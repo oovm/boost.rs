@@ -41,8 +41,28 @@ pub struct RenderStats {
     pub font_hashes: Vec<String>,
     /// FNV-1a hash of the project JSON that was rendered.
     pub project_hash: String,
+    /// Fingerprints of every external file the render actually loaded, in
+    /// declaration order.
+    pub assets: Vec<AssetFingerprint>,
     /// Declared optional resources that were absent; each is documented silence.
     pub optional_missing: Vec<String>,
+}
+
+/// One declared external resource and the bytes that were loaded for it.
+///
+/// Fonts have their own fingerprint list because they are resolved by role;
+/// images, videos and audio clips are recorded here so a finished file can be
+/// traced to the exact inputs even after the source files change.
+#[derive(serde::Serialize, Debug, Clone)]
+pub struct AssetFingerprint {
+    /// How the project uses the file: `image`, `video`, `audio` or `narration`.
+    pub kind: String,
+    /// The path as declared in the project.
+    pub path: String,
+    /// Byte length of the loaded file.
+    pub bytes: u64,
+    /// FNV-1a hash of the loaded bytes.
+    pub hash: String,
 }
 
 /// A half-open range of project frames to render.
@@ -212,10 +232,11 @@ pub fn render_project_with(
     let vignette = project.post.vignette.map(Vignette::new);
     let has_audio = project.audio.is_some();
     let plan = lower_audio(&project);
-    let optional_missing = preflight(&project, &mut fonts, &mut media, limits, &plan)?;
+    let optional_missing = preflight(&project, &mut fonts, &mut media, limits, &plan, &|| options.cancelled())?;
     if options.cancelled() {
         return Err(Error::cancelled("render cancelled after resource preflight"));
     }
+    let assets = fingerprint_assets(&project, &plan, &optional_missing);
     let audio = build_audio(&plan, &mut media, limits)?;
     if options.cancelled() {
         return Err(Error::cancelled("render cancelled after the audio bed was built"));
@@ -274,6 +295,7 @@ pub fn render_project_with(
         fonts: font_paths,
         font_hashes,
         project_hash: fnv1a(json.as_bytes()),
+        assets,
         optional_missing,
     })
 }
@@ -315,6 +337,15 @@ pub fn render_project_traced(json: &str, out: &Path, options: &RenderOptions<'_>
             Ok(stats) => {
                 for (role, path) in ["regular", "bold", "mono"].into_iter().zip(&stats.fonts) {
                     tracer.record(EventKind::FontResolved { role: role.to_string(), path: path.clone() });
+                }
+                for asset in &stats.assets {
+                    let kind = match asset.kind.as_str() {
+                        "image" => AssetKind::Image,
+                        "video" => AssetKind::Video,
+                        "audio" | "narration" => AssetKind::Audio,
+                        _ => AssetKind::Other,
+                    };
+                    tracer.record(EventKind::AssetLoaded { path: asset.path.clone(), kind, bytes: asset.bytes });
                 }
                 for path in &stats.optional_missing {
                     tracer.record(EventKind::AssetMissing {
@@ -388,7 +419,7 @@ pub fn preview_frame(json: &str, frame: u32, out: &Path) -> Result<PreviewStats,
     let mut media = MediaLibrary::new();
     let limits = DecodeLimits::project_default();
     let plan = lower_audio(&project);
-    preflight(&project, &mut fonts, &mut media, limits, &plan)?;
+    preflight(&project, &mut fonts, &mut media, limits, &plan, &|| false)?;
     let (w, h) = (project.width, project.height);
     let ss = supersample(&project);
     let mut pool = FramePool::new((w as f32 * ss).round() as u32, (h as f32 * ss).round() as u32);
@@ -791,18 +822,30 @@ fn preflight(
     media: &mut MediaLibrary,
     limits: DecodeLimits,
     plan: &AudioPlan,
+    cancelled: &dyn Fn() -> bool,
 ) -> Result<Vec<String>, Error> {
     let mut failures: Vec<String> = Vec::new();
     let mut optional_missing: Vec<String> = Vec::new();
     let mut decode_failed = false;
     for (index, scene) in project.scenes.iter().enumerate() {
+        // Preflight can be long: a film that imports many clips must still stop
+        // promptly when the host cancels, not only between rendered frames.
+        if cancelled() {
+            return Err(Error::cancelled(format!("preflight cancelled at scene {index}")));
+        }
         for (slot, item) in scene.items.iter().enumerate() {
+            if cancelled() {
+                return Err(Error::cancelled(format!("preflight cancelled at scene {index} item {slot}")));
+            }
             let where_ = format!("scene {index} item {slot}");
             preflight_item(project, &where_, item, fonts, media, limits, &mut failures, &mut optional_missing, &mut decode_failed);
         }
     }
     // The narration slot is a contract: it was lowered, so it must exist.
     if let Some(narration) = &plan.narration {
+        if cancelled() {
+            return Err(Error::cancelled("preflight cancelled before the narration check"));
+        }
         match std::fs::read(&narration.wav).ok().and_then(|bytes| media_codec::parse_wav_pcm16(&bytes)) {
             Some(wav) if wav.sample_rate == plan.sample_rate => {}
             Some(wav) => {
@@ -815,6 +858,9 @@ fn preflight(
         }
     }
     for clip in &plan.clips {
+        if cancelled() {
+            return Err(Error::cancelled(format!("preflight cancelled before decoding clip `{}`", clip.src)));
+        }
         match media.audio_pcm(&clip.src, plan.sample_rate, limits) {
             Ok(_) => {}
             Err(error) if clip.required => {
@@ -830,6 +876,60 @@ fn preflight(
     else {
         let message = format!("resource preflight failed: {}", failures.join("; "));
         Err(if decode_failed { Error::media(message) } else { Error::invalid(message) })
+    }
+}
+
+/// Fingerprints the external files the render actually loaded.
+///
+/// Preflight has already proved each required file decodes, so this pass only
+/// reads those files. Declared optional slots that stayed empty are excluded:
+/// they are documented silence, not inputs.
+fn fingerprint_assets(project: &Project, plan: &AudioPlan, optional_missing: &[String]) -> Vec<AssetFingerprint> {
+    let mut declared: Vec<(String, String)> = Vec::new();
+    for scene in &project.scenes {
+        for node in &scene.items {
+            collect_declared(node, &mut declared);
+        }
+    }
+    // Component definitions are declared once and may be instantiated many
+    // times; dedup below keeps each file in the report exactly once.
+    for component in &project.components {
+        for node in &component.items {
+            collect_declared(node, &mut declared);
+        }
+    }
+    for clip in &plan.clips {
+        declared.push(("audio".to_string(), clip.src.clone()));
+    }
+    if let Some(narration) = &plan.narration {
+        declared.push(("narration".to_string(), narration.wav.clone()));
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    let mut out = Vec::new();
+    for (kind, path) in declared {
+        if optional_missing.iter().any(|missing| *missing == path) || !seen.insert(path.clone()) {
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(&path)
+        else {
+            continue;
+        };
+        out.push(AssetFingerprint { kind, path, bytes: bytes.len() as u64, hash: fnv1a(&bytes) });
+    }
+    out
+}
+
+/// Collects the file-backed items a node declares, including nested layers.
+fn collect_declared(node: &Node, declared: &mut Vec<(String, String)>) {
+    match &node.item {
+        Item::Image { src, .. } => declared.push(("image".to_string(), src.clone())),
+        Item::Video { src, .. } => declared.push(("video".to_string(), src.clone())),
+        Item::Layer { items, .. } => {
+            for child in items {
+                collect_declared(child, declared);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -2007,6 +2107,15 @@ mod tests {
         let stats = super::render_project(&film.to_string(), &out, &mut |_, _| {}).expect("render imports");
         assert_eq!(stats.frames, 30);
         assert!(stats.audio);
+        // Every external file is fingerprinted from its bytes, so the artifact
+        // stays traceable after the sources change on disk.
+        let kinds: Vec<&str> = stats.assets.iter().map(|asset| asset.kind.as_str()).collect();
+        assert!(kinds.contains(&"image") && kinds.contains(&"video") && kinds.contains(&"audio"), "kinds: {kinds:?}");
+        for asset in &stats.assets {
+            let bytes = std::fs::read(&asset.path).expect("fingerprinted file exists");
+            assert_eq!(asset.bytes, bytes.len() as u64, "{}", asset.path);
+            assert_eq!(asset.hash, super::fnv1a(&bytes), "hash must match the bytes on disk: {}", asset.path);
+        }
         assert!(std::fs::metadata(&out).unwrap().len() > 2_000);
     }
 
@@ -2051,7 +2160,34 @@ mod tests {
         let stats = super::render_project(&film.to_string(), &out, &mut |_, _| {}).expect("optional slot renders");
         assert_eq!(stats.optional_missing.len(), 1);
         assert!(stats.optional_missing[0].ends_with("optional-absent.png"));
+        // An empty optional slot is documented silence, not a loaded input.
+        assert!(stats.assets.is_empty(), "absent optional files must not be fingerprinted: {:?}", stats.assets);
         assert!(out.exists());
+    }
+
+    /// Cancellation is polled during resource preflight, so a host that gives
+    /// up on a large project stops before the audio bed or any frame is built.
+    #[test]
+    fn preflight_honours_cancellation() {
+        let dir = std::env::temp_dir().join("opencut-media-tests");
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("cancelled-preflight.mp4");
+        let _ = std::fs::remove_file(&out);
+        let image = dir.join("cancel-fixture.png");
+        media_codec::write_png(&image, 8, 8, &vec![0x40u8; 8 * 8 * 4]).expect("write png");
+        let film = serde_json::json!({
+            "width": 64, "height": 64, "fps": 15, "duration_frames": 10,
+            "scenes": [{ "start": 0, "duration": 10,
+                "background": { "kind": "solid", "color": "#05070f" },
+                "items": [{ "kind": "image", "at": 0, "dur": 10, "src": image.to_str().unwrap(),
+                            "x": 0.5, "y": 0.5, "w": 0.5, "h": 0.5 }] }],
+            "audio": null
+        });
+        let cancel = || true;
+        let options = super::RenderOptions { cancel: Some(&cancel), ..Default::default() };
+        let error = super::render_project_with(&film.to_string(), &out, &options, &mut |_, _| {}).expect_err("cancel must stop the run");
+        assert_eq!(error.code(), "cancelled", "{error}");
+        assert!(!out.exists(), "a cancelled render must not publish an artifact");
     }
 
     /// Narration is a slot, not a guess: a path that does not decode aborts the
