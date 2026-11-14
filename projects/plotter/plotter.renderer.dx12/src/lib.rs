@@ -14,18 +14,45 @@ pub use error::RenderError;
 use plotter_renderer::RgbaImage;
 use plotter_view::Scene;
 
+use std::sync::{Mutex, OnceLock};
+
+/// Process-wide device so repeated renders reuse one `Direct3D 12` adapter.
+///
+/// The slot is cleared when a draw fails, which lets the next render rebuild the
+/// device instead of returning the same stale failure forever.
+fn device_slot() -> &'static Mutex<Option<hardware_backend_dx12::Dx12Backend>> {
+    static DEVICE: OnceLock<Mutex<Option<hardware_backend_dx12::Dx12Backend>>> = OnceLock::new();
+    DEVICE.get_or_init(|| Mutex::new(None))
+}
+
+/// Runs `draw` on the shared device, rebuilding it after a failure.
+fn with_device<T>(draw: impl FnOnce(&mut hardware_backend_dx12::Dx12Backend) -> Result<T, RenderError>) -> Result<T, RenderError> {
+    let mut slot = device_slot().lock().map_err(|_| RenderError::Backend("shared device lock is poisoned".into()))?;
+    if slot.is_none() {
+        *slot = Some(hardware_backend_dx12::Dx12Backend::new().map_err(RenderError::backend)?);
+    }
+    let backend = slot.as_mut().expect("the device slot was just filled");
+    match draw(backend) {
+        Ok(value) => Ok(value),
+        Err(error) => {
+            *slot = None;
+            Err(error)
+        }
+    }
+}
+
 /// Whether this host exposes a usable Direct3D 12 device.
 ///
-/// Always `false` outside Windows.
+/// Always `false` outside Windows. The probe reuses the shared device.
 pub fn is_available() -> bool {
-    cfg!(windows) && hardware_backend_dx12::Dx12Backend::new().is_ok()
+    cfg!(windows) && device_slot().lock().map(|slot| slot.is_some() || hardware_backend_dx12::Dx12Backend::new().is_ok()).unwrap_or(false)
 }
 
 /// Rasterise `scene` into `width`x`height` RGBA8 pixels.
 ///
 /// Triangles are drawn opaque over a transparent black background, so pixels no
 /// node touches stay `[0, 0, 0, 0]`. An empty scene returns an all-transparent
-/// image instead of an error.
+/// image instead of an error. Consecutive calls reuse one device.
 pub fn render_rgba8(scene: &Scene, width: u32, height: u32) -> Result<RgbaImage, RenderError> {
     if width == 0 || height == 0 {
         return Err(RenderError::EmptyTarget { width, height });
@@ -35,7 +62,6 @@ pub fn render_rgba8(scene: &Scene, width: u32, height: u32) -> Result<RgbaImage,
         return Ok(RgbaImage { width, height, pixels: vec![0; (width as usize) * (height as usize) * 4] });
     }
 
-    let mut backend = hardware_backend_dx12::Dx12Backend::new().map_err(RenderError::backend)?;
-    let pixels = backend.draw_vertex_buffer(&vertices, width, height).map_err(RenderError::backend)?;
+    let pixels = with_device(|backend| backend.draw_vertex_buffer(&vertices, width, height).map_err(RenderError::backend))?;
     Ok(RgbaImage { width, height, pixels })
 }

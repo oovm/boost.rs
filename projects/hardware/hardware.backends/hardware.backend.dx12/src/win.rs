@@ -117,6 +117,8 @@ pub struct Dx12Backend {
     program_cache: Vec<(u64, CachedProgram)>,
     program_hits: u64,
     program_misses: u64,
+    /// Vertex-buffer raster pipeline, which only depends on the fixed shaders.
+    vertex_raster_pipeline: Option<(ID3D12RootSignature, ID3D12PipelineState)>,
     /// Last descriptor path label taken by a submit (for thin-gate assertions).
     last_descriptor_path: &'static str,
     /// Last sync path label taken by a submit (for thin-gate assertions).
@@ -169,6 +171,7 @@ impl Dx12Backend {
                 program_cache: Vec::new(),
                 program_hits: 0,
                 program_misses: 0,
+                vertex_raster_pipeline: None,
                 last_descriptor_path: "",
                 last_sync_path: "",
                 last_pipeline_path: "",
@@ -1058,7 +1061,14 @@ impl Dx12Backend {
             )?;
 
             self.mark_pipeline_path();
-            let (root, pso) = self.create_vertex_raster_pso(&shaders.vs, &shaders.ps)?;
+            let (root, pso) = match self.vertex_raster_pipeline.clone() {
+                Some(cached) => cached,
+                None => {
+                    let created = self.create_vertex_raster_pso(&shaders.vs, &shaders.ps)?;
+                    self.vertex_raster_pipeline = Some((created.0.clone(), created.1.clone()));
+                    created
+                }
+            };
             self.mark_sync_path();
 
             self.allocator.Reset().map_err(dx_err)?;
