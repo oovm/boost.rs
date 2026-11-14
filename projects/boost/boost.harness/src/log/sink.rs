@@ -1,4 +1,4 @@
-use std::vec::Vec;
+use alloc::vec::Vec;
 
 use crate::log::{event::LogEvent, filter::Filter};
 

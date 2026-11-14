@@ -5,7 +5,8 @@
 //! its events to whichever task last ran on that thread. A thread-local scope therefore stays a thread
 //! scope, and only a [`TaskContext`] carried by the caller records a task.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use alloc::string::String;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use crate::log::{
     event::{LogEvent, LogEventBuilder},

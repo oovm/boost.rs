@@ -1,4 +1,8 @@
-use std::{string::String, time::SystemTime, vec::Vec};
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+
+#[cfg(feature = "std")]
+use std::time::SystemTime;
 
 use crate::log::{
     field::{Field, FieldValue, Fields},
@@ -28,6 +32,7 @@ pub struct LogEvent {
     level: Level,
     target: String,
     fields: Vec<Field>,
+    #[cfg(feature = "std")]
     timestamp: SystemTime,
     span_id: Option<SpanId>,
     parent_span_id: Option<SpanId>,
@@ -67,6 +72,7 @@ impl LogEvent {
     }
 
     /// Returns the event timestamp.
+    #[cfg(feature = "std")]
     pub fn timestamp(&self) -> SystemTime {
         self.timestamp
     }
@@ -150,6 +156,7 @@ impl LogEventBuilder {
             level: self.level,
             target: self.target,
             fields: self.fields.into_vec(),
+            #[cfg(feature = "std")]
             timestamp: SystemTime::now(),
             span_id: None,
             parent_span_id: None,

@@ -1,14 +1,12 @@
-use std::{
-    cell::RefCell,
-    string::String,
-    sync::atomic::{AtomicU64, Ordering},
-    vec::Vec,
-};
+use alloc::{string::String, vec::Vec};
+use core::cell::RefCell;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use crate::log::field::{Field, Fields};
 
 static NEXT_SPAN_ID: AtomicU64 = AtomicU64::new(1);
 
+#[cfg(feature = "std")]
 thread_local! {
     static SPAN_STACK: RefCell<Vec<SpanId>> = const { RefCell::new(Vec::new()) };
 }
@@ -40,7 +38,11 @@ pub struct LogSpan {
 impl LogSpan {
     /// Create a span with the given target.
     pub fn new(target: impl Into<String>) -> Self {
-        Self { id: SpanId::next(), target: target.into(), parent: current_span_id(), fields: Fields::new() }
+        #[cfg(feature = "std")]
+        let parent = current_span_id();
+        #[cfg(not(feature = "std"))]
+        let parent = None;
+        Self { id: SpanId::next(), target: target.into(), parent, fields: Fields::new() }
     }
 
     /// Attach a field to the span.
@@ -71,11 +73,13 @@ impl LogSpan {
 }
 
 /// Guard that exits a span when dropped.
+#[cfg(feature = "std")]
 #[derive(Debug)]
 pub struct SpanGuard {
     span_id: SpanId,
 }
 
+#[cfg(feature = "std")]
 impl SpanGuard {
     /// Enter a span and return a guard that exits it on drop.
     pub fn enter(span: LogSpan) -> Self {
@@ -89,6 +93,7 @@ impl SpanGuard {
     }
 }
 
+#[cfg(feature = "std")]
 impl Drop for SpanGuard {
     fn drop(&mut self) {
         SPAN_STACK.with(|stack| {
@@ -103,11 +108,13 @@ impl Drop for SpanGuard {
 }
 
 /// Returns the current span identifier when inside a span.
+#[cfg(feature = "std")]
 pub fn current_span_id() -> Option<SpanId> {
     SPAN_STACK.with(|stack| stack.borrow().last().copied())
 }
 
 /// Returns the parent span identifier for the current span.
+#[cfg(feature = "std")]
 pub fn current_parent_span_id() -> Option<SpanId> {
     SPAN_STACK.with(|stack| {
         let stack = stack.borrow();

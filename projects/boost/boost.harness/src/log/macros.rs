@@ -1,4 +1,5 @@
 /// Emit a structured log event.
+#[cfg(feature = "std")]
 #[macro_export]
 macro_rules! event {
     ($level:ident, $target:expr) => {

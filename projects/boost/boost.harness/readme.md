@@ -34,6 +34,7 @@ The test attributes `#[test]`, `#[fixture]`, and `#[case]` are re-exported from 
 | `terminal` | Diagnostic terminal rendering (implies `std`) |
 | `concolor` | Console color forcing hooks (implies `std`) |
 
-Without `std` the crate is `no_std` + `alloc` and exposes the diagnostic core
-(`boost_harness::diagnostic`) only. Log events, tests, benchmarks, and terminal rendering need host
-time, threads, panics, and stdout, so they stay behind `std`.
+Without `std` the crate is `no_std` + `alloc` and exposes the diagnostic core plus the log event
+model (`LogEvent`, fields, payloads, spans, tasks, filters, and the sink trait). Global dispatch,
+file and JSON sinks, async sinks, console rendering, tests, and benchmarks need host time, threads,
+panics, and stdout, so they stay behind `std`.

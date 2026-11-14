@@ -1,10 +1,10 @@
-use std::{
-    env,
-    error::Error,
-    fmt::{self, Display, Formatter},
-    string::String,
-    vec::Vec,
-};
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use core::error::Error;
+use core::fmt::{self, Display, Formatter};
+
+#[cfg(feature = "std")]
+use std::env;
 
 use crate::log::{event::LogEvent, level::Level};
 
@@ -126,6 +126,7 @@ impl Filter {
     ///
     /// A missing variable returns `None`. An invalid directive or a value that is not valid
     /// Unicode returns an error instead of falling back to a default level.
+    #[cfg(feature = "std")]
     pub fn from_env(variable: &str) -> Result<Option<Self>, FilterParseError> {
         let Some(value) = env::var_os(variable)
         else {

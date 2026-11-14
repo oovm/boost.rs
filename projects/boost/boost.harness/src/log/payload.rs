@@ -1,4 +1,4 @@
-use std::{string::String, vec::Vec};
+use alloc::{string::String, vec::Vec};
 
 use crate::log::field::FieldValue;
 

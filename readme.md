@@ -67,8 +67,8 @@ Prefer a single capability? Depend on the matching `boost-*` crate directly (`bo
 `boost-harness-macro` and expand against those modules.
 
 Host-independent crates are `no_std` with `alloc`: `boost-console`, `boost-source`, `boost-terminal`,
-`boost-random`, and the `boost_harness::diagnostic` core. `boost-net` and `boost-fs` keep their
-host-facing transports and filesystem operations behind `std`.
+`boost-random`, the `boost_harness::diagnostic` core, and the `boost_harness::log` event model. `boost-net`
+and `boost-fs` keep their host-facing transports and filesystem operations behind `std`.
 
 ## 📊 How boost compares
 
