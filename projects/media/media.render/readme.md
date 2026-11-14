@@ -5,4 +5,5 @@
 - `scene`（默认）`render_project`：把 `Project` 逐帧画出来、把音频按秒切块混进编码器。
   - 世界按全片最大 zoom 超采样光栅化，推近时不会糊。
   - 与 `media.codec` 组合成一条从 JSON 到 MP4 的完整链路。
+  - 可选 `trace` feature 提供 `render_project_traced`：把项目形状、字体文件、可选空槽、编码器配置、发布字节与失败分类记录进 `media-harness` 的 `Trace`，再交给 `analyze` / `render_markdown`。
 - `image-pipeline` `process_image`：无 scene 的图像管线 decode→处理→encode（显影配方或效果栈 + 时刻），输出 PNG，依赖图只含 codec、post、image、types，不拉 scene、text、audio。照片与特效宿主调用这一入口，绑定侧零编排。

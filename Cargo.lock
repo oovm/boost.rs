@@ -2753,6 +2753,14 @@ name = "media-dsp"
 version = "0.1.0"
 
 [[package]]
+name = "media-harness"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "media-image"
 version = "0.1.0"
 dependencies = [
@@ -2829,6 +2837,7 @@ dependencies = [
  "geometry",
  "media-audio",
  "media-codec",
+ "media-harness",
  "media-image",
  "media-layout",
  "media-motion",

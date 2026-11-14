@@ -90,6 +90,7 @@ members = [
     "projects/media/media.canvas",
     "projects/media/media.codec",
     "projects/media/media.dsp",
+    "projects/media/media.harness",
     "projects/media/media.image",
     "projects/media/media.layout",
     "projects/media/media.motion",
@@ -244,6 +245,7 @@ media-audio = { path = "projects/media/media.audio" }
 media-canvas = { path = "projects/media/media.canvas" }
 media-codec = { path = "projects/media/media.codec" }
 media-dsp = { path = "projects/media/media.dsp" }
+media-harness = { path = "projects/media/media.harness" }
 media-image = { path = "projects/media/media.image" }
 media-layout = { path = "projects/media/media.layout" }
 media-motion = { path = "projects/media/media.motion" }

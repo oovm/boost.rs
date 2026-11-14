@@ -3,25 +3,19 @@
 
 use std::path::{Path, PathBuf};
 
-use geometry::camera_at;
-use geometry::smooth_polyline;
-use geometry::{Rgba, parse, parse_or};
-use geometry::{apply, fade};
+use geometry::{Rgba, apply, camera_at, fade, parse, parse_or, smooth_polyline};
 use media_audio::{
-    AudioPlan, BgmPlan, ClipPlacement, InstrumentRequest, NarrationPlacement, NotePlacement, PatternPlacement,
-    PatternRequest, PatternTrackRequest, SfxPlacement, SfxRequest, VoicePlacement, build_audio,
+    AudioPlan, BgmPlan, ClipPlacement, InstrumentRequest, NarrationPlacement, NotePlacement, PatternPlacement, PatternRequest,
+    PatternTrackRequest, SfxPlacement, SfxRequest, VoicePlacement, build_audio,
 };
-use media_codec::DecodeLimits;
-use media_codec::Encoder;
-use media_codec::MediaLibrary;
+use media_codec::{DecodeLimits, Encoder, MediaLibrary};
 use media_image::{Bitmap, Frame};
 use media_motion::Motion;
 use media_post::Vignette;
 use media_raster::Paint;
 use media_scene::{Align, Background, Blend, Component, Item, Node, Project, ShapeKind};
 use media_text::Fonts;
-use media_types::Error;
-use media_types::hash;
+use media_types::{Error, hash};
 
 /// Facts about a finished render.
 ///
@@ -96,8 +90,7 @@ impl PartialOutput {
     }
 
     fn publish(&mut self, out: &Path) -> Result<(), Error> {
-        std::fs::rename(&self.path, out)
-            .map_err(|e| Error::io(format!("cannot publish {} -> {}: {e}", self.path.display(), out.display())))?;
+        std::fs::rename(&self.path, out).map_err(|e| Error::io(format!("cannot publish {} -> {}: {e}", self.path.display(), out.display())))?;
         self.published = true;
         Ok(())
     }
@@ -139,8 +132,7 @@ fn resolve_fonts(project: &Project) -> Result<(Fonts, Vec<String>), Error> {
             let mut bytes = Vec::with_capacity(3);
             let mut used = Vec::with_capacity(3);
             for (role, path) in spec.faces() {
-                let data = std::fs::read(path)
-                    .map_err(|e| Error::io(format!("project font `{role}` at {path} cannot be read: {e}")))?;
+                let data = std::fs::read(path).map_err(|e| Error::io(format!("project font `{role}` at {path} cannot be read: {e}")))?;
                 bytes.push(data);
                 used.push(path.to_string());
             }
@@ -157,11 +149,9 @@ fn resolve_fonts(project: &Project) -> Result<(Fonts, Vec<String>), Error> {
                         break;
                     }
                 }
-                let Some((data, path)) = hit else {
-                    return Err(Error::io(format!(
-                        "no {role} font found among: {}; declare `fonts` in the project",
-                        candidates.join(", ")
-                    )));
+                let Some((data, path)) = hit
+                else {
+                    return Err(Error::io(format!("no {role} font found among: {}; declare `fonts` in the project", candidates.join(", "))));
                 };
                 bytes.push(data);
                 used.push(path.to_string());
@@ -220,8 +210,7 @@ pub fn render_project_with(
     let bitrate = (w * h * fps / 2).clamp(2_000_000, 20_000_000);
     let mut partial = PartialOutput::new(out);
     if let Some(parent) = partial.path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| Error::io(format!("cannot create output directory {}: {e}", parent.display())))?;
+        std::fs::create_dir_all(parent).map_err(|e| Error::io(format!("cannot create output directory {}: {e}", parent.display())))?;
     }
     let mut encoder = Encoder::open(&partial.path, w, h, fps, bitrate, plan.sample_rate, has_audio)?;
     let audio_codec = encoder.audio_codec().to_string();
@@ -272,6 +261,87 @@ pub fn render_project_with(
     })
 }
 
+/// The outcome of one traced render: the same result an untraced call returns,
+/// plus everything the run recorded.
+#[cfg(feature = "trace")]
+#[derive(Debug)]
+pub struct TracedRender {
+    /// The render result, unchanged.
+    pub result: Result<RenderStats, Error>,
+    /// Recorded execution facts.
+    pub trace: media_harness::Trace,
+}
+
+/// Renders like [`render_project_with`] and records the run.
+///
+/// The trace is aggregate: project shape, font files, declared optional slots,
+/// the encoder configuration, published bytes and the failure class. Per-frame
+/// and per-item detail belongs to the caller's own spans around this call.
+#[cfg(feature = "trace")]
+pub fn render_project_traced(json: &str, out: &Path, options: &RenderOptions<'_>, progress: &mut dyn FnMut(u32, u32)) -> TracedRender {
+    use media_harness::{AssetKind, EventKind, Tracer};
+
+    let mut tracer = Tracer::new();
+    // The run-level span is orchestration, not a media stage; inner spans the
+    // host adds are what the slow-span rule should judge.
+    let result = tracer.span("run", |tracer| {
+        if let Ok(project) = serde_json::from_str::<Project>(json) {
+            tracer.record(EventKind::ProjectLoaded {
+                scenes: project.scenes.len(),
+                frames: project.duration_frames,
+                fps: project.fps,
+                width: project.width,
+                height: project.height,
+            });
+        }
+        match render_project_with(json, out, options, progress) {
+            Ok(stats) => {
+                for (role, path) in ["regular", "bold", "mono"].into_iter().zip(&stats.fonts) {
+                    tracer.record(EventKind::FontResolved { role: role.to_string(), path: path.clone() });
+                }
+                for path in &stats.optional_missing {
+                    tracer.record(EventKind::AssetMissing {
+                        path: path.clone(),
+                        kind: AssetKind::Other,
+                        slot: "declared optional".to_string(),
+                        required: false,
+                    });
+                }
+                tracer.record(EventKind::EncodeOpened {
+                    backend: stats.backend.clone(),
+                    width: stats.width,
+                    height: stats.height,
+                    fps: stats.fps,
+                    frames: stats.frames,
+                });
+                tracer.record(EventKind::Encoded { frames: stats.frames, bytes: stats.bytes });
+                tracer.record(EventKind::Published { path: stats.out.clone(), bytes: stats.bytes });
+                Ok(stats)
+            }
+            Err(error) => {
+                match error.code() {
+                    "invalid_scene" | "invalid_input" => {
+                        tracer.record(EventKind::ValidationFailed { subject: "render".to_string(), message: error.message.clone() })
+                    }
+                    "cancelled" => tracer.record(EventKind::Cancelled { frame: cancelled_frame(&error.message) }),
+                    "encode" | "unsupported_platform" => {
+                        tracer.record(EventKind::EncodeFailed { message: format!("{}: {}", error.code(), error.message) })
+                    }
+                    _ => tracer.record(EventKind::Note { message: format!("{}: {}", error.code(), error.message) }),
+                };
+                Err(error)
+            }
+        }
+    });
+    TracedRender { result, trace: tracer.finish() }
+}
+
+/// Reads the frame number out of `render cancelled at frame {f} of …`.
+#[cfg(feature = "trace")]
+fn cancelled_frame(message: &str) -> u32 {
+    message.split("frame ").nth(1).and_then(|rest| rest.split_whitespace().next()).and_then(|frame| frame.parse().ok()).unwrap_or(0)
+}
+
 /// Facts about one previewed frame.
 #[derive(serde::Serialize, Debug)]
 pub struct PreviewStats {
@@ -311,28 +381,20 @@ pub fn preview_frame(json: &str, frame: u32, out: &Path) -> Result<PreviewStats,
         std::fs::create_dir_all(parent).map_err(|e| Error::io(format!("cannot create {}: {e}", parent.display())))?;
     }
     media_codec::write_png(out, w, h, &frame_buffer.pixels)?;
-    Ok(PreviewStats {
-        frame,
-        width: w,
-        height: h,
-        fonts: font_paths,
-        project_hash: fnv1a(json.as_bytes()),
-    })
+    Ok(PreviewStats { frame, width: w, height: h, fonts: font_paths, project_hash: fnv1a(json.as_bytes()) })
 }
 
 /// Validates the requested interval against the film.
 fn resolve_range(project: &Project, options: &RenderOptions<'_>) -> Result<FrameRange, Error> {
-    let Some(range) = options.range else {
+    let Some(range) = options.range
+    else {
         return Ok(FrameRange { start: 0, end: project.duration_frames });
     };
     if range.start >= range.end {
         return Err(Error::invalid(format!("frame range {range:?} is empty (start must be below end)")));
     }
     if range.end > project.duration_frames {
-        return Err(Error::invalid(format!(
-            "frame range ends at {} but the film is {} frames",
-            range.end, project.duration_frames
-        )));
+        return Err(Error::invalid(format!("frame range ends at {} but the film is {} frames", range.end, project.duration_frames)));
     }
     Ok(range)
 }
@@ -379,12 +441,7 @@ pub fn lower_audio(project: &Project) -> AudioPlan {
             })
             .unwrap_or_default(),
         voice: spec
-            .map(|a| {
-                a.voice
-                    .iter()
-                    .map(|v| VoicePlacement { song: v.song.clone(), at_frames: v.at, volume: v.volume })
-                    .collect()
-            })
+            .map(|a| a.voice.iter().map(|v| VoicePlacement { song: v.song.clone(), at_frames: v.at, volume: v.volume }).collect())
             .unwrap_or_default(),
         notes: spec
             .map(|a| {
@@ -512,11 +569,7 @@ fn validate(project: &Project) -> Result<(), Error> {
     for problem in component_cycles(project) {
         problems.push(problem);
     }
-    if problems.is_empty() {
-        Ok(())
-    } else {
-        Err(Error::invalid(format!("scene contract: {}", problems.join("; "))))
-    }
+    if problems.is_empty() { Ok(()) } else { Err(Error::invalid(format!("scene contract: {}", problems.join("; ")))) }
 }
 
 /// Validates one node: its identity, its motion contract and its item.
@@ -570,18 +623,14 @@ fn component_cycles(project: &Project) -> Vec<String> {
             _ => {}
         }
     }
-    fn visit(
-        project: &Project,
-        id: &media_scene::NodeId,
-        path: &mut Vec<media_scene::NodeId>,
-        problems: &mut Vec<String>,
-    ) {
+    fn visit(project: &Project, id: &media_scene::NodeId, path: &mut Vec<media_scene::NodeId>, problems: &mut Vec<String>) {
         if path.contains(id) {
             let chain: Vec<String> = path.iter().map(ToString::to_string).chain(std::iter::once(id.to_string())).collect();
             problems.push(format!("component cycle: {}", chain.join(" -> ")));
             return;
         }
-        let Some(component) = find_component(project, id) else {
+        let Some(component) = find_component(project, id)
+        else {
             return;
         };
         path.push(id.clone());
@@ -738,10 +787,9 @@ fn preflight(
     if let Some(narration) = &plan.narration {
         match std::fs::read(&narration.wav).ok().and_then(|bytes| media_codec::parse_wav_pcm16(&bytes)) {
             Some(wav) if wav.sample_rate == plan.sample_rate => {}
-            Some(wav) => failures.push(format!(
-                "narration `{}` is {} Hz but the film is {} Hz",
-                narration.wav, wav.sample_rate, plan.sample_rate
-            )),
+            Some(wav) => {
+                failures.push(format!("narration `{}` is {} Hz but the film is {} Hz", narration.wav, wav.sample_rate, plan.sample_rate))
+            }
             None => {
                 decode_failed = true;
                 failures.push(format!("narration `{}` is missing or not a PCM16 WAV", narration.wav));
@@ -760,7 +808,8 @@ fn preflight(
     }
     if failures.is_empty() {
         Ok(optional_missing)
-    } else {
+    }
+    else {
         let message = format!("resource preflight failed: {}", failures.join("; "));
         Err(if decode_failed { Error::media(message) } else { Error::invalid(message) })
     }
@@ -977,7 +1026,8 @@ fn paint_frame(
             // pixels as the output needs.
             let buffer = scratch.as_ref().expect("global camera renders off-screen");
             out.resample_from(buffer, global_zoom, global_focus, global_rotate);
-        } else if let Some(camera) = camera {
+        }
+        else if let Some(camera) = camera {
             let t = if scene.duration > 1 { local as f32 / (scene.duration - 1) as f32 } else { 1.0 };
             let eased = apply(camera.ease, t);
             let zoom = camera.zoom_from + (camera.zoom_to - camera.zoom_from) * eased;
@@ -1007,7 +1057,8 @@ fn paint_background(frame: &mut Frame, bg: &Background, seconds: f32) {
             let stops: Vec<Rgba> = colors.iter().filter_map(|c| parse(c)).collect();
             if stops.is_empty() {
                 frame.fill(Rgba([8, 10, 20, 255]));
-            } else {
+            }
+            else {
                 frame.v_gradient(&stops);
             }
         }
@@ -1018,7 +1069,8 @@ fn paint_background(frame: &mut Frame, bg: &Background, seconds: f32) {
             let stops: Vec<Rgba> = base.iter().filter_map(|c| parse(c)).collect();
             if stops.is_empty() {
                 frame.fill(Rgba([5, 7, 15, 255]));
-            } else {
+            }
+            else {
                 frame.v_gradient(&stops);
             }
             let tint = parse_or(tint.as_deref(), Rgba([180, 205, 255, 255]));
@@ -1116,31 +1168,15 @@ fn paint_item(
             let drawn = if *rise > 0.0 {
                 // Character-by-character entrance reads as motion, not as a
                 // block of text fading in.
-                fonts.draw_staggered(
-                    frame,
-                    visible,
-                    px(x_of(*x), fw as u32),
-                    top,
-                    size,
-                    *bold,
-                    color,
-                    *align,
-                    *stagger,
-                    *rise * s,
-                    life,
-                )
-            } else {
+                fonts.draw_staggered(frame, visible, px(x_of(*x), fw as u32), top, size, *bold, color, *align, *stagger, *rise * s, life)
+            }
+            else {
                 fonts.draw_block(frame, visible, px(x_of(*x), fw as u32), top, size, *bold, color, *align, limit, lh)
             };
             if let Some(glow_color) = glow {
                 let gc = parse(glow_color);
                 if let Some(gc) = gc {
-                    frame.glow(
-                        px(x_of(*x), fw as u32),
-                        px(y_of(*y), fh as u32) - drift + drawn / 2.0,
-                        size * 2.2,
-                        gc.with_alpha(alpha * 0.10),
-                    );
+                    frame.glow(px(x_of(*x), fw as u32), px(y_of(*y), fh as u32) - drift + drawn / 2.0, size * 2.2, gc.with_alpha(alpha * 0.10));
                 }
             }
             if let Some(sub_text) = sub {
@@ -1213,14 +1249,9 @@ fn paint_item(
                 let remain = visible_total.saturating_sub(used);
                 let visible = if remain >= line.chars().count() { None } else { Some(remain) };
                 let mut themed = theme.clone();
-                for field in [
-                    &mut themed.plain,
-                    &mut themed.keyword,
-                    &mut themed.string,
-                    &mut themed.comment,
-                    &mut themed.number,
-                    &mut themed.function,
-                ] {
+                for field in
+                    [&mut themed.plain, &mut themed.keyword, &mut themed.string, &mut themed.comment, &mut themed.number, &mut themed.function]
+                {
                     if let Some(mut c) = parse(field) {
                         c.0[3] = (c.0[3] as f32 * alpha) as u8;
                         *field = format!("#{:02x}{:02x}{:02x}{:02x}", c.0[0], c.0[1], c.0[2], c.0[3]);
@@ -1250,18 +1281,7 @@ fn paint_item(
                 text = format!("{text}{s}");
             }
             let color = parse_or(Some(color), Rgba([240, 246, 255, 255])).with_alpha(alpha);
-            fonts.draw_block(
-                frame,
-                &text,
-                px(x_of(*x), fw as u32),
-                px(y_of(*y), fh as u32),
-                *size * s,
-                true,
-                color,
-                Align::Center,
-                None,
-                1.2,
-            );
+            fonts.draw_block(frame, &text, px(x_of(*x), fw as u32), px(y_of(*y), fh as u32), *size * s, true, color, Align::Center, None, 1.2);
         }
         Item::Card { at, dur, x, y, w, h, title, body, accent, panel, fade_in, fade_out, drift_y } => {
             if local < *at || local >= *at + *dur {
@@ -1355,9 +1375,7 @@ fn paint_item(
             let bitmap = match media.video_frame(src, source_seconds, limits) {
                 Ok(bitmap) => bitmap,
                 Err(error) if *required => {
-                    return Err(Error::media(format!(
-                        "required video `{src}` cannot be decoded at {source_seconds:.3}s: {error}"
-                    )));
+                    return Err(Error::media(format!("required video `{src}` cannot be decoded at {source_seconds:.3}s: {error}")));
                 }
                 Err(_) => return Ok(()),
             };
@@ -1444,22 +1462,7 @@ fn paint_item(
             }
             frame.grain((*density as f32 * s * s) as u32, strength * opacity, frame_index.wrapping_add(1));
         }
-        Item::Path {
-            at,
-            dur,
-            points,
-            smooth,
-            closed,
-            fill,
-            color,
-            stroke,
-            progress,
-            rotate,
-            scale,
-            blend,
-            fade_in,
-            fade_out,
-        } => {
+        Item::Path { at, dur, points, smooth, closed, fill, color, stroke, progress, rotate, scale, blend, fade_in, fade_out } => {
             if local < *at || local >= *at + *dur {
                 return Ok(());
             }
@@ -1562,7 +1565,8 @@ fn paint_item(
                     "component `{component}` nests deeper than {MAX_INSTANCE_DEPTH} levels; check for a cycle"
                 )));
             }
-            let Some(definition) = find_component(project, component) else {
+            let Some(definition) = find_component(project, component)
+            else {
                 if *required {
                     return Err(Error::invalid(format!("instance references unknown component `{component}`")));
                 }
@@ -1579,16 +1583,7 @@ fn paint_item(
             let bitmap = Bitmap::new(buffer.width, buffer.height, buffer.pixels.clone());
             pool.put(buffer);
             let (bw, bh) = (px(*w, fw as u32), px(*h, fh as u32));
-            frame.draw_bitmap(
-                &bitmap,
-                px(x_of(*x), fw as u32) - bw / 2.0,
-                px(y_of(*y), fh as u32) - bh / 2.0,
-                bw,
-                bh,
-                *fit,
-                alpha,
-                0.0,
-            );
+            frame.draw_bitmap(&bitmap, px(x_of(*x), fw as u32) - bw / 2.0, px(y_of(*y), fh as u32) - bh / 2.0, bw, bh, *fit, alpha, 0.0);
         }
         Item::Footnote { at, dur, text, size, x, y, align, color, fade_in, fade_out } => {
             if local < *at || local >= *at + *dur {
@@ -1600,18 +1595,7 @@ fn paint_item(
                 return Ok(());
             }
             let c = parse_or(Some(color), Rgba([93, 111, 140, 255])).with_alpha(alpha);
-            fonts.draw_block(
-                frame,
-                text,
-                px(x_of(*x), fw as u32),
-                px(y_of(*y), fh as u32),
-                *size * s,
-                false,
-                c,
-                *align,
-                Some(0.6 * fw),
-                1.2,
-            );
+            fonts.draw_block(frame, text, px(x_of(*x), fw as u32), px(y_of(*y), fh as u32), *size * s, false, c, *align, Some(0.6 * fw), 1.2);
         }
         Item::Progress { at, dur, track, fill, y } => {
             if local < *at || local >= *at + *dur {
@@ -1687,6 +1671,45 @@ mod tests {
         assert!(stats.audio);
         let meta = std::fs::metadata(&out).expect("output exists");
         assert!(meta.len() > 1_000, "mp4 too small: {}", meta.len());
+    }
+
+    /// A traced run records project shape, fonts, encoder facts and publishing,
+    /// and a rejected project becomes an explainable validation finding.
+    #[cfg(feature = "trace")]
+    #[test]
+    fn traced_render_records_stages_and_classifies_failures() {
+        use media_harness::{EventKind, FindingCode, analyze};
+
+        let project = serde_json::json!({
+            "width": 160, "height": 120, "fps": 10, "duration_frames": 10,
+            "scenes": [{
+                "start": 0, "duration": 10,
+                "background": { "kind": "solid", "color": "#05070f" },
+                "items": [{ "kind": "text", "at": 0, "dur": 10, "content": "MV", "size": 24.0,
+                            "color": "#ffffff", "x": 0.5, "y": 0.5 }]
+            }],
+            "audio": null
+        });
+        let out = std::env::temp_dir().join("media-render-traced.mp4");
+        let run = super::render_project_traced(&project.to_string(), &out, &Default::default(), &mut |_, _| {});
+        let stats = run.result.expect("render succeeds");
+        assert_eq!(stats.frames, 10);
+
+        let has = |predicate: fn(&EventKind) -> bool| run.trace.events.iter().any(|event| predicate(&event.kind));
+        assert!(has(|kind| matches!(kind, EventKind::ProjectLoaded { frames: 10, scenes: 1, .. })));
+        assert!(has(|kind| matches!(kind, EventKind::FontResolved { .. })));
+        assert!(has(|kind| matches!(kind, EventKind::EncodeOpened { frames: 10, .. })));
+        assert!(has(|kind| matches!(kind, EventKind::Encoded { frames: 10, .. })));
+        assert!(has(|kind| matches!(kind, EventKind::Published { .. })));
+        assert!(analyze(&run.trace, &Default::default()).is_empty(), "a clean run has no findings");
+
+        let rejected = super::render_project_traced("{}", &out, &Default::default(), &mut |_, _| {});
+        assert!(rejected.result.is_err());
+        let findings = analyze(&rejected.trace, &Default::default());
+        assert!(
+            findings.iter().any(|finding| finding.code == FindingCode::ValidationFailure),
+            "rejected project must be explained: {findings:?}"
+        );
     }
 
     /// A film-wide camera curve with zoom-gated layers and a soft light: the
@@ -1776,8 +1799,8 @@ mod tests {
         let project = serde_json::from_str::<media_scene::Project>(&bad).expect("wire json parses");
         let plan = super::lower_audio(&project);
         let mut media = media_codec::MediaLibrary::new();
-        let error = media_audio::build_audio(&plan, &mut media, media_codec::DecodeLimits::unbounded())
-            .expect_err("unknown kind must fail explicitly");
+        let error =
+            media_audio::build_audio(&plan, &mut media, media_codec::DecodeLimits::unbounded()).expect_err("unknown kind must fail explicitly");
         assert_eq!(error.code(), "invalid_input");
     }
 
@@ -1855,8 +1878,8 @@ mod tests {
         let project = serde_json::from_str::<media_scene::Project>(&bad).expect("wire json");
         let plan = super::lower_audio(&project);
         let mut media = media_codec::MediaLibrary::new();
-        let error = media_audio::build_audio(&plan, &mut media, media_codec::DecodeLimits::unbounded())
-            .expect_err("unknown instrument must fail");
+        let error =
+            media_audio::build_audio(&plan, &mut media, media_codec::DecodeLimits::unbounded()).expect_err("unknown instrument must fail");
         assert_eq!(error.code(), "invalid_input");
     }
 
@@ -1906,18 +1929,12 @@ mod tests {
         // 1b. Decode the clip back and check the pixels, so a silent import
         // failure cannot pass as a green test.
         let mut library = media_codec::MediaLibrary::new();
-        let frame = library
-            .video_frame(source.to_str().unwrap(), 0.1, media_codec::DecodeLimits::unbounded())
-            .expect("decode video frame");
+        let frame = library.video_frame(source.to_str().unwrap(), 0.1, media_codec::DecodeLimits::unbounded()).expect("decode video frame");
         assert_eq!((frame.width, frame.height), (160, 120));
         // 取中心像素：暗角（post::Vignette）只压边缘角，中心保留源色，
         // 断言验证的是视频回环而不是暗角强度。
         let center = (80 * 160 + 60) * 4;
-        assert!(
-            frame.rgba[center] > 120 && frame.rgba[center + 1] < 100,
-            "expected the red source, got {:?}",
-            &frame.rgba[center..center + 4]
-        );
+        assert!(frame.rgba[center] > 120 && frame.rgba[center + 1] < 100, "expected the red source, got {:?}", &frame.rgba[center..center + 4]);
 
         // 2. Write a short PCM16 WAV with our own writer.
         let wav = dir.join("tone.wav");

@@ -30,6 +30,9 @@ pub mod render;
 #[cfg(feature = "scene")]
 pub use render::{FrameRange, PreviewStats, RenderOptions, RenderStats, lower_audio, preview_frame, render_project, render_project_with};
 
+#[cfg(all(feature = "scene", feature = "trace"))]
+pub use render::{TracedRender, render_project_traced};
+
 #[cfg(feature = "sfx-export")]
 pub mod sfx;
 
