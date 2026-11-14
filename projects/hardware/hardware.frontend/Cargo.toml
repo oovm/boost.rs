@@ -1,0 +1,18 @@
+[package]
+name = "hardware-frontend"
+description = "UCF shader front-end: authored WGSL parses through oak-wgsl and lowers to UCF IR"
+readme = "readme.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+hardware-program = { workspace = true }
+oak-wgsl = { workspace = true }
+
+[dev-dependencies]
+hardware-emitter = { workspace = true }
+acorn-spirv = { workspace = true }
