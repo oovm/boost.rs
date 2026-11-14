@@ -1139,27 +1139,14 @@ dependencies = [
 
 [[package]]
 name = "dejavu"
-version = "0.0.1"
-source = "git+https://github.com/notedge/dejavu-language.git?rev=c14ad3f786feb30676d809999199a3c867a90cbf#c14ad3f786feb30676d809999199a3c867a90cbf"
-dependencies = [
- "dejavu-engine 0.0.1",
- "dejavu-ir 0.0.1",
- "dejavu-language 0.0.1",
- "dejavu-runtime 0.0.1",
- "dejavu-types 0.0.1",
- "serde_json",
-]
-
-[[package]]
-name = "dejavu"
 version = "0.0.2"
 source = "git+https://github.com/doki-land/dejavu-engine.git?rev=8aba1a0a61ac9d7f2112123a57faec649cf67427#8aba1a0a61ac9d7f2112123a57faec649cf67427"
 dependencies = [
- "dejavu-engine 0.0.2",
- "dejavu-ir 0.0.2",
- "dejavu-language 0.0.2",
- "dejavu-runtime 0.0.2",
- "dejavu-types 0.0.2",
+ "dejavu-engine",
+ "dejavu-ir",
+ "dejavu-language",
+ "dejavu-runtime",
+ "dejavu-types",
  "serde_json",
 ]
 
@@ -1174,37 +1161,14 @@ dependencies = [
 
 [[package]]
 name = "dejavu-engine"
-version = "0.0.1"
-source = "git+https://github.com/notedge/dejavu-language.git?rev=c14ad3f786feb30676d809999199a3c867a90cbf#c14ad3f786feb30676d809999199a3c867a90cbf"
-dependencies = [
- "dejavu-ir 0.0.1",
- "dejavu-language 0.0.1",
- "dejavu-types 0.0.1",
- "miette",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "dejavu-engine"
 version = "0.0.2"
 source = "git+https://github.com/doki-land/dejavu-engine.git?rev=8aba1a0a61ac9d7f2112123a57faec649cf67427#8aba1a0a61ac9d7f2112123a57faec649cf67427"
 dependencies = [
- "dejavu-ir 0.0.2",
- "dejavu-language 0.0.2",
- "dejavu-types 0.0.2",
+ "dejavu-ir",
+ "dejavu-language",
+ "dejavu-types",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "dejavu-ir"
-version = "0.0.1"
-source = "git+https://github.com/notedge/dejavu-language.git?rev=c14ad3f786feb30676d809999199a3c867a90cbf#c14ad3f786feb30676d809999199a3c867a90cbf"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -1221,50 +1185,18 @@ dependencies = [
 
 [[package]]
 name = "dejavu-language"
-version = "0.0.1"
-source = "git+https://github.com/notedge/dejavu-language.git?rev=c14ad3f786feb30676d809999199a3c867a90cbf#c14ad3f786feb30676d809999199a3c867a90cbf"
-dependencies = [
- "dejavu-ir 0.0.1",
- "miette",
- "serde_json",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "dejavu-language"
 version = "0.0.2"
 source = "git+https://github.com/doki-land/dejavu-engine.git?rev=8aba1a0a61ac9d7f2112123a57faec649cf67427#8aba1a0a61ac9d7f2112123a57faec649cf67427"
 dependencies = [
  "dejavu-diagnostic",
- "dejavu-ir 0.0.2",
+ "dejavu-ir",
  "serde_json",
 ]
-
-[[package]]
-name = "dejavu-runtime"
-version = "0.0.1"
-source = "git+https://github.com/notedge/dejavu-language.git?rev=c14ad3f786feb30676d809999199a3c867a90cbf#c14ad3f786feb30676d809999199a3c867a90cbf"
 
 [[package]]
 name = "dejavu-runtime"
 version = "0.0.2"
 source = "git+https://github.com/doki-land/dejavu-engine.git?rev=8aba1a0a61ac9d7f2112123a57faec649cf67427#8aba1a0a61ac9d7f2112123a57faec649cf67427"
-
-[[package]]
-name = "dejavu-types"
-version = "0.0.1"
-source = "git+https://github.com/notedge/dejavu-language.git?rev=c14ad3f786feb30676d809999199a3c867a90cbf#c14ad3f786feb30676d809999199a3c867a90cbf"
-dependencies = [
- "dejavu-ir 0.0.1",
- "dejavu-language 0.0.1",
- "fluent",
- "fluent-bundle",
- "fluent-syntax",
- "lru",
- "serde",
- "serde_json",
- "unic-langid",
-]
 
 [[package]]
 name = "dejavu-types"
@@ -3549,11 +3481,11 @@ dependencies = [
 name = "odm-generate"
 version = "0.1.0"
 dependencies = [
- "dejavu 0.0.1",
  "once_cell",
  "serde",
  "serde_json",
  "sha2 0.11.1",
+ "template-input-dejavu",
  "thiserror 2.0.21",
  "vos",
 ]
@@ -4879,49 +4811,17 @@ dependencies = [
 name = "template-input-dejavu"
 version = "0.1.0"
 dependencies = [
- "serde",
- "serde_json",
- "template",
- "unicode-normalization",
-]
-
-[[package]]
-name = "template-input-dejavu-codegen"
-version = "0.1.0"
-dependencies = [
+ "boost-fs",
+ "figment",
  "once_cell",
  "serde",
  "serde_json",
- "template-input-dejavu",
-]
-
-[[package]]
-name = "template-input-dejavu-config"
-version = "0.1.0"
-dependencies = [
- "boost-fs",
- "figment",
- "serde",
+ "template",
  "template-types",
  "toml",
  "toml_edit 0.25.19+spec-1.1.0",
+ "unicode-normalization",
 ]
-
-[[package]]
-name = "template-input-dejavu-macros"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "serde_json",
- "syn 2.0.119",
- "template-input-dejavu",
- "template-types",
-]
-
-[[package]]
-name = "template-input-dejavu-runtime"
-version = "0.1.0"
 
 [[package]]
 name = "template-input-hbs"
@@ -5347,7 +5247,7 @@ name = "vos-generator"
 version = "0.0.3"
 source = "git+https://github.com/voml/vos-language.git?rev=387d9fc3c9a556ddb8a433c627a866a2918d0186#387d9fc3c9a556ddb8a433c627a866a2918d0186"
 dependencies = [
- "dejavu 0.0.2",
+ "dejavu",
  "once_cell",
  "serde",
  "serde_json",

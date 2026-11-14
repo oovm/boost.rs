@@ -82,7 +82,7 @@ pub enum Stage {
 /// ↔ miette SourceSpan { offset: start, length: end - start }
 /// ```
 ///
-/// 该约定在 `dejavu-language` parser 迁移到本合同之前不会破坏任何现有消费者——
+/// 该约定在 `dejavu.template.*` 冻结码迁移到本合同之前不会破坏任何现有消费者——
 /// 当前 IR 层诊断来自运行时，尚无 parser 级别的 span。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Span {

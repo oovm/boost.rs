@@ -8,15 +8,21 @@
 
 pub mod builtins;
 pub mod catalog;
+pub mod codegen;
+#[cfg(feature = "config")]
+pub mod config;
 pub mod diagnostic;
 pub mod language;
 pub mod native;
 pub mod normalize;
 pub mod registry;
 pub mod render;
+pub mod runtime;
 mod template_bridge;
 pub mod trim;
 pub mod types;
+
+extern crate alloc;
 
 pub use builtins::{call_function, call_test};
 pub use catalog::{

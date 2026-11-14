@@ -1,6 +1,7 @@
 //! Dejavu rendering entry points for generated artifacts.
 
 use super::*;
+use template_input_dejavu::{IrDocument, render_ir};
 
 #[allow(dead_code)]
 pub(crate) fn render_aot_ir(ir_json: &'static str, ctx: &Value) -> Result<String> {
@@ -18,12 +19,13 @@ pub(crate) fn render_aot_ir(ir_json: &'static str, ctx: &Value) -> Result<String
             doc
         }
     };
-    Dejavu::render(&doc, ctx).map_err(|e| Error::Dejavu(e.to_string()))
+    render_ir(&doc, ctx).map_err(|e| Error::Dejavu(e.to_string()))
 }
 
 #[allow(dead_code)]
 pub(crate) fn render_dyn_source(source: &str, ctx: &Value) -> Result<String> {
-    Dejavu::render_source(source, ctx).map_err(|e| Error::Dejavu(format!("{e:?}")))
+    let doc = template_input_dejavu::parse(source).map_err(|e| Error::Dejavu(format!("{e:?}")))?;
+    render_ir(&doc, ctx).map_err(|e| Error::Dejavu(e.to_string()))
 }
 
 /// Marker kept for older Phase 0 callers.

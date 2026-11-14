@@ -1,8 +1,8 @@
 //! Page render: Markdown → HTML, then Dejavu **public** facade for layouts.
 //!
 //! Parsing and rendering go through the `dejavu` facade; the host registry that
-//! exposes `t(key, args?)` / `locale()` uses the `dejavu-ir` registry types
-//! (the facade does not re-export them). No dejavu-language / dejavu-engine.
+//! exposes `t(key, args?)` / `locale()` uses the dejavu registry types
+//! (the facade does not re-export them).
 //! Layout delimiters are chosen by file extension:
 //!
 //! - `.doki` / `.dj` → `{% ... %}` code, `{# ... #}` comments

@@ -50,7 +50,7 @@ fn main() {
         let source = fs::read_to_string(path).unwrap_or_else(|e| {
             panic!("read {}: {e}", path.display());
         });
-        let doc = dejavu::Dejavu::parse(&source).unwrap_or_else(|e| {
+        let doc = template_input_dejavu::parse(&source).unwrap_or_else(|e| {
             panic!("AOT parse {}: {e:?}", path.display());
         });
         let ir_path = aot_dir.join(format!("{ir_file}.ir.json"));

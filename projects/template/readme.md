@@ -4,21 +4,22 @@
 
 ## 包图
 
+分层自下而上：`template-types` 是最底层，不依赖任何 `template.*`；`template` 只提供合同；
+输入引擎与 framework 在合同之上。
+
 | 目录 | Package | 职责 |
 |------|---------|------|
-| `template/` | `template` | 合同：类型 / loader / 预算 / 诊断 / `TemplateEngine` trait |
+| `template.types/` | `template-types` | 底层共享值 / 错误 / i18n 类型 |
+| `template/` | `template` | 合同：loader / 预算 / 诊断 / `TemplateEngine` trait |
+| `template.input.dejavu/` | `template-input-dejavu` | Dejavu 语法、IR、渲染、AOT codegen、运行时工具与配置 |
 | `template.input.hbs/` | `template-input-hbs` | Handlebars 语法子集 |
 | `template.input.jinja/` | `template-input-jinja` | Jinja2 语法子集 |
-| `template.input.dejavu/` | `template-input-dejavu` | Dejavu 语法、IR 与渲染（登记 `template.input.dejavu`） |
-| `template.types` | `template-input-dejavu-types` | Dejavu 值 / 错误 / i18n 类型 |
-| `template.input.dejavu.runtime/` | `template-input-dejavu-runtime` | Dejavu AOT runtime helper（`no_std`） |
-| `template.input.dejavu.codegen/` | `template-input-dejavu-codegen` | Dejavu AOT codegen（IR → ESM） |
-| `template.input.dejavu.config/` | `template-input-dejavu-config` | Dejavu 模板配置加载 |
-| `template.input.dejavu.macros/` | `template-input-dejavu-macros` | Dejavu 过程宏占位 |
 | `template.framework/` | `template-framework` | 构建框架合同（页面入口 / 输入引擎编排 / 错误通道） |
 | `template.framework.doki/` | `template-framework-doki` | Doki 构建框架实现与配置 schema |
 
-目录名点分层，package 名连字符。输入引擎依赖 `template` 合同；`template` 不反向依赖任何引擎，测试因此不会形成 crate 环。
+目录名点分层，package 名连字符。输入引擎依赖 `template` 与 `template-types`；`template` 不反向
+依赖任何引擎，测试因此不会形成 crate 环。Dejavu 的 AOT codegen、配置加载与运行时工具都是
+`template-input-dejavu` 内的模块，不再拆成并列 crate。
 
 ## 边界
 

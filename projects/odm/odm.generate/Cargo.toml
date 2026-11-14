@@ -9,17 +9,17 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-dejavu = { workspace = true }
 once_cell = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+template-input-dejavu = { workspace = true }
 thiserror = { workspace = true }
 vos = { workspace = true }
 
 [build-dependencies]
-dejavu = { workspace = true }
 serde_json = { workspace = true }
+template-input-dejavu = { workspace = true }
 
 [features]
 default = ["aot", "templates-host"]

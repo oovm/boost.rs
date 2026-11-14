@@ -1,6 +1,6 @@
 //! Dejavu core types: values, errors, i18n — no Oak.
 //!
-//! Parsing lives in `dejavu-language`; IR lives in `dejavu-ir`.
+//! Parsing, IR, rendering and AOT codegen live in `template-input-dejavu`.
 
 #![deny(missing_docs)]
 

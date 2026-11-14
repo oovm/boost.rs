@@ -1,7 +1,7 @@
 //! AOT emission for template macros: hoisted functions and safe output.
 
 use serde_json::{Value, json};
-use template_input_dejavu_codegen::precompile_single;
+use template_input_dejavu::codegen::precompile_single;
 
 fn doc(children: Vec<Value>) -> Value {
     json!({
@@ -167,11 +167,7 @@ fn caller_outside_a_macro_is_a_compile_error() {
         "raw": false
     });
     let result = precompile_single(&doc(vec![call]).to_string(), None).expect("compile");
-    assert!(
-        result.diagnostics.iter().any(|d| d.code == "dejavu.template.caller-unavailable"),
-        "diagnostics: {:?}",
-        result.diagnostics
-    );
+    assert!(result.diagnostics.iter().any(|d| d.code == "dejavu.template.caller-unavailable"), "diagnostics: {:?}", result.diagnostics);
 }
 
 #[test]
@@ -184,9 +180,5 @@ fn call_to_an_unknown_macro_is_a_compile_error() {
         "trim": "none"
     });
     let result = precompile_single(&doc(vec![call]).to_string(), None).expect("compile");
-    assert!(
-        result.diagnostics.iter().any(|d| d.code == "dejavu.template.unknown-function"),
-        "diagnostics: {:?}",
-        result.diagnostics
-    );
+    assert!(result.diagnostics.iter().any(|d| d.code == "dejavu.template.unknown-function"), "diagnostics: {:?}", result.diagnostics);
 }

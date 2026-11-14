@@ -14,7 +14,7 @@
 //!    `node -e` subprocess (skipped gracefully if node is absent).
 
 use serde_json::{Value, json};
-use template_input_dejavu_codegen::{LineOrigin, PrecompileResult, precompile_single};
+use template_input_dejavu::codegen::{LineOrigin, PrecompileResult, precompile_single};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -28,8 +28,7 @@ fn round(s: &str) -> String {
 /// `round` of everything after the `import` lines — useful when we want to
 /// inspect whether runtime helpers are *called*, not just *imported*.
 fn round_body(s: &str) -> String {
-    let body =
-        s.lines().skip_while(|l| l.trim_start().starts_with("import ") || l.trim().is_empty()).collect::<Vec<_>>().join("\n");
+    let body = s.lines().skip_while(|l| l.trim_start().starts_with("import ") || l.trim().is_empty()).collect::<Vec<_>>().join("\n");
     round(&body)
 }
 
@@ -314,13 +313,8 @@ fn expr_literal_number_string() {
 
 #[test]
 fn expr_literal_null_bool() {
-    let ir = doc(vec![
-        interp(lit(json!(null)), false),
-        text(" "),
-        interp(lit(json!(true)), false),
-        text(" "),
-        interp(lit(json!(false)), false),
-    ]);
+    let ir =
+        doc(vec![interp(lit(json!(null)), false), text(" "), interp(lit(json!(true)), false), text(" "), interp(lit(json!(false)), false)]);
     let res = compile(&serde_json::to_string(&ir).unwrap());
     let r = round(&res.code);
     assert!(r.contains("null"));
@@ -340,8 +334,7 @@ fn expr_literal_object_array() {
 
 #[test]
 fn expr_reserved_word_uses_bracket() {
-    let ir =
-        doc(vec![interp(ident("if"), false), text(" "), interp(ident("for"), false), text(" "), interp(ident("await"), false)]);
+    let ir = doc(vec![interp(ident("if"), false), text(" "), interp(ident("for"), false), text(" "), interp(ident("await"), false)]);
     let res = compile(&serde_json::to_string(&ir).unwrap());
     let r = round(&res.code);
     assert!(r.contains("exprIdent(ctx, \"if\", __strict)"));

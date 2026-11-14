@@ -10,6 +10,17 @@
   共享 loader / 预算失败仍走 `template.*`。
 - 同时提供 IR 级入口（`parse` / `render_ir` 等），供 AOT codegen 与既有宿主复用。
 
+## 模块
+
+| 模块 | 内容 |
+|------|------|
+| `language` / `types` / `render` | 语法、IR 与渲染 |
+| `codegen` | IR → ESM AOT codegen（`template_input_dejavu::codegen`） |
+| `runtime` | AOT / 宿主运行时工具：转义、循环与 `Template` trait |
+| `config` | 模板配置加载（feature `config`） |
+
+AOT codegen、配置与运行时工具都属于本 crate，不再拆成并列的 `template.input.dejavu.*` crate。
+
 ```rust,ignore
 use template::{MapTemplateLoader, RenderOptions, RenderRequest, TemplateRoot};
 use template_input_dejavu::DejavuEngine;

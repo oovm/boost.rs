@@ -2,7 +2,7 @@
 name = "template-input-dejavu"
 version.workspace = true
 authors.workspace = true
-description = "Dejavu 模板语言：语法、IR 与渲染，登记为 template.input.dejavu"
+description = "Dejavu 模板语言：语法、IR、渲染、AOT codegen 与运行时工具，登记为 template.input.dejavu"
 repository = "https://github.com/notedge/document.rs"
 readme = "readme.md"
 license.workspace = true
@@ -10,6 +10,23 @@ edition.workspace = true
 
 [dependencies]
 template = { workspace = true }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+template-types = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 unicode-normalization = "0.1"
+once_cell = { workspace = true }
+figment = { version = "0.10", features = ["toml", "env"], optional = true }
+toml = { version = "0.8", optional = true }
+toml_edit = { version = "0.25", optional = true }
+
+[dev-dependencies]
+boost-fs = { workspace = true }
+
+[features]
+default = []
+config = ["dep:figment", "dep:toml", "dep:toml_edit"]
+
+[[test]]
+name = "config"
+path = "tests/config.rs"
+required-features = ["config"]

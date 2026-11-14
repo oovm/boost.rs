@@ -1,5 +1,5 @@
 #![cfg(test)]
-use template_input_dejavu_runtime::{
+use template_input_dejavu::runtime::{
     escaper::{Html, Text},
     *,
 };

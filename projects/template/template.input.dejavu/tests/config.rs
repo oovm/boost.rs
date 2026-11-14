@@ -1,6 +1,6 @@
 use boost_fs::temp::create_folder;
 use std::path::PathBuf;
-use template_input_dejavu_config::DejavuConfig;
+use template_input_dejavu::config::DejavuConfig;
 
 #[test]
 fn test_new_config() {

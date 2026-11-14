@@ -7,8 +7,10 @@
 //! generated module never depends on module-level state.
 
 use serde_json::{Value, json};
-use template_input_dejavu::{ArgValue, Stage};
-use template_input_dejavu_codegen::{PrecompileResult, precompile_single};
+use template_input_dejavu::{
+    ArgValue, Stage,
+    codegen::{PrecompileResult, precompile_single},
+};
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -76,8 +78,7 @@ fn entry(namespace: &str, name: &str, aliases: &[&str], min: u32, max: u32, capa
 }
 
 fn round_body(s: &str) -> String {
-    let body =
-        s.lines().skip_while(|l| l.trim_start().starts_with("import ") || l.trim().is_empty()).collect::<Vec<_>>().join("\n");
+    let body = s.lines().skip_while(|l| l.trim_start().starts_with("import ") || l.trim().is_empty()).collect::<Vec<_>>().join("\n");
     body.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
@@ -250,13 +251,8 @@ fn conflicting_entry_is_a_compile_diagnostic() {
 #[test]
 fn duplicate_custom_spellings_are_a_compile_diagnostic() {
     let ir = doc(vec![text("x")]);
-    let res = compile(
-        &ir,
-        &options(json!([
-            entry("filter", "shout", &["loud"], 0, 0, "pure"),
-            entry("filter", "holler", &["loud"], 0, 0, "pure")
-        ])),
-    );
+    let res =
+        compile(&ir, &options(json!([entry("filter", "shout", &["loud"], 0, 0, "pure"), entry("filter", "holler", &["loud"], 0, 0, "pure")])));
     let diagnostic = res.diagnostics.first().expect("expected a diagnostic");
     assert_eq!(diagnostic.code, "dejavu.template.registry-conflict");
     assert_eq!(diagnostic.stage, Stage::Compile);

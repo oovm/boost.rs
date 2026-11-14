@@ -3,8 +3,8 @@
 //! Keep JSON shape permissive (unknown fields ignored) so future dejavu-engine
 //! versions can pass extra knobs without breaking older crates.
 
+use crate::registry::{CapabilitySet, CustomEntry};
 use serde::{Deserialize, Serialize};
-use template_input_dejavu::registry::{CapabilitySet, CustomEntry};
 
 /// Single-template codegen options.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

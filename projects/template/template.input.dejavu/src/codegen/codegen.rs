@@ -7,16 +7,12 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::{Diagnostic, IrDocument, IrNode, Severity, Stage, TemplateCatalog, canonical_id as ir_canonical_id, codes};
 use serde::Serialize;
 use serde_json::Value;
-use template_input_dejavu::{
-    Diagnostic, IrDocument, IrNode, Severity, Stage, TemplateCatalog, canonical_id as ir_canonical_id, codes,
-};
 
-use crate::{
-    catalog::{
-        collect_all_reachable, collect_blocks, detect_cycle, js_import_name, parse_catalog_json, sanitize_id, split_canonical,
-    },
+use crate::codegen::{
+    catalog::{collect_all_reachable, collect_blocks, detect_cycle, js_import_name, parse_catalog_json, sanitize_id, split_canonical},
     emit::{self, CatalogEmitCtx, CodegenCtx, LineOrigin},
     options::CodegenOptions,
 };
@@ -111,7 +107,7 @@ pub(crate) const RUNTIME_IMPORT: &str = "@doki-land/dejavu-engine/runtime";
 
 /// Top-level single-template entry point.
 ///
-/// - `ir_json` — IR document JSON (as emitted by dejavu-ir / dejavu-language).
+/// - `ir_json` — IR document JSON (as emitted by `template_input_dejavu::parse`).
 /// - `options_json` — optional JSON string with codegen knobs.
 pub fn precompile_single(ir_json: &str, options_json: Option<&str>) -> Result<PrecompileResult, String> {
     let doc: IrDocument = serde_json::from_str(ir_json).map_err(|e| format!("invalid IR JSON: {e}"))?;
@@ -129,11 +125,7 @@ pub fn precompile_single(ir_json: &str, options_json: Option<&str>) -> Result<Pr
             emit::emit_body(children, &mut ctx, &mut body_str, None);
             macro_fns = emit::emit_macro_functions(children, &mut ctx, None);
         }
-        other => ctx.diagnostic(
-            Severity::Error,
-            "dejavu.compile.root-not-template",
-            format!("IR root node must be Template, got {other:?}"),
-        ),
+        other => ctx.diagnostic(Severity::Error, "dejavu.compile.root-not-template", format!("IR root node must be Template, got {other:?}")),
     }
 
     let code = build_module(&body_str, &macro_fns, &[], &[], None, None);
@@ -153,11 +145,7 @@ pub fn precompile_single(ir_json: &str, options_json: Option<&str>) -> Result<Pr
 ///   (default: the first root's first file), or from the catalog's files.
 /// - `catalog_json` — the full catalog wire format (roots[].files[path] = IR JSON).
 /// - `options_json` — optional codegen knobs.
-pub fn precompile_catalog(
-    _entry_ir_json: &str,
-    catalog_json: &str,
-    options_json: Option<&str>,
-) -> Result<PrecompileCatalogResult, String> {
+pub fn precompile_catalog(_entry_ir_json: &str, catalog_json: &str, options_json: Option<&str>) -> Result<PrecompileCatalogResult, String> {
     let catalog = parse_catalog_json(catalog_json)?;
     let opts = CodegenOptions::from_json(options_json).map_err(|e| format!("invalid options JSON: {e}"))?;
 
@@ -178,7 +166,7 @@ pub fn precompile_catalog(
     // 2b. Which reachable templates declare `partial <params>`?
     let mut partial_ids: HashSet<String> = HashSet::new();
     for id in &reachable {
-        if crate::catalog::is_partial_template(&catalog, id) {
+        if crate::codegen::catalog::is_partial_template(&catalog, id) {
             partial_ids.insert(id.clone());
         }
     }
@@ -201,8 +189,7 @@ pub fn precompile_catalog(
 
     // 4. Resolve each module's emitted body, block chains, and macro imports.
     let plans = build_module_plans(&catalog, &reachable, &entry_id, &partial_ids, &mut diagnostics);
-    let id_to_deps: HashMap<String, Vec<String>> =
-        plans.iter().map(|plan| (plan.id.clone(), plan.dependencies.clone())).collect();
+    let id_to_deps: HashMap<String, Vec<String>> = plans.iter().map(|plan| (plan.id.clone(), plan.dependencies.clone())).collect();
 
     // 5. Macro tree-shaking: only declarations reachable from a real call site
     //    (direct calls, `call` blocks, or calls inside live macros) are kept.
@@ -230,11 +217,7 @@ pub fn precompile_catalog(
             .cloned()
             .collect();
 
-        let cat_ctx = CatalogEmitCtx {
-            block_chains: &plan.block_chains,
-            include_imports: &plan.include_imports,
-            partial_ids: &partial_ids,
-        };
+        let cat_ctx = CatalogEmitCtx { block_chains: &plan.block_chains, include_imports: &plan.include_imports, partial_ids: &partial_ids };
 
         let mut ctx = CodegenCtx::new(&opts);
         ctx.set_macros(live_names.iter().cloned());
@@ -317,7 +300,7 @@ fn build_module_plans(
                 continue;
             }
         };
-        let block_chains = match crate::catalog::collect_block_chains(catalog, id) {
+        let block_chains = match crate::codegen::catalog::collect_block_chains(catalog, id) {
             Ok(chains) => chains,
             Err(d) => {
                 diagnostics.push(d);
@@ -334,8 +317,7 @@ fn build_module_plans(
             let Some(parent) = catalog_document(catalog, &topmost_parent_id)
             else {
                 diagnostics.push(
-                    Diagnostic::new(Severity::Error, "dejavu.compile.parent-template-missing", Stage::Compile)
-                        .template_id(&topmost_parent_id),
+                    Diagnostic::new(Severity::Error, "dejavu.compile.parent-template-missing", Stage::Compile).template_id(&topmost_parent_id),
                 );
                 continue;
             };
@@ -403,10 +385,10 @@ fn reachable_macros(plans: &[ModulePlan]) -> HashSet<MacroKey> {
     // block chain it emits, covering `super` levels).
     for plan in plans {
         let mut names = HashSet::new();
-        crate::catalog::collect_macro_calls(&plan.body_children, true, &mut names);
+        crate::codegen::catalog::collect_macro_calls(&plan.body_children, true, &mut names);
         for bodies in plan.block_chains.values() {
             for body in bodies {
-                crate::catalog::collect_macro_calls(body, true, &mut names);
+                crate::codegen::catalog::collect_macro_calls(body, true, &mut names);
             }
         }
         for name in names {
@@ -429,7 +411,7 @@ fn reachable_macros(plans: &[ModulePlan]) -> HashSet<MacroKey> {
             continue;
         };
         let mut names = HashSet::new();
-        crate::catalog::collect_macro_calls(std::slice::from_ref(node), false, &mut names);
+        crate::codegen::catalog::collect_macro_calls(std::slice::from_ref(node), false, &mut names);
         for name in names {
             if let Some(next) = resolve(&plan.id, &name) {
                 if live.insert(next.clone()) {
@@ -446,10 +428,10 @@ fn reachable_macros(plans: &[ModulePlan]) -> HashSet<MacroKey> {
 /// inside its live macro bodies.
 fn used_call_names(plan: &ModulePlan, live: &HashSet<MacroKey>) -> HashSet<String> {
     let mut names = HashSet::new();
-    crate::catalog::collect_macro_calls(&plan.body_children, true, &mut names);
+    crate::codegen::catalog::collect_macro_calls(&plan.body_children, true, &mut names);
     for bodies in plan.block_chains.values() {
         for body in bodies {
-            crate::catalog::collect_macro_calls(body, true, &mut names);
+            crate::codegen::catalog::collect_macro_calls(body, true, &mut names);
         }
     }
     for name in macro_names(&plan.body_children) {
@@ -457,7 +439,7 @@ fn used_call_names(plan: &ModulePlan, live: &HashSet<MacroKey>) -> HashSet<Strin
             continue;
         }
         if let Some(node) = macro_node(&plan.body_children, &name) {
-            crate::catalog::collect_macro_calls(std::slice::from_ref(node), false, &mut names);
+            crate::codegen::catalog::collect_macro_calls(std::slice::from_ref(node), false, &mut names);
         }
     }
     names
@@ -571,12 +553,7 @@ struct MacroImport {
 /// Non-literal paths, unresolvable references, unknown macro names, and
 /// collisions with locally declared macros are compile diagnostics — the same
 /// failures the interpreter raises while loading the catalog.
-fn resolve_macro_imports(
-    catalog: &TemplateCatalog,
-    children: &[IrNode],
-    from_id: &str,
-    diagnostics: &mut Vec<Diagnostic>,
-) -> Vec<MacroImport> {
+fn resolve_macro_imports(catalog: &TemplateCatalog, children: &[IrNode], from_id: &str, diagnostics: &mut Vec<Diagnostic>) -> Vec<MacroImport> {
     let mut out = Vec::new();
     let mut local_names: HashSet<String> = macro_names(children).into_iter().collect();
     for node in children {
@@ -584,7 +561,7 @@ fn resolve_macro_imports(
         else {
             continue;
         };
-        let Some(lit) = crate::catalog::extract_path_literal(path)
+        let Some(lit) = crate::codegen::catalog::extract_path_literal(path)
         else {
             diagnostics.push(
                 Diagnostic::new(Severity::Error, codes::IMPORT_PATH_NOT_LITERAL, Stage::Compile)
@@ -646,11 +623,7 @@ fn declared_macro_names(catalog: &TemplateCatalog, id: &str) -> HashSet<String> 
 }
 
 /// ESM imports for `from ... import` bindings.
-fn build_macro_import_lines(
-    macro_imports: &[MacroImport],
-    current_id: &str,
-    id_to_path: &serde_json::Map<String, Value>,
-) -> Vec<String> {
+fn build_macro_import_lines(macro_imports: &[MacroImport], current_id: &str, id_to_path: &serde_json::Map<String, Value>) -> Vec<String> {
     let current_path = match id_to_path.get(current_id) {
         Some(Value::String(p)) => p.as_str(),
         _ => "",
@@ -678,21 +651,14 @@ fn macro_export_lines(live_macros: &[String], macro_imports: &[MacroImport]) -> 
         out.push(format!("export {{ {} }};", emit::macro_fn_name(name)));
     }
     for imported in macro_imports {
-        out.push(format!(
-            "export {{ {} as {} }};",
-            emit::macro_import_binding(&imported.local),
-            emit::macro_fn_name(&imported.local),
-        ));
+        out.push(format!("export {{ {} as {} }};", emit::macro_import_binding(&imported.local), emit::macro_fn_name(&imported.local),));
     }
     out
 }
 
 /// Move body-line origins to module-line positions.
 fn shift_origins(origins: &[LineOrigin], offset: u32) -> Vec<LineOrigin> {
-    origins
-        .iter()
-        .map(|origin| LineOrigin { line: origin.line.saturating_add(offset), start: origin.start, end: origin.end })
-        .collect()
+    origins.iter().map(|origin| LineOrigin { line: origin.line.saturating_add(offset), start: origin.start, end: origin.end }).collect()
 }
 
 /// Build ESM import statements for a module given its dependencies and
@@ -773,11 +739,7 @@ fn pick_entry_id(catalog: &TemplateCatalog, explicit: Option<&str>) -> String {
         return id.to_string();
     }
     // First file in first root becomes the implicit entry.
-    catalog
-        .roots
-        .iter()
-        .find_map(|r| r.files.keys().next().map(|p| ir_canonical_id(&r.name, p)))
-        .unwrap_or_else(|| "__entry__".to_string())
+    catalog.roots.iter().find_map(|r| r.files.keys().next().map(|p| ir_canonical_id(&r.name, p))).unwrap_or_else(|| "__entry__".to_string())
 }
 
 fn catalog_document<'a>(catalog: &'a TemplateCatalog, id: &str) -> Option<&'a IrDocument> {
@@ -806,7 +768,7 @@ fn collect_includes_from_nodes(catalog: &TemplateCatalog, nodes: &[IrNode], from
     for n in nodes {
         match n {
             IrNode::StmtInclude { path, .. } => {
-                if let Some(lit) = crate::catalog::extract_path_literal(path) {
+                if let Some(lit) = crate::codegen::catalog::extract_path_literal(path) {
                     if let Ok(hit) = catalog.resolve_ref(&lit, Some(from_id)) {
                         if let Some(canon) = catalog.canonical_id(&hit) {
                             out.insert(lit, canon);
@@ -847,8 +809,7 @@ fn collect_includes_from_nodes(catalog: &TemplateCatalog, nodes: &[IrNode], from
 /// Build the manifest JSON string.
 fn build_manifest(entry_id: &str, id_to_path: &serde_json::Map<String, Value>) -> String {
     let entry_module = id_to_path.get(entry_id).and_then(|v| v.as_str()).unwrap_or("index.js").to_string();
-    let manifest =
-        Manifest { format: "dejavu.aot.catalog/1", entry_id, entry_module: &entry_module, modules: id_to_path, version: 1 };
+    let manifest = Manifest { format: "dejavu.aot.catalog/1", entry_id, entry_module: &entry_module, modules: id_to_path, version: 1 };
     serde_json::to_string(&manifest).unwrap_or_default()
 }
 

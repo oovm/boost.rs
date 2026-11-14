@@ -9,15 +9,13 @@
 
 use std::collections::{HashMap, HashSet};
 
-use template_input_dejavu::{
-    CatalogRoot, Diagnostic, IrDocument, IrNode, Severity, Stage, TemplateCatalog, codes, types::PartialParam,
-};
+use crate::{CatalogRoot, Diagnostic, IrDocument, IrNode, Severity, Stage, TemplateCatalog, codes, types::PartialParam};
 
 // ---------------------------------------------------------------------------
 // Catalog JSON wire format
 // ---------------------------------------------------------------------------
 
-/// JSON-deserializable shadow of `template_input_dejavu::TemplateCatalog`.
+/// JSON-deserializable shadow of `crate::TemplateCatalog`.
 ///
 /// We keep our own shadow because we want the field names in the JSON wire
 /// (`roots`, `files`) to match the TS side *exactly*, without accidentally
@@ -48,8 +46,7 @@ struct RootJson {
 pub fn parse_catalog_json(json: &str) -> Result<TemplateCatalog, String> {
     let cj: CatalogJson = serde_json::from_str(json).map_err(|e| format!("invalid catalog JSON: {e}"))?;
 
-    let extensions =
-        if cj.extensions.is_empty() { vec![".dejavu".to_string(), ".yarte".to_string(), String::new()] } else { cj.extensions };
+    let extensions = if cj.extensions.is_empty() { vec![".dejavu".to_string(), ".yarte".to_string(), String::new()] } else { cj.extensions };
 
     let mut roots = Vec::with_capacity(cj.roots.len());
     for r in cj.roots {
@@ -383,13 +380,7 @@ fn collect_edges_nodes(
 }
 
 /// Resolve an include / extends / import path literal to a canonical id.
-fn push_ref_edge(
-    catalog: &TemplateCatalog,
-    path: &IrNode,
-    from_id: &str,
-    kind: Option<EdgeKind>,
-    out: &mut Vec<(String, Option<EdgeKind>)>,
-) {
+fn push_ref_edge(catalog: &TemplateCatalog, path: &IrNode, from_id: &str, kind: Option<EdgeKind>, out: &mut Vec<(String, Option<EdgeKind>)>) {
     if let Some(p) = extract_path_literal(path) {
         if let Ok(hit) = catalog.resolve_ref(&p, Some(from_id)) {
             if let Some(canon) = catalog.canonical_id(&hit) {
@@ -432,10 +423,7 @@ pub fn collect_blocks(catalog: &TemplateCatalog, entry_id: &str) -> Result<Strin
 /// `super` walks one entry further down the chain, so a three-level template
 /// chain (`child → mid → base`) can resolve `super` in the child to `mid`
 /// and `super` in `mid` to `base`.
-pub fn collect_block_chains(
-    catalog: &TemplateCatalog,
-    entry_id: &str,
-) -> Result<HashMap<String, Vec<Vec<IrNode>>>, Diagnostic> {
+pub fn collect_block_chains(catalog: &TemplateCatalog, entry_id: &str) -> Result<HashMap<String, Vec<Vec<IrNode>>>, Diagnostic> {
     let mut chain: Vec<String> = vec![entry_id.to_string()];
     let mut cur = entry_id.to_string();
     loop {
@@ -565,7 +553,7 @@ pub fn collect_all_reachable(catalog: &TemplateCatalog, entry_id: &str) -> HashS
 ///
 /// Candidates are bare-identifier `Expr.Call` callees and `Stmt.Call` names;
 /// whether a candidate really is a macro depends on the module's macro table,
-/// which is resolved by [`crate::codegen`]. The walker only records names, so
+/// which is resolved by [`crate::codegen::codegen`]. The walker only records names, so
 /// it is deliberately independent of macro declarations.
 ///
 /// `skip_macro_bodies` excludes `Stmt.Macro` bodies: a declaration produces no

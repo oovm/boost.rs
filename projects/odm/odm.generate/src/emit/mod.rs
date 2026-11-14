@@ -11,7 +11,6 @@ use std::{
     sync::Mutex,
 };
 
-use dejavu::{Dejavu, IrDocument};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};

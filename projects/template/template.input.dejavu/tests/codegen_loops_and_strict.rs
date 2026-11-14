@@ -16,7 +16,7 @@
 //! of each test is skipped.
 
 use serde_json::{Value, json};
-use template_input_dejavu_codegen::precompile_single;
+use template_input_dejavu::codegen::precompile_single;
 
 // ---------------------------------------------------------------------------
 // IR fixture builders
@@ -148,8 +148,7 @@ console.log(JSON.stringify({{ value: __value, error: __error, probe: __probe }})
     match std::process::Command::new("node").args(["-e", &script]).output() {
         Ok(o) if o.status.success() => {
             let stdout = String::from_utf8_lossy(&o.stdout);
-            let parsed: Value =
-                serde_json::from_str(stdout.trim()).unwrap_or_else(|e| panic!("bad node output {stdout:?}: {e}"));
+            let parsed: Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|e| panic!("bad node output {stdout:?}: {e}"));
             if let Some(err) = parsed["error"].as_str() {
                 Some(Err(err.to_string()))
             }
@@ -179,11 +178,7 @@ fn two_loops_in_one_template_load_and_render() {
         text("A["),
         stmt_for("x", ident("xs"), vec![interp(ident("x"), false), text(",")]),
         text("]B["),
-        stmt_for(
-            "y",
-            ident("ys"),
-            vec![interp(member(ident("forloop"), "index0"), false), text("="), interp(ident("y"), false), text(",")],
-        ),
+        stmt_for("y", ident("ys"), vec![interp(member(ident("forloop"), "index0"), false), text("="), interp(ident("y"), false), text(",")]),
         text("]"),
     ]);
     let code = compile(&ir, None);
@@ -196,12 +191,8 @@ fn two_loops_in_one_template_load_and_render() {
 
 #[test]
 fn loop_item_is_restored_after_loop() {
-    let ir = doc(vec![
-        text("["),
-        stmt_for("item", ident("items"), vec![interp(ident("item"), false)]),
-        text("]"),
-        interp(ident("item"), false),
-    ]);
+    let ir =
+        doc(vec![text("["), stmt_for("item", ident("items"), vec![interp(ident("item"), false)]), text("]"), interp(ident("item"), false)]);
     let code = compile(&ir, None);
 
     // Existing `item` in the caller context survives the loop unchanged.
@@ -219,8 +210,7 @@ fn loop_item_is_restored_after_loop() {
 
     // Without a pre-existing `item`, the loop must delete the key instead of
     // leaving the last iteration value behind.
-    if let Some(out) = run_render(&code, "({ items: ['a','b'] })", "{}", "Object.prototype.hasOwnProperty.call(__ctx, 'item')")
-    {
+    if let Some(out) = run_render(&code, "({ items: ['a','b'] })", "{}", "Object.prototype.hasOwnProperty.call(__ctx, 'item')") {
         let (rendered, probe) = out.unwrap();
         assert_eq!(rendered, "[ab]");
         assert_eq!(probe, json!(false));
@@ -272,11 +262,7 @@ fn forloop_nesting_depth_and_restore() {
             stmt_for(
                 "cell",
                 ident("row"),
-                vec![
-                    interp(member(ident("forloop"), "depth"), false),
-                    text(":"),
-                    interp(member(ident("forloop"), "index"), false),
-                ],
+                vec![interp(member(ident("forloop"), "depth"), false), text(":"), interp(member(ident("forloop"), "index"), false)],
             ),
             // After the inner loop the outer `forloop` is visible again.
             interp(member(ident("forloop"), "depth"), false),
@@ -285,9 +271,7 @@ fn forloop_nesting_depth_and_restore() {
     )]);
     let code = compile(&ir, None);
 
-    if let Some(out) =
-        run_render(&code, "({ rows: [['a','b'], ['c']] })", "{}", "Object.prototype.hasOwnProperty.call(__ctx, 'forloop')")
-    {
+    if let Some(out) = run_render(&code, "({ rows: [['a','b'], ['c']] })", "{}", "Object.prototype.hasOwnProperty.call(__ctx, 'forloop')") {
         let (rendered, probe) = out.unwrap();
         assert_eq!(rendered, "[12:12:21][12:11]");
         assert_eq!(probe, json!(false));
@@ -365,11 +349,7 @@ fn call_time_strict_false_renders_lenient() {
 
 #[test]
 fn call_time_strict_true_flags_missing_member_and_index() {
-    let ir = doc(vec![
-        interp(member(ident("user"), "nickname"), false),
-        text("|"),
-        interp(index(ident("items"), lit(json!(3))), false),
-    ]);
+    let ir = doc(vec![interp(member(ident("user"), "nickname"), false), text("|"), interp(index(ident("items"), lit(json!(3))), false)]);
     let code = compile(&ir, None);
 
     if let Some(out) = run_render(&code, "({ user: { name: 'a' }, items: ['x'] })", "{ strictUndefined: true }", "null") {

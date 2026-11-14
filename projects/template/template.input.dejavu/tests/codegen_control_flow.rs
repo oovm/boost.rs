@@ -2,7 +2,7 @@
 //! defensive runtime rejection for hand-authored IR that escapes its unit.
 
 use serde_json::{Value, json};
-use template_input_dejavu_codegen::precompile_single;
+use template_input_dejavu::codegen::precompile_single;
 
 fn doc(children: Vec<Value>) -> Value {
     json!({

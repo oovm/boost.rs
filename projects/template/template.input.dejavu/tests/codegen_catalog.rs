@@ -8,7 +8,7 @@
 //! 5. Run generated JS under a Node.js stub when node is available.
 
 use serde_json::{Value, json};
-use template_input_dejavu_codegen::precompile_catalog;
+use template_input_dejavu::codegen::precompile_catalog;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -18,7 +18,7 @@ fn round(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-fn compile_catalog(files: &[(&str, Value)], entry_path: &str) -> template_input_dejavu_codegen::PrecompileCatalogResult {
+fn compile_catalog(files: &[(&str, Value)], entry_path: &str) -> template_input_dejavu::codegen::PrecompileCatalogResult {
     let entry_id = format!("main:{entry_path}");
     let opts = format!(r#"{{"entryId":"{entry_id}"}}"#);
     let file_map = files
@@ -39,7 +39,7 @@ fn compile_catalog(files: &[(&str, Value)], entry_path: &str) -> template_input_
     precompile_catalog("", &catalog_json, Some(&opts)).expect("catalog compile should succeed")
 }
 
-fn errors(r: &template_input_dejavu_codegen::PrecompileCatalogResult) -> Vec<&template_input_dejavu::Diagnostic> {
+fn errors(r: &template_input_dejavu::codegen::PrecompileCatalogResult) -> Vec<&template_input_dejavu::Diagnostic> {
     r.diagnostics.iter().filter(|d| d.severity == template_input_dejavu::Severity::Error).collect()
 }
 
@@ -131,7 +131,7 @@ const __rt = {
 const { htmlEscape, applyFilter, isTruthy, binary, unary, valueToString, exprIdent, exprMember, exprIndex, runtimeError } = __rt;
 "#;
 
-fn stub_for(modules: &[template_input_dejavu_codegen::GeneratedModule]) -> Option<String> {
+fn stub_for(modules: &[template_input_dejavu::codegen::GeneratedModule]) -> Option<String> {
     let mut stub = NODE_STUB.to_string();
     for m in modules {
         let base = m.path.rsplit('/').next().unwrap_or(&m.path).trim_end_matches(".js");
@@ -170,13 +170,13 @@ fn stub_for(modules: &[template_input_dejavu_codegen::GeneratedModule]) -> Optio
     Some(stub)
 }
 
-fn entry_var(modules: &[template_input_dejavu_codegen::GeneratedModule]) -> Option<String> {
+fn entry_var(modules: &[template_input_dejavu::codegen::GeneratedModule]) -> Option<String> {
     let entry = modules.first()?;
     let entry_base = entry.path.rsplit('/').next().unwrap_or(&entry.path).trim_end_matches(".js");
     Some(format!("__m_{entry_base}"))
 }
 
-fn run_modules_in_node(modules: &[template_input_dejavu_codegen::GeneratedModule], ctx_js: &str) -> Option<String> {
+fn run_modules_in_node(modules: &[template_input_dejavu::codegen::GeneratedModule], ctx_js: &str) -> Option<String> {
     let mut stub = stub_for(modules)?;
     let var = entry_var(modules)?;
     stub.push_str(&format!("console.log({var}.render({ctx_js}, {{}}));"));
@@ -194,7 +194,7 @@ fn run_modules_in_node(modules: &[template_input_dejavu_codegen::GeneratedModule
 }
 
 /// Run the generated entry and capture a thrown render error as JSON.
-fn run_modules_capture_error(modules: &[template_input_dejavu_codegen::GeneratedModule], ctx_js: &str) -> Option<String> {
+fn run_modules_capture_error(modules: &[template_input_dejavu::codegen::GeneratedModule], ctx_js: &str) -> Option<String> {
     let mut stub = stub_for(modules)?;
     let var = entry_var(modules)?;
     stub.push_str(&format!(
@@ -270,8 +270,7 @@ fn extends_three_level_child_overrides_grandparent() {
     let gp = doc(vec![stmt_block("main", vec![text("gp main")])]);
     let parent = doc(vec![stmt_extends(lit(json!("grandparent.dejavu"))), stmt_block("main", vec![text("p main")])]);
     let child = doc(vec![stmt_extends(lit(json!("parent.dejavu"))), stmt_block("main", vec![text("c main")])]);
-    let res =
-        compile_catalog(&[("index.dejavu", child), ("parent.dejavu", parent), ("grandparent.dejavu", gp)], "index.dejavu");
+    let res = compile_catalog(&[("index.dejavu", child), ("parent.dejavu", parent), ("grandparent.dejavu", gp)], "index.dejavu");
     assert!(errors(&res).is_empty(), "errors: {:?}", errors(&res));
     assert_eq!(res.modules.len(), 3);
 
@@ -467,11 +466,7 @@ fn partial_binds_defaults_at_aot() {
 #[test]
 fn include_with_merges_explicit_context_at_aot() {
     let partial = doc(vec![text("card:"), interp(ident("name"), false), text("/"), interp(ident("title"), false)]);
-    let entry = doc(vec![
-        stmt_include_with(lit(json!("card.dejavu")), Some(ident("card")), false),
-        text("|"),
-        interp(ident("name"), false),
-    ]);
+    let entry = doc(vec![stmt_include_with(lit(json!("card.dejavu")), Some(ident("card")), false), text("|"), interp(ident("name"), false)]);
     let res = compile_catalog(&[("index.dejavu", entry), ("card.dejavu", partial)], "index.dejavu");
     assert!(errors(&res).is_empty(), "errors: {:?}", errors(&res));
     let r = round(&res.modules[0].code);
@@ -510,11 +505,7 @@ fn recursive_tree_template() -> Value {
                 member(ident("node"), "child"),
                 vec![
                     text("("),
-                    stmt_include_with(
-                        lit(json!("tree.dejavu")),
-                        Some(obj(vec![("node", member(ident("node"), "child"))])),
-                        false,
-                    ),
+                    stmt_include_with(lit(json!("tree.dejavu")), Some(obj(vec![("node", member(ident("node"), "child"))])), false),
                     text(")"),
                 ],
                 vec![],

@@ -25,15 +25,15 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
-use template_input_dejavu::{
+use crate::{
     ArgValue, Diagnostic, IrNode, Severity, Span, Stage, codes,
     registry::{
-        Capability, CapabilitySet, CustomEntry, FilterLookupError, FunctionLookupError, Namespace, TestLookupError,
-        custom_entry, validate_custom_entries, validate_filter, validate_function, validate_test,
+        Capability, CapabilitySet, CustomEntry, FilterLookupError, FunctionLookupError, Namespace, TestLookupError, custom_entry,
+        validate_custom_entries, validate_filter, validate_function, validate_test,
     },
 };
 
-use crate::options::CodegenOptions;
+use crate::codegen::options::CodegenOptions;
 
 // ---------------------------------------------------------------------------
 // JavaScript reserved words (ES6+ — strict mode safe).
@@ -436,13 +436,7 @@ pub fn emit_expr(node: &IrNode, ctx: &mut CodegenCtx) -> String {
                 Err(FilterLookupError::Arity { spec }) => ctx.diagnostic_args(
                     Severity::Error,
                     codes::FILTER_ARITY,
-                    format!(
-                        "filter `{}` expects {}..{} argument(s), got {}",
-                        spec.name,
-                        spec.min_args,
-                        spec.max_args,
-                        arguments.len()
-                    ),
+                    format!("filter `{}` expects {}..{} argument(s), got {}", spec.name, spec.min_args, spec.max_args, arguments.len()),
                     [
                         ("filter", ArgValue::String(spec.name.to_string())),
                         ("minArgs", ArgValue::Number(spec.min_args as f64)),
@@ -485,11 +479,7 @@ pub fn emit_expr(node: &IrNode, ctx: &mut CodegenCtx) -> String {
             // caller parameters.
             if name == "caller" {
                 if !ctx.in_macro {
-                    ctx.diagnostic(
-                        Severity::Error,
-                        codes::CALLER_UNAVAILABLE,
-                        "`caller()` is only available inside a macro invoked by `call`",
-                    );
+                    ctx.diagnostic(Severity::Error, codes::CALLER_UNAVAILABLE, "`caller()` is only available inside a macro invoked by `call`");
                     return "null".into();
                 }
                 if arguments.is_empty() {
@@ -529,13 +519,7 @@ pub fn emit_expr(node: &IrNode, ctx: &mut CodegenCtx) -> String {
                     ctx.diagnostic_args(
                         Severity::Error,
                         codes::FUNCTION_ARITY,
-                        format!(
-                            "function `{}` expects {}..{} argument(s), got {}",
-                            spec.name,
-                            spec.min_args,
-                            spec.max_args,
-                            arguments.len()
-                        ),
+                        format!("function `{}` expects {}..{} argument(s), got {}", spec.name, spec.min_args, spec.max_args, arguments.len()),
                         [
                             ("function", ArgValue::String(spec.name.to_string())),
                             ("minArgs", ArgValue::Number(spec.min_args as f64)),
@@ -567,13 +551,7 @@ pub fn emit_expr(node: &IrNode, ctx: &mut CodegenCtx) -> String {
                         }
                     }
                     None => {
-                        ctx.diagnostic_arg(
-                            Severity::Error,
-                            codes::UNKNOWN_TEST,
-                            format!("unknown test `{test}`"),
-                            "test",
-                            test.clone(),
-                        );
+                        ctx.diagnostic_arg(Severity::Error, codes::UNKNOWN_TEST, format!("unknown test `{test}`"), "test", test.clone());
                         "null".into()
                     }
                 },
@@ -581,13 +559,7 @@ pub fn emit_expr(node: &IrNode, ctx: &mut CodegenCtx) -> String {
                     ctx.diagnostic_args(
                         Severity::Error,
                         codes::TEST_ARITY,
-                        format!(
-                            "test `{}` expects {}..{} argument(s), got {}",
-                            spec.name,
-                            spec.min_args,
-                            spec.max_args,
-                            arguments.len()
-                        ),
+                        format!("test `{}` expects {}..{} argument(s), got {}", spec.name, spec.min_args, spec.max_args, arguments.len()),
                         [
                             ("test", ArgValue::String(spec.name.to_string())),
                             ("minArgs", ArgValue::Number(spec.min_args as f64)),
@@ -659,7 +631,7 @@ pub fn emit_identifier(name: &str) -> String {
 
 /// Syntax-level access path for strict undefined member/index args.
 ///
-/// Mirrors `template_input_dejavu::render::access_path`: identifiers print their name,
+/// Mirrors `crate::render::access_path`: identifiers print their name,
 /// member/index chains join with `.` / `[...]`. A literal integer index prints
 /// as its integer string, a literal string index prints as-is, anything
 /// dynamic prints `?`. Non-access expression roots also yield `?`.
@@ -748,7 +720,7 @@ fn record_origin(node: &IrNode, out: &str, ctx: &mut CodegenCtx) {
 pub fn emit_body(nodes: &[IrNode], ctx: &mut CodegenCtx, out: &mut String, catalog: Option<&CatalogEmitCtx>) {
     // Apply the whitespace-control contract before emitting text so AOT output
     // matches the interpreter byte for byte.
-    let nodes = template_input_dejavu::trim::normalized_children(nodes);
+    let nodes = crate::trim::normalized_children(nodes);
     for n in &nodes {
         emit_stmt(n, ctx, out, catalog);
     }
@@ -820,9 +792,7 @@ pub fn emit_stmt(node: &IrNode, ctx: &mut CodegenCtx, out: &mut String, catalog:
             let guard = format!(
                 "if ((__callerArgs == null ? 0 : __callerArgs.length) !== {count}) {{ const __got = __callerArgs == null ? 0 : __callerArgs.length; throw runtimeError(\"dejavu.template.caller-arity\", \"`caller()` expects {count} argument(s), got \" + __got, {{ got: __got, maxArgs: {count} }}); }}\n"
             );
-            out.push_str(&format!(
-                "__out.push({js_fn}(ctx, [{args_s}], {depth}, __strict, function (__callerArgs) {{\n{guard}"
-            ));
+            out.push_str(&format!("__out.push({js_fn}(ctx, [{args_s}], {depth}, __strict, function (__callerArgs) {{\n{guard}"));
             if count == 0 {
                 out.push_str("const __out = [];\n");
                 out.push_str(&caller_body);
@@ -837,9 +807,7 @@ pub fn emit_stmt(node: &IrNode, ctx: &mut CodegenCtx, out: &mut String, catalog:
                     .join(", ");
                 out.push_str(&format!("return (function (ctx) {{\nconst __out = [];\n"));
                 out.push_str(&caller_body);
-                out.push_str(&format!(
-                    "return __out.join(\"\");\n}})(Object.assign({{}}, ctx, {{ {bindings} }}));\n}}, __custom));\n"
-                ));
+                out.push_str(&format!("return __out.join(\"\");\n}})(Object.assign({{}}, ctx, {{ {bindings} }}));\n}}, __custom));\n"));
             }
         }
         IrNode::StmtExtends { .. } => {
@@ -886,11 +854,7 @@ pub fn emit_stmt(node: &IrNode, ctx: &mut CodegenCtx, out: &mut String, catalog:
         // semantics, but be tolerant: emit as `__out.push(<expr>)` so it still
         // produces runtime output and surfaces the issue via diagnostics.
         _ => {
-            ctx.diagnostic(
-                Severity::Warning,
-                "dejavu.compile.expression-as-statement",
-                "expression used as top-level statement",
-            );
+            ctx.diagnostic(Severity::Warning, "dejavu.compile.expression-as-statement", "expression used as top-level statement");
             let e = emit_expr(node, ctx);
             out.push_str("__out.push(valueToString(");
             out.push_str(&e);
@@ -924,7 +888,7 @@ fn emit_block(name: &str, original_body: &[IrNode], ctx: &mut CodegenCtx, out: &
 }
 
 fn emit_partial(
-    params: &[template_input_dejavu::types::PartialParam],
+    params: &[crate::types::PartialParam],
     body: &[IrNode],
     ctx: &mut CodegenCtx,
     out: &mut String,
@@ -983,7 +947,7 @@ fn emit_include(
         emit_not_supported("Stmt.Include", None, ctx, out);
         return;
     };
-    let Some(literal) = crate::catalog::extract_path_literal(path_node)
+    let Some(literal) = crate::codegen::catalog::extract_path_literal(path_node)
     else {
         ctx.diagnostic(Severity::Error, codes::INCLUDE_PATH_NOT_LITERAL, "`include` requires a literal template path");
         return;
@@ -997,7 +961,7 @@ fn emit_include(
         );
         return;
     };
-    let binding = crate::catalog::js_import_name(canonical_id);
+    let binding = crate::codegen::catalog::js_import_name(canonical_id);
     // Include runtime contract: the included template's render(ctx, options)
     // returns a string; we spread it into __out.push for direct concatenation.
     // A partial target never inherits the caller context, so it receives the
@@ -1025,7 +989,7 @@ fn emit_include(
     // is the interpreter's constant, inlined here so both hosts share one bound.
     // Non-partial targets keep passing the current depth through.
     let depth = if target_is_partial {
-        let limit = template_input_dejavu::render::PARTIAL_RECURSION_LIMIT;
+        let limit = crate::render::PARTIAL_RECURSION_LIMIT;
         out.push_str(&format!(
             "if (__partialDepth >= {limit}) throw runtimeError(\"{}\", {}, {{ limit: {limit} }});\n",
             codes::PARTIAL_RECURSION,
@@ -1104,14 +1068,7 @@ fn emit_if(
 // For  (catalog-aware body propagation)
 // ---------------------------------------------------------------------------
 
-fn emit_for(
-    item: &str,
-    iterable: &IrNode,
-    body: &[IrNode],
-    ctx: &mut CodegenCtx,
-    out: &mut String,
-    catalog: Option<&CatalogEmitCtx>,
-) {
+fn emit_for(item: &str, iterable: &IrNode, body: &[IrNode], ctx: &mut CodegenCtx, out: &mut String, catalog: Option<&CatalogEmitCtx>) {
     // Unique temp names: two loops in one module body must not redeclare the
     // same `let` (that is a JS SyntaxError). The extra braces give every loop
     // its own block scope; nesting is therefore safe as well.
@@ -1153,11 +1110,7 @@ fn emit_for(
 
     // Restore the caller context: write back the old value when the key was
     // an own property, otherwise delete it (same as JIT scope restore).
-    out.push_str(&format!(
-        "if ({item_has}) ctx[{}] = {item_prev}; else delete ctx[{}];\n",
-        json_string(item),
-        json_string(item)
-    ));
+    out.push_str(&format!("if ({item_has}) ctx[{}] = {item_prev}; else delete ctx[{}];\n", json_string(item), json_string(item)));
     out.push_str(&format!("if ({meta_has}) ctx[\"forloop\"] = {meta_prev}; else delete ctx[\"forloop\"];\n"));
     out.push_str("}\n");
 }
@@ -1216,7 +1169,7 @@ fn analyze_interpolation(expression: &IrNode, raw: bool, ctx: &mut CodegenCtx) -
             // registry capability shared with the JIT renderer. Host-supplied
             // `safe-output` filters opt out of the automatic escape exactly like
             // built-in `raw` / `safe` / `escape`.
-            let capability = template_input_dejavu::registry::filter_spec(filter)
+            let capability = crate::registry::filter_spec(filter)
                 .map(|spec| spec.capability)
                 .or_else(|| custom_entry(ctx.custom_registry, Namespace::Filter, filter).map(|entry| entry.capability));
             let no_escape = matches!(capability, Some(Capability::SafeOutput));
@@ -1259,7 +1212,7 @@ pub fn macro_import_binding(name: &str) -> String {
 /// rebuilt from `args`), matching the interpreter's lexical isolation.
 pub fn emit_macro_functions(children: &[IrNode], ctx: &mut CodegenCtx, catalog: Option<&CatalogEmitCtx<'_>>) -> String {
     let mut out = String::new();
-    let limit = template_input_dejavu::render::MACRO_RECURSION_LIMIT;
+    let limit = crate::render::MACRO_RECURSION_LIMIT;
     for child in children {
         let IrNode::StmtMacro { name, params, body, .. } = child
         else {
@@ -1267,10 +1220,7 @@ pub fn emit_macro_functions(children: &[IrNode], ctx: &mut CodegenCtx, catalog: 
         };
         let required = params.iter().filter(|p| p.default.is_none()).count();
         let max = params.len();
-        out.push_str(&format!(
-            "function {}(__invokeCtx, args, __depth, __strict, __caller, __custom) {{\n",
-            macro_fn_name(name)
-        ));
+        out.push_str(&format!("function {}(__invokeCtx, args, __depth, __strict, __caller, __custom) {{\n", macro_fn_name(name)));
         out.push_str(&format!(
             "if (__caller == null) __caller = function () {{ throw runtimeError(\"dejavu.template.caller-unavailable\", {}); }};\n",
             json_string(&format!("macro `{name}` was invoked without a caller block"))
@@ -1331,10 +1281,7 @@ fn emit_not_supported(node_kind: &str, extra: Option<&str>, ctx: &mut CodegenCtx
     let detail = if let Some(e) = extra { format!("{node_kind} ({e})") } else { node_kind.to_string() };
     let msg = format!("dejavu.compile.not-supported-in-single-template: {detail}");
     ctx.diagnostic(Severity::Error, msg.clone(), msg.clone());
-    out.push_str(&format!(
-        "throw runtimeError(\"dejavu.compile.not-supported-in-single-template\", {});\n",
-        json_string(&detail)
-    ));
+    out.push_str(&format!("throw runtimeError(\"dejavu.compile.not-supported-in-single-template\", {});\n", json_string(&detail)));
 }
 
 // ---------------------------------------------------------------------------

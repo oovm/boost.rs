@@ -1,6 +1,6 @@
 //! Dejavu AOT codegen: IR → ESM JavaScript.
 //!
-//! This crate is the upstream codegen stage that produces a JS module
+//! This module is the upstream codegen stage that produces a JS module
 //! consumable by `@doki-land/dejavu-engine/runtime`.
 //!
 //! # Scope

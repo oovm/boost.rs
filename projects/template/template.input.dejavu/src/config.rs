@@ -10,7 +10,7 @@ use figment::{
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use template_input_dejavu_types::{DejavuError, DejavuResult};
+use template_types::{DejavuError, DejavuResult};
 
 /// Default `template_dir` value (used by serde when all figment sources omit it).
 fn default_template_dir() -> PathBuf {
@@ -40,8 +40,7 @@ impl DejavuConfig {
     /// Load configuration from a TOML file
     pub fn load<P: Into<PathBuf>>(path: P) -> DejavuResult<Self> {
         let path = path.into();
-        let config =
-            Figment::new().merge(Toml::file(&path)).extract::<Self>().map_err(|e| DejavuError::InvalidConfig(e.to_string()))?;
+        let config = Figment::new().merge(Toml::file(&path)).extract::<Self>().map_err(|e| DejavuError::InvalidConfig(e.to_string()))?;
         Ok(config)
     }
 
@@ -64,8 +63,7 @@ impl DejavuConfig {
     /// Save configuration to a TOML file
     pub fn save<P: Into<PathBuf>>(&self, path: P) -> DejavuResult<()> {
         let path = path.into();
-        let content =
-            toml::to_string_pretty(self).map_err(|e| DejavuError::InvalidConfig(format!("failed to serialize config: {e}")))?;
+        let content = toml::to_string_pretty(self).map_err(|e| DejavuError::InvalidConfig(format!("failed to serialize config: {e}")))?;
         std::fs::write(&path, content)?;
         Ok(())
     }

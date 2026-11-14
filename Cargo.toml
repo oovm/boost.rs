@@ -141,10 +141,6 @@ members = [
     "projects/template/template.framework",
     "projects/template/template.framework.doki",
     "projects/template/template.input.dejavu",
-    "projects/template/template.input.dejavu.codegen",
-    "projects/template/template.input.dejavu.config",
-    "projects/template/template.input.dejavu.macros",
-    "projects/template/template.input.dejavu.runtime",
     "projects/template/template.types",
     "projects/template/template.input.hbs",
     "projects/template/template.input.jinja",
@@ -304,13 +300,9 @@ template = { path = "projects/template/template" }
 template-framework = { path = "projects/template/template.framework" }
 template-framework-doki = { path = "projects/template/template.framework.doki" }
 template-input-dejavu = { path = "projects/template/template.input.dejavu" }
-template-input-dejavu-codegen = { path = "projects/template/template.input.dejavu.codegen" }
-template-input-dejavu-config = { path = "projects/template/template.input.dejavu.config" }
-template-input-dejavu-macros = { path = "projects/template/template.input.dejavu.macros" }
-template-input-dejavu-runtime = { path = "projects/template/template.input.dejavu.runtime" }
 template-input-hbs = { path = "projects/template/template.input.hbs" }
 template-input-jinja = { path = "projects/template/template.input.jinja" }
-template-input-dejavu-types = { path = "projects/template/template.types", package = "template-types" }
+template-types = { path = "projects/template/template.types" }
 # 品牌化库
 mongo = { path = "projects/database/facades/mongo" }
 sqlite = { path = "projects/database/facades/sqlite" }
@@ -398,7 +390,6 @@ bytemuck = { version = "1.25.2", features = ["derive"] }
 # --- Upstream sources: pinned to full 40-character revisions ---
 vos = { git = "https://github.com/voml/vos-language.git", rev = "387d9fc3c9a556ddb8a433c627a866a2918d0186" }
 von = { git = "https://github.com/voml/von-language.git", rev = "ccc58c90c8f94c0be3dfcacb3b0caec98a6ae3e4", features = ["serde"] }
-dejavu = { git = "https://github.com/notedge/dejavu-language.git", rev = "c14ad3f786feb30676d809999199a3c867a90cbf" }
 
 acorn-core = { git = "https://github.com/yggdrasil-language/acorn.rs.git", rev = "e104aaf89dffc55e261d15d110e88ddb392ee5d1" }
 acorn-codec = { git = "https://github.com/yggdrasil-language/acorn.rs.git", rev = "e104aaf89dffc55e261d15d110e88ddb392ee5d1", default-features = false, features = ["compression"] }
