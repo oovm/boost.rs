@@ -674,7 +674,7 @@ dependencies = [
  "document-diagnostic",
  "document-formats",
  "document-ir",
- "oak-xml 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-xml 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "serde",
  "serde_json",
  "serial_test 3.5.0",
@@ -882,7 +882,7 @@ dependencies = [
  "database-types",
  "database-udf",
  "js-sys",
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "oak-sql",
  "serde",
  "serde_json",
@@ -920,7 +920,7 @@ version = "0.1.0"
 dependencies = [
  "database-query",
  "database-types",
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "oak-sql",
  "serde",
  "serde_json",
@@ -994,7 +994,7 @@ dependencies = [
  "database-cluster",
  "database-types",
  "js-sys",
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "oak-sql",
  "serde",
  "serde_json",
@@ -1307,13 +1307,13 @@ dependencies = [
  "blake3",
  "boost-harness",
  "document-ir",
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "oak-html",
- "oak-markdown 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-markdown 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "oak-notedown",
  "oak-tex",
  "oak-typst",
- "oak-xml 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-xml 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "plotter-input-dot",
  "plotter-input-mermaid",
  "plotter-input-plantuml",
@@ -2852,9 +2852,9 @@ dependencies = [
 [[package]]
 name = "oak-abc"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3#b869e721935ff607e5e8d0c3231d3de5a1cd24e3"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "serde",
 ]
 
@@ -2893,7 +2893,7 @@ dependencies = [
 [[package]]
 name = "oak-core"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3#b869e721935ff607e5e8d0c3231d3de5a1cd24e3"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
  "serde",
  "smallvec",
@@ -2904,46 +2904,46 @@ dependencies = [
 [[package]]
 name = "oak-css-selector"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3#b869e721935ff607e5e8d0c3231d3de5a1cd24e3"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
  "boost-diagnostic",
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "serde",
 ]
 
 [[package]]
 name = "oak-dot"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3#b869e721935ff607e5e8d0c3231d3de5a1cd24e3"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "serde",
 ]
 
 [[package]]
 name = "oak-glsl"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3#b869e721935ff607e5e8d0c3231d3de5a1cd24e3"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "serde",
 ]
 
 [[package]]
 name = "oak-hlsl"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3#b869e721935ff607e5e8d0c3231d3de5a1cd24e3"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "serde",
 ]
 
 [[package]]
 name = "oak-html"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3#b869e721935ff607e5e8d0c3231d3de5a1cd24e3"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "oak-css-selector",
  "serde",
 ]
@@ -2962,29 +2962,29 @@ dependencies = [
 [[package]]
 name = "oak-markdown"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3#b869e721935ff607e5e8d0c3231d3de5a1cd24e3"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
  "dashmap",
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
- "oak-navigation 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
+ "oak-navigation 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "serde",
 ]
 
 [[package]]
 name = "oak-mdl"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3#b869e721935ff607e5e8d0c3231d3de5a1cd24e3"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "serde",
 ]
 
 [[package]]
 name = "oak-mermaid"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3#b869e721935ff607e5e8d0c3231d3de5a1cd24e3"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "oak-uml",
  "serde",
 ]
@@ -3000,71 +3000,71 @@ dependencies = [
 [[package]]
 name = "oak-navigation"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3#b869e721935ff607e5e8d0c3231d3de5a1cd24e3"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
 ]
 
 [[package]]
 name = "oak-notedown"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3#b869e721935ff607e5e8d0c3231d3de5a1cd24e3"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "serde",
 ]
 
 [[package]]
 name = "oak-plantuml"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3#b869e721935ff607e5e8d0c3231d3de5a1cd24e3"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "serde",
 ]
 
 [[package]]
 name = "oak-smiles"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3#b869e721935ff607e5e8d0c3231d3de5a1cd24e3"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "serde",
 ]
 
 [[package]]
 name = "oak-sql"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3#b869e721935ff607e5e8d0c3231d3de5a1cd24e3"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "serde",
 ]
 
 [[package]]
 name = "oak-tex"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3#b869e721935ff607e5e8d0c3231d3de5a1cd24e3"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "serde",
 ]
 
 [[package]]
 name = "oak-typst"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3#b869e721935ff607e5e8d0c3231d3de5a1cd24e3"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "serde",
 ]
 
 [[package]]
 name = "oak-uml"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3#b869e721935ff607e5e8d0c3231d3de5a1cd24e3"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "serde",
 ]
 
@@ -3079,9 +3079,9 @@ dependencies = [
 [[package]]
 name = "oak-wgsl"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3#b869e721935ff607e5e8d0c3231d3de5a1cd24e3"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "serde",
 ]
 
@@ -3098,10 +3098,10 @@ dependencies = [
 [[package]]
 name = "oak-xml"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3#b869e721935ff607e5e8d0c3231d3de5a1cd24e3"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
- "oak-xpath 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
+ "oak-xpath 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "serde",
 ]
 
@@ -3118,10 +3118,10 @@ dependencies = [
 [[package]]
 name = "oak-xpath"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3#b869e721935ff607e5e8d0c3231d3de5a1cd24e3"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
  "boost-diagnostic",
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "serde",
 ]
 
@@ -3433,7 +3433,7 @@ name = "plotter-input-abc"
 version = "0.1.0"
 dependencies = [
  "oak-abc",
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "plotter-engraving",
  "plotter-types",
 ]
@@ -3442,7 +3442,7 @@ dependencies = [
 name = "plotter-input-dot"
 version = "0.1.0"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "oak-dot",
  "plotter-diagram",
  "plotter-scene",
@@ -3453,7 +3453,7 @@ dependencies = [
 name = "plotter-input-mdl"
 version = "0.1.0"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "oak-mdl",
  "plotter-depiction",
  "plotter-types",
@@ -3463,7 +3463,7 @@ dependencies = [
 name = "plotter-input-mermaid"
 version = "0.1.0"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "oak-mermaid",
  "oak-uml",
  "plotter-diagram",
@@ -3475,7 +3475,7 @@ dependencies = [
 name = "plotter-input-plantuml"
 version = "0.1.0"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "oak-plantuml",
  "plotter-diagram",
  "plotter-input-mermaid",
@@ -3487,7 +3487,7 @@ dependencies = [
 name = "plotter-input-smiles"
 version = "0.1.0"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=b869e721935ff607e5e8d0c3231d3de5a1cd24e3)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "oak-smiles",
  "plotter-depiction",
  "plotter-types",

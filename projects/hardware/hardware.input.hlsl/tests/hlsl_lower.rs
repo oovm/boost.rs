@@ -88,6 +88,41 @@ void main(uint3 gid : SV_DispatchThreadID) {
 }
 
 #[test]
+fn lowers_cbuffer_block_into_uniform_slots_and_runs_on_cpu() {
+    let source = r#"
+cbuffer Params : register(b0)
+{
+    float scale;
+    float bias;
+};
+
+RWStructuredBuffer<float> OutBuf : register(u0);
+
+[numthreads(1, 1, 1)]
+void main(uint3 gid : SV_DispatchThreadID) {
+    OutBuf[gid.x] = Params.scale * 2.0 + Params.bias;
+}
+"#;
+    let lowered = lower_hlsl(source).expect("valid HLSL");
+    assert_eq!(lowered.uniforms.len(), 1);
+
+    let uniform = &lowered.uniforms[0];
+    assert_eq!(uniform.name, "Params");
+    assert_eq!(uniform.binding, 0);
+    assert_eq!(uniform.fields, vec![
+        ("scale".to_owned(), Ty::Scalar(ScalarTy::F32)),
+        ("bias".to_owned(), Ty::Scalar(ScalarTy::F32)),
+    ]);
+
+    let mut interpreter = CpuInterpreter::new();
+    interpreter.with_uniform(0, Value::F32(3.0));
+    interpreter.with_uniform(1, Value::F32(0.5));
+    interpreter.with_buffer(0, vec![Value::F32(0.0); 1]);
+    interpreter.run_parallel(&lowered.program, 1).expect("CPU execution");
+    assert_eq!(interpreter.buffer(0), Some(vec![Value::F32(6.5)].as_slice()));
+}
+
+#[test]
 fn rejects_unknown_uniform_field() {
     let source = r#"
 struct Params {

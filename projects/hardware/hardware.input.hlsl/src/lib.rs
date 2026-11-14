@@ -29,8 +29,14 @@ fn unsupported(message: impl Into<String>) -> FrontendError {
 
 fn convert_module(root: &h::HlslRoot) -> Result<ShaderModule, FrontendError> {
     let mut items = Vec::new();
+    let mut buffers = 0usize;
     for item in &root.items {
         if matches!(item, h::HlslItem::GlobalVar(global) if global.name.is_empty()) {
+            continue;
+        }
+        if let h::HlslItem::Cbuffer(buffer) = item {
+            items.extend(convert_cbuffer(buffer, buffers)?);
+            buffers += 1;
             continue;
         }
         items.push(convert_item(item)?);
@@ -49,7 +55,38 @@ fn convert_item(item: &h::HlslItem) -> Result<ModuleItem, FrontendError> {
             init: convert_expr(&constant.init)?,
         })),
         h::HlslItem::TypeAlias(alias) => Ok(ModuleItem::TypeAlias(TypeAlias { name: alias.name.clone(), ty: convert_type(&alias.ty) })),
+        h::HlslItem::Cbuffer(_) => Err(unsupported("`cbuffer` blocks are expanded before item conversion")),
     }
+}
+
+/// Expands one `cbuffer` / `tbuffer` block into a struct definition plus a
+/// uniform global bound to the block's `register(bN)` slot.
+fn convert_cbuffer(buffer: &h::HlslCbuffer, index: usize) -> Result<Vec<ModuleItem>, FrontendError> {
+    let name = if buffer.name.is_empty() { format!("Cbuffer{index}") } else { buffer.name.clone() };
+    let binding = buffer.register.as_ref().and_then(|register| register.index).unwrap_or(0);
+    let fields = buffer
+        .members
+        .iter()
+        .map(|member| StructField {
+            attributes: member.attributes.iter().filter_map(|attribute| convert_attribute(attribute).ok()).collect(),
+            name: member.name.clone(),
+            ty: convert_type(&member.ty),
+        })
+        .collect();
+    Ok(vec![
+        ModuleItem::Struct(StructDef { name: name.clone(), fields }),
+        ModuleItem::GlobalVar(GlobalVar {
+            attributes: vec![
+                Attribute { name: "group".into(), args: vec![Expr::IntegerLiteral(0)] },
+                Attribute { name: "binding".into(), args: vec![Expr::IntegerLiteral(i64::from(binding))] },
+            ],
+            address_space: Some(AddressSpace::Uniform),
+            access: Some(AccessMode::Read),
+            name: name.clone(),
+            ty: Some(TypeRef { name, args: Vec::new() }),
+            init: None,
+        }),
+    ])
 }
 
 fn convert_function(function: &h::HlslFunction) -> Result<FunctionDef, FrontendError> {
