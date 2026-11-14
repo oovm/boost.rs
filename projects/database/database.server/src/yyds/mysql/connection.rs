@@ -18,12 +18,11 @@ use database_execution::{
 };
 use database_protocol_mysql::{MAX_PACKET_PAYLOAD, PROTOCOL_VERSION};
 use database_query::{
-    MYSQL_BLOB_CAPACITY, SqlBoundExpression, SqlBoundLiteral, SqlCatalogBoundExpression, SqlCatalogBoundStatement, SqlColumn, SqlDialect,
-    SqlErrorKind, SqlExecutionPlan, SqlFieldType, SqlFrontendError, SqlParameterStyle, SqlResult, SqlSchemaCheckpoint, SqlSchemaRegistry,
-    SqlSessionCommand, SqlTransactionAction, SqlValue, analyze_meta_query, apply_auto_increment, bind_sql_catalog_with_variables,
-    describe_plan_for_dialect, is_accepted_collation, neutralized_sql_parameters, parse_ddl, parse_session_command,
-    plan_statement_for_dialect,
-    substitute_sql_parameters,
+    MYSQL_BLOB_CAPACITY, SqlBoundExpression, SqlBoundLiteral, SqlCatalog, SqlCatalogBoundExpression, SqlCatalogBoundStatement, SqlColumn,
+    SqlDialect, SqlErrorKind, SqlExecutionPlan, SqlFieldType, SqlFrontendError, SqlParameterStyle, SqlResult, SqlSchemaCheckpoint,
+    SqlSchemaRegistry, SqlSessionCommand, SqlTransactionAction, SqlValue, analyze_meta_query, apply_auto_increment,
+    bind_sql_catalog_with_variables, describe_plan_for_dialect, is_accepted_collation, neutralized_sql_parameters, parse_ddl,
+    parse_session_command, plan_statement_for_dialect, substitute_sql_parameters,
 };
 
 use super::wire::{PacketError, encode_packet};
@@ -169,6 +168,36 @@ fn normalize_session_boolean(sql: &str) -> Cow<'_, str> {
     Cow::Owned(format!("{} {replacement}{terminator}", &statement[..=index]))
 }
 
+/// Returns the first SQL keyword, skipping leading whitespace and comments.
+///
+/// Session-command detection parses a full Oak AST, which is wasted on the
+/// DML/SELECT statements that dominate a gateway's traffic. A verb check up
+/// front keeps that parser off the hot path without changing which statements
+/// the session layer accepts.
+fn leading_statement_verb(sql: &str) -> &str {
+    let mut rest = sql.trim_start();
+    loop {
+        if let Some(comment) = rest.strip_prefix("--") {
+            rest = comment.split_once('\n').map_or("", |(_, tail)| tail).trim_start();
+        }
+        else if let Some(comment) = rest.strip_prefix("/*") {
+            rest = comment.split_once("*/").map_or("", |(_, tail)| tail).trim_start();
+        }
+        else {
+            break;
+        }
+    }
+    rest.split(|ch: char| ch.is_ascii_whitespace() || matches!(ch, '(' | ';')).next().unwrap_or("")
+}
+
+/// Whether `verb` can start a statement the session layer replaces with a
+/// protocol command. Everything else is safe to send straight to the binder.
+fn is_session_verb(verb: &str) -> bool {
+    ["SET", "BEGIN", "START", "COMMIT", "ROLLBACK", "SAVEPOINT", "RELEASE", "SHOW", "PRAGMA", "RESET", "DISCARD"]
+        .iter()
+        .any(|candidate| verb.eq_ignore_ascii_case(candidate))
+}
+
 /// Whether a `SET` target names a known MySQL session variable the gateway
 /// emulates via `MYSQL_VARIABLES`. Rejects unknown names with `1193` at the
 /// protocol layer instead of silently accepting them.
@@ -223,11 +252,22 @@ struct MysqlTransactionSession {
     /// Registry snapshot captured at `BEGIN`. The catalog rides the same
     /// transaction as rows: `COMMIT` keeps it, every rollback path restores it.
     schema_checkpoint: Option<SqlSchemaCheckpoint>,
+    /// Last catalog snapshot and the registry revision it came from. Reusing it
+    /// skips a full schema clone per statement; any DDL bumps the revision.
+    catalog_cache: Option<(u32, SqlCatalog)>,
 }
 
 impl MysqlTransactionSession {
     fn new() -> Self {
-        Self { executor: None, handle: None, failed: false, autocommit: true, schema: String::new(), schema_checkpoint: None }
+        Self {
+            executor: None,
+            handle: None,
+            failed: false,
+            autocommit: true,
+            schema: String::new(),
+            schema_checkpoint: None,
+            catalog_cache: None,
+        }
     }
 
     /// Captures the registry state when a transaction block opens.
@@ -363,15 +403,16 @@ impl PreparedStatements {
     }
 }
 
-fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRuntime>>) -> io::Result<()> {
+fn serve_session(stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRuntime>>) -> io::Result<()> {
+    let mut reader = PacketReader::new(stream);
     let mut session = MysqlTransactionSession::new();
     let mut statements = PreparedStatements::new();
-    write_packet(&mut stream, 0, &handshake())?;
-    let response = match read_packet(&mut stream)? {
+    write_packet(&mut reader, 0, &handshake())?;
+    let response = match reader.read_packet()? {
         ReadPacket::Packet(1, response) => response,
         ReadPacket::Packet(_, _) => return Err(invalid_data("invalid MySQL handshake sequence")),
         ReadPacket::TooLarge(sequence) => {
-            write_packet_too_large(&mut stream, sequence)?;
+            write_packet_too_large(&mut reader, sequence)?;
             return Ok(());
         }
         ReadPacket::Closed => {
@@ -382,22 +423,23 @@ fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRunt
     let (username, empty_password, database) = match parse_handshake_response(&response) {
         Ok(parsed) => parsed,
         Err(error) => {
-            write_error(&mut stream, 2, 1043, "08S01", error)?;
+            write_error(&mut reader, 2, 1043, "08S01", error)?;
             return Ok(());
         }
     };
     if username.is_empty() || !empty_password {
-        write_error(&mut stream, 2, 1045, "28000", "access denied: loopback accepts only an empty password")?;
+        write_error(&mut reader, 2, 1045, "28000", "access denied: loopback accepts only an empty password")?;
         return Ok(());
     }
     session.schema = database.unwrap_or_default();
-    write_ok(&mut stream, 2, session.status_flags())?;
+    write_ok(&mut reader, 2, session.status_flags())?;
 
     loop {
-        let (sequence, payload) = match read_packet(&mut stream)? {
+        let packet = reader.read_packet()?;
+        let (sequence, payload) = match packet {
             ReadPacket::Packet(sequence, payload) => (sequence, payload),
             ReadPacket::TooLarge(sequence) => {
-                write_packet_too_large(&mut stream, sequence)?;
+                write_packet_too_large(&mut reader, sequence)?;
                 session.abandon(runtime.as_ref());
                 return Ok(());
             }
@@ -408,11 +450,11 @@ fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRunt
             }
         };
         if sequence != 0 {
-            write_error(&mut stream, sequence.wrapping_add(1), 1047, "08S01", "invalid command sequence")?;
+            write_error(&mut reader, sequence.wrapping_add(1), 1047, "08S01", "invalid command sequence")?;
             continue;
         }
         if payload.is_empty() {
-            write_error(&mut stream, sequence.wrapping_add(1), 1047, "08S01", "empty command")?;
+            write_error(&mut reader, sequence.wrapping_add(1), 1047, "08S01", "empty command")?;
             continue;
         }
         match payload[0] {
@@ -425,38 +467,38 @@ fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRunt
             // catalog, so `COM_INIT_DB` only records the new default schema and
             // must not reset any session state, while `COM_PING` is a no-op.
             // Both are answered with the protocol OK packet.
-            COM_PING => write_ok(&mut stream, sequence.wrapping_add(1), session.status_flags())?,
+            COM_PING => write_ok(&mut reader, sequence.wrapping_add(1), session.status_flags())?,
             COM_INIT_DB => match std::str::from_utf8(&payload[1..]) {
                 Ok(schema) => {
                     session.schema = schema.to_string();
-                    write_ok(&mut stream, sequence.wrapping_add(1), session.status_flags())?;
+                    write_ok(&mut reader, sequence.wrapping_add(1), session.status_flags())?;
                 }
-                Err(_) => write_error(&mut stream, sequence.wrapping_add(1), 1049, "42000", "database name is not valid UTF-8")?,
+                Err(_) => write_error(&mut reader, sequence.wrapping_add(1), 1049, "42000", "database name is not valid UTF-8")?,
             },
             // Connection pools (mysql-connector, SQLAlchemy `reset`) use this to
             // return an idle connection to its initial state. The socket and the
             // authentication stay untouched; only session state is reset.
             COM_RESET_CONNECTION => {
                 reset_connection_session(&mut session, &mut statements, runtime.as_ref())?;
-                write_ok(&mut stream, sequence.wrapping_add(1), session.status_flags())?;
+                write_ok(&mut reader, sequence.wrapping_add(1), session.status_flags())?;
             }
             COM_STMT_PREPARE => {
-                handle_prepare(&mut stream, sequence.wrapping_add(1), &payload, runtime.as_ref(), &mut statements, &mut session)?
+                handle_prepare(&mut reader, sequence.wrapping_add(1), &payload, runtime.as_ref(), &mut statements, &mut session)?
             }
             COM_STMT_EXECUTE => {
-                handle_execute(&mut stream, sequence.wrapping_add(1), &payload, runtime.as_ref(), &mut statements, &mut session)?
+                handle_execute(&mut reader, sequence.wrapping_add(1), &payload, runtime.as_ref(), &mut statements, &mut session)?
             }
             COM_STMT_CLOSE => {
                 if let Some(id) = take_u32(&payload[1..]) {
                     statements.entries.remove(&id);
                 }
             }
-            COM_STMT_RESET => handle_reset(&mut stream, sequence.wrapping_add(1), &payload, &statements, session.status_flags())?,
+            COM_STMT_RESET => handle_reset(&mut reader, sequence.wrapping_add(1), &payload, &statements, session.status_flags())?,
             COM_QUERY => {
                 let sql = match std::str::from_utf8(&payload[1..]) {
                     Ok(sql) => sql,
                     Err(_) => {
-                        write_error(&mut stream, sequence.wrapping_add(1), 1300, "HY000", "query is not valid UTF-8")?;
+                        write_error(&mut reader, sequence.wrapping_add(1), 1300, "HY000", "query is not valid UTF-8")?;
                         continue;
                     }
                 };
@@ -465,22 +507,22 @@ fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRunt
                 // registry cannot apply never falls through to the Oak binder.
                 match parse_ddl(sql, SqlDialect::Mysql) {
                     Err(error) => {
-                        write_statement_error(&mut stream, sequence.wrapping_add(1), "ddl", error)?;
+                        write_statement_error(&mut reader, sequence.wrapping_add(1), "ddl", error)?;
                         continue;
                     }
                     Ok(Some(statement)) => {
                         let Some(rt) = runtime.as_ref()
                         else {
-                            write_error(&mut stream, sequence.wrapping_add(1), 1235, "42000", "no SQL runtime")?;
+                            write_error(&mut reader, sequence.wrapping_add(1), 1235, "42000", "no SQL runtime")?;
                             continue;
                         };
                         if session.failed {
-                            write_error(&mut stream, sequence.wrapping_add(1), 40001, "HY000", "current transaction is aborted")?;
+                            write_error(&mut reader, sequence.wrapping_add(1), 40001, "HY000", "current transaction is aborted")?;
                             continue;
                         }
                         match rt.schema.apply_ddl(&statement) {
-                            Ok(_) => write_ok(&mut stream, sequence.wrapping_add(1), session.status_flags())?,
-                            Err(error) => write_statement_error(&mut stream, sequence.wrapping_add(1), "ddl", error)?,
+                            Ok(_) => write_ok(&mut reader, sequence.wrapping_add(1), session.status_flags())?,
+                            Err(error) => write_statement_error(&mut reader, sequence.wrapping_add(1), "ddl", error)?,
                         }
                         continue;
                     }
@@ -491,13 +533,13 @@ fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRunt
                 match analyze_meta_query(sql, SqlDialect::Mysql) {
                     Err(error) => {
                         session.fail();
-                        write_statement_error(&mut stream, sequence.wrapping_add(1), "metadata", error)?;
+                        write_statement_error(&mut reader, sequence.wrapping_add(1), "metadata", error)?;
                         continue;
                     }
                     Ok(Some(meta)) => {
                         let Some(rt) = runtime.as_ref()
                         else {
-                            write_error(&mut stream, sequence.wrapping_add(1), 1235, "42000", "no SQL runtime")?;
+                            write_error(&mut reader, sequence.wrapping_add(1), 1235, "42000", "no SQL runtime")?;
                             continue;
                         };
                         let described = meta.describe();
@@ -505,7 +547,7 @@ fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRunt
                         let column_types: Vec<u8> = described.iter().map(|column| mysql_field_type(&column.field_type)).collect();
                         let column_nullables: Vec<bool> = described.iter().map(|column| column.field_type.is_nullable()).collect();
                         write_result_set(
-                            &mut stream,
+                            &mut reader,
                             sequence.wrapping_add(1),
                             &result,
                             &column_types,
@@ -517,28 +559,34 @@ fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRunt
                     }
                     Ok(None) => {}
                 }
-                match parse_session_command(&normalize_session_boolean(sql)) {
+                // Only session verbs can project to a protocol command. DML and
+                // SELECT skip the extra full parse. Empty input keeps the old
+                // path so its error classification does not change.
+                let verb = leading_statement_verb(sql);
+                let parsed_session =
+                    if verb.is_empty() || is_session_verb(verb) { parse_session_command(&normalize_session_boolean(sql)) } else { Ok(None) };
+                match parsed_session {
                     Ok(Some(SqlSessionCommand::SetNames { character_set, .. })) if !character_set.eq_ignore_ascii_case("utf8mb4") => {
-                        write_error(&mut stream, sequence.wrapping_add(1), 1115, "42000", "unknown character set")?;
+                        write_error(&mut reader, sequence.wrapping_add(1), 1115, "42000", "unknown character set")?;
                     }
                     // 文本按 code point 精确比较，collation 只是会话元数据；接受与 DDL
                     // 同一份白名单，驱动默认的 `utf8mb4_0900_ai_ci` 也能建立连接。
                     Ok(Some(SqlSessionCommand::SetNames { collation, .. })) if collation.as_deref().is_none_or(is_accepted_collation) => {
-                        write_ok(&mut stream, sequence.wrapping_add(1), session.status_flags())?;
+                        write_ok(&mut reader, sequence.wrapping_add(1), session.status_flags())?;
                     }
                     Ok(Some(SqlSessionCommand::SetNames { collation, .. })) => {
                         // Engine text for `ER_UNKNOWN_COLLATION`.
                         let name = collation.as_deref().unwrap_or("utf8mb4");
-                        write_error(&mut stream, sequence.wrapping_add(1), 1273, "HY000", &format!("Unknown collation: '{name}'"))?;
+                        write_error(&mut reader, sequence.wrapping_add(1), 1273, "HY000", &format!("Unknown collation: '{name}'"))?;
                     }
                     Ok(Some(SqlSessionCommand::Transaction(action))) => match action {
                         SqlTransactionAction::Begin if session.failed => {
-                            write_error(&mut stream, sequence.wrapping_add(1), 40001, "HY000", "current transaction is aborted")?;
+                            write_error(&mut reader, sequence.wrapping_add(1), 40001, "HY000", "current transaction is aborted")?;
                         }
                         SqlTransactionAction::Begin => {
                             let Some(rt) = runtime.as_ref()
                             else {
-                                write_error(&mut stream, sequence.wrapping_add(1), 1235, "42000", "no SQL runtime")?;
+                                write_error(&mut reader, sequence.wrapping_add(1), 1235, "42000", "no SQL runtime")?;
                                 continue;
                             };
                             // The executor owns the transaction capability contract: BEGIN goes
@@ -551,10 +599,10 @@ fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRunt
                                     session.handle = Some(handle);
                                     session.failed = false;
                                     session.capture_schema(runtime.as_ref());
-                                    write_ok(&mut stream, sequence.wrapping_add(1), SERVER_STATUS_IN_TRANS)?;
+                                    write_ok(&mut reader, sequence.wrapping_add(1), SERVER_STATUS_IN_TRANS)?;
                                 }
                                 Err(err) => {
-                                    write_error(&mut stream, sequence.wrapping_add(1), 1235, "42000", &format!("BEGIN failed: {err}"))?;
+                                    write_error(&mut reader, sequence.wrapping_add(1), 1235, "42000", &format!("BEGIN failed: {err}"))?;
                                 }
                             }
                         }
@@ -566,7 +614,7 @@ fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRunt
                             session.failed = false;
                             // `COMMIT` of an aborted block is a rollback: catalog changes go too.
                             session.restore_schema(runtime.as_ref())?;
-                            write_ok(&mut stream, sequence.wrapping_add(1), session.status_flags())?;
+                            write_ok(&mut reader, sequence.wrapping_add(1), session.status_flags())?;
                         }
                         SqlTransactionAction::Commit => {
                             let mut commit_error = None;
@@ -585,21 +633,21 @@ fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRunt
                                     match err {
                                         // OCC 拒绝必须回报给客户端，否则并发写会被静默丢弃。
                                         err @ database_types::cluster::Error::CasConflict { .. } => write_error(
-                                            &mut stream,
+                                            &mut reader,
                                             sequence.wrapping_add(1),
                                             1213,
                                             "40001",
                                             &format!("COMMIT failed: serialization conflict: {err}"),
                                         )?,
                                         err => {
-                                            write_error(&mut stream, sequence.wrapping_add(1), 1105, "HY000", &format!("COMMIT failed: {err}"))?
+                                            write_error(&mut reader, sequence.wrapping_add(1), 1105, "HY000", &format!("COMMIT failed: {err}"))?
                                         }
                                     }
                                 }
                                 None => {
                                     // The commit point publishes the schema revision as well.
                                     session.schema_checkpoint = None;
-                                    write_ok(&mut stream, sequence.wrapping_add(1), session.status_flags())?;
+                                    write_ok(&mut reader, sequence.wrapping_add(1), session.status_flags())?;
                                 }
                             }
                         }
@@ -610,13 +658,13 @@ fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRunt
                             session.executor = None;
                             session.failed = false;
                             session.restore_schema(runtime.as_ref())?;
-                            write_ok(&mut stream, sequence.wrapping_add(1), session.status_flags())?;
+                            write_ok(&mut reader, sequence.wrapping_add(1), session.status_flags())?;
                         }
                         SqlTransactionAction::Savepoint(_)
                         | SqlTransactionAction::RollbackToSavepoint(_)
                         | SqlTransactionAction::ReleaseSavepoint(_) => {
                             write_error(
-                                &mut stream,
+                                &mut reader,
                                 sequence.wrapping_add(1),
                                 1235,
                                 "42000",
@@ -631,7 +679,7 @@ fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRunt
                             None => {
                                 session.fail();
                                 write_error(
-                                    &mut stream,
+                                    &mut reader,
                                     sequence.wrapping_add(1),
                                     1305,
                                     "42000",
@@ -646,16 +694,16 @@ fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRunt
                             SavepointIntent::Release { name } => handle.savepoint_release(&name),
                         };
                         match result {
-                            Ok(()) => write_ok(&mut stream, sequence.wrapping_add(1), session.status_flags())?,
+                            Ok(()) => write_ok(&mut reader, sequence.wrapping_add(1), session.status_flags())?,
                             Err(database_types::cluster::Error::Unsupported(msg))
                                 if msg.contains("does not exist") || msg.contains("already exists") =>
                             {
                                 session.fail();
-                                write_error(&mut stream, sequence.wrapping_add(1), 1305, "42000", msg)?;
+                                write_error(&mut reader, sequence.wrapping_add(1), 1305, "42000", msg)?;
                             }
                             Err(err) => {
                                 session.fail();
-                                write_error(&mut stream, sequence.wrapping_add(1), 1105, "HY000", &format!("savepoint failed: {err}"))?;
+                                write_error(&mut reader, sequence.wrapping_add(1), 1105, "HY000", &format!("savepoint failed: {err}"))?;
                             }
                         }
                     }
@@ -668,13 +716,13 @@ fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRunt
                             }
                         }
                         let result = SqlResult { columns: vec!["Variable_name".into(), "Value".into()], rows, affected_rows: 0 };
-                        write_result_set(&mut stream, sequence.wrapping_add(1), &result, &[], &[false, false], false, session.status_flags())?;
+                        write_result_set(&mut reader, sequence.wrapping_add(1), &result, &[], &[false, false], false, session.status_flags())?;
                     }
                     Ok(Some(SqlSessionCommand::SetVariable { name, value, .. })) => {
                         // MySQL 只接受已知 session 变量；未知变量应返回 1193。
                         if !is_known_mysql_variable(&name) {
                             session.fail();
-                            write_error(&mut stream, sequence.wrapping_add(1), 1193, "HY000", &format!("Unknown system variable '{name}'"))?;
+                            write_error(&mut reader, sequence.wrapping_add(1), 1193, "HY000", &format!("Unknown system variable '{name}'"))?;
                             continue;
                         }
                         // Values arrive as `@@session.autocommit` from drivers that
@@ -701,7 +749,7 @@ fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRunt
                                             session.restore_schema(runtime.as_ref())?;
                                             session.autocommit = true;
                                             write_error(
-                                                &mut stream,
+                                                &mut reader,
                                                 sequence.wrapping_add(1),
                                                 1105,
                                                 "HY000",
@@ -714,12 +762,12 @@ fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRunt
                             }
                             session.autocommit = autocommit;
                         }
-                        write_ok(&mut stream, sequence.wrapping_add(1), session.status_flags())?;
+                        write_ok(&mut reader, sequence.wrapping_add(1), session.status_flags())?;
                     }
                     Ok(Some(SqlSessionCommand::ShowParameter { name, .. })) => {
                         session.fail();
                         write_error(
-                            &mut stream,
+                            &mut reader,
                             sequence.wrapping_add(1),
                             1064,
                             "42000",
@@ -728,14 +776,14 @@ fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRunt
                     }
                     Ok(Some(SqlSessionCommand::Pragma { .. })) => {
                         session.fail();
-                        write_error(&mut stream, sequence.wrapping_add(1), 1064, "42000", "PRAGMA is not MySQL syntax")?;
+                        write_error(&mut reader, sequence.wrapping_add(1), 1064, "42000", "PRAGMA is not MySQL syntax")?;
                     }
                     Ok(Some(SqlSessionCommand::ResetVariables { .. })) | Ok(Some(SqlSessionCommand::Discard(_))) => {
                         // `RESET ...` / `DISCARD ...` are PostgreSQL session verbs. MySQL has no
                         // equivalent statement in the gateway subset, so answer with its normal
                         // syntax error instead of pretending to reset state.
                         write_error(
-                            &mut stream,
+                            &mut reader,
                             sequence.wrapping_add(1),
                             1064,
                             "42000",
@@ -746,17 +794,17 @@ fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRunt
                         // 语法错误与“未接入执行器”必须是不同错误，否则没有 runtime 时
                         // 客户端会把语法错误误判为不支持的能力。
                         session.fail();
-                        write_error(&mut stream, sequence.wrapping_add(1), 1064, "42000", "Oak could not parse the SQL statement")?;
+                        write_error(&mut reader, sequence.wrapping_add(1), 1064, "42000", "Oak could not parse the SQL statement")?;
                     }
                     Ok(None) => {
                         if session.failed {
-                            write_error(&mut stream, sequence.wrapping_add(1), 40001, "HY000", "current transaction is aborted")?;
+                            write_error(&mut reader, sequence.wrapping_add(1), 40001, "HY000", "current transaction is aborted")?;
                             continue;
                         }
                         match runtime.as_ref() {
-                            Some(rt) => execute_sql(&mut stream, sequence.wrapping_add(1), sql, rt, &mut session, &[], false, &[])?,
+                            Some(rt) => execute_sql(&mut reader, sequence.wrapping_add(1), sql, rt, &mut session, &[], false, &[], true)?,
                             None => write_error(
-                                &mut stream,
+                                &mut reader,
                                 sequence.wrapping_add(1),
                                 1235,
                                 "42000",
@@ -772,7 +820,7 @@ fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRunt
             // `ER_UNKNOWN_COM_ERROR` keeps one request in, one response out: the
             // next packet still starts a new command, so the stream never shifts.
             command => {
-                write_error(&mut stream, sequence.wrapping_add(1), ER_UNKNOWN_COM_ERROR, "HY000", &format!("Unknown command {command:#04X}"))?
+                write_error(&mut reader, sequence.wrapping_add(1), ER_UNKNOWN_COM_ERROR, "HY000", &format!("Unknown command {command:#04X}"))?
             }
         }
     }
@@ -882,25 +930,82 @@ fn advance(payload: &[u8], cursor: &mut usize, length: usize) -> Result<(), &'st
     Ok(())
 }
 
-fn read_packet(stream: &mut impl Read) -> io::Result<ReadPacket> {
-    let mut header = [0; 4];
-    let mut read = 0;
-    while read < header.len() {
-        match stream.read(&mut header[read..]) {
-            Ok(0) if read == 0 => return Ok(ReadPacket::Closed),
-            Ok(0) => return Err(invalid_data("truncated MySQL packet header")),
-            Ok(count) => read += count,
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-            Err(error) => return Err(error),
+/// Buffered classic-protocol reader.
+///
+/// One `read` returns whatever the OS has, which used to mean a separate
+/// syscall for the 4-byte header and another for the payload of every command.
+/// Keeping a session buffer lets one syscall serve a header plus its payload,
+/// and pipelines the next command when the client already sent it.
+struct PacketReader<R> {
+    stream: R,
+    buffer: Vec<u8>,
+    start: usize,
+}
+
+impl<R: Read> PacketReader<R> {
+    fn new(stream: R) -> Self {
+        Self { stream, buffer: Vec::with_capacity(16 * 1024), start: 0 }
+    }
+
+    /// Ensures at least `needed` unconsumed bytes are buffered.
+    /// Returns `false` when the peer closed before that many bytes arrived.
+    fn fill(&mut self, needed: usize) -> io::Result<bool> {
+        if self.buffer.len().saturating_sub(self.start) >= needed {
+            return Ok(true);
         }
+        if self.start > 0 {
+            self.buffer.copy_within(self.start.., 0);
+            let live = self.buffer.len() - self.start;
+            self.buffer.truncate(live);
+            self.start = 0;
+        }
+        while self.buffer.len() < needed {
+            let want = (needed - self.buffer.len()).min(256 * 1024);
+            let filled = self.buffer.len();
+            self.buffer.resize(filled + want, 0);
+            match self.stream.read(&mut self.buffer[filled..]) {
+                Ok(0) => {
+                    self.buffer.truncate(filled);
+                    return Ok(false);
+                }
+                Ok(count) => self.buffer.truncate(filled + count),
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => self.buffer.truncate(filled),
+                Err(error) => {
+                    self.buffer.truncate(filled);
+                    return Err(error);
+                }
+            }
+        }
+        Ok(true)
     }
-    let length = usize::from(header[0]) | (usize::from(header[1]) << 8) | (usize::from(header[2]) << 16);
-    if length > MAX_PACKET {
-        return Ok(ReadPacket::TooLarge(header[3]));
+
+    fn read_packet(&mut self) -> io::Result<ReadPacket> {
+        if !self.fill(4)? {
+            return if self.buffer.is_empty() { Ok(ReadPacket::Closed) } else { Err(invalid_data("truncated MySQL packet header")) };
+        }
+        let header = &self.buffer[self.start..self.start + 4];
+        let length = usize::from(header[0]) | (usize::from(header[1]) << 8) | (usize::from(header[2]) << 16);
+        let sequence = header[3];
+        if length > MAX_PACKET {
+            return Ok(ReadPacket::TooLarge(sequence));
+        }
+        if !self.fill(4 + length)? {
+            return Err(invalid_data("truncated MySQL packet payload"));
+        }
+        let payload = self.buffer[self.start + 4..self.start + 4 + length].to_vec();
+        self.start += 4 + length;
+        Ok(ReadPacket::Packet(sequence, payload))
     }
-    let mut payload = vec![0; length];
-    stream.read_exact(&mut payload)?;
-    Ok(ReadPacket::Packet(header[3], payload))
+}
+
+impl<R: Write> Write for PacketReader<R> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.stream.write(bytes)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.stream.flush()
+    }
 }
 
 /// Result of one wire frame read.
@@ -958,28 +1063,36 @@ fn execute_sql(
     column_types: &[u8],
     binary_rows: bool,
     column_nullables: &[bool],
+    meta_checked: bool,
 ) -> io::Result<()> {
-    match analyze_meta_query(sql, SqlDialect::Mysql) {
-        Err(error) => {
-            session.fail();
-            write_statement_error(stream, sequence, "metadata", error)?;
-            return Ok(());
+    if !meta_checked {
+        let analyzed_meta = analyze_meta_query(sql, SqlDialect::Mysql);
+        match analyzed_meta {
+            Err(error) => {
+                session.fail();
+                write_statement_error(stream, sequence, "metadata", error)?;
+                return Ok(());
+            }
+            Ok(Some(meta)) => {
+                let described = meta.describe();
+                let result = meta.execute(&runtime.schema, &session.schema);
+                let declared_types: Vec<u8> = described.iter().map(|column| mysql_field_type(&column.field_type)).collect();
+                let declared_nullables: Vec<bool> = described.iter().map(|column| column.field_type.is_nullable()).collect();
+                let column_types = if column_types.is_empty() { &declared_types } else { column_types };
+                let column_nullables = if column_nullables.is_empty() { &declared_nullables } else { column_nullables };
+                return write_result_set(stream, sequence, &result, column_types, column_nullables, binary_rows, session.status_flags());
+            }
+            Ok(None) => {}
         }
-        Ok(Some(meta)) => {
-            let described = meta.describe();
-            let result = meta.execute(&runtime.schema, &session.schema);
-            let declared_types: Vec<u8> = described.iter().map(|column| mysql_field_type(&column.field_type)).collect();
-            let declared_nullables: Vec<bool> = described.iter().map(|column| column.field_type.is_nullable()).collect();
-            let column_types = if column_types.is_empty() { &declared_types } else { column_types };
-            let column_nullables = if column_nullables.is_empty() { &declared_nullables } else { column_nullables };
-            return write_result_set(stream, sequence, &result, column_types, column_nullables, binary_rows, session.status_flags());
-        }
-        Ok(None) => {}
     }
-    let catalog = runtime.schema.catalog();
+    let revision = runtime.schema.revision();
+    if session.catalog_cache.as_ref().is_none_or(|(cached, _)| *cached != revision) {
+        session.catalog_cache = Some((revision, runtime.schema.catalog()));
+    }
+    let catalog = &session.catalog_cache.as_ref().expect("catalog cache was just filled").1;
     let bound = match bind_sql_catalog_with_variables(
         sql,
-        &catalog,
+        catalog,
         catalog.schema_version(),
         &|name: &str| mysql_system_variable(name, session.autocommit),
         SqlDialect::Mysql,
@@ -1006,7 +1119,7 @@ fn execute_sql(
     // The engine reports the generated value in the OK packet; drivers surface
     // it as `insertId` / `lastrowid`.
     let last_insert_id = if bound_insert_column_count(&bound) > columns_before { allocated_last_insert_id(&bound) } else { None };
-    let plan = match plan_statement_for_dialect(bound, &catalog, SqlDialect::Mysql) {
+    let plan = match plan_statement_for_dialect(bound, catalog, SqlDialect::Mysql) {
         Ok(plan) => plan,
         Err(error) => {
             session.fail();
@@ -1299,8 +1412,7 @@ fn handle_execute(
         }
     }
 
-    let sql = statement.sql.clone();
-    let description = statement.description.clone();
+    let sql = statement.sql.as_str();
     if session.failed {
         write_error(stream, sequence, 40001, "HY000", "current transaction is aborted")?;
         return Ok(());
@@ -1311,7 +1423,7 @@ fn handle_execute(
         write_error(stream, sequence, 1235, "42000", "YYDS MySQL SQL execution is not implemented (no SQL runtime)")?;
         return Ok(());
     };
-    let rendered = match substitute_sql_parameters(&sql, &values, SqlParameterStyle::QuestionMark) {
+    let rendered = match substitute_sql_parameters(sql, &values, SqlParameterStyle::QuestionMark) {
         Ok(rendered) => rendered,
         Err(error) => {
             session.fail();
@@ -1319,9 +1431,9 @@ fn handle_execute(
             return Ok(());
         }
     };
-    let column_types: Vec<u8> = description.iter().map(|column| mysql_field_type(&column.field_type)).collect();
-    let column_nullables: Vec<bool> = description.iter().map(|column| column.field_type.is_nullable()).collect();
-    execute_sql(stream, sequence, &rendered, runtime, session, &column_types, true, &column_nullables)
+    let column_types: Vec<u8> = statement.description.iter().map(|column| mysql_field_type(&column.field_type)).collect();
+    let column_nullables: Vec<bool> = statement.description.iter().map(|column| column.field_type.is_nullable()).collect();
+    execute_sql(stream, sequence, &rendered, runtime, session, &column_types, true, &column_nullables, false)
 }
 
 /// `COM_STMT_RESET` clears the cached parameter binding and returns OK.
