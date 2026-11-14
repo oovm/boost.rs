@@ -1,12 +1,13 @@
 //! Apollo 渲染器合同 — CPU reference 与后端共用合同。
 //!
 //! 只消费 Scene IR。不得重新推断 stat、scale 或 layout。
-//! SVG / WGPU 实现分别在 `apollo-backend-svg` 与 `apollo-backend-wgpu`。
+//! SVG 实现在 `plotter.renderer.svg`；加速后端尚未内建，见 [`gpu`]。
 
 #![deny(missing_docs)]
 
 mod cpu;
 mod font;
+pub mod gpu;
 mod prepare;
 mod report;
 mod target;

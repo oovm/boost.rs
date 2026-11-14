@@ -38,12 +38,6 @@ pub mod renderer {
     pub mod svg {
         pub use plotter_renderer_svg::*;
     }
-
-    /// WGPU / WebGPU 后端。
-    #[cfg(feature = "wgpu")]
-    pub mod wgpu {
-        pub use plotter_renderer_wgpu::*;
-    }
 }
 
 /// 通用矢量场景（semantic + display）。

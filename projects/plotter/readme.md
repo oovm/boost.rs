@@ -36,7 +36,6 @@ flowchart TB
     L[plotter.layout]
     R[plotter.renderer]
     RS[plotter.renderer.svg]
-    RW[plotter.renderer.wgpu]
   end
 
   subgraph vector["矢量场景链"]
@@ -60,7 +59,6 @@ flowchart TB
   L --> T & D
   R --> T & V
   RS --> R
-  RW --> R
   S --> T
   DG --> T & S
   C --> T & S
@@ -79,7 +77,7 @@ flowchart TB
 | `plotter.grammar`                    | `plotter-grammar`                    | `PlotSpec` → view 编译                                                                                   |
 | `plotter.view`                       | `plotter-view`                       | GoG 的后端无关 Scene IR（Arena + 稳定 ID）                                                               |
 | `plotter.layout`                     | `plotter-layout`                     | 面板与图/树布局                                                                                          |
-| `plotter.renderer*`                  | `plotter-renderer{-svg,-wgpu}`       | CPU 合同与后端                                                                                           |
+| `plotter.renderer*`                  | `plotter-renderer{-svg}`             | CPU 合同与 SVG 后端；GPU 待内部实现       |
 | `plotter.scene`                      | `plotter-scene`                      | 通用矢量 `SemanticScene` / `DisplayScene`                                                                |
 | `plotter.diagram`                    | `plotter-diagram`                    | **只做** `DiagramSpec → plan → scene`，不含语言前端                                                      |
 | `plotter.chart`                      | `plotter-chart`                      | 图表 / Vega-Lite，与 diagram 平行                                                                        |
@@ -135,8 +133,10 @@ flowchart LR
   Layout --> View
   View --> Renderer[plotter.renderer]
   Renderer --> SVG[renderer.svg]
-  Renderer --> WGPU[renderer.wgpu]
 ```
+
+渲染只有 SVG / CPU 两条路径。`renderer::gpu::is_available()` 恒为 `false`，`renderer::gpu::render` 返回
+`GpuUnavailable`；GPU 后端待 D3D12 内部实现后接入，不引入外部 GPU 运行时。
 
 ### 3.2 Diagram（图语言 → 矢量）
 
