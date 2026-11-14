@@ -3919,7 +3919,22 @@ pub(crate) fn write_error(stream: &mut dyn Write, message: &str) -> io::Result<(
 }
 
 pub(crate) fn write_bulk(stream: &mut dyn Write, bytes: &[u8]) -> io::Result<()> {
-    write!(stream, "${}\r\n", bytes.len())?;
+    // A collection reply calls this once per element, so the decimal length is
+    // rendered from a stack buffer instead of the generic formatting machinery.
+    let mut digits = [0_u8; 20];
+    let mut index = digits.len();
+    let mut length = bytes.len();
+    loop {
+        index -= 1;
+        digits[index] = b'0' + (length % 10) as u8;
+        length /= 10;
+        if length == 0 {
+            break;
+        }
+    }
+    stream.write_all(b"$")?;
+    stream.write_all(&digits[index..])?;
+    stream.write_all(b"\r\n")?;
     stream.write_all(bytes)?;
     stream.write_all(b"\r\n")
 }

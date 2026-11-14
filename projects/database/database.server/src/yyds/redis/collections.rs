@@ -277,6 +277,102 @@ pub(crate) fn decode_zset(bytes: &[u8]) -> Option<Vec<(Vec<u8>, f64)>> {
     if rest.is_empty() { Some(entries) } else { None }
 }
 
+/// zset 值的借用视图。
+///
+/// 全量读取只需要遍历成员一次，这里返回借用成员切片的条目，避免
+/// `decode_zset` 为每个成员分配一个 `Vec<u8>`。结构校验与 `decode_zset`
+/// 相同：长度必须自洽，且最后一个条目之后不能有剩余字节。
+fn zset_blob_view(bytes: &[u8]) -> Option<Vec<(&[u8], f64)>> {
+    let (count, mut rest) = read_u32(bytes)?;
+    let count = count as usize;
+    // 每个条目至少占 4 字节成员长度加 8 字节分数；超过这个上界说明计数损坏，
+    // 不能让损坏数据驱动一次超大分配。
+    if count > rest.len() / 12 {
+        return None;
+    }
+    let mut entries = Vec::with_capacity(count);
+    for _ in 0..count {
+        let (length, tail) = read_u32(rest)?;
+        let length = length as usize;
+        if tail.len() < length + 8 {
+            return None;
+        }
+        let (member, tail) = tail.split_at(length);
+        let score = f64::from_bits(u64::from_le_bytes(tail[..8].try_into().ok()?));
+        entries.push((member, score));
+        rest = &tail[8..];
+    }
+    if rest.is_empty() { Some(entries) } else { None }
+}
+
+/// 全量 zset 读取的排序规则，与 `sort_zset` 一致。
+fn sort_zset_view(entries: &mut [(&[u8], f64)]) {
+    entries.sort_by(|left, right| left.1.total_cmp(&right.1).then_with(|| left.0.cmp(right.0)));
+}
+
+/// 输出借用切片形式的 zset 结果，帧格式与 `write_zset_entries` 完全一致。
+fn write_zset_view(
+    stream: &mut dyn io::Write,
+    entries: &[(&[u8], f64)],
+    with_scores: bool,
+    protocol: u8,
+) -> io::Result<()> {
+    let nested = with_scores && protocol == 3;
+    let header = if with_scores && !nested { entries.len() * 2 } else { entries.len() };
+    write_array_header(stream, header)?;
+    for (member, score) in entries {
+        if nested {
+            stream.write_all(b"*2\r\n")?;
+        }
+        write_bulk(stream, member)?;
+        if with_scores {
+            write_score(stream, *score, protocol)?;
+        }
+    }
+    Ok(())
+}
+
+/// 统计并校验 set blob 的成员数，不复制成员。
+fn set_blob_count(bytes: &[u8]) -> Option<usize> {
+    let (count, mut rest) = read_u32(bytes)?;
+    let count = count as usize;
+    if count > rest.len() / 4 {
+        return None;
+    }
+    for _ in 0..count {
+        let (length, tail) = read_u32(rest)?;
+        let length = length as usize;
+        if tail.len() < length {
+            return None;
+        }
+        rest = &tail[length..];
+    }
+    if rest.is_empty() { Some(count) } else { None }
+}
+
+/// 直接从 set blob 写出成员回复，避免逐成员临时 `Vec<u8>`。
+///
+/// 先走一遍校验再写，结构损坏时不会留下半截帧。
+fn write_set_members(stream: &mut dyn io::Write, bytes: &[u8], protocol: u8) -> Option<io::Result<()>> {
+    let count = set_blob_count(bytes)?;
+    let corrupt = || io::Error::new(io::ErrorKind::InvalidData, "corrupt set blob");
+    let written = (|| -> io::Result<()> {
+        write_set_header(stream, count, protocol)?;
+        let (_, mut rest) = read_u32(bytes).ok_or_else(corrupt)?;
+        for _ in 0..count {
+            let (length, tail) = read_u32(rest).ok_or_else(corrupt)?;
+            let length = length as usize;
+            if tail.len() < length {
+                return Err(corrupt());
+            }
+            write_bulk(stream, &tail[..length])?;
+            rest = &tail[length..];
+        }
+        Ok(())
+    })();
+    Some(written)
+}
+
 /// hash 命令名集合。
 pub(crate) fn is_hash_command(command: &[u8]) -> bool {
     for name in [
@@ -647,12 +743,44 @@ fn score_text(score: f64) -> String {
 
 /// 分数回复：RESP2 用 bulk 文本，RESP3 用原生 double 类型。
 fn write_score(stream: &mut dyn io::Write, score: f64, protocol: u8) -> io::Result<()> {
+    // 整数分数是常见形态；直接从栈缓冲写出，避免为每个成员生成一个 `String`。
+    // 判定边界与 `score_text` 的整数分支一致，输出字节不变。
+    if score.fract() == 0.0 && score.abs() <= 4_611_686_018_427_387_904.0 {
+        let mut buffer = [0_u8; 21];
+        let digits = integer_bytes(score as i64, &mut buffer);
+        if protocol == 3 {
+            stream.write_all(b",")?;
+            stream.write_all(digits)?;
+            return stream.write_all(b"\r\n");
+        }
+        return write_bulk(stream, digits);
+    }
     if protocol == 3 {
         write!(stream, ",{}\r\n", score_text(score))
     }
     else {
         write_bulk(stream, score_text(score).as_bytes())
     }
+}
+
+/// 把有符号整数写成十进制字节，返回落在 `buffer` 里的切片。
+fn integer_bytes(value: i64, buffer: &mut [u8; 21]) -> &[u8] {
+    let mut index = buffer.len();
+    let negative = value < 0;
+    let mut magnitude = value.unsigned_abs();
+    loop {
+        index -= 1;
+        buffer[index] = b'0' + (magnitude % 10) as u8;
+        magnitude /= 10;
+        if magnitude == 0 {
+            break;
+        }
+    }
+    if negative {
+        index -= 1;
+        buffer[index] = b'-';
+    }
+    &buffer[index..]
 }
 
 /// `HSET` / `HGET` / `HGETALL` / `HDEL` / `HLEN` 的分派入口。
@@ -2403,16 +2531,21 @@ pub(crate) fn handle_set(
             return write_arity_error(stream, "smembers");
         }
         let key = request.arguments[1];
-        return match load_set(stream, executor, base, key)? {
-            Loaded::Missing => write_set_header(stream, 0, protocol),
-            Loaded::Found(members) => {
-                write_set_header(stream, members.len(), protocol)?;
-                for member in &members {
-                    write_bulk(stream, member)?;
-                }
-                Ok(())
-            }
-            Loaded::Rejected => Ok(()),
+        // 全量读取不需要逐成员解码：类型探测之后直接从成员 blob 写回复，
+        // 这样一个大集合只分配一次值拷贝，而不是每个成员一个 `Vec<u8>`。
+        match find_kind(executor, base, key) {
+            Ok(None) => return write_set_header(stream, 0, protocol),
+            Ok(Some(KeyKind::Set)) => {}
+            Ok(Some(_)) => return write_wrong_type(stream),
+            Err(message) => return write_storage_error(stream, &message),
+        }
+        return match load_value(executor, &KeyKind::Set.namespace(base), key) {
+            Ok(Some(bytes)) => match write_set_members(stream, &bytes, protocol) {
+                Some(result) => result,
+                None => write_error(stream, "stored set value is corrupt"),
+            },
+            Ok(None) => write_set_header(stream, 0, protocol),
+            Err(message) => write_storage_error(stream, &message),
         };
     }
     if command.eq_ignore_ascii_case(b"SCARD") {
@@ -3074,6 +3207,51 @@ fn parse_range_request(
         return Ok(None);
     }
     Ok(Some(request))
+}
+
+/// `ZRANGE key 0 -1 [WITHSCORES]` 的整段读形态。
+///
+/// 只有这两个下标都写成规范形式时才走借用快路径，其它写法继续走通用解析，
+/// 这样语法错误、`REV`、`BYSCORE` / `BYLEX` 与 `LIMIT` 的语义完全不变。
+fn is_full_zset_range(arguments: &[&[u8]]) -> bool {
+    if arguments.len() != 4 && arguments.len() != 5 {
+        return false;
+    }
+    if arguments.len() == 5 && !arguments[4].eq_ignore_ascii_case(b"WITHSCORES") {
+        return false;
+    }
+    arguments[2] == b"0" && arguments[3] == b"-1"
+}
+
+/// 整段读取一个 zset，直接从值 blob 输出成员与分数。
+///
+/// 通用路径会先 `decode_zset` 逐成员分配，再对选中区间做一次 `to_vec`
+/// 二次克隆；整段读只需要一份借用视图即可，分配量与成员数无关。
+fn read_full_zset(
+    stream: &mut dyn io::Write,
+    executor: &dyn KeyValueExecutor,
+    base: &Namespace,
+    key: &[u8],
+    with_scores: bool,
+    protocol: u8,
+) -> io::Result<()> {
+    match find_kind(executor, base, key) {
+        Ok(None) => return write_array_header(stream, 0),
+        Ok(Some(KeyKind::ZSet)) => {}
+        Ok(Some(_)) => return write_wrong_type(stream),
+        Err(message) => return write_storage_error(stream, &message),
+    }
+    match load_value(executor, &KeyKind::ZSet.namespace(base), key) {
+        Ok(Some(bytes)) => match zset_blob_view(&bytes) {
+            Some(mut entries) => {
+                sort_zset_view(&mut entries);
+                write_zset_view(stream, &entries, with_scores, protocol)
+            }
+            None => write_error(stream, "stored zset value is corrupt"),
+        },
+        Ok(None) => write_array_header(stream, 0),
+        Err(message) => write_storage_error(stream, &message),
+    }
 }
 
 /// 按键取出范围结果；错误回复已经写入时回 `None`。
@@ -5127,6 +5305,11 @@ pub(crate) fn handle_zset(
     if command.eq_ignore_ascii_case(b"ZRANGE") {
         if request.arguments.len() < 4 {
             return write_arity_error(stream, "zrange");
+        }
+        // 整段读是拉取大集合的常见形态：跳过逐成员解码与二次克隆。
+        if is_full_zset_range(&request.arguments) {
+            let with_scores = request.arguments.len() == 5;
+            return read_full_zset(stream, executor, base, request.arguments[1], with_scores, protocol);
         }
         let Some(range) = parse_range_request(stream, &request.arguments, (2, 3), 4, true)?
         else {
