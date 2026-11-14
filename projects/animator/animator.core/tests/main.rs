@@ -77,6 +77,29 @@ fn frame_sampling_matches_seconds() {
     let compiled = program(0.0, 2.0, 1.0).compile().expect("程序合法");
     assert_eq!(compiled.sample_frame(30, 15), Some(compiled.sample(0.5)));
     assert_eq!(compiled.sample_frame(0, 1), None);
+    assert_eq!(compiled.frame_count(0), None);
+}
+
+/// A1：同一时间轴在不同帧率下，帧号到秒的映射可以逐项复算，且帧数覆盖全长。
+#[test]
+fn frame_mapping_is_reproducible_across_frame_rates() {
+    let compiled = program(0.0, 3.0, 1.0).compile().expect("程序合法");
+    for fps in [24, 30, 60] {
+        let count = compiled.frame_count(fps).expect("fps 非零");
+        assert!(
+            f64::from(count) / f64::from(fps) >= compiled.duration_seconds(),
+            "{fps} fps 的 {count} 帧必须覆盖 {} 秒",
+            compiled.duration_seconds()
+        );
+        // 每个帧号都能用秒复算出同一场景。
+        for frame in [0, count / 3, count / 2, count - 1] {
+            assert_eq!(
+                compiled.sample_frame(fps, frame),
+                Some(compiled.sample(f64::from(frame) / f64::from(fps))),
+                "{fps} fps frame {frame}"
+            );
+        }
+    }
 }
 
 #[test]

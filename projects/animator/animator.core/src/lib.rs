@@ -240,4 +240,16 @@ impl Compiled {
         }
         Some(self.sample(f64::from(frame) / f64::from(fps)))
     }
+
+    /// 覆盖整条时间轴所需的整帧数量（向上取整）。
+    ///
+    /// 宿主按这个数量循环即可保证末帧落在或超过 `duration_seconds()`；
+    /// `fps == 0` 同样返回 `None`。取值只由时长与帧率决定，同一程序在不同
+    /// 帧率下的帧号 → 秒映射可以逐项复算。
+    pub fn frame_count(&self, fps: u32) -> Option<u32> {
+        if fps == 0 {
+            return None;
+        }
+        Some((self.duration * f64::from(fps)).ceil() as u32)
+    }
 }
