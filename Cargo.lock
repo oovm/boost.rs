@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "acorn-cfb"
 version = "0.0.1"
-source = "git+https://github.com/yggdrasil-language/acorn.rs.git?rev=281cb2349a179def31414d17ec41f3259d784b1b#281cb2349a179def31414d17ec41f3259d784b1b"
+source = "git+https://github.com/yggdrasil-language/acorn.rs.git?rev=c728e515f9545f08232c9aa7a3a743de70f833c2#c728e515f9545f08232c9aa7a3a743de70f833c2"
 dependencies = [
  "acorn-core",
 ]
@@ -13,12 +13,12 @@ dependencies = [
 [[package]]
 name = "acorn-codec"
 version = "0.0.1"
-source = "git+https://github.com/yggdrasil-language/acorn.rs.git?rev=281cb2349a179def31414d17ec41f3259d784b1b#281cb2349a179def31414d17ec41f3259d784b1b"
+source = "git+https://github.com/yggdrasil-language/acorn.rs.git?rev=c728e515f9545f08232c9aa7a3a743de70f833c2#c728e515f9545f08232c9aa7a3a743de70f833c2"
 
 [[package]]
 name = "acorn-core"
 version = "0.0.1"
-source = "git+https://github.com/yggdrasil-language/acorn.rs.git?rev=281cb2349a179def31414d17ec41f3259d784b1b#281cb2349a179def31414d17ec41f3259d784b1b"
+source = "git+https://github.com/yggdrasil-language/acorn.rs.git?rev=c728e515f9545f08232c9aa7a3a743de70f833c2#c728e515f9545f08232c9aa7a3a743de70f833c2"
 dependencies = [
  "boost-diagnostic",
 ]
@@ -26,7 +26,7 @@ dependencies = [
 [[package]]
 name = "acorn-doc"
 version = "0.0.1"
-source = "git+https://github.com/yggdrasil-language/acorn.rs.git?rev=281cb2349a179def31414d17ec41f3259d784b1b#281cb2349a179def31414d17ec41f3259d784b1b"
+source = "git+https://github.com/yggdrasil-language/acorn.rs.git?rev=c728e515f9545f08232c9aa7a3a743de70f833c2#c728e515f9545f08232c9aa7a3a743de70f833c2"
 dependencies = [
  "acorn-cfb",
  "acorn-core",
@@ -35,7 +35,7 @@ dependencies = [
 [[package]]
 name = "acorn-docx"
 version = "0.0.1"
-source = "git+https://github.com/yggdrasil-language/acorn.rs.git?rev=281cb2349a179def31414d17ec41f3259d784b1b#281cb2349a179def31414d17ec41f3259d784b1b"
+source = "git+https://github.com/yggdrasil-language/acorn.rs.git?rev=c728e515f9545f08232c9aa7a3a743de70f833c2#c728e515f9545f08232c9aa7a3a743de70f833c2"
 dependencies = [
  "acorn-core",
  "acorn-source",
@@ -44,9 +44,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "acorn-dxbc"
+version = "0.0.1"
+source = "git+https://github.com/yggdrasil-language/acorn.rs.git?rev=c728e515f9545f08232c9aa7a3a743de70f833c2#c728e515f9545f08232c9aa7a3a743de70f833c2"
+dependencies = [
+ "acorn-core",
+ "acorn-source",
+]
+
+[[package]]
 name = "acorn-epub"
 version = "0.0.1"
-source = "git+https://github.com/yggdrasil-language/acorn.rs.git?rev=281cb2349a179def31414d17ec41f3259d784b1b#281cb2349a179def31414d17ec41f3259d784b1b"
+source = "git+https://github.com/yggdrasil-language/acorn.rs.git?rev=c728e515f9545f08232c9aa7a3a743de70f833c2#c728e515f9545f08232c9aa7a3a743de70f833c2"
 dependencies = [
  "acorn-core",
  "acorn-source",
@@ -57,12 +66,12 @@ dependencies = [
 [[package]]
 name = "acorn-source"
 version = "0.0.1"
-source = "git+https://github.com/yggdrasil-language/acorn.rs.git?rev=281cb2349a179def31414d17ec41f3259d784b1b#281cb2349a179def31414d17ec41f3259d784b1b"
+source = "git+https://github.com/yggdrasil-language/acorn.rs.git?rev=c728e515f9545f08232c9aa7a3a743de70f833c2#c728e515f9545f08232c9aa7a3a743de70f833c2"
 
 [[package]]
 name = "acorn-spirv"
 version = "0.0.1"
-source = "git+https://github.com/yggdrasil-language/acorn.rs.git?rev=281cb2349a179def31414d17ec41f3259d784b1b#281cb2349a179def31414d17ec41f3259d784b1b"
+source = "git+https://github.com/yggdrasil-language/acorn.rs.git?rev=c728e515f9545f08232c9aa7a3a743de70f833c2#c728e515f9545f08232c9aa7a3a743de70f833c2"
 dependencies = [
  "acorn-core",
  "acorn-source",
@@ -71,7 +80,7 @@ dependencies = [
 [[package]]
 name = "acorn-ttf"
 version = "0.0.1"
-source = "git+https://github.com/yggdrasil-language/acorn.rs.git?rev=281cb2349a179def31414d17ec41f3259d784b1b#281cb2349a179def31414d17ec41f3259d784b1b"
+source = "git+https://github.com/yggdrasil-language/acorn.rs.git?rev=c728e515f9545f08232c9aa7a3a743de70f833c2#c728e515f9545f08232c9aa7a3a743de70f833c2"
 dependencies = [
  "acorn-core",
  "ttf-parser 0.21.1",
@@ -80,7 +89,7 @@ dependencies = [
 [[package]]
 name = "acorn-zip"
 version = "0.0.1"
-source = "git+https://github.com/yggdrasil-language/acorn.rs.git?rev=281cb2349a179def31414d17ec41f3259d784b1b#281cb2349a179def31414d17ec41f3259d784b1b"
+source = "git+https://github.com/yggdrasil-language/acorn.rs.git?rev=c728e515f9545f08232c9aa7a3a743de70f833c2#c728e515f9545f08232c9aa7a3a743de70f833c2"
 dependencies = [
  "acorn-codec",
  "acorn-core",
@@ -2070,13 +2079,13 @@ dependencies = [
 name = "hardware-emitter"
 version = "0.1.0"
 dependencies = [
+ "acorn-dxbc",
  "hardware-harness",
  "hardware-optimize",
  "hardware-program",
  "hardware-types",
  "libloading 0.9.1",
  "serde_json",
- "windows",
 ]
 
 [[package]]

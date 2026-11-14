@@ -6,6 +6,7 @@
 #![warn(missing_docs)]
 
 mod codegen;
+mod dxbc;
 mod dxil;
 mod hip;
 mod program_spirv;

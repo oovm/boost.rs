@@ -15,8 +15,6 @@ hardware-optimize = { workspace = true }
 hardware-types = { workspace = true }
 hardware-program = { workspace = true }
 
-[target.'cfg(windows)'.dependencies]
-windows = { workspace = true }
-
 [dev-dependencies]
 serde_json = { workspace = true }
+acorn-dxbc = { workspace = true }
