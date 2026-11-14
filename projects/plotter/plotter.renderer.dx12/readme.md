@@ -14,7 +14,8 @@ Node coverage: polyline (offset quad per segment), points (cross), 2D mesh,
 projected `Mesh3` / `Points3` (painter order), axis (line plus ticks) and text.
 Text runs have no triangle conversion: they are rasterised on the CPU from
 system font files (`PLOTTER_FONT_PATH` overrides; `segoeui.ttf` / `msyh.ttc` on
-Windows) and composited over the device frame in paint order. A missing font is
+Windows) and composited over the finished device frame in text order, so a text
+node always sits above every triangle. A missing font is
 `RenderError::FontUnavailable` and an uncovered character is
 `RenderError::MissingGlyph`, never a silent blank. A text-only scene needs no
 device.
