@@ -20,7 +20,7 @@ name = "acorn-core"
 version = "0.0.1"
 source = "git+https://github.com/yggdrasil-language/acorn.rs.git?rev=e104aaf89dffc55e261d15d110e88ddb392ee5d1#e104aaf89dffc55e261d15d110e88ddb392ee5d1"
 dependencies = [
- "boost-diagnostic 0.1.0 (git+https://github.com/oovm/rust-boost?rev=9aa52745d6eae2d7748c76e4e3e6555e1f6e4b86)",
+ "boost-diagnostic",
 ]
 
 [[package]]
@@ -355,10 +355,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "boost-benchmark"
-version = "0.1.0"
-
-[[package]]
 name = "boost-console"
 version = "0.1.0"
 dependencies = [
@@ -368,34 +364,10 @@ dependencies = [
 [[package]]
 name = "boost-diagnostic"
 version = "0.1.0"
-dependencies = [
- "boost-console",
- "boost-log",
- "boost-source 0.1.0",
- "boost-terminal",
- "serde",
- "serde_json",
- "serial_test 4.0.1",
- "unicode-width 0.2.3",
-]
-
-[[package]]
-name = "boost-diagnostic"
-version = "0.1.0"
 source = "git+https://github.com/oovm/rust-boost?rev=9aa52745d6eae2d7748c76e4e3e6555e1f6e4b86#9aa52745d6eae2d7748c76e4e3e6555e1f6e4b86"
 dependencies = [
  "boost-source 0.1.0 (git+https://github.com/oovm/rust-boost?rev=9aa52745d6eae2d7748c76e4e3e6555e1f6e4b86)",
  "serde",
-]
-
-[[package]]
-name = "boost-diagnostic-macro"
-version = "0.1.0"
-dependencies = [
- "boost-diagnostic 0.1.0",
- "proc-macro2",
- "quote",
- "syn 3.0.10",
 ]
 
 [[package]]
@@ -442,13 +414,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "boost-log"
-version = "0.1.0"
-dependencies = [
- "serial_test 4.0.1",
-]
-
-[[package]]
 name = "boost-random"
 version = "0.1.0"
 dependencies = [
@@ -476,22 +441,6 @@ dependencies = [
 [[package]]
 name = "boost-terminal"
 version = "0.1.0"
-
-[[package]]
-name = "boost-test"
-version = "0.1.0"
-dependencies = [
- "boost-test-macro",
-]
-
-[[package]]
-name = "boost-test-macro"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.10",
-]
 
 [[package]]
 name = "bumpalo"
@@ -3150,7 +3099,7 @@ name = "notedown-formats"
 version = "0.1.0"
 source = "git+https://github.com/notedge/notedown.git?rev=3c01bea86d5824771ff12e26dd50494f0199c0e7#3c01bea86d5824771ff12e26dd50494f0199c0e7"
 dependencies = [
- "boost-diagnostic 0.1.0 (git+https://github.com/oovm/rust-boost?rev=9aa52745d6eae2d7748c76e4e3e6555e1f6e4b86)",
+ "boost-diagnostic",
  "notedown-ir",
  "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs.git?rev=59c7d479882bc08124c81f95d03b154b5cecdcbe)",
  "oak-markdown 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs.git?rev=59c7d479882bc08124c81f95d03b154b5cecdcbe)",
@@ -3266,7 +3215,7 @@ name = "oak-css-selector"
 version = "0.0.12"
 source = "git+https://github.com/yggdrasil-language/oaks.git?rev=38e25ab8affb4218ef8d6fc1408fbfa0b2e65731#38e25ab8affb4218ef8d6fc1408fbfa0b2e65731"
 dependencies = [
- "boost-diagnostic 0.1.0 (git+https://github.com/oovm/rust-boost?rev=9aa52745d6eae2d7748c76e4e3e6555e1f6e4b86)",
+ "boost-diagnostic",
  "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=38e25ab8affb4218ef8d6fc1408fbfa0b2e65731)",
  "serde",
 ]
@@ -3443,7 +3392,7 @@ name = "oak-xpath"
 version = "0.0.12"
 source = "git+https://github.com/yggdrasil-language/oaks.git?rev=38e25ab8affb4218ef8d6fc1408fbfa0b2e65731#38e25ab8affb4218ef8d6fc1408fbfa0b2e65731"
 dependencies = [
- "boost-diagnostic 0.1.0 (git+https://github.com/oovm/rust-boost?rev=9aa52745d6eae2d7748c76e4e3e6555e1f6e4b86)",
+ "boost-diagnostic",
  "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=38e25ab8affb4218ef8d6fc1408fbfa0b2e65731)",
  "serde",
 ]
@@ -3453,7 +3402,7 @@ name = "oak-xpath"
 version = "0.0.12"
 source = "git+https://github.com/yggdrasil-language/oaks.git?rev=541b204a3d6fe2806dea1f905736261bf1d0b4ae#541b204a3d6fe2806dea1f905736261bf1d0b4ae"
 dependencies = [
- "boost-diagnostic 0.1.0 (git+https://github.com/oovm/rust-boost?rev=9aa52745d6eae2d7748c76e4e3e6555e1f6e4b86)",
+ "boost-diagnostic",
  "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=541b204a3d6fe2806dea1f905736261bf1d0b4ae)",
  "serde",
 ]

@@ -6,20 +6,14 @@ resolver = "2"
 # to resolve a manifest.
 members = [
     "projects/boost/boost",
-    "projects/boost/boost-benchmark",
     "projects/boost/boost-console",
-    "projects/boost/boost-diagnostic",
-    "projects/boost/boost-diagnostic-macro",
     "projects/boost/boost-fs",
     "projects/boost/boost.harness",
     "projects/boost/boost.harness.macro",
     "projects/boost/boost-http",
-    "projects/boost/boost-log",
     "projects/boost/boost-random",
     "projects/boost/boost-source",
     "projects/boost/boost-terminal",
-    "projects/boost/boost-test",
-    "projects/boost/boost-test-macro",
     "projects/crawler/crawler",
     "projects/crawler/crawler.browser",
     "projects/crawler/crawler.extract",
@@ -167,20 +161,14 @@ publish = false
 [workspace.dependencies]
 # 核心库
 boost = { path = "projects/boost/boost" }
-boost-benchmark = { path = "projects/boost/boost-benchmark" }
 boost-console = { path = "projects/boost/boost-console" }
-boost-diagnostic = { path = "projects/boost/boost-diagnostic", features = ["serde"] }
-boost-diagnostic-macro = { path = "projects/boost/boost-diagnostic-macro" }
 boost-fs = { path = "projects/boost/boost-fs" }
 boost-harness = { path = "projects/boost/boost.harness", features = ["serde"] }
 boost-harness-macro = { path = "projects/boost/boost.harness.macro" }
 boost-http = { path = "projects/boost/boost-http" }
-boost-log = { path = "projects/boost/boost-log" }
 boost-random = { path = "projects/boost/boost-random" }
 boost-source = { path = "projects/boost/boost-source" }
 boost-terminal = { path = "projects/boost/boost-terminal" }
-boost-test = { path = "projects/boost/boost-test" }
-boost-test-macro = { path = "projects/boost/boost-test-macro" }
 # 内部库
 crawler = { path = "projects/crawler/crawler" }
 crawler-browser = { path = "projects/crawler/crawler.browser" }
@@ -438,6 +426,7 @@ oak-sql = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "38e25
 [profile.release]
 lto = true
 panic = "abort"
+
 
 
 
