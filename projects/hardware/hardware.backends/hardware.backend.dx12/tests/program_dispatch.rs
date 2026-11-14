@@ -1,0 +1,144 @@
+//! Direct3D 12 dispatch of serialized generic UCF programs.
+//!
+//! These tests need a usable D3D12 adapter and skip with a message otherwise,
+//! matching the other device tests in this crate.
+
+use std::collections::BTreeMap;
+
+use hardware_backend_dx12::Dx12Backend;
+use hardware_ir::{Access, Domain, Graph, ParamValue, Priority, ResourceGraph, ResourceId, ResourceKind, ResourceNode, ShaderId, TaskGraph, TaskId, TaskKind, TaskNode};
+use hardware_program::{BinOp, Expr, Function, Program, Stmt, Ty, program_hash};
+use hardware_scheduler::Backend;
+use hardware_types::{Dispatch, ResourceId as Rid};
+
+fn buffer(id: u64, floats: usize) -> ResourceNode {
+    ResourceNode {
+        id: ResourceId(id),
+        kind: ResourceKind::Buffer,
+        domain: Domain::Vram,
+        access: Access::ReadWrite,
+        byte_size: Some((floats * 4) as u64),
+    }
+}
+
+fn dispatch_task(id: u64, program: &Program, params: BTreeMap<String, ParamValue>) -> TaskNode {
+    let mut params = params;
+    params.insert(
+        "program".into(),
+        ParamValue::Program { version: 1, hash: program_hash(program), body: serde_json::to_string(program).expect("serialize program") },
+    );
+    TaskNode {
+        id: TaskId(id),
+        kind: TaskKind::Dispatch,
+        shader: ShaderId(id),
+        params,
+        dispatch: Dispatch::Explicit { x: 4, y: 1, z: 1 },
+        objective: hardware_ir::Objective::MaxThroughput,
+        priority: Priority::Batch,
+    }
+}
+
+fn program(body: Vec<Stmt>) -> Program {
+    Program { version: 1, functions: vec![Function { name: "main".into(), params: Vec::new(), locals: Vec::new(), body, ret: Ty::f32() }], entry: 0 }
+}
+
+fn open() -> Option<Dx12Backend> {
+    match Dx12Backend::new() {
+        Ok(backend) => Some(backend),
+        Err(error) => {
+            eprintln!("skip dx12 program dispatch (no usable D3D12 device): {error}");
+            None
+        }
+    }
+}
+
+#[test]
+fn dispatches_uniform_scaled_buffer_reads() {
+    let program = program(vec![Stmt::Return(Expr::BinOp {
+        op: BinOp::Mul,
+        lhs: Box::new(Expr::LoadUniform(0)),
+        rhs: Box::new(Expr::LoadBuffer { resource: 0, index: Box::new(Expr::GlobalId) }),
+    })]);
+    let graph = Graph {
+        resources: ResourceGraph { nodes: vec![buffer(1, 4), buffer(2, 4)] },
+        tasks: TaskGraph {
+            nodes: vec![dispatch_task(
+                10,
+                &program,
+                BTreeMap::from([
+                    ("output".to_string(), ParamValue::I64(2)),
+                    ("buffer_0".to_string(), ParamValue::I64(1)),
+                    ("uniform_0".to_string(), ParamValue::F64(2.0)),
+                ]),
+            )],
+            edges: Vec::new(),
+        },
+    };
+
+    let Some(mut dx12) = open()
+    else {
+        return;
+    };
+    dx12.prepare(&graph).expect("prepare");
+    dx12.write_f32(Rid(1), &[1.0, 2.0, 3.0, 4.0]).expect("seed");
+    dx12.run_prepared(&graph).expect("dispatch");
+    let actual = dx12.read_f32(Rid(2)).expect("read");
+    assert_eq!(actual, vec![2.0, 4.0, 6.0, 8.0]);
+}
+
+#[test]
+fn dispatches_storage_buffer_writes() {
+    let program = program(vec![
+        Stmt::StoreBuffer { resource: 0, index: Expr::GlobalId, value: Expr::ConstF32(1.5) },
+        Stmt::Return(Expr::ConstF32(0.0)),
+    ]);
+    let graph = Graph {
+        resources: ResourceGraph { nodes: vec![buffer(2, 4), buffer(3, 4)] },
+        tasks: TaskGraph {
+            nodes: vec![dispatch_task(
+                12,
+                &program,
+                BTreeMap::from([("output".to_string(), ParamValue::I64(3)), ("buffer_0".to_string(), ParamValue::I64(2))]),
+            )],
+            edges: Vec::new(),
+        },
+    };
+
+    let Some(mut dx12) = open()
+    else {
+        return;
+    };
+    dx12.prepare(&graph).expect("prepare");
+    dx12.run_prepared(&graph).expect("dispatch");
+    let actual = dx12.read_f32(Rid(2)).expect("read");
+    assert_eq!(actual, vec![1.5; 4]);
+}
+
+#[test]
+fn dispatches_uniform_only_program() {
+    let program = program(vec![Stmt::Return(Expr::BinOp {
+        op: BinOp::Add,
+        lhs: Box::new(Expr::LoadUniform(0)),
+        rhs: Box::new(Expr::ConstF32(0.5)),
+    })]);
+    let graph = Graph {
+        resources: ResourceGraph { nodes: vec![buffer(2, 4)] },
+        tasks: TaskGraph {
+            nodes: vec![dispatch_task(
+                11,
+                &program,
+                BTreeMap::from([("output".to_string(), ParamValue::I64(2)), ("uniform_0".to_string(), ParamValue::F64(1.5))]),
+            )],
+            edges: Vec::new(),
+        },
+    };
+
+    let Some(mut dx12) = open()
+    else {
+        return;
+    };
+    dx12.prepare(&graph).expect("prepare");
+    dx12.run_prepared(&graph).expect("dispatch");
+    let actual = dx12.read_f32(Rid(2)).expect("read");
+    assert_eq!(actual, vec![2.0; 4]);
+}

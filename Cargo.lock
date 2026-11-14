@@ -1885,9 +1885,11 @@ dependencies = [
  "hardware-capability",
  "hardware-emitter",
  "hardware-ir",
+ "hardware-program",
  "hardware-runtime",
  "hardware-scheduler",
  "hardware-types",
+ "serde_json",
  "windows",
 ]
 
@@ -1977,6 +1979,7 @@ dependencies = [
 name = "hardware-input-wgsl"
 version = "0.1.0"
 dependencies = [
+ "acorn-dxbc",
  "acorn-spirv",
  "hardware-emitter",
  "hardware-frontend",

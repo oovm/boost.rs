@@ -28,6 +28,10 @@ fn encodes_generic_programs_through_the_unified_entry() {
     let module = encode_program(&program, "fill", TargetIsa::Spirv, CodegenOptions::default()).expect("SPIR-V");
     assert_eq!(module.isa, TargetIsa::Spirv);
     assert_eq!(&module.bytes[0..4], &0x0723_0203u32.to_le_bytes());
+
+    let module = encode_program(&program, "fill", TargetIsa::Dxbc, CodegenOptions::default()).expect("DXBC");
+    assert_eq!(module.isa, TargetIsa::Dxbc);
+    assert_eq!(&module.bytes[0..4], b"DXBC");
 }
 
 #[test]
@@ -43,6 +47,6 @@ fn reports_missing_program_encoders_explicitly() {
         }],
         entry: 0,
     };
-    let error = encode_program(&program, "fill", TargetIsa::Dxbc, CodegenOptions::default()).expect_err("no DXBC program encoder");
-    assert!(matches!(error, CodegenError::Unsupported { isa: TargetIsa::Dxbc, .. }));
+    let error = encode_program(&program, "fill", TargetIsa::Hsaco, CodegenOptions::default()).expect_err("no HSACO program encoder");
+    assert!(matches!(error, CodegenError::Unsupported { isa: TargetIsa::Hsaco, .. }));
 }

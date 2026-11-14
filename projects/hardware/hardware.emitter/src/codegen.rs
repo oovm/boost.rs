@@ -9,7 +9,7 @@ use hardware_optimize::{OptimizeOptions, optimize_program};
 use hardware_program::{Program, validate_program};
 use hardware_types::ShaderProgram;
 
-use crate::{emit_dxil, emit_hsaco, emit_program_spirv, emit_ptx, emit_spirv};
+use crate::{emit_dxil, emit_hsaco, emit_program_dxbc, emit_program_spirv, emit_ptx, emit_spirv};
 
 /// Target instruction set architecture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -188,7 +188,7 @@ pub fn encode_shader_traced(shader: &ShaderProgram, isa: TargetIsa, tracer: &mut
 /// Encodes a generic UCF program for `isa`.
 ///
 /// The program is validated and optimized once, then handed to the ISA
-/// encoder. Only SPIR-V accepts the generic program shape today.
+/// encoder. SPIR-V and DXBC accept the generic program shape today.
 pub fn encode_program(program: &Program, entry: &str, isa: TargetIsa, options: CodegenOptions) -> Result<EncodedModule, CodegenError> {
     validate_program(program).map_err(|error| CodegenError::Invalid(error.to_string()))?;
     let optimized;
@@ -199,11 +199,13 @@ pub fn encode_program(program: &Program, entry: &str, isa: TargetIsa, options: C
     else {
         program
     };
-    if isa != TargetIsa::Spirv {
-        return Err(CodegenError::Unsupported { isa, reason: "generic UCF programs still lack a program-level encoder for this ISA".into() });
-    }
-    let bytes =
-        emit_program_spirv(program, entry).map_err(|error| CodegenError::Encode { isa: TargetIsa::Spirv, message: error.to_string() })?;
+    let bytes = match isa {
+        TargetIsa::Spirv => emit_program_spirv(program, entry).map_err(|error| CodegenError::Encode { isa, message: error.to_string() })?,
+        TargetIsa::Dxbc => emit_program_dxbc(program, entry).map_err(|error| CodegenError::Encode { isa, message: error.to_string() })?,
+        _ => {
+            return Err(CodegenError::Unsupported { isa, reason: "generic UCF programs still lack a program-level encoder for this ISA".into() })
+        }
+    };
     Ok(EncodedModule { isa, bytes })
 }
 

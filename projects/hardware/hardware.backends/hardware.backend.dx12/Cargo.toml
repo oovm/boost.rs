@@ -12,8 +12,10 @@ publish.workspace = true
 hardware-capability = { workspace = true }
 hardware-emitter = { workspace = true }
 hardware-ir = { workspace = true }
+hardware-program = { workspace = true }
 hardware-scheduler = { workspace = true }
 hardware-types = { workspace = true }
+serde_json = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true }

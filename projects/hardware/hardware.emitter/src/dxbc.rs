@@ -189,14 +189,30 @@ impl Stage {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub(crate) enum Opcode {
+    /// `add`.
+    Add = 0,
+    /// `and`.
+    And = 1,
+    /// `break`.
+    Break = 2,
     /// `breakc` with the non-zero test control bit.
     BreakCNz = 3,
+    /// `continue`.
+    Continue = 7,
     /// `div`.
     Div = 14,
+    /// `else`.
+    Else = 18,
     /// `endif`.
     EndIf = 21,
     /// `endloop`.
     EndLoop = 22,
+    /// `eq`.
+    Eq = 24,
+    /// `exp`, the base-two exponential.
+    Exp = 25,
+    /// `ge`.
+    Ge = 29,
     /// `iadd`.
     IAdd = 30,
     /// `if_nz`.
@@ -205,20 +221,56 @@ pub(crate) enum Opcode {
     IMad = 35,
     /// `imul`, which writes a high and a low half.
     IMul = 38,
+    /// `ineg`.
+    INeg = 40,
     /// `ishl`.
     IShl = 41,
+    /// `itof`.
+    IToF = 43,
+    /// `log`, the base-two logarithm.
+    Log = 47,
     /// `loop`.
     Loop = 48,
+    /// `lt`.
+    Lt = 49,
     /// `mad`.
     Mad = 50,
+    /// `min`.
+    Min = 51,
+    /// `max`.
+    Max = 52,
     /// `mov`.
     Mov = 54,
+    /// `movc`.
+    MovC = 55,
+    /// `mul`.
+    Mul = 56,
+    /// `ne`.
+    Ne = 57,
+    /// `not`.
+    Not = 59,
+    /// `or`.
+    Or = 60,
     /// `ret`.
     Ret = 62,
+    /// `round_ni`.
+    RoundNI = 65,
+    /// `rsq`.
+    Rsq = 68,
+    /// `sqrt`.
+    Sqrt = 75,
+    /// `sincos`, which writes the sine and cosine of its source.
+    Sincos = 77,
     /// `udiv`, which writes a quotient and a remainder.
     UDiv = 78,
     /// `uge`.
     Uge = 80,
+    /// `umax`.
+    UMax = 83,
+    /// `umin`.
+    UMin = 84,
+    /// `ushr`.
+    UShr = 85,
     /// `dcl_constantbuffer`.
     DclConstantBuffer = 89,
     /// `dcl_input`.

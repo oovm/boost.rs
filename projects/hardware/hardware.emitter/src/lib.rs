@@ -9,6 +9,7 @@ mod codegen;
 mod dxbc;
 mod dxil;
 mod hip;
+mod program_dxbc;
 mod program_spirv;
 mod ptx;
 mod spirv;
@@ -21,6 +22,7 @@ pub use codegen::{
 };
 pub use dxil::{RasterTriDxbc, RasterVertexDxbc, emit_dxil, emit_raster_tri_dxbc, emit_vertex_raster_dxbc};
 pub use hip::{emit_hip, emit_hsaco};
+pub use program_dxbc::{ProgramBindings, ProgramDxbcError, WORKGROUP_SIZE, emit_program_dxbc, program_bindings, program_uniform_count};
 pub use program_spirv::{ProgramSpirvError, emit_program_spirv};
 pub use ptx::emit_ptx;
 pub use spirv::{RasterTriSpirv, emit_raster_tri_spirv, emit_spirv};

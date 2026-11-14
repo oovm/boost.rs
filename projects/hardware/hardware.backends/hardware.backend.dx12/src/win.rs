@@ -1,8 +1,11 @@
 use std::collections::BTreeMap;
 
 use hardware_capability::{Feature, FeatureSet, WiredStrategies};
-use hardware_emitter::{TargetIsa, emit_raster_tri_dxbc, emit_vertex_raster_dxbc, encode_shader, program_from_task};
-use hardware_ir::Graph;
+use hardware_emitter::{
+    CodegenOptions, TargetIsa, WORKGROUP_SIZE, emit_raster_tri_dxbc, emit_vertex_raster_dxbc, encode_program, encode_shader, program_from_task,
+};
+use hardware_ir::{Graph, ParamValue};
+use hardware_program::{Program, program_hash};
 use hardware_scheduler::{Backend, Error as SchedulerError, Result};
 use hardware_types::{ResourceId, TaskKind, TaskNode};
 use windows::{
@@ -584,6 +587,165 @@ impl Dx12Backend {
         }
     }
 
+    /// Dispatch a serialized generic UCF program over its output buffer.
+    ///
+    /// Params: `program` (serialized UCF body with its hash), `output` (result
+    /// buffer), `buffer_{n}` for every input resource the program reads,
+    /// optional `uniform_{n}` scalars, and explicit dispatch dimensions.
+    ///
+    /// Uniforms travel as 32-bit root constants with the same layout the SPIR-V
+    /// push-constant path uses: constant `0` is the dispatch count and constant
+    /// `n + 1` is uniform slot `n`.
+    fn run_program_task(&mut self, task: &TaskNode) -> Result<()> {
+        let (version, expected_hash, body) = match task.params.get("program") {
+            Some(ParamValue::Program { version, hash, body }) => (*version, *hash, body),
+            _ => return Err(map_backend_err(BackendError("Dispatch requires a serialized generic UCF program".into()))),
+        };
+        if version != 1 {
+            return Err(map_backend_err(BackendError(format!("unsupported generic UCF program version {version}"))));
+        }
+        let program: Program =
+            serde_json::from_str(body).map_err(|error| map_backend_err(BackendError(format!("invalid generic UCF program body: {error}"))))?;
+        let actual_hash = program_hash(&program);
+        if actual_hash != expected_hash {
+            return Err(map_backend_err(BackendError(format!(
+                "generic UCF program hash mismatch: expected {expected_hash}, got {actual_hash}"
+            ))));
+        }
+
+        let output = resource_param(task, "output").map_err(map_backend_err)?;
+        let bytes = self.buf_bytes(output)?;
+        if bytes == 0 || bytes % 4 != 0 {
+            return Err(map_backend_err(BackendError(format!(
+                "generic UCF output resource {} must contain 4-byte scalar elements",
+                output.0
+            ))));
+        }
+        let output_count = u32::try_from(bytes / 4)
+            .map_err(|_| map_backend_err(BackendError("generic UCF output element count exceeds u32".into())))?;
+        let dispatch_count = match task.dispatch {
+            hardware_types::Dispatch::Explicit { x, y, z } => x
+                .checked_mul(y)
+                .and_then(|value| value.checked_mul(z))
+                .ok_or_else(|| map_backend_err(BackendError("generic UCF dispatch dimensions overflow".into())))?,
+            hardware_types::Dispatch::Auto => {
+                return Err(map_backend_err(BackendError("generic UCF dispatch requires explicit dimensions".into())))
+            }
+        };
+        if dispatch_count > output_count {
+            return Err(map_backend_err(BackendError(format!(
+                "generic UCF dispatch count {dispatch_count} exceeds output capacity {output_count}"
+            ))));
+        }
+
+        let mut reads = Vec::new();
+        let mut writes = Vec::new();
+        let bindings = hardware_emitter::program_bindings(&program);
+        for resource in &bindings.reads {
+            let key = format!("buffer_{resource}");
+            let id = resource_param(task, &key).map_err(map_backend_err)?;
+            let input_bytes = self.buf_bytes(id)?;
+            if input_bytes % 4 != 0 {
+                return Err(map_backend_err(BackendError(format!(
+                    "generic UCF resource {} must contain 4-byte scalar elements",
+                    id.0
+                ))));
+            }
+            reads.push(id);
+        }
+        for resource in &bindings.writes {
+            let key = format!("buffer_{resource}");
+            let id = resource_param(task, &key).map_err(map_backend_err)?;
+            let output_bytes = self.buf_bytes(id)?;
+            if output_bytes % 4 != 0 {
+                return Err(map_backend_err(BackendError(format!(
+                    "generic UCF resource {} must contain 4-byte scalar elements",
+                    id.0
+                ))));
+            }
+            writes.push(id);
+        }
+
+        let uniforms = hardware_emitter::program_uniform_count(&program);
+        let mut constants = vec![dispatch_count];
+        for slot in 0..uniforms {
+            let value = match task.params.get(&format!("uniform_{slot}")) {
+                Some(ParamValue::F64(value)) => (*value as f32).to_bits(),
+                Some(ParamValue::I64(value)) => (*value as f32).to_bits(),
+                Some(other) => {
+                    return Err(map_backend_err(BackendError(format!("uniform_{slot} must be numeric, got {other:?}"))));
+                }
+                None => 0,
+            };
+            constants.push(value);
+        }
+        if constants.len() > 64 {
+            return Err(map_backend_err(BackendError(format!(
+                "generic UCF program needs {} root constants, the Direct3D 12 limit is 64",
+                constants.len()
+            ))));
+        }
+
+        let dxbc = encode_program(&program, "hardware_program_main", TargetIsa::Dxbc, CodegenOptions::default())
+            .map(|module| module.bytes)
+            .map_err(|error| map_emit_err(error.to_string()))?;
+        let mut params = Vec::with_capacity(reads.len() + writes.len() + 2);
+        params.push(root_constants(0, constants.len() as u32));
+        params.push(root_uav(0));
+        params.extend((0..reads.len()).map(|slot| root_srv(slot as u32)));
+        params.extend((0..writes.len()).map(|slot| root_uav(slot as u32 + 1)));
+
+        self.mark_pipeline_path();
+        let (root, pso) = self.create_compute_pso(&dxbc, &params)?;
+        let output_va = self.gpu_va(output)?;
+        let read_vas = reads.iter().map(|id| self.gpu_va(*id)).collect::<Result<Vec<_>>>()?;
+        let write_vas = writes.iter().map(|id| self.gpu_va(*id)).collect::<Result<Vec<_>>>()?;
+        self.mark_sync_path();
+        self.mark_descriptor_path();
+
+        unsafe {
+            self.allocator.Reset().map_err(dx_err)?;
+            let list: ID3D12GraphicsCommandList =
+                self.device.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &self.allocator, Some(&pso)).map_err(dx_err)?;
+
+            for id in &reads {
+                let buf = self.buffers.get_mut(id).unwrap();
+                transition(&list, &buf.resource, buf.state, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+                buf.state = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+            }
+            for id in writes.iter().chain(std::iter::once(&output)) {
+                let buf = self.buffers.get_mut(id).unwrap();
+                transition(&list, &buf.resource, buf.state, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+                buf.state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+            }
+
+            list.SetComputeRootSignature(&root);
+            list.SetPipelineState(&pso);
+            list.SetComputeRoot32BitConstants(0, constants.len() as u32, constants.as_ptr().cast(), 0);
+            list.SetComputeRootUnorderedAccessView(1, output_va);
+            for (slot, va) in read_vas.iter().enumerate() {
+                list.SetComputeRootShaderResourceView(2 + slot as u32, *va);
+            }
+            for (slot, va) in write_vas.iter().enumerate() {
+                list.SetComputeRootUnorderedAccessView(2 + reads.len() as u32 + slot as u32, *va);
+            }
+            let groups = dispatch_count.div_ceil(WORKGROUP_SIZE).max(1);
+            list.Dispatch(groups, 1, 1);
+
+            for id in reads.iter().chain(writes.iter()).chain(std::iter::once(&output)) {
+                let buf = self.buffers.get_mut(id).unwrap();
+                let before = buf.state;
+                transition(&list, &buf.resource, before, D3D12_RESOURCE_STATE_COMMON);
+                buf.state = D3D12_RESOURCE_STATE_COMMON;
+            }
+
+            list.Close().map_err(dx_err)?;
+            let lists = [Some(list.cast().map_err(dx_err)?)];
+            self.queue.ExecuteCommandLists(&lists);
+            self.signal_fence()
+        }
+    }
+
     /// Rasterize into an R8G8B8A8 RT and copy packed pixels into buffer `dst`.
     ///
     /// Params: `dst`, `width`, `height`, optional `r`/`g`/`b`/`a` in `0..1`,
@@ -1126,6 +1288,7 @@ impl Backend for Dx12Backend {
             TaskKind::Copy => self.run_copy(task),
             TaskKind::Fill => self.run_fill(task),
             TaskKind::MatMul => self.run_matmul(task),
+            TaskKind::Dispatch => self.run_program_task(task),
             TaskKind::Raster => self.run_raster(task),
             TaskKind::RtTrace => Err(map_backend_err(BackendError("ray tracing is not in the dx12 thin gate".into()))),
             other => Err(map_backend_err(BackendError(format!("dx12 backend does not implement {other:?}")))),
