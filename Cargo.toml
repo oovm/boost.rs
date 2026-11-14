@@ -5,6 +5,7 @@ resolver = "2"
 # (\projects/hardware/hardware.backends\, \projects/database/facades\) and fail
 # to resolve a manifest.
 members = [
+    "projects/animator/animator.bridge",
     "projects/animator/animator.chart",
     "projects/animator/animator.core",
     "projects/boost/boost",
@@ -164,6 +165,7 @@ publish = false
 
 [workspace.dependencies]
 # 动画扩展
+animator-bridge = { path = "projects/animator/animator.bridge" }
 animator-chart = { path = "projects/animator/animator.chart" }
 animator-core = { path = "projects/animator/animator.core" }
 # 核心库

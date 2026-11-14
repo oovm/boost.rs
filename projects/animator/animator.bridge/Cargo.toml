@@ -1,0 +1,13 @@
+[package]
+name = "animator-bridge"
+description = "动画桥接：把 animator 时间轴逐帧取样并输出确定性的 SVG 帧序列"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+readme = "readme.md"
+
+[dependencies]
+animator-core = { workspace = true }
+plotter-scene = { workspace = true }
