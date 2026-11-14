@@ -16,7 +16,7 @@ use database_execution::{
     cluster::{KeyValueExecutor, TransactionHandle},
     sql_exec::execute_plan,
 };
-use database_protocol_mysql::PROTOCOL_VERSION;
+use database_protocol_mysql::{MAX_PACKET_PAYLOAD, PROTOCOL_VERSION};
 use database_query::{
     MYSQL_BLOB_CAPACITY, SqlBoundExpression, SqlBoundLiteral, SqlCatalogBoundExpression, SqlCatalogBoundStatement, SqlColumn, SqlDialect,
     SqlErrorKind, SqlExecutionPlan, SqlFieldType, SqlFrontendError, SqlParameterStyle, SqlResult, SqlSchemaCheckpoint, SqlSchemaRegistry,
@@ -1484,6 +1484,11 @@ fn bound_insert_column_count(statement: &SqlCatalogBoundStatement) -> usize {
 }
 
 /// 把 SqlResult 编码成 MySQL ResultSet 协议包。
+///
+/// 结果集的每个包都带自己的序号，但读取端按 TCP 流解析，不要求一包一次
+/// `write`。这里把列定义、行与结尾 EOF 追加进同一个缓冲区，攒满
+/// [`RESULT_FLUSH_BYTES`] 再写出：1000 行结果从 1000+ 次小 `write` 降为个位数次，
+/// 帧头与载荷只复制一次，也不再为每行单独分配 `Vec`。
 fn write_result_set(
     stream: &mut impl Write,
     mut sequence: u8,
@@ -1493,11 +1498,13 @@ fn write_result_set(
     binary_rows: bool,
     status_flags: u16,
 ) -> io::Result<()> {
+    let mut buffer = Vec::with_capacity(RESULT_FLUSH_BYTES.min(8 * 1024));
+
     // 包 1: column count
     let count = result.columns.len();
     let mut col_count = Vec::new();
     encode_length_encoded(&mut col_count, count as u64);
-    write_packet(stream, sequence, &col_count)?;
+    push_packet(&mut buffer, sequence, &col_count)?;
     sequence = sequence.wrapping_add(1);
 
     // 包 2..N: column definitions
@@ -1505,32 +1512,73 @@ fn write_result_set(
         let declared = column_types.get(index).copied();
         let nullable = column_nullables.get(index).copied().unwrap_or(true);
         let def = encode_column_definition(col, declared.unwrap_or_else(|| column_type(&result.rows, index)), nullable);
-        write_packet(stream, sequence, &def)?;
+        push_packet(&mut buffer, sequence, &def)?;
         sequence = sequence.wrapping_add(1);
     }
 
     // EOF after columns
-    write_eof(stream, sequence, status_flags)?;
+    push_eof(&mut buffer, sequence, status_flags)?;
     sequence = sequence.wrapping_add(1);
 
     // Row packets
     for row in &result.rows {
-        let payload = if binary_rows {
-            encode_binary_row(row, column_types)
+        if binary_rows {
+            let payload = encode_binary_row(row, column_types);
+            push_packet(&mut buffer, sequence, &payload)?;
         }
         else {
-            let mut payload = Vec::new();
-            for value in row {
-                encode_sql_value(&mut payload, value);
-            }
-            payload
-        };
-        write_packet(stream, sequence, &payload)?;
+            push_text_row(&mut buffer, sequence, row)?;
+        }
         sequence = sequence.wrapping_add(1);
+        if buffer.len() >= RESULT_FLUSH_BYTES {
+            stream.write_all(&buffer)?;
+            buffer.clear();
+        }
     }
 
     // EOF after rows
-    write_eof(stream, sequence, status_flags)
+    push_eof(&mut buffer, sequence, status_flags)?;
+    stream.write_all(&buffer)
+}
+
+/// 结果集写出的攒批阈值：大于一次 MTU，小于 `MAX_PACKET`，兼顾延迟与系统调用次数。
+const RESULT_FLUSH_BYTES: usize = 64 * 1024;
+
+/// 把一条已经编码好的载荷按 classic 协议组帧追加到缓冲区。
+fn push_packet(out: &mut Vec<u8>, sequence: u8, payload: &[u8]) -> io::Result<()> {
+    let length = payload.len();
+    if length > MAX_PACKET_PAYLOAD {
+        return Err(packet_error(PacketError::PayloadTooLarge));
+    }
+    out.reserve(length + 4);
+    out.extend_from_slice(&[length as u8, (length >> 8) as u8, (length >> 16) as u8, sequence]);
+    out.extend_from_slice(payload);
+    Ok(())
+}
+
+/// 把 EOF 包追加到结果集缓冲区。
+fn push_eof(out: &mut Vec<u8>, sequence: u8, status_flags: u16) -> io::Result<()> {
+    let mut payload = [0xFE, 0x00, 0x00, 0x00, 0x00];
+    payload[3..].copy_from_slice(&status_flags.to_le_bytes());
+    push_packet(out, sequence, &payload)
+}
+
+/// 直接以 4 字节帧头占位写一行文本行，载荷长度算完后回填，省掉每行的临时 `Vec`。
+fn push_text_row(out: &mut Vec<u8>, sequence: u8, row: &[SqlValue]) -> io::Result<()> {
+    let start = out.len();
+    out.extend_from_slice(&[0, 0, 0, sequence]);
+    for value in row {
+        encode_sql_value(out, value);
+    }
+    let length = out.len() - start - 4;
+    if length > MAX_PACKET_PAYLOAD {
+        out.truncate(start);
+        return Err(packet_error(PacketError::PayloadTooLarge));
+    }
+    out[start] = length as u8;
+    out[start + 1] = (length >> 8) as u8;
+    out[start + 2] = (length >> 16) as u8;
+    Ok(())
 }
 
 /// 按列声明类型把一行编码成 MySQL binary protocol row（prepared statement 结果）。
@@ -1647,11 +1695,7 @@ fn encode_column_definition(name: &str, column_type: u8, nullable: bool) -> Vec<
 fn encode_sql_value(out: &mut Vec<u8>, value: &SqlValue) {
     match value {
         SqlValue::Null => out.push(0xFB),
-        SqlValue::Integer(n) => {
-            let text = n.to_string();
-            encode_length_encoded(out, text.len() as u64);
-            out.extend_from_slice(text.as_bytes());
-        }
+        SqlValue::Integer(n) => encode_integer_text(out, *n),
         SqlValue::Number(n) => {
             let text = format!("{n}");
             encode_length_encoded(out, text.len() as u64);
@@ -1672,6 +1716,31 @@ fn encode_sql_value(out: &mut Vec<u8>, value: &SqlValue) {
             out.extend_from_slice(text.as_bytes());
         }
     }
+}
+
+/// 把整数按十进制写进缓冲区。
+///
+/// 文本行协议要求十进制字符串，但每个单元格都走 `i64::to_string` 会为整数列
+/// 每行分配一次堆，扫描 1000 行就是上千次短命分配。这里改用栈上 20 字节暂存。
+fn encode_integer_text(out: &mut Vec<u8>, value: i64) {
+    let mut digits = [0_u8; 20];
+    let mut position = digits.len();
+    let negative = value < 0;
+    let mut remaining = value.unsigned_abs();
+    loop {
+        position -= 1;
+        digits[position] = b'0' + (remaining % 10) as u8;
+        remaining /= 10;
+        if remaining == 0 {
+            break;
+        }
+    }
+    if negative {
+        position -= 1;
+        digits[position] = b'-';
+    }
+    encode_length_encoded(out, (digits.len() - position) as u64);
+    out.extend_from_slice(&digits[position..]);
 }
 
 /// 把整数写成 MySQL length-encoded integer。
