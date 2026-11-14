@@ -10,8 +10,16 @@ pub(crate) fn reject_unsupported_modifiers(signature: &Signature, attribute: &st
     if let Some(constness) = signature.constness {
         return Err(syn::Error::new(constness.span, format!("`{attribute}` does not support `const` functions")));
     }
-    if let Some(unsafety) = signature.unsafety {
-        return Err(syn::Error::new(unsafety.span, format!("`{attribute}` does not support `unsafe` functions")));
+    // syn 3 replaced the `unsafety` token with a three-state `Safety`, so the
+    // qualifier is matched instead of tested for presence.
+    match signature.safety {
+        syn::Safety::Default => {}
+        syn::Safety::Unsafe(token) => {
+            return Err(syn::Error::new(token.span, format!("`{attribute}` does not support `unsafe` functions")));
+        }
+        syn::Safety::Safe(token) => {
+            return Err(syn::Error::new(token.span, format!("`{attribute}` does not support `safe`-qualified functions")));
+        }
     }
     if let Some(abi) = &signature.abi {
         return Err(syn::Error::new(abi.span(), format!("`{attribute}` does not support `extern` functions")));

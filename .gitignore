@@ -13,5 +13,3 @@ time-travel.*
 
 # Rust
 target/
-Cargo.lock
-valkyrie-errors/

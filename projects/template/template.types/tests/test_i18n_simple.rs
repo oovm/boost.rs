@@ -1,6 +1,6 @@
 #![cfg(test)]
 use std::{collections::HashMap, time::SystemTime};
-use template_input_dejavu_types::i18n::*;
+use template_types::i18n::*;
 
 #[test]
 fn test_translation_provider_trait() {
@@ -262,3 +262,4 @@ welcome = Welcome to DejaVu!
     let result = translator.translate("welcome", None, "en").unwrap();
     assert_eq!(result, "Welcome to DejaVu!");
 }
+

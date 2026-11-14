@@ -1,6 +1,6 @@
 #![cfg(test)]
 use std::{collections::HashMap, time::SystemTime};
-use template_input_dejavu_types::i18n::*;
+use template_types::i18n::*;
 
 #[test]
 fn test_simple_translator() {
@@ -115,3 +115,4 @@ fn test_i18n_context_with_custom_cache() {
     let result2 = i18n.t("test2", None).unwrap();
     assert_eq!(result2, "Test 2");
 }
+

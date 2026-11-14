@@ -10,7 +10,7 @@
 | `template.input.hbs/` | `template-input-hbs` | Handlebars 语法子集 |
 | `template.input.jinja/` | `template-input-jinja` | Jinja2 语法子集 |
 | `template.input.dejavu/` | `template-input-dejavu` | Dejavu 语法、IR 与渲染（登记 `template.input.dejavu`） |
-| `template.input.dejavu.types/` | `template-input-dejavu-types` | Dejavu 值 / 错误 / i18n 类型 |
+| `template.types` | `template-input-dejavu-types` | Dejavu 值 / 错误 / i18n 类型 |
 | `template.input.dejavu.runtime/` | `template-input-dejavu-runtime` | Dejavu AOT runtime helper（`no_std`） |
 | `template.input.dejavu.codegen/` | `template-input-dejavu-codegen` | Dejavu AOT codegen（IR → ESM） |
 | `template.input.dejavu.config/` | `template-input-dejavu-config` | Dejavu 模板配置加载 |

@@ -1,4 +1,4 @@
-use template_input_dejavu_types::values::{Context, Value};
+use template_types::values::{Context, Value};
 
 #[test]
 fn test_range_function() {
@@ -103,3 +103,4 @@ fn test_bool_function() {
     let result = context.call_function("bool", &[Value::Integer(1)]).unwrap();
     assert_eq!(result, Value::Bool(true));
 }
+

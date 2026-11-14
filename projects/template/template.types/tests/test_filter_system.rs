@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use template_input_dejavu_types::values::{
+use template_types::values::{
     Context, Value,
     filter::{Filter, FilterRegistry},
 };
@@ -9,7 +9,7 @@ use template_input_dejavu_types::values::{
 struct CustomFilter;
 
 impl Filter for CustomFilter {
-    fn apply(&self, value: Value, args: &[Value], _context: &Context) -> template_input_dejavu_types::DejavuResult<Value> {
+    fn apply(&self, value: Value, args: &[Value], _context: &Context) -> template_types::DejavuResult<Value> {
         match value {
             Value::String(s) => {
                 let prefix = args
@@ -79,3 +79,4 @@ fn test_filter_chain() {
     let result = ctx.apply_filter("uppercase", result, &[]).unwrap();
     assert_eq!(result, Value::String("HELLO WORLD".to_string()));
 }
+

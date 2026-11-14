@@ -1,7 +1,7 @@
 //! Multilingual support tests for internationalization functionality
 
 use std::{collections::HashMap, time::SystemTime};
-use template_input_dejavu_types::i18n::*;
+use template_types::i18n::*;
 
 #[test]
 fn test_multilingual_translations() {
@@ -117,3 +117,4 @@ fn test_locale_fallback_chain() {
     let result = translator.translate("greeting", None, "fr").unwrap();
     assert_eq!(result, "Hello!");
 }
+

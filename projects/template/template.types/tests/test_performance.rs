@@ -1,7 +1,7 @@
 //! Performance tests for internationalization functionality
 
 use std::{collections::HashMap, time::Instant};
-use template_input_dejavu_types::i18n::*;
+use template_types::i18n::*;
 
 #[test]
 fn test_translation_performance() {
@@ -155,3 +155,4 @@ fn test_locale_switching_performance() {
     let zh_result = i18n.t("key_0", None).unwrap();
     assert!(zh_result.contains("中文"));
 }
+

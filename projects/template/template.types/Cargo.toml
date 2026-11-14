@@ -1,5 +1,5 @@
 [package]
-name = "template-input-dejavu-types"
+name = "template-types"
 version.workspace = true
 authors.workspace = true
 description = "Dejavu 核心值、错误与 i18n 类型"

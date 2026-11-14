@@ -16,4 +16,6 @@ toml_edit = "0.25"
 figment = { version = "0.10", features = ["toml", "env"] }
 
 [dev-dependencies]
-boost-fs = { git = "https://github.com/oovm/rust-boost", rev = "7ba022a049cafef979dfe7a8adf81d9a0d3dd373" }
+boost-fs = { workspace = true }
+
+

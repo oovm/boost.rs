@@ -17,8 +17,12 @@ crawler-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 url = { workspace = true }
-yydb = { workspace = true, optional = true }
 
 [features]
-default = ["yydb"]
-yydb = ["dep:yydb"]
+default = []
+# `YydbStore` stays behind a feature, but the `yydb` crate is not a member of
+# this workspace: its published revisions need a VOS semantic model that no
+# longer shares a revision with the parser frontends here. Enabling this feature
+# requires restoring that dependency deliberately, not silently.
+yydb = []
+

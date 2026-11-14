@@ -1,7 +1,7 @@
 //! Reliability tests for internationalization functionality
 
 use std::collections::HashMap;
-use template_input_dejavu_types::i18n::*;
+use template_types::i18n::*;
 
 #[test]
 fn test_edge_cases() {
@@ -113,3 +113,4 @@ fn test_cache_behavior() {
     i18n.add_translations("zh", HashMap::new()).unwrap();
     assert_eq!(i18n.cache_size(), 0);
 }
+
