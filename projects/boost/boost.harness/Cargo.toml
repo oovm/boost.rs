@@ -1,0 +1,37 @@
+[package]
+name = "boost-harness"
+version.workspace = true
+authors.workspace = true
+description = "Structured log events, diagnostics, tests, fixtures, and benchmarks for the rust-boost family"
+repository = "https://github.com/oovm/rust-boost/tree/dev/projects/boost.harness"
+readme = "readme.md"
+license.workspace = true
+edition.workspace = true
+exclude = ["tests/**"]
+
+[dependencies]
+boost-harness-macro = { workspace = true }
+boost-console = { workspace = true }
+boost-source = { workspace = true }
+boost-terminal = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+unicode-width = { workspace = true, optional = true }
+
+[dev-dependencies]
+boost-console = { workspace = true }
+serial_test = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[features]
+default = []
+serde = ["dep:serde", "boost-source/serde"]
+terminal = ["dep:boost-terminal", "dep:unicode-width"]
+concolor = ["boost-console/concolor"]
+
+[[test]]
+name = "diagnostic"
+path = "tests/diagnostic/main.rs"
+
+[package.metadata.docs.rs]
+all-features = true

@@ -11,6 +11,8 @@ members = [
     "projects/boost/boost-diagnostic",
     "projects/boost/boost-diagnostic-macro",
     "projects/boost/boost-fs",
+    "projects/boost/boost.harness",
+    "projects/boost/boost.harness.macro",
     "projects/boost/boost-http",
     "projects/boost/boost-log",
     "projects/boost/boost-random",
@@ -170,6 +172,8 @@ boost-console = { path = "projects/boost/boost-console" }
 boost-diagnostic = { path = "projects/boost/boost-diagnostic", features = ["serde"] }
 boost-diagnostic-macro = { path = "projects/boost/boost-diagnostic-macro" }
 boost-fs = { path = "projects/boost/boost-fs" }
+boost-harness = { path = "projects/boost/boost.harness", features = ["serde"] }
+boost-harness-macro = { path = "projects/boost/boost.harness.macro" }
 boost-http = { path = "projects/boost/boost-http" }
 boost-log = { path = "projects/boost/boost-log" }
 boost-random = { path = "projects/boost/boost-random" }
@@ -434,7 +438,6 @@ oak-sql = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "38e25
 [profile.release]
 lto = true
 panic = "abort"
-
 
 
 

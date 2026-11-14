@@ -345,16 +345,13 @@ dependencies = [
 name = "boost"
 version = "0.1.0"
 dependencies = [
- "boost-benchmark",
  "boost-console",
- "boost-diagnostic 0.1.0",
  "boost-fs",
- "boost-log",
+ "boost-harness",
+ "boost-harness-macro",
  "boost-random",
  "boost-source 0.1.0",
  "boost-terminal",
- "boost-test",
- "boost-test-macro",
 ]
 
 [[package]]
@@ -365,8 +362,6 @@ version = "0.1.0"
 name = "boost-console"
 version = "0.1.0"
 dependencies = [
- "boost-log",
- "boost-terminal",
  "serial_test 4.0.1",
 ]
 
@@ -412,6 +407,29 @@ dependencies = [
  "futures-core",
  "futures-lite",
  "pin-project-lite",
+]
+
+[[package]]
+name = "boost-harness"
+version = "0.1.0"
+dependencies = [
+ "boost-console",
+ "boost-harness-macro",
+ "boost-source 0.1.0",
+ "boost-terminal",
+ "serde",
+ "serde_json",
+ "serial_test 4.0.1",
+ "unicode-width 0.2.3",
+]
+
+[[package]]
+name = "boost-harness-macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.10",
 ]
 
 [[package]]
@@ -757,8 +775,7 @@ version = "0.1.0"
 dependencies = [
  "acorn-codec",
  "blake3",
- "boost-diagnostic 0.1.0",
- "boost-log",
+ "boost-harness",
  "crawler-browser",
  "crawler-extract",
  "crawler-fetch",
@@ -779,7 +796,7 @@ dependencies = [
 name = "crawler-browser"
 version = "0.1.0"
 dependencies = [
- "boost-diagnostic 0.1.0",
+ "boost-harness",
  "boost-http",
  "crawler-extract",
  "crawler-types",
@@ -802,9 +819,8 @@ dependencies = [
 name = "crawler-fetch"
 version = "0.1.0"
 dependencies = [
- "boost-diagnostic 0.1.0",
+ "boost-harness",
  "boost-http",
- "boost-log",
  "crawler-types",
  "serde",
  "url",
@@ -823,7 +839,7 @@ name = "crawler-store"
 version = "0.1.0"
 dependencies = [
  "blake3",
- "boost-diagnostic 0.1.0",
+ "boost-harness",
  "crawler-types",
  "serde",
  "serde_json",
@@ -834,7 +850,7 @@ dependencies = [
 name = "crawler-types"
 version = "0.1.0"
 dependencies = [
- "boost-diagnostic 0.1.0",
+ "boost-harness",
  "document-ir",
  "serde",
  "url",
@@ -1439,8 +1455,7 @@ name = "document-convert"
 version = "0.1.0"
 dependencies = [
  "blake3",
- "boost-diagnostic 0.1.0",
- "boost-log",
+ "boost-harness",
  "document-compose",
  "document-diagnostic",
  "document-fonts",
@@ -1468,8 +1483,7 @@ dependencies = [
 name = "document-diagnostic"
 version = "0.1.0"
 dependencies = [
- "boost-diagnostic 0.1.0",
- "boost-log",
+ "boost-harness",
  "document-ir",
  "document-types",
  "serde_json",
@@ -1504,7 +1518,7 @@ dependencies = [
  "acorn-docx",
  "acorn-epub",
  "blake3",
- "boost-diagnostic 0.1.0",
+ "boost-harness",
  "document-ir",
  "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=38e25ab8affb4218ef8d6fc1408fbfa0b2e65731)",
  "oak-html",
@@ -1691,7 +1705,7 @@ dependencies = [
 name = "document-types"
 version = "0.1.0"
 dependencies = [
- "boost-diagnostic 0.1.0",
+ "boost-harness",
  "byteorder",
  "document-ir",
  "serde",
@@ -3986,7 +4000,7 @@ dependencies = [
 name = "plotter-types"
 version = "0.1.0"
 dependencies = [
- "boost-diagnostic 0.1.0",
+ "boost-harness",
  "serde",
  "serde_json",
 ]
@@ -4878,7 +4892,7 @@ dependencies = [
 name = "template"
 version = "0.1.0"
 dependencies = [
- "boost-diagnostic 0.1.0",
+ "boost-harness",
  "serde_json",
 ]
 

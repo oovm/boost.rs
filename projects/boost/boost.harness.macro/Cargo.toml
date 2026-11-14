@@ -1,0 +1,20 @@
+[package]
+name = "boost-harness-macro"
+version.workspace = true
+authors.workspace = true
+description = "Procedural macros for structured `boost-harness` test entries and diagnostics"
+repository = "https://github.com/oovm/rust-boost/tree/dev/projects/boost.harness.macro"
+readme = "readme.md"
+license.workspace = true
+edition.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { workspace = true, features = ["full"] }
+quote = { workspace = true }
+proc-macro2 = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
