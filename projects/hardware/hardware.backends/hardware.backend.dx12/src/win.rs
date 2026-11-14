@@ -81,6 +81,26 @@ pub struct Vertex {
 /// Bytes per [`Vertex`]: `POSITION` (`R32G32_FLOAT`) then `COLOR` (`R32G32B32A32_FLOAT`).
 const VERTEX_STRIDE: u32 = 24;
 
+/// Cached pipeline for one generic UCF program body.
+struct CachedProgram {
+    root: ID3D12RootSignature,
+    pso: ID3D12PipelineState,
+}
+
+/// Lookup counters of the generic-program pipeline cache.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ProgramCacheStats {
+    /// Dispatches served from the cache.
+    pub hits: u64,
+    /// Dispatches that had to encode `DXBC` and build a pipeline state.
+    pub misses: u64,
+    /// Pipelines currently cached.
+    pub entries: usize,
+}
+
+/// Maximum number of cached generic-program pipelines.
+const PROGRAM_CACHE_CAPACITY: usize = 16;
+
 /// DirectX 12 backend with device-resident buffers and compute dispatch.
 pub struct Dx12Backend {
     device: ID3D12Device,
@@ -93,6 +113,10 @@ pub struct Dx12Backend {
     shared: BTreeMap<SharedBufferId, SharedBuffer>,
     next_shared: u64,
     strategies: WiredStrategies,
+    /// Generic-program pipelines keyed by program hash, oldest first.
+    program_cache: Vec<(u64, CachedProgram)>,
+    program_hits: u64,
+    program_misses: u64,
     /// Last descriptor path label taken by a submit (for thin-gate assertions).
     last_descriptor_path: &'static str,
     /// Last sync path label taken by a submit (for thin-gate assertions).
@@ -142,6 +166,9 @@ impl Dx12Backend {
                 shared: BTreeMap::new(),
                 next_shared: 1,
                 strategies,
+                program_cache: Vec::new(),
+                program_hits: 0,
+                program_misses: 0,
                 last_descriptor_path: "",
                 last_sync_path: "",
                 last_pipeline_path: "",
@@ -167,6 +194,16 @@ impl Dx12Backend {
     /// Pipeline path label from the last submit that created a pipeline.
     pub fn last_pipeline_path(&self) -> &'static str {
         self.last_pipeline_path
+    }
+
+    /// Lookup counters of the generic-program pipeline cache.
+    pub fn program_cache_stats(&self) -> ProgramCacheStats {
+        ProgramCacheStats { hits: self.program_hits, misses: self.program_misses, entries: self.program_cache.len() }
+    }
+
+    /// Removes every cached generic-program pipeline.
+    pub fn clear_program_cache(&mut self) {
+        self.program_cache.clear();
     }
 
     fn mark_sync_path(&mut self) {
@@ -686,9 +723,8 @@ impl Dx12Backend {
             ))));
         }
 
-        let dxbc = encode_program(&program, "hardware_program_main", TargetIsa::Dxbc, CodegenOptions::default())
-            .map(|module| module.bytes)
-            .map_err(|error| map_emit_err(error.to_string()))?;
+        // The program hash covers the binding shape, so one cache key per body
+        // is enough: root constant count and resource registers follow from it.
         let mut params = Vec::with_capacity(reads.len() + writes.len() + 2);
         params.push(root_constants(0, constants.len() as u32));
         params.push(root_uav(0));
@@ -696,7 +732,27 @@ impl Dx12Backend {
         params.extend((0..writes.len()).map(|slot| root_uav(slot as u32 + 1)));
 
         self.mark_pipeline_path();
-        let (root, pso) = self.create_compute_pso(&dxbc, &params)?;
+        let (root, pso) = match self.program_cache.iter().position(|(key, _)| *key == expected_hash) {
+            Some(index) => {
+                self.program_hits += 1;
+                let entry = self.program_cache.remove(index);
+                let pipeline = (entry.1.root.clone(), entry.1.pso.clone());
+                self.program_cache.push(entry);
+                pipeline
+            }
+            None => {
+                self.program_misses += 1;
+                let dxbc = encode_program(&program, "hardware_program_main", TargetIsa::Dxbc, CodegenOptions::default())
+                    .map(|module| module.bytes)
+                    .map_err(|error| map_emit_err(error.to_string()))?;
+                let (root, pso) = self.create_compute_pso(&dxbc, &params)?;
+                if self.program_cache.len() == PROGRAM_CACHE_CAPACITY {
+                    self.program_cache.remove(0);
+                }
+                self.program_cache.push((expected_hash, CachedProgram { root: root.clone(), pso: pso.clone() }));
+                (root, pso)
+            }
+        };
         let output_va = self.gpu_va(output)?;
         let read_vas = reads.iter().map(|id| self.gpu_va(*id)).collect::<Result<Vec<_>>>()?;
         let write_vas = writes.iter().map(|id| self.gpu_va(*id)).collect::<Result<Vec<_>>>()?;

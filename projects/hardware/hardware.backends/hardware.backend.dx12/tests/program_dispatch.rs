@@ -148,6 +148,41 @@ fn dispatches_comparison_and_select() {
 }
 
 #[test]
+fn reuses_cached_pipelines_for_repeated_programs() {
+    let program = program(vec![Stmt::Return(Expr::BinOp {
+        op: BinOp::Add,
+        lhs: Box::new(Expr::LoadUniform(0)),
+        rhs: Box::new(Expr::ConstF32(1.0)),
+    })]);
+    let graph = Graph {
+        resources: ResourceGraph { nodes: vec![buffer(2, 4)] },
+        tasks: TaskGraph {
+            nodes: vec![dispatch_task(
+                18,
+                &program,
+                BTreeMap::from([("output".to_string(), ParamValue::I64(2)), ("uniform_0".to_string(), ParamValue::F64(0.5))]),
+            )],
+            edges: Vec::new(),
+        },
+    };
+
+    let Some(mut dx12) = open()
+    else {
+        return;
+    };
+    dx12.prepare(&graph).expect("prepare");
+    dx12.run_prepared(&graph).expect("first dispatch");
+    assert_eq!(dx12.program_cache_stats(), hardware_backend_dx12::ProgramCacheStats { hits: 0, misses: 1, entries: 1 });
+
+    dx12.run_prepared(&graph).expect("second dispatch");
+    assert_eq!(dx12.program_cache_stats(), hardware_backend_dx12::ProgramCacheStats { hits: 1, misses: 1, entries: 1 });
+    assert_eq!(dx12.read_f32(Rid(2)).expect("read"), vec![1.5; 4]);
+
+    dx12.clear_program_cache();
+    assert_eq!(dx12.program_cache_stats().entries, 0);
+}
+
+#[test]
 fn dispatches_bounded_loop_accumulation() {
     let entry = program(vec![
         Stmt::Let { id: 0, ty: Ty::f32(), init: Expr::ConstF32(0.0) },
