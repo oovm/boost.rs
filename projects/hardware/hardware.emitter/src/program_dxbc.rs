@@ -103,7 +103,16 @@ pub fn emit_program_dxbc(program: &Program, entry: &str) -> Result<Vec<u8>, Prog
     let reads = bindings.reads.iter().enumerate().map(|(rank, resource)| (*resource, rank as u32)).collect::<BTreeMap<_, _>>();
     let writes = bindings.writes.iter().enumerate().map(|(rank, resource)| (*resource, rank as u32 + 1)).collect::<BTreeMap<_, _>>();
 
-    let mut lower = Lowerer { uniforms: uniform_count, reads, writes, instructions: Vec::new(), temps: 0, locals: BTreeMap::new(), loop_depth: 0 };
+    let mut lower = Lowerer {
+        uniforms: uniform_count,
+        reads,
+        writes,
+        instructions: Vec::new(),
+        temps: 0,
+        locals: BTreeMap::new(),
+        loop_depth: 0,
+        synthetic: 0,
+    };
     let condition = lower.active_check();
     lower.emit(Opcode::IfNz, TEST_NONZERO, vec![Operand::temp(condition, Select::Scalar(0))]);
     lower.emit(Opcode::Ret, 0, Vec::new());
@@ -206,6 +215,8 @@ struct Lowerer {
     locals: BTreeMap<u32, (u32, Kind)>,
     /// Number of enclosing `loop` blocks, used to reject stray `break` / `continue`.
     loop_depth: usize,
+    /// Counter behind [`Lowerer::synthetic_local`].
+    synthetic: u32,
 }
 
 impl Lowerer {
@@ -379,19 +390,28 @@ impl Lowerer {
         Ok(())
     }
 
-    /// Lowers a loop body, which may use `break` but not `continue`.
+    /// Lowers a loop body, rewriting `continue` into a skip flag first.
     ///
-    /// SM5 `continue` jumps to the loop's continue point and then re-enters the
-    /// loop, so a lifted body would keep spinning. Expressing it needs the rest
-    /// of the body rewrapped in a predicate block, which the encoder does not do
-    /// yet, so `continue` is rejected instead of miscompiled.
+    /// SM5 `continue` jumps to the loop's continue point and re-enters the
+    /// loop, so lowering it directly would skip the counter increment. The body
+    /// is therefore rewritten so that everything after a `continue` runs inside
+    /// `if (skip == false)`, which keeps the structured shape.
     fn lower_loop_body(&mut self, body: &[Stmt]) -> Result<(), ProgramDxbcError> {
-        if loop_flow(body).1 {
-            return Err(ProgramDxbcError::UnsupportedStatement(
-                "`continue` is outside the DXBC structured subset, rewrite the body as a predicate".into(),
-            ));
+        if !loop_flow(body).1 {
+            return self.lower_sequence(body).map(|_| ());
         }
-        self.lower_sequence(body).map(|_| ())
+        let flag = self.synthetic_local();
+        let (rewritten, _) = rewrite_continues(body, flag);
+        let mut guarded = Vec::with_capacity(rewritten.len() + 1);
+        guarded.push(Stmt::Let { id: flag, ty: Ty::Scalar(ScalarTy::Bool), init: Expr::ConstBool(false) });
+        guarded.extend(rewritten);
+        self.lower_sequence(&guarded).map(|_| ())
+    }
+
+    /// Allocates a local id that cannot collide with program-authored locals.
+    fn synthetic_local(&mut self) -> u32 {
+        self.synthetic += 1;
+        u32::MAX - self.synthetic
     }
 
     fn lower_while(&mut self, cond: &Expr, limit: u32, body: &[Stmt]) -> Result<(), ProgramDxbcError> {
@@ -700,7 +720,12 @@ impl Lowerer {
 
     fn lower_binary(&mut self, op: BinOp, lhs: (u32, Kind), rhs: (u32, Kind)) -> Result<(u32, Kind), ProgramDxbcError> {
         if lhs.1 == Kind::Bool || rhs.1 == Kind::Bool {
-            return Err(ProgramDxbcError::UnsupportedExpression(format!("bool operand of {op:?}")));
+            // Boolean registers hold `0` / `0xffffffff`, so equality compares them as integers.
+            return match op {
+                BinOp::Eq => self.compare_equality(true, lhs, rhs),
+                BinOp::Ne => self.compare_equality(false, lhs, rhs),
+                other => Err(ProgramDxbcError::UnsupportedExpression(format!("bool operand of {other:?}"))),
+            };
         }
         if lhs.1 == Kind::Vec3 || rhs.1 == Kind::Vec3 {
             return self.lower_vector_binary(op, lhs, rhs);
@@ -863,7 +888,7 @@ impl Lowerer {
 
     /// Compares two scalars for equality, using the integer opcodes for `u32`.
     fn compare_equality(&mut self, equal: bool, lhs: (u32, Kind), rhs: (u32, Kind)) -> Result<(u32, Kind), ProgramDxbcError> {
-        let opcode = match (lhs.1 == Kind::U32, equal) {
+        let opcode = match (matches!(lhs.1, Kind::U32 | Kind::Bool), equal) {
             (true, true) => Opcode::IEq,
             (true, false) => Opcode::INe,
             (false, true) => Opcode::Eq,
@@ -1006,6 +1031,48 @@ fn loop_flow(statements: &[Stmt]) -> (bool, bool) {
         }
     }
     (breaks, continues)
+}
+
+/// Rewrites `continue` into stores to `flag`, guarding everything that follows.
+///
+/// Returns the rewritten statements and whether any `continue` survived for this
+/// loop. Nested loops own their own `continue`, so they are left untouched.
+fn rewrite_continues(statements: &[Stmt], flag: u32) -> (Vec<Stmt>, bool) {
+    let mut out = Vec::new();
+    let mut index = 0;
+    while index < statements.len() {
+        match &statements[index] {
+            Stmt::Continue => {
+                out.push(Stmt::StoreLocal { id: flag, value: Expr::ConstBool(true) });
+                // Everything after an unconditional `continue` is unreachable.
+                return (out, true);
+            }
+            Stmt::If { cond, then_body, else_body } => {
+                let (then_body, then_continues) = rewrite_continues(then_body, flag);
+                let (else_body, else_continues) = rewrite_continues(else_body, flag);
+                let continues = then_continues || else_continues;
+                out.push(Stmt::If { cond: cond.clone(), then_body, else_body });
+                if continues {
+                    let rest = &statements[index + 1..];
+                    if !rest.is_empty() {
+                        let (guarded, rest_continues) = rewrite_continues(rest, flag);
+                        // `flag == false` is the "keep going" guard.
+                        let keep_going = Expr::BinOp {
+                            op: BinOp::Eq,
+                            lhs: Box::new(Expr::LoadLocal(flag)),
+                            rhs: Box::new(Expr::ConstBool(false)),
+                        };
+                        out.push(Stmt::If { cond: keep_going, then_body: guarded, else_body: Vec::new() });
+                        return (out, continues || rest_continues);
+                    }
+                    return (out, continues);
+                }
+            }
+            other => out.push(other.clone()),
+        }
+        index += 1;
+    }
+    (out, false)
 }
 
 fn uniform_slots_stmt(stmt: &Stmt) -> Vec<u32> {

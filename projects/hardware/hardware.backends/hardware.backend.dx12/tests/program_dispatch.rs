@@ -180,6 +180,46 @@ fn dispatches_bounded_loop_accumulation() {
 }
 
 #[test]
+fn dispatches_loop_with_continue() {
+    let entry = program(vec![
+        Stmt::Let { id: 0, ty: Ty::f32(), init: Expr::ConstF32(0.0) },
+        Stmt::For {
+            iter: 1,
+            limit: 4,
+            body: vec![
+                Stmt::If {
+                    cond: Expr::BinOp { op: BinOp::Eq, lhs: Box::new(Expr::LoadLocal(1)), rhs: Box::new(Expr::ConstU32(1)) },
+                    then_body: vec![Stmt::Continue],
+                    else_body: Vec::new(),
+                },
+                Stmt::StoreLocal {
+                    id: 0,
+                    value: Expr::BinOp { op: BinOp::Add, lhs: Box::new(Expr::LoadLocal(0)), rhs: Box::new(Expr::ConstF32(1.0)) },
+                },
+            ],
+        },
+        Stmt::Return(Expr::LoadLocal(0)),
+    ]);
+
+    let graph = Graph {
+        resources: ResourceGraph { nodes: vec![buffer(2, 4)] },
+        tasks: TaskGraph {
+            nodes: vec![dispatch_task(17, &entry, BTreeMap::from([("output".to_string(), ParamValue::I64(2))]))],
+            edges: Vec::new(),
+        },
+    };
+
+    let Some(mut dx12) = open()
+    else {
+        return;
+    };
+    dx12.prepare(&graph).expect("prepare");
+    dx12.run_prepared(&graph).expect("dispatch");
+    // One of four iterations is skipped, so three increments remain.
+    assert_eq!(dx12.read_f32(Rid(2)).expect("read"), vec![3.0; 4]);
+}
+
+#[test]
 fn dispatches_loop_with_break() {
     let entry = program(
         vec![

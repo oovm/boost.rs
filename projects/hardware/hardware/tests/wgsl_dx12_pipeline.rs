@@ -40,6 +40,75 @@ fn buffer(id: u64, floats: usize) -> ResourceNode {
     }
 }
 
+/// Builds a one-task graph writing `program` into `output` over four threads.
+fn dispatch_graph(entry: &hardware_program::Program, output: u64, buffers: &[(u32, u64)]) -> Graph {
+    let mut params = BTreeMap::from([
+        (
+            "program".to_string(),
+            ParamValue::Program {
+                version: 1,
+                hash: program_hash(entry),
+                body: serde_json::to_string(entry).expect("serialize program"),
+            },
+        ),
+        ("output".to_string(), ParamValue::I64(output as i64)),
+    ]);
+    for (slot, id) in buffers {
+        params.insert(format!("buffer_{slot}"), ParamValue::I64(*id as i64));
+    }
+    Graph {
+        resources: ResourceGraph {
+            nodes: std::iter::once(buffer(output, 4)).chain(buffers.iter().map(|(_, id)| buffer(*id, 4))).collect(),
+        },
+        tasks: TaskGraph {
+            nodes: vec![TaskNode {
+                id: TaskId(1),
+                kind: TaskKind::Dispatch,
+                shader: ShaderId(1),
+                params,
+                dispatch: Dispatch::Explicit { x: 4, y: 1, z: 1 },
+                objective: hardware_ir::Objective::MaxThroughput,
+                priority: Priority::Batch,
+            }],
+            edges: Vec::new(),
+        },
+    }
+}
+
+#[test]
+fn lowered_wgsl_loop_with_continue_runs_on_direct3d_12() {
+    let source = r#"
+@group(0) @binding(0) var<storage, read_write> dst: array<f32>;
+
+@compute @workgroup_size(4, 1, 1)
+fn skip_one(@builtin(global_invocation_id) gid: vec3<u32>) {
+    var acc: f32 = 0.0;
+    for (var i: u32 = 0u; i < 4u; i = i + 1u) {
+        if (i == 2u) {
+            continue;
+        }
+        acc = acc + 1.0;
+    }
+    dst[gid.x] = acc;
+}
+"#;
+    let lowered = lower_wgsl(source).expect("valid WGSL");
+    assert_eq!(lowered.resources.len(), 1);
+    let dst = 1 + lowered.resources[0].resource as u64;
+    let graph = dispatch_graph(&lowered.program, 100, &[(lowered.resources[0].resource, dst)]);
+
+    let mut dx12 = match Dx12Backend::new() {
+        Ok(backend) => backend,
+        Err(error) => {
+            eprintln!("skip WGSL DX12 loop pipeline (no usable D3D12 device): {error}");
+            return;
+        }
+    };
+    dx12.prepare(&graph).expect("prepare");
+    dx12.run_prepared(&graph).expect("dispatch");
+    assert_eq!(dx12.read_f32(Rid(dst)).expect("read dst"), vec![3.0; 4]);
+}
+
 #[test]
 fn lowered_wgsl_runs_on_direct3d_12() {
     let lowered = lower_wgsl(SOURCE).expect("valid WGSL");
