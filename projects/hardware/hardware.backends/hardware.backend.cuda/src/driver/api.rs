@@ -680,11 +680,15 @@ fn check(code: CUresult, api: &str) -> Result<(), DriverError> {
     }
 }
 
+/// Path to the CUDA driver API that ships with the GPU driver.
+///
+/// The CUDA driver (`nvcuda.dll` on Windows, `libcuda.so.1` on Linux) is
+/// installed together with the display driver. The CUDA toolkit, `cudart`, and
+/// `nvcc` are never loaded. Apple platforms ship no CUDA driver, so the probe
+/// fails structurally there.
 fn driver_library_path() -> std::path::PathBuf {
     if cfg!(target_os = "windows") {
         Path::new("nvcuda.dll").to_path_buf()
-    } else if cfg!(target_os = "macos") {
-        Path::new("/usr/local/cuda/lib/libcuda.dylib").to_path_buf()
     } else {
         Path::new("libcuda.so.1").to_path_buf()
     }
