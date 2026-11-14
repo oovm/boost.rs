@@ -1,7 +1,9 @@
 //! Shared scene builders for the integration tests.
 
 use plotter_motion::{Easing, MotionIntent};
-use plotter_scene::{DisplayScene, NodeKind, Point, Rect, SceneNode, ShapeStyle, Size, TextStyle, Transform};
+use plotter_scene::{
+    DisplayScene, NodeKind, PathData, Point, Rect, SceneNode, ShapeStyle, Size, TextStyle, Transform,
+};
 
 /// Create a 200x100 scene from ordered root nodes.
 pub fn scene(nodes: Vec<SceneNode>) -> DisplayScene {
@@ -37,6 +39,18 @@ pub fn unlabeled_rect(x: f64) -> SceneNode {
 pub fn bar(id: &str, width: f64, height: f64) -> SceneNode {
     SceneNode::new(NodeKind::Rect { rect: Rect::new(0.0, 0.0, width, height), style: ShapeStyle::default() })
         .with_id(id)
+}
+
+/// A polyline path with a stable id, built from absolute points.
+pub fn polyline(id: &str, points: &[(f64, f64)]) -> SceneNode {
+    let mut path = PathData::new();
+    if let Some((x, y)) = points.first() {
+        path = path.move_to(Point::new(*x, *y));
+    }
+    for (x, y) in &points[1..] {
+        path = path.line_to(Point::new(*x, *y));
+    }
+    SceneNode::new(NodeKind::Path { path, style: ShapeStyle::default() }).with_id(id)
 }
 
 /// A group with a stable id and explicit opacity.

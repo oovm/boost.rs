@@ -24,9 +24,10 @@
 //!
 //! - `Transform`, `Extent` and `Opacity` are animated. `Extent` interpolates
 //!   the rectangle of `Rect` and `RoundedRect` nodes only, which is how chart
-//!   bars grow from a shared baseline. Path geometry, text content, clips and
-//!   colors are snapped to the next scene, so shape morphing and color
-//!   interpolation are intentionally out of scope.
+//!   bars grow from a shared baseline. `EnterPolicy::Trim` and
+//!   `ExitPolicy::Retract` reveal or retract `Path` nodes by length, which is
+//!   how a line chart draws itself on. Path geometry itself is never morphed,
+//!   and colors are snapped to the next scene.
 //! - `Transform` interpolation is component-wise on the affine matrix. It does
 //!   not decompose rotation or scale, and it never produces a different matrix
 //!   than the documented component lerp.

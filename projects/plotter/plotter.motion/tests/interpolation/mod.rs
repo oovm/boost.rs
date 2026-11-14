@@ -3,9 +3,9 @@
 use std::collections::BTreeSet;
 
 use plotter_motion::{Channel, Easing, EnterPolicy, ExitPolicy, MotionIntent, plan_transition, sample};
-use plotter_scene::{NodeKind, Rect, Transform};
+use plotter_scene::{NodeKind, PathData, Point, Rect, Transform};
 
-use crate::common::{bar, find, group, linear_intent, opacity, rect, rect_at, scene, text, x};
+use crate::common::{bar, find, group, linear_intent, opacity, polyline, rect, rect_at, scene, text, x};
 
 #[test]
 fn interpolates_transform_and_opacity() {
@@ -65,6 +65,64 @@ fn interpolates_the_extent_of_rect_nodes() {
     let previous = scene(vec![text("t", 1.0)]);
     let next = scene(vec![text("t", 1.0)]);
     assert!(plan_transition(&previous, &next, &linear_intent(1.0)).tracks.is_empty());
+}
+
+#[test]
+fn entering_paths_are_drawn_on_with_trim() {
+    let previous = scene(vec![]);
+    let next = scene(vec![polyline("line", &[(0.0, 0.0), (10.0, 0.0), (20.0, 0.0)])]);
+    let intent = MotionIntent { enter: EnterPolicy::Trim, ..linear_intent(1.0) };
+    let plan = plan_transition(&previous, &next, &intent);
+
+    // A quarter of the 20-unit path is the first 5 units.
+    let at_quarter = sample(&plan, &previous, &next, 0.25);
+    let quarter = path_of(&at_quarter, "line");
+    assert_eq!(quarter, &PathData::new().move_to(Point::new(0.0, 0.0)).line_to(Point::new(5.0, 0.0)));
+    // Three quarters crosses the corner and stops halfway through the second leg.
+    let at_most = sample(&plan, &previous, &next, 0.75);
+    let most = path_of(&at_most, "line");
+    assert_eq!(
+        most,
+        &PathData::new()
+            .move_to(Point::new(0.0, 0.0))
+            .line_to(Point::new(10.0, 0.0))
+            .line_to(Point::new(15.0, 0.0))
+    );
+    // Nothing is drawn at the very start.
+    let at_start = sample(&plan, &previous, &next, 0.0);
+    assert_eq!(path_of(&at_start, "line"), &PathData::new());
+    // At the end the path is untouched.
+    let at_end = sample(&plan, &previous, &next, 1.0);
+    assert_eq!(
+        path_of(&at_end, "line"),
+        &PathData::new()
+            .move_to(Point::new(0.0, 0.0))
+            .line_to(Point::new(10.0, 0.0))
+            .line_to(Point::new(20.0, 0.0))
+    );
+}
+
+#[test]
+fn exiting_paths_retract_to_their_start() {
+    let previous = scene(vec![polyline("line", &[(0.0, 0.0), (10.0, 0.0), (20.0, 0.0)])]);
+    let next = scene(vec![]);
+    let intent = MotionIntent { exit: ExitPolicy::Retract, ..linear_intent(1.0) };
+    let plan = plan_transition(&previous, &next, &intent);
+
+    let at_half = sample(&plan, &previous, &next, 0.5);
+    let half = path_of(&at_half, "line");
+    assert_eq!(half, &PathData::new().move_to(Point::new(0.0, 0.0)).line_to(Point::new(10.0, 0.0)));
+    // Once fully retracted the exiting node is not drawn at all.
+    let at_end = sample(&plan, &previous, &next, 1.0);
+    assert!(find(&at_end, "line").is_none());
+}
+
+/// The path commands of a `Path` node, for trim assertions.
+fn path_of<'a>(scene: &'a plotter_scene::DisplayScene, id: &str) -> &'a PathData {
+    match &find(scene, id).expect("path node should exist").kind {
+        NodeKind::Path { path, .. } => path,
+        other => panic!("expected a path node, got {other:?}"),
+    }
 }
 
 #[test]

@@ -36,6 +36,12 @@ pub enum EnterPolicy {
     Snap,
     /// Fade the node's own opacity from `0.0` to its target over the duration.
     Fade,
+    /// Draw `Path` nodes on from their start over the duration.
+    ///
+    /// A path is revealed by length, not scaled or faded: at progress `p` only
+    /// the first `p` fraction of its total length is drawn. Nodes of other kinds
+    /// snap, so a group's text labels still appear immediately.
+    Trim,
 }
 
 /// How a node that only exists in the previous scene disappears.
@@ -47,6 +53,11 @@ pub enum ExitPolicy {
     Fade,
     /// Keep drawing the previous subtree unchanged for every sampled time.
     Keep,
+    /// Retract `Path` nodes back to their start over the duration.
+    ///
+    /// The complement of [`EnterPolicy::Trim`]: the visible length shrinks from
+    /// full to zero. Nodes of other kinds snap.
+    Retract,
 }
 
 /// What an in-flight timeline does when a new transition interrupts it.
