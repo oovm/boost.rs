@@ -6,9 +6,11 @@ Generic UCF `Program` values are lowered from the UCF IR directly to backend-loa
 | ISA | Bytes | Loaded by |
 |-----|-------|-----------|
 | PTX | text | CUDA Driver (`cuModuleLoadData`) |
-| DXBC | bytecode | D3D12 (system `d3dcompiler` used only inside emitter) |
-| SPIR-V | words | Vulkan (`naga` is used as an internal IR and binary writer) |
+| DXBC | bytecode | D3D12 |
+| SPIR-V | words | Vulkan |
 | HSACO | ELF code object | HIP (`hipModuleLoadData`; OpenCL ICD used only inside emitter) |
 
 Authors never write PTX / HLSL / OpenCL / HIP C, and domain crates never write shader source.
-The generic UCF path constructs backend IR directly. Backends only load and launch the blobs.
+Every backend blob is assembled by this crate: the SPIR-V encoder lives in `src/spv.rs`,
+no shader source is parsed and no external shader compiler is invoked.
+Backends only load and launch the blobs.

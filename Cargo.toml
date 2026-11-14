@@ -315,8 +315,6 @@ serial_test = "4.0.1"
 fontdue = "0.9"
 libloading = "0.9.1"
 ash = "0.38"
-naga = { version = "24", default-features = false, features = ["wgsl-in", "spv-out"] }
-rspirv = "0.12"
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Direct3D",

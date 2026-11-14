@@ -10,8 +10,6 @@ publish.workspace = true
 
 [dependencies]
 libloading = { workspace = true }
-naga = { workspace = true }
-rspirv = { workspace = true }
 hardware-types = { workspace = true }
 hardware-program = { workspace = true }
 

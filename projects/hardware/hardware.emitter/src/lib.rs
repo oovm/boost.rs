@@ -6,6 +6,7 @@ mod hip;
 mod program_spirv;
 mod ptx;
 mod spirv;
+mod spv;
 mod task;
 
 pub use dxil::{emit_dxil, emit_raster_tri_dxbc, RasterTriDxbc};

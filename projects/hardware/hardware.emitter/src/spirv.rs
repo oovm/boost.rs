@@ -1,3 +1,6 @@
+use crate::spv::{
+    self, builtin, decoration, execution_mode, execution_model, inst, op, storage, Spv,
+};
 use hardware_types::{ShaderOp, ShaderProgram};
 
 /// SPIR-V module for the Raster triangle thin gate (vertex + fragment entries).
@@ -9,16 +12,17 @@ pub struct RasterTriSpirv {
 
 /// Emit SPIR-V words (as little-endian bytes) for the given UCF program.
 ///
-/// Built-in WGSL is compiled with `naga`. Authors never write shaders.
+/// The built-in kernels are assembled directly into SPIR-V words. Authors never
+/// write shaders and no external shader compiler is involved.
 pub fn emit_spirv(program: &ShaderProgram) -> Result<Vec<u8>, String> {
     for op in &program.ops {
         match op {
             ShaderOp::MemCopy => continue,
             ShaderOp::IotaFill { value } => {
-                return compile_wgsl(&wgsl_fill(&program.entry, *value), &program.entry);
+                return Ok(fill_module(&program.entry, *value));
             }
             ShaderOp::MatMul => {
-                return compile_wgsl(&wgsl_matmul(&program.entry), &program.entry);
+                return Ok(matmul_module(&program.entry));
             }
             ShaderOp::Rgba8Denoise => {
                 return Err("RGBA8 denoise is CUDA-only in this thin gate".into());
@@ -33,123 +37,293 @@ pub fn emit_spirv(program: &ShaderProgram) -> Result<Vec<u8>, String> {
 
 /// Emit a hard-coded NDC yellow triangle (VS+FS) for Raster `draw=tri`.
 pub fn emit_raster_tri_spirv() -> Result<RasterTriSpirv, String> {
-    let wgsl = r#"
-struct VSOut {
-    @builtin(position) pos: vec4<f32>,
-    @location(0) col: vec4<f32>,
-}
+    let mut spv = Spv::new();
+    let u32_ty = spv.u32_;
+    let bool_ty = spv.bool_;
+    let vec2_ty = spv.vec2_f32;
+    let vec4_ty = spv.vec4_f32;
 
-@vertex
-fn vs_main(@builtin(vertex_index) vid: u32) -> VSOut {
-    var verts = array<vec2<f32>, 3>(
-        vec2<f32>(-0.8, -0.8),
-        vec2<f32>( 0.8, -0.8),
-        vec2<f32>( 0.0,  0.8)
+    let out_vec4_ptr = spv.pointer(storage::OUTPUT, vec4_ty);
+    let in_u32_ptr = spv.pointer(storage::INPUT, u32_ty);
+    let in_vec4_ptr = spv.pointer(storage::INPUT, vec4_ty);
+
+    let out_pos = spv.global(out_vec4_ptr, storage::OUTPUT);
+    let out_col = spv.global(out_vec4_ptr, storage::OUTPUT);
+    spv.decorate(out_pos, decoration::BUILT_IN, &[builtin::POSITION]);
+    spv.decorate(out_col, decoration::LOCATION, &[0]);
+    let in_vid = spv.global(in_u32_ptr, storage::INPUT);
+    spv.decorate(in_vid, decoration::BUILT_IN, &[builtin::VERTEX_INDEX]);
+    let fs_in_col = spv.global(in_vec4_ptr, storage::INPUT);
+    spv.decorate(fs_in_col, decoration::LOCATION, &[0]);
+    let fs_out_color = spv.global(out_vec4_ptr, storage::OUTPUT);
+    spv.decorate(fs_out_color, decoration::LOCATION, &[0]);
+
+    let zero = spv.const_u32(0);
+    let one = spv.const_u32(1);
+    let f_zero = spv.const_f32(0.0);
+    let f_one = spv.const_f32(1.0);
+    let f_low = spv.const_f32(-0.8);
+    let f_high = spv.const_f32(0.8);
+    let v0 = spv.const_composite(vec2_ty, &[f_low, f_low]);
+    let v1 = spv.const_composite(vec2_ty, &[f_high, f_low]);
+    let v2 = spv.const_composite(vec2_ty, &[f_zero, f_high]);
+    let color = spv.const_composite(vec4_ty, &[f_one, f_one, f_zero, f_one]);
+
+    // Vertex entry: `verts[vid]` expands into two selects over three constants.
+    let vs_ty = spv.function_type(spv.void, &[u32_ty]);
+    let vs_id = spv.fresh();
+    let mut vs = Vec::new();
+    inst(&mut vs, op::FUNCTION, &[spv.void, vs_id, 0, vs_ty]);
+    let vid = spv.fresh();
+    inst(&mut vs, op::FUNCTION_PARAMETER, &[u32_ty, vid]);
+    let vs_label = spv.fresh();
+    inst(&mut vs, op::LABEL, &[vs_label]);
+
+    let is_zero = spv::binary(&mut spv, &mut vs, bool_ty, op::I_EQUAL, vid, zero);
+    let is_one = spv::binary(&mut spv, &mut vs, bool_ty, op::I_EQUAL, vid, one);
+    let pick_1_2 = spv::select(&mut spv, &mut vs, vec2_ty, is_one, v1, v2);
+    let corner = spv::select(&mut spv, &mut vs, vec2_ty, is_zero, v0, pick_1_2);
+    let position = spv::construct(&mut spv, &mut vs, vec4_ty, &[corner, f_zero, f_one]);
+    spv::store(&mut vs, out_pos, position);
+    spv::store(&mut vs, out_col, color);
+    inst(&mut vs, op::RETURN, &[]);
+    inst(&mut vs, op::FUNCTION_END, &[]);
+
+    // Fragment entry: pass the interpolated colour through.
+    let fs_ty = spv.function_type(spv.void, &[]);
+    let fs_id = spv.fresh();
+    let mut fs = Vec::new();
+    inst(&mut fs, op::FUNCTION, &[spv.void, fs_id, 0, fs_ty]);
+    let fs_label = spv.fresh();
+    inst(&mut fs, op::LABEL, &[fs_label]);
+    let loaded = spv::load(&mut spv, &mut fs, vec4_ty, fs_in_col);
+    spv::store(&mut fs, fs_out_color, loaded);
+    inst(&mut fs, op::RETURN, &[]);
+    inst(&mut fs, op::FUNCTION_END, &[]);
+
+    spv.entry_point(
+        execution_model::VERTEX,
+        vs_id,
+        "vs_main",
+        &[out_pos, out_col, in_vid],
     );
-    var o: VSOut;
-    o.pos = vec4<f32>(verts[vid], 0.0, 1.0);
-    o.col = vec4<f32>(1.0, 1.0, 0.0, 1.0);
-    return o;
-}
-
-@fragment
-fn fs_main(@location(0) col: vec4<f32>) -> @location(0) vec4<f32> {
-    return col;
-}
-"#;
+    spv.entry_point(
+        execution_model::FRAGMENT,
+        fs_id,
+        "fs_main",
+        &[fs_in_col, fs_out_color],
+    );
+    spv.execution_mode(fs_id, execution_mode::ORIGIN_UPPER_LEFT, &[]);
+    spv.push_function(vs);
+    spv.push_function(fs);
     Ok(RasterTriSpirv {
-        module: compile_wgsl(wgsl, "vs_main")?,
+        module: spv.finish(),
     })
 }
 
-fn wgsl_fill(entry: &str, value: f32) -> String {
-    format!(
-        r#"
-struct Params {{
-    count: u32,
-}}
+/// `out[i] = value for i in 0..count`.
+fn fill_module(entry: &str, value: f32) -> Vec<u8> {
+    let mut spv = Spv::new();
+    let u32_ty = spv.u32_;
+    let bool_ty = spv.bool_;
+    let f32_ty = spv.f32_;
+    let gid_ty = spv.vec3_u32;
 
-@group(0) @binding(0)
-var<storage, read_write> out_buf: array<f32>;
+    let push_struct = spv.block_struct(&[(u32_ty, 0)]);
+    let push_ptr = spv.pointer(storage::PUSH_CONSTANT, push_struct);
+    let push_u32_ptr = spv.pointer(storage::PUSH_CONSTANT, u32_ty);
+    let push_var = spv.global(push_ptr, storage::PUSH_CONSTANT);
 
-var<push_constant> params: Params;
+    let out_array = spv.runtime_array(f32_ty, 4);
+    let out_struct = spv.block_struct(&[(out_array, 0)]);
+    let out_ptr = spv.pointer(storage::STORAGE_BUFFER, out_struct);
+    let out_f32_ptr = spv.pointer(storage::STORAGE_BUFFER, f32_ty);
+    let out_var = spv.global(out_ptr, storage::STORAGE_BUFFER);
+    spv.decorate(out_var, decoration::DESCRIPTOR_SET, &[0]);
+    spv.decorate(out_var, decoration::BINDING, &[0]);
 
-@compute @workgroup_size(64)
-fn {entry}(@builtin(global_invocation_id) gid: vec3<u32>) {{
-    if (gid.x >= params.count) {{
-        return;
-    }}
-    out_buf[gid.x] = {value:?};
-}}
-"#
-    )
+    let function_ty = spv.function_type(spv.void, &[gid_ty]);
+    let function = spv.fresh();
+    let mut words = Vec::new();
+    inst(&mut words, op::FUNCTION, &[spv.void, function, 0, function_ty]);
+    let gid = spv.fresh();
+    inst(&mut words, op::FUNCTION_PARAMETER, &[gid_ty, gid]);
+    spv.decorate(gid, decoration::BUILT_IN, &[builtin::GLOBAL_INVOCATION_ID]);
+    let label = spv.fresh();
+    inst(&mut words, op::LABEL, &[label]);
+
+    let zero = spv.const_u32(0);
+    let value_id = spv.const_f32(value);
+    let mut body = Vec::new();
+    let gid_x = spv::extract(&mut spv, &mut body, u32_ty, gid, 0);
+    let count_ptr = spv::chain(&mut spv, &mut body, push_u32_ptr, push_var, &[zero]);
+    let count = spv::load(&mut spv, &mut body, u32_ty, count_ptr);
+    let in_bounds = spv::binary(&mut spv, &mut body, bool_ty, op::U_LESS_THAN, gid_x, count);
+
+    let active = spv.fresh();
+    let inactive = spv.fresh();
+    let merge = spv.fresh();
+    inst(&mut body, op::SELECTION_MERGE, &[merge, 0]);
+    inst(&mut body, op::BRANCH_CONDITIONAL, &[in_bounds, active, inactive]);
+    inst(&mut body, op::LABEL, &[active]);
+    let element = spv::chain(&mut spv, &mut body, out_f32_ptr, out_var, &[zero, gid_x]);
+    spv::store(&mut body, element, value_id);
+    inst(&mut body, op::BRANCH, &[merge]);
+    inst(&mut body, op::LABEL, &[inactive]);
+    inst(&mut body, op::BRANCH, &[merge]);
+    inst(&mut body, op::LABEL, &[merge]);
+    inst(&mut body, op::RETURN, &[]);
+
+    words.append(&mut body);
+    inst(&mut words, op::FUNCTION_END, &[]);
+    spv.push_function(words);
+
+    spv.entry_point(
+        execution_model::GL_COMPUTE,
+        function,
+        entry,
+        &[push_var, out_var],
+    );
+    spv.execution_mode(function, execution_mode::LOCAL_SIZE, &[64, 1, 1]);
+    spv.finish()
 }
 
-fn wgsl_matmul(entry: &str) -> String {
-    format!(
-        r#"
-struct Dims {{
-    m: u32,
-    n: u32,
-    k: u32,
-    _pad: u32,
-}}
+/// Naive row-major matmul: `C[m,n] = A[m,k] * B[k,n]`.
+fn matmul_module(entry: &str) -> Vec<u8> {
+    let mut spv = Spv::new();
+    let u32_ty = spv.u32_;
+    let bool_ty = spv.bool_;
+    let f32_ty = spv.f32_;
+    let gid_ty = spv.vec3_u32;
+    let ptr_fn_u32 = spv.pointer(storage::FUNCTION, u32_ty);
+    let ptr_fn_f32 = spv.pointer(storage::FUNCTION, f32_ty);
 
-@group(0) @binding(0)
-var<storage, read> a_buf: array<f32>;
+    let push_struct = spv.block_struct(&[(u32_ty, 0), (u32_ty, 4), (u32_ty, 8), (u32_ty, 12)]);
+    let push_ptr = spv.pointer(storage::PUSH_CONSTANT, push_struct);
+    let push_u32_ptr = spv.pointer(storage::PUSH_CONSTANT, u32_ty);
+    let push_var = spv.global(push_ptr, storage::PUSH_CONSTANT);
 
-@group(0) @binding(1)
-var<storage, read> b_buf: array<f32>;
-
-@group(0) @binding(2)
-var<storage, read_write> out_buf: array<f32>;
-
-var<push_constant> dims: Dims;
-
-@compute @workgroup_size(64)
-fn {entry}(@builtin(global_invocation_id) gid: vec3<u32>) {{
-    let idx = gid.x;
-    if (idx >= dims.m * dims.n) {{
-        return;
-    }}
-    let row = idx / dims.n;
-    let col = idx % dims.n;
-    var acc = 0.0;
-    for (var i = 0u; i < dims.k; i = i + 1u) {{
-        acc = acc + a_buf[row * dims.k + i] * b_buf[i * dims.n + col];
-    }}
-    out_buf[idx] = acc;
-}}
-"#
-    )
-}
-
-fn compile_wgsl(source: &str, entry: &str) -> Result<Vec<u8>, String> {
-    let module = naga::front::wgsl::parse_str(source)
-        .map_err(|e| format!("WGSL parse failed for `{entry}`: {e}"))?;
-    let info = naga::valid::Validator::new(
-        naga::valid::ValidationFlags::all(),
-        naga::valid::Capabilities::all(),
-    )
-    .validate(&module)
-    .map_err(|e| format!("WGSL validate failed for `{entry}`: {e}"))?;
-
-    let spv_options = naga::back::spv::Options {
-        lang_version: (1, 3),
-        flags: naga::back::spv::WriterFlags::empty(),
-        binding_map: Default::default(),
-        capabilities: None,
-        bounds_check_policies: naga::proc::BoundsCheckPolicies::default(),
-        zero_initialize_workgroup_memory: naga::back::spv::ZeroInitializeWorkgroupMemoryMode::Native,
-        debug_info: None,
+    let buffer_type = |spv: &mut Spv| {
+        let array = spv.runtime_array(f32_ty, 4);
+        let structure = spv.block_struct(&[(array, 0)]);
+        spv.pointer(storage::STORAGE_BUFFER, structure)
     };
-    let words = naga::back::spv::write_vec(&module, &info, &spv_options, None)
-        .map_err(|e| format!("SPIR-V write failed for `{entry}`: {e}"))?;
-    let mut bytes = Vec::with_capacity(words.len() * 4);
-    for w in words {
-        bytes.extend_from_slice(&w.to_le_bytes());
-    }
-    Ok(bytes)
+    let element_ptr = spv.pointer(storage::STORAGE_BUFFER, f32_ty);
+    let a_ptr = buffer_type(&mut spv);
+    let b_ptr = buffer_type(&mut spv);
+    let out_ptr = buffer_type(&mut spv);
+    let a_var = spv.global(a_ptr, storage::STORAGE_BUFFER);
+    let b_var = spv.global(b_ptr, storage::STORAGE_BUFFER);
+    let out_var = spv.global(out_ptr, storage::STORAGE_BUFFER);
+    spv.decorate(a_var, decoration::DESCRIPTOR_SET, &[0]);
+    spv.decorate(a_var, decoration::BINDING, &[0]);
+    spv.decorate(b_var, decoration::DESCRIPTOR_SET, &[0]);
+    spv.decorate(b_var, decoration::BINDING, &[1]);
+    spv.decorate(out_var, decoration::DESCRIPTOR_SET, &[0]);
+    spv.decorate(out_var, decoration::BINDING, &[2]);
+
+    let function_ty = spv.function_type(spv.void, &[gid_ty]);
+    let function = spv.fresh();
+    let mut words = Vec::new();
+    inst(&mut words, op::FUNCTION, &[spv.void, function, 0, function_ty]);
+    let gid = spv.fresh();
+    inst(&mut words, op::FUNCTION_PARAMETER, &[gid_ty, gid]);
+    spv.decorate(gid, decoration::BUILT_IN, &[builtin::GLOBAL_INVOCATION_ID]);
+    let label = spv.fresh();
+    inst(&mut words, op::LABEL, &[label]);
+
+    let mut locals = Vec::new();
+    let iter_var = spv.fresh();
+    inst(&mut locals, op::VARIABLE, &[ptr_fn_u32, iter_var, storage::FUNCTION]);
+    let acc_var = spv.fresh();
+    inst(&mut locals, op::VARIABLE, &[ptr_fn_f32, acc_var, storage::FUNCTION]);
+
+    let zero = spv.const_u32(0);
+    let one = spv.const_u32(1);
+    let two = spv.const_u32(2);
+    let f_zero = spv.const_f32(0.0);
+
+    let mut body = Vec::new();
+    spv::store(&mut body, iter_var, zero);
+    spv::store(&mut body, acc_var, f_zero);
+    let idx = spv::extract(&mut spv, &mut body, u32_ty, gid, 0);
+    let m_ptr = spv::chain(&mut spv, &mut body, push_u32_ptr, push_var, &[zero]);
+    let m = spv::load(&mut spv, &mut body, u32_ty, m_ptr);
+    let n_ptr = spv::chain(&mut spv, &mut body, push_u32_ptr, push_var, &[one]);
+    let n = spv::load(&mut spv, &mut body, u32_ty, n_ptr);
+    let k_ptr = spv::chain(&mut spv, &mut body, push_u32_ptr, push_var, &[two]);
+    let k = spv::load(&mut spv, &mut body, u32_ty, k_ptr);
+    let total = spv::binary(&mut spv, &mut body, u32_ty, op::I_MUL, m, n);
+    let out_of_bounds =
+        spv::binary(&mut spv, &mut body, bool_ty, op::U_GREATER_THAN_EQUAL, idx, total);
+
+    let row_block = spv.fresh();
+    let exit_block = spv.fresh();
+    let entry_merge = spv.fresh();
+    let loop_block = spv.fresh();
+    let body_block = spv.fresh();
+    let continue_block = spv.fresh();
+    let merge_block = spv.fresh();
+
+    inst(&mut body, op::SELECTION_MERGE, &[entry_merge, 0]);
+    inst(&mut body, op::BRANCH_CONDITIONAL, &[out_of_bounds, exit_block, row_block]);
+    inst(&mut body, op::LABEL, &[row_block]);
+    let row = spv::binary(&mut spv, &mut body, u32_ty, op::U_DIV, idx, n);
+    let col = spv::binary(&mut spv, &mut body, u32_ty, op::U_MOD, idx, n);
+    inst(&mut body, op::BRANCH, &[entry_merge]);
+
+    inst(&mut body, op::LABEL, &[exit_block]);
+    inst(&mut body, op::RETURN, &[]);
+
+    inst(&mut body, op::LABEL, &[entry_merge]);
+    inst(&mut body, op::BRANCH, &[loop_block]);
+
+    inst(&mut body, op::LABEL, &[loop_block]);
+    inst(&mut body, op::LOOP_MERGE, &[merge_block, continue_block, 0]);
+    let iter = spv::load(&mut spv, &mut body, u32_ty, iter_var);
+    let done = spv::binary(&mut spv, &mut body, bool_ty, op::U_GREATER_THAN_EQUAL, iter, k);
+    inst(&mut body, op::BRANCH_CONDITIONAL, &[done, merge_block, body_block]);
+
+    inst(&mut body, op::LABEL, &[body_block]);
+    let row_offset = spv::binary(&mut spv, &mut body, u32_ty, op::I_MUL, row, k);
+    let a_index = spv::binary(&mut spv, &mut body, u32_ty, op::I_ADD, row_offset, iter);
+    let a_element = spv::chain(&mut spv, &mut body, element_ptr, a_var, &[zero, a_index]);
+    let a_value = spv::load(&mut spv, &mut body, f32_ty, a_element);
+    let column_offset = spv::binary(&mut spv, &mut body, u32_ty, op::I_MUL, iter, n);
+    let b_index = spv::binary(&mut spv, &mut body, u32_ty, op::I_ADD, column_offset, col);
+    let b_element = spv::chain(&mut spv, &mut body, element_ptr, b_var, &[zero, b_index]);
+    let b_value = spv::load(&mut spv, &mut body, f32_ty, b_element);
+    let product = spv::binary(&mut spv, &mut body, f32_ty, op::F_MUL, a_value, b_value);
+    let acc = spv::load(&mut spv, &mut body, f32_ty, acc_var);
+    let sum = spv::binary(&mut spv, &mut body, f32_ty, op::F_ADD, acc, product);
+    spv::store(&mut body, acc_var, sum);
+    inst(&mut body, op::BRANCH, &[continue_block]);
+
+    inst(&mut body, op::LABEL, &[continue_block]);
+    let current = spv::load(&mut spv, &mut body, u32_ty, iter_var);
+    let next = spv::binary(&mut spv, &mut body, u32_ty, op::I_ADD, current, one);
+    spv::store(&mut body, iter_var, next);
+    inst(&mut body, op::BRANCH, &[loop_block]);
+
+    inst(&mut body, op::LABEL, &[merge_block]);
+    let out_element = spv::chain(&mut spv, &mut body, element_ptr, out_var, &[zero, idx]);
+    let accumulated = spv::load(&mut spv, &mut body, f32_ty, acc_var);
+    spv::store(&mut body, out_element, accumulated);
+    inst(&mut body, op::RETURN, &[]);
+
+    words.extend_from_slice(&locals);
+    words.append(&mut body);
+    inst(&mut words, op::FUNCTION_END, &[]);
+    spv.push_function(words);
+
+    spv.entry_point(
+        execution_model::GL_COMPUTE,
+        function,
+        entry,
+        &[push_var, a_var, b_var, out_var],
+    );
+    spv.execution_mode(function, execution_mode::LOCAL_SIZE, &[64, 1, 1]);
+    spv.finish()
 }
 
 #[cfg(test)]

@@ -1,10 +1,13 @@
-use naga::{
-    AddressSpace, ArraySize, BinaryOperator, Binding, BuiltIn, EntryPoint, Expression,
-    Function, FunctionArgument, FunctionResult, GlobalVariable, Literal, Module, ResourceBinding,
-    MathFunction, Scalar, ScalarKind, ShaderStage, Statement, StorageAccess, StructMember, Type, TypeInner,
-    VectorSize,
+use std::collections::BTreeMap;
+
+use hardware_program::{
+    validate_program, BinOp, CfgBlock, CfgInstruction, CfgTerminator, Expr,
+    Function as UcfFunction, Program, ScalarTy, Stmt, Ty, UnOp,
 };
-use hardware_program::{validate_program, BinOp, CfgInstruction, CfgTerminator, Expr, Function as UcfFunction, Program, Stmt, Ty, UnOp};
+
+use crate::spv::{
+    self, builtin, decoration, execution_mode, execution_model, glsl, inst, op, storage, Spv,
+};
 
 /// Errors returned when a generic UCF program is outside the first native GPU subset.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,7 +20,7 @@ pub enum ProgramSpirvError {
     UnsupportedExpression(String),
     /// The program uses a statement that this lowering slice cannot represent.
     UnsupportedStatement(String),
-    /// The generated backend IR failed validation or SPIR-V writing.
+    /// The generated module could not be encoded.
     Backend(String),
 }
 
@@ -37,35 +40,26 @@ impl std::error::Error for ProgramSpirvError {}
 
 /// Lower a generic scalar UCF program directly to SPIR-V.
 ///
-/// This path deliberately constructs backend IR instead of accepting shader source.
-/// The first slice writes the entry result to storage binding zero. It supports
-/// scalar constants, uniforms, global instance IDs, arithmetic, comparisons,
-/// local variables, selection, and bounded `for` loops are added incrementally.
+/// This path assembles SPIR-V words from the UCF program: it never parses shader
+/// source and never calls an external shader compiler. The entry result is
+/// written to storage binding zero, bounds-checked against the push-constant
+/// dispatch count.
 pub fn emit_program_spirv(program: &Program, entry: &str) -> Result<Vec<u8>, ProgramSpirvError> {
-    validate_program(program).map_err(|e| ProgramSpirvError::UnsupportedStatement(format!("invalid UCF program: {e}")))?;
+    validate_program(program).map_err(|e| {
+        ProgramSpirvError::UnsupportedStatement(format!("invalid UCF program: {e}"))
+    })?;
     let function = program.entry_fn().ok_or(ProgramSpirvError::MissingEntry)?;
     if function.ret != Ty::f32() && function.ret != Ty::f64() {
-        return Err(ProgramSpirvError::UnsupportedType(format!("return type {:?}", function.ret)));
+        return Err(ProgramSpirvError::UnsupportedType(format!(
+            "return type {:?}",
+            function.ret
+        )));
     }
-    let float_width = if function.ret == Ty::f64() { 8 } else { 4 };
-
-    let mut module = Module::default();
-    let f32_ty = module.types.insert(Type {
-        name: Some("ucf_f32".into()),
-        inner: TypeInner::Scalar(Scalar { kind: ScalarKind::Float, width: float_width }),
-    }, naga::Span::UNDEFINED);
-    let vec3_ty = module.types.insert(Type {
-        name: Some("ucf_vec3".into()),
-        inner: TypeInner::Vector { size: VectorSize::Tri, scalar: Scalar { kind: ScalarKind::Float, width: 4 } },
-    }, naga::Span::UNDEFINED);
-    let gid_ty = module.types.insert(Type {
-        name: Some("ucf_gid".into()),
-        inner: TypeInner::Vector { size: VectorSize::Tri, scalar: Scalar { kind: ScalarKind::Uint, width: 4 } },
-    }, naga::Span::UNDEFINED);
+    let float_width: u32 = if function.ret == Ty::f64() { 8 } else { 4 };
     let uniform_count = function
         .body
         .iter()
-        .flat_map(|stmt| uniform_slots_stmt(stmt))
+        .flat_map(uniform_slots_stmt)
         .max()
         .map(|slot| slot + 1)
         .unwrap_or(0);
@@ -75,648 +69,854 @@ pub fn emit_program_spirv(program: &Program, entry: &str) -> Result<Vec<u8>, Pro
             "push-constant uniform count {uniform_count} exceeds {uniform_limit} for scalar width {float_width}"
         )));
     }
-    let push_u32_ty = module.types.insert(Type {
-        name: Some("ucf_u32".into()),
-        inner: TypeInner::Scalar(Scalar { kind: ScalarKind::Uint, width: 4 }),
-    }, naga::Span::UNDEFINED);
-    let bool_ty = module.types.insert(Type {
-        name: Some("ucf_bool".into()),
-        inner: TypeInner::Scalar(Scalar { kind: ScalarKind::Bool, width: 1 }),
-    }, naga::Span::UNDEFINED);
-    let uniform_global = {
-        let mut members = vec![StructMember {
-            name: Some("dispatch_count".into()), ty: push_u32_ty, binding: None, offset: 0,
-        }];
-        members.extend((0..uniform_count).map(|slot| StructMember {
-            name: Some(format!("u{slot}")), ty: f32_ty, binding: None, offset: u32::from(float_width) * (slot + 1),
-        }));
-        let uniform_struct = module.types.insert(Type {
-            name: Some("ucf_push_constants".into()),
-            inner: TypeInner::Struct {
-                members,
-                span: u32::from(float_width) * (uniform_count + 1),
-            },
-        }, naga::Span::UNDEFINED);
-        module.global_variables.append(GlobalVariable {
-            name: Some("ucf_push_constants".into()),
-            space: AddressSpace::PushConstant,
-            binding: None,
-            ty: uniform_struct,
-            init: None,
-        }, naga::Span::UNDEFINED)
-    };
-    let output_array = module.types.insert(Type {
-        name: Some("ucf_output_array".into()),
-        inner: TypeInner::Array { base: f32_ty, size: ArraySize::Dynamic, stride: u32::from(float_width) },
-    }, naga::Span::UNDEFINED);
-    let output_struct = module.types.insert(Type {
-        name: Some("ucf_output".into()),
-        inner: TypeInner::Struct {
-            members: vec![StructMember { name: Some("data".into()), ty: output_array, binding: None, offset: 0 }],
-            span: u32::from(float_width),
-        },
-    }, naga::Span::UNDEFINED);
-    let output_global = module.global_variables.append(GlobalVariable {
-        name: Some("ucf_output".into()),
-        space: AddressSpace::Storage { access: StorageAccess::LOAD | StorageAccess::STORE },
-        binding: Some(ResourceBinding { group: 0, binding: 0 }),
-        ty: output_struct,
-        init: None,
-    }, naga::Span::UNDEFINED);
+
+    let mut spv = Spv::new();
+    let float_ty = if float_width == 8 { spv.f64() } else { spv.f32_ };
+    let u32_ty = spv.u32_;
+    let bool_ty = spv.bool_;
+    let vec3_ty = spv.vec3_f32;
+    let gid_ty = spv.vec3_u32;
+
+    let mut members = vec![(u32_ty, 0)];
+    members.extend((0..uniform_count).map(|slot| (float_ty, float_width * (slot + 1))));
+    let push_struct = spv.block_struct(&members);
+    let push_ptr = spv.pointer(storage::PUSH_CONSTANT, push_struct);
+    let push_u32_ptr = spv.pointer(storage::PUSH_CONSTANT, u32_ty);
+    let push_float_ptr = spv.pointer(storage::PUSH_CONSTANT, float_ty);
+    let push_var = spv.global(push_ptr, storage::PUSH_CONSTANT);
+
+    let output_array = spv.runtime_array(float_ty, float_width);
+    let output_struct = spv.block_struct(&[(output_array, 0)]);
+    let output_ptr = spv.pointer(storage::STORAGE_BUFFER, output_struct);
+    let element_ptr = spv.pointer(storage::STORAGE_BUFFER, float_ty);
+    let output_var = spv.global(output_ptr, storage::STORAGE_BUFFER);
+    spv.decorate(output_var, decoration::DESCRIPTOR_SET, &[0]);
+    spv.decorate(output_var, decoration::BINDING, &[0]);
+
     let resource_slots = program
         .functions
         .iter()
         .flat_map(|function| function.body.iter().flat_map(resource_slots_stmt))
         .collect::<std::collections::BTreeSet<_>>();
-    let mut buffer_globals = std::collections::BTreeMap::new();
+    let mut buffer_vars = BTreeMap::new();
     for resource in resource_slots {
-        let input_array = module.types.insert(Type {
-            name: Some(format!("ucf_input_{resource}_array")),
-            inner: TypeInner::Array { base: f32_ty, size: ArraySize::Dynamic, stride: u32::from(float_width) },
-        }, naga::Span::UNDEFINED);
-        let input_struct = module.types.insert(Type {
-            name: Some(format!("ucf_input_{resource}")),
-            inner: TypeInner::Struct {
-                members: vec![StructMember { name: Some("data".into()), ty: input_array, binding: None, offset: 0 }],
-                span: u32::from(float_width),
-            },
-        }, naga::Span::UNDEFINED);
-        let global = module.global_variables.append(GlobalVariable {
-            name: Some(format!("ucf_input_{resource}")),
-            space: AddressSpace::Storage { access: StorageAccess::LOAD | StorageAccess::STORE },
-            binding: Some(ResourceBinding { group: 0, binding: resource + 1 }),
-            ty: input_struct,
-            init: None,
-        }, naga::Span::UNDEFINED);
-        buffer_globals.insert(resource, global);
+        let array = spv.runtime_array(float_ty, float_width);
+        let structure = spv.block_struct(&[(array, 0)]);
+        let pointer = spv.pointer(storage::STORAGE_BUFFER, structure);
+        let variable = spv.global(pointer, storage::STORAGE_BUFFER);
+        spv.decorate(variable, decoration::DESCRIPTOR_SET, &[0]);
+        spv.decorate(variable, decoration::BINDING, &[resource + 1]);
+        buffer_vars.insert(resource, variable);
     }
 
-    let mut function_ir = Function {
-        name: Some(entry.into()),
-        arguments: vec![FunctionArgument {
-            name: Some("global_id".into()),
-            ty: gid_ty,
-            binding: Some(Binding::BuiltIn(BuiltIn::GlobalInvocationId)),
-        }],
-        result: Some(FunctionResult { ty: f32_ty, binding: None }),
-        ..Function::default()
-    };
-    let gid = function_ir.expressions.append(Expression::FunctionArgument(0), naga::Span::UNDEFINED);
-    let gid_x = function_ir.expressions.append(Expression::AccessIndex { base: gid, index: 0 }, naga::Span::UNDEFINED);
-    function_ir.body.push(Statement::Emit(naga::Range::new_from_bounds(gid_x, gid_x)), naga::Span::UNDEFINED);
-    let push_ptr = function_ir.expressions.append(Expression::GlobalVariable(uniform_global), naga::Span::UNDEFINED);
-    let count_ptr = function_ir.expressions.append(Expression::AccessIndex { base: push_ptr, index: 0 }, naga::Span::UNDEFINED);
-    let count = function_ir.expressions.append(Expression::Load { pointer: count_ptr }, naga::Span::UNDEFINED);
-    let in_bounds = function_ir.expressions.append(Expression::Binary { op: BinaryOperator::Less, left: gid_x, right: count }, naga::Span::UNDEFINED);
-    function_ir.body.push(Statement::Emit(naga::Range::new_from_bounds(count, in_bounds)), naga::Span::UNDEFINED);
-    let mut inactive = naga::Block::new();
-    inactive.push(Statement::Return { value: None }, naga::Span::UNDEFINED);
-    function_ir.body.push(Statement::If {
-        condition: in_bounds,
-        accept: naga::Block::new(),
-        reject: inactive,
-    }, naga::Span::UNDEFINED);
-    let result = {
-        let locals = std::collections::BTreeMap::new();
-        let emitted_count = function_ir.expressions.len();
-        let mut lower = Lowerer { function: &mut function_ir, float_width, f32_ty, vec3_ty, u32_ty: push_u32_ty, bool_ty, gid_x, in_bounds, uniform_global: Some(uniform_global), buffer_globals, locals, emitted_count };
-        let result = lower.lower_statements(function)?;
-        lower.emit_pending();
-        result
-    };
-    let out_ptr = function_ir.expressions.append(Expression::GlobalVariable(output_global), naga::Span::UNDEFINED);
-    let out_data = function_ir.expressions.append(Expression::AccessIndex { base: out_ptr, index: 0 }, naga::Span::UNDEFINED);
-    let out_element = function_ir.expressions.append(Expression::Access { base: out_data, index: gid_x }, naga::Span::UNDEFINED);
-    function_ir.body.push(Statement::Emit(naga::Range::new_from_bounds(out_data, out_element)), naga::Span::UNDEFINED);
-    let mut store_body = naga::Block::new();
-    store_body.push(Statement::Store { pointer: out_element, value: result }, naga::Span::UNDEFINED);
-    function_ir.body.push(Statement::If { condition: in_bounds, accept: store_body, reject: naga::Block::new() }, naga::Span::UNDEFINED);
-    function_ir.body.push(Statement::Return { value: None }, naga::Span::UNDEFINED);
-    function_ir.result = None;
-    module.entry_points.push(EntryPoint {
-        name: entry.into(),
-        stage: ShaderStage::Compute,
-        early_depth_test: None,
-        workgroup_size: [64, 1, 1],
-        workgroup_size_overrides: None,
-        function: function_ir,
-    });
+    let function_ty = spv.function_type(spv.void, &[gid_ty]);
+    let function_id = spv.fresh();
+    let mut words = Vec::new();
+    inst(&mut words, op::FUNCTION, &[spv.void, function_id, 0, function_ty]);
+    let gid = spv.fresh();
+    inst(&mut words, op::FUNCTION_PARAMETER, &[gid_ty, gid]);
+    spv.decorate(gid, decoration::BUILT_IN, &[builtin::GLOBAL_INVOCATION_ID]);
+    let label = spv.fresh();
+    inst(&mut words, op::LABEL, &[label]);
 
-    let info = naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::all())
-        .validate(&module)
-        .map_err(|e| ProgramSpirvError::Backend(format!("validation failed: {e:?}")))?;
-    let options = naga::back::spv::Options {
-        lang_version: (1, 3),
-        flags: naga::back::spv::WriterFlags::empty(),
-        binding_map: Default::default(),
-        capabilities: None,
-        bounds_check_policies: naga::proc::BoundsCheckPolicies::default(),
-        zero_initialize_workgroup_memory: naga::back::spv::ZeroInitializeWorkgroupMemoryMode::Native,
-        debug_info: None,
+    let zero = spv.const_u32(0);
+    let mut body = Vec::new();
+    let gid_x = spv::extract(&mut spv, &mut body, u32_ty, gid, 0);
+    let count_ptr = spv::chain(&mut spv, &mut body, push_u32_ptr, push_var, &[zero]);
+    let count = spv::load(&mut spv, &mut body, u32_ty, count_ptr);
+    let in_bounds = spv::binary(&mut spv, &mut body, bool_ty, op::U_LESS_THAN, gid_x, count);
+
+    // Inactive invocations return before touching any storage buffer.
+    let active = spv.fresh();
+    let inactive = spv.fresh();
+    let continue_block = spv.fresh();
+    inst(&mut body, op::SELECTION_MERGE, &[continue_block, 0]);
+    inst(&mut body, op::BRANCH_CONDITIONAL, &[in_bounds, active, inactive]);
+    inst(&mut body, op::LABEL, &[inactive]);
+    inst(&mut body, op::RETURN, &[]);
+    inst(&mut body, op::LABEL, &[active]);
+    inst(&mut body, op::BRANCH, &[continue_block]);
+    inst(&mut body, op::LABEL, &[continue_block]);
+
+    let mut lower = Lowerer {
+        spv: &mut spv,
+        float_width,
+        float_ty,
+        u32_ty,
+        bool_ty,
+        vec3_ty,
+        gid_x,
+        push_var,
+        push_float_ptr,
+        elem_ptr: element_ptr,
+        buffer_vars,
+        locals: BTreeMap::new(),
+        local_kinds: BTreeMap::new(),
+        local_decls: Vec::new(),
+        body,
     };
-    let words = naga::back::spv::write_vec(&module, &info, &options, None)
-        .map_err(|e| ProgramSpirvError::Backend(format!("SPIR-V write failed: {e}")))?;
-    let words = preserve_float_evaluation_order(&words)?;
-    Ok(words.into_iter().flat_map(u32::to_le_bytes).collect())
+    lower.local_kinds.insert(gid_x, Kind::U32);
+    let interface_buffers = lower.buffer_vars.values().copied().collect::<Vec<_>>();
+    let outcome = lower.lower_statements(function);
+    let local_decls = std::mem::take(&mut lower.local_decls);
+    let mut body = std::mem::take(&mut lower.body);
+    let result = outcome?;
+    drop(lower);
+
+    let output_element = spv::chain(&mut spv, &mut body, element_ptr, output_var, &[zero, gid_x]);
+    spv::store(&mut body, output_element, result);
+    inst(&mut body, op::RETURN, &[]);
+
+    words.extend_from_slice(&local_decls);
+    words.append(&mut body);
+    inst(&mut words, op::FUNCTION_END, &[]);
+    spv.push_function(words);
+
+    let mut interface = vec![push_var, output_var];
+    interface.extend(interface_buffers);
+    spv.entry_point(execution_model::GL_COMPUTE, function_id, entry, &interface);
+    spv.execution_mode(function_id, execution_mode::LOCAL_SIZE, &[64, 1, 1]);
+    Ok(spv.finish())
 }
 
-fn preserve_float_evaluation_order(words: &[u32]) -> Result<Vec<u32>, ProgramSpirvError> {
-    use rspirv::{binary::Assemble, dr::{Instruction, Operand}, spirv::{Decoration, Op}};
-    let mut module = rspirv::dr::load_words(words)
-        .map_err(|error| ProgramSpirvError::Backend(format!("SPIR-V parse failed: {error}")))?;
-    let targets = module.functions.iter().flat_map(|function| &function.blocks)
-        .flat_map(|block| &block.instructions)
-        .filter(|instruction| matches!(instruction.class.opcode,
-            Op::FAdd | Op::FSub | Op::FMul | Op::FDiv | Op::FRem | Op::FMod |
-            Op::VectorTimesScalar | Op::MatrixTimesScalar | Op::VectorTimesMatrix |
-            Op::MatrixTimesVector | Op::MatrixTimesMatrix | Op::OuterProduct | Op::Dot))
-        .filter_map(|instruction| instruction.result_id).collect::<Vec<_>>();
-    for target in targets {
-        module.annotations.push(Instruction::new(Op::Decorate, None, None,
-            vec![Operand::IdRef(target), Operand::Decoration(Decoration::NoContraction)]));
-    }
-    Ok(module.assemble())
+/// Value classes the encoder distinguishes when choosing an opcode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    Float,
+    U32,
+    Bool,
+    Vec3,
 }
 
 struct Lowerer<'a> {
-    function: &'a mut Function,
-    float_width: u8,
-    f32_ty: naga::Handle<Type>,
-    vec3_ty: naga::Handle<Type>,
-    u32_ty: naga::Handle<Type>,
-    bool_ty: naga::Handle<Type>,
-    gid_x: naga::Handle<Expression>,
-    in_bounds: naga::Handle<Expression>,
-    uniform_global: Option<naga::Handle<GlobalVariable>>,
-    buffer_globals: std::collections::BTreeMap<u32, naga::Handle<GlobalVariable>>,
-    locals: std::collections::BTreeMap<u32, naga::Handle<naga::LocalVariable>>,
-    emitted_count: usize,
+    spv: &'a mut Spv,
+    float_width: u32,
+    float_ty: u32,
+    u32_ty: u32,
+    bool_ty: u32,
+    vec3_ty: u32,
+    gid_x: u32,
+    push_var: u32,
+    push_float_ptr: u32,
+    elem_ptr: u32,
+    buffer_vars: BTreeMap<u32, u32>,
+    locals: BTreeMap<u32, u32>,
+    local_kinds: BTreeMap<u32, Kind>,
+    local_decls: Vec<u32>,
+    body: Vec<u32>,
 }
 
 impl<'a> Lowerer<'a> {
     fn scalar_type(&self) -> Ty {
-        if self.float_width == 8 { Ty::f64() } else { Ty::f32() }
-    }
-    fn emit_pending(&mut self) {
-        let mut block = std::mem::take(&mut self.function.body);
-        self.emit_pending_into(&mut block);
-        self.function.body = block;
-    }
-
-    fn emit_pending_into(&mut self, block: &mut naga::Block) {
-        let pending: Vec<_> = self.function.expressions.iter()
-            .skip(self.emitted_count)
-            .filter(|(_, expression)| !expression.needs_pre_emit())
-            .map(|(handle, _)| handle)
-            .collect();
-        for handle in pending {
-            block.push(Statement::Emit(naga::Range::new_from_bounds(handle, handle)), naga::Span::UNDEFINED);
+        if self.float_width == 8 {
+            Ty::f64()
+        } else {
+            Ty::f32()
         }
-        self.emitted_count = self.function.expressions.len();
     }
 
-    fn lower_loop_local(&mut self, stmt: &Stmt, block: &mut naga::Block) -> Result<(), ProgramSpirvError> {
-        let (id, value) = match stmt {
-            Stmt::For { .. } | Stmt::While { .. } => {
-                self.emit_pending_into(block);
-                let parent = std::mem::replace(&mut self.function.body, naga::Block::new());
-                let result = self.lower_statement_sequence(std::slice::from_ref(stmt));
-                let mut nested = std::mem::replace(&mut self.function.body, parent);
-                block.append(&mut nested);
-                result?;
-                return Ok(());
-            }
-            Stmt::Let { id, ty, init } => {
-                let local_ty = match ty {
-                    ty if *ty == self.scalar_type() => self.f32_ty,
-                    Ty::Vec3 => self.vec3_ty,
-                    Ty::Scalar(hardware_program::ScalarTy::U32) => self.u32_ty,
-                    Ty::Scalar(hardware_program::ScalarTy::Bool) => self.bool_ty,
-                    other => return Err(ProgramSpirvError::UnsupportedType(format!("loop local {other:?}"))),
-                };
-                let local = self.function.local_variables.append(
-                    naga::LocalVariable { name: Some(format!("local_{id}")), ty: local_ty, init: None },
-                    naga::Span::UNDEFINED,
-                );
-                let value = self.lower_expr(init)?;
-                self.locals.insert(*id, local);
-                (*id, value)
-            }
-            Stmt::StoreLocal { id, value } => (*id, self.lower_expr(value)?),
-            other => return Err(ProgramSpirvError::UnsupportedStatement(format!("native GPU loop body: {other:?}"))),
-        };
-        let local = *self.locals.get(&id).ok_or_else(|| ProgramSpirvError::UnsupportedStatement(format!("unknown local {id}")))?;
-        let pointer = self.function.expressions.append(Expression::LocalVariable(local), naga::Span::UNDEFINED);
-        self.emit_pending_into(block);
-        block.push(Statement::Store { pointer, value }, naga::Span::UNDEFINED);
-        Ok(())
+    fn type_of(&self, kind: Kind) -> u32 {
+        match kind {
+            Kind::Float => self.float_ty,
+            Kind::U32 => self.u32_ty,
+            Kind::Bool => self.bool_ty,
+            Kind::Vec3 => self.vec3_ty,
+        }
     }
 
-    fn lower_statements(&mut self, function: &UcfFunction) -> Result<naga::Handle<Expression>, ProgramSpirvError> {
-        self.lower_statement_sequence(&function.body)?
+    fn kind_of(&self, value: u32) -> Kind {
+        self.local_kinds.get(&value).copied().unwrap_or(Kind::Float)
+    }
+
+    fn local_type(&self, ty: &Ty) -> Option<(u32, Kind)> {
+        if *ty == self.scalar_type() {
+            return Some((self.float_ty, Kind::Float));
+        }
+        match ty {
+            Ty::Vec3 => Some((self.vec3_ty, Kind::Vec3)),
+            Ty::Scalar(ScalarTy::U32) => Some((self.u32_ty, Kind::U32)),
+            Ty::Scalar(ScalarTy::Bool) => Some((self.bool_ty, Kind::Bool)),
+            _ => None,
+        }
+    }
+
+    fn lower_statements(
+        &mut self,
+        function: &UcfFunction,
+    ) -> Result<u32, ProgramSpirvError> {
+        self.lower_sequence(&function.body)?
             .ok_or_else(|| ProgramSpirvError::UnsupportedStatement("entry has no return".into()))
     }
 
-    fn lower_statement_sequence(&mut self, statements: &[Stmt]) -> Result<Option<naga::Handle<Expression>>, ProgramSpirvError> {
+    /// Lower `statements` into a fresh block and return that block's words.
+    fn lower_nested(&mut self, statements: &[Stmt]) -> Result<Vec<u32>, ProgramSpirvError> {
+        let saved = std::mem::replace(&mut self.body, Vec::new());
+        let result = self.lower_sequence(statements);
+        let nested = std::mem::replace(&mut self.body, saved);
+        result?;
+        Ok(nested)
+    }
+
+    fn lower_sequence(
+        &mut self,
+        statements: &[Stmt],
+    ) -> Result<Option<u32>, ProgramSpirvError> {
         let mut result = None;
         for stmt in statements {
             match stmt {
                 Stmt::Cfg { entry, blocks } => {
                     if result.is_some() || statements.len() != 1 {
-                        return Err(ProgramSpirvError::UnsupportedStatement("CFG must be the complete function body".into()));
+                        return Err(ProgramSpirvError::UnsupportedStatement(
+                            "CFG must be the complete function body".into(),
+                        ));
                     }
                     result = Some(self.lower_pure_cfg(*entry, blocks)?);
                 }
                 Stmt::Let { id, ty, init } => {
-                    let local_ty = match ty {
-                        ty if *ty == self.scalar_type() => self.f32_ty,
-                        Ty::Vec3 => self.vec3_ty,
-                        Ty::Scalar(hardware_program::ScalarTy::U32) => self.u32_ty,
-                        Ty::Scalar(hardware_program::ScalarTy::Bool) => self.bool_ty,
-                        other => return Err(ProgramSpirvError::UnsupportedType(format!("local {other:?}"))),
-                    };
-                    let local = self.function.local_variables.append(naga::LocalVariable { name: Some(format!("local_{id}")), ty: local_ty, init: None }, naga::Span::UNDEFINED);
+                    let (local_ty, kind) = self.local_type(ty).ok_or_else(|| {
+                        ProgramSpirvError::UnsupportedType(format!("local {ty:?}"))
+                    })?;
+                    let pointer_ty = self.spv.pointer(storage::FUNCTION, local_ty);
+                    let local = self.spv.fresh();
+                    inst(
+                        &mut self.local_decls,
+                        op::VARIABLE,
+                        &[pointer_ty, local, storage::FUNCTION],
+                    );
                     let value = self.lower_expr(init)?;
-                    let pointer = self.function.expressions.append(Expression::LocalVariable(local), naga::Span::UNDEFINED);
-                    self.emit_pending();
-                    self.function.body.push(Statement::Store { pointer, value }, naga::Span::UNDEFINED);
+                    spv::store(&mut self.body, local, value);
                     self.locals.insert(*id, local);
+                    self.local_kinds.insert(local, kind);
                 }
                 Stmt::StoreLocal { id, value } => {
-                    let local = *self.locals.get(id).ok_or_else(|| ProgramSpirvError::UnsupportedStatement(format!("unknown local {id}")))?;
-                    let pointer = self.function.expressions.append(Expression::LocalVariable(local), naga::Span::UNDEFINED);
+                    let local = *self.locals.get(id).ok_or_else(|| {
+                        ProgramSpirvError::UnsupportedStatement(format!("unknown local {id}"))
+                    })?;
                     let value = self.lower_expr(value)?;
-                    self.emit_pending();
-                    self.function.body.push(Statement::Store { pointer, value }, naga::Span::UNDEFINED);
+                    spv::store(&mut self.body, local, value);
                 }
                 Stmt::StoreBuffer { resource, index, value } => {
-                    let global = *self.buffer_globals.get(resource).ok_or_else(|| {
-                        ProgramSpirvError::UnsupportedStatement(format!("unknown buffer resource {resource}"))
+                    let global = *self.buffer_vars.get(resource).ok_or_else(|| {
+                        ProgramSpirvError::UnsupportedStatement(format!(
+                            "unknown buffer resource {resource}"
+                        ))
                     })?;
                     let index = self.lower_expr(index)?;
                     let value = self.lower_expr(value)?;
-                    let base = self.function.expressions.append(
-                        Expression::GlobalVariable(global),
-                        naga::Span::UNDEFINED,
-                    );
-                    let data = self.function.expressions.append(
-                        Expression::AccessIndex { base, index: 0 },
-                        naga::Span::UNDEFINED,
-                    );
-                    let pointer = self.function.expressions.append(
-                        Expression::Access { base: data, index },
-                        naga::Span::UNDEFINED,
-                    );
-                    self.emit_pending();
-                    let mut store_body = naga::Block::new();
-                    store_body.push(Statement::Store { pointer, value }, naga::Span::UNDEFINED);
-                    self.function.body.push(Statement::If {
-                        condition: self.in_bounds,
-                        accept: store_body,
-                        reject: naga::Block::new(),
-                    }, naga::Span::UNDEFINED);
+                    let zero = self.spv.const_u32(0);
+                    let element =
+                        spv::chain(self.spv, &mut self.body, self.elem_ptr, global, &[zero, index]);
+                    spv::store(&mut self.body, element, value);
                 }
-                Stmt::For { iter, body, limit } => {
-                    let iter_handle = self.function.local_variables.append(
-                        naga::LocalVariable { name: Some("ucf_for_iter".into()), ty: self.u32_ty, init: None },
-                        naga::Span::UNDEFINED,
-                    );
-                    let iter_ptr = self.function.expressions.append(Expression::LocalVariable(iter_handle), naga::Span::UNDEFINED);
-                    let previous_iter = self.locals.insert(*iter, iter_handle);
-                    let zero = self.function.expressions.append(Expression::Literal(Literal::U32(0)), naga::Span::UNDEFINED);
-                    self.emit_pending();
-                    self.function.body.push(Statement::Store { pointer: iter_ptr, value: zero }, naga::Span::UNDEFINED);
-
-                    let mut loop_body = naga::Block::new();
-                    let iter_value = self.function.expressions.append(Expression::Load { pointer: iter_ptr }, naga::Span::UNDEFINED);
-                    let limit_value = self.function.expressions.append(Expression::Literal(Literal::U32(*limit)), naga::Span::UNDEFINED);
-                    let done = self.function.expressions.append(
-                        Expression::Binary { op: BinaryOperator::GreaterEqual, left: iter_value, right: limit_value },
-                        naga::Span::UNDEFINED,
-                    );
-                    // The iterator load must be emitted inside the loop. Emitting it
-                    // in the parent block freezes the condition at the initial value.
-                    self.emit_pending_into(&mut loop_body);
-                    let mut stop = naga::Block::new();
-                    stop.push(Statement::Break, naga::Span::UNDEFINED);
-                    loop_body.push(Statement::If { condition: done, accept: stop, reject: naga::Block::new() }, naga::Span::UNDEFINED);
-                    for nested in body {
-                        self.lower_loop_local(nested, &mut loop_body)?;
-                    }
-                    let one = self.function.expressions.append(Expression::Literal(Literal::U32(1)), naga::Span::UNDEFINED);
-                    let current = self.function.expressions.append(Expression::Load { pointer: iter_ptr }, naga::Span::UNDEFINED);
-                    let next = self.function.expressions.append(Expression::Binary { op: BinaryOperator::Add, left: current, right: one }, naga::Span::UNDEFINED);
-                    let mut continuing = naga::Block::new();
-                    self.emit_pending_into(&mut continuing);
-                    continuing.push(Statement::Store { pointer: iter_ptr, value: next }, naga::Span::UNDEFINED);
-                    self.function.body.push(Statement::Loop { body: loop_body, continuing, break_if: None }, naga::Span::UNDEFINED);
-                    if let Some(previous) = previous_iter {
-                        self.locals.insert(*iter, previous);
-                    } else {
-                        self.locals.remove(iter);
-                    }
-                }
-                Stmt::While { cond, body, limit } => {
-                    let iter = self.function.local_variables.append(
-                        naga::LocalVariable { name: Some("ucf_while_iter".into()), ty: self.u32_ty, init: None },
-                        naga::Span::UNDEFINED,
-                    );
-                    let iter_ptr = self.function.expressions.append(Expression::LocalVariable(iter), naga::Span::UNDEFINED);
-                    let zero = self.function.expressions.append(Expression::Literal(Literal::U32(0)), naga::Span::UNDEFINED);
-                    self.emit_pending();
-                    self.function.body.push(Statement::Store { pointer: iter_ptr, value: zero }, naga::Span::UNDEFINED);
-
-                    let mut loop_body = naga::Block::new();
-                    let iter_value = self.function.expressions.append(Expression::Load { pointer: iter_ptr }, naga::Span::UNDEFINED);
-                    let limit_value = self.function.expressions.append(Expression::Literal(Literal::U32(*limit)), naga::Span::UNDEFINED);
-                    let exhausted = self.function.expressions.append(
-                        Expression::Binary { op: BinaryOperator::GreaterEqual, left: iter_value, right: limit_value },
-                        naga::Span::UNDEFINED,
-                    );
-                    let condition = self.lower_expr(cond)?;
-                    self.emit_pending_into(&mut loop_body);
-                    let mut stop = naga::Block::new();
-                    stop.push(Statement::Break, naga::Span::UNDEFINED);
-                    loop_body.push(Statement::If { condition: exhausted, accept: stop, reject: naga::Block::new() }, naga::Span::UNDEFINED);
-                    let mut body_block = naga::Block::new();
-                    let mut body_stop = naga::Block::new();
-                    body_stop.push(Statement::Break, naga::Span::UNDEFINED);
-                    let mut body_accept = naga::Block::new();
-                    for nested in body {
-                        self.lower_loop_local(nested, &mut body_accept)?;
-                    }
-                    body_block.push(Statement::If { condition, accept: body_accept, reject: body_stop }, naga::Span::UNDEFINED);
-                    loop_body.append(&mut body_block);
-                    let one = self.function.expressions.append(Expression::Literal(Literal::U32(1)), naga::Span::UNDEFINED);
-                    let current = self.function.expressions.append(Expression::Load { pointer: iter_ptr }, naga::Span::UNDEFINED);
-                    let next = self.function.expressions.append(Expression::Binary { op: BinaryOperator::Add, left: current, right: one }, naga::Span::UNDEFINED);
-                    let mut continuing = naga::Block::new();
-                    self.emit_pending_into(&mut continuing);
-                    continuing.push(Statement::Store { pointer: iter_ptr, value: next }, naga::Span::UNDEFINED);
-                    self.function.body.push(Statement::Loop { body: loop_body, continuing, break_if: None }, naga::Span::UNDEFINED);
-                }
+                Stmt::For { iter, body, limit } => self.lower_for(*iter, *limit, body)?,
+                Stmt::While { cond, body, limit } => self.lower_while(cond, *limit, body)?,
                 Stmt::Return(value) => result = Some(self.lower_expr(value)?),
-                Stmt::Expr(expr) => { let _ = self.lower_expr(expr)?; }
-                other => return Err(ProgramSpirvError::UnsupportedStatement(format!("{other:?}"))),
+                Stmt::Expr(expr) => {
+                    let _ = self.lower_expr(expr)?;
+                }
+                other => {
+                    return Err(ProgramSpirvError::UnsupportedStatement(format!(
+                        "{other:?}"
+                    )))
+                }
             }
         }
         Ok(result)
     }
 
-    fn lower_pure_cfg(&mut self, entry: u32, blocks: &[hardware_program::CfgBlock]) -> Result<naga::Handle<Expression>, ProgramSpirvError> {
-        let entry_block = blocks.iter().find(|block| block.id == entry).ok_or_else(|| ProgramSpirvError::UnsupportedStatement("CFG entry block is missing".into()))?;
+    fn lower_for(
+        &mut self,
+        iter: u32,
+        limit: u32,
+        body: &[Stmt],
+    ) -> Result<(), ProgramSpirvError> {
+        let pointer_ty = self.spv.pointer(storage::FUNCTION, self.u32_ty);
+        let counter = self.spv.fresh();
+        inst(
+            &mut self.local_decls,
+            op::VARIABLE,
+            &[pointer_ty, counter, storage::FUNCTION],
+        );
+        let zero = self.spv.const_u32(0);
+        let one = self.spv.const_u32(1);
+        let limit_id = self.spv.const_u32(limit);
+        spv::store(&mut self.body, counter, zero);
+
+        let loop_label = self.spv.fresh();
+        let body_label = self.spv.fresh();
+        let continue_label = self.spv.fresh();
+        let merge_label = self.spv.fresh();
+        inst(&mut self.body, op::BRANCH, &[loop_label]);
+        inst(&mut self.body, op::LABEL, &[loop_label]);
+        inst(
+            &mut self.body,
+            op::LOOP_MERGE,
+            &[merge_label, continue_label, 0],
+        );
+        let current = spv::load(self.spv, &mut self.body, self.u32_ty, counter);
+        let done = spv::binary(
+            self.spv,
+            &mut self.body,
+            self.bool_ty,
+            op::U_GREATER_THAN_EQUAL,
+            current,
+            limit_id,
+        );
+        inst(
+            &mut self.body,
+            op::BRANCH_CONDITIONAL,
+            &[done, merge_label, body_label],
+        );
+        inst(&mut self.body, op::LABEL, &[body_label]);
+
+        let previous = self.locals.insert(iter, counter);
+        let previous_kind = self.local_kinds.insert(counter, Kind::U32);
+        let nested = self.lower_nested(body)?;
+        self.body.extend_from_slice(&nested);
+        if let Some(previous) = previous {
+            self.locals.insert(iter, previous);
+        } else {
+            self.locals.remove(&iter);
+        }
+        if let Some(previous) = previous_kind {
+            self.local_kinds.insert(counter, previous);
+        }
+
+        inst(&mut self.body, op::BRANCH, &[continue_label]);
+        inst(&mut self.body, op::LABEL, &[continue_label]);
+        let current = spv::load(self.spv, &mut self.body, self.u32_ty, counter);
+        let next = spv::binary(self.spv, &mut self.body, self.u32_ty, op::I_ADD, current, one);
+        spv::store(&mut self.body, counter, next);
+        inst(&mut self.body, op::BRANCH, &[loop_label]);
+        inst(&mut self.body, op::LABEL, &[merge_label]);
+        Ok(())
+    }
+
+    fn lower_while(
+        &mut self,
+        cond: &Expr,
+        limit: u32,
+        body: &[Stmt],
+    ) -> Result<(), ProgramSpirvError> {
+        let pointer_ty = self.spv.pointer(storage::FUNCTION, self.u32_ty);
+        let counter = self.spv.fresh();
+        inst(
+            &mut self.local_decls,
+            op::VARIABLE,
+            &[pointer_ty, counter, storage::FUNCTION],
+        );
+        let zero = self.spv.const_u32(0);
+        let one = self.spv.const_u32(1);
+        let limit_id = self.spv.const_u32(limit);
+        spv::store(&mut self.body, counter, zero);
+
+        let loop_label = self.spv.fresh();
+        let body_label = self.spv.fresh();
+        let continue_label = self.spv.fresh();
+        let merge_label = self.spv.fresh();
+        inst(&mut self.body, op::BRANCH, &[loop_label]);
+        inst(&mut self.body, op::LABEL, &[loop_label]);
+        inst(
+            &mut self.body,
+            op::LOOP_MERGE,
+            &[merge_label, continue_label, 0],
+        );
+        let current = spv::load(self.spv, &mut self.body, self.u32_ty, counter);
+        let exhausted = spv::binary(
+            self.spv,
+            &mut self.body,
+            self.bool_ty,
+            op::U_GREATER_THAN_EQUAL,
+            current,
+            limit_id,
+        );
+        let condition = self.lower_expr(cond)?;
+        let negated = spv::unary(self.spv, &mut self.body, self.bool_ty, op::LOGICAL_NOT, condition);
+        let stop = spv::binary(
+            self.spv,
+            &mut self.body,
+            self.bool_ty,
+            op::LOGICAL_OR,
+            exhausted,
+            negated,
+        );
+        inst(
+            &mut self.body,
+            op::BRANCH_CONDITIONAL,
+            &[stop, merge_label, body_label],
+        );
+        inst(&mut self.body, op::LABEL, &[body_label]);
+
+        let nested = self.lower_nested(body)?;
+        self.body.extend_from_slice(&nested);
+
+        inst(&mut self.body, op::BRANCH, &[continue_label]);
+        inst(&mut self.body, op::LABEL, &[continue_label]);
+        let current = spv::load(self.spv, &mut self.body, self.u32_ty, counter);
+        let next = spv::binary(self.spv, &mut self.body, self.u32_ty, op::I_ADD, current, one);
+        spv::store(&mut self.body, counter, next);
+        inst(&mut self.body, op::BRANCH, &[loop_label]);
+        inst(&mut self.body, op::LABEL, &[merge_label]);
+        Ok(())
+    }
+
+    fn lower_pure_cfg(
+        &mut self,
+        entry: u32,
+        blocks: &[CfgBlock],
+    ) -> Result<u32, ProgramSpirvError> {
+        let entry_block = blocks.iter().find(|block| block.id == entry).ok_or_else(|| {
+            ProgramSpirvError::UnsupportedStatement("CFG entry block is missing".into())
+        })?;
         if blocks.len() == 1 {
             let CfgTerminator::Return(value) = entry_block.terminator else {
-                return Err(ProgramSpirvError::UnsupportedStatement("single-block CFG must return".into()));
+                return Err(ProgramSpirvError::UnsupportedStatement(
+                    "single-block CFG must return".into(),
+                ));
             };
-            let mut values = std::collections::BTreeMap::new();
+            let mut values = BTreeMap::new();
             for instruction in &entry_block.instructions {
                 self.lower_cfg_instruction(instruction, &mut values)?;
             }
             return values.get(&value).copied().ok_or_else(|| {
-                ProgramSpirvError::UnsupportedStatement(format!("CFG return value {value} is not defined"))
+                ProgramSpirvError::UnsupportedStatement(format!(
+                    "CFG return value {value} is not defined"
+                ))
             });
         }
-        let CfgTerminator::ConditionalBranch { condition, then_block, then_args, else_block, else_args } = &entry_block.terminator else {
-            return Err(ProgramSpirvError::UnsupportedStatement("GPU CFG subset requires one conditional entry branch".into()));
+        let CfgTerminator::ConditionalBranch {
+            condition,
+            then_block,
+            then_args,
+            else_block,
+            else_args,
+        } = &entry_block.terminator
+        else {
+            return Err(ProgramSpirvError::UnsupportedStatement(
+                "GPU CFG subset requires one conditional entry branch".into(),
+            ));
         };
-        let mut values = std::collections::BTreeMap::new();
+        let mut values = BTreeMap::new();
         for instruction in &entry_block.instructions {
             self.lower_cfg_instruction(instruction, &mut values)?;
         }
-        let condition = *values.get(condition).ok_or_else(|| ProgramSpirvError::UnsupportedStatement("CFG condition is not defined in entry block".into()))?;
+        let condition = *values.get(condition).ok_or_else(|| {
+            ProgramSpirvError::UnsupportedStatement(
+                "CFG condition is not defined in entry block".into(),
+            )
+        })?;
         let then_value = self.lower_cfg_return_block(*then_block, then_args, blocks, &mut values)?;
         let else_value = self.lower_cfg_return_block(*else_block, else_args, blocks, &mut values)?;
-        Ok(self.function.expressions.append(Expression::Select { condition, accept: then_value, reject: else_value }, naga::Span::UNDEFINED))
+        Ok(spv::select(
+            self.spv,
+            &mut self.body,
+            self.float_ty,
+            condition,
+            then_value,
+            else_value,
+        ))
     }
 
-    fn lower_cfg_return_block(&mut self, block_id: u32, args: &[u32], blocks: &[hardware_program::CfgBlock], values: &mut std::collections::BTreeMap<u32, naga::Handle<Expression>>) -> Result<naga::Handle<Expression>, ProgramSpirvError> {
-        let block = blocks.iter().find(|block| block.id == block_id).ok_or_else(|| ProgramSpirvError::UnsupportedStatement(format!("CFG target block {block_id} is missing")))?;
+    fn lower_cfg_return_block(
+        &mut self,
+        block_id: u32,
+        args: &[u32],
+        blocks: &[CfgBlock],
+        values: &mut BTreeMap<u32, u32>,
+    ) -> Result<u32, ProgramSpirvError> {
+        let block = blocks.iter().find(|block| block.id == block_id).ok_or_else(|| {
+            ProgramSpirvError::UnsupportedStatement(format!(
+                "CFG target block {block_id} is missing"
+            ))
+        })?;
         if block.parameters.len() != args.len() {
-            return Err(ProgramSpirvError::UnsupportedStatement("CFG branch argument count does not match target parameters".into()));
+            return Err(ProgramSpirvError::UnsupportedStatement(
+                "CFG branch argument count does not match target parameters".into(),
+            ));
         }
         for (parameter, argument) in block.parameters.iter().zip(args) {
-            let value = *values.get(argument).ok_or_else(|| ProgramSpirvError::UnsupportedExpression(format!("unknown CFG branch argument {argument}")))?;
+            let value = *values.get(argument).ok_or_else(|| {
+                ProgramSpirvError::UnsupportedExpression(format!(
+                    "unknown CFG branch argument {argument}"
+                ))
+            })?;
             values.insert(parameter.value, value);
         }
         for instruction in &block.instructions {
             self.lower_cfg_instruction(instruction, values)?;
         }
         let CfgTerminator::Return(value) = block.terminator else {
-            return Err(ProgramSpirvError::UnsupportedStatement("GPU CFG subset requires branch blocks to return directly".into()));
+            return Err(ProgramSpirvError::UnsupportedStatement(
+                "GPU CFG subset requires branch blocks to return directly".into(),
+            ));
         };
-        values.get(&value).copied().ok_or_else(|| ProgramSpirvError::UnsupportedStatement(format!("CFG return value {value} is not defined")))
+        values.get(&value).copied().ok_or_else(|| {
+            ProgramSpirvError::UnsupportedStatement(format!(
+                "CFG return value {value} is not defined"
+            ))
+        })
     }
 
-    fn lower_cfg_instruction(&mut self, instruction: &CfgInstruction, values: &mut std::collections::BTreeMap<u32, naga::Handle<Expression>>) -> Result<(), ProgramSpirvError> {
-        let span = naga::Span::UNDEFINED;
+    fn lower_cfg_instruction(
+        &mut self,
+        instruction: &CfgInstruction,
+        values: &mut BTreeMap<u32, u32>,
+    ) -> Result<(), ProgramSpirvError> {
         if let CfgInstruction::StoreBuffer { resource, index, value } = instruction {
-            let global = *self.buffer_globals.get(resource).ok_or_else(|| {
+            let global = *self.buffer_vars.get(resource).ok_or_else(|| {
                 ProgramSpirvError::UnsupportedStatement(format!("unknown buffer resource {resource}"))
             })?;
-            let index = *values.get(index).ok_or_else(|| ProgramSpirvError::UnsupportedExpression(format!("unknown CFG value {index}")))?;
-            let value = *values.get(value).ok_or_else(|| ProgramSpirvError::UnsupportedExpression(format!("unknown CFG value {value}")))?;
-            let base = self.function.expressions.append(Expression::GlobalVariable(global), span);
-            let data = self.function.expressions.append(Expression::AccessIndex { base, index: 0 }, span);
-            let pointer = self.function.expressions.append(Expression::Access { base: data, index }, span);
-            self.emit_pending();
-            self.function.body.push(Statement::Store { pointer, value }, span);
+            let index = *values.get(index).ok_or_else(|| {
+                ProgramSpirvError::UnsupportedExpression(format!("unknown CFG value {index}"))
+            })?;
+            let value = *values.get(value).ok_or_else(|| {
+                ProgramSpirvError::UnsupportedExpression(format!("unknown CFG value {value}"))
+            })?;
+            let zero = self.spv.const_u32(0);
+            let element =
+                spv::chain(self.spv, &mut self.body, self.elem_ptr, global, &[zero, index]);
+            spv::store(&mut self.body, element, value);
             return Ok(());
         }
-        let handle = match instruction {
-            CfgInstruction::ConstF32 { value, .. } => self.function.expressions.append(Expression::Literal(Literal::F32(*value)), span),
-            CfgInstruction::ConstF64 { value, .. } if self.float_width == 8 => self.function.expressions.append(Expression::Literal(Literal::F64(*value)), span),
-            CfgInstruction::ConstU32 { value, .. } => self.function.expressions.append(Expression::Literal(Literal::U32(*value)), span),
+        let (handle, kind) = match instruction {
+            CfgInstruction::ConstF32 { value, .. } => {
+                (self.spv.const_f32(*value), Kind::Float)
+            }
+            CfgInstruction::ConstF64 { value, .. } => {
+                if self.float_width != 8 {
+                    return Err(ProgramSpirvError::UnsupportedType(
+                        "F64 constant in an F32 program".into(),
+                    ));
+                }
+                (self.spv.const_f64(*value), Kind::Float)
+            }
+            CfgInstruction::ConstU32 { value, .. } => {
+                (self.spv.const_u32(*value), Kind::U32)
+            }
             CfgInstruction::LoadUniform { slot, ty, .. } => {
                 if *ty != self.scalar_type() {
-                    return Err(ProgramSpirvError::UnsupportedType(format!("uniform {slot}: {ty:?}")));
+                    return Err(ProgramSpirvError::UnsupportedType(format!(
+                        "uniform {slot}: {ty:?}"
+                    )));
                 }
-                let global = self.uniform_global.ok_or_else(|| ProgramSpirvError::UnsupportedExpression("uniform without push-constant layout".into()))?;
-                let base = self.function.expressions.append(Expression::GlobalVariable(global), span);
-                let field = self.function.expressions.append(Expression::AccessIndex { base, index: *slot + 1 }, span);
-                self.function.expressions.append(Expression::Load { pointer: field }, span)
+                let index = self.spv.const_u32(*slot + 1);
+                let field = spv::chain(
+                    self.spv,
+                    &mut self.body,
+                    self.push_float_ptr,
+                    self.push_var,
+                    &[index],
+                );
+                (
+                    spv::load(self.spv, &mut self.body, self.float_ty, field),
+                    Kind::Float,
+                )
             }
-            CfgInstruction::GlobalId { .. } => self.gid_x,
+            CfgInstruction::GlobalId { .. } => (self.gid_x, Kind::U32),
             CfgInstruction::LoadBuffer { resource, index, ty, .. } => {
                 if *ty != self.scalar_type() {
-                    return Err(ProgramSpirvError::UnsupportedType(format!("buffer {resource}: {ty:?}")));
+                    return Err(ProgramSpirvError::UnsupportedType(format!(
+                        "buffer {resource}: {ty:?}"
+                    )));
                 }
-                let global = *self.buffer_globals.get(resource).ok_or_else(|| {
-                    ProgramSpirvError::UnsupportedStatement(format!("unknown buffer resource {resource}"))
+                let global = *self.buffer_vars.get(resource).ok_or_else(|| {
+                    ProgramSpirvError::UnsupportedStatement(format!(
+                        "unknown buffer resource {resource}"
+                    ))
                 })?;
-                let index = *values.get(index).ok_or_else(|| ProgramSpirvError::UnsupportedExpression(format!("unknown CFG value {index}")))?;
-                let base = self.function.expressions.append(Expression::GlobalVariable(global), span);
-                let data = self.function.expressions.append(Expression::AccessIndex { base, index: 0 }, span);
-                let element = self.function.expressions.append(Expression::Access { base: data, index }, span);
-                self.function.expressions.append(Expression::Load { pointer: element }, span)
+                let index = *values.get(index).ok_or_else(|| {
+                    ProgramSpirvError::UnsupportedExpression(format!("unknown CFG value {index}"))
+                })?;
+                let zero = self.spv.const_u32(0);
+                let element =
+                    spv::chain(self.spv, &mut self.body, self.elem_ptr, global, &[zero, index]);
+                (
+                    spv::load(self.spv, &mut self.body, self.float_ty, element),
+                    Kind::Float,
+                )
             }
             CfgInstruction::Binary { op, lhs, rhs, .. } => {
-                if self.float_width == 8 && matches!(op, BinOp::Pow | BinOp::Atan2) {
-                    return Err(ProgramSpirvError::UnsupportedExpression(format!("F64 {op:?} is not implemented")));
-                }
-                let left = *values.get(lhs).ok_or_else(|| ProgramSpirvError::UnsupportedExpression(format!("unknown CFG value {lhs}")))?;
-                let right = *values.get(rhs).ok_or_else(|| ProgramSpirvError::UnsupportedExpression(format!("unknown CFG value {rhs}")))?;
-                let expression = match op {
-                    BinOp::Min => Expression::Math { fun: MathFunction::Min, arg: left, arg1: Some(right), arg2: None, arg3: None },
-                    BinOp::Max => Expression::Math { fun: MathFunction::Max, arg: left, arg1: Some(right), arg2: None, arg3: None },
-                    BinOp::Add => Expression::Binary { op: BinaryOperator::Add, left, right },
-                    BinOp::Sub => Expression::Binary { op: BinaryOperator::Subtract, left, right },
-                    BinOp::Mul => Expression::Binary { op: BinaryOperator::Multiply, left, right },
-                    BinOp::Div => Expression::Binary { op: BinaryOperator::Divide, left, right },
-                    BinOp::Mod => Expression::Binary { op: BinaryOperator::Modulo, left, right },
-                    BinOp::Pow => Expression::Math { fun: MathFunction::Pow, arg: left, arg1: Some(right), arg2: None, arg3: None },
-                    BinOp::Atan2 => Expression::Math { fun: MathFunction::Atan2, arg: left, arg1: Some(right), arg2: None, arg3: None },
-                    BinOp::Lt => Expression::Binary { op: BinaryOperator::Less, left, right },
-                    BinOp::Le => Expression::Binary { op: BinaryOperator::LessEqual, left, right },
-                    BinOp::Eq => Expression::Binary { op: BinaryOperator::Equal, left, right },
-                    BinOp::Ne => Expression::Binary { op: BinaryOperator::NotEqual, left, right },
-                    BinOp::Ge => Expression::Binary { op: BinaryOperator::GreaterEqual, left, right },
-                    BinOp::Gt => Expression::Binary { op: BinaryOperator::Greater, left, right },
-                    other => return Err(ProgramSpirvError::UnsupportedExpression(format!("CFG binary {other:?}"))),
-                };
-                self.function.expressions.append(expression, span)
+                let left = *values.get(lhs).ok_or_else(|| {
+                    ProgramSpirvError::UnsupportedExpression(format!("unknown CFG value {lhs}"))
+                })?;
+                let right = *values.get(rhs).ok_or_else(|| {
+                    ProgramSpirvError::UnsupportedExpression(format!("unknown CFG value {rhs}"))
+                })?;
+                self.lower_binary(*op, left, right)?
             }
             CfgInstruction::Select { cond, then_, else_, .. } => {
-                let condition = *values.get(cond).ok_or_else(|| ProgramSpirvError::UnsupportedExpression(format!("unknown CFG value {cond}")))?;
-                let accept = *values.get(then_).ok_or_else(|| ProgramSpirvError::UnsupportedExpression(format!("unknown CFG value {then_}")))?;
-                let reject = *values.get(else_).ok_or_else(|| ProgramSpirvError::UnsupportedExpression(format!("unknown CFG value {else_}")))?;
-                self.function.expressions.append(Expression::Select { condition, accept, reject }, span)
+                let condition = *values.get(cond).ok_or_else(|| {
+                    ProgramSpirvError::UnsupportedExpression(format!("unknown CFG value {cond}"))
+                })?;
+                let accept = *values.get(then_).ok_or_else(|| {
+                    ProgramSpirvError::UnsupportedExpression(format!("unknown CFG value {then_}"))
+                })?;
+                let reject = *values.get(else_).ok_or_else(|| {
+                    ProgramSpirvError::UnsupportedExpression(format!("unknown CFG value {else_}"))
+                })?;
+                let kind = self.kind_of(accept);
+                let ty = self.type_of(kind);
+                (
+                    spv::select(self.spv, &mut self.body, ty, condition, accept, reject),
+                    kind,
+                )
             }
             CfgInstruction::Unary { op, arg, .. } => {
-                if self.float_width == 8 && matches!(op, UnOp::Sin | UnOp::Cos | UnOp::Atan | UnOp::Ln) {
-                    return Err(ProgramSpirvError::UnsupportedExpression(format!("F64 {op:?} is not implemented")));
-                }
-                let arg = *values.get(arg).ok_or_else(|| ProgramSpirvError::UnsupportedExpression(format!("unknown CFG value {arg}")))?;
-                match op {
-                    UnOp::Neg => self.function.expressions.append(Expression::Unary { op: naga::UnaryOperator::Negate, expr: arg }, span),
-                    UnOp::Sqrt => self.function.expressions.append(Expression::Math { fun: MathFunction::Sqrt, arg, arg1: None, arg2: None, arg3: None }, span),
-                    UnOp::Sin => self.function.expressions.append(Expression::Math { fun: MathFunction::Sin, arg, arg1: None, arg2: None, arg3: None }, span),
-                    UnOp::Cos => self.function.expressions.append(Expression::Math { fun: MathFunction::Cos, arg, arg1: None, arg2: None, arg3: None }, span),
-                    UnOp::Atan => self.function.expressions.append(Expression::Math { fun: MathFunction::Atan, arg, arg1: None, arg2: None, arg3: None }, span),
-                    UnOp::Abs => self.function.expressions.append(Expression::Math { fun: MathFunction::Abs, arg, arg1: None, arg2: None, arg3: None }, span),
-                    UnOp::Ln => self.function.expressions.append(Expression::Math { fun: MathFunction::Log, arg, arg1: None, arg2: None, arg3: None }, span),
-                    UnOp::Vec3Comp(index) => self.function.expressions.append(Expression::AccessIndex { base: arg, index: *index as u32 }, span),
-                    UnOp::IsFinite => {
-                        let same = self.function.expressions.append(Expression::Binary { op: BinaryOperator::Equal, left: arg, right: arg }, span);
-                        let abs = self.function.expressions.append(Expression::Math { fun: MathFunction::Abs, arg, arg1: None, arg2: None, arg3: None }, span);
-                        let limit = self.function.expressions.append(Expression::Literal(if self.float_width == 8 { Literal::F64(f64::MAX) } else { Literal::F32(f32::MAX) }), span);
-                        let below_limit = self.function.expressions.append(Expression::Binary { op: BinaryOperator::LessEqual, left: abs, right: limit }, span);
-                        let false_value = self.function.expressions.append(Expression::Literal(Literal::Bool(false)), span);
-                        self.function.expressions.append(Expression::Select { condition: same, accept: below_limit, reject: false_value }, span)
-                    }
-                    other => return Err(ProgramSpirvError::UnsupportedExpression(format!("CFG unary {other:?}"))),
-                }
+                let value = *values.get(arg).ok_or_else(|| {
+                    ProgramSpirvError::UnsupportedExpression(format!("unknown CFG value {arg}"))
+                })?;
+                self.lower_unary(*op, value)?
             }
-            _ => return Err(ProgramSpirvError::UnsupportedStatement("CFG instruction is outside the pure F32 GPU subset".into())),
+            _ => {
+                return Err(ProgramSpirvError::UnsupportedStatement(
+                    "CFG instruction is outside the pure F32 GPU subset".into(),
+                ))
+            }
         };
         let result = match instruction {
-            CfgInstruction::ConstF32 { result, .. } | CfgInstruction::ConstF64 { result, .. } | CfgInstruction::ConstU32 { result, .. }
-            | CfgInstruction::LoadUniform { result, .. } | CfgInstruction::LoadBuffer { result, .. }
-            | CfgInstruction::GlobalId { result } | CfgInstruction::Binary { result, .. }
-            | CfgInstruction::Unary { result, .. } | CfgInstruction::Select { result, .. } => *result,
+            CfgInstruction::ConstF32 { result, .. }
+            | CfgInstruction::ConstF64 { result, .. }
+            | CfgInstruction::ConstU32 { result, .. }
+            | CfgInstruction::LoadUniform { result, .. }
+            | CfgInstruction::LoadBuffer { result, .. }
+            | CfgInstruction::GlobalId { result }
+            | CfgInstruction::Binary { result, .. }
+            | CfgInstruction::Unary { result, .. }
+            | CfgInstruction::Select { result, .. } => *result,
             CfgInstruction::StoreBuffer { .. } => unreachable!(),
-            _ => unreachable!("unsupported CFG instruction did not produce a handle"),
+            _ => unreachable!("unsupported CFG instruction did not produce a value"),
         };
+        if kind != Kind::Float {
+            self.local_kinds.insert(handle, kind);
+        }
         values.insert(result, handle);
         Ok(())
     }
 
-    fn lower_expr(&mut self, expr: &Expr) -> Result<naga::Handle<Expression>, ProgramSpirvError> {
-        let span = naga::Span::UNDEFINED;
+    fn lower_expr(&mut self, expr: &Expr) -> Result<u32, ProgramSpirvError> {
         match expr {
-            Expr::ConstF32(v) => Ok(self.function.expressions.append(Expression::Literal(Literal::F32(*v)), span)),
-            Expr::ConstF64(v) if self.float_width == 8 => Ok(self.function.expressions.append(Expression::Literal(Literal::F64(*v)), span)),
-            Expr::ConstBool(v) => Ok(self.function.expressions.append(Expression::Literal(Literal::Bool(*v)), span)),
-            Expr::ConstU32(v) => Ok(self.function.expressions.append(Expression::Literal(Literal::U32(*v)), span)),
+            Expr::ConstF32(v) => Ok(self.spv.const_f32(*v)),
+            Expr::ConstF64(v) if self.float_width == 8 => Ok(self.spv.const_f64(*v)),
+            Expr::ConstBool(v) => Ok(self.spv.const_bool(*v)),
+            Expr::ConstU32(v) => {
+                let id = self.spv.const_u32(*v);
+                self.local_kinds.insert(id, Kind::U32);
+                Ok(id)
+            }
             Expr::GlobalId => Ok(self.gid_x),
             Expr::LoadUniform(slot) => {
-                let global = self.uniform_global.ok_or_else(|| ProgramSpirvError::UnsupportedExpression("uniform without push-constant layout".into()))?;
-                let base = self.function.expressions.append(Expression::GlobalVariable(global), span);
-                let field = self.function.expressions.append(Expression::AccessIndex { base, index: *slot + 1 }, span);
-                let value = self.function.expressions.append(Expression::Load { pointer: field }, span);
-                Ok(value)
+                let index = self.spv.const_u32(slot + 1);
+                let field = spv::chain(
+                    self.spv,
+                    &mut self.body,
+                    self.push_float_ptr,
+                    self.push_var,
+                    &[index],
+                );
+                Ok(spv::load(self.spv, &mut self.body, self.float_ty, field))
             }
             Expr::LoadLocal(id) => {
-                let local = *self.locals.get(id).ok_or_else(|| ProgramSpirvError::UnsupportedExpression(format!("unknown local {id}")))?;
-                let pointer = self.function.expressions.append(Expression::LocalVariable(local), span);
-                Ok(self.function.expressions.append(Expression::Load { pointer }, span))
+                let local = *self.locals.get(id).ok_or_else(|| {
+                    ProgramSpirvError::UnsupportedExpression(format!("unknown local {id}"))
+                })?;
+                let kind = self.local_kinds.get(&local).copied().unwrap_or(Kind::Float);
+                let ty = self.type_of(kind);
+                Ok(spv::load(self.spv, &mut self.body, ty, local))
             }
             Expr::LoadBuffer { resource, index } => {
-                let global = *self.buffer_globals.get(resource).ok_or_else(|| {
-                    ProgramSpirvError::UnsupportedExpression(format!("unknown buffer resource {resource}"))
+                let global = *self.buffer_vars.get(resource).ok_or_else(|| {
+                    ProgramSpirvError::UnsupportedExpression(format!(
+                        "unknown buffer resource {resource}"
+                    ))
                 })?;
                 let index = self.lower_expr(index)?;
-                let base = self.function.expressions.append(Expression::GlobalVariable(global), span);
-                let data = self.function.expressions.append(Expression::AccessIndex { base, index: 0 }, span);
-                let element = self.function.expressions.append(Expression::Access { base: data, index }, span);
-                let value = self.function.expressions.append(Expression::Load { pointer: element }, span);
-                Ok(value)
+                let zero = self.spv.const_u32(0);
+                let element =
+                    spv::chain(self.spv, &mut self.body, self.elem_ptr, global, &[zero, index]);
+                Ok(spv::load(self.spv, &mut self.body, self.float_ty, element))
             }
             Expr::BinOp { op, lhs, rhs } => {
-                if self.float_width == 8 && matches!(op, BinOp::Pow | BinOp::Atan2) {
-                    return Err(ProgramSpirvError::UnsupportedExpression(format!("F64 {op:?} is not implemented")));
-                }
-                let left = self.lower_expr(lhs)?; let right = self.lower_expr(rhs)?;
-                let expression = match op {
-                    BinOp::Min => Expression::Math { fun: MathFunction::Min, arg: left, arg1: Some(right), arg2: None, arg3: None },
-                    BinOp::Max => Expression::Math { fun: MathFunction::Max, arg: left, arg1: Some(right), arg2: None, arg3: None },
-                    BinOp::Add => Expression::Binary { op: BinaryOperator::Add, left, right },
-                    BinOp::Sub => Expression::Binary { op: BinaryOperator::Subtract, left, right },
-                    BinOp::Mul => Expression::Binary { op: BinaryOperator::Multiply, left, right },
-                    BinOp::Div => Expression::Binary { op: BinaryOperator::Divide, left, right },
-                    BinOp::Mod => Expression::Binary { op: BinaryOperator::Modulo, left, right },
-                    BinOp::Pow => Expression::Math { fun: MathFunction::Pow, arg: left, arg1: Some(right), arg2: None, arg3: None },
-                    BinOp::Atan2 => Expression::Math { fun: MathFunction::Atan2, arg: left, arg1: Some(right), arg2: None, arg3: None },
-                    BinOp::Lt => Expression::Binary { op: BinaryOperator::Less, left, right },
-                    BinOp::Le => Expression::Binary { op: BinaryOperator::LessEqual, left, right },
-                    BinOp::Eq => Expression::Binary { op: BinaryOperator::Equal, left, right },
-                    BinOp::Ne => Expression::Binary { op: BinaryOperator::NotEqual, left, right },
-                    BinOp::Ge => Expression::Binary { op: BinaryOperator::GreaterEqual, left, right },
-                    BinOp::Gt => Expression::Binary { op: BinaryOperator::Greater, left, right },
-                    other => return Err(ProgramSpirvError::UnsupportedExpression(format!("binary {other:?}"))),
-                };
-                Ok(self.function.expressions.append(expression, span))
+                let left = self.lower_expr(lhs)?;
+                let right = self.lower_expr(rhs)?;
+                Ok(self.lower_binary(*op, left, right)?.0)
             }
             Expr::Vec3Compose { x, y, z } => {
                 let x = self.lower_expr(x)?;
                 let y = self.lower_expr(y)?;
                 let z = self.lower_expr(z)?;
-                Ok(self.function.expressions.append(Expression::Compose { ty: self.vec3_ty, components: vec![x, y, z] }, span))
+                let id = spv::construct(self.spv, &mut self.body, self.vec3_ty, &[x, y, z]);
+                self.local_kinds.insert(id, Kind::Vec3);
+                Ok(id)
             }
             Expr::UnOp { op, arg } => {
-                if self.float_width == 8 && matches!(op, UnOp::Sin | UnOp::Cos | UnOp::Atan | UnOp::Ln) {
-                    return Err(ProgramSpirvError::UnsupportedExpression(format!("F64 {op:?} is not implemented")));
-                }
-                let arg = self.lower_expr(arg)?;
-                let expression = match op {
-                    UnOp::Neg => Expression::Unary { op: naga::UnaryOperator::Negate, expr: arg },
-                    UnOp::Sqrt => Expression::Math { fun: MathFunction::Sqrt, arg, arg1: None, arg2: None, arg3: None },
-                    UnOp::Sin => Expression::Math { fun: MathFunction::Sin, arg, arg1: None, arg2: None, arg3: None },
-                    UnOp::Cos => Expression::Math { fun: MathFunction::Cos, arg, arg1: None, arg2: None, arg3: None },
-                    UnOp::Atan => Expression::Math { fun: MathFunction::Atan, arg, arg1: None, arg2: None, arg3: None },
-                    UnOp::Abs => Expression::Math { fun: MathFunction::Abs, arg, arg1: None, arg2: None, arg3: None },
-                    UnOp::Ln => Expression::Math { fun: MathFunction::Log, arg, arg1: None, arg2: None, arg3: None },
-                    UnOp::Vec3Comp(index) => Expression::AccessIndex { base: arg, index: *index as u32 },
-                    UnOp::IsFinite => {
-                        let same = self.function.expressions.append(Expression::Binary { op: BinaryOperator::Equal, left: arg, right: arg }, span);
-                        let abs = self.function.expressions.append(Expression::Math { fun: MathFunction::Abs, arg, arg1: None, arg2: None, arg3: None }, span);
-                        let limit = self.function.expressions.append(Expression::Literal(if self.float_width == 8 { Literal::F64(f64::MAX) } else { Literal::F32(f32::MAX) }), span);
-                        let below_limit = self.function.expressions.append(Expression::Binary { op: BinaryOperator::LessEqual, left: abs, right: limit }, span);
-                        let false_value = self.function.expressions.append(Expression::Literal(Literal::Bool(false)), span);
-                        Expression::Select { condition: same, accept: below_limit, reject: false_value }
-                    }
-                    other => return Err(ProgramSpirvError::UnsupportedExpression(format!("unary {other:?}"))),
-                };
-                Ok(self.function.expressions.append(expression, span))
+                let value = self.lower_expr(arg)?;
+                Ok(self.lower_unary(*op, value)?.0)
             }
             Expr::Select { cond, then_, else_ } => {
                 let condition = self.lower_expr(cond)?;
                 let accept = self.lower_expr(then_)?;
                 let reject = self.lower_expr(else_)?;
-                Ok(self.function.expressions.append(Expression::Select { condition, accept, reject }, span))
+                let kind = self.kind_of(accept);
+                let ty = self.type_of(kind);
+                Ok(spv::select(
+                    self.spv,
+                    &mut self.body,
+                    ty,
+                    condition,
+                    accept,
+                    reject,
+                ))
             }
-            other => Err(ProgramSpirvError::UnsupportedExpression(format!("{other:?}"))),
+            other => Err(ProgramSpirvError::UnsupportedExpression(format!(
+                "{other:?}"
+            ))),
         }
+    }
+
+    fn lower_binary(
+        &mut self,
+        op: BinOp,
+        lhs: u32,
+        rhs: u32,
+    ) -> Result<(u32, Kind), ProgramSpirvError> {
+        let kind = self.kind_of(lhs);
+        let float = kind != Kind::U32;
+        if self.float_width == 8 && matches!(op, BinOp::Pow | BinOp::Atan2) {
+            return Err(ProgramSpirvError::UnsupportedExpression(format!(
+                "F64 {op:?} is not implemented"
+            )));
+        }
+        let id = match op {
+            BinOp::Min => spv::ext(self.spv, &mut self.body, self.float_ty, glsl::F_MIN, &[lhs, rhs]),
+            BinOp::Max => spv::ext(self.spv, &mut self.body, self.float_ty, glsl::F_MAX, &[lhs, rhs]),
+            BinOp::Pow => spv::ext(self.spv, &mut self.body, self.float_ty, glsl::POW, &[lhs, rhs]),
+            BinOp::Atan2 => {
+                spv::ext(self.spv, &mut self.body, self.float_ty, glsl::ATAN2, &[lhs, rhs])
+            }
+            BinOp::Add => self.float_binary(op::F_ADD, op::I_ADD, lhs, rhs, float),
+            BinOp::Sub => self.float_binary(op::F_SUB, op::I_SUB, lhs, rhs, float),
+            BinOp::Mul => self.float_binary(op::F_MUL, op::I_MUL, lhs, rhs, float),
+            BinOp::Div => self.float_binary(op::F_DIV, op::U_DIV, lhs, rhs, float),
+            BinOp::Mod => self.float_binary(op::F_MOD, op::U_MOD, lhs, rhs, float),
+            BinOp::Lt => self.compare(op::F_ORD_LESS_THAN, op::U_LESS_THAN, lhs, rhs, float),
+            BinOp::Le => self.compare(
+                op::F_ORD_LESS_THAN_EQUAL,
+                op::U_LESS_THAN_EQUAL,
+                lhs,
+                rhs,
+                float,
+            ),
+            BinOp::Gt => self.compare(op::F_ORD_GREATER_THAN, op::U_GREATER_THAN, lhs, rhs, float),
+            BinOp::Ge => self.compare(
+                op::F_ORD_GREATER_THAN_EQUAL,
+                op::U_GREATER_THAN_EQUAL,
+                lhs,
+                rhs,
+                float,
+            ),
+            BinOp::Eq => self.compare(op::F_ORD_EQUAL, op::I_EQUAL, lhs, rhs, float),
+            BinOp::Ne => self.compare(op::F_ORD_NOT_EQUAL, op::I_NOT_EQUAL, lhs, rhs, float),
+            other => {
+                return Err(ProgramSpirvError::UnsupportedExpression(format!(
+                    "binary {other:?}"
+                )))
+            }
+        };
+        let result = if matches!(
+            op,
+            BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge | BinOp::Eq | BinOp::Ne
+        ) {
+            Kind::Bool
+        } else if float {
+            Kind::Float
+        } else {
+            Kind::U32
+        };
+        if result != Kind::Float {
+            self.local_kinds.insert(id, result);
+        }
+        Ok((id, result))
+    }
+
+    fn float_binary(&mut self, float_op: u16, int_op: u16, lhs: u32, rhs: u32, float: bool) -> u32 {
+        let ty = if float { self.float_ty } else { self.u32_ty };
+        let opcode = if float { float_op } else { int_op };
+        let id = spv::binary(self.spv, &mut self.body, ty, opcode, lhs, rhs);
+        if float {
+            self.spv.decorate(id, decoration::NO_CONTRACTION, &[]);
+        }
+        id
+    }
+
+    fn compare(&mut self, float_op: u16, int_op: u16, lhs: u32, rhs: u32, float: bool) -> u32 {
+        let opcode = if float { float_op } else { int_op };
+        spv::binary(self.spv, &mut self.body, self.bool_ty, opcode, lhs, rhs)
+    }
+
+    fn lower_unary(&mut self, op: UnOp, arg: u32) -> Result<(u32, Kind), ProgramSpirvError> {
+        if self.float_width == 8 && matches!(op, UnOp::Sin | UnOp::Cos | UnOp::Atan | UnOp::Ln) {
+            return Err(ProgramSpirvError::UnsupportedExpression(format!(
+                "F64 {op:?} is not implemented"
+            )));
+        }
+        let id = match op {
+            UnOp::Neg => {
+                spv::unary(self.spv, &mut self.body, self.float_ty, op::F_NEGATE, arg)
+            }
+            UnOp::Sqrt => spv::ext(self.spv, &mut self.body, self.float_ty, glsl::SQRT, &[arg]),
+            UnOp::Sin => spv::ext(self.spv, &mut self.body, self.float_ty, glsl::SIN, &[arg]),
+            UnOp::Cos => spv::ext(self.spv, &mut self.body, self.float_ty, glsl::COS, &[arg]),
+            UnOp::Atan => spv::ext(self.spv, &mut self.body, self.float_ty, glsl::ATAN, &[arg]),
+            UnOp::Abs => spv::ext(self.spv, &mut self.body, self.float_ty, glsl::F_ABS, &[arg]),
+            UnOp::Ln => spv::ext(self.spv, &mut self.body, self.float_ty, glsl::LOG, &[arg]),
+            UnOp::Vec3Comp(index) => {
+                return Ok((
+                    spv::extract(self.spv, &mut self.body, self.float_ty, arg, u32::from(index)),
+                    Kind::Float,
+                ))
+            }
+            UnOp::IsFinite => {
+                let same = spv::binary(
+                    self.spv,
+                    &mut self.body,
+                    self.bool_ty,
+                    op::F_ORD_EQUAL,
+                    arg,
+                    arg,
+                );
+                let absolute =
+                    spv::ext(self.spv, &mut self.body, self.float_ty, glsl::F_ABS, &[arg]);
+                let limit = if self.float_width == 8 {
+                    self.spv.const_f64(f64::MAX)
+                } else {
+                    self.spv.const_f32(f32::MAX)
+                };
+                let below = spv::binary(
+                    self.spv,
+                    &mut self.body,
+                    self.bool_ty,
+                    op::F_ORD_LESS_THAN_EQUAL,
+                    absolute,
+                    limit,
+                );
+                let never = self.spv.const_bool(false);
+                let id = spv::select(
+                    self.spv,
+                    &mut self.body,
+                    self.bool_ty,
+                    same,
+                    below,
+                    never,
+                );
+                return Ok((id, Kind::Bool));
+            }
+            other => {
+                return Err(ProgramSpirvError::UnsupportedExpression(format!(
+                    "unary {other:?}"
+                )))
+            }
+        };
+        Ok((id, Kind::Float))
     }
 }
 
@@ -725,32 +925,51 @@ fn uniform_slots_stmt(stmt: &Stmt) -> Vec<u32> {
     fn visit_expr(value: &Expr, slots: &mut Vec<u32>) {
         match value {
             Expr::LoadUniform(slot) => slots.push(*slot),
-            Expr::BinOp { lhs, rhs, .. } => { visit_expr(lhs, slots); visit_expr(rhs, slots); }
+            Expr::BinOp { lhs, rhs, .. } => {
+                visit_expr(lhs, slots);
+                visit_expr(rhs, slots);
+            }
             Expr::UnOp { arg, .. } => visit_expr(arg, slots),
-            Expr::Select { cond, then_, else_ } => { visit_expr(cond, slots); visit_expr(then_, slots); visit_expr(else_, slots); }
+            Expr::Select { cond, then_, else_ } => {
+                visit_expr(cond, slots);
+                visit_expr(then_, slots);
+                visit_expr(else_, slots);
+            }
             _ => {}
         }
     }
     match stmt {
-        Stmt::Let { init, .. } | Stmt::StoreLocal { value: init, .. } | Stmt::Return(init) | Stmt::Expr(init) => visit_expr(init, &mut slots),
-        Stmt::If { cond, then_body, else_body } => { visit_expr(cond, &mut slots); for stmt in then_body.iter().chain(else_body) { slots.extend(uniform_slots_stmt(stmt)); } }
-        Stmt::For { body, .. } => for stmt in body { slots.extend(uniform_slots_stmt(stmt)); },
+        Stmt::Let { init, .. }
+        | Stmt::StoreLocal { value: init, .. }
+        | Stmt::Return(init)
+        | Stmt::Expr(init) => visit_expr(init, &mut slots),
+        Stmt::If { cond, then_body, else_body } => {
+            visit_expr(cond, &mut slots);
+            for stmt in then_body.iter().chain(else_body) {
+                slots.extend(uniform_slots_stmt(stmt));
+            }
+        }
+        Stmt::For { body, .. } => {
+            for stmt in body {
+                slots.extend(uniform_slots_stmt(stmt));
+            }
+        }
         Stmt::While { cond, body, .. } => {
             visit_expr(cond, &mut slots);
-            for stmt in body { slots.extend(uniform_slots_stmt(stmt)); }
+            for stmt in body {
+                slots.extend(uniform_slots_stmt(stmt));
+            }
         }
-        Stmt::StoreBuffer { index, value, .. } => { visit_expr(index, &mut slots); visit_expr(value, &mut slots); }
+        Stmt::StoreBuffer { index, value, .. } => {
+            visit_expr(index, &mut slots);
+            visit_expr(value, &mut slots);
+        }
         Stmt::Break | Stmt::Continue => {}
         Stmt::Cfg { blocks, .. } => {
             for block in blocks {
                 for instruction in &block.instructions {
-                    match instruction {
-                        CfgInstruction::LoadUniform { slot, .. } => slots.push(*slot),
-                        CfgInstruction::Binary { .. } | CfgInstruction::Unary { .. } | CfgInstruction::Select { .. }
-                        | CfgInstruction::Vec3Compose { .. } | CfgInstruction::LoadBuffer { .. }
-                        | CfgInstruction::StoreBuffer { .. } | CfgInstruction::ConstF32 { .. }
-                        | CfgInstruction::ConstF64 { .. } | CfgInstruction::ConstU32 { .. }
-                        | CfgInstruction::GlobalId { .. } => {}
+                    if let CfgInstruction::LoadUniform { slot, .. } = instruction {
+                        slots.push(*slot);
                     }
                 }
             }
@@ -767,30 +986,49 @@ fn resource_slots_stmt(stmt: &Stmt) -> Vec<u32> {
                 slots.push(*resource);
                 visit_expr(index, slots);
             }
-            Expr::BinOp { lhs, rhs, .. } => { visit_expr(lhs, slots); visit_expr(rhs, slots); }
+            Expr::BinOp { lhs, rhs, .. } => {
+                visit_expr(lhs, slots);
+                visit_expr(rhs, slots);
+            }
             Expr::UnOp { arg, .. } => visit_expr(arg, slots),
             Expr::Select { cond, then_, else_ } => {
-                visit_expr(cond, slots); visit_expr(then_, slots); visit_expr(else_, slots);
+                visit_expr(cond, slots);
+                visit_expr(then_, slots);
+                visit_expr(else_, slots);
             }
             Expr::Vec3Compose { x, y, z } => {
-                visit_expr(x, slots); visit_expr(y, slots); visit_expr(z, slots);
+                visit_expr(x, slots);
+                visit_expr(y, slots);
+                visit_expr(z, slots);
             }
-            Expr::Call { args, .. } => for arg in args { visit_expr(arg, slots); },
+            Expr::Call { args, .. } => {
+                for arg in args {
+                    visit_expr(arg, slots);
+                }
+            }
             _ => {}
         }
     }
     match stmt {
-        Stmt::Let { init, .. } | Stmt::StoreLocal { value: init, .. }
-        | Stmt::Return(init) | Stmt::Expr(init) => visit_expr(init, &mut slots),
+        Stmt::Let { init, .. }
+        | Stmt::StoreLocal { value: init, .. }
+        | Stmt::Return(init)
+        | Stmt::Expr(init) => visit_expr(init, &mut slots),
         Stmt::StoreBuffer { resource, index, value } => {
-            slots.push(*resource); visit_expr(index, &mut slots); visit_expr(value, &mut slots);
+            slots.push(*resource);
+            visit_expr(index, &mut slots);
+            visit_expr(value, &mut slots);
         }
         Stmt::If { cond, then_body, else_body } => {
             visit_expr(cond, &mut slots);
-            for nested in then_body.iter().chain(else_body) { slots.extend(resource_slots_stmt(nested)); }
+            for nested in then_body.iter().chain(else_body) {
+                slots.extend(resource_slots_stmt(nested));
+            }
         }
         Stmt::For { body, .. } | Stmt::While { body, .. } => {
-            for nested in body { slots.extend(resource_slots_stmt(nested)); }
+            for nested in body {
+                slots.extend(resource_slots_stmt(nested));
+            }
         }
         Stmt::Break | Stmt::Continue => {}
         Stmt::Cfg { blocks, .. } => {
@@ -810,49 +1048,80 @@ fn resource_slots_stmt(stmt: &Stmt) -> Vec<u32> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use hardware_program::{FunctionBuilder, ProgramBuilder};
+
+    /// Decode a module into `(opcode, operands)` pairs.
+    fn decode(bytes: &[u8]) -> Vec<(u16, Vec<u32>)> {
+        let words: Vec<u32> = bytes
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+        let mut out = Vec::new();
+        let mut index = 5;
+        while index < words.len() {
+            let word = words[index];
+            let length = (word >> 16) as usize;
+            let opcode = (word & 0xffff) as u16;
+            let operands = words[index + 1..index + length].to_vec();
+            out.push((opcode, operands));
+            index += length;
+        }
+        out
+    }
+
     #[test]
     fn float64_module_uses_native_width_and_rejects_unsupported_math() {
-        use hardware_program::{BinOp, FunctionBuilder, ProgramBuilder};
         let mut builder = FunctionBuilder::new("native_precision");
         let initial = builder.emit_const_f64(16777216.0).unwrap();
         let increment = builder.emit_const_f64(0.125).unwrap();
         let result = builder.emit_binary(BinOp::Add, initial, increment).unwrap();
         builder.return_value(result).unwrap();
         let program = ProgramBuilder::new().entry(builder).unwrap().finish().unwrap();
-        let module = rspirv::dr::load_bytes(&super::emit_program_spirv(&program, "native_precision").unwrap()).unwrap();
-        assert!(module.types_global_values.iter().any(|instruction|
-            instruction.class.opcode == rspirv::spirv::Op::TypeFloat
-                && instruction.operands == vec![rspirv::dr::Operand::LiteralBit32(64)]));
+        let module = decode(&super::emit_program_spirv(&program, "native_precision").unwrap());
+        assert!(module
+            .iter()
+            .any(|(opcode, operands)| *opcode == op::TYPE_FLOAT
+                && operands.len() == 2
+                && operands[1] == 64));
         let mut builder = FunctionBuilder::new("unsupported_math");
         let base = builder.emit_const_f64(2.0).unwrap();
         let exponent = builder.emit_const_f64(0.5).unwrap();
         let result = builder.emit_binary(BinOp::Pow, base, exponent).unwrap();
         builder.return_value(result).unwrap();
         let program = ProgramBuilder::new().entry(builder).unwrap().finish().unwrap();
-        assert!(matches!(super::emit_program_spirv(&program, "unsupported_math"),
-            Err(super::ProgramSpirvError::UnsupportedExpression(_))));
+        assert!(matches!(
+            super::emit_program_spirv(&program, "unsupported_math"),
+            Err(super::ProgramSpirvError::UnsupportedExpression(_))
+        ));
     }
-    use super::*;
 
     #[test]
     fn floating_arithmetic_results_disallow_contraction() {
-        use rspirv::{dr::Operand, spirv::{Decoration, Op}};
         let mut builder = hardware_program::FunctionBuilder::new("float_order");
         let value = builder.emit_load_uniform(0, Ty::f32()).unwrap();
         let one = builder.emit_const_f32(1.0).unwrap();
         let sum = builder.emit_binary(BinOp::Add, value, one).unwrap();
         let result = builder.emit_binary(BinOp::Sub, sum, value).unwrap();
         builder.return_value(result).unwrap();
-        let program = hardware_program::ProgramBuilder::new().entry(builder).unwrap().finish().unwrap();
+        let program = hardware_program::ProgramBuilder::new()
+            .entry(builder)
+            .unwrap()
+            .finish()
+            .unwrap();
         let bytes = emit_program_spirv(&program, "precise_main").unwrap();
-        let module = rspirv::dr::load_bytes(&bytes).unwrap();
-        let targets = module.functions.iter().flat_map(|function| &function.blocks).flat_map(|block| &block.instructions)
-            .filter(|instruction| matches!(instruction.class.opcode, Op::FAdd | Op::FSub))
-            .filter_map(|instruction| instruction.result_id).collect::<Vec<_>>();
+        let module = decode(&bytes);
+        let targets: Vec<u32> = module
+            .iter()
+            .filter(|(opcode, _)| *opcode == op::F_ADD || *opcode == op::F_SUB)
+            .map(|(_, operands)| operands[1])
+            .collect();
         assert!(!targets.is_empty());
         for target in targets {
-            assert!(module.annotations.iter().any(|instruction| instruction.class.opcode == Op::Decorate &&
-                instruction.operands == vec![Operand::IdRef(target), Operand::Decoration(Decoration::NoContraction)]));
+            assert!(module.iter().any(|(opcode, operands)| *opcode == op::DECORATE
+                && operands.len() == 2
+                && operands[0] == target
+                && operands[1] == decoration::NO_CONTRACTION));
         }
     }
 
@@ -865,8 +1134,15 @@ mod tests {
         let zero = builder.emit_const_f32(0.0).unwrap();
         let result = builder.emit_select(condition, one, zero).unwrap();
         builder.return_value(result).unwrap();
-        let program = hardware_program::ProgramBuilder::new().entry(builder).unwrap().finish().unwrap();
-        assert!(matches!(emit_program_spirv(&program, "unsupported_main"), Err(ProgramSpirvError::UnsupportedType(_))));
+        let program = hardware_program::ProgramBuilder::new()
+            .entry(builder)
+            .unwrap()
+            .finish()
+            .unwrap();
+        assert!(matches!(
+            emit_program_spirv(&program, "unsupported_main"),
+            Err(ProgramSpirvError::UnsupportedType(_))
+        ));
     }
 
     #[test]
@@ -896,9 +1172,13 @@ mod tests {
         let program = Program {
             version: 1,
             functions: vec![UcfFunction {
-                name: "main".into(), params: Vec::new(), locals: Vec::new(),
-                body: vec![Stmt::Return(Expr::LoadUniform(0))], ret: Ty::f32(),
-            }], entry: 0,
+                name: "main".into(),
+                params: Vec::new(),
+                locals: Vec::new(),
+                body: vec![Stmt::Return(Expr::LoadUniform(0))],
+                ret: Ty::f32(),
+            }],
+            entry: 0,
         };
         let bytes = emit_program_spirv(&program, "ucf_uniform_main").expect("valid SPIR-V");
         assert_eq!(&bytes[..4], &[0x03, 0x02, 0x23, 0x07]);
