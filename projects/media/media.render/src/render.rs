@@ -205,7 +205,6 @@ pub fn render_project_with(
     // 暗角唯一正式语义：`media.post::Vignette`（G7 裁决，旧 raster 掩码已删）。
     // 强度完全来自 `project.post`；未声明就是不压暗。
     let vignette = project.post.vignette.map(Vignette::new);
-    let seconds = project.time_base().to_seconds(project.duration_frames);
     let has_audio = project.audio.is_some();
     let plan = lower_audio(&project);
     let optional_missing = preflight(&project, &mut fonts, &mut media, limits, &plan)?;
@@ -224,6 +223,9 @@ pub fn render_project_with(
     let ss = supersample(&project);
     let mut pool = FramePool::new((w as f32 * ss).round() as u32, (h as f32 * ss).round() as u32);
     let total = last - first;
+    // The reported duration is the interval that was actually written, not the
+    // whole film, so interval exports do not overstate their length.
+    let seconds = project.time_base().to_seconds(total);
     let mut written_samples = 0usize;
     for f in first..last {
         if options.cancelled() {
