@@ -1,50 +1,47 @@
 use std::collections::BTreeMap;
 
 use hardware_capability::{Feature, FeatureSet, WiredStrategies};
-use hardware_emitter::{emit_dxil, emit_raster_tri_dxbc, program_from_task};
+use hardware_emitter::{TargetIsa, emit_raster_tri_dxbc, encode_shader, program_from_task};
 use hardware_ir::Graph;
 use hardware_scheduler::{Backend, Error as SchedulerError, Result};
 use hardware_types::{ResourceId, TaskKind, TaskNode};
-use windows::core::Interface;
-use windows::Win32::Foundation::{CloseHandle, HANDLE, RECT, WAIT_OBJECT_0};
-use windows::Win32::Graphics::Direct3D::{
-    D3D_FEATURE_LEVEL_12_0, D3D_FEATURE_LEVEL_12_1, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
+use windows::{
+    Win32::{
+        Foundation::{CloseHandle, HANDLE, RECT, WAIT_OBJECT_0},
+        Graphics::{
+            Direct3D::{D3D_FEATURE_LEVEL_12_0, D3D_FEATURE_LEVEL_12_1, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST},
+            Direct3D12::{
+                D3D_ROOT_SIGNATURE_VERSION_1, D3D12_BLEND_DESC, D3D12_CLEAR_VALUE, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_DESC,
+                D3D12_COMMAND_QUEUE_FLAG_NONE, D3D12_COMPUTE_PIPELINE_STATE_DESC, D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+                D3D12_CULL_MODE_NONE, D3D12_DEPTH_STENCIL_DESC, D3D12_DESCRIPTOR_HEAP_DESC, D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
+                D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_FENCE_FLAG_NONE, D3D12_FILL_MODE_SOLID, D3D12_GRAPHICS_PIPELINE_STATE_DESC,
+                D3D12_HEAP_FLAG_NONE, D3D12_HEAP_FLAG_SHARED, D3D12_HEAP_FLAGS, D3D12_HEAP_PROPERTIES, D3D12_HEAP_TYPE_DEFAULT,
+                D3D12_HEAP_TYPE_READBACK, D3D12_HEAP_TYPE_UPLOAD, D3D12_INPUT_LAYOUT_DESC, D3D12_MEMORY_POOL_UNKNOWN,
+                D3D12_PLACED_SUBRESOURCE_FOOTPRINT, D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE, D3D12_RASTERIZER_DESC, D3D12_RESOURCE_BARRIER,
+                D3D12_RESOURCE_BARRIER_0, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, D3D12_RESOURCE_BARRIER_FLAG_NONE,
+                D3D12_RESOURCE_BARRIER_TYPE_TRANSITION, D3D12_RESOURCE_DESC, D3D12_RESOURCE_DIMENSION_BUFFER,
+                D3D12_RESOURCE_DIMENSION_TEXTURE2D, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+                D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COPY_SOURCE,
+                D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                D3D12_RESOURCE_STATES, D3D12_RESOURCE_TRANSITION_BARRIER, D3D12_ROOT_CONSTANTS, D3D12_ROOT_DESCRIPTOR, D3D12_ROOT_PARAMETER,
+                D3D12_ROOT_PARAMETER_0, D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, D3D12_ROOT_PARAMETER_TYPE_SRV,
+                D3D12_ROOT_PARAMETER_TYPE_UAV, D3D12_ROOT_SIGNATURE_DESC, D3D12_ROOT_SIGNATURE_FLAG_NONE, D3D12_SHADER_BYTECODE,
+                D3D12_SHADER_VISIBILITY_ALL, D3D12_TEXTURE_COPY_LOCATION, D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
+                D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX, D3D12_TEXTURE_LAYOUT_ROW_MAJOR, D3D12_TEXTURE_LAYOUT_UNKNOWN, D3D12_VIEWPORT,
+                D3D12CreateDevice, D3D12SerializeRootSignature, ID3D12CommandAllocator, ID3D12CommandQueue, ID3D12DescriptorHeap, ID3D12Device,
+                ID3D12Fence, ID3D12GraphicsCommandList, ID3D12PipelineState, ID3D12Resource, ID3D12RootSignature,
+            },
+            Dxgi::{
+                Common::{DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_UNKNOWN, DXGI_SAMPLE_DESC},
+                CreateDXGIFactory1, IDXGIAdapter1, IDXGIFactory4,
+            },
+        },
+        System::Threading::{CreateEventW, INFINITE, WaitForSingleObject},
+    },
+    core::Interface,
 };
-use windows::Win32::Graphics::Direct3D12::{
-    D3D12SerializeRootSignature, D3D12_BLEND_DESC, D3D12_CLEAR_VALUE,
-    D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_DESC, D3D12_COMMAND_QUEUE_FLAG_NONE,
-    D3D12_COMPUTE_PIPELINE_STATE_DESC, D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-    D3D12_CULL_MODE_NONE, D3D12_DEPTH_STENCIL_DESC, D3D12_DESCRIPTOR_HEAP_DESC,
-    D3D12_DESCRIPTOR_HEAP_FLAG_NONE, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_FENCE_FLAG_NONE,
-    D3D12_FILL_MODE_SOLID, D3D12_GRAPHICS_PIPELINE_STATE_DESC, D3D12_HEAP_FLAG_NONE,
-    D3D12_HEAP_FLAG_SHARED, D3D12_HEAP_FLAGS, D3D12_HEAP_PROPERTIES, D3D12_HEAP_TYPE_DEFAULT,
-    D3D12_HEAP_TYPE_READBACK, D3D12_HEAP_TYPE_UPLOAD, D3D12_INPUT_LAYOUT_DESC,
-    D3D12_MEMORY_POOL_UNKNOWN, D3D12_PLACED_SUBRESOURCE_FOOTPRINT, D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
-    D3D12_RASTERIZER_DESC, D3D12_RESOURCE_BARRIER, D3D12_RESOURCE_BARRIER_0,
-    D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, D3D12_RESOURCE_BARRIER_FLAG_NONE,
-    D3D12_RESOURCE_BARRIER_TYPE_TRANSITION, D3D12_RESOURCE_DESC, D3D12_RESOURCE_DIMENSION_BUFFER,
-    D3D12_RESOURCE_DIMENSION_TEXTURE2D, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
-    D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATES,
-    D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COPY_SOURCE,
-    D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET,
-    D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_TRANSITION_BARRIER, D3D12_ROOT_CONSTANTS,
-    D3D12_ROOT_DESCRIPTOR, D3D12_ROOT_PARAMETER, D3D12_ROOT_PARAMETER_0,
-    D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, D3D12_ROOT_PARAMETER_TYPE_SRV,
-    D3D12_ROOT_PARAMETER_TYPE_UAV, D3D12_ROOT_SIGNATURE_DESC, D3D12_ROOT_SIGNATURE_FLAG_NONE,
-    D3D12_SHADER_BYTECODE, D3D12_SHADER_VISIBILITY_ALL, D3D12_TEXTURE_COPY_LOCATION,
-    D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT, D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
-    D3D12_TEXTURE_LAYOUT_UNKNOWN, D3D12_TEXTURE_LAYOUT_ROW_MAJOR, D3D12_VIEWPORT,
-    D3D_ROOT_SIGNATURE_VERSION_1, ID3D12CommandAllocator, ID3D12CommandQueue, ID3D12DescriptorHeap,
-    ID3D12Device, ID3D12Fence, ID3D12GraphicsCommandList, ID3D12PipelineState, ID3D12Resource,
-    ID3D12RootSignature, D3D12CreateDevice,
-};
-use windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_UNKNOWN, DXGI_SAMPLE_DESC,
-};
-use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIAdapter1, IDXGIFactory4};
-use windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject, INFINITE};
 
-use crate::params::{f32_param, resource_param, str_param, u32_param, BackendError};
+use crate::params::{BackendError, f32_param, resource_param, str_param, u32_param};
 
 struct DeviceBuffer {
     resource: ID3D12Resource,
@@ -88,11 +85,7 @@ impl Dx12Backend {
     pub fn new() -> Result<Self> {
         unsafe {
             let factory: IDXGIFactory4 = CreateDXGIFactory1().map_err(dx_err)?;
-            let adapter: IDXGIAdapter1 = factory
-                .EnumAdapters(0)
-                .map_err(dx_err)?
-                .cast()
-                .map_err(dx_err)?;
+            let adapter: IDXGIAdapter1 = factory.EnumAdapters(0).map_err(dx_err)?.cast().map_err(dx_err)?;
             let mut device: Option<ID3D12Device> = None;
             D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_12_1, &mut device)
                 .or_else(|_| D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_12_0, &mut device))
@@ -105,14 +98,9 @@ impl Dx12Backend {
                 Flags: D3D12_COMMAND_QUEUE_FLAG_NONE,
                 NodeMask: 0,
             };
-            let queue: ID3D12CommandQueue =
-                device.CreateCommandQueue(&queue_desc).map_err(dx_err)?;
-            let allocator: ID3D12CommandAllocator = device
-                .CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT)
-                .map_err(dx_err)?;
-            let fence: ID3D12Fence = device
-                .CreateFence(0, D3D12_FENCE_FLAG_NONE)
-                .map_err(dx_err)?;
+            let queue: ID3D12CommandQueue = device.CreateCommandQueue(&queue_desc).map_err(dx_err)?;
+            let allocator: ID3D12CommandAllocator = device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT).map_err(dx_err)?;
+            let fence: ID3D12Fence = device.CreateFence(0, D3D12_FENCE_FLAG_NONE).map_err(dx_err)?;
             let fence_event = CreateEventW(None, false, false, None).map_err(dx_err)?;
 
             let features = FeatureSet::new()
@@ -182,21 +170,10 @@ impl Dx12Backend {
                 D3D12_RESOURCE_STATE_COMMON,
                 D3D12_HEAP_FLAG_SHARED,
             )?;
-            let handle = self
-                .device
-                .CreateSharedHandle(&resource, None, 0x1000_0000u32, None)
-                .map_err(dx_err)?;
+            let handle = self.device.CreateSharedHandle(&resource, None, 0x1000_0000u32, None).map_err(dx_err)?;
             let id = SharedBufferId(self.next_shared);
             self.next_shared += 1;
-            self.shared.insert(
-                id,
-                SharedBuffer {
-                    resource,
-                    handle,
-                    bytes,
-                    state: D3D12_RESOURCE_STATE_COMMON,
-                },
-            );
+            self.shared.insert(id, SharedBuffer { resource, handle, bytes, state: D3D12_RESOURCE_STATE_COMMON });
             let zeros = vec![0u8; bytes];
             self.shared_upload(id, &zeros)?;
             Ok((id, handle.0 as isize))
@@ -206,14 +183,9 @@ impl Dx12Backend {
     /// Upload host `f32` values into a shared buffer.
     pub fn shared_write_f32(&mut self, id: SharedBufferId, values: &[f32]) -> Result<()> {
         let bytes = values.len() * 4;
-        let buf = self.shared.get(&id).ok_or_else(|| {
-            map_backend_err(BackendError(format!("shared buffer {} not allocated", id.0)))
-        })?;
+        let buf = self.shared.get(&id).ok_or_else(|| map_backend_err(BackendError(format!("shared buffer {} not allocated", id.0))))?;
         if buf.bytes != bytes {
-            return Err(map_backend_err(BackendError(format!(
-                "shared buffer {} expected {} bytes, got {bytes}",
-                id.0, buf.bytes
-            ))));
+            return Err(map_backend_err(BackendError(format!("shared buffer {} expected {} bytes, got {bytes}", id.0, buf.bytes))));
         }
         let mut host = Vec::with_capacity(bytes);
         for v in values {
@@ -224,34 +196,20 @@ impl Dx12Backend {
 
     /// NT handle previously returned by [`shared_alloc`] (still owned by this backend).
     pub fn shared_nt_handle(&self, id: SharedBufferId) -> Result<isize> {
-        let buf = self.shared.get(&id).ok_or_else(|| {
-            map_backend_err(BackendError(format!("shared buffer {} not allocated", id.0)))
-        })?;
+        let buf = self.shared.get(&id).ok_or_else(|| map_backend_err(BackendError(format!("shared buffer {} not allocated", id.0))))?;
         Ok(buf.handle.0 as isize)
     }
 
     /// Publish a shared buffer under a graph [`ResourceId`] so Fill/Copy can target it.
     pub fn publish_shared(&mut self, resource: ResourceId, shared: SharedBufferId) -> Result<()> {
-        let buf = self.shared.get(&shared).ok_or_else(|| {
-            map_backend_err(BackendError(format!("shared buffer {} not allocated", shared.0)))
-        })?;
+        let buf = self.shared.get(&shared).ok_or_else(|| map_backend_err(BackendError(format!("shared buffer {} not allocated", shared.0))))?;
         if let Some(existing) = self.buffers.get(&resource) {
             if existing.bytes != buf.bytes {
-                return Err(map_backend_err(BackendError(format!(
-                    "resource {} size mismatch for shared publish",
-                    resource.0
-                ))));
+                return Err(map_backend_err(BackendError(format!("resource {} size mismatch for shared publish", resource.0))));
             }
             return Ok(());
         }
-        self.buffers.insert(
-            resource,
-            DeviceBuffer {
-                resource: buf.resource.clone(),
-                bytes: buf.bytes,
-                state: buf.state,
-            },
-        );
+        self.buffers.insert(resource, DeviceBuffer { resource: buf.resource.clone(), bytes: buf.bytes, state: buf.state });
         Ok(())
     }
 
@@ -272,22 +230,15 @@ impl Dx12Backend {
             }
 
             self.allocator.Reset().map_err(dx_err)?;
-            let list: ID3D12GraphicsCommandList = self
-                .device
-                .CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &self.allocator, None)
-                .map_err(dx_err)?;
+            let list: ID3D12GraphicsCommandList =
+                self.device.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &self.allocator, None).map_err(dx_err)?;
 
             {
                 let buf = self.shared.get_mut(&id).unwrap();
                 transition(&list, &buf.resource, buf.state, D3D12_RESOURCE_STATE_COPY_DEST);
                 buf.state = D3D12_RESOURCE_STATE_COPY_DEST;
                 list.CopyBufferRegion(&buf.resource, 0, &upload, 0, bytes.len() as u64);
-                transition(
-                    &list,
-                    &buf.resource,
-                    D3D12_RESOURCE_STATE_COPY_DEST,
-                    D3D12_RESOURCE_STATE_COMMON,
-                );
+                transition(&list, &buf.resource, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COMMON);
                 buf.state = D3D12_RESOURCE_STATE_COMMON;
             }
 
@@ -302,14 +253,9 @@ impl Dx12Backend {
     /// Upload host `f32` values into an allocated device buffer.
     pub fn write_f32(&mut self, id: ResourceId, values: &[f32]) -> Result<()> {
         let bytes = values.len() * 4;
-        let buf = self.buffers.get(&id).ok_or_else(|| {
-            map_backend_err(BackendError(format!("resource {} not allocated", id.0)))
-        })?;
+        let buf = self.buffers.get(&id).ok_or_else(|| map_backend_err(BackendError(format!("resource {} not allocated", id.0))))?;
         if buf.bytes != bytes {
-            return Err(map_backend_err(BackendError(format!(
-                "resource {} expected {} bytes, got {bytes}",
-                id.0, buf.bytes
-            ))));
+            return Err(map_backend_err(BackendError(format!("resource {} expected {} bytes, got {bytes}", id.0, buf.bytes))));
         }
         let mut host = Vec::with_capacity(bytes);
         for v in values {
@@ -320,46 +266,23 @@ impl Dx12Backend {
 
     /// Download a device buffer as `f32` values.
     pub fn read_f32(&mut self, id: ResourceId) -> Result<Vec<f32>> {
-        let bytes = self
-            .buffers
-            .get(&id)
-            .ok_or_else(|| {
-                map_backend_err(BackendError(format!("resource {} not allocated", id.0)))
-            })?
-            .bytes;
+        let bytes = self.buffers.get(&id).ok_or_else(|| map_backend_err(BackendError(format!("resource {} not allocated", id.0))))?.bytes;
         let host = self.readback(id, bytes)?;
-        Ok(host
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect())
+        Ok(host.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect())
     }
 
     /// Download a device buffer as raw bytes (e.g. `R8G8B8A8` raster readback).
     pub fn read_u8(&mut self, id: ResourceId) -> Result<Vec<u8>> {
-        let bytes = self
-            .buffers
-            .get(&id)
-            .ok_or_else(|| {
-                map_backend_err(BackendError(format!("resource {} not allocated", id.0)))
-            })?
-            .bytes;
+        let bytes = self.buffers.get(&id).ok_or_else(|| map_backend_err(BackendError(format!("resource {} not allocated", id.0))))?.bytes;
         self.readback(id, bytes)
     }
 
     /// Run every task on this backend. Caller must [`prepare`] and seed inputs first.
     pub fn run_prepared(&mut self, graph: &Graph) -> Result<()> {
         graph.validate().map_err(SchedulerError::from)?;
-        let order = graph
-            .tasks
-            .topological_order()
-            .map_err(SchedulerError::from)?;
+        let order = graph.tasks.topological_order().map_err(SchedulerError::from)?;
         for task_id in order {
-            let task = graph
-                .tasks
-                .nodes
-                .iter()
-                .find(|t| t.id == task_id)
-                .expect("task in order must exist");
+            let task = graph.tasks.nodes.iter().find(|t| t.id == task_id).expect("task in order must exist");
             self.submit_task(graph, task)?;
         }
         Ok(())
@@ -376,30 +299,21 @@ impl Dx12Backend {
             )?;
             {
                 let mut ptr = std::ptr::null_mut();
-                upload
-                    .Map(0, None, Some(&mut ptr))
-                    .map_err(dx_err)?;
+                upload.Map(0, None, Some(&mut ptr)).map_err(dx_err)?;
                 std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr.cast(), bytes.len());
                 upload.Unmap(0, None);
             }
 
             self.allocator.Reset().map_err(dx_err)?;
-            let list: ID3D12GraphicsCommandList = self
-                .device
-                .CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &self.allocator, None)
-                .map_err(dx_err)?;
+            let list: ID3D12GraphicsCommandList =
+                self.device.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &self.allocator, None).map_err(dx_err)?;
 
             {
                 let buf = self.buffers.get_mut(&id).unwrap();
                 transition(&list, &buf.resource, buf.state, D3D12_RESOURCE_STATE_COPY_DEST);
                 buf.state = D3D12_RESOURCE_STATE_COPY_DEST;
                 list.CopyBufferRegion(&buf.resource, 0, &upload, 0, bytes.len() as u64);
-                transition(
-                    &list,
-                    &buf.resource,
-                    D3D12_RESOURCE_STATE_COPY_DEST,
-                    D3D12_RESOURCE_STATE_COMMON,
-                );
+                transition(&list, &buf.resource, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COMMON);
                 buf.state = D3D12_RESOURCE_STATE_COMMON;
             }
 
@@ -422,22 +336,15 @@ impl Dx12Backend {
             )?;
 
             self.allocator.Reset().map_err(dx_err)?;
-            let list: ID3D12GraphicsCommandList = self
-                .device
-                .CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &self.allocator, None)
-                .map_err(dx_err)?;
+            let list: ID3D12GraphicsCommandList =
+                self.device.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &self.allocator, None).map_err(dx_err)?;
 
             {
                 let buf = self.buffers.get_mut(&id).unwrap();
                 transition(&list, &buf.resource, buf.state, D3D12_RESOURCE_STATE_COPY_SOURCE);
                 buf.state = D3D12_RESOURCE_STATE_COPY_SOURCE;
                 list.CopyBufferRegion(&readback, 0, &buf.resource, 0, bytes as u64);
-                transition(
-                    &list,
-                    &buf.resource,
-                    D3D12_RESOURCE_STATE_COPY_SOURCE,
-                    D3D12_RESOURCE_STATE_COMMON,
-                );
+                transition(&list, &buf.resource, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_COMMON);
                 buf.state = D3D12_RESOURCE_STATE_COMMON;
             }
 
@@ -479,56 +386,42 @@ impl Dx12Backend {
                 DepthOrArraySize: 1,
                 MipLevels: 1,
                 Format: DXGI_FORMAT_UNKNOWN,
-                SampleDesc: DXGI_SAMPLE_DESC {
-                    Count: 1,
-                    Quality: 0,
-                },
+                SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
                 Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
                 Flags: flags,
             };
             let mut resource: Option<ID3D12Resource> = None;
-            self.device
-                .CreateCommittedResource(
-                    &heap,
-                    heap_flags,
-                    &desc,
-                    initial,
-                    None,
-                    &mut resource,
-                )
-                .map_err(dx_err)?;
+            self.device.CreateCommittedResource(&heap, heap_flags, &desc, initial, None, &mut resource).map_err(dx_err)?;
             resource.ok_or_else(|| dx_err_msg("CreateCommittedResource returned null"))
         }
     }
 
     fn gpu_va(&self, id: ResourceId) -> Result<u64> {
-        let buf = self.buffers.get(&id).ok_or_else(|| {
-            map_backend_err(BackendError(format!("resource {} not allocated", id.0)))
-        })?;
+        let buf = self.buffers.get(&id).ok_or_else(|| map_backend_err(BackendError(format!("resource {} not allocated", id.0))))?;
         Ok(unsafe { buf.resource.GetGPUVirtualAddress() })
     }
 
     fn run_copy(&mut self, task: &TaskNode) -> Result<()> {
         let src = resource_param(task, "src").map_err(map_backend_err)?;
         let dst = resource_param(task, "dst").map_err(map_backend_err)?;
-        let src_bytes = self.buffers.get(&src).map(|b| b.bytes).ok_or_else(|| {
-            map_backend_err(BackendError(format!("resource {} not allocated", src.0)))
-        })?;
-        let dst_bytes = self.buffers.get(&dst).map(|b| b.bytes).ok_or_else(|| {
-            map_backend_err(BackendError(format!("resource {} not allocated", dst.0)))
-        })?;
+        let src_bytes = self
+            .buffers
+            .get(&src)
+            .map(|b| b.bytes)
+            .ok_or_else(|| map_backend_err(BackendError(format!("resource {} not allocated", src.0))))?;
+        let dst_bytes = self
+            .buffers
+            .get(&dst)
+            .map(|b| b.bytes)
+            .ok_or_else(|| map_backend_err(BackendError(format!("resource {} not allocated", dst.0))))?;
         if src_bytes != dst_bytes {
-            return Err(map_backend_err(BackendError(format!(
-                "copy size mismatch: src {src_bytes} dst {dst_bytes}"
-            ))));
+            return Err(map_backend_err(BackendError(format!("copy size mismatch: src {src_bytes} dst {dst_bytes}"))));
         }
 
         unsafe {
             self.allocator.Reset().map_err(dx_err)?;
-            let list: ID3D12GraphicsCommandList = self
-                .device
-                .CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &self.allocator, None)
-                .map_err(dx_err)?;
+            let list: ID3D12GraphicsCommandList =
+                self.device.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &self.allocator, None).map_err(dx_err)?;
 
             let src_res = self.buffers.get(&src).unwrap().resource.clone();
             let dst_res = self.buffers.get(&dst).unwrap().resource.clone();
@@ -545,22 +438,12 @@ impl Dx12Backend {
             list.CopyBufferRegion(&dst_res, 0, &src_res, 0, src_bytes as u64);
             {
                 let src_buf = self.buffers.get_mut(&src).unwrap();
-                transition(
-                    &list,
-                    &src_res,
-                    D3D12_RESOURCE_STATE_COPY_SOURCE,
-                    D3D12_RESOURCE_STATE_COMMON,
-                );
+                transition(&list, &src_res, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_COMMON);
                 src_buf.state = D3D12_RESOURCE_STATE_COMMON;
             }
             {
                 let dst_buf = self.buffers.get_mut(&dst).unwrap();
-                transition(
-                    &list,
-                    &dst_res,
-                    D3D12_RESOURCE_STATE_COPY_DEST,
-                    D3D12_RESOURCE_STATE_COMMON,
-                );
+                transition(&list, &dst_res, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COMMON);
                 dst_buf.state = D3D12_RESOURCE_STATE_COMMON;
             }
 
@@ -574,18 +457,17 @@ impl Dx12Backend {
     fn run_fill(&mut self, task: &TaskNode) -> Result<()> {
         let dst = resource_param(task, "dst").map_err(map_backend_err)?;
         let _value = f32_param(task, "value").map_err(map_backend_err)?;
-        let bytes = self.buffers.get(&dst).map(|b| b.bytes).ok_or_else(|| {
-            map_backend_err(BackendError(format!("resource {} not allocated", dst.0)))
-        })?;
+        let bytes = self
+            .buffers
+            .get(&dst)
+            .map(|b| b.bytes)
+            .ok_or_else(|| map_backend_err(BackendError(format!("resource {} not allocated", dst.0))))?;
         if bytes % 4 != 0 {
-            return Err(map_backend_err(BackendError(format!(
-                "fill destination {} length {bytes} is not a multiple of 4",
-                dst.0
-            ))));
+            return Err(map_backend_err(BackendError(format!("fill destination {} length {bytes} is not a multiple of 4", dst.0))));
         }
         let count = (bytes / 4) as u32;
         let program = program_from_task(task).map_err(|err| map_emit_err(err.to_string()))?;
-        let dxbc = emit_dxil(&program).map_err(map_emit_err)?;
+        let dxbc = encode_shader(&program, TargetIsa::Dxbc).map(|module| module.bytes).map_err(|err| map_emit_err(err.to_string()))?;
         self.mark_pipeline_path();
         let (root, pso) = self.create_fill_pso(&dxbc)?;
         let dst_va = self.gpu_va(dst)?;
@@ -594,19 +476,12 @@ impl Dx12Backend {
 
         unsafe {
             self.allocator.Reset().map_err(dx_err)?;
-            let list: ID3D12GraphicsCommandList = self
-                .device
-                .CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &self.allocator, Some(&pso))
-                .map_err(dx_err)?;
+            let list: ID3D12GraphicsCommandList =
+                self.device.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &self.allocator, Some(&pso)).map_err(dx_err)?;
 
             {
                 let buf = self.buffers.get_mut(&dst).unwrap();
-                transition(
-                    &list,
-                    &buf.resource,
-                    buf.state,
-                    D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                );
+                transition(&list, &buf.resource, buf.state, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
                 buf.state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
             }
 
@@ -619,12 +494,7 @@ impl Dx12Backend {
 
             {
                 let buf = self.buffers.get_mut(&dst).unwrap();
-                transition(
-                    &list,
-                    &buf.resource,
-                    D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                    D3D12_RESOURCE_STATE_COMMON,
-                );
+                transition(&list, &buf.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COMMON);
                 buf.state = D3D12_RESOURCE_STATE_COMMON;
             }
 
@@ -647,7 +517,7 @@ impl Dx12Backend {
         expect_bytes(out, self.buf_bytes(out)?, (m as usize) * (n as usize) * 4)?;
 
         let program = program_from_task(task).map_err(|err| map_emit_err(err.to_string()))?;
-        let dxbc = emit_dxil(&program).map_err(map_emit_err)?;
+        let dxbc = encode_shader(&program, TargetIsa::Dxbc).map(|module| module.bytes).map_err(|err| map_emit_err(err.to_string()))?;
         self.mark_pipeline_path();
         let (root, pso) = self.create_matmul_pso(&dxbc)?;
         let a_va = self.gpu_va(a)?;
@@ -658,41 +528,24 @@ impl Dx12Backend {
 
         unsafe {
             self.allocator.Reset().map_err(dx_err)?;
-            let list: ID3D12GraphicsCommandList = self
-                .device
-                .CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &self.allocator, Some(&pso))
-                .map_err(dx_err)?;
+            let list: ID3D12GraphicsCommandList =
+                self.device.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &self.allocator, Some(&pso)).map_err(dx_err)?;
 
             for id in [a, b] {
                 let buf = self.buffers.get_mut(&id).unwrap();
-                transition(
-                    &list,
-                    &buf.resource,
-                    buf.state,
-                    D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
-                );
+                transition(&list, &buf.resource, buf.state, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
                 buf.state = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
             }
             {
                 let buf = self.buffers.get_mut(&out).unwrap();
-                transition(
-                    &list,
-                    &buf.resource,
-                    buf.state,
-                    D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                );
+                transition(&list, &buf.resource, buf.state, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
                 buf.state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
             }
 
             list.SetComputeRootSignature(&root);
             list.SetPipelineState(&pso);
             let constants = [m, n, k, 0u32];
-            list.SetComputeRoot32BitConstants(
-                0,
-                constants.len() as u32,
-                constants.as_ptr().cast(),
-                0,
-            );
+            list.SetComputeRoot32BitConstants(0, constants.len() as u32, constants.as_ptr().cast(), 0);
             list.SetComputeRootShaderResourceView(1, a_va);
             list.SetComputeRootShaderResourceView(2, b_va);
             list.SetComputeRootUnorderedAccessView(3, out_va);
@@ -722,15 +575,11 @@ impl Dx12Backend {
         let width = u32_param(task, "width").map_err(map_backend_err)?;
         let height = u32_param(task, "height").map_err(map_backend_err)?;
         if width == 0 || height == 0 {
-            return Err(map_backend_err(BackendError(
-                "raster width/height must be > 0".into(),
-            )));
+            return Err(map_backend_err(BackendError("raster width/height must be > 0".into())));
         }
         let draw = str_param(task, "draw").unwrap_or("clear");
         if draw != "clear" && draw != "tri" {
-            return Err(map_backend_err(BackendError(format!(
-                "raster draw must be `clear` or `tri`, got `{draw}`"
-            ))));
+            return Err(map_backend_err(BackendError(format!("raster draw must be `clear` or `tri`, got `{draw}`"))));
         }
         let r = f32_param(task, "r").unwrap_or(0.0);
         let g = f32_param(task, "g").unwrap_or(0.0);
@@ -742,24 +591,15 @@ impl Dx12Backend {
             .ok_or_else(|| map_backend_err(BackendError("raster size overflow".into())))?;
         let dst_bytes = self.buf_bytes(dst)?;
         if dst_bytes < need {
-            return Err(map_backend_err(BackendError(format!(
-                "raster destination {} has {dst_bytes} bytes, need at least {need}",
-                dst.0
-            ))));
+            return Err(map_backend_err(BackendError(format!("raster destination {} has {dst_bytes} bytes, need at least {need}", dst.0))));
         }
 
-        let tri_shaders = if draw == "tri" {
-            Some(emit_raster_tri_dxbc().map_err(map_emit_err)?)
-        } else {
-            None
-        };
+        let tri_shaders = if draw == "tri" { Some(emit_raster_tri_dxbc().map_err(map_emit_err)?) } else { None };
 
         unsafe {
             let clear = D3D12_CLEAR_VALUE {
                 Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-                Anonymous: windows::Win32::Graphics::Direct3D12::D3D12_CLEAR_VALUE_0 {
-                    Color: [r, g, b, a],
-                },
+                Anonymous: windows::Win32::Graphics::Direct3D12::D3D12_CLEAR_VALUE_0 { Color: [r, g, b, a] },
             };
             let heap = D3D12_HEAP_PROPERTIES {
                 Type: D3D12_HEAP_TYPE_DEFAULT,
@@ -776,23 +616,13 @@ impl Dx12Backend {
                 DepthOrArraySize: 1,
                 MipLevels: 1,
                 Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-                SampleDesc: DXGI_SAMPLE_DESC {
-                    Count: 1,
-                    Quality: 0,
-                },
+                SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
                 Layout: D3D12_TEXTURE_LAYOUT_UNKNOWN,
                 Flags: D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
             };
             let mut rt: Option<ID3D12Resource> = None;
             self.device
-                .CreateCommittedResource(
-                    &heap,
-                    D3D12_HEAP_FLAG_NONE,
-                    &rt_desc,
-                    D3D12_RESOURCE_STATE_RENDER_TARGET,
-                    Some(&clear),
-                    &mut rt,
-                )
+                .CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &rt_desc, D3D12_RESOURCE_STATE_RENDER_TARGET, Some(&clear), &mut rt)
                 .map_err(dx_err)?;
             let rt = rt.ok_or_else(|| dx_err_msg("raster RT CreateCommittedResource null"))?;
 
@@ -802,12 +632,8 @@ impl Dx12Backend {
                 Flags: D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
                 NodeMask: 0,
             };
-            let rtv_heap: ID3D12DescriptorHeap = self
-                .device
-                .CreateDescriptorHeap(&heap_desc)
-                .map_err(dx_err)?;
-            let rtv: D3D12_CPU_DESCRIPTOR_HANDLE =
-                rtv_heap.GetCPUDescriptorHandleForHeapStart();
+            let rtv_heap: ID3D12DescriptorHeap = self.device.CreateDescriptorHeap(&heap_desc).map_err(dx_err)?;
+            let rtv: D3D12_CPU_DESCRIPTOR_HANDLE = rtv_heap.GetCPUDescriptorHandleForHeapStart();
             self.device.CreateRenderTargetView(&rt, None, rtv);
 
             let mut footprint = D3D12_PLACED_SUBRESOURCE_FOOTPRINT::default();
@@ -842,27 +668,14 @@ impl Dx12Backend {
             self.mark_sync_path();
 
             self.allocator.Reset().map_err(dx_err)?;
-            let list: ID3D12GraphicsCommandList = self
-                .device
-                .CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &self.allocator, None)
-                .map_err(dx_err)?;
+            let list: ID3D12GraphicsCommandList =
+                self.device.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &self.allocator, None).map_err(dx_err)?;
 
             list.ClearRenderTargetView(rtv, &[r, g, b, a], None);
             if let Some((root, pso)) = &graphics {
-                let viewport = D3D12_VIEWPORT {
-                    TopLeftX: 0.0,
-                    TopLeftY: 0.0,
-                    Width: width as f32,
-                    Height: height as f32,
-                    MinDepth: 0.0,
-                    MaxDepth: 1.0,
-                };
-                let scissor = RECT {
-                    left: 0,
-                    top: 0,
-                    right: width as i32,
-                    bottom: height as i32,
-                };
+                let viewport =
+                    D3D12_VIEWPORT { TopLeftX: 0.0, TopLeftY: 0.0, Width: width as f32, Height: height as f32, MinDepth: 0.0, MaxDepth: 1.0 };
+                let scissor = RECT { left: 0, top: 0, right: width as i32, bottom: height as i32 };
                 list.OMSetRenderTargets(1, Some(&rtv), false, None);
                 list.RSSetViewports(&[viewport]);
                 list.RSSetScissorRects(&[scissor]);
@@ -871,25 +684,16 @@ impl Dx12Backend {
                 list.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
                 list.DrawInstanced(3, 1, 0, 0);
             }
-            transition(
-                &list,
-                &rt,
-                D3D12_RESOURCE_STATE_RENDER_TARGET,
-                D3D12_RESOURCE_STATE_COPY_SOURCE,
-            );
+            transition(&list, &rt, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
             let src_loc = D3D12_TEXTURE_COPY_LOCATION {
                 pResource: std::mem::ManuallyDrop::new(Some(rt.clone())),
                 Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
-                Anonymous: windows::Win32::Graphics::Direct3D12::D3D12_TEXTURE_COPY_LOCATION_0 {
-                    SubresourceIndex: 0,
-                },
+                Anonymous: windows::Win32::Graphics::Direct3D12::D3D12_TEXTURE_COPY_LOCATION_0 { SubresourceIndex: 0 },
             };
             let dst_loc = D3D12_TEXTURE_COPY_LOCATION {
                 pResource: std::mem::ManuallyDrop::new(Some(staging.clone())),
                 Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
-                Anonymous: windows::Win32::Graphics::Direct3D12::D3D12_TEXTURE_COPY_LOCATION_0 {
-                    PlacedFootprint: footprint,
-                },
+                Anonymous: windows::Win32::Graphics::Direct3D12::D3D12_TEXTURE_COPY_LOCATION_0 { PlacedFootprint: footprint },
             };
             list.CopyTextureRegion(&dst_loc, 0, 0, 0, &src_loc, None);
             list.Close().map_err(dx_err)?;
@@ -912,11 +716,7 @@ impl Dx12Backend {
         }
     }
 
-    fn create_graphics_tri_pso(
-        &self,
-        vs: &[u8],
-        ps: &[u8],
-    ) -> Result<(ID3D12RootSignature, ID3D12PipelineState)> {
+    fn create_graphics_tri_pso(&self, vs: &[u8], ps: &[u8]) -> Result<(ID3D12RootSignature, ID3D12PipelineState)> {
         unsafe {
             let root_desc = D3D12_ROOT_SIGNATURE_DESC {
                 NumParameters: 0,
@@ -927,31 +727,17 @@ impl Dx12Backend {
             };
             let mut blob = None;
             let mut error_blob = None;
-            D3D12SerializeRootSignature(
-                &root_desc,
-                D3D_ROOT_SIGNATURE_VERSION_1,
-                &mut blob,
-                Some(&mut error_blob),
-            )
-            .map_err(dx_err)?;
+            D3D12SerializeRootSignature(&root_desc, D3D_ROOT_SIGNATURE_VERSION_1, &mut blob, Some(&mut error_blob)).map_err(dx_err)?;
             let blob = blob.ok_or_else(|| dx_err_msg("graphics root signature serialize null"))?;
-            let bytes =
-                std::slice::from_raw_parts(blob.GetBufferPointer().cast(), blob.GetBufferSize());
-            let root: ID3D12RootSignature =
-                self.device.CreateRootSignature(0, bytes).map_err(dx_err)?;
+            let bytes = std::slice::from_raw_parts(blob.GetBufferPointer().cast(), blob.GetBufferSize());
+            let root: ID3D12RootSignature = self.device.CreateRootSignature(0, bytes).map_err(dx_err)?;
 
             let mut rtv_formats = [DXGI_FORMAT_UNKNOWN; 8];
             rtv_formats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
             let mut pso_desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
                 pRootSignature: std::mem::ManuallyDrop::new(Some(root.clone())),
-                VS: D3D12_SHADER_BYTECODE {
-                    pShaderBytecode: vs.as_ptr().cast(),
-                    BytecodeLength: vs.len(),
-                },
-                PS: D3D12_SHADER_BYTECODE {
-                    pShaderBytecode: ps.as_ptr().cast(),
-                    BytecodeLength: ps.len(),
-                },
+                VS: D3D12_SHADER_BYTECODE { pShaderBytecode: vs.as_ptr().cast(), BytecodeLength: vs.len() },
+                PS: D3D12_SHADER_BYTECODE { pShaderBytecode: ps.as_ptr().cast(), BytecodeLength: ps.len() },
                 BlendState: D3D12_BLEND_DESC {
                     AlphaToCoverageEnable: false.into(),
                     IndependentBlendEnable: false.into(),
@@ -969,68 +755,40 @@ impl Dx12Backend {
                     MultisampleEnable: false.into(),
                     AntialiasedLineEnable: false.into(),
                     ForcedSampleCount: 0,
-                    ConservativeRaster:
-                        windows::Win32::Graphics::Direct3D12::D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF,
+                    ConservativeRaster: windows::Win32::Graphics::Direct3D12::D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF,
                 },
-                DepthStencilState: D3D12_DEPTH_STENCIL_DESC {
-                    DepthEnable: false.into(),
-                    ..Default::default()
-                },
-                InputLayout: D3D12_INPUT_LAYOUT_DESC {
-                    pInputElementDescs: std::ptr::null(),
-                    NumElements: 0,
-                },
+                DepthStencilState: D3D12_DEPTH_STENCIL_DESC { DepthEnable: false.into(), ..Default::default() },
+                InputLayout: D3D12_INPUT_LAYOUT_DESC { pInputElementDescs: std::ptr::null(), NumElements: 0 },
                 PrimitiveTopologyType: D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
                 NumRenderTargets: 1,
                 RTVFormats: rtv_formats,
-                SampleDesc: DXGI_SAMPLE_DESC {
-                    Count: 1,
-                    Quality: 0,
-                },
+                SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
                 ..Default::default()
             };
             // Default RT blend: one render target, opaque.
             pso_desc.BlendState.RenderTarget[0].RenderTargetWriteMask = 0x0f;
             pso_desc.BlendState.RenderTarget[0].BlendEnable = false.into();
 
-            let pso: ID3D12PipelineState = self
-                .device
-                .CreateGraphicsPipelineState(&pso_desc)
-                .map_err(dx_err)?;
+            let pso: ID3D12PipelineState = self.device.CreateGraphicsPipelineState(&pso_desc).map_err(dx_err)?;
             Ok((root, pso))
         }
     }
 
     fn buf_bytes(&self, id: ResourceId) -> Result<usize> {
-        self.buffers
-            .get(&id)
-            .map(|b| b.bytes)
-            .ok_or_else(|| map_backend_err(BackendError(format!("resource {} not allocated", id.0))))
+        self.buffers.get(&id).map(|b| b.bytes).ok_or_else(|| map_backend_err(BackendError(format!("resource {} not allocated", id.0))))
     }
 
     fn create_fill_pso(&self, dxbc: &[u8]) -> Result<(ID3D12RootSignature, ID3D12PipelineState)> {
-        let params = [
-            root_constants(0, 1),
-            root_uav(0),
-        ];
+        let params = [root_constants(0, 1), root_uav(0)];
         self.create_compute_pso(dxbc, &params)
     }
 
     fn create_matmul_pso(&self, dxbc: &[u8]) -> Result<(ID3D12RootSignature, ID3D12PipelineState)> {
-        let params = [
-            root_constants(0, 4),
-            root_srv(0),
-            root_srv(1),
-            root_uav(0),
-        ];
+        let params = [root_constants(0, 4), root_srv(0), root_srv(1), root_uav(0)];
         self.create_compute_pso(dxbc, &params)
     }
 
-    fn create_compute_pso(
-        &self,
-        dxbc: &[u8],
-        params: &[D3D12_ROOT_PARAMETER],
-    ) -> Result<(ID3D12RootSignature, ID3D12PipelineState)> {
+    fn create_compute_pso(&self, dxbc: &[u8], params: &[D3D12_ROOT_PARAMETER]) -> Result<(ID3D12RootSignature, ID3D12PipelineState)> {
         unsafe {
             let root_desc = D3D12_ROOT_SIGNATURE_DESC {
                 NumParameters: params.len() as u32,
@@ -1041,23 +799,12 @@ impl Dx12Backend {
             };
             let mut blob = None;
             let mut error_blob = None;
-            D3D12SerializeRootSignature(
-                &root_desc,
-                D3D_ROOT_SIGNATURE_VERSION_1,
-                &mut blob,
-                Some(&mut error_blob),
-            )
-            .map_err(dx_err)?;
+            D3D12SerializeRootSignature(&root_desc, D3D_ROOT_SIGNATURE_VERSION_1, &mut blob, Some(&mut error_blob)).map_err(dx_err)?;
             let blob = blob.ok_or_else(|| dx_err_msg("D3D12SerializeRootSignature returned null"))?;
-            let bytes =
-                std::slice::from_raw_parts(blob.GetBufferPointer().cast(), blob.GetBufferSize());
-            let root: ID3D12RootSignature =
-                self.device.CreateRootSignature(0, bytes).map_err(dx_err)?;
+            let bytes = std::slice::from_raw_parts(blob.GetBufferPointer().cast(), blob.GetBufferSize());
+            let root: ID3D12RootSignature = self.device.CreateRootSignature(0, bytes).map_err(dx_err)?;
 
-            let cs = D3D12_SHADER_BYTECODE {
-                pShaderBytecode: dxbc.as_ptr().cast(),
-                BytecodeLength: dxbc.len(),
-            };
+            let cs = D3D12_SHADER_BYTECODE { pShaderBytecode: dxbc.as_ptr().cast(), BytecodeLength: dxbc.len() };
             let desc = D3D12_COMPUTE_PIPELINE_STATE_DESC {
                 pRootSignature: std::mem::ManuallyDrop::new(Some(root.clone())),
                 CS: cs,
@@ -1065,10 +812,7 @@ impl Dx12Backend {
                 CachedPSO: Default::default(),
                 Flags: Default::default(),
             };
-            let pso = self
-                .device
-                .CreateComputePipelineState(&desc)
-                .map_err(dx_err)?;
+            let pso = self.device.CreateComputePipelineState(&desc).map_err(dx_err)?;
             Ok((root, pso))
         }
     }
@@ -1076,13 +820,9 @@ impl Dx12Backend {
     fn signal_fence(&mut self) -> Result<()> {
         unsafe {
             self.fence_value += 1;
-            self.queue
-                .Signal(&self.fence, self.fence_value)
-                .map_err(dx_err)?;
+            self.queue.Signal(&self.fence, self.fence_value).map_err(dx_err)?;
             if self.fence.GetCompletedValue() < self.fence_value {
-                self.fence
-                    .SetEventOnCompletion(self.fence_value, self.fence_event)
-                    .map_err(dx_err)?;
+                self.fence.SetEventOnCompletion(self.fence_value, self.fence_event).map_err(dx_err)?;
                 let wait = WaitForSingleObject(self.fence_event, INFINITE);
                 if wait != WAIT_OBJECT_0 {
                     return Err(dx_err_msg("fence wait failed"));
@@ -1121,21 +861,15 @@ impl Backend for Dx12Backend {
     }
 
     fn features(&self) -> FeatureSet {
-        FeatureSet::new()
-            .with(Feature::Bindless)
-            .with(Feature::DescriptorHeap)
-            .with(Feature::DynamicRendering)
-            .with(Feature::EnhancedBarriers)
+        FeatureSet::new().with(Feature::Bindless).with(Feature::DescriptorHeap).with(Feature::DynamicRendering).with(Feature::EnhancedBarriers)
     }
 
     fn prepare(&mut self, graph: &Graph) -> Result<()> {
         for node in &graph.resources.nodes {
-            let bytes = node.byte_size.ok_or_else(|| {
-                map_backend_err(BackendError(format!(
-                    "resource {} needs byte_size for dx12 backend",
-                    node.id.0
-                )))
-            })? as usize;
+            let bytes = node
+                .byte_size
+                .ok_or_else(|| map_backend_err(BackendError(format!("resource {} needs byte_size for dx12 backend", node.id.0))))?
+                as usize;
             if let Some(existing) = self.buffers.get(&node.id) {
                 if existing.bytes != bytes {
                     return Err(map_backend_err(BackendError(format!(
@@ -1153,14 +887,7 @@ impl Backend for Dx12Backend {
                 D3D12_HEAP_FLAG_NONE,
             )?;
             // Zero-initialize via upload of zeros.
-            self.buffers.insert(
-                node.id,
-                DeviceBuffer {
-                    resource,
-                    bytes,
-                    state: D3D12_RESOURCE_STATE_COMMON,
-                },
-            );
+            self.buffers.insert(node.id, DeviceBuffer { resource, bytes, state: D3D12_RESOURCE_STATE_COMMON });
             let zeros = vec![0u8; bytes];
             self.upload(node.id, &zeros)?;
         }
@@ -1173,12 +900,8 @@ impl Backend for Dx12Backend {
             TaskKind::Fill => self.run_fill(task),
             TaskKind::MatMul => self.run_matmul(task),
             TaskKind::Raster => self.run_raster(task),
-            TaskKind::RtTrace => Err(map_backend_err(BackendError(
-                "ray tracing is not in the dx12 thin gate".into(),
-            ))),
-            other => Err(map_backend_err(BackendError(format!(
-                "dx12 backend does not implement {other:?}"
-            )))),
+            TaskKind::RtTrace => Err(map_backend_err(BackendError("ray tracing is not in the dx12 thin gate".into()))),
+            other => Err(map_backend_err(BackendError(format!("dx12 backend does not implement {other:?}")))),
         }
     }
 
@@ -1192,11 +915,7 @@ fn root_constants(shader_register: u32, num: u32) -> D3D12_ROOT_PARAMETER {
     D3D12_ROOT_PARAMETER {
         ParameterType: D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
         Anonymous: D3D12_ROOT_PARAMETER_0 {
-            Constants: D3D12_ROOT_CONSTANTS {
-                ShaderRegister: shader_register,
-                RegisterSpace: 0,
-                Num32BitValues: num,
-            },
+            Constants: D3D12_ROOT_CONSTANTS { ShaderRegister: shader_register, RegisterSpace: 0, Num32BitValues: num },
         },
         ShaderVisibility: D3D12_SHADER_VISIBILITY_ALL,
     }
@@ -1205,12 +924,7 @@ fn root_constants(shader_register: u32, num: u32) -> D3D12_ROOT_PARAMETER {
 fn root_uav(shader_register: u32) -> D3D12_ROOT_PARAMETER {
     D3D12_ROOT_PARAMETER {
         ParameterType: D3D12_ROOT_PARAMETER_TYPE_UAV,
-        Anonymous: D3D12_ROOT_PARAMETER_0 {
-            Descriptor: D3D12_ROOT_DESCRIPTOR {
-                ShaderRegister: shader_register,
-                RegisterSpace: 0,
-            },
-        },
+        Anonymous: D3D12_ROOT_PARAMETER_0 { Descriptor: D3D12_ROOT_DESCRIPTOR { ShaderRegister: shader_register, RegisterSpace: 0 } },
         ShaderVisibility: D3D12_SHADER_VISIBILITY_ALL,
     }
 }
@@ -1218,22 +932,12 @@ fn root_uav(shader_register: u32) -> D3D12_ROOT_PARAMETER {
 fn root_srv(shader_register: u32) -> D3D12_ROOT_PARAMETER {
     D3D12_ROOT_PARAMETER {
         ParameterType: D3D12_ROOT_PARAMETER_TYPE_SRV,
-        Anonymous: D3D12_ROOT_PARAMETER_0 {
-            Descriptor: D3D12_ROOT_DESCRIPTOR {
-                ShaderRegister: shader_register,
-                RegisterSpace: 0,
-            },
-        },
+        Anonymous: D3D12_ROOT_PARAMETER_0 { Descriptor: D3D12_ROOT_DESCRIPTOR { ShaderRegister: shader_register, RegisterSpace: 0 } },
         ShaderVisibility: D3D12_SHADER_VISIBILITY_ALL,
     }
 }
 
-fn transition(
-    list: &ID3D12GraphicsCommandList,
-    resource: &ID3D12Resource,
-    before: D3D12_RESOURCE_STATES,
-    after: D3D12_RESOURCE_STATES,
-) {
+fn transition(list: &ID3D12GraphicsCommandList, resource: &ID3D12Resource, before: D3D12_RESOURCE_STATES, after: D3D12_RESOURCE_STATES) {
     if before == after {
         return;
     }
@@ -1262,10 +966,7 @@ fn D3D12_RESOURCE_STATE_GENERIC_READ_UPLOAD() -> D3D12_RESOURCE_STATES {
 
 fn expect_bytes(id: ResourceId, have: usize, need: usize) -> Result<()> {
     if have != need {
-        return Err(map_backend_err(BackendError(format!(
-            "resource {} has {have} bytes, expected {need}",
-            id.0
-        ))));
+        return Err(map_backend_err(BackendError(format!("resource {} has {have} bytes, expected {need}", id.0))));
     }
     Ok(())
 }

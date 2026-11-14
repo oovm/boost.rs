@@ -11,4 +11,5 @@ publish.workspace = true
 [dependencies]
 serde = { workspace = true }
 hardware-ir = { workspace = true }
+hardware-program = { workspace = true }
 hardware-types = { workspace = true }

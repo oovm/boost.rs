@@ -4,10 +4,12 @@
 mod metrics;
 mod optimization;
 mod perf;
+mod program;
 
-pub use metrics::{attention_flops, AttentionMetrics, matmul_flops, MatmulMetrics};
+pub use metrics::{AttentionMetrics, MatmulMetrics, attention_flops, matmul_flops};
 pub use optimization::Optimization;
 pub use perf::{BackendPerfRow, PerfReport, TimedSample};
+pub use program::{OptimizeOptions, is_foldable_scalar, optimize_program};
 
 use hardware_ir::{Graph, Result};
 

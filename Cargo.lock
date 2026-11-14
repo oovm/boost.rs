@@ -2069,6 +2069,7 @@ dependencies = [
 name = "hardware-emitter"
 version = "0.1.0"
 dependencies = [
+ "hardware-optimize",
  "hardware-program",
  "hardware-types",
  "libloading 0.9.1",
@@ -2102,6 +2103,7 @@ name = "hardware-optimize"
 version = "0.1.0"
 dependencies = [
  "hardware-ir",
+ "hardware-program",
  "hardware-types",
  "serde",
 ]
