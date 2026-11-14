@@ -37,6 +37,8 @@ pub struct RenderStats {
     pub range: [u32; 2],
     /// Font files the render actually loaded, in role order.
     pub fonts: Vec<String>,
+    /// FNV-1a hash of each loaded font file's bytes, in the same order.
+    pub font_hashes: Vec<String>,
     /// FNV-1a hash of the project JSON that was rendered.
     pub project_hash: String,
     /// Declared optional resources that were absent; each is documented silence.
@@ -62,6 +64,8 @@ pub struct FrameRange {
 pub struct RenderOptions<'a> {
     pub range: Option<FrameRange>,
     pub cancel: Option<&'a dyn Fn() -> bool>,
+    /// Decode budget; `None` uses [`DecodeLimits::project_default`].
+    pub limits: Option<DecodeLimits>,
 }
 
 impl RenderOptions<'_> {
@@ -126,7 +130,7 @@ const SYSTEM_FONTS: [(&str, &[&str]); 3] = [
 /// Declared project fonts are an input contract: a missing or undecodable file
 /// is an error, never a silent swap to another face. Without a declaration the
 /// host probes the system candidates and still reports which files it loaded.
-fn resolve_fonts(project: &Project) -> Result<(Fonts, Vec<String>), Error> {
+fn resolve_fonts(project: &Project) -> Result<(Fonts, Vec<String>, Vec<String>), Error> {
     let (bytes, used) = match &project.fonts {
         Some(spec) => {
             let mut bytes = Vec::with_capacity(3);
@@ -160,7 +164,8 @@ fn resolve_fonts(project: &Project) -> Result<(Fonts, Vec<String>), Error> {
         }
     };
     let fonts = Fonts::from_bytes(&bytes[0], &bytes[1], &bytes[2])?;
-    Ok((fonts, used))
+    let hashes = bytes.iter().map(|data| fnv1a(data)).collect();
+    Ok((fonts, used, hashes))
 }
 
 fn fnv1a(bytes: &[u8]) -> String {
@@ -194,12 +199,12 @@ pub fn render_project_with(
     resolve_design(&mut project)?;
     validate(&project)?;
     let (w, h, fps) = (project.width, project.height, project.fps);
-    let (fonts, font_paths) = resolve_fonts(&project)?;
+    let (fonts, font_paths, font_hashes) = resolve_fonts(&project)?;
     let mut fonts = fonts;
     let mut media = MediaLibrary::new();
-    // The project layer's decode budget: this renderer trusts container sizes,
-    // hosts with tighter budgets pass their own limits to the codec calls.
-    let limits = DecodeLimits::unbounded();
+    // The project layer's decode budget is bounded: a huge or hostile container
+    // fails explicitly instead of exhausting memory mid-render.
+    let limits = options.limits.unwrap_or_else(DecodeLimits::project_default);
     let range = resolve_range(&project, options)?;
     let (first, last) = (range.start, range.end);
     // 暗角唯一正式语义：`media.post::Vignette`（G7 裁决，旧 raster 掩码已删）。
@@ -208,7 +213,13 @@ pub fn render_project_with(
     let has_audio = project.audio.is_some();
     let plan = lower_audio(&project);
     let optional_missing = preflight(&project, &mut fonts, &mut media, limits, &plan)?;
+    if options.cancelled() {
+        return Err(Error::cancelled("render cancelled after resource preflight"));
+    }
     let audio = build_audio(&plan, &mut media, limits)?;
+    if options.cancelled() {
+        return Err(Error::cancelled("render cancelled after the audio bed was built"));
+    }
     let bitrate = (w * h * fps / 2).clamp(2_000_000, 20_000_000);
     let mut partial = PartialOutput::new(out);
     if let Some(parent) = partial.path.parent().filter(|p| !p.as_os_str().is_empty()) {
@@ -261,6 +272,7 @@ pub fn render_project_with(
         audio: has_audio,
         range: [first, last],
         fonts: font_paths,
+        font_hashes,
         project_hash: fnv1a(json.as_bytes()),
         optional_missing,
     })
@@ -371,10 +383,10 @@ pub fn preview_frame(json: &str, frame: u32, out: &Path) -> Result<PreviewStats,
     if frame >= project.duration_frames {
         return Err(Error::invalid(format!("frame {frame} is outside 0..{}", project.duration_frames)));
     }
-    let (fonts, font_paths) = resolve_fonts(&project)?;
+    let (fonts, font_paths, _font_hashes) = resolve_fonts(&project)?;
     let mut fonts = fonts;
     let mut media = MediaLibrary::new();
-    let limits = DecodeLimits::unbounded();
+    let limits = DecodeLimits::project_default();
     let plan = lower_audio(&project);
     preflight(&project, &mut fonts, &mut media, limits, &plan)?;
     let (w, h) = (project.width, project.height);
@@ -2140,7 +2152,7 @@ mod tests {
         });
         let seen = std::cell::Cell::new(0u32);
         let stop = || seen.get() >= 15;
-        let options = super::RenderOptions { range: None, cancel: Some(&stop) };
+        let options = super::RenderOptions { range: None, cancel: Some(&stop), ..Default::default() };
         let error = super::render_project_with(&film.to_string(), &out, &options, &mut |done, _| seen.set(done))
             .expect_err("cancel must surface as an error");
         assert_eq!(error.code(), "cancelled", "{error}");
@@ -2168,7 +2180,7 @@ mod tests {
                 "background": { "kind": "solid", "color": "#203040" }, "items": [] }],
             "audio": null
         });
-        let options = super::RenderOptions { range: Some(super::FrameRange { start: 15, end: 45 }), cancel: None };
+        let options = super::RenderOptions { range: Some(super::FrameRange { start: 15, end: 45 }), cancel: None, ..Default::default() };
         let stats = super::render_project_with(&film.to_string(), &out, &options, &mut |_, _| {}).expect("range");
         assert_eq!(stats.frames, 30);
         assert_eq!(stats.range, [15, 45]);

@@ -7,8 +7,7 @@
 //! Decoded results are cached per path and video keeps its decoder position, so
 //! playing a clip forward decodes each sample exactly once.
 
-use std::collections::HashMap;
-use std::rc::Rc;
+use std::{collections::HashMap, rc::Rc};
 
 use media_image::Bitmap;
 use media_types::Error;
@@ -32,6 +31,17 @@ impl DecodeLimits {
     #[must_use]
     pub const fn unbounded() -> Self {
         Self { max_pixels: usize::MAX, max_audio_frames: usize::MAX }
+    }
+
+    /// The project-layer budget: bounded, but generous enough for real films.
+    ///
+    /// One decoded frame may hold `8192 × 8192` pixels and one audio track up to
+    /// 20 minutes at 44.1 kHz. These are explicit caps, not container trust:
+    /// anything larger fails with the codec's decode-limit error instead of
+    /// exhausting memory mid-render.
+    #[must_use]
+    pub const fn project_default() -> Self {
+        Self { max_pixels: 8192 * 8192, max_audio_frames: 44_100 * 60 * 20 }
     }
 }
 
@@ -117,17 +127,20 @@ fn decode_audio(path: &str, sample_rate: u32, limits: DecodeLimits) -> Result<Ve
 
 #[cfg(windows)]
 mod win {
-    use std::rc::Rc;
-    use std::sync::Once;
+    use std::{rc::Rc, sync::Once};
 
-    use windows::Win32::Foundation::GENERIC_READ;
-    use windows::Win32::Graphics::Imaging::{
-        CLSID_WICImagingFactory, GUID_WICPixelFormat32bppRGBA, IWICFormatConverter, IWICImagingFactory,
-        WICBitmapDitherTypeNone, WICBitmapPaletteTypeCustom, WICDecodeMetadataCacheOnDemand, WICRect,
+    use windows::{
+        Win32::{
+            Foundation::GENERIC_READ,
+            Graphics::Imaging::{
+                CLSID_WICImagingFactory, GUID_WICPixelFormat32bppRGBA, IWICFormatConverter, IWICImagingFactory, WICBitmapDitherTypeNone,
+                WICBitmapPaletteTypeCustom, WICDecodeMetadataCacheOnDemand, WICRect,
+            },
+            Media::MediaFoundation as mf,
+            System::Com::{CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx},
+        },
+        core::PCWSTR,
     };
-    use windows::Win32::Media::MediaFoundation as mf;
-    use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx};
-    use windows::core::PCWSTR;
 
     use media_image::Bitmap;
     use media_types::Error;
@@ -176,8 +189,8 @@ mod win {
     pub(super) fn decode_image(path: &str, limits: DecodeLimits) -> Result<Bitmap, Error> {
         ensure_com();
         unsafe {
-            let factory: IWICImagingFactory = CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)
-                .map_err(|e| media_error("CoCreateInstance(WIC)", e))?;
+            let factory: IWICImagingFactory =
+                CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER).map_err(|e| media_error("CoCreateInstance(WIC)", e))?;
             let path_w = wide(&absolute(path));
             let decoder = factory
                 .CreateDecoderFromFilename(PCWSTR(path_w.as_ptr()), None, GENERIC_READ, WICDecodeMetadataCacheOnDemand)
@@ -194,17 +207,9 @@ mod win {
                 return Err(Error::invalid_input(format!("image {path} is {width}x{height}, above the decode limit")));
             }
 
-            let converter: IWICFormatConverter =
-                factory.CreateFormatConverter().map_err(|e| media_error("WIC CreateFormatConverter", e))?;
+            let converter: IWICFormatConverter = factory.CreateFormatConverter().map_err(|e| media_error("WIC CreateFormatConverter", e))?;
             converter
-                .Initialize(
-                    &frame,
-                    &GUID_WICPixelFormat32bppRGBA,
-                    WICBitmapDitherTypeNone,
-                    None,
-                    0.0,
-                    WICBitmapPaletteTypeCustom,
-                )
+                .Initialize(&frame, &GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone, None, 0.0, WICBitmapPaletteTypeCustom)
                 .map_err(|e| media_error("WIC Initialize", e))?;
 
             let stride = (width as usize) * 4;
@@ -265,12 +270,9 @@ mod win {
             let stream = mf::MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32;
             unsafe {
                 let _ = reader.SetStreamSelection(mf::MF_SOURCE_READER_ALL_STREAMS.0 as u32, false);
-                reader
-                    .SetStreamSelection(stream, true)
-                    .map_err(|e| media_error(&format!("video {path} has no video stream"), e))?;
+                reader.SetStreamSelection(stream, true).map_err(|e| media_error(&format!("video {path} has no video stream"), e))?;
             }
-            let native =
-                unsafe { reader.GetNativeMediaType(stream, 0) }.map_err(|e| media_error("video native media type", e))?;
+            let native = unsafe { reader.GetNativeMediaType(stream, 0) }.map_err(|e| media_error("video native media type", e))?;
             let size = unsafe { native.GetUINT64(&mf::MF_MT_FRAME_SIZE) }.unwrap_or(0);
             let width = (size >> 32) as u32;
             let height = (size & 0xffff_ffff) as u32;
@@ -325,12 +327,12 @@ mod win {
                 }
                 if flags & FLAG_END_OF_STREAM != 0 {
                     // Hold the last decoded frame rather than emitting nothing.
-                    return self
-                        .last_frame
-                        .clone()
-                        .ok_or_else(|| Error::media(format!("video {} has no decodable frames", self.path)));
+                    return self.last_frame.clone().ok_or_else(|| Error::media(format!("video {} has no decodable frames", self.path)));
                 }
-                let Some(sample) = sample else { continue };
+                let Some(sample) = sample
+                else {
+                    continue;
+                };
                 let bitmap = Rc::new(self.to_bitmap(&sample, limits)?);
                 self.last_time = timestamp as f64 / 10_000_000.0;
                 self.last_frame = Some(Rc::clone(&bitmap));
@@ -341,8 +343,7 @@ mod win {
         }
 
         fn to_bitmap(&self, sample: &mf::IMFSample, limits: DecodeLimits) -> Result<Bitmap, Error> {
-            let current =
-                unsafe { self.reader.GetCurrentMediaType(self.stream) }.map_err(|e| media_error("video current type", e))?;
+            let current = unsafe { self.reader.GetCurrentMediaType(self.stream) }.map_err(|e| media_error("video current type", e))?;
             let size = unsafe { current.GetUINT64(&mf::MF_MT_FRAME_SIZE) }.unwrap_or(0);
             let width = (size >> 32) as u32;
             let height = (size & 0xffff_ffff) as u32;
@@ -359,7 +360,8 @@ mod win {
             // RGB32 buffers are BGRA and may be padded per row.
             let stride = if height > 0 && len as usize >= (width as usize) * (height as usize) * 4 {
                 len as usize / height as usize
-            } else {
+            }
+            else {
                 (width as usize) * 4
             };
             let bitmap = Bitmap::from_bgra(width, height, slice, stride);
@@ -401,9 +403,7 @@ mod win {
             let _ = reader.SetStreamSelection(mf::MF_SOURCE_READER_ALL_STREAMS.0 as u32, false);
         }
         unsafe {
-            reader
-                .SetStreamSelection(stream, true)
-                .map_err(|e| media_error(&format!("audio {path} has no audio stream"), e))?;
+            reader.SetStreamSelection(stream, true).map_err(|e| media_error(&format!("audio {path} has no audio stream"), e))?;
         }
 
         let target = unsafe { mf::MFCreateMediaType().map_err(|e| media_error("MFCreateMediaType(audio)", e))? };
@@ -414,12 +414,8 @@ mod win {
             target.SetUINT32(&mf::MF_MT_AUDIO_SAMPLES_PER_SECOND, sample_rate).map_err(|e| media_error("audio rate", e))?;
             target.SetUINT32(&mf::MF_MT_AUDIO_BITS_PER_SAMPLE, 32).map_err(|e| media_error("audio bits", e))?;
             target.SetUINT32(&mf::MF_MT_AUDIO_BLOCK_ALIGNMENT, 8).map_err(|e| media_error("audio block align", e))?;
-            target
-                .SetUINT32(&mf::MF_MT_AUDIO_AVG_BYTES_PER_SECOND, sample_rate * 8)
-                .map_err(|e| media_error("audio avg bytes", e))?;
-            reader
-                .SetCurrentMediaType(stream, None, &target)
-                .map_err(|e| media_error(&format!("audio {path} cannot be decoded to PCM"), e))?;
+            target.SetUINT32(&mf::MF_MT_AUDIO_AVG_BYTES_PER_SECOND, sample_rate * 8).map_err(|e| media_error("audio avg bytes", e))?;
+            reader.SetCurrentMediaType(stream, None, &target).map_err(|e| media_error(&format!("audio {path} cannot be decoded to PCM"), e))?;
         }
 
         let mut out: Vec<[f32; 2]> = Vec::new();
@@ -434,7 +430,10 @@ mod win {
             if flags & FLAG_END_OF_STREAM != 0 {
                 break;
             }
-            let Some(sample) = sample else { continue };
+            let Some(sample) = sample
+            else {
+                continue;
+            };
             let buffer = unsafe { sample.ConvertToContiguousBuffer() }.map_err(|e| media_error("audio buffer", e))?;
             let mut ptr: *mut u8 = std::ptr::null_mut();
             let mut len = 0u32;
