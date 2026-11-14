@@ -890,8 +890,7 @@ mod tests {
     /// 连接层注册的宿主函数在 `prepare` 与 `execute` 两条路径上都可解析求值。
     #[test]
     fn host_functions_registered_on_the_connection_reach_prepare_and_execute() {
-        use database_udf::Result as UdfResult;
-        use database_udf::{HostFunctionHandle, HostMicroDefinition, UdfError, UdfType, UdfValue};
+        use database_udf::{HostFunctionHandle, HostMicroDefinition, Result as UdfResult, UdfError, UdfType, UdfValue};
 
         struct Constant;
         impl HostRuntimeAdapter for Constant {
@@ -984,21 +983,18 @@ mod tests {
         let first = connection.open_cursor(&ascending, &[]).expect("first cursor");
         let second = connection.open_cursor(&descending, &[]).expect("second cursor");
 
-        assert_eq!(connection.cursor_next(first.handle, 3).expect("first window").rows, vec![
-            vec![Cell::Integer(1)],
-            vec![Cell::Integer(2)],
-            vec![Cell::Integer(3)]
-        ]);
-        assert_eq!(connection.cursor_next(second.handle, 3).expect("second window").rows, vec![
-            vec![Cell::Integer(10)],
-            vec![Cell::Integer(9)],
-            vec![Cell::Integer(8)]
-        ]);
-        assert_eq!(connection.cursor_next(first.handle, 3).expect("first continues").rows, vec![
-            vec![Cell::Integer(4)],
-            vec![Cell::Integer(5)],
-            vec![Cell::Integer(6)]
-        ]);
+        assert_eq!(
+            connection.cursor_next(first.handle, 3).expect("first window").rows,
+            vec![vec![Cell::Integer(1)], vec![Cell::Integer(2)], vec![Cell::Integer(3)]]
+        );
+        assert_eq!(
+            connection.cursor_next(second.handle, 3).expect("second window").rows,
+            vec![vec![Cell::Integer(10)], vec![Cell::Integer(9)], vec![Cell::Integer(8)]]
+        );
+        assert_eq!(
+            connection.cursor_next(first.handle, 3).expect("first continues").rows,
+            vec![vec![Cell::Integer(4)], vec![Cell::Integer(5)], vec![Cell::Integer(6)]]
+        );
         assert_eq!(connection.cursor_next(second.handle, 20).expect("second finishes").done, true);
         connection.cursor_close(first.handle).expect("close first");
         connection.cursor_close(second.handle).expect("close second");
@@ -1116,9 +1112,10 @@ mod tests {
         let prepared = connection.prepare("SELECT id, label FROM t").expect("parses");
         let opened = connection.open_cursor(&prepared, &[]).expect("cursor opens");
         assert!(opened.lazy);
-        assert_eq!(connection.cursor_next(opened.handle, 5).expect("first window").rows, (1..=5)
-            .map(|id| vec![Cell::Integer(id), Cell::Text(format!("row-{id}"))])
-            .collect::<Vec<_>>());
+        assert_eq!(
+            connection.cursor_next(opened.handle, 5).expect("first window").rows,
+            (1..=5).map(|id| vec![Cell::Integer(id), Cell::Text(format!("row-{id}"))]).collect::<Vec<_>>()
+        );
 
         connection.execute("UPDATE t SET label = 'changed' WHERE id = 1", &[]).expect("update after open");
         connection.execute("INSERT INTO t (id, label) VALUES (21, 'row-21')", &[]).expect("insert after open");
@@ -1417,12 +1414,9 @@ mod tests {
     #[test]
     fn delete_journal_is_removed_after_every_commit() {
         let path = temp_path("journal-delete");
-        let mut connection = Connection::open(ConnectionOptions {
-            filename: Some(path.clone()),
-            journal_mode: JournalMode::Delete,
-            ..Default::default()
-        })
-        .expect("file connection");
+        let mut connection =
+            Connection::open(ConnectionOptions { filename: Some(path.clone()), journal_mode: JournalMode::Delete, ..Default::default() })
+                .expect("file connection");
         let journal = database_storage::sqlite::journal::sidecar(&path);
         connection.execute("CREATE TABLE t (a INTEGER)", &[]).expect("create publishes");
         assert!(!journal.exists(), "a finished commit leaves no journal in delete mode");
@@ -1437,12 +1431,9 @@ mod tests {
     #[test]
     fn truncate_journal_stays_as_a_zero_byte_file_after_commit() {
         let path = temp_path("journal-truncate");
-        let mut connection = Connection::open(ConnectionOptions {
-            filename: Some(path.clone()),
-            journal_mode: JournalMode::Truncate,
-            ..Default::default()
-        })
-        .expect("file connection");
+        let mut connection =
+            Connection::open(ConnectionOptions { filename: Some(path.clone()), journal_mode: JournalMode::Truncate, ..Default::default() })
+                .expect("file connection");
         let journal = database_storage::sqlite::journal::sidecar(&path);
         connection.execute("CREATE TABLE t (a INTEGER)", &[]).expect("create publishes");
         connection.execute("INSERT INTO t VALUES (7)", &[]).expect("insert publishes");
@@ -1458,12 +1449,9 @@ mod tests {
     #[test]
     fn a_hot_journal_rolls_back_a_published_commit_on_reopen() {
         let path = temp_path("journal-after-publish");
-        let mut connection = Connection::open(ConnectionOptions {
-            filename: Some(path.clone()),
-            journal_mode: JournalMode::Delete,
-            ..Default::default()
-        })
-        .expect("file connection");
+        let mut connection =
+            Connection::open(ConnectionOptions { filename: Some(path.clone()), journal_mode: JournalMode::Delete, ..Default::default() })
+                .expect("file connection");
         connection.execute("CREATE TABLE t (a INTEGER)", &[]).expect("create publishes");
         connection.execute("INSERT INTO t VALUES (1)", &[]).expect("insert publishes");
         let before = fs::read(&path).expect("previous image");
@@ -1485,12 +1473,9 @@ mod tests {
         assert!(journal.exists(), "a read-only connection must not delete the journal");
 
         // A writable reopen restores the old image first, then clears the journal.
-        let mut reopened = Connection::open(ConnectionOptions {
-            filename: Some(path.clone()),
-            journal_mode: JournalMode::Delete,
-            ..Default::default()
-        })
-        .expect("writable reopen");
+        let mut reopened =
+            Connection::open(ConnectionOptions { filename: Some(path.clone()), journal_mode: JournalMode::Delete, ..Default::default() })
+                .expect("writable reopen");
         assert_eq!(reopened.execute("SELECT a FROM t", &[]).expect("read")[0].rows, vec![vec![Cell::Integer(1)]]);
         assert!(!journal.exists(), "recovery clears the journal before the next commit");
         assert_eq!(fs::read(&path).expect("restored image"), before);
@@ -1503,12 +1488,9 @@ mod tests {
     #[test]
     fn a_journal_without_a_published_image_keeps_the_old_main_file() {
         let path = temp_path("journal-after-journal");
-        let mut connection = Connection::open(ConnectionOptions {
-            filename: Some(path.clone()),
-            journal_mode: JournalMode::Truncate,
-            ..Default::default()
-        })
-        .expect("file connection");
+        let mut connection =
+            Connection::open(ConnectionOptions { filename: Some(path.clone()), journal_mode: JournalMode::Truncate, ..Default::default() })
+                .expect("file connection");
         connection.execute("CREATE TABLE t (a INTEGER)", &[]).expect("create publishes");
         connection.execute("INSERT INTO t VALUES (1)", &[]).expect("insert publishes");
         let before = fs::read(&path).expect("previous image");
@@ -1521,12 +1503,9 @@ mod tests {
         assert!(fs::metadata(&journal).expect("journal exists").len() > 0, "the journal holds the old page images");
         assert_eq!(fs::read(&path).expect("main file untouched"), before, "no half image reached the main file");
 
-        let mut reopened = Connection::open(ConnectionOptions {
-            filename: Some(path.clone()),
-            journal_mode: JournalMode::Truncate,
-            ..Default::default()
-        })
-        .expect("writable reopen");
+        let mut reopened =
+            Connection::open(ConnectionOptions { filename: Some(path.clone()), journal_mode: JournalMode::Truncate, ..Default::default() })
+                .expect("writable reopen");
         assert_eq!(reopened.execute("SELECT a FROM t", &[]).expect("read")[0].rows, vec![vec![Cell::Integer(1)]]);
         assert_eq!(fs::metadata(&journal).expect("journal exists").len(), 0, "recovery honours truncate mode");
         reopened.close().expect("close");
@@ -1539,12 +1518,9 @@ mod tests {
     fn the_reference_engine_rolls_back_a_hot_journal_written_by_this_binding() {
         let python = reference_python().expect("a Python interpreter with sqlite3 is required for the interop test");
         let path = temp_path("journal-interop");
-        let mut connection = Connection::open(ConnectionOptions {
-            filename: Some(path.clone()),
-            journal_mode: JournalMode::Delete,
-            ..Default::default()
-        })
-        .expect("file connection");
+        let mut connection =
+            Connection::open(ConnectionOptions { filename: Some(path.clone()), journal_mode: JournalMode::Delete, ..Default::default() })
+                .expect("file connection");
         connection.execute("CREATE TABLE t (a INTEGER)", &[]).expect("create publishes");
         connection.execute("INSERT INTO t VALUES (1)", &[]).expect("insert publishes");
         connection.fail_point = Some(FailPoint::AfterPublish);
@@ -1565,12 +1541,9 @@ db.close()
         assert!(output.status.success(), "upstream SQLite rejected the rollback journal: {}", String::from_utf8_lossy(&output.stderr));
         assert!(!database_storage::sqlite::journal::sidecar(&path).exists(), "SQLite removes the journal after rollback");
 
-        let mut reopened = Connection::open(ConnectionOptions {
-            filename: Some(path.clone()),
-            journal_mode: JournalMode::Delete,
-            ..Default::default()
-        })
-        .expect("reopen after the external rollback");
+        let mut reopened =
+            Connection::open(ConnectionOptions { filename: Some(path.clone()), journal_mode: JournalMode::Delete, ..Default::default() })
+                .expect("reopen after the external rollback");
         assert_eq!(reopened.execute("SELECT a FROM t", &[]).expect("read")[0].rows, vec![vec![Cell::Integer(1)]]);
         fs::remove_dir_all(path.parent().expect("parent directory")).expect("cleanup");
     }
@@ -1741,7 +1714,8 @@ db.close()
         let root = root_of(SchemaObjectKind::Table);
         let base = (root - 1) * page_size + header(root);
         bad_table[base] = 0;
-        let mut connection = Connection::open(ConnectionOptions { data: Some(bad_table), ..Default::default() }).expect("open defers table reads");
+        let mut connection =
+            Connection::open(ConnectionOptions { data: Some(bad_table), ..Default::default() }).expect("open defers table reads");
         let error = connection.execute("SELECT x FROM t", &[]).expect_err("corrupt table root");
         assert_eq!(error.code, "corrupt");
     }

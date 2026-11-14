@@ -78,13 +78,10 @@ fn registration_error(error: UdfError) -> SqlError {
 pub(super) fn udf_error_to_sql_error(name: &str, error: UdfError) -> SqlError {
     match error {
         UdfError::ArityMismatch => SqlError::new("wrong-arguments", format!("wrong number of arguments to function {name}()")),
-        UdfError::SignatureMismatch | UdfError::UnsupportedType => SqlError::new(
-            "unsupported-type",
-            format!("argument types do not match the signature of host function `{name}`"),
-        ),
-        UdfError::ExecutionFailed { message } => {
-            SqlError::new("udf-error", format!("user-defined function `{name}` failed: {message}"))
+        UdfError::SignatureMismatch | UdfError::UnsupportedType => {
+            SqlError::new("unsupported-type", format!("argument types do not match the signature of host function `{name}`"))
         }
+        UdfError::ExecutionFailed { message } => SqlError::new("udf-error", format!("user-defined function `{name}` failed: {message}")),
         other => SqlError::new("udf-error", format!("host function `{name}` failed: {other}")),
     }
 }
@@ -98,8 +95,12 @@ pub(super) fn cell_to_udf_value(name: &str, cell: &Cell) -> Result<UdfValue, Sql
         Cell::Null => Ok(UdfValue::Null),
         Cell::Integer(value) => Ok(UdfValue::I64(*value)),
         Cell::Text(text) => Ok(UdfValue::Text(text.clone())),
-        Cell::Real(_) => Err(SqlError::new("unsupported-type", format!("host function `{name}` does not accept `real` arguments in the Phase-1 UDF subset"))),
-        Cell::Blob(_) => Err(SqlError::new("unsupported-type", format!("host function `{name}` does not accept `blob` arguments in the Phase-1 UDF subset"))),
+        Cell::Real(_) => {
+            Err(SqlError::new("unsupported-type", format!("host function `{name}` does not accept `real` arguments in the Phase-1 UDF subset")))
+        }
+        Cell::Blob(_) => {
+            Err(SqlError::new("unsupported-type", format!("host function `{name}` does not accept `blob` arguments in the Phase-1 UDF subset")))
+        }
     }
 }
 

@@ -3439,7 +3439,9 @@ impl<'a> Parser<'a> {
                         return Err(error);
                     }
                     if distinct || !order.is_empty() || filter.is_some() {
-                        return Err(self.error("syntax", format!("`{name}()` is not an aggregate and cannot carry `DISTINCT`, `ORDER BY` or `FILTER`")));
+                        return Err(
+                            self.error("syntax", format!("`{name}()` is not an aggregate and cannot carry `DISTINCT`, `ORDER BY` or `FILTER`"))
+                        );
                     }
                     return Ok(Expr::HostFunction { name: folded, args });
                 }

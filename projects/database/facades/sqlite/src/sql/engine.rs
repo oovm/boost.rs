@@ -23,18 +23,18 @@ use crate::{
 use super::{
     datetime::{self, DateTimeFunction},
     error::SqlError,
-    host::{cell_to_udf_value, udf_error_to_sql_error, udf_value_to_cell, HostFunctionTable},
+    host::{HostFunctionTable, cell_to_udf_value, udf_error_to_sql_error, udf_value_to_cell},
     json_string,
-    storage_failure,
     sql::{
         AggregateFunction, AlterAction, Assignment, BinaryOp, CastType, CheckConstraint, ColumnRef, CommonTable, CompareOp, CompoundOp,
         CompoundTerm, ConflictAction, ConflictClause, DropColumnConflict, Expr, ForeignKey, ForeignKeyAction, FrameBound, FrameEdge,
         FrameExclude, FrameUnits, IndexColumn, InsertValue, JoinKind, Limit, Literal, NamedWindow, OrderKey, ScalarFunction, SelectCore,
         SelectItems, Statement, TableConstraint, TableRef, TransactionAction, TriggerEvent, TriggerTiming, UnaryOp, WindowFunction, WindowSpec,
-        core_references, parse, parse_with_host_functions, rewrite_create_index_column, rewrite_create_index_table, rewrite_create_table_column,
-        rewrite_create_table_drop_column, rewrite_create_table_name, rewrite_view_column, rewrite_view_table, statement_references,
-        strip_schema_qualifiers,
+        core_references, parse, parse_with_host_functions, rewrite_create_index_column, rewrite_create_index_table,
+        rewrite_create_table_column, rewrite_create_table_drop_column, rewrite_create_table_name, rewrite_view_column, rewrite_view_table,
+        statement_references, strip_schema_qualifiers,
     },
+    storage_failure,
 };
 
 /// One cell surfaced to the host.
@@ -274,6 +274,13 @@ enum ScanHint {
     /// `ORDER BY <rowid order> LIMIT n` with no other row-reducing clause:
     /// only the first `n` rows in rowid order can reach the output.
     Head(usize),
+    /// `<rowid> >= a AND/OR <rowid> <= b` 的单边或双边区间:按 rowid 区间读取,
+    /// 只解码区间内的行。缺失的一侧不设界。
+    Range { lower: Option<i64>, upper: Option<i64> },
+    /// `LIMIT 0`: no row can reach the output, so the base table is not read at
+    /// all. Column names still come from the schema, exactly as the materialized
+    /// path would produce them.
+    Empty,
 }
 
 /// Canonical equality signature of one index or group key value.
@@ -353,18 +360,21 @@ fn constant_in_list(list: &[ResolvedExpr]) -> Option<InListConstant> {
 /// everything else keeps the full `i64`.
 fn integer_probe_key(value: i64) -> ProbeKey {
     let real = value as f64;
-    if real.abs() < 9_223_372_036_854_775_808.0 && (real as i64) == value {
-        ProbeKey::Number(real.to_bits())
-    }
-    else {
-        ProbeKey::Wide(value)
-    }
+    if real.abs() < 9_223_372_036_854_775_808.0 && (real as i64) == value { ProbeKey::Number(real.to_bits()) } else { ProbeKey::Wide(value) }
 }
 
 /// Signature of a real; `None` for a NaN, which the engine compares equal to
 /// every numeric value and therefore has no hashable class.
 fn real_probe_key(value: f64) -> Option<ProbeKey> {
-    if value.is_nan() { None } else if value == 0.0 { Some(ProbeKey::Number(0.0f64.to_bits())) } else { Some(ProbeKey::Number(value.to_bits())) }
+    if value.is_nan() {
+        None
+    }
+    else if value == 0.0 {
+        Some(ProbeKey::Number(0.0f64.to_bits()))
+    }
+    else {
+        Some(ProbeKey::Number(value.to_bits()))
+    }
 }
 
 /// Text folded for its collation: `NOCASE` lowercases ASCII bytes and `RTRIM`
@@ -1340,11 +1350,7 @@ impl Engine {
                 // 的 autocommit 写入,这里只保留标记,不因回滚丢弃。
                 self.reload_catalog()?;
                 for index in 0..self.attached.len() {
-                    self.attached[index]
-                        .engine
-                        .writer
-                        .rollback_all()
-                        .map_err(|error| storage_failure(error).in_statement("rollback"))?;
+                    self.attached[index].engine.writer.rollback_all().map_err(|error| storage_failure(error).in_statement("rollback"))?;
                     self.attached[index].dirty = false;
                     self.attached[index].engine.reload_catalog()?;
                 }
@@ -1354,21 +1360,13 @@ impl Engine {
                     // A savepoint outside `BEGIN` opens its own transaction.
                     self.writer.begin().map_err(|error| storage_failure(error).in_statement("savepoint"))?;
                     for attached in &mut self.attached {
-                        attached
-                            .engine
-                            .writer
-                            .begin()
-                            .map_err(|error| storage_failure(error).in_statement("savepoint"))?;
+                        attached.engine.writer.begin().map_err(|error| storage_failure(error).in_statement("savepoint"))?;
                     }
                     self.transaction = Some(TransactionState { from_begin: false, savepoints: Vec::new() });
                 }
                 self.writer.savepoint(&name).map_err(|error| storage_failure(error).in_statement("savepoint"))?;
                 for attached in &mut self.attached {
-                    attached
-                        .engine
-                        .writer
-                        .savepoint(&name)
-                        .map_err(|error| storage_failure(error).in_statement("savepoint"))?;
+                    attached.engine.writer.savepoint(&name).map_err(|error| storage_failure(error).in_statement("savepoint"))?;
                 }
                 self.transaction.as_mut().expect("savepoint opened a transaction").savepoints.push(name);
             }
@@ -1391,11 +1389,7 @@ impl Engine {
                 }
                 self.writer.release(&name).map_err(|error| storage_failure(error).in_statement("release"))?;
                 for attached in &mut self.attached {
-                    attached
-                        .engine
-                        .writer
-                        .release(&name)
-                        .map_err(|error| storage_failure(error).in_statement("release"))?;
+                    attached.engine.writer.release(&name).map_err(|error| storage_failure(error).in_statement("release"))?;
                 }
                 let closing = {
                     let state = self.transaction.as_mut().expect("an open savepoint implies a transaction");
@@ -2204,9 +2198,13 @@ impl Engine {
     }
 
     /// 同 [`Engine::materialize_indexes_after_write`],针对 WITHOUT ROWID 表的聚簇树。
-    fn materialize_without_rowid_after_write(&mut self, _statement: &'static str) -> Result<(), SqlError> {
+    ///
+    /// 与索引键集不同,`WITHOUT ROWID` 表的行只存在于这份聚簇树里,普通
+    /// `SELECT` 会直接读镜像页。因此这里立即重建,不留延迟标记,否则同一条
+    /// 连接里写完再读会看到空表。
+    fn materialize_without_rowid_after_write(&mut self, statement: &'static str) -> Result<(), SqlError> {
         self.pending_without_rowid = true;
-        Ok(())
+        self.flush_pending_materialization(statement)
     }
 
     /// 把推迟的索引 / 聚簇树重建落进当前镜像。
@@ -2913,6 +2911,10 @@ impl Engine {
         if !matches!(statement, Statement::Select { .. } | Statement::Explain { .. }) {
             match &statement {
                 Statement::Update { .. } | Statement::Delete { .. } => {}
+                // `BEGIN` / `COMMIT` 本身不改行:已缓存的索引内容仍然准确,
+                // 一刀切只会让包住写入的事务丢掉增量补丁。回滚类动作相反,
+                // 会撤销事务内已并入探针的改动,必须走全量失效。
+                Statement::Transaction { action: TransactionAction::Begin | TransactionAction::Commit, .. } => {}
                 _ => match self.statement_table_key(&statement) {
                     Some(key) => self.invalidate_table_indexes(&key),
                     None => self.invalidate_all_indexes(),
@@ -3134,8 +3136,7 @@ impl Engine {
         if self.scope == TableScope::Temp {
             if let Some(expression) = into {
                 let target = self.vacuum_target(expression)?;
-                let empty = SqliteWriter::create(self.writer.page_size())
-                    .map_err(|error| storage_failure(error).in_statement("vacuum"))?;
+                let empty = SqliteWriter::create(self.writer.page_size()).map_err(|error| storage_failure(error).in_statement("vacuum"))?;
                 self.write_vacuum_image(&target, empty.pages())?;
             }
             return Ok(ExecResult { statement: "vacuum", columns: Vec::new(), rows: Vec::new(), affected: 0 });
@@ -3147,8 +3148,7 @@ impl Engine {
         }
         else {
             let synchronous = self.writer.synchronous();
-            let mut writer =
-                SqliteWriter::from_pages(image).map_err(|error| storage_failure(error).in_statement("vacuum"))?;
+            let mut writer = SqliteWriter::from_pages(image).map_err(|error| storage_failure(error).in_statement("vacuum"))?;
             writer.set_synchronous(synchronous);
             self.writer = writer;
             self.reload_catalog()?;
@@ -3210,8 +3210,7 @@ impl Engine {
         let application_id = self.writer.application_id();
         let limits = TableLimits::default();
         let objects = self.writer.schema_objects(limits).map_err(|error| storage_failure(error).in_statement("vacuum"))?;
-        let writer = SqliteWriter::create_with_encoding(page_size, encoding)
-            .map_err(|error| storage_failure(error).in_statement("vacuum"))?;
+        let writer = SqliteWriter::create_with_encoding(page_size, encoding).map_err(|error| storage_failure(error).in_statement("vacuum"))?;
         let mut fresh = Engine::from_writer(writer)?;
         for object in &objects {
             if object.kind != SchemaObjectKind::Table || object.name.eq_ignore_ascii_case("sqlite_sequence") {
@@ -3255,11 +3254,7 @@ impl Engine {
                     .map_err(|error| storage_failure(error).in_statement("vacuum"))?;
             }
             let limits = TableLimits::default();
-            for row in self
-                .writer
-                .table_rows("sqlite_sequence", limits)
-                .map_err(|error| storage_failure(error).in_statement("vacuum"))?
-            {
+            for row in self.writer.table_rows("sqlite_sequence", limits).map_err(|error| storage_failure(error).in_statement("vacuum"))? {
                 let values = decode_record(&row.payload, encoding, RecordLimits { max_columns: 1024, max_payload_bytes: 16 * 1024 * 1024 })
                     .map_err(|error| storage_failure(error).in_statement("vacuum"))?;
                 let cells: Vec<Cell> = values
@@ -3273,10 +3268,7 @@ impl Engine {
                     })
                     .collect();
                 let slots: Vec<Option<crate::WriteValue>> = cells.iter().map(|cell| Some(cell_write_value(cell))).collect();
-                fresh
-                    .writer
-                    .insert("sqlite_sequence", &slots)
-                    .map_err(|error| storage_failure(error).in_statement("vacuum"))?;
+                fresh.writer.insert("sqlite_sequence", &slots).map_err(|error| storage_failure(error).in_statement("vacuum"))?;
             }
         }
         for def in self.tables.clone() {
@@ -3623,9 +3615,7 @@ impl Engine {
                     }
                     return Err(SqlError::new("table-exists", format!("table {name} already exists")).in_statement("create-view"));
                 }
-                self.writer
-                    .create_view(&name, &sql)
-                    .map_err(|error| storage_failure(error).in_statement("create-view"))?;
+                self.writer.create_view(&name, &sql).map_err(|error| storage_failure(error).in_statement("create-view"))?;
                 self.views.insert(key, ViewDef { name, columns, query: *query });
                 Ok(ExecResult { statement: "create-view", columns: Vec::new(), rows: Vec::new(), affected: 1 })
             }
@@ -3711,9 +3701,7 @@ impl Engine {
                     rowid
                 }
                 else {
-                    self.writer
-                        .create_trigger(&name, &table, &sql)
-                        .map_err(|error| storage_failure(error).in_statement("create-trigger"))?;
+                    self.writer.create_trigger(&name, &table, &sql).map_err(|error| storage_failure(error).in_statement("create-trigger"))?;
                     0
                 };
                 self.triggers.insert(key, TriggerDef { name, table: table_key, timing, event, when, body, order, temp, sql, master_rowid });
@@ -3729,9 +3717,7 @@ impl Engine {
                     return Err(SqlError::new("unknown-trigger", format!("no such trigger: {name}")).in_statement("drop-trigger"));
                 };
                 if !trigger.temp {
-                    self.writer
-                        .drop_trigger(&trigger.name)
-                        .map_err(|error| storage_failure(error).in_statement("drop-trigger"))?;
+                    self.writer.drop_trigger(&trigger.name).map_err(|error| storage_failure(error).in_statement("drop-trigger"))?;
                 }
                 Ok(ExecResult { statement: "drop-trigger", columns: Vec::new(), rows: Vec::new(), affected: 1 })
             }
@@ -3787,6 +3773,12 @@ impl Engine {
                     }
                     None => None,
                 };
+                // 只追加行的语句可以把既有索引探针按新行增量补齐,不必等下一条
+                // 查询整份重建。带 `ON CONFLICT` / `REPLACE` / 触发器的语句可能
+                // 改写或删除既有行,仍走常规失效。
+                let watch_probes =
+                    conflict.is_none() && !replace && temp_position.is_none() && !self.table_has_triggers(&key) && self.table_has_probes(&key);
+                let mut probe_rows: Vec<(i64, Vec<Cell>)> = Vec::new();
                 let fast_upsert = upsert.as_ref().is_some_and(|plan| self.upsert_rowid_fast_path(def, &key, plan, temp_position));
                 let mut upsert_live = if upsert.is_some() && !fast_upsert { self.live_rows(def, "insert")? } else { Vec::new() };
                 let mut upsert_live_loaded = upsert.is_some() && !fast_upsert;
@@ -3974,9 +3966,7 @@ impl Engine {
                                     temp_insert_row(def, &mut table.rows, slots, &temp_keys)
                                 }
                                 else {
-                                    self.writer
-                                        .insert(&table, slots)
-                                        .map_err(|error| storage_failure(error).in_statement("insert"))
+                                    self.writer.insert(&table, slots).map_err(|error| storage_failure(error).in_statement("insert"))
                                 };
                                 match inserted {
                                     Ok(rowid) => UpsertOutcome::Inserted(rowid),
@@ -4054,6 +4044,9 @@ impl Engine {
                         }
                     }
                     rowids.push(rowid);
+                    if watch_probes {
+                        probe_rows.push((rowid, cells.clone()));
+                    }
                     if queue_triggers {
                         self.pending_events.push(PendingTriggerEvent {
                             table: key.clone(),
@@ -4110,6 +4103,9 @@ impl Engine {
                         return Err(error);
                     }
                     self.writer.commit().map_err(|error| storage_failure(error).in_statement("insert"))?;
+                    if watch_probes {
+                        self.patch_index_probes_after_insert(&key, &probe_rows);
+                    }
                 }
                 // Explicit indexes and the automatic ones built for any
                 // `PRIMARY KEY` / `UNIQUE` constraint live only as key sets
@@ -4410,12 +4406,8 @@ impl Engine {
                 };
                 let mut needs_index = self.has_indexes(def, &key);
                 // `WHERE <rowid> = <key>` 或普通列索引谓词命中时，扫描不必整表解码。
-                let candidates = if from.is_empty() {
-                    self.update_candidates(def, &key, &table, alias.as_deref(), filter.as_ref(), &targets)
-                }
-                else {
-                    None
-                };
+                let candidates =
+                    if from.is_empty() { self.update_candidates(def, &key, &table, alias.as_deref(), filter.as_ref(), &targets) } else { None };
                 let plan = self.plan_update(
                     def,
                     &key,
@@ -5297,11 +5289,7 @@ impl Engine {
             });
         }
         let mut rows = Vec::new();
-        for row in self
-            .writer
-            .table_rows(table, TableLimits::default())
-            .map_err(|error| storage_failure(error).in_statement("create-index"))?
-        {
+        for row in self.writer.table_rows(table, TableLimits::default()).map_err(|error| storage_failure(error).in_statement("create-index"))? {
             rows.push(decode_row(&row.payload, def, row.rowid)?);
         }
         for right in 1..rows.len() {
@@ -5373,10 +5361,8 @@ impl Engine {
             }
             return Ok(rows);
         }
-        let stored = self
-            .writer
-            .table_rows(&def.name, TableLimits::default())
-            .map_err(|error| storage_failure(error).in_statement(statement))?;
+        let stored =
+            self.writer.table_rows(&def.name, TableLimits::default()).map_err(|error| storage_failure(error).in_statement(statement))?;
         let mut rows = Vec::with_capacity(stored.len());
         for row in &stored {
             rows.push((row.rowid, decode_row(&row.payload, def, row.rowid)?));
@@ -5754,16 +5740,10 @@ impl Engine {
             Some(crate::WriteValue::Integer(rowid)) => *rowid,
             _ => return Ok(None),
         };
-        let payload = self
-            .writer
-            .row_payload(table, rowid)
-            .map_err(|error| storage_failure(error).in_statement("insert"))?;
+        let payload = self.writer.row_payload(table, rowid).map_err(|error| storage_failure(error).in_statement("insert"))?;
         let Some(payload) = payload
         else {
-            let inserted = self
-                .writer
-                .insert(table, slots)
-                .map_err(|error| storage_failure(error).in_statement("insert"))?;
+            let inserted = self.writer.insert(table, slots).map_err(|error| storage_failure(error).in_statement("insert"))?;
             return Ok(Some(UpsertOutcome::Inserted(inserted)));
         };
         if matches!(plan.action, UpsertAction::Nothing) {
@@ -5782,7 +5762,8 @@ impl Engine {
             let candidate = check_row(def, slots, rowid);
             let mut values: Vec<UpdateValue> = vec![UpdateValue::Keep; width];
             for (index, expr) in &plan.assignments {
-                let ResolvedExpr::ExcludedColumn { index: supplied } = expr else {
+                let ResolvedExpr::ExcludedColumn { index: supplied } = expr
+                else {
                     unreachable!("lean upsert assignments are all excluded-column references")
                 };
                 let value = cell_write_value(&candidate[*supplied]);
@@ -6227,9 +6208,7 @@ impl Engine {
         let rows = self.live_rows(def, statement)?;
         for index in managed {
             let entries = self.managed_index_entries(def, &index.terms, index.predicate.as_ref(), &rows)?;
-            self.writer
-                .replace_managed_index_entries(&index.name, &entries)
-                .map_err(|error| storage_failure(error).in_statement(statement))?;
+            self.writer.replace_managed_index_entries(&index.name, &entries).map_err(|error| storage_failure(error).in_statement(statement))?;
         }
         Ok(())
     }
@@ -6951,8 +6930,22 @@ impl Engine {
         ctes: Option<&CteEnv>,
     ) -> Result<ExecResult, SqlError> {
         let limit = self.eval_limit(limit.as_ref(), outer, budget, ctes)?;
+        // `LIMIT 0` drops every row, so a single base-table `FROM` is never read.
+        // The empty hint keeps the schema-derived column names intact, which is
+        // all this statement can observe.
+        let empty_limit = matches!(limit, Some((_, Some(0))));
         if !compounds.is_empty() {
             return self.compound_select(first, compounds, order, limit, outer, budget, ctes);
+        }
+        // `count(*)` over one plain rowid table is answered straight from the
+        // b-tree payloads: each record is decoded into one reused cell buffer,
+        // tested against the `WHERE` conjuncts and only counted. Rows are never
+        // collected into a row vector, so a counting statement pays no
+        // per-row `Vec<Cell>` allocation and no full-table decode. The helper
+        // only accepts a narrow shape and returns `None` for everything else,
+        // which keeps the generic path authoritative for the rest.
+        if let Some(result) = self.count_only_scan(first, &order, limit, outer, budget, ctes)? {
+            return Ok(result);
         }
         let SelectCore { distinct, items, from, filter, group, having, windows: named } = first;
         // Each `FROM` item becomes one source over already materialized rows:
@@ -6965,28 +6958,40 @@ impl Engine {
         // column index probes the index instead of decoding the whole table.
         // Both keep the full predicate running downstream, so the emitted row
         // set and order are unchanged.
-        let scan = match self.rowid_pin(from, filter) {
-            Some(rowid) => Some(ScanHint::Pin(rowid)),
-            None => self
-                .rowid_in_pin(from, filter)
-                .or_else(|| self.rowid_range_pin(from, filter))
-                .or_else(|| self.index_pin(from, filter))
-                .map(ScanHint::Rowids),
-        };
+        let scan = self.scan_hint(from, filter);
         // `ORDER BY <rowid order> LIMIT n` reads only the leading rows, because
         // the scan order already satisfies that sort.
         let scan = scan.or_else(|| self.rowid_head_bound(first, &order, limit).map(ScanHint::Head));
+        // `LIMIT 0` is answered without touching the table. Only one base source
+        // is narrowed: a derived table still runs (and may still raise), so the
+        // statement keeps every error it would have reported.
+        let scan = if empty_limit && from.len() == 1 && from[0].query.is_none() { Some(ScanHint::Empty) } else { scan };
         // Columns the statement never reads are skipped while decoding the base
         // table, so a `count(*)` join or an aggregate does not materialize every
         // text cell. The mask is derived from the raw expressions; any shape it
         // cannot attribute confidently falls back to decoding every column.
         let masks = self.read_column_masks(first, &order);
+        // 多来源 `FROM` 里,只读单个来源的 `WHERE` 合取可以在读该来源时就
+        // 收窄候选,不必先物化整表再在连接后过滤。单来源时整表过滤已由
+        // 上面的 `scan` 覆盖。
+        let local_hints: Vec<Option<ScanHint>> = if from.len() == 1 || scan.is_some() {
+            Vec::new()
+        }
+        else {
+            (0..from.len())
+                .map(|index| {
+                    let local = self.source_filter(index, from, filter)?;
+                    self.scan_hint(std::slice::from_ref(&from[index]), &Some(local))
+                })
+                .collect()
+        };
         let mut sources = Vec::with_capacity(from.len());
         let mut tables: Vec<Rc<Vec<Vec<Cell>>>> = Vec::with_capacity(from.len());
         let mut offset = 0;
         for (index, table) in from.iter().enumerate() {
             let keep = masks.as_ref().and_then(|masks| masks.get(index)).and_then(|mask| mask.as_deref());
-            let (columns, rows) = self.select_source(table, budget, ctes, scan.as_ref(), keep)?;
+            let hint = scan.as_ref().or_else(|| local_hints.get(index).and_then(|hint| hint.as_ref()));
+            let (columns, rows) = self.select_source(table, budget, ctes, hint, keep)?;
             let width = columns.width();
             let source = Source {
                 label: table.label().to_string(),
@@ -7360,13 +7365,23 @@ impl Engine {
             let out: Vec<Vec<Cell>> = unique.into_iter().skip(start).take(end - start).collect();
             return Ok(ExecResult { statement: "select", columns: labels, rows: out, affected: 0 });
         }
-        let (start, end) = limit_range(rows.len(), limit);
+        let total_rows = rows.len();
+        let (start, end) = limit_range(total_rows, limit);
+        // Without a sort key or a window order the surviving rows are already in
+        // emission order, so they move out of the product instead of being
+        // cloned cell by cell.
+        let unordered = keys.is_empty() && !windowed;
         let mut final_rows: Vec<Vec<Cell>> = Vec::with_capacity(end.saturating_sub(start));
         let mut final_windows: Vec<Vec<Cell>> = vec![Vec::new(); window_values.len()];
-        for &index in &order[start..end] {
-            final_rows.push(rows[index].clone());
-            for (column, values) in final_windows.iter_mut().zip(window_values.iter()) {
-                column.push(values[index].clone());
+        if unordered {
+            final_rows.extend(rows.into_iter().skip(start).take(end - start));
+        }
+        else {
+            for &index in &order[start..end] {
+                final_rows.push(rows[index].clone());
+                for (column, values) in final_windows.iter_mut().zip(window_values.iter()) {
+                    column.push(values[index].clone());
+                }
             }
         }
         match items {
@@ -7377,8 +7392,28 @@ impl Engine {
                     None => true,
                     Some((offset, count)) => offset == 0 && count.map_or(true, |count| count > 0),
                 };
-                let rows = if visible { vec![vec![Cell::Integer(rows.len() as i64)]] } else { Vec::new() };
+                let rows = if visible { vec![vec![Cell::Integer(total_rows as i64)]] } else { Vec::new() };
                 Ok(ExecResult { statement: "select", columns: labels, rows, affected: 0 })
+            }
+            SelectItems::Star if unordered => {
+                // A single source without `USING` shuffling exposes exactly its
+                // visible prefix, so the decoded row is the output row.
+                let plain = relation.sources.len() == 1
+                    && relation.sources[0].star_hidden.iter().all(|hidden| !*hidden)
+                    && relation.sources[0].star_override.iter().all(Option::is_none);
+                if plain {
+                    let visible = relation.sources[0].visible_width();
+                    for row in &mut final_rows {
+                        row.truncate(visible);
+                    }
+                    return Ok(ExecResult { statement: "select", columns: labels, rows: final_rows, affected: 0 });
+                }
+                Ok(ExecResult {
+                    statement: "select",
+                    columns: labels,
+                    rows: final_rows.iter().map(|row| relation.visible_row(row)).collect(),
+                    affected: 0,
+                })
             }
             SelectItems::Star => Ok(ExecResult {
                 statement: "select",
@@ -7405,6 +7440,125 @@ impl Engine {
                 Ok(ExecResult { statement: "select", columns: labels, rows: out, affected: 0 })
             }
         }
+    }
+
+    /// Answers a bare `count(*)` over one plain main-schema rowid table without
+    /// materializing a row vector.
+    ///
+    /// The accepted shape is deliberately narrow: no `DISTINCT`, `GROUP BY`,
+    /// `HAVING`, window, `ORDER BY`, join, `USING`/`NATURAL`, derived table or
+    /// rowid/index scan hint, and the projection must be exactly `count(*)`.
+    /// Each stored record is decoded into one reused [`Vec<Cell>`], the `WHERE`
+    /// conjuncts run against that buffer, and only the number of SQL-`TRUE`
+    /// rows is kept, which is the same row set the generic path counts. Every
+    /// other statement returns `None` and keeps the existing execution path.
+    fn count_only_scan(
+        &self,
+        first: &SelectCore,
+        order: &[OrderKey],
+        limit: Option<(usize, Option<usize>)>,
+        outer: &[Scope],
+        budget: &Budget,
+        ctes: Option<&CteEnv>,
+    ) -> Result<Option<ExecResult>, SqlError> {
+        // `LIMIT 0` needs no count at all: the generic path answers it without
+        // reading the table.
+        if matches!(limit, Some((_, Some(0)))) {
+            return Ok(None);
+        }
+        if first.distinct || !first.group.is_empty() || first.having.is_some() || !first.windows.is_empty() || !order.is_empty() {
+            return Ok(None);
+        }
+        if first.from.len() != 1 || !is_bare_count_star(&first.items) {
+            return Ok(None);
+        }
+        let entry = &first.from[0];
+        if entry.query.is_some() || entry.join.is_some() || entry.on.is_some() || entry.using.is_some() || entry.natural {
+            return Ok(None);
+        }
+        let Some(def) = self.prunable_def(entry)
+        else {
+            return Ok(None);
+        };
+        // A rowid or index hint narrows the scan to a handful of rows; a full
+        // walk would answer the same count far more slowly, so keep it.
+        if self.rowid_pin(&first.from, &first.filter).is_some()
+            || self.rowid_in_pin(&first.from, &first.filter).is_some()
+            || self.rowid_range_pin(&first.from, &first.filter).is_some()
+            || self.rowid_bound_hint(&first.from, &first.filter).is_some()
+            || self.index_pin(&first.from, &first.filter).is_some()
+        {
+            return Ok(None);
+        }
+        let width = def.columns.len();
+        let source = Source {
+            label: entry.label().to_string(),
+            columns: SourceColumns::Table(def),
+            offset: 0,
+            join: None,
+            star_hidden: vec![false; width],
+            unqualified_hidden: vec![false; width],
+            star_override: vec![None; width],
+        };
+        let mut relation = Relation { sources: vec![source], using: vec![Vec::new()], using_slots: Vec::new(), trigger: None, excluded: false };
+        relation.plan_joins(&first.from)?;
+        let shape = relation.shape();
+        let outer_shapes: Vec<ScopeShape> = outer.iter().map(Scope::shape).collect();
+        let mut keep = vec![false; width];
+        let mut conjuncts = Vec::new();
+        if let Some(filter) = &first.filter {
+            let mut specs = Vec::new();
+            let mut windows = Vec::new();
+            let resolved = resolve_expr(filter, &relation, &outer_shapes, &[], &mut windows, &mut specs, false, false)?;
+            if !specs.is_empty() || !windows.is_empty() {
+                return Ok(None);
+            }
+            if !predicate_columns(filter, entry.label(), def, &mut keep) {
+                // A predicate whose reads cannot be attributed from the raw
+                // syntax (a subquery, a window call, a foreign qualifier) keeps
+                // the generic path, which owns those semantics.
+                return Ok(None);
+            }
+            split_conjuncts(resolved, &mut conjuncts);
+        }
+        let empty_aggregates: Vec<Cell> = Vec::new();
+        let ctx =
+            EvalContext { engine: self, outer, current: &shape, aggregates: &empty_aggregates, windows: &[], window_row: 0, budget, ctes };
+        let count = self.count_scan_rows(def, &keep, &conjuncts, &ctx)?;
+        let labels = core_output_labels(&relation, &first.items);
+        let visible = match limit {
+            None => true,
+            Some((offset, limit)) => offset == 0 && limit.map_or(true, |limit| limit > 0),
+        };
+        let rows = if visible { vec![vec![Cell::Integer(count as i64)]] } else { Vec::new() };
+        Ok(Some(ExecResult { statement: "select", columns: labels, rows, affected: 0 }))
+    }
+
+    /// Counts the rows of one table whose `WHERE` conjuncts are all SQL-`TRUE`.
+    ///
+    /// Records are decoded into a single reused buffer, so a counting scan
+    /// allocates one row vector instead of one per stored row.
+    fn count_scan_rows(&self, def: &TableDef, keep: &[bool], conjuncts: &[ResolvedExpr], ctx: &EvalContext) -> Result<usize, SqlError> {
+        let stored =
+            self.writer.table_rows(&def.name, TableLimits::default()).map_err(|error| storage_failure(error).in_statement("select"))?;
+        let mut values: Vec<Cell> = Vec::with_capacity(def.columns.len() + 1);
+        let mut count = 0usize;
+        for row in &stored {
+            values.clear();
+            decode_row_into(&row.payload, def, row.rowid, Some(keep), &mut values)?;
+            let mut matched = true;
+            for conjunct in conjuncts {
+                if truthiness(&conjunct.eval(&values, ctx)?) != Some(true) {
+                    matched = false;
+                    break;
+                }
+            }
+            if matched {
+                ctx.budget.charge(1)?;
+                count += 1;
+            }
+        }
+        Ok(count)
     }
 
     /// Evaluates the trailing `LIMIT` / `OFFSET` expressions once, before any
@@ -8402,9 +8556,7 @@ impl Engine {
                 Self::collect_rowid_range(left, alias_name, label, parameters, lower, upper);
                 Self::collect_rowid_range(right, alias_name, label, parameters, lower, upper);
             }
-            Expr::Compare { left, op, right }
-                if matches!(op, CompareOp::Gt | CompareOp::GtEq | CompareOp::Lt | CompareOp::LtEq) =>
-            {
+            Expr::Compare { left, op, right } if matches!(op, CompareOp::Gt | CompareOp::GtEq | CompareOp::Lt | CompareOp::LtEq) => {
                 let (column, value, flipped) = match (left.as_ref(), right.as_ref()) {
                     (Expr::Column(column), value) => (column, known_cell(value, parameters), false),
                     (value, Expr::Column(column)) => (column, known_cell(value, parameters), true),
@@ -8548,6 +8700,115 @@ impl Engine {
             return None;
         }
         Some((def, table))
+    }
+
+    /// The pin/head hint for one `FROM` list: a point pin first, then the
+    /// candidate rowids of `IN`, a rowid interval or an index probe. Every pin
+    /// only narrows what the scan decodes; the predicate still runs in full, so
+    /// the emitted rows and their order never change.
+    fn scan_hint(&self, from: &[TableRef], filter: &Option<Expr>) -> Option<ScanHint> {
+        match self.rowid_pin(from, filter) {
+            Some(rowid) => Some(ScanHint::Pin(rowid)),
+            None => self
+                .rowid_in_pin(from, filter)
+                .or_else(|| self.rowid_range_pin(from, filter))
+                .map(ScanHint::Rowids)
+                .or_else(|| self.rowid_bound_hint(from, filter))
+                .or_else(|| self.index_pin(from, filter).map(ScanHint::Rowids)),
+        }
+    }
+
+    /// `<rowid> >= a` / `<rowid> <= b` 的单边或双边区间提示。
+    ///
+    /// 与 [`Engine::rowid_range_pin`] 不同,这里不要求两侧都有界,也不展开候选
+    /// rowid:读取侧直接用同一个区间走 b-tree 范围读,缺失的一侧不设界。谓词仍
+    /// 在解码后的行上重跑,所以区间只是候选超集。
+    fn rowid_bound_hint(&self, from: &[TableRef], filter: &Option<Expr>) -> Option<ScanHint> {
+        let (def, table) = self.bounded_scan_target(from)?;
+        let alias_name = def.rowid_alias.map(|index| def.columns[index].name.clone());
+        let filter = filter.as_ref()?;
+        let mut lower = None;
+        let mut upper = None;
+        Self::collect_rowid_range(filter, alias_name.as_deref(), table.label(), &self.parameters, &mut lower, &mut upper);
+        if lower.is_none() && upper.is_none() {
+            return None;
+        }
+        Some(ScanHint::Range { lower, upper })
+    }
+
+    /// `WHERE` conjuncts that read only one source of a multi-source `FROM`,
+    /// re-combined into that source's own filter.
+    ///
+    /// A conjunct is kept only when every column it reads is qualified with the
+    /// source's own label, or is an unqualified declared column no other source
+    /// can shadow. The whole predicate still runs after the join, so narrowing
+    /// the source read with this filter cannot change the result set.
+    fn source_filter(&self, index: usize, from: &[TableRef], filter: &Option<Expr>) -> Option<Expr> {
+        let filter = filter.as_ref()?;
+        let table = &from[index];
+        let def = self.prunable_def(table)?;
+        let label = table.label();
+        let mut conjuncts = Vec::new();
+        self.collect_source_conjuncts(filter, def, label, from, index, &mut conjuncts);
+        let mut combined = conjuncts.into_iter();
+        let mut filter = combined.next()?;
+        for conjunct in combined {
+            filter = Expr::And(Box::new(filter), Box::new(conjunct));
+        }
+        Some(filter)
+    }
+
+    /// Splits a raw `AND` chain into the conjuncts that belong to one source.
+    fn collect_source_conjuncts(&self, expr: &Expr, def: &TableDef, label: &str, from: &[TableRef], index: usize, out: &mut Vec<Expr>) {
+        match expr {
+            Expr::And(left, right) => {
+                self.collect_source_conjuncts(left, def, label, from, index, out);
+                self.collect_source_conjuncts(right, def, label, from, index, out);
+            }
+            single => {
+                if self.conjunct_is_source_local(single, def, label, from, index) {
+                    out.push(single.clone());
+                }
+            }
+        }
+    }
+
+    /// Whether every column a conjunct reads provably resolves to one source.
+    fn conjunct_is_source_local(&self, expr: &Expr, def: &TableDef, label: &str, from: &[TableRef], index: usize) -> bool {
+        let mut refs = Vec::new();
+        if !collect_unmasked_columns(expr, &mut refs) {
+            return false;
+        }
+        for column in refs {
+            if let Some(qualifier) = &column.qualifier {
+                if !qualifier.eq_ignore_ascii_case(label) {
+                    return false;
+                }
+                continue;
+            }
+            // 裸列名可能被任意一个来源解析,只有其它来源都不提供同名列时
+            // 才能确定归属;隐式 rowid 名字在多表下同样有歧义。
+            if is_rowid_alias(&column.name) {
+                return false;
+            }
+            if !def.columns.iter().any(|entry| entry.name.eq_ignore_ascii_case(&column.name)) {
+                return false;
+            }
+            for (other, table) in from.iter().enumerate() {
+                if other == index {
+                    continue;
+                }
+                match self.prunable_def(table) {
+                    Some(other_def) => {
+                        if other_def.columns.iter().any(|entry| entry.name.eq_ignore_ascii_case(&column.name)) {
+                            return false;
+                        }
+                    }
+                    None => return false,
+                }
+            }
+        }
+        true
     }
 
     /// Detects a `WHERE` conjunction that pins every key column of one plain
@@ -8715,6 +8976,9 @@ impl Engine {
                     .filter(|rowid| !probe.deleted.contains(rowid))
                     .collect();
                 rowids.sort_unstable();
+                // 重新插入同一个 rowid 会留下一条旧键墓碑条目,候选按 rowid
+                // 去重后与整表扫描的行集一致。
+                rowids.dedup();
                 return Some(rowids);
             }
             let mut rowids = Vec::new();
@@ -8722,7 +8986,8 @@ impl Engine {
                 if probe.deleted.contains(rowid) {
                     continue;
                 }
-                let Some(cell) = key.first() else {
+                let Some(cell) = key.first()
+                else {
                     continue;
                 };
                 if let Some(bound) = lower {
@@ -8740,6 +9005,7 @@ impl Engine {
                 rowids.push(*rowid);
             }
             rowids.sort_unstable();
+            rowids.dedup();
             Some(rowids)
         };
         {
@@ -8760,8 +9026,7 @@ impl Engine {
     /// key outside the canonical form (a NaN or a wide integer) poisons the
     /// probe so every later query keeps the full scan.
     fn build_index_probe(&self, index: &IndexDef, epoch: u64) -> IndexProbe {
-        let mut probe =
-            IndexProbe { epoch, map: HashMap::new(), entries: Vec::new(), sorted: false, deleted: HashSet::new(), poisoned: false };
+        let mut probe = IndexProbe { epoch, map: HashMap::new(), entries: Vec::new(), sorted: false, deleted: HashSet::new(), poisoned: false };
         let entries = match self.writer.index_entries_decoded(&index.name) {
             Ok(entries) => entries,
             Err(_) => {
@@ -8826,9 +9091,9 @@ impl Engine {
     /// (其它 attached schema、DDL 等)返回 `None`,调用方按全量失效处理。
     fn statement_table_key(&self, statement: &Statement) -> Option<String> {
         let (schema, table) = match statement {
-            Statement::Insert { schema, table, .. }
-            | Statement::Update { schema, table, .. }
-            | Statement::Delete { schema, table, .. } => (schema.as_deref(), table),
+            Statement::Insert { schema, table, .. } | Statement::Update { schema, table, .. } | Statement::Delete { schema, table, .. } => {
+                (schema.as_deref(), table)
+            }
             _ => return None,
         };
         match schema {
@@ -8863,6 +9128,99 @@ impl Engine {
         for index in self.indexes.values() {
             versions.insert(index.name.to_ascii_lowercase(), epoch);
         }
+    }
+
+    /// `INSERT` 执行后把新行增量补进既有索引探针。
+    ///
+    /// 与删除侧的 [`Engine::patch_index_probes_after_delete`] 对称:只要语句只
+    /// 追加行、不改写既有行,缓存内容加上这批新行就等于当前索引,不必让下一次
+    /// 查询整份重建。重新插入的 rowid 会先清掉墓碑,否则探针会把它当作已删除。
+    ///
+    /// 追加后 `entries` 不再保证按首列有序,范围探针退回线性扫描;下一次任何
+    /// 会改写行的语句仍按常规失效并重建。
+    fn patch_index_probes_after_insert(&self, table_key: &str, rows: &[(i64, Vec<Cell>)]) {
+        if rows.is_empty() {
+            return;
+        }
+        let epoch = self.next_epoch();
+        let mut patched: Vec<String> = Vec::new();
+        {
+            let mut probes = self.index_probes.borrow_mut();
+            for index in self.indexes.values() {
+                if index.table != table_key || index.managed || index.columns.is_empty() {
+                    continue;
+                }
+                let name = index.name.to_ascii_lowercase();
+                let Some(probe) = probes.get_mut(&name)
+                else {
+                    continue;
+                };
+                if probe.poisoned {
+                    continue;
+                }
+                let mut canonical = true;
+                for (rowid, cells) in rows {
+                    let mut key = Vec::with_capacity(index.columns.len());
+                    let mut key_cells = Vec::with_capacity(index.columns.len());
+                    for (slot, position) in index.columns.iter().enumerate() {
+                        let collation = index.collations.get(slot).copied().unwrap_or_default();
+                        let Some(cell) = cells.get(*position)
+                        else {
+                            canonical = false;
+                            break;
+                        };
+                        match probe_key(cell, collation) {
+                            Some(part) if !matches!(part, ProbeKey::Wide(_)) => key.push(part),
+                            _ => {
+                                canonical = false;
+                                break;
+                            }
+                        }
+                        key_cells.push(cell.clone());
+                    }
+                    if !canonical {
+                        break;
+                    }
+                    probe.deleted.remove(rowid);
+                    let rowids = probe.map.entry(key).or_default();
+                    let at = rowids.partition_point(|existing| existing < rowid);
+                    if rowids.get(at) != Some(rowid) {
+                        rowids.insert(at, *rowid);
+                    }
+                    probe.entries.push((key_cells, *rowid));
+                    probe.sorted = false;
+                }
+                if !canonical {
+                    probe.poisoned = true;
+                    continue;
+                }
+                patched.push(name);
+            }
+        }
+        if patched.is_empty() {
+            return;
+        }
+        {
+            let mut versions = self.index_versions.borrow_mut();
+            for name in &patched {
+                versions.insert(name.clone(), epoch);
+            }
+        }
+        // 补丁后的探针内容仍准确,把版本对齐到新 epoch 继续复用。
+        let mut probes = self.index_probes.borrow_mut();
+        for name in &patched {
+            if let Some(probe) = probes.get_mut(name) {
+                probe.epoch = epoch;
+            }
+        }
+    }
+
+    /// 表上是否存在可增量维护的索引探针缓存。
+    fn table_has_probes(&self, table_key: &str) -> bool {
+        let probes = self.index_probes.borrow();
+        self.indexes.values().any(|index| {
+            index.table == table_key && !index.managed && !index.columns.is_empty() && probes.contains_key(&index.name.to_ascii_lowercase())
+        })
     }
 
     /// `UPDATE` 执行后只让真正被改动的索引失效。
@@ -8912,7 +9270,8 @@ impl Engine {
                 }
                 let name = index.name.to_ascii_lowercase();
                 let version = self.index_version(&index.name);
-                let Some(probe) = probes.get_mut(&name) else {
+                let Some(probe) = probes.get_mut(&name)
+                else {
                     continue;
                 };
                 if index.managed || index.columns.is_empty() || probe.poisoned || probe.epoch != version {
@@ -9015,7 +9374,8 @@ impl Engine {
         {
             return None;
         }
-        let Some((offset, Some(count))) = limit else {
+        let Some((offset, Some(count))) = limit
+        else {
             return None;
         };
         let (def, table) = self.bounded_scan_target(&first.from)?;
@@ -9024,7 +9384,8 @@ impl Engine {
             if entry.descending || entry.nulls_first.is_some() {
                 return None;
             }
-            let Expr::Column(column) = &entry.expr else {
+            let Expr::Column(column) = &entry.expr
+            else {
                 return None;
             };
             if column.qualifier.as_deref().is_some_and(|qualifier| !qualifier.eq_ignore_ascii_case(table.label())) {
@@ -9179,8 +9540,7 @@ impl Engine {
             unqualified_hidden: vec![false; def.columns.len()],
             star_override: vec![None; def.columns.len()],
         };
-        let mut relation =
-            Relation { sources: vec![source], using: vec![Vec::new()], using_slots: Vec::new(), trigger: None, excluded: false };
+        let mut relation = Relation { sources: vec![source], using: vec![Vec::new()], using_slots: Vec::new(), trigger: None, excluded: false };
         relation.plan_joins(&first.from)?;
         let shape = relation.shape();
         let outer_shapes: Vec<ScopeShape> = Vec::new();
@@ -9321,7 +9681,10 @@ impl Engine {
         let ascending = rowids.windows(2).all(|pair| pair[0] < pair[1]);
         let dense = rowids.len() >= 2
             && ascending
-            && rowids.last().and_then(|last| last.checked_sub(rowids[0])).is_some_and(|span| span <= (rowids.len() as i64).saturating_mul(4).saturating_add(16));
+            && rowids
+                .last()
+                .and_then(|last| last.checked_sub(rowids[0]))
+                .is_some_and(|span| span <= (rowids.len() as i64).saturating_mul(4).saturating_add(16));
         if dense {
             let stored = self
                 .writer
@@ -9333,11 +9696,7 @@ impl Engine {
         let mut stored = Vec::with_capacity(rowids.len());
         for rowid in rowids {
             // 单行候选走写入器的 rowid 下钻，避免为一行重建整个区间读取上下文。
-            if let Some(payload) = self
-                .writer
-                .row_payload(table, *rowid)
-                .map_err(|error| storage_failure(error).in_statement("select"))?
-            {
+            if let Some(payload) = self.writer.row_payload(table, *rowid).map_err(|error| storage_failure(error).in_statement("select"))? {
                 stored.push(TableRow { rowid: *rowid, payload });
             }
         }
@@ -9439,6 +9798,11 @@ impl Engine {
         let position = if scope == TableScope::Temp { None } else { self.table_lookup.get(&key).copied() };
         if let Some(position) = position {
             let def = &self.tables[position];
+            // `LIMIT 0` over this table: no row can reach the output, so the
+            // b-tree is never walked. The column names still come from `def`.
+            if matches!(scan, Some(ScanHint::Empty)) {
+                return Ok((SourceColumns::Table(def), Rc::new(Vec::new())));
+            }
             if def.without_rowid {
                 let stored = self
                     .writer
@@ -9464,10 +9828,8 @@ impl Engine {
                         return Ok((SourceColumns::Table(def), cached));
                     }
                 }
-                let stored = self
-                    .writer
-                    .table_rows(&def.name, TableLimits::default())
-                    .map_err(|error| storage_failure(error).in_statement("select"))?;
+                let stored =
+                    self.writer.table_rows(&def.name, TableLimits::default()).map_err(|error| storage_failure(error).in_statement("select"))?;
                 let decoded = Rc::new(decode_stored_rows(&stored, def, keep)?);
                 let wider = {
                     let scans = self.statement_scans.borrow();
@@ -9477,9 +9839,7 @@ impl Engine {
                     }
                 };
                 if wider {
-                    self.statement_scans
-                        .borrow_mut()
-                        .insert(key, (keep.map(<[bool]>::to_vec), Rc::downgrade(&decoded)));
+                    self.statement_scans.borrow_mut().insert(key, (keep.map(<[bool]>::to_vec), Rc::downgrade(&decoded)));
                 }
                 return Ok((SourceColumns::Table(def), decoded));
             }
@@ -9511,6 +9871,14 @@ impl Engine {
                     .writer
                     .table_head(&def.name, *max_rows, TableLimits::default())
                     .map_err(|error| storage_failure(error).in_statement("select"))?,
+                // `WHERE <rowid> >= a` / `<= b`: read the interval that the
+                // predicate can still keep; the missing side stays unbounded.
+                Some(ScanHint::Range { lower, upper }) => self
+                    .writer
+                    .table_range(&def.name, lower.unwrap_or(i64::MIN), upper.unwrap_or(i64::MAX), TableLimits::default())
+                    .map_err(|error| storage_failure(error).in_statement("select"))?,
+                // Handled before the branch: the b-tree is never read.
+                Some(ScanHint::Empty) => Vec::new(),
                 None => unreachable!("plain table scans are cached above"),
             };
             return Ok((SourceColumns::Table(def), Rc::new(decode_stored_rows(&stored, def, keep)?)));
@@ -9557,10 +9925,8 @@ impl Engine {
         }
         if let Some(position) = engine.table_lookup.get(&key).copied() {
             let def = &engine.tables[position];
-            let stored = engine
-                .writer
-                .table_rows(&def.name, TableLimits::default())
-                .map_err(|error| storage_failure(error).in_statement("select"))?;
+            let stored =
+                engine.writer.table_rows(&def.name, TableLimits::default()).map_err(|error| storage_failure(error).in_statement("select"))?;
             return Ok((SourceColumns::Table(def), Rc::new(decode_stored_rows(&stored, def, None)?)));
         }
         Err(SqlError::new("unknown-table", format!("no such table: {qualifier}.{}", table.name)).in_statement("select"))
@@ -11271,10 +11637,7 @@ impl ResolvedExpr {
                     .ok_or_else(|| SqlError::new("unknown-function", format!("no such function: {name}")))?;
                 let arguments = values.iter().map(|cell| cell_to_udf_value(name, cell)).collect::<Result<Vec<_>, _>>()?;
                 let mut context = UdfContext::new(UdfBudget::new(ctx.budget.remaining.get() as u64));
-                implementation
-                    .invoke(&mut context, &arguments)
-                    .map_err(|error| udf_error_to_sql_error(name, error))
-                    .map(udf_value_to_cell)?
+                implementation.invoke(&mut context, &arguments).map_err(|error| udf_error_to_sql_error(name, error)).map(udf_value_to_cell)?
             }
             Self::Cast { value, target } => cast_cell(&value.eval(values, ctx)?, *target),
             Self::Collate { value, .. } => value.eval(values, ctx)?,
@@ -11328,13 +11691,21 @@ impl ResolvedExpr {
                     None => None,
                 };
                 // `LIKE` with a NULL value, pattern or escape yields NULL.
-                let (Some(value), Some(pattern)) = (text_form(&value), text_form(&pattern))
-                else {
-                    return Ok(Cell::Null);
+                // Text operands match straight off the stored strings, which
+                // keeps a full-table `LIKE` scan from allocating a `String`
+                // copy and two `Vec<char>` per row.
+                let matched = match (&value, &pattern) {
+                    (Cell::Text(value), Cell::Text(pattern)) => like_match_text(value, pattern, escape),
+                    _ => {
+                        let (Some(value), Some(pattern)) = (text_form(&value), text_form(&pattern))
+                        else {
+                            return Ok(Cell::Null);
+                        };
+                        let characters: Vec<char> = value.chars().collect();
+                        let pattern: Vec<char> = pattern.chars().collect();
+                        like_match(&characters, &pattern, escape)
+                    }
                 };
-                let characters: Vec<char> = value.chars().collect();
-                let pattern: Vec<char> = pattern.chars().collect();
-                let matched = like_match(&characters, &pattern, escape);
                 Cell::Integer(i64::from(matched != *negated))
             }
             Self::Subquery(query) => {
@@ -12376,8 +12747,7 @@ fn retain_first_distinct(rows: Vec<Vec<Cell>>, collations: &[Collation]) -> Vec<
                 Some(signature) => buckets.contains(signature),
                 None => {
                     linear = true;
-                    seen.iter()
-                        .any(|index| compare_cells_with(&out[*index][0], &row[0], collation) == Ordering::Equal)
+                    seen.iter().any(|index| compare_cells_with(&out[*index][0], &row[0], collation) == Ordering::Equal)
                 }
             };
             if !duplicate {
@@ -12439,7 +12809,11 @@ fn compute_aggregate(spec: &AggregateSpec, rows: &[Vec<Cell>], ctx: &EvalContext
         return Ok(Cell::Integer(count as i64));
     }
     // `min` / `max` 逐行折叠即可,不必先把整列参数收进一个向量。
-    if !spec.distinct && spec.order.is_empty() && spec.separator.is_none() && matches!(spec.function, AggregateFunction::Min | AggregateFunction::Max) {
+    if !spec.distinct
+        && spec.order.is_empty()
+        && spec.separator.is_none()
+        && matches!(spec.function, AggregateFunction::Min | AggregateFunction::Max)
+    {
         let Some(argument) = &spec.argument
         else {
             return Ok(Cell::Null);
@@ -12791,8 +13165,7 @@ fn build_groups(
 /// Canonical hash signature of one group key, or `None` when a component is
 /// outside the canonical form and the row has to go through the linear scan.
 fn group_signature(key: &[Cell], group_keys: &[GroupKey]) -> Option<Vec<ProbeKey>> {
-    key
-        .iter()
+    key.iter()
         .zip(group_keys)
         .map(|(cell, group_key)| {
             let collation = match group_key {
@@ -12810,16 +13183,12 @@ fn group_signature(key: &[Cell], group_keys: &[GroupKey]) -> Option<Vec<ProbeKey
 /// collation, exactly as the linear scan decided.
 fn group_keys_equal(left: &[Cell], right: &[Cell], group_keys: &[GroupKey]) -> bool {
     left.len() == right.len()
-        && left
-            .iter()
-            .zip(right)
-            .zip(group_keys)
-            .all(|((existing, key), group_key)| {
-                let collation = match group_key {
-                    GroupKey::Projected(_, collation) | GroupKey::Expression(_, collation) => *collation,
-                };
-                compare_cells_with(existing, key, collation) == Ordering::Equal
-            })
+        && left.iter().zip(right).zip(group_keys).all(|((existing, key), group_key)| {
+            let collation = match group_key {
+                GroupKey::Projected(_, collation) | GroupKey::Expression(_, collation) => *collation,
+            };
+            compare_cells_with(existing, key, collation) == Ordering::Equal
+        })
 }
 
 /// 统计普通源与内连接的匹配行数,不物化匹配行。
@@ -12835,19 +13204,27 @@ fn count_inner_join_rows(
     ctx: &EvalContext,
 ) -> Result<usize, SqlError> {
     // 探针形态与右表有序性每条语句只判定一次,避免在每行递归里重算。
-    let probes: Vec<Option<RowidProbe<'_>>> = relation
+    let probes: Vec<Option<JoinProbe<'_>>> = relation
         .sources
         .iter()
         .enumerate()
         .map(|(index, source)| {
-            Ok(rowid_join_probe(source, &ons[index], index).map(|(right_slot, probe)| {
+            if let Some((right_slot, probe)) = rowid_join_probe(source, &ons[index], index) {
                 let within = right_slot - source.offset;
                 let ascending = tables[index].windows(2).all(|pair| match (&pair[0][within], &pair[1][within]) {
                     (Cell::Integer(left), Cell::Integer(right)) => left < right,
                     _ => false,
                 });
-                RowidProbe { within, probe, ascending }
-            }))
+                return Ok(Some(JoinProbe::Rowid(RowidProbe { within, probe, ascending })));
+            }
+            // 非 rowid 的等值连接:右表按该列建一次哈希桶,左行只做一次查找。
+            // 任一存储键没有规范签名时整体退回逐行扫描,保证结果不变。
+            if let Some((within, probe, collation)) = column_join_probe(source, &ons[index], index) {
+                if let Some(buckets) = build_probe_buckets(&tables[index], within, collation) {
+                    return Ok(Some(JoinProbe::Hash(HashProbe { within, probe, collation, buckets })));
+                }
+            }
+            Ok(None)
         })
         .collect::<Result<Vec<_>, SqlError>>()?;
     let mut merged = vec![Cell::Null; relation.columns()];
@@ -12864,13 +13241,144 @@ struct RowidProbe<'a> {
     ascending: bool,
 }
 
+/// 一条 `ON <右侧列> = <前缀表达式>` 的等值探针:右表按该列按排序规则归一化后
+/// 建一次哈希桶,左行求值后直接取桶,不再逐行扫描右表。
+struct HashProbe<'a> {
+    /// 右表行内该列的位置。
+    within: usize,
+    /// 左行上求值的探针表达式。
+    probe: &'a ResolvedExpr,
+    /// 等值比较生效的排序规则,决定文本键的归一化方式。
+    collation: Collation,
+    /// 归一化键到右表行下标的桶,下标按右表顺序追加。
+    ///
+    /// 桶只按 64 位规范化哈希分组,不保存键的副本:碰撞只会多取候选,而候选
+    /// 行仍要重跑整条 `ON`,所以不会漏行也不会误配。
+    buckets: HashMap<u64, Vec<usize>>,
+}
+
+/// 内连接右表的一条等值探针:rowid 二分或普通列哈希。
+enum JoinProbe<'a> {
+    Rowid(RowidProbe<'a>),
+    Hash(HashProbe<'a>),
+}
+
+/// Detects an inner-join `ON` that is a single equality between one column of
+/// the current right source and an expression over strictly earlier sources.
+///
+/// The probe is only a lookup accelerator: the caller still evaluates the
+/// whole `ON` on every candidate, so a probe that over-fetches cannot change
+/// the result. Anything the canonical key cannot reproduce (a text collation
+/// the hash respects, a NaN, an integer outside the exact binary64 range) is
+/// handled by the caller falling back to the nested scan.
+fn column_join_probe<'a>(source: &Source, on: &'a Option<ResolvedExpr>, index: usize) -> Option<(usize, &'a ResolvedExpr, Collation)> {
+    let on = on.as_ref()?;
+    let (slot, probe, collation) = match on {
+        ResolvedExpr::Compare { left, op: CompareOp::Eq, right, collation } => match (left.as_ref(), right.as_ref()) {
+            (ResolvedExpr::Column { source: owner, index: slot }, other) if *owner == index => (*slot, other, *collation),
+            (other, ResolvedExpr::Column { source: owner, index: slot }) if *owner == index => (*slot, other, *collation),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    if slot < source.offset || slot >= source.offset + source.width() {
+        return None;
+    }
+    if probe.contains_subquery() {
+        return None;
+    }
+    let mut refs = Vec::new();
+    probe.collect_sources(&mut refs);
+    if refs.iter().any(|owner| *owner >= index) {
+        return None;
+    }
+    Some((slot - source.offset, probe, collation))
+}
+
+/// Builds the right-side hash buckets for one column probe, or `None` when any
+/// stored key has no canonical signature and the nested scan must stay.
+fn build_probe_buckets(rows: &[Vec<Cell>], within: usize, collation: Collation) -> Option<HashMap<u64, Vec<usize>>> {
+    let mut buckets: HashMap<u64, Vec<usize>> = HashMap::new();
+    for (position, row) in rows.iter().enumerate() {
+        let key = probe_hash(&row[within], collation)?;
+        buckets.entry(key).or_default().push(position);
+    }
+    Some(buckets)
+}
+
+/// 64 位规范化哈希:与 [`probe_key`] 的等价类一致,但只写哈希、不分配键。
+///
+/// 与 [`probe_key`] 一样,`NaN` 与超出 binary64 精确范围的整数返回 `None`,
+/// 由调用方退回逐行扫描;其余值按 SQL 等值语义折叠(有符号零归一、整数与
+/// 实数按同一数值签名、文本按排序规则折叠)。
+fn probe_hash(cell: &Cell, collation: Collation) -> Option<u64> {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    fn add(hash: &mut u64, byte: u8) {
+        *hash ^= u64::from(byte);
+        *hash = hash.wrapping_mul(PRIME);
+    }
+    fn add_bytes(hash: &mut u64, bytes: &[u8]) {
+        for byte in bytes {
+            add(hash, *byte);
+        }
+    }
+    match cell {
+        // Type tags keep the numeric, text and blob classes apart, exactly as
+        // `ProbeKey`'s variants do.
+        Cell::Null => {
+            let mut hash = OFFSET;
+            add(&mut hash, 0);
+            Some(hash)
+        }
+        Cell::Integer(value) => match integer_probe_key(*value) {
+            ProbeKey::Number(bits) => {
+                let mut hash = OFFSET;
+                add(&mut hash, 1);
+                add_bytes(&mut hash, &bits.to_le_bytes());
+                Some(hash)
+            }
+            _ => None,
+        },
+        Cell::Real(value) => match real_probe_key(*value) {
+            Some(ProbeKey::Number(bits)) => {
+                let mut hash = OFFSET;
+                add(&mut hash, 1);
+                add_bytes(&mut hash, &bits.to_le_bytes());
+                Some(hash)
+            }
+            _ => None,
+        },
+        Cell::Text(text) => {
+            let mut hash = OFFSET;
+            add(&mut hash, 2);
+            match collation {
+                Collation::Binary => add_bytes(&mut hash, text.as_bytes()),
+                Collation::Nocase => {
+                    for byte in text.bytes() {
+                        add(&mut hash, byte.to_ascii_lowercase());
+                    }
+                }
+                Collation::Rtrim => add_bytes(&mut hash, text.trim_end_matches(' ').as_bytes()),
+            }
+            Some(hash)
+        }
+        Cell::Blob(bytes) => {
+            let mut hash = OFFSET;
+            add(&mut hash, 3);
+            add_bytes(&mut hash, bytes);
+            Some(hash)
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn count_join_level(
     index: usize,
     relation: &Relation,
     ons: &[Option<ResolvedExpr>],
     tables: &[Rc<Vec<Vec<Cell>>>],
-    probes: &[Option<RowidProbe<'_>>],
+    probes: &[Option<JoinProbe<'_>>],
     conjuncts: &[ResolvedExpr],
     ctx: &EvalContext,
     merged: &mut [Cell],
@@ -12898,31 +13406,50 @@ fn count_join_level(
         }
         return Ok(());
     };
-    if let Some(rowid) = &probes[index] {
+    if let Some(probe) = &probes[index] {
         let right = tables[index].as_slice();
-        if let Cell::Integer(key) = rowid.probe.eval(merged, ctx)? {
-            if rowid.ascending {
-                let within = rowid.within;
-                let position = right.partition_point(|row| matches!(&row[within], Cell::Integer(value) if *value < key));
-                if let Some(row) = right.get(position) {
-                    if matches!(&row[within], Cell::Integer(value) if *value == key) {
-                        // The probe is the whole `ON` equality: an integer
-                        // rowid equal to the integer the probe produced makes
-                        // it true without re-evaluating the comparison.
-                        merged[start..end].clone_from_slice(row);
-                        count_join_level(index + 1, relation, ons, tables, probes, conjuncts, ctx, merged, count)?;
+        match probe {
+            JoinProbe::Rowid(rowid) => {
+                if let Cell::Integer(key) = rowid.probe.eval(merged, ctx)? {
+                    if rowid.ascending {
+                        let within = rowid.within;
+                        let position = right.partition_point(|row| matches!(&row[within], Cell::Integer(value) if *value < key));
+                        if let Some(row) = right.get(position) {
+                            if matches!(&row[within], Cell::Integer(value) if *value == key) {
+                                // The probe is the whole `ON` equality: an integer
+                                // rowid equal to the integer the probe produced makes
+                                // it true without re-evaluating the comparison.
+                                merged[start..end].clone_from_slice(row);
+                                count_join_level(index + 1, relation, ons, tables, probes, conjuncts, ctx, merged, count)?;
+                            }
+                        }
+                        return Ok(());
                     }
+                    let within = rowid.within;
+                    for row in right {
+                        if matches!(&row[within], Cell::Integer(value) if *value == key) {
+                            merged[start..end].clone_from_slice(row);
+                            count_join_level(index + 1, relation, ons, tables, probes, conjuncts, ctx, merged, count)?;
+                        }
+                    }
+                    return Ok(());
                 }
-                return Ok(());
             }
-            let within = rowid.within;
-            for row in right {
-                if matches!(&row[within], Cell::Integer(value) if *value == key) {
-                    merged[start..end].clone_from_slice(row);
-                    count_join_level(index + 1, relation, ons, tables, probes, conjuncts, ctx, merged, count)?;
+            JoinProbe::Hash(hash) => {
+                // 只有归一化键存在时才查找;键缺失的形态(超范围整数、NaN)
+                // 落回下面的逐行扫描,结果与通用路径一致。
+                if let Some(key) = probe_hash(&hash.probe.eval(merged, ctx)?, hash.collation) {
+                    if let Some(positions) = hash.buckets.get(&key) {
+                        for &position in positions {
+                            merged[start..end].clone_from_slice(&right[position]);
+                            if truthiness(&on.eval(merged, ctx)?) == Some(true) {
+                                count_join_level(index + 1, relation, ons, tables, probes, conjuncts, ctx, merged, count)?;
+                            }
+                        }
+                    }
+                    return Ok(());
                 }
             }
-            return Ok(());
         }
     }
     for row in tables[index].iter() {
@@ -12967,8 +13494,23 @@ fn join_rows(
         // row. The full `ON` still decides each candidate and any non-integer
         // probe falls back to the nested scan, so the emitted rows and their
         // left-major order are identical to the generic path below.
-        let fast =
-            if unconditional || !pairs.is_empty() || !matches!(kind, JoinKind::Inner) { None } else { rowid_join_probe(source, &ons[index], index) };
+        let fast = if unconditional || !pairs.is_empty() || !matches!(kind, JoinKind::Inner) {
+            None
+        }
+        else {
+            rowid_join_probe(source, &ons[index], index)
+        };
+        // 非 rowid 的等值连接同样不必逐行扫描右表:建一次哈希桶后按左行的
+        // 探针取候选。候选仍需重跑 `ON`,所以多取不会改变结果;右表任一存储
+        // 键没有规范签名时整条回退逐行扫描。
+        let hashed = if fast.is_none() && !unconditional && pairs.is_empty() && matches!(kind, JoinKind::Inner) {
+            column_join_probe(source, &ons[index], index).and_then(|(within, probe, collation)| {
+                build_probe_buckets(&tables[index], within, collation).map(|buckets| HashProbe { within, probe, collation, buckets })
+            })
+        }
+        else {
+            None
+        };
         if unconditional {
             for left in &rows {
                 for values in tables[index].iter() {
@@ -13015,6 +13557,33 @@ fn join_rows(
                                 next.push(merged);
                             }
                         }
+                    }
+                }
+            }
+        }
+        else if let Some(hash) = hashed {
+            let on = ons[index].as_ref().expect("the probe only returns for a present ON");
+            for left in &rows {
+                if let Some(key) = probe_hash(&hash.probe.eval(left, ctx)?, hash.collation) {
+                    if let Some(positions) = hash.buckets.get(&key) {
+                        for &position in positions {
+                            let mut merged = left.clone();
+                            merged[source.offset..source.offset + width].clone_from_slice(&tables[index][position]);
+                            if truthiness(&on.eval(&merged, ctx)?) == Some(true) {
+                                ctx.budget.charge(1)?;
+                                next.push(merged);
+                            }
+                        }
+                    }
+                    continue;
+                }
+                // 探针值没有规范签名(超范围整数、NaN):这一行保持逐行扫描。
+                for values in tables[index].iter() {
+                    let mut merged = left.clone();
+                    merged[source.offset..source.offset + width].clone_from_slice(values);
+                    if truthiness(&on.eval(&merged, ctx)?) == Some(true) {
+                        ctx.budget.charge(1)?;
+                        next.push(merged);
                     }
                 }
             }
@@ -13115,10 +13684,14 @@ fn rowid_join_probe<'a>(source: &Source, on: &'a Option<ResolvedExpr>, index: us
     let on = on.as_ref()?;
     let (slot, probe) = match on {
         ResolvedExpr::Compare { left, op: CompareOp::Eq, right, .. } => match (left.as_ref(), right.as_ref()) {
-            (ResolvedExpr::Column { source: owner, index: slot }, other) if *owner == index && (*slot == hidden_slot || alias_slot == Some(*slot)) => {
+            (ResolvedExpr::Column { source: owner, index: slot }, other)
+                if *owner == index && (*slot == hidden_slot || alias_slot == Some(*slot)) =>
+            {
                 (*slot, other)
             }
-            (other, ResolvedExpr::Column { source: owner, index: slot }) if *owner == index && (*slot == hidden_slot || alias_slot == Some(*slot)) => {
+            (other, ResolvedExpr::Column { source: owner, index: slot })
+                if *owner == index && (*slot == hidden_slot || alias_slot == Some(*slot)) =>
+            {
                 (*slot, other)
             }
             _ => return None,
@@ -13154,6 +13727,67 @@ fn join_product(tables: &[Rc<Vec<Vec<Cell>>>]) -> Vec<Vec<Cell>> {
         product = next;
     }
     product
+}
+
+/// Whether a projection is exactly one `count(*)`, optionally aliased.
+fn is_bare_count_star(items: &SelectItems) -> bool {
+    let SelectItems::Named(exprs) = items
+    else {
+        return false;
+    };
+    let [expr] = exprs.as_slice()
+    else {
+        return false;
+    };
+    matches!(
+        strip_alias(expr),
+        Expr::Aggregate {
+            function: AggregateFunction::CountStar,
+            argument: None,
+            separator: None,
+            distinct: false,
+            filter: None,
+            order,
+        } if order.is_empty()
+    )
+}
+
+/// The expression an `AS name` alias wraps; aliases never change a value.
+fn strip_alias(expr: &Expr) -> &Expr {
+    match expr {
+        Expr::Alias { value, .. } => strip_alias(value),
+        other => other,
+    }
+}
+
+/// Marks the columns one `WHERE` expression can read, mirroring the resolver's
+/// name lookup for a single table source.
+///
+/// Returns `false` when a read cannot be attributed from the raw syntax (a
+/// subquery, a window call, another table's qualifier, an unknown name), which
+/// tells the caller to decode every column instead of guessing.
+fn predicate_columns(expr: &Expr, label: &str, def: &TableDef, keep: &mut [bool]) -> bool {
+    let mut refs = Vec::new();
+    if !collect_unmasked_columns(expr, &mut refs) {
+        return false;
+    }
+    for column in refs {
+        if column.qualifier.as_deref().is_some_and(|qualifier| !qualifier.eq_ignore_ascii_case(label)) {
+            return false;
+        }
+        // A declared column shadows the implicit rowid names, exactly as the
+        // relation's own lookup does.
+        match def.columns.iter().position(|entry| entry.name.eq_ignore_ascii_case(&column.name)) {
+            Some(position) => {
+                if let Some(flag) = keep.get_mut(position) {
+                    *flag = true;
+                }
+            }
+            None if is_rowid_alias(&column.name) => {}
+            None => return false,
+        }
+    }
+    true
 }
 
 /// Flattens `a AND b AND c` into single conjuncts, each applied as soon as its
@@ -14059,6 +14693,102 @@ fn like_match(value: &[char], pattern: &[char], escape: Option<char>) -> bool {
         return like_match(tail, literal.1, escape);
     }
     like_eq(literal.0, *candidate) && like_match(tail, literal.1, escape)
+}
+
+/// One consumed pattern element.
+enum LikeElement {
+    /// The pattern ended.
+    End,
+    /// `_`: exactly one character.
+    Any,
+    /// A literal character, with any `ESCAPE` prefix already consumed.
+    Literal(char),
+}
+
+/// Matches one `LIKE` pattern against one text value without allocating.
+///
+/// Same semantics as [`like_match`] — `%` matches any run including the empty
+/// one, `_` exactly one character, and the `ESCAPE` character quotes the next
+/// pattern character — but it walks `Chars` clones and remembers the last `%`
+/// as a backtracking point instead of materializing two `Vec<char>` per call.
+/// `Chars` is a pair of pointers, so cloning one is free.
+fn like_match_text(value: &str, pattern: &str, escape: Option<char>) -> bool {
+    let mut value: std::str::Chars<'_> = value.chars();
+    let mut pattern: std::str::Chars<'_> = pattern.chars();
+    // Pattern position right after the most recent `%`, plus the value
+    // position that `%` started at; together they are the retry point.
+    let mut retry_pattern: Option<std::str::Chars<'_>> = None;
+    let mut retry_value: Option<std::str::Chars<'_>> = None;
+    loop {
+        let mut rest = pattern.clone();
+        let element = match rest.next() {
+            Some(first) if escape != Some(first) && first == '%' => {
+                retry_pattern = Some(rest.clone());
+                retry_value = Some(value.clone());
+                pattern = rest;
+                continue;
+            }
+            Some(first) if escape == Some(first) => match rest.next() {
+                Some(quoted) => {
+                    pattern = rest;
+                    LikeElement::Literal(quoted)
+                }
+                // A trailing escape character has nothing left to quote.
+                None => return false,
+            },
+            Some('_') => {
+                pattern = rest;
+                LikeElement::Any
+            }
+            Some(first) => {
+                pattern = rest;
+                LikeElement::Literal(first)
+            }
+            None => LikeElement::End,
+        };
+        let matched = match element {
+            LikeElement::End => {
+                if value.clone().next().is_none() {
+                    return true;
+                }
+                // Extend the run the last `%` swallowed by one character and
+                // retry the (already exhausted) pattern against the shorter tail.
+                let Some(next_value) = retry_value.as_mut()
+                else {
+                    return false;
+                };
+                let Some(next_pattern) = retry_pattern.as_ref()
+                else {
+                    return false;
+                };
+                if next_value.next().is_none() {
+                    return false;
+                }
+                value = next_value.clone();
+                pattern = next_pattern.clone();
+                continue;
+            }
+            LikeElement::Any => value.next().is_some(),
+            LikeElement::Literal(literal) => matches!(value.next(), Some(candidate) if like_eq(literal, candidate)),
+        };
+        if matched {
+            continue;
+        }
+        // Extend the run the last `%` swallowed by one character and retry.
+        let Some(next_value) = retry_value.as_mut()
+        else {
+            return false;
+        };
+        let Some(next_pattern) = retry_pattern.as_ref()
+        else {
+            return false;
+        };
+        if next_value.next().is_none() {
+            return false;
+        }
+        value = next_value.clone();
+        pattern = next_pattern.clone();
+    }
 }
 
 fn number_truthy(number: &Number) -> bool {
@@ -15839,9 +16569,8 @@ fn temp_insert_row(
     let cells: Vec<Cell> = cells.into_iter().take(def.columns.len()).collect();
     for (position, column) in def.columns.iter().enumerate() {
         if column.not_null && matches!(cells[position], Cell::Null) {
-            return Err(
-                SqlError::new("not-null-constraint", format!("NOT NULL constraint failed: {}.{}", def.name, column.name)).in_statement("insert")
-            );
+            return Err(SqlError::new("not-null-constraint", format!("NOT NULL constraint failed: {}.{}", def.name, column.name))
+                .in_statement("insert"));
         }
     }
     let live: Vec<(i64, Vec<Cell>)> = rows.iter().map(|(rowid, cells)| (*rowid, cells.clone())).collect();
@@ -16001,7 +16730,18 @@ fn decode_row(payload: &[u8], def: &TableDef, rowid: i64) -> Result<Vec<Cell>, S
 /// payload fails exactly as in the full decode, but its text or blob value is
 /// never materialized. `None` keeps every column.
 fn decode_row_masked(payload: &[u8], def: &TableDef, rowid: i64, keep: Option<&[bool]>) -> Result<Vec<Cell>, SqlError> {
-    let mut cells = decode_cells_kept(payload, keep)?;
+    let mut cells = Vec::new();
+    decode_row_into(payload, def, rowid, keep, &mut cells)?;
+    Ok(cells)
+}
+
+/// Decodes one stored row into `cells`, reusing that buffer's allocation.
+///
+/// The result is exactly [`decode_row_masked`]'s: kept columns decoded, skipped
+/// positions as [`Cell::Null`], short records padded with their declared
+/// defaults and an `INTEGER PRIMARY KEY` alias filled from the rowid.
+fn decode_row_into(payload: &[u8], def: &TableDef, rowid: i64, keep: Option<&[bool]>, cells: &mut Vec<Cell>) -> Result<(), SqlError> {
+    decode_cells_kept_into(payload, keep, cells)?;
     // A record written before `ALTER TABLE ADD COLUMN` is short; SQLite reads
     // the missing trailing columns as their declared default.
     while cells.len() < def.columns.len() {
@@ -16022,7 +16762,7 @@ fn decode_row_masked(payload: &[u8], def: &TableDef, rowid: i64, keep: Option<&[
             cells[index] = Cell::Integer(rowid);
         }
     }
-    Ok(cells)
+    Ok(())
 }
 
 /// Whether a decoded row set made with `broad` already carries every column a
@@ -16112,7 +16852,8 @@ impl LazyTableScan {
         }
         let page_size = validate_database(&pages).map_err(storage_failure)?;
         let reserved = usize::from(*pages.get(20).ok_or_else(|| corrupt_error("sqlite header truncated"))?);
-        let usable = page_size.checked_sub(reserved).filter(|usable| *usable >= 257).ok_or_else(|| corrupt_error("sqlite page size invalid"))?;
+        let usable =
+            page_size.checked_sub(reserved).filter(|usable| *usable >= 257).ok_or_else(|| corrupt_error("sqlite page size invalid"))?;
         let page_count = pages.len() / page_size;
         if page_count == 0 || root_page == 0 || root_page as usize > page_count {
             return Err(corrupt_error("sqlite table root page out of bounds"));
@@ -16220,7 +16961,10 @@ impl LazyTableScan {
                 }
                 self.last_rowid = Some(rowid);
                 self.total_rows += 1;
-                let start = cell.checked_add(length_size).and_then(|start| start.checked_add(rowid_size)).ok_or_else(|| corrupt_error("sqlite cell length overflow"))?;
+                let start = cell
+                    .checked_add(length_size)
+                    .and_then(|start| start.checked_add(rowid_size))
+                    .ok_or_else(|| corrupt_error("sqlite cell length overflow"))?;
                 let payload = lazy_cell_payload(
                     &pages,
                     self.page_size,
@@ -16429,12 +17173,14 @@ fn collect_unmasked_columns<'a>(expr: &'a Expr, out: &mut Vec<&'a ColumnRef>) ->
     }
 }
 
-/// Decodes one record payload, materializing only the positions `keep` flags.
+/// Decodes one record payload into `cells`, materializing only the positions
+/// `keep` flags and reusing that buffer's allocation.
 ///
 /// Mirrors the storage record decoder for layout validation (header and body
 /// bounds, reserved serial types, column limit, trailing bytes) while skipping
 /// the text and blob conversion of columns the statement never reads.
-fn decode_cells_kept(payload: &[u8], keep: Option<&[bool]>) -> Result<Vec<Cell>, SqlError> {
+fn decode_cells_kept_into(payload: &[u8], keep: Option<&[bool]>, cells: &mut Vec<Cell>) -> Result<(), SqlError> {
+    cells.clear();
     let limits = RecordLimits { max_columns: 1024, max_payload_bytes: 16 * 1024 * 1024 };
     let corrupt = |message: &str| SqlError::new("corrupt", message).in_statement("select");
     let limit = |message: &str| SqlError::new("unsupported", message).in_statement("select");
@@ -16447,7 +17193,6 @@ fn decode_cells_kept(payload: &[u8], keep: Option<&[bool]>) -> Result<Vec<Cell>,
         return Err(corrupt("sqlite record header size invalid"));
     }
     let mut body_offset = header_size;
-    let mut cells = Vec::new();
     while header_offset < header_size {
         if cells.len() >= limits.max_columns {
             return Err(limit("sqlite record column limit exceeded"));
@@ -16488,7 +17233,7 @@ fn decode_cells_kept(payload: &[u8], keep: Option<&[bool]>) -> Result<Vec<Cell>,
     if body_offset != payload.len() {
         return Err(corrupt("sqlite record has trailing body bytes"));
     }
-    Ok(cells)
+    Ok(())
 }
 
 /// Decodes one record text field exactly as the storage decoder does.
@@ -16508,8 +17253,7 @@ fn signed_record_integer(bytes: &[u8]) -> i64 {
 /// Decodes a raw record into cells without expanding an implicit rowid alias.
 fn decode_cells(payload: &[u8]) -> Result<Vec<Cell>, SqlError> {
     let limits = RecordLimits { max_columns: 1024, max_payload_bytes: 16 * 1024 * 1024 };
-    let values = decode_record(payload, TextEncoding::Utf8, limits)
-        .map_err(|error| storage_failure(error).in_statement("select"))?;
+    let values = decode_record(payload, TextEncoding::Utf8, limits).map_err(|error| storage_failure(error).in_statement("select"))?;
     // 文本字段直接移交解码结果里的 `String`,不再多复制一次。
     Ok(values
         .into_iter()
@@ -16625,8 +17369,7 @@ fn program_row(addr: i64, opcode: &str, p1: i64, p2: i64, p3: i64, p4: Option<&s
 #[cfg(test)]
 mod tests {
     use super::*;
-    use database_udf::Result as UdfResult;
-    use database_udf::{HostFunctionHandle, UdfError, UdfType, UdfValue};
+    use database_udf::{HostFunctionHandle, Result as UdfResult, UdfError, UdfType, UdfValue};
 
     #[test]
     fn from_writer_reopens_an_existing_image() {
@@ -17642,10 +18385,7 @@ mod tests {
 
     #[test]
     fn count_star_product_and_subquery_count_without_materializing_rows() {
-        let mut engine = joined_engine(&[
-            "CREATE TABLE t(id INTEGER PRIMARY KEY, score REAL)",
-            "INSERT INTO t VALUES (1,1.0),(2,2.0),(3,3.0)",
-        ]);
+        let mut engine = joined_engine(&["CREATE TABLE t(id INTEGER PRIMARY KEY, score REAL)", "INSERT INTO t VALUES (1,1.0),(2,2.0),(3,3.0)"]);
         assert_eq!(
             engine.execute_one("SELECT count(*) AS n FROM t WHERE score > 1.5").expect("count filter").rows,
             vec![vec![Cell::Integer(2)]]
@@ -17766,10 +18506,7 @@ mod tests {
 
     #[test]
     fn select_rowid_alias_equality_fetches_the_single_row() {
-        let mut engine = joined_engine(&[
-            "CREATE TABLE t(id INTEGER PRIMARY KEY, label TEXT)",
-            "INSERT INTO t VALUES (1,'a'),(2,'b'),(3,'c')",
-        ]);
+        let mut engine = joined_engine(&["CREATE TABLE t(id INTEGER PRIMARY KEY, label TEXT)", "INSERT INTO t VALUES (1,'a'),(2,'b'),(3,'c')"]);
         // A hit on the rowid alias is bounded to the one candidate row.
         assert_eq!(engine.execute_one("SELECT label FROM t WHERE id = 2").expect("point hit").rows, vec![vec![text("b")]]);
         // A miss yields no rows, exactly like the full scan.
@@ -17854,16 +18591,12 @@ mod tests {
 
     #[test]
     fn upsert_updates_in_place_and_keeps_unassigned_columns() {
-        let mut engine = joined_engine(&[
-            "CREATE TABLE t(id INTEGER PRIMARY KEY, label TEXT, score REAL)",
-            "INSERT INTO t VALUES (1,'a',1.5),(2,'b',2.5)",
-        ]);
+        let mut engine =
+            joined_engine(&["CREATE TABLE t(id INTEGER PRIMARY KEY, label TEXT, score REAL)", "INSERT INTO t VALUES (1,'a',1.5),(2,'b',2.5)"]);
         // Two supplied rows conflict with the same stored row inside one
         // statement: the second one must see the first one's write.
         engine
-            .execute_one(
-                "INSERT INTO t (id,label,score) VALUES (2,'bee',20),(2,'boo',30) ON CONFLICT(id) DO UPDATE SET score = excluded.score",
-            )
+            .execute_one("INSERT INTO t (id,label,score) VALUES (2,'bee',20),(2,'boo',30) ON CONFLICT(id) DO UPDATE SET score = excluded.score")
             .expect("multi upsert");
         assert_eq!(
             engine.execute_one("SELECT id, label, score FROM t ORDER BY id").expect("rows").rows,
@@ -17889,10 +18622,8 @@ mod tests {
 
     #[test]
     fn rowid_keyed_upsert_honors_do_nothing_and_the_update_predicate() {
-        let mut engine = joined_engine(&[
-            "CREATE TABLE t(id INTEGER PRIMARY KEY, label TEXT, score REAL)",
-            "INSERT INTO t VALUES (1,'a',1.5),(2,'b',2.5)",
-        ]);
+        let mut engine =
+            joined_engine(&["CREATE TABLE t(id INTEGER PRIMARY KEY, label TEXT, score REAL)", "INSERT INTO t VALUES (1,'a',1.5),(2,'b',2.5)"]);
         engine.execute_one("INSERT INTO t (id,label,score) VALUES (1,'a',9) ON CONFLICT(id) DO NOTHING").expect("do nothing");
         engine
             .execute_one("INSERT INTO t (id,label,score) VALUES (2,'b',8) ON CONFLICT(id) DO UPDATE SET score = excluded.score WHERE excluded.score > score")
@@ -17900,7 +18631,9 @@ mod tests {
         engine
             .execute_one("INSERT INTO t (id,label,score) VALUES (1,'a',1) ON CONFLICT(id) DO UPDATE SET score = excluded.score WHERE excluded.score > score")
             .expect("predicate false");
-        engine.execute_one("INSERT INTO t (id,label,score) VALUES (3,'c',3.5) ON CONFLICT(id) DO UPDATE SET score = excluded.score").expect("insert");
+        engine
+            .execute_one("INSERT INTO t (id,label,score) VALUES (3,'c',3.5) ON CONFLICT(id) DO UPDATE SET score = excluded.score")
+            .expect("insert");
         assert_eq!(
             engine.execute_one("SELECT id, label, score FROM t ORDER BY id").expect("rows").rows,
             vec![
@@ -17922,10 +18655,8 @@ mod tests {
 
     #[test]
     fn real_bound_rowid_upsert_takes_integer_affinity_before_conflict_detection() {
-        let mut engine = joined_engine(&[
-            "CREATE TABLE t(id INTEGER PRIMARY KEY, label TEXT, score REAL)",
-            "INSERT INTO t VALUES (1,'a',1.5),(2,'b',2.5)",
-        ]);
+        let mut engine =
+            joined_engine(&["CREATE TABLE t(id INTEGER PRIMARY KEY, label TEXT, score REAL)", "INSERT INTO t VALUES (1,'a',1.5),(2,'b',2.5)"]);
         // SQLite applies the column affinity to a bound value before conflict
         // detection: `2.0` into the rowid alias becomes the integer `2`, so the
         // upsert rewrites row 2 instead of colliding and surfacing `UNIQUE`.
@@ -17943,19 +18674,14 @@ mod tests {
 
     #[test]
     fn lean_upsert_uses_defaults_for_excluded_columns_outside_the_insert_list() {
-        let mut engine = joined_engine(&[
-            "CREATE TABLE t(id INTEGER PRIMARY KEY, label TEXT DEFAULT 'd', score REAL)",
-            "INSERT INTO t VALUES (1,'a',1.5)",
-        ]);
+        let mut engine =
+            joined_engine(&["CREATE TABLE t(id INTEGER PRIMARY KEY, label TEXT DEFAULT 'd', score REAL)", "INSERT INTO t VALUES (1,'a',1.5)"]);
         // `excluded.label` is the would-be-inserted row, so an unsupplied column
         // reads its default: the rewrite sets `label` to the default `'d'`.
         engine
             .execute_one("INSERT INTO t (id,score) VALUES (1,9.5) ON CONFLICT(id) DO UPDATE SET label = excluded.label, score = excluded.score")
             .expect("excluded default");
-        assert_eq!(
-            engine.execute_one("SELECT label, score FROM t WHERE id = 1").expect("row").rows,
-            vec![vec![text("d"), Cell::Real(9.5)]]
-        );
+        assert_eq!(engine.execute_one("SELECT label, score FROM t WHERE id = 1").expect("row").rows, vec![vec![text("d"), Cell::Real(9.5)]]);
     }
 
     #[test]
@@ -18030,10 +18756,7 @@ mod tests {
 
     #[test]
     fn narrowed_update_still_sees_conflicts_outside_the_pinned_row() {
-        let mut engine = joined_engine(&[
-            "CREATE TABLE t(id INTEGER PRIMARY KEY, label TEXT UNIQUE)",
-            "INSERT INTO t VALUES (1,'a'),(2,'b')",
-        ]);
+        let mut engine = joined_engine(&["CREATE TABLE t(id INTEGER PRIMARY KEY, label TEXT UNIQUE)", "INSERT INTO t VALUES (1,'a'),(2,'b')"]);
         // 收窄只对「唯一键仅 rowid」生效；带额外唯一键的表保留整表判定，冲突照常报出。
         let error = engine
             .execute_with_parameters("UPDATE t SET label = ? WHERE id = ?", &[text("b"), Cell::Integer(1)])
@@ -18137,10 +18860,7 @@ mod tests {
         // Writes invalidate the cached entries, exactly like the equality probe.
         assert!(indexed.execute_one("SELECT id FROM t WHERE label > 'y'").expect("primed miss").rows.is_empty());
         indexed.execute_one("UPDATE t SET label = 'zz' WHERE id = 1").expect("update");
-        assert_eq!(
-            indexed.execute_one("SELECT id FROM t WHERE label > 'y'").expect("new key hit").rows,
-            vec![vec![Cell::Integer(1)]]
-        );
+        assert_eq!(indexed.execute_one("SELECT id FROM t WHERE label > 'y'").expect("new key hit").rows, vec![vec![Cell::Integer(1)]]);
         indexed.execute_one("DELETE FROM t WHERE id = 1").expect("delete");
         assert!(indexed.execute_one("SELECT id FROM t WHERE label > 'y'").expect("deleted").rows.is_empty());
     }
@@ -18220,10 +18940,8 @@ mod tests {
 
     #[test]
     fn order_by_rowid_limit_reads_only_the_prefix() {
-        let mut engine = joined_engine(&[
-            "CREATE TABLE t(id INTEGER PRIMARY KEY, v TEXT)",
-            "INSERT INTO t VALUES (1,'a'),(2,'b'),(3,'c'),(4,'d'),(5,'e')",
-        ]);
+        let mut engine =
+            joined_engine(&["CREATE TABLE t(id INTEGER PRIMARY KEY, v TEXT)", "INSERT INTO t VALUES (1,'a'),(2,'b'),(3,'c'),(4,'d'),(5,'e')"]);
         // The rowid-alias order with a limit is the scan prefix itself.
         assert_eq!(
             engine.execute_one("SELECT id, v FROM t ORDER BY id LIMIT 2").expect("head").rows,
@@ -18510,9 +19228,7 @@ mod tests {
     #[test]
     fn insert_constraint_failures_keep_distinct_codes() {
         let mut engine = Engine::new(None).expect("blank engine");
-        engine
-            .execute_one("CREATE TABLE t(id INTEGER PRIMARY KEY, u TEXT UNIQUE, n TEXT NOT NULL, c INTEGER CHECK(c > 0))")
-            .expect("create");
+        engine.execute_one("CREATE TABLE t(id INTEGER PRIMARY KEY, u TEXT UNIQUE, n TEXT NOT NULL, c INTEGER CHECK(c > 0))").expect("create");
         engine.execute_one("INSERT INTO t VALUES (1, 'a', 'x', 1)").expect("insert");
 
         assert_eq!(engine.execute_one("INSERT INTO t VALUES (1, 'b', 'y', 2)").expect_err("rowid").code, "unique-constraint");
@@ -18522,10 +19238,7 @@ mod tests {
 
         engine.execute_one("CREATE TABLE parent(id INTEGER PRIMARY KEY)").expect("parent");
         engine.execute_one("CREATE TABLE child(pid INTEGER REFERENCES parent(id))").expect("child");
-        assert_eq!(
-            engine.execute_one("INSERT INTO child VALUES (7)").expect_err("foreign key").code,
-            "SQLITE_CONSTRAINT_FOREIGNKEY"
-        );
+        assert_eq!(engine.execute_one("INSERT INTO child VALUES (7)").expect_err("foreign key").code, "SQLITE_CONSTRAINT_FOREIGNKEY");
     }
 
     #[test]
@@ -19574,8 +20287,7 @@ mod tests {
     }
 
     fn scalar_definition(name: &str, args: Vec<UdfType>, returns: UdfType) -> HostMicroDefinition {
-        HostMicroDefinition::from_scalar(name, 1, args, returns, 7, format!("host/{name}"), 1, [0u8; 32])
-            .expect("definition is valid")
+        HostMicroDefinition::from_scalar(name, 1, args, returns, 7, format!("host/{name}"), 1, [0u8; 32]).expect("definition is valid")
     }
 
     /// 未注册的宿主名保持 `unknown-function`;注册后按折叠名解析并求值,
@@ -19934,10 +20646,7 @@ db.close()
         // A short record from `ALTER TABLE ADD COLUMN` reads its default through
         // the same mask when the new column is the only projection.
         engine.execute_one("ALTER TABLE t ADD COLUMN extra TEXT DEFAULT 'd'").expect("add column");
-        assert_eq!(
-            engine.execute_one("SELECT extra FROM t ORDER BY id").expect("default").rows,
-            vec![vec![Cell::Text("d".to_string())]; 3]
-        );
+        assert_eq!(engine.execute_one("SELECT extra FROM t ORDER BY id").expect("default").rows, vec![vec![Cell::Text("d".to_string())]; 3]);
     }
 
     /// 连接计数走裁剪后的行集与 rowid 探针时,行数必须与非连接的全扫描
