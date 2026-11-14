@@ -311,6 +311,44 @@ fn probe_key(cell: &Cell, collation: Collation) -> Option<ProbeKey> {
     }
 }
 
+/// 全字面量 `IN` 列表的预计算形态：解析期建一次，求值期只做一次哈希查找。
+///
+/// 逐行重算 `IN` 列表会让 `where id in (<100 个字面量>)` 退化成每行 100 次
+/// 表达式求值与比较（`in_list` 基准的热点）。列表项全是无 `COLLATE` 的字面量
+/// 时语义与按 `BINARY` 归一化的键集完全一致，因此可以安全地折叠成键集。
+#[derive(Clone, PartialEq)]
+struct InListConstant {
+    /// 非 NULL 列表项按 `BINARY` 归一化后的键集。
+    keys: std::collections::HashSet<ProbeKey>,
+    /// 列表里出现过 `NULL`：未命中时结果为 `NULL` 而不是布尔假。
+    saw_null: bool,
+}
+
+/// 把全字面量 `IN` 列表折叠成键集；含表达式、参数或逐项 `COLLATE` 时返回
+/// `None`，调用方回退到逐项求值。
+fn constant_in_list(list: &[ResolvedExpr]) -> Option<InListConstant> {
+    let mut keys = std::collections::HashSet::with_capacity(list.len());
+    let mut saw_null = false;
+    for item in list {
+        let ResolvedExpr::Cell(cell) = item
+        else {
+            return None;
+        };
+        if matches!(cell, Cell::Null) {
+            saw_null = true;
+            continue;
+        }
+        let key = probe_key(cell, Collation::Binary)?;
+        // 超出 binary64 精确范围的整数与实数比较会走数值语义；键集区分
+        // `Wide` / `Number`，此时折叠后的相等判定不再等价，回退逐项比较。
+        if matches!(key, ProbeKey::Wide(_)) {
+            return None;
+        }
+        keys.insert(key);
+    }
+    Some(InListConstant { keys, saw_null })
+}
+
 /// Signature of an integer: exact binary64 values fold onto the numeric bits,
 /// everything else keeps the full `i64`.
 fn integer_probe_key(value: i64) -> ProbeKey {
@@ -5362,10 +5400,19 @@ impl Engine {
                 end = sorted[next];
                 next += 1;
             }
-            let stored = self
-                .writer
-                .table_range(&def.name, start, end, TableLimits::default())
-                .map_err(|error| storage_failure(error).in_statement(statement))?;
+            let stored = if start == end {
+                // 单行候选直接走 writer 的 rowid 下钻：点查/按唯一键改写是
+                // DML 的常见形态，不必为一行重建区间读取上下文。
+                match self.writer.row_payload(&def.name, start).map_err(|error| storage_failure(error).in_statement(statement))? {
+                    Some(payload) => vec![TableRow { rowid: start, payload }],
+                    None => Vec::new(),
+                }
+            }
+            else {
+                self.writer
+                    .table_range(&def.name, start, end, TableLimits::default())
+                    .map_err(|error| storage_failure(error).in_statement(statement))?
+            };
             for row in &stored {
                 rows.push((row.rowid, decode_row(&row.payload, def, row.rowid)?));
             }
@@ -9112,11 +9159,14 @@ impl Engine {
         }
         let mut stored = Vec::with_capacity(rowids.len());
         for rowid in rowids {
-            stored.extend(
-                self.writer
-                    .table_range(table, *rowid, *rowid, TableLimits::default())
-                    .map_err(|error| storage_failure(error).in_statement("select"))?,
-            );
+            // 单行候选走写入器的 rowid 下钻，避免为一行重建整个区间读取上下文。
+            if let Some(payload) = self
+                .writer
+                .row_payload(table, *rowid)
+                .map_err(|error| storage_failure(error).in_statement("select"))?
+            {
+                stored.push(TableRow { rowid: *rowid, payload });
+            }
         }
         Ok(stored)
     }
@@ -9265,11 +9315,16 @@ impl Engine {
                 // rowid table: bound the scan to the one candidate row instead
                 // of decoding the whole table. The full predicate still runs in
                 // `cross_product`, so the emitted row set and order are exactly
-                // the unpushed path's; a miss yields no rows.
+                // the unpushed path's; a miss yields no rows. The writer's own
+                // rowid descent reads one cell instead of walking the reader's
+                // whole checked-range path.
                 Some(ScanHint::Pin(rowid)) => self
                     .writer
-                    .table_range(&def.name, *rowid, *rowid, TableLimits::default())
-                    .map_err(|error| storage_failure(error).in_statement("select"))?,
+                    .row_payload(&def.name, *rowid)
+                    .map_err(|error| storage_failure(error).in_statement("select"))?
+                    .map(|payload| TableRow { rowid: *rowid, payload })
+                    .into_iter()
+                    .collect(),
                 // A `WHERE <indexed column> = <literal>` covering every key
                 // column of a plain index: fetch just the probe's rowids. They
                 // arrive ascending, which is both the index order under one
@@ -10762,7 +10817,7 @@ enum ResolvedExpr {
         otherwise: Option<Box<ResolvedExpr>>,
     },
     /// `x IN (...)` or `x NOT IN (...)`.
-    In { value: Box<ResolvedExpr>, list: Vec<ResolvedExpr>, negated: bool, collation: Option<Collation> },
+    In { value: Box<ResolvedExpr>, list: Vec<ResolvedExpr>, negated: bool, collation: Option<Collation>, constant: Option<InListConstant> },
     /// Scalar function call.
     Function { name: ScalarFunction, args: Vec<ResolvedExpr> },
     /// 宿主注册的自定义标量函数调用;名字已折叠为小写。
@@ -10982,10 +11037,22 @@ impl ResolvedExpr {
                     None => Cell::Null,
                 }
             }
-            Self::In { value, list, negated, collation } => {
+            Self::In { value, list, negated, collation, constant } => {
                 let value = value.eval(values, ctx)?;
                 if matches!(value, Cell::Null) {
                     return Ok(Cell::Null);
+                }
+                if let Some(constant) = constant {
+                    let found = probe_key(&value, Collation::Binary).is_some_and(|key| constant.keys.contains(&key));
+                    return Ok(if found {
+                        Cell::Integer(i64::from(!*negated))
+                    }
+                    else if constant.saw_null {
+                        Cell::Null
+                    }
+                    else {
+                        Cell::Integer(i64::from(*negated))
+                    });
                 }
                 let mut saw_null = false;
                 for item in list {
@@ -11490,18 +11557,26 @@ fn resolve_expr(
                 })
                 .transpose()?,
         },
-        Expr::In { value, list, negated } => ResolvedExpr::In {
-            collation: match parsed_collation(value, relation)? {
+        Expr::In { value, list, negated } => {
+            let collation = match parsed_collation(value, relation)? {
                 Collation::Binary => None,
                 collation => Some(collation),
-            },
-            value: Box::new(resolve_expr(value, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
-            list: list
+            };
+            let list = list
                 .iter()
                 .map(|item| resolve_expr(item, relation, outer, named, windows, aggregates, allow_aggregate, allow_window))
-                .collect::<Result<Vec<_>, _>>()?,
-            negated: *negated,
-        },
+                .collect::<Result<Vec<_>, _>>()?;
+            // 左操作数没有显式 `COLLATE` 且列表项全是字面量时，逐项比较等价于
+            // 对 `BINARY` 键集做一次哈希查找，可在解析期折叠。
+            let constant = if collation.is_none() { constant_in_list(&list) } else { None };
+            ResolvedExpr::In {
+                collation,
+                value: Box::new(resolve_expr(value, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
+                list,
+                negated: *negated,
+                constant,
+            }
+        }
         Expr::Function { name, args } => ResolvedExpr::Function {
             name: *name,
             args: args
