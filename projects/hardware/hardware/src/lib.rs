@@ -6,6 +6,7 @@
 #![warn(missing_docs)]
 
 pub use hardware_capability as capability;
+pub use hardware_harness as harness;
 pub use hardware_ir as ir;
 pub use hardware_optimize as optimize;
 pub use hardware_runtime as runtime;

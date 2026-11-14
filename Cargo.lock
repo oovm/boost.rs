@@ -1979,6 +1979,7 @@ dependencies = [
  "hardware-backend-rocm",
  "hardware-backend-vulkan",
  "hardware-capability",
+ "hardware-harness",
  "hardware-ir",
  "hardware-optimize",
  "hardware-runtime",
@@ -2082,6 +2083,13 @@ name = "hardware-frontend"
 version = "0.1.0"
 dependencies = [
  "hardware-program",
+]
+
+[[package]]
+name = "hardware-harness"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

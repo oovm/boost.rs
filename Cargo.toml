@@ -75,6 +75,7 @@ members = [
     "projects/hardware/hardware.capability",
     "projects/hardware/hardware.emitter",
     "projects/hardware/hardware.frontend",
+    "projects/hardware/hardware.harness",
     "projects/hardware/hardware.input.glsl",
     "projects/hardware/hardware.input.hlsl",
     "projects/hardware/hardware.input.wgsl",
@@ -228,6 +229,7 @@ hardware-backend-vulkan = { path = "projects/hardware/hardware.backends/hardware
 hardware-capability = { path = "projects/hardware/hardware.capability" }
 hardware-emitter = { path = "projects/hardware/hardware.emitter" }
 hardware-frontend = { path = "projects/hardware/hardware.frontend" }
+hardware-harness = { path = "projects/hardware/hardware.harness" }
 hardware-input-glsl = { path = "projects/hardware/hardware.input.glsl" }
 hardware-input-hlsl = { path = "projects/hardware/hardware.input.hlsl" }
 hardware-input-wgsl = { path = "projects/hardware/hardware.input.wgsl" }

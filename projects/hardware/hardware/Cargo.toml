@@ -20,6 +20,7 @@ rocm = ["dep:hardware-backend-rocm"]
 hardware-types = { workspace = true }
 hardware-ir = { workspace = true }
 hardware-capability = { workspace = true }
+hardware-harness = { workspace = true }
 hardware-optimize = { workspace = true }
 hardware-scheduler = { workspace = true }
 hardware-runtime = { workspace = true }
