@@ -1,6 +1,6 @@
 use std::fmt;
 
-use boost_diagnostic::{Diagnostic, MessageArg};
+use boost_harness::diagnostic::{Diagnostic, MessageArg};
 
 /// Crawler orchestration error — structured diagnostic with stable code,
 /// typed args, cause chain, and origin.

@@ -3,7 +3,7 @@ use std::{
     time::Duration,
 };
 
-use boost_diagnostic::{DiagnosticSeverity, Message, MessageArg};
+use boost_harness::diagnostic::{DiagnosticSeverity, Message, MessageArg};
 use crawler_browser::{BrowserProvider, snapshot_to_fetch_artifact};
 use crawler_fetch::{FetchClient, FetchRequest, RobotsPolicy, Transport, site_key_for_url};
 use crawler_frontier::{FrontierQueue, FrontierSink, frontier_from_links};
@@ -259,7 +259,7 @@ fn enqueue_state_queue(store: &mut dyn Store, frontier: &mut StoreFrontier, queu
 }
 
 fn store_error(error: impl std::fmt::Display) -> CrawlError {
-    let diag = boost_diagnostic::Diagnostic::new(
+    let diag = boost_harness::diagnostic::Diagnostic::new(
         pd::code(pd::STORE_UNAVAILABLE),
         DiagnosticSeverity::Error,
         pd::origin_crawl(),
@@ -410,7 +410,7 @@ fn record_cancelled(state: &mut CrawlState, store: &Option<&mut dyn Store>) {
     let remaining = remaining_frontier(state, store);
     state.report.budget_status = CrawlBudgetStatus::Cancelled;
     state.report.remaining_frontier = remaining;
-    let diagnostic = boost_diagnostic::Diagnostic::new(
+    let diagnostic = boost_harness::diagnostic::Diagnostic::new(
         pd::code(pd::RUN_CANCELLED),
         DiagnosticSeverity::Warning,
         pd::origin_crawl(),
@@ -584,7 +584,7 @@ fn retry_or_exhaust(state: &mut CrawlState, item: &FrontierItem, reason: &str, r
             .report
             .events
             .push(CrawlEvent::Failed { url: item.request_url.clone(), reason: format!("retry-exhausted:{reason}") });
-        let diagnostic = boost_diagnostic::Diagnostic::new(
+        let diagnostic = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::FETCH_RETRY_EXHAUSTED),
             DiagnosticSeverity::Warning,
             pd::origin_fetch(),
@@ -1035,7 +1035,7 @@ fn record_skipped(state: &mut CrawlState, item: &FrontierItem, reason: &str) {
 fn record_budget_exhausted(state: &mut CrawlState, remaining: u32) {
     state.report.budget_status = CrawlBudgetStatus::Exhausted;
     state.report.remaining_frontier = remaining;
-    let diagnostic = boost_diagnostic::Diagnostic::new(
+    let diagnostic = boost_harness::diagnostic::Diagnostic::new(
         pd::code(pd::CRAWL_BUDGET_EXHAUSTED),
         DiagnosticSeverity::Warning,
         pd::origin_crawl(),
@@ -1068,7 +1068,7 @@ fn validate_resume_strategy(resume: &ResumeState, options: CrawlOptions<'_>) -> 
     if let Some(expected) = &resume.strategy_fingerprint {
         let actual = options.strategy_fingerprint.map(str::to_string).unwrap_or_else(|| default_strategy_fingerprint(options));
         if expected != &actual {
-            let diag = boost_diagnostic::Diagnostic::new(
+            let diag = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::REQUEST_INVALID),
                 DiagnosticSeverity::Error,
                 pd::origin_crawl(),

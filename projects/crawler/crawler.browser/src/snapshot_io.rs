@@ -1,12 +1,12 @@
 use std::{fs, path::Path};
 
-use boost_diagnostic::{DiagnosticSeverity, Message, MessageArg};
+use boost_harness::diagnostic::{DiagnosticSeverity, Message, MessageArg};
 use crawler_types::{BrowserSnapshot, CrawlError, Result, diagnostics as pd};
 
 use crate::provider::FixtureBrowserProvider;
 
 fn map_snapshot_io(action: &str, path: &Path, error: std::io::Error) -> CrawlError {
-    let diag = boost_diagnostic::Diagnostic::new(
+    let diag = boost_harness::diagnostic::Diagnostic::new(
         pd::code(pd::BROWSER_UNAVAILABLE),
         DiagnosticSeverity::Error,
         pd::origin_browser(),
@@ -20,7 +20,7 @@ fn map_snapshot_io(action: &str, path: &Path, error: std::io::Error) -> CrawlErr
 }
 
 fn map_snapshot_json(path: &Path, error: serde_json::Error) -> CrawlError {
-    let diag = boost_diagnostic::Diagnostic::new(
+    let diag = boost_harness::diagnostic::Diagnostic::new(
         pd::code(pd::BROWSER_SNAPSHOT_INVALID),
         DiagnosticSeverity::Error,
         pd::origin_browser(),
@@ -43,7 +43,7 @@ pub fn load_snapshot_json(path: impl AsRef<Path>) -> Result<BrowserSnapshot> {
 pub fn save_snapshot_json(path: impl AsRef<Path>, snapshot: &BrowserSnapshot) -> Result<()> {
     let path = path.as_ref();
     let json = serde_json::to_string_pretty(snapshot).map_err(|error| {
-        let diag = boost_diagnostic::Diagnostic::new(
+        let diag = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::BROWSER_SNAPSHOT_INVALID),
             DiagnosticSeverity::Error,
             pd::origin_browser(),
@@ -63,7 +63,7 @@ pub fn parse_browser_dirs(spec: &str) -> Vec<std::path::PathBuf> {
 
 fn load_snapshots_from_dir_into(provider: &mut FixtureBrowserProvider, dir: &Path) -> Result<u32> {
     if !dir.is_dir() {
-        let diag = boost_diagnostic::Diagnostic::new(
+        let diag = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::BROWSER_UNAVAILABLE),
             DiagnosticSeverity::Error,
             pd::origin_browser(),
@@ -77,7 +77,7 @@ fn load_snapshots_from_dir_into(provider: &mut FixtureBrowserProvider, dir: &Pat
     let mut loaded = 0u32;
     for entry in fs::read_dir(dir).map_err(|error| map_snapshot_io("read browser fixtures dir", dir, error))? {
         let entry = entry.map_err(|error| {
-            let diag = boost_diagnostic::Diagnostic::new(
+            let diag = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::BROWSER_UNAVAILABLE),
                 DiagnosticSeverity::Warning,
                 pd::origin_browser(),
@@ -103,7 +103,7 @@ fn load_snapshots_from_dir_into(provider: &mut FixtureBrowserProvider, dir: &Pat
 /// Later directories override earlier snapshots for the same URL.
 pub fn load_fixture_provider_from_dirs(dirs: &[impl AsRef<Path>]) -> Result<FixtureBrowserProvider> {
     if dirs.is_empty() {
-        let diag = boost_diagnostic::Diagnostic::new(
+        let diag = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::BROWSER_UNAVAILABLE),
             DiagnosticSeverity::Error,
             pd::origin_browser(),
@@ -118,7 +118,7 @@ pub fn load_fixture_provider_from_dirs(dirs: &[impl AsRef<Path>]) -> Result<Fixt
         loaded += load_snapshots_from_dir_into(&mut provider, dir.as_ref())?;
     }
     if loaded == 0 {
-        let diag = boost_diagnostic::Diagnostic::new(
+        let diag = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::BROWSER_UNAVAILABLE),
             DiagnosticSeverity::Error,
             pd::origin_browser(),
@@ -136,7 +136,7 @@ pub fn load_fixture_provider_from_dir(dir: impl AsRef<Path>) -> Result<FixtureBr
     let mut provider = FixtureBrowserProvider::new();
     let loaded = load_snapshots_from_dir_into(&mut provider, dir)?;
     if loaded == 0 {
-        let diag = boost_diagnostic::Diagnostic::new(
+        let diag = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::BROWSER_UNAVAILABLE),
             DiagnosticSeverity::Error,
             pd::origin_browser(),

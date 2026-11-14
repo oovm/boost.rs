@@ -2,7 +2,7 @@
 name = "boost"
 version.workspace = true
 authors.workspace = true
-description = "Feature-gated facade for orthogonal Rust standard-library enhancements (log, console, diagnostic, test, source, …)"
+description = "Feature-gated facade for orthogonal Rust standard-library enhancements (harness, console, diagnostic, source, …)"
 repository = "https://github.com/oovm/rust-boost/tree/dev/projects/boost"
 readme = "readme.md"
 license.workspace = true
@@ -12,28 +12,25 @@ categories = ["development-tools"]
 
 [dependencies]
 boost-console = { workspace = true, optional = true }
-boost-diagnostic = { workspace = true, optional = true }
 boost-fs = { workspace = true, optional = true }
-boost-log = { workspace = true, optional = true }
+boost-harness = { workspace = true, optional = true }
+boost-harness-macro = { workspace = true, optional = true }
 boost-random = { workspace = true, optional = true }
 boost-source = { workspace = true, optional = true }
 boost-terminal = { workspace = true, optional = true }
-boost-test = { workspace = true, optional = true }
-boost-test-macro = { workspace = true, optional = true }
-boost-benchmark = { workspace = true, optional = true }
 
 [features]
 default = []
-benchmark = ["dep:boost-benchmark"]
-console = ["dep:boost-console", "boost-console/console"]
-diagnostic = ["dep:boost-diagnostic"]
+benchmark = ["dep:boost-harness"]
+console = ["dep:boost-console", "dep:boost-harness"]
+diagnostic = ["dep:boost-harness"]
 fmt = ["dep:boost-console"]
 fs = ["dep:boost-fs"]
-log = ["dep:boost-log"]
+log = ["dep:boost-harness"]
 random = ["dep:boost-random"]
 source = ["dep:boost-source"]
 terminal = ["dep:boost-terminal"]
-test = ["dep:boost-test", "dep:boost-test-macro", "boost-test/macros"]
+test = ["dep:boost-harness", "dep:boost-harness-macro"]
 
 [[test]]
 name = "facade_test_macro"

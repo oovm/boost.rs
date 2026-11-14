@@ -10,7 +10,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use boost_diagnostic::{DiagnosticCause, DiagnosticSeverity, Message, MessageArg};
+use boost_harness::diagnostic::{DiagnosticCause, DiagnosticSeverity, Message, MessageArg};
 use crawler_types::{CrawlError, ExtractResult, Result, diagnostics as pd};
 use document_diagnostic::{DiagnosticEnvelope, diagnostics_from_graph, loss_severity};
 use document_formats::export::markdown_project::{MarkdownProject, export_markdown_project};
@@ -52,7 +52,7 @@ pub fn publish_extracted_page(
     extract: &ExtractResult,
 ) -> Result<PublishedPageProject> {
     let document = extract.document.as_ref().ok_or_else(|| {
-        let diag = boost_diagnostic::Diagnostic::new(
+        let diag = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::EXTRACT_PARSE_FAILED),
             DiagnosticSeverity::Error,
             pd::origin_extract(),
@@ -248,7 +248,7 @@ fn acquire_publish_lock(lock_path: &Path) -> Result<()> {
             return Ok(());
         }
     }
-    let diag = boost_diagnostic::Diagnostic::new(
+    let diag = boost_harness::diagnostic::Diagnostic::new(
         pd::code(pd::PUBLISH_CONFLICT),
         DiagnosticSeverity::Error,
         pd::origin_store(),
@@ -370,7 +370,7 @@ fn project_path_key_of(project_path: &str) -> String {
 }
 
 fn invalid_layout(message: String) -> CrawlError {
-    let diag = boost_diagnostic::Diagnostic::new(
+    let diag = boost_harness::diagnostic::Diagnostic::new(
         pd::code(pd::REQUEST_INVALID),
         DiagnosticSeverity::Error,
         pd::origin_extract(),
@@ -446,7 +446,7 @@ fn map_format_error(error: document_formats::FormatError) -> CrawlError {
     // wire code (so consumers key on stable Notedown codes), and add a
     // Crawler-origin wrapper with its own context code alongside.
     let notedown_diag = document_formats::from_format_error(&error);
-    let wrapper = boost_diagnostic::Diagnostic::new(
+    let wrapper = boost_harness::diagnostic::Diagnostic::new(
         pd::code(pd::EXTRACT_PARSE_FAILED),
         DiagnosticSeverity::Error,
         pd::origin_extract(),
@@ -464,7 +464,7 @@ fn map_format_error(error: document_formats::FormatError) -> CrawlError {
 }
 
 fn map_io_error(error: io::Error) -> CrawlError {
-    let diag = boost_diagnostic::Diagnostic::new(
+    let diag = boost_harness::diagnostic::Diagnostic::new(
         pd::code(pd::CACHE_WRITE_FAILED),
         DiagnosticSeverity::Error,
         pd::origin_store(),

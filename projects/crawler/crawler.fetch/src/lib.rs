@@ -95,12 +95,12 @@ fn infer_content_type(url: &Url) -> Option<String> {
 pub fn map_transport_error(message: impl Into<String>) -> CrawlError {
     let message = message.into();
     log_transport_error(&message);
-    let diag = boost_diagnostic::Diagnostic::new(
+    let diag = boost_harness::diagnostic::Diagnostic::new(
         crawler_types::diagnostics::code(crawler_types::diagnostics::FETCH_TRANSPORT_FAILED),
-        boost_diagnostic::DiagnosticSeverity::Error,
+        boost_harness::diagnostic::DiagnosticSeverity::Error,
         crawler_types::diagnostics::origin_fetch(),
-        boost_diagnostic::Message::new("crawler.diagnostic.transportFailed")
-            .with_arg("message", boost_diagnostic::MessageArg::Text(message.clone()))
+        boost_harness::diagnostic::Message::new("crawler.diagnostic.transportFailed")
+            .with_arg("message", boost_harness::diagnostic::MessageArg::Text(message.clone()))
             .with_fallback(format!("transport failure: {message}")),
     );
     CrawlError::from(diag)
@@ -108,7 +108,7 @@ pub fn map_transport_error(message: impl Into<String>) -> CrawlError {
 
 #[cfg(feature = "logger")]
 fn log_transport_error(message: &str) {
-    boost_log::event!(Error, "crawler.transport", message = message);
+    boost_harness::log::event!(Error, "crawler.transport", message = message);
 }
 
 #[cfg(not(feature = "logger"))]

@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
-use boost_diagnostic::{Diagnostic, DiagnosticCode, DiagnosticOrigin, DiagnosticSeverity, Message, MessageArg};
+use boost_harness::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticOrigin, DiagnosticSeverity, Message, MessageArg};
 
 /// Producer namespace for template diagnostics.
 pub const NAMESPACE: &str = "template";

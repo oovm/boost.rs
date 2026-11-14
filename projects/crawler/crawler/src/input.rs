@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use boost_diagnostic::{DiagnosticSeverity, Message, MessageArg};
+use boost_harness::diagnostic::{DiagnosticSeverity, Message, MessageArg};
 use crawler_types::{BrowserSnapshot, CrawlError, FetchArtifact, Result, diagnostics as pd};
 
 use crawler_browser::{load_snapshot_json, path_looks_like_snapshot};
@@ -33,7 +33,7 @@ pub fn parse_input_format(from: Option<&str>) -> Result<InputFormat> {
         "snapshot" => Ok(InputFormat::Snapshot),
         "auto" => Ok(InputFormat::Auto),
         other => {
-            let diag = boost_diagnostic::Diagnostic::new(
+            let diag = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::REQUEST_INVALID),
                 DiagnosticSeverity::Error,
                 pd::origin_crawl(),
@@ -65,7 +65,7 @@ pub fn load_input_with_source(path: &str, format: InputFormat, source_url: Optio
     let mut loaded = load_input_impl(path, format)?;
     if let (LoadedInput::Artifact(artifact), Some(source_url)) = (&mut loaded, source_url) {
         let page_url = url::Url::parse(source_url).map_err(|error| {
-            let diag = boost_diagnostic::Diagnostic::new(
+            let diag = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::URL_INVALID),
                 DiagnosticSeverity::Error,
                 pd::origin_crawl(),
@@ -100,7 +100,7 @@ fn load_input_impl(path: &str, format: InputFormat) -> Result<LoadedInput> {
         InputFormat::Snapshot => Ok(LoadedInput::Snapshot(load_snapshot_json(file_path)?)),
         InputFormat::Html => {
             let file_url = url::Url::from_file_path(file_path).map_err(|_| {
-                let diag = boost_diagnostic::Diagnostic::new(
+                let diag = boost_harness::diagnostic::Diagnostic::new(
                     pd::code(pd::URL_INVALID),
                     DiagnosticSeverity::Error,
                     pd::origin_crawl(),

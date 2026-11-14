@@ -25,9 +25,9 @@ pub(crate) fn map_format_error(error: FormatError) -> AdapterError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use boost_diagnostic::DiagnosticCode;
+    use boost_harness::diagnostic::DiagnosticCode;
 
-    fn extract_inner_diag(error: &AdapterError) -> &boost_diagnostic::Diagnostic {
+    fn extract_inner_diag(error: &AdapterError) -> &boost_harness::diagnostic::Diagnostic {
         match error {
             AdapterError::Diagnostic { diagnostic } => diagnostic,
             _ => panic!("expected Diagnostic variant"),

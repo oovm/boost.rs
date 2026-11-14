@@ -16,7 +16,7 @@ edition.workspace = true
 
 [dependencies]
 
-boost-diagnostic = { workspace = true }
+boost-harness = { workspace = true }
 document-types = { workspace = true }
 document-diagnostic = { workspace = true }
 
@@ -47,5 +47,4 @@ logger = ["document-diagnostic/logger"]
 console = ["logger"]
 
 [dev-dependencies]
-boost-log = { workspace = true }
 serial_test = "3.2.0"

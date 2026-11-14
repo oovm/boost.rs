@@ -1,6 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use boost_diagnostic::{DiagnosticSeverity, Message, MessageArg};
+use boost_harness::diagnostic::{DiagnosticSeverity, Message, MessageArg};
 use url::Url;
 
 use crate::{
@@ -16,7 +16,7 @@ use crate::{
 /// may affect resource identity.
 pub fn canonicalize_request_url(raw: &str) -> Result<Url> {
     let parsed = Url::parse(raw).map_err(|error| {
-        let diag = boost_diagnostic::Diagnostic::new(
+        let diag = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::URL_INVALID),
             DiagnosticSeverity::Error,
             pd::origin_fetch(),
@@ -36,7 +36,7 @@ pub const MAX_URL_LENGTH: usize = 8192;
 /// Canonicalize an already parsed URL.
 pub fn canonicalize_parsed_url(mut url: Url) -> Result<Url> {
     if url.scheme() != "http" && url.scheme() != "https" && url.scheme() != "file" {
-        let diag = boost_diagnostic::Diagnostic::new(
+        let diag = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::URL_OUT_OF_POLICY),
             DiagnosticSeverity::Error,
             pd::origin_fetch(),
@@ -48,7 +48,7 @@ pub fn canonicalize_parsed_url(mut url: Url) -> Result<Url> {
     }
 
     if url.as_str().len() > MAX_URL_LENGTH {
-        let diag = boost_diagnostic::Diagnostic::new(
+        let diag = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::URL_OUT_OF_POLICY),
             DiagnosticSeverity::Error,
             pd::origin_fetch(),
@@ -66,7 +66,7 @@ pub fn canonicalize_parsed_url(mut url: Url) -> Result<Url> {
     let host = url
         .host_str()
         .ok_or_else(|| {
-            let diag = boost_diagnostic::Diagnostic::new(
+            let diag = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::URL_INVALID),
                 DiagnosticSeverity::Error,
                 pd::origin_fetch(),
@@ -79,7 +79,7 @@ pub fn canonicalize_parsed_url(mut url: Url) -> Result<Url> {
         .to_ascii_lowercase();
 
     url.set_host(Some(&host)).map_err(|error| {
-        let diag = boost_diagnostic::Diagnostic::new(
+        let diag = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::URL_INVALID),
             DiagnosticSeverity::Error,
             pd::origin_fetch(),

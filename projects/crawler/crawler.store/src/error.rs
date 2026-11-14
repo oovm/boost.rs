@@ -1,6 +1,6 @@
 use std::fmt;
 
-use boost_diagnostic::{Diagnostic, DiagnosticSeverity, Message, MessageArg};
+use boost_harness::diagnostic::{Diagnostic, DiagnosticSeverity, Message, MessageArg};
 use crawler_types::diagnostics as pd;
 
 /// Stable store-level errors exposed to Crawler core.
@@ -98,7 +98,7 @@ pub type Result<T> = std::result::Result<T, StoreError>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use boost_diagnostic::DiagnosticCode;
+    use boost_harness::diagnostic::DiagnosticCode;
 
     fn extract_code(error: &StoreError) -> String {
         let diag = error.to_diagnostic();

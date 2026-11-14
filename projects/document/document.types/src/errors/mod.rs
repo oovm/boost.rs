@@ -5,7 +5,7 @@ mod display;
 
 use std::{error::Error, fmt::Debug};
 
-use boost_diagnostic::Diagnostic;
+use boost_harness::diagnostic::Diagnostic;
 
 /// Fatal failure in a Panduck reader, writer, or orchestration step.
 #[derive(Debug)]

@@ -42,21 +42,17 @@ jobs:
       - name: Source serde
         run: cargo test -p boost-source --features serde
       - name: Log
-        run: cargo test -p boost-log
+        run: cargo test -p boost-harness
       - name: Console fmt module
         run: cargo test -p boost-console --no-default-features --features fmt
-      - name: Console projection
-        run: cargo test -p boost-console
       - name: Boost facade
-        run: cargo test -p boost --features console,log,source,random,fmt,terminal,fs,diagnostic,test
-      - name: Diagnostic core
-        run: cargo test -p boost-diagnostic --no-default-features
-      - name: Diagnostic serde
-        run: cargo test -p boost-diagnostic --features serde
-      - name: Diagnostic log projection
-        run: cargo test -p boost-diagnostic --features log
-      - name: Test core without macros
-        run: cargo test -p boost-test --no-default-features
+        run: cargo test -p boost --features console,log,source,random,fmt,terminal,fs,diagnostic,test,benchmark
+      - name: Harness serde
+        run: cargo test -p boost-harness --features serde
+      - name: Harness terminal
+        run: cargo test -p boost-harness --features terminal
+      - name: Harness all optional features
+        run: cargo test -p boost-harness --all-features
       - name: Android must not reuse the Linux backend
         run: cargo check -p boost-random --features system --target aarch64-linux-android
 

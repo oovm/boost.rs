@@ -15,7 +15,7 @@ exclude = ["package.json", "tests/**"]
 doctest = false
 
 [dependencies]
-boost-diagnostic = { workspace = true }
+boost-harness = { workspace = true }
 document-ir = { workspace = true }
 url = { workspace = true }
 byteorder = { workspace = true }

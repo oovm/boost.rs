@@ -14,13 +14,14 @@ Default features are **empty**. Enable only what you need:
 | `random` | `boost::random` | `boost-random` |
 | `fmt` | `boost::fmt` | `boost-console` (`fmt` module only) |
 | `terminal` | `boost::terminal` | `boost-terminal` |
-| `console` | `boost::console` | `boost-console` (full console surface) |
+| `console` | `boost::console` | `boost-console` plus `boost-harness::log::console` |
 | `fs` | `boost::fs` | `boost-fs` |
-| `log` | `boost::log` | `boost-log` |
-| `diagnostic` | `boost::diagnostic` | `boost-diagnostic` |
-| `test` | `boost::test` | `boost-test` |
+| `log` | `boost::log` | `boost-harness::log` |
+| `diagnostic` | `boost::diagnostic` | `boost-harness::diagnostic` |
+| `test` | `boost::test` | `boost-harness::test` |
+| `benchmark` | `boost::benchmark` | `boost-harness::benchmark` |
 
-`fmt` enables only the styling submodule inside `boost-console`. `console` enables the full console surface (render, sinks, subscriber) and implies `log` and `terminal`. `diagnostic` pulls `boost-source` through `boost-diagnostic`.
+`console` opens the styling primitives plus log rendering, stderr sinks, and the default subscriber. `diagnostic` and `log` share one `boost-harness` dependency.
 
 ## Example
 
@@ -41,10 +42,9 @@ fn main() {
 
 ## Direct crates
 
-Libraries that expose only one concern should depend on `boost-log`, `boost-console`, or another member crate directly. The facade is for applications and integration tests that want one manifest line and explicit feature toggles.
+Libraries that expose only one concern should depend on `boost-harness`, `boost-console`, or another member crate directly. The facade is for applications and integration tests that want one manifest line and explicit feature toggles.
 
 ## Related packages
 
-- [`boost-console`](../boost-console/readme.md) — human-visible stderr output (depends on `boost-log`)
-- [`boost-diagnostic`](../boost-diagnostic/readme.md) — structured diagnostic facts
-- [`boost-test`](../boost-test/readme.md) — correctness harness and assertions
+- [`boost-harness`](../boost.harness/readme.md) — log events, diagnostics, tests, and benchmarks
+- [`boost-console`](../boost-console/readme.md) — terminal styling primitives

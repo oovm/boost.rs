@@ -14,4 +14,4 @@ doctest = false
 document-ir = { workspace = true }
 serde = { workspace = true }
 url = { workspace = true }
-boost-diagnostic = { workspace = true }
+boost-harness = { workspace = true }

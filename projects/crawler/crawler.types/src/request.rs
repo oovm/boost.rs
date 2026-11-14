@@ -1,4 +1,4 @@
-use boost_diagnostic::{DiagnosticSeverity, Message, MessageArg};
+use boost_harness::diagnostic::{DiagnosticSeverity, Message, MessageArg};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -30,7 +30,7 @@ impl CrawlSeed {
     /// Parse a seed URL string.
     pub fn parse(url: &str) -> Result<Self> {
         let parsed = Url::parse(url).map_err(|error| {
-            let diag = boost_diagnostic::Diagnostic::new(
+            let diag = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::URL_INVALID),
                 DiagnosticSeverity::Error,
                 pd::origin_fetch(),
@@ -139,7 +139,7 @@ impl CrawlRequest {
     pub fn from_seeds(urls: impl IntoIterator<Item = impl AsRef<str>>) -> Result<Self> {
         let seeds = urls.into_iter().map(|url| CrawlSeed::parse(url.as_ref())).collect::<Result<Vec<_>>>()?;
         if seeds.is_empty() {
-            let diag = boost_diagnostic::Diagnostic::new(
+            let diag = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::REQUEST_INVALID),
                 DiagnosticSeverity::Error,
                 pd::origin_fetch(),

@@ -1,7 +1,7 @@
 //! Stable diagnostic codes and constructors built on the workspace
-//! `boost-diagnostic` model.
+//! `boost_harness::diagnostic` model.
 
-pub use boost_diagnostic::{
+pub use boost_harness::diagnostic::{
     ByteRange, Diagnostic, DiagnosticLabel, DiagnosticLocation, DiagnosticOrigin, DiagnosticSeverity, LabelRole, Message,
     SourceRef,
 };

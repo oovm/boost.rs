@@ -1,13 +1,13 @@
 //! Crawler diagnostic constants and origin constructors.
 //!
 //! This module freezes the Crawler product namespace on top of
-//! [`boost_diagnostic`]'s neutral diagnostic model. Every code emitted by
+//! [`boost_harness::diagnostic`]'s neutral diagnostic model. Every code emitted by
 //! Crawler production code is a dotted identifier drawn from the stable
 //! tables below; changing a code string is a breaking wire change.
 //!
-//! Wire contract version: `diagnostic/v1` (see [`boost_diagnostic::wire::SCHEMA_VERSION`]).
+//! Wire contract version: `diagnostic/v1` (see [`boost_harness::diagnostic::wire::SCHEMA_VERSION`]).
 
-use boost_diagnostic::{DiagnosticCode, DiagnosticOrigin};
+use boost_harness::diagnostic::{DiagnosticCode, DiagnosticOrigin};
 
 /// Crawler namespace — the product origin for every diagnostic this crate emits.
 pub const NAMESPACE: &str = "crawler";
@@ -193,7 +193,7 @@ pub fn code(code: &'static str) -> DiagnosticCode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use boost_diagnostic::Message;
+    use boost_harness::diagnostic::Message;
 
     #[test]
     fn origin_constructors_use_crawler_namespace() {
@@ -252,7 +252,7 @@ mod tests {
 
     #[test]
     fn message_with_fallback_preserves_key_and_args() {
-        use boost_diagnostic::MessageArg;
+        use boost_harness::diagnostic::MessageArg;
         let msg = Message::new("crawler.fetch.http-status").with_arg("status", MessageArg::I64(429)).with_fallback("got a 429");
         assert_eq!(msg.key(), "crawler.fetch.http-status");
         assert_eq!(msg.args().len(), 1);

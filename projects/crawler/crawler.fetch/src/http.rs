@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, time::Duration};
 
-use boost_diagnostic::{Diagnostic, DiagnosticSeverity, Message, MessageArg};
+use boost_harness::diagnostic::{Diagnostic, DiagnosticSeverity, Message, MessageArg};
 use boost_http::{
     Headers, HttpTransport as RequestHttpTransport, HttpTransportConfig, Method, Request, RequestError,
     Transport as RequestTransport,

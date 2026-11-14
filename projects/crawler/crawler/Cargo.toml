@@ -16,7 +16,7 @@ crate-type = ["rlib"]
 [dependencies]
 blake3 = { workspace = true }
 acorn-codec = { workspace = true }
-boost-diagnostic = { workspace = true }
+boost-harness = { workspace = true }
 document-ir = { workspace = true }
 document-diagnostic = { workspace = true }
 document-formats = { workspace = true, features = ["markdown"] }
@@ -32,7 +32,6 @@ url = { workspace = true }
 oak-xml = { workspace = true }
 
 [dev-dependencies]
-boost-log = { workspace = true }
 serial_test = "3"
 
 [features]

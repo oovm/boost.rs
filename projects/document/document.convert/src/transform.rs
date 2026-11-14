@@ -22,7 +22,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use boost_diagnostic::{Diagnostic, DiagnosticCode, DiagnosticOrigin, DiagnosticSeverity, Message, MessageArg};
+use boost_harness::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticOrigin, DiagnosticSeverity, Message, MessageArg};
 use document_ir::{AssetId, Block, DocumentGraph, Inline, ListItem, NodeId, RelationEndpoint, RewriteResult, Traversal};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

@@ -68,7 +68,7 @@ pub use seed_input::resolve_crawl_seed_specs;
 pub use sitemap::{MAX_SITEMAP_LOCATIONS, locations, sitemap_body};
 pub use transaction::commit_page;
 
-use boost_diagnostic::{DiagnosticSeverity, Message};
+use boost_harness::diagnostic::{DiagnosticSeverity, Message};
 use crawler_types::{CrawlError, CrawlReport, CrawlRequest, Result, diagnostics as pd};
 
 /// Planned crawl work units without performing network I/O.
@@ -93,7 +93,7 @@ pub fn initial_report(request: &CrawlRequest) -> Result<CrawlReport> {
         .seeds
         .first()
         .ok_or_else(|| {
-            let diag = boost_diagnostic::Diagnostic::new(
+            let diag = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::REQUEST_INVALID),
                 DiagnosticSeverity::Error,
                 pd::origin_crawl(),

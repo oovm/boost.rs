@@ -8,14 +8,13 @@ edition.workspace = true
 readme = "readme.md"
 
 [dependencies]
-boost-diagnostic = { workspace = true }
-boost-log = { workspace = true, optional = true }
+boost-harness = { workspace = true }
 document-ir = { workspace = true }
 document-types = { workspace = true }
 
 [features]
 default = []
-logger = ["dep:boost-log", "boost-diagnostic/log"]
+logger = []
 
 [dev-dependencies]
 serde_json = { workspace = true }

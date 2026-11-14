@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use boost_diagnostic::{DiagnosticSeverity, Message, MessageArg};
+use boost_harness::diagnostic::{DiagnosticSeverity, Message, MessageArg};
 use crawler_types::{BrowserSnapshot, CrawlError, Result, diagnostics as pd};
 use url::Url;
 
@@ -15,7 +15,7 @@ fn boundary_error(key: &'static str, args: &[(&'static str, String)], fallback: 
     for (name, value) in args {
         message = message.with_arg(*name, MessageArg::Text(value.clone()));
     }
-    CrawlError::from(boost_diagnostic::Diagnostic::new(
+    CrawlError::from(boost_harness::diagnostic::Diagnostic::new(
         pd::code(pd::BROWSER_SNAPSHOT_INVALID),
         DiagnosticSeverity::Error,
         pd::origin_browser(),
@@ -95,7 +95,7 @@ impl BrowserProvider for FixtureBrowserProvider {
             return Err(error.clone());
         }
         let snapshot = self.snapshots.get(url.as_str()).cloned().ok_or_else(|| {
-            let diag = boost_diagnostic::Diagnostic::new(
+            let diag = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::BROWSER_UNAVAILABLE),
                 DiagnosticSeverity::Error,
                 pd::origin_browser(),

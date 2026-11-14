@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use acorn_codec::{CodecLimits, compression::gzip::Gzip};
-use boost_diagnostic::{DiagnosticSeverity, Message, MessageArg};
+use boost_harness::diagnostic::{DiagnosticSeverity, Message, MessageArg};
 use crawler_fetch::{FetchClient, FetchRequest, Transport};
 use crawler_types::{CrawlError, CrawlEvent, DiscoverySource, FrontierItem, Result, diagnostics as pd};
 use oak_xml::ast::XmlValue;
@@ -22,7 +22,7 @@ pub const MAX_SITEMAP_LOCATIONS: usize = 10_000;
 /// Parse sitemap XML and return whether the root is an index plus location URLs.
 pub fn locations(body: &[u8]) -> Result<(bool, Vec<String>)> {
     if body.len() > 1024 * 1024 {
-        let diag = boost_diagnostic::Diagnostic::new(
+        let diag = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::FETCH_BODY_BUDGET),
             DiagnosticSeverity::Error,
             pd::origin_fetch(),
@@ -33,7 +33,7 @@ pub fn locations(body: &[u8]) -> Result<(bool, Vec<String>)> {
         return Err(CrawlError::from(diag));
     }
     let text = std::str::from_utf8(body).map_err(|error| {
-        let diagnostic = boost_diagnostic::Diagnostic::new(
+        let diagnostic = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::EXTRACT_PARSE_FAILED),
             DiagnosticSeverity::Error,
             pd::origin_extract(),
@@ -44,7 +44,7 @@ pub fn locations(body: &[u8]) -> Result<(bool, Vec<String>)> {
         CrawlError::from(diagnostic)
     })?;
     let document = oak_xml::parse(text).map_err(|error| {
-        let diagnostic = boost_diagnostic::Diagnostic::new(
+        let diagnostic = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::EXTRACT_PARSE_FAILED),
             DiagnosticSeverity::Error,
             pd::origin_extract(),
@@ -60,7 +60,7 @@ pub fn locations(body: &[u8]) -> Result<(bool, Vec<String>)> {
         _ => None,
     }
     .ok_or_else(|| {
-        let diag = boost_diagnostic::Diagnostic::new(
+        let diag = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::EXTRACT_PARSE_FAILED),
             DiagnosticSeverity::Error,
             pd::origin_extract(),
@@ -72,7 +72,7 @@ pub fn locations(body: &[u8]) -> Result<(bool, Vec<String>)> {
         Some("urlset") => (false, "url"),
         Some("sitemapindex") => (true, "sitemap"),
         _ => {
-            let diag = boost_diagnostic::Diagnostic::new(
+            let diag = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::EXTRACT_UNSUPPORTED_MEDIA),
                 DiagnosticSeverity::Error,
                 pd::origin_extract(),
@@ -97,7 +97,7 @@ pub fn locations(body: &[u8]) -> Result<(bool, Vec<String>)> {
                 match value {
                     XmlValue::Text(value) | XmlValue::CData(value) => text.push_str(value),
                     _ => {
-                        let diag = boost_diagnostic::Diagnostic::new(
+                        let diag = boost_harness::diagnostic::Diagnostic::new(
                             pd::code(pd::EXTRACT_PARSE_FAILED),
                             DiagnosticSeverity::Error,
                             pd::origin_extract(),
@@ -110,7 +110,7 @@ pub fn locations(body: &[u8]) -> Result<(bool, Vec<String>)> {
             }
             locations.push(text.trim().to_string());
             if locations.len() > MAX_SITEMAP_LOCATIONS {
-                let diag = boost_diagnostic::Diagnostic::new(
+                let diag = boost_harness::diagnostic::Diagnostic::new(
                     pd::code(pd::FETCH_BODY_BUDGET),
                     DiagnosticSeverity::Error,
                     pd::origin_fetch(),
@@ -138,7 +138,7 @@ fn is_xml_content_type(artifact: &crawler_types::FetchArtifact) -> bool {
 /// Decode a fetched sitemap artifact body, honoring `content-encoding`.
 pub fn sitemap_body(artifact: &crawler_types::FetchArtifact) -> Result<Vec<u8>> {
     let body = artifact.body_bytes().ok_or_else(|| {
-        let diag = boost_diagnostic::Diagnostic::new(
+        let diag = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::EXTRACT_PARSE_FAILED),
             DiagnosticSeverity::Error,
             pd::origin_extract(),
@@ -152,7 +152,7 @@ pub fn sitemap_body(artifact: &crawler_types::FetchArtifact) -> Result<Vec<u8>> 
         None | Some("") | Some("identity") => body.to_vec(),
         Some("gzip") | Some("x-gzip") => {
             let facts = Gzip::decode(body, sitemap_limits()).map_err(|error| {
-                let diagnostic = boost_diagnostic::Diagnostic::new(
+                let diagnostic = boost_harness::diagnostic::Diagnostic::new(
                     pd::code(pd::FETCH_DECODE_FAILED),
                     DiagnosticSeverity::Error,
                     pd::origin_fetch(),
@@ -165,7 +165,7 @@ pub fn sitemap_body(artifact: &crawler_types::FetchArtifact) -> Result<Vec<u8>> 
             facts.value
         }
         Some(other) => {
-            let diag = boost_diagnostic::Diagnostic::new(
+            let diag = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::FETCH_DECODE_FAILED),
                 DiagnosticSeverity::Error,
                 pd::origin_fetch(),
@@ -177,7 +177,7 @@ pub fn sitemap_body(artifact: &crawler_types::FetchArtifact) -> Result<Vec<u8>> 
         }
     };
     if decoded.len() > SITEMAP_BUDGET_BYTES as usize {
-        let diagnostic = boost_diagnostic::Diagnostic::new(
+        let diagnostic = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::FETCH_BODY_BUDGET),
             DiagnosticSeverity::Error,
             pd::origin_fetch(),
@@ -223,7 +223,7 @@ pub(crate) fn discover<T: Transport>(
                 cache_hit: artifact.transport_provenance == crawler_types::TransportProvenance::CacheHit,
             });
             if artifact.status != 200 || artifact.final_url.origin() != source.request_url.origin() {
-                let diag = boost_diagnostic::Diagnostic::new(
+                let diag = boost_harness::diagnostic::Diagnostic::new(
                     pd::code(pd::FETCH_HTTP_STATUS),
                     DiagnosticSeverity::Error,
                     pd::origin_fetch(),
@@ -236,7 +236,7 @@ pub(crate) fn discover<T: Transport>(
                 return Err(CrawlError::from(diag));
             }
             if !is_xml_content_type(&artifact) {
-                let diag = boost_diagnostic::Diagnostic::new(
+                let diag = boost_harness::diagnostic::Diagnostic::new(
                     pd::code(pd::EXTRACT_UNSUPPORTED_MEDIA),
                     DiagnosticSeverity::Error,
                     pd::origin_extract(),

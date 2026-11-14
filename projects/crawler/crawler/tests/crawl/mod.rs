@@ -189,7 +189,7 @@ fn budget_exhaustion_records_status_and_remaining_frontier() {
     assert_eq!(output.report.remaining_frontier, 2);
     assert!(output.report.diagnostics.diagnostics.iter().any(|diagnostic| {
         diagnostic.code().as_str() == pd::CRAWL_BUDGET_EXHAUSTED
-            && diagnostic.severity() == boost_diagnostic::DiagnosticSeverity::Warning
+            && diagnostic.severity() == boost_harness::diagnostic::DiagnosticSeverity::Warning
     }));
 }
 

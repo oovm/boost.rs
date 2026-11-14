@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
-use boost_diagnostic::{Diagnostic, DiagnosticOrigin, DiagnosticSeverity, Message, MessageArg};
+use boost_harness::diagnostic::{Diagnostic, DiagnosticOrigin, DiagnosticSeverity, Message, MessageArg};
 
 /// Notedown product namespace for all format diagnostics.
 pub const NAMESPACE: &str = "notedown";
@@ -111,10 +111,10 @@ impl Display for FormatError {
 impl std::error::Error for FormatError {}
 
 /// Convert a [`FormatError`] into a structured [`Diagnostic`] on the shared
-/// boost-diagnostic wire. This is the authoritative bridge between the
+/// boost-harness diagnostic wire. This is the authoritative bridge between the
 /// formats-layer typed error enum and the neutral diagnostic envelope.
 pub fn from_format_error(error: &FormatError) -> Diagnostic {
-    use boost_diagnostic::DiagnosticCode;
+    use boost_harness::diagnostic::DiagnosticCode;
 
     let origin = origin_formats();
     let fallback = error.to_string();
@@ -167,7 +167,7 @@ pub fn from_format_error(error: &FormatError) -> Diagnostic {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use boost_diagnostic::DiagnosticCode;
+    use boost_harness::diagnostic::DiagnosticCode;
 
     #[test]
     fn codes_are_notedown_prefixed() {

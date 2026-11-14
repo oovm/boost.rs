@@ -1,4 +1,4 @@
-use boost_diagnostic::{DiagnosticEnvelope, DiagnosticSet};
+use boost_harness::diagnostic::{DiagnosticEnvelope, DiagnosticSet};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -33,7 +33,7 @@ pub enum CrawlBudgetStatus {
 
 /// High-level crawl report aligned with `crawler.report/v2`.
 ///
-/// Every run-level [`boost_diagnostic::Diagnostic`] emitted during the crawl
+/// Every run-level [`boost_harness::diagnostic::Diagnostic`] emitted during the crawl
 /// is carried in [`Self::diagnostics`] as a structured envelope so CLI /
 /// N-API consumers can surface stable codes and typed args without parsing
 /// free-form strings.
@@ -82,7 +82,7 @@ impl CrawlReport {
     }
 
     /// Collect a run-level diagnostic into the report envelope.
-    pub fn push_diagnostic(&mut self, diagnostic: boost_diagnostic::Diagnostic) {
+    pub fn push_diagnostic(&mut self, diagnostic: boost_harness::diagnostic::Diagnostic) {
         self.diagnostics.diagnostics.push(diagnostic);
     }
 }

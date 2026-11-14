@@ -15,9 +15,8 @@ crawler-types = { workspace = true }
 serde = { workspace = true }
 url = { workspace = true }
 boost-http = { workspace = true }
-boost-log = { workspace = true, optional = true }
-boost-diagnostic = { workspace = true }
+boost-harness = { workspace = true }
 
 [features]
 default = []
-logger = ["dep:boost-log"]
+logger = []

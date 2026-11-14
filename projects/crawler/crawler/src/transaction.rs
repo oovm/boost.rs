@@ -1,11 +1,11 @@
-use boost_diagnostic::{DiagnosticSeverity, Message, MessageArg};
+use boost_harness::diagnostic::{DiagnosticSeverity, Message, MessageArg};
 use crawler_types::{CrawlError, ExtractStatus, PageTransaction, Result, diagnostics as pd};
 
 /// Validate and commit a page transaction.
 pub fn commit_page(transaction: PageTransaction) -> Result<String> {
     match transaction.extract.status {
         ExtractStatus::Failed | ExtractStatus::Unsupported => {
-            let diag = boost_diagnostic::Diagnostic::new(
+            let diag = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::EXTRACT_PARSE_FAILED),
                 DiagnosticSeverity::Error,
                 pd::origin_extract(),
@@ -24,7 +24,7 @@ pub fn commit_page(transaction: PageTransaction) -> Result<String> {
     }
 
     let document = transaction.extract.document.as_ref().ok_or_else(|| {
-        let diag = boost_diagnostic::Diagnostic::new(
+        let diag = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::EXTRACT_PARSE_FAILED),
             DiagnosticSeverity::Error,
             pd::origin_extract(),
@@ -34,7 +34,7 @@ pub fn commit_page(transaction: PageTransaction) -> Result<String> {
     })?;
     let validation = document.validate();
     if !validation.is_valid() {
-        let diag = boost_diagnostic::Diagnostic::new(
+        let diag = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::EXTRACT_PARSE_FAILED),
             DiagnosticSeverity::Error,
             pd::origin_extract(),

@@ -7,14 +7,15 @@
 
 #[cfg(feature = "console")]
 pub mod console {
-    //! Human-visible console output, refresh, progress, and log subscribers.
+    //! Human-visible console output and log subscribers.
     pub use boost_console::*;
+    pub use boost_harness::log::console::*;
 }
 
 #[cfg(feature = "diagnostic")]
 pub mod diagnostic {
     //! Structured diagnostic data model and projections.
-    pub use boost_diagnostic::*;
+    pub use boost_harness::diagnostic::*;
 }
 
 #[cfg(feature = "fmt")]
@@ -32,7 +33,7 @@ pub mod fs {
 #[cfg(feature = "log")]
 pub mod log {
     //! Structured log events, spans, filters, and sinks.
-    pub use boost_log::*;
+    pub use boost_harness::log::*;
 }
 
 #[cfg(feature = "random")]
@@ -56,12 +57,12 @@ pub mod terminal {
 #[cfg(feature = "test")]
 pub mod test {
     //! Correctness tests, cases, fixtures, and assertions.
-    pub use boost_test::*;
-    pub use boost_test_macro::{facade_case as case, facade_fixture as fixture, facade_test as test};
+    pub use boost_harness::test::*;
+    pub use boost_harness_macro::{facade_case as case, facade_fixture as fixture, facade_test as test};
 }
 
 #[cfg(feature = "benchmark")]
 pub mod benchmark {
     //! Performance measurement with explicit samples and structured reports.
-    pub use boost_benchmark::*;
+    pub use boost_harness::benchmark::*;
 }

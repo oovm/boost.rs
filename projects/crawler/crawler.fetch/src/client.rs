@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use boost_diagnostic::{DiagnosticSeverity, Message, MessageArg};
+use boost_harness::diagnostic::{DiagnosticSeverity, Message, MessageArg};
 use crawler_types::{CrawlError, FetchArtifact, Result, TransportProvenance, diagnostics as pd};
 use url::Url;
 
@@ -101,7 +101,7 @@ impl<T: Transport> FetchClient<T> {
         }
 
         if !self.robots.is_allowed(&request.url) {
-            let diagnostic = boost_diagnostic::Diagnostic::new(
+            let diagnostic = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::ROBOTS_DENIED),
                 DiagnosticSeverity::Warning,
                 pd::origin_robots(),

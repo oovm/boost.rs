@@ -288,7 +288,7 @@ fn worker_413_reports_provider_code() {
 }
 
 fn browser_crash_error() -> crawler::types::CrawlError {
-    use boost_diagnostic::{Diagnostic, DiagnosticSeverity, Message};
+    use boost_harness::diagnostic::{Diagnostic, DiagnosticSeverity, Message};
 
     crawler::types::CrawlError::from(Diagnostic::new(
         crawler::types::diagnostics::code(crawler::types::diagnostics::BROWSER_UNAVAILABLE),

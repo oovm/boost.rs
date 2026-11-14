@@ -1,4 +1,4 @@
-use boost_diagnostic::{DiagnosticSeverity, Message, MessageArg};
+use boost_harness::diagnostic::{DiagnosticSeverity, Message, MessageArg};
 use crawler_types::{BrowserSnapshot, CrawlError, Result, diagnostics as pd};
 use url::Url;
 
@@ -50,7 +50,7 @@ pub fn build_browser_stack(fixture_dirs: Option<&str>, http_endpoint: Option<&st
     }
     if let Some(endpoint) = http_endpoint {
         let url = Url::parse(endpoint).map_err(|error| {
-            let diag = boost_diagnostic::Diagnostic::new(
+            let diag = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::URL_INVALID),
                 DiagnosticSeverity::Error,
                 pd::origin_browser(),
@@ -79,7 +79,7 @@ impl BrowserProvider for BrowserProviderStack {
             return http.capture_snapshot(url);
         }
         Err(last_error.unwrap_or_else(|| {
-            let diag = boost_diagnostic::Diagnostic::new(
+            let diag = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::BROWSER_UNAVAILABLE),
                 DiagnosticSeverity::Error,
                 pd::origin_browser(),

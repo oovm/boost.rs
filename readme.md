@@ -47,8 +47,8 @@ fn main() {
 }
 ```
 
-Prefer a single capability? Depend on the matching `boost-*` crate directly (`boost-log`, `boost-console`,
-`boost-diagnostic`, …) with the same types and no extra indirection.
+Prefer a single capability? Depend on the matching `boost-*` crate directly (`boost-harness`, `boost-console`,
+`boost-source`, …) with the same types and no extra indirection.
 
 ## ✨ Highlights
 
@@ -56,16 +56,15 @@ Prefer a single capability? Depend on the matching `boost-*` crate directly (`bo
 |------------|--------------------|------------------------------------------------------------------|
 | Facade     | `boost`            | Feature-gated `boost::…` modules; empty default features         |
 | Source     | `boost-source`     | Stable file identity, immutable snapshots, byte/line coordinates |
-| Log        | `boost-log`        | `LogEvent`, spans, filters, sinks — no terminal or styling       |
-| Console    | `boost-console`    | `fmt` styling module, stderr rendering, default subscriber       |
+| Harness    | `boost-harness`    | Log events, diagnostics, tests, fixtures, and benchmarks         |
+| Console    | `boost-console`    | `fmt` styling primitives                                         |
 | Terminal   | `boost-terminal`   | TTY/ANSI capability and device facts                             |
-| Diagnostic | `boost-diagnostic` | Structured problems: codes, labels, severity, collections        |
-| Test       | `boost-test`       | Cases, fixtures, assertions, structured `TestResult`             |
 | Random     | `boost-random`     | Deterministic streams, sampling, host entropy interfaces         |
 | FS         | `boost-fs`         | Walk, watch, temp files, atomic publish                          |
 
-Macros (`boost-test-macro`, `boost-diagnostic-macro`, …) compile against `syn` and generate code that references the
-runtime crates above.
+`boost-harness` exposes one module per concern: `boost_harness::log`, `boost_harness::diagnostic`,
+`boost_harness::test`, and `boost_harness::benchmark`. The test attributes and `diagnose!` macro live in
+`boost-harness-macro` and expand against those modules.
 
 ## 📊 How boost compares
 
@@ -80,11 +79,9 @@ runtime crates above.
 
 Each published crate ships a focused `readme.md` with import paths, feature flags, and a minimal usage block:
 
-- [`boost`](projects/boost/readme.md) — facade features and module map
-- [`boost-console`](projects/boost-console/readme.md) — stderr rendering and subscriber
-- [`boost-log`](projects/boost-log/readme.md) — events, filters, async sinks
-- [`boost-diagnostic`](projects/boost-diagnostic/readme.md) — diagnostic model and projections
-- [`boost-test`](projects/boost-test/readme.md) — cases, fixtures, assertions
+- [`boost`](projects/boost/boost/readme.md) — facade features and module map
+- [`boost-harness`](projects/boost/boost.harness/readme.md) — log, diagnostics, tests, benchmarks
+- [`boost-console`](projects/boost/boost-console/readme.md) — styling primitives
 
 ## 📜 License
 

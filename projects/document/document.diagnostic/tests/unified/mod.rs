@@ -1,4 +1,4 @@
-use boost_diagnostic::DiagnosticSeverity;
+use boost_harness::diagnostic::DiagnosticSeverity;
 use document_diagnostic::{DiagnosticEnvelope, diagnostics_from_graph, from_adapter_error, from_loss_marker};
 use document_ir::{DocumentGraph, IdAllocator, LossMarker, SemanticStatus, SourceSpan};
 use document_types::AdapterError;
@@ -30,7 +30,7 @@ fn loss_marker_status_arg_uses_controlled_wire_label() {
         status: SemanticStatus::Partial,
     };
     let set = {
-        let mut set = boost_diagnostic::DiagnosticSet::new();
+        let mut set = boost_harness::diagnostic::DiagnosticSet::new();
         set.push(from_loss_marker(&marker));
         set
     };
@@ -103,7 +103,7 @@ fn diagnostic_envelope_serializes_to_json() {
 fn adapter_error_typed_args_in_json_envelope() {
     let diag = from_adapter_error(&AdapterError::invalid_range(42usize, 7usize));
     let set = {
-        let mut s = boost_diagnostic::DiagnosticSet::new();
+        let mut s = boost_harness::diagnostic::DiagnosticSet::new();
         s.push(diag);
         s
     };
@@ -121,7 +121,7 @@ fn adapter_error_typed_args_in_json_envelope() {
 fn adapter_error_text_args_in_json_envelope() {
     let diag = from_adapter_error(&AdapterError::adapter("docx-writer", "numbering unresolved"));
     let set = {
-        let mut s = boost_diagnostic::DiagnosticSet::new();
+        let mut s = boost_harness::diagnostic::DiagnosticSet::new();
         s.push(diag);
         s
     };

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use boost_diagnostic::{DiagnosticSeverity, Message, MessageArg};
+use boost_harness::diagnostic::{DiagnosticSeverity, Message, MessageArg};
 use crawler_types::{CrawlError, FetchArtifact, Result, TransportProvenance, diagnostics as pd};
 use yydb::{Connection, OpenFlags};
 
@@ -22,7 +22,7 @@ impl YydbResponseCache {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let path_str = path.as_ref().display().to_string();
         let connection = Connection::open_with_flags(path.as_ref(), OpenFlags::wal()).map_err(|error| {
-            let diag = boost_diagnostic::Diagnostic::new(
+            let diag = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::STORE_UNAVAILABLE),
                 DiagnosticSeverity::Error,
                 pd::origin_store(),
@@ -34,7 +34,7 @@ impl YydbResponseCache {
             CrawlError::from(diag)
         })?;
         connection.ensure_schema(RESPONSE_CACHE_SCHEMA).map_err(|error| {
-            let diag = boost_diagnostic::Diagnostic::new(
+            let diag = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::STORE_UNAVAILABLE),
                 DiagnosticSeverity::Error,
                 pd::origin_store(),
@@ -55,7 +55,7 @@ impl YydbResponseCache {
             return Ok(None);
         };
         let mut artifact: FetchArtifact = serde_json::from_slice(&bytes).map_err(|error| {
-            let diag = boost_diagnostic::Diagnostic::new(
+            let diag = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::STORE_CORRUPT),
                 DiagnosticSeverity::Error,
                 pd::origin_store(),
@@ -74,7 +74,7 @@ impl YydbResponseCache {
     pub fn put(&self, artifact: &FetchArtifact) -> Result<String> {
         let key = keyspace::response_cache(&artifact.cache_key);
         let bytes = serde_json::to_vec(artifact).map_err(|error| {
-            let diag = boost_diagnostic::Diagnostic::new(
+            let diag = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::STORE_TRANSACTION_FAILED),
                 DiagnosticSeverity::Error,
                 pd::origin_store(),
@@ -96,7 +96,7 @@ impl YydbResponseCache {
 }
 
 fn map_yydb(error: yydb::Error) -> CrawlError {
-    let diag = boost_diagnostic::Diagnostic::new(
+    let diag = boost_harness::diagnostic::Diagnostic::new(
         pd::code(pd::STORE_TRANSACTION_FAILED),
         DiagnosticSeverity::Error,
         pd::origin_store(),

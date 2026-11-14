@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use boost_diagnostic::{DiagnosticSeverity, Message, MessageArg};
+use boost_harness::diagnostic::{DiagnosticSeverity, Message, MessageArg};
 use crawler_types::{CrawlError, Result, diagnostics as pd};
 use url::Url;
 
@@ -16,7 +16,7 @@ use url::Url;
 pub fn resolve_crawl_seed_specs(input: &str) -> Result<Vec<String>> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
-        let diag = boost_diagnostic::Diagnostic::new(
+        let diag = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::REQUEST_INVALID),
             DiagnosticSeverity::Error,
             pd::origin_crawl(),
@@ -40,7 +40,7 @@ fn looks_like_url(value: &str) -> bool {
 
 fn read_seed_file(path: &Path) -> Result<Vec<String>> {
     let content = fs::read_to_string(path).map_err(|error| {
-        let diag = boost_diagnostic::Diagnostic::new(
+        let diag = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::REQUEST_INVALID),
             DiagnosticSeverity::Error,
             pd::origin_crawl(),
@@ -62,7 +62,7 @@ fn read_seed_file(path: &Path) -> Result<Vec<String>> {
         }
         else {
             normalize_local_or_url_seed(trimmed).map_err(|error| {
-                let diag = boost_diagnostic::Diagnostic::new(
+                let diag = boost_harness::diagnostic::Diagnostic::new(
                     pd::code(pd::REQUEST_INVALID),
                     DiagnosticSeverity::Error,
                     pd::origin_crawl(),
@@ -78,7 +78,7 @@ fn read_seed_file(path: &Path) -> Result<Vec<String>> {
         seeds.push(seed);
     }
     if seeds.is_empty() {
-        let diag = boost_diagnostic::Diagnostic::new(
+        let diag = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::REQUEST_INVALID),
             DiagnosticSeverity::Error,
             pd::origin_crawl(),
@@ -97,7 +97,7 @@ fn normalize_local_or_url_seed(seed: &str) -> Result<String> {
     }
     let path = PathBuf::from(seed);
     let url = Url::from_file_path(path).map_err(|_| {
-        let diag = boost_diagnostic::Diagnostic::new(
+        let diag = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::URL_INVALID),
             DiagnosticSeverity::Error,
             pd::origin_crawl(),

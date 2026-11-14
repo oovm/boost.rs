@@ -1,7 +1,7 @@
 use serial_test::serial;
 use std::sync::{Arc, Mutex};
 
-use boost_log::{Filter, Level, LogEvent, LogSink, VecSink, clear_global_sink};
+use boost_harness::log::{Filter, Level, LogEvent, LogSink, VecSink, clear_global_sink};
 use crawler::{FetchRequest, HttpTransport, Transport, map_transport_error};
 use url::Url;
 
@@ -19,8 +19,8 @@ impl LogSink for SharedSink {
 fn map_transport_error_emits_logger_event_when_feature_enabled() {
     clear_global_sink();
     let sink = Arc::new(Mutex::new(VecSink::new()));
-    boost_log::set_global_sink(Box::new(SharedSink(sink.clone())));
-    boost_log::set_global_filter(Filter::new(Level::Trace));
+    boost_harness::log::set_global_sink(Box::new(SharedSink(sink.clone())));
+    boost_harness::log::set_global_filter(Filter::new(Level::Trace));
 
     let _ = map_transport_error("robots denied");
 

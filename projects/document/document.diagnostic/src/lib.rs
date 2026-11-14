@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
-//! Panduck orchestration diagnostics on the shared `boost-diagnostic` contract.
+//! Panduck orchestration diagnostics on the shared `boost_harness::diagnostic` contract.
 
-use boost_diagnostic::{
+use boost_harness::diagnostic::{
     Diagnostic, DiagnosticCode as WireDiagnosticCode, DiagnosticOrigin, DiagnosticSet, DiagnosticSeverity, Message,
 };
 use document_ir::{DocumentGraph, LossMarker, SemanticStatus, SourceSpan};
@@ -60,7 +60,7 @@ impl DiagnosticCode {
     }
 }
 
-pub use boost_diagnostic::{
+pub use boost_harness::diagnostic::{
     Diagnostic as UnifiedDiagnostic, DiagnosticAction, DiagnosticEnvelope, DiagnosticLabel, DiagnosticLocation,
     DiagnosticSet as UnifiedDiagnosticSet, DiagnosticSink, MessageArg, SCHEMA_VERSION as DIAGNOSTIC_SCHEMA_VERSION,
 };
@@ -280,19 +280,19 @@ fn block_id_at_span(graph: &DocumentGraph, span: SourceSpan) -> Option<u64> {
 }
 
 #[cfg(feature = "logger")]
-pub use boost_diagnostic::{
+pub use boost_harness::diagnostic::{
     diagnostic_to_log_event, emit_diagnostic as emit_unified_diagnostic, emit_diagnostic_log, emit_diagnostic_set,
 };
 
 /// Project a Panduck diagnostic into a log event.
 #[cfg(feature = "logger")]
-pub fn to_log_event(diagnostic: &Diagnostic) -> boost_log::LogEvent {
+pub fn to_log_event(diagnostic: &Diagnostic) -> boost_harness::log::LogEvent {
     diagnostic_to_log_event(diagnostic)
 }
 
 /// Project an adapter failure into a log event.
 #[cfg(feature = "logger")]
-pub fn adapter_error_to_log_event(error: &AdapterError) -> boost_log::LogEvent {
+pub fn adapter_error_to_log_event(error: &AdapterError) -> boost_harness::log::LogEvent {
     diagnostic_to_log_event(&from_adapter_error(error))
 }
 

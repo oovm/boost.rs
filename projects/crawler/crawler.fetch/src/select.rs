@@ -1,4 +1,4 @@
-use boost_diagnostic::{DiagnosticSeverity, Message, MessageArg};
+use boost_harness::diagnostic::{DiagnosticSeverity, Message, MessageArg};
 use crawler_types::{CrawlError, Result, diagnostics as pd};
 use url::Url;
 
@@ -28,7 +28,7 @@ pub fn transport_for_url(url: &Url) -> Result<SeedTransport> {
         "file" => Ok(SeedTransport::File(FileTransport::new())),
         "http" | "https" => Ok(SeedTransport::Http(HttpTransport::new())),
         other => {
-            let diag = boost_diagnostic::Diagnostic::new(
+            let diag = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::URL_OUT_OF_POLICY),
                 DiagnosticSeverity::Error,
                 pd::origin_fetch(),

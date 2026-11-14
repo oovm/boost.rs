@@ -39,7 +39,7 @@ pub use document_diagnostic::{DiagnosticEnvelope, SCHEMA_REPORT, from_adapter_er
 
 /// Build an empty diagnostic envelope for operations that completed cleanly.
 pub fn empty_diagnostic_envelope() -> DiagnosticEnvelope {
-    use boost_diagnostic::DiagnosticSet;
+    use boost_harness::diagnostic::DiagnosticSet;
     DiagnosticEnvelope::from_set(&DiagnosticSet::new())
 }
 

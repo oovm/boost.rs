@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use boost_diagnostic::{Diagnostic as UnifiedDiagnostic, DiagnosticCode, DiagnosticOrigin, DiagnosticSeverity, Message};
+use boost_harness::diagnostic::{Diagnostic as UnifiedDiagnostic, DiagnosticCode, DiagnosticOrigin, DiagnosticSeverity, Message};
 use document_compose::diagnostic::Diagnostic as ComposeDiagnostic;
 use document_fonts::{BodyFaceSet, BodyMetrics};
 use document_ir::{AssetKind, Block, DocumentGraph, LossMarker, SemanticStatus};
@@ -344,7 +344,7 @@ fn report_compose_diagnostics(diagnostics: &[ComposeDiagnostic]) {
 
 #[cfg(feature = "logger")]
 fn emit_diagnostic(diagnostic: &UnifiedDiagnostic) {
-    boost_diagnostic::emit_diagnostic(diagnostic);
+    boost_harness::diagnostic::emit_diagnostic(diagnostic);
 }
 
 #[cfg(not(feature = "logger"))]

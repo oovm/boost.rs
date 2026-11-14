@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use boost_log::{EventKind, Filter, Level, LogEvent, LogSink, VecSink, clear_global_sink};
+use boost_harness::log::{EventKind, Filter, Level, LogEvent, LogSink, VecSink, clear_global_sink};
 use document_convert::convert_bytes;
 use serial_test::serial;
 
@@ -17,8 +17,8 @@ impl LogSink for SharedSink {
 fn notedown_loss_emits_semantic_diagnostic_log_event() {
     clear_global_sink();
     let sink = Arc::new(Mutex::new(VecSink::new()));
-    boost_log::set_global_sink(Box::new(SharedSink(sink.clone())));
-    boost_log::set_global_filter(Filter::new(Level::Trace));
+    boost_harness::log::set_global_sink(Box::new(SharedSink(sink.clone())));
+    boost_harness::log::set_global_filter(Filter::new(Level::Trace));
 
     let source = b"# Route\n\nBody.\n".to_vec();
     let output = convert_bytes("notedown", "markdown", "route.nd", source, None).expect("convert");

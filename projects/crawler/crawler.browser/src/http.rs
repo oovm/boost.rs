@@ -1,4 +1,4 @@
-use boost_diagnostic::{DiagnosticSeverity, Message, MessageArg};
+use boost_harness::diagnostic::{DiagnosticSeverity, Message, MessageArg};
 use boost_http::{HttpTransport, HttpTransportConfig, Method, Request, Transport};
 use crawler_types::{BrowserSnapshot, CrawlError, Result, diagnostics as pd};
 use url::Url;
@@ -61,7 +61,7 @@ impl crate::provider::BrowserProvider for HttpBrowserProvider {
         });
         let request = Request::new(Method::Get, request_url);
         let response = transport.send(&request).map_err(|error| {
-            let diag = boost_diagnostic::Diagnostic::new(
+            let diag = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::BROWSER_UNAVAILABLE),
                 DiagnosticSeverity::Error,
                 pd::origin_browser(),
@@ -78,7 +78,7 @@ impl crate::provider::BrowserProvider for HttpBrowserProvider {
                 Some(code) => format!("browser worker returned status {status} ({code})"),
                 None => format!("browser worker returned status {status}"),
             };
-            let diag = boost_diagnostic::Diagnostic::new(
+            let diag = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::BROWSER_WORKER_STATUS),
                 DiagnosticSeverity::Error,
                 pd::origin_browser(),
@@ -90,7 +90,7 @@ impl crate::provider::BrowserProvider for HttpBrowserProvider {
             return Err(CrawlError::from(diag));
         }
         let snapshot: BrowserSnapshot = serde_json::from_slice(&response.body).map_err(|error| {
-            let diag = boost_diagnostic::Diagnostic::new(
+            let diag = boost_harness::diagnostic::Diagnostic::new(
                 pd::code(pd::BROWSER_SNAPSHOT_INVALID),
                 DiagnosticSeverity::Error,
                 pd::origin_browser(),
