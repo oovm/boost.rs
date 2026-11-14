@@ -1,0 +1,16 @@
+[package]
+name = "media-audio"
+description = "Audio track planning and mixing: neutral track plans, music pad, synthesis-rendered sound effects and imported clips"
+readme = "readme.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+media-types = { workspace = true }
+media-codec = { workspace = true }
+media-dsp = { workspace = true }
+media-synthesis = { workspace = true }
+media-voice = { workspace = true }

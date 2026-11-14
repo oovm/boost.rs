@@ -1,0 +1,59 @@
+//! HDR 帧缓冲与显示后处理。
+//!
+//! CPU 参考实现与 UCF 便携程序并行提供，二者通过 parity 测试互相约束；
+//! 程序构建与 CPU 解释执行基于 `hardware-program`，颜色使用
+//! `geometry-types` 的 `LinearRgb`，`Framebuffer` 存储归 `media.image`。
+//! 本 crate 只拥有处理语义与其执行，不包含任何领域物理。
+//!
+//! 输入域、传递函数、alpha、边界采样、模糊半径与 tone mapping 时机的正式合同
+//! 成文于 [`contract`]，每个算子以 [`contract::InputDomain`] 显式标注自己消费
+//! 线性 HDR 还是显示 RGBA8；显示空间可分离盒模糊的唯一实现见 [`display_blur`]。
+//! 显示空间算子（[`display_ops`]，五个：blur/chroma/displace/sweep/grain）与
+//! 镜头级算子（[`shot_ops`]：soft bloom/vignette/film grain/pulse/stamp/LUT/
+//! 转场混合，吸收自帧合成器 CPU 参考通路）、
+//! 有序栈合同（[`effect`]）、中立 JSON 栈声明（[`stack_spec`]）与通用参数组合
+//! （[`presets`]）共同构成效果栈；栈的 `bloom` 绑定 [`post`] 的线性 HDR 物理
+//! 路径，其显式域转换由 [`stack_bloom`] 执行、合同成文于 [`contract`]。
+//! 粒子与光束的生成求值归 `media.particles`，本 crate 只做栈适配。
+
+mod bloom_scale;
+mod box_blur;
+mod bright_extract;
+mod contract;
+mod develop;
+mod display_blur;
+mod display_ops;
+mod effect;
+mod generative;
+mod post;
+mod post_ucf;
+mod presets;
+mod shot_ops;
+mod stack_bloom;
+mod stack_spec;
+mod tone_map_batch;
+
+pub use bloom_scale::{UcfDownsample2xRgbBuilder, UcfUpsampleRgbBuilder};
+pub use box_blur::UcfBoxBlur3x3Builder;
+pub use bright_extract::HdrBrightExtractBuilder;
+pub use contract::{InputDomain, relative_radius, short_side};
+pub use develop::{Adjustments, DEVELOP_BLUR_COEFFICIENT};
+pub use display_blur::display_box_blur;
+pub use display_ops::{Blur, Chroma, Displace, Grain, Sweep};
+pub use effect::{Effect, EffectContext, EffectStack};
+pub use generative::{BeamsEffect, ParticlesEffect};
+pub use hardware_program::{post_bloom_extract, tone_map_aces};
+pub use post::{
+    aces_filmic, apply_post_process, apply_tone_map, bloom_pass, composite_bloom_from_bright,
+    extract_bright_pass, to_rgba8, tone_map_rgb, DEFAULT_BLOOM_INTENSITY,
+    DEFAULT_BLOOM_THRESHOLD, DEFAULT_EXPOSURE,
+};
+pub use post_ucf::{apply_tone_map_ucf, bloom_pass_ucf, extract_bright_pass_ucf};
+pub use presets::{Preset, PRESETS, preset, preset_names, volumetric};
+pub use shot_ops::{
+    EmberPulse, FilmGrain, GradeMap, SlamStamp, SoftBloom, Vignette, crossfade, flash, hash21,
+    iris_wipe, slices_wipe,
+};
+pub use stack_bloom::{Bloom, BLOOM_HDR_HEADROOM};
+pub use stack_spec::{EffectSpec, StackSpec};
+pub use tone_map_batch::tone_map_aces_batch;

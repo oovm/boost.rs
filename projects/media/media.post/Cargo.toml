@@ -1,0 +1,19 @@
+[package]
+name = "media-post"
+description = "Post-processing with a written input-domain contract: linear HDR passes (CPU reference and UCF programs) and the single display-space box blur"
+readme = "readme.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+geometry-motion = { workspace = true }
+geometry-types = { workspace = true }
+hardware-program = { workspace = true }
+media-image = { workspace = true }
+media-particles = { workspace = true }
+media-types = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

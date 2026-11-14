@@ -1,0 +1,24 @@
+[package]
+name = "media-text"
+description = "Text layout and glyph raster: fonts, measure, blocks, staggered reveals and code lines"
+readme = "readme.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+fontdue = { workspace = true }
+media-types = { workspace = true }
+geometry = { workspace = true, optional = true }
+media-image = { workspace = true, optional = true }
+media-raster = { workspace = true, optional = true }
+media-scene = { workspace = true, optional = true }
+
+[features]
+default = ["blocks"]
+# Blending glyph bitmaps onto a `Frame` needs the raster paint layer.
+paint = ["dep:geometry", "dep:media-image", "dep:media-raster"]
+# Blocks, staggers and code lines read alignment and tone from the scene IR.
+blocks = ["paint", "dep:media-scene"]
