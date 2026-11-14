@@ -2864,6 +2864,7 @@ dependencies = [
  "media-types",
  "media-voice",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

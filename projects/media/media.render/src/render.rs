@@ -13,7 +13,7 @@ use media_image::{Bitmap, Frame};
 use media_motion::Motion;
 use media_post::Vignette;
 use media_raster::Paint;
-use media_scene::{Align, Background, Blend, Component, Item, Node, Project, ShapeKind};
+use media_scene::{Align, Background, Blend, Component, Item, Node, Project, ShapeKind, resolve_design};
 use media_text::Fonts;
 use media_types::{Error, hash};
 
@@ -188,7 +188,10 @@ pub fn render_project_with(
     options: &RenderOptions<'_>,
     progress: &mut dyn FnMut(u32, u32),
 ) -> Result<RenderStats, Error> {
-    let project: Project = serde_json::from_str(json).map_err(|e| Error::invalid(format!("project json: {e}")))?;
+    let mut project: Project = serde_json::from_str(json).map_err(|e| Error::invalid(format!("project json: {e}")))?;
+    // Semantic colors are resolved before validation, so every later stage
+    // only ever sees concrete values and no paint path knows about tokens.
+    resolve_design(&mut project)?;
     validate(&project)?;
     let (w, h, fps) = (project.width, project.height, project.fps);
     let (fonts, font_paths) = resolve_fonts(&project)?;
@@ -360,7 +363,8 @@ pub struct PreviewStats {
 /// 137 is reviewing the frame the encoder will receive. It does not synthesize
 /// the audio bed: the preview is a picture.
 pub fn preview_frame(json: &str, frame: u32, out: &Path) -> Result<PreviewStats, Error> {
-    let project: Project = serde_json::from_str(json).map_err(|e| Error::invalid(format!("project json: {e}")))?;
+    let mut project: Project = serde_json::from_str(json).map_err(|e| Error::invalid(format!("project json: {e}")))?;
+    resolve_design(&mut project)?;
     validate(&project)?;
     if frame >= project.duration_frames {
         return Err(Error::invalid(format!("frame {frame} is outside 0..{}", project.duration_frames)));
@@ -1671,6 +1675,30 @@ mod tests {
         assert!(stats.audio);
         let meta = std::fs::metadata(&out).expect("output exists");
         assert!(meta.len() > 1_000, "mp4 too small: {}", meta.len());
+    }
+
+    /// Semantic color tokens are resolved before validation, so a film may
+    /// author `$accent` everywhere and still encode concrete pixels.
+    #[test]
+    fn renders_design_tokens_as_concrete_colors() {
+        let project = serde_json::json!({
+            "width": 160, "height": 120, "fps": 10, "duration_frames": 10,
+            "design": { "colors": [
+                { "role": "ink", "value": "#e6eefa" },
+                { "role": "accent", "value": "#7aa2ff", "locked": true }
+            ] },
+            "scenes": [{
+                "start": 0, "duration": 10,
+                "background": { "kind": "v-gradient", "colors": ["$ink", "$accent"] },
+                "items": [{ "kind": "text", "at": 0, "dur": 10, "content": "tokens", "size": 24.0,
+                            "color": "$accent", "x": 0.5, "y": 0.5 }]
+            }],
+            "audio": null
+        });
+        let out = std::env::temp_dir().join("media-render-design-tokens.mp4");
+        let stats = super::render_project(&project.to_string(), &out, &mut |_, _| {}).expect("render");
+        assert_eq!(stats.frames, 10);
+        assert!(std::fs::metadata(&out).expect("output exists").len() > 1_000);
     }
 
     /// A traced run records project shape, fonts, encoder facts and publishing,

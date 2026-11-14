@@ -41,6 +41,11 @@ pub struct Project {
     /// must report the exact paths it resolved.
     #[serde(default)]
     pub fonts: Option<FontsSpec>,
+    /// Semantic color card. Color fields may then reference a role as
+    /// `$role`; [`crate::design::resolve_design`] rewrites them to concrete
+    /// values and reports which scene and node used them.
+    #[serde(default)]
+    pub design: Option<crate::design::DesignSpec>,
 }
 
 /// Film-level visual output controls.
@@ -129,6 +134,10 @@ pub struct Scene {
     /// transform pushes/pulls and pans it into the output frame.
     #[serde(default)]
     pub camera: Option<Camera>,
+    /// Scene-level design overrides. A project entry marked `locked` cannot be
+    /// overridden here; a different value is an explicit `invalid_scene`.
+    #[serde(default)]
+    pub design: Option<crate::design::DesignSpec>,
 }
 
 /// A single camera move, interpolated across the whole scene.

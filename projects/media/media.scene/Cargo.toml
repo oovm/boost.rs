@@ -15,3 +15,6 @@ media-image = { workspace = true }
 media-motion = { workspace = true }
 media-types = { workspace = true }
 media-voice = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
