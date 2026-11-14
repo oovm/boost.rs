@@ -49,7 +49,7 @@ pub use music::{write_instrument, write_instrument_catalogue, write_pattern, wri
 pub mod voice;
 
 #[cfg(feature = "voice-export")]
-pub use voice::write_voice;
+pub use voice::{voice_samples, write_voice, write_voice_frames};
 
 #[cfg(feature = "image-pipeline")]
 pub mod image_pipeline;

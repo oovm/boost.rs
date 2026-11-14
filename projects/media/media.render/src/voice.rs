@@ -8,20 +8,43 @@ use media_codec::write_wav;
 use media_types::Error;
 use media_voice::VoiceSpec;
 
+/// Renders `spec` into interleaved stereo float frames without writing a file.
+///
+/// This is the single synthesis entry for exports and for hosts that need the
+/// samples themselves (level metering, DSP checks); [`write_voice`] reuses it,
+/// so no caller renders the same song twice.
+///
+/// # Errors
+/// An invalid spec or a zero rate is `invalid_input`.
+pub fn voice_samples(spec: &VoiceSpec, sample_rate: u32) -> Result<Vec<[f32; 2]>, Error> {
+    if sample_rate == 0 {
+        return Err(Error::invalid_input("voice export: sample rate must be positive"));
+    }
+    media_voice::render(spec, sample_rate as f32)
+}
+
+/// Writes already-rendered frames as a PCM16 stereo WAV.
+///
+/// # Errors
+/// A zero rate is `invalid_input`; write failures keep `io`.
+pub fn write_voice_frames(frames: &[[f32; 2]], path: &str, sample_rate: u32) -> Result<(), Error> {
+    if sample_rate == 0 {
+        return Err(Error::invalid_input("voice export: sample rate must be positive"));
+    }
+    let pcm: Vec<i16> = frames
+        .iter()
+        .flat_map(|frame| frame.iter().map(|sample| (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16))
+        .collect();
+    write_wav(path, &pcm, sample_rate)
+}
+
 /// Renders `spec` at `sample_rate` and writes it as a PCM16 stereo WAV.
 ///
 /// # Errors
 /// An invalid spec or rate is `invalid_input`; write failures keep `io`.
 pub fn write_voice(spec: &VoiceSpec, path: &str, sample_rate: u32) -> Result<(), Error> {
-    if sample_rate == 0 {
-        return Err(Error::invalid_input("voice export: sample rate must be positive"));
-    }
-    let samples = media_voice::render(spec, sample_rate as f32)?;
-    let pcm: Vec<i16> = samples
-        .iter()
-        .flat_map(|frame| frame.iter().map(|sample| (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16))
-        .collect();
-    write_wav(path, &pcm, sample_rate)
+    let samples = voice_samples(spec, sample_rate)?;
+    write_voice_frames(&samples, path, sample_rate)
 }
 
 #[cfg(test)]
@@ -73,6 +96,23 @@ mod tests {
             write_voice(&spec, "unused.wav", 0).expect_err("zero rate").code(),
             "invalid_input"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// One synthesis pass feeds both the meter and the file: writing the same
+    /// frames must equal the one-shot export byte for byte.
+    #[test]
+    fn frames_and_one_shot_export_agree() {
+        let dir = temp_dir("frames");
+        let spec = VoiceSpec::new(vec![Syllable { onset: None, vowel: Vowel::U, pitch: 520.0, beats: 0.5 }]);
+        let frames = voice_samples(&spec, 44_100).expect("samples");
+        assert_eq!(frames.len(), (spec.duration_seconds() * 44_100.0).ceil() as usize);
+        let direct = dir.join("direct.wav");
+        let from_frames = dir.join("frames.wav");
+        write_voice(&spec, direct.to_str().unwrap(), 44_100).expect("direct");
+        write_voice_frames(&frames, from_frames.to_str().unwrap(), 44_100).expect("from frames");
+        assert_eq!(std::fs::read(&direct).expect("direct"), std::fs::read(&from_frames).expect("frames"));
+        assert_eq!(voice_samples(&spec, 0).expect_err("zero rate").code(), "invalid_input");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
