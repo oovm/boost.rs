@@ -41,6 +41,20 @@ pub struct RasterTriDxbc {
     pub ps: Vec<u8>,
 }
 
+/// VS + PS DXBC for a vertex-buffer raster pass.
+///
+/// The pair expects one input layout shared with the backend: `POSITION`
+/// (`R32G32_FLOAT`, slot 0, offset 0) followed by `COLOR`
+/// (`R32G32B32A32_FLOAT`, slot 0, offset 8). Positions are given in pixels of
+/// the render target whose size is supplied as two 32-bit root constants.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RasterVertexDxbc {
+    /// Vertex shader bytecode (`vs_5_0`).
+    pub vs: Vec<u8>,
+    /// Pixel shader bytecode (`ps_5_0`).
+    pub ps: Vec<u8>,
+}
+
 /// Emit DXBC compute bytecode (`cs_5_1`) for the given UCF program.
 ///
 /// The module is encoded directly as DXBC container chunks; no shader source is
@@ -65,6 +79,16 @@ pub fn emit_dxil(program: &ShaderProgram) -> Result<Vec<u8>, String> {
 /// Emit a hard-coded NDC triangle VS/PS pair (yellow solid) for Raster `draw=tri`.
 pub fn emit_raster_tri_dxbc() -> Result<RasterTriDxbc, String> {
     Ok(RasterTriDxbc { vs: triangle_vertex_module(), ps: triangle_pixel_module() })
+}
+
+/// Emit a vertex-buffer triangle VS/PS pair (`vs_5_0` + `ps_5_0`).
+///
+/// The vertex shader reads `POSITION` and `COLOR` through the input assembler,
+/// converts pixel coordinates to clip space with the viewport size taken from
+/// two 32-bit root constants, and forwards the colour to the pixel shader, which
+/// writes the interpolated colour unchanged.
+pub fn emit_vertex_raster_dxbc() -> Result<RasterVertexDxbc, String> {
+    Ok(RasterVertexDxbc { vs: vertex_buffer_vertex_module(), ps: vertex_buffer_pixel_module() })
 }
 
 /// `out[tid] = value` for `tid < count`, dispatched over 64-thread groups.
@@ -331,6 +355,152 @@ fn triangle_pixel_module() -> Vec<u8> {
     assemble(shader, reflection, &inputs, &outputs)
 }
 
+/// Vertex shader of the vertex-buffer path: pixels in, clip space out.
+fn vertex_buffer_vertex_module() -> Vec<u8> {
+    let mut shader = ShaderWriter::new(Stage::Vertex, 0);
+    shader.refactoring_allowed();
+    shader.dcl_constant_buffer(0, 1);
+    shader.dcl_input(0, two(X, Y));
+    shader.dcl_input(1, ALL);
+    shader.dcl_output_sgv(0, ALL, NAME_POSITION);
+    shader.dcl_output(1, ALL);
+    shader.dcl_temps(1);
+
+    // r0.x = position.x / width, r0.y = position.y / height.
+    shader.op(
+        Opcode::Div,
+        0,
+        &[Operand::temp(0, Select::Mask(one(X))), Operand::input(0, Select::Scalar(X)), Operand::constant_buffer(0, 0, Select::Scalar(X))],
+    );
+    shader.op(
+        Opcode::Div,
+        0,
+        &[Operand::temp(0, Select::Mask(one(Y))), Operand::input(0, Select::Scalar(Y)), Operand::constant_buffer(0, 0, Select::Scalar(Y))],
+    );
+    // Clip space: x = 2t.x - 1, y = 1 - 2t.y (the target origin is top-left).
+    shader.op(
+        Opcode::Mad,
+        0,
+        &[
+            Operand::temp(0, Select::Mask(two(X, Y))),
+            Operand::temp(0, Select::XYXX),
+            Operand::immediate(&[2.0f32.to_bits(), (-2.0f32).to_bits(), 0, 0]),
+            Operand::immediate(&[(-1.0f32).to_bits(), 1.0f32.to_bits(), 0, 0]),
+        ],
+    );
+
+    shader.op(Opcode::Mov, 0, &[Operand::output(0, Select::Mask(two(X, Y))), Operand::temp(0, Select::XYXX)]);
+    shader.op(Opcode::Mov, 0, &[Operand::output(0, Select::Mask(two(Z, W))), Operand::immediate(&[0, 0, 0, 1.0f32.to_bits()])]);
+    shader.op(Opcode::Mov, 0, &[Operand::output(1, Select::Mask(ALL)), Operand::input(1, Select::ALL)]);
+    shader.op(Opcode::Ret, 0, &[]);
+
+    let inputs = [
+        SignatureElement {
+            name: "POSITION",
+            semantic_index: 0,
+            system_value: 0,
+            component_type: COMPONENT_FLOAT,
+            register: 0,
+            mask: two(X, Y),
+            read_mask: two(X, Y),
+        },
+        SignatureElement {
+            name: "COLOR",
+            semantic_index: 0,
+            system_value: 0,
+            component_type: COMPONENT_FLOAT,
+            register: 1,
+            mask: ALL,
+            read_mask: ALL,
+        },
+    ];
+    let outputs = [
+        SignatureElement {
+            name: "SV_Position",
+            semantic_index: 0,
+            system_value: NAME_POSITION,
+            component_type: COMPONENT_FLOAT,
+            register: 0,
+            mask: ALL,
+            read_mask: 0,
+        },
+        SignatureElement {
+            name: "COLOR",
+            semantic_index: 0,
+            system_value: 0,
+            component_type: COMPONENT_FLOAT,
+            register: 1,
+            mask: ALL,
+            read_mask: 0,
+        },
+    ];
+    let reflection = Reflection {
+        stage: Stage::Vertex,
+        minor: 0,
+        creator: creator("vs_5_0", "vertex_raster"),
+        constant_buffers: vec![ConstantBuffer {
+            name: "Viewport".into(),
+            size: 16,
+            variables: vec![
+                Variable { name: "width".into(), offset: 0, used: true },
+                Variable { name: "height".into(), offset: 4, used: true },
+                Variable { name: "_pad0".into(), offset: 8, used: false },
+                Variable { name: "_pad1".into(), offset: 12, used: false },
+            ],
+        }],
+        buffers: Vec::new(),
+    };
+    assemble(shader, reflection, &inputs, &outputs)
+}
+
+/// Pixel shader of the vertex-buffer path: forwards the interpolated colour.
+fn vertex_buffer_pixel_module() -> Vec<u8> {
+    let mut shader = ShaderWriter::new(Stage::Pixel, 0);
+    shader.refactoring_allowed();
+    shader.dcl_input_ps_linear(1, ALL);
+    shader.dcl_output(0, ALL);
+    shader.op(Opcode::Mov, 0, &[Operand::output(0, Select::Mask(ALL)), Operand::input(1, Select::ALL)]);
+    shader.op(Opcode::Ret, 0, &[]);
+
+    let inputs = [
+        SignatureElement {
+            name: "SV_Position",
+            semantic_index: 0,
+            system_value: NAME_POSITION,
+            component_type: COMPONENT_FLOAT,
+            register: 0,
+            mask: ALL,
+            read_mask: 0,
+        },
+        SignatureElement {
+            name: "COLOR",
+            semantic_index: 0,
+            system_value: 0,
+            component_type: COMPONENT_FLOAT,
+            register: 1,
+            mask: ALL,
+            read_mask: ALL,
+        },
+    ];
+    let outputs = [SignatureElement {
+        name: "SV_Target",
+        semantic_index: 0,
+        system_value: 0,
+        component_type: COMPONENT_FLOAT,
+        register: 0,
+        mask: ALL,
+        read_mask: 0,
+    }];
+    let reflection = Reflection {
+        stage: Stage::Pixel,
+        minor: 0,
+        creator: creator("ps_5_0", "vertex_raster"),
+        constant_buffers: Vec::new(),
+        buffers: Vec::new(),
+    };
+    assemble(shader, reflection, &inputs, &outputs)
+}
+
 /// Creator string recorded in the module's reflection chunk.
 fn creator(profile: &str, entry: &str) -> String {
     format!("hardware-emitter {profile} {entry}")
@@ -386,6 +556,20 @@ mod tests {
         let ps = chunk(&tri.ps, b"SHEX").expect("ps shex");
         assert_eq!(u32::from_le_bytes(vs[0..4].try_into().unwrap()), 0x0001_0050, "vs_5_0");
         assert_eq!(u32::from_le_bytes(ps[0..4].try_into().unwrap()), 0x0000_0050, "ps_5_0");
+    }
+
+    #[test]
+    fn emit_vertex_raster_vs_ps_dxbc() {
+        let vertex = emit_vertex_raster_dxbc().expect("vertex raster");
+        assert_eq!(&vertex.vs[0..4], b"DXBC");
+        assert_eq!(&vertex.ps[0..4], b"DXBC");
+        let vs = chunk(&vertex.vs, b"SHEX").expect("vs shex");
+        let ps = chunk(&vertex.ps, b"SHEX").expect("ps shex");
+        assert_eq!(u32::from_le_bytes(vs[0..4].try_into().unwrap()), 0x0001_0050, "vs_5_0");
+        assert_eq!(u32::from_le_bytes(ps[0..4].try_into().unwrap()), 0x0000_0050, "ps_5_0");
+        let inputs = chunk(&vertex.vs, b"ISGN").expect("vs isgn");
+        assert!(inputs.windows(8).any(|window| window == b"POSITION"));
+        assert!(inputs.windows(5).any(|window| window == b"COLOR"));
     }
 
     #[test]

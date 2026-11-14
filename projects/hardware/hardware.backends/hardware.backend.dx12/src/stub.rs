@@ -8,6 +8,18 @@ fn unsupported() -> hardware_scheduler::Error {
     hardware_scheduler::Error::Backend("dx12".into(), "DirectX 12 backend requires Windows".into())
 }
 
+/// One vertex of the vertex-buffer raster path.
+///
+/// `position` is in pixels of the render target with the origin at its top-left
+/// corner, and `color` is straight (non-premultiplied) RGBA in `0..=1`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Vertex {
+    /// Pixel-space position.
+    pub position: [f32; 2],
+    /// RGBA colour.
+    pub color: [f32; 4],
+}
+
 /// Non-Windows stub: DX12 is only available on Windows.
 pub struct Dx12Backend {
     strategies: WiredStrategies,
@@ -60,6 +72,11 @@ impl Dx12Backend {
 
     /// Prepared-graph execution, rejected on non-Windows hosts.
     pub fn run_prepared(&mut self, _graph: &Graph) -> Result<()> {
+        Err(unsupported())
+    }
+
+    /// Vertex-buffer rasterization, rejected on non-Windows hosts.
+    pub fn draw_vertex_buffer(&mut self, _vertices: &[Vertex], _width: u32, _height: u32) -> Result<Vec<u8>> {
         Err(unsupported())
     }
 }

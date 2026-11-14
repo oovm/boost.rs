@@ -191,6 +191,8 @@ impl Stage {
 pub(crate) enum Opcode {
     /// `breakc` with the non-zero test control bit.
     BreakCNz = 3,
+    /// `div`.
+    Div = 14,
     /// `endif`.
     EndIf = 21,
     /// `endloop`.
@@ -502,6 +504,11 @@ impl ShaderWriter {
     /// `dcl_input vThreadID.x`.
     pub(crate) fn dcl_thread_id(&mut self) {
         self.op(Opcode::DclInput, 0, &[Operand::thread_id(Select::Mask(0b0001))]);
+    }
+
+    /// `dcl_input v<slot>.<components>`.
+    pub(crate) fn dcl_input(&mut self, slot: u32, components: u8) {
+        self.op(Opcode::DclInput, 0, &[Operand::input(slot, Select::Mask(components))]);
     }
 
     /// `dcl_input_sgv v<slot>.<components>, <system value>`.

@@ -11,7 +11,7 @@ mod win;
 mod stub;
 
 #[cfg(windows)]
-pub use win::{Dx12Backend, SharedBufferId};
+pub use win::{Dx12Backend, SharedBufferId, Vertex};
 
 #[cfg(not(windows))]
-pub use stub::Dx12Backend;
+pub use stub::{Dx12Backend, Vertex};

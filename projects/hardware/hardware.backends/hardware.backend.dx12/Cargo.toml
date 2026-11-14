@@ -19,5 +19,6 @@ hardware-types = { workspace = true }
 windows = { workspace = true }
 
 [dev-dependencies]
+acorn-dxbc = { workspace = true }
 hardware-backend-cpu = { workspace = true }
 hardware-runtime = { workspace = true }
