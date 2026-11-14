@@ -1,4 +1,4 @@
-use hardware_harness::{AnalysisOptions, EventKind, FindingCode, Severity, Tracer, analyze, render_markdown};
+use hardware_harness::{AnalysisOptions, EventKind, FindingCode, Severity, Tracer, analyze, compare_readback, render_markdown};
 
 fn trace_with(events: Vec<EventKind>) -> hardware_harness::Trace {
     let mut tracer = Tracer::new();
@@ -67,6 +67,40 @@ fn flags_empty_trace_and_slow_dispatch() {
     let trace = tracer.finish();
     let findings = analyze(&trace, &AnalysisOptions { slow_dispatch_micros: 1 });
     assert!(findings.iter().any(|finding| finding.code == FindingCode::SlowDispatch));
+}
+
+#[test]
+fn matching_readback_records_only_the_readback() {
+    let mut tracer = Tracer::new();
+    assert!(compare_readback(2, &[1.0, 2.5], &[1.0, 2.5], &mut tracer));
+    let trace = tracer.finish();
+
+    assert_eq!(trace.events.len(), 1);
+    assert_eq!(trace.events[0].kind, EventKind::Readback { resource: 2, bytes: 8 });
+}
+
+#[test]
+fn mismatching_readback_flags_every_bad_index() {
+    let mut tracer = Tracer::new();
+    assert!(!compare_readback(3, &[1.0, 2.0, 3.0], &[1.0, 2.5, 0.0], &mut tracer));
+    let trace = tracer.finish();
+
+    assert_eq!(trace.events[0].kind, EventKind::Readback { resource: 3, bytes: 12 });
+    let mismatches: Vec<(u32, usize, &str, &str)> = trace
+        .events
+        .iter()
+        .filter_map(|event| match &event.kind {
+            EventKind::ReadbackMismatch { resource, index, expected, actual } => {
+                Some((*resource, *index, expected.as_str(), actual.as_str()))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(mismatches, vec![(3, 1, "2.000000", "2.500000"), (3, 2, "3.000000", "0.000000")]);
+
+    let findings = analyze(&trace, &AnalysisOptions::default());
+    assert_eq!(findings.len(), 2);
+    assert!(findings.iter().all(|finding| finding.code == FindingCode::ReadbackMismatch && finding.severity == Severity::Error));
 }
 
 #[test]

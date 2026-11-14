@@ -71,6 +71,15 @@ pub enum EventKind {
         /// Why this backend was chosen.
         reason: String,
     },
+    /// A backend reported an internal probe, such as a module cache lookup.
+    BackendProbe {
+        /// Backend name.
+        backend: String,
+        /// Stable probe category (`module_compile`, `module_cache_hit`, …).
+        kind: String,
+        /// Content hash key of the shader module, when known.
+        shader_key: Option<u64>,
+    },
     /// A required capability is missing on the chosen backend.
     CapabilityGap {
         /// Missing feature name.
@@ -158,14 +167,14 @@ impl EventKind {
             Self::BackendProbed { available: true, .. } => Severity::Info,
             Self::BackendProbed { .. } => Severity::Warning,
             Self::BackendSelected { .. } | Self::Emitted { .. } | Self::Dispatched { .. } | Self::Readback { .. } => Severity::Info,
-            Self::Note { .. } => Severity::Trace,
+            Self::Note { .. } | Self::BackendProbe { .. } => Severity::Trace,
         }
     }
 
     /// Execution phase implied by the event kind.
     pub const fn stage(&self) -> Stage {
         match self {
-            Self::BackendProbed { .. } => Stage::Probe,
+            Self::BackendProbed { .. } | Self::BackendProbe { .. } => Stage::Probe,
             Self::BackendSelected { .. } => Stage::Select,
             Self::CapabilityGap { .. } | Self::Degraded { .. } => Stage::Select,
             Self::Emitted { .. } | Self::EmitFailed { .. } => Stage::Emit,
@@ -181,6 +190,10 @@ impl EventKind {
             Self::BackendProbed { backend, available, reason } => match reason {
                 Some(reason) => format!("probe `{backend}` available={available}: {reason}"),
                 None => format!("probe `{backend}` available={available}"),
+            },
+            Self::BackendProbe { backend, kind, shader_key } => match shader_key {
+                Some(key) => format!("probe `{backend}` {kind} key={key:#x}"),
+                None => format!("probe `{backend}` {kind}"),
             },
             Self::BackendSelected { backend, reason } => format!("select `{backend}`: {reason}"),
             Self::CapabilityGap { feature } => format!("capability gap `{feature}`"),

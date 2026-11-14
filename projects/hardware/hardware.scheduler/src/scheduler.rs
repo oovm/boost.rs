@@ -176,7 +176,17 @@ impl Scheduler {
                     return Err(error);
                 }
             }
-            self.last_backend_probes.extend(self.backends[backend_idx].take_probe_events());
+            let probes = self.backends[backend_idx].take_probe_events();
+            if let Some(tracer) = tracer.as_mut() {
+                for probe in &probes {
+                    tracer.record(EventKind::BackendProbe {
+                        backend: probe.backend.clone(),
+                        kind: probe.kind.to_string(),
+                        shader_key: probe.shader_key,
+                    });
+                }
+            }
+            self.last_backend_probes.extend(probes);
             last_backend = Some(backend_idx);
         }
         Ok(())
@@ -478,5 +488,46 @@ mod tests {
         sched.register(Box::new(OrderBackend { name: "cpu".into(), order: order.clone() }));
         sched.execute(&graph).expect("execute");
         assert_eq!(*order.lock().unwrap(), vec![TaskId(1), TaskId(2)]);
+    }
+
+    struct ProbeBackend {
+        name: String,
+    }
+
+    impl Backend for ProbeBackend {
+        fn name(&self) -> &str {
+            &self.name
+        }
+
+        fn features(&self) -> hardware_capability::FeatureSet {
+            hardware_capability::FeatureSet::new()
+        }
+
+        fn submit_task(&mut self, _graph: &Graph, _task: &hardware_ir::TaskNode) -> Result<()> {
+            Ok(())
+        }
+
+        fn take_probe_events(&mut self) -> Vec<BackendProbeEvent> {
+            vec![BackendProbeEvent::new(self.name.clone(), crate::probe_kinds::MODULE_COMPILE, Some(0x1234))]
+        }
+    }
+
+    #[test]
+    fn records_backend_probes_in_trace() {
+        let nodes = vec![task(1, Priority::Batch, Objective::MaxThroughput)];
+        let graph = Graph { resources: ResourceGraph { nodes: vec![] }, tasks: TaskGraph { nodes, edges: vec![] } };
+        let mut sched = Scheduler::new().with_tracer(Tracer::new());
+        sched.register(Box::new(ProbeBackend { name: "cuda".into() }));
+        sched.execute(&graph).expect("execute");
+
+        let probes = sched.take_backend_probes();
+        assert_eq!(probes, vec![BackendProbeEvent::new("cuda", crate::probe_kinds::MODULE_COMPILE, Some(0x1234))]);
+
+        let trace = sched.take_trace().expect("trace");
+        assert!(trace.events.iter().any(|event| matches!(
+            &event.kind,
+            EventKind::BackendProbe { backend, kind, shader_key }
+                if backend == "cuda" && kind.as_str() == crate::probe_kinds::MODULE_COMPILE && *shader_key == Some(0x1234)
+        )));
     }
 }

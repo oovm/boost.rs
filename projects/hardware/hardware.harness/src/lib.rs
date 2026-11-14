@@ -7,10 +7,12 @@
 
 mod analysis;
 mod event;
+mod readback;
 mod report;
 mod tracer;
 
 pub use analysis::{AnalysisOptions, Finding, FindingCode, analyze};
 pub use event::{Event, EventKind, Seq, Severity, Stage};
+pub use readback::compare_readback;
 pub use report::render_markdown;
 pub use tracer::{Span, Trace, Tracer};
