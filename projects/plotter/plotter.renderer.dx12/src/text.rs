@@ -65,14 +65,17 @@ impl Raster {
     }
 
     /// Rasterises `ch` at `size`, caching by character and quarter-pixel size.
+    ///
+    /// The raster size is the quantised cache key so two near-identical sizes can
+    /// never share an entry while being rasterised at different scales.
     fn glyph(&mut self, ch: char, size: f32) -> Result<Glyph, RenderError> {
-        let size = size.max(1.0);
-        let key = (ch, (size * 4.0) as u32);
+        let quarter_pixels = ((size.max(1.0)) * 4.0).round() as u32;
+        let key = (ch, quarter_pixels);
         if let Some(hit) = self.cache.get(&key) {
             return Ok(hit.clone());
         }
         let face = self.faces.iter().find(|face| face.has_glyph(ch)).ok_or(RenderError::MissingGlyph { character: ch })?;
-        let (metrics, coverage) = face.rasterize(ch, size);
+        let (metrics, coverage) = face.rasterize(ch, quarter_pixels as f32 / 4.0);
         let glyph = Glyph {
             advance: metrics.advance_width,
             xmin: metrics.xmin as f32,
