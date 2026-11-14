@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 libloading = { workspace = true }
+hardware-harness = { workspace = true }
 hardware-optimize = { workspace = true }
 hardware-types = { workspace = true }
 hardware-program = { workspace = true }

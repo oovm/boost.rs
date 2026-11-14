@@ -4,6 +4,7 @@
 //! the shared program optimization runs once, and exactly one encoder produces
 //! the module. Backends never call individual emitters directly.
 
+use hardware_harness::{EventKind, Tracer};
 use hardware_optimize::{OptimizeOptions, optimize_program};
 use hardware_program::{Program, validate_program};
 use hardware_types::ShaderProgram;
@@ -169,6 +170,21 @@ pub fn encode_shader(shader: &ShaderProgram, isa: TargetIsa) -> Result<EncodedMo
     Ok(EncodedModule { isa, bytes })
 }
 
+/// Encodes a fixed-operation shader program and records the attempt in `tracer`.
+pub fn encode_shader_traced(shader: &ShaderProgram, isa: TargetIsa, tracer: &mut Tracer) -> Result<EncodedModule, CodegenError> {
+    let label = isa.name();
+    let result = tracer.span(label, |_| encode_shader(shader, isa));
+    match &result {
+        Ok(module) => {
+            tracer.record(EventKind::Emitted { isa: label.into(), entry: shader.entry.clone(), bytes: module.bytes.len() });
+        }
+        Err(error) => {
+            tracer.record(EventKind::EmitFailed { isa: label.into(), message: error.to_string() });
+        }
+    }
+    result
+}
+
 /// Encodes a generic UCF program for `isa`.
 ///
 /// The program is validated and optimized once, then handed to the ISA
@@ -189,4 +205,25 @@ pub fn encode_program(program: &Program, entry: &str, isa: TargetIsa, options: C
     let bytes =
         emit_program_spirv(program, entry).map_err(|error| CodegenError::Encode { isa: TargetIsa::Spirv, message: error.to_string() })?;
     Ok(EncodedModule { isa, bytes })
+}
+
+/// Encodes a generic UCF program and records the attempt in `tracer`.
+pub fn encode_program_traced(
+    program: &Program,
+    entry: &str,
+    isa: TargetIsa,
+    options: CodegenOptions,
+    tracer: &mut Tracer,
+) -> Result<EncodedModule, CodegenError> {
+    let label = isa.name();
+    let result = tracer.span(label, |_| encode_program(program, entry, isa, options));
+    match &result {
+        Ok(module) => {
+            tracer.record(EventKind::Emitted { isa: label.into(), entry: entry.to_string(), bytes: module.bytes.len() });
+        }
+        Err(error) => {
+            tracer.record(EventKind::EmitFailed { isa: label.into(), message: error.to_string() });
+        }
+    }
+    result
 }

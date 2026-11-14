@@ -1,12 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use hardware_ir::{Graph, Objective, Priority, TaskId};
+use hardware_harness::{EventKind, Trace, Tracer};
+use hardware_ir::{Dispatch, Graph, Objective, Priority, TaskId, TaskKind};
 
-use crate::backend::Backend;
-use crate::deadline::effective_deadlines;
-use crate::error::{Error, Result};
-use crate::exec::ExecutionBindings;
-use crate::probe::BackendProbeEvent;
+use crate::{
+    backend::Backend,
+    deadline::effective_deadlines,
+    error::{Error, Result},
+    exec::ExecutionBindings,
+    probe::BackendProbeEvent,
+};
 use hardware_capability::CapabilityReport;
 
 /// One cross-backend placement transition observed during dispatch.
@@ -25,16 +28,24 @@ pub struct Scheduler {
     backends: Vec<Box<dyn Backend>>,
     last_backend_switches: Vec<BackendSwitch>,
     last_backend_probes: Vec<BackendProbeEvent>,
+    tracer: Option<Tracer>,
 }
 
 impl Scheduler {
     /// Empty scheduler with no backends.
     pub fn new() -> Self {
-        Self {
-            backends: Vec::new(),
-            last_backend_switches: Vec::new(),
-            last_backend_probes: Vec::new(),
-        }
+        Self { backends: Vec::new(), last_backend_switches: Vec::new(), last_backend_probes: Vec::new(), tracer: None }
+    }
+
+    /// Records placement and dispatch events into `tracer`.
+    pub fn with_tracer(mut self, tracer: Tracer) -> Self {
+        self.tracer = Some(tracer);
+        self
+    }
+
+    /// Takes the finished trace when tracing was enabled.
+    pub fn take_trace(&mut self) -> Option<Trace> {
+        self.tracer.take().map(Tracer::finish)
     }
 
     /// Take backend-switch records from the most recent [`Self::dispatch`] / submit.
@@ -62,11 +73,7 @@ impl Scheduler {
 
     /// Capability rows for every registered backend (application probe).
     pub fn capabilities(&self) -> CapabilityReport {
-        CapabilityReport::from_backends(
-            self.backends
-                .iter()
-                .map(|b| (b.name().to_string(), b.features())),
-        )
+        CapabilityReport::from_backends(self.backends.iter().map(|b| (b.name().to_string(), b.features())))
     }
 
     /// Validate the graph and allocate/bind resources on every backend.
@@ -110,17 +117,36 @@ impl Scheduler {
     fn dispatch(&mut self, graph: &Graph) -> Result<()> {
         self.last_backend_switches.clear();
         self.last_backend_probes.clear();
+        let mut tracer = self.tracer.take();
+        let result = self.dispatch_inner(graph, &mut tracer);
+        self.tracer = tracer;
+        result
+    }
+
+    fn dispatch_inner(&mut self, graph: &Graph, tracer: &mut Option<Tracer>) -> Result<()> {
         let deadlines = effective_deadlines(graph);
         let order = schedule_order(graph, &deadlines)?;
         let mut last_backend: Option<usize> = None;
         for task_id in order {
-            let task = graph
-                .tasks
-                .nodes
-                .iter()
-                .find(|t| t.id == task_id)
-                .expect("task in order must exist");
-            let backend_idx = self.pick_backend_index(task)?;
+            let task = graph.tasks.nodes.iter().find(|t| t.id == task_id).expect("task in order must exist");
+            let label = task_label(task);
+            let backend_idx = match self.pick_backend_index(task) {
+                Ok(index) => index,
+                Err(error) => {
+                    if let Some(tracer) = tracer.as_mut() {
+                        tracer.record(EventKind::DispatchFailed { task: label, message: error.to_string() });
+                    }
+                    return Err(error);
+                }
+            };
+            let backend_name = self.backends[backend_idx].name().to_string();
+            if let Some(tracer) = tracer.as_mut() {
+                let pinned = matches!(task.params.get("backend"), Some(hardware_ir::ParamValue::Str(_)));
+                tracer.record(EventKind::BackendSelected {
+                    backend: backend_name.clone(),
+                    reason: if pinned { "pinned" } else { "placement" }.into(),
+                });
+            }
             if let Some(prev) = last_backend {
                 if prev != backend_idx {
                     self.backends[prev].flush()?;
@@ -131,9 +157,26 @@ impl Scheduler {
                     });
                 }
             }
-            self.backends[backend_idx].submit_task(graph, task)?;
-            self.last_backend_probes
-                .extend(self.backends[backend_idx].take_probe_events());
+            let submitted = if let Some(tracer) = tracer.as_mut() {
+                tracer.span(format!("dispatch {label} on {backend_name}"), |_| self.backends[backend_idx].submit_task(graph, task))
+            }
+            else {
+                self.backends[backend_idx].submit_task(graph, task)
+            };
+            match submitted {
+                Ok(()) => {
+                    if let Some(tracer) = tracer.as_mut() {
+                        tracer.record(EventKind::Dispatched { task: label, parallel: parallel_count(task) });
+                    }
+                }
+                Err(error) => {
+                    if let Some(tracer) = tracer.as_mut() {
+                        tracer.record(EventKind::DispatchFailed { task: label, message: error.to_string() });
+                    }
+                    return Err(error);
+                }
+            }
+            self.last_backend_probes.extend(self.backends[backend_idx].take_probe_events());
             last_backend = Some(backend_idx);
         }
         Ok(())
@@ -141,28 +184,16 @@ impl Scheduler {
 
     fn pick_backend_index(&self, task: &hardware_ir::TaskNode) -> Result<usize> {
         if let Some(hardware_ir::ParamValue::Str(name)) = task.params.get("backend") {
-            let pinned = self
-                .backends
-                .iter()
-                .position(|b| b.name() == name || b.name().contains(name.as_str()));
+            let pinned = self.backends.iter().position(|b| b.name() == name || b.name().contains(name.as_str()));
             if let Some(idx) = pinned {
                 return Ok(idx);
             }
-            return Err(Error::NoBackend(format!(
-                "pinned backend `{name}` not registered"
-            )));
+            return Err(Error::NoBackend(format!("pinned backend `{name}` not registered")));
         }
 
-        let prefer_cuda = matches!(
-            task.kind,
-            hardware_ir::TaskKind::MatMul | hardware_ir::TaskKind::Dispatch
-        );
-        let prefer_cpu = matches!(
-            task.kind,
-            hardware_ir::TaskKind::Copy | hardware_ir::TaskKind::Fill
-        );
-        let prefer_graphics =
-            matches!(task.kind, hardware_ir::TaskKind::Raster | hardware_ir::TaskKind::RtTrace);
+        let prefer_cuda = matches!(task.kind, hardware_ir::TaskKind::MatMul | hardware_ir::TaskKind::Dispatch);
+        let prefer_cpu = matches!(task.kind, hardware_ir::TaskKind::Copy | hardware_ir::TaskKind::Fill);
+        let prefer_graphics = matches!(task.kind, hardware_ir::TaskKind::Raster | hardware_ir::TaskKind::RtTrace);
 
         let idx = self
             .backends
@@ -170,30 +201,26 @@ impl Scheduler {
             .position(|b| {
                 if prefer_cuda {
                     b.name().contains("cuda") || b.name() == "cpu"
-                } else if prefer_cpu {
+                }
+                else if prefer_cpu {
                     b.name() == "cpu"
-                } else if prefer_graphics {
+                }
+                else if prefer_graphics {
                     b.name().contains("dx") || b.name().contains("vulkan")
-                } else {
+                }
+                else {
                     true
                 }
             })
             .or_else(|| {
-                if task.priority == Priority::Interactive
-                    || matches!(task.objective, Objective::MinLatency { .. })
-                {
+                if task.priority == Priority::Interactive || matches!(task.objective, Objective::MinLatency { .. }) {
                     self.backends.iter().position(|b| b.name().contains("dx"))
-                } else {
+                }
+                else {
                     None
                 }
             })
-            .or_else(|| {
-                if self.backends.is_empty() {
-                    None
-                } else {
-                    Some(0)
-                }
-            });
+            .or_else(|| if self.backends.is_empty() { None } else { Some(0) });
 
         idx.ok_or_else(|| Error::NoBackend(format!("{task_kind:?}", task_kind = task.kind)))
     }
@@ -205,10 +232,7 @@ impl Default for Scheduler {
     }
 }
 
-fn schedule_order(
-    graph: &Graph,
-    deadlines: &BTreeMap<TaskId, Option<u64>>,
-) -> Result<Vec<TaskId>> {
+fn schedule_order(graph: &Graph, deadlines: &BTreeMap<TaskId, Option<u64>>) -> Result<Vec<TaskId>> {
     let mut indegree: BTreeMap<TaskId, usize> = BTreeMap::new();
     let mut successors: BTreeMap<TaskId, Vec<TaskId>> = BTreeMap::new();
     let mut nodes: BTreeMap<TaskId, &hardware_ir::TaskNode> = BTreeMap::new();
@@ -252,34 +276,41 @@ fn schedule_order(
     Ok(order)
 }
 
-fn ready_key(
-    task: &hardware_ir::TaskNode,
-    deadlines: &BTreeMap<TaskId, Option<u64>>,
-) -> (i32, u64, TaskId) {
+fn task_label(task: &hardware_ir::TaskNode) -> String {
+    let kind = match &task.kind {
+        TaskKind::Custom(name) => name.clone(),
+        other => format!("{other:?}"),
+    };
+    format!("{kind}#{}", task.id.0)
+}
+
+fn parallel_count(task: &hardware_ir::TaskNode) -> u32 {
+    match task.dispatch {
+        Dispatch::Explicit { x, y, z } => x.saturating_mul(y).saturating_mul(z),
+        Dispatch::Auto => 0,
+    }
+}
+
+fn ready_key(task: &hardware_ir::TaskNode, deadlines: &BTreeMap<TaskId, Option<u64>>) -> (i32, u64, TaskId) {
     let prio_rank = match task.priority {
         Priority::Interactive => 0,
         Priority::Streaming => 1,
         Priority::Background => 2,
         Priority::Batch => 3,
     };
-    let deadline = deadlines
-        .get(&task.id)
-        .copied()
-        .flatten()
-        .unwrap_or(u64::MAX);
+    let deadline = deadlines.get(&task.id).copied().flatten().unwrap_or(u64::MAX);
     (prio_rank, deadline, task.id)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap as Map;
-    use std::sync::{Arc, Mutex};
-
-    use hardware_ir::{
-        DepEdge, DepKind, Graph, Objective, Priority, ResourceGraph, ShaderId, TaskGraph, TaskKind,
-        TaskNode,
+    use std::{
+        collections::BTreeMap as Map,
+        sync::{Arc, Mutex},
     };
+
+    use hardware_ir::{DepEdge, DepKind, Graph, Objective, Priority, ResourceGraph, ShaderId, TaskGraph, TaskKind, TaskNode};
 
     use crate::noop::NoopBackend;
 
@@ -330,18 +361,12 @@ mod tests {
         }
 
         fn submit_task(&mut self, _graph: &Graph, task: &hardware_ir::TaskNode) -> Result<()> {
-            self.order
-                .lock()
-                .unwrap()
-                .push(format!("submit:{}:{}", self.name, task.id.0));
+            self.order.lock().unwrap().push(format!("submit:{}:{}", self.name, task.id.0));
             Ok(())
         }
 
         fn flush(&mut self) -> Result<()> {
-            self.order
-                .lock()
-                .unwrap()
-                .push(format!("flush:{}", self.name));
+            self.order.lock().unwrap().push(format!("flush:{}", self.name));
             Ok(())
         }
     }
@@ -366,42 +391,17 @@ mod tests {
             resources: ResourceGraph { nodes: vec![] },
             tasks: TaskGraph {
                 nodes: vec![pinned(1, "dx12"), pinned(2, "cuda")],
-                edges: vec![DepEdge {
-                    from_task: Some(TaskId(1)),
-                    from_resource: None,
-                    to_task: TaskId(2),
-                    kind: DepKind::Execution,
-                }],
+                edges: vec![DepEdge { from_task: Some(TaskId(1)), from_resource: None, to_task: TaskId(2), kind: DepKind::Execution }],
             },
         };
         let log = Arc::new(Mutex::new(Vec::new()));
         let mut sched = Scheduler::new();
-        sched.register(Box::new(FlushBackend {
-            name: "dx12".into(),
-            order: log.clone(),
-        }));
-        sched.register(Box::new(FlushBackend {
-            name: "cuda".into(),
-            order: log.clone(),
-        }));
+        sched.register(Box::new(FlushBackend { name: "dx12".into(), order: log.clone() }));
+        sched.register(Box::new(FlushBackend { name: "cuda".into(), order: log.clone() }));
         sched.execute(&graph).expect("execute");
-        assert_eq!(
-            *log.lock().unwrap(),
-            vec![
-                "submit:dx12:1".to_string(),
-                "flush:dx12".to_string(),
-                "submit:cuda:2".to_string(),
-            ]
-        );
+        assert_eq!(*log.lock().unwrap(), vec!["submit:dx12:1".to_string(), "flush:dx12".to_string(), "submit:cuda:2".to_string(),]);
         let switches = sched.take_backend_switches();
-        assert_eq!(
-            switches,
-            vec![BackendSwitch {
-                from_backend: "dx12".into(),
-                to_backend: "cuda".into(),
-                at_task: TaskId(2),
-            }]
-        );
+        assert_eq!(switches, vec![BackendSwitch { from_backend: "dx12".into(), to_backend: "cuda".into(), at_task: TaskId(2) }]);
     }
 
     #[test]
@@ -418,51 +418,29 @@ mod tests {
         };
         let order = Arc::new(Mutex::new(Vec::new()));
         let mut sched = Scheduler::new();
-        sched.register(Box::new(OrderBackend {
-            name: "cpu".into(),
-            order: order.clone(),
-        }));
+        sched.register(Box::new(OrderBackend { name: "cpu".into(), order: order.clone() }));
         sched.execute(&graph).expect("execute");
         assert_eq!(*order.lock().unwrap(), vec![TaskId(2), TaskId(1)]);
     }
 
     #[test]
     fn interactive_120hz_not_starved_by_many_batch() {
-        use crate::{fits_120hz_frame, FRAME_BUDGET_120HZ_MICROS};
+        use crate::{FRAME_BUDGET_120HZ_MICROS, fits_120hz_frame};
 
         assert!(fits_120hz_frame(FRAME_BUDGET_120HZ_MICROS));
         assert!(!fits_120hz_frame(FRAME_BUDGET_120HZ_MICROS + 1));
 
-        let mut nodes = vec![task(
-            100,
-            Priority::Interactive,
-            Objective::MinLatency {
-                deadline_micros: FRAME_BUDGET_120HZ_MICROS,
-            },
-        )];
+        let mut nodes = vec![task(100, Priority::Interactive, Objective::MinLatency { deadline_micros: FRAME_BUDGET_120HZ_MICROS })];
         for id in 1..=16u64 {
             nodes.push(task(id, Priority::Batch, Objective::MaxThroughput));
         }
-        let graph = Graph {
-            resources: ResourceGraph { nodes: vec![] },
-            tasks: TaskGraph {
-                nodes,
-                edges: vec![],
-            },
-        };
+        let graph = Graph { resources: ResourceGraph { nodes: vec![] }, tasks: TaskGraph { nodes, edges: vec![] } };
         let order = Arc::new(Mutex::new(Vec::new()));
         let mut sched = Scheduler::new();
-        sched.register(Box::new(OrderBackend {
-            name: "cpu".into(),
-            order: order.clone(),
-        }));
+        sched.register(Box::new(OrderBackend { name: "cpu".into(), order: order.clone() }));
         sched.execute(&graph).expect("execute");
         let submitted = order.lock().unwrap().clone();
-        assert_eq!(
-            submitted[0],
-            TaskId(100),
-            "120 Hz Interactive must run before ready Batch work"
-        );
+        assert_eq!(submitted[0], TaskId(100), "120 Hz Interactive must run before ready Batch work");
     }
 
     #[test]
@@ -471,26 +449,15 @@ mod tests {
             resources: ResourceGraph { nodes: vec![] },
             tasks: TaskGraph {
                 nodes: vec![
-                    task(
-                        1,
-                        Priority::Batch,
-                        Objective::MinLatency { deadline_micros: 200 },
-                    ),
-                    task(
-                        2,
-                        Priority::Batch,
-                        Objective::MinLatency { deadline_micros: 50 },
-                    ),
+                    task(1, Priority::Batch, Objective::MinLatency { deadline_micros: 200 }),
+                    task(2, Priority::Batch, Objective::MinLatency { deadline_micros: 50 }),
                 ],
                 edges: vec![],
             },
         };
         let order = Arc::new(Mutex::new(Vec::new()));
         let mut sched = Scheduler::new();
-        sched.register(Box::new(OrderBackend {
-            name: "cpu".into(),
-            order: order.clone(),
-        }));
+        sched.register(Box::new(OrderBackend { name: "cpu".into(), order: order.clone() }));
         // Also register noop so Custom can land on first backend (cpu).
         let _ = NoopBackend;
         sched.execute(&graph).expect("execute");
@@ -502,24 +469,13 @@ mod tests {
         let graph = Graph {
             resources: ResourceGraph { nodes: vec![] },
             tasks: TaskGraph {
-                nodes: vec![
-                    task(1, Priority::Batch, Objective::MaxThroughput),
-                    task(2, Priority::Interactive, Objective::MaxThroughput),
-                ],
-                edges: vec![DepEdge {
-                    from_task: Some(TaskId(1)),
-                    from_resource: None,
-                    to_task: TaskId(2),
-                    kind: DepKind::Execution,
-                }],
+                nodes: vec![task(1, Priority::Batch, Objective::MaxThroughput), task(2, Priority::Interactive, Objective::MaxThroughput)],
+                edges: vec![DepEdge { from_task: Some(TaskId(1)), from_resource: None, to_task: TaskId(2), kind: DepKind::Execution }],
             },
         };
         let order = Arc::new(Mutex::new(Vec::new()));
         let mut sched = Scheduler::new();
-        sched.register(Box::new(OrderBackend {
-            name: "cpu".into(),
-            order: order.clone(),
-        }));
+        sched.register(Box::new(OrderBackend { name: "cpu".into(), order: order.clone() }));
         sched.execute(&graph).expect("execute");
         assert_eq!(*order.lock().unwrap(), vec![TaskId(1), TaskId(2)]);
     }

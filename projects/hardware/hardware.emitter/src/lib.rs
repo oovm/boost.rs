@@ -16,7 +16,7 @@ mod task;
 
 pub use codegen::{
     CodegenError, CodegenOptions, DxbcEncoder, EncodedModule, Encoder, HsacoEncoder, PtxEncoder, SpirvEncoder, TargetIsa, encode_program,
-    encode_shader, encoder,
+    encode_program_traced, encode_shader, encode_shader_traced, encoder,
 };
 pub use dxil::{RasterTriDxbc, emit_dxil, emit_raster_tri_dxbc};
 pub use hip::{emit_hip, emit_hsaco};

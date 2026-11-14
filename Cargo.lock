@@ -2070,6 +2070,7 @@ dependencies = [
 name = "hardware-emitter"
 version = "0.1.0"
 dependencies = [
+ "hardware-harness",
  "hardware-optimize",
  "hardware-program",
  "hardware-types",
@@ -2166,6 +2167,7 @@ name = "hardware-scheduler"
 version = "0.1.0"
 dependencies = [
  "hardware-capability",
+ "hardware-harness",
  "hardware-ir",
  "hardware-optimize",
  "serde",

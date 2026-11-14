@@ -12,5 +12,6 @@ publish.workspace = true
 serde = { workspace = true }
 thiserror = { workspace = true }
 hardware-capability = { workspace = true }
+hardware-harness = { workspace = true }
 hardware-ir = { workspace = true }
 hardware-optimize = { workspace = true }
