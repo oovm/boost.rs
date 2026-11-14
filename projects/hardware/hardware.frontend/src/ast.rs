@@ -202,6 +202,13 @@ pub enum Stmt {
         /// Loop body.
         body: Vec<Stmt>,
     },
+    /// A `do ... while` loop.
+    DoWhile {
+        /// Loop body.
+        body: Vec<Stmt>,
+        /// Loop condition.
+        cond: Expr,
+    },
     /// An unbounded loop.
     Loop {
         /// Loop body.

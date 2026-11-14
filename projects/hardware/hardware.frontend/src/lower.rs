@@ -6,8 +6,8 @@ use hardware_program::{BinOp, Expr as IrExpr, Function, Program, ScalarTy, Stmt 
 
 use crate::{
     ast::{
-        AccessMode, AddressSpace, AssignOp, Attribute, BinaryOp, ConstDef, Expr, FunctionDef, GlobalVar, ModuleItem, ShaderModule, Stmt,
-        StructDef, TypeAlias, TypeRef, UnaryOp,
+        AccessMode, AddressSpace, AssignOp, Attribute, BinaryOp, ConstDef, Expr, FunctionDef, ModuleItem, ShaderModule, Stmt, StructDef,
+        TypeAlias, TypeRef, UnaryOp,
     },
     error::FrontendError,
 };
@@ -300,6 +300,15 @@ impl Lowerer {
                 }
                 let body = self.lower_block(body)?;
                 out.push(IrStmt::While { cond, limit: MAX_LOOP, body });
+            }
+            Stmt::DoWhile { body, cond } => {
+                let (cond, cond_ty) = self.expr(cond)?;
+                if cond_ty != bool_ty() {
+                    return Err(unsupported("`do` condition that is not boolean"));
+                }
+                let mut loop_body = self.lower_block(body)?;
+                loop_body.push(IrStmt::If { cond, then_body: Vec::new(), else_body: vec![IrStmt::Break] });
+                out.push(IrStmt::While { cond: IrExpr::ConstBool(true), limit: MAX_LOOP, body: loop_body });
             }
             Stmt::Loop { body } => {
                 let body = self.lower_block(body)?;
