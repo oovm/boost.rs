@@ -135,8 +135,9 @@ flowchart LR
   Renderer --> SVG[renderer.svg]
 ```
 
-渲染只有 SVG / CPU 两条路径。`renderer::gpu::is_available()` 恒为 `false`，`renderer::gpu::render` 返回
-`GpuUnavailable`；GPU 后端待 D3D12 内部实现后接入，不引入外部 GPU 运行时。
+默认渲染路径是 SVG / CPU。可选 feature `dx12` 接入自研 D3D12 后端（`plotter.renderer.dx12`）：
+`renderer::gpu::is_available()` 仅在 Windows 且探测到可用设备时为 `true`，否则 `renderer::gpu::render`
+返回结构化错误 `GpuError::Unavailable`；不引入外部 GPU 运行时，也不静默降级到 CPU。
 
 ### 3.2 Diagram（图语言 → 矢量）
 

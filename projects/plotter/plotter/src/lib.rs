@@ -33,6 +33,9 @@ pub mod layout {
 pub mod renderer {
     pub use plotter_renderer::*;
 
+    /// 加速（GPU）渲染入口；`dx12` feature 下走自研 D3D12 后端。
+    pub mod gpu;
+
     /// SVG 矢量后端。
     #[cfg(feature = "svg")]
     pub mod svg {

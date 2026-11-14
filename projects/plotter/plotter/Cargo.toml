@@ -12,6 +12,8 @@ publish = false
 default = ["svg"]
 ## SVG vector backend (default).
 svg = ["dep:plotter-renderer-svg"]
+## In-house Direct3D 12 backend; only yields pixels on Windows with a usable device.
+dx12 = ["dep:plotter-renderer-dx12"]
 
 [dependencies]
 plotter-types = { workspace = true }
@@ -21,6 +23,7 @@ plotter-view = { workspace = true }
 plotter-layout = { workspace = true }
 plotter-renderer = { workspace = true }
 plotter-renderer-svg = { workspace = true, optional = true }
+plotter-renderer-dx12 = { workspace = true, optional = true }
 plotter-scene = { workspace = true }
 plotter-diagram = { workspace = true }
 plotter-chart = { workspace = true }

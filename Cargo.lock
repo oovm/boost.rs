@@ -3352,6 +3352,7 @@ dependencies = [
  "plotter-layout",
  "plotter-motion",
  "plotter-renderer",
+ "plotter-renderer-dx12",
  "plotter-renderer-svg",
  "plotter-runtime",
  "plotter-scene",
@@ -3511,6 +3512,16 @@ version = "0.1.0"
 dependencies = [
  "plotter-data",
  "plotter-grammar",
+ "plotter-types",
+ "plotter-view",
+]
+
+[[package]]
+name = "plotter-renderer-dx12"
+version = "0.1.0"
+dependencies = [
+ "hardware-backend-dx12",
+ "plotter-renderer",
  "plotter-types",
  "plotter-view",
 ]

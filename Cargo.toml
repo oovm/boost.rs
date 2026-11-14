@@ -131,6 +131,7 @@ members = [
     "projects/plotter/plotter.layout",
     "projects/plotter/plotter.motion",
     "projects/plotter/plotter.renderer",
+    "projects/plotter/plotter.renderer.dx12",
     "projects/plotter/plotter.renderer.svg",
     "projects/plotter/plotter.runtime",
     "projects/plotter/plotter.scene",
@@ -287,6 +288,7 @@ plotter-input-tikz = { path = "projects/plotter/plotter.input.tikz" }
 plotter-layout = { path = "projects/plotter/plotter.layout" }
 plotter-motion = { path = "projects/plotter/plotter.motion" }
 plotter-renderer = { path = "projects/plotter/plotter.renderer" }
+plotter-renderer-dx12 = { path = "projects/plotter/plotter.renderer.dx12" }
 plotter-renderer-svg = { path = "projects/plotter/plotter.renderer.svg" }
 plotter-runtime = { path = "projects/plotter/plotter.runtime" }
 plotter-scene = { path = "projects/plotter/plotter.scene" }
