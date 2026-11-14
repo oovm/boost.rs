@@ -19,7 +19,7 @@ use crate::{
     oplog::OplogEntry,
     storage::{
         CollectionOptions, IndexSpec, MongoStorage, SessionWriteState, StoreError, TransactionAbort, TransactionBegin, TransactionCommit,
-        TransactionWrite,
+        TransactionPage, TransactionWrite,
     },
 };
 
@@ -2115,7 +2115,12 @@ pub fn count(command: &BsonDocument, store: &dyn MongoStorage) -> Result<BsonDoc
         None => 0,
     };
 
-    let matched = {
+    // 空查询、无 skip/limit、未指定 hint 时，`count` 就是命名空间的文档数：
+    // 不必把每篇文档解码成 `BsonDocument`，直接按事务视图或已提交数据取条数。
+    let matched = if filter.fields.is_empty() && skip == 0 && limit == 0 && command.get("hint").is_none() {
+        namespace_documents(store, &namespace, session.key())?.len()
+    }
+    else {
         let access = choose_access(store, &namespace, &filter, &hint, &[], &[], session.key())?;
         let stop_after = scan_stop_after(&[], skip, limit);
         let pushed = pushed_skip(&access, &[], skip);
@@ -6935,16 +6940,65 @@ fn collect_matching_bounded(
     }
     let mut documents = Vec::new();
     let mut examined = 0i64;
-    if session.is_some() {
-        // 事务视图是合并后的整段结果，不能按页推进。
-        for (_key, value) in namespace_documents(store, namespace, session)? {
-            examined += 1;
-            if let Ok(candidate) = parse_bson(&value)
-                && document_matches(&candidate, filter)?
-            {
-                documents.push(candidate);
-                if stop_after.is_some_and(|bound| documents.len() >= bound) {
-                    break;
+    if let Some(session) = session {
+        // 只读事务（或没写过本命名空间的事务）直接按已提交数据分页；只有暂存
+        // 写入存在时合并视图才无法按游标推进，此时退回整段读。
+        let mut after: Option<Vec<u8>> = None;
+        loop {
+            let page = store
+                .transaction_scan_page(session, namespace, after.as_deref(), SCAN_PAGE)
+                .map_err(|error| CommandError::new(1, format!("scan failed: {error}")))?;
+            match page {
+                TransactionPage::None => {
+                    let committed = store
+                        .scan_page(namespace, after.as_deref(), SCAN_PAGE)
+                        .map_err(|error| CommandError::new(1, format!("scan failed: {error}")))?;
+                    after = committed.last().map(|(key, _)| key.clone());
+                    for (_key, value) in committed {
+                        examined += 1;
+                        if let Ok(candidate) = parse_bson(&value)
+                            && document_matches(&candidate, filter)?
+                        {
+                            documents.push(candidate);
+                            if stop_after.is_some_and(|bound| documents.len() >= bound) {
+                                return Ok((documents, examined));
+                            }
+                        }
+                    }
+                    if after.is_none() {
+                        break;
+                    }
+                }
+                TransactionPage::Page(page) => {
+                    if page.is_empty() {
+                        break;
+                    }
+                    after = page.last().map(|(key, _)| key.clone());
+                    for (_key, value) in page {
+                        examined += 1;
+                        if let Ok(candidate) = parse_bson(&value)
+                            && document_matches(&candidate, filter)?
+                        {
+                            documents.push(candidate);
+                            if stop_after.is_some_and(|bound| documents.len() >= bound) {
+                                return Ok((documents, examined));
+                            }
+                        }
+                    }
+                }
+                TransactionPage::Merged => {
+                    for (_key, value) in namespace_documents(store, namespace, Some(session))? {
+                        examined += 1;
+                        if let Ok(candidate) = parse_bson(&value)
+                            && document_matches(&candidate, filter)?
+                        {
+                            documents.push(candidate);
+                            if stop_after.is_some_and(|bound| documents.len() >= bound) {
+                                return Ok((documents, examined));
+                            }
+                        }
+                    }
+                    return Ok((documents, examined));
                 }
             }
         }

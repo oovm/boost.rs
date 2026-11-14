@@ -27,7 +27,7 @@ use database_protocol_mongo::{
 use database_storage::cluster_kv::{FileShard, InlineValue, Key, KvStore, ShardChange, StoredValue};
 use database_types::cluster::{CATALOG_SUFFIX, CatalogSchema, Namespace, ShardId};
 
-use crate::oplog::OplogEntry;
+use crate::{oplog::OplogEntry, storage::TransactionPage};
 
 /// One user-created index. `_id_` is implicit and is never stored here.
 #[derive(Debug, Clone)]
@@ -1060,6 +1060,36 @@ impl Store {
         Ok(Some(documents))
     }
 
+    /// 事务视角下的一页文档。
+    ///
+    /// 事务未开启、已放弃，或本命名空间没有暂存写入时，直接按已提交数据分页；
+    /// 只有暂存写入存在时才让调用方退回整段合并读取，避免合并视图破坏
+    /// 编码 `_id` 顺序。这样只读事务里的分页查询不会再整段读。
+    pub fn transaction_scan_page(
+        &self,
+        session: &str,
+        namespace: &str,
+        after: Option<&[u8]>,
+        limit: usize,
+    ) -> Result<TransactionPage, StoreError> {
+        let staged = {
+            let registry = self.sessions_lock();
+            match registry.transactions.get(session) {
+                None => None,
+                Some(state) if state.aborted => None,
+                Some(state) => Some(state.writes.keys().any(|(owner, _)| owner == namespace)),
+            }
+        };
+        let Some(staged) = staged
+        else {
+            return Ok(TransactionPage::None);
+        };
+        if staged {
+            return Ok(TransactionPage::Merged);
+        }
+        self.scan_page(namespace, after, limit).map(TransactionPage::Page)
+    }
+
     /// One document as the transaction sees it. The outer `Option` is `None`
     /// when the key is not staged, so the caller reads the committed value.
     pub fn transaction_get(&self, session: &str, namespace: &str, key: &[u8]) -> Result<Option<Option<Vec<u8>>>, StoreError> {
@@ -1821,6 +1851,16 @@ impl crate::storage::MongoStorage for Store {
 
     fn transaction_scan(&self, session: &str, namespace: &str) -> Result<Option<Vec<(Vec<u8>, Vec<u8>)>>, StoreError> {
         Store::transaction_scan(self, session, namespace)
+    }
+
+    fn transaction_scan_page(
+        &self,
+        session: &str,
+        namespace: &str,
+        after: Option<&[u8]>,
+        limit: usize,
+    ) -> Result<TransactionPage, StoreError> {
+        Store::transaction_scan_page(self, session, namespace, after, limit)
     }
 
     fn transaction_get(&self, session: &str, namespace: &str, key: &[u8]) -> Result<Option<Option<Vec<u8>>>, StoreError> {

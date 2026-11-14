@@ -17,6 +17,19 @@ pub use crate::store::{
 
 use crate::oplog::OplogEntry;
 
+/// 事务视图下的一页文档。
+///
+/// 分页扫描只在事务没有暂存写入时才能按游标推进；一旦本命名空间有暂存写入，
+/// 合并视图就不保证编码 `_id` 顺序，调用方必须退回整段合并读取。
+pub enum TransactionPage {
+    /// 会话没有开启事务，调用方读已提交数据。
+    None,
+    /// 事务视图的一页，已按 `after` / `limit` 裁剪。
+    Page(Vec<(Vec<u8>, Vec<u8>)>),
+    /// 事务对本命名空间有暂存写入，合并视图无法按游标分页。
+    Merged,
+}
+
 /// MongoDB 文档存储后端。
 ///
 /// 所有方法都以 namespace 为第一参数，namespace 是 `<database>.<collection>`。
@@ -218,6 +231,29 @@ pub trait MongoStorage: Send + Sync {
 
     /// 事务视角下的整个 namespace；会话无活跃事务时返回 `None`，调用方读已提交数据。
     fn transaction_scan(&self, session: &str, namespace: &str) -> Result<Option<Vec<(Vec<u8>, Vec<u8>)>>, StoreError>;
+
+    /// 事务视角下的一页文档，语义与 [`Self::scan_page`] 一致。
+    ///
+    /// 默认实现整段合并后裁剪，保证语义正确；能把游标下推到已提交数据、只在
+    /// 本命名空间有暂存写入时才退回整段的实现应覆盖它。
+    fn transaction_scan_page(
+        &self,
+        session: &str,
+        namespace: &str,
+        after: Option<&[u8]>,
+        limit: usize,
+    ) -> Result<TransactionPage, StoreError> {
+        let Some(documents) = self.transaction_scan(session, namespace)?
+        else {
+            return Ok(TransactionPage::None);
+        };
+        let mut page: Vec<(Vec<u8>, Vec<u8>)> =
+            documents.into_iter().filter(|(key, _)| after.is_none_or(|after| key.as_slice() > after)).collect();
+        if limit > 0 {
+            page.truncate(limit);
+        }
+        Ok(TransactionPage::Page(page))
+    }
 
     /// 事务视角下的单个文档。外层 `None` 表示该键未被暂存，调用方读已提交值。
     fn transaction_get(&self, session: &str, namespace: &str, key: &[u8]) -> Result<Option<Option<Vec<u8>>>, StoreError>;
