@@ -87,6 +87,40 @@ fn dispatches_uniform_scaled_buffer_reads() {
 }
 
 #[test]
+fn dispatches_vector_math_program() {
+    use hardware_program::{StructuredFunctionBuilder, UnOp};
+
+    let builder = StructuredFunctionBuilder::new("vector_math");
+    let a = Expr::Vec3Compose { x: Box::new(Expr::ConstF32(1.0)), y: Box::new(Expr::ConstF32(2.0)), z: Box::new(Expr::ConstF32(2.0)) };
+    let b = Expr::Vec3Compose { x: Box::new(Expr::ConstF32(0.0)), y: Box::new(Expr::ConstF32(3.0)), z: Box::new(Expr::ConstF32(0.0)) };
+    let unit = builder.unary(UnOp::Normalize, a.clone());
+    let dot = builder.binary(BinOp::Dot, unit, b);
+    let length = builder.unary(UnOp::Length, a);
+    let remainder = builder.binary(BinOp::Mod, Expr::ConstF32(5.5), Expr::ConstF32(2.0));
+    let sum = builder.binary(BinOp::Add, dot, length);
+    let result = builder.binary(BinOp::Add, sum, remainder);
+    let function = builder.finish(Ty::f32(), result);
+    let program = Program { version: 1, functions: vec![function], entry: 0 };
+
+    let graph = Graph {
+        resources: ResourceGraph { nodes: vec![buffer(2, 4)] },
+        tasks: TaskGraph {
+            nodes: vec![dispatch_task(13, &program, BTreeMap::from([("output".to_string(), ParamValue::I64(2))]))],
+            edges: Vec::new(),
+        },
+    };
+
+    let Some(mut dx12) = open()
+    else {
+        return;
+    };
+    dx12.prepare(&graph).expect("prepare");
+    dx12.run_prepared(&graph).expect("dispatch");
+    let actual = dx12.read_f32(Rid(2)).expect("read");
+    assert_eq!(actual, vec![6.5; 4]);
+}
+
+#[test]
 fn dispatches_storage_buffer_writes() {
     let program = program(vec![
         Stmt::StoreBuffer { resource: 0, index: Expr::GlobalId, value: Expr::ConstF32(1.5) },

@@ -201,6 +201,8 @@ pub(crate) enum Opcode {
     Continue = 7,
     /// `div`.
     Div = 14,
+    /// `dp3`, the three-component dot product.
+    Dp3 = 16,
     /// `else`.
     Else = 18,
     /// `endif`.
