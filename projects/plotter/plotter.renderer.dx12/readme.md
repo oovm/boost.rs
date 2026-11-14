@@ -11,9 +11,13 @@ Public surface:
 - `render_rgba8(scene, width, height)` — RGBA8 readback on a transparent background
 
 Node coverage: polyline (offset quad per segment), points (cross), 2D mesh,
-projected `Mesh3` / `Points3` (painter order), axis (line plus ticks). Text has no
-triangle conversion and fails with `RenderError::UnsupportedNode` instead of being
-dropped silently.
+projected `Mesh3` / `Points3` (painter order), axis (line plus ticks) and text.
+Text runs have no triangle conversion: they are rasterised on the CPU from
+system font files (`PLOTTER_FONT_PATH` overrides; `segoeui.ttf` / `msyh.ttc` on
+Windows) and composited over the device frame in paint order. A missing font is
+`RenderError::FontUnavailable` and an uncovered character is
+`RenderError::MissingGlyph`, never a silent blank. A text-only scene needs no
+device.
 
 ```sh
 cargo test -p plotter-renderer-dx12

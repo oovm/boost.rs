@@ -1,5 +1,7 @@
 //! Structured failures produced while turning a scene into pixels.
 
+use std::path::PathBuf;
+
 /// A scene that cannot be converted into a triangle list or rasterised.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RenderError {
@@ -15,13 +17,6 @@ pub enum RenderError {
         /// Dangling node id.
         node: u64,
     },
-    /// The node kind has no triangle conversion in this backend.
-    UnsupportedNode {
-        /// Node kind name.
-        kind: &'static str,
-        /// Node id owning the unsupported payload.
-        node: u64,
-    },
     /// A mesh index points outside its position array.
     InvalidIndex {
         /// Mesh node id.
@@ -29,16 +24,21 @@ pub enum RenderError {
         /// Offending index.
         index: u32,
     },
+    /// No system font could be opened, so text nodes cannot be rasterised.
+    FontUnavailable {
+        /// Paths that were probed and rejected.
+        tried: Vec<PathBuf>,
+    },
+    /// No loaded face covers a character requested by a text node.
+    MissingGlyph {
+        /// Character with no coverage.
+        character: char,
+    },
     /// Direct3D 12 device creation or draw failure.
     Backend(String),
 }
 
 impl RenderError {
-    /// Build an [`RenderError::UnsupportedNode`].
-    pub(crate) const fn unsupported(kind: &'static str, node: u64) -> Self {
-        Self::UnsupportedNode { kind, node }
-    }
-
     /// Build an [`RenderError::Backend`] from any displayable error.
     pub(crate) fn backend(err: impl core::fmt::Display) -> Self {
         Self::Backend(err.to_string())
@@ -52,11 +52,14 @@ impl core::fmt::Display for RenderError {
                 write!(f, "raster target must be non-zero, got {width}x{height}")
             }
             Self::MissingNode { node } => write!(f, "scene node {node} is missing from the arena"),
-            Self::UnsupportedNode { kind, node } => {
-                write!(f, "node {node} ({kind}) has no Direct3D 12 triangle conversion")
-            }
             Self::InvalidIndex { node, index } => {
                 write!(f, "mesh node {node} references vertex {index} outside its position array")
+            }
+            Self::FontUnavailable { tried } => {
+                write!(f, "no usable text font found, probed {}", tried.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", "))
+            }
+            Self::MissingGlyph { character } => {
+                write!(f, "the loaded text faces do not cover character {character:?}")
             }
             Self::Backend(message) => write!(f, "Direct3D 12 backend failed: {message}"),
         }

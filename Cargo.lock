@@ -3542,6 +3542,7 @@ dependencies = [
 name = "plotter-renderer-dx12"
 version = "0.1.0"
 dependencies = [
+ "fontdue",
  "hardware-backend-dx12",
  "plotter-renderer",
  "plotter-types",

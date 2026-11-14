@@ -67,18 +67,32 @@ fn points_render_as_crosses() {
 }
 
 #[test]
-fn text_nodes_fail_with_a_structured_error() {
+fn text_nodes_rasterise_through_system_fonts() {
     let mut arena = SceneArena::new();
     let text = arena.insert(SceneNodeKind::Text(TextNode {
-        position: Point2::new(4.0, 4.0),
-        content: "label".to_string(),
-        size: 8.0,
+        position: Point2::new(4.0, 44.0),
+        content: "Hi".to_string(),
+        size: 32.0,
         color: Rgba::WHITE,
     }));
     let root = arena.insert(SceneNodeKind::Group { children: vec![text] });
-    let scene = Scene::from_arena(root, arena, Viewport::new(64.0, 64.0));
+    let scene = Scene::from_arena(root, arena, Viewport::new(128.0, 64.0));
 
-    assert_eq!(render_rgba8(&scene, 64, 64).unwrap_err(), RenderError::UnsupportedNode { kind: "text", node: text.0 });
+    let image = match render_rgba8(&scene, 128, 64) {
+        Ok(image) => image,
+        Err(RenderError::FontUnavailable { .. }) => {
+            eprintln!("skip plotter d3d12 text render: no usable system font on this host");
+            return;
+        }
+        Err(error) => panic!("text should rasterise, got {error}"),
+    };
+    let painted = image.pixels.as_chunks::<4>().0.iter().filter(|pixel| pixel[3] > 0).count();
+    assert!(painted > 20, "glyph coverage must reach the target, painted {painted} pixels");
+    assert!(
+        image.pixels.as_chunks::<4>().0.iter().any(|pixel| pixel[3] > 200 && pixel[0] > 200 && pixel[1] > 200),
+        "opaque white ink must appear where the glyphs are"
+    );
+    assert!(opaque_pixels_with(&image, [0, 0, 0, 0]) > 0, "pixels outside the run stay transparent");
 }
 
 #[test]

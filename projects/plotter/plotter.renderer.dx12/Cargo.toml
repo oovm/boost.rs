@@ -9,6 +9,7 @@ readme = "readme.md"
 publish = false
 
 [dependencies]
+fontdue = { workspace = true }
 hardware-backend-dx12 = { workspace = true }
 plotter-renderer = { workspace = true }
 plotter-types = { workspace = true }

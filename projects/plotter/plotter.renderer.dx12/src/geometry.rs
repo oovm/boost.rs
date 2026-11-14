@@ -19,17 +19,39 @@ const MIN_STROKE_WIDTH: f32 = 1.0;
 /// Axis tick length in pixels.
 const TICK_LENGTH: f64 = 6.0;
 
-/// Convert every drawable node reachable from `scene.root` into a triangle list.
-pub(crate) fn collect_triangles(scene: &Scene, height: u32) -> Result<Vec<Vertex>, RenderError> {
-    let mut builder = Builder { height: height as f32, vertices: Vec::new() };
+/// One text node awaiting CPU glyph rasterisation.
+pub(crate) struct TextRun {
+    /// Scene-space anchor: left edge of the run and the baseline.
+    pub position: Point2,
+    /// Text content, one or more newline-separated lines.
+    pub content: String,
+    /// Font size in scene units (pixels).
+    pub size: f32,
+    /// Fill colour.
+    pub color: Rgba,
+}
+
+/// The two halves a scene rasterises into: GPU triangles and CPU text runs.
+pub(crate) struct Geometry {
+    /// Triangle list in paint order.
+    pub vertices: Vec<Vertex>,
+    /// Text nodes in paint order.
+    pub texts: Vec<TextRun>,
+}
+
+/// Convert every drawable node reachable from `scene.root` into a triangle list
+/// plus the text runs composited afterwards.
+pub(crate) fn collect(scene: &Scene, height: u32) -> Result<Geometry, RenderError> {
+    let mut builder = Builder { height: height as f32, vertices: Vec::new(), texts: Vec::new() };
     builder.visit(scene, scene.root)?;
-    Ok(builder.vertices)
+    Ok(Geometry { vertices: builder.vertices, texts: builder.texts })
 }
 
 /// Accumulates triangle vertices in paint order.
 struct Builder {
     height: f32,
     vertices: Vec<Vertex>,
+    texts: Vec<TextRun>,
 }
 
 impl Builder {
@@ -47,7 +69,9 @@ impl Builder {
             SceneNodeKind::Mesh3(mesh) => self.push_mesh3(scene, mesh, node.id)?,
             SceneNodeKind::Points3(points) => self.push_points3(scene, points),
             SceneNodeKind::Axis(axis) => self.push_axis(axis),
-            SceneNodeKind::Text(_) => return Err(RenderError::unsupported("text", node.id.0)),
+            SceneNodeKind::Text(text) => {
+                self.texts.push(TextRun { position: text.position, content: text.content.clone(), size: text.size, color: text.color })
+            }
         }
         Ok(())
     }

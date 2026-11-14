@@ -62,3 +62,28 @@ fn facade_renders_through_the_accelerated_backend_when_present() {
     assert_eq!(image.pixels.len(), (image.width * image.height * 4) as usize);
     assert!(image.pixels.as_chunks::<4>().0.iter().any(|pixel| pixel[3] > 0), "the accelerated frame must be painted");
 }
+
+#[cfg(feature = "dx12")]
+#[test]
+fn facade_renders_text_labels_through_the_accelerated_backend() {
+    use plotter::{grammar::AestheticExpr, renderer::gpu};
+
+    let table = ColumnTable::new()
+        .push_float("x", vec![0.0, 1.0])
+        .unwrap()
+        .push_float("y", vec![1.0, 2.0])
+        .unwrap()
+        .push_string("lab", vec!["A".to_string(), "B".to_string()])
+        .unwrap();
+    let mut mapping = Mapping::xy("x", "y");
+    mapping.label = Some(AestheticExpr::column("lab"));
+    let plot = PlotSpec::new(table).mapping(mapping).layer(LayerSpec::geom_text());
+    let scene = compile_plot(&plot, CompileOptions::default()).unwrap();
+    if !gpu::is_available() {
+        eprintln!("skip accelerated label render: no usable Direct3D 12 device on this host");
+        return;
+    }
+    let image = gpu::render(&scene).expect("labels should rasterise");
+    let painted = image.pixels.as_chunks::<4>().0.iter().filter(|pixel| pixel[3] > 0).count();
+    assert!(painted > 0, "text labels must reach the accelerated frame instead of disappearing");
+}
