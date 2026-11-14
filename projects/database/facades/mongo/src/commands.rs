@@ -461,7 +461,7 @@ const MAX_BSON_OBJECT_SIZE: usize = 16_793_600;
 /// Rejects one stored document above the BSON ceiling before it reaches the
 /// store, with the code and wording `mongod 8.0.9` uses.
 fn ensure_document_size(document: &BsonDocument, collection: &str) -> Result<(), CommandError> {
-    let size = encode_bson(document).len();
+    let size = document.encoded_len();
     if size > MAX_BSON_OBJECT_SIZE {
         return Err(CommandError::new(
             10334,

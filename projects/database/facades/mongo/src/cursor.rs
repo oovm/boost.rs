@@ -9,7 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use database_protocol_mongo::bson::{encode_bson, BsonValue};
+use database_protocol_mongo::bson::BsonValue;
 
 /// Idle time after which a cursor is reclaimed.
 pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(600);
@@ -22,9 +22,12 @@ pub const DEFAULT_FIRST_BATCH: usize = 101;
 pub const MAX_BATCH_BYTES: usize = 16_777_216;
 
 /// Encoded size of one cursor document.
+///
+/// 批大小只看编码后的字节数，因此直接按 BSON 布局算长度，不为了量体积再把
+/// 每篇文档真正编码一次。
 fn document_bytes(value: &BsonValue) -> usize {
     match value {
-        BsonValue::Document(document) => encode_bson(document).len(),
+        BsonValue::Document(document) => document.encoded_len(),
         _ => 0,
     }
 }

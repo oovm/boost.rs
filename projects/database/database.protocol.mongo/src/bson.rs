@@ -9,10 +9,7 @@
 //! `mongod 8.0.9` 会把这些类型原样回显在 `find` / `explain` 应答里，缺任何一种
 //! 都会让真机应答整条不可解码。
 
-use std::{
-    cmp::Ordering,
-    io::{self, Cursor, Read, Write},
-};
+use std::{cmp::Ordering, io};
 
 use crate::decimal128::Decimal128;
 
@@ -300,170 +297,203 @@ impl BsonDocument {
 // Encoding
 // ---------------------------------------------------------------------------
 
-fn write_cstring<W: Write>(writer: &mut W, value: &str) -> io::Result<()> {
-    writer.write_all(value.as_bytes())?;
-    writer.write_all(b"\x00")?;
-    Ok(())
+fn write_cstring(out: &mut Vec<u8>, value: &str) {
+    out.extend_from_slice(value.as_bytes());
+    out.push(0);
 }
 
-fn write_string<W: Write>(writer: &mut W, value: &str) -> io::Result<()> {
-    let bytes = value.as_bytes();
-    writer.write_all(&(bytes.len() as i32 + 1).to_le_bytes())?;
-    writer.write_all(bytes)?;
-    writer.write_all(b"\x00")?;
-    Ok(())
+fn write_string(out: &mut Vec<u8>, value: &str) {
+    out.extend_from_slice(&(value.len() as i32 + 1).to_le_bytes());
+    out.extend_from_slice(value.as_bytes());
+    out.push(0);
 }
 
-fn encode_document<W: Write>(writer: &mut W, doc: &BsonDocument) -> io::Result<()> {
-    let mut cursor = Cursor::new(Vec::<u8>::new());
-    // Placeholder length
-    cursor.write_all(&0_u32.to_le_bytes())?;
-    for (key, value) in &doc.fields {
-        encode_field(&mut cursor, key, value)?;
+/// 数组下标键直接写数字，不分摊一次 `String` 分配。
+fn write_index_key(out: &mut Vec<u8>, index: usize) {
+    let mut digits = [0_u8; 20];
+    let mut position = digits.len();
+    let mut remaining = index;
+    loop {
+        position -= 1;
+        digits[position] = b'0' + (remaining % 10) as u8;
+        remaining /= 10;
+        if remaining == 0 {
+            break;
+        }
     }
-    cursor.write_all(&0_u8.to_le_bytes())?; // terminator
-    let bytes = cursor.into_inner();
-    let len = bytes.len() as u32;
-    writer.write_all(&len.to_le_bytes())?;
-    writer.write_all(&bytes[4..])?;
-    Ok(())
+    out.extend_from_slice(&digits[position..]);
+    out.push(0);
 }
 
-fn encode_field<W: Write>(writer: &mut W, key: &str, value: &BsonValue) -> io::Result<()> {
+/// 数组下标键的十进制位数，供 [`BsonValue::encoded_len`] 精确计数。
+fn index_key_len(index: usize) -> usize {
+    index.checked_ilog10().map_or(1, |digits| digits as usize + 1)
+}
+
+/// Writes one document into `out` and patches its length prefix in place.
+///
+/// 整份文档（含嵌套文档与数组）只追加进调用方给的同一个缓冲区，因此编码一份
+/// 文档不再为每个子文档/数组分配临时 `Vec`。
+fn encode_document(out: &mut Vec<u8>, document: &BsonDocument) {
+    let start = out.len();
+    out.extend_from_slice(&0_u32.to_le_bytes());
+    for (key, value) in &document.fields {
+        encode_field(out, key, value);
+    }
+    out.push(0); // terminator
+    let length = (out.len() - start) as u32;
+    out[start..start + 4].copy_from_slice(&length.to_le_bytes());
+}
+
+fn encode_field(out: &mut Vec<u8>, key: &str, value: &BsonValue) {
+    out.push(element_type(value));
+    write_cstring(out, key);
+    encode_payload(out, value);
+}
+
+fn encode_indexed_field(out: &mut Vec<u8>, index: usize, value: &BsonValue) {
+    out.push(element_type(value));
+    write_index_key(out, index);
+    encode_payload(out, value);
+}
+
+/// BSON element type byte of one value.
+fn element_type(value: &BsonValue) -> u8 {
     match value {
-        BsonValue::Double(v) => {
-            writer.write_all(&0x01_u8.to_le_bytes())?;
-            write_cstring(writer, key)?;
-            writer.write_all(&v.to_le_bytes())?;
-        }
-        BsonValue::String(v) => {
-            writer.write_all(&0x02_u8.to_le_bytes())?;
-            write_cstring(writer, key)?;
-            write_string(writer, v)?;
-        }
-        BsonValue::Document(doc) => {
-            writer.write_all(&0x03_u8.to_le_bytes())?;
-            write_cstring(writer, key)?;
-            encode_document(writer, doc)?;
-        }
+        BsonValue::Double(_) => 0x01,
+        BsonValue::String(_) => 0x02,
+        BsonValue::Document(_) => 0x03,
+        BsonValue::Array(_) => 0x04,
+        BsonValue::Binary(_) => 0x05,
+        BsonValue::Undefined => 0x06,
+        BsonValue::ObjectId(_) => 0x07,
+        BsonValue::Bool(_) => 0x08,
+        BsonValue::DateTime(_) => 0x09,
+        BsonValue::Null => 0x0A,
+        BsonValue::Regex { .. } => 0x0B,
+        BsonValue::DbPointer { .. } => 0x0C,
+        BsonValue::Code(_) => 0x0D,
+        BsonValue::Symbol(_) => 0x0E,
+        BsonValue::CodeWithScope { .. } => 0x0F,
+        BsonValue::Int32(_) => 0x10,
+        BsonValue::Timestamp { .. } => 0x11,
+        BsonValue::Int64(_) => 0x12,
+        BsonValue::Decimal128(_) => 0x13,
+        BsonValue::MaxKey => 0x7F,
+        BsonValue::MinKey => 0xFF,
+    }
+}
+
+/// Writes the value payload that follows the element type and key.
+fn encode_payload(out: &mut Vec<u8>, value: &BsonValue) {
+    match value {
+        BsonValue::Double(v) => out.extend_from_slice(&v.to_le_bytes()),
+        BsonValue::String(v) => write_string(out, v),
+        BsonValue::Document(document) => encode_document(out, document),
         BsonValue::Array(items) => {
-            writer.write_all(&0x04_u8.to_le_bytes())?;
-            write_cstring(writer, key)?;
-            let mut sub = BsonDocument::new();
-            for (i, item) in items.iter().enumerate() {
-                sub.push(i.to_string(), item.clone());
+            let start = out.len();
+            out.extend_from_slice(&0_u32.to_le_bytes());
+            for (index, item) in items.iter().enumerate() {
+                encode_indexed_field(out, index, item);
             }
-            encode_document(writer, &sub)?;
+            out.push(0);
+            let length = (out.len() - start) as u32;
+            out[start..start + 4].copy_from_slice(&length.to_le_bytes());
         }
         BsonValue::Binary(v) => {
-            writer.write_all(&0x05_u8.to_le_bytes())?;
-            write_cstring(writer, key)?;
             // BSON 规范：子类型 0x02（已废弃的旧式二进制）在载荷前再内嵌一份
             // 自身长度。存储侧只保留载荷，这里按长度还原。
             let wire_len = if v.subtype == 0x02 { v.bytes.len() + 4 } else { v.bytes.len() };
-            writer.write_all(&(wire_len as i32).to_le_bytes())?;
-            writer.write_all(&v.subtype.to_le_bytes())?;
+            out.extend_from_slice(&(wire_len as i32).to_le_bytes());
+            out.push(v.subtype);
             if v.subtype == 0x02 {
-                writer.write_all(&(v.bytes.len() as i32).to_le_bytes())?;
+                out.extend_from_slice(&(v.bytes.len() as i32).to_le_bytes());
             }
-            writer.write_all(&v.bytes)?;
+            out.extend_from_slice(&v.bytes);
         }
-        BsonValue::ObjectId(bytes) => {
-            writer.write_all(&0x07_u8.to_le_bytes())?;
-            write_cstring(writer, key)?;
-            writer.write_all(bytes)?;
-        }
-        BsonValue::Bool(v) => {
-            writer.write_all(&0x08_u8.to_le_bytes())?;
-            write_cstring(writer, key)?;
-            writer.write_all(&if *v { 1_u8 } else { 0_u8 }.to_le_bytes())?;
-        }
-        BsonValue::Null => {
-            writer.write_all(&0x0A_u8.to_le_bytes())?;
-            write_cstring(writer, key)?;
-        }
-        BsonValue::Undefined => {
-            writer.write_all(&0x06_u8.to_le_bytes())?;
-            write_cstring(writer, key)?;
-        }
-        BsonValue::Int32(v) => {
-            writer.write_all(&0x10_u8.to_le_bytes())?;
-            write_cstring(writer, key)?;
-            writer.write_all(&v.to_le_bytes())?;
-        }
-        BsonValue::Int64(v) => {
-            writer.write_all(&0x12_u8.to_le_bytes())?;
-            write_cstring(writer, key)?;
-            writer.write_all(&v.to_le_bytes())?;
-        }
-        BsonValue::DateTime(v) => {
-            writer.write_all(&0x09_u8.to_le_bytes())?;
-            write_cstring(writer, key)?;
-            writer.write_all(&v.to_le_bytes())?;
-        }
+        BsonValue::Undefined | BsonValue::Null | BsonValue::MinKey | BsonValue::MaxKey => {}
+        BsonValue::ObjectId(bytes) => out.extend_from_slice(bytes),
+        BsonValue::Bool(v) => out.push(if *v { 1 } else { 0 }),
+        BsonValue::Int32(v) => out.extend_from_slice(&v.to_le_bytes()),
+        BsonValue::Int64(v) => out.extend_from_slice(&v.to_le_bytes()),
+        BsonValue::DateTime(v) => out.extend_from_slice(&v.to_le_bytes()),
         BsonValue::Timestamp { t, i } => {
-            writer.write_all(&0x11_u8.to_le_bytes())?;
-            write_cstring(writer, key)?;
             // 线上顺序是先 `i` 后 `t`。
-            writer.write_all(&i.to_le_bytes())?;
-            writer.write_all(&t.to_le_bytes())?;
+            out.extend_from_slice(&i.to_le_bytes());
+            out.extend_from_slice(&t.to_le_bytes());
         }
-        BsonValue::Decimal128(v) => {
-            writer.write_all(&0x13_u8.to_le_bytes())?;
-            write_cstring(writer, key)?;
-            writer.write_all(&v.bytes())?;
-        }
+        BsonValue::Decimal128(v) => out.extend_from_slice(&v.bytes()),
         BsonValue::Regex { pattern, options } => {
-            writer.write_all(&0x0B_u8.to_le_bytes())?;
-            write_cstring(writer, key)?;
-            write_cstring(writer, pattern)?;
-            write_cstring(writer, options)?;
+            write_cstring(out, pattern);
+            write_cstring(out, options);
         }
-        BsonValue::Code(code) => {
-            writer.write_all(&0x0D_u8.to_le_bytes())?;
-            write_cstring(writer, key)?;
-            write_string(writer, code)?;
-        }
+        BsonValue::Code(code) => write_string(out, code),
         BsonValue::CodeWithScope { code, scope } => {
-            writer.write_all(&0x0F_u8.to_le_bytes())?;
-            write_cstring(writer, key)?;
             // 总长度包含自身 4 字节，后面紧跟代码字符串与作用域文档。
-            let mut payload = Vec::new();
-            payload.write_all(&0_u32.to_le_bytes())?;
-            write_string(&mut payload, code)?;
-            encode_document(&mut payload, scope)?;
-            let total = payload.len() as u32;
-            writer.write_all(&total.to_le_bytes())?;
-            writer.write_all(&payload[4..])?;
+            let start = out.len();
+            out.extend_from_slice(&0_u32.to_le_bytes());
+            write_string(out, code);
+            encode_document(out, scope);
+            let length = (out.len() - start) as u32;
+            out[start..start + 4].copy_from_slice(&length.to_le_bytes());
         }
         BsonValue::DbPointer { namespace, id } => {
-            writer.write_all(&0x0C_u8.to_le_bytes())?;
-            write_cstring(writer, key)?;
-            write_string(writer, namespace)?;
-            writer.write_all(id)?;
+            write_string(out, namespace);
+            out.extend_from_slice(id);
         }
-        BsonValue::Symbol(text) => {
-            writer.write_all(&0x0E_u8.to_le_bytes())?;
-            write_cstring(writer, key)?;
-            write_string(writer, text)?;
-        }
-        BsonValue::MinKey => {
-            writer.write_all(&0xFF_u8.to_le_bytes())?;
-            write_cstring(writer, key)?;
-        }
-        BsonValue::MaxKey => {
-            writer.write_all(&0x7F_u8.to_le_bytes())?;
-            write_cstring(writer, key)?;
-        }
+        BsonValue::Symbol(text) => write_string(out, text),
     }
-    Ok(())
 }
 
 /// Encodes a [`BsonDocument`] into a freshly allocated byte vector.
 pub fn encode_bson(doc: &BsonDocument) -> Vec<u8> {
     let mut out = Vec::new();
-    encode_document(&mut out, doc).expect("Vec writer never fails");
+    encode_document(&mut out, doc);
     out
+}
+
+impl BsonDocument {
+    /// Number of bytes [`encode_bson`] writes for this document.
+    ///
+    /// 供分页与体积上限判断使用：只做一次算术遍，不产生编码缓冲区。
+    pub fn encoded_len(&self) -> usize {
+        let mut length = 5; // 4 字节长度前缀 + 终止符
+        for (key, value) in &self.fields {
+            length += 1 + key.len() + 1 + value.encoded_len();
+        }
+        length
+    }
+}
+
+impl BsonValue {
+    /// Number of bytes this value contributes after its type byte and key.
+    pub fn encoded_len(&self) -> usize {
+        match self {
+            BsonValue::Double(_) | BsonValue::DateTime(_) | BsonValue::Int64(_) => 8,
+            BsonValue::String(text) | BsonValue::Symbol(text) | BsonValue::Code(text) => 4 + text.len() + 1,
+            BsonValue::Document(document) => document.encoded_len(),
+            BsonValue::Array(items) => {
+                let mut length = 5;
+                for (index, item) in items.iter().enumerate() {
+                    length += 1 + index_key_len(index) + 1 + item.encoded_len();
+                }
+                length
+            }
+            BsonValue::Binary(binary) => {
+                let wire_len = if binary.subtype == 0x02 { binary.bytes.len() + 4 } else { binary.bytes.len() };
+                4 + 1 + wire_len
+            }
+            BsonValue::Undefined | BsonValue::Null | BsonValue::MinKey | BsonValue::MaxKey => 0,
+            BsonValue::ObjectId(_) => 12,
+            BsonValue::Bool(_) => 1,
+            BsonValue::Int32(_) => 4,
+            BsonValue::Timestamp { .. } => 8,
+            BsonValue::Decimal128(_) => 16,
+            BsonValue::Regex { pattern, options } => pattern.len() + 1 + options.len() + 1,
+            BsonValue::CodeWithScope { code, scope } => 4 + 4 + code.len() + 1 + scope.encoded_len(),
+            BsonValue::DbPointer { namespace, .. } => 4 + namespace.len() + 1 + 12,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -487,10 +517,88 @@ impl From<io::Error> for BsonError {
     }
 }
 
+/// 解析过程中的读取位置。
+///
+/// 所有读取都在输入切片上按偏移推进，不再经过 `Cursor` + `read_exact`，因此
+/// 解析一份文档不再逐字节发起 I/O 调用，嵌套文档也不再做一次整段拷贝。
+struct SliceReader<'a> {
+    input: &'a [u8],
+    position: usize,
+}
+
+impl<'a> SliceReader<'a> {
+    fn new(input: &'a [u8]) -> Self {
+        Self { input, position: 0 }
+    }
+
+    fn remaining(&self) -> usize {
+        self.input.len().saturating_sub(self.position)
+    }
+
+    fn read_u8(&mut self) -> Option<u8> {
+        let byte = *self.input.get(self.position)?;
+        self.position += 1;
+        Some(byte)
+    }
+
+    fn take(&mut self, count: usize) -> Option<&'a [u8]> {
+        let end = self.position.checked_add(count)?;
+        let slice = self.input.get(self.position..end)?;
+        self.position = end;
+        Some(slice)
+    }
+
+    fn read_i32(&mut self) -> Option<i32> {
+        let bytes = self.take(4)?;
+        Some(i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    }
+
+    fn read_i64(&mut self) -> Option<i64> {
+        let bytes = self.take(8)?;
+        Some(i64::from_le_bytes(bytes.try_into().ok()?))
+    }
+
+    fn read_f64(&mut self) -> Option<f64> {
+        let bytes = self.take(8)?;
+        Some(f64::from_le_bytes(bytes.try_into().ok()?))
+    }
+
+    /// Reads a NUL-terminated key, validating UTF-8 like the old byte-by-byte
+    /// reader did.
+    fn read_cstring(&mut self) -> Result<String, BsonError> {
+        let rest = self.input.get(self.position..).ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
+        let length = rest.iter().position(|byte| *byte == 0).ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
+        let text = std::str::from_utf8(&rest[..length]).map_err(|_| BsonError::Malformed("invalid UTF-8 in cstring".into()))?;
+        self.position += length + 1;
+        Ok(text.to_string())
+    }
+
+    /// Same as [`Self::read_cstring`] but discards the text, so array keys cost
+    /// a validation instead of an allocation.
+    fn skip_cstring(&mut self) -> Result<(), BsonError> {
+        let rest = self.input.get(self.position..).ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
+        let length = rest.iter().position(|byte| *byte == 0).ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
+        std::str::from_utf8(&rest[..length]).map_err(|_| BsonError::Malformed("invalid UTF-8 in cstring".into()))?;
+        self.position += length + 1;
+        Ok(())
+    }
+
+    fn read_string(&mut self) -> Result<String, BsonError> {
+        let length = self.read_i32().ok_or_else(|| BsonError::Malformed("invalid BSON string length".into()))?;
+        if length < 1 {
+            return Err(BsonError::Malformed("invalid BSON string length".into()));
+        }
+        let bytes = self.take((length - 1) as usize).ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
+        // 终止符与旧读取器一致：只消费，不校验取值。
+        self.read_u8().ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
+        String::from_utf8(bytes.to_vec()).map_err(|_| BsonError::Malformed("invalid UTF-8 in BSON string".into()))
+    }
+}
+
 /// Parses a BSON document from a byte slice.
 pub fn parse_bson(input: &[u8]) -> Result<BsonDocument, BsonError> {
-    let mut cursor = Cursor::new(input);
-    let doc_len = read_i32(&mut cursor)?;
+    let mut reader = SliceReader::new(input);
+    let doc_len = reader.read_i32().ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
     if doc_len < 0 {
         return Err(BsonError::Malformed("negative BSON document length".into()));
     }
@@ -502,95 +610,106 @@ pub fn parse_bson(input: &[u8]) -> Result<BsonDocument, BsonError> {
     }
     let mut doc = BsonDocument::new();
     loop {
-        let elem_type = match read_u8(&mut cursor) {
-            Ok(t) => t,
-            Err(_) => {
-                // Expected terminator at end
-                let pos = cursor.position() as usize;
-                if pos < input.len() && input[pos] == 0 {
-                    break;
-                }
-                return Err(BsonError::Malformed("unexpected end of BSON".into()));
-            }
+        let Some(elem_type) = reader.read_u8()
+        else {
+            return Err(BsonError::Malformed("unexpected end of BSON".into()));
         };
         if elem_type == 0 {
             break;
         }
-        let key = read_cstring(&mut cursor)?;
-        let value = parse_value(&mut cursor, elem_type)?;
+        let key = reader.read_cstring()?;
+        let value = parse_value(&mut reader, elem_type)?;
         doc.push(key, value);
     }
     Ok(doc)
 }
 
-fn parse_value<R: Read>(cursor: &mut R, elem_type: u8) -> Result<BsonValue, BsonError> {
+/// Hands out the body of one length-prefixed sub-document.
+fn bounded_sub_document<'a>(reader: &mut SliceReader<'a>) -> Result<SliceReader<'a>, BsonError> {
+    let len = reader.read_i32().ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
+    if len < 0 {
+        return Err(BsonError::Malformed("negative sub-document length".into()));
+    }
+    if len < 5 {
+        return Err(BsonError::Malformed("sub-document too short".into()));
+    }
+    let body = reader.take((len - 4) as usize).ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
+    Ok(SliceReader::new(body))
+}
+
+fn parse_value(reader: &mut SliceReader<'_>, elem_type: u8) -> Result<BsonValue, BsonError> {
     match elem_type {
-        0x01 => Ok(BsonValue::Double(read_f64(cursor)?)),
-        0x02 => Ok(BsonValue::String(read_string(cursor)?)),
-        0x03 => Ok(BsonValue::Document(parse_sub_document(cursor)?)),
-        0x04 => Ok(BsonValue::Array(parse_sub_document(cursor)?.fields.into_iter().map(|(_, v)| v).collect())),
+        0x01 => Ok(BsonValue::Double(reader.read_f64().ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?)),
+        0x02 => Ok(BsonValue::String(reader.read_string()?)),
+        0x03 => Ok(BsonValue::Document(parse_sub_document(reader)?)),
+        0x04 => Ok(BsonValue::Array(parse_sub_array(reader)?)),
         0x05 => {
-            let len = read_i32(cursor)?;
+            let len = reader.read_i32().ok_or_else(|| BsonError::Malformed("negative BSON binary length".into()))?;
             if len < 0 {
                 return Err(BsonError::Malformed("negative BSON binary length".into()));
             }
-            let subtype = read_u8(cursor)?;
-            let mut data = vec![0_u8; len as usize];
-            cursor.read_exact(&mut data)?;
-            if subtype == 0x02 {
-                // 旧式子类型在载荷内再内嵌一份自身长度：解码时剥离，并拒绝内
-                // 外长度不一致的流。
-                if len < 4 {
-                    return Err(BsonError::Malformed("legacy BSON binary is shorter than its length field".into()));
-                }
-                let embedded = read_i32(&mut Cursor::new(&data[..4]))?;
-                if embedded < 0 || embedded as usize + 4 != len as usize {
-                    return Err(BsonError::Malformed("legacy BSON binary length mismatch".into()));
-                }
-                data.drain(..4);
+            let subtype = reader.read_u8().ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
+            let payload = reader.take(len as usize).ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
+            if subtype != 0x02 {
+                return Ok(BsonValue::Binary(BinaryData::new(subtype, payload.to_vec())));
             }
-            Ok(BsonValue::Binary(BinaryData::new(subtype, data)))
+            // 旧式子类型在载荷内再内嵌一份自身长度：解码时剥离，并拒绝内
+            // 外长度不一致的流。
+            if len < 4 {
+                return Err(BsonError::Malformed("legacy BSON binary is shorter than its length field".into()));
+            }
+            let embedded = i32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]);
+            if embedded < 0 || embedded as usize + 4 != len as usize {
+                return Err(BsonError::Malformed("legacy BSON binary length mismatch".into()));
+            }
+            Ok(BsonValue::Binary(BinaryData::new(subtype, payload[4..].to_vec())))
         }
         0x06 => Ok(BsonValue::Undefined),
         0x07 => {
-            let mut bytes = [0_u8; 12];
-            cursor.read_exact(&mut bytes)?;
-            Ok(BsonValue::ObjectId(bytes))
+            let bytes = reader.take(12).ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
+            let mut identifier = [0_u8; 12];
+            identifier.copy_from_slice(bytes);
+            Ok(BsonValue::ObjectId(identifier))
         }
-        0x08 => Ok(BsonValue::Bool(read_u8(cursor)? != 0)),
-        0x09 => Ok(BsonValue::DateTime(read_i64(cursor)?)),
+        0x08 => Ok(BsonValue::Bool(reader.read_u8().ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))? != 0)),
+        0x09 => Ok(BsonValue::DateTime(reader.read_i64().ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?)),
         0x0A => Ok(BsonValue::Null),
-        0x0B => Ok(BsonValue::Regex { pattern: read_cstring(cursor)?, options: read_cstring(cursor)? }),
+        0x0B => Ok(BsonValue::Regex { pattern: reader.read_cstring()?, options: reader.read_cstring()? }),
         0x0C => {
-            let namespace = read_string(cursor)?;
+            let namespace = reader.read_string()?;
+            let bytes = reader.take(12).ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
             let mut id = [0_u8; 12];
-            cursor.read_exact(&mut id)?;
+            id.copy_from_slice(bytes);
             Ok(BsonValue::DbPointer { namespace, id })
         }
-        0x0D => Ok(BsonValue::Code(read_string(cursor)?)),
-        0x0E => Ok(BsonValue::Symbol(read_string(cursor)?)),
+        0x0D => Ok(BsonValue::Code(reader.read_string()?)),
+        0x0E => Ok(BsonValue::Symbol(reader.read_string()?)),
         0x0F => {
-            let len = read_i32(cursor)?;
+            let len = reader.read_i32().ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
             if len < 4 {
                 return Err(BsonError::Malformed("BSON code-with-scope is shorter than its length field".into()));
             }
-            let mut buf = vec![0_u8; (len - 4) as usize];
-            cursor.read_exact(&mut buf)?;
-            let mut inner = Cursor::new(buf.as_slice());
-            let code = read_string(&mut inner)?;
+            let payload = reader.take((len - 4) as usize).ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
+            let mut inner = SliceReader::new(payload);
+            let code = inner.read_string()?;
             let scope = parse_sub_document(&mut inner)?;
-            if inner.position() as usize != buf.len() {
+            if inner.remaining() != 0 {
                 return Err(BsonError::Malformed("BSON code-with-scope length mismatch".into()));
             }
             Ok(BsonValue::CodeWithScope { code, scope })
         }
-        0x10 => Ok(BsonValue::Int32(read_i32(cursor)?)),
-        0x11 => Ok(BsonValue::Timestamp { i: read_i32(cursor)? as u32, t: read_i32(cursor)? as u32 }),
-        0x12 => Ok(BsonValue::Int64(read_i64(cursor)?)),
+        0x10 => Ok(BsonValue::Int32(reader.read_i32().ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?)),
+        0x11 => {
+            let increment = reader.read_i32().ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
+            let seconds = reader.read_i32().ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
+            Ok(BsonValue::Timestamp { i: increment as u32, t: seconds as u32 })
+        }
+        0x12 => Ok(BsonValue::Int64(reader.read_i64().ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?)),
         0x13 => {
-            let mut bytes = [0_u8; 16];
-            cursor.read_exact(&mut bytes)?;
-            Ok(BsonValue::Decimal128(Decimal128::from_bytes(bytes)))
+            let bytes = reader.take(16).ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
+            let mut identifier = [0_u8; 16];
+            identifier.copy_from_slice(bytes);
+            Ok(BsonValue::Decimal128(Decimal128::from_bytes(identifier)))
         }
         0x7F => Ok(BsonValue::MaxKey),
         0xFF => Ok(BsonValue::MinKey),
@@ -598,77 +717,41 @@ fn parse_value<R: Read>(cursor: &mut R, elem_type: u8) -> Result<BsonValue, Bson
     }
 }
 
-fn parse_sub_document<R: Read>(cursor: &mut R) -> Result<BsonDocument, BsonError> {
-    let len = read_i32(cursor)?;
-    if len < 0 {
-        return Err(BsonError::Malformed("negative sub-document length".into()));
-    }
-    if len < 5 {
-        return Err(BsonError::Malformed("sub-document too short".into()));
-    }
-    let mut buf = vec![0_u8; (len - 4) as usize];
-    cursor.read_exact(&mut buf)?;
-    let mut sub = Cursor::new(buf.as_slice());
+fn parse_sub_document(reader: &mut SliceReader<'_>) -> Result<BsonDocument, BsonError> {
+    let mut sub = bounded_sub_document(reader)?;
     let mut doc = BsonDocument::new();
     loop {
-        let elem_type = match read_u8(&mut sub) {
-            Ok(t) => t,
-            Err(_) => break,
+        let Some(elem_type) = sub.read_u8()
+        else {
+            break;
         };
         if elem_type == 0 {
             break;
         }
-        let key = read_cstring(&mut sub)?;
+        let key = sub.read_cstring()?;
         let value = parse_value(&mut sub, elem_type)?;
         doc.push(key, value);
     }
     Ok(doc)
 }
 
-fn read_u8<R: Read>(r: &mut R) -> io::Result<u8> {
-    let mut buf = [0_u8; 1];
-    r.read_exact(&mut buf)?;
-    Ok(buf[0])
-}
-fn read_i32<R: Read>(r: &mut R) -> io::Result<i32> {
-    let mut buf = [0_u8; 4];
-    r.read_exact(&mut buf)?;
-    Ok(i32::from_le_bytes(buf))
-}
-fn read_i64<R: Read>(r: &mut R) -> io::Result<i64> {
-    let mut buf = [0_u8; 8];
-    r.read_exact(&mut buf)?;
-    Ok(i64::from_le_bytes(buf))
-}
-fn read_f64<R: Read>(r: &mut R) -> io::Result<f64> {
-    let mut buf = [0_u8; 8];
-    r.read_exact(&mut buf)?;
-    Ok(f64::from_le_bytes(buf))
-}
-
-fn read_cstring<R: Read>(r: &mut R) -> Result<String, BsonError> {
-    let mut out = Vec::new();
-    let mut byte = [0_u8; 1];
+/// Arrays are the same wire shape as documents, but their keys are the element
+/// indices and are never read back, so they are validated and dropped.
+fn parse_sub_array(reader: &mut SliceReader<'_>) -> Result<Vec<BsonValue>, BsonError> {
+    let mut sub = bounded_sub_document(reader)?;
+    let mut items = Vec::new();
     loop {
-        r.read_exact(&mut byte)?;
-        if byte[0] == 0 {
+        let Some(elem_type) = sub.read_u8()
+        else {
+            break;
+        };
+        if elem_type == 0 {
             break;
         }
-        out.push(byte[0]);
+        sub.skip_cstring()?;
+        items.push(parse_value(&mut sub, elem_type)?);
     }
-    String::from_utf8(out).map_err(|_| BsonError::Malformed("invalid UTF-8 in cstring".into()))
-}
-
-fn read_string<R: Read>(r: &mut R) -> Result<String, BsonError> {
-    let len = read_i32(r)?;
-    if len < 1 {
-        return Err(BsonError::Malformed("invalid BSON string length".into()));
-    }
-    let mut buf = vec![0_u8; (len - 1) as usize];
-    r.read_exact(&mut buf)?;
-    let mut term = [0_u8; 1];
-    r.read_exact(&mut term)?;
-    String::from_utf8(buf).map_err(|_| BsonError::Malformed("invalid UTF-8 in BSON string".into()))
+    Ok(items)
 }
 
 // ---------------------------------------------------------------------------
@@ -740,11 +823,9 @@ pub fn value_to_key(value: &BsonValue) -> Vec<u8> {
         other => {
             // Fallback: encode the whole value as BSON bytes for stable hashing.
             out.push(b'x');
-            let mut buf = Vec::new();
             let mut doc = BsonDocument::new();
             doc.push("_id".to_string(), other.clone());
-            encode_document(&mut buf, &doc).expect("Vec writer never fails");
-            out.extend_from_slice(&buf);
+            encode_document(&mut out, &doc);
         }
     }
     out

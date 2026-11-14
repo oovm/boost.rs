@@ -147,13 +147,175 @@ pub fn document_from_json(text: &str) -> Result<BsonDocument, String> {
 }
 
 /// 把 BSON 文档序列化成 Extended JSON 文本。
+///
+/// 直接按 BSON 结构写文本：一次遍历、一份输出缓冲，不再先建一棵
+/// `serde_json::Value` 再序列化。输出与
+/// `Value::Object(to_json_document(document)).to_string()` 逐字节一致。
 pub fn document_to_json(document: &BsonDocument) -> String {
-    Value::Object(to_json_document(document)).to_string()
+    let mut text = String::new();
+    write_document(&mut text, document);
+    text
 }
 
 /// 把 BSON 值序列化成 Extended JSON 文本。
 pub fn value_to_json_text(value: &BsonValue) -> String {
-    to_json(value).to_string()
+    let mut text = String::new();
+    write_json_value(&mut text, value);
+    text
+}
+
+fn write_document(text: &mut String, document: &BsonDocument) {
+    text.push('{');
+    for (position, (key, value)) in document.fields.iter().enumerate() {
+        if position > 0 {
+            text.push(',');
+        }
+        write_json_string(text, key);
+        text.push(':');
+        write_json_value(text, value);
+    }
+    text.push('}');
+}
+
+/// 单键包装的 Extended JSON 形态：`{"<tag>":"<payload>"}`。
+fn write_tagged_string(text: &mut String, tag: &str, payload: &str) {
+    text.push('{');
+    write_json_string(text, tag);
+    text.push(':');
+    write_json_string(text, payload);
+    text.push('}');
+}
+
+fn write_json_value(text: &mut String, value: &BsonValue) {
+    match value {
+        BsonValue::Document(document) => write_document(text, document),
+        BsonValue::Array(items) => {
+            text.push('[');
+            for (position, item) in items.iter().enumerate() {
+                if position > 0 {
+                    text.push(',');
+                }
+                write_json_value(text, item);
+            }
+            text.push(']');
+        }
+        BsonValue::String(content) => write_json_string(text, content),
+        BsonValue::Int32(number) => write_tagged_string(text, "$numberInt", &number.to_string()),
+        BsonValue::Int64(number) => write_tagged_string(text, "$numberLong", &number.to_string()),
+        BsonValue::Double(number) => write_tagged_string(text, "$numberDouble", &double_text(*number)),
+        BsonValue::Decimal128(number) => write_tagged_string(text, "$numberDecimal", &number.as_str()),
+        BsonValue::Bool(flag) => text.push_str(if *flag { "true" } else { "false" }),
+        BsonValue::Null => text.push_str("null"),
+        BsonValue::Undefined => text.push_str(r#"{"$undefined":true}"#),
+        BsonValue::ObjectId(bytes) => {
+            text.push_str(r#"{"$oid":""#);
+            write_hex(text, bytes);
+            text.push_str(r#""}"#);
+        }
+        BsonValue::Binary(binary) => {
+            text.push_str(r#"{"$binary":{"base64":""#);
+            write_base64(text, &binary.bytes);
+            text.push_str(r#"","subType":""#);
+            write_hex(text, &[binary.subtype]);
+            text.push_str(r#""}}"#);
+        }
+        BsonValue::DateTime(milliseconds) => {
+            text.push_str(r#"{"$date":{"$numberLong":""#);
+            text.push_str(&milliseconds.to_string());
+            text.push_str(r#""}}"#);
+        }
+        BsonValue::Timestamp { t, i } => {
+            text.push_str(r#"{"$timestamp":{"t":"#);
+            text.push_str(&t.to_string());
+            text.push_str(r#","i":"#);
+            text.push_str(&i.to_string());
+            text.push_str("}}");
+        }
+        BsonValue::MinKey => text.push_str(r#"{"$minKey":1}"#),
+        BsonValue::MaxKey => text.push_str(r#"{"$maxKey":1}"#),
+        BsonValue::Symbol(content) => write_tagged_string(text, "$symbol", content),
+        BsonValue::Regex { pattern, options } => {
+            text.push_str(r#"{"$regularExpression":{"pattern":"#);
+            write_json_string(text, pattern);
+            text.push_str(r#","options":"#);
+            write_json_string(text, options);
+            text.push_str("}}");
+        }
+        BsonValue::Code(code) => write_tagged_string(text, "$code", code),
+        BsonValue::CodeWithScope { code, scope } => {
+            text.push('{');
+            write_json_string(text, "$code");
+            text.push(':');
+            write_json_string(text, code);
+            text.push(',');
+            write_json_string(text, "$scope");
+            text.push(':');
+            write_document(text, scope);
+            text.push('}');
+        }
+        BsonValue::DbPointer { namespace, id } => {
+            text.push_str(r#"{"$dbPointer":{"$ref":"#);
+            write_json_string(text, namespace);
+            text.push_str(r#","$id":{"$oid":""#);
+            write_hex(text, id);
+            text.push_str(r#""}}}"#);
+        }
+    }
+}
+
+const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
+
+fn write_hex(text: &mut String, bytes: &[u8]) {
+    for byte in bytes {
+        text.push(HEX_DIGITS[(byte >> 4) as usize] as char);
+        text.push(HEX_DIGITS[(byte & 0x0f) as usize] as char);
+    }
+}
+
+fn write_base64(text: &mut String, bytes: &[u8]) {
+    for chunk in bytes.chunks(3) {
+        let triple = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let value = (u32::from(triple[0]) << 16) | (u32::from(triple[1]) << 8) | u32::from(triple[2]);
+        for position in 0..4 {
+            if position <= chunk.len() {
+                text.push(BASE64_ALPHABET[((value >> (18 - 6 * position)) & 0x3f) as usize] as char);
+            }
+            else {
+                text.push('=');
+            }
+        }
+    }
+}
+
+/// JSON 字符串字面量，转义规则与 `serde_json` 相同：只转义引号、反斜杠与
+/// 控制字符，非 ASCII 原样写 UTF-8。
+fn write_json_string(text: &mut String, value: &str) {
+    text.push('"');
+    let mut start = 0_usize;
+    for (index, byte) in value.bytes().enumerate() {
+        match byte {
+            b'"' | b'\\' | 0x00..=0x1f => {}
+            _ => continue,
+        }
+        text.push_str(&value[start..index]);
+        match byte {
+            b'"' => text.push_str("\\\""),
+            b'\\' => text.push_str("\\\\"),
+            0x08 => text.push_str("\\b"),
+            0x0c => text.push_str("\\f"),
+            b'\n' => text.push_str("\\n"),
+            b'\r' => text.push_str("\\r"),
+            b'\t' => text.push_str("\\t"),
+            control => {
+                text.push_str("\\u00");
+                text.push(HEX_DIGITS[(control >> 4) as usize] as char);
+                text.push(HEX_DIGITS[(control & 0x0f) as usize] as char);
+            }
+        }
+        start = index + 1;
+    }
+    text.push_str(&value[start..]);
+    text.push('"');
 }
 
 fn tagged(tag: &str, payload: String) -> Value {
