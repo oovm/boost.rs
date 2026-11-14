@@ -46,6 +46,12 @@ pub struct RenderStats {
     pub assets: Vec<AssetFingerprint>,
     /// Every scene with its frame range and whether it was written.
     pub scenes: Vec<SceneSpan>,
+    /// Peak/RMS facts of the mixed audio bed, when the film has one.
+    ///
+    /// Measured on the exact samples that are interleaved with the video, so a
+    /// silent or clipped bed is visible in the report instead of only in the
+    /// file. A film without audio reports `None`, never a zero level.
+    pub audio_level: Option<media_harness::LevelStats>,
     /// Declared optional resources that were absent; each is documented silence.
     pub optional_missing: Vec<String>,
 }
@@ -256,6 +262,7 @@ pub fn render_project_with(
     }
     let assets = fingerprint_assets(&project, &plan, &optional_missing);
     let audio = build_audio(&plan, &mut media, limits)?;
+    let audio_level = has_audio.then(|| media_harness::measure_pcm16(&audio));
     if options.cancelled() {
         return Err(Error::cancelled("render cancelled after the audio bed was built"));
     }
@@ -315,6 +322,7 @@ pub fn render_project_with(
         project_hash: fnv1a(json.as_bytes()),
         assets,
         scenes,
+        audio_level,
         optional_missing,
     })
 }
@@ -1840,6 +1848,11 @@ mod tests {
         let stats = super::render_project(&project.to_string(), &out, &mut |_, _| {}).expect("render");
         assert_eq!(stats.frames, 30);
         assert!(stats.audio);
+        // The report measures the bed that was actually interleaved with the
+        // video, so "there is audio" comes with a level a reviewer can check.
+        let level = stats.audio_level.expect("a film with audio reports its bed level");
+        assert!(level.samples > 0);
+        assert!(level.peak_db > -60.0, "bed too quiet: {} dBFS", level.peak_db);
         let meta = std::fs::metadata(&out).expect("output exists");
         assert!(meta.len() > 1_000, "mp4 too small: {}", meta.len());
     }
@@ -1951,6 +1964,7 @@ mod tests {
         let out = std::env::temp_dir().join("opencut-video-only.mp4");
         let stats = super::render_project(&project.to_string(), &out, &mut |_, _| {}).expect("render");
         assert!(!stats.audio);
+        assert!(stats.audio_level.is_none(), "a film without audio must not report a level");
         assert!(std::fs::metadata(&out).unwrap().len() > 500);
     }
 

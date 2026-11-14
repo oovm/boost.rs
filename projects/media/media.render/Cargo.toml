@@ -26,7 +26,7 @@ media-post = { workspace = true, optional = true }
 media-vector = { workspace = true, optional = true }
 media-voxel = { workspace = true, optional = true }
 media-layout = { workspace = true, optional = true }
-media-harness = { workspace = true, optional = true }
+media-harness = { workspace = true, features = ["serde"] }
 
 [features]
 default = ["scene"]
@@ -37,8 +37,9 @@ voice-export = ["dep:media-voice"]
 vector-export = ["dep:geometry", "dep:media-vector", "dep:media-raster", "media-codec/svg"]
 voxel-export = ["dep:media-voxel", "dep:media-raster", "media-codec/obj"]
 layout-export = ["dep:media-layout", "dep:media-raster", "dep:media-text", "media-text/paint"]
-# Records what a render actually did into a `media-harness` trace.
-trace = ["dep:media-harness"]
+# Records what a render actually did into a `media-harness` trace. The harness
+# crate itself is always available for audio level measurement.
+trace = []
 
 [dev-dependencies]
 serde_json = { workspace = true }

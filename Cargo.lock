@@ -1871,6 +1871,7 @@ dependencies = [
 name = "hardware-backend-dx12"
 version = "0.1.0"
 dependencies = [
+ "acorn-dxbc",
  "hardware-backend-cpu",
  "hardware-capability",
  "hardware-emitter",
