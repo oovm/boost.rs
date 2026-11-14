@@ -183,6 +183,37 @@ fn reuses_cached_pipelines_for_repeated_programs() {
 }
 
 #[test]
+fn dispatches_polar_math() {
+    use hardware_program::UnOp;
+
+    let builder = hardware_program::StructuredFunctionBuilder::new("polar_math");
+    let atan2 = builder.binary(BinOp::Atan2, Expr::ConstF32(1.0), Expr::ConstF32(1.0));
+    let atan = builder.unary(UnOp::Atan, Expr::ConstF32(1.0));
+    let sum = builder.binary(BinOp::Add, atan2, atan);
+    let entry = Program { version: 1, functions: vec![builder.finish(Ty::f32(), sum)], entry: 0 };
+
+    let graph = Graph {
+        resources: ResourceGraph { nodes: vec![buffer(2, 4)] },
+        tasks: TaskGraph {
+            nodes: vec![dispatch_task(19, &entry, BTreeMap::from([("output".to_string(), ParamValue::I64(2))]))],
+            edges: Vec::new(),
+        },
+    };
+
+    let Some(mut dx12) = open()
+    else {
+        return;
+    };
+    dx12.prepare(&graph).expect("prepare");
+    dx12.run_prepared(&graph).expect("dispatch");
+    // atan2(1, 1) = atan(1) = π/4, so the sum is π/2.
+    let actual = dx12.read_f32(Rid(2)).expect("read");
+    for value in actual {
+        assert!((value - std::f32::consts::FRAC_PI_2).abs() < 1e-3, "expected π/2, got {value}");
+    }
+}
+
+#[test]
 fn dispatches_bounded_loop_accumulation() {
     let entry = program(vec![
         Stmt::Let { id: 0, ty: Ty::f32(), init: Expr::ConstF32(0.0) },

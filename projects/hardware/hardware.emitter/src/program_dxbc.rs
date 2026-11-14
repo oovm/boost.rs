@@ -816,7 +816,43 @@ impl Lowerer {
             }
             BinOp::Pow => Err(ProgramDxbcError::UnsupportedExpression("integer `pow`".into())),
             BinOp::Dot => Err(ProgramDxbcError::UnsupportedExpression("vector dot product".into())),
-            BinOp::Atan2 => Err(ProgramDxbcError::UnsupportedExpression("`atan2`".into())),
+            BinOp::Atan2 if float => {
+                let y = lhs.0;
+                let x = rhs.0;
+                let quotient = self.temp();
+                self.emit(Opcode::Div, 0, vec![Self::dest(quotient), self.scalar(Kind::Float, y), self.scalar(Kind::Float, x)]);
+                let base = self.atan(quotient)?;
+                // `atan2(y, x)` differs from `atan(y / x)` by ±π when `x < 0`.
+                let x_negative = self.float_compare(Compare::Lt, x, -0.0)?;
+                let y_negative = self.float_compare(Compare::Lt, y, -0.0)?;
+                let minus_pi = self.literal((-std::f32::consts::PI).to_bits());
+                let plus_pi = self.literal(std::f32::consts::PI.to_bits());
+                let signed_pi = self.select(y_negative, minus_pi, plus_pi);
+                let zero = self.literal(0.0f32.to_bits());
+                let offset = self.select(x_negative, signed_pi, zero);
+                let shifted = self.temp();
+                self.emit(Opcode::Add, 0, vec![Self::dest(shifted), Operand::temp(base, Select::Scalar(0)), Operand::temp(offset, Select::Scalar(0))]);
+                // `x == 0` has no finite quotient, so it is answered directly.
+                let x_zero = {
+                    let target = self.temp();
+                    self.emit(
+                        Opcode::Eq,
+                        0,
+                        vec![
+                            Self::dest(target),
+                            self.scalar(Kind::Float, x),
+                            Operand::immediate(&[0.0f32.to_bits()]),
+                        ],
+                    );
+                    target
+                };
+                let minus_half = self.literal((-std::f32::consts::FRAC_PI_2).to_bits());
+                let plus_half = self.literal(std::f32::consts::FRAC_PI_2.to_bits());
+                let signed_half = self.select(y_negative, minus_half, plus_half);
+                let target = self.select(x_zero, signed_half, shifted);
+                Ok((target, Kind::Float))
+            }
+            BinOp::Atan2 => Err(ProgramDxbcError::UnsupportedExpression("integer `atan2`".into())),
             BinOp::Lt => self.compare(Compare::Lt, lhs, rhs),
             BinOp::Le => self.compare(Compare::Le, lhs, rhs),
             BinOp::Gt => self.compare(Compare::Gt, lhs, rhs),
@@ -860,10 +896,95 @@ impl Lowerer {
         }
     }
 
+    /// Compares a float register against a literal.
+    fn float_compare(&mut self, comparison: Compare, value: u32, literal: f32) -> Result<u32, ProgramDxbcError> {
+        let other = self.literal(literal.to_bits());
+        Ok(self.compare(comparison, (value, Kind::Float), (other, Kind::Float))?.0)
+    }
+
+    /// `movc` over two registers, both scalar floats.
+    fn select(&mut self, condition: u32, accept: u32, reject: u32) -> u32 {
+        let target = self.temp();
+        self.emit(
+            Opcode::MovC,
+            0,
+            vec![
+                Self::dest(target),
+                Operand::temp(condition, Select::Scalar(0)),
+                Operand::temp(accept, Select::Scalar(0)),
+                Operand::temp(reject, Select::Scalar(0)),
+            ],
+        );
+        target
+    }
+
+    /// `atan(x)` through a degree-9 minimax polynomial on `[-1, 1]`.
+    ///
+    /// SM5 has no `atan` opcode. The identity `atan(x) = ±π/2 - atan(1/x)` folds
+    /// `|x| > 1` back into the polynomial's range, and both branches are computed
+    /// so the result stays branch-free. Absolute error stays around `1e-5`.
+    fn atan(&mut self, value: u32) -> Result<u32, ProgramDxbcError> {
+        let negated = self.negate((value, Kind::Float))?;
+        let absolute = self.temp();
+        self.emit(
+            Opcode::Max,
+            0,
+            vec![Self::dest(absolute), Operand::temp(value, Select::Scalar(0)), Operand::temp(negated, Select::Scalar(0))],
+        );
+        let inside = self.float_compare(Compare::Gt, absolute, 1.0)?;
+        let one = self.literal(1.0f32.to_bits());
+        let inverse = self.temp();
+        self.emit(
+            Opcode::Div,
+            0,
+            vec![Self::dest(inverse), Operand::temp(one, Select::Scalar(0)), Operand::temp(absolute, Select::Scalar(0))],
+        );
+        let reduced = self.select(inside, inverse, absolute);
+
+        let squared = self.temp();
+        self.emit(Opcode::Mul, 0, vec![Self::dest(squared), Operand::temp(reduced, Select::Scalar(0)), Operand::temp(reduced, Select::Scalar(0))]);
+        let mut polynomial = self.literal(0.020_835_1f32.to_bits());
+        for coefficient in [-0.085_133_0f32, 0.180_141_0f32, -0.330_299_5f32, 1.0f32] {
+            let next = self.temp();
+            self.emit(
+                Opcode::Mad,
+                0,
+                vec![
+                    Self::dest(next),
+                    Operand::temp(polynomial, Select::Scalar(0)),
+                    Operand::temp(squared, Select::Scalar(0)),
+                    Operand::immediate(&[coefficient.to_bits()]),
+                ],
+            );
+            polynomial = next;
+        }
+        let reduced_angle = self.temp();
+        self.emit(
+            Opcode::Mul,
+            0,
+            vec![Self::dest(reduced_angle), Operand::temp(polynomial, Select::Scalar(0)), Operand::temp(reduced, Select::Scalar(0))],
+        );
+
+        // `π/2 - atan(|1/x|)` for the folded branch.
+        let negated_angle = self.negate((reduced_angle, Kind::Float))?;
+        let half_pi = self.literal(std::f32::consts::FRAC_PI_2.to_bits());
+        let folded = self.temp();
+        self.emit(
+            Opcode::Add,
+            0,
+            vec![Self::dest(folded), Operand::temp(half_pi, Select::Scalar(0)), Operand::temp(negated_angle, Select::Scalar(0))],
+        );
+        let magnitude = self.select(inside, folded, reduced_angle);
+
+        let negative = self.float_compare(Compare::Lt, value, 0.0)?;
+        let negated_magnitude = self.negate((magnitude, Kind::Float))?;
+        Ok(self.select(negative, negated_magnitude, magnitude))
+    }
+
     /// Orders two scalars, using the unsigned opcodes for `u32` values.
     ///
-    /// SM5 only has `lt` / `ge` per signedness: `lt`/`ge` for floats and signed
-    /// integers, `ult`/`uge` for unsigned integers.
+    /// SM5 only has `lt` / `ge` per signedness: `lt` / `ge` for floats and signed
+    /// integers, `ult` / `uge` for unsigned integers.
     fn compare(&mut self, comparison: Compare, lhs: (u32, Kind), rhs: (u32, Kind)) -> Result<(u32, Kind), ProgramDxbcError> {
         let unsigned = lhs.1 == Kind::U32;
         let (ge, lt) = if unsigned { (Opcode::Uge, Opcode::Ult) } else { (Opcode::Ge, Opcode::Lt) };
@@ -962,7 +1083,10 @@ impl Lowerer {
                 self.emit(Opcode::Mov, 0, vec![Self::dest(target), Operand::temp(pair, Select::Scalar(component))]);
                 Ok((target, Kind::Float))
             }
-            UnOp::Atan => Err(ProgramDxbcError::UnsupportedExpression("`atan`".into())),
+            UnOp::Atan => {
+                let target = self.atan(arg.0)?;
+                Ok((target, Kind::Float))
+            }
             UnOp::Length | UnOp::Normalize => Err(ProgramDxbcError::UnsupportedExpression("vector length / normalize".into())),
             UnOp::Abs => {
                 let negated = self.negate(arg)?;
