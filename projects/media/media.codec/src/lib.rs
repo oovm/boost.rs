@@ -24,4 +24,4 @@ pub use obj::{to_obj_string, write_obj};
 pub use png::write_png;
 #[cfg(feature = "svg")]
 pub use svg::{to_svg_string, write_svg};
-pub use wav::{WavPcm16, parse_wav_pcm16, write_wav};
+pub use wav::{WavFloat, WavPcm16, WavPcm24, parse_wav_f32, parse_wav_pcm16, parse_wav_pcm24, write_wav};

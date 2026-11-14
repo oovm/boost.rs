@@ -26,6 +26,14 @@ pub struct WavFloat {
     pub frames: Vec<[f32; 2]>,
 }
 
+/// A parsed 24-bit PCM WAV payload.
+pub struct WavPcm24 {
+    /// Sample rate declared by the file's `fmt ` chunk.
+    pub sample_rate: u32,
+    /// Interleaved stereo frames in -1..=1 floats (mono is widened).
+    pub frames: Vec<[f32; 2]>,
+}
+
 /// The chunks a WAV reader needs, located by one shared RIFF walk.
 struct RiffPayload {
     format: u16,
@@ -88,11 +96,7 @@ pub fn parse_wav_pcm16(bytes: &[u8]) -> Option<WavPcm16> {
     for f in 0..frames_count {
         let base = riff.data_start + f * frame_bytes;
         let left = i16::from_le_bytes(bytes[base..base + 2].try_into().ok()?) as f32 / 32768.0;
-        let right = if riff.channels >= 2 {
-            i16::from_le_bytes(bytes[base + 2..base + 4].try_into().ok()?) as f32 / 32768.0
-        } else {
-            left
-        };
+        let right = if riff.channels >= 2 { i16::from_le_bytes(bytes[base + 2..base + 4].try_into().ok()?) as f32 / 32768.0 } else { left };
         out.push([left, right]);
     }
     Some(WavPcm16 { sample_rate: riff.sample_rate, frames: out })
@@ -116,6 +120,31 @@ pub fn parse_wav_f32(bytes: &[u8]) -> Option<WavFloat> {
         out.push([left, right]);
     }
     Some(WavFloat { sample_rate: riff.sample_rate, frames: out })
+}
+
+/// PCM24 RIFF reader: interleaved stereo f32 frames out, mono is widened.
+/// A PCM16 or float file is rejected here on purpose — the format is explicit
+/// at the entry point, nothing is reinterpreted.
+#[must_use]
+pub fn parse_wav_pcm24(bytes: &[u8]) -> Option<WavPcm24> {
+    let riff = scan_riff(bytes)?;
+    if riff.format != 1 || riff.bits != 24 {
+        return None;
+    }
+    let read = |at: usize| -> Option<f32> {
+        let raw = bytes[at] as i32 | (bytes[at + 1] as i32) << 8 | (bytes[at + 2] as i32) << 16;
+        Some(((raw << 8) >> 8) as f32 / 8_388_608.0)
+    };
+    let frame_bytes = riff.channels as usize * 3;
+    let frames_count = riff.data_len / frame_bytes;
+    let mut out = Vec::with_capacity(frames_count);
+    for f in 0..frames_count {
+        let base = riff.data_start + f * frame_bytes;
+        let left = read(base)?;
+        let right = if riff.channels >= 2 { read(base + 3)? } else { left };
+        out.push([left, right]);
+    }
+    Some(WavPcm24 { sample_rate: riff.sample_rate, frames: out })
 }
 
 /// The fixed 44-byte RIFF/WAVE/fmt/data header for a stereo payload.

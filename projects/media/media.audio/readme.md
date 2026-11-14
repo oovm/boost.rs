@@ -9,3 +9,4 @@
 - 随机流唯一合同是 `media.dsp::Rng`：`synth_plucks` 与全部音效共用，不存在第二套随机设施。
 - 采样率与声道是输入合同：合成与写出之间不做隐式重采样，旁白采样率不符即报错。
 - 旁白只留接口：给定 WAV 就混入，不生成语音。导入片段支持 `fade_in_frames` / `fade_out_frames` 线性淡入淡出（帧基，经 `TimeBase` 推导）。
+- 歌曲分析也在此：`analysis::analyze_wav` / `analyze_mono` 把 PCM16、PCM24 或 float32 WAV 读成 `SongProfile`（BPM、拍偏移、每小节能量分段）。短时能量 → 起音强度 → 自相关测速 → 拍相位 → 按小节分段，全部确定性，无随机源、无训练模型；解码走 `media.codec`，其他容器显式拒绝。
