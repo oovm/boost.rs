@@ -6901,6 +6901,11 @@ fn collect_matching(
     Ok(documents)
 }
 
+/// Page size of a stop-bounded collection scan: large enough that the page
+/// boundary is amortised, small enough that an early stop does not clone the
+/// whole collection.
+const SCAN_PAGE: usize = 256;
+
 /// 与 [`collect_matching`] 相同，但命中数达到 `stop_after` 后停止读取。
 ///
 /// 第二个返回值是实际读到的文档数，供 `explain` 报告 `docsExamined`：提前停
@@ -6930,14 +6935,40 @@ fn collect_matching_bounded(
     }
     let mut documents = Vec::new();
     let mut examined = 0i64;
-    for (_key, value) in namespace_documents(store, namespace, session)? {
-        examined += 1;
-        if let Ok(candidate) = parse_bson(&value)
-            && document_matches(&candidate, filter)?
-        {
-            documents.push(candidate);
-            if stop_after.is_some_and(|bound| documents.len() >= bound) {
-                break;
+    if session.is_some() {
+        // 事务视图是合并后的整段结果，不能按页推进。
+        for (_key, value) in namespace_documents(store, namespace, session)? {
+            examined += 1;
+            if let Ok(candidate) = parse_bson(&value)
+                && document_matches(&candidate, filter)?
+            {
+                documents.push(candidate);
+                if stop_after.is_some_and(|bound| documents.len() >= bound) {
+                    break;
+                }
+            }
+        }
+        return Ok((documents, examined));
+    }
+    // 无排序的查询一旦凑够 `stop_after` 就不再需要后面的文档，因此按页扫描：
+    // 命中前只克隆已读到的那一页，而不是先整集合取回再丢弃。
+    let mut after: Option<Vec<u8>> = None;
+    loop {
+        let page =
+            store.scan_page(namespace, after.as_deref(), SCAN_PAGE).map_err(|error| CommandError::new(1, format!("scan failed: {error}")))?;
+        if page.is_empty() {
+            break;
+        }
+        after = page.last().map(|(key, _)| key.clone());
+        for (_key, value) in page {
+            examined += 1;
+            if let Ok(candidate) = parse_bson(&value)
+                && document_matches(&candidate, filter)?
+            {
+                documents.push(candidate);
+                if stop_after.is_some_and(|bound| documents.len() >= bound) {
+                    return Ok((documents, examined));
+                }
             }
         }
     }
@@ -12257,18 +12288,49 @@ fn parse_sort(sort: Option<&BsonValue>) -> Vec<(String, i32)> {
     }
 }
 
-fn sort_documents(documents: &mut [BsonDocument], sort: &[(String, i32)]) {
-    if sort.is_empty() {
-        return;
-    }
-    documents.sort_by(|left, right| {
-        for (field, direction) in sort {
-            let ordering = compare_values(&sort_key(left, field, *direction), &sort_key(right, field, *direction));
+/// One document's sort key: each field resolved once, with its direction.
+///
+/// Comparison walks the fields in `sort` order and reverses the per-field
+/// ordering for a descending key, which is what [`sort_documents`] did inline.
+struct DocumentSortKey(Vec<(BsonValue, i32)>);
+
+impl Ord for DocumentSortKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        for ((left, direction), (right, _)) in self.0.iter().zip(other.0.iter()) {
+            let ordering = compare_values(left, right);
             if ordering != Ordering::Equal {
                 return if *direction < 0 { ordering.reverse() } else { ordering };
             }
         }
         Ordering::Equal
+    }
+}
+
+impl PartialOrd for DocumentSortKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for DocumentSortKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl Eq for DocumentSortKey {}
+
+/// Stable sort by the requested keys.
+///
+/// Each document's key is resolved once (`sort_by_cached_key`) instead of on
+/// both sides of every comparison, so an `n log n` sort does `n` field lookups
+/// rather than `2 n log n`.
+fn sort_documents(documents: &mut [BsonDocument], sort: &[(String, i32)]) {
+    if sort.is_empty() {
+        return;
+    }
+    documents.sort_by_cached_key(|document| {
+        DocumentSortKey(sort.iter().map(|(field, direction)| (sort_key(document, field, *direction), *direction)).collect())
     });
 }
 

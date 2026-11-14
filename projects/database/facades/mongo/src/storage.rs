@@ -61,6 +61,19 @@ pub trait MongoStorage: Send + Sync {
     /// 的结果。
     fn scan(&self, namespace: &str) -> Result<Vec<(Vec<u8>, Vec<u8>)>, StoreError>;
 
+    /// 按编码 `_id` 升序读取一页文档。
+    ///
+    /// `after` 是排他游标，`limit` 是这一页最多返回的条数。默认实现整段扫描后
+    /// 裁剪，能下推游标的后端应覆盖它，避免为了早停把整个集合读进内存。
+    fn scan_page(&self, namespace: &str, after: Option<&[u8]>, limit: usize) -> Result<Vec<(Vec<u8>, Vec<u8>)>, StoreError> {
+        let mut entries = self.scan(namespace)?;
+        entries.retain(|(key, _)| after.is_none_or(|after| key.as_slice() > after));
+        if limit > 0 {
+            entries.truncate(limit);
+        }
+        Ok(entries)
+    }
+
     /// 删除给定的编码 `_id`，返回实际存在的条数。
     fn delete(&self, namespace: &str, keys: &[Vec<u8>]) -> Result<usize, StoreError>;
 

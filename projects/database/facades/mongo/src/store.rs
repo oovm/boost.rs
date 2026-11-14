@@ -1331,6 +1331,23 @@ impl Store {
             .collect())
     }
 
+    /// 按编码 `_id` 升序读取一页文档。
+    ///
+    /// `after` 是排他游标，`limit` 是这一页最多返回的条数；游标与条数都下推到底层
+    /// shard，因此早停的查询不用先把整个集合读进内存。
+    pub fn scan_page(&self, namespace: &str, after: Option<&[u8]>, limit: usize) -> Result<Vec<(Vec<u8>, Vec<u8>)>, StoreError> {
+        let shard = self.lock();
+        let records =
+            shard.scan(&Namespace(namespace.to_string()), b"", after, None, limit).map_err(|error| StoreError::Shard(error.to_string()))?;
+        Ok(records
+            .into_iter()
+            .filter_map(|record| match record.value {
+                StoredValue::Inline(InlineValue(bytes)) => Some((record.key.bytes, bytes)),
+                StoredValue::Object(_) => None,
+            })
+            .collect())
+    }
+
     /// 扫描保留命名空间下以 `prefix` 开头的键值对。
     ///
     /// 索引项与文档共享同一个 shard，所以这里直接走底层前缀扫描，不经过目录。
@@ -1661,6 +1678,10 @@ impl crate::storage::MongoStorage for Store {
 
     fn scan(&self, namespace: &str) -> Result<Vec<(Vec<u8>, Vec<u8>)>, StoreError> {
         Store::scan(self, namespace)
+    }
+
+    fn scan_page(&self, namespace: &str, after: Option<&[u8]>, limit: usize) -> Result<Vec<(Vec<u8>, Vec<u8>)>, StoreError> {
+        Store::scan_page(self, namespace, after, limit)
     }
 
     fn delete(&self, namespace: &str, keys: &[Vec<u8>]) -> Result<usize, StoreError> {
