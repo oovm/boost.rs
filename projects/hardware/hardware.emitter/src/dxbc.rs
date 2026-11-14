@@ -197,8 +197,6 @@ pub(crate) enum Opcode {
     Break = 2,
     /// `breakc` with the non-zero test control bit.
     BreakCNz = 3,
-    /// `continue`.
-    Continue = 7,
     /// `div`.
     Div = 14,
     /// `dp3`, the three-component dot product.
@@ -219,10 +217,14 @@ pub(crate) enum Opcode {
     IAdd = 30,
     /// `if_nz`.
     IfNz = 31,
+    /// `ieq`.
+    IEq = 32,
     /// `imad`.
     IMad = 35,
     /// `imul`, which writes a high and a low half.
     IMul = 38,
+    /// `ine`.
+    INe = 39,
     /// `ineg`.
     INeg = 40,
     /// `ishl`.
@@ -265,6 +267,8 @@ pub(crate) enum Opcode {
     Sincos = 77,
     /// `udiv`, which writes a quotient and a remainder.
     UDiv = 78,
+    /// `ult`.
+    Ult = 79,
     /// `uge`.
     Uge = 80,
     /// `umax`.

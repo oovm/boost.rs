@@ -103,7 +103,7 @@ pub fn emit_program_dxbc(program: &Program, entry: &str) -> Result<Vec<u8>, Prog
     let reads = bindings.reads.iter().enumerate().map(|(rank, resource)| (*resource, rank as u32)).collect::<BTreeMap<_, _>>();
     let writes = bindings.writes.iter().enumerate().map(|(rank, resource)| (*resource, rank as u32 + 1)).collect::<BTreeMap<_, _>>();
 
-    let mut lower = Lowerer { uniforms: uniform_count, reads, writes, instructions: Vec::new(), temps: 0, locals: BTreeMap::new() };
+    let mut lower = Lowerer { uniforms: uniform_count, reads, writes, instructions: Vec::new(), temps: 0, locals: BTreeMap::new(), loop_depth: 0 };
     let condition = lower.active_check();
     lower.emit(Opcode::IfNz, TEST_NONZERO, vec![Operand::temp(condition, Select::Scalar(0))]);
     lower.emit(Opcode::Ret, 0, Vec::new());
@@ -186,6 +186,15 @@ enum Kind {
 /// One buffered SM5 instruction.
 type Instruction = (Opcode, u32, Vec<Operand>);
 
+/// Ordering comparison requested by a [`BinOp`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Compare {
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
 struct Lowerer {
     uniforms: u32,
     /// Resource slot → raw SRV register.
@@ -195,6 +204,8 @@ struct Lowerer {
     instructions: Vec<Instruction>,
     temps: u32,
     locals: BTreeMap<u32, (u32, Kind)>,
+    /// Number of enclosing `loop` blocks, used to reject stray `break` / `continue`.
+    loop_depth: usize,
 }
 
 impl Lowerer {
@@ -308,7 +319,15 @@ impl Lowerer {
                 Stmt::For { iter, limit, body } => self.lower_for(*iter, *limit, body)?,
                 Stmt::While { cond, limit, body } => self.lower_while(cond, *limit, body)?,
                 Stmt::Break | Stmt::Continue => {
-                    return Err(ProgramDxbcError::UnsupportedStatement("`break` / `continue` are not in the DXBC scalar subset".into()));
+                    if matches!(stmt, Stmt::Continue) {
+                        return Err(ProgramDxbcError::UnsupportedStatement(
+                            "`continue` is outside the DXBC structured subset".into(),
+                        ));
+                    }
+                    if self.loop_depth == 0 {
+                        return Err(ProgramDxbcError::UnsupportedStatement("`break` outside a loop".into()));
+                    }
+                    self.emit(Opcode::Break, 0, Vec::new());
                 }
                 Stmt::Return(value) => result = Some(self.lower_expr(value)?.0),
                 Stmt::Expr(expr) => {
@@ -333,6 +352,7 @@ impl Lowerer {
         let counter = self.temp();
         self.emit(Opcode::Mov, 0, vec![Self::dest(counter), Operand::immediate(&[0])]);
         self.emit(Opcode::Loop, 0, Vec::new());
+        self.loop_depth += 1;
         let done = self.temp();
         self.emit(
             Opcode::Uge,
@@ -342,11 +362,12 @@ impl Lowerer {
         self.emit(Opcode::BreakCNz, TEST_NONZERO, vec![Operand::temp(done, Select::Scalar(0))]);
 
         let previous = self.locals.insert(iter, (counter, Kind::U32));
-        let outcome = self.lower_sequence(body);
+        let outcome = self.lower_loop_body(body);
         match previous {
             Some(previous) => self.locals.insert(iter, previous),
             None => self.locals.remove(&iter),
         };
+        self.loop_depth -= 1;
         outcome?;
 
         self.emit(
@@ -358,10 +379,26 @@ impl Lowerer {
         Ok(())
     }
 
+    /// Lowers a loop body, which may use `break` but not `continue`.
+    ///
+    /// SM5 `continue` jumps to the loop's continue point and then re-enters the
+    /// loop, so a lifted body would keep spinning. Expressing it needs the rest
+    /// of the body rewrapped in a predicate block, which the encoder does not do
+    /// yet, so `continue` is rejected instead of miscompiled.
+    fn lower_loop_body(&mut self, body: &[Stmt]) -> Result<(), ProgramDxbcError> {
+        if loop_flow(body).1 {
+            return Err(ProgramDxbcError::UnsupportedStatement(
+                "`continue` is outside the DXBC structured subset, rewrite the body as a predicate".into(),
+            ));
+        }
+        self.lower_sequence(body).map(|_| ())
+    }
+
     fn lower_while(&mut self, cond: &Expr, limit: u32, body: &[Stmt]) -> Result<(), ProgramDxbcError> {
         let counter = self.temp();
         self.emit(Opcode::Mov, 0, vec![Self::dest(counter), Operand::immediate(&[0])]);
         self.emit(Opcode::Loop, 0, Vec::new());
+        self.loop_depth += 1;
         let done = self.temp();
         self.emit(
             Opcode::Uge,
@@ -380,7 +417,9 @@ impl Lowerer {
         );
         self.emit(Opcode::BreakCNz, TEST_NONZERO, vec![Operand::temp(stop, Select::Scalar(0))]);
 
-        self.lower_sequence(body)?;
+        let outcome = self.lower_loop_body(body);
+        self.loop_depth -= 1;
+        outcome?;
 
         self.emit(
             Opcode::IAdd,
@@ -753,12 +792,12 @@ impl Lowerer {
             BinOp::Pow => Err(ProgramDxbcError::UnsupportedExpression("integer `pow`".into())),
             BinOp::Dot => Err(ProgramDxbcError::UnsupportedExpression("vector dot product".into())),
             BinOp::Atan2 => Err(ProgramDxbcError::UnsupportedExpression("`atan2`".into())),
-            BinOp::Lt => self.compare(Opcode::Lt, false, lhs, rhs),
-            BinOp::Le => self.compare(Opcode::Ge, true, lhs, rhs),
-            BinOp::Gt => self.compare(Opcode::Lt, true, lhs, rhs),
-            BinOp::Ge => self.compare(Opcode::Ge, false, lhs, rhs),
-            BinOp::Eq => self.compare(Opcode::Eq, false, lhs, rhs),
-            BinOp::Ne => self.compare(Opcode::Ne, false, lhs, rhs),
+            BinOp::Lt => self.compare(Compare::Lt, lhs, rhs),
+            BinOp::Le => self.compare(Compare::Le, lhs, rhs),
+            BinOp::Gt => self.compare(Compare::Gt, lhs, rhs),
+            BinOp::Ge => self.compare(Compare::Ge, lhs, rhs),
+            BinOp::Eq => self.compare_equality(true, lhs, rhs),
+            BinOp::Ne => self.compare_equality(false, lhs, rhs),
         }
     }
 
@@ -796,7 +835,19 @@ impl Lowerer {
         }
     }
 
-    fn compare(&mut self, opcode: Opcode, swap: bool, lhs: (u32, Kind), rhs: (u32, Kind)) -> Result<(u32, Kind), ProgramDxbcError> {
+    /// Orders two scalars, using the unsigned opcodes for `u32` values.
+    ///
+    /// SM5 only has `lt` / `ge` per signedness: `lt`/`ge` for floats and signed
+    /// integers, `ult`/`uge` for unsigned integers.
+    fn compare(&mut self, comparison: Compare, lhs: (u32, Kind), rhs: (u32, Kind)) -> Result<(u32, Kind), ProgramDxbcError> {
+        let unsigned = lhs.1 == Kind::U32;
+        let (ge, lt) = if unsigned { (Opcode::Uge, Opcode::Ult) } else { (Opcode::Ge, Opcode::Lt) };
+        let (opcode, swap) = match comparison {
+            Compare::Lt => (lt, false),
+            Compare::Le => (ge, true),
+            Compare::Gt => (lt, true),
+            Compare::Ge => (ge, false),
+        };
         let left = self.scalar(lhs.1, lhs.0);
         let right = self.scalar(rhs.1, rhs.0);
         let target = self.temp();
@@ -807,6 +858,21 @@ impl Lowerer {
             vec![Self::dest(target), left, right]
         };
         self.emit(opcode, 0, operands);
+        Ok((target, Kind::Bool))
+    }
+
+    /// Compares two scalars for equality, using the integer opcodes for `u32`.
+    fn compare_equality(&mut self, equal: bool, lhs: (u32, Kind), rhs: (u32, Kind)) -> Result<(u32, Kind), ProgramDxbcError> {
+        let opcode = match (lhs.1 == Kind::U32, equal) {
+            (true, true) => Opcode::IEq,
+            (true, false) => Opcode::INe,
+            (false, true) => Opcode::Eq,
+            (false, false) => Opcode::Ne,
+        };
+        let left = self.scalar(lhs.1, lhs.0);
+        let right = self.scalar(rhs.1, rhs.0);
+        let target = self.temp();
+        self.emit(opcode, 0, vec![Self::dest(target), left, right]);
         Ok((target, Kind::Bool))
     }
 
@@ -917,6 +983,29 @@ impl Lowerer {
             UnOp::Vec3Comp(_) => Err(ProgramDxbcError::UnsupportedType("vector component access".into())),
         }
     }
+}
+
+/// Whether a loop body uses `break` / `continue` for its own loop.
+///
+/// Nested loops own their own `break` / `continue`, so they are not counted.
+fn loop_flow(statements: &[Stmt]) -> (bool, bool) {
+    let mut breaks = false;
+    let mut continues = false;
+    for statement in statements {
+        match statement {
+            Stmt::Break => breaks = true,
+            Stmt::Continue => continues = true,
+            Stmt::If { then_body, else_body, .. } => {
+                let (nested_breaks, nested_continues) = loop_flow(then_body);
+                let (else_breaks, else_continues) = loop_flow(else_body);
+                breaks |= nested_breaks || else_breaks;
+                continues |= nested_continues || else_continues;
+            }
+            Stmt::For { .. } | Stmt::While { .. } | Stmt::Cfg { .. } => {}
+            Stmt::Let { .. } | Stmt::StoreLocal { .. } | Stmt::StoreBuffer { .. } | Stmt::Return(_) | Stmt::Expr(_) => {}
+        }
+    }
+    (breaks, continues)
 }
 
 fn uniform_slots_stmt(stmt: &Stmt) -> Vec<u32> {
@@ -1099,6 +1188,58 @@ mod tests {
         assert!(opcodes.contains(&(Opcode::LdRaw as u32)));
         assert!(opcodes.contains(&(Opcode::StoreRaw as u32)));
         assert!(opcodes.contains(&(Opcode::Mul as u32)));
+    }
+
+    #[test]
+    fn emits_integer_comparisons_with_unsigned_opcodes() {
+        let select = |op: BinOp| {
+            program(
+                vec![Stmt::Return(Expr::Select {
+                    cond: Box::new(Expr::BinOp { op, lhs: Box::new(Expr::GlobalId), rhs: Box::new(Expr::ConstU32(2)) }),
+                    then_: Box::new(Expr::ConstF32(1.0)),
+                    else_: Box::new(Expr::ConstF32(0.0)),
+                })],
+                Ty::f32(),
+            )
+        };
+        let ordering = opcodes(&emit_program_dxbc(&select(BinOp::Ge), "compare").expect("DXBC emission"));
+        assert!(ordering.contains(&(Opcode::Uge as u32)), "{ordering:?}");
+        assert!(!ordering.contains(&(Opcode::Ge as u32)), "{ordering:?}");
+
+        let equality = opcodes(&emit_program_dxbc(&select(BinOp::Eq), "compare").expect("DXBC emission"));
+        assert!(equality.contains(&(Opcode::IEq as u32)), "{equality:?}");
+        assert!(!equality.contains(&(Opcode::Eq as u32)), "{equality:?}");
+    }
+
+    #[test]
+    fn emits_bounded_loop_with_break() {
+        let entry = program(
+            vec![
+                Stmt::Let { id: 0, ty: Ty::f32(), init: Expr::ConstF32(0.0) },
+                Stmt::For {
+                    iter: 1,
+                    limit: 4,
+                    body: vec![
+                        Stmt::If {
+                            cond: Expr::BinOp { op: BinOp::Eq, lhs: Box::new(Expr::LoadLocal(1)), rhs: Box::new(Expr::ConstU32(2)) },
+                            then_body: vec![Stmt::Break],
+                            else_body: Vec::new(),
+                        },
+                        Stmt::StoreLocal {
+                            id: 0,
+                            value: Expr::BinOp { op: BinOp::Add, lhs: Box::new(Expr::LoadLocal(0)), rhs: Box::new(Expr::ConstF32(1.0)) },
+                        },
+                    ],
+                },
+                Stmt::Return(Expr::LoadLocal(0)),
+            ],
+            Ty::f32(),
+        );
+        let bytes = emit_program_dxbc(&entry, "loop_break").expect("DXBC emission");
+        let opcodes = opcodes(&bytes);
+        assert!(opcodes.contains(&(Opcode::Loop as u32)));
+        assert!(opcodes.contains(&(Opcode::Break as u32)));
+        assert!(opcodes.contains(&(Opcode::EndLoop as u32)));
     }
 
     #[test]

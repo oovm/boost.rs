@@ -121,6 +121,107 @@ fn dispatches_vector_math_program() {
 }
 
 #[test]
+fn dispatches_comparison_and_select() {
+    let cases = [(BinOp::Ge, [0.0f32, 0.0, 1.0, 1.0]), (BinOp::Gt, [0.0f32, 0.0, 0.0, 1.0]), (BinOp::Eq, [0.0f32, 0.0, 1.0, 0.0])];
+    for (op, expected) in cases {
+        let entry = program(vec![Stmt::Return(Expr::Select {
+            cond: Box::new(Expr::BinOp { op, lhs: Box::new(Expr::GlobalId), rhs: Box::new(Expr::ConstU32(2)) }),
+            then_: Box::new(Expr::ConstF32(1.0)),
+            else_: Box::new(Expr::ConstF32(0.0)),
+        })]);
+        let graph = Graph {
+            resources: ResourceGraph { nodes: vec![buffer(2, 4)] },
+            tasks: TaskGraph {
+                nodes: vec![dispatch_task(16, &entry, BTreeMap::from([("output".to_string(), ParamValue::I64(2))]))],
+                edges: Vec::new(),
+            },
+        };
+
+        let Some(mut dx12) = open()
+        else {
+            return;
+        };
+        dx12.prepare(&graph).expect("prepare");
+        dx12.run_prepared(&graph).expect("dispatch");
+        assert_eq!(dx12.read_f32(Rid(2)).expect("read"), expected.to_vec(), "{op:?}");
+    }
+}
+
+#[test]
+fn dispatches_bounded_loop_accumulation() {
+    let entry = program(vec![
+        Stmt::Let { id: 0, ty: Ty::f32(), init: Expr::ConstF32(0.0) },
+        Stmt::For {
+            iter: 1,
+            limit: 4,
+            body: vec![Stmt::StoreLocal {
+                id: 0,
+                value: Expr::BinOp { op: BinOp::Add, lhs: Box::new(Expr::LoadLocal(0)), rhs: Box::new(Expr::ConstF32(1.0)) },
+            }],
+        },
+        Stmt::Return(Expr::LoadLocal(0)),
+    ]);
+
+    let graph = Graph {
+        resources: ResourceGraph { nodes: vec![buffer(2, 4)] },
+        tasks: TaskGraph {
+            nodes: vec![dispatch_task(15, &entry, BTreeMap::from([("output".to_string(), ParamValue::I64(2))]))],
+            edges: Vec::new(),
+        },
+    };
+
+    let Some(mut dx12) = open()
+    else {
+        return;
+    };
+    dx12.prepare(&graph).expect("prepare");
+    dx12.run_prepared(&graph).expect("dispatch");
+    assert_eq!(dx12.read_f32(Rid(2)).expect("read"), vec![4.0; 4]);
+}
+
+#[test]
+fn dispatches_loop_with_break() {
+    let entry = program(
+        vec![
+            Stmt::Let { id: 0, ty: Ty::f32(), init: Expr::ConstF32(0.0) },
+            Stmt::For {
+                iter: 1,
+                limit: 4,
+                body: vec![
+                    Stmt::If {
+                        cond: Expr::BinOp { op: BinOp::Eq, lhs: Box::new(Expr::LoadLocal(1)), rhs: Box::new(Expr::ConstU32(2)) },
+                        then_body: vec![Stmt::Break],
+                        else_body: Vec::new(),
+                    },
+                    Stmt::StoreLocal {
+                        id: 0,
+                        value: Expr::BinOp { op: BinOp::Add, lhs: Box::new(Expr::LoadLocal(0)), rhs: Box::new(Expr::ConstF32(1.0)) },
+                    },
+                ],
+            },
+            Stmt::Return(Expr::LoadLocal(0)),
+        ],
+    );
+
+    let graph = Graph {
+        resources: ResourceGraph { nodes: vec![buffer(2, 4)] },
+        tasks: TaskGraph {
+            nodes: vec![dispatch_task(14, &entry, BTreeMap::from([("output".to_string(), ParamValue::I64(2))]))],
+            edges: Vec::new(),
+        },
+    };
+
+    let Some(mut dx12) = open()
+    else {
+        return;
+    };
+    dx12.prepare(&graph).expect("prepare");
+    dx12.run_prepared(&graph).expect("dispatch");
+    // The loop stops when the counter reaches two, so two increments are kept.
+    assert_eq!(dx12.read_f32(Rid(2)).expect("read"), vec![2.0; 4]);
+}
+
+#[test]
 fn dispatches_storage_buffer_writes() {
     let program = program(vec![
         Stmt::StoreBuffer { resource: 0, index: Expr::GlobalId, value: Expr::ConstF32(1.5) },
