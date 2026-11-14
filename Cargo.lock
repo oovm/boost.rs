@@ -405,10 +405,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "boost-http"
+name = "boost-net"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
+ "getrandom 0.4.3",
  "rustls",
+ "sha1 0.11.0",
  "url",
  "webpki-roots",
 ]
@@ -746,7 +749,7 @@ name = "crawler-browser"
 version = "0.1.0"
 dependencies = [
  "boost-harness",
- "boost-http",
+ "boost-net",
  "crawler-extract",
  "crawler-types",
  "serde_json",
@@ -769,7 +772,7 @@ name = "crawler-fetch"
 version = "0.1.0"
 dependencies = [
  "boost-harness",
- "boost-http",
+ "boost-net",
  "crawler-types",
  "serde",
  "url",

@@ -14,7 +14,7 @@ publish = false
 crawler-types = { workspace = true }
 serde = { workspace = true }
 url = { workspace = true }
-boost-http = { workspace = true }
+boost-net = { workspace = true }
 boost-harness = { workspace = true }
 
 [features]

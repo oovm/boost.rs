@@ -1,0 +1,29 @@
+[package]
+name = "boost-net"
+version.workspace = true
+authors.workspace = true
+description = "Protocol-layer network primitives: HTTP/1.1 and WebSocket over TCP with optional TLS versions"
+repository = "https://github.com/oovm/rust-boost/tree/dev/projects/boost.net"
+documentation = "https://docs.rs/boost-net"
+readme = "readme.md"
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+url = { workspace = true }
+getrandom = { workspace = true }
+sha1 = { workspace = true }
+base64 = { workspace = true }
+rustls = { workspace = true, optional = true }
+webpki-roots = { workspace = true, optional = true }
+
+[features]
+default = ["tls"]
+tls = ["dep:rustls", "dep:webpki-roots"]
+
+[dev-dependencies]
+sha1 = { workspace = true }
+base64 = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true

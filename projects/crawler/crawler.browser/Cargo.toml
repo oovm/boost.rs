@@ -17,6 +17,6 @@ crate-type = ["rlib"]
 crawler-types = { workspace = true }
 crawler-extract = { workspace = true }
 boost-harness = { workspace = true }
-boost-http = { workspace = true }
+boost-net = { workspace = true }
 serde_json = { workspace = true }
 url = { workspace = true }

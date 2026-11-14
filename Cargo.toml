@@ -10,7 +10,7 @@ members = [
     "projects/boost/boost-fs",
     "projects/boost/boost.harness",
     "projects/boost/boost.harness.macro",
-    "projects/boost/boost-http",
+    "projects/boost/boost.net",
     "projects/boost/boost-random",
     "projects/boost/boost-source",
     "projects/boost/boost-terminal",
@@ -161,7 +161,7 @@ boost-console = { path = "projects/boost/boost-console" }
 boost-fs = { path = "projects/boost/boost-fs" }
 boost-harness = { path = "projects/boost/boost.harness", features = ["serde"] }
 boost-harness-macro = { path = "projects/boost/boost.harness.macro" }
-boost-http = { path = "projects/boost/boost-http" }
+boost-net = { path = "projects/boost/boost.net" }
 boost-random = { path = "projects/boost/boost-random" }
 boost-source = { path = "projects/boost/boost-source" }
 boost-terminal = { path = "projects/boost/boost-terminal" }

@@ -1,13 +1,6 @@
-#![doc = include_str!("readme.md")]
-#![deny(missing_docs)]
+//! HTTP/1.1 request, response, and transport primitives.
 
-use std::{
-    collections::BTreeMap,
-    error::Error as StdError,
-    fmt::{Display, Formatter},
-    io,
-    str::FromStr,
-};
+use std::{collections::BTreeMap, str::FromStr};
 
 pub use url::Url;
 
@@ -53,7 +46,7 @@ impl Method {
 }
 
 impl FromStr for Method {
-    type Err = RequestError;
+    type Err = NetError;
 
     /// Parse a known method case-insensitively, or keep any other HTTP token as [`Method::Custom`].
     fn from_str(value: &str) -> Result<Self, Self::Err> {
@@ -67,7 +60,7 @@ impl FromStr for Method {
             "OPTIONS" => Self::Options,
             "TRACE" => Self::Trace,
             _ if is_token(value.trim()) => Self::Custom(value.trim().to_string()),
-            _ => return Err(RequestError::Unsupported(format!("invalid HTTP method `{value}`"))),
+            _ => return Err(NetError::Unsupported(format!("invalid HTTP method `{value}`"))),
         };
         Ok(method)
     }
@@ -218,55 +211,16 @@ impl Response {
 }
 
 /// Errors produced while constructing or sending a request.
-#[derive(Debug)]
-pub enum RequestError {
-    /// The selected transport cannot handle the request.
-    Unsupported(String),
-    /// The transport failed before a response was produced.
-    Transport(String),
-    /// Reading a response body failed.
-    Body(io::Error),
-    /// The response body exceeded the configured limit.
-    BodyTooLarge {
-        /// Maximum permitted body size.
-        limit: usize,
-    },
-    /// The response headers exceeded the configured limit.
-    HeaderTooLarge {
-        /// Maximum permitted header block size.
-        limit: usize,
-    },
-}
-
-impl Display for RequestError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Unsupported(message) => write!(formatter, "unsupported request: {message}"),
-            Self::Transport(message) => write!(formatter, "transport error: {message}"),
-            Self::Body(error) => write!(formatter, "response body error: {error}"),
-            Self::BodyTooLarge { limit } => write!(formatter, "response body exceeds {limit} bytes"),
-            Self::HeaderTooLarge { limit } => write!(formatter, "response headers exceed {limit} bytes"),
-        }
-    }
-}
-
-impl StdError for RequestError {
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        match self {
-            Self::Body(error) => Some(error),
-            _ => None,
-        }
-    }
-}
+pub use crate::NetError;
 
 /// A synchronous request executor.
 pub trait Transport {
     /// Send one request and return its response.
-    fn send(&self, request: &Request) -> Result<Response, RequestError>;
+    fn send(&self, request: &Request) -> Result<Response, NetError>;
 }
 
 /// Send one request through a transport.
-pub fn send<T: Transport + ?Sized>(transport: &T, request: &Request) -> Result<Response, RequestError> {
+pub fn send<T: Transport + ?Sized>(transport: &T, request: &Request) -> Result<Response, NetError> {
     transport.send(request)
 }
 
@@ -275,6 +229,6 @@ pub(crate) fn is_token(value: &str) -> bool {
     !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte))
 }
 
-mod http_transport;
+mod transport;
 
-pub use http_transport::{HttpTransport, HttpTransportConfig};
+pub use transport::{HttpTransport, HttpTransportConfig};

@@ -1,9 +1,8 @@
 use std::{collections::BTreeMap, time::Duration};
 
 use boost_harness::diagnostic::{Diagnostic, DiagnosticSeverity, Message, MessageArg};
-use boost_http::{
-    Headers, HttpTransport as RequestHttpTransport, HttpTransportConfig, Method, Request, RequestError,
-    Transport as RequestTransport,
+use boost_net::http::{
+    Headers, HttpTransport as RequestHttpTransport, HttpTransportConfig, Method, NetError, Request, Transport as RequestTransport,
 };
 use crawler_types::{BodyStorage, CrawlError, RedirectHop, Result, TransportProvenance};
 
@@ -48,10 +47,7 @@ impl Transport for HttpTransport {
     fn fetch(&self, request: &FetchRequest) -> Result<crawler_types::FetchArtifact> {
         let scheme = request.url.scheme();
         if scheme != "http" && scheme != "https" {
-            return Err(make_transport_diag(
-                pd::FETCH_TRANSPORT_FAILED,
-                &format!("http transport cannot fetch `{}`", request.url),
-            ));
+            return Err(make_transport_diag(pd::FETCH_TRANSPORT_FAILED, &format!("http transport cannot fetch `{}`", request.url)));
         }
 
         let max_redirects = u32::try_from(self.max_redirects)
@@ -84,26 +80,28 @@ impl Transport for HttpTransport {
     }
 }
 
-// ─── boost_http RequestError → CrawlError 分型 ──────────────────────────────
+// ─── boost_net NetError → CrawlError 分型 ──────────────────────────────
 
-/// Map a `boost_http::RequestError` into a structured [`CrawlError`] with the
+/// Map a `boost_net::NetError` into a structured [`CrawlError`] with the
 /// correct stable diagnostic code for timeout / TLS / redirect / body-budget /
 /// generic transport failures.
-fn map_http_request_error(error: RequestError) -> CrawlError {
+fn map_http_request_error(error: NetError) -> CrawlError {
     match error {
-        RequestError::Unsupported(msg) => make_transport_diag(pd::FETCH_TRANSPORT_FAILED, &msg),
-        RequestError::Transport(msg) => classify_transport_msg(&msg),
-        RequestError::Body(io_err) => make_transport_diag(pd::FETCH_DECODE_FAILED, &format!("body read failed: {io_err}")),
-        RequestError::BodyTooLarge { limit } => {
+        NetError::Unsupported(msg) => make_transport_diag(pd::FETCH_TRANSPORT_FAILED, &msg),
+        NetError::Transport(msg) => classify_transport_msg(&msg),
+        NetError::Body(io_err) => make_transport_diag(pd::FETCH_DECODE_FAILED, &format!("body read failed: {io_err}")),
+        NetError::BodyTooLarge { limit } => {
             make_transport_diag_u64(pd::FETCH_BODY_BUDGET, "response body exceeded configured budget", limit as u64)
         }
-        RequestError::HeaderTooLarge { limit } => {
+        NetError::HeaderTooLarge { limit } => {
             make_transport_diag_u64(pd::FETCH_BODY_BUDGET, "response headers exceeded configured budget", limit as u64)
         }
+        NetError::Protocol(msg) => make_transport_diag(pd::FETCH_TRANSPORT_FAILED, &msg),
+        NetError::Closed => make_transport_diag(pd::FETCH_TRANSPORT_FAILED, "connection is closed"),
     }
 }
 
-/// Sub-classify a `RequestError::Transport` inner message into timeout /
+/// Sub-classify a `NetError::Transport` inner message into timeout /
 /// redirect-limit / TLS-failed / catch-all transport-failed.
 fn classify_transport_msg(msg: &str) -> CrawlError {
     let lower = msg.to_ascii_lowercase();
@@ -168,7 +166,7 @@ fn diagnostic_key_for(code: &'static str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use boost_http::RequestError;
+    use boost_net::NetError;
 
     fn extract_code(error: &CrawlError) -> String {
         error.code().expect("diagnostic must have code").to_string()
@@ -176,75 +174,45 @@ mod tests {
 
     #[test]
     fn classify_timeout_variants() {
-        assert_eq!(
-            extract_code(&map_http_request_error(RequestError::Transport("whole-request timeout exceeded".into()))),
-            pd::FETCH_TIMEOUT,
-        );
-        assert_eq!(
-            extract_code(&map_http_request_error(RequestError::Transport("request deadline exceeded".into()))),
-            pd::FETCH_TIMEOUT,
-        );
-        assert_eq!(
-            extract_code(&map_http_request_error(RequestError::Transport("TCP connect timed out".into()))),
-            pd::FETCH_TIMEOUT,
-        );
+        assert_eq!(extract_code(&map_http_request_error(NetError::Transport("whole-request timeout exceeded".into()))), pd::FETCH_TIMEOUT,);
+        assert_eq!(extract_code(&map_http_request_error(NetError::Transport("request deadline exceeded".into()))), pd::FETCH_TIMEOUT,);
+        assert_eq!(extract_code(&map_http_request_error(NetError::Transport("TCP connect timed out".into()))), pd::FETCH_TIMEOUT,);
     }
 
     #[test]
     fn classify_redirect_limit() {
         assert_eq!(
-            extract_code(&map_http_request_error(RequestError::Transport("redirect chain exceeded 8 hops".into()))),
+            extract_code(&map_http_request_error(NetError::Transport("redirect chain exceeded 8 hops".into()))),
             pd::FETCH_REDIRECT_LIMIT,
         );
-        assert_eq!(
-            extract_code(&map_http_request_error(RequestError::Transport("redirect loop exhausted".into()))),
-            pd::FETCH_REDIRECT_LIMIT,
-        );
+        assert_eq!(extract_code(&map_http_request_error(NetError::Transport("redirect loop exhausted".into()))), pd::FETCH_REDIRECT_LIMIT,);
     }
 
     #[test]
     fn classify_tls_failure() {
-        assert_eq!(
-            extract_code(&map_http_request_error(RequestError::Transport("TLS handshake failed".into()))),
-            pd::FETCH_TLS_FAILED,
-        );
-        assert_eq!(
-            extract_code(&map_http_request_error(RequestError::Transport("certificate verification failed".into()))),
-            pd::FETCH_TLS_FAILED,
-        );
+        assert_eq!(extract_code(&map_http_request_error(NetError::Transport("TLS handshake failed".into()))), pd::FETCH_TLS_FAILED,);
+        assert_eq!(extract_code(&map_http_request_error(NetError::Transport("certificate verification failed".into()))), pd::FETCH_TLS_FAILED,);
     }
 
     #[test]
     fn classify_fallback_to_transport_failed() {
-        assert_eq!(
-            extract_code(&map_http_request_error(RequestError::Transport("DNS resolution failed".into()))),
-            pd::FETCH_TRANSPORT_FAILED,
-        );
-        assert_eq!(
-            extract_code(&map_http_request_error(RequestError::Transport("connection refused".into()))),
-            pd::FETCH_TRANSPORT_FAILED,
-        );
+        assert_eq!(extract_code(&map_http_request_error(NetError::Transport("DNS resolution failed".into()))), pd::FETCH_TRANSPORT_FAILED,);
+        assert_eq!(extract_code(&map_http_request_error(NetError::Transport("connection refused".into()))), pd::FETCH_TRANSPORT_FAILED,);
     }
 
     #[test]
     fn body_too_large_maps_to_budget() {
-        assert_eq!(
-            extract_code(&map_http_request_error(RequestError::BodyTooLarge { limit: 8 * 1024 * 1024 })),
-            pd::FETCH_BODY_BUDGET,
-        );
+        assert_eq!(extract_code(&map_http_request_error(NetError::BodyTooLarge { limit: 8 * 1024 * 1024 })), pd::FETCH_BODY_BUDGET,);
     }
 
     #[test]
     fn body_io_error_maps_to_decode_failed() {
         let io_err = std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "premature close");
-        assert_eq!(extract_code(&map_http_request_error(RequestError::Body(io_err))), pd::FETCH_DECODE_FAILED,);
+        assert_eq!(extract_code(&map_http_request_error(NetError::Body(io_err))), pd::FETCH_DECODE_FAILED,);
     }
 
     #[test]
     fn unsupported_variant_uses_transport_failed() {
-        assert_eq!(
-            extract_code(&map_http_request_error(RequestError::Unsupported("invalid URL".into()))),
-            pd::FETCH_TRANSPORT_FAILED,
-        );
+        assert_eq!(extract_code(&map_http_request_error(NetError::Unsupported("invalid URL".into()))), pd::FETCH_TRANSPORT_FAILED,);
     }
 }

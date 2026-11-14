@@ -6,7 +6,7 @@ use std::{
     thread,
 };
 
-use boost_http::{HttpTransport, HttpTransportConfig, Method, Request, RequestError, Transport};
+use boost_net::http::{HttpTransport, HttpTransportConfig, Method, NetError, Request, Transport};
 use url::Url;
 
 /// Serves exactly one response over a local TCP connection and returns its URL.
@@ -62,5 +62,5 @@ fn fetches_https_resource_with_webpki_roots() {
 fn rejects_response_header_budget() {
     let url = serve("HTTP/1.1 200 OK\r\nX-Large: value\r\nContent-Length: 0\r\n\r\n");
     let transport = HttpTransport::with_config(HttpTransportConfig { max_header_bytes: 10, ..HttpTransportConfig::default() });
-    assert!(matches!(transport.send(&Request::new(Method::Get, url)), Err(RequestError::HeaderTooLarge { limit: 10 })));
+    assert!(matches!(transport.send(&Request::new(Method::Get, url)), Err(NetError::HeaderTooLarge { limit: 10 })));
 }

@@ -1,5 +1,5 @@
 use boost_harness::diagnostic::{DiagnosticSeverity, Message, MessageArg};
-use boost_http::{HttpTransport, HttpTransportConfig, Method, Request, Transport};
+use boost_net::http::{HttpTransport, HttpTransportConfig, Method, Request, Transport};
 use crawler_types::{BrowserSnapshot, CrawlError, Result, diagnostics as pd};
 use url::Url;
 

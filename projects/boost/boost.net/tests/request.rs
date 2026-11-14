@@ -2,13 +2,13 @@
 
 use std::str::FromStr;
 
-use boost_http::{Headers, Method, Request, RequestError, Response, Transport, Url, send};
+use boost_net::http::{Headers, Method, NetError, Request, Response, Transport, Url, send};
 
 /// Transport that echoes the request back, so the public `send` entry has a real implementation.
 struct EchoTransport;
 
 impl Transport for EchoTransport {
-    fn send(&self, request: &Request) -> Result<Response, RequestError> {
+    fn send(&self, request: &Request) -> Result<Response, NetError> {
         Ok(Response { url: request.url.clone(), status: 201, headers: Headers::new(), body: request.body.clone(), redirects: Vec::new() })
     }
 }
@@ -49,7 +49,7 @@ fn method_parsing_keeps_known_names_and_valid_custom_tokens() {
     assert_eq!(Method::from_str("get").unwrap(), Method::Get);
     assert_eq!(Method::from_str("DELETE").unwrap(), Method::Delete);
     assert_eq!(Method::from_str("PURGE").unwrap(), Method::Custom("PURGE".to_string()));
-    assert!(matches!(Method::from_str("bad method"), Err(RequestError::Unsupported(_))));
+    assert!(matches!(Method::from_str("bad method"), Err(NetError::Unsupported(_))));
 }
 
 #[test]
