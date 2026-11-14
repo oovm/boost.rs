@@ -24,6 +24,32 @@ fn x_of(scene: &DisplayScene, id: &str) -> f64 {
         .e()
 }
 
+/// 高度可变的矩形场景，用来验证矩形通道。
+fn bar_scene(id: &str, height: f64) -> DisplayScene {
+    let node = SceneNode::new(NodeKind::Rect {
+        rect: Rect::new(0.0, 0.0, 10.0, height),
+        style: ShapeStyle::default(),
+    })
+    .with_id(id);
+    let mut scene = DisplayScene::new(Size::new(200.0, 100.0));
+    scene.push(node);
+    scene
+}
+
+/// 读取场景内某个 id 的矩形高度。
+fn height_of(scene: &DisplayScene, id: &str) -> f64 {
+    match &scene
+        .nodes
+        .iter()
+        .find(|node| node.id.as_deref() == Some(id))
+        .unwrap_or_else(|| panic!("场景里没有 id 为 `{id}` 的节点"))
+        .kind
+    {
+        NodeKind::Rect { rect, .. } => rect.height,
+        other => panic!("预期矩形节点，实际为 {other:?}"),
+    }
+}
+
 /// 两状态程序：`from` 秒开始，`from + duration` 处完成，`to` 秒进入下一个状态。
 fn program(from: f64, to: f64, duration: f64) -> Program {
     Program {
@@ -42,6 +68,21 @@ fn interpolates_inside_a_transition() {
     assert_eq!(x_of(&compiled.sample(0.0), "bar"), 0.0);
     assert_eq!(x_of(&compiled.sample(0.5), "bar"), 50.0);
     assert_eq!(x_of(&compiled.sample(1.0), "bar"), 100.0);
+}
+
+#[test]
+fn grows_a_bar_through_the_extent_channel() {
+    let program = Program {
+        states: vec![
+            SceneState { at: 0.0, scene: bar_scene("bar", 10.0) },
+            SceneState { at: 1.0, scene: bar_scene("bar", 50.0) },
+        ],
+        transitions: vec![Transition { duration: 1.0, ease: Easing::Linear, ..Transition::default() }],
+    };
+    let compiled = program.compile().expect("程序合法");
+    assert_eq!(height_of(&compiled.sample(0.0), "bar"), 10.0);
+    assert_eq!(height_of(&compiled.sample(0.5), "bar"), 30.0);
+    assert_eq!(height_of(&compiled.sample(1.0), "bar"), 50.0);
 }
 
 #[test]

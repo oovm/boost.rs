@@ -3,9 +3,9 @@
 use std::collections::BTreeSet;
 
 use plotter_motion::{Channel, Easing, EnterPolicy, ExitPolicy, MotionIntent, plan_transition, sample};
-use plotter_scene::Transform;
+use plotter_scene::{NodeKind, Rect, Transform};
 
-use crate::common::{find, group, linear_intent, opacity, rect, rect_at, scene, text, x};
+use crate::common::{bar, find, group, linear_intent, opacity, rect, rect_at, scene, text, x};
 
 #[test]
 fn interpolates_transform_and_opacity() {
@@ -43,6 +43,28 @@ fn omits_unchanged_channels() {
     let plan = plan_transition(&previous, &next, &intent);
     assert_eq!(plan.tracks.len(), 1);
     assert_eq!(plan.tracks[0].channel, Channel::Transform);
+}
+
+#[test]
+fn interpolates_the_extent_of_rect_nodes() {
+    let previous = scene(vec![bar("bar", 10.0, 10.0)]);
+    let next = scene(vec![bar("bar", 10.0, 50.0)]);
+    let plan = plan_transition(&previous, &next, &linear_intent(1.0));
+    assert_eq!(plan.tracks.iter().filter(|track| track.channel == Channel::Extent).count(), 1);
+
+    let middle = sample(&plan, &previous, &next, 0.5);
+    let rect = match &find(&middle, "bar").expect("bar exists").kind {
+        NodeKind::Rect { rect, .. } => *rect,
+        other => panic!("expected a rect node, got {other:?}"),
+    };
+    // The origin stays put and only the height grows: a bar rises from its
+    // baseline instead of sliding.
+    assert_eq!(rect, Rect::new(0.0, 0.0, 10.0, 30.0));
+
+    // A node kind without a rectangle never receives an extent track.
+    let previous = scene(vec![text("t", 1.0)]);
+    let next = scene(vec![text("t", 1.0)]);
+    assert!(plan_transition(&previous, &next, &linear_intent(1.0)).tracks.is_empty());
 }
 
 #[test]

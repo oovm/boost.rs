@@ -22,9 +22,11 @@
 //!
 //! # Known boundaries
 //!
-//! - Only `Transform` and `Opacity` are animated. Path geometry, rect extents,
-//!   text content, and colors are snapped to the next scene, so shape morphing
-//!   and color interpolation are intentionally out of scope.
+//! - `Transform`, `Extent` and `Opacity` are animated. `Extent` interpolates
+//!   the rectangle of `Rect` and `RoundedRect` nodes only, which is how chart
+//!   bars grow from a shared baseline. Path geometry, text content, clips and
+//!   colors are snapped to the next scene, so shape morphing and color
+//!   interpolation are intentionally out of scope.
 //! - `Transform` interpolation is component-wise on the affine matrix. It does
 //!   not decompose rotation or scale, and it never produces a different matrix
 //!   than the documented component lerp.

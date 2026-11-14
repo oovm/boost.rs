@@ -2,10 +2,10 @@
 
 use std::collections::HashMap;
 
-use plotter_scene::{DisplayScene, NodeKind, SceneNode, Transform};
+use plotter_scene::{DisplayScene, NodeKind, Rect, SceneNode, Transform};
 
 use crate::{
-    internal::{first_paths, lerp, lerp_transform, multiply_node_opacity, set_node_opacity},
+    internal::{first_paths, lerp, lerp_transform, multiply_node_opacity, set_node_extent, set_node_opacity},
     plan::{Channel, ChannelValue, CorrespondenceKind, EnterPolicy, ExitPolicy, Track, TransitionPlan},
 };
 
@@ -32,10 +32,11 @@ use crate::{
 ///
 /// # Known boundaries
 ///
-/// - Only transform and opacity differ between frames. Path commands, rect
-///   extents, text, clips, and colors are snapped to the next scene, or copied
+/// - `Transform`, `Extent` and `Opacity` differ between frames. Path commands,
+///   text content, clips, and colors are snapped to the next scene, or copied
 ///   verbatim for exiting nodes. Shape morphing and color interpolation are not
-///   implemented.
+///   implemented; an extent track only exists for `Rect` and `RoundedRect`
+///   nodes that also exist in both scenes.
 /// - Transform interpolation is component-wise; rotations and non-uniform
 ///   scales therefore do not decompose.
 /// - Entering and exiting nodes animate opacity only. `intent.channels` applies
@@ -117,6 +118,11 @@ fn apply_next(node: &mut SceneNode, index: &SampleIndex<'_>, enter: EnterPolicy,
                         node.transform = transform;
                     }
                 }
+                if let Some(track) = index.tracks.get(&(id, Channel::Extent)) {
+                    if let Some(rect) = interpolated_extent(track, progress) {
+                        set_node_extent(&mut node.kind, rect);
+                    }
+                }
                 if let Some(track) = index.tracks.get(&(id, Channel::Opacity)) {
                     if let Some(value) = interpolated_opacity(track, progress) {
                         set_node_opacity(node, value);
@@ -137,6 +143,18 @@ fn apply_next(node: &mut SceneNode, index: &SampleIndex<'_>, enter: EnterPolicy,
 fn interpolated_transform(track: &Track, progress: f64) -> Option<Transform> {
     match (track.from, track.to) {
         (ChannelValue::Transform(from), ChannelValue::Transform(to)) => Some(lerp_transform(from, to, progress)),
+        _ => None,
+    }
+}
+
+fn interpolated_extent(track: &Track, progress: f64) -> Option<Rect> {
+    match (track.from, track.to) {
+        (ChannelValue::Extent(from), ChannelValue::Extent(to)) => Some(Rect {
+            x: lerp(from.x, to.x, progress),
+            y: lerp(from.y, to.y, progress),
+            width: lerp(from.width, to.width, progress),
+            height: lerp(from.height, to.height, progress),
+        }),
         _ => None,
     }
 }

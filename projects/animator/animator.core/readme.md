@@ -12,9 +12,10 @@
 
 - 只依赖 `plotter.motion` 与 `plotter.scene`，不依赖数据、布局、输入语言或渲染器。
 - 不加载数据、不排版、不读时钟，也不做事件派发；宿主传入时间，输出场景。
-- 动画只继承 `plotter.motion` 已声明的通道：`Transform` 与 `Opacity`。路径形变、颜色渐变不在本层承诺范围内。
+- 动画只继承 `plotter.motion` 已声明的通道：`Transform`、`Extent` 与 `Opacity`。`Extent` 让 `Rect` / `RoundedRect` 节点从共享基线长高；路径形变（`PathTrim`）与颜色渐变不在本层承诺范围内。
+- 每段过渡可以显式给出通道集合，缺省为三个通道全开；不支持的节点类型不会凭空获得几何通道。
 - 状态顺序、错误与输出都是确定的：同样输入永远得到同样的场景。
 
 ## 验收
 
-`cargo test -p animator-core` 覆盖保持段、过渡段、时长为零、边界钳制、帧取样与非法程序。
+`cargo test -p animator-core` 覆盖保持段、过渡段、时长为零、边界钳制、帧取样、矩形长高与非法程序。

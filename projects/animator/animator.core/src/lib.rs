@@ -22,12 +22,10 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
-use plotter_motion::{
-    Channel, EnterPolicy, ExitPolicy, InterruptionPolicy, MotionIntent, TransitionPlan, plan_transition, sample,
-};
+use plotter_motion::{EnterPolicy, ExitPolicy, InterruptionPolicy, MotionIntent, TransitionPlan, plan_transition, sample};
 use plotter_scene::DisplayScene;
 
-pub use plotter_motion::Easing;
+pub use plotter_motion::{Channel, Easing};
 
 /// 时间轴上的一个静态状态。
 #[derive(Clone, Debug, PartialEq)]
@@ -42,12 +40,18 @@ pub struct SceneState {
 ///
 /// `duration` 超过两状态间隔属于显式错误，避免“动画还没播完就被下一个状态覆盖”
 /// 这种难以察觉的时间轴缺口。
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Transition {
     /// 过渡时长（秒），`0` 表示直接切换。
     pub duration: f64,
     /// 归一化进度上的缓动。
     pub ease: Easing,
+    /// 对两个状态中都存在的节点执行插值的通道。
+    ///
+    /// 缺省包含 `Transform`、`Extent` 与 `Opacity`：前两者让图表柱从共享基线
+    /// 长高，后者负责淡入淡出。`Extent` 只作用于 `Rect` / `RoundedRect` 节点，
+    /// 其它节点不会凭空获得几何通道。
+    pub channels: BTreeSet<Channel>,
     /// 只存在于后一个状态的节点如何出现。
     pub enter: EnterPolicy,
     /// 只存在于前一个状态的节点如何消失。
@@ -55,9 +59,15 @@ pub struct Transition {
 }
 
 impl Default for Transition {
-    /// 一个可用缺省：0.4 秒、缓入缓出、进出都淡入淡出。
+    /// 一个可用缺省：0.4 秒、缓入缓出、变换/矩形/透明度三个通道、进出都淡入淡出。
     fn default() -> Self {
-        Self { duration: 0.4, ease: Easing::EaseInOut, enter: EnterPolicy::Fade, exit: ExitPolicy::Fade }
+        Self {
+            duration: 0.4,
+            ease: Easing::EaseInOut,
+            channels: BTreeSet::from([Channel::Transform, Channel::Extent, Channel::Opacity]),
+            enter: EnterPolicy::Fade,
+            exit: ExitPolicy::Fade,
+        }
     }
 }
 
@@ -189,7 +199,7 @@ impl Program {
             let intent = MotionIntent {
                 duration: transition.duration,
                 ease: transition.ease,
-                channels: BTreeSet::from([Channel::Transform, Channel::Opacity]),
+                channels: transition.channels.clone(),
                 enter: transition.enter,
                 exit: transition.exit,
                 interruption: InterruptionPolicy::CancelAndRestart,

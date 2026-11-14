@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use plotter_scene::{DisplayScene, NodeKind, SceneNode, Transform};
+use plotter_scene::{DisplayScene, NodeKind, Rect, SceneNode, Transform};
 
 /// Linear interpolation between two scalars with exact endpoints.
 ///
@@ -73,6 +73,29 @@ pub(crate) fn set_node_opacity(node: &mut SceneNode, value: f64) {
 /// Scale the node's own opacity by `factor`, clamped to `0.0..=1.0`.
 pub(crate) fn multiply_node_opacity(node: &mut SceneNode, factor: f64) {
     set_node_opacity(node, node_opacity(node) * factor);
+}
+
+/// The rectangle carried by a shape, if the node kind has one.
+///
+/// Only `Rect` and `RoundedRect` own a rectangle. Every other kind reports
+/// `None`, so they never receive an extent track and are never silently
+/// converted into one.
+pub(crate) fn node_extent(node: &SceneNode) -> Option<Rect> {
+    match &node.kind {
+        NodeKind::Rect { rect, .. } | NodeKind::RoundedRect { rect, .. } => Some(*rect),
+        _ => None,
+    }
+}
+
+/// Replace the rectangle of a shape, leaving other kinds untouched.
+///
+/// Takes the kind rather than the whole node so sampling can mutate geometry
+/// while it still borrows the node's id.
+pub(crate) fn set_node_extent(kind: &mut NodeKind, value: Rect) {
+    match kind {
+        NodeKind::Rect { rect, .. } | NodeKind::RoundedRect { rect, .. } => *rect = value,
+        _ => {}
+    }
 }
 
 /// First node for every id in pre-order document order.

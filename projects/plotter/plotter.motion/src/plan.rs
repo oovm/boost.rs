@@ -2,21 +2,29 @@
 
 use std::collections::{BTreeSet, HashSet};
 
-use plotter_scene::{DisplayScene, Transform};
+use plotter_scene::{DisplayScene, Rect, Transform};
 
 use crate::{
     easing::Easing,
-    internal::{first_nodes, node_opacity, ordered_ids},
+    internal::{first_nodes, node_extent, node_opacity, ordered_ids},
 };
 
 /// A channel that motion can animate between two matching nodes.
 ///
 /// Channels also define their own iteration order, so a plan always lists all
-/// transform tracks before all opacity tracks for the same node.
+/// transform tracks before all extent tracks, and all extent tracks before all
+/// opacity tracks for the same node.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Channel {
     /// The node's local affine transform.
     Transform,
+    /// The rectangle carried by `Rect` and `RoundedRect` nodes.
+    ///
+    /// This is the channel behind chart bars growing from a baseline: the
+    /// origin and both extents interpolate, so a bar whose baseline edge is
+    /// shared between the two scenes keeps that edge fixed. Nodes of any other
+    /// kind have no extent and never receive this track.
+    Extent,
     /// The node's own opacity, as stored by its variant or style.
     Opacity,
 }
@@ -74,13 +82,13 @@ pub struct MotionIntent {
 }
 
 impl Default for MotionIntent {
-    /// A practical default: 0.3 s, `EaseInOut`, transform and opacity, fade in
-    /// and out, and restart on interruption.
+    /// A practical default: 0.3 s, `EaseInOut`, transform, extent and opacity,
+    /// fade in and out, and restart on interruption.
     fn default() -> Self {
         Self {
             duration: 0.3,
             ease: Easing::EaseInOut,
-            channels: BTreeSet::from([Channel::Transform, Channel::Opacity]),
+            channels: BTreeSet::from([Channel::Transform, Channel::Extent, Channel::Opacity]),
             enter: EnterPolicy::Fade,
             exit: ExitPolicy::Fade,
             interruption: InterruptionPolicy::CancelAndRestart,
@@ -113,6 +121,8 @@ pub struct Correspondence {
 pub enum ChannelValue {
     /// A local affine transform.
     Transform(Transform),
+    /// A rectangle's origin and extents.
+    Extent(Rect),
     /// A node opacity in the inclusive range `0.0..=1.0`.
     Opacity(f64),
 }
@@ -214,6 +224,19 @@ pub fn plan_transition(previous: &DisplayScene, next: &DisplayScene, intent: &Mo
                             channel: Channel::Transform,
                             from: ChannelValue::Transform(previous_node.transform),
                             to: ChannelValue::Transform(next_node.transform),
+                        });
+                    }
+                }
+                Channel::Extent => {
+                    let (Some(from), Some(to)) = (node_extent(previous_node), node_extent(next_node)) else {
+                        continue;
+                    };
+                    if from != to {
+                        tracks.push(Track {
+                            id: correspondence.id.clone(),
+                            channel: Channel::Extent,
+                            from: ChannelValue::Extent(from),
+                            to: ChannelValue::Extent(to),
                         });
                     }
                 }

@@ -33,6 +33,12 @@ pub fn unlabeled_rect(x: f64) -> SceneNode {
         .with_transform(Transform::translate(x, 0.0))
 }
 
+/// A rectangle with explicit local extents and no translation.
+pub fn bar(id: &str, width: f64, height: f64) -> SceneNode {
+    SceneNode::new(NodeKind::Rect { rect: Rect::new(0.0, 0.0, width, height), style: ShapeStyle::default() })
+        .with_id(id)
+}
+
 /// A group with a stable id and explicit opacity.
 pub fn group(id: &str, opacity: f64, children: Vec<SceneNode>) -> SceneNode {
     SceneNode::new(NodeKind::Group { children, opacity }).with_id(id)
