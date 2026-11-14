@@ -1,14 +1,16 @@
-//! Lowering from the `oak-wgsl` typed syntax tree into UCF program IR.
+//! Lowering from the language-neutral shader syntax into UCF program IR.
 
 use std::collections::HashMap;
 
-use hardware_program::{BinOp, Expr, Function, Program, ScalarTy, Stmt, Ty, UnOp, validate_program};
-use oak_wgsl::ast::{
-    WgslAccessMode, WgslAssignOp, WgslAttribute, WgslBinaryOp, WgslConst, WgslExpression, WgslFunction, WgslItem, WgslRoot, WgslStatement,
-    WgslStruct, WgslType, WgslUnaryOp,
-};
+use hardware_program::{BinOp, Expr as IrExpr, Function, Program, ScalarTy, Stmt as IrStmt, Ty, UnOp, validate_program};
 
-use crate::error::FrontendError;
+use crate::{
+    ast::{
+        AccessMode, AddressSpace, AssignOp, Attribute, BinaryOp, ConstDef, Expr, FunctionDef, GlobalVar, ModuleItem, ShaderModule, Stmt,
+        StructDef, TypeAlias, TypeRef, UnaryOp,
+    },
+    error::FrontendError,
+};
 
 /// Guard applied to `while` and `loop`, matching the UCF program validator.
 const MAX_LOOP: u32 = 1_000_000;
@@ -27,7 +29,7 @@ pub struct ResourceBinding {
     /// Element type read or written through the binding.
     pub element: Ty,
     /// Declared access mode.
-    pub access: WgslAccessMode,
+    pub access: AccessMode,
 }
 
 /// Result of lowering one shader module.
@@ -41,10 +43,9 @@ pub struct LoweredShader {
     pub program: Program,
 }
 
-/// Parses WGSL text through `oak-wgsl` and lowers it into a UCF program.
-pub fn lower_wgsl(source: &str) -> Result<LoweredShader, FrontendError> {
-    let root = oak_wgsl::parse_wgsl(source).map_err(FrontendError::Parse)?;
-    Lowerer::default().run(&root)
+/// Lowers a language-neutral shader module into a UCF program.
+pub fn lower_module(module: &ShaderModule) -> Result<LoweredShader, FrontendError> {
+    Lowerer::default().run(module)
 }
 
 fn unsupported(message: impl Into<String>) -> FrontendError {
@@ -82,8 +83,8 @@ enum Builtin {
 #[derive(Default)]
 struct Lowerer {
     structs: HashMap<String, Ty>,
-    aliases: HashMap<String, WgslType>,
-    consts: HashMap<String, WgslExpression>,
+    aliases: HashMap<String, TypeRef>,
+    consts: HashMap<String, Expr>,
     resources: Vec<ResourceBinding>,
     resource_slots: HashMap<String, u32>,
     locals: HashMap<String, Local>,
@@ -93,22 +94,22 @@ struct Lowerer {
 }
 
 impl Lowerer {
-    fn run(mut self, root: &WgslRoot) -> Result<LoweredShader, FrontendError> {
-        self.collect_struct_names(root);
-        self.collect_aliases(root);
-        self.fill_structs(root)?;
-        self.collect_consts(root);
-        self.collect_resources(root)?;
+    fn run(mut self, module: &ShaderModule) -> Result<LoweredShader, FrontendError> {
+        self.collect_struct_names(module);
+        self.collect_aliases(module);
+        self.fill_structs(module)?;
+        self.collect_consts(module);
+        self.collect_resources(module)?;
 
-        let entry = root
+        let entry = module
             .items
             .iter()
             .find_map(|item| match item {
-                WgslItem::Function(function) if has_attribute(&function.attributes, "compute") => Some(function),
+                ModuleItem::Function(function) if has_attribute(&function.attributes, "compute") => Some(function),
                 _ => None,
             })
             .cloned()
-            .ok_or_else(|| unsupported("module has no `@compute` entry function"))?;
+            .ok_or_else(|| unsupported("module has no `compute` entry function"))?;
 
         if entry.return_type.is_some() {
             return Err(unsupported(format!("compute entry `{}` declares a return type", entry.name)));
@@ -116,8 +117,8 @@ impl Lowerer {
 
         self.bind_params(&entry)?;
         let mut body = self.lower_block(&entry.body)?;
-        if !matches!(body.last(), Some(Stmt::Return(_))) {
-            body.push(Stmt::Return(Expr::ConstF32(0.0)));
+        if !matches!(body.last(), Some(IrStmt::Return(_))) {
+            body.push(IrStmt::Return(IrExpr::ConstF32(0.0)));
         }
 
         let function = Function { name: entry.name.clone(), params: Vec::new(), locals: self.slots, body, ret: f32_ty() };
@@ -127,48 +128,48 @@ impl Lowerer {
         Ok(LoweredShader { entry: entry.name, resources: self.resources, program })
     }
 
-    fn collect_struct_names(&mut self, root: &WgslRoot) {
-        for item in &root.items {
-            if let WgslItem::Struct(structure) = item {
+    fn collect_struct_names(&mut self, module: &ShaderModule) {
+        for item in &module.items {
+            if let ModuleItem::Struct(structure) = item {
                 self.structs.insert(structure.name.clone(), Ty::Struct { name: structure.name.clone(), fields: Vec::new() });
             }
         }
     }
 
-    fn collect_aliases(&mut self, root: &WgslRoot) {
-        for item in &root.items {
-            if let WgslItem::TypeAlias(alias) = item {
-                self.aliases.insert(alias.name.clone(), alias.ty.clone());
+    fn collect_aliases(&mut self, module: &ShaderModule) {
+        for item in &module.items {
+            if let ModuleItem::TypeAlias(TypeAlias { name, ty }) = item {
+                self.aliases.insert(name.clone(), ty.clone());
             }
         }
     }
 
-    fn fill_structs(&mut self, root: &WgslRoot) -> Result<(), FrontendError> {
-        for item in &root.items {
-            let WgslItem::Struct(WgslStruct { name, members }) = item
+    fn fill_structs(&mut self, module: &ShaderModule) -> Result<(), FrontendError> {
+        for item in &module.items {
+            let ModuleItem::Struct(StructDef { name, fields }) = item
             else {
                 continue;
             };
-            let mut fields = Vec::with_capacity(members.len());
-            for member in members {
-                fields.push((member.name.clone(), self.map_type(&member.ty)?));
+            let mut resolved = Vec::with_capacity(fields.len());
+            for field in fields {
+                resolved.push((field.name.clone(), self.map_type(&field.ty)?));
             }
-            self.structs.insert(name.clone(), Ty::Struct { name: name.clone(), fields });
+            self.structs.insert(name.clone(), Ty::Struct { name: name.clone(), fields: resolved });
         }
         Ok(())
     }
 
-    fn collect_consts(&mut self, root: &WgslRoot) {
-        for item in &root.items {
-            if let WgslItem::Const(WgslConst { name, init, .. }) = item {
+    fn collect_consts(&mut self, module: &ShaderModule) {
+        for item in &module.items {
+            if let ModuleItem::Const(ConstDef { name, init, .. }) = item {
                 self.consts.insert(name.clone(), init.clone());
             }
         }
     }
 
-    fn collect_resources(&mut self, root: &WgslRoot) -> Result<(), FrontendError> {
-        for item in &root.items {
-            let WgslItem::GlobalVar(global) = item
+    fn collect_resources(&mut self, module: &ShaderModule) -> Result<(), FrontendError> {
+        for item in &module.items {
+            let ModuleItem::GlobalVar(global) = item
             else {
                 continue;
             };
@@ -176,7 +177,7 @@ impl Lowerer {
             else {
                 continue;
             };
-            if !matches!(address_space, oak_wgsl::ast::WgslAddressSpace::Storage) {
+            if !matches!(address_space, AddressSpace::Storage) {
                 return Err(unsupported(format!("address space of binding `{}`", global.name)));
             }
             let ty = match &global.ty {
@@ -197,13 +198,13 @@ impl Lowerer {
                 binding,
                 resource,
                 element,
-                access: global.access.unwrap_or(WgslAccessMode::Read),
+                access: global.access.unwrap_or(AccessMode::Read),
             });
         }
         Ok(())
     }
 
-    fn bind_params(&mut self, entry: &WgslFunction) -> Result<(), FrontendError> {
+    fn bind_params(&mut self, entry: &FunctionDef) -> Result<(), FrontendError> {
         for param in &entry.params {
             match attribute_argument(&param.attributes, "builtin").as_deref() {
                 Some("global_invocation_id") => {
@@ -213,14 +214,14 @@ impl Lowerer {
                     return Err(unsupported(format!("builtin parameter `{other}`")));
                 }
                 None => {
-                    return Err(unsupported(format!("entry parameter `{}` has no `@builtin` attribute", param.name)));
+                    return Err(unsupported(format!("entry parameter `{}` has no `builtin` attribute", param.name)));
                 }
             }
         }
         Ok(())
     }
 
-    fn map_type(&self, ty: &WgslType) -> Result<Ty, FrontendError> {
+    fn map_type(&self, ty: &TypeRef) -> Result<Ty, FrontendError> {
         match ty.name.as_str() {
             "f32" => Ok(f32_ty()),
             "f64" => Ok(Ty::Scalar(ScalarTy::F64)),
@@ -251,14 +252,14 @@ impl Lowerer {
         }
     }
 
-    fn lower_block(&mut self, statements: &[WgslStatement]) -> Result<Vec<Stmt>, FrontendError> {
+    fn lower_block(&mut self, statements: &[Stmt]) -> Result<Vec<IrStmt>, FrontendError> {
         let saved = self.locals.clone();
         let result = self.lower_statements(statements);
         self.locals = saved;
         result
     }
 
-    fn lower_statements(&mut self, statements: &[WgslStatement]) -> Result<Vec<Stmt>, FrontendError> {
+    fn lower_statements(&mut self, statements: &[Stmt]) -> Result<Vec<IrStmt>, FrontendError> {
         let mut out = Vec::new();
         for statement in statements {
             self.lower_statement(statement, &mut out)?;
@@ -266,9 +267,9 @@ impl Lowerer {
         Ok(out)
     }
 
-    fn lower_statement(&mut self, statement: &WgslStatement, out: &mut Vec<Stmt>) -> Result<(), FrontendError> {
+    fn lower_statement(&mut self, statement: &Stmt, out: &mut Vec<IrStmt>) -> Result<(), FrontendError> {
         match statement {
-            WgslStatement::Var { name, ty, init, is_const } => {
+            Stmt::Var { name, ty, init, is_const } => {
                 let init = init.as_ref().ok_or_else(|| unsupported(format!("declaration `{name}` without an initializer")))?;
                 let (value, init_ty) = self.expr(init)?;
                 let ty = match ty {
@@ -277,58 +278,52 @@ impl Lowerer {
                 };
                 let id = self.alloc_slot(ty.clone());
                 self.locals.insert(name.clone(), Local { id, ty: ty.clone(), mutable: !is_const });
-                out.push(Stmt::Let { id, ty, init: value });
+                out.push(IrStmt::Let { id, ty, init: value });
             }
-            WgslStatement::Assign { target, op, value } => self.lower_assign(target, *op, value, out)?,
-            WgslStatement::If { cond, then_body, else_body } => {
+            Stmt::Assign { target, op, value } => self.lower_assign(target, *op, value, out)?,
+            Stmt::If { cond, then_body, else_body } => {
                 let (cond, cond_ty) = self.expr(cond)?;
                 if cond_ty != bool_ty() {
                     return Err(unsupported("`if` condition that is not boolean"));
                 }
                 let then_body = self.lower_block(then_body)?;
                 let else_body = self.lower_block(else_body)?;
-                out.push(Stmt::If { cond, then_body, else_body });
+                out.push(IrStmt::If { cond, then_body, else_body });
             }
-            WgslStatement::For { init, cond, update, body } => {
+            Stmt::For { init, cond, update, body } => {
                 self.lower_for(init.as_deref(), cond.as_ref(), update.as_deref(), body, out)?;
             }
-            WgslStatement::While { cond, body } => {
+            Stmt::While { cond, body } => {
                 let (cond, cond_ty) = self.expr(cond)?;
                 if cond_ty != bool_ty() {
                     return Err(unsupported("`while` condition that is not boolean"));
                 }
                 let body = self.lower_block(body)?;
-                out.push(Stmt::While { cond, limit: MAX_LOOP, body });
+                out.push(IrStmt::While { cond, limit: MAX_LOOP, body });
             }
-            WgslStatement::Loop { body } => {
+            Stmt::Loop { body } => {
                 let body = self.lower_block(body)?;
-                out.push(Stmt::While { cond: Expr::ConstBool(true), limit: MAX_LOOP, body });
+                out.push(IrStmt::While { cond: IrExpr::ConstBool(true), limit: MAX_LOOP, body });
             }
-            WgslStatement::Break => out.push(Stmt::Break),
-            WgslStatement::Continue => out.push(Stmt::Continue),
-            WgslStatement::Discard => return Err(unsupported("`discard`")),
-            WgslStatement::Return(None) => out.push(Stmt::Return(Expr::ConstF32(0.0))),
-            WgslStatement::Return(Some(_)) => return Err(unsupported("compute entry returning a value")),
-            WgslStatement::Expr(expression) => {
+            Stmt::Break => out.push(IrStmt::Break),
+            Stmt::Continue => out.push(IrStmt::Continue),
+            Stmt::Discard => return Err(unsupported("`discard`")),
+            Stmt::Return(None) => out.push(IrStmt::Return(IrExpr::ConstF32(0.0))),
+            Stmt::Return(Some(_)) => return Err(unsupported("compute entry returning a value")),
+            Stmt::Expr(expression) => {
                 let (expression, _) = self.expr(expression)?;
-                out.push(Stmt::Expr(expression));
+                out.push(IrStmt::Expr(expression));
             }
-            WgslStatement::Block(statements) => {
+            Stmt::Block(statements) => {
                 out.extend(self.lower_block(statements)?);
             }
         }
         Ok(())
     }
 
-    fn lower_assign(
-        &mut self,
-        target: &WgslExpression,
-        op: WgslAssignOp,
-        value: &WgslExpression,
-        out: &mut Vec<Stmt>,
-    ) -> Result<(), FrontendError> {
+    fn lower_assign(&mut self, target: &Expr, op: AssignOp, value: &Expr, out: &mut Vec<IrStmt>) -> Result<(), FrontendError> {
         match target {
-            WgslExpression::Ident(name) => {
+            Expr::Ident(name) => {
                 let local = self.locals.get(name).cloned().ok_or_else(|| unsupported(format!("assignment to unknown local `{name}`")))?;
                 if !local.mutable {
                     return Err(unsupported(format!("assignment to immutable local `{name}`")));
@@ -338,14 +333,14 @@ impl Lowerer {
                     return Err(unsupported(format!("assignment to `{name}` with a mismatched type")));
                 }
                 let value = match assign_binop(op)? {
-                    Some(binop) => Expr::BinOp { op: binop, lhs: Box::new(Expr::LoadLocal(local.id)), rhs: Box::new(value) },
+                    Some(binop) => IrExpr::BinOp { op: binop, lhs: Box::new(IrExpr::LoadLocal(local.id)), rhs: Box::new(value) },
                     None => value,
                 };
-                out.push(Stmt::StoreLocal { id: local.id, value });
+                out.push(IrStmt::StoreLocal { id: local.id, value });
                 Ok(())
             }
-            WgslExpression::Index { base, index } => {
-                let WgslExpression::Ident(name) = base.as_ref()
+            Expr::Index { base, index } => {
+                let Expr::Ident(name) = base.as_ref()
                 else {
                     return Err(unsupported("assignment through a computed buffer expression"));
                 };
@@ -363,14 +358,14 @@ impl Lowerer {
                     return Err(unsupported(format!("store to `{name}` with a mismatched element type")));
                 }
                 let value = match assign_binop(op)? {
-                    Some(binop) => Expr::BinOp {
+                    Some(binop) => IrExpr::BinOp {
                         op: binop,
-                        lhs: Box::new(Expr::LoadBuffer { resource, index: Box::new(index.clone()) }),
+                        lhs: Box::new(IrExpr::LoadBuffer { resource, index: Box::new(index.clone()) }),
                         rhs: Box::new(value),
                     },
                     None => value,
                 };
-                out.push(Stmt::StoreBuffer { resource, index, value });
+                out.push(IrStmt::StoreBuffer { resource, index, value });
                 Ok(())
             }
             _ => Err(unsupported("assignment target")),
@@ -379,24 +374,24 @@ impl Lowerer {
 
     fn lower_for(
         &mut self,
-        init: Option<&WgslStatement>,
-        cond: Option<&WgslExpression>,
-        update: Option<&WgslStatement>,
-        body: &[WgslStatement],
-        out: &mut Vec<Stmt>,
+        init: Option<&Stmt>,
+        cond: Option<&Expr>,
+        update: Option<&Stmt>,
+        body: &[Stmt],
+        out: &mut Vec<IrStmt>,
     ) -> Result<(), FrontendError> {
-        let Some(WgslStatement::Var { name, init: Some(WgslExpression::IntegerLiteral(0)), .. }) = init
+        let Some(Stmt::Var { name, init: Some(Expr::IntegerLiteral(0)), .. }) = init
         else {
             return Err(unsupported("`for` initializer must declare the loop variable at `0`"));
         };
         let limit = match cond {
-            Some(WgslExpression::Binary { op: WgslBinaryOp::Lt, lhs, rhs }) => {
+            Some(Expr::Binary { op: BinaryOp::Lt, lhs, rhs }) => {
                 match lhs.as_ref() {
-                    WgslExpression::Ident(inner) if inner == name => {}
+                    Expr::Ident(inner) if inner == name => {}
                     _ => return Err(unsupported("`for` condition must compare the loop variable")),
                 }
                 match rhs.as_ref() {
-                    WgslExpression::IntegerLiteral(value) => u32::try_from(*value).map_err(|_| unsupported("negative `for` bound"))?,
+                    Expr::IntegerLiteral(value) => u32::try_from(*value).map_err(|_| unsupported("negative `for` bound"))?,
                     _ => return Err(unsupported("`for` bound must be an integer literal")),
                 }
             }
@@ -410,29 +405,29 @@ impl Lowerer {
         self.locals.insert(name.clone(), Local { id, ty: u32_ty(), mutable: true });
         let body = self.lower_block(body)?;
         self.locals.remove(name);
-        out.push(Stmt::For { iter: id, limit, body });
+        out.push(IrStmt::For { iter: id, limit, body });
         Ok(())
     }
 
-    fn expr(&mut self, expression: &WgslExpression) -> Result<(Expr, Ty), FrontendError> {
+    fn expr(&mut self, expression: &Expr) -> Result<(IrExpr, Ty), FrontendError> {
         match expression {
-            WgslExpression::IntegerLiteral(value) => {
+            Expr::IntegerLiteral(value) => {
                 let value = u32::try_from(*value).map_err(|_| unsupported(format!("integer literal `{value}`")))?;
-                Ok((Expr::ConstU32(value), u32_ty()))
+                Ok((IrExpr::ConstU32(value), u32_ty()))
             }
-            WgslExpression::FloatLiteral(value) => Ok((Expr::ConstF32(*value as f32), f32_ty())),
-            WgslExpression::BoolLiteral(value) => Ok((Expr::ConstBool(*value), bool_ty())),
-            WgslExpression::Ident(name) => self.binding_expr(name),
-            WgslExpression::Unary { op, expr } => {
+            Expr::FloatLiteral(value) => Ok((IrExpr::ConstF32(*value as f32), f32_ty())),
+            Expr::BoolLiteral(value) => Ok((IrExpr::ConstBool(*value), bool_ty())),
+            Expr::Ident(name) => self.binding_expr(name),
+            Expr::Unary { op, expr } => {
                 let (arg, ty) = self.expr(expr)?;
                 match op {
-                    WgslUnaryOp::Neg if is_scalar(&ty) => Ok((Expr::UnOp { op: UnOp::Neg, arg: Box::new(arg) }, ty)),
-                    WgslUnaryOp::Neg => Err(unsupported("negation of a non-scalar value")),
-                    WgslUnaryOp::Not => Err(unsupported("logical negation")),
-                    WgslUnaryOp::BitNot => Err(unsupported("bitwise negation")),
+                    UnaryOp::Neg if is_scalar(&ty) => Ok((IrExpr::UnOp { op: UnOp::Neg, arg: Box::new(arg) }, ty)),
+                    UnaryOp::Neg => Err(unsupported("negation of a non-scalar value")),
+                    UnaryOp::Not => Err(unsupported("logical negation")),
+                    UnaryOp::BitNot => Err(unsupported("bitwise negation")),
                 }
             }
-            WgslExpression::Binary { op, lhs, rhs } => {
+            Expr::Binary { op, lhs, rhs } => {
                 let binop = binary_op(*op)?;
                 let (lhs, lhs_ty) = self.expr(lhs)?;
                 let (rhs, rhs_ty) = self.expr(rhs)?;
@@ -446,18 +441,18 @@ impl Lowerer {
                 else {
                     return Err(unsupported("binary operands with mismatched types"));
                 };
-                Ok((Expr::BinOp { op: binop, lhs: Box::new(lhs), rhs: Box::new(rhs) }, ty))
+                Ok((IrExpr::BinOp { op: binop, lhs: Box::new(lhs), rhs: Box::new(rhs) }, ty))
             }
-            WgslExpression::Call { callee, args } => self.call(callee, args),
-            WgslExpression::Member { base, field } => self.member(base, field),
-            WgslExpression::Index { base, index } => self.index(base, index),
-            WgslExpression::Paren(inner) => self.expr(inner),
+            Expr::Call { callee, args } => self.call(callee, args),
+            Expr::Member { base, field } => self.member(base, field),
+            Expr::Index { base, index } => self.index(base, index),
+            Expr::Paren(inner) => self.expr(inner),
         }
     }
 
-    fn binding_expr(&mut self, name: &str) -> Result<(Expr, Ty), FrontendError> {
+    fn binding_expr(&mut self, name: &str) -> Result<(IrExpr, Ty), FrontendError> {
         if let Some(local) = self.locals.get(name) {
-            return Ok((Expr::LoadLocal(local.id), local.ty.clone()));
+            return Ok((IrExpr::LoadLocal(local.id), local.ty.clone()));
         }
         if let Some(init) = self.consts.get(name).cloned() {
             return self.expr(&init);
@@ -471,8 +466,8 @@ impl Lowerer {
         Err(unsupported(format!("unknown binding `{name}`")))
     }
 
-    fn call(&mut self, callee: &str, args: &[WgslExpression]) -> Result<(Expr, Ty), FrontendError> {
-        if callee.starts_with("vec3") {
+    fn call(&mut self, callee: &str, args: &[Expr]) -> Result<(IrExpr, Ty), FrontendError> {
+        if callee == "vec3" {
             if args.len() != 3 {
                 return Err(unsupported(format!("`{callee}` with {} arguments", args.len())));
             }
@@ -488,7 +483,7 @@ impl Lowerer {
             else {
                 unreachable!("checked length")
             };
-            return Ok((Expr::Vec3Compose { x: Box::new(x.clone()), y: Box::new(y.clone()), z: Box::new(z.clone()) }, Ty::Vec3));
+            return Ok((IrExpr::Vec3Compose { x: Box::new(x.clone()), y: Box::new(y.clone()), z: Box::new(z.clone()) }, Ty::Vec3));
         }
         if callee == "f32" {
             let (value, _) = self.single_arg(callee, args)?;
@@ -510,21 +505,21 @@ impl Lowerer {
             if ty != f32_ty() {
                 return Err(unsupported(format!("`{callee}` on a non-`f32` value")));
             }
-            return Ok((Expr::UnOp { op, arg: Box::new(value) }, f32_ty()));
+            return Ok((IrExpr::UnOp { op, arg: Box::new(value) }, f32_ty()));
         }
         if callee == "length" {
             let (value, ty) = self.single_arg(callee, args)?;
             if ty != Ty::Vec3 {
                 return Err(unsupported("`length` on a non-`vec3` value"));
             }
-            return Ok((Expr::UnOp { op: UnOp::Length, arg: Box::new(value) }, Ty::Scalar(ScalarTy::F64)));
+            return Ok((IrExpr::UnOp { op: UnOp::Length, arg: Box::new(value) }, Ty::Scalar(ScalarTy::F64)));
         }
         if callee == "normalize" {
             let (value, ty) = self.single_arg(callee, args)?;
             if ty != Ty::Vec3 {
                 return Err(unsupported("`normalize` on a non-`vec3` value"));
             }
-            return Ok((Expr::UnOp { op: UnOp::Normalize, arg: Box::new(value) }, Ty::Vec3));
+            return Ok((IrExpr::UnOp { op: UnOp::Normalize, arg: Box::new(value) }, Ty::Vec3));
         }
         let binary = match callee {
             "min" => Some(BinOp::Min),
@@ -551,29 +546,29 @@ impl Lowerer {
             else {
                 lhs_ty
             };
-            return Ok((Expr::BinOp { op, lhs: Box::new(lhs), rhs: Box::new(rhs) }, ty));
+            return Ok((IrExpr::BinOp { op, lhs: Box::new(lhs), rhs: Box::new(rhs) }, ty));
         }
         Err(unsupported(format!("call to `{callee}`")))
     }
 
-    fn single_arg(&mut self, callee: &str, args: &[WgslExpression]) -> Result<(Expr, Ty), FrontendError> {
+    fn single_arg(&mut self, callee: &str, args: &[Expr]) -> Result<(IrExpr, Ty), FrontendError> {
         match args {
             [arg] => self.expr(arg),
             _ => Err(unsupported(format!("`{callee}` with {} arguments", args.len()))),
         }
     }
 
-    fn member(&mut self, base: &WgslExpression, field: &str) -> Result<(Expr, Ty), FrontendError> {
-        if let WgslExpression::Ident(name) = base {
+    fn member(&mut self, base: &Expr, field: &str) -> Result<(IrExpr, Ty), FrontendError> {
+        if let Expr::Ident(name) = base {
             if self.builtins.get(name) == Some(&Builtin::GlobalInvocationId) && field == "x" {
-                return Ok((Expr::GlobalId, u32_ty()));
+                return Ok((IrExpr::GlobalId, u32_ty()));
             }
         }
         Err(unsupported(format!("member access `.{field}`")))
     }
 
-    fn index(&mut self, base: &WgslExpression, index: &WgslExpression) -> Result<(Expr, Ty), FrontendError> {
-        let WgslExpression::Ident(name) = base
+    fn index(&mut self, base: &Expr, index: &Expr) -> Result<(IrExpr, Ty), FrontendError> {
+        let Expr::Ident(name) = base
         else {
             return Err(unsupported("indexing a computed expression"));
         };
@@ -586,7 +581,7 @@ impl Lowerer {
             return Err(unsupported("buffer index that is not `u32`"));
         }
         let element = self.resources[resource as usize].element.clone();
-        Ok((Expr::LoadBuffer { resource, index: Box::new(index) }, element))
+        Ok((IrExpr::LoadBuffer { resource, index: Box::new(index) }, element))
     }
 
     fn alloc_slot(&mut self, ty: Ty) -> u32 {
@@ -597,70 +592,66 @@ impl Lowerer {
     }
 }
 
-fn has_attribute(attributes: &[WgslAttribute], name: &str) -> bool {
+fn has_attribute(attributes: &[Attribute], name: &str) -> bool {
     attributes.iter().any(|attribute| attribute.name == name)
 }
 
-fn attribute_integer(attributes: &[WgslAttribute], name: &str) -> Option<u32> {
+fn attribute_integer(attributes: &[Attribute], name: &str) -> Option<u32> {
     let attribute = attributes.iter().find(|attribute| attribute.name == name)?;
     match attribute.args.as_slice() {
-        [WgslExpression::IntegerLiteral(value)] => u32::try_from(*value).ok(),
+        [Expr::IntegerLiteral(value)] => u32::try_from(*value).ok(),
         _ => None,
     }
 }
 
-fn attribute_argument(attributes: &[WgslAttribute], name: &str) -> Option<String> {
+fn attribute_argument(attributes: &[Attribute], name: &str) -> Option<String> {
     let attribute = attributes.iter().find(|attribute| attribute.name == name)?;
     match attribute.args.as_slice() {
-        [WgslExpression::Ident(value)] => Some(value.clone()),
+        [Expr::Ident(value)] => Some(value.clone()),
         _ => None,
     }
 }
 
-fn assign_binop(op: WgslAssignOp) -> Result<Option<BinOp>, FrontendError> {
+fn assign_binop(op: AssignOp) -> Result<Option<BinOp>, FrontendError> {
     match op {
-        WgslAssignOp::Assign => Ok(None),
-        WgslAssignOp::AddAssign => Ok(Some(BinOp::Add)),
-        WgslAssignOp::SubAssign => Ok(Some(BinOp::Sub)),
-        WgslAssignOp::MulAssign => Ok(Some(BinOp::Mul)),
-        WgslAssignOp::DivAssign => Ok(Some(BinOp::Div)),
-        WgslAssignOp::ModAssign => Ok(Some(BinOp::Mod)),
+        AssignOp::Assign => Ok(None),
+        AssignOp::AddAssign => Ok(Some(BinOp::Add)),
+        AssignOp::SubAssign => Ok(Some(BinOp::Sub)),
+        AssignOp::MulAssign => Ok(Some(BinOp::Mul)),
+        AssignOp::DivAssign => Ok(Some(BinOp::Div)),
+        AssignOp::ModAssign => Ok(Some(BinOp::Mod)),
         other => Err(unsupported(format!("assignment operator `{other:?}`"))),
     }
 }
 
-fn binary_op(op: WgslBinaryOp) -> Result<BinOp, FrontendError> {
+fn binary_op(op: BinaryOp) -> Result<BinOp, FrontendError> {
     match op {
-        WgslBinaryOp::Add => Ok(BinOp::Add),
-        WgslBinaryOp::Sub => Ok(BinOp::Sub),
-        WgslBinaryOp::Mul => Ok(BinOp::Mul),
-        WgslBinaryOp::Div => Ok(BinOp::Div),
-        WgslBinaryOp::Mod => Ok(BinOp::Mod),
-        WgslBinaryOp::Lt => Ok(BinOp::Lt),
-        WgslBinaryOp::Le => Ok(BinOp::Le),
-        WgslBinaryOp::Eq => Ok(BinOp::Eq),
-        WgslBinaryOp::Ne => Ok(BinOp::Ne),
-        WgslBinaryOp::Ge => Ok(BinOp::Ge),
-        WgslBinaryOp::Gt => Ok(BinOp::Gt),
+        BinaryOp::Add => Ok(BinOp::Add),
+        BinaryOp::Sub => Ok(BinOp::Sub),
+        BinaryOp::Mul => Ok(BinOp::Mul),
+        BinaryOp::Div => Ok(BinOp::Div),
+        BinaryOp::Mod => Ok(BinOp::Mod),
+        BinaryOp::Lt => Ok(BinOp::Lt),
+        BinaryOp::Le => Ok(BinOp::Le),
+        BinaryOp::Eq => Ok(BinOp::Eq),
+        BinaryOp::Ne => Ok(BinOp::Ne),
+        BinaryOp::Ge => Ok(BinOp::Ge),
+        BinaryOp::Gt => Ok(BinOp::Gt),
         other => Err(unsupported(format!("binary operator `{other:?}`"))),
     }
 }
 
-fn validate_for_update(update: &WgslStatement, name: &str) -> Result<(), FrontendError> {
+fn validate_for_update(update: &Stmt, name: &str) -> Result<(), FrontendError> {
     match update {
-        WgslStatement::Assign {
-            target: WgslExpression::Ident(target),
-            op: WgslAssignOp::Assign,
-            value: WgslExpression::Binary { op: WgslBinaryOp::Add, lhs, rhs },
-        } if target == name => match (lhs.as_ref(), rhs.as_ref()) {
-            (WgslExpression::Ident(base), WgslExpression::IntegerLiteral(1)) if base == name => Ok(()),
-            _ => Err(unsupported("`for` update must be `i = i + 1`")),
-        },
-        WgslStatement::Assign {
-            target: WgslExpression::Ident(target),
-            op: WgslAssignOp::AddAssign,
-            value: WgslExpression::IntegerLiteral(1),
-        } if target == name => Ok(()),
+        Stmt::Assign { target: Expr::Ident(target), op: AssignOp::Assign, value: Expr::Binary { op: BinaryOp::Add, lhs, rhs } }
+            if target == name =>
+        {
+            match (lhs.as_ref(), rhs.as_ref()) {
+                (Expr::Ident(base), Expr::IntegerLiteral(1)) if base == name => Ok(()),
+                _ => Err(unsupported("`for` update must be `i = i + 1`")),
+            }
+        }
+        Stmt::Assign { target: Expr::Ident(target), op: AssignOp::AddAssign, value: Expr::IntegerLiteral(1) } if target == name => Ok(()),
         _ => Err(unsupported("`for` update must be `i = i + 1`")),
     }
 }

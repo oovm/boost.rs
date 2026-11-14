@@ -2081,11 +2081,18 @@ dependencies = [
 name = "hardware-frontend"
 version = "0.1.0"
 dependencies = [
+ "hardware-program",
+]
+
+[[package]]
+name = "hardware-input-wgsl"
+version = "0.1.0"
+dependencies = [
  "acorn-spirv",
  "hardware-emitter",
+ "hardware-frontend",
  "hardware-program",
  "oak-wgsl",
- "thiserror 2.0.21",
 ]
 
 [[package]]

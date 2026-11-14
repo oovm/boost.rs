@@ -9,10 +9,4 @@ authors.workspace = true
 publish.workspace = true
 
 [dependencies]
-thiserror = { workspace = true }
 hardware-program = { workspace = true }
-oak-wgsl = { workspace = true }
-
-[dev-dependencies]
-hardware-emitter = { workspace = true }
-acorn-spirv = { workspace = true }

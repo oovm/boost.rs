@@ -1,4 +1,5 @@
-use hardware_frontend::{FrontendError, lower_wgsl};
+use hardware_frontend::FrontendError;
+use hardware_input_wgsl::lower_wgsl;
 use hardware_program::{CpuInterpreter, ScalarTy, Ty, Value};
 
 fn fill_source() -> &'static str {
@@ -85,7 +86,7 @@ fn clamp(@builtin(global_invocation_id) gid: vec3<u32>) {
 #[test]
 fn rejects_module_without_compute_entry() {
     let error = lower_wgsl("fn main() {}").expect_err("a module without a compute entry must fail");
-    assert!(matches!(error, FrontendError::Unsupported(message) if message.contains("@compute")));
+    assert!(matches!(error, FrontendError::Unsupported(message) if message.contains("compute")));
 }
 
 #[test]

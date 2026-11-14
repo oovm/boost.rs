@@ -1,11 +1,14 @@
-//! UCF shader front-end.
+//! Language-neutral shader front-end.
 //!
-//! Authored shader text is parsed by `oak-wgsl` and lowered into the generic
-//! UCF program IR. This crate never lexes shader source and never emits a
-//! target ISA.
+//! Parser crates (`hardware-input-wgsl`, `hardware-input-hlsl`,
+//! `hardware-input-glsl`) convert their own syntax trees into [`ast::ShaderModule`]
+//! and hand it to [`lower_module`]. This crate never parses shader text and never
+//! emits a target ISA.
 
+/// Language-neutral shader syntax.
+pub mod ast;
 mod error;
 mod lower;
 
 pub use error::FrontendError;
-pub use lower::{LoweredShader, ResourceBinding, lower_wgsl};
+pub use lower::{LoweredShader, ResourceBinding, lower_module};

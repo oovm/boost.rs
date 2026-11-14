@@ -1,5 +1,5 @@
 use hardware_emitter::emit_program_spirv;
-use hardware_frontend::lower_wgsl;
+use hardware_input_wgsl::lower_wgsl;
 
 /// The lowered WGSL program must survive the internal SPIR-V emitter and the
 /// `acorn-spirv` structural validator.
