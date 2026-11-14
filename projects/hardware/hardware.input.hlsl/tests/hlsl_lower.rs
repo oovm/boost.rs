@@ -1,3 +1,4 @@
+use hardware_frontend::FrontendError;
 use hardware_input_hlsl::lower_hlsl;
 use hardware_program::{CpuInterpreter, ScalarTy, Ty, Value};
 
@@ -52,6 +53,57 @@ void sum(uint3 gid : SV_DispatchThreadID) {
     interpreter.with_buffer(1, vec![Value::F32(0.0); 2]);
     interpreter.run_parallel(&lowered.program, 2).expect("CPU execution");
     assert_eq!(interpreter.buffer(1), Some(vec![Value::F32(10.0); 2].as_slice()));
+}
+
+#[test]
+fn lowers_uniform_block_into_slots_and_runs_on_cpu() {
+    let source = r#"
+struct Params {
+    float scale;
+};
+
+uniform Params params : register(b0);
+RWStructuredBuffer<float> OutBuf : register(u0);
+
+[numthreads(1, 1, 1)]
+void main(uint3 gid : SV_DispatchThreadID) {
+    OutBuf[gid.x] = params.scale * 2.0;
+}
+"#;
+    let lowered = lower_hlsl(source).expect("valid HLSL");
+    assert_eq!(lowered.uniforms.len(), 1);
+
+    let uniform = &lowered.uniforms[0];
+    assert_eq!(uniform.name, "params");
+    assert_eq!(uniform.group, 0);
+    assert_eq!(uniform.binding, 0);
+    assert_eq!(uniform.slot, 0);
+    assert_eq!(uniform.fields, vec![("scale".to_owned(), Ty::Scalar(ScalarTy::F32))]);
+
+    let mut interpreter = CpuInterpreter::new();
+    interpreter.with_uniform(0, Value::F32(3.0));
+    interpreter.with_buffer(0, vec![Value::F32(0.0); 1]);
+    interpreter.run_parallel(&lowered.program, 1).expect("CPU execution");
+    assert_eq!(interpreter.buffer(0), Some(vec![Value::F32(6.0)].as_slice()));
+}
+
+#[test]
+fn rejects_unknown_uniform_field() {
+    let source = r#"
+struct Params {
+    float scale;
+};
+
+uniform Params params : register(b0);
+RWStructuredBuffer<float> OutBuf : register(u0);
+
+[numthreads(1, 1, 1)]
+void main(uint3 gid : SV_DispatchThreadID) {
+    OutBuf[gid.x] = params.missing;
+}
+"#;
+    let error = lower_hlsl(source).expect_err("an unknown uniform field must fail");
+    assert!(matches!(error, FrontendError::Unsupported(message) if message.contains("missing")));
 }
 
 #[test]

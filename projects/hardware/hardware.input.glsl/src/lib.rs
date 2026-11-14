@@ -46,9 +46,36 @@ fn convert_module(root: &g::GlslRoot) -> Result<ShaderModule, FrontendError> {
         if matches!(item, g::GlslItem::GlobalVar(global) if global.name.is_empty()) {
             continue;
         }
+        if let g::GlslItem::GlobalVar(global) = item
+            && is_uniform_block(global)
+        {
+            items.push(ModuleItem::Struct(uniform_block_struct(global)));
+        }
         items.push(converter.convert_item(item)?);
     }
     Ok(ShaderModule { items })
+}
+
+/// Returns `true` for a `uniform` interface block with scalar members.
+fn is_uniform_block(global: &g::GlslGlobalVar) -> bool {
+    global.qualifiers.contains(&g::GlslQualifier::Uniform) && !global.members.is_empty()
+}
+
+/// Builds the struct that backs a uniform block so the neutral lowering can
+/// address each member through the block name.
+fn uniform_block_struct(global: &g::GlslGlobalVar) -> StructDef {
+    StructDef {
+        name: global.name.clone(),
+        fields: global
+            .members
+            .iter()
+            .map(|member| StructField {
+                attributes: layout_attributes(&member.layout),
+                name: member.name.clone(),
+                ty: convert_type(&member.ty),
+            })
+            .collect(),
+    }
 }
 
 impl Converter {
@@ -96,7 +123,7 @@ impl Converter {
 
     fn convert_global(&self, global: &g::GlslGlobalVar) -> Result<ModuleItem, FrontendError> {
         if global.qualifiers.contains(&g::GlslQualifier::Uniform) {
-            return Err(unsupported(format!("uniform block `{}`", global.name)));
+            return self.convert_uniform(global);
         }
         if !global.qualifiers.contains(&g::GlslQualifier::Buffer) {
             return Err(unsupported(format!("interface variable `{}`", global.name)));
@@ -130,6 +157,34 @@ impl Converter {
             access: Some(access),
             name: member.name.clone(),
             ty: Some(TypeRef { name: "array".into(), args: vec![convert_type(&member.ty)] }),
+            init: None,
+        }))
+    }
+
+    /// Maps a `uniform` declaration or interface block to a read-only uniform
+    /// binding. A block is typed by the struct synthesized for its members.
+    fn convert_uniform(&self, global: &g::GlslGlobalVar) -> Result<ModuleItem, FrontendError> {
+        let binding = global
+            .layout
+            .iter()
+            .find(|layout| layout.name == "binding")
+            .and_then(|layout| layout.value.as_ref())
+            .and_then(layout_integer)
+            .unwrap_or(0);
+        let ty = match global.ty.as_ref() {
+            Some(ty) => convert_type(ty),
+            None if is_uniform_block(global) => TypeRef { name: global.name.clone(), args: Vec::new() },
+            None => return Err(unsupported(format!("uniform `{}` has no type", global.name))),
+        };
+        Ok(ModuleItem::GlobalVar(GlobalVar {
+            attributes: vec![
+                Attribute { name: "group".into(), args: vec![Expr::IntegerLiteral(0)] },
+                Attribute { name: "binding".into(), args: vec![Expr::IntegerLiteral(binding)] },
+            ],
+            address_space: Some(AddressSpace::Uniform),
+            access: Some(AccessMode::Read),
+            name: global.name.clone(),
+            ty: Some(ty),
             init: None,
         }))
     }

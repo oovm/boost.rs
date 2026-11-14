@@ -98,12 +98,25 @@ fn convert_struct(structure: &h::HlslStruct) -> StructDef {
 fn convert_global(global: &h::HlslGlobalVar) -> Result<ModuleItem, FrontendError> {
     let name = global.name.clone();
     let ty = global.ty.as_ref().ok_or_else(|| unsupported(format!("global `{name}` has no type")))?;
+    let binding = global.register.as_ref().and_then(|register| register.index).unwrap_or(0);
+    if global.qualifiers.contains(&h::HlslQualifier::Uniform) {
+        return Ok(ModuleItem::GlobalVar(GlobalVar {
+            attributes: vec![
+                Attribute { name: "group".into(), args: vec![Expr::IntegerLiteral(0)] },
+                Attribute { name: "binding".into(), args: vec![Expr::IntegerLiteral(i64::from(binding))] },
+            ],
+            address_space: Some(AddressSpace::Uniform),
+            access: Some(AccessMode::Read),
+            name,
+            ty: Some(convert_type(ty)),
+            init: None,
+        }));
+    }
     let buffer = buffer_binding(ty)?;
     let Some((element, access)) = buffer
     else {
         return Err(unsupported(format!("global `{name}` of type `{}`", ty.name)));
     };
-    let binding = global.register.as_ref().and_then(|register| register.index).unwrap_or(0);
     let address_space =
         if global.qualifiers.contains(&h::HlslQualifier::Groupshared) { AddressSpace::Workgroup } else { AddressSpace::Storage };
     Ok(ModuleItem::GlobalVar(GlobalVar {

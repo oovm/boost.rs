@@ -32,6 +32,25 @@ pub struct ResourceBinding {
     pub access: AccessMode,
 }
 
+/// One authored uniform binding lowered into contiguous scalar uniform slots.
+///
+/// A uniform block contributes one entry: every scalar field takes the next
+/// slot, so `fields[i]` is read through `LoadUniform(slot + i)`. A scalar
+/// binding contributes an entry with no fields and reads through `slot`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UniformBinding {
+    /// Authored block or variable name.
+    pub name: String,
+    /// `@group` value.
+    pub group: u32,
+    /// `@binding` or register value.
+    pub binding: u32,
+    /// First UCF uniform slot the binding occupies.
+    pub slot: u32,
+    /// Scalar fields in declaration order. Empty for a single scalar binding.
+    pub fields: Vec<(String, Ty)>,
+}
+
 /// Result of lowering one shader module.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoweredShader {
@@ -39,6 +58,8 @@ pub struct LoweredShader {
     pub entry: String,
     /// Resource bindings in declaration order.
     pub resources: Vec<ResourceBinding>,
+    /// Uniform bindings in declaration order.
+    pub uniforms: Vec<UniformBinding>,
     /// Lowered UCF program.
     pub program: Program,
 }
@@ -68,6 +89,10 @@ fn is_scalar(ty: &Ty) -> bool {
     matches!(ty, Ty::Scalar(_))
 }
 
+fn is_uniform_scalar(ty: &Ty) -> bool {
+    matches!(ty, Ty::Scalar(ScalarTy::F32 | ScalarTy::U32 | ScalarTy::I32 | ScalarTy::Bool))
+}
+
 #[derive(Clone)]
 struct Local {
     id: u32,
@@ -87,6 +112,10 @@ struct Lowerer {
     consts: HashMap<String, Expr>,
     resources: Vec<ResourceBinding>,
     resource_slots: HashMap<String, u32>,
+    uniforms: Vec<UniformBinding>,
+    uniform_slots: HashMap<String, usize>,
+    uniform_scalars: HashMap<String, (u32, Ty)>,
+    next_uniform_slot: u32,
     locals: HashMap<String, Local>,
     builtins: HashMap<String, Builtin>,
     slots: Vec<(u32, Ty)>,
@@ -125,7 +154,7 @@ impl Lowerer {
         let program = Program { version: 1, functions: vec![function], entry: 0 };
         validate_program(&program).map_err(|error| FrontendError::Invalid(error.to_string()))?;
 
-        Ok(LoweredShader { entry: entry.name, resources: self.resources, program })
+        Ok(LoweredShader { entry: entry.name, resources: self.resources, uniforms: self.uniforms, program })
     }
 
     fn collect_struct_names(&mut self, module: &ShaderModule) {
@@ -177,30 +206,62 @@ impl Lowerer {
             else {
                 continue;
             };
-            if !matches!(address_space, AddressSpace::Storage) {
+            if !matches!(address_space, AddressSpace::Storage | AddressSpace::Uniform) {
                 return Err(unsupported(format!("address space of binding `{}`", global.name)));
+            }
+            if self.resource_slots.contains_key(&global.name) || self.uniform_slots.contains_key(&global.name) {
+                return Err(unsupported(format!("binding `{}` is declared more than once", global.name)));
             }
             let ty = match &global.ty {
                 Some(ty) => self.map_type(ty)?,
                 None => return Err(unsupported(format!("binding `{}` has no type", global.name))),
             };
-            let element = match ty {
-                Ty::Array { elem, .. } => *elem,
-                other => other,
-            };
             let group = attribute_integer(&global.attributes, "group").unwrap_or(0);
             let binding = attribute_integer(&global.attributes, "binding").unwrap_or(0);
-            let resource = self.resources.len() as u32;
-            self.resource_slots.insert(global.name.clone(), resource);
-            self.resources.push(ResourceBinding {
-                name: global.name.clone(),
-                group,
-                binding,
-                resource,
-                element,
-                access: global.access.unwrap_or(AccessMode::Read),
-            });
+            match address_space {
+                AddressSpace::Storage => {
+                    let element = match ty {
+                        Ty::Array { elem, .. } => *elem,
+                        other => other,
+                    };
+                    let resource = self.resources.len() as u32;
+                    self.resource_slots.insert(global.name.clone(), resource);
+                    self.resources.push(ResourceBinding {
+                        name: global.name.clone(),
+                        group,
+                        binding,
+                        resource,
+                        element,
+                        access: global.access.unwrap_or(AccessMode::Read),
+                    });
+                }
+                AddressSpace::Uniform => self.collect_uniform(&global.name, ty, group, binding)?,
+                _ => unreachable!("other address spaces are rejected above"),
+            }
         }
+        Ok(())
+    }
+
+    /// Flattens one uniform binding into consecutive scalar slots.
+    fn collect_uniform(&mut self, name: &str, ty: Ty, group: u32, binding: u32) -> Result<(), FrontendError> {
+        let fields = match &ty {
+            Ty::Struct { fields, .. } if !fields.is_empty() => fields.clone(),
+            Ty::Scalar(_) if is_uniform_scalar(&ty) => Vec::new(),
+            other => return Err(unsupported(format!("uniform `{name}` of type `{other:?}`"))),
+        };
+        for (field, field_ty) in &fields {
+            if !is_uniform_scalar(field_ty) {
+                return Err(unsupported(format!("uniform field `{name}.{field}` of type `{field_ty:?}`")));
+            }
+        }
+        let slot = self.next_uniform_slot;
+        let width = u32::try_from(fields.len()).unwrap_or(u32::MAX).max(1);
+        self.next_uniform_slot = self.next_uniform_slot.saturating_add(width);
+        self.uniform_slots.insert(name.to_owned(), self.uniforms.len());
+        if fields.is_empty() {
+            self.uniform_scalars.insert(name.to_owned(), (slot, ty.clone()));
+        }
+        self.uniforms.push(UniformBinding { name: name.to_owned(), group, binding, slot, fields });
         Ok(())
     }
 
@@ -469,6 +530,12 @@ impl Lowerer {
         if self.builtins.contains_key(name) {
             return Err(unsupported(format!("builtin `{name}` must be indexed by a component")));
         }
+        if let Some((slot, ty)) = self.uniform_scalars.get(name) {
+            return Ok((IrExpr::LoadUniform(*slot), ty.clone()));
+        }
+        if self.uniform_slots.contains_key(name) {
+            return Err(unsupported(format!("uniform `{name}` must be accessed by field")));
+        }
         if self.resource_slots.contains_key(name) {
             return Err(unsupported(format!("resource `{name}` must be indexed")));
         }
@@ -571,6 +638,16 @@ impl Lowerer {
         if let Expr::Ident(name) = base {
             if self.builtins.get(name) == Some(&Builtin::GlobalInvocationId) && field == "x" {
                 return Ok((IrExpr::GlobalId, u32_ty()));
+            }
+            if let Some(&index) = self.uniform_slots.get(name) {
+                let uniform = &self.uniforms[index];
+                let Some(position) = uniform.fields.iter().position(|(candidate, _)| candidate == field)
+                else {
+                    return Err(unsupported(format!("uniform `{name}` has no field `{field}`")));
+                };
+                let slot = uniform.slot + position as u32;
+                let ty = uniform.fields[position].1.clone();
+                return Ok((IrExpr::LoadUniform(slot), ty));
             }
         }
         Err(unsupported(format!("member access `.{field}`")))

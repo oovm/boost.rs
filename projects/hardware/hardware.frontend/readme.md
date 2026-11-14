@@ -22,10 +22,12 @@ WGSL / HLSL / GLSL text
 
 ## Supported subset
 
-Module scope: `struct`, `type alias`, module constants, storage bindings with group/binding attributes, and one compute entry.
+Module scope: `struct`, `type alias`, module constants, storage bindings with group/binding attributes, uniform bindings with group/binding attributes, and one compute entry.
+
+Uniform bindings are flattened into scalar UCF slots. A uniform block assigns one slot per scalar field in declaration order, so `params.scale` becomes `LoadUniform(slot + 0)`. Only `f32`, `u32`, `i32`, and `bool` fields are supported, and a single scalar binding reads `LoadUniform(slot)` directly.
 
 Statements: local declarations, assignment and compound assignment, `if` / `else`, `for` with a literal bound, `while`, `loop`, `break`, `continue`, `return`, expression statements, and nested blocks.
 
-Expressions: numeric and boolean literals, local and constant references, the global-invocation builtin's `.x`, storage reads and writes, `+ - * / %` and comparisons, `vec3` construction, `f32` / `u32` casts, and the `abs` / `sqrt` / `sin` / `cos` / `min` / `max` / `pow` / `dot` / `length` / `normalize` builtins.
+Expressions: numeric and boolean literals, local and constant references, the global-invocation builtin's `.x`, storage reads and writes, uniform reads, `+ - * / %` and comparisons, `vec3` construction, `f32` / `u32` casts, and the `abs` / `sqrt` / `sin` / `cos` / `min` / `max` / `pow` / `dot` / `length` / `normalize` builtins.
 
 Everything else is reported as [`FrontendError::Unsupported`].

@@ -1,3 +1,4 @@
+use hardware_frontend::FrontendError;
 use hardware_input_glsl::lower_glsl;
 use hardware_program::{CpuInterpreter, ScalarTy, Ty, Value};
 
@@ -54,15 +55,60 @@ void main() {
 }
 
 #[test]
-fn rejects_uniform_blocks() {
+fn lowers_uniform_block_into_slots_and_runs_on_cpu() {
     let source = r#"
 layout(local_size_x = 1) in;
-layout(std140) uniform Params { float scale; };
+layout(std140, binding = 0) uniform params {
+    float scale;
+    float offset;
+};
 layout(std430, binding = 0) buffer Data { float values[]; };
 void main() {
-    values[gl_GlobalInvocationID.x] = scale;
+    values[gl_GlobalInvocationID.x] = params.scale * 2.0;
 }
 "#;
-    let error = lower_glsl(source).expect_err("uniform blocks are not lowered yet");
-    assert!(error.to_string().contains("uniform"));
+    let lowered = lower_glsl(source).expect("valid GLSL");
+    assert_eq!(lowered.uniforms.len(), 1);
+
+    let uniform = &lowered.uniforms[0];
+    assert_eq!(uniform.name, "params");
+    assert_eq!(uniform.group, 0);
+    assert_eq!(uniform.binding, 0);
+    assert_eq!(uniform.slot, 0);
+    assert_eq!(uniform.fields, vec![("scale".to_owned(), Ty::Scalar(ScalarTy::F32)), ("offset".to_owned(), Ty::Scalar(ScalarTy::F32))]);
+
+    let mut interpreter = CpuInterpreter::new();
+    interpreter.with_uniform(0, Value::F32(3.0));
+    interpreter.with_uniform(1, Value::F32(1.0));
+    interpreter.with_buffer(0, vec![Value::F32(0.0); 1]);
+    interpreter.run_parallel(&lowered.program, 1).expect("CPU execution");
+    assert_eq!(interpreter.buffer(0), Some(vec![Value::F32(6.0)].as_slice()));
+}
+
+#[test]
+fn rejects_unknown_uniform_field() {
+    let source = r#"
+layout(local_size_x = 1) in;
+layout(std140, binding = 0) uniform params { float scale; };
+layout(std430, binding = 0) buffer Data { float values[]; };
+void main() {
+    values[gl_GlobalInvocationID.x] = params.missing;
+}
+"#;
+    let error = lower_glsl(source).expect_err("an unknown uniform field must fail");
+    assert!(matches!(error, FrontendError::Unsupported(message) if message.contains("missing")));
+}
+
+#[test]
+fn rejects_uniform_blocks_with_compound_members() {
+    let source = r#"
+layout(local_size_x = 1) in;
+layout(std140, binding = 0) uniform params { vec4 tint; };
+layout(std430, binding = 0) buffer Data { float values[]; };
+void main() {
+    values[gl_GlobalInvocationID.x] = params.tint.x;
+}
+"#;
+    let error = lower_glsl(source).expect_err("non-scalar uniform members are not lowered yet");
+    assert!(matches!(error, FrontendError::Unsupported(message) if message.contains("uniform")));
 }

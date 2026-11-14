@@ -11,6 +11,7 @@ HLSL input for the UCF pipeline. Text is parsed by `oak-hlsl`, converted into th
 | `register(uN)` / `register(tN)` | `binding(N)` with `group(0)` |
 | `RWStructuredBuffer<T>` | `storage` + `read_write` binding of `array<T>` |
 | `StructuredBuffer<T>` | `storage` + `read` binding of `array<T>` |
+| `uniform` global (scalar or struct) | `uniform` binding, one slot per scalar member |
 | `float`, `float2..4`, `uint`, `int` | `f32`, `vec2..4`, `u32`, `i32` |
 
-`RWByteAddressBuffer` and `cbuffer` are not lowered yet and return a structured error.
+`RWByteAddressBuffer` is not lowered yet and returns a structured error. `cbuffer` blocks are skipped by `oak-hlsl` before the AST exists, so their members never reach this front-end and reads of them fail as unknown bindings.

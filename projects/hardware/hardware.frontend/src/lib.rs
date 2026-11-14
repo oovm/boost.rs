@@ -11,4 +11,4 @@ mod error;
 mod lower;
 
 pub use error::FrontendError;
-pub use lower::{LoweredShader, ResourceBinding, lower_module};
+pub use lower::{LoweredShader, ResourceBinding, UniformBinding, lower_module};
