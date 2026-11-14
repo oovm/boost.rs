@@ -2,8 +2,6 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use ash::vk;
-use ash::{Device, Entry, Instance};
 use hardware_capability::{Feature, FeatureSet, WiredStrategies};
 use hardware_emitter::{emit_program_spirv, emit_raster_tri_spirv, emit_spirv, program_from_task};
 use hardware_ir::{Graph, TaskKind, TaskNode};
@@ -11,11 +9,13 @@ use hardware_scheduler::{Backend, Error as SchedulerError, Result};
 use hardware_types::{Dispatch, ParamValue, ResourceId};
 use hardware_program::{program_hash, Program};
 
+use crate::driver::ffi::*;
+use crate::driver::VulkanDriver;
 use crate::params::{f32_param, resource_param, str_param, u32_param, BackendError};
 
 struct DeviceBuffer {
-    buffer: vk::Buffer,
-    memory: vk::DeviceMemory,
+    buffer: VkBuffer,
+    memory: VkDeviceMemory,
     bytes: usize,
 }
 
@@ -24,10 +24,10 @@ struct ComputePipelineCache {
     entry: String,
     buffer_count: usize,
     push_size: usize,
-    module: vk::ShaderModule,
-    set_layout: vk::DescriptorSetLayout,
-    pipeline_layout: vk::PipelineLayout,
-    pipeline: vk::Pipeline,
+    module: VkShaderModule,
+    set_layout: VkDescriptorSetLayout,
+    pipeline_layout: VkPipelineLayout,
+    pipeline: VkPipeline,
 }
 
 struct LoweredProgram {
@@ -60,13 +60,8 @@ pub struct ProgramCacheStats {
 
 /// Vulkan compute / graphics backend with device-resident buffers.
 pub struct VulkanBackend {
-    _entry: Entry,
-    instance: Instance,
-    physical: vk::PhysicalDevice,
-    device: Device,
-    queue: vk::Queue,
-    command_pool: vk::CommandPool,
-    /// Queue family supports `GRAPHICS` (required for Raster `draw=tri`).
+    driver: VulkanDriver,
+    command_pool: VkCommandPool,
     graphics: bool,
     supports_float64: bool,
     buffers: BTreeMap<ResourceId, DeviceBuffer>,
@@ -85,96 +80,35 @@ pub struct VulkanBackend {
 impl VulkanBackend {
     /// Open the first physical device with a compute-capable queue.
     pub fn new() -> Result<Self> {
-        unsafe {
-            let entry = Entry::load().map_err(|e| map_backend_err(BackendError(e.to_string())))?;
-            let app = vk::ApplicationInfo::default()
-                .application_name(c"hardware")
-                .application_version(0)
-                .engine_name(c"hardware")
-                .engine_version(0)
-                .api_version(vk::API_VERSION_1_1);
-            let info = vk::InstanceCreateInfo::default().application_info(&app);
-            let instance = entry
-                .create_instance(&info, None)
-                .map_err(|e| map_backend_err(BackendError(format!("create_instance: {e}"))))?;
+        let driver = VulkanDriver::new().map_err(|error| map_backend_err(BackendError(error.to_string())))?;
+        let command_pool = driver
+            .create_command_pool(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT)
+            .map_err(|error| map_backend_err(BackendError(format!("command_pool: {error}"))))?;
+        let graphics = driver.graphics();
+        let supports_float64 = driver.supports_float64();
 
-            let physicals = instance
-                .enumerate_physical_devices()
-                .map_err(|e| map_backend_err(BackendError(format!("enumerate devices: {e}"))))?;
-            let (physical, queue_family, graphics) = physicals
-                .iter()
-                .find_map(|&pdev| {
-                    let props = instance.get_physical_device_queue_family_properties(pdev);
-                    props.iter().enumerate().find_map(|(i, q)| {
-                        if q.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
-                            Some((pdev, i as u32, true))
-                        } else {
-                            None
-                        }
-                    })
-                })
-                .or_else(|| {
-                    physicals.iter().find_map(|&pdev| {
-                        let props = instance.get_physical_device_queue_family_properties(pdev);
-                        props.iter().enumerate().find_map(|(i, q)| {
-                            if q.queue_flags.contains(vk::QueueFlags::COMPUTE) {
-                                Some((pdev, i as u32, false))
-                            } else {
-                                None
-                            }
-                        })
-                    })
-                })
-                .ok_or_else(|| {
-                    map_backend_err(BackendError("no Vulkan compute/graphics queue".into()))
-                })?;
+        let features = FeatureSet::new()
+            .with(Feature::ProgramFloat32)
+            .with(Feature::Bindless)
+            .with(Feature::DescriptorBuffer)
+            .with(Feature::DynamicRendering)
+            .with(Feature::Synchronization2);
+        let strategies = WiredStrategies::from_features(&features);
 
-            let priorities = [1.0f32];
-            let qinfo = vk::DeviceQueueCreateInfo::default()
-                .queue_family_index(queue_family)
-                .queue_priorities(&priorities);
-            let supports_float64 = instance.get_physical_device_features(physical).shader_float64 == vk::TRUE;
-            let enabled_features = vk::PhysicalDeviceFeatures::default().shader_float64(supports_float64);
-            let dinfo = vk::DeviceCreateInfo::default().queue_create_infos(std::slice::from_ref(&qinfo))
-                .enabled_features(&enabled_features);
-            let device = instance
-                .create_device(physical, &dinfo, None)
-                .map_err(|e| map_backend_err(BackendError(format!("create_device: {e}"))))?;
-            let queue = device.get_device_queue(queue_family, 0);
-            let pool_info = vk::CommandPoolCreateInfo::default()
-                .queue_family_index(queue_family)
-                .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
-            let command_pool = device
-                .create_command_pool(&pool_info, None)
-                .map_err(|e| map_backend_err(BackendError(format!("command_pool: {e}"))))?;
-
-            let features = FeatureSet::new()
-                .with(Feature::ProgramFloat32)
-                .with(Feature::Bindless)
-                .with(Feature::DescriptorBuffer)
-                .with(Feature::DynamicRendering)
-                .with(Feature::Synchronization2);
-            let strategies = WiredStrategies::from_features(&features);
-
-            Ok(Self {
-                _entry: entry,
-                instance,
-                physical,
-                device,
-                queue,
-                command_pool,
-                graphics,
-                supports_float64,
-                buffers: BTreeMap::new(),
-                compute_pipelines: Vec::new(),
-                program_cache: Vec::new(),
-                program_cache_stats: ProgramCacheStats::default(),
-                strategies,
-                last_descriptor_path: "",
-                last_sync_path: "",
-                last_pipeline_path: "",
-            })
-        }
+        Ok(Self {
+            driver,
+            command_pool,
+            graphics,
+            supports_float64,
+            buffers: BTreeMap::new(),
+            compute_pipelines: Vec::new(),
+            program_cache: Vec::new(),
+            program_cache_stats: ProgramCacheStats::default(),
+            strategies,
+            last_descriptor_path: "",
+            last_sync_path: "",
+            last_pipeline_path: "",
+        })
     }
 
     /// Degrade-chain strategies resolved when the backend opened.
@@ -298,165 +232,76 @@ impl VulkanBackend {
     }
 
     fn upload(&mut self, id: ResourceId, bytes: &[u8]) -> Result<()> {
-        unsafe {
-            let (staging, staging_mem) = self.create_buffer(
-                bytes.len(),
-                vk::BufferUsageFlags::TRANSFER_SRC,
-                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-            )?;
-            {
-                let ptr = self
-                    .device
-                    .map_memory(staging_mem, 0, bytes.len() as u64, vk::MemoryMapFlags::empty())
-                    .map_err(vk_err)?;
+        let (staging, staging_mem) = self.driver.create_buffer(
+            bytes.len(),
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        ).map_err(vk_err)?;
+        {
+            let ptr = self.driver.map_memory(staging_mem, bytes.len()).map_err(vk_err)?;
+            unsafe {
                 std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr.cast(), bytes.len());
-                self.device.unmap_memory(staging_mem);
             }
-            let dst = self.buffers.get(&id).unwrap().buffer;
-            self.with_commands(|cmd| {
-                let region = vk::BufferCopy::default().size(bytes.len() as u64);
-                self.device
-                    .cmd_copy_buffer(cmd, staging, dst, std::slice::from_ref(&region));
-            })?;
-            self.device.destroy_buffer(staging, None);
-            self.device.free_memory(staging_mem, None);
-            Ok(())
+            self.driver.unmap_memory(staging_mem);
         }
+        let dst = self.buffers.get(&id).unwrap().buffer;
+        self.with_commands(|cmd| {
+            self.driver.cmd_copy_buffer(cmd, staging, dst, bytes.len());
+        })?;
+        self.driver.destroy_buffer(staging, staging_mem);
+        Ok(())
     }
 
     fn readback(&mut self, id: ResourceId, bytes: usize) -> Result<Vec<u8>> {
+        let (staging, staging_mem) = self.driver.create_buffer(
+            bytes,
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        ).map_err(vk_err)?;
+        let src = self.buffers.get(&id).unwrap().buffer;
+        self.with_commands(|cmd| {
+            self.driver.cmd_copy_buffer(cmd, src, staging, bytes);
+        })?;
+        let mut out = vec![0u8; bytes];
+        let ptr = self.driver.map_memory(staging_mem, bytes).map_err(vk_err)?;
         unsafe {
-            let (staging, staging_mem) = self.create_buffer(
-                bytes,
-                vk::BufferUsageFlags::TRANSFER_DST,
-                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-            )?;
-            let src = self.buffers.get(&id).unwrap().buffer;
-            self.with_commands(|cmd| {
-                let region = vk::BufferCopy::default().size(bytes as u64);
-                self.device
-                    .cmd_copy_buffer(cmd, src, staging, std::slice::from_ref(&region));
-            })?;
-            let mut out = vec![0u8; bytes];
-            let ptr = self
-                .device
-                .map_memory(staging_mem, 0, bytes as u64, vk::MemoryMapFlags::empty())
-                .map_err(vk_err)?;
             std::ptr::copy_nonoverlapping(ptr.cast(), out.as_mut_ptr(), bytes);
-            self.device.unmap_memory(staging_mem);
-            self.device.destroy_buffer(staging, None);
-            self.device.free_memory(staging_mem, None);
-            Ok(out)
         }
+        self.driver.unmap_memory(staging_mem);
+        self.driver.destroy_buffer(staging, staging_mem);
+        Ok(out)
     }
 
     fn create_buffer(
         &self,
         bytes: usize,
-        usage: vk::BufferUsageFlags,
-        props: vk::MemoryPropertyFlags,
-    ) -> Result<(vk::Buffer, vk::DeviceMemory)> {
-        unsafe {
-            let info = vk::BufferCreateInfo::default()
-                .size(bytes.max(1) as u64)
-                .usage(usage)
-                .sharing_mode(vk::SharingMode::EXCLUSIVE);
-            let buffer = self.device.create_buffer(&info, None).map_err(vk_err)?;
-            let reqs = self.device.get_buffer_memory_requirements(buffer);
-            let memory_type = self
-                .find_memory_type(reqs.memory_type_bits, props)
-                .ok_or_else(|| map_backend_err(BackendError("no suitable memory type".into())))?;
-            let alloc = vk::MemoryAllocateInfo::default()
-                .allocation_size(reqs.size)
-                .memory_type_index(memory_type);
-            let memory = self.device.allocate_memory(&alloc, None).map_err(vk_err)?;
-            self.device
-                .bind_buffer_memory(buffer, memory, 0)
-                .map_err(vk_err)?;
-            Ok((buffer, memory))
-        }
+        usage: u32,
+        props: u32,
+    ) -> Result<(VkBuffer, VkDeviceMemory)> {
+        self.driver.create_buffer(bytes, usage, props).map_err(vk_err)
     }
 
     fn create_image(
         &self,
         width: u32,
         height: u32,
-        usage: vk::ImageUsageFlags,
-        props: vk::MemoryPropertyFlags,
-    ) -> Result<(vk::Image, vk::DeviceMemory)> {
-        unsafe {
-            let info = vk::ImageCreateInfo::default()
-                .image_type(vk::ImageType::TYPE_2D)
-                .format(vk::Format::R8G8B8A8_UNORM)
-                .extent(vk::Extent3D {
-                    width,
-                    height,
-                    depth: 1,
-                })
-                .mip_levels(1)
-                .array_layers(1)
-                .samples(vk::SampleCountFlags::TYPE_1)
-                .tiling(vk::ImageTiling::OPTIMAL)
-                .usage(usage)
-                .sharing_mode(vk::SharingMode::EXCLUSIVE)
-                .initial_layout(vk::ImageLayout::UNDEFINED);
-            let image = self.device.create_image(&info, None).map_err(vk_err)?;
-            let reqs = self.device.get_image_memory_requirements(image);
-            let memory_type = self
-                .find_memory_type(reqs.memory_type_bits, props)
-                .ok_or_else(|| {
-                    map_backend_err(BackendError("no suitable image memory type".into()))
-                })?;
-            let alloc = vk::MemoryAllocateInfo::default()
-                .allocation_size(reqs.size)
-                .memory_type_index(memory_type);
-            let memory = self.device.allocate_memory(&alloc, None).map_err(vk_err)?;
-            self.device
-                .bind_image_memory(image, memory, 0)
-                .map_err(vk_err)?;
-            Ok((image, memory))
-        }
+        usage: u32,
+        props: u32,
+    ) -> Result<(VkImage, VkDeviceMemory)> {
+        self.driver.create_image(width, height, usage, props).map_err(vk_err)
     }
 
-    fn find_memory_type(&self, type_bits: u32, props: vk::MemoryPropertyFlags) -> Option<u32> {
-        unsafe {
-            let mem = self
-                .instance
-                .get_physical_device_memory_properties(self.physical);
-            (0..mem.memory_type_count).find(|&i| {
-                (type_bits & (1 << i)) != 0
-                    && mem.memory_types[i as usize]
-                        .property_flags
-                        .contains(props)
-            })
-        }
-    }
-
-    fn with_commands(&self, record: impl FnOnce(vk::CommandBuffer)) -> Result<()> {
-        unsafe {
-            let alloc = vk::CommandBufferAllocateInfo::default()
-                .command_pool(self.command_pool)
-                .level(vk::CommandBufferLevel::PRIMARY)
-                .command_buffer_count(1);
-            let cmds = self
-                .device
-                .allocate_command_buffers(&alloc)
-                .map_err(vk_err)?;
-            let cmd = cmds[0];
-            let begin = vk::CommandBufferBeginInfo::default()
-                .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-            self.device.begin_command_buffer(cmd, &begin).map_err(vk_err)?;
-            record(cmd);
-            self.device.end_command_buffer(cmd).map_err(vk_err)?;
-            let submit = vk::SubmitInfo::default().command_buffers(&cmds);
-            self.device
-                .queue_submit(self.queue, std::slice::from_ref(&submit), vk::Fence::null())
-                .map_err(vk_err)?;
-            self.device.queue_wait_idle(self.queue).map_err(vk_err)?;
-            self.device
-                .free_command_buffers(self.command_pool, &cmds);
-            Ok(())
-        }
+    fn with_commands(&self, record: impl FnOnce(VkCommandBuffer)) -> Result<()> {
+        let cmd = self
+            .driver
+            .allocate_command_buffer(self.command_pool)
+            .map_err(vk_err)?;
+        self.driver.begin_command_buffer(cmd).map_err(vk_err)?;
+        record(cmd);
+        self.driver.end_command_buffer(cmd).map_err(vk_err)?;
+        let submitted = self.driver.submit_and_wait(cmd);
+        self.driver.free_command_buffer(self.command_pool, cmd);
+        submitted.map_err(vk_err)
     }
 
     fn run_copy(&mut self, task: &TaskNode) -> Result<()> {
@@ -471,10 +316,8 @@ impl VulkanBackend {
         }
         let src_buf = self.buffers.get(&src).unwrap().buffer;
         let dst_buf = self.buffers.get(&dst).unwrap().buffer;
-        self.with_commands(|cmd| unsafe {
-            let region = vk::BufferCopy::default().size(src_bytes as u64);
-            self.device
-                .cmd_copy_buffer(cmd, src_buf, dst_buf, std::slice::from_ref(&region));
+        self.with_commands(|cmd| {
+            self.driver.cmd_copy_buffer(cmd, src_buf, dst_buf, src_bytes);
         })
     }
 
@@ -721,104 +564,49 @@ impl VulkanBackend {
         need: usize,
         color: [f32; 4],
     ) -> Result<()> {
-        unsafe {
-            let (image, image_mem) = self.create_image(
-                width,
-                height,
-                vk::ImageUsageFlags::TRANSFER_SRC | vk::ImageUsageFlags::TRANSFER_DST,
-                vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            )?;
-            let (staging, staging_mem) = self.create_buffer(
-                need,
-                vk::BufferUsageFlags::TRANSFER_DST,
-                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-            )?;
+        let (image, image_mem) = self.create_image(
+            width,
+            height,
+            VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        )?;
+        let (staging, staging_mem) = self.create_buffer(
+            need,
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        )?;
 
-            self.mark_sync_path();
-            self.with_commands(|cmd| {
-                let range = vk::ImageSubresourceRange::default()
-                    .aspect_mask(vk::ImageAspectFlags::COLOR)
-                    .base_mip_level(0)
-                    .level_count(1)
-                    .base_array_layer(0)
-                    .layer_count(1);
-                let to_dst = vk::ImageMemoryBarrier::default()
-                    .src_access_mask(vk::AccessFlags::empty())
-                    .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-                    .old_layout(vk::ImageLayout::UNDEFINED)
-                    .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                    .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                    .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                    .image(image)
-                    .subresource_range(range);
-                self.device.cmd_pipeline_barrier(
-                    cmd,
-                    vk::PipelineStageFlags::TOP_OF_PIPE,
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::DependencyFlags::empty(),
-                    &[],
-                    &[],
-                    std::slice::from_ref(&to_dst),
-                );
-                let clear = vk::ClearColorValue { float32: color };
-                self.device.cmd_clear_color_image(
-                    cmd,
-                    image,
-                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    &clear,
-                    std::slice::from_ref(&range),
-                );
-                let to_src = vk::ImageMemoryBarrier::default()
-                    .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-                    .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
-                    .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                    .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-                    .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                    .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                    .image(image)
-                    .subresource_range(range);
-                self.device.cmd_pipeline_barrier(
-                    cmd,
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::DependencyFlags::empty(),
-                    &[],
-                    &[],
-                    std::slice::from_ref(&to_src),
-                );
-                let region = vk::BufferImageCopy::default()
-                    .buffer_offset(0)
-                    .buffer_row_length(0)
-                    .buffer_image_height(0)
-                    .image_subresource(
-                        vk::ImageSubresourceLayers::default()
-                            .aspect_mask(vk::ImageAspectFlags::COLOR)
-                            .mip_level(0)
-                            .base_array_layer(0)
-                            .layer_count(1),
-                    )
-                    .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
-                    .image_extent(vk::Extent3D {
-                        width,
-                        height,
-                        depth: 1,
-                    });
-                self.device.cmd_copy_image_to_buffer(
-                    cmd,
-                    image,
-                    vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                    staging,
-                    std::slice::from_ref(&region),
-                );
-            })?;
+        self.mark_sync_path();
+        self.with_commands(|cmd| {
+            self.driver.cmd_image_barrier(
+                cmd,
+                image,
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                0,
+                VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            );
+            self.driver.cmd_clear_color(cmd, image, color);
+            self.driver.cmd_image_barrier(
+                cmd,
+                image,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_ACCESS_TRANSFER_READ_BIT,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            );
+            self.driver
+                .cmd_copy_image_to_buffer(cmd, image, staging, width, height);
+        })?;
 
-            let pixels = self.map_staging_pixels(staging_mem, need)?;
-            self.device.destroy_buffer(staging, None);
-            self.device.free_memory(staging_mem, None);
-            self.device.destroy_image(image, None);
-            self.device.free_memory(image_mem, None);
-            self.upload(dst, &pixels)
-        }
+        let pixels = self.map_staging_pixels(staging_mem, need)?;
+        self.driver.destroy_buffer(staging, staging_mem);
+        self.driver.destroy_image(image, image_mem);
+        self.upload(dst, &pixels)
     }
 
     fn run_raster_tri(
@@ -830,264 +618,103 @@ impl VulkanBackend {
         clear_color: [f32; 4],
     ) -> Result<()> {
         let spirv = emit_raster_tri_spirv().map_err(map_emit_err)?;
-        unsafe {
-            let (image, image_mem) = self.create_image(
+        let (image, image_mem) = self.create_image(
+            width,
+            height,
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+                | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+                | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        )?;
+        let view = self.driver.create_image_view(image).map_err(vk_err)?;
+        let render_pass = self
+            .driver
+            .create_color_render_pass(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)
+            .map_err(vk_err)?;
+        let framebuffer = self
+            .driver
+            .create_framebuffer(render_pass, view, width, height)
+            .map_err(vk_err)?;
+
+        let words: Vec<u32> = spirv
+            .module
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+        let module = self.driver.create_shader_module(&words).map_err(vk_err)?;
+        let pipeline_layout = self
+            .driver
+            .create_pipeline_layout(None, 0, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
+            .map_err(vk_err)?;
+        let (vs_name, fs_name) = (
+            std::ffi::CString::new("vs_main").unwrap(),
+            std::ffi::CString::new("fs_main").unwrap(),
+        );
+        self.mark_pipeline_path();
+        let pipeline = self
+            .driver
+            .create_triangle_pipeline(
+                module,
+                &vs_name,
+                module,
+                &fs_name,
+                pipeline_layout,
+                render_pass,
                 width,
                 height,
-                vk::ImageUsageFlags::COLOR_ATTACHMENT
-                    | vk::ImageUsageFlags::TRANSFER_SRC
-                    | vk::ImageUsageFlags::TRANSFER_DST,
-                vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            )?;
-            let view_info = vk::ImageViewCreateInfo::default()
-                .image(image)
-                .view_type(vk::ImageViewType::TYPE_2D)
-                .format(vk::Format::R8G8B8A8_UNORM)
-                .subresource_range(
-                    vk::ImageSubresourceRange::default()
-                        .aspect_mask(vk::ImageAspectFlags::COLOR)
-                        .base_mip_level(0)
-                        .level_count(1)
-                        .base_array_layer(0)
-                        .layer_count(1),
-                );
-            let view = self
-                .device
-                .create_image_view(&view_info, None)
-                .map_err(vk_err)?;
+            )
+            .map_err(vk_err)?;
 
-            let attachment = vk::AttachmentDescription::default()
-                .format(vk::Format::R8G8B8A8_UNORM)
-                .samples(vk::SampleCountFlags::TYPE_1)
-                .load_op(vk::AttachmentLoadOp::CLEAR)
-                .store_op(vk::AttachmentStoreOp::STORE)
-                .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-                .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-                .initial_layout(vk::ImageLayout::UNDEFINED)
-                .final_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL);
-            let color_ref = vk::AttachmentReference::default()
-                .attachment(0)
-                .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
-            let subpass = vk::SubpassDescription::default()
-                .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-                .color_attachments(std::slice::from_ref(&color_ref));
-            let dependency = vk::SubpassDependency::default()
-                .src_subpass(vk::SUBPASS_EXTERNAL)
-                .dst_subpass(0)
-                .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-                .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-                .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE);
-            let rp_info = vk::RenderPassCreateInfo::default()
-                .attachments(std::slice::from_ref(&attachment))
-                .subpasses(std::slice::from_ref(&subpass))
-                .dependencies(std::slice::from_ref(&dependency));
-            let render_pass = self
-                .device
-                .create_render_pass(&rp_info, None)
-                .map_err(vk_err)?;
+        let (staging, staging_mem) = self.create_buffer(
+            need,
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        )?;
 
-            let fb_attachments = [view];
-            let fb_info = vk::FramebufferCreateInfo::default()
-                .render_pass(render_pass)
-                .attachments(&fb_attachments)
-                .width(width)
-                .height(height)
-                .layers(1);
-            let framebuffer = self
-                .device
-                .create_framebuffer(&fb_info, None)
-                .map_err(vk_err)?;
+        self.mark_sync_path();
+        self.with_commands(|cmd| {
+            self.driver
+                .cmd_draw_triangle(cmd, render_pass, framebuffer, width, height, clear_color);
+            self.driver
+                .cmd_bind_pipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            self.driver.cmd_draw(cmd);
+            self.driver.cmd_end_render_pass(cmd);
 
-            let words: Vec<u32> = spirv
-                .module
-                .chunks_exact(4)
-                .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                .collect();
-            let module_info = vk::ShaderModuleCreateInfo::default().code(&words);
-            let module = self
-                .device
-                .create_shader_module(&module_info, None)
-                .map_err(vk_err)?;
-            let vs_name = std::ffi::CString::new("vs_main").unwrap();
-            let fs_name = std::ffi::CString::new("fs_main").unwrap();
-            let stages = [
-                vk::PipelineShaderStageCreateInfo::default()
-                    .stage(vk::ShaderStageFlags::VERTEX)
-                    .module(module)
-                    .name(&vs_name),
-                vk::PipelineShaderStageCreateInfo::default()
-                    .stage(vk::ShaderStageFlags::FRAGMENT)
-                    .module(module)
-                    .name(&fs_name),
-            ];
-            let vertex_input = vk::PipelineVertexInputStateCreateInfo::default();
-            let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::default()
-                .topology(vk::PrimitiveTopology::TRIANGLE_LIST);
-            let viewport = vk::Viewport {
-                x: 0.0,
-                y: 0.0,
-                width: width as f32,
-                height: height as f32,
-                min_depth: 0.0,
-                max_depth: 1.0,
-            };
-            let scissor = vk::Rect2D {
-                offset: vk::Offset2D { x: 0, y: 0 },
-                extent: vk::Extent2D { width, height },
-            };
-            let viewport_state = vk::PipelineViewportStateCreateInfo::default()
-                .viewports(std::slice::from_ref(&viewport))
-                .scissors(std::slice::from_ref(&scissor));
-            let raster = vk::PipelineRasterizationStateCreateInfo::default()
-                .polygon_mode(vk::PolygonMode::FILL)
-                .cull_mode(vk::CullModeFlags::NONE)
-                .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
-                .line_width(1.0);
-            let multisample = vk::PipelineMultisampleStateCreateInfo::default()
-                .rasterization_samples(vk::SampleCountFlags::TYPE_1);
-            let color_blend_attachment = vk::PipelineColorBlendAttachmentState::default()
-                .color_write_mask(vk::ColorComponentFlags::RGBA)
-                .blend_enable(false);
-            let color_blend = vk::PipelineColorBlendStateCreateInfo::default()
-                .attachments(std::slice::from_ref(&color_blend_attachment));
-            let layout_info = vk::PipelineLayoutCreateInfo::default();
-            let pipeline_layout = self
-                .device
-                .create_pipeline_layout(&layout_info, None)
-                .map_err(vk_err)?;
-            let pipeline_info = vk::GraphicsPipelineCreateInfo::default()
-                .stages(&stages)
-                .vertex_input_state(&vertex_input)
-                .input_assembly_state(&input_assembly)
-                .viewport_state(&viewport_state)
-                .rasterization_state(&raster)
-                .multisample_state(&multisample)
-                .color_blend_state(&color_blend)
-                .layout(pipeline_layout)
-                .render_pass(render_pass)
-                .subpass(0);
-            self.mark_pipeline_path();
-            let pipelines = self
-                .device
-                .create_graphics_pipelines(
-                    vk::PipelineCache::null(),
-                    std::slice::from_ref(&pipeline_info),
-                    None,
-                )
-                .map_err(|(_, e)| vk_err(e))?;
-            let pipeline = pipelines[0];
+            self.driver.cmd_image_barrier(
+                cmd,
+                image,
+                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                VK_ACCESS_TRANSFER_READ_BIT,
+                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            );
+            self.driver
+                .cmd_copy_image_to_buffer(cmd, image, staging, width, height);
+        })?;
 
-            let (staging, staging_mem) = self.create_buffer(
-                need,
-                vk::BufferUsageFlags::TRANSFER_DST,
-                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-            )?;
+        let pixels = self.map_staging_pixels(staging_mem, need)?;
 
-            self.mark_sync_path();
-            self.with_commands(|cmd| {
-                let clear = vk::ClearValue {
-                    color: vk::ClearColorValue {
-                        float32: clear_color,
-                    },
-                };
-                let begin_info = vk::RenderPassBeginInfo::default()
-                    .render_pass(render_pass)
-                    .framebuffer(framebuffer)
-                    .render_area(vk::Rect2D {
-                        offset: vk::Offset2D { x: 0, y: 0 },
-                        extent: vk::Extent2D { width, height },
-                    })
-                    .clear_values(std::slice::from_ref(&clear));
-                self.device.cmd_begin_render_pass(
-                    cmd,
-                    &begin_info,
-                    vk::SubpassContents::INLINE,
-                );
-                self.device
-                    .cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, pipeline);
-                self.device.cmd_draw(cmd, 3, 1, 0, 0);
-                self.device.cmd_end_render_pass(cmd);
+        self.driver.destroy_pipeline(pipeline);
+        self.driver.destroy_pipeline_layout(pipeline_layout);
+        self.driver.destroy_shader_module(module);
+        self.driver.destroy_framebuffer(framebuffer);
+        self.driver.destroy_render_pass(render_pass);
+        self.driver.destroy_image_view(view);
+        self.driver.destroy_buffer(staging, staging_mem);
+        self.driver.destroy_image(image, image_mem);
 
-                let range = vk::ImageSubresourceRange::default()
-                    .aspect_mask(vk::ImageAspectFlags::COLOR)
-                    .base_mip_level(0)
-                    .level_count(1)
-                    .base_array_layer(0)
-                    .layer_count(1);
-                let to_transfer = vk::ImageMemoryBarrier::default()
-                    .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-                    .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
-                    .old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-                    .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-                    .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                    .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                    .image(image)
-                    .subresource_range(range);
-                self.device.cmd_pipeline_barrier(
-                    cmd,
-                    vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::DependencyFlags::empty(),
-                    &[],
-                    &[],
-                    std::slice::from_ref(&to_transfer),
-                );
-
-                let region = vk::BufferImageCopy::default()
-                    .buffer_offset(0)
-                    .buffer_row_length(0)
-                    .buffer_image_height(0)
-                    .image_subresource(
-                        vk::ImageSubresourceLayers::default()
-                            .aspect_mask(vk::ImageAspectFlags::COLOR)
-                            .mip_level(0)
-                            .base_array_layer(0)
-                            .layer_count(1),
-                    )
-                    .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
-                    .image_extent(vk::Extent3D {
-                        width,
-                        height,
-                        depth: 1,
-                    });
-                self.device.cmd_copy_image_to_buffer(
-                    cmd,
-                    image,
-                    vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                    staging,
-                    std::slice::from_ref(&region),
-                );
-            })?;
-
-            let pixels = self.map_staging_pixels(staging_mem, need)?;
-
-            self.device.destroy_pipeline(pipeline, None);
-            self.device.destroy_pipeline_layout(pipeline_layout, None);
-            self.device.destroy_shader_module(module, None);
-            self.device.destroy_framebuffer(framebuffer, None);
-            self.device.destroy_render_pass(render_pass, None);
-            self.device.destroy_image_view(view, None);
-            self.device.destroy_buffer(staging, None);
-            self.device.free_memory(staging_mem, None);
-            self.device.destroy_image(image, None);
-            self.device.free_memory(image_mem, None);
-
-            self.upload(dst, &pixels)
-        }
+        self.upload(dst, &pixels)
     }
 
-    unsafe fn map_staging_pixels(
-        &self,
-        staging_mem: vk::DeviceMemory,
-        need: usize,
-    ) -> Result<Vec<u8>> {
+    fn map_staging_pixels(&self, staging_mem: VkDeviceMemory, need: usize) -> Result<Vec<u8>> {
+        let pointer = self.driver.map_memory(staging_mem, need).map_err(vk_err)?;
         let mut pixels = vec![0u8; need];
-        let ptr = self
-            .device
-            .map_memory(staging_mem, 0, need as u64, vk::MemoryMapFlags::empty())
-            .map_err(vk_err)?;
-        std::ptr::copy_nonoverlapping(ptr.cast(), pixels.as_mut_ptr(), need);
-        self.device.unmap_memory(staging_mem);
+        unsafe {
+            std::ptr::copy_nonoverlapping(pointer.cast(), pixels.as_mut_ptr(), need);
+        }
+        self.driver.unmap_memory(staging_mem);
         Ok(pixels)
     }
 
@@ -1095,172 +722,93 @@ impl VulkanBackend {
         &mut self,
         spirv_bytes: &[u8],
         entry: &str,
-        buffers: &[vk::Buffer],
+        buffers: &[VkBuffer],
         push_bytes: &[u8],
         groups_x: u32,
     ) -> Result<()> {
-        unsafe {
-            let cache_index = if let Some(index) = self.compute_pipelines.iter().position(|cached| {
-                cached.spirv == spirv_bytes
-                    && cached.entry == entry
-                    && cached.buffer_count == buffers.len()
-                    && cached.push_size == push_bytes.len()
-            }) {
-                index
-            } else {
-                let words: Vec<u32> = spirv_bytes
-                    .chunks_exact(4)
-                    .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                    .collect();
-                let module_info = vk::ShaderModuleCreateInfo::default().code(&words);
-                let module = self
-                    .device
-                    .create_shader_module(&module_info, None)
-                    .map_err(vk_err)?;
-                let bindings: Vec<_> = (0..buffers.len() as u32)
-                    .map(|i| {
-                        vk::DescriptorSetLayoutBinding::default()
-                            .binding(i)
-                            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                            .descriptor_count(1)
-                            .stage_flags(vk::ShaderStageFlags::COMPUTE)
-                    })
-                    .collect();
-                let set_layout_info =
-                    vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
-                self.mark_descriptor_path();
-                let set_layout = self
-                    .device
-                    .create_descriptor_set_layout(&set_layout_info, None)
-                    .map_err(vk_err)?;
-                let push_range = vk::PushConstantRange::default()
-                    .stage_flags(vk::ShaderStageFlags::COMPUTE)
-                    .offset(0)
-                    .size(push_bytes.len() as u32);
-                let mut layout_info = vk::PipelineLayoutCreateInfo::default()
-                    .set_layouts(std::slice::from_ref(&set_layout));
-                if !push_bytes.is_empty() {
-                    layout_info = layout_info.push_constant_ranges(std::slice::from_ref(&push_range));
-                }
-                let pipeline_layout = self
-                    .device
-                    .create_pipeline_layout(&layout_info, None)
-                    .map_err(vk_err)?;
-                let entry_c = std::ffi::CString::new(entry).map_err(|e| {
-                    map_backend_err(BackendError(format!("invalid entry `{entry}`: {e}")))
-                })?;
-                let stage = vk::PipelineShaderStageCreateInfo::default()
-                    .stage(vk::ShaderStageFlags::COMPUTE)
-                    .module(module)
-                    .name(entry_c.as_c_str());
-                let pipeline_info = vk::ComputePipelineCreateInfo::default()
-                    .stage(stage)
-                    .layout(pipeline_layout);
-                self.mark_pipeline_path();
-                let pipelines = self
-                    .device
-                    .create_compute_pipelines(
-                        vk::PipelineCache::null(),
-                        std::slice::from_ref(&pipeline_info),
-                        None,
-                    )
-                    .map_err(|(_, e)| vk_err(e))?;
-                self.compute_pipelines.push(ComputePipelineCache {
-                    spirv: spirv_bytes.to_vec(),
-                    entry: entry.to_owned(),
-                    buffer_count: buffers.len(),
-                    push_size: push_bytes.len(),
-                    module,
-                    set_layout,
-                    pipeline_layout,
-                    pipeline: pipelines[0],
-                });
-                self.compute_pipelines.len() - 1
-            };
-            let cached = &self.compute_pipelines[cache_index];
-            let set_layout = cached.set_layout;
-            let pipeline_layout = cached.pipeline_layout;
-            let pipeline = cached.pipeline;
-
-            let pool_sizes = [vk::DescriptorPoolSize::default()
-                .ty(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(buffers.len() as u32)];
-            let pool_info = vk::DescriptorPoolCreateInfo::default()
-                .pool_sizes(&pool_sizes)
-                .max_sets(1);
-            let desc_pool = self
-                .device
-                .create_descriptor_pool(&pool_info, None)
-                .map_err(vk_err)?;
-            let alloc_info = vk::DescriptorSetAllocateInfo::default()
-                .descriptor_pool(desc_pool)
-                .set_layouts(std::slice::from_ref(&set_layout));
-            let sets = self
-                .device
-                .allocate_descriptor_sets(&alloc_info)
-                .map_err(vk_err)?;
-            let set = sets[0];
-
-            let buffer_infos: Vec<_> = buffers
-                .iter()
-                .map(|b| {
-                    vk::DescriptorBufferInfo::default()
-                        .buffer(*b)
-                        .offset(0)
-                        .range(vk::WHOLE_SIZE)
-                })
+        let cache_index = if let Some(index) = self.compute_pipelines.iter().position(|cached| {
+            cached.spirv == spirv_bytes
+                && cached.entry == entry
+                && cached.buffer_count == buffers.len()
+                && cached.push_size == push_bytes.len()
+        }) {
+            index
+        } else {
+            let words: Vec<u32> = spirv_bytes
+                .chunks_exact(4)
+                .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
                 .collect();
-            let writes: Vec<_> = buffer_infos
-                .iter()
-                .enumerate()
-                .map(|(i, info)| {
-                    vk::WriteDescriptorSet::default()
-                        .dst_set(set)
-                        .dst_binding(i as u32)
-                        .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                        .buffer_info(std::slice::from_ref(info))
-                })
-                .collect();
-            self.device.update_descriptor_sets(&writes, &[]);
-
-            self.with_commands(|cmd| {
-                let dependency = vk::MemoryBarrier::default()
-                    .src_access_mask(vk::AccessFlags::MEMORY_WRITE)
-                    .dst_access_mask(vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE);
-                self.device.cmd_pipeline_barrier(
-                    cmd,
-                    vk::PipelineStageFlags::ALL_COMMANDS,
-                    vk::PipelineStageFlags::COMPUTE_SHADER,
-                    vk::DependencyFlags::empty(),
-                    std::slice::from_ref(&dependency),
-                    &[],
-                    &[],
-                );
-                self.device
-                    .cmd_bind_pipeline(cmd, vk::PipelineBindPoint::COMPUTE, pipeline);
-                self.device.cmd_bind_descriptor_sets(
-                    cmd,
-                    vk::PipelineBindPoint::COMPUTE,
-                    pipeline_layout,
-                    0,
-                    std::slice::from_ref(&set),
-                    &[],
-                );
-                if !push_bytes.is_empty() {
-                    self.device.cmd_push_constants(
-                        cmd,
-                        pipeline_layout,
-                        vk::ShaderStageFlags::COMPUTE,
-                        0,
-                        push_bytes,
-                    );
-                }
-                self.device.cmd_dispatch(cmd, groups_x, 1, 1);
+            let module = self.driver.create_shader_module(&words).map_err(vk_err)?;
+            self.mark_descriptor_path();
+            let set_layout = self
+                .driver
+                .create_storage_set_layout(buffers.len() as u32, VK_SHADER_STAGE_COMPUTE_BIT)
+                .map_err(vk_err)?;
+            let pipeline_layout = self
+                .driver
+                .create_pipeline_layout(
+                    Some(set_layout),
+                    push_bytes.len() as u32,
+                    VK_SHADER_STAGE_COMPUTE_BIT,
+                )
+                .map_err(vk_err)?;
+            let entry_c = std::ffi::CString::new(entry).map_err(|e| {
+                map_backend_err(BackendError(format!("invalid entry `{entry}`: {e}")))
             })?;
+            self.mark_pipeline_path();
+            let pipeline = self
+                .driver
+                .create_compute_pipeline(module, &entry_c, pipeline_layout)
+                .map_err(vk_err)?;
+            self.compute_pipelines.push(ComputePipelineCache {
+                spirv: spirv_bytes.to_vec(),
+                entry: entry.to_owned(),
+                buffer_count: buffers.len(),
+                push_size: push_bytes.len(),
+                module,
+                set_layout,
+                pipeline_layout,
+                pipeline,
+            });
+            self.compute_pipelines.len() - 1
+        };
+        let (set_layout, pipeline_layout, pipeline) = {
+            let cached = &self.compute_pipelines[cache_index];
+            (cached.set_layout, cached.pipeline_layout, cached.pipeline)
+        };
 
-            self.device.destroy_descriptor_pool(desc_pool, None);
-            Ok(())
-        }
+        let desc_pool = self.driver.create_descriptor_pool(buffers.len() as u32).map_err(vk_err)?;
+        let set = self.driver.allocate_descriptor_set(desc_pool, set_layout).map_err(vk_err)?;
+        self.driver.update_storage_buffers(set, buffers);
+
+        self.with_commands(|cmd| {
+            self.driver.cmd_memory_barrier(
+                cmd,
+                VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_ACCESS_MEMORY_WRITE_BIT,
+                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+            );
+            self.driver
+                .cmd_bind_pipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+            self.driver
+                .cmd_bind_descriptor_set(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, set);
+            if !push_bytes.is_empty() {
+                self.driver
+                    .cmd_push_constants(cmd, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, push_bytes);
+            }
+            self.driver.cmd_dispatch(cmd, groups_x);
+            self.driver.cmd_memory_barrier(
+                cmd,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_ACCESS_SHADER_WRITE_BIT,
+                VK_ACCESS_TRANSFER_READ_BIT,
+            );
+        })?;
+
+        self.driver.destroy_descriptor_pool(desc_pool);
+        Ok(())
     }
 
     fn buf_bytes(&self, id: ResourceId) -> Result<usize> {
@@ -1324,23 +872,18 @@ fn hardware_program_resource_slots(stmt: &hardware_program::Stmt) -> std::result
 
 impl Drop for VulkanBackend {
     fn drop(&mut self) {
-        unsafe {
-            let _ = self.device.device_wait_idle();
-            for cached in self.compute_pipelines.drain(..) {
-                self.device.destroy_pipeline(cached.pipeline, None);
-                self.device.destroy_pipeline_layout(cached.pipeline_layout, None);
-                self.device.destroy_descriptor_set_layout(cached.set_layout, None);
-                self.device.destroy_shader_module(cached.module, None);
-            }
-            let buffers = std::mem::take(&mut self.buffers);
-            for (_, buf) in buffers {
-                self.device.destroy_buffer(buf.buffer, None);
-                self.device.free_memory(buf.memory, None);
-            }
-            self.device.destroy_command_pool(self.command_pool, None);
-            self.device.destroy_device(None);
-            self.instance.destroy_instance(None);
+        let _ = self.driver.device_wait_idle();
+        for cached in self.compute_pipelines.drain(..) {
+            self.driver.destroy_pipeline(cached.pipeline);
+            self.driver.destroy_pipeline_layout(cached.pipeline_layout);
+            self.driver.destroy_descriptor_set_layout(cached.set_layout);
+            self.driver.destroy_shader_module(cached.module);
         }
+        let buffers = std::mem::take(&mut self.buffers);
+        for (_, buf) in buffers {
+            self.driver.destroy_buffer(buf.buffer, buf.memory);
+        }
+        self.driver.destroy_command_pool(self.command_pool);
     }
 }
 
@@ -1378,10 +921,10 @@ impl Backend for VulkanBackend {
             }
             let (buffer, memory) = self.create_buffer(
                 bytes,
-                vk::BufferUsageFlags::STORAGE_BUFFER
-                    | vk::BufferUsageFlags::TRANSFER_SRC
-                    | vk::BufferUsageFlags::TRANSFER_DST,
-                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+                    | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
+                    | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             )?;
             self.buffers.insert(
                 node.id,
@@ -1424,8 +967,8 @@ fn expect_bytes(id: ResourceId, have: usize, need: usize) -> Result<()> {
     Ok(())
 }
 
-fn vk_err(error: vk::Result) -> SchedulerError {
-    SchedulerError::Backend("vulkan".into(), format!("{error:?}"))
+fn vk_err(error: DriverError) -> SchedulerError {
+    SchedulerError::Backend("vulkan".into(), error.to_string())
 }
 
 fn map_emit_err(error: String) -> SchedulerError {
