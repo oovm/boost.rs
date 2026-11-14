@@ -1,0 +1,386 @@
+//! Lowering from computed layout and document semantics into presentation IR.
+
+use std::collections::HashSet;
+
+use document_compose::math::FontStyle;
+use document_ir::{Block, DocumentGraph, Inline, NodeId, RelationEndpoint};
+use document_layout::plan::{Graphic, ImagePlaceholder, LayoutItem, LayoutPlan, Path, Rect, Rule, TextRun};
+
+use crate::{
+    display::{
+        DisplayAnchor, DisplayGraphic, DisplayImage, DisplayItem, DisplayPage, DisplayPath, DisplayPresentation, DisplayRect,
+        DisplayRule, DisplayTextRun,
+    },
+    flow::{FlowBlock, FlowListItem, FlowPresentation, FlowRun, FlowTableRow},
+};
+
+/// Lower a layout plan into a display presentation.
+pub fn build_display_presentation(plan: &LayoutPlan) -> DisplayPresentation {
+    DisplayPresentation {
+        pages: plan
+            .pages
+            .iter()
+            .map(|page| {
+                let mut anchors = Vec::new();
+                let items = page
+                    .items
+                    .iter()
+                    .filter_map(|item| match item {
+                        LayoutItem::Anchor { name, y } => {
+                            anchors.push(DisplayAnchor { name: name.clone(), y: *y });
+                            None
+                        }
+                        other => lower_item(other),
+                    })
+                    .collect();
+                DisplayPage { width: page.width, height: page.height, items, anchors }
+            })
+            .collect(),
+    }
+}
+
+fn lower_item(item: &LayoutItem) -> Option<DisplayItem> {
+    let item = match item {
+        LayoutItem::TextRun(TextRun {
+            x,
+            y,
+            size,
+            width,
+            font_family,
+            style,
+            text,
+            href,
+            anchor,
+            title,
+            color,
+            numeric,
+            artifact,
+        }) => DisplayItem::TextRun(DisplayTextRun {
+            x: *x,
+            y: *y,
+            size: *size,
+            width: *width,
+            font_family: font_family.clone(),
+            style: *style,
+            text: text.clone(),
+            href: href.clone(),
+            anchor: anchor.clone(),
+            title: title.clone(),
+            color: *color,
+            numeric: *numeric,
+            artifact: *artifact,
+        }),
+        LayoutItem::Rule(Rule { x1, y1, x2, y2, thickness, color }) => {
+            DisplayItem::Rule(DisplayRule { x1: *x1, y1: *y1, x2: *x2, y2: *y2, thickness: *thickness, color: *color })
+        }
+        LayoutItem::Rect(Rect { x, y, width, height, filled, fill, stroke, stroke_width }) => DisplayItem::Rect(DisplayRect {
+            x: *x,
+            y: *y,
+            width: *width,
+            height: *height,
+            filled: *filled,
+            fill: *fill,
+            stroke: *stroke,
+            stroke_width: *stroke_width,
+        }),
+        LayoutItem::ImagePlaceholder(ImagePlaceholder { x, y, width, height, alt, source }) => {
+            DisplayItem::Image(DisplayImage {
+                x: *x,
+                y: *y,
+                width: *width,
+                height: *height,
+                alt: alt.clone(),
+                source: source.clone(),
+            })
+        }
+        LayoutItem::Graphic(Graphic { x, y, width, height, scene, alt }) => DisplayItem::Graphic(DisplayGraphic {
+            x: *x,
+            y: *y,
+            width: *width,
+            height: *height,
+            scene: scene.clone(),
+            alt: alt.clone(),
+        }),
+        LayoutItem::Path(Path { d, x, y, width, height, depth }) => {
+            DisplayItem::Path(DisplayPath { d: d.clone(), x: *x, y: *y, width: *width, height: *height, depth: *depth })
+        }
+        // Anchors are collected into the page before items are lowered.
+        LayoutItem::Anchor { .. } => return None,
+    };
+    Some(item)
+}
+
+/// Build the semantic flow presentation of a Notedown document graph.
+///
+/// The flow keeps block semantics for reflow targets. Nested section children
+/// follow their heading, and nested list children stay on their item so no
+/// block content is dropped or promoted out of its parent list item.
+pub fn build_flow_presentation(graph: &DocumentGraph) -> FlowPresentation {
+    let mut blocks = Vec::new();
+    collect_flow(graph, &root_ids(graph), &mut blocks);
+    FlowPresentation { root_tag: "article".to_string(), blocks }
+}
+
+/// Block ids that no section or list item claims as a child, in graph order.
+fn root_ids(graph: &DocumentGraph) -> Vec<NodeId> {
+    let mut referenced = HashSet::new();
+    for node in &graph.blocks {
+        match &node.block {
+            Block::Section { children, .. } => referenced.extend(children.iter().copied()),
+            Block::Quote { children, .. } => referenced.extend(children.iter().copied()),
+            Block::List { items, .. } => {
+                for item in items {
+                    referenced.extend(item.children.iter().copied());
+                }
+            }
+            Block::Table { head, body, foot, .. } => {
+                for cell in head.iter().chain(body).chain(foot).flat_map(|row| row.cells.iter()) {
+                    referenced.extend(cell.children.iter().copied());
+                }
+            }
+            _ => {}
+        }
+    }
+    graph.blocks.iter().map(|node| node.id).filter(|id| !referenced.contains(id)).collect()
+}
+
+fn plain(inlines: &[Inline]) -> String {
+    inlines.iter().map(Inline::plain_text).collect()
+}
+
+/// Map an inline style name onto the shared face style.
+///
+/// Unrecognised names fall back to [`FontStyle::Normal`], matching layout: an
+/// unknown style string never becomes an invented emphasis.
+fn flow_style(style: &str) -> FontStyle {
+    match style.to_ascii_lowercase().as_str() {
+        "bold" | "strong" => FontStyle::Bold,
+        "italic" | "em" => FontStyle::Italic,
+        "mono" | "code" => FontStyle::Monospace,
+        "strike" => FontStyle::Strike,
+        _ => FontStyle::Normal,
+    }
+}
+
+/// Append one run, merging it into the previous run of the same style, link,
+/// and link title.
+///
+/// A change of destination or hover text ends the previous run, so a link
+/// boundary is never merged away and neighbouring anchors with different
+/// tooltips keep their own titles.
+fn push_run(runs: &mut Vec<FlowRun>, text: &str, style: FontStyle, href: Option<&str>, title: Option<&str>) {
+    if text.is_empty() {
+        return;
+    }
+    if let Some(last) = runs.last_mut()
+        && last.style == style
+        && last.href.as_deref() == href
+        && last.title.as_deref() == title
+    {
+        last.text.push_str(text);
+        return;
+    }
+    runs.push(FlowRun {
+        text: text.to_string(),
+        style,
+        href: href.map(str::to_string),
+        title: title.map(str::to_string),
+        math: None,
+    });
+}
+
+/// Resolve the destination of a link target.
+///
+/// Only authored external URIs become destinations. Internal `Node`,
+/// `Document`, `Asset`, and `Unresolved` targets keep the display text but stay
+/// without a destination, because reflow HTML emits no matching ids and a
+/// fabricated `#` anchor or invented URL scheme would point nowhere.
+fn link_href(target: &RelationEndpoint) -> Option<&str> {
+    match target {
+        RelationEndpoint::ExternalUri(uri) if !uri.is_empty() => Some(uri),
+        _ => None,
+    }
+}
+
+/// Resolve the hover text of a link target.
+///
+/// An authored empty title carries no tooltip, so it lowers to `None` instead of
+/// an empty attribute in the output.
+fn link_title(title: Option<&String>) -> Option<&str> {
+    title.map(String::as_str).filter(|value| !value.is_empty())
+}
+
+/// Flatten inline content into styled runs under the enclosing style and link.
+fn flow_runs<'a>(
+    inlines: &'a [Inline],
+    style: FontStyle,
+    href: Option<&'a str>,
+    title: Option<&'a str>,
+    runs: &mut Vec<FlowRun>,
+) {
+    for inline in inlines {
+        match inline {
+            Inline::Styled { style: name, children } => flow_runs(children, flow_style(name), href, title, runs),
+            Inline::InlineCode { text } => push_run(runs, text, FontStyle::Monospace, href, title),
+            // A formula stays its own run: a reflow target typesets it instead
+            // of printing the source, so it must never merge into neighbouring
+            // text.
+            Inline::InlineMath { formula } => runs.push(FlowRun {
+                text: String::new(),
+                style,
+                href: href.map(str::to_string),
+                title: title.map(str::to_string),
+                math: Some(formula.clone()),
+            }),
+            Inline::Image { alt, .. } => flow_runs(alt, style, href, title, runs),
+            // Attributes and link destinations carry no printable face, but
+            // their wrapped content keeps every authored style.
+            Inline::Attributed { children, .. } => flow_runs(children, style, href, title, runs),
+            Inline::Link { target, display, title: link_hover } => {
+                // A nested external link wins. A nested internal link keeps the
+                // enclosing destination so its text stays inside the anchor.
+                flow_runs(display, style, link_href(target).or(href), link_title(link_hover.as_ref()).or(title), runs);
+            }
+            Inline::Note { display: Some(display), .. } | Inline::Citation { display: Some(display), .. } => {
+                flow_runs(display, style, href, title, runs);
+            }
+            other => push_run(runs, &other.plain_text(), style, href, title),
+        }
+    }
+}
+
+/// Styled runs for one inline sequence with no enclosing emphasis.
+fn runs_of(inlines: &[Inline]) -> Vec<FlowRun> {
+    let mut runs = Vec::new();
+    flow_runs(inlines, FontStyle::Normal, None, None, &mut runs);
+    runs
+}
+
+fn collect_flow(graph: &DocumentGraph, ids: &[NodeId], blocks: &mut Vec<FlowBlock>) {
+    for id in ids {
+        let Some(node) = graph.block(*id)
+        else {
+            continue;
+        };
+        match &node.block {
+            Block::Section { level, title, children } => {
+                blocks.push(FlowBlock::Heading { level: (*level).clamp(1, 6), runs: runs_of(title) });
+                collect_flow(graph, children, blocks);
+            }
+            Block::Paragraph { content } => {
+                let mut runs: Vec<FlowRun> = Vec::new();
+                for inline in content {
+                    if let Inline::Image { source, alt, .. } = inline {
+                        // An inline image ends the run so the image block keeps
+                        // its place in document order.
+                        if runs.iter().any(|run| !run.text.trim().is_empty()) {
+                            blocks.push(FlowBlock::Paragraph { runs: std::mem::take(&mut runs) });
+                        }
+                        else {
+                            runs.clear();
+                        }
+                        blocks.push(FlowBlock::Image { alt: plain(alt), source: source.clone() });
+                        continue;
+                    }
+                    flow_runs(std::slice::from_ref(inline), FontStyle::Normal, None, None, &mut runs);
+                }
+                blocks.push(FlowBlock::Paragraph { runs });
+            }
+            Block::List { ordered, items } => {
+                let items = items
+                    .iter()
+                    .map(|item| {
+                        // Nested blocks stay on the item that authored them, so a
+                        // child list renders inside the parent `<li>`.
+                        let mut children = Vec::new();
+                        collect_flow(graph, &item.children, &mut children);
+                        FlowListItem { runs: runs_of(&item.content), number: item.number, children }
+                    })
+                    .collect();
+                blocks.push(FlowBlock::List { ordered: *ordered, items });
+            }
+            Block::Code { language, content } => {
+                blocks.push(FlowBlock::CodeBlock { language: language.clone(), text: content.clone() });
+            }
+            // Reflow HTML has no scene surface, so the authored diagram source
+            // stays visible under its language tag instead of disappearing.
+            Block::Diagram { language, source } => {
+                blocks.push(FlowBlock::CodeBlock { language: Some(language.clone()), text: source.clone() });
+            }
+            // Charts, scores, and structures also have no scene surface in this
+            // layer, so the authored source stays visible rather than vanishing
+            // from the reflowed page.
+            Block::Chart { language, source }
+            | Block::Engraving { language, source }
+            | Block::Depiction { language, source } => {
+                blocks.push(FlowBlock::CodeBlock { language: Some(language.clone()), text: source.clone() });
+            }
+            Block::Math { formula } => {
+                blocks.push(FlowBlock::Math { formula: formula.clone() });
+            }
+            Block::Quote { children } => {
+                let mut runs = Vec::new();
+                let mut rest = Vec::new();
+                for child_id in children {
+                    match graph.block(*child_id).map(|node| &node.block) {
+                        Some(Block::Paragraph { content }) => {
+                            if !runs.is_empty() {
+                                push_run(&mut runs, "\n", FontStyle::Normal, None, None);
+                            }
+                            flow_runs(content, FontStyle::Normal, None, None, &mut runs);
+                        }
+                        _ => rest.push(*child_id),
+                    }
+                }
+                blocks.push(FlowBlock::Quote { runs });
+                // Non-paragraph children have no single quote run surface, so
+                // they keep following the quotation in document order.
+                collect_flow(graph, &rest, blocks);
+            }
+            Block::Table { caption, head, body, foot } => {
+                let rows: Vec<(&document_ir::TableRow, bool)> = head
+                    .iter()
+                    .map(|row| (row, true))
+                    .chain(body.iter().map(|row| (row, false)))
+                    .chain(foot.iter().map(|row| (row, false)))
+                    .collect();
+                blocks.push(FlowBlock::Table {
+                    caption: caption.clone(),
+                    rows: rows
+                        .into_iter()
+                        .map(|(row, is_header)| FlowTableRow {
+                            is_header,
+                            cells: row
+                                .cells
+                                .iter()
+                                .map(|cell| {
+                                    let mut content = Vec::new();
+                                    for child_id in &cell.children {
+                                        let Some(child) = graph.block(*child_id)
+                                        else {
+                                            continue;
+                                        };
+                                        let Block::Paragraph { content: paragraph } = &child.block
+                                        else {
+                                            continue;
+                                        };
+                                        if !content.is_empty() {
+                                            content.push(document_ir::Inline::Text { text: " ".into() });
+                                        }
+                                        content.extend(paragraph.iter().cloned());
+                                    }
+                                    runs_of(&content)
+                                })
+                                .collect(),
+                        })
+                        .collect(),
+                });
+            }
+            Block::Opaque { kind, .. } if kind == "thematic_break" => blocks.push(FlowBlock::Rule),
+            // Opaque payloads with no flow meaning are dropped, not guessed.
+            Block::Opaque { .. } => {}
+            // Raw HTML is not interpreted or reflowed in the presentation layer.
+            Block::RawHtml { .. } => {}
+        }
+    }
+}

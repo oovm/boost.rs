@@ -1,0 +1,15 @@
+[package]
+name = "plotter-input-mdl"
+version.workspace = true
+authors.workspace = true
+readme = "readme.md"
+description = "MDL molfile/SDF frontend: Oak AST to plotter MoleculeSpec / scene"
+license.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+plotter-depiction = { workspace = true }
+plotter-types = { workspace = true }
+oak-core = { workspace = true }
+oak-mdl = { workspace = true }

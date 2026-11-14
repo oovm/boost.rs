@@ -1,0 +1,557 @@
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    asset::Asset,
+    block::{Block, BlockNode, TableCell, TableRow},
+    id::{AssetId, DocumentId, LinkId, NodeId},
+    inline::Inline,
+    metadata::MetadataEntry,
+    page::PageSetup,
+    relation::{Relation, RelationEndpoint, RelationKind},
+    source::{CoverageReport, SourceRef, SourceSpan},
+    status::LossMarker,
+    transform_errors::TransformError,
+};
+
+/// Document-level metadata (title is not document identity).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DocumentMetadata {
+    /// Display title (not document identity).
+    pub title: Option<String>,
+    /// Primary language tag when known.
+    pub language: Option<String>,
+    /// Document authors in display order.
+    pub authors: Vec<String>,
+    /// Free-form tags or keywords.
+    pub tags: Vec<String>,
+    /// Typed metadata outside the fixed fields, in stable authored order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub properties: Vec<MetadataEntry>,
+}
+
+/// Semantic document graph — import layers construct this, export layers
+/// consume it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(from = "WireDocumentGraph")]
+pub struct DocumentGraph {
+    /// Stable document identity.
+    pub id: DocumentId,
+    /// Monotonic revision bumped on semantic edits.
+    pub revision: u64,
+    /// Display metadata separate from identity.
+    pub metadata: DocumentMetadata,
+    /// Top-level and nested block nodes.
+    pub blocks: Vec<BlockNode>,
+    /// Directed semantic relations.
+    pub relations: Vec<Relation>,
+    /// Registered assets referenced by the document.
+    pub assets: Vec<Asset>,
+    /// Provenance sidecar records.
+    pub sources: Vec<SourceRef>,
+    /// Import/export completeness summary.
+    pub coverage: CoverageReport,
+    /// Page geometry and body metrics the source declared, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_setup: Option<PageSetup>,
+    /// Source spans aligned with `blocks`, when an importer knew them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    block_spans: Vec<Option<SourceSpan>>,
+    /// Source spans aligned with `coverage.loss`, when an importer knew them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    loss_spans: Vec<Option<SourceSpan>>,
+    /// Internal allocator for auto-assigned node ids.
+    #[serde(default)]
+    next_node: u64,
+}
+
+/// Wire view used to load documents written before quotes became block
+/// containers.
+#[derive(Deserialize)]
+struct WireDocumentGraph {
+    id: DocumentId,
+    revision: u64,
+    metadata: DocumentMetadata,
+    blocks: Vec<WireBlockNode>,
+    relations: Vec<Relation>,
+    assets: Vec<Asset>,
+    sources: Vec<SourceRef>,
+    coverage: CoverageReport,
+    #[serde(default)]
+    page_setup: Option<PageSetup>,
+    #[serde(default)]
+    block_spans: Vec<Option<SourceSpan>>,
+    #[serde(default)]
+    loss_spans: Vec<Option<SourceSpan>>,
+    #[serde(default)]
+    next_node: u64,
+}
+
+#[derive(Deserialize)]
+struct WireBlockNode {
+    id: NodeId,
+    block: WireBlock,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum WireBlock {
+    /// Legacy quote payload with inline content.
+    LegacyQuote {
+        #[serde(rename = "Quote")]
+        quote: WireLegacyQuote,
+    },
+    /// Legacy table payload with header flags and inline cell content.
+    LegacyTable {
+        #[serde(rename = "Table")]
+        table: WireLegacyTable,
+    },
+    /// Current block payload.
+    Current(Block),
+}
+
+#[derive(Deserialize)]
+struct WireLegacyQuote {
+    content: Vec<Inline>,
+    #[serde(default)]
+    children: Vec<NodeId>,
+}
+
+#[derive(Deserialize)]
+struct WireLegacyTable {
+    #[serde(default)]
+    caption: Option<String>,
+    rows: Vec<WireLegacyTableRow>,
+}
+
+#[derive(Deserialize)]
+struct WireLegacyTableRow {
+    #[serde(default)]
+    is_header: bool,
+    cells: Vec<WireLegacyTableCell>,
+}
+
+#[derive(Deserialize)]
+struct WireLegacyTableCell {
+    content: Vec<Inline>,
+    colspan: u32,
+    rowspan: u32,
+}
+
+impl From<WireDocumentGraph> for DocumentGraph {
+    fn from(wire: WireDocumentGraph) -> Self {
+        let WireDocumentGraph {
+            id,
+            revision,
+            metadata,
+            blocks,
+            relations,
+            assets,
+            sources,
+            coverage,
+            page_setup,
+            block_spans,
+            loss_spans,
+            next_node,
+        } = wire;
+        let max_id = blocks.iter().map(|node| node.id.0).max().unwrap_or(0);
+        let mut graph = Self {
+            id,
+            revision,
+            metadata,
+            blocks: Vec::with_capacity(blocks.len()),
+            relations,
+            assets,
+            sources,
+            coverage,
+            page_setup,
+            block_spans: Vec::with_capacity(blocks.len()),
+            loss_spans,
+            next_node: next_node.max(max_id),
+        };
+        let mut legacy_quotes = Vec::new();
+        let mut legacy_tables = Vec::new();
+        for (index, node) in blocks.into_iter().enumerate() {
+            let span = block_spans.get(index).copied().flatten();
+            match node.block {
+                WireBlock::LegacyQuote { quote } => {
+                    if !quote.content.is_empty() {
+                        legacy_quotes.push((graph.blocks.len(), quote.content));
+                    }
+                    graph.blocks.push(BlockNode { id: node.id, block: Block::Quote { children: quote.children } });
+                }
+                WireBlock::LegacyTable { table } => {
+                    legacy_tables.push((graph.blocks.len(), table));
+                    graph.blocks.push(BlockNode {
+                        id: node.id,
+                        block: Block::Table { caption: None, head: Vec::new(), body: Vec::new(), foot: Vec::new() },
+                    });
+                }
+                WireBlock::Current(block) => {
+                    graph.blocks.push(BlockNode { id: node.id, block });
+                }
+            }
+            graph.block_spans.push(span);
+        }
+        for (quote_index, content) in legacy_quotes {
+            let child = graph.push_block_at(Block::Paragraph { content }, None);
+            if let Block::Quote { children } = &mut graph.blocks[quote_index].block {
+                children.insert(0, child);
+            }
+        }
+        for (table_index, table) in legacy_tables {
+            let caption = table.caption;
+            let mut head = Vec::new();
+            let mut body = Vec::new();
+            let mut in_head_band = true;
+            for row in table.rows {
+                let is_header = row.is_header;
+                let mut cells = Vec::with_capacity(row.cells.len());
+                for cell in row.cells {
+                    let mut children = Vec::new();
+                    if !cell.content.is_empty() {
+                        children.push(graph.push_block_at(Block::Paragraph { content: cell.content }, None));
+                    }
+                    cells.push(TableCell { children, colspan: cell.colspan, rowspan: cell.rowspan });
+                }
+                let row = TableRow { cells };
+                if is_header && in_head_band {
+                    head.push(row);
+                }
+                else {
+                    in_head_band = false;
+                    body.push(row);
+                }
+            }
+            graph.blocks[table_index].block = Block::Table { caption, head, body, foot: Vec::new() };
+        }
+        for node in &mut graph.blocks {
+            normalize_block_inline_styles(&mut node.block);
+        }
+        graph
+    }
+}
+
+/// Canonicalize style aliases that older wire payloads and format adapters
+/// used, without inventing a style for names outside the spelling table.
+fn normalize_inline_styles(inlines: &mut [Inline]) {
+    for inline in inlines {
+        match inline {
+            Inline::Styled { style, children } => {
+                let canonical = match style.as_str() {
+                    "strong" => Some("bold"),
+                    "emph" | "emphasis" => Some("italic"),
+                    "strikethrough" | "strikeout" => Some("strike"),
+                    "sup" => Some("superscript"),
+                    "sub" => Some("subscript"),
+                    _ => None,
+                };
+                if let Some(canonical) = canonical {
+                    style.clear();
+                    style.push_str(canonical);
+                }
+                normalize_inline_styles(children);
+            }
+            Inline::Attributed { children, .. } => normalize_inline_styles(children),
+            Inline::Link { display, .. } => normalize_inline_styles(display),
+            Inline::Image { alt, .. } => normalize_inline_styles(alt),
+            Inline::Note { display: Some(display), .. } => normalize_inline_styles(display),
+            Inline::Citation { display: Some(display), .. } => normalize_inline_styles(display),
+            _ => {}
+        }
+    }
+}
+
+fn normalize_block_inline_styles(block: &mut Block) {
+    match block {
+        Block::Paragraph { content } => normalize_inline_styles(content),
+        Block::Section { title, .. } => normalize_inline_styles(title),
+        Block::List { items, .. } => {
+            for item in items {
+                normalize_inline_styles(&mut item.content);
+            }
+        }
+        _ => {}
+    }
+}
+
+impl DocumentGraph {
+    /// Empty document with the given identity.
+    pub fn new(id: DocumentId) -> Self {
+        Self {
+            id,
+            revision: 0,
+            metadata: DocumentMetadata {
+                title: None,
+                language: None,
+                authors: Vec::new(),
+                tags: Vec::new(),
+                properties: Vec::new(),
+            },
+            blocks: Vec::new(),
+            relations: Vec::new(),
+            assets: Vec::new(),
+            sources: Vec::new(),
+            coverage: CoverageReport { complete: true, loss: Vec::new() },
+            page_setup: None,
+            block_spans: Vec::new(),
+            loss_spans: Vec::new(),
+            next_node: 0,
+        }
+    }
+
+    /// Bump the document revision after a semantic edit.
+    pub fn bump_revision(&mut self) {
+        self.revision += 1;
+    }
+
+    /// Replace display metadata without changing document identity.
+    pub fn set_metadata(&mut self, metadata: DocumentMetadata) {
+        self.metadata = metadata;
+        self.bump_revision();
+    }
+
+    /// Append a block and return its semantic node id.
+    pub fn push_block(&mut self, block: Block) -> NodeId {
+        self.push_block_at(block, None)
+    }
+
+    /// Append a block together with its authored source span.
+    pub fn push_block_at(&mut self, block: Block, span: Option<SourceSpan>) -> NodeId {
+        self.next_node += 1;
+        let id = NodeId(self.next_node);
+        self.blocks.push(BlockNode { id, block });
+        self.block_spans.push(span);
+        id
+    }
+
+    /// The authored source span of one block, when the importer recorded it.
+    pub fn block_span(&self, id: NodeId) -> Option<SourceSpan> {
+        self.blocks.iter().position(|node| node.id == id).and_then(|index| self.block_spans.get(index).copied().flatten())
+    }
+
+    /// Append a block with an explicit id (import adapters with stable foreign
+    /// ids).
+    pub fn push_block_with_id(&mut self, id: NodeId, block: Block) {
+        self.push_block_with_id_at(id, block, None)
+    }
+
+    /// Append a block with an explicit id and authored source span.
+    pub fn push_block_with_id_at(&mut self, id: NodeId, block: Block, span: Option<SourceSpan>) {
+        if id.0 > self.next_node {
+            self.next_node = id.0;
+        }
+        self.blocks.push(BlockNode { id, block });
+        self.block_spans.push(span);
+    }
+
+    /// Record import/export loss without mutating content.
+    pub fn push_loss(&mut self, marker: LossMarker) {
+        self.push_loss_at(marker, None)
+    }
+
+    /// Record import/export loss together with its authored source span.
+    pub fn push_loss_at(&mut self, marker: LossMarker, span: Option<SourceSpan>) {
+        self.coverage.complete = false;
+        self.coverage.loss.push(marker);
+        self.loss_spans.push(span);
+    }
+
+    /// The authored source span of one loss marker, by its index in
+    /// [`DocumentGraph::coverage`] loss order.
+    pub fn loss_span(&self, index: usize) -> Option<SourceSpan> {
+        self.loss_spans.get(index).copied().flatten()
+    }
+
+    /// Append a relation edge.
+    pub fn push_relation(&mut self, relation: Relation) {
+        self.relations.push(relation);
+    }
+
+    /// Register an asset and return its id.
+    pub fn push_asset(&mut self, asset: Asset) -> AssetId {
+        let id = asset.id;
+        self.assets.push(asset);
+        id
+    }
+
+    /// Update asset storage location while preserving logical identity.
+    pub fn set_asset_source(&mut self, id: AssetId, source: Option<String>) -> bool {
+        let Some(asset) = self.assets.iter_mut().find(|asset| asset.id == id)
+        else {
+            return false;
+        };
+        asset.source = source;
+        self.bump_revision();
+        true
+    }
+
+    /// Attach provenance to a semantic node.
+    pub fn attach_source(&mut self, source: SourceRef) {
+        self.sources.push(source);
+    }
+
+    /// Look up a block by semantic node id.
+    pub fn block(&self, id: NodeId) -> Option<&BlockNode> {
+        self.blocks.iter().find(|node| node.id == id)
+    }
+
+    /// Provenance records attached to a semantic node.
+    pub fn sources_for(&self, node: NodeId) -> Vec<&SourceRef> {
+        self.sources.iter().filter(|source| source.node == node).collect()
+    }
+
+    /// Relations whose source endpoint matches `endpoint`.
+    pub fn relations_from(&self, endpoint: &RelationEndpoint) -> Vec<&Relation> {
+        self.relations.iter().filter(|relation| relation.source.matches(endpoint)).collect()
+    }
+
+    /// Relations whose target endpoint matches `endpoint`.
+    pub fn relations_to(&self, endpoint: &RelationEndpoint) -> Vec<&Relation> {
+        self.relations.iter().filter(|relation| relation.target.matches(endpoint)).collect()
+    }
+
+    /// Indexed backlink edges pointing at `target`.
+    pub fn backlinks_to(&self, target: &RelationEndpoint) -> Vec<&Relation> {
+        self.relations
+            .iter()
+            .filter(|relation| relation.kind == RelationKind::Backlink && relation.target.matches(target))
+            .collect()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Mutation API — the write counterpart to push_*
+// ---------------------------------------------------------------------------
+
+impl DocumentGraph {
+    /// 删除一个 block 节点。
+    ///
+    /// 行为：
+    /// 1. 从 `blocks` Vec 中移除该节点
+    /// 2. 从所有 Section / ListItem 的 children 列表中清除对它的引用
+    /// 3. relations / sources 中对它的引用**不会**自动清理 ——
+    ///    [`validate`] 会把它们报告为 dangling。由调用方决定是否同步清理。
+    ///
+    /// [`validate`]: DocumentGraph::validate
+    pub fn delete_block(&mut self, id: NodeId) -> Result<(), TransformError> {
+        let pos = self.blocks.iter().position(|n| n.id == id).ok_or(TransformError::NotFound(id))?;
+        self.blocks.remove(pos);
+
+        // 从所有 Section children / ListItem children 中移除引用
+        for node in &mut self.blocks {
+            match &mut node.block {
+                Block::Section { children, .. } => {
+                    children.retain(|c| *c != id);
+                }
+                Block::List { items, .. } => {
+                    for item in items {
+                        item.children.retain(|c| *c != id);
+                    }
+                }
+                Block::Quote { children } => {
+                    children.retain(|c| *c != id);
+                }
+                Block::Table { head, body, foot, .. } => {
+                    for row in head.iter_mut().chain(body.iter_mut()).chain(foot.iter_mut()) {
+                        for cell in &mut row.cells {
+                            cell.children.retain(|c| *c != id);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        self.bump_revision();
+        Ok(())
+    }
+
+    /// 用新 Block 替换指定节点的 payload。NodeId 保持不变（语义身份稳定）。
+    pub fn replace_block(&mut self, id: NodeId, new_block: Block) -> Result<(), TransformError> {
+        let node = self.blocks.iter_mut().find(|n| n.id == id).ok_or(TransformError::NotFound(id))?;
+        node.block = new_block;
+        self.bump_revision();
+        Ok(())
+    }
+
+    /// 替换可容纳子节点的 block（目前仅 [`Block::Section`]）的 children 列表。
+    ///
+    /// 调用方必须保证 `new_children` 里的每个 NodeId 都已在图中存在；
+    /// 本函数只做最基本的结构合法性判断（parent 能否持 children）。
+    pub fn set_children(&mut self, parent_id: NodeId, new_children: Vec<NodeId>) -> Result<(), TransformError> {
+        let node = self.blocks.iter_mut().find(|n| n.id == parent_id).ok_or(TransformError::NotFound(parent_id))?;
+        match &mut node.block {
+            Block::Section { children, .. } => {
+                *children = new_children;
+            }
+            _ => return Err(TransformError::InvalidParent(parent_id)),
+        }
+        self.bump_revision();
+        Ok(())
+    }
+
+    /// 向 Section 的 children 列表追加一个子节点。
+    pub fn append_child(&mut self, parent_id: NodeId, child: NodeId) -> Result<(), TransformError> {
+        let node = self.blocks.iter_mut().find(|n| n.id == parent_id).ok_or(TransformError::NotFound(parent_id))?;
+        match &mut node.block {
+            Block::Section { children, .. } => {
+                children.push(child);
+            }
+            _ => return Err(TransformError::InvalidParent(parent_id)),
+        }
+        self.bump_revision();
+        Ok(())
+    }
+
+    /// 从 Section 的 children 列表中移除指定子节点（不删除 block 本身）。
+    pub fn remove_child(&mut self, parent_id: NodeId, child: NodeId) -> Result<(), TransformError> {
+        let node = self.blocks.iter_mut().find(|n| n.id == parent_id).ok_or(TransformError::NotFound(parent_id))?;
+        match &mut node.block {
+            Block::Section { children, .. } => {
+                let pos = children
+                    .iter()
+                    .position(|c| *c == child)
+                    .ok_or(TransformError::ChildNotFound { parent: parent_id, child })?;
+                children.remove(pos);
+            }
+            _ => return Err(TransformError::InvalidParent(parent_id)),
+        }
+        self.bump_revision();
+        Ok(())
+    }
+}
+
+/// Monotonic id allocator for a conversion session.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct IdAllocator {
+    next_document: u64,
+    next_node: u64,
+    next_asset: u64,
+    next_link: u64,
+}
+
+impl IdAllocator {
+    /// Allocate the next document id.
+    pub fn document_id(&mut self) -> DocumentId {
+        self.next_document += 1;
+        DocumentId(self.next_document)
+    }
+
+    /// Allocate the next node id.
+    pub fn node_id(&mut self) -> NodeId {
+        self.next_node += 1;
+        NodeId(self.next_node)
+    }
+
+    /// Allocate the next asset id.
+    pub fn asset_id(&mut self) -> AssetId {
+        self.next_asset += 1;
+        AssetId(self.next_asset)
+    }
+
+    /// Allocate the next relation id.
+    pub fn link_id(&mut self) -> LinkId {
+        self.next_link += 1;
+        LinkId(self.next_link)
+    }
+}

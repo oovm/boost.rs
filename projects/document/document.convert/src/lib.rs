@@ -1,0 +1,596 @@
+#![deny(missing_docs)]
+#![doc = include_str!("readme.md")]
+
+mod budget;
+mod dedupe_assets;
+pub use budget::ConversionBudgets;
+pub mod chart;
+pub mod depiction;
+pub mod diagram;
+pub mod engraving;
+mod format_error;
+mod inspect;
+mod publish;
+mod readers;
+mod span;
+mod structure;
+pub mod transform;
+mod writers;
+
+use std::{fs, path::Path, sync::Arc};
+
+use document_diagnostic::diagnostics_from_graph;
+use document_fonts::BodyFaceSet;
+use document_formats::{
+    FormatDirection, FormatStatus, capabilities,
+    import::{
+        doc::import_doc_bytes, docx::import_docx_bytes, epub::import_epub_bytes, html::import_html_bytes,
+        pdf::import_pdf_bytes, pptx::import_pptx_graph_bytes, xlsx::import_xlsx_graph_bytes,
+    },
+};
+use document_ir::{DocumentGraph, LossMarker, SemanticStatus};
+use document_types::{AdapterError, Result};
+use serde::Serialize;
+
+/// Re-export of `panduck-diagnostic` envelope type so downstream NAPI consumers
+/// can build diagnostics-aligned reports without depending on the diagnostic
+/// crate directly.
+pub use document_diagnostic::{DiagnosticEnvelope, SCHEMA_REPORT, from_adapter_error};
+
+/// Build an empty diagnostic envelope for operations that completed cleanly.
+pub fn empty_diagnostic_envelope() -> DiagnosticEnvelope {
+    use boost_diagnostic::DiagnosticSet;
+    DiagnosticEnvelope::from_set(&DiagnosticSet::new())
+}
+
+pub use inspect::{
+    DocxDecodedPart, DocxInspectDecode, DocxInspectIndex, inspect_docx_decode, inspect_docx_decode_bytes, inspect_docx_index,
+    inspect_docx_index_bytes,
+};
+pub use publish::{PublishedMarkdownProject, publish_bytes, publish_markdown_project, publish_text};
+pub use readers::{
+    read_doc, read_doc_bytes, read_html, read_html_bytes, read_markdown, read_markdown_bytes, read_markdown_bytes_with_assets,
+    read_notedown, read_notedown_bytes, read_pdf, read_pdf_bytes, read_tex, read_tex_bytes, read_typst, read_typst_bytes,
+};
+pub use structure::MAX_STRUCTURE_DEPTH;
+pub use transform::{TransformOutcome, TransformPassReport, TransformPassStatus, apply_transform_passes};
+pub use writers::{
+    write_document_docx, write_document_epub, write_document_html, write_document_markdown, write_document_pdf,
+    write_markdown_project,
+};
+
+/// Reader handlers wired into this build (lowercase).
+///
+/// This list only says a reader implementation exists. It does not by itself
+/// make a route available — [`supports_route`] also requires the `Import`
+/// capability in `document_formats::capabilities()` to be routable.
+pub const READERS: &[&str] = &["docx", "doc", "pdf", "epub", "html", "markdown", "notedown", "tex", "typst", "xlsx", "pptx"];
+
+/// Writer handlers wired into this build (lowercase).
+///
+/// Same rule as [`READERS`]: wiring is not availability. Each writer must also
+/// carry a routable `Export` capability in `document_formats::capabilities()`.
+pub const WRITERS: &[&str] = &["markdown", "docx", "pdf", "html", "epub"];
+
+/// Look up one direction of a format in the single capability table.
+fn capability_status(id: &str, direction: FormatDirection) -> Option<FormatStatus> {
+    capabilities()
+        .into_iter()
+        .find(|capability| capability.id == id && capability.direction == direction)
+        .map(|capability| capability.status)
+}
+
+/// Whether a capability status may be routed.
+///
+/// `Ready` and `Partial` are routable: `Partial` means the implementation is
+/// wired and usable for its advertised subset, and every gap it hits is
+/// reported per document through loss markers and diagnostics, so the route
+/// itself stays honest. `Planned` is not wired yet. `Unavailable` is an
+/// explicit opt-out — including the wired-but-not-deliverable exports — so
+/// neither may be routed. A direction missing from the table means the
+/// corresponding cargo feature is off.
+fn is_routable(status: Option<FormatStatus>) -> bool {
+    matches!(status, Some(FormatStatus::Ready | FormatStatus::Partial))
+}
+
+/// Whether `from` can be read and `to` can be written.
+///
+/// A route is available iff `from` is a wired reader whose `Import` capability
+/// is routable and `to` is a wired writer whose `Export` capability is
+/// routable. `document_formats::capabilities()` is the only capability table;
+/// this function never hard-codes a status of its own.
+pub fn supports_route(from: &str, to: &str) -> bool {
+    let from = from.to_ascii_lowercase();
+    let to = to.to_ascii_lowercase();
+    READERS.contains(&from.as_str())
+        && WRITERS.contains(&to.as_str())
+        && is_routable(capability_status(&from, FormatDirection::Import))
+        && is_routable(capability_status(&to, FormatDirection::Export))
+}
+
+/// Lists available conversion routes.
+///
+/// Each wired pair is filtered through [`supports_route`], so a format whose
+/// export capability is `Unavailable` — currently `docx` and `pdf` — never
+/// appears as a target.
+pub fn supported_routes() -> Vec<(String, String)> {
+    let mut routes = Vec::new();
+    for reader in READERS {
+        for writer in WRITERS {
+            if supports_route(reader, writer) {
+                routes.push((reader.to_string(), writer.to_string()));
+            }
+        }
+    }
+    routes
+}
+
+/// Markdown project conversion output.
+#[derive(Debug, Clone, Serialize)]
+pub struct ConvertProjectOutput {
+    /// Primary Markdown body (`index.md` content).
+    pub index_markdown: String,
+    /// Project-relative asset paths that were materialized.
+    pub published_assets: Vec<String>,
+    /// Project-relative chapter paths that were materialized.
+    pub published_chapters: Vec<String>,
+    /// Image sources left unresolved in the Markdown body.
+    pub unresolved_assets: Vec<String>,
+    /// Serialized `panduck.report/v0` JSON payload.
+    pub report_json: String,
+    /// Number of semantic loss markers recorded in the report.
+    pub loss_count: usize,
+}
+
+/// Conversion output payload and report metadata.
+#[derive(Debug, Clone, Serialize)]
+pub struct ConvertOutput {
+    /// Text output for text targets such as `markdown`.
+    pub markdown: String,
+    /// HTML output for the `html` target.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub html: Option<String>,
+    /// Binary output for container targets such as `docx`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binary: Option<Vec<u8>>,
+    /// Serialized `panduck.report/v0` JSON payload.
+    pub report_json: String,
+    /// Number of semantic loss markers recorded in the report.
+    pub loss_count: usize,
+}
+
+/// Serialize the IR loss markers with the authored span each one points at.
+///
+/// `notedown-ir` keeps spans in a sidecar alongside the markers, so the report
+/// carries `span.start` and `span.end` per loss. Consumers no longer have to
+/// re-read the source to locate a loss.
+fn losses_with_spans(graph: &DocumentGraph) -> Vec<serde_json::Value> {
+    graph
+        .coverage
+        .loss
+        .iter()
+        .enumerate()
+        .map(|(index, loss)| {
+            let span = graph.loss_span(index);
+            serde_json::json!({
+                "code": loss.code,
+                "message": loss.message,
+                "status": loss.status,
+                "severity": document_diagnostic::loss_severity(loss.status).to_string(),
+                "span": match span {
+                    Some(span) => serde_json::json!({ "start": span.start, "end": span.end }),
+                    None => serde_json::Value::Null,
+                },
+            })
+        })
+        .collect()
+}
+
+/// Serialize project-assembly losses, which have no authored source span.
+fn project_losses(project: &document_formats::export::markdown_project::MarkdownProject) -> Vec<serde_json::Value> {
+    project
+        .losses
+        .iter()
+        .map(|loss| {
+            serde_json::json!({
+                "code": loss.code,
+                "message": loss.message,
+                "status": loss.status,
+                "severity": document_diagnostic::loss_severity(loss.status).to_string(),
+                "span": serde_json::Value::Null,
+            })
+        })
+        .collect()
+}
+
+/// Converts bytes from `from` format to `to` format.
+///
+/// `handlers_json` is an optional JSON-serialized plan descriptor from the
+/// TS-side `ConversionPlan`. Only its `transforms` array is executed, through
+/// `apply_transform_passes`. Policy handler closures stay in TS — they cannot
+/// cross the wire, and this pipeline does not execute them.
+pub fn convert_bytes(from: &str, to: &str, label: &str, bytes: Vec<u8>, handlers_json: Option<&str>) -> Result<ConvertOutput> {
+    convert_bytes_with_budgets(from, to, label, bytes, handlers_json, None)
+}
+
+/// Converts bytes while enforcing container budgets before import.
+///
+/// Budget exhaustion is reported as `notedown.format.budget-exhausted`, which
+/// the CLI maps to exit code 7 without publishing any output.
+pub fn convert_bytes_with_budgets(
+    from: &str,
+    to: &str,
+    label: &str,
+    bytes: Vec<u8>,
+    handlers_json: Option<&str>,
+    budgets: Option<&ConversionBudgets>,
+) -> Result<ConvertOutput> {
+    convert_bytes_inner(from, to, label, bytes, handlers_json, budgets, None)
+}
+
+/// Converts bytes with host-injected body faces.
+///
+/// PDF output embeds the supplied faces, so the host is the only source of
+/// body fonts. Callers that ask for `pdf` without supplying a set get
+/// `notedown.convert.pdf-fonts-missing`.
+pub fn convert_bytes_with_body_faces(
+    from: &str,
+    to: &str,
+    label: &str,
+    bytes: Vec<u8>,
+    handlers_json: Option<&str>,
+    body_set: &Arc<BodyFaceSet>,
+) -> Result<ConvertOutput> {
+    convert_bytes_inner(from, to, label, bytes, handlers_json, None, Some(body_set))
+}
+
+fn convert_bytes_inner(
+    from: &str,
+    to: &str,
+    label: &str,
+    bytes: Vec<u8>,
+    handlers_json: Option<&str>,
+    budgets: Option<&ConversionBudgets>,
+    body_set: Option<&Arc<BodyFaceSet>>,
+) -> Result<ConvertOutput> {
+    let from = from.to_ascii_lowercase();
+    let to = to.to_ascii_lowercase();
+    if !supports_route(&from, &to) {
+        return format_error::fail(AdapterError::unsupported_format(from, format!("convert to {to}")));
+    }
+    if let Some(budgets) = budgets {
+        budgets.enforce_container(&from, label, &bytes)?;
+    }
+
+    let mut graph = format_error::propagate(read_source(&from, label, bytes))?;
+    let transform_outcome = apply_transform_passes(&mut graph, handlers_json);
+    let (markdown, html, binary) = format_error::propagate(write_target(&to, &mut graph, body_set))?;
+    let loss_count = graph.coverage.loss.len();
+    let mut diagnostic_set = diagnostics_from_graph(&graph);
+    for diagnostic in &transform_outcome.diagnostics {
+        diagnostic_set.push(diagnostic.clone());
+    }
+
+    if loss_count > 0 {
+        document_diagnostic::log_diagnostic_set(&diagnostic_set);
+    }
+    let diagnostic_envelope = DiagnosticEnvelope::from_set(&diagnostic_set);
+    let mut pipeline = serde_json::json!({ "reader": from, "writer": to, "stages": ["read", "ir", "write"] });
+    if !transform_outcome.is_empty() {
+        pipeline["transforms"] = serde_json::to_value(&transform_outcome.passes).unwrap_or_default();
+    }
+    let report_json = serde_json::json!({
+        "schema_version": document_diagnostic::SCHEMA_REPORT,
+        "operation": "convert",
+        "status": if loss_count == 0 { "success" } else { "success_with_loss" },
+        "inputs": [{ "path": label, "format": from }],
+        "pipeline": pipeline,
+        "coverage": graph.coverage,
+        "losses": losses_with_spans(&graph),
+        "diagnostics": diagnostic_envelope,
+        "outputs": [{ "format": to, "published": true }],
+    })
+    .to_string();
+
+    Ok(ConvertOutput { markdown, html, binary, report_json, loss_count })
+}
+
+/// Converts bytes into a Markdown project description without writing disk.
+pub fn convert_to_markdown_project_bytes(
+    from: &str,
+    label: &str,
+    bytes: Vec<u8>,
+    handlers_json: Option<&str>,
+) -> Result<ConvertProjectOutput> {
+    convert_to_markdown_project_bytes_with_budgets(from, label, bytes, handlers_json, None)
+}
+
+/// Byte-input Markdown project conversion with container budgets.
+pub fn convert_to_markdown_project_bytes_with_budgets(
+    from: &str,
+    label: &str,
+    bytes: Vec<u8>,
+    handlers_json: Option<&str>,
+    budgets: Option<&ConversionBudgets>,
+) -> Result<ConvertProjectOutput> {
+    let from = from.to_ascii_lowercase();
+    if !supports_markdown_project_source(&from) {
+        return format_error::fail(AdapterError::unsupported_format(from, "markdown project"));
+    }
+    if let Some(budgets) = budgets {
+        budgets.enforce_container(&from, label, &bytes)?;
+    }
+
+    let mut graph = format_error::propagate(read_source(&from, label, bytes))?;
+    let transform_outcome = apply_transform_passes(&mut graph, handlers_json);
+    let mut project = format_error::propagate(write_markdown_project(&graph))?;
+    dedupe_assets::dedupe_markdown_project(&mut project);
+    Ok(build_convert_project_output(&from, label, &graph, &project, &transform_outcome))
+}
+
+/// Converts bytes and publishes a Markdown project directory.
+pub fn convert_to_markdown_project(
+    from: &str,
+    label: &str,
+    bytes: Vec<u8>,
+    output_dir: impl AsRef<Path>,
+    handlers_json: Option<&str>,
+) -> Result<(ConvertProjectOutput, PublishedMarkdownProject)> {
+    convert_to_markdown_project_with_budgets(from, label, bytes, output_dir, handlers_json, None)
+}
+
+/// Publishes a Markdown project while enforcing container budgets.
+pub fn convert_to_markdown_project_with_budgets(
+    from: &str,
+    label: &str,
+    bytes: Vec<u8>,
+    output_dir: impl AsRef<Path>,
+    handlers_json: Option<&str>,
+    budgets: Option<&ConversionBudgets>,
+) -> Result<(ConvertProjectOutput, PublishedMarkdownProject)> {
+    let from = from.to_ascii_lowercase();
+    if !supports_markdown_project_source(&from) {
+        return format_error::fail(AdapterError::unsupported_format(from, "markdown project"));
+    }
+    if let Some(budgets) = budgets {
+        budgets.enforce_container(&from, label, &bytes)?;
+    }
+
+    let mut graph = format_error::propagate(read_source(&from, label, bytes))?;
+    let transform_outcome = apply_transform_passes(&mut graph, handlers_json);
+    let mut project = format_error::propagate(write_markdown_project(&graph))?;
+    dedupe_assets::dedupe_markdown_project(&mut project);
+    let output = build_convert_project_output(&from, label, &graph, &project, &transform_outcome);
+    let published = publish_markdown_project(output_dir, &project, &output.report_json)?;
+    Ok((output, published))
+}
+
+fn build_convert_project_output(
+    from: &str,
+    label: &str,
+    graph: &DocumentGraph,
+    project: &document_formats::export::markdown_project::MarkdownProject,
+    transform_outcome: &TransformOutcome,
+) -> ConvertProjectOutput {
+    let loss_count = graph.coverage.loss.len() + project.losses.len();
+    let mut diagnostic_set = diagnostics_from_graph(graph);
+    for diagnostic in &transform_outcome.diagnostics {
+        diagnostic_set.push(diagnostic.clone());
+    }
+
+    if loss_count > 0 {
+        document_diagnostic::log_diagnostic_set(&diagnostic_set);
+    }
+    let diagnostic_envelope = DiagnosticEnvelope::from_set(&diagnostic_set);
+    let published_assets: Vec<String> = project.assets.iter().map(|asset| asset.relative_path.clone()).collect();
+    let published_chapters: Vec<String> = project.chapters.iter().map(|chapter| chapter.relative_path.clone()).collect();
+    let mut outputs = vec![
+        serde_json::json!({ "path": "index.md", "format": "markdown", "published": true }),
+        serde_json::json!({ "path": "assets/", "format": "assets", "published_asset_count": published_assets.len() }),
+    ];
+    for chapter in &published_chapters {
+        outputs.push(serde_json::json!({ "path": chapter, "format": "markdown", "published": true }));
+    }
+    outputs.push(serde_json::json!({ "path": "panduck.report.json", "format": "report", "published": true }));
+    let mut pipeline =
+        serde_json::json!({ "reader": from, "writer": "markdown-project", "stages": ["read", "ir", "write", "materialize"] });
+    if !transform_outcome.is_empty() {
+        pipeline["transforms"] = serde_json::to_value(&transform_outcome.passes).unwrap_or_default();
+    }
+    let mut losses = losses_with_spans(graph);
+    losses.extend(project_losses(project));
+    let report_json = serde_json::json!({
+        "schema_version": document_diagnostic::SCHEMA_REPORT,
+        "operation": "convert_project",
+        "status": if loss_count == 0 { "success" } else { "success_with_loss" },
+        "inputs": [{ "path": label, "format": from }],
+        "pipeline": pipeline,
+        "coverage": graph.coverage,
+        "losses": losses,
+        "diagnostics": diagnostic_envelope,
+        "outputs": outputs,
+        "unresolved_assets": project.unresolved_asset_sources,
+    })
+    .to_string();
+
+    ConvertProjectOutput {
+        index_markdown: project.index_markdown.clone(),
+        published_assets,
+        published_chapters,
+        unresolved_assets: project.unresolved_asset_sources.clone(),
+        report_json,
+        loss_count,
+    }
+}
+
+/// Returns whether Panduck can emit a Markdown project from this source format.
+pub fn supports_markdown_project_source(from: &str) -> bool {
+    let from = from.to_ascii_lowercase();
+    READERS.contains(&from.as_str()) && is_routable(capability_status(&from, FormatDirection::Import))
+}
+
+/// Converts a file on disk into a Markdown project directory.
+pub fn convert_markdown_project_file(
+    from: &str,
+    input: impl AsRef<Path>,
+    output_dir: impl AsRef<Path>,
+    handlers_json: Option<&str>,
+) -> Result<(ConvertProjectOutput, PublishedMarkdownProject)> {
+    convert_markdown_project_file_with_budgets(from, input, output_dir, handlers_json, None)
+}
+
+/// File-input Markdown project conversion with container budgets.
+pub fn convert_markdown_project_file_with_budgets(
+    from: &str,
+    input: impl AsRef<Path>,
+    output_dir: impl AsRef<Path>,
+    handlers_json: Option<&str>,
+    budgets: Option<&ConversionBudgets>,
+) -> Result<(ConvertProjectOutput, PublishedMarkdownProject)> {
+    let input = input.as_ref();
+    let bytes = match fs::read(input) {
+        Ok(bytes) => bytes,
+        Err(source) => {
+            return format_error::fail(AdapterError::io(source, Some(input.display().to_string())));
+        }
+    };
+    convert_to_markdown_project_with_budgets(from, &input.display().to_string(), bytes, output_dir, handlers_json, budgets)
+}
+
+/// Converts a file on disk.
+pub fn convert_file(from: &str, to: &str, input: impl AsRef<Path>, handlers_json: Option<&str>) -> Result<ConvertOutput> {
+    convert_file_with_budgets(from, to, input, handlers_json, None)
+}
+
+/// File-input conversion with container budgets.
+pub fn convert_file_with_budgets(
+    from: &str,
+    to: &str,
+    input: impl AsRef<Path>,
+    handlers_json: Option<&str>,
+    budgets: Option<&ConversionBudgets>,
+) -> Result<ConvertOutput> {
+    let input = input.as_ref();
+    let bytes = match fs::read(input) {
+        Ok(bytes) => bytes,
+        Err(source) => {
+            return format_error::fail(AdapterError::io(source, Some(input.display().to_string())));
+        }
+    };
+    convert_bytes_with_budgets(from, to, &input.display().to_string(), bytes, handlers_json, budgets)
+}
+
+fn read_source(from: &str, label: &str, bytes: Vec<u8>) -> Result<DocumentGraph> {
+    structure::enforce(from, label, &bytes)?;
+    match from {
+        "docx" => import_docx_bytes(label, &bytes).map_err(crate::format_error::map_format_error),
+        "doc" => import_doc_bytes(label, &bytes).map_err(crate::format_error::map_format_error),
+        "pdf" => import_pdf_bytes(label, &bytes).map_err(crate::format_error::map_format_error),
+        "epub" => import_epub_bytes(label, &bytes).map_err(crate::format_error::map_format_error),
+        "xlsx" => import_xlsx_graph_bytes(label, &bytes).map_err(crate::format_error::map_format_error),
+        "pptx" => import_pptx_graph_bytes(label, &bytes).map_err(crate::format_error::map_format_error),
+        "html" => import_html_bytes(label, &bytes).map_err(crate::format_error::map_format_error),
+        "markdown" => {
+            let text = match String::from_utf8(bytes) {
+                Ok(text) => text,
+                Err(error) => {
+                    return format_error::fail(AdapterError::invalid_input(format!(
+                        "markdown input is not valid UTF-8: {error}"
+                    )));
+                }
+            };
+            read_markdown_bytes(label, text)
+        }
+        "notedown" => {
+            let text = match String::from_utf8(bytes) {
+                Ok(text) => text,
+                Err(error) => {
+                    return format_error::fail(AdapterError::invalid_input(format!(
+                        "notedown input is not valid UTF-8: {error}"
+                    )));
+                }
+            };
+            read_notedown_bytes(label, text)
+        }
+        "tex" => {
+            let text = match String::from_utf8(bytes) {
+                Ok(text) => text,
+                Err(error) => {
+                    return format_error::fail(AdapterError::invalid_input(format!("tex input is not valid UTF-8: {error}")));
+                }
+            };
+            read_tex_bytes(label, text)
+        }
+        "typst" => {
+            let text = match String::from_utf8(bytes) {
+                Ok(text) => text,
+                Err(error) => {
+                    return format_error::fail(AdapterError::invalid_input(format!("typst input is not valid UTF-8: {error}")));
+                }
+            };
+            read_typst_bytes(label, text)
+        }
+        other => format_error::fail(AdapterError::unsupported_format(other, "read")),
+    }
+}
+
+fn write_target(
+    to: &str,
+    graph: &mut DocumentGraph,
+    body_set: Option<&Arc<BodyFaceSet>>,
+) -> Result<(String, Option<String>, Option<Vec<u8>>)> {
+    match to {
+        "markdown" => {
+            let markdown = write_document_markdown(graph)?;
+            Ok((markdown, None, None))
+        }
+        "docx" => {
+            let binary = write_document_docx(graph)?;
+            Ok((String::new(), None, Some(binary)))
+        }
+        "pdf" => {
+            let Some(body_set) = body_set
+            else {
+                return format_error::fail(crate::writers::missing_body_faces());
+            };
+            if graph.page_setup.is_some_and(|page| page.columns.is_some_and(|columns| columns > 1)) {
+                graph.push_loss(LossMarker {
+                    code: "export.pdf.columns_unsupported".into(),
+                    message: "the document declares multiple columns but the PDF writer lays text out in one column".into(),
+                    status: SemanticStatus::Partial,
+                });
+            }
+            let binary = write_document_pdf(graph, body_set)?;
+            Ok((String::new(), None, Some(binary)))
+        }
+        "html" => {
+            let diagrams = crate::diagram::render_diagrams(graph);
+            for (loss, span) in diagrams.losses.into_iter().zip(diagrams.loss_spans) {
+                graph.push_loss_at(loss, span);
+            }
+            let charts = crate::chart::render_charts(graph);
+            for (loss, span) in charts.losses.into_iter().zip(charts.loss_spans) {
+                graph.push_loss_at(loss, span);
+            }
+            let scores = crate::engraving::render_engravings(graph);
+            for (loss, span) in scores.losses.into_iter().zip(scores.loss_spans) {
+                graph.push_loss_at(loss, span);
+            }
+            let structures = crate::depiction::render_depictions(graph);
+            for (loss, span) in structures.losses.into_iter().zip(structures.loss_spans) {
+                graph.push_loss_at(loss, span);
+            }
+            let mut scenes = diagrams.scenes;
+            scenes.extend(charts.scenes);
+            scenes.extend(scores.scenes);
+            scenes.extend(structures.scenes);
+            let html = write_document_html(graph, &scenes)?;
+            Ok((String::new(), Some(html), None))
+        }
+        "epub" => {
+            let binary = write_document_epub(graph)?;
+            Ok((String::new(), None, Some(binary)))
+        }
+        other => format_error::fail(AdapterError::unsupported_format(other, "write")),
+    }
+}

@@ -1,0 +1,224 @@
+use std::path::Path;
+
+use acorn_core::{Budget, BudgetTracker};
+use acorn_epub::OcfPackage;
+use document_ir::{DocumentGraph, DocumentId, DocumentMetadata, LossMarker, SemanticStatus, SourceKind, SourceRef};
+
+use super::{
+    assets::{find_cover_manifest_item, hydrate_package_assets, register_cover_asset, register_stylesheet_assets},
+    map_ocf_error,
+    navigation::{find_nav_manifest_item, parse_nav_toc, push_navigation_toc},
+    xhtml::blocks_from_xhtml_with_context,
+};
+use crate::FormatError;
+
+/// Import an EPUB file from disk into `notedown-ir`.
+pub fn import_epub(path: impl AsRef<Path>) -> Result<DocumentGraph, FormatError> {
+    let path = path.as_ref();
+    let bytes = std::fs::read(path)
+        .map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
+    import_epub_bytes(&path.display().to_string(), &bytes)
+}
+
+/// Import EPUB bytes into `notedown-ir`.
+pub fn import_epub_bytes(label: &str, bytes: &[u8]) -> Result<DocumentGraph, FormatError> {
+    if !looks_like_zip(bytes) {
+        return Err(FormatError::invalid_input("input is not a ZIP-based EPUB package"));
+    }
+
+    let package = OcfPackage::open(label.to_string(), bytes.to_vec()).map_err(map_ocf_error)?;
+    let mut ledger = BudgetTracker::new(Budget::default());
+    let opf_xml = package.read_member(package.root_opf_path(), &mut ledger).map_err(map_ocf_error)?;
+    let opf =
+        acorn_epub::parse_opf_xml(package.root_opf_path(), &opf_xml).map_err(|error| FormatError::parse("epub", error))?;
+
+    let mut graph = DocumentGraph::new(document_id_for(label));
+    graph.metadata = DocumentMetadata {
+        title: opf.metadata.title.clone(),
+        language: opf.metadata.language.clone(),
+        authors: opf.metadata.creators.clone(),
+        tags: Vec::new(),
+        properties: Vec::new(),
+    };
+    let unmapped_metadata = unmapped_metadata_fields(&opf_xml);
+    if !unmapped_metadata.is_empty() {
+        graph.push_loss(LossMarker {
+            code: "import.epub.metadata_unmapped".into(),
+            message: format!(
+                "OPF metadata outside `title`, `language` and `creator` is not carried into `notedown-ir`: `{}`",
+                unmapped_metadata.join("`, `")
+            ),
+            status: SemanticStatus::Partial,
+        });
+    }
+
+    let nav_manifest_id = find_nav_manifest_item(&opf).map(|item| item.id.clone());
+    if let Some(cover_item) = find_cover_manifest_item(&opf) {
+        let member_path = OcfPackage::resolve_href(package.root_opf_path(), &cover_item.href);
+        register_cover_asset(&mut graph, &member_path, &cover_item.href);
+    }
+    register_stylesheet_assets(&mut graph, package.root_opf_path(), &opf);
+    if let Some(nav_item) = find_nav_manifest_item(&opf) {
+        let member_path = OcfPackage::resolve_href(package.root_opf_path(), &nav_item.href);
+        match package.read_member(&member_path, &mut ledger) {
+            Ok(nav_xhtml) => match parse_nav_toc(&nav_xhtml) {
+                Ok(entries) => {
+                    let node = push_navigation_toc(&mut graph, &entries);
+                    graph.attach_source(SourceRef {
+                        node,
+                        kind: SourceKind::PackageMember { path: member_path },
+                        precision: SemanticStatus::Partial,
+                    });
+                }
+                Err(error) => {
+                    graph.push_loss(LossMarker {
+                        code: "import.epub.navigation_unresolved".into(),
+                        message: error.to_string(),
+                        status: SemanticStatus::Unresolved,
+                    });
+                }
+            },
+            Err(error) => {
+                graph.push_loss(LossMarker {
+                    code: "import.epub.navigation_missing".into(),
+                    message: map_ocf_error(error).to_string(),
+                    status: SemanticStatus::Unresolved,
+                });
+            }
+        }
+    }
+
+    let mut imported_pages = 0usize;
+    for spine_item in &opf.spine {
+        if nav_manifest_id.as_deref() == Some(spine_item.idref.as_str()) {
+            continue;
+        }
+        let Some(manifest) = opf.manifest.get(&spine_item.idref)
+        else {
+            graph.push_loss(LossMarker {
+                code: "import.epub.spine_item_unresolved".into(),
+                message: format!("spine idref `{}` is missing from the manifest", spine_item.idref),
+                status: SemanticStatus::Unresolved,
+            });
+            continue;
+        };
+        if !manifest.media_type.contains("xhtml") && !manifest.media_type.contains("html") {
+            graph.push_loss(LossMarker {
+                code: "import.epub.unsupported_manifest_type".into(),
+                message: format!("skipped spine item `{}` with media type `{}`", manifest.id, manifest.media_type),
+                status: SemanticStatus::Unsupported,
+            });
+            continue;
+        }
+
+        let member_path = OcfPackage::resolve_href(package.root_opf_path(), &manifest.href);
+        let xhtml = match package.read_member(&member_path, &mut ledger) {
+            Ok(xhtml) => xhtml,
+            Err(error) => {
+                graph.push_loss(LossMarker {
+                    code: "import.epub.spine_member_missing".into(),
+                    message: format!("spine member `{member_path}` cannot be read: {}", map_ocf_error(error)),
+                    status: SemanticStatus::Unresolved,
+                });
+                continue;
+            }
+        };
+        let blocks = match blocks_from_xhtml_with_context(&xhtml, &mut graph, Some(member_path.as_str())) {
+            Ok(blocks) => blocks,
+            Err(error) => {
+                graph.push_loss(LossMarker {
+                    code: "import.epub.spine_member_unresolved".into(),
+                    message: format!("spine member `{member_path}` cannot be lowered: {error}"),
+                    status: SemanticStatus::Unresolved,
+                });
+                continue;
+            }
+        };
+        imported_pages += 1;
+        for block in blocks {
+            let node = graph.push_block(block);
+            graph.attach_source(SourceRef {
+                node,
+                kind: SourceKind::PackageMember { path: member_path.clone() },
+                precision: SemanticStatus::Partial,
+            });
+        }
+        for loss in super::xhtml::losses_from_xhtml(&xhtml)? {
+            graph.push_loss(loss);
+        }
+    }
+    if opf.spine.is_empty() {
+        graph.push_loss(LossMarker {
+            code: "import.epub.spine_empty".into(),
+            message: "the OPF package declares no spine items, so no reading order could be imported".into(),
+            status: SemanticStatus::Unresolved,
+        });
+    }
+    else if imported_pages == 0 {
+        graph.push_loss(LossMarker {
+            code: "import.epub.spine_empty".into(),
+            message: "no spine item produced readable content, so the reading order is empty".into(),
+            status: SemanticStatus::Unresolved,
+        });
+    }
+
+    hydrate_package_assets(&mut graph, &package, &mut ledger);
+
+    graph.push_loss(LossMarker {
+        code: "import.epub.partial_coverage".into(),
+        message: "EPUB import maps OPF metadata, EPUB3 navigation TOC, spine XHTML via oak-html with container unwrapping, blockquote, pre/code, hr, tables, nested lists, structural footnotes (`epub:type=\"noteref\"` references and `epub:type=\"footnote\"` asides with multi-paragraph definitions and flattened inline markup), embedded image assets, manifest CSS members, external SVG image references, and MathML formulas. Inline CSS semantics remain pending".into(),
+        status: SemanticStatus::Partial,
+    });
+    Ok(graph)
+}
+
+fn looks_like_zip(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"PK\x03\x04") || bytes.starts_with(b"PK\x05\x06")
+}
+
+/// Collect OPF metadata elements the IR does not model.
+///
+/// Acorn's `OpfMetadata` exposes only `title`, `language` and `creator`, so the
+/// reader reports the remaining elements by name instead of letting them
+/// disappear silently. A `<meta>` element is reported through its `property`
+/// or `name` attribute, which is how EPUB3 metadata such as
+/// `dcterms:modified` is written.
+fn unmapped_metadata_fields(opf_xml: &[u8]) -> Vec<String> {
+    let Ok(value) = acorn_epub::parse_xml_bytes(opf_xml)
+    else {
+        return Vec::new();
+    };
+    let Ok(root) = acorn_epub::document_root(&value)
+    else {
+        return Vec::new();
+    };
+    let Some(metadata) = acorn_epub::elements_by_local_name(root, "metadata").into_iter().next()
+    else {
+        return Vec::new();
+    };
+
+    let mut fields = Vec::new();
+    for child in metadata.children.iter().filter_map(|value| value.as_element()) {
+        let name = if acorn_epub::element_is(child, "meta") {
+            acorn_epub::attribute_value(child, "property")
+                .or_else(|| acorn_epub::attribute_value(child, "name"))
+                .unwrap_or_else(|| "meta".to_string())
+        }
+        else {
+            child.name.rsplit_once(':').map(|(_, local)| local).unwrap_or(&child.name).to_string()
+        };
+        if matches!(name.as_str(), "title" | "language" | "creator") || fields.contains(&name) {
+            continue;
+        }
+        fields.push(name);
+    }
+    fields
+}
+
+fn document_id_for(label: &str) -> DocumentId {
+    let mut hash = 1u64;
+    for byte in label.bytes() {
+        hash = hash.wrapping_mul(31).wrapping_add(u64::from(byte));
+    }
+    DocumentId(hash)
+}

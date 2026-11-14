@@ -1,0 +1,1866 @@
+//! PDF output: a minimal, dependency-free PDF 1.7 writer.
+//!
+//! The writer paints the same display primitives as the SVG backend.
+//! Text is normally painted from subsets of the bundled body faces in
+//! `document_fonts`, embedded as Identity-H `CIDFontType2` programs, so no
+//! reader or print pipeline can substitute a system face and reflow the page.
+//! Monospaced runs embed the bundled fixed-advance face rather than base-14
+//! `Courier`, so a code block keeps its grid in a self-contained file too.
+//! [`PdfFontPolicy::Discover`] and the file policies keep the older behaviour:
+//! WinAnsi text uses a base-14 face and only the characters the encoding cannot
+//! reach pull a system TrueType subset in.
+//! Coordinates arrive with the origin at the page top-left corner and are
+//! flipped to PDF's bottom-left origin by subtracting them from the page height.
+//!
+//! Image slots are raster XObjects when their source resolves to a PNG or
+//! JPEG. An SVG source instead paints as vector geometry from a parsed scene,
+//! so an icon keeps its curves at any resolution and registers no `/XObject`.
+//! Sources resolve through a caller-owned [`PdfResources`] context, so a
+//! page-level image slot and a scene image node share one decoder while the
+//! host decides where the bytes come from. A raster object is shared by every
+//! slot that names the same source, and an SVG is parsed once for the whole
+//! document. The raster picture paints upright with a `q … cm /ImN Do Q` block
+//! whose matrix reverses the image rows inside the y-flipped page. An absent,
+//! unresolvable, or unsupported source keeps the dashed placeholder.
+
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    fmt::Write as _,
+    path::PathBuf,
+    sync::Arc,
+};
+
+use document_compose::{Diagnostic, Severity, math::FontStyle};
+use document_fonts::{BodyFaceSet, BodyFaceStyle, BodyFamily, BodyMetrics};
+use document_presentation::display::{
+    DisplayGraphic, DisplayImage, DisplayItem, DisplayPage, DisplayPath, DisplayPresentation, DisplayRect, DisplayRule,
+    DisplayTextRun,
+};
+use document_renderer::is_safe_href;
+use plotter_scene::DisplayScene;
+
+use crate::{
+    font::{ChainKey, FontChain, Subset, SystemFont, provided_faces},
+    resources::PdfResources,
+};
+
+/// Base-14 fonts this backend can emit, in canonical resource order.
+///
+/// The table covers the three standard families in their regular, bold,
+/// italic, and bold-italic faces, so `/F1../Fn` stays stable no matter which
+/// styles a document uses.
+const BASE_FONTS: [&str; 12] = [
+    "Courier",
+    "Courier-Bold",
+    "Courier-BoldOblique",
+    "Courier-Oblique",
+    "Helvetica",
+    "Helvetica-Bold",
+    "Helvetica-BoldOblique",
+    "Helvetica-Oblique",
+    "Times-Roman",
+    "Times-Bold",
+    "Times-BoldItalic",
+    "Times-Italic",
+];
+
+/// Run extent above the baseline, as a fraction of the font size.
+///
+/// This mirrors the layout contract that places every baseline at
+/// `line top + 0.8 * size`, so a link rectangle covers the whole line box.
+const ASCENT: f64 = 0.8;
+/// Run extent below the baseline, as a fraction of the font size.
+///
+/// The base-14 faces have no embedded metrics here, so the descent is the
+/// stacked complement of [`ASCENT`] rather than a per-font value.
+const DESCENDER: f64 = 0.2;
+
+/// Result of a PDF render that succeeded, carrying both the PDF bytes and any
+/// warnings the pipeline emitted while producing them.
+#[derive(Debug)]
+pub struct PdfRenderOutcome {
+    /// Complete PDF 1.7 bytes ready to write.
+    pub pdf: Vec<u8>,
+    /// Warnings and info diagnostics the pipeline recorded while rendering.
+    ///
+    /// Only non-error diagnostics appear here; the first fatal error short-circuits
+    /// the render and returns from the function directly.
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+/// Where glyphs for PDF text come from.
+///
+/// There is no implicit font: a caller always states a policy, and
+/// `Provided` embeds the body faces the host handed over for every
+/// non-monospaced run, so the PDF never depends on a reader's installed fonts.
+/// `Discover` and both file variants build a fallback chain: the first font
+/// supplies the characters it covers and later fonts fill in the rest. For
+/// `Discover` the candidates are system faces with `glyf` outlines. For
+/// `File` and `Files` they are exactly the authored paths, in order.
+#[derive(Debug, Clone)]
+pub enum PdfFontPolicy {
+    /// Embed subsets of the body faces supplied by the caller.
+    ///
+    /// The set travels in an [`Arc`] so one host-owned pack can serve every
+    /// render call without copying megabytes of font bytes.
+    Provided(Arc<BodyFaceSet>),
+    /// Discover system TrueType fonts for characters WinAnsi cannot encode.
+    Discover,
+    /// Never embed a font; characters outside WinAnsi degrade to `?`.
+    Base14Only,
+    /// Embed subsets loaded from this font file.
+    File(PathBuf),
+    /// Embed subsets loaded from these font files, in fallback order.
+    ///
+    /// Every entry must be a readable `glyf` TrueType font, and together they
+    /// must cover the document; a character no entry covers is an error rather
+    /// than a silently dropped glyph or a `?`.
+    Files(Vec<PathBuf>),
+}
+
+/// PDF renderer with an explicit font policy.
+pub fn render_pdf_with_font_policy(presentation: &DisplayPresentation, policy: &PdfFontPolicy) -> Result<Vec<u8>, Diagnostic> {
+    render_pdf_with_resources(presentation, policy, &PdfResources::default())
+}
+
+/// PDF renderer with an explicit font policy and caller-owned image resources.
+///
+/// Sources resolve through `resources`, so a host can point relative paths at a
+/// base directory or hand over bytes it already fetched. The default context
+/// reproduces the behaviour of [`render_pdf_with_font_policy`].
+pub fn render_pdf_with_resources(
+    presentation: &DisplayPresentation,
+    policy: &PdfFontPolicy,
+    resources: &PdfResources,
+) -> Result<Vec<u8>, Diagnostic> {
+    render_pdf_with_resources_and_diagnostics(presentation, policy, resources).map(|outcome| outcome.pdf)
+}
+
+/// Like [`render_pdf_with_font_policy`] but returns the warnings the pipeline collected.
+pub fn render_pdf_with_font_policy_and_diagnostics(
+    presentation: &DisplayPresentation,
+    policy: &PdfFontPolicy,
+) -> Result<PdfRenderOutcome, Diagnostic> {
+    render_pdf_with_resources_and_diagnostics(presentation, policy, &PdfResources::default())
+}
+
+/// Like [`render_pdf_with_resources`] but returns the warnings the pipeline collected.
+pub fn render_pdf_with_resources_and_diagnostics(
+    presentation: &DisplayPresentation,
+    policy: &PdfFontPolicy,
+    resources: &PdfResources,
+) -> Result<PdfRenderOutcome, Diagnostic> {
+    let mut diagnostics = Vec::new();
+    let pdf = render_document(presentation, policy, resources, &mut diagnostics)?;
+    Ok(PdfRenderOutcome { pdf, diagnostics })
+}
+
+fn render_document(
+    presentation: &DisplayPresentation,
+    policy: &PdfFontPolicy,
+    resources: &PdfResources,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<Vec<u8>, Diagnostic> {
+    if presentation.pages.is_empty() {
+        return Err(Diagnostic {
+            code: "vutex.render.pdf.no_pages".into(),
+            severity: Severity::Error,
+            message: "PDF output needs at least one display page with page geometry".into(),
+            span: None,
+        });
+    }
+    let objects = build_objects(presentation, policy, resources, diagnostics)?;
+    Ok(assemble(&objects))
+}
+
+/// Whether a character has a byte in the WinAnsi encoding this writer emits.
+fn representable(ch: char) -> bool {
+    matches!(ch, ' '..='~') || (ch as u32) <= 0xFF || winansi_byte(ch).is_some()
+}
+
+/// Whether a text run needs glyphs beyond the base-14 fonts.
+pub(crate) fn needs_embedding(text: &str) -> bool {
+    text.chars().any(|ch| !representable(ch))
+}
+
+/// Base-14 face a scene text style asks for.
+pub(crate) fn scene_font_style(weight: Option<u16>) -> FontStyle {
+    match weight {
+        Some(weight) if weight >= 600 => FontStyle::Bold,
+        _ => FontStyle::Normal,
+    }
+}
+
+/// Face style a body run asks for.
+///
+/// Only upright, bold, and italic have bundled faces. Math-only and decorative
+/// styles never reach the page as text (math paints as outlines), and a
+/// `Monospace` style only names the family, which is handled separately.
+pub(crate) fn body_style(style: FontStyle) -> BodyFaceStyle {
+    document_fonts::body_style(style)
+}
+
+/// Family and style a text run asks the chain for.
+///
+/// A declared name that matches a registered [`Named`](BodyFamily::Named) face
+/// of `metrics` keeps its own family key, so the embedded subset and the layout
+/// measurement come from the same face. Without that match the old fold stays:
+/// monospaced names select the code face and every other name the prose face,
+/// because the bundled set carries one reading face per script rather than one
+/// per declared family name.
+pub(crate) fn chain_key(family: &str, style: FontStyle, metrics: Option<&BodyMetrics>) -> ChainKey {
+    metrics.and_then(|metrics| metrics.key_for_name(family, style)).unwrap_or_else(|| ChainKey {
+        family: if family.to_ascii_lowercase().contains("mono") { BodyFamily::Mono } else { BodyFamily::Serif },
+        style: body_style(style),
+    })
+}
+
+/// Whether one text run paints through the embedded font chain.
+///
+/// `body` is set by [`PdfFontPolicy::Provided`], where every run embeds, because
+/// a printed page must not depend on the reader shipping any face. The other
+/// policies only embed where WinAnsi cannot reach the text.
+fn embeds_run(body: bool, text: &str) -> bool {
+    body || needs_embedding(text)
+}
+
+/// Characters painted with the embedded font, per requested family and style.
+fn embedded_charsets(
+    presentation: &DisplayPresentation,
+    body: bool,
+    metrics: Option<&BodyMetrics>,
+) -> BTreeMap<ChainKey, BTreeSet<char>> {
+    let mut charsets: BTreeMap<ChainKey, BTreeSet<char>> = BTreeMap::new();
+    let mut add = |family: &str, style: FontStyle, text: &str| {
+        if !embeds_run(body, text) {
+            return;
+        }
+        charsets.entry(chain_key(family, style, metrics)).or_default().extend(text.chars());
+    };
+    for page in &presentation.pages {
+        for item in &page.items {
+            match item {
+                DisplayItem::TextRun(run) => add(&run.font_family, run.style, &run.text),
+                DisplayItem::Graphic(graphic) => {
+                    crate::scene::visit_texts(&graphic.scene, &mut |style, text| {
+                        add(style.font_family.as_deref().unwrap_or(""), scene_font_style(style.font_weight), text);
+                    });
+                }
+                _ => {}
+            }
+        }
+    }
+    charsets
+}
+
+/// Every character an embedded chain must cover, in code point order.
+fn flat_charset(charsets: &BTreeMap<ChainKey, BTreeSet<char>>) -> BTreeSet<char> {
+    charsets.values().flat_map(|chars| chars.iter().copied()).collect()
+}
+
+/// Load and subset the fonts a document needs, when its policy allows it.
+///
+/// `Base14Only` deliberately keeps its degraded `?` output and `Ok(None)`. Any
+/// other policy that cannot provide a glyph for every character returns a
+/// diagnostic instead of silently dropping text or substituting `?`. Fonts that
+/// cannot be read are reported, but a discovered candidate that is merely
+/// absent contributes nothing rather than failing the document.
+///
+/// `metrics` are the parsed faces of a [`PdfFontPolicy::Provided`] pack, when
+/// the policy carries them, so a declared name that matches a registered face
+/// selects that face's chain key instead of folding onto the prose one.
+///
+/// Non-fatal diagnostics (warnings) are appended to `diagnostics`.
+fn load_chain(
+    presentation: &DisplayPresentation,
+    policy: &PdfFontPolicy,
+    metrics: Option<&BodyMetrics>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<Option<FontChain>, Diagnostic> {
+    let body = matches!(policy, PdfFontPolicy::Provided(_));
+    let charsets = embedded_charsets(presentation, body, metrics);
+    let charset = flat_charset(&charsets);
+    if charset.is_empty() {
+        return Ok(None);
+    }
+    let faces = match policy {
+        PdfFontPolicy::Base14Only => {
+            append_warning(
+                Some(diagnostics),
+                "vutex.render.pdf.font_unavailable",
+                format!(
+                    "PdfFontPolicy::Base14Only degrades {} characters to '?' because the WinAnsi encoding cannot represent them; switch to Provided or provide explicit font files to embed glyphs",
+                    charset.len()
+                ),
+            );
+            return Ok(None);
+        }
+        PdfFontPolicy::Provided(set) => provided_faces(set),
+        PdfFontPolicy::Discover => discover_fonts_with_warnings(&charset, diagnostics)
+            .into_iter()
+            .map(|font| (font, BodyFamily::Serif, BodyFaceStyle::Regular))
+            .collect(),
+        PdfFontPolicy::File(path) => vec![(load_font_file(path)?, BodyFamily::Serif, BodyFaceStyle::Regular)],
+        PdfFontPolicy::Files(paths) => {
+            if paths.is_empty() {
+                return Err(Diagnostic {
+                    code: "vutex.render.pdf.font_unavailable".into(),
+                    severity: Severity::Error,
+                    message: "the explicit font file list is empty".into(),
+                    span: None,
+                });
+            }
+            paths
+                .iter()
+                .map(|path| load_font_file(path).map(|font| (font, BodyFamily::Serif, BodyFaceStyle::Regular)))
+                .collect::<Result<Vec<_>, _>>()?
+        }
+    };
+    if faces.is_empty() {
+        return Err(Diagnostic {
+            code: "vutex.render.pdf.font_unavailable".into(),
+            severity: Severity::Error,
+            message: "no glyf TrueType font was found for the document charset".into(),
+            span: None,
+        });
+    }
+    let chain = FontChain::build(&faces, &charsets);
+    let missing = chain.missing(&charsets);
+    if !missing.is_empty() {
+        return Err(Diagnostic {
+            code: "vutex.render.pdf.glyph_missing".into(),
+            severity: Severity::Error,
+            message: format!("the embedded font chain has no glyph for {}", codepoints(&missing)),
+            span: None,
+        });
+    }
+    Ok(Some(chain))
+}
+
+/// Discover system fonts for `charset`, appending a warning for each candidate
+/// path that could not be read as a `glyf` TrueType file.
+fn discover_fonts_with_warnings(charset: &BTreeSet<char>, diagnostics: &mut Vec<Diagnostic>) -> Vec<SystemFont> {
+    let mut remaining = charset.clone();
+    let mut fonts = Vec::new();
+    for path in crate::font::CANDIDATES {
+        if remaining.is_empty() {
+            break;
+        }
+        match SystemFont::load(std::path::Path::new(path)) {
+            Some(font) => {
+                let covered: BTreeSet<char> = remaining.iter().copied().filter(|ch| font.glyph_id(*ch).is_some()).collect();
+                if covered.is_empty() {
+                    continue;
+                }
+                remaining.retain(|ch| !covered.contains(ch));
+                fonts.push(font);
+            }
+            None => {
+                // A path that does not exist on this platform (e.g. Windows
+                // paths on macOS) is normal and produces no warning. Only a
+                // file that *does* exist but fails to parse is a real problem.
+                if std::path::Path::new(path).exists() {
+                    append_warning(
+                        Some(diagnostics),
+                        "vutex.render.pdf.font_unavailable",
+                        format!("system font candidate {} could not be loaded as a glyf TrueType font", path),
+                    );
+                }
+            }
+        }
+    }
+    fonts
+}
+
+/// Append one warning diagnostic to `diagnostics`.
+///
+/// A `None` sink is silently ignored, so callers can thread diagnostics through
+/// optional contexts without branching at every site.
+pub(crate) fn append_warning(diagnostics: Option<&mut Vec<Diagnostic>>, code: &str, message: String) {
+    if let Some(list) = diagnostics {
+        list.push(Diagnostic { code: code.to_string(), severity: Severity::Warning, message, span: None });
+    }
+}
+
+/// Load one explicitly authored font file, or report why it cannot be used.
+fn load_font_file(path: &PathBuf) -> Result<SystemFont, Diagnostic> {
+    SystemFont::load(path).ok_or_else(|| Diagnostic {
+        code: "vutex.render.pdf.font_unavailable".into(),
+        severity: Severity::Error,
+        message: format!("font file {} is not a readable glyf TrueType font", path.display()),
+        span: None,
+    })
+}
+
+/// Code points in `chars`, as `U+XXXX` tokens, for a diagnostic message.
+fn codepoints(chars: &[char]) -> String {
+    const LIMIT: usize = 16;
+    let mut tokens: Vec<String> = chars.iter().take(LIMIT).map(|ch| format!("U+{:04X}", *ch as u32)).collect();
+    if chars.len() > LIMIT {
+        tokens.push(format!("and {} more", chars.len() - LIMIT));
+    }
+    tokens.join(" ")
+}
+
+/// Distinct scene alphas below full opacity, in ascending order.
+///
+/// The list drives one `/ExtGState` object per value, so scenes that share an
+/// opacity share a single dictionary and resource name.
+fn scene_opacities(presentation: &DisplayPresentation) -> Vec<f64> {
+    let mut alphas: Vec<f64> = Vec::new();
+    for page in &presentation.pages {
+        for item in &page.items {
+            let DisplayItem::Graphic(graphic) = item
+            else {
+                continue;
+            };
+            crate::scene::visit_opacities(&graphic.scene, &mut |alpha| {
+                if !alphas.contains(&alpha) {
+                    alphas.push(alpha);
+                }
+            });
+        }
+    }
+    alphas.sort_by(f64::total_cmp);
+    alphas
+}
+
+/// Base-14 font for a display font family and face style.
+///
+/// Families resolve by substring, so CSS stacks such as `sans-serif` keep
+/// working; a style the base-14 set cannot express (math and plain sans/mono
+/// labels) falls back to the family's regular face.
+pub(crate) fn base_font_for(family: &str, style: FontStyle) -> &'static str {
+    let lower = family.to_ascii_lowercase();
+    if lower.contains("mono") {
+        match style {
+            FontStyle::Bold => "Courier-Bold",
+            FontStyle::Italic => "Courier-Oblique",
+            _ => "Courier",
+        }
+    }
+    else if lower.contains("sans") {
+        match style {
+            FontStyle::Bold => "Helvetica-Bold",
+            FontStyle::Italic => "Helvetica-Oblique",
+            _ => "Helvetica",
+        }
+    }
+    else {
+        match style {
+            FontStyle::Bold => "Times-Bold",
+            FontStyle::Italic => "Times-Italic",
+            _ => "Times-Roman",
+        }
+    }
+}
+
+/// Distinct base-14 fonts referenced by text runs, in canonical order.
+///
+/// Runs painted with the embedded font need no base-14 entry, but they do when
+/// the policy disabled embedding, when no font was found, or when the run keeps
+/// a monospaced base face.
+fn used_fonts(presentation: &DisplayPresentation, embed_available: bool, body: bool) -> Vec<&'static str> {
+    let mut used: Vec<&'static str> = Vec::new();
+    fn add(used: &mut Vec<&'static str>, base: &'static str) {
+        if !used.contains(&base) {
+            used.push(base);
+        }
+    }
+    for page in &presentation.pages {
+        for item in &page.items {
+            match item {
+                DisplayItem::TextRun(run) => {
+                    if embed_available && embeds_run(body, &run.text) {
+                        continue;
+                    }
+                    add(&mut used, base_font_for(&run.font_family, run.style));
+                }
+                DisplayItem::Graphic(graphic) => {
+                    crate::scene::visit_texts(&graphic.scene, &mut |style, text| {
+                        let family = style.font_family.as_deref().unwrap_or("");
+                        if embed_available && embeds_run(body, text) {
+                            return;
+                        }
+                        add(&mut used, base_font_for(family, scene_font_style(style.font_weight)));
+                    });
+                }
+                _ => {}
+            }
+        }
+    }
+    BASE_FONTS.iter().copied().filter(|base| used.contains(base)).collect()
+}
+
+/// What a link annotation points at.
+#[derive(Debug, Clone, PartialEq)]
+enum LinkTarget {
+    /// External destination written into a `/URI` action.
+    Uri(String),
+    /// In-document destination: the page object and the top edge to jump to.
+    Destination {
+        /// Zero-based page index, resolved to its page object number.
+        page: usize,
+        /// Top edge in PDF user space.
+        y: f64,
+    },
+}
+
+/// A link annotation produced by one safe text-run destination.
+#[derive(Debug, Clone, PartialEq)]
+struct LinkAnnotation {
+    /// Lower-left x, in PDF user space.
+    x1: f64,
+    /// Lower-left y, in PDF user space.
+    y1: f64,
+    /// Upper-right x, in PDF user space.
+    x2: f64,
+    /// Upper-right y, in PDF user space.
+    y2: f64,
+    /// Destination the annotation jumps to.
+    target: LinkTarget,
+    /// Hover text written into `/Contents`, when the run carried a title.
+    title: Option<String>,
+}
+
+/// One indirect object: a dictionary whose body is text, or a stream with bytes.
+#[derive(Debug)]
+enum PdfObject {
+    /// A dictionary or array serialized as ASCII.
+    Text(String),
+    /// A dictionary plus a `/Length`-prefixed binary stream body.
+    Stream { dict: String, data: Vec<u8> },
+}
+
+impl PdfObject {
+    /// Dictionary of a stream object, without its `/Length` entry.
+    fn stream(dict: String, data: Vec<u8>) -> Self {
+        Self::Stream { dict, data }
+    }
+}
+
+/// Embedded font programs shared by every page, plus their resource range.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct EmbeddedText<'a> {
+    /// Subsets in fallback order, carrying the `char` to CID mappings.
+    pub(crate) chain: &'a FontChain,
+    /// One-based `/F` resource index of the chain's first subset.
+    ///
+    /// Subset `i` is registered as `/F{first_index + i}`, so a character's
+    /// subset index turns straight into the resource a content stream selects.
+    pub(crate) first_index: usize,
+    /// `true` when the policy embeds body text even where WinAnsi would do.
+    pub(crate) body: bool,
+    /// Metrics of the host-supplied faces, when the policy provided them.
+    pub(crate) metrics: Option<&'a BodyMetrics>,
+}
+
+impl EmbeddedText<'_> {
+    /// Whether one run paints through this chain; see [`embeds_run`].
+    pub(crate) fn embeds(&self, text: &str) -> bool {
+        embeds_run(self.body, text)
+    }
+
+    /// `/F` resource index and CID that paint one character.
+    pub(crate) fn glyph(&self, ch: char, family: &str, style: FontStyle) -> Option<(usize, u16)> {
+        let key = if self.body {
+            chain_key(family, style, self.metrics)
+        }
+        else {
+            ChainKey { family: BodyFamily::Serif, style: BodyFaceStyle::Regular }
+        };
+        self.chain.glyph(ch, key).map(|(subset, cid)| (self.first_index + subset, cid))
+    }
+}
+
+/// `/ExtGState` resources for the distinct scene alphas a document paints.
+///
+/// One object serves every page, so a scene value that recurs across pages
+/// still costs a single dictionary and a single resource name.
+#[derive(Debug, Default)]
+pub(crate) struct OpacityResources {
+    /// Resource name and alpha, in ascending alpha order.
+    entries: Vec<(String, f64)>,
+}
+
+impl OpacityResources {
+    /// Resource name selecting the graphics state for an alpha.
+    ///
+    /// The collector visits the same scene tree with the same arithmetic as the
+    /// painter, so only exact matches occur and a missing name means the node
+    /// paints fully opaque.
+    pub(crate) fn name(&self, alpha: f64) -> Option<&str> {
+        self.entries.iter().find(|(_, value)| *value == alpha).map(|(name, _)| name.as_str())
+    }
+}
+
+/// Image sources resolved once for the whole document.
+///
+/// A raster source maps to its `/ImN` resource name, while an SVG source keeps
+/// the parsed scene so the content stream can paint vector geometry. Both
+/// tables are keyed by the exact source string, so a source used twice is
+/// decoded or parsed once.
+#[derive(Debug, Default)]
+pub(crate) struct ImageResources {
+    /// `/ImN` resource name per raster source.
+    rasters: BTreeMap<String, String>,
+    /// Parsed scene per SVG source.
+    scenes: BTreeMap<String, DisplayScene>,
+}
+
+impl ImageResources {
+    /// `/ImN` name of a resolved raster, when the source was a PNG or JPEG.
+    pub(crate) fn raster(&self, source: &str) -> Option<&str> {
+        self.rasters.get(source).map(String::as_str)
+    }
+
+    /// Parsed scene of a resolved SVG source.
+    pub(crate) fn scene(&self, source: &str) -> Option<&DisplayScene> {
+        self.scenes.get(source)
+    }
+
+    /// Whether a source was already decoded or parsed.
+    fn contains(&self, source: &str) -> bool {
+        self.rasters.contains_key(source) || self.scenes.contains_key(source)
+    }
+}
+
+/// Object streams in object-number order; index `i` is object `i + 1`.
+fn build_objects(
+    presentation: &DisplayPresentation,
+    policy: &PdfFontPolicy,
+    sources: &PdfResources,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<Vec<PdfObject>, Diagnostic> {
+    let metrics = match policy {
+        PdfFontPolicy::Provided(set) => Some(BodyMetrics::from_set(set)),
+        _ => None,
+    };
+    let chain = load_chain(presentation, policy, metrics.as_ref(), diagnostics)?;
+    let body = matches!(policy, PdfFontPolicy::Provided(_));
+    let fonts = used_fonts(presentation, chain.is_some(), body);
+    let page_count = presentation.pages.len();
+
+    let mut document = Document::default();
+    document.push(PdfObject::Text(catalog_object()));
+    document.push(PdfObject::Text(pages_object(page_count)));
+    // Pages and their content come first so the page tree keeps object numbers
+    // that do not shift when a document gains shared resources.
+    let mut page_numbers = Vec::with_capacity(page_count);
+    let mut content_numbers = Vec::with_capacity(page_count);
+    for _ in 0..page_count {
+        page_numbers.push(document.push(PdfObject::Text(String::new())));
+        content_numbers.push(document.push(PdfObject::Text(String::new())));
+    }
+
+    // Named destinations are page and top-edge pairs. Anchors arrive in page
+    // coordinates with the origin at the page top, so they are flipped here
+    // exactly like painted primitives.
+    let destinations: HashMap<String, (usize, f64)> = presentation
+        .pages
+        .iter()
+        .enumerate()
+        .flat_map(|(index, page)| {
+            page.anchors.iter().map(move |anchor| {
+                (anchor.name.clone(), (index, (page.height - anchor.y).clamp(0.0, page.height)))
+            })
+        })
+        .collect();
+    let page_links: Vec<Vec<LinkAnnotation>> =
+        presentation.pages.iter().map(|page| page_links(page, &destinations)).collect();
+
+    let mut page_resources = PageResources::default();
+    let mut font_objects: Vec<(&'static str, usize)> = Vec::with_capacity(fonts.len());
+    for (index, base) in fonts.iter().enumerate() {
+        let object = document.push(PdfObject::Text(font_object(base)));
+        page_resources.insert("Font", &format!("F{}", index + 1), object);
+        font_objects.push((*base, object));
+    }
+    let embedded_first = fonts.len() + 1;
+    let mut embedded = None;
+    if let Some(chain) = &chain {
+        for (index, subset) in chain.subsets().iter().enumerate() {
+            let first = document.next_number();
+            page_resources.insert("Font", &format!("F{}", embedded_first + index), first);
+            push_embedded_font_objects(&mut document, subset, first, &embedded_name(index, subset));
+        }
+        embedded = Some(EmbeddedText { chain, first_index: embedded_first, body, metrics: metrics.as_ref() });
+    }
+
+    let mut opacities = OpacityResources::default();
+    for (index, alpha) in scene_opacities(presentation).into_iter().enumerate() {
+        let name = format!("GS{}", index + 1);
+        let object = document.push(PdfObject::Text(ext_gstate_object(alpha)));
+        page_resources.insert("ExtGState", &name, object);
+        opacities.entries.push((name, alpha));
+    }
+
+    let annotation_numbers = push_link_annotations(&mut document, &page_links, &page_numbers);
+    let images = register_images(presentation, &mut document, sources, &mut page_resources);
+
+    for (index, page) in presentation.pages.iter().enumerate() {
+        let content = page_content(page, &font_objects, embedded, &opacities, &images, diagnostics);
+        document.replace(content_numbers[index], content_object(&content));
+        document.replace(
+            page_numbers[index],
+            PdfObject::Text(page_object(page, &page_resources.dict(), content_numbers[index], &annotation_numbers[index])),
+        );
+    }
+    Ok(document.finish())
+}
+
+/// Resolve every image one presentation references, once per distinct source.
+///
+/// Raster sources become `/ImN` XObjects and SVG sources become parsed scenes.
+/// Both page-level image slots and scene image nodes contribute, so the whole
+/// document shares one raster object per distinct source and parses each SVG
+/// once. Sources resolve through the caller's [`PdfResources`]. A transparent
+/// raster contributes a pair: its `/DeviceGray` soft mask is appended first and
+/// the colour image that references it as `/SMask` receives the `/ImN` name. A
+/// reference that cannot be resolved is left out, so painting falls back to the
+/// dashed slot.
+fn register_images(
+    presentation: &DisplayPresentation,
+    document: &mut Document,
+    sources: &PdfResources,
+    page_resources: &mut PageResources,
+) -> ImageResources {
+    let mut images = ImageResources::default();
+    for page in &presentation.pages {
+        for item in &page.items {
+            match item {
+                DisplayItem::Image(image) => {
+                    if let Some(source) = &image.source {
+                        register_image(source, None, document, sources, page_resources, &mut images);
+                    }
+                }
+                DisplayItem::Graphic(graphic) => {
+                    crate::scene::visit_images(&graphic.scene, &mut |resource| {
+                        register_image(
+                            &resource.href,
+                            resource.mime.as_deref(),
+                            document,
+                            sources,
+                            page_resources,
+                            &mut images,
+                        );
+                    });
+                }
+                _ => {}
+            }
+        }
+    }
+    images
+}
+
+/// Resolve one source unless an earlier slot already handled it.
+///
+/// An SVG becomes vector geometry and registers nothing in `/XObject`; anything
+/// else goes through the raster decoder, and a payload that is neither PNG nor
+/// JPEG leaves the source unresolved.
+fn register_image(
+    source: &str,
+    mime: Option<&str>,
+    document: &mut Document,
+    sources: &PdfResources,
+    page_resources: &mut PageResources,
+    images: &mut ImageResources,
+) {
+    if images.contains(source) {
+        return;
+    }
+    if let Some(scene) = sources.load_svg(source, mime) {
+        images.scenes.insert(source.to_string(), scene);
+        return;
+    }
+    let Some(raster) = sources.load(source)
+    else {
+        return;
+    };
+    let smask = raster.smask().map(|(dict, alpha)| document.push(PdfObject::stream(dict, alpha.to_vec())));
+    let object = document.push(PdfObject::stream(raster.dict(smask), raster.data));
+    let name = format!("Im{}", images.rasters.len() + 1);
+    page_resources.insert("XObject", &name, object);
+    images.rasters.insert(source.to_string(), name);
+}
+
+/// Append every link annotation and report their numbers in paint order.
+fn push_link_annotations(
+    document: &mut Document,
+    page_links: &[Vec<LinkAnnotation>],
+    page_numbers: &[usize],
+) -> Vec<Vec<usize>> {
+    let mut numbers = Vec::with_capacity(page_links.len());
+    for links in page_links {
+        numbers.push(
+            links
+                .iter()
+                .map(|link| document.push(PdfObject::Text(annotation_object(link, page_numbers))))
+                .collect(),
+        );
+    }
+    numbers
+}
+
+/// Indirect objects in append order; object number `n` is `objects[n - 1]`.
+#[derive(Debug, Default)]
+struct Document {
+    objects: Vec<PdfObject>,
+}
+
+impl Document {
+    /// Append an object and return its one-based object number.
+    fn push(&mut self, object: PdfObject) -> usize {
+        self.objects.push(object);
+        self.objects.len()
+    }
+
+    /// Number the next appended object receives.
+    fn next_number(&self) -> usize {
+        self.objects.len() + 1
+    }
+
+    /// Replace the object stored at a one-based object number.
+    fn replace(&mut self, number: usize, object: PdfObject) {
+        if let Some(slot) = self.objects.get_mut(number.saturating_sub(1)) {
+            *slot = object;
+        }
+    }
+
+    /// Objects in object-number order.
+    fn finish(self) -> Vec<PdfObject> {
+        self.objects
+    }
+}
+
+/// One category of a page `/Resources` dictionary, such as `Font` or `ExtGState`.
+#[derive(Debug)]
+struct ResourceGroup {
+    /// PDF resource category written as the dictionary key.
+    category: &'static str,
+    /// Resource name and object number, in insertion order.
+    entries: Vec<(String, usize)>,
+}
+
+/// Named resources shared by every page.
+#[derive(Debug, Default)]
+struct PageResources {
+    /// Resource categories in first-insertion order.
+    groups: Vec<ResourceGroup>,
+}
+
+impl PageResources {
+    /// Register one named resource under a category.
+    ///
+    /// `name` is the PDF name without its leading slash, so content streams can
+    /// select it as `/Name`.
+    fn insert(&mut self, category: &'static str, name: &str, object: usize) {
+        if !self.groups.iter().any(|group| group.category == category) {
+            self.groups.push(ResourceGroup { category, entries: Vec::new() });
+        }
+        if let Some(group) = self.groups.iter_mut().find(|group| group.category == category) {
+            group.entries.push((name.to_string(), object));
+        }
+    }
+
+    /// The `/Resources` dictionary body.
+    fn dict(&self) -> String {
+        let groups: Vec<String> = self
+            .groups
+            .iter()
+            .filter(|group| !group.entries.is_empty())
+            .map(|group| {
+                let entries: Vec<String> = group.entries.iter().map(|(name, object)| format!("/{name} {object} 0 R")).collect();
+                format!("/{} << {} >>", group.category, entries.join(" "))
+            })
+            .collect();
+        if groups.is_empty() { "<< >>".to_string() } else { format!("<< {} >>", groups.join(" ")) }
+    }
+}
+
+/// Append the five objects of one embedded font program, in object order.
+///
+/// The order is fixed by [`build_objects`]: Type0 font, CIDFont, font
+/// descriptor, `FontFile2` stream, then the `ToUnicode` stream.
+fn push_embedded_font_objects(document: &mut Document, subset: &Subset, first: usize, name: &str) {
+    document.push(PdfObject::Text(type0_font_object(name, first + 1, first + 4)));
+    document.push(PdfObject::Text(cid_font_object(name, first + 2, subset)));
+    document.push(PdfObject::Text(font_descriptor_object(name, first + 3, subset)));
+    document.push(PdfObject::stream(format!("<< /Length1 {} >>", subset.data.len()), subset.data.clone()));
+    document.push(PdfObject::stream(String::new(), to_unicode_cmap(subset)));
+}
+
+/// `/BaseFont` name of one embedded subset.
+///
+/// The six-letter prefix marks the program as a subset, as the PDF spec asks,
+/// and its position in the fallback chain keeps every program distinct. The
+/// remaining part is the source face's PostScript name, so a font list in a
+/// reader or a print pipeline names the real family instead of a placeholder.
+fn embedded_name(index: usize, subset: &Subset) -> String {
+    let mut tag = *b"AAAAAA";
+    let mut value = index;
+    for slot in tag.iter_mut().rev() {
+        *slot = b'A' + (value % 26) as u8;
+        value /= 26;
+    }
+    format!("{}+{}", String::from_utf8(tag.to_vec()).expect("subset tags are ascii"), subset.name)
+}
+
+/// Link annotations for every resolvable destination on one page, in paint
+/// order.
+///
+/// The rectangle is the run's glyph box: the baseline sits at `page_height -
+/// y`, the top at `0.8 * size` above it, and the bottom at `0.2 * size` below
+/// it. Boxes are clipped to the page MediaBox so a run that overflows the page
+/// never produces an annotation outside it.
+///
+/// A run carries either an internal anchor or an external URI. A fragment URI
+/// such as `#intro` names a display anchor, so it becomes a page jump instead of
+/// a URI action that points at a non-existent external resource. A destination
+/// no anchor satisfies is dropped while the text stays painted.
+fn page_links(page: &DisplayPage, destinations: &HashMap<String, (usize, f64)>) -> Vec<LinkAnnotation> {
+    let mut links = Vec::new();
+    for item in &page.items {
+        let DisplayItem::TextRun(run) = item
+        else {
+            continue;
+        };
+        let target = if let Some(anchor) = &run.anchor {
+            destination_for(anchor, destinations)
+        }
+        else if let Some(href) = run.href.as_deref() {
+            match href.strip_prefix('#') {
+                Some(fragment) => destination_for(fragment, destinations),
+                None if is_safe_href(href) => Some(LinkTarget::Uri(href.to_string())),
+                None => None,
+            }
+        }
+        else {
+            None
+        };
+        let Some(target) = target
+        else {
+            continue;
+        };
+        if !all_finite(&[run.x, run.y, run.size, run.width]) {
+            continue;
+        }
+        let x1 = run.x.clamp(0.0, page.width);
+        let x2 = (run.x + run.width).clamp(0.0, page.width);
+        let y1 = (page.height - (run.y + DESCENDER * run.size)).clamp(0.0, page.height);
+        let y2 = (page.height - (run.y - ASCENT * run.size)).clamp(0.0, page.height);
+        if x2 <= x1 || y2 <= y1 {
+            continue;
+        }
+        links.push(LinkAnnotation { x1, y1, x2, y2, target, title: run.title.clone() });
+    }
+    links
+}
+
+/// Resolve one anchor name to a page-jump target.
+fn destination_for(anchor: &str, destinations: &HashMap<String, (usize, f64)>) -> Option<LinkTarget> {
+    destinations.get(anchor).map(|(page, y)| LinkTarget::Destination { page: *page, y: *y })
+}
+
+fn catalog_object() -> String {
+    "<< /Type /Catalog /Pages 2 0 R >>".to_string()
+}
+
+fn pages_object(page_count: usize) -> String {
+    let kids: Vec<String> = (0..page_count).map(|index| format!("{} 0 R", 3 + 2 * index)).collect();
+    format!("<< /Type /Pages /Kids [{}] /Count {page_count} >>", kids.join(" "))
+}
+
+fn page_object(page: &DisplayPage, resources: &str, content_number: usize, annotations: &[usize]) -> String {
+    let mut object = format!(
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {} {}] /Resources {resources} /Contents {content_number} 0 R",
+        num(page.width),
+        num(page.height),
+    );
+    if !annotations.is_empty() {
+        let references: Vec<String> = annotations.iter().map(|number| format!("{number} 0 R")).collect();
+        let _ = write!(object, " /Annots [{}]", references.join(" "));
+    }
+    object.push_str(" >>");
+    object
+}
+
+/// Link annotation: a URI action or an in-document destination over the run's
+/// glyph rectangle, carrying the authored hover text as `/Contents` when the run
+/// had one.
+fn annotation_object(link: &LinkAnnotation, page_numbers: &[usize]) -> String {
+    let mut object = format!(
+        "<< /Type /Annot /Subtype /Link /Rect [{} {} {} {}] /Border [0 0 0]",
+        num(link.x1),
+        num(link.y1),
+        num(link.x2),
+        num(link.y2),
+    );
+    match &link.target {
+        LinkTarget::Uri(uri) => {
+            // Same literal-string escaping as text, so a destination containing
+            // parentheses or backslashes cannot break the dictionary syntax.
+            let _ = write!(object, " /A << /S /URI /URI ({}) >>", escape_text(uri, None));
+        }
+        LinkTarget::Destination { page, y } => {
+            // `/XYZ left top zoom`: keep the horizontal offset and the reader's
+            // current zoom, and jump to the destination's top edge.
+            let number = page_numbers.get(*page).copied().unwrap_or(1);
+            let _ = write!(object, " /Dest [{number} 0 R /XYZ 0 {} 0]", num(*y));
+        }
+    };
+    if let Some(title) = &link.title {
+        let _ = write!(object, " /Contents ({})", escape_text(title, None));
+    }
+    object.push_str(" >>");
+    object
+}
+
+fn font_object(base: &str) -> String {
+    format!("<< /Type /Font /Subtype /Type1 /BaseFont /{base} /Encoding /WinAnsiEncoding >>")
+}
+
+/// Type0 font that selects the embedded CID program with `Identity-H`.
+///
+/// With an identity CMap the CID of a glyph equals its glyph id, so the
+/// content stream can address subset glyphs by number.
+fn type0_font_object(name: &str, cid_object: usize, to_unicode_object: usize) -> String {
+    format!(
+        "<< /Type /Font /Subtype /Type0 /BaseFont /{name} /Encoding /Identity-H \
+         /DescendantFonts [{cid_object} 0 R] /ToUnicode {to_unicode_object} 0 R >>"
+    )
+}
+
+fn cid_font_object(name: &str, descriptor_object: usize, subset: &Subset) -> String {
+    // Readers keep `/W` in an integer glyph space, so the table carries the
+    // rounded advance and `paint_text` corrects the remainder in `TJ`.
+    let widths: Vec<String> = subset.widths.iter().map(|(cid, width)| format!("{cid} [{}]", num_real(width.round()))).collect();
+    format!(
+        "<< /Type /Font /Subtype /CIDFontType2 /BaseFont /{name} \
+         /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> \
+         /FontDescriptor {descriptor_object} 0 R /CIDToGIDMap /Identity /DW 1000 /W [{}] >>",
+        widths.join(" ")
+    )
+}
+
+fn font_descriptor_object(name: &str, font_file_object: usize, subset: &Subset) -> String {
+    format!(
+        "<< /Type /FontDescriptor /FontName /{name} /Flags 4 \
+         /FontBBox [{} {} {} {}] /ItalicAngle {} /Ascent {} /Descent {} /CapHeight {} /StemV 80 \
+         /FontFile2 {font_file_object} 0 R >>",
+        subset.bbox[0],
+        subset.bbox[1],
+        subset.bbox[2],
+        subset.bbox[3],
+        num(subset.italic_angle),
+        subset.ascent,
+        subset.descent,
+        subset.cap_height,
+    )
+}
+
+/// `ToUnicode` CMap mapping subset CIDs back to the code points they paint.
+///
+/// The mapping keeps copied text and text extraction readable even though the
+/// content stream addresses glyph ids rather than characters. Destinations are
+/// UTF-16BE, so a code point above the BMP becomes its surrogate pair.
+fn to_unicode_cmap(subset: &Subset) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(
+        b"/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n\
+          /CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n\
+          /CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n\
+          1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n",
+    );
+    let entries: Vec<(&char, &u16)> = subset.cids.iter().collect();
+    for chunk in entries.chunks(100) {
+        out.extend_from_slice(format!("{} beginbfchar\n", chunk.len()).as_bytes());
+        for (ch, cid) in chunk {
+            out.extend_from_slice(format!("<{cid:04X}> <{}>\n", utf16_hex(**ch)).as_bytes());
+        }
+        out.extend_from_slice(b"endbfchar\n");
+    }
+    out.extend_from_slice(b"endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n");
+    out
+}
+
+/// UTF-16BE hexadecimal form of one character, as `ToUnicode` expects.
+fn utf16_hex(ch: char) -> String {
+    let mut units = [0u16; 2];
+    ch.encode_utf16(&mut units).iter().map(|unit| format!("{unit:04X}")).collect()
+}
+
+fn content_object(content: &str) -> PdfObject {
+    PdfObject::stream(format!("<< /Length {} >>", content.len()), content.as_bytes().to_vec())
+}
+
+/// Content stream operators for one page; always ends with a newline.
+fn page_content<'d>(
+    page: &DisplayPage,
+    fonts: &[(&'static str, usize)],
+    embedded: Option<EmbeddedText<'_>>,
+    opacities: &OpacityResources,
+    images: &ImageResources,
+    diagnostics: &'d mut Vec<Diagnostic>,
+) -> String {
+    let mut out = String::new();
+    let mut painter = crate::scene::ScenePaint { fonts, embedded, images, opacities, diagnostics: Some(diagnostics) };
+    for item in &page.items {
+        write_item(&mut out, page.height, item, fonts, embedded, &mut painter);
+    }
+    if out.is_empty() {
+        out.push('\n');
+    }
+    out
+}
+
+fn write_item<'d>(
+    out: &mut String,
+    page_height: f64,
+    item: &DisplayItem,
+    fonts: &[(&'static str, usize)],
+    embedded: Option<EmbeddedText<'_>>,
+    painter: &mut crate::scene::ScenePaint<'_, 'd>,
+) {
+    match item {
+        DisplayItem::TextRun(run) if run.artifact => {
+            // Page furniture is not authored content, so mark it as a pagination
+            // artifact (PDF 1.7 §14.8.2.2). Text extraction consumers drop it
+            // instead of reopening a running header or folio as body text.
+            out.push_str("/Artifact BMC\n");
+            write_text(out, page_height, run, fonts, embedded, painter.diagnostics.as_deref_mut());
+            out.push_str("EMC\n");
+        }
+        DisplayItem::TextRun(run) => write_text(out, page_height, run, fonts, embedded, painter.diagnostics.as_deref_mut()),
+        DisplayItem::Rule(rule) => write_rule(out, page_height, rule),
+        DisplayItem::Rect(rect) => write_rect(out, page_height, rect),
+        DisplayItem::Image(image) => write_image(out, page_height, image, painter),
+        DisplayItem::Graphic(graphic) => write_graphic(out, page_height, graphic, painter),
+        DisplayItem::Path(path) => write_path(out, page_height, path),
+    }
+}
+
+fn write_text(
+    out: &mut String,
+    page_height: f64,
+    run: &DisplayTextRun,
+    fonts: &[(&'static str, usize)],
+    embedded: Option<EmbeddedText<'_>>,
+    diagnostics: Option<&mut Vec<Diagnostic>>,
+) {
+    if !all_finite(&[run.x, run.y, run.size]) {
+        return;
+    }
+    let embedded_run = embedded.filter(|chain| chain.embeds(&run.text));
+    let resource_index = match embedded_run {
+        Some(chain) => Some(chain.first_index),
+        None => {
+            let base = base_font_for(&run.font_family, run.style);
+            fonts.iter().position(|(font, _)| *font == base).map(|index| index + 1)
+        }
+    };
+    let Some(resource_index) = resource_index
+    else {
+        return;
+    };
+    paint_text(
+        out,
+        run.x,
+        page_height - run.y,
+        run.size,
+        resource_index,
+        &run.text,
+        embedded_run,
+        &run.font_family,
+        run.style,
+        false,
+        diagnostics,
+    );
+}
+
+/// Emit the glyphs collected for one subset, switching to `TJ` when a pair
+/// adjusts the advance.
+fn flush_text_segment(out: &mut String, index: usize, size: f64, parts: &mut Vec<String>, glyphs: &mut String) {
+    if !glyphs.is_empty() {
+        parts.push(format!("<{}>", std::mem::take(glyphs)));
+    }
+    if parts.is_empty() {
+        return;
+    }
+    let _ = write!(out, "/F{index} {} Tf\n", num(size));
+    if parts.len() == 1 {
+        let _ = write!(out, "{} Tj\n", parts[0]);
+    }
+    else {
+        let _ = write!(out, "[{}] TJ\n", parts.join(" "));
+    }
+    parts.clear();
+}
+
+/// Exact advance of one painted glyph, in the 1000-unit glyph space.
+///
+/// `font` is the one-based `/F` resource index, so the subset sits that far
+/// past the chain's first index.
+fn embedded_width(embedded: &EmbeddedText<'_>, font: usize, cid: u16) -> Option<f64> {
+    let subset = font.checked_sub(embedded.first_index)?;
+    embedded.chain.subsets().get(subset)?.widths.get(&cid).copied()
+}
+
+/// Emit one text object at a page-space position.
+///
+/// `flip` inverts the text matrix so glyphs stay upright inside a y-flipped
+/// scene-to-page matrix. Text painted from the embedded chain is split into one
+/// `Tj` per subset, and the font is switched between the groups: the text
+/// position keeps advancing, so a run mixing Han characters with an emoji
+/// still reads as one uninterrupted line.
+///
+/// When `diagnostics` is `Some`, characters that the embedded chain cannot
+/// cover and would otherwise be silently dropped produce a render-level Warning.
+pub(crate) fn paint_text(
+    out: &mut String,
+    x: f64,
+    y: f64,
+    size: f64,
+    resource_index: usize,
+    text: &str,
+    embedded: Option<EmbeddedText<'_>>,
+    family: &str,
+    style: FontStyle,
+    flip: bool,
+    mut diagnostics: Option<&mut Vec<Diagnostic>>,
+) {
+    let down = if flip { -1.0 } else { 1.0 };
+    if let Some(embedded) = embedded {
+        // Body text carries kerning from the same `BodyMetrics` layout used, so
+        // the writer never parses a font on its own.
+        let metrics = embedded.metrics;
+        let key = chain_key(family, style, metrics);
+        let _ = write!(out, "BT\n1 0 0 {down} {} {} Tm\n", num(x), num(y));
+        let mut current: Option<usize> = None;
+        let mut parts: Vec<String> = Vec::new();
+        let mut glyphs = String::new();
+        let mut previous: Option<(char, usize, u16)> = None;
+        let mut missing: Vec<char> = Vec::new();
+        for ch in text.chars() {
+            let Some((font, cid)) = embedded.glyph(ch, family, style)
+            else {
+                missing.push(ch);
+                // A skipped character breaks the pair, exactly as layout
+                // measures it.
+                previous = None;
+                continue;
+            };
+            if current != Some(font) {
+                if let Some(index) = current {
+                    flush_text_segment(out, index, size, &mut parts, &mut glyphs);
+                }
+                current = Some(font);
+                previous = None;
+            }
+            if let Some((left, left_font, left_cid)) = previous {
+                let kern = metrics.and_then(|metrics| metrics.kerning_em(key, left, ch)).unwrap_or(0.0);
+                // `/W` carries the advance rounded to a whole thousandth, so
+                // the pen needs the fractional part back. A `TJ` number moves
+                // right when negative and left when positive, which is also
+                // how a negative kern points.
+                let residual = embedded_width(&embedded, left_font, left_cid).map_or(0.0, |exact| exact.round() - exact);
+                let adjustment = residual - kern * 1000.0;
+                if adjustment.abs() > 1e-9 {
+                    if !glyphs.is_empty() {
+                        parts.push(format!("<{}>", std::mem::take(&mut glyphs)));
+                    }
+                    parts.push(num_real(adjustment));
+                }
+            }
+            let _ = write!(glyphs, "{cid:04X}");
+            previous = Some((ch, font, cid));
+        }
+        if let Some(index) = current {
+            flush_text_segment(out, index, size, &mut parts, &mut glyphs);
+        }
+        out.push_str("ET\n");
+        if !missing.is_empty() {
+            append_warning(
+                diagnostics.as_deref_mut(),
+                "vutex.render.pdf.glyph_missing",
+                format!(
+                    "embedded font chain has no glyph for {} while painting text; the characters were skipped",
+                    codepoints(&missing)
+                ),
+            );
+        }
+        return;
+    }
+    let _ = write!(
+        out,
+        "BT\n/F{resource_index} {} Tf\n1 0 0 {down} {} {} Tm\n({}) Tj\nET\n",
+        num(size),
+        num(x),
+        num(y),
+        escape_text(text, diagnostics.as_deref_mut()),
+    );
+}
+
+/// Paint one rule as a filled bar.
+///
+/// A rule is a filled box rather than a stroked segment: TeX shapes its rules
+/// as ink of a given thickness and the SVG math backend already paints one as a
+/// rectangle. The filled form keeps exactly the ink the previous stroke covered
+/// — the rectangle is centred on the rule line — while the content stream
+/// carries one path fill instead of a stroke, so a math page has the same number
+/// of path paints as the layout tree has paths and rules. A rule that is not
+/// horizontal has no rectangle to fill and keeps the plain stroke.
+fn write_rule(out: &mut String, page_height: f64, rule: &DisplayRule) {
+    if !all_finite(&[rule.x1, rule.y1, rule.x2, rule.y2, rule.thickness]) {
+        return;
+    }
+    if rule.y1 == rule.y2 && rule.x2 > rule.x1 && rule.thickness > 0.0 {
+        let bottom = page_height - (rule.y1 + rule.thickness / 2.0);
+        // `q`/`Q` keep the fill colour from leaking into later text.
+        let _ = write!(
+            out,
+            "q\n0.067 g\n{} {} {} {} re\nf\nQ\n",
+            num(rule.x1),
+            num(bottom),
+            num(rule.x2 - rule.x1),
+            num(rule.thickness)
+        );
+        return;
+    }
+    let _ = write!(
+        out,
+        "0.067 G\n{} w\n{} {} m\n{} {} l\nS\n",
+        num(rule.thickness),
+        num(rule.x1),
+        num(page_height - rule.y1),
+        num(rule.x2),
+        num(page_height - rule.y2),
+    );
+}
+
+fn write_rect(out: &mut String, page_height: f64, rect: &DisplayRect) {
+    if !all_finite(&[rect.x, rect.y, rect.width, rect.height]) {
+        return;
+    }
+    let y = page_height - (rect.y + rect.height);
+    // The fill colour stays inside `q`/`Q` so later text keeps the default
+    // black fill instead of inheriting the background grey.
+    if rect.filled {
+        let _ = write!(out, "q\n0.949 g\n{} {} {} {} re\nf\nQ\n", num(rect.x), num(y), num(rect.width), num(rect.height));
+    }
+    else {
+        let _ = write!(out, "q\n0.6 G\n0.5 w\n{} {} {} {} re\nS\nQ\n", num(rect.x), num(y), num(rect.width), num(rect.height));
+    }
+}
+
+/// Paint one page-level image, or its dashed slot when the source did not resolve.
+///
+/// A raster paints as `/ImN Do`. PDF image space puts the first sample row at
+/// the top of the unit square, while page space counts y downward from the page
+/// top. The `d` entry is therefore positive and the translation places the unit
+/// square's bottom edge at `page_height - (image.y + image.height)`, so the
+/// first row lands on the box's top edge and the picture stays upright.
+///
+/// An SVG paints through the scene painter instead. Its scene is uniformly
+/// fitted and centred inside the slot, and the painter's root matrix flips the
+/// scene's y-down coordinates into PDF's y-up page space, so the icon is right
+/// way up without any per-slot row reversal.
+fn write_image<'d>(out: &mut String, page_height: f64, image: &DisplayImage, painter: &mut crate::scene::ScenePaint<'_, 'd>) {
+    if !all_finite(&[image.x, image.y, image.width, image.height]) {
+        return;
+    }
+    if image.width > 0.0
+        && image.height > 0.0
+        && let Some(source) = image.source.as_deref()
+    {
+        if let Some(name) = painter.images.raster(source) {
+            let bottom = page_height - (image.y + image.height);
+            let _ = write!(
+                out,
+                "q\n{} 0 0 {} {} {} cm\n/{name} Do\nQ\n",
+                num(image.width),
+                num(image.height),
+                num(image.x),
+                num(bottom)
+            );
+            return;
+        }
+        if let Some(scene) = painter.images.scene(source)
+            && crate::scene::write_scene_slot(out, page_height, scene, image.x, image.y, image.width, image.height, painter)
+        {
+            return;
+        }
+    }
+    write_image_placeholder(out, page_height, image);
+}
+
+/// Reserved dashed slot for an image this backend could not resolve.
+fn write_image_placeholder(out: &mut String, page_height: f64, image: &DisplayImage) {
+    let y = page_height - (image.y + image.height);
+    let _ = write!(
+        out,
+        "0.6 G\n0.5 w\n[3 2] 0 d\n{} {} {} {} re\nS\n[] 0 d\n",
+        num(image.x),
+        num(y),
+        num(image.width),
+        num(image.height),
+    );
+}
+
+fn write_graphic<'d>(
+    out: &mut String,
+    page_height: f64,
+    graphic: &DisplayGraphic,
+    painter: &mut crate::scene::ScenePaint<'_, 'd>,
+) {
+    if !all_finite(&[graphic.x, graphic.y, graphic.width, graphic.height]) {
+        return;
+    }
+    crate::scene::write_scene(out, page_height, graphic, painter);
+}
+
+/// Paint one vector glyph outline extracted from the embedded MATH font.
+///
+/// SVG path coordinates use y-down math space; we mirror each y through
+/// `page_height` as every other PDF primitive does, and emit the result as a
+/// filled PDF path. The surrounding `q`/`Q` bracket isolates the fill colour
+/// so later text keeps its default black fill.
+fn write_path(out: &mut String, page_height: f64, path: &DisplayPath) {
+    if !all_finite(&[path.x, path.y]) || path.d.is_empty() {
+        return;
+    }
+    let origin_y = page_height - path.y;
+    let pdf_ops = svg_path_to_pdf_operators(&path.d, path.x, origin_y);
+    if pdf_ops.is_empty() {
+        return;
+    }
+    let _ = write!(out, "q\n0.0 f\n{pdf_ops}f\nQ\n");
+}
+
+/// Convert an SVG `d` attribute into PDF path operators.
+///
+/// The path is translated by `(origin_x, origin_y)` before y-flipping; the
+/// resulting PDF path operators use PDF's y-up coordinate space directly so
+/// the page transform chain stays consistent with every other primitive.
+///
+/// We only emit the operators our own `SvgPathBuilder` actually produces
+/// (M, L, Q, C, Z) and also handle T for compatibility with real-world glyph
+/// outlines. Relative variants (lowercase m/l/q/c/z) and unknown operators
+/// are silently dropped rather than mis-emitted.
+fn svg_path_to_pdf_operators(raw: &str, origin_x: f64, origin_y: f64) -> String {
+    let tokens = tokenize_svg_path(raw);
+    let mut out = String::new();
+    let mut last_pt = (0.0, 0.0); // current pen position
+    let mut start_pt = (0.0, 0.0); // current subpath start
+
+    let mut i = 0;
+    while i < tokens.len() {
+        let op = tokens[i].as_str();
+        i += 1;
+        match op {
+            "M" => {
+                if let (Some(x), Some(y)) =
+                    (tokens.get(i).and_then(|t| t.parse::<f64>().ok()), tokens.get(i + 1).and_then(|t| t.parse::<f64>().ok()))
+                {
+                    i += 2;
+                    let px = x + origin_x;
+                    let py = origin_y - y;
+                    last_pt = (px, py);
+                    start_pt = (px, py);
+                    let _ = write!(out, "{} {} m\n", num(px), num(py));
+                    // Additional coordinate pairs after M are implicit L (per SVG spec)
+                    while i + 1 < tokens.len() && tokens[i].parse::<f64>().is_ok() && tokens[i + 1].parse::<f64>().is_ok() {
+                        let ax = tokens[i].parse::<f64>().unwrap();
+                        let ay = tokens[i + 1].parse::<f64>().unwrap();
+                        i += 2;
+                        let ppx = ax + origin_x;
+                        let ppy = origin_y - ay;
+                        last_pt = (ppx, ppy);
+                        let _ = write!(out, "{} {} l\n", num(ppx), num(ppy));
+                    }
+                }
+            }
+            "L" => {
+                if let (Some(x), Some(y)) =
+                    (tokens.get(i).and_then(|t| t.parse::<f64>().ok()), tokens.get(i + 1).and_then(|t| t.parse::<f64>().ok()))
+                {
+                    i += 2;
+                    let px = x + origin_x;
+                    let py = origin_y - y;
+                    last_pt = (px, py);
+                    let _ = write!(out, "{} {} l\n", num(px), num(py));
+                }
+            }
+            "Q" => {
+                if let (Some(x1), Some(y1), Some(x), Some(y)) = (
+                    tokens.get(i).and_then(|t| t.parse::<f64>().ok()),
+                    tokens.get(i + 1).and_then(|t| t.parse::<f64>().ok()),
+                    tokens.get(i + 2).and_then(|t| t.parse::<f64>().ok()),
+                    tokens.get(i + 3).and_then(|t| t.parse::<f64>().ok()),
+                ) {
+                    i += 4;
+                    let px1 = x1 + origin_x;
+                    let py1 = origin_y - y1;
+                    let px = x + origin_x;
+                    let py = origin_y - y;
+                    last_pt = (px, py);
+                    // PDF has no native quadratic curve operator; convert to cubic:
+                    let cx1 = last_pt.0 + (px1 - last_pt.0) * (2.0 / 3.0);
+                    let cy1 = last_pt.1 + (py1 - last_pt.1) * (2.0 / 3.0);
+                    let cx2 = px + (py1 - py) * (1.0 / 3.0) - (last_pt.0 - cx1);
+                    let cy2 = py + (py1 - py) * (1.0 / 3.0);
+                    let _ = write!(out, "{} {} {} {} {} {} c\n", num(cx1), num(cy1), num(cx2), num(cy2), num(px), num(py));
+                }
+            }
+            "C" => {
+                if let (Some(x1), Some(y1), Some(x2), Some(y2), Some(x), Some(y)) = (
+                    tokens.get(i).and_then(|t| t.parse::<f64>().ok()),
+                    tokens.get(i + 1).and_then(|t| t.parse::<f64>().ok()),
+                    tokens.get(i + 2).and_then(|t| t.parse::<f64>().ok()),
+                    tokens.get(i + 3).and_then(|t| t.parse::<f64>().ok()),
+                    tokens.get(i + 4).and_then(|t| t.parse::<f64>().ok()),
+                    tokens.get(i + 5).and_then(|t| t.parse::<f64>().ok()),
+                ) {
+                    i += 6;
+                    let px1 = x1 + origin_x;
+                    let py1 = origin_y - y1;
+                    let px2 = x2 + origin_x;
+                    let py2 = origin_y - y2;
+                    let px = x + origin_x;
+                    let py = origin_y - y;
+                    last_pt = (px, py);
+                    let _ = write!(out, "{} {} {} {} {} {} c\n", num(px1), num(py1), num(px2), num(py2), num(px), num(py));
+                }
+            }
+            "Z" | "z" => {
+                last_pt = start_pt;
+                out.push_str("h\n");
+            }
+            "H" => {
+                if let Some(x) = tokens.get(i).and_then(|t| t.parse::<f64>().ok()) {
+                    i += 1;
+                    let px = x + origin_x;
+                    let py = last_pt.1;
+                    last_pt = (px, py);
+                    let _ = write!(out, "{} {} l\n", num(px), num(py));
+                }
+            }
+            "V" => {
+                if let Some(y) = tokens.get(i).and_then(|t| t.parse::<f64>().ok()) {
+                    i += 1;
+                    let px = last_pt.0;
+                    let py = origin_y - y;
+                    last_pt = (px, py);
+                    let _ = write!(out, "{} {} l\n", num(px), num(py));
+                }
+            }
+            _ => {
+                // Unknown or relative operator — skip its numeric args.
+                while i < tokens.len() && tokens[i].parse::<f64>().is_ok() {
+                    i += 1;
+                }
+            }
+        }
+    }
+
+    out
+}
+
+/// Tokenise an SVG `d` attribute into alternating operator letters and
+/// numeric literals (including negative and floating-point forms).
+///
+/// The token list is flat: every char is a single-token string; numeric
+/// literals are one token each; operators are single-letter tokens.
+fn tokenize_svg_path(raw: &str) -> Vec<String> {
+    let mut tokens: Vec<String> = Vec::new();
+    let chars: Vec<char> = raw.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        let c = chars[i];
+        if c.is_ascii_whitespace() || c == ',' {
+            i += 1;
+            continue;
+        }
+        if c.is_ascii_alphabetic() {
+            tokens.push(c.to_string());
+            i += 1;
+            continue;
+        }
+        if c == '-' || c == '.' || c.is_ascii_digit() {
+            let start = i;
+            if c == '-' {
+                i += 1;
+            }
+            while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.' || chars[i] == 'e' || chars[i] == 'E') {
+                // Handle optional + / - after exponent
+                if (chars[i] == 'e' || chars[i] == 'E') && i + 1 < chars.len() && (chars[i + 1] == '+' || chars[i + 1] == '-') {
+                    i += 1; // skip exponent letter
+                    i += 1; // skip sign
+                    while i < chars.len() && chars[i].is_ascii_digit() {
+                        i += 1;
+                    }
+                    continue;
+                }
+                i += 1;
+            }
+            tokens.push(chars[start..i].iter().collect());
+            continue;
+        }
+        // Unknown char — skip.
+        i += 1;
+    }
+
+    tokens
+}
+
+/// Graphics state selecting one alpha for both fill and stroke.
+///
+/// `/AIS false` keeps the alpha from applying to a soft mask, and `/BM /Normal`
+/// fixes the blend mode so every reader composites the node the same way.
+fn ext_gstate_object(alpha: f64) -> String {
+    format!("<< /Type /ExtGState /ca {} /CA {} /AIS false /BM /Normal >>", num(alpha), num(alpha))
+}
+
+fn all_finite(values: &[f64]) -> bool {
+    values.iter().copied().all(f64::is_finite)
+}
+
+/// Escape a string for a PDF literal string and encode it for WinAnsi.
+///
+/// `\`, `(`, and `)` are backslash-escaped, printable ASCII passes through,
+/// Latin-1 code points become three-digit octal escapes, code points that
+/// WinAnsi reaches through its upper range (typographic punctuation, the
+/// bullet, the euro sign) are remapped to their WinAnsi byte, and everything
+/// else becomes `?` because the encoding cannot represent it.
+///
+/// When `diagnostics` is `Some`, characters that fall back to `?` emit a
+/// render-level Warning instead of being silently substituted.
+pub(crate) fn escape_text(text: &str, mut diagnostics: Option<&mut Vec<Diagnostic>>) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut degraded: Vec<char> = Vec::new();
+    for ch in text.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '(' => out.push_str("\\("),
+            ')' => out.push_str("\\)"),
+            ' '..='~' => out.push(ch),
+            ch if (ch as u32) <= 0xFF => {
+                let _ = write!(out, "\\{:03o}", ch as u32);
+            }
+            ch => match winansi_byte(ch) {
+                Some(byte) => {
+                    let _ = write!(out, "\\{byte:03o}");
+                }
+                None => {
+                    degraded.push(ch);
+                    out.push('?');
+                }
+            },
+        }
+    }
+    if !degraded.is_empty() {
+        append_warning(
+            diagnostics.as_deref_mut(),
+            "vutex.render.pdf.font_unavailable",
+            format!(
+                "WinAnsi encoding cannot represent {} characters and they were substituted with '?'",
+                codepoints(&degraded)
+            ),
+        );
+    }
+    out
+}
+
+/// WinAnsi byte for a code point above Latin-1 that the encoding still covers.
+///
+/// WinAnsiEncoding keeps the Latin-1 positions but replaces the `0x80..=0x9F`
+/// block with printable punctuation, so code points such as U+2022 BULLET
+/// (the list marker the layout pass emits) have a byte of their own instead of
+/// degrading to `?`.
+fn winansi_byte(ch: char) -> Option<u8> {
+    let byte = match ch {
+        '\u{20AC}' => 0x80,
+        '\u{201A}' => 0x82,
+        '\u{0192}' => 0x83,
+        '\u{201E}' => 0x84,
+        '\u{2026}' => 0x85,
+        '\u{2020}' => 0x86,
+        '\u{2021}' => 0x87,
+        '\u{02C6}' => 0x88,
+        '\u{2030}' => 0x89,
+        '\u{0160}' => 0x8A,
+        '\u{2039}' => 0x8B,
+        '\u{0152}' => 0x8C,
+        '\u{017D}' => 0x8E,
+        '\u{2018}' => 0x91,
+        '\u{2019}' => 0x92,
+        '\u{201C}' => 0x93,
+        '\u{201D}' => 0x94,
+        '\u{2022}' => 0x95,
+        '\u{2013}' => 0x96,
+        '\u{2014}' => 0x97,
+        '\u{02DC}' => 0x98,
+        '\u{2122}' => 0x99,
+        '\u{0161}' => 0x9A,
+        '\u{203A}' => 0x9B,
+        '\u{0153}' => 0x9C,
+        '\u{017E}' => 0x9E,
+        '\u{0178}' => 0x9F,
+        _ => return None,
+    };
+    Some(byte)
+}
+
+/// Stable decimal rendering: at most three decimals, no trailing zeros, no `-0`.
+pub(crate) fn num(value: f64) -> String {
+    let text = format!("{value:.3}");
+    let trimmed = text.trim_end_matches('0').trim_end_matches('.');
+    if trimmed.is_empty() || trimmed == "-0" { "0".to_string() } else { trimmed.to_string() }
+}
+
+/// Higher-precision rendering for `/W` widths and `TJ` adjustments.
+///
+/// Eight decimals cover every font-unit ratio exactly for the bundled faces
+/// (`1000/2048` is a terminating binary fraction), so a kern of `-264/2048`
+/// reaches the stream as `128.90625` instead of a three-decimal approximation.
+/// A pair adjustment also carries the fractional part of the previous glyph's
+/// advance, which `/W` rounds away.
+pub(crate) fn num_real(value: f64) -> String {
+    let text = format!("{value:.8}");
+    let trimmed = text.trim_end_matches('0').trim_end_matches('.');
+    if trimmed.is_empty() || trimmed == "-0" { "0".to_string() } else { trimmed.to_string() }
+}
+
+/// Strip any pre-existing `/Length <value>` entry from a PDF stream dictionary
+/// string, preserving every other entry unchanged, then append a fresh
+/// `/Length N` where `N` is the actual byte length of the stream body.
+///
+/// This makes the writer robust against callers who captured a stale
+/// `/Length` before the stream body was finalised — a mistake that Poppler
+/// reports as *"Bad 'Length' attribute in stream"* or *"Missing 'endstream' or
+/// incorrect stream length"*.  `/Length1` (used on FontFile descriptors) is
+/// left untouched because it names a different semantic.
+fn rebuild_stream_dict(dict: &str, data_len: usize) -> String {
+    let bytes = dict.as_bytes();
+    let mut cleaned = String::with_capacity(dict.len());
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if i + 7 <= bytes.len()
+            && &dict[i..i + 7] == "/Length"
+            && !matches!(bytes.get(i + 7), Some(c) if *c == b'1' || *c == b'2' || *c == b'3')
+        {
+            // Make sure `/Length` is followed by a boundary (whitespace or end).
+            let is_boundary = match bytes.get(i + 7) {
+                Some(c) => c.is_ascii_whitespace(),
+                None => true,
+            };
+            if is_boundary {
+                i += 7;
+                // Skip whitespace after the key.
+                while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+                    i += 1;
+                }
+                // Skip the value — number, name, or indirect ref — until we hit
+                // whitespace or the next key or closing `>>`.
+                while i < bytes.len() {
+                    let c = bytes[i];
+                    if c.is_ascii_whitespace() || c == b'/' || c == b'>' {
+                        break;
+                    }
+                    i += 1;
+                }
+                // Skip trailing whitespace so we don't leave double gaps.
+                while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+                    i += 1;
+                }
+                continue;
+            }
+        }
+        cleaned.push(bytes[i] as char);
+        i += 1;
+    }
+
+    // Peel the outer `<< >>` if present to rebuild cleanly.
+    let trimmed = cleaned.trim();
+    let inner = if let Some(stripped) = trimmed.strip_prefix("<<").and_then(|s| s.strip_suffix(">>")) {
+        stripped.trim().to_string()
+    }
+    else {
+        trimmed.to_string()
+    };
+
+    if inner.is_empty() { format!("<< /Length {data_len} >>") } else { format!("<< {inner} /Length {data_len} >>") }
+}
+
+/// Serialize objects into a complete PDF file with a byte-exact xref table.
+fn assemble(objects: &[PdfObject]) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(b"%PDF-1.7\n%\xE2\xE3\xCF\xD3\n");
+    let mut offsets = Vec::with_capacity(objects.len());
+    for (index, object) in objects.iter().enumerate() {
+        offsets.push(out.len());
+        out.extend_from_slice(format!("{} 0 obj\n", index + 1).as_bytes());
+        match object {
+            PdfObject::Text(body) => out.extend_from_slice(body.as_bytes()),
+            PdfObject::Stream { dict, data } => {
+                let dict = rebuild_stream_dict(dict, data.len());
+                out.extend_from_slice(dict.as_bytes());
+                out.extend_from_slice(b"\nstream\n");
+                out.extend_from_slice(data);
+                out.extend_from_slice(b"\nendstream");
+            }
+        }
+        out.extend_from_slice(b"\nendobj\n");
+    }
+    let xref_offset = out.len();
+    let size = objects.len() + 1;
+    out.extend_from_slice(format!("xref\n0 {size}\n").as_bytes());
+    out.extend_from_slice(b"0000000000 65535 f \n");
+    for offset in &offsets {
+        out.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    out.extend_from_slice(format!("trailer\n<< /Size {size} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n").as_bytes());
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rebuild_stream_dict;
+
+    #[test]
+    fn rebuild_from_empty_dict() {
+        let got = rebuild_stream_dict("", 42);
+        assert_eq!(got, "<< /Length 42 >>");
+    }
+
+    #[test]
+    fn rebuild_replaces_a_stale_length() {
+        let got = rebuild_stream_dict("<< /Length 99999 >>", 42);
+        assert_eq!(got, "<< /Length 42 >>");
+    }
+
+    #[test]
+    fn rebuild_preserves_other_entries() {
+        let got =
+            rebuild_stream_dict("<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /BitsPerComponent 8 /Length 99 >>", 12);
+        assert!(got.contains("/Type /XObject"));
+        assert!(got.contains("/Subtype /Image"));
+        assert!(got.contains("/Length 12"));
+        assert!(!got.contains("/Length 99"), "stale value must be gone");
+    }
+
+    #[test]
+    fn rebuild_does_not_touch_length1_used_by_fontfile_descriptors() {
+        let got = rebuild_stream_dict("<< /Length1 1234 /Length 99 >>", 2048);
+        assert!(got.contains("/Length1 1234"), "FontFile descriptor keeps its non-compressed length hint");
+        assert!(got.contains("/Length 2048"), "stream Length is the actual byte count");
+        assert!(!got.contains("/Length 99"), "stale Length must be gone");
+    }
+
+    #[test]
+    fn rebuild_handles_dict_without_explicit_length() {
+        let got = rebuild_stream_dict("<< /Filter /FlateDecode >>", 32);
+        assert_eq!(got, "<< /Filter /FlateDecode /Length 32 >>");
+    }
+}

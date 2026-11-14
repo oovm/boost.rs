@@ -1,0 +1,1086 @@
+use std::{
+    collections::{BTreeMap, HashSet},
+    time::Duration,
+};
+
+use boost_diagnostic::{DiagnosticSeverity, Message, MessageArg};
+use crawler_browser::{BrowserProvider, snapshot_to_fetch_artifact};
+use crawler_fetch::{FetchClient, FetchRequest, RobotsPolicy, Transport, site_key_for_url};
+use crawler_frontier::{FrontierQueue, FrontierSink, frontier_from_links};
+use crawler_store::{ClaimToken, PageAssetBinding, ResumeState, RunSpec, Store, keyspace::item_id_from_url};
+use crawler_types::{
+    AdmissionDecision, BrowserFallbackPolicy, BrowserFallbackTrigger, ChallengeOutcome, ChallengePolicy, CrawlBudgetStatus,
+    CrawlError, CrawlEvent, CrawlReport, CrawlRequest, ExtractBudget, ExtractContext, ExtractResult, ExtractStatus,
+    FetchArtifact, FrontierItem, PageChallengeState, Result, apply_challenge_policy, diagnostics as pd,
+};
+use document_ir::{Block, DocumentGraph, Inline};
+
+use crate::{
+    admission::{admit_frontier_item, seed_frontier},
+    extract::{Extractor, run_extract},
+    frontier_scheduler::StoreFrontier,
+    initial_report, sitemap,
+    transaction::commit_page,
+};
+use crawler_types::PageTransaction;
+
+/// Robots rules persisted through the store expire after this window.
+pub const ROBOTS_STORE_TTL: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// Minimum plain-text characters an HTTP extraction must yield before the crawl
+/// accepts the fetched page as real content.
+///
+/// Below this value the page is treated as a JavaScript shell or an empty
+/// skeleton and, when browser fallback is enabled, the render path is tried.
+pub const LOW_YIELD_MIN_TEXT_CHARS: u64 = 64;
+
+/// Minimum number of content-bearing `notedown-ir` blocks an HTTP extraction
+/// must yield before the crawl accepts the fetched page as real content.
+pub const LOW_YIELD_MIN_CONTENT_BLOCKS: u32 = 1;
+
+/// Maximum fetch attempts for one frontier item before it is completed as
+/// failed. Attempt one has `attempts == 0` on the item.
+pub const MAX_FETCH_ATTEMPTS: u32 = 5;
+
+/// Inline `<script>` payload size from which a page may be considered
+/// script-dominant rather than content-dominant.
+pub const LOW_YIELD_SCRIPT_MIN_BYTES: u64 = 512;
+
+/// Inline `<script>` payload must be at least this multiple of the extracted
+/// text characters for the script-dominance signal to fire.
+pub const LOW_YIELD_SCRIPT_TEXT_RATIO: u64 = 4;
+
+/// Observed content yield of one extraction, used only to route a page toward
+/// the render fallback. It never changes the `notedown-ir` produced by extract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PageYield {
+    /// Total plain-text characters across content-bearing blocks.
+    pub text_chars: u64,
+    /// Number of content-bearing `notedown-ir` blocks.
+    pub content_blocks: u32,
+    /// Total bytes inside inline `<script>` elements.
+    pub inline_script_bytes: u64,
+}
+
+impl PageYield {
+    /// Measure the routing yield of an HTTP artifact and its extraction.
+    pub fn measure(artifact: &FetchArtifact, extract: &ExtractResult) -> Self {
+        let inline_script_bytes = artifact.body_bytes().map(inline_script_bytes).unwrap_or(0);
+        let (text_chars, content_blocks) = extract.document.as_ref().map(measure_document).unwrap_or((0, 0));
+        Self { text_chars, content_blocks, inline_script_bytes }
+    }
+
+    /// Whether this yield is too thin to accept as a real page.
+    pub fn is_low(&self) -> bool {
+        self.content_blocks < LOW_YIELD_MIN_CONTENT_BLOCKS
+            || self.text_chars < LOW_YIELD_MIN_TEXT_CHARS
+            || (self.inline_script_bytes >= LOW_YIELD_SCRIPT_MIN_BYTES
+                && self.inline_script_bytes >= self.text_chars.saturating_mul(LOW_YIELD_SCRIPT_TEXT_RATIO))
+    }
+}
+
+/// Host-injected cancellation signal.
+///
+/// The crawl loop checks the signal before admission and after each claim. A
+/// cancelled run stops admitting new work, releases any claim it already took
+/// as pending, and leaves the remaining frontier visible in the report.
+pub trait CancelSignal {
+    /// Whether the host asked the run to stop.
+    fn is_cancelled(&self) -> bool;
+}
+
+/// Optional browser and fallback settings for a crawl run.
+#[derive(Clone, Copy)]
+pub struct CrawlOptions<'a> {
+    /// Browser provider used when fallback policy allows it.
+    pub browser: Option<&'a dyn BrowserProvider>,
+    /// When to invoke the browser provider.
+    pub browser_fallback: BrowserFallbackPolicy,
+    /// Challenge handling for browser snapshots.
+    pub challenge_policy: ChallengePolicy,
+    /// Strategy fingerprint frozen in the store so a resume cannot silently
+    /// continue under a different fallback strategy.
+    pub strategy_fingerprint: Option<&'a str>,
+    /// Cancellation signal checked by the run loop.
+    pub cancel: Option<&'a dyn CancelSignal>,
+}
+
+impl<'a> Default for CrawlOptions<'a> {
+    fn default() -> Self {
+        Self {
+            browser: None,
+            browser_fallback: BrowserFallbackPolicy::Never,
+            challenge_policy: ChallengePolicy::Stop,
+            strategy_fingerprint: None,
+            cancel: None,
+        }
+    }
+}
+
+/// Mutable crawl session state.
+#[derive(Debug, Clone)]
+pub struct CrawlState {
+    /// User request.
+    pub request: CrawlRequest,
+    /// Frontier queue used when the run has no store backend.
+    pub queue: FrontierQueue,
+    /// Requests consumed in this invocation.
+    pub requests_used: u32,
+    /// Accumulated report for this invocation.
+    pub report: CrawlReport,
+    /// Last frontier item paused for operator action.
+    pub last_paused_item: Option<FrontierItem>,
+}
+
+/// How one claimed frontier item leaves the work loop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorkOutcome {
+    /// The item is finished and leaves the frontier.
+    Done,
+    /// The item paused the run and returns to pending unchanged.
+    Paused,
+    /// The store should requeue the item with an advanced attempt count.
+    Retry {
+        /// Server-requested host delay from `Retry-After`.
+        retry_after: Option<Duration>,
+    },
+}
+
+/// Output of a crawl run.
+#[derive(Debug, Clone)]
+pub struct CrawlOutput {
+    /// Final report.
+    pub report: CrawlReport,
+    /// Committed page identities.
+    pub committed_pages: Vec<String>,
+    /// Artifacts available for offline re-extract.
+    pub artifacts: Vec<FetchArtifact>,
+    /// Store run identity, when the run persisted to a store.
+    pub run_id: Option<String>,
+}
+
+/// Run a bounded crawl using the provided transport.
+pub fn run_crawl<T: Transport>(request: CrawlRequest, transport: T, extractors: &[&dyn Extractor]) -> Result<CrawlOutput> {
+    run_crawl_with_options(request, transport, extractors, CrawlOptions::default())
+}
+
+/// Run a bounded crawl with optional browser fallback.
+pub fn run_crawl_with_options<T: Transport>(
+    request: CrawlRequest,
+    transport: T,
+    extractors: &[&dyn Extractor],
+    options: CrawlOptions<'_>,
+) -> Result<CrawlOutput> {
+    let state = seeded_state(&request)?;
+    run_crawl_loop(state, transport, extractors, options, None, None)
+}
+
+/// Run a bounded crawl whose frontier, page transactions and caches live in the
+/// given store.
+pub fn run_crawl_with_store<T: Transport>(
+    request: CrawlRequest,
+    transport: T,
+    extractors: &[&dyn Extractor],
+    options: CrawlOptions<'_>,
+    store: &mut dyn Store,
+) -> Result<CrawlOutput> {
+    let mut state = seeded_state(&request)?;
+    let run_id = begin_store_run(store, &request, options)?;
+    let mut frontier = StoreFrontier::new(STORE_WORKER_ID, request.politeness);
+    enqueue_state_queue(store, &mut frontier, &mut state.queue)?;
+    let mut output = run_crawl_loop(state, transport, extractors, options, Some(store), Some(frontier))?;
+    output.run_id = Some(run_id);
+    Ok(output)
+}
+
+fn seeded_state(request: &CrawlRequest) -> Result<CrawlState> {
+    let mut state = CrawlState {
+        request: request.clone(),
+        queue: FrontierQueue::new(),
+        requests_used: 0,
+        report: initial_report(request)?,
+        last_paused_item: None,
+    };
+    for item in seed_frontier(request)? {
+        state.report.events.push(CrawlEvent::Discovered { url: item.request_url.clone(), depth: item.depth });
+        state.queue.push(item);
+    }
+    Ok(state)
+}
+
+/// Resume a crawl from persisted store state.
+///
+/// The caller must have already called [`Store::resume`] so the store points at
+/// the returned run. Frontier records, claims and committed pages stay in the
+/// store: this function only rebuilds the in-process report and scheduler.
+pub fn resume_crawl_from_store<T: Transport>(
+    resume: ResumeState,
+    transport: T,
+    extractors: &[&dyn Extractor],
+    options: CrawlOptions<'_>,
+    store: &mut dyn Store,
+) -> Result<CrawlOutput> {
+    let request = resume.request.clone().ok_or_else(|| {
+        store_error("run has no persisted request and cannot be resumed without a JSON checkpoint".to_string())
+    })?;
+    validate_resume_strategy(&resume, options)?;
+    let state = CrawlState {
+        request: request.clone(),
+        queue: FrontierQueue::new(),
+        requests_used: 0,
+        report: initial_report(&request)?,
+        last_paused_item: None,
+    };
+    let mut frontier = StoreFrontier::new(STORE_WORKER_ID, request.politeness);
+    frontier.adopt_hosts(&resume.pending_hosts);
+    let mut output = run_crawl_loop(state, transport, extractors, options, Some(store), Some(frontier))?;
+    output.run_id = Some(resume.run_id);
+    Ok(output)
+}
+
+/// Worker identity recorded on store claims for a local crawl run.
+const STORE_WORKER_ID: &str = "crawl-local";
+
+fn begin_store_run(store: &mut dyn Store, request: &CrawlRequest, options: CrawlOptions<'_>) -> Result<String> {
+    let seed_url = request.seeds.first().map(|seed| seed.url.to_string()).unwrap_or_default();
+    let strategy_fingerprint =
+        options.strategy_fingerprint.map(str::to_string).unwrap_or_else(|| default_strategy_fingerprint(options));
+    store
+        .begin_run(RunSpec { seed_url, request: Some(request.clone()), strategy_fingerprint: Some(strategy_fingerprint) })
+        .map(|handle| handle.run_id)
+        .map_err(store_error)
+}
+
+fn enqueue_state_queue(store: &mut dyn Store, frontier: &mut StoreFrontier, queue: &mut FrontierQueue) -> Result<()> {
+    while let Some(item) = queue.pop() {
+        frontier.enqueue(store, item).map_err(store_error)?;
+    }
+    Ok(())
+}
+
+fn store_error(error: impl std::fmt::Display) -> CrawlError {
+    let diag = boost_diagnostic::Diagnostic::new(
+        pd::code(pd::STORE_UNAVAILABLE),
+        DiagnosticSeverity::Error,
+        pd::origin_crawl(),
+        Message::new("crawler.diagnostic.storeUnavailable").with_fallback(error.to_string()),
+    );
+    CrawlError::from(diag)
+}
+
+fn next_work(
+    state: &mut CrawlState,
+    store: &mut Option<&mut dyn Store>,
+    frontier: &mut Option<StoreFrontier>,
+) -> Result<Option<(FrontierItem, Option<ClaimToken>)>> {
+    if let (Some(store), Some(frontier)) = (store.as_deref_mut(), frontier.as_mut()) {
+        let Some(token) = frontier.next(store).map_err(store_error)?
+        else {
+            return Ok(None);
+        };
+        let item = store
+            .frontier_item(&token.item_id)
+            .map_err(store_error)?
+            .ok_or_else(|| store_error(format!("claimed frontier item `{}` disappeared", token.item_id)))?;
+        return Ok(Some((item, Some(token))));
+    }
+    Ok(state.queue.pop().map(|item| (item, None)))
+}
+
+fn finish_work(
+    store: &mut Option<&mut dyn Store>,
+    frontier: &mut Option<StoreFrontier>,
+    queue: &mut FrontierQueue,
+    item: &FrontierItem,
+    token: Option<&ClaimToken>,
+    outcome: WorkOutcome,
+) {
+    if let (Some(store), Some(frontier), Some(token)) = (store.as_deref_mut(), frontier.as_mut(), token) {
+        let result = match outcome {
+            WorkOutcome::Done => frontier.release_done(store, token),
+            WorkOutcome::Paused => frontier.release_pending(store, token),
+            WorkOutcome::Retry { retry_after } => frontier.release_failed(store, token, item.attempts, retry_after),
+        };
+        let _ = result;
+        return;
+    }
+    if let WorkOutcome::Retry { .. } = outcome {
+        let mut retry = item.clone();
+        retry.attempts = retry.attempts.saturating_add(1);
+        queue.requeue(retry);
+    }
+}
+
+fn run_crawl_loop<T: Transport>(
+    mut state: CrawlState,
+    transport: T,
+    extractors: &[&dyn Extractor],
+    options: CrawlOptions<'_>,
+    mut store: Option<&mut dyn Store>,
+    mut frontier: Option<StoreFrontier>,
+) -> Result<CrawlOutput> {
+    let request = state.request.clone();
+    state.report.budget_status = CrawlBudgetStatus::Completed;
+    state.report.remaining_frontier = 0;
+    let mut client = FetchClient::new(transport, RobotsPolicy::from_profile(request.politeness));
+    let mut committed_pages = Vec::new();
+    let mut artifacts = Vec::new();
+    let extract_budget = ExtractBudget::default();
+    let mut sitemap_discovered = HashSet::new();
+    let mut cancelled = false;
+
+    loop {
+        if is_cancelled(options) {
+            cancelled = true;
+            break;
+        }
+        let Some((item, claim)) = next_work(&mut state, &mut store, &mut frontier)?
+        else {
+            break;
+        };
+        if is_cancelled(options) {
+            // The claim was already taken, so return it to pending instead of
+            // letting it ride out the lease. Work not yet admitted is dropped.
+            if claim.is_some() {
+                finish_work(&mut store, &mut frontier, &mut state.queue, &item, claim.as_ref(), WorkOutcome::Paused);
+            }
+            else {
+                state.queue.requeue(item);
+            }
+            cancelled = true;
+            break;
+        }
+        if state.requests_used >= request.budget.max_requests {
+            if claim.is_none() {
+                state.queue.requeue(item.clone());
+            }
+            let remaining = remaining_frontier(&state, &store);
+            record_budget_exhausted(&mut state, remaining);
+            finish_work(&mut store, &mut frontier, &mut state.queue, &item, claim.as_ref(), WorkOutcome::Paused);
+            break;
+        }
+
+        let outcome = process_one_item(
+            &mut state,
+            &item,
+            &mut client,
+            extractors,
+            extract_budget,
+            &mut committed_pages,
+            &mut artifacts,
+            options,
+            &mut sitemap_discovered,
+            &mut store,
+            &mut frontier,
+            claim.as_ref(),
+            &request,
+        )?;
+        finish_work(&mut store, &mut frontier, &mut state.queue, &item, claim.as_ref(), outcome);
+        // Without a store the in-memory queue has no host scheduler, so the
+        // retry is immediate and only bounded by the attempt cap.
+        if outcome == WorkOutcome::Paused {
+            break;
+        }
+    }
+
+    if cancelled {
+        record_cancelled(&mut state, &store);
+    }
+    else if state.last_paused_item.is_some() {
+        state.report.budget_status = CrawlBudgetStatus::Cancelled;
+        state.report.remaining_frontier = remaining_frontier(&state, &store);
+    }
+
+    Ok(CrawlOutput { report: state.report, committed_pages, artifacts, run_id: None })
+}
+
+fn remaining_frontier(state: &CrawlState, store: &Option<&mut dyn Store>) -> u32 {
+    match store.as_deref() {
+        Some(store) => store.pending_frontier_count().unwrap_or(0) as u32,
+        None => state.queue.len() as u32,
+    }
+}
+
+fn is_cancelled(options: CrawlOptions<'_>) -> bool {
+    options.cancel.is_some_and(CancelSignal::is_cancelled)
+}
+
+/// Mark the run cancelled and keep the pending frontier visible in the report.
+fn record_cancelled(state: &mut CrawlState, store: &Option<&mut dyn Store>) {
+    let remaining = remaining_frontier(state, store);
+    state.report.budget_status = CrawlBudgetStatus::Cancelled;
+    state.report.remaining_frontier = remaining;
+    let diagnostic = boost_diagnostic::Diagnostic::new(
+        pd::code(pd::RUN_CANCELLED),
+        DiagnosticSeverity::Warning,
+        pd::origin_crawl(),
+        Message::new("crawler.diagnostic.runCancelled")
+            .with_arg("remainingFrontier", MessageArg::U64(remaining as u64))
+            .with_fallback(format!("crawl cancelled with {remaining} frontier item(s) remaining")),
+    );
+    state.report.push_diagnostic(diagnostic);
+}
+
+/// Process one claimed or queued item and report how it leaves the frontier.
+#[allow(clippy::too_many_arguments)]
+fn process_one_item<T: Transport>(
+    state: &mut CrawlState,
+    item: &FrontierItem,
+    client: &mut FetchClient<T>,
+    extractors: &[&dyn Extractor],
+    extract_budget: ExtractBudget,
+    committed_pages: &mut Vec<String>,
+    artifacts: &mut Vec<FetchArtifact>,
+    options: CrawlOptions<'_>,
+    sitemap_discovered: &mut HashSet<String>,
+    store: &mut Option<&mut dyn Store>,
+    frontier: &mut Option<StoreFrontier>,
+    claim: Option<&ClaimToken>,
+    request: &CrawlRequest,
+) -> Result<WorkOutcome> {
+    let decision = admit_frontier_item(item, request);
+    state.report.events.push(CrawlEvent::Admitted { url: item.request_url.clone(), decision: decision.clone() });
+    if !matches!(decision, AdmissionDecision::Admitted) {
+        state.report.skipped += 1;
+        return Ok(WorkOutcome::Done);
+    }
+
+    state.requests_used += 1;
+    let fetch_request = FetchRequest { url: item.request_url.clone(), headers: BTreeMap::new() };
+    if let Some(store) = store.as_deref() {
+        if matches!(item.request_url.scheme(), "http" | "https") {
+            let site = site_key_for_url(&item.request_url);
+            if !client.robots().has_site_rules(&item.request_url) {
+                if let Ok(Some(body)) = store.get_robots_cache(&site) {
+                    client.load_site_robots(&site, &String::from_utf8_lossy(&body));
+                }
+            }
+        }
+        if let Ok(Some(cached)) = store.get_response_cache(&item.request_url.to_string()) {
+            client.cache_mut().put(cached);
+        }
+    }
+    let fetched = client.fetch(&fetch_request);
+    if let Some(store) = store.as_deref_mut() {
+        for (site, body) in client.take_robots_updates() {
+            let _ = store.put_robots_cache(&site, body.as_bytes(), ROBOTS_STORE_TTL);
+        }
+    }
+    let artifact = match fetched {
+        Ok(artifact) => {
+            // Classify HTTP status before feeding into extract pipeline.
+            let status_class = crawler_fetch::classify_http_status(artifact.status);
+            match status_class {
+                crawler_fetch::HttpStatusClass::PermanentFailure => {
+                    record_skipped(state, item, &format!("permanent-http-failure:{}", artifact.status));
+                    return Ok(WorkOutcome::Done);
+                }
+                crawler_fetch::HttpStatusClass::ClientError => {
+                    // 401/403 — don't extract, don't retry.
+                    record_skipped(state, item, &format!("client-http-error:{}", artifact.status));
+                    return Ok(WorkOutcome::Done);
+                }
+                crawler_fetch::HttpStatusClass::Retryable => {
+                    let retry_after = crawler_fetch::retry_after_delay(&artifact);
+                    let reason = format!("retryable-http-status:{}", artifact.status);
+                    return Ok(retry_or_exhaust(state, item, &reason, retry_after));
+                }
+                crawler_fetch::HttpStatusClass::Proceed => artifact,
+            }
+        }
+        Err(error) => {
+            if error.code().is_some_and(|code| code == pd::ROBOTS_DENIED) {
+                record_crawl_diagnostic(state, &error);
+                record_skipped(state, item, "robots-denied");
+                return Ok(WorkOutcome::Done);
+            }
+            record_crawl_diagnostic(state, &error);
+            let fetch_error = error.to_string();
+            match try_browser_fallback(item, options) {
+                BrowserFallbackAttempt::Captured { snapshot, browser_engine } => {
+                    state.report.events.push(CrawlEvent::BrowserFallback {
+                        url: item.request_url.clone(),
+                        trigger: BrowserFallbackTrigger::FetchFailure,
+                        fetch_error: Some(fetch_error),
+                        browser_engine,
+                        observed_text_chars: None,
+                        observed_content_blocks: None,
+                    });
+                    if let Some(artifact) = accept_browser_snapshot(state, item, snapshot, options) {
+                        discover_sitemap(state, item, client, sitemap_discovered, store, frontier)?;
+                        process_fetched_item(
+                            state,
+                            item,
+                            artifact,
+                            extractors,
+                            extract_budget,
+                            committed_pages,
+                            artifacts,
+                            request.budget.max_depth,
+                            options,
+                            false,
+                            false,
+                            store,
+                            frontier,
+                            claim,
+                        );
+                    }
+                    return Ok(work_outcome(state, item));
+                }
+                BrowserFallbackAttempt::Failed(error) => {
+                    record_browser_fallback_failure(state, item, BrowserFallbackTrigger::FetchFailure, error);
+                    return Ok(WorkOutcome::Done);
+                }
+                BrowserFallbackAttempt::Disabled => {
+                    return Ok(retry_or_exhaust(state, item, &fetch_error, None));
+                }
+            }
+        }
+    };
+
+    if let Some(store) = store.as_deref_mut() {
+        let _ = store.put_response_cache(&artifact);
+    }
+
+    discover_sitemap(state, item, client, sitemap_discovered, store, frontier)?;
+    process_fetched_item(
+        state,
+        item,
+        artifact,
+        extractors,
+        extract_budget,
+        committed_pages,
+        artifacts,
+        request.budget.max_depth,
+        options,
+        true,
+        true,
+        store,
+        frontier,
+        claim,
+    );
+    Ok(work_outcome(state, item))
+}
+
+fn item_paused(state: &CrawlState, item: &FrontierItem) -> bool {
+    state.last_paused_item.as_ref().is_some_and(|paused| paused.request_url == item.request_url)
+}
+
+fn work_outcome(state: &CrawlState, item: &FrontierItem) -> WorkOutcome {
+    if item_paused(state, item) { WorkOutcome::Paused } else { WorkOutcome::Done }
+}
+
+/// Requeue a failed attempt through the frontier until the attempt cap is hit.
+///
+/// The store advances `attempts` on requeue. The host scheduler applies the
+/// policy backoff and extends it with any `Retry-After` window. Exhausted
+/// items leave the frontier as done with a diagnostic instead of retrying
+/// forever.
+fn retry_or_exhaust(state: &mut CrawlState, item: &FrontierItem, reason: &str, retry_after: Option<Duration>) -> WorkOutcome {
+    let attempt_number = item.attempts.saturating_add(1);
+    if attempt_number >= MAX_FETCH_ATTEMPTS {
+        state.report.failed += 1;
+        state
+            .report
+            .events
+            .push(CrawlEvent::Failed { url: item.request_url.clone(), reason: format!("retry-exhausted:{reason}") });
+        let diagnostic = boost_diagnostic::Diagnostic::new(
+            pd::code(pd::FETCH_RETRY_EXHAUSTED),
+            DiagnosticSeverity::Warning,
+            pd::origin_fetch(),
+            Message::new("crawler.diagnostic.fetchRetryExhausted")
+                .with_arg("url", MessageArg::Text(item.request_url.to_string()))
+                .with_arg("attempts", MessageArg::U64(u64::from(attempt_number)))
+                .with_arg("reason", MessageArg::Text(reason.to_string()))
+                .with_fallback(format!(
+                    "retry attempts exhausted for `{}` after {attempt_number} attempt(s): {reason}",
+                    item.request_url
+                )),
+        );
+        state.report.push_diagnostic(diagnostic);
+        WorkOutcome::Done
+    }
+    else {
+        WorkOutcome::Retry { retry_after }
+    }
+}
+
+fn discover_sitemap<T: Transport>(
+    state: &mut CrawlState,
+    item: &FrontierItem,
+    client: &mut FetchClient<T>,
+    sitemap_discovered: &mut HashSet<String>,
+    store: &mut Option<&mut dyn Store>,
+    frontier: &mut Option<StoreFrontier>,
+) -> Result<()> {
+    let host_key = site_key_for_url(&item.request_url);
+    if !sitemap_discovered.insert(host_key) || client.robots().sitemaps_for_url(&item.request_url).is_empty() {
+        return Ok(());
+    }
+    sitemap::discover(state, item, client, sitemap_discovered);
+    if let (Some(store), Some(frontier)) = (store.as_deref_mut(), frontier.as_mut()) {
+        enqueue_state_queue(store, frontier, &mut state.queue)?;
+    }
+    Ok(())
+}
+
+enum BrowserFallbackAttempt {
+    Disabled,
+    Captured { snapshot: crawler_types::BrowserSnapshot, browser_engine: String },
+    Failed(CrawlError),
+}
+
+fn try_browser_fallback(item: &FrontierItem, options: CrawlOptions<'_>) -> BrowserFallbackAttempt {
+    if options.browser_fallback != BrowserFallbackPolicy::OnFetchFailure {
+        return BrowserFallbackAttempt::Disabled;
+    }
+    let Some(browser) = options.browser
+    else {
+        return BrowserFallbackAttempt::Disabled;
+    };
+    match browser.capture_snapshot(&item.request_url) {
+        Ok(snapshot) => {
+            let browser_engine = snapshot.browser_engine.clone();
+            BrowserFallbackAttempt::Captured { snapshot, browser_engine }
+        }
+        Err(error) => BrowserFallbackAttempt::Failed(error),
+    }
+}
+
+enum BrowserPageAction {
+    Proceed(FetchArtifact),
+    Skip(String),
+    Pause(PageChallengeState),
+    Fail(String),
+}
+
+/// Resolve a captured snapshot against the challenge policy and record the
+/// resulting skip / pause / failure event when it cannot proceed.
+fn accept_browser_snapshot(
+    state: &mut CrawlState,
+    item: &FrontierItem,
+    snapshot: crawler_types::BrowserSnapshot,
+    options: CrawlOptions<'_>,
+) -> Option<FetchArtifact> {
+    match resolve_browser_snapshot(snapshot, options.challenge_policy) {
+        BrowserPageAction::Proceed(artifact) => Some(artifact),
+        BrowserPageAction::Skip(reason) => {
+            record_skipped(state, item, &reason);
+            None
+        }
+        BrowserPageAction::Pause(challenge_state) => {
+            record_paused(state, item, challenge_state);
+            None
+        }
+        BrowserPageAction::Fail(reason) => {
+            state.report.failed += 1;
+            state.report.events.push(CrawlEvent::Failed { url: item.request_url.clone(), reason });
+            None
+        }
+    }
+}
+
+/// Record a failed render fallback without swallowing the provider diagnostic.
+fn record_browser_fallback_failure(
+    state: &mut CrawlState,
+    item: &FrontierItem,
+    trigger: BrowserFallbackTrigger,
+    error: CrawlError,
+) {
+    let diagnostic_code = error.code().unwrap_or(pd::BROWSER_FALLBACK_FAILED).to_string();
+    let provider_code = error.text_arg("workerCode").filter(|code| !code.is_empty()).map(str::to_string);
+    let reason = error.to_string();
+    let CrawlError::Diagnostic(d) = &error;
+    state.report.push_diagnostic(d.clone());
+    state.report.failed += 1;
+    state.report.events.push(CrawlEvent::BrowserFallbackFailed {
+        url: item.request_url.clone(),
+        trigger,
+        diagnostic_code,
+        provider_code,
+        reason: reason.clone(),
+    });
+    state.report.events.push(CrawlEvent::Failed { url: item.request_url.clone(), reason });
+}
+
+fn resolve_browser_snapshot(snapshot: crawler_types::BrowserSnapshot, policy: ChallengePolicy) -> BrowserPageAction {
+    let challenge_state = snapshot.challenge_state;
+    let outcome = apply_challenge_policy(challenge_state, policy);
+    match outcome {
+        ChallengeOutcome::Proceed => BrowserPageAction::Proceed(snapshot_to_fetch_artifact(&snapshot)),
+        ChallengeOutcome::Skip => BrowserPageAction::Skip(challenge_reason("skipped", challenge_state)),
+        ChallengeOutcome::PauseForOperator => BrowserPageAction::Pause(challenge_state),
+        ChallengeOutcome::Stop => BrowserPageAction::Fail(challenge_reason("blocked", challenge_state)),
+        ChallengeOutcome::FallbackHttp => BrowserPageAction::Fail("challenge-fallback-http-unavailable".into()),
+    }
+}
+
+fn challenge_reason(prefix: &str, state: PageChallengeState) -> String {
+    format!("{prefix}:{}", serde_json::to_string(&state).unwrap_or_else(|_| "unknown".into()))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn process_fetched_item(
+    state: &mut CrawlState,
+    item: &FrontierItem,
+    mut artifact: FetchArtifact,
+    extractors: &[&dyn Extractor],
+    extract_budget: ExtractBudget,
+    committed_pages: &mut Vec<String>,
+    artifacts: &mut Vec<FetchArtifact>,
+    max_depth: u32,
+    options: CrawlOptions<'_>,
+    record_fetched: bool,
+    allow_low_yield_fallback: bool,
+    store: &mut Option<&mut dyn Store>,
+    frontier: &mut Option<StoreFrontier>,
+    claim: Option<&ClaimToken>,
+) {
+    let event_start = state.report.events.events().len();
+    let cache_hit = artifact.transport_provenance == crawler_types::TransportProvenance::CacheHit;
+    if record_fetched {
+        state.report.events.push(CrawlEvent::Fetched { url: artifact.final_url.clone(), status: artifact.status, cache_hit });
+    }
+    artifacts.push(artifact.clone());
+
+    let mut extract = extract_artifact(&artifact, item, extractors, extract_budget);
+    state.report.events.push(CrawlEvent::Extracted {
+        url: extract.source_url.clone(),
+        status: extract.status,
+        extractor: extract.extractor.clone(),
+    });
+
+    if matches!(extract.status, ExtractStatus::Failed | ExtractStatus::Unsupported) {
+        state.report.failed += 1;
+        return;
+    }
+
+    if allow_low_yield_fallback && is_html_artifact(&artifact) {
+        let page_yield = PageYield::measure(&artifact, &extract);
+        if page_yield.is_low() {
+            match try_browser_fallback(item, options) {
+                BrowserFallbackAttempt::Disabled => {}
+                BrowserFallbackAttempt::Failed(error) => {
+                    record_browser_fallback_failure(state, item, BrowserFallbackTrigger::LowYield, error);
+                    return;
+                }
+                BrowserFallbackAttempt::Captured { snapshot, browser_engine } => {
+                    state.report.events.push(CrawlEvent::BrowserFallback {
+                        url: item.request_url.clone(),
+                        trigger: BrowserFallbackTrigger::LowYield,
+                        fetch_error: None,
+                        browser_engine,
+                        observed_text_chars: Some(page_yield.text_chars),
+                        observed_content_blocks: Some(page_yield.content_blocks),
+                    });
+                    let Some(rendered) = accept_browser_snapshot(state, item, snapshot, options)
+                    else {
+                        return;
+                    };
+                    artifact = rendered;
+                    if let Some(last) = artifacts.last_mut() {
+                        *last = artifact.clone();
+                    }
+                    extract = extract_artifact(&artifact, item, extractors, extract_budget);
+                    state.report.events.push(CrawlEvent::Extracted {
+                        url: extract.source_url.clone(),
+                        status: extract.status,
+                        extractor: extract.extractor.clone(),
+                    });
+                    if matches!(extract.status, ExtractStatus::Failed | ExtractStatus::Unsupported) {
+                        state.report.failed += 1;
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    state.report.extracted += 1;
+    let discovered = extract.discovered_links.clone();
+    let document = extract.document.clone();
+    let page_identity = item.request_url.to_string();
+    let transaction = PageTransaction { page_identity: page_identity.clone(), extract, discovered_links: discovered.clone() };
+    match commit_page(transaction) {
+        Ok(committed_identity) => {
+            let committed_event = CrawlEvent::Committed { page_identity: committed_identity.clone() };
+            let page_events: Vec<CrawlEvent> = state.report.events.events()[event_start..].to_vec();
+            // Admitted links are staged in the page transaction when a store is
+            // present, so the page record and its frontier links cannot diverge.
+            let links = if store.is_some() {
+                let mut sink = StagedLinks::new(frontier.as_ref());
+                frontier_from_links(&mut sink, item, &discovered, max_depth)
+            }
+            else {
+                frontier_from_links(&mut state.queue, item, &discovered, max_depth)
+            };
+            let discovered_events: Vec<CrawlEvent> =
+                links.iter().map(|next| CrawlEvent::Discovered { url: next.request_url.clone(), depth: next.depth }).collect();
+            if let Some(store) = store.as_deref_mut() {
+                let worker_id = claim.map(|claim| claim.worker_id.as_str()).unwrap_or(STORE_WORKER_ID);
+                let written = write_page_transaction(
+                    store,
+                    worker_id,
+                    &page_identity,
+                    &artifact,
+                    document.as_ref(),
+                    &page_events,
+                    &committed_event,
+                    &discovered_events,
+                    &links,
+                );
+                if let Err(error) = written {
+                    let _ = store.abort_page_tx();
+                    let CrawlError::Diagnostic(d) = &error;
+                    state.report.push_diagnostic(d.clone());
+                    state.report.failed += 1;
+                    state.report.events.push(CrawlEvent::Failed { url: item.request_url.clone(), reason: error.to_string() });
+                    return;
+                }
+                if let Some(frontier) = frontier.as_mut() {
+                    frontier.note_admitted(&links);
+                }
+            }
+            state.report.committed += 1;
+            state.report.events.push(committed_event);
+            committed_pages.push(committed_identity);
+            if state.last_paused_item.as_ref().is_some_and(|paused| paused.request_url == item.request_url) {
+                state.last_paused_item = None;
+            }
+            for next in discovered_events {
+                state.report.events.push(next);
+            }
+        }
+        Err(error) => {
+            let CrawlError::Diagnostic(d) = &error;
+            state.report.push_diagnostic(d.clone());
+            state.report.failed += 1;
+            state.report.events.push(CrawlEvent::Failed { url: item.request_url.clone(), reason: error.to_string() });
+            return;
+        }
+    }
+}
+
+/// Deduplicate discovered links against the store frontier before the page
+/// commit stages them.
+struct StagedLinks<'a> {
+    frontier: Option<&'a StoreFrontier>,
+    seen: HashSet<String>,
+}
+
+impl<'a> StagedLinks<'a> {
+    fn new(frontier: Option<&'a StoreFrontier>) -> Self {
+        Self { frontier, seen: HashSet::new() }
+    }
+}
+
+impl FrontierSink for StagedLinks<'_> {
+    fn push(&mut self, item: FrontierItem) -> bool {
+        let key = item.request_url.to_string();
+        if self.frontier.is_some_and(|frontier| frontier.contains(&item_id_from_url(&key))) {
+            return false;
+        }
+        self.seen.insert(key)
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_page_transaction(
+    store: &mut dyn Store,
+    worker_id: &str,
+    page_identity: &str,
+    artifact: &FetchArtifact,
+    document: Option<&DocumentGraph>,
+    page_events: &[CrawlEvent],
+    committed_event: &CrawlEvent,
+    discovered_events: &[CrawlEvent],
+    links: &[FrontierItem],
+) -> Result<()> {
+    store.begin_page_tx(worker_id).map_err(store_error)?;
+    store.page_tx_put_fetch(page_identity, artifact.body_bytes().unwrap_or_default()).map_err(store_error)?;
+    if let Some(document) = document {
+        let bytes = serde_json::to_vec(document).map_err(|error| store_error(format!("IR serialization failed: {error}")))?;
+        store.page_tx_put_ir(page_identity, &bytes).map_err(store_error)?;
+        for asset in &document.assets {
+            let Some(bytes) = asset.bytes.as_deref()
+            else {
+                continue;
+            };
+            if bytes.is_empty() {
+                continue;
+            }
+            let fingerprint = asset.content_identity.clone().unwrap_or_else(|| crate::assets::fingerprint(bytes));
+            let binding = PageAssetBinding {
+                asset_id: asset.id.0.to_string(),
+                fingerprint,
+                media_type: asset.media_type.clone(),
+                bytes: bytes.to_vec(),
+            };
+            store.page_tx_bind_asset(&binding).map_err(store_error)?;
+        }
+    }
+    for event in page_events {
+        store.page_tx_put_event(event).map_err(store_error)?;
+    }
+    store.page_tx_put_event(committed_event).map_err(store_error)?;
+    for event in discovered_events {
+        store.page_tx_put_event(event).map_err(store_error)?;
+    }
+    store.page_tx_admit_links(links.to_vec()).map_err(store_error)?;
+    store.commit_page_tx().map_err(store_error)
+}
+
+fn extract_artifact(
+    artifact: &FetchArtifact,
+    item: &FrontierItem,
+    extractors: &[&dyn Extractor],
+    extract_budget: ExtractBudget,
+) -> ExtractResult {
+    run_extract(artifact, extractors, extract_budget, &ExtractContext { page_identity: Some(item.request_url.to_string()) })
+}
+
+/// Only HTML artifacts can be replaced by a rendered DOM. A short PDF, JSON or
+/// plain-text response is not a JavaScript shell.
+fn is_html_artifact(artifact: &FetchArtifact) -> bool {
+    if let Some(content_type) = artifact.content_type.as_deref() {
+        return content_type.to_ascii_lowercase().contains("html");
+    }
+    let Some(body) = artifact.body_bytes()
+    else {
+        return false;
+    };
+    let head = &body[..body.len().min(64)];
+    let head = String::from_utf8_lossy(head);
+    let head = head.trim_start().trim_start_matches('\u{feff}').to_ascii_lowercase();
+    ["<!doctype html", "<html", "<body", "<div", "<p", "<article", "<main"].iter().any(|prefix| head.starts_with(prefix))
+}
+
+fn measure_document(graph: &DocumentGraph) -> (u64, u32) {
+    let mut text_chars = 0u64;
+    let mut content_blocks = 0u32;
+    for node in &graph.blocks {
+        if let Some(chars) = block_text_chars(&node.block) {
+            content_blocks += 1;
+            text_chars += chars;
+        }
+    }
+    (text_chars, content_blocks)
+}
+
+fn block_text_chars(block: &Block) -> Option<u64> {
+    let chars = match block {
+        Block::Section { title, .. } => inline_text_chars(title),
+        Block::Paragraph { content } => inline_text_chars(content),
+        Block::List { items, .. } => items.iter().map(|item| inline_text_chars(&item.content)).sum(),
+        // Cell paragraph bodies are their own graph blocks and are counted by
+        // the caller as they are visited, so only the caption is charged here.
+        Block::Table { caption, .. } => caption.as_deref().map(|caption| caption.chars().count() as u64).unwrap_or(0),
+        Block::Quote { .. } => return None,
+        Block::Code { content, .. } => content.chars().count() as u64,
+        Block::Math { formula } => formula.source.chars().count() as u64,
+        Block::Diagram { source, .. }
+        | Block::Chart { source, .. }
+        | Block::Engraving { source, .. }
+        | Block::Depiction { source, .. } => source.chars().count() as u64,
+        Block::Opaque { .. } | Block::RawHtml { .. } => return None,
+    };
+    Some(chars)
+}
+
+fn inline_text_chars(inlines: &[Inline]) -> u64 {
+    inlines.iter().map(|inline| inline.plain_text().chars().count() as u64).sum()
+}
+
+/// Sum the bytes inside inline `<script>` elements.
+fn inline_script_bytes(body: &[u8]) -> u64 {
+    const OPEN: &[u8] = b"<script";
+    const CLOSE: &[u8] = b"</script";
+    let mut total = 0u64;
+    let mut cursor = 0usize;
+    while let Some(start) = find_ascii_case_insensitive(body, OPEN, cursor) {
+        let Some(open_end) = body[start..].iter().position(|byte| *byte == b'>')
+        else {
+            break;
+        };
+        let body_start = start + open_end + 1;
+        let Some(end) = find_ascii_case_insensitive(body, CLOSE, body_start)
+        else {
+            break;
+        };
+        total += end.saturating_sub(body_start) as u64;
+        cursor = end + CLOSE.len();
+    }
+    total
+}
+
+fn find_ascii_case_insensitive(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
+    if needle.is_empty() || from >= haystack.len() || needle.len() > haystack.len() {
+        return None;
+    }
+    let last = haystack.len() - needle.len();
+    (from..=last).find(|start| {
+        haystack
+            .get(*start..)
+            .and_then(|rest| rest.get(..needle.len()))
+            .is_some_and(|window| window.eq_ignore_ascii_case(needle))
+    })
+}
+
+fn record_skipped(state: &mut CrawlState, item: &FrontierItem, reason: &str) {
+    state.report.skipped += 1;
+    state.report.events.push(CrawlEvent::Skipped { url: item.request_url.clone(), reason: reason.into() });
+}
+
+/// Mark the run budget-exhausted and keep the pending frontier visible.
+fn record_budget_exhausted(state: &mut CrawlState, remaining: u32) {
+    state.report.budget_status = CrawlBudgetStatus::Exhausted;
+    state.report.remaining_frontier = remaining;
+    let diagnostic = boost_diagnostic::Diagnostic::new(
+        pd::code(pd::CRAWL_BUDGET_EXHAUSTED),
+        DiagnosticSeverity::Warning,
+        pd::origin_crawl(),
+        Message::new("crawler.diagnostic.crawlBudgetExhausted")
+            .with_arg("remainingFrontier", MessageArg::U64(remaining as u64))
+            .with_fallback(format!("crawl request budget exhausted with {remaining} frontier item(s) remaining")),
+    );
+    state.report.push_diagnostic(diagnostic);
+}
+
+/// Push a run-level diagnostic into the report envelope when a page fails
+/// with a structured [`CrawlError::Diagnostic`].
+fn record_crawl_diagnostic(state: &mut CrawlState, error: &CrawlError) {
+    let CrawlError::Diagnostic(d) = error;
+    state.report.push_diagnostic(d.clone());
+}
+
+fn record_paused(state: &mut CrawlState, item: &FrontierItem, challenge_state: PageChallengeState) {
+    state.requests_used = state.requests_used.saturating_sub(1);
+    state.report.paused += 1;
+    state.last_paused_item = Some(item.clone());
+    state.report.events.push(CrawlEvent::PausedForOperator { url: item.request_url.clone(), challenge_state });
+}
+
+fn default_strategy_fingerprint(options: CrawlOptions<'_>) -> String {
+    format!("browser_fallback={:?}", options.browser_fallback)
+}
+
+fn validate_resume_strategy(resume: &ResumeState, options: CrawlOptions<'_>) -> Result<()> {
+    if let Some(expected) = &resume.strategy_fingerprint {
+        let actual = options.strategy_fingerprint.map(str::to_string).unwrap_or_else(|| default_strategy_fingerprint(options));
+        if expected != &actual {
+            let diag = boost_diagnostic::Diagnostic::new(
+                pd::code(pd::REQUEST_INVALID),
+                DiagnosticSeverity::Error,
+                pd::origin_crawl(),
+                Message::new("crawler.diagnostic.resumeStrategyMismatch")
+                    .with_arg("checkpoint", MessageArg::Text(expected.clone()))
+                    .with_arg("current", MessageArg::Text(actual.clone()))
+                    .with_fallback(format!(
+                        "resume strategy mismatch: checkpoint `{expected}` does not match current `{actual}`"
+                    )),
+            );
+            return Err(CrawlError::from(diag));
+        }
+    }
+    Ok(())
+}

@@ -1,0 +1,26 @@
+[package]
+name = "document-renderer-html"
+version.workspace = true
+authors.workspace = true
+description = "HTML 快照与 reflow 输出后端"
+license.workspace = true
+edition.workspace = true
+readme = "readme.md"
+
+[dependencies]
+document-compose = { workspace = true, features = ["serde"] }
+document-ir = { workspace = true }
+document-layout = { workspace = true }
+document-presentation = { workspace = true }
+document-renderer = { workspace = true }
+document-renderer-svg = { workspace = true }
+document-text = { workspace = true }
+
+[dev-dependencies]
+document-ir = { workspace = true }
+document-fonts = { workspace = true }
+plotter-diagram = { workspace = true }
+plotter-input-plantuml = { workspace = true }
+plotter-input-dot = { workspace = true }
+plotter-input-mermaid = { workspace = true }
+document-layout = { workspace = true }

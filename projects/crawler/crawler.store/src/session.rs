@@ -1,0 +1,832 @@
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+
+use crawler_types::{CrawlEvent, CrawlRequest, FetchArtifact, FrontierItem, PageChallengeState, TransportProvenance};
+use serde::{Deserialize, Serialize};
+use url::Url;
+
+use crate::{
+    error::{Result, StoreError},
+    keyspace::{item_id_from_url, run_id_from_seed},
+    types::{
+        BrowserSessionRecord, BrowserSnapshotInput, BrowserSnapshotRecord, ChallengePauseRecord, CheckpointClaim,
+        CheckpointView, ClaimToken, ObjectKind, ObjectRef, PageAssetBinding, PagePhase, PageTxHandle, ReleaseOutcome,
+        ResumeState, RunHandle, RunSpec,
+    },
+};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ClaimRecord {
+    worker_id: String,
+    fencing_token: u64,
+    lease_until_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct PageRecord {
+    item_id: String,
+    worker_id: String,
+    fencing_token: u64,
+    phase: PagePhase,
+    fetch_fixture: Option<String>,
+    ir_fixture: Option<String>,
+    #[serde(default)]
+    fetch_ref: Option<ObjectRef>,
+    #[serde(default)]
+    ir_ref: Option<ObjectRef>,
+    #[serde(default)]
+    asset_refs: Vec<ObjectRef>,
+    #[serde(default)]
+    admitted_links: Vec<FrontierItem>,
+    #[serde(default)]
+    events: Vec<CrawlEvent>,
+}
+
+/// One content-addressed object retained by the memory backend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct StoredObject {
+    pub(crate) reference: ObjectRef,
+    pub(crate) bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct RunState {
+    seed_url: String,
+    #[serde(default)]
+    request: Option<CrawlRequest>,
+    #[serde(default)]
+    strategy_fingerprint: Option<String>,
+    frontier: BTreeMap<String, FrontierItem>,
+    claims: BTreeMap<String, ClaimRecord>,
+    pages: BTreeMap<String, PageRecord>,
+    event_count: u64,
+    #[serde(default)]
+    checkpoint_sequence: u64,
+    #[serde(default)]
+    last_checkpoint_view: Option<CheckpointView>,
+    #[serde(default)]
+    events: Vec<CrawlEvent>,
+    #[serde(default)]
+    challenge_pauses: BTreeMap<String, ChallengePauseRecord>,
+    #[serde(default)]
+    browser_session: Option<BrowserSessionRecord>,
+    next_fencing: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RobotsCacheEntry {
+    body: Vec<u8>,
+    expires_at_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+struct NamespaceQuota {
+    max_bytes: u64,
+    max_records: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SessionSnapshot {
+    runs: BTreeMap<String, RunState>,
+    active_run_id: Option<String>,
+    #[serde(default)]
+    response_cache: BTreeMap<String, Vec<u8>>,
+    #[serde(default)]
+    robots_cache: BTreeMap<String, RobotsCacheEntry>,
+    #[serde(default)]
+    objects: BTreeMap<String, StoredObject>,
+    #[serde(default)]
+    browser_cache: BTreeMap<String, BrowserSnapshotRecord>,
+    #[serde(default)]
+    namespace_quotas: BTreeMap<String, NamespaceQuota>,
+}
+
+/// One committed page exposed by the legacy session migration path.
+#[derive(Debug, Clone)]
+pub(crate) struct LegacyPage {
+    pub(crate) page_id: String,
+    pub(crate) item_id: String,
+    pub(crate) worker_id: String,
+    pub(crate) fencing_token: u64,
+    pub(crate) phase: PagePhase,
+    pub(crate) fetch_fixture: Option<String>,
+    pub(crate) ir_fixture: Option<String>,
+}
+
+/// One run exposed by the legacy session migration path.
+#[derive(Debug, Clone)]
+pub(crate) struct LegacyRun {
+    pub(crate) run_id: String,
+    pub(crate) seed_url: String,
+    pub(crate) event_count: u64,
+    pub(crate) frontier: Vec<FrontierItem>,
+    pub(crate) pages: Vec<LegacyPage>,
+}
+
+/// Shared store session state used by memory and YYDB backends.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct StoreSession {
+    runs: BTreeMap<String, RunState>,
+    active_run_id: Option<String>,
+    #[serde(default)]
+    response_cache: BTreeMap<String, Vec<u8>>,
+    #[serde(default)]
+    robots_cache: BTreeMap<String, RobotsCacheEntry>,
+    #[serde(default)]
+    objects: BTreeMap<String, StoredObject>,
+    #[serde(default)]
+    browser_cache: BTreeMap<String, BrowserSnapshotRecord>,
+    #[serde(default)]
+    namespace_quotas: BTreeMap<String, NamespaceQuota>,
+    #[serde(default)]
+    claim_lease: Duration,
+    snapshot: SessionSnapshot,
+    last_claim: Option<ClaimToken>,
+    active_page_tx: Option<PageTxHandle>,
+}
+
+impl StoreSession {
+    pub(crate) fn new(claim_lease: Duration) -> Self {
+        Self {
+            runs: BTreeMap::new(),
+            active_run_id: None,
+            response_cache: BTreeMap::new(),
+            robots_cache: BTreeMap::new(),
+            objects: BTreeMap::new(),
+            browser_cache: BTreeMap::new(),
+            namespace_quotas: BTreeMap::new(),
+            claim_lease,
+            snapshot: SessionSnapshot {
+                runs: BTreeMap::new(),
+                active_run_id: None,
+                response_cache: BTreeMap::new(),
+                robots_cache: BTreeMap::new(),
+                objects: BTreeMap::new(),
+                browser_cache: BTreeMap::new(),
+                namespace_quotas: BTreeMap::new(),
+            },
+            last_claim: None,
+            active_page_tx: None,
+        }
+    }
+
+    pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        serde_json::from_slice(bytes).map_err(|error| StoreError::StoreCorrupt(error.to_string()))
+    }
+
+    fn now_millis() -> u64 {
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64
+    }
+
+    pub(crate) fn persist_snapshot(&mut self) {
+        self.snapshot = SessionSnapshot {
+            runs: self.runs.clone(),
+            active_run_id: self.active_run_id.clone(),
+            response_cache: self.response_cache.clone(),
+            robots_cache: self.robots_cache.clone(),
+            objects: self.objects.clone(),
+            browser_cache: self.browser_cache.clone(),
+            namespace_quotas: self.namespace_quotas.clone(),
+        };
+    }
+
+    pub(crate) fn reopen(&mut self) -> Result<()> {
+        self.runs = self.snapshot.runs.clone();
+        self.active_run_id = self.snapshot.active_run_id.clone();
+        self.response_cache = self.snapshot.response_cache.clone();
+        self.robots_cache = self.snapshot.robots_cache.clone();
+        self.objects = self.snapshot.objects.clone();
+        self.browser_cache = self.snapshot.browser_cache.clone();
+        self.namespace_quotas = self.snapshot.namespace_quotas.clone();
+        self.last_claim = None;
+        self.active_page_tx = None;
+        if let Some(run_id) = &self.active_run_id {
+            if let Some(run) = self.runs.get(run_id) {
+                if let Some((item_id, claim)) = run.claims.iter().next() {
+                    self.last_claim = Some(ClaimToken {
+                        item_id: item_id.clone(),
+                        worker_id: claim.worker_id.clone(),
+                        fencing_token: claim.fencing_token,
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn begin_run(&mut self, spec: RunSpec) -> Result<RunHandle> {
+        let run_id = run_id_from_seed(&spec.seed_url);
+        let run = RunState {
+            seed_url: spec.seed_url,
+            request: spec.request,
+            strategy_fingerprint: spec.strategy_fingerprint,
+            frontier: BTreeMap::new(),
+            claims: BTreeMap::new(),
+            pages: BTreeMap::new(),
+            event_count: 0,
+            checkpoint_sequence: 0,
+            last_checkpoint_view: None,
+            events: Vec::new(),
+            challenge_pauses: BTreeMap::new(),
+            browser_session: None,
+            next_fencing: 0,
+        };
+        self.runs.insert(run_id.clone(), run);
+        self.active_run_id = Some(run_id.clone());
+        self.last_claim = None;
+        self.active_page_tx = None;
+        self.persist_snapshot();
+        Ok(RunHandle { run_id })
+    }
+
+    pub(crate) fn resume(&mut self, run_id: &str) -> Result<ResumeState> {
+        let now = Self::now_millis();
+        let run = self.runs.get_mut(run_id).ok_or_else(|| StoreError::StoreInvalidState(format!("unknown run `{run_id}`")))?;
+        let expired: Vec<String> =
+            run.claims.iter().filter(|(_, claim)| claim.lease_until_ms <= now).map(|(item_id, _)| item_id.clone()).collect();
+        for item_id in expired {
+            run.claims.remove(&item_id);
+        }
+        let committed_pages = run.pages.values().filter(|page| page.phase == PagePhase::Committed).count() as u64;
+        let pending_frontier = run.frontier.len() as u64;
+        let pending_hosts: BTreeSet<String> = run.frontier.values().map(|item| item.site_key.clone()).collect();
+        let open_claims = run
+            .claims
+            .iter()
+            .map(|(item_id, claim)| CheckpointClaim {
+                item_id: item_id.clone(),
+                worker_id: claim.worker_id.clone(),
+                fencing_token: claim.fencing_token,
+                lease_until_ms: claim.lease_until_ms,
+            })
+            .collect();
+        let state = ResumeState {
+            run_id: run_id.to_owned(),
+            seed_url: run.seed_url.clone(),
+            request: run.request.clone(),
+            strategy_fingerprint: run.strategy_fingerprint.clone(),
+            last_commit_sequence: run.event_count,
+            committed_pages,
+            pending_frontier,
+            pending_hosts: pending_hosts.into_iter().collect(),
+            open_claims,
+        };
+        self.active_run_id = Some(run_id.to_owned());
+        self.last_claim = None;
+        self.active_page_tx = None;
+        self.persist_snapshot();
+        Ok(state)
+    }
+
+    pub(crate) fn active_run_id(&self) -> Result<Option<String>> {
+        Ok(self.active_run_id.clone())
+    }
+
+    pub(crate) fn enqueue(&mut self, item: FrontierItem) -> Result<()> {
+        let run = self.active_run_mut()?;
+        let item_id = item_id_from_url(item.request_url.as_str());
+        run.frontier.insert(item_id, item);
+        self.persist_snapshot();
+        Ok(())
+    }
+
+    pub(crate) fn claim_next(&mut self, host_key: &str, worker_id: &str) -> Result<Option<ClaimToken>> {
+        let now = Self::now_millis();
+        let lease_millis = self.claim_lease.as_millis() as u64;
+        let run = self.active_run_mut()?;
+        for (item_id, item) in &run.frontier {
+            if item.site_key != host_key {
+                continue;
+            }
+            // A committed page is terminal for its frontier item and must not be re-claimed.
+            if run.pages.get(item_id).is_some_and(|page| page.phase == PagePhase::Committed) {
+                continue;
+            }
+            if let Some(claim) = run.claims.get(item_id) {
+                if claim.lease_until_ms > now {
+                    if claim.worker_id == worker_id {
+                        let token = ClaimToken {
+                            item_id: item_id.clone(),
+                            worker_id: worker_id.to_owned(),
+                            fencing_token: claim.fencing_token,
+                        };
+                        self.last_claim = Some(token.clone());
+                        return Ok(Some(token));
+                    }
+                    continue;
+                }
+                // Expired claims are reclaimable with a fresh fencing token.
+            }
+            run.next_fencing += 1;
+            let token =
+                ClaimToken { item_id: item_id.clone(), worker_id: worker_id.to_owned(), fencing_token: run.next_fencing };
+            run.claims.insert(
+                item_id.clone(),
+                ClaimRecord {
+                    worker_id: worker_id.to_owned(),
+                    fencing_token: run.next_fencing,
+                    lease_until_ms: now + lease_millis,
+                },
+            );
+            self.last_claim = Some(token.clone());
+            self.persist_snapshot();
+            return Ok(Some(token));
+        }
+        Ok(None)
+    }
+
+    pub(crate) fn second_worker_claim(&mut self, worker_id: &str) -> Result<()> {
+        let run = self.active_run()?;
+        let item_id =
+            run.claims.keys().next().cloned().ok_or_else(|| StoreError::StoreInvalidState("no claimed item".into()))?;
+        self.last_claim = Some(ClaimToken { item_id, worker_id: worker_id.to_owned(), fencing_token: 0 });
+        Ok(())
+    }
+
+    pub(crate) fn renew_claim(&mut self, token: &ClaimToken) -> Result<u64> {
+        let now = Self::now_millis();
+        let lease_millis = self.claim_lease.as_millis() as u64;
+        let run = self.active_run_mut()?;
+        let claim = run.claims.get_mut(&token.item_id).ok_or(StoreError::StoreFencingMismatch)?;
+        if claim.worker_id != token.worker_id || claim.fencing_token != token.fencing_token {
+            return Err(StoreError::StoreFencingMismatch);
+        }
+        if claim.lease_until_ms <= now {
+            return Err(StoreError::StoreLeaseExpired);
+        }
+        claim.lease_until_ms = now + lease_millis;
+        let until = claim.lease_until_ms;
+        self.persist_snapshot();
+        Ok(until)
+    }
+
+    pub(crate) fn release_claim(&mut self, token: &ClaimToken, outcome: ReleaseOutcome) -> Result<()> {
+        let run = self.active_run_mut()?;
+        let claim = run.claims.get(&token.item_id).ok_or(StoreError::StoreFencingMismatch)?;
+        if claim.worker_id != token.worker_id || claim.fencing_token != token.fencing_token {
+            return Err(StoreError::StoreFencingMismatch);
+        }
+        if claim.lease_until_ms <= Self::now_millis() {
+            return Err(StoreError::StoreLeaseExpired);
+        }
+        run.claims.remove(&token.item_id);
+        match outcome {
+            ReleaseOutcome::Done => {
+                run.frontier.remove(&token.item_id);
+            }
+            ReleaseOutcome::Pending => {}
+            ReleaseOutcome::Requeue => {
+                if let Some(item) = run.frontier.get_mut(&token.item_id) {
+                    item.attempts = item.attempts.saturating_add(1);
+                }
+            }
+        }
+        if self.last_claim.as_ref() == Some(token) {
+            self.last_claim = None;
+        }
+        self.persist_snapshot();
+        Ok(())
+    }
+
+    pub(crate) fn begin_page_tx(&mut self, worker_id: &str) -> Result<PageTxHandle> {
+        let claim = self.last_claim.clone().ok_or_else(|| StoreError::StoreInvalidState("no claim token".into()))?;
+        if claim.worker_id != worker_id {
+            return Err(StoreError::StoreFencingMismatch);
+        }
+        let run = self.active_run_mut()?;
+        let active = run.claims.get(&claim.item_id).ok_or(StoreError::StoreFencingMismatch)?;
+        if active.worker_id != worker_id || active.fencing_token != claim.fencing_token {
+            return Err(StoreError::StoreFencingMismatch);
+        }
+        if active.lease_until_ms <= Self::now_millis() {
+            return Err(StoreError::StoreLeaseExpired);
+        }
+        let page_id = claim.item_id.clone();
+        run.pages.insert(
+            page_id.clone(),
+            PageRecord {
+                item_id: claim.item_id.clone(),
+                worker_id: worker_id.to_owned(),
+                fencing_token: claim.fencing_token,
+                phase: PagePhase::Claimed,
+                fetch_fixture: None,
+                ir_fixture: None,
+                fetch_ref: None,
+                ir_ref: None,
+                asset_refs: Vec::new(),
+                admitted_links: Vec::new(),
+                events: Vec::new(),
+            },
+        );
+        let handle = PageTxHandle { page_id };
+        self.active_page_tx = Some(handle.clone());
+        self.persist_snapshot();
+        Ok(handle)
+    }
+
+    pub(crate) fn page_tx_put_fetch(&mut self, fixture: &str, bytes: &[u8]) -> Result<()> {
+        let reference = self.insert_object(ObjectKind::ResponseBody, None, bytes)?;
+        let page_id =
+            self.active_page_tx.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no page tx".into()))?.page_id.clone();
+        let run = self.active_run_mut()?;
+        let page = run.pages.get_mut(&page_id).ok_or_else(|| StoreError::StoreNotFound(page_id.clone()))?;
+        page.fetch_fixture = Some(fixture.to_owned());
+        page.fetch_ref = Some(reference);
+        page.phase = PagePhase::Fetched;
+        self.persist_snapshot();
+        Ok(())
+    }
+
+    pub(crate) fn page_tx_put_ir(&mut self, fixture: &str, bytes: &[u8]) -> Result<()> {
+        let reference = self.insert_object(ObjectKind::IrPackage, None, bytes)?;
+        let page_id =
+            self.active_page_tx.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no page tx".into()))?.page_id.clone();
+        let run = self.active_run_mut()?;
+        let page = run.pages.get_mut(&page_id).ok_or_else(|| StoreError::StoreNotFound(page_id.clone()))?;
+        page.ir_fixture = Some(fixture.to_owned());
+        page.ir_ref = Some(reference);
+        page.phase = PagePhase::IrValidated;
+        self.persist_snapshot();
+        Ok(())
+    }
+
+    pub(crate) fn page_tx_bind_asset(&mut self, binding: &PageAssetBinding) -> Result<()> {
+        let reference = self.insert_object(ObjectKind::AssetBytes, binding.media_type.as_deref(), &binding.bytes)?;
+        let page_id =
+            self.active_page_tx.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no page tx".into()))?.page_id.clone();
+        let run = self.active_run_mut()?;
+        let page = run.pages.get_mut(&page_id).ok_or_else(|| StoreError::StoreNotFound(page_id.clone()))?;
+        page.asset_refs.push(reference);
+        page.phase = PagePhase::AssetsBound;
+        self.persist_snapshot();
+        Ok(())
+    }
+
+    pub(crate) fn page_tx_admit_links(&mut self, items: Vec<FrontierItem>) -> Result<()> {
+        let page_id =
+            self.active_page_tx.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no page tx".into()))?.page_id.clone();
+        let run = self.active_run_mut()?;
+        let page = run.pages.get_mut(&page_id).ok_or_else(|| StoreError::StoreNotFound(page_id.clone()))?;
+        page.admitted_links.extend(items);
+        Ok(())
+    }
+
+    pub(crate) fn page_tx_put_event(&mut self, event: &CrawlEvent) -> Result<()> {
+        let page_id =
+            self.active_page_tx.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no page tx".into()))?.page_id.clone();
+        let run = self.active_run_mut()?;
+        let page = run.pages.get_mut(&page_id).ok_or_else(|| StoreError::StoreNotFound(page_id.clone()))?;
+        page.events.push(event.clone());
+        Ok(())
+    }
+
+    pub(crate) fn commit_page_tx(&mut self) -> Result<()> {
+        let page_id =
+            self.active_page_tx.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no page tx".into()))?.page_id.clone();
+        let run = self.active_run_mut()?;
+        let claim = run.claims.get(&page_id).ok_or(StoreError::StoreFencingMismatch)?;
+        if claim.lease_until_ms <= Self::now_millis() {
+            return Err(StoreError::StoreLeaseExpired);
+        }
+        let admitted =
+            run.pages.get(&page_id).ok_or_else(|| StoreError::StoreNotFound(page_id.clone()))?.admitted_links.clone();
+        let event_count =
+            run.pages.get(&page_id).ok_or_else(|| StoreError::StoreNotFound(page_id.clone()))?.events.len().max(1);
+        // Links and events land with the page phase in one in-memory step so a
+        // failed commit never exposes a page without its frontier admissions.
+        for item in admitted {
+            let item_id = item_id_from_url(item.request_url.as_str());
+            run.frontier.entry(item_id).or_insert(item);
+        }
+        let page = run.pages.get_mut(&page_id).ok_or_else(|| StoreError::StoreNotFound(page_id.clone()))?;
+        page.phase = PagePhase::Committed;
+        run.event_count += event_count as u64;
+        self.active_page_tx = None;
+        self.persist_snapshot();
+        Ok(())
+    }
+
+    pub(crate) fn abort_page_tx(&mut self) -> Result<()> {
+        let page_id =
+            self.active_page_tx.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no page tx".into()))?.page_id.clone();
+        let run = self.active_run_mut()?;
+        run.pages.remove(&page_id);
+        self.active_page_tx = None;
+        self.persist_snapshot();
+        Ok(())
+    }
+
+    pub(crate) fn event_count(&self) -> Result<u64> {
+        Ok(self.active_run()?.event_count)
+    }
+
+    pub(crate) fn save_checkpoint_view(&mut self) -> Result<u64> {
+        let run_id = self.active_run_id.clone().ok_or_else(|| StoreError::StoreInvalidState("no active run".into()))?;
+        let sequence = {
+            let run = self.active_run_mut()?;
+            run.checkpoint_sequence = run.event_count;
+            let view = Self::view_from_run(&run_id, run);
+            run.last_checkpoint_view = Some(view);
+            run.event_count
+        };
+        self.persist_snapshot();
+        Ok(sequence)
+    }
+
+    fn view_from_run(run_id: &str, run: &RunState) -> CheckpointView {
+        CheckpointView {
+            run_id: run_id.to_owned(),
+            seed_url: run.seed_url.clone(),
+            last_commit_sequence: run.checkpoint_sequence,
+            committed_pages: run.pages.values().filter(|page| page.phase == PagePhase::Committed).count() as u64,
+            pending_frontier: run.frontier.len() as u64,
+            open_claims: run
+                .claims
+                .iter()
+                .map(|(item_id, claim)| CheckpointClaim {
+                    item_id: item_id.clone(),
+                    worker_id: claim.worker_id.clone(),
+                    fencing_token: claim.fencing_token,
+                    lease_until_ms: claim.lease_until_ms,
+                })
+                .collect(),
+        }
+    }
+
+    pub(crate) fn checkpoint_view(&self) -> Result<Option<CheckpointView>> {
+        Ok(self.active_run()?.last_checkpoint_view.clone())
+    }
+
+    pub(crate) fn checkpoint_lag(&self) -> u64 {
+        self.active_run().map(|run| run.event_count.saturating_sub(run.checkpoint_sequence)).unwrap_or(0)
+    }
+
+    pub(crate) fn frontier_item(&self, item_id: &str) -> Result<Option<FrontierItem>> {
+        Ok(self.active_run()?.frontier.get(item_id).cloned())
+    }
+
+    pub(crate) fn pending_frontier_count(&self) -> Result<u64> {
+        Ok(self.active_run()?.frontier.len() as u64)
+    }
+
+    pub(crate) fn page_asset_refs(&self, page_id: &str) -> Result<Vec<String>> {
+        let run = self.active_run()?;
+        run.pages
+            .get(page_id)
+            .map(|page| page.asset_refs.iter().map(|reference| reference.fingerprint.clone()).collect())
+            .ok_or_else(|| StoreError::StoreNotFound(page_id.to_owned()))
+    }
+
+    pub(crate) fn page_object_refs(&self, page_id: &str) -> Result<Vec<ObjectRef>> {
+        let run = self.active_run()?;
+        let page = run.pages.get(page_id).ok_or_else(|| StoreError::StoreNotFound(page_id.to_owned()))?;
+        let mut refs = Vec::with_capacity(2 + page.asset_refs.len());
+        refs.extend(page.fetch_ref.clone());
+        refs.extend(page.ir_ref.clone());
+        refs.extend(page.asset_refs.iter().cloned());
+        Ok(refs)
+    }
+
+    /// Store one object, returning the existing reference when the bytes are already present.
+    pub(crate) fn insert_object(&mut self, kind: ObjectKind, media_type: Option<&str>, bytes: &[u8]) -> Result<ObjectRef> {
+        let fingerprint = blake3::hash(bytes).to_hex().to_string();
+        if let Some(existing) = self.objects.get(&fingerprint) {
+            return Ok(existing.reference.clone());
+        }
+        let reference = ObjectRef {
+            fingerprint: fingerprint.clone(),
+            size: bytes.len() as u64,
+            media_type: media_type.map(str::to_owned),
+            kind,
+        };
+        self.objects.insert(fingerprint, StoredObject { reference: reference.clone(), bytes: bytes.to_vec() });
+        self.persist_snapshot();
+        Ok(reference)
+    }
+
+    pub(crate) fn get_object(&self, fingerprint: &str) -> Result<Option<Vec<u8>>> {
+        Ok(self.objects.get(fingerprint).map(|object| object.bytes.clone()))
+    }
+
+    pub(crate) fn object_ref(&self, fingerprint: &str) -> Result<Option<ObjectRef>> {
+        Ok(self.objects.get(fingerprint).map(|object| object.reference.clone()))
+    }
+
+    pub(crate) fn page_phase(&self, page_id: &str) -> Result<PagePhase> {
+        if page_id == "auto" {
+            return self.page_phase_for_auto();
+        }
+        let run = self.active_run()?;
+        run.pages.get(page_id).map(|page| page.phase).ok_or_else(|| StoreError::StoreNotFound(page_id.to_owned()))
+    }
+
+    fn active_run(&self) -> Result<&RunState> {
+        let run_id = self.active_run_id.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no active run".into()))?;
+        self.runs.get(run_id).ok_or_else(|| StoreError::StoreNotFound(run_id.clone()))
+    }
+
+    fn active_run_mut(&mut self) -> Result<&mut RunState> {
+        let run_id = self.active_run_id.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no active run".into()))?.clone();
+        self.runs.get_mut(&run_id).ok_or_else(|| StoreError::StoreNotFound(run_id))
+    }
+
+    fn page_phase_for_auto(&self) -> Result<PagePhase> {
+        if let Ok(page) = self.page_for_auto() {
+            return Ok(page.phase);
+        }
+        let claim = self.last_claim.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no active claim".into()))?;
+        let run = self.active_run()?;
+        if run.claims.contains_key(&claim.item_id) {
+            return Ok(PagePhase::Claimed);
+        }
+        Err(StoreError::StoreNotFound("auto page".into()))
+    }
+
+    fn page_for_auto(&self) -> Result<&PageRecord> {
+        let run = self.active_run()?;
+        let claim = self.last_claim.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no active claim".into()))?;
+        run.pages
+            .values()
+            .find(|page| page.item_id == claim.item_id)
+            .or_else(|| run.pages.values().find(|page| page.worker_id == claim.worker_id))
+            .ok_or_else(|| StoreError::StoreNotFound("auto page".into()))
+    }
+
+    pub(crate) fn get_response_cache(&self, cache_key: &str) -> Result<Option<FetchArtifact>> {
+        let Some(bytes) = self.response_cache.get(cache_key)
+        else {
+            return Ok(None);
+        };
+        let mut artifact: FetchArtifact =
+            serde_json::from_slice(bytes).map_err(|error| StoreError::StoreCorrupt(error.to_string()))?;
+        artifact.transport_provenance = TransportProvenance::CacheHit;
+        Ok(Some(artifact))
+    }
+
+    pub(crate) fn put_response_cache(&mut self, artifact: &FetchArtifact) -> Result<()> {
+        let bytes = serde_json::to_vec(artifact).map_err(|error| StoreError::StoreCorrupt(error.to_string()))?;
+        self.response_cache.insert(artifact.cache_key.clone(), bytes);
+        self.enforce_response_quota();
+        self.persist_snapshot();
+        Ok(())
+    }
+
+    pub(crate) fn set_namespace_quota(&mut self, namespace: &str, max_bytes: u64, max_records: u64) {
+        self.namespace_quotas.insert(namespace.to_owned(), NamespaceQuota { max_bytes, max_records });
+        self.persist_snapshot();
+    }
+
+    pub(crate) fn response_cache_stats(&self) -> (u64, u64, Option<u64>) {
+        let bytes_used = self.response_cache.values().map(|bytes| bytes.len() as u64).sum();
+        let quota = self.namespace_quotas.get("cache/response/").map(|quota| quota.max_bytes);
+        (self.response_cache.len() as u64, bytes_used, quota)
+    }
+
+    fn enforce_response_quota(&mut self) {
+        let Some(quota) = self.namespace_quotas.get("cache/response/").copied()
+        else {
+            return;
+        };
+        loop {
+            let bytes_used: u64 = self.response_cache.values().map(|bytes| bytes.len() as u64).sum();
+            if (self.response_cache.len() as u64) <= quota.max_records && bytes_used <= quota.max_bytes {
+                return;
+            }
+            let victim = self
+                .response_cache
+                .iter()
+                .min_by_key(|(_, bytes)| {
+                    serde_json::from_slice::<FetchArtifact>(bytes)
+                        .map(|artifact| artifact.retrieved_at_epoch)
+                        .unwrap_or_default()
+                })
+                .map(|(key, _)| key.clone());
+            let Some(victim) = victim
+            else {
+                return;
+            };
+            self.response_cache.remove(&victim);
+        }
+    }
+
+    pub(crate) fn get_robots_cache(&self, site_key: &str) -> Result<Option<Vec<u8>>> {
+        let Some(entry) = self.robots_cache.get(site_key)
+        else {
+            return Ok(None);
+        };
+        if entry.expires_at_ms.is_some_and(|deadline| deadline <= Self::now_millis()) {
+            return Ok(None);
+        }
+        Ok(Some(entry.body.clone()))
+    }
+
+    pub(crate) fn put_robots_cache(&mut self, site_key: &str, body: &[u8], ttl: Duration) -> Result<()> {
+        let expires_at_ms = Self::now_millis().saturating_add(ttl.as_millis() as u64);
+        self.robots_cache
+            .insert(site_key.to_string(), RobotsCacheEntry { body: body.to_vec(), expires_at_ms: Some(expires_at_ms) });
+        self.persist_snapshot();
+        Ok(())
+    }
+
+    pub(crate) fn put_browser_snapshot(&mut self, input: BrowserSnapshotInput) -> Result<BrowserSnapshotRecord> {
+        crate::privacy::ensure_archive_is_redacted(&input.archive)?;
+        if let Some(reference) = &input.vault_session_ref {
+            crate::privacy::ensure_vault_ref_is_opaque(reference)?;
+        }
+        let snapshot_key = input.snapshot_key.clone();
+        let snapshot_ref = self.insert_object(ObjectKind::BrowserArchive, input.media_type.as_deref(), &input.archive)?;
+        let record = BrowserSnapshotRecord {
+            snapshot_key: snapshot_key.clone(),
+            page_url: input.page_url,
+            snapshot_ref,
+            transport_provenance: input.transport_provenance,
+            captured_at_epoch: input.captured_at_epoch,
+            ttl_until_ms: input.ttl.map(|ttl| Self::now_millis().saturating_add(ttl.as_millis() as u64)),
+            vault_session_ref: input.vault_session_ref,
+        };
+        self.browser_cache.insert(snapshot_key, record.clone());
+        self.persist_snapshot();
+        Ok(record)
+    }
+
+    pub(crate) fn get_browser_snapshot(&self, snapshot_key: &str) -> Result<Option<BrowserSnapshotRecord>> {
+        let Some(record) = self.browser_cache.get(snapshot_key)
+        else {
+            return Ok(None);
+        };
+        if record.ttl_until_ms.is_some_and(|deadline| deadline <= Self::now_millis()) {
+            return Ok(None);
+        }
+        Ok(Some(record.clone()))
+    }
+
+    pub(crate) fn record_challenge_pause(
+        &mut self,
+        item_id: &str,
+        page_url: &str,
+        state: PageChallengeState,
+    ) -> Result<ChallengePauseRecord> {
+        let url = Url::parse(page_url)
+            .map_err(|error| StoreError::StoreInvalidState(format!("challenge pause url is invalid: {error}")))?;
+        let record = ChallengePauseRecord {
+            item_id: item_id.to_owned(),
+            page_url: page_url.to_owned(),
+            state,
+            paused_at_ms: Self::now_millis(),
+        };
+        let run = self.active_run_mut()?;
+        run.challenge_pauses.insert(item_id.to_owned(), record.clone());
+        run.events.push(CrawlEvent::PausedForOperator { url, challenge_state: state });
+        run.event_count += 1;
+        self.persist_snapshot();
+        Ok(record)
+    }
+
+    pub(crate) fn challenge_pause(&self, item_id: &str) -> Result<Option<ChallengePauseRecord>> {
+        Ok(self.active_run()?.challenge_pauses.get(item_id).cloned())
+    }
+
+    pub(crate) fn put_browser_session(&mut self, record: &BrowserSessionRecord) -> Result<()> {
+        crate::privacy::ensure_session_record(record)?;
+        self.active_run_mut()?.browser_session = Some(record.clone());
+        self.persist_snapshot();
+        Ok(())
+    }
+
+    pub(crate) fn browser_session(&self) -> Result<Option<BrowserSessionRecord>> {
+        Ok(self.active_run()?.browser_session.clone())
+    }
+
+    /// Read-only view used by the one-way legacy session blob migration.
+    ///
+    /// Active claims are intentionally dropped: their lease tokens live outside the
+    /// blob, so migrated items become reclaimable instead of carrying dead fencing.
+    pub(crate) fn legacy_export(&self) -> (Option<String>, Vec<LegacyRun>) {
+        let runs = self
+            .runs
+            .iter()
+            .map(|(run_id, run)| LegacyRun {
+                run_id: run_id.clone(),
+                seed_url: run.seed_url.clone(),
+                event_count: run.event_count,
+                frontier: run.frontier.values().cloned().collect(),
+                pages: run
+                    .pages
+                    .iter()
+                    .map(|(page_id, page)| LegacyPage {
+                        page_id: page_id.clone(),
+                        item_id: page.item_id.clone(),
+                        worker_id: page.worker_id.clone(),
+                        fencing_token: page.fencing_token,
+                        phase: page.phase,
+                        fetch_fixture: page.fetch_fixture.clone(),
+                        ir_fixture: page.ir_fixture.clone(),
+                    })
+                    .collect(),
+            })
+            .collect();
+        (self.active_run_id.clone(), runs)
+    }
+}

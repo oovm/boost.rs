@@ -1,0 +1,652 @@
+//! Structural validation for semantic graph invariants.
+
+use crate::{
+    block::Block,
+    graph::DocumentGraph,
+    id::{AssetId, DocumentId, LinkId, NodeId},
+    inline::Inline,
+    metadata::{MetadataEntry, MetadataValue},
+    relation::{RelationEndpoint, RelationKind},
+};
+use std::collections::{HashMap, HashSet};
+
+/// Single invariant violation on the document graph.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValidationIssue {
+    /// Duplicate semantic node id.
+    DuplicateNodeId {
+        /// Repeated node id.
+        id: NodeId,
+    },
+    /// Duplicate asset id.
+    DuplicateAssetId {
+        /// Repeated asset id.
+        id: AssetId,
+    },
+    /// Duplicate relation id.
+    DuplicateLinkId {
+        /// Repeated relation id.
+        id: LinkId,
+    },
+    /// Reference to a missing node.
+    UnknownNode {
+        /// Missing node id.
+        id: NodeId,
+    },
+    /// Section child id not present in the block list.
+    UnknownSectionChild {
+        /// Section node id.
+        section: NodeId,
+        /// Missing child id.
+        child: NodeId,
+    },
+    /// List child id not present in the block list.
+    UnknownListChild {
+        /// List node id.
+        list: NodeId,
+        /// Missing child id.
+        child: NodeId,
+    },
+    /// Quote child id not present in the block list.
+    UnknownQuoteChild {
+        /// Quote node id.
+        quote: NodeId,
+        /// Missing child id.
+        child: NodeId,
+    },
+    /// Table cell child id not present in the block list.
+    UnknownTableCellChild {
+        /// Table node id.
+        table: NodeId,
+        /// Zero-based row index across header, body, and footer bands.
+        row_index: usize,
+        /// Zero-based cell index inside that row.
+        cell_index: usize,
+        /// Missing child id.
+        child: NodeId,
+    },
+    /// Inline reference targets a missing node.
+    UnknownInlineReference {
+        /// Source node id.
+        from: NodeId,
+        /// Missing target node id.
+        target: NodeId,
+    },
+    /// Inline link targets a missing endpoint.
+    UnknownInlineLinkTarget {
+        /// Source node id.
+        from: NodeId,
+        /// Invalid link target.
+        target: RelationEndpoint,
+    },
+    /// Inline image references an unregistered asset.
+    UnknownInlineImageAsset {
+        /// Source node id.
+        from: NodeId,
+        /// Missing asset id.
+        asset: AssetId,
+    },
+    /// Note or citation inline is missing its label/key.
+    EmptyInlineLabel {
+        /// Source node id.
+        from: NodeId,
+        /// Inline kind name for diagnostics.
+        kind: String,
+    },
+    /// Inline image has neither a source location nor a bound asset.
+    EmptyInlineImageSource {
+        /// Source node id.
+        from: NodeId,
+    },
+    /// Inline attributed wrapper carries no attribute at all.
+    EmptyInlineAttributes {
+        /// Source node id.
+        from: NodeId,
+    },
+    /// Inline attribute carries an empty id, class, or key.
+    EmptyInlineAttributeName {
+        /// Source node id.
+        from: NodeId,
+        /// Attribute slot name for diagnostics.
+        slot: String,
+    },
+    /// Inline styled wrapper carries an empty style name.
+    EmptyInlineStyle {
+        /// Source node id.
+        from: NodeId,
+    },
+    /// Relation endpoint refers to a missing node or asset.
+    UnknownRelationEndpoint {
+        /// Relation id with the invalid endpoint.
+        link: LinkId,
+    },
+    /// Structural containment cycle detected.
+    ContainmentCycle {
+        /// Cycle source node.
+        from: NodeId,
+        /// Cycle target node.
+        to: NodeId,
+    },
+    /// Ordered list item is missing an explicit number.
+    MissingListItemNumber {
+        /// List node id.
+        list: NodeId,
+        /// Zero-based item index inside the list.
+        item_index: usize,
+    },
+    /// List item number violates the ordering invariant (non-positive or
+    /// not strictly greater than the previous item).
+    OutOfOrderListItemNumber {
+        /// List node id.
+        list: NodeId,
+        /// Zero-based item index inside the list.
+        item_index: usize,
+        /// Observed number, when present.
+        found: Option<u32>,
+        /// Previous item number that this one must exceed.
+        previous: Option<u32>,
+    },
+    /// Unordered list item should not carry a number.
+    UnexpectedListItemNumber {
+        /// List node id.
+        list: NodeId,
+        /// Zero-based item index inside the list.
+        item_index: usize,
+        /// Observed number.
+        found: u32,
+    },
+    /// Cell colspan must be at least 1.
+    ZeroColspan {
+        /// Table node id.
+        table: NodeId,
+        /// Zero-based row index.
+        row_index: usize,
+        /// Zero-based cell index in that row.
+        cell_index: usize,
+    },
+    /// Cell rowspan must be at least 1.
+    ZeroRowspan {
+        /// Table node id.
+        table: NodeId,
+        /// Zero-based row index.
+        row_index: usize,
+        /// Zero-based cell index in that row.
+        cell_index: usize,
+    },
+    /// Cell colspan exceeds the table's column count.
+    ColspanOutOfBounds {
+        /// Table node id.
+        table: NodeId,
+        /// Zero-based row index.
+        row_index: usize,
+        /// Zero-based cell index in that row.
+        cell_index: usize,
+        /// Declared colspan value.
+        found: u32,
+        /// Table column count (widest row effective width).
+        max_columns: u32,
+    },
+    /// Cell rowspan would extend past the last table row.
+    RowspanOutOfBounds {
+        /// Table node id.
+        table: NodeId,
+        /// Zero-based row index.
+        row_index: usize,
+        /// Zero-based cell index in that row.
+        cell_index: usize,
+        /// Declared rowspan value.
+        found: u32,
+        /// Actual table row count.
+        total_rows: usize,
+    },
+    /// Metadata key is empty.
+    EmptyMetadataKey {
+        /// Path to the offending entry, such as `properties[2]`.
+        path: String,
+    },
+    /// Metadata map repeats a key.
+    DuplicateMetadataKey {
+        /// Repeated key.
+        key: String,
+        /// Index of the first occurrence.
+        first: usize,
+        /// Index of the repeated occurrence.
+        repeated: usize,
+    },
+    /// Metadata uses a key owned by a fixed document metadata field.
+    ReservedMetadataKey {
+        /// Reserved key.
+        key: String,
+    },
+    /// Floating-point metadata value is not finite.
+    NonFiniteMetadataFloat {
+        /// Path to the offending value.
+        path: String,
+    },
+}
+
+/// Collected validation result.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ValidationReport {
+    /// Recorded invariant violations.
+    pub issues: Vec<ValidationIssue>,
+}
+
+impl ValidationReport {
+    /// Whether no invariant violations were recorded.
+    pub fn is_valid(&self) -> bool {
+        self.issues.is_empty()
+    }
+}
+
+impl DocumentGraph {
+    /// Check identity uniqueness, endpoint existence, and local reference
+    /// integrity.
+    pub fn validate(&self) -> ValidationReport {
+        let mut report = ValidationReport::default();
+        let node_ids = self.collect_node_ids(&mut report);
+        let asset_ids = self.collect_asset_ids(&mut report);
+        self.check_relations(&node_ids, &asset_ids, &mut report);
+        self.check_sources(&node_ids, &mut report);
+        self.check_block_refs(&node_ids, &asset_ids, &mut report);
+        self.check_containment_cycles(&node_ids, &mut report);
+        self.check_metadata(&mut report);
+        report
+    }
+
+    fn check_metadata(&self, report: &mut ValidationReport) {
+        check_metadata_entries(&self.metadata.properties, "properties", true, report);
+    }
+
+    fn collect_node_ids(&self, report: &mut ValidationReport) -> HashSet<NodeId> {
+        let mut seen = HashSet::new();
+        for node in &self.blocks {
+            if !seen.insert(node.id) {
+                report.issues.push(ValidationIssue::DuplicateNodeId { id: node.id });
+            }
+        }
+        seen
+    }
+
+    fn collect_asset_ids(&self, report: &mut ValidationReport) -> HashSet<AssetId> {
+        let mut seen = HashSet::new();
+        for asset in &self.assets {
+            if !seen.insert(asset.id) {
+                report.issues.push(ValidationIssue::DuplicateAssetId { id: asset.id });
+            }
+        }
+        seen
+    }
+
+    fn check_relations(&self, node_ids: &HashSet<NodeId>, asset_ids: &HashSet<AssetId>, report: &mut ValidationReport) {
+        let mut seen_links = HashSet::new();
+        for relation in &self.relations {
+            if !seen_links.insert(relation.id) {
+                report.issues.push(ValidationIssue::DuplicateLinkId { id: relation.id });
+            }
+
+            if !endpoint_exists(&relation.source, self.id, node_ids, asset_ids)
+                || !endpoint_exists(&relation.target, self.id, node_ids, asset_ids)
+            {
+                report.issues.push(ValidationIssue::UnknownRelationEndpoint { link: relation.id });
+            }
+        }
+    }
+
+    fn check_sources(&self, node_ids: &HashSet<NodeId>, report: &mut ValidationReport) {
+        for source in &self.sources {
+            if !node_ids.contains(&source.node) {
+                report.issues.push(ValidationIssue::UnknownNode { id: source.node });
+            }
+        }
+    }
+
+    fn check_block_refs(&self, node_ids: &HashSet<NodeId>, asset_ids: &HashSet<AssetId>, report: &mut ValidationReport) {
+        let context = InlineContext { document_id: self.id, node_ids, asset_ids };
+        for node in &self.blocks {
+            match &node.block {
+                Block::Section { title, children, .. } => {
+                    check_inline_refs(node.id, title, &context, report);
+                    for child in children {
+                        if !node_ids.contains(child) {
+                            report.issues.push(ValidationIssue::UnknownSectionChild { section: node.id, child: *child });
+                        }
+                    }
+                }
+                Block::Paragraph { content } => {
+                    check_inline_refs(node.id, content, &context, report);
+                }
+                Block::Quote { children } => {
+                    for child in children {
+                        if !node_ids.contains(child) {
+                            report.issues.push(ValidationIssue::UnknownQuoteChild { quote: node.id, child: *child });
+                        }
+                    }
+                }
+                Block::List { ordered, items, .. } => {
+                    check_list_numbering(node.id, *ordered, items, report);
+                    for item in items {
+                        check_inline_refs(node.id, &item.content, &context, report);
+                        for child in &item.children {
+                            if !node_ids.contains(child) {
+                                report.issues.push(ValidationIssue::UnknownListChild { list: node.id, child: *child });
+                            }
+                        }
+                    }
+                }
+                Block::Table { head, body, foot, .. } => {
+                    let table_id = node.id;
+                    let rows: Vec<&crate::block::TableRow> = head.iter().chain(body.iter()).chain(foot.iter()).collect();
+                    for (row_index, row) in rows.iter().enumerate() {
+                        for (cell_index, cell) in row.cells.iter().enumerate() {
+                            for child in &cell.children {
+                                if !node_ids.contains(child) {
+                                    report.issues.push(ValidationIssue::UnknownTableCellChild {
+                                        table: table_id,
+                                        row_index,
+                                        cell_index,
+                                        child: *child,
+                                    });
+                                }
+                            }
+                            if cell.colspan == 0 {
+                                report.issues.push(ValidationIssue::ZeroColspan { table: table_id, row_index, cell_index });
+                            }
+                            if cell.rowspan == 0 {
+                                report.issues.push(ValidationIssue::ZeroRowspan { table: table_id, row_index, cell_index });
+                            }
+                            if cell.rowspan > 0 && row_index + cell.rowspan as usize > rows.len() {
+                                report.issues.push(ValidationIssue::RowspanOutOfBounds {
+                                    table: table_id,
+                                    row_index,
+                                    cell_index,
+                                    found: cell.rowspan,
+                                    total_rows: rows.len(),
+                                });
+                            }
+                        }
+                    }
+                    check_table_colspans(table_id, &rows, report);
+                }
+                Block::Code { .. }
+                | Block::Math { .. }
+                | Block::Diagram { .. }
+                | Block::Chart { .. }
+                | Block::Engraving { .. }
+                | Block::Depiction { .. }
+                | Block::Opaque { .. }
+                | Block::RawHtml { .. } => {}
+            }
+        }
+    }
+
+    fn check_containment_cycles(&self, node_ids: &HashSet<NodeId>, report: &mut ValidationReport) {
+        let mut children_by_node: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
+        for node in &self.blocks {
+            let children = children_by_node.entry(node.id).or_default();
+            match &node.block {
+                Block::Section { children: nested, .. } => children.extend(nested.iter().copied()),
+                Block::List { items, .. } => {
+                    children.extend(items.iter().flat_map(|item| item.children.iter().copied()));
+                }
+                Block::Quote { children: nested } => children.extend(nested.iter().copied()),
+                Block::Table { head, body, foot, .. } => {
+                    children.extend(
+                        head.iter()
+                            .chain(body.iter())
+                            .chain(foot.iter())
+                            .flat_map(|row| row.cells.iter())
+                            .flat_map(|cell| cell.children.iter().copied()),
+                    );
+                }
+                _ => {}
+            }
+        }
+        for relation in &self.relations {
+            if relation.kind == RelationKind::Contains {
+                if let (RelationEndpoint::Node(parent), RelationEndpoint::Node(child)) = (&relation.source, &relation.target) {
+                    children_by_node.entry(*parent).or_default().push(*child);
+                }
+            }
+        }
+
+        let mut state = HashMap::<NodeId, u8>::new();
+        let mut stack = Vec::<(NodeId, usize)>::new();
+        for node in &self.blocks {
+            if state.get(&node.id).copied().unwrap_or(0) != 0 {
+                continue;
+            }
+            state.insert(node.id, 1);
+            stack.push((node.id, 0));
+
+            while let Some((current, child_index)) = stack.last().copied() {
+                let children = children_by_node.get(&current).map_or(&[][..], Vec::as_slice);
+                if child_index >= children.len() {
+                    state.insert(current, 2);
+                    stack.pop();
+                    continue;
+                }
+
+                let child = children[child_index];
+                stack.last_mut().expect("DFS stack is non-empty").1 += 1;
+                if !node_ids.contains(&child) {
+                    continue;
+                }
+                match state.get(&child).copied().unwrap_or(0) {
+                    1 => report.issues.push(ValidationIssue::ContainmentCycle { from: current, to: child }),
+                    2 => {}
+                    _ => {
+                        state.insert(child, 1);
+                        stack.push((child, 0));
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn endpoint_exists(
+    endpoint: &RelationEndpoint,
+    document_id: DocumentId,
+    node_ids: &HashSet<NodeId>,
+    asset_ids: &HashSet<AssetId>,
+) -> bool {
+    match endpoint {
+        RelationEndpoint::Node(id) => node_ids.contains(id),
+        RelationEndpoint::Document(id) => *id == document_id,
+        RelationEndpoint::Asset(id) => asset_ids.contains(id),
+        RelationEndpoint::ExternalUri(_) | RelationEndpoint::Unresolved { .. } => true,
+    }
+}
+
+/// Resolution environment shared by every inline reference check.
+struct InlineContext<'a> {
+    document_id: DocumentId,
+    node_ids: &'a HashSet<NodeId>,
+    asset_ids: &'a HashSet<AssetId>,
+}
+
+fn check_inline_refs(from: NodeId, inlines: &[Inline], context: &InlineContext<'_>, report: &mut ValidationReport) {
+    for inline in inlines {
+        match inline {
+            Inline::Reference { target, .. } if !context.node_ids.contains(target) => {
+                report.issues.push(ValidationIssue::UnknownInlineReference { from, target: *target });
+            }
+            Inline::Link { target, display, .. } => {
+                if !endpoint_exists(target, context.document_id, context.node_ids, context.asset_ids) {
+                    report.issues.push(ValidationIssue::UnknownInlineLinkTarget { from, target: target.clone() });
+                }
+                check_inline_refs(from, display, context, report);
+            }
+            Inline::Image { source, alt, asset, .. } => {
+                if let Some(asset) = asset {
+                    if !context.asset_ids.contains(asset) {
+                        report.issues.push(ValidationIssue::UnknownInlineImageAsset { from, asset: *asset });
+                    }
+                }
+                else if source.trim().is_empty() {
+                    report.issues.push(ValidationIssue::EmptyInlineImageSource { from });
+                }
+                check_inline_refs(from, alt, context, report);
+            }
+            Inline::Note { label, display } => {
+                check_label(from, "note", label, report);
+                if let Some(display) = display {
+                    check_inline_refs(from, display, context, report);
+                }
+            }
+            Inline::Citation { key, display } => {
+                check_label(from, "citation", key, report);
+                if let Some(display) = display {
+                    check_inline_refs(from, display, context, report);
+                }
+            }
+            Inline::Styled { style, children } => {
+                if style.trim().is_empty() {
+                    report.issues.push(ValidationIssue::EmptyInlineStyle { from });
+                }
+                check_inline_refs(from, children, context, report);
+            }
+            Inline::Attributed { attributes, children } => {
+                if attributes.is_empty() {
+                    report.issues.push(ValidationIssue::EmptyInlineAttributes { from });
+                }
+                if attributes.id.as_deref().is_some_and(|id| id.trim().is_empty()) {
+                    report.issues.push(ValidationIssue::EmptyInlineAttributeName { from, slot: "id".into() });
+                }
+                for class in &attributes.classes {
+                    if class.trim().is_empty() {
+                        report.issues.push(ValidationIssue::EmptyInlineAttributeName { from, slot: "class".into() });
+                    }
+                }
+                for pair in &attributes.pairs {
+                    if pair.key.trim().is_empty() {
+                        report.issues.push(ValidationIssue::EmptyInlineAttributeName { from, slot: "key".into() });
+                    }
+                }
+                check_inline_refs(from, children, context, report);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn check_label(from: NodeId, kind: &str, label: &str, report: &mut ValidationReport) {
+    if label.trim().is_empty() {
+        report.issues.push(ValidationIssue::EmptyInlineLabel { from, kind: kind.to_string() });
+    }
+}
+
+/// Enforce list numbering invariants per [`Living 00`].
+///
+/// - Ordered list items must all carry a non-zero, strictly increasing number.
+/// - Unordered list items must not carry a number.
+fn check_list_numbering(list_id: NodeId, ordered: bool, items: &[crate::block::ListItem], report: &mut ValidationReport) {
+    if !ordered {
+        for (index, item) in items.iter().enumerate() {
+            if let Some(n) = item.number {
+                report.issues.push(ValidationIssue::UnexpectedListItemNumber { list: list_id, item_index: index, found: n });
+            }
+        }
+        return;
+    }
+
+    let mut previous: Option<u32> = None;
+    for (index, item) in items.iter().enumerate() {
+        match item.number {
+            None => report.issues.push(ValidationIssue::MissingListItemNumber { list: list_id, item_index: index }),
+            Some(n) => {
+                if n == 0 {
+                    report.issues.push(ValidationIssue::OutOfOrderListItemNumber {
+                        list: list_id,
+                        item_index: index,
+                        found: Some(n),
+                        previous,
+                    });
+                }
+                else if let Some(prev) = previous {
+                    if n <= prev {
+                        report.issues.push(ValidationIssue::OutOfOrderListItemNumber {
+                            list: list_id,
+                            item_index: index,
+                            found: Some(n),
+                            previous: Some(prev),
+                        });
+                    }
+                }
+                previous = Some(n);
+            }
+        }
+    }
+}
+
+/// The table's base column count is the maximum cell count across rows
+/// (raw `cells.len()`, not expanded via colspan). Individual cells must not
+/// declare a `colspan` larger than that count. Zero colspans are caught in
+/// the caller before we get here.
+fn check_table_colspans(table_id: NodeId, rows: &[&crate::block::TableRow], report: &mut ValidationReport) {
+    if rows.is_empty() {
+        return;
+    }
+    let max_columns = rows.iter().map(|row| row.cells.len() as u32).max().unwrap_or(0);
+
+    for (row_index, row) in rows.iter().enumerate() {
+        for (cell_index, cell) in row.cells.iter().enumerate() {
+            if cell.colspan > max_columns {
+                report.issues.push(ValidationIssue::ColspanOutOfBounds {
+                    table: table_id,
+                    row_index,
+                    cell_index,
+                    found: cell.colspan,
+                    max_columns,
+                });
+            }
+        }
+    }
+}
+
+/// Check one metadata map scope for unique, non-empty, non-reserved keys.
+fn check_metadata_entries(entries: &[MetadataEntry], path: &str, top_level: bool, report: &mut ValidationReport) {
+    let mut seen: HashMap<&str, usize> = HashMap::new();
+    for (index, entry) in entries.iter().enumerate() {
+        let entry_path = format!("{path}[{index}]");
+        if entry.key.is_empty() {
+            report.issues.push(ValidationIssue::EmptyMetadataKey { path: entry_path.clone() });
+        }
+        if top_level && is_reserved_metadata_key(&entry.key) {
+            report.issues.push(ValidationIssue::ReservedMetadataKey { key: entry.key.clone() });
+        }
+        if let Some(first) = seen.get(entry.key.as_str()) {
+            report.issues.push(ValidationIssue::DuplicateMetadataKey {
+                key: entry.key.clone(),
+                first: *first,
+                repeated: index,
+            });
+        }
+        else {
+            seen.insert(entry.key.as_str(), index);
+        }
+        check_metadata_value(&entry.value, &entry_path, report);
+    }
+}
+
+fn check_metadata_value(value: &MetadataValue, path: &str, report: &mut ValidationReport) {
+    match value {
+        MetadataValue::Float(number) if !number.is_finite() => {
+            report.issues.push(ValidationIssue::NonFiniteMetadataFloat { path: path.to_string() });
+        }
+        MetadataValue::List(items) => {
+            for (index, item) in items.iter().enumerate() {
+                check_metadata_value(item, &format!("{path}[{index}]"), report);
+            }
+        }
+        MetadataValue::Map(entries) => check_metadata_entries(entries, path, false, report),
+        MetadataValue::Text(_) | MetadataValue::Integer(_) | MetadataValue::Float(_) | MetadataValue::Boolean(_) => {}
+    }
+}
+
+/// Keys owned by the fixed metadata fields, so they cannot also appear as
+/// typed properties.
+fn is_reserved_metadata_key(key: &str) -> bool {
+    matches!(key, "title" | "author" | "authors" | "lang" | "language" | "keywords" | "tags")
+}

@@ -1,0 +1,13 @@
+[package]
+name = "plotter-engraving"
+version.workspace = true
+authors.workspace = true
+readme = "readme.md"
+description = "Music score engraving chain: ScoreSpec to EngravingPlan to scene, no language frontend"
+license.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+plotter-scene = { workspace = true }
+plotter-types = { workspace = true }

@@ -1,0 +1,15 @@
+[package]
+name = "plotter-input-smiles"
+version.workspace = true
+authors.workspace = true
+readme = "readme.md"
+description = "SMILES frontend: Oak AST to plotter MoleculeSpec / ReactionSpec / scene"
+license.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+plotter-depiction = { workspace = true }
+plotter-types = { workspace = true }
+oak-core = { workspace = true }
+oak-smiles = { workspace = true }
