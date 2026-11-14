@@ -161,6 +161,8 @@ repository = "https://github.com/oovm/rust-boost"
 publish = false
 
 [workspace.dependencies]
+# 动画扩展
+animator-core = { path = "projects/animator/animator.core" }
 # 核心库
 boost-console = { path = "projects/boost/boost-console" }
 boost-fs = { path = "projects/boost/boost-fs" }

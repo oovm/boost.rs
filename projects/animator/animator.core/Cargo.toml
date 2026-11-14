@@ -1,0 +1,13 @@
+[package]
+name = "animator-core"
+description = "图表与示意图的动画程序：把静态场景序列编译成可逐帧取样的时间轴"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+readme = "readme.md"
+
+[dependencies]
+plotter-motion = { workspace = true }
+plotter-scene = { workspace = true }
