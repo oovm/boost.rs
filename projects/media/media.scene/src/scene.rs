@@ -124,6 +124,10 @@ pub struct Component {
 /// One temporal block with a background and its items.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Scene {
+    /// Stable identity for storyboard mapping, revision notes and locks.
+    /// Optional for legacy wire data, but unique and non-empty when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     pub start: u32,
     pub duration: u32,
     #[serde(default)]

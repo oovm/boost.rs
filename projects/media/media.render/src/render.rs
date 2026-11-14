@@ -44,6 +44,8 @@ pub struct RenderStats {
     /// Fingerprints of every external file the render actually loaded, in
     /// declaration order.
     pub assets: Vec<AssetFingerprint>,
+    /// Every scene with its frame range and whether it was written.
+    pub scenes: Vec<SceneSpan>,
     /// Declared optional resources that were absent; each is documented silence.
     pub optional_missing: Vec<String>,
 }
@@ -63,6 +65,21 @@ pub struct AssetFingerprint {
     pub bytes: u64,
     /// FNV-1a hash of the loaded bytes.
     pub hash: String,
+}
+
+/// One project scene mapped into frames.
+///
+/// The span is what a storyboard, a review note or an interval re-render points
+/// at: the declared scene identity plus the exact half-open frame range it
+/// occupies, independent of scene order in the file.
+#[derive(serde::Serialize, Debug, Clone)]
+pub struct SceneSpan {
+    /// Declared scene id, or `scene-{index}` when the project did not name it.
+    pub id: String,
+    /// Half-open project frame range of the scene.
+    pub range: [u32; 2],
+    /// Whether this scene intersects the frame range that was written.
+    pub rendered: bool,
 }
 
 /// A half-open range of project frames to render.
@@ -227,6 +244,7 @@ pub fn render_project_with(
     let limits = options.limits.unwrap_or_else(DecodeLimits::project_default);
     let range = resolve_range(&project, options)?;
     let (first, last) = (range.start, range.end);
+    let scenes = scene_spans(&project, first, last);
     // 暗角唯一正式语义：`media.post::Vignette`（G7 裁决，旧 raster 掩码已删）。
     // 强度完全来自 `project.post`；未声明就是不压暗。
     let vignette = project.post.vignette.map(Vignette::new);
@@ -296,6 +314,7 @@ pub fn render_project_with(
         font_hashes,
         project_hash: fnv1a(json.as_bytes()),
         assets,
+        scenes,
         optional_missing,
     })
 }
@@ -596,9 +615,21 @@ fn validate(project: &Project) -> Result<(), Error> {
         }
     }
     let mut problems = Vec::new();
+    // Scene ids are the stable handle a storyboard or revision refers to, so a
+    // blank or repeated id is rejected instead of silently pointing at the
+    // wrong block.
+    let mut scene_ids = std::collections::BTreeSet::new();
     for (index, scene) in project.scenes.iter().enumerate() {
         if scene.duration == 0 {
             return Err(Error::invalid("scene duration must be positive"));
+        }
+        if let Some(id) = &scene.id {
+            if id.trim().is_empty() {
+                return Err(Error::invalid(format!("scene {index} id must not be empty")));
+            }
+            if !scene_ids.insert(id.clone()) {
+                return Err(Error::invalid(format!("duplicate scene id `{id}`")));
+            }
         }
         if scene.start + scene.duration > project.duration_frames {
             return Err(Error::invalid(format!("scene at {} exceeds duration {}", scene.start, project.duration_frames)));
@@ -877,6 +908,28 @@ fn preflight(
         let message = format!("resource preflight failed: {}", failures.join("; "));
         Err(if decode_failed { Error::media(message) } else { Error::invalid(message) })
     }
+}
+
+/// Maps every declared scene into project frames.
+///
+/// The id is the scene's declared identity, or `scene-{index}` for legacy wire
+/// data. `rendered` marks the scenes the written frame interval touches, so an
+/// interval export states exactly which blocks it re-rendered.
+fn scene_spans(project: &Project, first: u32, last: u32) -> Vec<SceneSpan> {
+    project
+        .scenes
+        .iter()
+        .enumerate()
+        .map(|(index, scene)| {
+            let start = scene.start;
+            let end = scene.start.saturating_add(scene.duration);
+            SceneSpan {
+                id: scene.id.clone().unwrap_or_else(|| format!("scene-{index}")),
+                range: [start, end],
+                rendered: start < last && end > first,
+            }
+        })
+        .collect()
 }
 
 /// Fingerprints the external files the render actually loaded.
@@ -2321,6 +2374,59 @@ mod tests {
         assert_eq!(stats.frames, 30);
         assert_eq!(stats.range, [15, 45]);
         assert!(out.exists());
+    }
+
+    /// Scenes carry stable identities and exact frame spans, so a storyboard or
+    /// an interval export can name the block it points at instead of counting
+    /// array positions.
+    #[test]
+    fn scene_spans_name_blocks_and_mark_the_written_interval() {
+        let dir = std::env::temp_dir().join("opencut-media-tests");
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("scene-spans.mp4");
+        let film = serde_json::json!({
+            "width": 64, "height": 64, "fps": 15, "duration_frames": 60,
+            "scenes": [
+                { "id": "cold-open", "start": 0, "duration": 20,
+                  "background": { "kind": "solid", "color": "#101820" }, "items": [] },
+                { "id": "mechanism", "start": 20, "duration": 25,
+                  "background": { "kind": "solid", "color": "#203040" }, "items": [] },
+                { "start": 45, "duration": 15,
+                  "background": { "kind": "solid", "color": "#304050" }, "items": [] }
+            ],
+            "audio": null
+        });
+        let options = super::RenderOptions { range: Some(super::FrameRange { start: 20, end: 45 }), cancel: None, ..Default::default() };
+        let stats = super::render_project_with(&film.to_string(), &out, &options, &mut |_, _| {}).expect("range render");
+        let spans: Vec<(&str, [u32; 2], bool)> =
+            stats.scenes.iter().map(|span| (span.id.as_str(), span.range, span.rendered)).collect();
+        assert_eq!(spans, vec![("cold-open", [0, 20], false), ("mechanism", [20, 45], true), ("scene-2", [45, 60], false)]);
+    }
+
+    /// A scene id is the stable handle a revision points at: blank or repeated
+    /// ids are rejected instead of resolving to the wrong block.
+    #[test]
+    fn scene_ids_must_be_unique_and_non_empty() {
+        let base = |scenes: serde_json::Value| {
+            serde_json::json!({
+                "width": 64, "height": 64, "fps": 15, "duration_frames": 30,
+                "scenes": scenes, "audio": null
+            })
+            .to_string()
+        };
+        let duplicate = base(serde_json::json!([
+            { "id": "a", "start": 0, "duration": 15, "background": { "kind": "solid", "color": "#101820" }, "items": [] },
+            { "id": "a", "start": 15, "duration": 15, "background": { "kind": "solid", "color": "#101820" }, "items": [] }
+        ]));
+        let out = std::env::temp_dir().join("opencut-media-tests").join("duplicate-scene.mp4");
+        let error = super::render_project(&duplicate, &out, &mut |_, _| {}).expect_err("duplicate id must fail");
+        assert!(error.message.contains("duplicate scene id"), "{error}");
+
+        let blank = base(serde_json::json!([
+            { "id": "  ", "start": 0, "duration": 15, "background": { "kind": "solid", "color": "#101820" }, "items": [] }
+        ]));
+        let error = super::render_project(&blank, &out, &mut |_, _| {}).expect_err("blank id must fail");
+        assert!(error.message.contains("id must not be empty"), "{error}");
     }
 
     /// Vignette is opt-in: the same film keeps bright corners unless `post`
