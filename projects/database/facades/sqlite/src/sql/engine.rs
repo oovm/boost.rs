@@ -497,6 +497,13 @@ const MAX_TRIGGER_DEPTH: usize = 100;
 /// 多余行换掉一次 b-tree 下降。
 const CANDIDATE_GAP: i64 = 8;
 
+/// 行 rowid 区间下推的候选上限。
+///
+/// `WHERE <rowid> >= a AND <rowid> <= b` 直接按区间读 b-tree,但只有区间宽度在
+/// 这个上限内才展开成候选 rowid;更宽的区间仍然是整表扫描,避免为一条语句
+/// 造出与表同量级的候选向量。
+const ROWID_RANGE_CANDIDATES: i64 = 4_096;
+
 /// Sentinel source indexes that mark a `NEW` / `OLD` reference in a resolved
 /// expression. They never collide with a `FROM` source position.
 const TRIGGER_SOURCE_NEW: usize = usize::MAX;
@@ -5468,6 +5475,14 @@ impl Engine {
         if let Some(rowid) = Self::rowid_eq_conjunct(filter, alias_name.as_deref(), label, &self.parameters) {
             return Some(vec![rowid]);
         }
+        // `IN (<rowids>)` 与 `>= a AND <= b` 同样是 rowid 上的精确候选集,
+        // 不必为一条写语句解码整表再逐行判断。
+        if let Some(rowids) = Self::rowid_in_conjunct(filter, alias_name.as_deref(), label, &self.parameters) {
+            return Some(rowids);
+        }
+        if let Some(rowids) = Self::rowid_range_candidates(filter, alias_name.as_deref(), label, &self.parameters) {
+            return Some(rowids);
+        }
         for index in self.indexes.values() {
             if index.managed || index.table != table_key || index.columns.is_empty() {
                 continue;
@@ -6760,11 +6775,19 @@ impl Engine {
             Some(rows) => rows,
             None => owned_live.as_deref().unwrap_or_default(),
         };
-        let mut state = live.to_vec();
+        // 冲突判定的状态只在存在非 rowid 唯一键时才需要整份拷贝。rowid 唯一性
+        // 用活动 rowid 集合判定,于是整表 `UPDATE` 每行不再扫一遍整张表。
+        let column_keys: Vec<&UniqueKey> = keys.iter().filter(|key| matches!(key, UniqueKey::Columns(..))).collect();
+        let rowid_label: Option<&str> = keys.iter().find_map(|key| match key {
+            UniqueKey::Rowid(label) => Some(label.as_str()),
+            UniqueKey::Columns(..) => None,
+        });
+        let mut state = if column_keys.is_empty() { Vec::new() } else { live.to_vec() };
+        let mut live_rowids: HashSet<i64> = live.iter().map(|(rowid, _)| *rowid).collect();
         let mut writes = Vec::new();
         let mut returned = Vec::new();
         let mut affected = 0usize;
-        for (rowid, cells) in live {
+        for (position, (rowid, cells)) in live.iter().enumerate() {
             let eval_cells = match joined {
                 Some(joined) => match joined.get(rowid) {
                     Some(row) => row.clone(),
@@ -6819,23 +6842,35 @@ impl Engine {
                 }
                 assigned[*index] = true;
             }
-            let mut check_cells = next.clone();
-            check_cells.push(Cell::Integer(next_rowid));
-            for check in &def.checks {
-                if truthiness(&check.expr.eval(&check_cells, &ctx)?) == Some(false) {
-                    let name = check.name.clone().unwrap_or_else(|| check.text.clone());
-                    return Err(SqlError::new("check-constraint", format!("CHECK constraint failed: {name}"))
-                        .in_clause("CHECK")
-                        .in_statement("update"));
+            if !def.checks.is_empty() {
+                let mut check_cells = next.clone();
+                check_cells.push(Cell::Integer(next_rowid));
+                for check in &def.checks {
+                    if truthiness(&check.expr.eval(&check_cells, &ctx)?) == Some(false) {
+                        let name = check.name.clone().unwrap_or_else(|| check.text.clone());
+                        return Err(SqlError::new("check-constraint", format!("CHECK constraint failed: {name}"))
+                            .in_clause("CHECK")
+                            .in_statement("update"));
+                    }
                 }
             }
-            if let Some(label) = unique_conflict(&keys, &next, next_rowid, &state, *rowid) {
-                return Err(SqlError::new("unique-constraint", format!("UNIQUE constraint failed: {label}")).in_statement("update"));
+            if let Some(label) = rowid_label {
+                // `UNIQUE(rowid)` 只在换成另一个仍被占用的 rowid 时冲突。
+                if next_rowid != *rowid && live_rowids.contains(&next_rowid) {
+                    return Err(SqlError::new("unique-constraint", format!("UNIQUE constraint failed: {label}")).in_statement("update"));
+                }
             }
-            if let Some(entry) = state.iter_mut().find(|(id, _)| *id == *rowid) {
-                entry.0 = next_rowid;
-                entry.1 = next.clone();
+            for key in &column_keys {
+                if let Some(label) = unique_conflict(std::slice::from_ref(*key), &next, next_rowid, &state, *rowid) {
+                    return Err(SqlError::new("unique-constraint", format!("UNIQUE constraint failed: {label}")).in_statement("update"));
+                }
             }
+            if !state.is_empty() && position < state.len() {
+                state[position].0 = next_rowid;
+                state[position].1 = next.clone();
+            }
+            live_rowids.remove(rowid);
+            live_rowids.insert(next_rowid);
             if let Some(returning) = returning {
                 let mut new_cells = next.clone();
                 new_cells.push(Cell::Integer(next_rowid));
@@ -6932,7 +6967,11 @@ impl Engine {
         // set and order are unchanged.
         let scan = match self.rowid_pin(from, filter) {
             Some(rowid) => Some(ScanHint::Pin(rowid)),
-            None => self.index_pin(from, filter).map(ScanHint::Rowids),
+            None => self
+                .rowid_in_pin(from, filter)
+                .or_else(|| self.rowid_range_pin(from, filter))
+                .or_else(|| self.index_pin(from, filter))
+                .map(ScanHint::Rowids),
         };
         // `ORDER BY <rowid order> LIMIT n` reads only the leading rows, because
         // the scan order already satisfies that sort.
@@ -8309,6 +8348,99 @@ impl Engine {
         Self::rowid_eq_conjunct(filter.as_ref()?, alias_name.as_deref(), table.label(), &self.parameters)
     }
 
+    /// `WHERE <rowid> IN (<integers>)` on one bounded rowid table: the listed
+    /// rowids, ascending and de-duplicated.
+    ///
+    /// Only an all-integer `IN` list on the rowid-alias (or `rowid` /
+    /// `_rowid_` / `oid`) name qualifies; anything else keeps the full read.
+    /// The predicate still runs downstream, so the candidate set only narrows
+    /// what the scan decodes and never changes the emitted rows or their order.
+    fn rowid_in_pin(&self, from: &[TableRef], filter: &Option<Expr>) -> Option<Vec<i64>> {
+        let (def, table) = self.bounded_scan_target(from)?;
+        let alias_name = def.rowid_alias.map(|index| def.columns[index].name.clone());
+        Self::rowid_in_conjunct(filter.as_ref()?, alias_name.as_deref(), table.label(), &self.parameters)
+    }
+
+    /// `WHERE <rowid> >= <a> AND <rowid> <= <b>`: the rowids inside the stated
+    /// interval, ascending. Bounds are widened to inclusive and the interval is
+    /// capped, so an unhelpful range keeps the full read instead of building a
+    /// huge candidate vector.
+    fn rowid_range_pin(&self, from: &[TableRef], filter: &Option<Expr>) -> Option<Vec<i64>> {
+        let (def, table) = self.bounded_scan_target(from)?;
+        let alias_name = def.rowid_alias.map(|index| def.columns[index].name.clone());
+        Self::rowid_range_candidates(filter.as_ref()?, alias_name.as_deref(), table.label(), &self.parameters)
+    }
+
+    /// Rowid candidates of a bounded `WHERE <rowid> >= <a> AND <rowid> <= <b>`
+    /// conjunction. Only intervals that state both bounds qualify.
+    fn rowid_range_candidates(expr: &Expr, alias_name: Option<&str>, label: &str, parameters: &[Cell]) -> Option<Vec<i64>> {
+        let mut lower: Option<i64> = None;
+        let mut upper: Option<i64> = None;
+        Self::collect_rowid_range(expr, alias_name, label, parameters, &mut lower, &mut upper);
+        let (start, end) = (lower?, upper?);
+        // 宽度用 checked 差值判定:极端边界(i64::MIN..i64::MAX)不展开候选。
+        let span = end.checked_sub(start)?;
+        if span < 0 || span >= ROWID_RANGE_CANDIDATES {
+            return None;
+        }
+        Some((start..=end).collect())
+    }
+
+    /// Folds the tightest rowid bounds of one predicate into `lower` / `upper`.
+    /// Exclusive comparisons are widened to inclusive on purpose: the
+    /// candidate set is only a superset and the predicate runs again later.
+    fn collect_rowid_range(
+        expr: &Expr,
+        alias_name: Option<&str>,
+        label: &str,
+        parameters: &[Cell],
+        lower: &mut Option<i64>,
+        upper: &mut Option<i64>,
+    ) {
+        match expr {
+            Expr::And(left, right) => {
+                Self::collect_rowid_range(left, alias_name, label, parameters, lower, upper);
+                Self::collect_rowid_range(right, alias_name, label, parameters, lower, upper);
+            }
+            Expr::Compare { left, op, right }
+                if matches!(op, CompareOp::Gt | CompareOp::GtEq | CompareOp::Lt | CompareOp::LtEq) =>
+            {
+                let (column, value, flipped) = match (left.as_ref(), right.as_ref()) {
+                    (Expr::Column(column), value) => (column, known_cell(value, parameters), false),
+                    (value, Expr::Column(column)) => (column, known_cell(value, parameters), true),
+                    _ => return,
+                };
+                let Some(cell) = value
+                else {
+                    return;
+                };
+                let value = match cell {
+                    Cell::Integer(value) => value,
+                    Cell::Real(real) => match integral_rowid(real) {
+                        Some(value) => value,
+                        None => return,
+                    },
+                    _ => return,
+                };
+                if column.qualifier.as_deref().is_some_and(|qualifier| !qualifier.eq_ignore_ascii_case(label)) {
+                    return;
+                }
+                let rowid_named = is_rowid_alias(&column.name);
+                let alias_named = alias_name.is_some_and(|name| name.eq_ignore_ascii_case(&column.name));
+                if !(rowid_named || alias_named) {
+                    return;
+                }
+                let op = if flipped { flip_range_op(*op) } else { *op };
+                match op {
+                    CompareOp::Gt | CompareOp::GtEq => *lower = Some(lower.map_or(value, |bound| bound.max(value))),
+                    CompareOp::Lt | CompareOp::LtEq => *upper = Some(upper.map_or(value, |bound| bound.min(value))),
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// Walks the top-level `AND` chain of a predicate for a `rowid = <int>` (or
     /// `<int> = rowid`) comparison on the rowid-alias column or an implicit
     /// `rowid` / `_rowid_` / `oid` name. Anything outside a plain `AND` of
@@ -8341,6 +8473,47 @@ impl Engine {
                 let rowid_named = is_rowid_alias(&column.name);
                 let alias_named = alias_name.is_some_and(|name| name.eq_ignore_ascii_case(&column.name));
                 if rowid_named || alias_named { Some(value) } else { None }
+            }
+            _ => None,
+        }
+    }
+
+    /// Walks the top-level `AND` chain for a `rowid IN (<integers>)` list and
+    /// returns the listed rowids ascending.
+    ///
+    /// The list must be a plain (not `NOT`) `IN` over the rowid-alias or
+    /// implicit rowid name, with every item a known integer. Bound values are
+    /// accepted once they are bound, exactly like the equality pin; anything
+    /// else keeps the full scan.
+    fn rowid_in_conjunct(expr: &Expr, alias_name: Option<&str>, label: &str, parameters: &[Cell]) -> Option<Vec<i64>> {
+        match expr {
+            Expr::And(left, right) => Self::rowid_in_conjunct(left, alias_name, label, parameters)
+                .or_else(|| Self::rowid_in_conjunct(right, alias_name, label, parameters)),
+            Expr::In { value, list, negated: false } => {
+                let Expr::Column(column) = value.as_ref()
+                else {
+                    return None;
+                };
+                if column.qualifier.as_deref().is_some_and(|qualifier| !qualifier.eq_ignore_ascii_case(label)) {
+                    return None;
+                }
+                let rowid_named = is_rowid_alias(&column.name);
+                let alias_named = alias_name.is_some_and(|name| name.eq_ignore_ascii_case(&column.name));
+                if !(rowid_named || alias_named) || list.is_empty() {
+                    return None;
+                }
+                let mut rowids = Vec::with_capacity(list.len());
+                for item in list {
+                    let value = match known_cell(item, parameters)? {
+                        Cell::Integer(value) => value,
+                        Cell::Real(real) => integral_rowid(real)?,
+                        _ => return None,
+                    };
+                    rowids.push(value);
+                }
+                rowids.sort_unstable();
+                rowids.dedup();
+                Some(rowids)
             }
             _ => None,
         }
