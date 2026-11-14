@@ -12,6 +12,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+fn is_select(sql: &str) -> bool {
+    sql.len() >= 6 && sql.as_bytes()[..6].eq_ignore_ascii_case(b"select")
+}
+
 use database_execution::{
     cluster::{KeyValueExecutor, TransactionHandle},
     sql_exec::execute_plan,
@@ -198,6 +202,28 @@ fn is_session_verb(verb: &str) -> bool {
         .any(|candidate| verb.eq_ignore_ascii_case(candidate))
 }
 
+/// Cheap pre-filter for [`analyze_meta_query`].
+///
+/// The metadata analyzer normalises and lowercases the whole statement before
+/// looking for its eight trigger words, which is pure overhead for the
+/// DML/SELECT traffic that dominates a gateway. This scan rejects those
+/// statements without allocating; it is deliberately conservative — a `SHOW`
+/// verb always reaches the analyzer so whitespace variants still parse.
+fn may_be_metadata_query(sql: &str) -> bool {
+    const NEEDLES: &[&str] =
+        &["information_schema", "pg_catalog", "show tables", "show databases", "database(", "current_database(", "current_schema(", "version("];
+    NEEDLES.iter().any(|needle| contains_ignore_ascii_case(sql, needle)) || leading_statement_verb(sql).eq_ignore_ascii_case("show")
+}
+
+fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
+    let haystack = haystack.as_bytes();
+    let needle = needle.as_bytes();
+    if needle.is_empty() {
+        return true;
+    }
+    haystack.windows(needle.len()).any(|window| window.iter().zip(needle).all(|(left, right)| left.eq_ignore_ascii_case(right)))
+}
+
 /// Whether a `SET` target names a known MySQL session variable the gateway
 /// emulates via `MYSQL_VARIABLES`. Rejects unknown names with `1193` at the
 /// protocol layer instead of silently accepting them.
@@ -254,8 +280,28 @@ struct MysqlTransactionSession {
     schema_checkpoint: Option<SqlSchemaCheckpoint>,
     /// Last catalog snapshot and the registry revision it came from. Reusing it
     /// skips a full schema clone per statement; any DDL bumps the revision.
-    catalog_cache: Option<(u32, SqlCatalog)>,
+    catalog_cache: Option<(u32, Arc<SqlCatalog>)>,
+    /// Catalog-stable SELECT plans keyed by SQL text. Repeated point lookups
+    /// (and prepared statements whose rendered values cycle) skip bind and
+    /// planning entirely; any DDL revision drops the whole cache.
+    select_cache: HashMap<String, CachedSelectPlan>,
+    /// Reused result-set assembly buffer so a single-row response does not
+    /// allocate a fresh 8 KiB staging vector per statement.
+    result_buffer: Vec<u8>,
 }
+
+/// A planned SELECT plus the result shape derived from that plan.
+#[derive(Debug, Clone)]
+struct CachedSelectPlan {
+    plan: Arc<SqlExecutionPlan>,
+    column_types: Vec<u8>,
+    column_nullables: Vec<bool>,
+}
+
+/// Upper bound on cached SELECT plans per session. The workloads that repeat
+/// SQL keep a couple of hundred entries; crossing the bound drops the cache
+/// instead of growing without limit.
+const SELECT_CACHE_LIMIT: usize = 512;
 
 impl MysqlTransactionSession {
     fn new() -> Self {
@@ -267,6 +313,8 @@ impl MysqlTransactionSession {
             schema: String::new(),
             schema_checkpoint: None,
             catalog_cache: None,
+            select_cache: HashMap::new(),
+            result_buffer: Vec::new(),
         }
     }
 
@@ -366,6 +414,7 @@ fn reset_connection_session(
     session.failed = false;
     session.autocommit = true;
     session.schema.clear();
+    session.select_cache.clear();
     statements.entries.clear();
     // Resetting a connection discards an open transaction, catalog changes included.
     session.restore_schema(runtime)
@@ -505,7 +554,14 @@ fn serve_session(stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRuntime>
                 // DDL resolves against the local schema registry instead of the
                 // session-command parser, so a `CREATE` / `ALTER` / `DROP` that the
                 // registry cannot apply never falls through to the Oak binder.
-                match parse_ddl(sql, SqlDialect::Mysql) {
+                // The first keyword decides whether a full DDL parse can pay off;
+                // this is the same leading-word test `parse_ddl` performs.
+                let verb = leading_statement_verb(sql);
+                let is_ddl = verb.eq_ignore_ascii_case("create")
+                    || verb.eq_ignore_ascii_case("alter")
+                    || verb.eq_ignore_ascii_case("drop");
+                let parsed_ddl = if is_ddl { parse_ddl(sql, SqlDialect::Mysql) } else { Ok(None) };
+                match parsed_ddl {
                     Err(error) => {
                         write_statement_error(&mut reader, sequence.wrapping_add(1), "ddl", error)?;
                         continue;
@@ -530,7 +586,8 @@ fn serve_session(stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRuntime>
                 }
                 // Metadata views never touch the executor or the session
                 // transaction: they are synthesized from the local schema registry.
-                match analyze_meta_query(sql, SqlDialect::Mysql) {
+                let analyzed_meta = analyze_meta_query(sql, SqlDialect::Mysql);
+                match analyzed_meta {
                     Err(error) => {
                         session.fail();
                         write_statement_error(&mut reader, sequence.wrapping_add(1), "metadata", error)?;
@@ -546,6 +603,7 @@ fn serve_session(stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRuntime>
                         let result = meta.execute(&rt.schema, &session.schema);
                         let column_types: Vec<u8> = described.iter().map(|column| mysql_field_type(&column.field_type)).collect();
                         let column_nullables: Vec<bool> = described.iter().map(|column| column.field_type.is_nullable()).collect();
+                        let status_flags = session.status_flags();
                         write_result_set(
                             &mut reader,
                             sequence.wrapping_add(1),
@@ -553,7 +611,8 @@ fn serve_session(stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRuntime>
                             &column_types,
                             &column_nullables,
                             false,
-                            session.status_flags(),
+                            status_flags,
+                            &mut session.result_buffer,
                         )?;
                         continue;
                     }
@@ -562,7 +621,6 @@ fn serve_session(stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRuntime>
                 // Only session verbs can project to a protocol command. DML and
                 // SELECT skip the extra full parse. Empty input keeps the old
                 // path so its error classification does not change.
-                let verb = leading_statement_verb(sql);
                 let parsed_session =
                     if verb.is_empty() || is_session_verb(verb) { parse_session_command(&normalize_session_boolean(sql)) } else { Ok(None) };
                 match parsed_session {
@@ -716,7 +774,17 @@ fn serve_session(stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRuntime>
                             }
                         }
                         let result = SqlResult { columns: vec!["Variable_name".into(), "Value".into()], rows, affected_rows: 0 };
-                        write_result_set(&mut reader, sequence.wrapping_add(1), &result, &[], &[false, false], false, session.status_flags())?;
+                        let status_flags = session.status_flags();
+                        write_result_set(
+                            &mut reader,
+                            sequence.wrapping_add(1),
+                            &result,
+                            &[],
+                            &[false, false],
+                            false,
+                            status_flags,
+                            &mut session.result_buffer,
+                        )?;
                     }
                     Ok(Some(SqlSessionCommand::SetVariable { name, value, .. })) => {
                         // MySQL 只接受已知 session 变量；未知变量应返回 1193。
@@ -1065,7 +1133,7 @@ fn execute_sql(
     column_nullables: &[bool],
     meta_checked: bool,
 ) -> io::Result<()> {
-    if !meta_checked {
+    if !meta_checked && may_be_metadata_query(sql) {
         let analyzed_meta = analyze_meta_query(sql, SqlDialect::Mysql);
         match analyzed_meta {
             Err(error) => {
@@ -1080,54 +1148,145 @@ fn execute_sql(
                 let declared_nullables: Vec<bool> = described.iter().map(|column| column.field_type.is_nullable()).collect();
                 let column_types = if column_types.is_empty() { &declared_types } else { column_types };
                 let column_nullables = if column_nullables.is_empty() { &declared_nullables } else { column_nullables };
-                return write_result_set(stream, sequence, &result, column_types, column_nullables, binary_rows, session.status_flags());
+                let status_flags = session.status_flags();
+                return write_result_set(
+                    stream,
+                    sequence,
+                    &result,
+                    column_types,
+                    column_nullables,
+                    binary_rows,
+                    status_flags,
+                    &mut session.result_buffer,
+                );
             }
             Ok(None) => {}
         }
     }
     let revision = runtime.schema.revision();
     if session.catalog_cache.as_ref().is_none_or(|(cached, _)| *cached != revision) {
-        session.catalog_cache = Some((revision, runtime.schema.catalog()));
+        session.select_cache.clear();
+        session.catalog_cache = Some((revision, Arc::new(runtime.schema.catalog())));
     }
-    let catalog = &session.catalog_cache.as_ref().expect("catalog cache was just filled").1;
-    let bound = match bind_sql_catalog_with_variables(
+    // Only SELECT plans are catalog-stable: writes allocate AUTO_INCREMENT
+    // values at bind time and must never be replayed from a cache. `@@`
+    // references and unrendered placeholders stay uncached because their
+    // resolved values are baked into the plan.
+    let cacheable = is_select(sql) && !sql.contains("@@") && !sql.contains('?');
+    if cacheable {
+        if let Some(cached) = session.select_cache.get(sql) {
+            let plan = Arc::clone(&cached.plan);
+            let (declared_types, declared_nullables) = if column_types.is_empty() {
+                (cached.column_types.clone(), cached.column_nullables.clone())
+            }
+            else {
+                (column_types.to_vec(), column_nullables.to_vec())
+            };
+            return finish_plan(
+                stream,
+                sequence,
+                &plan,
+                None,
+                &declared_types,
+                &declared_nullables,
+                binary_rows,
+                runtime,
+                session,
+            );
+        }
+    }
+    let catalog = Arc::clone(&session.catalog_cache.as_ref().expect("catalog cache was just filled").1);
+    let (plan, last_insert_id) = match build_plan(sql, runtime, session, &catalog) {
+        Ok(planned) => planned,
+        Err((stage, error)) => {
+            session.fail();
+            write_statement_error(stream, sequence, stage, error)?;
+            return Ok(());
+        }
+    };
+    let plan = Arc::new(plan);
+    // Text protocol (`COM_QUERY`) has no prepare-time description, so derive the
+    // declared column types from the plan instead of guessing from row values.
+    let (declared_types, declared_nullables) = if column_types.is_empty() {
+        plan_column_types(&plan)
+    }
+    else {
+        (column_types.to_vec(), column_nullables.to_vec())
+    };
+    if cacheable {
+        if session.select_cache.len() >= SELECT_CACHE_LIMIT {
+            session.select_cache.clear();
+        }
+        session.select_cache.insert(
+            sql.to_string(),
+            CachedSelectPlan {
+                plan: Arc::clone(&plan),
+                column_types: declared_types.clone(),
+                column_nullables: declared_nullables.clone(),
+            },
+        );
+    }
+    finish_plan(
+        stream,
+        sequence,
+        &plan,
+        last_insert_id,
+        &declared_types,
+        &declared_nullables,
+        binary_rows,
+        runtime,
+        session,
+    )
+}
+
+/// Binds, applies sequence defaults and plans one statement.
+fn build_plan(
+    sql: &str,
+    runtime: &Arc<MysqlSqlRuntime>,
+    session: &mut MysqlTransactionSession,
+    catalog: &SqlCatalog,
+) -> Result<(SqlExecutionPlan, Option<u64>), (&'static str, SqlFrontendError)> {
+    let bound = bind_sql_catalog_with_variables(
         sql,
         catalog,
         catalog.schema_version(),
         &|name: &str| mysql_system_variable(name, session.autocommit),
         SqlDialect::Mysql,
-    ) {
-        Ok(bound) => bound,
-        Err(error) => {
-            session.fail();
-            write_statement_error(stream, sequence, "bind", error)?;
-            return Ok(());
-        }
-    };
+    )
+    .map_err(|error| ("bind", error))?;
     // `AUTO_INCREMENT` / serial columns default at write time, after binding and
     // before planning. The counter is consumed before execution and survives a
     // rollback, matching both MySQL and PostgreSQL sequence semantics.
     let columns_before = bound_insert_column_count(&bound);
-    let bound = match apply_auto_increment(&runtime.schema, bound) {
-        Ok(bound) => bound,
-        Err(error) => {
-            session.fail();
-            write_statement_error(stream, sequence, "bind", error)?;
-            return Ok(());
-        }
-    };
+    let bound = apply_auto_increment(&runtime.schema, bound).map_err(|error| ("bind", error))?;
     // The engine reports the generated value in the OK packet; drivers surface
     // it as `insertId` / `lastrowid`.
     let last_insert_id = if bound_insert_column_count(&bound) > columns_before { allocated_last_insert_id(&bound) } else { None };
-    let plan = match plan_statement_for_dialect(bound, catalog, SqlDialect::Mysql) {
-        Ok(plan) => plan,
-        Err(error) => {
-            session.fail();
-            write_statement_error(stream, sequence, "plan", error)?;
-            return Ok(());
-        }
-    };
+    let plan = plan_statement_for_dialect(bound, catalog, SqlDialect::Mysql).map_err(|error| ("plan", error))?;
+    Ok((plan, last_insert_id))
+}
 
+/// Derives the wire column types a plan declares.
+fn plan_column_types(plan: &SqlExecutionPlan) -> (Vec<u8>, Vec<bool>) {
+    let columns = describe_plan_for_dialect(plan, SqlDialect::Mysql);
+    let types = columns.iter().map(|column| mysql_field_type(&column.field_type)).collect();
+    let nullables = columns.iter().map(|column| column.field_type.is_nullable()).collect();
+    (types, nullables)
+}
+
+/// Executes one resolved plan and writes its OK or result-set response.
+#[allow(clippy::too_many_arguments)]
+fn finish_plan(
+    stream: &mut impl Write,
+    sequence: u8,
+    plan: &SqlExecutionPlan,
+    last_insert_id: Option<u64>,
+    declared_types: &[u8],
+    declared_nullables: &[bool],
+    binary_rows: bool,
+    runtime: &Arc<MysqlSqlRuntime>,
+    session: &mut MysqlTransactionSession,
+) -> io::Result<()> {
     // DML 写操作 —— 先 execute 再回 OK packet
     let is_write = !matches!(
         plan,
@@ -1148,7 +1307,7 @@ fn execute_sql(
         }
     }
     let handle_ref: Option<&dyn TransactionHandle> = session.handle.as_deref();
-    let result = match execute_plan(runtime.executor.as_ref(), handle_ref, &plan, SqlDialect::Mysql) {
+    let result = match execute_plan(runtime.executor.as_ref(), handle_ref, plan, SqlDialect::Mysql) {
         Ok(result) => result,
         Err(error) => {
             session.fail();
@@ -1156,18 +1315,30 @@ fn execute_sql(
             return Ok(());
         }
     };
+    let status_flags = session.status_flags();
     if is_write {
-        write_ok_with_affected(stream, sequence, result.affected_rows, last_insert_id, session.status_flags())?;
-        return Ok(());
+        return write_ok_with_affected(stream, sequence, result.affected_rows, last_insert_id, status_flags);
     }
-    // Text protocol (`COM_QUERY`) has no prepare-time description, so derive the
-    // declared column types from the plan instead of guessing from row values.
-    let declared_columns = describe_plan_for_dialect(&plan, SqlDialect::Mysql);
-    let declared_types: Vec<u8> = declared_columns.iter().map(|column| mysql_field_type(&column.field_type)).collect();
-    let declared_nullables: Vec<bool> = declared_columns.iter().map(|column| column.field_type.is_nullable()).collect();
-    let column_types = if column_types.is_empty() { &declared_types } else { column_types };
-    let column_nullables = if column_nullables.is_empty() { &declared_nullables } else { column_nullables };
-    write_result_set(stream, sequence, &result, column_types, column_nullables, binary_rows, session.status_flags())
+    let (owned_types, owned_nullables);
+    let (column_types, column_nullables) = if declared_types.is_empty() {
+        let (types, nullables) = plan_column_types(plan);
+        owned_types = types;
+        owned_nullables = nullables;
+        (&owned_types[..], &owned_nullables[..])
+    }
+    else {
+        (declared_types, declared_nullables)
+    };
+    write_result_set(
+        stream,
+        sequence,
+        &result,
+        column_types,
+        column_nullables,
+        binary_rows,
+        status_flags,
+        &mut session.result_buffer,
+    )
 }
 
 /// Maps a structured gateway failure to its MySQL error number and SQLSTATE.
@@ -1609,14 +1780,20 @@ fn write_result_set(
     column_nullables: &[bool],
     binary_rows: bool,
     status_flags: u16,
+    buffer: &mut Vec<u8>,
 ) -> io::Result<()> {
-    let mut buffer = Vec::with_capacity(RESULT_FLUSH_BYTES.min(8 * 1024));
+    // 会话级缓冲区跨语句复用：首次按 8 KiB 起步，之后容量随最大结果集增长一次，
+    // 单行结果不再每条语句重新分配一个暂存向量。
+    buffer.clear();
+    if buffer.capacity() == 0 {
+        buffer.reserve(RESULT_FLUSH_BYTES.min(8 * 1024));
+    }
 
     // 包 1: column count
     let count = result.columns.len();
     let mut col_count = Vec::new();
     encode_length_encoded(&mut col_count, count as u64);
-    push_packet(&mut buffer, sequence, &col_count)?;
+    push_packet(buffer, sequence, &col_count)?;
     sequence = sequence.wrapping_add(1);
 
     // 包 2..N: column definitions
@@ -1624,33 +1801,33 @@ fn write_result_set(
         let declared = column_types.get(index).copied();
         let nullable = column_nullables.get(index).copied().unwrap_or(true);
         let def = encode_column_definition(col, declared.unwrap_or_else(|| column_type(&result.rows, index)), nullable);
-        push_packet(&mut buffer, sequence, &def)?;
+        push_packet(buffer, sequence, &def)?;
         sequence = sequence.wrapping_add(1);
     }
 
     // EOF after columns
-    push_eof(&mut buffer, sequence, status_flags)?;
+    push_eof(buffer, sequence, status_flags)?;
     sequence = sequence.wrapping_add(1);
 
     // Row packets
     for row in &result.rows {
         if binary_rows {
             let payload = encode_binary_row(row, column_types);
-            push_packet(&mut buffer, sequence, &payload)?;
+            push_packet(buffer, sequence, &payload)?;
         }
         else {
-            push_text_row(&mut buffer, sequence, row)?;
+            push_text_row(buffer, sequence, row)?;
         }
         sequence = sequence.wrapping_add(1);
         if buffer.len() >= RESULT_FLUSH_BYTES {
-            stream.write_all(&buffer)?;
+            stream.write_all(buffer)?;
             buffer.clear();
         }
     }
 
     // EOF after rows
-    push_eof(&mut buffer, sequence, status_flags)?;
-    stream.write_all(&buffer)
+    push_eof(buffer, sequence, status_flags)?;
+    stream.write_all(buffer)
 }
 
 /// 结果集写出的攒批阈值：大于一次 MTU，小于 `MAX_PACKET`，兼顾延迟与系统调用次数。
