@@ -1,5 +1,5 @@
 use super::{color::Color, paint::Paint};
-use std::{
+use core::{
     fmt::{self, Display},
     hash::{Hash, Hasher},
     ops::BitOr,
@@ -183,7 +183,7 @@ macro_rules! checker_for {
 }
 
 #[inline]
-fn write_spliced<T: Display>(c: &mut bool, f: &mut impl std::fmt::Write, t: T) -> fmt::Result {
+fn write_spliced<T: Display>(c: &mut bool, f: &mut impl core::fmt::Write, t: T) -> fmt::Result {
     if *c {
         write!(f, ";{}", t)
     }
@@ -396,7 +396,7 @@ impl Style {
     ///
     /// ```rust
     /// use boost_console::fmt::Style;
-    /// use std::fmt;
+    /// use core::fmt;
     ///
     /// struct CustomItem {
     ///     item: u32,
@@ -411,7 +411,7 @@ impl Style {
     ///     }
     /// }
     /// ```
-    pub fn fmt_prefix(&self, f: &mut impl std::fmt::Write) -> fmt::Result {
+    pub fn fmt_prefix(&self, f: &mut impl core::fmt::Write) -> fmt::Result {
         // A user may just want a code-free string when no styles are applied.
         if self.is_plain() {
             return Ok(());
@@ -458,7 +458,7 @@ impl Style {
     ///
     /// ```rust
     /// use boost_console::fmt::Style;
-    /// use std::fmt;
+    /// use core::fmt;
     ///
     /// struct CustomItem {
     ///     item: u32,
@@ -473,7 +473,7 @@ impl Style {
     ///     }
     /// }
     /// ```
-    pub fn fmt_suffix(&self, f: &mut impl std::fmt::Write) -> fmt::Result {
+    pub fn fmt_suffix(&self, f: &mut impl core::fmt::Write) -> fmt::Result {
         if self.is_plain() {
             return Ok(());
         }

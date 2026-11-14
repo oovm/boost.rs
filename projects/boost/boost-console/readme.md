@@ -2,6 +2,8 @@
 
 Terminal text styling primitives: colors, paint, style, and stream-aware formatting.
 
+The crate is `no_std` with `alloc`; styling never requires the host operating system.
+
 Log-event rendering, stderr sinks, and `install_global_subscriber` now live in `boost-harness::log::console`.
 
 Repository context: [boost README](../../readme.md).

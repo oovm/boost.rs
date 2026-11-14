@@ -10,16 +10,19 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
-url = { workspace = true }
-getrandom = { workspace = true }
-sha1 = { workspace = true }
-base64 = { workspace = true }
+# `url` is pinned locally so the no_std build does not inherit the workspace
+# `serde` feature, which needs an allocator-aware serde build.
+url = { version = "2.5.8", default-features = false }
+getrandom = { workspace = true, optional = true }
+sha1 = { workspace = true, optional = true }
+base64 = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
 webpki-roots = { workspace = true, optional = true }
 
 [features]
-default = ["tls"]
-tls = ["dep:rustls", "dep:webpki-roots"]
+default = ["std", "tls"]
+std = ["dep:getrandom", "dep:sha1", "dep:base64", "url/std"]
+tls = ["std", "dep:rustls", "dep:webpki-roots"]
 
 [dev-dependencies]
 sha1 = { workspace = true }

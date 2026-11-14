@@ -1,3 +1,5 @@
+use alloc::{string::String, vec::Vec};
+
 use crate::{
     access::{AccessError, ByteAccess},
     identity::IdentityError,

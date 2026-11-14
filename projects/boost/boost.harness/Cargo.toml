@@ -11,23 +11,23 @@ exclude = ["tests/**"]
 
 [dependencies]
 boost-harness-macro = { workspace = true }
-boost-console = { workspace = true }
+boost-console = { workspace = true, optional = true }
 boost-source = { workspace = true }
 boost-terminal = { workspace = true, optional = true }
-serde = { workspace = true, optional = true }
+serde = { workspace = true, optional = true, default-features = false, features = ["alloc"] }
 unicode-width = { workspace = true, optional = true }
 
 [dev-dependencies]
 boost-console = { workspace = true }
 serial_test = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 
 [features]
-default = []
+default = ["std"]
+std = ["dep:boost-console"]
 serde = ["dep:serde", "boost-source/serde"]
-terminal = ["dep:boost-terminal", "dep:unicode-width"]
-concolor = ["boost-console/concolor"]
+terminal = ["std", "dep:boost-terminal", "dep:unicode-width"]
+concolor = ["std", "boost-console/concolor"]
 
 [[test]]
 name = "diagnostic"

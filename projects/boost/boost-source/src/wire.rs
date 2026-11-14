@@ -1,3 +1,5 @@
+use alloc::{string::String, vec::Vec};
+
 use crate::identity::SourceRef;
 
 /// Encode a source reference into a reversible wire identifier.

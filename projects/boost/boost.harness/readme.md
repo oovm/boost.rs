@@ -24,3 +24,16 @@ log events through `boost_harness::diagnostic` without reversing the module boun
 
 The test attributes `#[test]`, `#[fixture]`, and `#[case]` are re-exported from `boost_harness::test`, and the
 `diagnose!` macro expands against `boost_harness::diagnostic`.
+
+## Features
+
+| Feature | What you get |
+|---------|----------------|
+| `std` (default) | `log`, `test`, `benchmark`, diagnostic log projection, and console rendering |
+| `serde` | Diagnostic wire encoding |
+| `terminal` | Diagnostic terminal rendering (implies `std`) |
+| `concolor` | Console color forcing hooks (implies `std`) |
+
+Without `std` the crate is `no_std` + `alloc` and exposes the diagnostic core
+(`boost_harness::diagnostic`) only. Log events, tests, benchmarks, and terminal rendering need host
+time, threads, panics, and stdout, so they stay behind `std`.

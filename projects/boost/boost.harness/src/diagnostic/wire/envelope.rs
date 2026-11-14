@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use crate::diagnostic::{collect::DiagnosticSet, model::Diagnostic};
 
 /// Current JSON schema version for diagnostic wire data.

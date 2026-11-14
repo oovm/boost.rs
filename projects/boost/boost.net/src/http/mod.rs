@@ -1,6 +1,13 @@
 //! HTTP/1.1 request, response, and transport primitives.
 
-use std::{collections::BTreeMap, str::FromStr};
+use alloc::{
+    collections::BTreeMap,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+use core::str::FromStr;
 
 pub use url::Url;
 
@@ -229,6 +236,8 @@ pub(crate) fn is_token(value: &str) -> bool {
     !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte))
 }
 
+#[cfg(feature = "std")]
 mod transport;
 
+#[cfg(feature = "std")]
 pub use transport::{HttpTransport, HttpTransportConfig};

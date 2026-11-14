@@ -1,3 +1,5 @@
+use alloc::string::String;
+
 use core::fmt::{self, Display, Formatter};
 
 use crate::range::ByteRange;

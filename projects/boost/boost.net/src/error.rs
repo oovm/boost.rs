@@ -1,10 +1,9 @@
 //! Errors shared by every `boost_net` protocol.
 
-use std::{
-    error::Error as StdError,
-    fmt::{Display, Formatter},
-    io,
-};
+use alloc::string::String;
+use core::fmt::{Display, Formatter};
+#[cfg(feature = "std")]
+use std::io;
 
 /// Errors produced while constructing or running a network request.
 #[derive(Debug)]
@@ -16,6 +15,7 @@ pub enum NetError {
     /// The peer violated the protocol contract.
     Protocol(String),
     /// Reading a response body failed.
+    #[cfg(feature = "std")]
     Body(io::Error),
     /// The response body or message exceeded the configured limit.
     BodyTooLarge {
@@ -32,11 +32,12 @@ pub enum NetError {
 }
 
 impl Display for NetError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Unsupported(message) => write!(formatter, "unsupported request: {message}"),
             Self::Transport(message) => write!(formatter, "transport error: {message}"),
             Self::Protocol(message) => write!(formatter, "protocol error: {message}"),
+            #[cfg(feature = "std")]
             Self::Body(error) => write!(formatter, "response body error: {error}"),
             Self::BodyTooLarge { limit } => write!(formatter, "response body exceeds {limit} bytes"),
             Self::HeaderTooLarge { limit } => write!(formatter, "response headers exceed {limit} bytes"),
@@ -45,9 +46,10 @@ impl Display for NetError {
     }
 }
 
-impl StdError for NetError {
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+impl core::error::Error for NetError {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
         match self {
+            #[cfg(feature = "std")]
             Self::Body(error) => Some(error),
             _ => None,
         }

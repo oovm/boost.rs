@@ -66,6 +66,10 @@ Prefer a single capability? Depend on the matching `boost-*` crate directly (`bo
 `boost_harness::test`, and `boost_harness::benchmark`. The test attributes and `diagnose!` macro live in
 `boost-harness-macro` and expand against those modules.
 
+Host-independent crates are `no_std` with `alloc`: `boost-console`, `boost-source`, `boost-terminal`,
+`boost-random`, and the `boost_harness::diagnostic` core. `boost-net` and `boost-fs` keep their
+host-facing transports and filesystem operations behind `std`.
+
 ## 📊 How boost compares
 
 |                    | boost                                   | Typical ecosystem crates                        |

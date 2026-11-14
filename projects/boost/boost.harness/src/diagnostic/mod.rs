@@ -12,6 +12,7 @@ pub mod wire;
 #[cfg(feature = "terminal")]
 pub mod terminal;
 
+#[cfg(feature = "std")]
 pub mod log_projection;
 
 pub use boost_harness_macro::diagnose;
@@ -21,6 +22,7 @@ pub use provenance::{AddressSpaceRef, DocumentRef, MappingPrecision, MemberPath,
 pub use render::{diagnostic_message, message_fallback};
 pub use source::SourceLookup;
 
+#[cfg(feature = "std")]
 pub use log_projection::{
     diagnostic_to_event, diagnostic_to_log_event, diagnostic_to_payload, emit_diagnostic, emit_diagnostic_log, emit_diagnostic_set,
 };

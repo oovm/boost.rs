@@ -1,4 +1,4 @@
-use std::fmt::{Display, Formatter};
+use core::fmt::{Display, Formatter};
 
 use super::{Color, Paint};
 
@@ -66,7 +66,7 @@ impl<T: Display> Console for T {}
 #[derive(Copy, Clone, Debug)]
 pub struct Foreground<T>(T, Option<Color>);
 impl<T: Display> Display for Foreground<T> {
-    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
         if let Some(col) = self.1 { write!(f, "{}", Paint::new(&self.0).fg(col)) } else { write!(f, "{}", self.0) }
     }
 }
@@ -75,7 +75,7 @@ impl<T: Display> Display for Foreground<T> {
 #[derive(Copy, Clone, Debug)]
 pub struct Background<T>(T, Option<Color>);
 impl<T: Display> Display for Background<T> {
-    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
         if let Some(col) = self.1 { write!(f, "{}", Paint::new(&self.0).bg(col)) } else { write!(f, "{}", self.0) }
     }
 }

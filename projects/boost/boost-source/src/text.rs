@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use crate::{
     access::{AccessError, ByteAccess},
     range::ByteRange,

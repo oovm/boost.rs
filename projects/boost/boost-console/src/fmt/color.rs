@@ -57,7 +57,7 @@ impl Color {
         Style::new(self)
     }
 
-    pub(crate) fn ascii_fmt(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
+    pub(crate) fn ascii_fmt(&self, f: &mut impl core::fmt::Write) -> core::fmt::Result {
         match *self {
             Color::Unset => Ok(()),
             Color::Default => write!(f, "9"),

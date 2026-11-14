@@ -1,5 +1,7 @@
 //! TLS protocol version selection shared by HTTPS and WSS.
 
+use alloc::{vec, vec::Vec};
+
 use crate::NetError;
 
 /// One TLS protocol version a connection may negotiate.
@@ -21,8 +23,8 @@ impl TlsVersion {
     }
 }
 
-impl std::fmt::Display for TlsVersion {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for TlsVersion {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter.write_str(self.as_str())
     }
 }

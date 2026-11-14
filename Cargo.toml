@@ -156,7 +156,6 @@ publish = false
 
 [workspace.dependencies]
 # 核心库
-boost = { path = "projects/boost/boost" }
 boost-console = { path = "projects/boost/boost-console" }
 boost-fs = { path = "projects/boost/boost-fs" }
 boost-harness = { path = "projects/boost/boost.harness", features = ["serde"] }
@@ -166,7 +165,6 @@ boost-random = { path = "projects/boost/boost-random" }
 boost-source = { path = "projects/boost/boost-source" }
 boost-terminal = { path = "projects/boost/boost-terminal" }
 # 内部库
-crawler = { path = "projects/crawler/crawler" }
 crawler-browser = { path = "projects/crawler/crawler.browser" }
 crawler-extract = { path = "projects/crawler/crawler.extract" }
 crawler-fetch = { path = "projects/crawler/crawler.fetch" }
@@ -193,7 +191,6 @@ database-storage = { path = "projects/database/database.storage" }
 database-types = { path = "projects/database/database.types" }
 database-udf = { path = "projects/database/database.udf" }
 
-document = { path = "projects/document/document" }
 document-compose = { path = "projects/document/document.compose" }
 document-convert = { path = "projects/document/document.convert" }
 document-diagnostic = { path = "projects/document/document.diagnostic" }
@@ -219,7 +216,6 @@ geometry = { path = "projects/geometry/geometry" }
 geometry-motion = { path = "projects/geometry/geometry.motion" }
 geometry-types = { path = "projects/geometry/geometry.types" }
 
-hardware = { path = "projects/hardware/hardware" }
 hardware-backend-cpu = { path = "projects/hardware/hardware.backends/hardware.backend.cpu" }
 hardware-backend-cuda = { path = "projects/hardware/hardware.backends/hardware.backend.cuda" }
 hardware-backend-dx12 = { path = "projects/hardware/hardware.backends/hardware.backend.dx12" }
@@ -232,10 +228,8 @@ hardware-optimize = { path = "projects/hardware/hardware.optimize" }
 hardware-program = { path = "projects/hardware/hardware.program" }
 hardware-runtime = { path = "projects/hardware/hardware.runtime" }
 hardware-scheduler = { path = "projects/hardware/hardware.scheduler" }
-hardware-wasm = { path = "projects/hardware/bindings/hardware.wasm" }
 hardware-types = { path = "projects/hardware/hardware.types" }
 
-media = { path = "projects/media/media" }
 media-audio = { path = "projects/media/media.audio" }
 media-canvas = { path = "projects/media/media.canvas" }
 media-codec = { path = "projects/media/media.codec" }
@@ -256,7 +250,6 @@ media-vector = { path = "projects/media/media.vector" }
 media-voice = { path = "projects/media/media.voice" }
 media-voxel = { path = "projects/media/media.voxel" }
 
-odm = { path = "projects/odm/odm" }
 odm-adapter = { path = "projects/odm/odm.adapter" }
 odm-generate = { path = "projects/odm/odm.generate" }
 odm-input-graphql = { path = "projects/odm/odm.input.graphql" }
@@ -264,7 +257,6 @@ odm-input-sql = { path = "projects/odm/odm.input.sql" }
 odm-input-vos = { path = "projects/odm/odm.input.vos" }
 odm-types = { path = "projects/odm/odm.types" }
 
-plotter = { path = "projects/plotter/plotter" }
 plotter-chart = { path = "projects/plotter/plotter.chart" }
 plotter-data = { path = "projects/plotter/plotter.data" }
 plotter-depiction = { path = "projects/plotter/plotter.depiction" }
@@ -288,20 +280,16 @@ plotter-scene = { path = "projects/plotter/plotter.scene" }
 plotter-view = { path = "projects/plotter/plotter.view" }
 plotter-types = { path = "projects/plotter/plotter.types" }
 
-searcher = { path = "projects/searcher/searcher" }
 searcher-document = { path = "projects/searcher/searcher.document" }
 searcher-index = { path = "projects/searcher/searcher.index" }
-searcher-query = { path = "projects/searcher/searcher.query" }
 searcher-rank = { path = "projects/searcher/searcher.rank" }
 searcher-store = { path = "projects/searcher/searcher.store" }
 searcher-types = { path = "projects/searcher/searcher.types" }
 
 template = { path = "projects/template/template" }
 template-framework = { path = "projects/template/template.framework" }
-template-framework-doki = { path = "projects/template/template.framework.doki" }
 template-input-dejavu = { path = "projects/template/template.input.dejavu" }
 template-input-hbs = { path = "projects/template/template.input.hbs" }
-template-input-jinja = { path = "projects/template/template.input.jinja" }
 template-types = { path = "projects/template/template.types" }
 # 品牌化库
 mongo = { path = "projects/database/facades/mongo" }
@@ -315,37 +303,14 @@ unicode-width = "0.2.3"
 url = { version = "2.5.8", features = ["serde"] }
 rustls = { version = "0.23.45", default-features = false, features = ["std", "ring", "tls12"] }
 webpki-roots = "1.0.9"
-lsp-types = "0.97.0"
 syn = "3.0.10"
 quote = "1.0.35"
 proc-macro2 = { version = "1.0.78", features = ["span-locations"] }
-unindent = "0.2.3"
-dashu = "0.6.2"
-toml = "1.2.1+spec-1.1.0"
-num = "0.4.1"
-pex = "0.2.4"
 regex = "1"
-ropey = "1.6.1"
-rust_decimal = "1.34.3"
-ucd-trie = "0.1.6"
-sled = "0.34.7"
-serde-binary = "0.5.0"
-email_address = { version = "0.2.4", features = ["serde"] }
-semver = { version = "1.0.22", features = ["serde"] }
-mime = "0.3.17"
-peginator = "0.7.0"
-tl = "0.7.8"
-chrono = "0.4.35"
-globset = "0.4.14"
 futures-core = "0.3.31"
 async-channel = "2.3.1"
 futures-lite = "2.6.0"
 pin-project-lite = "0.2.16"
-font-kit = "0.14.3"
-pathfinder = "0.6.5"
-image = "0.25.10"
-imageproc = "0.27.0"
-winreg = "0.56.0"
 serial_test = "4.0.1"
 fontdue = "0.9"
 libloading = "0.9.1"
@@ -375,7 +340,6 @@ base64 = "0.23.1"
 uuid = { version = "1", features = ["serde", "v4"] }
 once_cell = "1"
 getrandom = "0.4"
-getrandom-03 = { package = "getrandom", version = "0.4.3" }
 glob = "0.3"
 libc = { version = "0.2", default-features = false }
 windows-sys = { version = "0.61.2", default-features = false, features = ["Win32_Storage_FileSystem", "Win32_System_IO"] }

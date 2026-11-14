@@ -1,5 +1,7 @@
+use alloc::{format, string::String};
+
 use super::style::Property;
-use std::fmt;
+use core::fmt;
 /// A structure encapsulating an item and styling.
 ///
 /// See the [crate level documentation](./) for usage information.
@@ -367,7 +369,7 @@ impl_fmt_trait!(Display, "{}");
 impl_fmt_trait!(Debug, "{:?}");
 
 use super::{color::Color, style::Style};
-use std::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, Ordering};
 
 static ENABLED: AtomicBool = AtomicBool::new(true);
 
