@@ -1,7 +1,9 @@
 //! One socket, one connection, no global state.
 
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
+use std::ops::Range;
 use std::time::Duration;
 
 use super::auth::{md5_password, ScramClient};
@@ -9,6 +11,59 @@ use super::error::{Notice, PostgresError};
 use database_protocol_pgsql::{self as protocol, MAX_MESSAGE_BYTES};
 
 const TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Read-ahead size of one connection.
+///
+/// A reply is many small frames, and one `read` per frame would cost two
+/// syscalls per row. The socket is drained in 64 KiB chunks instead and each
+/// frame is decoded in place, so a thousand-row result costs a handful of
+/// reads rather than two thousand.
+const READ_BUFFER_BYTES: usize = 64 * 1024;
+
+/// The socket plus the read-ahead buffer frames are decoded from.
+#[derive(Debug)]
+struct Transport {
+    stream: TcpStream,
+    buffer: Vec<u8>,
+    /// Offset of the frame being decoded, always the first unconsumed byte.
+    position: usize,
+    /// Number of received bytes in `buffer`.
+    filled: usize,
+}
+
+impl Transport {
+    fn new(stream: TcpStream) -> Self {
+        Self { stream, buffer: vec![0; READ_BUFFER_BYTES], position: 0, filled: 0 }
+    }
+
+    /// Makes at least `needed` unread bytes contiguous at the returned offset,
+    /// refilling the buffer only after the bytes already held are exhausted.
+    ///
+    /// The bytes there are valid until the next call, which may move them.
+    fn ensure(&mut self, needed: usize) -> Result<usize, PostgresError> {
+        loop {
+            if self.filled - self.position >= needed {
+                return Ok(self.position);
+            }
+            if self.position > 0 {
+                self.buffer.copy_within(self.position..self.filled, 0);
+                self.filled -= self.position;
+                self.position = 0;
+            }
+            if self.filled == self.buffer.len() {
+                // One frame larger than the read-ahead buffer: grow once.
+                self.buffer.resize(self.filled + READ_BUFFER_BYTES.max(needed - self.filled), 0);
+            }
+            let read = self.stream.read(&mut self.buffer[self.filled..]).map_err(io_error)?;
+            if read == 0 {
+                return Err(PostgresError::Io(
+                    "the server closed the connection before the message was complete".into(),
+                ));
+            }
+            self.filled += read;
+        }
+    }
+}
 
 /// Where to connect and which identity to present in the startup packet.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -168,12 +223,17 @@ pub struct BackendKeyData {
 /// A live protocol-v3 connection in the simple-query mode.
 #[derive(Debug)]
 pub struct Connection {
-    stream: TcpStream,
+    reader: Transport,
     config: ClientConfig,
     backend_key: Option<BackendKeyData>,
     session_tag: u32,
     statements: u64,
     notices: Vec<Notice>,
+    /// Columns each open prepared statement returns, captured by [`Self::prepare`].
+    ///
+    /// A prepared statement is described once; every later execute reuses that
+    /// description instead of asking the server for a `RowDescription` again.
+    prepared_columns: HashMap<String, Vec<protocol::ColumnDescription>>,
     /// Set once the stream is desynchronised, so later calls cannot read the
     /// reply of an abandoned round trip as if it belonged to a new statement.
     failure: Option<String>,
@@ -223,6 +283,8 @@ struct ExtendedOutcome {
     results: Vec<TypedResult>,
     parameters: Vec<u32>,
     described: Vec<Column>,
+    /// Wire description behind `described`, reused by later executes.
+    description: Vec<protocol::ColumnDescription>,
     suspended: bool,
 }
 
@@ -246,12 +308,13 @@ impl Connection {
             .map(|elapsed| elapsed.subsec_nanos())
             .unwrap_or(0);
         let mut connection = Self {
-            stream,
+            reader: Transport::new(stream),
             config: config.clone(),
             backend_key: None,
             session_tag,
             statements: 0,
             notices: Vec::new(),
+            prepared_columns: HashMap::new(),
             failure: None,
         };
         connection.startup(config)?;
@@ -306,22 +369,24 @@ impl Connection {
     }
 
     fn startup(&mut self, config: &ClientConfig) -> Result<(), PostgresError> {
-        self.stream
+        self.reader
+            .stream
             .write_all(&protocol::startup_packet(&config.user, &config.database))
             .map_err(io_error)?;
         let mut authenticated = false;
         let mut scram: Option<ScramClient> = None;
         loop {
-            let (tag, payload) = self.read_message()?;
+            let (tag, range) = self.read_message()?;
+            let payload = &self.reader.buffer[range];
             match tag {
-                b'E' => return Err(protocol::error_response(&payload)),
+                b'E' => return Err(protocol::error_response(payload)),
                 b'R' => {
                     if payload.len() < 4 {
                         return Err(PostgresError::Protocol("truncated PostgreSQL authentication request".into()));
                     }
                     let code = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
                     if let Some(answer) = authentication_answer(config, code, &payload[4..], &mut scram, &mut authenticated)? {
-                        self.stream.write_all(&answer).map_err(io_error)?;
+                        self.reader.stream.write_all(&answer).map_err(io_error)?;
                     }
                 }
                 b'Z' => {
@@ -342,7 +407,7 @@ impl Connection {
                     }
                 }
                 b'S' => {}
-                b'N' => self.record_notice(&payload)?,
+                b'N' => record_notice(&mut self.notices, payload)?,
                 other => return Err(PostgresError::Protocol(format!("unsupported PostgreSQL startup response tag {other}"))),
             }
         }
@@ -388,18 +453,14 @@ impl Connection {
         std::mem::take(&mut self.notices)
     }
 
-    fn record_notice(&mut self, payload: &[u8]) -> Result<(), PostgresError> {
-        self.notices.push(protocol::notice_response(payload)?);
-        Ok(())
-    }
-
     fn run_simple(&mut self, sql: &str) -> Result<SimpleOutcome, PostgresError> {
-        self.stream.write_all(&protocol::query_packet(sql)?).map_err(io_error)?;
+        self.reader.stream.write_all(&protocol::query_packet(sql)?).map_err(io_error)?;
         let mut results = Vec::new();
         let mut current: Option<(Vec<String>, Vec<Vec<Option<String>>>)> = None;
         let mut failure: Option<PostgresError> = None;
         loop {
-            let (tag, payload) = self.read_message()?;
+            let (tag, range) = self.read_message()?;
+            let payload = &self.reader.buffer[range];
             if failure.is_some() {
                 // The server abandons the remaining statements after an error and
                 // only sends ReadyForQuery next; drain it so the socket stays usable.
@@ -413,22 +474,22 @@ impl Connection {
             }
             match tag {
                 b'E' => {
-                    failure = Some(protocol::error_response(&payload));
+                    failure = Some(protocol::error_response(payload));
                 }
                 b'T' => {
                     if current.is_some() {
                         return Err(PostgresError::Protocol("unexpected PostgreSQL RowDescription".into()));
                     }
-                    current = Some((protocol::column_names(&payload)?, Vec::new()));
+                    current = Some((protocol::column_names(payload)?, Vec::new()));
                 }
                 b'D' => {
                     let Some((columns, rows)) = current.as_mut() else {
                         return Err(PostgresError::Protocol("DataRow without RowDescription".into()));
                     };
-                    rows.push(protocol::data_row(&payload, columns.len())?);
+                    rows.push(protocol::data_row(payload, columns.len())?);
                 }
                 b'C' => {
-                    let command = protocol::command_tag(&payload)?;
+                    let command = protocol::command_tag(payload)?;
                     let (columns, rows) = current.take().unwrap_or_default();
                     results.push(QueryResult {
                         columns: columns.into_iter().map(|name| Column { name }).collect(),
@@ -451,7 +512,7 @@ impl Connection {
                     return Ok(SimpleOutcome { results, error: None });
                 }
                 b'S' | b'K' => {}
-                b'N' => self.record_notice(&payload)?,
+                b'N' => record_notice(&mut self.notices, payload)?,
                 other => return Err(PostgresError::Protocol(format!("unsupported PostgreSQL response tag {other}"))),
             }
         }
@@ -505,7 +566,7 @@ impl Connection {
         packet.extend_from_slice(&protocol::describe_packet(b'P', "")?);
         packet.extend_from_slice(&protocol::execute_packet("", 0)?);
         packet.extend_from_slice(&protocol::sync_packet());
-        match self.read_extended(&packet) {
+        match self.read_extended(&packet, None) {
             Ok(outcome) => Ok(outcome.results),
             Err(error) => {
                 self.poison(&error);
@@ -522,13 +583,14 @@ impl Connection {
         let mut packet = protocol::parse_packet(&name, sql, param_types)?;
         packet.extend_from_slice(&protocol::describe_packet(b'S', &name)?);
         packet.extend_from_slice(&protocol::sync_packet());
-        let outcome = match self.read_extended(&packet) {
+        let outcome = match self.read_extended(&packet, None) {
             Ok(outcome) => outcome,
             Err(error) => {
                 self.poison(&error);
                 return Err(error);
             }
         };
+        self.prepared_columns.insert(name.clone(), outcome.description.clone());
         Ok(Prepared { name, parameters: outcome.parameters, columns: outcome.described })
     }
 
@@ -550,10 +612,17 @@ impl Connection {
         let param_formats = param_format_codes(params);
         let values: Vec<Option<&[u8]>> = params.iter().map(|param| param.value).collect();
         let mut packet = protocol::bind_packet_with_formats("", name, &values, &param_formats, result_formats)?;
-        packet.extend_from_slice(&protocol::describe_packet(b'P', "")?);
+        // `prepare` already described the statement, so the columns are known:
+        // asking for the portal description again would make the server rebuild
+        // and resend a `RowDescription` on every execution. Only a binary result
+        // format changes the description, and that still needs a fresh one.
+        let described = if result_formats.is_empty() { self.prepared_columns.get(name).cloned() } else { None };
+        if described.is_none() {
+            packet.extend_from_slice(&protocol::describe_packet(b'P', "")?);
+        }
         packet.extend_from_slice(&protocol::execute_packet("", 0)?);
         packet.extend_from_slice(&protocol::sync_packet());
-        match self.read_extended(&packet) {
+        match self.read_extended(&packet, described.as_deref()) {
             Ok(outcome) => Ok(outcome.results.into_iter().map(TypedResult::into_query_result).collect()),
             Err(error) => {
                 self.poison(&error);
@@ -582,7 +651,7 @@ impl Connection {
         let mut packet = protocol::bind_packet_with_formats(portal, statement, &values, &param_formats, result_formats)?;
         packet.extend_from_slice(&protocol::describe_packet(b'P', portal)?);
         packet.extend_from_slice(&protocol::sync_packet());
-        let outcome = match self.read_extended(&packet) {
+        let outcome = match self.read_extended(&packet, None) {
             Ok(outcome) => outcome,
             Err(error) => {
                 self.poison(&error);
@@ -603,7 +672,7 @@ impl Connection {
         let mut packet = protocol::describe_packet(b'P', portal)?;
         packet.extend_from_slice(&protocol::execute_packet(portal, max_rows)?);
         packet.extend_from_slice(&protocol::sync_packet());
-        let outcome = match self.read_extended(&packet) {
+        let outcome = match self.read_extended(&packet, None) {
             Ok(outcome) => outcome,
             Err(error) => {
                 self.poison(&error);
@@ -625,6 +694,7 @@ impl Connection {
     /// Closes a prepared statement on the server. Closing an unknown name is a
     /// no-op: the server answers CloseComplete either way.
     pub fn close_prepared(&mut self, name: &str) -> Result<(), PostgresError> {
+        self.prepared_columns.remove(name);
         self.close_named(b'S', name)
     }
 
@@ -632,7 +702,7 @@ impl Connection {
         self.ensure_usable()?;
         let mut packet = protocol::close_packet(target, name)?;
         packet.extend_from_slice(&protocol::sync_packet());
-        let outcome = match self.read_extended(&packet) {
+        let outcome = match self.read_extended(&packet, None) {
             Ok(outcome) => outcome,
             Err(error) => {
                 self.poison(&error);
@@ -684,12 +754,13 @@ impl Connection {
     }
 
     fn run_copy_in(&mut self, sql: &str, chunks: &[&[u8]]) -> Result<CopyOutcome, PostgresError> {
-        self.stream.write_all(&protocol::query_packet(sql)?).map_err(io_error)?;
+        self.reader.stream.write_all(&protocol::query_packet(sql)?).map_err(io_error)?;
         let mut tag = String::new();
         let mut failure: Option<PostgresError> = None;
         let mut streaming = false;
         loop {
-            let (byte, payload) = self.read_message()?;
+            let (byte, range) = self.read_message()?;
+            let payload = &self.reader.buffer[range];
             if failure.is_some() {
                 if byte == b'Z' {
                     if payload.len() != 1 {
@@ -701,17 +772,17 @@ impl Connection {
             }
             match byte {
                 b'G' if !streaming => {
-                    protocol::copy_response(&payload)?;
+                    protocol::copy_response(payload)?;
                     for chunk in chunks {
-                        self.stream.write_all(&protocol::copy_data_packet(chunk)?).map_err(io_error)?;
+                        self.reader.stream.write_all(&protocol::copy_data_packet(chunk)?).map_err(io_error)?;
                     }
-                    self.stream.write_all(&protocol::copy_done_packet()).map_err(io_error)?;
+                    self.reader.stream.write_all(&protocol::copy_done_packet()).map_err(io_error)?;
                     streaming = true;
                 }
-                b'C' => tag = protocol::command_tag(&payload)?,
-                b'E' => failure = Some(protocol::error_response(&payload)),
+                b'C' => tag = protocol::command_tag(payload)?,
+                b'E' => failure = Some(protocol::error_response(payload)),
                 b'S' | b'K' => {}
-                b'N' => self.record_notice(&payload)?,
+                b'N' => record_notice(&mut self.notices, payload)?,
                 b'Z' => {
                     if payload.len() != 1 {
                         return Err(PostgresError::Protocol("invalid ReadyForQuery".into()));
@@ -728,12 +799,13 @@ impl Connection {
     }
 
     fn run_copy_out(&mut self, sql: &str) -> Result<(Vec<u8>, CopyOutcome), PostgresError> {
-        self.stream.write_all(&protocol::query_packet(sql)?).map_err(io_error)?;
+        self.reader.stream.write_all(&protocol::query_packet(sql)?).map_err(io_error)?;
         let mut data = Vec::new();
         let mut tag = String::new();
         let mut failure: Option<PostgresError> = None;
         loop {
-            let (byte, payload) = self.read_message()?;
+            let (byte, range) = self.read_message()?;
+            let payload = &self.reader.buffer[range];
             if failure.is_some() {
                 if byte == b'Z' {
                     if payload.len() != 1 {
@@ -745,14 +817,14 @@ impl Connection {
             }
             match byte {
                 b'H' => {
-                    protocol::copy_response(&payload)?;
+                    protocol::copy_response(payload)?;
                 }
-                b'd' => data.extend_from_slice(&payload),
+                b'd' => data.extend_from_slice(payload),
                 b'c' => {}
-                b'C' => tag = protocol::command_tag(&payload)?,
-                b'E' => failure = Some(protocol::error_response(&payload)),
+                b'C' => tag = protocol::command_tag(payload)?,
+                b'E' => failure = Some(protocol::error_response(payload)),
                 b'S' | b'K' => {}
-                b'N' => self.record_notice(&payload)?,
+                b'N' => record_notice(&mut self.notices, payload)?,
                 b'Z' => {
                     if payload.len() != 1 {
                         return Err(PostgresError::Protocol("invalid ReadyForQuery".into()));
@@ -768,22 +840,30 @@ impl Connection {
         }
     }
 
-    fn read_extended(&mut self, packet: &[u8]) -> Result<ExtendedOutcome, PostgresError> {
-        self.stream.write_all(packet).map_err(io_error)?;
+    fn read_extended(
+        &mut self,
+        packet: &[u8],
+        expected: Option<&[protocol::ColumnDescription]>,
+    ) -> Result<ExtendedOutcome, PostgresError> {
+        self.reader.stream.write_all(packet).map_err(io_error)?;
         let mut results = Vec::new();
         let mut parameters = Vec::new();
         let mut details: Vec<protocol::ColumnDescription> = Vec::new();
         let mut described: Vec<Column> = Vec::new();
-        // Every round trip that expects rows carries a Describe, so the decoder
-        // always receives a fresh RowDescription before the first DataRow.
-        let mut current: Option<(Vec<protocol::ColumnDescription>, Vec<Vec<Option<String>>>)> = None;
+        // A round trip that carries a Describe decodes its rows against the
+        // `RowDescription` it receives. An execute that reuses the description
+        // taken at `prepare` time starts from that one instead, so no
+        // `RowDescription` is expected on the wire.
+        let mut current: Option<(Vec<protocol::ColumnDescription>, Vec<Vec<Option<String>>>)> =
+            expected.map(|columns| (columns.to_vec(), Vec::new()));
         let mut suspended = false;
         let mut failure: Option<PostgresError> = None;
         // A decode error must still drain to ReadyForQuery so the session stays
         // usable, but the error is returned instead of the partial rows.
         let mut deferred: Option<PostgresError> = None;
         loop {
-            let (tag, payload) = self.read_message()?;
+            let (tag, range) = self.read_message()?;
+            let payload = &self.reader.buffer[range];
             if failure.is_some() || deferred.is_some() {
                 if tag == b'Z' {
                     return Err(failure.or(deferred).expect("failure or deferred is set"));
@@ -796,9 +876,9 @@ impl Connection {
                         return Err(PostgresError::Protocol("invalid extended-protocol completion".into()));
                     }
                 }
-                b't' => parameters = protocol::parameter_description(&payload)?,
+                b't' => parameters = protocol::parameter_description(payload)?,
                 b'T' => {
-                    let columns = protocol::row_description(&payload)?;
+                    let columns = protocol::row_description(payload)?;
                     if let Some((_, rows)) = current.as_ref() {
                         if !rows.is_empty() {
                             return Err(PostgresError::Protocol("unexpected PostgreSQL RowDescription".into()));
@@ -820,13 +900,13 @@ impl Connection {
                     let Some((columns, rows)) = current.as_mut() else {
                         return Err(PostgresError::Protocol("DataRow without RowDescription".into()));
                     };
-                    match protocol::data_row_with_formats(&payload, columns) {
+                    match protocol::data_row_with_formats(payload, columns) {
                         Ok(values) => rows.push(values),
                         Err(error) => deferred = Some(error),
                     }
                 }
                 b'C' => {
-                    let command = protocol::command_tag(&payload)?;
+                    let command = protocol::command_tag(payload)?;
                     let (columns, rows) = current.take().unwrap_or_else(|| (details.clone(), Vec::new()));
                     let columns: Vec<TypedColumn> =
                         columns.iter().map(|column| TypedColumn { name: column.name.clone(), type_oid: column.type_oid }).collect();
@@ -852,7 +932,7 @@ impl Connection {
                     results.push(TypedResult { columns, rows, tag: String::new() });
                     suspended = true;
                 }
-                b'E' => failure = Some(protocol::error_response(&payload)),
+                b'E' => failure = Some(protocol::error_response(payload)),
                 b'Z' => {
                     if payload.len() != 1 {
                         return Err(PostgresError::Protocol("invalid ReadyForQuery".into()));
@@ -864,10 +944,10 @@ impl Connection {
                             return Err(PostgresError::Protocol("PostgreSQL result ended before CommandComplete".into()));
                         }
                     }
-                    return Ok(ExtendedOutcome { results, parameters, described, suspended });
+                    return Ok(ExtendedOutcome { results, parameters, described, description: details, suspended });
                 }
                 b'S' | b'K' => {}
-                b'N' => self.record_notice(&payload)?,
+                b'N' => record_notice(&mut self.notices, payload)?,
                 other => return Err(PostgresError::Protocol(format!("unsupported PostgreSQL response tag {other}"))),
             }
         }
@@ -875,8 +955,8 @@ impl Connection {
 
     /// Shuts the socket down without consuming the handle.
     pub fn disconnect(&mut self) -> Result<(), PostgresError> {
-        self.stream.flush().map_err(io_error)?;
-        self.stream.shutdown(std::net::Shutdown::Both).map_err(io_error)
+        self.reader.stream.flush().map_err(io_error)?;
+        self.reader.stream.shutdown(std::net::Shutdown::Both).map_err(io_error)
     }
 
     /// Closes the socket on the wire instead of waiting for the process to exit.
@@ -884,17 +964,32 @@ impl Connection {
         self.disconnect()
     }
 
-    fn read_message(&mut self) -> Result<(u8, Vec<u8>), PostgresError> {
-        let mut header = [0_u8; 5];
-        self.stream.read_exact(&mut header).map_err(io_error)?;
+    /// Reads one framed message from the read-ahead buffer.
+    ///
+    /// Returns the tag and the range its payload occupies inside
+    /// `self.reader.buffer`. Nothing is allocated and nothing is copied; the
+    /// range is only valid until the next message is read.
+    fn read_message(&mut self) -> Result<(u8, Range<usize>), PostgresError> {
+        let start = self.reader.ensure(5)?;
+        let header = &self.reader.buffer[start..start + 5];
+        let tag = header[0];
         let length = u32::from_be_bytes([header[1], header[2], header[3], header[4]]) as usize;
         if length < 4 || length > MAX_MESSAGE_BYTES {
             return Err(PostgresError::Protocol("invalid PostgreSQL message length".into()));
         }
-        let mut payload = vec![0_u8; length - 4];
-        self.stream.read_exact(&mut payload).map_err(io_error)?;
-        Ok((header[0], payload))
+        let payload = length - 4;
+        self.reader.position = start + 5;
+        let payload_start = self.reader.ensure(payload)?;
+        self.reader.position = payload_start + payload;
+        Ok((tag, payload_start..payload_start + payload))
     }
+}
+
+/// Records one `NoticeResponse` while a decoded frame is still borrowed from the
+/// read buffer, so notice handling never re-borrows the whole connection.
+fn record_notice(notices: &mut Vec<Notice>, payload: &[u8]) -> Result<(), PostgresError> {
+    notices.push(protocol::notice_response(payload)?);
+    Ok(())
 }
 
 /// Turns one server authentication request into the packet the client must
