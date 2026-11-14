@@ -37,3 +37,5 @@ hardware-backend-cuda = { workspace = true }
 hardware-backend-dx12 = { workspace = true }
 hardware-backend-vulkan = { workspace = true }
 hardware-backend-rocm = { workspace = true }
+hardware-input-wgsl = { workspace = true }
+hardware-program = { workspace = true }
