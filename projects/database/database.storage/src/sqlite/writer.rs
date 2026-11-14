@@ -2295,47 +2295,80 @@ impl SqliteWriter {
         })
     }
 
-    /// 写路径下钻用的叶子 rowid 读取。
+    /// 在叶子页的 rowid 升序 cell 指针数组上二分定位插入点。
     ///
-    /// 页号来自写入器自己维护的 b-tree（非外部文件解析），但在 `open` 之后仍可能
-    /// 指向损坏文件里的页，因此页级不变量（页范围、页类型、cell 指针数组）在此一次
-    /// 校验，循环内只做已校验范围内的直接索引。这样既保留损坏输入的结构化 `Corrupt`，
-    /// 又不必像读取路径那样逐格付 `checked_*` 守卫开销。插入下钻每行都要重建整页
-    /// rowid 向量，正是 `insert_multi`/`batch` 的基准热点。
-    fn leaf_rowids_for_write(&self, page: u32) -> Result<Vec<i64>> {
-        if page == 0 {
-            return Err(Error::Corrupt("sqlite table page reference out of bounds"));
-        }
-        let offset = self.page_offset(page);
-        let end = offset.checked_add(self.page_size).ok_or(Error::Corrupt("sqlite page offset overflow"))?;
-        if end > self.pages.len() {
-            return Err(Error::Corrupt("sqlite table page reference out of bounds"));
-        }
-        let page_bytes = &self.pages[offset..end];
+    /// 返回 `(position, hit)`：`position` 是第一个 rowid 不小于目标的槽位，
+    /// `hit` 表示该槽位正是目标 rowid。每次比较只解两个 varint，不再为整页
+    /// 重建 rowid 向量——后者让满页插入退化成每行 O(页内 cell 数)。
+    fn leaf_locate(&self, page: u32, rowid: i64) -> Result<(usize, bool)> {
+        let page_bytes = self.checked_page(page)?;
         let header_relative = Self::header_offset(page);
-        if page_bytes[header_relative] != PAGE_TABLE_LEAF {
+        let kind = *page_bytes.get(header_relative).ok_or(Error::Corrupt("sqlite table page header truncated"))?;
+        if kind != PAGE_TABLE_LEAF {
             return Err(Error::Corrupt("sqlite page type invalid"));
         }
-        let count = u16::from_be_bytes(page_bytes[header_relative + 3..header_relative + 5].try_into().unwrap()) as usize;
+        let count = Self::page_u16(page_bytes, header_relative + 3, "sqlite table page header truncated")?;
         if header_relative + 8 + count * 2 > self.usable {
-            return Err(Error::Corrupt("sqlite cell pointer array out of bounds"));
+            return Err(Error::Corrupt("sqlite table cell pointer array out of bounds"));
         }
-        let mut out = Vec::with_capacity(count);
-        for index in 0..count {
+        let rowid_at = |index: usize| -> Result<i64> {
             let pointer = header_relative + 8 + index * 2;
-            let cell_offset = u16::from_be_bytes(page_bytes[pointer..pointer + 2].try_into().unwrap()) as usize;
+            let cell_offset = Self::page_u16(page_bytes, pointer, "sqlite table cell pointer truncated")?;
             if cell_offset >= self.usable {
-                return Err(Error::Corrupt("sqlite cell pointer out of bounds"));
+                return Err(Error::Corrupt("sqlite table cell pointer out of bounds"));
             }
-            let (_, length_size) = decode_varint(&page_bytes[cell_offset..])?;
-            let rowid_start = cell_offset + length_size;
-            if rowid_start >= self.usable {
-                return Err(Error::Corrupt("sqlite rowid truncated"));
+            let tail = page_bytes.get(cell_offset..).ok_or(Error::Corrupt("sqlite table cell pointer out of bounds"))?;
+            let (_, length_size) = decode_varint(tail)?;
+            let rowid_start = cell_offset.checked_add(length_size).ok_or(Error::Corrupt("sqlite table cell offset overflow"))?;
+            let rowid_tail = page_bytes.get(rowid_start..).ok_or(Error::Corrupt("sqlite table rowid truncated"))?;
+            let (candidate, _) = decode_varint(rowid_tail)?;
+            Ok(candidate as i64)
+        };
+        let (mut low, mut high) = (0usize, count);
+        while low < high {
+            let middle = low + (high - low) / 2;
+            if rowid_at(middle)? < rowid {
+                low = middle + 1;
             }
-            let (rowid, _) = decode_varint(&page_bytes[rowid_start..])?;
-            out.push(rowid as i64);
+            else {
+                high = middle;
+            }
         }
-        Ok(out)
+        let hit = low < count && rowid_at(low)? == rowid;
+        Ok((low, hit))
+    }
+
+    /// 在内部页的孩子路由 cell 上二分定位：返回 `(child_index, child)`。
+    ///
+    /// 路由键升序，`child_index` 为 `None` 表示命中 rightmost 指针。
+    fn interior_locate(&self, page: u32, rowid: i64) -> Result<(Option<usize>, u32)> {
+        let offset = self.page_offset(page);
+        let header_relative = Self::header_offset(page);
+        let count = u16::from_be_bytes(self.pages[offset + header_relative + 3..offset + header_relative + 5].try_into().unwrap()) as usize;
+        let key_at = |index: usize| -> Result<(u32, i64)> {
+            let pointer = header_relative + 12 + index * 2;
+            let cell_offset = u16::from_be_bytes(self.pages[offset + pointer..offset + pointer + 2].try_into().unwrap()) as usize;
+            let child = u32::from_be_bytes(self.pages[offset + cell_offset..offset + cell_offset + 4].try_into().unwrap());
+            let (key, _) = decode_varint(&self.pages[offset + cell_offset + 4..])?;
+            Ok((child, key as i64))
+        };
+        let (mut low, mut high) = (0usize, count);
+        while low < high {
+            let middle = low + (high - low) / 2;
+            if rowid <= key_at(middle)?.1 {
+                high = middle;
+            }
+            else {
+                low = middle + 1;
+            }
+        }
+        if low < count {
+            Ok((Some(low), key_at(low)?.0))
+        }
+        else {
+            let rightmost = u32::from_be_bytes(self.pages[offset + header_relative + 8..offset + header_relative + 12].try_into().unwrap());
+            Ok((None, rightmost))
+        }
     }
 
     fn cells_common<F>(&self, page: u32, mut parse: F) -> Result<Vec<(i64, usize, Vec<u8>)>>
@@ -2640,45 +2673,39 @@ impl SqliteWriter {
             let count = Self::page_u16(page_bytes, header_relative + 3, "sqlite table page header truncated")?;
             match kind {
                 PAGE_TABLE_LEAF => {
-                    let pointers_end = header_relative + 8 + count * 2;
-                    if pointers_end > self.usable {
-                        return Err(Error::Corrupt("sqlite table cell pointer array out of bounds"));
+                    let (position, hit) = self.leaf_locate(page, rowid)?;
+                    if !hit {
+                        return Ok(None);
                     }
-                    for index in 0..count {
-                        let pointer = header_relative + 8 + index * 2;
-                        let cell_offset = Self::page_u16(page_bytes, pointer, "sqlite table cell pointer truncated")?;
-                        if cell_offset >= self.usable {
-                            return Err(Error::Corrupt("sqlite table cell pointer out of bounds"));
-                        }
-                        let tail = page_bytes.get(cell_offset..).ok_or(Error::Corrupt("sqlite table cell pointer out of bounds"))?;
-                        let (length, length_size) = decode_varint(tail)?;
-                        let rowid_start = cell_offset.checked_add(length_size).ok_or(Error::Corrupt("sqlite table cell offset overflow"))?;
-                        let rowid_tail = page_bytes.get(rowid_start..).ok_or(Error::Corrupt("sqlite table rowid truncated"))?;
-                        let (candidate, rowid_size) = decode_varint(rowid_tail)?;
-                        if candidate as i64 != rowid {
-                            continue;
-                        }
-                        let payload_len = usize::try_from(length).map_err(|_| Error::Unsupported("sqlite payload too large"))?;
-                        if payload_len > self.pages.len() {
-                            return Err(Error::Corrupt("sqlite cell payload length exceeds image size"));
-                        }
-                        let local = self.local_payload(payload_len);
-                        let prefix = length_size + rowid_size;
-                        let span = prefix + local + if payload_len > local { 4 } else { 0 };
-                        if cell_offset.checked_add(span).is_none_or(|end| end > self.usable) {
-                            return Err(Error::Corrupt("sqlite cell payload truncated"));
-                        }
-                        return Ok(Some(TableCell { page, rowid, offset: cell_offset, prefix, payload_len, local, span }));
+                    let pointer = header_relative + 8 + position * 2;
+                    let cell_offset = Self::page_u16(page_bytes, pointer, "sqlite table cell pointer truncated")?;
+                    if cell_offset >= self.usable {
+                        return Err(Error::Corrupt("sqlite table cell pointer out of bounds"));
                     }
-                    return Ok(None);
+                    let tail = page_bytes.get(cell_offset..).ok_or(Error::Corrupt("sqlite table cell pointer out of bounds"))?;
+                    let (length, length_size) = decode_varint(tail)?;
+                    let rowid_start = cell_offset.checked_add(length_size).ok_or(Error::Corrupt("sqlite table cell offset overflow"))?;
+                    let rowid_tail = page_bytes.get(rowid_start..).ok_or(Error::Corrupt("sqlite table rowid truncated"))?;
+                    let (_, rowid_size) = decode_varint(rowid_tail)?;
+                    let payload_len = usize::try_from(length).map_err(|_| Error::Unsupported("sqlite payload too large"))?;
+                    if payload_len > self.pages.len() {
+                        return Err(Error::Corrupt("sqlite cell payload length exceeds image size"));
+                    }
+                    let local = self.local_payload(payload_len);
+                    let prefix = length_size + rowid_size;
+                    let span = prefix + local + if payload_len > local { 4 } else { 0 };
+                    if cell_offset.checked_add(span).is_none_or(|end| end > self.usable) {
+                        return Err(Error::Corrupt("sqlite cell payload truncated"));
+                    }
+                    return Ok(Some(TableCell { page, rowid, offset: cell_offset, prefix, payload_len, local, span }));
                 }
                 PAGE_TABLE_INTERIOR => {
                     let pointers_end = header_relative + 12 + count * 2;
                     if pointers_end > self.usable {
                         return Err(Error::Corrupt("sqlite table cell pointer array out of bounds"));
                     }
-                    let mut child = Self::page_u32(page_bytes, header_relative + 8, "sqlite table child pointer truncated")?;
-                    for index in 0..count {
+                    let rightmost = Self::page_u32(page_bytes, header_relative + 8, "sqlite table child pointer truncated")?;
+                    let key_at = |index: usize| -> Result<(u32, i64)> {
                         let pointer = header_relative + 12 + index * 2;
                         let cell_offset = Self::page_u16(page_bytes, pointer, "sqlite table cell pointer truncated")?;
                         if cell_offset >= self.usable {
@@ -2688,10 +2715,21 @@ impl SqliteWriter {
                         let key_start = cell_offset.checked_add(4).ok_or(Error::Corrupt("sqlite table cell offset overflow"))?;
                         let key_tail = page_bytes.get(key_start..).ok_or(Error::Corrupt("sqlite table key truncated"))?;
                         let (key, _) = decode_varint(key_tail)?;
-                        if rowid <= key as i64 {
-                            child = candidate;
-                            break;
+                        Ok((candidate, key as i64))
+                    };
+                    let (mut low, mut high) = (0usize, count);
+                    while low < high {
+                        let middle = low + (high - low) / 2;
+                        if rowid <= key_at(middle)?.1 {
+                            high = middle;
                         }
+                        else {
+                            low = middle + 1;
+                        }
+                    }
+                    let mut child = rightmost;
+                    if low < count {
+                        child = key_at(low)?.0;
                     }
                     page = child;
                 }
@@ -2854,9 +2892,8 @@ impl SqliteWriter {
         let kind = self.pages[offset + header_relative];
         match kind {
             PAGE_TABLE_LEAF => {
-                let rowids = self.leaf_rowids_for_write(page)?;
-                let position = rowids.partition_point(|candidate| *candidate < rowid);
-                if rowids.get(position).is_some_and(|candidate| *candidate == rowid) {
+                let (position, duplicate) = self.leaf_locate(page, rowid)?;
+                if duplicate {
                     // 重复 rowid 在插入下钻到叶子时就判定，不再先做一次独立查找。
                     return Err(Error::Constraint { kind: "unique", message: "sqlite UNIQUE constraint failed" });
                 }
@@ -2899,21 +2936,7 @@ impl SqliteWriter {
                 Ok(Some(Split { boundaries }))
             }
             PAGE_TABLE_INTERIOR => {
-                let count =
-                    u16::from_be_bytes(self.pages[offset + header_relative + 3..offset + header_relative + 5].try_into().unwrap()) as usize;
-                let mut child_index = None;
-                let mut child = u32::from_be_bytes(self.pages[offset + header_relative + 8..offset + header_relative + 12].try_into().unwrap());
-                for index in 0..count {
-                    let pointer = header_relative + 12 + index * 2;
-                    let cell_offset = u16::from_be_bytes(self.pages[offset + pointer..offset + pointer + 2].try_into().unwrap()) as usize;
-                    let candidate = u32::from_be_bytes(self.pages[offset + cell_offset..offset + cell_offset + 4].try_into().unwrap());
-                    let (key, _) = decode_varint(&self.pages[offset + cell_offset + 4..])?;
-                    if rowid <= key as i64 {
-                        child = candidate;
-                        child_index = Some(index);
-                        break;
-                    }
-                }
+                let (child_index, child) = self.interior_locate(page, rowid)?;
                 let Some(split) = self.table_insert_inner(child, rowid, payload)?
                 else {
                     return Ok(None);
@@ -3002,30 +3025,15 @@ impl SqliteWriter {
         let kind = self.pages[offset + header_relative];
         match kind {
             PAGE_TABLE_LEAF => {
-                let rowids = self.leaf_rowids_for_write(page)?;
-                let position = rowids.partition_point(|candidate| *candidate < rowid);
-                if !rowids.get(position).is_some_and(|candidate| *candidate == rowid) {
+                let (position, hit) = self.leaf_locate(page, rowid)?;
+                if !hit {
                     return Err(Error::Unsupported("sqlite rowid not found"));
-                };
+                }
                 self.remove_cell(page, position)?;
                 Ok(page)
             }
             PAGE_TABLE_INTERIOR => {
-                let count =
-                    u16::from_be_bytes(self.pages[offset + header_relative + 3..offset + header_relative + 5].try_into().unwrap()) as usize;
-                let mut child_index = None;
-                let mut child = u32::from_be_bytes(self.pages[offset + header_relative + 8..offset + header_relative + 12].try_into().unwrap());
-                for index in 0..count {
-                    let pointer = header_relative + 12 + index * 2;
-                    let cell_offset = u16::from_be_bytes(self.pages[offset + pointer..offset + pointer + 2].try_into().unwrap()) as usize;
-                    let candidate = u32::from_be_bytes(self.pages[offset + cell_offset..offset + cell_offset + 4].try_into().unwrap());
-                    let (key, _) = decode_varint(&self.pages[offset + cell_offset + 4..])?;
-                    if rowid <= key as i64 {
-                        child = candidate;
-                        child_index = Some(index);
-                        break;
-                    }
-                }
+                let (child_index, child) = self.interior_locate(page, rowid)?;
                 let root = self.table_delete(child, rowid)?;
                 if root != child {
                     // Child shrank to nothing and was freed; repoint.
@@ -4741,3 +4749,4 @@ fn normalized_index_values(values: &[WriteValue], collations: &[Collation]) -> V
         })
         .collect()
 }
+
