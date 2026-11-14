@@ -1,0 +1,83 @@
+//! `database-harness`：测试与基准的判定协议。
+//!
+//! 负责七件事：语料身份（seed / count / 摘要）、已知差异台账（登记、匹配、
+//! 未登记、信号变化、陈旧条目）、观测比对与归类、基准统计与报告行、报告
+//! 信封、grammar 驱动的模糊输入生成（确定性 PRNG、复现信封与收缩状态机，
+//! 语法内容由调用方提供）、门禁判定（套件计数汇总与 floor 判定，测试输出
+//! 解析留在产品仓）。它不解析线协议、不实现 SQL 或命令语义，也不生成
+//! 任何期望值；期望值始终由真实外部引擎、官方语料或冻结基线提供。
+//!
+//! feature `charts` 打开后经 `plotter-chart` 把基准报告行渲染为分组柱图
+//! SVG；默认不开启，判定核心保持零绘图依赖。
+//!
+//! 依赖方向固定为 `database-harness -> database-types`。本 crate 不反向依赖
+//! `database` 门面，也不依赖任何产品 crate。
+
+#![deny(missing_docs)]
+
+pub mod bench;
+pub mod compare;
+pub mod corpus;
+pub mod fuzz;
+pub mod gate;
+pub mod observe;
+pub mod report;
+
+#[cfg(feature = "charts")]
+pub mod chart;
+
+pub use bench::{
+    BenchPlan, BenchProblem, BenchProvenance, BenchReport, BenchResult, BenchRow, DeltaRegistry, IntentionalDelta, Stats, per_op_ms, summarize,
+    summarize_plan,
+};
+pub use compare::{CompareMode, Comparison, Diff, DifferenceClass, UnavailableEvidence, classify, compare};
+pub use corpus::{
+    Baseline, BaselineIdentity, BaselineProblem, BaselineVerdict, CorpusSpec, DifferenceObservation, Digest, KnownDifference, check_baseline,
+    check_identity,
+};
+pub use fuzz::{
+    FuzzInput, FuzzPlan, Grammar, Rule, ShrinkMove, ShrinkMoveKind, ShrinkSession, SlotPool, SplitMix64, Symbol, TraceEntry, generate, render,
+    shrink, shrink_next, shrink_report, shrink_start,
+};
+pub use gate::{
+    BaselineSignal, CaseOutcome, CaseRecord, ExpectedCase, Floor, GateManifest, GatePolicy, GateProblem, GateVerdict, Metric,
+    OracleQualification, SuiteReport, SuiteTally, evaluate, evaluate_with_manifest,
+};
+pub use observe::{Cell, ErrorShape, Observed, ObservedBody, TruthProvenance};
+pub use report::{CorpusReport, REPORT_VERSION, ReportEnvelope, RunIdentity, render_json};
+
+/// 判定协议的错误。
+#[derive(Debug, thiserror::Error)]
+pub enum HarnessError {
+    /// 共享类型层返回的错误。
+    #[error(transparent)]
+    Types(#[from] database_types::Error),
+    /// 摘要不是 64 位十六进制。
+    #[error("摘要必须是 64 位十六进制，实际是 {0:?}")]
+    InvalidDigest(String),
+    /// 报告序列化失败。
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+    /// 报告版本不是当前合同版本。
+    #[error("不支持的报告版本 {version}")]
+    UnsupportedReportVersion {
+        /// 输入信封声明的版本。
+        version: u32,
+    },
+    /// 验收报告缺必填身份字段。
+    #[error("报告字段 {field} 不能为空")]
+    EmptyReportField {
+        /// 缺失的字段名。
+        field: &'static str,
+    },
+    /// fuzz 生成、重放或语法校验失败。
+    #[error("fuzz: {0}")]
+    Fuzz(String),
+    /// 图表渲染失败（feature `charts`）。
+    #[cfg(feature = "charts")]
+    #[error("chart: {0}")]
+    Chart(String),
+}
+
+/// 判定协议的结果别名。
+pub type Result<T = ()> = std::result::Result<T, HarnessError>;
