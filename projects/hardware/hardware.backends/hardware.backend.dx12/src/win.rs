@@ -14,26 +14,29 @@ use windows::{
         Graphics::{
             Direct3D::{D3D_FEATURE_LEVEL_12_0, D3D_FEATURE_LEVEL_12_1, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST},
             Direct3D12::{
-                D3D_ROOT_SIGNATURE_VERSION_1, D3D12_BLEND_DESC, D3D12_CLEAR_VALUE, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_DESC,
+                D3D_ROOT_SIGNATURE_VERSION_1, D3D12_BLEND, D3D12_BLEND_DESC, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_ONE, D3D12_BLEND_OP,
+                D3D12_BLEND_OP_ADD, D3D12_BLEND_SRC_ALPHA, D3D12_CLEAR_VALUE, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_DESC,
                 D3D12_COMMAND_QUEUE_FLAG_NONE, D3D12_COMPUTE_PIPELINE_STATE_DESC, D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
                 D3D12_CULL_MODE_NONE, D3D12_DEPTH_STENCIL_DESC, D3D12_DESCRIPTOR_HEAP_DESC, D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
-                D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_FENCE_FLAG_NONE, D3D12_FILL_MODE_SOLID, D3D12_GRAPHICS_PIPELINE_STATE_DESC,
-                D3D12_HEAP_FLAG_NONE, D3D12_HEAP_FLAG_SHARED, D3D12_HEAP_FLAGS, D3D12_HEAP_PROPERTIES, D3D12_HEAP_TYPE_DEFAULT,
-                D3D12_HEAP_TYPE_READBACK, D3D12_HEAP_TYPE_UPLOAD, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, D3D12_INPUT_ELEMENT_DESC,
-                D3D12_INPUT_LAYOUT_DESC, D3D12_MEMORY_POOL_UNKNOWN, D3D12_PLACED_SUBRESOURCE_FOOTPRINT, D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
+                D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS, D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS,
+                D3D12_FENCE_FLAG_NONE, D3D12_FILL_MODE_SOLID, D3D12_GRAPHICS_PIPELINE_STATE_DESC, D3D12_HEAP_FLAG_NONE, D3D12_HEAP_FLAG_SHARED,
+                D3D12_HEAP_FLAGS, D3D12_HEAP_PROPERTIES, D3D12_HEAP_TYPE_DEFAULT, D3D12_HEAP_TYPE_READBACK, D3D12_HEAP_TYPE_UPLOAD,
+                D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, D3D12_INPUT_ELEMENT_DESC, D3D12_INPUT_LAYOUT_DESC, D3D12_MEMORY_POOL_UNKNOWN,
+                D3D12_MULTISAMPLE_QUALITY_LEVELS_FLAG_NONE, D3D12_PLACED_SUBRESOURCE_FOOTPRINT, D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
                 D3D12_RASTERIZER_DESC, D3D12_RESOURCE_BARRIER, D3D12_RESOURCE_BARRIER_0, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
                 D3D12_RESOURCE_BARRIER_FLAG_NONE, D3D12_RESOURCE_BARRIER_TYPE_TRANSITION, D3D12_RESOURCE_DESC, D3D12_RESOURCE_DIMENSION_BUFFER,
                 D3D12_RESOURCE_DIMENSION_TEXTURE2D, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
                 D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COPY_SOURCE,
-                D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                D3D12_RESOURCE_STATES, D3D12_RESOURCE_TRANSITION_BARRIER, D3D12_ROOT_CONSTANTS, D3D12_ROOT_DESCRIPTOR, D3D12_ROOT_PARAMETER,
-                D3D12_ROOT_PARAMETER_0, D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, D3D12_ROOT_PARAMETER_TYPE_SRV,
-                D3D12_ROOT_PARAMETER_TYPE_UAV, D3D12_ROOT_SIGNATURE_DESC, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT,
-                D3D12_ROOT_SIGNATURE_FLAG_NONE, D3D12_SHADER_BYTECODE, D3D12_SHADER_VISIBILITY_ALL, D3D12_TEXTURE_COPY_LOCATION,
-                D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT, D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX, D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-                D3D12_TEXTURE_LAYOUT_UNKNOWN, D3D12_VERTEX_BUFFER_VIEW, D3D12_VIEWPORT, D3D12CreateDevice, D3D12SerializeRootSignature,
-                ID3D12CommandAllocator, ID3D12CommandQueue, ID3D12DescriptorHeap, ID3D12Device, ID3D12Fence, ID3D12GraphicsCommandList,
-                ID3D12PipelineState, ID3D12Resource, ID3D12RootSignature,
+                D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_RESOLVE_DEST,
+                D3D12_RESOURCE_STATE_RESOLVE_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATES,
+                D3D12_RESOURCE_TRANSITION_BARRIER, D3D12_ROOT_CONSTANTS, D3D12_ROOT_DESCRIPTOR, D3D12_ROOT_PARAMETER, D3D12_ROOT_PARAMETER_0,
+                D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, D3D12_ROOT_PARAMETER_TYPE_SRV, D3D12_ROOT_PARAMETER_TYPE_UAV,
+                D3D12_ROOT_SIGNATURE_DESC, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT, D3D12_ROOT_SIGNATURE_FLAG_NONE,
+                D3D12_SHADER_BYTECODE, D3D12_SHADER_VISIBILITY_ALL, D3D12_TEXTURE_COPY_LOCATION, D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
+                D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX, D3D12_TEXTURE_LAYOUT_ROW_MAJOR, D3D12_TEXTURE_LAYOUT_UNKNOWN,
+                D3D12_VERTEX_BUFFER_VIEW, D3D12_VIEWPORT, D3D12CreateDevice, D3D12SerializeRootSignature, ID3D12CommandAllocator,
+                ID3D12CommandQueue, ID3D12DescriptorHeap, ID3D12Device, ID3D12Fence, ID3D12GraphicsCommandList, ID3D12PipelineState,
+                ID3D12Resource, ID3D12RootSignature,
             },
             Dxgi::{
                 Common::{
@@ -119,12 +122,61 @@ pub struct Dx12Backend {
     program_misses: u64,
     /// Vertex-buffer raster pipeline, which only depends on the fixed shaders.
     vertex_raster_pipeline: Option<(ID3D12RootSignature, ID3D12PipelineState)>,
+    /// Multisample count for the vertex-buffer raster path: 4, 2 or 1.
+    raster_samples: u32,
     /// Last descriptor path label taken by a submit (for thin-gate assertions).
     last_descriptor_path: &'static str,
     /// Last sync path label taken by a submit (for thin-gate assertions).
     last_sync_path: &'static str,
     /// Last pipeline path label taken by a submit (for thin-gate assertions).
     last_pipeline_path: &'static str,
+}
+
+/// Picks the highest multisample count the adapter supports for the vertex raster target.
+fn probe_raster_samples(device: &ID3D12Device) -> u32 {
+    for samples in [4u32, 2] {
+        let mut levels = D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS {
+            Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+            SampleCount: samples,
+            Flags: D3D12_MULTISAMPLE_QUALITY_LEVELS_FLAG_NONE,
+            NumQualityLevels: 0,
+        };
+        let supported = unsafe {
+            device.CheckFeatureSupport(
+                D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS,
+                std::ptr::from_mut(&mut levels).cast(),
+                std::mem::size_of::<D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS>() as u32,
+            )
+        };
+        if supported.is_ok() && levels.NumQualityLevels > 0 {
+            return samples;
+        }
+    }
+    1
+}
+
+/// Converts premultiplied readback colour into straight RGBA.
+///
+/// The vertex raster blends source-alpha over a transparent target, so partial
+/// coverage stores `colour * alpha`. Callers get the straight form the CPU and
+/// SVG renderers produce.
+fn unpremultiply(pixels: &mut [u8]) {
+    for pixel in pixels.as_chunks_mut::<4>().0 {
+        let alpha = u32::from(pixel[3]);
+        if alpha == 255 {
+            continue;
+        }
+        if alpha == 0 {
+            pixel[0] = 0;
+            pixel[1] = 0;
+            pixel[2] = 0;
+            continue;
+        }
+        for channel in &mut pixel[..3] {
+            let straight = (u32::from(*channel) * 255).div_ceil(alpha).min(255);
+            *channel = straight as u8;
+        }
+    }
 }
 
 impl Dx12Backend {
@@ -156,6 +208,7 @@ impl Dx12Backend {
                 .with(Feature::DynamicRendering)
                 .with(Feature::EnhancedBarriers);
             let strategies = WiredStrategies::from_features(&features);
+            let raster_samples = probe_raster_samples(&device);
 
             Ok(Self {
                 device,
@@ -172,6 +225,7 @@ impl Dx12Backend {
                 program_hits: 0,
                 program_misses: 0,
                 vertex_raster_pipeline: None,
+                raster_samples,
                 last_descriptor_path: "",
                 last_sync_path: "",
                 last_pipeline_path: "",
@@ -182,6 +236,11 @@ impl Dx12Backend {
     /// Degrade-chain strategies resolved when the backend opened.
     pub fn strategies(&self) -> WiredStrategies {
         self.strategies
+    }
+
+    /// Multisample count used by the vertex-buffer raster target: 4, 2 or 1.
+    pub fn raster_samples(&self) -> u32 {
+        self.raster_samples
     }
 
     /// Descriptor path label from the last submit that bound descriptors.
@@ -656,20 +715,17 @@ impl Dx12Backend {
         let output = resource_param(task, "output").map_err(map_backend_err)?;
         let bytes = self.buf_bytes(output)?;
         if bytes == 0 || bytes % 4 != 0 {
-            return Err(map_backend_err(BackendError(format!(
-                "generic UCF output resource {} must contain 4-byte scalar elements",
-                output.0
-            ))));
+            return Err(map_backend_err(BackendError(format!("generic UCF output resource {} must contain 4-byte scalar elements", output.0))));
         }
-        let output_count = u32::try_from(bytes / 4)
-            .map_err(|_| map_backend_err(BackendError("generic UCF output element count exceeds u32".into())))?;
+        let output_count =
+            u32::try_from(bytes / 4).map_err(|_| map_backend_err(BackendError("generic UCF output element count exceeds u32".into())))?;
         let dispatch_count = match task.dispatch {
             hardware_types::Dispatch::Explicit { x, y, z } => x
                 .checked_mul(y)
                 .and_then(|value| value.checked_mul(z))
                 .ok_or_else(|| map_backend_err(BackendError("generic UCF dispatch dimensions overflow".into())))?,
             hardware_types::Dispatch::Auto => {
-                return Err(map_backend_err(BackendError("generic UCF dispatch requires explicit dimensions".into())))
+                return Err(map_backend_err(BackendError("generic UCF dispatch requires explicit dimensions".into())));
             }
         };
         if dispatch_count > output_count {
@@ -686,10 +742,7 @@ impl Dx12Backend {
             let id = resource_param(task, &key).map_err(map_backend_err)?;
             let input_bytes = self.buf_bytes(id)?;
             if input_bytes % 4 != 0 {
-                return Err(map_backend_err(BackendError(format!(
-                    "generic UCF resource {} must contain 4-byte scalar elements",
-                    id.0
-                ))));
+                return Err(map_backend_err(BackendError(format!("generic UCF resource {} must contain 4-byte scalar elements", id.0))));
             }
             reads.push(id);
         }
@@ -698,10 +751,7 @@ impl Dx12Backend {
             let id = resource_param(task, &key).map_err(map_backend_err)?;
             let output_bytes = self.buf_bytes(id)?;
             if output_bytes % 4 != 0 {
-                return Err(map_backend_err(BackendError(format!(
-                    "generic UCF resource {} must contain 4-byte scalar elements",
-                    id.0
-                ))));
+                return Err(map_backend_err(BackendError(format!("generic UCF resource {} must contain 4-byte scalar elements", id.0))));
             }
             writes.push(id);
         }
@@ -1010,6 +1060,7 @@ impl Dx12Backend {
                 CreationNodeMask: 0,
                 VisibleNodeMask: 0,
             };
+            let samples = self.raster_samples.max(1);
             let rt_desc = D3D12_RESOURCE_DESC {
                 Dimension: D3D12_RESOURCE_DIMENSION_TEXTURE2D,
                 Alignment: 0,
@@ -1018,7 +1069,7 @@ impl Dx12Backend {
                 DepthOrArraySize: 1,
                 MipLevels: 1,
                 Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-                SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                SampleDesc: DXGI_SAMPLE_DESC { Count: samples, Quality: 0 },
                 Layout: D3D12_TEXTURE_LAYOUT_UNKNOWN,
                 Flags: D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
             };
@@ -1038,12 +1089,28 @@ impl Dx12Backend {
             let rtv: D3D12_CPU_DESCRIPTOR_HANDLE = rtv_heap.GetCPUDescriptorHandleForHeapStart();
             self.device.CreateRenderTargetView(&rt, None, rtv);
 
+            // Multisampled frames are resolved into a single-sample texture before the
+            // readback copy, so the staging footprint always describes a plain image.
+            let single_desc =
+                D3D12_RESOURCE_DESC { SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 }, Flags: D3D12_RESOURCE_FLAG_NONE, ..rt_desc };
+            let resolved = if samples > 1 {
+                let mut resource: Option<ID3D12Resource> = None;
+                self.device
+                    .CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &single_desc, D3D12_RESOURCE_STATE_COPY_DEST, None, &mut resource)
+                    .map_err(dx_err)?;
+                Some(resource.ok_or_else(|| dx_err_msg("vertex raster resolve CreateCommittedResource null"))?)
+            }
+            else {
+                None
+            };
+            let copy_desc = if resolved.is_some() { &single_desc } else { &rt_desc };
+
             let mut footprint = D3D12_PLACED_SUBRESOURCE_FOOTPRINT::default();
             let mut row_count = 0u32;
             let mut row_size = 0u64;
             let mut total = 0u64;
             self.device.GetCopyableFootprints(
-                &rt_desc,
+                copy_desc,
                 0,
                 1,
                 0,
@@ -1095,9 +1162,21 @@ impl Dx12Backend {
             list.SetGraphicsRoot32BitConstants(0, size.len() as u32, size.as_ptr().cast(), 0);
             list.DrawInstanced(vertices.len() as u32, 1, 0, 0);
 
-            transition(&list, &rt, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
+            let copy_source = match &resolved {
+                Some(resolve) => {
+                    transition(&list, &rt, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_RESOLVE_SOURCE);
+                    transition(&list, resolve, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_RESOLVE_DEST);
+                    list.ResolveSubresource(resolve, 0, &rt, 0, DXGI_FORMAT_R8G8B8A8_UNORM);
+                    transition(&list, resolve, D3D12_RESOURCE_STATE_RESOLVE_DEST, D3D12_RESOURCE_STATE_COPY_SOURCE);
+                    resolve.clone()
+                }
+                None => {
+                    transition(&list, &rt, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
+                    rt.clone()
+                }
+            };
             let src_loc = D3D12_TEXTURE_COPY_LOCATION {
-                pResource: std::mem::ManuallyDrop::new(Some(rt.clone())),
+                pResource: std::mem::ManuallyDrop::new(Some(copy_source)),
                 Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
                 Anonymous: windows::Win32::Graphics::Direct3D12::D3D12_TEXTURE_COPY_LOCATION_0 { SubresourceIndex: 0 },
             };
@@ -1122,13 +1201,14 @@ impl Dx12Backend {
                 std::ptr::copy_nonoverlapping(src_row, dst_row, (width as usize) * 4);
             }
             staging.Unmap(0, None);
+            unpremultiply(&mut pixels);
             Ok(pixels)
         }
     }
 
     fn create_graphics_tri_pso(&self, vs: &[u8], ps: &[u8]) -> Result<(ID3D12RootSignature, ID3D12PipelineState)> {
         let layout = D3D12_INPUT_LAYOUT_DESC { pInputElementDescs: std::ptr::null(), NumElements: 0 };
-        self.create_graphics_pso(vs, ps, &[], layout)
+        self.create_graphics_pso(vs, ps, &[], layout, 1)
     }
 
     /// PSO for the vertex-buffer path: `POSITION` + `COLOR` in slot 0, one root constant pair.
@@ -1154,7 +1234,7 @@ impl Dx12Backend {
             },
         ];
         let desc = D3D12_INPUT_LAYOUT_DESC { pInputElementDescs: layout.as_ptr(), NumElements: layout.len() as u32 };
-        self.create_graphics_pso(vs, ps, &[root_constants(0, 2)], desc)
+        self.create_graphics_pso(vs, ps, &[root_constants(0, 2)], desc, self.raster_samples)
     }
 
     fn create_graphics_pso(
@@ -1163,6 +1243,7 @@ impl Dx12Backend {
         ps: &[u8],
         params: &[D3D12_ROOT_PARAMETER],
         input_layout: D3D12_INPUT_LAYOUT_DESC,
+        samples: u32,
     ) -> Result<(ID3D12RootSignature, ID3D12PipelineState)> {
         unsafe {
             // A shader that consumes vertex attributes only accepts a root signature
@@ -1217,12 +1298,23 @@ impl Dx12Backend {
                 PrimitiveTopologyType: D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
                 NumRenderTargets: 1,
                 RTVFormats: rtv_formats,
-                SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                SampleDesc: DXGI_SAMPLE_DESC { Count: samples.max(1), Quality: 0 },
                 ..Default::default()
             };
-            // Default RT blend: one render target, opaque.
-            pso_desc.BlendState.RenderTarget[0].RenderTargetWriteMask = 0x0f;
-            pso_desc.BlendState.RenderTarget[0].BlendEnable = false.into();
+            // Source-alpha blending over a transparent target. With no destination
+            // coverage the stored colour is premultiplied; the vertex-buffer readback
+            // divides it back out so callers always see straight RGBA.
+            let target = &mut pso_desc.BlendState.RenderTarget[0];
+            target.BlendEnable = true.into();
+            target.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+            target.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+            target.BlendOp = D3D12_BLEND_OP_ADD;
+            target.SrcBlendAlpha = D3D12_BLEND_ONE;
+            target.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+            target.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+            target.LogicOpEnable = false.into();
+            target.LogicOp = windows::Win32::Graphics::Direct3D12::D3D12_LOGIC_OP_NOOP;
+            target.RenderTargetWriteMask = 0x0f;
 
             let pso: ID3D12PipelineState = self.device.CreateGraphicsPipelineState(&pso_desc).map_err(dx_err)?;
             Ok((root, pso))
