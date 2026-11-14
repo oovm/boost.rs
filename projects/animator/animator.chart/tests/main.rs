@@ -4,7 +4,7 @@ use animator_chart::{ChartState, ChartTimeline, ChartTimelineError};
 use plotter_chart::{
     ChannelEncoding, ChartOptions, ChartSpec, DataColumn, DataSnapshot, FieldKind, FieldRef, Mark, Value,
 };
-use plotter_scene::DisplayScene;
+use plotter_scene::{DisplayScene, NodeKind};
 
 /// 两栏柱状图：`cat` 是分类，`value` 是高度。
 fn spec() -> ChartSpec {
@@ -36,6 +36,20 @@ fn bar_x(scene: &DisplayScene, id: &str) -> f64 {
         .unwrap_or_else(|| panic!("场景里没有 id 为 `{id}` 的节点"))
         .transform
         .e()
+}
+
+/// 找到 id 为 `chart-bar-1` 的节点的矩形高度；柱高变化体现为 `Extent` 插值。
+fn bar_height(scene: &DisplayScene, id: &str) -> f64 {
+    match &scene
+        .nodes
+        .iter()
+        .find(|node| node.id.as_deref() == Some(id))
+        .unwrap_or_else(|| panic!("场景里没有 id 为 `{id}` 的节点"))
+        .kind
+    {
+        NodeKind::Rect { rect, .. } => rect.height,
+        other => panic!("预期矩形节点，实际为 {other:?}"),
+    }
 }
 
 #[test]
@@ -81,6 +95,32 @@ fn data_states_change_the_sampled_scene() {
     assert_ne!(middle, end, "过渡中不能直接跳到终点");
     // 柱 0 没变，柱 1 变了：只有第二个 id 的位置需要移动。
     assert_eq!(bar_x(&start, "chart-bar-0"), bar_x(&end, "chart-bar-0"));
+}
+
+/// 柱高由 `Extent` 通道插值：中间帧是首末高度的线性中点。
+///
+/// 必须开启共享定义域：否则每份快照各自缩放轴，值翻三倍轴也翻三倍，柱高在像素
+/// 上保持不变，看起来就像没有动画。
+#[test]
+fn bar_height_interpolates_with_the_data() {
+    let mut timeline = ChartTimeline::new(
+        spec(),
+        ChartOptions::default(),
+        vec![
+            ChartState { at: 0.0, data: data([1.0, 2.0]) },
+            ChartState { at: 2.0, data: data([1.0, 6.0]) },
+        ],
+    );
+    timeline.shared_domain = true;
+    let compiled = timeline.program().expect("程序合法").compile().expect("时间轴合法");
+    let start = bar_height(&compiled.sample(0.0), "chart-bar-1");
+    let middle = bar_height(&compiled.sample(0.2), "chart-bar-1");
+    let end = bar_height(&compiled.sample(0.4), "chart-bar-1");
+    assert_ne!(start, end, "数据变化必须改变柱高");
+    assert!(
+        (middle - (start + end) / 2.0).abs() < 1e-9,
+        "中间帧应为线性中点，实际 {middle}，首末 {start}/{end}"
+    );
 }
 
 /// 同一输入重复编译，任意时刻取样完全相同。
