@@ -137,8 +137,7 @@ pub(crate) fn eval_window_projection(
                     else {
                         position as i128 + offset as i128
                     };
-                    let ordered =
-                        ordered_rows.get_or_insert_with(|| keyed.iter().map(|(_, index)| rows[*index].clone()).collect());
+                    let ordered = ordered_rows.get_or_insert_with(|| keyed.iter().map(|(_, index)| rows[*index].clone()).collect());
                     match usize::try_from(target).ok().filter(|target| *target < ordered.len()) {
                         Some(target) => eval_expression(value_expr, &ordered[target], field_types, dialect)?,
                         // 越出分区：有默认值就按当前行求值，否则 SQL NULL。
@@ -149,8 +148,7 @@ pub(crate) fn eval_window_projection(
                     }
                 }
                 None => {
-                    let ordered_rows =
-                        ordered_rows.get_or_insert_with(|| keyed.iter().map(|(_, index)| rows[*index].clone()).collect());
+                    let ordered_rows = ordered_rows.get_or_insert_with(|| keyed.iter().map(|(_, index)| rows[*index].clone()).collect());
                     let (frame_start, frame_end) =
                         window_frame_bounds(spec, position, peer_start[position], peer_end[position], ordered_rows.len(), range_axis.as_ref())?;
                     let frame = if frame_start < frame_end { &ordered_rows[frame_start..frame_end] } else { &ordered_rows[0..0] };
