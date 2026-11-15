@@ -2915,6 +2915,10 @@ impl Engine {
                 // 一刀切只会让包住写入的事务丢掉增量补丁。回滚类动作相反,
                 // 会撤销事务内已并入探针的改动,必须走全量失效。
                 Statement::Transaction { action: TransactionAction::Begin | TransactionAction::Commit, .. } => {}
+                // 只追加行的普通 `INSERT` 不改变既有索引内容:语句提交后会把新行
+                // 增量并入探针,这里先全量失效只会让补丁失去对齐基准。
+                Statement::Insert { schema: None, table, conflict: None, replace: false, .. }
+                    if self.insert_keeps_index_content(table) => {}
                 _ => match self.statement_table_key(&statement) {
                     Some(key) => self.invalidate_table_indexes(&key),
                     None => self.invalidate_all_indexes(),
@@ -4254,6 +4258,9 @@ impl Engine {
                 self.writer
                     .create_index_with_sql(&name, &table, &names, unique, Some(&sql))
                     .map_err(|error| storage_failure(error).in_statement("create-index"))?;
+                // 空表上新键的索引:探针从空集开始,后续 `INSERT` / `DELETE`
+                // 逐行增量维护,首次区间删除或等值查询不必再整份解码索引。
+                let empty_index = self.writer.index_is_empty(&name).unwrap_or(false);
                 let order = self.index_sequence;
                 self.index_sequence += 1;
                 self.indexes.insert(
@@ -4270,6 +4277,9 @@ impl Engine {
                         collations,
                     },
                 );
+                if empty_index {
+                    self.install_empty_index_probe(&name);
+                }
                 Ok(ExecResult { statement: "create-index", columns: Vec::new(), rows: Vec::new(), affected: 1 })
             }
             Statement::Update { schema: _, table, alias, assignments, from, filter, returning } => {
@@ -6958,7 +6968,9 @@ impl Engine {
         // column index probes the index instead of decoding the whole table.
         // Both keep the full predicate running downstream, so the emitted row
         // set and order are unchanged.
-        let scan = self.scan_hint(from, filter);
+        // 相关子查询的外层键探针比字面量区间更窄(通常只剩一行),所以先试它;
+        // 只在只有一层外引用时生效,普通查询仍是零开销。
+        let scan = self.runtime_index_pin(from, filter, outer).or_else(|| self.scan_hint(from, filter));
         // `ORDER BY <rowid order> LIMIT n` reads only the leading rows, because
         // the scan order already satisfies that sort.
         let scan = scan.or_else(|| self.rowid_head_bound(first, &order, limit).map(ScanHint::Head));
@@ -6990,7 +7002,11 @@ impl Engine {
         let mut offset = 0;
         for (index, table) in from.iter().enumerate() {
             let keep = masks.as_ref().and_then(|masks| masks.get(index)).and_then(|mask| mask.as_deref());
-            let hint = scan.as_ref().or_else(|| local_hints.get(index).and_then(|hint| hint.as_ref()));
+            let local = local_hints.get(index).and_then(|hint| hint.as_ref());
+            // 等值连接的内层能按索引取值时只读匹配行,不必先物化整张右表。
+            let join_pin =
+                if index > 0 && scan.is_none() && local.is_none() { self.join_index_pin(from, index, &tables, masks.as_deref()) } else { None };
+            let hint = scan.as_ref().or(local).or(join_pin.as_ref());
             let (columns, rows) = self.select_source(table, budget, ctes, hint, keep)?;
             let width = columns.width();
             let source = Source {
@@ -8718,8 +8734,174 @@ impl Engine {
         }
     }
 
-    /// `<rowid> >= a` / `<rowid> <= b` 的单边或双边区间提示。
+    /// 相关子查询里的等值下推:`where <indexed col> = <外层列>`。
     ///
+    /// 与外层字面量下推不同,这里的键只在执行期由外层行决定。形状被刻意限窄:
+    /// 单张普通 rowid 表、比较的一侧是本表的一列且该列是某个普通索引的首列、
+    /// 另一侧直接就是一层外引用。命中时按外层值查一次索引探针,只解码候选行;
+    /// 谓词仍整体重跑,所以候选超集不影响结果。
+    fn runtime_index_pin(&self, from: &[TableRef], filter: &Option<Expr>, outer: &[Scope]) -> Option<ScanHint> {
+        if from.len() != 1 || outer.len() != 1 {
+            return None;
+        }
+        let filter = filter.as_ref()?;
+        let def = self.prunable_def(&from[0])?;
+        let width = def.columns.len();
+        let source = Source {
+            label: from[0].label().to_string(),
+            columns: SourceColumns::Table(def),
+            offset: 0,
+            join: None,
+            star_hidden: vec![false; width],
+            unqualified_hidden: vec![false; width],
+            star_override: vec![None; width],
+        };
+        let relation = Relation { sources: vec![source], using: vec![Vec::new()], using_slots: Vec::new(), trigger: None, excluded: false };
+        let shape = relation.shape();
+        let outer_shapes: Vec<ScopeShape> = outer.iter().map(Scope::shape).collect();
+        let mut windows = Vec::new();
+        let mut specs = Vec::new();
+        let resolved = resolve_expr(filter, &relation, &outer_shapes, &[], &mut windows, &mut specs, false, false).ok()?;
+        if !windows.is_empty() || !specs.is_empty() {
+            return None;
+        }
+        let mut conjuncts = Vec::new();
+        split_conjuncts(resolved, &mut conjuncts);
+        for conjunct in &conjuncts {
+            let ResolvedExpr::Compare { left, op: CompareOp::Eq, right, .. } = conjunct
+            else {
+                continue;
+            };
+            let (slot, probe) = match (left.as_ref(), right.as_ref()) {
+                (ResolvedExpr::Column { source: 0, index: slot }, probe) => (*slot, probe),
+                (probe, ResolvedExpr::Column { source: 0, index: slot }) => (*slot, probe),
+                _ => continue,
+            };
+            let ResolvedExpr::OuterColumn { depth: 0, index } = probe
+            else {
+                continue;
+            };
+            let Some(value) = outer[0].columns.get(*index).map(|column| column.value.clone())
+            else {
+                continue;
+            };
+            if let Some(rowids) = self.index_probe_by_column(def, slot, &value) {
+                return Some(ScanHint::Rowids(rowids));
+            }
+        }
+        None
+    }
+
+    /// 等值连接的内层按索引取值:只把匹配外层键的右行交给连接。
+    ///
+    /// 形状刻意限得很窄:内连 / 左连的 `ON` 恰好是 `<本源裸列> = <更早源的裸列>`,
+    /// 两列声明的排序规则相同,且本源码列是某个普通单列索引的首列。命中时用
+    /// 已物化的外层列值逐值查索引,把候选 rowid 当作内层的扫描提示;`ON` 仍在
+    /// 候选上重跑,所以候选只是超集,行集与左主序都不变。右 / 全连接会用到未
+    /// 匹配的右行,因此不做这层过滤。
+    fn join_index_pin(
+        &self,
+        from: &[TableRef],
+        index: usize,
+        tables: &[Rc<Vec<Vec<Cell>>>],
+        masks: Option<&[Option<Vec<bool>>]>,
+    ) -> Option<ScanHint> {
+        let table = from.get(index)?;
+        if !matches!(table.join, Some(JoinKind::Inner) | Some(JoinKind::Left)) {
+            return None;
+        }
+        let Expr::Compare { left, op: CompareOp::Eq, right } = table.on.as_ref()?
+        else {
+            return None;
+        };
+        let (Expr::Column(inner), Expr::Column(probe)) = (left.as_ref(), right.as_ref())
+        else {
+            return None;
+        };
+        let (inner, probe) = if column_qualified_as(inner, table.label()) {
+            (inner, probe)
+        }
+        else if column_qualified_as(probe, table.label()) {
+            (probe, inner)
+        }
+        else {
+            return None;
+        };
+        let def = self.prunable_def(table)?;
+        let position = def.columns.iter().position(|column| column.name.eq_ignore_ascii_case(&inner.name))?;
+        // rowid 别名列没有存储值,按它取键会读到 NULL;这类连接保持整表扫描。
+        if Some(position) == def.rowid_alias {
+            return None;
+        }
+        let qualifier = probe.qualifier.as_deref()?;
+        let owner = (0..index).find(|candidate| from[*candidate].label().eq_ignore_ascii_case(qualifier))?;
+        let owner_def = self.prunable_def(&from[owner])?;
+        let owner_position = owner_def.columns.iter().position(|column| column.name.eq_ignore_ascii_case(&probe.name))?;
+        // 投影掩码可能跳过探针列,行内只剩 NULL 占位,此时不能取键。
+        if masks
+            .and_then(|masks| masks.get(owner))
+            .and_then(|mask| mask.as_deref())
+            .is_some_and(|mask| !mask.get(owner_position).copied().unwrap_or(true))
+        {
+            return None;
+        }
+        let collation = def.columns[position].collate.unwrap_or_default();
+        if owner_def.columns[owner_position].collate.unwrap_or_default() != collation {
+            return None;
+        }
+        let table_key = def.name.to_ascii_lowercase();
+        let usable = self.indexes.values().any(|candidate| {
+            !candidate.managed
+                && candidate.table == table_key
+                && candidate.columns.as_slice() == [position]
+                && candidate.collations.first().copied().unwrap_or_default() == collation
+        });
+        if !usable {
+            return None;
+        }
+        let rows = tables.get(owner)?;
+        let mut rowids = std::collections::BTreeSet::new();
+        for row in rows.iter() {
+            let Some(cell) = row.get(owner_position)
+            else {
+                return None;
+            };
+            // `NULL = anything` 永远不成立,不贡献候选,也不该让整条连接退回整表扫描。
+            if matches!(cell, Cell::Null) {
+                continue;
+            }
+            rowids.extend(self.index_probe_by_column(def, position, cell)?);
+        }
+        Some(ScanHint::Rowids(rowids.into_iter().collect()))
+    }
+
+    /// 按一列的运行期取值查普通索引,返回候选 rowid。
+    fn index_probe_by_column(&self, def: &TableDef, position: usize, cell: &Cell) -> Option<Vec<i64>> {
+        let table_key = def.name.to_ascii_lowercase();
+        for index in self.indexes.values() {
+            if index.managed || index.table != table_key || index.columns.as_slice() != [position] {
+                continue;
+            }
+            let affinity = affinity_of(&def.columns[position].declared_type);
+            let cell = match (affinity, cell) {
+                (Affinity::Integer, Cell::Real(real)) => Cell::Integer(integral_rowid(*real)?),
+                _ => cell.clone(),
+            };
+            match (&affinity, &cell) {
+                (Affinity::Text, Cell::Text(_)) | (Affinity::Real, Cell::Real(_)) | (Affinity::Integer, Cell::Integer(_)) => {}
+                _ => continue,
+            }
+            let collation = index.collations.first().copied().unwrap_or_default();
+            let key = probe_key(&cell, collation)?;
+            if matches!(key, ProbeKey::Wide(_)) {
+                return None;
+            }
+            return self.index_probe_rowids(index, &[key]);
+        }
+        None
+    }
+
+    /// `<rowid> >= a` / `<rowid> <= b` 的单边或双边区间提示。
     /// 与 [`Engine::rowid_range_pin`] 不同,这里不要求两侧都有界,也不展开候选
     /// rowid:读取侧直接用同一个区间走 b-tree 范围读,缺失的一侧不设界。谓词仍
     /// 在解码后的行上重跑,所以区间只是候选超集。
@@ -9078,6 +9260,17 @@ impl Engine {
         self.index_versions.borrow().get(&name.to_ascii_lowercase()).copied().unwrap_or(0)
     }
 
+    /// 在空索引上登记一份空探针,让后续写语句从第一行起就增量维护键集。
+    ///
+    /// 只在 `CREATE INDEX` 建在空表上时调用:此时键集为空,登记成本为常数,
+    /// 而首次查询 / 区间删除不必再整份解码索引项。
+    fn install_empty_index_probe(&self, name: &str) {
+        let epoch = self.index_version(name);
+        let probe =
+            IndexProbe { epoch, map: HashMap::new(), entries: Vec::new(), sorted: true, deleted: HashSet::new(), poisoned: false };
+        self.index_probes.borrow_mut().insert(name.to_ascii_lowercase(), probe);
+    }
+
     /// 推进时钟并返回新 epoch。
     fn next_epoch(&self) -> u64 {
         let next = self.write_epoch.get().wrapping_add(1);
@@ -9136,8 +9329,8 @@ impl Engine {
     /// 追加行、不改写既有行,缓存内容加上这批新行就等于当前索引,不必让下一次
     /// 查询整份重建。重新插入的 rowid 会先清掉墓碑,否则探针会把它当作已删除。
     ///
-    /// 追加后 `entries` 不再保证按首列有序,范围探针退回线性扫描;下一次任何
-    /// 会改写行的语句仍按常规失效并重建。
+    /// 追加后只要首列仍非递减,`entries` 就继续按首列有序,范围探针仍可二分;
+    /// 键序被打乱时才退回线性扫描,由下一次会改写行的语句按常规失效并重建。
     fn patch_index_probes_after_insert(&self, table_key: &str, rows: &[(i64, Vec<Cell>)]) {
         if rows.is_empty() {
             return;
@@ -9151,11 +9344,14 @@ impl Engine {
                     continue;
                 }
                 let name = index.name.to_ascii_lowercase();
+                let version = self.index_version(&index.name);
                 let Some(probe) = probes.get_mut(&name)
                 else {
                     continue;
                 };
-                if probe.poisoned {
+                // 只有与当前索引内容同步的探针才能追加:被其它语句改写过的
+                // 旧快照必须留给下一条查询整份重建。
+                if probe.poisoned || probe.epoch != version {
                     continue;
                 }
                 let mut canonical = true;
@@ -9187,8 +9383,18 @@ impl Engine {
                     if rowids.get(at) != Some(rowid) {
                         rowids.insert(at, *rowid);
                     }
+                    // 只有新键落在首列序的前面时才破坏有序性;按递增键插入的
+                    // 常见形态保持 `sorted`,范围探针继续走二分。
+                    if probe.sorted {
+                        let collation = index.collations.first().copied().unwrap_or_default();
+                        if let (Some(last), Some(next)) =
+                            (probe.entries.last().and_then(|(cells, _)| cells.first()), key_cells.first())
+                            && compare_cells_with(last, next, collation) == Ordering::Greater
+                        {
+                            probe.sorted = false;
+                        }
+                    }
                     probe.entries.push((key_cells, *rowid));
-                    probe.sorted = false;
                 }
                 if !canonical {
                     probe.poisoned = true;
@@ -9221,6 +9427,26 @@ impl Engine {
         self.indexes.values().any(|index| {
             index.table == table_key && !index.managed && !index.columns.is_empty() && probes.contains_key(&index.name.to_ascii_lowercase())
         })
+    }
+
+    /// 普通 `INSERT` 是否只往表尾追加行、因而保持既有索引内容不变。
+    ///
+    /// 条件与插入路径里 `watch_probes` 的判定一致:主库的普通 rowid 表、无
+    /// 触发器、已有可增量维护的探针,且语句没有 `ON CONFLICT` / `REPLACE`。
+    /// 成立时语句执行前不必让索引缓存整体失效,提交后的增量补丁即可对齐。
+    fn insert_keeps_index_content(&self, table: &str) -> bool {
+        let key = table.to_ascii_lowercase();
+        if self.temp_lookup.contains_key(&key) || self.table_has_triggers(&key) {
+            return false;
+        }
+        let Some(position) = self.table_lookup.get(&key).copied()
+        else {
+            return false;
+        };
+        if self.tables[position].without_rowid {
+            return false;
+        }
+        self.table_has_probes(&key)
     }
 
     /// `UPDATE` 执行后只让真正被改动的索引失效。
@@ -13229,8 +13455,33 @@ fn count_inner_join_rows(
         .collect::<Result<Vec<_>, SqlError>>()?;
     let mut merged = vec![Cell::Null; relation.columns()];
     let mut count = 0usize;
-    count_join_level(0, relation, ons, tables, &probes, conjuncts, ctx, &mut merged, &mut count)?;
+    // `WHERE` 合取按最早可判定的源提前求值:外层行不满足单表谓词时,不必
+    // 再为它做一次右表探针。
+    let levels = conjunct_bind_levels(conjuncts, relation.sources.len());
+    count_join_level(0, relation, ons, tables, &probes, conjuncts, &levels, ctx, &mut merged, &mut count)?;
     Ok(count)
+}
+
+/// 判定在第 `level` 步绑定完成后才能确定取值的 `WHERE` 合取。
+///
+/// `merged` 的 `0..=level` 源已经写入;返回 `false` 表示这一候选行不可能
+/// 出现在结果里,调用方可以立刻剪枝。
+fn join_level_conjuncts_hold(
+    level: usize,
+    conjuncts: &[ResolvedExpr],
+    levels: &[Option<usize>],
+    merged: &[Cell],
+    ctx: &EvalContext,
+) -> Result<bool, SqlError> {
+    for (conjunct, bound) in conjuncts.iter().zip(levels) {
+        if *bound != Some(level) {
+            continue;
+        }
+        if truthiness(&conjunct.eval(merged, ctx)?) != Some(true) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 /// 一条 `ON <右侧 rowid> = <前缀表达式>` 的等值探针,`ascending` 表示右表按该
@@ -13380,6 +13631,7 @@ fn count_join_level(
     tables: &[Rc<Vec<Vec<Cell>>>],
     probes: &[Option<JoinProbe<'_>>],
     conjuncts: &[ResolvedExpr],
+    levels: &[Option<usize>],
     ctx: &EvalContext,
     merged: &mut [Cell],
     count: &mut usize,
@@ -13402,7 +13654,10 @@ fn count_join_level(
     else {
         for values in tables[index].iter() {
             merged[start..end].clone_from_slice(values);
-            count_join_level(index + 1, relation, ons, tables, probes, conjuncts, ctx, merged, count)?;
+            if !join_level_conjuncts_hold(index, conjuncts, levels, merged, ctx)? {
+                continue;
+            }
+            count_join_level(index + 1, relation, ons, tables, probes, conjuncts, levels, ctx, merged, count)?;
         }
         return Ok(());
     };
@@ -13420,7 +13675,9 @@ fn count_join_level(
                                 // rowid equal to the integer the probe produced makes
                                 // it true without re-evaluating the comparison.
                                 merged[start..end].clone_from_slice(row);
-                                count_join_level(index + 1, relation, ons, tables, probes, conjuncts, ctx, merged, count)?;
+                                if join_level_conjuncts_hold(index, conjuncts, levels, merged, ctx)? {
+                                    count_join_level(index + 1, relation, ons, tables, probes, conjuncts, levels, ctx, merged, count)?;
+                                }
                             }
                         }
                         return Ok(());
@@ -13429,7 +13686,9 @@ fn count_join_level(
                     for row in right {
                         if matches!(&row[within], Cell::Integer(value) if *value == key) {
                             merged[start..end].clone_from_slice(row);
-                            count_join_level(index + 1, relation, ons, tables, probes, conjuncts, ctx, merged, count)?;
+                            if join_level_conjuncts_hold(index, conjuncts, levels, merged, ctx)? {
+                                count_join_level(index + 1, relation, ons, tables, probes, conjuncts, levels, ctx, merged, count)?;
+                            }
                         }
                     }
                     return Ok(());
@@ -13442,8 +13701,11 @@ fn count_join_level(
                     if let Some(positions) = hash.buckets.get(&key) {
                         for &position in positions {
                             merged[start..end].clone_from_slice(&right[position]);
-                            if truthiness(&on.eval(merged, ctx)?) == Some(true) {
-                                count_join_level(index + 1, relation, ons, tables, probes, conjuncts, ctx, merged, count)?;
+                            if truthiness(&on.eval(merged, ctx)?) != Some(true) {
+                                continue;
+                            }
+                            if join_level_conjuncts_hold(index, conjuncts, levels, merged, ctx)? {
+                                count_join_level(index + 1, relation, ons, tables, probes, conjuncts, levels, ctx, merged, count)?;
                             }
                         }
                     }
@@ -13454,9 +13716,13 @@ fn count_join_level(
     }
     for row in tables[index].iter() {
         merged[start..end].clone_from_slice(row);
-        if truthiness(&on.eval(merged, ctx)?) == Some(true) {
-            count_join_level(index + 1, relation, ons, tables, probes, conjuncts, ctx, merged, count)?;
+        if truthiness(&on.eval(merged, ctx)?) != Some(true) {
+            continue;
         }
+        if !join_level_conjuncts_hold(index, conjuncts, levels, merged, ctx)? {
+            continue;
+        }
+        count_join_level(index + 1, relation, ons, tables, probes, conjuncts, levels, ctx, merged, count)?;
     }
     Ok(())
 }
@@ -13480,6 +13746,19 @@ fn join_rows(
     ctx: &EvalContext,
 ) -> Result<Vec<Vec<Cell>>, SqlError> {
     let mut rows: Vec<Vec<Cell>> = vec![vec![Cell::Null; relation.columns()]];
+    // `WHERE` 合取尽早求值:一个合取只读已经绑定的源时,它在当前源合并完
+    // 就可以判定,不必等右表全部展开。`join_indexed` / `join_left` 这类
+    // 「外层行多、命中行少」的连接因此只对通过谓词的外层行做探针,而不是
+    // 先为每一行生成连接结果再由末端的合取丢弃。
+    let levels = conjunct_bind_levels(conjuncts, relation.sources.len());
+    // 只有「内连接 / 左连接」构成的整个 `FROM` 才能提前裁剪左行:右/全连接
+    // 会为未匹配的右行补一行左 `NULL`,提前丢弃左行会改变「哪些右行算未匹配」。
+    // `USING` / `NATURAL` 的合并列在两侧都绑定后才成立,同样不做提前裁剪。
+    let prunable = relation.using.iter().all(|pairs| pairs.is_empty())
+        && relation
+            .sources
+            .iter()
+            .all(|source| matches!(source.join, None | Some(JoinKind::Inner) | Some(JoinKind::Left)));
     for (index, source) in relation.sources.iter().enumerate() {
         let width = source.width();
         let pairs = &relation.using[index];
@@ -13502,8 +13781,9 @@ fn join_rows(
         };
         // 非 rowid 的等值连接同样不必逐行扫描右表:建一次哈希桶后按左行的
         // 探针取候选。候选仍需重跑 `ON`,所以多取不会改变结果;右表任一存储
-        // 键没有规范签名时整条回退逐行扫描。
-        let hashed = if fast.is_none() && !unconditional && pairs.is_empty() && matches!(kind, JoinKind::Inner) {
+        // 键没有规范签名时整条回退逐行扫描。`LEFT JOIN` 复用同一条探针,只是
+        // 未命中的左行要按外连接语义补一行 NULL。
+        let hashed = if fast.is_none() && !unconditional && pairs.is_empty() && matches!(kind, JoinKind::Inner | JoinKind::Left) {
             column_join_probe(source, &ons[index], index).and_then(|(within, probe, collation)| {
                 build_probe_buckets(&tables[index], within, collation).map(|buckets| HashProbe { within, probe, collation, buckets })
             })
@@ -13563,7 +13843,9 @@ fn join_rows(
         }
         else if let Some(hash) = hashed {
             let on = ons[index].as_ref().expect("the probe only returns for a present ON");
+            let outer = matches!(kind, JoinKind::Left);
             for left in &rows {
+                let mut matched = false;
                 if let Some(key) = probe_hash(&hash.probe.eval(left, ctx)?, hash.collation) {
                     if let Some(positions) = hash.buckets.get(&key) {
                         for &position in positions {
@@ -13572,19 +13854,27 @@ fn join_rows(
                             if truthiness(&on.eval(&merged, ctx)?) == Some(true) {
                                 ctx.budget.charge(1)?;
                                 next.push(merged);
+                                matched = true;
                             }
                         }
                     }
-                    continue;
                 }
-                // 探针值没有规范签名(超范围整数、NaN):这一行保持逐行扫描。
-                for values in tables[index].iter() {
-                    let mut merged = left.clone();
-                    merged[source.offset..source.offset + width].clone_from_slice(values);
-                    if truthiness(&on.eval(&merged, ctx)?) == Some(true) {
-                        ctx.budget.charge(1)?;
-                        next.push(merged);
+                else {
+                    // 探针值没有规范签名(超范围整数、NaN):这一行保持逐行扫描。
+                    for values in tables[index].iter() {
+                        let mut merged = left.clone();
+                        merged[source.offset..source.offset + width].clone_from_slice(values);
+                        if truthiness(&on.eval(&merged, ctx)?) == Some(true) {
+                            ctx.budget.charge(1)?;
+                            next.push(merged);
+                            matched = true;
+                        }
                     }
+                }
+                if outer && !matched {
+                    // 左连接保留未命中的左行;这一来源的列在左行里已是 NULL。
+                    ctx.budget.charge(1)?;
+                    next.push(left.clone());
                 }
             }
         }
@@ -13630,6 +13920,24 @@ fn join_rows(
                     }
                 }
             }
+        }
+        // `RIGHT` / `FULL` 连接会为未匹配的右行补一行左 `NULL`,提前丢弃左行
+        // 会改变「哪些右行算未匹配」,因此这两类源之后不再提前裁剪。
+        if prunable && levels.iter().any(|level| *level == Some(index)) {
+            let mut kept = Vec::with_capacity(next.len());
+            for row in next {
+                let mut pass = true;
+                for (conjunct, level) in conjuncts.iter().zip(&levels) {
+                    if *level == Some(index) && truthiness(&conjunct.eval(&row, ctx)?) != Some(true) {
+                        pass = false;
+                        break;
+                    }
+                }
+                if pass {
+                    kept.push(row);
+                }
+            }
+            next = kept;
         }
         rows = next;
     }
@@ -13800,6 +14108,25 @@ fn split_conjuncts(predicate: ResolvedExpr, out: &mut Vec<ResolvedExpr>) {
         }
         other => out.push(other),
     }
+}
+
+/// 每个 `WHERE` 合取最早可以判定的源下标:它引用的最大源。
+///
+/// 该源与更早的源绑定后,合取的值就固定了,所以可以在连接的第 `level` 步
+/// 求值并丢弃不满足的行。`None` 表示不能提前判定(含子查询,或不引用任何源):
+/// 这类合取仍在整行绑定完之后求值。
+fn conjunct_bind_levels(conjuncts: &[ResolvedExpr], source_count: usize) -> Vec<Option<usize>> {
+    conjuncts
+        .iter()
+        .map(|conjunct| {
+            if conjunct.contains_subquery() {
+                return None;
+            }
+            let mut refs = Vec::new();
+            conjunct.collect_sources(&mut refs);
+            refs.into_iter().max().filter(|level| *level < source_count)
+        })
+        .collect()
 }
 
 /// Orders the sources so predicates can prune as early as possible.
@@ -17124,6 +17451,11 @@ fn decode_stored_rows(stored: &[TableRow], def: &TableDef, keep: Option<&[bool]>
             Ok(cells)
         })
         .collect()
+}
+
+/// Whether a bare column reference is qualified with exactly `label`.
+fn column_qualified_as(column: &ColumnRef, label: &str) -> bool {
+    column.qualifier.as_deref().is_some_and(|qualifier| qualifier.eq_ignore_ascii_case(label))
 }
 
 /// Collects the column references one expression can read, refusing any node

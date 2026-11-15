@@ -718,6 +718,18 @@ impl SqliteWriter {
         read_table_head(&self.pages, meta.root_page, max_rows, limits)
     }
 
+    /// Whether one index currently holds no live key. Cheap enough to call at
+    /// DDL time: it only looks up the index's master row and its key set, never
+    /// decoding a key. Returns an error when no index with that name exists.
+    pub fn index_is_empty(&self, index: &str) -> Result<bool> {
+        let row = self
+            .master_rows()?
+            .into_iter()
+            .find(|row| row.kind == "index" && eq_ignore_ascii_case(&row.name, index))
+            .ok_or(Error::Unsupported("sqlite index does not exist"))?;
+        Ok(self.index_entries.get(&row.rowid).is_none_or(|entries| entries.is_empty()))
+    }
+
     /// Reads one index's live key set, decoded into `(key values, rowid)` pairs
     /// in the index's own column order. The key set is the writer's in-memory
     /// source of truth while the image is being mutated, so this reflects every
