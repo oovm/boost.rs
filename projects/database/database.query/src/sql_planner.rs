@@ -234,6 +234,20 @@ pub fn plan_select_for_dialect(
     else {
         None
     };
+    // 相关子查询在执行期替换外层值后可能落到这些字段的等值上；执行层据此重建探针。
+    let unique_indexes: Vec<u64> = table
+        .unique_constraints
+        .iter()
+        .filter_map(|constraint| match constraint.as_slice() {
+            [field_id] if *field_id != pk_field.field_id => table
+                .fields
+                .iter()
+                .find(|field| field.field_id == *field_id)
+                .filter(|field| crate::sql_index::index_supported(&field.field_type))
+                .map(|field| field.field_id),
+            _ => None,
+        })
+        .collect();
 
     Ok(SqlExecutionPlan::Scan(ScanPlan {
         namespace,
@@ -243,6 +257,7 @@ pub fn plan_select_for_dialect(
         rowid_before,
         limit: kv_limit,
         index,
+        unique_indexes,
         projection_fields,
         projection_expressions,
         remaining_predicate,
@@ -1251,6 +1266,11 @@ pub struct ScanPlan {
     /// 它只决定「读哪些行」，不决定「哪些行入选」：被探测的谓词仍然留在
     /// [`Self::remaining_predicate`] 里逐行复核。
     pub index: Option<IndexProbe>,
+    /// 可等值探测的单列 `UNIQUE` 二级索引字段（不含主键）。
+    ///
+    /// 相关子查询的谓词在规划期还含外层列，`index` 只能是 `None`；执行层在逐行
+    /// 替换出外层值后，用这份字段集合把「内层列 = 字面量」重新折成探针。
+    pub unique_indexes: Vec<u64>,
     /// 投影里直接映射到 catalog 字段的那些列：(field_id, display_name)。
     pub projection_fields: Vec<(u64, String)>,
     /// 投影里需要在 row 上做表达式求值的那些：(expression, display_name)。

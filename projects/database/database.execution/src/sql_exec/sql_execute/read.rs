@@ -529,6 +529,53 @@ pub(crate) fn scan_secondary_index(
     Ok(Some(scanned))
 }
 
+/// 把「内层列 = 字面量」折成单列 `UNIQUE` 索引的等值探针。
+///
+/// 只在规划期没有探针时使用（相关子查询逐行替换出外层值后的扫描）。探针仍是候选
+/// 超集，`remaining_predicate` 会逐行复核；索引未就绪时 `scan_secondary_index`
+/// 返回 `None`，调用方自然退回整表扫描。
+fn runtime_index_probe(plan: &ScanPlan) -> Option<IndexProbe> {
+    if plan.unique_indexes.is_empty() {
+        return None;
+    }
+    let predicate = plan.remaining_predicate.as_ref()?;
+    let mut conjuncts = Vec::new();
+    split_conjuncts(predicate, &mut conjuncts);
+    for conjunct in conjuncts {
+        let SqlCatalogBoundExpression::Binary { left, operator: SqlBoundBinaryOperator::Equal, right } = conjunct
+        else {
+            continue;
+        };
+        let (column, literal) = match (left.as_ref(), right.as_ref()) {
+            (SqlCatalogBoundExpression::Column(column), SqlCatalogBoundExpression::Literal(literal)) => (column, literal),
+            (SqlCatalogBoundExpression::Literal(literal), SqlCatalogBoundExpression::Column(column)) => (column, literal),
+            _ => continue,
+        };
+        if !plan.unique_indexes.contains(&column.field_id) {
+            continue;
+        }
+        let Some(field_type) = plan.field_types.get(&column.row_id)
+        else {
+            continue;
+        };
+        let payload = match (field_type.inner(), literal) {
+            (
+                database_query::catalog_bind::SqlFieldType::Int32 | database_query::catalog_bind::SqlFieldType::Int64,
+                SqlBoundLiteral::Integer(value),
+            ) => database_query::sql_index::encode_integer(*value),
+            (database_query::catalog_bind::SqlFieldType::String, SqlBoundLiteral::String(text)) => text.as_bytes().to_vec(),
+            _ => continue,
+        };
+        return Some(IndexProbe {
+            namespace: database_query::sql_index::index_namespace(&plan.namespace, column.field_id),
+            exact: Some(database_query::sql_index::entry_key(&payload)),
+            after: None,
+            before: None,
+        });
+    }
+    None
+}
+
 pub(crate) fn execute_scan(
     executor: &dyn KeyValueExecutor,
     transaction: Option<&dyn TransactionHandle>,
@@ -540,7 +587,10 @@ pub(crate) fn execute_scan(
         return Ok(SqlResult { columns, rows: Vec::new(), affected_rows: 0 });
     }
     let namespace = Namespace(plan.namespace.clone());
-    let indexed = match &plan.index {
+    // 规划期谓词还含外层列时 `plan.index` 只能是 `None`；相关子查询逐行替换出
+    // 字面量后，这里再按 `unique_indexes` 把等值折成探针，避免每行重扫整表。
+    let plan_index = plan.index.clone().or_else(|| runtime_index_probe(plan));
+    let indexed = match &plan_index {
         Some(index) => scan_secondary_index(executor, transaction, index, &namespace)?,
         None => None,
     };
