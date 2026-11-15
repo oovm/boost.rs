@@ -150,38 +150,48 @@ impl SqlValue {
 }
 
 /// 一个 row 上各个字段的 bytes 值，key 是该列在本查询里的 row id。
+///
+/// 行的字段数通常只有个位数，用按 field_id 有序的 `Vec` 比 `BTreeMap` 少一层
+/// 节点分配，逐行解码与克隆也更快；`encode_row` 依赖的字典序由 `insert`
+/// 的二分定位维持。
 #[derive(Debug, Default, Clone)]
 pub struct RowFieldValues {
-    fields: BTreeMap<u64, Vec<u8>>,
+    fields: Vec<(u64, Vec<u8>)>,
 }
 
 impl RowFieldValues {
     /// 创建一个空 row。
     pub fn new() -> Self {
-        Self { fields: BTreeMap::new() }
+        Self { fields: Vec::new() }
     }
 
     /// 插入/覆盖一个字段值（field_id → bytes）。
     pub fn insert(&mut self, field_id: u64, value: Vec<u8>) {
-        self.fields.insert(field_id, value);
+        match self.fields.binary_search_by_key(&field_id, |(existing, _)| *existing) {
+            Ok(index) => self.fields[index].1 = value,
+            Err(index) => self.fields.insert(index, (field_id, value)),
+        }
     }
 
     /// 删除一个字段。SQL NULL 在 row 编码里表示为字段缺失，因此
     /// `SET col = NULL` 必须移除已有字段而不是写入空 bytes。
     pub fn remove(&mut self, field_id: u64) {
-        self.fields.remove(&field_id);
+        if let Ok(index) = self.fields.binary_search_by_key(&field_id, |(existing, _)| *existing) {
+            self.fields.remove(index);
+        }
     }
 
     /// 按 field_id 取原始 bytes；不存在返回 None。
     pub fn get(&self, field_id: u64) -> Option<&[u8]> {
-        self.fields.get(&field_id).map(|v| v.as_slice())
+        let index = self.fields.binary_search_by_key(&field_id, |(existing, _)| *existing).ok()?;
+        Some(self.fields[index].1.as_slice())
     }
 
     /// 合并另一行的字段。JOIN 后的一行同时携带两侧表的字段，
     /// 每张表的 row id 段互不重叠，所以按键覆盖即等价于拼行。
     pub fn merge(&mut self, other: &Self) {
         for (field_id, bytes) in &other.fields {
-            self.fields.insert(*field_id, bytes.clone());
+            self.insert(*field_id, bytes.clone());
         }
     }
 
@@ -192,7 +202,8 @@ impl RowFieldValues {
         field_id: u64,
         field_types: &std::collections::BTreeMap<u64, crate::catalog_bind::SqlFieldType>,
     ) -> Option<SqlValue> {
-        let bytes = self.fields.get(&field_id)?;
+        let index = self.fields.binary_search_by_key(&field_id, |(existing, _)| *existing).ok()?;
+        let bytes = self.fields[index].1.as_slice();
         let field_type = field_types.get(&field_id).cloned().unwrap_or(crate::catalog_bind::SqlFieldType::Unknown);
         Some(SqlValue::from_row_bytes_typed(bytes, &field_type))
     }

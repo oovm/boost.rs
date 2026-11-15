@@ -67,17 +67,23 @@ pub(crate) fn upsert_row(
     // 读到的行可能刚好被并发事务插入，重新读一次即可命中改写路径。
     for _ in 0..2 {
         let existing_bytes = read_row_bytes(executor, transaction, &namespace, &plan.rowid)?;
-        let Some(existing_bytes) = existing_bytes
-        else {
-            let row = write_plan_to_row(plan);
-            if let Some(constraint) = unique_conflict_on_write(executor, transaction, &plan.namespace, &plan.unique_constraints, &row, None)? {
-                return Err(duplicate_key_error(&constraint));
+        // MySQL 的 `ON DUPLICATE KEY UPDATE` 也覆盖次要 `UNIQUE` 冲突：主键没命中时，
+        // 先找一条约束列相同的既有行，命中就改写那一行（主键保持不变）。
+        let (target_rowid, existing_bytes) = match existing_bytes {
+            Some(bytes) => (plan.rowid.clone(), bytes),
+            None => {
+                let proposed = write_plan_to_row(plan);
+                match find_unique_conflict(executor, transaction, &plan.namespace, &plan.unique_constraints, &proposed)? {
+                    Some((rowid, bytes)) => (rowid, bytes),
+                    None => {
+                        let bytes = encode_row(&proposed);
+                        if put_if_absent(executor, transaction, &plan.namespace, &plan.rowid, bytes)? {
+                            return returning_result(&plan.returning, &plan.field_types, vec![proposed], 1, dialect);
+                        }
+                        continue;
+                    }
+                }
             }
-            let bytes = encode_row(&row);
-            if put_if_absent(executor, transaction, &plan.namespace, &plan.rowid, bytes)? {
-                return returning_result(&plan.returning, &plan.field_types, vec![row], 1, dialect);
-            }
-            continue;
         };
         let existing_row = decode_row(&existing_bytes)?;
         // 赋值右值同时看到既有行（槽 0）与提议写入的 `EXCLUDED` 行（槽 1，列带上
@@ -87,19 +93,20 @@ pub(crate) fn upsert_row(
             return returning_result(&plan.returning, &plan.field_types, Vec::new(), 0, dialect);
         };
         if let Some(constraint) =
-            unique_conflict_on_write(executor, transaction, &plan.namespace, &plan.unique_constraints, &row, Some(&plan.rowid))?
+            unique_conflict_on_write(executor, transaction, &plan.namespace, &plan.unique_constraints, &row, Some(&target_rowid))?
         {
             return Err(duplicate_key_error(&constraint));
         }
         let encoded = encode_row(&row);
-        let command = KeyValueCommand { namespace: namespace.clone(), key: plan.rowid.clone(), action: KeyValueAction::Put(encoded) };
+        let command = KeyValueCommand { namespace: namespace.clone(), key: target_rowid, action: KeyValueAction::Put(encoded) };
         match transaction {
             Some(handle) => handle
                 .write_if_unchanged(command, Some(existing_bytes))
                 .map_err(|e| write_error(format!("TransactionHandle.upsert failed: {e}"), &e))?,
             None => executor.execute(None, command).map_err(|e| internal_error(&format!("KeyValueExecutor.upsert failed: {e}")))?,
         };
-        return returning_result(&plan.returning, &plan.field_types, vec![row], 1, dialect);
+        // MySQL 对「命中并改写」报 2（插入报 1），驱动据此区分两种结果。
+        return returning_result(&plan.returning, &plan.field_types, vec![row], 2, dialect);
     }
     Err(SqlFrontendError::new(SqlErrorKind::Conflict, format!("concurrent write to row in {} prevented the conflict update", plan.namespace)))
 }
@@ -411,19 +418,17 @@ fn ensure_unique_rows(
     folded: &BTreeMap<Vec<u8>, BatchedRow>,
     stored: &[(Vec<u8>, Vec<u8>)],
 ) -> Result<(), SqlFrontendError> {
-    let mut pending: Vec<(Vec<u8>, RowFieldValues)> = Vec::new();
+    let mut snapshot = UniqueSnapshot::build(constraints, stored)?;
     for rowid in order {
         let entry = &folded[rowid];
         if !entry.applied {
             continue;
         }
         let row = entry.current.as_ref().expect("applied entry carries a row");
-        let pending_without_self: Vec<(Vec<u8>, RowFieldValues)> =
-            pending.iter().filter(|(pending_rowid, _)| pending_rowid != rowid).cloned().collect();
-        if let Some(constraint) = unique_conflict_in_snapshot(constraints, row, Some(rowid), &pending_without_self, stored)? {
+        if let Some(constraint) = snapshot.conflict(row, Some(rowid)) {
             return Err(duplicate_key_error(&constraint));
         }
-        pending.push((rowid.clone(), row.clone()));
+        snapshot.remember(rowid, row);
     }
     Ok(())
 }
@@ -509,13 +514,12 @@ pub(crate) fn execute_insert_select(
             unique_constraints: plan.unique_constraints.clone(),
         });
     }
-    // 没有冲突策略时，源行之间与目标表内都不能出现重复主键，预检保证整条语句不发布。
-    // 有策略时逐行按策略处理冲突，预检会让 `DO NOTHING` / `DO UPDATE` 失效。
+    // 没有冲突策略时，源行之间与目标表内都不能出现重复主键或次要 `UNIQUE`，
+    // 预检保证整条语句不发布；有策略时冲突交给逐行 `DO NOTHING` / `DO UPDATE`。
     if plan.conflict.is_none() {
         ensure_insert_targets_absent(executor, transaction, &write_plans)?;
+        ensure_unique_targets_absent(executor, transaction, &write_plans)?;
     }
-    // 次要 `UNIQUE` 约束与主键一样在写入前整体预检，命中即整条语句拒绝。
-    ensure_unique_targets_absent(executor, transaction, &write_plans)?;
     // 源查询没有产出行时写语句仍有结果形状（`RETURNING` 列定义，0 行）。
     if write_plans.is_empty() {
         let columns = plan.returning.as_ref().map(returning_column_labels).unwrap_or_default();
@@ -575,16 +579,13 @@ pub(crate) fn ensure_unique_targets_absent(
     }
     let namespace = Namespace(first.namespace.clone());
     let stored = scan_rows(executor, transaction, &namespace, &[], None, None, 0, "unique_check")?;
-    let mut pending: Vec<(Vec<u8>, RowFieldValues)> = Vec::new();
+    let mut snapshot = UniqueSnapshot::build(&first.unique_constraints, &stored)?;
     for plan in plans {
         let row = write_plan_to_row(plan);
-        let pending_without_self: Vec<(Vec<u8>, RowFieldValues)> = pending.iter().filter(|(rowid, _)| rowid != &plan.rowid).cloned().collect();
-        if let Some(constraint) =
-            unique_conflict_in_snapshot(&first.unique_constraints, &row, Some(&plan.rowid), &pending_without_self, &stored)?
-        {
+        if let Some(constraint) = snapshot.conflict(&row, Some(&plan.rowid)) {
             return Err(duplicate_key_error(&constraint));
         }
-        pending.push((plan.rowid.clone(), row));
+        snapshot.remember(&plan.rowid, &row);
     }
     Ok(())
 }
@@ -791,15 +792,22 @@ pub(crate) fn execute_update_scan(
         "update_scan",
     )?;
     let mut changes = Vec::with_capacity(scanned.len());
-    let mut pending: Vec<(Vec<u8>, RowFieldValues)> = Vec::new();
+    // 一条语句的写入要到 `apply_statement_changes` 才发布，循环里的每一行看到的
+    // 基存快照完全相同。快照在第一次命中时读一次并建成约束元组的哈希索引，
+    // 避免每个命中行都全表重扫、逐行解码；零命中语句则不付这份成本。
+    let mut unique_snapshot: Option<UniqueSnapshot<'_>> = None;
+    let predicate_ids = plan.predicate.as_ref().map(|predicate| expression_needed_field_ids(&[], &[], Some(predicate)));
     for (rowid, pre_image) in scanned {
-        let mut row = decode_row(&pre_image)?;
-        if let Some(predicate) = &plan.predicate {
-            let value = eval_expression(predicate, &row, &plan.field_types, dialect)?;
+        // 选择性 UPDATE 先用谓词列判定命中，命中后才解码整行：改写需要保留未赋值的
+        // 列，但未命中的行不值得付整行解码的成本。
+        if let (Some(predicate), Some(ids)) = (&plan.predicate, &predicate_ids) {
+            let candidate = decode_row_fields(&pre_image, ids)?;
+            let value = eval_expression(predicate, &candidate, &plan.field_types, dialect)?;
             if !truthy(&value) {
                 continue;
             }
         }
+        let mut row = decode_row(&pre_image)?;
         // SET 右值基于改写前的行求值，全部求完再统一应用（同时赋值语义）。
         let mut updates = Vec::with_capacity(plan.fields.len());
         for assignment in &plan.fields {
@@ -815,15 +823,15 @@ pub(crate) fn execute_update_scan(
             }
         }
         if !plan.unique_constraints.is_empty() {
-            // 旧快照仍含本行自身与同语句已处理的行，两者都要从冲突候选里排除。
-            let stored = scan_rows(executor, transaction, &namespace, &[], None, None, 0, "unique_check")?;
-            let pending_without_self: Vec<(Vec<u8>, RowFieldValues)> =
-                pending.iter().filter(|(pending_rowid, _)| pending_rowid != &rowid).cloned().collect();
-            if let Some(constraint) = unique_conflict_in_snapshot(&plan.unique_constraints, &row, Some(&rowid), &pending_without_self, &stored)?
-            {
+            if unique_snapshot.is_none() {
+                let stored = scan_rows(executor, transaction, &namespace, &[], None, None, 0, "unique_check")?;
+                unique_snapshot = Some(UniqueSnapshot::build(&plan.unique_constraints, &stored)?);
+            }
+            let snapshot = unique_snapshot.as_mut().expect("snapshot was built above");
+            if let Some(constraint) = snapshot.conflict(&row, Some(&rowid)) {
                 return Err(duplicate_key_error(&constraint));
             }
-            pending.push((rowid.clone(), row.clone()));
+            snapshot.remember(&rowid, &row);
         }
         changes.push(StatementChange {
             command: KeyValueCommand { namespace: namespace.clone(), key: rowid, action: KeyValueAction::Put(encode_row(&row)) },
@@ -855,9 +863,10 @@ pub(crate) fn execute_delete_scan(
         "delete_scan",
     )?;
     let mut changes = Vec::with_capacity(scanned.len());
+    let predicate_ids = plan.predicate.as_ref().map(|predicate| expression_needed_field_ids(&[], &[], Some(predicate)));
     for (rowid, pre_image) in scanned {
-        if let Some(predicate) = &plan.predicate {
-            let row = decode_row(&pre_image)?;
+        if let (Some(predicate), Some(ids)) = (&plan.predicate, &predicate_ids) {
+            let row = decode_row_fields(&pre_image, ids)?;
             let value = eval_expression(predicate, &row, &plan.field_types, dialect)?;
             if !truthy(&value) {
                 continue;
@@ -909,6 +918,67 @@ pub(crate) fn unique_conflict_between(
     })
 }
 
+/// 一条语句内共享的 `UNIQUE` 快照索引。
+///
+/// 多行 UPDATE / INSERT 的每一行都要与「基存快照 + 本语句已处理行」比对。
+/// 逐行重扫并把每一行与候选行两两比较是 O(行数 × 命中数)；这里把约束元组
+/// 序列化成哈希 key，构建一次后每行只查自己的元组。
+struct UniqueSnapshot<'a> {
+    constraints: &'a [UniqueConstraintPlan],
+    buckets: Vec<std::collections::HashMap<Vec<u8>, Vec<Vec<u8>>>>,
+}
+
+impl<'a> UniqueSnapshot<'a> {
+    fn build(constraints: &'a [UniqueConstraintPlan], stored: &[(Vec<u8>, Vec<u8>)]) -> Result<Self, SqlFrontendError> {
+        let mut snapshot = Self { constraints, buckets: constraints.iter().map(|_| std::collections::HashMap::new()).collect() };
+        if constraints.is_empty() {
+            return Ok(snapshot);
+        }
+        let ids = constraint_field_ids(constraints);
+        for (rowid, bytes) in stored {
+            let row = decode_row_fields(bytes, &ids)?;
+            snapshot.remember(rowid, &row);
+        }
+        Ok(snapshot)
+    }
+
+    /// 返回与候选行冲突的约束描述；`excluded_rowid` 用于排除正在改写的那一行。
+    fn conflict(&self, candidate: &RowFieldValues, excluded_rowid: Option<&[u8]>) -> Option<String> {
+        for (constraint, bucket) in self.constraints.iter().zip(&self.buckets) {
+            let Some(tuple) = constraint_tuple(candidate, &constraint.columns) else {
+                continue;
+            };
+            let Some(rowids) = bucket.get(&constraint_key(&tuple)) else {
+                continue;
+            };
+            if rowids.iter().any(|rowid| excluded_rowid.is_none_or(|excluded| rowid.as_slice() != excluded)) {
+                let names: Vec<&str> = constraint.columns.iter().map(|(_, name)| name.as_str()).collect();
+                return Some(format!("UNIQUE ({})", names.join(", ")));
+            }
+        }
+        None
+    }
+
+    /// 把一条已经通过校验的行加入索引，供同语句后续行查重。
+    fn remember(&mut self, rowid: &[u8], row: &RowFieldValues) {
+        for (constraint, bucket) in self.constraints.iter().zip(&mut self.buckets) {
+            if let Some(tuple) = constraint_tuple(row, &constraint.columns) {
+                bucket.entry(constraint_key(&tuple)).or_default().push(rowid.to_vec());
+            }
+        }
+    }
+}
+
+/// 把约束元组编码成无歧义的哈希 key（每列前置长度）。
+fn constraint_key(tuple: &[Vec<u8>]) -> Vec<u8> {
+    let mut key = Vec::new();
+    for value in tuple {
+        key.extend_from_slice(&(value.len() as u32).to_be_bytes());
+        key.extend_from_slice(value);
+    }
+    key
+}
+
 /// 在基存快照与同语句已产出的行中查找 `UNIQUE` 冲突。
 ///
 /// `excluded_rowid` 排除当前行自身（UPDATE 时它仍然存在于旧快照里）。
@@ -932,9 +1002,49 @@ pub(crate) fn unique_conflict_in_snapshot(
         if excluded_rowid.is_some_and(|excluded| excluded == rowid.as_slice()) {
             continue;
         }
-        let row = decode_row(bytes)?;
+        // 冲突只取决于约束列；整行解码会把与约束无关的列也复制一遍。
+        let row = decode_row_fields(bytes, &constraint_field_ids(constraints))?;
         if let Some(conflict) = unique_conflict_between(constraints, candidate, &row) {
             return Ok(Some(conflict));
+        }
+    }
+    Ok(None)
+}
+
+/// 一组唯一约束引用到的全部字段 ID，去重后供局部行解码使用。
+fn constraint_field_ids(constraints: &[UniqueConstraintPlan]) -> Vec<u64> {
+    let mut ids = Vec::new();
+    for constraint in constraints {
+        for (field_id, _) in &constraint.columns {
+            if !ids.contains(field_id) {
+                ids.push(*field_id);
+            }
+        }
+    }
+    ids
+}
+
+/// 在基存快照里找第一条与 `candidate` 冲突次要 `UNIQUE` 的行。
+///
+/// 返回值是 `(rowid, row bytes)`，供 `ON DUPLICATE KEY UPDATE` 把改写落到
+/// 实际冲突的那一行；没有约束或没有冲突时返回 `None`。
+fn find_unique_conflict(
+    executor: &dyn KeyValueExecutor,
+    transaction: Option<&dyn TransactionHandle>,
+    namespace: &str,
+    constraints: &[UniqueConstraintPlan],
+    candidate: &RowFieldValues,
+) -> Result<Option<(Vec<u8>, Vec<u8>)>, SqlFrontendError> {
+    if constraints.is_empty() {
+        return Ok(None);
+    }
+    let namespace = Namespace(namespace.to_string());
+    let stored = scan_rows(executor, transaction, &namespace, &[], None, None, 0, "unique_check")?;
+    let ids = constraint_field_ids(constraints);
+    for (rowid, bytes) in stored {
+        let row = decode_row_fields(&bytes, &ids)?;
+        if unique_conflict_between(constraints, candidate, &row).is_some() {
+            return Ok(Some((rowid, bytes)));
         }
     }
     Ok(None)

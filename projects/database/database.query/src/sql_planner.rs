@@ -173,10 +173,14 @@ pub fn plan_select_for_dialect(
     // 聚合与 GROUP BY 只在扫描路径求值，窗口函数需要看到分区里的其余行——这三种情况
     // 不允许点读，等值必须留在 remaining 里由扫描逐行过滤，否则谓词会被抽取吞掉。
     let point_read_allowed = !has_window && !has_aggregate && select.group_by.is_none();
-    let (pk_equality, pk_prefix, remaining_predicate) = match select.predicate {
-        None => (None, None, None),
+    let extracted = match select.predicate {
+        None => PkPredicate::default(),
         Some(expr) => extract_pk_range(expr, source.row_id(pk_field.field_id), point_read_allowed)?,
     };
+    let pk_equality = extracted.equality;
+    let pk_prefix = extracted.prefix;
+    let remaining_predicate = extracted.remaining;
+    let (rowid_after, rowid_before) = pk_scan_bounds(is_integer_primary_key(pk_field), extracted.lower, extracted.upper);
 
     // 3. 分流：有精确 pk 等值 → Read；其他全部 → Scan。
     // 先从 catalog table 收集 row_id → SqlFieldType 映射。
@@ -224,9 +228,10 @@ pub fn plan_select_for_dialect(
 
     Ok(SqlExecutionPlan::Scan(ScanPlan {
         namespace,
+        pk_row_id: source.row_id(pk_field.field_id),
         rowid_prefix: pk_prefix.unwrap_or_default(),
-        rowid_after: None,
-        rowid_before: None,
+        rowid_after,
+        rowid_before,
         limit: kv_limit,
         projection_fields,
         projection_expressions,
@@ -665,7 +670,8 @@ pub fn plan_insert(insert: SqlCatalogBoundInsert, catalog: &SqlCatalog, dialect:
 
 /// 计划 `ON CONFLICT`：只有主键这一条唯一约束，目标列必须与之相符。
 ///
-/// MySQL 没有 `ON CONFLICT` 语法，同一语句在该方言下按语法错误拒绝。
+/// MySQL 没有 `ON CONFLICT` 语法；网关在绑定前把 `ON DUPLICATE KEY UPDATE`
+/// 改写成带主键目标的 `ON CONFLICT ... DO UPDATE`，因此这里两种方言都接受。
 fn plan_on_conflict(
     conflict: Option<SqlCatalogBoundConflict>,
     table: &crate::SqlCatalogTable,
@@ -675,9 +681,6 @@ fn plan_on_conflict(
     else {
         return Ok(None);
     };
-    if dialect != SqlDialect::Postgres {
-        return Err(SqlFrontendError::syntax("ON CONFLICT is only supported by the PostgreSQL dialect"));
-    }
     // PostgreSQL 只允许 `DO NOTHING` 省略冲突目标，`DO UPDATE` 必须先声明目标。
     if conflict.columns.is_empty() {
         if matches!(conflict.action, SqlCatalogBoundConflictAction::DoUpdate { .. }) {
@@ -920,7 +923,8 @@ pub fn plan_update(update: SqlCatalogBoundUpdate, catalog: &SqlCatalog, dialect:
     };
 
     // UPDATE 没有聚合与分组，等值始终可以交给点读。
-    let (pk_literal, pk_prefix, remaining) = extract_pk_range(predicate.clone(), pk_field.field_id, true)?;
+    let extracted = extract_pk_range(predicate.clone(), pk_field.field_id, true)?;
+    let PkPredicate { equality: pk_literal, prefix: pk_prefix, lower, upper, remaining } = extracted;
     if let Some(rowid_literal) = pk_literal {
         return Ok(SqlExecutionPlan::Update(UpdatePlan {
             namespace,
@@ -931,11 +935,12 @@ pub fn plan_update(update: SqlCatalogBoundUpdate, catalog: &SqlCatalog, dialect:
             unique_constraints,
         }));
     }
+    let (rowid_after, rowid_before) = pk_scan_bounds(is_integer_primary_key(pk_field), lower, upper);
     Ok(SqlExecutionPlan::UpdateScan(UpdateScanPlan {
         namespace,
         rowid_prefix: pk_prefix.unwrap_or_default(),
-        rowid_after: None,
-        rowid_before: None,
+        rowid_after,
+        rowid_before,
         fields: write_fields,
         predicate: remaining,
         field_types,
@@ -964,7 +969,8 @@ pub fn plan_delete(delete: SqlCatalogBoundDelete, catalog: &SqlCatalog) -> Resul
     };
 
     // DELETE 没有聚合与分组，等值始终可以交给点读。
-    let (pk_literal, pk_prefix, remaining) = extract_pk_range(predicate.clone(), pk_field.field_id, true)?;
+    let extracted = extract_pk_range(predicate.clone(), pk_field.field_id, true)?;
+    let PkPredicate { equality: pk_literal, prefix: pk_prefix, lower, upper, remaining } = extracted;
     if let Some(rowid_literal) = pk_literal {
         return Ok(SqlExecutionPlan::Delete(DeletePlan {
             namespace,
@@ -973,11 +979,12 @@ pub fn plan_delete(delete: SqlCatalogBoundDelete, catalog: &SqlCatalog) -> Resul
             field_types,
         }));
     }
+    let (rowid_after, rowid_before) = pk_scan_bounds(is_integer_primary_key(pk_field), lower, upper);
     Ok(SqlExecutionPlan::DeleteScan(DeleteScanPlan {
         namespace,
         rowid_prefix: pk_prefix.unwrap_or_default(),
-        rowid_after: None,
-        rowid_before: None,
+        rowid_after,
+        rowid_before,
         predicate: remaining,
         field_types,
     }))
@@ -1211,13 +1218,17 @@ pub struct ReadPlan {
 pub struct ScanPlan {
     /// namespace 标签，形如 `table:{type_id}`。
     pub namespace: String,
+    /// 主键列的 row id。`ORDER BY <主键>` 且带 `LIMIT` 时，执行层据此判断
+    /// KV 扫描顺序是否已经满足排序，从而只解码需要返回的行。
+    pub pk_row_id: u64,
     /// rowid 前缀 bytes；空 = 整个 namespace 全扫。
     pub rowid_prefix: Vec<u8>,
     /// exclusive lower cursor —— 跳过所有 `rowid <= after` 的记录。None = 无下界。
-    /// 整数主键的范围条件不得下推成字节边界，planner 当前恒为 None；字段保留给 KV scan API。
+    /// 只有上下界同为非负整数且位数相同时，planner 才会把数值范围翻译成字节边界；
+    /// 范围谓词仍保留在 `remaining_predicate` 里逐行复核。
     pub rowid_after: Option<Vec<u8>>,
     /// exclusive upper cursor —— 跳过所有 `rowid >= before` 的记录。None = 无上界。
-    /// 同 [`Self::rowid_after`]，planner 当前恒为 None。
+    /// 下推条件同 [`Self::rowid_after`]。
     pub rowid_before: Option<Vec<u8>>,
     /// 下推到 kv-store 的 scan limit（0 = 无上限）。ORDER BY / 聚合 / GROUP BY 存在时保持 0。
     pub limit: usize,
@@ -1547,15 +1558,15 @@ pub struct DeleteScanPlan {
 
 /// 从 WHERE predicate 里提取所有关于 pk 字段的条件。
 ///
-/// 返回三元组：
-/// - `Option<SqlBoundLiteral>` —— pk = literal 等值（读单点）
-/// - `Option<Vec<u8>>` —— pk LIKE 'prefix%' 前缀
-/// - `Option<SqlCatalogBoundExpression>` —— 剩余不能下推的条件
+/// 返回值把主键条件分成三类：
+/// - `equality` —— pk = literal 等值（读单点）
+/// - `prefix` —— pk LIKE 'prefix%' 前缀
+/// - `lower` / `upper` —— pk 比较范围，只作为 KV 扫描边界的**提示**；
+///   对应谓词仍然保留在 `remaining` 里逐行复核
 ///
-/// `pk > / >= / < / <=` 与 `BETWEEN`（脱糖成 `>= AND <=`）一律留在 remaining，
-/// 由行级数值求值过滤：整数主键编码成不补零的十进制 ASCII，KV 扫描按字节序比较
-/// 键，字节边界下推会把数值序变成字典序。等值与 LIKE 前缀是精确字节匹配，
-/// 编码一致时结果集不变，仍然下推。
+/// `lower` / `upper` 能否真正下推由 [`pk_scan_bound`] 决定：整数主键编码成不补零的
+/// 十进制 ASCII，只有上下界位数相同、且上下界都存在时，数值序才等于字节序。
+/// 下推只是少扫一段 key，语义仍由 `remaining` 保证。
 ///
 /// 冲突规则：两个等值 / 两个不同前缀 → planner_error。
 ///
@@ -1566,20 +1577,25 @@ fn extract_pk_range(
     predicate: SqlCatalogBoundExpression,
     pk_row_id: u64,
     point_read_allowed: bool,
-) -> Result<(Option<SqlBoundLiteral>, Option<Vec<u8>>, Option<SqlCatalogBoundExpression>), SqlFrontendError> {
+) -> Result<PkPredicate, SqlFrontendError> {
     match predicate {
         // AND 拆分 — 两侧分别提取，再合并。
         SqlCatalogBoundExpression::Binary { left, operator: SqlBoundBinaryOperator::And, right } => {
-            let (l_eq, l_pre, l_rem) = extract_pk_range(*left, pk_row_id, point_read_allowed)?;
-            let (r_eq, r_pre, r_rem) = extract_pk_range(*right, pk_row_id, point_read_allowed)?;
-            let eq = merge_opt(l_eq, r_eq, "conflicting primary-key equality inside AND")?;
-            let prefix = merge_opt(l_pre, r_pre, "conflicting primary-key LIKE prefix inside AND")?;
-            let remaining = combine_remaining(l_rem, r_rem);
-            Ok((eq, prefix, remaining))
+            let mut left = extract_pk_range(*left, pk_row_id, point_read_allowed)?;
+            let right = extract_pk_range(*right, pk_row_id, point_read_allowed)?;
+            let eq = merge_opt(left.equality.take(), right.equality, "conflicting primary-key equality inside AND")?;
+            let prefix = merge_opt(left.prefix.take(), right.prefix, "conflicting primary-key LIKE prefix inside AND")?;
+            let lower = merge_lower(left.lower, right.lower);
+            let upper = merge_upper(left.upper, right.upper);
+            let remaining = combine_remaining(left.remaining.take(), right.remaining);
+            Ok(PkPredicate { equality: eq, prefix, lower, upper, remaining })
         }
 
         // 所有其他 Binary 表达式 —— 尝试识别 pk 条件。
         SqlCatalogBoundExpression::Binary { left, operator, right } => {
+            let original = |left: SqlCatalogBoundExpression, operator, right: SqlCatalogBoundExpression| {
+                SqlCatalogBoundExpression::Binary { left: Box::new(left), operator, right: Box::new(right) }
+            };
             match (operator, *left, *right) {
                 // pk = literal
                 (SqlBoundBinaryOperator::Equal, SqlCatalogBoundExpression::Column(col), SqlCatalogBoundExpression::Literal(lit))
@@ -1587,7 +1603,7 @@ fn extract_pk_range(
                     if col.row_id == pk_row_id && point_read_allowed =>
                 {
                     let _rowid = pk_literal_to_rowid(&lit)?;
-                    Ok((Some(lit), None, None))
+                    Ok(PkPredicate { equality: Some(lit), ..PkPredicate::default() })
                 }
 
                 // pk LIKE 'prefix%'
@@ -1596,34 +1612,195 @@ fn extract_pk_range(
                 {
                     let prefix = match &lit {
                         SqlBoundLiteral::String(s) if s.ends_with('%') && !s.ends_with("%%") => s[..s.len() - 1].as_bytes().to_vec(),
-                        _ => {
-                            // LIKE 模式不只是 prefix%，下推成 remaining
-                            return Ok((
-                                None,
-                                None,
-                                Some(SqlCatalogBoundExpression::Binary {
-                                    left: Box::new(SqlCatalogBoundExpression::Column(col)),
-                                    operator: SqlBoundBinaryOperator::Like,
-                                    right: Box::new(SqlCatalogBoundExpression::Literal(lit)),
-                                }),
-                            ));
-                        }
+                        _ => Vec::new(),
                     };
-                    Ok((None, Some(prefix), None))
+                    if prefix.is_empty() && !matches!(&lit, SqlBoundLiteral::String(s) if s == "%") {
+                        // LIKE 模式不只是 prefix%，下推成 remaining
+                        return Ok(PkPredicate {
+                            remaining: Some(original(SqlCatalogBoundExpression::Column(col), operator, SqlCatalogBoundExpression::Literal(lit))),
+                            ..PkPredicate::default()
+                        });
+                    }
+                    Ok(PkPredicate { prefix: Some(prefix), ..PkPredicate::default() })
+                }
+
+                // pk 比较范围：只作为扫描边界提示，原谓词留在 remaining 保证语义。
+                (op @ (SqlBoundBinaryOperator::Greater
+                | SqlBoundBinaryOperator::GreaterEqual
+                | SqlBoundBinaryOperator::Less
+                | SqlBoundBinaryOperator::LessEqual), SqlCatalogBoundExpression::Column(col), SqlCatalogBoundExpression::Literal(lit))
+                    if col.row_id == pk_row_id =>
+                {
+                    let Some(bound) = pk_bound_from(&lit, op) else {
+                        return Ok(PkPredicate {
+                            remaining: Some(original(SqlCatalogBoundExpression::Column(col), op, SqlCatalogBoundExpression::Literal(lit))),
+                            ..PkPredicate::default()
+                        });
+                    };
+                    Ok(PkPredicate {
+                        lower: bound.0,
+                        upper: bound.1,
+                        remaining: Some(original(SqlCatalogBoundExpression::Column(col), op, SqlCatalogBoundExpression::Literal(lit))),
+                        ..PkPredicate::default()
+                    })
+                }
+
+                // 反向比较 `literal > pk` 等价于 `pk < literal`。
+                (op @ (SqlBoundBinaryOperator::Greater
+                | SqlBoundBinaryOperator::GreaterEqual
+                | SqlBoundBinaryOperator::Less
+                | SqlBoundBinaryOperator::LessEqual), SqlCatalogBoundExpression::Literal(lit), SqlCatalogBoundExpression::Column(col))
+                    if col.row_id == pk_row_id =>
+                {
+                    let flipped = flip_comparison(op);
+                    let Some(bound) = pk_bound_from(&lit, flipped) else {
+                        return Ok(PkPredicate {
+                            remaining: Some(original(SqlCatalogBoundExpression::Literal(lit), op, SqlCatalogBoundExpression::Column(col))),
+                            ..PkPredicate::default()
+                        });
+                    };
+                    Ok(PkPredicate {
+                        lower: bound.0,
+                        upper: bound.1,
+                        remaining: Some(original(SqlCatalogBoundExpression::Literal(lit), op, SqlCatalogBoundExpression::Column(col))),
+                        ..PkPredicate::default()
+                    })
                 }
 
                 // 其他所有 Binary —— 留在 remaining
-                (op, left, right) => Ok((
-                    None,
-                    None,
-                    Some(SqlCatalogBoundExpression::Binary { left: Box::new(left), operator: op, right: Box::new(right) }),
-                )),
+                (op, left, right) => Ok(PkPredicate { remaining: Some(original(left, op, right)), ..PkPredicate::default() }),
             }
         }
 
         // OR、Between、Unary、Column-alone、Literal-alone 等全部留作 remaining。
-        other => Ok((None, None, Some(other))),
+        other => Ok(PkPredicate { remaining: Some(other), ..PkPredicate::default() }),
     }
+}
+
+/// 一个 pk 比较边界：`inclusive` 表示等号是否包含。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PkBound {
+    value: i64,
+    inclusive: bool,
+}
+
+/// `extract_pk_range` 的提取结果。
+#[derive(Debug, Default)]
+struct PkPredicate {
+    equality: Option<SqlBoundLiteral>,
+    prefix: Option<Vec<u8>>,
+    lower: Option<PkBound>,
+    upper: Option<PkBound>,
+    remaining: Option<SqlCatalogBoundExpression>,
+}
+
+/// 把整数比较字面量翻译成一个边界；非整数与 NULL 不做提示。
+fn pk_bound_from(literal: &SqlBoundLiteral, operator: SqlBoundBinaryOperator) -> Option<(Option<PkBound>, Option<PkBound>)> {
+    let SqlBoundLiteral::Integer(value) = literal
+    else {
+        return None;
+    };
+    let value = *value;
+    Some(match operator {
+        SqlBoundBinaryOperator::Greater => (Some(PkBound { value, inclusive: false }), None),
+        SqlBoundBinaryOperator::GreaterEqual => (Some(PkBound { value, inclusive: true }), None),
+        SqlBoundBinaryOperator::Less => (None, Some(PkBound { value, inclusive: false })),
+        SqlBoundBinaryOperator::LessEqual => (None, Some(PkBound { value, inclusive: true })),
+        _ => return None,
+    })
+}
+
+fn flip_comparison(operator: SqlBoundBinaryOperator) -> SqlBoundBinaryOperator {
+    match operator {
+        SqlBoundBinaryOperator::Greater => SqlBoundBinaryOperator::Less,
+        SqlBoundBinaryOperator::GreaterEqual => SqlBoundBinaryOperator::LessEqual,
+        SqlBoundBinaryOperator::Less => SqlBoundBinaryOperator::Greater,
+        SqlBoundBinaryOperator::LessEqual => SqlBoundBinaryOperator::GreaterEqual,
+        other => other,
+    }
+}
+
+fn merge_lower(left: Option<PkBound>, right: Option<PkBound>) -> Option<PkBound> {
+    match (left, right) {
+        (Some(a), Some(b)) => Some(match a.value.cmp(&b.value) {
+            std::cmp::Ordering::Greater => a,
+            std::cmp::Ordering::Less => b,
+            // 同值取更严格的一侧：`> x` 比 `>= x` 更强。
+            std::cmp::Ordering::Equal if a.inclusive && !b.inclusive => b,
+            _ => a,
+        }),
+        (Some(bound), None) | (None, Some(bound)) => Some(bound),
+        (None, None) => None,
+    }
+}
+
+fn merge_upper(left: Option<PkBound>, right: Option<PkBound>) -> Option<PkBound> {
+    match (left, right) {
+        (Some(a), Some(b)) => Some(match a.value.cmp(&b.value) {
+            std::cmp::Ordering::Less => a,
+            std::cmp::Ordering::Greater => b,
+            // 同值取更严格的一侧：`< x` 比 `<= x` 更强。
+            std::cmp::Ordering::Equal if a.inclusive && !b.inclusive => b,
+            _ => a,
+        }),
+        (Some(bound), None) | (None, Some(bound)) => Some(bound),
+        (None, None) => None,
+    }
+}
+
+/// 整数主键才走十进制字节边界；文本主键可以包含任意前缀，字节序与数值序无关。
+fn is_integer_primary_key(field: &crate::SqlCatalogField) -> bool {
+    matches!(field.field_type.inner(), SqlFieldType::Int32 | SqlFieldType::Int64)
+}
+
+fn pk_scan_bounds(integer_primary_key: bool, lower: Option<PkBound>, upper: Option<PkBound>) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
+    if !integer_primary_key {
+        return (None, None);
+    }
+    match (lower, upper) {
+        (Some(lower), Some(upper)) => match pk_scan_bound(&lower, &upper) {
+            Some((after, before)) => (Some(after), Some(before)),
+            None => (None, None),
+        },
+        _ => (None, None),
+    }
+}
+
+/// 把上下界翻译成 KV 扫描的字节边界。
+///
+/// 主键 rowid 是不补零的十进制 ASCII，字节序只在同一宽度内等于数值序。因此只有当
+/// 上下界都是非负整数、位数相同且区间非空时才下推；调用方仍保留范围谓词逐行复核，
+/// 所以这里最多多扫几行，绝不会漏掉数值上命中的行。
+///
+/// `after` 是开下界，`before` 是开上界：
+/// - `> L` 用 `L` 本身；`>= L` 用同宽度的 `L - 1` 补零串作栅栏。
+/// - `<= U` 用 `U` 后追加 `0xFF`（key 只含十进制字符）以包含 `U`；`< U` 用 `U` 本身。
+fn pk_scan_bound(lower: &PkBound, upper: &PkBound) -> Option<(Vec<u8>, Vec<u8>)> {
+    if lower.value < 0 || upper.value < 0 || lower.value > upper.value {
+        return None;
+    }
+    let lower_text = lower.value.to_string();
+    let upper_text = upper.value.to_string();
+    if lower_text.len() != upper_text.len() {
+        return None;
+    }
+    let width = lower_text.len();
+    let after = if lower.inclusive {
+        if lower.value == 0 {
+            Vec::new()
+        }
+        else {
+            format!("{:0width$}", lower.value - 1, width = width).into_bytes()
+        }
+    }
+    else {
+        lower_text.into_bytes()
+    };
+    let mut before = upper_text.into_bytes();
+    if upper.inclusive {
+        before.push(0xFF);
+    }
+    Some((after, before))
 }
 
 fn merge_opt<T>(left: Option<T>, right: Option<T>, conflict_msg: &str) -> Result<Option<T>, SqlFrontendError>

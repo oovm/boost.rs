@@ -462,6 +462,25 @@ pub(crate) fn execute_scan(
 
     let needed_ids = scan_needed_field_ids(plan);
 
+    // `ORDER BY <主键> ASC LIMIT n` 没有行级过滤时，KV 扫出的 key 顺序就是结果顺序
+    // （只要 key 的数值序与字节序一致）。先验证整段 key 单调，再只解码窗口内的行，
+    // 避免为 LIMIT 20 的结果解码整张表。
+    if let Some((start, end)) = pk_ordered_window(plan, &scanned) {
+        let mut rows = Vec::with_capacity(end - start);
+        for (_rowid, value_bytes) in &scanned[start..end] {
+            let row = decode_row_fields(value_bytes, &needed_ids)?;
+            let mut row_values: Vec<SqlValue> = Vec::with_capacity(plan.projection_fields.len() + plan.projection_expressions.len());
+            for (field_id, _) in &plan.projection_fields {
+                row_values.push(projected_value(&row, *field_id, &plan.field_types, &plan.field_defaults));
+            }
+            for (expr, _) in &plan.projection_expressions {
+                row_values.push(eval_row_expression(expr, &row, &plan.field_types, dialect, executor, transaction)?);
+            }
+            rows.push(row_values);
+        }
+        return Ok(SqlResult { columns, rows, affected_rows: 0 });
+    }
+
     // Top-N heap 优化：ORDER BY + (LIMIT 或 OFFSET) 时，用 BinaryHeap 保留 Top-N，
     // 避免先收集全量 rows 再排序。容量 = offset + limit（limit=0 视为无限，fallback 到 Vec）。
     let use_top_n = plan.order_by.is_some() && (plan.limit_after_sort > 0 || plan.offset_after_sort > 0);
@@ -693,15 +712,48 @@ pub(crate) fn execute_scan(
     }
 
     // —— 常规 Vec 路径：无 ORDER BY（kv-scan 顺序）或 ORDER BY 但无 LIMIT/OFFSET ——
+    // 选择性过滤（WHERE 命中率低）时，先用谓词列解码出一个小行判定是否命中，
+    // 命中后才解码投影列：索引缺失时的全表扫描仍要逐行走 TLV，但不必为不命中的行
+    // 复制投影字段。
+    let predicate_ids = plan
+        .remaining_predicate
+        .as_ref()
+        .filter(|_| plan.order_by.is_none() && plan.group_by.is_none() && !plan.has_aggregate && !plan.has_window && !plan.distinct)
+        .map(|predicate| expression_needed_field_ids(&[], &[], Some(predicate)));
     let mut staged: Vec<(Vec<Option<SqlValue>>, Vec<SqlValue>)> = Vec::new();
     for (_rowid, value_bytes) in scanned {
-        let row = decode_row_fields(&value_bytes, &needed_ids)?;
-        if let Some(ref predicate) = plan.remaining_predicate {
-            let v = eval_row_expression(predicate, &row, &plan.field_types, dialect, executor, transaction)?;
-            if !truthy(&v) {
-                continue;
+        let row = match &predicate_ids {
+            Some(ids) => {
+                let candidate = decode_row_fields(&value_bytes, ids)?;
+                let v = eval_row_expression(
+                    plan.remaining_predicate.as_ref().expect("checked above"),
+                    &candidate,
+                    &plan.field_types,
+                    dialect,
+                    executor,
+                    transaction,
+                )?;
+                if !truthy(&v) {
+                    continue;
+                }
+                if ids.len() == needed_ids.len() {
+                    candidate
+                }
+                else {
+                    decode_row_fields(&value_bytes, &needed_ids)?
+                }
             }
-        }
+            None => {
+                let row = decode_row_fields(&value_bytes, &needed_ids)?;
+                if let Some(ref predicate) = plan.remaining_predicate {
+                    let v = eval_row_expression(predicate, &row, &plan.field_types, dialect, executor, transaction)?;
+                    if !truthy(&v) {
+                        continue;
+                    }
+                }
+                row
+            }
+        };
 
         let sort_keys: Vec<Option<SqlValue>> = match &plan.order_by {
             Some(items) => items
@@ -720,6 +772,50 @@ pub(crate) fn execute_scan(
         staged.push((sort_keys, row_values));
     }
     Ok(finish_scan_staged(plan, columns, staged))
+}
+
+/// 判断扫描结果是否已经满足 `ORDER BY <主键> ASC LIMIT n`，是则返回要解码的行窗口。
+///
+/// rowid 是不补零的十进制文本，字节序不总是数值序。这里要求整段 key 都能解析成
+/// 严格递增的整数，才接受「扫描顺序 = 排序结果」；否则回退到普通排序路径，
+/// 不改变任何语义。
+fn pk_ordered_window(plan: &ScanPlan, scanned: &[(Vec<u8>, Vec<u8>)]) -> Option<(usize, usize)> {
+    if plan.remaining_predicate.is_some()
+        || plan.has_aggregate
+        || plan.has_window
+        || plan.group_by.is_some()
+        || plan.having.is_some()
+        || plan.distinct
+        || plan.limit_after_sort == 0
+    {
+        return None;
+    }
+    let items = plan.order_by.as_ref()?;
+    let [item] = items.as_slice()
+    else {
+        return None;
+    };
+    if !matches!(item.direction, SqlBoundOrderDirection::Asc) {
+        return None;
+    }
+    let SqlCatalogBoundExpression::Column(column) = &item.expression
+    else {
+        return None;
+    };
+    if column.row_id != plan.pk_row_id {
+        return None;
+    }
+    let mut previous: Option<i64> = None;
+    for (key, _) in scanned {
+        let value: i64 = std::str::from_utf8(key).ok()?.parse().ok()?;
+        if previous.is_some_and(|previous| value <= previous) {
+            return None;
+        }
+        previous = Some(value);
+    }
+    let start = plan.offset_after_sort.min(scanned.len());
+    let end = start.saturating_add(plan.limit_after_sort).min(scanned.len());
+    Some((start, end))
 }
 
 /// Tail shared by scan and join plans after projection values are produced.
