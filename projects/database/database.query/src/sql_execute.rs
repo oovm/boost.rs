@@ -1,7 +1,5 @@
 //! SQL values, row TLV encoding and expression evaluation shared by planning and execution.
 
-use std::collections::BTreeMap;
-
 use crate::{
     catalog_bind::{SqlCatalogBoundExpression, collect_column_ids},
     sql::{

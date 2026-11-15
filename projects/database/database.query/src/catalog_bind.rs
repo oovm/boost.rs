@@ -720,7 +720,11 @@ pub fn bind_sql_catalog_with_variables(
     }
     // `::<type>` 在 Oak 里只有词法没有节点，收下就等于静默丢掉转换和列名。
     crate::sql::reject_cast_operator(source)?;
-    let statement = bind_sql(source, dialect)?;
+    // MySQL 的 `ON DUPLICATE KEY UPDATE` 没有冲突目标，Oak 也不认这段语法。
+    // 在绑定前把它改写成等价的 `ON CONFLICT (<primary key>) DO UPDATE`，冲突
+    // 目标由 catalog 的主键补齐；写入语义仍由 planner/executor 的同一套冲突路径执行。
+    let rewritten = if dialect == SqlDialect::Mysql { rewrite_mysql_duplicate_key(source, catalog)? } else { None };
+    let statement = bind_sql(rewritten.as_deref().unwrap_or(source), dialect)?;
     match statement {
         SqlBoundStatement::Select(select) => bind_select(select, catalog, variables).map(SqlCatalogBoundStatement::Select),
         SqlBoundStatement::Insert(insert) => bind_insert(insert, catalog, variables).map(SqlCatalogBoundStatement::Insert),
@@ -728,6 +732,223 @@ pub fn bind_sql_catalog_with_variables(
         SqlBoundStatement::Delete(delete) => bind_delete(delete, catalog, variables).map(SqlCatalogBoundStatement::Delete),
         SqlBoundStatement::SetOperation(set) => bind_set_operation(set, catalog, variables).map(SqlCatalogBoundStatement::SetOperation),
     }
+}
+
+/// Rewrites MySQL `INSERT ... ON DUPLICATE KEY UPDATE` into the Oak-parsed
+/// `ON CONFLICT (<primary key>) DO UPDATE SET` form.
+///
+/// MySQL's clause has no conflict target, so the target is filled from the
+/// catalog primary key. The gateway's conflict path keys rows by primary key;
+/// a duplicate on another unique column is handled by the executor's unique
+/// conflict check. `VALUES (col)` is rewritten to `EXCLUDED.col`, the
+/// equivalent proposal-row reference.
+fn rewrite_mysql_duplicate_key(source: &str, catalog: &SqlCatalog) -> Result<Option<String>, SqlFrontendError> {
+    const CLAUSE: &str = "ON DUPLICATE KEY UPDATE";
+    let Some(index) = find_keyword_outside_literals(source, CLAUSE)
+    else {
+        return Ok(None);
+    };
+    let head = &source[..index];
+    let tail = &source[index + CLAUSE.len()..];
+    let table_name = insert_target_table(head).ok_or_else(|| {
+        SqlFrontendError::new(SqlErrorKind::Syntax, "ON DUPLICATE KEY UPDATE requires an INSERT statement".to_string())
+    })?;
+    let table = find_table(catalog, table_name)?;
+    let catalog_table = catalog
+        .tables
+        .iter()
+        .find(|candidate| candidate.type_id == table.type_id)
+        .ok_or_else(|| SqlFrontendError::new(SqlErrorKind::Internal, format!("catalog table `{table_name}` is not published")))?;
+    let primary_key = catalog_table
+        .fields
+        .first()
+        .ok_or_else(|| SqlFrontendError::new(SqlErrorKind::Internal, format!("table `{table_name}` has no fields")))?;
+    let assignments = rewrite_values_references(tail);
+    Ok(Some(format!("{head} ON CONFLICT (`{}`) DO UPDATE SET {assignments}", primary_key.name)))
+}
+
+/// Case-insensitive keyword search that ignores single-quoted strings,
+/// double-quoted identifiers and backtick identifiers.
+fn find_keyword_outside_literals(source: &str, keyword: &str) -> Option<usize> {
+    let bytes = source.as_bytes();
+    let needle = keyword.as_bytes();
+    let mut index = 0;
+    let mut quote: Option<u8> = None;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        match quote {
+            Some(active) => {
+                if byte == b'\\' {
+                    index += 2;
+                    continue;
+                }
+                if byte == active {
+                    if active != b'`' && bytes.get(index + 1) == Some(&active) {
+                        index += 2;
+                        continue;
+                    }
+                    quote = None;
+                }
+                index += 1;
+            }
+            None => {
+                if byte == b'\'' || byte == b'"' || byte == b'`' {
+                    quote = Some(byte);
+                    index += 1;
+                    continue;
+                }
+                if index + needle.len() <= bytes.len()
+                    && bytes[index..index + needle.len()].eq_ignore_ascii_case(needle)
+                {
+                    return Some(index);
+                }
+                index += 1;
+            }
+        }
+    }
+    None
+}
+
+/// Finds the table name of an `INSERT [IGNORE] [INTO] <name>` head.
+fn insert_target_table(head: &str) -> Option<&str> {
+    let mut rest = head.trim_start();
+    let verb = take_word(rest)?;
+    if !verb.eq_ignore_ascii_case("insert") {
+        return None;
+    }
+    rest = rest[verb.len()..].trim_start();
+    while let Some(word) = take_word(rest) {
+        if word.eq_ignore_ascii_case("ignore") || word.eq_ignore_ascii_case("into") {
+            rest = rest[word.len()..].trim_start();
+            continue;
+        }
+        break;
+    }
+    // Qualify the target as `schema`.`table` and keep the last segment.
+    let (mut table, consumed) = parse_identifier(rest)?;
+    let mut rest = rest[consumed..].trim_start();
+    while let Some(after_dot) = rest.strip_prefix('.') {
+        let after = after_dot.trim_start();
+        let (segment, consumed) = parse_identifier(after)?;
+        table = segment;
+        rest = after[consumed..].trim_start();
+    }
+    Some(table)
+}
+
+fn take_word(input: &str) -> Option<&str> {
+    let end = input.find(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_')).unwrap_or(input.len());
+    (end > 0).then(|| &input[..end])
+}
+
+/// Parses a bare or backtick/double-quoted identifier, returning its text with
+/// the quotes stripped and the number of input bytes consumed.
+fn parse_identifier(input: &str) -> Option<(&str, usize)> {
+    let bytes = input.as_bytes();
+    match bytes.first() {
+        Some(&quote @ (b'`' | b'"')) => {
+            let mut end = 1;
+            while end < bytes.len() {
+                if bytes[end] == quote {
+                    if bytes.get(end + 1) == Some(&quote) {
+                        end += 2;
+                        continue;
+                    }
+                    return Some((&input[1..end], end + 1));
+                }
+                end += 1;
+            }
+            None
+        }
+        Some(_) => {
+            let end = input.find(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_' || ch == '$')).unwrap_or(input.len());
+            (end > 0).then(|| (&input[..end], end))
+        }
+        None => None,
+    }
+}
+
+/// Rewrites `VALUES (col)` / `VALUES(col)` references to `EXCLUDED.col`.
+fn rewrite_values_references(tail: &str) -> String {
+    let mut out = String::with_capacity(tail.len());
+    let mut index = 0;
+    while index < tail.len() {
+        let Some(relative) = find_keyword_outside_literals(&tail[index..], "VALUES") else {
+            out.push_str(&tail[index..]);
+            break;
+        };
+        let start = index + relative;
+        out.push_str(&tail[index..start]);
+        let after_keyword = start + "VALUES".len();
+        let rest = &tail[after_keyword..];
+        let trimmed = rest.trim_start();
+        if !trimmed.starts_with('(') {
+            out.push_str("VALUES");
+            index = after_keyword;
+            continue;
+        }
+        let open = after_keyword + (rest.len() - trimmed.len());
+        let Some(close) = matching_paren(tail, open) else {
+            out.push_str(&tail[start..]);
+            break;
+        };
+        let inner = tail[open + 1..close].trim();
+        if is_column_identifier(inner) {
+            out.push_str("EXCLUDED.");
+            out.push_str(inner);
+        }
+        else {
+            out.push_str(&tail[start..=close]);
+        }
+        index = close + 1;
+    }
+    out
+}
+
+fn matching_paren(input: &str, open: usize) -> Option<usize> {
+    let bytes = input.as_bytes();
+    let mut depth = 0usize;
+    let mut quote: Option<u8> = None;
+    let mut index = open;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        match quote {
+            Some(active) => {
+                if byte == b'\\' {
+                    index += 2;
+                    continue;
+                }
+                if byte == active {
+                    quote = None;
+                }
+            }
+            None => {
+                if byte == b'\'' || byte == b'"' || byte == b'`' {
+                    quote = Some(byte);
+                }
+                else if byte == b'(' {
+                    depth += 1;
+                }
+                else if byte == b')' {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(index);
+                    }
+                }
+            }
+        }
+        index += 1;
+    }
+    None
+}
+
+fn is_column_identifier(text: &str) -> bool {
+    let inner = text
+        .strip_prefix('`')
+        .and_then(|text| text.strip_suffix('`'))
+        .or_else(|| text.strip_prefix('"').and_then(|text| text.strip_suffix('"')))
+        .unwrap_or(text);
+    !inner.is_empty() && inner.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '$')
 }
 
 /// Default resolver for dialects without `@@` system variables.

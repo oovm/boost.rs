@@ -79,6 +79,10 @@ pub struct DdlColumn {
     pub not_null: bool,
     /// Whether `PRIMARY KEY` was written inline.
     pub inline_primary_key: bool,
+    /// Whether `UNIQUE` was written inline. The column-level spelling is
+    /// collected into the same table-level constraint list as
+    /// `UNIQUE KEY (column)`.
+    pub inline_unique: bool,
     /// Whether the column allocates its own values: MySQL `AUTO_INCREMENT` or
     /// PostgreSQL `SERIAL` / `BIGSERIAL` / `SMALLSERIAL`.
     pub auto_increment: bool,
@@ -551,7 +555,11 @@ impl Parser {
             Some("FULLTEXT") => Err(SqlFrontendError::unsupported("`FULLTEXT` indexes are not supported by the cluster SQL gateway")),
             Some("SPATIAL") => Err(SqlFrontendError::unsupported("`SPATIAL` indexes are not supported by the cluster SQL gateway")),
             _ => {
-                columns.push(self.column_definition()?);
+                let column = self.column_definition()?;
+                if column.inline_unique {
+                    unique_constraints.push(vec![column.name.clone()]);
+                }
+                columns.push(column);
                 Ok(())
             }
         }
@@ -584,6 +592,7 @@ impl Parser {
         }
         let mut not_null = false;
         let mut inline_primary_key = false;
+        let mut inline_unique = false;
         // PostgreSQL serial pseudo-types imply an owned sequence.
         let mut auto_increment = matches!(sql_type.as_str(), "SERIAL" | "BIGSERIAL" | "SMALLSERIAL");
         let mut default = None;
@@ -605,6 +614,7 @@ impl Parser {
                 }
                 Some("UNIQUE") => {
                     self.cursor += 1;
+                    inline_unique = true;
                 }
                 Some("DEFAULT") => {
                     self.cursor += 1;
@@ -636,7 +646,7 @@ impl Parser {
                 _ => break,
             }
         }
-        Ok(DdlColumn { name, sql_type, not_null, inline_primary_key, auto_increment, default })
+        Ok(DdlColumn { name, sql_type, not_null, inline_primary_key, inline_unique, auto_increment, default })
     }
 
     fn type_parameters(&mut self) -> Result<String, SqlFrontendError> {

@@ -592,6 +592,12 @@ fn apply_ddl(state: &mut RegistryState, statement: &SqlDdlStatement) -> Result<(
             if column.inline_primary_key {
                 state.tables[index].primary_key.push(column.name.clone());
             }
+            if column.inline_unique {
+                let constraint = vec![column.name.clone()];
+                if !state.tables[index].unique_constraints.contains(&constraint) {
+                    state.tables[index].unique_constraints.push(constraint);
+                }
+            }
             Ok((SqlDdlOutcome::AlterTableAddColumn { added: true }, true))
         }
         SqlDdlStatement::DropTable { names, if_exists } => {

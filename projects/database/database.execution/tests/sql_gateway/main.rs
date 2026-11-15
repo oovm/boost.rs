@@ -142,6 +142,10 @@ fn string_primary_key_equality_and_like_prefix_still_work() {
     assert_eq!(result.rows.len(), 2);
     let result = gateway.expect_sql("SELECT name FROM words WHERE name LIKE 'a%e'");
     assert_eq!(result.rows.len(), 1);
+    // 文本主键不做十进制字节边界下推：范围仍按文本比较语义过滤。
+    // `apricot` 与 `banana` 都落在 (apple, banana] 内。
+    let result = gateway.expect_sql("SELECT name FROM words WHERE name > 'apple' AND name <= 'banana'");
+    assert_eq!(result.rows.len(), 2);
 }
 
 /// `UPDATE ... SET` 右值支持算术表达式：点读路径与扫描路径都按当前行值求值。
@@ -264,4 +268,77 @@ fn update_statement_binds_to_update_variant() {
     let catalog = gateway.registry.catalog();
     let bound = bind_sql_catalog("UPDATE shape SET n = n + 1 WHERE id = 1", &catalog, catalog.schema_version(), SqlDialect::Mysql).expect("bind");
     assert!(matches!(bound, SqlCatalogBoundStatement::Update(_)));
+}
+
+/// 同宽度的四位数主键范围会下推成 KV 字节边界，结果仍由剩余谓词复核。
+#[test]
+fn four_digit_primary_key_range_pushes_bounds_without_losing_rows() {
+    let gateway = Gateway::new("pk-pushdown");
+    gateway.expect_sql("CREATE TABLE wide (id INT NOT NULL PRIMARY KEY, v INT)");
+    let values: Vec<String> = (1000..=1199).map(|id| format!("({id}, {id})")).collect();
+    gateway.expect_sql(&format!("INSERT INTO wide (id, v) VALUES {}", values.join(", ")));
+    assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM wide WHERE id > 1100 AND id <= 1120"), 20);
+    assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM wide WHERE id >= 1100 AND id < 1120"), 20);
+    assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM wide WHERE id BETWEEN 1000 AND 1099"), 100);
+    // 位数不同的边界不下推字节边界，数值语义必须保持。
+    assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM wide WHERE id > 999 AND id <= 1000"), 1);
+}
+
+/// `ORDER BY <主键> LIMIT n` 的快速路径只有在 key 数值严格递增时才启用；
+/// 混合位数的 rowid 会回退到排序路径，结果仍是数值序。
+#[test]
+fn mixed_width_primary_key_order_by_keeps_numeric_order() {
+    let gateway = Gateway::new("pk-order");
+    gateway.expect_sql("CREATE TABLE seq (id INT NOT NULL PRIMARY KEY, v INT)");
+    gateway.expect_sql("INSERT INTO seq (id, v) VALUES (9, 9), (10, 10), (99, 99), (100, 100), (1000, 1000)");
+    let result = gateway.expect_sql("SELECT id FROM seq ORDER BY id LIMIT 3");
+    assert_eq!(
+        result.rows,
+        vec![
+            vec![SqlValue::Integer(9)],
+            vec![SqlValue::Integer(10)],
+            vec![SqlValue::Integer(99)],
+        ]
+    );
+}
+
+/// 列级 `UNIQUE` 与表级 `UNIQUE KEY` 一样生效；MySQL 的
+/// `ON DUPLICATE KEY UPDATE` 覆盖主键与次要唯一键两种冲突。
+#[test]
+fn inline_unique_and_on_duplicate_key_update_follow_mysql_semantics() {
+    let gateway = Gateway::new("upsert");
+    gateway.expect_sql("CREATE TABLE ups (id INT NOT NULL PRIMARY KEY, uk INT UNIQUE, v INT, pad VARCHAR(8))");
+    gateway.expect_sql("INSERT INTO ups (id, uk, v, pad) VALUES (1, 10, 1, 'a')");
+
+    // 主键冲突：`VALUES(col)` 取提议行的值，MySQL 对改写报 2 行。
+    assert_eq!(
+        gateway.expect_sql("INSERT INTO ups (id, uk, v, pad) VALUES (1, 10, 2, 'b') ON DUPLICATE KEY UPDATE v = VALUES(v), pad = VALUES(pad)").affected_rows,
+        2
+    );
+    assert_eq!(gateway.scalar_integer("SELECT v FROM ups WHERE id = 1"), 2);
+    assert_eq!(gateway.scalar_text("SELECT pad FROM ups WHERE id = 1"), "b");
+
+    // 次要唯一键冲突：改写实际冲突的那一行，主键保持不变，也不插入新行。
+    assert_eq!(
+        gateway.expect_sql("INSERT INTO ups (id, uk, v, pad) VALUES (2, 10, 3, 'c') ON DUPLICATE KEY UPDATE v = VALUES(v)").affected_rows,
+        2
+    );
+    assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM ups"), 1);
+    assert_eq!(gateway.scalar_integer("SELECT v FROM ups WHERE id = 1"), 3);
+
+    // 没有冲突策略时，列级 UNIQUE 仍按 1062 拒绝。
+    let error = gateway.sql("INSERT INTO ups (id, uk, v, pad) VALUES (3, 10, 4, 'd')").expect_err("duplicate unique must fail");
+    assert_eq!(error.kind, database_query::SqlErrorKind::DuplicateKey);
+}
+
+/// `INSERT ... SELECT` 把源查询的每一行写入目标表。
+#[test]
+fn insert_select_writes_every_source_row() {
+    let gateway = Gateway::new("insert-select");
+    gateway.expect_sql("CREATE TABLE src (id INT NOT NULL PRIMARY KEY, v INT)");
+    gateway.expect_sql("INSERT INTO src (id, v) VALUES (1, 10), (2, 20), (3, 30)");
+    gateway.expect_sql("CREATE TABLE dst (id INT NOT NULL PRIMARY KEY, v INT)");
+    assert_eq!(gateway.expect_sql("INSERT INTO dst (id, v) SELECT id, v FROM src WHERE id > 1").affected_rows, 2);
+    assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM dst"), 2);
+    assert_eq!(gateway.scalar_integer("SELECT SUM(v) FROM dst"), 50);
 }

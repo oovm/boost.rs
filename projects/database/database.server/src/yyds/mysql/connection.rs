@@ -284,7 +284,7 @@ struct MysqlTransactionSession {
     /// Catalog-stable SELECT plans keyed by SQL text. Repeated point lookups
     /// (and prepared statements whose rendered values cycle) skip bind and
     /// planning entirely; any DDL revision drops the whole cache.
-    select_cache: HashMap<String, CachedSelectPlan>,
+    select_cache: HashMap<String, Arc<CachedSelectPlan>>,
     /// Reused result-set assembly buffer so a single-row response does not
     /// allocate a fresh 8 KiB staging vector per statement.
     result_buffer: Vec<u8>,
@@ -296,6 +296,10 @@ struct CachedSelectPlan {
     plan: Arc<SqlExecutionPlan>,
     column_types: Vec<u8>,
     column_nullables: Vec<bool>,
+    /// Column-count and column-definition packets encoded for a response that
+    /// starts at sequence 1. Rows and the trailing EOF are still appended per
+    /// statement because their values and status flags change.
+    prefix: Vec<u8>,
 }
 
 /// Upper bound on cached SELECT plans per session. The workloads that repeat
@@ -426,11 +430,44 @@ struct PreparedStatement {
     sql: String,
     /// Number of `?` placeholders the statement references.
     parameter_count: usize,
-    /// Result columns derived from the catalog. Writes describe to no columns.
-    description: Vec<SqlColumn>,
+    /// Wire type and nullability of every result column, derived once at
+    /// prepare time so an execute never rebuilds these vectors.
+    column_types: Vec<u8>,
+    column_nullables: Vec<bool>,
     /// `(type code, unsigned flag)` per parameter, remembered so an execute
     /// that reuses the previous binding can decode values.
     parameter_types: Vec<(u8, bool)>,
+    /// Rendered SQL keyed by the decoded parameter values. Rendering depends
+    /// only on the value list (the null bitmap and wire types are already
+    /// folded into those values), so a repeated bind skips `walk_parameters`
+    /// and its per-character buffer entirely.
+    render_cache: Vec<RenderedSql>,
+}
+
+/// One rendered SQL text plus the exact parameter values that produced it.
+/// Values are compared element-wise instead of by hash so a collision can
+/// never reuse the wrong statement text.
+#[derive(Debug, Clone)]
+struct RenderedSql {
+    values: Vec<SqlValue>,
+    text: Arc<str>,
+}
+
+/// Upper bound on rendered texts per prepared statement. A parameter cycle
+/// longer than this re-renders instead of growing without limit.
+const RENDER_CACHE_LIMIT: usize = 256;
+
+impl PreparedStatement {
+    fn cached_render(&self, values: &[SqlValue]) -> Option<Arc<str>> {
+        self.render_cache.iter().find(|entry| entry.values == values).map(|entry| Arc::clone(&entry.text))
+    }
+
+    fn remember_render(&mut self, values: &[SqlValue], text: Arc<str>) {
+        if self.render_cache.len() >= RENDER_CACHE_LIMIT {
+            self.render_cache.clear();
+        }
+        self.render_cache.push(RenderedSql { values: values.to_vec(), text });
+    }
 }
 
 /// Per-connection prepared statement registry. Statement ids are never reused
@@ -586,7 +623,11 @@ fn serve_session(stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRuntime>
                 }
                 // Metadata views never touch the executor or the session
                 // transaction: they are synthesized from the local schema registry.
-                let analyzed_meta = analyze_meta_query(sql, SqlDialect::Mysql);
+                // `analyze_meta_query` normalises and lowercases the whole
+                // statement before looking for its trigger words. Reject the
+                // DML/SELECT traffic with the allocation-free pre-filter first.
+                let analyzed_meta =
+                    if may_be_metadata_query(sql) { analyze_meta_query(sql, SqlDialect::Mysql) } else { Ok(None) };
                 match analyzed_meta {
                     Err(error) => {
                         session.fail();
@@ -611,6 +652,7 @@ fn serve_session(stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRuntime>
                             &column_types,
                             &column_nullables,
                             false,
+                            None,
                             status_flags,
                             &mut session.result_buffer,
                         )?;
@@ -782,6 +824,7 @@ fn serve_session(stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRuntime>
                             &[],
                             &[false, false],
                             false,
+                            None,
                             status_flags,
                             &mut session.result_buffer,
                         )?;
@@ -1156,6 +1199,7 @@ fn execute_sql(
                     column_types,
                     column_nullables,
                     binary_rows,
+                    None,
                     status_flags,
                     &mut session.result_buffer,
                 );
@@ -1174,22 +1218,22 @@ fn execute_sql(
     // resolved values are baked into the plan.
     let cacheable = is_select(sql) && !sql.contains("@@") && !sql.contains('?');
     if cacheable {
-        if let Some(cached) = session.select_cache.get(sql) {
-            let plan = Arc::clone(&cached.plan);
+        if let Some(cached) = session.select_cache.get(sql).cloned() {
             let (declared_types, declared_nullables) = if column_types.is_empty() {
-                (cached.column_types.clone(), cached.column_nullables.clone())
+                (&cached.column_types[..], &cached.column_nullables[..])
             }
             else {
-                (column_types.to_vec(), column_nullables.to_vec())
+                (column_types, column_nullables)
             };
             return finish_plan(
                 stream,
                 sequence,
-                &plan,
+                &cached.plan,
                 None,
-                &declared_types,
-                &declared_nullables,
+                declared_types,
+                declared_nullables,
                 binary_rows,
+                Some((&cached.prefix, cached.column_types.len())),
                 runtime,
                 session,
             );
@@ -1207,23 +1251,32 @@ fn execute_sql(
     let plan = Arc::new(plan);
     // Text protocol (`COM_QUERY`) has no prepare-time description, so derive the
     // declared column types from the plan instead of guessing from row values.
-    let (declared_types, declared_nullables) = if column_types.is_empty() {
-        plan_column_types(&plan)
-    }
-    else {
-        (column_types.to_vec(), column_nullables.to_vec())
+    // Prepared executes already carry that description, and describing again
+    // would put an extra plan walk on every first-time parameter value.
+    let described = if column_types.is_empty() { Some(describe_plan_for_dialect(&plan, SqlDialect::Mysql)) } else { None };
+    let (declared_types, declared_nullables) = match &described {
+        Some(columns) => (
+            columns.iter().map(|column| mysql_field_type(&column.field_type)).collect(),
+            columns.iter().map(|column| column.field_type.is_nullable()).collect(),
+        ),
+        None => (column_types.to_vec(), column_nullables.to_vec()),
     };
     if cacheable {
+        let prefix = described
+            .as_deref()
+            .map(|columns| encode_result_prefix(columns, &declared_types, &declared_nullables))
+            .unwrap_or_default();
         if session.select_cache.len() >= SELECT_CACHE_LIMIT {
             session.select_cache.clear();
         }
         session.select_cache.insert(
             sql.to_string(),
-            CachedSelectPlan {
+            Arc::new(CachedSelectPlan {
                 plan: Arc::clone(&plan),
                 column_types: declared_types.clone(),
                 column_nullables: declared_nullables.clone(),
-            },
+                prefix,
+            }),
         );
     }
     finish_plan(
@@ -1234,6 +1287,7 @@ fn execute_sql(
         &declared_types,
         &declared_nullables,
         binary_rows,
+        None,
         runtime,
         session,
     )
@@ -1274,6 +1328,28 @@ fn plan_column_types(plan: &SqlExecutionPlan) -> (Vec<u8>, Vec<bool>) {
     (types, nullables)
 }
 
+/// Pre-encodes the column-count and column-definition packets for a response
+/// that starts at sequence 1, so a cached plan reuses them instead of rebuilding
+/// one `Vec` per column on every execution. The trailing EOF stays dynamic
+/// because it carries the session status flags.
+fn encode_result_prefix(columns: &[SqlColumn], column_types: &[u8], column_nullables: &[bool]) -> Vec<u8> {
+    let mut prefix = Vec::new();
+    let mut count = Vec::new();
+    encode_length_encoded(&mut count, columns.len() as u64);
+    let Ok(()) = push_packet(&mut prefix, 1, &count) else {
+        return Vec::new();
+    };
+    for (index, column) in columns.iter().enumerate() {
+        let declared = column_types.get(index).copied().unwrap_or_else(|| mysql_field_type(&column.field_type));
+        let nullable = column_nullables.get(index).copied().unwrap_or(true);
+        let definition = encode_column_definition(&column.name, declared, nullable);
+        if push_packet(&mut prefix, 2u8.wrapping_add(index as u8), &definition).is_err() {
+            return Vec::new();
+        }
+    }
+    prefix
+}
+
 /// Executes one resolved plan and writes its OK or result-set response.
 #[allow(clippy::too_many_arguments)]
 fn finish_plan(
@@ -1284,6 +1360,7 @@ fn finish_plan(
     declared_types: &[u8],
     declared_nullables: &[bool],
     binary_rows: bool,
+    prefix: Option<(&[u8], usize)>,
     runtime: &Arc<MysqlSqlRuntime>,
     session: &mut MysqlTransactionSession,
 ) -> io::Result<()> {
@@ -1336,6 +1413,7 @@ fn finish_plan(
         column_types,
         column_nullables,
         binary_rows,
+        prefix,
         status_flags,
         &mut session.result_buffer,
     )
@@ -1476,7 +1554,19 @@ fn handle_prepare(
         }
         write_eof(stream, next, session.status_flags())?;
     }
-    statements.entries.insert(id, PreparedStatement { sql: sql.to_string(), description, parameter_types: Vec::new(), parameter_count });
+    let column_types: Vec<u8> = description.iter().map(|column| mysql_field_type(&column.field_type)).collect();
+    let column_nullables: Vec<bool> = description.iter().map(|column| column.field_type.is_nullable()).collect();
+    statements.entries.insert(
+        id,
+        PreparedStatement {
+            sql: sql.to_string(),
+            column_types,
+            column_nullables,
+            parameter_types: Vec::new(),
+            parameter_count,
+            render_cache: Vec::new(),
+        },
+    );
     Ok(())
 }
 
@@ -1583,7 +1673,6 @@ fn handle_execute(
         }
     }
 
-    let sql = statement.sql.as_str();
     if session.failed {
         write_error(stream, sequence, 40001, "HY000", "current transaction is aborted")?;
         return Ok(());
@@ -1594,17 +1683,37 @@ fn handle_execute(
         write_error(stream, sequence, 1235, "42000", "YYDS MySQL SQL execution is not implemented (no SQL runtime)")?;
         return Ok(());
     };
-    let rendered = match substitute_sql_parameters(sql, &values, SqlParameterStyle::QuestionMark) {
-        Ok(rendered) => rendered,
-        Err(error) => {
-            session.fail();
-            write_statement_error(stream, sequence, "parameter", error)?;
+    let rendered = {
+        let Some(statement) = statements.entries.get(&statement_id)
+        else {
+            write_error(stream, sequence, 1243, "HY000", &format!("Unknown prepared statement handler ({statement_id})"))?;
             return Ok(());
+        };
+        match statement.cached_render(&values) {
+            Some(text) => text,
+            None => {
+                let rendered = match substitute_sql_parameters(&statement.sql, &values, SqlParameterStyle::QuestionMark) {
+                    Ok(rendered) => rendered,
+                    Err(error) => {
+                        session.fail();
+                        write_statement_error(stream, sequence, "parameter", error)?;
+                        return Ok(());
+                    }
+                };
+                let text: Arc<str> = Arc::from(rendered);
+                if let Some(statement) = statements.entries.get_mut(&statement_id) {
+                    statement.remember_render(&values, Arc::clone(&text));
+                }
+                text
+            }
         }
     };
-    let column_types: Vec<u8> = statement.description.iter().map(|column| mysql_field_type(&column.field_type)).collect();
-    let column_nullables: Vec<bool> = statement.description.iter().map(|column| column.field_type.is_nullable()).collect();
-    execute_sql(stream, sequence, &rendered, runtime, session, &column_types, true, &column_nullables, false)
+    let Some(statement) = statements.entries.get(&statement_id)
+    else {
+        write_error(stream, sequence, 1243, "HY000", &format!("Unknown prepared statement handler ({statement_id})"))?;
+        return Ok(());
+    };
+    execute_sql(stream, sequence, &rendered, runtime, session, &statement.column_types, true, &statement.column_nullables, false)
 }
 
 /// `COM_STMT_RESET` clears the cached parameter binding and returns OK.
@@ -1779,6 +1888,7 @@ fn write_result_set(
     column_types: &[u8],
     column_nullables: &[bool],
     binary_rows: bool,
+    prefix: Option<(&[u8], usize)>,
     status_flags: u16,
     buffer: &mut Vec<u8>,
 ) -> io::Result<()> {
@@ -1789,20 +1899,32 @@ fn write_result_set(
         buffer.reserve(RESULT_FLUSH_BYTES.min(8 * 1024));
     }
 
-    // 包 1: column count
-    let count = result.columns.len();
-    let mut col_count = Vec::new();
-    encode_length_encoded(&mut col_count, count as u64);
-    push_packet(buffer, sequence, &col_count)?;
-    sequence = sequence.wrapping_add(1);
+    // 缓存计划的热路径直接复用已经编码好的列定义；序号从 1 开始时这些
+    // 帧头才与调用方的序号一致，其它序号回退到逐列编码。
+    match prefix.filter(|_| sequence == 1) {
+        Some((bytes, count)) if !bytes.is_empty() => {
+            buffer.extend_from_slice(bytes);
+            // The classic protocol wraps the sequence byte at 255, and a result
+            // set may carry more than 253 columns.
+            sequence = sequence.wrapping_add(1u8.wrapping_add(count as u8));
+        }
+        _ => {
+            // 包 1: column count
+            let count = result.columns.len();
+            let mut col_count = Vec::new();
+            encode_length_encoded(&mut col_count, count as u64);
+            push_packet(buffer, sequence, &col_count)?;
+            sequence = sequence.wrapping_add(1);
 
-    // 包 2..N: column definitions
-    for (index, col) in result.columns.iter().enumerate() {
-        let declared = column_types.get(index).copied();
-        let nullable = column_nullables.get(index).copied().unwrap_or(true);
-        let def = encode_column_definition(col, declared.unwrap_or_else(|| column_type(&result.rows, index)), nullable);
-        push_packet(buffer, sequence, &def)?;
-        sequence = sequence.wrapping_add(1);
+            // 包 2..N: column definitions
+            for (index, col) in result.columns.iter().enumerate() {
+                let declared = column_types.get(index).copied();
+                let nullable = column_nullables.get(index).copied().unwrap_or(true);
+                let def = encode_column_definition(col, declared.unwrap_or_else(|| column_type(&result.rows, index)), nullable);
+                push_packet(buffer, sequence, &def)?;
+                sequence = sequence.wrapping_add(1);
+            }
+        }
     }
 
     // EOF after columns
