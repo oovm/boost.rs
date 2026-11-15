@@ -306,9 +306,10 @@ fn split_conjuncts<'a>(expression: &'a SqlCatalogBoundExpression, out: &mut Vec<
 
 /// 从 JOIN 的 `ON` 条件里收集可以下推成哈希探针的等值列对。
 ///
-/// 只接受「两侧都是 catalog 列、两侧字段类型完全相同、其中一侧属于本次连接来源」的
-/// `=`，并沿 `AND` 递归。类型不同或任一侧是表达式时不参与索引：SQL 的隐式转换会让
-/// 等值判断跳出原始字节，这类情况仍走完整的嵌套循环与 `ON` 求值。
+/// 只接受「两侧都是 catalog 列、两侧字段类型可按同一数值/文本语义比较、其中一侧
+/// 属于本次连接来源」的 `=`，并沿 `AND` 递归。类型不同且不能共用同一哈希键序列化
+/// 时不参与索引：SQL 的隐式转换会让等值判断跳出原始字节，这类情况仍走完整的嵌套
+/// 循环与 `ON` 求值。
 fn join_hash_columns(
     on: &database_query::catalog_bind::SqlCatalogBoundExpression,
     right_row_ids: &[u64],
@@ -344,7 +345,7 @@ fn join_hash_columns(
                 let (Some(left_type), Some(right_type)) = (field_types.get(&left_row_id), field_types.get(&right_row_id)) else {
                     return;
                 };
-                if left_type == right_type {
+                if hash_compatible(left_type, right_type) {
                     pairs.push((left_row_id, right_row_id));
                 }
             }
@@ -353,6 +354,18 @@ fn join_hash_columns(
     }
     collect(on, right_row_ids, field_types, &mut pairs);
     pairs
+}
+
+/// 两列能否共用一个哈希键。
+///
+/// `SqlFieldType::inner()` 去掉可空包装：`INT` 与 `INT NULL` 在等值判断上完全
+/// 一致，仅因 `Optional` 包装拒绝会让最常见的 `a.id = b.item_id` 退回嵌套循环。
+/// 整数宽度（`INT` / `BIGINT`）也共用同一 `SqlValue::Integer` 序列化，可以互相探针；
+/// 其余类型仍要求精确相同，避免隐式转换让哈希键与 `ON` 求值脱节。
+fn hash_compatible(left: &database_query::catalog_bind::SqlFieldType, right: &database_query::catalog_bind::SqlFieldType) -> bool {
+    use database_query::catalog_bind::SqlFieldType;
+    let (left, right) = (left.inner(), right.inner());
+    left == right || matches!((&left, &right), (SqlFieldType::Int32, SqlFieldType::Int64) | (SqlFieldType::Int64, SqlFieldType::Int32))
 }
 
 /// 按右行的等值列建一次哈希桶，桶内保留右行下标以维持与嵌套循环一致的输出顺序。
