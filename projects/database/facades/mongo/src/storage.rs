@@ -10,11 +10,11 @@
 //! namespace 存在性的权威来源、事务未提交前只对所属会话可见、oplog 按封顶容量
 //! 淘汰。命令层不得感知后端类型，也不得各自携带一份存储实现。
 
+use crate::oplog::OplogEntry;
 pub use crate::store::{
     CollectionOptions, INDEX_NAMESPACE_MARKER, IndexSpec, InsertReport, SessionState, SessionWriteState, StoreError, TransactionAbort,
     TransactionBegin, TransactionCommit, TransactionWrite, TtlMonitorState, index_namespace, is_index_namespace,
 };
-use crate::oplog::OplogEntry;
 
 /// 事务视图下的一页文档。
 ///
@@ -198,6 +198,21 @@ pub trait MongoStorage: Send + Sync {
         Ok(applied)
     }
 
+    /// 开启一个写入批处理作用域：作用域内的写入立即对读可见，落盘推迟到
+    /// [`Self::end_write_batch`]。
+    ///
+    /// 这是“一条命令一次落盘”的手段：`bulkWrite` 之类由多条语句组成的命令把整个
+    /// 命令收进一个作用域，各条语句之间仍然读得到前序写入。默认实现什么都不做，
+    /// 后端不参与合并提交时每次写入照旧各自落盘。
+    fn begin_write_batch(&self) {}
+
+    /// 结束写入批处理作用域，把作用域内的全部写入一次落盘。
+    ///
+    /// 返回错误表示这次落盘失败；能回滚的后端必须把内存恢复到作用域开始前的状态。
+    fn end_write_batch(&self) -> Result<(), StoreError> {
+        Ok(())
+    }
+
     /// 已注册的 namespace，按字典序排列。
     fn namespaces(&self) -> Result<Vec<String>, StoreError>;
 
@@ -287,13 +302,7 @@ pub trait MongoStorage: Send + Sync {
     ///
     /// 默认实现整段合并后裁剪，保证语义正确；能把游标下推到已提交数据、只在
     /// 本命名空间有暂存写入时才退回整段的实现应覆盖它。
-    fn transaction_scan_page(
-        &self,
-        session: &str,
-        namespace: &str,
-        after: Option<&[u8]>,
-        limit: usize,
-    ) -> Result<TransactionPage, StoreError> {
+    fn transaction_scan_page(&self, session: &str, namespace: &str, after: Option<&[u8]>, limit: usize) -> Result<TransactionPage, StoreError> {
         let Some(documents) = self.transaction_scan(session, namespace)?
         else {
             return Ok(TransactionPage::None);

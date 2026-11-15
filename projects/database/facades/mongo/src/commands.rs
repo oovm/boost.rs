@@ -5541,158 +5541,170 @@ pub fn bulk_write(command: &BsonDocument, store: &dyn MongoStorage) -> Result<Bs
     let mut n_upserted = 0_i64;
     let mut n_deleted = 0_i64;
 
-    for (index, operation) in operations.iter().enumerate() {
-        let BsonValue::Document(operation) = operation
-        else {
-            return Err(CommandError::new(2, "BulkWrite ops entry must be a document".to_string()));
-        };
-        let kind = ["insert", "update", "delete"]
-            .into_iter()
-            .find(|field| operation.get(field).is_some())
-            .ok_or_else(|| CommandError::new(2, "BulkWrite ops entry must be an insert, update, or delete".to_string()))?;
-        let Some(BsonValue::Int32(namespace_index)) = operation.get(kind)
-        else {
-            return Err(CommandError::new(
-                2,
-                format!("BulkWrite ops entry {} has an invalid nsInfo index.", render_shell_value(&BsonValue::Document(operation.clone()))),
-            ));
-        };
-        let namespace_index = usize::try_from(*namespace_index).ok();
-        let Some(namespace_index) = namespace_index.filter(|index| *index < names.len())
-        else {
-            return Err(CommandError::new(
-                2,
-                format!("BulkWrite ops entry {} has an invalid nsInfo index.", render_shell_value(&BsonValue::Document(operation.clone()))),
-            ));
-        };
-        let namespace = &names[namespace_index];
-        let (database, collection) =
-            namespace.split_once('.').ok_or_else(|| CommandError::new(2, format!("nsInfo namespace '{namespace}' is not fully qualified")))?;
-
-        let reply = match kind {
-            "insert" => {
-                let Some(document) = operation.get("document")
-                else {
-                    return Err(CommandError::new(2, "BulkWrite insert entry requires a 'document' field".to_string()));
-                };
-                let mut request = BsonDocument::new();
-                request.push("insert".to_string(), BsonValue::String(collection.to_string()));
-                request.push("documents".to_string(), BsonValue::Array(vec![document.clone()]));
-                request.push("$db".to_string(), BsonValue::String(database.to_string()));
-                insert(&request, store)?
-            }
-            "update" => {
-                let Some(filter) = operation.get("filter")
-                else {
-                    return Err(CommandError::new(2, "BulkWrite update entry requires a 'filter' field".to_string()));
-                };
-                let Some(update_mods) = operation.get("updateMods")
-                else {
-                    return Err(CommandError::new(2, "BulkWrite update entry requires an 'updateMods' field".to_string()));
-                };
-                let mut specification = BsonDocument::new();
-                specification.push("q".to_string(), filter.clone());
-                specification.push("u".to_string(), update_mods.clone());
-                if let Some(value) = operation.get("multi") {
-                    specification.push("multi".to_string(), value.clone());
-                }
-                if let Some(value) = operation.get("upsert") {
-                    specification.push("upsert".to_string(), value.clone());
-                }
-                let mut request = BsonDocument::new();
-                request.push("update".to_string(), BsonValue::String(collection.to_string()));
-                request.push("updates".to_string(), BsonValue::Array(vec![BsonValue::Document(specification)]));
-                request.push("$db".to_string(), BsonValue::String(database.to_string()));
-                update(&request, store)?
-            }
-            _ => {
-                let Some(filter) = operation.get("filter")
-                else {
-                    return Err(CommandError::new(2, "BulkWrite delete entry requires a 'filter' field".to_string()));
-                };
-                let limit = if command_bool(operation, "multi", false) { 0 } else { 1 };
-                let mut specification = BsonDocument::new();
-                specification.push("q".to_string(), filter.clone());
-                specification.push("limit".to_string(), BsonValue::Int32(limit));
-                let mut request = BsonDocument::new();
-                request.push("delete".to_string(), BsonValue::String(collection.to_string()));
-                request.push("deletes".to_string(), BsonValue::Array(vec![BsonValue::Document(specification)]));
-                request.push("$db".to_string(), BsonValue::String(database.to_string()));
-                delete(&request, store)?
-            }
-        };
-
-        let write_errors = match reply.get("writeErrors") {
-            Some(BsonValue::Array(errors)) => errors,
-            _ => &Vec::new(),
-        };
-        let failed = !write_errors.is_empty();
-        let mut result = BsonDocument::new();
-        result.push("ok".to_string(), BsonValue::Double(if failed { 0.0 } else { 1.0 }));
-        result.push("idx".to_string(), BsonValue::Int32(index as i32));
-        if let Some(first) = write_errors.first() {
-            let BsonValue::Document(first) = first
+    // 整条 `bulkWrite` 收进一个写入批处理作用域：每条语句的写入立即对后序语句可见，
+    // 但整条命令只在结束时落盘一次。语句失败仍保留已生效的写入，与逐条提交一致。
+    store.begin_write_batch();
+    let outcome = (|| -> Result<(), CommandError> {
+        for (index, operation) in operations.iter().enumerate() {
+            let BsonValue::Document(operation) = operation
             else {
-                return Err(CommandError::new(2, "writeErrors entries must be documents".to_string()));
+                return Err(CommandError::new(2, "BulkWrite ops entry must be a document".to_string()));
             };
-            for (field, value) in &first.fields {
-                if field == "index" {
-                    continue;
-                }
-                result.push(field.clone(), value.clone());
-            }
-            result.push("n".to_string(), BsonValue::Int32(0));
-            n_errors += 1;
-        }
-        else {
-            let n = reply_count(&reply, "n");
-            match kind {
+            let kind = ["insert", "update", "delete"]
+                .into_iter()
+                .find(|field| operation.get(field).is_some())
+                .ok_or_else(|| CommandError::new(2, "BulkWrite ops entry must be an insert, update, or delete".to_string()))?;
+            let Some(BsonValue::Int32(namespace_index)) = operation.get(kind)
+            else {
+                return Err(CommandError::new(
+                    2,
+                    format!("BulkWrite ops entry {} has an invalid nsInfo index.", render_shell_value(&BsonValue::Document(operation.clone()))),
+                ));
+            };
+            let namespace_index = usize::try_from(*namespace_index).ok();
+            let Some(namespace_index) = namespace_index.filter(|index| *index < names.len())
+            else {
+                return Err(CommandError::new(
+                    2,
+                    format!("BulkWrite ops entry {} has an invalid nsInfo index.", render_shell_value(&BsonValue::Document(operation.clone()))),
+                ));
+            };
+            let namespace = &names[namespace_index];
+            let (database, collection) = namespace
+                .split_once('.')
+                .ok_or_else(|| CommandError::new(2, format!("nsInfo namespace '{namespace}' is not fully qualified")))?;
+
+            let reply = match kind {
                 "insert" => {
-                    n_inserted += n;
-                    result.push("n".to_string(), count_value(n));
+                    let Some(document) = operation.get("document")
+                    else {
+                        return Err(CommandError::new(2, "BulkWrite insert entry requires a 'document' field".to_string()));
+                    };
+                    let mut request = BsonDocument::new();
+                    request.push("insert".to_string(), BsonValue::String(collection.to_string()));
+                    request.push("documents".to_string(), BsonValue::Array(vec![document.clone()]));
+                    request.push("$db".to_string(), BsonValue::String(database.to_string()));
+                    insert(&request, store)?
                 }
                 "update" => {
-                    if let Some(upserted) = reply.get("upserted") {
-                        n_upserted += 1;
-                        result.push("n".to_string(), count_value(n));
-                        let modified = reply_count(&reply, "nModified");
-                        n_modified += modified;
-                        result.push("nModified".to_string(), count_value(modified));
-                        let upserted = match upserted {
-                            BsonValue::Array(items) => items.first().and_then(|item| match item {
-                                BsonValue::Document(entry) => entry.get("_id").cloned(),
-                                _ => None,
-                            }),
-                            other => Some(other.clone()),
-                        };
-                        if let Some(identifier) = upserted {
-                            let mut entry = BsonDocument::new();
-                            entry.push("_id".to_string(), identifier);
-                            result.push("upserted".to_string(), BsonValue::Document(entry));
-                        }
-                    }
+                    let Some(filter) = operation.get("filter")
                     else {
-                        n_matched += n;
-                        let modified = reply_count(&reply, "nModified");
-                        n_modified += modified;
-                        result.push("n".to_string(), count_value(n));
-                        result.push("nModified".to_string(), count_value(modified));
+                        return Err(CommandError::new(2, "BulkWrite update entry requires a 'filter' field".to_string()));
+                    };
+                    let Some(update_mods) = operation.get("updateMods")
+                    else {
+                        return Err(CommandError::new(2, "BulkWrite update entry requires an 'updateMods' field".to_string()));
+                    };
+                    let mut specification = BsonDocument::new();
+                    specification.push("q".to_string(), filter.clone());
+                    specification.push("u".to_string(), update_mods.clone());
+                    if let Some(value) = operation.get("multi") {
+                        specification.push("multi".to_string(), value.clone());
                     }
+                    if let Some(value) = operation.get("upsert") {
+                        specification.push("upsert".to_string(), value.clone());
+                    }
+                    let mut request = BsonDocument::new();
+                    request.push("update".to_string(), BsonValue::String(collection.to_string()));
+                    request.push("updates".to_string(), BsonValue::Array(vec![BsonValue::Document(specification)]));
+                    request.push("$db".to_string(), BsonValue::String(database.to_string()));
+                    update(&request, store)?
                 }
                 _ => {
-                    n_deleted += n;
-                    result.push("n".to_string(), count_value(n));
+                    let Some(filter) = operation.get("filter")
+                    else {
+                        return Err(CommandError::new(2, "BulkWrite delete entry requires a 'filter' field".to_string()));
+                    };
+                    let limit = if command_bool(operation, "multi", false) { 0 } else { 1 };
+                    let mut specification = BsonDocument::new();
+                    specification.push("q".to_string(), filter.clone());
+                    specification.push("limit".to_string(), BsonValue::Int32(limit));
+                    let mut request = BsonDocument::new();
+                    request.push("delete".to_string(), BsonValue::String(collection.to_string()));
+                    request.push("deletes".to_string(), BsonValue::Array(vec![BsonValue::Document(specification)]));
+                    request.push("$db".to_string(), BsonValue::String(database.to_string()));
+                    delete(&request, store)?
+                }
+            };
+
+            let write_errors = match reply.get("writeErrors") {
+                Some(BsonValue::Array(errors)) => errors,
+                _ => &Vec::new(),
+            };
+            let failed = !write_errors.is_empty();
+            let mut result = BsonDocument::new();
+            result.push("ok".to_string(), BsonValue::Double(if failed { 0.0 } else { 1.0 }));
+            result.push("idx".to_string(), BsonValue::Int32(index as i32));
+            if let Some(first) = write_errors.first() {
+                let BsonValue::Document(first) = first
+                else {
+                    return Err(CommandError::new(2, "writeErrors entries must be documents".to_string()));
+                };
+                for (field, value) in &first.fields {
+                    if field == "index" {
+                        continue;
+                    }
+                    result.push(field.clone(), value.clone());
+                }
+                result.push("n".to_string(), BsonValue::Int32(0));
+                n_errors += 1;
+            }
+            else {
+                let n = reply_count(&reply, "n");
+                match kind {
+                    "insert" => {
+                        n_inserted += n;
+                        result.push("n".to_string(), count_value(n));
+                    }
+                    "update" => {
+                        if let Some(upserted) = reply.get("upserted") {
+                            n_upserted += 1;
+                            result.push("n".to_string(), count_value(n));
+                            let modified = reply_count(&reply, "nModified");
+                            n_modified += modified;
+                            result.push("nModified".to_string(), count_value(modified));
+                            let upserted = match upserted {
+                                BsonValue::Array(items) => items.first().and_then(|item| match item {
+                                    BsonValue::Document(entry) => entry.get("_id").cloned(),
+                                    _ => None,
+                                }),
+                                other => Some(other.clone()),
+                            };
+                            if let Some(identifier) = upserted {
+                                let mut entry = BsonDocument::new();
+                                entry.push("_id".to_string(), identifier);
+                                result.push("upserted".to_string(), BsonValue::Document(entry));
+                            }
+                        }
+                        else {
+                            n_matched += n;
+                            let modified = reply_count(&reply, "nModified");
+                            n_modified += modified;
+                            result.push("n".to_string(), count_value(n));
+                            result.push("nModified".to_string(), count_value(modified));
+                        }
+                    }
+                    _ => {
+                        n_deleted += n;
+                        result.push("n".to_string(), count_value(n));
+                    }
                 }
             }
-        }
 
-        if !errors_only || failed {
-            results.push(BsonValue::Document(result));
+            if !errors_only || failed {
+                results.push(BsonValue::Document(result));
+            }
+            if failed && ordered {
+                break;
+            }
         }
-        if failed && ordered {
-            break;
-        }
-    }
+        Ok(())
+    })();
+    // 无论语句执行成功与否都要结束作用域：已经生效的写入必须落盘，
+    // 落盘失败则内存回到命令开始前的状态并向客户端报错。
+    let durable = store.end_write_batch();
+    outcome?;
+    durable.map_err(|error| CommandError::new(2, format!("bulkWrite failed to persist: {error}")))?;
 
     let mut cursor = BsonDocument::new();
     cursor.push("id".to_string(), BsonValue::Int64(0));

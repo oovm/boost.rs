@@ -27,7 +27,10 @@ use database_protocol_mongo::{
 use database_storage::cluster_kv::{FileShard, InlineValue, Key, KvStore, ShardChange, StoredValue};
 use database_types::cluster::{CATALOG_SUFFIX, CatalogSchema, Namespace, ShardId};
 
-use crate::{oplog::OplogEntry, storage::{NamespaceWrite, TransactionPage}};
+use crate::{
+    oplog::OplogEntry,
+    storage::{NamespaceWrite, TransactionPage},
+};
 
 /// One user-created index. `_id_` is implicit and is never stored here.
 #[derive(Debug, Clone)]
@@ -469,8 +472,7 @@ pub fn collection_record(namespace: &str, options: &CollectionOptions, indexes: 
 /// 解析 [`collection_record`] 生成的记录，只返回该 namespace 自己的部分。
 pub fn parse_collection_record(namespace: &str, text: &str) -> Result<(CollectionOptions, Vec<IndexSpec>), StoreError> {
     let options = parse_collections(text)?.remove(namespace).unwrap_or_default();
-    let indexes =
-        parse_indexes(text)?.into_iter().filter(|index| index.namespace == namespace).collect();
+    let indexes = parse_indexes(text)?.into_iter().filter(|index| index.namespace == namespace).collect();
     Ok((options, indexes))
 }
 
@@ -932,6 +934,24 @@ impl Store {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         }
+    }
+
+    /// 开启一个写入批处理作用域。
+    ///
+    /// 作用域内的写入立即对其他读可见（含同一命令里后续语句），但落盘推迟到
+    /// [`Self::end_write_batch`]：整条命令只付一次快照提交。没有作用域时每次写入
+    /// 仍然各自落盘，语义不变。
+    pub fn begin_write_batch(&self) {
+        let mut shard = self.lock();
+        shard.begin_write_batch();
+    }
+
+    /// 结束写入批处理作用域，把作用域内的全部写入一次落盘。
+    ///
+    /// 落盘失败时内存回到作用域开始前的状态，调用方必须把失败报给客户端。
+    pub fn end_write_batch(&self) -> Result<(), StoreError> {
+        let mut shard = self.lock();
+        shard.end_write_batch().map_err(|error| StoreError::Shard(error.to_string()))
     }
 
     fn catalog_lock(&self) -> MutexGuard<'_, CatalogState> {
@@ -1817,6 +1837,14 @@ impl crate::storage::MongoStorage for Store {
         Store::commit_namespaces(self, writes)
     }
 
+    fn begin_write_batch(&self) {
+        Store::begin_write_batch(self);
+    }
+
+    fn end_write_batch(&self) -> Result<(), StoreError> {
+        Store::end_write_batch(self)
+    }
+
     fn namespaces(&self) -> Result<Vec<String>, StoreError> {
         Store::namespaces(self)
     }
@@ -1921,13 +1949,7 @@ impl crate::storage::MongoStorage for Store {
         Store::transaction_scan(self, session, namespace)
     }
 
-    fn transaction_scan_page(
-        &self,
-        session: &str,
-        namespace: &str,
-        after: Option<&[u8]>,
-        limit: usize,
-    ) -> Result<TransactionPage, StoreError> {
+    fn transaction_scan_page(&self, session: &str, namespace: &str, after: Option<&[u8]>, limit: usize) -> Result<TransactionPage, StoreError> {
         Store::transaction_scan_page(self, session, namespace, after, limit)
     }
 
