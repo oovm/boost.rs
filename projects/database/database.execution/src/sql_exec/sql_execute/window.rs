@@ -103,7 +103,10 @@ pub(crate) fn eval_window_projection(
             start = end;
         }
 
-        let ordered_rows: Vec<RowFieldValues> = keyed.iter().map(|(_, index)| rows[*index].clone()).collect();
+        // 排序后的行副本只在 `LAG` / `LEAD` 与聚合帧里用到；排名类函数直接用
+        // 输入下标，跳过这一整份行克隆。
+        let mut ordered_rows: Option<Vec<RowFieldValues>> = None;
+        let ordered_len = keyed.len();
         // RANGE 帧的数值偏移按单列 ORDER BY 的值比较；`DESC` 取负把值轴统一到升序，
         // 只含 `UNBOUNDED` / `CURRENT ROW` 的 RANGE 帧与 ROWS 共用 peer 边界，不需要值轴。
         let range_axis = match spec.frame.as_ref() {
@@ -122,7 +125,7 @@ pub(crate) fn eval_window_projection(
                     // 标准公式 `floor(position * buckets / len) + 1`（position 从 0 起），
                     // 余数分给前面的桶，与 MySQL / PostgreSQL 一致；i128 中间值防溢出。
                     let buckets = ntile_buckets.ok_or_else(|| internal_error("window function NTILE() is missing its bucket count"))?;
-                    let bucket = position as i128 * buckets as i128 / ordered_rows.len() as i128 + 1;
+                    let bucket = position as i128 * buckets as i128 / ordered_len as i128 + 1;
                     SqlValue::Integer(i64::try_from(bucket).unwrap_or(i64::MAX))
                 }
                 Some(SqlWindowFunction::Lag) | Some(SqlWindowFunction::Lead) => {
@@ -134,8 +137,10 @@ pub(crate) fn eval_window_projection(
                     else {
                         position as i128 + offset as i128
                     };
-                    match usize::try_from(target).ok().filter(|target| *target < ordered_rows.len()) {
-                        Some(target) => eval_expression(value_expr, &ordered_rows[target], field_types, dialect)?,
+                    let ordered =
+                        ordered_rows.get_or_insert_with(|| keyed.iter().map(|(_, index)| rows[*index].clone()).collect());
+                    match usize::try_from(target).ok().filter(|target| *target < ordered.len()) {
+                        Some(target) => eval_expression(value_expr, &ordered[target], field_types, dialect)?,
                         // 越出分区：有默认值就按当前行求值，否则 SQL NULL。
                         None => match default {
                             Some(default) => eval_expression(default, &rows[*index], field_types, dialect)?,
@@ -144,6 +149,8 @@ pub(crate) fn eval_window_projection(
                     }
                 }
                 None => {
+                    let ordered_rows =
+                        ordered_rows.get_or_insert_with(|| keyed.iter().map(|(_, index)| rows[*index].clone()).collect());
                     let (frame_start, frame_end) =
                         window_frame_bounds(spec, position, peer_start[position], peer_end[position], ordered_rows.len(), range_axis.as_ref())?;
                     let frame = if frame_start < frame_end { &ordered_rows[frame_start..frame_end] } else { &ordered_rows[0..0] };
