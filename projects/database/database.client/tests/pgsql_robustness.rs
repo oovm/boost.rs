@@ -551,20 +551,19 @@ fn portal_suspension_keeps_rows_and_the_session_open() {
         server.write_all(&frame(b'T', &row_description("n"))).expect("RowDescription");
         server.write_all(&frame(b'Z', b"I")).expect("ReadyForQuery");
 
-        // First execute: Describe(P), Execute, Sync. Suspends after one row.
-        for _ in 0..3 {
+        // First execute: Execute, Sync. The portal description taken at Bind is
+        // reused, so no Describe(P) and no second RowDescription.
+        for _ in 0..2 {
             let _ = read_tagged(&mut server);
         }
-        server.write_all(&frame(b'T', &row_description("n"))).expect("RowDescription");
         server.write_all(&frame(b'D', &data_row("1"))).expect("DataRow");
         server.write_all(&frame(b's', b"")).expect("PortalSuspended");
         server.write_all(&frame(b'Z', b"I")).expect("ReadyForQuery");
 
-        // Second execute: Describe(P), Execute, Sync. Finishes the portal.
-        for _ in 0..3 {
+        // Second execute: Execute, Sync. Finishes the portal.
+        for _ in 0..2 {
             let _ = read_tagged(&mut server);
         }
-        server.write_all(&frame(b'T', &row_description("n"))).expect("RowDescription");
         server.write_all(&frame(b'D', &data_row("2"))).expect("DataRow");
         server.write_all(&frame(b'C', b"SELECT 1\0")).expect("CommandComplete");
         server.write_all(&frame(b'Z', b"I")).expect("ReadyForQuery");

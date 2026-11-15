@@ -220,6 +220,17 @@ pub struct BackendKeyData {
     pub secret_key: i32,
 }
 
+/// One `NotificationResponse` delivered to a listening session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Notification {
+    /// Backend pid that sent the `NOTIFY`.
+    pub process_id: i32,
+    /// Channel name.
+    pub channel: String,
+    /// Payload, empty when the `NOTIFY` carried none.
+    pub payload: String,
+}
+
 /// A live protocol-v3 connection in the simple-query mode.
 #[derive(Debug)]
 pub struct Connection {
@@ -229,6 +240,11 @@ pub struct Connection {
     session_tag: u32,
     statements: u64,
     notices: Vec<Notice>,
+    /// `NotificationResponse` frames received so far, in wire order.
+    notifications: Vec<Notification>,
+    /// Columns of each bound portal, so a suspended `Execute` does not ask the
+    /// server to describe — and therefore re-plan — the statement again.
+    portal_columns: HashMap<String, Vec<protocol::ColumnDescription>>,
     /// Columns each open prepared statement returns, captured by [`Self::prepare`].
     ///
     /// A prepared statement is described once; every later execute reuses that
@@ -314,6 +330,8 @@ impl Connection {
             session_tag,
             statements: 0,
             notices: Vec::new(),
+            notifications: Vec::new(),
+            portal_columns: HashMap::new(),
             prepared_columns: HashMap::new(),
             failure: None,
         };
@@ -453,6 +471,11 @@ impl Connection {
         std::mem::take(&mut self.notices)
     }
 
+    /// Drains every `NOTIFY` delivered to this session so far, in wire order.
+    pub fn take_notifications(&mut self) -> Vec<Notification> {
+        std::mem::take(&mut self.notifications)
+    }
+
     fn run_simple(&mut self, sql: &str) -> Result<SimpleOutcome, PostgresError> {
         self.reader.stream.write_all(&protocol::query_packet(sql)?).map_err(io_error)?;
         let mut results = Vec::new();
@@ -513,6 +536,7 @@ impl Connection {
                 }
                 b'S' | b'K' => {}
                 b'N' => record_notice(&mut self.notices, payload)?,
+                b'A' => record_notification(&mut self.notifications, payload)?,
                 other => return Err(PostgresError::Protocol(format!("unsupported PostgreSQL response tag {other}"))),
             }
         }
@@ -658,6 +682,7 @@ impl Connection {
                 return Err(error);
             }
         };
+        self.portal_columns.insert(portal.to_owned(), outcome.description.clone());
         Ok(Portal { name: portal.to_owned(), parameters: outcome.parameters, columns: outcome.described })
     }
 
@@ -669,10 +694,18 @@ impl Connection {
     /// batch stopped.
     pub fn execute_portal(&mut self, portal: &str, max_rows: i32) -> Result<PortalReport, PostgresError> {
         self.ensure_usable()?;
-        let mut packet = protocol::describe_packet(b'P', portal)?;
+        // `bind_portal` already described this portal. Describing again would
+        // make the server re-plan and re-run the whole statement per batch just
+        // to rebuild a `RowDescription`, which is what makes a suspended portal
+        // slower than a plain cursor. Only an unknown portal asks again.
+        let described = self.portal_columns.get(portal).cloned();
+        let mut packet = Vec::new();
+        if described.is_none() {
+            packet.extend_from_slice(&protocol::describe_packet(b'P', portal)?);
+        }
         packet.extend_from_slice(&protocol::execute_packet(portal, max_rows)?);
         packet.extend_from_slice(&protocol::sync_packet());
-        let outcome = match self.read_extended(&packet, None) {
+        let outcome = match self.read_extended(&packet, described.as_deref()) {
             Ok(outcome) => outcome,
             Err(error) => {
                 self.poison(&error);
@@ -688,6 +721,7 @@ impl Connection {
     /// Closes a portal on the server. Closing an unknown name still answers
     /// `CloseComplete`.
     pub fn close_portal(&mut self, name: &str) -> Result<(), PostgresError> {
+        self.portal_columns.remove(name);
         self.close_named(b'P', name)
     }
 
@@ -783,6 +817,7 @@ impl Connection {
                 b'E' => failure = Some(protocol::error_response(payload)),
                 b'S' | b'K' => {}
                 b'N' => record_notice(&mut self.notices, payload)?,
+                b'A' => record_notification(&mut self.notifications, payload)?,
                 b'Z' => {
                     if payload.len() != 1 {
                         return Err(PostgresError::Protocol("invalid ReadyForQuery".into()));
@@ -825,6 +860,7 @@ impl Connection {
                 b'E' => failure = Some(protocol::error_response(payload)),
                 b'S' | b'K' => {}
                 b'N' => record_notice(&mut self.notices, payload)?,
+                b'A' => record_notification(&mut self.notifications, payload)?,
                 b'Z' => {
                     if payload.len() != 1 {
                         return Err(PostgresError::Protocol("invalid ReadyForQuery".into()));
@@ -948,6 +984,7 @@ impl Connection {
                 }
                 b'S' | b'K' => {}
                 b'N' => record_notice(&mut self.notices, payload)?,
+                b'A' => record_notification(&mut self.notifications, payload)?,
                 other => return Err(PostgresError::Protocol(format!("unsupported PostgreSQL response tag {other}"))),
             }
         }
@@ -989,6 +1026,31 @@ impl Connection {
 /// read buffer, so notice handling never re-borrows the whole connection.
 fn record_notice(notices: &mut Vec<Notice>, payload: &[u8]) -> Result<(), PostgresError> {
     notices.push(protocol::notice_response(payload)?);
+    Ok(())
+}
+
+/// Records one `NotificationResponse`: sender pid, then channel and payload as
+/// NUL-terminated strings.
+fn record_notification(notifications: &mut Vec<Notification>, payload: &[u8]) -> Result<(), PostgresError> {
+    if payload.len() < 6 {
+        return Err(PostgresError::Protocol("truncated NotificationResponse".into()));
+    }
+    let process_id = i32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
+    let channel_end = payload[4..]
+        .iter()
+        .position(|byte| *byte == 0)
+        .map(|relative| 4 + relative)
+        .ok_or_else(|| PostgresError::Protocol("NotificationResponse channel is not terminated".into()))?;
+    let payload_end = payload[channel_end + 1..]
+        .iter()
+        .position(|byte| *byte == 0)
+        .map(|relative| channel_end + 1 + relative)
+        .ok_or_else(|| PostgresError::Protocol("NotificationResponse payload is not terminated".into()))?;
+    let channel = std::str::from_utf8(&payload[4..channel_end])
+        .map_err(|_| PostgresError::Protocol("NotificationResponse channel is not UTF-8".into()))?;
+    let value = std::str::from_utf8(&payload[channel_end + 1..payload_end])
+        .map_err(|_| PostgresError::Protocol("NotificationResponse payload is not UTF-8".into()))?;
+    notifications.push(Notification { process_id, channel: channel.to_owned(), payload: value.to_owned() });
     Ok(())
 }
 
