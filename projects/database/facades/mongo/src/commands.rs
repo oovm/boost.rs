@@ -12946,7 +12946,22 @@ fn regex_candidates(candidates: &[&BsonValue], operand: &BsonValue, options: &st
     }))
 }
 
+std::thread_local! {
+    /// 最近编译过的 `$regex`，避免逐文档重编译。
+    ///
+    /// 匹配路径按文档逐条调用 `regex_candidates`，原实现每次都重新构造
+    /// `regex::Regex`（编译一个前缀模式约十微秒，1000 篇文档就是十毫秒级）。
+    /// 缓存只按 `(pattern, options)` 命中，超过上限整体清空，长生命周期进程
+    /// 不会被任意用户模式撑大。
+    static REGEX_CACHE: std::cell::RefCell<std::collections::HashMap<(String, String), regex::Regex>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
 fn compile_regex(pattern: &str, options: &str) -> Result<regex::Regex, CommandError> {
+    let key = (pattern.to_string(), options.to_string());
+    if let Some(cached) = REGEX_CACHE.with(|cache| cache.borrow().get(&key).cloned()) {
+        return Ok(cached);
+    }
     let mut builder = regex::RegexBuilder::new(pattern);
     for option in options.chars() {
         match option {
@@ -12967,7 +12982,15 @@ fn compile_regex(pattern: &str, options: &str) -> Result<regex::Regex, CommandEr
             other => return Err(CommandError::new(2, format!("unsupported $regex option: {other}"))),
         }
     }
-    builder.build().map_err(|error| CommandError::new(2, format!("invalid $regex pattern: {error}")))
+    let regex = builder.build().map_err(|error| CommandError::new(2, format!("invalid $regex pattern: {error}")))?;
+    REGEX_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.len() >= 64 {
+            cache.clear();
+        }
+        cache.insert(key, regex.clone());
+    });
+    Ok(regex)
 }
 
 fn size_candidates(candidates: &[&BsonValue], operand: &BsonValue) -> bool {
