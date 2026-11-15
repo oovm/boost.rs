@@ -9,7 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use database_protocol_mongo::bson::BsonValue;
+use database_protocol_mongo::bson::{BsonDocument, BsonValue};
 
 /// Idle time after which a cursor is reclaimed.
 pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(600);
@@ -53,6 +53,20 @@ fn take_batch(documents: &mut Vec<BsonValue>, limit: usize) -> Vec<BsonValue> {
     documents.drain(..count).collect()
 }
 
+/// 游标后续还要继续的那次扫描。
+///
+/// 首包只把当前页交给客户端，剩下的位置留在游标里：下一次 `getMore` 按
+/// `after` 增量取页，不必在 `find` 时先把整个结果集物化进内存。
+#[derive(Debug)]
+pub struct CursorScan {
+    /// 仍是这次查询的过滤条件。
+    pub filter: BsonDocument,
+    /// 已扫描到的文档键（排他游标）；`None` 表示已扫到末尾。
+    pub after: Option<Vec<u8>>,
+    /// 返回给客户端的投影，续扫时逐篇套用。
+    pub projection: Option<BsonDocument>,
+}
+
 /// One open cursor.
 #[derive(Debug)]
 pub struct Cursor {
@@ -60,6 +74,8 @@ pub struct Cursor {
     pub namespace: String,
     /// Documents the next `getMore` returns.
     pub remaining: Vec<BsonValue>,
+    /// 还不能整段物化时保留的续扫位置。
+    scan: Option<CursorScan>,
     /// Set when the collection was dropped after the cursor was opened.
     killed: bool,
     last_used: Instant,
@@ -87,6 +103,8 @@ pub enum GetMoreError {
         /// Namespace the dropped collection lived in.
         namespace: String,
     },
+    /// 续扫时存储层报错；游标保留，下一次 `getMore` 可以重试。
+    Backend(String),
 }
 
 /// Per-host cursor table.
@@ -140,15 +158,31 @@ impl CursorStore {
     /// default 101 documents. An explicit `Some(0)` opens the cursor with an
     /// empty first batch, so the caller has to `getMore` for every document.
     /// A cursor id of `0` means everything fit into the first batch.
-    pub fn open(&mut self, namespace: &str, mut documents: Vec<BsonValue>, batch_size: Option<usize>) -> (i64, Vec<BsonValue>) {
+    pub fn open(&mut self, namespace: &str, documents: Vec<BsonValue>, batch_size: Option<usize>) -> (i64, Vec<BsonValue>) {
+        self.open_scan(namespace, documents, batch_size, None)
+    }
+
+    /// Like [`Self::open`], but keeps a scan position for later `getMore`s.
+    ///
+    /// `scan` is `Some` while the namespace still has documents the first call
+    /// did not read; a cursor stays open even when the first batch is empty, so
+    /// an explicit `batchSize: 0` still yields a usable cursor id.
+    pub fn open_scan(
+        &mut self,
+        namespace: &str,
+        mut documents: Vec<BsonValue>,
+        batch_size: Option<usize>,
+        scan: Option<CursorScan>,
+    ) -> (i64, Vec<BsonValue>) {
         self.reclaim();
         let first_batch = take_batch(&mut documents, batch_size.unwrap_or(DEFAULT_FIRST_BATCH));
-        if documents.is_empty() {
+        if documents.is_empty() && scan.is_none() {
             return (0, first_batch);
         }
         let id = self.next_id;
         self.next_id += 1;
-        self.cursors.insert(id, Cursor { namespace: namespace.to_string(), remaining: documents, killed: false, last_used: Instant::now() });
+        self.cursors
+            .insert(id, Cursor { namespace: namespace.to_string(), remaining: documents, scan, killed: false, last_used: Instant::now() });
         (id, first_batch)
     }
 
@@ -160,7 +194,20 @@ impl CursorStore {
     ///
     /// `None` (absent or zero `batchSize`) drains everything that fits, as
     /// `mongod 8.0.9` does for `getMore`.
-    pub fn get_more(&mut self, id: i64, namespace: &str, batch_size: Option<usize>) -> Result<(Vec<BsonValue>, String), GetMoreError> {
+    ///
+    /// `refill` is called when the buffered documents are exhausted and the
+    /// cursor still has a scan position: it receives that position and the wanted
+    /// batch size, advances it, and returns the next documents.
+    pub fn get_more<F>(
+        &mut self,
+        id: i64,
+        namespace: &str,
+        batch_size: Option<usize>,
+        refill: F,
+    ) -> Result<(Vec<BsonValue>, String), GetMoreError>
+    where
+        F: FnOnce(&mut CursorScan, usize) -> Result<Vec<BsonValue>, String>,
+    {
         self.reclaim();
         let Some(cursor) = self.cursors.get(&id)
         else {
@@ -177,8 +224,27 @@ impl CursorStore {
         let cursor = self.cursors.get_mut(&id).expect("cursor was just read");
         cursor.last_used = Instant::now();
         let namespace = cursor.namespace.clone();
-        let batch = take_batch(&mut cursor.remaining, batch_size.unwrap_or(usize::MAX));
-        let drained = cursor.remaining.is_empty();
+        let want = batch_size.unwrap_or(usize::MAX);
+        // A short buffered page is not the end of the cursor: fill it up from the
+        // saved scan position first, so `getMore` answers `batchSize` documents
+        // while more data exists, exactly like `mongod`.
+        if let Some(mut scan) = cursor.scan.take() {
+            if cursor.remaining.len() < want {
+                let deficit = want.saturating_sub(cursor.remaining.len());
+                match refill(&mut scan, deficit) {
+                    Ok(documents) => cursor.remaining.extend(documents),
+                    Err(message) => {
+                        cursor.scan = Some(scan);
+                        return Err(GetMoreError::Backend(message));
+                    }
+                }
+            }
+            if scan.after.is_some() {
+                cursor.scan = Some(scan);
+            }
+        }
+        let batch = take_batch(&mut cursor.remaining, want);
+        let drained = cursor.remaining.is_empty() && cursor.scan.is_none();
         if drained {
             self.cursors.remove(&id);
         }
@@ -197,6 +263,7 @@ impl CursorStore {
             if !cursor.killed && cursor.namespace.starts_with(&prefix) {
                 cursor.killed = true;
                 cursor.remaining.clear();
+                cursor.scan = None;
                 killed += 1;
             }
         }
@@ -213,6 +280,7 @@ impl CursorStore {
             if !cursor.killed && cursor.namespace == namespace {
                 cursor.killed = true;
                 cursor.remaining.clear();
+                cursor.scan = None;
                 killed += 1;
             }
         }

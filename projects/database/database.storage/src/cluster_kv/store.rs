@@ -701,7 +701,7 @@ fn replace_file(temp: &Path, destination: &Path) -> Result<()> {
 #[cfg(windows)]
 fn replace_file(temp: &Path, destination: &Path) -> Result<()> {
     use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::{MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW, ReplaceFileW};
+    use windows_sys::Win32::Storage::FileSystem::{MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW};
 
     fn wide(path: &Path) -> Vec<u16> {
         path.as_os_str().encode_wide().chain(Some(0)).collect()
@@ -709,13 +709,11 @@ fn replace_file(temp: &Path, destination: &Path) -> Result<()> {
 
     let temp_wide = wide(temp);
     let destination_wide = wide(destination);
+    // `MoveFileExW` 与 Unix 的 `rename` 是同一个提交点：替换目录项，并且
+    // `MOVEFILE_WRITE_THROUGH` 让替换本身落盘。这里不用 `ReplaceFileW`，它会额外搬运
+    // 备份文件与安全属性，提交固定开销明显更高，而 shard 快照没有需要保留的旧副本。
     let result = unsafe {
-        if destination.exists() {
-            ReplaceFileW(destination_wide.as_ptr(), temp_wide.as_ptr(), std::ptr::null(), 0, std::ptr::null_mut(), std::ptr::null_mut())
-        }
-        else {
-            MoveFileExW(temp_wide.as_ptr(), destination_wide.as_ptr(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
-        }
+        MoveFileExW(temp_wide.as_ptr(), destination_wide.as_ptr(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
     };
     if result == 0 { Err(Error::Io(std::io::Error::last_os_error())) } else { Ok(()) }
 }

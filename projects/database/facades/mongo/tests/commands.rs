@@ -1133,14 +1133,38 @@ fn find_batch_leaves_a_get_more_cursor() {
 
     let mut get_more = document(&[("getMore", BsonValue::Int64(id)), ("collection", text("items")), ("$db", text("app"))]);
     get_more.push("batchSize", BsonValue::Int32(2));
-    let next = commands::get_more(&get_more, &mut cursors).expect("getMore");
+    let next = commands::get_more(&get_more, &store, &mut cursors).expect("getMore");
     assert_eq!(batch(&next, "nextBatch").len(), 2);
     assert_eq!(cursor_id(&next), id);
 
     // The third batch drains what is left, so the reply must close the cursor.
-    let last = commands::get_more(&get_more, &mut cursors).expect("getMore");
+    let last = commands::get_more(&get_more, &store, &mut cursors).expect("getMore");
     assert_eq!(batch(&last, "nextBatch").len(), 2);
     assert_eq!(cursor_id(&last), 0);
+}
+
+#[test]
+fn find_fills_the_default_first_batch_across_scan_pages() {
+    let store = store();
+    insert_documents(
+        &store,
+        "items",
+        (0..600).map(|index| document(&[("_id", BsonValue::Int32(index)), ("mark", BsonValue::Int32(index % 4))])).collect(),
+    );
+
+    // 谓词只命中四分之一：第一个扫描页只有 64 篇命中，首包仍必须是缺省的 101 篇。
+    let mut find = command("find", "items", "app");
+    find.push("filter", BsonValue::Document(document(&[("mark", BsonValue::Int32(0))])));
+    let mut cursors = CursorStore::new();
+    let response = commands::find(&find, &store, &mut cursors).expect("find");
+    assert_eq!(batch(&response, "firstBatch").len(), 101);
+    let id = cursor_id(&response);
+    assert!(id > 0);
+
+    let get_more = document(&[("getMore", BsonValue::Int64(id)), ("collection", text("items")), ("$db", text("app"))]);
+    let rest = commands::get_more(&get_more, &store, &mut cursors).expect("getMore");
+    assert_eq!(batch(&rest, "nextBatch").len(), 49);
+    assert_eq!(cursor_id(&rest), 0);
 }
 
 #[test]
@@ -1156,13 +1180,13 @@ fn get_more_refuses_another_namespace() {
     let id = cursor_id(&response);
 
     let foreign = document(&[("getMore", BsonValue::Int64(id)), ("collection", text("items")), ("$db", text("tenant_b"))]);
-    let error = commands::get_more(&foreign, &mut cursors).expect_err("a foreign namespace must be refused");
+    let error = commands::get_more(&foreign, &store, &mut cursors).expect_err("a foreign namespace must be refused");
     assert_eq!(error.code, 13);
     assert_eq!(error.message, "Requested getMore on namespace 'tenant_b.items', but cursor belongs to a different namespace app.items");
 
     // The cursor itself stays intact for the namespace that opened it.
     let own = document(&[("getMore", BsonValue::Int64(id)), ("collection", text("items")), ("$db", text("app"))]);
-    let next = commands::get_more(&own, &mut cursors).expect("getMore on its own namespace");
+    let next = commands::get_more(&own, &store, &mut cursors).expect("getMore on its own namespace");
     assert_eq!(batch(&next, "nextBatch").len(), 2);
 }
 
@@ -1171,7 +1195,7 @@ fn get_more_requires_a_collection() {
     let mut cursors = CursorStore::new();
     let (id, _) = cursors.open("app.items", (0..4).map(BsonValue::Int32).collect(), Some(2));
     let request = document(&[("getMore", BsonValue::Int64(id)), ("$db", text("app"))]);
-    let error = commands::get_more(&request, &mut cursors).expect_err("collection is required");
+    let error = commands::get_more(&request, &store(), &mut cursors).expect_err("collection is required");
     assert_eq!(error.code, 40415);
 }
 
@@ -1195,7 +1219,7 @@ fn idle_cursors_are_reclaimed_lazily() {
     let (id, _) = cursors.open("app.items", (0..4).map(BsonValue::Int32).collect(), Some(2));
     assert_eq!(cursors.len(), 1);
     std::thread::sleep(Duration::from_millis(20));
-    assert!(cursors.get_more(id, "app.items", None).is_err());
+    assert!(cursors.get_more(id, "app.items", None, |_, _| Ok(Vec::new())).is_err());
     assert!(cursors.is_empty());
     assert_eq!(CursorStore::new().idle_timeout(), Duration::from_secs(600));
 }
@@ -1404,7 +1428,10 @@ fn update_by_id_reads_points_and_probes_persisted_index_entries() {
     specification.push("q", BsonValue::Document(document(&[("_id", BsonValue::Int32(1))])));
     specification.push(
         "u",
-        BsonValue::Document(document(&[("$set", BsonValue::Document(document(&[("a", BsonValue::Int32(7)), ("seen", BsonValue::Bool(true))])))])),
+        BsonValue::Document(document(&[(
+            "$set",
+            BsonValue::Document(document(&[("a", BsonValue::Int32(7)), ("seen", BsonValue::Bool(true))])),
+        )])),
     );
     single.push("updates", BsonValue::Array(vec![BsonValue::Document(specification)]));
     let reply = commands::update(&single, &store).expect("update");

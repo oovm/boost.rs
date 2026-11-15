@@ -212,7 +212,14 @@ fn dispatch_command(bson_doc: &BsonDocument, executor: Option<&dyn KeyValueExecu
         "bulkWrite" => run(executor, "bulkWrite", |storage| commands::bulk_write(bson_doc, storage)),
         "commitTransaction" => run(executor, "commitTransaction", |storage| commands::commit_transaction(bson_doc, storage)),
         "abortTransaction" => run(executor, "abortTransaction", |storage| commands::abort_transaction(bson_doc, storage)),
-        "getMore" => render(commands::get_more(bson_doc, &mut lock_cursors(cursors))),
+        "getMore" => {
+            let Some(executor) = executor
+            else {
+                return build_error_bson(2, "getMore requires an executor");
+            };
+            let storage = storage::ExecutorStorage::new(executor);
+            render(commands::get_more(bson_doc, &storage, &mut lock_cursors(cursors)))
+        }
         "killCursors" => render(commands::kill_cursors(bson_doc, &mut lock_cursors(cursors))),
         other => generic_error_body(other),
     }

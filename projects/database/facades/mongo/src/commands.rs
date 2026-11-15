@@ -9,17 +9,19 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use database_protocol_mongo::bson::{BinaryData, BsonDocument, BsonValue, encode_bson, integral_value, parse_bson, value_to_key};
+use database_protocol_mongo::bson::{
+    BinaryData, BsonDocument, BsonValue, encode_bson, integral_value, parse_bson, parse_bson_projected, value_to_key,
+};
 
 use database_protocol_mongo::{decimal128::Decimal128, json};
 
 use crate::{
-    cursor::{CursorStore, GetMoreError},
+    cursor::{CursorScan, CursorStore, DEFAULT_FIRST_BATCH, GetMoreError},
     id::generate_object_id,
     oplog::OplogEntry,
     storage::{
-        CollectionOptions, IndexSpec, MongoStorage, SessionWriteState, StoreError, TransactionAbort, TransactionBegin, TransactionCommit,
-        TransactionPage, TransactionWrite,
+        CollectionOptions, IndexSpec, MongoStorage, NamespaceWrite, SessionWriteState, StoreError, TransactionAbort, TransactionBegin,
+        TransactionCommit, TransactionPage, TransactionWrite,
     },
 };
 
@@ -618,8 +620,7 @@ fn commit_insert(
     }
 
     let mut staged: BTreeSet<Vec<u8>> = BTreeSet::new();
-    let mut accepted: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
-    let mut accepted_documents: Vec<BsonDocument> = Vec::new();
+    let mut accepted: Vec<(BsonDocument, Vec<u8>)> = Vec::new();
     for (index, document, identifier) in candidates {
         let id_key = value_to_key(identifier);
         let taken = staged.contains(&id_key) || namespace_document(store, namespace, &id_key, session)?.is_some();
@@ -662,14 +663,13 @@ fn commit_insert(
                 indexed[position].insert(index_tuple(&tuple));
             }
         }
-        accepted.push((id_key, encode_bson(document)));
-        accepted_documents.push(document.clone());
+        accepted.push((document.clone(), id_key));
     }
 
     if !accepted.is_empty() {
         stage_insert(store, session, namespace, &accepted)?;
     }
-    Ok((accepted.len(), accepted_documents))
+    Ok((accepted.len(), accepted.into_iter().map(|(document, _)| document).collect()))
 }
 
 /// Stages the oplog entries for documents an insert actually wrote.
@@ -2060,6 +2060,37 @@ pub fn find(command: &BsonDocument, store: &dyn MongoStorage, cursors: &mut Curs
     let hint = resolve_hint(command, store, &namespace, &filter, command.get("sort"), command.get("projection"))?;
 
     let access = choose_access(store, &namespace, &filter, &hint, &sort, &[], session.key())?;
+    // 无排序、无 skip/limit 的普通集合扫描可以推迟到 `getMore`：首包只读一页，
+    // 续扫位置留在游标里，避免一开始就把整个结果集物化。索引扫描、反向扫描与
+    // 事务视图都不能按 `_id` 游标续读，仍走整段物化。
+    let deferred = sort.is_empty()
+        && skip == 0
+        && limit == 0
+        && session.key().is_none()
+        && matches!(access, QueryAccess::Collection { direction: 1 })
+        && store.supports_page_scan();
+    if deferred {
+        // 首包必须是 `batchSize`（缺省 101）篇命中，而不是第一个扫描页里的命中；
+        // 谓词选择性强时一页不足，继续按页补齐，游标位置停在已发出文档之后。
+        let want = batch_size.unwrap_or(DEFAULT_FIRST_BATCH);
+        let mut values: Vec<BsonValue> = Vec::new();
+        let mut after = None;
+        loop {
+            let (documents, next) = scan_collection_page(store, &namespace, &filter, SCAN_PAGE, after.as_deref())?;
+            for document in documents {
+                if let Some(value) = project_document(document, projection.as_ref())? {
+                    values.push(value);
+                }
+            }
+            after = next;
+            if values.len() >= want || after.is_none() {
+                break;
+            }
+        }
+        let scan = after.map(|after| CursorScan { filter: filter.clone(), after: Some(after), projection: projection.clone() });
+        let (cursor_id, first_batch) = cursors.open_scan(&namespace, values, batch_size, scan);
+        return Ok(cursor_reply(&namespace, "firstBatch", first_batch, cursor_id));
+    }
     // 无排序时结果顺序就是扫描顺序，命中前 `skip + limit` 篇即可停手。
     let stop_after = scan_stop_after(&sort, skip, limit);
     let pushed = pushed_skip(&access, &sort, skip);
@@ -2124,8 +2155,34 @@ pub fn count(command: &BsonDocument, store: &dyn MongoStorage) -> Result<BsonDoc
         let access = choose_access(store, &namespace, &filter, &hint, &[], &[], session.key())?;
         let stop_after = scan_stop_after(&[], skip, limit);
         let pushed = pushed_skip(&access, &[], skip);
-        let outcome = scan_with_access(store, &namespace, &filter, &access, session.key(), false, stop_after, pushed)?;
-        outcome.documents.len() + outcome.skipped_at_index
+        match &access {
+            // 非空 filter 的集合扫描只需要谓词字段；能静态收敛时按投影解码，
+            // 并用同一早停边界在命中足够后立即停止读取。
+            QueryAccess::Collection { direction: 1 } => {
+                let fields = filter_projection_fields(&filter);
+                let mut matched = 0_usize;
+                scan_namespace_pages(store, &namespace, session.key(), |value| {
+                    let decoded = match fields.as_deref() {
+                        Some(fields) => parse_bson_projected(value, fields),
+                        None => parse_bson(value),
+                    };
+                    if let Ok(candidate) = decoded
+                        && document_matches(&candidate, &filter)?
+                    {
+                        matched += 1;
+                        if stop_after.is_some_and(|bound| matched >= bound) {
+                            return Ok(false);
+                        }
+                    }
+                    Ok(true)
+                })?;
+                matched
+            }
+            _ => {
+                let outcome = scan_with_access(store, &namespace, &filter, &access, session.key(), false, stop_after, pushed)?;
+                outcome.documents.len() + outcome.skipped_at_index
+            }
+        }
     };
     let start = skip.min(matched);
     let end = if limit > 0 { (start + limit).min(matched) } else { matched };
@@ -3974,7 +4031,7 @@ fn increment_value(current: &BsonValue, amount: &BsonValue) -> Option<BsonValue>
 /// A cursor is bound to the namespace it was opened on. `mongod` requires the
 /// `collection` field and refuses a request that names another namespace, so the
 /// lookup is scoped before any document is read.
-pub fn get_more(command: &BsonDocument, cursors: &mut CursorStore) -> Result<BsonDocument, CommandError> {
+pub fn get_more(command: &BsonDocument, store: &dyn MongoStorage, cursors: &mut CursorStore) -> Result<BsonDocument, CommandError> {
     let Some(cursor_id) = command.get("getMore").and_then(int_value)
     else {
         return Err(CommandError::new(2, "getMore requires a cursor id"));
@@ -3990,19 +4047,39 @@ pub fn get_more(command: &BsonDocument, cursors: &mut CursorStore) -> Result<Bso
     // Absent and explicit `0` both mean "fill the batch", which `mongod 8.0.9`
     // answers by draining everything that fits under the BSON ceiling.
     let batch_size = command.get("batchSize").and_then(int_value).filter(|count| *count > 0).map(|count| count as usize);
-    let (batch, namespace) = cursors.get_more(cursor_id, &namespace, batch_size).map_err(|error| match error {
-        GetMoreError::NotFound(id) => CommandError::new(43, format!("cursor id {id} not found")),
-        // `mongod` refuses a cross-namespace request with `Unauthorized` before
-        // it looks at the cursor's state.
-        GetMoreError::NamespaceMismatch { requested, cursor } => {
-            CommandError::new(13, format!("Requested getMore on namespace '{requested}', but cursor belongs to a different namespace {cursor}"))
-        }
-        // `mongod 8.0.9` kills the cursor with the collection and answers one
-        // `QueryPlanKilled` naming the collection UUID.
-        GetMoreError::CollectionDropped { namespace, .. } => {
-            CommandError::new(175, format!("collection dropped. UUID {}", collection_uuid_text(&namespace)))
-        }
-    })?;
+    let (batch, namespace) = cursors
+        .get_more(cursor_id, &namespace, batch_size, |scan, want| {
+            let mut picked: Vec<BsonValue> = Vec::new();
+            loop {
+                let (documents, after) =
+                    scan_collection_page(store, &namespace, &scan.filter, SCAN_PAGE, scan.after.as_deref()).map_err(|error| error.message)?;
+                for document in documents {
+                    if let Some(value) = project_document(document, scan.projection.as_ref()).map_err(|error| error.message)? {
+                        picked.push(value);
+                    }
+                }
+                scan.after = after;
+                if picked.len() >= want || scan.after.is_none() {
+                    break;
+                }
+            }
+            Ok(picked)
+        })
+        .map_err(|error| match error {
+            GetMoreError::NotFound(id) => CommandError::new(43, format!("cursor id {id} not found")),
+            // `mongod` refuses a cross-namespace request with `Unauthorized` before
+            // it looks at the cursor's state.
+            GetMoreError::NamespaceMismatch { requested, cursor } => CommandError::new(
+                13,
+                format!("Requested getMore on namespace '{requested}', but cursor belongs to a different namespace {cursor}"),
+            ),
+            // `mongod 8.0.9` kills the cursor with the collection and answers one
+            // `QueryPlanKilled` naming the collection UUID.
+            GetMoreError::CollectionDropped { namespace, .. } => {
+                CommandError::new(175, format!("collection dropped. UUID {}", collection_uuid_text(&namespace)))
+            }
+            GetMoreError::Backend(message) => CommandError::new(1, format!("scan failed: {message}")),
+        })?;
     let remaining = if cursors.contains(cursor_id) { cursor_id } else { 0 };
     Ok(cursor_reply(&namespace, "nextBatch", batch, remaining))
 }
@@ -4827,6 +4904,26 @@ fn note_multikey(store: &dyn MongoStorage, documents: &[(BsonDocument, Vec<u8>)]
     Ok(())
 }
 
+/// 一个文档集合的全部索引项，按索引项命名空间分组。
+///
+/// 与 [`write_index_entries`] 同一套键构造，只是把结果交回调用方，让写命令能把
+/// 索引项与文档合成同一次提交。
+fn index_entries_by_namespace(
+    documents: &[(BsonDocument, Vec<u8>)],
+    specifications: &[IndexSpec],
+) -> BTreeMap<String, Vec<(Vec<u8>, Vec<u8>)>> {
+    let mut by_namespace: BTreeMap<String, Vec<(Vec<u8>, Vec<u8>)>> = BTreeMap::new();
+    if specifications.is_empty() || documents.is_empty() {
+        return by_namespace;
+    }
+    for (document, document_key) in documents {
+        for (namespace, entry_key) in document_index_entries(document, document_key, specifications) {
+            by_namespace.entry(namespace).or_default().push((entry_key, document_key.clone()));
+        }
+    }
+    by_namespace
+}
+
 /// 为一个文档集合写入索引项；每个条目值是文档键，读取时据此回表。
 fn write_index_entries(
     store: &dyn MongoStorage,
@@ -4838,12 +4935,7 @@ fn write_index_entries(
         return Ok(());
     }
     note_multikey(store, documents, specifications)?;
-    let mut by_namespace: BTreeMap<String, Vec<(Vec<u8>, Vec<u8>)>> = BTreeMap::new();
-    for (document, document_key) in documents {
-        for (namespace, entry_key) in document_index_entries(document, document_key, specifications) {
-            by_namespace.entry(namespace).or_default().push((entry_key, document_key.clone()));
-        }
-    }
+    let by_namespace = index_entries_by_namespace(documents, specifications);
     put_index_keys(store, session, &by_namespace)
 }
 
@@ -4897,31 +4989,44 @@ fn remove_index_entries(
 
 /// Stages a batch of new documents in the session's transaction, or writes it
 /// straight to the shard outside one.
+///
+/// `documents` pairs each accepted document with its encoded `_id` key, so the
+/// index entries are derived from the document the caller already has instead of
+/// parsing the payload back.
 fn stage_insert(
     store: &dyn MongoStorage,
     session: Option<&str>,
     namespace: &str,
-    documents: &[(Vec<u8>, Vec<u8>)],
+    documents: &[(BsonDocument, Vec<u8>)],
 ) -> Result<(), CommandError> {
     let specifications = store.index_specs(namespace)?;
-    if !specifications.is_empty() {
-        let parsed: Vec<(BsonDocument, Vec<u8>)> =
-            documents.iter().filter_map(|(key, payload)| parse_bson(payload).ok().map(|document| (document, key.clone()))).collect();
-        // 先写索引项再写文档：文档写失败时最多留下指向不存在文档的条目，读取会跳过；
-        // 反序则会静默漏掉文档，查询结果少一条且没有任何报错。
-        write_index_entries(store, session, &parsed, &specifications)?;
-    }
-    match session {
-        Some(key) => {
-            for (document_key, payload) in documents {
-                if store.transaction_write(key, namespace, document_key, Some(payload.clone())) == TransactionWrite::Conflict {
-                    return Err(write_conflict_error());
-                }
-            }
-            Ok(())
+    if let Some(key) = session {
+        if !specifications.is_empty() {
+            write_index_entries(store, Some(key), documents, &specifications)?;
         }
-        None => store.import(namespace, documents).map(|_| ()).map_err(|error| CommandError::new(2, format!("insert failed: {error}"))),
+        for (document, document_key) in documents {
+            let payload = encode_bson(document);
+            if store.transaction_write(key, namespace, document_key, Some(payload)) == TransactionWrite::Conflict {
+                return Err(write_conflict_error());
+            }
+        }
+        return Ok(());
     }
+    let payloads: Vec<(Vec<u8>, Vec<u8>)> = documents.iter().map(|(document, key)| (key.clone(), encode_bson(document))).collect();
+    // 文档与索引项合成一次提交：同一条 `insert` 只付一次落盘，也不会出现
+    // 「索引项已落、文档未落」的中间态。
+    let mut index_writes: BTreeMap<String, Vec<(Vec<u8>, Vec<u8>)>> = BTreeMap::new();
+    if !specifications.is_empty() {
+        note_multikey(store, documents, &specifications)?;
+        index_writes = index_entries_by_namespace(documents, &specifications);
+    }
+    let mut writes: Vec<NamespaceWrite<'_>> = Vec::with_capacity(index_writes.len() + 1);
+    for (entry_namespace, entries) in &index_writes {
+        writes.push(NamespaceWrite { namespace: entry_namespace, puts: entries, deletes: &[] });
+    }
+    writes.push(NamespaceWrite { namespace, puts: &payloads, deletes: &[] });
+    store.commit_namespaces(&writes).map_err(|error| CommandError::new(2, format!("insert failed: {error}")))?;
+    Ok(())
 }
 
 /// Stages replacements in the session's transaction, or writes them straight
@@ -4962,24 +5067,37 @@ fn stage_replace(
                 removed.entry(entry_namespace.clone()).or_default().push(entry_key.clone());
             }
         }
-        // 新增项先落地、旧项最后删除：中途失败只会多出可被完整过滤条件淘汰的条目。
-        put_index_keys(store, session, &added)?;
     }
-    let written = match session {
+    match session {
         Some(key) => {
+            // 新增项先落地、旧项最后删除：中途失败只会多出可被完整过滤条件淘汰的条目。
+            if !specifications.is_empty() {
+                put_index_keys(store, Some(key), &added)?;
+            }
             for (document_key, payload) in documents {
                 if store.transaction_write(key, namespace, document_key, Some(payload.clone())) == TransactionWrite::Conflict {
                     return Err(write_conflict_error());
                 }
             }
+            if !specifications.is_empty() {
+                delete_index_keys(store, Some(key), &removed)?;
+            }
             Ok(documents.len())
         }
-        None => store.replace(namespace, documents).map_err(|error| CommandError::new(2, error.to_string())),
-    };
-    if !specifications.is_empty() {
-        delete_index_keys(store, session, &removed)?;
+        None => {
+            // 文档与索引项一次提交：一条 `update` 只付一次落盘。
+            let mut writes: Vec<NamespaceWrite<'_>> = Vec::with_capacity(added.len() + removed.len() + 1);
+            for (entry_namespace, entries) in &added {
+                writes.push(NamespaceWrite { namespace: entry_namespace, puts: entries, deletes: &[] });
+            }
+            writes.push(NamespaceWrite { namespace, puts: documents, deletes: &[] });
+            for (entry_namespace, keys) in &removed {
+                writes.push(NamespaceWrite { namespace: entry_namespace, puts: &[], deletes: keys });
+            }
+            store.commit_namespaces(&writes).map_err(|error| CommandError::new(2, error.to_string()))?;
+            Ok(documents.len())
+        }
     }
-    written
 }
 
 /// Stages deletions in the session's transaction, or writes them straight to
@@ -4996,21 +5114,37 @@ fn stage_delete(store: &dyn MongoStorage, session: Option<&str>, namespace: &str
             }
         }
     }
-    let written = match session {
+    match session {
         Some(key) => {
             for document_key in keys {
                 if store.transaction_write(key, namespace, document_key, None) == TransactionWrite::Conflict {
                     return Err(write_conflict_error());
                 }
             }
+            if !specifications.is_empty() {
+                remove_index_entries(store, session, &removed, &specifications)?;
+            }
             Ok(keys.len())
         }
-        None => store.delete(namespace, keys).map_err(|error| CommandError::new(2, error.to_string())),
-    };
-    if !specifications.is_empty() {
-        remove_index_entries(store, session, &removed, &specifications)?;
+        None => {
+            // 文档与索引项一次提交：一条 `delete` 只付一次落盘。
+            let mut index_deletes: BTreeMap<String, Vec<Vec<u8>>> = BTreeMap::new();
+            if !specifications.is_empty() {
+                for (document, document_key) in &removed {
+                    for (entry_namespace, entry_key) in document_index_entries(document, document_key, &specifications) {
+                        index_deletes.entry(entry_namespace).or_default().push(entry_key);
+                    }
+                }
+            }
+            let mut writes: Vec<NamespaceWrite<'_>> = Vec::with_capacity(index_deletes.len() + 1);
+            writes.push(NamespaceWrite { namespace, puts: &[], deletes: keys });
+            for (entry_namespace, entry_keys) in &index_deletes {
+                writes.push(NamespaceWrite { namespace: entry_namespace, puts: &[], deletes: entry_keys });
+            }
+            let applied = store.commit_namespaces(&writes).map_err(|error| CommandError::new(2, error.to_string()))?;
+            Ok(applied[0])
+        }
     }
-    written
 }
 
 /// The namespace as seen by the session: staged writes layered over committed
@@ -5081,7 +5215,13 @@ pub fn find_and_modify(command: &BsonDocument, store: &dyn MongoStorage) -> Resu
     }
 
     let sort = parse_sort(command.get("sort"));
-    let mut documents = collect_matching(store, &namespace, filter, session.key())?;
+    // 无排序时只需要第一篇命中；有排序时顺序由排序决定，仍要读完整段再排。
+    let mut documents = if sort.is_empty() {
+        collect_matching_bounded(store, &namespace, filter, session.key(), false, Some(1))?.0
+    }
+    else {
+        collect_matching(store, &namespace, filter, session.key())?
+    };
     sort_documents(&mut documents, &sort);
     let matched = documents.first().cloned();
 
@@ -5123,13 +5263,40 @@ pub fn find_and_modify(command: &BsonDocument, store: &dyn MongoStorage) -> Resu
         let unique_indexes: Vec<IndexSpec> = index_specs.iter().filter(|index| index.unique).cloned().collect();
         if !unique_indexes.is_empty() {
             let key = value_to_key(identifier_value.as_ref().unwrap_or(&BsonValue::Null));
-            let mut indexed: BTreeMap<Vec<u8>, Vec<BTreeSet<Vec<u8>>>> = BTreeMap::new();
-            for (other_key, payload) in namespace_documents(store, &namespace, session.key())? {
-                if let Ok(candidate) = parse_bson(&payload) {
-                    indexed.insert(other_key, unique_indexes.iter().map(|spec| tuples_of(&candidate, spec)).collect());
-                }
+            // 与 `update` 同一条路径：唯一索引项已落盘且不在事务里时，按前缀探针
+            // 检查冲突，不再为一次 findAndModify 整表建唯一键 map。
+            let probe_namespaces: Option<Vec<String>> = if session.key().is_some() {
+                None
             }
-            if let Some((specification, values)) = find_unique_conflict(&unique_indexes, &updated, &key, &indexed) {
+            else {
+                let mut namespaces = Vec::with_capacity(unique_indexes.len());
+                let mut ready = true;
+                for specification in &unique_indexes {
+                    let entries_namespace = crate::storage::index_namespace(&namespace, &specification.name);
+                    let entries = store
+                        .reserved_has_entries(&entries_namespace)
+                        .map_err(|error| CommandError::new(1, format!("index probe failed: {error}")))?;
+                    if !entries {
+                        ready = false;
+                        break;
+                    }
+                    namespaces.push(entries_namespace);
+                }
+                ready.then_some(namespaces)
+            };
+            let conflict = match &probe_namespaces {
+                Some(namespaces) => unique_conflict_by_probe(store, namespaces, &unique_indexes, &updated, &key)?,
+                None => {
+                    let mut indexed: BTreeMap<Vec<u8>, Vec<BTreeSet<Vec<u8>>>> = BTreeMap::new();
+                    for (other_key, payload) in namespace_documents(store, &namespace, session.key())? {
+                        if let Ok(candidate) = parse_bson(&payload) {
+                            indexed.insert(other_key, unique_indexes.iter().map(|spec| tuples_of(&candidate, spec)).collect());
+                        }
+                    }
+                    find_unique_conflict(&unique_indexes, &updated, &key, &indexed)
+                }
+            };
+            if let Some((specification, values)) = conflict {
                 let failure = duplicate_index_error(0, &namespace, specification, &values);
                 let mut error =
                     CommandError::new(11000, format!("Plan executor error during findAndModify :: caused by :: {}", failure.message));
@@ -5283,20 +5450,33 @@ pub fn distinct(command: &BsonDocument, store: &dyn MongoStorage) -> Result<Bson
     let segments: Vec<&str> = key.split('.').collect();
     let mut seen: BTreeSet<Vec<u8>> = BTreeSet::new();
     let mut values = Vec::new();
-    for (_key, payload) in namespace_documents(store, &namespace, session.key())? {
-        let Ok(document) = parse_bson(&payload)
+    // `distinct` 只读谓词字段与取值路径的首段；能静态收敛时跳过其余字段。
+    let mut decode_fields = filter_projection_fields(filter);
+    if let Some(fields) = decode_fields.as_mut() {
+        let top = segments.first().copied().unwrap_or("");
+        if !fields.iter().any(|field| field == top) {
+            fields.push(top.to_string());
+        }
+    }
+    scan_namespace_pages(store, &namespace, session.key(), |payload| {
+        let decoded = match decode_fields.as_deref() {
+            Some(fields) => parse_bson_projected(payload, fields),
+            None => parse_bson(payload),
+        };
+        let Ok(document) = decoded
         else {
-            continue;
+            return Ok(true);
         };
         if !document_matches(&document, filter)? {
-            continue;
+            return Ok(true);
         }
         let mut matched = Vec::new();
         collect_values_at(&document, &segments, &mut matched);
         for value in matched {
             collect_distinct(value, &mut seen, &mut values);
         }
-    }
+        Ok(true)
+    })?;
     // `mongod` collects distinct values in a sorted BSON set, so the reply is
     // ordered by canonical type and value instead of by scan order.
     values.sort_by(compare_values);
@@ -6910,6 +7090,140 @@ fn collect_matching(
 /// boundary is amortised, small enough that an early stop does not clone the
 /// whole collection.
 const SCAN_PAGE: usize = 256;
+
+/// 读取一页集合扫描，返回本页命中与下一页的排他游标。
+///
+/// `limit` 是这一页最多读取的文档数；读满一页才保留续扫位置，不足一页即到
+/// 末尾。命中先按 `_id` 顺序收集，与整段扫描的交付顺序一致。
+fn scan_collection_page(
+    store: &dyn MongoStorage,
+    namespace: &str,
+    filter: &BsonDocument,
+    limit: usize,
+    after: Option<&[u8]>,
+) -> Result<(Vec<BsonDocument>, Option<Vec<u8>>), CommandError> {
+    let page = store.scan_page(namespace, after, limit).map_err(|error| CommandError::new(1, format!("scan failed: {error}")))?;
+    let next = if page.len() < limit { None } else { page.last().map(|(key, _)| key.clone()) };
+    let mut documents = Vec::new();
+    for (_key, value) in page {
+        if let Ok(document) = parse_bson(&value)
+            && document_matches(&document, filter)?
+        {
+            documents.push(document);
+        }
+    }
+    Ok((documents, next))
+}
+
+/// 套用 `find` 的投影；被投影排除的文档直接丢弃，与窗口语义一致。
+fn project_document(document: BsonDocument, projection: Option<&BsonDocument>) -> Result<Option<BsonValue>, CommandError> {
+    match projection {
+        Some(projection) => Ok(project_stage(&[document], projection)?.into_iter().next().map(BsonValue::Document)),
+        None => Ok(Some(BsonValue::Document(document))),
+    }
+}
+
+/// 过滤谓词只读取的顶层字段；无法安全收敛时返回 `None`（退回整篇解码）。
+///
+/// `count` / `distinct` 不需要把每篇文档都建成完整 `BsonDocument`：谓词引用
+/// 的顶层字段之外，其余字段按线协议长度跳过即可。`$where`、`$expr` 一类可以
+/// 读整篇文档的算子无法静态分析，遇到就放弃投影。
+fn filter_projection_fields(filter: &BsonDocument) -> Option<Vec<String>> {
+    fn collect(document: &BsonDocument, fields: &mut BTreeSet<String>) -> bool {
+        for (name, value) in &document.fields {
+            match name.as_str() {
+                "$and" | "$or" | "$nor" => {
+                    let BsonValue::Array(items) = value
+                    else {
+                        return false;
+                    };
+                    for item in items {
+                        let BsonValue::Document(item) = item
+                        else {
+                            return false;
+                        };
+                        if !collect(item, fields) {
+                            return false;
+                        }
+                    }
+                }
+                "$where" | "$expr" | "$text" | "$jsonSchema" | "$comment" | "$near" | "$nearSphere" => return false,
+                _ if name.starts_with('$') => return false,
+                _ => {
+                    fields.insert(name.split('.').next().unwrap_or(name).to_string());
+                }
+            }
+        }
+        true
+    }
+    let mut fields = BTreeSet::new();
+    collect(filter, &mut fields).then(|| fields.into_iter().collect())
+}
+
+/// 按页遍历命名空间，`visit` 返回 `false` 时提前结束。
+///
+/// 事务内没有本命名空间暂存写入时按已提交数据分页；只有合并视图无法按游标
+/// 推进时才整段读取。与 `find` 的早停扫描共用同一页大小。
+fn scan_namespace_pages<F>(store: &dyn MongoStorage, namespace: &str, session: Option<&str>, mut visit: F) -> Result<(), CommandError>
+where
+    F: FnMut(&[u8]) -> Result<bool, CommandError>,
+{
+    if let Some(session) = session {
+        let mut after: Option<Vec<u8>> = None;
+        loop {
+            let page = store
+                .transaction_scan_page(session, namespace, after.as_deref(), SCAN_PAGE)
+                .map_err(|error| CommandError::new(1, format!("scan failed: {error}")))?;
+            let documents = match page {
+                TransactionPage::None => store
+                    .scan_page(namespace, after.as_deref(), SCAN_PAGE)
+                    .map_err(|error| CommandError::new(1, format!("scan failed: {error}")))?,
+                TransactionPage::Page(page) => page,
+                TransactionPage::Merged => {
+                    let documents = store
+                        .transaction_scan(session, namespace)
+                        .map_err(|error| CommandError::new(1, format!("scan failed: {error}")))?
+                        .unwrap_or_default();
+                    for (_key, value) in documents {
+                        if !visit(&value)? {
+                            return Ok(());
+                        }
+                    }
+                    return Ok(());
+                }
+            };
+            let fetched = documents.len();
+            after = documents.last().map(|(key, _)| key.clone());
+            for (_key, value) in documents {
+                if !visit(&value)? {
+                    return Ok(());
+                }
+            }
+            if fetched < SCAN_PAGE {
+                break;
+            }
+        }
+    }
+    else {
+        let mut after: Option<Vec<u8>> = None;
+        loop {
+            let page = store
+                .scan_page(namespace, after.as_deref(), SCAN_PAGE)
+                .map_err(|error| CommandError::new(1, format!("scan failed: {error}")))?;
+            let fetched = page.len();
+            after = page.last().map(|(key, _)| key.clone());
+            for (_key, value) in page {
+                if !visit(&value)? {
+                    return Ok(());
+                }
+            }
+            if fetched < SCAN_PAGE {
+                break;
+            }
+        }
+    }
+    Ok(())
+}
 
 /// 与 [`collect_matching`] 相同，但命中数达到 `stop_after` 后停止读取。
 ///
@@ -8709,11 +9023,12 @@ fn out_stage(
     if !target_keys.is_empty() {
         stage_delete(store, session, &target, &target_keys)?;
     }
-    let entries: Vec<(Vec<u8>, Vec<u8>)> = staged_documents
+    let entries: Vec<(BsonDocument, Vec<u8>)> = staged_documents
         .into_iter()
         .map(|document| {
             let identifier = document.get("_id").cloned().unwrap_or(BsonValue::Null);
-            (value_to_key(&identifier), encode_bson(&document))
+            let key = value_to_key(&identifier);
+            (document, key)
         })
         .collect();
     stage_insert(store, session, &target, &entries)?;
@@ -9071,7 +9386,7 @@ fn merge_stage(
                 return Err(merge_duplicate_error(&target, &conflict_name, &conflict_pattern, &conflict_value, false));
             }
             target_documents.push(inserted.clone());
-            stage_insert(store, session, &target, &[(identifier_key, encode_bson(&inserted))])?;
+            stage_insert(store, session, &target, &[(inserted, identifier_key)])?;
         }
     }
 

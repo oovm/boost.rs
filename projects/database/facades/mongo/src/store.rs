@@ -27,7 +27,7 @@ use database_protocol_mongo::{
 use database_storage::cluster_kv::{FileShard, InlineValue, Key, KvStore, ShardChange, StoredValue};
 use database_types::cluster::{CATALOG_SUFFIX, CatalogSchema, Namespace, ShardId};
 
-use crate::{oplog::OplogEntry, storage::TransactionPage};
+use crate::{oplog::OplogEntry, storage::{NamespaceWrite, TransactionPage}};
 
 /// One user-created index. `_id_` is implicit and is never stored here.
 #[derive(Debug, Clone)]
@@ -1503,6 +1503,66 @@ impl Store {
         Ok(documents.len())
     }
 
+    /// 一条写命令的全部命名空间写入，合成一次 shard 提交。
+    ///
+    /// 这是 `insert` / `update` / `delete` 的落盘主路径：同一条命令的文档与索引项
+    /// 一起提交，不再各触发一次整快照落盘。目录镜像与写入版本记录仍然按命名空间
+    /// 补上，因此提交之后的可见性与逐个写入完全相同。
+    pub fn commit_namespaces(&self, writes: &[NamespaceWrite<'_>]) -> Result<Vec<usize>, StoreError> {
+        let mut applied = Vec::with_capacity(writes.len());
+        let mut noted: Vec<(String, Vec<Vec<u8>>)> = Vec::new();
+        {
+            let mut shard = self.lock();
+            let mut changes: Vec<ShardChange> = Vec::new();
+            for write in writes {
+                let mut count = 0;
+                let mut touched: Vec<Vec<u8>> = Vec::new();
+                for key_bytes in write.deletes {
+                    let candidate = Key::new(write.namespace, key_bytes.clone());
+                    if matches!(shard.get(&candidate), Ok(Some(_))) {
+                        changes.push(ShardChange::Delete { key: candidate });
+                        touched.push(key_bytes.clone());
+                        count += 1;
+                    }
+                }
+                if !write.puts.is_empty() {
+                    for (key_bytes, payload) in write.puts {
+                        changes.push(ShardChange::Put {
+                            key: Key::new(write.namespace, key_bytes.clone()),
+                            value: StoredValue::Inline(InlineValue(payload.clone())),
+                            expires_at: None,
+                        });
+                        touched.push(key_bytes.clone());
+                    }
+                    count += write.puts.len();
+                    if !is_index_namespace(write.namespace) {
+                        let catalog_key = Key::new(CATALOG_NAMESPACE, write.namespace.as_bytes().to_vec());
+                        if shard.get(&catalog_key).ok().flatten().is_none() {
+                            changes.push(ShardChange::Put {
+                                key: catalog_key,
+                                value: StoredValue::Inline(InlineValue(Vec::new())),
+                                expires_at: None,
+                            });
+                        }
+                    }
+                }
+                if !is_index_namespace(write.namespace) && !touched.is_empty() {
+                    noted.push((write.namespace.to_string(), touched));
+                }
+                applied.push(count);
+            }
+            if changes.is_empty() {
+                return Ok(applied);
+            }
+            shard.commit_changes(changes).map_err(|error| StoreError::Shard(error.to_string()))?;
+        }
+        for (namespace, keys) in &noted {
+            self.note_writes(namespace, keys);
+            self.register_namespace(namespace)?;
+        }
+        Ok(applied)
+    }
+
     /// Namespaces registered in the `.yyds` catalog, sorted.
     pub fn namespaces(&self) -> Result<Vec<String>, StoreError> {
         Ok(self.catalog_lock().namespaces.iter().cloned().collect())
@@ -1714,6 +1774,10 @@ impl crate::storage::MongoStorage for Store {
         Store::scan_page(self, namespace, after, limit)
     }
 
+    fn supports_page_scan(&self) -> bool {
+        true
+    }
+
     fn delete(&self, namespace: &str, keys: &[Vec<u8>]) -> Result<usize, StoreError> {
         Store::delete(self, namespace, keys)
     }
@@ -1747,6 +1811,10 @@ impl crate::storage::MongoStorage for Store {
 
     fn import(&self, namespace: &str, documents: &[(Vec<u8>, Vec<u8>)]) -> Result<usize, StoreError> {
         Store::import(self, namespace, documents)
+    }
+
+    fn commit_namespaces(&self, writes: &[NamespaceWrite<'_>]) -> Result<Vec<usize>, StoreError> {
+        Store::commit_namespaces(self, writes)
     }
 
     fn namespaces(&self) -> Result<Vec<String>, StoreError> {

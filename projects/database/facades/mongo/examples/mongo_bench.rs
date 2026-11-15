@@ -321,7 +321,7 @@ impl Backend {
                 let result = match name {
                     "insert" => commands::insert(command, store),
                     "find" => commands::find(command, store, cursors),
-                    "getMore" => commands::get_more(command, cursors),
+                    "getMore" => commands::get_more(command, store, cursors),
                     "update" => commands::update(command, store),
                     "delete" => commands::delete(command, store),
                     "aggregate" => commands::aggregate(command, store),

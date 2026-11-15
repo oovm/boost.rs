@@ -583,6 +583,16 @@ impl<'a> SliceReader<'a> {
         Ok(())
     }
 
+    /// Reads a NUL-terminated key as a raw slice, validating UTF-8 like
+    /// [`Self::read_cstring`] but without allocating a `String`.
+    fn read_raw_cstring(&mut self) -> Result<&'a [u8], BsonError> {
+        let rest = self.input.get(self.position..).ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
+        let length = rest.iter().position(|byte| *byte == 0).ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
+        std::str::from_utf8(&rest[..length]).map_err(|_| BsonError::Malformed("invalid UTF-8 in cstring".into()))?;
+        self.position += length + 1;
+        Ok(&rest[..length])
+    }
+
     fn read_string(&mut self) -> Result<String, BsonError> {
         let length = self.read_i32().ok_or_else(|| BsonError::Malformed("invalid BSON string length".into()))?;
         if length < 1 {
@@ -622,6 +632,109 @@ pub fn parse_bson(input: &[u8]) -> Result<BsonDocument, BsonError> {
         doc.push(key, value);
     }
     Ok(doc)
+}
+
+/// Parses only the top-level `fields` of a BSON document.
+///
+/// 过滤谓词只读取它引用的顶层字段时，其余字段可以按线协议长度跳过，不必为
+/// 整表扫描里的每一篇文档都建一份完整 `BsonDocument`。字段名按顶层匹配：
+/// 需要 `a.b` 时调用方传入 `a`，整棵子树照常解码，嵌套路径语义不变。
+pub fn parse_bson_projected(input: &[u8], fields: &[String]) -> Result<BsonDocument, BsonError> {
+    let mut reader = SliceReader::new(input);
+    let doc_len = reader.read_i32().ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
+    if doc_len < 0 {
+        return Err(BsonError::Malformed("negative BSON document length".into()));
+    }
+    if doc_len < 5 {
+        return Err(BsonError::Malformed("BSON document too short".into()));
+    }
+    if doc_len as usize > input.len() {
+        return Err(BsonError::Malformed("BSON length exceeds input".into()));
+    }
+    let mut doc = BsonDocument::new();
+    loop {
+        let Some(elem_type) = reader.read_u8()
+        else {
+            return Err(BsonError::Malformed("unexpected end of BSON".into()));
+        };
+        if elem_type == 0 {
+            break;
+        }
+        let key = reader.read_raw_cstring()?;
+        if fields.iter().any(|field| field.as_bytes() == key) {
+            let name = String::from_utf8(key.to_vec()).map_err(|_| BsonError::Malformed("invalid UTF-8 in cstring".into()))?;
+            let value = parse_value(&mut reader, elem_type)?;
+            doc.push(name, value);
+        }
+        else {
+            skip_value(&mut reader, elem_type)?;
+        }
+    }
+    Ok(doc)
+}
+
+/// Skips one BSON value without materialising it.
+fn skip_value(reader: &mut SliceReader<'_>, elem_type: u8) -> Result<(), BsonError> {
+    fn take(reader: &mut SliceReader<'_>, count: usize) -> Result<(), BsonError> {
+        reader.take(count).map(|_| ()).ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))
+    }
+    match elem_type {
+        0x01 => take(reader, 8),
+        // string / JavaScript code / symbol: i32 length including the NUL.
+        0x02 | 0x0D | 0x0E => {
+            let length = reader.read_i32().ok_or_else(|| BsonError::Malformed("invalid BSON string length".into()))?;
+            if length < 1 {
+                return Err(BsonError::Malformed("invalid BSON string length".into()));
+            }
+            take(reader, length as usize)
+        }
+        // document / array: i32 length including the trailing NUL.
+        0x03 | 0x04 => {
+            let length = reader.read_i32().ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
+            if length < 5 {
+                return Err(BsonError::Malformed("BSON sub-document too short".into()));
+            }
+            take(reader, (length - 4) as usize)
+        }
+        // binary: i32 length, subtype byte, payload.
+        0x05 => {
+            let length = reader.read_i32().ok_or_else(|| BsonError::Malformed("negative BSON binary length".into()))?;
+            if length < 0 {
+                return Err(BsonError::Malformed("negative BSON binary length".into()));
+            }
+            take(reader, 1 + length as usize)
+        }
+        0x06 | 0x7F | 0xFF | 0x0A => Ok(()),
+        0x07 => take(reader, 12),
+        0x08 => take(reader, 1),
+        // date / timestamp / int64.
+        0x09 | 0x11 | 0x12 => take(reader, 8),
+        // regex: two cstrings.
+        0x0B => {
+            reader.skip_cstring()?;
+            reader.skip_cstring()
+        }
+        // dbPointer: string plus 12-byte object id.
+        0x0C => {
+            let length = reader.read_i32().ok_or_else(|| BsonError::Malformed("invalid BSON string length".into()))?;
+            if length < 1 {
+                return Err(BsonError::Malformed("invalid BSON string length".into()));
+            }
+            take(reader, length as usize)?;
+            take(reader, 12)
+        }
+        // code with scope: i32 total length including itself.
+        0x0F => {
+            let length = reader.read_i32().ok_or_else(|| BsonError::Malformed("unexpected end of BSON".into()))?;
+            if length < 4 {
+                return Err(BsonError::Malformed("BSON code with scope too short".into()));
+            }
+            take(reader, (length - 4) as usize)
+        }
+        0x10 => take(reader, 4),
+        0x13 => take(reader, 16),
+        other => Err(BsonError::Malformed(format!("unsupported BSON element type {other:#x}"))),
+    }
 }
 
 /// Hands out the body of one length-prefixed sub-document.

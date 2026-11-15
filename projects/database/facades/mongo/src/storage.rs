@@ -14,7 +14,6 @@ pub use crate::store::{
     CollectionOptions, INDEX_NAMESPACE_MARKER, IndexSpec, InsertReport, SessionState, SessionWriteState, StoreError, TransactionAbort,
     TransactionBegin, TransactionCommit, TransactionWrite, TtlMonitorState, index_namespace, is_index_namespace,
 };
-
 use crate::oplog::OplogEntry;
 
 /// 事务视图下的一页文档。
@@ -28,6 +27,24 @@ pub enum TransactionPage {
     Page(Vec<(Vec<u8>, Vec<u8>)>),
     /// 事务对本命名空间有暂存写入，合并视图无法按游标分页。
     Merged,
+}
+
+/// 一次提交内要落地的多个命名空间写入。
+///
+/// 写命令经常要同时改文档与索引项（`insert` / `update` / `delete` 各写 1–3 个
+/// 命名空间）。逐个命名空间提交会让同一条命令落盘多次，因此命令层把整条命令的
+/// 写入收成一个 [`MongoStorage::commit_namespaces`] 调用，后端能合并时只提交一次。
+///
+/// 先应用 `deletes` 再应用 `puts`：同一条命令里同一个键不会既删又写，顺序只为
+/// 让默认实现与合并实现的可见结果一致。
+#[derive(Debug, Clone, Copy)]
+pub struct NamespaceWrite<'a> {
+    /// 目标命名空间，文档集合或索引项保留命名空间。
+    pub namespace: &'a str,
+    /// 覆盖写或新增的键值对。
+    pub puts: &'a [(Vec<u8>, Vec<u8>)],
+    /// 要删除的键。
+    pub deletes: &'a [Vec<u8>],
 }
 
 /// MongoDB 文档存储后端。
@@ -85,6 +102,14 @@ pub trait MongoStorage: Send + Sync {
             entries.truncate(limit);
         }
         Ok(entries)
+    }
+
+    /// `scan_page` 是否真的把游标下推到底层。
+    ///
+    /// 默认实现先整段读取再裁剪，调用方若据此推迟扫描，每页都会重读整个命名
+    /// 空间，反而更慢；只有覆盖了 [`Self::scan_page`] 的后端返回 `true`。
+    fn supports_page_scan(&self) -> bool {
+        false
     }
 
     /// 删除给定的编码 `_id`，返回实际存在的条数。
@@ -146,6 +171,32 @@ pub trait MongoStorage: Send + Sync {
 
     /// 覆盖写一批文档，不做重复检查，供 `mongodump` 导入使用。
     fn import(&self, namespace: &str, documents: &[(Vec<u8>, Vec<u8>)]) -> Result<usize, StoreError>;
+
+    /// 一条写命令的全部落地动作，按 [`NamespaceWrite`] 的顺序应用。
+    ///
+    /// 返回每个写入实际落地的变更条数（新增/覆盖的 `puts` 加上真实存在的
+    /// `deletes`），与逐个调用 [`Self::import`] / [`Self::delete`] 的计数一致。
+    /// 默认实现逐条回退，因此后端不覆盖它也只是慢一点，语义不变。
+    fn commit_namespaces(&self, writes: &[NamespaceWrite<'_>]) -> Result<Vec<usize>, StoreError> {
+        let mut applied = Vec::with_capacity(writes.len());
+        for write in writes {
+            let mut count = 0;
+            if !write.deletes.is_empty() {
+                count += self.delete(write.namespace, write.deletes)?;
+            }
+            if !write.puts.is_empty() {
+                let written = if is_index_namespace(write.namespace) {
+                    self.put_reserved(write.namespace, write.puts)?
+                }
+                else {
+                    self.import(write.namespace, write.puts)?
+                };
+                count += written;
+            }
+            applied.push(count);
+        }
+        Ok(applied)
+    }
 
     /// 已注册的 namespace，按字典序排列。
     fn namespaces(&self) -> Result<Vec<String>, StoreError>;

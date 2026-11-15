@@ -5,7 +5,7 @@
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use database_protocol_mongo::{
-    bson::{BsonDocument, BsonValue, double_bits, encode_bson, integral_value, parse_bson, value_to_key},
+    bson::{BsonDocument, BsonValue, double_bits, encode_bson, integral_value, parse_bson, parse_bson_projected, value_to_key},
     decimal128::Decimal128,
     wire::{decode_op_msg_command, decode_op_query_command, encode_op_msg_body},
 };
@@ -382,4 +382,32 @@ fn bytes_to_hex(bytes: &[u8]) -> String {
         write!(out, "{byte:02x}").expect("writing to a string cannot fail");
     }
     out
+}
+
+/// 投影解码只保留点名的顶层字段，剩余字段按线协议长度跳过。
+#[test]
+fn projected_parse_keeps_only_named_top_level_fields() {
+    let mut nested = BsonDocument::new();
+    nested.push("kept".to_string(), BsonValue::Int32(7));
+    let mut document = BsonDocument::new();
+    document.push("a".to_string(), BsonValue::Document(nested));
+    document.push("b".to_string(), BsonValue::String("skipped".to_string()));
+    document.push("c".to_string(), BsonValue::Array(vec![BsonValue::Int32(1), BsonValue::Int32(2)]));
+    document.push("d".to_string(), BsonValue::Binary(database_protocol_mongo::bson::BinaryData::new(0, vec![1, 2, 3])));
+    let bytes = encode_bson(&document);
+
+    let projected = parse_bson_projected(&bytes, &["a".to_string()]).expect("projected parse");
+    assert_eq!(projected.fields.len(), 1);
+    let BsonValue::Document(nested) = projected.get("a").expect("field a is kept")
+    else {
+        panic!("a must stay a document");
+    };
+    assert_eq!(nested.get("kept"), Some(&BsonValue::Int32(7)));
+
+    let nested_path = parse_bson_projected(&bytes, &["a".to_string()]).expect("nested path keeps the subtree");
+    assert_eq!(nested_path, projected);
+
+    // 全字段投影与完整解码逐字段一致，跳过的取值不影响结果。
+    let all = parse_bson_projected(&bytes, &["a".to_string(), "b".to_string(), "c".to_string(), "d".to_string()]).expect("all fields");
+    assert_eq!(all, parse_bson(&bytes).expect("full parse"));
 }
