@@ -426,6 +426,32 @@ enum SubqueryCache {
     InList { values: Vec<Cell>, keys: Option<HashSet<ProbeKey>>, saw_null: bool },
 }
 
+/// 一个相关 `EXISTS` 的索引探针计划。
+///
+/// 只接受「内层单表 + 一个内层列等于外层列的等值 + 其余只读内层列的合取」
+/// 这一形状。计划按语句内 AST 地址缓存,逐行求值只剩一次索引探针和候选行
+/// 解码,不再重跑内层 `SELECT` 的整套解析与物化流程。
+struct ExistsProbePlan {
+    /// 内层表名,读取时按目录重新定位。
+    table: String,
+    /// 内层表在 `tables` 中的位置。
+    table_position: usize,
+    /// 参与探针的普通索引名(小写)。
+    index: String,
+    /// 参与等值的内层列位置。
+    slot: usize,
+    /// 参与等值的外层(当前行)单元格位置。
+    outer: usize,
+    /// 索引探针使用的排序规则。
+    probe_collation: Collation,
+    /// 等值比较本身的排序规则;探针只保证候选超集,结果以它复核。
+    compare_collation: Collation,
+    /// 等值之外的其余合取,只读内层列。
+    residual: Vec<ResolvedExpr>,
+    /// 内层行形状,供残差求值。
+    shape: ScopeShape,
+}
+
 /// One view in the engine catalog, keyed by its lowercase name.
 #[derive(Clone)]
 struct ViewDef {
@@ -1226,6 +1252,9 @@ pub struct Engine {
     /// Memoized uncorrelated subquery results for the running statement, keyed
     /// by the resolved subquery node address. Cleared before every statement.
     subquery_cache: std::cell::RefCell<HashMap<usize, SubqueryCache>>,
+    /// 相关 `EXISTS` 的索引探针计划,按语句内 AST 地址缓存;`None` 表示该
+    /// 形状不适用,同一语句内不再重复尝试。每条语句开始时清空。
+    exists_probes: std::cell::RefCell<HashMap<usize, Option<ExistsProbePlan>>>,
     /// 单条语句内已解码的整表行,按小写表名索引,并记录该份行集覆盖的列掩码。
     /// 只缓存主库普通 rowid 表的无提示全表扫描:新请求所需列若已被缓存掩码
     /// 覆盖(全量解码覆盖任何裁剪),就复用同一份行集,让同表内外层子查询与
@@ -1298,6 +1327,7 @@ impl Engine {
             index_versions: std::cell::RefCell::new(HashMap::new()),
             index_probes: std::cell::RefCell::new(HashMap::new()),
             subquery_cache: std::cell::RefCell::new(HashMap::new()),
+            exists_probes: std::cell::RefCell::new(HashMap::new()),
             statement_scans: std::cell::RefCell::new(HashMap::new()),
             outer_read: std::cell::Cell::new(false),
             host_functions: HostFunctionTable::default(),
@@ -2120,7 +2150,9 @@ impl Engine {
     /// 语句时不再重新词法或重新解析 SQL 文本。触发器体照常经过
     /// [`Engine::run_triggered`],与文本入口的执行路径一致。
     pub fn execute_statement(&mut self, statement: &Statement, parameters: &[Cell]) -> Result<ExecResult, SqlError> {
-        self.parameters = parameters.to_vec();
+        // 复用参数缓冲:预编译语句高频执行时不再每次重新分配一份参数向量。
+        self.parameters.clear();
+        self.parameters.extend_from_slice(parameters);
         let result = self.run_triggered(statement.clone());
         self.parameters.clear();
         result
@@ -2363,6 +2395,11 @@ impl Engine {
     /// point, so a body statement still fires the other triggers. With
     /// `recursive_triggers` off, a trigger already on the stack is skipped.
     fn run_triggered(&mut self, statement: Statement) -> Result<ExecResult, SqlError> {
+        // 全库没有任何触发器时不可能排入事件,语句不需要为「触发器失败回滚」
+        // 额外开一层写事务;直接走常规语句路径。
+        if self.triggers.is_empty() {
+            return self.run_statement(statement);
+        }
         let fired = match &statement {
             Statement::Insert { schema, table, .. } => Some((schema.as_deref(), table.clone())),
             Statement::Update { schema, table, .. } => Some((schema.as_deref(), table.clone())),
@@ -2895,6 +2932,7 @@ impl Engine {
     fn run_statement(&mut self, statement: Statement) -> Result<ExecResult, SqlError> {
         // 子查询备忘与已解码行集都只在一条语句的 AST 存活期内有意义。
         self.subquery_cache.borrow_mut().clear();
+        self.exists_probes.borrow_mut().clear();
         self.statement_scans.borrow_mut().clear();
         self.outer_read.set(false);
         let result = self.run_statement_dispatch(statement);
@@ -3158,6 +3196,7 @@ impl Engine {
             self.reload_catalog()?;
             self.index_probes.borrow_mut().clear();
             self.subquery_cache.borrow_mut().clear();
+            self.exists_probes.borrow_mut().clear();
             self.write_epoch.set(self.write_epoch.get() + 1);
         }
         Ok(ExecResult { statement: "vacuum", columns: Vec::new(), rows: Vec::new(), affected: 0 })
@@ -3859,7 +3898,6 @@ impl Engine {
                 let queue_triggers = self.table_has_triggers(&key);
                 let trigger_columns = trigger_frame_columns(def);
                 let recursive_triggers = self.recursive_triggers;
-                let replace_old_rows = if replace { self.live_rows(def, "insert")? } else { Vec::new() };
                 let mut replace_deleted: Vec<(i64, Vec<Cell>)> = Vec::new();
                 let mut replace_index_needed = false;
                 let mut replace_without_needed = false;
@@ -3998,7 +4036,10 @@ impl Engine {
                             continue;
                         }
                     };
-                    let cells = check_row(def, slots, rowid);
+                    // 行像只在 CHECK / RETURNING / 触发器 / 索引探针缓存需要时
+                    // 才拼出来:普通插入路径不再为每行复制一份单元格向量。
+                    let needs_cells = !def.checks.is_empty() || returning.is_some() || queue_triggers || watch_probes;
+                    let cells = if needs_cells { check_row(def, slots, rowid) } else { Vec::new() };
                     let ctx = EvalContext {
                         engine: self,
                         outer: &[],
@@ -4066,7 +4107,12 @@ impl Engine {
                 // the transaction commits: a failing statement leaves no row
                 // behind, and a self-reference may point at a later row of the
                 // same statement.
-                if failure.is_none() && self.foreign_keys && temp_position.is_none() && !replace_deleted.is_empty() {
+                // 只有本表或被别的表引用时才需要外键检查:没有外键关系的表上
+                // `REPLACE` 不再为每条语句做一次全表快照。
+                let replace_needs_foreign_keys = self.foreign_keys
+                    && temp_position.is_none()
+                    && (!def.foreign_keys.is_empty() || !self.referencing_foreign_keys(&def.name).is_empty());
+                if failure.is_none() && replace_needs_foreign_keys && !replace_deleted.is_empty() {
                     let changes: Vec<(Vec<Cell>, Option<Vec<Cell>>)> = replace_deleted.iter().map(|(_, cells)| (cells.clone(), None)).collect();
                     match self.apply_foreign_key_actions(def, &changes, "insert", 0) {
                         Ok((index_needed, without_needed)) => {
@@ -4077,6 +4123,9 @@ impl Engine {
                     }
                     if failure.is_none() {
                         let removed: Vec<i64> = replace_deleted.iter().map(|(rowid, _)| *rowid).collect();
+                        // 只有开启外键时才需要整表快照：普通 `REPLACE` 不再为每条
+                        // 语句扫一遍全表。
+                        let replace_old_rows = self.live_rows(def, "insert")?;
                         if let Err(error) = self.check_delete_foreign_keys(def, &replace_old_rows, &removed, "insert") {
                             failure = Some(error);
                         }
@@ -4479,14 +4528,26 @@ impl Engine {
                 }
                 else {
                     self.writer.begin().map_err(|error| storage_failure(error).in_statement("update"))?;
+                    // 规划阶段已经解出每一行的原值:写侧直接复用这份行像,不再从
+                    // b-tree 读一次 payload 并重新解码。
+                    let mut live_cursor = 0usize;
                     for (rowid, values) in &plan.writes {
-                        let mut new_cells = old_lookup.get(rowid).cloned().unwrap_or_default();
-                        if new_cells.len() < def.columns.len() {
-                            new_cells.resize(def.columns.len(), Cell::Null);
+                        while live_cursor < plan.live.len() && plan.live[live_cursor].0 < *rowid {
+                            live_cursor += 1;
                         }
-                        for (slot, value) in values.iter().enumerate() {
-                            if let crate::UpdateValue::Set(value) = value {
-                                new_cells[slot] = write_value_cell(value);
+                        let previous = plan.live.get(live_cursor).filter(|(id, _)| id == rowid).map(|(_, cells)| cells.as_slice());
+                        // 行像只有触发器和 WITHOUT ROWID 表需要;普通 rowid 表把
+                        // 赋值交给写侧,不为每一行拼一份完整的单元格向量。
+                        let needs_cells = queue_triggers || def.without_rowid;
+                        let mut new_cells = if needs_cells { old_lookup.get(rowid).cloned().unwrap_or_default() } else { Vec::new() };
+                        if needs_cells {
+                            if new_cells.len() < def.columns.len() {
+                                new_cells.resize(def.columns.len(), Cell::Null);
+                            }
+                            for (slot, value) in values.iter().enumerate() {
+                                if let crate::UpdateValue::Set(value) = value {
+                                    new_cells[slot] = write_value_cell(value);
+                                }
                             }
                         }
                         if queue_triggers {
@@ -4499,6 +4560,10 @@ impl Engine {
                                 old_lookup.get(rowid).cloned().unwrap_or_default().iter().map(cell_write_value).collect();
                             let new_values: Vec<crate::WriteValue> = new_cells.iter().map(cell_write_value).collect();
                             self.writer.update_without_rowid(&table, &old_values, &new_values)
+                        }
+                        else if let Some(previous) = previous {
+                            let before = cells_write_values(previous);
+                            self.writer.update_with_values(&table, *rowid, values, before)
                         }
                         else {
                             self.writer.update(&table, *rowid, values)
@@ -4646,6 +4711,10 @@ impl Engine {
                 }
                 else {
                     self.writer.begin().map_err(|error| storage_failure(error).in_statement("delete"))?;
+                    // 删除语句在规划阶段已经解出被删行:有索引键要维护时把这些值
+                    // 直接交给写侧,没有索引时连行像都不必读,只删 b-tree 项。
+                    let maintain_indexes = needs_index && !def.without_rowid;
+                    let mut live_cursor = 0usize;
                     for rowid in &plan.removed {
                         if queue_triggers {
                             let old_cells = old_lookup.get(rowid).cloned().unwrap_or_default();
@@ -4657,8 +4726,20 @@ impl Engine {
                                 old_lookup.get(rowid).cloned().unwrap_or_default().iter().map(cell_write_value).collect();
                             self.writer.delete_without_rowid(&table, &old_values)
                         }
+                        else if maintain_indexes {
+                            while live_cursor < plan.live.len() && plan.live[live_cursor].0 < *rowid {
+                                live_cursor += 1;
+                            }
+                            match plan.live.get(live_cursor).filter(|(id, _)| id == rowid) {
+                                Some((_, cells)) => {
+                                    let values = cells_write_values(cells);
+                                    self.writer.delete_with_values(&table, *rowid, &values)
+                                }
+                                None => self.writer.delete(&table, *rowid),
+                            }
+                        }
                         else {
-                            self.writer.delete(&table, *rowid)
+                            self.writer.delete_rowid(&table, *rowid)
                         };
                         if let Err(error) = removed {
                             let _ = self.writer.rollback();
@@ -6080,11 +6161,54 @@ impl Engine {
         trigger_columns: &[String],
         deleted: &mut Vec<(i64, Vec<Cell>)>,
     ) -> Result<i64, SqlError> {
-        let live = self.live_rows(def, "insert")?;
         let explicit_rowid = def.rowid_alias.and_then(|alias| slots.get(alias).and_then(|slot| slot.as_ref())).and_then(|value| match value {
             crate::WriteValue::Integer(value) => Some(*value),
             _ => None,
         });
+        // 已给出 rowid、且表上没有其它唯一键/表达式索引时，`REPLACE` 只可能
+        // 与同一 rowid 的旧行冲突：按 rowid 点读即可，不必为每条语句扫全表。
+        let extra_unique = self.unique_keys(def, table_key).into_iter().any(|key| !matches!(key, UniqueKey::Rowid(_)));
+        let managed_targets = self.upsert_managed_indexes(def, table_key);
+        if let Some(rowid) = explicit_rowid.filter(|_| !def.without_rowid && !extra_unique && managed_targets.is_empty()) {
+            let old = match temp_position {
+                Some(position) => self.temp_tables[position].rows.get(&rowid).cloned(),
+                None => self.live_rows_at(def, "insert", &[rowid])?.into_iter().next().map(|(_, cells)| cells),
+            };
+            if let Some(old) = old {
+                if queue_triggers && recursive_triggers {
+                    self.queue_delete_before(table_key, trigger_columns, rowid, &old);
+                }
+                if let Some(position) = temp_position {
+                    self.temp_tables[position].rows.remove(&rowid);
+                }
+                else {
+                    self.writer.delete(table, rowid).map_err(|error| write_failure(error, "insert", def))?;
+                }
+                deleted.push((rowid, old.clone()));
+                if queue_triggers && recursive_triggers {
+                    self.queue_delete_after(table_key, trigger_columns, rowid, &old);
+                }
+            }
+            if queue_triggers {
+                self.pending_events.push(PendingTriggerEvent {
+                    table: table_key.to_string(),
+                    timing: TriggerTiming::Before,
+                    event: TriggerEvent::Insert,
+                    columns: trigger_columns.to_vec(),
+                    new: Some(check_row(def, slots, rowid)),
+                    old: None,
+                });
+            }
+            return match temp_position {
+                Some(position) => {
+                    let keys = self.unique_keys(def, table_key);
+                    let table_state = &mut self.temp_tables[position];
+                    temp_insert_row(def, &mut table_state.rows, slots, &keys)
+                }
+                None => self.writer.insert(table, slots).map_err(|error| storage_failure(error).in_statement("insert")),
+            };
+        }
+        let live = self.live_rows(def, "insert")?;
         let candidate_rowid = match explicit_rowid {
             Some(rowid) => rowid,
             None => live.iter().map(|(rowid, _)| *rowid).max().unwrap_or(0) + 1,
@@ -6772,22 +6896,29 @@ impl Engine {
             UniqueKey::Columns(..) => None,
         });
         let mut state = if column_keys.is_empty() { Vec::new() } else { live.to_vec() };
-        let mut live_rowids: HashSet<i64> = live.iter().map(|(rowid, _)| *rowid).collect();
+        // 只有赋值可能改动 rowid 时才需要活动 rowid 集合:整表更新通常一个
+        // `INTEGER PRIMARY KEY` 都没碰,构建与逐行维护这份集合纯属浪费。
+        let rowid_move_possible = targets.iter().any(|(index, _)| Some(*index) == def.rowid_alias);
+        let mut live_rowids: HashSet<i64> = if rowid_move_possible { live.iter().map(|(rowid, _)| *rowid).collect() } else { HashSet::new() };
         let mut writes = Vec::new();
         let mut returned = Vec::new();
         let mut affected = 0usize;
+        // 逐行复用的求值与赋值缓冲:整表 `UPDATE` 因此不再为每一行重新分配行向量。
+        let mut eval_cells: Vec<Cell> = Vec::with_capacity(width + 1);
+        let mut next: Vec<Cell> = Vec::with_capacity(width);
+        let mut assigned = vec![false; width];
         for (position, (rowid, cells)) in live.iter().enumerate() {
-            let eval_cells = match joined {
+            eval_cells.clear();
+            match joined {
                 Some(joined) => match joined.get(rowid) {
-                    Some(row) => row.clone(),
+                    Some(row) => eval_cells.extend_from_slice(row),
                     None => continue,
                 },
                 None => {
-                    let mut cells = cells.clone();
-                    cells.push(Cell::Integer(*rowid));
-                    cells
+                    eval_cells.extend_from_slice(cells);
+                    eval_cells.push(Cell::Integer(*rowid));
                 }
-            };
+            }
             let ctx =
                 EvalContext { engine: self, outer: &[], current: shape, aggregates: &[], windows: &[], window_row: 0, budget, ctes: None };
             if joined.is_none() {
@@ -6797,9 +6928,10 @@ impl Engine {
                     }
                 }
             }
-            let mut next = cells.clone();
+            next.clear();
+            next.extend_from_slice(cells);
+            assigned.fill(false);
             let mut next_rowid = *rowid;
-            let mut assigned = vec![false; width];
             for (index, target) in targets {
                 let value = target.eval(&eval_cells, &ctx)?;
                 let column = &def.columns[*index];
@@ -6858,8 +6990,10 @@ impl Engine {
                 state[position].0 = next_rowid;
                 state[position].1 = next.clone();
             }
-            live_rowids.remove(rowid);
-            live_rowids.insert(next_rowid);
+            if rowid_move_possible {
+                live_rowids.remove(rowid);
+                live_rowids.insert(next_rowid);
+            }
             if let Some(returning) = returning {
                 let mut new_cells = next.clone();
                 new_cells.push(Cell::Integer(next_rowid));
@@ -6904,8 +7038,11 @@ impl Engine {
         };
         let mut removed = Vec::new();
         let mut returned = Vec::new();
+        // 逐行复用的求值缓冲:批量删除不再为每一行复制一份行向量。
+        let mut eval_cells: Vec<Cell> = Vec::with_capacity(def.columns.len() + 1);
         for (rowid, cells) in &live {
-            let mut eval_cells = cells.clone();
+            eval_cells.clear();
+            eval_cells.extend_from_slice(cells);
             eval_cells.push(Cell::Integer(*rowid));
             let ctx =
                 EvalContext { engine: self, outer: &[], current: shape, aggregates: &[], windows: &[], window_row: 0, budget, ctes: None };
@@ -8790,6 +8927,215 @@ impl Engine {
             }
         }
         None
+    }
+
+    /// 相关 `EXISTS` 的索引探针快速路径。
+    ///
+    /// 返回 `Some(answer)` 表示已用一次索引探针回答存在性,`None` 表示形状
+    /// 不适用或探针无法精确回答,调用方继续走通用子查询执行。计划按语句内
+    /// AST 地址缓存,同一语句的每个外层行只付一次探针与候选行解码。
+    fn correlated_exists(&self, query: &Statement, values: &[Cell], ctx: &EvalContext) -> Result<Option<bool>, SqlError> {
+        let key = query as *const Statement as usize;
+        if !self.exists_probes.borrow().contains_key(&key) {
+            let plan = self.build_exists_probe(query, ctx);
+            self.exists_probes.borrow_mut().insert(key, plan);
+        }
+        let probes = self.exists_probes.borrow();
+        let Some(plan) = probes.get(&key).and_then(Option::as_ref)
+        else {
+            return Ok(None);
+        };
+        ctx.budget.charge(1)?;
+        let Some(outer) = values.get(plan.outer)
+        else {
+            return Ok(None);
+        };
+        let def = &self.tables[plan.table_position];
+        let affinity = affinity_of(&def.columns[plan.slot].declared_type);
+        let cell = match (affinity, outer) {
+            (Affinity::Integer, Cell::Real(real)) => match integral_rowid(*real) {
+                Some(value) => Cell::Integer(value),
+                None => return Ok(None),
+            },
+            _ => outer.clone(),
+        };
+        match (&affinity, &cell) {
+            (Affinity::Text, Cell::Text(_)) | (Affinity::Real, Cell::Real(_)) | (Affinity::Integer, Cell::Integer(_)) => {}
+            _ => return Ok(None),
+        }
+        let Some(probe) = probe_key(&cell, plan.probe_collation)
+        else {
+            return Ok(None);
+        };
+        if matches!(probe, ProbeKey::Wide(_)) {
+            return Ok(None);
+        }
+        let Some(index) = self.indexes.get(&plan.index)
+        else {
+            return Ok(None);
+        };
+        let Some(rowids) = self.index_probe_rowids(index, &[probe]) else {
+            return Ok(None);
+        };
+        for rowid in rowids {
+            let Some(payload) = self.writer.row_payload(&plan.table, rowid).map_err(|error| storage_failure(error).in_statement("select"))?
+            else {
+                continue;
+            };
+            let stored = [TableRow { rowid, payload }];
+            let decoded = decode_stored_rows(&stored, def, None)?;
+            let row = &decoded[0];
+            // 探针只保证候选是超集（`NOCASE` / `RTRIM` 会合并等价类），
+            // 等值本身仍按列排序规则复核一次。
+            if compare_cells_with(&row[plan.slot], &cell, plan.compare_collation) != Ordering::Equal {
+                continue;
+            }
+            let mut matched = true;
+            if !plan.residual.is_empty() {
+                let eval = EvalContext {
+                    engine: self,
+                    outer: &[],
+                    current: &plan.shape,
+                    aggregates: &[],
+                    windows: &[],
+                    window_row: 0,
+                    budget: ctx.budget,
+                    ctes: ctx.ctes,
+                };
+                for conjunct in &plan.residual {
+                    if truthiness(&conjunct.eval(row, &eval)?) != Some(true) {
+                        matched = false;
+                        break;
+                    }
+                }
+            }
+            if matched {
+                return Ok(Some(true));
+            }
+        }
+        Ok(Some(false))
+    }
+
+    /// 构建 [`Self::correlated_exists`] 的计划；形状不适用时返回 `None`。
+    fn build_exists_probe(&self, query: &Statement, ctx: &EvalContext) -> Option<ExistsProbePlan> {
+        let Statement::Select { with, recursive: false, first, compounds, order, limit } = query
+        else {
+            return None;
+        };
+        if !with.is_empty() || !compounds.is_empty() || !order.is_empty() || limit.is_some() {
+            return None;
+        }
+        if first.distinct || !first.group.is_empty() || first.having.is_some() || !first.windows.is_empty() {
+            return None;
+        }
+        // `EXISTS (SELECT count(*) ...)` 恒为真，聚合与窗口必须排除；投影只
+        // 接受不会在求值时报错的常量或裸列，存在性与投影内容无关。
+        match &first.items {
+            SelectItems::CountAll => return None,
+            SelectItems::Named(exprs)
+                if !exprs.iter().all(|expr| match expr {
+                    Expr::Literal(_) | Expr::Column(_) => true,
+                    Expr::Alias { value, .. } => matches!(value.as_ref(), Expr::Literal(_) | Expr::Column(_)),
+                    _ => false,
+                }) =>
+            {
+                return None;
+            }
+            _ => {}
+        }
+        if first.from.len() != 1 {
+            return None;
+        }
+        let entry = &first.from[0];
+        if entry.query.is_some() || entry.join.is_some() || entry.on.is_some() || entry.using.is_some() || entry.natural {
+            return None;
+        }
+        let def = self.prunable_def(entry)?;
+        let position = *self.table_lookup.get(&entry.name.to_ascii_lowercase())?;
+        let filter = first.filter.as_ref()?;
+        let width = def.columns.len();
+        let source = Source {
+            label: entry.label().to_string(),
+            columns: SourceColumns::Table(def),
+            offset: 0,
+            join: None,
+            star_hidden: vec![false; width],
+            unqualified_hidden: vec![false; width],
+            star_override: vec![None; width],
+        };
+        let relation = Relation { sources: vec![source], using: vec![Vec::new()], using_slots: Vec::new(), trigger: None, excluded: false };
+        let shape = relation.shape();
+        let mut outer_shapes: Vec<ScopeShape> = Vec::with_capacity(ctx.outer.len() + 1);
+        outer_shapes.push(ctx.current.clone());
+        outer_shapes.extend(ctx.outer.iter().map(Scope::shape));
+        let mut windows = Vec::new();
+        let mut specs = Vec::new();
+        let resolved = match resolve_expr(filter, &relation, &outer_shapes, &[], &mut windows, &mut specs, false, false) {
+            Ok(resolved) => resolved,
+            Err(_) => return None,
+        };
+        if !windows.is_empty() || !specs.is_empty() {
+            return None;
+        }
+        let mut conjuncts = Vec::new();
+        split_conjuncts(resolved, &mut conjuncts);
+        let mut equality: Option<(usize, usize, usize, Collation)> = None;
+        for (at, conjunct) in conjuncts.iter().enumerate() {
+            let ResolvedExpr::Compare { left, op: CompareOp::Eq, right, collation } = conjunct
+            else {
+                continue;
+            };
+            let pair = match (left.as_ref(), right.as_ref()) {
+                (ResolvedExpr::Column { source: 0, index: slot }, ResolvedExpr::OuterColumn { depth: 0, index: outer }) => {
+                    Some((*slot, *outer))
+                }
+                (ResolvedExpr::OuterColumn { depth: 0, index: outer }, ResolvedExpr::Column { source: 0, index: slot }) => {
+                    Some((*slot, *outer))
+                }
+                _ => None,
+            };
+            if let Some((slot, outer)) = pair {
+                equality = Some((at, slot, outer, *collation));
+                break;
+            }
+        }
+        let Some((at, slot, outer, compare_collation)) = equality
+        else {
+            return None;
+        };
+        let table_key = def.name.to_ascii_lowercase();
+        let Some(index) = self
+            .indexes
+            .values()
+            .find(|index| !index.managed && index.table == table_key && index.columns.as_slice() == [slot])
+        else {
+            return None;
+        };
+        let index_name = index.name.to_ascii_lowercase();
+        let probe_collation = index.collations.first().copied().unwrap_or_default();
+        let mut residual = Vec::with_capacity(conjuncts.len() - 1);
+        for (position, conjunct) in conjuncts.into_iter().enumerate() {
+            if position == at {
+                continue;
+            }
+            // 残差必须只读内层列:读取外层或再跑子查询都会把快速路径重新拖回
+            // 通用执行,也破坏“按 AST 缓存一次”的前提。
+            if !conjunct.is_inner_only() {
+                return None;
+            }
+            residual.push(conjunct);
+        }
+        Some(ExistsProbePlan {
+            table: def.name.clone(),
+            table_position: position,
+            index: index_name,
+            slot,
+            outer,
+            probe_collation,
+            compare_collation,
+            residual,
+            shape,
+        })
     }
 
     /// 等值连接的内层按索引取值:只把匹配外层键的右行交给连接。
@@ -10939,6 +11285,7 @@ impl Scope {
 /// An inner expression resolves an outer reference to `(depth, index)` once;
 /// evaluation then reads the value from the matching `Scope` of the current
 /// outer row.
+#[derive(Clone)]
 struct ScopeShape {
     columns: Vec<(String, String)>,
 }
@@ -11700,6 +12047,19 @@ struct ResolvedFrame {
 }
 
 impl ResolvedExpr {
+    /// 只读求值:字面量与已绑定列直接借出,不复制单元格。
+    ///
+    /// 只读算子(比较、`IS NULL`、`LIKE`)把操作数按引用交给下游比较函数,
+    /// 因此逐行扫描不必为每个文本操作数克隆一份 `String`。其余形态返回
+    /// `None`,由 [`ResolvedExpr::eval`] 走完整求值。
+    fn eval_borrowed<'a>(&'a self, values: &'a [Cell]) -> Option<&'a Cell> {
+        match self {
+            Self::Cell(cell) => Some(cell),
+            Self::Column { index, .. } => values.get(*index),
+            _ => None,
+        }
+    }
+
     /// Evaluates this expression against one merged row.
     ///
     /// Every position (projection, `WHERE`, `ORDER BY`, nested subquery) goes
@@ -11742,14 +12102,22 @@ impl ResolvedExpr {
             }
             Self::Binary { left, op, right } => arithmetic(*op, &left.eval(values, ctx)?, &right.eval(values, ctx)?),
             Self::Compare { left, op, right, collation } => {
-                match compare_values(&left.eval(values, ctx)?, &right.eval(values, ctx)?, *op, *collation) {
+                // 字面量与列操作数按引用比较:逐行扫描因此不克隆任何文本。
+                let comparison = match (left.eval_borrowed(values), right.eval_borrowed(values)) {
+                    (Some(left), Some(right)) => compare_values(left, right, *op, *collation),
+                    _ => compare_values(&left.eval(values, ctx)?, &right.eval(values, ctx)?, *op, *collation),
+                };
+                match comparison {
                     Some(true) => Cell::Integer(1),
                     Some(false) => Cell::Integer(0),
                     None => Cell::Null,
                 }
             }
             Self::IsNull { value, negated } => {
-                let is_null = matches!(value.eval(values, ctx)?, Cell::Null);
+                let is_null = match value.eval_borrowed(values) {
+                    Some(cell) => matches!(cell, Cell::Null),
+                    None => matches!(value.eval(values, ctx)?, Cell::Null),
+                };
                 Cell::Integer(i64::from(is_null != *negated))
             }
             Self::IsTruth { value, truth, negated } => {
@@ -11762,16 +12130,31 @@ impl ResolvedExpr {
                 Some(value) => Cell::Integer(i64::from(!value)),
                 None => Cell::Null,
             },
-            Self::And(left, right) => match (truthiness(&left.eval(values, ctx)?), truthiness(&right.eval(values, ctx)?)) {
-                (Some(false), _) | (_, Some(false)) => Cell::Integer(0),
-                (Some(true), Some(true)) => Cell::Integer(1),
-                _ => Cell::Null,
-            },
-            Self::Or(left, right) => match (truthiness(&left.eval(values, ctx)?), truthiness(&right.eval(values, ctx)?)) {
-                (Some(true), _) | (_, Some(true)) => Cell::Integer(1),
-                (Some(false), Some(false)) => Cell::Integer(0),
-                _ => Cell::Null,
-            },
+            // `AND` / `OR` 短路求值,与 SQLite 一致:左侧已能定案时不求值右侧,
+            // 既省掉一个操作数的求值,也让 `a = 1 OR b = 2` 这类谓词在命中的行上
+            // 少做一次比较。
+            Self::And(left, right) => {
+                let left = truthiness(&left.eval(values, ctx)?);
+                if left == Some(false) {
+                    return Ok(Cell::Integer(0));
+                }
+                match (left, truthiness(&right.eval(values, ctx)?)) {
+                    (Some(false), _) | (_, Some(false)) => Cell::Integer(0),
+                    (Some(true), Some(true)) => Cell::Integer(1),
+                    _ => Cell::Null,
+                }
+            }
+            Self::Or(left, right) => {
+                let left = truthiness(&left.eval(values, ctx)?);
+                if left == Some(true) {
+                    return Ok(Cell::Integer(1));
+                }
+                match (left, truthiness(&right.eval(values, ctx)?)) {
+                    (Some(true), _) | (_, Some(true)) => Cell::Integer(1),
+                    (Some(false), Some(false)) => Cell::Integer(0),
+                    _ => Cell::Null,
+                }
+            }
             Self::Case { operand, branches, otherwise, collation } => {
                 match operand {
                     None => {
@@ -11899,8 +12282,23 @@ impl ResolvedExpr {
                 Cell::Integer(i64::from(matched != *negated))
             }
             Self::Like { value, pattern, negated, escape } => {
-                let value = value.eval(values, ctx)?;
-                let pattern = pattern.eval(values, ctx)?;
+                // 两个操作数按引用取出,避免逐行克隆文本(全表 `LIKE` 扫描的热点)。
+                let owned_value;
+                let value = match value.eval_borrowed(values) {
+                    Some(cell) => cell,
+                    None => {
+                        owned_value = value.eval(values, ctx)?;
+                        &owned_value
+                    }
+                };
+                let owned_pattern;
+                let pattern = match pattern.eval_borrowed(values) {
+                    Some(cell) => cell,
+                    None => {
+                        owned_pattern = pattern.eval(values, ctx)?;
+                        &owned_pattern
+                    }
+                };
                 let escape = match escape {
                     Some(escape) => {
                         let text = text_form(&escape.eval(values, ctx)?);
@@ -11919,11 +12317,15 @@ impl ResolvedExpr {
                 // `LIKE` with a NULL value, pattern or escape yields NULL.
                 // Text operands match straight off the stored strings, which
                 // keeps a full-table `LIKE` scan from allocating a `String`
-                // copy and two `Vec<char>` per row.
-                let matched = match (&value, &pattern) {
-                    (Cell::Text(value), Cell::Text(pattern)) => like_match_text(value, pattern, escape),
+                // copy and two `Vec<char>` per row. 纯前缀模式(`abc%`、`abc`)
+                // 再走一次前缀比较,不必启动逐字符匹配器。
+                let matched = match (value, pattern) {
+                    (Cell::Text(value), Cell::Text(pattern)) => match like_plain_prefix(pattern, escape) {
+                        Some((prefix, open)) => like_prefix_text(value, prefix, open),
+                        None => like_match_text(value, pattern, escape),
+                    },
                     _ => {
-                        let (Some(value), Some(pattern)) = (text_form(&value), text_form(&pattern))
+                        let (Some(value), Some(pattern)) = (text_form(value), text_form(pattern))
                         else {
                             return Ok(Cell::Null);
                         };
@@ -11961,6 +12363,9 @@ impl ResolvedExpr {
                     }
                 }
                 ctx.engine.outer_read.set(false);
+                if let Some(answer) = ctx.engine.correlated_exists(query, values, ctx)? {
+                    return Ok(Cell::Integer(i64::from(answer)));
+                }
                 let result = run_subquery(query, values, ctx)?;
                 if !ctx.engine.outer_read.get() {
                     ctx.engine.subquery_cache.borrow_mut().insert(key, SubqueryCache::Rows(result.rows.clone()));
@@ -12093,6 +12498,45 @@ impl ResolvedExpr {
             | Self::Parameter(_)
             | Self::Column { .. }
             | Self::OuterColumn { .. }
+            | Self::AggregateRef(_)
+            | Self::Window(_)
+            | Self::TriggerColumn { .. }
+            | Self::ExcludedColumn { .. } => false,
+        }
+    }
+
+    /// Whether this expression only reads the current row, literals and
+    /// parameters — no outer column, subquery, aggregate or window. Used by the
+    /// correlated-`EXISTS` probe, whose residual predicates must stay local so
+    /// one cached plan answers every outer row.
+    fn is_inner_only(&self) -> bool {
+        match self {
+            Self::Cell(_) | Self::Parameter(_) | Self::Column { .. } => true,
+            Self::Unary { value, .. }
+            | Self::Not(value)
+            | Self::IsNull { value, .. }
+            | Self::IsTruth { value, .. }
+            | Self::Cast { value, .. }
+            | Self::Collate { value, .. } => value.is_inner_only(),
+            Self::Binary { left, right, .. } | Self::Compare { left, right, .. } | Self::And(left, right) | Self::Or(left, right) => {
+                left.is_inner_only() && right.is_inner_only()
+            }
+            Self::IsDistinct { left, right, .. } => left.is_inner_only() && right.is_inner_only(),
+            Self::Glob { value, pattern, .. } => value.is_inner_only() && pattern.is_inner_only(),
+            Self::Case { operand, branches, otherwise, .. } => {
+                operand.as_ref().is_none_or(|operand| operand.is_inner_only())
+                    && branches.iter().all(|(condition, result)| condition.is_inner_only() && result.is_inner_only())
+                    && otherwise.as_ref().is_none_or(|otherwise| otherwise.is_inner_only())
+            }
+            Self::In { value, list, .. } => value.is_inner_only() && list.iter().all(ResolvedExpr::is_inner_only),
+            Self::Function { args, .. } | Self::HostFunction { args, .. } => args.iter().all(ResolvedExpr::is_inner_only),
+            Self::Like { value, pattern, escape, .. } => {
+                value.is_inner_only() && pattern.is_inner_only() && escape.as_ref().is_none_or(|escape| escape.is_inner_only())
+            }
+            Self::OuterColumn { .. }
+            | Self::Subquery(_)
+            | Self::Exists(_)
+            | Self::InSubquery { .. }
             | Self::AggregateRef(_)
             | Self::Window(_)
             | Self::TriggerColumn { .. }
@@ -15032,6 +15476,37 @@ enum LikeElement {
     Literal(char),
 }
 
+/// 纯前缀模式的快速形态:模式是 `<prefix>%` 或 `<prefix>`,且 `prefix` 内没有
+/// `%`、`_` 与转义字符。返回 `prefix` 与「是否允许更长」。
+///
+/// 命中时 `LIKE` 等价于一次前缀比较,不必启动逐字符匹配器。带 `ESCAPE` 的
+/// 模式保持原匹配器:转义字符自身也要参与判定。
+fn like_plain_prefix(pattern: &str, escape: Option<char>) -> Option<(&str, bool)> {
+    if escape.is_some() {
+        return None;
+    }
+    let (prefix, open) = match pattern.strip_suffix('%') {
+        Some(prefix) => (prefix, true),
+        None => (pattern, false),
+    };
+    if prefix.contains(['%', '_']) {
+        return None;
+    }
+    Some((prefix, open))
+}
+
+/// `LIKE` 前缀匹配:`value` 是否以 `prefix` 开头(`open` 为假时要求整串相等),
+/// ASCII 字母不区分大小写,与 [`like_eq`] 的逐字符规则一致。
+///
+/// UTF-8 是自同步编码,逐字节做 ASCII 折叠比较与前缀字符比较等价:多字节字符
+/// 必须逐字节相同,ASCII 字节也不会出现在多字节序列内部。
+fn like_prefix_text(value: &str, prefix: &str, open: bool) -> bool {
+    let value = value.as_bytes();
+    let prefix = prefix.as_bytes();
+    let matched_length = if open { value.len() >= prefix.len() } else { value.len() == prefix.len() };
+    matched_length && prefix.iter().zip(&value[..prefix.len()]).all(|(pattern, candidate)| pattern.eq_ignore_ascii_case(candidate))
+}
+
 /// Matches one `LIKE` pattern against one text value without allocating.
 ///
 /// Same semantics as [`like_match`] — `%` matches any run including the empty
@@ -16867,6 +17342,11 @@ fn cell_write_value(cell: &Cell) -> crate::WriteValue {
         Cell::Text(value) => crate::WriteValue::Text(value.clone()),
         Cell::Blob(value) => crate::WriteValue::Blob(value.clone()),
     }
+}
+
+/// 把一行已解码的单元格整体转成写侧的存储值,供写语句复用自己已读出的行像。
+fn cells_write_values(cells: &[Cell]) -> Vec<crate::WriteValue> {
+    cells.iter().map(cell_write_value).collect()
 }
 
 /// Inserts one row into an in-memory temp table and returns its rowid.
@@ -19235,6 +19715,60 @@ mod tests {
         assert_eq!(
             engine.execute_one("SELECT id FROM m WHERE v NOT IN (SELECT v FROM m WHERE id = 2)").expect("null not in").rows,
             Vec::<Vec<Cell>>::new()
+        );
+    }
+
+    #[test]
+    fn correlated_exists_index_probe_matches_the_full_scan() {
+        let setup = [
+            "CREATE TABLE a(id INTEGER PRIMARY KEY, label TEXT)",
+            "INSERT INTO a VALUES (1,'x'),(2,'y'),(3,'x'),(4,'z')",
+            "CREATE TABLE b(id INTEGER PRIMARY KEY, label TEXT)",
+            "INSERT INTO b VALUES (1,'x'),(2,'y'),(3,'y'),(4,'w')",
+        ];
+        let mut plain = joined_engine(&setup);
+        let mut indexed = joined_engine(&setup);
+        indexed.execute_one("CREATE INDEX b_label ON b(label)").expect("index");
+        for sql in [
+            "SELECT count(*) FROM a WHERE EXISTS (SELECT 1 FROM b WHERE b.label = a.label)",
+            "SELECT count(*) FROM a WHERE EXISTS (SELECT 1 FROM b WHERE b.label = a.label AND b.id <= 2)",
+            "SELECT id FROM a WHERE EXISTS (SELECT 1 FROM b WHERE b.label = a.label AND b.id > 1) ORDER BY id",
+            "SELECT count(*) FROM a WHERE NOT EXISTS (SELECT 1 FROM b WHERE b.label = a.label)",
+        ] {
+            let expected = plain.execute_one(sql).expect("plain").rows;
+            let actual = indexed.execute_one(sql).expect("indexed").rows;
+            assert_eq!(actual, expected, "{sql}");
+        }
+    }
+
+    #[test]
+    fn correlated_exists_rechecks_equality_under_the_predicate_collation() {
+        let mut engine = joined_engine(&[
+            "CREATE TABLE outer_t(id INTEGER PRIMARY KEY, label TEXT)",
+            "INSERT INTO outer_t VALUES (1,'b')",
+            "CREATE TABLE inner_t(id INTEGER PRIMARY KEY, label TEXT)",
+            "INSERT INTO inner_t VALUES (1,'B')",
+            // 探针按索引的 `NOCASE` 折叠会命中 `'B'`，但列比较是 `BINARY`，
+            // 复核必须按谓词的排序规则拒绝它。
+            "CREATE INDEX inner_t_label ON inner_t(label COLLATE NOCASE)",
+        ]);
+        assert_eq!(
+            engine
+                .execute_one(
+                    "SELECT count(*) FROM outer_t WHERE EXISTS (SELECT 1 FROM inner_t WHERE inner_t.label = outer_t.label)"
+                )
+                .expect("exists")
+                .rows,
+            vec![vec![Cell::Integer(0)]]
+        );
+        assert_eq!(
+            engine
+                .execute_one(
+                    "SELECT count(*) FROM outer_t WHERE EXISTS (SELECT 1 FROM inner_t WHERE inner_t.label = outer_t.label COLLATE NOCASE)"
+                )
+                .expect("nocase")
+                .rows,
+            vec![vec![Cell::Integer(1)]]
         );
     }
 

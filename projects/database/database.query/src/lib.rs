@@ -10,6 +10,7 @@ pub mod sql_batch;
 pub mod sql_ddl;
 pub mod sql_describe;
 pub mod sql_execute;
+pub mod sql_index;
 pub mod sql_meta;
 pub mod sql_parameters;
 pub mod sql_planner;
@@ -36,7 +37,7 @@ pub use sql_meta::{
 };
 pub use sql_parameters::{SqlParameterStyle, neutralized_sql_parameters, nulled_sql_parameters, substitute_sql_parameters};
 pub use sql_planner::{
-    DefaultValue, DeletePlan, InsertSelectColumn, InsertSelectPlan, JoinPlan, JoinSourcePlan, ReadPlan, ScanPlan, SetOperationPlan,
+    DefaultValue, DeletePlan, IndexProbe, InsertSelectColumn, InsertSelectPlan, JoinPlan, JoinSourcePlan, ReadPlan, ScanPlan, SetOperationPlan,
     SqlExecutionPlan, SqlSetOrderByItem, UniqueConstraintPlan, UpdateAssignment, UpdatePlan, WritePlan, plan_select, plan_select_for_dialect,
     plan_statement, plan_statement_for_dialect,
 };

@@ -384,11 +384,7 @@ fn repeated_updates_reuse_the_freed_cell_instead_of_growing_the_page() {
     for round in 0..1000 {
         let row = (round % 50) + 1;
         writer
-            .update(
-                "items",
-                row,
-                &[UpdateValue::Keep, UpdateValue::Keep, UpdateValue::Set(WriteValue::Real(7.25))],
-            )
+            .update("items", row, &[UpdateValue::Keep, UpdateValue::Keep, UpdateValue::Set(WriteValue::Real(7.25))])
             .expect("update reuses the delete hole");
     }
     writer.commit().expect("commit");

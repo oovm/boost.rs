@@ -112,14 +112,20 @@ fn failed_commit_restores_records_and_the_next_commit_is_byte_correct() {
         ])
         .expect_err("the durable boundary is blocked");
     assert!(shard.get(&b).unwrap().is_none(), "a failed batch must not leak the new key");
-    assert_eq!(shard.get(&a).unwrap().unwrap().value, StoredValue::Inline(InlineValue(b"original".to_vec())), "the touched key keeps its pre-image");
+    assert_eq!(
+        shard.get(&a).unwrap().unwrap().value,
+        StoredValue::Inline(InlineValue(b"original".to_vec())),
+        "the touched key keeps its pre-image"
+    );
     assert_eq!(fs::read(&backup).unwrap(), published, "the durable snapshot keeps the pre-commit bytes");
 
     fs::remove_dir(&path).unwrap();
     fs::rename(&backup, &path).unwrap();
 
     // A failed commit must not consume revisions: the retry starts where the shard did.
-    shard.commit_changes(vec![ShardChange::Put { key: b.clone(), value: StoredValue::Inline(InlineValue(b"new".to_vec())), expires_at: None }]).expect("retry");
+    shard
+        .commit_changes(vec![ShardChange::Put { key: b.clone(), value: StoredValue::Inline(InlineValue(b"new".to_vec())), expires_at: None }])
+        .expect("retry");
     assert_eq!(shard.get(&b).unwrap().unwrap().revision, 2);
     assert_eq!(shard.get(&a).unwrap().unwrap().revision, 1);
     assert_matches_full_reencode(&shard, &path);
@@ -406,6 +412,77 @@ fn file_shard_namespaces_len_and_flush_persist() {
     assert_eq!(reopened.len(&Namespace("a".into())).unwrap(), 0);
     assert_eq!(reopened.len(&Namespace("b".into())).unwrap(), 1);
     assert_eq!(reopened.namespaces().unwrap(), vec![Namespace("b".into())]);
+    cleanup(&path);
+}
+
+#[test]
+fn write_batch_publishes_to_memory_and_persists_once_on_end() {
+    let path = temp_path("batch");
+    let mut shard = FileShard::open(&path).expect("open");
+    let a = Key::new("ns", b"a");
+    let b = Key::new("ns", b"b");
+    shard.put(a.clone(), StoredValue::Inline(InlineValue(b"1".to_vec()))).expect("seed");
+    let published = fs::read(&path).expect("read seed snapshot");
+
+    shard.begin_write_batch();
+    shard
+        .commit_changes(vec![
+            ShardChange::Put { key: b.clone(), value: StoredValue::Inline(InlineValue(b"new".to_vec())), expires_at: None },
+            ShardChange::Delete { key: a.clone() },
+        ])
+        .expect("stage");
+    // Staged writes are immediately visible to reads, including the reads a later statement
+    // of the same command performs, but the snapshot file is untouched until the scope ends.
+    assert!(shard.get(&b).expect("get").is_some(), "a staged write must be readable");
+    assert!(shard.get(&a).expect("get").is_none(), "a staged delete must be readable");
+    assert_eq!(fs::read(&path).expect("read"), published, "a batch scope must not persist per write");
+
+    shard.end_write_batch().expect("end batch");
+    assert_ne!(fs::read(&path).expect("read"), published, "ending the scope publishes the snapshot");
+    drop(shard);
+
+    let reopened = FileShard::open(&path).expect("reopen after batch");
+    assert!(reopened.get(&a).expect("get").is_none());
+    assert!(reopened.get(&b).expect("get").is_some());
+    cleanup(&path);
+}
+
+#[test]
+fn failed_write_batch_commit_restores_the_pre_scope_state() {
+    let path = temp_path("batch-failure");
+    let backup = path.with_extension("saved");
+    let mut shard = FileShard::open(&path).expect("open");
+    let a = Key::new("ns", b"a");
+    let b = Key::new("ns", b"b");
+    shard.put(a.clone(), StoredValue::Inline(InlineValue(b"1".to_vec()))).expect("seed");
+    let published = fs::read(&path).expect("read seed snapshot");
+    fs::rename(&path, &backup).unwrap();
+    fs::create_dir(&path).unwrap();
+
+    shard.begin_write_batch();
+    shard
+        .commit_changes(vec![ShardChange::Put { key: b.clone(), value: StoredValue::Inline(InlineValue(b"new".to_vec())), expires_at: None }])
+        .expect("stage");
+    shard.commit_changes(vec![ShardChange::Delete { key: a.clone() }]).expect("stage delete");
+    assert!(shard.get(&b).expect("get").is_some());
+    assert!(shard.end_write_batch().is_err(), "the durable boundary is blocked");
+
+    // The whole scope is rolled back: no staged write stays visible and no revision is spent.
+    assert!(shard.get(&b).expect("get").is_none(), "a failed batch must not leak the new key");
+    assert!(shard.get(&a).expect("get").is_some(), "a failed batch must restore the deleted key");
+    assert_eq!(shard.get(&a).unwrap().unwrap().revision, 1);
+
+    fs::remove_dir(&path).unwrap();
+    fs::rename(&backup, &path).unwrap();
+    shard.begin_write_batch();
+    shard
+        .commit_changes(vec![ShardChange::Put { key: b.clone(), value: StoredValue::Inline(InlineValue(b"retry".to_vec())), expires_at: None }])
+        .expect("stage retry");
+    shard.end_write_batch().expect("retry batch");
+    assert_eq!(shard.get(&b).unwrap().unwrap().revision, 2, "a failed batch must not consume revisions");
+    drop(shard);
+    let reopened = FileShard::open(&path).expect("reopen after retry");
+    assert_eq!(reopened.get(&b).unwrap().unwrap().revision, 2);
     cleanup(&path);
 }
 

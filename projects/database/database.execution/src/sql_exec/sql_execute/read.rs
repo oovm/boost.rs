@@ -438,6 +438,84 @@ pub(crate) fn scan_rows(
     }
 }
 
+/// 一次有序批量 Get；事务存在时必须走事务快照。
+pub(crate) fn read_batch(
+    executor: &dyn KeyValueExecutor,
+    transaction: Option<&dyn TransactionHandle>,
+    commands: &[KeyValueCommand],
+) -> Result<Vec<database_query::cluster_kv::KeyValueResult>, SqlFrontendError> {
+    match transaction {
+        Some(handle) => handle
+            .execute_read_batch(commands)
+            .map_err(|e| internal_error(&format!("TransactionHandle.read_batch failed: {e}"))),
+        None => executor
+            .execute_read_batch(None, commands)
+            .map_err(|e| internal_error(&format!("KeyValueExecutor.read_batch failed: {e}"))),
+    }
+}
+
+/// 用单列唯一索引取候选 rowid，再按 rowid 批量取行。
+///
+/// 返回 `Ok(None)` 表示索引没有完备标记（旧数据目录、或某次写入发现值无法编码），
+/// 调用方必须退回整表扫描——那是唯一能保证不漏行的路径。
+///
+/// 候选 rowid 会按字节序排序后再取行：KV 扫描按 key 字节序返回，排序后结果顺序与
+/// 整表扫描完全一致，`ORDER BY` 与分页语义不受索引影响。索引里残留的已删除 rowid
+/// 取不到行，直接跳过。
+pub(crate) fn scan_secondary_index(
+    executor: &dyn KeyValueExecutor,
+    transaction: Option<&dyn TransactionHandle>,
+    index: &IndexProbe,
+    table_namespace: &Namespace,
+) -> Result<Option<Vec<(Vec<u8>, Vec<u8>)>>, SqlFrontendError> {
+    let namespace = Namespace(index.namespace.clone());
+    let mut commands =
+        vec![KeyValueCommand { namespace: namespace.clone(), key: database_query::sql_index::READY_KEY.to_vec(), action: KeyValueAction::Get }];
+    if let Some(exact) = &index.exact {
+        commands.push(KeyValueCommand { namespace: namespace.clone(), key: exact.clone(), action: KeyValueAction::Get });
+    }
+    let results = read_batch(executor, transaction, &commands)?;
+    if !matches!(results.first(), Some(database_query::cluster_kv::KeyValueResult::Get(Some(_)))) {
+        return Ok(None);
+    }
+    let mut rowids: Vec<Vec<u8>> = Vec::new();
+    if index.exact.is_some() {
+        if let Some(database_query::cluster_kv::KeyValueResult::Get(Some(rowid))) = results.get(1) {
+            rowids.push(rowid.clone());
+        }
+    }
+    else {
+        let entries = scan_rows(
+            executor,
+            transaction,
+            &namespace,
+            &[database_query::sql_index::ENTRY_PREFIX],
+            index.after.as_deref(),
+            index.before.as_deref(),
+            0,
+            "index_scan",
+        )?;
+        rowids.extend(entries.into_iter().map(|(_, rowid)| rowid));
+    }
+    rowids.sort();
+    rowids.dedup();
+    if rowids.is_empty() {
+        return Ok(Some(Vec::new()));
+    }
+    let commands: Vec<KeyValueCommand> = rowids
+        .iter()
+        .map(|rowid| KeyValueCommand { namespace: table_namespace.clone(), key: rowid.clone(), action: KeyValueAction::Get })
+        .collect();
+    let fetched = read_batch(executor, transaction, &commands)?;
+    let mut scanned = Vec::with_capacity(rowids.len());
+    for (rowid, result) in rowids.into_iter().zip(fetched) {
+        if let database_query::cluster_kv::KeyValueResult::Get(Some(bytes)) = result {
+            scanned.push((rowid, bytes));
+        }
+    }
+    Ok(Some(scanned))
+}
+
 pub(crate) fn execute_scan(
     executor: &dyn KeyValueExecutor,
     transaction: Option<&dyn TransactionHandle>,
@@ -449,16 +527,23 @@ pub(crate) fn execute_scan(
         return Ok(SqlResult { columns, rows: Vec::new(), affected_rows: 0 });
     }
     let namespace = Namespace(plan.namespace.clone());
-    let scanned = scan_rows(
-        executor,
-        transaction,
-        &namespace,
-        &plan.rowid_prefix,
-        plan.rowid_after.as_deref(),
-        plan.rowid_before.as_deref(),
-        plan.limit,
-        "scan",
-    )?;
+    let indexed = match &plan.index {
+        Some(index) => scan_secondary_index(executor, transaction, index, &namespace)?,
+        None => None,
+    };
+    let scanned = match indexed {
+        Some(rows) => rows,
+        None => scan_rows(
+            executor,
+            transaction,
+            &namespace,
+            &plan.rowid_prefix,
+            plan.rowid_after.as_deref(),
+            plan.rowid_before.as_deref(),
+            plan.limit,
+            "scan",
+        )?,
+    };
 
     let needed_ids = scan_needed_field_ids(plan);
 

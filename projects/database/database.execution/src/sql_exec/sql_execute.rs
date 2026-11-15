@@ -28,7 +28,7 @@ use database_query::{
         retain_distinct_projected_rows,
     },
     sql_planner::{
-        ConflictAssignment, ConflictPolicy, DeletePlan, DeleteScanPlan, InsertSelectPlan, JoinPlan, JoinSourcePlan, ReadPlan,
+        ConflictAssignment, ConflictPolicy, DeletePlan, DeleteScanPlan, IndexProbe, InsertSelectPlan, JoinPlan, JoinSourcePlan, ReadPlan,
         ReturningProjections, ScalarPlan, ScanPlan, SetOperationPlan, SqlExecutionPlan, UniqueConstraintPlan, UpdatePlan, UpdateScanPlan,
         WriteField, WritePlan, check_write_literal, pk_literal_to_rowid,
     },
@@ -38,12 +38,13 @@ use database_types::cluster::Namespace;
 use crate::cluster::{BufferedCommit, CommitCondition, KeyValueExecutor, TransactionHandle};
 use database_query::cluster_kv::{KeyValueAction, KeyValueCommand};
 
+mod index;
 mod outer;
 mod read;
 mod window;
 mod write;
 
-pub(crate) use self::{outer::*, read::*, window::*, write::*};
+pub(crate) use self::{index::*, outer::*, read::*, window::*, write::*};
 pub(crate) use database_query::sql_execute::{cmp_string, eq_string, expression_needed_field_ids, scan_needed_field_ids};
 
 /// 执行一个已计划的 SQL 语句。

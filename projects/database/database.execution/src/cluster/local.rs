@@ -558,10 +558,11 @@ impl TransactionHandle for LocalTransactionHandle {
             .iter()
             .rposition(|(existing, _)| existing == name)
             .ok_or_else(|| Error::Unsupported(leak_str(&format!("savepoint `{name}` does not exist"))))?;
-        let (_, snapshot) = savepoints.remove(index);
-        // Drop every savepoint strictly above the named one so later rollback-to cannot jump
-        // past its own restore barrier.
-        savepoints.truncate(index);
+        // `ROLLBACK TO SAVEPOINT` restores the buffer but keeps the named savepoint
+        // open (MySQL and standard SQL agree here), so only the strictly newer
+        // savepoints are dropped.
+        let snapshot = savepoints[index].1.clone();
+        savepoints.truncate(index + 1);
         drop(savepoints);
         let mut buffer = self.buffer.lock().map_err(|_| Error::Corrupt("transaction buffer poisoned"))?;
         *buffer = snapshot;
@@ -574,7 +575,8 @@ impl TransactionHandle for LocalTransactionHandle {
             .iter()
             .rposition(|(existing, _)| existing == name)
             .ok_or_else(|| Error::Unsupported(leak_str(&format!("savepoint `{name}` does not exist"))))?;
-        savepoints.remove(index);
+        // Releasing a savepoint also releases every savepoint established after it.
+        savepoints.truncate(index);
         Ok(())
     }
 }

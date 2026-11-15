@@ -226,6 +226,15 @@ pub fn plan_select_for_dialect(
     let limit_after_sort = if needs_post_filter_limit { limit.unwrap_or(0) } else { 0 };
     let offset_after_sort = if needs_post_filter_limit { offset.unwrap_or(0) } else { 0 };
 
+    // 单列唯一索引的候选集探测。`pk_prefix` 非空时不能用：`pk LIKE 'x%'` 的前缀
+    // 已经从 remaining 里抽走，索引候选集不再受它约束，会漏行。
+    let index = if pk_prefix.is_none() {
+        secondary_index_probe(remaining_predicate.as_ref(), table, &namespace)
+    }
+    else {
+        None
+    };
+
     Ok(SqlExecutionPlan::Scan(ScanPlan {
         namespace,
         pk_row_id: source.row_id(pk_field.field_id),
@@ -233,6 +242,7 @@ pub fn plan_select_for_dialect(
         rowid_after,
         rowid_before,
         limit: kv_limit,
+        index,
         projection_fields,
         projection_expressions,
         remaining_predicate,
@@ -955,6 +965,7 @@ pub fn plan_delete(delete: SqlCatalogBoundDelete, catalog: &SqlCatalog) -> Resul
     let pk_field = primary_key_of(table)?;
     let field_types: std::collections::BTreeMap<u64, crate::catalog_bind::SqlFieldType> =
         table.fields.iter().map(|f| (f.field_id, f.field_type.clone())).collect();
+    let unique_constraints = unique_constraints_of(table);
 
     let Some(predicate) = delete.predicate
     else {
@@ -965,6 +976,7 @@ pub fn plan_delete(delete: SqlCatalogBoundDelete, catalog: &SqlCatalog) -> Resul
             rowid_before: None,
             predicate: None,
             field_types,
+            unique_constraints,
         }));
     };
 
@@ -977,6 +989,7 @@ pub fn plan_delete(delete: SqlCatalogBoundDelete, catalog: &SqlCatalog) -> Resul
             rowid: pk_literal_to_rowid(&rowid_literal)?,
             remaining_predicate: remaining,
             field_types,
+            unique_constraints,
         }));
     }
     let (rowid_after, rowid_before) = pk_scan_bounds(is_integer_primary_key(pk_field), lower, upper);
@@ -987,6 +1000,7 @@ pub fn plan_delete(delete: SqlCatalogBoundDelete, catalog: &SqlCatalog) -> Resul
         rowid_before,
         predicate: remaining,
         field_types,
+        unique_constraints,
     }))
 }
 
@@ -1232,6 +1246,11 @@ pub struct ScanPlan {
     pub rowid_before: Option<Vec<u8>>,
     /// 下推到 kv-store 的 scan limit（0 = 无上限）。ORDER BY / 聚合 / GROUP BY 存在时保持 0。
     pub limit: usize,
+    /// 单列 `UNIQUE` 二级索引候选集探测；`None` 表示整表扫描。
+    ///
+    /// 它只决定「读哪些行」，不决定「哪些行入选」：被探测的谓词仍然留在
+    /// [`Self::remaining_predicate`] 里逐行复核。
+    pub index: Option<IndexProbe>,
     /// 投影里直接映射到 catalog 字段的那些列：(field_id, display_name)。
     pub projection_fields: Vec<(u64, String)>,
     /// 投影里需要在 row 上做表达式求值的那些：(expression, display_name)。
@@ -1504,6 +1523,23 @@ pub struct WriteField {
     pub capacity: Option<u32>,
 }
 
+/// 单列 `UNIQUE` 二级索引上的一次候选集探测。
+///
+/// 规划期只把顶层 `AND` 合取项里针对该列的等值或范围条件翻成索引键，因此候选集
+/// 一定是真实结果集的超集。行级复核仍由 [`ScanPlan::remaining_predicate`] 完成：
+/// 索引只是少读行，不改变哪一行入选。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexProbe {
+    /// 索引 namespace，形如 `table:{type_id}/idx/{field_id}`。
+    pub namespace: String,
+    /// 等值点读的完整条目键；与 `after` / `before` 互斥。
+    pub exact: Option<Vec<u8>>,
+    /// 范围扫描下界（exclusive），以条目前缀 `0x01` 开头。
+    pub after: Option<Vec<u8>>,
+    /// 范围扫描上界（exclusive）。
+    pub before: Option<Vec<u8>>,
+}
+
 /// DELETE 执行计划。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeletePlan {
@@ -1516,6 +1552,8 @@ pub struct DeletePlan {
     pub remaining_predicate: Option<SqlCatalogBoundExpression>,
     /// field_id → SqlFieldType 映射，execute 层 eval predicate 用。
     pub field_types: std::collections::BTreeMap<u64, crate::catalog_bind::SqlFieldType>,
+    /// 该表声明的 `UNIQUE` 约束，执行层据此摘除对应的二级索引条目。
+    pub unique_constraints: Vec<UniqueConstraintPlan>,
 }
 
 /// 多行 UPDATE 执行计划：扫描 rowid 区间，逐行评估完整 WHERE 后改写。
@@ -1554,6 +1592,8 @@ pub struct DeleteScanPlan {
     pub predicate: Option<SqlCatalogBoundExpression>,
     /// field_id → SqlFieldType 映射，execute 层解码与求值用。
     pub field_types: std::collections::BTreeMap<u64, crate::catalog_bind::SqlFieldType>,
+    /// 该表声明的 `UNIQUE` 约束，执行层据此摘除对应的二级索引条目。
+    pub unique_constraints: Vec<UniqueConstraintPlan>,
 }
 
 /// 从 WHERE predicate 里提取所有关于 pk 字段的条件。
@@ -1864,6 +1904,154 @@ fn unique_constraints_of(table: &crate::SqlCatalogTable) -> Vec<UniqueConstraint
 
 fn find_table(catalog: &SqlCatalog, type_id: u64) -> Result<&crate::SqlCatalogTable, SqlFrontendError> {
     catalog.tables().iter().find(|t| t.type_id == type_id).ok_or_else(|| planner_error("catalog table is missing"))
+}
+
+/// 从 `WHERE` 里为单列 `UNIQUE` 索引挑一个候选集探测。
+///
+/// 只吃顶层 `AND` 合取项：它们是整条谓词的必要条件，任何结果行都必须满足，因此
+/// 用其中一个条件圈出来的行集一定覆盖真实结果。`OR` 一侧的条件不满足这个性质，
+/// 一律跳过；`NOT` / `CASE` 等复合形状同样跳过。
+///
+/// 单列唯一索引是唯一支持的索引形态：多列约束与非唯一索引不在本轮范围内，仍走整表扫描。
+fn secondary_index_probe(
+    predicate: Option<&SqlCatalogBoundExpression>,
+    table: &crate::SqlCatalogTable,
+    table_namespace: &str,
+) -> Option<IndexProbe> {
+    let predicate = predicate?;
+    let mut conjuncts = Vec::new();
+    split_index_conjuncts(predicate, &mut conjuncts);
+    // 主键已有 rowid 直读 / 字节区间路径，重复建索引没有收益。
+    let pk_field_id = table.fields.first()?.field_id;
+    for constraint in &table.unique_constraints {
+        let [field_id] = constraint.as_slice()
+        else {
+            continue;
+        };
+        if *field_id == pk_field_id {
+            continue;
+        }
+        let Some(field) = table.fields.iter().find(|field| field.field_id == *field_id)
+        else {
+            continue;
+        };
+        if !crate::sql_index::index_supported(&field.field_type) {
+            continue;
+        }
+        // 非 JOIN 扫描里 row id 就是 catalog field id（第一次出现占槽 0）。
+        let row_id = *field_id;
+        let mut equality: Option<SqlBoundLiteral> = None;
+        let mut lower: Option<(i64, bool)> = None;
+        let mut upper: Option<(i64, bool)> = None;
+        for conjunct in &conjuncts {
+            match index_condition(conjunct, row_id) {
+                Some(IndexCondition::Equal(literal)) => equality = Some(literal),
+                Some(IndexCondition::Greater(value, inclusive)) => lower = merge_index_bound(lower, (value, inclusive), true),
+                Some(IndexCondition::Less(value, inclusive)) => upper = merge_index_bound(upper, (value, inclusive), false),
+                None => {}
+            }
+        }
+        let namespace = crate::sql_index::index_namespace(table_namespace, *field_id);
+        if let Some(literal) = equality {
+            let payload = index_payload(&literal, &field.field_type)?;
+            return Some(IndexProbe { namespace, exact: Some(crate::sql_index::entry_key(&payload)), after: None, before: None });
+        }
+        if !crate::sql_index::range_supported(&field.field_type) {
+            continue;
+        }
+        if lower.is_none() && upper.is_none() {
+            continue;
+        }
+        let after = lower.map(|(value, inclusive)| {
+            let payload = crate::sql_index::encode_integer(value);
+            if inclusive { crate::sql_index::inclusive_lower_cursor(&payload) } else { crate::sql_index::exclusive_lower_cursor(&payload) }
+        });
+        let before = upper.map(|(value, inclusive)| {
+            let payload = crate::sql_index::encode_integer(value);
+            if inclusive { crate::sql_index::inclusive_upper_cursor(&payload) } else { crate::sql_index::exclusive_upper_cursor(&payload) }
+        });
+        return Some(IndexProbe { namespace, exact: None, after, before });
+    }
+    None
+}
+
+/// 索引探测只看 `AND` 拆分出来的合取项，不深入 `OR`。
+fn split_index_conjuncts<'a>(expression: &'a SqlCatalogBoundExpression, out: &mut Vec<&'a SqlCatalogBoundExpression>) {
+    match expression {
+        SqlCatalogBoundExpression::Binary { left, operator: SqlBoundBinaryOperator::And, right } => {
+            split_index_conjuncts(left, out);
+            split_index_conjuncts(right, out);
+        }
+        _ => out.push(expression),
+    }
+}
+
+/// 一个合取项里针对某一列的等值 / 比较条件。
+enum IndexCondition {
+    Equal(SqlBoundLiteral),
+    Greater(i64, bool),
+    Less(i64, bool),
+}
+
+fn index_condition(expression: &SqlCatalogBoundExpression, row_id: u64) -> Option<IndexCondition> {
+    let SqlCatalogBoundExpression::Binary { left, operator, right } = expression
+    else {
+        return None;
+    };
+    match (left.as_ref(), right.as_ref()) {
+        (SqlCatalogBoundExpression::Column(column), SqlCatalogBoundExpression::Literal(literal)) if column.row_id == row_id => {
+            match operator {
+                SqlBoundBinaryOperator::Equal => Some(IndexCondition::Equal(literal.clone())),
+                SqlBoundBinaryOperator::Greater => integer_literal(literal).map(|value| IndexCondition::Greater(value, false)),
+                SqlBoundBinaryOperator::GreaterEqual => integer_literal(literal).map(|value| IndexCondition::Greater(value, true)),
+                SqlBoundBinaryOperator::Less => integer_literal(literal).map(|value| IndexCondition::Less(value, false)),
+                SqlBoundBinaryOperator::LessEqual => integer_literal(literal).map(|value| IndexCondition::Less(value, true)),
+                _ => None,
+            }
+        }
+        (SqlCatalogBoundExpression::Literal(literal), SqlCatalogBoundExpression::Column(column)) if column.row_id == row_id => {
+            match operator {
+                SqlBoundBinaryOperator::Equal => Some(IndexCondition::Equal(literal.clone())),
+                SqlBoundBinaryOperator::Greater => integer_literal(literal).map(|value| IndexCondition::Less(value, false)),
+                SqlBoundBinaryOperator::GreaterEqual => integer_literal(literal).map(|value| IndexCondition::Less(value, true)),
+                SqlBoundBinaryOperator::Less => integer_literal(literal).map(|value| IndexCondition::Greater(value, false)),
+                SqlBoundBinaryOperator::LessEqual => integer_literal(literal).map(|value| IndexCondition::Greater(value, true)),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn integer_literal(literal: &SqlBoundLiteral) -> Option<i64> {
+    match literal {
+        SqlBoundLiteral::Integer(value) => Some(*value),
+        _ => None,
+    }
+}
+
+/// 同一列上的多条比较条件取更严格的一侧（`> ` 强于 `>=`，`<` 强于 `<=`）。
+///
+/// `lower` 为真时取更大的下界，为假时取更小的上界；同值时排他边界更严格。
+fn merge_index_bound(current: Option<(i64, bool)>, candidate: (i64, bool), lower: bool) -> Option<(i64, bool)> {
+    let Some(current) = current
+    else {
+        return Some(candidate);
+    };
+    let ordering = current.0.cmp(&candidate.0);
+    let stricter = ordering == if lower { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+    let take_candidate = stricter || (ordering == std::cmp::Ordering::Equal && current.1 && !candidate.1);
+    Some(if take_candidate { candidate } else { current })
+}
+
+/// 字面量在某一列类型下的索引 payload；类型对不上时不使用索引（由整表扫描兜底）。
+fn index_payload(literal: &SqlBoundLiteral, field_type: &crate::catalog_bind::SqlFieldType) -> Option<Vec<u8>> {
+    use crate::catalog_bind::SqlFieldType;
+    match (literal, field_type.inner()) {
+        (SqlBoundLiteral::Integer(value), SqlFieldType::Int32 | SqlFieldType::Int64) => Some(crate::sql_index::encode_integer(*value)),
+        (SqlBoundLiteral::String(value), SqlFieldType::String) => Some(value.as_bytes().to_vec()),
+        _ => None,
+    }
 }
 
 /// 无 FROM 投影的默认列名：字面量取字面量文本，函数取大写函数名，
@@ -2457,5 +2645,107 @@ mod pk_range_pushdown_tests {
     fn bind_and_plan_err(catalog: &SqlCatalog, sql: &str) -> crate::sql::SqlFrontendError {
         let bound = bind_sql_catalog(sql, catalog, catalog.schema_version(), SqlDialect::Mysql).expect("bind");
         plan_statement_for_dialect(bound, catalog, SqlDialect::Mysql).expect_err("plan must fail")
+    }
+}
+
+#[cfg(test)]
+mod secondary_index_plan_tests {
+    use super::{ScanPlan, SqlExecutionPlan, plan_statement_for_dialect};
+    use crate::catalog_bind::{SqlCatalog, bind_sql_catalog};
+    use crate::sql::SqlDialect;
+    use crate::sql_ddl::parse_ddl;
+    use crate::sql_schema::SqlSchemaRegistry;
+
+    fn mysql_catalog(ddl: &str) -> SqlCatalog {
+        let registry = SqlSchemaRegistry::new_in_memory();
+        let statement = parse_ddl(ddl, SqlDialect::Mysql).expect("parse").expect("DDL statement");
+        registry.apply_ddl(&statement).expect("apply DDL");
+        registry.catalog()
+    }
+
+    fn scan_plan(catalog: &SqlCatalog, sql: &str) -> ScanPlan {
+        let bound = bind_sql_catalog(sql, catalog, catalog.schema_version(), SqlDialect::Mysql).expect("bind");
+        let plan = plan_statement_for_dialect(bound, catalog, SqlDialect::Mysql).expect("plan");
+        match plan {
+            SqlExecutionPlan::Scan(scan) => scan,
+            other => panic!("`{sql}` must plan to a scan, got {other:?}"),
+        }
+    }
+
+    fn field_id(catalog: &SqlCatalog, table: &str, column: &str) -> u64 {
+        catalog
+            .tables()
+            .iter()
+            .find(|candidate| candidate.name == table)
+            .and_then(|candidate| candidate.fields.iter().find(|field| field.name == column))
+            .map(|field| field.field_id)
+            .expect("field")
+    }
+
+    fn index_namespace(catalog: &SqlCatalog, table: &str, column: &str) -> String {
+        let table = catalog.tables().iter().find(|candidate| candidate.name == table).expect("table");
+        crate::sql_index::index_namespace(&format!("table:{}", table.type_id), field_id(catalog, table.name.as_str(), column))
+    }
+
+    /// `uk = literal` 生成一次索引点读，同时保留原谓词做行级复核。
+    #[test]
+    fn unique_equality_probes_the_index() {
+        let catalog = mysql_catalog("CREATE TABLE t (id INT NOT NULL PRIMARY KEY, uk INT UNIQUE, tag VARCHAR(8) UNIQUE)");
+        let scan = scan_plan(&catalog, "SELECT id FROM t WHERE uk = 7");
+        let probe = scan.index.expect("unique equality must probe the index");
+        assert_eq!(probe.namespace, index_namespace(&catalog, "t", "uk"));
+        assert!(probe.exact.is_some(), "equality must resolve to one entry key");
+        assert!(probe.after.is_none() && probe.before.is_none());
+        assert!(scan.remaining_predicate.is_some(), "the predicate must still be rechecked per row");
+
+        // 文本唯一列的等值同样可以点读。
+        let scan = scan_plan(&catalog, "SELECT id FROM t WHERE tag = 'abc'");
+        let probe = scan.index.expect("text unique equality must probe the index");
+        assert_eq!(probe.namespace, index_namespace(&catalog, "t", "tag"));
+        assert!(probe.exact.is_some());
+    }
+
+    /// `BETWEEN` 脱糖成 `>= AND <=`，整数列翻译成索引范围游标。
+    #[test]
+    fn unique_between_becomes_a_range_scan() {
+        let catalog = mysql_catalog("CREATE TABLE t (id INT NOT NULL PRIMARY KEY, uk INT UNIQUE)");
+        let scan = scan_plan(&catalog, "SELECT id FROM t WHERE uk BETWEEN 10 AND 20");
+        let probe = scan.index.expect("unique range must scan the index");
+        assert!(probe.exact.is_none());
+        assert!(probe.after.is_some(), "inclusive lower bound must set a cursor");
+        assert!(probe.before.is_some(), "inclusive upper bound must set a cursor");
+
+        // 单边范围同样只设置对应一侧。
+        let scan = scan_plan(&catalog, "SELECT id FROM t WHERE uk > 10");
+        let probe = scan.index.expect("one-sided range must scan the index");
+        assert!(probe.after.is_some() && probe.before.is_none());
+    }
+
+    /// 只有顶层 `AND` 合取项能圈候选集；`OR` 一侧与文本范围都不走索引。
+    #[test]
+    fn disjunctions_and_text_ranges_fall_back_to_a_full_scan() {
+        let catalog = mysql_catalog("CREATE TABLE t (id INT NOT NULL PRIMARY KEY, uk INT UNIQUE, tag VARCHAR(8) UNIQUE)");
+        assert!(scan_plan(&catalog, "SELECT id FROM t WHERE uk = 1 OR uk = 2").index.is_none());
+        assert!(scan_plan(&catalog, "SELECT id FROM t WHERE tag BETWEEN 'a' AND 'b'").index.is_none());
+        // 没有唯一约束的列不建索引。
+        let catalog = mysql_catalog("CREATE TABLE plain (id INT NOT NULL PRIMARY KEY, v INT)");
+        assert!(scan_plan(&catalog, "SELECT id FROM plain WHERE v = 1").index.is_none());
+    }
+
+    /// 多列唯一约束不在本轮范围内，保持整表扫描。
+    #[test]
+    fn multi_column_unique_keys_are_not_indexed() {
+        let catalog = mysql_catalog("CREATE TABLE t (id INT NOT NULL PRIMARY KEY, a INT, b INT, UNIQUE KEY pair (a, b))");
+        assert!(scan_plan(&catalog, "SELECT id FROM t WHERE a = 1").index.is_none());
+    }
+
+    /// 主键 LIKE 前缀已被抽成 rowid 前缀扫描（remaining 里不再有它），此时不能用
+    /// 二级索引，否则候选集会绕开前缀条件。
+    #[test]
+    fn primary_key_like_prefix_disables_the_secondary_probe() {
+        let catalog = mysql_catalog("CREATE TABLE t (id INT NOT NULL PRIMARY KEY, uk INT UNIQUE)");
+        let scan = scan_plan(&catalog, "SELECT id FROM t WHERE id LIKE '1%' AND uk = 7");
+        assert!(!scan.rowid_prefix.is_empty());
+        assert!(scan.index.is_none(), "rowid prefix is semantic, the index probe would lose it");
     }
 }

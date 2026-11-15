@@ -741,17 +741,20 @@ impl SqliteWriter {
             .into_iter()
             .find(|row| row.kind == "index" && eq_ignore_ascii_case(&row.name, index))
             .ok_or(Error::Unsupported("sqlite index does not exist"))?;
-        let Some(entries) = self.index_entries.get(&row.rowid) else {
+        let Some(entries) = self.index_entries.get(&row.rowid)
+        else {
             return Ok(Vec::new());
         };
         let mut out = Vec::with_capacity(entries.len());
         for payload in entries {
-            let values = decode_record(payload, self.encoding, Default::default())
-                .map_err(|_| Error::Corrupt("sqlite index record decode failed"))?;
-            let Some(last) = values.last() else {
+            let values =
+                decode_record(payload, self.encoding, Default::default()).map_err(|_| Error::Corrupt("sqlite index record decode failed"))?;
+            let Some(last) = values.last()
+            else {
                 continue;
             };
-            let database_formats::sqlite::RecordValue::Integer(rowid) = last else {
+            let database_formats::sqlite::RecordValue::Integer(rowid) = last
+            else {
                 return Err(Error::Corrupt("sqlite index record has no rowid column"));
             };
             let key = values[..values.len() - 1]
@@ -1405,11 +1408,60 @@ impl SqliteWriter {
         };
         let values = decode_record(&payload, self.encoding, Default::default()).map_err(|_| Error::Corrupt("sqlite record decode failed"))?;
         let owned = expand_alias(&meta, rowid, &values);
+        self.remove_row(&meta, rowid, &owned)
+    }
+
+    /// Deletes one row whose current values the caller already decoded.
+    ///
+    /// The engine reads the row for its own plan, so passing those values here
+    /// skips the payload read and record decode on the write side. `values` must
+    /// be the stored image in declared-column order with the rowid alias slot
+    /// filled from `rowid`, exactly what [`expand_alias`] produces.
+    pub fn delete_with_values(&mut self, table: &str, rowid: i64, values: &[WriteValue]) -> Result<bool> {
+        let meta = self.table_meta(table)?;
+        if meta.without_rowid {
+            return Err(Error::Unsupported("sqlite rowid delete on a WITHOUT ROWID table is not supported"));
+        }
+        if values.len() != meta.columns.len() {
+            return Err(Error::Unsupported("sqlite delete row arity mismatch"));
+        }
+        self.remove_row(&meta, rowid, values)
+    }
+
+    /// Deletes one row, decoding it only when a key set has to be maintained.
+    ///
+    /// The caller may prove from its own catalog that a table carries no index
+    /// key set; the writer re-checks that on the authoritative table metadata,
+    /// so a caller that guessed wrong still gets a correct (just slower) delete.
+    pub fn delete_rowid(&mut self, table: &str, rowid: i64) -> Result<bool> {
+        let meta = self.table_meta(table)?;
+        if meta.without_rowid {
+            return Err(Error::Unsupported("sqlite rowid delete on a WITHOUT ROWID table is not supported"));
+        }
+        if meta.indexes.iter().any(|index| !index.managed) {
+            let Some(payload) = self.read_payload(meta.root_page, rowid)?
+            else {
+                return Ok(false);
+            };
+            let values =
+                decode_record(&payload, self.encoding, Default::default()).map_err(|_| Error::Corrupt("sqlite record decode failed"))?;
+            let owned = expand_alias(&meta, rowid, &values);
+            return self.remove_row(&meta, rowid, &owned);
+        }
+        let root = self.table_delete(meta.root_page, rowid)?;
+        if root != meta.root_page {
+            self.set_master_root(meta.master_rowid, root)?;
+        }
+        Ok(true)
+    }
+
+    /// Removes one row from the table b-tree and from every non-managed index.
+    fn remove_row(&mut self, meta: &TableMeta, rowid: i64, values: &[WriteValue]) -> Result<bool> {
         for index_meta in meta.indexes.iter() {
             if index_meta.managed {
                 continue;
             }
-            let key = encode_index_key(&meta, index_meta, rowid, &owned, self.encoding)?;
+            let key = encode_index_key(meta, index_meta, rowid, values, self.encoding)?;
             self.index_entry_remove(index_meta.master_rowid, &key);
         }
         let root = self.table_delete(meta.root_page, rowid)?;
@@ -1438,9 +1490,46 @@ impl SqliteWriter {
         };
         let payload = self.read_cell_payload(&cell)?;
         let decoded = decode_record(&payload, self.encoding, Default::default()).map_err(|_| Error::Corrupt("sqlite record decode failed"))?;
-        let mut owned = expand_alias(&meta, rowid, &decoded);
-        // 旧值只用于索引键对比与回写路径的索引摘除,避免再读一次 payload。
-        let before = owned.clone();
+        let before = expand_alias(&meta, rowid, &decoded);
+        self.apply_update(meta, cell, rowid, values, before)
+    }
+
+    /// Updates one row whose pre-statement values the caller already decoded.
+    ///
+    /// The engine reads the row to plan the statement, so passing that image
+    /// here skips the payload read and record decode on the write side. `before`
+    /// must be the stored image in declared-column order with the rowid alias
+    /// slot filled from `rowid`, exactly what [`expand_alias`] produces.
+    pub fn update_with_values(&mut self, table: &str, rowid: i64, values: &[UpdateValue], before: Vec<WriteValue>) -> Result<bool> {
+        if values.is_empty() {
+            return Ok(false);
+        }
+        let meta = self.table_meta(table)?;
+        if meta.without_rowid {
+            return Err(Error::Unsupported("sqlite rowid update on a WITHOUT ROWID table is not supported"));
+        }
+        if values.len() != meta.columns.len() || before.len() != meta.columns.len() {
+            return Err(Error::Unsupported("sqlite update arity mismatch"));
+        }
+        let Some(cell) = self.find_table_cell(meta.root_page, rowid)?
+        else {
+            return Ok(false);
+        };
+        self.apply_update(meta, cell, rowid, values, before)
+    }
+
+    /// Applies one row update on top of its pre-statement image.
+    fn apply_update(&mut self, meta: TableMeta, cell: TableCell, rowid: i64, values: &[UpdateValue], before: Vec<WriteValue>) -> Result<bool> {
+        // 旧索引键必须在 `before` 被移入新行像之前算好；没有任何普通索引
+        // (整表表达式更新的常见形态)时这段为空,行像不再复制第二份。
+        let mut old_keys: Vec<Vec<u8>> = Vec::new();
+        for index_meta in meta.indexes.iter() {
+            if index_meta.managed {
+                continue;
+            }
+            old_keys.push(encode_index_key(&meta, index_meta, rowid, &before, self.encoding)?);
+        }
+        let mut owned = before;
         let mut next_rowid = rowid;
         for (index, slot) in values.iter().enumerate() {
             let UpdateValue::Set(value) = slot
@@ -1453,13 +1542,13 @@ impl SqliteWriter {
                 return Err(Error::Constraint { kind: "not-null", message: "sqlite NOT NULL constraint failed" });
             }
             if Some(index) == meta.rowid_alias {
-                let WriteValue::Integer(rowid_value) = value
+                let WriteValue::Integer(rowid_value) = &value
                 else {
                     return Err(Error::Unsupported("sqlite rowid alias must be an integer"));
                 };
-                next_rowid = rowid_value;
+                next_rowid = *rowid_value;
             }
-            owned[index] = value.clone();
+            owned[index] = value;
         }
         if next_rowid != rowid && self.contains_rowid(meta.root_page, next_rowid)? {
             return Err(Error::Constraint { kind: "unique", message: "sqlite UNIQUE constraint failed" });
@@ -1486,11 +1575,13 @@ impl SqliteWriter {
         // Only indexes whose key actually changed need their live entry
         // rewritten. A rowid move always takes the delete/insert path.
         let mut index_changes: Vec<(i64, Vec<u8>, Vec<u8>)> = Vec::new();
+        let mut old_key_cursor = 0usize;
         for index_meta in meta.indexes.iter() {
             if index_meta.managed {
                 continue;
             }
-            let old_key = encode_index_key(&meta, index_meta, rowid, &before, self.encoding)?;
+            let old_key = old_keys[old_key_cursor].clone();
+            old_key_cursor += 1;
             let new_key = encode_index_key(&meta, index_meta, next_rowid, &owned, self.encoding)?;
             if old_key != new_key {
                 index_changes.push((index_meta.master_rowid, old_key, new_key));
@@ -1505,7 +1596,16 @@ impl SqliteWriter {
             return Ok(true);
         }
 
-        self.remove_index_entries(&meta, rowid, &before)?;
+        // 旧键已在进入本函数时算好,这里按索引声明顺序直接摘除,不再为
+        // 每个索引重编码一遍旧行像。
+        let mut old_key_cursor = 0usize;
+        for index_meta in meta.indexes.iter() {
+            if index_meta.managed {
+                continue;
+            }
+            self.index_entry_remove(index_meta.master_rowid, &old_keys[old_key_cursor]);
+            old_key_cursor += 1;
+        }
         let mut root = self.table_delete(meta.root_page, rowid)?;
         root = self.table_insert(root, next_rowid, &payload)?;
         if root != meta.root_page {
@@ -1513,18 +1613,6 @@ impl SqliteWriter {
         }
         self.add_index_entries(&meta, next_rowid, &owned)?;
         Ok(true)
-    }
-
-    /// 摘除一行在全部非托管索引里的活动键。
-    fn remove_index_entries(&mut self, meta: &TableMeta, rowid: i64, values: &[WriteValue]) -> Result<()> {
-        for index_meta in meta.indexes.iter() {
-            if index_meta.managed {
-                continue;
-            }
-            let key = encode_index_key(meta, index_meta, rowid, values, self.encoding)?;
-            self.index_entry_remove(index_meta.master_rowid, &key);
-        }
-        Ok(())
     }
 
     /// 写入一行在全部非托管索引里的活动键。
@@ -2671,14 +2759,17 @@ impl SqliteWriter {
     /// payload 读取共用这一条下钻路径。
     fn find_table_cell(&self, root: u32, rowid: i64) -> Result<Option<TableCell>> {
         let mut page = root;
-        let mut visited = std::collections::BTreeSet::new();
+        // 下钻路径只有几十层,用一个定长栈做环检测即可,避免每行一次
+        // `BTreeSet` 分配;超出上限必然不是合法 b-tree。
+        let mut visited: Vec<u32> = Vec::with_capacity(8);
         loop {
             if page == 0 || page > self.page_count() {
                 return Err(Error::Corrupt("sqlite table page reference out of bounds"));
             }
-            if !visited.insert(page) {
+            if visited.contains(&page) || visited.len() >= 64 {
                 return Err(Error::Corrupt("sqlite table b-tree page repeated"));
             }
+            visited.push(page);
             let page_bytes = self.checked_page(page)?;
             let header_relative = Self::header_offset(page);
             let kind = *page_bytes.get(header_relative).ok_or(Error::Corrupt("sqlite table page header truncated"))?;
@@ -4761,4 +4852,3 @@ fn normalized_index_values(values: &[WriteValue], collations: &[Collation]) -> V
         })
         .collect()
 }
-

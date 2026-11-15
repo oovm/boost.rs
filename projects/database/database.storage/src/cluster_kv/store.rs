@@ -218,6 +218,23 @@ impl KvStore for MemoryShard {
     }
 }
 
+/// One open write-batch scope.
+///
+/// Changes staged inside the scope are applied to memory (so later reads and later
+/// statements in the same command see them) but are only made durable when the
+/// outermost scope ends. If that durable write fails, `journal` restores the exact
+/// pre-scope memory state and `start_revision` is restored with it.
+#[derive(Debug)]
+struct WriteBatch {
+    start_revision: u64,
+    journal: CommitJournal,
+    depth: usize,
+    /// Thread that opened the scope. Writes from any other thread are settled
+    /// durably first, so one host's deferred writes are never carried into
+    /// another host's commit or rollback.
+    owner: std::thread::ThreadId,
+}
+
 /// File-backed shard storing one namespace.using the native `.yykv` snapshot format.
 #[derive(Debug)]
 pub struct FileShard {
@@ -233,6 +250,8 @@ pub struct FileShard {
     next_revision: u64,
     /// Resume point for a budgeted expiry pass; process-local and not persisted.
     sweep_cursor: Option<Key>,
+    /// Open write-batch scope, if any.
+    batch: Option<WriteBatch>,
 }
 
 impl FileShard {
@@ -256,6 +275,7 @@ impl FileShard {
                 encoded_len: 0,
                 next_revision: 1,
                 sweep_cursor: None,
+                batch: None,
             };
             shard.persist()?;
             Ok(shard)
@@ -411,6 +431,19 @@ impl FileShard {
             journal.restore(self);
             return Err(error);
         }
+        if self.owns_batch() {
+            self.absorb(journal);
+            self.next_revision = next_revision;
+            return Ok(revision);
+        }
+        if self.batch.is_some() {
+            if let Err(error) = self.persist_staged(next_revision) {
+                journal.restore(self);
+                return Err(error);
+            }
+            self.next_revision = next_revision;
+            return Ok(revision);
+        }
         if let Err(error) = self.persist_incremental(next_revision) {
             journal.restore(self);
             return Err(error);
@@ -418,10 +451,117 @@ impl FileShard {
         self.next_revision = next_revision;
         Ok(revision)
     }
+
+    /// Whether the calling thread owns the open write-batch scope.
+    fn owns_batch(&self) -> bool {
+        self.batch.as_ref().is_some_and(|batch| batch.owner == std::thread::current().id())
+    }
+
+    /// Opens a write-batch scope.
+    ///
+    /// Inside the scope every write is applied to memory immediately (readers, including
+    /// later statements of the same command, see it) but only the outermost
+    /// [`Self::end_write_batch`] writes a snapshot. Scopes nest; the innermost `flush` of
+    /// durability is the outermost end.
+    pub fn begin_write_batch(&mut self) {
+        match self.batch.as_mut() {
+            Some(batch) => batch.depth += 1,
+            None => {
+                self.batch = Some(WriteBatch {
+                    start_revision: self.next_revision,
+                    journal: CommitJournal::new(),
+                    depth: 1,
+                    owner: std::thread::current().id(),
+                });
+            }
+        }
+    }
+
+    /// Closes a write-batch scope and makes its staged writes durable with one snapshot write.
+    ///
+    /// A failed durable write restores the exact state from before the outermost scope, so a
+    /// caller that reports the failure can never leave a half-committed command visible.
+    pub fn end_write_batch(&mut self) -> Result<()> {
+        let Some(batch) = self.batch.as_mut()
+        else {
+            return Ok(());
+        };
+        if batch.depth > 1 {
+            batch.depth -= 1;
+            return Ok(());
+        }
+        let WriteBatch { start_revision, journal, .. } = self.batch.take().expect("batch was just read");
+        // A scope that staged nothing must not rewrite the snapshot.
+        if journal.entries.is_empty() && self.next_revision == start_revision {
+            return Ok(());
+        }
+        if let Err(error) = self.persist_incremental(self.next_revision) {
+            journal.restore(self);
+            self.next_revision = start_revision;
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    /// Persists everything currently in memory and rebases an open scope onto that snapshot.
+    ///
+    /// A write from a thread that does not own the open scope settles it this way: the
+    /// staged state becomes durable together with the new write, and the scope journal
+    /// (pre-images older than the snapshot) is dropped so a later rollback can never move
+    /// the disk state backwards.
+    fn persist_staged(&mut self, next_revision: u64) -> Result<()> {
+        self.persist_incremental(next_revision)?;
+        if let Some(batch) = self.batch.as_mut() {
+            batch.journal = CommitJournal::new();
+            batch.start_revision = next_revision;
+        }
+        Ok(())
+    }
+
+    /// Applies one batch of changes starting at the current revision.
+    ///
+    /// The caller owns the pre-images (`CommitJournal`) and either restores them on failure
+    /// or hands them to [`Self::absorb`] when the scope stays open.
+    fn stage_locked(&mut self, changes: &[ShardChange]) -> Result<()> {
+        let mut revision = self.next_revision;
+        for change in changes {
+            let applied = match change {
+                ShardChange::Put { key, value, expires_at } => {
+                    self.apply_put(Record { key: key.clone(), value: value.clone(), revision, expires_at: *expires_at })
+                }
+                ShardChange::Delete { key } => {
+                    self.apply_delete(key);
+                    Ok(())
+                }
+            };
+            applied?;
+            if matches!(change, ShardChange::Put { .. }) {
+                revision += 1;
+            }
+        }
+        Ok(())
+    }
+
+    /// Merges one commit's pre-images into the open scope's journal.
+    ///
+    /// The earliest pre-image of a key wins, so restoring the scope rewinds every key to the
+    /// state it had when the scope opened.
+    fn absorb(&mut self, journal: CommitJournal) {
+        let Some(batch) = self.batch.as_mut()
+        else {
+            return;
+        };
+        for (key, record, segment) in journal.entries {
+            if batch.journal.seen.insert(key.clone()) {
+                batch.journal.entries.push((key, record, segment));
+            }
+        }
+    }
 }
 
 /// Pre-images of the keys one commit touches, so a failed durable write restores the exact
 /// pre-commit memory state instead of leaving a half-applied batch visible to readers.
+#[derive(Debug)]
 struct CommitJournal {
     seen: BTreeSet<Key>,
     entries: Vec<(Key, Option<Record>, Option<Vec<u8>>)>,
@@ -489,6 +629,17 @@ impl KvStore for FileShard {
         let mut journal = CommitJournal::new();
         journal.capture(self, key);
         self.apply_delete(key);
+        if self.owns_batch() {
+            self.absorb(journal);
+            return Ok(true);
+        }
+        if self.batch.is_some() {
+            if let Err(error) = self.persist_staged(self.next_revision) {
+                journal.restore(self);
+                return Err(error);
+            }
+            return Ok(true);
+        }
         if let Err(error) = self.persist_incremental(self.next_revision) {
             journal.restore(self);
             return Err(error);
@@ -511,24 +662,32 @@ impl KvStore for FileShard {
         // Stage in place: only the touched records are re-encoded; every clean record keeps
         // its cached snapshot bytes. A failure at any step restores the journaled pre-images,
         // so the visible state is either the whole batch or nothing.
-        let mut revision = self.next_revision;
-        for change in &changes {
-            let applied = match change {
-                ShardChange::Put { key, value, expires_at } => {
-                    self.apply_put(Record { key: key.clone(), value: value.clone(), revision, expires_at: *expires_at })
-                }
-                ShardChange::Delete { key } => {
-                    self.apply_delete(key);
-                    Ok(())
-                }
-            };
-            if let Err(error) = applied {
-                journal.restore(self);
-                return Err(error);
+        if let Err(error) = self.stage_locked(&changes) {
+            journal.restore(self);
+            return Err(error);
+        }
+        match self.batch.as_ref() {
+            Some(batch) if batch.owner == std::thread::current().id() => {
+                // Inside the owning thread's scope the change is only published to memory;
+                // the scope owner makes it durable with one snapshot write when the command
+                // finishes.
+                self.absorb(journal);
+                self.next_revision = next_revision;
+                return Ok(());
             }
-            if matches!(change, ShardChange::Put { .. }) {
-                revision += 1;
+            Some(_) => {
+                // Another thread's scope is open. Its staged state and this change are
+                // persisted together right away, and the scope is rebased onto that snapshot,
+                // so this write is neither deferred behind the other scope nor rolled back
+                // with it.
+                if let Err(error) = self.persist_staged(next_revision) {
+                    journal.restore(self);
+                    return Err(error);
+                }
+                self.next_revision = next_revision;
+                return Ok(());
             }
+            None => {}
         }
         if let Err(error) = self.persist_incremental(next_revision) {
             journal.restore(self);
@@ -682,8 +841,15 @@ fn write_snapshot_durable(path: &Path, bytes: &[u8]) -> Result<()> {
 
 fn decode(path: &Path, bytes: &[u8]) -> Result<FileShard> {
     let snapshot = decode_snapshot(bytes)?;
-    let mut shard =
-        FileShard { path: path.to_path_buf(), records: snapshot.records, encoded: BTreeMap::new(), encoded_len: 0, next_revision: snapshot.next_revision, sweep_cursor: None };
+    let mut shard = FileShard {
+        path: path.to_path_buf(),
+        records: snapshot.records,
+        encoded: BTreeMap::new(),
+        encoded_len: 0,
+        next_revision: snapshot.next_revision,
+        sweep_cursor: None,
+        batch: None,
+    };
     shard.rebuild_encoded()?;
     Ok(shard)
 }
@@ -712,9 +878,7 @@ fn replace_file(temp: &Path, destination: &Path) -> Result<()> {
     // `MoveFileExW` 与 Unix 的 `rename` 是同一个提交点：替换目录项，并且
     // `MOVEFILE_WRITE_THROUGH` 让替换本身落盘。这里不用 `ReplaceFileW`，它会额外搬运
     // 备份文件与安全属性，提交固定开销明显更高，而 shard 快照没有需要保留的旧副本。
-    let result = unsafe {
-        MoveFileExW(temp_wide.as_ptr(), destination_wide.as_ptr(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
-    };
+    let result = unsafe { MoveFileExW(temp_wide.as_ptr(), destination_wide.as_ptr(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) };
     if result == 0 { Err(Error::Io(std::io::Error::last_os_error())) } else { Ok(()) }
 }
 
