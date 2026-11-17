@@ -31,6 +31,7 @@ Boost 家族的共享密码基础能力：hash、HMAC/HKDF、AEAD、签名/验�
 | HMAC-SHA256 | RFC 2104，含恒定时间标签比较（`mac`） |
 | HKDF-SHA256 | RFC 5869 Extract / Expand（`mac`） |
 | AES-128 / AES-256 与 GCM | FIPS 197 分组加密、NIST SP 800-38D 的 CTR 与 GHASH 认证（`aead`），S-box 由 GF(2^8) 逆元现算 |
+| X25519 | RFC 7748 的 GF(2^255-19) 乘法、Montgomery ladder 与 clamp（`x25519`） |
 | RSAES-OAEP(SHA-1) 填充 | RFC 8017，含 `MGF1`，模幂用 `rsa` 提供的 `BigUint`（`rsa`） |
 
 ## 依赖台账
@@ -43,7 +44,6 @@ Boost 家族的共享密码基础能力：hash、HMAC/HKDF、AEAD、签名/验�
 | `p384` | 0.13.1 | Apache-2.0 OR MIT | NIST P-384 ECDSA（`ecdsa` feature） |
 | `rsa` | 0.9.10 | MIT OR Apache-2.0 | RSA 公钥解析、验签与 `BigUint` 模幂 |
 | `signature` | 2.2.0 | Apache-2.0 OR MIT | `Signer`/`Verifier` 签名 trait 层（与 `p256`/`p384`/`rsa` 同版本） |
-| `x25519-dalek` | 2.0.1 | BSD-3-Clause | X25519 DH 与 `StaticSecret`（`static_secrets` feature） |
 | `base64` | 0.23.1 | MIT OR Apache-2.0 | base64 标准与无填充编解码 |
 | `zeroize` | 1.9.1 | Apache-2.0 OR MIT | 秘密材料清零（`derive` feature，`Zeroizing`/`ZeroizeOnDrop`） |
 | `sha1-rsa`（package `sha1`） | 0.10 | MIT OR Apache-2.0 | OAEP(SHA-1) 的 `lHash` 与 MGF1 |
