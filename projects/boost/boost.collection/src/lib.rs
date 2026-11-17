@@ -3,8 +3,9 @@
 //! ArrayND 的逻辑模型是规则 N 维坐标域与元素的对应关系；连续、dense 或
 //! 常驻内存属于具体表示与载体，不是 ArrayND 的普遍前提。本 crate 当前只交付
 //! 首个**内存实现**：自有连续行主序存储、静态 rank、运行时 extent、`usize`
-//! 范围，不承载矩阵运算、张量执行图、图邻接语义或 GPU 布局策略，也不复制
-//! 标准库已有的 `Vec`、数组和 `slice` 能力。
+//! 范围；图部分提供逻辑能力与内存/CSR 表示。不承载矩阵运算、张量执行图、
+//! 图表布局/标签/路由、数据库 schema 或 GPU 布局策略，也不复制标准库已有
+//! 的 `Vec`、数组和 `slice` 能力。
 //!
 //! 三个作者面按“形状放在哪里”分工，三者都是内存实例：
 //!
@@ -27,6 +28,7 @@ mod array3d;
 mod array_read;
 mod array_view;
 mod error;
+mod graph;
 
 pub use array::ArrayND;
 pub use array_read::Array2DRead;
@@ -35,3 +37,4 @@ pub use array2d::Array2D;
 pub use array3d::Array3D;
 pub use boost_collection_macro::array;
 pub use error::{CollectionError, Result};
+pub use graph::{CsrGraph, GraphError, GraphRead, GraphResult, MemoryEdge, MemoryGraph, OutgoingEdges, topological_order};
