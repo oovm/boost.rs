@@ -3,6 +3,7 @@
 
 use std::{cell::RefCell, collections::BTreeSet, sync::OnceLock};
 
+use boost_collection::ArrayND;
 use document_text::math::{FontMetricsSystem, GlyphId, KernCorner, MathFontFacts, MathFontFamily, StretchAxis, StretchPlan};
 use serde::{Deserialize, Serialize};
 
@@ -2366,17 +2367,14 @@ impl LayoutEngine {
 
         // Layout every cell once.  `alignedat` padding reaches layout as
         // missing cells, so an absent cell is an empty kern rather than a
-        // narrower row.
-        let mut cell_layouts: Vec<Vec<LayoutNode>> = Vec::with_capacity(environment.rows.len());
-        for row in &environment.rows {
-            let mut cells = Vec::with_capacity(columns);
-            for column in 0..columns {
-                match row.cells.get(column) {
-                    Some(cell) => cells.push(self.layout_node_state(cell, state)?),
-                    None => cells.push(LayoutNode::Kern(Fixed::ZERO)),
-                }
+        // narrower row.  The padded grid is one contiguous workspace: build
+        // straight into its final storage instead of a row of nested `Vec`s.
+        let mut cell_layouts = ArrayND::new([environment.rows.len(), columns], |_| LayoutNode::Kern(Fixed::ZERO))
+            .map_err(|error| MathError::internal_error(format!("cell workspace: {error}")))?;
+        for (row_index, row) in environment.rows.iter().enumerate() {
+            for (column, cell) in row.cells.iter().take(columns).enumerate() {
+                cell_layouts[[row_index, column]] = self.layout_node_state(cell, state)?;
             }
-            cell_layouts.push(cells);
         }
 
         let mut row_boxes: Vec<LayoutNode> = Vec::with_capacity(environment.rows.len());
@@ -2388,10 +2386,11 @@ impl LayoutEngine {
             // of a relation.  These grids carry no intercolumn gutter, so
             // `col_spacing` is the environment's own value (zero for them).
             AlignmentAnchors::ColumnPairs => {
-                let col_widths = Self::anchor_column_widths(&cell_layouts, columns);
-                for (row_index, cells) in cell_layouts.into_iter().enumerate() {
+                let col_widths = Self::anchor_column_widths(&cell_layouts);
+                let mut cells = cell_layouts.into_iter();
+                for row_index in 0..environment.rows.len() {
                     row_boxes.push(self.pack_anchor_row(
-                        cells,
+                        cells.by_ref().take(columns),
                         &col_widths,
                         &environment.rows[row_index].cells,
                         size,
@@ -2412,10 +2411,11 @@ impl LayoutEngine {
             // `split` belongs in an `equation` body is the IR's diagnostic.
             AlignmentAnchors::SingleEquation => {
                 let point = environment.alignment_point().unwrap_or(1);
-                let col_widths = Self::anchor_column_widths(&cell_layouts, columns);
-                for (row_index, cells) in cell_layouts.into_iter().enumerate() {
+                let col_widths = Self::anchor_column_widths(&cell_layouts);
+                let mut cells = cell_layouts.into_iter();
+                for row_index in 0..environment.rows.len() {
                     row_boxes.push(self.pack_anchor_row(
-                        cells,
+                        cells.by_ref().take(columns),
                         &col_widths,
                         &environment.rows[row_index].cells,
                         size,
@@ -2431,9 +2431,10 @@ impl LayoutEngine {
             // where each row then sits across the block is the row placement
             // applied below.
             AlignmentAnchors::Centered | AlignmentAnchors::Spread => {
-                for cells in cell_layouts {
+                let mut cells = cell_layouts.into_iter();
+                for _ in 0..environment.rows.len() {
                     let mut children = Vec::new();
-                    for (column, cell) in cells.into_iter().enumerate() {
+                    for (column, cell) in cells.by_ref().take(columns).enumerate() {
                         if column > 0 && col_spacing > Fixed::ZERO {
                             children.push(LayoutNode::Kern(col_spacing));
                         }
@@ -2504,9 +2505,11 @@ impl LayoutEngine {
     }
 
     /// Column widths of an anchor grid: every column is as wide as its widest cell.
-    fn anchor_column_widths(cell_layouts: &[Vec<LayoutNode>], columns: usize) -> Vec<Fixed> {
+    fn anchor_column_widths(cell_layouts: &ArrayND<LayoutNode, 2>) -> Vec<Fixed> {
+        let [rows, columns] = cell_layouts.shape();
         let mut col_widths = vec![Fixed::ZERO; columns];
-        for cells in cell_layouts {
+        for row in 0..rows {
+            let cells = cell_layouts.row(row).expect("row index is inside the workspace");
             for (column, cell) in cells.iter().enumerate() {
                 col_widths[column] = col_widths[column].max(cell.width());
             }
@@ -2523,7 +2526,7 @@ impl LayoutEngine {
     /// structured alignment point.
     fn pack_anchor_row(
         &self,
-        cells: Vec<LayoutNode>,
+        cells: impl Iterator<Item = LayoutNode>,
         col_widths: &[Fixed],
         authored: &[FormulaNode],
         size: Fixed,
@@ -2532,7 +2535,7 @@ impl LayoutEngine {
         relation_space: impl Fn(usize) -> bool,
     ) -> LayoutNode {
         let mut children = Vec::new();
-        for (column, cell) in cells.into_iter().enumerate() {
+        for (column, cell) in cells.enumerate() {
             let diff = col_widths[column] - cell.width();
             let cell_box = if right_side(column) {
                 self.pack_hbox(vec![LayoutNode::Kern(diff), cell], Some(col_widths[column]))

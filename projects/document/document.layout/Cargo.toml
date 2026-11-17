@@ -8,6 +8,7 @@ edition.workspace = true
 readme = "readme.md"
 
 [dependencies]
+boost-collection = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 document-ir = { workspace = true }
 document-formats = { workspace = true, features = ["tex"] }
