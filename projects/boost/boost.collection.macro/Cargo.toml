@@ -1,0 +1,20 @@
+[package]
+name = "boost-collection-macro"
+version.workspace = true
+authors.workspace = true
+description = "Procedural macros for `boost-collection` fixed-shape array types"
+repository = "https://github.com/oovm/rust-boost/tree/dev/projects/boost.collection.macro"
+readme = "readme.md"
+license.workspace = true
+edition.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { workspace = true, features = ["full"] }
+quote = { workspace = true }
+proc-macro2 = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true

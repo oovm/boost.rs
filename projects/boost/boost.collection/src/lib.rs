@@ -22,33 +22,5 @@ mod error;
 
 pub use array::ArrayND;
 pub use array2d::Array2D;
+pub use boost_collection_macro::array;
 pub use error::{CollectionError, Result};
-
-/// 编译期固定形状的二维数组类型，接受元组书写。
-///
-/// 稳定 Rust 的 const 泛型参数不能是元组，类型参数位置无法直接写
-/// `Array2D<f32, (3, 3)>`；本宏把元组拆成两个 const 参数，展开结果仍是
-/// 普通类型别名，不引入额外包装。
-///
-/// ```
-/// use boost_collection::array;
-///
-/// type Grid = array!(f32, (3, 3));
-///
-/// let mut grid = Grid::filled(0.0);
-/// grid[[1, 2]] = 5.0;
-/// assert_eq!(grid.shape(), [3, 3]);
-/// assert_eq!(grid[[1, 2]], 5.0);
-///
-/// type Inline = array!(u8, 2, 2);
-/// assert_eq!(Inline::filled(0).len(), 4);
-/// ```
-#[macro_export]
-macro_rules! array {
-    ($element:ty, ($rows:expr, $columns:expr)) => {
-        $crate::Array2D<$element, { $rows }, { $columns }>
-    };
-    ($element:ty, $rows:expr, $columns:expr) => {
-        $crate::Array2D<$element, { $rows }, { $columns }>
-    };
-}

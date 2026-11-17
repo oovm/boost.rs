@@ -12,6 +12,7 @@ members = [
     "projects/boost/boost-console",
     "projects/boost/boost.crypto",
     "projects/boost/boost.collection",
+    "projects/boost/boost.collection.macro",
     "projects/boost/boost-fs",
     "projects/boost/boost.harness",
     "projects/boost/boost.harness.macro",
@@ -172,6 +173,7 @@ animator-chart = { path = "projects/animator/animator.chart" }
 animator-core = { path = "projects/animator/animator.core" }
 # 核心库
 boost-collection = { path = "projects/boost/boost.collection" }
+boost-collection-macro = { path = "projects/boost/boost.collection.macro" }
 boost-console = { path = "projects/boost/boost-console" }
 boost-crypto = { path = "projects/boost/boost.crypto" }
 boost-fs = { path = "projects/boost/boost-fs" }

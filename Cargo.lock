@@ -373,6 +373,7 @@ name = "boost"
 version = "0.1.0"
 dependencies = [
  "boost-collection",
+ "boost-collection-macro",
  "boost-console",
  "boost-crypto",
  "boost-fs",
@@ -386,6 +387,18 @@ dependencies = [
 [[package]]
 name = "boost-collection"
 version = "0.1.0"
+dependencies = [
+ "boost-collection-macro",
+]
+
+[[package]]
+name = "boost-collection-macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.10",
+]
 
 [[package]]
 name = "boost-console"

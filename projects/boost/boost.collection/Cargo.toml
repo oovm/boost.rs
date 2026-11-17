@@ -8,5 +8,8 @@ readme = "readme.md"
 license.workspace = true
 edition.workspace = true
 
+[dependencies]
+boost-collection-macro = { workspace = true }
+
 [package.metadata.docs.rs]
 all-features = true

@@ -9,6 +9,7 @@
 pub mod collection {
     //! Rule-shaped collections with contiguous storage and checked shapes.
     pub use boost_collection::*;
+    pub use boost_collection_macro::facade_array as array;
 }
 
 #[cfg(feature = "console")]

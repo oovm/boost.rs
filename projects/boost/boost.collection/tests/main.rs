@@ -4,11 +4,8 @@
 //! 乘积溢出与长度不匹配拒绝、非 Copy 元素的初始化/移动/释放、
 //! 二维行切片，以及编译期固定形状与 `array!` 元组展开。
 
-use boost_collection::{array, Array2D, ArrayND, CollectionError};
-use std::{
-    cell::Cell,
-    rc::Rc,
-};
+use boost_collection::{Array2D, ArrayND, CollectionError, array};
+use std::{cell::Cell, rc::Rc};
 
 #[test]
 fn row_major_generation_and_access() {
@@ -32,8 +29,8 @@ fn zero_extents_keep_their_shape() {
     assert_eq!(columnless.shape(), [3, 0]);
 
     // 零 extent 必须先于非零轴的乘积检查，合法空数组不能因溢出被拒。
-    let huge_empty = ArrayND::<u8, 2>::new([0, usize::MAX], |_| unreachable!("no element is generated"))
-        .expect("zero extent wins over the product");
+    let huge_empty =
+        ArrayND::<u8, 2>::new([0, usize::MAX], |_| unreachable!("no element is generated")).expect("zero extent wins over the product");
     assert_eq!(huge_empty.len(), 0);
 }
 

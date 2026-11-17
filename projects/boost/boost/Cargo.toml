@@ -12,6 +12,7 @@ categories = ["development-tools"]
 
 [dependencies]
 boost-collection = { workspace = true, optional = true }
+boost-collection-macro = { workspace = true, optional = true }
 boost-console = { workspace = true, optional = true }
 boost-crypto = { workspace = true, optional = true }
 boost-fs = { workspace = true, optional = true }
@@ -24,7 +25,7 @@ boost-terminal = { workspace = true, optional = true }
 [features]
 default = []
 benchmark = ["dep:boost-harness"]
-collection = ["dep:boost-collection"]
+collection = ["dep:boost-collection", "dep:boost-collection-macro"]
 console = ["dep:boost-console", "dep:boost-harness"]
 crypto = ["dep:boost-crypto"]
 diagnostic = ["dep:boost-harness"]
@@ -39,6 +40,10 @@ test = ["dep:boost-harness", "dep:boost-harness-macro"]
 [[test]]
 name = "facade_test_macro"
 required-features = ["test"]
+
+[[test]]
+name = "facade_collection_macro"
+required-features = ["collection"]
 
 [package.metadata.docs.rs]
 all-features = true
