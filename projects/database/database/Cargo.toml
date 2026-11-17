@@ -14,6 +14,7 @@ default = [
     "input",
     "query",
     "execution",
+    "embed",
     "udf",
     "formats",
     "storage",
@@ -31,6 +32,7 @@ types = ["dep:database-types"]
 input = ["dep:database-input"]
 query = ["dep:database-query"]
 execution = ["dep:database-execution"]
+embed = ["dep:database-embed"]
 udf = ["dep:database-udf"]
 formats = ["dep:database-formats"]
 storage = ["dep:database-storage"]
@@ -51,6 +53,7 @@ database-types = { workspace = true, optional = true }
 database-input = { workspace = true, optional = true }
 database-query = { workspace = true, optional = true }
 database-execution = { workspace = true, optional = true }
+database-embed = { workspace = true, optional = true }
 database-udf = { workspace = true, optional = true }
 database-formats = { workspace = true, optional = true }
 database-storage = { workspace = true, optional = true }

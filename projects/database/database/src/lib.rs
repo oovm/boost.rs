@@ -29,6 +29,12 @@ pub mod execution {
     pub use database_execution::*;
 }
 
+/// YYDB 进程内门面（不开 TCP，进程内读写 `.yydx`）。
+#[cfg(feature = "embed")]
+pub mod embed {
+    pub use database_embed::*;
+}
+
 /// UDF 合同、注册表与调用运行时。
 #[cfg(feature = "udf")]
 pub mod udf {

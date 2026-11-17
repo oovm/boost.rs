@@ -1,0 +1,16 @@
+# `database-embed` 是 YYDB 的进程内门面：同一套 VOS schema 与查询语义，
+# 不开 TCP、不起服务进程，进程内直接读写 `.yydx`。
+[package]
+name = "database-embed"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+database-execution = { workspace = true }
+database-types = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

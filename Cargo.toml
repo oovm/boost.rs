@@ -30,6 +30,7 @@ members = [
     "projects/database/database",
     "projects/database/database.client",
     "projects/database/database.cluster",
+    "projects/database/database.embed",
     "projects/database/database.execution",
     "projects/database/database.formats",
     "projects/database/database.harness",
@@ -194,6 +195,7 @@ crawler-types = { path = "projects/crawler/crawler.types" }
 database = { path = "projects/database/database" }
 database-client = { path = "projects/database/database.client" }
 database-cluster = { path = "projects/database/database.cluster" }
+database-embed = { path = "projects/database/database.embed" }
 database-execution = { path = "projects/database/database.execution" }
 database-formats = { path = "projects/database/database.formats" }
 database-harness = { path = "projects/database/database.harness" }
@@ -358,9 +360,6 @@ sha2 = { version = "0.11.1", features = ["oid"] }
 sha1-rsa = { package = "sha1", version = "0.10" }
 rsa = { version = "0.9.10", features = ["sha2"] }
 base64 = "0.23.1"
-p256 = { version = "0.13.2", features = ["ecdsa"] }
-p384 = { version = "0.13.1", features = ["ecdsa"] }
-signature = "2.2.0"
 zeroize = { version = "1.9.1", features = ["derive"] }
 sha2-rsa = { package = "sha2", version = "0.10.9", features = ["oid"] }
 uuid = { version = "1", features = ["serde", "v4"] }
