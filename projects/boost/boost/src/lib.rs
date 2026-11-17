@@ -5,6 +5,12 @@
 
 #![deny(missing_docs)]
 
+#[cfg(feature = "collection")]
+pub mod collection {
+    //! Rule-shaped collections with contiguous storage and checked shapes.
+    pub use boost_collection::*;
+}
+
 #[cfg(feature = "console")]
 pub mod console {
     //! Human-visible console output and log subscribers.

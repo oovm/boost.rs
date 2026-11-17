@@ -1,0 +1,12 @@
+[package]
+name = "boost-collection"
+version.workspace = true
+authors.workspace = true
+description = "Rule-shaped N-dimensional collections for the boost family: contiguous row-major ArrayND with validated runtime extents"
+repository = "https://github.com/oovm/rust-boost/tree/dev/projects/boost.collection"
+readme = "readme.md"
+license.workspace = true
+edition.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true

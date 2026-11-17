@@ -372,6 +372,7 @@ dependencies = [
 name = "boost"
 version = "0.1.0"
 dependencies = [
+ "boost-collection",
  "boost-console",
  "boost-crypto",
  "boost-fs",
@@ -381,6 +382,10 @@ dependencies = [
  "boost-source 0.1.0",
  "boost-terminal",
 ]
+
+[[package]]
+name = "boost-collection"
+version = "0.1.0"
 
 [[package]]
 name = "boost-console"

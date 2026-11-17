@@ -11,6 +11,7 @@ keywords = ["boost", "stdlib", "facade", "logging", "diagnostic", "testing"]
 categories = ["development-tools"]
 
 [dependencies]
+boost-collection = { workspace = true, optional = true }
 boost-console = { workspace = true, optional = true }
 boost-crypto = { workspace = true, optional = true }
 boost-fs = { workspace = true, optional = true }
@@ -23,6 +24,7 @@ boost-terminal = { workspace = true, optional = true }
 [features]
 default = []
 benchmark = ["dep:boost-harness"]
+collection = ["dep:boost-collection"]
 console = ["dep:boost-console", "dep:boost-harness"]
 crypto = ["dep:boost-crypto"]
 diagnostic = ["dep:boost-harness"]
