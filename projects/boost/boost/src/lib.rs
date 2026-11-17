@@ -12,6 +12,12 @@ pub mod console {
     pub use boost_harness::log::console::*;
 }
 
+#[cfg(feature = "crypto")]
+pub mod crypto {
+    //! Cryptographic primitives and secret material lifetimes.
+    pub use boost_crypto::*;
+}
+
 #[cfg(feature = "diagnostic")]
 pub mod diagnostic {
     //! Structured diagnostic data model and projections.

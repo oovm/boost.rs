@@ -10,11 +10,12 @@ members = [
     "projects/animator/animator.core",
     "projects/boost/boost",
     "projects/boost/boost-console",
+    "projects/boost/boost.crypto",
     "projects/boost/boost-fs",
     "projects/boost/boost.harness",
     "projects/boost/boost.harness.macro",
     "projects/boost/boost.net",
-    "projects/boost/boost-random",
+    "projects/boost/boost.random",
     "projects/boost/boost-source",
     "projects/boost/boost-terminal",
     "projects/crawler/crawler",
@@ -170,11 +171,12 @@ animator-chart = { path = "projects/animator/animator.chart" }
 animator-core = { path = "projects/animator/animator.core" }
 # 核心库
 boost-console = { path = "projects/boost/boost-console" }
+boost-crypto = { path = "projects/boost/boost.crypto" }
 boost-fs = { path = "projects/boost/boost-fs" }
 boost-harness = { path = "projects/boost/boost.harness", features = ["serde"] }
 boost-harness-macro = { path = "projects/boost/boost.harness.macro" }
 boost-net = { path = "projects/boost/boost.net" }
-boost-random = { path = "projects/boost/boost-random" }
+boost-random = { path = "projects/boost/boost.random" }
 boost-source = { path = "projects/boost/boost-source" }
 boost-terminal = { path = "projects/boost/boost-terminal" }
 # 内部库
@@ -348,13 +350,23 @@ windows = { version = "0.62.2", features = [
 ] }
 blake3 = "1"
 sha1 = "0.11.0"
-sha2 = "0.11.1"
+sha2 = { version = "0.11.1", features = ["oid"] }
 sha1-rsa = { package = "sha1", version = "0.10" }
 rsa = { version = "0.9.10", features = ["sha2", "getrandom"] }
 base64 = "0.23.1"
+hmac = "0.13.0"
+hkdf = "0.13.0"
+aes-gcm = "0.10.3"
+p256 = { version = "0.13.2", features = ["ecdsa"] }
+p384 = { version = "0.13.1", features = ["ecdsa"] }
+signature = "2.2.0"
+x25519-dalek = { version = "2.0.1", features = ["static_secrets"] }
+zeroize = { version = "1.9.1", features = ["derive"] }
+getrandom = "0.4"
+rand_core = { version = "0.6.4", features = ["std"] }
+sha2-rsa = { package = "sha2", version = "0.10.9", features = ["oid"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 once_cell = "1"
-getrandom = "0.4"
 glob = "0.3"
 libc = { version = "0.2", default-features = false }
 windows-sys = { version = "0.61.2", default-features = false, features = ["Win32_Storage_FileSystem", "Win32_System_IO"] }

@@ -12,6 +12,7 @@ categories = ["development-tools"]
 
 [dependencies]
 boost-console = { workspace = true, optional = true }
+boost-crypto = { workspace = true, optional = true }
 boost-fs = { workspace = true, optional = true }
 boost-harness = { workspace = true, optional = true }
 boost-harness-macro = { workspace = true, optional = true }
@@ -23,6 +24,7 @@ boost-terminal = { workspace = true, optional = true }
 default = []
 benchmark = ["dep:boost-harness"]
 console = ["dep:boost-console", "dep:boost-harness"]
+crypto = ["dep:boost-crypto"]
 diagnostic = ["dep:boost-harness"]
 fmt = ["dep:boost-console"]
 fs = ["dep:boost-fs"]
