@@ -4,7 +4,7 @@
 //! 乘积溢出与长度不匹配拒绝、非 Copy 元素的初始化/移动/释放、
 //! 二维行切片，以及编译期固定形状与 `array!` 元组展开。
 
-use boost_collection::{Array2D, ArrayND, CollectionError, array};
+use boost_collection::{Array2D, Array3D, ArrayND, CollectionError, array};
 use std::{cell::Cell, rc::Rc};
 
 #[test]
@@ -132,4 +132,29 @@ fn compile_time_shape_keeps_zero_extents() {
     assert!(empty.is_empty());
     assert_eq!(empty.shape(), [0, 4]);
     assert_eq!(empty.get([0, 0]), None);
+}
+
+#[test]
+fn compile_time_three_dimensional_shape() {
+    type Cube = array!(u8, (2, 3, 4));
+    let mut cube = Cube::new(|[first, second, third]| (first * 12 + second * 4 + third) as u8);
+    assert_eq!(cube.shape(), [2, 3, 4]);
+    assert_eq!(cube.rank(), 3);
+    assert_eq!(cube.len(), 24);
+    assert_eq!(cube[[1, 2, 3]], 23);
+    assert_eq!(cube.get([2, 0, 0]), None);
+    assert_eq!(cube.iter().copied().collect::<Vec<_>>(), (0..24).collect::<Vec<u8>>());
+
+    cube[[0, 1, 2]] = 7;
+    *cube.get_mut([0, 1, 3]).expect("in bounds") = 8;
+    assert_eq!(cube.plane(0).expect("first plane")[1], [4, 5, 7, 8]);
+    assert_eq!(cube.plane(2), None);
+
+    type Flat = array!(u8, 1, 2, 3);
+    assert_eq!(Flat::filled(0).len(), 6);
+    assert_eq!(Array3D::<u8, 1, 0, 3>::new(|_| unreachable!("no element is generated")).shape(), [1, 0, 3]);
+
+    let source = [[[1_u8, 2], [3, 4]], [[5, 6], [7, 8]]];
+    let converted: Array3D<u8, 2, 2, 2> = Array3D::from(source);
+    assert_eq!(converted.into_inner(), source);
 }

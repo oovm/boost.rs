@@ -13,12 +13,13 @@ Boost 家族的规则集合能力：逻辑模型、访问能力、表示布局�
 
 逻辑元素数与已分配槽数、逻辑遍历序号与物理地址是不同事实；稀疏缺省、shape 变更、视图失效与 I/O 失败语义尚未进入代码。等第二种真实表示出现再抽能力 trait，不先造 God trait 或空后端。
 
-## 两个作者面
+## 三个作者面
 
 | 类型 | 形状位置 | 存储 | 适用 |
 |------|----------|------|------|
 | `ArrayND<T, N>` | 运行时构造（`N` 是轴数） | `Vec<T>` 连续区 | 维数固定、各轴长度运行时确定 |
-| `Array2D<T, ROWS, COLUMNS>` | 编译期类型参数 | `[[T; COLUMNS]; ROWS]` | 小尺寸、形状属于类型合同 |
+| `Array2D<T, ROWS, COLUMNS>` | 编译期类型参数 | `[[T; COLUMNS]; ROWS]` | 小尺寸二维、形状属于类型合同 |
+| `Array3D<T, D1, D2, D3>` | 编译期类型参数 | `[[[T; D3]; D2]; D1]` | 小尺寸三维、形状属于类型合同 |
 
 稳定 Rust 不允许元组作为 const 泛型参数，因此 `Array2D<f32, (3, 3)>` 不成立。需要元组书写时用宏：
 
@@ -32,7 +33,16 @@ grid[[1, 2]] = 5.0;
 assert_eq!(grid.shape(), [3, 3]);
 ```
 
-`array!(f32, 3, 3)` 与元组写法等价，展开结果都是普通 `Array2D` 类型。
+```rust
+use boost_collection::array;
+
+type Cube = array!(f32, (2, 3, 4));
+
+let cube = Cube::filled(0.0);
+assert_eq!(cube.shape(), [2, 3, 4]);
+```
+
+`array!(f32, 3, 3)` 与 `array!(f32, 2, 3, 4)` 分别和二维、三维元组写法等价，展开结果都是普通 `Array2D` / `Array3D` 类型。
 
 ## 不变量
 

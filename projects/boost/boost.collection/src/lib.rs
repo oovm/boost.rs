@@ -6,11 +6,12 @@
 //! 范围，不承载矩阵运算、张量执行图、图邻接语义或 GPU 布局策略，也不复制
 //! 标准库已有的 `Vec`、数组和 `slice` 能力。
 //!
-//! 两个作者面按“形状放在哪里”分工，两者都是内存实例：
+//! 三个作者面按“形状放在哪里”分工，三者都是内存实例：
 //!
 //! - [`ArrayND`]：静态 rank、各轴 extent 在构造时确定（运行时形状）。
-//! - [`Array2D`]：形状直接进类型的二维数组（编译期形状），用
-//!   [`array!`] 宏接受元组书写：`type Grid = array!(f32, (3, 3));`。
+//! - [`Array2D`] / [`Array3D`]：形状直接进类型的二维或三维数组（编译期形状），
+//!   用 [`array!`] 宏接受元组书写：`type Grid = array!(f32, (3, 3));`、
+//!   `type Cube = array!(f32, (2, 3, 4));`。
 //!
 //! 稀疏、strided/分块、磁盘或设备载体尚未交付，等原因类型真实出现再抽能力；
 //! 真正不等长的分段数据（邻接表、变长字节串、独立增长的段落）不因词面
@@ -21,9 +22,11 @@
 
 mod array;
 mod array2d;
+mod array3d;
 mod error;
 
 pub use array::ArrayND;
 pub use array2d::Array2D;
+pub use array3d::Array3D;
 pub use boost_collection_macro::array;
 pub use error::{CollectionError, Result};
