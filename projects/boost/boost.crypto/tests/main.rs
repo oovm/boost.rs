@@ -46,6 +46,13 @@ fn hmac_rfc4231_cases() {
     let expected = hex("5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843");
     let tag = mac::hmac_sha256(b"Jefe", b"what do ya want for nothing?").expect("hmac");
     assert_eq!(tag.as_slice(), expected.as_slice());
+
+    // RFC 4231 Test Case 1，SHA-384 变体。
+    let expected = hex(
+        "afd03944d84895626b0825f4ab46907f15f9dadbe4101ec682aa034c7cebc59cfaea9ea9076ede7f4af152e8b2fa9cb6",
+    );
+    let tag = mac::hmac_sha384(&key, b"Hi There").expect("hmac");
+    assert_eq!(tag.as_slice(), expected.as_slice());
 }
 
 #[test]
@@ -164,6 +171,9 @@ fn ecdsa_p256_roundtrip_and_encodings() {
     let last = tampered.len() - 1;
     tampered[last] ^= 0x01;
     assert!(verifier.verify_der(message, &tampered).is_err());
+
+    // RFC 6979 确定性 nonce：同一私钥与消息必须产生同一签名。
+    assert_eq!(key.sign_fixed(message), fixed);
 }
 
 #[test]

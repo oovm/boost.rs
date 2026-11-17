@@ -6,14 +6,14 @@ Boost 家族的共享密码基础能力：hash、HMAC/HKDF、AEAD、签名/验�
 
 ## 当前状态（未签收）
 
-本 crate 目前仍是对审计过的第三方纯 Rust 原语的能力门面，**不等于原语内化**。`p256`/`p384`/`rsa`/`x25519-dalek`/`aes-gcm`/`sha2` 等仍由外部实现闭包提供算法与数学能力，并各自携带 `rand_core`/`rand` 传递依赖。按现行内化合同，这只能算接线，不能记为已通过；吸收真实所需算法与数学能力、删除外部实现闭包是独立切片。
+本 crate 仍在继续原语内化，**不等于全部签收**。`rsa` 仍由外部实现闭包提供公钥解析、验签与 `BigUint` 模幂，并携带 `rand_core`/`rand` 传递依赖；`boost.random` 的 web 熵后端仍未移除。按现行内化合同，这只算部分吸收，不能记为已通过；剩余外部实现闭包是独立切片。
 
 ## 模块面
 
 | 模块 | 能力 |
 |------|------|
 | `hash` | SHA-256 / SHA-384 / SHA-512 一次性摘要 |
-| `mac` | HMAC-SHA256（含恒定时间验证）、HKDF-Extract / HKDF-Expand（raw `info`，TLS 1.3 Expand-Label 由调用方在外层组合） |
+| `mac` | HMAC-SHA256 / HMAC-SHA384（含恒定时间验证）、HKDF-Extract / HKDF-Expand（raw `info`，TLS 1.3 Expand-Label 由调用方在外层组合） |
 | `aead` | AES-128-GCM / AES-256-GCM seal/open，nonce 由调用方给出，库不生成 |
 | `ecdsa` | P-256 / P-384 签名与验签，DER 与 fixed-width 两种编码透出并可互转；私钥生成从宿主熵取标量，非法标量有限重试 |
 | `rsa` | PKCS#1 v1.5 与 PSS 的 SHA-256 / SHA-384 验签；自有 OAEP(SHA-1) 填充加密（种子逐次取自宿主熵）。私钥生成与随机化签名需要外部 RNG trait，本 crate 不提供 |
@@ -33,6 +33,8 @@ Boost 家族的共享密码基础能力：hash、HMAC/HKDF、AEAD、签名/验�
 | AES-128 / AES-256 与 GCM | FIPS 197 分组加密、NIST SP 800-38D 的 CTR 与 GHASH 认证（`aead`），S-box 由 GF(2^8) 逆元现算 |
 | X25519 | RFC 7748 的 GF(2^255-19) 乘法、Montgomery ladder 与 clamp（`x25519`） |
 | RSAES-OAEP(SHA-1) 填充 | RFC 8017，含 `MGF1`，模幂用 `rsa` 提供的 `BigUint`（`rsa`） |
+| P-256 / P-384 ECDSA | NIST 曲线域运算、标量乘、ECDSA 签名/验签与 DER / fixed-width 编码，随机标量逐次取自 `boost-random`（`ecdsa`） |
+| HMAC-SHA384 | RFC 2104，与 SHA-256 共用同一实现（`mac`） |
 
 ## 依赖台账
 
@@ -40,10 +42,7 @@ Boost 家族的共享密码基础能力：hash、HMAC/HKDF、AEAD、签名/验�
 
 | crate | 版本 | 许可证 | 用途 |
 |-------|------|--------|------|
-| `p256` | 0.13.2 | Apache-2.0 OR MIT | NIST P-256 ECDSA（`ecdsa` feature） |
-| `p384` | 0.13.1 | Apache-2.0 OR MIT | NIST P-384 ECDSA（`ecdsa` feature） |
-| `rsa` | 0.9.10 | MIT OR Apache-2.0 | RSA 公钥解析、验签与 `BigUint` 模幂 |
-| `signature` | 2.2.0 | Apache-2.0 OR MIT | `Signer`/`Verifier` 签名 trait 层（与 `p256`/`p384`/`rsa` 同版本） |
+| `rsa` | 0.9.10 | MIT OR Apache-2.0 | RSA 公钥解析、验签、`BigUint` 模幂与签名 trait 层 |
 | `base64` | 0.23.1 | MIT OR Apache-2.0 | base64 标准与无填充编解码 |
 | `zeroize` | 1.9.1 | Apache-2.0 OR MIT | 秘密材料清零（`derive` feature，`Zeroizing`/`ZeroizeOnDrop`） |
 | `sha1-rsa`（package `sha1`） | 0.10 | MIT OR Apache-2.0 | OAEP(SHA-1) 的 `lHash` 与 MGF1 |

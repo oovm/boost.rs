@@ -3,7 +3,7 @@
 //! 只用本 crate 的 [`crate::hash`] 摘要，遵循 RFC 2104 与 RFC 5869。`info` 为原始字节：
 //! TLS 1.3 的 Expand-Label 由调用方在外层按 RFC 8446 §7.1 组合后传入，本模块不焊协议语义。
 
-use crate::hash::sha256;
+use crate::hash::{sha256, sha384};
 use crate::{CryptoError, Result};
 
 /// SHA-256 的分组长度（HMAC 的 ipad/opad 长度）。
@@ -11,30 +11,44 @@ const SHA256_BLOCK: usize = 64;
 /// SHA-256 的摘要长度。
 const SHA256_LEN: usize = 32;
 
+/// SHA-384 的分组长度。
+const SHA384_BLOCK: usize = 128;
+/// SHA-384 的摘要长度。
+const SHA384_LEN: usize = 48;
+
 /// 计算 HMAC-SHA256（32 字节）。
 pub fn hmac_sha256(key: &[u8], data: &[u8]) -> Result<[u8; 32]> {
-    Ok(hmac(key, data))
+    Ok(hmac::<{ SHA256_BLOCK }, { SHA256_LEN }>(key, data, sha256))
+}
+
+/// 计算 HMAC-SHA384（48 字节）。
+pub fn hmac_sha384(key: &[u8], data: &[u8]) -> Result<[u8; 48]> {
+    Ok(hmac::<{ SHA384_BLOCK }, { SHA384_LEN }>(key, data, sha384))
 }
 
 /// HMAC 本身对任意长度 key 都有定义，内部实现不产生失败。
-fn hmac(key: &[u8], data: &[u8]) -> [u8; 32] {
-    let mut normalized = [0u8; SHA256_BLOCK];
-    if key.len() > SHA256_BLOCK {
-        normalized[..SHA256_LEN].copy_from_slice(&sha256(key));
+fn hmac<const BLOCK: usize, const LEN: usize>(
+    key: &[u8],
+    data: &[u8],
+    hash: fn(&[u8]) -> [u8; LEN],
+) -> [u8; LEN] {
+    let mut normalized = [0u8; BLOCK];
+    if key.len() > BLOCK {
+        normalized[..LEN].copy_from_slice(&hash(key));
     }
     else {
         normalized[..key.len()].copy_from_slice(key);
     }
 
-    let mut inner = Vec::with_capacity(SHA256_BLOCK + data.len());
-    inner.extend_from_slice(&xor_pad(&normalized, 0x36));
+    let mut inner = Vec::with_capacity(BLOCK + data.len());
+    inner.extend_from_slice(&xor_pad::<BLOCK>(&normalized, 0x36));
     inner.extend_from_slice(data);
-    let inner_digest = sha256(&inner);
+    let inner_digest = hash(&inner);
 
-    let mut outer = Vec::with_capacity(SHA256_BLOCK + SHA256_LEN);
-    outer.extend_from_slice(&xor_pad(&normalized, 0x5c));
+    let mut outer = Vec::with_capacity(BLOCK + LEN);
+    outer.extend_from_slice(&xor_pad::<BLOCK>(&normalized, 0x5c));
     outer.extend_from_slice(&inner_digest);
-    sha256(&outer)
+    hash(&outer)
 }
 
 /// 以恒定时间比较验证 HMAC-SHA256 标签。
@@ -49,7 +63,7 @@ pub fn hmac_sha256_verify(key: &[u8], data: &[u8], tag: &[u8]) -> Result<()> {
 pub fn hkdf_extract_sha256(salt: Option<&[u8]>, ikm: &[u8]) -> [u8; 32] {
     let zeros = [0u8; SHA256_LEN];
     let salt = salt.unwrap_or(&zeros);
-    hmac(salt, ikm)
+    hmac::<{ SHA256_BLOCK }, { SHA256_LEN }>(salt, ikm, sha256)
 }
 
 /// HKDF-Expand（RFC 5869 §2.3），把 PRK 与原始 `info` 展开到 `out`。
@@ -68,7 +82,7 @@ pub fn hkdf_expand_sha256(prk: &[u8], info: &[u8], out: &mut [u8]) -> Result<()>
         input.extend_from_slice(&previous);
         input.extend_from_slice(info);
         input.push(counter);
-        let block = hmac(prk, &input);
+        let block = hmac::<{ SHA256_BLOCK }, { SHA256_LEN }>(prk, &input, sha256);
         let take = (out.len() - filled).min(SHA256_LEN);
         out[filled..filled + take].copy_from_slice(&block[..take]);
         filled += take;
@@ -84,9 +98,9 @@ pub fn hkdf_sha256(salt: Option<&[u8]>, ikm: &[u8], info: &[u8], out: &mut [u8])
     hkdf_expand_sha256(&prk, info, out)
 }
 
-fn xor_pad(block: &[u8; SHA256_BLOCK], byte: u8) -> [u8; SHA256_BLOCK] {
-    let mut out = [0u8; SHA256_BLOCK];
-    for index in 0..SHA256_BLOCK {
+fn xor_pad<const BLOCK: usize>(block: &[u8; BLOCK], byte: u8) -> [u8; BLOCK] {
+    let mut out = [0u8; BLOCK];
+    for index in 0..BLOCK {
         out[index] = block[index] ^ byte;
     }
     out

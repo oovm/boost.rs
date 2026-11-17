@@ -16,7 +16,7 @@ use rsa::{
 };
 use sha1_rsa::{Digest as _, Sha1};
 use sha2_rsa::{Sha256, Sha384};
-use signature::Verifier as _;
+use rsa::signature::Verifier as _;
 
 /// OAEP 使用的摘要长度（SHA-1）。
 const OAEP_HASH_LEN: usize = 20;
