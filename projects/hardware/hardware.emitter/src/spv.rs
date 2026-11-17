@@ -48,15 +48,14 @@ pub(crate) mod op {
     pub const U_DIV: u16 = 134;
     pub const F_DIV: u16 = 136;
     pub const U_MOD: u16 = 137;
-    pub const F_REM: u16 = 140;
     pub const F_MOD: u16 = 141;
     pub const SELECT: u16 = 169;
     pub const I_EQUAL: u16 = 170;
     pub const I_NOT_EQUAL: u16 = 171;
     pub const U_GREATER_THAN: u16 = 172;
-    pub const U_GREATER_THAN_EQUAL: u16 = 173;
+    pub const U_GREATER_THAN_EQUAL: u16 = 174;
     pub const U_LESS_THAN: u16 = 176;
-    pub const U_LESS_THAN_EQUAL: u16 = 177;
+    pub const U_LESS_THAN_EQUAL: u16 = 178;
     pub const F_ORD_EQUAL: u16 = 180;
     pub const F_ORD_NOT_EQUAL: u16 = 182;
     pub const F_ORD_LESS_THAN: u16 = 184;
@@ -69,7 +68,6 @@ pub(crate) mod op {
     pub const BRANCH: u16 = 249;
     pub const BRANCH_CONDITIONAL: u16 = 250;
     pub const RETURN: u16 = 253;
-    pub const RETURN_VALUE: u16 = 254;
     pub const LOGICAL_OR: u16 = 166;
     pub const LOGICAL_NOT: u16 = 168;
 }
@@ -168,7 +166,6 @@ pub(crate) struct Spv {
     pointers: BTreeMap<(u32, u32), u32>,
     constants: BTreeMap<(u32, u64), u32>,
     std450: Option<u32>,
-    bytes: Option<u32>,
     /// `void` type id.
     pub void: u32,
     /// `bool` type id.
@@ -177,8 +174,6 @@ pub(crate) struct Spv {
     pub u32_: u32,
     /// 32-bit float type id.
     pub f32_: u32,
-    /// 32-bit signed integer type id (created on demand).
-    pub i32_: Option<u32>,
     /// 64-bit float type id (created on demand).
     pub f64_: Option<u32>,
     /// `vec2<f32>` type id.
@@ -209,12 +204,10 @@ impl Spv {
             pointers: BTreeMap::new(),
             constants: BTreeMap::new(),
             std450: None,
-            bytes: None,
             void: 0,
             bool_: 0,
             u32_: 0,
             f32_: 0,
-            i32_: None,
             f64_: None,
             vec2_f32: 0,
             vec3_u32: 0,
@@ -249,17 +242,6 @@ impl Spv {
         if !self.capabilities.iter().any(|entry| *entry == capability) {
             inst(&mut self.capabilities, op::CAPABILITY, &[capability]);
         }
-    }
-
-    /// 32-bit signed integer type id.
-    pub fn i32(&mut self) -> u32 {
-        if let Some(id) = self.i32_ {
-            return id;
-        }
-        let id = self.fresh();
-        inst(&mut self.types, op::TYPE_INT, &[id, 32, 1]);
-        self.i32_ = Some(id);
-        id
     }
 
     /// 64-bit float type id, adding the `Float64` capability on first use.
@@ -313,11 +295,7 @@ impl Spv {
         inst(&mut self.types, op::TYPE_STRUCT, &operands);
         inst(&mut self.annotations, op::DECORATE, &[id, decoration::BLOCK]);
         for (index, (_, offset)) in members.iter().enumerate() {
-            inst(
-                &mut self.annotations,
-                op::MEMBER_DECORATE,
-                &[id, index as u32, decoration::OFFSET, *offset],
-            );
+            inst(&mut self.annotations, op::MEMBER_DECORATE, &[id, index as u32, decoration::OFFSET, *offset]);
         }
         id
     }
@@ -350,13 +328,7 @@ impl Spv {
     }
 
     /// Declare an entry point with its interface variables.
-    pub fn entry_point(
-        &mut self,
-        model: u32,
-        function: u32,
-        name: &str,
-        interface: &[u32],
-    ) {
+    pub fn entry_point(&mut self, model: u32, function: u32, name: &str, interface: &[u32]) {
         let mut operands = Vec::with_capacity(interface.len() + 4);
         operands.push(model);
         operands.push(function);
@@ -392,12 +364,6 @@ impl Spv {
     /// 32-bit unsigned integer constant.
     pub fn const_u32(&mut self, value: u32) -> u32 {
         self.constant(self.u32_, u64::from(value), &[value])
-    }
-
-    /// 32-bit signed integer constant.
-    pub fn const_i32(&mut self, value: i32) -> u32 {
-        let ty = self.i32();
-        self.constant(ty, u64::from(value as u32), &[value as u32])
     }
 
     /// 32-bit float constant.
@@ -490,20 +456,11 @@ fn name_words(name: &str) -> Vec<u32> {
     while bytes.len() % 4 != 0 {
         bytes.push(0);
     }
-    bytes
-        .chunks_exact(4)
-        .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-        .collect()
+    bytes.chunks_exact(4).map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])).collect()
 }
 
 /// Append `OpCompositeExtract` and return the result id.
-pub(crate) fn extract(
-    spv: &mut Spv,
-    code: &mut Vec<u32>,
-    result: u32,
-    base: u32,
-    index: u32,
-) -> u32 {
+pub(crate) fn extract(spv: &mut Spv, code: &mut Vec<u32>, result: u32, base: u32, index: u32) -> u32 {
     let id = spv.fresh();
     inst(code, op::COMPOSITE_EXTRACT, &[result, id, base, index]);
     id
@@ -521,27 +478,14 @@ pub(crate) fn construct(spv: &mut Spv, code: &mut Vec<u32>, result: u32, parts: 
 }
 
 /// Append `OpSelect` and return the result id.
-pub(crate) fn select(
-    spv: &mut Spv,
-    code: &mut Vec<u32>,
-    result: u32,
-    condition: u32,
-    accept: u32,
-    reject: u32,
-) -> u32 {
+pub(crate) fn select(spv: &mut Spv, code: &mut Vec<u32>, result: u32, condition: u32, accept: u32, reject: u32) -> u32 {
     let id = spv.fresh();
     inst(code, op::SELECT, &[result, id, condition, accept, reject]);
     id
 }
 
 /// Append `OpAccessChain` and return the result id.
-pub(crate) fn chain(
-    spv: &mut Spv,
-    code: &mut Vec<u32>,
-    result: u32,
-    base: u32,
-    indices: &[u32],
-) -> u32 {
+pub(crate) fn chain(spv: &mut Spv, code: &mut Vec<u32>, result: u32, base: u32, indices: &[u32]) -> u32 {
     let id = spv.fresh();
     let mut operands = Vec::with_capacity(indices.len() + 3);
     operands.push(result);
@@ -565,40 +509,21 @@ pub(crate) fn store(code: &mut Vec<u32>, pointer: u32, value: u32) {
 }
 
 /// Append an arithmetic or comparison instruction and return the result id.
-pub(crate) fn binary(
-    spv: &mut Spv,
-    code: &mut Vec<u32>,
-    result: u32,
-    opcode: u16,
-    lhs: u32,
-    rhs: u32,
-) -> u32 {
+pub(crate) fn binary(spv: &mut Spv, code: &mut Vec<u32>, result: u32, opcode: u16, lhs: u32, rhs: u32) -> u32 {
     let id = spv.fresh();
     inst(code, opcode, &[result, id, lhs, rhs]);
     id
 }
 
 /// Append a unary instruction and return the result id.
-pub(crate) fn unary(
-    spv: &mut Spv,
-    code: &mut Vec<u32>,
-    result: u32,
-    opcode: u16,
-    value: u32,
-) -> u32 {
+pub(crate) fn unary(spv: &mut Spv, code: &mut Vec<u32>, result: u32, opcode: u16, value: u32) -> u32 {
     let id = spv.fresh();
     inst(code, opcode, &[result, id, value]);
     id
 }
 
 /// Append a `GLSL.std.450` extended instruction and return the result id.
-pub(crate) fn ext(
-    spv: &mut Spv,
-    code: &mut Vec<u32>,
-    result: u32,
-    instruction: u32,
-    args: &[u32],
-) -> u32 {
+pub(crate) fn ext(spv: &mut Spv, code: &mut Vec<u32>, result: u32, instruction: u32, args: &[u32]) -> u32 {
     let set = spv.std450();
     let id = spv.fresh();
     let mut operands = Vec::with_capacity(args.len() + 4);

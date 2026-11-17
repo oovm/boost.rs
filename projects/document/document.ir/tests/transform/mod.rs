@@ -6,9 +6,7 @@
 //! - [`DocumentGraph::walk`] / [`DocumentGraph::walk_mut`] 遍历
 //! - [`RewriteResult`] 各种变体的实际效果
 
-use document_ir::{
-    Block, Diagnostic, DocumentGraph, IdAllocator, Inline, ListItem, NodeId, RewriteResult, TransformError, Traversal,
-};
+use document_ir::{Block, Diagnostic, DocumentGraph, IdAllocator, Inline, ListItem, NodeId, RewriteResult, TransformError, Traversal};
 
 // ---------------------------------------------------------------------------
 // Helper — 构造一棵典型的 graph
@@ -31,11 +29,8 @@ fn build_sample_graph() -> (DocumentGraph, NodeId, NodeId, NodeId, NodeId, NodeI
 
     let p_hello = g.push_block(Block::Paragraph { content: vec![Inline::Text { text: "Hello".into() }] });
     let p_nested_body = g.push_block(Block::Paragraph { content: vec![Inline::Text { text: "Nested body".into() }] });
-    let sec_nested = g.push_block(Block::Section {
-        level: 2,
-        title: vec![Inline::Text { text: "Nested".into() }],
-        children: vec![p_nested_body],
-    });
+    let sec_nested =
+        g.push_block(Block::Section { level: 2, title: vec![Inline::Text { text: "Nested".into() }], children: vec![p_nested_body] });
     let p_item_body = g.push_block(Block::Paragraph { content: vec![Inline::Text { text: "Item body".into() }] });
     let list_root = g.push_block(Block::List {
         ordered: false,
@@ -267,12 +262,7 @@ fn walk_mut_remove_deletes_node() {
 
     assert!(g.block(p_hello).is_some());
 
-    g.walk_mut(
-        Traversal::BottomUp,
-        |id, _block, _kids| {
-            if id == p_hello { RewriteResult::Remove } else { RewriteResult::Keep }
-        },
-    );
+    g.walk_mut(Traversal::BottomUp, |id, _block, _kids| if id == p_hello { RewriteResult::Remove } else { RewriteResult::Keep });
 
     assert!(g.block(p_hello).is_none(), "Remove 应该从 blocks Vec 中删除节点");
 }
@@ -314,12 +304,7 @@ fn walk_mut_replace_swaps_old_node_for_new_on_parent() {
 fn walk_mut_replace_with_empty_vec_removes_from_parent() {
     let (mut g, sec_root, p_hello, _sec_nested, _p_nested_body, _list_root, _p_item_body) = build_sample_graph();
 
-    g.walk_mut(
-        Traversal::BottomUp,
-        |id, _block, _kids| {
-            if id == p_hello { RewriteResult::Replace(vec![]) } else { RewriteResult::Keep }
-        },
-    );
+    g.walk_mut(Traversal::BottomUp, |id, _block, _kids| if id == p_hello { RewriteResult::Replace(vec![]) } else { RewriteResult::Keep });
 
     assert!(g.block(p_hello).is_none());
     let root = g.block(sec_root).unwrap();
@@ -363,12 +348,7 @@ fn walk_mut_unwrap_promotes_children_to_parent() {
 
     // sec_root.children = [p_hello, sec_nested, list_root]
     // 我们 unwrap sec_nested —— sec_nested 消失，p_nested_body 提升到 sec_root.children
-    g.walk_mut(
-        Traversal::BottomUp,
-        |id, _block, _kids| {
-            if id == sec_nested { RewriteResult::Unwrap } else { RewriteResult::Keep }
-        },
-    );
+    g.walk_mut(Traversal::BottomUp, |id, _block, _kids| if id == sec_nested { RewriteResult::Unwrap } else { RewriteResult::Keep });
 
     assert!(g.block(sec_nested).is_none(), "被 Unwrap 的节点本体应被删除");
     assert!(g.block(p_nested_body).is_some(), "子节点 block 本体仍应存在");

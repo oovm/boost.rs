@@ -202,17 +202,12 @@ fn encode_node(n: &NativeNode) -> IrNode {
         NativeKind::Call { name, arguments, params, body, trim } => IrNode::StmtCall {
             name: name.clone(),
             arguments: arguments.iter().map(encode_expr).collect(),
-            params: params
-                .iter()
-                .map(|p| PartialParam { name: p.name.clone(), default: p.default.as_ref().map(encode_expr) })
-                .collect(),
+            params: params.iter().map(|p| PartialParam { name: p.name.clone(), default: p.default.as_ref().map(encode_expr) }).collect(),
             body: body.iter().map(encode_node).collect(),
             trim: trim.clone(),
             span,
         },
-        NativeKind::Extends { parent, trim } => {
-            IrNode::StmtExtends { parent: Box::new(encode_expr(parent)), trim: trim.clone(), span }
-        }
+        NativeKind::Extends { parent, trim } => IrNode::StmtExtends { parent: Box::new(encode_expr(parent)), trim: trim.clone(), span },
         NativeKind::Include { path, with, only, trim } => IrNode::StmtInclude {
             path: Box::new(encode_expr(path)),
             with: with.as_ref().map(|w| Box::new(encode_expr(w))),
@@ -237,11 +232,9 @@ fn encode_expr(e: &NativeExpr) -> IrNode {
         NativeExpr::Index { object, index } => {
             IrNode::ExprIndex { object: Box::new(encode_expr(object)), index: Box::new(encode_expr(index)), span: None }
         }
-        NativeExpr::Call { callee, arguments } => IrNode::ExprCall {
-            callee: Box::new(encode_expr(callee)),
-            arguments: arguments.iter().map(encode_expr).collect(),
-            span: None,
-        },
+        NativeExpr::Call { callee, arguments } => {
+            IrNode::ExprCall { callee: Box::new(encode_expr(callee)), arguments: arguments.iter().map(encode_expr).collect(), span: None }
+        }
         NativeExpr::Test { expression, test, arguments, negated } => IrNode::ExprTest {
             expression: Box::new(encode_expr(expression)),
             test: test.clone(),
@@ -259,10 +252,7 @@ fn encode_expr(e: &NativeExpr) -> IrNode {
             IrNode::ExprUnary { operator: operator.clone(), argument: Box::new(encode_expr(argument)), span: None }
         }
         NativeExpr::Object { entries } => IrNode::ExprObject {
-            entries: entries
-                .iter()
-                .map(|(key, value)| crate::types::ObjectEntry { key: key.clone(), value: encode_expr(value) })
-                .collect(),
+            entries: entries.iter().map(|(key, value)| crate::types::ObjectEntry { key: key.clone(), value: encode_expr(value) }).collect(),
             span: None,
         },
         NativeExpr::Pipe { expression, filter, arguments } => IrNode::ExprPipe {
@@ -278,10 +268,9 @@ fn decode_node(n: &IrNode) -> NativeNode {
     match n {
         IrNode::Text { value, span } => NativeNode::new(NativeKind::Text(value.clone()), span.clone()),
         IrNode::Comment { value, span } => NativeNode::new(NativeKind::Comment(value.clone()), span.clone()),
-        IrNode::Interpolation { expression, trim, raw, span } => NativeNode::new(
-            NativeKind::Interpolation { expression: decode_expr(expression), trim: trim.clone(), raw: *raw },
-            span.clone(),
-        ),
+        IrNode::Interpolation { expression, trim, raw, span } => {
+            NativeNode::new(NativeKind::Interpolation { expression: decode_expr(expression), trim: trim.clone(), raw: *raw }, span.clone())
+        }
         IrNode::StmtIf { test, consequent, else_ifs, alternate, trim, span } => NativeNode::new(
             NativeKind::If {
                 test: decode_expr(test),
@@ -289,9 +278,7 @@ fn decode_node(n: &IrNode) -> NativeNode {
                 else_ifs: else_ifs
                     .iter()
                     .map(|ei| match ei {
-                        IrNode::StmtElseIf { test, consequent, .. } => {
-                            (decode_expr(test), consequent.iter().map(decode_node).collect())
-                        }
+                        IrNode::StmtElseIf { test, consequent, .. } => (decode_expr(test), consequent.iter().map(decode_node).collect()),
                         _ => (NativeExpr::Literal(Value::Bool(false)), vec![]),
                     })
                     .collect(),
@@ -315,10 +302,7 @@ fn decode_node(n: &IrNode) -> NativeNode {
         ),
         IrNode::StmtPartial { params, body, trim, span } => NativeNode::new(
             NativeKind::Partial {
-                params: params
-                    .iter()
-                    .map(|p| NativeParam { name: p.name.clone(), default: p.default.as_ref().map(decode_expr) })
-                    .collect(),
+                params: params.iter().map(|p| NativeParam { name: p.name.clone(), default: p.default.as_ref().map(decode_expr) }).collect(),
                 body: body.iter().map(decode_node).collect(),
                 trim: trim.clone(),
             },
@@ -333,10 +317,7 @@ fn decode_node(n: &IrNode) -> NativeNode {
                 Some(lit) => NativeNode::new(
                     NativeKind::Import {
                         path: lit,
-                        names: names
-                            .iter()
-                            .map(|n| NativeImportName { name: n.name.clone(), alias: n.alias.clone() })
-                            .collect(),
+                        names: names.iter().map(|n| NativeImportName { name: n.name.clone(), alias: n.alias.clone() }).collect(),
                         trim: trim.clone(),
                     },
                     span.clone(),
@@ -349,10 +330,7 @@ fn decode_node(n: &IrNode) -> NativeNode {
         IrNode::StmtMacro { name, params, body, trim, span } => NativeNode::new(
             NativeKind::Macro {
                 name: name.clone(),
-                params: params
-                    .iter()
-                    .map(|p| NativeParam { name: p.name.clone(), default: p.default.as_ref().map(decode_expr) })
-                    .collect(),
+                params: params.iter().map(|p| NativeParam { name: p.name.clone(), default: p.default.as_ref().map(decode_expr) }).collect(),
                 body: body.iter().map(decode_node).collect(),
                 trim: trim.clone(),
             },
@@ -362,10 +340,7 @@ fn decode_node(n: &IrNode) -> NativeNode {
             NativeKind::Call {
                 name: name.clone(),
                 arguments: arguments.iter().map(decode_expr).collect(),
-                params: params
-                    .iter()
-                    .map(|p| NativeParam { name: p.name.clone(), default: p.default.as_ref().map(decode_expr) })
-                    .collect(),
+                params: params.iter().map(|p| NativeParam { name: p.name.clone(), default: p.default.as_ref().map(decode_expr) }).collect(),
                 body: body.iter().map(decode_node).collect(),
                 trim: trim.clone(),
             },
@@ -375,20 +350,13 @@ fn decode_node(n: &IrNode) -> NativeNode {
             NativeNode::new(NativeKind::Extends { parent: decode_expr(parent), trim: trim.clone() }, span.clone())
         }
         IrNode::StmtInclude { path, with, only, trim, span } => NativeNode::new(
-            NativeKind::Include {
-                path: decode_expr(path),
-                with: with.as_ref().map(|w| decode_expr(w)),
-                only: *only,
-                trim: trim.clone(),
-            },
+            NativeKind::Include { path: decode_expr(path), with: with.as_ref().map(|w| decode_expr(w)), only: *only, trim: trim.clone() },
             span.clone(),
         ),
         IrNode::StmtSuper { trim, span } => NativeNode::new(NativeKind::Super { trim: trim.clone() }, span.clone()),
         IrNode::StmtBreak { trim, span } => NativeNode::new(NativeKind::Break { trim: trim.clone() }, span.clone()),
         IrNode::StmtContinue { trim, span } => NativeNode::new(NativeKind::Continue { trim: trim.clone() }, span.clone()),
-        IrNode::StmtRaw { value, trim, span } => {
-            NativeNode::new(NativeKind::Raw { value: value.clone(), trim: trim.clone() }, span.clone())
-        }
+        IrNode::StmtRaw { value, trim, span } => NativeNode::new(NativeKind::Raw { value: value.clone(), trim: trim.clone() }, span.clone()),
         other => NativeNode::new(NativeKind::Text(format!("/* unsupported {other:?} */")), None),
     }
 }
@@ -397,9 +365,7 @@ fn decode_expr(n: &IrNode) -> NativeExpr {
     match n {
         IrNode::ExprLiteral { value, .. } => NativeExpr::Literal(value.clone()),
         IrNode::ExprIdentifier { name, .. } => NativeExpr::Identifier(name.clone()),
-        IrNode::ExprMember { object, property, .. } => {
-            NativeExpr::Member { object: Box::new(decode_expr(object)), property: property.clone() }
-        }
+        IrNode::ExprMember { object, property, .. } => NativeExpr::Member { object: Box::new(decode_expr(object)), property: property.clone() },
         IrNode::ExprIndex { object, index, .. } => {
             NativeExpr::Index { object: Box::new(decode_expr(object)), index: Box::new(decode_expr(index)) }
         }
@@ -412,11 +378,9 @@ fn decode_expr(n: &IrNode) -> NativeExpr {
             arguments: arguments.iter().map(decode_expr).collect(),
             negated: *negated,
         },
-        IrNode::ExprBinary { operator, left, right, .. } => NativeExpr::Binary {
-            operator: operator.clone(),
-            left: Box::new(decode_expr(left)),
-            right: Box::new(decode_expr(right)),
-        },
+        IrNode::ExprBinary { operator, left, right, .. } => {
+            NativeExpr::Binary { operator: operator.clone(), left: Box::new(decode_expr(left)), right: Box::new(decode_expr(right)) }
+        }
         IrNode::ExprUnary { operator, argument, .. } => {
             NativeExpr::Unary { operator: operator.clone(), argument: Box::new(decode_expr(argument)) }
         }

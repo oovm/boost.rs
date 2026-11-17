@@ -4,8 +4,7 @@ use std::{
 };
 
 use document_ir::{
-    Attributes, Block, BreakKind, DocumentGraph, Inline, ListItem, LossMarker, NodeId, RelationEndpoint, SemanticStatus,
-    TableRow,
+    Attributes, Block, BreakKind, DocumentGraph, Inline, ListItem, LossMarker, NodeId, RelationEndpoint, SemanticStatus, TableRow,
 };
 
 use crate::FormatError;
@@ -98,18 +97,12 @@ pub fn export_html_report(graph: &DocumentGraph) -> Result<HtmlExport, FormatErr
 /// `data-diagram-language` / `data-diagram-source-hex` round-trip markers, so
 /// the HTML importer still recovers the authored source. A diagram block whose
 /// scene failed to render keeps the visible source `<pre>` fallback.
-pub fn export_html_with_diagrams(
-    graph: &DocumentGraph,
-    diagrams: &HashMap<NodeId, RenderedDiagram>,
-) -> Result<String, FormatError> {
+pub fn export_html_with_diagrams(graph: &DocumentGraph, diagrams: &HashMap<NodeId, RenderedDiagram>) -> Result<String, FormatError> {
     Ok(export_html_report_with_diagrams(graph, diagrams)?.html)
 }
 
 /// Export as HTML and report every construct the projection could not carry.
-pub fn export_html_report_with_diagrams(
-    graph: &DocumentGraph,
-    diagrams: &HashMap<NodeId, RenderedDiagram>,
-) -> Result<HtmlExport, FormatError> {
+pub fn export_html_report_with_diagrams(graph: &DocumentGraph, diagrams: &HashMap<NodeId, RenderedDiagram>) -> Result<HtmlExport, FormatError> {
     let validation = graph.validate();
     if !validation.is_valid() {
         return Err(FormatError::invalid_input(format!("invalid document graph: {:?}", validation.issues)));
@@ -234,8 +227,7 @@ fn write_node(
     diagrams: &HashMap<NodeId, RenderedDiagram>,
     footnote_refs: &mut FootnoteRefIds,
 ) -> Result<(), FormatError> {
-    write!(out, r#"<div id="node-{}" data-node-id="{}">"#, id.0, id.0)
-        .map_err(|error| FormatError::unsupported("html", error.to_string()))?;
+    write!(out, r#"<div id="node-{}" data-node-id="{}">"#, id.0, id.0).map_err(|error| FormatError::unsupported("html", error.to_string()))?;
     write_block(out, graph, id, block, diagrams, footnote_refs)?;
     out.push_str("</div>");
     Ok(())
@@ -278,9 +270,8 @@ fn write_block(
             write_inlines(out, title, footnote_refs)?;
             write!(out, "</h{}>", level).map_err(format_error)?;
             for child_id in children {
-                let child = graph
-                    .block(*child_id)
-                    .ok_or_else(|| FormatError::invalid_input(format!("section child `{child_id:?}` is missing")))?;
+                let child =
+                    graph.block(*child_id).ok_or_else(|| FormatError::invalid_input(format!("section child `{child_id:?}` is missing")))?;
                 write_node(out, graph, child.id, &child.block, diagrams, footnote_refs)?;
             }
         }
@@ -292,9 +283,8 @@ fn write_block(
         Block::Quote { children } => {
             out.push_str("<blockquote>");
             for child_id in children {
-                let child = graph
-                    .block(*child_id)
-                    .ok_or_else(|| FormatError::invalid_input(format!("quote child `{child_id:?}` is missing")))?;
+                let child =
+                    graph.block(*child_id).ok_or_else(|| FormatError::invalid_input(format!("quote child `{child_id:?}` is missing")))?;
                 write_node(out, graph, child.id, &child.block, diagrams, footnote_refs)?;
             }
             out.push_str("</blockquote>");
@@ -402,9 +392,7 @@ fn write_block(
             out.push_str("</div>");
         }
         Block::List { ordered, items } => write_list(out, graph, *ordered, items, diagrams, footnote_refs)?,
-        Block::Table { caption, head, body, foot } => {
-            write_table(out, graph, caption.as_deref(), head, body, foot, diagrams, footnote_refs)?
-        }
+        Block::Table { caption, head, body, foot } => write_table(out, graph, caption.as_deref(), head, body, foot, diagrams, footnote_refs)?,
         Block::Opaque { kind, payload_hint, .. } if kind == "thematic_break" => {
             out.push_str("<hr>");
             if !payload_hint.is_empty() {
@@ -474,9 +462,7 @@ fn write_list(
         expected = number.saturating_add(1);
         write_inlines(out, &item.content, footnote_refs)?;
         for child_id in &item.children {
-            let child = graph
-                .block(*child_id)
-                .ok_or_else(|| FormatError::invalid_input(format!("list child `{child_id:?}` is missing")))?;
+            let child = graph.block(*child_id).ok_or_else(|| FormatError::invalid_input(format!("list child `{child_id:?}` is missing")))?;
             write_node(out, graph, child.id, &child.block, diagrams, footnote_refs)?;
         }
         out.push_str("</li>");
@@ -545,9 +531,8 @@ fn write_table_rows(
             }
             out.push('>');
             for child_id in &cell.children {
-                let child = graph
-                    .block(*child_id)
-                    .ok_or_else(|| FormatError::invalid_input(format!("table cell child `{child_id:?}` is missing")))?;
+                let child =
+                    graph.block(*child_id).ok_or_else(|| FormatError::invalid_input(format!("table cell child `{child_id:?}` is missing")))?;
                 write_block(out, graph, *child_id, &child.block, diagrams, footnote_refs)?;
             }
             out.push_str("</");
@@ -657,9 +642,7 @@ fn write_inlines(out: &mut String, inlines: &[Inline], footnote_refs: &mut Footn
                 BreakKind::Hard => out.push_str("<br>"),
                 BreakKind::Soft => out.push('\n'),
             },
-            Inline::Attributed { attributes, children }
-                if matches!(children.as_slice(), [Inline::Image { .. }]) && !attributes.is_empty() =>
-            {
+            Inline::Attributed { attributes, children } if matches!(children.as_slice(), [Inline::Image { .. }]) && !attributes.is_empty() => {
                 // Attributes that wrap only a bitmap belong on the `<img>` element.
                 // Writing them on a `<span>` would leave `width`/`height` as inert
                 // attributes that no consumer treats as a display size.
@@ -765,17 +748,10 @@ fn collect_export_losses(graph: &DocumentGraph) -> Vec<LossMarker> {
     losses
 }
 
-fn collect_inline_losses(
-    graph: &DocumentGraph,
-    inlines: &[Inline],
-    losses: &mut Vec<LossMarker>,
-    seen: &mut HashSet<(String, String)>,
-) {
+fn collect_inline_losses(graph: &DocumentGraph, inlines: &[Inline], losses: &mut Vec<LossMarker>, seen: &mut HashSet<(String, String)>) {
     for inline in inlines {
         match inline {
-            Inline::Styled { children, .. } | Inline::Attributed { children, .. } => {
-                collect_inline_losses(graph, children, losses, seen)
-            }
+            Inline::Styled { children, .. } | Inline::Attributed { children, .. } => collect_inline_losses(graph, children, losses, seen),
             Inline::Link { target, display, .. } => {
                 if !matches!(target, RelationEndpoint::ExternalUri(_) | RelationEndpoint::Node(_)) {
                     push_export_loss(
@@ -820,13 +796,7 @@ fn collect_inline_losses(
     }
 }
 
-fn push_export_loss(
-    losses: &mut Vec<LossMarker>,
-    seen: &mut HashSet<(String, String)>,
-    code: &str,
-    message: String,
-    status: SemanticStatus,
-) {
+fn push_export_loss(losses: &mut Vec<LossMarker>, seen: &mut HashSet<(String, String)>, code: &str, message: String, status: SemanticStatus) {
     if seen.insert((code.to_string(), message.clone())) {
         losses.push(LossMarker { code: code.into(), message, status });
     }
@@ -844,8 +814,7 @@ fn write_attributes(out: &mut String, attributes: &Attributes) -> Result<(), For
         out.push('"');
     }
     for pair in &attributes.pairs {
-        if !is_valid_attribute_name(&pair.key) || pair.key.eq_ignore_ascii_case("id") || pair.key.eq_ignore_ascii_case("class")
-        {
+        if !is_valid_attribute_name(&pair.key) || pair.key.eq_ignore_ascii_case("id") || pair.key.eq_ignore_ascii_case("class") {
             return Err(FormatError::unsupported("html", format!("invalid attribute name `{}`", pair.key)));
         }
         out.push(' ');

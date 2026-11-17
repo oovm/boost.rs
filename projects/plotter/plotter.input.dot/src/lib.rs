@@ -6,14 +6,10 @@ use std::ops::Range;
 use oak_core::{Builder, SourceText, errors::OakError, parser::session::ParseSession};
 use oak_dot::{
     DotBuilder, DotLanguage,
-    ast::{
-        Attribute, AttributeTarget, Compass, DotRoot, EdgeOp, EdgeOperand, GraphType, NodeId, NodeStatement, Statement,
-        SubgraphStatement,
-    },
+    ast::{Attribute, AttributeTarget, Compass, DotRoot, EdgeOp, EdgeOperand, GraphType, NodeId, NodeStatement, Statement, SubgraphStatement},
 };
 use plotter_types::{
-    ByteRange, Diagnostic, DiagnosticLabel, DiagnosticLocation, DiagnosticSeverity, LabelRole, Message, NAMESPACE, SourceRef,
-    codes, diagnostic,
+    ByteRange, Diagnostic, DiagnosticLabel, DiagnosticLocation, DiagnosticSeverity, LabelRole, Message, NAMESPACE, SourceRef, codes, diagnostic,
 };
 
 use plotter_diagram::{
@@ -248,13 +244,7 @@ impl Collector {
             Some(&index) => index,
             None => {
                 self.indices.insert(id.to_string(), self.nodes.len());
-                self.nodes.push(DiagramNode {
-                    id: id.to_string(),
-                    label: None,
-                    shape: NodeShape::Box,
-                    ports: Vec::new(),
-                    cluster: None,
-                });
+                self.nodes.push(DiagramNode { id: id.to_string(), label: None, shape: NodeShape::Box, ports: Vec::new(), cluster: None });
                 self.sources.push_node(span);
                 self.nodes.len() - 1
             }
@@ -327,8 +317,7 @@ fn port_geometry(compass: Compass, span: Range<usize>, diagnostics: &mut Vec<Dia
             ("sw", Side::Left, 1.0)
         }
         Compass::C => {
-            diagnostics
-                .push(approximated_at("center compass `c` has no boundary anchor and uses the default side midpoint", span));
+            diagnostics.push(approximated_at("center compass `c` has no boundary anchor and uses the default side midpoint", span));
             ("c", Side::Top, 0.5)
         }
     }
@@ -346,20 +335,14 @@ fn compass_of(name: &str) -> Option<Compass> {
 fn dot_root_to_spec(root: &DotRoot) -> Result<(DiagramSpec, Vec<Diagnostic>, SourceMap), DiagramError> {
     if root.graphs.len() > 1 {
         let second = span_of(root.graphs[1].span);
-        return Err(unsupported_at(
-            format!("a DOT document may contain exactly one top-level graph, found {}", root.graphs.len()),
-            second,
-        ));
+        return Err(unsupported_at(format!("a DOT document may contain exactly one top-level graph, found {}", root.graphs.len()), second));
     }
     let Some(graph) = root.graphs.first()
     else {
         return Err(DiagramError::empty_diagram("the DOT document declares no graph"));
     };
     if graph.strict {
-        return Err(unsupported_at(
-            "`strict` graphs change multi-edge semantics that the DOT subset does not model",
-            span_of(graph.span),
-        ));
+        return Err(unsupported_at("`strict` graphs change multi-edge semantics that the DOT subset does not model", span_of(graph.span)));
     }
 
     let mut collector = Collector { sources: SourceMap::new(SOURCE), ..Collector::default() };
@@ -419,11 +402,7 @@ fn rankdir(value: &str, span: Range<usize>) -> Result<Direction, DiagramError> {
     }
 }
 
-fn graph_attributes(
-    attributes: &[Attribute],
-    direction: Direction,
-    diagnostics: &mut Vec<Diagnostic>,
-) -> Result<Direction, DiagramError> {
+fn graph_attributes(attributes: &[Attribute], direction: Direction, diagnostics: &mut Vec<Diagnostic>) -> Result<Direction, DiagramError> {
     let mut direction = direction;
     for attribute in attributes {
         match attribute.name.to_ascii_lowercase().as_str() {
@@ -431,15 +410,10 @@ fn graph_attributes(
                 let value = attribute.value.as_deref().unwrap_or_default();
                 direction = rankdir(value, span_of(attribute.span))?;
             }
-            "label" => diagnostics.push(approximated_at(
-                "a graph-level label has no place in the scene surface and is not rendered",
-                span_of(attribute.span),
-            )),
+            "label" => diagnostics
+                .push(approximated_at("a graph-level label has no place in the scene surface and is not rendered", span_of(attribute.span))),
             other => {
-                return Err(unsupported_at(
-                    format!("graph attribute `{other}` is outside the DOT subset"),
-                    span_of(attribute.span),
-                ));
+                return Err(unsupported_at(format!("graph attribute `{other}` is outside the DOT subset"), span_of(attribute.span)));
             }
         }
     }
@@ -488,12 +462,7 @@ fn reject_html_label(value: &str, span: Range<usize>) -> Result<(), DiagramError
     Ok(())
 }
 
-fn check_style(
-    value: &str,
-    target: StyleTarget,
-    span: Range<usize>,
-    diagnostics: &mut Vec<Diagnostic>,
-) -> Result<(), DiagramError> {
+fn check_style(value: &str, target: StyleTarget, span: Range<usize>, diagnostics: &mut Vec<Diagnostic>) -> Result<(), DiagramError> {
     for token in value.split(',') {
         let token = token.trim();
         if !ALLOWED_STYLE_TOKENS.contains(&token) {
@@ -505,23 +474,17 @@ fn check_style(
             }
             "dashed" | "dotted" => {
                 if target == StyleTarget::Node {
-                    diagnostics.push(approximated_at(
-                        format!("node outline style `{token}` has no dash surface and is drawn solid"),
-                        span.clone(),
-                    ));
+                    diagnostics
+                        .push(approximated_at(format!("node outline style `{token}` has no dash surface and is drawn solid"), span.clone()));
                 }
             }
             "bold" => {
                 if target == StyleTarget::Node {
-                    diagnostics
-                        .push(approximated_at("node outline style `bold` is not applied as a stroke weight", span.clone()));
+                    diagnostics.push(approximated_at("node outline style `bold` is not applied as a stroke weight", span.clone()));
                 }
             }
             "filled" => {
-                diagnostics.push(approximated_at(
-                    "style `filled` carries a fill colour that the scene takes from its theme",
-                    span.clone(),
-                ));
+                diagnostics.push(approximated_at("style `filled` carries a fill colour that the scene takes from its theme", span.clone()));
             }
             _ => {}
         }
@@ -573,17 +536,12 @@ fn lower_statement(
 }
 
 /// Apply one `node [...]` statement to the defaults active at this point.
-fn apply_node_defaults(
-    attributes: &[Attribute],
-    defaults: &mut Defaults,
-    diagnostics: &mut Vec<Diagnostic>,
-) -> Result<(), DiagramError> {
+fn apply_node_defaults(attributes: &[Attribute], defaults: &mut Defaults, diagnostics: &mut Vec<Diagnostic>) -> Result<(), DiagramError> {
     for child in attributes {
         check_attribute(child, StyleTarget::Node, diagnostics)?;
         match child.name.to_ascii_lowercase().as_str() {
             "shape" => {
-                defaults.node_shape =
-                    Some(node_shape(child.value.as_deref().unwrap_or_default(), span_of(child.span), diagnostics)?);
+                defaults.node_shape = Some(node_shape(child.value.as_deref().unwrap_or_default(), span_of(child.span), diagnostics)?);
             }
             "style" => {
                 defaults.node_rounded |= style_contains(child.value.as_deref().unwrap_or_default(), "rounded");
@@ -600,11 +558,7 @@ fn apply_node_defaults(
 }
 
 /// Apply one `edge [...]` statement to the defaults active at this point.
-fn apply_edge_defaults(
-    attributes: &[Attribute],
-    defaults: &mut Defaults,
-    diagnostics: &mut Vec<Diagnostic>,
-) -> Result<(), DiagramError> {
+fn apply_edge_defaults(attributes: &[Attribute], defaults: &mut Defaults, diagnostics: &mut Vec<Diagnostic>) -> Result<(), DiagramError> {
     for child in attributes {
         check_attribute(child, StyleTarget::Edge, diagnostics)?;
         match child.name.to_ascii_lowercase().as_str() {
@@ -682,16 +636,10 @@ fn lower_edge(
         let operand_endpoint = edge_operand(operand, collector, defaults, diagnostics)?;
         match (op, graph_type) {
             (EdgeOp::Directed, GraphType::Graph) => {
-                return Err(unsupported_at(
-                    "a directed `->` edge inside an undirected `graph` is outside the DOT subset",
-                    span_of(edge.span),
-                ));
+                return Err(unsupported_at("a directed `->` edge inside an undirected `graph` is outside the DOT subset", span_of(edge.span)));
             }
             (EdgeOp::Undirected, GraphType::Digraph) => {
-                return Err(unsupported_at(
-                    "an undirected `--` edge inside a `digraph` is outside the DOT subset",
-                    span_of(edge.span),
-                ));
+                return Err(unsupported_at("an undirected `--` edge inside a `digraph` is outside the DOT subset", span_of(edge.span)));
             }
             _ => {}
         }
@@ -780,12 +728,7 @@ fn style_for(value: &str, fallback: EdgeStyle) -> EdgeStyle {
 ///
 /// Only compass points are accepted as ports. A named port (`:f0`) or a named
 /// port with a compass suffix (`:out:n`) is rejected with the port's byte span.
-fn endpoint(
-    id: &NodeId,
-    collector: &mut Collector,
-    defaults: &Defaults,
-    diagnostics: &mut Vec<Diagnostic>,
-) -> Result<Endpoint, DiagramError> {
+fn endpoint(id: &NodeId, collector: &mut Collector, defaults: &Defaults, diagnostics: &mut Vec<Diagnostic>) -> Result<Endpoint, DiagramError> {
     let node = id.id.trim();
     if node.is_empty() {
         return Err(unsupported_at("an empty node id is outside the DOT subset", span_of(id.span)));
@@ -799,10 +742,7 @@ fn endpoint(
     let span = span_of(port.span);
     let compass = match (&port.id, &port.compass) {
         (Some(name), _) => compass_of(name).ok_or_else(|| {
-            unsupported_at(
-                format!("named port `:{name}` is outside the DOT subset, only compass points are accepted"),
-                span.clone(),
-            )
+            unsupported_at(format!("named port `:{name}` is outside the DOT subset, only compass points are accepted"), span.clone())
         })?,
         (None, Some(compass)) => compass.clone(),
         (None, None) => return Ok(Endpoint { node: node.to_string(), port: None }),
@@ -820,9 +760,7 @@ fn edge_operand(
 ) -> Result<Endpoint, DiagramError> {
     match operand {
         EdgeOperand::Node(id) => endpoint(id, collector, defaults, diagnostics),
-        EdgeOperand::Subgraph(subgraph) => {
-            Err(unsupported_at("subgraphs as edge operands are outside the DOT subset", span_of(subgraph.span)))
-        }
+        EdgeOperand::Subgraph(subgraph) => Err(unsupported_at("subgraphs as edge operands are outside the DOT subset", span_of(subgraph.span))),
     }
 }
 
@@ -874,10 +812,7 @@ fn lower_subgraph(
                 AttributeTarget::Node => apply_node_defaults(&attribute.attributes, &mut scoped, diagnostics)?,
                 AttributeTarget::Edge => apply_edge_defaults(&attribute.attributes, &mut scoped, diagnostics)?,
                 AttributeTarget::Graph => {
-                    return Err(unsupported_at(
-                        "graph attributes inside a subgraph are outside the DOT subset",
-                        span_of(attribute.span),
-                    ));
+                    return Err(unsupported_at("graph attributes inside a subgraph are outside the DOT subset", span_of(attribute.span)));
                 }
             },
             Statement::Subgraph(nested) => {
@@ -921,9 +856,6 @@ fn lower_subgraph(
         Ok(())
     }
     else {
-        Err(unsupported_at(
-            "a non-cluster subgraph is only accepted for `rank=same`, which this subgraph does not declare",
-            span,
-        ))
+        Err(unsupported_at("a non-cluster subgraph is only accepted for `rank=same`, which this subgraph does not declare", span))
     }
 }

@@ -14,11 +14,7 @@ pub fn blocks_from_xhtml(xml: &[u8]) -> Result<Vec<Block>, FormatError> {
 }
 
 /// Lower XHTML spine content and optionally register embedded image assets.
-pub fn blocks_from_xhtml_with_context(
-    xml: &[u8],
-    graph: &mut DocumentGraph,
-    member_path: Option<&str>,
-) -> Result<Vec<Block>, FormatError> {
+pub fn blocks_from_xhtml_with_context(xml: &[u8], graph: &mut DocumentGraph, member_path: Option<&str>) -> Result<Vec<Block>, FormatError> {
     let text = prepare_xhtml_for_oak_html(&String::from_utf8_lossy(xml));
     let document = parse_html_bytes(text.as_bytes())?;
     register_spine_images_from_document(&document, graph, member_path)?;
@@ -124,12 +120,7 @@ fn prepare_xhtml_for_oak_html(xml: &str) -> String {
     text
 }
 
-pub(crate) fn register_and_image_inline(
-    src: &str,
-    alt: &str,
-    graph: &mut DocumentGraph,
-    member_path: Option<&str>,
-) -> Option<Inline> {
+pub(crate) fn register_and_image_inline(src: &str, alt: &str, graph: &mut DocumentGraph, member_path: Option<&str>) -> Option<Inline> {
     let asset = member_path.and_then(|member_path| register_image_from_src(graph, member_path, src));
     image_inline(src, alt, asset)
 }

@@ -92,14 +92,10 @@ fn time_ordered_declaration_drives_axis_message_order_and_activations() {
         compile::{LayoutOptions, compile},
         plan::PlanLayout,
         render::render,
-        spec::{
-            Activation, DiagramEdge, DiagramNode, DiagramSpec, Direction, EdgeStyle, Endpoint, LayoutModel, NodeShape,
-            SequenceLayout,
-        },
+        spec::{Activation, DiagramEdge, DiagramNode, DiagramSpec, Direction, EdgeStyle, Endpoint, LayoutModel, NodeShape, SequenceLayout},
     };
 
-    let node =
-        |id: &str| DiagramNode { id: id.to_string(), label: None, shape: NodeShape::Box, ports: Vec::new(), cluster: None };
+    let node = |id: &str| DiagramNode { id: id.to_string(), label: None, shape: NodeShape::Box, ports: Vec::new(), cluster: None };
     let message = |from: &str, to: &str, label: &str| DiagramEdge {
         from: Endpoint { node: from.to_string(), port: None },
         to: Endpoint { node: to.to_string(), port: None },
@@ -131,8 +127,5 @@ fn time_ordered_declaration_drives_axis_message_order_and_activations() {
     assert_eq!(plan.diagnostics.len(), 0, "a well-formed declaration reports no loss: {:?}", plan.diagnostics);
 
     let scene = render(&plan);
-    assert!(
-        scene.nodes.iter().any(|node| node.id.as_deref() == Some("sequence-activation-0")),
-        "activation bars must reach the scene"
-    );
+    assert!(scene.nodes.iter().any(|node| node.id.as_deref() == Some("sequence-activation-0")), "activation bars must reach the scene");
 }

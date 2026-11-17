@@ -55,13 +55,7 @@ pub struct FetchClient<T: Transport> {
 impl<T: Transport> FetchClient<T> {
     /// Build a client around a transport and robots policy.
     pub fn new(transport: T, robots: RobotsPolicy) -> Self {
-        Self {
-            transport,
-            cache: ResponseCache::default(),
-            robots,
-            last_site_requests: BTreeMap::new(),
-            robots_updates: Vec::new(),
-        }
+        Self { transport, cache: ResponseCache::default(), robots, last_site_requests: BTreeMap::new(), robots_updates: Vec::new() }
     }
 
     /// Access the in-memory response cache.

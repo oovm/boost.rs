@@ -511,12 +511,7 @@ fn snap(value: f64, step: f64) -> f64 {
 }
 
 fn normalized_domain(domain: (f64, f64)) -> (f64, f64) {
-    let (min, max) = if domain.0.is_finite() && domain.1.is_finite() {
-        (domain.0.min(domain.1), domain.0.max(domain.1))
-    }
-    else {
-        (0.0, 1.0)
-    };
+    let (min, max) = if domain.0.is_finite() && domain.1.is_finite() { (domain.0.min(domain.1), domain.0.max(domain.1)) } else { (0.0, 1.0) };
     if min == max {
         let padding = if min == 0.0 { 1.0 } else { (min.abs() * 0.5).max(0.5) };
         (min - padding, max + padding)

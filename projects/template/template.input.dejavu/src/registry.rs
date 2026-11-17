@@ -123,13 +123,7 @@ pub struct FilterSpec {
     pub capability: Capability,
 }
 
-const fn spec(
-    name: &'static str,
-    aliases: &'static [&'static str],
-    min_args: usize,
-    max_args: usize,
-    capability: Capability,
-) -> FilterSpec {
+const fn spec(name: &'static str, aliases: &'static [&'static str], min_args: usize, max_args: usize, capability: Capability) -> FilterSpec {
     FilterSpec { name, aliases, min_args, max_args, capability }
 }
 
@@ -164,11 +158,7 @@ pub fn filter_spec(name: &str) -> Option<&'static FilterSpec> {
 /// `FilterLookupError::Arity` for an out-of-contract argument count and
 /// `FilterLookupError::NotAllowed` when the host did not grant the filter's
 /// capability.
-pub fn validate_filter(
-    name: &str,
-    arg_count: usize,
-    capabilities: CapabilitySet,
-) -> Result<&'static FilterSpec, FilterLookupError> {
+pub fn validate_filter(name: &str, arg_count: usize, capabilities: CapabilitySet) -> Result<&'static FilterSpec, FilterLookupError> {
     let spec = filter_spec(name).ok_or(FilterLookupError::Unknown)?;
     if arg_count < spec.min_args || arg_count > spec.max_args {
         return Err(FilterLookupError::Arity { spec });
@@ -236,11 +226,7 @@ pub fn function_spec(name: &str) -> Option<&'static FunctionSpec> {
 }
 
 /// Validate a function name, argument count and host-granted capabilities.
-pub fn validate_function(
-    name: &str,
-    arg_count: usize,
-    capabilities: CapabilitySet,
-) -> Result<&'static FunctionSpec, FunctionLookupError> {
+pub fn validate_function(name: &str, arg_count: usize, capabilities: CapabilitySet) -> Result<&'static FunctionSpec, FunctionLookupError> {
     let spec = function_spec(name).ok_or(FunctionLookupError::Unknown)?;
     if arg_count < spec.min_args || arg_count > spec.max_args {
         return Err(FunctionLookupError::Arity { spec });
@@ -436,9 +422,7 @@ pub fn validate_custom_entries(entries: &[CustomEntry]) -> Result<(), Diagnostic
 
 /// Look up a custom entry by canonical name or alias inside one namespace.
 pub fn custom_entry<'a>(entries: &'a [CustomEntry], namespace: Namespace, name: &str) -> Option<&'a CustomEntry> {
-    entries
-        .iter()
-        .find(|entry| entry.namespace == namespace && (entry.name == name || entry.aliases.iter().any(|alias| alias == name)))
+    entries.iter().find(|entry| entry.namespace == namespace && (entry.name == name || entry.aliases.iter().any(|alias| alias == name)))
 }
 
 // ---------------------------------------------------------------------------
@@ -474,9 +458,7 @@ pub fn to_json_with_custom(custom: &[CustomEntry]) -> String {
         Namespace::Filter,
     );
     let functions = merged_table(
-        FUNCTIONS
-            .iter()
-            .map(|spec| entry_json(spec.name, spec.aliases, spec.min_args, spec.max_args, spec.capability.as_str())),
+        FUNCTIONS.iter().map(|spec| entry_json(spec.name, spec.aliases, spec.min_args, spec.max_args, spec.capability.as_str())),
         custom,
         Namespace::Function,
     );

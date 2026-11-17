@@ -237,11 +237,7 @@ fn wrap(angle: f64) -> f64 {
 }
 
 /// 计算分子内全部原子的平面坐标，返回位置与用到的环。
-fn layout(
-    spec: &MoleculeSpec,
-    length: f64,
-    diagnostics: &mut Vec<Diagnostic>,
-) -> Result<(Vec<Point>, Vec<Vec<usize>>), DepictionError> {
+fn layout(spec: &MoleculeSpec, length: f64, diagnostics: &mut Vec<Diagnostic>) -> Result<(Vec<Point>, Vec<Vec<usize>>), DepictionError> {
     let adj = adjacency(spec);
     let mut placed: Vec<Option<Point>> = vec![None; spec.atoms.len()];
     let mut parent: Vec<Option<usize>> = vec![None; spec.atoms.len()];
@@ -289,10 +285,7 @@ fn layout(
                 let (sin_d, cos_d) = delta.sin_cos();
                 for &atom in ring {
                     let old = placed[atom].expect("placed");
-                    placed[atom] = Some(Point::new(
-                        center.x + old.x * cos_d - old.y * sin_d,
-                        center.y + old.x * sin_d + old.y * cos_d,
-                    ));
+                    placed[atom] = Some(Point::new(center.x + old.x * cos_d - old.y * sin_d, center.y + old.x * sin_d + old.y * cos_d));
                 }
             }
             continue;
@@ -335,7 +328,10 @@ fn layout(
             for walk in [1isize, -1isize] {
                 for angle_sign in [1.0, -1.0] {
                     let k_b = (1..size).find(|k| ring[(ia as isize + walk * *k as isize).rem_euclid(size as isize) as usize] == b);
-                    let Some(k_b) = k_b else { continue };
+                    let Some(k_b) = k_b
+                    else {
+                        continue;
+                    };
                     let expected = theta_a + angle_sign * step * k_b as f64;
                     if (wrap(theta_b - expected)).abs() > step * 0.25 {
                         continue;
@@ -400,8 +396,7 @@ fn layout(
 
         // 以全部已放置原子为种子展开 BFS：这样锚点所在的连通分量无论从哪一端
         // 接入已放置几何都会被完整摆出，外层循环也必然前进。
-        let mut queue: VecDeque<usize> =
-            placed.iter().enumerate().filter_map(|(index, point)| point.map(|_| index)).collect();
+        let mut queue: VecDeque<usize> = placed.iter().enumerate().filter_map(|(index, point)| point.map(|_| index)).collect();
         while let Some(current) = queue.pop_front() {
             let Some(current_position) = placed[current]
             else {
@@ -446,16 +441,14 @@ fn layout(
                 // 先按 zigzag → 直行 → 回头的顺序取第一个无碰撞、不交叉的
                 // 候选。纯「最大间隙」排序会在平手时绕回起点，把链盘成假环。
                 for angle in candidates {
-                    let point =
-                        Point::new(current_position.x + length * angle.cos(), current_position.y + length * angle.sin());
+                    let point = Point::new(current_position.x + length * angle.cos(), current_position.y + length * angle.sin());
                     let gap = clearance(point, &placed, &[]);
                     let crosses = spec.bonds.iter().any(|bond| {
                         let (Some(from), Some(to)) = (placed[bond.from], placed[bond.to])
                         else {
                             return false;
                         };
-                        (bond.from != neighbour && bond.to != neighbour)
-                            && segments_cross(current_position, point, from, to)
+                        (bond.from != neighbour && bond.to != neighbour) && segments_cross(current_position, point, from, to)
                     });
                     if gap >= length * 0.9 && !crosses {
                         best = Some((gap, point));
@@ -593,8 +586,7 @@ fn draw_molecule(spec: &MoleculeSpec, positions: &[Point], length: f64, palette:
                 return atom.hydrogens;
             }
             let base = atom.element.base_valence()?;
-            let used: f64 =
-                spec.bonds.iter().filter(|bond| bond.from == index || bond.to == index).map(|bond| order_value(bond.order)).sum();
+            let used: f64 = spec.bonds.iter().filter(|bond| bond.from == index || bond.to == index).map(|bond| order_value(bond.order)).sum();
             let allowed = f64::from(base as i16 + i16::from(atom.charge)).max(0.0);
             let remaining = allowed - used;
             if remaining < -EPS {
@@ -609,8 +601,7 @@ fn draw_molecule(spec: &MoleculeSpec, positions: &[Point], length: f64, palette:
         .iter()
         .enumerate()
         .map(|(index, atom)| {
-            atom.labelled()
-                .then(|| label_text(atom, hydrogens[index], spec.bonds.iter().any(|bond| bond.from == index || bond.to == index)))
+            atom.labelled().then(|| label_text(atom, hydrogens[index], spec.bonds.iter().any(|bond| bond.from == index || bond.to == index)))
         })
         .collect();
 
@@ -654,17 +645,13 @@ fn draw_molecule(spec: &MoleculeSpec, positions: &[Point], length: f64, palette:
     // 芳香环内侧虚线：逐环、逐边偏向环心。共享键两侧各补一条，正是稠环的
     // 标准画法。
     let order_at = |a: usize, b: usize| -> Option<BondOrder> {
-        spec.bonds
-            .iter()
-            .find(|bond| (bond.from == a && bond.to == b) || (bond.from == b && bond.to == a))
-            .map(|bond| bond.order)
+        spec.bonds.iter().find(|bond| (bond.from == a && bond.to == b) || (bond.from == b && bond.to == a)).map(|bond| bond.order)
     };
     for ring in rings {
         if ring.len() < 3 || ring.len() > MAX_RING {
             continue;
         }
-        let edges: Vec<(usize, usize)> =
-            ring.iter().copied().zip(ring.iter().copied().skip(1).chain(ring.first().copied())).collect();
+        let edges: Vec<(usize, usize)> = ring.iter().copied().zip(ring.iter().copied().skip(1).chain(ring.first().copied())).collect();
         if !edges.iter().all(|(a, b)| order_at(*a, *b) == Some(BondOrder::Aromatic)) {
             continue;
         }

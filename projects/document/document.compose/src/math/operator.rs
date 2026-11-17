@@ -85,16 +85,15 @@ impl LimitsPolicy {
 }
 
 /// Named operators that stack their scripts like `\mathop{…}\limits`.
-const LIMIT_NAMED_OPERATORS: &[&str] =
-    &["lim", "limsup", "liminf", "max", "min", "sup", "inf", "det", "gcd", "Pr", "argmax", "argmin"];
+const LIMIT_NAMED_OPERATORS: &[&str] = &["lim", "limsup", "liminf", "max", "min", "sup", "inf", "det", "gcd", "Pr", "argmax", "argmin"];
 
 /// Named operators that keep their scripts beside the symbol.
 ///
 /// The names are the bare spellings `\DeclareMathOperator` receives, without
 /// the leading backslash.
 const SIDE_NAMED_OPERATORS: &[&str] = &[
-    "sin", "cos", "tan", "cot", "sec", "csc", "arcsin", "arccos", "arctan", "sinh", "cosh", "tanh", "log", "ln", "lg", "exp",
-    "deg", "dim", "hom", "ker",
+    "sin", "cos", "tan", "cot", "sec", "csc", "arcsin", "arccos", "arctan", "sinh", "cosh", "tanh", "log", "ln", "lg", "exp", "deg", "dim",
+    "hom", "ker",
 ];
 
 impl OperatorClass {
@@ -201,8 +200,8 @@ mod tests {
 
         // Function names stay on the baseline and keep their scripts beside.
         for name in [
-            "sin", "cos", "tan", "cot", "sec", "csc", "arcsin", "arccos", "arctan", "sinh", "cosh", "tanh", "log", "ln", "lg",
-            "exp", "deg", "dim", "hom", "ker",
+            "sin", "cos", "tan", "cot", "sec", "csc", "arcsin", "arccos", "arctan", "sinh", "cosh", "tanh", "log", "ln", "lg", "exp", "deg",
+            "dim", "hom", "ker",
         ] {
             assert_eq!(LimitsPolicy::of_text(name), LimitsPolicy::NoLimits, "`{name}` must not stack");
             let class = OperatorClass::of_node(&named_op(name));

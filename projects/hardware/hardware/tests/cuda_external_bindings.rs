@@ -2,8 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use hardware::prelude::*;
-use hardware::ParamValue;
+use hardware::{ParamValue, prelude::*};
 use hardware_backend_cuda::CudaBackend;
 
 fn buffer(id: u64, floats: usize) -> ResourceNode {
@@ -22,39 +21,20 @@ fn i(key: &str, v: i64) -> (String, ParamValue) {
 
 fn matmul_graph() -> Graph {
     Graph {
-        resources: ResourceGraph {
-            nodes: vec![buffer(1, 4), buffer(2, 4), buffer(3, 4)],
-        },
+        resources: ResourceGraph { nodes: vec![buffer(1, 4), buffer(2, 4), buffer(3, 4)] },
         tasks: TaskGraph {
             nodes: vec![TaskNode {
                 id: TaskId(10),
                 kind: TaskKind::MatMul,
                 shader: ShaderId(10),
-                params: BTreeMap::from([
-                    i("a", 1),
-                    i("b", 2),
-                    i("out", 3),
-                    i("m", 2),
-                    i("n", 2),
-                    i("k", 2),
-                ]),
+                params: BTreeMap::from([i("a", 1), i("b", 2), i("out", 3), i("m", 2), i("n", 2), i("k", 2)]),
                 dispatch: Default::default(),
                 objective: Objective::MaxThroughput,
                 priority: Priority::Batch,
             }],
             edges: vec![
-                DepEdge {
-                    from_task: None,
-                    from_resource: Some(ResourceId(1)),
-                    to_task: TaskId(10),
-                    kind: DepKind::Data,
-                },
-                DepEdge {
-                    from_task: None,
-                    from_resource: Some(ResourceId(2)),
-                    to_task: TaskId(10),
-                    kind: DepKind::Data,
-                },
+                DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data },
+                DepEdge { from_task: None, from_resource: Some(ResourceId(2)), to_task: TaskId(10), kind: DepKind::Data },
             ],
         },
     }
@@ -172,11 +152,7 @@ fn cuda_foreign_stream_matmul_soft_skip() {
             return;
         }
     };
-    assert_ne!(
-        foreign.raw() as usize,
-        backend.default_stream().raw() as usize,
-        "foreign stream must differ from default"
-    );
+    assert_ne!(foreign.raw() as usize, backend.default_stream().raw() as usize, "foreign stream must differ from default");
 
     let graph = matmul_graph();
     let mut bindings = ExecutionBindings::new();

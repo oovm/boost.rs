@@ -149,9 +149,7 @@ impl MetaQuery {
             match filter {
                 FilterValue::Value(value) => equal_values(actual, value),
                 FilterValue::Pattern(pattern) => match actual {
-                    SqlValue::String(text) if self.dialect == SqlDialect::Mysql => {
-                        like_matches(&pattern.to_lowercase(), &text.to_lowercase())
-                    }
+                    SqlValue::String(text) if self.dialect == SqlDialect::Mysql => like_matches(&pattern.to_lowercase(), &text.to_lowercase()),
                     SqlValue::String(text) => like_matches(pattern, text),
                     _ => false,
                 },
@@ -609,7 +607,8 @@ fn analyze_select(select: &SelectStatement, dialect: SqlDialect, sql: &str) -> R
     let columns = if count {
         let name = projection_ids.first().map(|(_, name)| name.clone()).unwrap_or_else(|| "count".to_string());
         vec![MetaColumn { id: ColumnId::Count, name, field_type: SqlFieldType::Int64 }]
-    } else {
+    }
+    else {
         projection_ids.into_iter().map(|(id, name)| MetaColumn { id, name, field_type: field_type(id) }).collect()
     };
     Ok(Some(MetaQuery { view, dialect, columns, filters, order, limit, offset, like: None, with_pk, pk, scalar: None, count }))
@@ -867,7 +866,10 @@ fn parse_filters(
         for conjunct in conjuncts(expr) {
             let Expression::Binary { left, op, right, .. } = conjunct
             else {
-                return Err(unsupported(format!("metadata filters accept only `=` or `LIKE` comparisons joined with `AND`; {}", shapes(dialect))));
+                return Err(unsupported(format!(
+                    "metadata filters accept only `=` or `LIKE` comparisons joined with `AND`; {}",
+                    shapes(dialect)
+                )));
             };
             let like = match op {
                 BinaryOperator::Equal => false,
@@ -889,10 +891,7 @@ fn parse_filters(
                 match right.as_ref() {
                     Expression::Literal(Literal::String(value, _)) => FilterValue::Pattern(value.to_string()),
                     _ => {
-                        return Err(unsupported(format!(
-                            "`LIKE` accepts only a string literal pattern; {}",
-                            shapes(dialect)
-                        )));
+                        return Err(unsupported(format!("`LIKE` accepts only a string literal pattern; {}", shapes(dialect))));
                     }
                 }
             }

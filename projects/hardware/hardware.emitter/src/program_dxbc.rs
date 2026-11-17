@@ -13,11 +13,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use hardware_program::{BinOp, CfgBlock, CfgInstruction, CfgTerminator, Expr, Function as UcfFunction, Program, ScalarTy, Stmt, Ty, UnOp, validate_program};
+use hardware_program::{
+    BinOp, CfgBlock, CfgInstruction, CfgTerminator, Expr, Function as UcfFunction, Program, ScalarTy, Stmt, Ty, UnOp, validate_program,
+};
 
 use crate::dxbc::{
-    BoundBuffer, BufferRegister, Chunk, ConstantBuffer, Opcode, Operand, Reflection, Register, Select, ShaderWriter, Stage, TEST_NONZERO, Variable,
-    container, reflection_chunk, signature_chunk,
+    BoundBuffer, BufferRegister, Chunk, ConstantBuffer, Opcode, Operand, Reflection, Register, Select, ShaderWriter, Stage, TEST_NONZERO,
+    Variable, container, reflection_chunk, signature_chunk,
 };
 
 /// Errors returned when a generic UCF program is outside the DXBC subset.
@@ -78,14 +80,7 @@ pub fn program_bindings(program: &Program) -> ProgramBindings {
 
 /// Number of uniform slots the program reads (`slot + 1` of the highest slot).
 pub fn program_uniform_count(program: &Program) -> u32 {
-    program
-        .functions
-        .iter()
-        .flat_map(|function| function.body.iter())
-        .flat_map(uniform_slots_stmt)
-        .max()
-        .map(|slot| slot + 1)
-        .unwrap_or(0)
+    program.functions.iter().flat_map(|function| function.body.iter()).flat_map(uniform_slots_stmt).max().map(|slot| slot + 1).unwrap_or(0)
 }
 
 /// Emit DXBC `cs_5_1` bytecode for a generic UCF program.
@@ -169,7 +164,11 @@ pub fn emit_program_dxbc(program: &Program, entry: &str) -> Result<Vec<u8>, Prog
             name: "UcfParams".into(),
             size: (uniform_count + 1).div_ceil(4) * 16,
             variables: (0..=uniform_count)
-                .map(|index| Variable { name: if index == 0 { "count".into() } else { format!("uniform_{}", index - 1) }, offset: index * 4, used: true })
+                .map(|index| Variable {
+                    name: if index == 0 { "count".into() } else { format!("uniform_{}", index - 1) },
+                    offset: index * 4,
+                    used: true,
+                })
                 .collect(),
         }],
         buffers,
@@ -236,7 +235,11 @@ impl Lowerer {
         self.emit(
             Opcode::Uge,
             0,
-            vec![Operand::temp(active, Select::Mask(1)), Operand::thread_id(Select::Scalar(0)), Operand::constant_buffer(0, 0, Select::Scalar(0))],
+            vec![
+                Operand::temp(active, Select::Mask(1)),
+                Operand::thread_id(Select::Scalar(0)),
+                Operand::constant_buffer(0, 0, Select::Scalar(0)),
+            ],
         );
         active
     }
@@ -331,9 +334,7 @@ impl Lowerer {
                 Stmt::While { cond, limit, body } => self.lower_while(cond, *limit, body)?,
                 Stmt::Break | Stmt::Continue => {
                     if matches!(stmt, Stmt::Continue) {
-                        return Err(ProgramDxbcError::UnsupportedStatement(
-                            "`continue` is outside the DXBC structured subset".into(),
-                        ));
+                        return Err(ProgramDxbcError::UnsupportedStatement("`continue` is outside the DXBC structured subset".into()));
                     }
                     if self.loop_depth == 0 {
                         return Err(ProgramDxbcError::UnsupportedStatement("`break` outside a loop".into()));
@@ -381,11 +382,7 @@ impl Lowerer {
         self.loop_depth -= 1;
         outcome?;
 
-        self.emit(
-            Opcode::IAdd,
-            0,
-            vec![Self::dest(counter), Operand::temp(counter, Select::Scalar(0)), Operand::immediate(&[1])],
-        );
+        self.emit(Opcode::IAdd, 0, vec![Self::dest(counter), Operand::temp(counter, Select::Scalar(0)), Operand::immediate(&[1])]);
         self.emit(Opcode::EndLoop, 0, Vec::new());
         Ok(())
     }
@@ -430,22 +427,14 @@ impl Lowerer {
         let value = self.lower_expr(cond)?;
         let negated = self.temp();
         self.emit(Opcode::Not, 0, vec![Self::dest(negated), self.scalar(value.1, value.0)]);
-        self.emit(
-            Opcode::Or,
-            0,
-            vec![Self::dest(stop), Operand::temp(stop, Select::Scalar(0)), Operand::temp(negated, Select::Scalar(0))],
-        );
+        self.emit(Opcode::Or, 0, vec![Self::dest(stop), Operand::temp(stop, Select::Scalar(0)), Operand::temp(negated, Select::Scalar(0))]);
         self.emit(Opcode::BreakCNz, TEST_NONZERO, vec![Operand::temp(stop, Select::Scalar(0))]);
 
         let outcome = self.lower_loop_body(body);
         self.loop_depth -= 1;
         outcome?;
 
-        self.emit(
-            Opcode::IAdd,
-            0,
-            vec![Self::dest(counter), Operand::temp(counter, Select::Scalar(0)), Operand::immediate(&[1])],
-        );
+        self.emit(Opcode::IAdd, 0, vec![Self::dest(counter), Operand::temp(counter, Select::Scalar(0)), Operand::immediate(&[1])]);
         self.emit(Opcode::EndLoop, 0, Vec::new());
         Ok(())
     }
@@ -486,7 +475,12 @@ impl Lowerer {
         self.emit(
             Opcode::MovC,
             0,
-            vec![Self::dest(target), self.scalar(condition_kind, condition), Operand::temp(accept, Select::Scalar(0)), Operand::temp(reject, Select::Scalar(0))],
+            vec![
+                Self::dest(target),
+                self.scalar(condition_kind, condition),
+                Operand::temp(accept, Select::Scalar(0)),
+                Operand::temp(reject, Select::Scalar(0)),
+            ],
         );
         Ok(target)
     }
@@ -518,17 +512,10 @@ impl Lowerer {
         else {
             return Err(ProgramDxbcError::UnsupportedStatement("DXBC CFG subset requires branch blocks to return directly".into()));
         };
-        values
-            .get(&value)
-            .copied()
-            .ok_or_else(|| ProgramDxbcError::UnsupportedStatement(format!("CFG return value {value} is not defined")))
+        values.get(&value).copied().ok_or_else(|| ProgramDxbcError::UnsupportedStatement(format!("CFG return value {value} is not defined")))
     }
 
-    fn lower_cfg_instruction(
-        &mut self,
-        instruction: &CfgInstruction,
-        values: &mut BTreeMap<u32, (u32, Kind)>,
-    ) -> Result<(), ProgramDxbcError> {
+    fn lower_cfg_instruction(&mut self, instruction: &CfgInstruction, values: &mut BTreeMap<u32, (u32, Kind)>) -> Result<(), ProgramDxbcError> {
         if let CfgInstruction::StoreBuffer { resource, index, value } = instruction {
             let index = *values.get(index).ok_or_else(|| ProgramDxbcError::UnsupportedExpression(format!("unknown CFG value {index}")))?;
             let value = *values.get(value).ok_or_else(|| ProgramDxbcError::UnsupportedExpression(format!("unknown CFG value {value}")))?;
@@ -588,11 +575,7 @@ impl Lowerer {
                 let lanes = [x?, y?, z?];
                 let target = self.temp();
                 for (component, value) in lanes.into_iter().enumerate() {
-                    self.emit(
-                        Opcode::Mov,
-                        0,
-                        vec![Operand::temp(target, Select::Mask(1 << (component as u8))), self.scalar(value.1, value.0)],
-                    );
+                    self.emit(Opcode::Mov, 0, vec![Operand::temp(target, Select::Mask(1 << (component as u8))), self.scalar(value.1, value.0)]);
                 }
                 (target, Kind::Vec3)
             }
@@ -623,10 +606,8 @@ impl Lowerer {
             Expr::GlobalId => Ok((self.mov(Operand::thread_id(Select::Scalar(0))), Kind::U32)),
             Expr::LoadUniform(slot) => Ok((self.uniform(*slot), Kind::Float)),
             Expr::LoadLocal(id) => {
-                let (slot, kind) = *self
-                    .locals
-                    .get(id)
-                    .ok_or_else(|| ProgramDxbcError::UnsupportedExpression(format!("unknown local {id}")))?;
+                let (slot, kind) =
+                    *self.locals.get(id).ok_or_else(|| ProgramDxbcError::UnsupportedExpression(format!("unknown local {id}")))?;
                 let copy = self.mov(Operand::temp(slot, Select::Scalar(0)));
                 Ok((copy, kind))
             }
@@ -665,11 +646,7 @@ impl Lowerer {
                 let lanes = [self.lower_expr(x)?, self.lower_expr(y)?, self.lower_expr(z)?];
                 let target = self.temp();
                 for (component, value) in lanes.into_iter().enumerate() {
-                    self.emit(
-                        Opcode::Mov,
-                        0,
-                        vec![Operand::temp(target, Select::Mask(1 << (component as u8))), self.scalar(value.1, value.0)],
-                    );
+                    self.emit(Opcode::Mov, 0, vec![Operand::temp(target, Select::Mask(1 << (component as u8))), self.scalar(value.1, value.0)]);
                 }
                 Ok((target, Kind::Vec3))
             }
@@ -681,17 +658,19 @@ impl Lowerer {
         if index.1 == Kind::Float {
             return Err(ProgramDxbcError::UnsupportedExpression("buffer index must be an integer".into()));
         }
-        let rank = *self
-            .reads
-            .get(&resource)
-            .ok_or_else(|| ProgramDxbcError::UnsupportedExpression(format!("unknown buffer resource {resource}")))?;
+        let rank =
+            *self.reads.get(&resource).ok_or_else(|| ProgramDxbcError::UnsupportedExpression(format!("unknown buffer resource {resource}")))?;
         let address = self.temp();
         self.emit(Opcode::IShl, 0, vec![Self::dest(address), self.scalar(index.1, index.0), Operand::immediate(&[2])]);
         let slot = self.temp();
         self.emit(
             Opcode::LdRaw,
             0,
-            vec![Operand::temp(slot, Select::Mask(1)), Operand::temp(address, Select::Scalar(0)), Operand::bound(Register::Resource, rank, Select::UNUSED)],
+            vec![
+                Operand::temp(slot, Select::Mask(1)),
+                Operand::temp(address, Select::Scalar(0)),
+                Operand::bound(Register::Resource, rank, Select::UNUSED),
+            ],
         );
         Ok(slot)
     }
@@ -745,7 +724,11 @@ impl Lowerer {
             BinOp::Sub => {
                 let negated = self.negate(rhs)?;
                 let target = self.temp();
-                self.emit(if float { Opcode::Add } else { Opcode::IAdd }, 0, vec![Self::dest(target), left, Operand::temp(negated, Select::Scalar(0))]);
+                self.emit(
+                    if float { Opcode::Add } else { Opcode::IAdd },
+                    0,
+                    vec![Self::dest(target), left, Operand::temp(negated, Select::Scalar(0))],
+                );
                 Ok((target, lhs.1))
             }
             BinOp::Mul => {
@@ -785,12 +768,7 @@ impl Lowerer {
                 self.emit(
                     Opcode::Mad,
                     0,
-                    vec![
-                        Self::dest(target),
-                        Operand::temp(floor, Select::Scalar(0)),
-                        Operand::temp(negated, Select::Scalar(0)),
-                        left,
-                    ],
+                    vec![Self::dest(target), Operand::temp(floor, Select::Scalar(0)), Operand::temp(negated, Select::Scalar(0)), left],
                 );
                 Ok((target, Kind::Float))
             }
@@ -831,19 +809,15 @@ impl Lowerer {
                 let zero = self.literal(0.0f32.to_bits());
                 let offset = self.select(x_negative, signed_pi, zero);
                 let shifted = self.temp();
-                self.emit(Opcode::Add, 0, vec![Self::dest(shifted), Operand::temp(base, Select::Scalar(0)), Operand::temp(offset, Select::Scalar(0))]);
+                self.emit(
+                    Opcode::Add,
+                    0,
+                    vec![Self::dest(shifted), Operand::temp(base, Select::Scalar(0)), Operand::temp(offset, Select::Scalar(0))],
+                );
                 // `x == 0` has no finite quotient, so it is answered directly.
                 let x_zero = {
                     let target = self.temp();
-                    self.emit(
-                        Opcode::Eq,
-                        0,
-                        vec![
-                            Self::dest(target),
-                            self.scalar(Kind::Float, x),
-                            Operand::immediate(&[0.0f32.to_bits()]),
-                        ],
-                    );
+                    self.emit(Opcode::Eq, 0, vec![Self::dest(target), self.scalar(Kind::Float, x), Operand::immediate(&[0.0f32.to_bits()])]);
                     target
                 };
                 let minus_half = self.literal((-std::f32::consts::FRAC_PI_2).to_bits());
@@ -934,15 +908,15 @@ impl Lowerer {
         let inside = self.float_compare(Compare::Gt, absolute, 1.0)?;
         let one = self.literal(1.0f32.to_bits());
         let inverse = self.temp();
-        self.emit(
-            Opcode::Div,
-            0,
-            vec![Self::dest(inverse), Operand::temp(one, Select::Scalar(0)), Operand::temp(absolute, Select::Scalar(0))],
-        );
+        self.emit(Opcode::Div, 0, vec![Self::dest(inverse), Operand::temp(one, Select::Scalar(0)), Operand::temp(absolute, Select::Scalar(0))]);
         let reduced = self.select(inside, inverse, absolute);
 
         let squared = self.temp();
-        self.emit(Opcode::Mul, 0, vec![Self::dest(squared), Operand::temp(reduced, Select::Scalar(0)), Operand::temp(reduced, Select::Scalar(0))]);
+        self.emit(
+            Opcode::Mul,
+            0,
+            vec![Self::dest(squared), Operand::temp(reduced, Select::Scalar(0)), Operand::temp(reduced, Select::Scalar(0))],
+        );
         let mut polynomial = self.literal(0.020_835_1f32.to_bits());
         for coefficient in [-0.085_133_0f32, 0.180_141_0f32, -0.330_299_5f32, 1.0f32] {
             let next = self.temp();
@@ -997,12 +971,7 @@ impl Lowerer {
         let left = self.scalar(lhs.1, lhs.0);
         let right = self.scalar(rhs.1, rhs.0);
         let target = self.temp();
-        let operands = if swap {
-            vec![Self::dest(target), right, left]
-        }
-        else {
-            vec![Self::dest(target), left, right]
-        };
+        let operands = if swap { vec![Self::dest(target), right, left] } else { vec![Self::dest(target), left, right] };
         self.emit(opcode, 0, operands);
         Ok((target, Kind::Bool))
     }
@@ -1063,11 +1032,7 @@ impl Lowerer {
                 let inverse = self.temp();
                 self.emit(Opcode::Rsq, 0, vec![Self::dest(inverse), Operand::temp(squared, Select::Scalar(0))]);
                 let target = self.temp();
-                self.emit(
-                    Opcode::Mul,
-                    0,
-                    vec![Self::dest_of(target, Kind::Vec3), source, Operand::temp(inverse, Select::Scalar(0))],
-                );
+                self.emit(Opcode::Mul, 0, vec![Self::dest_of(target, Kind::Vec3), source, Operand::temp(inverse, Select::Scalar(0))]);
                 Ok((target, Kind::Vec3))
             }
             UnOp::Sqrt => {
@@ -1091,11 +1056,7 @@ impl Lowerer {
             UnOp::Abs => {
                 let negated = self.negate(arg)?;
                 let target = self.temp();
-                self.emit(
-                    Opcode::Max,
-                    0,
-                    vec![Self::dest_of(target, arg.1), source, Operand::temp(negated, Select::Scalar(0))],
-                );
+                self.emit(Opcode::Max, 0, vec![Self::dest_of(target, arg.1), source, Operand::temp(negated, Select::Scalar(0))]);
                 Ok((target, arg.1))
             }
             UnOp::Ln => {
@@ -1105,7 +1066,11 @@ impl Lowerer {
                 self.emit(
                     Opcode::Mul,
                     0,
-                    vec![Self::dest(target), Operand::temp(logarithm, Select::Scalar(0)), Operand::immediate(&[std::f32::consts::LN_2.to_bits()])],
+                    vec![
+                        Self::dest(target),
+                        Operand::temp(logarithm, Select::Scalar(0)),
+                        Operand::immediate(&[std::f32::consts::LN_2.to_bits()]),
+                    ],
                 );
                 Ok((target, Kind::Float))
             }
@@ -1181,11 +1146,8 @@ fn rewrite_continues(statements: &[Stmt], flag: u32) -> (Vec<Stmt>, bool) {
                     if !rest.is_empty() {
                         let (guarded, rest_continues) = rewrite_continues(rest, flag);
                         // `flag == false` is the "keep going" guard.
-                        let keep_going = Expr::BinOp {
-                            op: BinOp::Eq,
-                            lhs: Box::new(Expr::LoadLocal(flag)),
-                            rhs: Box::new(Expr::ConstBool(false)),
-                        };
+                        let keep_going =
+                            Expr::BinOp { op: BinOp::Eq, lhs: Box::new(Expr::LoadLocal(flag)), rhs: Box::new(Expr::ConstBool(false)) };
                         out.push(Stmt::If { cond: keep_going, then_body: guarded, else_body: Vec::new() });
                         return (out, continues || rest_continues);
                     }
@@ -1297,7 +1259,9 @@ fn collect_resources(stmt: &Stmt, reads: &mut BTreeSet<u32>, writes: &mut BTreeS
     }
 
     match stmt {
-        Stmt::Let { init, .. } | Stmt::StoreLocal { value: init, .. } | Stmt::Return(init) | Stmt::Expr(init) => visit_expr(init, reads, writes),
+        Stmt::Let { init, .. } | Stmt::StoreLocal { value: init, .. } | Stmt::Return(init) | Stmt::Expr(init) => {
+            visit_expr(init, reads, writes)
+        }
         Stmt::StoreBuffer { resource, index, value } => {
             writes.insert(*resource);
             visit_expr(index, reads, writes);
@@ -1347,7 +1311,8 @@ mod tests {
             if &bytes[offset..offset + 4] == b"SHEX" {
                 let size = u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().unwrap()) as usize;
                 let payload = &bytes[offset + 8..offset + 8 + size];
-                let words: Vec<u32> = payload.chunks_exact(4).map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])).collect();
+                let words: Vec<u32> =
+                    payload.chunks_exact(4).map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])).collect();
                 let mut out = Vec::new();
                 let mut word = 2;
                 while word < words.len() {
@@ -1362,7 +1327,11 @@ mod tests {
     }
 
     fn program(body: Vec<Stmt>, ret: Ty) -> Program {
-        Program { version: 1, functions: vec![UcfFunction { name: "main".into(), params: Vec::new(), locals: Vec::new(), body, ret }], entry: 0 }
+        Program {
+            version: 1,
+            functions: vec![UcfFunction { name: "main".into(), params: Vec::new(), locals: Vec::new(), body, ret }],
+            entry: 0,
+        }
     }
 
     #[test]
@@ -1458,18 +1427,14 @@ mod tests {
         let f64_program = program(vec![Stmt::Return(Expr::ConstF64(1.0))], Ty::f64());
         assert!(matches!(emit_program_dxbc(&f64_program, "f64"), Err(ProgramDxbcError::UnsupportedType(_))));
 
-        let vector =
-            program(vec![Stmt::Return(Expr::UnOp { op: UnOp::Length, arg: Box::new(Expr::LoadUniform(0)) })], Ty::f32());
+        let vector = program(vec![Stmt::Return(Expr::UnOp { op: UnOp::Length, arg: Box::new(Expr::LoadUniform(0)) })], Ty::f32());
         assert!(matches!(emit_program_dxbc(&vector, "vector"), Err(ProgramDxbcError::UnsupportedExpression(_))));
     }
 
     #[test]
     fn store_buffer_writes_through_the_auxiliary_uav() {
         let store = program(
-            vec![
-                Stmt::StoreBuffer { resource: 0, index: Expr::GlobalId, value: Expr::LoadUniform(0) },
-                Stmt::Return(Expr::ConstF32(0.0)),
-            ],
+            vec![Stmt::StoreBuffer { resource: 0, index: Expr::GlobalId, value: Expr::LoadUniform(0) }, Stmt::Return(Expr::ConstF32(0.0))],
             Ty::f32(),
         );
         let bindings = program_bindings(&store);

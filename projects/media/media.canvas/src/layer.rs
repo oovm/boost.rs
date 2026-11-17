@@ -27,13 +27,7 @@ pub struct Layer {
 impl Layer {
     #[must_use]
     pub fn new(name: impl Into<String>, width: u32, height: u32) -> Self {
-        Self {
-            name: name.into(),
-            frame: Frame::new(width, height),
-            opacity: 1.0,
-            blend: BlendMode::Normal,
-            visible: true,
-        }
+        Self { name: name.into(), frame: Frame::new(width, height), opacity: 1.0, blend: BlendMode::Normal, visible: true }
     }
 }
 
@@ -47,11 +41,7 @@ pub struct LayerStack {
 impl LayerStack {
     #[must_use]
     pub fn new(width: u32, height: u32) -> Self {
-        Self {
-            width: width.max(1),
-            height: height.max(1),
-            layers: Vec::new(),
-        }
+        Self { width: width.max(1), height: height.max(1), layers: Vec::new() }
     }
 
     /// Appends a transparent layer and returns its index.

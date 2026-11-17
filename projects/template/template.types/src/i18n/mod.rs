@@ -43,11 +43,7 @@ pub struct TranslationData {
 impl TranslationData {
     /// Create a new translation data instance
     pub fn new(current_locale: &str, default_locale: &str) -> Self {
-        Self {
-            translations: HashMap::new(),
-            current_locale: current_locale.to_string(),
-            default_locale: default_locale.to_string(),
-        }
+        Self { translations: HashMap::new(), current_locale: current_locale.to_string(), default_locale: default_locale.to_string() }
     }
 
     /// Add translations for a locale
@@ -486,8 +482,6 @@ impl TranslationProvider for FluentTranslator {
 impl FluentTranslator {
     /// Get a bundle for a locale, with fallback to default
     pub fn get_bundle(&self, locale: &str) -> Option<&FluentBundle<FluentResource>> {
-        self.bundles
-            .get(locale)
-            .or_else(|| if locale != self.default_locale { self.bundles.get(&self.default_locale) } else { None })
+        self.bundles.get(locale).or_else(|| if locale != self.default_locale { self.bundles.get(&self.default_locale) } else { None })
     }
 }

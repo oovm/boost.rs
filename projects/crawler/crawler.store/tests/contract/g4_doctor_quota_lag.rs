@@ -33,18 +33,12 @@ fn g4_doctor_reports_quota_bound_and_usage() {
             store.put_response_cache(&artifact(key)).expect("put response");
         }
 
-        assert!(
-            store.get_response_cache("https://example.com/a").expect("get a").is_none(),
-            "oldest entry must be evicted on {backend}"
-        );
+        assert!(store.get_response_cache("https://example.com/a").expect("get a").is_none(), "oldest entry must be evicted on {backend}");
         assert!(store.get_response_cache("https://example.com/c").expect("get c").is_some());
 
         let report = store.doctor().expect("doctor");
-        let namespace = report
-            .namespaces
-            .iter()
-            .find(|namespace| namespace.prefix == "cache/response/")
-            .expect("cache namespace must be reported");
+        let namespace =
+            report.namespaces.iter().find(|namespace| namespace.prefix == "cache/response/").expect("cache namespace must be reported");
         assert_eq!(namespace.record_count, 2, "usage must stay inside the quota on {backend}");
         assert_eq!(namespace.quota_max_bytes, Some(4096));
         assert!(namespace.bytes_used > 0);

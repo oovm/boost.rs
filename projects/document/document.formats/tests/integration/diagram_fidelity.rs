@@ -67,8 +67,7 @@ const PLANTUML_SOURCES: &[(&str, &str)] = &[
 
 /// Every fence language shares one corpus shape so a new language cannot
 /// silently skip a round-trip surface.
-const DIAGRAM_CORPORA: &[(&str, &[(&str, &str)])] =
-    &[("mermaid", DIAGRAM_SOURCES), ("dot", DOT_SOURCES), ("plantuml", PLANTUML_SOURCES)];
+const DIAGRAM_CORPORA: &[(&str, &[(&str, &str)])] = &[("mermaid", DIAGRAM_SOURCES), ("dot", DOT_SOURCES), ("plantuml", PLANTUML_SOURCES)];
 
 fn fenced(language: &str, source: &str) -> String {
     let run = source.split(|character| character == '\n').map(longest_backtick_run).max().unwrap_or(0);
@@ -151,8 +150,7 @@ fn rendered_diagram_figures_round_trip_the_authored_source() {
             let html = export_html_with_diagrams(&graph, &diagrams).expect("export rendered diagram html");
             assert!(html.contains("<figure class=\"diagram\""), "{label}\n{html}");
             assert!(html.contains(&format!("data-diagram-language=\"{language}\"")), "{label}\n{html}");
-            let from_html =
-                import_html_bytes(&format!("{name}.rendered.html"), html.as_bytes()).expect("reopen rendered diagram html");
+            let from_html = import_html_bytes(&format!("{name}.rendered.html"), html.as_bytes()).expect("reopen rendered diagram html");
             assert_eq!(diagram_block(&from_html, language), *source, "{label}\n{html}");
         }
     }
@@ -169,8 +167,7 @@ fn rendered_diagram_svg_with_self_closing_children_keeps_the_following_block() {
             Block::Diagram { .. } => Some((
                 node.id,
                 RenderedDiagram {
-                    svg: "<svg viewBox=\"0 0 20 20\"><rect width=\"20\" height=\"20\"/><text x=\"4\" y=\"12\">A</text></svg>"
-                        .to_string(),
+                    svg: "<svg viewBox=\"0 0 20 20\"><rect width=\"20\" height=\"20\"/><text x=\"4\" y=\"12\">A</text></svg>".to_string(),
                 },
             )),
             _ => None,
@@ -188,7 +185,8 @@ fn rendered_diagram_svg_with_self_closing_children_keeps_the_following_block() {
 
 #[test]
 fn mixed_diagram_languages_keep_typed_fences_through_html() {
-    let markdown = "```mermaid\nflowchart LR\n  A --> B\n```\n\n```plantuml\n@startuml\nAlice -> Bob\n@enduml\n```\n\n```dot\ndigraph { a -> b }\n```\n";
+    let markdown =
+        "```mermaid\nflowchart LR\n  A --> B\n```\n\n```plantuml\n@startuml\nAlice -> Bob\n@enduml\n```\n\n```dot\ndigraph { a -> b }\n```\n";
     let graph = import_markdown_bytes("mixed.md", markdown).expect("import mixed diagram markdown");
     let diagrams = graph
         .blocks
@@ -197,8 +195,7 @@ fn mixed_diagram_languages_keep_typed_fences_through_html() {
             Block::Diagram { .. } => Some((
                 node.id,
                 RenderedDiagram {
-                    svg: "<svg viewBox=\"0 0 20 20\"><rect width=\"20\" height=\"20\"/><text x=\"4\" y=\"12\">A</text></svg>"
-                        .to_string(),
+                    svg: "<svg viewBox=\"0 0 20 20\"><rect width=\"20\" height=\"20\"/><text x=\"4\" y=\"12\">A</text></svg>".to_string(),
                 },
             )),
             _ => None,

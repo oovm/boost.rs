@@ -19,6 +19,8 @@ pub struct ThemeSpec {
     pub facet_gap: f64,
     /// 分面标题字号。
     pub facet_label_size: f32,
+    /// 坐标轴刻度数字字号。
+    pub tick_label_size: f32,
 }
 
 impl Default for ThemeSpec {
@@ -38,6 +40,7 @@ impl ThemeSpec {
             margin: (48.0, 36.0, 16.0, 16.0),
             facet_gap: 8.0,
             facet_label_size: 10.0,
+            tick_label_size: 9.0,
         }
     }
 
@@ -51,6 +54,7 @@ impl ThemeSpec {
             margin: (48.0, 36.0, 16.0, 16.0),
             facet_gap: 8.0,
             facet_label_size: 10.0,
+            tick_label_size: 9.0,
         }
     }
 }

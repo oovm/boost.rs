@@ -172,10 +172,7 @@ fn unix_millis_now() -> Option<u64> {
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .ok()
-            .map(|d| d.as_millis() as u64)
+        SystemTime::now().duration_since(UNIX_EPOCH).ok().map(|d| d.as_millis() as u64)
     }
 }
 
@@ -223,13 +220,7 @@ impl ExecutionDiagnostics {
     }
 
     /// Append a marker without timing (compat helper).
-    pub fn push_simple(
-        &mut self,
-        kind: impl Into<String>,
-        task_id: Option<u64>,
-        resource_id: Option<u64>,
-        backend: impl Into<String>,
-    ) {
+    pub fn push_simple(&mut self, kind: impl Into<String>, task_id: Option<u64>, resource_id: Option<u64>, backend: impl Into<String>) {
         let mut b = ExecutionEvent::builder(kind, backend).stamp_now();
         if let Some(t) = task_id {
             b = b.task_id(t);
@@ -249,9 +240,7 @@ impl ExecutionDiagnostics {
         backend: impl Into<String>,
         started: Instant,
     ) {
-        let mut b = ExecutionEvent::builder(kind, backend)
-            .stamp_now()
-            .duration_since(started);
+        let mut b = ExecutionEvent::builder(kind, backend).stamp_now().duration_since(started);
         if let Some(t) = task_id {
             b = b.task_id(t);
         }
@@ -263,12 +252,7 @@ impl ExecutionDiagnostics {
 
     /// Record a failure marker with stable [`ErrorCode`].
     pub fn push_error(&mut self, backend: impl Into<String>, code: ErrorCode) {
-        self.push(
-            ExecutionEvent::builder(kinds::BACKEND_ERROR, backend)
-                .stamp_now()
-                .error_code(code)
-                .build(),
-        );
+        self.push(ExecutionEvent::builder(kinds::BACKEND_ERROR, backend).stamp_now().error_code(code).build());
     }
 
     /// True if any event of `kind` was recorded.

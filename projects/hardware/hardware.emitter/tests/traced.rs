@@ -29,7 +29,8 @@ fn traces_unsupported_program_encoding() {
         entry: 0,
     };
     let mut tracer = Tracer::new();
-    let error = encode_program_traced(&program, "fill", TargetIsa::Hsaco, CodegenOptions::default(), &mut tracer).expect_err("no HSACO program encoder");
+    let error = encode_program_traced(&program, "fill", TargetIsa::Hsaco, CodegenOptions::default(), &mut tracer)
+        .expect_err("no HSACO program encoder");
     assert!(error.to_string().contains("unsupported"));
 
     let trace = tracer.finish();

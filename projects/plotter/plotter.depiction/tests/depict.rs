@@ -69,8 +69,7 @@ fn toluene() -> MoleculeSpec {
 
 #[test]
 fn a_ring_substituent_terminates_and_gets_a_position() {
-    let scene = molecule_to_scene_with_options(&toluene(), &DepictionOptions::default())
-        .expect("a substituted ring depicts without looping");
+    let scene = molecule_to_scene_with_options(&toluene(), &DepictionOptions::default()).expect("a substituted ring depicts without looping");
     assert!(scene.scene.size.width > 0.0);
     assert!(scene.scene.size.height > 0.0);
 }
@@ -262,8 +261,7 @@ fn over_valent_atom_is_refused() {
         let h = spec.push_atom(atom_of(Element::H));
         spec.push_bond(Bond::new(c, h, BondOrder::Single));
     }
-    let error =
-        molecule_to_scene_with_options(&spec, &DepictionOptions::default()).expect_err("five bonds on carbon is refused");
+    let error = molecule_to_scene_with_options(&spec, &DepictionOptions::default()).expect_err("five bonds on carbon is refused");
     assert_eq!(error.code(), codes::DEPICTION_UNSUPPORTED);
     assert!(error.message().contains("bond order units"), "refusal names the valence arithmetic");
 }
@@ -304,8 +302,7 @@ fn disconnected_fragment_is_shifted_and_reported() {
     let _ = (first, second);
 
     let lowered = molecule_to_scene_with_options(&spec, &DepictionOptions::default()).expect("salt-like input depicts");
-    let approximated: Vec<_> =
-        lowered.diagnostics.iter().filter(|d| d.code().as_str() == codes::DEPICTION_APPROXIMATED).collect();
+    let approximated: Vec<_> = lowered.diagnostics.iter().filter(|d| d.code().as_str() == codes::DEPICTION_APPROXIMATED).collect();
     assert_eq!(approximated.len(), 1);
     assert!(approximated[0].message().to_string().contains("disconnected"));
     assert_eq!(lowered.plan.labels.len(), 2, "both oxygen atoms are labelled");

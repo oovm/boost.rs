@@ -10,10 +10,8 @@ use crawler_store::YydbResponseCache;
 
 #[test]
 fn round_trips_artifact() {
-    let path = std::env::temp_dir().join(format!(
-        "crawler-store-cache-{}.yydb",
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos()
-    ));
+    let path = std::env::temp_dir()
+        .join(format!("crawler-store-cache-{}.yydb", SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos()));
     let cache = YydbResponseCache::open(&path).expect("cache");
     let artifact = FetchArtifact {
         request_url: Url::parse("https://example.com/").unwrap(),

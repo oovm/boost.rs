@@ -7,7 +7,7 @@ use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     path::PathBuf,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{Arc, atomic::AtomicBool},
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -26,12 +26,7 @@ where
 {
     let shard = ShardId(shard_name.into());
     let executor = Arc::new(
-        LocalExecutor::new(
-            ShardMap::new(ShardEpoch(1), vec![shard.clone()]).unwrap(),
-            HashMap::from([(shard, store)]),
-            Vec::new(),
-        )
-        .unwrap(),
+        LocalExecutor::new(ShardMap::new(ShardEpoch(1), vec![shard.clone()]).unwrap(), HashMap::from([(shard, store)]), Vec::new()).unwrap(),
     );
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
@@ -1247,12 +1242,9 @@ fn bit_operations() {
 
     send(&mut client, &["HSET", "h", "f", "v"]);
     assert_eq!(expect_integer(&mut client), 1);
-    for arguments in [
-        ["SETBIT", "h", "0", "1"].as_slice(),
-        ["GETBIT", "h", "0"].as_slice(),
-        ["BITCOUNT", "h"].as_slice(),
-        ["BITPOS", "h", "0"].as_slice(),
-    ] {
+    for arguments in
+        [["SETBIT", "h", "0", "1"].as_slice(), ["GETBIT", "h", "0"].as_slice(), ["BITCOUNT", "h"].as_slice(), ["BITPOS", "h", "0"].as_slice()]
+    {
         send(&mut client, arguments);
         expect_error(&mut client, WRONGTYPE);
     }
@@ -1611,9 +1603,7 @@ fn read_rank_with_score(client: &mut TcpStream) -> Option<(i64, String)> {
         Reply::Array(Some(items)) => {
             assert_eq!(items.len(), 2, "WITHSCORE reply must hold rank and score");
             match (&items[0], &items[1]) {
-                (Reply::Integer(rank), Reply::Bulk(Some(score))) => {
-                    Some((*rank, String::from_utf8(score.clone()).unwrap()))
-                }
+                (Reply::Integer(rank), Reply::Bulk(Some(score))) => Some((*rank, String::from_utf8(score.clone()).unwrap())),
                 other => panic!("unexpected rank reply {:?}", other),
             }
         }
@@ -2399,16 +2389,10 @@ fn expiretime_reports_absolute_deadlines() {
     expect_status(&mut client, "OK");
     send(&mut client, &["EXPIRETIME", "k"]);
     let seconds = expect_integer(&mut client);
-    assert!(
-        (now_ms / 1000 + 90..=now_ms / 1000 + 110).contains(&seconds),
-        "EXPIRETIME not near the expected deadline: {seconds}"
-    );
+    assert!((now_ms / 1000 + 90..=now_ms / 1000 + 110).contains(&seconds), "EXPIRETIME not near the expected deadline: {seconds}");
     send(&mut client, &["PEXPIRETIME", "k"]);
     let milliseconds = expect_integer(&mut client);
-    assert!(
-        (now_ms + 90_000..=now_ms + 110_000).contains(&milliseconds),
-        "PEXPIRETIME not near the expected deadline: {milliseconds}"
-    );
+    assert!((now_ms + 90_000..=now_ms + 110_000).contains(&milliseconds), "PEXPIRETIME not near the expected deadline: {milliseconds}");
     send(&mut client, &["SADD", "s", "x"]);
     assert_eq!(expect_integer(&mut client), 1);
     send(&mut client, &["EXPIRE", "s", "100"]);
@@ -3027,7 +3011,10 @@ fn list_position_commands() {
 
     // 负参数与非法参数。
     send(&mut client, &["LPOS", "l", "a", "RANK", "0"]);
-    expect_error(&mut client, "ERR RANK can't be zero: use 1 to start from the first match, 2 from the second ... or use negative to start from the end of the list");
+    expect_error(
+        &mut client,
+        "ERR RANK can't be zero: use 1 to start from the first match, 2 from the second ... or use negative to start from the end of the list",
+    );
     send(&mut client, &["LPOS", "l", "a", "COUNT", "-1"]);
     expect_error(&mut client, "ERR COUNT can't be negative");
     send(&mut client, &["LPOS", "l", "a", "MAXLEN", "-1"]);
@@ -3343,8 +3330,7 @@ fn expect_mpop(client: &mut TcpStream, key: &str, expected: &[(&str, &str)]) {
                 other => panic!("expected key bulk, got {}", describe(other)),
             }
             let pairs = pair_items(&items[1]);
-            let expected: Vec<(String, String)> =
-                expected.iter().map(|(member, score)| (member.to_string(), score.to_string())).collect();
+            let expected: Vec<(String, String)> = expected.iter().map(|(member, score)| (member.to_string(), score.to_string())).collect();
             assert_eq!(pairs, expected);
         }
         other => panic!("expected mpop array, got {}", describe(&other)),
@@ -3420,10 +3406,7 @@ fn zset_family_options_ranges_and_pops() {
     send(&mut client, &["ZRANGE", "r", "[b", "(d", "BYLEX"]);
     expect_array(&mut client, &["b", "c"]);
     send(&mut client, &["ZRANGE", "r", "0", "-1", "LIMIT", "0", "1"]);
-    expect_error(
-        &mut client,
-        "ERR syntax error, LIMIT is only supported in combination with either BYSCORE or BYLEX",
-    );
+    expect_error(&mut client, "ERR syntax error, LIMIT is only supported in combination with either BYSCORE or BYLEX");
     send(&mut client, &["ZRANGE", "r", "-", "+", "BYLEX", "WITHSCORES"]);
     expect_error(&mut client, "ERR syntax error, WITHSCORES not supported in combination with BYLEX");
     send(&mut client, &["ZRANGE", "r", "0", "-1", "BOGUS"]);

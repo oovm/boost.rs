@@ -5,9 +5,7 @@ use plotter_scene::{DisplayScene, NodeKind, Point, Rect, SceneNode, ShapeStyle, 
 
 fn scene() -> DisplayScene {
     let mut scene = DisplayScene::new(Size::new(100.0, 100.0));
-    scene.push(
-        SceneNode::new(NodeKind::Rect { rect: Rect::new(0.0, 0.0, 10.0, 10.0), style: ShapeStyle::default() }).with_id("a"),
-    );
+    scene.push(SceneNode::new(NodeKind::Rect { rect: Rect::new(0.0, 0.0, 10.0, 10.0), style: ShapeStyle::default() }).with_id("a"));
     scene
 }
 
@@ -18,18 +16,12 @@ fn hovering(id: &str) -> RuntimeState {
 #[test]
 fn pointer_move_emits_hover_only_when_the_target_changes() {
     let state = RuntimeState::default();
-    assert_eq!(
-        normalize(&NormalizedEvent::PointerMove { x: 5.0, y: 5.0 }, &state, &scene()),
-        [Action::Hover(Some("a".to_owned()))]
-    );
+    assert_eq!(normalize(&NormalizedEvent::PointerMove { x: 5.0, y: 5.0 }, &state, &scene()), [Action::Hover(Some("a".to_owned()))]);
 
     let already_hovered = hovering("a");
     assert!(normalize(&NormalizedEvent::PointerMove { x: 5.0, y: 5.0 }, &already_hovered, &scene()).is_empty());
 
-    assert_eq!(
-        normalize(&NormalizedEvent::PointerMove { x: 80.0, y: 80.0 }, &already_hovered, &scene()),
-        [Action::Hover(None)]
-    );
+    assert_eq!(normalize(&NormalizedEvent::PointerMove { x: 80.0, y: 80.0 }, &already_hovered, &scene()), [Action::Hover(None)]);
 }
 
 #[test]
@@ -56,19 +48,15 @@ fn pointer_down_resolves_the_semantic_target_from_coordinates() {
 
 #[test]
 fn pointer_down_prefers_an_explicit_target() {
-    let actions = normalize(
-        &NormalizedEvent::PointerDown { target: Some("explicit".to_owned()), x: 5.0, y: 5.0 },
-        &RuntimeState::default(),
-        &scene(),
-    );
+    let actions =
+        normalize(&NormalizedEvent::PointerDown { target: Some("explicit".to_owned()), x: 5.0, y: 5.0 }, &RuntimeState::default(), &scene());
 
     assert_eq!(actions, [Action::Press(Some("explicit".to_owned()))]);
 }
 
 #[test]
 fn pointer_down_on_empty_canvas_emits_nothing() {
-    let actions =
-        normalize(&NormalizedEvent::PointerDown { target: None, x: 90.0, y: 90.0 }, &RuntimeState::default(), &scene());
+    let actions = normalize(&NormalizedEvent::PointerDown { target: None, x: 90.0, y: 90.0 }, &RuntimeState::default(), &scene());
 
     assert!(actions.is_empty());
 }

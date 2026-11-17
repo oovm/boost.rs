@@ -51,12 +51,7 @@ mod tests {
     use super::*;
 
     fn root(name: &str, files: &[&str]) -> ResolveRoot {
-        ResolveRoot {
-            name: name.into(),
-            scheme: name.into(),
-            priority: 0,
-            files: files.iter().map(|file| (*file).to_string()).collect(),
-        }
+        ResolveRoot { name: name.into(), scheme: name.into(), priority: 0, files: files.iter().map(|file| (*file).to_string()).collect() }
     }
 
     fn extensions() -> Vec<&'static str> {

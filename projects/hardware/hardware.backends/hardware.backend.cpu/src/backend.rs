@@ -1,19 +1,19 @@
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use hardware_capability::{Feature, FeatureSet};
 use hardware_ir::{Dispatch, Graph, ParamValue, TaskKind, TaskNode};
-use hardware_program::{program_hash, CpuExecResult, CpuInterpreter, Program, Value};
+use hardware_program::{CpuExecResult, CpuInterpreter, Program, Value, program_hash};
 use hardware_scheduler::{
-    Backend, Error as SchedulerError, ExecStream, ExecutionBindings, ExternalBuffer,
-    ImmediateBridge, Result, StreamEventBridge,
+    Backend, Error as SchedulerError, ExecStream, ExecutionBindings, ExternalBuffer, ImmediateBridge, Result, StreamEventBridge,
 };
 use hardware_types::ResourceId;
 
-use crate::external::HostExternalBuffer;
-use crate::params::{f32_param, optional_f64_param, resource_param, u32_param, BackendError};
-use crate::raster_tri;
-use crate::store::{shared_store, HostStore, SharedHostStore};
+use crate::{
+    external::HostExternalBuffer,
+    params::{BackendError, f32_param, optional_f64_param, resource_param, u32_param},
+    raster_tri,
+    store::{HostStore, SharedHostStore, shared_store},
+};
 
 /// Host CPU reference backend with readable buffer store.
 pub struct CpuBackend {
@@ -37,22 +37,12 @@ pub struct ProgramExecutionReport {
 impl CpuBackend {
     /// Empty backend with a private shared store.
     pub fn new() -> Self {
-        Self {
-            store: shared_store(),
-            externals: BTreeMap::new(),
-            stream: None,
-            bridge: ImmediateBridge,
-        }
+        Self { store: shared_store(), externals: BTreeMap::new(), stream: None, bridge: ImmediateBridge }
     }
 
     /// Backend that shares an existing store (for seed / readback beside `Runtime`).
     pub fn with_store(store: SharedHostStore) -> Self {
-        Self {
-            store,
-            externals: BTreeMap::new(),
-            stream: None,
-            bridge: ImmediateBridge,
-        }
+        Self { store, externals: BTreeMap::new(), stream: None, bridge: ImmediateBridge }
     }
 
     /// Clone of the shared store handle.
@@ -88,20 +78,14 @@ impl CpuBackend {
         for (resource, values) in buffers {
             interpreter.with_buffer(resource, values);
         }
-        let instances = interpreter
-            .run_parallel(program, count)
-            .map_err(|error| error.to_string())?;
+        let instances = interpreter.run_parallel(program, count).map_err(|error| error.to_string())?;
         let mut output_buffers = BTreeMap::new();
         for resource in interpreter.resource_ids() {
             if let Some(values) = interpreter.buffer(resource) {
                 output_buffers.insert(resource, values.to_vec());
             }
         }
-        Ok(ProgramExecutionReport {
-            program_hash: program_hash(program),
-            instances,
-            buffers: output_buffers,
-        })
+        Ok(ProgramExecutionReport { program_hash: program_hash(program), instances, buffers: output_buffers })
     }
 
     /// 从序列化程序执行，并校验调用方绑定的哈希。
@@ -115,17 +99,13 @@ impl CpuBackend {
         let program: Program = serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
         let actual_hash = program_hash(&program);
         if actual_hash != expected_hash {
-            return Err(format!(
-                "program hash mismatch: expected {expected_hash}, actual {actual_hash}"
-            ));
+            return Err(format!("program hash mismatch: expected {expected_hash}, actual {actual_hash}"));
         }
         self.execute_program(&program, count, uniforms)
     }
 
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, HostStore>> {
-        self.store
-            .lock()
-            .map_err(|_| Self::map_err(BackendError("cpu store lock poisoned".into())))
+        self.store.lock().map_err(|_| Self::map_err(BackendError("cpu store lock poisoned".into())))
     }
 
     fn map_err(err: BackendError) -> SchedulerError {
@@ -153,31 +133,20 @@ impl Backend for CpuBackend {
             if buf.backend_name() != "cpu" {
                 return Err(SchedulerError::Backend(
                     "cpu".into(),
-                    format!(
-                        "external buffer for resource {} has backend `{}`, expected `cpu`",
-                        id.0,
-                        buf.backend_name()
-                    ),
+                    format!("external buffer for resource {} has backend `{}`, expected `cpu`", id.0, buf.backend_name()),
                 ));
             }
             if let Some(host) = buf.as_any().downcast_ref::<HostExternalBuffer>() {
                 if !Arc::ptr_eq(host.store(), &self.store) {
                     return Err(SchedulerError::Backend(
                         "cpu".into(),
-                        format!(
-                            "external buffer for resource {} must share the backend host store",
-                            id.0
-                        ),
+                        format!("external buffer for resource {} must share the backend host store", id.0),
                     ));
                 }
                 if host.resource_id() != *id {
                     return Err(SchedulerError::Backend(
                         "cpu".into(),
-                        format!(
-                            "external buffer resource id {} does not match bind key {}",
-                            host.resource_id().0,
-                            id.0
-                        ),
+                        format!("external buffer resource id {} does not match bind key {}", host.resource_id().0, id.0),
                     ));
                 }
             }
@@ -187,10 +156,7 @@ impl Backend for CpuBackend {
             if stream.backend_name() != "cpu" {
                 return Err(SchedulerError::Backend(
                     "cpu".into(),
-                    format!(
-                        "preferred stream backend `{}` is not `cpu`",
-                        stream.backend_name()
-                    ),
+                    format!("preferred stream backend `{}` is not `cpu`", stream.backend_name()),
                 ));
             }
             self.stream = Some(Arc::clone(stream));
@@ -201,12 +167,9 @@ impl Backend for CpuBackend {
     fn prepare(&mut self, graph: &Graph) -> Result<()> {
         let mut store = self.lock()?;
         for node in &graph.resources.nodes {
-            let bytes = node.byte_size.ok_or_else(|| {
-                Self::map_err(BackendError(format!(
-                    "resource {} needs byte_size for cpu backend",
-                    node.id.0
-                )))
-            })? as usize;
+            let bytes =
+                node.byte_size.ok_or_else(|| Self::map_err(BackendError(format!("resource {} needs byte_size for cpu backend", node.id.0))))?
+                    as usize;
             if let Some(ext) = self.externals.get(&node.id) {
                 if ext.byte_size() != bytes as u64 {
                     return Err(Self::map_err(BackendError(format!(
@@ -228,9 +191,7 @@ impl Backend for CpuBackend {
             TaskKind::MatMul => self.run_matmul(task).map_err(Self::map_err),
             TaskKind::Dispatch => self.run_program_task(task).map_err(Self::map_err),
             TaskKind::Raster => self.run_raster(task).map_err(Self::map_err),
-            other => Err(Self::map_err(BackendError(format!(
-                "cpu backend does not implement {other:?}"
-            )))),
+            other => Err(Self::map_err(BackendError(format!("cpu backend does not implement {other:?}")))),
         }
     }
 
@@ -248,23 +209,18 @@ impl CpuBackend {
         let (version, expected_hash, body) = match task.params.get("program") {
             Some(ParamValue::Program { version, hash, body }) => (*version, *hash, body),
             _ => {
-                return Err(BackendError(
-                    "dispatch task is missing a serialized UCF program".into(),
-                ));
+                return Err(BackendError("dispatch task is missing a serialized UCF program".into()));
             }
         };
         if version == 0 {
             return Err(BackendError("UCF program version must be non-zero".into()));
         }
         let dispatch_count = match task.dispatch {
-            Dispatch::Explicit { x, y, z } => x
-                .checked_mul(y)
-                .and_then(|value| value.checked_mul(z))
-                .ok_or_else(|| BackendError("dispatch dimensions overflow".into()))?,
+            Dispatch::Explicit { x, y, z } => {
+                x.checked_mul(y).and_then(|value| value.checked_mul(z)).ok_or_else(|| BackendError("dispatch dimensions overflow".into()))?
+            }
             Dispatch::Auto => {
-                return Err(BackendError(
-                    "generic UCF dispatch requires explicit dimensions".into(),
-                ));
+                return Err(BackendError("generic UCF dispatch requires explicit dimensions".into()));
             }
         };
         let mut uniforms = Vec::new();
@@ -275,9 +231,7 @@ impl CpuBackend {
                     ParamValue::F64(value) => *value,
                     ParamValue::I64(value) => *value as f64,
                     _ => {
-                        return Err(BackendError(format!(
-                            "{key} must be numeric for generic UCF dispatch"
-                        )));
+                        return Err(BackendError(format!("{key} must be numeric for generic UCF dispatch")));
                     }
                 };
                 uniforms.push((slot, Value::F64(value)));
@@ -287,9 +241,8 @@ impl CpuBackend {
         for slot in 0..64u32 {
             let key = format!("buffer_{slot}");
             if let Some(ParamValue::I64(resource)) = task.params.get(&key) {
-                let resource = ResourceId(u64::try_from(*resource).map_err(|_| {
-                    BackendError(format!("{key} resource id must be non-negative"))
-                })?);
+                let resource =
+                    ResourceId(u64::try_from(*resource).map_err(|_| BackendError(format!("{key} resource id must be non-negative")))?);
                 let values: Vec<Value> = self
                     .store
                     .lock()
@@ -301,8 +254,7 @@ impl CpuBackend {
                 bound_buffers.push((slot, resource, values));
             }
         }
-        let program: Program = serde_json::from_str(body)
-            .map_err(|error| BackendError(format!("invalid UCF program body: {error}")))?;
+        let program: Program = serde_json::from_str(body).map_err(|error| BackendError(format!("invalid UCF program body: {error}")))?;
         let report = self
             .execute_program_with_buffers(
                 &program,
@@ -312,50 +264,29 @@ impl CpuBackend {
             )
             .map_err(BackendError)?;
         if report.program_hash != expected_hash {
-            return Err(BackendError(format!(
-                "program hash mismatch: expected {expected_hash}, actual {}",
-                report.program_hash
-            )));
+            return Err(BackendError(format!("program hash mismatch: expected {expected_hash}, actual {}", report.program_hash)));
         }
         {
-            let mut store = self
-                .store
-                .lock()
-                .map_err(|_| BackendError("cpu store lock poisoned".into()))?;
+            let mut store = self.store.lock().map_err(|_| BackendError("cpu store lock poisoned".into()))?;
             for (slot, resource, _) in &bound_buffers {
                 if let Some(values) = report.buffers.get(slot) {
                     let values: Vec<f32> = values
                         .iter()
-                        .map(|value| {
-                            value
-                                .as_f64()
-                                .map(|value| value as f32)
-                                .map_err(|error| BackendError(error))
-                        })
+                        .map(|value| value.as_f64().map(|value| value as f32).map_err(|error| BackendError(error)))
                         .collect::<std::result::Result<_, _>>()?;
                     store.write_f32(*resource, &values)?;
                 }
             }
         }
         if let Some(ParamValue::I64(output)) = task.params.get("output") {
-            let output = ResourceId(u64::try_from(*output).map_err(|_| {
-                BackendError("generic UCF output resource id must be non-negative".into())
-            })?);
+            let output =
+                ResourceId(u64::try_from(*output).map_err(|_| BackendError("generic UCF output resource id must be non-negative".into()))?);
             let values: Vec<f32> = report
                 .instances
                 .iter()
-                .map(|result| {
-                    result
-                        .value
-                        .as_f64()
-                        .map(|value| value as f32)
-                        .map_err(|error| BackendError(error))
-                })
+                .map(|result| result.value.as_f64().map(|value| value as f32).map_err(|error| BackendError(error)))
                 .collect::<std::result::Result<_, _>>()?;
-            let mut store = self
-                .store
-                .lock()
-                .map_err(|_| BackendError("cpu store lock poisoned".into()))?;
+            let mut store = self.store.lock().map_err(|_| BackendError("cpu store lock poisoned".into()))?;
             store.write_f32_prefix(output, &values)?;
         }
         Ok(())
@@ -364,18 +295,11 @@ impl CpuBackend {
     fn run_copy(&mut self, task: &TaskNode) -> std::result::Result<(), BackendError> {
         let src = resource_param(task, "src")?;
         let dst = resource_param(task, "dst")?;
-        let mut store = self
-            .store
-            .lock()
-            .map_err(|_| BackendError("cpu store lock poisoned".into()))?;
+        let mut store = self.store.lock().map_err(|_| BackendError("cpu store lock poisoned".into()))?;
         let src_bytes = store.bytes(src)?.to_vec();
         let dst_bytes = store.bytes_mut(dst)?;
         if src_bytes.len() != dst_bytes.len() {
-            return Err(BackendError(format!(
-                "copy size mismatch: src {} dst {}",
-                src_bytes.len(),
-                dst_bytes.len()
-            )));
+            return Err(BackendError(format!("copy size mismatch: src {} dst {}", src_bytes.len(), dst_bytes.len())));
         }
         dst_bytes.copy_from_slice(&src_bytes);
         Ok(())
@@ -384,17 +308,10 @@ impl CpuBackend {
     fn run_fill(&mut self, task: &TaskNode) -> std::result::Result<(), BackendError> {
         let dst = resource_param(task, "dst")?;
         let value = f32_param(task, "value")?;
-        let mut store = self
-            .store
-            .lock()
-            .map_err(|_| BackendError("cpu store lock poisoned".into()))?;
+        let mut store = self.store.lock().map_err(|_| BackendError("cpu store lock poisoned".into()))?;
         let bytes = store.bytes_mut(dst)?;
         if bytes.len() % 4 != 0 {
-            return Err(BackendError(format!(
-                "fill destination {} length {} is not a multiple of 4",
-                dst.0,
-                bytes.len()
-            )));
+            return Err(BackendError(format!("fill destination {} length {} is not a multiple of 4", dst.0, bytes.len())));
         }
         let enc = value.to_le_bytes();
         for slot in bytes.chunks_exact_mut(4) {
@@ -411,10 +328,7 @@ impl CpuBackend {
         let n = u32_param(task, "n")? as usize;
         let k = u32_param(task, "k")? as usize;
 
-        let store = self
-            .store
-            .lock()
-            .map_err(|_| BackendError("cpu store lock poisoned".into()))?;
+        let store = self.store.lock().map_err(|_| BackendError("cpu store lock poisoned".into()))?;
         let a = store.read_f32(a_id)?;
         let b = store.read_f32(b_id)?;
         expect_len(a_id, a.len(), m * k)?;
@@ -433,10 +347,7 @@ impl CpuBackend {
             }
         }
 
-        let mut store = self
-            .store
-            .lock()
-            .map_err(|_| BackendError("cpu store lock poisoned".into()))?;
+        let mut store = self.store.lock().map_err(|_| BackendError("cpu store lock poisoned".into()))?;
         store.write_f32(out_id, &out)
     }
 
@@ -448,16 +359,11 @@ impl CpuBackend {
             Some(ParamValue::Str(s)) => s.as_str(),
             None => "clear",
             Some(other) => {
-                return Err(BackendError(format!(
-                    "task {} param `draw` must be string, got {other:?}",
-                    task.id.0
-                )));
+                return Err(BackendError(format!("task {} param `draw` must be string, got {other:?}", task.id.0)));
             }
         };
         if draw != "clear" && draw != "tri" {
-            return Err(BackendError(format!(
-                "cpu raster draw must be `clear` or `tri`, got `{draw}`"
-            )));
+            return Err(BackendError(format!("cpu raster draw must be `clear` or `tri`, got `{draw}`")));
         }
 
         let dst = resource_param(task, "dst")?;
@@ -477,13 +383,11 @@ impl CpuBackend {
             (a.clamp(0.0, 1.0) * 255.0).round() as u8,
         ];
         let pixels = if draw == "tri" {
-            raster_tri::raster_clear_tri_rgba8(width, height, clear, raster_tri::TRI_RGBA)
-                .map_err(|msg| BackendError(msg.into()))?
-        } else {
-            let need = width
-                .checked_mul(height)
-                .and_then(|p| p.checked_mul(4))
-                .ok_or_else(|| BackendError("raster pixel count overflow".into()))?;
+            raster_tri::raster_clear_tri_rgba8(width, height, clear, raster_tri::TRI_RGBA).map_err(|msg| BackendError(msg.into()))?
+        }
+        else {
+            let need =
+                width.checked_mul(height).and_then(|p| p.checked_mul(4)).ok_or_else(|| BackendError("raster pixel count overflow".into()))?;
             let mut solid = Vec::with_capacity(need);
             for _ in 0..(width * height) {
                 solid.extend_from_slice(&clear);
@@ -492,17 +396,10 @@ impl CpuBackend {
         };
         let need = pixels.len();
 
-        let mut store = self
-            .store
-            .lock()
-            .map_err(|_| BackendError("cpu store lock poisoned".into()))?;
+        let mut store = self.store.lock().map_err(|_| BackendError("cpu store lock poisoned".into()))?;
         let bytes = store.bytes_mut(dst)?;
         if bytes.len() < need {
-            return Err(BackendError(format!(
-                "resource {} has {} bytes, raster needs {need}",
-                dst.0,
-                bytes.len()
-            )));
+            return Err(BackendError(format!("resource {} has {} bytes, raster needs {need}", dst.0, bytes.len())));
         }
         bytes[..need].copy_from_slice(&pixels);
         Ok(())
@@ -511,10 +408,7 @@ impl CpuBackend {
 
 fn expect_len(id: ResourceId, have: usize, need: usize) -> std::result::Result<(), BackendError> {
     if have != need {
-        return Err(BackendError(format!(
-            "resource {} has {have} f32 values, expected {need}",
-            id.0
-        )));
+        return Err(BackendError(format!("resource {} has {have} f32 values, expected {need}", id.0)));
     }
     Ok(())
 }
@@ -552,11 +446,7 @@ mod program_tests {
                     Stmt::Let {
                         id: 1,
                         ty: Ty::f64(),
-                        init: Expr::BinOp {
-                            op: BinOp::Add,
-                            lhs: Box::new(Expr::LoadUniform(0)),
-                            rhs: Box::new(Expr::GlobalId),
-                        },
+                        init: Expr::BinOp { op: BinOp::Add, lhs: Box::new(Expr::LoadUniform(0)), rhs: Box::new(Expr::GlobalId) },
                     },
                     Stmt::Return(Expr::LoadLocal(1)),
                 ],
@@ -565,21 +455,16 @@ mod program_tests {
             entry: 0,
         };
         let backend = CpuBackend::new();
-        let report = backend
-            .execute_program(&program, 3, [(0, Value::F64(2.0))])
-            .expect("program execution");
+        let report = backend.execute_program(&program, 3, [(0, Value::F64(2.0))]).expect("program execution");
         assert_eq!(report.program_hash, program_hash(&program));
         assert_eq!(report.instances[0].value, Value::F64(2.0));
         assert_eq!(report.instances[2].value, Value::F64(4.0));
 
         let bytes = serde_json::to_vec(&program).expect("encode program");
-        let decoded = backend
-            .execute_program_bytes(&bytes, report.program_hash, 1, [(0, Value::F64(5.0))])
-            .expect("serialized program execution");
+        let decoded =
+            backend.execute_program_bytes(&bytes, report.program_hash, 1, [(0, Value::F64(5.0))]).expect("serialized program execution");
         assert_eq!(decoded.instances[0].value, Value::F64(5.0));
-        assert!(backend
-            .execute_program_bytes(&bytes, report.program_hash.wrapping_add(1), 1, [])
-            .is_err());
+        assert!(backend.execute_program_bytes(&bytes, report.program_hash.wrapping_add(1), 1, []).is_err());
     }
 
     #[test]
@@ -594,10 +479,7 @@ mod program_tests {
                     Stmt::StoreBuffer {
                         resource: 1,
                         index: Expr::GlobalId,
-                        value: Expr::LoadBuffer {
-                            resource: 0,
-                            index: Box::new(Expr::GlobalId),
-                        },
+                        value: Expr::LoadBuffer { resource: 0, index: Box::new(Expr::GlobalId) },
                     },
                     Stmt::Return(Expr::GlobalId),
                 ],
@@ -608,10 +490,7 @@ mod program_tests {
         let hash = program_hash(&program);
         let body = serde_json::to_string(&program).expect("encode program");
         let mut params = BTreeMap::new();
-        params.insert(
-            "program".into(),
-            ParamValue::Program { version: 1, hash, body },
-        );
+        params.insert("program".into(), ParamValue::Program { version: 1, hash, body });
         params.insert("output".into(), ParamValue::I64(7));
         params.insert("buffer_0".into(), ParamValue::I64(8));
         params.insert("buffer_1".into(), ParamValue::I64(9));
@@ -641,12 +520,7 @@ mod program_tests {
         };
         let mut backend = CpuBackend::new();
         backend.prepare(&graph).expect("prepare graph");
-        backend
-            .store()
-            .lock()
-            .unwrap()
-            .write_f32(ResourceId(8), &[4.0, 5.0, 6.0])
-            .unwrap();
+        backend.store().lock().unwrap().write_f32(ResourceId(8), &[4.0, 5.0, 6.0]).unwrap();
         backend.submit_task(&graph, &task).expect("dispatch program");
         assert_eq!(backend.store().lock().unwrap().read_f32(ResourceId(7)).unwrap(), vec![0.0, 1.0, 2.0]);
         assert_eq!(backend.store().lock().unwrap().read_f32(ResourceId(9)).unwrap(), vec![4.0, 5.0, 6.0]);

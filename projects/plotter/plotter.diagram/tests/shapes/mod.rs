@@ -19,12 +19,7 @@ fn spec(nodes: Vec<DiagramNode>, edges: Vec<DiagramEdge>) -> DiagramSpec {
 }
 
 fn edge(from: &str, to: &str, style: EdgeStyle) -> DiagramEdge {
-    DiagramEdge {
-        from: Endpoint { node: from.to_string(), port: None },
-        to: Endpoint { node: to.to_string(), port: None },
-        label: None,
-        style,
-    }
+    DiagramEdge { from: Endpoint { node: from.to_string(), port: None }, to: Endpoint { node: to.to_string(), port: None }, label: None, style }
 }
 
 fn scene_node<'a>(scene: &'a SemanticScene, id: &str) -> &'a SemanticNode {

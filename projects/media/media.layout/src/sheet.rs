@@ -12,8 +12,10 @@ use geometry::Rgba;
 use media_text::FontId;
 use media_types::Error;
 
-use crate::model::ComicDoc;
-use crate::spec::{MAX_SHEET_SCALE, MIN_SHEET_SCALE};
+use crate::{
+    model::ComicDoc,
+    spec::{MAX_SHEET_SCALE, MIN_SHEET_SCALE},
+};
 
 /// Fixed gutter between cells and around the sheet edge.
 pub const SHEET_GUTTER: u32 = 16;
@@ -55,9 +57,7 @@ pub struct SheetPlan {
 /// the source's silent clamps.
 pub fn sheet_plan(comic: &ComicDoc, scale: f32, cols: usize) -> Result<SheetPlan, Error> {
     if !scale.is_finite() || !(MIN_SHEET_SCALE..=MAX_SHEET_SCALE).contains(&scale) {
-        return Err(Error::invalid_input(format!(
-            "sheet scale {scale}: must be finite and within {MIN_SHEET_SCALE}..={MAX_SHEET_SCALE}"
-        )));
+        return Err(Error::invalid_input(format!("sheet scale {scale}: must be finite and within {MIN_SHEET_SCALE}..={MAX_SHEET_SCALE}")));
     }
     if cols < 1 {
         return Err(Error::invalid_input("sheet cols must be at least 1"));

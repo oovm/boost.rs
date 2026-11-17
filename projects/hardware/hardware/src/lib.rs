@@ -15,43 +15,38 @@ pub use hardware_types as types;
 
 // Shared value types
 pub use hardware_types::{
-    Access, DepKind, Dispatch, Domain, Objective, ParamValue, Priority, ResourceId,
-    ResourceKind, ResourceNode, ShaderId, TaskId, TaskKind, TaskNode,
+    Access, DepKind, Dispatch, Domain, Objective, ParamValue, Priority, ResourceId, ResourceKind, ResourceNode, ShaderId, TaskId, TaskKind,
+    TaskNode,
 };
 
 // Graph IR
 pub use hardware_ir::{
-    chain_edges, decode, encode, DepEdge, Error as IrError, Graph, GraphBuilder, ResourceGraph,
-    Result as IrResult, TaskGraph, MAGIC as UCF_MAGIC, WIRE_MAJOR as UCF_WIRE_MAJOR,
+    DepEdge, Error as IrError, Graph, GraphBuilder, MAGIC as UCF_MAGIC, ResourceGraph, Result as IrResult, TaskGraph,
+    WIRE_MAJOR as UCF_WIRE_MAJOR, chain_edges, decode, encode,
 };
 
 // Capability / optimization
 pub use hardware_capability::{
-    pick_descriptor_strategy, pick_pipeline_strategy, pick_sync_strategy, BackendCapabilities,
-    CapabilityReport, DescriptorStrategy, Feature, FeatureSet, PipelineStrategy, SyncStrategy,
+    BackendCapabilities, CapabilityReport, DescriptorStrategy, Feature, FeatureSet, PipelineStrategy, SyncStrategy, pick_descriptor_strategy,
+    pick_pipeline_strategy, pick_sync_strategy,
 };
 pub use hardware_optimize::{
-    apply, attention_flops, matmul_flops, AttentionMetrics, BackendPerfRow, MatmulMetrics,
-    Optimization, PerfReport, TimedSample,
+    AttentionMetrics, BackendPerfRow, MatmulMetrics, Optimization, PerfReport, TimedSample, apply, attention_flops, matmul_flops,
 };
 
 // Scheduler / runtime
+pub use hardware_runtime::{CapacityPolicy, ExecutionDiagnostics, ExecutionEvent, ExecutionEventBuilder, Runtime, dry_run, event_kinds};
 pub use hardware_scheduler::{
-    fits_120hz_frame, Backend, Error as SchedulerError, ErrorCode as SchedulerErrorCode,
-    ExecEvent, ExecStream, ExecutionBindings, ExternalBuffer, ImmediateBridge, ImmediateEvent,
-    ImmediateStream, NoopBackend, Result as SchedulerResult, Scheduler, StreamEventBridge,
-    FRAME_BUDGET_120HZ_MICROS,
-};
-pub use hardware_runtime::{
-    dry_run, event_kinds, CapacityPolicy, ExecutionDiagnostics, ExecutionEvent,
-    ExecutionEventBuilder, Runtime,
+    Backend, Error as SchedulerError, ErrorCode as SchedulerErrorCode, ExecEvent, ExecStream, ExecutionBindings, ExternalBuffer,
+    FRAME_BUDGET_120HZ_MICROS, ImmediateBridge, ImmediateEvent, ImmediateStream, NoopBackend, Result as SchedulerResult, Scheduler,
+    StreamEventBridge, fits_120hz_frame,
 };
 
 #[cfg(feature = "cpu")]
 mod session;
 
 #[cfg(feature = "cpu")]
-pub use session::{immediate_event, immediate_stream, CpuSession};
+pub use session::{CpuSession, immediate_event, immediate_stream};
 
 #[cfg(feature = "cpu")]
 pub use hardware_backend_cpu as backend_cpu;
@@ -71,24 +66,21 @@ pub use hardware_backend_rocm as backend_rocm;
 /// Common imports for application code.
 pub mod prelude {
     pub use crate::{
-        apply, attention_flops, decode, encode, fits_120hz_frame, matmul_flops,
-        pick_descriptor_strategy, pick_pipeline_strategy, pick_sync_strategy, Access,
-        AttentionMetrics, Backend, BackendCapabilities, BackendPerfRow, CapacityPolicy,
-        CapabilityReport, chain_edges, DepEdge, DepKind, DescriptorStrategy, Dispatch, Domain,
-        dry_run, event_kinds, ExecutionDiagnostics, ExecutionEvent, ExecutionEventBuilder, Feature,
-        FeatureSet, Graph, GraphBuilder, MatmulMetrics, NoopBackend, Objective, Optimization,
-        ParamValue, PerfReport, PipelineStrategy, Priority, ResourceGraph, ResourceId, ResourceKind,
-        ResourceNode, Runtime, Scheduler, SchedulerErrorCode, ExecutionBindings, ExternalBuffer,
-        ImmediateBridge, ImmediateEvent, ImmediateStream, ExecEvent, ExecStream, StreamEventBridge,
-        ShaderId, SyncStrategy, TaskGraph, TaskId, TaskKind, TaskNode, TimedSample,
-        FRAME_BUDGET_120HZ_MICROS, UCF_MAGIC, UCF_WIRE_MAJOR,
+        Access, AttentionMetrics, Backend, BackendCapabilities, BackendPerfRow, CapabilityReport, CapacityPolicy, DepEdge, DepKind,
+        DescriptorStrategy, Dispatch, Domain, ExecEvent, ExecStream, ExecutionBindings, ExecutionDiagnostics, ExecutionEvent,
+        ExecutionEventBuilder, ExternalBuffer, FRAME_BUDGET_120HZ_MICROS, Feature, FeatureSet, Graph, GraphBuilder, ImmediateBridge,
+        ImmediateEvent, ImmediateStream, MatmulMetrics, NoopBackend, Objective, Optimization, ParamValue, PerfReport, PipelineStrategy,
+        Priority, ResourceGraph, ResourceId, ResourceKind, ResourceNode, Runtime, Scheduler, SchedulerErrorCode, ShaderId, StreamEventBridge,
+        SyncStrategy, TaskGraph, TaskId, TaskKind, TaskNode, TimedSample, UCF_MAGIC, UCF_WIRE_MAJOR, apply, attention_flops, chain_edges,
+        decode, dry_run, encode, event_kinds, fits_120hz_frame, matmul_flops, pick_descriptor_strategy, pick_pipeline_strategy,
+        pick_sync_strategy,
     };
 
     #[cfg(feature = "cpu")]
-    pub use crate::backend_cpu::{shared_store, CpuBackend, HostExternalBuffer, HostStore};
+    pub use crate::backend_cpu::{CpuBackend, HostExternalBuffer, HostStore, shared_store};
 
     #[cfg(feature = "cpu")]
-    pub use crate::{immediate_event, immediate_stream, CpuSession};
+    pub use crate::{CpuSession, immediate_event, immediate_stream};
 
     #[cfg(feature = "cuda")]
     pub use crate::backend_cuda::CudaBackend;

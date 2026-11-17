@@ -65,24 +65,17 @@ impl RobotsPolicy {
 
     /// Parse and cache robots rules for a site key.
     pub fn load_site_rules(&mut self, site_key: &str, body: &str) {
-        self.sites.insert(
-            site_key.to_string(),
-            CachedSiteRobots { state: SiteRobotsState::Loaded, document: RobotsTxt::parse(body) },
-        );
+        self.sites.insert(site_key.to_string(), CachedSiteRobots { state: SiteRobotsState::Loaded, document: RobotsTxt::parse(body) });
     }
 
     /// Mark a site as having no usable `robots.txt`.
     pub fn mark_site_missing(&mut self, site_key: &str) {
-        self.sites
-            .insert(site_key.to_string(), CachedSiteRobots { state: SiteRobotsState::Missing, document: RobotsTxt::default() });
+        self.sites.insert(site_key.to_string(), CachedSiteRobots { state: SiteRobotsState::Missing, document: RobotsTxt::default() });
     }
 
     /// Mark robots fetch as failed for a site.
     pub fn mark_site_unavailable(&mut self, site_key: &str) {
-        self.sites.insert(
-            site_key.to_string(),
-            CachedSiteRobots { state: SiteRobotsState::Unavailable, document: RobotsTxt::default() },
-        );
+        self.sites.insert(site_key.to_string(), CachedSiteRobots { state: SiteRobotsState::Unavailable, document: RobotsTxt::default() });
     }
 
     /// Crawl-delay from loaded robots for the URL site, if any.

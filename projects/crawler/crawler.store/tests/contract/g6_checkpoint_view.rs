@@ -10,9 +10,7 @@ fn commit_one(store: &mut impl crawler_store::Store, slot: &str) {
     store.begin_page_tx("w1").expect("begin tx");
     store.page_tx_put_fetch(&format!("fetch/{slot}"), slot.as_bytes()).expect("put fetch");
     store.page_tx_put_ir(&format!("ir/{slot}"), slot.as_bytes()).expect("put ir");
-    store
-        .page_tx_put_event(&CrawlEvent::Committed { page_identity: format!("https://example.com{slot}") })
-        .expect("stage event");
+    store.page_tx_put_event(&CrawlEvent::Committed { page_identity: format!("https://example.com{slot}") }).expect("stage event");
     store.commit_page_tx().expect("commit");
     assert_eq!(store.page_phase(&claim.item_id).expect("page phase"), PagePhase::Committed);
 }

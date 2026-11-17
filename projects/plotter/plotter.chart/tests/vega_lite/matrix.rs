@@ -23,10 +23,9 @@ const ROWS: &str = r#"[
 /// The base encoding pair that keeps each mark inside its kernel contract.
 fn base(mark: &str) -> (&'static str, &'static str) {
     match mark {
-        "bar" | "point" | "tick" => (
-            r#""x": {"field": "region", "type": "nominal", "scale": {"type": "band"}}"#,
-            r#""y": {"field": "value", "type": "quantitative"}"#,
-        ),
+        "bar" | "point" | "tick" => {
+            (r#""x": {"field": "region", "type": "nominal", "scale": {"type": "band"}}"#, r#""y": {"field": "value", "type": "quantitative"}"#)
+        }
         "rect" => (r#""x": {"field": "region", "type": "nominal"}"#, r#""y": {"field": "segment", "type": "nominal"}"#),
         _ => (r#""x": {"field": "step", "type": "quantitative"}"#, r#""y": {"field": "value", "type": "quantitative"}"#),
     }
@@ -102,12 +101,7 @@ fn every_mark_channel_cell_renders_or_is_refused_with_the_kernel_contract() {
                     rendered.push((*mark, *channel));
                 }
                 Err(error) => {
-                    assert_eq!(
-                        error.code(),
-                        codes::INVALID_SPEC,
-                        "{mark}/{channel}: expected a kernel refusal, got `{}`",
-                        error.message()
-                    );
+                    assert_eq!(error.code(), codes::INVALID_SPEC, "{mark}/{channel}: expected a kernel refusal, got `{}`", error.message());
                     refused.push((*mark, *channel));
                 }
             }
@@ -115,10 +109,7 @@ fn every_mark_channel_cell_renders_or_is_refused_with_the_kernel_contract() {
     }
 
     for (mark, channel) in &rendered {
-        assert!(
-            kernel_supports(mark, channel),
-            "{mark}/{channel}: the kernel does not support this binding yet the cell rendered"
-        );
+        assert!(kernel_supports(mark, channel), "{mark}/{channel}: the kernel does not support this binding yet the cell rendered");
     }
     for (mark, channel) in &refused {
         assert!(!kernel_supports(mark, channel), "{mark}/{channel}: the kernel supports this binding yet the cell was refused");
@@ -144,7 +135,6 @@ fn every_base_document_renders_byte_identical_svgs() {
 
 #[test]
 fn refusing_documents_never_emit_an_svg() {
-    let error = vega_lite::lower(&BASE_DOCUMENT.replace(r#""mark":"bar""#, r#""mark":"rule""#))
-        .expect_err("rule is outside the subset");
+    let error = vega_lite::lower(&BASE_DOCUMENT.replace(r#""mark":"bar""#, r#""mark":"rule""#)).expect_err("rule is outside the subset");
     assert_eq!(error.code(), codes::UNSUPPORTED_MARK);
 }

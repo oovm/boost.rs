@@ -47,8 +47,7 @@ fn html_import_drives_title_blocks_assets_and_provenance() {
         "https://example.com/docs/page.html",
         r#"<html><head><title>Guide</title></head><body><h1>Title</h1><p>Body <img src="../img/diagram.png" alt="D"></p></body></html>"#,
     );
-    let result = HtmlExtractor
-        .extract(ExtractInput { artifact: &artifact, budget: ExtractBudget::default() }, &ExtractContext::default());
+    let result = HtmlExtractor.extract(ExtractInput { artifact: &artifact, budget: ExtractBudget::default() }, &ExtractContext::default());
 
     let document = result.document.expect("document");
     assert_eq!(document.metadata.title.as_deref(), Some("Guide"));
@@ -69,15 +68,11 @@ fn mermaid_source_blocks_stay_diagrams_with_provenance() {
          <pre><code class=\"language-mermaid\">flowchart LR\n  X --&gt; Y</code></pre>\n\
          </body></html>",
     );
-    let result = HtmlExtractor
-        .extract(ExtractInput { artifact: &artifact, budget: ExtractBudget::default() }, &ExtractContext::default());
+    let result = HtmlExtractor.extract(ExtractInput { artifact: &artifact, budget: ExtractBudget::default() }, &ExtractContext::default());
 
     let document = result.document.expect("document");
-    let diagrams: Vec<_> = document
-        .blocks
-        .iter()
-        .filter(|node| matches!(&node.block, Block::Diagram { language, .. } if language == "mermaid"))
-        .collect();
+    let diagrams: Vec<_> =
+        document.blocks.iter().filter(|node| matches!(&node.block, Block::Diagram { language, .. } if language == "mermaid")).collect();
     assert_eq!(diagrams.len(), 2, "both mermaid containers must become diagram blocks: {:?}", document.blocks);
     for node in &diagrams {
         let Block::Diagram { source, .. } = &node.block
@@ -102,8 +97,7 @@ fn inline_svg_is_registered_as_graphic_resource_reference() {
         "https://example.com/docs/rendered.html",
         &format!("<html><head><title>Rendered</title></head><body><p>before</p>{svg}<p>after</p></body></html>"),
     );
-    let result = HtmlExtractor
-        .extract(ExtractInput { artifact: &artifact, budget: ExtractBudget::default() }, &ExtractContext::default());
+    let result = HtmlExtractor.extract(ExtractInput { artifact: &artifact, budget: ExtractBudget::default() }, &ExtractContext::default());
 
     let document = result.document.expect("document");
     let svg_node = document
@@ -135,8 +129,7 @@ fn bitmap_only_diagram_is_kept_and_marked_unstructured() {
         "https://example.com/docs/bitmap.html",
         r#"<html><head><title>Bitmap</title></head><body><p><img class="mermaid" src="renders/flow.png" alt="flowchart"></p></body></html>"#,
     );
-    let result = HtmlExtractor
-        .extract(ExtractInput { artifact: &artifact, budget: ExtractBudget::default() }, &ExtractContext::default());
+    let result = HtmlExtractor.extract(ExtractInput { artifact: &artifact, budget: ExtractBudget::default() }, &ExtractContext::default());
 
     let document = result.document.expect("document");
     // The raster image stays a first-class asset with its resolved URL.
@@ -166,8 +159,7 @@ fn plain_images_do_not_trigger_diagram_bitmap_loss() {
         "https://example.com/docs/photo.html",
         r#"<html><head><title>Photo</title></head><body><p><img src="photo.png" alt="a photo"></p></body></html>"#,
     );
-    let result = HtmlExtractor
-        .extract(ExtractInput { artifact: &artifact, budget: ExtractBudget::default() }, &ExtractContext::default());
+    let result = HtmlExtractor.extract(ExtractInput { artifact: &artifact, budget: ExtractBudget::default() }, &ExtractContext::default());
 
     let document = result.document.expect("document");
     assert_eq!(document.assets.len(), 1);
@@ -185,8 +177,7 @@ fn plain_images_do_not_trigger_diagram_bitmap_loss() {
 fn rendered_mermaid_svg_without_source_keeps_a_span_loss() {
     let html = r#"<html><head><title>Rendered</title></head><body><p>before</p><svg xmlns="http://www.w3.org/2000/svg" aria-roledescription="flowchart-v2" viewBox="0 0 10 10"><rect width="10" height="10"/></svg><p>after</p></body></html>"#;
     let artifact = artifact("https://example.com/docs/rendered.html", html);
-    let result = HtmlExtractor
-        .extract(ExtractInput { artifact: &artifact, budget: ExtractBudget::default() }, &ExtractContext::default());
+    let result = HtmlExtractor.extract(ExtractInput { artifact: &artifact, budget: ExtractBudget::default() }, &ExtractContext::default());
 
     let document = result.document.expect("document");
     assert_eq!(result.status, ExtractStatus::Partial, "missing source is a partial extraction");
@@ -205,24 +196,15 @@ fn html_links_resolve_against_page_base_and_keep_crawl_relations() {
         "https://example.com/docs/page.html",
         r##"<html><head><base href="/guide/"></head><body><a href="next.html">Next</a><a href="#top">Top</a><a href="https://other.example/x">Out</a><img src="pic.png"></body></html>"##,
     );
-    let result = HtmlExtractor
-        .extract(ExtractInput { artifact: &artifact, budget: ExtractBudget::default() }, &ExtractContext::default());
+    let result = HtmlExtractor.extract(ExtractInput { artifact: &artifact, budget: ExtractBudget::default() }, &ExtractContext::default());
 
     let links = result.discovered_links;
     assert!(
-        links
-            .iter()
-            .any(|link| link.target == "https://example.com/guide/next.html" && link.relation == LinkRelation::Navigation),
+        links.iter().any(|link| link.target == "https://example.com/guide/next.html" && link.relation == LinkRelation::Navigation),
         "{links:?}"
     );
-    assert!(
-        links.iter().any(|link| link.target == "https://other.example/x" && link.relation == LinkRelation::External),
-        "{links:?}"
-    );
-    assert!(
-        links.iter().any(|link| link.target == "https://example.com/guide/pic.png" && link.relation == LinkRelation::Asset),
-        "{links:?}"
-    );
+    assert!(links.iter().any(|link| link.target == "https://other.example/x" && link.relation == LinkRelation::External), "{links:?}");
+    assert!(links.iter().any(|link| link.target == "https://example.com/guide/pic.png" && link.relation == LinkRelation::Asset), "{links:?}");
     assert!(links.iter().all(|link| !link.target.contains("#top")), "{links:?}");
 }
 
@@ -230,8 +212,7 @@ fn html_links_resolve_against_page_base_and_keep_crawl_relations() {
 fn utf8_bom_overrides_transport_and_meta_charsets() {
     let bytes = b"\xEF\xBB\xBF<html><head><meta charset=\"windows-1252\"></head><body>caf\xC3\xA9</body></html>".to_vec();
     let artifact = artifact_bytes("https://example.com/bom.html", "text/html; charset=windows-1252", bytes);
-    let result = HtmlExtractor
-        .extract(ExtractInput { artifact: &artifact, budget: ExtractBudget::default() }, &ExtractContext::default());
+    let result = HtmlExtractor.extract(ExtractInput { artifact: &artifact, budget: ExtractBudget::default() }, &ExtractContext::default());
 
     assert_eq!(result.status, ExtractStatus::Partial, "{:?}", result.losses);
     let document = result.document.expect("document");
@@ -244,8 +225,7 @@ fn utf8_bom_overrides_transport_and_meta_charsets() {
 fn transport_charset_decodes_legacy_body_without_meta() {
     let bytes = b"<html><body>caf\xE9</body></html>".to_vec();
     let artifact = artifact_bytes("https://example.com/latin1.html", "text/html; charset=iso-8859-1", bytes);
-    let result = HtmlExtractor
-        .extract(ExtractInput { artifact: &artifact, budget: ExtractBudget::default() }, &ExtractContext::default());
+    let result = HtmlExtractor.extract(ExtractInput { artifact: &artifact, budget: ExtractBudget::default() }, &ExtractContext::default());
 
     let document = result.document.expect("document");
     assert!(plain_text(&document).contains("café"), "Content-Type charset must decode legacy bytes");
@@ -255,8 +235,7 @@ fn transport_charset_decodes_legacy_body_without_meta() {
 fn meta_charset_is_used_when_transport_has_none() {
     let bytes = b"<html><head><meta charset=\"windows-1252\"></head><body>caf\xE9</body></html>".to_vec();
     let artifact = artifact_bytes("https://example.com/meta.html", "text/html", bytes);
-    let result = HtmlExtractor
-        .extract(ExtractInput { artifact: &artifact, budget: ExtractBudget::default() }, &ExtractContext::default());
+    let result = HtmlExtractor.extract(ExtractInput { artifact: &artifact, budget: ExtractBudget::default() }, &ExtractContext::default());
 
     let document = result.document.expect("document");
     assert!(plain_text(&document).contains("café"), "meta charset must decode legacy bytes");
@@ -265,8 +244,7 @@ fn meta_charset_is_used_when_transport_has_none() {
 #[test]
 fn undecodable_body_is_a_failed_extraction() {
     let artifact = artifact_bytes("https://example.com/broken.html", "text/html", vec![b'<', 0xFF, 0x80, b'>']);
-    let result = HtmlExtractor
-        .extract(ExtractInput { artifact: &artifact, budget: ExtractBudget::default() }, &ExtractContext::default());
+    let result = HtmlExtractor.extract(ExtractInput { artifact: &artifact, budget: ExtractBudget::default() }, &ExtractContext::default());
 
     assert_eq!(result.status, ExtractStatus::Failed);
     assert!(result.document.is_none());

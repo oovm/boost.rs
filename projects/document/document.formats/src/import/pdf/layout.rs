@@ -141,12 +141,7 @@ pub(crate) fn page_flow(items: &[PageItem], profile: &StyleProfile) -> Vec<FlowB
     blocks
 }
 
-fn layout_lines(
-    blocks: &mut Vec<FlowBlock>,
-    paragraph: &mut Option<Paragraph>,
-    lines: &[ExtractedLine],
-    profile: &StyleProfile,
-) {
+fn layout_lines(blocks: &mut Vec<FlowBlock>, paragraph: &mut Option<Paragraph>, lines: &[ExtractedLine], profile: &StyleProfile) {
     let leading = estimate_leading(lines, profile.body_size);
     let mut index = 0;
     while index < lines.len() {
@@ -196,13 +191,7 @@ fn flush_paragraph(blocks: &mut Vec<FlowBlock>, paragraph: &mut Option<Paragraph
     }
 }
 
-fn append_line(
-    paragraph: &mut Option<Paragraph>,
-    line: &ExtractedLine,
-    body_size: f32,
-    leading: f32,
-    blocks: &mut Vec<FlowBlock>,
-) {
+fn append_line(paragraph: &mut Option<Paragraph>, line: &ExtractedLine, body_size: f32, leading: f32, blocks: &mut Vec<FlowBlock>) {
     let Some(current) = paragraph.as_mut()
     else {
         *paragraph = Some(Paragraph { text: line.text.clone(), size: line.size, y: line.y });
@@ -258,8 +247,7 @@ fn leading_gaps(lines: &[ExtractedLine], body_size: f32) -> Vec<f32> {
             continue;
         };
         let gap = (previous_y - y).abs();
-        if gap > 0.0 && gap < body_size * 3.0 && (previous.size - body_size).abs() < 0.6 && (next.size - body_size).abs() < 0.6
-        {
+        if gap > 0.0 && gap < body_size * 3.0 && (previous.size - body_size).abs() < 0.6 && (next.size - body_size).abs() < 0.6 {
             gaps.push(gap);
         }
     }
@@ -477,8 +465,7 @@ fn table_at(lines: &[ExtractedLine]) -> Option<(Vec<Vec<String>>, usize, usize)>
         }
         start -= 1;
     }
-    let mut rows =
-        lines[start..=anchor].iter().filter_map(|line| header_cells(line).or_else(|| data_cells(line))).collect::<Vec<_>>();
+    let mut rows = lines[start..=anchor].iter().filter_map(|line| header_cells(line).or_else(|| data_cells(line))).collect::<Vec<_>>();
     let mut index = anchor + 1;
     while let Some(line) = lines.get(index) {
         let Some(cells) = data_cells(line)

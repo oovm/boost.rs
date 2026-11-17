@@ -4,12 +4,10 @@ use std::collections::HashMap;
 
 use super::{
     encoding::{
-        decode_pdf_string as decode_pdf_string_impl, decode_text_bytes as decode_text_bytes_impl,
-        decode_with_font as decode_with_font_impl,
+        decode_pdf_string as decode_pdf_string_impl, decode_text_bytes as decode_text_bytes_impl, decode_with_font as decode_with_font_impl,
     },
     fonts::{
-        ToUnicodeMap as InnerToUnicodeMap, increment_unicode as increment_unicode_impl,
-        parse_to_unicode_cmap as parse_to_unicode_cmap_impl,
+        ToUnicodeMap as InnerToUnicodeMap, increment_unicode as increment_unicode_impl, parse_to_unicode_cmap as parse_to_unicode_cmap_impl,
     },
     images::parse_inline_jpeg as parse_inline_jpeg_impl,
     metadata::split_pdf_paragraphs as split_pdf_paragraphs_impl,

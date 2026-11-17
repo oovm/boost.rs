@@ -6,10 +6,7 @@ use document_ir::{Asset, AssetId, AssetKind, DocumentGraph, Inline, LossMarker, 
 /// `properties="cover-image"`.
 pub fn find_cover_manifest_item(opf: &OpfDocument) -> Option<&ManifestItem> {
     opf.manifest.values().find(|item| {
-        item.properties
-            .as_deref()
-            .map(|properties| properties.split_whitespace().any(|token| token == "cover-image"))
-            .unwrap_or(false)
+        item.properties.as_deref().map(|properties| properties.split_whitespace().any(|token| token == "cover-image")).unwrap_or(false)
     })
 }
 

@@ -25,17 +25,15 @@ pub mod types;
 extern crate alloc;
 
 pub use builtins::{call_function, call_test};
-pub use catalog::{
-    CatalogFiles, CatalogLoader, CatalogRoot, ResolveHit, ResolveRoot, TemplateCatalog, canonical_id, resolve_ref,
-};
+pub use catalog::{CatalogFiles, CatalogLoader, CatalogRoot, ResolveHit, ResolveRoot, TemplateCatalog, canonical_id, resolve_ref};
 pub use diagnostic::{ArgValue, Diagnostic, RelatedSpan, Severity, Span, Stage, codes};
 pub use language::{ParseError, ParseResult, parse, parse_named, parse_native, parse_native_with, parse_with};
 pub use native::{NativeExpr, NativeImportName, NativeKind, NativeNode, NativeParam, NativeTemplate};
 pub use normalize::normalize_value;
 pub use registry::{Capability, CapabilitySet, CustomEntry, Namespace, validate_custom_entries};
 pub use render::{
-    CustomError, CustomRegistry, RenderOptions, ResolvedTemplate, TemplateLoader, WarningSink, check_source_budget, render_ir,
-    render_ir_opts, render_ir_with_loader,
+    CustomError, CustomRegistry, RenderOptions, ResolvedTemplate, TemplateLoader, WarningSink, check_source_budget, render_ir, render_ir_opts,
+    render_ir_with_loader,
 };
 pub use trim::{level_of, normalized_children, trim_prefix, trim_suffix};
 pub use types::{IR_VERSION, IrDocument, IrNode, Language, TemplateConfig, default_language};
@@ -46,8 +44,8 @@ use std::cell::RefCell;
 
 use serde_json::Value;
 use template::{
-    RenderBudget, RenderOutput, RenderRequest, TemplateCapability, TemplateContentKind, TemplateEngine, TemplateError,
-    TemplateId, TemplateStatus,
+    RenderBudget, RenderOutput, RenderRequest, TemplateCapability, TemplateContentKind, TemplateEngine, TemplateError, TemplateId,
+    TemplateStatus,
 };
 
 /// Extensions the engine probes for dejavu sources.
@@ -309,11 +307,7 @@ pub fn template_error_from_ir(error: IrError) -> TemplateError {
 /// Map one dejavu diagnostic onto the shared template error, keeping the code.
 pub fn template_error_from_diagnostic(diagnostic: Diagnostic) -> TemplateError {
     let args = diagnostic.args.iter().map(|(name, value)| (name.clone(), arg_text(value))).collect::<Vec<_>>();
-    TemplateError::with_owned_args(
-        diagnostic.code.clone(),
-        diagnostic.message.clone().unwrap_or_else(|| diagnostic.code.clone()),
-        args,
-    )
+    TemplateError::with_owned_args(diagnostic.code.clone(), diagnostic.message.clone().unwrap_or_else(|| diagnostic.code.clone()), args)
 }
 
 fn arg_text(value: &ArgValue) -> String {
@@ -360,8 +354,7 @@ impl<'a> EngineLoader<'a> {
         let id = self.inner.resolve(reference, from_id.as_ref(), EXTENSIONS).map_err(template_error_to_diagnostic)?;
         let source = self.inner.source(&id).map_err(template_error_to_diagnostic)?;
         RenderBudget::new(self.limits).source(source).map_err(|_| {
-            Diagnostic::new(Severity::Error, codes::SOURCE_BUDGET, Stage::Load)
-                .arg("limit", self.limits.max_source_bytes as i64)
+            Diagnostic::new(Severity::Error, codes::SOURCE_BUDGET, Stage::Load).arg("limit", self.limits.max_source_bytes as i64)
         })?;
         let language = language_for_path(id.path());
         let document = parse_with(source, &id.to_string(), &language).map_err(parse_error_diagnostic)?;

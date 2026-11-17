@@ -209,18 +209,12 @@ fn resolve(facts: &[Fact<'_>], scopes: &InvalidationSet, targets: &BTreeSet<Stri
         result.whole_layers.insert(InvalidationScope::Motion);
     }
 
-    result.retained =
-        facts.iter().filter_map(|fact| fact.id).map(str::to_owned).filter(|id| !result.recompute.contains(id)).collect();
+    result.retained = facts.iter().filter_map(|fact| fact.id).map(str::to_owned).filter(|id| !result.recompute.contains(id)).collect();
     result
 }
 
 /// Overlay narrowing: targeted nodes plus their source and id-prefix relatives.
-fn resolve_overlay(
-    facts: &[Fact<'_>],
-    targets: &BTreeSet<String>,
-    target_sources: &BTreeSet<&str>,
-    result: &mut NodeInvalidation,
-) {
+fn resolve_overlay(facts: &[Fact<'_>], targets: &BTreeSet<String>, target_sources: &BTreeSet<&str>, result: &mut NodeInvalidation) {
     if targets.is_empty() {
         result.whole_layers.insert(InvalidationScope::Overlay);
         return;
@@ -237,9 +231,9 @@ fn resolve_overlay(
 /// An id matches a target exactly or as a highlight child such as
 /// `target/outline` or `target:ring`.
 fn id_matches_target(id: &str, targets: &BTreeSet<String>) -> bool {
-    targets.iter().any(|target| {
-        id == target || id.strip_prefix(target.as_str()).is_some_and(|rest| rest.starts_with('/') || rest.starts_with(':'))
-    })
+    targets
+        .iter()
+        .any(|target| id == target || id.strip_prefix(target.as_str()).is_some_and(|rest| rest.starts_with('/') || rest.starts_with(':')))
 }
 
 /// Nodes that data snapshots and scales can reach.

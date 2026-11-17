@@ -11,11 +11,9 @@ fn compiles_graph_circular() {
         vec![GraphEdge::new("a", "b"), GraphEdge::new("b", "c")],
     )
     .unwrap();
-    let scene = compile_plot(
-        &PlotSpec::from_graph(graph).layer(LayerSpec::geom_edge()).layer(LayerSpec::geom_node()),
-        CompileOptions::golden(),
-    )
-    .unwrap();
+    let scene =
+        compile_plot(&PlotSpec::from_graph(graph).layer(LayerSpec::geom_edge()).layer(LayerSpec::geom_node()), CompileOptions::golden())
+            .unwrap();
     assert!(scene.nodes.nodes().iter().any(|n| matches!(n.kind, SceneNodeKind::Points(_))));
     assert!(scene.nodes.nodes().iter().any(|n| matches!(n.kind, SceneNodeKind::Polyline(_))));
 }

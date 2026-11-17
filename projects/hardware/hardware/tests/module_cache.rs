@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use hardware_backend_cuda::CudaBackend;
 use hardware_backend_rocm::RocmBackend;
 use hardware_ir::{
-    Access, DepEdge, DepKind, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph,
-    ResourceId, ResourceKind, ResourceNode, ShaderId, TaskGraph, TaskId, TaskKind, TaskNode,
+    Access, DepEdge, DepKind, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph, ResourceId, ResourceKind, ResourceNode, ShaderId,
+    TaskGraph, TaskId, TaskKind, TaskNode,
 };
 use hardware_scheduler::Backend;
 
@@ -22,28 +22,18 @@ fn buffer(id: u64, floats: usize) -> ResourceNode {
 
 fn fill_graph(value: f64) -> Graph {
     Graph {
-        resources: ResourceGraph {
-            nodes: vec![buffer(1, 4)],
-        },
+        resources: ResourceGraph { nodes: vec![buffer(1, 4)] },
         tasks: TaskGraph {
             nodes: vec![TaskNode {
                 id: TaskId(10),
                 kind: TaskKind::Fill,
                 shader: ShaderId(10),
-                params: BTreeMap::from([
-                    ("dst".into(), ParamValue::I64(1)),
-                    ("value".into(), ParamValue::F64(value)),
-                ]),
+                params: BTreeMap::from([("dst".into(), ParamValue::I64(1)), ("value".into(), ParamValue::F64(value))]),
                 dispatch: Default::default(),
                 objective: Objective::MaxThroughput,
                 priority: Priority::Batch,
             }],
-            edges: vec![DepEdge {
-                from_task: None,
-                from_resource: Some(ResourceId(1)),
-                to_task: TaskId(10),
-                kind: DepKind::Data,
-            }],
+            edges: vec![DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data }],
         },
     }
 }
@@ -74,11 +64,7 @@ fn rocm_module_cache_hits_on_repeat_fill_soft_skip() {
     }
     assert_eq!(rocm.module_cache_misses(), 1);
     assert_eq!(rocm.module_cache_hits(), 1);
-    eprintln!(
-        "rocm module cache ok: hits={} misses={}",
-        rocm.module_cache_hits(),
-        rocm.module_cache_misses()
-    );
+    eprintln!("rocm module cache ok: hits={} misses={}", rocm.module_cache_hits(), rocm.module_cache_misses());
 }
 
 #[test]
@@ -107,9 +93,5 @@ fn cuda_module_cache_hits_on_repeat_fill_soft_skip() {
     }
     assert_eq!(cuda.module_cache_misses(), 1);
     assert_eq!(cuda.module_cache_hits(), 1);
-    eprintln!(
-        "cuda module cache ok: hits={} misses={}",
-        cuda.module_cache_hits(),
-        cuda.module_cache_misses()
-    );
+    eprintln!("cuda module cache ok: hits={} misses={}", cuda.module_cache_hits(), cuda.module_cache_misses());
 }

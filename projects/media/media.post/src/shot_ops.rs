@@ -194,8 +194,7 @@ impl EmberPulse {
                 let p = ((y * width + x) * 4) as usize;
                 let gains = [1.0_f32, 0.72, 0.35];
                 for c in 0..3 {
-                    let value = (frame.pixels[p + c] as f32 / 255.0 + glow * gains[c])
-                        .clamp(0.0, 1.0);
+                    let value = (frame.pixels[p + c] as f32 / 255.0 + glow * gains[c]).clamp(0.0, 1.0);
                     frame.pixels[p + c] = (value * 255.0).round() as u8;
                 }
             }
@@ -224,8 +223,7 @@ impl SlamStamp {
         }
         let slam = smoothstep(0.0, 0.22, shot_progress);
         let scale = 2.4 - 1.4 * slam;
-        let opacity =
-            strength * slam * (0.75 + 0.25 * (shot_progress * std::f32::consts::PI).sin().abs());
+        let opacity = strength * slam * (0.75 + 0.25 * (shot_progress * std::f32::consts::PI).sin().abs());
         if opacity <= 0.0 {
             return;
         }
@@ -248,9 +246,7 @@ impl SlamStamp {
                 let p = ((y * width + x) * 4) as usize;
                 let targets = [0.98_f32, 0.82, 0.55];
                 for c in 0..3 {
-                    let value = (frame.pixels[p + c] as f32 / 255.0 * (1.0 - mask)
-                        + targets[c] * mask)
-                        .clamp(0.0, 1.0);
+                    let value = (frame.pixels[p + c] as f32 / 255.0 * (1.0 - mask) + targets[c] * mask).clamp(0.0, 1.0);
                     frame.pixels[p + c] = (value * 255.0).round() as u8;
                 }
             }
@@ -306,8 +302,7 @@ impl GradeMap {
         let y = (height / 2).min(height.saturating_sub(1)) as usize;
         let mut table = [[0u8; 3]; 256];
         for (index, entry) in table.iter_mut().enumerate() {
-            let sx = (((index as f32 / 255.0) * (src_w - 1) as f32).round() as usize)
-                .min(src_w - 1);
+            let sx = (((index as f32 / 255.0) * (src_w - 1) as f32).round() as usize).min(src_w - 1);
             let base = (y * src_w + sx) * 4;
             *entry = [rgba[base], rgba[base + 1], rgba[base + 2]];
         }
@@ -334,8 +329,7 @@ impl GradeMap {
             let idx = (luma * 255.0).round() as usize;
             let graded = &self.table[idx.min(255)];
             for c in 0..3 {
-                chunk[c] =
-                    (chunk[c] as f32 * (1.0 - mix) + graded[c] as f32 * mix).round() as u8;
+                chunk[c] = (chunk[c] as f32 * (1.0 - mix) + graded[c] as f32 * mix).round() as u8;
             }
         }
     }
@@ -353,16 +347,8 @@ fn sample_stops(stops: &[(f32, [u8; 3])], t: f32) -> [u8; 3] {
         let (t0, c0) = window[0];
         let (t1, c1) = window[1];
         if t <= t1 {
-            let u = if (t1 - t0).abs() < f32::EPSILON {
-                0.0
-            } else {
-                (t - t0) / (t1 - t0)
-            };
-            return [
-                lerp_u8(c0[0], c1[0], u),
-                lerp_u8(c0[1], c1[1], u),
-                lerp_u8(c0[2], c1[2], u),
-            ];
+            let u = if (t1 - t0).abs() < f32::EPSILON { 0.0 } else { (t - t0) / (t1 - t0) };
+            return [lerp_u8(c0[0], c1[0], u), lerp_u8(c0[1], c1[1], u), lerp_u8(c0[2], c1[2], u)];
         }
     }
     stops[stops.len() - 1].1
@@ -464,8 +450,7 @@ pub fn flash(frame: &mut Frame, amount: f32) {
     }
     for chunk in frame.pixels.chunks_exact_mut(4) {
         for c in 0..3 {
-            chunk[c] =
-                ((chunk[c] as f32 * (1.0 - amount) + 255.0 * amount).round() as u8).min(255);
+            chunk[c] = ((chunk[c] as f32 * (1.0 - amount) + 255.0 * amount).round() as u8).min(255);
         }
     }
 }

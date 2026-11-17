@@ -9,24 +9,10 @@ extern "C" {
     pub fn ucf_host_bind_external_buffer(resource_id: u32, handle_id: u32) -> i32;
 
     /// L2：宿主侧 WebGPU 清屏（设备须已由 TS 初始化）。
-    pub fn ucf_host_l2_color_fill_webgpu(
-        width: u32,
-        height: u32,
-        r: u8,
-        g: u8,
-        b: u8,
-        a: u8,
-    ) -> i32;
+    pub fn ucf_host_l2_color_fill_webgpu(width: u32, height: u32, r: u8, g: u8, b: u8, a: u8) -> i32;
 
     /// L2：宿主侧 WebGPU Raster 清屏（与 Fill 同色参数，语义为 Raster）。
-    pub fn ucf_host_l2_raster_clear_webgpu(
-        width: u32,
-        height: u32,
-        r: u8,
-        g: u8,
-        b: u8,
-        a: u8,
-    ) -> i32;
+    pub fn ucf_host_l2_raster_clear_webgpu(width: u32, height: u32, r: u8, g: u8, b: u8, a: u8) -> i32;
 
     /// L2：宿主侧 WebGPU Raster `draw=tri`（黑底 + NDC 黄三角）。
     pub fn ucf_host_l2_raster_tri_webgpu(width: u32, height: u32) -> i32;

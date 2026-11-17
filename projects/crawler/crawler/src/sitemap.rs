@@ -101,8 +101,7 @@ pub fn locations(body: &[u8]) -> Result<(bool, Vec<String>)> {
                             pd::code(pd::EXTRACT_PARSE_FAILED),
                             DiagnosticSeverity::Error,
                             pd::origin_extract(),
-                            Message::new("crawler.diagnostic.sitemapLocType")
-                                .with_fallback("sitemap <loc> must contain text only"),
+                            Message::new("crawler.diagnostic.sitemapLocType").with_fallback("sitemap <loc> must contain text only"),
                         );
                         return Err(CrawlError::from(diag));
                     }
@@ -142,8 +141,7 @@ pub fn sitemap_body(artifact: &crawler_types::FetchArtifact) -> Result<Vec<u8>> 
             pd::code(pd::EXTRACT_PARSE_FAILED),
             DiagnosticSeverity::Error,
             pd::origin_extract(),
-            Message::new("crawler.diagnostic.sitemapBodyMissing")
-                .with_fallback("sitemap artifact has no inline body available"),
+            Message::new("crawler.diagnostic.sitemapBodyMissing").with_fallback("sitemap artifact has no inline body available"),
         );
         CrawlError::from(diag)
     })?;
@@ -191,12 +189,7 @@ pub fn sitemap_body(artifact: &crawler_types::FetchArtifact) -> Result<Vec<u8>> 
     Ok(decoded)
 }
 
-pub(crate) fn discover<T: Transport>(
-    state: &mut CrawlState,
-    source: &FrontierItem,
-    client: &mut FetchClient<T>,
-    seen: &mut HashSet<String>,
-) {
+pub(crate) fn discover<T: Transport>(state: &mut CrawlState, source: &FrontierItem, client: &mut FetchClient<T>, seen: &mut HashSet<String>) {
     let mut pending = client.robots().sitemaps_for_url(&source.request_url).to_vec();
     while let Some(location) = pending.pop() {
         let Ok(url) = crawler_types::canonicalize_request_url(&location)

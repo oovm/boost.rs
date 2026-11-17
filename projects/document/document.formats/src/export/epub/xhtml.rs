@@ -500,10 +500,7 @@ fn write_inlines(
             Inline::Link { target, display, title } => {
                 let RelationEndpoint::ExternalUri(url) = target
                 else {
-                    return Err(FormatError::unsupported(
-                        "epub",
-                        format!("link target `{target:?}` has no EPUB destination mapping"),
-                    ));
+                    return Err(FormatError::unsupported("epub", format!("link target `{target:?}` has no EPUB destination mapping")));
                 };
                 out.push_str("<a href=\"");
                 escape_attribute(out, url);
@@ -527,9 +524,7 @@ fn write_inlines(
                 BreakKind::Hard => out.push_str("<br/>"),
                 BreakKind::Soft => out.push('\n'),
             },
-            Inline::Attributed { attributes, children }
-                if matches!(children.as_slice(), [Inline::Image { .. }]) && !attributes.is_empty() =>
-            {
+            Inline::Attributed { attributes, children } if matches!(children.as_slice(), [Inline::Image { .. }]) && !attributes.is_empty() => {
                 // A size or identity wrapper around one bitmap belongs on the
                 // `<img>` element, never on a `<span>` where `width`/`height`
                 // would be inert.
@@ -569,10 +564,7 @@ fn write_inlines(
                 out.push_str("</a></sup>");
             }
             Inline::Citation { .. } => {
-                return Err(FormatError::unsupported(
-                    "epub",
-                    "inline Citation is not representable by the conservative EPUB exporter",
-                ));
+                return Err(FormatError::unsupported("epub", "inline Citation is not representable by the conservative EPUB exporter"));
             }
             Inline::RawHtml { html } => out.push_str(html),
         }
@@ -608,8 +600,7 @@ fn write_attributes(out: &mut String, attributes: &Attributes) -> Result<(), For
         out.push('"');
     }
     for pair in &attributes.pairs {
-        if !is_valid_attribute_name(&pair.key) || pair.key.eq_ignore_ascii_case("id") || pair.key.eq_ignore_ascii_case("class")
-        {
+        if !is_valid_attribute_name(&pair.key) || pair.key.eq_ignore_ascii_case("id") || pair.key.eq_ignore_ascii_case("class") {
             return Err(FormatError::unsupported("epub", format!("invalid attribute name `{}`", pair.key)));
         }
         out.push(' ');

@@ -1,5 +1,5 @@
-use thiserror::Error;
 use hardware_ir::Domain;
+use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -25,11 +25,7 @@ pub enum Error {
     #[error("backend `{0}` failed: {1}")]
     Backend(String, String),
     #[error("capacity exceeded on {domain:?}: used {used} bytes, limit {limit}")]
-    CapacityExceeded {
-        domain: Domain,
-        used: u64,
-        limit: u64,
-    },
+    CapacityExceeded { domain: Domain, used: u64, limit: u64 },
 }
 
 impl Error {
@@ -53,23 +49,9 @@ mod tests {
     fn error_code_covers_variants() {
         let ir = Error::Ir(hardware_ir::Error::UnknownResource(9));
         assert_eq!(ir.code(), ErrorCode::Ir);
-        assert_eq!(
-            Error::NoBackend("cpu".into()).code(),
-            ErrorCode::NoBackend
-        );
-        assert_eq!(
-            Error::Backend("cuda".into(), "missing".into()).code(),
-            ErrorCode::Backend
-        );
-        assert_eq!(
-            Error::CapacityExceeded {
-                domain: Domain::Vram,
-                used: 2,
-                limit: 1,
-            }
-            .code(),
-            ErrorCode::CapacityExceeded
-        );
+        assert_eq!(Error::NoBackend("cpu".into()).code(), ErrorCode::NoBackend);
+        assert_eq!(Error::Backend("cuda".into(), "missing".into()).code(), ErrorCode::Backend);
+        assert_eq!(Error::CapacityExceeded { domain: Domain::Vram, used: 2, limit: 1 }.code(), ErrorCode::CapacityExceeded);
     }
 
     #[test]

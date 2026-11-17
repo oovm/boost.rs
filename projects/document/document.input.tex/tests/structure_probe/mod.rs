@@ -16,8 +16,7 @@ fn dump(label: &str, source: &str) {
     }
     println!("report: {:#?}", document.report);
     println!("diagnostics: {:#?}", document.diagnostics);
-    let (plan, diagnostics) =
-        layout_with_diagnostics(&document.graph, &LayoutHint::a4(), &Diagrams::default(), &BodyMetrics::default());
+    let (plan, diagnostics) = layout_with_diagnostics(&document.graph, &LayoutHint::a4(), &Diagrams::default(), &BodyMetrics::default());
     println!("layout diagnostics: {:#?}", diagnostics);
     for page in &plan.pages {
         for item in &page.items {

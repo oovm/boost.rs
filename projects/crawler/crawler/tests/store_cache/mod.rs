@@ -95,16 +95,14 @@ fn yydb_store_backed_caches_survive_a_restart_without_refetching() {
     let extractors: [&dyn Extractor; 1] = [&html];
     let request = CrawlRequest::from_seed("https://example.com/a").expect("seed");
 
-    let first =
-        run_crawl_with_store(request, transport(&fetches), &extractors, Default::default(), &mut store).expect("first crawl");
+    let first = run_crawl_with_store(request, transport(&fetches), &extractors, Default::default(), &mut store).expect("first crawl");
     assert_eq!(first.report.committed, 1);
     assert_eq!(fetches.get(), 2, "robots and page must be fetched once");
 
     store.reopen().expect("restart");
     cache_second_seed(&mut store);
     let second_request = CrawlRequest::from_seed("https://example.com/b").expect("second seed");
-    let second = run_crawl_with_store(second_request, transport(&fetches), &extractors, Default::default(), &mut store)
-        .expect("second crawl");
+    let second = run_crawl_with_store(second_request, transport(&fetches), &extractors, Default::default(), &mut store).expect("second crawl");
     assert_eq!(second.report.committed, 1);
     assert_eq!(fetches.get(), 2, "restart must reuse stored robots and response");
 
@@ -120,16 +118,14 @@ fn store_backed_caches_survive_a_restart_without_refetching() {
     let extractors: [&dyn Extractor; 1] = [&html];
     let request = CrawlRequest::from_seed("https://example.com/a").expect("seed");
 
-    let first =
-        run_crawl_with_store(request, transport(&fetches), &extractors, Default::default(), &mut store).expect("first crawl");
+    let first = run_crawl_with_store(request, transport(&fetches), &extractors, Default::default(), &mut store).expect("first crawl");
     assert_eq!(first.report.committed, 1);
     assert_eq!(fetches.get(), 2, "robots and page must be fetched once");
 
     store.reopen().expect("restart");
     cache_second_seed(&mut store);
     let second_request = CrawlRequest::from_seed("https://example.com/b").expect("second seed");
-    let second = run_crawl_with_store(second_request, transport(&fetches), &extractors, Default::default(), &mut store)
-        .expect("second crawl");
+    let second = run_crawl_with_store(second_request, transport(&fetches), &extractors, Default::default(), &mut store).expect("second crawl");
     assert_eq!(second.report.committed, 1);
     assert_eq!(fetches.get(), 2, "restart must reuse stored robots and response");
     assert!(

@@ -9,8 +9,7 @@ use document_formats::{
     },
 };
 use document_ir::{
-    AssetKind, Block, DocumentGraph, DocumentId, Inline, MathExpression, RelationEndpoint, RelationKind, SemanticStatus,
-    TableCell, TableRow,
+    AssetKind, Block, DocumentGraph, DocumentId, Inline, MathExpression, RelationEndpoint, RelationKind, SemanticStatus, TableCell, TableRow,
 };
 
 struct Assets(std::collections::HashMap<String, Vec<u8>>);
@@ -61,8 +60,7 @@ fn markdown_export_keeps_html_image_width_and_height() {
 
 #[test]
 fn markdown_export_of_an_unsized_image_stays_markdown() {
-    let graph =
-        import_html_text("img-plain.html", r#"<body><img src="chart.png" alt="chart"></body>"#).expect("import html image");
+    let graph = import_html_text("img-plain.html", r#"<body><img src="chart.png" alt="chart"></body>"#).expect("import html image");
     let markdown = export_markdown(&graph).expect("export markdown");
     assert!(markdown.contains("![chart](chart.png)"), "a plain image stays markdown: {markdown}");
     assert!(!markdown.contains("<img"), "no size means no inline HTML: {markdown}");
@@ -209,8 +207,7 @@ fn markdown_lists_lower_to_list_blocks() {
 fn markdown_quote_nested_blocks_round_trip() {
     let source = "> - a\n> - b\n";
     let graph = import_markdown_bytes("quote-list.md", source).expect("import quoted list");
-    let Block::Quote { children } =
-        &graph.blocks.iter().find(|node| matches!(node.block, Block::Quote { .. })).expect("quote block").block
+    let Block::Quote { children } = &graph.blocks.iter().find(|node| matches!(node.block, Block::Quote { .. })).expect("quote block").block
     else {
         unreachable!()
     };
@@ -263,8 +260,7 @@ fn markdown_blockquote_lowers_inline_content() {
 
     let multiline = "> first line\n> second line\n";
     let multiline_graph = import_markdown_bytes("multiline-quote.md", multiline).expect("import multiline quote");
-    let quote_node =
-        multiline_graph.blocks.iter().find(|node| matches!(node.block, Block::Quote { .. })).expect("multiline quote expected");
+    let quote_node = multiline_graph.blocks.iter().find(|node| matches!(node.block, Block::Quote { .. })).expect("multiline quote expected");
     let Block::Quote { children } = &quote_node.block
     else {
         unreachable!()
@@ -276,14 +272,10 @@ fn markdown_blockquote_lowers_inline_content() {
             _ => None,
         })
         .expect("multiline quote body must be a paragraph child");
-    assert!(
-        content.iter().any(|inline| matches!(inline, Inline::Break { kind: document_ir::BreakKind::Soft })),
-        "{content:#?}"
-    );
+    assert!(content.iter().any(|inline| matches!(inline, Inline::Break { kind: document_ir::BreakKind::Soft })), "{content:#?}");
     assert_eq!(content.iter().map(Inline::plain_text).collect::<String>().trim(), "first line second line");
     let multiline_markdown = export_markdown(&multiline_graph).expect("export multiline quote");
-    let multiline_reopened =
-        import_markdown_bytes("multiline-quote-roundtrip.md", &multiline_markdown).expect("reopen multiline quote");
+    let multiline_reopened = import_markdown_bytes("multiline-quote-roundtrip.md", &multiline_markdown).expect("reopen multiline quote");
     assert_eq!(multiline_reopened.blocks, multiline_graph.blocks);
 }
 
@@ -312,14 +304,8 @@ fn markdown_tables_lower_header_and_rows() {
     assert_eq!(head.len(), 1);
     assert_eq!(body.len(), 1);
     assert_eq!(head[0].cells.len(), 2);
-    assert_eq!(
-        head[0].cells.iter().map(|cell| cell_text(&graph, cell)).collect::<Vec<_>>(),
-        vec!["A".to_string(), "B".to_string()]
-    );
-    assert_eq!(
-        body[0].cells.iter().map(|cell| cell_text(&graph, cell)).collect::<Vec<_>>(),
-        vec!["1".to_string(), "2".to_string()]
-    );
+    assert_eq!(head[0].cells.iter().map(|cell| cell_text(&graph, cell)).collect::<Vec<_>>(), vec!["A".to_string(), "B".to_string()]);
+    assert_eq!(body[0].cells.iter().map(|cell| cell_text(&graph, cell)).collect::<Vec<_>>(), vec!["1".to_string(), "2".to_string()]);
     assert!(head.iter().chain(body).flat_map(|row| row.cells.iter()).all(|cell| cell.colspan == 1 && cell.rowspan == 1));
     assert!(graph.validate().is_valid());
 
@@ -348,10 +334,7 @@ fn markdown_table_export_uses_three_hyphen_delimiters() {
     let (head, body) = table(&reopened);
     assert_eq!(head.len(), 1);
     assert_eq!(body.len(), 1);
-    assert_eq!(
-        body[0].cells.iter().map(|cell| cell_text(&reopened, cell)).collect::<Vec<_>>(),
-        vec!["1".to_string(), "2".to_string()]
-    );
+    assert_eq!(body[0].cells.iter().map(|cell| cell_text(&reopened, cell)).collect::<Vec<_>>(), vec!["1".to_string(), "2".to_string()]);
 }
 
 #[test]
@@ -366,10 +349,7 @@ fn markdown_spanning_table_reopens_as_a_flattened_pipe_table() {
         head: vec![TableRow { cells: vec![TableCell { children: vec![head_text], colspan: 2, rowspan: 1 }] }],
         body: vec![
             TableRow {
-                cells: vec![
-                    TableCell { children: vec![a], colspan: 1, rowspan: 2 },
-                    TableCell { children: vec![b], colspan: 1, rowspan: 1 },
-                ],
+                cells: vec![TableCell { children: vec![a], colspan: 1, rowspan: 2 }, TableCell { children: vec![b], colspan: 1, rowspan: 1 }],
             },
             TableRow { cells: vec![TableCell { children: vec![c], colspan: 1, rowspan: 1 }] },
         ],
@@ -392,11 +372,7 @@ fn markdown_spanning_table_reopens_as_a_flattened_pipe_table() {
     assert_eq!(cell_text(&reopened, &rows[0].cells[0]), "Head");
     assert!(body[0].cells.iter().any(|cell| cell_text(&reopened, cell) == "a"), "{:?}", body[0].cells);
     assert!(
-        reopened
-            .coverage
-            .loss
-            .iter()
-            .any(|loss| loss.code == "import.html.table_spans" && loss.status == SemanticStatus::Partial),
+        reopened.coverage.loss.iter().any(|loss| loss.code == "import.html.table_spans" && loss.status == SemanticStatus::Partial),
         "{:?}",
         reopened.coverage.loss
     );
@@ -425,13 +401,9 @@ fn top_level_table<'a>(graph: &'a DocumentGraph) -> &'a Block {
         .iter()
         .flat_map(|node| match &node.block {
             Block::Section { children, .. } | Block::Quote { children } => children.clone(),
-            Block::Table { head, body, foot, .. } => head
-                .iter()
-                .chain(body)
-                .chain(foot)
-                .flat_map(|row| row.cells.iter())
-                .flat_map(|cell| cell.children.iter().copied())
-                .collect(),
+            Block::Table { head, body, foot, .. } => {
+                head.iter().chain(body).chain(foot).flat_map(|row| row.cells.iter()).flat_map(|cell| cell.children.iter().copied()).collect()
+            }
             _ => Vec::new(),
         })
         .collect();
@@ -452,11 +424,7 @@ fn markdown_html_table_with_a_nested_table_round_trips_as_blocks() {
         "a nested table inside a cell must lower to blocks: {:#?}",
         graph.blocks
     );
-    assert!(
-        !graph.coverage.loss.iter().any(|loss| loss.code == "import.markdown.raw_html_unrendered"),
-        "{:?}",
-        graph.coverage.loss
-    );
+    assert!(!graph.coverage.loss.iter().any(|loss| loss.code == "import.markdown.raw_html_unrendered"), "{:?}", graph.coverage.loss);
 
     let Block::Table { body, .. } = top_level_table(&graph)
     else {
@@ -472,11 +440,7 @@ fn markdown_html_table_with_a_nested_table_round_trips_as_blocks() {
         panic!("top-level table expected after round trip: {:#?}", reopened.blocks)
     };
     let reopened_cell = &reopened_body[0].cells[0];
-    assert_eq!(
-        cell_block_kinds(&reopened, reopened_cell),
-        ["paragraph", "table"],
-        "round trip keeps the nested table: {markdown}"
-    );
+    assert_eq!(cell_block_kinds(&reopened, reopened_cell), ["paragraph", "table"], "round trip keeps the nested table: {markdown}");
 }
 
 #[test]
@@ -493,11 +457,7 @@ fn markdown_definition_list_lowers_to_paragraphs_with_a_loss_code() {
         .collect::<Vec<_>>();
     assert_eq!(texts, vec!["Term".to_string(), "definition".to_string(), "second".to_string()]);
     assert!(
-        graph
-            .coverage
-            .loss
-            .iter()
-            .any(|loss| loss.code == "import.markdown.definition_list" && loss.status == SemanticStatus::Partial),
+        graph.coverage.loss.iter().any(|loss| loss.code == "import.markdown.definition_list" && loss.status == SemanticStatus::Partial),
         "{:?}",
         graph.coverage.loss
     );
@@ -506,11 +466,7 @@ fn markdown_definition_list_lowers_to_paragraphs_with_a_loss_code() {
     let markdown = export_markdown(&graph).expect("export definition list");
     assert_eq!(markdown, "Term\n\ndefinition\n\nsecond\n\n");
     let reopened = import_markdown_bytes("definition-list-roundtrip.md", &markdown).expect("reopen definition list");
-    assert!(
-        !reopened.coverage.loss.iter().any(|loss| loss.code == "import.markdown.definition_list"),
-        "{:?}",
-        reopened.coverage.loss
-    );
+    assert!(!reopened.coverage.loss.iter().any(|loss| loss.code == "import.markdown.definition_list"), "{:?}", reopened.coverage.loss);
 }
 
 #[test]
@@ -731,12 +687,7 @@ fn markdown_image_in_a_mixed_link_label_round_trips() {
     assert!(matches!(&display[0], Inline::Text { text } if text == "cover "), "{display:#?}");
 
     let codes: Vec<&str> = graph.coverage.loss.iter().map(|loss| loss.code.as_str()).collect();
-    assert_eq!(
-        codes,
-        ["import.markdown.asset_unresolved"],
-        "the only loss is the unresolved asset: {:#?}",
-        graph.coverage.loss
-    );
+    assert_eq!(codes, ["import.markdown.asset_unresolved"], "the only loss is the unresolved asset: {:#?}", graph.coverage.loss);
 
     let markdown = export_markdown(&graph).expect("export markdown");
     assert!(markdown.contains("![alt](a.png)"), "{markdown}");
@@ -755,10 +706,7 @@ fn markdown_unresolved_reference_links_are_preserved_and_reported() {
     else {
         panic!("paragraph")
     };
-    assert!(
-        content.iter().any(|inline| matches!(inline, Inline::Text { text } if text.contains("[label][missing]"))),
-        "{content:#?}"
-    );
+    assert!(content.iter().any(|inline| matches!(inline, Inline::Text { text } if text.contains("[label][missing]"))), "{content:#?}");
     assert!(graph.coverage.loss.iter().any(|loss| loss.code == "import.markdown.unresolved_reference_link"));
 }
 
@@ -872,11 +820,7 @@ fn markdown_footnote_reopen_preserves_reference_body_and_following_text() {
     };
     assert_eq!(
         content,
-        &vec![
-            Inline::Text { text: "See".into() },
-            Inline::Note { label: "1".into(), display: None },
-            Inline::Text { text: " after".into() },
-        ]
+        &vec![Inline::Text { text: "See".into() }, Inline::Note { label: "1".into(), display: None }, Inline::Text { text: " after".into() },]
     );
     let markdown = export_markdown(&graph).expect("export");
     let reopened = import_markdown_bytes("footnote-round.md", &markdown).expect("reopen");
@@ -943,9 +887,7 @@ fn markdown_export_does_not_silently_drop_reference_identity() {
     let mut graph = DocumentGraph::new(DocumentId(11));
     let target = graph.push_block(Block::Paragraph { content: vec![Inline::Text { text: "target".into() }] });
     graph.push_block(Block::Paragraph { content: vec![Inline::Reference { target, display: "see target".into() }] });
-    assert!(
-        export_markdown(&graph).expect_err("reference identity cannot be discarded").to_string().contains("anchor mapping")
-    );
+    assert!(export_markdown(&graph).expect_err("reference identity cannot be discarded").to_string().contains("anchor mapping"));
 }
 
 #[test]
@@ -953,16 +895,9 @@ fn markdown_export_preserves_nested_section_content_on_reopen() {
     let mut graph = DocumentGraph::new(DocumentId(9));
     let lead = graph.push_block(Block::Paragraph { content: vec![Inline::Text { text: "lead paragraph".into() }] });
     let nested_body = graph.push_block(Block::Paragraph { content: vec![Inline::Text { text: "nested body".into() }] });
-    let nested_section = graph.push_block(Block::Section {
-        level: 2,
-        title: vec![Inline::Text { text: "Nested".into() }],
-        children: vec![nested_body],
-    });
-    graph.push_block(Block::Section {
-        level: 1,
-        title: vec![Inline::Text { text: "Root".into() }],
-        children: vec![lead, nested_section],
-    });
+    let nested_section =
+        graph.push_block(Block::Section { level: 2, title: vec![Inline::Text { text: "Nested".into() }], children: vec![nested_body] });
+    graph.push_block(Block::Section { level: 1, title: vec![Inline::Text { text: "Root".into() }], children: vec![lead, nested_section] });
 
     let markdown = export_markdown(&graph).expect("export");
     let reopened = import_markdown_bytes("nested.md", &markdown).expect("reopen");
@@ -1018,17 +953,14 @@ fn markdown_image_reopen_preserves_asset_relation_and_surrounding_text() {
         panic!("expected reopened paragraph")
     };
     assert!(matches!(&content[0], Inline::Text { text } if text == "before "));
-    assert!(
-        matches!(&content[1], Inline::Image { source, asset: Some(bound), .. } if source == "images/diagram.png" && *bound == asset.id)
-    );
+    assert!(matches!(&content[1], Inline::Image { source, asset: Some(bound), .. } if source == "images/diagram.png" && *bound == asset.id));
     assert!(matches!(&content[2], Inline::Text { text } if text == " after"));
 }
 
 #[test]
 fn markdown_export_rejects_containment_cycles() {
     let mut graph = DocumentGraph::new(DocumentId(10));
-    let section =
-        graph.push_block(Block::Section { level: 1, title: vec![Inline::Text { text: "Cycle".into() }], children: Vec::new() });
+    let section = graph.push_block(Block::Section { level: 1, title: vec![Inline::Text { text: "Cycle".into() }], children: Vec::new() });
     if let Block::Section { children, .. } = &mut graph.blocks[0].block {
         children.push(section);
     }
@@ -1040,9 +972,7 @@ fn markdown_export_rejects_containment_cycles() {
 #[test]
 fn markdown_export_escapes_literal_syntax_characters() {
     let mut graph = DocumentGraph::new(DocumentId(1));
-    graph.push_block(Block::Paragraph {
-        content: vec![Inline::Text { text: "literal *stars* and [brackets] | marker".into() }],
-    });
+    graph.push_block(Block::Paragraph { content: vec![Inline::Text { text: "literal *stars* and [brackets] | marker".into() }] });
 
     let markdown = export_markdown(&graph).expect("export");
     assert!(markdown.contains(r"literal \*stars\* and \[brackets\] \| marker"));
@@ -1058,10 +988,7 @@ fn markdown_export_escapes_literal_syntax_characters() {
 fn markdown_export_rejects_unrepresentable_inline_styles() {
     let mut graph = DocumentGraph::new(DocumentId(1));
     graph.push_block(Block::Paragraph {
-        content: vec![Inline::Styled {
-            style: "small_caps".into(),
-            children: vec![Inline::Text { text: "meaningful style".into() }],
-        }],
+        content: vec![Inline::Styled { style: "small_caps".into(), children: vec![Inline::Text { text: "meaningful style".into() }] }],
     });
 
     let error = export_markdown(&graph).expect_err("style must not be silently dropped");
@@ -1126,11 +1053,7 @@ fn markdown_thematic_break_lowers_to_the_canonical_opaque_block() {
         Block::Opaque { kind: "thematic_break".into(), payload_hint: "---".into(), status: SemanticStatus::Partial }
     );
     assert!(matches!(&graph.blocks[2].block, Block::Paragraph { .. }), "{:#?}", graph.blocks[2].block);
-    assert!(
-        !graph.coverage.loss.iter().any(|loss| loss.code == "import.markdown.horizontal_rule"),
-        "{:#?}",
-        graph.coverage.loss
-    );
+    assert!(!graph.coverage.loss.iter().any(|loss| loss.code == "import.markdown.horizontal_rule"), "{:#?}", graph.coverage.loss);
     assert!(graph.validate().is_valid());
 
     let markdown = export_markdown(&graph).expect("export markdown");
@@ -1169,11 +1092,8 @@ fn markdown_mermaid_fence_lowers_to_a_diagram_block() {
 
 #[test]
 fn markdown_diagram_round_trips_through_a_mermaid_fence() {
-    let graph = import_markdown_bytes(
-        "diagram-roundtrip.md",
-        "```mermaid\nflowchart TD\n  A[Start] --> B{Done?}\n  B -->|yes| C[Stop]\n```\n",
-    )
-    .expect("import markdown");
+    let graph = import_markdown_bytes("diagram-roundtrip.md", "```mermaid\nflowchart TD\n  A[Start] --> B{Done?}\n  B -->|yes| C[Stop]\n```\n")
+        .expect("import markdown");
 
     let markdown = export_markdown(&graph).expect("export diagram markdown");
     assert!(markdown.contains("```mermaid"), "{markdown:?}");
@@ -1216,11 +1136,7 @@ fn markdown_fenced_code_allows_an_indented_opening_fence() {
     assert_eq!(content, "A[Start] --> B");
 
     let deep = import_markdown_bytes("deep-fence.md", "    ```mermaid\nA[Start] --> B\n    ```\n").expect("import markdown");
-    assert!(
-        !matches!(&deep.blocks[0].block, Block::Diagram { .. }),
-        "four spaces must not open a fence: {:#?}",
-        deep.blocks[0].block
-    );
+    assert!(!matches!(&deep.blocks[0].block, Block::Diagram { .. }), "four spaces must not open a fence: {:#?}", deep.blocks[0].block);
 }
 
 #[test]
@@ -1234,10 +1150,7 @@ fn markdown_fenced_code_keeps_inner_blank_lines() {
 fn markdown_setext_heading_is_not_a_thematic_break() {
     let graph = import_markdown_bytes("setext.md", "Title\n---\n").expect("import markdown");
     assert_eq!(graph.blocks.len(), 1, "{:#?}", graph.blocks);
-    assert_eq!(
-        graph.blocks[0].block,
-        Block::Section { level: 2, title: vec![Inline::Text { text: "Title".into() }], children: Vec::new() }
-    );
+    assert_eq!(graph.blocks[0].block, Block::Section { level: 2, title: vec![Inline::Text { text: "Title".into() }], children: Vec::new() });
     assert!(graph.coverage.loss.is_empty(), "{:#?}", graph.coverage.loss);
     assert!(graph.validate().is_valid());
 }
@@ -1330,11 +1243,7 @@ fn markdown_raw_html_block_is_preserved() {
     // The block is preserved verbatim, but the semantic SVG/PDF reflow does not
     // lay raw HTML out, so the loss stays truthful instead of being cleared.
     assert!(
-        graph
-            .coverage
-            .loss
-            .iter()
-            .any(|loss| loss.code == "import.markdown.raw_html_unrendered" && loss.status == SemanticStatus::Partial),
+        graph.coverage.loss.iter().any(|loss| loss.code == "import.markdown.raw_html_unrendered" && loss.status == SemanticStatus::Partial),
         "the unrendered raw HTML block must surface a structured loss: {:#?}",
         graph.coverage.loss
     );
@@ -1343,12 +1252,7 @@ fn markdown_raw_html_block_is_preserved() {
 fn markdown_front_matter_is_reported_as_an_unmapped_loss_with_provenance() {
     let source = "---\ntitle: Notes\n---\n\nBody.\n";
     let graph = import_markdown_bytes("front.md", source).expect("import markdown");
-    let index = graph
-        .coverage
-        .loss
-        .iter()
-        .position(|loss| loss.code == "import.markdown.front_matter_unmapped")
-        .expect("front matter loss");
+    let index = graph.coverage.loss.iter().position(|loss| loss.code == "import.markdown.front_matter_unmapped").expect("front matter loss");
     assert_eq!(graph.coverage.loss[index].status, SemanticStatus::Unsupported);
     assert!(!graph.coverage.complete);
     let span = graph.loss_span(index).expect("front matter span");
@@ -1371,8 +1275,8 @@ fn markdown_front_matter_is_reported_as_an_unmapped_loss_with_provenance() {
 
 #[test]
 fn markdown_images_without_bytes_report_asset_unresolved() {
-    let graph = import_markdown_bytes("images.md", "A local ![alt](pic.png) and a remote ![r](https://example.com/r.png)\n")
-        .expect("import markdown");
+    let graph =
+        import_markdown_bytes("images.md", "A local ![alt](pic.png) and a remote ![r](https://example.com/r.png)\n").expect("import markdown");
     let codes = graph.coverage.loss.iter().map(|loss| loss.code.as_str()).collect::<Vec<_>>();
     assert_eq!(codes, vec!["import.markdown.asset_unresolved", "import.markdown.asset_unresolved"], "{codes:?}");
     assert!(graph.coverage.loss.iter().all(|loss| loss.status == SemanticStatus::Partial), "{:#?}", graph.coverage.loss);

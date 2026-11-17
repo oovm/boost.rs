@@ -3,8 +3,10 @@
 //! This is a **transport gate**, not a frozen native wire schema. The payload
 //! remains JSON so field evolution stays on the existing serde path.
 
-use crate::error::{Error, Result};
-use crate::graph::Graph;
+use crate::{
+    error::{Error, Result},
+    graph::Graph,
+};
 
 /// File magic: ASCII `UCF` followed by NUL.
 pub const MAGIC: &[u8; 4] = b"UCF\0";
@@ -25,20 +27,14 @@ pub fn encode(graph: &Graph) -> Result<Vec<u8>> {
 /// Decode `.ucf` bytes produced by [`encode`] (or an equal layout).
 pub fn decode(bytes: &[u8]) -> Result<Graph> {
     if bytes.len() < 8 {
-        return Err(Error::TruncatedBinary(format!(
-            "need at least 8 header bytes, got {}",
-            bytes.len()
-        )));
+        return Err(Error::TruncatedBinary(format!("need at least 8 header bytes, got {}", bytes.len())));
     }
     if &bytes[0..4] != MAGIC.as_slice() {
         return Err(Error::InvalidMagic);
     }
     let major = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
     if major != WIRE_MAJOR {
-        return Err(Error::UnsupportedWireMajor {
-            found: major,
-            supported: WIRE_MAJOR,
-        });
+        return Err(Error::UnsupportedWireMajor { found: major, supported: WIRE_MAJOR });
     }
     serde_json::from_slice(&bytes[8..]).map_err(|e| Error::Serde(e.to_string()))
 }

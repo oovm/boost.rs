@@ -14,8 +14,8 @@ use database_cluster::topology::ShardMap;
 use database_execution::{cluster::LocalExecutor, sql_exec::execute_plan};
 use database_query::{
     SqlCatalogBoundStatement, SqlResult, SqlSchemaRegistry, SqlValue, bind_sql_catalog, parse_ddl, plan_statement_for_dialect,
+    sql::{SqlDialect, SqlFrontendError},
 };
-use database_query::sql::{SqlDialect, SqlFrontendError};
 use database_storage::cluster_kv::FileShard;
 use database_types::cluster::{ShardEpoch, ShardId};
 
@@ -266,7 +266,8 @@ fn update_statement_binds_to_update_variant() {
     let gateway = Gateway::new("bind-shape");
     gateway.expect_sql("CREATE TABLE shape (id INT NOT NULL PRIMARY KEY, n INT)");
     let catalog = gateway.registry.catalog();
-    let bound = bind_sql_catalog("UPDATE shape SET n = n + 1 WHERE id = 1", &catalog, catalog.schema_version(), SqlDialect::Mysql).expect("bind");
+    let bound =
+        bind_sql_catalog("UPDATE shape SET n = n + 1 WHERE id = 1", &catalog, catalog.schema_version(), SqlDialect::Mysql).expect("bind");
     assert!(matches!(bound, SqlCatalogBoundStatement::Update(_)));
 }
 
@@ -292,14 +293,7 @@ fn mixed_width_primary_key_order_by_keeps_numeric_order() {
     gateway.expect_sql("CREATE TABLE seq (id INT NOT NULL PRIMARY KEY, v INT)");
     gateway.expect_sql("INSERT INTO seq (id, v) VALUES (9, 9), (10, 10), (99, 99), (100, 100), (1000, 1000)");
     let result = gateway.expect_sql("SELECT id FROM seq ORDER BY id LIMIT 3");
-    assert_eq!(
-        result.rows,
-        vec![
-            vec![SqlValue::Integer(9)],
-            vec![SqlValue::Integer(10)],
-            vec![SqlValue::Integer(99)],
-        ]
-    );
+    assert_eq!(result.rows, vec![vec![SqlValue::Integer(9)], vec![SqlValue::Integer(10)], vec![SqlValue::Integer(99)],]);
 }
 
 /// 列级 `UNIQUE` 与表级 `UNIQUE KEY` 一样生效；MySQL 的
@@ -312,7 +306,9 @@ fn inline_unique_and_on_duplicate_key_update_follow_mysql_semantics() {
 
     // 主键冲突：`VALUES(col)` 取提议行的值，MySQL 对改写报 2 行。
     assert_eq!(
-        gateway.expect_sql("INSERT INTO ups (id, uk, v, pad) VALUES (1, 10, 2, 'b') ON DUPLICATE KEY UPDATE v = VALUES(v), pad = VALUES(pad)").affected_rows,
+        gateway
+            .expect_sql("INSERT INTO ups (id, uk, v, pad) VALUES (1, 10, 2, 'b') ON DUPLICATE KEY UPDATE v = VALUES(v), pad = VALUES(pad)")
+            .affected_rows,
         2
     );
     assert_eq!(gateway.scalar_integer("SELECT v FROM ups WHERE id = 1"), 2);

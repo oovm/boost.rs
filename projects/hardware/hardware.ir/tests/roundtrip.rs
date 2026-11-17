@@ -1,6 +1,6 @@
 use hardware_ir::{
-    Access, DepEdge, DepKind, Domain, Graph, Objective, Priority, ResourceGraph, ResourceId,
-    ResourceKind, ResourceNode, ShaderId, TaskGraph, TaskId, TaskKind, TaskNode,
+    Access, DepEdge, DepKind, Domain, Graph, Objective, Priority, ResourceGraph, ResourceId, ResourceKind, ResourceNode, ShaderId, TaskGraph,
+    TaskId, TaskKind, TaskNode,
 };
 
 #[test]
@@ -25,12 +25,7 @@ fn graph_serde_roundtrip() {
                 objective: Objective::MaxThroughput,
                 priority: Priority::Batch,
             }],
-            edges: vec![DepEdge {
-                from_task: None,
-                from_resource: Some(ResourceId(1)),
-                to_task: TaskId(10),
-                kind: DepKind::Data,
-            }],
+            edges: vec![DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data }],
         },
     };
 

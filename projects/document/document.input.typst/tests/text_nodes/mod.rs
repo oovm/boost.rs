@@ -117,9 +117,7 @@ Before /* COMMENT_BLOCK_MUST_VANISH */ after.
 
 #[test]
 fn escapes_keep_literal_text_and_do_not_shift_following_spans() {
-    for (source, expected) in
-        [("\\*a\n\n#set page(width: 1cm)\n", "*a"), ("\\*中文后文\n\n#set page(width: 1cm)\n", "*中文后文")]
-    {
+    for (source, expected) in [("\\*a\n\n#set page(width: 1cm)\n", "*a"), ("\\*中文后文\n\n#set page(width: 1cm)\n", "*中文后文")] {
         let imported = import_source("virtual://escape.typ", source).expect("escapes must import");
 
         let mut texts = Vec::new();

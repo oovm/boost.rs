@@ -1,5 +1,7 @@
-use alloc::string::{String, ToString};
-use alloc::vec::Vec;
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 use core::fmt::{self, Display, Formatter};
 
 /// Typed field value attached to console events and diagnostic projections.

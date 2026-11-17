@@ -210,8 +210,7 @@ impl DataSnapshot {
 
             for (index, value) in column.values.iter().enumerate() {
                 if value.is_null() {
-                    diagnostics
-                        .push(chart_warning(codes::MISSING_VALUE, format!("field `{}` row {index} is missing", column.name)));
+                    diagnostics.push(chart_warning(codes::MISSING_VALUE, format!("field `{}` row {index} is missing", column.name)));
                     continue;
                 }
                 if let Value::Number(number) = value {

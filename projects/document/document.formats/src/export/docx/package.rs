@@ -112,12 +112,7 @@ fn root_rels_xml(include_metadata: bool) -> String {
     )
 }
 
-fn content_types_xml(
-    include_numbering: bool,
-    image_extensions: &[String],
-    include_footnotes: bool,
-    include_metadata: bool,
-) -> String {
+fn content_types_xml(include_numbering: bool, image_extensions: &[String], include_footnotes: bool, include_metadata: bool) -> String {
     let mut xml = String::from(
         r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">

@@ -66,14 +66,9 @@ pub fn inspect_docx_decode(path: impl AsRef<Path>, part_filter: Option<&str>) ->
 }
 
 /// Decodes DOCX package members without projecting document semantics.
-pub fn inspect_docx_decode_bytes(
-    label: impl Into<String>,
-    bytes: Vec<u8>,
-    part_filter: Option<&str>,
-) -> Result<DocxInspectDecode> {
+pub fn inspect_docx_decode_bytes(label: impl Into<String>, bytes: Vec<u8>, part_filter: Option<&str>) -> Result<DocxInspectDecode> {
     let label = label.into();
-    let inspect = inspect_docx_bytes(&label, &bytes, part_filter, true, InspectBudget::default())
-        .map_err(format_error::map_format_error)?;
+    let inspect = inspect_docx_bytes(&label, &bytes, part_filter, true, InspectBudget::default()).map_err(format_error::map_format_error)?;
     let parts = inspect
         .parts
         .into_iter()
@@ -91,8 +86,7 @@ pub fn inspect_docx_decode_bytes(
 /// Indexes DOCX bytes without reading document semantics.
 pub fn inspect_docx_index_bytes(label: impl Into<String>, bytes: Vec<u8>) -> Result<DocxInspectIndex> {
     let label = label.into();
-    let inspect =
-        inspect_docx_bytes(&label, &bytes, None, false, InspectBudget::default()).map_err(format_error::map_format_error)?;
+    let inspect = inspect_docx_bytes(&label, &bytes, None, false, InspectBudget::default()).map_err(format_error::map_format_error)?;
     Ok(DocxInspectIndex {
         format: inspect.format,
         outer: inspect.outer,

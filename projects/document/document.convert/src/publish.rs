@@ -59,8 +59,7 @@ pub fn publish_markdown_project(
     // (bad asset path, disk full, …) returns before `output_dir` is touched,
     // and the staging directory is always removed so a failed publish leaves
     // neither a dirty output directory nor a half-written sibling behind.
-    let result =
-        stage_markdown_project(&staging_dir, project, report_json).and_then(|()| replace_project_dir(&staging_dir, output_dir));
+    let result = stage_markdown_project(&staging_dir, project, report_json).and_then(|()| replace_project_dir(&staging_dir, output_dir));
     let _ = fs::remove_dir_all(&staging_dir);
     result?;
 
@@ -89,9 +88,10 @@ fn stage_markdown_project(staging_dir: &Path, project: &MarkdownProject, report_
     }
 
     for asset in &project.assets {
-        let file_name = asset.relative_path.strip_prefix("assets/").ok_or_else(|| {
-            AdapterError::invalid_input(format!("asset path must start with assets/: {}", asset.relative_path))
-        })?;
+        let file_name = asset
+            .relative_path
+            .strip_prefix("assets/")
+            .ok_or_else(|| AdapterError::invalid_input(format!("asset path must start with assets/: {}", asset.relative_path)))?;
         publish_bytes(assets_dir.join(file_name), &asset.bytes)?;
     }
 
@@ -113,8 +113,7 @@ fn replace_project_dir(staging_dir: &Path, output_dir: &Path) -> Result<()> {
         // an explicit remove-before-rename keeps semantics identical.
         Err(_) => {
             if output_dir.exists() {
-                fs::remove_dir_all(output_dir)
-                    .map_err(|error| AdapterError::io(error, Some(output_dir.display().to_string())))?;
+                fs::remove_dir_all(output_dir).map_err(|error| AdapterError::io(error, Some(output_dir.display().to_string())))?;
             }
             fs::rename(staging_dir, output_dir).map_err(|e| {
                 let msg = e.to_string();
@@ -147,10 +146,8 @@ fn publish_bytes_atomic(path: &Path, content: &[u8]) -> io::Result<()> {
 }
 
 fn staging_path(parent: &Path, target: &Path) -> io::Result<PathBuf> {
-    let file_name =
-        target.file_name().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "destination has no file name"))?;
-    let nanos =
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|duration| duration.as_nanos()).unwrap_or(0);
+    let file_name = target.file_name().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "destination has no file name"))?;
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|duration| duration.as_nanos()).unwrap_or(0);
     Ok(parent.join(format!(".{}.{}.{}.tmp", file_name.to_string_lossy(), std::process::id(), nanos)))
 }
 

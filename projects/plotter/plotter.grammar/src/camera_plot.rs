@@ -41,35 +41,18 @@ pub enum Camera3dSpec {
 impl Camera3dSpec {
     /// 默认透视。
     pub fn perspective_default() -> Self {
-        Self::Perspective {
-            eye: Vec3::new(2.5, 2.0, 2.5),
-            target: Vec3::ZERO,
-            up: Vec3::Y,
-            fovy_degrees: 45.0,
-            near: 0.1,
-            far: 100.0,
-        }
+        Self::Perspective { eye: Vec3::new(2.5, 2.0, 2.5), target: Vec3::ZERO, up: Vec3::Y, fovy_degrees: 45.0, near: 0.1, far: 100.0 }
     }
 
     /// 转为 Scene 相机。
     pub fn to_scene_camera(&self) -> CameraSpec {
         match self {
-            Self::Perspective { eye, target, up, fovy_degrees, near, far } => CameraSpec::Perspective {
-                eye: *eye,
-                target: *target,
-                up: *up,
-                fovy_degrees: *fovy_degrees,
-                near: *near,
-                far: *far,
-            },
-            Self::Orthographic { eye, target, up, half_extent_y, near, far } => CameraSpec::Orthographic3d {
-                eye: *eye,
-                target: *target,
-                up: *up,
-                half_extent_y: *half_extent_y,
-                near: *near,
-                far: *far,
-            },
+            Self::Perspective { eye, target, up, fovy_degrees, near, far } => {
+                CameraSpec::Perspective { eye: *eye, target: *target, up: *up, fovy_degrees: *fovy_degrees, near: *near, far: *far }
+            }
+            Self::Orthographic { eye, target, up, half_extent_y, near, far } => {
+                CameraSpec::Orthographic3d { eye: *eye, target: *target, up: *up, half_extent_y: *half_extent_y, near: *near, far: *far }
+            }
         }
     }
 }

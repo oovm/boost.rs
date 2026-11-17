@@ -299,9 +299,7 @@ fn paint_autoshape(
         ));
     }
     else {
-        svg.push_str(&format!(
-            "<rect x=\"{x:.1}\" y=\"{y:.1}\" width=\"{width:.1}\" height=\"{height:.1}\" fill=\"{fill}\"{stroke}/>"
-        ));
+        svg.push_str(&format!("<rect x=\"{x:.1}\" y=\"{y:.1}\" width=\"{width:.1}\" height=\"{height:.1}\" fill=\"{fill}\"{stroke}/>"));
     }
     let Some(text) = &shape.text
     else {
@@ -358,10 +356,7 @@ fn paint_autoshape(
     if clipped {
         issues.push(PptxIssue {
             code: codes::VIEW_TEXT_OVERFLOW.to_owned(),
-            message: format!(
-                "slide {slide} shape `{}` text exceeds its frame and is clipped after {painted_lines} lines",
-                shape.id
-            ),
+            message: format!("slide {slide} shape `{}` text exceeds its frame and is clipped after {painted_lines} lines", shape.id),
             status: IssueStatus::Partial,
             slide: Some(slide),
             shape: Some(shape.id),
@@ -381,16 +376,7 @@ fn paint_autoshape(
     });
 }
 
-fn paint_picture(
-    shape: &Shape,
-    slide: u32,
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-    svg: &mut String,
-    issues: &mut Vec<PptxIssue>,
-) {
+fn paint_picture(shape: &Shape, slide: u32, x: f64, y: f64, width: f64, height: f64, svg: &mut String, issues: &mut Vec<PptxIssue>) {
     let Some(image) = &shape.image
     else {
         return;
@@ -442,8 +428,7 @@ fn paint_table(
         let row_height = emu_to_px(row.height).max(1.0);
         let mut cursor_x = x;
         for (position, cell) in row.cells.iter().enumerate() {
-            let width_emu =
-                table.column_widths.get(position).copied().unwrap_or(column_total / table.column_widths.len().max(1) as i64);
+            let width_emu = table.column_widths.get(position).copied().unwrap_or(column_total / table.column_widths.len().max(1) as i64);
             let cell_width = (width_emu as f64 / column_total as f64) * width;
             let fill = match cell.fill.as_ref() {
                 Some(Fill::Solid(color)) => color.clone(),
@@ -463,7 +448,7 @@ fn paint_table(
                         "<text x=\"{:.1}\" y=\"{line_y:.1}\" font-family=\"sans-serif\" font-size=\"{font_px:.1}\" fill=\"#1a1a1a\">{}</text>",
                         cursor_x + 5.0,
                         escape(text_line)
-                        ));
+                    ));
                     line_y += font_px * 1.15;
                 }
                 if lines.len() > ((row_height - 4.0) / (font_px * 1.15)).max(1.0) as usize {
@@ -564,10 +549,7 @@ fn compose_html(presentation: &PptxPresentation, views: &[SlideView], issues: &[
             view.index, view.index, view.svg
         ));
         if let Some(slide) = slide {
-            html.push_str(&format!(
-                "<p class=\"notes\"><b>Layout:</b> {}</p>",
-                escape(slide.layout_name.as_deref().unwrap_or("unknown"))
-            ));
+            html.push_str(&format!("<p class=\"notes\"><b>Layout:</b> {}</p>", escape(slide.layout_name.as_deref().unwrap_or("unknown"))));
             if let Some(notes) = &slide.notes {
                 html.push_str(&format!("<p class=\"notes\"><b>Notes:</b> {}</p>", escape(notes).replace('\n', "<br>")));
             }

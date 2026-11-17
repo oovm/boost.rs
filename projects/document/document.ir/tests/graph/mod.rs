@@ -103,10 +103,7 @@ fn diagram_source_survives_wire_roundtrip() {
     );
 
     let restored: DocumentGraph = serde_json::from_str(&json).expect("deserialize");
-    assert_eq!(
-        restored.blocks[0].block,
-        Block::Diagram { language: "mermaid".into(), source: "flowchart TD\n  A --> B".into() }
-    );
+    assert_eq!(restored.blocks[0].block, Block::Diagram { language: "mermaid".into(), source: "flowchart TD\n  A --> B".into() });
     assert!(restored.validate().is_valid());
 }
 
@@ -123,11 +120,7 @@ fn source_spans_travel_with_blocks_and_loss_markers() {
         },
         Some(span),
     );
-    graph.push_loss(LossMarker {
-        code: "other.loss".to_string(),
-        message: "no span".to_string(),
-        status: SemanticStatus::Lossy,
-    });
+    graph.push_loss(LossMarker { code: "other.loss".to_string(), message: "no span".to_string(), status: SemanticStatus::Lossy });
 
     assert_eq!(graph.block_span(id), Some(span));
     assert_eq!(graph.loss_span(0), Some(span));

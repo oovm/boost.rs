@@ -22,27 +22,13 @@ impl<'a> ExprParser<'a> {
             let span = lex.span();
             match tok {
                 Ok(CodeToken::CodeEnd) => {
-                    return Err(ParseError::at(
-                        source,
-                        file,
-                        base + span.start,
-                        span.len(),
-                        "unexpected `%>` inside expression",
-                        "here",
-                    )
-                    .with_code(codes::PARSE_UNEXPECTED_TOKEN));
+                    return Err(ParseError::at(source, file, base + span.start, span.len(), "unexpected `%>` inside expression", "here")
+                        .with_code(codes::PARSE_UNEXPECTED_TOKEN));
                 }
                 Ok(t) => tokens.push((t, span)),
                 Err(()) => {
-                    return Err(ParseError::at(
-                        source,
-                        file,
-                        base + span.start,
-                        span.len().max(1),
-                        "invalid token in expression",
-                        "bad token",
-                    )
-                    .with_code(codes::PARSE_UNEXPECTED_TOKEN));
+                    return Err(ParseError::at(source, file, base + span.start, span.len().max(1), "invalid token in expression", "bad token")
+                        .with_code(codes::PARSE_UNEXPECTED_TOKEN));
                 }
             }
         }
@@ -53,15 +39,8 @@ impl<'a> ExprParser<'a> {
         let expr = self.parse_pipe()?;
         if self.pos != self.tokens.len() {
             let span = self.peek_span();
-            return Err(ParseError::at(
-                self.source,
-                self.file,
-                span.start,
-                span.len(),
-                "trailing input in expression",
-                "unexpected",
-            )
-            .with_code(codes::PARSE_TRAILING_INPUT));
+            return Err(ParseError::at(self.source, self.file, span.start, span.len(), "trailing input in expression", "unexpected")
+                .with_code(codes::PARSE_TRAILING_INPUT));
         }
         Ok(expr)
     }
@@ -307,15 +286,8 @@ impl<'a> ExprParser<'a> {
                     let index = self.parse_pipe()?;
                     if !matches!(self.bump(), Some(CodeToken::RBracket)) {
                         let span = self.peek_span();
-                        return Err(ParseError::at(
-                            self.source,
-                            self.file,
-                            span.start,
-                            span.len(),
-                            "expected `]`",
-                            "expected ]",
-                        )
-                        .with_code(codes::PARSE_UNCLOSED_EXPRESSION));
+                        return Err(ParseError::at(self.source, self.file, span.start, span.len(), "expected `]`", "expected ]")
+                            .with_code(codes::PARSE_UNCLOSED_EXPRESSION));
                     }
                     left = NativeExpr::Index { object: Box::new(left), index: Box::new(index) };
                 }
@@ -334,15 +306,8 @@ impl<'a> ExprParser<'a> {
                     }
                     if !matches!(self.bump(), Some(CodeToken::RParen)) {
                         let span = self.peek_span();
-                        return Err(ParseError::at(
-                            self.source,
-                            self.file,
-                            span.start,
-                            span.len(),
-                            "expected `)`",
-                            "expected )",
-                        )
-                        .with_code(codes::PARSE_UNCLOSED_EXPRESSION));
+                        return Err(ParseError::at(self.source, self.file, span.start, span.len(), "expected `)`", "expected )")
+                            .with_code(codes::PARSE_UNCLOSED_EXPRESSION));
                     }
                     left = NativeExpr::Call { callee: Box::new(left), arguments: args };
                 }
@@ -360,15 +325,8 @@ impl<'a> ExprParser<'a> {
             Some(CodeToken::Number(n)) => {
                 let num: serde_json::Number = n.parse().map_err(|_| {
                     let span = self.peek_span();
-                    ParseError::at(
-                        self.source,
-                        self.file,
-                        span.start,
-                        span.len(),
-                        format!("invalid number `{n}`"),
-                        "bad number",
-                    )
-                    .with_code(codes::PARSE_UNEXPECTED_TOKEN)
+                    ParseError::at(self.source, self.file, span.start, span.len(), format!("invalid number `{n}`"), "bad number")
+                        .with_code(codes::PARSE_UNEXPECTED_TOKEN)
                 })?;
                 Ok(NativeExpr::Literal(Value::Number(num)))
             }

@@ -20,8 +20,8 @@ mod transform;
 
 pub use color::Color;
 pub use diagnostics::{
-    ByteRange, Diagnostic, DiagnosticLabel, DiagnosticLocation, DiagnosticOrigin, DiagnosticSeverity, LabelRole, Message,
-    NAMESPACE, SourceRef, codes, diagnostic, origin,
+    ByteRange, Diagnostic, DiagnosticLabel, DiagnosticLocation, DiagnosticOrigin, DiagnosticSeverity, LabelRole, Message, NAMESPACE, SourceRef,
+    codes, diagnostic, origin,
 };
 pub use geometry::{Bounds, Point, Rect, Size};
 pub use rejections::{CATALOG_JSON, CodeDoc, MatrixRow, RejectionCase, cases, cases_for, code_docs, matrix};

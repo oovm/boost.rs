@@ -21,7 +21,9 @@ pub struct UcfBoxBlur3x3Builder {
 
 impl UcfBoxBlur3x3Builder {
     /// 创建 3×3 盒式模糊 Builder。
-    pub fn new(width: u32, height: u32) -> Self { Self { width, height } }
+    pub fn new(width: u32, height: u32) -> Self {
+        Self { width, height }
+    }
 
     /// 展开通用 U32 索引算术和 F32 资源读写程序。
     pub fn build(self) -> Result<Program, Error> {
@@ -79,11 +81,17 @@ impl UcfBoxBlur3x3Builder {
             builder.store_local(count, b(&builder, BinOp::Add, Expr::LoadLocal(count), builder.const_f32(1.0)));
         }
         for channel in 0usize..3 {
-            builder.store_buffer(2, b(&builder, BinOp::Add, output.clone(), builder.const_u32(channel as u32)),
-                b(&builder, BinOp::Div, Expr::LoadLocal(sum[channel]), Expr::LoadLocal(count)));
+            builder.store_buffer(
+                2,
+                b(&builder, BinOp::Add, output.clone(), builder.const_u32(channel as u32)),
+                b(&builder, BinOp::Div, Expr::LoadLocal(sum[channel]), Expr::LoadLocal(count)),
+            );
         }
-        let valid = builder.select(b(&builder, BinOp::Gt, width.clone(), builder.const_u32(0)),
-            b(&builder, BinOp::Gt, height, builder.const_u32(0)), Expr::ConstBool(false));
+        let valid = builder.select(
+            b(&builder, BinOp::Gt, width.clone(), builder.const_u32(0)),
+            b(&builder, BinOp::Gt, height, builder.const_u32(0)),
+            Expr::ConstBool(false),
+        );
         let status = builder.select(valid, builder.const_f32(1.0), builder.const_f32(2.0));
         ProgramBuilder::new()
             .structured_entry(builder, Ty::f32(), status)
@@ -113,19 +121,13 @@ mod tests {
     #[test]
     fn blur_builder_matches_reference_for_non_degenerate_image() {
         let program = UcfBoxBlur3x3Builder::new(3, 2).build().unwrap();
-        let input = [
-            1.0, 0.0, 0.0, 2.0, 0.0, 0.0, 3.0, 0.0, 0.0,
-            4.0, 0.0, 0.0, 5.0, 0.0, 0.0, 6.0, 0.0, 0.0,
-        ];
+        let input = [1.0, 0.0, 0.0, 2.0, 0.0, 0.0, 3.0, 0.0, 0.0, 4.0, 0.0, 0.0, 5.0, 0.0, 0.0, 6.0, 0.0, 0.0];
         let mut cpu = CpuInterpreter::new();
         cpu.with_buffer(1, input.into_iter().map(Value::F32).collect());
         cpu.with_buffer(2, vec![Value::F32(0.0); 18]);
         cpu.run_parallel(&program, 6).unwrap();
         let output = cpu.buffer(2).unwrap();
-        let expected = [
-            2.3333333, 3.0, 3.6666667,
-            3.3333333, 4.0, 4.6666667,
-        ];
+        let expected = [2.3333333, 3.0, 3.6666667, 3.3333333, 4.0, 4.6666667];
         for (pixel, expected_red) in expected.into_iter().enumerate() {
             assert!((output[pixel * 3].as_f64().unwrap() - expected_red).abs() < 1.0e-5);
         }

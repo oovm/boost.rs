@@ -9,10 +9,12 @@
 
 use geometry_types::Rgba;
 
-use crate::display_ops::{Chroma, Displace, Grain, Sweep};
-use crate::effect::EffectStack;
-use crate::generative::{BeamsEffect, ParticlesEffect};
-use crate::stack_bloom::Bloom;
+use crate::{
+    display_ops::{Chroma, Displace, Grain, Sweep},
+    effect::EffectStack,
+    generative::{BeamsEffect, ParticlesEffect},
+    stack_bloom::Bloom,
+};
 use media_particles::{Beams, Particles};
 
 const AMBER: Rgba = Rgba([255, 196, 120, 255]);
@@ -27,58 +29,29 @@ pub struct Preset {
 
 /// 出厂目录，顺序稳定。
 pub const PRESETS: &[Preset] = &[
-    Preset {
-        name: "cinematic",
-        description: "Soft bloom, slight colour split, restrained grain",
-        build: cinematic,
-    },
-    Preset {
-        name: "dreamy",
-        description: "Wide bloom with a slow displacement",
-        build: dreamy,
-    },
-    Preset {
-        name: "glitch",
-        description: "Channel split, wave displacement and hard grain",
-        build: glitch,
-    },
-    Preset {
-        name: "fireside",
-        description: "Sparks, warm bloom and a travelling light band",
-        build: fireside,
-    },
-    Preset {
-        name: "clean",
-        description: "Only the lightest touch of grain",
-        build: clean,
-    },
+    Preset { name: "cinematic", description: "Soft bloom, slight colour split, restrained grain", build: cinematic },
+    Preset { name: "dreamy", description: "Wide bloom with a slow displacement", build: dreamy },
+    Preset { name: "glitch", description: "Channel split, wave displacement and hard grain", build: glitch },
+    Preset { name: "fireside", description: "Sparks, warm bloom and a travelling light band", build: fireside },
+    Preset { name: "clean", description: "Only the lightest touch of grain", build: clean },
 ];
 
 fn cinematic() -> EffectStack {
     // 旧显示域 (0.62, 0.55, 0.55)「soft bloom」→ HDR (1.5, 0.15)：
     // 阈值 1.5 对应上转换显示线性亮度 0.75（sRGB 字节约 225），只让真高光
     // 参与；强度 0.15 低于默认 0.18，保持「克制」的定位。
-    EffectStack::new()
-        .push(Bloom::new(1.5, 0.15))
-        .push(Chroma::new(0.0015))
-        .push(Grain::new(0.16, 900.0))
+    EffectStack::new().push(Bloom::new(1.5, 0.15)).push(Chroma::new(0.0015)).push(Grain::new(0.16, 900.0))
 }
 
 fn dreamy() -> EffectStack {
     // 旧显示域 (0.5, 0.8, 0.7)「wide bloom」→ HDR (0.9, 0.3)：
     // 阈值 0.9 低于显示白，让中间调以上整体起雾（旧 0.5×255=128 的
     // 「大面积命中」意图）；强度 0.3 高于默认，配合宽域扩散。
-    EffectStack::new()
-        .push(Bloom::new(0.9, 0.3))
-        .push(Displace::new(0.004, 1.5, 0.15))
-        .push(crate::display_ops::Blur::new(0.04))
+    EffectStack::new().push(Bloom::new(0.9, 0.3)).push(Displace::new(0.004, 1.5, 0.15)).push(crate::display_ops::Blur::new(0.04))
 }
 
 fn glitch() -> EffectStack {
-    EffectStack::new()
-        .push(Chroma::new(0.006))
-        .push(Displace::new(0.012, 6.0, 2.5))
-        .push(Grain::new(0.4, 2200.0))
+    EffectStack::new().push(Chroma::new(0.006)).push(Displace::new(0.012, 6.0, 2.5)).push(Grain::new(0.4, 2200.0))
 }
 
 fn fireside() -> EffectStack {

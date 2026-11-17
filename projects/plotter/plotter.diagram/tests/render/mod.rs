@@ -26,11 +26,8 @@ fn example_spec() -> DiagramSpec {
     let mut spec = DiagramSpec::new(Direction::TopDown);
     spec.nodes = vec![first, node("B")];
     spec.edges = vec![edge("A", "B", Some("go"))];
-    spec.clusters = vec![Cluster {
-        id: "group".to_string(),
-        label: Some("Group".to_string()),
-        members: vec!["A".to_string(), "B".to_string()],
-    }];
+    spec.clusters =
+        vec![Cluster { id: "group".to_string(), label: Some("Group".to_string()), members: vec!["A".to_string(), "B".to_string()] }];
     spec
 }
 
@@ -139,10 +136,7 @@ fn edge_labels_paint_a_backing_plate_under_the_text() {
             let segment = pair[0].distance(pair[1]);
             if remaining <= segment && segment > 0.0 {
                 let ratio = remaining / segment;
-                center = plotter_scene::Point::new(
-                    pair[0].x + (pair[1].x - pair[0].x) * ratio,
-                    pair[0].y + (pair[1].y - pair[0].y) * ratio,
-                );
+                center = plotter_scene::Point::new(pair[0].x + (pair[1].x - pair[0].x) * ratio, pair[0].y + (pair[1].y - pair[0].y) * ratio);
                 break;
             }
             remaining -= segment;

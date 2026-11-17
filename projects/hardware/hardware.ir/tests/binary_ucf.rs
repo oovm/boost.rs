@@ -1,7 +1,6 @@
 use hardware_ir::{
-    decode, encode, Access, DepEdge, DepKind, Domain, Error, Graph, Objective, Priority,
-    ResourceGraph, ResourceId, ResourceKind, ResourceNode, ShaderId, TaskGraph, TaskId, TaskKind,
-    TaskNode, MAGIC, WIRE_MAJOR,
+    Access, DepEdge, DepKind, Domain, Error, Graph, MAGIC, Objective, Priority, ResourceGraph, ResourceId, ResourceKind, ResourceNode,
+    ShaderId, TaskGraph, TaskId, TaskKind, TaskNode, WIRE_MAJOR, decode, encode,
 };
 
 fn sample_graph() -> Graph {
@@ -25,12 +24,7 @@ fn sample_graph() -> Graph {
                 objective: Objective::MaxThroughput,
                 priority: Priority::Batch,
             }],
-            edges: vec![DepEdge {
-                from_task: None,
-                from_resource: Some(ResourceId(1)),
-                to_task: TaskId(10),
-                kind: DepKind::Data,
-            }],
+            edges: vec![DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data }],
         },
     }
 }
@@ -40,10 +34,7 @@ fn binary_ucf_roundtrip() {
     let graph = sample_graph();
     let bytes = encode(&graph).expect("encode");
     assert_eq!(&bytes[0..4], MAGIC.as_slice());
-    assert_eq!(
-        u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]),
-        WIRE_MAJOR
-    );
+    assert_eq!(u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]), WIRE_MAJOR);
     let decoded = decode(&bytes).expect("decode");
     assert_eq!(graph, decoded);
     decoded.validate().expect("valid");
@@ -60,19 +51,10 @@ fn binary_ucf_rejects_bad_magic() {
 fn binary_ucf_rejects_unsupported_major() {
     let mut bytes = encode(&sample_graph()).expect("encode");
     bytes[4..8].copy_from_slice(&999u32.to_le_bytes());
-    assert_eq!(
-        decode(&bytes),
-        Err(Error::UnsupportedWireMajor {
-            found: 999,
-            supported: WIRE_MAJOR,
-        })
-    );
+    assert_eq!(decode(&bytes), Err(Error::UnsupportedWireMajor { found: 999, supported: WIRE_MAJOR }));
 }
 
 #[test]
 fn binary_ucf_rejects_truncated_header() {
-    assert!(matches!(
-        decode(b"UCF"),
-        Err(Error::TruncatedBinary(_))
-    ));
+    assert!(matches!(decode(b"UCF"), Err(Error::TruncatedBinary(_))));
 }

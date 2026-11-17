@@ -33,8 +33,7 @@ use std::{
 use document_compose::{Diagnostic, Severity, math::FontStyle};
 use document_fonts::{BodyFaceSet, BodyFaceStyle, BodyFamily, BodyMetrics};
 use document_presentation::display::{
-    DisplayGraphic, DisplayImage, DisplayItem, DisplayPage, DisplayPath, DisplayPresentation, DisplayRect, DisplayRule,
-    DisplayTextRun,
+    DisplayGraphic, DisplayImage, DisplayItem, DisplayPage, DisplayPath, DisplayPresentation, DisplayRect, DisplayRule, DisplayTextRun,
 };
 use document_renderer::is_safe_href;
 use plotter_scene::DisplayScene;
@@ -225,11 +224,7 @@ fn embeds_run(body: bool, text: &str) -> bool {
 }
 
 /// Characters painted with the embedded font, per requested family and style.
-fn embedded_charsets(
-    presentation: &DisplayPresentation,
-    body: bool,
-    metrics: Option<&BodyMetrics>,
-) -> BTreeMap<ChainKey, BTreeSet<char>> {
+fn embedded_charsets(presentation: &DisplayPresentation, body: bool, metrics: Option<&BodyMetrics>) -> BTreeMap<ChainKey, BTreeSet<char>> {
     let mut charsets: BTreeMap<ChainKey, BTreeSet<char>> = BTreeMap::new();
     let mut add = |family: &str, style: FontStyle, text: &str| {
         if !embeds_run(body, text) {
@@ -661,13 +656,10 @@ fn build_objects(
         .iter()
         .enumerate()
         .flat_map(|(index, page)| {
-            page.anchors.iter().map(move |anchor| {
-                (anchor.name.clone(), (index, (page.height - anchor.y).clamp(0.0, page.height)))
-            })
+            page.anchors.iter().map(move |anchor| (anchor.name.clone(), (index, (page.height - anchor.y).clamp(0.0, page.height))))
         })
         .collect();
-    let page_links: Vec<Vec<LinkAnnotation>> =
-        presentation.pages.iter().map(|page| page_links(page, &destinations)).collect();
+    let page_links: Vec<Vec<LinkAnnotation>> = presentation.pages.iter().map(|page| page_links(page, &destinations)).collect();
 
     let mut page_resources = PageResources::default();
     let mut font_objects: Vec<(&'static str, usize)> = Vec::with_capacity(fonts.len());
@@ -736,14 +728,7 @@ fn register_images(
                 }
                 DisplayItem::Graphic(graphic) => {
                     crate::scene::visit_images(&graphic.scene, &mut |resource| {
-                        register_image(
-                            &resource.href,
-                            resource.mime.as_deref(),
-                            document,
-                            sources,
-                            page_resources,
-                            &mut images,
-                        );
+                        register_image(&resource.href, resource.mime.as_deref(), document, sources, page_resources, &mut images);
                     });
                 }
                 _ => {}
@@ -785,19 +770,10 @@ fn register_image(
 }
 
 /// Append every link annotation and report their numbers in paint order.
-fn push_link_annotations(
-    document: &mut Document,
-    page_links: &[Vec<LinkAnnotation>],
-    page_numbers: &[usize],
-) -> Vec<Vec<usize>> {
+fn push_link_annotations(document: &mut Document, page_links: &[Vec<LinkAnnotation>], page_numbers: &[usize]) -> Vec<Vec<usize>> {
     let mut numbers = Vec::with_capacity(page_links.len());
     for links in page_links {
-        numbers.push(
-            links
-                .iter()
-                .map(|link| document.push(PdfObject::Text(annotation_object(link, page_numbers))))
-                .collect(),
-        );
+        numbers.push(links.iter().map(|link| document.push(PdfObject::Text(annotation_object(link, page_numbers)))).collect());
     }
     numbers
 }
@@ -989,13 +965,8 @@ fn page_object(page: &DisplayPage, resources: &str, content_number: usize, annot
 /// glyph rectangle, carrying the authored hover text as `/Contents` when the run
 /// had one.
 fn annotation_object(link: &LinkAnnotation, page_numbers: &[usize]) -> String {
-    let mut object = format!(
-        "<< /Type /Annot /Subtype /Link /Rect [{} {} {} {}] /Border [0 0 0]",
-        num(link.x1),
-        num(link.y1),
-        num(link.x2),
-        num(link.y2),
-    );
+    let mut object =
+        format!("<< /Type /Annot /Subtype /Link /Rect [{} {} {} {}] /Border [0 0 0]", num(link.x1), num(link.y1), num(link.x2), num(link.y2),);
     match &link.target {
         LinkTarget::Uri(uri) => {
             // Same literal-string escaping as text, so a destination containing
@@ -1283,10 +1254,7 @@ pub(crate) fn paint_text(
             append_warning(
                 diagnostics.as_deref_mut(),
                 "vutex.render.pdf.glyph_missing",
-                format!(
-                    "embedded font chain has no glyph for {} while painting text; the characters were skipped",
-                    codepoints(&missing)
-                ),
+                format!("embedded font chain has no glyph for {} while painting text; the characters were skipped", codepoints(&missing)),
             );
         }
         return;
@@ -1317,14 +1285,7 @@ fn write_rule(out: &mut String, page_height: f64, rule: &DisplayRule) {
     if rule.y1 == rule.y2 && rule.x2 > rule.x1 && rule.thickness > 0.0 {
         let bottom = page_height - (rule.y1 + rule.thickness / 2.0);
         // `q`/`Q` keep the fill colour from leaking into later text.
-        let _ = write!(
-            out,
-            "q\n0.067 g\n{} {} {} {} re\nf\nQ\n",
-            num(rule.x1),
-            num(bottom),
-            num(rule.x2 - rule.x1),
-            num(rule.thickness)
-        );
+        let _ = write!(out, "q\n0.067 g\n{} {} {} {} re\nf\nQ\n", num(rule.x1), num(bottom), num(rule.x2 - rule.x1), num(rule.thickness));
         return;
     }
     let _ = write!(
@@ -1375,14 +1336,7 @@ fn write_image<'d>(out: &mut String, page_height: f64, image: &DisplayImage, pai
     {
         if let Some(name) = painter.images.raster(source) {
             let bottom = page_height - (image.y + image.height);
-            let _ = write!(
-                out,
-                "q\n{} 0 0 {} {} {} cm\n/{name} Do\nQ\n",
-                num(image.width),
-                num(image.height),
-                num(image.x),
-                num(bottom)
-            );
+            let _ = write!(out, "q\n{} 0 0 {} {} {} cm\n/{name} Do\nQ\n", num(image.width), num(image.height), num(image.x), num(bottom));
             return;
         }
         if let Some(scene) = painter.images.scene(source)
@@ -1397,22 +1351,10 @@ fn write_image<'d>(out: &mut String, page_height: f64, image: &DisplayImage, pai
 /// Reserved dashed slot for an image this backend could not resolve.
 fn write_image_placeholder(out: &mut String, page_height: f64, image: &DisplayImage) {
     let y = page_height - (image.y + image.height);
-    let _ = write!(
-        out,
-        "0.6 G\n0.5 w\n[3 2] 0 d\n{} {} {} {} re\nS\n[] 0 d\n",
-        num(image.x),
-        num(y),
-        num(image.width),
-        num(image.height),
-    );
+    let _ = write!(out, "0.6 G\n0.5 w\n[3 2] 0 d\n{} {} {} {} re\nS\n[] 0 d\n", num(image.x), num(y), num(image.width), num(image.height),);
 }
 
-fn write_graphic<'d>(
-    out: &mut String,
-    page_height: f64,
-    graphic: &DisplayGraphic,
-    painter: &mut crate::scene::ScenePaint<'_, 'd>,
-) {
+fn write_graphic<'d>(out: &mut String, page_height: f64, graphic: &DisplayGraphic, painter: &mut crate::scene::ScenePaint<'_, 'd>) {
     if !all_finite(&[graphic.x, graphic.y, graphic.width, graphic.height]) {
         return;
     }
@@ -1663,10 +1605,7 @@ pub(crate) fn escape_text(text: &str, mut diagnostics: Option<&mut Vec<Diagnosti
         append_warning(
             diagnostics.as_deref_mut(),
             "vutex.render.pdf.font_unavailable",
-            format!(
-                "WinAnsi encoding cannot represent {} characters and they were substituted with '?'",
-                codepoints(&degraded)
-            ),
+            format!("WinAnsi encoding cannot represent {} characters and they were substituted with '?'", codepoints(&degraded)),
         );
     }
     out
@@ -1842,8 +1781,7 @@ mod tests {
 
     #[test]
     fn rebuild_preserves_other_entries() {
-        let got =
-            rebuild_stream_dict("<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /BitsPerComponent 8 /Length 99 >>", 12);
+        let got = rebuild_stream_dict("<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /BitsPerComponent 8 /Length 99 >>", 12);
         assert!(got.contains("/Type /XObject"));
         assert!(got.contains("/Subtype /Image"));
         assert!(got.contains("/Length 12"));

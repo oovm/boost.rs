@@ -21,11 +21,7 @@ impl TimeBase {
     /// Exact rational fps, e.g. NTSC `30000 / 1001`.
     #[must_use]
     pub const fn rational(numerator: u32, denominator: u32) -> Option<Self> {
-        if numerator == 0 || denominator == 0 {
-            None
-        } else {
-            Some(Self { numerator, denominator })
-        }
+        if numerator == 0 || denominator == 0 { None } else { Some(Self { numerator, denominator }) }
     }
 
     #[must_use]

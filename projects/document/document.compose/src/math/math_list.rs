@@ -499,10 +499,8 @@ fn project_one(node: &FormulaNode, state: &mut MathStyleState, list: &mut MathLi
             noad.nucleus = Some(base.clone());
             let sub_state = state.sub();
             let sup_state = state.sup();
-            noad.scripts = Some(Scripts {
-                sub: Some(Box::new(with_style(sub, sub_state.style))),
-                sup: Some(Box::new(with_style(sup, sup_state.style))),
-            });
+            noad.scripts =
+                Some(Scripts { sub: Some(Box::new(with_style(sub, sub_state.style))), sup: Some(Box::new(with_style(sup, sup_state.style))) });
             push_noad(list, noad, pending_limits);
         }
         FormulaNode::Fraction { num, den, line } => {
@@ -543,8 +541,7 @@ fn project_one(node: &FormulaNode, state: &mut MathStyleState, list: &mut MathLi
             // so the spacing engine can read its glyph for metrics.
             let mut open = Noad::new(NoadKind::Open, state.style, state.cramped);
             if let Some(gk) = left {
-                open.nucleus =
-                    Some(Box::new(FormulaNode::Symbol { glyph_key: gk.clone(), role: SymbolRole::Opening, span: *left_span }));
+                open.nucleus = Some(Box::new(FormulaNode::Symbol { glyph_key: gk.clone(), role: SymbolRole::Opening, span: *left_span }));
             }
             open.fence = true;
             push_noad(list, open, pending_limits);
@@ -562,8 +559,7 @@ fn project_one(node: &FormulaNode, state: &mut MathStyleState, list: &mut MathLi
             // Right delimiter → Close noad, or the null `\right.` close.
             let mut close = Noad::new(NoadKind::Close, state.style, state.cramped);
             if let Some(gk) = right {
-                close.nucleus =
-                    Some(Box::new(FormulaNode::Symbol { glyph_key: gk.clone(), role: SymbolRole::Closing, span: *right_span }));
+                close.nucleus = Some(Box::new(FormulaNode::Symbol { glyph_key: gk.clone(), role: SymbolRole::Closing, span: *right_span }));
             }
             close.fence = true;
             push_noad(list, close, pending_limits);
@@ -904,9 +900,7 @@ fn merge_text_nodes(a: Option<&Box<FormulaNode>>, b: Option<&Box<FormulaNode>>) 
         // Defensive fallback: keep b (caller already filtered).
         (_, Some(_)) => b.unwrap().clone(),
         (Some(_), None) => a.unwrap().clone(),
-        (None, None) => {
-            Box::new(FormulaNode::Text { text: String::new(), font_style: crate::math::FontStyle::Math, span: None })
-        }
+        (None, None) => Box::new(FormulaNode::Text { text: String::new(), font_style: crate::math::FontStyle::Math, span: None }),
     }
 }
 
@@ -970,10 +964,8 @@ mod tests {
 
     #[test]
     fn sequence_flattens() {
-        let nodes = vec![
-            FormulaNode::Sequence(vec![sym('a', SymbolRole::Ordinary), sym('b', SymbolRole::Ordinary)]),
-            sym('+', SymbolRole::Binary),
-        ];
+        let nodes =
+            vec![FormulaNode::Sequence(vec![sym('a', SymbolRole::Ordinary), sym('b', SymbolRole::Ordinary)]), sym('+', SymbolRole::Binary)];
         let list = MathList::from(nodes.as_slice());
         // Sequence flattens so we get three noads total.
         assert_eq!(list.len(), 3);
@@ -1016,10 +1008,8 @@ mod tests {
 
     #[test]
     fn subscript_attaches() {
-        let nodes = vec![FormulaNode::Subscript {
-            base: Box::new(sym('x', SymbolRole::Ordinary)),
-            sub: Box::new(sym('i', SymbolRole::Ordinary)),
-        }];
+        let nodes =
+            vec![FormulaNode::Subscript { base: Box::new(sym('x', SymbolRole::Ordinary)), sub: Box::new(sym('i', SymbolRole::Ordinary)) }];
         let list = MathList::from(nodes.as_slice());
         assert_eq!(list.len(), 1);
         let n = noad(&list, 0);
@@ -1224,12 +1214,8 @@ mod tests {
     #[test]
     fn bin_after_a_relation_becomes_ord() {
         // `a = + b` → Atom · Rel · Ord · Atom — the Bin follows a Rel.
-        let nodes = vec![
-            sym('a', SymbolRole::Ordinary),
-            sym('=', SymbolRole::Relation),
-            sym('+', SymbolRole::Binary),
-            sym('b', SymbolRole::Ordinary),
-        ];
+        let nodes =
+            vec![sym('a', SymbolRole::Ordinary), sym('=', SymbolRole::Relation), sym('+', SymbolRole::Binary), sym('b', SymbolRole::Ordinary)];
         let projected = MathList::from(nodes.as_slice());
         let normalized = normalize_math_list(projected);
         assert_eq!(normalized.len(), 4);
@@ -1396,11 +1382,7 @@ mod tests {
 
     #[test]
     fn limits_spec_attaches_to_next_op() {
-        let nodes = vec![
-            FormulaNode::LimitsSpec(LimitsPolicy::Limits),
-            sym('∑', SymbolRole::LargeOperator),
-            sym('x', SymbolRole::Ordinary),
-        ];
+        let nodes = vec![FormulaNode::LimitsSpec(LimitsPolicy::Limits), sym('∑', SymbolRole::LargeOperator), sym('x', SymbolRole::Ordinary)];
         let list = MathList::from(nodes.as_slice());
         assert_eq!(list.len(), 2);
         assert_eq!(noad(&list, 0).kind, NoadKind::Op);
@@ -1471,13 +1453,7 @@ mod tests {
     fn glue_between_atoms_keeps_a_binding_bin() {
         // `a \, + \, b`: the spaces do not strip the operator's neighbours, so
         // the Bin keeps its class and its Medium glue on both sides.
-        let nodes = vec![
-            sym('a', SymbolRole::Ordinary),
-            space(3.0),
-            sym('+', SymbolRole::Binary),
-            space(3.0),
-            sym('b', SymbolRole::Ordinary),
-        ];
+        let nodes = vec![sym('a', SymbolRole::Ordinary), space(3.0), sym('+', SymbolRole::Binary), space(3.0), sym('b', SymbolRole::Ordinary)];
         let normalized = normalize_math_list(MathList::from(nodes.as_slice()));
         assert_eq!(noad(&normalized, 1).kind, NoadKind::Bin);
     }

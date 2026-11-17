@@ -26,9 +26,7 @@ pub fn write_document_pdf(graph: &mut DocumentGraph, body_set: &Arc<BodyFaceSet>
     for source in crate::writers::unresolved_image_sources(graph) {
         graph.push_loss(LossMarker {
             code: "export.pdf.image_unresolved".into(),
-            message: format!(
-                "image `{source}` has no captured bytes. The page keeps a dashed placeholder instead of the picture"
-            ),
+            message: format!("image `{source}` has no captured bytes. The page keeps a dashed placeholder instead of the picture"),
             status: SemanticStatus::Partial,
         });
     }
@@ -38,11 +36,7 @@ pub fn write_document_pdf(graph: &mut DocumentGraph, body_set: &Arc<BodyFaceSet>
     // then has no picture and no scene, so only that code becomes a marker.
     for loss in &losses {
         if loss.fatal && loss.code.starts_with("panduck.") {
-            graph.push_loss(LossMarker {
-                code: loss.code.clone(),
-                message: loss.message.clone(),
-                status: SemanticStatus::Unsupported,
-            });
+            graph.push_loss(LossMarker { code: loss.code.clone(), message: loss.message.clone(), status: SemanticStatus::Unsupported });
         }
     }
     if !losses.is_empty() {
@@ -60,20 +54,15 @@ pub fn write_document_pdf(graph: &mut DocumentGraph, body_set: &Arc<BodyFaceSet>
     report_compose_diagnostics(&layout_diagnostics);
     let presentation = build_display_presentation(&plan);
     let resources = pdf_resources(graph);
-    let outcome =
-        render_pdf_with_resources_and_diagnostics(&presentation, &PdfFontPolicy::Provided(Arc::clone(body_set)), &resources)
-            .map_err(map_render_diagnostic)?;
+    let outcome = render_pdf_with_resources_and_diagnostics(&presentation, &PdfFontPolicy::Provided(Arc::clone(body_set)), &resources)
+        .map_err(map_render_diagnostic)?;
     // Render warnings that replace or skip a glyph have no error severity, so
     // the request succeeds and only this report can say the glyph was lost.
     // Every other render diagnostic is either fatal (returned above) or a
     // paint note that changes no authored content.
     for diagnostic in &outcome.diagnostics {
         if matches!(diagnostic.code.as_str(), "vutex.render.pdf.font_unavailable" | "vutex.render.pdf.glyph_missing") {
-            graph.push_loss(LossMarker {
-                code: diagnostic.code.clone(),
-                message: diagnostic.message.clone(),
-                status: SemanticStatus::Partial,
-            });
+            graph.push_loss(LossMarker { code: diagnostic.code.clone(), message: diagnostic.message.clone(), status: SemanticStatus::Partial });
         }
     }
     report_compose_diagnostics(&outcome.diagnostics);
@@ -150,16 +139,13 @@ fn lower_host_scenes(graph: &DocumentGraph) -> (Diagrams, Vec<LossNotice>) {
             Block::Diagram { language, source } => {
                 let language = language.trim();
                 let lowered = if language.eq_ignore_ascii_case("mermaid") {
-                    plotter_input_mermaid::mermaid_to_scene(source)
-                        .map_err(|error| (error.code().to_string(), error.message().to_string()))
+                    plotter_input_mermaid::mermaid_to_scene(source).map_err(|error| (error.code().to_string(), error.message().to_string()))
                 }
                 else if language.eq_ignore_ascii_case("dot") {
-                    plotter_input_dot::dot_to_scene(source)
-                        .map_err(|error| (error.code().to_string(), error.message().to_string()))
+                    plotter_input_dot::dot_to_scene(source).map_err(|error| (error.code().to_string(), error.message().to_string()))
                 }
                 else if language.eq_ignore_ascii_case("plantuml") || language.eq_ignore_ascii_case("puml") {
-                    plotter_input_plantuml::plantuml_to_scene(source)
-                        .map_err(|error| (error.code().to_string(), error.message().to_string()))
+                    plotter_input_plantuml::plantuml_to_scene(source).map_err(|error| (error.code().to_string(), error.message().to_string()))
                 }
                 else {
                     continue;
@@ -209,11 +195,7 @@ fn lower_host_scenes(graph: &DocumentGraph) -> (Diagrams, Vec<LossNotice>) {
                         }
                         diagrams.insert(node.id, scene, "vega-lite chart");
                     }
-                    Err(error) => losses.push(LossNotice {
-                        code: error.code().to_string(),
-                        message: error.message().to_string(),
-                        fatal: true,
-                    }),
+                    Err(error) => losses.push(LossNotice { code: error.code().to_string(), message: error.message().to_string(), fatal: true }),
                 }
             }
             Block::Engraving { language, source } if language.trim().eq_ignore_ascii_case("abc") => {
@@ -237,25 +219,16 @@ fn lower_host_scenes(graph: &DocumentGraph) -> (Diagrams, Vec<LossNotice>) {
                         }
                         diagrams.insert(node.id, lowered.scene, "abc score");
                     }
-                    Err(error) => losses.push(LossNotice {
-                        code: error.code().to_string(),
-                        message: error.message().to_string(),
-                        fatal: true,
-                    }),
+                    Err(error) => losses.push(LossNotice { code: error.code().to_string(), message: error.message().to_string(), fatal: true }),
                 }
             }
             Block::Depiction { language, source } => {
                 let language = language.trim();
                 let lowered = if language.eq_ignore_ascii_case("smiles") {
-                    plotter_input_smiles::smiles_to_scene(source)
-                        .map_err(|error| (error.code().to_string(), error.message().to_string()))
+                    plotter_input_smiles::smiles_to_scene(source).map_err(|error| (error.code().to_string(), error.message().to_string()))
                 }
-                else if language.eq_ignore_ascii_case("mol")
-                    || language.eq_ignore_ascii_case("mdl")
-                    || language.eq_ignore_ascii_case("sdf")
-                {
-                    plotter_input_mdl::mdl_to_scene(source)
-                        .map_err(|error| (error.code().to_string(), error.message().to_string()))
+                else if language.eq_ignore_ascii_case("mol") || language.eq_ignore_ascii_case("mdl") || language.eq_ignore_ascii_case("sdf") {
+                    plotter_input_mdl::mdl_to_scene(source).map_err(|error| (error.code().to_string(), error.message().to_string()))
                 }
                 else {
                     continue;

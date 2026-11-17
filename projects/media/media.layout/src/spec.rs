@@ -151,7 +151,8 @@ impl ComicSpec {
         for (index, page) in self.pages.iter().enumerate() {
             let target = doc.add_page();
             let page_mut = doc.page_mut(target).expect("page just added");
-            page_mut.panels = page.panels.iter().enumerate().map(|(i, panel)| panel.resolve(index, i)).collect::<Result<Vec<Panel>, Error>>()?;
+            page_mut.panels =
+                page.panels.iter().enumerate().map(|(i, panel)| panel.resolve(index, i)).collect::<Result<Vec<Panel>, Error>>()?;
         }
         Ok(doc)
     }
@@ -167,14 +168,8 @@ impl PanelSpec {
             return Err(Error::invalid_input(format!("{field} rect: width and height must not be negative")));
         }
         let fill = resolve_color(self.fill.as_deref(), DEFAULT_PANEL_FILL, &format!("{field} fill"))?;
-        let mut panel = Panel {
-            rect: self.rect,
-            fill,
-            image: self.image.clone(),
-            fit: self.fit.unwrap_or_default(),
-            border: None,
-            texts: Vec::new(),
-        };
+        let mut panel =
+            Panel { rect: self.rect, fill, image: self.image.clone(), fit: self.fit.unwrap_or_default(), border: None, texts: Vec::new() };
         if let Some(border) = &self.border {
             let width = match border.width {
                 None => DEFAULT_BORDER_WIDTH,
@@ -186,10 +181,8 @@ impl PanelSpec {
                     width
                 }
             };
-            panel.border = Some(Border {
-                color: resolve_color(border.color.as_deref(), DEFAULT_BORDER_COLOR, &format!("{field} border color"))?,
-                width,
-            });
+            panel.border =
+                Some(Border { color: resolve_color(border.color.as_deref(), DEFAULT_BORDER_COLOR, &format!("{field} border color"))?, width });
         }
         for (text_index, text) in self.texts.iter().enumerate() {
             panel.texts.push(text.resolve(&format!("{field} text {text_index}"))?);
@@ -258,11 +251,7 @@ fn resolve_color(value: Option<&str>, fallback: Rgba, field: &str) -> Result<Rgb
 }
 
 fn finite(value: f32, field: &str) -> Result<(), Error> {
-    if value.is_finite() {
-        Ok(())
-    } else {
-        Err(Error::invalid_input(format!("{field}: values must be finite")))
-    }
+    if value.is_finite() { Ok(()) } else { Err(Error::invalid_input(format!("{field}: values must be finite"))) }
 }
 
 #[cfg(test)]
@@ -275,9 +264,11 @@ mod tests {
 
     #[test]
     fn minimal_document_takes_the_absorbed_defaults() {
-        let doc = spec(r#"{"width":400,"height":300,"pages":[{"panels":[{"rect":[0.0,0.0,100.0,100.0],"texts":[{"kind":"caption","text":"HI"}]}]}]}"#)
-            .resolve()
-            .expect("defaults resolve");
+        let doc = spec(
+            r#"{"width":400,"height":300,"pages":[{"panels":[{"rect":[0.0,0.0,100.0,100.0],"texts":[{"kind":"caption","text":"HI"}]}]}]}"#,
+        )
+        .resolve()
+        .expect("defaults resolve");
         assert_eq!(doc.width, 400);
         assert_eq!(doc.height, 300);
         assert_eq!(doc.background, DEFAULT_BACKGROUND);
@@ -342,7 +333,10 @@ mod tests {
     #[test]
     fn unknown_fit_spelling_fails_deserialization() {
         // The deliberate correction: the binding silently fell back to Contain.
-        assert!(serde_json::from_str::<ComicSpec>(r##"{"width":10,"height":10,"pages":[{"panels":[{"rect":[0.0,0.0,1.0,1.0],"fit":"tile"}]}]}"##).is_err());
+        assert!(
+            serde_json::from_str::<ComicSpec>(r##"{"width":10,"height":10,"pages":[{"panels":[{"rect":[0.0,0.0,1.0,1.0],"fit":"tile"}]}]}"##)
+                .is_err()
+        );
         for accepted in ["contain", "cover", "stretch"] {
             let json = format!(r#"{{"width":10,"height":10,"pages":[{{"panels":[{{"rect":[0.0,0.0,1.0,1.0],"fit":"{accepted}"}}]}}]}}"#);
             serde_json::from_str::<ComicSpec>(&json).expect("accepted fit spelling");
@@ -364,9 +358,11 @@ mod tests {
             .resolve()
             .expect_err("negative border rejects");
         assert!(error.message.contains("border width"), "{}", error.message);
-        let error = spec(r#"{"width":10,"height":10,"pages":[{"panels":[{"rect":[0.0,0.0,1.0,1.0],"texts":[{"kind":"caption","text":"x","size":0.5}]}]}]}"#)
-            .resolve()
-            .expect_err("sub-pixel size rejects");
+        let error = spec(
+            r#"{"width":10,"height":10,"pages":[{"panels":[{"rect":[0.0,0.0,1.0,1.0],"texts":[{"kind":"caption","text":"x","size":0.5}]}]}]}"#,
+        )
+        .resolve()
+        .expect_err("sub-pixel size rejects");
         assert!(error.message.contains("size: must be at least 1"), "{}", error.message);
         let error = spec(r#"{"width":10,"height":10,"pages":[{"panels":[{"rect":[0.0,0.0,1.0,1.0],"texts":[{"kind":"caption","text":"x","size":1e300}]}]}]}"#)
             .resolve()
@@ -384,7 +380,12 @@ mod tests {
 
     #[test]
     fn balloon_requires_a_tail_and_caption_ignores_one() {
-        assert!(serde_json::from_str::<ComicSpec>(r#"{"width":10,"height":10,"pages":[{"panels":[{"rect":[0.0,0.0,1.0,1.0],"texts":[{"kind":"balloon","text":"x"}]}]}]}"#).is_err());
+        assert!(
+            serde_json::from_str::<ComicSpec>(
+                r#"{"width":10,"height":10,"pages":[{"panels":[{"rect":[0.0,0.0,1.0,1.0],"texts":[{"kind":"balloon","text":"x"}]}]}]}"#
+            )
+            .is_err()
+        );
         let doc = spec(r#"{"width":10,"height":10,"pages":[{"panels":[{"rect":[0.0,0.0,1.0,1.0],"texts":[{"kind":"caption","text":"x","tail":[1.0,2.0]}]}]}]}"#)
             .resolve()
             .expect("extra key is ignored like the historical DTO");

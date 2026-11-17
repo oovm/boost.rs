@@ -15,28 +15,19 @@ fn report_status(report_json: &str) -> String {
 
 fn loss_codes(report_json: &str) -> Vec<String> {
     let report: serde_json::Value = serde_json::from_str(report_json).expect("parse report");
-    report["losses"]
-        .as_array()
-        .expect("losses array")
-        .iter()
-        .filter_map(|loss| loss["code"].as_str().map(str::to_string))
-        .collect()
+    report["losses"].as_array().expect("losses array").iter().filter_map(|loss| loss["code"].as_str().map(str::to_string)).collect()
 }
 
 #[test]
 fn markdown_mermaid_renders_inline_svg_in_html_output() {
-    let output = convert_bytes("markdown", "html", "diagram.md", FLOWCHART_DOC.as_bytes().to_vec(), None)
-        .expect("convert markdown to html");
+    let output = convert_bytes("markdown", "html", "diagram.md", FLOWCHART_DOC.as_bytes().to_vec(), None).expect("convert markdown to html");
     let html = output.html.as_deref().expect("html output");
 
     assert!(html.contains(r#"<figure class="diagram" data-diagram-language="mermaid""#), "{html}");
     assert!(html.contains("<svg"), "rendered diagram must embed real SVG: {html}");
     assert!(html.contains("data-diagram-source-hex="), "{html}");
     assert!(html.contains("Closing paragraph."), "{html}");
-    assert!(
-        !html.contains(r#"<pre class="diagram" data-diagram-language"#),
-        "a rendered diagram must not keep the source fallback: {html}"
-    );
+    assert!(!html.contains(r#"<pre class="diagram" data-diagram-language"#), "a rendered diagram must not keep the source fallback: {html}");
     assert_eq!(output.loss_count, 0, "a clean render must stay loss-free: {}", output.report_json);
     assert_eq!(report_status(&output.report_json), "success");
     assert_convert_report(&output, "html");
@@ -44,22 +35,15 @@ fn markdown_mermaid_renders_inline_svg_in_html_output() {
 
 #[test]
 fn broken_mermaid_falls_back_to_visible_source_with_structured_loss() {
-    let output = convert_bytes("markdown", "html", "broken.md", BROKEN_DOC.as_bytes().to_vec(), None)
-        .expect("convert broken markdown to html");
+    let output = convert_bytes("markdown", "html", "broken.md", BROKEN_DOC.as_bytes().to_vec(), None).expect("convert broken markdown to html");
     let html = output.html.as_deref().expect("html output");
 
-    assert!(
-        html.contains(r#"<pre class="diagram" data-diagram-language="mermaid""#),
-        "failed renders must keep visible source: {html}"
-    );
+    assert!(html.contains(r#"<pre class="diagram" data-diagram-language="mermaid""#), "failed renders must keep visible source: {html}");
     assert!(html.contains("this is not a mermaid diagram at all"), "{html}");
     assert!(!html.contains("<figure"), "{html}");
 
     let codes = loss_codes(&output.report_json);
-    assert!(
-        codes.iter().any(|code| code.starts_with("davinci.diagram.")),
-        "expected a davinci.diagram.* loss code, got {codes:?}"
-    );
+    assert!(codes.iter().any(|code| code.starts_with("davinci.diagram.")), "expected a davinci.diagram.* loss code, got {codes:?}");
     assert_eq!(report_status(&output.report_json), "success_with_loss");
     assert!(output.loss_count > 0);
 }
@@ -67,8 +51,7 @@ fn broken_mermaid_falls_back_to_visible_source_with_structured_loss() {
 #[test]
 fn mixed_document_renders_valid_diagrams_and_reports_broken_ones() {
     let document = "# Mixed\n\n```mermaid\nflowchart LR\n  A --> B\n```\n\n```mermaid\nnot mermaid at all\n```\n";
-    let output =
-        convert_bytes("markdown", "html", "mixed.md", document.as_bytes().to_vec(), None).expect("convert mixed document");
+    let output = convert_bytes("markdown", "html", "mixed.md", document.as_bytes().to_vec(), None).expect("convert mixed document");
     let html = output.html.as_deref().expect("html output");
 
     assert_eq!(html.matches(r#"<figure class="diagram""#).count(), 1, "{html}");
@@ -78,17 +61,15 @@ fn mixed_document_renders_valid_diagrams_and_reports_broken_ones() {
 
 #[test]
 fn mermaid_html_output_is_byte_stable() {
-    let first =
-        convert_bytes("markdown", "html", "diagram.md", FLOWCHART_DOC.as_bytes().to_vec(), None).expect("first convert");
-    let second =
-        convert_bytes("markdown", "html", "diagram.md", FLOWCHART_DOC.as_bytes().to_vec(), None).expect("second convert");
+    let first = convert_bytes("markdown", "html", "diagram.md", FLOWCHART_DOC.as_bytes().to_vec(), None).expect("first convert");
+    let second = convert_bytes("markdown", "html", "diagram.md", FLOWCHART_DOC.as_bytes().to_vec(), None).expect("second convert");
     assert_eq!(first.html, second.html, "the same input must render byte-identical HTML");
 }
 
 #[test]
 fn markdown_target_keeps_the_authored_fence_without_rendering() {
-    let output = convert_bytes("markdown", "markdown", "diagram.md", FLOWCHART_DOC.as_bytes().to_vec(), None)
-        .expect("convert markdown to markdown");
+    let output =
+        convert_bytes("markdown", "markdown", "diagram.md", FLOWCHART_DOC.as_bytes().to_vec(), None).expect("convert markdown to markdown");
     assert!(output.markdown.contains("```mermaid\nflowchart TD"), "{}", output.markdown);
     assert!(output.markdown.contains("B -->|yes| C[Stop]"), "{}", output.markdown);
     assert_eq!(output.loss_count, 0, "{}", output.report_json);
@@ -96,8 +77,7 @@ fn markdown_target_keeps_the_authored_fence_without_rendering() {
 
 #[test]
 fn markdown_mermaid_survives_the_docx_round_trip() {
-    let to_docx =
-        convert_bytes("markdown", "docx", "diagram.md", FLOWCHART_DOC.as_bytes().to_vec(), None).expect("markdown to docx");
+    let to_docx = convert_bytes("markdown", "docx", "diagram.md", FLOWCHART_DOC.as_bytes().to_vec(), None).expect("markdown to docx");
     let docx = to_docx.binary.expect("docx bytes");
     let back = convert_bytes("docx", "markdown", "diagram.docx", docx.to_vec(), None).expect("docx back to markdown");
     assert!(back.markdown.contains("```mermaid"), "{}", back.markdown);
@@ -183,8 +163,7 @@ fn rejected_plantuml_loss_carries_the_authored_span() {
 #[test]
 fn package_visibility_members_reach_the_svg_without_a_loss() {
     let document = "# Visibility\n\n```plantuml\n@startuml\nclass Cache {\n  ~cache : Map\n}\n@enduml\n```\n";
-    let output = convert_bytes("markdown", "html", "visibility.md", document.as_bytes().to_vec(), None)
-        .expect("convert package visibility");
+    let output = convert_bytes("markdown", "html", "visibility.md", document.as_bytes().to_vec(), None).expect("convert package visibility");
     let html = output.html.as_deref().expect("html output");
 
     assert!(html.contains("~cache : Map"), "the `~` member must be drawn, not dropped: {html}");
@@ -195,14 +174,10 @@ fn package_visibility_members_reach_the_svg_without_a_loss() {
 #[test]
 fn unknown_member_markers_are_rejected_with_a_span_instead_of_dropped() {
     let document = "# Marker\n\n```plantuml\n@startuml\nclass Cache {\n  !cache : Map\n}\n@enduml\n```\n";
-    let output =
-        convert_bytes("markdown", "html", "marker.md", document.as_bytes().to_vec(), None).expect("convert unknown marker");
+    let output = convert_bytes("markdown", "html", "marker.md", document.as_bytes().to_vec(), None).expect("convert unknown marker");
     let html = output.html.as_deref().expect("html output");
 
-    assert!(
-        html.contains(r#"<pre class="diagram" data-diagram-language="plantuml""#),
-        "the refusal must keep the source visible: {html}"
-    );
+    assert!(html.contains(r#"<pre class="diagram" data-diagram-language="plantuml""#), "the refusal must keep the source visible: {html}");
     assert!(!html.contains("~cache"), "{html}");
     assert!(output.loss_count > 0, "the refusal must be reported: {}", output.report_json);
     assert_eq!(report_status(&output.report_json), "success_with_loss");
@@ -212,20 +187,12 @@ fn unknown_member_markers_are_rejected_with_a_span_instead_of_dropped() {
 #[test]
 fn mixed_plantuml_families_are_refused_with_the_contradicting_marker() {
     let document = "# Mixed Family\n\n```plantuml\n@startuml\nclass Order\nparticipant X\n@enduml\n```\n";
-    let output =
-        convert_bytes("markdown", "html", "mixed.md", document.as_bytes().to_vec(), None).expect("convert mixed family");
+    let output = convert_bytes("markdown", "html", "mixed.md", document.as_bytes().to_vec(), None).expect("convert mixed family");
     let html = output.html.as_deref().expect("html output");
 
-    assert!(
-        html.contains(r#"<pre class="diagram" data-diagram-language="plantuml""#),
-        "the refusal must keep the source visible: {html}"
-    );
+    assert!(html.contains(r#"<pre class="diagram" data-diagram-language="plantuml""#), "the refusal must keep the source visible: {html}");
     assert!(output.loss_count > 0, "the refusal must be reported: {}", output.report_json);
     assert_eq!(report_status(&output.report_json), "success_with_loss");
-    assert!(
-        output.report_json.contains("mixes class and sequence"),
-        "the diagnostic names the conflict: {}",
-        output.report_json
-    );
+    assert!(output.report_json.contains("mixes class and sequence"), "the diagnostic names the conflict: {}", output.report_json);
     assert!(output.report_json.contains("span.start"), "the diagnostic carries the marker offset: {}", output.report_json);
 }

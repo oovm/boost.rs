@@ -67,12 +67,7 @@ pub struct HostScheduler {
 impl HostScheduler {
     /// Build a scheduler whose hosts share the profile defaults.
     pub fn new(profile: PolitenessProfile) -> Self {
-        Self {
-            default: HostPolicy::for_profile(profile),
-            overrides: BTreeMap::new(),
-            state: BTreeMap::new(),
-            empty_retry: EMPTY_HOST_RETRY,
-        }
+        Self { default: HostPolicy::for_profile(profile), overrides: BTreeMap::new(), state: BTreeMap::new(), empty_retry: EMPTY_HOST_RETRY }
     }
 
     /// Override the policy for one host partition.
@@ -173,12 +168,7 @@ pub struct StoreFrontier {
 impl StoreFrontier {
     /// Build a frontier for one worker.
     pub fn new(worker_id: impl Into<String>, profile: PolitenessProfile) -> Self {
-        Self {
-            worker_id: worker_id.into(),
-            scheduler: HostScheduler::new(profile),
-            host_by_item: BTreeMap::new(),
-            seen: BTreeSet::new(),
-        }
+        Self { worker_id: worker_id.into(), scheduler: HostScheduler::new(profile), host_by_item: BTreeMap::new(), seen: BTreeSet::new() }
     }
 
     /// Replace the host scheduler, mainly for per-host overrides and tests.

@@ -60,11 +60,7 @@ pub(crate) fn script_expression(
 }
 
 /// Fold a script onto the expression it modifies.
-pub(crate) fn attach_script(
-    expressions: &mut Vec<MathExpression>,
-    superscript: Option<MathExpression>,
-    subscript: Option<MathExpression>,
-) {
+pub(crate) fn attach_script(expressions: &mut Vec<MathExpression>, superscript: Option<MathExpression>, subscript: Option<MathExpression>) {
     let Some(last) = expressions.pop()
     else {
         expressions.push(MathExpression::Unsupported { kind: "script-base".into(), source: String::new(), span: None });

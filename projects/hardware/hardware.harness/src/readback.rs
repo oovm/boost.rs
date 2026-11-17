@@ -16,12 +16,7 @@ pub fn compare_readback(resource: u32, expected: &[f32], actual: &[f32], tracer:
     for (index, (want, got)) in expected.iter().zip(actual).enumerate() {
         if want != got {
             matched = false;
-            tracer.record(EventKind::ReadbackMismatch {
-                resource,
-                index,
-                expected: format!("{want:.6}"),
-                actual: format!("{got:.6}"),
-            });
+            tracer.record(EventKind::ReadbackMismatch { resource, index, expected: format!("{want:.6}"), actual: format!("{got:.6}") });
         }
     }
     matched

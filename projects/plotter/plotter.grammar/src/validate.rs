@@ -58,8 +58,7 @@ fn validate_2d(spec: &PlotSpec) -> Result<()> {
 
     for (index, layer) in spec.layers.iter().enumerate() {
         if layer.data.is_some() {
-            return Err(Diagnostic::error(DiagnosticCode::UnsupportedSpec, "尚未支持层级覆盖数据")
-                .with_param("layer", index.to_string()));
+            return Err(Diagnostic::error(DiagnosticCode::UnsupportedSpec, "尚未支持层级覆盖数据").with_param("layer", index.to_string()));
         }
         match layer.stat {
             StatSpec::Identity => {}
@@ -70,19 +69,20 @@ fn validate_2d(spec: &PlotSpec) -> Result<()> {
             }
             GeomSpec::Text(text) => validate_text_layer(table, &spec.mapping, &layer.mapping, text, index)?,
             GeomSpec::Surface(_) | GeomSpec::Point3d(_) => {
-                return Err(Diagnostic::error(DiagnosticCode::UnsupportedSpec, "三维 geom 需要 cartesian3d")
-                    .with_param("layer", index.to_string()));
+                return Err(
+                    Diagnostic::error(DiagnosticCode::UnsupportedSpec, "三维 geom 需要 cartesian3d").with_param("layer", index.to_string())
+                );
             }
             GeomSpec::Node(_) | GeomSpec::Edge(_) | GeomSpec::TreeNode(_) | GeomSpec::TreeEdge(_) => {
-                return Err(Diagnostic::error(DiagnosticCode::UnsupportedSpec, "图/树 geom 需要对应坐标系")
-                    .with_param("layer", index.to_string()));
+                return Err(
+                    Diagnostic::error(DiagnosticCode::UnsupportedSpec, "图/树 geom 需要对应坐标系").with_param("layer", index.to_string())
+                );
             }
         }
-        if matches!(layer.geom, GeomSpec::Bar(_))
-            && spec.scales.iter().any(|s| s.aesthetic == "y" && matches!(s.kind, ScaleKind::Log10))
-        {
-            return Err(Diagnostic::error(DiagnosticCode::UnsupportedSpec, "geom_bar 暂不支持 log10 y scale")
-                .with_param("layer", index.to_string()));
+        if matches!(layer.geom, GeomSpec::Bar(_)) && spec.scales.iter().any(|s| s.aesthetic == "y" && matches!(s.kind, ScaleKind::Log10)) {
+            return Err(
+                Diagnostic::error(DiagnosticCode::UnsupportedSpec, "geom_bar 暂不支持 log10 y scale").with_param("layer", index.to_string())
+            );
         }
     }
 
@@ -96,8 +96,7 @@ fn validate_3d(spec: &PlotSpec) -> Result<()> {
 
     for (index, layer) in spec.layers.iter().enumerate() {
         if layer.data.is_some() {
-            return Err(Diagnostic::error(DiagnosticCode::UnsupportedSpec, "尚未支持层级覆盖数据")
-                .with_param("layer", index.to_string()));
+            return Err(Diagnostic::error(DiagnosticCode::UnsupportedSpec, "尚未支持层级覆盖数据").with_param("layer", index.to_string()));
         }
         match layer.stat {
             StatSpec::Identity => {}
@@ -106,8 +105,9 @@ fn validate_3d(spec: &PlotSpec) -> Result<()> {
             GeomSpec::Surface(_) => {
                 let DataRef::Grid(grid) = &spec.data
                 else {
-                    return Err(Diagnostic::error(DiagnosticCode::UnsupportedSpec, "geom_surface 需要 GridData")
-                        .with_param("layer", index.to_string()));
+                    return Err(
+                        Diagnostic::error(DiagnosticCode::UnsupportedSpec, "geom_surface 需要 GridData").with_param("layer", index.to_string())
+                    );
                 };
                 grid.validate()?;
             }
@@ -167,8 +167,7 @@ fn validate_graph(spec: &PlotSpec) -> Result<()> {
     }
     for (index, layer) in spec.layers.iter().enumerate() {
         if layer.data.is_some() {
-            return Err(Diagnostic::error(DiagnosticCode::UnsupportedSpec, "尚未支持层级覆盖数据")
-                .with_param("layer", index.to_string()));
+            return Err(Diagnostic::error(DiagnosticCode::UnsupportedSpec, "尚未支持层级覆盖数据").with_param("layer", index.to_string()));
         }
         match layer.stat {
             StatSpec::Identity => {}
@@ -195,8 +194,7 @@ fn validate_tree(spec: &PlotSpec) -> Result<()> {
     }
     for (index, layer) in spec.layers.iter().enumerate() {
         if layer.data.is_some() {
-            return Err(Diagnostic::error(DiagnosticCode::UnsupportedSpec, "尚未支持层级覆盖数据")
-                .with_param("layer", index.to_string()));
+            return Err(Diagnostic::error(DiagnosticCode::UnsupportedSpec, "尚未支持层级覆盖数据").with_param("layer", index.to_string()));
         }
         match layer.stat {
             StatSpec::Identity => {}
@@ -204,24 +202,15 @@ fn validate_tree(spec: &PlotSpec) -> Result<()> {
         match &layer.geom {
             GeomSpec::TreeNode(_) | GeomSpec::TreeEdge(_) => {}
             _ => {
-                return Err(Diagnostic::error(
-                    DiagnosticCode::UnsupportedSpec,
-                    "tree-space 仅支持 geom_tree_node / geom_tree_edge",
-                )
-                .with_param("layer", index.to_string()));
+                return Err(Diagnostic::error(DiagnosticCode::UnsupportedSpec, "tree-space 仅支持 geom_tree_node / geom_tree_edge")
+                    .with_param("layer", index.to_string()));
             }
         }
     }
     Ok(())
 }
 
-fn validate_xy_layer(
-    table: &ColumnTable,
-    plot_mapping: &Mapping,
-    layer_mapping: &Mapping,
-    layer_index: usize,
-    geom_name: &str,
-) -> Result<()> {
+fn validate_xy_layer(table: &ColumnTable, plot_mapping: &Mapping, layer_mapping: &Mapping, layer_index: usize, geom_name: &str) -> Result<()> {
     let mapping = plot_mapping.merge(layer_mapping);
     let x = mapping.x.as_ref().ok_or_else(|| {
         Diagnostic::error(DiagnosticCode::MissingMapping, format!("{geom_name} 需要 x mapping"))

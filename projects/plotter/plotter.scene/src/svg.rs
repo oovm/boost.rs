@@ -139,14 +139,9 @@ fn validate_rect(rect: Rect, context: &str) -> Result<(), SceneError> {
 }
 
 fn validate_transform(transform: Transform, context: &str) -> Result<(), SceneError> {
-    for (name, value) in [
-        ("a", transform.a()),
-        ("b", transform.b()),
-        ("c", transform.c()),
-        ("d", transform.d()),
-        ("e", transform.e()),
-        ("f", transform.f()),
-    ] {
+    for (name, value) in
+        [("a", transform.a()), ("b", transform.b()), ("c", transform.c()), ("d", transform.d()), ("e", transform.e()), ("f", transform.f())]
+    {
         if !value.is_finite() {
             return Err(SceneError::invalid_transform(format!("{context}.{name} must be finite, found {value}")));
         }
@@ -171,12 +166,7 @@ fn validate_non_negative(value: f64, context: &str) -> Result<(), SceneError> {
 }
 
 fn validate_finite(value: f64, context: &str) -> Result<(), SceneError> {
-    if value.is_finite() {
-        Ok(())
-    }
-    else {
-        Err(SceneError::invalid_geometry(format!("{context} must be finite, found {value}")))
-    }
+    if value.is_finite() { Ok(()) } else { Err(SceneError::invalid_geometry(format!("{context} must be finite, found {value}"))) }
 }
 
 // ---------------------------------------------------------------------------
@@ -283,14 +273,7 @@ pub(crate) fn write_svg(scene: &DisplayScene, hooks: Option<SvgHooks>) -> Result
     Ok(out)
 }
 
-fn write_node(
-    out: &mut String,
-    node: &SceneNode,
-    depth: usize,
-    clip_index: &mut usize,
-    hooks: Option<&SvgHooks>,
-    kind: PaintMode,
-) {
+fn write_node(out: &mut String, node: &SceneNode, depth: usize, clip_index: &mut usize, hooks: Option<&SvgHooks>, kind: PaintMode) {
     match node.clip {
         Some(clip) => {
             let id = match hooks {
@@ -327,14 +310,7 @@ fn write_node(
     }
 }
 
-fn write_element(
-    out: &mut String,
-    node: &SceneNode,
-    depth: usize,
-    clip_index: &mut usize,
-    hooks: Option<&SvgHooks>,
-    inherited: PaintMode,
-) {
+fn write_element(out: &mut String, node: &SceneNode, depth: usize, clip_index: &mut usize, hooks: Option<&SvgHooks>, inherited: PaintMode) {
     let indent = indent(depth);
     // A role-bearing element takes the paint mode its palette assigns. A
     // role-less node inherits its parent's mode, so a decoration inside a
@@ -468,11 +444,7 @@ fn write_element(
                     push_semantic_attributes(out, node, hooks);
                     out.push_str(" points=\"");
                     let points = if matches!(*shape, MarkerShape::Triangle) {
-                        vec![
-                            Point::new(at.x, at.y - half),
-                            Point::new(at.x - half, at.y + half),
-                            Point::new(at.x + half, at.y + half),
-                        ]
+                        vec![Point::new(at.x, at.y - half), Point::new(at.x - half, at.y + half), Point::new(at.x + half, at.y + half)]
                     }
                     else {
                         vec![
@@ -543,15 +515,9 @@ fn write_palette(out: &mut String, prefix: &str, tokens: &ThemeTokens, palette: 
     let _ = write!(out, ".{prefix} .{prefix}-node {{ fill: {node_fill}; stroke: {node_stroke} }}");
     let _ = write!(out, ".{prefix} .{prefix}-cluster {{ fill: {cluster_fill}; stroke: {node_stroke} }}");
     let _ = write!(out, ".{prefix} .{prefix}-edge {{ fill: none; stroke: {edge_stroke} }}");
-    let _ = write!(
-        out,
-        ".{prefix} .{prefix}-edge polygon, .{prefix} .{prefix}-edge circle {{ fill: {edge_stroke}; stroke: none }}"
-    );
-    let _ = write!(
-        out,
-        ".{prefix} .{prefix}-edge-label-bg {{ fill: {edge_label_bg}; fill-opacity: {} }}",
-        plotter_types::EDGE_LABEL_BG_OPACITY
-    );
+    let _ = write!(out, ".{prefix} .{prefix}-edge polygon, .{prefix} .{prefix}-edge circle {{ fill: {edge_stroke}; stroke: none }}");
+    let _ =
+        write!(out, ".{prefix} .{prefix}-edge-label-bg {{ fill: {edge_label_bg}; fill-opacity: {} }}", plotter_types::EDGE_LABEL_BG_OPACITY);
     let _ = write!(out, ".{prefix} .{prefix}-edge-label {{ fill: {edge_label_text} }}");
     let _ = write!(out, ".{prefix} .{prefix}-label {{ fill: {node_text} }}");
     let _ = write!(out, ".{prefix} .{prefix}-decoration {{ fill: none; stroke: {edge_stroke} }}");
@@ -687,9 +653,7 @@ fn push_transform_attribute(out: &mut String, transform: Transform) {
         return;
     }
     out.push_str(" transform=\"matrix(");
-    for (index, value) in
-        [transform.a(), transform.b(), transform.c(), transform.d(), transform.e(), transform.f()].iter().enumerate()
-    {
+    for (index, value) in [transform.a(), transform.b(), transform.c(), transform.d(), transform.e(), transform.f()].iter().enumerate() {
         if index > 0 {
             out.push_str(", ");
         }

@@ -127,10 +127,7 @@ impl SfxSpec {
     /// implementation, preserved deliberately.
     pub fn validate(&self) -> Result<(), Error> {
         if !self.duration.is_finite() || self.duration < MIN_DURATION {
-            return Err(Error::invalid_input(format!(
-                "sfx duration {} must be at least {MIN_DURATION} seconds",
-                self.duration
-            )));
+            return Err(Error::invalid_input(format!("sfx duration {} must be at least {MIN_DURATION} seconds", self.duration)));
         }
         if !self.pitch.is_finite() || self.pitch < MIN_PITCH {
             return Err(Error::invalid_input(format!("sfx pitch {} must be at least {MIN_PITCH}", self.pitch)));
@@ -160,43 +157,15 @@ const fn spec(family: Family, duration: f32, seed: u32, pitch: f32, brightness: 
 
 /// The shipped catalogue. Names are stable: hosts store them, not indices.
 pub const PRESETS: &[Preset] = &[
-    Preset {
-        name: "whoosh-soft",
-        description: "Air moving past the camera, no edge",
-        spec: spec(Family::Whoosh, 0.9, 11, 1.0, 0.35),
-    },
-    Preset {
-        name: "whoosh-metal",
-        description: "Brighter sweep for hard cuts",
-        spec: spec(Family::Whoosh, 0.7, 23, 1.35, 0.8),
-    },
-    Preset {
-        name: "impact-deep",
-        description: "Sub-heavy land for a title card",
-        spec: spec(Family::Impact, 1.4, 31, 0.85, 0.25),
-    },
-    Preset {
-        name: "impact-snap",
-        description: "Short transient for UI and beats",
-        spec: spec(Family::Impact, 0.45, 37, 1.2, 0.6),
-    },
-    Preset {
-        name: "riser-tension",
-        description: "Six-second build into a reveal",
-        spec: spec(Family::Riser, 6.0, 41, 1.0, 0.55),
-    },
+    Preset { name: "whoosh-soft", description: "Air moving past the camera, no edge", spec: spec(Family::Whoosh, 0.9, 11, 1.0, 0.35) },
+    Preset { name: "whoosh-metal", description: "Brighter sweep for hard cuts", spec: spec(Family::Whoosh, 0.7, 23, 1.35, 0.8) },
+    Preset { name: "impact-deep", description: "Sub-heavy land for a title card", spec: spec(Family::Impact, 1.4, 31, 0.85, 0.25) },
+    Preset { name: "impact-snap", description: "Short transient for UI and beats", spec: spec(Family::Impact, 0.45, 37, 1.2, 0.6) },
+    Preset { name: "riser-tension", description: "Six-second build into a reveal", spec: spec(Family::Riser, 6.0, 41, 1.0, 0.55) },
     Preset { name: "tick-clean", description: "Neutral timekeeping click", spec: spec(Family::Tick, 0.12, 47, 1.0, 0.5) },
-    Preset {
-        name: "glitch-data",
-        description: "Broken-stream stutter for transitions",
-        spec: spec(Family::Glitch, 0.8, 53, 1.0, 0.7),
-    },
+    Preset { name: "glitch-data", description: "Broken-stream stutter for transitions", spec: spec(Family::Glitch, 0.8, 53, 1.0, 0.7) },
     Preset { name: "sub-drop", description: "Low sine falling away", spec: spec(Family::Sub, 2.2, 59, 0.9, 0.2) },
-    Preset {
-        name: "ambience-night",
-        description: "Quiet air bed to sit under narration",
-        spec: spec(Family::Ambience, 8.0, 61, 1.0, 0.3),
-    },
+    Preset { name: "ambience-night", description: "Quiet air bed to sit under narration", spec: spec(Family::Ambience, 8.0, 61, 1.0, 0.3) },
     Preset { name: "sparkle-rise", description: "Scattered high pings", spec: spec(Family::Sparkle, 1.6, 67, 1.1, 0.85) },
 ];
 
@@ -216,16 +185,8 @@ pub fn preset_names() -> Vec<&'static str> {
 mod tests {
     use super::*;
 
-    const ALL_FAMILIES: [Family; 8] = [
-        Family::Whoosh,
-        Family::Impact,
-        Family::Riser,
-        Family::Tick,
-        Family::Glitch,
-        Family::Sub,
-        Family::Ambience,
-        Family::Sparkle,
-    ];
+    const ALL_FAMILIES: [Family; 8] =
+        [Family::Whoosh, Family::Impact, Family::Riser, Family::Tick, Family::Glitch, Family::Sub, Family::Ambience, Family::Sparkle];
 
     #[test]
     fn family_names_round_trip_through_parse() {

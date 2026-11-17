@@ -14,9 +14,7 @@ use document_compose::{ConversionReport, Diagnostic, Severity};
 pub use document_formats::detect::{ContainerKind, DetectionConfidence, FormatDetection};
 use document_formats::{
     detect::detect_bytes,
-    import::{
-        doc::import_doc_bytes, docx::import_docx_bytes, epub::import_epub_bytes, html::import_html_bytes, pdf::import_pdf_bytes,
-    },
+    import::{doc::import_doc_bytes, docx::import_docx_bytes, epub::import_epub_bytes, html::import_html_bytes, pdf::import_pdf_bytes},
 };
 use document_ir::DocumentGraph;
 
@@ -216,9 +214,7 @@ pub fn import_auto(label: &str, bytes: &[u8], extension_hint: Option<&str>) -> R
         return Err(InputError::from(Diagnostic {
             code: codes::UNSUPPORTED_FORMAT.to_owned(),
             severity: Severity::Error,
-            message: format!(
-                "{label}: probed `{id}`, which belongs to a text-language profile rather than this container profile",
-            ),
+            message: format!("{label}: probed `{id}`, which belongs to a text-language profile rather than this container profile",),
             span: None,
         }));
     };
@@ -248,12 +244,7 @@ pub fn import_file(path: impl AsRef<Path>, format: Option<Format>) -> Result<Imp
     }
 }
 
-fn import_with_detection(
-    format: Format,
-    label: &str,
-    bytes: &[u8],
-    detection: FormatDetection,
-) -> Result<ImportedDocument, InputError> {
+fn import_with_detection(format: Format, label: &str, bytes: &[u8], detection: FormatDetection) -> Result<ImportedDocument, InputError> {
     let graph = match format {
         Format::Html => import_html_bytes(label, bytes),
         Format::Docx => import_docx_bytes(label, bytes),
@@ -320,10 +311,7 @@ fn probe_failure(detection: &FormatDetection, label: &str) -> InputError {
     let (code, message) = match detection.confidence {
         DetectionConfidence::Ambiguous => (
             codes::AMBIGUOUS_FORMAT,
-            format!(
-                "{label}: bytes stay ambiguous between {} and no extension hint resolved them",
-                detection.candidates.join(" / ")
-            ),
+            format!("{label}: bytes stay ambiguous between {} and no extension hint resolved them", detection.candidates.join(" / ")),
         ),
         _ => (codes::UNKNOWN_FORMAT, format!("{label}: {} so an explicit format is required", detection.evidence)),
     };

@@ -76,10 +76,7 @@ impl TypeAnnotationParser {
 
             let parts: Vec<&str> = prop.split(":").map(|p| p.trim()).collect();
             if parts.len() != 2 {
-                return Err(DejavuError::RuntimeError(RuntimeError::NotImplemented(format!(
-                    "Invalid object property: {}",
-                    prop
-                ))));
+                return Err(DejavuError::RuntimeError(RuntimeError::NotImplemented(format!("Invalid object property: {}", prop))));
             }
 
             let name = parts[0].trim_matches('"').trim_matches('\'');

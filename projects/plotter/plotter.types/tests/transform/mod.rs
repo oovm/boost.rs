@@ -37,9 +37,6 @@ fn determinant_tracks_area_scale() {
 #[test]
 fn matrix_components_are_exposed() {
     let transform = Transform::new(2.0, 0.0, 0.0, 3.0, 4.0, 5.0);
-    assert_eq!(
-        (transform.a(), transform.b(), transform.c(), transform.d(), transform.e(), transform.f()),
-        (2.0, 0.0, 0.0, 3.0, 4.0, 5.0)
-    );
+    assert_eq!((transform.a(), transform.b(), transform.c(), transform.d(), transform.e(), transform.f()), (2.0, 0.0, 0.0, 3.0, 4.0, 5.0));
     assert_eq!(Transform::default(), Transform::IDENTITY);
 }

@@ -31,11 +31,7 @@ fn blur_pass(frame: &mut Frame, radius: i32, horizontal: bool) {
         for x in 0..width {
             let mut acc = [0u32; 3];
             for offset in -radius..=radius {
-                let (sx, sy) = if horizontal {
-                    ((x + offset).clamp(0, width - 1), y)
-                } else {
-                    (x, (y + offset).clamp(0, height - 1))
-                };
+                let (sx, sy) = if horizontal { ((x + offset).clamp(0, width - 1), y) } else { (x, (y + offset).clamp(0, height - 1)) };
                 let index = ((sy * width + sx) * 4) as usize;
                 for k in 0..3 {
                     acc[k] += source[index + k] as u32;

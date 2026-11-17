@@ -2,9 +2,8 @@ use plotter_scene::{Color, DisplayScene, NodeKind, Rect, SceneNode, ShapeStyle, 
 
 #[test]
 fn nested_group_transform_is_composed_into_svg_matrix() {
-    let child =
-        SceneNode::new(NodeKind::Rect { rect: Rect::new(0.0, 0.0, 10.0, 10.0), style: ShapeStyle::filled(Color::BLACK) })
-            .with_transform(Transform::translate(5.0, 0.0));
+    let child = SceneNode::new(NodeKind::Rect { rect: Rect::new(0.0, 0.0, 10.0, 10.0), style: ShapeStyle::filled(Color::BLACK) })
+        .with_transform(Transform::translate(5.0, 0.0));
     let group = SceneNode::group(vec![child]).with_transform(Transform::translate(20.0, 10.0));
 
     let mut scene = DisplayScene::new(Size::new(100.0, 100.0));

@@ -467,7 +467,9 @@ fn ensure_document_size(document: &BsonDocument, collection: &str) -> Result<(),
     if size > MAX_BSON_OBJECT_SIZE {
         return Err(CommandError::new(
             10334,
-            format!("BSONObj size: {size} (0x{size:X}) is invalid. Size must be between 0 and 16793600(16MB) First element: insert: \"{collection}\""),
+            format!(
+                "BSONObj size: {size} (0x{size:X}) is invalid. Size must be between 0 and 16793600(16MB) First element: insert: \"{collection}\""
+            ),
         ));
     }
     Ok(())
@@ -2844,14 +2846,14 @@ pub fn update(command: &BsonDocument, store: &dyn MongoStorage) -> Result<BsonDo
     // 条目缺失（旧目录还没回填）或事务内暂存对探针不可见时，退回整表 map，宁可慢也不放行重复键。
     let probe_namespaces: Option<Vec<String>> = if session.key().is_some() {
         None
-    } else {
+    }
+    else {
         let mut namespaces = Vec::with_capacity(unique_indexes.len());
         let mut ready = true;
         for specification in &unique_indexes {
             let entries_namespace = crate::storage::index_namespace(&namespace, &specification.name);
-            let entries = store
-                .reserved_has_entries(&entries_namespace)
-                .map_err(|error| CommandError::new(1, format!("index probe failed: {error}")))?;
+            let entries =
+                store.reserved_has_entries(&entries_namespace).map_err(|error| CommandError::new(1, format!("index probe failed: {error}")))?;
             if !entries {
                 ready = false;
                 break;

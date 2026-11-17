@@ -45,14 +45,7 @@ pub enum CameraSpec {
 impl CameraSpec {
     /// 默认透视相机（看向原点）。
     pub fn perspective_default() -> Self {
-        Self::Perspective {
-            eye: Vec3::new(2.5, 2.0, 2.5),
-            target: Vec3::ZERO,
-            up: Vec3::Y,
-            fovy_degrees: 45.0,
-            near: 0.1,
-            far: 100.0,
-        }
+        Self::Perspective { eye: Vec3::new(2.5, 2.0, 2.5), target: Vec3::ZERO, up: Vec3::Y, fovy_degrees: 45.0, near: 0.1, far: 100.0 }
     }
 
     /// 是否为纯 2D 正交。
@@ -105,17 +98,9 @@ fn ndc_to_screen(nx: f64, ny: f64, nz: f64, viewport: Viewport) -> ScreenPoint {
 }
 
 fn look_basis(eye: Vec3, target: Vec3, up: Vec3) -> Result<(Vec3, Vec3, Vec3)> {
-    let forward = (target - eye)
-        .normalized()
-        .ok_or_else(|| Diagnostic::error(DiagnosticCode::ValidationFailed, "相机 eye 与 target 重合"))?;
-    let right = forward
-        .cross(up)
-        .normalized()
-        .ok_or_else(|| Diagnostic::error(DiagnosticCode::ValidationFailed, "相机 up 与视线平行"))?;
-    let cam_up = right
-        .cross(forward)
-        .normalized()
-        .ok_or_else(|| Diagnostic::error(DiagnosticCode::ValidationFailed, "无法构造相机上方向"))?;
+    let forward = (target - eye).normalized().ok_or_else(|| Diagnostic::error(DiagnosticCode::ValidationFailed, "相机 eye 与 target 重合"))?;
+    let right = forward.cross(up).normalized().ok_or_else(|| Diagnostic::error(DiagnosticCode::ValidationFailed, "相机 up 与视线平行"))?;
+    let cam_up = right.cross(forward).normalized().ok_or_else(|| Diagnostic::error(DiagnosticCode::ValidationFailed, "无法构造相机上方向"))?;
     Ok((right, cam_up, forward))
 }
 

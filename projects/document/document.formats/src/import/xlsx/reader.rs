@@ -8,9 +8,8 @@ use oak_xml::ast::XmlElement;
 
 use super::{
     model::{
-        CellComment, CellFormula, CellStyle, CellValue, DateKind, DateSystem, FormulaKind, FreezePane, ImageAnchor,
-        IssueStatus, SheetColumn, SheetImage, SheetRow, SheetVisibility, WorkbookStyles, XlsxCell, XlsxIssue, XlsxSheet,
-        XlsxStats, XlsxWorkbook, codes,
+        CellComment, CellFormula, CellStyle, CellValue, DateKind, DateSystem, FormulaKind, FreezePane, ImageAnchor, IssueStatus, SheetColumn,
+        SheetImage, SheetRow, SheetVisibility, WorkbookStyles, XlsxCell, XlsxIssue, XlsxSheet, XlsxStats, XlsxWorkbook, codes,
     },
     reference::{parse_range, parse_reference, reference},
     styles::parse_styles,
@@ -19,8 +18,8 @@ use super::{
 use crate::{
     FormatError,
     import::office::{
-        attribute_value, bool_attribute, child_named, children_named, descendants_named, document_root, element_text,
-        element_text_without, f64_attribute, local_name, parse_xml, u32_attribute,
+        attribute_value, bool_attribute, child_named, children_named, descendants_named, document_root, element_text, element_text_without,
+        f64_attribute, local_name, parse_xml, u32_attribute,
     },
 };
 
@@ -32,8 +31,7 @@ const THEME_PART: &str = "xl/theme/theme1.xml";
 /// Imports an XLSX workbook from disk.
 pub fn import_xlsx(path: impl AsRef<Path>) -> Result<XlsxWorkbook, FormatError> {
     let path = path.as_ref();
-    let bytes =
-        fs::read(path).map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
+    let bytes = fs::read(path).map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
     import_xlsx_bytes(&path.display().to_string(), &bytes)
 }
 
@@ -46,8 +44,7 @@ pub fn import_xlsx_bytes(label: &str, bytes: &[u8]) -> Result<XlsxWorkbook, Form
     let mut ledger = BudgetTracker::new(Budget::default());
     let mut issues = Vec::new();
 
-    let workbook_part =
-        package.main_document_part_path(&mut ledger).map_err(map_opc_error)?.unwrap_or_else(|| WORKBOOK_PART.to_owned());
+    let workbook_part = package.main_document_part_path(&mut ledger).map_err(map_opc_error)?.unwrap_or_else(|| WORKBOOK_PART.to_owned());
     let workbook_xml = package.read_part(&workbook_part, &mut ledger).map_err(map_opc_error)?;
     let workbook_value = parse_xml(&workbook_xml, "xlsx")?;
     let workbook_root = document_root(&workbook_value, "xlsx")?;
@@ -65,22 +62,10 @@ pub fn import_xlsx_bytes(label: &str, bytes: &[u8]) -> Result<XlsxWorkbook, Form
 
     let macro_enabled = package.part_paths().iter().any(|path| local_name(path).eq_ignore_ascii_case("vbaProject.bin"));
     if macro_enabled {
-        issues.push(issue(
-            codes::MACRO,
-            "VBA project detected and refused by the XLSX reader",
-            IssueStatus::Unsupported,
-            None,
-            None,
-        ));
+        issues.push(issue(codes::MACRO, "VBA project detected and refused by the XLSX reader", IssueStatus::Unsupported, None, None));
     }
     if package.part_paths().iter().any(|path| path.starts_with("xl/externalLinks/")) {
-        issues.push(issue(
-            codes::DEFINED_NAME,
-            "external workbook links are carried as names only",
-            IssueStatus::Partial,
-            None,
-            None,
-        ));
+        issues.push(issue(codes::DEFINED_NAME, "external workbook links are carried as names only", IssueStatus::Partial, None, None));
     }
 
     let mut sheets = Vec::new();
@@ -99,10 +84,8 @@ pub fn import_xlsx_bytes(label: &str, bytes: &[u8]) -> Result<XlsxWorkbook, Form
             .and_then(|id| workbook_rels.get(id))
             .map(|relationship| resolve_target(&workbook_part, &relationship.target))
             .unwrap_or_else(|| format!("xl/worksheets/sheet{}.xml", sheet_number + 1));
-        let relationship_type = relation_id
-            .as_deref()
-            .and_then(|id| workbook_rels.get(id))
-            .map(|relationship| relationship.relationship_type.clone());
+        let relationship_type =
+            relation_id.as_deref().and_then(|id| workbook_rels.get(id)).map(|relationship| relationship.relationship_type.clone());
         let is_worksheet = relationship_type.as_deref().map(|kind| kind.ends_with("/worksheet")).unwrap_or(true);
         if !is_worksheet {
             issues.push(issue(
@@ -257,13 +240,7 @@ fn bool_attribute_of(element: Option<&XmlElement>, name: &str) -> Option<bool> {
     element.and_then(|element| bool_attribute(element, name))
 }
 
-fn issue(
-    code: &str,
-    message: impl Into<String>,
-    status: IssueStatus,
-    sheet: Option<String>,
-    cell: Option<String>,
-) -> XlsxIssue {
+fn issue(code: &str, message: impl Into<String>, status: IssueStatus, sheet: Option<String>, cell: Option<String>) -> XlsxIssue {
     XlsxIssue { code: code.to_owned(), message: message.into(), status, sheet, cell }
 }
 
@@ -285,16 +262,9 @@ fn parse_sheet(
     let root = document_root(&value, "xlsx")?;
 
     let (default_row_height, default_column_width) = child_named(root, "sheetFormatPr")
-        .map(|format| {
-            (
-                f64_attribute(format, "defaultRowHeight").unwrap_or(15.0),
-                f64_attribute(format, "defaultColWidth").unwrap_or(8.43),
-            )
-        })
+        .map(|format| (f64_attribute(format, "defaultRowHeight").unwrap_or(15.0), f64_attribute(format, "defaultColWidth").unwrap_or(8.43)))
         .unwrap_or((15.0, 8.43));
-    let dimension = child_named(root, "dimension")
-        .and_then(|dimension| attribute_value(dimension, "ref"))
-        .and_then(|text| parse_range(&text));
+    let dimension = child_named(root, "dimension").and_then(|dimension| attribute_value(dimension, "ref")).and_then(|text| parse_range(&text));
 
     let columns = child_named(root, "cols")
         .map(|cols| {
@@ -324,19 +294,16 @@ fn parse_sheet(
             rows.push(SheetRow { index: row_index, height, custom_height, hidden });
             let mut next_column = 1;
             for cell in children_named(row, "c") {
-                let (cell_row, cell_column, cell_reference) =
-                    match attribute_value(cell, "r").and_then(|text| parse_reference(&text)) {
-                        Some((cell_row, cell_column)) => (cell_row, cell_column, reference(cell_row, cell_column)),
-                        None => {
-                            let cell_reference = reference(row_index, next_column);
-                            (row_index, next_column, cell_reference)
-                        }
-                    };
+                let (cell_row, cell_column, cell_reference) = match attribute_value(cell, "r").and_then(|text| parse_reference(&text)) {
+                    Some((cell_row, cell_column)) => (cell_row, cell_column, reference(cell_row, cell_column)),
+                    None => {
+                        let cell_reference = reference(row_index, next_column);
+                        (row_index, next_column, cell_reference)
+                    }
+                };
                 next_column = cell_column + 1;
                 let style_index = u32_attribute(cell, "s");
-                let style = style_index
-                    .and_then(|style_index| styles.cell_formats.get(style_index as usize).cloned())
-                    .unwrap_or_default();
+                let style = style_index.and_then(|style_index| styles.cell_formats.get(style_index as usize).cloned()).unwrap_or_default();
                 if let Some(style_index) = style_index {
                     if styles.cell_formats.get(style_index as usize).is_none() {
                         issues.push(issue(
@@ -387,8 +354,7 @@ fn parse_sheet(
             })
         });
 
-    let auto_filter =
-        child_named(root, "autoFilter").and_then(|filter| attribute_value(filter, "ref")).and_then(|text| parse_range(&text));
+    let auto_filter = child_named(root, "autoFilter").and_then(|filter| attribute_value(filter, "ref")).and_then(|text| parse_range(&text));
     let conditional_formatting = child_named(root, "conditionalFormatting").is_some();
     let data_validations = child_named(root, "dataValidations").is_some();
 
@@ -450,8 +416,7 @@ fn parse_sheet(
         .map(|relationship| resolve_target(part, &relationship.target))
     {
         if let Some(drawing_xml) = read_part_optional(package, ledger, &drawing_part) {
-            let (read_images, chart_count, drawing_issues) =
-                parse_drawing(package, ledger, &drawing_part, &drawing_xml, &sheet_rels, name);
+            let (read_images, chart_count, drawing_issues) = parse_drawing(package, ledger, &drawing_part, &drawing_xml, &sheet_rels, name);
             images.extend(read_images);
             charts = chart_count;
             issues.extend(drawing_issues);
@@ -591,13 +556,7 @@ fn textual_value(text: &str, style: &CellStyle, date_system: DateSystem) -> Cell
     }
 }
 
-fn parse_formula(
-    cell: &XmlElement,
-    parsed: &CellValue,
-    sheet: &str,
-    cell_reference: &str,
-    issues: &mut Vec<XlsxIssue>,
-) -> Option<CellFormula> {
+fn parse_formula(cell: &XmlElement, parsed: &CellValue, sheet: &str, cell_reference: &str, issues: &mut Vec<XlsxIssue>) -> Option<CellFormula> {
     let formula = child_named(cell, "f")?;
     let source = element_text(formula).trim().to_owned();
     let kind = attribute_value(formula, "t").unwrap_or_else(|| "normal".to_owned());
@@ -666,12 +625,7 @@ fn parse_drawing(
         .chain(children_named(root, "twoCellAnchor"))
         .chain(children_named(root, "absoluteAnchor"))
     {
-        let from = child_named(anchor, "from").map(parse_anchor).unwrap_or(ImageAnchor {
-            column: 0,
-            column_offset: 0,
-            row: 0,
-            row_offset: 0,
-        });
+        let from = child_named(anchor, "from").map(parse_anchor).unwrap_or(ImageAnchor { column: 0, column_offset: 0, row: 0, row_offset: 0 });
         let to = child_named(anchor, "to").map(parse_anchor);
         let extent = child_named(anchor, "ext").and_then(|ext| {
             let cx = i64::from(u32_attribute(ext, "cx").unwrap_or(0));
@@ -768,9 +722,8 @@ fn parse_comments(xml: &[u8], sheet: &str, issues: &mut Vec<XlsxIssue>) -> Vec<C
     else {
         return Vec::new();
     };
-    let authors: Vec<String> = child_named(root, "authors")
-        .map(|block| children_named(block, "author").into_iter().map(element_text).collect())
-        .unwrap_or_default();
+    let authors: Vec<String> =
+        child_named(root, "authors").map(|block| children_named(block, "author").into_iter().map(element_text).collect()).unwrap_or_default();
     let Some(list) = child_named(root, "commentList")
     else {
         return Vec::new();

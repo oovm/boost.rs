@@ -51,8 +51,7 @@ impl TemplateError {
         for (name, value) in args {
             payload = payload.with_arg(name, MessageArg::Text(value));
         }
-        let diagnostic =
-            Diagnostic::new(DiagnosticCode::new(code), DiagnosticSeverity::Error, origin(), payload.with_fallback(fallback));
+        let diagnostic = Diagnostic::new(DiagnosticCode::new(code), DiagnosticSeverity::Error, origin(), payload.with_fallback(fallback));
         Self { diagnostics: vec![diagnostic] }
     }
 

@@ -30,10 +30,7 @@ fn publish_markdown_project_writes_index_chapters_assets_and_report() {
     assert!(output_dir.join("chapters/000-chapter-one.md").exists());
     assert!(output_dir.join("assets/logo.png").exists());
     assert!(published.report_path.exists());
-    assert_eq!(
-        fs::read_to_string(output_dir.join("chapters/000-chapter-one.md")).expect("chapter"),
-        "# Chapter One\n\nBody.\n"
-    );
+    assert_eq!(fs::read_to_string(output_dir.join("chapters/000-chapter-one.md")).expect("chapter"), "# Chapter One\n\nBody.\n");
 
     let _ = fs::remove_dir_all(&output_dir);
 }
@@ -211,17 +208,14 @@ fn failed_first_publish_leaves_no_output_or_staging_directory() {
 
     assert!(result.is_err(), "bad asset path must produce an error");
     assert!(!output_dir.exists(), "failed publish must not create the target directory");
-    let leftovers: Vec<_> = fs::read_dir(&base)
-        .expect("base entries")
-        .map(|entry| entry.expect("entry").file_name().to_string_lossy().to_string())
-        .collect();
+    let leftovers: Vec<_> =
+        fs::read_dir(&base).expect("base entries").map(|entry| entry.expect("entry").file_name().to_string_lossy().to_string()).collect();
     assert!(leftovers.is_empty(), "failed publish leaked staging entries: {leftovers:?}");
     let _ = fs::remove_dir_all(&base);
 }
 
 fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
-    let nanos =
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|duration| duration.as_nanos()).unwrap_or(0);
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|duration| duration.as_nanos()).unwrap_or(0);
     std::env::temp_dir().join(format!("{prefix}-{}-{nanos}", std::process::id()))
 }
 

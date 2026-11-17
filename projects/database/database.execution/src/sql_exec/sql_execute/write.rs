@@ -32,8 +32,7 @@ pub(crate) fn insert_row_if_absent(
 ) -> Result<SqlResult, SqlFrontendError> {
     let row = write_plan_to_row(plan);
     let namespace = Namespace(plan.namespace.clone());
-    let mut indexes =
-        IndexMaintenance::open(executor, transaction, &plan.namespace, &plan.unique_constraints, &plan.field_types)?;
+    let mut indexes = IndexMaintenance::open(executor, transaction, &plan.namespace, &plan.unique_constraints, &plan.field_types)?;
     // 唯一性复核与索引回填共用同一次全表快照；没有唯一约束时两者都不需要。
     let stored = if plan.unique_constraints.is_empty() {
         Vec::new()
@@ -53,7 +52,8 @@ pub(crate) fn insert_row_if_absent(
     }
     indexes.remember_insert(&row, &plan.rowid);
     let index_commands = indexes.take_commands();
-    let command = KeyValueCommand { namespace: namespace.clone(), key: plan.rowid.clone(), action: KeyValueAction::PutIfAbsent(encode_row(&row)) };
+    let command =
+        KeyValueCommand { namespace: namespace.clone(), key: plan.rowid.clone(), action: KeyValueAction::PutIfAbsent(encode_row(&row)) };
     let inserted = commit_row_write(executor, transaction, command, CommitCondition::PutIfAbsent, &index_commands, "insert")?;
     let affected = match (inserted, do_nothing) {
         (true, _) => 1,
@@ -83,8 +83,7 @@ pub(crate) fn upsert_row(
     dialect: SqlDialect,
 ) -> Result<SqlResult, SqlFrontendError> {
     let namespace = Namespace(plan.namespace.clone());
-    let mut indexes =
-        IndexMaintenance::open(executor, transaction, &plan.namespace, &plan.unique_constraints, &plan.field_types)?;
+    let mut indexes = IndexMaintenance::open(executor, transaction, &plan.namespace, &plan.unique_constraints, &plan.field_types)?;
     if indexes.needs_backfill() {
         let stored = index_snapshot(executor, transaction, &namespace)?;
         indexes.backfill(&stored)?;
@@ -108,14 +107,8 @@ pub(crate) fn upsert_row(
                             key: plan.rowid.clone(),
                             action: KeyValueAction::PutIfAbsent(encode_row(&proposed)),
                         };
-                        let inserted = commit_row_write(
-                            executor,
-                            transaction,
-                            command,
-                            CommitCondition::PutIfAbsent,
-                            &index_commands,
-                            "upsert",
-                        )?;
+                        let inserted =
+                            commit_row_write(executor, transaction, command, CommitCondition::PutIfAbsent, &index_commands, "upsert")?;
                         if inserted {
                             return returning_result(&plan.returning, &plan.field_types, vec![proposed], 1, dialect);
                         }
@@ -139,14 +132,8 @@ pub(crate) fn upsert_row(
         indexes.remember_replace(Some(&existing_row), &row, &target_rowid);
         let index_commands = indexes.take_commands();
         let command = KeyValueCommand { namespace: namespace.clone(), key: target_rowid, action: KeyValueAction::Put(encode_row(&row)) };
-        let written = commit_row_write(
-            executor,
-            transaction,
-            command,
-            CommitCondition::ValueEquals(Some(existing_bytes)),
-            &index_commands,
-            "upsert",
-        )?;
+        let written =
+            commit_row_write(executor, transaction, command, CommitCondition::ValueEquals(Some(existing_bytes)), &index_commands, "upsert")?;
         if !written {
             return Err(SqlFrontendError::new(
                 SqlErrorKind::Conflict,
@@ -176,20 +163,18 @@ fn commit_row_write(
     match transaction {
         Some(handle) => {
             let written = match &condition {
-                CommitCondition::PutIfAbsent => match handle
-                    .execute(command)
-                    .map_err(|e| write_error(format!("TransactionHandle.{operation} failed: {e}"), &e))?
-                {
-                    database_query::cluster_kv::KeyValueResult::PutIfAbsent { revision } => revision.is_some(),
-                    _ => true,
-                },
-                CommitCondition::PutIfPresent => match handle
-                    .execute(command)
-                    .map_err(|e| write_error(format!("TransactionHandle.{operation} failed: {e}"), &e))?
-                {
-                    database_query::cluster_kv::KeyValueResult::PutIfPresent { revision } => revision.is_some(),
-                    _ => true,
-                },
+                CommitCondition::PutIfAbsent => {
+                    match handle.execute(command).map_err(|e| write_error(format!("TransactionHandle.{operation} failed: {e}"), &e))? {
+                        database_query::cluster_kv::KeyValueResult::PutIfAbsent { revision } => revision.is_some(),
+                        _ => true,
+                    }
+                }
+                CommitCondition::PutIfPresent => {
+                    match handle.execute(command).map_err(|e| write_error(format!("TransactionHandle.{operation} failed: {e}"), &e))? {
+                        database_query::cluster_kv::KeyValueResult::PutIfPresent { revision } => revision.is_some(),
+                        _ => true,
+                    }
+                }
                 CommitCondition::ValueEquals(pre_image) => {
                     handle
                         .write_if_unchanged(command, pre_image.clone())
@@ -204,9 +189,7 @@ fn commit_row_write(
         }
         // 没有索引段要提交时保持单命令路径：一条命令本身就是一次 durable 提交点。
         None if index_commands.is_empty() => {
-            let result = executor
-                .execute(None, command)
-                .map_err(|e| internal_error(&format!("KeyValueExecutor.{operation} failed: {e}")))?;
+            let result = executor.execute(None, command).map_err(|e| internal_error(&format!("KeyValueExecutor.{operation} failed: {e}")))?;
             Ok(result_is_write(result))
         }
         None => {
@@ -349,9 +332,8 @@ pub(crate) fn execute_multi_insert_atomic(
 ) -> Result<SqlResult, SqlFrontendError> {
     let first = plans.first().expect("atomic multi-insert requires at least one plan");
     let namespace = Namespace(first.namespace.clone());
-    let unique_conflict = || {
-        SqlFrontendError::new(SqlErrorKind::DuplicateKey, format!("duplicate key value violates unique constraint: {}", first.namespace))
-    };
+    let unique_conflict =
+        || SqlFrontendError::new(SqlErrorKind::DuplicateKey, format!("duplicate key value violates unique constraint: {}", first.namespace));
     let needs_preimage = plans.iter().any(|plan| plan.conflict.is_some());
     let mut indexes = IndexMaintenance::open(executor, None, &first.namespace, &first.unique_constraints, &first.field_types)?;
     for attempt in 0..2 {
@@ -448,17 +430,15 @@ fn load_insert_preimages(
             rowids.push(plan.rowid.clone());
         }
     }
-    let commands: Vec<KeyValueCommand> = rowids
-        .iter()
-        .map(|rowid| KeyValueCommand { namespace: namespace.clone(), key: rowid.clone(), action: KeyValueAction::Get })
-        .collect();
+    let commands: Vec<KeyValueCommand> =
+        rowids.iter().map(|rowid| KeyValueCommand { namespace: namespace.clone(), key: rowid.clone(), action: KeyValueAction::Get }).collect();
     let results = match transaction {
-        Some(handle) => handle
-            .execute_read_batch(&commands)
-            .map_err(|e| internal_error(&format!("TransactionHandle.read_batch failed: {e}")))?,
-        None => executor
-            .execute_read_batch(None, &commands)
-            .map_err(|e| internal_error(&format!("KeyValueExecutor.read_batch failed: {e}")))?,
+        Some(handle) => {
+            handle.execute_read_batch(&commands).map_err(|e| internal_error(&format!("TransactionHandle.read_batch failed: {e}")))?
+        }
+        None => {
+            executor.execute_read_batch(None, &commands).map_err(|e| internal_error(&format!("KeyValueExecutor.read_batch failed: {e}")))?
+        }
     };
     for (rowid, result) in rowids.iter().zip(results) {
         let bytes = match result {
@@ -773,8 +753,7 @@ pub(crate) fn execute_update(
     {
         return Err(duplicate_key_error(&constraint));
     }
-    let mut indexes =
-        IndexMaintenance::open(executor, transaction, &plan.namespace, &plan.unique_constraints, &plan.field_types)?;
+    let mut indexes = IndexMaintenance::open(executor, transaction, &plan.namespace, &plan.unique_constraints, &plan.field_types)?;
     if indexes.needs_backfill() {
         let stored = index_snapshot(executor, transaction, &namespace)?;
         indexes.backfill(&stored)?;
@@ -796,8 +775,7 @@ pub(crate) fn execute_delete(
     dialect: SqlDialect,
 ) -> Result<SqlResult, SqlFrontendError> {
     let namespace = Namespace(plan.namespace.clone());
-    let mut indexes =
-        IndexMaintenance::open(executor, transaction, &plan.namespace, &plan.unique_constraints, &plan.field_types)?;
+    let mut indexes = IndexMaintenance::open(executor, transaction, &plan.namespace, &plan.unique_constraints, &plan.field_types)?;
     if indexes.needs_backfill() {
         let stored = index_snapshot(executor, transaction, &namespace)?;
         indexes.backfill(&stored)?;
@@ -834,14 +812,7 @@ pub(crate) fn execute_delete(
     let index_commands = indexes.take_commands();
     let command = KeyValueCommand { namespace, key: plan.rowid.clone(), action: KeyValueAction::Delete };
     // 事务内 DELETE 同样交给 OCC：pre-image 已被并发事务改写时 COMMIT 被拒绝。
-    let written = commit_row_write(
-        executor,
-        transaction,
-        command,
-        CommitCondition::ValueEquals(pre_image),
-        &index_commands,
-        "delete",
-    )?;
+    let written = commit_row_write(executor, transaction, command, CommitCondition::ValueEquals(pre_image), &index_commands, "delete")?;
     Ok(SqlResult { columns: Vec::new(), rows: Vec::new(), affected_rows: u64::from(written) })
 }
 
@@ -929,8 +900,7 @@ pub(crate) fn execute_update_scan(
         0,
         "update_scan",
     )?;
-    let mut indexes =
-        IndexMaintenance::open(executor, transaction, &plan.namespace, &plan.unique_constraints, &plan.field_types)?;
+    let mut indexes = IndexMaintenance::open(executor, transaction, &plan.namespace, &plan.unique_constraints, &plan.field_types)?;
     if indexes.needs_backfill() {
         let stored = index_snapshot(executor, transaction, &namespace)?;
         indexes.backfill(&stored)?;
@@ -1009,8 +979,7 @@ pub(crate) fn execute_delete_scan(
         0,
         "delete_scan",
     )?;
-    let mut indexes =
-        IndexMaintenance::open(executor, transaction, &plan.namespace, &plan.unique_constraints, &plan.field_types)?;
+    let mut indexes = IndexMaintenance::open(executor, transaction, &plan.namespace, &plan.unique_constraints, &plan.field_types)?;
     if indexes.needs_backfill() {
         let stored = index_snapshot(executor, transaction, &namespace)?;
         indexes.backfill(&stored)?;
@@ -1103,10 +1072,12 @@ impl<'a> UniqueSnapshot<'a> {
     /// 返回与候选行冲突的约束描述；`excluded_rowid` 用于排除正在改写的那一行。
     fn conflict(&self, candidate: &RowFieldValues, excluded_rowid: Option<&[u8]>) -> Option<String> {
         for (constraint, bucket) in self.constraints.iter().zip(&self.buckets) {
-            let Some(tuple) = constraint_tuple(candidate, &constraint.columns) else {
+            let Some(tuple) = constraint_tuple(candidate, &constraint.columns)
+            else {
                 continue;
             };
-            let Some(rowids) = bucket.get(&constraint_key(&tuple)) else {
+            let Some(rowids) = bucket.get(&constraint_key(&tuple))
+            else {
                 continue;
             };
             if rowids.iter().any(|rowid| excluded_rowid.is_none_or(|excluded| rowid.as_slice() != excluded)) {
@@ -1266,10 +1237,7 @@ mod tests {
     #[test]
     fn later_statement_row_duplicating_a_unique_value_is_rejected() {
         let constraints = vec![UniqueConstraintPlan { columns: vec![(1, "email".to_string())] }];
-        let plans = vec![
-            insert_plan(b"first", "same@example.com", &constraints),
-            insert_plan(b"second", "same@example.com", &constraints),
-        ];
+        let plans = vec![insert_plan(b"first", "same@example.com", &constraints), insert_plan(b"second", "same@example.com", &constraints)];
         let (order, folded) = fold_insert_plans(&plans, &BTreeMap::new(), SqlDialect::Postgres).expect("fold succeeds");
         let error = ensure_unique_rows(&constraints, &order, &folded, &[]).expect_err("the later row must clash");
         assert_eq!(error.kind, SqlErrorKind::DuplicateKey);

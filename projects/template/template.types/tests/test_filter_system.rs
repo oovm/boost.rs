@@ -63,8 +63,7 @@ fn test_custom_filter() {
     ctx.register_filter("custom", Arc::new(CustomFilter));
 
     // 测试自定义过滤器
-    let result =
-        ctx.apply_filter("custom", Value::String("test".to_string()), &[Value::String("Prefix: ".to_string())]).unwrap();
+    let result = ctx.apply_filter("custom", Value::String("test".to_string()), &[Value::String("Prefix: ".to_string())]).unwrap();
     assert_eq!(result, Value::String("Prefix: test".to_string()));
 }
 
@@ -79,4 +78,3 @@ fn test_filter_chain() {
     let result = ctx.apply_filter("uppercase", result, &[]).unwrap();
     assert_eq!(result, Value::String("HELLO WORLD".to_string()));
 }
-

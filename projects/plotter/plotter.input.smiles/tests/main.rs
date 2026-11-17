@@ -69,10 +69,7 @@ fn reaction_smiles_lower_to_reactants_products_and_arrow() {
 #[test]
 fn stereo_and_any_bonds_record_named_losses() {
     let stereo = smiles_to_spec("C/C=C/C").expect("stereo lowers");
-    assert!(
-        stereo.diagnostics.iter().any(|diagnostic| diagnostic.code().as_str() == codes::DEPICTION_APPROXIMATED),
-        "stereo must be reported"
-    );
+    assert!(stereo.diagnostics.iter().any(|diagnostic| diagnostic.code().as_str() == codes::DEPICTION_APPROXIMATED), "stereo must be reported");
 
     let any = smiles_to_spec("C~C").expect("any bond lowers");
     let StructureSpec::Molecule(molecule) = &any.spec

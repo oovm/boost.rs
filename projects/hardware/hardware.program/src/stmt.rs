@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::expr::Expr;
-use crate::types::Ty;
+use crate::{expr::Expr, types::Ty};
 
 /// SSA 指令。操作数使用函数内稳定的值编号，不携带领域语义。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

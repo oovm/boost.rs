@@ -4,7 +4,7 @@ use plotter_data::ColumnTable;
 use plotter_layout::{PanelRect, layout_facet_panels, layout_single_panel};
 use plotter_types::plot::{Diagnostic, DiagnosticCode, Interval, Result};
 use plotter_view::{
-    AxisNode, CameraSpec, MeshNode, Point2, PointsNode, PolylineNode, Rect2, Scene, SceneArena, SceneMetadata, SceneNodeKind,
+    AxisNode, CameraSpec, MeshNode, Point2, PointsNode, PolylineNode, Rect2, Scene, SceneArena, SceneMetadata, SceneNodeKind, TextAnchor,
     TextNode, Viewport,
 };
 
@@ -101,13 +101,7 @@ fn compile_plot_2d(spec: &PlotSpec, options: CompileOptions, cartesian: crate::c
     }
 
     let root = arena.insert(SceneNodeKind::Group { children: root_children });
-    Ok(Scene {
-        root,
-        nodes: arena,
-        camera: CameraSpec::Orthographic2d,
-        viewport: options.viewport,
-        metadata: SceneMetadata::default(),
-    })
+    Ok(Scene { root, nodes: arena, camera: CameraSpec::Orthographic2d, viewport: options.viewport, metadata: SceneMetadata::default() })
 }
 
 struct PanelJob {
@@ -192,6 +186,7 @@ fn compile_panel(arena: &mut SceneArena, input: PanelCompile<'_>) -> Result<Vec<
             content: label.to_string(),
             size: theme.facet_label_size,
             color: theme.foreground,
+            anchor: TextAnchor::Start,
         })));
     }
 
@@ -215,23 +210,27 @@ fn compile_panel(arena: &mut SceneArena, input: PanelCompile<'_>) -> Result<Vec<
             frame.height(),
         )
     };
+    let (h_scale, v_scale) = if flip { (y_scale, x_scale) } else { (x_scale, y_scale) };
 
+    let tick_count = 5;
     children.push(arena.insert(SceneNodeKind::Axis(AxisNode {
         horizontal: true,
         domain: h_domain,
         origin: h_origin,
         length: h_len,
-        tick_count: 5,
+        tick_count,
         stroke: theme.axis_stroke,
     })));
+    push_tick_labels(arena, &mut children, h_scale, h_origin, h_len, tick_count, true, theme);
     children.push(arena.insert(SceneNodeKind::Axis(AxisNode {
         horizontal: false,
         domain: v_domain,
         origin: v_origin,
         length: v_len,
-        tick_count: 5,
+        tick_count,
         stroke: theme.axis_stroke,
     })));
+    push_tick_labels(arena, &mut children, v_scale, v_origin, v_len, tick_count, false, theme);
 
     for layer in layers {
         let mapping = plot_mapping.merge(&layer.mapping);
@@ -246,11 +245,7 @@ fn compile_panel(arena: &mut SceneArena, input: PanelCompile<'_>) -> Result<Vec<
             }
             GeomSpec::Point(point) => {
                 let positions = project_xy_points(table, &mapping, x_scale, y_scale, frame, flip, 1)?;
-                children.push(arena.insert(SceneNodeKind::Points(PointsNode {
-                    positions,
-                    size: point.size,
-                    fill: theme.foreground,
-                })));
+                children.push(arena.insert(SceneNodeKind::Points(PointsNode { positions, size: point.size, fill: theme.foreground })));
             }
             GeomSpec::Bar(bar) => {
                 for rect in project_bars(table, &mapping, x_scale, y_scale, frame, flip, bar.width)? {
@@ -269,6 +264,7 @@ fn compile_panel(arena: &mut SceneArena, input: PanelCompile<'_>) -> Result<Vec<
                         content,
                         size: text.size,
                         color: theme.foreground,
+                        anchor: TextAnchor::Middle,
                     })));
                 }
             }
@@ -284,6 +280,87 @@ fn compile_panel(arena: &mut SceneArena, input: PanelCompile<'_>) -> Result<Vec<
     Ok(children)
 }
 
+/// 刻度线长度，与各渲染器的 `TICK_LENGTH` 一致。
+const TICK_LENGTH: f64 = 6.0;
+
+/// 为一条轴发出刻度数字 `TextNode`，与渲染器画出的刻度位置一致。
+fn push_tick_labels(
+    arena: &mut SceneArena,
+    children: &mut Vec<plotter_types::plot::NodeId>,
+    scale: ResolvedScale,
+    origin: Point2,
+    length: f64,
+    tick_count: u32,
+    horizontal: bool,
+    theme: &ThemeSpec,
+) {
+    let ticks = tick_count.max(2);
+    let positions: Vec<f64> = (0..ticks).map(|i| f64::from(i) / f64::from(ticks - 1)).collect();
+    let values: Vec<f64> = positions.iter().map(|t| tick_value(scale, *t)).collect();
+    let labels = format_ticks(&values);
+    let size = f64::from(theme.tick_label_size);
+    for (t, content) in positions.into_iter().zip(labels) {
+        let node = if horizontal {
+            TextNode {
+                position: Point2::new(origin.x + length * t, origin.y - TICK_LENGTH - size - 2.0),
+                content,
+                size: theme.tick_label_size,
+                color: theme.foreground,
+                anchor: TextAnchor::Middle,
+            }
+        }
+        else {
+            TextNode {
+                position: Point2::new(origin.x - TICK_LENGTH - 2.0, origin.y + length * t + size * 0.35),
+                content,
+                size: theme.tick_label_size,
+                color: theme.foreground,
+                anchor: TextAnchor::End,
+            }
+        };
+        children.push(arena.insert(SceneNodeKind::Text(node)));
+    }
+}
+
+/// 第 `t` 个刻度（0..=1）对应的数据值。
+fn tick_value(scale: ResolvedScale, t: f64) -> f64 {
+    match scale.kind {
+        ScaleKind::Continuous => scale.domain.min + (scale.domain.max - scale.domain.min) * t,
+        ScaleKind::Log10 => {
+            let lo = scale.domain.min.log10();
+            let hi = scale.domain.max.log10();
+            10f64.powf(lo + (hi - lo) * t)
+        }
+    }
+}
+
+/// 选择最小的十进制位数（0..=6）使所有刻度值都能精确显示；
+/// 找不到时退化为 2 位小数。尾部零与孤立小数点一律裁掉。
+fn format_ticks(values: &[f64]) -> Vec<String> {
+    let decimals = (0..=6usize)
+        .find(|d| {
+            let factor = 10f64.powi(*d as i32);
+            values.iter().all(|v| {
+                let scaled = v * factor;
+                (scaled - scaled.round()).abs() < 1e-6
+            })
+        })
+        .unwrap_or(2);
+    values
+        .iter()
+        .map(|v| {
+            let mut text = format!("{v:.decimals$}");
+            if text.contains('.') {
+                text = text.trim_end_matches('0').trim_end_matches('.').to_string();
+            }
+            if text == "-0" {
+                text = "0".to_string();
+            }
+            text
+        })
+        .collect()
+}
+
 fn resolve_scale(
     table: &ColumnTable,
     plot_mapping: &Mapping,
@@ -295,12 +372,8 @@ fn resolve_scale(
 ) -> Result<ResolvedScale> {
     let scale = scales.iter().rev().find(|scale| scale.aesthetic == aesthetic);
     let kind = scale.map(|s| s.kind).unwrap_or(ScaleKind::Continuous);
-    let mut domain = if let Some(Some(domain)) = scale.map(|s| s.domain) {
-        domain
-    }
-    else {
-        infer_domain(table, plot_mapping, layers, aesthetic)?
-    };
+    let mut domain =
+        if let Some(Some(domain)) = scale.map(|s| s.domain) { domain } else { infer_domain(table, plot_mapping, layers, aesthetic)? };
 
     if include_zero_for_bar && aesthetic == "y" {
         domain = Interval::new(domain.min.min(0.0), domain.max.max(0.0));
@@ -336,8 +409,7 @@ fn infer_domain(table: &ColumnTable, plot_mapping: &Mapping, layers: &[LayerSpec
             _ => None,
         }
         .ok_or_else(|| {
-            Diagnostic::error(DiagnosticCode::MissingMapping, format!("缺少 {aesthetic} mapping"))
-                .with_param("aesthetic", aesthetic)
+            Diagnostic::error(DiagnosticCode::MissingMapping, format!("缺少 {aesthetic} mapping")).with_param("aesthetic", aesthetic)
         })?;
         let column = table.float_column(name)?;
         for value in &column.values {
@@ -356,9 +428,7 @@ fn infer_domain(table: &ColumnTable, plot_mapping: &Mapping, layers: &[LayerSpec
         }
     }
     if !min.is_finite() || !max.is_finite() {
-        return Err(
-            Diagnostic::error(DiagnosticCode::EmptyData, format!("{aesthetic} 域为空")).with_param("aesthetic", aesthetic)
-        );
+        return Err(Diagnostic::error(DiagnosticCode::EmptyData, format!("{aesthetic} 域为空")).with_param("aesthetic", aesthetic));
     }
     if (max - min).abs() < f64::EPSILON {
         max = min + 1.0;
@@ -394,10 +464,8 @@ fn project_xy_points(
     flip: bool,
     min_points: usize,
 ) -> Result<Vec<Point2>> {
-    let x_name =
-        mapping.x.as_ref().ok_or_else(|| Diagnostic::error(DiagnosticCode::MissingMapping, "缺少 x mapping"))?.column_name();
-    let y_name =
-        mapping.y.as_ref().ok_or_else(|| Diagnostic::error(DiagnosticCode::MissingMapping, "缺少 y mapping"))?.column_name();
+    let x_name = mapping.x.as_ref().ok_or_else(|| Diagnostic::error(DiagnosticCode::MissingMapping, "缺少 x mapping"))?.column_name();
+    let y_name = mapping.y.as_ref().ok_or_else(|| Diagnostic::error(DiagnosticCode::MissingMapping, "缺少 y mapping"))?.column_name();
     let xs = &table.float_column(x_name)?.values;
     let ys = &table.float_column(y_name)?.values;
     if xs.len() != ys.len() {
@@ -427,10 +495,8 @@ fn project_bars(
     flip: bool,
     width: f64,
 ) -> Result<Vec<Rect2>> {
-    let x_name =
-        mapping.x.as_ref().ok_or_else(|| Diagnostic::error(DiagnosticCode::MissingMapping, "缺少 x mapping"))?.column_name();
-    let y_name =
-        mapping.y.as_ref().ok_or_else(|| Diagnostic::error(DiagnosticCode::MissingMapping, "缺少 y mapping"))?.column_name();
+    let x_name = mapping.x.as_ref().ok_or_else(|| Diagnostic::error(DiagnosticCode::MissingMapping, "缺少 x mapping"))?.column_name();
+    let y_name = mapping.y.as_ref().ok_or_else(|| Diagnostic::error(DiagnosticCode::MissingMapping, "缺少 y mapping"))?.column_name();
     let xs = &table.float_column(x_name)?.values;
     let ys = &table.float_column(y_name)?.values;
     if xs.len() != ys.len() {

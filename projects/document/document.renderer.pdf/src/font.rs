@@ -130,8 +130,7 @@ impl SystemFont {
         let hmetrics = read_hmetrics(&raw, hmtx, horizontal_count, num_glyphs)?;
         let cmap = Cmap::parse(&raw, cmap_table.0, cmap_table.1)?;
 
-        let bbox =
-            [i16_at(&raw, head.0 + 36)?, i16_at(&raw, head.0 + 38)?, i16_at(&raw, head.0 + 40)?, i16_at(&raw, head.0 + 42)?];
+        let bbox = [i16_at(&raw, head.0 + 36)?, i16_at(&raw, head.0 + 38)?, i16_at(&raw, head.0 + 40)?, i16_at(&raw, head.0 + 42)?];
         let cap_height = read_cap_height(&raw, &tables, ascender);
         let italic_angle = read_italic_angle(&raw, &tables);
         let postscript_name = read_postscript_name(&raw, &tables).unwrap_or_else(|| "VutexSystemFont".to_string());
@@ -358,17 +357,13 @@ impl FontChain {
     /// bold code run or a Han character inside a code block still paints.
     /// Characters no face covers stay out of the chain, so [`Self::missing`]
     /// reports them to the caller instead of painting an empty glyph.
-    pub(crate) fn build(
-        faces: &[(SystemFont, BodyFamily, BodyFaceStyle)],
-        charsets: &BTreeMap<ChainKey, BTreeSet<char>>,
-    ) -> Self {
+    pub(crate) fn build(faces: &[(SystemFont, BodyFamily, BodyFaceStyle)], charsets: &BTreeMap<ChainKey, BTreeSet<char>>) -> Self {
         let mut chain = Self::default();
         for (key, charset) in charsets {
             let mut glyphs = BTreeMap::new();
             let mut remaining = charset.clone();
             for candidate in key_order(*key) {
-                let matching =
-                    faces.iter().filter(|(_, family, style)| *family == candidate.family && *style == candidate.style);
+                let matching = faces.iter().filter(|(_, family, style)| *family == candidate.family && *style == candidate.style);
                 for (font, _, _) in matching {
                     let covered: BTreeSet<char> = remaining.iter().copied().filter(|ch| font.glyph_id(*ch).is_some()).collect();
                     if covered.is_empty() {
@@ -399,9 +394,7 @@ impl FontChain {
     /// Subset index and CID that paint one character for one family and style.
     pub(crate) fn glyph(&self, ch: char, key: ChainKey) -> Option<(usize, u16)> {
         for candidate in key_order(key) {
-            if let Some((index, cid)) =
-                self.styles.iter().find(|(built, _)| *built == candidate).and_then(|(_, glyphs)| glyphs.get(&ch))
-            {
+            if let Some((index, cid)) = self.styles.iter().find(|(built, _)| *built == candidate).and_then(|(_, glyphs)| glyphs.get(&ch)) {
                 return Some((*index, *cid));
             }
         }
@@ -428,10 +421,7 @@ impl FontChain {
 /// missing-glyph error naming the character instead of silently painting a
 /// base-14 fallback.
 pub(crate) fn provided_faces(set: &BodyFaceSet) -> Vec<(SystemFont, BodyFamily, BodyFaceStyle)> {
-    set.faces()
-        .iter()
-        .filter_map(|face| SystemFont::from_bytes(&face.bytes).map(|font| (font, face.family, face.style)))
-        .collect()
+    set.faces().iter().filter_map(|face| SystemFont::from_bytes(&face.bytes).map(|font| (font, face.family, face.style))).collect()
 }
 
 /// Offset of the face this module reads inside `raw`, handling `.ttc` headers.
@@ -582,9 +572,7 @@ impl Cmap {
                     if range_offset == 0 {
                         return Some((i32::from(code) + i32::from(segment.delta)) as u16);
                     }
-                    let index_at = (segment.range_offset_at as i64
-                        + i64::from(range_offset)
-                        + 2 * i64::from(code - segment.start)) as usize;
+                    let index_at = (segment.range_offset_at as i64 + i64::from(range_offset) + 2 * i64::from(code - segment.start)) as usize;
                     let glyph = u16_at(data, index_at)?;
                     if glyph == 0 {
                         return None;
@@ -690,8 +678,7 @@ fn remap_composite(glyph: &[u8], mapping: &BTreeMap<u16, u16>) -> Vec<u8> {
 fn build_cmap(cids: &BTreeMap<char, u16>) -> Option<Vec<u8>> {
     let mut entries: Vec<(u32, u16)> = cids.iter().map(|(ch, cid)| (*ch as u32, *cid)).collect();
     entries.sort_by_key(|(code, _)| *code);
-    let bmp: Vec<(u16, u16)> =
-        entries.iter().filter(|(code, _)| *code <= 0xFFFF).map(|(code, cid)| (*code as u16, *cid)).collect();
+    let bmp: Vec<(u16, u16)> = entries.iter().filter(|(code, _)| *code <= 0xFFFF).map(|(code, cid)| (*code as u16, *cid)).collect();
     let mut subtables: Vec<(u16, u16, Vec<u8>)> = vec![(3, 1, build_format4(&bmp))];
     if entries.iter().any(|(code, _)| *code > 0xFFFF) {
         subtables.push((3, 10, build_format12(&entries)));

@@ -19,8 +19,8 @@ mod url;
 pub use crate::{
     artifact::{BodyStorage, FetchArtifact, HttpStatus, RedirectHop, TransportProvenance},
     browser::{
-        AuthProfile, BrowserActionKind, BrowserBoundary, BrowserDownload, BrowserFrame, BrowserShadowRoot, BrowserSnapshot,
-        ChallengePolicy, CredentialRef, PageChallengeState, SessionPersistence,
+        AuthProfile, BrowserActionKind, BrowserBoundary, BrowserDownload, BrowserFrame, BrowserShadowRoot, BrowserSnapshot, ChallengePolicy,
+        CredentialRef, PageChallengeState, SessionPersistence,
     },
     challenge::{ChallengeOutcome, apply_challenge_policy},
     diagnostics::{
@@ -29,9 +29,7 @@ pub use crate::{
     },
     error::{CrawlError, Result},
     events::{BrowserFallbackTrigger, CrawlEvent, EventLog, PageTransaction},
-    extract::{
-        ExtractBudget, ExtractContext, ExtractInput, ExtractOutcome, ExtractResult, ExtractStatus, ProbeResult, ProbeStatus,
-    },
+    extract::{ExtractBudget, ExtractContext, ExtractInput, ExtractOutcome, ExtractResult, ExtractStatus, ProbeResult, ProbeStatus},
     frontier::{AdmissionDecision, DiscoverySource, FrontierItem, LinkCandidate, LinkRelation},
     inspect::{InspectReport, InspectStage},
     request::{BrowserFallbackPolicy, CrawlBudget, CrawlRequest, CrawlScope, CrawlSeed, PolitenessProfile},

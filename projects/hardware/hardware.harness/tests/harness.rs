@@ -90,9 +90,7 @@ fn mismatching_readback_flags_every_bad_index() {
         .events
         .iter()
         .filter_map(|event| match &event.kind {
-            EventKind::ReadbackMismatch { resource, index, expected, actual } => {
-                Some((*resource, *index, expected.as_str(), actual.as_str()))
-            }
+            EventKind::ReadbackMismatch { resource, index, expected, actual } => Some((*resource, *index, expected.as_str(), actual.as_str())),
             _ => None,
         })
         .collect();

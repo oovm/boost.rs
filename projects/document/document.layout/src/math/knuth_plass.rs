@@ -234,13 +234,8 @@ impl KnuthPlass {
                     }
                 }
                 else {
-                    best_for_class[fitness] = Some(BreakPoint {
-                        index: i,
-                        previous: Some(node_idx),
-                        total_demerits,
-                        line: node.line + 1,
-                        fitness_class: fitness,
-                    });
+                    best_for_class[fitness] =
+                        Some(BreakPoint { index: i, previous: Some(node_idx), total_demerits, line: node.line + 1, fitness_class: fitness });
                 }
             }
 

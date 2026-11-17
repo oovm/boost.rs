@@ -20,17 +20,16 @@ pub(crate) fn md5_password(password: &str, user: &str, salt: &[u8]) -> String {
 /// RFC 1321 MD5 as lowercase hex.
 pub(crate) fn md5_hex(input: &[u8]) -> String {
     const S: [u32; 64] = [
-        7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 4,
-        11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+        7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4,
+        11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
     ];
     const K: [u32; 64] = [
-        0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee, 0xf57c0faf, 0x4787c62a, 0xa8304613, 0xfd469501, 0x698098d8, 0x8b44f7af,
-        0xffff5bb1, 0x895cd7be, 0x6b901122, 0xfd987193, 0xa679438e, 0x49b40821, 0xf61e2562, 0xc040b340, 0x265e5a51, 0xe9b6c7aa,
-        0xd62f105d, 0x02441453, 0xd8a1e681, 0xe7d3fbc8, 0x21e1cde6, 0xc33707d6, 0xf4d50d87, 0x455a14ed, 0xa9e3e905, 0xfcefa3f8,
-        0x676f02d9, 0x8d2a4c8a, 0xfffa3942, 0x8771f681, 0x6d9d6122, 0xfde5380c, 0xa4beea44, 0x4bdecfa9, 0xf6bb4b60, 0xbebfbc70,
-        0x289b7ec6, 0xeaa127fa, 0xd4ef3085, 0x04881d05, 0xd9d4d039, 0xe6db99e5, 0x1fa27cf8, 0xc4ac5665, 0xf4292244, 0x432aff97,
-        0xab9423a7, 0xfc93a039, 0x655b59c3, 0x8f0ccc92, 0xffeff47d, 0x85845dd1, 0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1,
-        0xf7537e82, 0xbd3af235, 0x2ad7d2bb, 0xeb86d391,
+        0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee, 0xf57c0faf, 0x4787c62a, 0xa8304613, 0xfd469501, 0x698098d8, 0x8b44f7af, 0xffff5bb1,
+        0x895cd7be, 0x6b901122, 0xfd987193, 0xa679438e, 0x49b40821, 0xf61e2562, 0xc040b340, 0x265e5a51, 0xe9b6c7aa, 0xd62f105d, 0x02441453,
+        0xd8a1e681, 0xe7d3fbc8, 0x21e1cde6, 0xc33707d6, 0xf4d50d87, 0x455a14ed, 0xa9e3e905, 0xfcefa3f8, 0x676f02d9, 0x8d2a4c8a, 0xfffa3942,
+        0x8771f681, 0x6d9d6122, 0xfde5380c, 0xa4beea44, 0x4bdecfa9, 0xf6bb4b60, 0xbebfbc70, 0x289b7ec6, 0xeaa127fa, 0xd4ef3085, 0x04881d05,
+        0xd9d4d039, 0xe6db99e5, 0x1fa27cf8, 0xc4ac5665, 0xf4292244, 0x432aff97, 0xab9423a7, 0xfc93a039, 0x655b59c3, 0x8f0ccc92, 0xffeff47d,
+        0x85845dd1, 0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1, 0xf7537e82, 0xbd3af235, 0x2ad7d2bb, 0xeb86d391,
     ];
 
     let mut padded = input.to_vec();
@@ -154,9 +153,8 @@ impl ScramClient {
         if !nonce.starts_with(&self.nonce) {
             return Err(PostgresError::Protocol("SCRAM server nonce does not extend the client nonce".into()));
         }
-        let decoded_salt = STANDARD
-            .decode(&salt)
-            .map_err(|error| PostgresError::Protocol(format!("SCRAM salt is not valid base64: {error}")))?;
+        let decoded_salt =
+            STANDARD.decode(&salt).map_err(|error| PostgresError::Protocol(format!("SCRAM salt is not valid base64: {error}")))?;
         let salted_password = pbkdf2_sha256(self.password.as_bytes(), &decoded_salt, iterations);
         self.server_first = server_first.to_owned();
 
@@ -182,12 +180,9 @@ impl ScramClient {
         if let Some(error) = server_final.strip_prefix("e=") {
             return Err(PostgresError::Protocol(format!("SCRAM authentication failed: {error}")));
         }
-        let signature = server_final
-            .strip_prefix("v=")
-            .ok_or(PostgresError::Protocol("SCRAM server-final is missing the signature".into()))?;
-        let decoded = STANDARD
-            .decode(signature)
-            .map_err(|error| PostgresError::Protocol(format!("SCRAM signature is not valid base64: {error}")))?;
+        let signature = server_final.strip_prefix("v=").ok_or(PostgresError::Protocol("SCRAM server-final is missing the signature".into()))?;
+        let decoded =
+            STANDARD.decode(signature).map_err(|error| PostgresError::Protocol(format!("SCRAM signature is not valid base64: {error}")))?;
         let expected = self.expected_server_signature.ok_or(PostgresError::Protocol("SCRAM final arrived before continue".into()))?;
         if decoded != expected {
             return Err(PostgresError::Protocol("SCRAM server signature mismatch".into()));
@@ -224,7 +219,10 @@ mod tests {
     fn pbkdf2_matches_rfc_6070_shape() {
         assert_eq!(
             pbkdf2_sha256(b"password", b"salt", 1),
-            [0x12, 0x0f, 0xb6, 0xcf, 0xfc, 0xf8, 0xb3, 0x2c, 0x43, 0xe7, 0x22, 0x52, 0x56, 0xc4, 0xf8, 0x37, 0xa8, 0x65, 0x48, 0xc9, 0x2c, 0xcc, 0x35, 0x48, 0x08, 0x05, 0x98, 0x7c, 0xb7, 0x0b, 0xe1, 0x7b]
+            [
+                0x12, 0x0f, 0xb6, 0xcf, 0xfc, 0xf8, 0xb3, 0x2c, 0x43, 0xe7, 0x22, 0x52, 0x56, 0xc4, 0xf8, 0x37, 0xa8, 0x65, 0x48, 0xc9, 0x2c,
+                0xcc, 0x35, 0x48, 0x08, 0x05, 0x98, 0x7c, 0xb7, 0x0b, 0xe1, 0x7b
+            ]
         );
     }
 
@@ -233,13 +231,9 @@ mod tests {
         let nonce = "rOprNGfwEbeRWgbNEkqO";
         let (mut client, client_first) = ScramClient::with_nonce("user", "pencil", nonce);
         assert_eq!(client_first, format!("n,,n=user,r={nonce}"));
-        let server_first =
-            "r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096";
+        let server_first = "r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096";
         let client_final = client.continue_with(server_first).expect("continue");
-        assert_eq!(
-            client_final,
-            "c=biws,r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,p=dHzbZapWIk4jUhN+Ute9ytag9zjfMHgsqmmiz7AndVQ="
-        );
+        assert_eq!(client_final, "c=biws,r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,p=dHzbZapWIk4jUhN+Ute9ytag9zjfMHgsqmmiz7AndVQ=");
         client.verify("v=6rriTRBi23WpRR/wtup+mMhUZUn/dB5nLTJRsjl95G4=").expect("verify");
     }
 

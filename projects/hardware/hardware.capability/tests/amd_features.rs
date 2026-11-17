@@ -4,10 +4,7 @@ use hardware_capability::{Feature, FeatureSet};
 
 /// Mirror of `RocmBackend::features` for unit assertion when HIP is absent.
 fn rocm_feature_set() -> FeatureSet {
-    FeatureSet::new()
-        .with(Feature::UnifiedMemory)
-        .with(Feature::MatrixCore)
-        .with(Feature::HipGraph)
+    FeatureSet::new().with(Feature::UnifiedMemory).with(Feature::MatrixCore).with(Feature::HipGraph)
 }
 
 #[test]

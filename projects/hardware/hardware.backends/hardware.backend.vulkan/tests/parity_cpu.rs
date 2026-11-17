@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 
-use hardware_backend_cpu::{shared_store, CpuBackend};
+use hardware_backend_cpu::{CpuBackend, shared_store};
 use hardware_backend_vulkan::VulkanBackend;
-use hardware_program::{program_hash, BinOp, Expr, Function, FunctionBuilder, Program, ProgramBuilder, Stmt, Ty};
 use hardware_ir::{
-    Access, DepEdge, DepKind, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph,
-    ResourceId, ResourceKind, ResourceNode, ShaderId, TaskGraph, TaskId, TaskKind, TaskNode,
+    Access, DepEdge, DepKind, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph, ResourceId, ResourceKind, ResourceNode, ShaderId,
+    TaskGraph, TaskId, TaskKind, TaskNode,
 };
+use hardware_program::{BinOp, Expr, Function, FunctionBuilder, Program, ProgramBuilder, Stmt, Ty, program_hash};
 use hardware_scheduler::Backend;
 use hardware_types::ResourceId as Rid;
 
@@ -42,58 +42,17 @@ fn f(key: &str, v: f64) -> (String, ParamValue) {
 
 fn reference_graph() -> Graph {
     Graph {
-        resources: ResourceGraph {
-            nodes: vec![
-                buffer(1, 4),
-                buffer(2, 4),
-                buffer(3, 4),
-                buffer(4, 4),
-            ],
-        },
+        resources: ResourceGraph { nodes: vec![buffer(1, 4), buffer(2, 4), buffer(3, 4), buffer(4, 4)] },
         tasks: TaskGraph {
             nodes: vec![
-                task(
-                    10,
-                    TaskKind::Copy,
-                    BTreeMap::from([i("src", 1), i("dst", 2)]),
-                ),
-                task(
-                    11,
-                    TaskKind::Fill,
-                    BTreeMap::from([i("dst", 3), f("value", 1.0)]),
-                ),
-                task(
-                    12,
-                    TaskKind::MatMul,
-                    BTreeMap::from([
-                        i("a", 2),
-                        i("b", 3),
-                        i("out", 4),
-                        i("m", 2),
-                        i("n", 2),
-                        i("k", 2),
-                    ]),
-                ),
+                task(10, TaskKind::Copy, BTreeMap::from([i("src", 1), i("dst", 2)])),
+                task(11, TaskKind::Fill, BTreeMap::from([i("dst", 3), f("value", 1.0)])),
+                task(12, TaskKind::MatMul, BTreeMap::from([i("a", 2), i("b", 3), i("out", 4), i("m", 2), i("n", 2), i("k", 2)])),
             ],
             edges: vec![
-                DepEdge {
-                    from_task: None,
-                    from_resource: Some(ResourceId(1)),
-                    to_task: TaskId(10),
-                    kind: DepKind::Data,
-                },
-                DepEdge {
-                    from_task: Some(TaskId(10)),
-                    from_resource: None,
-                    to_task: TaskId(12),
-                    kind: DepKind::Execution,
-                },
-                DepEdge {
-                    from_task: Some(TaskId(11)),
-                    from_resource: None,
-                    to_task: TaskId(12),
-                    kind: DepKind::Execution,
-                },
+                DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data },
+                DepEdge { from_task: Some(TaskId(10)), from_resource: None, to_task: TaskId(12), kind: DepKind::Execution },
+                DepEdge { from_task: Some(TaskId(11)), from_resource: None, to_task: TaskId(12), kind: DepKind::Execution },
             ],
         },
     }
@@ -105,11 +64,7 @@ fn run_cpu(graph: &Graph) -> Vec<f32> {
         let mut prep = CpuBackend::with_store(store.clone());
         prep.prepare(graph).expect("cpu prepare");
     }
-    store
-        .lock()
-        .unwrap()
-        .write_f32(Rid(1), &[1.0, 2.0, 3.0, 4.0])
-        .expect("cpu seed");
+    store.lock().unwrap().write_f32(Rid(1), &[1.0, 2.0, 3.0, 4.0]).expect("cpu seed");
 
     let mut runtime = hardware_runtime::Runtime::new();
     runtime.register_backend(Box::new(CpuBackend::with_store(store.clone())));
@@ -127,11 +82,7 @@ fn run_cpu_generic_dispatch(graph: &Graph) -> Vec<f32> {
     let mut runtime = hardware_runtime::Runtime::new();
     runtime.register_backend(Box::new(CpuBackend::with_store(store.clone())));
     runtime.run(graph).expect("cpu generic dispatch run");
-    let output = store
-        .lock()
-        .unwrap()
-        .read_f32(Rid(10))
-        .expect("cpu generic dispatch read");
+    let output = store.lock().unwrap().read_f32(Rid(10)).expect("cpu generic dispatch read");
     output
 }
 
@@ -170,19 +121,14 @@ fn generic_dispatch_graph(program: &Program, dispatch_count: usize, output_len: 
     let body = serde_json::to_string(program).expect("serialize program");
     let hash = program_hash(program);
     Graph {
-        resources: ResourceGraph {
-            nodes: vec![buffer(10, output_len), buffer(11, output_len)],
-        },
+        resources: ResourceGraph { nodes: vec![buffer(10, output_len), buffer(11, output_len)] },
         tasks: TaskGraph {
             nodes: vec![TaskNode {
                 id: TaskId(20),
                 kind: TaskKind::Dispatch,
                 shader: ShaderId(20),
                 params: BTreeMap::from([
-                    (
-                        "program".into(),
-                        ParamValue::Program { version: 1, hash, body },
-                    ),
+                    ("program".into(), ParamValue::Program { version: 1, hash, body }),
                     ("output".into(), ParamValue::I64(10)),
                     ("buffer_0".into(), ParamValue::I64(11)),
                     ("uniform_0".into(), ParamValue::F64(2.5)),
@@ -204,11 +150,7 @@ fn vulkan_generic_dispatch_matches_cpu_interpreter() {
             name: "uniform_constant".into(),
             params: Vec::new(),
             locals: Vec::new(),
-            body: vec![Stmt::Return(Expr::BinOp {
-                op: BinOp::Add,
-                lhs: Box::new(Expr::LoadUniform(0)),
-                rhs: Box::new(Expr::ConstF32(1.0)),
-            })],
+            body: vec![Stmt::Return(Expr::BinOp { op: BinOp::Add, lhs: Box::new(Expr::LoadUniform(0)), rhs: Box::new(Expr::ConstF32(1.0)) })],
             ret: Ty::f32(),
         }],
         entry: 0,
@@ -289,11 +231,7 @@ fn vulkan_builder_vector_math_matches_cpu_interpreter() {
     let root = function.emit_unary(hardware_program::UnOp::Sqrt, four, Ty::f32()).expect("sqrt");
     let result = function.emit_binary(BinOp::Add, sine, root).expect("add");
     function.return_value(result).expect("return");
-    let program = ProgramBuilder::new()
-        .entry(function)
-        .expect("entry")
-        .finish()
-        .expect("valid vector math program");
+    let program = ProgramBuilder::new().entry(function).expect("entry").finish().expect("valid vector math program");
     let graph = generic_dispatch_graph(&program, 65, 70);
     let expected = run_cpu_generic_dispatch(&graph);
     let mut vk = match VulkanBackend::new() {
@@ -410,10 +348,7 @@ fn vulkan_generic_buffer_load_matches_cpu_interpreter() {
             locals: Vec::new(),
             body: vec![Stmt::Return(Expr::BinOp {
                 op: BinOp::Add,
-                lhs: Box::new(Expr::LoadBuffer {
-                    resource: 0,
-                    index: Box::new(Expr::GlobalId),
-                }),
+                lhs: Box::new(Expr::LoadBuffer { resource: 0, index: Box::new(Expr::GlobalId) }),
                 rhs: Box::new(Expr::LoadUniform(0)),
             })],
             ret: Ty::f32(),
@@ -426,11 +361,7 @@ fn vulkan_generic_buffer_load_matches_cpu_interpreter() {
         let mut prep = CpuBackend::with_store(store.clone());
         prep.prepare(&graph).expect("cpu prepare");
     }
-    store
-        .lock()
-        .unwrap()
-        .write_f32(Rid(11), &(0..70).map(|value| value as f32).collect::<Vec<_>>())
-        .expect("cpu input seed");
+    store.lock().unwrap().write_f32(Rid(11), &(0..70).map(|value| value as f32).collect::<Vec<_>>()).expect("cpu input seed");
     let mut runtime = hardware_runtime::Runtime::new();
     runtime.register_backend(Box::new(CpuBackend::with_store(store.clone())));
     runtime.run(&graph).expect("cpu buffer dispatch run");
@@ -447,8 +378,7 @@ fn vulkan_generic_buffer_load_matches_cpu_interpreter() {
         eprintln!("skip generic buffer Vulkan parity (prepare failed): {err}");
         return;
     }
-    vk.write_f32(Rid(11), &(0..70).map(|value| value as f32).collect::<Vec<_>>())
-        .expect("vulkan input seed");
+    vk.write_f32(Rid(11), &(0..70).map(|value| value as f32).collect::<Vec<_>>()).expect("vulkan input seed");
     vk.run_prepared(&graph).expect("vulkan buffer dispatch run");
     let actual = vk.read_f32(Rid(10)).expect("vulkan output read");
     assert_eq!(actual, expected);
@@ -460,10 +390,7 @@ fn vulkan_generic_buffer_load_matches_cpu_interpreter() {
 fn vulkan_generic_buffer_store_matches_cpu_interpreter() {
     let result = Expr::BinOp {
         op: BinOp::Add,
-        lhs: Box::new(Expr::LoadBuffer {
-            resource: 0,
-            index: Box::new(Expr::GlobalId),
-        }),
+        lhs: Box::new(Expr::LoadBuffer { resource: 0, index: Box::new(Expr::GlobalId) }),
         rhs: Box::new(Expr::LoadUniform(0)),
     };
     let program = Program {
@@ -473,16 +400,8 @@ fn vulkan_generic_buffer_store_matches_cpu_interpreter() {
             params: Vec::new(),
             locals: vec![(0, Ty::f32())],
             body: vec![
-                Stmt::Let {
-                    id: 0,
-                    ty: Ty::f32(),
-                    init: result.clone(),
-                },
-                Stmt::StoreBuffer {
-                    resource: 0,
-                    index: Expr::GlobalId,
-                    value: Expr::LoadLocal(0),
-                },
+                Stmt::Let { id: 0, ty: Ty::f32(), init: result.clone() },
+                Stmt::StoreBuffer { resource: 0, index: Expr::GlobalId, value: Expr::LoadLocal(0) },
                 Stmt::Return(Expr::LoadLocal(0)),
             ],
             ret: Ty::f32(),
@@ -543,11 +462,7 @@ fn vulkan_generic_bounded_for_matches_cpu_interpreter() {
                     limit: 8,
                     body: vec![Stmt::StoreLocal {
                         id: 0,
-                        value: Expr::BinOp {
-                            op: BinOp::Add,
-                            lhs: Box::new(Expr::LoadLocal(0)),
-                            rhs: Box::new(Expr::LoadUniform(0)),
-                        },
+                        value: Expr::BinOp { op: BinOp::Add, lhs: Box::new(Expr::LoadLocal(0)), rhs: Box::new(Expr::LoadUniform(0)) },
                     }],
                 },
                 Stmt::Return(Expr::LoadLocal(0)),
@@ -581,27 +496,33 @@ fn vulkan_loop_local_snapshots_match_cpu_interpreter() {
     for use_while in [false, true] {
         let body = vec![
             Stmt::Let { id: 2, ty: Ty::f32(), init: Expr::LoadLocal(0) },
-            Stmt::StoreLocal { id: 0, value: Expr::BinOp {
-                op: BinOp::Add, lhs: Box::new(Expr::LoadLocal(2)), rhs: Box::new(Expr::ConstF32(1.0)),
-            } },
-            Stmt::StoreLocal { id: 3, value: Expr::BinOp {
-                op: BinOp::Add, lhs: Box::new(Expr::LoadLocal(3)), rhs: Box::new(Expr::LoadLocal(2)),
-            } },
+            Stmt::StoreLocal {
+                id: 0,
+                value: Expr::BinOp { op: BinOp::Add, lhs: Box::new(Expr::LoadLocal(2)), rhs: Box::new(Expr::ConstF32(1.0)) },
+            },
+            Stmt::StoreLocal {
+                id: 3,
+                value: Expr::BinOp { op: BinOp::Add, lhs: Box::new(Expr::LoadLocal(3)), rhs: Box::new(Expr::LoadLocal(2)) },
+            },
         ];
-        let loop_stmt = if use_while {
-            Stmt::While { cond: Expr::ConstBool(true), body, limit: 4 }
-        } else {
-            Stmt::For { iter: 1, body, limit: 4 }
+        let loop_stmt =
+            if use_while { Stmt::While { cond: Expr::ConstBool(true), body, limit: 4 } } else { Stmt::For { iter: 1, body, limit: 4 } };
+        let program = Program {
+            version: 1,
+            entry: 0,
+            functions: vec![Function {
+                name: "loop_snapshot".into(),
+                params: Vec::new(),
+                locals: vec![(0, Ty::f32()), (2, Ty::f32()), (3, Ty::f32())],
+                body: vec![
+                    Stmt::Let { id: 0, ty: Ty::f32(), init: Expr::ConstF32(0.0) },
+                    Stmt::Let { id: 3, ty: Ty::f32(), init: Expr::ConstF32(0.0) },
+                    loop_stmt,
+                    Stmt::Return(Expr::LoadLocal(3)),
+                ],
+                ret: Ty::f32(),
+            }],
         };
-        let program = Program { version: 1, entry: 0, functions: vec![Function {
-            name: "loop_snapshot".into(), params: Vec::new(),
-            locals: vec![(0, Ty::f32()), (2, Ty::f32()), (3, Ty::f32())],
-            body: vec![
-                Stmt::Let { id: 0, ty: Ty::f32(), init: Expr::ConstF32(0.0) },
-                Stmt::Let { id: 3, ty: Ty::f32(), init: Expr::ConstF32(0.0) },
-                loop_stmt, Stmt::Return(Expr::LoadLocal(3)),
-            ], ret: Ty::f32(),
-        }] };
         let graph = generic_dispatch_graph(&program, 65, 70);
         let expected = run_cpu_generic_dispatch(&graph);
         let mut backend = VulkanBackend::new().expect("Vulkan loop snapshots");
@@ -615,32 +536,42 @@ fn vulkan_loop_local_snapshots_match_cpu_interpreter() {
 
 #[test]
 fn vulkan_nested_bounded_loops_match_cpu_interpreter() {
-    let add = |id, value| Stmt::StoreLocal { id, value: Expr::BinOp {
-        op: BinOp::Add, lhs: Box::new(Expr::LoadLocal(id)), rhs: Box::new(Expr::ConstF32(value)),
-    } };
+    let add = |id, value| Stmt::StoreLocal {
+        id,
+        value: Expr::BinOp { op: BinOp::Add, lhs: Box::new(Expr::LoadLocal(id)), rhs: Box::new(Expr::ConstF32(value)) },
+    };
     for outer_while in [false, true] {
         let inner_body = vec![add(0, 1.0), add(2, 1.0)];
         let inner = if outer_while {
             Stmt::For { iter: 4, limit: 3, body: inner_body }
-        } else {
-            Stmt::While { cond: Expr::BinOp { op: BinOp::Lt, lhs: Box::new(Expr::LoadLocal(2)), rhs: Box::new(Expr::ConstF32(3.0)) }, limit: 3, body: inner_body }
+        }
+        else {
+            Stmt::While {
+                cond: Expr::BinOp { op: BinOp::Lt, lhs: Box::new(Expr::LoadLocal(2)), rhs: Box::new(Expr::ConstF32(3.0)) },
+                limit: 3,
+                body: inner_body,
+            }
         };
         let body = vec![Stmt::StoreLocal { id: 2, value: Expr::ConstF32(0.0) }, inner, add(3, 1.0)];
-        let outer = if outer_while {
-            Stmt::While { cond: Expr::ConstBool(true), limit: 4, body }
-        } else {
-            Stmt::For { iter: 1, limit: 4, body }
+        let outer =
+            if outer_while { Stmt::While { cond: Expr::ConstBool(true), limit: 4, body } } else { Stmt::For { iter: 1, limit: 4, body } };
+        let program = Program {
+            version: 1,
+            entry: 0,
+            functions: vec![Function {
+                name: "nested_accumulate".into(),
+                params: Vec::new(),
+                locals: vec![(0, Ty::f32()), (2, Ty::f32()), (3, Ty::f32())],
+                body: vec![
+                    Stmt::Let { id: 0, ty: Ty::f32(), init: Expr::ConstF32(0.0) },
+                    Stmt::Let { id: 2, ty: Ty::f32(), init: Expr::ConstF32(0.0) },
+                    Stmt::Let { id: 3, ty: Ty::f32(), init: Expr::ConstF32(0.0) },
+                    outer,
+                    Stmt::Return(Expr::LoadLocal(0)),
+                ],
+                ret: Ty::f32(),
+            }],
         };
-        let program = Program { version: 1, entry: 0, functions: vec![Function {
-            name: "nested_accumulate".into(), params: Vec::new(),
-            locals: vec![(0, Ty::f32()), (2, Ty::f32()), (3, Ty::f32())],
-            body: vec![
-                Stmt::Let { id: 0, ty: Ty::f32(), init: Expr::ConstF32(0.0) },
-                Stmt::Let { id: 2, ty: Ty::f32(), init: Expr::ConstF32(0.0) },
-                Stmt::Let { id: 3, ty: Ty::f32(), init: Expr::ConstF32(0.0) },
-                outer, Stmt::Return(Expr::LoadLocal(0)),
-            ], ret: Ty::f32(),
-        }] };
         let graph = generic_dispatch_graph(&program, 65, 70);
         let expected = run_cpu_generic_dispatch(&graph);
         let mut backend = VulkanBackend::new().expect("Vulkan nested loops");
@@ -664,19 +595,11 @@ fn vulkan_generic_bounded_while_matches_cpu_interpreter() {
             body: vec![
                 Stmt::Let { id: 0, ty: Ty::f32(), init: Expr::ConstF32(0.0) },
                 Stmt::While {
-                    cond: Expr::BinOp {
-                        op: BinOp::Gt,
-                        lhs: Box::new(Expr::LoadUniform(0)),
-                        rhs: Box::new(Expr::LoadLocal(0)),
-                    },
+                    cond: Expr::BinOp { op: BinOp::Gt, lhs: Box::new(Expr::LoadUniform(0)), rhs: Box::new(Expr::LoadLocal(0)) },
                     limit: 8,
                     body: vec![Stmt::StoreLocal {
                         id: 0,
-                        value: Expr::BinOp {
-                            op: BinOp::Add,
-                            lhs: Box::new(Expr::LoadLocal(0)),
-                            rhs: Box::new(Expr::ConstF32(1.0)),
-                        },
+                        value: Expr::BinOp { op: BinOp::Add, lhs: Box::new(Expr::LoadLocal(0)), rhs: Box::new(Expr::ConstF32(1.0)) },
                     }],
                 },
                 Stmt::Return(Expr::LoadLocal(0)),

@@ -1,4 +1,4 @@
-use hardware_program::{BinOp, FunctionBuilder, ProgramBuilder, CpuInterpreter, Value};
+use hardware_program::{BinOp, CpuInterpreter, FunctionBuilder, ProgramBuilder, Value};
 
 #[test]
 fn u32_arithmetic_preserves_integer_index_semantics() {
@@ -17,7 +17,8 @@ fn u32_arithmetic_preserves_integer_index_semantics() {
 
     let mut interpreter = CpuInterpreter::new();
     let results = interpreter.run_parallel(&program, 4).expect("execute");
-    assert_eq!(results.iter().map(|result| &result.value).collect::<Vec<_>>(), vec![
-        &Value::U32(0), &Value::U32(1), &Value::U32(3), &Value::U32(4),
-    ]);
+    assert_eq!(
+        results.iter().map(|result| &result.value).collect::<Vec<_>>(),
+        vec![&Value::U32(0), &Value::U32(1), &Value::U32(3), &Value::U32(4),]
+    );
 }

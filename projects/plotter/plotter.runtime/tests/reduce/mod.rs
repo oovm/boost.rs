@@ -162,11 +162,8 @@ fn pan_accumulates_translation() {
 
 #[test]
 fn resize_only_changes_viewport_extents() {
-    let state = RuntimeState {
-        hover: Some("kept".to_owned()),
-        viewport: Viewport { scale: 3.0, ..Viewport::default() },
-        ..RuntimeState::default()
-    };
+    let state =
+        RuntimeState { hover: Some("kept".to_owned()), viewport: Viewport { scale: 3.0, ..Viewport::default() }, ..RuntimeState::default() };
 
     let next = reduce(&state, &Action::Resize { width: 640.0, height: -20.0 });
 
@@ -287,12 +284,7 @@ fn parameter_changes_carry_the_closed_data_chain() {
 
     assert_eq!(
         update.invalidation,
-        InvalidationSet::of([
-            InvalidationScope::Data,
-            InvalidationScope::Measurement,
-            InvalidationScope::Layout,
-            InvalidationScope::Motion,
-        ])
+        InvalidationSet::of([InvalidationScope::Data, InvalidationScope::Measurement, InvalidationScope::Layout, InvalidationScope::Motion,])
     );
     assert_eq!(update.state.parameters.get("brush"), Some(&0.5));
 }

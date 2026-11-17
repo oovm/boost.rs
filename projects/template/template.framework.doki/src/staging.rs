@@ -76,8 +76,7 @@ fn copy_tree(from: &Path, to_root: &Path, rel: &str, committed: &mut Vec<String>
         let entry = entry.map_err(|source| CoreError::Io { source })?;
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
-        let child_rel =
-            if rel.is_empty() { name_str.replace('\\', "/") } else { format!("{rel}/{}", name_str.replace('\\', "/")) };
+        let child_rel = if rel.is_empty() { name_str.replace('\\', "/") } else { format!("{rel}/{}", name_str.replace('\\', "/")) };
         let src = entry.path();
         let dest = to_root.join(&child_rel);
         if src.is_dir() {

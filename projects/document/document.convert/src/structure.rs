@@ -17,8 +17,7 @@ use crate::format_error;
 /// measured against it.
 pub const MAX_STRUCTURE_DEPTH: usize = 96;
 
-const VOID_ELEMENTS: &[&str] =
-    &["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"];
+const VOID_ELEMENTS: &[&str] = &["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"];
 
 /// Rejects text inputs whose structural nesting exceeds [`MAX_STRUCTURE_DEPTH`].
 ///

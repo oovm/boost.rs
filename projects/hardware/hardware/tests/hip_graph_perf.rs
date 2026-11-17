@@ -1,13 +1,12 @@
 //! Soft-skip: report HIP Graph replay vs stream wall time (advisory <5%).
 
-use std::collections::BTreeMap;
-use std::time::Instant;
+use std::{collections::BTreeMap, time::Instant};
 
 use hardware_backend_rocm::RocmBackend;
 use hardware_capability::Feature;
 use hardware_ir::{
-    Access, DepEdge, DepKind, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph,
-    ResourceId, ResourceKind, ResourceNode, ShaderId, TaskGraph, TaskId, TaskKind, TaskNode,
+    Access, DepEdge, DepKind, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph, ResourceId, ResourceKind, ResourceNode, ShaderId,
+    TaskGraph, TaskId, TaskKind, TaskNode,
 };
 use hardware_scheduler::Backend;
 use hardware_types::ResourceId as Rid;
@@ -45,39 +44,16 @@ fn i(key: &str, v: i64) -> (String, ParamValue) {
 fn matmul_graph() -> Graph {
     let elems = (N as usize) * (N as usize);
     Graph {
-        resources: ResourceGraph {
-            nodes: vec![
-                buffer(1, elems),
-                buffer(2, elems),
-                buffer(3, elems),
-            ],
-        },
+        resources: ResourceGraph { nodes: vec![buffer(1, elems), buffer(2, elems), buffer(3, elems)] },
         tasks: TaskGraph {
             nodes: vec![task(
                 10,
                 TaskKind::MatMul,
-                BTreeMap::from([
-                    i("a", 1),
-                    i("b", 2),
-                    i("out", 3),
-                    i("m", N as i64),
-                    i("n", N as i64),
-                    i("k", N as i64),
-                ]),
+                BTreeMap::from([i("a", 1), i("b", 2), i("out", 3), i("m", N as i64), i("n", N as i64), i("k", N as i64)]),
             )],
             edges: vec![
-                DepEdge {
-                    from_task: None,
-                    from_resource: Some(ResourceId(1)),
-                    to_task: TaskId(10),
-                    kind: DepKind::Data,
-                },
-                DepEdge {
-                    from_task: None,
-                    from_resource: Some(ResourceId(2)),
-                    to_task: TaskId(10),
-                    kind: DepKind::Data,
-                },
+                DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data },
+                DepEdge { from_task: None, from_resource: Some(ResourceId(2)), to_task: TaskId(10), kind: DepKind::Data },
             ],
         },
     }
@@ -101,10 +77,7 @@ fn hip_graph_vs_stream_perf_report_soft_skip() {
             return;
         }
     };
-    assert!(
-        rocm.features().has(Feature::HipGraph),
-        "ROCm backend must advertise HipGraph"
-    );
+    assert!(rocm.features().has(Feature::HipGraph), "ROCm backend must advertise HipGraph");
 
     let graph = matmul_graph();
     if let Err(err) = rocm.prepare(&graph) {
@@ -163,8 +136,6 @@ fn hip_graph_vs_stream_perf_report_soft_skip() {
     let stream_ns = t1.elapsed().as_nanos();
 
     let ratio = graph_ns as f64 / stream_ns as f64;
-    eprintln!(
-        "hip graph vs stream MatMul {N}x{N}: graph={graph_ns}ns stream={stream_ns}ns ratio={ratio:.3} (advisory graph/stream < 1.05)"
-    );
+    eprintln!("hip graph vs stream MatMul {N}x{N}: graph={graph_ns}ns stream={stream_ns}ns ratio={ratio:.3} (advisory graph/stream < 1.05)");
     assert!(graph_ns > 0 && stream_ns > 0);
 }

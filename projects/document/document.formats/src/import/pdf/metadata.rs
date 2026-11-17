@@ -81,26 +81,23 @@ pub(crate) fn pdf_dictionary_string(object: &[u8], key: &[u8]) -> Option<String>
     }
 }
 pub(crate) fn append_image_asset(graph: &mut DocumentGraph, image: &PdfImage) {
-    let asset_id = match graph
-        .assets
-        .iter()
-        .find(|asset| asset.kind == AssetKind::Image && asset.source.as_deref() == Some(image.source.as_str()))
-    {
-        Some(asset) => asset.id,
-        None => {
-            let asset_id = AssetId(graph.assets.len() as u64 + 1);
-            graph.push_asset(Asset {
-                id: asset_id,
-                kind: AssetKind::Image,
-                content_identity: None,
-                source: Some(image.source.clone()),
-                media_type: Some(image.media_type.to_owned()),
-                status: SemanticStatus::Resolved,
-                bytes: Some(image.bytes.clone()),
-            });
-            asset_id
-        }
-    };
+    let asset_id =
+        match graph.assets.iter().find(|asset| asset.kind == AssetKind::Image && asset.source.as_deref() == Some(image.source.as_str())) {
+            Some(asset) => asset.id,
+            None => {
+                let asset_id = AssetId(graph.assets.len() as u64 + 1);
+                graph.push_asset(Asset {
+                    id: asset_id,
+                    kind: AssetKind::Image,
+                    content_identity: None,
+                    source: Some(image.source.clone()),
+                    media_type: Some(image.media_type.to_owned()),
+                    status: SemanticStatus::Resolved,
+                    bytes: Some(image.bytes.clone()),
+                });
+                asset_id
+            }
+        };
     graph.push_block(Block::Paragraph {
         content: vec![Inline::Image { source: image.source.clone(), alt: Vec::new(), title: None, asset: Some(asset_id) }],
     });

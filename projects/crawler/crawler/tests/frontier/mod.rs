@@ -19,11 +19,7 @@ fn expands_navigation_links() {
     let mut items = seed_frontier(&request).expect("items");
     let source = items.remove(0);
     queue.push(source.clone());
-    let links = vec![LinkCandidate {
-        target: "https://example.com/next".into(),
-        relation: LinkRelation::Navigation,
-        source_hint: None,
-    }];
+    let links = vec![LinkCandidate { target: "https://example.com/next".into(), relation: LinkRelation::Navigation, source_hint: None }];
     let admitted = frontier_from_links(&mut queue, &source, &links, 2);
     assert_eq!(admitted.len(), 1);
     assert_eq!(queue.len(), 2);

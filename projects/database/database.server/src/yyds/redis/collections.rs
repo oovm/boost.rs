@@ -41,8 +41,7 @@ pub(crate) enum KeyKind {
 
 impl KeyKind {
     /// 所有已知类型，按探测顺序排列（字符串优先，保持既有语义）。
-    pub(crate) const ALL: [KeyKind; 6] =
-        [KeyKind::String, KeyKind::Hash, KeyKind::List, KeyKind::Set, KeyKind::ZSet, KeyKind::Stream];
+    pub(crate) const ALL: [KeyKind; 6] = [KeyKind::String, KeyKind::Hash, KeyKind::List, KeyKind::Set, KeyKind::ZSet, KeyKind::Stream];
 
     /// `TYPE` 回复里使用的类型名。
     pub(crate) fn name(self) -> &'static str {
@@ -119,8 +118,7 @@ fn load_value(executor: &dyn KeyValueExecutor, namespace: &Namespace, key: &[u8]
 
 /// 写回集合键，保留既有过期时间（Redis 修改集合内容不会清掉 TTL）。
 fn store_value(executor: &dyn KeyValueExecutor, namespace: &Namespace, key: &[u8], value: Vec<u8>) -> Result<(), String> {
-    let command =
-        KeyValueCommand { namespace: namespace.clone(), key: key.to_vec(), action: KeyValueAction::PutKeepingExpiry(value) };
+    let command = KeyValueCommand { namespace: namespace.clone(), key: key.to_vec(), action: KeyValueAction::PutKeepingExpiry(value) };
     match executor.execute(None, command) {
         Ok(KeyValueResult::Put { .. }) => Ok(()),
         Ok(_) => Err("collection write returned an unexpected result".into()),
@@ -311,12 +309,7 @@ fn sort_zset_view(entries: &mut [(&[u8], f64)]) {
 }
 
 /// 输出借用切片形式的 zset 结果，帧格式与 `write_zset_entries` 完全一致。
-fn write_zset_view(
-    stream: &mut dyn io::Write,
-    entries: &[(&[u8], f64)],
-    with_scores: bool,
-    protocol: u8,
-) -> io::Result<()> {
+fn write_zset_view(stream: &mut dyn io::Write, entries: &[(&[u8], f64)], with_scores: bool, protocol: u8) -> io::Result<()> {
     let nested = with_scores && protocol == 3;
     let header = if with_scores && !nested { entries.len() * 2 } else { entries.len() };
     write_array_header(stream, header)?;
@@ -550,12 +543,7 @@ fn load_hash(
 }
 
 /// 载入 list 元素并校验类型。
-fn load_list(
-    stream: &mut dyn io::Write,
-    executor: &dyn KeyValueExecutor,
-    base: &Namespace,
-    key: &[u8],
-) -> io::Result<Loaded<Vec<Vec<u8>>>> {
+fn load_list(stream: &mut dyn io::Write, executor: &dyn KeyValueExecutor, base: &Namespace, key: &[u8]) -> io::Result<Loaded<Vec<Vec<u8>>>> {
     match find_kind(executor, base, key) {
         Ok(None) => return Ok(Loaded::Missing),
         Ok(Some(KeyKind::List)) => {}
@@ -585,12 +573,7 @@ fn load_list(
 }
 
 /// 载入 set 成员并校验类型。
-fn load_set(
-    stream: &mut dyn io::Write,
-    executor: &dyn KeyValueExecutor,
-    base: &Namespace,
-    key: &[u8],
-) -> io::Result<Loaded<Vec<Vec<u8>>>> {
+fn load_set(stream: &mut dyn io::Write, executor: &dyn KeyValueExecutor, base: &Namespace, key: &[u8]) -> io::Result<Loaded<Vec<Vec<u8>>>> {
     match find_kind(executor, base, key) {
         Ok(None) => return Ok(Loaded::Missing),
         Ok(Some(KeyKind::Set)) => {}
@@ -755,12 +738,7 @@ fn write_score(stream: &mut dyn io::Write, score: f64, protocol: u8) -> io::Resu
         }
         return write_bulk(stream, digits);
     }
-    if protocol == 3 {
-        write!(stream, ",{}\r\n", score_text(score))
-    }
-    else {
-        write_bulk(stream, score_text(score).as_bytes())
-    }
+    if protocol == 3 { write!(stream, ",{}\r\n", score_text(score)) } else { write_bulk(stream, score_text(score).as_bytes()) }
 }
 
 /// 把有符号整数写成十进制字节，返回落在 `buffer` 里的切片。
@@ -978,9 +956,7 @@ pub(crate) fn handle_hash(
         let key = request.arguments[1];
         return match load_hash(stream, executor, base, key)? {
             Loaded::Missing => write_integer(stream, 0),
-            Loaded::Found(fields) => {
-                write_integer(stream, i64::from(fields.iter().any(|(name, _)| name.as_slice() == request.arguments[2])))
-            }
+            Loaded::Found(fields) => write_integer(stream, i64::from(fields.iter().any(|(name, _)| name.as_slice() == request.arguments[2]))),
             Loaded::Rejected => Ok(()),
         };
     }
@@ -1214,7 +1190,10 @@ fn handle_lpos(
                 return write_error(stream, "value is out of range, value must between -9223372036854775807 and 9223372036854775807");
             }
             if rank == 0 {
-                return write_error(stream, "RANK can't be zero: use 1 to start from the first match, 2 from the second ... or use negative to start from the end of the list");
+                return write_error(
+                    stream,
+                    "RANK can't be zero: use 1 to start from the first match, 2 from the second ... or use negative to start from the end of the list",
+                );
             }
             options.rank = rank;
             index += 2;
@@ -1411,12 +1390,7 @@ fn parse_timeout(stream: &mut dyn io::Write, raw: &[u8]) -> io::Result<Option<Op
 ///
 /// 与真机一致：按参数顺序逐键检查，遇到第一个非空列表就停止，因此它前面的键必须先
 /// 通过类型检查；返回 `false` 表示错误已经写出。
-fn precheck_lists(
-    stream: &mut dyn io::Write,
-    executor: &dyn KeyValueExecutor,
-    base: &Namespace,
-    keys: &[&[u8]],
-) -> io::Result<bool> {
+fn precheck_lists(stream: &mut dyn io::Write, executor: &dyn KeyValueExecutor, base: &Namespace, keys: &[&[u8]]) -> io::Result<bool> {
     for key in keys {
         match find_kind(executor, base, key) {
             Ok(None) => {}
@@ -1785,10 +1759,7 @@ fn handle_mpop(
         let (popped, kept): (Vec<Vec<u8>>, Vec<Vec<u8>>) = match side {
             ListSide::Left => (elements[..take].to_vec(), elements[take..].to_vec()),
             // 与 `RPOP key count` 一致：从表尾逐个弹出，回复是尾端在前。
-            ListSide::Right => (
-                elements[elements.len() - take..].iter().rev().cloned().collect(),
-                elements[..elements.len() - take].to_vec(),
-            ),
+            ListSide::Right => (elements[elements.len() - take..].iter().rev().cloned().collect(), elements[..elements.len() - take].to_vec()),
         };
         if let Err(message) = persist_list(executor, base, key, &kept) {
             return write_storage_error(stream, &message);
@@ -1887,12 +1858,7 @@ pub(crate) fn handle_list(
             Loaded::Found(elements) => {
                 let length = elements.len() as i64;
                 let position = if index < 0 { length.saturating_add(index) } else { index };
-                if position < 0 || position >= length {
-                    write_null(stream, protocol)
-                }
-                else {
-                    write_bulk(stream, &elements[position as usize])
-                }
+                if position < 0 || position >= length { write_null(stream, protocol) } else { write_bulk(stream, &elements[position as usize]) }
             }
             Loaded::Rejected => Ok(()),
         };
@@ -2281,12 +2247,7 @@ fn remove_all_kinds(executor: &dyn KeyValueExecutor, base: &Namespace, key: &[u8
 }
 
 /// 无条件写入一个值（新记录不带过期时间），对应 `*STORE` 覆盖目标的真机语义。
-fn store_fresh_value(
-    executor: &dyn KeyValueExecutor,
-    namespace: &Namespace,
-    key: &[u8],
-    value: Vec<u8>,
-) -> Result<(), String> {
+fn store_fresh_value(executor: &dyn KeyValueExecutor, namespace: &Namespace, key: &[u8], value: Vec<u8>) -> Result<(), String> {
     let command = KeyValueCommand { namespace: namespace.clone(), key: key.to_vec(), action: KeyValueAction::Put(value) };
     match executor.execute(None, command) {
         Ok(KeyValueResult::Put { .. }) => Ok(()),
@@ -2344,10 +2305,7 @@ fn apply_set_op(op: SetOp, sets: &[Vec<Vec<u8>>]) -> Vec<Vec<u8>> {
 
 /// 进程内伪随机源：没有引入 `rand` 依赖，用时钟纳秒做种子跑 xorshift64。
 fn random_state() -> u64 {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_nanos() as u64)
-        .unwrap_or(1);
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|duration| duration.as_nanos() as u64).unwrap_or(1);
     nanos ^ 0x9E37_79B9_7F4A_7C15
 }
 
@@ -2379,11 +2337,7 @@ fn parse_scan_cursor(stream: &mut dyn io::Write, raw: &[u8]) -> io::Result<Optio
 }
 
 /// 解析 `MATCH pattern` 与 `COUNT count` 选项。
-fn parse_scan_tail(
-    stream: &mut dyn io::Write,
-    arguments: &[&[u8]],
-    start: usize,
-) -> io::Result<Option<(Option<Vec<u8>>, usize)>> {
+fn parse_scan_tail(stream: &mut dyn io::Write, arguments: &[&[u8]], start: usize) -> io::Result<Option<(Option<Vec<u8>>, usize)>> {
     let mut pattern: Option<Vec<u8>> = None;
     let mut count = 10usize;
     let mut index = start;
@@ -2417,13 +2371,7 @@ fn parse_scan_tail(
 }
 
 /// 写出一段集合扫描结果：`[next-cursor, [members...]]`。
-fn write_scan_page(
-    stream: &mut dyn io::Write,
-    items: &[Vec<u8>],
-    cursor: usize,
-    count: usize,
-    pattern: Option<&[u8]>,
-) -> io::Result<()> {
+fn write_scan_page(stream: &mut dyn io::Write, items: &[Vec<u8>], cursor: usize, count: usize, pattern: Option<&[u8]>) -> io::Result<()> {
     if cursor >= items.len() {
         stream.write_all(b"*2\r\n")?;
         write_bulk(stream, b"0")?;
@@ -2431,8 +2379,7 @@ fn write_scan_page(
     }
     let end = cursor.saturating_add(count).min(items.len());
     let next = if end >= items.len() { "0".to_string() } else { end.to_string() };
-    let matched: Vec<&Vec<u8>> =
-        items[cursor..end].iter().filter(|item| pattern.map_or(true, |pattern| glob_match(pattern, item))).collect();
+    let matched: Vec<&Vec<u8>> = items[cursor..end].iter().filter(|item| pattern.map_or(true, |pattern| glob_match(pattern, item))).collect();
     stream.write_all(b"*2\r\n")?;
     write_bulk(stream, next.as_bytes())?;
     write_array_header(stream, matched.len())?;
@@ -2559,10 +2506,7 @@ pub(crate) fn handle_set(
             Loaded::Rejected => Ok(()),
         };
     }
-    if command.eq_ignore_ascii_case(b"SINTER")
-        || command.eq_ignore_ascii_case(b"SUNION")
-        || command.eq_ignore_ascii_case(b"SDIFF")
-    {
+    if command.eq_ignore_ascii_case(b"SINTER") || command.eq_ignore_ascii_case(b"SUNION") || command.eq_ignore_ascii_case(b"SDIFF") {
         if request.arguments.len() < 2 {
             let name = String::from_utf8_lossy(command).to_ascii_lowercase();
             return write_arity_error(stream, &name);
@@ -2637,9 +2581,7 @@ pub(crate) fn handle_set(
         if source == destination {
             return match load_set(stream, executor, base, source)? {
                 Loaded::Missing => write_integer(stream, 0),
-                Loaded::Found(members) => {
-                    write_integer(stream, i64::from(members.iter().any(|existing| existing.as_slice() == member)))
-                }
+                Loaded::Found(members) => write_integer(stream, i64::from(members.iter().any(|existing| existing.as_slice() == member))),
                 Loaded::Rejected => Ok(()),
             };
         }
@@ -2700,12 +2642,7 @@ pub(crate) fn handle_set(
         let key = request.arguments[1];
         let members = match load_set(stream, executor, base, key)? {
             Loaded::Missing => {
-                return if request.arguments.len() == 3 {
-                    write_array_header(stream, 0)
-                }
-                else {
-                    write_null(stream, protocol)
-                };
+                return if request.arguments.len() == 3 { write_array_header(stream, 0) } else { write_null(stream, protocol) };
             }
             Loaded::Found(members) => members,
             Loaded::Rejected => return Ok(()),
@@ -2805,9 +2742,7 @@ pub(crate) fn handle_set(
                 else {
                     return write_error(stream, "set exceeds the storage limit");
                 };
-                if let Err(message) =
-                    store_value(executor, &KeyKind::Set.namespace(base), request.arguments[1], bytes)
-                {
+                if let Err(message) = store_value(executor, &KeyKind::Set.namespace(base), request.arguments[1], bytes) {
                     return write_storage_error(stream, &message);
                 }
             }
@@ -2846,12 +2781,8 @@ pub(crate) fn handle_set(
         for index in order.iter().take(take) {
             kept[*index] = false;
         }
-        let remaining = members
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| kept[*index])
-            .map(|(_, member)| member.clone())
-            .collect::<Vec<Vec<u8>>>();
+        let remaining =
+            members.iter().enumerate().filter(|(index, _)| kept[*index]).map(|(_, member)| member.clone()).collect::<Vec<Vec<u8>>>();
         let Some(bytes) = encode_set(&remaining)
         else {
             return write_error(stream, "set exceeds the storage limit");
@@ -2890,9 +2821,7 @@ pub(crate) fn handle_set(
         }
         let mut limit = 0usize;
         if request.arguments.len() > 2 + numkeys {
-            if !request.arguments[2 + numkeys].eq_ignore_ascii_case(b"LIMIT")
-                || request.arguments.len() != 4 + numkeys
-            {
+            if !request.arguments[2 + numkeys].eq_ignore_ascii_case(b"LIMIT") || request.arguments.len() != 4 + numkeys {
                 return write_error(stream, "syntax error");
             }
             match parse_index(request.arguments[3 + numkeys]) {
@@ -3023,12 +2952,7 @@ fn lex_at_most(member: &[u8], bound: &LexBound) -> bool {
 ///
 /// 分数一致时这就是普通的字典序；分数不一致时保留这条遍历语义，包括首元素
 /// 越过 `max` 时整段判空。
-fn lex_block(
-    entries: &[(Vec<u8>, f64)],
-    min: &LexBound,
-    max: &LexBound,
-    reverse: bool,
-) -> Option<(usize, usize)> {
+fn lex_block(entries: &[(Vec<u8>, f64)], min: &LexBound, max: &LexBound, reverse: bool) -> Option<(usize, usize)> {
     let (first, last) = entries.first().zip(entries.last())?;
     if !lex_at_most(&first.0, max) || !lex_at_least(&last.0, min) {
         return None;
@@ -3048,7 +2972,8 @@ fn lex_block(
         Some((start, end))
     }
     else {
-        let Some(start) = entries.iter().position(|(member, _)| lex_at_least(member, min)) else {
+        let Some(start) = entries.iter().position(|(member, _)| lex_at_least(member, min))
+        else {
             return None;
         };
         if !lex_at_most(&entries[start].0, max) {
@@ -3087,12 +3012,7 @@ fn apply_limit<T: Clone>(items: &[T], offset: i64, count: i64) -> Vec<T> {
 ///
 /// RESP2 把分数作为相邻的 bulk 平铺，RESP3 改用 `[member, score]` 子数组，
 /// 与真机的 `addReplyArrayLen` / `addReplyDouble` 组合一致。
-fn write_zset_entries(
-    stream: &mut dyn io::Write,
-    entries: &[(Vec<u8>, f64)],
-    with_scores: bool,
-    protocol: u8,
-) -> io::Result<()> {
+fn write_zset_entries(stream: &mut dyn io::Write, entries: &[(Vec<u8>, f64)], with_scores: bool, protocol: u8) -> io::Result<()> {
     let nested = with_scores && protocol == 3;
     let header = if with_scores && !nested { entries.len() * 2 } else { entries.len() };
     write_array_header(stream, header)?;
@@ -3109,11 +3029,7 @@ fn write_zset_entries(
 }
 
 /// 输出 `[member, score]` 子数组序列，`ZPOPMIN` / `ZMPOP` 等使用。
-fn write_zset_pairs(
-    stream: &mut dyn io::Write,
-    entries: &[(Vec<u8>, f64)],
-    protocol: u8,
-) -> io::Result<()> {
+fn write_zset_pairs(stream: &mut dyn io::Write, entries: &[(Vec<u8>, f64)], protocol: u8) -> io::Result<()> {
     write_array_header(stream, entries.len())?;
     for (member, score) in entries {
         stream.write_all(b"*2\r\n")?;
@@ -3180,8 +3096,7 @@ fn parse_range_request(
                 write_error(stream, "syntax error")?;
                 return Ok(None);
             }
-            let (Some(offset), Some(count)) =
-                (parse_index(arguments[index + 1]), parse_index(arguments[index + 2]))
+            let (Some(offset), Some(count)) = (parse_index(arguments[index + 1]), parse_index(arguments[index + 2]))
             else {
                 write_error(stream, "value is not an integer or out of range")?;
                 return Ok(None);
@@ -3284,32 +3199,21 @@ fn select_range(
             }
         }
         RangeMode::Score => {
-            let (low, high) = if request.reverse {
-                (&request.second, &request.first)
-            }
-            else {
-                (&request.first, &request.second)
-            };
+            let (low, high) = if request.reverse { (&request.second, &request.first) } else { (&request.first, &request.second) };
             let (Some(min), Some(max)) = (parse_score_bound(low), parse_score_bound(high))
             else {
                 write_error(stream, "min or max is not a float")?;
                 return Ok(None);
             };
             sort_zset(&mut entries);
-            let mut selected: Vec<(Vec<u8>, f64)> =
-                entries.into_iter().filter(|(_, score)| in_score_range(*score, min, max)).collect();
+            let mut selected: Vec<(Vec<u8>, f64)> = entries.into_iter().filter(|(_, score)| in_score_range(*score, min, max)).collect();
             if request.reverse {
                 selected.reverse();
             }
             selected
         }
         RangeMode::Lex => {
-            let (low, high) = if request.reverse {
-                (&request.second, &request.first)
-            }
-            else {
-                (&request.first, &request.second)
-            };
+            let (low, high) = if request.reverse { (&request.second, &request.first) } else { (&request.first, &request.second) };
             let (Some(min), Some(max)) = (parse_lex_bound(low), parse_lex_bound(high))
             else {
                 write_error(stream, "min or max not valid string range item")?;
@@ -3349,10 +3253,7 @@ struct ZAddOptions {
 ///
 /// 互斥规则与真机一致：`NX` 与 `XX` 不能同时出现，`GT` / `LT` 不能与 `NX`
 /// 同时出现，`GT` 与 `LT` 也互斥。选项之后必须剩下一对或以上的分数与成员。
-fn parse_zadd_options(
-    stream: &mut dyn io::Write,
-    arguments: &[&[u8]],
-) -> io::Result<Option<(ZAddOptions, usize)>> {
+fn parse_zadd_options(stream: &mut dyn io::Write, arguments: &[&[u8]]) -> io::Result<Option<(ZAddOptions, usize)>> {
     let mut options = ZAddOptions::default();
     let mut index = 2;
     while index < arguments.len() {
@@ -3400,13 +3301,8 @@ fn parse_zadd_options(
     Ok(Some((options, index)))
 }
 
-
 /// 解析 `ZRANGEBYSCORE` 的 `WITHSCORES` 与 `LIMIT offset count` 选项。
-fn parse_score_range_options(
-    stream: &mut dyn io::Write,
-    arguments: &[&[u8]],
-    start: usize,
-) -> io::Result<Option<(bool, Option<(i64, i64)>)>> {
+fn parse_score_range_options(stream: &mut dyn io::Write, arguments: &[&[u8]], start: usize) -> io::Result<Option<(bool, Option<(i64, i64)>)>> {
     let mut with_scores = false;
     let mut limit: Option<(i64, i64)> = None;
     let mut index = start;
@@ -3420,8 +3316,7 @@ fn parse_score_range_options(
                 write_error(stream, "syntax error")?;
                 return Ok(None);
             }
-            let (Some(offset), Some(count)) =
-                (parse_index(arguments[index + 1]), parse_index(arguments[index + 2]))
+            let (Some(offset), Some(count)) = (parse_index(arguments[index + 1]), parse_index(arguments[index + 2]))
             else {
                 write_error(stream, "value is not an integer or out of range")?;
                 return Ok(None);
@@ -3438,17 +3333,12 @@ fn parse_score_range_options(
 }
 
 /// 解析 `ZRANGEBYLEX` 的 `LIMIT offset count` 选项，字典族不接受 `WITHSCORES`。
-fn parse_lex_options(
-    stream: &mut dyn io::Write,
-    arguments: &[&[u8]],
-    start: usize,
-) -> io::Result<Option<Option<(i64, i64)>>> {
+fn parse_lex_options(stream: &mut dyn io::Write, arguments: &[&[u8]], start: usize) -> io::Result<Option<Option<(i64, i64)>>> {
     let mut limit: Option<(i64, i64)> = None;
     let mut index = start;
     while index < arguments.len() {
         if arguments[index].eq_ignore_ascii_case(b"LIMIT") && index + 2 < arguments.len() {
-            let (Some(offset), Some(count)) =
-                (parse_index(arguments[index + 1]), parse_index(arguments[index + 2]))
+            let (Some(offset), Some(count)) = (parse_index(arguments[index + 1]), parse_index(arguments[index + 2]))
             else {
                 write_error(stream, "value is not an integer or out of range")?;
                 return Ok(None);
@@ -3484,10 +3374,8 @@ fn write_hscan_page(
     }
     let end = cursor.saturating_add(count).min(fields.len());
     let next = if end >= fields.len() { "0".to_string() } else { end.to_string() };
-    let matched: Vec<&(Vec<u8>, Vec<u8>)> = fields[cursor..end]
-        .iter()
-        .filter(|(field, _)| pattern.map_or(true, |pattern| glob_match(pattern, field)))
-        .collect();
+    let matched: Vec<&(Vec<u8>, Vec<u8>)> =
+        fields[cursor..end].iter().filter(|(field, _)| pattern.map_or(true, |pattern| glob_match(pattern, field))).collect();
     stream.write_all(b"*2\r\n")?;
     write_bulk(stream, next.as_bytes())?;
     write_array_header(stream, matched.len() * 2)?;
@@ -3513,10 +3401,8 @@ fn write_zscan_page(
     }
     let end = cursor.saturating_add(count).min(entries.len());
     let next = if end >= entries.len() { "0".to_string() } else { end.to_string() };
-    let matched: Vec<&(Vec<u8>, f64)> = entries[cursor..end]
-        .iter()
-        .filter(|(member, _)| pattern.map_or(true, |pattern| glob_match(pattern, member)))
-        .collect();
+    let matched: Vec<&(Vec<u8>, f64)> =
+        entries[cursor..end].iter().filter(|(member, _)| pattern.map_or(true, |pattern| glob_match(pattern, member))).collect();
     stream.write_all(b"*2\r\n")?;
     write_bulk(stream, next.as_bytes())?;
     write_array_header(stream, matched.len() * 2)?;
@@ -3570,11 +3456,7 @@ fn parse_positive_usize(raw: &[u8]) -> Option<usize> {
 }
 
 /// 解析 `ZUNIONSTORE` / `ZINTERSTORE` 的 `numkeys`、键列表与可选选项。
-fn parse_zset_store_plan(
-    stream: &mut dyn io::Write,
-    name: &str,
-    arguments: &[&[u8]],
-) -> io::Result<Option<ZSetStorePlan>> {
+fn parse_zset_store_plan(stream: &mut dyn io::Write, name: &str, arguments: &[&[u8]]) -> io::Result<Option<ZSetStorePlan>> {
     let Some(numkeys) = parse_positive_usize(arguments[2])
     else {
         write_error(stream, &format!("at least 1 input key is needed for '{name}' command"))?;
@@ -3652,12 +3534,7 @@ fn load_zsets(
 }
 
 /// 按真机语义计算并集、交集或差集，结果按分数升序、同分按成员字节排序。
-fn combine_zsets(
-    sets: &[Vec<(Vec<u8>, f64)>],
-    weights: &[f64],
-    aggregate: ZSetAggregate,
-    op: ZSetOp,
-) -> Vec<(Vec<u8>, f64)> {
+fn combine_zsets(sets: &[Vec<(Vec<u8>, f64)>], weights: &[f64], aggregate: ZSetAggregate, op: ZSetOp) -> Vec<(Vec<u8>, f64)> {
     let weighted = |score: f64, weight: f64| {
         let value = score * weight;
         if value.is_nan() { 0.0 } else { value }
@@ -4058,12 +3935,7 @@ fn load_sort_elements(
 }
 
 /// 按 `BY` / `GET` 模式取值：`*` 被元素替换，`->` 后缀表示哈希字段，类型不匹配视为缺失。
-fn lookup_sort_pattern(
-    executor: &dyn KeyValueExecutor,
-    base: &Namespace,
-    pattern: &[u8],
-    element: &[u8],
-) -> Option<Vec<u8>> {
+fn lookup_sort_pattern(executor: &dyn KeyValueExecutor, base: &Namespace, pattern: &[u8], element: &[u8]) -> Option<Vec<u8>> {
     let mut expanded = Vec::new();
     for byte in pattern {
         if *byte == b'*' {
@@ -4167,14 +4039,11 @@ fn handle_sort(
         options
             .get
             .iter()
-            .map(|pattern| {
-                if pattern.as_slice() == b"#" {
-                    Some(element.clone())
-                }
-                else {
-                    lookup_sort_pattern(executor, base, pattern, element)
-                }
-            })
+            .map(
+                |pattern| {
+                    if pattern.as_slice() == b"#" { Some(element.clone()) } else { lookup_sort_pattern(executor, base, pattern, element) }
+                },
+            )
             .collect()
     };
     let values: Vec<Option<Vec<u8>>> = selected.iter().flat_map(|element| gather(element)).collect();
@@ -4223,18 +4092,8 @@ enum BitOverflow {
 /// 一条 `BITFIELD` 子命令。
 enum BitFieldOp {
     Get { encoding: BitEncoding, offset: u64 },
-    Set {
-        encoding: BitEncoding,
-        offset: u64,
-        value: i64,
-        overflow: BitOverflow,
-    },
-    Incr {
-        encoding: BitEncoding,
-        offset: u64,
-        increment: i64,
-        overflow: BitOverflow,
-    },
+    Set { encoding: BitEncoding, offset: u64, value: i64, overflow: BitOverflow },
+    Incr { encoding: BitEncoding, offset: u64, increment: i64, overflow: BitOverflow },
 }
 
 const MAX_BIT_OFFSET: u64 = 0xffff_ffff;
@@ -4275,11 +4134,7 @@ fn parse_bitfield_offset(raw: &[u8], bits: u32) -> Option<u64> {
 }
 
 /// 解析整条 `BITFIELD`：语法与编码校验先于任何写入。
-fn parse_bitfield_ops(
-    stream: &mut dyn io::Write,
-    arguments: &[&[u8]],
-    readonly: bool,
-) -> io::Result<Option<Vec<BitFieldOp>>> {
+fn parse_bitfield_ops(stream: &mut dyn io::Write, arguments: &[&[u8]], readonly: bool) -> io::Result<Option<Vec<BitFieldOp>>> {
     let mut operations = Vec::new();
     let mut overflow = BitOverflow::Wrap;
     let mut index = 2;
@@ -4312,7 +4167,15 @@ fn parse_bitfield_ops(
             write_error(stream, "BITFIELD_RO only supports the GET subcommand")?;
             return Ok(None);
         }
-        let needs = if keyword.eq_ignore_ascii_case(b"GET") { 3 } else if writing { 4 } else { 0 };
+        let needs = if keyword.eq_ignore_ascii_case(b"GET") {
+            3
+        }
+        else if writing {
+            4
+        }
+        else {
+            0
+        };
         if needs == 0 {
             write_error(stream, "syntax error")?;
             return Ok(None);
@@ -4361,12 +4224,7 @@ fn read_bitfield(body: &[u8], offset: u64, encoding: BitEncoding) -> i128 {
         let bit = if byte < body.len() { (body[byte] >> (7 - (position % 8))) & 1 } else { 0 };
         raw = (raw << 1) | bit as u128;
     }
-    if encoding.signed && raw >= (1_u128 << (encoding.bits - 1)) {
-        raw as i128 - (1_i128 << encoding.bits)
-    }
-    else {
-        raw as i128
-    }
+    if encoding.signed && raw >= (1_u128 << (encoding.bits - 1)) { raw as i128 - (1_i128 << encoding.bits) } else { raw as i128 }
 }
 
 /// 把位域末端补齐到完整字节。
@@ -4802,8 +4660,7 @@ pub(crate) fn handle_zset(
             return write_arity_error(stream, name);
         }
         let key = request.arguments[1];
-        let (high, low) =
-            if reverse { (request.arguments[2], request.arguments[3]) } else { (request.arguments[3], request.arguments[2]) };
+        let (high, low) = if reverse { (request.arguments[2], request.arguments[3]) } else { (request.arguments[3], request.arguments[2]) };
         let (Some(min), Some(max)) = (parse_score_bound(low), parse_score_bound(high))
         else {
             return write_error(stream, "min or max is not a float");
@@ -4818,8 +4675,7 @@ pub(crate) fn handle_zset(
             Loaded::Rejected => return Ok(()),
         };
         sort_zset(&mut entries);
-        let mut selected: Vec<(Vec<u8>, f64)> =
-            entries.into_iter().filter(|(_, score)| in_score_range(*score, min, max)).collect();
+        let mut selected: Vec<(Vec<u8>, f64)> = entries.into_iter().filter(|(_, score)| in_score_range(*score, min, max)).collect();
         if reverse {
             selected.reverse();
         }
@@ -4835,8 +4691,7 @@ pub(crate) fn handle_zset(
             return write_arity_error(stream, name);
         }
         let key = request.arguments[1];
-        let (high, low) =
-            if reverse { (request.arguments[2], request.arguments[3]) } else { (request.arguments[3], request.arguments[2]) };
+        let (high, low) = if reverse { (request.arguments[2], request.arguments[3]) } else { (request.arguments[3], request.arguments[2]) };
         let (Some(min), Some(max)) = (parse_lex_bound(low), parse_lex_bound(high))
         else {
             return write_error(stream, "min or max not valid string range item");
@@ -4883,12 +4738,7 @@ pub(crate) fn handle_zset(
         let key = request.arguments[1];
         let mut entries = match load_zset(stream, executor, base, key)? {
             Loaded::Missing => {
-                return if with_score {
-                    write_null_array(stream, protocol)
-                }
-                else {
-                    write_null(stream, protocol)
-                };
+                return if with_score { write_null_array(stream, protocol) } else { write_null(stream, protocol) };
             }
             Loaded::Found(entries) => entries,
             Loaded::Rejected => return Ok(()),
@@ -4985,8 +4835,15 @@ pub(crate) fn handle_zset(
     {
         let by_score = command.eq_ignore_ascii_case(b"ZREMRANGEBYSCORE");
         let by_lex = command.eq_ignore_ascii_case(b"ZREMRANGEBYLEX");
-        let name =
-            if by_score { "zremrangebyscore" } else if by_lex { "zremrangebylex" } else { "zremrangebyrank" };
+        let name = if by_score {
+            "zremrangebyscore"
+        }
+        else if by_lex {
+            "zremrangebylex"
+        }
+        else {
+            "zremrangebyrank"
+        };
         if request.arguments.len() != 4 {
             return write_arity_error(stream, name);
         }
@@ -5090,8 +4947,7 @@ pub(crate) fn handle_zset(
         if request.arguments.len() != 4 {
             return write_arity_error(stream, "zlexcount");
         }
-        let (Some(min), Some(max)) =
-            (parse_lex_bound(request.arguments[2]), parse_lex_bound(request.arguments[3]))
+        let (Some(min), Some(max)) = (parse_lex_bound(request.arguments[2]), parse_lex_bound(request.arguments[3]))
         else {
             return write_error(stream, "min or max not valid string range item");
         };
@@ -5099,10 +4955,7 @@ pub(crate) fn handle_zset(
             Loaded::Missing => write_integer(stream, 0),
             Loaded::Found(entries) => write_integer(
                 stream,
-                entries
-                    .iter()
-                    .filter(|(member, _)| lex_at_least(member, &min) && lex_at_most(member, &max))
-                    .count() as i64,
+                entries.iter().filter(|(member, _)| lex_at_least(member, &min) && lex_at_most(member, &max)).count() as i64,
             ),
             Loaded::Rejected => Ok(()),
         };
@@ -5175,12 +5028,7 @@ pub(crate) fn handle_zset(
             Loaded::Rejected => return Ok(()),
         };
         if entries.is_empty() {
-            return if request.arguments.len() == 2 {
-                write_null(stream, protocol)
-            }
-            else {
-                write_array_header(stream, 0)
-            };
+            return if request.arguments.len() == 2 { write_null(stream, protocol) } else { write_array_header(stream, 0) };
         }
         if request.arguments.len() == 2 {
             let index = random_below(entries.len());
@@ -5420,12 +5268,7 @@ enum HllLoaded {
 /// 读取一个 HLL 键。
 ///
 /// HLL 在真机上就是一个字符串，所以它落在字符串命名空间，`TYPE` 也回复 `string`。
-fn load_hll(
-    stream: &mut dyn io::Write,
-    executor: &dyn KeyValueExecutor,
-    base: &Namespace,
-    key: &[u8],
-) -> io::Result<HllLoaded> {
+fn load_hll(stream: &mut dyn io::Write, executor: &dyn KeyValueExecutor, base: &Namespace, key: &[u8]) -> io::Result<HllLoaded> {
     match find_kind(executor, base, key) {
         Ok(None) => return Ok(HllLoaded::Missing),
         Ok(Some(KeyKind::String)) => {}
@@ -5610,7 +5453,8 @@ pub(crate) fn handle_hyperloglog(
     executor: Option<&dyn KeyValueExecutor>,
     base: &Namespace,
 ) -> io::Result<()> {
-    let Some(executor) = executor else {
+    let Some(executor) = executor
+    else {
         return write_error(stream, "unsupported command");
     };
     let command = request.arguments[0];

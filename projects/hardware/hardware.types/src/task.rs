@@ -2,8 +2,10 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{ShaderId, TaskId};
-use crate::objective::{Objective, Priority};
+use crate::{
+    ids::{ShaderId, TaskId},
+    objective::{Objective, Priority},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TaskKind {
@@ -22,7 +24,11 @@ pub enum TaskKind {
 pub enum Dispatch {
     #[default]
     Auto,
-    Explicit { x: u32, y: u32, z: u32 },
+    Explicit {
+        x: u32,
+        y: u32,
+        z: u32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

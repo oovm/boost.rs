@@ -8,8 +8,8 @@
 use std::{fs, path::Path};
 
 use document_ir::{
-    Asset, AssetKind, AttributePair, Attributes, Block, DocumentGraph, DocumentId, DocumentMetadata, IdAllocator, Inline,
-    LossMarker, SemanticStatus, TableCell, TableRow,
+    Asset, AssetKind, AttributePair, Attributes, Block, DocumentGraph, DocumentId, DocumentMetadata, IdAllocator, Inline, LossMarker,
+    SemanticStatus, TableCell, TableRow,
 };
 
 use super::{
@@ -34,8 +34,7 @@ impl Default for GraphOptions {
 /// Imports a PPTX file and projects it into `notedown-ir`.
 pub fn import_pptx_graph(path: impl AsRef<Path>) -> Result<DocumentGraph, FormatError> {
     let path = path.as_ref();
-    let bytes =
-        fs::read(path).map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
+    let bytes = fs::read(path).map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
     import_pptx_graph_bytes(&path.display().to_string(), &bytes)
 }
 
@@ -70,11 +69,7 @@ pub fn presentation_to_graph(presentation: &PptxPresentation, options: &GraphOpt
             continue;
         }
         let title = slide_title(slide);
-        let section_id = graph.push_block(Block::Section {
-            level: 1,
-            title: vec![Inline::Text { text: title.clone() }],
-            children: Vec::new(),
-        });
+        let section_id = graph.push_block(Block::Section { level: 1, title: vec![Inline::Text { text: title.clone() }], children: Vec::new() });
         let mut children = Vec::new();
 
         for shape in &slide.shapes {
@@ -115,10 +110,7 @@ pub fn presentation_to_graph(presentation: &PptxPresentation, options: &GraphOpt
                         }));
                         graph.push_loss(LossMarker {
                             code: "import.pptx.image-frame".into(),
-                            message: format!(
-                                "slide {} picture `{}` keeps no frame geometry in the IR",
-                                slide.index, shape.name
-                            ),
+                            message: format!("slide {} picture `{}` keeps no frame geometry in the IR", slide.index, shape.name),
                             status: SemanticStatus::Partial,
                         });
                     }
@@ -129,13 +121,8 @@ pub fn presentation_to_graph(presentation: &PptxPresentation, options: &GraphOpt
                         for (row_index, row) in table.rows.iter().enumerate() {
                             let mut cells = Vec::new();
                             for (column_index, cell) in row.cells.iter().enumerate() {
-                                let paragraphs: Vec<Vec<Inline>> = cell
-                                    .text
-                                    .paragraphs
-                                    .iter()
-                                    .map(paragraph_inlines)
-                                    .filter(|content| !content.is_empty())
-                                    .collect();
+                                let paragraphs: Vec<Vec<Inline>> =
+                                    cell.text.paragraphs.iter().map(paragraph_inlines).filter(|content| !content.is_empty()).collect();
                                 if paragraphs.len() > 1 {
                                     graph.push_loss(LossMarker {
                                         code: codes::TABLE_CELL_PARAGRAPHS.into(),
@@ -196,8 +183,7 @@ pub fn presentation_to_graph(presentation: &PptxPresentation, options: &GraphOpt
         }
 
         if let Some(notes) = &slide.notes {
-            children
-                .push(graph.push_block(Block::Paragraph { content: vec![Inline::Text { text: format!("Notes: {notes}") }] }));
+            children.push(graph.push_block(Block::Paragraph { content: vec![Inline::Text { text: format!("Notes: {notes}") }] }));
         }
         if let Some(parent) = graph.blocks.iter_mut().find(|node| node.id == section_id) {
             if let Block::Section { children: owned, .. } = &mut parent.block {
@@ -235,12 +221,9 @@ fn paragraph_inlines(paragraph: &Paragraph) -> Vec<Inline> {
             continue;
         }
         let mut inline = Inline::Text { text: run.text.clone() };
-        for (flag, style) in [
-            (run.style.bold, "bold"),
-            (run.style.italic, "italic"),
-            (run.style.underline, "underline"),
-            (run.style.strike, "strike"),
-        ] {
+        for (flag, style) in
+            [(run.style.bold, "bold"), (run.style.italic, "italic"), (run.style.underline, "underline"), (run.style.strike, "strike")]
+        {
             if flag {
                 inline = Inline::Styled { style: style.to_owned(), children: vec![inline] };
             }
@@ -255,10 +238,7 @@ fn paragraph_inlines(paragraph: &Paragraph) -> Vec<Inline> {
         if let Some(link) = run.hyperlink.as_deref() {
             pairs.push(AttributePair { key: "pptx.link".into(), value: link.to_owned() });
         }
-        content.push(Inline::Attributed {
-            attributes: Attributes { id: None, classes: Vec::new(), pairs },
-            children: vec![inline],
-        });
+        content.push(Inline::Attributed { attributes: Attributes { id: None, classes: Vec::new(), pairs }, children: vec![inline] });
     }
     content
 }

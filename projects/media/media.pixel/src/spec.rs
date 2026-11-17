@@ -12,8 +12,7 @@ use media_image::Bitmap;
 use media_types::Error;
 use serde::Deserialize;
 
-use crate::canvas::PixelCanvas;
-use crate::palette::Palette;
+use crate::{canvas::PixelCanvas, palette::Palette};
 
 /// Upper bound on both the canvas area and the exported area, in pixels,
 /// accepted by [`render_sprite`].
@@ -43,7 +42,11 @@ pub struct SpriteSpec {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum PixelOp {
-    Pixel { x: u32, y: u32, index: u8 },
+    Pixel {
+        x: u32,
+        y: u32,
+        index: u8,
+    },
     Line {
         from: [u32; 2],
         to: [u32; 2],
@@ -56,7 +59,10 @@ pub enum PixelOp {
         #[serde(default)]
         filled: bool,
     },
-    Flood { at: [u32; 2], index: u8 },
+    Flood {
+        at: [u32; 2],
+        index: u8,
+    },
 }
 
 impl PixelOp {
@@ -66,12 +72,7 @@ impl PixelOp {
         match self {
             Self::Pixel { x, y, index } => canvas.set(*x, *y, *index),
             Self::Line { from, to, index } => canvas.line(from[0], from[1], to[0], to[1], *index),
-            Self::Rect {
-                at,
-                size,
-                index,
-                filled,
-            } => canvas.rect(at[0], at[1], size[0], size[1], *index, *filled),
+            Self::Rect { at, size, index, filled } => canvas.rect(at[0], at[1], size[0], size[1], *index, *filled),
             Self::Flood { at, index } => canvas.flood(at[0], at[1], *index),
         }
     }
@@ -85,35 +86,26 @@ pub fn render_sprite(spec: &SpriteSpec) -> Result<Bitmap, Error> {
     let width = spec.width.max(1);
     let height = spec.height.max(1);
     check_area(width, height)?;
-    let palette = if spec.palette.is_empty() {
-        Palette::default()
-    } else {
-        Palette::from_hex(&spec.palette)?
-    };
+    let palette = if spec.palette.is_empty() { Palette::default() } else { Palette::from_hex(&spec.palette)? };
     let mut canvas = PixelCanvas::new(spec.width, spec.height);
     for op in &spec.ops {
         op.apply(&mut canvas);
     }
     let factor = spec.scale.unwrap_or(1).max(1);
-    let scaled_width = width
-        .checked_mul(factor)
-        .ok_or_else(|| Error::invalid_input(format!("sprite scale {factor} overflows {width}x{height}")))?;
-    let scaled_height = height
-        .checked_mul(factor)
-        .ok_or_else(|| Error::invalid_input(format!("sprite scale {factor} overflows {width}x{height}")))?;
+    let scaled_width =
+        width.checked_mul(factor).ok_or_else(|| Error::invalid_input(format!("sprite scale {factor} overflows {width}x{height}")))?;
+    let scaled_height =
+        height.checked_mul(factor).ok_or_else(|| Error::invalid_input(format!("sprite scale {factor} overflows {width}x{height}")))?;
     check_area(scaled_width, scaled_height)?;
     let scaled = canvas.scale(factor);
     Ok(scaled.to_bitmap(&palette))
 }
 
 fn check_area(width: u32, height: u32) -> Result<(), Error> {
-    let area = (width as usize)
-        .checked_mul(height as usize)
-        .ok_or_else(|| Error::invalid_input(format!("sprite area {width}x{height} overflows")))?;
+    let area =
+        (width as usize).checked_mul(height as usize).ok_or_else(|| Error::invalid_input(format!("sprite area {width}x{height} overflows")))?;
     if area > MAX_SPRITE_PIXELS {
-        return Err(Error::invalid_input(format!(
-            "sprite area {area} exceeds the {MAX_SPRITE_PIXELS} pixel budget"
-        )));
+        return Err(Error::invalid_input(format!("sprite area {area} exceeds the {MAX_SPRITE_PIXELS} pixel budget")));
     }
     Ok(())
 }
@@ -127,36 +119,12 @@ mod tests {
             width: 16,
             height: 16,
             scale: Some(8),
-            palette: vec![
-                "#000000".to_string(),
-                "#343a54".to_string(),
-                "#cc4448".to_string(),
-                "#f6c470".to_string(),
-                "#4884c8".to_string(),
-            ],
+            palette: vec!["#000000".to_string(), "#343a54".to_string(), "#cc4448".to_string(), "#f6c470".to_string(), "#4884c8".to_string()],
             ops: vec![
-                PixelOp::Rect {
-                    at: [2, 2],
-                    size: [12, 12],
-                    index: 1,
-                    filled: true,
-                },
-                PixelOp::Rect {
-                    at: [4, 4],
-                    size: [8, 8],
-                    index: 2,
-                    filled: true,
-                },
-                PixelOp::Pixel {
-                    x: 8,
-                    y: 8,
-                    index: 3,
-                },
-                PixelOp::Line {
-                    from: [1, 1],
-                    to: [14, 1],
-                    index: 4,
-                },
+                PixelOp::Rect { at: [2, 2], size: [12, 12], index: 1, filled: true },
+                PixelOp::Rect { at: [4, 4], size: [8, 8], index: 2, filled: true },
+                PixelOp::Pixel { x: 8, y: 8, index: 3 },
+                PixelOp::Line { from: [1, 1], to: [14, 1], index: 4 },
                 PixelOp::Flood { at: [0, 0], index: 4 },
             ],
         }
@@ -191,17 +159,7 @@ mod tests {
 
     #[test]
     fn sprite_defaults_apply_palette_and_scale() {
-        let spec = SpriteSpec {
-            width: 2,
-            height: 2,
-            scale: None,
-            palette: vec![],
-            ops: vec![PixelOp::Pixel {
-                x: 0,
-                y: 0,
-                index: 1,
-            }],
-        };
+        let spec = SpriteSpec { width: 2, height: 2, scale: None, palette: vec![], ops: vec![PixelOp::Pixel { x: 0, y: 0, index: 1 }] };
         let bitmap = render_sprite(&spec).unwrap();
         assert_eq!((bitmap.width, bitmap.height), (2, 2));
         assert_eq!(pixel(&bitmap, 0, 0), Palette::default().color(1));
@@ -216,17 +174,8 @@ mod tests {
             scale: Some(0),
             palette: vec![],
             ops: vec![
-                PixelOp::Pixel {
-                    x: 1,
-                    y: 1,
-                    index: 2,
-                },
-                PixelOp::Rect {
-                    at: [0, 0],
-                    size: [3, 3],
-                    index: 5,
-                    filled: true,
-                },
+                PixelOp::Pixel { x: 1, y: 1, index: 2 },
+                PixelOp::Rect { at: [0, 0], size: [3, 3], index: 5, filled: true },
                 PixelOp::Flood { at: [3, 3], index: 9 },
             ],
         };
@@ -238,13 +187,7 @@ mod tests {
 
     #[test]
     fn zero_dimensions_still_render() {
-        let spec = SpriteSpec {
-            width: 0,
-            height: 0,
-            scale: Some(3),
-            palette: vec![],
-            ops: vec![],
-        };
+        let spec = SpriteSpec { width: 0, height: 0, scale: Some(3), palette: vec![], ops: vec![] };
         let bitmap = render_sprite(&spec).unwrap();
         assert_eq!((bitmap.width, bitmap.height), (3, 3));
     }
@@ -253,48 +196,24 @@ mod tests {
     fn malformed_palette_hex_errors_the_whole_sprite() {
         // The deliberate correction: the OpenPixel binding silently turned
         // a bad colour transparent; the domain entry rejects it.
-        let spec = SpriteSpec {
-            width: 2,
-            height: 2,
-            scale: None,
-            palette: vec!["#000".to_string(), "red".to_string()],
-            ops: vec![],
-        };
+        let spec = SpriteSpec { width: 2, height: 2, scale: None, palette: vec!["#000".to_string(), "red".to_string()], ops: vec![] };
         let error = render_sprite(&spec).err().unwrap();
         assert_eq!(error.code(), "invalid_input");
     }
 
     #[test]
     fn oversized_canvas_hits_the_input_budget() {
-        let spec = SpriteSpec {
-            width: u32::MAX,
-            height: 2,
-            scale: None,
-            palette: vec![],
-            ops: vec![],
-        };
+        let spec = SpriteSpec { width: u32::MAX, height: 2, scale: None, palette: vec![], ops: vec![] };
         let error = render_sprite(&spec).err().unwrap();
         assert_eq!(error.code(), "invalid_input");
 
-        let at_budget = SpriteSpec {
-            width: 4096,
-            height: 4096,
-            scale: None,
-            palette: vec![],
-            ops: vec![],
-        };
+        let at_budget = SpriteSpec { width: 4096, height: 4096, scale: None, palette: vec![], ops: vec![] };
         assert!(render_sprite(&at_budget).is_ok(), "16 Mi canvas is inside the budget");
     }
 
     #[test]
     fn oversized_export_scale_hits_the_input_budget() {
-        let spec = SpriteSpec {
-            width: 16,
-            height: 16,
-            scale: Some(100_000),
-            palette: vec![],
-            ops: vec![],
-        };
+        let spec = SpriteSpec { width: 16, height: 16, scale: Some(100_000), palette: vec![], ops: vec![] };
         let error = render_sprite(&spec).err().unwrap();
         assert_eq!(error.code(), "invalid_input");
     }

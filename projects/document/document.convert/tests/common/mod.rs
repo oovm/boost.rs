@@ -180,8 +180,7 @@ pub fn assert_convert_project_report(output: &ConvertProjectOutput, published: &
 /// Assert the report lists every expected loss code at least once.
 pub fn assert_report_contains_loss_codes(report_json: &str, codes: &[&str]) {
     let report = parse_report_json(report_json);
-    let loss_codes =
-        report["losses"].as_array().expect("losses array").iter().filter_map(|loss| loss["code"].as_str()).collect::<Vec<_>>();
+    let loss_codes = report["losses"].as_array().expect("losses array").iter().filter_map(|loss| loss["code"].as_str()).collect::<Vec<_>>();
     for code in codes {
         assert!(loss_codes.iter().any(|entry| *entry == *code), "expected loss code {code}, got {loss_codes:?}");
     }

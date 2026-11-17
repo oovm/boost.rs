@@ -1,9 +1,7 @@
 //! CPU 栅格后端 — 确定性 reference（2D + 投影后的 3D）。
 
 use plotter_types::plot::{Diagnostic, DiagnosticCode, Result, Rgba};
-use plotter_view::{
-    AxisNode, Mesh3Node, MeshNode, Point2, Points3Node, PointsNode, PolylineNode, Scene, TextNode, try_project_to_screen,
-};
+use plotter_view::{AxisNode, Mesh3Node, MeshNode, Point2, Points3Node, PointsNode, PolylineNode, Scene, TextNode, try_project_to_screen};
 
 use crate::{
     Renderer,
@@ -43,8 +41,7 @@ impl Renderer for CpuRasterRenderer {
         let scene = &prepared.scene;
         *image = crate::target::RgbaImage::from_viewport(scene.viewport);
         let height = image.height as f64;
-        let primitive_count =
-            if scene.camera.is_2d() { render_2d(image, height, scene)? } else { render_3d_projected(image, height, scene)? };
+        let primitive_count = if scene.camera.is_2d() { render_2d(image, height, scene)? } else { render_3d_projected(image, height, scene)? };
 
         Ok(FrameReport { primitive_count })
     }
@@ -147,13 +144,7 @@ fn collect_points3(scene: &Scene, cloud: &Points3Node, out: &mut Vec<ProjectedPo
         else {
             continue;
         };
-        out.push(ProjectedPoint {
-            x: p.x,
-            y: p.y,
-            depth: p.depth,
-            radius: cloud.size.max(1.0).round() as i32,
-            fill: cloud.fill,
-        });
+        out.push(ProjectedPoint { x: p.x, y: p.y, depth: p.depth, radius: cloud.size.max(1.0).round() as i32, fill: cloud.fill });
     }
 }
 
@@ -206,6 +197,12 @@ fn draw_mesh(image: &mut crate::target::RgbaImage, height: f64, mesh: &MeshNode)
 fn draw_text(image: &mut crate::target::RgbaImage, height: f64, text: &TextNode) -> u32 {
     let (mut x, y) = scene_to_pixel(text.position, height);
     let scale = ((text.size / 7.0).round() as i32).max(1);
+    let run_width = text.content.chars().count() as i32 * 6 * scale;
+    x -= match text.anchor {
+        plotter_view::TextAnchor::Start => 0,
+        plotter_view::TextAnchor::Middle => run_width / 2,
+        plotter_view::TextAnchor::End => run_width,
+    };
     let mut count = 0_u32;
     for ch in text.content.chars() {
         let glyph = glyph5x7(ch);
@@ -229,12 +226,7 @@ fn draw_text(image: &mut crate::target::RgbaImage, height: f64, text: &TextNode)
 fn draw_axis(image: &mut crate::target::RgbaImage, height: f64, axis: &AxisNode) -> u32 {
     let mut count = 0_u32;
     let origin = axis.origin;
-    let end = if axis.horizontal {
-        Point2::new(origin.x + axis.length, origin.y)
-    }
-    else {
-        Point2::new(origin.x, origin.y + axis.length)
-    };
+    let end = if axis.horizontal { Point2::new(origin.x + axis.length, origin.y) } else { Point2::new(origin.x, origin.y + axis.length) };
     let (x0, y0) = scene_to_pixel(origin, height);
     let (x1, y1) = scene_to_pixel(end, height);
     count += draw_thick_line(image, x0, y0, x1, y1, 0, axis.stroke);

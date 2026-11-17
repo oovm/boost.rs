@@ -119,23 +119,14 @@ pub fn parse_hex(input: &str) -> Result<Rgba, Error> {
         if double {
             let lo = nibble(*hex.as_bytes().get(j)?)?;
             Some((hi * 16 + lo) as u8)
-        } else {
+        }
+        else {
             Some((hi * 17) as u8)
         }
     };
     let color = match hex.len() {
-        3 => [
-            byte(0, 0, false).ok_or_else(invalid)?,
-            byte(1, 1, false).ok_or_else(invalid)?,
-            byte(2, 2, false).ok_or_else(invalid)?,
-            255,
-        ],
-        6 => [
-            byte(0, 1, true).ok_or_else(invalid)?,
-            byte(2, 3, true).ok_or_else(invalid)?,
-            byte(4, 5, true).ok_or_else(invalid)?,
-            255,
-        ],
+        3 => [byte(0, 0, false).ok_or_else(invalid)?, byte(1, 1, false).ok_or_else(invalid)?, byte(2, 2, false).ok_or_else(invalid)?, 255],
+        6 => [byte(0, 1, true).ok_or_else(invalid)?, byte(2, 3, true).ok_or_else(invalid)?, byte(4, 5, true).ok_or_else(invalid)?, 255],
         8 => [
             byte(0, 1, true).ok_or_else(invalid)?,
             byte(2, 3, true).ok_or_else(invalid)?,
@@ -227,9 +218,7 @@ mod tests {
 
     #[test]
     fn from_hex_errors_on_the_first_bad_colour() {
-        let error = Palette::from_hex(&["#000".to_string(), "nope".to_string()])
-            .err()
-            .unwrap();
+        let error = Palette::from_hex(&["#000".to_string(), "nope".to_string()]).err().unwrap();
         assert_eq!(error.code(), "invalid_input");
         let palette = Palette::from_hex(&["#000".to_string(), "#fff".to_string()]).unwrap();
         assert_eq!(palette.color(1), [255, 255, 255, 255]);

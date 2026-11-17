@@ -7,8 +7,7 @@
 use std::collections::{HashMap, HashSet};
 
 use document_ir::{
-    AssetId, Block as IrBlock, BreakKind, DocumentGraph, Inline as IrInline, LossMarker, MathDisplay, NodeId, RelationEndpoint,
-    SemanticStatus,
+    AssetId, Block as IrBlock, BreakKind, DocumentGraph, Inline as IrInline, LossMarker, MathDisplay, NodeId, RelationEndpoint, SemanticStatus,
 };
 
 use crate::FormatError;
@@ -16,8 +15,8 @@ use crate::FormatError;
 use super::{
     codec::{self, FORMAT_ID, PandocBudget},
     model::{
-        API_VERSION, Attr, Block, Caption, Cell, Citation, CitationMode, ColSpec, Inline, ListNumberDelim, ListNumberStyle,
-        MathType, MetaValue, OrderedList, PandocDocument, QuoteType, Row, Table, TableBody, TableFoot, TableHead, Target,
+        API_VERSION, Attr, Block, Caption, Cell, Citation, CitationMode, ColSpec, Inline, ListNumberDelim, ListNumberStyle, MathType,
+        MetaValue, OrderedList, PandocDocument, QuoteType, Row, Table, TableBody, TableFoot, TableHead, Target,
     },
 };
 
@@ -45,8 +44,7 @@ impl PandocExport {
 /// Export one document graph as Pandoc JSON.
 pub fn export_pandoc_json(graph: &DocumentGraph) -> Result<PandocExport, FormatError> {
     let mut exporter = Exporter::new(graph);
-    let document =
-        PandocDocument { api_version: API_VERSION, meta: exporter.encode_metadata(), blocks: exporter.export_top_level()? };
+    let document = PandocDocument { api_version: API_VERSION, meta: exporter.encode_metadata(), blocks: exporter.export_top_level()? };
     Ok(PandocExport { document, losses: exporter.losses })
 }
 
@@ -85,16 +83,10 @@ impl Exporter<'_> {
             meta.push(("lang".into(), MetaValue::String(language.clone())));
         }
         if !self.graph.metadata.authors.is_empty() {
-            meta.push((
-                "author".into(),
-                MetaValue::List(self.graph.metadata.authors.iter().cloned().map(MetaValue::String).collect()),
-            ));
+            meta.push(("author".into(), MetaValue::List(self.graph.metadata.authors.iter().cloned().map(MetaValue::String).collect())));
         }
         if !self.graph.metadata.tags.is_empty() {
-            meta.push((
-                "tags".into(),
-                MetaValue::List(self.graph.metadata.tags.iter().cloned().map(MetaValue::String).collect()),
-            ));
+            meta.push(("tags".into(), MetaValue::List(self.graph.metadata.tags.iter().cloned().map(MetaValue::String).collect())));
         }
         for entry in &self.graph.metadata.properties {
             let value = self.encode_metadata_value(&entry.value);
@@ -127,19 +119,16 @@ impl Exporter<'_> {
                 );
                 MetaValue::String(number.to_string())
             }
-            document_ir::MetadataValue::List(items) => {
-                MetaValue::List(items.iter().map(|item| self.encode_metadata_value(item)).collect())
+            document_ir::MetadataValue::List(items) => MetaValue::List(items.iter().map(|item| self.encode_metadata_value(item)).collect()),
+            document_ir::MetadataValue::Map(entries) => {
+                MetaValue::Map(entries.iter().map(|entry| (entry.key.clone(), self.encode_metadata_value(&entry.value))).collect())
             }
-            document_ir::MetadataValue::Map(entries) => MetaValue::Map(
-                entries.iter().map(|entry| (entry.key.clone(), self.encode_metadata_value(&entry.value))).collect(),
-            ),
         }
     }
 
     fn export_top_level(&mut self) -> Result<Vec<Block>, FormatError> {
         let referenced = referenced_children(self.graph);
-        let top_level: Vec<NodeId> =
-            self.graph.blocks.iter().map(|node| node.id).filter(|id| !referenced.contains(id)).collect();
+        let top_level: Vec<NodeId> = self.graph.blocks.iter().map(|node| node.id).filter(|id| !referenced.contains(id)).collect();
         self.export_sequence(&top_level)
     }
 
@@ -154,17 +143,12 @@ impl Exporter<'_> {
     fn export_node(&mut self, id: NodeId) -> Result<Vec<Block>, FormatError> {
         let Some(node) = self.graph.block(id)
         else {
-            self.loss(
-                "export.pandoc-json.dangling_node",
-                format!("node {} is missing from the graph", id.0),
-                SemanticStatus::Unsupported,
-            );
+            self.loss("export.pandoc-json.dangling_node", format!("node {} is missing from the graph", id.0), SemanticStatus::Unsupported);
             return Ok(Vec::new());
         };
         let block = match &node.block {
             IrBlock::Section { level, title, children } => {
-                let mut blocks =
-                    vec![Block::Header { level: i64::from(*level), attr: Attr::empty(), inlines: self.export_inlines(title)? }];
+                let mut blocks = vec![Block::Header { level: i64::from(*level), attr: Attr::empty(), inlines: self.export_inlines(title)? }];
                 blocks.extend(self.export_sequence(children)?);
                 return Ok(blocks);
             }
@@ -233,10 +217,9 @@ impl Exporter<'_> {
                 Attr { id: String::new(), classes: vec!["diagram".into(), language.clone()], pairs: Vec::new() },
                 source.clone(),
             ),
-            IrBlock::Chart { language, source } => Block::CodeBlock(
-                Attr { id: String::new(), classes: vec!["chart".into(), language.clone()], pairs: Vec::new() },
-                source.clone(),
-            ),
+            IrBlock::Chart { language, source } => {
+                Block::CodeBlock(Attr { id: String::new(), classes: vec!["chart".into(), language.clone()], pairs: Vec::new() }, source.clone())
+            }
             IrBlock::Engraving { language, source } => Block::CodeBlock(
                 Attr { id: String::new(), classes: vec!["engraving".into(), language.clone()], pairs: Vec::new() },
                 source.clone(),
@@ -245,9 +228,7 @@ impl Exporter<'_> {
                 Attr { id: String::new(), classes: vec!["depiction".into(), language.clone()], pairs: Vec::new() },
                 source.clone(),
             ),
-            IrBlock::Opaque { kind, payload_hint, .. }
-                if kind == "footnote_definition" && self.consumed_definitions.contains(&id) =>
-            {
+            IrBlock::Opaque { kind, payload_hint, .. } if kind == "footnote_definition" && self.consumed_definitions.contains(&id) => {
                 // The body now lives inside the reconstructed native Note.
                 return Ok(Vec::new());
             }
@@ -262,9 +243,8 @@ impl Exporter<'_> {
             return Ok(Block::HorizontalRule);
         }
         if kind == "pandoc.div" || kind == "pandoc.figure" {
-            let value: serde_json::Value = serde_json::from_str(payload_hint).map_err(|error| {
-                FormatError::parse(FORMAT_ID, format!("opaque `{kind}` payload is not valid JSON: {error}"))
-            })?;
+            let value: serde_json::Value = serde_json::from_str(payload_hint)
+                .map_err(|error| FormatError::parse(FORMAT_ID, format!("opaque `{kind}` payload is not valid JSON: {error}")))?;
             return codec::decode_block_value(&value);
         }
         if let Some(format) = kind.strip_prefix("pandoc.raw.") {
@@ -351,9 +331,7 @@ impl Exporter<'_> {
                     "smallcaps" => Ok(Inline::SmallCaps(children)),
                     "quote-single" => Ok(Inline::Quoted { kind: QuoteType::Single, inlines: children }),
                     "quote-double" => Ok(Inline::Quoted { kind: QuoteType::Double, inlines: children }),
-                    other => {
-                        Err(FormatError::unsupported(FORMAT_ID, format!("inline style `{other}` has no Pandoc constructor")))
-                    }
+                    other => Err(FormatError::unsupported(FORMAT_ID, format!("inline style `{other}` has no Pandoc constructor"))),
                 }
             }
             IrInline::InlineCode { text } => Ok(Inline::Code { attr: Attr::empty(), text: text.clone() }),
@@ -392,15 +370,10 @@ impl Exporter<'_> {
                         SemanticStatus::Partial,
                     );
                 }
-                Ok(Inline::Link {
-                    attr: Attr::empty(),
-                    inlines,
-                    target: Target { url, title: title.clone().unwrap_or_default() },
-                })
+                Ok(Inline::Link { attr: Attr::empty(), inlines, target: Target { url, title: title.clone().unwrap_or_default() } })
             }
             IrInline::Image { source, alt, title, asset } => {
-                let url =
-                    if source.is_empty() { asset.map(|id| self.asset_source(id)).unwrap_or_default() } else { source.clone() };
+                let url = if source.is_empty() { asset.map(|id| self.asset_source(id)).unwrap_or_default() } else { source.clone() };
                 if url.is_empty() {
                     self.loss(
                         "export.pandoc-json.image_source_missing",
@@ -631,9 +604,9 @@ fn collect_note_references(inlines: &[IrInline], out: &mut HashSet<String>) {
                     collect_note_references(display, out);
                 }
             }
-            IrInline::Styled { children, .. }
-            | IrInline::Attributed { children, .. }
-            | IrInline::Link { display: children, .. } => collect_note_references(children, out),
+            IrInline::Styled { children, .. } | IrInline::Attributed { children, .. } | IrInline::Link { display: children, .. } => {
+                collect_note_references(children, out)
+            }
             IrInline::Image { alt, .. } => collect_note_references(alt, out),
             IrInline::Citation { display: Some(display), .. } => collect_note_references(display, out),
             _ => {}
@@ -654,8 +627,8 @@ fn classify_footnote_body(body: &str) -> Result<Vec<IrInline>, NoteDefinitionFai
         // The opaque payload is a GFM definition written by our own importers,
         // so the Markdown adapter is the only parser that can read it back
         // exactly. A fragment parse keeps block structure visible.
-        let parsed = crate::import::markdown::import_markdown_bytes("footnote-body.md", body)
-            .map_err(|_| NoteDefinitionFailure::Unrepresentable)?;
+        let parsed =
+            crate::import::markdown::import_markdown_bytes("footnote-body.md", body).map_err(|_| NoteDefinitionFailure::Unrepresentable)?;
         let mut content = None;
         for node in &parsed.blocks {
             match &node.block {
@@ -693,9 +666,9 @@ fn classify_footnote_body(body: &str) -> Result<Vec<IrInline>, NoteDefinitionFai
 fn has_nested_note(inlines: &[IrInline]) -> bool {
     inlines.iter().any(|inline| match inline {
         IrInline::Note { .. } => true,
-        IrInline::Styled { children, .. }
-        | IrInline::Attributed { children, .. }
-        | IrInline::Link { display: children, .. } => has_nested_note(children),
+        IrInline::Styled { children, .. } | IrInline::Attributed { children, .. } | IrInline::Link { display: children, .. } => {
+            has_nested_note(children)
+        }
         IrInline::Image { alt, .. } => has_nested_note(alt),
         IrInline::Citation { display: Some(display), .. } => has_nested_note(display),
         _ => false,
@@ -722,9 +695,7 @@ fn unbind_fragment_assets(inlines: &mut [IrInline]) -> bool {
                     resolvable = false;
                 }
             }
-            IrInline::Styled { children, .. }
-            | IrInline::Attributed { children, .. }
-            | IrInline::Link { display: children, .. } => {
+            IrInline::Styled { children, .. } | IrInline::Attributed { children, .. } | IrInline::Link { display: children, .. } => {
                 if !unbind_fragment_assets(children) {
                     resolvable = false;
                 }

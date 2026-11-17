@@ -23,37 +23,22 @@ pub enum ShaderOp {
 
 impl ShaderProgram {
     pub fn dispatch_fill(entry: impl Into<String>, value: f32) -> Self {
-        Self {
-            entry: entry.into(),
-            ops: vec![ShaderOp::IotaFill { value }],
-        }
+        Self { entry: entry.into(), ops: vec![ShaderOp::IotaFill { value }] }
     }
 
     pub fn matmul(entry: impl Into<String>) -> Self {
-        Self {
-            entry: entry.into(),
-            ops: vec![ShaderOp::MatMul],
-        }
+        Self { entry: entry.into(), ops: vec![ShaderOp::MatMul] }
     }
 
     pub fn mem_copy(entry: impl Into<String>) -> Self {
-        Self {
-            entry: entry.into(),
-            ops: vec![ShaderOp::MemCopy],
-        }
+        Self { entry: entry.into(), ops: vec![ShaderOp::MemCopy] }
     }
 
     pub fn rgba8_denoise(entry: impl Into<String>) -> Self {
-        Self {
-            entry: entry.into(),
-            ops: vec![ShaderOp::Rgba8Denoise],
-        }
+        Self { entry: entry.into(), ops: vec![ShaderOp::Rgba8Denoise] }
     }
 
     pub fn attention(entry: impl Into<String>) -> Self {
-        Self {
-            entry: entry.into(),
-            ops: vec![ShaderOp::Attention],
-        }
+        Self { entry: entry.into(), ops: vec![ShaderOp::Attention] }
     }
 }

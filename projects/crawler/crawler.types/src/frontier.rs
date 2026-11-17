@@ -67,15 +67,7 @@ pub struct FrontierItem {
 impl FrontierItem {
     /// Build a seed frontier item at depth zero.
     pub fn seed(request_url: Url, site_key: String) -> Self {
-        Self {
-            request_url,
-            discovery: DiscoverySource::Seed,
-            depth: 0,
-            site_key,
-            priority: 0,
-            attempts: 0,
-            discovered_at_epoch: now_epoch(),
-        }
+        Self { request_url, discovery: DiscoverySource::Seed, depth: 0, site_key, priority: 0, attempts: 0, discovered_at_epoch: now_epoch() }
     }
 }
 

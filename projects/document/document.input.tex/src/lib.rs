@@ -111,9 +111,7 @@ impl TexInputError {
 
     /// Build an error whose diagnostic carries `code` and `message`.
     fn new(code: &str, message: impl Into<String>) -> Self {
-        Self {
-            diagnostic: Diagnostic { code: code.to_string(), severity: Severity::Error, message: message.into(), span: None },
-        }
+        Self { diagnostic: Diagnostic { code: code.to_string(), severity: Severity::Error, message: message.into(), span: None } }
     }
 }
 
@@ -149,8 +147,8 @@ pub fn import_source(label: &str, source: &str) -> Result<TexDocument, TexInputE
 /// Convert one TeX file into the document model.
 pub fn import_file(path: impl AsRef<Path>) -> Result<TexDocument, TexInputError> {
     let path = path.as_ref();
-    let source = std::fs::read_to_string(path)
-        .map_err(|error| TexInputError::new(IO_FAILED, format!("failed to read {}: {error}", path.display())))?;
+    let source =
+        std::fs::read_to_string(path).map_err(|error| TexInputError::new(IO_FAILED, format!("failed to read {}: {error}", path.display())))?;
     import_source(&path.display().to_string(), &source)
 }
 
@@ -162,8 +160,7 @@ pub fn import_file(path: impl AsRef<Path>) -> Result<TexDocument, TexInputError>
 /// diagnostic unchanged.
 pub fn render_svg(label: &str, source: &str) -> Result<TexRender, TexInputError> {
     let TexDocument { graph, report, mut diagnostics } = import_source(label, source)?;
-    let (plan, layout_diagnostics) =
-        layout_with_diagnostics(&graph, &LayoutHint::a4(), &Diagrams::new(), &BodyMetrics::default());
+    let (plan, layout_diagnostics) = layout_with_diagnostics(&graph, &LayoutHint::a4(), &Diagrams::new(), &BodyMetrics::default());
     diagnostics.extend(layout_diagnostics);
     let display = build_display_presentation(&plan);
     let pages = display.pages.len();
@@ -254,12 +251,7 @@ pub fn conversion_diagnostics(graph: &DocumentGraph, source: &str) -> Vec<Diagno
         }
         let payload = payload_after_colon(&marker.message);
         let span = graph.loss_span(index).map(span_of).or_else(|| payload.and_then(|text| unique_payload_span(source, text)));
-        diagnostics.push(Diagnostic {
-            code: marker.code.clone(),
-            severity: severity_of(marker.status),
-            message: marker.message.clone(),
-            span,
-        });
+        diagnostics.push(Diagnostic { code: marker.code.clone(), severity: severity_of(marker.status), message: marker.message.clone(), span });
     }
 
     for node in &graph.blocks {
@@ -278,12 +270,7 @@ pub fn conversion_diagnostics(graph: &DocumentGraph, source: &str) -> Vec<Diagno
     }
 
     for mismatch in math_mismatches(graph) {
-        diagnostics.push(Diagnostic {
-            code: MATH_LANGUAGE.to_string(),
-            severity: Severity::Error,
-            message: mismatch.message(),
-            span: None,
-        });
+        diagnostics.push(Diagnostic { code: MATH_LANGUAGE.to_string(), severity: Severity::Error, message: mismatch.message(), span: None });
     }
 
     for leaked in leaked_commands(graph) {
@@ -418,9 +405,7 @@ fn collect_inline_parts<'a>(content: &'a [Inline], formulas: &mut Vec<&'a MathFo
         match inline {
             Inline::Text { text } => texts.push(text),
             Inline::InlineMath { formula } => formulas.push(formula),
-            Inline::Styled { children, .. } | Inline::Attributed { children, .. } => {
-                collect_inline_parts(children, formulas, texts)
-            }
+            Inline::Styled { children, .. } | Inline::Attributed { children, .. } => collect_inline_parts(children, formulas, texts),
             Inline::Link { display, .. } => collect_inline_parts(display, formulas, texts),
             Inline::Image { alt, .. } => collect_inline_parts(alt, formulas, texts),
             Inline::Note { display: Some(display), .. } | Inline::Citation { display: Some(display), .. } => {
@@ -530,10 +515,7 @@ fn ensure_source_budget(source: &str) -> Result<(), TexInputError> {
     if source.len() <= MAX_SOURCE_BYTES {
         return Ok(());
     }
-    Err(TexInputError::new(
-        SOURCE_TOO_LARGE,
-        format!("source is {} bytes, above the {MAX_SOURCE_BYTES} byte budget", source.len()),
-    ))
+    Err(TexInputError::new(SOURCE_TOO_LARGE, format!("source is {} bytes, above the {MAX_SOURCE_BYTES} byte budget", source.len())))
 }
 
 /// Turn a frontend rejection into the profile's structured error.

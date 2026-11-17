@@ -68,8 +68,7 @@ fn html_mermaid_containers_lower_to_renderable_svg_scenes() {
     let expected_labels: [&[&str]; 2] =
         [&["Fetch page", "Status OK?", "Extract blocks", "Record failure", "yes"], &["Frontier", "Worker", "claim", "commit"]];
     for ((name, source), labels) in names.iter().zip(sources.iter()).zip(expected_labels.iter()) {
-        let lowered =
-            mermaid_to_scene(source).unwrap_or_else(|error| panic!("{name}: mermaid lowering failed: {error}\n{source}"));
+        let lowered = mermaid_to_scene(source).unwrap_or_else(|error| panic!("{name}: mermaid lowering failed: {error}\n{source}"));
         let svg = lowered.scene.to_svg().unwrap_or_else(|error| panic!("{name}: scene must serialize to SVG: {error}"));
         for label in *labels {
             assert!(svg_contains_label(&svg, label), "{name}: SVG must draw the label `{label}`\n{svg}");
@@ -89,8 +88,7 @@ fn svg_contains_label(svg: &str, label: &str) -> bool {
 /// reopened document must still hold a `dot` diagram block.
 #[test]
 fn dot_fences_lower_to_svg_and_round_trip_html_and_markdown() {
-    let source =
-        "digraph pipeline {\n  rankdir=LR;\n  Fetch [shape=box]\n  Store [shape=box]\n  Fetch -> Store [label=\"persist\"]\n}";
+    let source = "digraph pipeline {\n  rankdir=LR;\n  Fetch [shape=box]\n  Store [shape=box]\n  Fetch -> Store [label=\"persist\"]\n}";
     let graph = import_markdown_bytes("pipeline.md", &format!("```dot\n{source}\n```\n")).expect("import dot markdown");
     let block = single_diagram(&graph);
     assert_eq!(block, ("dot".to_string(), source.to_string()));
@@ -144,10 +142,7 @@ fn plantuml_fences_lower_to_svg_and_round_trip_html_and_markdown() {
     let graph = import_markdown_bytes("orders.md", &format!("```plantuml\n{source}\n```\n")).expect("import plantuml markdown");
     let block = single_diagram(&graph);
     assert_eq!(block, ("plantuml".to_string(), source.to_string()));
-    assert!(
-        export_markdown(&graph).expect("export plantuml markdown").contains("```plantuml"),
-        "the fence must reopen as `plantuml`"
-    );
+    assert!(export_markdown(&graph).expect("export plantuml markdown").contains("```plantuml"), "the fence must reopen as `plantuml`");
 
     let lowered = plantuml_to_scene(source).expect("plantuml lowering should succeed");
     assert!(lowered.diagnostics.is_empty(), "the subset fixture must not approximate: {:?}", lowered.diagnostics);
@@ -176,8 +171,7 @@ fn plantuml_fences_lower_to_svg_and_round_trip_html_and_markdown() {
 #[test]
 fn rejected_plantuml_keeps_the_source_fallback_visible() {
     let source = "@startuml\nclass A\nnote right of A : detail\n@enduml";
-    let graph =
-        import_markdown_bytes("rejected.md", &format!("```plantuml\n{source}\n```\n")).expect("import plantuml markdown");
+    let graph = import_markdown_bytes("rejected.md", &format!("```plantuml\n{source}\n```\n")).expect("import plantuml markdown");
 
     let error = plantuml_to_scene(source).expect_err("notes are outside the PlantUML subset");
     let span = error.span().expect("the rejection must carry a span");

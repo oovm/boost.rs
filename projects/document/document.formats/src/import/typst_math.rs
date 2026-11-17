@@ -79,11 +79,7 @@ impl<'a> TypstMathLowerer<'a> {
     }
 
     fn push_loss(&mut self, construct: &str, start: usize, end: usize) {
-        self.losses.push(MathLoss {
-            construct: construct.to_string(),
-            snippet: self.body[start..end].to_string(),
-            span: (start, end),
-        });
+        self.losses.push(MathLoss { construct: construct.to_string(), snippet: self.body[start..end].to_string(), span: (start, end) });
     }
 
     /// The offset just past the delimiter matching the one at `open`, or
@@ -173,11 +169,7 @@ impl<'a> TypstMathLowerer<'a> {
                         self.cursor += run.len();
                         append_expression(
                             &mut items,
-                            MathExpression::Atom(MathAtom {
-                                text: text.to_string(),
-                                class,
-                                span: span_from(0, start, self.cursor),
-                            }),
+                            MathExpression::Atom(MathAtom { text: text.to_string(), class, span: span_from(0, start, self.cursor) }),
                         );
                     }
                     else if self.body[self.cursor + run.len()..].starts_with('.') {
@@ -193,10 +185,7 @@ impl<'a> TypstMathLowerer<'a> {
                         // one italic atom, exactly as the TeX profile splits
                         // an unknown text token.
                         for (offset, ch) in run.char_indices() {
-                            append_expression(
-                                &mut items,
-                                char_expression(ch, span_from(0, start + offset, start + offset + ch.len_utf8())),
-                            );
+                            append_expression(&mut items, char_expression(ch, span_from(0, start + offset, start + offset + ch.len_utf8())));
                         }
                         self.cursor += run.len();
                     }
@@ -204,10 +193,7 @@ impl<'a> TypstMathLowerer<'a> {
                 c if c.is_ascii_digit() => {
                     let digits = self.take_run(|c| c.is_ascii_digit());
                     let end = self.cursor;
-                    append_expression(
-                        &mut items,
-                        MathExpression::Number { text: digits.to_string(), span: span_from(0, start, end) },
-                    );
+                    append_expression(&mut items, MathExpression::Number { text: digits.to_string(), span: span_from(0, start, end) });
                 }
                 _ => {
                     self.cursor += c.len_utf8();
@@ -255,11 +241,7 @@ impl<'a> TypstMathLowerer<'a> {
                 let run = self.letter_run();
                 if let Some((text, class)) = symbol_for(run) {
                     self.cursor += run.len();
-                    return Some(MathExpression::Atom(MathAtom {
-                        text: text.to_string(),
-                        class,
-                        span: span_from(0, start, self.cursor),
-                    }));
+                    return Some(MathExpression::Atom(MathAtom { text: text.to_string(), class, span: span_from(0, start, self.cursor) }));
                 }
                 if self.body[self.cursor + run.len()..].starts_with('.') {
                     let end = self.dotted_path_end();

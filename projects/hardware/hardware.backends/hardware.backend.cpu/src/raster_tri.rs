@@ -30,28 +30,16 @@ pub fn point_in_ndc_tri(p: (f32, f32), verts: [(f32, f32); 3]) -> bool {
 }
 
 /// 清屏 + NDC 黄三角 → 紧凑 RGBA8。
-pub fn raster_clear_tri_rgba8(
-    width: usize,
-    height: usize,
-    clear: [u8; 4],
-    tri: [u8; 4],
-) -> Result<Vec<u8>, &'static str> {
+pub fn raster_clear_tri_rgba8(width: usize, height: usize, clear: [u8; 4], tri: [u8; 4]) -> Result<Vec<u8>, &'static str> {
     if width == 0 || height == 0 {
         return Ok(Vec::new());
     }
-    let need = width
-        .checked_mul(height)
-        .and_then(|p| p.checked_mul(4))
-        .ok_or("raster size overflow")?;
+    let need = width.checked_mul(height).and_then(|p| p.checked_mul(4)).ok_or("raster size overflow")?;
     let mut out = vec![0u8; need];
     for y in 0..height {
         for x in 0..width {
             let ndc = pixel_center_to_ndc(x, y, width, height);
-            let rgba = if point_in_ndc_tri(ndc, NDC_TRI_VERTS) {
-                tri
-            } else {
-                clear
-            };
+            let rgba = if point_in_ndc_tri(ndc, NDC_TRI_VERTS) { tri } else { clear };
             let i = (y * width + x) * 4;
             out[i..i + 4].copy_from_slice(&rgba);
         }

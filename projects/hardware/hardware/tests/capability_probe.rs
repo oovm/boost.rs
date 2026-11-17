@@ -30,24 +30,15 @@ fn probe_available_backends_into_capability_report() {
     match RocmBackend::new(0) {
         Ok(b) => {
             let feats = b.features();
-            assert!(
-                feats.has(hardware_capability::Feature::MatrixCore),
-                "ROCm must expose MatrixCore"
-            );
-            assert!(
-                feats.has(hardware_capability::Feature::HipGraph),
-                "ROCm must expose HipGraph"
-            );
+            assert!(feats.has(hardware_capability::Feature::MatrixCore), "ROCm must expose MatrixCore");
+            assert!(feats.has(hardware_capability::Feature::HipGraph), "ROCm must expose HipGraph");
             rows.push((b.name().into(), feats));
         }
         Err(err) => eprintln!("skip rocm capability probe: {err}"),
     }
 
     let report = CapabilityReport::from_backends(rows);
-    assert!(
-        report.contains_backend("cpu"),
-        "CPU backend must always contribute a row"
-    );
+    assert!(report.contains_backend("cpu"), "CPU backend must always contribute a row");
     let lines = report.lines();
     assert!(!lines.is_empty());
     for line in &lines {

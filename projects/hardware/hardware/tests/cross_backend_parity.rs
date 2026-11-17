@@ -2,14 +2,14 @@
 
 use std::collections::BTreeMap;
 
-use hardware_backend_cpu::{shared_store, CpuBackend};
+use hardware_backend_cpu::{CpuBackend, shared_store};
 use hardware_backend_cuda::CudaBackend;
 use hardware_backend_dx12::Dx12Backend;
 use hardware_backend_rocm::RocmBackend;
 use hardware_backend_vulkan::VulkanBackend;
 use hardware_ir::{
-    Access, DepEdge, DepKind, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph,
-    ResourceId, ResourceKind, ResourceNode, ShaderId, TaskGraph, TaskId, TaskKind, TaskNode,
+    Access, DepEdge, DepKind, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph, ResourceId, ResourceKind, ResourceNode, ShaderId,
+    TaskGraph, TaskId, TaskKind, TaskNode,
 };
 use hardware_scheduler::Backend;
 use hardware_types::ResourceId as Rid;
@@ -46,58 +46,17 @@ fn f(key: &str, v: f64) -> (String, ParamValue) {
 
 fn reference_graph() -> Graph {
     Graph {
-        resources: ResourceGraph {
-            nodes: vec![
-                buffer(1, 4),
-                buffer(2, 4),
-                buffer(3, 4),
-                buffer(4, 4),
-            ],
-        },
+        resources: ResourceGraph { nodes: vec![buffer(1, 4), buffer(2, 4), buffer(3, 4), buffer(4, 4)] },
         tasks: TaskGraph {
             nodes: vec![
-                task(
-                    10,
-                    TaskKind::Copy,
-                    BTreeMap::from([i("src", 1), i("dst", 2)]),
-                ),
-                task(
-                    11,
-                    TaskKind::Fill,
-                    BTreeMap::from([i("dst", 3), f("value", 1.0)]),
-                ),
-                task(
-                    12,
-                    TaskKind::MatMul,
-                    BTreeMap::from([
-                        i("a", 2),
-                        i("b", 3),
-                        i("out", 4),
-                        i("m", 2),
-                        i("n", 2),
-                        i("k", 2),
-                    ]),
-                ),
+                task(10, TaskKind::Copy, BTreeMap::from([i("src", 1), i("dst", 2)])),
+                task(11, TaskKind::Fill, BTreeMap::from([i("dst", 3), f("value", 1.0)])),
+                task(12, TaskKind::MatMul, BTreeMap::from([i("a", 2), i("b", 3), i("out", 4), i("m", 2), i("n", 2), i("k", 2)])),
             ],
             edges: vec![
-                DepEdge {
-                    from_task: None,
-                    from_resource: Some(ResourceId(1)),
-                    to_task: TaskId(10),
-                    kind: DepKind::Data,
-                },
-                DepEdge {
-                    from_task: Some(TaskId(10)),
-                    from_resource: None,
-                    to_task: TaskId(12),
-                    kind: DepKind::Execution,
-                },
-                DepEdge {
-                    from_task: Some(TaskId(11)),
-                    from_resource: None,
-                    to_task: TaskId(12),
-                    kind: DepKind::Execution,
-                },
+                DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data },
+                DepEdge { from_task: Some(TaskId(10)), from_resource: None, to_task: TaskId(12), kind: DepKind::Execution },
+                DepEdge { from_task: Some(TaskId(11)), from_resource: None, to_task: TaskId(12), kind: DepKind::Execution },
             ],
         },
     }
@@ -109,11 +68,7 @@ fn run_cpu(graph: &Graph) -> Vec<f32> {
         let mut prep = CpuBackend::with_store(store.clone());
         prep.prepare(graph).expect("cpu prepare");
     }
-    store
-        .lock()
-        .unwrap()
-        .write_f32(Rid(1), &[1.0, 2.0, 3.0, 4.0])
-        .expect("cpu seed");
+    store.lock().unwrap().write_f32(Rid(1), &[1.0, 2.0, 3.0, 4.0]).expect("cpu seed");
     let mut runtime = hardware_runtime::Runtime::new();
     runtime.register_backend(Box::new(CpuBackend::with_store(store.clone())));
     runtime.run(graph).expect("cpu run");
@@ -135,14 +90,12 @@ fn available_gpu_backends_match_cpu() {
 
     match CudaBackend::new(0) {
         Ok(mut cuda) => {
-            if cuda.prepare(&graph).is_ok()
-                && cuda.write_f32(Rid(1), &seed()).is_ok()
-                && cuda.run_prepared(&graph).is_ok()
-            {
+            if cuda.prepare(&graph).is_ok() && cuda.write_f32(Rid(1), &seed()).is_ok() && cuda.run_prepared(&graph).is_ok() {
                 let actual = cuda.read_f32(Rid(4)).expect("cuda read");
                 assert_eq!(actual, expected, "cuda");
                 ran += 1;
-            } else {
+            }
+            else {
                 eprintln!("skip cuda (prepare/run failed)");
             }
         }
@@ -151,14 +104,12 @@ fn available_gpu_backends_match_cpu() {
 
     match Dx12Backend::new() {
         Ok(mut dx) => {
-            if dx.prepare(&graph).is_ok()
-                && dx.write_f32(Rid(1), &seed()).is_ok()
-                && dx.run_prepared(&graph).is_ok()
-            {
+            if dx.prepare(&graph).is_ok() && dx.write_f32(Rid(1), &seed()).is_ok() && dx.run_prepared(&graph).is_ok() {
                 let actual = dx.read_f32(Rid(4)).expect("dx12 read");
                 assert_eq!(actual, expected, "dx12");
                 ran += 1;
-            } else {
+            }
+            else {
                 eprintln!("skip dx12 (prepare/run failed)");
             }
         }
@@ -167,14 +118,12 @@ fn available_gpu_backends_match_cpu() {
 
     match VulkanBackend::new() {
         Ok(mut vk) => {
-            if vk.prepare(&graph).is_ok()
-                && vk.write_f32(Rid(1), &seed()).is_ok()
-                && vk.run_prepared(&graph).is_ok()
-            {
+            if vk.prepare(&graph).is_ok() && vk.write_f32(Rid(1), &seed()).is_ok() && vk.run_prepared(&graph).is_ok() {
                 let actual = vk.read_f32(Rid(4)).expect("vulkan read");
                 assert_eq!(actual, expected, "vulkan");
                 ran += 1;
-            } else {
+            }
+            else {
                 eprintln!("skip vulkan (prepare/run failed)");
             }
         }
@@ -183,14 +132,12 @@ fn available_gpu_backends_match_cpu() {
 
     match RocmBackend::new(0) {
         Ok(mut rocm) => {
-            if rocm.prepare(&graph).is_ok()
-                && rocm.write_f32(Rid(1), &seed()).is_ok()
-                && rocm.run_prepared(&graph).is_ok()
-            {
+            if rocm.prepare(&graph).is_ok() && rocm.write_f32(Rid(1), &seed()).is_ok() && rocm.run_prepared(&graph).is_ok() {
                 let actual = rocm.read_f32(Rid(4)).expect("rocm read");
                 assert_eq!(actual, expected, "rocm");
                 ran += 1;
-            } else {
+            }
+            else {
                 eprintln!("skip rocm (prepare/run failed)");
             }
         }

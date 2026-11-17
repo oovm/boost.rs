@@ -10,8 +10,7 @@ use crate::import::math_ml::{lower_math_element, math_display, single_display_ma
 use super::{
     assets::register_image_from_src,
     html_extensions::{
-        attribute_value, child_elements, descendant_text, direct_child_elements, element_is, first_descendant_element,
-        select_css,
+        attribute_value, child_elements, descendant_text, direct_child_elements, element_is, first_descendant_element, select_css,
     },
     xhtml::{language_from_class, normalize_whitespace, push_inline, quote_block_from_blocks, register_and_image_inline},
 };
@@ -78,12 +77,7 @@ fn collect_semantic_blocks(
     }
 }
 
-fn collect_child_blocks(
-    element: &Element,
-    graph: &mut DocumentGraph,
-    member_path: Option<&str>,
-    losses: &mut Vec<LossMarker>,
-) -> Vec<Block> {
+fn collect_child_blocks(element: &Element, graph: &mut DocumentGraph, member_path: Option<&str>, losses: &mut Vec<LossMarker>) -> Vec<Block> {
     let mut blocks = Vec::new();
     for child in direct_child_elements(element) {
         collect_semantic_blocks(child, &mut blocks, losses, graph, member_path, false);
@@ -116,11 +110,10 @@ fn lower_semantic_block(
             if let Some(math) = single_display_math_child(element) {
                 return Some(Block::Math { formula: lower_math(math, MathDisplay::Display, losses) });
             }
-            let mut content =
-                non_empty_inlines(collect_inlines_from_element(element, graph, member_path, losses)).or_else(|| {
-                    let plain = descendant_text(element);
-                    if plain.is_empty() { None } else { Some(vec![Inline::Text { text: plain }]) }
-                })?;
+            let mut content = non_empty_inlines(collect_inlines_from_element(element, graph, member_path, losses)).or_else(|| {
+                let plain = descendant_text(element);
+                if plain.is_empty() { None } else { Some(vec![Inline::Text { text: plain }]) }
+            })?;
             trim_inline_edges(&mut content);
             Some(Block::Paragraph { content })
         }
@@ -155,12 +148,8 @@ fn lower_semantic_block(
             let (language, content) = extract_pre_code_content(element);
             if content.is_empty() { None } else { Some(Block::Code { language, content }) }
         }
-        "hr" => {
-            Some(Block::Opaque { kind: "thematic_break".into(), payload_hint: "---".into(), status: SemanticStatus::Partial })
-        }
-        "script" | "head" | "meta" | "title" | "html" | "body" | "section" | "article" | "main" | "div" | "nav" | "figure" => {
-            None
-        }
+        "hr" => Some(Block::Opaque { kind: "thematic_break".into(), payload_hint: "---".into(), status: SemanticStatus::Partial }),
+        "script" | "head" | "meta" | "title" | "html" | "body" | "section" | "article" | "main" | "div" | "nav" | "figure" => None,
         "style" => {
             losses.push(LossMarker {
                 code: "import.epub.css_inline_block_unsupported".into(),
@@ -187,8 +176,7 @@ fn lower_semantic_block(
         }
         "svg" => extract_svg_image_href(element)
             .and_then(|(href, alt)| {
-                register_and_image_inline(&href, &alt, graph, member_path)
-                    .map(|inline| Block::Paragraph { content: vec![inline] })
+                register_and_image_inline(&href, &alt, graph, member_path).map(|inline| Block::Paragraph { content: vec![inline] })
             })
             .or_else(|| {
                 losses.push(LossMarker {
@@ -201,12 +189,7 @@ fn lower_semantic_block(
         "aside" if is_footnote_aside(element) => lower_footnote_definition(element, losses),
         "table" => {
             let (head, body) = collect_table_rows(element, graph, member_path, losses);
-            if head.is_empty() && body.is_empty() {
-                None
-            }
-            else {
-                Some(Block::Table { caption: None, head, body, foot: Vec::new() })
-            }
+            if head.is_empty() && body.is_empty() { None } else { Some(Block::Table { caption: None, head, body, foot: Vec::new() }) }
         }
         _ => {
             losses.push(LossMarker {
@@ -240,8 +223,7 @@ fn trim_inline_edges(inlines: &mut Vec<Inline>) {
 
 /// Whether an `<aside>` declares the EPUB structural footnote marker.
 fn is_footnote_aside(element: &Element) -> bool {
-    attribute_value(element, "epub:type")
-        .is_some_and(|value| value.split_whitespace().any(|token| token.eq_ignore_ascii_case("footnote")))
+    attribute_value(element, "epub:type").is_some_and(|value| value.split_whitespace().any(|token| token.eq_ignore_ascii_case("footnote")))
 }
 
 /// Lower `<aside epub:type="footnote">` to the opaque authored payload shape.
@@ -275,17 +257,12 @@ fn lower_footnote_definition(element: &Element, losses: &mut Vec<LossMarker>) ->
     if flattened_markup {
         losses.push(LossMarker {
             code: "import.epub.footnote_inline_markup_flattened".into(),
-            message: "`<aside epub:type=\"footnote\">` inline markup is flattened to plain text in the definition payload"
-                .into(),
+            message: "`<aside epub:type=\"footnote\">` inline markup is flattened to plain text in the definition payload".into(),
             status: SemanticStatus::Partial,
         });
     }
     let body = paragraphs.join("\n\n    ");
-    Some(Block::Opaque {
-        kind: "footnote_definition".into(),
-        payload_hint: format!("[^{label}]: {body}"),
-        status: SemanticStatus::Resolved,
-    })
+    Some(Block::Opaque { kind: "footnote_definition".into(), payload_hint: format!("[^{label}]: {body}"), status: SemanticStatus::Resolved })
 }
 
 /// Collect the definition body paragraph by paragraph without its return link.
@@ -302,12 +279,7 @@ fn footnote_body_paragraphs(element: &Element) -> (Vec<String>, bool) {
     (paragraphs, flattened_markup)
 }
 
-fn collect_footnote_paragraphs(
-    element: &Element,
-    paragraphs: &mut Vec<String>,
-    current: &mut String,
-    flattened_markup: &mut bool,
-) {
+fn collect_footnote_paragraphs(element: &Element, paragraphs: &mut Vec<String>, current: &mut String, flattened_markup: &mut bool) {
     for child in &element.children {
         match child {
             HtmlNode::Text(text) => current.push_str(&text.content),
@@ -408,9 +380,8 @@ fn is_footnote_backlink(element: &Element) -> bool {
     if !element_is(element, "a") {
         return false;
     }
-    let returns_to_reference = attribute_value(element, "href").is_some_and(|href| {
-        href.trim().strip_prefix('#').is_some_and(|fragment| fragment.trim().to_ascii_lowercase().starts_with("fnref"))
-    });
+    let returns_to_reference = attribute_value(element, "href")
+        .is_some_and(|href| href.trim().strip_prefix('#').is_some_and(|fragment| fragment.trim().to_ascii_lowercase().starts_with("fnref")));
     if returns_to_reference {
         return true;
     }
@@ -420,8 +391,7 @@ fn is_footnote_backlink(element: &Element) -> bool {
 
 /// Whether an anchor declares an EPUB footnote reference marker.
 fn is_footnote_reference(element: &Element) -> bool {
-    attribute_value(element, "epub:type")
-        .is_some_and(|value| value.split_whitespace().any(|token| token.eq_ignore_ascii_case("noteref")))
+    attribute_value(element, "epub:type").is_some_and(|value| value.split_whitespace().any(|token| token.eq_ignore_ascii_case("noteref")))
         || attribute_value(element, "role").is_some_and(|role| role.eq_ignore_ascii_case("doc-noteref"))
 }
 
@@ -433,9 +403,8 @@ fn is_footnote_reference(element: &Element) -> bool {
 /// display when it differs from the label or `[^label]`. A reference whose
 /// label cannot be resolved falls back to the ordinary anchor path.
 fn footnote_reference_inline(element: &Element) -> Option<Inline> {
-    let from_href = attribute_value(element, "href")
-        .and_then(|href| href.trim().strip_prefix('#').map(|fragment| footnote_label(fragment)))
-        .flatten();
+    let from_href =
+        attribute_value(element, "href").and_then(|href| href.trim().strip_prefix('#').map(|fragment| footnote_label(fragment))).flatten();
     let label = attribute_value(element, "data-footnote-label")
         .or(from_href)
         .map(|label| label.trim().to_string())
@@ -484,8 +453,7 @@ fn collect_list_items(
     if ordered && has_attribute(element, "reversed") {
         losses.push(LossMarker {
             code: "import.epub.list_reversed_unsupported".into(),
-            message: "`<ol reversed>` descending ordinals are not representable in the IR list model, so items are numbered ascending"
-                .into(),
+            message: "`<ol reversed>` descending ordinals are not representable in the IR list model, so items are numbered ascending".into(),
             status: SemanticStatus::Partial,
         });
     }
@@ -507,9 +475,8 @@ fn collect_list_items(
                     Some(_) => {
                         losses.push(LossMarker {
                             code: "import.epub.list_item_value_unsupported".into(),
-                            message:
-                                "`<li value>` would break the strictly increasing ordinal invariant, so the running sequence continues"
-                                    .into(),
+                            message: "`<li value>` would break the strictly increasing ordinal invariant, so the running sequence continues"
+                                .into(),
                             status: SemanticStatus::Partial,
                         });
                         next = next.saturating_add(1);
@@ -550,8 +517,7 @@ fn lower_list_item(
                     "ul" | "ol" => {
                         let nested_ordered = tag == "ol";
                         let nested_start = nested_ordered.then(|| ordered_list_start(child_element));
-                        let nested =
-                            collect_list_items(child_element, nested_ordered, nested_start, graph, member_path, losses);
+                        let nested = collect_list_items(child_element, nested_ordered, nested_start, graph, member_path, losses);
                         if !nested.is_empty() {
                             let id = graph.push_block(Block::List { ordered: nested_ordered, items: nested });
                             children.push(id);
@@ -703,12 +669,7 @@ fn is_block_element_tag(tag: &str) -> bool {
     )
 }
 
-fn collect_table_row(
-    row: &Element,
-    graph: &mut DocumentGraph,
-    member_path: Option<&str>,
-    losses: &mut Vec<LossMarker>,
-) -> (bool, TableRow) {
+fn collect_table_row(row: &Element, graph: &mut DocumentGraph, member_path: Option<&str>, losses: &mut Vec<LossMarker>) -> (bool, TableRow) {
     let mut is_header = false;
     let mut cells = Vec::new();
     for child in direct_child_elements(row) {
@@ -813,14 +774,12 @@ fn lower_inline_element(
             let alt = attribute_value(element, "alt").unwrap_or_default();
             register_and_image_inline(&src, &alt, graph, member_path)
         }
-        "strong" | "b" => Some(Inline::Styled {
-            style: "bold".into(),
-            children: collect_inlines_from_element(element, graph, member_path, losses),
-        }),
-        "em" | "i" => Some(Inline::Styled {
-            style: "italic".into(),
-            children: collect_inlines_from_element(element, graph, member_path, losses),
-        }),
+        "strong" | "b" => {
+            Some(Inline::Styled { style: "bold".into(), children: collect_inlines_from_element(element, graph, member_path, losses) })
+        }
+        "em" | "i" => {
+            Some(Inline::Styled { style: "italic".into(), children: collect_inlines_from_element(element, graph, member_path, losses) })
+        }
         "code" => Some(Inline::InlineCode { text: descendant_text(element) }),
         "a" => {
             let children = collect_inlines_from_element(element, graph, member_path, losses);
@@ -838,20 +797,13 @@ fn lower_inline_element(
         }
         "math" => Some(Inline::InlineMath { formula: lower_math(element, math_display(element), losses) }),
         "br" => Some(Inline::Break { kind: BreakKind::Hard }),
-        "s" | "del" | "strike" => Some(Inline::Styled {
-            style: "strike".into(),
-            children: collect_inlines_from_element(element, graph, member_path, losses),
-        }),
-        "u" => Some(Inline::Styled {
-            style: "underline".into(),
-            children: collect_inlines_from_element(element, graph, member_path, losses),
-        }),
+        "s" | "del" | "strike" => {
+            Some(Inline::Styled { style: "strike".into(), children: collect_inlines_from_element(element, graph, member_path, losses) })
+        }
+        "u" => Some(Inline::Styled { style: "underline".into(), children: collect_inlines_from_element(element, graph, member_path, losses) }),
         "sup" | "sub" => {
             let style = if tag == "sup" { "superscript" } else { "subscript" };
-            Some(Inline::Styled {
-                style: style.into(),
-                children: collect_inlines_from_element(element, graph, member_path, losses),
-            })
+            Some(Inline::Styled { style: style.into(), children: collect_inlines_from_element(element, graph, member_path, losses) })
         }
         _ => {
             let text = descendant_text(element);
@@ -859,12 +811,7 @@ fn lower_inline_element(
         }
     };
     let attributes = inline_attributes(element);
-    if attributes.is_empty() {
-        lowered
-    }
-    else {
-        Some(Inline::Attributed { attributes, children: lowered.into_iter().collect() })
-    }
+    if attributes.is_empty() { lowered } else { Some(Inline::Attributed { attributes, children: lowered.into_iter().collect() }) }
 }
 
 /// Collect the identity and class attributes of an inline element so authored

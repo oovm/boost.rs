@@ -3,12 +3,11 @@
 use std::collections::BTreeSet;
 
 use plotter_runtime::{
-    Action, InvalidationScope, InvalidationSet, RuntimeState, RuntimeUpdate, invalidated_nodes, invalidated_semantic_nodes,
-    reduce_update,
+    Action, InvalidationScope, InvalidationSet, RuntimeState, RuntimeUpdate, invalidated_nodes, invalidated_semantic_nodes, reduce_update,
 };
 use plotter_scene::{
-    DisplayScene, NodeKind, Point, Rect, SceneNode, SemanticKind, SemanticNode, SemanticRole, SemanticScene, ShapeStyle, Size,
-    SourceRef, TextStyle,
+    DisplayScene, NodeKind, Point, Rect, SceneNode, SemanticKind, SemanticNode, SemanticRole, SemanticScene, ShapeStyle, Size, SourceRef,
+    TextStyle,
 };
 
 fn shape(id: Option<&str>, role: Option<SemanticRole>, source: Option<&str>) -> SceneNode {
@@ -26,8 +25,7 @@ fn shape(id: Option<&str>, role: Option<SemanticRole>, source: Option<&str>) -> 
 }
 
 fn text(id: Option<&str>, role: Option<SemanticRole>) -> SceneNode {
-    let mut node =
-        SceneNode::new(NodeKind::Text { position: Point::ZERO, text: "label".to_owned(), style: TextStyle::default() });
+    let mut node = SceneNode::new(NodeKind::Text { position: Point::ZERO, text: "label".to_owned(), style: TextStyle::default() });
     if let Some(id) = id {
         node = node.with_id(id);
     }
@@ -56,11 +54,7 @@ fn display_scene() -> DisplayScene {
 }
 
 fn update(invalidation: InvalidationSet, targets: &[&str]) -> RuntimeUpdate {
-    RuntimeUpdate {
-        state: RuntimeState::default(),
-        invalidation,
-        targets: targets.iter().map(|target| (*target).to_owned()).collect(),
-    }
+    RuntimeUpdate { state: RuntimeState::default(), invalidation, targets: targets.iter().map(|target| (*target).to_owned()).collect() }
 }
 
 fn ids(ids: &[&str]) -> BTreeSet<String> {

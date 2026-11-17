@@ -11,15 +11,14 @@ use oak_plantuml::{
     PlantUmlBuilder, PlantUmlLanguage,
     ast::{
         ActivityDecision, ActivityDiagram, ActivityEndpoint, ActivityFork, ActivityNode, ActivitySwimlane, ActivityTransition,
-        ClassDeclaration, ClassDiagram, ClassKeyword, ClassMember, ClassRelation, ClassRelationKind, ComponentDiagram,
-        ComponentElement, ComponentNode, ComponentPackage, MemberVisibility, MessageArrow, ParticipantKind, PlantUmlDiagram,
-        PlantUmlRoot, PortDirection, SequenceDiagram, StateDiagram, StateElement, StateEndpoint, StateKind,
+        ClassDeclaration, ClassDiagram, ClassKeyword, ClassMember, ClassRelation, ClassRelationKind, ComponentDiagram, ComponentElement,
+        ComponentNode, ComponentPackage, MemberVisibility, MessageArrow, ParticipantKind, PlantUmlDiagram, PlantUmlRoot, PortDirection,
+        SequenceDiagram, StateDiagram, StateElement, StateEndpoint, StateKind,
     },
 };
 use plotter_scene::SceneResolver;
 use plotter_types::{
-    ByteRange, Diagnostic, DiagnosticLabel, DiagnosticLocation, DiagnosticSeverity, LabelRole, Message, NAMESPACE, SourceRef,
-    codes, diagnostic,
+    ByteRange, Diagnostic, DiagnosticLabel, DiagnosticLocation, DiagnosticSeverity, LabelRole, Message, NAMESPACE, SourceRef, codes, diagnostic,
 };
 
 use plotter_diagram::{
@@ -29,8 +28,7 @@ use plotter_diagram::{
     render::render,
     source::SourceMap,
     spec::{
-        Activation, Cluster, DiagramEdge, DiagramNode, DiagramSpec, Direction, EdgeStyle, Endpoint, LayoutModel, NodeShape,
-        SequenceLayout,
+        Activation, Cluster, DiagramEdge, DiagramNode, DiagramSpec, Direction, EdgeStyle, Endpoint, LayoutModel, NodeShape, SequenceLayout,
     },
 };
 
@@ -279,9 +277,7 @@ fn single_diagram(root: &PlantUmlRoot) -> Result<&PlantUmlDiagram, DiagramError>
 fn plantuml_root_to_spec(root: &PlantUmlRoot, source: &str) -> Result<(DiagramSpec, Vec<Diagnostic>, SourceMap), DiagramError> {
     match single_diagram(root)? {
         PlantUmlDiagram::Class(class) => class_spec(class, source),
-        PlantUmlDiagram::Sequence(sequence) => {
-            sequence_spec(sequence, source).map(|(spec, sources)| (spec, Vec::new(), sources))
-        }
+        PlantUmlDiagram::Sequence(sequence) => sequence_spec(sequence, source).map(|(spec, sources)| (spec, Vec::new(), sources)),
         PlantUmlDiagram::Activity(activity) => activity_spec(activity, source),
         PlantUmlDiagram::State(state) => state_spec(state, source),
         PlantUmlDiagram::Component(component) => component_spec(component, source),
@@ -325,19 +321,11 @@ fn class_spec(diagram: &ClassDiagram, source: &str) -> Result<(DiagramSpec, Vec<
         let left = relation.left.trim();
         let right = relation.right.trim();
         if left.is_empty() || right.is_empty() {
-            return Err(
-                DiagramError::unsupported("class relation has an empty class name").with_span(relation.span.clone().into())
-            );
+            return Err(DiagramError::unsupported("class relation has an empty class name").with_span(relation.span.clone().into()));
         }
         for endpoint in [left, right] {
             if known.insert(endpoint.to_string()) {
-                spec.nodes.push(DiagramNode {
-                    id: endpoint.to_string(),
-                    label: None,
-                    shape: NodeShape::Box,
-                    ports: Vec::new(),
-                    cluster: None,
-                });
+                spec.nodes.push(DiagramNode { id: endpoint.to_string(), label: None, shape: NodeShape::Box, ports: Vec::new(), cluster: None });
                 sources.push_node(Some(relation.span.clone().into()));
             }
         }
@@ -400,18 +388,11 @@ fn sequence_spec(diagram: &SequenceDiagram, source: &str) -> Result<(DiagramSpec
         let from = message.from.trim();
         let to = message.to.trim();
         if from.is_empty() || to.is_empty() {
-            return Err(DiagramError::unsupported("sequence message has an empty participant id")
-                .with_span(message.span.clone().into()));
+            return Err(DiagramError::unsupported("sequence message has an empty participant id").with_span(message.span.clone().into()));
         }
         for endpoint in [from, to] {
             if known.insert(endpoint.to_string()) {
-                spec.nodes.push(DiagramNode {
-                    id: endpoint.to_string(),
-                    label: None,
-                    shape: NodeShape::Box,
-                    ports: Vec::new(),
-                    cluster: None,
-                });
+                spec.nodes.push(DiagramNode { id: endpoint.to_string(), label: None, shape: NodeShape::Box, ports: Vec::new(), cluster: None });
                 sources.push_node(Some(message.span.clone().into()));
             }
         }
@@ -433,11 +414,7 @@ fn sequence_spec(diagram: &SequenceDiagram, source: &str) -> Result<(DiagramSpec
                 span.from_message, span.to_message, message_count
             )));
         }
-        activations.push(Activation {
-            participant: span.participant.clone(),
-            from_message: span.from_message,
-            to_message: span.to_message,
-        });
+        activations.push(Activation { participant: span.participant.clone(), from_message: span.from_message, to_message: span.to_message });
     }
 
     if spec.nodes.is_empty() {
@@ -477,14 +454,7 @@ struct Graph {
 }
 
 impl Graph {
-    fn upsert(
-        &mut self,
-        id: &str,
-        label: Option<String>,
-        shape: Option<NodeShape>,
-        ancestors: &[String],
-        span: Option<Range<usize>>,
-    ) {
+    fn upsert(&mut self, id: &str, label: Option<String>, shape: Option<NodeShape>, ancestors: &[String], span: Option<Range<usize>>) {
         match self.indices.get(id) {
             Some(&index) => {
                 let node = &mut self.nodes[index];
@@ -529,21 +499,12 @@ impl Graph {
             suffix += 1;
         }
         let title = title.trim();
-        self.clusters.push(Cluster {
-            id: id.clone(),
-            label: (!title.is_empty()).then(|| title.to_string()),
-            members: Vec::new(),
-        });
+        self.clusters.push(Cluster { id: id.clone(), label: (!title.is_empty()).then(|| title.to_string()), members: Vec::new() });
         id
     }
 
     fn push_edge(&mut self, from: String, to: String, label: Option<String>, style: EdgeStyle, span: Option<Range<usize>>) {
-        self.edges.push(DiagramEdge {
-            from: Endpoint { node: from, port: None },
-            to: Endpoint { node: to, port: None },
-            label,
-            style,
-        });
+        self.edges.push(DiagramEdge { from: Endpoint { node: from, port: None }, to: Endpoint { node: to, port: None }, label, style });
         self.edge_spans.push(span);
     }
 
@@ -753,10 +714,8 @@ fn activity_spec(diagram: &ActivityDiagram, source: &str) -> Result<(DiagramSpec
 fn state_spec(diagram: &StateDiagram, source: &str) -> Result<(DiagramSpec, Vec<Diagnostic>, SourceMap), DiagramError> {
     refuse_dropped(source, DROPPED_STATE_STATEMENTS, false, "state")?;
     if let Some((range, token)) = locate_unsupported_stereotype(source) {
-        return Err(DiagramError::unsupported(format!(
-            "state stereotype `<<{token}>>` is not lowered, the diagram falls back to its source"
-        ))
-        .with_span(range));
+        return Err(DiagramError::unsupported(format!("state stereotype `<<{token}>>` is not lowered, the diagram falls back to its source"))
+            .with_span(range));
     }
 
     let mut graph = Graph::default();
@@ -773,24 +732,13 @@ fn state_spec(diagram: &StateDiagram, source: &str) -> Result<(DiagramSpec, Vec<
     Ok((spec, diagnostics, sources))
 }
 
-fn collect_states(
-    graph: &mut Graph,
-    elements: &[StateElement],
-    ancestors: &[String],
-    scope: &str,
-    source: &str,
-) -> Result<(), DiagramError> {
+fn collect_states(graph: &mut Graph, elements: &[StateElement], ancestors: &[String], scope: &str, source: &str) -> Result<(), DiagramError> {
     for element in elements {
         match element {
             StateElement::State(state) => {
                 let id = require_id(&state.id)?;
-                let label = state
-                    .text
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|text| !text.is_empty())
-                    .map(str::to_string)
-                    .or_else(|| Some(id.clone()));
+                let label =
+                    state.text.as_deref().map(str::trim).filter(|text| !text.is_empty()).map(str::to_string).or_else(|| Some(id.clone()));
                 graph.upsert(&id, label.clone(), Some(state_shape(state.kind)), ancestors, None);
                 if !state.regions.is_empty() {
                     let frame_label = label.clone().unwrap_or_else(|| id.clone());
@@ -821,12 +769,7 @@ fn collect_states(
     Ok(())
 }
 
-fn state_endpoint(
-    graph: &mut Graph,
-    endpoint: &StateEndpoint,
-    ancestors: &[String],
-    scope: &str,
-) -> Result<String, DiagramError> {
+fn state_endpoint(graph: &mut Graph, endpoint: &StateEndpoint, ancestors: &[String], scope: &str) -> Result<String, DiagramError> {
     match endpoint {
         StateEndpoint::State(id) => {
             let id = require_id(id)?;
@@ -899,8 +842,7 @@ fn component_spec(diagram: &ComponentDiagram, source: &str) -> Result<(DiagramSp
             graph.upsert(name, None, None, &[], Some(oak_span(&relation.span)));
         }
         let (from, to) = if relation.marker_at_left { (right, left) } else { (left, right) };
-        let label =
-            folded_label(relation.left_multiplicity.as_ref(), relation.right_multiplicity.as_ref(), relation.label.as_ref());
+        let label = folded_label(relation.left_multiplicity.as_ref(), relation.right_multiplicity.as_ref(), relation.label.as_ref());
         graph.push_edge(from, to, label, class_edge_style(&relation.kind), Some(oak_span(&relation.span)));
     }
 
@@ -927,23 +869,11 @@ fn collect_components(
         match element {
             ComponentElement::Component(node) => {
                 let id = require_id(&node.name)?;
-                graph.upsert(
-                    &id,
-                    Some(component_label(node, false, source)),
-                    Some(NodeShape::Box),
-                    ancestors,
-                    Some(oak_span(&node.span)),
-                );
+                graph.upsert(&id, Some(component_label(node, false, source)), Some(NodeShape::Box), ancestors, Some(oak_span(&node.span)));
             }
             ComponentElement::Interface(node) => {
                 let id = require_id(&node.name)?;
-                graph.upsert(
-                    &id,
-                    Some(component_label(node, true, source)),
-                    Some(NodeShape::Box),
-                    ancestors,
-                    Some(oak_span(&node.span)),
-                );
+                graph.upsert(&id, Some(component_label(node, true, source)), Some(NodeShape::Box), ancestors, Some(oak_span(&node.span)));
             }
             ComponentElement::Port(port) => {
                 let id = require_id(&port.name)?;
@@ -957,10 +887,9 @@ fn collect_components(
             ComponentElement::Package(package) => {
                 let cluster = graph.register_cluster(Some(&format!("package:{}", package.span.start)), &package_label(package));
                 if depth > 0 {
-                    graph.diagnostics.push(approximated_at(
-                        "a nested component package is flattened into its enclosing frame",
-                        oak_span(&package.span),
-                    ));
+                    graph
+                        .diagnostics
+                        .push(approximated_at("a nested component package is flattened into its enclosing frame", oak_span(&package.span)));
                 }
                 let mut nested = ancestors.to_vec();
                 nested.push(cluster);
@@ -1334,13 +1263,12 @@ fn reject_unsupported(source: &str) -> Result<(), DiagramError> {
             if lower.starts_with("@startuml") {
                 let rest = &lower["@startuml".len()..];
                 if !rest.is_empty() && !rest.starts_with(char::is_whitespace) && !rest.starts_with('(') {
-                    return Err(
-                        DiagramError::unsupported(format!("unknown PlantUML marker `{line}`")).with_span(line_start..line_end)
-                    );
+                    return Err(DiagramError::unsupported(format!("unknown PlantUML marker `{line}`")).with_span(line_start..line_end));
                 }
                 if start.is_some() {
-                    return Err(DiagramError::unsupported("a PlantUML source declares more than one `@startuml`")
-                        .with_span(line_start..line_end));
+                    return Err(
+                        DiagramError::unsupported("a PlantUML source declares more than one `@startuml`").with_span(line_start..line_end)
+                    );
                 }
                 start = Some(line_start..line_end);
                 continue;
@@ -1350,8 +1278,7 @@ fn reject_unsupported(source: &str) -> Result<(), DiagramError> {
         }
         if lower.starts_with("@enduml") {
             if end.is_some() {
-                return Err(DiagramError::unsupported("a PlantUML source declares more than one `@enduml`")
-                    .with_span(line_start..line_end));
+                return Err(DiagramError::unsupported("a PlantUML source declares more than one `@enduml`").with_span(line_start..line_end));
             }
             end = Some(line_start..line_end);
             continue;
@@ -1360,17 +1287,16 @@ fn reject_unsupported(source: &str) -> Result<(), DiagramError> {
             return Err(DiagramError::unsupported(format!("unknown PlantUML marker `{line}`")).with_span(line_start..line_end));
         }
         if start.is_none() {
-            return Err(DiagramError::unsupported("PlantUML content must be wrapped by `@startuml` and `@enduml`")
-                .with_span(line_start..line_end));
+            return Err(
+                DiagramError::unsupported("PlantUML content must be wrapped by `@startuml` and `@enduml`").with_span(line_start..line_end)
+            );
         }
         if end.is_some() {
             return Err(DiagramError::unsupported("PlantUML content must not follow `@enduml`").with_span(line_start..line_end));
         }
         if line.starts_with('!') {
-            return Err(DiagramError::unsupported(
-                "PlantUML preprocessor directives such as `!include` and `!define` are refused",
-            )
-            .with_span(line_start..line_end));
+            return Err(DiagramError::unsupported("PlantUML preprocessor directives such as `!include` and `!define` are refused")
+                .with_span(line_start..line_end));
         }
         let keyword = first_word(&lower);
         if OTHER_DIAGRAM_KEYWORDS.contains(&keyword.as_str()) {
@@ -1392,8 +1318,5 @@ fn reject_unsupported(source: &str) -> Result<(), DiagramError> {
 }
 
 fn first_word(line: &str) -> String {
-    line.split(|character: char| character.is_whitespace() || character == '{' || character == '(')
-        .next()
-        .unwrap_or("")
-        .to_string()
+    line.split(|character: char| character.is_whitespace() || character == '{' || character == '(').next().unwrap_or("").to_string()
 }

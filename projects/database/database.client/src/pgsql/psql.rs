@@ -121,10 +121,7 @@ pub fn format_results(results: &[QueryResult], options: &PsqlOptions) -> Vec<Str
         }
         for row in &result.rows {
             lines.push(
-                row.iter()
-                    .map(|value| value.as_deref().unwrap_or(options.null_value.as_str()))
-                    .collect::<Vec<_>>()
-                    .join(&options.separator),
+                row.iter().map(|value| value.as_deref().unwrap_or(options.null_value.as_str())).collect::<Vec<_>>().join(&options.separator),
             );
         }
         if result.columns.is_empty() && options.headers {

@@ -12,8 +12,10 @@
 
 use geometry::Rgba;
 
-use crate::mesh::{Face, VoxelGrid, faces};
-use crate::shade::Shading;
+use crate::{
+    mesh::{Face, VoxelGrid, faces},
+    shade::Shading,
+};
 
 /// One quad in frame coordinates, ready to paint.
 #[derive(Clone, Copy, Debug, PartialEq)]

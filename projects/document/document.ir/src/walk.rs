@@ -62,11 +62,7 @@ impl DocumentGraph {
                         Self::mark_descendants_skipped(self, *id, &mut skip_children);
                     }
                 }
-                RewriteResult::Keep
-                | RewriteResult::Replace(_)
-                | RewriteResult::Remove
-                | RewriteResult::Unwrap
-                | RewriteResult::Error(_) => {}
+                RewriteResult::Keep | RewriteResult::Replace(_) | RewriteResult::Remove | RewriteResult::Unwrap | RewriteResult::Error(_) => {}
             }
         }
 
@@ -360,12 +356,7 @@ impl DocumentGraph {
         let _ = self.delete_block(id);
     }
 
-    fn replace_in_parent_children(
-        &mut self,
-        parent_id: NodeId,
-        old_child: NodeId,
-        new_children: &[NodeId],
-    ) -> Result<(), TransformError> {
+    fn replace_in_parent_children(&mut self, parent_id: NodeId, old_child: NodeId, new_children: &[NodeId]) -> Result<(), TransformError> {
         let node = self.blocks.iter_mut().find(|n| n.id == parent_id).ok_or(TransformError::NotFound(parent_id))?;
         match &mut node.block {
             Block::Section { children, .. } => {

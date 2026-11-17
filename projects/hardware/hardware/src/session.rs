@@ -2,15 +2,12 @@
 
 use std::sync::Arc;
 
-use hardware_backend_cpu::{shared_store, CpuBackend, HostExternalBuffer, SharedHostStore};
+use hardware_backend_cpu::{CpuBackend, HostExternalBuffer, SharedHostStore, shared_store};
 use hardware_capability::CapabilityReport;
 use hardware_ir::Graph;
-use hardware_runtime::{
-    event_kinds as kinds, ExecutionDiagnostics, ExecutionEvent, Runtime,
-};
+use hardware_runtime::{ExecutionDiagnostics, ExecutionEvent, Runtime, event_kinds as kinds};
 use hardware_scheduler::{
-    Error as SchedulerError, ExecutionBindings, ImmediateBridge, ImmediateEvent, ImmediateStream,
-    Result as SchedulerResult, StreamEventBridge,
+    Error as SchedulerError, ExecutionBindings, ImmediateBridge, ImmediateEvent, ImmediateStream, Result as SchedulerResult, StreamEventBridge,
 };
 use hardware_types::ResourceId;
 
@@ -33,12 +30,7 @@ impl CpuSession {
         let store = shared_store();
         let mut runtime = Runtime::new();
         runtime.register_backend(Box::new(CpuBackend::with_store(store.clone())));
-        Self {
-            store,
-            runtime,
-            bindings: ExecutionBindings::new(),
-            bridge: ImmediateBridge,
-        }
+        Self { store, runtime, bindings: ExecutionBindings::new(), bridge: ImmediateBridge }
     }
 
     /// Assign a graph id stamped onto subsequent diagnostic events.
@@ -71,12 +63,10 @@ impl CpuSession {
     ) -> SchedulerResult<()> {
         let result = self.bridge.record_event(stream, event);
         match &result {
-            Ok(()) => self.runtime.diagnostics_mut().push(
-                ExecutionEvent::builder(kinds::EVENT_SIGNAL, "cpu")
-                    .stream_id("immediate")
-                    .stamp_now()
-                    .build(),
-            ),
+            Ok(()) => self
+                .runtime
+                .diagnostics_mut()
+                .push(ExecutionEvent::builder(kinds::EVENT_SIGNAL, "cpu").stream_id("immediate").stamp_now().build()),
             Err(err) => self.runtime.diagnostics_mut().push_error("cpu", err.code()),
         }
         result
@@ -90,12 +80,10 @@ impl CpuSession {
     ) -> SchedulerResult<()> {
         let result = self.bridge.wait_event(stream, event);
         match &result {
-            Ok(()) => self.runtime.diagnostics_mut().push(
-                ExecutionEvent::builder(kinds::STREAM_WAIT, "cpu")
-                    .stream_id("immediate")
-                    .stamp_now()
-                    .build(),
-            ),
+            Ok(()) => self
+                .runtime
+                .diagnostics_mut()
+                .push(ExecutionEvent::builder(kinds::STREAM_WAIT, "cpu").stream_id("immediate").stamp_now().build()),
             Err(err) => self.runtime.diagnostics_mut().push_error("cpu", err.code()),
         }
         result

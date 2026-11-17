@@ -3,8 +3,7 @@
 use document_compose::{Severity, SourceSpan};
 use document_input_typst::{IMPORT_FAILED, UNTERMINATED_GROUP, import_path, import_source, render_svg};
 
-const MINIMAL: &str =
-    "= Introduction\n\nHello *world* and _emphasis_ with a [link](https://example.com).\n\n- First item\n- Second item\n";
+const MINIMAL: &str = "= Introduction\n\nHello *world* and _emphasis_ with a [link](https://example.com).\n\n- First item\n- Second item\n";
 
 const SUBSET: &str = "= Top\n\n== Second level\n\n1. one\n2. two\n\n- outer\n  - inner\n\n```rust\nfn main() {}\n```\n\nA [named link](https://example.com \"title\") and *bold* text.\n";
 
@@ -92,11 +91,7 @@ fn dynamic_construct_is_opaque_with_an_exact_source_span() {
 fn typst_math_lowers_to_semantics_and_no_longer_reports_the_language_gap() {
     let document = import_source("math.typ", MATH).expect("Typst math imports");
 
-    assert!(
-        document.report.preserved.is_empty(),
-        "lowered math is no longer source-preserved: {:?}",
-        document.report.preserved
-    );
+    assert!(document.report.preserved.is_empty(), "lowered math is no longer source-preserved: {:?}", document.report.preserved);
     let language_gaps: Vec<&str> = document
         .diagnostics
         .iter()
@@ -113,8 +108,7 @@ fn typst_math_lowers_to_semantics_and_no_longer_reports_the_language_gap() {
     assert!(layout_gaps.is_empty(), "no language gap survives for typst: {:?}", rendered.diagnostics);
     // The test host installs no math font, so the engine reports the font
     // loss instead of the old language gap: the formula is still visible.
-    let not_typeset: Vec<_> =
-        rendered.diagnostics.iter().filter(|diagnostic| diagnostic.code == "vutex.layout.math.not_typeset").collect();
+    let not_typeset: Vec<_> = rendered.diagnostics.iter().filter(|diagnostic| diagnostic.code == "vutex.layout.math.not_typeset").collect();
     assert_eq!(not_typeset.len(), 2, "one font-loss report per formula: {:?}", rendered.diagnostics);
 }
 
@@ -154,11 +148,7 @@ fn documented_subset_lowers_without_loss() {
         vec!["export.pdf.code_language_dropped"],
         "the layout stage still reports the fence language loss it cannot paint"
     );
-    assert!(
-        without_layout_stage(&rendered.diagnostics).is_empty(),
-        "no construct-level diagnostics: {:?}",
-        rendered.diagnostics
-    );
+    assert!(without_layout_stage(&rendered.diagnostics).is_empty(), "no construct-level diagnostics: {:?}", rendered.diagnostics);
 }
 
 #[test]
@@ -199,8 +189,7 @@ fn block_in_inline_context_diagnostic_points_at_the_authored_block() {
     let source = "Lead *a\n- b*\n";
     let document = import_source("inline-block.typ", source).expect("a block inside an inline fragment degrades to a loss");
 
-    let matched: Vec<_> =
-        document.diagnostics.iter().filter(|diagnostic| diagnostic.code == "import.typst.block_in_inline_context").collect();
+    let matched: Vec<_> = document.diagnostics.iter().filter(|diagnostic| diagnostic.code == "import.typst.block_in_inline_context").collect();
     assert_eq!(matched.len(), 1, "one diagnostic per rejected block: {:?}", document.diagnostics);
     let diagnostic = matched[0];
     assert_eq!(diagnostic.severity, Severity::Warning);
@@ -219,8 +208,7 @@ fn cross_line_set_group_after_a_spaced_head_imports_as_one_opaque_construct() {
     assert_eq!(document.report.opaque[0].code, "typst.expression.set");
     assert_eq!(document.report.opaque[0].detail, group, "the opaque detail keeps the full payload, not the first line");
 
-    let dynamic: Vec<_> =
-        document.diagnostics.iter().filter(|diagnostic| diagnostic.code == "import.typst.dynamic_content").collect();
+    let dynamic: Vec<_> = document.diagnostics.iter().filter(|diagnostic| diagnostic.code == "import.typst.dynamic_content").collect();
     assert_eq!(dynamic.len(), 1, "exactly one dynamic-content diagnostic for the group: {:?}", document.diagnostics);
     assert_eq!(dynamic[0].span, Some(SourceSpan { start: start as u32, end: (start + group.len()) as u32 }));
 
@@ -256,11 +244,7 @@ fn comments_produce_no_text_nodes() {
     assert_eq!(rendered.report.lowered.handled, 2);
     assert!(rendered.report.unsupported.is_empty());
     assert!(rendered.report.opaque.is_empty());
-    assert!(
-        without_layout_stage(&rendered.diagnostics).is_empty(),
-        "comments carry no diagnostics: {:?}",
-        rendered.diagnostics
-    );
+    assert!(without_layout_stage(&rendered.diagnostics).is_empty(), "comments carry no diagnostics: {:?}", rendered.diagnostics);
 }
 
 #[test]
@@ -291,11 +275,7 @@ fn inline_markup_keeps_structured_nodes() {
     assert!(rendered.svg.contains("space"));
     assert!(rendered.report.unsupported.is_empty());
     assert!(rendered.report.opaque.is_empty());
-    assert!(
-        without_layout_stage(&rendered.diagnostics).is_empty(),
-        "markup carries no diagnostics: {:?}",
-        rendered.diagnostics
-    );
+    assert!(without_layout_stage(&rendered.diagnostics).is_empty(), "markup carries no diagnostics: {:?}", rendered.diagnostics);
 }
 
 #[test]
@@ -418,12 +398,9 @@ fn every_opaque_item_carries_a_positioned_diagnostic() {
         let document = import_source(label, source).expect("document imports");
 
         for item in &document.report.opaque {
-            let matched = document
-                .diagnostics
-                .iter()
-                .find(|diagnostic| diagnostic.code == item.code || diagnostic.message.contains(item.detail.trim()));
-            let diagnostic = matched
-                .unwrap_or_else(|| panic!("{label}: opaque `{}` has no diagnostic: {:?}", item.code, document.diagnostics));
+            let matched =
+                document.diagnostics.iter().find(|diagnostic| diagnostic.code == item.code || diagnostic.message.contains(item.detail.trim()));
+            let diagnostic = matched.unwrap_or_else(|| panic!("{label}: opaque `{}` has no diagnostic: {:?}", item.code, document.diagnostics));
             assert!(diagnostic.span.is_some(), "{label}: diagnostic for `{}` is unpositioned", item.code);
         }
     }

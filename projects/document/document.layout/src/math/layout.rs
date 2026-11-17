@@ -10,11 +10,10 @@ use super::conformance::{FontConformance, FontFallback};
 use document_compose::{
     Diagnostic, Severity, SourceSpan,
     math::{
-        Alignment, AlignmentAnchors, BBox, DelimiterComponent, DelimiterVariant, EnvironmentKind, Fixed, FontMetricsSnapshot,
-        FontStyle, FormulaLayoutResult, FormulaMetrics, FormulaNode, GlyphKey, GlyphMetrics, LimitsPolicy, LineStyle,
-        MathConstant, MathEnvironment, MathError, MathItem, MathList, MathResult, MathSemantics, MathStyle, MathStyleState,
-        Noad, NoadKind, Numbering, OperatorClass, PaintNode, RowPlacement, SpacingRule, SymbolRole, math_alphalect,
-        normalize_math_list, project_formula_with_state,
+        Alignment, AlignmentAnchors, BBox, DelimiterComponent, DelimiterVariant, EnvironmentKind, Fixed, FontMetricsSnapshot, FontStyle,
+        FormulaLayoutResult, FormulaMetrics, FormulaNode, GlyphKey, GlyphMetrics, LimitsPolicy, LineStyle, MathConstant, MathEnvironment,
+        MathError, MathItem, MathList, MathResult, MathSemantics, MathStyle, MathStyleState, Noad, NoadKind, Numbering, OperatorClass,
+        PaintNode, RowPlacement, SpacingRule, SymbolRole, math_alphalect, normalize_math_list, project_formula_with_state,
     },
 };
 
@@ -122,15 +121,11 @@ impl LayoutNode {
     /// Project the node onto the Knuth-Plass item model for line breaking.
     pub fn to_kp_item(&self) -> crate::math::knuth_plass::Item {
         match self {
-            LayoutNode::Glue(g) => {
-                crate::math::knuth_plass::Item::Glue { width: g.width, stretch: g.stretch, shrink: g.shrink }
-            }
+            LayoutNode::Glue(g) => crate::math::knuth_plass::Item::Glue { width: g.width, stretch: g.stretch, shrink: g.shrink },
             LayoutNode::Penalty { width, penalty, flagged } => {
                 crate::math::knuth_plass::Item::Penalty { width: *width, penalty: *penalty, flagged: *flagged }
             }
-            LayoutNode::Kern(k) => {
-                crate::math::knuth_plass::Item::Glue { width: *k, stretch: Fixed::ZERO, shrink: Fixed::ZERO }
-            }
+            LayoutNode::Kern(k) => crate::math::knuth_plass::Item::Glue { width: *k, stretch: Fixed::ZERO, shrink: Fixed::ZERO },
             LayoutNode::Anchor { .. } => crate::math::knuth_plass::Item::Box { width: Fixed::ZERO, debug_info: None },
             _ => crate::math::knuth_plass::Item::Box { width: self.width(), debug_info: None },
         }
@@ -272,12 +267,9 @@ impl AtomClass {
             NoadKind::Open => AtomClass::Open,
             NoadKind::Close => AtomClass::Close,
             NoadKind::Punct => AtomClass::Punct,
-            NoadKind::Inner
-            | NoadKind::Fence
-            | NoadKind::Radical
-            | NoadKind::Vcent
-            | NoadKind::TableCell
-            | NoadKind::Environment => AtomClass::Inner,
+            NoadKind::Inner | NoadKind::Fence | NoadKind::Radical | NoadKind::Vcent | NoadKind::TableCell | NoadKind::Environment => {
+                AtomClass::Inner
+            }
         }
     }
 }
@@ -484,8 +476,7 @@ impl LayoutEngine {
     /// G5 ledger take over, so a gate can see the substitution instead of
     /// mistaking σ17 for σ16.
     fn lone_subscript_shift(&self, size: Fixed) -> Fixed {
-        match self.family.and_then(MathFontFamily::tex_parameter_family).and_then(MathSemantics::tex_lone_subscript_shift_down)
-        {
+        match self.family.and_then(MathFontFamily::tex_parameter_family).and_then(MathSemantics::tex_lone_subscript_shift_down) {
             Some(sub1) => sub1 * size,
             None => {
                 self.record_fallback(FontFallback::MissingTexParameter("sub1"));
@@ -615,12 +606,10 @@ impl LayoutEngine {
             FormulaNode::Symbol { glyph_key, .. } => Some(glyph_key.clone()),
             FormulaNode::Sequence(items) => items.iter().find_map(Self::authored_glyph_key),
             FormulaNode::Number { text, .. } => text.chars().next().map(|c| GlyphKey::from_char(c, None, FontStyle::Normal)),
-            FormulaNode::Text { text, font_style, .. } => {
-                text.chars().next().map(|c| GlyphKey::from_char(c, None, *font_style))
+            FormulaNode::Text { text, font_style, .. } => text.chars().next().map(|c| GlyphKey::from_char(c, None, *font_style)),
+            FormulaNode::Subscript { base, .. } | FormulaNode::Superscript { base, .. } | FormulaNode::SubSuperscript { base, .. } => {
+                Self::authored_glyph_key(base)
             }
-            FormulaNode::Subscript { base, .. }
-            | FormulaNode::Superscript { base, .. }
-            | FormulaNode::SubSuperscript { base, .. } => Self::authored_glyph_key(base),
             FormulaNode::Fraction { num, .. } => Self::authored_glyph_key(num),
             FormulaNode::Radical { radicand, .. } => Self::authored_glyph_key(radicand),
             FormulaNode::Delimited { content, .. } => Self::authored_glyph_key(content),
@@ -823,9 +812,7 @@ impl LayoutEngine {
                     Ok(self.break_lines(children, vec![*width], 1.0))
                 }
                 FormulaNode::Fraction { num, den, line } => self.layout_fraction(num, den, *line, state),
-                FormulaNode::Radical { degree, radicand, span } => {
-                    self.layout_radical(degree.as_deref(), radicand, state, *span)
-                }
+                FormulaNode::Radical { degree, radicand, span } => self.layout_radical(degree.as_deref(), radicand, state, *span),
                 FormulaNode::VerticalBox { content, alignment } => {
                     let mut children = Vec::new();
                     for node in content {
@@ -872,14 +859,9 @@ impl LayoutEngine {
                 FormulaNode::Superscript { base, sup } => {
                     self.layout_subsup(base, None, Some(sup), state, OperatorClass::of_node(base), LimitsPolicy::of_node(base))
                 }
-                FormulaNode::SubSuperscript { base, sub, sup } => self.layout_subsup(
-                    base,
-                    Some(sub),
-                    Some(sup),
-                    state,
-                    OperatorClass::of_node(base),
-                    LimitsPolicy::of_node(base),
-                ),
+                FormulaNode::SubSuperscript { base, sub, sup } => {
+                    self.layout_subsup(base, Some(sub), Some(sup), state, OperatorClass::of_node(base), LimitsPolicy::of_node(base))
+                }
                 // A math space is a kern of the current em: `width` is already
                 // in em, so the style scale is the only factor left to apply.
                 FormulaNode::Space { width } => {
@@ -970,11 +952,7 @@ impl LayoutEngine {
     ///
     /// 返回的元组同时携带布局内部的 [`LayoutNode`] 盒树，调用方不再需要
     /// 对同一棵语义树重复跑一次 `layout_node`。
-    pub fn layout_formula_result(
-        &self,
-        nodes: &[FormulaNode],
-        style: MathStyle,
-    ) -> MathResult<(FormulaLayoutResult, LayoutNode)> {
+    pub fn layout_formula_result(&self, nodes: &[FormulaNode], style: MathStyle) -> MathResult<(FormulaLayoutResult, LayoutNode)> {
         let layout_node = self.layout_math_list(nodes, style)?;
         // width / height / depth take the packed root box (the same
         // advance/shift semantics the render cursor walks), axis is the font's
@@ -984,13 +962,8 @@ impl LayoutEngine {
         let height = layout_node.height();
         let depth = layout_node.depth();
         let axis = self.math_constant(MathConstant::AxisHeight, self.base_size).unwrap_or(Fixed::ZERO);
-        let metrics = FormulaMetrics {
-            width,
-            height,
-            depth,
-            axis,
-            ink_bounds: BBox { x: Fixed::ZERO, y: Fixed::ZERO, width, height: height + depth },
-        };
+        let metrics =
+            FormulaMetrics { width, height, depth, axis, ink_bounds: BBox { x: Fixed::ZERO, y: Fixed::ZERO, width, height: height + depth } };
         // The paint tree lives in the canvas space the renderers emit into:
         // box top-left at the origin, baseline at `y = metrics.height`.
         let paint = lower_layout_to_paint(&layout_node, Fixed::ZERO, metrics.height).unwrap_or_default();
@@ -1004,10 +977,7 @@ impl LayoutEngine {
         diagnostics.extend(self.font_fallback_diagnostics());
         if self.conformance == FontConformance::Strict && !self.fallbacks.borrow().is_empty() {
             let report = self.font_fallbacks().iter().map(|f| f.to_string()).collect::<Vec<_>>().join(", ");
-            return Err(MathError::font_error(
-                "font",
-                format!("G5 conformance mode forbids font fallbacks, consumed: {report}"),
-            ));
+            return Err(MathError::font_error("font", format!("G5 conformance mode forbids font fallbacks, consumed: {report}")));
         }
         Ok((
             FormulaLayoutResult {
@@ -1082,9 +1052,7 @@ impl LayoutEngine {
                 // a *conditional* `\nonscript\mskip`: the glue vanishes at
                 // script style and below, so e.g. `a+b` inside a fraction
                 // numerator carries no muskip around the binary operator.
-                let skip = if matches!(style, MathStyle::Script | MathStyle::ScriptScript)
-                    && matches!(skip, TexSkip::Medium | TexSkip::Thick)
-                {
+                let skip = if matches!(style, MathStyle::Script | MathStyle::ScriptScript) && matches!(skip, TexSkip::Medium | TexSkip::Thick) {
                     TexSkip::NoGlue
                 }
                 else {
@@ -1105,9 +1073,7 @@ impl LayoutEngine {
                 let left_nucleus = left.nucleus.as_deref();
                 let right_nucleus = noad.nucleus.as_deref();
                 if let (Some(left_node), Some(right_node)) = (left_nucleus, right_nucleus) {
-                    if let (Some(left_key), Some(right_key)) =
-                        (self.first_glyph_key(left_node), self.first_glyph_key(right_node))
-                    {
+                    if let (Some(left_key), Some(right_key)) = (self.first_glyph_key(left_node), self.first_glyph_key(right_node)) {
                         if let Some(kern) = self.math_kern_between(&left_key, &right_key, size) {
                             if kern != Fixed::ZERO {
                                 children.push(LayoutNode::Kern(kern));
@@ -1163,14 +1129,7 @@ impl LayoutEngine {
                     let sup_ref = scripts.sup.as_deref();
                     // No nucleus → call layout_subsup with a zero-width kern as
                     // the base so the scripts still get positioned correctly.
-                    self.layout_subsup(
-                        &FormulaNode::SetMathStyle(style),
-                        sub_ref,
-                        sup_ref,
-                        state,
-                        OperatorClass::Ord,
-                        LimitsPolicy::Auto,
-                    )?
+                    self.layout_subsup(&FormulaNode::SetMathStyle(style), sub_ref, sup_ref, state, OperatorClass::Ord, LimitsPolicy::Auto)?
                 }
                 (None, None) => LayoutNode::Kern(Fixed::ZERO),
             };
@@ -1242,13 +1201,7 @@ impl LayoutEngine {
     /// keeps the text-size design otherwise. MATH publishes those designs as the
     /// size variants of the operator's glyph construction, so they come from the
     /// font instead of being scaled up here.
-    fn layout_math_symbol(
-        &self,
-        key: &GlyphKey,
-        role: SymbolRole,
-        style: MathStyle,
-        span: Option<SourceSpan>,
-    ) -> MathResult<LayoutNode> {
+    fn layout_math_symbol(&self, key: &GlyphKey, role: SymbolRole, style: MathStyle, span: Option<SourceSpan>) -> MathResult<LayoutNode> {
         if matches!(role, SymbolRole::LargeOperator) && matches!(style, MathStyle::Display) {
             if let Some(variant) = self.display_operator_variant(key)? {
                 let size = self.base_size * self.get_style_scale(style);
@@ -1492,12 +1445,8 @@ impl LayoutEngine {
     fn get_spacing_glue(&self, spacing: SpacingRule) -> Option<Glue> {
         match spacing {
             SpacingRule::Thin => Some(Glue { width: Fixed::from_f64(3.0), stretch: Fixed::ZERO, shrink: Fixed::ZERO }),
-            SpacingRule::Medium => {
-                Some(Glue { width: Fixed::from_f64(4.0), stretch: Fixed::from_f64(2.0), shrink: Fixed::ZERO })
-            }
-            SpacingRule::Thick => {
-                Some(Glue { width: Fixed::from_f64(5.0), stretch: Fixed::from_f64(5.0), shrink: Fixed::ZERO })
-            }
+            SpacingRule::Medium => Some(Glue { width: Fixed::from_f64(4.0), stretch: Fixed::from_f64(2.0), shrink: Fixed::ZERO }),
+            SpacingRule::Thick => Some(Glue { width: Fixed::from_f64(5.0), stretch: Fixed::from_f64(5.0), shrink: Fixed::ZERO }),
             _ => None,
         }
     }
@@ -1518,10 +1467,7 @@ impl LayoutEngine {
             // would let a column-padding kern inflate the row's height (a
             // `cases` row grew to the width of the padding it needed), so
             // only nodes with real ink contribute extents.
-            if !matches!(
-                child,
-                LayoutNode::Kern(_) | LayoutNode::Glue(_) | LayoutNode::Penalty { .. } | LayoutNode::Anchor { .. }
-            ) {
+            if !matches!(child, LayoutNode::Kern(_) | LayoutNode::Glue(_) | LayoutNode::Penalty { .. } | LayoutNode::Anchor { .. }) {
                 max_height = max_height.max(child.height());
                 max_depth = max_depth.max(child.depth());
             }
@@ -1696,8 +1642,7 @@ impl LayoutEngine {
         let mut v_children = Vec::new();
 
         // Centering numerator
-        let num_hbox = self
-            .pack_hbox(vec![LayoutNode::Kern((width - num_layout.width()) / Fixed::from_f64(2.0)), num_layout], Some(width));
+        let num_hbox = self.pack_hbox(vec![LayoutNode::Kern((width - num_layout.width()) / Fixed::from_f64(2.0)), num_layout], Some(width));
         v_children.push(num_hbox);
 
         // Gap between num and rule
@@ -1722,8 +1667,7 @@ impl LayoutEngine {
         let actual_den_shift = den_shift.max(den_min_shift);
         v_children.push(LayoutNode::Kern(actual_den_shift + axis_height - rule_thickness / Fixed::from_f64(2.0) - den_height));
 
-        let den_hbox = self
-            .pack_hbox(vec![LayoutNode::Kern((width - den_layout.width()) / Fixed::from_f64(2.0)), den_layout], Some(width));
+        let den_hbox = self.pack_hbox(vec![LayoutNode::Kern((width - den_layout.width()) / Fixed::from_f64(2.0)), den_layout], Some(width));
         v_children.push(den_hbox);
 
         let mut vbox_node = self.pack_vbox(v_children, Alignment::Center);
@@ -1964,19 +1908,15 @@ impl LayoutEngine {
             let rise = self.math_constant(MathConstant::UpperLimitBaselineRiseMin, size).unwrap_or(Fixed::ZERO);
             let kern = gap.max(rise - base_layout.height() - sup_l.depth()) + display_clearance;
 
-            let sup_hbox = self.pack_hbox(
-                vec![LayoutNode::Kern((total_width - sup_l.width()) / Fixed::from_f64(2.0)), sup_l],
-                Some(total_width),
-            );
+            let sup_hbox =
+                self.pack_hbox(vec![LayoutNode::Kern((total_width - sup_l.width()) / Fixed::from_f64(2.0)), sup_l], Some(total_width));
             v_children.push(sup_hbox);
             v_children.push(LayoutNode::Kern(kern));
         }
 
         let base_depth = base_layout.depth();
-        let base_hbox = self.pack_hbox(
-            vec![LayoutNode::Kern((total_width - base_layout.width()) / Fixed::from_f64(2.0)), base_layout],
-            Some(total_width),
-        );
+        let base_hbox =
+            self.pack_hbox(vec![LayoutNode::Kern((total_width - base_layout.width()) / Fixed::from_f64(2.0)), base_layout], Some(total_width));
         v_children.push(base_hbox);
 
         let mut baseline_drop = Fixed::ZERO;
@@ -1996,10 +1936,8 @@ impl LayoutEngine {
             baseline_drop = (base_depth + gap + sub_height + display_clearance).max(drop);
 
             v_children.push(LayoutNode::Kern(gap + display_clearance));
-            let sub_hbox = self.pack_hbox(
-                vec![LayoutNode::Kern((total_width - sub_l.width()) / Fixed::from_f64(2.0)), sub_l],
-                Some(total_width),
-            );
+            let sub_hbox =
+                self.pack_hbox(vec![LayoutNode::Kern((total_width - sub_l.width()) / Fixed::from_f64(2.0)), sub_l], Some(total_width));
             v_children.push(sub_hbox);
         }
 
@@ -2049,14 +1987,10 @@ impl LayoutEngine {
         let rise = self.math_constant(MathConstant::UpperLimitBaselineRiseMin, size).unwrap_or(Fixed::ZERO);
         let kern = gap.max(rise - base_layout.height() - top_layout.depth());
 
-        let top_hbox = self.pack_hbox(
-            vec![LayoutNode::Kern((total_width - top_layout.width()) / Fixed::from_f64(2.0)), top_layout],
-            Some(total_width),
-        );
-        let base_hbox = self.pack_hbox(
-            vec![LayoutNode::Kern((total_width - base_layout.width()) / Fixed::from_f64(2.0)), base_layout],
-            Some(total_width),
-        );
+        let top_hbox =
+            self.pack_hbox(vec![LayoutNode::Kern((total_width - top_layout.width()) / Fixed::from_f64(2.0)), top_layout], Some(total_width));
+        let base_hbox =
+            self.pack_hbox(vec![LayoutNode::Kern((total_width - base_layout.width()) / Fixed::from_f64(2.0)), base_layout], Some(total_width));
 
         Ok(self.pack_vbox(vec![top_hbox, LayoutNode::Kern(kern), base_hbox], Alignment::Center))
     }
@@ -2083,14 +2017,10 @@ impl LayoutEngine {
         let gap = self.math_constant(MathConstant::LowerLimitGapMin, size).unwrap_or(Fixed::ZERO);
         let _drop = self.math_constant(MathConstant::LowerLimitBaselineDropMin, size).unwrap_or(Fixed::ZERO);
 
-        let base_hbox = self.pack_hbox(
-            vec![LayoutNode::Kern((total_width - base_layout.width()) / Fixed::from_f64(2.0)), base_layout],
-            Some(total_width),
-        );
-        let bot_hbox = self.pack_hbox(
-            vec![LayoutNode::Kern((total_width - bot_layout.width()) / Fixed::from_f64(2.0)), bot_layout],
-            Some(total_width),
-        );
+        let base_hbox =
+            self.pack_hbox(vec![LayoutNode::Kern((total_width - base_layout.width()) / Fixed::from_f64(2.0)), base_layout], Some(total_width));
+        let bot_hbox =
+            self.pack_hbox(vec![LayoutNode::Kern((total_width - bot_layout.width()) / Fixed::from_f64(2.0)), bot_layout], Some(total_width));
 
         let vbox = self.pack_vbox(vec![base_hbox, LayoutNode::Kern(gap), bot_hbox], Alignment::Center);
 
@@ -2196,16 +2126,14 @@ impl LayoutEngine {
             // The superscript sits on the operator's advance, but this box
             // starts one correction left of it (see the trailing kern below),
             // so the correction is put back here.
-            let sup_layout =
-                self.pack_hbox(vec![LayoutNode::Kern(base_italic_correction), sup_inner, LayoutNode::Kern(script_space)], None);
+            let sup_layout = self.pack_hbox(vec![LayoutNode::Kern(base_italic_correction), sup_inner, LayoutNode::Kern(script_space)], None);
             // A cramped base takes the font's cramped minimum instead of the
             // regular one. TeX's `make_scripts` then keeps the script's own
             // bottom at least `x-height/4` above the baseline — the MATH table
             // publishes that clearance as `SuperscriptBottomMin` — and the
             // nucleus height only enters for a box nucleus via
             // `SuperscriptBaselineDropMax`.
-            let sup_constant =
-                if state.cramped { MathConstant::SuperscriptShiftUpCramped } else { MathConstant::SuperscriptShiftUp };
+            let sup_constant = if state.cramped { MathConstant::SuperscriptShiftUpCramped } else { MathConstant::SuperscriptShiftUp };
             let sup_shift = self.math_constant(sup_constant, size).unwrap_or(Fixed::ZERO);
             let sup_bottom_min = self.math_constant(MathConstant::SuperscriptBottomMin, size).unwrap_or(Fixed::ZERO);
 
@@ -2258,8 +2186,7 @@ impl LayoutEngine {
                 // lands 0.861 + 0.140 = 1.001 em, against the reference's
                 // measured 0.997 em, and the text-style one 0.306 + 0.140 =
                 // 0.446 em against 0.444 em.
-                let drop_min =
-                    self.math_constant(MathConstant::SubscriptBaselineDropMin, size * script_scale).unwrap_or(Fixed::ZERO);
+                let drop_min = self.math_constant(MathConstant::SubscriptBaselineDropMin, size * script_scale).unwrap_or(Fixed::ZERO);
                 calculated_sub_shift = calculated_sub_shift.max(base_layout.depth() + drop_min);
             }
             sub_correction_depth = calculated_sub_shift + sub_layout.depth();
@@ -2415,8 +2342,7 @@ impl LayoutEngine {
         // `align`, `equation`, `gather` and `multline` pin display style so an
         // enclosing `\scriptstyle` cannot demote their rows.  `aligned`,
         // `alignedat`, `split` and `gathered` follow the surrounding style.
-        let state =
-            if environment.kind.is_display_level() { MathStyleState { style: MathStyle::Display, ..state } } else { state };
+        let state = if environment.kind.is_display_level() { MathStyleState { style: MathStyle::Display, ..state } } else { state };
         if environment.rows.is_empty() {
             return Ok(LayoutNode::Kern(Fixed::ZERO));
         }
@@ -2526,11 +2452,7 @@ impl LayoutEngine {
             EnvironmentKind::Equation => None,
             _ => {
                 let (height, depth) = array_strut(1.0);
-                Some(LayoutNode::Rule {
-                    width: Fixed::ZERO,
-                    height: Fixed::from_f64(height) * size,
-                    depth: Fixed::from_f64(depth) * size,
-                })
+                Some(LayoutNode::Rule { width: Fixed::ZERO, height: Fixed::from_f64(height) * size, depth: Fixed::from_f64(depth) * size })
             }
         };
 
@@ -2741,10 +2663,7 @@ impl LayoutEngine {
                         Alignment::Left => self.pack_hbox(vec![cell, LayoutNode::Kern(diff)], Some(col_widths[c])),
                         Alignment::Center => {
                             let half = diff / Fixed::from_f64(2.0);
-                            self.pack_hbox(
-                                vec![LayoutNode::Kern(half), cell, LayoutNode::Kern(diff - half)],
-                                Some(col_widths[c]),
-                            )
+                            self.pack_hbox(vec![LayoutNode::Kern(half), cell, LayoutNode::Kern(diff - half)], Some(col_widths[c]))
                         }
                         Alignment::Right => self.pack_hbox(vec![LayoutNode::Kern(diff), cell], Some(col_widths[c])),
                     };
@@ -2822,9 +2741,7 @@ impl LayoutEngine {
         // step, and `\delimitershortfall` bounds the absolute slack.
         let delta = (content_layout.height() - axis_height).max(content_layout.depth() + axis_height);
         let required = delta * Fixed::from_f64(2.0);
-        let minimum = (required * Fixed::from_f64(DELIMITER_FACTOR))
-            .max(required - size * Fixed::from_f64(DELIMITER_SHORTFALL_EM))
-            .max(size);
+        let minimum = (required * Fixed::from_f64(DELIMITER_FACTOR)).max(required - size * Fixed::from_f64(DELIMITER_SHORTFALL_EM)).max(size);
 
         let mut children = Vec::new();
 
@@ -2942,8 +2859,7 @@ impl LayoutEngine {
         size: Fixed,
         span: Option<SourceSpan>,
     ) -> MathResult<Option<LayoutNode>> {
-        let find_variant =
-            |glyph: u16| variants.iter().map(|variant| &variant.glyph).find(|key| key.glyph_id == Some(glyph)).cloned();
+        let find_variant = |glyph: u16| variants.iter().map(|variant| &variant.glyph).find(|key| key.glyph_id == Some(glyph)).cloned();
 
         match plan {
             StretchPlan::Variant(variant) => {
@@ -2962,8 +2878,7 @@ impl LayoutEngine {
                 // spans `extent` rather than the sum of every part.
                 let mut parts = Vec::with_capacity(plan.instances.len() * 2);
                 for part in &plan.instances {
-                    let key =
-                        components.iter().map(|component| &component.glyph).find(|key| key.glyph_id == Some(part.glyph.get()));
+                    let key = components.iter().map(|component| &component.glyph).find(|key| key.glyph_id == Some(part.glyph.get()));
                     let Some(key) = key
                     else {
                         return Ok(None);
@@ -2991,13 +2906,7 @@ impl LayoutEngine {
         wrapper
     }
 
-    fn layout_accent(
-        &self,
-        accent: &GlyphKey,
-        base: &FormulaNode,
-        state: MathStyleState,
-        span: Option<SourceSpan>,
-    ) -> MathResult<LayoutNode> {
+    fn layout_accent(&self, accent: &GlyphKey, base: &FormulaNode, state: MathStyleState, span: Option<SourceSpan>) -> MathResult<LayoutNode> {
         let base_layout = self.layout_node_state(base, state)?;
         let style = state.style;
         let style_scale = self.get_style_scale(style);
@@ -3086,9 +2995,9 @@ impl LayoutEngine {
                     .glyph_id
                     .and_then(|glyph_id| self.facts.as_ref()?.top_accent_attachment(GlyphId::new(glyph_id)))
                     .map(|em| em * glyph.size);
-                facts_attachment.filter(|attachment| *attachment > Fixed::ZERO).or_else(|| {
-                    (glyph.metrics.top_accent_attachment > Fixed::ZERO).then_some(glyph.metrics.top_accent_attachment)
-                })
+                facts_attachment
+                    .filter(|attachment| *attachment > Fixed::ZERO)
+                    .or_else(|| (glyph.metrics.top_accent_attachment > Fixed::ZERO).then_some(glyph.metrics.top_accent_attachment))
             }
             LayoutNode::HBox(hbox) => {
                 let mut offset = Fixed::ZERO;
@@ -3255,14 +3164,9 @@ fn lower_layout_to_paint(node: &LayoutNode, x: Fixed, y: Fixed) -> Option<PaintN
                 spans: vec![glyph.span],
             })
         }
-        LayoutNode::Rule { width, height, depth } => Some(PaintNode::Rect {
-            x,
-            y: y - *height,
-            width: *width,
-            height: *height + *depth,
-            stroke_width: Fixed::ZERO,
-            baseline: y,
-        }),
+        LayoutNode::Rule { width, height, depth } => {
+            Some(PaintNode::Rect { x, y: y - *height, width: *width, height: *height + *depth, stroke_width: Fixed::ZERO, baseline: y })
+        }
         LayoutNode::Path(path) => Some(PaintNode::VectorPath {
             d: path.d.clone(),
             x,

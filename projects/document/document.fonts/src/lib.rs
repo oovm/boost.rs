@@ -109,37 +109,12 @@ pub struct FaceSpec {
 /// too. A requested style is served by the faces of that style first, then by
 /// the regular faces, which is why the list repeats script order per style.
 pub const FACE_FILES: &[FaceSpec] = &[
-    FaceSpec {
-        file_name: "Tinos-Regular.ttf",
-        family: BodyFamily::Serif,
-        script: BodyScript::Latin,
-        style: BodyFaceStyle::Regular,
-    },
+    FaceSpec { file_name: "Tinos-Regular.ttf", family: BodyFamily::Serif, script: BodyScript::Latin, style: BodyFaceStyle::Regular },
     FaceSpec { file_name: "Tinos-Bold.ttf", family: BodyFamily::Serif, script: BodyScript::Latin, style: BodyFaceStyle::Bold },
-    FaceSpec {
-        file_name: "Tinos-Italic.ttf",
-        family: BodyFamily::Serif,
-        script: BodyScript::Latin,
-        style: BodyFaceStyle::Italic,
-    },
-    FaceSpec {
-        file_name: "NotoSerifSC-Regular.ttf",
-        family: BodyFamily::Serif,
-        script: BodyScript::Cjk,
-        style: BodyFaceStyle::Regular,
-    },
-    FaceSpec {
-        file_name: "NotoSerifSC-Bold.ttf",
-        family: BodyFamily::Serif,
-        script: BodyScript::Cjk,
-        style: BodyFaceStyle::Bold,
-    },
-    FaceSpec {
-        file_name: "NotoSansMono-Regular.ttf",
-        family: BodyFamily::Mono,
-        script: BodyScript::Latin,
-        style: BodyFaceStyle::Regular,
-    },
+    FaceSpec { file_name: "Tinos-Italic.ttf", family: BodyFamily::Serif, script: BodyScript::Latin, style: BodyFaceStyle::Italic },
+    FaceSpec { file_name: "NotoSerifSC-Regular.ttf", family: BodyFamily::Serif, script: BodyScript::Cjk, style: BodyFaceStyle::Regular },
+    FaceSpec { file_name: "NotoSerifSC-Bold.ttf", family: BodyFamily::Serif, script: BodyScript::Cjk, style: BodyFaceStyle::Bold },
+    FaceSpec { file_name: "NotoSansMono-Regular.ttf", family: BodyFamily::Mono, script: BodyScript::Latin, style: BodyFaceStyle::Regular },
 ];
 
 /// A face pack could not be read from its directory.
@@ -200,8 +175,7 @@ impl BodyFaceSet {
         let mut faces = Vec::with_capacity(FACE_FILES.len());
         for spec in FACE_FILES {
             let path = dir.join(spec.file_name);
-            let bytes = std::fs::read(&path)
-                .map_err(|error| FaceSetError { file: path.display().to_string(), reason: io_reason(&error) })?;
+            let bytes = std::fs::read(&path).map_err(|error| FaceSetError { file: path.display().to_string(), reason: io_reason(&error) })?;
             faces.push(BodyFace::new(spec.family, spec.script, spec.style, bytes));
         }
         Ok(Self { faces })
@@ -219,10 +193,7 @@ impl BodyFaceSet {
     /// [`Serif`](BodyFamily::Serif), because a missing family must stay a
     /// distinct failure from a face that lacks one glyph.
     pub fn family_named(&self, name: &str) -> Option<BodyFamily> {
-        self.faces
-            .iter()
-            .find(|face| matches!(face.family, BodyFamily::Named(registered) if registered == name))
-            .map(|face| face.family)
+        self.faces.iter().find(|face| matches!(face.family, BodyFamily::Named(registered) if registered == name)).map(|face| face.family)
     }
 
     /// Number of faces in the pack.
@@ -279,17 +250,13 @@ impl MathFontPack {
     /// The bytes are leaked because the math registry borrows them for the whole
     /// process, so a host that keeps its pack on disk pays the copy once.
     pub fn load_from(dir: &Path) -> Result<Self, FaceSetError> {
-        Ok(Self {
-            latin_modern: read_static(&dir.join("LatinModernMath-Regular.otf"))?,
-            xits: read_static(&dir.join("XITSMath-Regular.otf"))?,
-        })
+        Ok(Self { latin_modern: read_static(&dir.join("LatinModernMath-Regular.otf"))?, xits: read_static(&dir.join("XITSMath-Regular.otf"))? })
     }
 }
 
 /// Read one file into a slice that lives as long as the process.
 fn read_static(path: &Path) -> Result<&'static [u8], FaceSetError> {
-    let bytes =
-        std::fs::read(path).map_err(|error| FaceSetError { file: path.display().to_string(), reason: io_reason(&error) })?;
+    let bytes = std::fs::read(path).map_err(|error| FaceSetError { file: path.display().to_string(), reason: io_reason(&error) })?;
     Ok(Box::leak(bytes.into_boxed_slice()))
 }
 

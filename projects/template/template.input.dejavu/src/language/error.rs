@@ -54,14 +54,7 @@ impl ParseError {
     /// Call sites use this exclusively; signature is intentionally stable so
     /// parser sub-modules (`expr.rs`, `stmt.rs`, `stmt_head.rs`) never need to
     /// know about `Span` or any diagnostic backend.
-    pub fn at(
-        source: &str,
-        name: &str,
-        start: usize,
-        len: usize,
-        message: impl Into<String>,
-        label: impl Into<String>,
-    ) -> Self {
+    pub fn at(source: &str, name: &str, start: usize, len: usize, message: impl Into<String>, label: impl Into<String>) -> Self {
         let clamped = if len == 0 { 1.min(source.len().saturating_sub(start).max(1)) } else { len };
         Self::new(source.to_string(), name, Span::new(start, start + clamped), message, label)
     }

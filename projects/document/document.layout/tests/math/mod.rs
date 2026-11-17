@@ -365,12 +365,8 @@ fn typst_and_tex_tags_lay_the_same_math_ir_identically() {
         MathExpression::Atom(MathAtom { text: "+".into(), class: MathClass::Binary, span: None }),
         MathExpression::Number { text: "1".into(), span: None },
     ]);
-    let typst = MathFormula {
-        source: "x^2 + 1".into(),
-        language: Some("typst".into()),
-        display: MathDisplay::Inline,
-        expression: expression.clone(),
-    };
+    let typst =
+        MathFormula { source: "x^2 + 1".into(), language: Some("typst".into()), display: MathDisplay::Inline, expression: expression.clone() };
     let tex = MathFormula { source: "x^2+1".into(), language: Some("latex".into()), display: MathDisplay::Inline, expression };
 
     let (_, typst_root, _) = layout_formula_for(&typst, 10.0, MathFontFamily::LmMath).expect("typst path lays out");
@@ -385,8 +381,7 @@ fn typst_and_tex_tags_lay_the_same_math_ir_identically() {
         assert_eq!(from_typst.char, from_tex.char, "glyph {index} must be the same character");
         assert_eq!(from_typst.outline, from_tex.outline, "glyph {index} must carry the same path data");
         assert!(
-            (from_typst.origin_x - from_tex.origin_x).abs() <= TOLERANCE
-                && (from_typst.baseline_y - from_tex.baseline_y).abs() <= TOLERANCE,
+            (from_typst.origin_x - from_tex.origin_x).abs() <= TOLERANCE && (from_typst.baseline_y - from_tex.baseline_y).abs() <= TOLERANCE,
             "glyph {index} {:?} sits at ({}, {}), the tex path ({}, {})",
             from_typst.char,
             from_typst.origin_x,

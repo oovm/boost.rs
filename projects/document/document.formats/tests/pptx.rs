@@ -7,8 +7,8 @@
 use std::{fs, path::PathBuf};
 
 use document_formats::import::pptx::{
-    EstimatedMetrics, Fill, GraphOptions, PlaceholderKind, RenderOptions, ShapeKind, TextMeasurer, import_pptx_bytes,
-    presentation_to_graph, render_presentation, render_presentation_with, text_wrap_probe,
+    EstimatedMetrics, Fill, GraphOptions, PlaceholderKind, RenderOptions, ShapeKind, TextMeasurer, import_pptx_bytes, presentation_to_graph,
+    render_presentation, render_presentation_with, text_wrap_probe,
 };
 use document_ir::{Block, DocumentGraph, Inline, TableCell};
 
@@ -44,29 +44,19 @@ fn placeholder_geometry_is_inherited_from_layout_and_master() {
     let title = first
         .shapes
         .iter()
-        .find(|shape| {
-            shape.placeholder.as_ref().map(|placeholder| placeholder.kind == PlaceholderKind::CenterTitle).unwrap_or(false)
-        })
+        .find(|shape| shape.placeholder.as_ref().map(|placeholder| placeholder.kind == PlaceholderKind::CenterTitle).unwrap_or(false))
         .unwrap();
     assert!(title.inherited_transform);
     let transform = title.transform.unwrap();
     assert_eq!((transform.x, transform.y), (685800, 2130425));
     assert_eq!((transform.cx, transform.cy), (7772400, 1470025));
 
-    let subtitle = first
-        .shapes
-        .iter()
-        .find(|shape| shape.placeholder.as_ref().and_then(|placeholder| placeholder.index) == Some(1))
-        .unwrap();
+    let subtitle = first.shapes.iter().find(|shape| shape.placeholder.as_ref().and_then(|placeholder| placeholder.index) == Some(1)).unwrap();
     assert_eq!(subtitle.transform.unwrap().x, 1371600);
 
     let second = presentation.slide(2).unwrap();
     assert_eq!(second.shapes[0].transform.unwrap().x, 457200, "the title falls back to the master title placeholder");
-    let body = second
-        .shapes
-        .iter()
-        .find(|shape| shape.placeholder.as_ref().and_then(|placeholder| placeholder.index) == Some(1))
-        .unwrap();
+    let body = second.shapes.iter().find(|shape| shape.placeholder.as_ref().and_then(|placeholder| placeholder.index) == Some(1)).unwrap();
     let body_transform = body.transform.unwrap();
     assert_eq!((body_transform.x, body_transform.y), (457200, 1600200));
     assert!(body.inherited_transform);
@@ -83,11 +73,7 @@ fn text_shapes_keep_paragraph_levels_fills_lines_and_rotation() {
     assert!(rounded.line.as_ref().and_then(|line| line.color.as_ref()).is_some());
     assert_eq!(rounded.transform.unwrap().rotation_deg, 8.0);
 
-    let body = slide
-        .shapes
-        .iter()
-        .find(|shape| shape.placeholder.as_ref().and_then(|placeholder| placeholder.index) == Some(1))
-        .unwrap();
+    let body = slide.shapes.iter().find(|shape| shape.placeholder.as_ref().and_then(|placeholder| placeholder.index) == Some(1)).unwrap();
     let text = body.text.as_ref().unwrap();
     assert_eq!(text.paragraphs.len(), 2);
     assert_eq!(text.paragraphs[0].level, 0);
@@ -139,8 +125,7 @@ fn refused_constructs_carry_structured_codes() {
 fn ir_projection_keeps_slide_sections_tables_and_refusals() {
     let presentation = presentation();
     let graph = presentation_to_graph(&presentation, &GraphOptions::default());
-    let sections: Vec<&Block> =
-        graph.blocks.iter().map(|node| &node.block).filter(|block| matches!(block, Block::Section { .. })).collect();
+    let sections: Vec<&Block> = graph.blocks.iter().map(|node| &node.block).filter(|block| matches!(block, Block::Section { .. })).collect();
     assert_eq!(sections.len(), 2);
     let Block::Section { title, .. } = sections[0]
     else {
@@ -266,21 +251,11 @@ fn injected_metrics_wrap_earlier_and_chart_fragments_replace_the_placeholder() {
     let estimated = text_wrap_probe(&presentation, &EstimatedMetrics);
     let measured = text_wrap_probe(&presentation, &WideMetrics);
     assert_eq!(estimated.len(), measured.len());
-    assert!(
-        estimated.iter().zip(&measured).any(|(left, right)| right.lines.len() > left.lines.len()),
-        "{estimated:?} {measured:?}"
-    );
+    assert!(estimated.iter().zip(&measured).any(|(left, right)| right.lines.len() > left.lines.len()), "{estimated:?} {measured:?}");
 
-    let chart = presentation
-        .slide(2)
-        .expect("slide 2")
-        .shapes
-        .iter()
-        .find(|shape| shape.kind == ShapeKind::Chart)
-        .expect("chart shape");
+    let chart = presentation.slide(2).expect("slide 2").shapes.iter().find(|shape| shape.kind == ShapeKind::Chart).expect("chart shape");
     let fragment = "<rect x=\"0\" y=\"0\" width=\"10\" height=\"10\" fill=\"#336699\"/>";
-    let render =
-        render_presentation_with(&presentation, &RenderOptions::default(), &WideMetrics, &[(2, chart.id, fragment.to_owned())]);
+    let render = render_presentation_with(&presentation, &RenderOptions::default(), &WideMetrics, &[(2, chart.id, fragment.to_owned())]);
     let slide = render.views.iter().find(|view| view.index == 2).expect("slide view 2");
     assert!(slide.svg.contains(fragment), "{}", slide.svg);
     assert!(!slide.svg.contains("chart refused"), "{}", slide.svg);
@@ -321,10 +296,7 @@ fn cell_text(graph: &DocumentGraph, cell: &TableCell) -> Vec<String> {
 }
 
 fn pptx_row_text(row: &document_formats::import::pptx::PptxTableRow) -> Vec<String> {
-    row.cells
-        .iter()
-        .map(|cell| cell.text.paragraphs.iter().map(|paragraph| paragraph.text()).collect::<Vec<_>>().join(""))
-        .collect()
+    row.cells.iter().map(|cell| cell.text.paragraphs.iter().map(|paragraph| paragraph.text()).collect::<Vec<_>>().join("")).collect()
 }
 
 #[test]
@@ -346,9 +318,8 @@ fn render_paints_every_slide_and_writes_evidence_html() {
     assert!(render.issues.iter().all(|issue| !issue.code.is_empty()));
     assert!(!render.views[0].deviations.is_empty());
 
-    let evidence = std::env::var("CARGO_TARGET_TMPDIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| std::env::temp_dir().join("document-rs-evidence"));
+    let evidence =
+        std::env::var("CARGO_TARGET_TMPDIR").map(PathBuf::from).unwrap_or_else(|_| std::env::temp_dir().join("document-rs-evidence"));
     let directory = evidence.join("office-evidence/pptx");
     fs::create_dir_all(&directory).expect("evidence dir");
     fs::write(directory.join("generated-layouts-and-chart.pptx"), sample_package()).expect("sample pptx");
@@ -549,8 +520,7 @@ const NOTES_TWO: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><p:notes xmln
 const CHART: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><c:chartSpace xmlns:c=\"http://schemas.openxmlformats.org/drawingml/2006/chart\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\"><c:chart><c:plotArea><c:barChart><c:barDir val=\"col\"/><c:ser><c:idx val=\"0\"/><c:tx><c:strRef><c:f>Sheet1!$B$1</c:f><c:strCache><c:pt idx=\"0\"><c:v>Revenue</c:v></c:pt></c:strCache></c:strRef></c:tx><c:cat><c:strRef><c:f>Sheet1!$A$2:$A$4</c:f><c:strCache><c:pt idx=\"0\"><c:v>North</c:v></c:pt><c:pt idx=\"1\"><c:v>South</c:v></c:pt><c:pt idx=\"2\"><c:v>East</c:v></c:pt></c:strCache></c:strRef></c:cat><c:val><c:numRef><c:f>Sheet1!$B$2:$B$4</c:f><c:numCache><c:pt idx=\"0\"><c:v>42</c:v></c:pt><c:pt idx=\"1\"><c:v>31</c:v></c:pt><c:pt idx=\"2\"><c:v>27</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser></c:barChart></c:plotArea></c:chart></c:chartSpace>";
 
 const PNG: &[u8] = &[
-    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01,
-    0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41,
-    0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
-    0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+    0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01,
+    0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
 ];

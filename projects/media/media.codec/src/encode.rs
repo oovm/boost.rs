@@ -95,9 +95,13 @@ impl Encoder {
 mod windows_encoder {
     use std::path::Path;
 
-    use windows::Win32::Media::MediaFoundation as mf;
-    use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
-    use windows::core::{GUID, PCWSTR};
+    use windows::{
+        Win32::{
+            Media::MediaFoundation as mf,
+            System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx},
+        },
+        core::{GUID, PCWSTR},
+    };
 
     use media_types::Error;
 
@@ -143,22 +147,15 @@ mod windows_encoder {
     }
 
     impl WindowsEncoder {
-        pub fn open(
-            out: &Path,
-            width: u32,
-            height: u32,
-            fps: u32,
-            bitrate: u32,
-            sample_rate: u32,
-            with_audio: bool,
-        ) -> Result<Self, Error> {
+        pub fn open(out: &Path, width: u32, height: u32, fps: u32, bitrate: u32, sample_rate: u32, with_audio: bool) -> Result<Self, Error> {
             unsafe {
                 let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
                 mf::MFStartup(mf::MF_VERSION, mf::MFSTARTUP_FULL).map_err(|e| encode_error("MFStartup", e))?;
             }
             let candidates: &[(&windows::core::GUID, &str)] = if with_audio {
                 &[(&mf::MFAudioFormat_AAC, "aac"), (&mf::MFAudioFormat_FLAC, "flac")]
-            } else {
+            }
+            else {
                 &[(&mf::MFAudioFormat_AAC, "none")]
             };
             let mut last_error = None;
@@ -184,45 +181,31 @@ mod windows_encoder {
         ) -> Result<Self, Error> {
             let wide_path = wide(out);
             let writer: mf::IMFSinkWriter = unsafe {
-                mf::MFCreateSinkWriterFromURL(
-                    PCWSTR(wide_path.as_ptr()),
-                    None::<&mf::IMFByteStream>,
-                    None::<&mf::IMFAttributes>,
-                )
-                .map_err(|e| encode_error("MFCreateSinkWriterFromURL", e))?
+                mf::MFCreateSinkWriterFromURL(PCWSTR(wide_path.as_ptr()), None::<&mf::IMFByteStream>, None::<&mf::IMFAttributes>)
+                    .map_err(|e| encode_error("MFCreateSinkWriterFromURL", e))?
             };
 
             // --- video stream ---
             let video_out = unsafe { mf::MFCreateMediaType().map_err(|e| encode_error("MFCreateMediaType(video out)", e))? };
             unsafe {
-                set_guid(&video_out, &mf::MF_MT_MAJOR_TYPE, &mf::MFMediaType_Video)
-                    .map_err(|e| encode_error("video major", e))?;
-                set_guid(&video_out, &mf::MF_MT_SUBTYPE, &mf::MFVideoFormat_H264)
-                    .map_err(|e| encode_error("video subtype", e))?;
+                set_guid(&video_out, &mf::MF_MT_MAJOR_TYPE, &mf::MFMediaType_Video).map_err(|e| encode_error("video major", e))?;
+                set_guid(&video_out, &mf::MF_MT_SUBTYPE, &mf::MFVideoFormat_H264).map_err(|e| encode_error("video subtype", e))?;
                 set_u32(&video_out, &mf::MF_MT_AVG_BITRATE, bitrate).map_err(|e| encode_error("video bitrate", e))?;
                 set_u64(&video_out, &mf::MF_MT_FRAME_SIZE, pack32(width, height)).map_err(|e| encode_error("frame size", e))?;
                 set_u64(&video_out, &mf::MF_MT_FRAME_RATE, pack32(fps, 1)).map_err(|e| encode_error("frame rate", e))?;
-                set_u64(&video_out, &mf::MF_MT_PIXEL_ASPECT_RATIO, pack32(1, 1))
-                    .map_err(|e| encode_error("pixel aspect", e))?;
-                set_u32(&video_out, &mf::MF_MT_INTERLACE_MODE, INTERLACE_PROGRESSIVE)
-                    .map_err(|e| encode_error("interlace", e))?;
+                set_u64(&video_out, &mf::MF_MT_PIXEL_ASPECT_RATIO, pack32(1, 1)).map_err(|e| encode_error("pixel aspect", e))?;
+                set_u32(&video_out, &mf::MF_MT_INTERLACE_MODE, INTERLACE_PROGRESSIVE).map_err(|e| encode_error("interlace", e))?;
             }
             let video_in = unsafe { mf::MFCreateMediaType().map_err(|e| encode_error("MFCreateMediaType(video in)", e))? };
             unsafe {
-                set_guid(&video_in, &mf::MF_MT_MAJOR_TYPE, &mf::MFMediaType_Video)
-                    .map_err(|e| encode_error("video in major", e))?;
-                set_guid(&video_in, &mf::MF_MT_SUBTYPE, &mf::MFVideoFormat_NV12)
-                    .map_err(|e| encode_error("video in subtype", e))?;
-                set_u64(&video_in, &mf::MF_MT_FRAME_SIZE, pack32(width, height))
-                    .map_err(|e| encode_error("frame size in", e))?;
+                set_guid(&video_in, &mf::MF_MT_MAJOR_TYPE, &mf::MFMediaType_Video).map_err(|e| encode_error("video in major", e))?;
+                set_guid(&video_in, &mf::MF_MT_SUBTYPE, &mf::MFVideoFormat_NV12).map_err(|e| encode_error("video in subtype", e))?;
+                set_u64(&video_in, &mf::MF_MT_FRAME_SIZE, pack32(width, height)).map_err(|e| encode_error("frame size in", e))?;
                 set_u64(&video_in, &mf::MF_MT_FRAME_RATE, pack32(fps, 1)).map_err(|e| encode_error("frame rate in", e))?;
-                set_u64(&video_in, &mf::MF_MT_PIXEL_ASPECT_RATIO, pack32(1, 1))
-                    .map_err(|e| encode_error("pixel aspect in", e))?;
-                set_u32(&video_in, &mf::MF_MT_INTERLACE_MODE, INTERLACE_PROGRESSIVE)
-                    .map_err(|e| encode_error("interlace in", e))?;
+                set_u64(&video_in, &mf::MF_MT_PIXEL_ASPECT_RATIO, pack32(1, 1)).map_err(|e| encode_error("pixel aspect in", e))?;
+                set_u32(&video_in, &mf::MF_MT_INTERLACE_MODE, INTERLACE_PROGRESSIVE).map_err(|e| encode_error("interlace in", e))?;
                 set_u32(&video_in, &mf::MF_MT_DEFAULT_STRIDE, width).map_err(|e| encode_error("stride", e))?;
-                set_u32(&video_in, &mf::MF_MT_VIDEO_NOMINAL_RANGE, NOMINAL_RANGE_FULL)
-                    .map_err(|e| encode_error("nominal range", e))?;
+                set_u32(&video_in, &mf::MF_MT_VIDEO_NOMINAL_RANGE, NOMINAL_RANGE_FULL).map_err(|e| encode_error("nominal range", e))?;
             }
             let video_index = unsafe { writer.AddStream(&video_out).map_err(|e| encode_error("AddStream(video)", e))? };
             unsafe {
@@ -234,33 +217,25 @@ mod windows_encoder {
             // --- audio stream ---
             let mut audio_index = None;
             if with_audio {
-                let audio_out =
-                    unsafe { mf::MFCreateMediaType().map_err(|e| encode_error("MFCreateMediaType(audio out)", e))? };
+                let audio_out = unsafe { mf::MFCreateMediaType().map_err(|e| encode_error("MFCreateMediaType(audio out)", e))? };
                 unsafe {
-                    set_guid(&audio_out, &mf::MF_MT_MAJOR_TYPE, &mf::MFMediaType_Audio)
-                        .map_err(|e| encode_error("audio major", e))?;
+                    set_guid(&audio_out, &mf::MF_MT_MAJOR_TYPE, &mf::MFMediaType_Audio).map_err(|e| encode_error("audio major", e))?;
                     set_guid(&audio_out, &mf::MF_MT_SUBTYPE, audio_subtype).map_err(|e| encode_error("audio subtype", e))?;
                     set_u32(&audio_out, &mf::MF_MT_AUDIO_BITS_PER_SAMPLE, 16).map_err(|e| encode_error("audio bits", e))?;
                     set_u32(&audio_out, &mf::MF_MT_AUDIO_NUM_CHANNELS, 2).map_err(|e| encode_error("audio channels", e))?;
-                    set_u32(&audio_out, &mf::MF_MT_AUDIO_SAMPLES_PER_SECOND, sample_rate)
-                        .map_err(|e| encode_error("audio rate", e))?;
+                    set_u32(&audio_out, &mf::MF_MT_AUDIO_SAMPLES_PER_SECOND, sample_rate).map_err(|e| encode_error("audio rate", e))?;
                     if *audio_subtype == mf::MFAudioFormat_AAC {
-                        set_u32(&audio_out, &mf::MF_MT_AUDIO_AVG_BYTES_PER_SECOND, 25_600)
-                            .map_err(|e| encode_error("audio bitrate", e))?;
+                        set_u32(&audio_out, &mf::MF_MT_AUDIO_AVG_BYTES_PER_SECOND, 25_600).map_err(|e| encode_error("audio bitrate", e))?;
                     }
                 }
                 let audio_in = unsafe { mf::MFCreateMediaType().map_err(|e| encode_error("MFCreateMediaType(audio in)", e))? };
                 unsafe {
-                    set_guid(&audio_in, &mf::MF_MT_MAJOR_TYPE, &mf::MFMediaType_Audio)
-                        .map_err(|e| encode_error("audio in major", e))?;
-                    set_guid(&audio_in, &mf::MF_MT_SUBTYPE, &mf::MFAudioFormat_Float)
-                        .map_err(|e| encode_error("audio in subtype", e))?;
+                    set_guid(&audio_in, &mf::MF_MT_MAJOR_TYPE, &mf::MFMediaType_Audio).map_err(|e| encode_error("audio in major", e))?;
+                    set_guid(&audio_in, &mf::MF_MT_SUBTYPE, &mf::MFAudioFormat_Float).map_err(|e| encode_error("audio in subtype", e))?;
                     set_u32(&audio_in, &mf::MF_MT_AUDIO_NUM_CHANNELS, 2).map_err(|e| encode_error("audio in channels", e))?;
-                    set_u32(&audio_in, &mf::MF_MT_AUDIO_SAMPLES_PER_SECOND, sample_rate)
-                        .map_err(|e| encode_error("audio in rate", e))?;
+                    set_u32(&audio_in, &mf::MF_MT_AUDIO_SAMPLES_PER_SECOND, sample_rate).map_err(|e| encode_error("audio in rate", e))?;
                     set_u32(&audio_in, &mf::MF_MT_AUDIO_BITS_PER_SAMPLE, 32).map_err(|e| encode_error("audio in bits", e))?;
-                    set_u32(&audio_in, &mf::MF_MT_AUDIO_BLOCK_ALIGNMENT, 8)
-                        .map_err(|e| encode_error("audio block align", e))?;
+                    set_u32(&audio_in, &mf::MF_MT_AUDIO_BLOCK_ALIGNMENT, 8).map_err(|e| encode_error("audio block align", e))?;
                     set_u32(&audio_in, &mf::MF_MT_AUDIO_AVG_BYTES_PER_SECOND, sample_rate * 8)
                         .map_err(|e| encode_error("audio in avg bytes", e))?;
                 }
@@ -272,16 +247,7 @@ mod windows_encoder {
                 }
             }
 
-            Ok(Self {
-                writer,
-                video_index,
-                audio_index,
-                width,
-                height,
-                sample_rate,
-                started: false,
-                audio_codec: codec_name.to_string(),
-            })
+            Ok(Self { writer, video_index, audio_index, width, height, sample_rate, started: false, audio_codec: codec_name.to_string() })
         }
 
         pub fn write_video(&mut self, nv12: &[u8], frame: u32, fps: u32) -> Result<(), Error> {
@@ -296,8 +262,7 @@ mod windows_encoder {
             let unit = 10_000_000i64;
             unsafe {
                 let sample = mf::MFCreateSample().map_err(|e| encode_error("MFCreateSample", e))?;
-                let buffer =
-                    mf::MFCreateMemoryBuffer(nv12.len() as u32).map_err(|e| encode_error("MFCreateMemoryBuffer", e))?;
+                let buffer = mf::MFCreateMemoryBuffer(nv12.len() as u32).map_err(|e| encode_error("MFCreateMemoryBuffer", e))?;
                 let mut ptr: *mut u8 = std::ptr::null_mut();
                 buffer.Lock(&mut ptr, None, None).map_err(|e| encode_error("Lock", e))?;
                 std::ptr::copy_nonoverlapping(nv12.as_ptr(), ptr, nv12.len());
@@ -312,7 +277,8 @@ mod windows_encoder {
         }
 
         pub fn write_audio(&mut self, pcm: &[i16], start_sample: u64) -> Result<(), Error> {
-            let Some(index) = self.audio_index else {
+            let Some(index) = self.audio_index
+            else {
                 return Ok(());
             };
             if !self.started {
@@ -323,8 +289,7 @@ mod windows_encoder {
             let payload = floats.len() * 4;
             unsafe {
                 let sample = mf::MFCreateSample().map_err(|e| encode_error("MFCreateSample(audio)", e))?;
-                let buffer =
-                    mf::MFCreateMemoryBuffer(payload as u32).map_err(|e| encode_error("MFCreateMemoryBuffer(audio)", e))?;
+                let buffer = mf::MFCreateMemoryBuffer(payload as u32).map_err(|e| encode_error("MFCreateMemoryBuffer(audio)", e))?;
                 let mut ptr: *mut u8 = std::ptr::null_mut();
                 buffer.Lock(&mut ptr, None, None).map_err(|e| encode_error("Lock(audio)", e))?;
                 std::ptr::copy_nonoverlapping(bytemuck_f32(&floats).as_ptr(), ptr, payload);
@@ -332,12 +297,8 @@ mod windows_encoder {
                 buffer.SetCurrentLength(payload as u32).map_err(|e| encode_error("SetCurrentLength(audio)", e))?;
                 sample.AddBuffer(&buffer).map_err(|e| encode_error("AddBuffer(audio)", e))?;
                 let rate = self.sample_rate as i64;
-                sample
-                    .SetSampleTime(start_sample as i64 * 10_000_000 / rate)
-                    .map_err(|e| encode_error("SetSampleTime(audio)", e))?;
-                sample
-                    .SetSampleDuration(pcm.len() as i64 * 10_000_000 / 2 / rate)
-                    .map_err(|e| encode_error("SetSampleDuration(audio)", e))?;
+                sample.SetSampleTime(start_sample as i64 * 10_000_000 / rate).map_err(|e| encode_error("SetSampleTime(audio)", e))?;
+                sample.SetSampleDuration(pcm.len() as i64 * 10_000_000 / 2 / rate).map_err(|e| encode_error("SetSampleDuration(audio)", e))?;
                 self.writer.WriteSample(index, &sample).map_err(|e| encode_error("WriteSample(audio)", e))?;
             }
             Ok(())

@@ -1,4 +1,4 @@
-use hardware_program::{post_bloom_extract, tone_map_aces, validate_program, CpuInterpreter, Value};
+use hardware_program::{CpuInterpreter, Value, post_bloom_extract, tone_map_aces, validate_program};
 
 #[test]
 fn tone_map_aces_clamps_hot_channel() {

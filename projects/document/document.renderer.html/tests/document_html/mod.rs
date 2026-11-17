@@ -67,33 +67,18 @@ fn reflow_html_nests_child_list_inside_parent_item() {
     let mut graph = DocumentGraph::new(DocumentId(5));
     let child = graph.push_block(Block::List {
         ordered: false,
-        items: vec![ListItem {
-            content: vec![text("child")],
-            children: Vec::new(),
-            number: None,
-            is_task: false,
-            is_checked: None,
-        }],
+        items: vec![ListItem { content: vec![text("child")], children: Vec::new(), number: None, is_task: false, is_checked: None }],
     });
     graph.push_block(Block::List {
         ordered: false,
-        items: vec![ListItem {
-            content: vec![text("parent")],
-            children: vec![child],
-            number: None,
-            is_task: false,
-            is_checked: None,
-        }],
+        items: vec![ListItem { content: vec![text("parent")], children: vec![child], number: None, is_task: false, is_checked: None }],
     });
 
     let html = render_html_reflow(&build_flow_presentation(&graph)).expect("reflow html");
 
     // Line breaks are layout, not structure, so compare the compact shape.
     let compact = html.replace('\n', "");
-    assert!(
-        compact.contains("<ul data-vutex-block=\"list\"><li>parent<ul data-vutex-block=\"list\"><li>child</li></ul></li></ul>"),
-        "{html}"
-    );
+    assert!(compact.contains("<ul data-vutex-block=\"list\"><li>parent<ul data-vutex-block=\"list\"><li>child</li></ul></li></ul>"), "{html}");
 }
 
 #[test]
@@ -123,11 +108,7 @@ fn reflow_html_wraps_link_runs_in_anchors() {
 fn reflow_html_omits_href_for_internal_links() {
     let mut graph = DocumentGraph::new(DocumentId(3));
     graph.push_block(Block::Paragraph {
-        content: vec![Inline::Link {
-            target: RelationEndpoint::Node(NodeId(1)),
-            display: vec![text("Section one")],
-            title: None,
-        }],
+        content: vec![Inline::Link { target: RelationEndpoint::Node(NodeId(1)), display: vec![text("Section one")], title: None }],
     });
 
     let html = render_html_reflow(&build_flow_presentation(&graph)).expect("reflow html");
@@ -152,10 +133,7 @@ fn reflow_html_keeps_authored_ordered_numbers() {
     // The first authored number sets the list start, and the jump to nine
     // keeps a per-item value even though the running count expected four.
     let compact = html.replace('\n', "");
-    assert!(
-        compact.contains("<ol data-vutex-block=\"list\" start=\"3\"><li>third</li><li value=\"9\">ninth</li></ol>"),
-        "{html}"
-    );
+    assert!(compact.contains("<ol data-vutex-block=\"list\" start=\"3\"><li>third</li><li value=\"9\">ninth</li></ol>"), "{html}");
 }
 
 #[test]
@@ -197,9 +175,7 @@ fn snapshot_html_wraps_link_runs_in_anchors() {
     // Only the linked run is wrapped, the attribute value stays escaped, and
     // the accent colour rides the anchor while body ink rides every run.
     assert!(
-        html.contains(
-            "<a class=\"vutex-link\" href=\"https://example.com/guide?q=a&amp;lang=zh\" style=\"color:#2B5B84\">the guide</a>"
-        ),
+        html.contains("<a class=\"vutex-link\" href=\"https://example.com/guide?q=a&amp;lang=zh\" style=\"color:#2B5B84\">the guide</a>"),
         "{html}"
     );
     assert!(html.contains("color:#1A1A1A\">Read </div>"), "{html}");

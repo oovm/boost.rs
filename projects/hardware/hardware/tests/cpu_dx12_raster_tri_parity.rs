@@ -5,20 +5,14 @@ use std::collections::BTreeMap;
 use hardware_backend_cpu::CpuBackend;
 use hardware_backend_dx12::Dx12Backend;
 use hardware_ir::{
-    Access, DepEdge, DepKind, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph,
-    ResourceId, ResourceKind, ResourceNode, ShaderId, TaskGraph, TaskId, TaskKind, TaskNode,
+    Access, DepEdge, DepKind, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph, ResourceId, ResourceKind, ResourceNode, ShaderId,
+    TaskGraph, TaskId, TaskKind, TaskNode,
 };
 use hardware_scheduler::Backend;
 use hardware_types::ResourceId as Rid;
 
 fn buffer(id: u64, bytes: u64, domain: Domain) -> ResourceNode {
-    ResourceNode {
-        id: ResourceId(id),
-        kind: ResourceKind::Buffer,
-        domain,
-        access: Access::ReadWrite,
-        byte_size: Some(bytes),
-    }
+    ResourceNode { id: ResourceId(id), kind: ResourceKind::Buffer, domain, access: Access::ReadWrite, byte_size: Some(bytes) }
 }
 
 fn task(id: u64, kind: TaskKind, params: BTreeMap<String, ParamValue>) -> TaskNode {
@@ -49,9 +43,7 @@ fn tri_graph(domain: Domain) -> Graph {
     let width = 32i64;
     let height = 32i64;
     Graph {
-        resources: ResourceGraph {
-            nodes: vec![buffer(1, (width * height * 4) as u64, domain)],
-        },
+        resources: ResourceGraph { nodes: vec![buffer(1, (width * height * 4) as u64, domain)] },
         tasks: TaskGraph {
             nodes: vec![task(
                 10,
@@ -67,12 +59,7 @@ fn tri_graph(domain: Domain) -> Graph {
                     s("draw", "tri"),
                 ]),
             )],
-            edges: vec![DepEdge {
-                from_task: None,
-                from_resource: Some(ResourceId(1)),
-                to_task: TaskId(10),
-                kind: DepKind::Data,
-            }],
+            edges: vec![DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data }],
         },
     }
 }
@@ -80,8 +67,7 @@ fn tri_graph(domain: Domain) -> Graph {
 fn run_cpu(graph: &Graph) -> Vec<u8> {
     let mut cpu = CpuBackend::new();
     cpu.prepare(graph).expect("cpu prepare");
-    cpu.submit_task(graph, &graph.tasks.nodes[0])
-        .expect("cpu raster tri");
+    cpu.submit_task(graph, &graph.tasks.nodes[0]).expect("cpu raster tri");
     let store = cpu.store();
     let guard = store.lock().expect("lock");
     guard.bytes(Rid(1)).expect("cpu bytes").to_vec()

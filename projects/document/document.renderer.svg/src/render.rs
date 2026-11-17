@@ -36,11 +36,7 @@ fn render_document(presentation: &DisplayPresentation) -> Result<String, Diagnos
     for (index, page) in presentation.pages.iter().enumerate() {
         out.push_str(&format!(r##"<g data-page="{}" transform="translate(0, {})">"##, index + 1, num(offset),));
         out.push('\n');
-        out.push_str(&format!(
-            r##"<rect x="0" y="0" width="{}" height="{}" fill="#ffffff"/>"##,
-            num(page.width),
-            num(page.height),
-        ));
+        out.push_str(&format!(r##"<rect x="0" y="0" width="{}" height="{}" fill="#ffffff"/>"##, num(page.width), num(page.height),));
         out.push('\n');
         for item in &page.items {
             write_item(&mut out, item)?;

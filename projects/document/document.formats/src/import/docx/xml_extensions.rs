@@ -160,9 +160,7 @@ pub fn u32_attribute(element: &XmlElement, expected: &str) -> Option<u32> {
 /// Interprets a WordprocessingML boolean flag element.
 pub fn bool_from_element(element: Option<&XmlElement>, default: bool) -> bool {
     match element {
-        Some(element) => {
-            attribute_value(element, "val").map(|value| !matches!(value.as_str(), "0" | "false" | "off")).unwrap_or(default)
-        }
+        Some(element) => attribute_value(element, "val").map(|value| !matches!(value.as_str(), "0" | "false" | "off")).unwrap_or(default),
         None => default,
     }
 }
@@ -242,10 +240,9 @@ fn collect_element_text(element: &XmlElement, out: &mut String) {
 pub fn document_root(value: &XmlValue) -> Result<&XmlElement, FormatError> {
     match value {
         XmlValue::Element(element) => Ok(element),
-        XmlValue::Fragment(values) => values
-            .iter()
-            .find_map(XmlValue::as_element)
-            .ok_or_else(|| FormatError::parse("docx", "xml fragment has no root element")),
+        XmlValue::Fragment(values) => {
+            values.iter().find_map(XmlValue::as_element).ok_or_else(|| FormatError::parse("docx", "xml fragment has no root element"))
+        }
         _ => Err(FormatError::parse("docx", "xml has no root element")),
     }
 }
@@ -262,10 +259,7 @@ mod tests {
     #[test]
     fn leaf_text_restores_escaped_characters_dropped_by_the_parser() {
         assert_eq!(parse_leaf_text("<w:t xmlns:w=\"urn:x\">A --&gt; B{Done?}</w:t>"), "A --> B{Done?}");
-        assert_eq!(
-            parse_leaf_text("<w:t xmlns:w=\"urn:x\">a &quot;quoted&quot; &amp; &lt;tag&gt;</w:t>"),
-            "a \"quoted\" & <tag>"
-        );
+        assert_eq!(parse_leaf_text("<w:t xmlns:w=\"urn:x\">a &quot;quoted&quot; &amp; &lt;tag&gt;</w:t>"), "a \"quoted\" & <tag>");
     }
 
     #[test]

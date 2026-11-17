@@ -13,11 +13,7 @@ fn luminance_matches_the_wcag_reference_values() {
 #[test]
 fn light_palette_keeps_text_and_edges_at_wcag_aa() {
     let tokens = DIAGRAM_THEME.light;
-    assert!(
-        contrast_ratio(tokens.edge_stroke, LIGHT_PAGE) >= 4.5,
-        "edge vs page: {}",
-        contrast_ratio(tokens.edge_stroke, LIGHT_PAGE)
-    );
+    assert!(contrast_ratio(tokens.edge_stroke, LIGHT_PAGE) >= 4.5, "edge vs page: {}", contrast_ratio(tokens.edge_stroke, LIGHT_PAGE));
     assert!(
         contrast_ratio(tokens.edge_label_text, tokens.edge_label_bg) >= 4.5,
         "label text vs backing: {}",
@@ -33,11 +29,7 @@ fn light_palette_keeps_text_and_edges_at_wcag_aa() {
 #[test]
 fn dark_palette_keeps_text_and_edges_at_wcag_aa() {
     let tokens = DIAGRAM_THEME.dark;
-    assert!(
-        contrast_ratio(tokens.edge_stroke, DARK_PAGE) >= 4.5,
-        "edge vs page: {}",
-        contrast_ratio(tokens.edge_stroke, DARK_PAGE)
-    );
+    assert!(contrast_ratio(tokens.edge_stroke, DARK_PAGE) >= 4.5, "edge vs page: {}", contrast_ratio(tokens.edge_stroke, DARK_PAGE));
     assert!(
         contrast_ratio(tokens.edge_label_text, tokens.edge_label_bg) >= 4.5,
         "label text vs backing: {}",

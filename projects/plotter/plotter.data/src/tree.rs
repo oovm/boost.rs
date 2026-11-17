@@ -96,8 +96,9 @@ impl TreeData {
             if node.id == self.root {
                 has_declared_root = true;
                 if node.parent.is_some() {
-                    return Err(Diagnostic::error(DiagnosticCode::ValidationFailed, "声明的根不能有 parent")
-                        .with_param("root", self.root.clone()));
+                    return Err(
+                        Diagnostic::error(DiagnosticCode::ValidationFailed, "声明的根不能有 parent").with_param("root", self.root.clone())
+                    );
                 }
             }
         }
@@ -115,8 +116,9 @@ impl TreeData {
             if let Some(parent) = &node.parent
                 && !seen.contains(parent)
             {
-                return Err(Diagnostic::error(DiagnosticCode::UnknownColumn, format!("父节点 `{}` 不存在", parent))
-                    .with_param("node", parent.clone()));
+                return Err(
+                    Diagnostic::error(DiagnosticCode::UnknownColumn, format!("父节点 `{}` 不存在", parent)).with_param("node", parent.clone())
+                );
             }
         }
         // 环检测：沿 parent 上行。
@@ -126,9 +128,7 @@ impl TreeData {
             guard.insert(node.id.as_str());
             while let Some(pid) = cursor {
                 if !guard.insert(pid) {
-                    return Err(
-                        Diagnostic::error(DiagnosticCode::ValidationFailed, "树存在环").with_param("node", node.id.clone())
-                    );
+                    return Err(Diagnostic::error(DiagnosticCode::ValidationFailed, "树存在环").with_param("node", node.id.clone()));
                 }
                 cursor = self.nodes.iter().find(|n| n.id == pid).and_then(|n| n.parent.as_deref());
             }

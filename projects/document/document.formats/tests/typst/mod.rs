@@ -134,11 +134,7 @@ fn without_spans(expression: &MathExpression) -> MathExpression {
         MathExpression::StyleSwitch { style } => MathExpression::StyleSwitch { style },
         MathExpression::LimitsPolicy { limits } => MathExpression::LimitsPolicy { limits },
         MathExpression::Environment(environment) => MathExpression::Environment(MathEnvironment {
-            rows: environment
-                .rows
-                .iter()
-                .map(|row| MathRow { cells: row.cells.iter().map(without_spans).collect(), ..row.clone() })
-                .collect(),
+            rows: environment.rows.iter().map(|row| MathRow { cells: row.cells.iter().map(without_spans).collect(), ..row.clone() }).collect(),
             span: None,
             ..environment
         }),
@@ -423,11 +419,7 @@ fn group_string_literal_parenthesis_does_not_close_the_group() {
 
     let (_, payload, span) = only_opaque(&graph);
     assert!(payload.contains("a ) b"));
-    assert_eq!(
-        &text[span.start as usize..span.end as usize],
-        group,
-        "the `)` inside the string literal must not end the group"
-    );
+    assert_eq!(&text[span.start as usize..span.end as usize], group, "the `)` inside the string literal must not end the group");
     assert_eq!(paragraph_text(&graph), vec!["after".to_string()]);
 }
 
@@ -508,9 +500,6 @@ fn cross_line_group_after_a_spaced_head_is_one_opaque_block() {
     let index = loss_index(&graph, "import.typst.dynamic_content");
     assert_eq!(graph.loss_span(index), Some(span), "the loss span covers the complete group");
 
-    assert!(
-        blocks(&graph).iter().any(|node| matches!(&node.block, Block::Section { .. })),
-        "the heading before the group survives"
-    );
+    assert!(blocks(&graph).iter().any(|node| matches!(&node.block, Block::Section { .. })), "the heading before the group survives");
     assert_eq!(paragraph_text(&graph), vec!["Body.".to_string()], "the group body never surfaces as body text");
 }

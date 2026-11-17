@@ -1,4 +1,4 @@
-use hardware_optimize::{attention_flops, AttentionMetrics, matmul_flops, MatmulMetrics};
+use hardware_optimize::{AttentionMetrics, MatmulMetrics, attention_flops, matmul_flops};
 
 #[test]
 fn matmul_flops_is_two_mnk() {

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use hardware_emitter::{try_program_from_task, ProgramLowerError};
+use hardware_emitter::{ProgramLowerError, try_program_from_task};
 use hardware_types::{Objective, Priority, ShaderId, TaskId, TaskKind, TaskNode};
 
 #[test]
@@ -15,10 +15,5 @@ fn ton_custom_op_fails_strict_lower() {
         priority: Priority::Batch,
     };
     let err = try_program_from_task(&task).unwrap_err();
-    assert_eq!(
-        err,
-        ProgramLowerError::UnsupportedCustomOp {
-            name: "ton_trace_geodesics".into(),
-        }
-    );
+    assert_eq!(err, ProgramLowerError::UnsupportedCustomOp { name: "ton_trace_geodesics".into() });
 }

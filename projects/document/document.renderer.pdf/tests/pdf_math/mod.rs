@@ -105,8 +105,7 @@ fn rectangle_fills(content: &str, min_width: f64) -> usize {
             if ops != ["m", "l", "l", "l", "h"] {
                 return false;
             }
-            let xs: Vec<f64> =
-                lines.iter().take(4).filter_map(|line| line.split_whitespace().next()?.parse::<f64>().ok()).collect();
+            let xs: Vec<f64> = lines.iter().take(4).filter_map(|line| line.split_whitespace().next()?.parse::<f64>().ok()).collect();
             xs.len() == 4 && (xs[0] - xs[2]).abs() >= min_width
         })
         .count()
@@ -115,8 +114,7 @@ fn rectangle_fills(content: &str, min_width: f64) -> usize {
 /// Lay out one formula, lower it to display primitives, and render a PDF page.
 fn render_formula(source: &str) -> (Vec<u8>, Vec<LayoutItem>, Vec<Diagnostic>) {
     install_host_math_fonts();
-    let (result, _, _) =
-        layout_formula_source(source, true, default_base_size(true)).unwrap_or_else(|e| panic!("layout {source}: {e}"));
+    let (result, _, _) = layout_formula_source(source, true, default_base_size(true)).unwrap_or_else(|e| panic!("layout {source}: {e}"));
     let mut diagnostics = Vec::new();
     let items = collect_paint(&result, 72.0, BASELINE, &mut diagnostics);
     let plan = LayoutPlan { pages: vec![LayoutPage { width: PAGE_WIDTH, height: PAGE_HEIGHT, items: items.clone() }] };
@@ -153,8 +151,7 @@ fn path_origins(content: &str) -> Vec<(f64, f64)> {
     let mut origins = Vec::new();
     for block in content.split("q\n").skip(1) {
         if let Some(line) = block.lines().find(|line| line.ends_with(" m")) {
-            let numbers: Vec<f64> =
-                line.trim_end_matches(" m").split_whitespace().map(|value| value.parse().expect("path operand")).collect();
+            let numbers: Vec<f64> = line.trim_end_matches(" m").split_whitespace().map(|value| value.parse().expect("path operand")).collect();
             origins.push((numbers[0], numbers[1]));
         }
     }
@@ -180,11 +177,7 @@ fn math_pages_paint_outlines_without_host_text() {
 
         let expected = path_primitives(&root);
         assert!(expected > 0, "{source}: the layout tree must paint something");
-        assert_eq!(
-            content.matches("\nf\n").count(),
-            expected,
-            "{source}: one fill per glyph outline and rule, expected {expected}: {content}"
-        );
+        assert_eq!(content.matches("\nf\n").count(), expected, "{source}: one fill per glyph outline and rule, expected {expected}: {content}");
         let rules = rule_primitives(&root);
         let painted = content.matches(" re\n").count() + rectangle_fills(&content, 2.0);
         assert_eq!(painted, rules, "{source}: every rule paints as a filled rectangle, expected {rules}: {content}");

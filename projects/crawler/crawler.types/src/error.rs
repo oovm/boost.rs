@@ -29,11 +29,9 @@ impl CrawlError {
     pub fn text_arg(&self, name: &str) -> Option<&str> {
         match self {
             Self::Diagnostic(d) => {
-                d.message().args().iter().find_map(|(key, value)| (key.as_str() == name).then_some(value)).and_then(|value| {
-                    match value {
-                        MessageArg::Text(text) => Some(text.as_str()),
-                        _ => None,
-                    }
+                d.message().args().iter().find_map(|(key, value)| (key.as_str() == name).then_some(value)).and_then(|value| match value {
+                    MessageArg::Text(text) => Some(text.as_str()),
+                    _ => None,
                 })
             }
         }

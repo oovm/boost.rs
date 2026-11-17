@@ -1,7 +1,6 @@
 //! Soft-skip CUDA vs ROCm MatMul throughput / MFU comparison.
 
-use std::collections::BTreeMap;
-use std::time::Instant;
+use std::{collections::BTreeMap, time::Instant};
 
 use hardware::prelude::*;
 use hardware_backend_cuda::CudaBackend;
@@ -40,58 +39,17 @@ fn f(key: &str, v: f64) -> (String, ParamValue) {
 
 fn matmul_graph() -> Graph {
     Graph {
-        resources: ResourceGraph {
-            nodes: vec![
-                buffer(1, 4),
-                buffer(2, 4),
-                buffer(3, 4),
-                buffer(4, 4),
-            ],
-        },
+        resources: ResourceGraph { nodes: vec![buffer(1, 4), buffer(2, 4), buffer(3, 4), buffer(4, 4)] },
         tasks: TaskGraph {
             nodes: vec![
-                task(
-                    10,
-                    TaskKind::Copy,
-                    BTreeMap::from([i("src", 1), i("dst", 2)]),
-                ),
-                task(
-                    11,
-                    TaskKind::Fill,
-                    BTreeMap::from([i("dst", 3), f("value", 1.0)]),
-                ),
-                task(
-                    12,
-                    TaskKind::MatMul,
-                    BTreeMap::from([
-                        i("a", 2),
-                        i("b", 3),
-                        i("out", 4),
-                        i("m", 2),
-                        i("n", 2),
-                        i("k", 2),
-                    ]),
-                ),
+                task(10, TaskKind::Copy, BTreeMap::from([i("src", 1), i("dst", 2)])),
+                task(11, TaskKind::Fill, BTreeMap::from([i("dst", 3), f("value", 1.0)])),
+                task(12, TaskKind::MatMul, BTreeMap::from([i("a", 2), i("b", 3), i("out", 4), i("m", 2), i("n", 2), i("k", 2)])),
             ],
             edges: vec![
-                DepEdge {
-                    from_task: None,
-                    from_resource: Some(ResourceId(1)),
-                    to_task: TaskId(10),
-                    kind: DepKind::Data,
-                },
-                DepEdge {
-                    from_task: Some(TaskId(10)),
-                    from_resource: None,
-                    to_task: TaskId(12),
-                    kind: DepKind::Execution,
-                },
-                DepEdge {
-                    from_task: Some(TaskId(11)),
-                    from_resource: None,
-                    to_task: TaskId(12),
-                    kind: DepKind::Execution,
-                },
+                DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data },
+                DepEdge { from_task: Some(TaskId(10)), from_resource: None, to_task: TaskId(12), kind: DepKind::Execution },
+                DepEdge { from_task: Some(TaskId(11)), from_resource: None, to_task: TaskId(12), kind: DepKind::Execution },
             ],
         },
     }
@@ -108,9 +66,7 @@ fn cuda_and_rocm_matmul_mfu_soft_skip() {
 
     match CudaBackend::new(0) {
         Ok(mut cuda) => {
-            if cuda.prepare(&graph).is_ok()
-                && cuda.write_f32(Rid(1), &[1.0, 2.0, 3.0, 4.0]).is_ok()
-            {
+            if cuda.prepare(&graph).is_ok() && cuda.write_f32(Rid(1), &[1.0, 2.0, 3.0, 4.0]).is_ok() {
                 let start = Instant::now();
                 if cuda.run_prepared(&graph).is_ok() {
                     let elapsed = start.elapsed();
@@ -119,15 +75,14 @@ fn cuda_and_rocm_matmul_mfu_soft_skip() {
                     let metrics = MatmulMetrics::new(2, 2, 2, elapsed.as_nanos());
                     assert!(metrics.flop_per_s() > 0.0);
                     let mfu = metrics.mfu(NOMINAL_PEAK_FLOP_PER_S).expect("mfu");
-                    eprintln!(
-                        "cuda matmul: {:.3e} FLOP/s MFU={mfu:.3e} (peak={NOMINAL_PEAK_FLOP_PER_S:.3e})",
-                        metrics.flop_per_s()
-                    );
+                    eprintln!("cuda matmul: {:.3e} FLOP/s MFU={mfu:.3e} (peak={NOMINAL_PEAK_FLOP_PER_S:.3e})", metrics.flop_per_s());
                     cuda_m = Some(metrics);
-                } else {
+                }
+                else {
                     eprintln!("skip cuda side (run failed)");
                 }
-            } else {
+            }
+            else {
                 eprintln!("skip cuda side (prepare/seed failed)");
             }
         }
@@ -136,9 +91,7 @@ fn cuda_and_rocm_matmul_mfu_soft_skip() {
 
     match RocmBackend::new(0) {
         Ok(mut rocm) => {
-            if rocm.prepare(&graph).is_ok()
-                && rocm.write_f32(Rid(1), &[1.0, 2.0, 3.0, 4.0]).is_ok()
-            {
+            if rocm.prepare(&graph).is_ok() && rocm.write_f32(Rid(1), &[1.0, 2.0, 3.0, 4.0]).is_ok() {
                 let start = Instant::now();
                 if rocm.run_prepared(&graph).is_ok() {
                     let elapsed = start.elapsed();
@@ -147,15 +100,14 @@ fn cuda_and_rocm_matmul_mfu_soft_skip() {
                     let metrics = MatmulMetrics::new(2, 2, 2, elapsed.as_nanos());
                     assert!(metrics.flop_per_s() > 0.0);
                     let mfu = metrics.mfu(NOMINAL_PEAK_FLOP_PER_S).expect("mfu");
-                    eprintln!(
-                        "rocm matmul: {:.3e} FLOP/s MFU={mfu:.3e} (peak={NOMINAL_PEAK_FLOP_PER_S:.3e})",
-                        metrics.flop_per_s()
-                    );
+                    eprintln!("rocm matmul: {:.3e} FLOP/s MFU={mfu:.3e} (peak={NOMINAL_PEAK_FLOP_PER_S:.3e})", metrics.flop_per_s());
                     rocm_m = Some(metrics);
-                } else {
+                }
+                else {
                     eprintln!("skip rocm side (run failed)");
                 }
-            } else {
+            }
+            else {
                 eprintln!("skip rocm side (prepare/seed failed)");
             }
         }

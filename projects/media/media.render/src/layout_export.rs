@@ -16,9 +16,7 @@
 //! inject font bytes and an [`media_layout::ImageStore`] (the codec-backed
 //! [`MediaImages`] is provided for path-style artwork).
 
-use std::collections::HashMap;
-use std::path::Path;
-use std::rc::Rc;
+use std::{collections::HashMap, path::Path, rc::Rc};
 
 use media_codec::{DecodeLimits, MediaLibrary};
 use media_image::{Bitmap, Frame};
@@ -70,8 +68,7 @@ impl<'a> MediaImages<'a> {
 impl ImageStore for MediaImages<'_> {
     fn resolve(&mut self, key: &str) -> Result<&Bitmap, Error> {
         if !self.cache.contains_key(key) {
-            let bitmap =
-                self.library.image(key, self.limits).map_err(|e| Error::io(format!("image {key}: {e}")))?;
+            let bitmap = self.library.image(key, self.limits).map_err(|e| Error::io(format!("image {key}: {e}")))?;
             self.cache.insert(key.to_string(), bitmap);
         }
         Ok(&self.cache[key])
@@ -179,11 +176,7 @@ mod tests {
     /// absorbed render path is byte-for-byte, not "some installed font".
     fn system_font_bytes() -> Option<(Vec<u8>, Vec<u8>, Vec<u8>)> {
         let read = |path: &str| std::fs::read(path).ok();
-        Some((
-            read("C:\\Windows\\Fonts\\msyh.ttc")?,
-            read("C:\\Windows\\Fonts\\msyhbd.ttc")?,
-            read("C:\\Windows\\Fonts\\consola.ttf")?,
-        ))
+        Some((read("C:\\Windows\\Fonts\\msyh.ttc")?, read("C:\\Windows\\Fonts\\msyhbd.ttc")?, read("C:\\Windows\\Fonts\\consola.ttf")?))
     }
 
     fn fnv1a64(bytes: &[u8]) -> u64 {
@@ -242,15 +235,11 @@ mod tests {
     #[test]
     fn malformed_input_rejects_before_any_font_is_parsed() {
         // Garbage font bytes prove the order: the colour error must surface.
-        let spec: ComicSpec =
-            serde_json::from_str(r##"{"width":10,"height":10,"background":"#zzz"}"##).expect("parses");
+        let spec: ComicSpec = serde_json::from_str(r##"{"width":10,"height":10,"background":"#zzz"}"##).expect("parses");
         let garbage = [0u8; 8];
         let mut store = media_codec::MediaLibrary::new();
         let mut images = MediaImages::new(&mut store);
-        let mut assets = LayoutAssets {
-            fonts: FontAssets { regular: &garbage, bold: &garbage, mono: &garbage },
-            images: &mut images,
-        };
+        let mut assets = LayoutAssets { fonts: FontAssets { regular: &garbage, bold: &garbage, mono: &garbage }, images: &mut images };
         let error = write_page(&spec, 0, &mut assets, Path::new("unused.png")).expect_err("bad colour rejects");
         assert_eq!(error.code(), "invalid_input");
     }
@@ -261,10 +250,7 @@ mod tests {
         let garbage = [0u8; 8];
         let mut store = media_codec::MediaLibrary::new();
         let mut images = MediaImages::new(&mut store);
-        let mut assets = LayoutAssets {
-            fonts: FontAssets { regular: &garbage, bold: &garbage, mono: &garbage },
-            images: &mut images,
-        };
+        let mut assets = LayoutAssets { fonts: FontAssets { regular: &garbage, bold: &garbage, mono: &garbage }, images: &mut images };
         let error = write_page(&spec, 0, &mut assets, Path::new("unused.png")).expect_err("bad font rejects");
         assert_eq!(error.code(), "io");
         assert!(error.message.contains("regular font"), "{}", error.message);
@@ -277,20 +263,15 @@ mod tests {
             r#"{"width":10,"height":10,"pages":[{"panels":[{"rect":[0.0,0.0,10.0,10.0],"image":"E:/no-such-opencomic-panel.png","fit":"cover"}]}]}"#,
         )
         .expect("parses");
-        let Some(fonts_bytes) = system_font_bytes() else {
+        let Some(fonts_bytes) = system_font_bytes()
+        else {
             eprintln!("SKIP: pinned system fonts absent");
             return;
         };
         let mut store = media_codec::MediaLibrary::new();
         let mut images = MediaImages::new(&mut store);
-        let mut assets = LayoutAssets {
-            fonts: FontAssets {
-                regular: &fonts_bytes.0,
-                bold: &fonts_bytes.1,
-                mono: &fonts_bytes.2,
-            },
-            images: &mut images,
-        };
+        let mut assets =
+            LayoutAssets { fonts: FontAssets { regular: &fonts_bytes.0, bold: &fonts_bytes.1, mono: &fonts_bytes.2 }, images: &mut images };
         let error = write_page(&spec, 0, &mut assets, Path::new("unused.png")).expect_err("broken path rejects");
         assert_eq!(error.code(), "io");
         assert!(error.message.contains("image E:/no-such-opencomic-panel.png"), "{}", error.message);
@@ -303,7 +284,8 @@ mod tests {
         // over the RGBA8 buffer, same pinned font files). The old pipeline
         // painted directly through `media.raster`; the new one lowers the
         // `media.layout` plan — the pictures must not drift.
-        let Some(fonts_bytes) = system_font_bytes() else {
+        let Some(fonts_bytes) = system_font_bytes()
+        else {
             eprintln!("SKIP: pinned system fonts absent");
             return;
         };
@@ -315,7 +297,8 @@ mod tests {
 
     #[test]
     fn the_overview_pixels_byte_match_the_absorbed_source() {
-        let Some(fonts_bytes) = system_font_bytes() else {
+        let Some(fonts_bytes) = system_font_bytes()
+        else {
             eprintln!("SKIP: pinned system fonts absent");
             return;
         };
@@ -331,7 +314,8 @@ mod tests {
 
     #[test]
     fn the_pipeline_is_self_deterministic() {
-        let Some(fonts_bytes) = system_font_bytes() else {
+        let Some(fonts_bytes) = system_font_bytes()
+        else {
             eprintln!("SKIP: pinned system fonts absent");
             return;
         };
@@ -344,17 +328,16 @@ mod tests {
 
     #[test]
     fn write_page_produces_both_artifacts_and_creates_directories() {
-        let Some(fonts_bytes) = system_font_bytes() else {
+        let Some(fonts_bytes) = system_font_bytes()
+        else {
             eprintln!("SKIP: pinned system fonts absent");
             return;
         };
         let dir = std::env::temp_dir().join(format!("media-layout-export-{}", std::process::id()));
         let mut store = media_codec::MediaLibrary::new();
         let mut images = MediaImages::new(&mut store);
-        let mut assets = LayoutAssets {
-            fonts: FontAssets { regular: &fonts_bytes.0, bold: &fonts_bytes.1, mono: &fonts_bytes.2 },
-            images: &mut images,
-        };
+        let mut assets =
+            LayoutAssets { fonts: FontAssets { regular: &fonts_bytes.0, bold: &fonts_bytes.1, mono: &fonts_bytes.2 }, images: &mut images };
         let page = write_page(&source_test_doc(), 2, &mut assets, &dir.join("nested/page.png")).expect("page");
         assert_eq!((page.width, page.height), (400, 300));
         assert!(page.bytes > 0);

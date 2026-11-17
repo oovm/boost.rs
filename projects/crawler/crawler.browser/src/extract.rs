@@ -1,7 +1,7 @@
 use crawler_extract::{Extractor, run_extract};
 use crawler_types::{
-    BrowserSnapshot, ChallengeOutcome, ChallengePolicy, ExtractBudget, ExtractContext, ExtractResult, ExtractStatus,
-    PageChallengeState, apply_challenge_policy,
+    BrowserSnapshot, ChallengeOutcome, ChallengePolicy, ExtractBudget, ExtractContext, ExtractResult, ExtractStatus, PageChallengeState,
+    apply_challenge_policy,
     document_ir::{LossMarker, SemanticStatus},
 };
 
@@ -68,11 +68,7 @@ fn boundary_losses(snapshot: &BrowserSnapshot) -> Vec<LossMarker> {
         else {
             format!("closed shadow root on `{}` is unsupported and cannot be read", root.host)
         };
-        losses.push(LossMarker {
-            code: "crawler.browser.shadow_root_boundary".into(),
-            message,
-            status: SemanticStatus::Partial,
-        });
+        losses.push(LossMarker { code: "crawler.browser.shadow_root_boundary".into(), message, status: SemanticStatus::Partial });
     }
     for download in &snapshot.boundary.downloads {
         losses.push(LossMarker {

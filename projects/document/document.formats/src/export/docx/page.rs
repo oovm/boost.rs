@@ -133,9 +133,7 @@ pub fn styles_xml(setup: &DocxPageSetup, custom_style_ids: &[String]) -> String 
     let _ = write!(xml, "{half_points}\"/><w:szCs w:val=\"{half_points}\"/></w:rPr></w:rPrDefault>");
     let _ = write!(xml, "\n    <w:pPrDefault><w:pPr><w:spacing w:line=\"{line}\" w:lineRule=\"auto\"/></w:pPr></w:pPrDefault>");
     xml.push_str("\n  </w:docDefaults>");
-    xml.push_str(
-        "\n  <w:style w:type=\"paragraph\" w:styleId=\"Normal\" w:default=\"1\"><w:name w:val=\"Normal\"/><w:qFormat/></w:style>",
-    );
+    xml.push_str("\n  <w:style w:type=\"paragraph\" w:styleId=\"Normal\" w:default=\"1\"><w:name w:val=\"Normal\"/><w:qFormat/></w:style>");
     for level in 1..=6_u8 {
         let scale = heading_scale(level);
         let heading_half_points = (setup.base_font_size * scale * 2.0).round() as i64;

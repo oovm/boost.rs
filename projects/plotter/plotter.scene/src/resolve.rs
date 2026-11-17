@@ -98,21 +98,11 @@ fn resolve_kind(kind: &SemanticKind) -> NodeKind {
         SemanticKind::Path { path, style } => NodeKind::Path { path: path.clone(), style: style.clone() },
         SemanticKind::Line { from, to, style } => NodeKind::Line { from: *from, to: *to, style: style.clone() },
         SemanticKind::Rect { rect, style } => NodeKind::Rect { rect: *rect, style: style.clone() },
-        SemanticKind::RoundedRect { rect, radius, style } => {
-            NodeKind::RoundedRect { rect: *rect, radius: *radius, style: style.clone() }
-        }
-        SemanticKind::Ellipse { center, radii, style } => {
-            NodeKind::Ellipse { center: *center, radii: *radii, style: style.clone() }
-        }
-        SemanticKind::Text { position, text, style } => {
-            NodeKind::Text { position: *position, text: text.clone(), style: style.clone() }
-        }
-        SemanticKind::Image { rect, resource, opacity } => {
-            NodeKind::Image { rect: *rect, resource: resource.clone(), opacity: *opacity }
-        }
-        SemanticKind::Marker { at, shape, size, style } => {
-            NodeKind::Marker { at: *at, shape: *shape, size: *size, style: style.clone() }
-        }
+        SemanticKind::RoundedRect { rect, radius, style } => NodeKind::RoundedRect { rect: *rect, radius: *radius, style: style.clone() },
+        SemanticKind::Ellipse { center, radii, style } => NodeKind::Ellipse { center: *center, radii: *radii, style: style.clone() },
+        SemanticKind::Text { position, text, style } => NodeKind::Text { position: *position, text: text.clone(), style: style.clone() },
+        SemanticKind::Image { rect, resource, opacity } => NodeKind::Image { rect: *rect, resource: resource.clone(), opacity: *opacity },
+        SemanticKind::Marker { at, shape, size, style } => NodeKind::Marker { at: *at, shape: *shape, size: *size, style: style.clone() },
     }
 }
 
@@ -144,8 +134,7 @@ fn inverse_rect(rect: Rect, transform: Transform) -> Option<Rect> {
     let d = transform.a();
     let e = transform.c() * transform.f() - transform.d() * transform.e();
     let f = transform.b() * transform.e() - transform.a() * transform.f();
-    let inverse =
-        Transform::new(a / determinant, b / determinant, c / determinant, d / determinant, e / determinant, f / determinant);
+    let inverse = Transform::new(a / determinant, b / determinant, c / determinant, d / determinant, e / determinant, f / determinant);
     Some(rect_hull(rect, inverse))
 }
 

@@ -3,8 +3,8 @@
 #![deny(missing_docs)]
 
 use crawler_types::{
-    ExtractBudget, ExtractContext, ExtractInput, ExtractResult, ExtractStatus, FetchArtifact, LinkCandidate, LinkRelation,
-    ProbeResult, ProbeStatus,
+    ExtractBudget, ExtractContext, ExtractInput, ExtractResult, ExtractStatus, FetchArtifact, LinkCandidate, LinkRelation, ProbeResult,
+    ProbeStatus,
 };
 use document_formats::import::html::{HtmlImport, HtmlLink, HtmlLinkRole, import_html_bytes_with_links};
 
@@ -39,12 +39,7 @@ pub fn select_extractor<'a>(
 }
 
 /// Run offline extraction against a fetch artifact.
-pub fn run_extract(
-    artifact: &FetchArtifact,
-    extractors: &[&dyn Extractor],
-    budget: ExtractBudget,
-    ctx: &ExtractContext,
-) -> ExtractResult {
+pub fn run_extract(artifact: &FetchArtifact, extractors: &[&dyn Extractor], budget: ExtractBudget, ctx: &ExtractContext) -> ExtractResult {
     let input = ExtractInput { artifact, budget };
     if let Some((extractor, _)) = select_extractor(extractors, artifact, budget) {
         return extractor.extract(input, ctx);
@@ -72,11 +67,7 @@ pub(crate) fn import_html_page(page_url: &url::Url, bytes: &[u8]) -> Result<Html
 ///
 /// Format semantics stay in Notedown. This only applies crawl policy: base URI
 /// resolution, non-crawlable target rejection, and relation classification.
-pub(crate) fn link_candidates_from_import(
-    page_url: &url::Url,
-    base_href: Option<&str>,
-    links: &[HtmlLink],
-) -> Vec<LinkCandidate> {
+pub(crate) fn link_candidates_from_import(page_url: &url::Url, base_href: Option<&str>, links: &[HtmlLink]) -> Vec<LinkCandidate> {
     let base = resolve_base_url(page_url, base_href);
     links
         .iter()

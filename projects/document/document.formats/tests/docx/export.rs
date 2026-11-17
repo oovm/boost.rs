@@ -3,8 +3,8 @@ use document_formats::{
     import::{docx::import_docx_bytes, markdown::import_markdown_bytes},
 };
 use document_ir::{
-    Asset, AssetId, AssetKind, AttributePair, Attributes, Block, DocumentGraph, DocumentId, Inline, ListItem, NodeId,
-    RelationEndpoint, SemanticStatus, TableCell, TableRow,
+    Asset, AssetId, AssetKind, AttributePair, Attributes, Block, DocumentGraph, DocumentId, Inline, ListItem, NodeId, RelationEndpoint,
+    SemanticStatus, TableCell, TableRow,
 };
 
 fn png_header(width: u32, height: u32) -> Vec<u8> {
@@ -155,11 +155,7 @@ fn docx_export_of_a_known_style_writes_no_style_id() {
 #[test]
 fn docx_export_keeps_an_opaque_kind_and_payload_text_and_reads_them_back() {
     let mut graph = DocumentGraph::new(DocumentId(74));
-    graph.push_block(Block::Opaque {
-        kind: "zz-kind".into(),
-        payload_hint: "ZZ_OPAQUEHINT_ZZ".into(),
-        status: SemanticStatus::Resolved,
-    });
+    graph.push_block(Block::Opaque { kind: "zz-kind".into(), payload_hint: "ZZ_OPAQUEHINT_ZZ".into(), status: SemanticStatus::Resolved });
 
     let exported = export_docx_bytes(&graph).expect("export opaque block");
     let xml = String::from_utf8_lossy(&exported);
@@ -247,10 +243,7 @@ fn docx_export_round_trips_underline_and_strike_styles() {
             Inline::Styled { style: "underline".into(), children: vec![Inline::Text { text: "under".into() }] },
             Inline::Styled {
                 style: "strike".into(),
-                children: vec![Inline::Styled {
-                    style: "bold".into(),
-                    children: vec![Inline::Text { text: " crossed".into() }],
-                }],
+                children: vec![Inline::Styled { style: "bold".into(), children: vec![Inline::Text { text: " crossed".into() }] }],
             },
         ],
     });
@@ -330,10 +323,7 @@ fn docx_export_round_trips_valued_character_styles() {
         style: "font-size:28".into(),
         children: vec![Inline::Styled {
             style: "font-family:Aptos".into(),
-            children: vec![Inline::Styled {
-                style: "highlight:yellow".into(),
-                children: vec![Inline::Text { text: "styled".into() }],
-            }],
+            children: vec![Inline::Styled { style: "highlight:yellow".into(), children: vec![Inline::Text { text: "styled".into() }] }],
         }],
     };
     graph.push_block(Block::Paragraph { content: vec![styled] });
@@ -361,11 +351,7 @@ fn docx_inline_image_order_survives_ir_edit_and_regeneration() {
     );
     let rels = br#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/logo.png"/></Relationships>"#;
     let png = png_header(1, 1);
-    let zip = stored_zip(&[
-        ("word/document.xml", document.as_bytes()),
-        ("word/_rels/document.xml.rels", rels),
-        ("word/media/logo.png", &png),
-    ]);
+    let zip = stored_zip(&[("word/document.xml", document.as_bytes()), ("word/_rels/document.xml.rels", rels), ("word/media/logo.png", &png)]);
     let mut graph = import_docx_bytes("ordered.docx", &zip).expect("import inline order");
     let before = export_markdown(&graph).expect("render inline order");
     assert!(before.contains("**Before**![Logo](media/logo.png)**After**Inserted![Logo](media/logo.png)Tail"), "{before}");
@@ -421,9 +407,7 @@ fn docx_export_round_trips_lists_with_numbering() {
     let payload = String::from_utf8_lossy(&exported);
     assert!(payload.contains("word/numbering.xml"));
     assert!(
-        payload.contains(
-            "Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering\" Target=\"numbering.xml\"/>"
-        ),
+        payload.contains("Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering\" Target=\"numbering.xml\"/>"),
         "the document part must point at the numbering part: {payload}"
     );
     assert!(payload.contains("w:ilvl=\"1\"><w:numFmt"));
@@ -535,10 +519,7 @@ fn docx_export_writes_grid_span_and_vertical_merge() {
     let exported_xml = String::from_utf8_lossy(&exported);
     // The grid follows the spans, not the raw cell count: the first row has a
     // single cell that still occupies two columns.
-    assert!(
-        exported_xml.contains("<w:tblGrid><w:gridCol w:w=\"4513\"/><w:gridCol w:w=\"4513\"/></w:tblGrid>"),
-        "{exported_xml}"
-    );
+    assert!(exported_xml.contains("<w:tblGrid><w:gridCol w:w=\"4513\"/><w:gridCol w:w=\"4513\"/></w:tblGrid>"), "{exported_xml}");
     assert!(
         exported_xml.contains("<w:tcW w:w=\"9026\" w:type=\"dxa\"/><w:gridSpan w:val=\"2\"/></w:tcPr>"),
         "a `colspan` cell must span both grid columns: {exported_xml}"
@@ -579,9 +560,8 @@ fn docx_export_writes_grid_span_and_vertical_merge() {
 
 #[test]
 fn docx_export_assigns_ids_to_named_footnotes() {
-    let graph =
-        import_markdown_bytes("named-footnote.md", "See[^note] and[^1].\n\n[^note]: Named body.\n\n[^1]: Numeric body.\n")
-            .expect("import markdown");
+    let graph = import_markdown_bytes("named-footnote.md", "See[^note] and[^1].\n\n[^note]: Named body.\n\n[^1]: Numeric body.\n")
+        .expect("import markdown");
     let exported = export_docx_bytes(&graph).expect("a named footnote must not fail the export");
     let payload = String::from_utf8_lossy(&exported);
     // `w:footnoteReference` only takes integers, so `[^1]` keeps id 1 and the
@@ -592,10 +572,7 @@ fn docx_export_assigns_ids_to_named_footnotes() {
         payload.contains(r#"<w:footnote w:id="1"><w:p><w:r><w:t>Numeric body.</w:t>"#),
         "the numeric body stays attached to id 1: {payload}"
     );
-    assert!(
-        payload.contains(r#"<w:footnote w:id="2"><w:p><w:r><w:t>Named body.</w:t>"#),
-        "the named body stays attached to id 2: {payload}"
-    );
+    assert!(payload.contains(r#"<w:footnote w:id="2"><w:p><w:r><w:t>Named body.</w:t>"#), "the named body stays attached to id 2: {payload}");
     let round = import_docx_bytes("named-footnote-round.docx", &exported).expect("reopen docx");
     let labels: Vec<String> = round
         .blocks
@@ -612,11 +589,8 @@ fn docx_export_assigns_ids_to_named_footnotes() {
         })
         .collect();
     assert_eq!(labels, vec!["2".to_string(), "1".to_string()], "{:?}", round.blocks);
-    let definitions = round
-        .blocks
-        .iter()
-        .filter(|node| matches!(&node.block, Block::Opaque { kind, .. } if kind == "footnote_definition"))
-        .count();
+    let definitions =
+        round.blocks.iter().filter(|node| matches!(&node.block, Block::Opaque { kind, .. } if kind == "footnote_definition")).count();
     assert_eq!(definitions, 2, "{:?}", round.blocks);
 }
 
@@ -700,11 +674,8 @@ fn docx_export_round_trips_footnotes() {
     Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
     Target="footnotes.xml"/>
 </Relationships>"#;
-    let zip = stored_zip(&[
-        ("word/document.xml", document_xml),
-        ("word/_rels/document.xml.rels", rels_xml),
-        ("word/footnotes.xml", footnotes_xml),
-    ]);
+    let zip =
+        stored_zip(&[("word/document.xml", document_xml), ("word/_rels/document.xml.rels", rels_xml), ("word/footnotes.xml", footnotes_xml)]);
     let graph = import_docx_bytes("footnotes.docx", &zip).expect("import docx");
     let exported = export_docx_bytes(&graph).expect("export docx");
     let payload = String::from_utf8_lossy(&exported);
@@ -799,11 +770,7 @@ fn docx_reader_recovers_citation_keys_and_titles_it_writes() {
     }
 
     assert_eq!(citation.as_ref().map(|entry| entry.0.as_str()), Some("smith2024"), "{dumped}");
-    assert_eq!(
-        citation.as_ref().and_then(|entry| entry.1.as_ref()),
-        Some(&vec![Inline::Text { text: "(Smith 2024)".into() }]),
-        "{dumped}"
-    );
+    assert_eq!(citation.as_ref().and_then(|entry| entry.1.as_ref()), Some(&vec![Inline::Text { text: "(Smith 2024)".into() }]), "{dumped}");
     assert_eq!(link, Some(Some("Example tooltip".into())), "{dumped}");
     assert_eq!(image, Some(Some("Logo title".into())), "{dumped}");
 }
@@ -855,9 +822,7 @@ fn docx_export_round_trips_embedded_images() {
 
 #[test]
 fn docx_images_use_consistent_emu_extents_without_upscaling() {
-    for (width, height, extent) in
-        [(640, 480, (4_000_000, 3_000_000)), (100, 50, (952_500, 476_250)), (50, 100, (476_250, 952_500))]
-    {
+    for (width, height, extent) in [(640, 480, (4_000_000, 3_000_000)), (100, 50, (952_500, 476_250)), (50, 100, (476_250, 952_500))] {
         let graph = graph_with_image(png_header(width, height), "media/size.png");
         let exported = export_docx_bytes(&graph).expect("export sized PNG");
         let xml = String::from_utf8_lossy(&exported);
@@ -934,11 +899,7 @@ fn docx_emits_section_and_list_children_in_semantic_order() {
             ..Default::default()
         }],
     });
-    graph.push_block(Block::Section {
-        level: 1,
-        title: vec![Inline::Text { text: "section heading".into() }],
-        children: vec![list],
-    });
+    graph.push_block(Block::Section { level: 1, title: vec![Inline::Text { text: "section heading".into() }], children: vec![list] });
     let exported = export_docx_bytes(&graph).expect("export section children");
     let xml = String::from_utf8_lossy(&exported);
     assert!(xml.contains("word/numbering.xml"));
@@ -997,10 +958,7 @@ fn docx_export_lowers_math_to_omml_and_reads_it_back() {
     });
     let exported = export_docx_bytes(&graph).expect("export math");
     let xml = String::from_utf8_lossy(&exported);
-    assert!(
-        xml.contains("xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\""),
-        "the math namespace is declared"
-    );
+    assert!(xml.contains("xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\""), "the math namespace is declared");
     assert!(xml.contains("<m:oMathPara><m:oMath><m:f>"), "display math becomes an OMML fraction");
     assert!(xml.contains("<m:sSup>"), "inline math keeps its superscript");
     let reopened = import_docx_bytes("math-round.docx", &exported).expect("reopen math");
@@ -1127,10 +1085,7 @@ fn docx_export_stacks_single_cell_environments_as_equation_array() {
     });
     let exported = export_docx_bytes(&graph).expect("export gather");
     let xml = String::from_utf8_lossy(&exported);
-    assert!(
-        xml.contains("<m:eqArr><m:e><m:r><m:t>a</m:t></m:r></m:e><m:e>"),
-        "a row-per-equation environment is `m:eqArr`: {xml}"
-    );
+    assert!(xml.contains("<m:eqArr><m:e><m:r><m:t>a</m:t></m:r></m:e><m:e>"), "a row-per-equation environment is `m:eqArr`: {xml}");
     assert!(!xml.contains("<m:m>"), "a gather must not become a cell matrix: {xml}");
     let reopened = import_docx_bytes("gather-round.docx", &exported).expect("reopen gather");
     let source = reopened.blocks.iter().find_map(|node| match &node.block {
@@ -1163,11 +1118,7 @@ fn docx_export_declares_diagram_and_chart_languages_in_styles() {
 }
 
 fn math_atom(text: &str) -> document_ir::MathExpression {
-    document_ir::MathExpression::Atom(document_ir::MathAtom {
-        text: text.into(),
-        class: document_ir::MathClass::Identifier,
-        span: None,
-    })
+    document_ir::MathExpression::Atom(document_ir::MathAtom { text: text.into(), class: document_ir::MathClass::Identifier, span: None })
 }
 
 #[test]
@@ -1180,10 +1131,7 @@ fn docx_export_maps_semantic_math_faces_to_run_properties() {
             display: document_ir::MathDisplay::Display,
             expression: document_ir::MathExpression::Sequence(vec![
                 document_ir::MathExpression::Styled { style: document_ir::MathStyle::Bold, body: Box::new(math_atom("x")) },
-                document_ir::MathExpression::Styled {
-                    style: document_ir::MathStyle::DoubleStruck,
-                    body: Box::new(math_atom("R")),
-                },
+                document_ir::MathExpression::Styled { style: document_ir::MathStyle::DoubleStruck, body: Box::new(math_atom("R")) },
                 document_ir::MathExpression::Text { text: "kg".into(), span: None },
             ]),
         },
@@ -1214,16 +1162,8 @@ fn docx_export_covers_math_expression_variants_with_omml() {
                     span: None,
                 },
                 document_ir::MathExpression::Delimited {
-                    open: Some(document_ir::MathDelimiter {
-                        kind: document_ir::MathDelimiterKind::Bracket,
-                        character: Some('['),
-                        span: None,
-                    }),
-                    close: Some(document_ir::MathDelimiter {
-                        kind: document_ir::MathDelimiterKind::Bracket,
-                        character: Some(']'),
-                        span: None,
-                    }),
+                    open: Some(document_ir::MathDelimiter { kind: document_ir::MathDelimiterKind::Bracket, character: Some('['), span: None }),
+                    close: Some(document_ir::MathDelimiter { kind: document_ir::MathDelimiterKind::Bracket, character: Some(']'), span: None }),
                     body: Box::new(math_atom("a")),
                     middles: vec![math_atom("b")],
                 },
@@ -1245,10 +1185,7 @@ fn docx_export_covers_math_expression_variants_with_omml() {
     });
     let exported = export_docx_bytes(&graph).expect("export math variants");
     let xml = String::from_utf8_lossy(&exported);
-    assert!(
-        xml.contains("<m:rad><m:radPr><m:degHide m:val=\"1\"/></m:radPr><m:deg/>"),
-        "a root without an index hides the degree: {xml}"
-    );
+    assert!(xml.contains("<m:rad><m:radPr><m:degHide m:val=\"1\"/></m:radPr><m:deg/>"), "a root without an index hides the degree: {xml}");
     assert!(xml.contains("<m:rad><m:deg><m:r><m:t>3</m:t></m:r></m:deg>"), "a cube root keeps its index: {xml}");
     assert!(
         xml.contains("<m:d><m:dPr><m:begChr m:val=\"[\"/><m:endChr m:val=\"]\"/></m:dPr><m:e>"),
@@ -1269,11 +1206,7 @@ fn docx_export_keeps_unsupported_math_fragments_as_visible_text() {
             source: "\\foo{bar}".into(),
             language: Some("latex".into()),
             display: document_ir::MathDisplay::Display,
-            expression: document_ir::MathExpression::Unsupported {
-                kind: "unknown-command".into(),
-                source: "\\foo{bar}".into(),
-                span: None,
-            },
+            expression: document_ir::MathExpression::Unsupported { kind: "unknown-command".into(), source: "\\foo{bar}".into(), span: None },
         },
     });
     let exported = export_docx_bytes(&graph).expect("export unsupported math");
@@ -1379,35 +1312,15 @@ fn docx_export_keeps_caption_and_number_in_every_position() {
     let nested = graph.push_block(Block::List {
         ordered: true,
         items: vec![
-            ListItem {
-                content: vec![Inline::Text { text: "three".into() }],
-                children: Vec::new(),
-                number: Some(3),
-                ..Default::default()
-            },
-            ListItem {
-                content: vec![Inline::Text { text: "four".into() }],
-                children: Vec::new(),
-                number: Some(4),
-                ..Default::default()
-            },
+            ListItem { content: vec![Inline::Text { text: "three".into() }], children: Vec::new(), number: Some(3), ..Default::default() },
+            ListItem { content: vec![Inline::Text { text: "four".into() }], children: Vec::new(), number: Some(4), ..Default::default() },
         ],
     });
     graph.push_block(Block::List {
         ordered: true,
         items: vec![
-            ListItem {
-                content: vec![Inline::Text { text: "five".into() }],
-                children: vec![nested],
-                number: Some(5),
-                ..Default::default()
-            },
-            ListItem {
-                content: vec![Inline::Text { text: "seven".into() }],
-                children: Vec::new(),
-                number: Some(7),
-                ..Default::default()
-            },
+            ListItem { content: vec![Inline::Text { text: "five".into() }], children: vec![nested], number: Some(5), ..Default::default() },
+            ListItem { content: vec![Inline::Text { text: "seven".into() }], children: Vec::new(), number: Some(7), ..Default::default() },
         ],
     });
     let last_cell = graph.push_block(Block::Paragraph { content: vec![Inline::Text { text: "last".into() }] });
@@ -1462,18 +1375,8 @@ fn docx_export_keeps_table_caption_list_start_and_reference_target() {
     graph.push_block(Block::List {
         ordered: true,
         items: vec![
-            ListItem {
-                content: vec![Inline::Text { text: "five".into() }],
-                children: Vec::new(),
-                number: Some(5),
-                ..Default::default()
-            },
-            ListItem {
-                content: vec![Inline::Text { text: "six".into() }],
-                children: Vec::new(),
-                number: Some(6),
-                ..Default::default()
-            },
+            ListItem { content: vec![Inline::Text { text: "five".into() }], children: Vec::new(), number: Some(5), ..Default::default() },
+            ListItem { content: vec![Inline::Text { text: "six".into() }], children: Vec::new(), number: Some(6), ..Default::default() },
         ],
     });
     graph.push_block(Block::Paragraph { content: vec![Inline::Reference { display: "go".into(), target }] });
@@ -1493,11 +1396,7 @@ fn docx_export_indents_plain_paragraph_children_of_list_items() {
     let child = graph.push_block(Block::Paragraph { content: vec![Inline::Text { text: "Child block.".into() }] });
     graph.push_block(Block::List {
         ordered: false,
-        items: vec![ListItem {
-            content: vec![Inline::Text { text: "Parent item".into() }],
-            children: vec![child],
-            ..Default::default()
-        }],
+        items: vec![ListItem { content: vec![Inline::Text { text: "Parent item".into() }], children: vec![child], ..Default::default() }],
     });
 
     let exported = export_docx_bytes(&graph).expect("export list child DOCX");

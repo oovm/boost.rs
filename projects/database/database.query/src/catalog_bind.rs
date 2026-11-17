@@ -750,9 +750,8 @@ fn rewrite_mysql_duplicate_key(source: &str, catalog: &SqlCatalog) -> Result<Opt
     };
     let head = &source[..index];
     let tail = &source[index + CLAUSE.len()..];
-    let table_name = insert_target_table(head).ok_or_else(|| {
-        SqlFrontendError::new(SqlErrorKind::Syntax, "ON DUPLICATE KEY UPDATE requires an INSERT statement".to_string())
-    })?;
+    let table_name = insert_target_table(head)
+        .ok_or_else(|| SqlFrontendError::new(SqlErrorKind::Syntax, "ON DUPLICATE KEY UPDATE requires an INSERT statement".to_string()))?;
     let table = find_table(catalog, table_name)?;
     let catalog_table = catalog
         .tables
@@ -797,9 +796,7 @@ fn find_keyword_outside_literals(source: &str, keyword: &str) -> Option<usize> {
                     index += 1;
                     continue;
                 }
-                if index + needle.len() <= bytes.len()
-                    && bytes[index..index + needle.len()].eq_ignore_ascii_case(needle)
-                {
+                if index + needle.len() <= bytes.len() && bytes[index..index + needle.len()].eq_ignore_ascii_case(needle) {
                     return Some(index);
                 }
                 index += 1;
@@ -873,7 +870,8 @@ fn rewrite_values_references(tail: &str) -> String {
     let mut out = String::with_capacity(tail.len());
     let mut index = 0;
     while index < tail.len() {
-        let Some(relative) = find_keyword_outside_literals(&tail[index..], "VALUES") else {
+        let Some(relative) = find_keyword_outside_literals(&tail[index..], "VALUES")
+        else {
             out.push_str(&tail[index..]);
             break;
         };
@@ -888,7 +886,8 @@ fn rewrite_values_references(tail: &str) -> String {
             continue;
         }
         let open = after_keyword + (rest.len() - trimmed.len());
-        let Some(close) = matching_paren(tail, open) else {
+        let Some(close) = matching_paren(tail, open)
+        else {
             out.push_str(&tail[start..]);
             break;
         };

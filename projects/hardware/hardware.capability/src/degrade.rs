@@ -53,11 +53,7 @@ pub struct WiredStrategies {
 impl WiredStrategies {
     /// Pick all three strategies from an advertised feature set.
     pub fn from_features(features: &FeatureSet) -> Self {
-        Self {
-            descriptor: pick_descriptor_strategy(features),
-            pipeline: pick_pipeline_strategy(features),
-            sync: pick_sync_strategy(features),
-        }
+        Self { descriptor: pick_descriptor_strategy(features), pipeline: pick_pipeline_strategy(features), sync: pick_sync_strategy(features) }
     }
 
     /// Stable label for the descriptor path (thin-gate assertions).
@@ -93,11 +89,14 @@ impl WiredStrategies {
 pub fn pick_descriptor_strategy(features: &FeatureSet) -> DescriptorStrategy {
     if features.has(Feature::Bindless) && features.has(Feature::DescriptorHeap) {
         DescriptorStrategy::ResourceDescriptorHeap
-    } else if features.has(Feature::DescriptorBuffer) {
+    }
+    else if features.has(Feature::DescriptorBuffer) {
         DescriptorStrategy::DescriptorBuffer
-    } else if features.has(Feature::Bindless) {
+    }
+    else if features.has(Feature::Bindless) {
         DescriptorStrategy::BindlessIndexing
-    } else {
+    }
+    else {
         DescriptorStrategy::TraditionalSets
     }
 }
@@ -106,9 +105,11 @@ pub fn pick_descriptor_strategy(features: &FeatureSet) -> DescriptorStrategy {
 pub fn pick_pipeline_strategy(features: &FeatureSet) -> PipelineStrategy {
     if features.has(Feature::ShaderObject) {
         PipelineStrategy::ShaderObject
-    } else if features.has(Feature::PipelineLibrary) {
+    }
+    else if features.has(Feature::PipelineLibrary) {
         PipelineStrategy::PipelineLibrary
-    } else {
+    }
+    else {
         PipelineStrategy::PsoPrecache
     }
 }
@@ -117,9 +118,11 @@ pub fn pick_pipeline_strategy(features: &FeatureSet) -> PipelineStrategy {
 pub fn pick_sync_strategy(features: &FeatureSet) -> SyncStrategy {
     if features.has(Feature::EnhancedBarriers) {
         SyncStrategy::EnhancedBarriers
-    } else if features.has(Feature::Synchronization2) {
+    }
+    else if features.has(Feature::Synchronization2) {
         SyncStrategy::Synchronization2
-    } else {
+    }
+    else {
         SyncStrategy::LegacyBarriers
     }
 }

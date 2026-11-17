@@ -5,8 +5,7 @@
 //! commands. Resolution into display geometry is a separate step.
 
 use plotter_scene::{
-    Color, PathData, Point, Rect, SemanticKind, SemanticNode, SemanticRole, SemanticScene, ShapeStyle, SourceRef, TextAnchor,
-    TextStyle,
+    Color, PathData, Point, Rect, SemanticKind, SemanticNode, SemanticRole, SemanticScene, ShapeStyle, SourceRef, TextAnchor, TextStyle,
 };
 
 use crate::plan::{AxisPlan, ChartCompilePlan, MarkGeometry, MarkInstance, MarkStyle};
@@ -58,25 +57,17 @@ fn push_mark(scene: &mut SemanticScene, instance: &MarkInstance, font_size: f64)
         }
         MarkGeometry::Point { center, size, shape } => (
             SemanticRole::Mark,
-            SemanticNode::new(SemanticKind::Marker {
-                at: *center,
-                shape: *shape,
-                size: *size,
-                style: shape_style(&instance.style),
-            }),
+            SemanticNode::new(SemanticKind::Marker { at: *center, shape: *shape, size: *size, style: shape_style(&instance.style) }),
         ),
-        MarkGeometry::Polyline(points) => (
-            SemanticRole::Mark,
-            SemanticNode::new(SemanticKind::Path { path: polyline(points), style: shape_style(&instance.style) }),
-        ),
-        MarkGeometry::Polygon(points) => (
-            SemanticRole::Mark,
-            SemanticNode::new(SemanticKind::Path { path: polyline(points).close(), style: shape_style(&instance.style) }),
-        ),
-        MarkGeometry::Segment { from, to } => (
-            SemanticRole::Mark,
-            SemanticNode::new(SemanticKind::Line { from: *from, to: *to, style: shape_style(&instance.style) }),
-        ),
+        MarkGeometry::Polyline(points) => {
+            (SemanticRole::Mark, SemanticNode::new(SemanticKind::Path { path: polyline(points), style: shape_style(&instance.style) }))
+        }
+        MarkGeometry::Polygon(points) => {
+            (SemanticRole::Mark, SemanticNode::new(SemanticKind::Path { path: polyline(points).close(), style: shape_style(&instance.style) }))
+        }
+        MarkGeometry::Segment { from, to } => {
+            (SemanticRole::Mark, SemanticNode::new(SemanticKind::Line { from: *from, to: *to, style: shape_style(&instance.style) }))
+        }
         MarkGeometry::Label { anchor, text } => {
             let fill = instance.style.fill.unwrap_or(Color::BLACK);
             let baseline = anchor.offset(0.0, font_size * TEXT_BASELINE_SHIFT);
@@ -141,14 +132,7 @@ fn shape_style(style: &MarkStyle) -> ShapeStyle {
 }
 
 fn text_style(fill: Color, font_size: f64, text_anchor: TextAnchor) -> TextStyle {
-    TextStyle {
-        fill: Some(fill),
-        opacity: 1.0,
-        font_family: Some("sans-serif".to_string()),
-        font_size,
-        font_weight: None,
-        text_anchor,
-    }
+    TextStyle { fill: Some(fill), opacity: 1.0, font_family: Some("sans-serif".to_string()), font_size, font_weight: None, text_anchor }
 }
 
 fn geometry_bounds(geometry: &MarkGeometry) -> Option<Rect> {

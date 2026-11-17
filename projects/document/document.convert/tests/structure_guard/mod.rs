@@ -25,11 +25,7 @@ fn assert_structure_budget_error(error: document_types::AdapterError) {
     assert!(display.contains("structure nesting depth"), "the failure must name the structural guard: {display}");
     match error {
         document_types::AdapterError::Diagnostic { diagnostic } => {
-            assert_eq!(
-                format!("{}", diagnostic.code()),
-                "notedown.format.budget-exhausted",
-                "the CLI maps this code to exit code 7"
-            );
+            assert_eq!(format!("{}", diagnostic.code()), "notedown.format.budget-exhausted", "the CLI maps this code to exit code 7");
         }
         other => panic!("expected a structured diagnostic, got {other:?}"),
     }
@@ -46,15 +42,14 @@ fn html_nesting_far_beyond_the_builtin_limit_returns_an_error_instead_of_abortin
 #[test]
 fn markdown_bracket_nesting_far_beyond_the_builtin_limit_returns_an_error() {
     let markdown = nested_markdown(5000);
-    let error = convert_bytes("markdown", "html", "deep.md", markdown.into_bytes(), None)
-        .expect_err("5000 nested brackets must be rejected");
+    let error = convert_bytes("markdown", "html", "deep.md", markdown.into_bytes(), None).expect_err("5000 nested brackets must be rejected");
     assert_structure_budget_error(error);
 }
 
 #[test]
 fn nesting_at_the_builtin_limit_still_converts() {
     let html = nested_html(MAX_STRUCTURE_DEPTH);
-    let output = convert_bytes("html", "markdown", "limit.html", html.into_bytes(), None)
-        .expect("depth at the built-in limit must stay convertible");
+    let output =
+        convert_bytes("html", "markdown", "limit.html", html.into_bytes(), None).expect("depth at the built-in limit must stay convertible");
     assert!(output.markdown.contains("body"));
 }

@@ -396,9 +396,7 @@ fn normalize_heading_level(graph: &mut DocumentGraph, id: NodeId, parent_level: 
 
     if let Some((level, title, children)) = section {
         let target = (parent_level + 1).min(6);
-        if level != target
-            && graph.replace_block(id, Block::Section { level: target, title, children: children.clone() }).is_ok()
-        {
+        if level != target && graph.replace_block(id, Block::Section { level: target, title, children: children.clone() }).is_ok() {
             *changed_nodes += 1;
         }
         for child in children {
@@ -419,8 +417,7 @@ fn normalize_heading_level(graph: &mut DocumentGraph, id: NodeId, parent_level: 
 }
 
 fn run_resolve_references(graph: &mut DocumentGraph, spec: &TransformPassSpec) -> (TransformPassReport, Vec<Diagnostic>) {
-    let targets: HashMap<NodeId, String> =
-        graph.blocks.iter().map(|node| (node.id, readable_block_text(graph, &node.block))).collect();
+    let targets: HashMap<NodeId, String> = graph.blocks.iter().map(|node| (node.id, readable_block_text(graph, &node.block))).collect();
     let ids: Vec<NodeId> = graph.blocks.iter().map(|node| node.id).collect();
 
     let mut changed_nodes = 0usize;
@@ -447,10 +444,7 @@ fn run_resolve_references(graph: &mut DocumentGraph, spec: &TransformPassSpec) -
             pass_diagnostic(
                 "panduck.transform.pass-applied",
                 DiagnosticSeverity::Info,
-                format!(
-                    "Transform pass \"{}\" resolved {repaired_references} reference(s) in {changed_nodes} block(s)",
-                    spec.name
-                ),
+                format!("Transform pass \"{}\" resolved {repaired_references} reference(s) in {changed_nodes} block(s)", spec.name),
             )
             .with_note(
                 Message::new("panduck.transform.pass-applied")
@@ -498,8 +492,7 @@ fn resolve_block(
             let items = items
                 .iter()
                 .map(|item| {
-                    let (content, item_changed) =
-                        resolve_inlines(&item.content, targets, repaired_references, diagnostics, pass_name);
+                    let (content, item_changed) = resolve_inlines(&item.content, targets, repaired_references, diagnostics, pass_name);
                     changed |= item_changed;
                     ListItem {
                         content,
@@ -633,26 +626,22 @@ fn readable_block_text(graph: &DocumentGraph, block: &Block) -> String {
     match block {
         Block::Section { title, .. } => plain_text_of(title),
         Block::Paragraph { content } => plain_text_of(content),
-        Block::Quote { children } => {
-            joined_text(children.iter().map(|child_id| {
-                graph.block(*child_id).map_or_else(String::new, |child| readable_block_text(graph, &child.block))
-            }))
-        }
+        Block::Quote { children } => joined_text(
+            children.iter().map(|child_id| graph.block(*child_id).map_or_else(String::new, |child| readable_block_text(graph, &child.block))),
+        ),
         Block::List { items, .. } => joined_text(items.iter().map(|item| plain_text_of(&item.content))),
-        Block::Table { caption, head, body, foot } => {
-            match caption.as_deref().map(str::trim).filter(|caption| !caption.is_empty()) {
-                Some(caption) => caption.to_string(),
-                None => joined_text(
-                    head.iter()
-                        .chain(body)
-                        .chain(foot)
-                        .flat_map(|row| row.cells.iter())
-                        .flat_map(|cell| cell.children.iter())
-                        .filter_map(|child_id| graph.block(*child_id))
-                        .map(|child| readable_block_text(graph, &child.block)),
-                ),
-            }
-        }
+        Block::Table { caption, head, body, foot } => match caption.as_deref().map(str::trim).filter(|caption| !caption.is_empty()) {
+            Some(caption) => caption.to_string(),
+            None => joined_text(
+                head.iter()
+                    .chain(body)
+                    .chain(foot)
+                    .flat_map(|row| row.cells.iter())
+                    .flat_map(|cell| cell.children.iter())
+                    .filter_map(|child_id| graph.block(*child_id))
+                    .map(|child| readable_block_text(graph, &child.block)),
+            ),
+        },
         Block::Code { .. }
         | Block::Math { .. }
         | Block::Diagram { .. }
@@ -827,8 +816,7 @@ fn rewrite_block(block: &Block, search: &str, replacement: &str) -> Option<(Bloc
                 occurrences += caption.matches(search).count();
                 caption.replace(search, replacement)
             });
-            (occurrences > 0)
-                .then(|| (Block::Table { caption, head: head.clone(), body: body.clone(), foot: foot.clone() }, occurrences))
+            (occurrences > 0).then(|| (Block::Table { caption, head: head.clone(), body: body.clone(), foot: foot.clone() }, occurrences))
         }
         // Diagram, chart, score, and structure source is authored data, not
         // inline prose, so text replacement must not rewrite or corrupt it.

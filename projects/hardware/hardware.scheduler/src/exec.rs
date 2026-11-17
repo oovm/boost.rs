@@ -3,9 +3,7 @@
 //! These types are **runtime** contracts. They are not part of the `.ucf` wire
 //! format — adapters (DXO / Spark) bind live device objects after decode.
 
-use std::any::Any;
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::{any::Any, collections::BTreeMap, sync::Arc};
 
 use hardware_ir::ResourceId;
 
@@ -94,11 +92,7 @@ impl StreamEventBridge for ImmediateBridge {
         if stream.backend_name() != event.backend_name() {
             return Err(Error::Backend(
                 "cpu".into(),
-                format!(
-                    "wait_event backend mismatch: stream={} event={}",
-                    stream.backend_name(),
-                    event.backend_name()
-                ),
+                format!("wait_event backend mismatch: stream={} event={}", stream.backend_name(), event.backend_name()),
             ));
         }
         Ok(())
@@ -108,11 +102,7 @@ impl StreamEventBridge for ImmediateBridge {
         if stream.backend_name() != event.backend_name() {
             return Err(Error::Backend(
                 "cpu".into(),
-                format!(
-                    "record_event backend mismatch: stream={} event={}",
-                    stream.backend_name(),
-                    event.backend_name()
-                ),
+                format!("record_event backend mismatch: stream={} event={}", stream.backend_name(), event.backend_name()),
             ));
         }
         Ok(())
@@ -190,9 +180,7 @@ mod tests {
                 self
             }
         }
-        let err = bridge
-            .wait_event(&stream, &Other)
-            .expect_err("mismatch");
+        let err = bridge.wait_event(&stream, &Other).expect_err("mismatch");
         assert!(matches!(err, Error::Backend(_, _)));
     }
 }

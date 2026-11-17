@@ -11,9 +11,11 @@
 use geometry_types::LinearRgb;
 use media_image::{Frame, Framebuffer};
 
-use crate::contract::InputDomain;
-use crate::effect::{Effect, EffectContext};
-use crate::post::{bloom_pass, DEFAULT_BLOOM_INTENSITY, DEFAULT_BLOOM_THRESHOLD};
+use crate::{
+    contract::InputDomain,
+    effect::{Effect, EffectContext},
+    post::{DEFAULT_BLOOM_INTENSITY, DEFAULT_BLOOM_THRESHOLD, bloom_pass},
+};
 
 /// 显示白（线性 1.0）上转换到的 HDR 能量。
 ///
@@ -24,20 +26,12 @@ pub const BLOOM_HDR_HEADROOM: f64 = 2.0;
 
 /// sRGB 编码值 → 线性光（IEC 61966-2-1 EOTF）。
 fn srgb_eotf(encoded: f64) -> f64 {
-    if encoded <= 0.04045 {
-        encoded / 12.92
-    } else {
-        ((encoded + 0.055) / 1.055).powf(2.4)
-    }
+    if encoded <= 0.04045 { encoded / 12.92 } else { ((encoded + 0.055) / 1.055).powf(2.4) }
 }
 
 /// 线性光 → sRGB 编码值（上式的严格逆，即 OETF）。
 fn srgb_oetf(linear: f64) -> f64 {
-    if linear <= 0.003_130_8 {
-        linear * 12.92
-    } else {
-        1.055 * linear.powf(1.0 / 2.4) - 0.055
-    }
+    if linear <= 0.003_130_8 { linear * 12.92 } else { 1.055 * linear.powf(1.0 / 2.4) - 0.055 }
 }
 
 /// 显示字节 → 线性 HDR 上转换（EOTF 后乘 headroom）。
@@ -93,11 +87,7 @@ impl Effect for Bloom {
         let mut fb = Framebuffer::new(width, height);
         for index in 0..width as usize * height as usize {
             let i = index * 4;
-            fb.pixels[index] = LinearRgb::new(
-                up_convert(frame.pixels[i]),
-                up_convert(frame.pixels[i + 1]),
-                up_convert(frame.pixels[i + 2]),
-            );
+            fb.pixels[index] = LinearRgb::new(up_convert(frame.pixels[i]), up_convert(frame.pixels[i + 1]), up_convert(frame.pixels[i + 2]));
         }
         bloom_pass(&mut fb, self.threshold, self.intensity);
         for index in 0..width as usize * height as usize {

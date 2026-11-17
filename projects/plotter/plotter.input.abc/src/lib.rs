@@ -18,21 +18,20 @@ use std::ops::Range;
 use oak_abc::{
     AbcBuilder, AbcLanguage,
     ast::{
-        AbcAccidental, AbcBarline, AbcChord, AbcClef, AbcDecoration, AbcEvent, AbcFraction, AbcKey, AbcMeter, AbcNote,
-        AbcPitch, AbcRoot, AbcSlur, AbcUnsupported,
+        AbcAccidental, AbcBarline, AbcChord, AbcClef, AbcDecoration, AbcEvent, AbcFraction, AbcKey, AbcMeter, AbcNote, AbcPitch, AbcRoot,
+        AbcSlur, AbcUnsupported,
     },
 };
 use oak_core::{Builder, SourceText, errors::OakError, parser::session::ParseSession};
 use plotter_engraving::{
     EngravingError, EngravingOptions, LoweredEngraving,
     spec::{
-        Accidental, Articulation, Barline, Clef, Event, KeySignature, Measure, Pitch, ScoreSpec, SlurState, Step, TieState,
-        TimeSignature, Tuplet,
+        Accidental, Articulation, Barline, Clef, Event, KeySignature, Measure, Pitch, ScoreSpec, SlurState, Step, TieState, TimeSignature,
+        Tuplet,
     },
 };
 use plotter_types::{
-    Diagnostic, DiagnosticLabel, DiagnosticLocation, DiagnosticSeverity, LabelRole, Message, NAMESPACE, SourceRef, codes,
-    diagnostic,
+    Diagnostic, DiagnosticLabel, DiagnosticLocation, DiagnosticSeverity, LabelRole, Message, NAMESPACE, SourceRef, codes, diagnostic,
 };
 
 /// 诊断与标签里使用的源身份。
@@ -141,10 +140,7 @@ fn lower_root(root: &AbcRoot) -> Result<LoweredScore, EngravingError> {
             Some(span_of(&root.tunes[1].span)),
         );
     }
-    let tune = root
-        .tunes
-        .first()
-        .ok_or_else(|| EngravingError::unsupported("the ABC source declares no tune to engrave"))?;
+    let tune = root.tunes.first().ok_or_else(|| EngravingError::unsupported("the ABC source declares no tune to engrave"))?;
     for unsupported in &tune.unsupported {
         refused_construct(&mut diagnostics, unsupported);
     }
@@ -155,10 +151,7 @@ fn lower_root(root: &AbcRoot) -> Result<LoweredScore, EngravingError> {
             Some(span_of(&tune.voices[1].span)),
         );
     }
-    let voice = tune
-        .voices
-        .first()
-        .ok_or_else(|| EngravingError::unsupported("the ABC tune declares no voice to engrave"))?;
+    let voice = tune.voices.first().ok_or_else(|| EngravingError::unsupported("the ABC tune declares no voice to engrave"))?;
     let clef = lower_clef(voice.clef.as_ref(), &voice.span)?;
     let header_span = span_of(&root.header.span);
     let key = lower_key(root.header.key.as_ref(), &header_span)?;
@@ -175,11 +168,7 @@ fn lower_root(root: &AbcRoot) -> Result<LoweredScore, EngravingError> {
                 }
                 AbcEvent::Rest(rest) => {
                     if pending_tie {
-                        approximated(
-                            &mut diagnostics,
-                            "a tie that runs into a rest is dropped",
-                            Some(span_of(&rest.span)),
-                        );
+                        approximated(&mut diagnostics, "a tie that runs into a rest is dropped", Some(span_of(&rest.span)));
                         pending_tie = false;
                     }
                     events.push(Event::rest(quarter_units(rest.length)));
@@ -215,14 +204,14 @@ fn lower_clef(clef: Option<&AbcClef>, span: &core::range::Range<usize>) -> Resul
     match clef {
         None | Some(AbcClef::Treble) => Ok(Clef::Treble),
         Some(AbcClef::Bass) => Ok(Clef::Bass),
-        Some(AbcClef::Alto) => Err(EngravingError::unsupported(
-            "an alto clef is outside the v0 engraving subset, which models treble and bass staves",
-        )
-        .with_span(span_of(span))),
-        Some(AbcClef::Other(name)) => Err(EngravingError::unsupported(format!(
-            "clef `{name}` is outside the v0 engraving subset, which models treble and bass staves"
-        ))
-        .with_span(span_of(span))),
+        Some(AbcClef::Alto) => {
+            Err(EngravingError::unsupported("an alto clef is outside the v0 engraving subset, which models treble and bass staves")
+                .with_span(span_of(span)))
+        }
+        Some(AbcClef::Other(name)) => {
+            Err(EngravingError::unsupported(format!("clef `{name}` is outside the v0 engraving subset, which models treble and bass staves"))
+                .with_span(span_of(span)))
+        }
     }
 }
 
@@ -254,10 +243,8 @@ fn lower_key(key: Option<&AbcKey>, header_span: &Range<usize>) -> Result<KeySign
         "" | "maj" | "major" => false,
         "m" | "min" | "minor" | "aeolian" => true,
         other => {
-            return Err(EngravingError::unsupported(format!(
-                "key mode `{other}` is outside the v0 subset, which models major and minor keys"
-            ))
-            .with_span(header_span.clone()));
+            return Err(EngravingError::unsupported(format!("key mode `{other}` is outside the v0 subset, which models major and minor keys"))
+                .with_span(header_span.clone()));
         }
     };
     let letter = match key.tonic.to_ascii_uppercase() {
@@ -269,10 +256,9 @@ fn lower_key(key: Option<&AbcKey>, header_span: &Range<usize>) -> Result<KeySign
         'A' => 9,
         'B' => 11,
         other => {
-            return Err(EngravingError::unsupported(format!(
-                "key tonic `{other}` is not one of C, D, E, F, G, A, B"
-            ))
-            .with_span(header_span.clone()));
+            return Err(
+                EngravingError::unsupported(format!("key tonic `{other}` is not one of C, D, E, F, G, A, B")).with_span(header_span.clone())
+            );
         }
     };
     let shift = match key.accidental {
@@ -412,11 +398,7 @@ fn tie_state(pending: bool, starts: bool, diagnostics: &mut Vec<Diagnostic>, spa
         (false, true) => TieState::Start,
         (true, false) => TieState::Stop,
         (true, true) => {
-            approximated(
-                diagnostics,
-                "a note closes one tie and starts another; the incoming tie is dropped",
-                Some(span_of(span)),
-            );
+            approximated(diagnostics, "a note closes one tie and starts another; the incoming tie is dropped", Some(span_of(span)));
             TieState::Start
         }
     }
@@ -429,22 +411,14 @@ fn slur_state(slur: AbcSlur, diagnostics: &mut Vec<Diagnostic>, span: &core::ran
         AbcSlur::Start => SlurState::Start,
         AbcSlur::Stop => SlurState::Stop,
         AbcSlur::Both => {
-            approximated(
-                diagnostics,
-                "a slur that both opens and closes on one note is drawn as a closing slur",
-                Some(span_of(span)),
-            );
+            approximated(diagnostics, "a slur that both opens and closes on one note is drawn as a closing slur", Some(span_of(span)));
             SlurState::Stop
         }
     }
 }
 
 /// 装饰映射。v0 只有断奏与保持线有基本图元。
-fn articulations(
-    decorations: &[AbcDecoration],
-    diagnostics: &mut Vec<Diagnostic>,
-    span: &core::range::Range<usize>,
-) -> Vec<Articulation> {
+fn articulations(decorations: &[AbcDecoration], diagnostics: &mut Vec<Diagnostic>, span: &core::range::Range<usize>) -> Vec<Articulation> {
     let mut out = Vec::new();
     for decoration in decorations {
         match decoration {
@@ -462,11 +436,7 @@ fn articulations(
                 approximated(diagnostics, "an accent has no v0 glyph and is not drawn", Some(span_of(span)));
             }
             AbcDecoration::Unknown(name) => {
-                approximated(
-                    diagnostics,
-                    format!("decoration `{name}` is outside the ABC subset and is not drawn"),
-                    Some(span_of(span)),
-                );
+                approximated(diagnostics, format!("decoration `{name}` is outside the ABC subset and is not drawn"), Some(span_of(span)));
             }
         }
     }

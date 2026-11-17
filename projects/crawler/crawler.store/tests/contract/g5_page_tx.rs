@@ -8,12 +8,7 @@ use crawler_types::CrawlEvent;
 use crate::contract::support::{HOST, LONG_LEASE, TEST_LEASE, assert_both, item};
 
 fn binding() -> PageAssetBinding {
-    PageAssetBinding {
-        asset_id: "7".into(),
-        fingerprint: "fp-7".into(),
-        media_type: Some("image/png".into()),
-        bytes: vec![1, 2, 3],
-    }
+    PageAssetBinding { asset_id: "7".into(), fingerprint: "fp-7".into(), media_type: Some("image/png".into()), bytes: vec![1, 2, 3] }
 }
 
 #[test]
@@ -32,10 +27,7 @@ fn g5_page_tx_assets_links_and_events_are_atomic() {
         store.page_tx_put_event(&CrawlEvent::Committed { page_identity: "https://example.com/a".into() }).expect("stage event");
         assert_eq!(store.pending_frontier_count().expect("frontier"), 1, "admitted link stays invisible until commit");
         store.abort_page_tx().expect("abort");
-        assert!(
-            matches!(store.page_phase(&claim.item_id), Err(StoreError::StoreNotFound(_))),
-            "aborted page must not leave a visible record"
-        );
+        assert!(matches!(store.page_phase(&claim.item_id), Err(StoreError::StoreNotFound(_))), "aborted page must not leave a visible record");
         assert_eq!(store.pending_frontier_count().expect("frontier"), 1, "abort must not admit links");
         assert_eq!(store.event_count().expect("events"), 0, "abort must not append events");
 
@@ -71,10 +63,7 @@ fn g5_expired_lease_cannot_commit_page_tx() {
         store.page_tx_put_ir("ir/a", b"alpha-ir").expect("put ir");
         thread::sleep(TEST_LEASE + Duration::from_millis(250));
         assert!(matches!(store.commit_page_tx(), Err(StoreError::StoreLeaseExpired)), "an expired lease must not commit");
-        assert!(
-            !matches!(store.page_phase(&claim.item_id), Ok(PagePhase::Committed)),
-            "a rejected commit must not expose a committed page"
-        );
+        assert!(!matches!(store.page_phase(&claim.item_id), Ok(PagePhase::Committed)), "a rejected commit must not expose a committed page");
         assert_eq!(store.pending_frontier_count().expect("frontier"), 1);
     });
 }

@@ -27,4 +27,4 @@ pub mod spec;
 pub mod tract;
 
 pub use formant::render;
-pub use spec::{Onset, Syllable, Vibrato, Vowel, VoiceSpec};
+pub use spec::{Coda, Onset, Syllable, Vibrato, VoiceSpec, Vowel};

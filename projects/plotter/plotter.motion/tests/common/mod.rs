@@ -1,9 +1,7 @@
 //! Shared scene builders for the integration tests.
 
 use plotter_motion::{Easing, MotionIntent};
-use plotter_scene::{
-    DisplayScene, NodeKind, PathData, Point, Rect, SceneNode, ShapeStyle, Size, TextStyle, Transform,
-};
+use plotter_scene::{DisplayScene, NodeKind, PathData, Point, Rect, SceneNode, ShapeStyle, Size, TextStyle, Transform};
 
 /// Create a 200x100 scene from ordered root nodes.
 pub fn scene(nodes: Vec<SceneNode>) -> DisplayScene {
@@ -16,12 +14,9 @@ pub fn scene(nodes: Vec<SceneNode>) -> DisplayScene {
 
 /// A 10x10 rectangle with a stable id, translated along both axes.
 pub fn rect_at(id: &str, x: f64, y: f64, opacity: f64) -> SceneNode {
-    SceneNode::new(NodeKind::Rect {
-        rect: Rect::new(0.0, 0.0, 10.0, 10.0),
-        style: ShapeStyle { opacity, ..ShapeStyle::default() },
-    })
-    .with_id(id)
-    .with_transform(Transform::translate(x, y))
+    SceneNode::new(NodeKind::Rect { rect: Rect::new(0.0, 0.0, 10.0, 10.0), style: ShapeStyle { opacity, ..ShapeStyle::default() } })
+        .with_id(id)
+        .with_transform(Transform::translate(x, y))
 }
 
 /// A 10x10 rectangle with a stable id, translated horizontally.
@@ -37,8 +32,7 @@ pub fn unlabeled_rect(x: f64) -> SceneNode {
 
 /// A rectangle with explicit local extents and no translation.
 pub fn bar(id: &str, width: f64, height: f64) -> SceneNode {
-    SceneNode::new(NodeKind::Rect { rect: Rect::new(0.0, 0.0, width, height), style: ShapeStyle::default() })
-        .with_id(id)
+    SceneNode::new(NodeKind::Rect { rect: Rect::new(0.0, 0.0, width, height), style: ShapeStyle::default() }).with_id(id)
 }
 
 /// A polyline path with a stable id, built from absolute points.

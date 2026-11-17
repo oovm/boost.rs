@@ -88,11 +88,7 @@ fn g8_challenge_pause_lands_in_run_state() {
     assert_both!("g8-challenge", LONG_LEASE, |store| {
         store.begin_run(RunSpec::new("https://example.com/")).expect("begin run");
         let pause = store
-            .record_challenge_pause(
-                "https://example.com/login",
-                "https://example.com/login",
-                PageChallengeState::ChallengeRequired,
-            )
+            .record_challenge_pause("https://example.com/login", "https://example.com/login", PageChallengeState::ChallengeRequired)
             .expect("record pause");
         assert_eq!(pause.state, PageChallengeState::ChallengeRequired);
         assert_eq!(pause.page_url, "https://example.com/login");

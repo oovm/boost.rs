@@ -34,10 +34,8 @@ fn yydb_store_opens_and_caches_a_response() {
     use crawler_store::YydbStore;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    let path = std::env::temp_dir().join(format!(
-        "crawler-store-smoke-{}.yydx",
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos()
-    ));
+    let path = std::env::temp_dir()
+        .join(format!("crawler-store-smoke-{}.yydx", SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos()));
     let mut store = YydbStore::open(StoreConfig::yydb(&path)).expect("open");
     let artifact = sample();
     store.put_response_cache(&artifact).expect("put");

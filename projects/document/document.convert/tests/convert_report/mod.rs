@@ -1,16 +1,12 @@
-use document_convert::{
-    convert_bytes, convert_bytes_with_body_faces, write_document_docx, write_document_html, write_document_pdf,
-};
+use document_convert::{convert_bytes, convert_bytes_with_body_faces, write_document_docx, write_document_html, write_document_pdf};
 use document_formats::import::{markdown::import_markdown_bytes, pdf::import_pdf_bytes};
 use document_ir::{
-    AttributePair, Attributes, Block, DocumentGraph, DocumentId, Inline, ListItem, MathDisplay, MathFormula, RelationEndpoint,
-    SemanticStatus, TableCell, TableRow,
+    AttributePair, Attributes, Block, DocumentGraph, DocumentId, Inline, ListItem, MathDisplay, MathFormula, RelationEndpoint, SemanticStatus,
+    TableCell, TableRow,
 };
 
 use crate::common;
-use common::{
-    assert_convert_report, assert_report_contains_loss_codes, docx_zip, docx_zip_with_footnotes, pdf_body_faces, stored_zip,
-};
+use common::{assert_convert_report, assert_report_contains_loss_codes, docx_zip, docx_zip_with_footnotes, pdf_body_faces, stored_zip};
 
 #[test]
 fn html_to_markdown_convert_report_matches_ir_loss() {
@@ -35,8 +31,7 @@ fn docx_field_to_markdown_convert_report_lists_field_loss() {
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
   <w:body><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t>visible fallback</w:t></w:r></w:p></w:body>
 </w:document>"#;
-    let output =
-        convert_bytes("docx", "markdown", "field.docx", docx_zip(document_xml), None).expect("convert docx with field");
+    let output = convert_bytes("docx", "markdown", "field.docx", docx_zip(document_xml), None).expect("convert docx with field");
 
     assert_convert_report(&output, "markdown");
     assert_report_contains_loss_codes(&output.report_json, &["reader.docx.fields", "import.docx.partial_coverage"]);
@@ -55,8 +50,8 @@ fn docx_unresolved_footnote_to_markdown_convert_report_lists_footnote_loss() {
     </w:p>
   </w:body>
 </w:document>"#;
-    let output = convert_bytes("docx", "markdown", "footnote.docx", docx_zip(document_xml), None)
-        .expect("convert docx with unresolved footnote");
+    let output =
+        convert_bytes("docx", "markdown", "footnote.docx", docx_zip(document_xml), None).expect("convert docx with unresolved footnote");
 
     assert_convert_report(&output, "markdown");
     assert_report_contains_loss_codes(&output.report_json, &["reader.docx.footnote_body", "import.docx.partial_coverage"]);
@@ -81,15 +76,13 @@ fn docx_resolved_footnote_to_markdown_convert_report_omits_footnote_body_loss() 
     <w:p><w:r><w:t>Footnote body.</w:t></w:r></w:p>
   </w:footnote>
 </w:footnotes>"#;
-    let output =
-        convert_bytes("docx", "markdown", "footnote-resolved.docx", docx_zip_with_footnotes(document_xml, footnotes_xml), None)
-            .expect("convert docx with resolved footnote");
+    let output = convert_bytes("docx", "markdown", "footnote-resolved.docx", docx_zip_with_footnotes(document_xml, footnotes_xml), None)
+        .expect("convert docx with resolved footnote");
 
     assert_convert_report(&output, "markdown");
     assert_report_contains_loss_codes(&output.report_json, &["import.docx.partial_coverage"]);
     let report = serde_json::from_str::<serde_json::Value>(&output.report_json).expect("report");
-    let loss_codes =
-        report["losses"].as_array().expect("losses").iter().filter_map(|loss| loss["code"].as_str()).collect::<Vec<_>>();
+    let loss_codes = report["losses"].as_array().expect("losses").iter().filter_map(|loss| loss["code"].as_str()).collect::<Vec<_>>();
     assert!(
         !loss_codes.iter().any(|code| *code == "reader.docx.footnote_body"),
         "resolved footnote must not report reader.docx.footnote_body, got {loss_codes:?}"
@@ -223,8 +216,7 @@ fn epub_with_nav_to_markdown_convert_report_omits_navigation_missing() {
     let output = convert_bytes("epub", "markdown", "nav.epub", zip, None).expect("convert epub with nav");
     assert_convert_report(&output, "markdown");
     let report = serde_json::from_str::<serde_json::Value>(&output.report_json).expect("report");
-    let loss_codes =
-        report["losses"].as_array().expect("losses").iter().filter_map(|loss| loss["code"].as_str()).collect::<Vec<_>>();
+    let loss_codes = report["losses"].as_array().expect("losses").iter().filter_map(|loss| loss["code"].as_str()).collect::<Vec<_>>();
     assert!(
         !loss_codes.iter().any(|code| *code == "import.epub.navigation_missing"),
         "nav manifest must not report navigation_missing, got {loss_codes:?}"
@@ -286,11 +278,10 @@ fn doc_to_markdown_convert_report_lists_partial_coverage() {
 #[test]
 fn pdf_to_markdown_convert_report_lists_partial_coverage() {
     let faces = pdf_body_faces();
-    let pdf =
-        convert_bytes_with_body_faces("markdown", "pdf", "sample.md", b"# Heading\n\nBody text.\n".to_vec(), None, &faces)
-            .expect("write PDF")
-            .binary
-            .expect("PDF bytes");
+    let pdf = convert_bytes_with_body_faces("markdown", "pdf", "sample.md", b"# Heading\n\nBody text.\n".to_vec(), None, &faces)
+        .expect("write PDF")
+        .binary
+        .expect("PDF bytes");
     let output = convert_bytes("pdf", "markdown", "sample.pdf", pdf, None).expect("convert pdf to markdown");
 
     assert_convert_report(&output, "markdown");
@@ -318,12 +309,7 @@ fn pdf_convert_reports_dropped_citation_key_and_image_title() {
     let codes: Vec<&str> = graph.coverage.loss.iter().map(|loss| loss.code.as_str()).collect();
     assert_eq!(
         codes,
-        [
-            "export.pdf.image_unresolved",
-            "export.pdf.citation_degraded",
-            "export.pdf.image_title_dropped",
-            "export.pdf.image_alt_dropped"
-        ],
+        ["export.pdf.image_unresolved", "export.pdf.citation_degraded", "export.pdf.image_title_dropped", "export.pdf.image_alt_dropped"],
         "{:?}",
         graph.coverage.loss
     );
@@ -363,18 +349,8 @@ fn pdf_export_keeps_list_and_nested_table_cells_inside_the_table() {
     let list_cell = graph.push_block(Block::List {
         ordered: true,
         items: vec![
-            ListItem {
-                content: vec![Inline::Text { text: "ZZ_LIST_A".into() }],
-                children: Vec::new(),
-                number: Some(1),
-                ..Default::default()
-            },
-            ListItem {
-                content: vec![Inline::Text { text: "ZZ_LIST_B".into() }],
-                children: Vec::new(),
-                number: Some(2),
-                ..Default::default()
-            },
+            ListItem { content: vec![Inline::Text { text: "ZZ_LIST_A".into() }], children: Vec::new(), number: Some(1), ..Default::default() },
+            ListItem { content: vec![Inline::Text { text: "ZZ_LIST_B".into() }], children: Vec::new(), number: Some(2), ..Default::default() },
         ],
     });
     let inner_head = graph.push_block(Block::Paragraph { content: vec![Inline::Text { text: "ZZ_INNER_HEAD".into() }] });
@@ -412,12 +388,8 @@ fn pdf_export_keeps_list_and_nested_table_cells_inside_the_table() {
         1,
         "one table with flattened sub-blocks must report the loss once: {codes:?}"
     );
-    let flattened = graph
-        .coverage
-        .loss
-        .iter()
-        .find(|loss| loss.code == "export.pdf.table_cell_flattened")
-        .expect("the flattening loss must be present");
+    let flattened =
+        graph.coverage.loss.iter().find(|loss| loss.code == "export.pdf.table_cell_flattened").expect("the flattening loss must be present");
     assert!(flattened.message.contains("`list`"), "the loss must name the list: {}", flattened.message);
     assert!(flattened.message.contains("`table`"), "the loss must name the nested table: {}", flattened.message);
 
@@ -509,9 +481,7 @@ fn pdf_export_reports_an_unsupported_math_language() {
     let mut graph = DocumentGraph::new(DocumentId(98));
     // `typst` has a lowering, so the unsupported-language branch needs a tag
     // that really has none: `asciimath` is kept as preserved source.
-    graph.push_block(Block::Math {
-        formula: MathFormula::unsupported("x", Some("asciimath".into()), MathDisplay::Display, "asciimath"),
-    });
+    graph.push_block(Block::Math { formula: MathFormula::unsupported("x", Some("asciimath".into()), MathDisplay::Display, "asciimath") });
     write_document_pdf(&mut graph, &faces).expect("PDF write keeps the authored source");
     let codes = pdf_loss_codes(&graph);
     assert!(codes.iter().any(|code| code == "vutex.layout.math.unsupported_language"), "{codes:?}");
@@ -580,19 +550,12 @@ fn html_export_reports_every_projection_loss() {
             image_with_alt("alt", "missing.png"),
         ],
     });
-    graph.push_block(Block::Opaque {
-        kind: "custom_block".into(),
-        payload_hint: "payload".into(),
-        status: SemanticStatus::Resolved,
-    });
+    graph.push_block(Block::Opaque { kind: "custom_block".into(), payload_hint: "payload".into(), status: SemanticStatus::Resolved });
     write_document_html(&mut graph, &std::collections::HashMap::new()).expect("HTML write");
     let codes: Vec<String> = graph.coverage.loss.iter().map(|loss| loss.code.clone()).collect();
-    for expected in [
-        "export.html.citation_degraded",
-        "export.html.unresolved_link",
-        "export.html.image_asset_unresolved",
-        "export.html.opaque_projection",
-    ] {
+    for expected in
+        ["export.html.citation_degraded", "export.html.unresolved_link", "export.html.image_asset_unresolved", "export.html.opaque_projection"]
+    {
         assert!(codes.iter().any(|code| code == expected), "expected {expected}: {codes:?}");
     }
 }
@@ -652,14 +615,10 @@ fn markdown_reference_link_convert_report_matches_loss_count() {
 
 #[test]
 fn markdown_missing_image_to_docx_reports_import_and_export_loss() {
-    let output = convert_bytes("markdown", "docx", "images.md", b"A ![alt](pic.png)\n".to_vec(), None)
-        .expect("convert markdown to docx");
+    let output = convert_bytes("markdown", "docx", "images.md", b"A ![alt](pic.png)\n".to_vec(), None).expect("convert markdown to docx");
 
     assert_convert_report(&output, "docx");
-    assert_report_contains_loss_codes(
-        &output.report_json,
-        &["import.markdown.asset_unresolved", "export.docx.image_unresolved"],
-    );
+    assert_report_contains_loss_codes(&output.report_json, &["import.markdown.asset_unresolved", "export.docx.image_unresolved"]);
     let report = serde_json::from_str::<serde_json::Value>(&output.report_json).expect("report");
     assert_eq!(report["status"].as_str(), Some("success_with_loss"), "{report}");
 }
@@ -671,10 +630,7 @@ fn markdown_missing_image_to_pdf_reports_import_and_export_loss() {
         .expect("convert markdown to pdf");
 
     assert_convert_report(&output, "pdf");
-    assert_report_contains_loss_codes(
-        &output.report_json,
-        &["import.markdown.asset_unresolved", "export.pdf.image_unresolved"],
-    );
+    assert_report_contains_loss_codes(&output.report_json, &["import.markdown.asset_unresolved", "export.pdf.image_unresolved"]);
     let report = serde_json::from_str::<serde_json::Value>(&output.report_json).expect("report");
     assert_eq!(report["status"].as_str(), Some("success_with_loss"), "{report}");
 }
@@ -756,16 +712,11 @@ fn pdf_export_turns_internal_node_links_into_destination_annotations() {
     let faces = pdf_body_faces();
     let mut graph = DocumentGraph::new(DocumentId(16));
     let body = graph.push_block(Block::Paragraph { content: vec![Inline::Text { text: "Target body.".into() }] });
-    let section =
-        graph.push_block(Block::Section { level: 1, title: vec![Inline::Text { text: "Intro".into() }], children: vec![body] });
+    let section = graph.push_block(Block::Section { level: 1, title: vec![Inline::Text { text: "Intro".into() }], children: vec![body] });
     graph.push_block(Block::Paragraph {
         content: vec![
             Inline::Text { text: "Go ".into() },
-            Inline::Link {
-                target: RelationEndpoint::Node(section),
-                display: vec![Inline::Text { text: "back".into() }],
-                title: None,
-            },
+            Inline::Link { target: RelationEndpoint::Node(section), display: vec![Inline::Text { text: "back".into() }], title: None },
         ],
     });
 
@@ -875,11 +826,7 @@ fn pdf_export_of_a_known_style_reports_no_style_loss() {
 fn pdf_export_names_the_opaque_kind_and_keeps_the_payload_text() {
     let faces = pdf_body_faces();
     let mut graph = DocumentGraph::new(DocumentId(31));
-    graph.push_block(Block::Opaque {
-        kind: "zz-kind".into(),
-        payload_hint: "ZZ_OPAQUEHINT_ZZ".into(),
-        status: SemanticStatus::Resolved,
-    });
+    graph.push_block(Block::Opaque { kind: "zz-kind".into(), payload_hint: "ZZ_OPAQUEHINT_ZZ".into(), status: SemanticStatus::Resolved });
 
     let pdf = write_document_pdf(&mut graph, &faces).expect("write PDF");
     let reopened = convert_bytes("pdf", "markdown", "opaque.pdf", pdf, None).expect("reopen PDF");
@@ -977,10 +924,7 @@ fn pdf_export_of_a_plain_paragraph_reports_no_attribute_loss() {
 
     let mut empty = DocumentGraph::new(DocumentId(27));
     empty.push_block(Block::Paragraph {
-        content: vec![Inline::Attributed {
-            attributes: Attributes::default(),
-            children: vec![Inline::Text { text: "ZZ_EMPTY_ZZ".into() }],
-        }],
+        content: vec![Inline::Attributed { attributes: Attributes::default(), children: vec![Inline::Text { text: "ZZ_EMPTY_ZZ".into() }] }],
     });
     write_document_pdf(&mut empty, &faces).expect("write PDF");
     let codes: Vec<&str> = empty.coverage.loss.iter().map(|loss| loss.code.as_str()).collect();

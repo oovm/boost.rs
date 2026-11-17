@@ -7,8 +7,7 @@ mod report;
 mod set;
 
 pub use degrade::{
-    pick_descriptor_strategy, pick_pipeline_strategy, pick_sync_strategy, DescriptorStrategy,
-    PipelineStrategy, SyncStrategy, WiredStrategies,
+    DescriptorStrategy, PipelineStrategy, SyncStrategy, WiredStrategies, pick_descriptor_strategy, pick_pipeline_strategy, pick_sync_strategy,
 };
 pub use feature::Feature;
 pub use report::{BackendCapabilities, CapabilityReport};

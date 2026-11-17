@@ -1,9 +1,7 @@
 //! Extracted from `src/browser/extract.rs`.
 
 use crawler::{Extractor, HtmlExtractor, run_extract_from_snapshot};
-use crawler_types::{
-    BrowserSnapshot, ChallengeOutcome, ChallengePolicy, ExtractBudget, ExtractContext, ExtractStatus, PageChallengeState,
-};
+use crawler_types::{BrowserSnapshot, ChallengeOutcome, ChallengePolicy, ExtractBudget, ExtractContext, ExtractStatus, PageChallengeState};
 use url::Url;
 
 fn snapshot(state: PageChallengeState) -> BrowserSnapshot {

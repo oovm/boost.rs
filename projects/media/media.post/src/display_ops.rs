@@ -13,9 +13,11 @@
 use geometry_types::Rgba;
 use media_image::Frame;
 
-use crate::contract::{InputDomain, relative_radius, short_side};
-use crate::display_blur::display_box_blur;
-use crate::effect::{Effect, EffectContext};
+use crate::{
+    contract::{InputDomain, relative_radius, short_side},
+    display_blur::display_box_blur,
+    effect::{Effect, EffectContext},
+};
 
 /// 可分离盒模糊重复三轮（近似高斯）。半径 = amount × 短边 × 0.06。
 pub struct Blur {

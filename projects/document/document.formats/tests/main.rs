@@ -61,8 +61,7 @@ mod tex_export_smoke {
     #[test]
     fn sizing_options_are_a_loss_not_a_refusal() {
         let graph = import_tex_bytes("sizing", "\\includegraphics[width=2cm]{a.png}\n").expect("tex import");
-        let marker =
-            graph.coverage.loss.iter().find(|marker| marker.code == "import.tex.image_dimensions").expect("sizing loss marker");
+        let marker = graph.coverage.loss.iter().find(|marker| marker.code == "import.tex.image_dimensions").expect("sizing loss marker");
         assert_eq!(marker.status, document_ir::SemanticStatus::Partial, "{:?}", graph.coverage.loss);
         let html = export_html(&graph).expect("html export");
         assert!(html.contains(r#"src="a.png""#), "{html}");
@@ -134,10 +133,7 @@ mod html_anchor_integrity {
                 export_html(&import_tex_bytes("anchor-tex", "\\section{A}\\label{a}\nsee \\ref{a}\n").expect("tex import"))
                     .expect("html export"),
             ),
-            (
-                "typst",
-                export_html(&import_typst_bytes("anchor-typst", "= Title\n").expect("typst import")).expect("html export"),
-            ),
+            ("typst", export_html(&import_typst_bytes("anchor-typst", "= Title\n").expect("typst import")).expect("html export")),
         ];
         for (label, html) in cases {
             assert_local_anchors_resolve(label, &html);
@@ -207,9 +203,7 @@ mod html_structure_smoke {
             .blocks
             .iter()
             .find_map(|node| match &node.block {
-                Block::Table { caption, head, body, foot } => {
-                    Some((caption, head.as_slice(), body.as_slice(), foot.as_slice()))
-                }
+                Block::Table { caption, head, body, foot } => Some((caption, head.as_slice(), body.as_slice(), foot.as_slice())),
                 _ => None,
             })
             .unwrap_or_else(|| panic!("table expected: {:#?}", graph.blocks))
@@ -234,9 +228,8 @@ mod html_structure_smoke {
 
     #[test]
     fn table_sections_keep_their_cells() {
-        let output = html(
-            "<table><colgroup><col span=2></colgroup><thead><tr><th>h</th></tr></thead><tbody><tr><td>b</td></tr></tbody></table>",
-        );
+        let output =
+            html("<table><colgroup><col span=2></colgroup><thead><tr><th>h</th></tr></thead><tbody><tr><td>b</td></tr></tbody></table>");
         assert!(output.contains("<thead><tr><th><p>h</p></th></tr></thead>"), "{output}");
         assert!(output.contains("<tbody><tr><td><p>b</p></td></tr></tbody>"), "{output}");
         assert!(
@@ -263,10 +256,7 @@ mod html_structure_smoke {
         let late = "<table><tbody><tr><td>Body</td></tr></tbody><thead><tr><th>Late</th></tr></thead></table>";
         let codes = loss_codes(late);
         assert!(codes.contains(&"import.html.head_after_body".to_string()), "{codes:?}");
-        assert!(
-            !codes.contains(&"import.html.table_sections".to_string()),
-            "a late head section is not a scattered `th` row: {codes:?}"
-        );
+        assert!(!codes.contains(&"import.html.table_sections".to_string()), "a late head section is not a scattered `th` row: {codes:?}");
         let output = html(late);
         assert!(output.contains("<thead><tr><th><p>Late</p></th></tr></thead>"), "{output}");
         assert!(output.contains("<tbody><tr><td><p>Body</p></td></tr></tbody>"), "{output}");
@@ -288,10 +278,7 @@ mod html_structure_smoke {
         let (caption, head, body, foot) = table(&graph);
         assert_eq!(caption.as_deref(), Some("Cap"));
         assert_eq!((head.len(), body.len(), foot.len()), (1, 1, 1));
-        assert!(
-            !loss_codes(source).contains(&"import.html.table_cell_blocks".to_string()),
-            "cell block layout is preserved, not flattened"
-        );
+        assert!(!loss_codes(source).contains(&"import.html.table_cell_blocks".to_string()), "cell block layout is preserved, not flattened");
         let output = export_html(&graph).expect("html export");
         assert!(output.contains("<thead><tr><th><p>h1</p></th><th><p>h2</p></th></tr></thead>"), "{output}");
         assert!(output.contains("<tbody><tr><td><p>a</p><p>b</p></td><td><p>c</p></td></tr></tbody>"), "{output}");

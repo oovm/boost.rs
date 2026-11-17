@@ -39,9 +39,7 @@ fn line_node(line: &LinePlan, id: &str) -> SemanticNode {
     if line.dashed {
         style.dash = Some([2.0 * line.width, 2.0 * line.width]);
     }
-    SemanticNode::new(SemanticKind::Line { from: line.from, to: line.to, style })
-        .with_id(id.to_string())
-        .with_role(SemanticRole::Edge)
+    SemanticNode::new(SemanticKind::Line { from: line.from, to: line.to, style }).with_id(id.to_string()).with_role(SemanticRole::Edge)
 }
 
 /// 标签：可选背景块 + 文本。
@@ -112,34 +110,22 @@ fn arrow_nodes(arrow: &ArrowPlan, index: usize) -> Vec<(String, SemanticNode)> {
             let lower_to = Point::new(arrow.to.x - shift.x, arrow.to.y - shift.y);
             nodes.push((
                 format!("arrow-{index}-shaft-a"),
-                SemanticNode::new(SemanticKind::Line {
-                    from: upper_from,
-                    to: upper_to,
-                    style: ShapeStyle::stroked(SKELETON, width),
-                })
-                .with_role(SemanticRole::Edge),
+                SemanticNode::new(SemanticKind::Line { from: upper_from, to: upper_to, style: ShapeStyle::stroked(SKELETON, width) })
+                    .with_role(SemanticRole::Edge),
             ));
             nodes.push((format!("arrow-{index}-head-a"), head_node(head_at(upper_to, upper_from))));
             nodes.push((
                 format!("arrow-{index}-shaft-b"),
-                SemanticNode::new(SemanticKind::Line {
-                    from: lower_to,
-                    to: lower_from,
-                    style: ShapeStyle::stroked(SKELETON, width),
-                })
-                .with_role(SemanticRole::Edge),
+                SemanticNode::new(SemanticKind::Line { from: lower_to, to: lower_from, style: ShapeStyle::stroked(SKELETON, width) })
+                    .with_role(SemanticRole::Edge),
             ));
             nodes.push((format!("arrow-{index}-head-b"), head_node(head_at(lower_from, lower_to))));
         }
         crate::spec::ArrowKind::Single | crate::spec::ArrowKind::Double => {
             nodes.push((
                 format!("arrow-{index}-shaft"),
-                SemanticNode::new(SemanticKind::Line {
-                    from: arrow.from,
-                    to: arrow.to,
-                    style: ShapeStyle::stroked(SKELETON, width),
-                })
-                .with_role(SemanticRole::Edge),
+                SemanticNode::new(SemanticKind::Line { from: arrow.from, to: arrow.to, style: ShapeStyle::stroked(SKELETON, width) })
+                    .with_role(SemanticRole::Edge),
             ));
             nodes.push((format!("arrow-{index}-head"), head_node(head_at(arrow.to, arrow.from))));
             if matches!(arrow.kind, crate::spec::ArrowKind::Double) {

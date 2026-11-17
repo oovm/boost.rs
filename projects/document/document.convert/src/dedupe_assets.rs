@@ -34,20 +34,14 @@ pub fn dedupe_markdown_project(project: &mut MarkdownProject) -> usize {
     for asset in project.assets.drain(..) {
         let fingerprint = blake3_hash(&asset.bytes);
         let is_first = !fingerprint_to_path.contains_key(&fingerprint);
-        let canonical_path = fingerprint_to_path
-            .entry(fingerprint)
-            .or_insert_with(|| content_address_path(&asset.relative_path, &fingerprint))
-            .clone();
+        let canonical_path =
+            fingerprint_to_path.entry(fingerprint).or_insert_with(|| content_address_path(&asset.relative_path, &fingerprint)).clone();
 
         old_to_new.insert(asset.relative_path, canonical_path.clone());
 
         // Only keep the first occurrence of each fingerprint.
         if is_first {
-            rewritten_assets.push(MarkdownProjectAsset {
-                relative_path: canonical_path,
-                bytes: asset.bytes,
-                asset_id: asset.asset_id,
-            });
+            rewritten_assets.push(MarkdownProjectAsset { relative_path: canonical_path, bytes: asset.bytes, asset_id: asset.asset_id });
         }
     }
 

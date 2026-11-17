@@ -1,13 +1,11 @@
 use std::{collections::HashMap, path::Path};
 
 use document_ir::{
-    Block, BreakKind, DocumentGraph, DocumentId, Inline, ListItem, LossMarker, MathDisplay, NodeId, RelationEndpoint,
-    SemanticStatus, SourceSpan, TableCell, TableRow,
+    Block, BreakKind, DocumentGraph, DocumentId, Inline, ListItem, LossMarker, MathDisplay, NodeId, RelationEndpoint, SemanticStatus,
+    SourceSpan, TableCell, TableRow,
 };
 use oak_core::{GreenNode, Parser, RedNode, RedTree, SourceText, parser::session::ParseSession};
-use oak_markdown::{
-    MarkdownLanguage, MarkdownParser, lexer::token_type::MarkdownTokenType, parser::element_type::MarkdownElementType,
-};
+use oak_markdown::{MarkdownLanguage, MarkdownParser, lexer::token_type::MarkdownTokenType, parser::element_type::MarkdownElementType};
 
 use super::{
     common::{cell_children, decode_escaped_text, register_image_assets},
@@ -19,8 +17,8 @@ use crate::FormatError;
 /// Import Markdown from disk into `notedown-ir`.
 pub fn import_markdown(path: impl AsRef<Path>) -> Result<DocumentGraph, FormatError> {
     let path = path.as_ref();
-    let text = std::fs::read_to_string(path)
-        .map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
+    let text =
+        std::fs::read_to_string(path).map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
     import_markdown_bytes(&path.display().to_string(), &text)
 }
 
@@ -65,11 +63,7 @@ pub fn import_markdown_bytes(label: &str, text: &str) -> Result<DocumentGraph, F
 /// files supplies them through the same asset source the HTML reader uses.
 /// Targets without captured bytes stay `Unresolved` and raise
 /// `import.markdown.asset_unresolved`.
-pub fn import_markdown_bytes_with_assets(
-    label: &str,
-    text: &str,
-    assets: &dyn HtmlAssetSource,
-) -> Result<DocumentGraph, FormatError> {
+pub fn import_markdown_bytes_with_assets(label: &str, text: &str, assets: &dyn HtmlAssetSource) -> Result<DocumentGraph, FormatError> {
     import_markdown_bytes_with_source(label, text, false, assets)
 }
 
@@ -209,8 +203,7 @@ fn lower_markdown_tree(
             continue;
         }
         if node.element_type() == MarkdownElementType::CodeBlock {
-            let (language, content, consumed, body_offset) =
-                extract_code_block(node, source, children.get(index..).unwrap_or_default());
+            let (language, content, consumed, body_offset) = extract_code_block(node, source, children.get(index..).unwrap_or_default());
             index += consumed;
             let span = Some(SourceSpan { start: body_offset as u32, end: (body_offset + content.len()) as u32 });
             let block = match language {
@@ -238,9 +231,7 @@ fn lower_markdown_tree(
             graph.push_loss_at(
                 LossMarker {
                     code: "import.markdown.front_matter_unmapped".into(),
-                    message:
-                        "front matter carries metadata that the IR has no field for, so it stays an unsupported opaque block"
-                            .into(),
+                    message: "front matter carries metadata that the IR has no field for, so it stays an unsupported opaque block".into(),
                     status: SemanticStatus::Unsupported,
                 },
                 Some(SourceSpan { start: span.start as u32, end: span.end as u32 }),
@@ -331,9 +322,7 @@ fn lower_markdown_tree(
             graph.push_loss_at(
                 LossMarker {
                     code: "import.markdown.definition_list".into(),
-                    message:
-                        "definition list is lowered to term and description paragraphs because the IR has no definition list node"
-                            .into(),
+                    message: "definition list is lowered to term and description paragraphs because the IR has no definition list node".into(),
                     status: SemanticStatus::Partial,
                 },
                 Some(SourceSpan { start: span.start as u32, end: span.end as u32 }),
@@ -630,11 +619,9 @@ fn lower_block_node(
             let (head, body) = extract_table(node, source, context, graph);
             BlockOutcome::Block(Block::Table { caption: None, head, body, foot: Vec::new() })
         }
-        MarkdownElementType::HorizontalRule => BlockOutcome::Block(Block::Opaque {
-            kind: "thematic_break".into(),
-            payload_hint: "---".into(),
-            status: SemanticStatus::Partial,
-        }),
+        MarkdownElementType::HorizontalRule => {
+            BlockOutcome::Block(Block::Opaque { kind: "thematic_break".into(), payload_hint: "---".into(), status: SemanticStatus::Partial })
+        }
         MarkdownElementType::HtmlTag | MarkdownElementType::XmlTag => {
             let raw = node.text(source).into_owned();
             if let Some((url, display)) = autolink_target(raw.trim_end()) {
@@ -719,10 +706,9 @@ fn collect_inlines(node: RedNode<MarkdownLanguage>, source: &SourceText, context
                             }
                             else {
                                 let span = leaf.span();
-                                context.losses.push((
-                                    raw_html_loss_marker(),
-                                    Some(SourceSpan { start: span.start as u32, end: span.end as u32 }),
-                                ));
+                                context
+                                    .losses
+                                    .push((raw_html_loss_marker(), Some(SourceSpan { start: span.start as u32, end: span.end as u32 })));
                                 Some(Inline::RawHtml { html: text.into_owned() })
                             }
                         }
@@ -779,15 +765,9 @@ fn merge_adjacent_text(inlines: &mut Vec<Inline>) {
 
 fn lower_inline_node(node: RedNode<MarkdownLanguage>, source: &SourceText, context: &mut LinkContext) -> Option<Inline> {
     match node.element_type() {
-        MarkdownElementType::Text | MarkdownElementType::HeadingText => {
-            Some(Inline::Text { text: decode_escaped_text(&node.text(source)) })
-        }
-        MarkdownElementType::Strong => {
-            Some(Inline::Styled { style: "bold".into(), children: collect_inlines(node, source, context) })
-        }
-        MarkdownElementType::Emphasis => {
-            Some(Inline::Styled { style: "italic".into(), children: collect_inlines(node, source, context) })
-        }
+        MarkdownElementType::Text | MarkdownElementType::HeadingText => Some(Inline::Text { text: decode_escaped_text(&node.text(source)) }),
+        MarkdownElementType::Strong => Some(Inline::Styled { style: "bold".into(), children: collect_inlines(node, source, context) }),
+        MarkdownElementType::Emphasis => Some(Inline::Styled { style: "italic".into(), children: collect_inlines(node, source, context) }),
         MarkdownElementType::InlineCode => Some(Inline::InlineCode { text: inline_code_text(&node.text(source)) }),
         MarkdownElementType::Link => parse_inline_link(node, source, context),
         MarkdownElementType::Image => parse_inline_image(node, source, context),
@@ -801,16 +781,11 @@ fn lower_inline_node(node: RedNode<MarkdownLanguage>, source: &SourceText, conte
             let label = raw.trim().strip_prefix("[^").and_then(|value| value.strip_suffix(']')).unwrap_or_default().to_string();
             if context.flow_footnotes {
                 let span = node.span();
-                context.losses.push((
-                    footnote_reference_loss_marker(),
-                    Some(SourceSpan { start: span.start as u32, end: span.end as u32 }),
-                ));
+                context.losses.push((footnote_reference_loss_marker(), Some(SourceSpan { start: span.start as u32, end: span.end as u32 })));
             }
             Some(Inline::Note { label, display: None })
         }
-        MarkdownElementType::Strikethrough => {
-            Some(Inline::Styled { style: "strike".into(), children: collect_inlines(node, source, context) })
-        }
+        MarkdownElementType::Strikethrough => Some(Inline::Styled { style: "strike".into(), children: collect_inlines(node, source, context) }),
         MarkdownElementType::HtmlTag | MarkdownElementType::XmlTag => {
             let raw = node.text(source).into_owned();
             if let Some((url, display)) = autolink_target(raw.trim_end()) {
@@ -1090,11 +1065,7 @@ fn parse_inline_link(node: RedNode<MarkdownLanguage>, source: &SourceText, conte
     let span = node.span();
     let site = SourceSpan { start: span.start as u32, end: span.end as u32 };
     if let Some((_, url, title)) = resolve_link_destination(raw.as_ref(), context, site) {
-        return Some(Inline::Link {
-            target: RelationEndpoint::ExternalUri(url),
-            display: link_display(raw.as_ref(), context),
-            title,
-        });
+        return Some(Inline::Link { target: RelationEndpoint::ExternalUri(url), display: link_display(raw.as_ref(), context), title });
     }
     Some(Inline::Text { text: decode_escaped_text(raw.trim_end()) })
 }
@@ -1117,11 +1088,7 @@ fn parse_inline_image(node: RedNode<MarkdownLanguage>, source: &SourceText, cont
 /// lookup happens in the same collector pass that owns the node, so an
 /// unresolved explicit label can point at the exact source range instead of
 /// leaving the loss span-less.
-fn resolve_link_destination(
-    raw: &str,
-    context: &mut LinkContext,
-    site: SourceSpan,
-) -> Option<(String, String, Option<String>)> {
+fn resolve_link_destination(raw: &str, context: &mut LinkContext, site: SourceSpan) -> Option<(String, String, Option<String>)> {
     if let Some((text, url, title)) = split_markdown_link(raw) {
         return Some((text, url, title));
     }
@@ -1369,16 +1336,12 @@ fn is_markdown_marker(text: &str) -> bool {
 /// Unknown or absent language tags stay `Block::Code` instead of being guessed
 /// as diagrams, and every listed language must have a lowering frontend.
 fn is_diagram_language(language: &str) -> bool {
-    language.eq_ignore_ascii_case("mermaid")
-        || language.eq_ignore_ascii_case("dot")
-        || language.eq_ignore_ascii_case("plantuml")
+    language.eq_ignore_ascii_case("mermaid") || language.eq_ignore_ascii_case("dot") || language.eq_ignore_ascii_case("plantuml")
 }
 
 /// Chart fences are promoted to `Block::Chart`, never to `Block::Diagram`.
 fn is_chart_language(language: &str) -> bool {
-    language.eq_ignore_ascii_case("vega")
-        || language.eq_ignore_ascii_case("vega-lite")
-        || language.eq_ignore_ascii_case("chart")
+    language.eq_ignore_ascii_case("vega") || language.eq_ignore_ascii_case("vega-lite") || language.eq_ignore_ascii_case("chart")
 }
 
 /// Score fences are promoted to `Block::Engraving`, never to `Block::Diagram`
@@ -1644,12 +1607,7 @@ fn attach_list_to_last_item(graph: &mut DocumentGraph, parent: NodeId, child: No
 /// Nested `List` children are recursed instead of becoming child blocks, so a
 /// run that `oak-markdown` split across several root nodes is rebuilt as one
 /// sequence before the levels are reconstructed.
-fn collect_list_items(
-    node: RedNode<MarkdownLanguage>,
-    source: &SourceText,
-    context: &mut LinkContext,
-    out: &mut Vec<FlatItem>,
-) {
+fn collect_list_items(node: RedNode<MarkdownLanguage>, source: &SourceText, context: &mut LinkContext, out: &mut Vec<FlatItem>) {
     for child in node.children() {
         let RedTree::Node(item_node) = child
         else {
@@ -1659,8 +1617,7 @@ fn collect_list_items(
             continue;
         }
         let marker = list_item_marker(item_node, source);
-        let ordered =
-            marker.as_deref().and_then(|value| value.chars().next()).is_some_and(|character| character.is_ascii_digit());
+        let ordered = marker.as_deref().and_then(|value| value.chars().next()).is_some_and(|character| character.is_ascii_digit());
         let number = if ordered {
             marker
                 .as_deref()
@@ -1804,11 +1761,7 @@ fn lower_list_item<'a>(
 /// remaining lines as paragraph text, so the closing tag would be escaped on
 /// export. CommonMark ends an HTML block at the first blank line, which makes
 /// the block the contiguous run of siblings after the opening tag.
-fn extract_html_block(
-    node: RedNode<MarkdownLanguage>,
-    trailing: &[RedTree<MarkdownLanguage>],
-    source: &SourceText,
-) -> (String, usize) {
+fn extract_html_block(node: RedNode<MarkdownLanguage>, trailing: &[RedTree<MarkdownLanguage>], source: &SourceText) -> (String, usize) {
     let text = source.text();
     let start = node.span().start;
     let end = html_block_terminator(text, start);
@@ -1838,8 +1791,7 @@ fn html_block_terminator(text: &str, start: usize) -> usize {
     let mut line_start = start.min(length);
     let mut first_line = true;
     while line_start < length {
-        let line_end =
-            text.get(line_start..).and_then(|rest| rest.find(['\n', '\r'])).map(|index| line_start + index).unwrap_or(length);
+        let line_end = text.get(line_start..).and_then(|rest| rest.find(['\n', '\r'])).map(|index| line_start + index).unwrap_or(length);
         if !first_line && text.get(line_start..line_end).unwrap_or("").trim().is_empty() {
             return line_start;
         }
@@ -1921,8 +1873,7 @@ fn footnote_body_loss_marker() -> LossMarker {
 fn footnote_reference_loss_marker() -> LossMarker {
     LossMarker {
         code: "import.markdown.footnote_reference_marker".into(),
-        message: "footnote reference renders as a textual `[^label]` marker because flow targets have no footnote apparatus"
-            .into(),
+        message: "footnote reference renders as a textual `[^label]` marker because flow targets have no footnote apparatus".into(),
         status: SemanticStatus::Partial,
     }
 }
@@ -1931,11 +1882,7 @@ fn footnote_reference_loss_marker() -> LossMarker {
 ///
 /// `oak-markdown` keeps the `:` marker in the node, so it is removed here while
 /// the authored description text keeps its inline formatting.
-fn definition_description_inlines(
-    node: RedNode<MarkdownLanguage>,
-    source: &SourceText,
-    context: &mut LinkContext,
-) -> Vec<Inline> {
+fn definition_description_inlines(node: RedNode<MarkdownLanguage>, source: &SourceText, context: &mut LinkContext) -> Vec<Inline> {
     let mut content = collect_inlines(node, source, context);
     trim_trailing_line_break(&mut content);
     if let Some(Inline::Text { text }) = content.first_mut() {
@@ -1989,8 +1936,7 @@ fn lower_html_table_block(html: &str, graph: &mut DocumentGraph) -> Option<Block
 
 /// Find the single table that no other block references.
 fn root_table(blocks: &[document_ir::BlockNode]) -> Option<&document_ir::BlockNode> {
-    let referenced: std::collections::HashSet<NodeId> =
-        blocks.iter().flat_map(|node| direct_block_references(&node.block)).collect();
+    let referenced: std::collections::HashSet<NodeId> = blocks.iter().flat_map(|node| direct_block_references(&node.block)).collect();
     let mut roots = blocks.iter().filter(|node| matches!(node.block, Block::Table { .. }) && !referenced.contains(&node.id));
     let root = roots.next()?;
     roots.next().is_none().then_some(root)
@@ -2001,13 +1947,9 @@ fn direct_block_references(block: &Block) -> Vec<NodeId> {
     match block {
         Block::Section { children, .. } | Block::Quote { children } => children.clone(),
         Block::List { items, .. } => items.iter().flat_map(|item| item.children.iter().copied()).collect(),
-        Block::Table { head, body, foot, .. } => head
-            .iter()
-            .chain(body)
-            .chain(foot)
-            .flat_map(|row| row.cells.iter())
-            .flat_map(|cell| cell.children.iter().copied())
-            .collect(),
+        Block::Table { head, body, foot, .. } => {
+            head.iter().chain(body).chain(foot).flat_map(|row| row.cells.iter()).flat_map(|cell| cell.children.iter().copied()).collect()
+        }
         _ => Vec::new(),
     }
 }
@@ -2086,12 +2028,7 @@ fn remap_block_references(
 /// tree. The dequoted body is re-read with the same import profile: a body that
 /// lowers to paragraphs becomes a real `Paragraph` child, and any deeper block
 /// (list, heading, table, code, nested quote) becomes another quote child.
-fn lower_blockquote(
-    node: RedNode<MarkdownLanguage>,
-    source: &SourceText,
-    context: &mut LinkContext,
-    graph: &mut DocumentGraph,
-) -> Block {
+fn lower_blockquote(node: RedNode<MarkdownLanguage>, source: &SourceText, context: &mut LinkContext, graph: &mut DocumentGraph) -> Block {
     let raw = node.text(source);
     let body = strip_blockquote_markers(&raw);
     if body != raw && !body.trim().is_empty() {
@@ -2313,9 +2250,7 @@ fn extract_table(
                 context.losses.push((
                     LossMarker {
                         code: "import.markdown.table_alignment".into(),
-                        message:
-                            "GFM column alignment is not represented in the table IR, so the reopened table uses default alignment"
-                                .into(),
+                        message: "GFM column alignment is not represented in the table IR, so the reopened table uses default alignment".into(),
                         status: SemanticStatus::Partial,
                     },
                     Some(SourceSpan { start: span.start as u32, end: span.end as u32 }),
@@ -2323,10 +2258,7 @@ fn extract_table(
             }
             continue;
         }
-        let cells = contents
-            .into_iter()
-            .map(|content| TableCell { children: cell_children(graph, content), colspan: 1, rowspan: 1 })
-            .collect();
+        let cells = contents.into_iter().map(|content| TableCell { children: cell_children(graph, content), colspan: 1, rowspan: 1 }).collect();
         let row = TableRow { cells };
         if header_pending {
             head.push(row);

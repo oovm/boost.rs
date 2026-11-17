@@ -159,10 +159,7 @@ fn package_member_path(graph: &DocumentGraph, node: NodeId) -> Option<String> {
 
 fn is_navigation_only_group(graph: &DocumentGraph, group: &SpineGroup) -> bool {
     group.member_path.to_ascii_lowercase().contains("nav")
-        && group
-            .blocks
-            .iter()
-            .all(|node_id| graph.block(*node_id).map(|node| matches!(node.block, Block::List { .. })).unwrap_or(false))
+        && group.blocks.iter().all(|node_id| graph.block(*node_id).map(|node| matches!(node.block, Block::List { .. })).unwrap_or(false))
 }
 
 fn chapter_label_from_member(member_path: &str, graph: &DocumentGraph, first_block: Option<NodeId>) -> String {
@@ -244,8 +241,8 @@ pub fn plan_assets(graph: &DocumentGraph) -> Vec<PlannedAsset> {
         };
         let file_name = stable_asset_file_name(asset, &used_names);
         used_names.insert(file_name.clone());
-        let media_type = guess_media_type(&file_name)
-            .unwrap_or_else(|| guess_from_bytes(bytes).unwrap_or("application/octet-stream".to_string()));
+        let media_type =
+            guess_media_type(&file_name).unwrap_or_else(|| guess_from_bytes(bytes).unwrap_or("application/octet-stream".to_string()));
         let relative_path = format!("assets/{file_name}");
         assets.push(PlannedAsset { relative_path, bytes: bytes.clone(), media_type, asset_id: asset.id });
     }
@@ -272,10 +269,8 @@ fn stable_asset_file_name(asset: &Asset, used: &HashSet<String>) -> String {
 }
 
 fn sanitize_file_name(name: &str) -> String {
-    let mut sanitized = name
-        .chars()
-        .map(|c| if matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') { '_' } else { c })
-        .collect::<String>();
+    let mut sanitized =
+        name.chars().map(|c| if matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') { '_' } else { c }).collect::<String>();
     if sanitized.is_empty() {
         sanitized = "asset".into();
     }

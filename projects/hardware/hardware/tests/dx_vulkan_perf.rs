@@ -1,7 +1,6 @@
 //! Soft-skip DX12 vs Vulkan wall-clock samples for MatMul and Raster clear.
 
-use std::collections::BTreeMap;
-use std::time::Instant;
+use std::{collections::BTreeMap, time::Instant};
 
 use hardware::prelude::*;
 use hardware_backend_dx12::Dx12Backend;
@@ -19,13 +18,7 @@ fn buffer_floats(id: u64, floats: usize) -> ResourceNode {
 }
 
 fn buffer_bytes(id: u64, bytes: u64) -> ResourceNode {
-    ResourceNode {
-        id: ResourceId(id),
-        kind: ResourceKind::Buffer,
-        domain: Domain::Vram,
-        access: Access::ReadWrite,
-        byte_size: Some(bytes),
-    }
+    ResourceNode { id: ResourceId(id), kind: ResourceKind::Buffer, domain: Domain::Vram, access: Access::ReadWrite, byte_size: Some(bytes) }
 }
 
 fn task(id: u64, kind: TaskKind, params: BTreeMap<String, ParamValue>) -> TaskNode {
@@ -50,58 +43,17 @@ fn f(key: &str, v: f64) -> (String, ParamValue) {
 
 fn matmul_graph() -> Graph {
     Graph {
-        resources: ResourceGraph {
-            nodes: vec![
-                buffer_floats(1, 4),
-                buffer_floats(2, 4),
-                buffer_floats(3, 4),
-                buffer_floats(4, 4),
-            ],
-        },
+        resources: ResourceGraph { nodes: vec![buffer_floats(1, 4), buffer_floats(2, 4), buffer_floats(3, 4), buffer_floats(4, 4)] },
         tasks: TaskGraph {
             nodes: vec![
-                task(
-                    10,
-                    TaskKind::Copy,
-                    BTreeMap::from([i("src", 1), i("dst", 2)]),
-                ),
-                task(
-                    11,
-                    TaskKind::Fill,
-                    BTreeMap::from([i("dst", 3), f("value", 1.0)]),
-                ),
-                task(
-                    12,
-                    TaskKind::MatMul,
-                    BTreeMap::from([
-                        i("a", 2),
-                        i("b", 3),
-                        i("out", 4),
-                        i("m", 2),
-                        i("n", 2),
-                        i("k", 2),
-                    ]),
-                ),
+                task(10, TaskKind::Copy, BTreeMap::from([i("src", 1), i("dst", 2)])),
+                task(11, TaskKind::Fill, BTreeMap::from([i("dst", 3), f("value", 1.0)])),
+                task(12, TaskKind::MatMul, BTreeMap::from([i("a", 2), i("b", 3), i("out", 4), i("m", 2), i("n", 2), i("k", 2)])),
             ],
             edges: vec![
-                DepEdge {
-                    from_task: None,
-                    from_resource: Some(ResourceId(1)),
-                    to_task: TaskId(10),
-                    kind: DepKind::Data,
-                },
-                DepEdge {
-                    from_task: Some(TaskId(10)),
-                    from_resource: None,
-                    to_task: TaskId(12),
-                    kind: DepKind::Execution,
-                },
-                DepEdge {
-                    from_task: Some(TaskId(11)),
-                    from_resource: None,
-                    to_task: TaskId(12),
-                    kind: DepKind::Execution,
-                },
+                DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data },
+                DepEdge { from_task: Some(TaskId(10)), from_resource: None, to_task: TaskId(12), kind: DepKind::Execution },
+                DepEdge { from_task: Some(TaskId(11)), from_resource: None, to_task: TaskId(12), kind: DepKind::Execution },
             ],
         },
     }
@@ -109,29 +61,14 @@ fn matmul_graph() -> Graph {
 
 fn raster_clear_graph() -> Graph {
     Graph {
-        resources: ResourceGraph {
-            nodes: vec![buffer_bytes(1, 32 * 32 * 4)],
-        },
+        resources: ResourceGraph { nodes: vec![buffer_bytes(1, 32 * 32 * 4)] },
         tasks: TaskGraph {
             nodes: vec![task(
                 10,
                 TaskKind::Raster,
-                BTreeMap::from([
-                    i("dst", 1),
-                    i("width", 32),
-                    i("height", 32),
-                    f("r", 1.0),
-                    f("g", 0.0),
-                    f("b", 0.0),
-                    f("a", 1.0),
-                ]),
+                BTreeMap::from([i("dst", 1), i("width", 32), i("height", 32), f("r", 1.0), f("g", 0.0), f("b", 0.0), f("a", 1.0)]),
             )],
-            edges: vec![DepEdge {
-                from_task: None,
-                from_resource: Some(ResourceId(1)),
-                to_task: TaskId(10),
-                kind: DepKind::Data,
-            }],
+            edges: vec![DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data }],
         },
     }
 }
@@ -146,9 +83,7 @@ fn time_dx12() -> Option<BackendPerfRow> {
             }
         };
         let matmul = matmul_graph();
-        if dx.prepare(&matmul).is_err()
-            || dx.write_f32(Rid(1), &[1.0, 2.0, 3.0, 4.0]).is_err()
-        {
+        if dx.prepare(&matmul).is_err() || dx.write_f32(Rid(1), &[1.0, 2.0, 3.0, 4.0]).is_err() {
             eprintln!("skip dx12 perf (matmul prepare/seed)");
             return None;
         }
@@ -186,10 +121,7 @@ fn time_dx12() -> Option<BackendPerfRow> {
 
     Some(BackendPerfRow {
         backend: "dx12".into(),
-        samples: vec![
-            TimedSample::new("matmul", matmul_ns),
-            TimedSample::new("raster_clear", raster_ns),
-        ],
+        samples: vec![TimedSample::new("matmul", matmul_ns), TimedSample::new("raster_clear", raster_ns)],
     })
 }
 
@@ -203,9 +135,7 @@ fn time_vulkan() -> Option<BackendPerfRow> {
             }
         };
         let matmul = matmul_graph();
-        if vk.prepare(&matmul).is_err()
-            || vk.write_f32(Rid(1), &[1.0, 2.0, 3.0, 4.0]).is_err()
-        {
+        if vk.prepare(&matmul).is_err() || vk.write_f32(Rid(1), &[1.0, 2.0, 3.0, 4.0]).is_err() {
             eprintln!("skip vulkan perf (matmul prepare/seed)");
             return None;
         }
@@ -243,10 +173,7 @@ fn time_vulkan() -> Option<BackendPerfRow> {
 
     Some(BackendPerfRow {
         backend: "vulkan".into(),
-        samples: vec![
-            TimedSample::new("matmul", matmul_ns),
-            TimedSample::new("raster_clear", raster_ns),
-        ],
+        samples: vec![TimedSample::new("matmul", matmul_ns), TimedSample::new("raster_clear", raster_ns)],
     })
 }
 
@@ -269,20 +196,11 @@ fn dx12_vulkan_perf_report_soft_skip() {
     }
     for row in &report.rows {
         for sample in &row.samples {
-            assert!(
-                sample.elapsed_nanos > 0,
-                "{} {} must be timed",
-                row.backend,
-                sample.label
-            );
+            assert!(sample.elapsed_nanos > 0, "{} {} must be timed", row.backend, sample.label);
         }
     }
-    if report.sample_nanos("dx12", "matmul").is_some()
-        && report.sample_nanos("vulkan", "matmul").is_some()
-    {
-        let ratio = report
-            .ratio("vulkan", "dx12", "matmul")
-            .expect("matmul ratio");
+    if report.sample_nanos("dx12", "matmul").is_some() && report.sample_nanos("vulkan", "matmul").is_some() {
+        let ratio = report.ratio("vulkan", "dx12", "matmul").expect("matmul ratio");
         eprintln!("vulkan/dx12 matmul ratio: {ratio:.3}");
         assert!(ratio.is_finite() && ratio > 0.0);
     }

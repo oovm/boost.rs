@@ -17,11 +17,11 @@ use database_execution::{
     sql_exec::execute_plan,
 };
 use database_query::{
-    DiscardTarget, SqlBoundExpression, SqlBoundLiteral, SqlCatalog, SqlCatalogBoundStatement, SqlColumn, SqlDialect,
-    SqlErrorKind, SqlExecutionPlan, SqlFieldType, SqlFrontendError, SqlParameterStyle, SqlSchemaRegistry, SqlSessionCommand,
-    SqlTransactionAction, SqlValue, analyze_meta_query, apply_auto_increment, bind_sql_catalog, describe_bound_insert, describe_plan,
-    detect_session_reset_statement, encode_hex, neutralized_sql_parameters, parse_ddl, parse_session_command, pg_server_version,
-    plan_statement_for_dialect, split_sql_batch, substitute_sql_parameters,
+    DiscardTarget, SqlBoundExpression, SqlBoundLiteral, SqlCatalog, SqlCatalogBoundStatement, SqlColumn, SqlDialect, SqlErrorKind,
+    SqlExecutionPlan, SqlFieldType, SqlFrontendError, SqlParameterStyle, SqlSchemaRegistry, SqlSessionCommand, SqlTransactionAction, SqlValue,
+    analyze_meta_query, apply_auto_increment, bind_sql_catalog, describe_bound_insert, describe_plan, detect_session_reset_statement,
+    encode_hex, neutralized_sql_parameters, parse_ddl, parse_session_command, pg_server_version, plan_statement_for_dialect, split_sql_batch,
+    substitute_sql_parameters,
 };
 
 /// PostgreSQL type OIDs supported by the gateway.
@@ -697,11 +697,7 @@ fn handle_single_statement(
                 if needle == "search_path" { Some(session.search_path.clone()) } else { pg_parameter(&name).map(|s| s.to_string()) };
             match value {
                 Some(value) => {
-                    write_row_description(
-                        stream,
-                        &[SqlColumn { name: name.clone(), field_type: SqlFieldType::String, field_id: None }],
-                        &[0],
-                    )?;
+                    write_row_description(stream, &[SqlColumn { name: name.clone(), field_type: SqlFieldType::String, field_id: None }], &[0])?;
                     write_data_row(
                         stream,
                         &[SqlValue::String(value)],

@@ -9,13 +9,12 @@
 //! `createIndexes` 的失败消息内含随机 operation id 与集合 UUID（真机同样随机），
 //! 逐字节比较没有意义，改为只断言 `ok`、`code`、`codeName`、消息前缀与 namespace。
 
-use std::collections::HashMap;
-use std::sync::Mutex;
+use std::{collections::HashMap, sync::Mutex};
 
 use database_cluster::topology::ShardMap;
 use database_execution::cluster::{KeyValueExecutor, LocalExecutor};
 use database_server::yyds::mongo::{
-    bson::{encode_bson, parse_bson, BinaryData, BsonDocument, BsonValue},
+    bson::{BinaryData, BsonDocument, BsonValue, encode_bson, parse_bson},
     handle_op_msg,
 };
 use database_storage::cluster_kv::MemoryShard;

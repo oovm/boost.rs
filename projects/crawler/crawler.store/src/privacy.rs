@@ -11,8 +11,7 @@ use crate::{
 };
 
 /// Credential-bearing header or field markers rejected in browser archives.
-const ARCHIVE_MARKERS: &[&str] =
-    &["set-cookie:", "cookie:", "authorization:", "proxy-authorization:", "www-authenticate:", "bearer "];
+const ARCHIVE_MARKERS: &[&str] = &["set-cookie:", "cookie:", "authorization:", "proxy-authorization:", "www-authenticate:", "bearer "];
 
 /// Words that make a vault handle look like an inlined secret.
 const SECRET_WORDS: &[&str] = &["cookie", "authorization", "bearer", "password", "passwd", "secret", "token"];
@@ -21,9 +20,7 @@ const SECRET_WORDS: &[&str] = &["cookie", "authorization", "bearer", "password",
 pub(crate) fn ensure_archive_is_redacted(archive: &[u8]) -> Result<()> {
     for marker in ARCHIVE_MARKERS {
         if contains_ascii_case_insensitive(archive, marker) {
-            return Err(StoreError::StoreInvalidState(format!(
-                "credential plaintext is not allowed in a browser archive: found `{marker}`"
-            )));
+            return Err(StoreError::StoreInvalidState(format!("credential plaintext is not allowed in a browser archive: found `{marker}`")));
         }
     }
     Ok(())
@@ -41,9 +38,7 @@ pub(crate) fn ensure_vault_ref_is_opaque(reference: &str) -> Result<()> {
     }
     let lower = reference.to_ascii_lowercase();
     if let Some(word) = SECRET_WORDS.iter().find(|word| lower.contains(*word)) {
-        return Err(StoreError::StoreInvalidState(format!(
-            "vault session reference must be an opaque handle but contains `{word}`"
-        )));
+        return Err(StoreError::StoreInvalidState(format!("vault session reference must be an opaque handle but contains `{word}`")));
     }
     Ok(())
 }
@@ -55,9 +50,7 @@ pub(crate) fn ensure_session_record(record: &BrowserSessionRecord) -> Result<()>
         (BrowserSessionPersistence::ExternalVault, None) => {
             Err(StoreError::StoreInvalidState("external vault persistence requires a vault session reference".into()))
         }
-        (_, Some(_)) => {
-            Err(StoreError::StoreInvalidState("only external vault persistence may store a vault session reference".into()))
-        }
+        (_, Some(_)) => Err(StoreError::StoreInvalidState("only external vault persistence may store a vault session reference".into())),
         (_, None) => Ok(()),
     }
 }

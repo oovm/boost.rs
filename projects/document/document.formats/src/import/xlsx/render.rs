@@ -162,13 +162,9 @@ fn render_sheet(
         }];
     }
 
-    let frozen_rows =
-        rows.iter().copied().filter(|row| *row <= sheet.freeze.map(|freeze| freeze.rows).unwrap_or(0)).collect::<Vec<_>>();
-    let frozen_columns = columns
-        .iter()
-        .copied()
-        .filter(|column| *column <= sheet.freeze.map(|freeze| freeze.columns).unwrap_or(0))
-        .collect::<Vec<_>>();
+    let frozen_rows = rows.iter().copied().filter(|row| *row <= sheet.freeze.map(|freeze| freeze.rows).unwrap_or(0)).collect::<Vec<_>>();
+    let frozen_columns =
+        columns.iter().copied().filter(|column| *column <= sheet.freeze.map(|freeze| freeze.columns).unwrap_or(0)).collect::<Vec<_>>();
     let body_rows: Vec<u32> = rows.iter().copied().filter(|row| !frozen_rows.contains(row)).collect();
     let body_columns: Vec<u32> = columns.iter().copied().filter(|column| !frozen_columns.contains(column)).collect();
     if !frozen_rows.is_empty() || !frozen_columns.is_empty() {
@@ -243,10 +239,7 @@ fn render_sheet(
         html.push_str("<table class=\"grid\"><colgroup><col style=\"width:");
         html.push_str(&format!("{ROW_GUTTER_PX}px\">"));
         for column in &page_columns {
-            html.push_str(&format!(
-                "<col style=\"width:{:.1}px\">",
-                column_px(sheet, *column).min(body_width.max(content_width))
-            ));
+            html.push_str(&format!("<col style=\"width:{:.1}px\">", column_px(sheet, *column).min(body_width.max(content_width))));
         }
         html.push_str("</colgroup><thead><tr><th class=\"gutter\"></th>");
         for column in &page_columns {
@@ -467,12 +460,9 @@ fn cell_css(sheet: &XlsxSheet, workbook: &XlsxWorkbook, row: u32, column: u32, i
     else {
         css.push_str("white-space:nowrap;overflow:hidden;");
     }
-    for (side, edge) in [
-        ("top", &style.borders.top),
-        ("right", &style.borders.right),
-        ("bottom", &style.borders.bottom),
-        ("left", &style.borders.left),
-    ] {
+    for (side, edge) in
+        [("top", &style.borders.top), ("right", &style.borders.right), ("bottom", &style.borders.bottom), ("left", &style.borders.left)]
+    {
         if let Some(edge) = edge {
             let width = match edge.style.as_str() {
                 "medium" => "2px",
@@ -485,25 +475,14 @@ fn cell_css(sheet: &XlsxSheet, workbook: &XlsxWorkbook, row: u32, column: u32, i
                 "double" => "double",
                 _ => "solid",
             };
-            let color = edge
-                .color
-                .as_deref()
-                .and_then(|color| resolve_color(color, &workbook.styles))
-                .unwrap_or_else(|| "#808080".to_owned());
+            let color = edge.color.as_deref().and_then(|color| resolve_color(color, &workbook.styles)).unwrap_or_else(|| "#808080".to_owned());
             css.push_str(&format!("border-{side}:{width} {line} {color};"));
         }
     }
     css
 }
 
-fn append_cell(
-    html: &mut String,
-    sheet: &XlsxSheet,
-    workbook: &XlsxWorkbook,
-    row: u32,
-    column: u32,
-    issues: &mut Vec<XlsxIssue>,
-) {
+fn append_cell(html: &mut String, sheet: &XlsxSheet, workbook: &XlsxWorkbook, row: u32, column: u32, issues: &mut Vec<XlsxIssue>) {
     let Some(cell) = sheet.cell(row, column)
     else {
         return;
@@ -567,10 +546,8 @@ fn append_images(html: &mut String, sheet: &XlsxSheet, page_rows: &[u32], page_c
 
 fn image_size(image: &super::model::SheetImage) -> (f64, f64) {
     if let Some(to) = image.to {
-        let width = (to.column.saturating_sub(image.from.column) as f64 * 64.0)
-            + (to.column_offset - image.from.column_offset) as f64 / 9525.0;
-        let height =
-            (to.row.saturating_sub(image.from.row) as f64 * 20.0) + (to.row_offset - image.from.row_offset) as f64 / 9525.0;
+        let width = (to.column.saturating_sub(image.from.column) as f64 * 64.0) + (to.column_offset - image.from.column_offset) as f64 / 9525.0;
+        let height = (to.row.saturating_sub(image.from.row) as f64 * 20.0) + (to.row_offset - image.from.row_offset) as f64 / 9525.0;
         if width > 4.0 && height > 4.0 {
             return (width, height);
         }
@@ -606,13 +583,7 @@ fn base64(bytes: &[u8]) -> String {
     output
 }
 
-fn issue(
-    code: &str,
-    message: impl Into<String>,
-    status: IssueStatus,
-    sheet: Option<String>,
-    cell: Option<String>,
-) -> XlsxIssue {
+fn issue(code: &str, message: impl Into<String>, status: IssueStatus, sheet: Option<String>, cell: Option<String>) -> XlsxIssue {
     XlsxIssue { code: code.to_owned(), message: message.into(), status, sheet, cell }
 }
 

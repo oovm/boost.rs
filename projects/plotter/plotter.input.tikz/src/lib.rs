@@ -116,8 +116,7 @@ fn fit_scene(nodes: Vec<SceneNode>) -> Result<DisplayScene, TikzError> {
     };
     let width = bounds.width() + PICTURE_MARGIN * 2.0;
     let height = bounds.height() + PICTURE_MARGIN * 2.0;
-    let root = SceneNode::group(nodes)
-        .with_transform(Transform::translate(PICTURE_MARGIN - bounds.min.x, PICTURE_MARGIN - bounds.min.y));
+    let root = SceneNode::group(nodes).with_transform(Transform::translate(PICTURE_MARGIN - bounds.min.x, PICTURE_MARGIN - bounds.min.y));
     let mut scene = DisplayScene::new(Size::new(width, height));
     scene.push(root);
     Ok(scene)
@@ -746,8 +745,7 @@ impl Parser {
         }
         let mut nodes = Vec::new();
         if !contours.is_empty() {
-            nodes
-                .push(SceneNode::new(NodeKind::Path { path: build_path(&contours, style), style: style.shape_style(command) }));
+            nodes.push(SceneNode::new(NodeKind::Path { path: build_path(&contours, style), style: style.shape_style(command) }));
         }
         nodes.extend(texts);
         Ok(nodes)
@@ -1031,7 +1029,8 @@ fn drop_leading_point(contours: &mut Vec<Contour>, open: Option<usize>, start: P
     else {
         return;
     };
-    let replaceable = matches!(contours.get(index), Some(Contour::Polyline { points, closed: false }) if points.len() == 1 && points[0] == start);
+    let replaceable =
+        matches!(contours.get(index), Some(Contour::Polyline { points, closed: false }) if points.len() == 1 && points[0] == start);
     if replaceable {
         contours.pop();
     }
@@ -1046,14 +1045,7 @@ fn drop_leading_point(contours: &mut Vec<Contour>, open: Option<usize>, start: P
 /// vertical extent still uses an `0.8` / `0.2` baseline split, because
 /// `document.fonts` exposes advances and kerning but no ink bounds. Every side
 /// grows by the default `inner sep`, a third of the font size.
-fn node_box(
-    text: &str,
-    position: Point,
-    anchor: TextAnchor,
-    font_size: f64,
-    options: NodeOptions,
-    path_style: Style,
-) -> SceneNode {
+fn node_box(text: &str, position: Point, anchor: TextAnchor, font_size: f64, options: NodeOptions, path_style: Style) -> SceneNode {
     let width = label_width(text) * font_size;
     let left = match anchor {
         TextAnchor::Start => position.x,
@@ -1179,16 +1171,14 @@ fn append_dashed_contour(path: &mut PathData, points: &[Point], closed: bool) {
         let mut consumed = 0.0f64;
         while length - consumed > f64::EPSILON {
             if on && !pen_down {
-                path.commands
-                    .push(PathCommand::MoveTo(Point::new(start.x + direction.0 * consumed, start.y + direction.1 * consumed)));
+                path.commands.push(PathCommand::MoveTo(Point::new(start.x + direction.0 * consumed, start.y + direction.1 * consumed)));
                 pen_down = true;
             }
             let step = remaining.min(length - consumed);
             consumed += step;
             remaining -= step;
             if on {
-                path.commands
-                    .push(PathCommand::LineTo(Point::new(start.x + direction.0 * consumed, start.y + direction.1 * consumed)));
+                path.commands.push(PathCommand::LineTo(Point::new(start.x + direction.0 * consumed, start.y + direction.1 * consumed)));
             }
             if remaining <= f64::EPSILON {
                 pen_down = false;

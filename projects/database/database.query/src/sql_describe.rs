@@ -228,7 +228,9 @@ fn infer_expression_type(
                     argument
                 }
             }
-            "max" | "min" | "abs" | "round" => args.first().map(|arg| infer_expression_type(arg, field_types, dialect)).unwrap_or(SqlFieldType::Unknown),
+            "max" | "min" | "abs" | "round" => {
+                args.first().map(|arg| infer_expression_type(arg, field_types, dialect)).unwrap_or(SqlFieldType::Unknown)
+            }
             // `COALESCE`/`IFNULL` 的声明类型是所有实际分支的公共类型，NULL 字面量不参与推断。
             "coalesce" | "ifnull" | "nvl" => args
                 .iter()
@@ -248,10 +250,9 @@ fn infer_expression_type(
             | SqlBoundBinaryOperator::GreaterEqual
             | SqlBoundBinaryOperator::Like => SqlFieldType::Bool,
             SqlBoundBinaryOperator::Divide | SqlBoundBinaryOperator::Modulo => SqlFieldType::Float64,
-            SqlBoundBinaryOperator::Plus | SqlBoundBinaryOperator::Minus | SqlBoundBinaryOperator::Multiply => merge_numeric(
-                infer_expression_type(left, field_types, dialect),
-                infer_expression_type(right, field_types, dialect),
-            ),
+            SqlBoundBinaryOperator::Plus | SqlBoundBinaryOperator::Minus | SqlBoundBinaryOperator::Multiply => {
+                merge_numeric(infer_expression_type(left, field_types, dialect), infer_expression_type(right, field_types, dialect))
+            }
         },
         Unary { operator, expression } => match operator {
             SqlBoundUnaryOperator::Not

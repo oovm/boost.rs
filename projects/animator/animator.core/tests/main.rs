@@ -15,22 +15,12 @@ fn scene_with(id: &str, x: f64) -> DisplayScene {
 
 /// 读取场景内某个 id 的横向平移，用来判断插值是否真实发生。
 fn x_of(scene: &DisplayScene, id: &str) -> f64 {
-    scene
-        .nodes
-        .iter()
-        .find(|node| node.id.as_deref() == Some(id))
-        .unwrap_or_else(|| panic!("场景里没有 id 为 `{id}` 的节点"))
-        .transform
-        .e()
+    scene.nodes.iter().find(|node| node.id.as_deref() == Some(id)).unwrap_or_else(|| panic!("场景里没有 id 为 `{id}` 的节点")).transform.e()
 }
 
 /// 高度可变的矩形场景，用来验证矩形通道。
 fn bar_scene(id: &str, height: f64) -> DisplayScene {
-    let node = SceneNode::new(NodeKind::Rect {
-        rect: Rect::new(0.0, 0.0, 10.0, height),
-        style: ShapeStyle::default(),
-    })
-    .with_id(id);
+    let node = SceneNode::new(NodeKind::Rect { rect: Rect::new(0.0, 0.0, 10.0, height), style: ShapeStyle::default() }).with_id(id);
     let mut scene = DisplayScene::new(Size::new(200.0, 100.0));
     scene.push(node);
     scene
@@ -38,12 +28,7 @@ fn bar_scene(id: &str, height: f64) -> DisplayScene {
 
 /// 读取场景内某个 id 的矩形高度。
 fn height_of(scene: &DisplayScene, id: &str) -> f64 {
-    match &scene
-        .nodes
-        .iter()
-        .find(|node| node.id.as_deref() == Some(id))
-        .unwrap_or_else(|| panic!("场景里没有 id 为 `{id}` 的节点"))
-        .kind
+    match &scene.nodes.iter().find(|node| node.id.as_deref() == Some(id)).unwrap_or_else(|| panic!("场景里没有 id 为 `{id}` 的节点")).kind
     {
         NodeKind::Rect { rect, .. } => rect.height,
         other => panic!("预期矩形节点，实际为 {other:?}"),
@@ -53,10 +38,7 @@ fn height_of(scene: &DisplayScene, id: &str) -> f64 {
 /// 两状态程序：`from` 秒开始，`from + duration` 处完成，`to` 秒进入下一个状态。
 fn program(from: f64, to: f64, duration: f64) -> Program {
     Program {
-        states: vec![
-            SceneState { at: from, scene: scene_with("bar", 0.0) },
-            SceneState { at: to, scene: scene_with("bar", 100.0) },
-        ],
+        states: vec![SceneState { at: from, scene: scene_with("bar", 0.0) }, SceneState { at: to, scene: scene_with("bar", 100.0) }],
         transitions: vec![Transition { duration, ease: Easing::Linear, ..Transition::default() }],
     }
 }
@@ -73,10 +55,7 @@ fn interpolates_inside_a_transition() {
 #[test]
 fn grows_a_bar_through_the_extent_channel() {
     let program = Program {
-        states: vec![
-            SceneState { at: 0.0, scene: bar_scene("bar", 10.0) },
-            SceneState { at: 1.0, scene: bar_scene("bar", 50.0) },
-        ],
+        states: vec![SceneState { at: 0.0, scene: bar_scene("bar", 10.0) }, SceneState { at: 1.0, scene: bar_scene("bar", 50.0) }],
         transitions: vec![Transition { duration: 1.0, ease: Easing::Linear, ..Transition::default() }],
     };
     let compiled = program.compile().expect("程序合法");
@@ -134,11 +113,7 @@ fn frame_mapping_is_reproducible_across_frame_rates() {
         );
         // 每个帧号都能用秒复算出同一场景。
         for frame in [0, count / 3, count / 2, count - 1] {
-            assert_eq!(
-                compiled.sample_frame(fps, frame),
-                Some(compiled.sample(f64::from(frame) / f64::from(fps))),
-                "{fps} fps frame {frame}"
-            );
+            assert_eq!(compiled.sample_frame(fps, frame), Some(compiled.sample(f64::from(frame) / f64::from(fps))), "{fps} fps frame {frame}");
         }
     }
 }
@@ -162,26 +137,14 @@ fn rejects_invalid_programs() {
     assert_eq!(mismatched.compile().unwrap_err(), ProgramError::TransitionCount { states: 2, transitions: 0 });
 
     let unordered = Program {
-        states: vec![
-            SceneState { at: 1.0, scene: scene_with("bar", 0.0) },
-            SceneState { at: 1.0, scene: scene_with("bar", 100.0) },
-        ],
+        states: vec![SceneState { at: 1.0, scene: scene_with("bar", 0.0) }, SceneState { at: 1.0, scene: scene_with("bar", 100.0) }],
         transitions: vec![Transition { duration: 0.0, ..Transition::default() }],
     };
     assert_eq!(unordered.compile().unwrap_err(), ProgramError::TimeNotAscending { index: 1 });
 
-    let negative = Program {
-        states: program(0.0, 2.0, 1.0).states,
-        transitions: vec![Transition { duration: -0.5, ..Transition::default() }],
-    };
+    let negative = Program { states: program(0.0, 2.0, 1.0).states, transitions: vec![Transition { duration: -0.5, ..Transition::default() }] };
     assert_eq!(negative.compile().unwrap_err(), ProgramError::NegativeDuration { index: 0 });
 
-    let too_long = Program {
-        states: program(0.0, 2.0, 1.0).states,
-        transitions: vec![Transition { duration: 3.0, ..Transition::default() }],
-    };
-    assert_eq!(
-        too_long.compile().unwrap_err(),
-        ProgramError::TransitionTooLong { index: 0, duration: 3.0, gap: 2.0 }
-    );
+    let too_long = Program { states: program(0.0, 2.0, 1.0).states, transitions: vec![Transition { duration: 3.0, ..Transition::default() }] };
+    assert_eq!(too_long.compile().unwrap_err(), ProgramError::TransitionTooLong { index: 0, duration: 3.0, gap: 2.0 });
 }

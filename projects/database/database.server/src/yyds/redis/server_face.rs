@@ -351,10 +351,7 @@ impl Default for ClientRegistry {
 
 /// 40 位十六进制的进程标识，形状与真机的 `run_id` 一致。
 fn generate_run_id() -> String {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|delta| delta.as_nanos())
-        .unwrap_or(0);
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|delta| delta.as_nanos()).unwrap_or(0);
     format!("{nanos:040x}")
 }
 
@@ -371,7 +368,8 @@ pub(crate) fn handle_client(
     pubsub: &PubSubState,
 ) -> io::Result<bool> {
     let count = request.arguments.len();
-    let Some(raw) = request.arguments.get(1) else {
+    let Some(raw) = request.arguments.get(1)
+    else {
         return write_arity(stream, "client").map(|_| true);
     };
     let subcommand = String::from_utf8_lossy(raw).to_ascii_lowercase();
@@ -475,19 +473,15 @@ fn valid_client_name(name: &[u8]) -> bool {
 }
 
 /// `CLIENT LIST [TYPE type] [ID id] [LADDR addr] [USER user]`。
-fn handle_client_list(
-    stream: &mut dyn Write,
-    request: &Request<'_>,
-    registry: &ClientRegistry,
-    pubsub: &PubSubState,
-) -> io::Result<()> {
+fn handle_client_list(stream: &mut dyn Write, request: &Request<'_>, registry: &ClientRegistry, pubsub: &PubSubState) -> io::Result<()> {
     let mut filter_type: Option<String> = None;
     let mut filter_id: Option<u64> = None;
     let mut filter_laddr: Option<String> = None;
     let raw = &request.arguments[2..];
     let mut index = 0;
     while index < raw.len() {
-        let Some(value) = raw.get(index + 1) else {
+        let Some(value) = raw.get(index + 1)
+        else {
             write_error(stream, "syntax error")?;
             return Ok(());
         };
@@ -561,7 +555,8 @@ fn handle_client_kill(
     if count == 3 {
         // 单参数形按完整 `host:port` 匹配，找不到时真机报 No such client。
         let address = String::from_utf8_lossy(request.arguments[2]).into_owned();
-        let Some(target) = entries.iter().find(|entry| entry.remote == address) else {
+        let Some(target) = entries.iter().find(|entry| entry.remote == address)
+        else {
             write_error(stream, "No such client")?;
             return Ok(true);
         };
@@ -576,7 +571,8 @@ fn handle_client_kill(
     let raw = &request.arguments[2..];
     let mut index = 0;
     while index < raw.len() {
-        let Some(value) = raw.get(index + 1) else {
+        let Some(value) = raw.get(index + 1)
+        else {
             write_error(stream, "syntax error")?;
             return Ok(true);
         };
@@ -679,10 +675,8 @@ fn parse_integer_text(text: &str) -> Option<i64> {
 /// `CLIENT LIST` 的 `cmd=` 字段：容器命令显示 `parent|sub`，其余只显示命令名。
 pub(crate) fn command_context(command: &[u8], arguments: &[&[u8]]) -> String {
     let name = String::from_utf8_lossy(command).to_ascii_lowercase();
-    const CONTAINERS: &[&str] = &[
-        "acl", "client", "command", "config", "function", "latency", "memory", "object", "pubsub", "script", "xgroup",
-        "xinfo",
-    ];
+    const CONTAINERS: &[&str] =
+        &["acl", "client", "command", "config", "function", "latency", "memory", "object", "pubsub", "script", "xgroup", "xinfo"];
     if CONTAINERS.contains(&name.as_str()) {
         if let Some(subcommand) = arguments.get(1) {
             return format!("{name}|{}", String::from_utf8_lossy(subcommand).to_ascii_lowercase());
@@ -870,12 +864,8 @@ pub(crate) fn handle_info(
     pubsub: &PubSubState,
     executor: Option<&dyn KeyValueExecutor>,
 ) -> io::Result<()> {
-    let requested: Vec<String> = request.arguments[1..]
-        .iter()
-        .map(|raw| String::from_utf8_lossy(raw).to_ascii_lowercase())
-        .collect();
-    let all =
-        requested.is_empty() || requested.iter().any(|name| matches!(name.as_str(), "all" | "everything" | "default"));
+    let requested: Vec<String> = request.arguments[1..].iter().map(|raw| String::from_utf8_lossy(raw).to_ascii_lowercase()).collect();
+    let all = requested.is_empty() || requested.iter().any(|name| matches!(name.as_str(), "all" | "everything" | "default"));
     let mut parts = String::new();
     for section in ["server", "clients", "memory", "stats", "keyspace"] {
         if !all && !requested.iter().any(|name| name == section) {
@@ -1093,16 +1083,13 @@ fn info_keyspace(executor: Option<&dyn KeyValueExecutor>) -> String {
             let mut expires = 0_usize;
             for kind in KeyKind::ALL {
                 let target = kind.namespace(&base);
-                let Ok(records) = executor.execute_scan(None, &target, &[], None, None, 0) else {
+                let Ok(records) = executor.execute_scan(None, &target, &[], None, None, 0)
+                else {
                     continue;
                 };
                 keys += records.len();
                 for (key, _) in records {
-                    let command = KeyValueCommand {
-                        namespace: target.clone(),
-                        key,
-                        action: KeyValueAction::GetExpiry,
-                    };
+                    let command = KeyValueCommand { namespace: target.clone(), key, action: KeyValueAction::GetExpiry };
                     if let Ok(database_query::cluster_kv::KeyValueResult::Expiry { present: true, expires_at: Some(_) }) =
                         executor.execute(None, command)
                     {
@@ -1147,8 +1134,16 @@ const CONFIG_DEFAULTS: &[(&str, &str)] = &[
 const CONFIG_IMMUTABLE: &[&str] = &["databases", "port", "supervised"];
 
 const MAXMEMORY_POLICIES: &[&str] = &[
-    "volatile-lru", "volatile-lfu", "volatile-random", "volatile-ttl", "volatile-lrm", "allkeys-lru", "allkeys-lfu",
-    "allkeys-random", "allkeys-lrm", "noeviction",
+    "volatile-lru",
+    "volatile-lfu",
+    "volatile-random",
+    "volatile-ttl",
+    "volatile-lrm",
+    "allkeys-lru",
+    "allkeys-lfu",
+    "allkeys-random",
+    "allkeys-lrm",
+    "noeviction",
 ];
 
 /// `CONFIG GET pattern [pattern ...]` 与 `CONFIG SET name value [name value ...]`。
@@ -1190,8 +1185,12 @@ pub(crate) fn handle_config(stream: &mut dyn Write, request: &Request<'_>, regis
             for chunk in request.arguments[2..].chunks(2) {
                 let raw_name = chunk[0];
                 let lowered = String::from_utf8_lossy(raw_name).to_ascii_lowercase();
-                let Some((name, _)) = values.iter().find(|(name, _)| *name == lowered) else {
-                    write_error(stream, &format!("Unknown option or number of arguments for CONFIG SET - '{}'", String::from_utf8_lossy(raw_name)))?;
+                let Some((name, _)) = values.iter().find(|(name, _)| *name == lowered)
+                else {
+                    write_error(
+                        stream,
+                        &format!("Unknown option or number of arguments for CONFIG SET - '{}'", String::from_utf8_lossy(raw_name)),
+                    )?;
                     return Ok(());
                 };
                 let value = String::from_utf8_lossy(chunk[1]).into_owned();
@@ -1203,12 +1202,8 @@ pub(crate) fn handle_config(stream: &mut dyn Write, request: &Request<'_>, regis
             }
             let mut values = registry.config.lock().unwrap_or_else(|poison| poison.into_inner());
             for (name, value) in pairs {
-                let stored = if name == "maxmemory" {
-                    parse_memory_value(&value).map(|bytes| bytes.to_string()).unwrap_or(value)
-                }
-                else {
-                    value
-                };
+                let stored =
+                    if name == "maxmemory" { parse_memory_value(&value).map(|bytes| bytes.to_string()).unwrap_or(value) } else { value };
                 if let Some(entry) = values.iter_mut().find(|(known, _)| *known == name) {
                     entry.1 = stored;
                 }
@@ -1291,8 +1286,27 @@ fn parse_memory_value(raw: &str) -> Option<u64> {
 // ---------------------------------------------------------------------------
 
 const ACL_CATEGORIES: &[&str] = &[
-    "keyspace", "read", "write", "set", "sortedset", "list", "hash", "string", "array", "bitmap", "hyperloglog",
-    "geo", "stream", "pubsub", "admin", "fast", "slow", "blocking", "dangerous", "connection", "transaction",
+    "keyspace",
+    "read",
+    "write",
+    "set",
+    "sortedset",
+    "list",
+    "hash",
+    "string",
+    "array",
+    "bitmap",
+    "hyperloglog",
+    "geo",
+    "stream",
+    "pubsub",
+    "admin",
+    "fast",
+    "slow",
+    "blocking",
+    "dangerous",
+    "connection",
+    "transaction",
     "scripting",
 ];
 
@@ -1336,8 +1350,7 @@ pub(crate) fn handle_acl(stream: &mut dyn Write, request: &Request<'_>, protocol
                 return Ok(());
             }
             let marker = format!("@{category}");
-            let names: Vec<&str> =
-                COMMAND_SPECS.iter().filter(|spec| spec.acl.contains(&marker.as_str())).map(|spec| spec.name).collect();
+            let names: Vec<&str> = COMMAND_SPECS.iter().filter(|spec| spec.acl.contains(&marker.as_str())).map(|spec| spec.name).collect();
             stream.write_all(format!("*{}\r\n", names.len()).as_bytes())?;
             for name in names {
                 write_bulk(stream, name.as_bytes())?;
@@ -1411,16 +1424,8 @@ impl EmbeddedServerFace {
     }
 
     /// 执行一条服务器面命令；返回 `false` 表示 `CLIENT KILL` 命中了本会话。
-    pub fn execute(
-        &mut self,
-        stream: &mut dyn Write,
-        arguments: &[&[u8]],
-        executor: &dyn KeyValueExecutor,
-    ) -> io::Result<bool> {
-        let request = Request {
-            arguments: arguments.to_vec(),
-            consumed: 0,
-        };
+    pub fn execute(&mut self, stream: &mut dyn Write, arguments: &[&[u8]], executor: &dyn KeyValueExecutor) -> io::Result<bool> {
+        let request = Request { arguments: arguments.to_vec(), consumed: 0 };
         let command = arguments.first().copied().unwrap_or_default();
         self.state.record.touch(command_context(command, arguments));
         self.registry.bump_command();
@@ -1466,14 +1471,7 @@ const KS_RO_ACCESS_INDEX1: &[(&str, SpecValue)] = &[
         "find_keys",
         SpecValue::Map(&[
             ("type", SpecValue::Text("range")),
-            (
-                "spec",
-                SpecValue::Map(&[
-                    ("lastkey", SpecValue::Int(0)),
-                    ("keystep", SpecValue::Int(1)),
-                    ("limit", SpecValue::Int(0)),
-                ]),
-            ),
+            ("spec", SpecValue::Map(&[("lastkey", SpecValue::Int(0)), ("keystep", SpecValue::Int(1)), ("limit", SpecValue::Int(0))])),
         ]),
     ),
 ];
@@ -1485,14 +1483,7 @@ const KS_RO_INDEX1: &[(&str, SpecValue)] = &[
         "find_keys",
         SpecValue::Map(&[
             ("type", SpecValue::Text("range")),
-            (
-                "spec",
-                SpecValue::Map(&[
-                    ("lastkey", SpecValue::Int(0)),
-                    ("keystep", SpecValue::Int(1)),
-                    ("limit", SpecValue::Int(0)),
-                ]),
-            ),
+            ("spec", SpecValue::Map(&[("lastkey", SpecValue::Int(0)), ("keystep", SpecValue::Int(1)), ("limit", SpecValue::Int(0))])),
         ]),
     ),
 ];
@@ -1504,14 +1495,7 @@ const KS_RW_INDEX1: &[(&str, SpecValue)] = &[
         "find_keys",
         SpecValue::Map(&[
             ("type", SpecValue::Text("range")),
-            (
-                "spec",
-                SpecValue::Map(&[
-                    ("lastkey", SpecValue::Int(0)),
-                    ("keystep", SpecValue::Int(1)),
-                    ("limit", SpecValue::Int(0)),
-                ]),
-            ),
+            ("spec", SpecValue::Map(&[("lastkey", SpecValue::Int(0)), ("keystep", SpecValue::Int(1)), ("limit", SpecValue::Int(0))])),
         ]),
     ),
 ];
@@ -1523,14 +1507,7 @@ const KS_RW_UPDATE_INDEX1: &[(&str, SpecValue)] = &[
         "find_keys",
         SpecValue::Map(&[
             ("type", SpecValue::Text("range")),
-            (
-                "spec",
-                SpecValue::Map(&[
-                    ("lastkey", SpecValue::Int(0)),
-                    ("keystep", SpecValue::Int(1)),
-                    ("limit", SpecValue::Int(0)),
-                ]),
-            ),
+            ("spec", SpecValue::Map(&[("lastkey", SpecValue::Int(0)), ("keystep", SpecValue::Int(1)), ("limit", SpecValue::Int(0))])),
         ]),
     ),
 ];
@@ -1542,14 +1519,7 @@ const KS_RW_ACCESS_UPDATE_INDEX1: &[(&str, SpecValue)] = &[
         "find_keys",
         SpecValue::Map(&[
             ("type", SpecValue::Text("range")),
-            (
-                "spec",
-                SpecValue::Map(&[
-                    ("lastkey", SpecValue::Int(0)),
-                    ("keystep", SpecValue::Int(1)),
-                    ("limit", SpecValue::Int(0)),
-                ]),
-            ),
+            ("spec", SpecValue::Map(&[("lastkey", SpecValue::Int(0)), ("keystep", SpecValue::Int(1)), ("limit", SpecValue::Int(0))])),
         ]),
     ),
 ];
@@ -1561,14 +1531,7 @@ const KS_RM_DELETE_RANGE: &[(&str, SpecValue)] = &[
         "find_keys",
         SpecValue::Map(&[
             ("type", SpecValue::Text("range")),
-            (
-                "spec",
-                SpecValue::Map(&[
-                    ("lastkey", SpecValue::Int(-1)),
-                    ("keystep", SpecValue::Int(1)),
-                    ("limit", SpecValue::Int(0)),
-                ]),
-            ),
+            ("spec", SpecValue::Map(&[("lastkey", SpecValue::Int(-1)), ("keystep", SpecValue::Int(1)), ("limit", SpecValue::Int(0))])),
         ]),
     ),
 ];
@@ -1580,14 +1543,7 @@ const KS_RO_ACCESS_RANGE: &[(&str, SpecValue)] = &[
         "find_keys",
         SpecValue::Map(&[
             ("type", SpecValue::Text("range")),
-            (
-                "spec",
-                SpecValue::Map(&[
-                    ("lastkey", SpecValue::Int(-1)),
-                    ("keystep", SpecValue::Int(1)),
-                    ("limit", SpecValue::Int(0)),
-                ]),
-            ),
+            ("spec", SpecValue::Map(&[("lastkey", SpecValue::Int(-1)), ("keystep", SpecValue::Int(1)), ("limit", SpecValue::Int(0))])),
         ]),
     ),
 ];
@@ -1599,14 +1555,7 @@ const KS_RO_RANGE: &[(&str, SpecValue)] = &[
         "find_keys",
         SpecValue::Map(&[
             ("type", SpecValue::Text("range")),
-            (
-                "spec",
-                SpecValue::Map(&[
-                    ("lastkey", SpecValue::Int(-1)),
-                    ("keystep", SpecValue::Int(1)),
-                    ("limit", SpecValue::Int(0)),
-                ]),
-            ),
+            ("spec", SpecValue::Map(&[("lastkey", SpecValue::Int(-1)), ("keystep", SpecValue::Int(1)), ("limit", SpecValue::Int(0))])),
         ]),
     ),
 ];
@@ -1618,14 +1567,7 @@ const KS_RW_INSERT_INDEX1: &[(&str, SpecValue)] = &[
         "find_keys",
         SpecValue::Map(&[
             ("type", SpecValue::Text("range")),
-            (
-                "spec",
-                SpecValue::Map(&[
-                    ("lastkey", SpecValue::Int(0)),
-                    ("keystep", SpecValue::Int(1)),
-                    ("limit", SpecValue::Int(0)),
-                ]),
-            ),
+            ("spec", SpecValue::Map(&[("lastkey", SpecValue::Int(0)), ("keystep", SpecValue::Int(1)), ("limit", SpecValue::Int(0))])),
         ]),
     ),
 ];
@@ -1638,14 +1580,7 @@ const KS_SET: &[(&str, SpecValue)] = &[
         "find_keys",
         SpecValue::Map(&[
             ("type", SpecValue::Text("range")),
-            (
-                "spec",
-                SpecValue::Map(&[
-                    ("lastkey", SpecValue::Int(0)),
-                    ("keystep", SpecValue::Int(1)),
-                    ("limit", SpecValue::Int(0)),
-                ]),
-            ),
+            ("spec", SpecValue::Map(&[("lastkey", SpecValue::Int(0)), ("keystep", SpecValue::Int(1)), ("limit", SpecValue::Int(0))])),
         ]),
     ),
 ];
@@ -2033,27 +1968,9 @@ const CLIENT_SUBCOMMANDS: &[CommandSpec] = &[
         &["nondeterministic_output"],
     ),
     subcommand("client|getname", 2, &["noscript", "loading", "stale"], &["@slow", "@connection"], &[]),
-    subcommand(
-        "client|unblock",
-        -3,
-        &["admin", "noscript", "loading", "stale"],
-        &["@admin", "@slow", "@dangerous", "@connection"],
-        &[],
-    ),
-    subcommand(
-        "client|info",
-        2,
-        &["noscript", "loading", "stale"],
-        &["@slow", "@connection"],
-        &["nondeterministic_output"],
-    ),
-    subcommand(
-        "client|no-evict",
-        3,
-        &["admin", "noscript", "loading", "stale"],
-        &["@admin", "@slow", "@dangerous", "@connection"],
-        &[],
-    ),
+    subcommand("client|unblock", -3, &["admin", "noscript", "loading", "stale"], &["@admin", "@slow", "@dangerous", "@connection"], &[]),
+    subcommand("client|info", 2, &["noscript", "loading", "stale"], &["@slow", "@connection"], &["nondeterministic_output"]),
+    subcommand("client|no-evict", 3, &["admin", "noscript", "loading", "stale"], &["@admin", "@slow", "@dangerous", "@connection"], &[]),
     subcommand(
         "client|setname",
         3,
@@ -2061,29 +1978,11 @@ const CLIENT_SUBCOMMANDS: &[CommandSpec] = &[
         &["@slow", "@connection"],
         &["request_policy:all_nodes", "response_policy:all_succeeded"],
     ),
-    subcommand(
-        "client|unpause",
-        2,
-        &["admin", "noscript", "loading", "stale"],
-        &["@admin", "@slow", "@dangerous", "@connection"],
-        &[],
-    ),
+    subcommand("client|unpause", 2, &["admin", "noscript", "loading", "stale"], &["@admin", "@slow", "@dangerous", "@connection"], &[]),
     subcommand("client|id", 2, &["noscript", "loading", "stale"], &["@slow", "@connection"], &[]),
-    subcommand(
-        "client|kill",
-        -3,
-        &["admin", "noscript", "loading", "stale"],
-        &["@admin", "@slow", "@dangerous", "@connection"],
-        &[],
-    ),
+    subcommand("client|kill", -3, &["admin", "noscript", "loading", "stale"], &["@admin", "@slow", "@dangerous", "@connection"], &[]),
     subcommand("client|no-touch", 3, &["noscript", "loading", "stale"], &["@slow", "@connection"], &[]),
-    subcommand(
-        "client|pause",
-        -3,
-        &["admin", "noscript", "loading", "stale"],
-        &["@admin", "@slow", "@dangerous", "@connection"],
-        &[],
-    ),
+    subcommand("client|pause", -3, &["admin", "noscript", "loading", "stale"], &["@admin", "@slow", "@dangerous", "@connection"], &[]),
     subcommand("client|caching", 3, &["noscript", "loading", "stale"], &["@slow", "@connection"], &[]),
     subcommand("client|getredir", 2, &["noscript", "loading", "stale"], &["@slow", "@connection"], &[]),
     subcommand("client|help", 2, &["loading", "stale"], &["@slow", "@connection"], &[]),
@@ -2100,27 +1999,9 @@ const CLIENT_SUBCOMMANDS: &[CommandSpec] = &[
 ];
 
 const COMMAND_SUBCOMMANDS: &[CommandSpec] = &[
-    subcommand(
-        "command|list",
-        -2,
-        &["loading", "stale"],
-        &["@slow", "@connection"],
-        &["nondeterministic_output_order"],
-    ),
-    subcommand(
-        "command|info",
-        -2,
-        &["loading", "stale"],
-        &["@slow", "@connection"],
-        &["nondeterministic_output_order"],
-    ),
-    subcommand(
-        "command|docs",
-        -2,
-        &["loading", "stale"],
-        &["@slow", "@connection"],
-        &["nondeterministic_output_order"],
-    ),
+    subcommand("command|list", -2, &["loading", "stale"], &["@slow", "@connection"], &["nondeterministic_output_order"]),
+    subcommand("command|info", -2, &["loading", "stale"], &["@slow", "@connection"], &["nondeterministic_output_order"]),
+    subcommand("command|docs", -2, &["loading", "stale"], &["@slow", "@connection"], &["nondeterministic_output_order"]),
     subcommand("command|getkeysandflags", -3, &["loading", "stale"], &["@slow", "@connection"], &[]),
     subcommand("command|help", 2, &["loading", "stale"], &["@slow", "@connection"], &[]),
     subcommand("command|count", 2, &["loading", "stale"], &["@slow", "@connection"], &[]),
@@ -2200,17 +2081,15 @@ const COMMAND_DOCS: &[(&str, &[DocsValue])] = &[(
         DocsValue::Text("complexity"),
         DocsValue::Text("O(1)"),
         DocsValue::Text("arguments"),
-        DocsValue::List(&[
-            DocsValue::List(&[
-                DocsValue::Text("name"),
-                DocsValue::Text("key"),
-                DocsValue::Text("type"),
-                DocsValue::Text("key"),
-                DocsValue::Text("display_text"),
-                DocsValue::Text("key"),
-                DocsValue::Text("key_spec_index"),
-                DocsValue::Int(0),
-            ]),
-        ]),
+        DocsValue::List(&[DocsValue::List(&[
+            DocsValue::Text("name"),
+            DocsValue::Text("key"),
+            DocsValue::Text("type"),
+            DocsValue::Text("key"),
+            DocsValue::Text("display_text"),
+            DocsValue::Text("key"),
+            DocsValue::Text("key_spec_index"),
+            DocsValue::Int(0),
+        ])]),
     ],
 )];

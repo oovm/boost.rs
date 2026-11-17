@@ -6,18 +6,16 @@
 //! `TexLeftRightPair` nodes with their spans.
 
 use document_ir::{
-    MathAtom, MathClass, MathColumnAlignment, MathDelimiter, MathDelimiterKind, MathDisplay, MathEnvironment,
-    MathEnvironmentKind, MathExpression, MathFormula, MathFractionLine, MathRow, MathRowNumbering, MathRowPlacement, MathSpace,
-    MathSpan, MathStyle, MathStyleKind,
+    MathAtom, MathClass, MathColumnAlignment, MathDelimiter, MathDelimiterKind, MathDisplay, MathEnvironment, MathEnvironmentKind,
+    MathExpression, MathFormula, MathFractionLine, MathRow, MathRowNumbering, MathRowPlacement, MathSpace, MathSpan, MathStyle, MathStyleKind,
 };
 use oak_tex::ast::{
-    MathDelimiter as TexMathDelimiter, TexArgument, TexCell, TexCommand, TexEnvironment, TexItem, TexLeftRightPair, TexMath,
-    TexRoot, TexRow,
+    MathDelimiter as TexMathDelimiter, TexArgument, TexCell, TexCommand, TexEnvironment, TexItem, TexLeftRightPair, TexMath, TexRoot, TexRow,
 };
 
 use super::math_common::{
-    append_expression, attach_script, char_atom, char_expression, class_for_char, script_expression, sequence, slice,
-    span_from, symbol_for, unsupported,
+    append_expression, attach_script, char_atom, char_expression, class_for_char, script_expression, sequence, slice, span_from, symbol_for,
+    unsupported,
 };
 
 /// Lower one Oak math node into the document math semantics.
@@ -302,14 +300,11 @@ fn lower_command(command: &TexCommand, source: &str, base: usize) -> MathExpress
 }
 
 fn fraction(command: &TexCommand, source: &str, line: MathFractionLine, base: usize) -> MathExpression {
-    let arguments: Vec<MathExpression> =
-        command.arguments.iter().map(|argument| lower_argument(argument, source, base)).collect();
+    let arguments: Vec<MathExpression> = command.arguments.iter().map(|argument| lower_argument(argument, source, base)).collect();
     match arguments.as_slice() {
-        [numerator, denominator] => MathExpression::Fraction {
-            numerator: Box::new(numerator.clone()),
-            denominator: Box::new(denominator.clone()),
-            line,
-        },
+        [numerator, denominator] => {
+            MathExpression::Fraction { numerator: Box::new(numerator.clone()), denominator: Box::new(denominator.clone()), line }
+        }
         _ => unsupported(command.span.start, command.span.end, source, "fraction", base),
     }
 }
@@ -330,27 +325,18 @@ fn styled_fraction(command: &TexCommand, source: &str, style: MathStyleKind, bas
 }
 
 fn styled(style: MathStyle, command: &TexCommand, source: &str, base: usize) -> MathExpression {
-    let body = command
-        .arguments
-        .first()
-        .map(|argument| lower_argument(argument, source, base))
-        .unwrap_or(MathExpression::Sequence(Vec::new()));
+    let body = command.arguments.first().map(|argument| lower_argument(argument, source, base)).unwrap_or(MathExpression::Sequence(Vec::new()));
     MathExpression::Styled { style, body: Box::new(body) }
 }
 
 fn accent(mark: char, wide: bool, command: &TexCommand, source: &str, base: usize) -> MathExpression {
-    let body = command
-        .arguments
-        .first()
-        .map(|argument| lower_argument(argument, source, base))
-        .unwrap_or(MathExpression::Sequence(Vec::new()));
+    let body = command.arguments.first().map(|argument| lower_argument(argument, source, base)).unwrap_or(MathExpression::Sequence(Vec::new()));
     MathExpression::Accent { mark, wide, base: Box::new(body), span: span_from(base, command.span.start, command.span.end) }
 }
 
 fn stack(command: &TexCommand, source: &str, above: bool, base: usize) -> MathExpression {
     let mut arguments = command.arguments.iter();
-    let stacked =
-        arguments.next().map(|argument| lower_argument(argument, source, base)).unwrap_or(MathExpression::Sequence(Vec::new()));
+    let stacked = arguments.next().map(|argument| lower_argument(argument, source, base)).unwrap_or(MathExpression::Sequence(Vec::new()));
     let base_expression =
         arguments.next().map(|argument| lower_argument(argument, source, base)).unwrap_or(MathExpression::Sequence(Vec::new()));
     if above {
@@ -515,21 +501,15 @@ fn column_alignment(name: &str, rows: &[MathRow]) -> Vec<MathColumnAlignment> {
     let columns = rows.iter().map(|row| row.cells.len()).max().unwrap_or(0);
     match name {
         "cases" => vec![MathColumnAlignment::Left; columns],
-        "aligned" | "alignedat" | "align" | "alignat" | "flalign" | "split" => (0..columns)
-            .map(|index| if index % 2 == 0 { MathColumnAlignment::Right } else { MathColumnAlignment::Left })
-            .collect(),
+        "aligned" | "alignedat" | "align" | "alignat" | "flalign" | "split" => {
+            (0..columns).map(|index| if index % 2 == 0 { MathColumnAlignment::Right } else { MathColumnAlignment::Left }).collect()
+        }
         "gather" | "gathered" | "equation" | "multline" => vec![MathColumnAlignment::Center; columns.max(1)],
         _ => vec![MathColumnAlignment::Center; columns],
     }
 }
 
-fn environment_rows(
-    environment: &TexEnvironment,
-    source: &str,
-    kind: &MathEnvironmentKind,
-    numbered: bool,
-    base: usize,
-) -> Vec<MathRow> {
+fn environment_rows(environment: &TexEnvironment, source: &str, kind: &MathEnvironmentKind, numbered: bool, base: usize) -> Vec<MathRow> {
     let authored: Vec<&TexRow> = environment
         .content
         .items
@@ -540,12 +520,7 @@ fn environment_rows(
         })
         .collect();
     if authored.is_empty() {
-        let cells = if environment.content.items.is_empty() {
-            Vec::new()
-        }
-        else {
-            vec![lower_root(&environment.content.items, source, base)]
-        };
+        let cells = if environment.content.items.is_empty() { Vec::new() } else { vec![lower_root(&environment.content.items, source, base)] };
         return vec![MathRow { cells, placement: MathRowPlacement::Normal, numbering: MathRowNumbering::None }];
     }
     let total = authored.len();
@@ -580,13 +555,8 @@ fn row_placement(kind: &MathEnvironmentKind, index: usize, total: usize) -> Math
 
 fn lower_cell(cell: &TexCell, source: &str, base: usize) -> MathExpression {
     // Row metadata describes the row; it is not an atom of the cell.
-    let items: Vec<TexItem> = cell
-        .content
-        .items
-        .iter()
-        .filter(|item| !matches!(item, TexItem::Command(command) if is_row_metadata(command)))
-        .cloned()
-        .collect();
+    let items: Vec<TexItem> =
+        cell.content.items.iter().filter(|item| !matches!(item, TexItem::Command(command) if is_row_metadata(command))).cloned().collect();
     lower_root(&items, source, base)
 }
 
@@ -696,9 +666,8 @@ fn text_expression(text: &str, start: usize, base: usize) -> MathExpression {
 /// function exactly when it is one of the documented operator names.
 fn named_function(name: &str) -> bool {
     const NAMES: &[&str] = &[
-        "lim", "limsup", "liminf", "max", "min", "sup", "inf", "det", "gcd", "Pr", "argmax", "argmin", "sin", "cos", "tan",
-        "cot", "sec", "csc", "arcsin", "arccos", "arctan", "sinh", "cosh", "tanh", "log", "ln", "lg", "exp", "deg", "dim",
-        "hom", "ker",
+        "lim", "limsup", "liminf", "max", "min", "sup", "inf", "det", "gcd", "Pr", "argmax", "argmin", "sin", "cos", "tan", "cot", "sec",
+        "csc", "arcsin", "arccos", "arctan", "sinh", "cosh", "tanh", "log", "ln", "lg", "exp", "deg", "dim", "hom", "ker",
     ];
     NAMES.contains(&name)
 }
@@ -793,9 +762,7 @@ mod tests {
             else {
                 panic!("`{source}` must lower to a style switch followed by the fraction")
             };
-            assert!(
-                matches!(items.as_slice(), [MathExpression::StyleSwitch { style }, MathExpression::Fraction { .. }] if *style == want)
-            );
+            assert!(matches!(items.as_slice(), [MathExpression::StyleSwitch { style }, MathExpression::Fraction { .. }] if *style == want));
         }
     }
 

@@ -20,10 +20,7 @@ fn repo_root() -> PathBuf {
 }
 
 fn binary_reason(path: &Path) -> Option<String> {
-    let asset_svg = path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"));
+    let asset_svg = path.extension().and_then(|extension| extension.to_str()).is_some_and(|extension| extension.eq_ignore_ascii_case("svg"));
     if asset_svg {
         return Some("SVG asset".to_string());
     }

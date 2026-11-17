@@ -50,8 +50,7 @@ fn css_selector_registers_spine_images() {
 <svg><image xlink:href="images/diagram.svg"/></svg>
 </body></html>"#;
     let mut graph = DocumentGraph::new(DocumentId(3));
-    let blocks =
-        blocks_from_xhtml_with_context(XHTML.as_bytes(), &mut graph, Some("OEBPS/chapter.xhtml")).expect("lower xhtml");
+    let blocks = blocks_from_xhtml_with_context(XHTML.as_bytes(), &mut graph, Some("OEBPS/chapter.xhtml")).expect("lower xhtml");
     assert!(!blocks.is_empty());
     assert_eq!(graph.assets.len(), 2);
     assert!(graph.assets.iter().any(|asset| asset.source.as_deref() == Some("OEBPS/images/cover.png")));

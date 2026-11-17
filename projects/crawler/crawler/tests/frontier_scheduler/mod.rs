@@ -5,9 +5,7 @@ use std::{thread, time::Duration};
 use crawler::{HostPolicy, HostScheduler, StoreFrontier};
 #[cfg(feature = "yydb")]
 use crawler_store::YydbStore;
-use crawler_store::{
-    ClaimToken, MemoryStore, ReleaseOutcome, RunSpec, Store, StoreConfig, StoreError, keyspace::item_id_from_url,
-};
+use crawler_store::{ClaimToken, MemoryStore, ReleaseOutcome, RunSpec, Store, StoreConfig, StoreError, keyspace::item_id_from_url};
 use crawler_types::{FrontierItem, PolitenessProfile};
 use url::Url;
 

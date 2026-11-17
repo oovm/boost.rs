@@ -7,8 +7,8 @@ use document_input_markdown::{MAX_SOURCE_BYTES, codes, import_file, import_sourc
 #[test]
 fn front_matter_fails_closed_with_span() {
     let source = "---\ntitle: ignored\n---\n\nBody\n";
-    let error = import_source("virtual://front-matter.md", source)
-        .expect_err("front matter carries metadata the document model cannot consume");
+    let error =
+        import_source("virtual://front-matter.md", source).expect_err("front matter carries metadata the document model cannot consume");
 
     assert_eq!(error.code(), "import.markdown.front_matter_unmapped");
     let diagnostic = error.diagnostics().first().expect("the rejection must carry its diagnostic");
@@ -45,8 +45,7 @@ fn source_over_budget_is_rejected_before_parsing() {
 
 #[test]
 fn lossy_construct_stays_importable_while_unsupported_construct_is_rejected() {
-    let lossy = import_source("virtual://definition-list.md", "Term\n: definition\n")
-        .expect("a reported downgrade must not stop the import");
+    let lossy = import_source("virtual://definition-list.md", "Term\n: definition\n").expect("a reported downgrade must not stop the import");
     assert!(
         lossy.diagnostics.iter().any(|diagnostic| diagnostic.code == "import.markdown.definition_list"),
         "the downgrade must stay visible: {:#?}",

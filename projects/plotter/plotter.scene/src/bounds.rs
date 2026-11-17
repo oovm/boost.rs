@@ -17,9 +17,7 @@ impl SceneNode {
     pub fn bounds(&self) -> Option<Bounds> {
         let local = local_bounds(&self.kind)?;
         let clipped = match self.clip {
-            Some(clip) => {
-                local.intersection(Bounds::new(Point::new(clip.x, clip.y), Point::new(clip.right(), clip.bottom())))?
-            }
+            Some(clip) => local.intersection(Bounds::new(Point::new(clip.x, clip.y), Point::new(clip.right(), clip.bottom())))?,
             None => local,
         };
         Some(transform_bounds(clipped, self.transform))

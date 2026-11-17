@@ -99,6 +99,18 @@ pub struct Points3Node {
     pub interaction: Option<InteractionId>,
 }
 
+/// 文本水平锚点：`position.x` 相对文本的含义。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum TextAnchor {
+    /// `position.x` 是文本左缘。
+    #[default]
+    Start,
+    /// `position.x` 是文本中心。
+    Middle,
+    /// `position.x` 是文本右缘。
+    End,
+}
+
 /// 文本节点。
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TextNode {
@@ -110,6 +122,8 @@ pub struct TextNode {
     pub size: f32,
     /// 颜色。
     pub color: Rgba,
+    /// 水平锚点。
+    pub anchor: TextAnchor,
 }
 
 /// 坐标轴节点（A2：线性刻度轴）。

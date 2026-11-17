@@ -64,10 +64,7 @@ impl RobotsTxt {
 
     /// Select the most specific group whose `User-agent` matches the crawler token.
     pub fn group_for_agent(&self, user_agent: &str) -> Option<&RobotsGroup> {
-        self.groups
-            .iter()
-            .filter(|group| group.matches_agent(user_agent))
-            .max_by_key(|group| group.agent_specificity(user_agent))
+        self.groups.iter().filter(|group| group.matches_agent(user_agent)).max_by_key(|group| group.agent_specificity(user_agent))
     }
 
     /// Whether a path is allowed for the given crawler user-agent.

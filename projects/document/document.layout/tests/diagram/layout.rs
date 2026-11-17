@@ -10,15 +10,8 @@ use plotter_scene::{Color, DisplayScene, NodeKind, Point, Rect, SceneNode, Shape
 
 fn text_scene(width: f64, height: f64) -> DisplayScene {
     let mut scene = DisplayScene::new(Size { width, height });
-    scene.push(SceneNode::new(NodeKind::Rect {
-        rect: Rect { x: 0.0, y: 0.0, width, height },
-        style: ShapeStyle::stroked(Color::BLACK, 1.0),
-    }));
-    scene.push(SceneNode::new(NodeKind::Text {
-        position: Point { x: 8.0, y: 24.0 },
-        text: "diagram".to_string(),
-        style: Default::default(),
-    }));
+    scene.push(SceneNode::new(NodeKind::Rect { rect: Rect { x: 0.0, y: 0.0, width, height }, style: ShapeStyle::stroked(Color::BLACK, 1.0) }));
+    scene.push(SceneNode::new(NodeKind::Text { position: Point { x: 8.0, y: 24.0 }, text: "diagram".to_string(), style: Default::default() }));
     scene
 }
 

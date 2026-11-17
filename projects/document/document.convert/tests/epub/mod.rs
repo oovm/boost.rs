@@ -133,8 +133,7 @@ fn epub_to_markdown_route_reopens_with_ir_semantics_and_loss_report() {
 #[test]
 fn epub_to_docx_route_reopens_semantic_content() {
     let output = convert_bytes("epub", "docx", "book.epub", minimal_epub_zip(), None).expect("convert epub");
-    let reopened = document_formats::import::docx::import_docx_bytes("book.docx", &output.binary.expect("docx output"))
-        .expect("reopen docx");
+    let reopened = document_formats::import::docx::import_docx_bytes("book.docx", &output.binary.expect("docx output")).expect("reopen docx");
     assert!(reopened.validate().is_valid());
     assert!(
         reopened.blocks.iter().any(|node| matches!(
@@ -168,18 +167,16 @@ fn assert_budget_error(error: document_types::AdapterError) {
 #[test]
 fn epub_container_entries_budget_is_enforced_before_import() {
     let budgets = document_convert::ConversionBudgets { decompressed_bytes: None, container_entries: Some(2) };
-    let error =
-        document_convert::convert_bytes_with_budgets("epub", "markdown", "book.epub", minimal_epub_zip(), None, Some(&budgets))
-            .expect_err("an EPUB with four members must not pass a two-entry budget");
+    let error = document_convert::convert_bytes_with_budgets("epub", "markdown", "book.epub", minimal_epub_zip(), None, Some(&budgets))
+        .expect_err("an EPUB with four members must not pass a two-entry budget");
     assert_budget_error(error);
 }
 
 #[test]
 fn epub_decompressed_bytes_budget_is_enforced_before_import() {
     let budgets = document_convert::ConversionBudgets { decompressed_bytes: Some(256), container_entries: None };
-    let error =
-        document_convert::convert_bytes_with_budgets("epub", "markdown", "book.epub", minimal_epub_zip(), None, Some(&budgets))
-            .expect_err("the declared member sizes must not pass a 256 byte budget");
+    let error = document_convert::convert_bytes_with_budgets("epub", "markdown", "book.epub", minimal_epub_zip(), None, Some(&budgets))
+        .expect_err("the declared member sizes must not pass a 256 byte budget");
     assert_budget_error(error);
 }
 
@@ -188,9 +185,8 @@ fn epub_container_offers_its_member_sizes_as_declared_uncompressed_bytes() {
     // Member count is indexed, so the same document passes a permissive budget
     // and only the totals are reported to the caller.
     let budgets = document_convert::ConversionBudgets { decompressed_bytes: Some(65536), container_entries: Some(64) };
-    let output =
-        document_convert::convert_bytes_with_budgets("epub", "markdown", "book.epub", minimal_epub_zip(), None, Some(&budgets))
-            .expect("a permissive container budget must not block the conversion");
+    let output = document_convert::convert_bytes_with_budgets("epub", "markdown", "book.epub", minimal_epub_zip(), None, Some(&budgets))
+        .expect("a permissive container budget must not block the conversion");
     assert!(output.markdown.contains("Hello EPUB"));
 }
 
@@ -259,9 +255,8 @@ fn epub_with_nav_and_metadata_zip() -> Vec<u8> {
 
 #[test]
 fn epub_project_route_reports_navigation_and_metadata_losses() {
-    let output =
-        document_convert::convert_to_markdown_project_bytes("epub", "book.epub", epub_with_nav_and_metadata_zip(), None)
-            .expect("convert epub project");
+    let output = document_convert::convert_to_markdown_project_bytes("epub", "book.epub", epub_with_nav_and_metadata_zip(), None)
+        .expect("convert epub project");
     let report: serde_json::Value = serde_json::from_str(&output.report_json).expect("report");
     let losses = report["losses"].as_array().expect("losses");
     let codes = losses.iter().filter_map(|loss| loss["code"].as_str()).collect::<Vec<_>>();

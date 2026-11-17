@@ -1,14 +1,16 @@
 //! Same graph: DX12 Raster triangle → CUDA RGBA8 denoise over shared buffer.
 
-use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+};
 
 use hardware_backend_cuda::CudaBackend;
 use hardware_backend_dx12::Dx12Backend;
 use hardware_capability::FeatureSet;
 use hardware_ir::{
-    Access, DepEdge, DepKind, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph,
-    ResourceId, ResourceKind, ResourceNode, ShaderId, TaskGraph, TaskId, TaskKind, TaskNode,
+    Access, DepEdge, DepKind, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph, ResourceId, ResourceKind, ResourceNode, ShaderId,
+    TaskGraph, TaskId, TaskKind, TaskNode,
 };
 use hardware_scheduler::{Backend, Result, Scheduler};
 use hardware_types::ResourceId as Rid;
@@ -62,13 +64,7 @@ impl Backend for LockedDx12 {
 }
 
 fn buffer_bytes(id: u64, bytes: u64) -> ResourceNode {
-    ResourceNode {
-        id: ResourceId(id),
-        kind: ResourceKind::Buffer,
-        domain: Domain::Vram,
-        access: Access::ReadWrite,
-        byte_size: Some(bytes),
-    }
+    ResourceNode { id: ResourceId(id), kind: ResourceKind::Buffer, domain: Domain::Vram, access: Access::ReadWrite, byte_size: Some(bytes) }
 }
 
 fn task(id: u64, kind: TaskKind, params: BTreeMap<String, ParamValue>) -> TaskNode {
@@ -132,28 +128,12 @@ fn hybrid_graph() -> Graph {
                 task(
                     11,
                     TaskKind::Custom("denoise".into()),
-                    BTreeMap::from([
-                        i("src", 1),
-                        i("out", 2),
-                        i("width", width as i64),
-                        i("height", height as i64),
-                        s("backend", "cuda"),
-                    ]),
+                    BTreeMap::from([i("src", 1), i("out", 2), i("width", width as i64), i("height", height as i64), s("backend", "cuda")]),
                 ),
             ],
             edges: vec![
-                DepEdge {
-                    from_task: None,
-                    from_resource: Some(ResourceId(1)),
-                    to_task: TaskId(10),
-                    kind: DepKind::Data,
-                },
-                DepEdge {
-                    from_task: Some(TaskId(10)),
-                    from_resource: None,
-                    to_task: TaskId(11),
-                    kind: DepKind::Execution,
-                },
+                DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data },
+                DepEdge { from_task: Some(TaskId(10)), from_resource: None, to_task: TaskId(11), kind: DepKind::Execution },
             ],
         },
     }
@@ -221,11 +201,7 @@ fn dx12_raster_rgba8_then_cuda_denoise() {
         return;
     }
 
-    let pixels = cuda
-        .lock()
-        .unwrap()
-        .read_u8(Rid(2))
-        .expect("cuda denoise read_u8");
+    let pixels = cuda.lock().unwrap().read_u8(Rid(2)).expect("cuda denoise read_u8");
     assert_eq!(pixels.len(), rgba_bytes);
     let center = pixel_at(&pixels, 32, 16, 16);
     assert_eq!(center, [255, 255, 0, 255], "solid yellow center survives horizontal mean");

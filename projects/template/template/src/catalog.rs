@@ -300,18 +300,10 @@ impl TemplateLoader for MapTemplateLoader {
             ));
         };
         let key = normalize_path(id.path()).ok_or_else(|| {
-            TemplateError::with_args(
-                codes::NOT_FOUND,
-                format!("template id `{id}` has an invalid path"),
-                vec![("ref", id.to_string())],
-            )
+            TemplateError::with_args(codes::NOT_FOUND, format!("template id `{id}` has an invalid path"), vec![("ref", id.to_string())])
         })?;
         root.file(&key).ok_or_else(|| {
-            TemplateError::with_args(
-                codes::NOT_FOUND,
-                format!("template `{id}` is not registered"),
-                vec![("ref", id.to_string())],
-            )
+            TemplateError::with_args(codes::NOT_FOUND, format!("template `{id}` is not registered"), vec![("ref", id.to_string())])
         })
     }
 }
@@ -326,9 +318,7 @@ impl TemplateLoader for MapTemplateLoader {
 pub fn split_scheme(reference: &str) -> Option<(&str, &str)> {
     let (head, rest) = reference.split_once(':')?;
     let first = head.chars().next()?;
-    if !first.is_ascii_alphabetic()
-        || !head.chars().all(|character| character.is_ascii_alphanumeric() || "_+-".contains(character))
-    {
+    if !first.is_ascii_alphabetic() || !head.chars().all(|character| character.is_ascii_alphanumeric() || "_+-".contains(character)) {
         return None;
     }
     Some((head, rest))

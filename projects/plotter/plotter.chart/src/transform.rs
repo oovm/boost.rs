@@ -336,10 +336,7 @@ fn utc_parts(millis: i64) -> Result<(i64, u32, u32, u32, u32, u32), ChartError> 
     const MILLIS_PER_DAY: i64 = 86_400_000;
     const MAX_ABS_MILLIS: i64 = 8_640_000_000_000_000;
     if !(-MAX_ABS_MILLIS..=MAX_ABS_MILLIS).contains(&millis) {
-        return Err(ChartError::new(
-            codes::INVALID_SPEC,
-            format!("temporal value `{millis}` is outside the supported epoch range"),
-        ));
+        return Err(ChartError::new(codes::INVALID_SPEC, format!("temporal value `{millis}` is outside the supported epoch range")));
     }
     let days = millis.div_euclid(MILLIS_PER_DAY);
     let rest = millis.rem_euclid(MILLIS_PER_DAY);

@@ -166,10 +166,7 @@ impl GlyphConstruction {
     /// Variants are searched rather than assumed sorted, so a font that lists
     /// them out of order still yields the smallest sufficient design.
     pub fn smallest_variant_covering(&self, target: Fixed) -> Option<&MathVariant> {
-        self.variants
-            .iter()
-            .filter(|variant| variant.stretch_measurement >= target)
-            .min_by_key(|variant| variant.stretch_measurement)
+        self.variants.iter().filter(|variant| variant.stretch_measurement >= target).min_by_key(|variant| variant.stretch_measurement)
     }
 
     /// Choose the design for `target`: the TeX/OpenType rule of taking the
@@ -265,10 +262,7 @@ mod tests {
 
     /// Synthetic recipe: one top piece, one repeater, one bottom piece.
     fn brace_assembly() -> GlyphAssembly {
-        GlyphAssembly {
-            italic_correction: em(0.02),
-            parts: vec![part(10, 0.5, false), part(11, 0.25, true), part(12, 0.5, false)],
-        }
+        GlyphAssembly { italic_correction: em(0.02), parts: vec![part(10, 0.5, false), part(11, 0.25, true), part(12, 0.5, false)] }
     }
 
     #[test]
@@ -295,8 +289,7 @@ mod tests {
 
     #[test]
     fn assembly_without_a_repeater_cannot_grow() {
-        let assembly =
-            GlyphAssembly { italic_correction: Fixed::ZERO, parts: vec![part(10, 0.4, false), part(11, 0.4, false)] };
+        let assembly = GlyphAssembly { italic_correction: Fixed::ZERO, parts: vec![part(10, 0.4, false), part(11, 0.4, false)] };
         assert!(assembly.plan(em(0.5), Fixed::ZERO).is_some(), "fixed recipe covers 0.8 em");
         assert!(assembly.plan(em(2.0), Fixed::ZERO).is_none(), "fixed recipe cannot reach 2 em");
     }
@@ -306,13 +299,7 @@ mod tests {
         // Shape of Latin Modern Math's brace: hook, extender, middle, extender, hook.
         let assembly = GlyphAssembly {
             italic_correction: Fixed::ZERO,
-            parts: vec![
-                part(10, 0.5, false),
-                part(11, 0.25, true),
-                part(12, 0.5, false),
-                part(13, 0.25, true),
-                part(14, 0.5, false),
-            ],
+            parts: vec![part(10, 0.5, false), part(11, 0.25, true), part(12, 0.5, false), part(13, 0.25, true), part(14, 0.5, false)],
         };
         let overlap = em(0.05);
         let plan = assembly.plan(em(3.0), overlap).expect("recipe must reach 3 em");

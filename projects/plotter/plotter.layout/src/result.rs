@@ -77,10 +77,7 @@ impl LayoutResult {
 }
 
 /// 由节点位置生成直线边。
-pub fn straight_routes(
-    edges: impl IntoIterator<Item = (String, String)>,
-    positions: &[(String, LayoutPoint)],
-) -> Vec<EdgeRoute> {
+pub fn straight_routes(edges: impl IntoIterator<Item = (String, String)>, positions: &[(String, LayoutPoint)]) -> Vec<EdgeRoute> {
     let lookup = |id: &str| positions.iter().find(|(k, _)| k == id).map(|(_, p)| *p);
     edges
         .into_iter()

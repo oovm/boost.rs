@@ -29,9 +29,7 @@ fn bar_chart_renders_real_rect_geometry() {
 
     assert!(html.contains(r#"<figure class="chart" data-chart-language="vega-lite""#), "{html}");
     assert!(
-        html.contains(
-            r#"<svg xmlns="http://www.w3.org/2000/svg" class="chart" width="480" height="320" viewBox="0 0 480 320">"#
-        ),
+        html.contains(r#"<svg xmlns="http://www.w3.org/2000/svg" class="chart" width="480" height="320" viewBox="0 0 480 320">"#),
         "{html}"
     );
     assert!(
@@ -47,9 +45,7 @@ fn bar_chart_renders_real_rect_geometry() {
         "the smallest bar must stay visible instead of collapsing to `height=\"0\"`: {html}"
     );
     assert!(
-        html.contains(
-            r#"<line id="chart-2-chart-axis-x" data-role="axis" class="chart-axis" x1="56" y1="264" x2="424" y2="264""#
-        ),
+        html.contains(r#"<line id="chart-2-chart-axis-x" data-role="axis" class="chart-axis" x1="56" y1="264" x2="424" y2="264""#),
         "{html}"
     );
     assert!(!html.contains(r#"<pre class="chart""#), "a rendered chart must not keep the source fallback: {html}");
@@ -80,14 +76,8 @@ fn two_charts_on_one_page_keep_unique_ids() {
     unique.dedup();
     assert_eq!(unique.len(), ids.len(), "ids must be unique within the page: {ids:?}");
     let chart_ids: Vec<&String> = ids.iter().filter(|id| id.contains("chart")).collect();
-    assert!(
-        chart_ids.iter().filter(|id| id.starts_with("chart-2-")).count() > 0,
-        "the first chart namespaces its ids: {ids:?}"
-    );
-    assert!(
-        chart_ids.iter().filter(|id| id.starts_with("chart-3-")).count() > 0,
-        "the second chart namespaces its ids: {ids:?}"
-    );
+    assert!(chart_ids.iter().filter(|id| id.starts_with("chart-2-")).count() > 0, "the first chart namespaces its ids: {ids:?}");
+    assert!(chart_ids.iter().filter(|id| id.starts_with("chart-3-")).count() > 0, "the second chart namespaces its ids: {ids:?}");
     for id in chart_ids {
         assert!(id.starts_with("chart-2-") || id.starts_with("chart-3-"), "every chart id is namespaced by its block: {id}");
     }
@@ -157,10 +147,7 @@ fn unsupported_chart_constructs_keep_the_source_and_report_a_span() {
         let output = html_of("vega-lite", spec);
         let html = output.html.as_deref().expect("html output");
 
-        assert!(
-            html.contains(r#"<pre class="chart" data-chart-language="vega-lite""#),
-            "a refused chart must keep its source visible: {html}"
-        );
+        assert!(html.contains(r#"<pre class="chart" data-chart-language="vega-lite""#), "a refused chart must keep its source visible: {html}");
         assert!(html.contains(needle), "the authored construct must stay readable: {html}");
         assert!(!html.contains("<figure"), "a refused chart must not emit a figure: {html}");
         assert_eq!(report_status(&output.report_json), "success_with_loss", "{code}");
@@ -171,19 +158,12 @@ fn unsupported_chart_constructs_keep_the_source_and_report_a_span() {
         let loss = &losses[0];
         assert_eq!(loss["code"], *code, "{losses:?}");
         assert_eq!(loss["status"], "Unsupported", "{losses:?}");
-        assert!(
-            loss["message"].as_str().expect("loss message").contains(path),
-            "the loss must name the JSON path `{path}`: {losses:?}"
-        );
+        assert!(loss["message"].as_str().expect("loss message").contains(path), "the loss must name the JSON path `{path}`: {losses:?}");
         let start = loss["span"]["start"].as_u64().expect("span.start must be a real number");
         let end = loss["span"]["end"].as_u64().expect("span.end must be a real number");
         assert!(start > 0 && end > start, "the authored span must be a non-empty range: {losses:?}");
         let document = chart_doc("vega-lite", spec);
-        assert_eq!(
-            &document[start as usize..end as usize],
-            *rejected,
-            "the span must cover exactly the rejected JSON value: {losses:?}"
-        );
+        assert_eq!(&document[start as usize..end as usize], *rejected, "the span must cover exactly the rejected JSON value: {losses:?}");
 
         let diagnostics = report["diagnostics"]["diagnostics"].as_array().expect("diagnostics array");
         let diagnostic = diagnostics

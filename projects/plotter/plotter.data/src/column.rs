@@ -89,10 +89,8 @@ impl Column {
     pub fn as_float(&self) -> Result<&FloatColumn> {
         match self {
             Self::Float(column) => Ok(column),
-            Self::String(_) => {
-                Err(Diagnostic::error(DiagnosticCode::ValidationFailed, format!("列 `{}` 不是浮点列", self.name()))
-                    .with_param("column", self.name()))
-            }
+            Self::String(_) => Err(Diagnostic::error(DiagnosticCode::ValidationFailed, format!("列 `{}` 不是浮点列", self.name()))
+                .with_param("column", self.name())),
         }
     }
 
@@ -100,10 +98,8 @@ impl Column {
     pub fn as_string(&self) -> Result<&StringColumn> {
         match self {
             Self::String(column) => Ok(column),
-            Self::Float(_) => {
-                Err(Diagnostic::error(DiagnosticCode::ValidationFailed, format!("列 `{}` 不是字符串列", self.name()))
-                    .with_param("column", self.name()))
-            }
+            Self::Float(_) => Err(Diagnostic::error(DiagnosticCode::ValidationFailed, format!("列 `{}` 不是字符串列", self.name()))
+                .with_param("column", self.name())),
         }
     }
 }

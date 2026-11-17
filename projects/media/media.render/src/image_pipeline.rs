@@ -32,19 +32,13 @@ pub enum ImageOperation<'a> {
     Develop(&'a Adjustments),
     /// One effect stack at one moment (display-space, time-varying operators
     /// derive their phase from `time_base`).
-    Stack {
-        stack: &'a EffectStack,
-        frame: u32,
-        time_base: TimeBase,
-    },
+    Stack { stack: &'a EffectStack, frame: u32, time_base: TimeBase },
 }
 
 /// Decodes `src`, applies `operation` and encodes the result as a PNG at
 /// `out`, returning the observable facts of the run.
 pub fn process_image(src: &Path, out: &Path, operation: &ImageOperation<'_>) -> Result<ProcessedImage, Error> {
-    let src_str = src
-        .to_str()
-        .ok_or_else(|| Error::invalid_input("source path is not valid UTF-8"))?;
+    let src_str = src.to_str().ok_or_else(|| Error::invalid_input("source path is not valid UTF-8"))?;
     let mut library = MediaLibrary::new();
     // The project-layer decode budget: this entry trusts container sizes;
     // hosts with tighter budgets call the codec directly instead.
@@ -67,13 +61,7 @@ pub fn process_image(src: &Path, out: &Path, operation: &ImageOperation<'_>) -> 
     }
     media_codec::write_png(out, width, height, &frame.pixels)?;
     let bytes = std::fs::metadata(out).map(|m| m.len()).unwrap_or(0);
-    Ok(ProcessedImage {
-        out: out.display().to_string(),
-        width,
-        height,
-        bytes,
-        effects,
-    })
+    Ok(ProcessedImage { out: out.display().to_string(), width, height, bytes, effects })
 }
 
 #[cfg(all(test, windows))]
@@ -100,9 +88,7 @@ mod tests {
 
     fn decode(path: &Path) -> (u32, u32, Vec<u8>) {
         let mut library = MediaLibrary::new();
-        let bitmap = library
-            .image(path.to_str().unwrap(), DecodeLimits::unbounded())
-            .expect("decode");
+        let bitmap = library.image(path.to_str().unwrap(), DecodeLimits::unbounded()).expect("decode");
         (bitmap.width, bitmap.height, bitmap.rgba.clone())
     }
 
@@ -110,15 +96,8 @@ mod tests {
     fn develop_round_trip_brightens_and_reports() {
         let src = fixture("develop-src.png");
         let out = std::env::temp_dir().join("media-image-pipeline-tests/out-develop.png");
-        let stats = process_image(
-            &src,
-            &out,
-            &ImageOperation::Develop(&Adjustments {
-                exposure: 1.0,
-                ..Adjustments::default()
-            }),
-        )
-        .expect("develop");
+        let stats =
+            process_image(&src, &out, &ImageOperation::Develop(&Adjustments { exposure: 1.0, ..Adjustments::default() })).expect("develop");
         assert_eq!((stats.width, stats.height), (16, 8));
         assert!(stats.bytes > 0);
         assert!(stats.effects.is_empty());
@@ -135,22 +114,12 @@ mod tests {
     fn stack_round_trip_reports_applied_names() {
         let src = fixture("stack-src.png");
         let out = std::env::temp_dir().join("media-image-pipeline-tests/nested/deep/out-stack.png");
-        let stack = StackSpec::from_json(
-            r##"{"effects":[{"kind":"chroma","amount":0.05},{"kind":"grain","strength":0.1,"density":1000}]}"##,
-        )
-        .expect("spec")
-        .compile()
-        .expect("stack");
-        let stats = process_image(
-            &src,
-            &out,
-            &ImageOperation::Stack {
-                stack: &stack,
-                frame: 2,
-                time_base: TimeBase::from_fps(30),
-            },
-        )
-        .expect("stack run");
+        let stack = StackSpec::from_json(r##"{"effects":[{"kind":"chroma","amount":0.05},{"kind":"grain","strength":0.1,"density":1000}]}"##)
+            .expect("spec")
+            .compile()
+            .expect("stack");
+        let stats = process_image(&src, &out, &ImageOperation::Stack { stack: &stack, frame: 2, time_base: TimeBase::from_fps(30) })
+            .expect("stack run");
         assert_eq!(stats.effects, vec!["chroma", "grain"]);
         assert_eq!((stats.width, stats.height), (16, 8));
         assert!(out.exists(), "nested output directories are created");
@@ -162,16 +131,8 @@ mod tests {
         let stack = media_post::preset("fireside").expect("preset");
         let render = |frame: u32| {
             let out = std::env::temp_dir().join(format!("media-image-pipeline-tests/moment-{frame}.png"));
-            process_image(
-                &src,
-                &out,
-                &ImageOperation::Stack {
-                    stack: &stack,
-                    frame,
-                    time_base: TimeBase::from_fps(30),
-                },
-            )
-            .expect("render moment");
+            process_image(&src, &out, &ImageOperation::Stack { stack: &stack, frame, time_base: TimeBase::from_fps(30) })
+                .expect("render moment");
             decode(&out).2
         };
         assert_eq!(render(0), render(0), "the same moment reproduces");

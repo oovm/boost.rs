@@ -325,9 +325,7 @@ impl EnvironmentKind {
     /// Where this environment's `&` anchors sit.
     pub fn anchors(self) -> AlignmentAnchors {
         match self {
-            EnvironmentKind::Aligned | EnvironmentKind::AlignedAt { .. } | EnvironmentKind::Align => {
-                AlignmentAnchors::ColumnPairs
-            }
+            EnvironmentKind::Aligned | EnvironmentKind::AlignedAt { .. } | EnvironmentKind::Align => AlignmentAnchors::ColumnPairs,
             EnvironmentKind::Split => AlignmentAnchors::SingleEquation,
             EnvironmentKind::Equation | EnvironmentKind::Gather | EnvironmentKind::Gathered => AlignmentAnchors::Centered,
             EnvironmentKind::Multline => AlignmentAnchors::Spread,
@@ -795,12 +793,10 @@ impl MathSemNode {
 
         Some(match node {
             FormulaNode::Sequence(items) => MathSemNode::Row(MathSemantics::from_nodes(items).nodes).into_row(),
-            FormulaNode::HorizontalBox { content, .. }
-            | FormulaNode::Paragraph { content, .. }
-            | FormulaNode::VerticalBox { content, .. } => MathSemNode::Row(MathSemantics::from_nodes(content).nodes).into_row(),
-            FormulaNode::Fraction { num, den, line } => {
-                MathSemNode::Fraction { numerator: child(num), denominator: child(den), line: *line }
+            FormulaNode::HorizontalBox { content, .. } | FormulaNode::Paragraph { content, .. } | FormulaNode::VerticalBox { content, .. } => {
+                MathSemNode::Row(MathSemantics::from_nodes(content).nodes).into_row()
             }
+            FormulaNode::Fraction { num, den, line } => MathSemNode::Fraction { numerator: child(num), denominator: child(den), line: *line },
             FormulaNode::Radical { degree, radicand, .. } => {
                 MathSemNode::Radical { radicand: child(radicand), degree: degree.as_ref().map(|degree| child(degree)) }
             }
@@ -817,16 +813,11 @@ impl MathSemNode {
             FormulaNode::Space { width } => MathSemNode::Space { width_em: width.to_f64() },
             FormulaNode::Subscript { base, sub } => MathSemNode::Sub { base: child(base), sub: child(sub) },
             FormulaNode::Superscript { base, sup } => MathSemNode::Sup { base: child(base), sup: child(sup) },
-            FormulaNode::SubSuperscript { base, sub, sup } => {
-                MathSemNode::SubSup { base: child(base), sub: child(sub), sup: child(sup) }
-            }
+            FormulaNode::SubSuperscript { base, sub, sup } => MathSemNode::SubSup { base: child(base), sub: child(sub), sup: child(sup) },
             // A matrix has no authored column alignment beyond its own cell
             // contents, so it carries none here and keeps MathML's default.
             FormulaNode::Matrix { rows, .. } => MathSemNode::Table {
-                rows: rows
-                    .iter()
-                    .map(|row| row.iter().map(|cell| Self::from_formula(cell).unwrap_or(MathSemNode::Empty)).collect())
-                    .collect(),
+                rows: rows.iter().map(|row| row.iter().map(|cell| Self::from_formula(cell).unwrap_or(MathSemNode::Empty)).collect()).collect(),
                 columnalign: Vec::new(),
             },
             // Presentation MathML has exactly one `mtable` element and no field
@@ -1126,10 +1117,7 @@ mod tests {
             lower(&face('R', FontStyle::DoubleStruck)),
             MathSemNode::Identifier { text: "R".into(), mathvariant: Some(MathVariant::DoubleStruck) }
         );
-        assert_eq!(
-            lower(&face('A', FontStyle::Bold)),
-            MathSemNode::Identifier { text: "A".into(), mathvariant: Some(MathVariant::Bold) }
-        );
+        assert_eq!(lower(&face('A', FontStyle::Bold)), MathSemNode::Identifier { text: "A".into(), mathvariant: Some(MathVariant::Bold) });
         assert_eq!(
             lower(&face('L', FontStyle::Calligraphic)),
             MathSemNode::Identifier { text: "L".into(), mathvariant: Some(MathVariant::Script) }
@@ -1148,11 +1136,8 @@ mod tests {
 
     #[test]
     fn imperative_nodes_are_dropped() {
-        let nodes = vec![
-            FormulaNode::SetMathStyle(MathStyle::Script),
-            sym('x', SymbolRole::Ordinary),
-            FormulaNode::LimitsSpec(LimitsPolicy::Limits),
-        ];
+        let nodes =
+            vec![FormulaNode::SetMathStyle(MathStyle::Script), sym('x', SymbolRole::Ordinary), FormulaNode::LimitsSpec(LimitsPolicy::Limits)];
         let semantics = MathSemantics::from_nodes(&nodes);
         assert_eq!(semantics.nodes, vec![MathSemNode::Identifier { text: "x".into(), mathvariant: None }]);
     }
@@ -1160,16 +1145,10 @@ mod tests {
     #[test]
     fn sequence_root_is_unwrapped_and_single_children_stay_bare() {
         let tree = FormulaTree {
-            root: FormulaNode::Sequence(vec![
-                sym('x', SymbolRole::Ordinary),
-                FormulaNode::Sequence(vec![sym('+', SymbolRole::Binary)]),
-            ]),
+            root: FormulaNode::Sequence(vec![sym('x', SymbolRole::Ordinary), FormulaNode::Sequence(vec![sym('+', SymbolRole::Binary)])]),
         };
         let semantics = MathSemantics::from_formula_tree(&tree);
-        assert_eq!(
-            semantics.nodes,
-            vec![MathSemNode::Identifier { text: "x".into(), mathvariant: None }, MathSemNode::Operator("+".into())]
-        );
+        assert_eq!(semantics.nodes, vec![MathSemNode::Identifier { text: "x".into(), mathvariant: None }, MathSemNode::Operator("+".into())]);
     }
 
     // ── AMS environments ──────────────────────────────────────────────
@@ -1206,12 +1185,7 @@ mod tests {
         for kind in [EnvironmentKind::Align, EnvironmentKind::Equation, EnvironmentKind::Gather, EnvironmentKind::Multline] {
             assert!(kind.is_display_level(), "{kind:?} is a display-level block");
         }
-        for kind in [
-            EnvironmentKind::Aligned,
-            EnvironmentKind::AlignedAt { pairs: 1 },
-            EnvironmentKind::Split,
-            EnvironmentKind::Gathered,
-        ] {
+        for kind in [EnvironmentKind::Aligned, EnvironmentKind::AlignedAt { pairs: 1 }, EnvironmentKind::Split, EnvironmentKind::Gathered] {
             assert!(!kind.is_display_level(), "{kind:?} follows the surrounding style");
         }
         assert_eq!(EnvironmentKind::Gathered.name(false), "gathered");
@@ -1238,9 +1212,7 @@ mod tests {
         // through the columns and carry no row placement.
         let gather = env(EnvironmentKind::Gather, vec![cell(), cell()]);
         assert_eq!(gather.row_placements(), Some(vec![RowPlacement::Centered, RowPlacement::Centered]));
-        for kind in
-            [EnvironmentKind::Aligned, EnvironmentKind::AlignedAt { pairs: 1 }, EnvironmentKind::Align, EnvironmentKind::Split]
-        {
+        for kind in [EnvironmentKind::Aligned, EnvironmentKind::AlignedAt { pairs: 1 }, EnvironmentKind::Align, EnvironmentKind::Split] {
             let grid = env(kind, vec![cell(), cell()]);
             assert_eq!(grid.row_placements(), None, "{kind:?} positions its rows through the column grid");
         }
@@ -1289,8 +1261,7 @@ mod tests {
         // one table.  The kind, anchors, per-column alignment and per-row
         // numbering survive on the IR node itself, and the alignment also lands
         // on the table because `mtable` can express it.
-        let mut environment =
-            env(EnvironmentKind::Split, vec![vec![sym('x', SymbolRole::Ordinary)], vec![sym('y', SymbolRole::Ordinary)]]);
+        let mut environment = env(EnvironmentKind::Split, vec![vec![sym('x', SymbolRole::Ordinary)], vec![sym('y', SymbolRole::Ordinary)]]);
         environment.rows[0].numbering = Numbering::Tag("1".into());
         environment.rows[1].numbering = Numbering::Suppressed;
         let node = FormulaNode::Environment(environment);

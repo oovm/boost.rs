@@ -5,8 +5,8 @@
 //! commands. Resolution into display geometry is a separate step.
 
 use plotter_scene::{
-    Color, MarkerShape, PathData, Point, Rect, SemanticKind, SemanticNode, SemanticRole, SemanticScene, ShapeStyle, Size,
-    SourceRef, TextAnchor, TextStyle, Transform,
+    Color, MarkerShape, PathData, Point, Rect, SemanticKind, SemanticNode, SemanticRole, SemanticScene, ShapeStyle, Size, SourceRef,
+    TextAnchor, TextStyle, Transform,
 };
 
 use crate::{
@@ -136,12 +136,7 @@ pub fn render_sequence_with_options(plan: &DiagramLayoutPlan, options: &RenderOp
         scene.push(
             SemanticNode::new(SemanticKind::Rect {
                 rect: activation.rect,
-                style: ShapeStyle {
-                    fill: Some(NODE_FILL),
-                    stroke: Some(NODE_STROKE),
-                    stroke_width: 1.0,
-                    ..ShapeStyle::default()
-                },
+                style: ShapeStyle { fill: Some(NODE_FILL), stroke: Some(NODE_STROKE), stroke_width: 1.0, ..ShapeStyle::default() },
             })
             .with_id(format!("sequence-activation-{index}"))
             .with_role(SemanticRole::Decoration)
@@ -176,19 +171,13 @@ fn push_cluster(scene: &mut SemanticScene, cluster: &PlacedCluster, options: &Re
     if let Some(label) = &cluster.label {
         let font_size = CLUSTER_FONT_SIZE.min(options.font_size);
         for (index, line) in label.split('\n').enumerate() {
-            let position = Point::new(
-                cluster.rect.x + CLUSTER_LABEL_X,
-                cluster.rect.y + CLUSTER_LABEL_Y + index as f64 * font_size * LINE_HEIGHT,
-            );
+            let position =
+                Point::new(cluster.rect.x + CLUSTER_LABEL_X, cluster.rect.y + CLUSTER_LABEL_Y + index as f64 * font_size * LINE_HEIGHT);
             scene.push(
-                SemanticNode::new(SemanticKind::Text {
-                    position,
-                    text: line.to_string(),
-                    style: label_text_style(font_size, CLUSTER_STROKE),
-                })
-                .with_id(cluster_label_id(&cluster.id, index, label.split('\n').count()))
-                .with_role(SemanticRole::Label)
-                .with_source(source.clone()),
+                SemanticNode::new(SemanticKind::Text { position, text: line.to_string(), style: label_text_style(font_size, CLUSTER_STROKE) })
+                    .with_id(cluster_label_id(&cluster.id, index, label.split('\n').count()))
+                    .with_role(SemanticRole::Label)
+                    .with_source(source.clone()),
             );
         }
     }
@@ -201,10 +190,8 @@ fn push_edge(scene: &mut SemanticScene, id_prefix: &str, index: usize, edge: &Ro
         path = path.line_to(point);
     }
 
-    let mut children = vec![
-        SemanticNode::new(SemanticKind::Path { path, style: edge_style(edge.style) })
-            .with_id(format!("{id_prefix}-{index}-line")),
-    ];
+    let mut children =
+        vec![SemanticNode::new(SemanticKind::Path { path, style: edge_style(edge.style) }).with_id(format!("{id_prefix}-{index}-line"))];
 
     if has_arrow(edge.style) {
         let end = edge.points[edge.points.len() - 1];
@@ -223,17 +210,13 @@ fn push_edge(scene: &mut SemanticScene, id_prefix: &str, index: usize, edge: &Ro
         );
     }
 
-    scene.push(
-        SemanticNode::group(children).with_id(format!("{id_prefix}-{index}")).with_role(SemanticRole::Edge).with_source(source),
-    );
+    scene.push(SemanticNode::group(children).with_id(format!("{id_prefix}-{index}")).with_role(SemanticRole::Edge).with_source(source));
 }
 
 fn push_node(scene: &mut SemanticScene, node: &PlacedNode) {
     let source = SourceRef::element(node.id.clone());
     let id = format!("node-{}", node.id);
-    scene.push(
-        node_shape(node).with_id(id.clone()).with_role(SemanticRole::Node).with_source(source).with_hit_region(node.rect),
-    );
+    scene.push(node_shape(node).with_id(id.clone()).with_role(SemanticRole::Node).with_source(source).with_hit_region(node.rect));
 }
 
 fn push_node_label(scene: &mut SemanticScene, node: &PlacedNode, options: &RenderOptions) {
@@ -241,15 +224,7 @@ fn push_node_label(scene: &mut SemanticScene, node: &PlacedNode, options: &Rende
         return;
     }
     let source = SourceRef::element(node.id.clone());
-    push_centered_text(
-        scene,
-        &format!("node-{}-label", node.id),
-        &node.label,
-        node.rect.center(),
-        options.font_size,
-        LabelKind::Node,
-        source,
-    );
+    push_centered_text(scene, &format!("node-{}-label", node.id), &node.label, node.rect.center(), options.font_size, LabelKind::Node, source);
 }
 
 fn push_edge_label(scene: &mut SemanticScene, id_prefix: &str, index: usize, edge: &RoutedEdge, options: &RenderOptions) {
@@ -267,25 +242,11 @@ fn push_edge_label(scene: &mut SemanticScene, id_prefix: &str, index: usize, edg
             .with_source(source.clone()),
     );
     let font_size = crate::compile::edge_label_font_size(options.font_size);
-    push_centered_text(
-        scene,
-        &format!("{id_prefix}-{index}-label"),
-        label,
-        label_box.center(),
-        font_size,
-        LabelKind::Edge,
-        source,
-    );
+    push_centered_text(scene, &format!("{id_prefix}-{index}-label"), label, label_box.center(), font_size, LabelKind::Edge, source);
 }
 
 fn label_backdrop_style() -> ShapeStyle {
-    ShapeStyle {
-        fill: Some(DIAGRAM_THEME.light.edge_label_bg),
-        stroke: None,
-        stroke_width: 0.0,
-        dash: None,
-        opacity: EDGE_LABEL_BG_OPACITY,
-    }
+    ShapeStyle { fill: Some(DIAGRAM_THEME.light.edge_label_bg), stroke: None, stroke_width: 0.0, dash: None, opacity: EDGE_LABEL_BG_OPACITY }
 }
 
 #[derive(Clone, Copy)]
@@ -313,14 +274,10 @@ fn push_centered_text(
         let position = Point::new(center.x, center.y + offset + font_size * BASELINE_SHIFT);
         let id = if lines.len() == 1 { id_prefix.to_string() } else { format!("{id_prefix}-{index}") };
         scene.push(
-            SemanticNode::new(SemanticKind::Text {
-                position,
-                text: (*line).to_string(),
-                style: label_text_style(font_size, fill),
-            })
-            .with_id(id)
-            .with_role(role)
-            .with_source(source.clone()),
+            SemanticNode::new(SemanticKind::Text { position, text: (*line).to_string(), style: label_text_style(font_size, fill) })
+                .with_id(id)
+                .with_role(role)
+                .with_source(source.clone()),
         );
     }
 }
@@ -355,18 +312,12 @@ fn node_shape(node: &PlacedNode) -> SemanticNode {
                 style: ShapeStyle { fill: Some(NODE_STROKE), stroke: None, ..ShapeStyle::default() },
             }
         }
-        NodeShape::DoubleCircle => {
-            SemanticKind::Group { children: double_circle_children(&node.id, node.rect, style), opacity: 1.0 }
-        }
+        NodeShape::DoubleCircle => SemanticKind::Group { children: double_circle_children(&node.id, node.rect, style), opacity: 1.0 },
         NodeShape::Component => SemanticKind::Group { children: component_children(&node.id, node.rect, style), opacity: 1.0 },
-        NodeShape::Ellipse => SemanticKind::Ellipse {
-            center: node.rect.center(),
-            radii: Size::new(node.rect.width * 0.5, node.rect.height * 0.5),
-            style,
-        },
-        NodeShape::Plaintext => {
-            SemanticKind::Rect { rect: node.rect, style: ShapeStyle { fill: None, stroke: None, ..ShapeStyle::default() } }
+        NodeShape::Ellipse => {
+            SemanticKind::Ellipse { center: node.rect.center(), radii: Size::new(node.rect.width * 0.5, node.rect.height * 0.5), style }
         }
+        NodeShape::Plaintext => SemanticKind::Rect { rect: node.rect, style: ShapeStyle { fill: None, stroke: None, ..ShapeStyle::default() } },
     };
     SemanticNode::new(kind)
 }
@@ -460,8 +411,7 @@ fn double_circle_children(id: &str, rect: Rect, style: ShapeStyle) -> Vec<Semant
     vec![
         SemanticNode::new(SemanticKind::Ellipse { center: rect.center(), radii: outer, style: style.clone() })
             .with_id(format!("node-{id}-outer")),
-        SemanticNode::new(SemanticKind::Ellipse { center: rect.center(), radii: inner, style })
-            .with_id(format!("node-{id}-inner")),
+        SemanticNode::new(SemanticKind::Ellipse { center: rect.center(), radii: inner, style }).with_id(format!("node-{id}-inner")),
     ]
 }
 
@@ -496,12 +446,8 @@ fn cylinder_children(id: &str, rect: Rect, style: ShapeStyle) -> Vec<SemanticNod
             style: style.clone(),
         })
         .with_id(format!("node-{id}-bottom")),
-        SemanticNode::new(SemanticKind::Ellipse {
-            center: Point::new(center.x, rect.y + cap),
-            radii: Size::new(rect.width * 0.5, cap),
-            style,
-        })
-        .with_id(format!("node-{id}-top")),
+        SemanticNode::new(SemanticKind::Ellipse { center: Point::new(center.x, rect.y + cap), radii: Size::new(rect.width * 0.5, cap), style })
+            .with_id(format!("node-{id}-top")),
     ]
 }
 

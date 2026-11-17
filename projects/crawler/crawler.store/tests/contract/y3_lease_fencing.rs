@@ -14,10 +14,7 @@ fn y3_stale_fencing_is_rejected_and_expired_claims_are_reclaimed() {
 
         let stale = store.claim_next(HOST, "w1").expect("claim").expect("first claim");
         store.second_worker_claim("w2").expect("competing token");
-        assert!(
-            matches!(store.begin_page_tx("w2"), Err(StoreError::StoreFencingMismatch)),
-            "stale fencing token must be rejected"
-        );
+        assert!(matches!(store.begin_page_tx("w2"), Err(StoreError::StoreFencingMismatch)), "stale fencing token must be rejected");
 
         thread::sleep(TEST_LEASE + Duration::from_millis(250));
         let fresh = store.claim_next(HOST, "w2").expect("claim").expect("expired claim reclaimed");

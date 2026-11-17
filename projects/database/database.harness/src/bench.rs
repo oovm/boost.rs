@@ -382,7 +382,14 @@ mod tests {
 
     #[test]
     fn provenance_stays_off_the_wire_when_unset() {
-        let row = BenchRow { workload: "get-seq".into(), unit: "ms".into(), ours: summarize(&[1.0]).expect("ours"), reference: None, reference_engine: None, provenance: None };
+        let row = BenchRow {
+            workload: "get-seq".into(),
+            unit: "ms".into(),
+            ours: summarize(&[1.0]).expect("ours"),
+            reference: None,
+            reference_engine: None,
+            provenance: None,
+        };
         let row_json = serde_json::to_string(&row).expect("row serializes");
         assert!(!row_json.contains("provenance"), "unset row provenance must not appear on the wire: {row_json}");
 
@@ -394,7 +401,18 @@ mod tests {
     #[test]
     fn provenance_wire_keys_are_frozen_snake_case() {
         let json = serde_json::to_string(&full_provenance()).expect("provenance serializes");
-        for key in ["\"scenario\"", "\"scenario_params\"", "\"data_scale\"", "\"rustc_version\"", "\"node_version\"", "\"target_triple\"", "\"rev\"", "\"plan\"", "\"rounds\":5", "\"warmup\":1"] {
+        for key in [
+            "\"scenario\"",
+            "\"scenario_params\"",
+            "\"data_scale\"",
+            "\"rustc_version\"",
+            "\"node_version\"",
+            "\"target_triple\"",
+            "\"rev\"",
+            "\"plan\"",
+            "\"rounds\":5",
+            "\"warmup\":1",
+        ] {
             assert!(json.contains(key), "missing frozen wire key {key} in {json}");
         }
     }
@@ -444,7 +462,14 @@ mod tests {
 
         let report = BenchReport {
             provenance: Some(run_level),
-            rows: vec![BenchRow { workload: "set-big".into(), unit: "ms".into(), ours: summarize(&[1.0]).expect("ours"), reference: None, reference_engine: None, provenance: Some(row_level) }],
+            rows: vec![BenchRow {
+                workload: "set-big".into(),
+                unit: "ms".into(),
+                ours: summarize(&[1.0]).expect("ours"),
+                reference: None,
+                reference_engine: None,
+                provenance: Some(row_level),
+            }],
         };
         let effective = report.row_provenance(&report.rows[0]);
         assert_eq!(effective.scenario.as_deref(), Some("redis-big-value-set"), "row wins on overlap");

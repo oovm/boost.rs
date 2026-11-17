@@ -42,8 +42,6 @@ fn dx12_write_cuda_read_shared_buffer() {
         }
     };
 
-    let actual = cuda
-        .read_imported_f32(imported)
-        .expect("cuda read imported");
+    let actual = cuda.read_imported_f32(imported).expect("cuda read imported");
     assert_eq!(actual, values.to_vec());
 }

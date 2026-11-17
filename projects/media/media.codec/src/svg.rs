@@ -78,12 +78,9 @@ fn element(shape: &NormShape) -> String {
             }
             out
         }
-        NormGeometry::Disc { center, radius } => format!(
-            "<circle cx=\"{}\" cy=\"{}\" r=\"{}\"",
-            number(center[0]),
-            number(center[1]),
-            number(*radius)
-        ),
+        NormGeometry::Disc { center, radius } => {
+            format!("<circle cx=\"{}\" cy=\"{}\" r=\"{}\"", number(center[0]), number(center[1]), number(*radius))
+        }
     };
     paint(&mut out, shape.fill, "fill");
     paint(&mut out, shape.stroke, "stroke");
@@ -133,18 +130,8 @@ mod tests {
     fn sample() -> NormDoc {
         let mut doc = VectorDoc::new(64, 48, Rgba([10, 12, 20, 255]));
         let _ = doc.add_layer("base");
-        doc.add_shape(
-            0,
-            Shape::rect([4.0, 4.0], [40.0, 24.0], 6.0)
-                .filled(Rgba([30, 40, 70, 255]))
-                .stroked(Rgba([120, 160, 255, 255]), 2.0),
-        );
-        doc.add_shape(
-            0,
-            Shape::path(vec![[8.0, 30.0], [24.0, 12.0], [56.0, 28.0]])
-                .smooth()
-                .stroked(Rgba([255, 200, 120, 255]), 3.0),
-        );
+        doc.add_shape(0, Shape::rect([4.0, 4.0], [40.0, 24.0], 6.0).filled(Rgba([30, 40, 70, 255])).stroked(Rgba([120, 160, 255, 255]), 2.0));
+        doc.add_shape(0, Shape::path(vec![[8.0, 30.0], [24.0, 12.0], [56.0, 28.0]]).smooth().stroked(Rgba([255, 200, 120, 255]), 3.0));
         doc.add_shape(0, Shape::circle([32.0, 24.0], 10.0).filled(Rgba([9, 9, 9, 255])));
         doc.normalize()
     }
@@ -238,7 +225,11 @@ mod tests {
         let mut doc = sample();
         doc.layers.push(media_vector::NormLayer { name: "ghost".to_string(), shapes: Vec::new() });
         let svg = to_svg_string(&doc);
-        assert_eq!(svg.matches("<g ").count(), 2, "normalization already dropped hidden layers, but an appended empty layer still renders its group");
+        assert_eq!(
+            svg.matches("<g ").count(),
+            2,
+            "normalization already dropped hidden layers, but an appended empty layer still renders its group"
+        );
 
         let mut doc = VectorDoc::new(64, 48, Rgba::default());
         let _ = doc.add_layer("shown");

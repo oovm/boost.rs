@@ -10,8 +10,10 @@
 
 use media_image::Frame;
 
-use crate::contract::{InputDomain, relative_radius};
-use crate::display_blur::display_box_blur;
+use crate::{
+    contract::{InputDomain, relative_radius},
+    display_blur::display_box_blur,
+};
 
 /// 显影模糊的短边系数（相对半径合同，见 [`crate::contract`]）。
 pub const DEVELOP_BLUR_COEFFICIENT: f32 = 0.03;
@@ -35,14 +37,7 @@ pub struct Adjustments {
 
 impl Default for Adjustments {
     fn default() -> Self {
-        Self {
-            exposure: 0.0,
-            brightness: 0.0,
-            contrast: 0.0,
-            saturation: 0.0,
-            temperature: 0.0,
-            blur: 0.0,
-        }
+        Self { exposure: 0.0, brightness: 0.0, contrast: 0.0, saturation: 0.0, temperature: 0.0, blur: 0.0 }
     }
 }
 
@@ -55,12 +50,7 @@ impl Adjustments {
 
     /// 按固定顺序就地应用配方。
     pub fn apply(&self, frame: &mut Frame) {
-        if self.exposure != 0.0
-            || self.brightness != 0.0
-            || self.contrast != 0.0
-            || self.saturation != 0.0
-            || self.temperature != 0.0
-        {
+        if self.exposure != 0.0 || self.brightness != 0.0 || self.contrast != 0.0 || self.saturation != 0.0 || self.temperature != 0.0 {
             tone(frame, self);
         }
         if self.blur > 0.0 {
@@ -79,11 +69,7 @@ fn tone(frame: &mut Frame, recipe: &Adjustments) {
     let saturation = 1.0 + recipe.saturation.clamp(-1.0, 1.0);
     let warm = recipe.temperature.clamp(-1.0, 1.0);
     for index in (0..frame.pixels.len()).step_by(4) {
-        let mut rgb = [
-            frame.pixels[index] as f32 / 255.0,
-            frame.pixels[index + 1] as f32 / 255.0,
-            frame.pixels[index + 2] as f32 / 255.0,
-        ];
+        let mut rgb = [frame.pixels[index] as f32 / 255.0, frame.pixels[index + 1] as f32 / 255.0, frame.pixels[index + 2] as f32 / 255.0];
         for channel in &mut rgb {
             *channel = ((*channel * exposure - 0.5) * contrast + 0.5 + brightness).clamp(0.0, 1.0);
         }
@@ -115,22 +101,14 @@ mod tests {
     #[test]
     fn brightness_lifts_the_mean() {
         let mut frame = grey(80);
-        Adjustments {
-            brightness: 0.25,
-            ..Adjustments::default()
-        }
-        .apply(&mut frame);
+        Adjustments { brightness: 0.25, ..Adjustments::default() }.apply(&mut frame);
         assert!(frame.pixels[0] > 80, "{}", frame.pixels[0]);
     }
 
     #[test]
     fn contrast_pushes_dark_pixels_lower() {
         let mut frame = grey(60);
-        Adjustments {
-            contrast: 0.6,
-            ..Adjustments::default()
-        }
-        .apply(&mut frame);
+        Adjustments { contrast: 0.6, ..Adjustments::default() }.apply(&mut frame);
         assert!(frame.pixels[0] < 60, "{}", frame.pixels[0]);
     }
 
@@ -140,11 +118,7 @@ mod tests {
         for chunk in frame.pixels.chunks_exact_mut(4) {
             chunk.copy_from_slice(&[200, 60, 40, 255]);
         }
-        Adjustments {
-            saturation: -1.0,
-            ..Adjustments::default()
-        }
-        .apply(&mut frame);
+        Adjustments { saturation: -1.0, ..Adjustments::default() }.apply(&mut frame);
         assert_eq!(frame.pixels[0], frame.pixels[1]);
         assert_eq!(frame.pixels[1], frame.pixels[2]);
     }
@@ -153,10 +127,7 @@ mod tests {
     fn exposure_is_monotonic() {
         let mut dark = grey(30);
         let mut light = grey(200);
-        let recipe = Adjustments {
-            exposure: 0.4,
-            ..Adjustments::default()
-        };
+        let recipe = Adjustments { exposure: 0.4, ..Adjustments::default() };
         recipe.apply(&mut dark);
         recipe.apply(&mut light);
         assert!(light.pixels[0] > dark.pixels[0]);
@@ -167,19 +138,11 @@ mod tests {
         // Golden of the exposed authoring surface: grey 80 with brightness
         // 0.25 is exactly 80/255 + 0.125 -> round(0.43872... * 255) = 112.
         let mut frame = grey(80);
-        Adjustments {
-            brightness: 0.25,
-            ..Adjustments::default()
-        }
-        .apply(&mut frame);
+        Adjustments { brightness: 0.25, ..Adjustments::default() }.apply(&mut frame);
         assert_eq!(frame.pixels[0], 112);
         // Warmth shifts red and blue by the pinned 0.06 constant.
         let mut frame = grey(128);
-        Adjustments {
-            temperature: 1.0,
-            ..Adjustments::default()
-        }
-        .apply(&mut frame);
+        Adjustments { temperature: 1.0, ..Adjustments::default() }.apply(&mut frame);
         assert!(frame.pixels[0] > 128 && frame.pixels[2] < 128);
     }
 
@@ -197,11 +160,7 @@ mod tests {
         }
         let hot = ((50 * 100 + 50) as usize) * 4;
         frame.pixels[hot..hot + 3].copy_from_slice(&[255, 255, 255]);
-        Adjustments {
-            blur: 0.5,
-            ..Adjustments::default()
-        }
-        .apply(&mut frame);
+        Adjustments { blur: 0.5, ..Adjustments::default() }.apply(&mut frame);
         assert_eq!(&frame.pixels[hot..hot + 3], &[28, 28, 28]);
     }
 

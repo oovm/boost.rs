@@ -1,6 +1,4 @@
-use crawler_types::{
-    ExtractBudget, ExtractContext, ExtractInput, ExtractResult, ExtractStatus, FetchArtifact, ProbeResult, ProbeStatus,
-};
+use crawler_types::{ExtractBudget, ExtractContext, ExtractInput, ExtractResult, ExtractStatus, FetchArtifact, ProbeResult, ProbeStatus};
 use document_formats::from_format_error;
 use document_ir::{Block, DocumentGraph, DocumentId, Inline, LossMarker, SemanticStatus, SourceKind, SourceSpan};
 
@@ -54,11 +52,7 @@ impl Extractor for HtmlExtractor {
                     losses: vec![
                         // Primary: the authoritative Notedown code preserved
                         // from the formats-layer diagnostic.
-                        LossMarker {
-                            code: diagnostic.code().as_str().to_string(),
-                            message: fallback,
-                            status: SemanticStatus::Partial,
-                        },
+                        LossMarker { code: diagnostic.code().as_str().to_string(), message: fallback, status: SemanticStatus::Partial },
                         // Secondary: Crawler-side context that the failure
                         // originated at HTML extraction time.
                         LossMarker {
@@ -110,11 +104,7 @@ fn decode_failure(artifact: &FetchArtifact, error: &super::encoding::DecodeError
         source_url: artifact.final_url.clone(),
         document: None,
         discovered_links: Vec::new(),
-        losses: vec![LossMarker {
-            code: "crawler.extract.encoding_failed".into(),
-            message: message.clone(),
-            status: SemanticStatus::Partial,
-        }],
+        losses: vec![LossMarker { code: "crawler.extract.encoding_failed".into(), message: message.clone(), status: SemanticStatus::Partial }],
         extractor: "html".into(),
     }
 }
@@ -280,9 +270,7 @@ fn authored_span(document: &DocumentGraph, id: document_ir::NodeId) -> Option<So
 /// Generic inline SVG stays an ordinary graphic resource; only Mermaid's
 /// rendered signatures trigger the missing-source loss.
 fn looks_like_rendered_diagram(markup: &str) -> bool {
-    ["aria-roledescription=", "class=\"mermaid", "id=\"mermaid", "data-processed=\"true\""]
-        .iter()
-        .any(|signal| markup.contains(signal))
+    ["aria-roledescription=", "class=\"mermaid", "id=\"mermaid", "data-processed=\"true\""].iter().any(|signal| markup.contains(signal))
 }
 
 /// Collect bitmap-only diagrams: authored `<img>` occurrences marked with the

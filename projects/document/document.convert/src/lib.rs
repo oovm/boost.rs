@@ -24,8 +24,8 @@ use document_fonts::BodyFaceSet;
 use document_formats::{
     FormatDirection, FormatStatus, capabilities,
     import::{
-        doc::import_doc_bytes, docx::import_docx_bytes, epub::import_epub_bytes, html::import_html_bytes,
-        pdf::import_pdf_bytes, pptx::import_pptx_graph_bytes, xlsx::import_xlsx_graph_bytes,
+        doc::import_doc_bytes, docx::import_docx_bytes, epub::import_epub_bytes, html::import_html_bytes, pdf::import_pdf_bytes,
+        pptx::import_pptx_graph_bytes, xlsx::import_xlsx_graph_bytes,
     },
 };
 use document_ir::{DocumentGraph, LossMarker, SemanticStatus};
@@ -49,14 +49,13 @@ pub use inspect::{
 };
 pub use publish::{PublishedMarkdownProject, publish_bytes, publish_markdown_project, publish_text};
 pub use readers::{
-    read_doc, read_doc_bytes, read_html, read_html_bytes, read_markdown, read_markdown_bytes, read_markdown_bytes_with_assets,
-    read_notedown, read_notedown_bytes, read_pdf, read_pdf_bytes, read_tex, read_tex_bytes, read_typst, read_typst_bytes,
+    read_doc, read_doc_bytes, read_html, read_html_bytes, read_markdown, read_markdown_bytes, read_markdown_bytes_with_assets, read_notedown,
+    read_notedown_bytes, read_pdf, read_pdf_bytes, read_tex, read_tex_bytes, read_typst, read_typst_bytes,
 };
 pub use structure::MAX_STRUCTURE_DEPTH;
 pub use transform::{TransformOutcome, TransformPassReport, TransformPassStatus, apply_transform_passes};
 pub use writers::{
-    write_document_docx, write_document_epub, write_document_html, write_document_markdown, write_document_pdf,
-    write_markdown_project,
+    write_document_docx, write_document_epub, write_document_html, write_document_markdown, write_document_pdf, write_markdown_project,
 };
 
 /// Reader handlers wired into this build (lowercase).
@@ -74,10 +73,7 @@ pub const WRITERS: &[&str] = &["markdown", "docx", "pdf", "html", "epub"];
 
 /// Look up one direction of a format in the single capability table.
 fn capability_status(id: &str, direction: FormatDirection) -> Option<FormatStatus> {
-    capabilities()
-        .into_iter()
-        .find(|capability| capability.id == id && capability.direction == direction)
-        .map(|capability| capability.status)
+    capabilities().into_iter().find(|capability| capability.id == id && capability.direction == direction).map(|capability| capability.status)
 }
 
 /// Whether a capability status may be routed.
@@ -296,12 +292,7 @@ fn convert_bytes_inner(
 }
 
 /// Converts bytes into a Markdown project description without writing disk.
-pub fn convert_to_markdown_project_bytes(
-    from: &str,
-    label: &str,
-    bytes: Vec<u8>,
-    handlers_json: Option<&str>,
-) -> Result<ConvertProjectOutput> {
+pub fn convert_to_markdown_project_bytes(from: &str, label: &str, bytes: Vec<u8>, handlers_json: Option<&str>) -> Result<ConvertProjectOutput> {
     convert_to_markdown_project_bytes_with_budgets(from, label, bytes, handlers_json, None)
 }
 
@@ -392,8 +383,7 @@ fn build_convert_project_output(
         outputs.push(serde_json::json!({ "path": chapter, "format": "markdown", "published": true }));
     }
     outputs.push(serde_json::json!({ "path": "panduck.report.json", "format": "report", "published": true }));
-    let mut pipeline =
-        serde_json::json!({ "reader": from, "writer": "markdown-project", "stages": ["read", "ir", "write", "materialize"] });
+    let mut pipeline = serde_json::json!({ "reader": from, "writer": "markdown-project", "stages": ["read", "ir", "write", "materialize"] });
     if !transform_outcome.is_empty() {
         pipeline["transforms"] = serde_json::to_value(&transform_outcome.passes).unwrap_or_default();
     }
@@ -494,9 +484,7 @@ fn read_source(from: &str, label: &str, bytes: Vec<u8>) -> Result<DocumentGraph>
             let text = match String::from_utf8(bytes) {
                 Ok(text) => text,
                 Err(error) => {
-                    return format_error::fail(AdapterError::invalid_input(format!(
-                        "markdown input is not valid UTF-8: {error}"
-                    )));
+                    return format_error::fail(AdapterError::invalid_input(format!("markdown input is not valid UTF-8: {error}")));
                 }
             };
             read_markdown_bytes(label, text)
@@ -505,9 +493,7 @@ fn read_source(from: &str, label: &str, bytes: Vec<u8>) -> Result<DocumentGraph>
             let text = match String::from_utf8(bytes) {
                 Ok(text) => text,
                 Err(error) => {
-                    return format_error::fail(AdapterError::invalid_input(format!(
-                        "notedown input is not valid UTF-8: {error}"
-                    )));
+                    return format_error::fail(AdapterError::invalid_input(format!("notedown input is not valid UTF-8: {error}")));
                 }
             };
             read_notedown_bytes(label, text)
@@ -534,11 +520,7 @@ fn read_source(from: &str, label: &str, bytes: Vec<u8>) -> Result<DocumentGraph>
     }
 }
 
-fn write_target(
-    to: &str,
-    graph: &mut DocumentGraph,
-    body_set: Option<&Arc<BodyFaceSet>>,
-) -> Result<(String, Option<String>, Option<Vec<u8>>)> {
+fn write_target(to: &str, graph: &mut DocumentGraph, body_set: Option<&Arc<BodyFaceSet>>) -> Result<(String, Option<String>, Option<Vec<u8>>)> {
     match to {
         "markdown" => {
             let markdown = write_document_markdown(graph)?;

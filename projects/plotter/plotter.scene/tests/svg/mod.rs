@@ -1,6 +1,6 @@
 use plotter_scene::{
-    Color, DisplayScene, MarkerShape, NodeKind, PathData, Point, Rect, ResourceRef, SceneNode, SemanticRole, ShapeStyle, Size,
-    SourceRef, TextAnchor, TextStyle, Transform,
+    Color, DisplayScene, MarkerShape, NodeKind, PathData, Point, Rect, ResourceRef, SceneNode, SemanticRole, ShapeStyle, Size, SourceRef,
+    TextAnchor, TextStyle, Transform,
 };
 
 fn sample_scene() -> DisplayScene {
@@ -90,10 +90,8 @@ fn text_is_escaped_and_styled() {
 #[test]
 fn clips_get_stable_unique_ids() {
     let rect = Rect::new(0.0, 0.0, 20.0, 20.0);
-    let first = SceneNode::new(NodeKind::Rect { rect, style: ShapeStyle::filled(Color::BLACK) })
-        .with_clip(Rect::new(0.0, 0.0, 10.0, 10.0));
-    let second = SceneNode::new(NodeKind::Rect { rect, style: ShapeStyle::filled(Color::BLACK) })
-        .with_clip(Rect::new(2.0, 2.0, 5.0, 5.0));
+    let first = SceneNode::new(NodeKind::Rect { rect, style: ShapeStyle::filled(Color::BLACK) }).with_clip(Rect::new(0.0, 0.0, 10.0, 10.0));
+    let second = SceneNode::new(NodeKind::Rect { rect, style: ShapeStyle::filled(Color::BLACK) }).with_clip(Rect::new(2.0, 2.0, 5.0, 5.0));
 
     let mut scene = DisplayScene::new(Size::new(40.0, 40.0));
     scene.push(SceneNode::group(vec![first, second]));
@@ -109,12 +107,8 @@ fn clips_get_stable_unique_ids() {
 fn image_and_rounded_rect_emit_expected_attributes() {
     let mut scene = DisplayScene::new(Size::new(100.0, 100.0));
     scene.push(
-        SceneNode::new(NodeKind::RoundedRect {
-            rect: Rect::new(1.0, 2.0, 30.0, 40.0),
-            radius: 6.0,
-            style: ShapeStyle::filled(Color::WHITE),
-        })
-        .with_id("rounded"),
+        SceneNode::new(NodeKind::RoundedRect { rect: Rect::new(1.0, 2.0, 30.0, 40.0), radius: 6.0, style: ShapeStyle::filled(Color::WHITE) })
+            .with_id("rounded"),
     );
     scene.push(
         SceneNode::new(NodeKind::Image {
@@ -126,10 +120,7 @@ fn image_and_rounded_rect_emit_expected_attributes() {
     );
     let svg = scene.to_svg().expect("valid scene");
 
-    assert!(
-        svg.contains("<rect id=\"rounded\" x=\"1\" y=\"2\" width=\"30\" height=\"40\" rx=\"6\" fill=\"#ffffff\"/>"),
-        "{svg}"
-    );
+    assert!(svg.contains("<rect id=\"rounded\" x=\"1\" y=\"2\" width=\"30\" height=\"40\" rx=\"6\" fill=\"#ffffff\"/>"), "{svg}");
     assert!(svg.contains("href=\"assets/a&amp;b.png\""), "{svg}");
     assert!(svg.contains("data-mime=\"image/png\""), "{svg}");
     assert!(svg.contains("opacity=\"0.75\""), "{svg}");
@@ -201,10 +192,7 @@ fn namespaced_hooks_prefix_ids_and_scope_role_classes() {
     let second_ids = ids(&second);
     assert!(first_ids.iter().all(|id| id.starts_with("diagram-1-")), "{first_ids:?}");
     assert!(second_ids.iter().all(|id| id.starts_with("diagram-2-")), "{second_ids:?}");
-    assert!(
-        first_ids.iter().all(|id| !second_ids.contains(id)),
-        "namespaces must not overlap: {first_ids:?} vs {second_ids:?}"
-    );
+    assert!(first_ids.iter().all(|id| !second_ids.contains(id)), "namespaces must not overlap: {first_ids:?} vs {second_ids:?}");
 
     // No bare generic class names leak into the output.
     for bare in ["class=\"node\"", "class=\"edge\"", "class=\"label\"", "class=\"cluster\""] {

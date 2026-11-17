@@ -410,7 +410,10 @@ mod tests {
             signal: vec!["code=1101".into(), "codeName=duplicate key".into()],
             reason: "structured-rejection".into(),
         }];
-        assert_eq!(classify(&comparison, Some("case-7"), &known), DifferenceClass::Known { key: "case-7".into(), reason: "structured-rejection".into() });
+        assert_eq!(
+            classify(&comparison, Some("case-7"), &known),
+            DifferenceClass::Known { key: "case-7".into(), reason: "structured-rejection".into() }
+        );
     }
 
     #[test]
@@ -437,14 +440,9 @@ mod tests {
 
     #[test]
     fn unavailable_is_a_state_not_a_clean_match() {
-        let expected = Observed {
-            provenance: external(),
-            body: ObservedBody::Unavailable { code: "offline".into(), reason: "engine down".into() },
-        };
-        let actual = Observed {
-            provenance: None,
-            body: ObservedBody::Unavailable { code: "offline".into(), reason: "engine down".into() },
-        };
+        let expected =
+            Observed { provenance: external(), body: ObservedBody::Unavailable { code: "offline".into(), reason: "engine down".into() } };
+        let actual = Observed { provenance: None, body: ObservedBody::Unavailable { code: "offline".into(), reason: "engine down".into() } };
         let comparison = compare(&expected, &actual, &CompareMode::Exact);
         assert!(comparison.matched, "错误码相同在载荷层一致");
         assert!(

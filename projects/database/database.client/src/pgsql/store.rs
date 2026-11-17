@@ -410,12 +410,7 @@ mod tests {
     /// repo writes when `database-formats` owns the shard.
     fn shared_record(namespace: &str, key: &[u8], value: &[u8], revision: u64) -> (TestKey, ShardRecord) {
         let key = TestKey::new(namespace, key.to_vec());
-        let stored = ShardRecord {
-            key: key.clone(),
-            value: StoredValue::Inline(TestInlineValue(value.to_vec())),
-            revision,
-            expires_at: None,
-        };
+        let stored = ShardRecord { key: key.clone(), value: StoredValue::Inline(TestInlineValue(value.to_vec())), revision, expires_at: None };
         (key, stored)
     }
 

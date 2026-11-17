@@ -2,8 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use hardware::prelude::*;
-use hardware::ParamValue;
+use hardware::{ParamValue, prelude::*};
 
 fn buffer(id: u64, floats: usize) -> ResourceNode {
     ResourceNode {
@@ -37,58 +36,17 @@ fn f(key: &str, v: f64) -> (String, ParamValue) {
 
 fn reference_graph() -> Graph {
     Graph {
-        resources: ResourceGraph {
-            nodes: vec![
-                buffer(1, 4),
-                buffer(2, 4),
-                buffer(3, 4),
-                buffer(4, 4),
-            ],
-        },
+        resources: ResourceGraph { nodes: vec![buffer(1, 4), buffer(2, 4), buffer(3, 4), buffer(4, 4)] },
         tasks: TaskGraph {
             nodes: vec![
-                task(
-                    10,
-                    TaskKind::Copy,
-                    BTreeMap::from([i("src", 1), i("dst", 2)]),
-                ),
-                task(
-                    11,
-                    TaskKind::Fill,
-                    BTreeMap::from([i("dst", 3), f("value", 1.0)]),
-                ),
-                task(
-                    12,
-                    TaskKind::MatMul,
-                    BTreeMap::from([
-                        i("a", 2),
-                        i("b", 3),
-                        i("out", 4),
-                        i("m", 2),
-                        i("n", 2),
-                        i("k", 2),
-                    ]),
-                ),
+                task(10, TaskKind::Copy, BTreeMap::from([i("src", 1), i("dst", 2)])),
+                task(11, TaskKind::Fill, BTreeMap::from([i("dst", 3), f("value", 1.0)])),
+                task(12, TaskKind::MatMul, BTreeMap::from([i("a", 2), i("b", 3), i("out", 4), i("m", 2), i("n", 2), i("k", 2)])),
             ],
             edges: vec![
-                DepEdge {
-                    from_task: None,
-                    from_resource: Some(ResourceId(1)),
-                    to_task: TaskId(10),
-                    kind: DepKind::Data,
-                },
-                DepEdge {
-                    from_task: Some(TaskId(10)),
-                    from_resource: None,
-                    to_task: TaskId(12),
-                    kind: DepKind::Execution,
-                },
-                DepEdge {
-                    from_task: Some(TaskId(11)),
-                    from_resource: None,
-                    to_task: TaskId(12),
-                    kind: DepKind::Execution,
-                },
+                DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data },
+                DepEdge { from_task: Some(TaskId(10)), from_resource: None, to_task: TaskId(12), kind: DepKind::Execution },
+                DepEdge { from_task: Some(TaskId(11)), from_resource: None, to_task: TaskId(12), kind: DepKind::Execution },
             ],
         },
     }
@@ -101,29 +59,19 @@ fn external_host_buffers_and_immediate_stream_run() {
 
     for node in &graph.resources.nodes {
         let bytes = node.byte_size.expect("sized");
-        session
-            .bind_host_buffer(node.id, bytes)
-            .expect("bind external");
+        session.bind_host_buffer(node.id, bytes).expect("bind external");
     }
     session.set_stream(immediate_stream());
 
     let stream = immediate_stream();
     let upload = immediate_event();
     let compute = immediate_event();
-    session
-        .record_event(stream.as_ref(), upload.as_ref())
-        .expect("record upload");
-    session
-        .wait_event(stream.as_ref(), upload.as_ref())
-        .expect("upload → compute");
-    session
-        .record_event(stream.as_ref(), compute.as_ref())
-        .expect("record compute");
+    session.record_event(stream.as_ref(), upload.as_ref()).expect("record upload");
+    session.wait_event(stream.as_ref(), upload.as_ref()).expect("upload → compute");
+    session.record_event(stream.as_ref(), compute.as_ref()).expect("record compute");
 
     session.prepare(&graph).expect("prepare");
-    session
-        .write_f32(ResourceId(1), &[1.0, 2.0, 3.0, 4.0])
-        .expect("write");
+    session.write_f32(ResourceId(1), &[1.0, 2.0, 3.0, 4.0]).expect("write");
     session.run_prepared(&graph).expect("run");
     session.flush().expect("flush");
 
@@ -146,8 +94,6 @@ fn reject_foreign_store_external_buffer() {
 
     let store = shared_store();
     let mut backend = CpuBackend::with_store(store);
-    let err = backend
-        .bind_externals(&bindings)
-        .expect_err("foreign store");
+    let err = backend.bind_externals(&bindings).expect_err("foreign store");
     assert_eq!(err.code(), SchedulerErrorCode::Backend);
 }

@@ -195,17 +195,11 @@ fn g_prod_memory_and_yydb_report_the_same_contract_surface() {
     assert_both!("prod-surface", LONG_LEASE, |store, backend| {
         store.set_namespace_quota("cache/response/", u64::MAX, u64::MAX).expect("quota");
         let report = store.doctor().expect("doctor");
-        assert!(
-            report.namespaces.iter().any(|entry| entry.prefix == "cache/response/"),
-            "cache namespace must be reported on {backend}"
-        );
+        assert!(report.namespaces.iter().any(|entry| entry.prefix == "cache/response/"), "cache namespace must be reported on {backend}");
         assert!(report.issues.is_empty(), "doctor must stay quiet on {backend}");
 
         store.reopen().expect("reopen");
         let report = store.doctor().expect("doctor after reopen");
-        assert!(
-            report.namespaces.iter().any(|entry| entry.prefix == "cache/response/"),
-            "cache namespace must survive reopen on {backend}"
-        );
+        assert!(report.namespaces.iter().any(|entry| entry.prefix == "cache/response/"), "cache namespace must survive reopen on {backend}");
     });
 }

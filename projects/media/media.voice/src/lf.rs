@@ -74,14 +74,17 @@ fn build_cycle(rd: f32) -> Vec<f32> {
         flow[i] = if t < tp {
             let xi = t / tp;
             (xi * std::f64::consts::FRAC_PI_2).sin().powi(2)
-        } else if t < te {
+        }
+        else if t < te {
             let xi = (t - tp) / (te - tp);
             ((1.0 - xi) * std::f64::consts::FRAC_PI_2).sin().powi(2)
-        } else if t < tc {
+        }
+        else if t < tc {
             // 快速回相：cos² 收尾到零（比开相陡，模拟闭合力）。
             let xi = (t - te) / ta;
             -0.15 * ((1.0 - xi) * std::f64::consts::FRAC_PI_2).sin().powi(2)
-        } else {
+        }
+        else {
             0.0
         };
     }
@@ -97,12 +100,7 @@ fn build_cycle(rd: f32) -> Vec<f32> {
     for v in &mut cycle {
         *v /= energy;
     }
-    let min_index = cycle
-        .iter()
-        .enumerate()
-        .min_by(|a, b| a.1.total_cmp(b.1))
-        .map(|(i, _)| i)
-        .unwrap_or(0);
+    let min_index = cycle.iter().enumerate().min_by(|a, b| a.1.total_cmp(b.1)).map(|(i, _)| i).unwrap_or(0);
     let shift = PERIOD / 4;
     let mut aligned = vec![0.0_f32; PERIOD];
     for (i, v) in cycle.iter().enumerate() {
@@ -144,10 +142,7 @@ mod tests {
         let h2 = magnitude(2);
         let h8 = magnitude(8);
         let slope_db_per_oct = 20.0 * (h8 / h2).log10() / (4.0_f64).log2();
-        assert!(
-            (-18.0..=-6.0).contains(&slope_db_per_oct),
-            "tilt {slope_db_per_oct} dB/oct outside glottal range"
-        );
+        assert!((-18.0..=-6.0).contains(&slope_db_per_oct), "tilt {slope_db_per_oct} dB/oct outside glottal range");
     }
 
     #[test]

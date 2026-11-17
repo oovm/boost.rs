@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use hardware_backend_vulkan::VulkanBackend;
 use hardware_capability::{DescriptorStrategy, PipelineStrategy, SyncStrategy};
 use hardware_ir::{
-    Access, DepEdge, DepKind, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph,
-    ResourceId, ResourceKind, ResourceNode, ShaderId, TaskGraph, TaskId, TaskKind, TaskNode,
+    Access, DepEdge, DepKind, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph, ResourceId, ResourceKind, ResourceNode, ShaderId,
+    TaskGraph, TaskId, TaskKind, TaskNode,
 };
 use hardware_scheduler::Backend;
 use hardware_types::ResourceId as Rid;
@@ -43,21 +43,10 @@ fn f(key: &str, v: f64) -> (String, ParamValue) {
 
 fn fill_graph() -> Graph {
     Graph {
-        resources: ResourceGraph {
-            nodes: vec![buffer(1, 4)],
-        },
+        resources: ResourceGraph { nodes: vec![buffer(1, 4)] },
         tasks: TaskGraph {
-            nodes: vec![task(
-                10,
-                TaskKind::Fill,
-                BTreeMap::from([i("dst", 1), f("value", 1.0)]),
-            )],
-            edges: vec![DepEdge {
-                from_task: None,
-                from_resource: Some(ResourceId(1)),
-                to_task: TaskId(10),
-                kind: DepKind::Data,
-            }],
+            nodes: vec![task(10, TaskKind::Fill, BTreeMap::from([i("dst", 1), f("value", 1.0)]))],
+            edges: vec![DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data }],
         },
     }
 }
@@ -85,18 +74,10 @@ fn raster_graph() -> Graph {
                     f("g", 0.0),
                     f("b", 0.0),
                     f("a", 1.0),
-                    (
-                        "draw".into(),
-                        ParamValue::Str("tri".into()),
-                    ),
+                    ("draw".into(), ParamValue::Str("tri".into())),
                 ]),
             )],
-            edges: vec![DepEdge {
-                from_task: None,
-                from_resource: Some(ResourceId(1)),
-                to_task: TaskId(10),
-                kind: DepKind::Data,
-            }],
+            edges: vec![DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data }],
         },
     }
 }
@@ -115,10 +96,7 @@ fn vulkan_wires_degrade_strategies_soft_skip() {
     assert_eq!(s.descriptor, DescriptorStrategy::DescriptorBuffer);
     assert_eq!(s.pipeline, PipelineStrategy::PsoPrecache);
     assert_eq!(s.sync, SyncStrategy::Synchronization2);
-    eprintln!(
-        "vulkan strategies: descriptor={:?} pipeline={:?} sync={:?}",
-        s.descriptor, s.pipeline, s.sync
-    );
+    eprintln!("vulkan strategies: descriptor={:?} pipeline={:?} sync={:?}", s.descriptor, s.pipeline, s.sync);
 
     let fill = fill_graph();
     if let Err(err) = vk.prepare(&fill) {
@@ -153,10 +131,5 @@ fn vulkan_wires_degrade_strategies_soft_skip() {
     }
     assert_eq!(vk.last_sync_path(), "synchronization2");
     assert_eq!(vk.last_pipeline_path(), "pso_precache");
-    eprintln!(
-        "vulkan wired paths: descriptor={} pipeline={} sync={}",
-        vk.last_descriptor_path(),
-        vk.last_pipeline_path(),
-        vk.last_sync_path()
-    );
+    eprintln!("vulkan wired paths: descriptor={} pipeline={} sync={}", vk.last_descriptor_path(), vk.last_pipeline_path(), vk.last_sync_path());
 }

@@ -45,16 +45,8 @@ pub fn capabilities() -> Vec<FormatCapability> {
     capabilities.push(FormatCapability { id: "notedown", direction: FormatDirection::Import, status: FormatStatus::Partial });
     #[cfg(feature = "markdown")]
     {
-        capabilities.push(FormatCapability {
-            id: "markdown",
-            direction: FormatDirection::Import,
-            status: FormatStatus::Partial,
-        });
-        capabilities.push(FormatCapability {
-            id: "markdown",
-            direction: FormatDirection::Export,
-            status: FormatStatus::Partial,
-        });
+        capabilities.push(FormatCapability { id: "markdown", direction: FormatDirection::Import, status: FormatStatus::Partial });
+        capabilities.push(FormatCapability { id: "markdown", direction: FormatDirection::Export, status: FormatStatus::Partial });
     }
     capabilities.push(FormatCapability { id: "html", direction: FormatDirection::Export, status: FormatStatus::Partial });
     #[cfg(feature = "html")]
@@ -71,11 +63,7 @@ pub fn capabilities() -> Vec<FormatCapability> {
     #[cfg(feature = "doc")]
     {
         capabilities.push(FormatCapability { id: "doc", direction: FormatDirection::Import, status: FormatStatus::Partial });
-        capabilities.push(FormatCapability {
-            id: "doc",
-            direction: FormatDirection::Export,
-            status: FormatStatus::Unavailable,
-        });
+        capabilities.push(FormatCapability { id: "doc", direction: FormatDirection::Export, status: FormatStatus::Unavailable });
     }
     #[cfg(feature = "pdf")]
     {
@@ -98,11 +86,7 @@ pub fn capabilities() -> Vec<FormatCapability> {
         // stay refused with structured codes, so the import is partial.
         capabilities.push(FormatCapability { id: "xlsx", direction: FormatDirection::Import, status: FormatStatus::Partial });
         // No SpreadsheetML writer exists, so the export direction is opt-out.
-        capabilities.push(FormatCapability {
-            id: "xlsx",
-            direction: FormatDirection::Export,
-            status: FormatStatus::Unavailable,
-        });
+        capabilities.push(FormatCapability { id: "xlsx", direction: FormatDirection::Export, status: FormatStatus::Unavailable });
     }
     #[cfg(feature = "pptx")]
     {
@@ -111,27 +95,15 @@ pub fn capabilities() -> Vec<FormatCapability> {
         // SmartArt, OLE objects and media stay refused with structured codes.
         capabilities.push(FormatCapability { id: "pptx", direction: FormatDirection::Import, status: FormatStatus::Partial });
         // No PresentationML writer exists, so the export direction is opt-out.
-        capabilities.push(FormatCapability {
-            id: "pptx",
-            direction: FormatDirection::Export,
-            status: FormatStatus::Unavailable,
-        });
+        capabilities.push(FormatCapability { id: "pptx", direction: FormatDirection::Export, status: FormatStatus::Unavailable });
     }
     #[cfg(feature = "pandoc-json")]
     {
         // The strict wire codec covers the full typed model. The IR adapter is
         // partial because containers and rich table/citation structure have no
         // IR constructor and degrade with explicit loss markers.
-        capabilities.push(FormatCapability {
-            id: "pandoc-json",
-            direction: FormatDirection::Import,
-            status: FormatStatus::Partial,
-        });
-        capabilities.push(FormatCapability {
-            id: "pandoc-json",
-            direction: FormatDirection::Export,
-            status: FormatStatus::Partial,
-        });
+        capabilities.push(FormatCapability { id: "pandoc-json", direction: FormatDirection::Import, status: FormatStatus::Partial });
+        capabilities.push(FormatCapability { id: "pandoc-json", direction: FormatDirection::Export, status: FormatStatus::Partial });
     }
     #[cfg(feature = "tex")]
     capabilities.push(FormatCapability { id: "tex", direction: FormatDirection::Import, status: FormatStatus::Partial });

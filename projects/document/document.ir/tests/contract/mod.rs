@@ -2,9 +2,8 @@
 //! boundaries.
 
 use document_ir::{
-    Asset, AssetId, AssetKind, Block, DocumentEnvelope, DocumentGraph, DocumentMetadata, IdAllocator, Inline, LinkId,
-    MetadataEntry, MetadataValue, NodeId, Relation, RelationEndpoint, RelationKind, SemanticStatus, SourceKind, SourceRef,
-    TableRow, ValidationIssue,
+    Asset, AssetId, AssetKind, Block, DocumentEnvelope, DocumentGraph, DocumentMetadata, IdAllocator, Inline, LinkId, MetadataEntry,
+    MetadataValue, NodeId, Relation, RelationEndpoint, RelationKind, SemanticStatus, SourceKind, SourceRef, TableRow, ValidationIssue,
 };
 
 fn sample_graph() -> (DocumentGraph, NodeId, AssetId, LinkId) {
@@ -202,10 +201,7 @@ fn provenance_is_optional_and_does_not_define_block_semantics() {
     });
 
     assert!(without_source.sources_for(unprovenanced).is_empty());
-    assert_eq!(
-        without_source.block(unprovenanced).expect("block").block,
-        with_uncertain_source.block(sourced).expect("block").block
-    );
+    assert_eq!(without_source.block(unprovenanced).expect("block").block, with_uncertain_source.block(sourced).expect("block").block);
 
     let encoded = serde_json::to_string(&with_uncertain_source).expect("serialize");
     let restored: DocumentGraph = serde_json::from_str(&encoded).expect("deserialize");
@@ -250,10 +246,7 @@ fn metadata_and_asset_path_changes_preserve_link_identity() {
 
     let relation = graph.relations.iter().find(|relation| relation.id == link_id).expect("relation");
     assert_eq!(relation.target, RelationEndpoint::Asset(asset_id));
-    assert_eq!(
-        graph.assets.iter().find(|asset| asset.id == asset_id).and_then(|asset| asset.source.as_deref()),
-        Some("media/new.png")
-    );
+    assert_eq!(graph.assets.iter().find(|asset| asset.id == asset_id).and_then(|asset| asset.source.as_deref()), Some("media/new.png"));
     assert_eq!(graph.metadata.title.as_deref(), Some("renamed title"));
     assert_eq!(graph.id, doc_id);
 }
@@ -290,8 +283,7 @@ fn bidirectional_relation_is_distinct_from_backlink_index() {
 fn math_and_inferred_pdf_layout_keep_explicit_semantics() {
     let mut graph = DocumentGraph::new(IdAllocator::default().document_id());
 
-    let formula =
-        document_ir::MathFormula::unsupported("E = mc^2", Some("latex".to_string()), document_ir::MathDisplay::Display, "raw");
+    let formula = document_ir::MathFormula::unsupported("E = mc^2", Some("latex".to_string()), document_ir::MathDisplay::Display, "raw");
     let math = graph.push_block(Block::Math { formula });
     let inferred = graph.push_block(Block::Opaque {
         kind: "pdf.reading-order".to_string(),
@@ -306,11 +298,7 @@ fn math_and_inferred_pdf_layout_keep_explicit_semantics() {
     let layout = graph.block(inferred).expect("layout");
     assert!(matches!(layout.block, Block::Opaque { status: SemanticStatus::Inferred, .. }));
 
-    graph.attach_source(SourceRef {
-        node: inferred,
-        kind: SourceKind::GlyphRegion { page: 3 },
-        precision: SemanticStatus::Inferred,
-    });
+    graph.attach_source(SourceRef { node: inferred, kind: SourceKind::GlyphRegion { page: 3 }, precision: SemanticStatus::Inferred });
     assert_eq!(graph.sources_for(inferred)[0].precision, SemanticStatus::Inferred);
 }
 
@@ -369,9 +357,7 @@ fn validator_rejects_invalid_typed_metadata() {
     assert!(!report.is_valid());
     assert!(report.issues.iter().any(|issue| matches!(issue, ValidationIssue::EmptyMetadataKey { .. })));
     assert!(report.issues.iter().any(|issue| matches!(issue, ValidationIssue::ReservedMetadataKey { key } if key == "title")));
-    assert!(
-        report.issues.iter().any(|issue| matches!(issue, ValidationIssue::DuplicateMetadataKey { key, .. } if key == "dup"))
-    );
+    assert!(report.issues.iter().any(|issue| matches!(issue, ValidationIssue::DuplicateMetadataKey { key, .. } if key == "dup")));
     assert!(report.issues.iter().any(|issue| matches!(issue, ValidationIssue::NonFiniteMetadataFloat { .. })));
 }
 

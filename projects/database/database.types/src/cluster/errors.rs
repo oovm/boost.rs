@@ -1,7 +1,9 @@
 use std::{error, fmt, io, result};
 
-use crate::cluster::fencing::{FenceToken, OwnerEntry};
-use crate::ReasonCode;
+use crate::{
+    ReasonCode,
+    cluster::fencing::{FenceToken, OwnerEntry},
+};
 
 /// 分布式 API 通用结果别名。
 pub type Result<T> = result::Result<T, Error>;

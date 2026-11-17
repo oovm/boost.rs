@@ -26,9 +26,7 @@ fn diagnostic_codes(report: &Value) -> Vec<String> {
 
 #[test]
 fn replace_text_pass_rewrites_heading_and_paragraph() {
-    let plan = plan_json(
-        r#"{"name":"replace-text","description":"rewrite greeting","params":{"search":"Hello","replacement":"Bonjour"}}"#,
-    );
+    let plan = plan_json(r#"{"name":"replace-text","description":"rewrite greeting","params":{"search":"Hello","replacement":"Bonjour"}}"#);
     let output = convert_bytes(
         "html",
         "markdown",
@@ -80,8 +78,7 @@ fn replace_text_keeps_diagram_source_and_remove_blocks_targets_diagrams() {
     use document_ir::{Block, DocumentGraph, DocumentId, Inline};
 
     let mut graph = DocumentGraph::new(DocumentId(1));
-    let diagram = graph
-        .push_block(Block::Diagram { language: "mermaid".to_string(), source: "flowchart TD\n  Hello --> World".to_string() });
+    let diagram = graph.push_block(Block::Diagram { language: "mermaid".to_string(), source: "flowchart TD\n  Hello --> World".to_string() });
     graph.push_block(Block::Paragraph { content: vec![Inline::Text { text: "Hello body.".to_string() }] });
 
     let replace = plan_json(r#"{"name":"replace-text","params":{"search":"Hello","replacement":"Bonjour"}}"#);
@@ -130,14 +127,9 @@ fn remove_blocks_pass_sweeps_descendants_of_removed_section() {
 #[test]
 fn unknown_pass_name_is_reported_and_skipped() {
     let plan = plan_json(r#"{"name":"no-such-pass"}"#);
-    let output = convert_bytes(
-        "html",
-        "markdown",
-        "unsupported.html",
-        br#"<html><body><p>Unchanged body.</p></body></html>"#.to_vec(),
-        Some(&plan),
-    )
-    .expect("convert with unsupported pass");
+    let output =
+        convert_bytes("html", "markdown", "unsupported.html", br#"<html><body><p>Unchanged body.</p></body></html>"#.to_vec(), Some(&plan))
+            .expect("convert with unsupported pass");
 
     assert_convert_report(&output, "markdown");
     assert!(output.markdown.contains("Unchanged body."));
@@ -153,14 +145,9 @@ fn unknown_pass_name_is_reported_and_skipped() {
 #[test]
 fn resolve_references_is_a_supported_pass_without_references() {
     let plan = plan_json(r#"{"name":"resolve-references"}"#);
-    let output = convert_bytes(
-        "html",
-        "markdown",
-        "no-references.html",
-        br#"<html><body><p>Plain body.</p></body></html>"#.to_vec(),
-        Some(&plan),
-    )
-    .expect("convert with resolve-references");
+    let output =
+        convert_bytes("html", "markdown", "no-references.html", br#"<html><body><p>Plain body.</p></body></html>"#.to_vec(), Some(&plan))
+            .expect("convert with resolve-references");
 
     assert_convert_report(&output, "markdown");
     assert!(output.markdown.contains("Plain body."));
@@ -248,10 +235,7 @@ fn resolve_references_fills_empty_display_from_target_text_and_is_idempotent() {
     let heading = graph.push_block(section_block(1, "Section title", Vec::new()));
     let holder = graph.push_block(Block::Paragraph {
         content: vec![
-            Inline::Styled {
-                style: "em".to_string(),
-                children: vec![Inline::Reference { target: body, display: String::new() }],
-            },
+            Inline::Styled { style: "em".to_string(), children: vec![Inline::Reference { target: body, display: String::new() }] },
             Inline::Link {
                 target: RelationEndpoint::Document(DocumentId(1)),
                 display: vec![Inline::Reference { target: heading, display: String::new() }],
@@ -308,11 +292,8 @@ fn resolve_references_replaces_dangling_reference_and_warns() {
     assert_eq!(outcome.passes[0].changed_nodes, 1);
     assert_eq!(outcome.passes[0].replaced_occurrences, Some(2));
 
-    let dangling: Vec<_> = outcome
-        .diagnostics
-        .iter()
-        .filter(|diagnostic| diagnostic.code().as_str() == "panduck.transform.dangling-reference")
-        .collect();
+    let dangling: Vec<_> =
+        outcome.diagnostics.iter().filter(|diagnostic| diagnostic.code().as_str() == "panduck.transform.dangling-reference").collect();
     assert_eq!(dangling.len(), 2);
     assert!(dangling.iter().any(|diagnostic| diagnostic.message().to_string().contains("999")));
     assert!(dangling.iter().any(|diagnostic| diagnostic.message().to_string().contains("1000")));
@@ -323,11 +304,7 @@ fn resolve_references_replaces_dangling_reference_and_warns() {
     };
     assert_eq!(
         content,
-        &[
-            Inline::Text { text: "Missing note".to_string() },
-            Inline::Text { text: " then ".to_string() },
-            Inline::Text { text: String::new() },
-        ]
+        &[Inline::Text { text: "Missing note".to_string() }, Inline::Text { text: " then ".to_string() }, Inline::Text { text: String::new() },]
     );
 
     let second = apply_transform_passes(&mut graph, Some(&plan));
@@ -342,8 +319,7 @@ fn resolve_references_keeps_authored_display_text() {
 
     let mut graph = DocumentGraph::new(DocumentId(1));
     let target = graph.push_block(Block::Paragraph { content: vec![Inline::Text { text: "Target body".to_string() }] });
-    let holder =
-        graph.push_block(Block::Paragraph { content: vec![Inline::Reference { target, display: "Keep me".to_string() }] });
+    let holder = graph.push_block(Block::Paragraph { content: vec![Inline::Reference { target, display: "Keep me".to_string() }] });
 
     let plan = plan_json(r#"{"name":"resolve-references"}"#);
     let outcome = apply_transform_passes(&mut graph, Some(&plan));
@@ -362,9 +338,8 @@ fn resolve_references_keeps_authored_display_text() {
 #[test]
 fn replace_text_without_search_is_reported_as_invalid_params() {
     let plan = plan_json(r#"{"name":"replace-text","params":{"replacement":"x"}}"#);
-    let output =
-        convert_bytes("html", "markdown", "invalid.html", br#"<html><body><p>Body.</p></body></html>"#.to_vec(), Some(&plan))
-            .expect("convert with invalid replace-text params");
+    let output = convert_bytes("html", "markdown", "invalid.html", br#"<html><body><p>Body.</p></body></html>"#.to_vec(), Some(&plan))
+        .expect("convert with invalid replace-text params");
 
     assert_convert_report(&output, "markdown");
     let report = report(&output);
@@ -376,8 +351,7 @@ fn replace_text_without_search_is_reported_as_invalid_params() {
 fn conversion_without_transforms_keeps_pipeline_and_graph_unchanged() {
     let bytes = br#"<html><body><h1>Title</h1><p>Body.</p></body></html>"#.to_vec();
     let baseline = convert_bytes("html", "markdown", "plain.html", bytes.clone(), None).expect("baseline convert");
-    let empty_plan =
-        convert_bytes("html", "markdown", "plain.html", bytes, Some(&plan_json(""))).expect("convert with empty pass list");
+    let empty_plan = convert_bytes("html", "markdown", "plain.html", bytes, Some(&plan_json(""))).expect("convert with empty pass list");
 
     assert_eq!(baseline.markdown, empty_plan.markdown);
     let baseline_report = report(&baseline);

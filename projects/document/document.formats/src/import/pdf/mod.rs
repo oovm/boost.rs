@@ -18,9 +18,7 @@ pub mod test_support;
 
 use std::collections::{BTreeSet, HashMap};
 
-use document_ir::{
-    Block, DocumentGraph, DocumentId, Inline, ListItem, LossMarker, NodeId, SemanticStatus, TableCell, TableRow,
-};
+use document_ir::{Block, DocumentGraph, DocumentId, Inline, ListItem, LossMarker, NodeId, SemanticStatus, TableCell, TableRow};
 
 use crate::{FormatError, import::common::cell_children};
 
@@ -60,9 +58,7 @@ pub fn import_pdf_bytes(label: &str, bytes: &[u8]) -> Result<DocumentGraph, Form
     let page_streams = if use_page_filter {
         page_groups
             .iter()
-            .map(|ids| {
-                ids.iter().filter_map(|id| streams.iter().find(|stream| stream.object_id == Some(*id))).collect::<Vec<_>>()
-            })
+            .map(|ids| ids.iter().filter_map(|id| streams.iter().find(|stream| stream.object_id == Some(*id))).collect::<Vec<_>>())
             .collect::<Vec<_>>()
     }
     else {
@@ -74,10 +70,7 @@ pub fn import_pdf_bytes(label: &str, bytes: &[u8]) -> Result<DocumentGraph, Form
         (font_maps, images)
     }
     else {
-        (
-            vec![font_maps.into_iter().flatten().collect::<HashMap<_, _>>()],
-            vec![images.into_iter().flatten().collect::<HashMap<_, _>>()],
-        )
+        (vec![font_maps.into_iter().flatten().collect::<HashMap<_, _>>()], vec![images.into_iter().flatten().collect::<HashMap<_, _>>()])
     };
     let mut unresolved_fonts = BTreeSet::new();
     let mut spacing_adjustments = false;
@@ -99,7 +92,8 @@ pub fn import_pdf_bytes(label: &str, bytes: &[u8]) -> Result<DocumentGraph, Form
     if spacing_adjustments {
         graph.push_loss(LossMarker {
             code: "import.pdf.text_spacing".into(),
-            message: "TJ numeric spacing adjustments narrower than the word-gap threshold are kerning and are not turned into whitespace".into(),
+            message: "TJ numeric spacing adjustments narrower than the word-gap threshold are kerning and are not turned into whitespace"
+                .into(),
             status: SemanticStatus::Partial,
         });
     }
@@ -126,9 +120,7 @@ pub fn import_pdf_bytes(label: &str, bytes: &[u8]) -> Result<DocumentGraph, Form
     for font in unresolved_fonts {
         graph.push_loss(LossMarker {
             code: "import.pdf.font_encoding_unresolved".into(),
-            message: format!(
-                "font `/{font}` has neither a usable `/ToUnicode` map nor `/WinAnsiEncoding`, text drawn with it is omitted"
-            ),
+            message: format!("font `/{font}` has neither a usable `/ToUnicode` map nor `/WinAnsiEncoding`, text drawn with it is omitted"),
             status: SemanticStatus::Unresolved,
         });
     }
@@ -142,9 +134,7 @@ pub fn import_pdf_bytes(label: &str, bytes: &[u8]) -> Result<DocumentGraph, Form
     if inferred.headings {
         graph.push_loss(LossMarker {
             code: "import.pdf.heading_level_inferred".into(),
-            message:
-                "heading levels are inferred from font-size rank, the PDF text layer carries no authored heading semantics"
-                    .into(),
+            message: "heading levels are inferred from font-size rank, the PDF text layer carries no authored heading semantics".into(),
             status: SemanticStatus::Partial,
         });
     }
@@ -203,11 +193,7 @@ fn emit_flow_block(
                 .map(|cells| TableRow {
                     cells: cells
                         .into_iter()
-                        .map(|text| TableCell {
-                            children: cell_children(graph, vec![Inline::Text { text }]),
-                            colspan: 1,
-                            rowspan: 1,
-                        })
+                        .map(|text| TableCell { children: cell_children(graph, vec![Inline::Text { text }]), colspan: 1, rowspan: 1 })
                         .collect(),
                 })
                 .collect();
@@ -247,7 +233,6 @@ fn emit_list(graph: &mut DocumentGraph, list: FlowList) -> NodeId {
 /// Import a PDF file from disk.
 pub fn import_pdf(path: impl AsRef<std::path::Path>) -> Result<DocumentGraph, FormatError> {
     let path = path.as_ref();
-    let bytes = std::fs::read(path)
-        .map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
+    let bytes = std::fs::read(path).map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
     import_pdf_bytes(&path.display().to_string(), &bytes)
 }

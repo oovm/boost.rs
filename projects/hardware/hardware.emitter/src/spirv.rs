@@ -1,6 +1,4 @@
-use crate::spv::{
-    self, builtin, decoration, execution_mode, execution_model, inst, op, storage, Spv,
-};
+use crate::spv::{self, Spv, builtin, decoration, execution_mode, execution_model, inst, op, storage};
 use hardware_types::{ShaderOp, ShaderProgram};
 
 /// SPIR-V module for the Raster triangle thin gate (vertex + fragment entries).
@@ -70,15 +68,14 @@ pub fn emit_raster_tri_spirv() -> Result<RasterTriSpirv, String> {
     let color = spv.const_composite(vec4_ty, &[f_one, f_one, f_zero, f_one]);
 
     // Vertex entry: `verts[vid]` expands into two selects over three constants.
-    let vs_ty = spv.function_type(spv.void, &[u32_ty]);
+    let vs_ty = spv.function_type(spv.void, &[]);
     let vs_id = spv.fresh();
     let mut vs = Vec::new();
     inst(&mut vs, op::FUNCTION, &[spv.void, vs_id, 0, vs_ty]);
-    let vid = spv.fresh();
-    inst(&mut vs, op::FUNCTION_PARAMETER, &[u32_ty, vid]);
     let vs_label = spv.fresh();
     inst(&mut vs, op::LABEL, &[vs_label]);
 
+    let vid = spv::load(&mut spv, &mut vs, u32_ty, in_vid);
     let is_zero = spv::binary(&mut spv, &mut vs, bool_ty, op::I_EQUAL, vid, zero);
     let is_one = spv::binary(&mut spv, &mut vs, bool_ty, op::I_EQUAL, vid, one);
     let pick_1_2 = spv::select(&mut spv, &mut vs, vec2_ty, is_one, v1, v2);
@@ -101,24 +98,12 @@ pub fn emit_raster_tri_spirv() -> Result<RasterTriSpirv, String> {
     inst(&mut fs, op::RETURN, &[]);
     inst(&mut fs, op::FUNCTION_END, &[]);
 
-    spv.entry_point(
-        execution_model::VERTEX,
-        vs_id,
-        "vs_main",
-        &[out_pos, out_col, in_vid],
-    );
-    spv.entry_point(
-        execution_model::FRAGMENT,
-        fs_id,
-        "fs_main",
-        &[fs_in_col, fs_out_color],
-    );
+    spv.entry_point(execution_model::VERTEX, vs_id, "vs_main", &[out_pos, out_col, in_vid]);
+    spv.entry_point(execution_model::FRAGMENT, fs_id, "fs_main", &[fs_in_col, fs_out_color]);
     spv.execution_mode(fs_id, execution_mode::ORIGIN_UPPER_LEFT, &[]);
     spv.push_function(vs);
     spv.push_function(fs);
-    Ok(RasterTriSpirv {
-        module: spv.finish(),
-    })
+    Ok(RasterTriSpirv { module: spv.finish() })
 }
 
 /// `out[i] = value for i in 0..count`.
@@ -142,19 +127,21 @@ fn fill_module(entry: &str, value: f32) -> Vec<u8> {
     spv.decorate(out_var, decoration::DESCRIPTOR_SET, &[0]);
     spv.decorate(out_var, decoration::BINDING, &[0]);
 
-    let function_ty = spv.function_type(spv.void, &[gid_ty]);
+    let gid_ptr = spv.pointer(storage::INPUT, gid_ty);
+    let gid_var = spv.global(gid_ptr, storage::INPUT);
+    spv.decorate(gid_var, decoration::BUILT_IN, &[builtin::GLOBAL_INVOCATION_ID]);
+
+    let function_ty = spv.function_type(spv.void, &[]);
     let function = spv.fresh();
     let mut words = Vec::new();
     inst(&mut words, op::FUNCTION, &[spv.void, function, 0, function_ty]);
-    let gid = spv.fresh();
-    inst(&mut words, op::FUNCTION_PARAMETER, &[gid_ty, gid]);
-    spv.decorate(gid, decoration::BUILT_IN, &[builtin::GLOBAL_INVOCATION_ID]);
     let label = spv.fresh();
     inst(&mut words, op::LABEL, &[label]);
 
     let zero = spv.const_u32(0);
     let value_id = spv.const_f32(value);
     let mut body = Vec::new();
+    let gid = spv::load(&mut spv, &mut body, gid_ty, gid_var);
     let gid_x = spv::extract(&mut spv, &mut body, u32_ty, gid, 0);
     let count_ptr = spv::chain(&mut spv, &mut body, push_u32_ptr, push_var, &[zero]);
     let count = spv::load(&mut spv, &mut body, u32_ty, count_ptr);
@@ -178,12 +165,7 @@ fn fill_module(entry: &str, value: f32) -> Vec<u8> {
     inst(&mut words, op::FUNCTION_END, &[]);
     spv.push_function(words);
 
-    spv.entry_point(
-        execution_model::GL_COMPUTE,
-        function,
-        entry,
-        &[push_var, out_var],
-    );
+    spv.entry_point(execution_model::GL_COMPUTE, function, entry, &[gid_var, push_var, out_var]);
     spv.execution_mode(function, execution_mode::LOCAL_SIZE, &[64, 1, 1]);
     spv.finish()
 }
@@ -222,13 +204,14 @@ fn matmul_module(entry: &str) -> Vec<u8> {
     spv.decorate(out_var, decoration::DESCRIPTOR_SET, &[0]);
     spv.decorate(out_var, decoration::BINDING, &[2]);
 
-    let function_ty = spv.function_type(spv.void, &[gid_ty]);
+    let gid_ptr = spv.pointer(storage::INPUT, gid_ty);
+    let gid_var = spv.global(gid_ptr, storage::INPUT);
+    spv.decorate(gid_var, decoration::BUILT_IN, &[builtin::GLOBAL_INVOCATION_ID]);
+
+    let function_ty = spv.function_type(spv.void, &[]);
     let function = spv.fresh();
     let mut words = Vec::new();
     inst(&mut words, op::FUNCTION, &[spv.void, function, 0, function_ty]);
-    let gid = spv.fresh();
-    inst(&mut words, op::FUNCTION_PARAMETER, &[gid_ty, gid]);
-    spv.decorate(gid, decoration::BUILT_IN, &[builtin::GLOBAL_INVOCATION_ID]);
     let label = spv.fresh();
     inst(&mut words, op::LABEL, &[label]);
 
@@ -246,6 +229,7 @@ fn matmul_module(entry: &str) -> Vec<u8> {
     let mut body = Vec::new();
     spv::store(&mut body, iter_var, zero);
     spv::store(&mut body, acc_var, f_zero);
+    let gid = spv::load(&mut spv, &mut body, gid_ty, gid_var);
     let idx = spv::extract(&mut spv, &mut body, u32_ty, gid, 0);
     let m_ptr = spv::chain(&mut spv, &mut body, push_u32_ptr, push_var, &[zero]);
     let m = spv::load(&mut spv, &mut body, u32_ty, m_ptr);
@@ -254,8 +238,7 @@ fn matmul_module(entry: &str) -> Vec<u8> {
     let k_ptr = spv::chain(&mut spv, &mut body, push_u32_ptr, push_var, &[two]);
     let k = spv::load(&mut spv, &mut body, u32_ty, k_ptr);
     let total = spv::binary(&mut spv, &mut body, u32_ty, op::I_MUL, m, n);
-    let out_of_bounds =
-        spv::binary(&mut spv, &mut body, bool_ty, op::U_GREATER_THAN_EQUAL, idx, total);
+    let out_of_bounds = spv::binary(&mut spv, &mut body, bool_ty, op::U_GREATER_THAN_EQUAL, idx, total);
 
     let row_block = spv.fresh();
     let exit_block = spv.fresh();
@@ -316,12 +299,7 @@ fn matmul_module(entry: &str) -> Vec<u8> {
     inst(&mut words, op::FUNCTION_END, &[]);
     spv.push_function(words);
 
-    spv.entry_point(
-        execution_model::GL_COMPUTE,
-        function,
-        entry,
-        &[push_var, a_var, b_var, out_var],
-    );
+    spv.entry_point(execution_model::GL_COMPUTE, function, entry, &[gid_var, push_var, a_var, b_var, out_var]);
     spv.execution_mode(function, execution_mode::LOCAL_SIZE, &[64, 1, 1]);
     spv.finish()
 }

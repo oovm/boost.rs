@@ -9,12 +9,8 @@ fn source_url_override_replaces_artifact_identity_for_relative_resolution() {
     let path = dir.join("page.html");
     std::fs::write(&path, "<html><body><img src=\"img/flow.png\"></body></html>").expect("write");
 
-    let loaded = load_input_with_source(
-        path.to_str().expect("utf8 path"),
-        InputFormat::Html,
-        Some("https://example.com/docs/page.html"),
-    )
-    .expect("load");
+    let loaded =
+        load_input_with_source(path.to_str().expect("utf8 path"), InputFormat::Html, Some("https://example.com/docs/page.html")).expect("load");
     let LoadedInput::Artifact(artifact) = loaded
     else {
         panic!("expected artifact")
@@ -48,8 +44,7 @@ fn invalid_source_url_is_a_structured_error() {
     let path = dir.join("page.html");
     std::fs::write(&path, "<html><body>ok</body></html>").expect("write");
 
-    let error =
-        load_input_with_source(path.to_str().expect("utf8 path"), InputFormat::Html, Some("not a url")).expect_err("reject");
+    let error = load_input_with_source(path.to_str().expect("utf8 path"), InputFormat::Html, Some("not a url")).expect_err("reject");
     assert!(error.to_string().contains("not a url"), "{error}");
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -76,8 +71,7 @@ fn source_url_override_never_touches_snapshots() {
     .expect("write");
 
     let loaded =
-        load_input_with_source(path.to_str().expect("utf8 path"), InputFormat::Snapshot, Some("https://other.example/x"))
-            .expect("load");
+        load_input_with_source(path.to_str().expect("utf8 path"), InputFormat::Snapshot, Some("https://other.example/x")).expect("load");
     let LoadedInput::Snapshot(snapshot) = loaded
     else {
         panic!("expected snapshot")

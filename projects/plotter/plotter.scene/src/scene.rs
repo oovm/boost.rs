@@ -182,14 +182,7 @@ pub struct TextStyle {
 
 impl Default for TextStyle {
     fn default() -> Self {
-        Self {
-            fill: Some(Color::BLACK),
-            opacity: 1.0,
-            font_family: None,
-            font_size: 16.0,
-            font_weight: None,
-            text_anchor: TextAnchor::Start,
-        }
+        Self { fill: Some(Color::BLACK), opacity: 1.0, font_family: None, font_size: 16.0, font_weight: None, text_anchor: TextAnchor::Start }
     }
 }
 
@@ -402,16 +395,8 @@ impl DisplayScene {
     ///
     /// Every role is tinted from the theme palette, which is the diagram
     /// contract: node and edge colors are theme semantics.
-    pub fn to_svg_with_hooks(
-        &self,
-        id_namespace: &str,
-        class_prefix: &str,
-        theme: &plotter_types::DiagramTheme,
-    ) -> Result<String, SceneError> {
-        crate::svg::write_svg(
-            self,
-            Some(crate::svg::SvgHooks { id_namespace, class_prefix, theme, palette: crate::svg::RolePalette::Diagram }),
-        )
+    pub fn to_svg_with_hooks(&self, id_namespace: &str, class_prefix: &str, theme: &plotter_types::DiagramTheme) -> Result<String, SceneError> {
+        crate::svg::write_svg(self, Some(crate::svg::SvgHooks { id_namespace, class_prefix, theme, palette: crate::svg::RolePalette::Diagram }))
     }
 
     /// Serialize a scene whose paint is authored end to end.
@@ -445,9 +430,6 @@ impl DisplayScene {
         class_prefix: &str,
         theme: &plotter_types::DiagramTheme,
     ) -> Result<String, SceneError> {
-        crate::svg::write_svg(
-            self,
-            Some(crate::svg::SvgHooks { id_namespace, class_prefix, theme, palette: crate::svg::RolePalette::Chart }),
-        )
+        crate::svg::write_svg(self, Some(crate::svg::SvgHooks { id_namespace, class_prefix, theme, palette: crate::svg::RolePalette::Chart }))
     }
 }

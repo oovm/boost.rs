@@ -7,8 +7,10 @@
 use media_image::Frame;
 use media_particles::{Beams, Particles};
 
-use crate::contract::InputDomain;
-use crate::effect::{Effect, EffectContext};
+use crate::{
+    contract::InputDomain,
+    effect::{Effect, EffectContext},
+};
 
 /// 把 [`Particles`] 适配为栈算子，稳定名 `particles`。
 pub struct ParticlesEffect(pub Particles);

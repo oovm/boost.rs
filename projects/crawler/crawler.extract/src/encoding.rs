@@ -93,9 +93,7 @@ fn charset_attribute(tag: &str) -> Option<String> {
 fn parameter_value(after: &str, terminators: &[char]) -> Option<String> {
     let after = after.trim_start().strip_prefix('=')?.trim_start();
     let after = after.strip_prefix(['"', '\'']).unwrap_or(after);
-    let end = after
-        .find(|ch: char| ch == '"' || ch == '\'' || ch.is_ascii_whitespace() || terminators.contains(&ch))
-        .unwrap_or(after.len());
+    let end = after.find(|ch: char| ch == '"' || ch == '\'' || ch.is_ascii_whitespace() || terminators.contains(&ch)).unwrap_or(after.len());
     let label = after[..end].trim_matches(|ch| ch == '"' || ch == '\'');
     (!label.is_empty()).then(|| label.to_string())
 }

@@ -20,8 +20,8 @@ use plotter_types::{Diagnostic, DiagnosticSeverity};
 use serde_json::{Map, Value as Json};
 
 use crate::{
-    Aggregate, Channel, ChannelEncoding, ChartCompilePlan, ChartError, ChartOptions, ChartSpec, DataColumn, DataSnapshot,
-    FieldKind, FieldRef, Guide, Mark, ScaleSpec,
+    Aggregate, Channel, ChannelEncoding, ChartCompilePlan, ChartError, ChartOptions, ChartSpec, DataColumn, DataSnapshot, FieldKind, FieldRef,
+    Guide, Mark, ScaleSpec,
     error::codes,
     transform::{BinSpec, ChannelTransform, TimeUnit},
 };
@@ -157,12 +157,7 @@ fn lower_document(source: &str) -> Result<VegaChart, ChartError> {
                 return Err(fail(
                     codes::TYPE_MISMATCH,
                     &binding.path,
-                    format!(
-                        "field `{}` is declared both `{}` and `{}`",
-                        binding.name,
-                        existing.kind.as_str(),
-                        binding.kind.as_str()
-                    ),
+                    format!("field `{}` is declared both `{}` and `{}`", binding.name, existing.kind.as_str(), binding.kind.as_str()),
                 ));
             }
             continue;
@@ -173,8 +168,7 @@ fn lower_document(source: &str) -> Result<VegaChart, ChartError> {
     let columns = fields
         .iter()
         .map(|field| {
-            let values =
-                rows.iter().enumerate().map(|(index, row)| cell_value(row, field, index)).collect::<Result<Vec<_>, _>>()?;
+            let values = rows.iter().enumerate().map(|(index, row)| cell_value(row, field, index)).collect::<Result<Vec<_>, _>>()?;
             Ok(DataColumn::new(field.name.clone(), field.kind, values))
         })
         .collect::<Result<Vec<_>, ChartError>>()?;
@@ -188,10 +182,8 @@ fn lower_document(source: &str) -> Result<VegaChart, ChartError> {
     }
     spec.fields = fields;
     for binding in &bindings {
-        spec.encoding.set(
-            binding.channel,
-            ChannelEncoding { field: FieldRef::new(binding.name.clone(), binding.kind), aggregate: binding.aggregate },
-        );
+        spec.encoding
+            .set(binding.channel, ChannelEncoding { field: FieldRef::new(binding.name.clone(), binding.kind), aggregate: binding.aggregate });
         if let Some(scale) = binding.scale {
             spec.scales.set(binding.channel, scale);
         }
@@ -312,9 +304,8 @@ fn parse_color(value: &Json, path: &str) -> Result<Color, ChartError> {
         6 => digits.to_string(),
         _ => return Err(fail(codes::UNSUPPORTED_ENCODING, path, "only `#rgb` and `#rrggbb` colors are supported")),
     };
-    let parse = |slice: &str| {
-        u8::from_str_radix(slice, 16).map_err(|_| fail(codes::UNSUPPORTED_ENCODING, path, "color digits must be hexadecimal"))
-    };
+    let parse =
+        |slice: &str| u8::from_str_radix(slice, 16).map_err(|_| fail(codes::UNSUPPORTED_ENCODING, path, "color digits must be hexadecimal"));
     Ok(Color::rgb(parse(&expanded[0..2])?, parse(&expanded[2..4])?, parse(&expanded[4..6])?))
 }
 
@@ -346,11 +337,7 @@ fn lower_data(value: &Json) -> Result<Vec<Map<String, Json>>, ChartError> {
                 for (index, row) in array.iter().enumerate() {
                     let Some(row) = row.as_object()
                     else {
-                        return Err(fail(
-                            codes::INVALID_SPEC,
-                            &format!("$.data.values[{index}]"),
-                            "every row must be a JSON object",
-                        ));
+                        return Err(fail(codes::INVALID_SPEC, &format!("$.data.values[{index}]"), "every row must be a JSON object"));
                     };
                     collected.push(row.clone());
                 }
@@ -427,11 +414,7 @@ fn lower_channel(channel: Channel, value: &Json, path: &str) -> Result<Binding, 
             }
             "bin" => {
                 if !matches!(channel, Channel::X | Channel::Y) {
-                    return Err(fail(
-                        codes::UNSUPPORTED_ENCODING,
-                        &format!("{path}.bin"),
-                        "`bin` applies to the `x` and `y` channels only",
-                    ));
+                    return Err(fail(codes::UNSUPPORTED_ENCODING, &format!("{path}.bin"), "`bin` applies to the `x` and `y` channels only"));
                 }
                 has_bin = true;
                 transform = lower_bin(item, &format!("{path}.bin"))?;
@@ -504,11 +487,7 @@ fn lower_bin(value: &Json, path: &str) -> Result<Option<ChannelTransform>, Chart
                 )
             }
             else {
-                fail(
-                    codes::INVALID_SPEC,
-                    path,
-                    "string `bin` values are not supported (`true` or an options object is required)",
-                )
+                fail(codes::INVALID_SPEC, path, "string `bin` values are not supported (`true` or an options object is required)")
             });
         }
         Json::Object(_) => {}
@@ -623,11 +602,7 @@ fn lower_scale(value: &Json, path: &str) -> Result<ScaleSpec, ChartError> {
             "domain" => {
                 let Some(array) = item.as_array()
                 else {
-                    return Err(fail(
-                        codes::UNSUPPORTED_SCALE,
-                        &format!("{path}.domain"),
-                        "only a numeric `[min, max]` domain is supported",
-                    ));
+                    return Err(fail(codes::UNSUPPORTED_SCALE, &format!("{path}.domain"), "only a numeric `[min, max]` domain is supported"));
                 };
                 if array.len() != 2 {
                     return Err(fail(codes::UNSUPPORTED_SCALE, &format!("{path}.domain"), "the domain must have two bounds"));
@@ -672,11 +647,7 @@ fn lower_scale(value: &Json, path: &str) -> Result<ScaleSpec, ChartError> {
         "point" => {
             refuse_non_linear_options(path, zero, nice)?;
             if domain.is_some() {
-                return Err(fail(
-                    codes::INVALID_SCALE,
-                    &format!("{path}.domain"),
-                    "a point scale cannot take a numeric domain",
-                ));
+                return Err(fail(codes::INVALID_SCALE, &format!("{path}.domain"), "a point scale cannot take a numeric domain"));
             }
             Ok(ScaleSpec::Point { padding: padding.unwrap_or(0.5) })
         }
@@ -684,11 +655,7 @@ fn lower_scale(value: &Json, path: &str) -> Result<ScaleSpec, ChartError> {
             refuse_non_linear_options(path, zero, nice)?;
             Ok(ScaleSpec::Nominal)
         }
-        other => Err(fail(
-            codes::UNSUPPORTED_SCALE,
-            &format!("{path}.type"),
-            format!("the chart kernel cannot train a `{other}` scale yet"),
-        )),
+        other => Err(fail(codes::UNSUPPORTED_SCALE, &format!("{path}.type"), format!("the chart kernel cannot train a `{other}` scale yet"))),
     }
 }
 
@@ -724,11 +691,7 @@ fn cell_value(row: &Map<String, Json>, field: &FieldRef, index: usize) -> Result
         },
         (FieldKind::Nominal | FieldKind::Ordinal, Json::String(text)) => Ok(crate::Value::Text(text.clone())),
         (FieldKind::Nominal | FieldKind::Ordinal, Json::Number(number)) => Ok(crate::Value::Text(number.to_string())),
-        (kind, _) => Err(fail(
-            codes::TYPE_MISMATCH,
-            &path,
-            format!("a `{}` field cannot hold a {} value", kind.as_str(), json_kind(cell)),
-        )),
+        (kind, _) => Err(fail(codes::TYPE_MISMATCH, &path, format!("a `{}` field cannot hold a {} value", kind.as_str(), json_kind(cell)))),
     }
 }
 

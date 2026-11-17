@@ -204,15 +204,15 @@ const STRUCTURE_CASES: &[(&str, &str, &str)] = &[
 
 fn layout(source: &str) -> (LayoutNode, FormulaLayoutResult) {
     crate::math::install_host_math_fonts();
-    let (result, root, _) = layout_formula_source(source, false, default_base_size(false))
-        .unwrap_or_else(|e| panic!("failed to layout {source}: {e}"));
+    let (result, root, _) =
+        layout_formula_source(source, false, default_base_size(false)).unwrap_or_else(|e| panic!("failed to layout {source}: {e}"));
     (root, result)
 }
 
 fn layout_display(source: &str) -> (LayoutNode, FormulaLayoutResult) {
     crate::math::install_host_math_fonts();
-    let (result, root, _) = layout_formula_source(source, true, default_base_size(true))
-        .unwrap_or_else(|e| panic!("failed to layout (display) {source}: {e}"));
+    let (result, root, _) =
+        layout_formula_source(source, true, default_base_size(true)).unwrap_or_else(|e| panic!("failed to layout (display) {source}: {e}"));
     (root, result)
 }
 
@@ -276,16 +276,8 @@ fn every_formula_lays_out_in_both_inline_and_display_style() {
 
         for (label, m) in [("inline", inline), ("display", display)] {
             assert!(m.metrics.width > Fixed::ZERO, "{formula} ({label}): width must be positive, got {:?}", m.metrics.width);
-            assert!(
-                m.metrics.height >= Fixed::ZERO,
-                "{formula} ({label}): height must be non-negative, got {:?}",
-                m.metrics.height
-            );
-            assert!(
-                m.metrics.depth >= Fixed::ZERO,
-                "{formula} ({label}): depth must be non-negative, got {:?}",
-                m.metrics.depth
-            );
+            assert!(m.metrics.height >= Fixed::ZERO, "{formula} ({label}): height must be non-negative, got {:?}", m.metrics.height);
+            assert!(m.metrics.depth >= Fixed::ZERO, "{formula} ({label}): depth must be non-negative, got {:?}", m.metrics.depth);
         }
     }
 }

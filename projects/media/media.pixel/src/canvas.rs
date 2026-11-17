@@ -27,11 +27,7 @@ impl PixelCanvas {
     #[must_use]
     pub fn new(width: u32, height: u32) -> Self {
         let (width, height) = (width.max(1), height.max(1));
-        Self {
-            width,
-            height,
-            pixels: vec![0; (width as usize) * (height as usize)],
-        }
+        Self { width, height, pixels: vec![0; (width as usize) * (height as usize)] }
     }
 
     #[must_use]

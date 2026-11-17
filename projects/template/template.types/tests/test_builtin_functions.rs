@@ -27,8 +27,7 @@ fn test_len_function() {
 #[test]
 fn test_join_function() {
     let context = Context::new();
-    let array =
-        Value::Array(vec![Value::String("a".to_string()), Value::String("b".to_string()), Value::String("c".to_string())]);
+    let array = Value::Array(vec![Value::String("a".to_string()), Value::String("b".to_string()), Value::String("c".to_string())]);
     let result = context.call_function("join", &[array, Value::String(",".to_string())]).unwrap();
     assert_eq!(result, Value::String("a,b,c".to_string()));
 }
@@ -103,4 +102,3 @@ fn test_bool_function() {
     let result = context.call_function("bool", &[Value::Integer(1)]).unwrap();
     assert_eq!(result, Value::Bool(true));
 }
-

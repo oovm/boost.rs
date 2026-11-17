@@ -1,10 +1,12 @@
 use hardware_capability::CapabilityReport;
 use hardware_ir::Graph;
-use hardware_optimize::{apply, Optimization};
+use hardware_optimize::{Optimization, apply};
 use hardware_scheduler::{Backend, ExecutionBindings, Scheduler};
 
-use crate::capacity::{apply_capacity, CapacityPolicy};
-use crate::diagnostics::{kinds, ExecutionDiagnostics, ExecutionEvent};
+use crate::{
+    capacity::{CapacityPolicy, apply_capacity},
+    diagnostics::{ExecutionDiagnostics, ExecutionEvent, kinds},
+};
 
 /// Owns backends, capacity policy, and graph execution.
 pub struct Runtime {
@@ -27,12 +29,7 @@ impl Runtime {
 
     /// Runtime with an explicit capacity policy.
     pub fn with_capacity(capacity: CapacityPolicy) -> Self {
-        Self {
-            scheduler: Scheduler::new(),
-            capacity,
-            diagnostics: ExecutionDiagnostics::default(),
-            bindings: ExecutionBindings::new(),
-        }
+        Self { scheduler: Scheduler::new(), capacity, diagnostics: ExecutionDiagnostics::default(), bindings: ExecutionBindings::new() }
     }
 
     /// Register a backend for the scheduler.
@@ -119,12 +116,7 @@ impl Runtime {
         if self.bindings.buffers.is_empty() && self.bindings.stream.is_none() {
             return Ok(());
         }
-        self.diagnostics.push_simple(
-            kinds::RESOURCE_BIND,
-            None,
-            None,
-            "runtime",
-        );
+        self.diagnostics.push_simple(kinds::RESOURCE_BIND, None, None, "runtime");
         let result = self.scheduler.bind_externals(&self.bindings);
         if let Err(ref err) = result {
             self.diagnostics.push_error("runtime", err.code());
@@ -134,17 +126,11 @@ impl Runtime {
 
     /// Validate and prepare resources on every backend (idempotent on size match).
     pub fn prepare(&mut self, graph: &Graph) -> hardware_scheduler::Result<()> {
-        self.diagnostics
-            .push_simple(kinds::GRAPH_VALIDATE, None, None, "runtime");
+        self.diagnostics.push_simple(kinds::GRAPH_VALIDATE, None, None, "runtime");
         self.apply_bindings()?;
         let result = self.scheduler.prepare(graph);
         match &result {
-            Ok(()) => self.diagnostics.push_simple(
-                kinds::RESOURCE_PREPARE,
-                None,
-                None,
-                "runtime",
-            ),
+            Ok(()) => self.diagnostics.push_simple(kinds::RESOURCE_PREPARE, None, None, "runtime"),
             Err(err) => self.diagnostics.push_error("runtime", err.code()),
         }
         result
@@ -154,9 +140,7 @@ impl Runtime {
     pub fn flush(&mut self) -> hardware_scheduler::Result<()> {
         let result = self.scheduler.flush();
         match &result {
-            Ok(()) => self
-                .diagnostics
-                .push_simple(kinds::FLUSH, None, None, "runtime"),
+            Ok(()) => self.diagnostics.push_simple(kinds::FLUSH, None, None, "runtime"),
             Err(err) => self.diagnostics.push_error("runtime", err.code()),
         }
         result
@@ -168,11 +152,7 @@ impl Runtime {
     }
 
     /// Optimizations + capacity + submit without re-preparing.
-    pub fn run_prepared_with_opts(
-        &mut self,
-        graph: &Graph,
-        opts: &[Optimization],
-    ) -> hardware_scheduler::Result<()> {
+    pub fn run_prepared_with_opts(&mut self, graph: &Graph, opts: &[Optimization]) -> hardware_scheduler::Result<()> {
         let mut graph = graph.clone();
         apply(&mut graph, opts)?;
         let migrations = apply_capacity(&mut graph, self.capacity)?;
@@ -182,16 +162,8 @@ impl Runtime {
             Ok(()) => {
                 self.record_backend_switches();
                 self.record_backend_probes();
-                self.diagnostics.push(
-                    ExecutionEvent::builder(kinds::TASK_SUBMIT, "runtime")
-                        .stamp_now()
-                        .build(),
-                );
-                self.diagnostics.push(
-                    ExecutionEvent::builder(kinds::TASK_COMPLETE, "runtime")
-                        .stamp_now()
-                        .build(),
-                );
+                self.diagnostics.push(ExecutionEvent::builder(kinds::TASK_SUBMIT, "runtime").stamp_now().build());
+                self.diagnostics.push(ExecutionEvent::builder(kinds::TASK_COMPLETE, "runtime").stamp_now().build());
             }
             Err(err) => self.diagnostics.push_error("runtime", err.code()),
         }
@@ -204,33 +176,21 @@ impl Runtime {
     }
 
     /// Apply optimizations, then capacity, then schedule (prepare + submit).
-    pub fn run_with_opts(
-        &mut self,
-        graph: &Graph,
-        opts: &[Optimization],
-    ) -> hardware_scheduler::Result<()> {
+    pub fn run_with_opts(&mut self, graph: &Graph, opts: &[Optimization]) -> hardware_scheduler::Result<()> {
         let mut graph = graph.clone();
         apply(&mut graph, opts)?;
         let migrations = apply_capacity(&mut graph, self.capacity)?;
         self.record_resource_migrations(&migrations);
-        self.diagnostics
-            .push_simple(kinds::GRAPH_VALIDATE, None, None, "runtime");
+        self.diagnostics.push_simple(kinds::GRAPH_VALIDATE, None, None, "runtime");
         self.apply_bindings()?;
         let result = self.scheduler.execute(&graph);
         match &result {
             Ok(()) => {
-                self.diagnostics.push_simple(
-                    kinds::RESOURCE_PREPARE,
-                    None,
-                    None,
-                    "runtime",
-                );
+                self.diagnostics.push_simple(kinds::RESOURCE_PREPARE, None, None, "runtime");
                 self.record_backend_switches();
                 self.record_backend_probes();
-                self.diagnostics
-                    .push_simple(kinds::TASK_SUBMIT, None, None, "runtime");
-                self.diagnostics
-                    .push_simple(kinds::TASK_COMPLETE, None, None, "runtime");
+                self.diagnostics.push_simple(kinds::TASK_SUBMIT, None, None, "runtime");
+                self.diagnostics.push_simple(kinds::TASK_COMPLETE, None, None, "runtime");
             }
             Err(err) => self.diagnostics.push_error("runtime", err.code()),
         }
@@ -247,9 +207,7 @@ impl Default for Runtime {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hardware_ir::{
-        Access, Domain, ResourceGraph, ResourceId, ResourceKind, ResourceNode, TaskGraph,
-    };
+    use hardware_ir::{Access, Domain, ResourceGraph, ResourceId, ResourceKind, ResourceNode, TaskGraph};
     use hardware_scheduler::NoopBackend;
 
     #[test]
@@ -264,21 +222,12 @@ mod tests {
                     byte_size: Some(200),
                 }],
             },
-            tasks: TaskGraph {
-                nodes: vec![],
-                edges: vec![],
-            },
+            tasks: TaskGraph { nodes: vec![], edges: vec![] },
         };
-        let mut rt = Runtime::with_capacity(CapacityPolicy::SoftLimit {
-            domain: Domain::Vram,
-            bytes: 100,
-        });
+        let mut rt = Runtime::with_capacity(CapacityPolicy::SoftLimit { domain: Domain::Vram, bytes: 100 });
         rt.register_backend(Box::new(NoopBackend));
         let err = rt.run(&graph).expect_err("should exceed");
-        assert!(matches!(
-            err,
-            hardware_scheduler::Error::CapacityExceeded { .. }
-        ));
+        assert!(matches!(err, hardware_scheduler::Error::CapacityExceeded { .. }));
     }
 
     #[test]
@@ -302,37 +251,20 @@ mod tests {
                     },
                 ],
             },
-            tasks: TaskGraph {
-                nodes: vec![],
-                edges: vec![],
-            },
+            tasks: TaskGraph { nodes: vec![], edges: vec![] },
         };
-        let mut rt = Runtime::with_capacity(CapacityPolicy::MigrateToHost {
-            domain: Domain::Vram,
-            bytes: 100,
-        });
+        let mut rt = Runtime::with_capacity(CapacityPolicy::MigrateToHost { domain: Domain::Vram, bytes: 100 });
         rt.register_backend(Box::new(NoopBackend));
         rt.run(&graph).expect("migrate then run");
         assert!(rt.diagnostics().contains_kind(kinds::RESOURCE_MIGRATE));
-        let m = rt
-            .diagnostics()
-            .first_of_kind(kinds::RESOURCE_MIGRATE)
-            .expect("migration event");
+        let m = rt.diagnostics().first_of_kind(kinds::RESOURCE_MIGRATE).expect("migration event");
         assert_eq!(m.resource_id, Some(1));
         assert!(m.host_transfer);
     }
 
     #[test]
     fn prepare_flush_capabilities_record_diagnostics() {
-        let graph = Graph {
-            resources: ResourceGraph {
-                nodes: vec![],
-            },
-            tasks: TaskGraph {
-                nodes: vec![],
-                edges: vec![],
-            },
-        };
+        let graph = Graph { resources: ResourceGraph { nodes: vec![] }, tasks: TaskGraph { nodes: vec![], edges: vec![] } };
         let mut rt = Runtime::new();
         rt.register_backend(Box::new(NoopBackend));
         assert!(!rt.capabilities().backends.is_empty());
@@ -342,13 +274,7 @@ mod tests {
         assert!(rt.diagnostics().contains_kind(kinds::GRAPH_VALIDATE));
         assert!(rt.diagnostics().contains_kind(kinds::RESOURCE_PREPARE));
         assert!(rt.diagnostics().contains_kind(kinds::FLUSH));
-        assert_eq!(
-            rt.diagnostics()
-                .first_of_kind(kinds::GRAPH_VALIDATE)
-                .unwrap()
-                .graph_id,
-            Some(7)
-        );
+        assert_eq!(rt.diagnostics().first_of_kind(kinds::GRAPH_VALIDATE).unwrap().graph_id, Some(7));
     }
 
     #[test]
@@ -369,17 +295,14 @@ mod tests {
         rt.register_backend(Box::new(NoopBackend));
         let err = rt.prepare(&bad).expect_err("invalid");
         assert_eq!(err.code(), hardware_scheduler::ErrorCode::Ir);
-        let e = rt
-            .diagnostics()
-            .first_of_kind(kinds::BACKEND_ERROR)
-            .expect("error event");
+        let e = rt.diagnostics().first_of_kind(kinds::BACKEND_ERROR).expect("error event");
         assert_eq!(e.error_code, Some(hardware_scheduler::ErrorCode::Ir));
     }
 
     #[test]
     fn run_emits_backend_switch_when_crossing_backends() {
-        use std::collections::BTreeMap;
         use hardware_ir::{DepEdge, DepKind, ParamValue, TaskId, TaskKind, TaskNode};
+        use std::collections::BTreeMap;
 
         struct NamedBackend {
             name: String,
@@ -394,11 +317,7 @@ mod tests {
                 hardware_capability::FeatureSet::new()
             }
 
-            fn submit_task(
-                &mut self,
-                _graph: &Graph,
-                _task: &hardware_ir::TaskNode,
-            ) -> hardware_scheduler::Result<()> {
+            fn submit_task(&mut self, _graph: &Graph, _task: &hardware_ir::TaskNode) -> hardware_scheduler::Result<()> {
                 Ok(())
             }
         }
@@ -408,10 +327,7 @@ mod tests {
                 id: TaskId(id),
                 kind: TaskKind::Custom("x".into()),
                 shader: hardware_ir::ShaderId(id),
-                params: BTreeMap::from([(
-                    "backend".into(),
-                    ParamValue::Str(backend.into()),
-                )]),
+                params: BTreeMap::from([("backend".into(), ParamValue::Str(backend.into()))]),
                 dispatch: Default::default(),
                 objective: hardware_ir::Objective::MaxThroughput,
                 priority: hardware_ir::Priority::Batch,
@@ -422,26 +338,14 @@ mod tests {
             resources: ResourceGraph { nodes: vec![] },
             tasks: TaskGraph {
                 nodes: vec![pinned(1, "dx12"), pinned(2, "cuda")],
-                edges: vec![DepEdge {
-                    from_task: Some(TaskId(1)),
-                    from_resource: None,
-                    to_task: TaskId(2),
-                    kind: DepKind::Execution,
-                }],
+                edges: vec![DepEdge { from_task: Some(TaskId(1)), from_resource: None, to_task: TaskId(2), kind: DepKind::Execution }],
             },
         };
         let mut rt = Runtime::new();
-        rt.register_backend(Box::new(NamedBackend {
-            name: "dx12".into(),
-        }));
-        rt.register_backend(Box::new(NamedBackend {
-            name: "cuda".into(),
-        }));
+        rt.register_backend(Box::new(NamedBackend { name: "dx12".into() }));
+        rt.register_backend(Box::new(NamedBackend { name: "cuda".into() }));
         rt.run(&graph).expect("cross backend run");
-        let sw = rt
-            .diagnostics()
-            .first_of_kind(kinds::BACKEND_SWITCH)
-            .expect("backend_switch");
+        let sw = rt.diagnostics().first_of_kind(kinds::BACKEND_SWITCH).expect("backend_switch");
         assert_eq!(sw.backend, "cuda");
         assert_eq!(sw.task_id, Some(2));
         assert_eq!(sw.stream_id.as_deref(), Some("dx12->cuda"));

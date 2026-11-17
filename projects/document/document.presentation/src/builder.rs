@@ -8,8 +8,8 @@ use document_layout::plan::{Graphic, ImagePlaceholder, LayoutItem, LayoutPlan, P
 
 use crate::{
     display::{
-        DisplayAnchor, DisplayGraphic, DisplayImage, DisplayItem, DisplayPage, DisplayPath, DisplayPresentation, DisplayRect,
-        DisplayRule, DisplayTextRun,
+        DisplayAnchor, DisplayGraphic, DisplayImage, DisplayItem, DisplayPage, DisplayPath, DisplayPresentation, DisplayRect, DisplayRule,
+        DisplayTextRun,
     },
     flow::{FlowBlock, FlowListItem, FlowPresentation, FlowRun, FlowTableRow},
 };
@@ -41,35 +41,23 @@ pub fn build_display_presentation(plan: &LayoutPlan) -> DisplayPresentation {
 
 fn lower_item(item: &LayoutItem) -> Option<DisplayItem> {
     let item = match item {
-        LayoutItem::TextRun(TextRun {
-            x,
-            y,
-            size,
-            width,
-            font_family,
-            style,
-            text,
-            href,
-            anchor,
-            title,
-            color,
-            numeric,
-            artifact,
-        }) => DisplayItem::TextRun(DisplayTextRun {
-            x: *x,
-            y: *y,
-            size: *size,
-            width: *width,
-            font_family: font_family.clone(),
-            style: *style,
-            text: text.clone(),
-            href: href.clone(),
-            anchor: anchor.clone(),
-            title: title.clone(),
-            color: *color,
-            numeric: *numeric,
-            artifact: *artifact,
-        }),
+        LayoutItem::TextRun(TextRun { x, y, size, width, font_family, style, text, href, anchor, title, color, numeric, artifact }) => {
+            DisplayItem::TextRun(DisplayTextRun {
+                x: *x,
+                y: *y,
+                size: *size,
+                width: *width,
+                font_family: font_family.clone(),
+                style: *style,
+                text: text.clone(),
+                href: href.clone(),
+                anchor: anchor.clone(),
+                title: title.clone(),
+                color: *color,
+                numeric: *numeric,
+                artifact: *artifact,
+            })
+        }
         LayoutItem::Rule(Rule { x1, y1, x2, y2, thickness, color }) => {
             DisplayItem::Rule(DisplayRule { x1: *x1, y1: *y1, x2: *x2, y2: *y2, thickness: *thickness, color: *color })
         }
@@ -84,23 +72,11 @@ fn lower_item(item: &LayoutItem) -> Option<DisplayItem> {
             stroke_width: *stroke_width,
         }),
         LayoutItem::ImagePlaceholder(ImagePlaceholder { x, y, width, height, alt, source }) => {
-            DisplayItem::Image(DisplayImage {
-                x: *x,
-                y: *y,
-                width: *width,
-                height: *height,
-                alt: alt.clone(),
-                source: source.clone(),
-            })
+            DisplayItem::Image(DisplayImage { x: *x, y: *y, width: *width, height: *height, alt: alt.clone(), source: source.clone() })
         }
-        LayoutItem::Graphic(Graphic { x, y, width, height, scene, alt }) => DisplayItem::Graphic(DisplayGraphic {
-            x: *x,
-            y: *y,
-            width: *width,
-            height: *height,
-            scene: scene.clone(),
-            alt: alt.clone(),
-        }),
+        LayoutItem::Graphic(Graphic { x, y, width, height, scene, alt }) => {
+            DisplayItem::Graphic(DisplayGraphic { x: *x, y: *y, width: *width, height: *height, scene: scene.clone(), alt: alt.clone() })
+        }
         LayoutItem::Path(Path { d, x, y, width, height, depth }) => {
             DisplayItem::Path(DisplayPath { d: d.clone(), x: *x, y: *y, width: *width, height: *height, depth: *depth })
         }
@@ -180,13 +156,7 @@ fn push_run(runs: &mut Vec<FlowRun>, text: &str, style: FontStyle, href: Option<
         last.text.push_str(text);
         return;
     }
-    runs.push(FlowRun {
-        text: text.to_string(),
-        style,
-        href: href.map(str::to_string),
-        title: title.map(str::to_string),
-        math: None,
-    });
+    runs.push(FlowRun { text: text.to_string(), style, href: href.map(str::to_string), title: title.map(str::to_string), math: None });
 }
 
 /// Resolve the destination of a link target.
@@ -211,13 +181,7 @@ fn link_title(title: Option<&String>) -> Option<&str> {
 }
 
 /// Flatten inline content into styled runs under the enclosing style and link.
-fn flow_runs<'a>(
-    inlines: &'a [Inline],
-    style: FontStyle,
-    href: Option<&'a str>,
-    title: Option<&'a str>,
-    runs: &mut Vec<FlowRun>,
-) {
+fn flow_runs<'a>(inlines: &'a [Inline], style: FontStyle, href: Option<&'a str>, title: Option<&'a str>, runs: &mut Vec<FlowRun>) {
     for inline in inlines {
         match inline {
             Inline::Styled { style: name, children } => flow_runs(children, flow_style(name), href, title, runs),
@@ -310,9 +274,7 @@ fn collect_flow(graph: &DocumentGraph, ids: &[NodeId], blocks: &mut Vec<FlowBloc
             // Charts, scores, and structures also have no scene surface in this
             // layer, so the authored source stays visible rather than vanishing
             // from the reflowed page.
-            Block::Chart { language, source }
-            | Block::Engraving { language, source }
-            | Block::Depiction { language, source } => {
+            Block::Chart { language, source } | Block::Engraving { language, source } | Block::Depiction { language, source } => {
                 blocks.push(FlowBlock::CodeBlock { language: Some(language.clone()), text: source.clone() });
             }
             Block::Math { formula } => {

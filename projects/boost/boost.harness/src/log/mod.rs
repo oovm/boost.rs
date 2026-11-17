@@ -27,9 +27,9 @@ mod task;
 #[cfg(feature = "std")]
 pub mod console;
 
-pub use crate::{field_value, span};
 #[cfg(feature = "std")]
 pub use crate::event;
+pub use crate::{field_value, span};
 
 #[cfg(feature = "std")]
 pub use async_sink::{AsyncSink, AsyncSinkError};

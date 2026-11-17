@@ -1,8 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use document_ir::{
-    Asset, AssetId, AssetKind, Block, DocumentGraph, DocumentMetadata, LossMarker, NodeId, SemanticStatus, SourceKind,
-};
+use document_ir::{Asset, AssetId, AssetKind, Block, DocumentGraph, DocumentMetadata, LossMarker, NodeId, SemanticStatus, SourceKind};
 
 use crate::{FormatError, export::markdown::export_markdown_with_image_urls_for_roots};
 
@@ -52,13 +50,7 @@ pub fn export_markdown_project(graph: &DocumentGraph) -> Result<MarkdownProject,
     let spine_groups = group_blocks_by_package_member(graph);
     if spine_groups.len() <= 1 {
         let index_markdown = export_markdown_with_image_urls_for_roots(graph, None, Some(&image_urls))?;
-        return Ok(MarkdownProject {
-            index_markdown,
-            chapters: Vec::new(),
-            assets,
-            unresolved_asset_sources: unresolved,
-            losses: Vec::new(),
-        });
+        return Ok(MarkdownProject { index_markdown, chapters: Vec::new(), assets, unresolved_asset_sources: unresolved, losses: Vec::new() });
     }
 
     let mut chapters = Vec::with_capacity(spine_groups.len());
@@ -82,13 +74,7 @@ pub fn export_markdown_project(graph: &DocumentGraph) -> Result<MarkdownProject,
 
     if chapters.is_empty() {
         let index_markdown = export_markdown_with_image_urls_for_roots(graph, None, Some(&image_urls))?;
-        return Ok(MarkdownProject {
-            index_markdown,
-            chapters: Vec::new(),
-            assets,
-            unresolved_asset_sources: unresolved,
-            losses,
-        });
+        return Ok(MarkdownProject { index_markdown, chapters: Vec::new(), assets, unresolved_asset_sources: unresolved, losses });
     }
 
     let index_markdown = build_chapter_index(&graph.metadata, &chapters);
@@ -128,16 +114,11 @@ fn package_member_path(graph: &DocumentGraph, node: NodeId) -> Option<String> {
 
 fn is_navigation_only_group(graph: &DocumentGraph, group: &SpineGroup) -> bool {
     group.member_path.to_ascii_lowercase().contains("nav")
-        && group
-            .blocks
-            .iter()
-            .all(|node_id| graph.block(*node_id).map(|node| matches!(node.block, Block::List { .. })).unwrap_or(false))
+        && group.blocks.iter().all(|node_id| graph.block(*node_id).map(|node| matches!(node.block, Block::List { .. })).unwrap_or(false))
 }
 
 fn chapter_relative_path(index: usize, member_path: &str, markdown: &str) -> String {
-    let slug = slug_from_member_path(member_path)
-        .or_else(|| first_heading_slug(markdown))
-        .unwrap_or_else(|| format!("chapter-{}", index + 1));
+    let slug = slug_from_member_path(member_path).or_else(|| first_heading_slug(markdown)).unwrap_or_else(|| format!("chapter-{}", index + 1));
     format!("chapters/{index:03}-{slug}.md")
 }
 
@@ -186,9 +167,7 @@ fn build_chapter_index(metadata: &DocumentMetadata, chapters: &[MarkdownProjectC
         output.push_str("\n\n");
     }
     for chapter in chapters {
-        let label = first_heading_slug(&chapter.markdown)
-            .map(|slug| slug.replace('-', " "))
-            .unwrap_or_else(|| chapter.relative_path.clone());
+        let label = first_heading_slug(&chapter.markdown).map(|slug| slug.replace('-', " ")).unwrap_or_else(|| chapter.relative_path.clone());
         output.push_str("- [");
         output.push_str(&label);
         output.push_str("](");
@@ -199,9 +178,7 @@ fn build_chapter_index(metadata: &DocumentMetadata, chapters: &[MarkdownProjectC
     output
 }
 
-fn plan_project_assets(
-    graph: &DocumentGraph,
-) -> Result<(HashMap<String, String>, Vec<MarkdownProjectAsset>, Vec<String>), FormatError> {
+fn plan_project_assets(graph: &DocumentGraph) -> Result<(HashMap<String, String>, Vec<MarkdownProjectAsset>, Vec<String>), FormatError> {
     let mut image_urls = HashMap::new();
     let mut assets = Vec::new();
     let mut unresolved = Vec::new();
@@ -295,9 +272,7 @@ fn media_extension_name(name: String, media_type: Option<&str>) -> String {
 fn sanitize_file_name(name: &str) -> String {
     let mut sanitized = name
         .chars()
-        .map(
-            |character| if matches!(character, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') { '_' } else { character },
-        )
+        .map(|character| if matches!(character, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') { '_' } else { character })
         .collect::<String>();
     if sanitized.is_empty() {
         sanitized = "asset".into();

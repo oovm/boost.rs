@@ -44,8 +44,8 @@ mod timeline;
 
 pub use easing::Easing;
 pub use plan::{
-    Channel, ChannelValue, Correspondence, CorrespondenceKind, EnterPolicy, ExitPolicy, InterruptionPolicy, MotionIntent,
-    Track, TransitionPlan, match_scenes, plan_transition,
+    Channel, ChannelValue, Correspondence, CorrespondenceKind, EnterPolicy, ExitPolicy, InterruptionPolicy, MotionIntent, Track,
+    TransitionPlan, match_scenes, plan_transition,
 };
 pub use sample::sample;
 pub use timeline::Timeline;

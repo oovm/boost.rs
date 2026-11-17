@@ -76,12 +76,10 @@ impl ConversionBudgets {
         let inspect = inspect_epub_bytes(label, bytes, budget).map_err(format_error::map_format_error)?;
         if let Some(limit) = self.container_entries {
             if inspect.parts.len() as u64 > limit {
-                return format_error::fail(AdapterError::diagnostic(document_formats::from_format_error(
-                    &FormatError::budget(
-                        "epub",
-                        format!("container_entries budget exhausted: indexed {} exceeds limit {limit}", inspect.parts.len()),
-                    ),
-                )));
+                return format_error::fail(AdapterError::diagnostic(document_formats::from_format_error(&FormatError::budget(
+                    "epub",
+                    format!("container_entries budget exhausted: indexed {} exceeds limit {limit}", inspect.parts.len()),
+                ))));
             }
         }
         self.check_declared("epub", inspect.parts.iter().map(|part| part.uncompressed_size))

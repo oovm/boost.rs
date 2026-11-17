@@ -20,8 +20,7 @@ use plotter_depiction::{
     spec::{ArrowKind, Atom, Bond, BondOrder, Element, MoleculeSpec, ReactionSpec},
 };
 use plotter_types::{
-    Diagnostic, DiagnosticLabel, DiagnosticLocation, DiagnosticSeverity, LabelRole, Message, NAMESPACE, SourceRef, codes,
-    diagnostic,
+    Diagnostic, DiagnosticLabel, DiagnosticLocation, DiagnosticSeverity, LabelRole, Message, NAMESPACE, SourceRef, codes, diagnostic,
 };
 
 /// 诊断与标签里使用的源身份。
@@ -67,12 +66,8 @@ pub fn smiles_to_spec(source: &str) -> Result<LoweredStructure, DepictionError> 
 pub fn smiles_to_scene(source: &str) -> Result<LoweredDepiction, DepictionError> {
     let lowered = smiles_to_spec(source)?;
     let mut depicted = match &lowered.spec {
-        StructureSpec::Molecule(molecule) => {
-            plotter_depiction::molecule_to_scene_with_options(molecule, &DepictionOptions::default())?
-        }
-        StructureSpec::Reaction(reaction) => {
-            plotter_depiction::reaction_to_scene_with_options(reaction, &DepictionOptions::default())?
-        }
+        StructureSpec::Molecule(molecule) => plotter_depiction::molecule_to_scene_with_options(molecule, &DepictionOptions::default())?,
+        StructureSpec::Reaction(reaction) => plotter_depiction::reaction_to_scene_with_options(reaction, &DepictionOptions::default())?,
     };
     depicted.plan.diagnostics.extend(lowered.diagnostics);
     depicted.diagnostics = depicted.plan.diagnostics.clone();
@@ -136,18 +131,12 @@ fn lower_root(source: &str, root: &SmilesRoot) -> Result<LoweredStructure, Depic
 }
 
 /// 降级一个反应式。
-fn lower_reaction(
-    _source: &str,
-    root: &SmilesRoot,
-    diagnostics: &mut Vec<Diagnostic>,
-) -> Result<ReactionSpec, DepictionError> {
+fn lower_reaction(_source: &str, root: &SmilesRoot, diagnostics: &mut Vec<Diagnostic>) -> Result<ReactionSpec, DepictionError> {
     let arrow = root.arrow.as_ref();
     let reactants: Vec<MoleculeSpec> = root.items.iter().map(|item| merge_items(std::slice::from_ref(item), diagnostics)).collect();
     let products: Vec<MoleculeSpec> = root.products.iter().map(|item| merge_items(std::slice::from_ref(item), diagnostics)).collect();
     if reactants.is_empty() || products.is_empty() {
-        return Err(DepictionError::unsupported(
-            "a reaction needs at least one reactant and one product fragment on each side of the arrow",
-        ));
+        return Err(DepictionError::unsupported("a reaction needs at least one reactant and one product fragment on each side of the arrow"));
     }
     let kind = match arrow.map(|arrow| arrow.kind) {
         Some(oak_smiles::ast::SmilesArrowKind::Double) => ArrowKind::Double,
@@ -162,13 +151,7 @@ fn lower_reaction(
             "reagent fragments are drawn as plain arrow text without their structures",
         ));
     }
-    Ok(ReactionSpec {
-        reactants,
-        products,
-        above,
-        below: arrow.and_then(|arrow| arrow.below.clone()),
-        arrow: kind,
-    })
+    Ok(ReactionSpec { reactants, products, above, below: arrow.and_then(|arrow| arrow.below.clone()), arrow: kind })
 }
 
 /// 把若干片段合并成一个分子图：原子下标按片段顺序平移。
@@ -189,35 +172,18 @@ fn merge_items(items: &[SmilesItem], diagnostics: &mut Vec<Diagnostic>) -> Molec
 /// 原子映射。
 fn lower_atom(atom: &SmilesAtom, diagnostics: &mut Vec<Diagnostic>) -> Atom {
     if atom.element == "*" {
-        approximated(
-            diagnostics,
-            "an author-written wildcard atom is drawn as `*` with no valence check",
-            Some(span_of(&atom.span)),
-        );
+        approximated(diagnostics, "an author-written wildcard atom is drawn as `*` with no valence check", Some(span_of(&atom.span)));
     }
     if atom.chirality.is_some() {
-        approximated(
-            diagnostics,
-            "tetrahedral chirality (`@` / `@@`) has no v0 depiction and is not drawn",
-            Some(span_of(&atom.span)),
-        );
+        approximated(diagnostics, "tetrahedral chirality (`@` / `@@`) has no v0 depiction and is not drawn", Some(span_of(&atom.span)));
     }
-    Atom {
-        element: element_from_symbol(&atom.element),
-        charge: atom.charge,
-        isotope: atom.isotope,
-        hydrogens: atom.explicit_hydrogens,
-    }
+    Atom { element: element_from_symbol(&atom.element), charge: atom.charge, isotope: atom.isotope, hydrogens: atom.explicit_hydrogens }
 }
 
 /// 键映射。
 fn lower_bond(bond: &SmilesBond, offset: usize, diagnostics: &mut Vec<Diagnostic>) -> Bond {
     if bond.stereo.is_some() {
-        approximated(
-            diagnostics,
-            "double-bond direction (`/` or `\\`) has no v0 depiction and is not drawn",
-            Some(span_of(&bond.span)),
-        );
+        approximated(diagnostics, "double-bond direction (`/` or `\\`) has no v0 depiction and is not drawn", Some(span_of(&bond.span)));
     }
     let order = match bond.order {
         SmilesBondOrder::Single => BondOrder::Single,

@@ -145,9 +145,7 @@ fn table_quote_nested_list_and_task_list_reach_the_rendered_svg() {
         })
         .collect();
     let has_item = |needle: &str| {
-        lists
-            .iter()
-            .any(|items| items.iter().any(|item| item.content.iter().any(|inline| inline.plain_text().contains(needle))))
+        lists.iter().any(|items| items.iter().any(|item| item.content.iter().any(|inline| inline.plain_text().contains(needle))))
     };
     assert!(has_item("outer"), "the outer item must lower to a list block: {lists:#?}");
     assert!(has_item("inner"), "the nested item must not be dropped: {lists:#?}");
@@ -190,17 +188,14 @@ fn aligned_table_only_warns_and_still_renders() {
         .unwrap_or_else(|| panic!("alignment markers must be reported: {:#?}", imported.report));
     assert!(!lossy.detail.is_empty());
     assert!(
-        imported.diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == "import.markdown.table_alignment" && diagnostic.severity == Severity::Warning
-        }),
+        imported
+            .diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.code == "import.markdown.table_alignment" && diagnostic.severity == Severity::Warning }),
         "{:#?}",
         imported.diagnostics
     );
-    assert!(
-        imported.diagnostics.iter().all(|diagnostic| diagnostic.severity != Severity::Error),
-        "{:#?}",
-        imported.diagnostics
-    );
+    assert!(imported.diagnostics.iter().all(|diagnostic| diagnostic.severity != Severity::Error), "{:#?}", imported.diagnostics);
 
     let rendered = render_svg("virtual://aligned-table.md", source, &Diagrams::new()).expect("the table must render");
     assert!(rendered.svg.contains("Left") && rendered.svg.contains("Right"), "cells must reach the svg");
@@ -235,11 +230,8 @@ fn opaque_blocks_are_reported_instead_of_dropped() {
     let imported = import_source("virtual://thematic-break.md", source).expect("thematic breaks are not fatal");
 
     assert!(imported.report.opaque.iter().any(|item| item.detail.contains("thematic_break")), "{:?}", imported.report.opaque);
-    let diagnostic = imported
-        .diagnostics
-        .iter()
-        .find(|diagnostic| diagnostic.code == codes::OPAQUE_BLOCK)
-        .expect("opaque block must produce a diagnostic");
+    let diagnostic =
+        imported.diagnostics.iter().find(|diagnostic| diagnostic.code == codes::OPAQUE_BLOCK).expect("opaque block must produce a diagnostic");
     assert_eq!(diagnostic.severity, Severity::Info);
 }
 
@@ -319,12 +311,10 @@ fn footnote_bodies_stay_for_writers_and_flow_reports_what_it_cannot_place() {
 
     // A flow target such as SVG cannot place the body, so the same import path
     // reports both markers with their authored ranges.
-    let rendered =
-        render_svg("virtual://footnote.md", source, &Diagrams::new()).expect("flow rendering succeeds with a reported loss");
-    for (code, expected) in [
-        ("import.markdown.footnote_body_unplaced", "[^n]: Footnote body text."),
-        ("import.markdown.footnote_reference_marker", "[^n]"),
-    ] {
+    let rendered = render_svg("virtual://footnote.md", source, &Diagrams::new()).expect("flow rendering succeeds with a reported loss");
+    for (code, expected) in
+        [("import.markdown.footnote_body_unplaced", "[^n]: Footnote body text."), ("import.markdown.footnote_reference_marker", "[^n]")]
+    {
         let diagnostic = rendered
             .diagnostics
             .iter()

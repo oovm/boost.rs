@@ -9,7 +9,8 @@ use std::collections::BTreeMap;
 use hardware_backend_dx12::Dx12Backend;
 use hardware_input_wgsl::lower_wgsl;
 use hardware_ir::{
-    Access, Domain, Graph, ParamValue, Priority, ResourceGraph, ResourceId, ResourceKind, ResourceNode, ShaderId, TaskGraph, TaskId, TaskKind, TaskNode,
+    Access, Domain, Graph, ParamValue, Priority, ResourceGraph, ResourceId, ResourceKind, ResourceNode, ShaderId, TaskGraph, TaskId, TaskKind,
+    TaskNode,
 };
 use hardware_program::program_hash;
 use hardware_scheduler::Backend;
@@ -45,11 +46,7 @@ fn dispatch_graph(entry: &hardware_program::Program, output: u64, buffers: &[(u3
     let mut params = BTreeMap::from([
         (
             "program".to_string(),
-            ParamValue::Program {
-                version: 1,
-                hash: program_hash(entry),
-                body: serde_json::to_string(entry).expect("serialize program"),
-            },
+            ParamValue::Program { version: 1, hash: program_hash(entry), body: serde_json::to_string(entry).expect("serialize program") },
         ),
         ("output".to_string(), ParamValue::I64(output as i64)),
     ]);
@@ -57,9 +54,7 @@ fn dispatch_graph(entry: &hardware_program::Program, output: u64, buffers: &[(u3
         params.insert(format!("buffer_{slot}"), ParamValue::I64(*id as i64));
     }
     Graph {
-        resources: ResourceGraph {
-            nodes: std::iter::once(buffer(output, 4)).chain(buffers.iter().map(|(_, id)| buffer(*id, 4))).collect(),
-        },
+        resources: ResourceGraph { nodes: std::iter::once(buffer(output, 4)).chain(buffers.iter().map(|(_, id)| buffer(*id, 4))).collect() },
         tasks: TaskGraph {
             nodes: vec![TaskNode {
                 id: TaskId(1),
@@ -127,11 +122,14 @@ fn lowered_wgsl_runs_on_direct3d_12() {
                 kind: TaskKind::Dispatch,
                 shader: ShaderId(1),
                 params: BTreeMap::from([
-                    ("program".to_string(), ParamValue::Program {
-                        version: 1,
-                        hash: program_hash(&lowered.program),
-                        body: serde_json::to_string(&lowered.program).expect("serialize program"),
-                    }),
+                    (
+                        "program".to_string(),
+                        ParamValue::Program {
+                            version: 1,
+                            hash: program_hash(&lowered.program),
+                            body: serde_json::to_string(&lowered.program).expect("serialize program"),
+                        },
+                    ),
                     ("output".to_string(), ParamValue::I64(output as i64)),
                     (format!("buffer_{}", lowered.resources[0].resource), ParamValue::I64(src as i64)),
                     (format!("buffer_{}", lowered.resources[1].resource), ParamValue::I64(dst as i64)),

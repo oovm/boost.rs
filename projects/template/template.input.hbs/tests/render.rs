@@ -1,7 +1,6 @@
 use serde_json::json;
 use template::{
-    MapTemplateLoader, RenderLimits, RenderOptions, RenderOutput, RenderRequest, TemplateEngine, TemplateError, TemplateId,
-    TemplateRoot, codes,
+    MapTemplateLoader, RenderLimits, RenderOptions, RenderOutput, RenderRequest, TemplateEngine, TemplateError, TemplateId, TemplateRoot, codes,
 };
 use template_input_hbs::{HbsEngine, codes as hbs_codes};
 
@@ -54,10 +53,7 @@ fn empty_collections_are_truthy_in_hbs() {
 #[test]
 fn each_exposes_index_and_first_last() {
     let data = json!({ "items": ["a", "b"] });
-    assert_eq!(
-        render("{{#each items}}{{@index}}:{{this}}:{{@first}}:{{@last}};{{/each}}", data),
-        "0:a:true:false;1:b:false:true;"
-    );
+    assert_eq!(render("{{#each items}}{{@index}}:{{this}}:{{@first}}:{{@last}};{{/each}}", data), "0:a:true:false;1:b:false:true;");
     assert_eq!(render("{{#each items}}x{{else}}empty{{/each}}", json!({ "items": [] })), "empty");
 }
 
@@ -102,10 +98,7 @@ fn strict_undefined_is_reported() {
 
 #[test]
 fn helper_calls_and_unknown_blocks_fail_closed() {
-    assert_eq!(
-        code(render_with("{{upper name}}", &json!({ "name": "x" }), None, RenderOptions::default())),
-        hbs_codes::UNSUPPORTED_HELPER
-    );
+    assert_eq!(code(render_with("{{upper name}}", &json!({ "name": "x" }), None, RenderOptions::default())), hbs_codes::UNSUPPORTED_HELPER);
     assert_eq!(
         code(render_with("{{#each items skip=1}}{{/each}}", &json!({ "items": [] }), None, RenderOptions::default())),
         hbs_codes::UNSUPPORTED_HELPER
@@ -114,10 +107,7 @@ fn helper_calls_and_unknown_blocks_fail_closed() {
         code(render_with("{{#repeat n}}x{{/repeat}}", &json!({ "n": 2 }), None, RenderOptions::default())),
         hbs_codes::UNSUPPORTED_BLOCK
     );
-    assert_eq!(
-        code(render_with("{{> hello x=1}}", &json!({}), None, RenderOptions::default())),
-        hbs_codes::UNSUPPORTED_CONSTRUCT
-    );
+    assert_eq!(code(render_with("{{> hello x=1}}", &json!({}), None, RenderOptions::default())), hbs_codes::UNSUPPORTED_CONSTRUCT);
 }
 
 #[test]
@@ -128,19 +118,15 @@ fn whitespace_control_trims_one_side() {
 
 #[test]
 fn budgets_are_hard_ceilings() {
-    let options =
-        RenderOptions { limits: RenderLimits { max_output_bytes: 4, ..RenderLimits::default() }, ..RenderOptions::default() };
+    let options = RenderOptions { limits: RenderLimits { max_output_bytes: 4, ..RenderLimits::default() }, ..RenderOptions::default() };
     assert_eq!(code(render_with("hello", &json!({}), None, options)), codes::OUTPUT_BUDGET);
 
-    let options =
-        RenderOptions { limits: RenderLimits { max_source_bytes: 4, ..RenderLimits::default() }, ..RenderOptions::default() };
+    let options = RenderOptions { limits: RenderLimits { max_source_bytes: 4, ..RenderLimits::default() }, ..RenderOptions::default() };
     assert_eq!(code(render_with("hello", &json!({}), None, options)), codes::SOURCE_BUDGET);
 
-    let options =
-        RenderOptions { limits: RenderLimits { max_steps: 1, ..RenderLimits::default() }, ..RenderOptions::default() };
+    let options = RenderOptions { limits: RenderLimits { max_steps: 1, ..RenderLimits::default() }, ..RenderOptions::default() };
     assert_eq!(code(render_with("{{a}}{{b}}", &json!({}), None, options)), codes::STEP_BUDGET);
 
-    let options =
-        RenderOptions { limits: RenderLimits { max_include_depth: 1, ..RenderLimits::default() }, ..RenderOptions::default() };
+    let options = RenderOptions { limits: RenderLimits { max_include_depth: 1, ..RenderLimits::default() }, ..RenderOptions::default() };
     assert_eq!(code(render_with("{{> loop}}", &json!({}), None, options)), codes::INCLUDE_DEPTH);
 }

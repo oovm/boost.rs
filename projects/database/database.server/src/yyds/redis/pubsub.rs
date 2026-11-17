@@ -11,7 +11,7 @@ use std::{
     io::{self, ErrorKind, Write},
     net::{Shutdown, TcpStream},
     sync::{
-        Mutex, MutexGuard, Arc,
+        Arc, Mutex, MutexGuard,
         atomic::{AtomicBool, AtomicU8, Ordering},
     },
     time::{Duration, Instant},
@@ -199,7 +199,8 @@ impl PubSubState {
     /// Redis still answers one frame carrying a null name, so it is returned as `None`.
     pub fn unsubscribe(&self, client: u64, names: &[&[u8]], pattern: bool) -> Vec<(Option<Vec<u8>>, usize)> {
         let mut clients = self.lock();
-        let Some(entry) = clients.get_mut(&client) else {
+        let Some(entry) = clients.get_mut(&client)
+        else {
             return vec![(None, 0)];
         };
         let mut replies = Vec::new();
@@ -243,12 +244,7 @@ impl PubSubState {
         let mut deliveries = Vec::new();
         for (client, entry) in clients.iter() {
             if entry.channels.contains(channel) {
-                deliveries.push(Delivery {
-                    client: *client,
-                    pattern: None,
-                    channel: channel.to_vec(),
-                    payload: payload.to_vec(),
-                });
+                deliveries.push(Delivery { client: *client, pattern: None, channel: channel.to_vec(), payload: payload.to_vec() });
                 delivered += 1;
             }
             for pattern in &entry.patterns {
@@ -298,11 +294,7 @@ impl PubSubState {
     /// subscriptions, so `PUBSUB NUMPAT` and `INFO stats` share this answer.
     pub fn numpat(&self) -> usize {
         let clients = self.lock();
-        clients
-            .values()
-            .flat_map(|entry| entry.patterns.iter().map(|pattern| pattern.as_slice()))
-            .collect::<BTreeSet<&[u8]>>()
-            .len()
+        clients.values().flat_map(|entry| entry.patterns.iter().map(|pattern| pattern.as_slice())).collect::<BTreeSet<&[u8]>>().len()
     }
 }
 
@@ -379,9 +371,7 @@ impl PubSubRegistry {
             let writes = self.lock_writes();
             deliveries
                 .into_iter()
-                .filter_map(|delivery| {
-                    writes.sinks.get(&delivery.client).map(|sink| (sink.protocol(), Arc::clone(sink), delivery))
-                })
+                .filter_map(|delivery| writes.sinks.get(&delivery.client).map(|sink| (sink.protocol(), Arc::clone(sink), delivery)))
                 .collect::<Vec<_>>()
         };
         for (protocol, sink, delivery) in targets {

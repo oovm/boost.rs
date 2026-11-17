@@ -15,8 +15,8 @@ use crate::{
     error::{ChartError, chart_warning, codes},
     plan::{AxisPlan, AxisTick, ChartCompilePlan, ChartScale, MarkGeometry, MarkInstance, MarkStyle, TitlePlan},
     scale::{
-        Scale, Transfer, TransformedScale, inferred_domain, linear_ticks, log_ticks, nice_domain, train_band, train_linear,
-        train_nominal, train_point,
+        Scale, Transfer, TransformedScale, inferred_domain, linear_ticks, log_ticks, nice_domain, train_band, train_linear, train_nominal,
+        train_point,
     },
     spec::{Channel, ChartSpec, Guide, Mark, PositionAdjust, ScaleSpec},
     statistic::{Observation, aggregate},
@@ -109,8 +109,7 @@ pub fn compile(spec: &ChartSpec, data: &DataSnapshot, options: &ChartOptions) ->
 
     let title_text = spec.title.as_deref().map(str::trim).filter(|text| !text.is_empty());
     if title_text.is_none() && spec.title.is_some() {
-        diagnostics
-            .push(chart_warning(codes::APPROXIMATED, "an authored chart title is blank, so no title text node is drawn"));
+        diagnostics.push(chart_warning(codes::APPROXIMATED, "an authored chart title is blank, so no title text node is drawn"));
     }
     let title_font_size = options.font_size * TITLE_FONT_SCALE;
 
@@ -208,10 +207,7 @@ fn check_fields(spec: &ChartSpec, data: &DataSnapshot) -> Result<(), ChartError>
     for field in &spec.fields {
         match data.field(&field.name) {
             None => {
-                return Err(ChartError::new(
-                    codes::UNKNOWN_FIELD,
-                    format!("field `{}` is not in the data snapshot", field.name),
-                ));
+                return Err(ChartError::new(codes::UNKNOWN_FIELD, format!("field `{}` is not in the data snapshot", field.name)));
             }
             Some(column) if column.kind != field.kind => {
                 return Err(ChartError::new(
@@ -263,13 +259,9 @@ fn resolve_transforms(spec: &ChartSpec, data: &DataSnapshot) -> Result<[Option<R
         let applied = match transform {
             ChannelTransform::Bin(bin) => {
                 let column = data.field(&encoding.field.name).ok_or_else(|| {
-                    ChartError::new(
-                        codes::UNKNOWN_FIELD,
-                        format!("field `{}` is not in the data snapshot", encoding.field.name),
-                    )
+                    ChartError::new(codes::UNKNOWN_FIELD, format!("field `{}` is not in the data snapshot", encoding.field.name))
                 })?;
-                let values: Vec<f64> =
-                    column.values.iter().filter_map(Value::as_number).filter(|value| value.is_finite()).collect();
+                let values: Vec<f64> = column.values.iter().filter_map(Value::as_number).filter(|value| value.is_finite()).collect();
                 ResolvedTransform::Bin(ResolvedBin::resolve(bin, &values)?)
             }
             ChannelTransform::TimeUnit(unit) => ResolvedTransform::TimeUnit(unit),
@@ -296,9 +288,9 @@ fn project_rows(
             else {
                 continue;
             };
-            let column = data.field(&encoding.field.name).ok_or_else(|| {
-                ChartError::new(codes::UNKNOWN_FIELD, format!("field `{}` is not in the data snapshot", encoding.field.name))
-            })?;
+            let column = data
+                .field(&encoding.field.name)
+                .ok_or_else(|| ChartError::new(codes::UNKNOWN_FIELD, format!("field `{}` is not in the data snapshot", encoding.field.name)))?;
             let value = column.values[index].clone();
             if value.is_null() {
                 missing[channel_index(channel)] += 1;
@@ -326,10 +318,8 @@ fn project_rows(
             continue;
         }
         let name = spec.encoding.channel(channel).map(|encoding| encoding.field.name.as_str()).unwrap_or_default();
-        diagnostics.push(chart_warning(
-            codes::MISSING_VALUE,
-            format!("field `{name}` has {count} missing value(s); affected rows are skipped"),
-        ));
+        diagnostics
+            .push(chart_warning(codes::MISSING_VALUE, format!("field `{name}` has {count} missing value(s); affected rows are skipped")));
     }
     Ok(rows)
 }
@@ -337,8 +327,7 @@ fn project_rows(
 fn aggregate_rows(spec: &ChartSpec, channel: Channel, rows: Vec<Row>, diagnostics: &mut Vec<Diagnostic>) -> Vec<Row> {
     let encoding = spec.encoding.channel(channel).expect("a measured channel is always bound");
     let aggregate_kind = encoding.aggregate.expect("a measured channel always declares an aggregate");
-    let observations: Vec<Observation> =
-        rows.iter().map(|row| Observation::new(row.keys(Some(channel)), row.get(channel).cloned())).collect();
+    let observations: Vec<Observation> = rows.iter().map(|row| Observation::new(row.keys(Some(channel)), row.get(channel).cloned())).collect();
     let aggregated = aggregate(&observations, aggregate_kind);
 
     let mut output = Vec::with_capacity(aggregated.len());
@@ -362,10 +351,7 @@ fn aggregate_rows(spec: &ChartSpec, channel: Channel, rows: Vec<Row>, diagnostic
         output.push(row);
     }
     if dropped > 0 {
-        diagnostics.push(chart_warning(
-            codes::MISSING_VALUE,
-            format!("{dropped} aggregated group(s) have no numeric value and were skipped"),
-        ));
+        diagnostics.push(chart_warning(codes::MISSING_VALUE, format!("{dropped} aggregated group(s) have no numeric value and were skipped")));
     }
     output
 }
@@ -441,10 +427,7 @@ fn train_channel(
                     if domain.is_none() && collapsed(&values) {
                         diagnostics.push(chart_warning(
                             codes::DEGENERATE_DOMAIN,
-                            format!(
-                                "the `{}` channel has one distinct value; its linear domain was expanded",
-                                channel.as_str()
-                            ),
+                            format!("the `{}` channel has one distinct value; its linear domain was expanded", channel.as_str()),
                         ));
                     }
                     // Vega semantics: a bar or area measures from the origin,
@@ -482,10 +465,9 @@ fn train_channel(
                     }
                     Ok(Scale::Point(train_point(&categories, range, padding)))
                 }
-                ScaleSpec::Auto | ScaleSpec::Nominal => Err(ChartError::new(
-                    codes::INVALID_SCALE,
-                    format!("the `{}` channel cannot use a nominal scale", channel.as_str()),
-                )),
+                ScaleSpec::Auto | ScaleSpec::Nominal => {
+                    Err(ChartError::new(codes::INVALID_SCALE, format!("the `{}` channel cannot use a nominal scale", channel.as_str())))
+                }
             }
         }
     }
@@ -526,11 +508,7 @@ fn train_transformed(
             if min == max {
                 diagnostics.push(chart_warning(
                     codes::DEGENERATE_DOMAIN,
-                    format!(
-                        "the `{}` channel has one distinct value; its {} domain was expanded",
-                        channel.as_str(),
-                        transfer.as_str()
-                    ),
+                    format!("the `{}` channel has one distinct value; its {} domain was expanded", channel.as_str(), transfer.as_str()),
                 ));
                 match transfer {
                     Transfer::Log => (min * 0.5, max * 2.0),
@@ -616,9 +594,10 @@ fn position_of(row: &Row, scales: &[ChartScale]) -> Option<Point> {
 }
 
 fn numeric(row: &Row, channel: Channel) -> Result<f64, ChartError> {
-    row.get(channel).and_then(Value::as_number).filter(|value| value.is_finite()).ok_or_else(|| {
-        ChartError::new(codes::TYPE_MISMATCH, format!("the `{}` channel needs a finite numeric value", channel.as_str()))
-    })
+    row.get(channel)
+        .and_then(Value::as_number)
+        .filter(|value| value.is_finite())
+        .ok_or_else(|| ChartError::new(codes::TYPE_MISMATCH, format!("the `{}` channel needs a finite numeric value", channel.as_str())))
 }
 
 fn color_for(row: &Row, scales: &[ChartScale], paints: PaintDefaults) -> Color {
@@ -741,11 +720,10 @@ fn build_bars(
             let baseline = baseline_position(y_scale).expect("a numeric scale has a baseline");
             for (index, row) in rows.iter().enumerate() {
                 let category = row.get(Channel::X).map(Value::label).unwrap_or_default();
-                let slot_start = band.position(&category).ok_or_else(|| {
-                    ChartError::new(codes::INVALID_SPEC, format!("category `{category}` is missing from the band scale"))
-                })?;
-                let (offset, width) =
-                    dodge.as_ref().and_then(|dodge| dodge.slot(row, band.band_width)).unwrap_or((0.0, band.band_width));
+                let slot_start = band
+                    .position(&category)
+                    .ok_or_else(|| ChartError::new(codes::INVALID_SPEC, format!("category `{category}` is missing from the band scale")))?;
+                let (offset, width) = dodge.as_ref().and_then(|dodge| dodge.slot(row, band.band_width)).unwrap_or((0.0, band.band_width));
                 let position = y_scale.map_number(numeric(row, Channel::Y)?).expect("the guard checked a numeric scale");
                 let rect = Rect::new(slot_start + offset, position.min(baseline), width, (position - baseline).abs());
                 marks.push(MarkInstance {
@@ -761,11 +739,10 @@ fn build_bars(
             let baseline = baseline_position(x_scale).expect("a numeric scale has a baseline");
             for (index, row) in rows.iter().enumerate() {
                 let category = row.get(Channel::Y).map(Value::label).unwrap_or_default();
-                let slot_start = band.position(&category).ok_or_else(|| {
-                    ChartError::new(codes::INVALID_SPEC, format!("category `{category}` is missing from the band scale"))
-                })?;
-                let (offset, width) =
-                    dodge.as_ref().and_then(|dodge| dodge.slot(row, band.band_width)).unwrap_or((0.0, band.band_width));
+                let slot_start = band
+                    .position(&category)
+                    .ok_or_else(|| ChartError::new(codes::INVALID_SPEC, format!("category `{category}` is missing from the band scale")))?;
+                let (offset, width) = dodge.as_ref().and_then(|dodge| dodge.slot(row, band.band_width)).unwrap_or((0.0, band.band_width));
                 let position = x_scale.map_number(numeric(row, Channel::X)?).expect("the guard checked a numeric scale");
                 let rect = Rect::new(position.min(baseline), slot_start + offset, (position - baseline).abs(), width);
                 marks.push(MarkInstance {
@@ -787,13 +764,7 @@ fn build_bars(
     Ok(())
 }
 
-fn build_points(
-    rows: &[Row],
-    scales: &[ChartScale],
-    options: &ChartOptions,
-    paints: PaintDefaults,
-    marks: &mut Vec<MarkInstance>,
-) {
+fn build_points(rows: &[Row], scales: &[ChartScale], options: &ChartOptions, paints: PaintDefaults, marks: &mut Vec<MarkInstance>) {
     for (index, row) in rows.iter().enumerate() {
         let Some(center) = position_of(row, scales)
         else {
@@ -941,12 +912,7 @@ fn build_rules(
     Ok(())
 }
 
-fn build_rects(
-    rows: &[Row],
-    scales: &[ChartScale],
-    paints: PaintDefaults,
-    marks: &mut Vec<MarkInstance>,
-) -> Result<(), ChartError> {
+fn build_rects(rows: &[Row], scales: &[ChartScale], paints: PaintDefaults, marks: &mut Vec<MarkInstance>) -> Result<(), ChartError> {
     let x_band = find_scale(scales, Channel::X).and_then(Scale::band);
     let y_band = find_scale(scales, Channel::Y).and_then(Scale::band);
     let (Some(x_band), Some(y_band)) = (x_band, y_band)
@@ -956,18 +922,16 @@ fn build_rects(
     for (index, row) in rows.iter().enumerate() {
         let x_label = row.get(Channel::X).map(Value::label).unwrap_or_default();
         let y_label = row.get(Channel::Y).map(Value::label).unwrap_or_default();
-        let x = x_band.position(&x_label).ok_or_else(|| {
-            ChartError::new(codes::INVALID_SPEC, format!("category `{x_label}` is missing from the x band scale"))
-        })?;
-        let y = y_band.position(&y_label).ok_or_else(|| {
-            ChartError::new(codes::INVALID_SPEC, format!("category `{y_label}` is missing from the y band scale"))
-        })?;
+        let x = x_band
+            .position(&x_label)
+            .ok_or_else(|| ChartError::new(codes::INVALID_SPEC, format!("category `{x_label}` is missing from the x band scale")))?;
+        let y = y_band
+            .position(&y_label)
+            .ok_or_else(|| ChartError::new(codes::INVALID_SPEC, format!("category `{y_label}` is missing from the y band scale")))?;
         // A y axis runs bottom-to-top, so its band width is negative and the
         // recorded position is the band's lower edge. Normalize the rectangle.
-        let (x, width) =
-            if x_band.band_width < 0.0 { (x + x_band.band_width, -x_band.band_width) } else { (x, x_band.band_width) };
-        let (y, height) =
-            if y_band.band_width < 0.0 { (y + y_band.band_width, -y_band.band_width) } else { (y, y_band.band_width) };
+        let (x, width) = if x_band.band_width < 0.0 { (x + x_band.band_width, -x_band.band_width) } else { (x, x_band.band_width) };
+        let (y, height) = if y_band.band_width < 0.0 { (y + y_band.band_width, -y_band.band_width) } else { (y, y_band.band_width) };
         marks.push(MarkInstance {
             id: format!("chart-rect-{index}"),
             mark: Mark::Rect,
@@ -979,12 +943,7 @@ fn build_rects(
     Ok(())
 }
 
-fn build_ticks(
-    rows: &[Row],
-    scales: &[ChartScale],
-    paints: PaintDefaults,
-    marks: &mut Vec<MarkInstance>,
-) -> Result<(), ChartError> {
+fn build_ticks(rows: &[Row], scales: &[ChartScale], paints: PaintDefaults, marks: &mut Vec<MarkInstance>) -> Result<(), ChartError> {
     let x = find_scale(scales, Channel::X);
     let y = find_scale(scales, Channel::Y);
     let half = TICK_MARK_LENGTH * 0.5;
@@ -1123,11 +1082,7 @@ impl Row {
     }
 
     fn keys(&self, measure: Option<Channel>) -> Vec<Value> {
-        Channel::ALL
-            .iter()
-            .filter(|channel| Some(**channel) != measure)
-            .filter_map(|channel| self.get(*channel).cloned())
-            .collect()
+        Channel::ALL.iter().filter(|channel| Some(**channel) != measure).filter_map(|channel| self.get(*channel).cloned()).collect()
     }
 }
 

@@ -115,17 +115,14 @@ fn unknown_command_stays_opaque_and_records_loss() {
 #[test]
 fn unknown_environment_stays_opaque() {
     let graph = import_tex_bytes("unknown_env.tex", "\\begin{mystery}payload\\end{mystery}\n").unwrap();
-    assert!(
-        blocks(&graph)
-            .iter()
-            .any(|node| matches!(&node.block, Block::Opaque { kind, .. } if kind == "tex.environment.mystery"))
-    );
+    assert!(blocks(&graph).iter().any(|node| matches!(&node.block, Block::Opaque { kind, .. } if kind == "tex.environment.mystery")));
     assert!(graph.coverage.loss.iter().any(|loss| loss.code == "import.tex.unknown_environment"));
 }
 
 #[test]
 fn unordered_and_ordered_lists_lower_with_numbers() {
-    let text = "\\begin{itemize}\n\\item One\n\\item Two\n\\end{itemize}\n\n\\begin{enumerate}\n\\item First\n\\item Second\n\\end{enumerate}\n";
+    let text =
+        "\\begin{itemize}\n\\item One\n\\item Two\n\\end{itemize}\n\n\\begin{enumerate}\n\\item First\n\\item Second\n\\end{enumerate}\n";
     let graph = import_tex_bytes("lists.tex", text).unwrap();
     let lists: Vec<&Block> = blocks(&graph)
         .iter()
@@ -286,9 +283,11 @@ fn nested_left_right_pairs_keep_inner_structure() {
 #[test]
 fn limits_marker_stays_adjacent_to_its_operator() {
     let graph = import_tex_bytes("limits.tex", "\\sum\\limits_{i=1}^{n}\n").unwrap();
-    assert!(blocks(&graph).iter().any(
-        |node| matches!(&node.block, Block::Opaque { kind, payload_hint, .. } if kind == "tex.sum" && payload_hint == "\\sum")
-    ));
+    assert!(
+        blocks(&graph)
+            .iter()
+            .any(|node| matches!(&node.block, Block::Opaque { kind, payload_hint, .. } if kind == "tex.sum" && payload_hint == "\\sum"))
+    );
 
     let inlines = paragraph_inlines(&graph);
     let marker = inlines.first().expect("limits marker inline");
@@ -309,9 +308,11 @@ fn limits_marker_stays_adjacent_to_its_operator() {
 #[test]
 fn nolimits_marker_records_the_nolimits_variant() {
     let graph = import_tex_bytes("nolimits.tex", "\\int\\nolimits_0^1\n").unwrap();
-    assert!(blocks(&graph).iter().any(
-        |node| matches!(&node.block, Block::Opaque { kind, payload_hint, .. } if kind == "tex.int" && payload_hint == "\\int")
-    ));
+    assert!(
+        blocks(&graph)
+            .iter()
+            .any(|node| matches!(&node.block, Block::Opaque { kind, payload_hint, .. } if kind == "tex.int" && payload_hint == "\\int"))
+    );
 
     let inlines = paragraph_inlines(&graph);
     let marker = inlines.first().expect("nolimits marker inline");
@@ -354,10 +355,7 @@ fn math_environments_lower_to_math_blocks_with_source_spans() {
     let graph = import_tex_bytes("environments.tex", text).unwrap();
     let maths = math_blocks(&graph);
     assert_eq!(maths.len(), 2, "each math environment becomes one math block");
-    assert!(
-        blocks(&graph).iter().all(|node| !matches!(&node.block, Block::Opaque { .. })),
-        "math environments must not stay opaque"
-    );
+    assert!(blocks(&graph).iter().all(|node| !matches!(&node.block, Block::Opaque { .. })), "math environments must not stay opaque");
 
     let (aligned, aligned_id, _) = &maths[0];
     assert!(aligned.starts_with("\\begin{aligned}"));
@@ -393,13 +391,8 @@ fn numbered_math_environments_record_the_missing_number_anchor() {
         ]
     );
 
-    let numbering: Vec<&str> = graph
-        .coverage
-        .loss
-        .iter()
-        .filter(|loss| loss.code == "import.tex.math_numbering")
-        .map(|loss| loss.message.as_str())
-        .collect();
+    let numbering: Vec<&str> =
+        graph.coverage.loss.iter().filter(|loss| loss.code == "import.tex.math_numbering").map(|loss| loss.message.as_str()).collect();
     assert_eq!(numbering.len(), 2, "only the unstarred equation and align carry a number");
     assert!(numbering.iter().any(|message| message.contains("align`")));
     assert!(numbering.iter().any(|message| message.contains("equation`")));
@@ -613,10 +606,7 @@ fn math_style_commands_outside_math_source_are_dropped_silently() {
         "Pre formula text.\n\n\\displaystyle\n\\textstyle\n\\scriptstyle\n\\scriptscriptstyle\n\nPost formula text.\n",
     )
     .unwrap();
-    assert!(
-        blocks(&graph).iter().all(|node| !matches!(&node.block, Block::Opaque { .. })),
-        "math style commands must not stay opaque"
-    );
+    assert!(blocks(&graph).iter().all(|node| !matches!(&node.block, Block::Opaque { .. })), "math style commands must not stay opaque");
     assert_eq!(loss_count(&graph, "import.tex.math_style_command"), 0);
 }
 
@@ -627,10 +617,7 @@ fn math_font_commands_outside_math_source_are_dropped_silently() {
         "See \\mathbf{A} and \\mathit{B} and \\mathrm{C} and \\mathcal{D} and \\mathbb{E} and \\mathfrak{F}.\n",
     )
     .unwrap();
-    assert!(
-        blocks(&graph).iter().all(|node| !matches!(&node.block, Block::Opaque { .. })),
-        "math font commands must not stay opaque"
-    );
+    assert!(blocks(&graph).iter().all(|node| !matches!(&node.block, Block::Opaque { .. })), "math font commands must not stay opaque");
     assert_eq!(loss_count(&graph, "import.tex.math_font_command"), 0);
 }
 
@@ -662,10 +649,7 @@ fn text_mode_space_commands_keep_their_authored_distinction() {
     let spaces: Vec<String> = paragraph_inlines(&graph).into_iter().filter_map(space_value).collect();
     assert_eq!(spaces, vec!["thin", "medium", "thick", "negative", "quad", "double-quad"]);
     assert_eq!(loss_count(&graph, "import.tex.space_marker"), 6, "one loss per authored spacing command");
-    assert!(
-        blocks(&graph).iter().all(|node| !matches!(&node.block, Block::Opaque { .. })),
-        "spacing commands must not stay opaque"
-    );
+    assert!(blocks(&graph).iter().all(|node| !matches!(&node.block, Block::Opaque { .. })), "spacing commands must not stay opaque");
     assert!(!has_loss(&graph, "import.tex.unsupported_command"));
 }
 
@@ -724,10 +708,7 @@ fn title_and_author_fill_document_metadata() {
     assert_eq!(graph.metadata.authors, vec!["A. Chen".to_string(), "B. Wu".to_string()]);
     assert!(has_loss(&graph, "import.tex.metadata_date"));
     assert!(has_loss(&graph, "import.tex.maketitle_dropped"));
-    assert!(
-        blocks(&graph).iter().all(|node| !matches!(&node.block, Block::Opaque { .. })),
-        "metadata commands must not stay opaque"
-    );
+    assert!(blocks(&graph).iter().all(|node| !matches!(&node.block, Block::Opaque { .. })), "metadata commands must not stay opaque");
 }
 
 #[test]
@@ -806,19 +787,15 @@ fn footnote_becomes_numbered_note_with_lowered_body() {
     let notes: Vec<(String, String)> = paragraph_inlines(&graph)
         .into_iter()
         .filter_map(|inline| match inline {
-            Inline::Note { label, display } => Some((
-                label.clone(),
-                display.as_ref().map(|display| display.iter().map(Inline::plain_text).collect()).unwrap_or_default(),
-            )),
+            Inline::Note { label, display } => {
+                Some((label.clone(), display.as_ref().map(|display| display.iter().map(Inline::plain_text).collect()).unwrap_or_default()))
+            }
             _ => None,
         })
         .collect();
     assert_eq!(notes, vec![("1".to_string(), "A note.".to_string())]);
     assert!(has_loss(&graph, "import.tex.footnote_body"));
-    assert!(
-        blocks(&graph).iter().all(|node| !matches!(&node.block, Block::Opaque { .. })),
-        "footnote must not stay an opaque block"
-    );
+    assert!(blocks(&graph).iter().all(|node| !matches!(&node.block, Block::Opaque { .. })), "footnote must not stay an opaque block");
     assert!(graph.validate().is_valid());
 }
 

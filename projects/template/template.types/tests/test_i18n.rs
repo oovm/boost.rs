@@ -115,4 +115,3 @@ fn test_i18n_context_with_custom_cache() {
     let result2 = i18n.t("test2", None).unwrap();
     assert_eq!(result2, "Test 2");
 }
-

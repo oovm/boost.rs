@@ -445,12 +445,7 @@ impl DocumentGraph {
     }
 }
 
-fn endpoint_exists(
-    endpoint: &RelationEndpoint,
-    document_id: DocumentId,
-    node_ids: &HashSet<NodeId>,
-    asset_ids: &HashSet<AssetId>,
-) -> bool {
+fn endpoint_exists(endpoint: &RelationEndpoint, document_id: DocumentId, node_ids: &HashSet<NodeId>, asset_ids: &HashSet<AssetId>) -> bool {
     match endpoint {
         RelationEndpoint::Node(id) => node_ids.contains(id),
         RelationEndpoint::Document(id) => *id == document_id,
@@ -617,11 +612,7 @@ fn check_metadata_entries(entries: &[MetadataEntry], path: &str, top_level: bool
             report.issues.push(ValidationIssue::ReservedMetadataKey { key: entry.key.clone() });
         }
         if let Some(first) = seen.get(entry.key.as_str()) {
-            report.issues.push(ValidationIssue::DuplicateMetadataKey {
-                key: entry.key.clone(),
-                first: *first,
-                repeated: index,
-            });
+            report.issues.push(ValidationIssue::DuplicateMetadataKey { key: entry.key.clone(), first: *first, repeated: index });
         }
         else {
             seen.insert(entry.key.as_str(), index);

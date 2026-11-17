@@ -4,9 +4,7 @@ use document_formats::{
 };
 use document_ir::{Block, BreakKind, DocumentGraph, DocumentId, Inline, RelationKind, SemanticStatus, SourceKind};
 
-fn table(
-    graph: &DocumentGraph,
-) -> (&Option<String>, &[document_ir::TableRow], &[document_ir::TableRow], &[document_ir::TableRow]) {
+fn table(graph: &DocumentGraph) -> (&Option<String>, &[document_ir::TableRow], &[document_ir::TableRow], &[document_ir::TableRow]) {
     graph
         .blocks
         .iter()
@@ -124,11 +122,7 @@ fn html_round_trips_style_script_and_form_markup() {
         if loss.code.starts_with("import.html.raw_") {
             let span = imported.loss_span(index).unwrap_or_else(|| panic!("{} must carry an authored span", loss.code));
             assert!(span.end > span.start, "{} spans an empty range: {span:?}", loss.code);
-            assert!(
-                source.get(span.start as usize..span.end as usize).is_some(),
-                "{} span points outside the source: {span:?}",
-                loss.code
-            );
+            assert!(source.get(span.start as usize..span.end as usize).is_some(), "{} span points outside the source: {span:?}", loss.code);
         }
     }
 }
@@ -145,8 +139,7 @@ fn html_import_reads_rendered_diagram_figures_without_leaking_svg_text() {
     assert_eq!(single_diagram(&reopened), ("mermaid".to_string(), source.to_string()));
     assert!(
         !reopened.blocks.iter().any(|node| match &node.block {
-            Block::Paragraph { content } =>
-                content.iter().map(Inline::plain_text).collect::<String>().contains("rendered label"),
+            Block::Paragraph { content } => content.iter().map(Inline::plain_text).collect::<String>().contains("rendered label"),
             _ => false,
         }),
         "svg payload text must not leak into paragraphs: {:?}",
@@ -171,29 +164,21 @@ fn single_diagram(graph: &DocumentGraph) -> (String, String) {
 fn html_import_promotes_mermaid_container_classes_to_diagram_blocks() {
     let flowchart = "flowchart TD\n  A[Start] --> B{Done?}\n  B -->|yes| C[Stop]";
 
-    let div = import_html_text(
-        "mermaid-div.html",
-        &format!("<body><article><div class=\"mermaid\">\n{flowchart}\n</div></article></body>"),
-    )
-    .expect("import div container");
+    let div = import_html_text("mermaid-div.html", &format!("<body><article><div class=\"mermaid\">\n{flowchart}\n</div></article></body>"))
+        .expect("import div container");
     assert_eq!(single_diagram(&div), ("mermaid".to_string(), flowchart.to_string()));
 
-    let pre = import_html_text("mermaid-pre.html", &format!("<body><pre class=\"mermaid\">\n{flowchart}\n</pre></body>"))
-        .expect("import pre");
+    let pre = import_html_text("mermaid-pre.html", &format!("<body><pre class=\"mermaid\">\n{flowchart}\n</pre></body>")).expect("import pre");
     assert_eq!(single_diagram(&pre), ("mermaid".to_string(), flowchart.to_string()));
 
-    let fenced = import_html_text(
-        "mermaid-fenced.html",
-        &format!("<body><pre><code class=\"language-mermaid\">{flowchart}</code></pre></body>"),
-    )
-    .expect("import fenced code");
+    let fenced =
+        import_html_text("mermaid-fenced.html", &format!("<body><pre><code class=\"language-mermaid\">{flowchart}</code></pre></body>"))
+            .expect("import fenced code");
     assert_eq!(single_diagram(&fenced), ("mermaid".to_string(), flowchart.to_string()));
 
-    let shouted = import_html_text(
-        "mermaid-shouted.html",
-        &format!("<body><pre><code class=\"LANGUAGE-MERMAID\">{flowchart}</code></pre></body>"),
-    )
-    .expect("import upper-case marker");
+    let shouted =
+        import_html_text("mermaid-shouted.html", &format!("<body><pre><code class=\"LANGUAGE-MERMAID\">{flowchart}</code></pre></body>"))
+            .expect("import upper-case marker");
     assert_eq!(single_diagram(&shouted), ("mermaid".to_string(), flowchart.to_string()));
 }
 
@@ -235,11 +220,7 @@ fn html_import_keeps_image_only_mermaid_container_as_bitmap_with_loss() {
     assert_eq!(graph.assets.len(), 1, "the bitmap must be registered as an asset: {:?}", graph.assets);
     assert_eq!(graph.assets[0].source.as_deref(), Some("assets/flow.png"));
     assert!(
-        graph
-            .coverage
-            .loss
-            .iter()
-            .any(|loss| loss.code == "import.html.empty_diagram_container" && loss.status == SemanticStatus::Partial),
+        graph.coverage.loss.iter().any(|loss| loss.code == "import.html.empty_diagram_container" && loss.status == SemanticStatus::Partial),
         "the empty container must surface a structured loss: {:?}",
         graph.coverage.loss
     );
@@ -247,11 +228,8 @@ fn html_import_keeps_image_only_mermaid_container_as_bitmap_with_loss() {
 
 #[test]
 fn html_import_keeps_image_only_mermaid_pre_on_the_default_path() {
-    let graph = import_html_text(
-        "mermaid-pre-bitmap.html",
-        r#"<body><pre class="mermaid"><img src="chart.png" alt="chart"></pre></body>"#,
-    )
-    .expect("import image-only mermaid pre");
+    let graph = import_html_text("mermaid-pre-bitmap.html", r#"<body><pre class="mermaid"><img src="chart.png" alt="chart"></pre></body>"#)
+        .expect("import image-only mermaid pre");
 
     assert!(
         !graph.blocks.iter().any(|node| matches!(node.block, Block::Diagram { .. } | Block::Code { .. })),
@@ -266,24 +244,18 @@ fn html_import_keeps_image_only_mermaid_pre_on_the_default_path() {
 fn html_import_keeps_plain_images_and_textual_mermaid_containers_unchanged() {
     // Plain images keep their exact behavior: no diagram promotion, no empty
     // container loss, and no attribute wrapper when no size was authored.
-    let plain =
-        import_html_text("plain-image.html", r#"<body><p><img src="a.png" alt="A"></p></body>"#).expect("import plain image");
+    let plain = import_html_text("plain-image.html", r#"<body><p><img src="a.png" alt="A"></p></body>"#).expect("import plain image");
     let Block::Paragraph { content } = &plain.blocks[0].block
     else {
         panic!("expected a paragraph: {:?}", plain.blocks)
     };
-    assert!(
-        matches!(&content[0], Inline::Image { source, .. } if source == "a.png"),
-        "a size-less image stays unwrapped: {:?}",
-        content
-    );
+    assert!(matches!(&content[0], Inline::Image { source, .. } if source == "a.png"), "a size-less image stays unwrapped: {:?}", content);
     assert!(!plain.coverage.loss.iter().any(|loss| loss.code == "import.html.empty_diagram_container"));
 
     // Textual mermaid containers still promote with their authored source.
     let flowchart = "flowchart TD\n  A --> B";
-    let textual =
-        import_html_text("mermaid-textual.html", &format!("<body><div class=\"mermaid\">\n{flowchart}\n</div></body>"))
-            .expect("import textual");
+    let textual = import_html_text("mermaid-textual.html", &format!("<body><div class=\"mermaid\">\n{flowchart}\n</div></body>"))
+        .expect("import textual");
     assert_eq!(single_diagram(&textual), ("mermaid".to_string(), flowchart.to_string()));
     assert!(!textual.coverage.loss.iter().any(|loss| loss.code == "import.html.empty_diagram_container"));
 }
@@ -300,11 +272,7 @@ fn block_images(block: &Block) -> Vec<(String, Vec<(String, String)>)> {
     images
 }
 
-fn collect_inline_images(
-    inlines: &[Inline],
-    inherited: &[(String, String)],
-    images: &mut Vec<(String, Vec<(String, String)>)>,
-) {
+fn collect_inline_images(inlines: &[Inline], inherited: &[(String, String)], images: &mut Vec<(String, Vec<(String, String)>)>) {
     for inline in inlines {
         match inline {
             Inline::Image { source, .. } => images.push((source.clone(), inherited.to_vec())),
@@ -370,9 +338,8 @@ fn html_import_keeps_block_svg_verbatim_and_reopens_it() {
 
 #[test]
 fn html_import_keeps_non_diagram_classes_on_the_default_path() {
-    let lookalike =
-        import_html_text("mermaid-lookalike.html", "<body><div class=\"mermaid-theme\"><p>not a diagram</p></div></body>")
-            .expect("import lookalike");
+    let lookalike = import_html_text("mermaid-lookalike.html", "<body><div class=\"mermaid-theme\"><p>not a diagram</p></div></body>")
+        .expect("import lookalike");
     assert!(single_diagram_opt(&lookalike).is_none(), "substring classes must not match: {:?}", lookalike.blocks);
 
     let rust = import_html_text("rust-code.html", "<body><pre><code class=\"language-rust\">fn main() {}</code></pre></body>")
@@ -398,8 +365,7 @@ fn html_mermaid_containers_reopen_through_markdown_as_diagrams() {
 
     let sequence = "sequenceDiagram\n  Alice->>Bob: Hi";
     let graph =
-        import_html_text("mermaid-roundtrip.html", &format!("<body><div class=\"mermaid\">\n{sequence}\n</div></body>"))
-            .expect("import html");
+        import_html_text("mermaid-roundtrip.html", &format!("<body><div class=\"mermaid\">\n{sequence}\n</div></body>")).expect("import html");
     assert_eq!(single_diagram(&graph).0, "mermaid");
 
     let markdown = export_markdown(&graph).expect("export markdown");
@@ -517,19 +483,12 @@ fn html_import_lowers_common_blocks_and_reports_partial_surface() {
     assert!(
         matches!(&graph.blocks[1].block, Block::Paragraph { content } if content.iter().any(|inline| matches!(inline, Inline::Styled { style, .. } if style == "bold")))
     );
-    assert!(
-        graph
-            .coverage
-            .loss
-            .iter()
-            .any(|loss| loss.code == "import.html.partial_coverage" && loss.status == SemanticStatus::Partial)
-    );
+    assert!(graph.coverage.loss.iter().any(|loss| loss.code == "import.html.partial_coverage" && loss.status == SemanticStatus::Partial));
 }
 
 #[test]
 fn html_import_keeps_interactive_markup_as_raw_html() {
-    let graph = import_html_text("interactive.html", "<body><script>alert(1)</script><form><input></form></body>")
-        .expect("import html");
+    let graph = import_html_text("interactive.html", "<body><script>alert(1)</script><form><input></form></body>").expect("import html");
     for code in ["import.html.raw_script", "import.html.raw_form", "import.html.raw_form_control"] {
         assert!(graph.coverage.loss.iter().any(|loss| loss.code == code), "missing {code}: {:?}", graph.coverage.loss);
     }
@@ -547,11 +506,9 @@ fn html_import_keeps_interactive_markup_as_raw_html() {
 
 #[test]
 fn html_import_does_not_drop_sibling_blocks_or_nested_list_content() {
-    let graph = import_html_text(
-        "nested.html",
-        r#"<body><div><p>first</p><p>second</p><ul><li>outer<ul><li>inner</li></ul></li></ul></div></body>"#,
-    )
-    .expect("import html");
+    let graph =
+        import_html_text("nested.html", r#"<body><div><p>first</p><p>second</p><ul><li>outer<ul><li>inner</li></ul></li></ul></div></body>"#)
+            .expect("import html");
     assert_eq!(graph.blocks.iter().filter(|node| matches!(node.block, Block::Paragraph { .. })).count(), 2);
     let list = graph
         .blocks
@@ -603,8 +560,8 @@ fn html_import_lowers_breaks_to_a_first_class_inline() {
 
 #[test]
 fn html_import_preserves_authored_inline_identity_and_classes() {
-    let graph = import_html_text("attributed.html", r#"<body><p><span id="anchor" class="lead note">Marked</span></p></body>"#)
-        .expect("import html");
+    let graph =
+        import_html_text("attributed.html", r#"<body><p><span id="anchor" class="lead note">Marked</span></p></body>"#).expect("import html");
     let Block::Paragraph { content } = &graph.blocks[0].block
     else {
         panic!("paragraph expected")
@@ -634,10 +591,7 @@ fn html_import_records_dropped_inline_style_declarations() {
         .expect("inline CSS must be recorded as a loss");
     assert_eq!(loss.status, SemanticStatus::Unsupported);
     let span = graph.loss_span(index).expect("the loss keeps the authored span");
-    assert!(
-        source.get(span.start as usize..span.end as usize).is_some(),
-        "the recorded span must point inside the source: {span:?}"
-    );
+    assert!(source.get(span.start as usize..span.end as usize).is_some(), "the recorded span must point inside the source: {span:?}");
 
     let Block::Paragraph { content } = &graph.blocks[0].block
     else {
@@ -652,11 +606,8 @@ fn html_import_records_dropped_inline_style_declarations() {
 
 #[test]
 fn html_import_maps_inline_styles_to_canonical_ir_names() {
-    let graph = import_html_text(
-        "styles.html",
-        "<body><p><s>gone</s> <del>old</del> <u>under</u> <sup>up</sup> <sub>down</sub></p></body>",
-    )
-    .expect("import html");
+    let graph = import_html_text("styles.html", "<body><p><s>gone</s> <del>old</del> <u>under</u> <sup>up</sup> <sub>down</sub></p></body>")
+        .expect("import html");
     let Block::Paragraph { content } = &graph.blocks[0].block
     else {
         panic!("paragraph expected")
@@ -664,9 +615,7 @@ fn html_import_maps_inline_styles_to_canonical_ir_names() {
     let styles = content
         .iter()
         .filter_map(|inline| match inline {
-            Inline::Styled { style, children } => {
-                Some((style.as_str(), children.iter().map(Inline::plain_text).collect::<String>()))
-            }
+            Inline::Styled { style, children } => Some((style.as_str(), children.iter().map(Inline::plain_text).collect::<String>())),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -689,8 +638,7 @@ fn html_import_maps_inline_styles_to_canonical_ir_names() {
 
 #[test]
 fn html_import_registers_unresolved_image_and_reopens_export() {
-    let graph = import_html_text("image.html", r#"<body><p><img src="assets/picture.png" alt="Picture"></p></body>"#)
-        .expect("import html");
+    let graph = import_html_text("image.html", r#"<body><p><img src="assets/picture.png" alt="Picture"></p></body>"#).expect("import html");
     assert_eq!(graph.assets.len(), 1);
     assert_eq!(graph.relations[0].kind, RelationKind::Embeds);
     let output = export_html(&graph).expect("export html");
@@ -711,11 +659,7 @@ fn html_footnote_reference_and_endnotes_round_trip_through_markdown() {
 
     let reopened = import_html_text("footnote.html", &html).expect("import html");
     let markdown = export_markdown(&reopened).expect("export markdown");
-    assert_eq!(
-        markdown.trim_end(),
-        source.trim_end(),
-        "footnote round trip must preserve the authored definition byte for byte"
-    );
+    assert_eq!(markdown.trim_end(), source.trim_end(), "footnote round trip must preserve the authored definition byte for byte");
 
     let rebound = import_markdown_bytes("footnote-reopen.md", &markdown).expect("reopen markdown");
     assert!(matches!(
@@ -737,10 +681,7 @@ fn html_import_reads_pandoc_style_footnotes() {
     else {
         panic!("paragraph expected, got {:?}", graph.blocks)
     };
-    assert!(
-        content.iter().any(|inline| matches!(inline, Inline::Note { label, display: None } if label == "1")),
-        "{content:?}"
-    );
+    assert!(content.iter().any(|inline| matches!(inline, Inline::Note { label, display: None } if label == "1")), "{content:?}");
     assert!(graph.blocks.iter().any(|node| matches!(
         &node.block,
         Block::Opaque { kind, payload_hint, .. } if kind == "footnote_definition" && payload_hint == "[^1]: Body."
@@ -779,11 +720,8 @@ fn html_import_flattens_table_cell_spans_into_a_pipe_table() {
 
 #[test]
 fn html_import_refuses_invalid_cell_span_instead_of_collapsing_it() {
-    let graph = import_html_text(
-        "bad-span.html",
-        "<body><table><tr><td colspan=\"0\">a</td><td rowspan=\"wide\">b</td></tr></table></body>",
-    )
-    .expect("import html");
+    let graph = import_html_text("bad-span.html", "<body><table><tr><td colspan=\"0\">a</td><td rowspan=\"wide\">b</td></tr></table></body>")
+        .expect("import html");
     let (_, head, body, _) = table(&graph);
     let rows: Vec<&document_ir::TableRow> = head.iter().chain(body).collect();
     assert_eq!(rows[0].cells[0].colspan, 1);
@@ -796,8 +734,7 @@ fn html_import_refuses_invalid_cell_span_instead_of_collapsing_it() {
 
 #[test]
 fn html_import_lowers_definition_list_to_paragraphs_with_a_loss_code() {
-    let graph = import_html_text("definition-list.html", "<body><dl><dt>Term</dt><dd>Definition</dd></dl></body>")
-        .expect("import html");
+    let graph = import_html_text("definition-list.html", "<body><dl><dt>Term</dt><dd>Definition</dd></dl></body>").expect("import html");
     let texts = graph
         .blocks
         .iter()
@@ -808,11 +745,7 @@ fn html_import_lowers_definition_list_to_paragraphs_with_a_loss_code() {
         .collect::<Vec<_>>();
     assert_eq!(texts, vec!["Term".to_string(), "Definition".to_string()]);
     assert!(
-        graph
-            .coverage
-            .loss
-            .iter()
-            .any(|loss| loss.code == "import.html.definition_list" && loss.status == SemanticStatus::Partial),
+        graph.coverage.loss.iter().any(|loss| loss.code == "import.html.definition_list" && loss.status == SemanticStatus::Partial),
         "{:?}",
         graph.coverage.loss
     );
@@ -864,11 +797,9 @@ fn nested_table_rows_do_not_leak_into_the_outer_table() {
 
 #[test]
 fn html_import_preserves_table_cell_blocks() {
-    let graph = import_html_text(
-        "cell-blocks.html",
-        "<body><table><tr><th>Head</th></tr><tr><td><p>one</p><p>two</p></td></tr></table></body>",
-    )
-    .expect("import html");
+    let graph =
+        import_html_text("cell-blocks.html", "<body><table><tr><th>Head</th></tr><tr><td><p>one</p><p>two</p></td></tr></table></body>")
+            .expect("import html");
     let (_, _, body, _) = table(&graph);
     let cell = &body[0].cells[0];
     assert_eq!(cell.children.len(), 2, "both authored paragraphs are cell blocks: {cell:?}");

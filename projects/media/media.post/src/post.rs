@@ -30,11 +30,7 @@ pub fn aces_filmic(x: f64) -> f64 {
 
 /// 线性 RGB → 显示 RGB（UCF `ton_tone_map`）。
 pub fn tone_map_rgb(color: LinearRgb) -> LinearRgb {
-    LinearRgb::new(
-        aces_filmic(color.r),
-        aces_filmic(color.g),
-        aces_filmic(color.b),
-    )
+    LinearRgb::new(aces_filmic(color.r), aces_filmic(color.g), aces_filmic(color.b))
 }
 
 fn luminance(c: LinearRgb) -> f64 {
@@ -50,7 +46,8 @@ pub fn extract_bright_pass(pixels: &[LinearRgb], threshold: f64) -> Vec<LinearRg
             if l > threshold {
                 let scale = (l - threshold) / l.max(1.0e-9);
                 px.scale(scale)
-            } else {
+            }
+            else {
                 LinearRgb::BLACK
             }
         })
@@ -80,30 +77,20 @@ fn multi_scale_bloom(src: &[LinearRgb], width: u32, height: u32) -> Vec<LinearRg
     let l0 = box_blur_3x3(src, width, height);
     let (w2, h2, down) = downsample_half(src, width, height);
     let l1 = if w2 > 0 && h2 > 0 {
-        upsample_add(
-            &box_blur_3x3(&down, w2, h2),
-            w2,
-            h2,
-            width,
-            height,
-            0.55,
-        )
-    } else {
+        upsample_add(&box_blur_3x3(&down, w2, h2), w2, h2, width, height, 0.55)
+    }
+    else {
         vec![LinearRgb::BLACK; src.len()]
     };
     let (w4, h4, down2) = downsample_half(&down, w2, h2);
     let l2 = if w4 > 0 && h4 > 0 {
         let mid = upsample_add(&box_blur_3x3(&down2, w4, h4), w4, h4, w2, h2, 1.0);
         upsample_add(&mid, w2, h2, width, height, 0.35)
-    } else {
+    }
+    else {
         vec![LinearRgb::BLACK; src.len()]
     };
-    src.iter()
-        .zip(l0.iter())
-        .zip(l1.iter())
-        .zip(l2.iter())
-        .map(|(((base, a), b), c)| base.add(*a).add(*b).add(*c))
-        .collect()
+    src.iter().zip(l0.iter()).zip(l1.iter()).zip(l2.iter()).map(|(((base, a), b), c)| base.add(*a).add(*b).add(*c)).collect()
 }
 
 fn downsample_half(src: &[LinearRgb], width: u32, height: u32) -> (u32, u32, Vec<LinearRgb>) {
@@ -128,14 +115,7 @@ fn downsample_half(src: &[LinearRgb], width: u32, height: u32) -> (u32, u32, Vec
     (w2, h2, out)
 }
 
-fn upsample_add(
-    src: &[LinearRgb],
-    src_w: u32,
-    src_h: u32,
-    dst_w: u32,
-    dst_h: u32,
-    weight: f64,
-) -> Vec<LinearRgb> {
+fn upsample_add(src: &[LinearRgb], src_w: u32, src_h: u32, dst_w: u32, dst_h: u32, weight: f64) -> Vec<LinearRgb> {
     let mut out = vec![LinearRgb::BLACK; (dst_w * dst_h) as usize];
     if src_w == 0 || src_h == 0 {
         return out;

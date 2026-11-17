@@ -20,8 +20,7 @@ use plotter_depiction::{
     spec::{Atom, Bond, BondOrder, Element, MoleculeSpec},
 };
 use plotter_types::{
-    Diagnostic, DiagnosticLabel, DiagnosticLocation, DiagnosticSeverity, LabelRole, Message, NAMESPACE, SourceRef, codes,
-    diagnostic,
+    Diagnostic, DiagnosticLabel, DiagnosticLocation, DiagnosticSeverity, LabelRole, Message, NAMESPACE, SourceRef, codes, diagnostic,
 };
 
 /// 诊断与标签里使用的源身份。
@@ -59,10 +58,7 @@ pub fn mdl_to_spec(source: &str) -> Result<LoweredStructure, DepictionError> {
             root.records.get(1).map(|record| span_of(&record.span)),
         );
     }
-    let record = root
-        .records
-        .first()
-        .ok_or_else(|| DepictionError::unsupported("the MDL source declares no record to depict"))?;
+    let record = root.records.first().ok_or_else(|| DepictionError::unsupported("the MDL source declares no record to depict"))?;
     let spec = lower_record(record, &mut diagnostics)?;
     Ok(LoweredStructure { spec, diagnostics })
 }
@@ -120,11 +116,7 @@ fn approximated(losses: &mut Vec<Diagnostic>, message: impl Into<String>, span: 
 
 /// 降级一条 MDL 记录。
 fn lower_record(record: &MdlRecord, diagnostics: &mut Vec<Diagnostic>) -> Result<MoleculeSpec, DepictionError> {
-    approximated(
-        diagnostics,
-        "authored 2D/3D coordinates are replaced by the deterministic depiction layout",
-        Some(span_of(&record.span)),
-    );
+    approximated(diagnostics, "authored 2D/3D coordinates are replaced by the deterministic depiction layout", Some(span_of(&record.span)));
     let mut molecule = MoleculeSpec::new();
     for atom in &record.atoms {
         if atom.mass_difference != 0 {
@@ -140,12 +132,7 @@ fn lower_record(record: &MdlRecord, diagnostics: &mut Vec<Diagnostic>) -> Result
         if atom.stereo != 0 {
             approximated(diagnostics, "atom stereo parity is not depicted", Some(span_of(&atom.span)));
         }
-        molecule.push_atom(Atom {
-            element: element_from_symbol(&atom.element),
-            charge: atom.charge,
-            isotope: None,
-            hydrogens: None,
-        });
+        molecule.push_atom(Atom { element: element_from_symbol(&atom.element), charge: atom.charge, isotope: None, hydrogens: None });
     }
     for bond in &record.bonds {
         molecule.push_bond(lower_bond(bond, record, diagnostics)?);
@@ -158,11 +145,8 @@ fn lower_record(record: &MdlRecord, diagnostics: &mut Vec<Diagnostic>) -> Result
 fn lower_bond(bond: &MdlBond, record: &MdlRecord, diagnostics: &mut Vec<Diagnostic>) -> Result<Bond, DepictionError> {
     let count = record.atoms.len();
     if bond.from == 0 || bond.to == 0 || bond.from > count || bond.to > count {
-        return Err(DepictionError::unsupported(format!(
-            "bond endpoint ({}, {}) is outside the {count} declared atoms",
-            bond.from, bond.to
-        ))
-        .with_span(span_of(&bond.span)));
+        return Err(DepictionError::unsupported(format!("bond endpoint ({}, {}) is outside the {count} declared atoms", bond.from, bond.to))
+            .with_span(span_of(&bond.span)));
     }
     if bond.stereo != 0 {
         approximated(diagnostics, "bond stereo parity is not depicted", Some(span_of(&bond.span)));
@@ -205,11 +189,7 @@ fn apply_properties(record: &MdlRecord, molecule: &mut MoleculeSpec, diagnostics
                     }
                 }
             }
-            kind => approximated(
-                diagnostics,
-                format!("property block `M  {kind}` is not depicted"),
-                Some(span_of(&property.span)),
-            ),
+            kind => approximated(diagnostics, format!("property block `M  {kind}` is not depicted"), Some(span_of(&property.span))),
         }
     }
 }

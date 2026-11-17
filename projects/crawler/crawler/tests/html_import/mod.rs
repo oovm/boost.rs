@@ -1,9 +1,7 @@
 //! Acceptance gate 1 fixtures for HTML import and link discovery.
 
 use crawler::{Extractor, FrontierQueue, HtmlExtractor, frontier_from_links, run_extract};
-use crawler_types::{
-    BodyStorage, ExtractBudget, ExtractContext, ExtractStatus, FetchArtifact, FrontierItem, TransportProvenance, site_key,
-};
+use crawler_types::{BodyStorage, ExtractBudget, ExtractContext, ExtractStatus, FetchArtifact, FrontierItem, TransportProvenance, site_key};
 use url::Url;
 
 fn fixture_artifact(html: &str, page: &str) -> FetchArtifact {

@@ -2,9 +2,7 @@
 
 use std::collections::HashMap;
 
-use document_formats::import::html::{
-    HtmlAssetSource, import_html_text, import_html_with_links, import_html_with_links_and_assets,
-};
+use document_formats::import::html::{HtmlAssetSource, import_html_text, import_html_with_links, import_html_with_links_and_assets};
 use document_ir::{Inline, SemanticStatus};
 
 struct Bytes(HashMap<String, Vec<u8>>);
@@ -23,9 +21,8 @@ fn png_bytes() -> Vec<u8> {
 fn captured_image_bytes_resolve_the_asset_with_a_content_identity() {
     let mut bytes = Bytes(HashMap::new());
     bytes.0.insert("assets/a.png".into(), png_bytes());
-    let graph =
-        import_html_with_links_and_assets("assets.html", r#"<body><p><img src="assets/a.png" alt="A"></p></body>"#, &bytes)
-            .expect("import with assets");
+    let graph = import_html_with_links_and_assets("assets.html", r#"<body><p><img src="assets/a.png" alt="A"></p></body>"#, &bytes)
+        .expect("import with assets");
 
     let asset = graph.document.assets.first().expect("image asset");
     assert_eq!(asset.status, SemanticStatus::Resolved);
@@ -38,19 +35,12 @@ fn captured_image_bytes_resolve_the_asset_with_a_content_identity() {
 
 #[test]
 fn missing_image_bytes_keep_the_asset_unresolved_and_raise_a_loss() {
-    let graph = import_html_text("assets.html", r#"<body><p><img src="assets/a.png" alt="A"></p></body>"#)
-        .expect("import without assets");
+    let graph = import_html_text("assets.html", r#"<body><p><img src="assets/a.png" alt="A"></p></body>"#).expect("import without assets");
     let asset = graph.assets.first().expect("image asset");
     assert_eq!(asset.status, SemanticStatus::Unresolved);
     assert!(asset.bytes.is_none());
     assert!(asset.content_identity.is_none());
-    assert!(
-        graph
-            .coverage
-            .loss
-            .iter()
-            .any(|loss| loss.code == "import.html.asset_unresolved" && loss.message.contains("assets/a.png"))
-    );
+    assert!(graph.coverage.loss.iter().any(|loss| loss.code == "import.html.asset_unresolved" && loss.message.contains("assets/a.png")));
 }
 
 #[test]
@@ -63,11 +53,8 @@ fn image_bytes_infer_the_media_type_when_the_target_has_no_extension() {
 
 #[test]
 fn srcset_without_src_selects_the_largest_candidate() {
-    let import = import_html_with_links(
-        "srcset.html",
-        r#"<body><img srcset="small.png 1x, large.png 3x, medium.png 2x" alt="S"></body>"#,
-    )
-    .expect("import");
+    let import = import_html_with_links("srcset.html", r#"<body><img srcset="small.png 1x, large.png 3x, medium.png 2x" alt="S"></body>"#)
+        .expect("import");
     let image_source = image_source(&import.document);
     assert_eq!(image_source, "large.png");
     assert_eq!(import.links.iter().filter(|link| link.role == document_formats::import::html::HtmlLinkRole::SrcSet).count(), 3);
@@ -75,15 +62,13 @@ fn srcset_without_src_selects_the_largest_candidate() {
 
 #[test]
 fn srcset_width_descriptors_select_the_widest_candidate() {
-    let import = import_html_with_links("srcset.html", r#"<body><img srcset="a.png 320w, b.png 1280w, c.png 640w"></body>"#)
-        .expect("import");
+    let import = import_html_with_links("srcset.html", r#"<body><img srcset="a.png 320w, b.png 1280w, c.png 640w"></body>"#).expect("import");
     assert_eq!(image_source(&import.document), "b.png");
 }
 
 #[test]
 fn authored_src_wins_over_srcset_candidates() {
-    let import =
-        import_html_with_links("srcset.html", r#"<body><img src="chosen.png" srcset="large.png 3x"></body>"#).expect("import");
+    let import = import_html_with_links("srcset.html", r#"<body><img src="chosen.png" srcset="large.png 3x"></body>"#).expect("import");
     assert_eq!(image_source(&import.document), "chosen.png");
 }
 
@@ -103,12 +88,10 @@ fn find_image(block: &document_ir::Block) -> Option<String> {
     };
     content.iter().find_map(|inline| match inline {
         Inline::Image { source, .. } => Some(source.clone()),
-        Inline::Styled { children, .. } | Inline::Attributed { children, .. } => {
-            children.iter().find_map(|child| match child {
-                Inline::Image { source, .. } => Some(source.clone()),
-                _ => None,
-            })
-        }
+        Inline::Styled { children, .. } | Inline::Attributed { children, .. } => children.iter().find_map(|child| match child {
+            Inline::Image { source, .. } => Some(source.clone()),
+            _ => None,
+        }),
         _ => None,
     })
 }

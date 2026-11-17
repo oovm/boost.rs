@@ -93,12 +93,7 @@ pub fn faces(grid: &VoxelGrid) -> Vec<Face> {
         // +Y (top)
         if grid.get([x, y + 1, z]).is_none() {
             out.push(Face {
-                corners: [
-                    [fx, fy + 1.0, fz],
-                    [fx + 1.0, fy + 1.0, fz],
-                    [fx + 1.0, fy + 1.0, fz + 1.0],
-                    [fx, fy + 1.0, fz + 1.0],
-                ],
+                corners: [[fx, fy + 1.0, fz], [fx + 1.0, fy + 1.0, fz], [fx + 1.0, fy + 1.0, fz + 1.0], [fx, fy + 1.0, fz + 1.0]],
                 direction: Direction::PosY,
                 color: *color,
             });
@@ -114,12 +109,7 @@ pub fn faces(grid: &VoxelGrid) -> Vec<Face> {
         // +X
         if grid.get([x + 1, y, z]).is_none() {
             out.push(Face {
-                corners: [
-                    [fx + 1.0, fy, fz],
-                    [fx + 1.0, fy + 1.0, fz],
-                    [fx + 1.0, fy + 1.0, fz + 1.0],
-                    [fx + 1.0, fy, fz + 1.0],
-                ],
+                corners: [[fx + 1.0, fy, fz], [fx + 1.0, fy + 1.0, fz], [fx + 1.0, fy + 1.0, fz + 1.0], [fx + 1.0, fy, fz + 1.0]],
                 direction: Direction::PosX,
                 color: *color,
             });
@@ -135,12 +125,7 @@ pub fn faces(grid: &VoxelGrid) -> Vec<Face> {
         // +Z
         if grid.get([x, y, z + 1]).is_none() {
             out.push(Face {
-                corners: [
-                    [fx + 1.0, fy, fz + 1.0],
-                    [fx + 1.0, fy + 1.0, fz + 1.0],
-                    [fx, fy + 1.0, fz + 1.0],
-                    [fx, fy, fz + 1.0],
-                ],
+                corners: [[fx + 1.0, fy, fz + 1.0], [fx + 1.0, fy + 1.0, fz + 1.0], [fx, fy + 1.0, fz + 1.0], [fx, fy, fz + 1.0]],
                 direction: Direction::PosZ,
                 color: *color,
             });
@@ -246,11 +231,7 @@ mod tests {
             assert_eq!(chunk.iter().map(|face| face.direction).collect::<Vec<_>>(), cycle.to_vec());
         }
         let first_corners: Vec<[f32; 3]> = quads.chunks(6).map(|chunk| chunk[0].corners[0]).collect();
-        assert_eq!(
-            first_corners,
-            vec![[-5.0, 5.0, 9.0], [0.0, 1.0, 0.0], [2.0, -2.0, -1.0]],
-            "cells visit in BTreeMap order, top faces first"
-        );
+        assert_eq!(first_corners, vec![[-5.0, 5.0, 9.0], [0.0, 1.0, 0.0], [2.0, -2.0, -1.0]], "cells visit in BTreeMap order, top faces first");
     }
 
     #[test]

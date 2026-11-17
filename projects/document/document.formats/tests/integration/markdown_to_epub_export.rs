@@ -51,10 +51,7 @@ fn epub_export_keeps_the_title_at_the_start_of_the_body_chapter() {
         .expect("chapter-000 must be UTF-8");
     assert!(first.contains("<h1>Sample Book</h1>"), "the title must open the first chapter: {first}");
     assert!(first.contains("Hello EPUB"), "the body must stay in the chapter opened by its title: {first}");
-    assert!(
-        package.read_member("OEBPS/chapter-001.xhtml", &mut ledger).is_err(),
-        "one title plus one body must not split into two chapters"
-    );
+    assert!(package.read_member("OEBPS/chapter-001.xhtml", &mut ledger).is_err(), "one title plus one body must not split into two chapters");
 
     let reopened = import_epub_bytes("book.epub", &bytes).expect("reopen epub");
     let markdown = export_markdown(&reopened).expect("export markdown");
@@ -75,8 +72,8 @@ fn epub_export_writes_an_unknown_inline_style_as_a_class() {
     let bytes = export_epub_bytes(&graph).expect("an unknown style must not reject the EPUB export");
     let package = OcfPackage::open("style.epub", bytes).expect("open as OCF");
     let mut ledger = BudgetTracker::new(Budget::default());
-    let chapter = String::from_utf8(package.read_member("OEBPS/chapter-000.xhtml", &mut ledger).expect("read chapter"))
-        .expect("chapter must be UTF-8");
+    let chapter =
+        String::from_utf8(package.read_member("OEBPS/chapter-000.xhtml", &mut ledger).expect("read chapter")).expect("chapter must be UTF-8");
     assert!(chapter.contains(r#"<span class="zzstyle">ZZR53ZZ</span>"#), "{chapter}");
 }
 
@@ -183,14 +180,8 @@ fn epub_export_opf_has_required_dc_elements_and_nav_root_is_html_with_epub_type(
     let nav_xml = String::from_utf8(nav_bytes).expect("nav.xhtml must be UTF-8");
 
     assert!(nav_xml.starts_with("<?xml"), "nav.xhtml must begin with an XML declaration");
-    assert!(
-        nav_xml.contains(r#"<html xmlns="http://www.w3.org/1999/xhtml""#),
-        "nav.xhtml root must be <html> with the XHTML namespace"
-    );
-    assert!(
-        nav_xml.contains("xmlns:epub=\"http://www.idpf.org/2007/ops\""),
-        "nav.xhtml must declare the epub namespace on root <html>"
-    );
+    assert!(nav_xml.contains(r#"<html xmlns="http://www.w3.org/1999/xhtml""#), "nav.xhtml root must be <html> with the XHTML namespace");
+    assert!(nav_xml.contains("xmlns:epub=\"http://www.idpf.org/2007/ops\""), "nav.xhtml must declare the epub namespace on root <html>");
     assert!(nav_xml.contains(r#"epub:type="nav""#), "nav.xhtml root <html> must carry epub:type=\"nav\" (EPUB 3 §3.4)");
     // xml:lang 和 lang 属性都必须落在根 <html> 上，且值一致。
     let xml_lang = extract_attr(&nav_xml, "xml:lang");
@@ -221,9 +212,7 @@ fn epub_export_renders_footnotes_as_endnotes_instead_of_rejecting_the_block() {
     let mut chapter_xml = None;
     for item in opf.manifest.values().filter(|item| item.media_type == "application/xhtml+xml") {
         let xml = String::from_utf8(
-            package
-                .read_member(&format!("OEBPS/{}", item.href), &mut BudgetTracker::new(Budget::default()))
-                .unwrap_or_default(),
+            package.read_member(&format!("OEBPS/{}", item.href), &mut BudgetTracker::new(Budget::default())).unwrap_or_default(),
         )
         .unwrap_or_default();
         if xml.contains("doc-endnotes") {
@@ -233,14 +222,8 @@ fn epub_export_renders_footnotes_as_endnotes_instead_of_rejecting_the_block() {
     }
     let chapter_xml = chapter_xml.expect("one chapter must carry endnotes");
 
-    assert!(
-        chapter_xml.contains(r#"<section class="footnotes" role="doc-endnotes">"#),
-        "chapter must contain endnotes: {chapter_xml}"
-    );
-    assert!(
-        chapter_xml.contains(r#"data-footnote-label="1""#),
-        "footnote reference must carry its label marker: {chapter_xml}"
-    );
+    assert!(chapter_xml.contains(r#"<section class="footnotes" role="doc-endnotes">"#), "chapter must contain endnotes: {chapter_xml}");
+    assert!(chapter_xml.contains(r#"data-footnote-label="1""#), "footnote reference must carry its label marker: {chapter_xml}");
     assert!(chapter_xml.contains("data-footnote-source-hex="), "definition must keep the authored payload: {chapter_xml}");
     assert!(!chapter_xml.contains("[^1]:"), "GFM payload must not leak as prose: {chapter_xml}");
 }
@@ -251,18 +234,15 @@ fn epub_reference_across_chapters_points_at_the_owning_chapter() {
 
     let mut graph = DocumentGraph::new(DocumentId(73));
     let first = graph.push_block(Block::Paragraph { content: vec![Inline::Text { text: "first".into() }] });
-    let _section_one =
-        graph.push_block(Block::Section { level: 1, title: vec![Inline::Text { text: "One".into() }], children: vec![first] });
-    let second =
-        graph.push_block(Block::Paragraph { content: vec![Inline::Reference { display: "go".into(), target: first }] });
+    let _section_one = graph.push_block(Block::Section { level: 1, title: vec![Inline::Text { text: "One".into() }], children: vec![first] });
+    let second = graph.push_block(Block::Paragraph { content: vec![Inline::Reference { display: "go".into(), target: first }] });
     graph.push_block(Block::Section { level: 1, title: vec![Inline::Text { text: "Two".into() }], children: vec![second] });
 
     let bytes = export_epub_bytes(&graph).expect("export two chapters");
     let package = OcfPackage::open("cross-reference.epub", bytes).expect("open as OCF");
     let mut ledger = BudgetTracker::new(Budget::default());
-    let mut read = |path: &str| {
-        String::from_utf8(package.read_member(path, &mut ledger).expect("read chapter")).expect("chapter must be UTF-8")
-    };
+    let mut read =
+        |path: &str| String::from_utf8(package.read_member(path, &mut ledger).expect("read chapter")).expect("chapter must be UTF-8");
     let chapter_one = read("OEBPS/chapter-000.xhtml");
     let chapter_two = read("OEBPS/chapter-001.xhtml");
     assert!(chapter_one.contains(&format!(r#"id="node-{}""#, first.0)), "{chapter_one}");
@@ -288,35 +268,15 @@ fn epub_export_keeps_table_caption_list_start_and_reference_anchor() {
     let nested = graph.push_block(Block::List {
         ordered: true,
         items: vec![
-            ListItem {
-                content: vec![Inline::Text { text: "three".into() }],
-                children: Vec::new(),
-                number: Some(3),
-                ..Default::default()
-            },
-            ListItem {
-                content: vec![Inline::Text { text: "five".into() }],
-                children: Vec::new(),
-                number: Some(5),
-                ..Default::default()
-            },
+            ListItem { content: vec![Inline::Text { text: "three".into() }], children: Vec::new(), number: Some(3), ..Default::default() },
+            ListItem { content: vec![Inline::Text { text: "five".into() }], children: Vec::new(), number: Some(5), ..Default::default() },
         ],
     });
     graph.push_block(Block::List {
         ordered: true,
         items: vec![
-            ListItem {
-                content: vec![Inline::Text { text: "five".into() }],
-                children: vec![nested],
-                number: Some(5),
-                ..Default::default()
-            },
-            ListItem {
-                content: vec![Inline::Text { text: "seven".into() }],
-                children: Vec::new(),
-                number: Some(7),
-                ..Default::default()
-            },
+            ListItem { content: vec![Inline::Text { text: "five".into() }], children: vec![nested], number: Some(5), ..Default::default() },
+            ListItem { content: vec![Inline::Text { text: "seven".into() }], children: Vec::new(), number: Some(7), ..Default::default() },
         ],
     });
     let last_cell = graph.push_block(Block::Paragraph { content: vec![Inline::Text { text: "last".into() }] });
@@ -331,8 +291,8 @@ fn epub_export_keeps_table_caption_list_start_and_reference_anchor() {
     let bytes = export_epub_bytes(&graph).expect("export epub with structural blocks");
     let package = OcfPackage::open("structural.epub", bytes).expect("open as OCF");
     let mut ledger = BudgetTracker::new(Budget::default());
-    let chapter = String::from_utf8(package.read_member("OEBPS/chapter-000.xhtml", &mut ledger).expect("read chapter"))
-        .expect("chapter must be UTF-8");
+    let chapter =
+        String::from_utf8(package.read_member("OEBPS/chapter-000.xhtml", &mut ledger).expect("read chapter")).expect("chapter must be UTF-8");
 
     assert!(chapter.contains("<caption>首表</caption>"), "{chapter}");
     assert!(chapter.contains("<caption>尾表</caption>"), "{chapter}");
@@ -341,8 +301,5 @@ fn epub_export_keeps_table_caption_list_start_and_reference_anchor() {
     assert!(chapter.contains(r#"<li value="7">"#), "{chapter}");
     assert!(chapter.contains(r#"<li value="5">"#), "{chapter}");
     assert!(chapter.contains(&format!(r##"href="#node-{}""##, target.0)), "the reference must point at its target: {chapter}");
-    assert!(
-        chapter.contains(&format!(r#"id="node-{}""#, target.0)),
-        "the reference target must exist in the same chapter: {chapter}"
-    );
+    assert!(chapter.contains(&format!(r#"id="node-{}""#, target.0)), "the reference target must exist in the same chapter: {chapter}");
 }

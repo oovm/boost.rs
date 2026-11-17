@@ -22,32 +22,27 @@ use serde_json::Value;
 use template::{MapTemplateLoader, RenderOptions, TemplateContentKind, TemplateError, TemplateId, TemplateStatus};
 use template_framework::{FrameworkCapability, FrameworkOutput, FrameworkRequest, TemplateFramework};
 use template_input_dejavu::{
-    CustomRegistry, ParseError, language_for_path, parse_with, render_ir_opts, template_error_from_diagnostic,
-    template_error_from_ir,
+    CustomRegistry, ParseError, language_for_path, parse_with, render_ir_opts, template_error_from_diagnostic, template_error_from_ir,
 };
 
 pub use config::{
-    ExtensionRef, I18nConfig, LoadOptions, OverrideTarget, PluginEntry, ProjectConfig, ProjectPaths, load_project_config,
-    peek_theme_ref, theme_defaults_file,
+    ExtensionRef, I18nConfig, LoadOptions, OverrideTarget, PluginEntry, ProjectConfig, ProjectPaths, load_project_config, peek_theme_ref,
+    theme_defaults_file,
 };
 pub use diagnostic::{Diagnostic, Severity};
 pub use error::{ConfigError, ConfigResult, CoreError, CoreResult};
 pub use frontmatter::{FrontMatter, ParsedDocument, parse_document};
-pub use graph::{
-    ContentGraph, ContentId, ContentKind, ContentNode, FrontMatterDto, discover_markdown_content, load_markdown_node,
-};
-pub use i18n::{
-    CATALOG_IO_CODE, CATALOG_SYNTAX_CODE, DUPLICATE_KEY_CODE, FALLBACK_CYCLE_CODE, I18n, MISSING_CATALOG_CODE, MISSING_KEY_CODE,
-};
+pub use graph::{ContentGraph, ContentId, ContentKind, ContentNode, FrontMatterDto, discover_markdown_content, load_markdown_node};
+pub use i18n::{CATALOG_IO_CODE, CATALOG_SYNTAX_CODE, DUPLICATE_KEY_CODE, FALLBACK_CYCLE_CODE, I18n, MISSING_CATALOG_CODE, MISSING_KEY_CODE};
 pub use protocol::{
-    BuildMode, BuildPhase, BuildPlan, BuildResult, ExplainRebuild, ExtensionKind, ExtensionSourceKind, FileChange,
-    FileChangeKind, HookKind, HookWorkItem, InvalidationResult, PluginResult, ResolvedExtension,
+    BuildMode, BuildPhase, BuildPlan, BuildResult, ExplainRebuild, ExtensionKind, ExtensionSourceKind, FileChange, FileChangeKind, HookKind,
+    HookWorkItem, InvalidationResult, PluginResult, ResolvedExtension,
 };
 pub use render::{DEFAULT_LAYOUT, RenderedPage, language_for_ext, markdown_to_html, render_page, render_taxonomy_page};
 pub use session::BuildSession;
 pub use site::{
-    INVALID_LOCALE_CODE, INVALID_TYPE_CODE, PageType, ROUTE_CONFLICT_CODE, SiteModel, SitePage, TAGS_INDEX_ID,
-    TAXONOMY_CONFLICT_CODE, TagEntry, TaxonomyView,
+    INVALID_LOCALE_CODE, INVALID_TYPE_CODE, PageType, ROUTE_CONFLICT_CODE, SiteModel, SitePage, TAGS_INDEX_ID, TAXONOMY_CONFLICT_CODE,
+    TagEntry, TaxonomyView,
 };
 
 /// Framework id registered under `template.framework.<id>`.
@@ -120,8 +115,7 @@ fn parse_error_diagnostic(error: ParseError) -> template_input_dejavu::Diagnosti
 #[must_use]
 pub fn layout_loader(layout_id: &str, source: &str) -> (MapTemplateLoader, TemplateId) {
     let entry_path = layout_entry_path(layout_id);
-    let loader =
-        MapTemplateLoader::new().with_root(template::TemplateRoot::new("theme", 0).with_file(entry_path.as_str(), source));
+    let loader = MapTemplateLoader::new().with_root(template::TemplateRoot::new("theme", 0).with_file(entry_path.as_str(), source));
     (loader, TemplateId::new("theme", entry_path))
 }
 
@@ -137,12 +131,7 @@ pub fn layout_options() -> RenderOptions {
 }
 
 /// Render one layout source without host extensions (no i18n registry).
-pub fn render_layout_source(
-    layout_id: &str,
-    source: &str,
-    data: &Value,
-    strict_undefined: bool,
-) -> Result<FrameworkOutput, TemplateError> {
+pub fn render_layout_source(layout_id: &str, source: &str, data: &Value, strict_undefined: bool) -> Result<FrameworkOutput, TemplateError> {
     let (loader, entry) = layout_loader(layout_id, source);
     let framework = DokiFramework { custom: None };
     let options = RenderOptions { strict_undefined, ..RenderOptions::default() };
@@ -164,23 +153,20 @@ mod tests {
 
     #[test]
     fn layout_render_delegates_to_the_dejavu_engine() {
-        let output = render_layout_source("page.doki", "{% page.title %}", &json!({ "page": { "title": "Hi" } }), false)
-            .expect("render");
+        let output = render_layout_source("page.doki", "{% page.title %}", &json!({ "page": { "title": "Hi" } }), false).expect("render");
         assert_eq!(output.text, "Hi");
         assert_eq!(output.dependencies, vec![TemplateId::new("theme", "page.doki")]);
     }
 
     #[test]
     fn layout_render_keeps_the_dejavu_error_code() {
-        let error = render_layout_source("page.doki", "{% page.title %}", &json!({ "page": {} }), true)
-            .expect_err("strict should fail");
+        let error = render_layout_source("page.doki", "{% page.title %}", &json!({ "page": {} }), true).expect_err("strict should fail");
         assert_eq!(error.code(), "dejavu.template.undefined-member");
     }
 
     #[test]
     fn dejavu_profile_is_chosen_by_extension() {
-        let output =
-            render_layout_source("legacy.dejavu", "Hello, <% name %>!", &json!({ "name": "Ada" }), false).expect("render");
+        let output = render_layout_source("legacy.dejavu", "Hello, <% name %>!", &json!({ "name": "Ada" }), false).expect("render");
         assert_eq!(output.text, "Hello, Ada!");
     }
 

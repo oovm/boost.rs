@@ -53,11 +53,7 @@ fn table_alignment_downgrade_is_reported() {
 | Alpha | 1 |
 ";
     let imported = import_source("virtual://table-alignment.md", source).expect("aligned table must import");
-    assert!(
-        imported.report.lossy.iter().any(|item| item.code == "import.markdown.table_alignment"),
-        "{:?}",
-        imported.report.lossy
-    );
+    assert!(imported.report.lossy.iter().any(|item| item.code == "import.markdown.table_alignment"), "{:?}", imported.report.lossy);
     let diagnostic = imported
         .diagnostics
         .iter()

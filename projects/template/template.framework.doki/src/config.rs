@@ -203,9 +203,7 @@ impl ProjectConfig {
                 return Err(ConfigError::invalid(format!("`i18n.fallback` key `{child}` is not listed in `i18n.locales`")));
             }
             if !seen.contains(parent.as_str()) {
-                return Err(ConfigError::invalid(format!(
-                    "`i18n.fallback` parent `{parent}` of `{child}` is not listed in `i18n.locales`"
-                )));
+                return Err(ConfigError::invalid(format!("`i18n.fallback` parent `{parent}` of `{child}` is not listed in `i18n.locales`")));
             }
             if child == &self.lang {
                 return Err(ConfigError::invalid(format!(
@@ -244,8 +242,7 @@ pub fn peek_theme_ref(root: impl AsRef<Path>) -> ConfigResult<Option<ExtensionRe
     if !config_file.is_file() {
         return Err(ConfigError::invalid(format!("missing doki.toml under {}", root.display())));
     }
-    let peek: ThemePeek =
-        Figment::new().merge(Toml::file(&config_file)).extract().map_err(|source| ConfigError::Extract { source })?;
+    let peek: ThemePeek = Figment::new().merge(Toml::file(&config_file)).extract().map_err(|source| ConfigError::Extract { source })?;
     if let Some(theme) = &peek.theme {
         theme.validate("theme")?;
     }
@@ -447,8 +444,7 @@ package = "@acme/theme"
         )
         .unwrap();
 
-        let (_, cfg) =
-            load_project_config(dir.path(), LoadOptions { theme_defaults: Some(defaults), ..Default::default() }).unwrap();
+        let (_, cfg) = load_project_config(dir.path(), LoadOptions { theme_defaults: Some(defaults), ..Default::default() }).unwrap();
         assert_eq!(cfg.lang, "ja");
     }
 

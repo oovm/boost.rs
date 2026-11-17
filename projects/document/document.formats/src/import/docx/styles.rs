@@ -63,9 +63,7 @@ pub fn parse_styles_xml_lossy(xml: &[u8]) -> StyleDefaults {
         let rule = line_rule(spacing);
         attribute_value(spacing, "line").and_then(|value| value.parse::<f64>().ok()).and_then(|line| match rule {
             LineRule::Multiple => (line > 0.0).then_some(line / LINE_UNITS_PER_LINE),
-            LineRule::Length => {
-                base_font_size.filter(|size| *size > 0.0).filter(|_| line > 0.0).map(|size| (line / TWIPS_PER_POINT) / size)
-            }
+            LineRule::Length => base_font_size.filter(|size| *size > 0.0).filter(|_| line > 0.0).map(|size| (line / TWIPS_PER_POINT) / size),
         })
     });
     StyleDefaults { base_font_size, line_height }

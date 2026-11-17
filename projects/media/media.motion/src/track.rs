@@ -40,12 +40,7 @@ impl Lerp for [f32; 3] {
 
 impl Lerp for [f32; 4] {
     fn lerp(a: &Self, b: &Self, t: f32) -> Self {
-        [
-            f32::lerp(&a[0], &b[0], t),
-            f32::lerp(&a[1], &b[1], t),
-            f32::lerp(&a[2], &b[2], t),
-            f32::lerp(&a[3], &b[3], t),
-        ]
+        [f32::lerp(&a[0], &b[0], t), f32::lerp(&a[1], &b[1], t), f32::lerp(&a[2], &b[2], t), f32::lerp(&a[3], &b[3], t)]
     }
 }
 
@@ -139,11 +134,7 @@ mod tests {
     use super::*;
 
     fn ramp() -> Track<f32> {
-        Track::new(vec![
-            Key::linear(0, 0.0),
-            Key::eased(10, 10.0, Ease::Linear),
-            Key::linear(20, 0.0),
-        ])
+        Track::new(vec![Key::linear(0, 0.0), Key::eased(10, 10.0, Ease::Linear), Key::linear(20, 0.0)])
     }
 
     #[test]

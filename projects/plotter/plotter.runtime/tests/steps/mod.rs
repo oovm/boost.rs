@@ -15,11 +15,9 @@ fn hover_only_repaints_the_overlay() {
 
 #[test]
 fn focus_press_and_selection_never_recompile_the_tree() {
-    for action in [
-        Action::Focus(Some("a".to_owned())),
-        Action::Press(Some("b".to_owned())),
-        Action::Select { target: "c".to_owned(), additive: true },
-    ] {
+    for action in
+        [Action::Focus(Some("a".to_owned())), Action::Press(Some("b".to_owned())), Action::Select { target: "c".to_owned(), additive: true }]
+    {
         let update = reduce_update(&RuntimeState::default(), &action);
         assert_eq!(derive_steps(&update.invalidation), vec![Pass::RepaintOverlay], "{action:?}");
     }
@@ -35,10 +33,7 @@ fn data_changes_run_data_then_measurement_then_layout() {
     assert_eq!(derive_steps(&set(&[InvalidationScope::Data])), vec![Pass::RecompileData, Pass::Remeasure, Pass::Relayout]);
 
     let parameter = reduce_update(&RuntimeState::default(), &Action::SetParameter { name: "x".to_owned(), value: 1.0 });
-    assert_eq!(
-        derive_steps(&parameter.invalidation),
-        vec![Pass::RecompileData, Pass::Remeasure, Pass::Relayout, Pass::RetargetMotion]
-    );
+    assert_eq!(derive_steps(&parameter.invalidation), vec![Pass::RecompileData, Pass::Remeasure, Pass::Relayout, Pass::RetargetMotion]);
 }
 
 #[test]
@@ -83,10 +78,7 @@ fn steps_follow_the_documented_pipeline_order() {
         InvalidationScope::Motion,
     ]);
 
-    assert_eq!(
-        derive_steps(&all),
-        vec![Pass::RecomputeViewport, Pass::Relayout, Pass::Restyle, Pass::RetargetMotion, Pass::RepaintOverlay,]
-    );
+    assert_eq!(derive_steps(&all), vec![Pass::RecomputeViewport, Pass::Relayout, Pass::Restyle, Pass::RetargetMotion, Pass::RepaintOverlay,]);
 }
 
 #[test]

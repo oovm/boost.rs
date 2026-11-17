@@ -2,8 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use hardware::prelude::*;
-use hardware::ParamValue;
+use hardware::{ParamValue, prelude::*};
 use hardware_backend_cuda::CudaBackend;
 use hardware_runtime::event_kinds;
 
@@ -23,20 +22,12 @@ fn fill_graph(value: f64) -> Graph {
                 id: TaskId(10),
                 kind: TaskKind::Fill,
                 shader: ShaderId(10),
-                params: BTreeMap::from([
-                    ("dst".into(), ParamValue::I64(1)),
-                    ("value".into(), ParamValue::F64(value)),
-                ]),
+                params: BTreeMap::from([("dst".into(), ParamValue::I64(1)), ("value".into(), ParamValue::F64(value))]),
                 dispatch: Default::default(),
                 objective: Objective::MaxThroughput,
                 priority: Priority::Batch,
             }],
-            edges: vec![DepEdge {
-                from_task: None,
-                from_resource: Some(ResourceId(1)),
-                to_task: TaskId(10),
-                kind: DepKind::Data,
-            }],
+            edges: vec![DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data }],
         },
     }
 }

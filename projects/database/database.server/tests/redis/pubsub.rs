@@ -4,7 +4,7 @@ use std::{
     collections::HashMap,
     io::{Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
-    sync::{atomic::AtomicBool, Arc},
+    sync::{Arc, atomic::AtomicBool},
     thread,
     time::Duration,
 };
@@ -209,10 +209,7 @@ fn pattern_subscription_receives_pmessage() {
     expect(&mut subscriber, "*3\r\n$10\r\npsubscribe\r\n$6\r\nnews.*\r\n:1\r\n");
     send(&mut publisher, &["PUBLISH", "news.tech", "tick"]);
     expect(&mut publisher, ":1\r\n");
-    expect(
-        &mut subscriber,
-        "*4\r\n$8\r\npmessage\r\n$6\r\nnews.*\r\n$9\r\nnews.tech\r\n$4\r\ntick\r\n",
-    );
+    expect(&mut subscriber, "*4\r\n$8\r\npmessage\r\n$6\r\nnews.*\r\n$9\r\nnews.tech\r\n$4\r\ntick\r\n");
 }
 
 #[test]
@@ -228,10 +225,7 @@ fn direct_and_matching_pattern_count_twice() {
     send(&mut publisher, &["PUBLISH", "news.tech", "both"]);
     expect(&mut publisher, ":2\r\n");
     expect(&mut subscriber, "*3\r\n$7\r\nmessage\r\n$9\r\nnews.tech\r\n$4\r\nboth\r\n");
-    expect(
-        &mut subscriber,
-        "*4\r\n$8\r\npmessage\r\n$6\r\nnews.*\r\n$9\r\nnews.tech\r\n$4\r\nboth\r\n",
-    );
+    expect(&mut subscriber, "*4\r\n$8\r\npmessage\r\n$6\r\nnews.*\r\n$9\r\nnews.tech\r\n$4\r\nboth\r\n");
 }
 
 #[test]

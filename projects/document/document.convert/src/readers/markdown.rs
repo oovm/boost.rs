@@ -25,11 +25,7 @@ pub fn read_markdown_bytes(label: impl Into<String>, text: String) -> Result<Doc
 /// The same asset source the HTML reader accepts is reused here, so an adapter
 /// that owns the referenced files can materialize Markdown images instead of
 /// dropping every one of them.
-pub fn read_markdown_bytes_with_assets(
-    label: impl Into<String>,
-    text: String,
-    assets: &dyn HtmlAssetSource,
-) -> Result<DocumentGraph> {
+pub fn read_markdown_bytes_with_assets(label: impl Into<String>, text: String, assets: &dyn HtmlAssetSource) -> Result<DocumentGraph> {
     let label = label.into();
     import_markdown_bytes_with_assets(&label, &text, assets).map_err(map_format_error)
 }

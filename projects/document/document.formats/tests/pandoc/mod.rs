@@ -8,9 +8,8 @@ use document_formats::{
         codec::{decode, encode},
         export_pandoc_json, import_pandoc_json_bytes_with,
         model::{
-            API_VERSION, Alignment, Attr, Block, Caption, Cell, Citation, CitationMode, ColSpec, Inline, ListNumberDelim,
-            ListNumberStyle, MathType, MetaValue, OrderedList, PandocDocument, QuoteType, Row, Table, TableBody, TableFoot,
-            TableHead, Target,
+            API_VERSION, Alignment, Attr, Block, Caption, Cell, Citation, CitationMode, ColSpec, Inline, ListNumberDelim, ListNumberStyle,
+            MathType, MetaValue, OrderedList, PandocDocument, QuoteType, Row, Table, TableBody, TableFoot, TableHead, Target,
         },
     },
 };
@@ -103,21 +102,10 @@ fn all_constructors_document() -> PandocDocument {
     };
     let table = Table {
         attr: attr("table", &["t"], &[("k", "a"), ("k", "b")]),
-        caption: Caption {
-            short: Some(vec![Inline::Str("short".into())]),
-            blocks: vec![Block::Plain(vec![Inline::Str("caption".into())])],
-        },
-        colspecs: vec![
-            ColSpec { alignment: Alignment::Left, width: 0.25 },
-            ColSpec { alignment: Alignment::Default, width: 0.0 },
-        ],
+        caption: Caption { short: Some(vec![Inline::Str("short".into())]), blocks: vec![Block::Plain(vec![Inline::Str("caption".into())])] },
+        colspecs: vec![ColSpec { alignment: Alignment::Left, width: 0.25 }, ColSpec { alignment: Alignment::Default, width: 0.0 }],
         head: TableHead { attr: Attr::default(), rows: vec![row.clone()] },
-        bodies: vec![TableBody {
-            attr: attr("body", &[], &[]),
-            row_head_columns: 1,
-            head: vec![row.clone()],
-            body: vec![row.clone()],
-        }],
+        bodies: vec![TableBody { attr: attr("body", &[], &[]), row_head_columns: 1, head: vec![row.clone()], body: vec![row.clone()] }],
         foot: TableFoot { attr: Attr::default(), rows: vec![row] },
     };
     let blocks = vec![
@@ -131,16 +119,10 @@ fn all_constructors_document() -> PandocDocument {
             start: 3,
             style: ListNumberStyle::UpperRoman,
             delimiter: ListNumberDelim::TwoParens,
-            items: vec![
-                vec![Block::Plain(vec![Inline::Str("one".into())])],
-                vec![Block::Para(vec![Inline::Str("two".into())])],
-            ],
+            items: vec![vec![Block::Plain(vec![Inline::Str("one".into())])], vec![Block::Para(vec![Inline::Str("two".into())])]],
         }),
         Block::BulletList(vec![vec![Block::Plain(vec![Inline::Str("bullet".into())])]]),
-        Block::DefinitionList(vec![(
-            vec![Inline::Str("term".into())],
-            vec![vec![Block::Plain(vec![Inline::Str("definition".into())])]],
-        )]),
+        Block::DefinitionList(vec![(vec![Inline::Str("term".into())], vec![vec![Block::Plain(vec![Inline::Str("definition".into())])]])]),
         Block::Header { level: 2, attr: attr("head", &["h"], &[("k", "v")]), inlines: vec![Inline::Str("Heading".into())] },
         Block::HorizontalRule,
         Block::Table(table),
@@ -149,10 +131,7 @@ fn all_constructors_document() -> PandocDocument {
             caption: Caption { short: None, blocks: vec![Block::Plain(vec![Inline::Str("figure caption".into())])] },
             blocks: vec![Block::Para(vec![Inline::Str("figure body".into())])],
         },
-        Block::Div {
-            attr: attr("div", &["d"], &[("class", "x")]),
-            blocks: vec![Block::Para(vec![Inline::Str("div body".into())])],
-        },
+        Block::Div { attr: attr("div", &["d"], &[("class", "x")]), blocks: vec![Block::Para(vec![Inline::Str("div body".into())])] },
     ];
     let mut meta: Vec<(String, MetaValue)> = vec![
         ("title".into(), MetaValue::Inlines(vec![Inline::Str("标题".into())])),
@@ -301,11 +280,7 @@ fn import_builds_sections_without_inventing_headings_and_preserves_typed_metadat
     assert_eq!(graph.metadata.properties.len(), 1);
     assert_eq!(graph.metadata.properties[0].key, "custom");
     assert_eq!(graph.metadata.properties[0].value, document_ir::MetadataValue::Boolean(true));
-    assert!(
-        !graph.coverage.loss.iter().any(|loss| loss.code == "import.pandoc-json.meta_unmapped"),
-        "{:?}",
-        graph.coverage.loss
-    );
+    assert!(!graph.coverage.loss.iter().any(|loss| loss.code == "import.pandoc-json.meta_unmapped"), "{:?}", graph.coverage.loss);
 
     let sections: Vec<(u8, String, usize)> = graph
         .blocks
@@ -413,8 +388,8 @@ fn strict_policy_rejects_containers_that_only_have_an_opaque_projection() {
         ]
     })
     .to_string();
-    let error = import_pandoc_json_bytes_with("strict", text.as_bytes(), &PandocImportOptions::default())
-        .expect_err("strict policy must reject a div");
+    let error =
+        import_pandoc_json_bytes_with("strict", text.as_bytes(), &PandocImportOptions::default()).expect_err("strict policy must reject a div");
     assert!(format!("{error}").contains("import.pandoc-json.div_payload"), "{error}");
 
     let graph = import(&text);
@@ -473,11 +448,7 @@ fn table_cell_block_content_is_preserved_and_round_trips() {
     })
     .to_string();
     let graph = import(&text);
-    assert!(
-        !graph.coverage.loss.iter().any(|loss| loss.code == "import.pandoc-json.table_cell_blocks"),
-        "{:?}",
-        graph.coverage.loss
-    );
+    assert!(!graph.coverage.loss.iter().any(|loss| loss.code == "import.pandoc-json.table_cell_blocks"), "{:?}", graph.coverage.loss);
     let body = graph
         .blocks
         .iter()
@@ -611,11 +582,7 @@ fn non_consecutive_ordered_list_numbers_are_reported() {
         ],
     });
     let exported = export_pandoc_json(&graph).expect("export");
-    assert!(
-        exported.losses.iter().any(|loss| loss.code == "export.pandoc-json.list_number"),
-        "{}",
-        exported.to_json_text().expect("json")
-    );
+    assert!(exported.losses.iter().any(|loss| loss.code == "export.pandoc-json.list_number"), "{}", exported.to_json_text().expect("json"));
     let Block::OrderedList(list) = &exported.document.blocks[0]
     else {
         panic!("expected an ordered list");
@@ -670,11 +637,7 @@ fn pandoc_note_with_an_image_survives_a_markdown_round_trip() {
 
     let reopened = import_markdown_bytes("note-image.md", &markdown).expect("reopen markdown");
     let exported = export_pandoc_json(&reopened).expect("export pandoc json");
-    assert!(
-        !exported.losses.iter().any(|loss| loss.code.starts_with("export.pandoc-json.note_definition")),
-        "{:?}",
-        exported.losses
-    );
+    assert!(!exported.losses.iter().any(|loss| loss.code.starts_with("export.pandoc-json.note_definition")), "{:?}", exported.losses);
     assert!(footnote_definition_payloads(&exported.document.blocks).is_empty(), "{:?}", exported.document.blocks);
     let notes = paragraph_notes(&exported.document.blocks);
     assert_eq!(notes.len(), 1, "{:?}", exported.document.blocks);
@@ -697,9 +660,7 @@ fn pandoc_note_with_an_image_survives_a_markdown_round_trip() {
 #[test]
 fn unrelated_custom_inline_style_fails_the_export() {
     let mut graph = DocumentGraph::new(document_ir::IdAllocator::default().document_id());
-    graph.push_block(IrBlock::Paragraph {
-        content: vec![document_ir::Inline::Styled { style: "sparkle".into(), children: vec![] }],
-    });
+    graph.push_block(IrBlock::Paragraph { content: vec![document_ir::Inline::Styled { style: "sparkle".into(), children: vec![] }] });
     let error = export_pandoc_json(&graph).expect_err("unknown style must fail");
     assert!(format!("{error}").contains("inline style `sparkle`"), "{error}");
 }
@@ -766,11 +727,7 @@ fn pandoc_notes_receive_deterministic_distinct_labels() {
     let graph = import(&text);
     assert!(graph.validate().is_valid(), "{:?}", graph.validate().issues);
     assert_eq!(note_labels(&graph), ["pandoc-note-1", "pandoc-note-2"]);
-    assert_eq!(
-        note_labels(&import(&text)),
-        ["pandoc-note-1", "pandoc-note-2"],
-        "labels must not depend on import order or clock"
-    );
+    assert_eq!(note_labels(&import(&text)), ["pandoc-note-1", "pandoc-note-2"], "labels must not depend on import order or clock");
 }
 
 #[test]
@@ -805,26 +762,16 @@ fn pandoc_citations_without_a_key_are_dropped_with_a_loss() {
         .expect("paragraph");
     assert_eq!(content.iter().map(document_ir::Inline::plain_text).collect::<String>(), "before after");
     assert!(!content.iter().any(|inline| matches!(inline, IrInline::Citation { .. })));
-    let loss = graph
-        .coverage
-        .loss
-        .iter()
-        .find(|loss| loss.code == "import.pandoc-json.empty_citation")
-        .expect("a keyless citation must be recorded");
+    let loss =
+        graph.coverage.loss.iter().find(|loss| loss.code == "import.pandoc-json.empty_citation").expect("a keyless citation must be recorded");
     assert_eq!(loss.status, SemanticStatus::Unsupported);
     assert!(graph.validate().is_valid());
 }
 
 #[test]
 fn pandoc_citation_display_distinguishes_absent_from_empty() {
-    let citation = Citation {
-        id: "smith2024".into(),
-        prefix: Vec::new(),
-        suffix: Vec::new(),
-        mode: CitationMode::Normal,
-        note_num: 0,
-        hash: 0,
-    };
+    let citation =
+        Citation { id: "smith2024".into(), prefix: Vec::new(), suffix: Vec::new(), mode: CitationMode::Normal, note_num: 0, hash: 0 };
     let document = PandocDocument {
         api_version: API_VERSION,
         meta: Vec::new(),
@@ -891,9 +838,7 @@ fn pandoc_inline_text(inlines: &[Inline]) -> String {
             | Inline::SmallCaps(inner) => pandoc_inline_text(inner),
             Inline::Span { inlines, .. } => pandoc_inline_text(inlines),
             Inline::Code { text, .. } => text.clone(),
-            Inline::Quoted { inlines, .. } | Inline::Link { inlines, .. } | Inline::Image { inlines, .. } => {
-                pandoc_inline_text(inlines)
-            }
+            Inline::Quoted { inlines, .. } | Inline::Link { inlines, .. } | Inline::Image { inlines, .. } => pandoc_inline_text(inlines),
             Inline::Cite { inlines, .. } => pandoc_inline_text(inlines),
             _ => String::new(),
         })
@@ -907,11 +852,7 @@ fn markdown_footnote_definition_becomes_a_native_note() {
     assert!(graph.validate().is_valid(), "{:?}", graph.validate().issues);
 
     let exported = export_pandoc_json(&graph).expect("export");
-    assert!(
-        !exported.losses.iter().any(|loss| loss.code.starts_with("export.pandoc-json.note_definition")),
-        "{:?}",
-        exported.losses
-    );
+    assert!(!exported.losses.iter().any(|loss| loss.code.starts_with("export.pandoc-json.note_definition")), "{:?}", exported.losses);
     // The consumed definition must not linger as a raw opaque block.
     assert!(footnote_definition_payloads(&exported.document.blocks).is_empty(), "{:?}", exported.document.blocks);
 
@@ -940,11 +881,7 @@ fn multiline_footnote_definition_stays_opaque_with_a_precise_reason() {
     assert!(payload.contains('\n'), "{payload:?}");
 
     let exported = export_pandoc_json(&graph).expect("export");
-    assert!(
-        exported.losses.iter().any(|loss| loss.code == "export.pandoc-json.note_definition_multiblock"),
-        "{:?}",
-        exported.losses
-    );
+    assert!(exported.losses.iter().any(|loss| loss.code == "export.pandoc-json.note_definition_multiblock"), "{:?}", exported.losses);
     assert_eq!(footnote_definition_payloads(&exported.document.blocks), vec![payload.as_str()]);
     assert!(paragraph_notes(&exported.document.blocks).iter().all(|note| note.is_empty()));
 }
@@ -954,11 +891,7 @@ fn nested_footnote_reference_stays_opaque_with_a_precise_reason() {
     let markdown = "Text[^a].\n\n[^a]: body with [^b]\n";
     let graph = import_markdown_bytes("note.md", markdown).expect("markdown import");
     let exported = export_pandoc_json(&graph).expect("export");
-    assert!(
-        exported.losses.iter().any(|loss| loss.code == "export.pandoc-json.note_definition_nested"),
-        "{:?}",
-        exported.losses
-    );
+    assert!(exported.losses.iter().any(|loss| loss.code == "export.pandoc-json.note_definition_nested"), "{:?}", exported.losses);
     assert_eq!(footnote_definition_payloads(&exported.document.blocks), vec!["[^a]: body with [^b]"]);
     assert!(paragraph_notes(&exported.document.blocks).iter().all(|note| note.is_empty()));
 }
@@ -967,11 +900,7 @@ fn nested_footnote_reference_stays_opaque_with_a_precise_reason() {
 fn missing_footnote_definition_reports_a_missing_reason() {
     let graph = import_markdown_bytes("note.md", "Text[^a].\n").expect("markdown import");
     let exported = export_pandoc_json(&graph).expect("export");
-    assert!(
-        exported.losses.iter().any(|loss| loss.code == "export.pandoc-json.note_definition_missing"),
-        "{:?}",
-        exported.losses
-    );
+    assert!(exported.losses.iter().any(|loss| loss.code == "export.pandoc-json.note_definition_missing"), "{:?}", exported.losses);
     assert!(footnote_definition_payloads(&exported.document.blocks).is_empty());
     assert!(paragraph_notes(&exported.document.blocks).iter().all(|note| note.is_empty()));
 }
@@ -980,11 +909,7 @@ fn missing_footnote_definition_reports_a_missing_reason() {
 fn empty_footnote_definition_reports_an_empty_reason() {
     let graph = import_markdown_bytes("note.md", "Text[^a].\n\n[^a]:\n").expect("markdown import");
     let exported = export_pandoc_json(&graph).expect("export");
-    assert!(
-        exported.losses.iter().any(|loss| loss.code == "export.pandoc-json.note_definition_empty"),
-        "{:?}",
-        exported.losses
-    );
+    assert!(exported.losses.iter().any(|loss| loss.code == "export.pandoc-json.note_definition_empty"), "{:?}", exported.losses);
 }
 
 #[test]
@@ -992,11 +917,7 @@ fn block_level_footnote_body_reports_a_block_level_reason() {
     let markdown = "Text[^a].\n\n[^a]: - list item\n";
     let graph = import_markdown_bytes("note.md", markdown).expect("markdown import");
     let exported = export_pandoc_json(&graph).expect("export");
-    assert!(
-        exported.losses.iter().any(|loss| loss.code == "export.pandoc-json.note_definition_block_level"),
-        "{:?}",
-        exported.losses
-    );
+    assert!(exported.losses.iter().any(|loss| loss.code == "export.pandoc-json.note_definition_block_level"), "{:?}", exported.losses);
     assert_eq!(footnote_definition_payloads(&exported.document.blocks), vec!["[^a]: - list item"]);
 }
 
@@ -1005,11 +926,7 @@ fn footnote_body_with_an_image_is_rebuilt_as_a_native_note() {
     let markdown = "Text[^a].\n\n[^a]: see ![alt](pic.png)\n";
     let graph = import_markdown_bytes("note.md", markdown).expect("markdown import");
     let exported = export_pandoc_json(&graph).expect("export");
-    assert!(
-        !exported.losses.iter().any(|loss| loss.code.starts_with("export.pandoc-json.note_definition")),
-        "{:?}",
-        exported.losses
-    );
+    assert!(!exported.losses.iter().any(|loss| loss.code.starts_with("export.pandoc-json.note_definition")), "{:?}", exported.losses);
     assert!(footnote_definition_payloads(&exported.document.blocks).is_empty());
     let notes = paragraph_notes(&exported.document.blocks);
     assert_eq!(notes.len(), 1);
@@ -1033,11 +950,7 @@ fn lossy_footnote_body_stays_opaque_with_an_unrepresentable_reason() {
     let markdown = "Text[^a].\n\n[^a]: [text][missing]\n";
     let graph = import_markdown_bytes("note.md", markdown).expect("markdown import");
     let exported = export_pandoc_json(&graph).expect("export");
-    assert!(
-        exported.losses.iter().any(|loss| loss.code == "export.pandoc-json.note_definition_unrepresentable"),
-        "{:?}",
-        exported.losses
-    );
+    assert!(exported.losses.iter().any(|loss| loss.code == "export.pandoc-json.note_definition_unrepresentable"), "{:?}", exported.losses);
     assert_eq!(footnote_definition_payloads(&exported.document.blocks), vec!["[^a]: [text][missing]"]);
 }
 
@@ -1067,10 +980,7 @@ fn pandoc_note_body_survives_a_markdown_round_trip() {
     let document = PandocDocument {
         api_version: API_VERSION,
         meta: Vec::new(),
-        blocks: vec![Block::Para(vec![
-            Inline::Str("See".into()),
-            Inline::Note(vec![Block::Para(vec![Inline::Str("body one".into())])]),
-        ])],
+        blocks: vec![Block::Para(vec![Inline::Str("See".into()), Inline::Note(vec![Block::Para(vec![Inline::Str("body one".into())])])])],
     };
     let graph = import(&encode_text(&document));
     let markdown = export_markdown(&graph).expect("a pandoc note body must have a Markdown footnote spelling");

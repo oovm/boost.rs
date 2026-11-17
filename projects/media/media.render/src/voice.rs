@@ -31,10 +31,7 @@ pub fn write_voice_frames(frames: &[[f32; 2]], path: &str, sample_rate: u32) -> 
     if sample_rate == 0 {
         return Err(Error::invalid_input("voice export: sample rate must be positive"));
     }
-    let pcm: Vec<i16> = frames
-        .iter()
-        .flat_map(|frame| frame.iter().map(|sample| (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16))
-        .collect();
+    let pcm: Vec<i16> = frames.iter().flat_map(|frame| frame.iter().map(|sample| (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)).collect();
     write_wav(path, &pcm, sample_rate)
 }
 
@@ -51,7 +48,7 @@ pub fn write_voice(spec: &VoiceSpec, path: &str, sample_rate: u32) -> Result<(),
 mod tests {
     use super::*;
     use media_codec::parse_wav_pcm16;
-    use media_voice::{Syllable, Vowel, VoiceSpec};
+    use media_voice::{Syllable, VoiceSpec, Vowel};
 
     fn temp_dir(name: &str) -> std::path::PathBuf {
         let mut path = std::env::temp_dir();
@@ -88,14 +85,8 @@ mod tests {
         assert_eq!(std::fs::read(&a).expect("a"), std::fs::read(&b).expect("b"));
         let mut invalid = spec.clone();
         invalid.syllables.clear();
-        assert_eq!(
-            write_voice(&invalid, "unused.wav", 44_100).expect_err("empty lyric").code(),
-            "invalid_input"
-        );
-        assert_eq!(
-            write_voice(&spec, "unused.wav", 0).expect_err("zero rate").code(),
-            "invalid_input"
-        );
+        assert_eq!(write_voice(&invalid, "unused.wav", 44_100).expect_err("empty lyric").code(), "invalid_input");
+        assert_eq!(write_voice(&spec, "unused.wav", 0).expect_err("zero rate").code(), "invalid_input");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

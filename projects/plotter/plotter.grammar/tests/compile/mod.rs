@@ -17,36 +17,27 @@ fn compiles_point_bar_text() {
         .push_string("lab", vec!["a".into(), "b".into(), "c".into()])
         .unwrap();
 
-    let point = compile_plot(
-        &PlotSpec::new(table.clone()).mapping(Mapping::xy("x", "y")).layer(LayerSpec::geom_point()),
-        CompileOptions::golden(),
-    )
-    .unwrap();
+    let point =
+        compile_plot(&PlotSpec::new(table.clone()).mapping(Mapping::xy("x", "y")).layer(LayerSpec::geom_point()), CompileOptions::golden())
+            .unwrap();
     assert!(point.nodes.nodes().iter().any(|n| matches!(n.kind, SceneNodeKind::Points(_))));
 
-    let bar = compile_plot(
-        &PlotSpec::new(table.clone()).mapping(Mapping::xy("x", "y")).layer(LayerSpec::geom_bar()),
-        CompileOptions::golden(),
-    )
-    .unwrap();
+    let bar = compile_plot(&PlotSpec::new(table.clone()).mapping(Mapping::xy("x", "y")).layer(LayerSpec::geom_bar()), CompileOptions::golden())
+        .unwrap();
     assert!(bar.nodes.nodes().iter().any(|n| matches!(n.kind, SceneNodeKind::Mesh(_))));
 
     let mut mapping = Mapping::xy("x", "y");
     mapping.label = Some(AestheticExpr::column("lab"));
-    let text =
-        compile_plot(&PlotSpec::new(table).mapping(mapping).layer(LayerSpec::geom_text()), CompileOptions::golden()).unwrap();
+    let text = compile_plot(&PlotSpec::new(table).mapping(mapping).layer(LayerSpec::geom_text()), CompileOptions::golden()).unwrap();
     assert!(text.nodes.nodes().iter().any(|n| matches!(n.kind, SceneNodeKind::Text(_))));
 }
 
 #[test]
 fn log_y_midpoint_differs_from_linear() {
-    let table =
-        ColumnTable::new().push_float("x", vec![0.0, 0.5, 1.0]).unwrap().push_float("y", vec![1.0, 10.0, 100.0]).unwrap();
-    let linear = compile_plot(
-        &PlotSpec::new(table.clone()).mapping(Mapping::xy("x", "y")).layer(LayerSpec::geom_point()),
-        CompileOptions::golden(),
-    )
-    .unwrap();
+    let table = ColumnTable::new().push_float("x", vec![0.0, 0.5, 1.0]).unwrap().push_float("y", vec![1.0, 10.0, 100.0]).unwrap();
+    let linear =
+        compile_plot(&PlotSpec::new(table.clone()).mapping(Mapping::xy("x", "y")).layer(LayerSpec::geom_point()), CompileOptions::golden())
+            .unwrap();
     let log = compile_plot(
         &PlotSpec::new(table).mapping(Mapping::xy("x", "y")).scale(ScaleSpec::log10_y()).layer(LayerSpec::geom_point()),
         CompileOptions::golden(),
@@ -85,10 +76,7 @@ fn facet_wrap_builds_two_panels() {
         .push_string("g", vec!["a".into(), "a".into(), "b".into(), "b".into()])
         .unwrap();
     let scene = compile_plot(
-        &PlotSpec::new(table)
-            .mapping(Mapping::xy("x", "y"))
-            .facets(FacetSpec::wrap_ncol("g", 2))
-            .layer(LayerSpec::geom_point()),
+        &PlotSpec::new(table).mapping(Mapping::xy("x", "y")).facets(FacetSpec::wrap_ncol("g", 2)).layer(LayerSpec::geom_point()),
         CompileOptions::golden(),
     )
     .unwrap();

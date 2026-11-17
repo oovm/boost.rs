@@ -32,11 +32,8 @@ impl TemplateFramework for StubFramework {
 }
 
 fn loader() -> MapTemplateLoader {
-    MapTemplateLoader::new().with_root(
-        TemplateRoot::new("theme", 0)
-            .with_file("page.hbs", "<h1>{{ title }}</h1>")
-            .with_file("nav.hbs", "<nav>{{ title }}</nav>"),
-    )
+    MapTemplateLoader::new()
+        .with_root(TemplateRoot::new("theme", 0).with_file("page.hbs", "<h1>{{ title }}</h1>").with_file("nav.hbs", "<nav>{{ title }}</nav>"))
 }
 
 #[test]

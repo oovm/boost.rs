@@ -107,8 +107,7 @@ pub fn load_fixture_provider_from_dirs(dirs: &[impl AsRef<Path>]) -> Result<Fixt
             pd::code(pd::BROWSER_UNAVAILABLE),
             DiagnosticSeverity::Error,
             pd::origin_browser(),
-            Message::new("crawler.diagnostic.browserFixturesRequired")
-                .with_fallback("at least one browser fixtures directory is required"),
+            Message::new("crawler.diagnostic.browserFixturesRequired").with_fallback("at least one browser fixtures directory is required"),
         );
         return Err(CrawlError::from(diag));
     }

@@ -15,17 +15,13 @@ mod host;
 mod l2;
 mod raster;
 
-pub use contract::{
-    error_code_to_i32, reference_graph, run_diag_mask, run_matmul_contract, EXPECTED_DIAG_MASK,
-    EXPECTED_MATMUL,
-};
+pub use contract::{EXPECTED_DIAG_MASK, EXPECTED_MATMUL, error_code_to_i32, reference_graph, run_diag_mask, run_matmul_contract};
 pub use fill::{run_color_fill_rgba8, write_color_fill_rgba8};
 pub use host::bind_external_buffer_via_host;
 pub use l2::{l2_color_fill_webgpu_status, run_l2_color_fill_webgpu};
 pub use raster::{
-    l2_raster_clear_webgpu_status, l2_raster_tri_webgpu_status, run_l2_raster_clear_webgpu,
-    run_l2_raster_tri_webgpu, run_raster_clear_rgba8, run_raster_tri_rgba8,
-    write_raster_clear_rgba8, write_raster_tri_rgba8,
+    l2_raster_clear_webgpu_status, l2_raster_tri_webgpu_status, run_l2_raster_clear_webgpu, run_l2_raster_tri_webgpu, run_raster_clear_rgba8,
+    run_raster_tri_rgba8, write_raster_clear_rgba8, write_raster_tri_rgba8,
 };
 
 /// Wasm 目标三元组（与 Rust target 对齐）。
@@ -37,65 +33,31 @@ pub const TARGET_TRIPLE: &str = "wasm32-unknown-unknown";
 ///
 /// `out` 必须可写且长度足够。
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ucf_color_fill_rgba8(
-    width: u32,
-    height: u32,
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8,
-    out: *mut u8,
-) -> i32 {
+pub unsafe extern "C" fn ucf_color_fill_rgba8(width: u32, height: u32, r: u8, g: u8, b: u8, a: u8, out: *mut u8) -> i32 {
     write_color_fill_rgba8(width, height, [r, g, b, a], out)
 }
 
 /// L2：UCF CPU `Fill` 校验后，经 `ucf_host` 提交 WebGPU 清屏。
 #[unsafe(no_mangle)]
-pub extern "C" fn ucf_l2_color_fill_webgpu(
-    width: u32,
-    height: u32,
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8,
-) -> i32 {
+pub extern "C" fn ucf_l2_color_fill_webgpu(width: u32, height: u32, r: u8, g: u8, b: u8, a: u8) -> i32 {
     l2_color_fill_webgpu_status(width, height, [r, g, b, a])
 }
 
 /// L2：UCF CPU `Raster` 清屏校验后，经 `ucf_host` 提交 WebGPU 清屏。
 #[unsafe(no_mangle)]
-pub extern "C" fn ucf_l2_raster_clear_webgpu(
-    width: u32,
-    height: u32,
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8,
-) -> i32 {
+pub extern "C" fn ucf_l2_raster_clear_webgpu(width: u32, height: u32, r: u8, g: u8, b: u8, a: u8) -> i32 {
     l2_raster_clear_webgpu_status(width, height, r, g, b, a)
 }
 
 /// CPU `Raster` 清屏读回 RGBA8 到线性内存。
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ucf_raster_clear_rgba8(
-    width: u32,
-    height: u32,
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8,
-    out: *mut u8,
-) -> i32 {
+pub unsafe extern "C" fn ucf_raster_clear_rgba8(width: u32, height: u32, r: u8, g: u8, b: u8, a: u8, out: *mut u8) -> i32 {
     write_raster_clear_rgba8(width, height, r, g, b, a, out)
 }
 
 /// CPU `Raster` `draw=tri` 读回 RGBA8 到线性内存。
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ucf_raster_tri_rgba8(
-    width: u32,
-    height: u32,
-    out: *mut u8,
-) -> i32 {
+pub unsafe extern "C" fn ucf_raster_tri_rgba8(width: u32, height: u32, out: *mut u8) -> i32 {
     write_raster_tri_rgba8(width, height, out)
 }
 

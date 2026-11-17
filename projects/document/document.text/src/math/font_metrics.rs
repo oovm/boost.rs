@@ -5,8 +5,7 @@ use std::collections::HashMap;
 use super::opentype::MathFontFamily;
 
 use document_compose::math::{
-    DelimiterConstruction, DelimiterVariant, Fixed, FontMetricsData, FontStyle, GlyphKey, GlyphMetrics, MathConstant,
-    MathError, MathResult,
+    DelimiterConstruction, DelimiterVariant, Fixed, FontMetricsData, FontStyle, GlyphKey, GlyphMetrics, MathConstant, MathError, MathResult,
 };
 
 #[derive(Debug)]
@@ -131,10 +130,7 @@ impl FontMetricsSystem {
         if let (Some(face), Some(ch)) = (emphasis, key.char) {
             return Err(MathError::font_error(
                 family,
-                format!(
-                    "font ships no {face} face for '{ch}' (U+{:04X}); synthesized emphasis outlines are forbidden",
-                    ch as u32
-                ),
+                format!("font ships no {face} face for '{ch}' (U+{:04X}); synthesized emphasis outlines are forbidden", ch as u32),
             ));
         }
         Err(MathError::font_error(family, "glyph path not in cache"))
@@ -148,12 +144,7 @@ const BOLD_OFFSET: f64 = 0.014;
 
 /// Look up the upright key a derived emphasis face is built from.
 fn upright_key(key: &GlyphKey, style: FontStyle) -> GlyphKey {
-    GlyphKey {
-        char: key.char,
-        glyph_id: None,
-        font_family: key.font_family.clone().or_else(|| Some("default".to_string())),
-        style,
-    }
+    GlyphKey { char: key.char, glyph_id: None, font_family: key.font_family.clone().or_else(|| Some("default".to_string())), style }
 }
 
 /// Metrics for a derived bold or italic face.
@@ -338,9 +329,7 @@ fn bar_path(offsets: &[f64], height: f64, depth: f64) -> String {
     let mut path = String::new();
     for &x in offsets {
         let right = x + BAR_STROKE;
-        path.push_str(&format!(
-            "M {x:.4},{bottom:.4} L {right:.4},{bottom:.4} L {right:.4},{height:.4} L {x:.4},{height:.4} Z "
-        ));
+        path.push_str(&format!("M {x:.4},{bottom:.4} L {right:.4},{bottom:.4} L {right:.4},{height:.4} L {x:.4},{height:.4} Z "));
     }
     path
 }
@@ -374,10 +363,7 @@ fn rekey_script_variants(map: HashMap<GlyphKey, Vec<GlyphKey>>, new_family: &str
 /// Layout reads the variant and assembly glyph keys straight out of the
 /// construction it looks up, so a construction whose inner keys still name the
 /// source font resolves to synthetic extents and paints nothing.
-fn rekey_delimiters(
-    map: HashMap<GlyphKey, DelimiterConstruction>,
-    new_family: &str,
-) -> HashMap<GlyphKey, DelimiterConstruction> {
+fn rekey_delimiters(map: HashMap<GlyphKey, DelimiterConstruction>, new_family: &str) -> HashMap<GlyphKey, DelimiterConstruction> {
     let family = Some(new_family.to_string());
     map.into_iter()
         .map(|(mut key, mut construction)| {
@@ -404,8 +390,7 @@ pub fn builtin_font_metrics() -> FontMetricsSystem {
     // Prefer XITS Math (KaTeX lineage), fall back to LM Math (Computer Modern).
     // The same list gates `MathFontFacts::embedded`, so the engine's facts and
     // this cache always describe one font.
-    let opentype_data =
-        MathFontFamily::BUILTIN_PREFERENCE.into_iter().find_map(|fam| super::opentype::opentype_font_metrics(fam));
+    let opentype_data = MathFontFamily::BUILTIN_PREFERENCE.into_iter().find_map(|fam| super::opentype::opentype_font_metrics(fam));
     builtin_font_metrics_from(opentype_data)
 }
 
@@ -462,12 +447,7 @@ fn builtin_font_metrics_from(opentype_data: Option<FontMetricsData>) -> FontMetr
         }
         let mut variants = Vec::new();
         for (i, &(h, d)) in variant_sizes.iter().enumerate() {
-            let variant_key = GlyphKey {
-                char: Some(ch),
-                glyph_id: Some(1000 + i as u16),
-                font_family: family.clone(),
-                style: FontStyle::Math,
-            };
+            let variant_key = GlyphKey { char: Some(ch), glyph_id: Some(1000 + i as u16), font_family: family.clone(), style: FontStyle::Math };
             data.glyphs.insert(
                 variant_key.clone(),
                 GlyphMetrics {
@@ -542,12 +522,8 @@ fn builtin_font_metrics_from(opentype_data: Option<FontMetricsData>) -> FontMetr
         let base_path = bar_path(offsets, bar_variants[0].0, bar_variants[0].1);
         let mut variants = Vec::new();
         for (index, &(height, depth)) in bar_variants.iter().enumerate() {
-            let variant_key = GlyphKey {
-                char: Some(ch),
-                glyph_id: Some(2000 + index as u16),
-                font_family: family.clone(),
-                style: FontStyle::Math,
-            };
+            let variant_key =
+                GlyphKey { char: Some(ch), glyph_id: Some(2000 + index as u16), font_family: family.clone(), style: FontStyle::Math };
             let advance = if index == 0 { base_advance } else { stretched_advance };
             data.glyphs.insert(
                 variant_key.clone(),

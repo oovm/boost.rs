@@ -1,6 +1,6 @@
 use document_ir::{
-    AttributePair, Attributes, Block, BreakKind, DocumentGraph, DocumentId, Inline, LossMarker, MathDisplay, NodeId,
-    RelationEndpoint, SemanticStatus, SourceKind, SourceRef, SourceSpan,
+    AttributePair, Attributes, Block, BreakKind, DocumentGraph, DocumentId, Inline, LossMarker, MathDisplay, NodeId, RelationEndpoint,
+    SemanticStatus, SourceKind, SourceRef, SourceSpan,
 };
 use oak_core::{Builder, SourceText, parser::session::ParseSession};
 use oak_html::{
@@ -83,11 +83,7 @@ pub fn import_html_bytes(label: &str, bytes: &[u8]) -> Result<DocumentGraph, For
 }
 
 /// Import HTML with caller-supplied asset bytes.
-pub fn import_html_bytes_with_assets(
-    label: &str,
-    bytes: &[u8],
-    assets: &dyn HtmlAssetSource,
-) -> Result<DocumentGraph, FormatError> {
+pub fn import_html_bytes_with_assets(label: &str, bytes: &[u8], assets: &dyn HtmlAssetSource) -> Result<DocumentGraph, FormatError> {
     import_html_with_links_and_assets(
         label,
         std::str::from_utf8(bytes).map_err(|error| FormatError::parse("html", format!("{label}: {error}")))?,
@@ -113,19 +109,12 @@ pub fn import_html_with_links(label: &str, text: &str) -> Result<HtmlImport, For
 }
 
 /// Import HTML with link candidates and caller-supplied asset bytes.
-pub fn import_html_with_links_and_assets(
-    label: &str,
-    text: &str,
-    assets: &dyn HtmlAssetSource,
-) -> Result<HtmlImport, FormatError> {
+pub fn import_html_with_links_and_assets(label: &str, text: &str, assets: &dyn HtmlAssetSource) -> Result<HtmlImport, FormatError> {
     let authored = text;
     let source = SourceText::new(text);
     let builder = HtmlBuilder::new(HtmlLanguage::default());
     let mut session = ParseSession::<HtmlLanguage>::default();
-    let document = builder
-        .build(&source, &[], &mut session)
-        .result
-        .map_err(|error| FormatError::parse("html", format!("{label}: {error}")))?;
+    let document = builder.build(&source, &[], &mut session).result.map_err(|error| FormatError::parse("html", format!("{label}: {error}")))?;
     let mut graph = DocumentGraph::new(DocumentId(1));
     if let Some(title) = document.nodes.iter().filter_map(as_element).find_map(|element| find_element(element, "title")) {
         let title = text_content(title).trim().to_string();
@@ -322,9 +311,7 @@ pub(crate) fn hydrate_image_assets(graph: &mut DocumentGraph, source: &dyn HtmlA
     for target in unresolved {
         graph.push_loss(LossMarker {
             code: loss_code.into(),
-            message: format!(
-                "image `{target}` has no captured bytes. The asset stays Unresolved and is not materialized under assets/"
-            ),
+            message: format!("image `{target}` has no captured bytes. The asset stays Unresolved and is not materialized under assets/"),
             status: SemanticStatus::Partial,
         });
     }
@@ -412,11 +399,7 @@ fn lower_children(children: &[HtmlNode], graph: &mut DocumentGraph, source: &str
     result
 }
 
-fn flush_inline_run(
-    result: &mut Vec<(Block, std::ops::Range<usize>)>,
-    pending: &mut Vec<Inline>,
-    span: &mut Option<std::ops::Range<usize>>,
-) {
+fn flush_inline_run(result: &mut Vec<(Block, std::ops::Range<usize>)>, pending: &mut Vec<Inline>, span: &mut Option<std::ops::Range<usize>>) {
     let Some(span) = span.take()
     else {
         return;
@@ -555,11 +538,7 @@ fn as_element(node: &HtmlNode) -> Option<&Element> {
 }
 
 fn attribute(element: &Element, name: &str) -> Option<String> {
-    element
-        .attributes
-        .iter()
-        .find(|attribute| attribute.name.eq_ignore_ascii_case(name))
-        .and_then(|attribute| attribute.value.clone())
+    element.attributes.iter().find(|attribute| attribute.name.eq_ignore_ascii_case(name)).and_then(|attribute| attribute.value.clone())
 }
 
 /// Read a table cell span attribute.
@@ -600,8 +579,7 @@ fn flatten_table_spans(rows: Vec<document_ir::TableRow>) -> (Vec<document_ir::Ta
     if !spanning {
         return (rows, false);
     }
-    let columns =
-        rows.iter().map(|row| row.cells.iter().map(|cell| cell.colspan.max(1) as usize).sum::<usize>()).max().unwrap_or(0);
+    let columns = rows.iter().map(|row| row.cells.iter().map(|cell| cell.colspan.max(1) as usize).sum::<usize>()).max().unwrap_or(0);
     let mut grid: Vec<Vec<Option<Vec<NodeId>>>> = vec![vec![None; columns]; rows.len()];
     for (row_index, row) in rows.iter().enumerate() {
         let mut column = 0;
@@ -617,12 +595,8 @@ fn flatten_table_spans(rows: Vec<document_ir::TableRow>) -> (Vec<document_ir::Ta
             for covered_row in row_index..(row_index + rowspan).min(rows.len()) {
                 for covered_column in column..(column + colspan).min(columns) {
                     if grid[covered_row][covered_column].is_none() {
-                        grid[covered_row][covered_column] = Some(if covered_row == row_index && covered_column == column {
-                            cell.children.clone()
-                        }
-                        else {
-                            Vec::new()
-                        });
+                        grid[covered_row][covered_column] =
+                            Some(if covered_row == row_index && covered_column == column { cell.children.clone() } else { Vec::new() });
                     }
                 }
             }
@@ -659,11 +633,7 @@ fn lower_blocks(element: &Element, graph: &mut DocumentGraph, source: &str) -> V
     match tag.as_str() {
         "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
             vec![(
-                Block::Section {
-                    level: tag[1..].parse().unwrap_or(1),
-                    title: lower_inlines(element, graph, source),
-                    children: Vec::new(),
-                },
+                Block::Section { level: tag[1..].parse().unwrap_or(1), title: lower_inlines(element, graph, source), children: Vec::new() },
                 span,
             )]
         }
@@ -746,10 +716,8 @@ fn lower_blocks(element: &Element, graph: &mut DocumentGraph, source: &str) -> V
             // Ordered items must carry their number: the markdown writer
             // refuses lists whose items lack one. `<ol start="n">` shifts the
             // sequence; unordered items stay unnumbered.
-            let start = attribute(element, "start")
-                .and_then(|value| value.parse::<u32>().ok())
-                .filter(|value| ordered && *value > 0)
-                .unwrap_or(1);
+            let start =
+                attribute(element, "start").and_then(|value| value.parse::<u32>().ok()).filter(|value| ordered && *value > 0).unwrap_or(1);
             let mut number = start;
             let mut items = Vec::new();
             // HTML closes an open `<li>` when another item starts, so a nested
@@ -877,9 +845,7 @@ fn lower_blocks(element: &Element, graph: &mut DocumentGraph, source: &str) -> V
                 graph.push_loss_at(
                     LossMarker {
                         code: "import.html.table_spans".into(),
-                        message:
-                            "merged table cells are flattened into empty continuation slots so the table stays a pipe table"
-                                .into(),
+                        message: "merged table cells are flattened into empty continuation slots so the table stays a pipe table".into(),
                         status: SemanticStatus::Partial,
                     },
                     element_source_span(element),
@@ -912,19 +878,14 @@ fn lower_blocks(element: &Element, graph: &mut DocumentGraph, source: &str) -> V
             blocks.push((Block::Table { caption, head, body, foot }, span));
             blocks
         }
-        "hr" => vec![(
-            Block::Opaque { kind: "thematic_break".into(), payload_hint: "---".into(), status: SemanticStatus::Partial },
-            span,
-        )],
+        "hr" => vec![(Block::Opaque { kind: "thematic_break".into(), payload_hint: "---".into(), status: SemanticStatus::Partial }, span)],
         "dl" => {
             // The IR has no definition list node. Terms and definitions become
             // paragraphs of their own and the downgrade is recorded.
             graph.push_loss_at(
                 LossMarker {
                     code: "import.html.definition_list".into(),
-                    message:
-                        "definition list is lowered to term and definition paragraphs because the IR has no definition list node"
-                            .into(),
+                    message: "definition list is lowered to term and definition paragraphs because the IR has no definition list node".into(),
                     status: SemanticStatus::Partial,
                 },
                 element_source_span(element),
@@ -979,18 +940,16 @@ fn lower_blocks(element: &Element, graph: &mut DocumentGraph, source: &str) -> V
 /// payload keeps the exact authored bytes; element text is only a fallback.
 fn explicit_diagram_marker(element: &Element, source: &str) -> Option<(String, String)> {
     let language = attribute(element, "data-diagram-language").filter(|language| !language.trim().is_empty())?;
-    let diagram = attribute(element, "data-diagram-source-hex")
-        .and_then(|hex| decode_hex(&hex))
-        .unwrap_or_else(|| preformatted_source(element, source));
+    let diagram =
+        attribute(element, "data-diagram-source-hex").and_then(|hex| decode_hex(&hex)).unwrap_or_else(|| preformatted_source(element, source));
     Some((language, diagram))
 }
 
 /// Explicit chart round-trip marker written by the HTML exporter.
 fn explicit_chart_marker(element: &Element, source: &str) -> Option<(String, String)> {
     let language = attribute(element, "data-chart-language").filter(|language| !language.trim().is_empty())?;
-    let chart = attribute(element, "data-chart-source-hex")
-        .and_then(|hex| decode_hex(&hex))
-        .unwrap_or_else(|| preformatted_source(element, source));
+    let chart =
+        attribute(element, "data-chart-source-hex").and_then(|hex| decode_hex(&hex)).unwrap_or_else(|| preformatted_source(element, source));
     Some((language, chart))
 }
 
@@ -1029,9 +988,8 @@ fn lower_footnote_section(element: &Element) -> Option<Vec<(Block, std::ops::Ran
     }
     let mut definitions = Vec::new();
     for item in descendants(element, "li") {
-        let label = attribute(item, "data-footnote-label").or_else(|| {
-            attribute(item, "id").and_then(|id| id.strip_prefix("fn").map(|rest| rest.trim_start_matches('-').to_string()))
-        });
+        let label = attribute(item, "data-footnote-label")
+            .or_else(|| attribute(item, "id").and_then(|id| id.strip_prefix("fn").map(|rest| rest.trim_start_matches('-').to_string())));
         let Some(label) = label.map(|label| label.trim().to_string()).filter(|label| !label.is_empty())
         else {
             continue;
@@ -1072,8 +1030,7 @@ fn footnote_reference_inline(element: &Element) -> Option<Inline> {
         link
     };
     let href = attribute(marker, "href").or_else(|| anchor.and_then(|link| attribute(link, "href"))).unwrap_or_default();
-    let from_href =
-        href.trim().strip_prefix("#fn").map(|rest| rest.trim_start_matches('-').to_string()).filter(|label| !label.is_empty());
+    let from_href = href.trim().strip_prefix("#fn").map(|rest| rest.trim_start_matches('-').to_string()).filter(|label| !label.is_empty());
     let label = attribute(marker, "data-footnote-label")
         .or_else(|| anchor.and_then(|link| attribute(link, "data-footnote-label")))
         .or(from_href)?
@@ -1101,9 +1058,7 @@ fn has_footnote_marker(element: &Element) -> bool {
         return true;
     }
     attribute(element, "class").is_some_and(|class| {
-        class
-            .split_whitespace()
-            .any(|token| token.eq_ignore_ascii_case("footnote-ref") || token.eq_ignore_ascii_case("footnote-reference"))
+        class.split_whitespace().any(|token| token.eq_ignore_ascii_case("footnote-ref") || token.eq_ignore_ascii_case("footnote-reference"))
     })
 }
 
@@ -1133,9 +1088,7 @@ fn hosted_diagram_source(element: &Element, graph: &mut DocumentGraph, source: &
         graph.push_loss_at(
             LossMarker {
                 code: "import.html.empty_diagram_container".into(),
-                message: format!(
-                    "a `{language}` diagram container carried no text source, so its contents were kept on the default path"
-                ),
+                message: format!("a `{language}` diagram container carried no text source, so its contents were kept on the default path"),
                 status: SemanticStatus::Partial,
             },
             element_source_span(element),
@@ -1179,9 +1132,7 @@ fn diagram_language_in_class_list(class: &str) -> Option<String> {
 /// Keep the diagram languages the Markdown importer promotes to
 /// `Block::Diagram`; unknown or absent markers stay on the default path.
 fn is_diagram_language(language: &str) -> bool {
-    language.eq_ignore_ascii_case("mermaid")
-        || language.eq_ignore_ascii_case("dot")
-        || language.eq_ignore_ascii_case("plantuml")
+    language.eq_ignore_ascii_case("mermaid") || language.eq_ignore_ascii_case("dot") || language.eq_ignore_ascii_case("plantuml")
 }
 
 /// HTML formatting commonly pads the authored diagram source with a leading
@@ -1272,13 +1223,7 @@ fn lower_list_item(item: &Element, graph: &mut DocumentGraph, number: Option<u32
             }
         }
     }
-    document_ir::ListItem {
-        content: lower_list_item_inlines(item, graph, source),
-        children,
-        number,
-        is_task: false,
-        is_checked: None,
-    }
+    document_ir::ListItem { content: lower_list_item_inlines(item, graph, source), children, number, is_task: false, is_checked: None }
 }
 
 /// Items of a list, including items the author wrote nested inside a previous
@@ -1296,10 +1241,7 @@ fn collect_list_items<'a>(element: &'a Element, items: &mut Vec<&'a Element>) {
 /// Elements that belong to a table's own structure rather than being foster
 /// parented outside it.
 fn is_table_structure(element: &Element) -> bool {
-    matches!(
-        element.tag_name.to_ascii_lowercase().as_str(),
-        "caption" | "colgroup" | "col" | "thead" | "tbody" | "tfoot" | "tr" | "td" | "th"
-    )
+    matches!(element.tag_name.to_ascii_lowercase().as_str(), "caption" | "colgroup" | "col" | "thead" | "tbody" | "tfoot" | "tr" | "td" | "th")
 }
 
 fn lower_math_block(element: &Element, graph: &mut DocumentGraph, display: MathDisplay) -> Block {
@@ -1387,12 +1329,7 @@ fn table_section_rows<'a>(table: &'a Element) -> Vec<(&'a Element, TableSection)
             _ => continue,
         };
         rows.extend(
-            child
-                .children
-                .iter()
-                .filter_map(as_element)
-                .filter(|row| row.tag_name.eq_ignore_ascii_case("tr"))
-                .map(|row| (row, section)),
+            child.children.iter().filter_map(as_element).filter(|row| row.tag_name.eq_ignore_ascii_case("tr")).map(|row| (row, section)),
         );
     }
     rows
@@ -1448,10 +1385,7 @@ fn is_unsupported_element(element: &Element) -> bool {
 /// them. `<style>`, `<script>` and `<form>` own their whole subtree, so the
 /// raw slice preserves controls and text without a second HTML parser.
 fn is_raw_preserved_element(element: &Element) -> bool {
-    matches!(
-        element.tag_name.to_ascii_lowercase().as_str(),
-        "script" | "style" | "form" | "input" | "select" | "textarea" | "button"
-    )
+    matches!(element.tag_name.to_ascii_lowercase().as_str(), "script" | "style" | "form" | "input" | "select" | "textarea" | "button")
 }
 
 fn lower_inline_element(element: &Element, graph: &mut DocumentGraph, source: &str) -> Vec<Inline> {
@@ -1489,11 +1423,7 @@ fn lower_inline_element(element: &Element, graph: &mut DocumentGraph, source: &s
                 nested
             }
             else {
-                vec![Inline::Link {
-                    target: RelationEndpoint::ExternalUri(target),
-                    display: nested,
-                    title: attribute(element, "title"),
-                }]
+                vec![Inline::Link { target: RelationEndpoint::ExternalUri(target), display: nested, title: attribute(element, "title") }]
             }
         }
         "img" => {
@@ -1545,8 +1475,7 @@ fn inline_attributes(element: &Element, graph: &mut DocumentGraph) -> Attributes
             }
         }
         else if attribute.name.eq_ignore_ascii_case("class") {
-            attributes.classes =
-                attribute.value.as_deref().unwrap_or_default().split_whitespace().map(str::to_string).collect();
+            attributes.classes = attribute.value.as_deref().unwrap_or_default().split_whitespace().map(str::to_string).collect();
         }
         else if attribute.name.eq_ignore_ascii_case("style") {
             // CSS declarations have no IR field. Recording the loss keeps the

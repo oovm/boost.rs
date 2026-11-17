@@ -203,18 +203,12 @@ impl ShapeSpec {
 fn parse_color(field: &str, input: Option<&str>) -> Result<Option<Rgba>, Error> {
     match input {
         None => Ok(None),
-        Some(text) => parse(text)
-            .map(Some)
-            .ok_or_else(|| Error::invalid_input(format!("{field}: invalid color '{text}'"))),
+        Some(text) => parse(text).map(Some).ok_or_else(|| Error::invalid_input(format!("{field}: invalid color '{text}'"))),
     }
 }
 
 fn check_finite(field: &str, value: f32) -> Result<(), Error> {
-    if value.is_finite() {
-        Ok(())
-    } else {
-        Err(Error::invalid_input(format!("{field}: {value} must be finite")))
-    }
+    if value.is_finite() { Ok(()) } else { Err(Error::invalid_input(format!("{field}: {value} must be finite"))) }
 }
 
 fn check_point(field: &str, point: &[f32; 2]) -> Result<(), Error> {
@@ -278,14 +272,16 @@ mod tests {
         assert_eq!(layer.name, "base");
         assert_eq!(layer.opacity, 0.8);
         assert_eq!(layer.shapes.len(), 3);
-        let Shape::Path { points, smooth, stroke, width, .. } = &layer.shapes[0] else {
+        let Shape::Path { points, smooth, stroke, width, .. } = &layer.shapes[0]
+        else {
             panic!("path");
         };
         assert_eq!(points, &vec![[8.0, 30.0], [24.0, 12.0]]);
         assert!(smooth);
         assert_eq!(*stroke, Some(Rgba([255, 200, 120, 255])));
         assert_eq!(*width, 3.0);
-        let Shape::Rect { radius, fill, .. } = &layer.shapes[1] else {
+        let Shape::Rect { radius, fill, .. } = &layer.shapes[1]
+        else {
             panic!("rect");
         };
         assert_eq!(*radius, 6.0);
@@ -294,13 +290,15 @@ mod tests {
 
     #[test]
     fn shape_defaults_apply_per_field() {
-        let doc = spec(r#"{"width":8,"height":8,"layers":[{"shapes":[
+        let doc = spec(
+            r#"{"width":8,"height":8,"layers":[{"shapes":[
             {"kind": "path", "points": [[0, 0], [4, 4]]},
             {"kind": "rect", "origin": [0, 0], "size": [4, 4]},
             {"kind": "circle", "center": [2, 2], "radius": 1.0}
-        ]}]}"#)
-            .build()
-            .expect("build");
+        ]}]}"#,
+        )
+        .build()
+        .expect("build");
         for shape in &doc.layers[0].shapes {
             match shape {
                 Shape::Path { smooth, closed, fill, stroke, width, .. } => {
@@ -323,11 +321,13 @@ mod tests {
 
     #[test]
     fn opacity_is_clamped_into_the_valid_range() {
-        let doc = spec(r#"{"width":8,"height":8,"layers":[
+        let doc = spec(
+            r#"{"width":8,"height":8,"layers":[
             {"opacity": 2.5}, {"opacity": -1.0}
-        ]}"#)
-            .build()
-            .expect("build");
+        ]}"#,
+        )
+        .build()
+        .expect("build");
         assert_eq!(doc.layers[0].opacity, 1.0);
         assert_eq!(doc.layers[1].opacity, 0.0);
     }
@@ -338,10 +338,16 @@ mod tests {
         // silence; every bad hex now names itself.
         for (json, field) in [
             (r#"{"width":8,"height":8,"background":"nope"}"#, "background"),
-            (r##"{"width":8,"height":8,"layers":[{"shapes":[
-                {"kind":"circle","center":[2,2],"radius":1,"fill":"#zzzzzz"}]}]}"##, "fill"),
-            (r##"{"width":8,"height":8,"layers":[{"shapes":[
-                {"kind":"rect","origin":[0,0],"size":[4,4],"stroke":"#fff0"}]}]}"##, "stroke"),
+            (
+                r##"{"width":8,"height":8,"layers":[{"shapes":[
+                {"kind":"circle","center":[2,2],"radius":1,"fill":"#zzzzzz"}]}]}"##,
+                "fill",
+            ),
+            (
+                r##"{"width":8,"height":8,"layers":[{"shapes":[
+                {"kind":"rect","origin":[0,0],"size":[4,4],"stroke":"#fff0"}]}]}"##,
+                "stroke",
+            ),
         ] {
             let error = spec(json).build().expect_err("bad color rejects");
             assert_eq!(error.code(), "invalid_input", "{json}");
@@ -360,14 +366,8 @@ mod tests {
         let shape = ShapeSpec::Circle { center: [2.0, f32::INFINITY], radius: 1.0, fill: None, stroke: None, width: 2.0 };
         assert_eq!(shape.build().expect_err("infinite coordinate rejects").code(), "invalid_input");
 
-        let shape = ShapeSpec::Path {
-            points: vec![[0.0, 0.0], [f32::NAN, 1.0]],
-            smooth: false,
-            closed: false,
-            fill: None,
-            stroke: None,
-            width: 2.0,
-        };
+        let shape =
+            ShapeSpec::Path { points: vec![[0.0, 0.0], [f32::NAN, 1.0]], smooth: false, closed: false, fill: None, stroke: None, width: 2.0 };
         assert_eq!(shape.build().expect_err("NaN point rejects").code(), "invalid_input");
 
         let spec = VectorSpec {

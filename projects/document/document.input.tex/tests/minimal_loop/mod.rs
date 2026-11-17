@@ -47,11 +47,8 @@ fn minimal_tex_document_reaches_an_svg_artifact() {
     assert_eq!(document.report.opaque[0].code, "tex.documentclass");
     assert!(document.report.lossy.is_empty(), "the minimal subset carries no lossy markers: {:#?}", document.report.lossy);
 
-    let preamble = document
-        .diagnostics
-        .iter()
-        .find(|diagnostic| diagnostic.code == "tex.documentclass")
-        .expect("the opaque preamble must be diagnosed");
+    let preamble =
+        document.diagnostics.iter().find(|diagnostic| diagnostic.code == "tex.documentclass").expect("the opaque preamble must be diagnosed");
     assert_eq!(preamble.severity, Severity::Warning);
     let span = preamble.span.expect("the preamble must be located in the source");
     assert_eq!(&SAMPLE[span.start as usize..span.end as usize], "\\documentclass{article}");

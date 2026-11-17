@@ -207,12 +207,7 @@ impl<'a> SvgWalk<'a> {
                 // paints outside: the tracked ink must cover the overhang or
                 // the viewport clips it.
                 let half = (stroke_width.to_f64() / 2.0).max(0.0);
-                let rect = Bounds {
-                    min_x: ox + rx - half,
-                    min_y: oy + ry - half,
-                    max_x: ox + rx + rw + half,
-                    max_y: oy + ry + rh + half,
-                };
+                let rect = Bounds { min_x: ox + rx - half, min_y: oy + ry - half, max_x: ox + rx + rw + half, max_y: oy + ry + rh + half };
                 self.ink.get_or_insert(rect).include_bounds(&rect);
                 if stroke_width.to_f64() > 0.0 {
                     let _ = write!(
@@ -226,11 +221,7 @@ impl<'a> SvgWalk<'a> {
                     );
                 }
                 else {
-                    let _ = write!(
-                        self.buffer,
-                        r#"<rect x="{}" y="{}" width="{}" height="{}" fill="currentColor" />"#,
-                        rx, ry, rw, rh
-                    );
+                    let _ = write!(self.buffer, r#"<rect x="{}" y="{}" width="{}" height="{}" fill="currentColor" />"#, rx, ry, rw, rh);
                 }
             }
             PaintNode::VectorPath { d, x, y, scale, bbox: _bbox } => {
@@ -423,12 +414,7 @@ mod tests {
                 height: Fixed::from_f64(20.0),
                 depth: Fixed::from_f64(5.0),
                 axis: Fixed::ZERO,
-                ink_bounds: BBox {
-                    x: Fixed::from_f64(10.0),
-                    y: Fixed::ZERO,
-                    width: Fixed::from_f64(80.0),
-                    height: Fixed::from_f64(15.0),
-                },
+                ink_bounds: BBox { x: Fixed::from_f64(10.0), y: Fixed::ZERO, width: Fixed::from_f64(80.0), height: Fixed::from_f64(15.0) },
             },
             paint: PaintNode::Group {
                 children: vec![PaintNode::Rect {
@@ -527,10 +513,7 @@ mod tests {
             translate_y: Fixed::ZERO,
         };
         let svg = render_formula_result(&res).markup;
-        assert!(
-            svg.contains(r#"<path d="M 0 0 L 1 1 Z" transform="translate(3.0000, 4.0000) scale(16.0000, -16.0000)""#),
-            "{svg}"
-        );
+        assert!(svg.contains(r#"<path d="M 0 0 L 1 1 Z" transform="translate(3.0000, 4.0000) scale(16.0000, -16.0000)""#), "{svg}");
     }
 
     /// One formula with the same glyph painted twice at different positions.
@@ -546,8 +529,7 @@ mod tests {
             path_data: vec![Some("M 0 0 L 1 1 Z".to_string())],
             spans: vec![None],
         };
-        res.paint =
-            PaintNode::Group { children: vec![glyph(3.0), glyph(9.0)], translate_x: Fixed::ZERO, translate_y: Fixed::ZERO };
+        res.paint = PaintNode::Group { children: vec![glyph(3.0), glyph(9.0)], translate_x: Fixed::ZERO, translate_y: Fixed::ZERO };
         res
     }
 

@@ -121,12 +121,8 @@ fn query_affected_rows(client: &mut TcpStream, sql: &str) -> u64 {
 fn decode_lenenc(payload: &[u8], offset: usize) -> u64 {
     match payload[offset] {
         0..=250 => u64::from(payload[offset]),
-        252 => {
-            u64::from(u16::from_le_bytes([payload[offset + 1], payload[offset + 2]]))
-        }
-        253 => {
-            u64::from(u32::from_le_bytes([payload[offset + 1], payload[offset + 2], payload[offset + 3], 0]))
-        }
+        252 => u64::from(u16::from_le_bytes([payload[offset + 1], payload[offset + 2]])),
+        253 => u64::from(u32::from_le_bytes([payload[offset + 1], payload[offset + 2], payload[offset + 3], 0])),
         254 => u64::from_le_bytes(payload[offset + 1..offset + 9].try_into().unwrap()),
         other => panic!("invalid length-encoded prefix {other} in OK packet"),
     }
@@ -213,7 +209,11 @@ fn read_lenenc(payload: &[u8], offset: usize) -> (usize, usize) {
         0x00..=0xFA => (usize::from(payload[offset]), offset + 1),
         0xFB => (usize::MAX, offset + 1),
         0xFC => (usize::from(u16::from_le_bytes([payload[offset + 1], payload[offset + 2]])), offset + 3),
-        0xFD => (usize::try_from(u32::from_le_bytes([payload[offset + 1], payload[offset + 2], payload[offset + 3], 0])).expect("3-byte length fits usize"), offset + 4),
+        0xFD => (
+            usize::try_from(u32::from_le_bytes([payload[offset + 1], payload[offset + 2], payload[offset + 3], 0]))
+                .expect("3-byte length fits usize"),
+            offset + 4,
+        ),
         other => panic!("invalid length-encoded prefix {other} in row packet"),
     }
 }

@@ -132,12 +132,7 @@ pub fn from_spanned_loss_marker(marker: &LossMarker, span: Option<SourceSpan>) -
 /// gives the byte range inside that block. Import-level losses pass `None`
 /// because no block owns them.
 pub fn from_spanned_loss_marker_at(marker: &LossMarker, span: Option<SourceSpan>, block: Option<u64>) -> Diagnostic {
-    let code = if marker.code.contains('.') {
-        WireDiagnosticCode::new(&marker.code)
-    }
-    else {
-        DiagnosticCode::SemanticLoss.wire_code()
-    };
+    let code = if marker.code.contains('.') { WireDiagnosticCode::new(&marker.code) } else { DiagnosticCode::SemanticLoss.wire_code() };
     let mut msg = Message::new("panduck.semantic.loss")
         .with_arg("code", MessageArg::Text(marker.code.clone()))
         .with_arg("severity", MessageArg::Text(semantic_status_label(marker.status).to_string()));
@@ -145,16 +140,9 @@ pub fn from_spanned_loss_marker_at(marker: &LossMarker, span: Option<SourceSpan>
         msg = msg.with_arg("block", MessageArg::U64(block));
     }
     if let Some(span) = span {
-        msg = msg
-            .with_arg("span.start", MessageArg::U64(span.start as u64))
-            .with_arg("span.end", MessageArg::U64(span.end as u64));
+        msg = msg.with_arg("span.start", MessageArg::U64(span.start as u64)).with_arg("span.end", MessageArg::U64(span.end as u64));
     }
-    Diagnostic::new(
-        code,
-        loss_severity(marker.status),
-        DiagnosticOrigin::new("panduck", "semantic"),
-        msg.with_fallback(marker.message.clone()),
-    )
+    Diagnostic::new(code, loss_severity(marker.status), DiagnosticOrigin::new("panduck", "semantic"), msg.with_fallback(marker.message.clone()))
 }
 
 /// Map adapter-layer failures to unified diagnostics.
@@ -178,12 +166,7 @@ pub fn from_adapter_error(error: &AdapterError) -> Diagnostic {
                 }
                 None => format!("I/O error: {source}"),
             };
-            Diagnostic::new(
-                DiagnosticCode::AdapterIo.wire_code(),
-                DiagnosticSeverity::Error,
-                origin,
-                msg.with_fallback(fallback),
-            )
+            Diagnostic::new(DiagnosticCode::AdapterIo.wire_code(), DiagnosticSeverity::Error, origin, msg.with_fallback(fallback))
         }
         AdapterError::InvalidInput { message } => {
             let diag = Diagnostic::new(
@@ -240,12 +223,7 @@ pub fn from_adapter_error(error: &AdapterError) -> Diagnostic {
                 }
                 None => format!("config error: {message}"),
             };
-            Diagnostic::new(
-                DiagnosticCode::AdapterConfig.wire_code(),
-                DiagnosticSeverity::Error,
-                origin,
-                msg.with_fallback(fallback),
-            )
+            Diagnostic::new(DiagnosticCode::AdapterConfig.wire_code(), DiagnosticSeverity::Error, origin, msg.with_fallback(fallback))
         }
     }
 }

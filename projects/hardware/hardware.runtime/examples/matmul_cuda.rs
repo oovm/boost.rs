@@ -23,12 +23,7 @@ fn main() -> hardware_scheduler::Result<()> {
                 objective: Objective::MaxThroughput,
                 priority: Priority::Batch,
             }],
-            edges: vec![DepEdge {
-                from_task: None,
-                from_resource: Some(ResourceId(1)),
-                to_task: TaskId(1),
-                kind: DepKind::Data,
-            }],
+            edges: vec![DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(1), kind: DepKind::Data }],
         },
     };
 

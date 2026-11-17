@@ -1,8 +1,6 @@
 //! Layout coverage for non-paragraph blocks and inline images.
 
-use document_ir::{
-    Asset, AssetId, AssetKind, Block, DocumentGraph, DocumentId, Inline, ListItem, SemanticStatus, TableCell, TableRow,
-};
+use document_ir::{Asset, AssetId, AssetKind, Block, DocumentGraph, DocumentId, Inline, ListItem, SemanticStatus, TableCell, TableRow};
 use document_layout::{
     layout,
     plan::{LayoutItem, LayoutPage, TextRun},
@@ -46,20 +44,10 @@ fn layout_keeps_the_intrinsic_image_aspect_ratio() {
         bytes: Some(png_bytes(640, 320)),
     });
     graph.push_block(Block::Paragraph {
-        content: vec![Inline::Image {
-            source: "wide.png".to_string(),
-            alt: vec![text("Wide figure")],
-            title: None,
-            asset: Some(wide),
-        }],
+        content: vec![Inline::Image { source: "wide.png".to_string(), alt: vec![text("Wide figure")], title: None, asset: Some(wide) }],
     });
     graph.push_block(Block::Paragraph {
-        content: vec![Inline::Image {
-            source: "unknown.png".to_string(),
-            alt: vec![text("No payload")],
-            title: None,
-            asset: None,
-        }],
+        content: vec![Inline::Image { source: "unknown.png".to_string(), alt: vec![text("No payload")], title: None, asset: None }],
     });
 
     let plan = layout(&graph);
@@ -105,18 +93,9 @@ fn lays_out_quote_code_table_break_and_image() {
         }],
         foot: Vec::new(),
     });
-    graph.push_block(Block::Opaque {
-        kind: "thematic_break".to_string(),
-        payload_hint: "---".to_string(),
-        status: SemanticStatus::Partial,
-    });
+    graph.push_block(Block::Opaque { kind: "thematic_break".to_string(), payload_hint: "---".to_string(), status: SemanticStatus::Partial });
     graph.push_block(Block::Paragraph {
-        content: vec![Inline::Image {
-            source: "figure.png".to_string(),
-            alt: vec![text("Figure alt")],
-            title: None,
-            asset: None,
-        }],
+        content: vec![Inline::Image { source: "figure.png".to_string(), alt: vec![text("Figure alt")], title: None, asset: None }],
     });
 
     let plan = layout(&graph);
@@ -166,10 +145,7 @@ fn table_rowspan_keeps_later_cells_in_their_column_and_skips_the_crossing_rule()
     let spanned = runs.iter().find(|run| run.text == "Spanned").expect("spanned row run");
     let first = runs.iter().find(|run| run.text == "First").expect("first row run");
     let later = runs.iter().find(|run| run.text == "Later").expect("later row run");
-    assert!(
-        later.x > spanned.x,
-        "a cell in the second row must stay in column two instead of sliding under the rowspan cell: {runs:?}"
-    );
+    assert!(later.x > spanned.x, "a cell in the second row must stay in column two instead of sliding under the rowspan cell: {runs:?}");
     assert_eq!(later.x, first.x, "both cells belong to the same column: {runs:?}");
 
     let boxes: Vec<_> = page
@@ -193,10 +169,7 @@ fn table_rowspan_keeps_later_cells_in_their_column_and_skips_the_crossing_rule()
         })
         .collect();
     let full = rules.iter().map(|rule| rule.x2 - rule.x1).fold(0.0f64, f64::max);
-    assert!(
-        rules.iter().any(|rule| rule.x2 - rule.x1 < full - 1.0),
-        "the row boundary must skip the columns the rowspan cell owns: {rules:?}"
-    );
+    assert!(rules.iter().any(|rule| rule.x2 - rule.x1 < full - 1.0), "the row boundary must skip the columns the rowspan cell owns: {rules:?}");
 }
 
 #[test]
@@ -211,16 +184,10 @@ fn table_without_rowspan_draws_no_span_box_or_split_rule() {
         head: Vec::new(),
         body: vec![
             TableRow {
-                cells: vec![
-                    TableCell { children: vec![a], colspan: 1, rowspan: 1 },
-                    TableCell { children: vec![b], colspan: 1, rowspan: 1 },
-                ],
+                cells: vec![TableCell { children: vec![a], colspan: 1, rowspan: 1 }, TableCell { children: vec![b], colspan: 1, rowspan: 1 }],
             },
             TableRow {
-                cells: vec![
-                    TableCell { children: vec![c], colspan: 1, rowspan: 1 },
-                    TableCell { children: vec![d], colspan: 1, rowspan: 1 },
-                ],
+                cells: vec![TableCell { children: vec![c], colspan: 1, rowspan: 1 }, TableCell { children: vec![d], colspan: 1, rowspan: 1 }],
             },
         ],
         foot: Vec::new(),
@@ -250,20 +217,8 @@ fn layout_draws_task_boxes_and_keeps_plain_list_markers() {
     graph.push_block(Block::List {
         ordered: false,
         items: vec![
-            ListItem {
-                content: vec![text("Checked")],
-                children: Vec::new(),
-                number: None,
-                is_task: true,
-                is_checked: Some(true),
-            },
-            ListItem {
-                content: vec![text("Open")],
-                children: Vec::new(),
-                number: None,
-                is_task: true,
-                is_checked: Some(false),
-            },
+            ListItem { content: vec![text("Checked")], children: Vec::new(), number: None, is_task: true, is_checked: Some(true) },
+            ListItem { content: vec![text("Open")], children: Vec::new(), number: None, is_task: true, is_checked: Some(false) },
             ListItem { content: vec![text("Plain")], children: Vec::new(), number: None, is_task: false, is_checked: None },
         ],
     });

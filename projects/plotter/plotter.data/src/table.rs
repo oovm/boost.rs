@@ -33,8 +33,9 @@ impl ColumnTable {
     /// 插入列；名称冲突或长度不一致则失败。
     pub fn insert(&mut self, column: Column) -> Result<()> {
         if column.is_empty() {
-            return Err(Diagnostic::error(DiagnosticCode::EmptyData, format!("列 `{}` 为空", column.name()))
-                .with_param("column", column.name()));
+            return Err(
+                Diagnostic::error(DiagnosticCode::EmptyData, format!("列 `{}` 为空", column.name())).with_param("column", column.name())
+            );
         }
         if self.columns.iter().any(|existing| existing.name() == column.name()) {
             return Err(Diagnostic::error(DiagnosticCode::ValidationFailed, format!("列名重复：`{}`", column.name()))
@@ -62,9 +63,10 @@ impl ColumnTable {
 
     /// 按名查找列。
     pub fn column(&self, name: &str) -> Result<&Column> {
-        self.columns.iter().find(|column| column.name() == name).ok_or_else(|| {
-            Diagnostic::error(DiagnosticCode::UnknownColumn, format!("未知列 `{name}`")).with_param("column", name)
-        })
+        self.columns
+            .iter()
+            .find(|column| column.name() == name)
+            .ok_or_else(|| Diagnostic::error(DiagnosticCode::UnknownColumn, format!("未知列 `{name}`")).with_param("column", name))
     }
 
     /// 按名取浮点列。
@@ -134,11 +136,8 @@ impl ColumnTable {
         }
         for column in &self.columns {
             if column.len() != expected {
-                return Err(Diagnostic::error(
-                    DiagnosticCode::ColumnLengthMismatch,
-                    format!("列 `{}` 长度不一致", column.name()),
-                )
-                .with_param("column", column.name()));
+                return Err(Diagnostic::error(DiagnosticCode::ColumnLengthMismatch, format!("列 `{}` 长度不一致", column.name()))
+                    .with_param("column", column.name()));
             }
         }
         Ok(())

@@ -8,9 +8,11 @@ use media_image::{Bitmap, Fit};
 use media_text::FontId;
 use media_types::Error;
 
-use crate::metrics::{BASELINE_FACTOR, LINE_HEIGHT_FACTOR, PAD_FACTOR, TextMeasure, text_box};
-use crate::model::{ComicDoc, Panel, TextItem, TextKind};
-use crate::paths;
+use crate::{
+    metrics::{BASELINE_FACTOR, LINE_HEIGHT_FACTOR, PAD_FACTOR, TextMeasure, text_box},
+    model::{ComicDoc, Panel, TextItem, TextKind},
+    paths,
+};
 
 /// Stroke width of every caption box and balloon outline (the source fixed).
 pub const BOX_STROKE_WIDTH: f32 = 2.0;
@@ -56,12 +58,7 @@ pub struct PagePlan {
 
 /// Builds the plan for one page. An unknown page index and an unresolvable
 /// panel image are explicit errors; neither paints a partial page.
-pub fn page_plan(
-    comic: &ComicDoc,
-    page: usize,
-    text: &mut dyn TextMeasure,
-    images: &mut dyn ImageStore,
-) -> Result<PagePlan, Error> {
+pub fn page_plan(comic: &ComicDoc, page: usize, text: &mut dyn TextMeasure, images: &mut dyn ImageStore) -> Result<PagePlan, Error> {
     let page = comic.pages.get(page).ok_or_else(|| Error::invalid_input(format!("no page {page}")))?;
     let mut ops = Vec::new();
     for panel in &page.panels {
@@ -101,11 +98,7 @@ fn paint_text(ops: &mut Vec<DrawOp>, text: &mut dyn TextMeasure, item: &TextItem
         TextKind::Balloon => {
             let radius = (box_h / BALLOON_RADIUS_DIVISOR).min(BALLOON_MAX_RADIUS);
             ops.push(DrawOp::FillRoundRect { rect: box_.rect, radius, color: item.fill });
-            ops.push(DrawOp::StrokePolyline {
-                points: paths::round_rect_path(box_.rect, radius),
-                width: BOX_STROKE_WIDTH,
-                color: item.stroke,
-            });
+            ops.push(DrawOp::StrokePolyline { points: paths::round_rect_path(box_.rect, radius), width: BOX_STROKE_WIDTH, color: item.stroke });
             if let Some(tail) = item.tail {
                 let [b0, b1] = paths::tail_base(box_.rect, tail);
                 ops.push(DrawOp::FillPolygon { points: vec![b0, tail, b1], color: item.fill });
@@ -122,7 +115,14 @@ fn paint_text(ops: &mut Vec<DrawOp>, text: &mut dyn TextMeasure, item: &TextItem
             TextKind::Caption => x0 + pad,
             TextKind::Balloon => x0 + (box_w - width) / 2.0,
         };
-        ops.push(DrawOp::TextLine { text: line.clone(), x, baseline: top + item.size * BASELINE_FACTOR, size: item.size, font, color: item.color });
+        ops.push(DrawOp::TextLine {
+            text: line.clone(),
+            x,
+            baseline: top + item.size * BASELINE_FACTOR,
+            size: item.size,
+            font,
+            color: item.color,
+        });
         top += line_height;
     }
 }
@@ -130,10 +130,12 @@ fn paint_text(ops: &mut Vec<DrawOp>, text: &mut dyn TextMeasure, item: &TextItem
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Border;
-    use crate::spec::{DEFAULT_TEXT_COLOR, DEFAULT_TEXT_FILL, DEFAULT_TEXT_STROKE};
-    use crate::testutil::{FixedText, KeyStore, demo_spec};
-    use crate::Page;
+    use crate::{
+        Page,
+        model::Border,
+        spec::{DEFAULT_TEXT_COLOR, DEFAULT_TEXT_FILL, DEFAULT_TEXT_STROKE},
+        testutil::{FixedText, KeyStore, demo_spec},
+    };
 
     fn page(panels: Vec<Panel>) -> ComicDoc {
         let mut comic = ComicDoc::new(400, 300, Rgba([250, 250, 252, 255]));
@@ -269,7 +271,10 @@ mod tests {
         let mut measurer = FixedText::new(&["HI"], 10.0);
         let mut store = KeyStore::new(&[]);
         let plan = page_plan(&comic, 0, &mut measurer, &mut store).expect("plan");
-        let DrawOp::TextLine { font, .. } = plan.ops.last().expect("line") else { panic!("last op must be the text line") };
+        let DrawOp::TextLine { font, .. } = plan.ops.last().expect("line")
+        else {
+            panic!("last op must be the text line")
+        };
         assert_eq!(*font, FontId::Bold);
     }
 

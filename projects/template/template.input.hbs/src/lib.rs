@@ -8,8 +8,7 @@ mod eval;
 mod parser;
 
 use template::{
-    RenderBudget, RenderOutput, RenderRequest, TemplateCapability, TemplateContentKind, TemplateEngine, TemplateError,
-    TemplateStatus,
+    RenderBudget, RenderOutput, RenderRequest, TemplateCapability, TemplateContentKind, TemplateEngine, TemplateError, TemplateStatus,
 };
 
 /// Handlebars syntax subset engine.

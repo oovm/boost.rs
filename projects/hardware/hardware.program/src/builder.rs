@@ -149,19 +149,29 @@ impl StructuredFunctionBuilder {
     }
 
     /// 构造常量表达式。
-    pub fn const_f32(&self, value: f32) -> Expr { Expr::ConstF32(value) }
+    pub fn const_f32(&self, value: f32) -> Expr {
+        Expr::ConstF32(value)
+    }
 
     /// 构造 F64 常量，不经过 F32 中间值。
-    pub fn const_f64(&self, value: f64) -> Expr { Expr::ConstF64(value) }
+    pub fn const_f64(&self, value: f64) -> Expr {
+        Expr::ConstF64(value)
+    }
 
     /// 构造无符号整数常量表达式。
-    pub fn const_u32(&self, value: u32) -> Expr { Expr::ConstU32(value) }
+    pub fn const_u32(&self, value: u32) -> Expr {
+        Expr::ConstU32(value)
+    }
 
     /// 构造 uniform 读取表达式。
-    pub fn load_uniform(&self, slot: u32) -> Expr { Expr::LoadUniform(slot) }
+    pub fn load_uniform(&self, slot: u32) -> Expr {
+        Expr::LoadUniform(slot)
+    }
 
     /// 构造并行实例索引表达式。
-    pub fn global_id(&self) -> Expr { Expr::GlobalId }
+    pub fn global_id(&self) -> Expr {
+        Expr::GlobalId
+    }
 
     /// 构造 buffer 读取表达式。
     pub fn load_buffer(&self, resource: u32, index: Expr) -> Expr {
@@ -248,12 +258,7 @@ impl FunctionBuilder {
     }
 
     /// 发出条件跳转终结器。
-    pub fn conditional_branch(
-        &mut self,
-        condition: ValueId,
-        then_block: BlockId,
-        else_block: BlockId,
-    ) -> Result<(), BuildError> {
+    pub fn conditional_branch(&mut self, condition: ValueId, then_block: BlockId, else_block: BlockId) -> Result<(), BuildError> {
         self.conditional_branch_with_args(condition, then_block, Vec::new(), else_block, Vec::new())
     }
 
@@ -442,20 +447,14 @@ impl FunctionBuilder {
             Instruction::ConstF32 { result, value } => CfgInstruction::ConstF32 { result: result.0, value: *value },
             Instruction::ConstF64 { result, value } => CfgInstruction::ConstF64 { result: result.0, value: *value },
             Instruction::ConstU32 { result, value } => CfgInstruction::ConstU32 { result: result.0, value: *value },
-            Instruction::LoadUniform { result, slot, ty } => {
-                CfgInstruction::LoadUniform { result: result.0, slot: *slot, ty: ty.clone() }
-            }
+            Instruction::LoadUniform { result, slot, ty } => CfgInstruction::LoadUniform { result: result.0, slot: *slot, ty: ty.clone() },
             Instruction::LoadBuffer { result, resource, index, ty } => {
                 CfgInstruction::LoadBuffer { result: result.0, resource: *resource, index: index.0, ty: ty.clone() }
             }
             Instruction::GlobalId { result } => CfgInstruction::GlobalId { result: result.0 },
-            Instruction::Binary { result, op, lhs, rhs } => {
-                CfgInstruction::Binary { result: result.0, op: *op, lhs: lhs.0, rhs: rhs.0 }
-            }
+            Instruction::Binary { result, op, lhs, rhs } => CfgInstruction::Binary { result: result.0, op: *op, lhs: lhs.0, rhs: rhs.0 },
             Instruction::Unary { result, op, arg } => CfgInstruction::Unary { result: result.0, op: *op, arg: arg.0 },
-            Instruction::Vec3Compose { result, x, y, z } => {
-                CfgInstruction::Vec3Compose { result: result.0, x: x.0, y: y.0, z: z.0 }
-            }
+            Instruction::Vec3Compose { result, x, y, z } => CfgInstruction::Vec3Compose { result: result.0, x: x.0, y: y.0, z: z.0 },
             Instruction::Select { result, cond, then_, else_ } => {
                 CfgInstruction::Select { result: result.0, cond: cond.0, then_: then_.0, else_: else_.0 }
             }
@@ -469,9 +468,13 @@ impl FunctionBuilder {
         match terminator {
             Terminator::Return(value) => CfgTerminator::Return(value.0),
             Terminator::Branch { target, args } => CfgTerminator::Branch { target: target.0, args: args.iter().map(|value| value.0).collect() },
-            Terminator::ConditionalBranch { condition, then_block, then_args, else_block, else_args } => {
-                CfgTerminator::ConditionalBranch { condition: condition.0, then_block: then_block.0, then_args: then_args.iter().map(|value| value.0).collect(), else_block: else_block.0, else_args: else_args.iter().map(|value| value.0).collect() }
-            }
+            Terminator::ConditionalBranch { condition, then_block, then_args, else_block, else_args } => CfgTerminator::ConditionalBranch {
+                condition: condition.0,
+                then_block: then_block.0,
+                then_args: then_args.iter().map(|value| value.0).collect(),
+                else_block: else_block.0,
+                else_args: else_args.iter().map(|value| value.0).collect(),
+            },
         }
     }
 
@@ -528,12 +531,12 @@ impl FunctionBuilder {
         if let Terminator::Return(value) = terminator {
             self.return_value_id = Some(value);
             block.terminator = Some(Terminator::Return(value));
-        } else {
+        }
+        else {
             block.terminator = Some(terminator);
         }
         Ok(())
     }
-
 }
 
 /// 构造完整 UCF 程序。
@@ -698,9 +701,7 @@ mod tests {
         function.switch_to(loop_block).expect("loop block");
         let next = function.emit_binary(BinOp::Add, loop_value, one).expect("increment");
         let condition = function.emit_binary(BinOp::Lt, next, limit).expect("loop condition");
-        function
-            .conditional_branch_with_args(condition, loop_block, vec![next], exit_block, vec![next])
-            .expect("loop branch");
+        function.conditional_branch_with_args(condition, loop_block, vec![next], exit_block, vec![next]).expect("loop branch");
         function.switch_to(exit_block).expect("exit block");
         function.return_value(exit_value).expect("exit return");
         let program = ProgramBuilder::new().entry(function).expect("entry").finish().expect("valid CFG loop");
@@ -728,11 +729,10 @@ mod tests {
         let mut function = StructuredFunctionBuilder::new("structured_sum");
         let accumulator = function.let_value(Ty::f32(), Expr::ConstF32(0.0));
         function.bounded_for(4, |function, iter| {
-            function.store_local(accumulator, Expr::BinOp {
-                op: BinOp::Add,
-                lhs: Box::new(Expr::LoadLocal(accumulator)),
-                rhs: Box::new(Expr::LoadLocal(iter)),
-            });
+            function.store_local(
+                accumulator,
+                Expr::BinOp { op: BinOp::Add, lhs: Box::new(Expr::LoadLocal(accumulator)), rhs: Box::new(Expr::LoadLocal(iter)) },
+            );
         });
         let program = ProgramBuilder::new()
             .structured_entry(function, Ty::f32(), Expr::LoadLocal(accumulator))
@@ -749,7 +749,11 @@ mod tests {
         let input = function.let_value(Ty::f32(), Expr::LoadUniform(0));
         let finite = Expr::UnOp { op: UnOp::IsFinite, arg: Box::new(Expr::LoadLocal(input)) };
         let result = Expr::Select { cond: Box::new(finite), then_: Box::new(Expr::ConstF32(1.0)), else_: Box::new(Expr::ConstF32(0.0)) };
-        let program = ProgramBuilder::new().structured_entry(function, Ty::f32(), result).expect("is finite entry").finish().expect("valid is finite program");
+        let program = ProgramBuilder::new()
+            .structured_entry(function, Ty::f32(), result)
+            .expect("is finite entry")
+            .finish()
+            .expect("valid is finite program");
         for (value, expected) in [(Value::F32(1.0), 1.0), (Value::F32(f32::NAN), 0.0), (Value::F32(f32::INFINITY), 0.0)] {
             let result = CpuInterpreter::new().with_uniform(0, value).run(&program).expect("CPU is finite execution");
             assert_eq!(result.value, Value::F32(expected));

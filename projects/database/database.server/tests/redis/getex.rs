@@ -5,7 +5,7 @@ use std::{
     collections::HashMap,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
-    sync::{atomic::AtomicBool, Arc},
+    sync::{Arc, atomic::AtomicBool},
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -234,11 +234,7 @@ fn getex_rejects_combined_options() {
     let (mut client, _server) = executor_server();
     send(&mut client, &["SET", "k", "v"]);
     expect_status(&mut client, "OK");
-    for options in [
-        ["EX", "10", "PERSIST"].as_slice(),
-        ["PERSIST", "EX", "10"].as_slice(),
-        ["EX", "10", "PX", "3000"].as_slice(),
-    ] {
+    for options in [["EX", "10", "PERSIST"].as_slice(), ["PERSIST", "EX", "10"].as_slice(), ["EX", "10", "PX", "3000"].as_slice()] {
         let mut arguments = vec!["GETEX", "k"];
         arguments.extend_from_slice(options);
         send(&mut client, &arguments);

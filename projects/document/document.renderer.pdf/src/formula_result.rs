@@ -36,8 +36,7 @@ use document_compose::{
 pub fn render_formula_result(result: &FormulaLayoutResult) -> Result<Vec<u8>, Diagnostic> {
     let metrics = &result.metrics;
     // Page dimensions in PDF points (≈ CSS px).
-    let (page_w, page_h) =
-        (metrics.width.to_f64().max(1.0) + 8.0, (metrics.height.to_f64() + metrics.depth.to_f64()).max(1.0) + 8.0);
+    let (page_w, page_h) = (metrics.width.to_f64().max(1.0) + 8.0, (metrics.height.to_f64() + metrics.depth.to_f64()).max(1.0) + 8.0);
 
     // Canvas-space state: the formula box top-left maps to PDF (4, baseline +
     // height), where the baseline sits 4 pt above the page bottom plus depth.
@@ -321,12 +320,7 @@ mod tests {
                 height: Fixed::from_f64(20.0),
                 depth: Fixed::from_f64(5.0),
                 axis: Fixed::ZERO,
-                ink_bounds: BBox {
-                    x: Fixed::from_f64(10.0),
-                    y: Fixed::ZERO,
-                    width: Fixed::from_f64(80.0),
-                    height: Fixed::from_f64(15.0),
-                },
+                ink_bounds: BBox { x: Fixed::from_f64(10.0), y: Fixed::ZERO, width: Fixed::from_f64(80.0), height: Fixed::from_f64(15.0) },
             },
             paint: PaintNode::Group {
                 children: vec![PaintNode::Rect {

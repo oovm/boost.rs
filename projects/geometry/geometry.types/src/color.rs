@@ -39,7 +39,8 @@ pub fn parse(input: &str) -> Option<Rgba> {
         if double {
             let lo = nibble(*hex.as_bytes().get(j)?)?;
             Some((hi * 16 + lo) as u8)
-        } else {
+        }
+        else {
             Some((hi * 17) as u8)
         }
     };
@@ -96,11 +97,7 @@ impl LinearRgb {
     #[must_use]
     pub fn to_u8(self) -> [u8; 3] {
         let c = self.clamp01();
-        [
-            (c.r * 255.0).round() as u8,
-            (c.g * 255.0).round() as u8,
-            (c.b * 255.0).round() as u8,
-        ]
+        [(c.r * 255.0).round() as u8, (c.g * 255.0).round() as u8, (c.b * 255.0).round() as u8]
     }
 }
 

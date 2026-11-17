@@ -1,17 +1,13 @@
-use template::{
-    MapTemplateLoader, TemplateError, TemplateId, TemplateLoader, TemplateRoot, codes, normalize_path, split_scheme,
-};
+use template::{MapTemplateLoader, TemplateError, TemplateId, TemplateLoader, TemplateRoot, codes, normalize_path, split_scheme};
 
 fn loader() -> MapTemplateLoader {
-    MapTemplateLoader::new()
-        .with_root(TemplateRoot::new("low", 0).with_file("a.hbs", "low").with_file("shared.hbs", "shared"))
-        .with_root(
-            TemplateRoot::new("high", 10)
-                .with_file("a.hbs", "high")
-                .with_file("pages/detail.hbs", "detail")
-                .with_file("pages/home.hbs", "home")
-                .with_file("shared.hbs", "shared-high"),
-        )
+    MapTemplateLoader::new().with_root(TemplateRoot::new("low", 0).with_file("a.hbs", "low").with_file("shared.hbs", "shared")).with_root(
+        TemplateRoot::new("high", 10)
+            .with_file("a.hbs", "high")
+            .with_file("pages/detail.hbs", "detail")
+            .with_file("pages/home.hbs", "home")
+            .with_file("shared.hbs", "shared-high"),
+    )
 }
 
 fn error_code(result: Result<TemplateId, TemplateError>) -> String {
@@ -91,8 +87,7 @@ fn parse_code(id: &str) -> String {
 
 #[test]
 fn scheme_alias_resolves_to_the_root_name() {
-    let loader =
-        MapTemplateLoader::new().with_root(TemplateRoot::new("view", 0).with_scheme("tpl").with_file("hello.hbs", "hello"));
+    let loader = MapTemplateLoader::new().with_root(TemplateRoot::new("view", 0).with_scheme("tpl").with_file("hello.hbs", "hello"));
 
     let id = loader.resolve("tpl:hello", None, EXTENSIONS).expect("resolve");
     assert_eq!(id.root(), "view");
@@ -107,15 +102,8 @@ fn canonical_ids_parse_and_reject_non_canonical_forms() {
     let id = TemplateId::parse("high:pages/home.hbs").expect("canonical id parses");
     assert_eq!(id, TemplateId::new("high", "pages/home.hbs"));
 
-    for invalid in [
-        "high:/pages/home.hbs",
-        "high:pages/./home.hbs",
-        "high:pages/../home.hbs",
-        "high:",
-        "high",
-        " high:a.hbs",
-        "high:a\\b.hbs",
-    ] {
+    for invalid in ["high:/pages/home.hbs", "high:pages/./home.hbs", "high:pages/../home.hbs", "high:", "high", " high:a.hbs", "high:a\\b.hbs"]
+    {
         assert_eq!(parse_code(invalid), codes::INVALID_REFERENCE, "`{invalid}` must be rejected");
     }
 }

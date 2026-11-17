@@ -262,11 +262,7 @@ mod tests {
             baseline: Fixed::ONE,
         };
         let group = PaintNode::Group {
-            children: vec![PaintNode::Group {
-                children: vec![a],
-                translate_x: Fixed::from_f64(4.0),
-                translate_y: Fixed::from_f64(-2.0),
-            }],
+            children: vec![PaintNode::Group { children: vec![a], translate_x: Fixed::from_f64(4.0), translate_y: Fixed::from_f64(-2.0) }],
             translate_x: Fixed::from_f64(1.0),
             translate_y: Fixed::ZERO,
         };

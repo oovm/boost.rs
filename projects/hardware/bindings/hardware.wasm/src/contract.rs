@@ -2,9 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use hardware::prelude::*;
-use hardware::ParamValue;
-use hardware::SchedulerErrorCode as ErrorCode;
+use hardware::{ParamValue, SchedulerErrorCode as ErrorCode, prelude::*};
 
 const DIAG_GRAPH_VALIDATE: u32 = 1 << 0;
 const DIAG_RESOURCE_PREPARE: u32 = 1 << 1;
@@ -47,58 +45,17 @@ fn f(key: &str, v: f64) -> (String, ParamValue) {
 /// Copy → Fill → MatMul reference graph used by the application contract test.
 pub fn reference_graph() -> Graph {
     Graph {
-        resources: ResourceGraph {
-            nodes: vec![
-                buffer(1, 4),
-                buffer(2, 4),
-                buffer(3, 4),
-                buffer(4, 4),
-            ],
-        },
+        resources: ResourceGraph { nodes: vec![buffer(1, 4), buffer(2, 4), buffer(3, 4), buffer(4, 4)] },
         tasks: TaskGraph {
             nodes: vec![
-                task(
-                    10,
-                    TaskKind::Copy,
-                    BTreeMap::from([i("src", 1), i("dst", 2)]),
-                ),
-                task(
-                    11,
-                    TaskKind::Fill,
-                    BTreeMap::from([i("dst", 3), f("value", 1.0)]),
-                ),
-                task(
-                    12,
-                    TaskKind::MatMul,
-                    BTreeMap::from([
-                        i("a", 2),
-                        i("b", 3),
-                        i("out", 4),
-                        i("m", 2),
-                        i("n", 2),
-                        i("k", 2),
-                    ]),
-                ),
+                task(10, TaskKind::Copy, BTreeMap::from([i("src", 1), i("dst", 2)])),
+                task(11, TaskKind::Fill, BTreeMap::from([i("dst", 3), f("value", 1.0)])),
+                task(12, TaskKind::MatMul, BTreeMap::from([i("a", 2), i("b", 3), i("out", 4), i("m", 2), i("n", 2), i("k", 2)])),
             ],
             edges: vec![
-                DepEdge {
-                    from_task: None,
-                    from_resource: Some(ResourceId(1)),
-                    to_task: TaskId(10),
-                    kind: DepKind::Data,
-                },
-                DepEdge {
-                    from_task: Some(TaskId(10)),
-                    from_resource: None,
-                    to_task: TaskId(12),
-                    kind: DepKind::Execution,
-                },
-                DepEdge {
-                    from_task: Some(TaskId(11)),
-                    from_resource: None,
-                    to_task: TaskId(12),
-                    kind: DepKind::Execution,
-                },
+                DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data },
+                DepEdge { from_task: Some(TaskId(10)), from_resource: None, to_task: TaskId(12), kind: DepKind::Execution },
+                DepEdge { from_task: Some(TaskId(11)), from_resource: None, to_task: TaskId(12), kind: DepKind::Execution },
             ],
         },
     }
@@ -126,15 +83,10 @@ pub fn run_matmul_contract() -> Result<Vec<f32>, ErrorCode> {
     }
 
     session.prepare(&graph).map_err(|e| e.code())?;
-    session
-        .write_f32(ResourceId(1), &[1.0, 2.0, 3.0, 4.0])
-        .map_err(|e| e.code())?;
+    session.write_f32(ResourceId(1), &[1.0, 2.0, 3.0, 4.0]).map_err(|e| e.code())?;
     session.run_prepared(&graph).map_err(|e| e.code())?;
     session.flush().map_err(|e| e.code())?;
-    session
-        .read_f32(ResourceId(4))
-        .map(|v| v.to_vec())
-        .map_err(|e| e.code())
+    session.read_f32(ResourceId(4)).map(|v| v.to_vec()).map_err(|e| e.code())
 }
 
 /// Bitmask of diagnostic kinds observed after [`run_matmul_contract`].
@@ -144,9 +96,7 @@ pub fn run_diag_mask() -> Result<u32, ErrorCode> {
 
     let mut session = CpuSession::open();
     session.prepare(&graph).map_err(|e| e.code())?;
-    session
-        .write_f32(ResourceId(1), &[1.0, 2.0, 3.0, 4.0])
-        .map_err(|e| e.code())?;
+    session.write_f32(ResourceId(1), &[1.0, 2.0, 3.0, 4.0]).map_err(|e| e.code())?;
     session.run_prepared(&graph).map_err(|e| e.code())?;
     session.flush().map_err(|e| e.code())?;
     let _ = session.read_f32(ResourceId(4)).map_err(|e| e.code())?;
@@ -181,10 +131,5 @@ pub fn run_diag_mask() -> Result<u32, ErrorCode> {
 pub const EXPECTED_MATMUL: [f32; 4] = [3.0, 3.0, 7.0, 7.0];
 
 /// Expected diagnostic mask bits after a successful contract run.
-pub const EXPECTED_DIAG_MASK: u32 = DIAG_GRAPH_VALIDATE
-    | DIAG_RESOURCE_PREPARE
-    | DIAG_RESOURCE_UPLOAD
-    | DIAG_TASK_SUBMIT
-    | DIAG_TASK_COMPLETE
-    | DIAG_FLUSH
-    | DIAG_READBACK;
+pub const EXPECTED_DIAG_MASK: u32 =
+    DIAG_GRAPH_VALIDATE | DIAG_RESOURCE_PREPARE | DIAG_RESOURCE_UPLOAD | DIAG_TASK_SUBMIT | DIAG_TASK_COMPLETE | DIAG_FLUSH | DIAG_READBACK;

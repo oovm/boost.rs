@@ -525,6 +525,16 @@ pub enum Item {
         color: String,
         #[serde(default)]
         stroke: Option<f32>,
+        /// Dash length in design pixels for a dashed stroke; `None` is solid.
+        ///
+        /// Dashes are measured along the path length by the rasteriser, so a
+        /// dashed technical line keeps its rhythm through curves instead of
+        /// being approximated by separate segments.
+        #[serde(default)]
+        dash: Option<f32>,
+        /// Gap between dashes in design pixels; defaults to the dash length.
+        #[serde(default)]
+        gap: Option<f32>,
         /// Fraction of the outline drawn, for a path that draws itself.
         #[serde(default = "default_one_f32")]
         progress: f32,

@@ -4,8 +4,7 @@
 //! 后端指令。解析成显示几何是 `plotter_scene::SceneResolver` 的独立一步。
 
 use plotter_scene::{
-    PathData, Point, Rect, SemanticKind, SemanticNode, SemanticRole, SemanticScene, ShapeStyle, Size, SourceRef, TextAnchor,
-    TextStyle,
+    PathData, Point, Rect, SemanticKind, SemanticNode, SemanticRole, SemanticScene, ShapeStyle, Size, SourceRef, TextAnchor, TextStyle,
 };
 use plotter_types::Color;
 
@@ -143,12 +142,8 @@ fn note_node(note: &NotePlan, origin: Point) -> SemanticNode {
         children.push(glyph_node(glyph, origin));
     }
     if let Some(lyric) = &note.lyric {
-        let id = note
-            .heads
-            .first()
-            .and_then(|glyph| glyph.id.clone())
-            .map(|head| format!("lyric-{head}"))
-            .unwrap_or_else(|| "lyric".to_string());
+        let id =
+            note.heads.first().and_then(|glyph| glyph.id.clone()).map(|head| format!("lyric-{head}")).unwrap_or_else(|| "lyric".to_string());
         children.push(text_node_at(lyric, origin, &id));
     }
 
@@ -178,13 +173,9 @@ fn glyph_node(glyph: &GlyphPlan, origin: Point) -> SemanticNode {
 
 /// 系统内文本。
 fn text_node_at(text: &TextPlan, origin: Point, id: &str) -> SemanticNode {
-    SemanticNode::new(SemanticKind::Text {
-        position: relative(text.at, origin),
-        text: text.text.clone(),
-        style: text.style.clone(),
-    })
-    .with_id(id.to_string())
-    .with_role(SemanticRole::Label)
+    SemanticNode::new(SemanticKind::Text { position: relative(text.at, origin), text: text.text.clone(), style: text.style.clone() })
+        .with_id(id.to_string())
+        .with_role(SemanticRole::Label)
 }
 
 /// 画布级文本（标题 / 作者）。
@@ -203,12 +194,9 @@ fn barline_nodes(bar: &crate::plan::BarlinePlan, origin: Point, space: f64, syst
     let height = 4.0 * space;
 
     let make = |x: f64, width: f64, id: String| {
-        SemanticNode::new(SemanticKind::Rect {
-            rect: Rect::new(x - origin.x, 0.0, width, height),
-            style: ShapeStyle::filled(STAFF_STROKE),
-        })
-        .with_id(id)
-        .with_role(SemanticRole::Decoration)
+        SemanticNode::new(SemanticKind::Rect { rect: Rect::new(x - origin.x, 0.0, width, height), style: ShapeStyle::filled(STAFF_STROKE) })
+            .with_id(id)
+            .with_role(SemanticRole::Decoration)
     };
 
     match bar.kind {
@@ -264,11 +252,9 @@ fn shift_path(path: &PathData, origin: Point) -> PathData {
             PathCommand::QuadraticTo { control, to } => {
                 PathCommand::QuadraticTo { control: relative(control, origin), to: relative(to, origin) }
             }
-            PathCommand::CubicTo { control1, control2, to } => PathCommand::CubicTo {
-                control1: relative(control1, origin),
-                control2: relative(control2, origin),
-                to: relative(to, origin),
-            },
+            PathCommand::CubicTo { control1, control2, to } => {
+                PathCommand::CubicTo { control1: relative(control1, origin), control2: relative(control2, origin), to: relative(to, origin) }
+            }
             PathCommand::Close => PathCommand::Close,
         })
         .collect();
@@ -277,12 +263,5 @@ fn shift_path(path: &PathData, origin: Point) -> PathData {
 
 /// 默认正文字体样式（供测试与宿主覆盖）。
 pub fn body_style(size: f64, anchor: TextAnchor) -> TextStyle {
-    TextStyle {
-        fill: Some(Color::BLACK),
-        opacity: 1.0,
-        font_family: None,
-        font_size: size,
-        font_weight: None,
-        text_anchor: anchor,
-    }
+    TextStyle { fill: Some(Color::BLACK), opacity: 1.0, font_family: None, font_size: size, font_weight: None, text_anchor: anchor }
 }

@@ -13,12 +13,7 @@ pub struct RenderLimits {
 
 impl Default for RenderLimits {
     fn default() -> Self {
-        Self {
-            max_source_bytes: 8 * 1024 * 1024,
-            max_output_bytes: 64 * 1024 * 1024,
-            max_include_depth: 32,
-            max_steps: 1_000_000,
-        }
+        Self { max_source_bytes: 8 * 1024 * 1024, max_output_bytes: 64 * 1024 * 1024, max_include_depth: 32, max_steps: 1_000_000 }
     }
 }
 

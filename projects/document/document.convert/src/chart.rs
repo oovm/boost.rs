@@ -60,11 +60,7 @@ pub fn render_charts(graph: &DocumentGraph) -> RenderedCharts {
             Ok(chart) => chart,
             Err(error) => {
                 rendered.push_loss(
-                    LossMarker {
-                        code: error.code().to_string(),
-                        message: error.message().to_string(),
-                        status: SemanticStatus::Unsupported,
-                    },
+                    LossMarker { code: error.code().to_string(), message: error.message().to_string(), status: SemanticStatus::Unsupported },
                     absolute_span(block_span, error.span()),
                 );
                 continue;
@@ -86,11 +82,7 @@ pub fn render_charts(graph: &DocumentGraph) -> RenderedCharts {
             }
             Err(error) => {
                 rendered.push_loss(
-                    LossMarker {
-                        code: error.code().to_string(),
-                        message: error.message().to_string(),
-                        status: SemanticStatus::Lossy,
-                    },
+                    LossMarker { code: error.code().to_string(), message: error.message().to_string(), status: SemanticStatus::Lossy },
                     block_span,
                 );
             }
@@ -101,7 +93,5 @@ pub fn render_charts(graph: &DocumentGraph) -> RenderedCharts {
 
 fn is_vega_language(language: &str) -> bool {
     let language = language.trim();
-    language.eq_ignore_ascii_case("chart")
-        || language.eq_ignore_ascii_case("vega")
-        || language.eq_ignore_ascii_case("vega-lite")
+    language.eq_ignore_ascii_case("chart") || language.eq_ignore_ascii_case("vega") || language.eq_ignore_ascii_case("vega-lite")
 }

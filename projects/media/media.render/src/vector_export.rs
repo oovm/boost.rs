@@ -96,7 +96,8 @@ fn paint_shape(frame: &mut Frame, shape: &NormShape) {
             if let Some(color) = shape.fill {
                 if *radius > 0.0 {
                     frame.round_rect(origin[0], origin[1], size[0], size[1], *radius, color);
-                } else {
+                }
+                else {
                     frame.rect(origin[0], origin[1], size[0], size[1], color);
                 }
             }
@@ -298,9 +299,7 @@ mod tests {
         doc.add_shape(0, Shape::rect([4.0, 4.0], [40.0, 24.0], 6.0).filled(media_vector::Rgba([30, 40, 70, 255])));
         doc.add_shape(
             0,
-            Shape::path(vec![[8.0, 30.0], [24.0, 12.0], [56.0, 28.0]])
-                .smooth()
-                .stroked(media_vector::Rgba([255, 200, 120, 255]), 3.0),
+            Shape::path(vec![[8.0, 30.0], [24.0, 12.0], [56.0, 28.0]]).smooth().stroked(media_vector::Rgba([255, 200, 120, 255]), 3.0),
         );
         doc.add_shape(
             0,

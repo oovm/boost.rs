@@ -71,8 +71,7 @@ fn civil_from_days(days: i64) -> (i32, u32, u32) {
 pub(crate) fn detect_date_kind(code: &str) -> Option<DateKind> {
     let tokens = date_tokens(code);
     let has_date = tokens.iter().any(|token| matches!(token, 'y' | 'd'));
-    let has_time =
-        tokens.iter().any(|token| matches!(token, 'h' | 's')) || code.contains("[h]") || code.contains("[m]") && !has_date;
+    let has_time = tokens.iter().any(|token| matches!(token, 'h' | 's')) || code.contains("[h]") || code.contains("[m]") && !has_date;
     match (has_date, has_time) {
         (true, true) => Some(DateKind::DateTime),
         (true, false) => Some(DateKind::Date),
@@ -166,9 +165,7 @@ pub(crate) fn display_cell(value: &CellValue, style: &CellStyle, styles: &Workbo
         CellValue::Empty => Displayed { text: String::new(), approximated: false },
         CellValue::Text(text) => Displayed { text: text.clone(), approximated: false },
         CellValue::SharedString { text, .. } => Displayed { text: text.clone(), approximated: false },
-        CellValue::Boolean(value) => {
-            Displayed { text: if *value { "TRUE".into() } else { "FALSE".into() }, approximated: false }
-        }
+        CellValue::Boolean(value) => Displayed { text: if *value { "TRUE".into() } else { "FALSE".into() }, approximated: false },
         CellValue::Error { code } => Displayed { text: code.clone(), approximated: false },
         CellValue::Date(date) => Displayed { text: render_date(date, style.number_format.as_deref()), approximated: false },
         CellValue::Number(number) => render_number(*number, style, styles),

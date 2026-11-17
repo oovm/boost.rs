@@ -594,9 +594,7 @@ fn serve_session(stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRuntime>
                 // The first keyword decides whether a full DDL parse can pay off;
                 // this is the same leading-word test `parse_ddl` performs.
                 let verb = leading_statement_verb(sql);
-                let is_ddl = verb.eq_ignore_ascii_case("create")
-                    || verb.eq_ignore_ascii_case("alter")
-                    || verb.eq_ignore_ascii_case("drop");
+                let is_ddl = verb.eq_ignore_ascii_case("create") || verb.eq_ignore_ascii_case("alter") || verb.eq_ignore_ascii_case("drop");
                 let parsed_ddl = if is_ddl { parse_ddl(sql, SqlDialect::Mysql) } else { Ok(None) };
                 match parsed_ddl {
                     Err(error) => {
@@ -626,8 +624,7 @@ fn serve_session(stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRuntime>
                 // `analyze_meta_query` normalises and lowercases the whole
                 // statement before looking for its trigger words. Reject the
                 // DML/SELECT traffic with the allocation-free pre-filter first.
-                let analyzed_meta =
-                    if may_be_metadata_query(sql) { analyze_meta_query(sql, SqlDialect::Mysql) } else { Ok(None) };
+                let analyzed_meta = if may_be_metadata_query(sql) { analyze_meta_query(sql, SqlDialect::Mysql) } else { Ok(None) };
                 match analyzed_meta {
                     Err(error) => {
                         session.fail();
@@ -1262,10 +1259,8 @@ fn execute_sql(
         None => (column_types.to_vec(), column_nullables.to_vec()),
     };
     if cacheable {
-        let prefix = described
-            .as_deref()
-            .map(|columns| encode_result_prefix(columns, &declared_types, &declared_nullables))
-            .unwrap_or_default();
+        let prefix =
+            described.as_deref().map(|columns| encode_result_prefix(columns, &declared_types, &declared_nullables)).unwrap_or_default();
         if session.select_cache.len() >= SELECT_CACHE_LIMIT {
             session.select_cache.clear();
         }
@@ -1279,18 +1274,7 @@ fn execute_sql(
             }),
         );
     }
-    finish_plan(
-        stream,
-        sequence,
-        &plan,
-        last_insert_id,
-        &declared_types,
-        &declared_nullables,
-        binary_rows,
-        None,
-        runtime,
-        session,
-    )
+    finish_plan(stream, sequence, &plan, last_insert_id, &declared_types, &declared_nullables, binary_rows, None, runtime, session)
 }
 
 /// Binds, applies sequence defaults and plans one statement.
@@ -1336,7 +1320,8 @@ fn encode_result_prefix(columns: &[SqlColumn], column_types: &[u8], column_nulla
     let mut prefix = Vec::new();
     let mut count = Vec::new();
     encode_length_encoded(&mut count, columns.len() as u64);
-    let Ok(()) = push_packet(&mut prefix, 1, &count) else {
+    let Ok(()) = push_packet(&mut prefix, 1, &count)
+    else {
         return Vec::new();
     };
     for (index, column) in columns.iter().enumerate() {
@@ -1406,17 +1391,7 @@ fn finish_plan(
     else {
         (declared_types, declared_nullables)
     };
-    write_result_set(
-        stream,
-        sequence,
-        &result,
-        column_types,
-        column_nullables,
-        binary_rows,
-        prefix,
-        status_flags,
-        &mut session.result_buffer,
-    )
+    write_result_set(stream, sequence, &result, column_types, column_nullables, binary_rows, prefix, status_flags, &mut session.result_buffer)
 }
 
 /// Maps a structured gateway failure to its MySQL error number and SQLSTATE.

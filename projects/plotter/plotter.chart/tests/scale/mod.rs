@@ -1,6 +1,6 @@
 use plotter_chart::scale::{
-    MARKERS, PALETTE, Scale, Transfer, TransformedScale, inferred_domain, linear_ticks, log_ticks, nice_domain, train_band,
-    train_linear, train_nominal, train_point,
+    MARKERS, PALETTE, Scale, Transfer, TransformedScale, inferred_domain, linear_ticks, log_ticks, nice_domain, train_band, train_linear,
+    train_nominal, train_point,
 };
 use plotter_scene::MarkerShape;
 
@@ -148,10 +148,7 @@ fn nice_domains_round_outward_to_the_tick_grid() {
 
     let ticked = nice_domain((3.0, 97.0), 5);
     let ticks = linear_ticks(ticked, 5);
-    assert!(
-        approx(ticks[0], ticked.0) && approx(ticks[ticks.len() - 1], ticked.1),
-        "boundary ticks land on the nice domain: {ticks:?}"
-    );
+    assert!(approx(ticks[0], ticked.0) && approx(ticks[ticks.len() - 1], ticked.1), "boundary ticks land on the nice domain: {ticks:?}");
 }
 
 #[test]

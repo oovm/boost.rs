@@ -12,6 +12,5 @@ pub mod model;
 pub use codec::{FORMAT_ID, PandocBudget};
 pub use export::{PandocExport, export_pandoc_json};
 pub use import::{
-    PandocImportOptions, PandocLossPolicy, import_pandoc_json, import_pandoc_json_bytes, import_pandoc_json_bytes_with,
-    import_pandoc_json_text,
+    PandocImportOptions, PandocLossPolicy, import_pandoc_json, import_pandoc_json_bytes, import_pandoc_json_bytes_with, import_pandoc_json_text,
 };

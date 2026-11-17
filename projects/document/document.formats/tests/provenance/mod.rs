@@ -16,16 +16,14 @@ fn source_sidecar_does_not_affect_markdown_export() {
 
     assert_eq!(block_semantics(&with_text_span), block_semantics(&with_package_source));
 
-    let text_span_node =
-        with_text_span.blocks.iter().find(|node| matches!(node.block, Block::Paragraph { .. })).expect("paragraph").id;
+    let text_span_node = with_text_span.blocks.iter().find(|node| matches!(node.block, Block::Paragraph { .. })).expect("paragraph").id;
     with_text_span.attach_source(SourceRef {
         node: text_span_node,
         kind: SourceKind::TextSpan { start: 12, end: 28 },
         precision: SemanticStatus::Resolved,
     });
 
-    let package_node =
-        with_package_source.blocks.iter().find(|node| matches!(node.block, Block::Paragraph { .. })).expect("paragraph").id;
+    let package_node = with_package_source.blocks.iter().find(|node| matches!(node.block, Block::Paragraph { .. })).expect("paragraph").id;
     with_package_source.attach_source(SourceRef {
         node: package_node,
         kind: SourceKind::PackageMember { path: "word/document.xml".to_string() },

@@ -239,7 +239,8 @@ pub fn plan_transition(previous: &DisplayScene, next: &DisplayScene, intent: &Mo
                     }
                 }
                 Channel::Extent => {
-                    let (Some(from), Some(to)) = (node_extent(previous_node), node_extent(next_node)) else {
+                    let (Some(from), Some(to)) = (node_extent(previous_node), node_extent(next_node))
+                    else {
                         continue;
                     };
                     if from != to {

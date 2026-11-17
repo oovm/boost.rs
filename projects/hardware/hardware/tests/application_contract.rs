@@ -2,8 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use hardware::prelude::*;
-use hardware::ParamValue;
+use hardware::{ParamValue, prelude::*};
 
 fn buffer(id: u64, floats: usize) -> ResourceNode {
     ResourceNode {
@@ -37,58 +36,17 @@ fn f(key: &str, v: f64) -> (String, ParamValue) {
 
 fn reference_graph() -> Graph {
     Graph {
-        resources: ResourceGraph {
-            nodes: vec![
-                buffer(1, 4),
-                buffer(2, 4),
-                buffer(3, 4),
-                buffer(4, 4),
-            ],
-        },
+        resources: ResourceGraph { nodes: vec![buffer(1, 4), buffer(2, 4), buffer(3, 4), buffer(4, 4)] },
         tasks: TaskGraph {
             nodes: vec![
-                task(
-                    10,
-                    TaskKind::Copy,
-                    BTreeMap::from([i("src", 1), i("dst", 2)]),
-                ),
-                task(
-                    11,
-                    TaskKind::Fill,
-                    BTreeMap::from([i("dst", 3), f("value", 1.0)]),
-                ),
-                task(
-                    12,
-                    TaskKind::MatMul,
-                    BTreeMap::from([
-                        i("a", 2),
-                        i("b", 3),
-                        i("out", 4),
-                        i("m", 2),
-                        i("n", 2),
-                        i("k", 2),
-                    ]),
-                ),
+                task(10, TaskKind::Copy, BTreeMap::from([i("src", 1), i("dst", 2)])),
+                task(11, TaskKind::Fill, BTreeMap::from([i("dst", 3), f("value", 1.0)])),
+                task(12, TaskKind::MatMul, BTreeMap::from([i("a", 2), i("b", 3), i("out", 4), i("m", 2), i("n", 2), i("k", 2)])),
             ],
             edges: vec![
-                DepEdge {
-                    from_task: None,
-                    from_resource: Some(ResourceId(1)),
-                    to_task: TaskId(10),
-                    kind: DepKind::Data,
-                },
-                DepEdge {
-                    from_task: Some(TaskId(10)),
-                    from_resource: None,
-                    to_task: TaskId(12),
-                    kind: DepKind::Execution,
-                },
-                DepEdge {
-                    from_task: Some(TaskId(11)),
-                    from_resource: None,
-                    to_task: TaskId(12),
-                    kind: DepKind::Execution,
-                },
+                DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data },
+                DepEdge { from_task: Some(TaskId(10)), from_resource: None, to_task: TaskId(12), kind: DepKind::Execution },
+                DepEdge { from_task: Some(TaskId(11)), from_resource: None, to_task: TaskId(12), kind: DepKind::Execution },
             ],
         },
     }
@@ -100,10 +58,7 @@ fn application_contract_encode_prepare_run_flush_readback() {
     let original = reference_graph();
     let bytes = encode(&original).expect("encode .ucf");
     assert_eq!(&bytes[0..4], UCF_MAGIC.as_slice());
-    assert_eq!(
-        u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]),
-        UCF_WIRE_MAJOR
-    );
+    assert_eq!(u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]), UCF_WIRE_MAJOR);
 
     let graph = decode(&bytes).expect("decode .ucf");
     assert_eq!(graph, original);
@@ -113,9 +68,7 @@ fn application_contract_encode_prepare_run_flush_readback() {
     assert!(caps.contains_backend("cpu"));
 
     session.prepare(&graph).expect("prepare");
-    session
-        .write_f32(ResourceId(1), &[1.0, 2.0, 3.0, 4.0])
-        .expect("write");
+    session.write_f32(ResourceId(1), &[1.0, 2.0, 3.0, 4.0]).expect("write");
     session.run_prepared(&graph).expect("run_prepared");
     session.flush().expect("flush");
 
@@ -148,20 +101,12 @@ fn application_contract_maps_ir_errors() {
         resources: ResourceGraph { nodes: vec![] },
         tasks: TaskGraph {
             nodes: vec![],
-            edges: vec![DepEdge {
-                from_task: None,
-                from_resource: Some(ResourceId(1)),
-                to_task: TaskId(1),
-                kind: DepKind::Data,
-            }],
+            edges: vec![DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(1), kind: DepKind::Data }],
         },
     };
     let err = session.prepare(&bad).expect_err("invalid graph");
     assert_eq!(err.code(), SchedulerErrorCode::Ir);
-    let e = session
-        .diagnostics()
-        .first_of_kind(event_kinds::BACKEND_ERROR)
-        .expect("backend_error event");
+    let e = session.diagnostics().first_of_kind(event_kinds::BACKEND_ERROR).expect("backend_error event");
     assert_eq!(e.error_code, Some(SchedulerErrorCode::Ir));
 }
 
@@ -172,23 +117,12 @@ fn application_contract_stream_event_diagnostics() {
     let stream = immediate_stream();
     let upload = immediate_event();
     let compute = immediate_event();
-    session
-        .record_event(stream.as_ref(), upload.as_ref())
-        .expect("record upload");
-    session
-        .wait_event(stream.as_ref(), upload.as_ref())
-        .expect("wait upload");
-    session
-        .record_event(stream.as_ref(), compute.as_ref())
-        .expect("record compute");
+    session.record_event(stream.as_ref(), upload.as_ref()).expect("record upload");
+    session.wait_event(stream.as_ref(), upload.as_ref()).expect("wait upload");
+    session.record_event(stream.as_ref(), compute.as_ref()).expect("record compute");
 
     let diag = session.diagnostics();
     assert!(diag.contains_kind(event_kinds::EVENT_SIGNAL));
     assert!(diag.contains_kind(event_kinds::STREAM_WAIT));
-    assert_eq!(
-        diag.first_of_kind(event_kinds::EVENT_SIGNAL)
-            .unwrap()
-            .graph_id,
-        Some(99)
-    );
+    assert_eq!(diag.first_of_kind(event_kinds::EVENT_SIGNAL).unwrap().graph_id, Some(99));
 }

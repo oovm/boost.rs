@@ -1,6 +1,5 @@
 use plotter_chart::{
-    Channel, ChannelEncoding, ChartOptions, ChartSpec, DataSnapshot, FieldKind, FieldRef, Mark, MarkGeometry, Scale, compile,
-    lower, render,
+    Channel, ChannelEncoding, ChartOptions, ChartSpec, DataSnapshot, FieldKind, FieldRef, Mark, MarkGeometry, Scale, compile, lower, render,
 };
 use plotter_scene::{SceneResolver, SemanticKind, SemanticNode, SemanticRole, SemanticScene};
 

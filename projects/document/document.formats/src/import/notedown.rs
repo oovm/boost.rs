@@ -1,8 +1,6 @@
 use std::path::Path;
 
-use document_ir::{
-    Block, DocumentGraph, DocumentId, Inline, ListItem, LossMarker, RelationEndpoint, SemanticStatus, SourceSpan, TableRow,
-};
+use document_ir::{Block, DocumentGraph, DocumentId, Inline, ListItem, LossMarker, RelationEndpoint, SemanticStatus, SourceSpan, TableRow};
 use oak_core::{Parser, RedNode, RedTree, SourceText, parser::session::ParseSession};
 use oak_notedown::{NoteLanguage, NoteParser, lexer::token_type::NoteTokenType, parser::element_type::NoteElementType};
 
@@ -15,8 +13,8 @@ type LossQueue = Vec<(LossMarker, Option<SourceSpan>)>;
 /// Import Notedown text from disk into `notedown-ir` via `oak-notedown`.
 pub fn import_notedown(path: impl AsRef<Path>) -> Result<DocumentGraph, FormatError> {
     let path = path.as_ref();
-    let text = std::fs::read_to_string(path)
-        .map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
+    let text =
+        std::fs::read_to_string(path).map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
     import_notedown_bytes(&path.display().to_string(), &text)
 }
 
@@ -31,11 +29,7 @@ pub fn import_notedown_bytes(label: &str, text: &str) -> Result<DocumentGraph, F
     lower_notedown_tree(label, green_tree, &source)
 }
 
-fn lower_notedown_tree(
-    label: &str,
-    green_tree: &oak_core::GreenNode<NoteLanguage>,
-    source: &SourceText,
-) -> Result<DocumentGraph, FormatError> {
+fn lower_notedown_tree(label: &str, green_tree: &oak_core::GreenNode<NoteLanguage>, source: &SourceText) -> Result<DocumentGraph, FormatError> {
     let root = RedNode::new(green_tree, 0);
     let mut graph = DocumentGraph::new(document_id_for(label));
     let mut losses: LossQueue = Vec::new();
@@ -58,21 +52,14 @@ fn lower_notedown_tree(
     else {
         graph.push_loss(LossMarker {
             code: "import.notedown.partial_coverage".into(),
-            message:
-                "notedown import lowers headings, paragraphs, lists, code blocks, tables, and basic links via oak-notedown"
-                    .into(),
+            message: "notedown import lowers headings, paragraphs, lists, code blocks, tables, and basic links via oak-notedown".into(),
             status: SemanticStatus::Partial,
         });
     }
     Ok(graph)
 }
 
-fn lower_root_blocks(
-    node: RedNode<NoteLanguage>,
-    source: &SourceText,
-    losses: &mut LossQueue,
-    graph: &mut DocumentGraph,
-) -> Vec<Block> {
+fn lower_root_blocks(node: RedNode<NoteLanguage>, source: &SourceText, losses: &mut LossQueue, graph: &mut DocumentGraph) -> Vec<Block> {
     let mut blocks = Vec::new();
     let mut pending_list: Option<(bool, Vec<ListItem>)> = None;
 
@@ -161,12 +148,7 @@ fn lower_block_node(
             let (level, title) = heading_parts(node, source);
             Some(Block::Section {
                 level,
-                title: if title.is_empty() {
-                    collect_inlines(node, source, losses)
-                }
-                else {
-                    vec![Inline::Text { text: title }]
-                },
+                title: if title.is_empty() { collect_inlines(node, source, losses) } else { vec![Inline::Text { text: title }] },
                 children: Vec::new(),
             })
         }
@@ -294,13 +276,10 @@ fn strip_list_marker(inlines: &mut Vec<Inline>) {
         return;
     };
     let trimmed = text.trim_start();
-    let content =
-        trimmed.strip_prefix("- ").or_else(|| trimmed.strip_prefix("* ")).or_else(|| trimmed.strip_prefix("+ ")).or_else(
-            || {
-                let (prefix, rest) = trimmed.split_once(". ")?;
-                (!prefix.is_empty() && prefix.chars().all(|character| character.is_ascii_digit())).then_some(rest)
-            },
-        );
+    let content = trimmed.strip_prefix("- ").or_else(|| trimmed.strip_prefix("* ")).or_else(|| trimmed.strip_prefix("+ ")).or_else(|| {
+        let (prefix, rest) = trimmed.split_once(". ")?;
+        (!prefix.is_empty() && prefix.chars().all(|character| character.is_ascii_digit())).then_some(rest)
+    });
     if let Some(content) = content {
         *text = content.trim().to_string();
     }
@@ -315,9 +294,7 @@ fn extract_code_block(node: RedNode<NoteLanguage>, source: &SourceText) -> (Opti
     let stripped = raw.trim().trim_start_matches('`').trim_end_matches('`');
     let mut lines = stripped.lines();
     let first = lines.next().unwrap_or("").trim();
-    let language = if first.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
-        && !first.is_empty()
-        && !first.contains(' ')
+    let language = if first.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_') && !first.is_empty() && !first.contains(' ')
     {
         Some(first.to_string())
     }
@@ -463,10 +440,9 @@ fn lower_inline_node(node: RedNode<NoteLanguage>, source: &SourceText, losses: &
                 Some(Inline::Text { text: node.text(source).into_owned() })
             }
             NoteTokenType::InlineCode => Some(Inline::InlineCode { text: inline_code_text(node.text(source).as_ref()) }),
-            NoteTokenType::Strikethrough => Some(Inline::Styled {
-                style: "strike".into(),
-                children: strip_inline_marker(collect_inlines(node, source, losses), "~~"),
-            }),
+            NoteTokenType::Strikethrough => {
+                Some(Inline::Styled { style: "strike".into(), children: strip_inline_marker(collect_inlines(node, source, losses), "~~") })
+            }
             NoteTokenType::Strong | NoteTokenType::Emphasis => {
                 let raw = node.text(source);
                 let marker = match (token, raw.starts_with('_')) {
@@ -476,10 +452,7 @@ fn lower_inline_node(node: RedNode<NoteLanguage>, source: &SourceText, losses: &
                     (_, false) => "*",
                 };
                 let style = if token == NoteTokenType::Strong { "bold" } else { "italic" };
-                Some(Inline::Styled {
-                    style: style.into(),
-                    children: strip_inline_marker(collect_inlines(node, source, losses), marker),
-                })
+                Some(Inline::Styled { style: style.into(), children: strip_inline_marker(collect_inlines(node, source, losses), marker) })
             }
             NoteTokenType::Whitespace => Some(Inline::Text { text: node.text(source).into_owned() }),
             _ => None,
@@ -563,11 +536,7 @@ fn collect_plain_text(node: RedNode<NoteLanguage>, source: &SourceText) -> Strin
 fn parse_inline_link(node: RedNode<NoteLanguage>, source: &SourceText, losses: &mut LossQueue) -> Option<Inline> {
     let raw = node.text(source);
     if let Some((text, url)) = split_markdown_link(raw.as_ref()) {
-        return Some(Inline::Link {
-            target: RelationEndpoint::ExternalUri(url),
-            display: vec![Inline::Text { text }],
-            title: None,
-        });
+        return Some(Inline::Link { target: RelationEndpoint::ExternalUri(url), display: vec![Inline::Text { text }], title: None });
     }
     // `oak-notedown` emits a `Link` element for a bare `[label]` with no target.
     // The authored label is still a relation, so keep it as `Unresolved` and

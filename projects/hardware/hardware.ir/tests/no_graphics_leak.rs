@@ -1,22 +1,13 @@
 //! IR must not carry graphics backend dirt (PSO / Heap / Barrier object names).
 
 use hardware_ir::{
-    Access, DepEdge, DepKind, Domain, Graph, Objective, Priority, ResourceGraph, ResourceId,
-    ResourceKind, ResourceNode, ShaderId, TaskGraph, TaskId, TaskKind, TaskNode,
+    Access, DepEdge, DepKind, Domain, Graph, Objective, Priority, ResourceGraph, ResourceId, ResourceKind, ResourceNode, ShaderId, TaskGraph,
+    TaskId, TaskKind, TaskNode,
 };
 use hardware_types::{ParamValue, ShaderOp, ShaderProgram};
 
-const FORBIDDEN: &[&str] = &[
-    "PSO",
-    "PsoPrecache",
-    "DescriptorHeap",
-    "DescriptorBuffer",
-    "PipelineState",
-    "ID3D12",
-    "VkPipeline",
-    "Barrier",
-    "Heap",
-];
+const FORBIDDEN: &[&str] =
+    &["PSO", "PsoPrecache", "DescriptorHeap", "DescriptorBuffer", "PipelineState", "ID3D12", "VkPipeline", "Barrier", "Heap"];
 
 fn sample_graph() -> Graph {
     Graph {
@@ -44,11 +35,7 @@ fn sample_graph() -> Graph {
                     id: TaskId(10),
                     kind: TaskKind::Raster,
                     shader: ShaderId(1),
-                    params: [(
-                        "draw".into(),
-                        ParamValue::Str("tri".into()),
-                    )]
-                    .into(),
+                    params: [("draw".into(), ParamValue::Str("tri".into()))].into(),
                     dispatch: Default::default(),
                     objective: Objective::MinLatency { deadline_micros: 8_000 },
                     priority: Priority::Interactive,
@@ -73,18 +60,8 @@ fn sample_graph() -> Graph {
                 },
             ],
             edges: vec![
-                DepEdge {
-                    from_task: Some(TaskId(10)),
-                    from_resource: None,
-                    to_task: TaskId(11),
-                    kind: DepKind::Execution,
-                },
-                DepEdge {
-                    from_task: None,
-                    from_resource: Some(ResourceId(1)),
-                    to_task: TaskId(11),
-                    kind: DepKind::Data,
-                },
+                DepEdge { from_task: Some(TaskId(10)), from_resource: None, to_task: TaskId(11), kind: DepKind::Execution },
+                DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(11), kind: DepKind::Data },
             ],
         },
     }
@@ -92,10 +69,7 @@ fn sample_graph() -> Graph {
 
 fn assert_clean(label: &str, text: &str) {
     for needle in FORBIDDEN {
-        assert!(
-            !text.contains(needle),
-            "{label} must not contain graphics dirt `{needle}`: {text}"
-        );
+        assert!(!text.contains(needle), "{label} must not contain graphics dirt `{needle}`: {text}");
     }
 }
 

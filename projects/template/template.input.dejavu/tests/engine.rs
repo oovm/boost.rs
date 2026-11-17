@@ -30,13 +30,9 @@ fn render(entry: Option<&TemplateId>, source: &str, data: &serde_json::Value, st
 #[test]
 fn doki_profile_renders_statements_with_curly_delimiters() {
     let entry = TemplateId::new("theme", "page.doki");
-    let text = render(
-        Some(&entry),
-        "{% if page.title %}<h1>{% page.title %}</h1>{% end if %}",
-        &json!({ "page": { "title": "Hello" } }),
-        false,
-    )
-    .expect("render");
+    let text =
+        render(Some(&entry), "{% if page.title %}<h1>{% page.title %}</h1>{% end if %}", &json!({ "page": { "title": "Hello" } }), false)
+            .expect("render");
     assert_eq!(text, "<h1>Hello</h1>");
 }
 

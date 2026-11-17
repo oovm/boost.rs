@@ -46,18 +46,13 @@ pub struct PublishedPageProject {
 }
 
 /// Writes a single extracted HTML page to the shared Markdown project directory contract.
-pub fn publish_extracted_page(
-    output_dir: impl AsRef<Path>,
-    label: &str,
-    extract: &ExtractResult,
-) -> Result<PublishedPageProject> {
+pub fn publish_extracted_page(output_dir: impl AsRef<Path>, label: &str, extract: &ExtractResult) -> Result<PublishedPageProject> {
     let document = extract.document.as_ref().ok_or_else(|| {
         let diag = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::EXTRACT_PARSE_FAILED),
             DiagnosticSeverity::Error,
             pd::origin_extract(),
-            Message::new("crawler.diagnostic.missingDocumentGraphPublish")
-                .with_fallback("missing document graph for page publish".to_string()),
+            Message::new("crawler.diagnostic.missingDocumentGraphPublish").with_fallback("missing document graph for page publish".to_string()),
         );
         CrawlError::from(diag)
     })?;
@@ -315,12 +310,7 @@ fn validate_project(project: &MarkdownProject) -> Result<()> {
     Ok(())
 }
 
-fn reserve_project_path(
-    files: &mut HashSet<String>,
-    directories: &mut HashSet<String>,
-    project_path: &str,
-    kind: &str,
-) -> Result<()> {
+fn reserve_project_path(files: &mut HashSet<String>, directories: &mut HashSet<String>, project_path: &str, kind: &str) -> Result<()> {
     assert_safe_project_path(project_path)?;
     let segments: Vec<&str> = project_path.split(['/', '\\']).collect();
     let key = project_path_key_of(project_path);
@@ -374,9 +364,7 @@ fn invalid_layout(message: String) -> CrawlError {
         pd::code(pd::REQUEST_INVALID),
         DiagnosticSeverity::Error,
         pd::origin_extract(),
-        Message::new("crawler.diagnostic.projectLayoutInvalid")
-            .with_arg("detail", MessageArg::Text(message.clone()))
-            .with_fallback(message),
+        Message::new("crawler.diagnostic.projectLayoutInvalid").with_arg("detail", MessageArg::Text(message.clone())).with_fallback(message),
     );
     CrawlError::from(diag)
 }
@@ -411,10 +399,8 @@ fn publish_bytes_atomic(path: &Path, content: &[u8]) -> io::Result<()> {
 }
 
 fn staging_path(parent: &Path, target: &Path) -> io::Result<PathBuf> {
-    let file_name =
-        target.file_name().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "destination has no file name"))?;
-    let nanos =
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|duration| duration.as_nanos()).unwrap_or(0);
+    let file_name = target.file_name().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "destination has no file name"))?;
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|duration| duration.as_nanos()).unwrap_or(0);
     Ok(parent.join(format!(".{}.{}.{}.tmp", file_name.to_string_lossy(), std::process::id(), nanos)))
 }
 
@@ -545,14 +531,7 @@ mod tests {
 
     #[test]
     fn unsafe_asset_paths_are_rejected() {
-        for path in [
-            "assets/../escape.png",
-            "assets/a:b.png",
-            "assets/a\u{0007}.png",
-            "assets/a.png ",
-            "/assets/a.png",
-            "assets/a.png/",
-        ] {
+        for path in ["assets/../escape.png", "assets/a:b.png", "assets/a\u{0007}.png", "assets/a.png ", "/assets/a.png", "assets/a.png/"] {
             let dir = temp_dir("crawler-publish-unsafe");
             let mut bad = project("bad");
             bad.assets = vec![asset(path)];

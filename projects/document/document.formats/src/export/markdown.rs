@@ -3,9 +3,7 @@ use std::{
     fmt::Write as _,
 };
 
-use document_ir::{
-    Attributes, Block, BreakKind, DocumentGraph, Inline, ListItem, LossMarker, NodeId, RelationEndpoint, TableCell, TableRow,
-};
+use document_ir::{Attributes, Block, BreakKind, DocumentGraph, Inline, ListItem, LossMarker, NodeId, RelationEndpoint, TableCell, TableRow};
 
 use crate::FormatError;
 
@@ -33,10 +31,7 @@ pub fn export_markdown_report(graph: &DocumentGraph) -> Result<MarkdownExport, F
 
 /// Export Markdown while rewriting inline image destinations through
 /// `image_urls`.
-pub fn export_markdown_with_image_urls(
-    graph: &DocumentGraph,
-    image_urls: Option<&HashMap<String, String>>,
-) -> Result<String, FormatError> {
+pub fn export_markdown_with_image_urls(graph: &DocumentGraph, image_urls: Option<&HashMap<String, String>>) -> Result<String, FormatError> {
     Ok(export_markdown_report_with_image_urls_for_roots(graph, None, image_urls)?.text)
 }
 
@@ -131,12 +126,7 @@ fn synthesized_footnotes(graph: &DocumentGraph, roots: &[NodeId]) -> Vec<(String
     definitions
 }
 
-fn collect_block_footnotes(
-    graph: &DocumentGraph,
-    id: NodeId,
-    seen: &mut HashSet<String>,
-    definitions: &mut Vec<(String, Vec<Inline>)>,
-) {
+fn collect_block_footnotes(graph: &DocumentGraph, id: NodeId, seen: &mut HashSet<String>, definitions: &mut Vec<(String, Vec<Inline>)>) {
     let Some(node) = graph.block(id)
     else {
         return;
@@ -261,9 +251,8 @@ fn write_block(
         Block::Quote { children } => {
             let mut body = String::new();
             for child_id in children {
-                let child = graph
-                    .block(*child_id)
-                    .ok_or_else(|| FormatError::invalid_input(format!("quote child `{child_id:?}` is missing")))?;
+                let child =
+                    graph.block(*child_id).ok_or_else(|| FormatError::invalid_input(format!("quote child `{child_id:?}` is missing")))?;
                 if !body.is_empty() {
                     body.push_str("\n\n");
                 }
@@ -352,10 +341,7 @@ fn write_list(
                     write_list(out, graph, *nested_ordered, nested_items, indent + 2, image_urls)?;
                 }
                 else {
-                    return Err(FormatError::unsupported(
-                        "markdown",
-                        format!("nested list child `{child_id:?}` is not representable yet"),
-                    ));
+                    return Err(FormatError::unsupported("markdown", format!("nested list child `{child_id:?}` is not representable yet")));
                 }
             }
         }
@@ -382,16 +368,7 @@ fn write_table(
         // silently dropping the structure. A caption has no pipe-table slot
         // either, so a captioned table takes the same HTML path and keeps
         // `<caption>` for the reader that lowers the table again.
-        super::html::write_table(
-            out,
-            graph,
-            caption,
-            head,
-            body,
-            foot,
-            &HashMap::new(),
-            &mut super::html::FootnoteRefIds::default(),
-        )?;
+        super::html::write_table(out, graph, caption, head, body, foot, &HashMap::new(), &mut super::html::FootnoteRefIds::default())?;
         out.push('\n');
         return Ok(());
     }
@@ -429,10 +406,7 @@ fn table_cells_fit_a_pipe_table(graph: &DocumentGraph, head: &[TableRow], body: 
         row.cells.iter().all(|cell| {
             cell.colspan <= 1
                 && cell.rowspan <= 1
-                && cell
-                    .children
-                    .iter()
-                    .all(|id| matches!(graph.block(*id).map(|node| &node.block), Some(Block::Paragraph { .. })))
+                && cell.children.iter().all(|id| matches!(graph.block(*id).map(|node| &node.block), Some(Block::Paragraph { .. })))
         })
     })
 }
@@ -449,9 +423,7 @@ fn write_table_cell(
 ) -> Result<(), FormatError> {
     let mut wrote = false;
     for child_id in &cell.children {
-        let child = graph
-            .block(*child_id)
-            .ok_or_else(|| FormatError::invalid_input(format!("table cell child `{child_id:?}` is missing")))?;
+        let child = graph.block(*child_id).ok_or_else(|| FormatError::invalid_input(format!("table cell child `{child_id:?}` is missing")))?;
         let Block::Paragraph { content } = &child.block
         else {
             return Err(FormatError::unsupported(
@@ -472,11 +444,7 @@ fn inline_plain_text(inline: &Inline) -> String {
     inline.plain_text()
 }
 
-fn write_inlines(
-    out: &mut String,
-    inlines: &[Inline],
-    image_urls: Option<&HashMap<String, String>>,
-) -> Result<(), FormatError> {
+fn write_inlines(out: &mut String, inlines: &[Inline], image_urls: Option<&HashMap<String, String>>) -> Result<(), FormatError> {
     write_inlines_in_table_cell(out, inlines, image_urls, false)
 }
 
@@ -504,9 +472,8 @@ fn write_inline(
         }
         Inline::InlineCode { text } => {
             let delimiter = "`".repeat(longest_backtick_run(text) + 1);
-            let needs_padding = text.starts_with('`')
-                || text.ends_with('`')
-                || (text.starts_with(' ') && text.ends_with(' ') && !text.trim().is_empty());
+            let needs_padding =
+                text.starts_with('`') || text.ends_with('`') || (text.starts_with(' ') && text.ends_with(' ') && !text.trim().is_empty());
             out.push_str(&delimiter);
             if needs_padding {
                 out.push(' ');
@@ -588,9 +555,7 @@ fn write_inline(
                 }
             }
         },
-        Inline::Attributed { attributes, children }
-            if matches!(children.as_slice(), [Inline::Image { .. }]) && !attributes.is_empty() =>
-        {
+        Inline::Attributed { attributes, children } if matches!(children.as_slice(), [Inline::Image { .. }]) && !attributes.is_empty() => {
             // An image wrapper carries the display size or identity of the bitmap
             // itself. Inline HTML keeps those on the `<img>` element, where every
             // downstream tool reads them; a `<span width="…">` would be invalid
@@ -650,13 +615,9 @@ fn write_span_attributes(out: &mut String, attributes: &Attributes) -> Result<()
         out.push('"');
     }
     for pair in &attributes.pairs {
-        let valid_name = !pair.key.is_empty()
-            && pair.key.chars().all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | ':' | '.'));
+        let valid_name = !pair.key.is_empty() && pair.key.chars().all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | ':' | '.'));
         if !valid_name || pair.key.eq_ignore_ascii_case("id") || pair.key.eq_ignore_ascii_case("class") {
-            return Err(FormatError::unsupported(
-                "markdown",
-                format!("attribute name `{}` has no inline HTML spelling", pair.key),
-            ));
+            return Err(FormatError::unsupported("markdown", format!("attribute name `{}` has no inline HTML spelling", pair.key)));
         }
         out.push(' ');
         out.push_str(&pair.key);
@@ -687,8 +648,7 @@ fn write_markdown_text(out: &mut String, text: &str) {
         // CommonMark already treats an underscore between two word characters
         // as literal text, so escaping it would change authored bytes for no
         // reason. Every other underscore stays escaped.
-        let intraword_underscore =
-            character == '_' && previous.is_some_and(char::is_alphanumeric) && next.is_some_and(char::is_alphanumeric);
+        let intraword_underscore = character == '_' && previous.is_some_and(char::is_alphanumeric) && next.is_some_and(char::is_alphanumeric);
         if matches!(character, '\\' | '`' | '*' | '{' | '}' | '[' | ']' | '<' | '>' | '!' | '|' | '#' | '+' | '-')
             || (character == '_' && !intraword_underscore)
         {
@@ -714,10 +674,7 @@ fn ensure_latex_math(content: &str, language: Option<&str>) -> Result<(), Format
 fn markdown_link_destination(target: &RelationEndpoint) -> Result<&str, FormatError> {
     match target {
         RelationEndpoint::ExternalUri(url) => Ok(url),
-        other => Err(FormatError::unsupported(
-            "markdown",
-            format!("link target `{other:?}` has no stable Markdown destination mapping"),
-        )),
+        other => Err(FormatError::unsupported("markdown", format!("link target `{other:?}` has no stable Markdown destination mapping"))),
     }
 }
 
@@ -765,10 +722,7 @@ fn write_fenced(out: &mut String, language: Option<&str>, content: &str) {
 /// A diagram only round-trips through Markdown when the importer promotes the
 /// same fence back to `Block::Diagram`.
 fn ensure_reopenable_language(language: &str) -> Result<(), FormatError> {
-    if language.eq_ignore_ascii_case("mermaid")
-        || language.eq_ignore_ascii_case("dot")
-        || language.eq_ignore_ascii_case("plantuml")
-    {
+    if language.eq_ignore_ascii_case("mermaid") || language.eq_ignore_ascii_case("dot") || language.eq_ignore_ascii_case("plantuml") {
         Ok(())
     }
     else {
@@ -782,10 +736,7 @@ fn ensure_reopenable_language(language: &str) -> Result<(), FormatError> {
 /// A chart only round-trips through Markdown when the importer promotes the
 /// same fence back to `Block::Chart`.
 fn ensure_reopenable_chart_language(language: &str) -> Result<(), FormatError> {
-    if language.eq_ignore_ascii_case("vega")
-        || language.eq_ignore_ascii_case("vega-lite")
-        || language.eq_ignore_ascii_case("chart")
-    {
+    if language.eq_ignore_ascii_case("vega") || language.eq_ignore_ascii_case("vega-lite") || language.eq_ignore_ascii_case("chart") {
         Ok(())
     }
     else {

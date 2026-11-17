@@ -32,8 +32,8 @@ fn tag_dispatch_selects_the_engine_without_sniffing_source() {
 #[test]
 fn typst_expression_reaches_the_formula_tree_and_unknown_tags_stay_refused() {
     let expression = MathExpression::Sequence(vec![identifier("x")]);
-    let (_tree, diagnostics) = lower_formula_tree(&formula(Some("typst"), expression.clone()))
-        .expect("a typst formula has a lowering into the shared tree");
+    let (_tree, diagnostics) =
+        lower_formula_tree(&formula(Some("typst"), expression.clone())).expect("a typst formula has a lowering into the shared tree");
     assert!(diagnostics.is_empty(), "a plain identifier body adds no diagnostics: {diagnostics:?}");
     assert!(lower_formula_tree(&formula(Some("asciimath"), expression)).is_err(), "an unlowered tag stays refused");
 }
@@ -46,14 +46,11 @@ fn typst_math_never_reports_the_unsupported_language_gap() {
     let expression = MathExpression::Sequence(vec![identifier("x")]);
     let mut graph = DocumentGraph::new(DocumentId(7));
     graph.push_block(Block::Math { formula: formula(Some("typst"), expression.clone()) });
-    graph.push_block(Block::Paragraph {
-        content: vec![Inline::InlineMath { formula: formula(Some("typst"), expression.clone()) }],
-    });
+    graph.push_block(Block::Paragraph { content: vec![Inline::InlineMath { formula: formula(Some("typst"), expression.clone()) }] });
     graph.push_block(Block::Math { formula: formula(Some("asciimath"), expression) });
 
     let (_plan, diagnostics) = layout_with_diagnostics(&graph, &LayoutHint::a4(), &Diagrams::new(), &BodyMetrics::default());
-    let unsupported: Vec<_> =
-        diagnostics.iter().filter(|diagnostic| diagnostic.code == "vutex.layout.math.unsupported_language").collect();
+    let unsupported: Vec<_> = diagnostics.iter().filter(|diagnostic| diagnostic.code == "vutex.layout.math.unsupported_language").collect();
     assert_eq!(unsupported.len(), 1, "only the unknown tag keeps the language gap: {diagnostics:?}");
     assert!(unsupported[0].message.contains("asciimath"), "the gap names the unlowered tag: {:?}", unsupported[0]);
 }

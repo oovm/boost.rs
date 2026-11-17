@@ -6,9 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crawler_fetch::{
-    FetchClient, MemoryEntry, MemoryTransport, RobotsPolicy, Transport, fetch_url, retry_after_delay, site_key_for_url,
-};
+use crawler_fetch::{FetchClient, MemoryEntry, MemoryTransport, RobotsPolicy, Transport, fetch_url, retry_after_delay, site_key_for_url};
 use crawler_types::{BodyStorage, CrawlError, FetchArtifact, HttpStatus, PolitenessProfile, TransportProvenance};
 use url::Url;
 
@@ -77,8 +75,7 @@ fn loads_robots_txt_before_fetching_page() {
         "https://example.com/robots.txt",
         MemoryEntry { status: 200, headers: Default::default(), body: b"User-agent: *\nDisallow: /secret\n".to_vec() },
     );
-    transport
-        .insert("https://example.com/open", MemoryEntry { status: 200, headers: Default::default(), body: b"open".to_vec() });
+    transport.insert("https://example.com/open", MemoryEntry { status: 200, headers: Default::default(), body: b"open".to_vec() });
     let mut client = FetchClient::new(transport, RobotsPolicy::from_profile(PolitenessProfile::Developer));
     let allowed = Url::parse("https://example.com/open").expect("url");
     fetch_url(&mut client, allowed.clone()).expect("allowed page");
@@ -92,10 +89,7 @@ fn loads_robots_txt_before_fetching_page() {
 #[test]
 fn missing_robots_txt_uses_fallback_paths() {
     let mut transport = MemoryTransport::new();
-    transport.insert(
-        "https://example.com/private/data",
-        MemoryEntry { status: 200, headers: Default::default(), body: b"private".to_vec() },
-    );
+    transport.insert("https://example.com/private/data", MemoryEntry { status: 200, headers: Default::default(), body: b"private".to_vec() });
     let mut client = FetchClient::new(transport, RobotsPolicy::from_profile(PolitenessProfile::Conservative));
     let url = Url::parse("https://example.com/private/data").expect("url");
     let error = fetch_url(&mut client, url).expect_err("fallback deny");
@@ -157,11 +151,7 @@ fn retry_after_requires_a_numeric_header() {
     let url = Url::parse("file:///seq").expect("url");
     let without = SeqTransport::artifact(url.as_str(), 503, BTreeMap::new(), b"busy");
     assert_eq!(retry_after_delay(&without), None);
-    let with_date = SeqTransport::artifact(
-        url.as_str(),
-        503,
-        BTreeMap::from([("retry-after".into(), "Wed, 21 Oct 2015 07:28:00 GMT".into())]),
-        b"busy",
-    );
+    let with_date =
+        SeqTransport::artifact(url.as_str(), 503, BTreeMap::from([("retry-after".into(), "Wed, 21 Oct 2015 07:28:00 GMT".into())]), b"busy");
     assert_eq!(retry_after_delay(&with_date), None, "HTTP-date Retry-After is not supported");
 }

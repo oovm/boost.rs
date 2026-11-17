@@ -404,15 +404,8 @@ fn write_inline_math(out: &mut String, source: &str, svg: &FormulaSvg) {
 
 /// Embed one typeset display formula as its own line.
 fn write_display_math(out: &mut String, source: &str, svg: &FormulaSvg) {
-    out.push_str(&format!(
-        "<div class=\"vutex-math\" data-vutex-block=\"math\" role=\"img\" aria-label=\"{}\">",
-        escape_attribute(source),
-    ));
-    out.push_str(&svg.markup.replacen(
-        "<svg ",
-        &format!("<svg style=\"width:{}pt;height:{}pt\" ", num(svg.width), num(svg.height)),
-        1,
-    ));
+    out.push_str(&format!("<div class=\"vutex-math\" data-vutex-block=\"math\" role=\"img\" aria-label=\"{}\">", escape_attribute(source),));
+    out.push_str(&svg.markup.replacen("<svg ", &format!("<svg style=\"width:{}pt;height:{}pt\" ", num(svg.width), num(svg.height)), 1));
     out.push_str("</div>\n");
 }
 
@@ -427,13 +420,7 @@ fn write_math_source_block(out: &mut String, source: &str) {
 /// inside a link renders as `<a href="…"><strong>…</strong></a>`. Runs without a
 /// destination keep the plain output, and the link title only appears on an
 /// anchor that exists. A math run typesets instead of printing source text.
-fn write_flow_run(
-    out: &mut String,
-    run: &FlowRun,
-    math: Option<FlowMathContext>,
-    glyphs: &mut GlyphDefs,
-    diagnostics: &mut Vec<Diagnostic>,
-) {
+fn write_flow_run(out: &mut String, run: &FlowRun, math: Option<FlowMathContext>, glyphs: &mut GlyphDefs, diagnostics: &mut Vec<Diagnostic>) {
     let anchor = run.href.as_deref().filter(|href| is_safe_href(href));
     if let Some(href) = anchor {
         write_anchor_open(out, href, run.title.as_deref(), None);

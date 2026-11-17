@@ -3276,9 +3276,7 @@ fn respond(
         // 本地网关没有口令模型。真机在未配置密码时对 AUTH 回复的正是这条文案，
         // 客户端据此区分「服务端未设密码」与「命令不存在」。
         if count == 2 || count == 3 {
-            stream.write_all(
-                b"-ERR Client sent AUTH, but no password is set. Did you mean AUTH <username> <password>?\r\n",
-            )?;
+            stream.write_all(b"-ERR Client sent AUTH, but no password is set. Did you mean AUTH <username> <password>?\r\n")?;
         }
         else {
             stream.write_all(b"-ERR wrong number of arguments for 'auth' command\r\n")?;

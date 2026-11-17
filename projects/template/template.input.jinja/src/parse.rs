@@ -33,11 +33,7 @@ fn unsupported_construct(construct: &str, message: impl Into<String>) -> Templat
 }
 
 fn unsupported_tag(tag: &str) -> TemplateError {
-    TemplateError::with_args(
-        jinja_codes::UNSUPPORTED_TAG,
-        format!("tag `{tag}` is not supported in v0"),
-        vec![("construct", tag.to_string())],
-    )
+    TemplateError::with_args(jinja_codes::UNSUPPORTED_TAG, format!("tag `{tag}` is not supported in v0"), vec![("construct", tag.to_string())])
 }
 
 fn tokenize(source: &str) -> Result<Vec<Token>, TemplateError> {
@@ -74,14 +70,10 @@ fn tokenize(source: &str) -> Result<Vec<Token>, TemplateError> {
 }
 
 fn find_open(text: &str) -> Option<(usize, &'static str)> {
-    [
-        text.find("{{").map(|index| (index, "{{")),
-        text.find("{%").map(|index| (index, "{%")),
-        text.find("{#").map(|index| (index, "{#")),
-    ]
-    .into_iter()
-    .flatten()
-    .min_by_key(|(index, _)| *index)
+    [text.find("{{").map(|index| (index, "{{")), text.find("{%").map(|index| (index, "{%")), text.find("{#").map(|index| (index, "{#"))]
+        .into_iter()
+        .flatten()
+        .min_by_key(|(index, _)| *index)
 }
 
 fn strip_left_marker(body: &str) -> (bool, &str) {
@@ -249,8 +241,7 @@ fn tag(content: &str, frames: &mut Vec<Frame>, current: &mut Vec<Node>) -> Resul
             else {
                 return Err(parse_failed("`endfor` does not close a `for`"));
             };
-            let (body, otherwise) =
-                if in_else { (body, std::mem::take(current)) } else { (std::mem::take(current), Vec::new()) };
+            let (body, otherwise) = if in_else { (body, std::mem::take(current)) } else { (std::mem::take(current), Vec::new()) };
             current.push(Node::For { target, source, body, otherwise });
             Ok(())
         }
@@ -268,12 +259,7 @@ fn tag(content: &str, frames: &mut Vec<Frame>, current: &mut Vec<Node>) -> Resul
     }
 }
 
-fn close_if(
-    sections: Vec<(Expr, Vec<Node>)>,
-    active: Option<Expr>,
-    in_else: bool,
-    final_nodes: Vec<Node>,
-) -> Result<Node, TemplateError> {
+fn close_if(sections: Vec<(Expr, Vec<Node>)>, active: Option<Expr>, in_else: bool, final_nodes: Vec<Node>) -> Result<Node, TemplateError> {
     let mut sections = sections;
     let otherwise = if in_else {
         final_nodes
@@ -296,10 +282,7 @@ fn parse_for(body: &str) -> Result<(String, Expr), TemplateError> {
     }
     let (target, rest) = split_head(body);
     if target.contains([',', '(', ')', '[', ']']) {
-        return Err(unsupported_construct(
-            "destructuring",
-            format!("`for {target} in …` destructuring is not supported in v0"),
-        ));
+        return Err(unsupported_construct("destructuring", format!("`for {target} in …` destructuring is not supported in v0")));
     }
     if !target.chars().all(|character| character.is_alphanumeric() || character == '_') || target.is_empty() {
         return Err(parse_failed(format!("invalid `for` target `{target}`")));
@@ -451,11 +434,7 @@ fn lex_expression(raw: &str) -> Result<Vec<Lex>, TemplateError> {
     Ok(tokens)
 }
 
-fn lex_string(
-    raw: &str,
-    start: usize,
-    characters: &mut std::iter::Peekable<std::str::CharIndices<'_>>,
-) -> Result<String, TemplateError> {
+fn lex_string(raw: &str, start: usize, characters: &mut std::iter::Peekable<std::str::CharIndices<'_>>) -> Result<String, TemplateError> {
     let quote = raw[start..].chars().next().unwrap_or_default();
     let mut output = String::new();
     while let Some((_, character)) = characters.next() {

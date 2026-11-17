@@ -1,6 +1,6 @@
 use document_ir::{
-    Asset, AssetId, AssetKind, AttributePair, Attributes, Block, BreakKind, DocumentEnvelope, DocumentGraph, DocumentId,
-    Inline, LinkId, RelationEndpoint, SemanticStatus, ValidationIssue,
+    Asset, AssetId, AssetKind, AttributePair, Attributes, Block, BreakKind, DocumentEnvelope, DocumentGraph, DocumentId, Inline, LinkId,
+    RelationEndpoint, SemanticStatus, ValidationIssue,
 };
 
 fn image_with(source: &str, asset: Option<AssetId>) -> Inline {
@@ -43,11 +43,9 @@ fn link_keeps_display_separate_from_destination_and_allows_unresolved_target() {
 
 #[test]
 fn link_reports_unknown_semantic_target_instead_of_dropping_it() {
-    for target in [
-        RelationEndpoint::Node(document_ir::NodeId(99)),
-        RelationEndpoint::Asset(AssetId(99)),
-        RelationEndpoint::Document(DocumentId(2)),
-    ] {
+    for target in
+        [RelationEndpoint::Node(document_ir::NodeId(99)), RelationEndpoint::Asset(AssetId(99)), RelationEndpoint::Document(DocumentId(2))]
+    {
         let mut graph = DocumentGraph::new(DocumentId(1));
         paragraph(&mut graph, vec![Inline::Link { target: target.clone(), display: Vec::new(), title: None }]);
 
@@ -73,11 +71,7 @@ fn link_to_existing_asset_and_document_endpoints_is_valid() {
     });
     paragraph(
         &mut graph,
-        vec![Inline::Link {
-            target: RelationEndpoint::Asset(asset_id),
-            display: vec![Inline::Text { text: "data".to_string() }],
-            title: None,
-        }],
+        vec![Inline::Link { target: RelationEndpoint::Asset(asset_id), display: vec![Inline::Text { text: "data".to_string() }], title: None }],
     );
 
     assert!(graph.validate().is_valid());
@@ -151,11 +145,7 @@ fn attributed_children_are_validated_and_carry_stable_order_attributes() {
                 classes: vec!["lead".to_string(), "wide".to_string()],
                 pairs: vec![AttributePair { key: "data-role".to_string(), value: "summary".to_string() }],
             },
-            children: vec![Inline::Link {
-                target: RelationEndpoint::Node(document_ir::NodeId(9)),
-                display: Vec::new(),
-                title: None,
-            }],
+            children: vec![Inline::Link { target: RelationEndpoint::Node(document_ir::NodeId(9)), display: Vec::new(), title: None }],
         }],
     );
 
@@ -181,11 +171,7 @@ fn break_kinds_are_distinct_semantics() {
     let mut graph = DocumentGraph::new(DocumentId(1));
     paragraph(
         &mut graph,
-        vec![
-            Inline::Text { text: "a".to_string() },
-            Inline::Break { kind: BreakKind::Soft },
-            Inline::Break { kind: BreakKind::Hard },
-        ],
+        vec![Inline::Text { text: "a".to_string() }, Inline::Break { kind: BreakKind::Soft }, Inline::Break { kind: BreakKind::Hard }],
     );
 
     assert!(graph.validate().is_valid());

@@ -98,9 +98,7 @@ fn note_labels(graph: &DocumentGraph) -> Vec<String> {
 fn has_attributed_class(graph: &DocumentGraph, class: &str) -> bool {
     fn scan(inlines: &[Inline], class: &str) -> bool {
         inlines.iter().any(|inline| match inline {
-            Inline::Attributed { attributes, children } => {
-                attributes.classes.iter().any(|token| token == class) || scan(children, class)
-            }
+            Inline::Attributed { attributes, children } => attributes.classes.iter().any(|token| token == class) || scan(children, class),
             Inline::Styled { children, .. } => scan(children, class),
             Inline::Link { display, .. } => scan(display, class),
             _ => false,
@@ -155,10 +153,8 @@ fn html_table_lowers_to_a_structured_table() {
     assert_eq!(body.len(), 2, "{body:?}");
     assert!(head.iter().chain(body).all(|row| row.cells.iter().all(|cell| cell.colspan == 1 && cell.rowspan == 1)));
     assert_eq!(loss(&graph, "import.html.table_spans"), SemanticStatus::Partial, "{:?}", loss_codes(&graph));
-    let raw_tables: Vec<&Block> = collect_blocks(
-        &graph,
-        &|block| matches!(block, Block::RawHtml { html } if html.to_ascii_lowercase().contains("<table")),
-    );
+    let raw_tables: Vec<&Block> =
+        collect_blocks(&graph, &|block| matches!(block, Block::RawHtml { html } if html.to_ascii_lowercase().contains("<table")));
     assert!(raw_tables.is_empty(), "table stayed raw: {raw_tables:?}");
     let markdown = export_markdown(&graph).expect("markdown export");
     // A caption has no GFM pipe slot, so the table takes the inline HTML path
@@ -349,25 +345,13 @@ fn epub_structural_footnotes_become_notes_and_definitions() {
     assert_eq!(note_labels(&graph), vec!["1".to_string(), "2".to_string(), "3".to_string()], "{:?}", graph.blocks);
     assert_eq!(
         footnote_definitions(&graph),
-        vec![
-            "[^1]: Single paragraph note.",
-            "[^2]: First paragraph.\n\n    Second paragraph.",
-            "[^3]: Inline bold, code, and link.",
-        ]
+        vec!["[^1]: Single paragraph note.", "[^2]: First paragraph.\n\n    Second paragraph.", "[^3]: Inline bold, code, and link.",]
     );
     assert_eq!(footnote_paragraph_counts(&graph), vec![1, 2, 1], "{:?}", footnote_definitions(&graph));
-    assert_eq!(
-        loss(&graph, "import.epub.footnote_inline_markup_flattened"),
-        SemanticStatus::Partial,
-        "{:?}",
-        loss_codes(&graph)
-    );
+    assert_eq!(loss(&graph, "import.epub.footnote_inline_markup_flattened"), SemanticStatus::Partial, "{:?}", loss_codes(&graph));
     assert!(!loss_codes(&graph).iter().any(|code| code == "import.epub.unsupported_xhtml_block"), "{:?}", loss_codes(&graph));
     let markdown = export_markdown(&graph).expect("markdown export");
-    assert!(
-        markdown.contains("Body with a single note[^1], a note with two paragraphs[^2], and a note with inline markup[^3]."),
-        "{markdown}"
-    );
+    assert!(markdown.contains("Body with a single note[^1], a note with two paragraphs[^2], and a note with inline markup[^3]."), "{markdown}");
     assert!(!markdown.contains('↩'), "return glyph leaked into the definitions: {markdown}");
     assert!(!markdown.contains("link.return"), "return copy leaked into the definitions: {markdown}");
     assert!(markdown.contains("[^1]: Single paragraph note."), "{markdown}");
@@ -402,19 +386,12 @@ fn epub_footnote_reference_without_definition_stays_a_note() {
 
 fn epub_fixture(name: &str) -> Vec<u8> {
     match name {
-        "ordered-list" => {
-            build_epub("ordered-list", "Fixture ordered-list.epub", &[("chapter1.xhtml", ORDERED_LIST_CHAPTER)], false)
-        }
+        "ordered-list" => build_epub("ordered-list", "Fixture ordered-list.epub", &[("chapter1.xhtml", ORDERED_LIST_CHAPTER)], false),
         "css-link" => build_epub("css-link", "Fixture css-link.epub", &[("chapter1.xhtml", CSS_LINK_CHAPTER)], true),
-        "inline-style" => {
-            build_epub("inline-style", "Fixture inline-style.epub", &[("chapter1.xhtml", INLINE_STYLE_CHAPTER)], false)
+        "inline-style" => build_epub("inline-style", "Fixture inline-style.epub", &[("chapter1.xhtml", INLINE_STYLE_CHAPTER)], false),
+        "list-value-reversed" => {
+            build_epub("list-value-reversed", "Fixture list value reversed", &[("chapter1.xhtml", LIST_VALUE_REVERSED_CHAPTER)], false)
         }
-        "list-value-reversed" => build_epub(
-            "list-value-reversed",
-            "Fixture list value reversed",
-            &[("chapter1.xhtml", LIST_VALUE_REVERSED_CHAPTER)],
-            false,
-        ),
         "footnotes" => build_epub("footnotes", "Fixture footnotes.epub", &[("chapter1.xhtml", FOOTNOTES_CHAPTER)], false),
         "footnotes-edge" => build_epub(
             "footnotes-edge",
@@ -445,10 +422,8 @@ fn build_epub(identifier: &str, title: &str, chapters: &[(&str, &str)], linked_c
     let nav = format!(
         r##"<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>nav</title></head><body><nav epub:type="toc" xmlns:epub="http://www.idpf.org/2007/ops"><ol>{nav_items}</ol></nav></body></html>"##
     );
-    let mut parts: Vec<(String, Vec<u8>)> = vec![
-        ("mimetype".to_string(), b"application/epub+zip".to_vec()),
-        ("META-INF/container.xml".to_string(), CONTAINER.to_vec()),
-    ];
+    let mut parts: Vec<(String, Vec<u8>)> =
+        vec![("mimetype".to_string(), b"application/epub+zip".to_vec()), ("META-INF/container.xml".to_string(), CONTAINER.to_vec())];
     for (href, body) in chapters {
         parts.push((format!("OEBPS/{href}"), body.as_bytes().to_vec()));
     }

@@ -94,21 +94,14 @@ pub fn render_engravings(graph: &DocumentGraph) -> RenderedEngravings {
                     );
                     continue;
                 }
-                match lowered.scene.to_svg_with_authored_hooks(
-                    &format!("engraving-{}", node.id.0),
-                    "engraving",
-                    &plotter_types::DIAGRAM_THEME,
-                ) {
+                match lowered.scene.to_svg_with_authored_hooks(&format!("engraving-{}", node.id.0), "engraving", &plotter_types::DIAGRAM_THEME)
+                {
                     Ok(svg) => {
                         rendered.scenes.insert(node.id, RenderedDiagram { svg });
                     }
                     Err(error) => {
                         rendered.push_loss(
-                            LossMarker {
-                                code: error.code().to_string(),
-                                message: error.message().to_string(),
-                                status: SemanticStatus::Lossy,
-                            },
+                            LossMarker { code: error.code().to_string(), message: error.message().to_string(), status: SemanticStatus::Lossy },
                             block_span,
                         );
                     }
@@ -116,11 +109,7 @@ pub fn render_engravings(graph: &DocumentGraph) -> RenderedEngravings {
             }
             Err(error) => {
                 rendered.push_loss(
-                    LossMarker {
-                        code: error.code().to_string(),
-                        message: error.message().to_string(),
-                        status: SemanticStatus::Unsupported,
-                    },
+                    LossMarker { code: error.code().to_string(), message: error.message().to_string(), status: SemanticStatus::Unsupported },
                     absolute_span(block_span, error.span()),
                 );
             }

@@ -31,24 +31,12 @@ pub fn try_program_from_task(task: &TaskNode) -> Result<ShaderProgram, ProgramLo
             Ok(ShaderProgram::dispatch_fill("ucf_fill", value))
         }
         TaskKind::MatMul => Ok(ShaderProgram::matmul("ucf_matmul")),
-        TaskKind::Custom(name) if name == "denoise" => {
-            Ok(ShaderProgram::rgba8_denoise("ucf_denoise"))
-        }
-        TaskKind::Custom(name) if name == "attention" => {
-            Ok(ShaderProgram::attention("ucf_attention"))
-        }
-        TaskKind::Custom(name) => Err(ProgramLowerError::UnsupportedCustomOp {
-            name: name.clone(),
-        }),
-        TaskKind::Dispatch => Err(ProgramLowerError::UnsupportedTaskKind {
-            kind: "Dispatch".into(),
-        }),
-        TaskKind::Raster => Err(ProgramLowerError::UnsupportedTaskKind {
-            kind: "Raster".into(),
-        }),
-        TaskKind::RtTrace => Err(ProgramLowerError::UnsupportedTaskKind {
-            kind: "RtTrace".into(),
-        }),
+        TaskKind::Custom(name) if name == "denoise" => Ok(ShaderProgram::rgba8_denoise("ucf_denoise")),
+        TaskKind::Custom(name) if name == "attention" => Ok(ShaderProgram::attention("ucf_attention")),
+        TaskKind::Custom(name) => Err(ProgramLowerError::UnsupportedCustomOp { name: name.clone() }),
+        TaskKind::Dispatch => Err(ProgramLowerError::UnsupportedTaskKind { kind: "Dispatch".into() }),
+        TaskKind::Raster => Err(ProgramLowerError::UnsupportedTaskKind { kind: "Raster".into() }),
+        TaskKind::RtTrace => Err(ProgramLowerError::UnsupportedTaskKind { kind: "RtTrace".into() }),
     }
 }
 
@@ -61,13 +49,5 @@ pub fn program_from_task(task: &TaskNode) -> Result<ShaderProgram, ProgramLowerE
 
 /// Whether the program needs a device kernel (vs memcpy-only).
 pub fn needs_kernel(program: &ShaderProgram) -> bool {
-    program.ops.iter().any(|op| {
-        matches!(
-            op,
-            ShaderOp::IotaFill { .. }
-                | ShaderOp::MatMul
-                | ShaderOp::Rgba8Denoise
-                | ShaderOp::Attention
-        )
-    })
+    program.ops.iter().any(|op| matches!(op, ShaderOp::IotaFill { .. } | ShaderOp::MatMul | ShaderOp::Rgba8Denoise | ShaderOp::Attention))
 }

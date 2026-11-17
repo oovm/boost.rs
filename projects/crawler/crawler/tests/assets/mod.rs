@@ -29,11 +29,7 @@ fn materializes_bytes_identity_and_response_media_type() {
     let mut transport = MemoryTransport::new();
     transport.insert(
         source,
-        MemoryEntry {
-            status: 200,
-            headers: BTreeMap::from([("content-type".into(), "image/png".into())]),
-            body: b"asset-body".to_vec(),
-        },
+        MemoryEntry { status: 200, headers: BTreeMap::from([("content-type".into(), "image/png".into())]), body: b"asset-body".to_vec() },
     );
     let mut client = FetchClient::new(transport, RobotsPolicy::from_profile(crawler_types::PolitenessProfile::Developer));
     let mut document = document_with_asset(source);
@@ -53,8 +49,7 @@ fn materializes_bytes_identity_and_response_media_type() {
 #[test]
 fn fetch_failure_preserves_unresolved_asset_and_records_loss() {
     let source = "https://example.com/missing.png";
-    let mut client =
-        FetchClient::new(MemoryTransport::new(), RobotsPolicy::from_profile(crawler_types::PolitenessProfile::Developer));
+    let mut client = FetchClient::new(MemoryTransport::new(), RobotsPolicy::from_profile(crawler_types::PolitenessProfile::Developer));
     let mut document = document_with_asset(source);
 
     assert_eq!(hydrate_assets(&mut document, &mut client, 8, 1024).expect("hydrate"), 0);
@@ -143,11 +138,7 @@ fn retryable_asset_status_is_retried_before_resolving() {
         attempts: attempts.clone(),
         responses: Mutex::new(VecDeque::from([
             MemoryEntry { status: 503, headers: BTreeMap::from([("retry-after".into(), "0".into())]), body: b"busy".to_vec() },
-            MemoryEntry {
-                status: 200,
-                headers: BTreeMap::from([("content-type".into(), "image/png".into())]),
-                body: b"retried-body".to_vec(),
-            },
+            MemoryEntry { status: 200, headers: BTreeMap::from([("content-type".into(), "image/png".into())]), body: b"retried-body".to_vec() },
         ])),
     };
     let mut client = FetchClient::new(transport, RobotsPolicy::from_profile(crawler_types::PolitenessProfile::Developer));
@@ -191,11 +182,7 @@ fn identical_asset_bytes_share_one_fingerprint_and_one_project_file() {
     for source in ["https://example.com/a.png", "https://example.com/b.png"] {
         transport.insert(
             source,
-            MemoryEntry {
-                status: 200,
-                headers: BTreeMap::from([("content-type".into(), "image/png".into())]),
-                body: b"shared-bytes".to_vec(),
-            },
+            MemoryEntry { status: 200, headers: BTreeMap::from([("content-type".into(), "image/png".into())]), body: b"shared-bytes".to_vec() },
         );
     }
     let mut client = FetchClient::new(transport, RobotsPolicy::from_profile(crawler_types::PolitenessProfile::Developer));
@@ -214,8 +201,7 @@ fn identical_asset_bytes_share_one_fingerprint_and_one_project_file() {
 #[test]
 fn zero_asset_budget_records_loss_without_fetching() {
     let mut document = document_with_asset("https://example.com/image.png");
-    let mut client =
-        FetchClient::new(MemoryTransport::new(), RobotsPolicy::from_profile(crawler_types::PolitenessProfile::Developer));
+    let mut client = FetchClient::new(MemoryTransport::new(), RobotsPolicy::from_profile(crawler_types::PolitenessProfile::Developer));
     assert_eq!(hydrate_assets(&mut document, &mut client, 0, 1024).expect("hydrate"), 0);
     assert_eq!(document.assets[0].status, SemanticStatus::Unresolved);
     assert_eq!(document.coverage.loss.len(), 1);

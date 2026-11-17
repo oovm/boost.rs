@@ -62,11 +62,8 @@ fn only_glyph<'a>(root: &'a LayoutNode) -> &'a Glyph {
 
 /// Read the root `viewBox` as `(min_x, min_y, width, height)`.
 fn view_box(svg: &str) -> (f64, f64, f64, f64) {
-    let values: Vec<f64> = svg_attribute(svg, "viewBox")
-        .expect("root viewBox")
-        .split_whitespace()
-        .map(|value| value.parse().expect("viewBox number"))
-        .collect();
+    let values: Vec<f64> =
+        svg_attribute(svg, "viewBox").expect("root viewBox").split_whitespace().map(|value| value.parse().expect("viewBox number")).collect();
     assert_eq!(values.len(), 4, "viewBox needs four numbers: {svg}");
     (values[0], values[1], values[2], values[3])
 }
@@ -292,10 +289,7 @@ fn simple_sum_extents_stay_in_one_em_range() {
     assert!((1.5..4.0).contains(&width), "{width} em wide is not plausible for `x + y`");
     assert!((0.5..1.2).contains(&height), "{height} em tall is not plausible for `x + y`");
     let (_, _, view_width, view_height) = view_box(&svg);
-    assert!(
-        view_width >= layout_width - 1e-9 && view_height >= box_height - 1e-9,
-        "viewport must cover the layout box:\n{svg}"
-    );
+    assert!(view_width >= layout_width - 1e-9 && view_height >= box_height - 1e-9, "viewport must cover the layout box:\n{svg}");
 }
 
 #[test]
@@ -365,10 +359,7 @@ fn tall_brace_is_assembled_from_stacked_parts() {
     let bare = r"\frac{\frac{a}{b}}{\frac{c}{d}}";
     let (bare_svg, _) = render(bare, false);
     let (wrapped_svg, _) = render(r"\left\{\frac{\frac{a}{b}}{\frac{c}{d}}\right\}", false);
-    assert!(
-        outline_paths(&wrapped_svg).len() >= outline_paths(&bare_svg).len() + 2,
-        "the brace must add assembled parts:\n{wrapped_svg}"
-    );
+    assert!(outline_paths(&wrapped_svg).len() >= outline_paths(&bare_svg).len() + 2, "the brace must add assembled parts:\n{wrapped_svg}");
     let (bare_min, bare_max) = ink_y_extent(&bare_svg);
     let (min, max) = ink_y_extent(&wrapped_svg);
     assert!(max - min >= bare_max - bare_min - 1.0, "the brace is shorter than the content it wraps:\n{wrapped_svg}");

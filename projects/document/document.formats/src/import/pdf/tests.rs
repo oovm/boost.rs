@@ -24,16 +24,10 @@ fn paginated_glyph_pdf(page_texts: &[&str]) -> Vec<u8> {
             first_content + index
         ));
     }
-    pdf.push_str(&format!(
-        "{font_id} 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj\n"
-    ));
+    pdf.push_str(&format!("{font_id} 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj\n"));
     for (index, text) in page_texts.iter().enumerate() {
         let content = glyph_run_stream(text);
-        pdf.push_str(&format!(
-            "{} 0 obj\n<< /Length {} >>\nstream\n{content}\nendstream\nendobj\n",
-            first_content + index,
-            content.len()
-        ));
+        pdf.push_str(&format!("{} 0 obj\n<< /Length {} >>\nstream\n{content}\nendstream\nendobj\n", first_content + index, content.len()));
     }
     pdf.push_str("trailer\n<< /Root 1 0 R >>\n%%EOF\n");
     pdf.into_bytes()
@@ -126,15 +120,10 @@ fn objstm_font_pdf(stream: &[u8], object_count: u32, first: u32) -> Vec<u8> {
     pdf.extend_from_slice(
         b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>\nendobj\n",
     );
+    pdf.extend_from_slice(format!("4 0 obj\n<< /Length {} >>\nstream\n{content}\nendstream\nendobj\n", content.len()).as_bytes());
     pdf.extend_from_slice(
-        format!("4 0 obj\n<< /Length {} >>\nstream\n{content}\nendstream\nendobj\n", content.len()).as_bytes(),
-    );
-    pdf.extend_from_slice(
-        format!(
-            "6 0 obj\n<< /Type /ObjStm /N {object_count} /First {first} /Filter /FlateDecode /Length {} >>\nstream\n",
-            stream.len()
-        )
-        .as_bytes(),
+        format!("6 0 obj\n<< /Type /ObjStm /N {object_count} /First {first} /Filter /FlateDecode /Length {} >>\nstream\n", stream.len())
+            .as_bytes(),
     );
     pdf.extend_from_slice(stream);
     pdf.extend_from_slice(b"\nendstream\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n");
@@ -145,10 +134,8 @@ fn compressed_font_object_stream() -> (Vec<u8>, u32) {
     let header = "5 0 ";
     let body = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>";
     let decoded = format!("{header}{body}");
-    let compressed = acorn_codec::compression::zlib::Zlib::encode(
-        decoded.as_bytes(),
-        acorn_codec::compression::deflate::DeflateLevel::default(),
-    );
+    let compressed =
+        acorn_codec::compression::zlib::Zlib::encode(decoded.as_bytes(), acorn_codec::compression::deflate::DeflateLevel::default());
     (compressed, header.len() as u32)
 }
 
@@ -171,12 +158,7 @@ fn a_cm_transform_maps_page_setup_to_page_units() {
 #[test]
 fn line_moves_build_one_paragraph_text() {
     let font = "/Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding";
-    let pdf = single_page_font_pdf(
-        font,
-        "/Font << /F1 4 0 R >>",
-        None,
-        "BT /F1 12 Tf 20 800 Td (first line) Tj 0 -16 Td (second line) Tj ET",
-    );
+    let pdf = single_page_font_pdf(font, "/Font << /F1 4 0 R >>", None, "BT /F1 12 Tf 20 800 Td (first line) Tj 0 -16 Td (second line) Tj ET");
     let graph = import_pdf_bytes("line-break", &pdf).expect("pdf import");
     let texts = paragraph_texts(&graph);
 
@@ -191,12 +173,8 @@ fn line_moves_build_one_paragraph_text() {
 #[test]
 fn a_wider_baseline_gap_starts_a_new_paragraph() {
     let font = "/Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding";
-    let pdf = single_page_font_pdf(
-        font,
-        "/Font << /F1 4 0 R >>",
-        None,
-        "BT /F1 10 Tf 20 800 Td (one) Tj 0 -14 Td (two) Tj 0 -46 Td (three) Tj ET",
-    );
+    let pdf =
+        single_page_font_pdf(font, "/Font << /F1 4 0 R >>", None, "BT /F1 10 Tf 20 800 Td (one) Tj 0 -14 Td (two) Tj 0 -46 Td (three) Tj ET");
     let graph = import_pdf_bytes("paragraph-gap", &pdf).expect("pdf import");
 
     assert_eq!(paragraph_texts(&graph), ["one two", "three"], "a gap past the leading splits paragraphs");
@@ -226,12 +204,7 @@ fn a_larger_font_size_becomes_a_heading_level() {
 #[test]
 fn bullet_lines_become_a_list() {
     let font = "/Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding";
-    let pdf = single_page_font_pdf(
-        font,
-        "/Font << /F1 4 0 R >>",
-        None,
-        "BT /F1 10 Tf 20 800 Td (- Alpha) Tj 0 -14 Td (- Beta) Tj ET",
-    );
+    let pdf = single_page_font_pdf(font, "/Font << /F1 4 0 R >>", None, "BT /F1 10 Tf 20 800 Td (- Alpha) Tj 0 -14 Td (- Beta) Tj ET");
     let graph = import_pdf_bytes("bullet-list", &pdf).expect("pdf import");
 
     let items = graph.blocks.iter().find_map(|node| match &node.block {
@@ -239,15 +212,13 @@ fn bullet_lines_become_a_list() {
         _ => None,
     });
     assert_eq!(items, Some(2), "two bullet lines become two list items");
-    assert!(
-        graph.coverage.loss.iter().any(|loss| loss.code == "import.pdf.list_structure_inferred"),
-        "an inferred list must be reported"
-    );
+    assert!(graph.coverage.loss.iter().any(|loss| loss.code == "import.pdf.list_structure_inferred"), "an inferred list must be reported");
 }
 
 #[test]
 fn column_gaps_become_a_table() {
-    let font = "/Type /Font /Subtype /Type1 /BaseFont /Test /Encoding /WinAnsiEncoding /FirstChar 65 /LastChar 70 /Widths [500 500 500 500 500 500]";
+    let font =
+        "/Type /Font /Subtype /Type1 /BaseFont /Test /Encoding /WinAnsiEncoding /FirstChar 65 /LastChar 70 /Widths [500 500 500 500 500 500]";
     let pdf = width_font_pdf(
         font,
         None,
@@ -261,10 +232,7 @@ fn column_gaps_become_a_table() {
         _ => None,
     });
     assert_eq!(table, Some(2), "two rows of two cells become a table");
-    assert!(
-        graph.coverage.loss.iter().any(|loss| loss.code == "import.pdf.table_structure_inferred"),
-        "an inferred table must be reported"
-    );
+    assert!(graph.coverage.loss.iter().any(|loss| loss.code == "import.pdf.table_structure_inferred"), "an inferred table must be reported");
 }
 
 #[test]
@@ -354,16 +322,12 @@ fn unresolved_font_fails_closed_with_diagnostic() {
     let texts = paragraph_texts(&graph);
 
     assert!(!contains_control_character(&texts), "fallback bytes must not surface as control characters");
-    assert!(
-        graph.coverage.loss.iter().any(|loss| loss.code == "import.pdf.font_encoding_unresolved"),
-        "an unresolved font must be reported"
-    );
+    assert!(graph.coverage.loss.iter().any(|loss| loss.code == "import.pdf.font_encoding_unresolved"), "an unresolved font must be reported");
 }
 
 #[test]
 fn simple_font_widths_build_a_word_gap() {
-    let font =
-        "/Type /Font /Subtype /Type1 /BaseFont /Test /Encoding /WinAnsiEncoding /FirstChar 65 /LastChar 66 /Widths [500 500]";
+    let font = "/Type /Font /Subtype /Type1 /BaseFont /Test /Encoding /WinAnsiEncoding /FirstChar 65 /LastChar 66 /Widths [500 500]";
     let pdf = width_font_pdf(font, None, &[], "BT /F1 10 Tf 1 0 0 1 20 800 Tm (A) Tj 1 0 0 1 60 800 Tm (B) Tj ET");
     let graph = import_pdf_bytes("simple-width-gap", &pdf).expect("pdf import");
 
@@ -372,8 +336,7 @@ fn simple_font_widths_build_a_word_gap() {
 
 #[test]
 fn simple_font_widths_ignore_a_subthreshold_gap() {
-    let font =
-        "/Type /Font /Subtype /Type1 /BaseFont /Test /Encoding /WinAnsiEncoding /FirstChar 65 /LastChar 66 /Widths [500 500]";
+    let font = "/Type /Font /Subtype /Type1 /BaseFont /Test /Encoding /WinAnsiEncoding /FirstChar 65 /LastChar 66 /Widths [500 500]";
     let pdf = width_font_pdf(font, None, &[], "BT /F1 10 Tf 1 0 0 1 20 800 Tm (A) Tj 1 0 0 1 26 800 Tm (B) Tj ET");
     let graph = import_pdf_bytes("simple-width-kerning", &pdf).expect("pdf import");
 
@@ -432,11 +395,7 @@ fn missing_widths_do_not_synthesise_a_space() {
     );
     let graph = import_pdf_bytes("missing-widths", &pdf).expect("pdf import");
 
-    assert_eq!(
-        paragraph_texts(&graph),
-        ["AB"],
-        "without a declared width the geometric gap must stay unevaluated instead of being estimated"
-    );
+    assert_eq!(paragraph_texts(&graph), ["AB"], "without a declared width the geometric gap must stay unevaluated instead of being estimated");
 }
 
 #[test]
@@ -447,8 +406,7 @@ fn glyph_runs_stay_one_chunk_per_source_page() {
     assert_eq!(graph.blocks.len(), pages.len(), "one paragraph per source page");
     assert_eq!(paragraph_texts(&graph), pages, "page text is preserved verbatim");
 
-    let non_whitespace: usize =
-        paragraph_texts(&graph).iter().map(|text| text.chars().filter(|c| !c.is_whitespace()).count()).sum();
+    let non_whitespace: usize = paragraph_texts(&graph).iter().map(|text| text.chars().filter(|c| !c.is_whitespace()).count()).sum();
     let expected: usize = pages.iter().map(|text| text.chars().filter(|c| !c.is_whitespace()).count()).sum();
     assert_eq!(non_whitespace, expected, "no glyph is dropped");
 }

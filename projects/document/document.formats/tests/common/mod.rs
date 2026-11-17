@@ -1,7 +1,5 @@
 use document_formats::import::register_image_assets;
-use document_ir::{
-    AssetId, Block, DocumentGraph, DocumentId, Inline, ListItem, RelationEndpoint, RelationKind, TableCell, TableRow,
-};
+use document_ir::{AssetId, Block, DocumentGraph, DocumentId, Inline, ListItem, RelationEndpoint, RelationKind, TableCell, TableRow};
 
 fn image(source: &str) -> Inline {
     Inline::Image { source: source.into(), alt: vec![Inline::Text { text: "diagram".into() }], title: None, asset: None }
@@ -65,8 +63,7 @@ fn table_images_keep_separate_occurrence_identity_and_node_endpoint() {
     assert!(graph.assets.iter().all(|asset| asset.source.as_deref() == Some("same.png")));
     assert_eq!(graph.relations.len(), 2);
     assert!(graph.relations.iter().all(|relation| {
-        relation.kind == RelationKind::Embeds
-            && matches!(relation.source, RelationEndpoint::Node(node) if node == first || node == second)
+        relation.kind == RelationKind::Embeds && matches!(relation.source, RelationEndpoint::Node(node) if node == first || node == second)
     }));
     assert_eq!(bound_assets(&graph.blocks[0].block), vec![Some(graph.assets[0].id)]);
     assert_eq!(bound_assets(&graph.blocks[1].block), vec![Some(graph.assets[1].id)]);

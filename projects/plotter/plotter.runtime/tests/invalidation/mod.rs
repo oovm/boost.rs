@@ -147,15 +147,11 @@ fn closure_propagates_only_documented_dependencies() {
         set(&[InvalidationScope::Data]).closure(),
         set(&[InvalidationScope::Data, InvalidationScope::Measurement, InvalidationScope::Layout])
     );
-    assert_eq!(
-        set(&[InvalidationScope::Measurement]).closure(),
-        set(&[InvalidationScope::Measurement, InvalidationScope::Layout])
-    );
+    assert_eq!(set(&[InvalidationScope::Measurement]).closure(), set(&[InvalidationScope::Measurement, InvalidationScope::Layout]));
     assert_eq!(set(&[InvalidationScope::Layout]).closure(), set(&[InvalidationScope::Layout]));
 
     let independent =
-        set(&[InvalidationScope::Overlay, InvalidationScope::Style, InvalidationScope::Viewport, InvalidationScope::Motion])
-            .closure();
+        set(&[InvalidationScope::Overlay, InvalidationScope::Style, InvalidationScope::Viewport, InvalidationScope::Motion]).closure();
     assert_eq!(independent.len(), 4, "overlay, style, viewport, and motion imply nothing");
     assert!(!independent.contains(InvalidationScope::Layout));
     assert!(!independent.contains(InvalidationScope::Measurement));

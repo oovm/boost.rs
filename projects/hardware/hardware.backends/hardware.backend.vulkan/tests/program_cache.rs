@@ -1,9 +1,11 @@
-use std::collections::BTreeMap;
 use hardware_backend_vulkan::VulkanBackend;
 use hardware_ir::{Dispatch, Graph, ResourceGraph, TaskGraph};
 use hardware_program::{BinOp, FunctionBuilder, Program, ProgramBuilder, Ty};
 use hardware_scheduler::Backend;
-use hardware_types::{Access, Domain, Objective, ParamValue, Priority, ResourceId, ResourceKind, ResourceNode, ShaderId, TaskId, TaskKind, TaskNode};
+use hardware_types::{
+    Access, Domain, Objective, ParamValue, Priority, ResourceId, ResourceKind, ResourceNode, ShaderId, TaskId, TaskKind, TaskNode,
+};
+use std::collections::BTreeMap;
 
 fn program(increment: f32) -> Program {
     let mut builder = FunctionBuilder::new("generic_increment");
@@ -16,20 +18,41 @@ fn program(increment: f32) -> Program {
 
 fn graph(program: &Program) -> Graph {
     Graph {
-        resources: ResourceGraph { nodes: [1, 2].into_iter().map(|id| ResourceNode {
-            id: ResourceId(id), kind: ResourceKind::Buffer, domain: Domain::Vram,
-            access: Access::ReadWrite, byte_size: Some(8),
-        }).collect() },
-        tasks: TaskGraph { nodes: vec![TaskNode {
-            id: TaskId(1), kind: TaskKind::Dispatch, shader: ShaderId(1),
-            params: BTreeMap::from([
-                ("program".into(), ParamValue::Program { version: program.version,
-                    hash: hardware_program::program_hash(program), body: serde_json::to_string(program).unwrap() }),
-                ("output".into(), ParamValue::I64(1)),
-                ("uniform_0".into(), ParamValue::F64(4.0)),
-            ]), dispatch: Dispatch::Explicit { x: 2, y: 1, z: 1 },
-            objective: Objective::MaxUtilization, priority: Priority::Batch,
-        }], edges: vec![] },
+        resources: ResourceGraph {
+            nodes: [1, 2]
+                .into_iter()
+                .map(|id| ResourceNode {
+                    id: ResourceId(id),
+                    kind: ResourceKind::Buffer,
+                    domain: Domain::Vram,
+                    access: Access::ReadWrite,
+                    byte_size: Some(8),
+                })
+                .collect(),
+        },
+        tasks: TaskGraph {
+            nodes: vec![TaskNode {
+                id: TaskId(1),
+                kind: TaskKind::Dispatch,
+                shader: ShaderId(1),
+                params: BTreeMap::from([
+                    (
+                        "program".into(),
+                        ParamValue::Program {
+                            version: program.version,
+                            hash: hardware_program::program_hash(program),
+                            body: serde_json::to_string(program).unwrap(),
+                        },
+                    ),
+                    ("output".into(), ParamValue::I64(1)),
+                    ("uniform_0".into(), ParamValue::F64(4.0)),
+                ]),
+                dispatch: Dispatch::Explicit { x: 2, y: 1, z: 1 },
+                objective: Objective::MaxUtilization,
+                priority: Priority::Batch,
+            }],
+            edges: vec![],
+        },
     }
 }
 
@@ -74,8 +97,16 @@ fn warm_cache_never_trusts_hash_without_identical_body_and_version() {
     backend.prepare(&graph).unwrap();
     backend.run_prepared(&graph).unwrap();
     for invalid in [
-        ParamValue::Program { version: 1, hash: hardware_program::program_hash(&original), body: serde_json::to_string(&program(2.0)).unwrap() },
-        ParamValue::Program { version: 1, hash: hardware_program::program_hash(&original) + 1, body: serde_json::to_string(&original).unwrap() },
+        ParamValue::Program {
+            version: 1,
+            hash: hardware_program::program_hash(&original),
+            body: serde_json::to_string(&program(2.0)).unwrap(),
+        },
+        ParamValue::Program {
+            version: 1,
+            hash: hardware_program::program_hash(&original) + 1,
+            body: serde_json::to_string(&original).unwrap(),
+        },
         ParamValue::Program { version: 2, hash: hardware_program::program_hash(&original), body: serde_json::to_string(&original).unwrap() },
         ParamValue::Program { version: 1, hash: hardware_program::program_hash(&original), body: "not a program".into() },
     ] {

@@ -16,16 +16,13 @@
 //! An unknown `sfx` family or preset is an explicit `invalid_input` error,
 //! never a silent skip.
 
-use media_codec::DecodeLimits;
-use media_codec::MediaLibrary;
-use media_codec::parse_wav_pcm16;
+use media_codec::{DecodeLimits, MediaLibrary, parse_wav_pcm16};
 use media_dsp::Rng;
 use media_synthesis::{
-    DrumPattern, Family, Instrument, InstrumentSpec, PatternTrack, SfxSpec, pattern_preset, preset as shared_preset,
-    render as render_sfx, render_instrument, render_pattern,
+    DrumPattern, Family, Instrument, InstrumentSpec, PatternTrack, SfxSpec, pattern_preset, preset as shared_preset, render as render_sfx,
+    render_instrument, render_pattern,
 };
-use media_types::Error;
-use media_types::TimeBase;
+use media_types::{Error, TimeBase};
 use media_voice::VoiceSpec;
 
 /// One synthesized effect placed on the track.
@@ -79,12 +76,10 @@ impl SfxRequest {
                 return Err(Error::invalid_input("sfx placement must name `kind` or `preset`"));
             }
             (Some(family), None) => {
-                let family =
-                    Family::parse(family).ok_or_else(|| Error::invalid_input(format!("unknown sfx kind {family}")))?;
+                let family = Family::parse(family).ok_or_else(|| Error::invalid_input(format!("unknown sfx kind {family}")))?;
                 SfxSpec::new(family, sfx_placement_duration(family))
             }
-            (None, Some(name)) => shared_preset(name)
-                .ok_or_else(|| Error::invalid_input(format!("unknown sfx preset {name}")))?,
+            (None, Some(name)) => shared_preset(name).ok_or_else(|| Error::invalid_input(format!("unknown sfx preset {name}")))?,
         };
         let spec = SfxSpec {
             duration: self.duration.unwrap_or(base.duration),
@@ -140,16 +135,7 @@ impl InstrumentRequest {
     /// A request that names only an instrument and takes every other default.
     #[must_use]
     pub fn named(instrument: &str) -> Self {
-        Self {
-            instrument: instrument.to_owned(),
-            note: None,
-            duration: None,
-            velocity: 1.0,
-            tone: None,
-            decay: None,
-            pan: None,
-            seed: None,
-        }
+        Self { instrument: instrument.to_owned(), note: None, duration: None, velocity: 1.0, tone: None, decay: None, pan: None, seed: None }
     }
 
     /// Resolves to a renderable instrument spec.
@@ -219,13 +205,10 @@ impl PatternRequest {
     /// violation are `invalid_input`.
     pub fn resolve(&self) -> Result<DrumPattern, Error> {
         match (&self.preset, self.tracks.is_empty()) {
-            (Some(_), false) => Err(Error::invalid_input(
-                "pattern placement must name either `preset` or `tracks`, not both",
-            )),
+            (Some(_), false) => Err(Error::invalid_input("pattern placement must name either `preset` or `tracks`, not both")),
             (None, true) => Err(Error::invalid_input("pattern placement must name `preset` or `tracks`")),
             (Some(name), true) => {
-                let mut pattern =
-                    pattern_preset(name).ok_or_else(|| Error::invalid_input(format!("unknown pattern preset {name}")))?;
+                let mut pattern = pattern_preset(name).ok_or_else(|| Error::invalid_input(format!("unknown pattern preset {name}")))?;
                 if let Some(bpm) = self.bpm {
                     pattern.bpm = bpm;
                 }
@@ -240,14 +223,14 @@ impl PatternRequest {
                 let bars = self.bars.unwrap_or(1);
                 let mut tracks = Vec::with_capacity(self.tracks.len());
                 for track in &self.tracks {
-                    let instrument = Instrument::parse(&track.instrument).ok_or_else(|| {
-                        Error::invalid_input(format!("unknown instrument {} in pattern track", track.instrument))
-                    })?;
+                    let instrument = Instrument::parse(&track.instrument)
+                        .ok_or_else(|| Error::invalid_input(format!("unknown instrument {} in pattern track", track.instrument)))?;
                     let mut steps = track.steps.clone();
                     let total = steps_per_bar as usize * bars as usize;
                     if steps.len() == steps_per_bar as usize && bars > 1 {
                         steps = steps.repeat(bars as usize);
-                    } else if steps.len() != total {
+                    }
+                    else if steps.len() != total {
                         return Err(Error::invalid_input(format!(
                             "pattern track {} has {} steps, expected {steps_per_bar} (one bar, repeated) or {total}",
                             track.instrument,
@@ -408,10 +391,7 @@ pub fn build_audio(plan: &AudioPlan, media: &mut MediaLibrary, limits: DecodeLim
                 // clip stays silent and the rest of the film still compiles.
                 // A required slot is a declared contract — fail explicitly.
                 if clip.required {
-                    return Err(Error::invalid_input(format!(
-                        "required audio clip `{}` cannot be decoded: {error}",
-                        clip.src
-                    )));
+                    return Err(Error::invalid_input(format!("required audio clip `{}` cannot be decoded: {error}", clip.src)));
                 }
                 continue;
             }
@@ -523,13 +503,10 @@ fn synth_plucks(buf: &mut [f32], volume: f32, sample_rate: u32) {
 /// or a foreign sample rate are all explicit errors. "This film has no
 /// narration" is expressed by omitting the slot, never by a broken file.
 fn mix_wav(buf: &mut [f32], path: &str, delay_frames: u32, volume: f32, plan: &AudioPlan) -> Result<(), Error> {
-    let bytes = std::fs::read(path).map_err(|error| {
-        Error::invalid_input(format!("narration `{path}` cannot be read: {error}"))
-    })?;
-    let Some(wav) = parse_wav_pcm16(&bytes) else {
-        return Err(Error::invalid_input(format!(
-            "narration `{path}` is not a decodable PCM16 WAV"
-        )));
+    let bytes = std::fs::read(path).map_err(|error| Error::invalid_input(format!("narration `{path}` cannot be read: {error}")))?;
+    let Some(wav) = parse_wav_pcm16(&bytes)
+    else {
+        return Err(Error::invalid_input(format!("narration `{path}` is not a decodable PCM16 WAV")));
     };
     if wav.sample_rate != plan.sample_rate {
         return Err(Error::invalid_input(format!(
@@ -576,12 +553,7 @@ mod tests {
 
     #[test]
     fn placed_effects_are_audible() {
-        let bed = build_audio(
-            &plan(vec![effect("whoosh", 10, 0.5)]),
-            &mut MediaLibrary::new(),
-            DecodeLimits::unbounded(),
-        )
-        .expect("bed");
+        let bed = build_audio(&plan(vec![effect("whoosh", 10, 0.5)]), &mut MediaLibrary::new(), DecodeLimits::unbounded()).expect("bed");
         let start = 10 * 44_100 / 30;
         let region = &bed[start * 2..(start + 44_100 / 2) * 2];
         let peak = region.iter().fold(0i16, |a, s| a.max(s.abs()));
@@ -590,18 +562,8 @@ mod tests {
 
     #[test]
     fn same_kind_sounds_identical_at_any_position() {
-        let a = build_audio(
-            &plan(vec![effect("impact", 0, 0.5)]),
-            &mut MediaLibrary::new(),
-            DecodeLimits::unbounded(),
-        )
-        .expect("bed a");
-        let b = build_audio(
-            &plan(vec![effect("impact", 37, 0.5)]),
-            &mut MediaLibrary::new(),
-            DecodeLimits::unbounded(),
-        )
-        .expect("bed b");
+        let a = build_audio(&plan(vec![effect("impact", 0, 0.5)]), &mut MediaLibrary::new(), DecodeLimits::unbounded()).expect("bed a");
+        let b = build_audio(&plan(vec![effect("impact", 37, 0.5)]), &mut MediaLibrary::new(), DecodeLimits::unbounded()).expect("bed b");
         let start_a = 0;
         let start_b = 37 * 44_100 / 30;
         let len = (sfx_placement_duration(Family::Impact) * 44_100.0) as usize - 100;
@@ -655,12 +617,8 @@ mod tests {
 
     #[test]
     fn unknown_kind_is_an_explicit_error() {
-        let error = build_audio(
-            &plan(vec![effect("airhorn", 0, 0.5)]),
-            &mut MediaLibrary::new(),
-            DecodeLimits::unbounded(),
-        )
-        .expect_err("unknown kind must fail");
+        let error = build_audio(&plan(vec![effect("airhorn", 0, 0.5)]), &mut MediaLibrary::new(), DecodeLimits::unbounded())
+            .expect_err("unknown kind must fail");
         assert_eq!(error.code(), "invalid_input");
         assert!(error.message.contains("airhorn"));
     }
@@ -710,12 +668,8 @@ mod tests {
 
     #[test]
     fn placed_voice_is_audible_and_positioned() {
-        let song = media_voice::VoiceSpec::new(vec![media_voice::Syllable {
-            onset: None,
-            vowel: media_voice::Vowel::A,
-            pitch: 330.0,
-            beats: 1.0,
-        }]);
+        let song =
+            media_voice::VoiceSpec::new(vec![media_voice::Syllable { onset: None, vowel: media_voice::Vowel::A, pitch: 330.0, beats: 1.0 }]);
         let mut p = plan(Vec::new());
         p.voice = vec![VoicePlacement { song, at_frames: 15, volume: 0.9 }];
         let bed = build_audio(&p, &mut MediaLibrary::new(), DecodeLimits::unbounded()).expect("bed");
@@ -729,11 +683,7 @@ mod tests {
     #[test]
     fn placed_instrument_notes_and_grooves_are_audible() {
         let mut p = plan(Vec::new());
-        p.notes = vec![NotePlacement {
-            request: InstrumentRequest::named("kick"),
-            at_frames: 0,
-            volume: 0.9,
-        }];
+        p.notes = vec![NotePlacement { request: InstrumentRequest::named("kick"), at_frames: 0, volume: 0.9 }];
         let bed = build_audio(&p, &mut MediaLibrary::new(), DecodeLimits::unbounded()).expect("note bed");
         let peak = bed[..44_100].iter().fold(0i16, |a, s| a.max(s.abs()));
         assert!(peak > 500, "kick too quiet: {peak}");

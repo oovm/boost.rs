@@ -24,7 +24,11 @@ pub fn tone_map_aces_batch() -> Program {
         );
         let denominator = builder.binary(
             BinOp::Add,
-            builder.binary(BinOp::Mul, x.clone(), builder.binary(BinOp::Add, builder.binary(BinOp::Mul, builder.const_f32(2.43), x), builder.const_f32(0.59))),
+            builder.binary(
+                BinOp::Mul,
+                x.clone(),
+                builder.binary(BinOp::Add, builder.binary(BinOp::Mul, builder.const_f32(2.43), x), builder.const_f32(0.59)),
+            ),
             builder.const_f32(0.14),
         );
         builder.binary(BinOp::Min, one.clone(), builder.binary(BinOp::Max, zero.clone(), builder.binary(BinOp::Div, numerator, denominator)))
@@ -34,5 +38,9 @@ pub fn tone_map_aces_batch() -> Program {
         let mapped = channel(&mut builder, input);
         builder.store_buffer(2, builder.binary(BinOp::Add, output_base.clone(), builder.const_u32(component)), mapped);
     }
-    ProgramBuilder::new().structured_entry(builder, Ty::f32(), zero).expect("valid batch tone map builder").finish().expect("valid batch tone map program")
+    ProgramBuilder::new()
+        .structured_entry(builder, Ty::f32(), zero)
+        .expect("valid batch tone map builder")
+        .finish()
+        .expect("valid batch tone map program")
 }

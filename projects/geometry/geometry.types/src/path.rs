@@ -13,8 +13,7 @@ pub fn smooth_polyline(points: &[Vec2], closed: bool, segments: u32) -> Vec<Vec2
     }
     let count = points.len();
     let at = |i: isize| -> Vec2 {
-        let index =
-            if closed { ((i % count as isize) + count as isize) % count as isize } else { i.clamp(0, count as isize - 1) };
+        let index = if closed { ((i % count as isize) + count as isize) % count as isize } else { i.clamp(0, count as isize - 1) };
         points[index as usize]
     };
     let mut out = Vec::with_capacity(count * segments as usize + 1);
@@ -38,7 +37,8 @@ pub fn smooth_polyline(points: &[Vec2], closed: bool, segments: u32) -> Vec<Vec2
     }
     if closed {
         out.push(out[0]);
-    } else {
+    }
+    else {
         out.push(points[count - 1]);
     }
     out
@@ -63,20 +63,13 @@ pub fn rounded_rect_outline(origin: Vec2, size: Vec2, radius: f32, segments: u32
     }
     let segments = segments.max(1);
     // (centre, start angle degrees) of the four corner arcs in clockwise order.
-    let corners = [
-        ([x + w - r, y + r], 270.0f32),
-        ([x + w - r, y + h - r], 0.0),
-        ([x + r, y + h - r], 90.0),
-        ([x + r, y + r], 180.0),
-    ];
+    let corners = [([x + w - r, y + r], 270.0f32), ([x + w - r, y + h - r], 0.0), ([x + r, y + h - r], 90.0), ([x + r, y + r], 180.0)];
     let mut out = Vec::with_capacity(4 * segments as usize + 4);
     out.push([x + r, y]);
     for ([cx, cy], start) in corners {
         // End of the straight edge that precedes this arc.
         let edge_end = [cx + r * start.to_radians().cos(), cy + r * start.to_radians().sin()];
-        if (edge_end[0] - out[out.len() - 1][0]).abs() > f32::EPSILON
-            || (edge_end[1] - out[out.len() - 1][1]).abs() > f32::EPSILON
-        {
+        if (edge_end[0] - out[out.len() - 1][0]).abs() > f32::EPSILON || (edge_end[1] - out[out.len() - 1][1]).abs() > f32::EPSILON {
             out.push(edge_end);
         }
         for i in 1..=segments {
@@ -122,10 +115,7 @@ mod tests {
     #[test]
     fn zero_radius_is_the_corner_rectangle() {
         let outline = rounded_rect_outline([2.0, 3.0], [20.0, 10.0], 0.0, 12);
-        assert_eq!(
-            outline,
-            vec![[2.0, 3.0], [22.0, 3.0], [22.0, 13.0], [2.0, 13.0], [2.0, 3.0]]
-        );
+        assert_eq!(outline, vec![[2.0, 3.0], [22.0, 3.0], [22.0, 13.0], [2.0, 13.0], [2.0, 3.0]]);
     }
 
     #[test]
@@ -165,9 +155,6 @@ mod tests {
 
     #[test]
     fn negative_radius_behaves_like_zero() {
-        assert_eq!(
-            rounded_rect_outline([1.0, 1.0], [8.0, 6.0], -4.0, 12),
-            rounded_rect_outline([1.0, 1.0], [8.0, 6.0], 0.0, 12)
-        );
+        assert_eq!(rounded_rect_outline([1.0, 1.0], [8.0, 6.0], -4.0, 12), rounded_rect_outline([1.0, 1.0], [8.0, 6.0], 0.0, 12));
     }
 }

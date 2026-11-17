@@ -6,7 +6,10 @@
 use std::collections::BTreeMap;
 
 use hardware_backend_dx12::Dx12Backend;
-use hardware_ir::{Access, Domain, Graph, ParamValue, Priority, ResourceGraph, ResourceId, ResourceKind, ResourceNode, ShaderId, TaskGraph, TaskId, TaskKind, TaskNode};
+use hardware_ir::{
+    Access, Domain, Graph, ParamValue, Priority, ResourceGraph, ResourceId, ResourceKind, ResourceNode, ShaderId, TaskGraph, TaskId, TaskKind,
+    TaskNode,
+};
 use hardware_program::{BinOp, Expr, Function, Program, Stmt, Ty, program_hash};
 use hardware_scheduler::Backend;
 use hardware_types::{Dispatch, ResourceId as Rid};
@@ -39,7 +42,11 @@ fn dispatch_task(id: u64, program: &Program, params: BTreeMap<String, ParamValue
 }
 
 fn program(body: Vec<Stmt>) -> Program {
-    Program { version: 1, functions: vec![Function { name: "main".into(), params: Vec::new(), locals: Vec::new(), body, ret: Ty::f32() }], entry: 0 }
+    Program {
+        version: 1,
+        functions: vec![Function { name: "main".into(), params: Vec::new(), locals: Vec::new(), body, ret: Ty::f32() }],
+        entry: 0,
+    }
 }
 
 fn open() -> Option<Dx12Backend> {
@@ -149,11 +156,8 @@ fn dispatches_comparison_and_select() {
 
 #[test]
 fn reuses_cached_pipelines_for_repeated_programs() {
-    let program = program(vec![Stmt::Return(Expr::BinOp {
-        op: BinOp::Add,
-        lhs: Box::new(Expr::LoadUniform(0)),
-        rhs: Box::new(Expr::ConstF32(1.0)),
-    })]);
+    let program =
+        program(vec![Stmt::Return(Expr::BinOp { op: BinOp::Add, lhs: Box::new(Expr::LoadUniform(0)), rhs: Box::new(Expr::ConstF32(1.0)) })]);
     let graph = Graph {
         resources: ResourceGraph { nodes: vec![buffer(2, 4)] },
         tasks: TaskGraph {
@@ -287,27 +291,25 @@ fn dispatches_loop_with_continue() {
 
 #[test]
 fn dispatches_loop_with_break() {
-    let entry = program(
-        vec![
-            Stmt::Let { id: 0, ty: Ty::f32(), init: Expr::ConstF32(0.0) },
-            Stmt::For {
-                iter: 1,
-                limit: 4,
-                body: vec![
-                    Stmt::If {
-                        cond: Expr::BinOp { op: BinOp::Eq, lhs: Box::new(Expr::LoadLocal(1)), rhs: Box::new(Expr::ConstU32(2)) },
-                        then_body: vec![Stmt::Break],
-                        else_body: Vec::new(),
-                    },
-                    Stmt::StoreLocal {
-                        id: 0,
-                        value: Expr::BinOp { op: BinOp::Add, lhs: Box::new(Expr::LoadLocal(0)), rhs: Box::new(Expr::ConstF32(1.0)) },
-                    },
-                ],
-            },
-            Stmt::Return(Expr::LoadLocal(0)),
-        ],
-    );
+    let entry = program(vec![
+        Stmt::Let { id: 0, ty: Ty::f32(), init: Expr::ConstF32(0.0) },
+        Stmt::For {
+            iter: 1,
+            limit: 4,
+            body: vec![
+                Stmt::If {
+                    cond: Expr::BinOp { op: BinOp::Eq, lhs: Box::new(Expr::LoadLocal(1)), rhs: Box::new(Expr::ConstU32(2)) },
+                    then_body: vec![Stmt::Break],
+                    else_body: Vec::new(),
+                },
+                Stmt::StoreLocal {
+                    id: 0,
+                    value: Expr::BinOp { op: BinOp::Add, lhs: Box::new(Expr::LoadLocal(0)), rhs: Box::new(Expr::ConstF32(1.0)) },
+                },
+            ],
+        },
+        Stmt::Return(Expr::LoadLocal(0)),
+    ]);
 
     let graph = Graph {
         resources: ResourceGraph { nodes: vec![buffer(2, 4)] },
@@ -329,10 +331,8 @@ fn dispatches_loop_with_break() {
 
 #[test]
 fn dispatches_storage_buffer_writes() {
-    let program = program(vec![
-        Stmt::StoreBuffer { resource: 0, index: Expr::GlobalId, value: Expr::ConstF32(1.5) },
-        Stmt::Return(Expr::ConstF32(0.0)),
-    ]);
+    let program =
+        program(vec![Stmt::StoreBuffer { resource: 0, index: Expr::GlobalId, value: Expr::ConstF32(1.5) }, Stmt::Return(Expr::ConstF32(0.0))]);
     let graph = Graph {
         resources: ResourceGraph { nodes: vec![buffer(2, 4), buffer(3, 4)] },
         tasks: TaskGraph {
@@ -357,11 +357,8 @@ fn dispatches_storage_buffer_writes() {
 
 #[test]
 fn dispatches_uniform_only_program() {
-    let program = program(vec![Stmt::Return(Expr::BinOp {
-        op: BinOp::Add,
-        lhs: Box::new(Expr::LoadUniform(0)),
-        rhs: Box::new(Expr::ConstF32(0.5)),
-    })]);
+    let program =
+        program(vec![Stmt::Return(Expr::BinOp { op: BinOp::Add, lhs: Box::new(Expr::LoadUniform(0)), rhs: Box::new(Expr::ConstF32(0.5)) })]);
     let graph = Graph {
         resources: ResourceGraph { nodes: vec![buffer(2, 4)] },
         tasks: TaskGraph {

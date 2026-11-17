@@ -107,12 +107,7 @@ pub(crate) fn build_diagnostics(graph: &DocumentGraph, source: &str) -> Vec<Diag
                 located_payloads.push(text.to_string());
             }
         }
-        diagnostics.push(Diagnostic {
-            code: marker.code.clone(),
-            severity: severity(marker.status),
-            message: marker.message.clone(),
-            span,
-        });
+        diagnostics.push(Diagnostic { code: marker.code.clone(), severity: severity(marker.status), message: marker.message.clone(), span });
     }
 
     let mut opaque_locator = Locator::new(source);
@@ -345,10 +340,7 @@ mod tests {
         assert_eq!(report.parsed.handled, 2);
         assert_eq!(report.lowered.considered, 2);
         assert_eq!(report.lowered.handled, 1);
-        assert_eq!(
-            report.opaque,
-            vec![OpaqueItem { code: "typst.expression.custom".to_string(), detail: "#custom()".to_string() }]
-        );
+        assert_eq!(report.opaque, vec![OpaqueItem { code: "typst.expression.custom".to_string(), detail: "#custom()".to_string() }]);
     }
 
     #[test]

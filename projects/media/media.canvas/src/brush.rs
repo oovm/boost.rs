@@ -28,29 +28,17 @@ pub struct Brush {
 impl Brush {
     #[must_use]
     pub fn round(radius: f32, color: Rgba) -> Self {
-        Self {
-            radius: radius.max(0.5),
-            hardness: 0.6,
-            color,
-            flow: 1.0,
-            mode: BrushMode::Paint,
-        }
+        Self { radius: radius.max(0.5), hardness: 0.6, color, flow: 1.0, mode: BrushMode::Paint }
     }
 
     #[must_use]
     pub fn soft(radius: f32, color: Rgba) -> Self {
-        Self {
-            hardness: 0.15,
-            ..Self::round(radius, color)
-        }
+        Self { hardness: 0.15, ..Self::round(radius, color) }
     }
 
     #[must_use]
     pub fn eraser(radius: f32) -> Self {
-        Self {
-            mode: BrushMode::Erase,
-            ..Self::round(radius, Rgba([0, 0, 0, 255]))
-        }
+        Self { mode: BrushMode::Erase, ..Self::round(radius, Rgba([0, 0, 0, 255])) }
     }
 
     /// Stamps one dab at `(cx, cy)`.
@@ -70,11 +58,7 @@ impl Brush {
                     continue;
                 }
                 // Soft edge between `inner` and `radius`.
-                let falloff = if distance <= inner {
-                    1.0
-                } else {
-                    ((radius - distance) / (radius - inner).max(1e-3)).clamp(0.0, 1.0)
-                };
+                let falloff = if distance <= inner { 1.0 } else { ((radius - distance) / (radius - inner).max(1e-3)).clamp(0.0, 1.0) };
                 let gain = falloff * self.flow.clamp(0.0, 1.0);
                 if gain <= 0.001 {
                     continue;
@@ -91,14 +75,12 @@ impl Brush {
                         frame.pixels[index + 3] = 255;
                     }
                     BrushMode::Erase => {
-                        frame.pixels[index + 3] =
-                            (frame.pixels[index + 3] as f32 * (1.0 - gain)) as u8;
+                        frame.pixels[index + 3] = (frame.pixels[index + 3] as f32 * (1.0 - gain)) as u8;
                     }
                     BrushMode::Add => {
                         for k in 0..3 {
                             let added = self.color.0[k] as f32 * gain;
-                            frame.pixels[index + k] =
-                                (frame.pixels[index + k] as f32 + added).min(255.0) as u8;
+                            frame.pixels[index + k] = (frame.pixels[index + k] as f32 + added).min(255.0) as u8;
                         }
                         frame.pixels[index + 3] = 255;
                     }
@@ -168,10 +150,7 @@ mod tests {
     fn additive_stamps_only_brighten() {
         let mut frame = Frame::new(8, 8);
         frame.fill(Rgba([10, 10, 10, 255]));
-        let brush = Brush {
-            mode: BrushMode::Add,
-            ..Brush::round(4.0, Rgba([60, 60, 60, 255]))
-        };
+        let brush = Brush { mode: BrushMode::Add, ..Brush::round(4.0, Rgba([60, 60, 60, 255])) };
         brush.stamp(&mut frame, 4.0, 4.0);
         let center = ((4 * 8 + 4) * 4) as usize;
         assert!(frame.pixels[center] >= 60, "{}", frame.pixels[center]);

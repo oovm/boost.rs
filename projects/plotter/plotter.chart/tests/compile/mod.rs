@@ -1,6 +1,6 @@
 use plotter_chart::{
-    Aggregate, Channel, ChannelEncoding, ChartOptions, ChartSpec, FieldKind, FieldRef, Mark, MarkGeometry, PositionAdjust,
-    Scale, ScaleSpec, codes, compile,
+    Aggregate, Channel, ChannelEncoding, ChartOptions, ChartSpec, FieldKind, FieldRef, Mark, MarkGeometry, PositionAdjust, Scale, ScaleSpec,
+    codes, compile,
 };
 
 use crate::support::{approx, bar_data, bar_spec, column, has_code, numbers, snapshot, texts};
@@ -96,11 +96,8 @@ fn sum_mean_min_and_max_change_bar_geometry() {
         column("value", FieldKind::Quantitative, numbers(&[5.0, 10.0, 15.0])),
     ]);
 
-    for (aggregate, expected) in
-        [(Aggregate::Sum, 30.0), (Aggregate::Mean, 10.0), (Aggregate::Min, 5.0), (Aggregate::Max, 15.0)]
-    {
-        let spec = bar_spec()
-            .with_encoding(Channel::Y, ChannelEncoding::field("value", FieldKind::Quantitative).with_aggregate(aggregate));
+    for (aggregate, expected) in [(Aggregate::Sum, 30.0), (Aggregate::Mean, 10.0), (Aggregate::Min, 5.0), (Aggregate::Max, 15.0)] {
+        let spec = bar_spec().with_encoding(Channel::Y, ChannelEncoding::field("value", FieldKind::Quantitative).with_aggregate(aggregate));
         let plan = compile(&spec, &data, &options()).expect("aggregated chart should compile");
         let linear = plan.scale(Channel::Y).and_then(Scale::linear).expect("y linear scale");
         let baseline = vertical_baseline(linear);
@@ -150,10 +147,8 @@ fn line_series_order_points_by_x_and_split_by_series() {
 
 #[test]
 fn area_series_close_the_polygon_on_the_baseline() {
-    let data = snapshot(vec![
-        column("x", FieldKind::Quantitative, numbers(&[1.0, 2.0])),
-        column("y", FieldKind::Quantitative, numbers(&[3.0, 7.0])),
-    ]);
+    let data =
+        snapshot(vec![column("x", FieldKind::Quantitative, numbers(&[1.0, 2.0])), column("y", FieldKind::Quantitative, numbers(&[3.0, 7.0]))]);
     let spec = ChartSpec::new(Mark::Area)
         .with_field(FieldRef::new("x", FieldKind::Quantitative))
         .with_field(FieldRef::new("y", FieldKind::Quantitative))
@@ -196,10 +191,7 @@ fn rules_span_the_plot_and_text_marks_anchor_at_their_point() {
         .with_field(FieldRef::new("value", FieldKind::Quantitative))
         .with_encoding(Channel::X, ChannelEncoding::field("x", FieldKind::Quantitative))
         .with_encoding(Channel::Y, ChannelEncoding::field("value", FieldKind::Quantitative));
-    let data = snapshot(vec![
-        column("x", FieldKind::Quantitative, numbers(&[1.0])),
-        column("value", FieldKind::Quantitative, numbers(&[7.0])),
-    ]);
+    let data = snapshot(vec![column("x", FieldKind::Quantitative, numbers(&[1.0])), column("value", FieldKind::Quantitative, numbers(&[7.0]))]);
     let plan = compile(&text, &data, &options()).expect("text chart should compile");
     let MarkGeometry::Label { anchor, text } = &plan.marks[0].geometry
     else {
@@ -225,10 +217,7 @@ fn explicit_bands_and_linear_domains_are_honoured() {
 
 #[test]
 fn unknown_snapshot_fields_fail_before_scaling() {
-    let data = snapshot(vec![
-        column("category", FieldKind::Nominal, texts(&["A"])),
-        column("other", FieldKind::Quantitative, numbers(&[1.0])),
-    ]);
+    let data = snapshot(vec![column("category", FieldKind::Nominal, texts(&["A"])), column("other", FieldKind::Quantitative, numbers(&[1.0]))]);
 
     let error = compile(&bar_spec(), &data, &options()).expect_err("the field is missing");
     assert_eq!(error.code(), codes::UNKNOWN_FIELD);
@@ -247,10 +236,8 @@ fn a_snapshot_with_no_usable_rows_is_rejected() {
 
 #[test]
 fn ragged_data_is_rejected_with_the_validation_code() {
-    let data = snapshot(vec![
-        column("category", FieldKind::Nominal, texts(&["A", "B"])),
-        column("value", FieldKind::Quantitative, numbers(&[1.0])),
-    ]);
+    let data =
+        snapshot(vec![column("category", FieldKind::Nominal, texts(&["A", "B"])), column("value", FieldKind::Quantitative, numbers(&[1.0]))]);
 
     let error = compile(&bar_spec(), &data, &options()).expect_err("ragged data");
     assert_eq!(error.code(), codes::RAGGED_COLUMN);
@@ -310,8 +297,7 @@ fn a_sqrt_scale_shares_the_transformed_path() {
         column("value", FieldKind::Quantitative, numbers(&[1.0, 10.0, 100.0])),
     ]);
     let linear = compile(&bar_spec(), &data, &options()).expect("linear chart");
-    let sqrt =
-        compile(&bar_spec().with_scale(Channel::Y, plotter_chart::ScaleSpec::sqrt()), &data, &options()).expect("sqrt chart");
+    let sqrt = compile(&bar_spec().with_scale(Channel::Y, plotter_chart::ScaleSpec::sqrt()), &data, &options()).expect("sqrt chart");
 
     let linear_middle = match &linear.marks[1].geometry {
         MarkGeometry::Rect(rect) => rect.y,
@@ -335,10 +321,7 @@ fn compiling_the_same_input_twice_is_identical() {
 
 #[test]
 fn point_positions_reconcile_with_both_scales() {
-    let data = snapshot(vec![
-        column("x", FieldKind::Quantitative, numbers(&[1.0])),
-        column("y", FieldKind::Quantitative, numbers(&[2.0])),
-    ]);
+    let data = snapshot(vec![column("x", FieldKind::Quantitative, numbers(&[1.0])), column("y", FieldKind::Quantitative, numbers(&[2.0]))]);
     let spec = ChartSpec::new(Mark::Point)
         .with_field(FieldRef::new("x", FieldKind::Quantitative))
         .with_field(FieldRef::new("y", FieldKind::Quantitative))
@@ -387,8 +370,7 @@ fn rect_marks_fill_band_cells_and_reject_non_band_axes() {
         assert!(approx(rect.x, x_band.position(column).expect("column")));
         assert!(approx(rect.width, x_band.band_width.abs()));
         let edge = y_band.position(row).expect("row");
-        let (top, height) =
-            if y_band.band_width < 0.0 { (edge + y_band.band_width, -y_band.band_width) } else { (edge, y_band.band_width) };
+        let (top, height) = if y_band.band_width < 0.0 { (edge + y_band.band_width, -y_band.band_width) } else { (edge, y_band.band_width) };
         assert!(approx(rect.y, top));
         assert!(approx(rect.height, height));
         assert!(rect.width > 0.0 && rect.height > 0.0, "a rect must have a positive extent");
@@ -399,20 +381,15 @@ fn rect_marks_fill_band_cells_and_reject_non_band_axes() {
         .with_field(FieldRef::new("y", FieldKind::Quantitative))
         .with_encoding(Channel::X, ChannelEncoding::field("x", FieldKind::Quantitative))
         .with_encoding(Channel::Y, ChannelEncoding::field("y", FieldKind::Quantitative));
-    let data = snapshot(vec![
-        column("x", FieldKind::Quantitative, numbers(&[1.0])),
-        column("y", FieldKind::Quantitative, numbers(&[2.0])),
-    ]);
+    let data = snapshot(vec![column("x", FieldKind::Quantitative, numbers(&[1.0])), column("y", FieldKind::Quantitative, numbers(&[2.0]))]);
     let error = compile(&quantitative, &data, &options()).expect_err("a rect needs two band axes");
     assert_eq!(error.code(), codes::INVALID_SPEC);
 }
 
 #[test]
 fn tick_marks_center_a_short_segment_on_each_observation() {
-    let data = snapshot(vec![
-        column("group", FieldKind::Nominal, texts(&["a", "b"])),
-        column("value", FieldKind::Quantitative, numbers(&[1.0, 4.0])),
-    ]);
+    let data =
+        snapshot(vec![column("group", FieldKind::Nominal, texts(&["a", "b"])), column("value", FieldKind::Quantitative, numbers(&[1.0, 4.0]))]);
     let spec = ChartSpec::new(Mark::Tick)
         .with_field(FieldRef::new("group", FieldKind::Nominal))
         .with_field(FieldRef::new("value", FieldKind::Quantitative))
@@ -493,10 +470,7 @@ fn a_bar_anchors_its_inferred_domain_at_zero_and_can_opt_out() {
     else {
         panic!("a bar must compile to a rectangle");
     };
-    assert!(
-        approx(clipped_smallest.height, 0.0),
-        "opting out of zero clips the minimum bar, which is the documented trade-off"
-    );
+    assert!(approx(clipped_smallest.height, 0.0), "opting out of zero clips the minimum bar, which is the documented trade-off");
 
     let MarkGeometry::Rect(plain_smallest) = &plain.marks[2].geometry
     else {
@@ -571,10 +545,7 @@ fn dodge_splits_band_slots_by_first_appearance_order() {
     for rect in &rects {
         assert!(approx(rect.width, half), "each sub-slot is one half of the band slot");
     }
-    assert!(
-        rects[0].right() <= rects[1].x + 1e-9 && rects[2].right() <= rects[3].x + 1e-9,
-        "dodged bars in one slot never overlap"
-    );
+    assert!(rects[0].right() <= rects[1].x + 1e-9 && rects[2].right() <= rects[3].x + 1e-9, "dodged bars in one slot never overlap");
 
     let repeat = compile(&grouped_spec(Mark::Bar), &grouped_data(), &options()).expect("compile again");
     assert_eq!(repeat.marks, plan.marks, "dodge placement is deterministic");
@@ -595,10 +566,7 @@ fn dodge_keeps_global_sub_slots_when_a_group_lacks_a_category() {
         MarkGeometry::Rect(rect) => *rect,
         _ => panic!("a bar must compile to a rectangle"),
     };
-    assert!(
-        approx(mixed.x, band.position("mixed").expect("mixed slot") + half),
-        "the `reference` bar keeps the second global sub-slot"
-    );
+    assert!(approx(mixed.x, band.position("mixed").expect("mixed slot") + half), "the `reference` bar keeps the second global sub-slot");
     assert!(approx(mixed.width, half), "a partial group still uses the global sub-slot width");
 }
 

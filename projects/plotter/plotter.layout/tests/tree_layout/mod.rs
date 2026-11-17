@@ -6,13 +6,7 @@ use plotter_layout::{LayoutOptions, RadialTreeLayout, TidyTreeLayout, TreeLayout
 fn sample_tree() -> TreeData {
     TreeData::new(
         "r",
-        vec![
-            TreeNode::root("r"),
-            TreeNode::child("a", "r"),
-            TreeNode::child("b", "r"),
-            TreeNode::child("c", "a"),
-            TreeNode::child("d", "a"),
-        ],
+        vec![TreeNode::root("r"), TreeNode::child("a", "r"), TreeNode::child("b", "r"), TreeNode::child("c", "a"), TreeNode::child("d", "a")],
     )
     .unwrap()
 }

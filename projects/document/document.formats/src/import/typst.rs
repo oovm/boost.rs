@@ -14,9 +14,7 @@
 
 use std::path::Path;
 
-use document_ir::{
-    Block, DocumentGraph, DocumentId, Inline, ListItem, LossMarker, NodeId, RelationEndpoint, SemanticStatus, SourceSpan,
-};
+use document_ir::{Block, DocumentGraph, DocumentId, Inline, ListItem, LossMarker, NodeId, RelationEndpoint, SemanticStatus, SourceSpan};
 use oak_core::{Builder, SourceText, parser::session::ParseSession};
 use oak_typst::{
     TypstBuilder, TypstLanguage,
@@ -29,8 +27,8 @@ use crate::FormatError;
 /// Import a Typst file from disk into `notedown-ir`.
 pub fn import_typst(path: impl AsRef<Path>) -> Result<DocumentGraph, FormatError> {
     let path = path.as_ref();
-    let text = std::fs::read_to_string(path)
-        .map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
+    let text =
+        std::fs::read_to_string(path).map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
     import_typst_bytes(&path.display().to_string(), &text)
 }
 
@@ -47,11 +45,7 @@ fn lower_typst_root(root: &TypstRoot, text: &str, id: DocumentId) -> DocumentGra
     sink.flush(&mut lowerer.graph);
 
     if lowerer.graph.blocks.is_empty() {
-        lowerer.loss(
-            "import.typst.empty_document",
-            "Typst source produced no supported semantic blocks",
-            SemanticStatus::Partial,
-        );
+        lowerer.loss("import.typst.empty_document", "Typst source produced no supported semantic blocks", SemanticStatus::Partial);
     }
     register_image_assets(&mut lowerer.graph);
     lowerer.graph
@@ -277,12 +271,8 @@ impl<'a> TypstLowerer<'a> {
                 self.line_breaks = 0;
                 let Some((body_start, body_end, display)) = math_content(raw)
                 else {
-                    let formula = document_ir::MathFormula::unsupported(
-                        raw.trim(),
-                        Some("typst".into()),
-                        document_ir::MathDisplay::Inline,
-                        "typst-math",
-                    );
+                    let formula =
+                        document_ir::MathFormula::unsupported(raw.trim(), Some("typst".into()), document_ir::MathDisplay::Inline, "typst-math");
                     sink.inlines.push(Inline::InlineMath { formula });
                     return;
                 };
@@ -300,11 +290,7 @@ impl<'a> TypstLowerer<'a> {
                 sink.inlines.push(self.link_inline(link));
             }
             TypstItem::Block(root) => self.lower_root(&root.items, root.span.end, sink),
-            TypstItem::Raw(_)
-            | TypstItem::Heading(_)
-            | TypstItem::ListItem(_)
-            | TypstItem::EnumItem(_)
-            | TypstItem::Quote(_) => {
+            TypstItem::Raw(_) | TypstItem::Heading(_) | TypstItem::ListItem(_) | TypstItem::EnumItem(_) | TypstItem::Quote(_) => {
                 unreachable!()
             }
         }
@@ -523,12 +509,7 @@ impl<'a> TypstLowerer<'a> {
         let Ok(root) = parse_typst("<tail>", tail)
         else {
             let span = self.span_at(start, end);
-            self.loss_at(
-                "import.typst.fragment_parse_failed",
-                "reparsed Typst tail could not be parsed",
-                SemanticStatus::Partial,
-                span,
-            );
+            self.loss_at("import.typst.fragment_parse_failed", "reparsed Typst tail could not be parsed", SemanticStatus::Partial, span);
             return;
         };
         let mut inner = TypstLowerer {
@@ -549,12 +530,7 @@ impl<'a> TypstLowerer<'a> {
         let Ok(root) = parse_typst("<inline>", fragment)
         else {
             let authored = self.span_at(span.start as usize, span.end as usize);
-            self.loss_at(
-                "import.typst.fragment_parse_failed",
-                "inline Typst fragment could not be parsed",
-                SemanticStatus::Partial,
-                authored,
-            );
+            self.loss_at("import.typst.fragment_parse_failed", "inline Typst fragment could not be parsed", SemanticStatus::Partial, authored);
             return Vec::new();
         };
         let mut inner = TypstLowerer {
@@ -598,11 +574,9 @@ impl<'a> TypstLowerer<'a> {
                 TypstItem::Math(root) => {
                     let raw = self.raw(root.span.start, root.span.end);
                     let formula = match math_content(raw) {
-                        Some((body_start, body_end, _)) => self.lower_math(
-                            &raw[body_start..body_end],
-                            document_ir::MathDisplay::Inline,
-                            root.span.start + body_start,
-                        ),
+                        Some((body_start, body_end, _)) => {
+                            self.lower_math(&raw[body_start..body_end], document_ir::MathDisplay::Inline, root.span.start + body_start)
+                        }
                         None => document_ir::MathFormula::unsupported(
                             raw.trim(),
                             Some("typst".into()),
@@ -951,10 +925,7 @@ fn split_list_lines(raw: &str, ordered: bool, base: usize) -> (Vec<ListLine>, Op
                     ordered: line_ordered,
                     number,
                     content: content.to_string(),
-                    span: SourceSpan {
-                        start: (base + offset + line.len() - content.len()) as u32,
-                        end: (base + offset + line.len()) as u32,
-                    },
+                    span: SourceSpan { start: (base + offset + line.len() - content.len()) as u32, end: (base + offset + line.len()) as u32 },
                 });
                 saw_item = true;
                 offset += segment.len();
@@ -1168,8 +1139,8 @@ fn raw_content(raw: &str) -> (String, Option<String>) {
     if ticks >= 3 {
         if let Some(newline) = inner.find('\n') {
             let first = inner[..newline].trim();
-            let is_language = !first.is_empty()
-                && first.chars().all(|character| character.is_alphanumeric() || matches!(character, '+' | '-' | '_'));
+            let is_language =
+                !first.is_empty() && first.chars().all(|character| character.is_alphanumeric() || matches!(character, '+' | '-' | '_'));
             if is_language {
                 return (inner[newline + 1..].trim_matches('\n').to_string(), Some(first.to_string()));
             }
@@ -1306,33 +1277,21 @@ mod tests {
     #[test]
     fn empty_list_loss_records_the_authored_region() {
         let text = "Lead\n- \nTrail\n";
-        let mut lowerer =
-            TypstLowerer { graph: DocumentGraph::new(DocumentId(1)), source: text, base: 0, cursor: 0, line_breaks: 0 };
+        let mut lowerer = TypstLowerer { graph: DocumentGraph::new(DocumentId(1)), source: text, base: 0, cursor: 0, line_breaks: 0 };
         let mut sink = Sink::document();
         lowerer.lower_list_items(Vec::new(), SourceSpan::new(5, 7), &mut sink);
 
-        let index = lowerer
-            .graph
-            .coverage
-            .loss
-            .iter()
-            .position(|marker| marker.code == "import.typst.empty_list")
-            .expect("empty list loss");
+        let index = lowerer.graph.coverage.loss.iter().position(|marker| marker.code == "import.typst.empty_list").expect("empty list loss");
         assert_eq!(lowerer.graph.loss_span(index), SourceSpan::new(5, 7));
         assert_eq!(&text[5..7], "- ", "the region names the list markup that carries no item line");
     }
 
     #[test]
     fn reparse_buffers_translate_their_spans_to_authored_coordinates() {
-        let mut lowerer =
-            TypstLowerer { graph: DocumentGraph::new(DocumentId(1)), source: "frag", base: 5, cursor: 0, line_breaks: 0 };
+        let mut lowerer = TypstLowerer { graph: DocumentGraph::new(DocumentId(1)), source: "frag", base: 5, cursor: 0, line_breaks: 0 };
         assert_eq!(lowerer.span_at(1, 3), SourceSpan::new(6, 8), "buffer offsets shift by the authored base");
         let inlines = lowerer.lower_inline_fragment("rag", SourceSpan { start: 1, end: 4 });
         assert!(!inlines.is_empty(), "a parseable fragment still lowers to inlines");
-        assert!(
-            lowerer.graph.coverage.loss.is_empty(),
-            "a successful reparse records no failure loss: {:?}",
-            lowerer.graph.coverage.loss
-        );
+        assert!(lowerer.graph.coverage.loss.is_empty(), "a successful reparse records no failure loss: {:?}", lowerer.graph.coverage.loss);
     }
 }

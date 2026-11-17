@@ -61,9 +61,7 @@ fn diagram_style_ids(graph: &DocumentGraph) -> Vec<String> {
             Block::Chart { language, .. } => Some(format!("Chart:{language}")),
             Block::Engraving { language, .. } => Some(format!("Score:{language}")),
             Block::Depiction { language, .. } => Some(format!("Structure:{language}")),
-            Block::Code { language: Some(language), .. } if !language.trim().is_empty() => {
-                Some(format!("Code:{}", language.trim()))
-            }
+            Block::Code { language: Some(language), .. } if !language.trim().is_empty() => Some(format!("Code:{}", language.trim())),
             Block::Opaque { kind, .. } if !kind.trim().is_empty() => Some(format!("Opaque:{}", kind.trim())),
             _ => None,
         };

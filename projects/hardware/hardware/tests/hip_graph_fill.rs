@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use hardware_backend_rocm::RocmBackend;
 use hardware_capability::Feature;
 use hardware_ir::{
-    Access, DepEdge, DepKind, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph,
-    ResourceId, ResourceKind, ResourceNode, ShaderId, TaskGraph, TaskId, TaskKind, TaskNode,
+    Access, DepEdge, DepKind, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph, ResourceId, ResourceKind, ResourceNode, ShaderId,
+    TaskGraph, TaskId, TaskKind, TaskNode,
 };
 use hardware_scheduler::Backend;
 use hardware_types::ResourceId as Rid;
@@ -26,10 +26,7 @@ fn fill_task(id: u64, dst: u64, value: f64) -> TaskNode {
         id: TaskId(id),
         kind: TaskKind::Fill,
         shader: ShaderId(id),
-        params: BTreeMap::from([
-            ("dst".into(), ParamValue::I64(dst as i64)),
-            ("value".into(), ParamValue::F64(value)),
-        ]),
+        params: BTreeMap::from([("dst".into(), ParamValue::I64(dst as i64)), ("value".into(), ParamValue::F64(value))]),
         dispatch: Default::default(),
         objective: Objective::MaxThroughput,
         priority: Priority::Batch,
@@ -38,17 +35,10 @@ fn fill_task(id: u64, dst: u64, value: f64) -> TaskNode {
 
 fn fill_graph() -> Graph {
     Graph {
-        resources: ResourceGraph {
-            nodes: vec![buffer(1, 4)],
-        },
+        resources: ResourceGraph { nodes: vec![buffer(1, 4)] },
         tasks: TaskGraph {
             nodes: vec![fill_task(10, 1, 3.0)],
-            edges: vec![DepEdge {
-                from_task: None,
-                from_resource: Some(ResourceId(1)),
-                to_task: TaskId(10),
-                kind: DepKind::Data,
-            }],
+            edges: vec![DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data }],
         },
     }
 }
@@ -62,10 +52,7 @@ fn hip_graph_fill_matches_stream_soft_skip() {
             return;
         }
     };
-    assert!(
-        rocm.features().has(Feature::HipGraph),
-        "ROCm backend must advertise HipGraph"
-    );
+    assert!(rocm.features().has(Feature::HipGraph), "ROCm backend must advertise HipGraph");
 
     let graph = fill_graph();
     if let Err(err) = rocm.prepare(&graph) {

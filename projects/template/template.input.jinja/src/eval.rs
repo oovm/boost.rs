@@ -321,11 +321,7 @@ impl<'a> Renderer<'a> {
 }
 
 fn undefined(expression: &Expr) -> TemplateError {
-    TemplateError::with_args(
-        codes::UNDEFINED_VARIABLE,
-        format!("`{}` is undefined", expression.text),
-        vec![("path", expression.text.clone())],
-    )
+    TemplateError::with_args(codes::UNDEFINED_VARIABLE, format!("`{}` is undefined", expression.text), vec![("path", expression.text.clone())])
 }
 
 fn lookup(name: &str, root: &Value, scopes: &[BTreeMap<String, Value>]) -> Option<Value> {
@@ -555,11 +551,7 @@ fn type_name(value: &Value) -> &'static str {
 }
 
 fn unknown_filter(name: &str) -> TemplateError {
-    TemplateError::with_args(
-        jinja_codes::UNKNOWN_FILTER,
-        format!("filter `{name}` is not supported in v0"),
-        vec![("filter", name.to_string())],
-    )
+    TemplateError::with_args(jinja_codes::UNKNOWN_FILTER, format!("filter `{name}` is not supported in v0"), vec![("filter", name.to_string())])
 }
 
 fn filter_value(name: &str, value: &Value) -> TemplateError {

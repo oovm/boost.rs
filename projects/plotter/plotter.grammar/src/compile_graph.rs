@@ -1,8 +1,8 @@
 //! 图 / 树 PlotSpec → layout → Scene。
 
 use plotter_layout::{
-    CircularLayout, ForceLayout, GraphLayout, GridLayout, LayeredLayout, LayoutOptions, LayoutResult, RadialTreeLayout,
-    TidyTreeLayout, TreeLayout,
+    CircularLayout, ForceLayout, GraphLayout, GridLayout, LayeredLayout, LayoutOptions, LayoutResult, RadialTreeLayout, TidyTreeLayout,
+    TreeLayout,
 };
 use plotter_types::plot::{Diagnostic, DiagnosticCode, Result};
 use plotter_view::{CameraSpec, Point2, PointsNode, PolylineNode, Scene, SceneArena, SceneMetadata, SceneNodeKind};
@@ -36,11 +36,7 @@ pub(crate) fn compile_plot_tree(spec: &PlotSpec, options: CompileOptions, space:
     scene_from_layout(spec, options, &laid)
 }
 
-fn run_graph_layout(
-    graph: &plotter_data::GraphData,
-    algorithm: GraphLayoutKind,
-    options: &LayoutOptions,
-) -> Result<LayoutResult> {
+fn run_graph_layout(graph: &plotter_data::GraphData, algorithm: GraphLayoutKind, options: &LayoutOptions) -> Result<LayoutResult> {
     match algorithm {
         GraphLayoutKind::Circular => CircularLayout.layout(graph, options),
         GraphLayoutKind::Grid => GridLayout.layout(graph, options),
@@ -85,36 +81,19 @@ fn scene_from_layout(spec: &PlotSpec, options: CompileOptions, laid: &LayoutResu
             }
             GeomSpec::Node(node) => {
                 let positions: Vec<Point2> = laid.positions.iter().map(|(_, p)| Point2::new(p.x, p.y)).collect();
-                children.push(arena.insert(SceneNodeKind::Points(PointsNode {
-                    positions,
-                    size: node.size,
-                    fill: theme.foreground,
-                })));
+                children.push(arena.insert(SceneNodeKind::Points(PointsNode { positions, size: node.size, fill: theme.foreground })));
             }
             GeomSpec::TreeNode(node) => {
                 let positions: Vec<Point2> = laid.positions.iter().map(|(_, p)| Point2::new(p.x, p.y)).collect();
-                children.push(arena.insert(SceneNodeKind::Points(PointsNode {
-                    positions,
-                    size: node.size,
-                    fill: theme.foreground,
-                })));
+                children.push(arena.insert(SceneNodeKind::Points(PointsNode { positions, size: node.size, fill: theme.foreground })));
             }
             _ => {
-                return Err(Diagnostic::error(
-                    DiagnosticCode::UnsupportedSpec,
-                    "图/树坐标系仅支持 node/edge 或 tree_node/tree_edge",
-                )
-                .with_param("layer", layer_index.to_string()));
+                return Err(Diagnostic::error(DiagnosticCode::UnsupportedSpec, "图/树坐标系仅支持 node/edge 或 tree_node/tree_edge")
+                    .with_param("layer", layer_index.to_string()));
             }
         }
     }
 
     let root = arena.insert(SceneNodeKind::Group { children });
-    Ok(Scene {
-        root,
-        nodes: arena,
-        camera: CameraSpec::Orthographic2d,
-        viewport: options.viewport,
-        metadata: SceneMetadata::default(),
-    })
+    Ok(Scene { root, nodes: arena, camera: CameraSpec::Orthographic2d, viewport: options.viewport, metadata: SceneMetadata::default() })
 }

@@ -132,12 +132,7 @@ impl<'a> Renderer<'a> {
         self.nodes(&nodes, context, frames, output, Some(id), depth + 1)
     }
 
-    fn resolve<'v>(
-        &self,
-        expression: &Expr,
-        context: &[Cow<'v, Value>],
-        frames: &[Frame],
-    ) -> Result<Option<Cow<'v, Value>>, TemplateError> {
+    fn resolve<'v>(&self, expression: &Expr, context: &[Cow<'v, Value>], frames: &[Frame]) -> Result<Option<Cow<'v, Value>>, TemplateError> {
         let resolved = match &expression.kind {
             ExprKind::Literal(value) => Some(Cow::Owned(value.clone())),
             ExprKind::Path(path) => path_value(path, context, frames),
@@ -150,11 +145,7 @@ impl<'a> Renderer<'a> {
 }
 
 fn undefined(expression: &Expr) -> TemplateError {
-    TemplateError::with_args(
-        codes::UNDEFINED_VARIABLE,
-        format!("`{}` is undefined", expression.text),
-        vec![("path", expression.text.clone())],
-    )
+    TemplateError::with_args(codes::UNDEFINED_VARIABLE, format!("`{}` is undefined", expression.text), vec![("path", expression.text.clone())])
 }
 
 fn path_value<'v>(path: &PathExpr, context: &[Cow<'v, Value>], frames: &[Frame]) -> Option<Cow<'v, Value>> {
@@ -209,9 +200,7 @@ fn member<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
 fn iteration<'v>(value: Option<Cow<'v, Value>>) -> Vec<(Option<String>, Cow<'v, Value>)> {
     match value {
         Some(Cow::Borrowed(Value::Array(items))) => items.iter().map(|item| (None, Cow::Borrowed(item))).collect(),
-        Some(Cow::Borrowed(Value::Object(map))) => {
-            map.iter().map(|(key, item)| (Some(key.clone()), Cow::Borrowed(item))).collect()
-        }
+        Some(Cow::Borrowed(Value::Object(map))) => map.iter().map(|(key, item)| (Some(key.clone()), Cow::Borrowed(item))).collect(),
         Some(Cow::Owned(Value::Array(items))) => items.into_iter().map(|item| (None, Cow::Owned(item))).collect(),
         Some(Cow::Owned(Value::Object(map))) => map.into_iter().map(|(key, item)| (Some(key), Cow::Owned(item))).collect(),
         _ => Vec::new(),

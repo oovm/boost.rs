@@ -54,10 +54,7 @@ pub fn tail_base(rect: [f32; 4], tail: [f32; 2]) -> [[f32; 2]; 2] {
     let t = tx.min(ty);
     let (bx, by) = (cx + ux * t, cy + uy * t);
     let (px, py) = (-uy, ux);
-    [
-        [bx + px * TAIL_BASE_HALF_WIDTH, by + py * TAIL_BASE_HALF_WIDTH],
-        [bx - px * TAIL_BASE_HALF_WIDTH, by - py * TAIL_BASE_HALF_WIDTH],
-    ]
+    [[bx + px * TAIL_BASE_HALF_WIDTH, by + py * TAIL_BASE_HALF_WIDTH], [bx - px * TAIL_BASE_HALF_WIDTH, by - py * TAIL_BASE_HALF_WIDTH]]
 }
 
 #[cfg(test)]

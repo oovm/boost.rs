@@ -23,9 +23,9 @@ pub struct NavEntry {
 /// Locate the EPUB3 navigation manifest item when declared via
 /// `properties="nav"`.
 pub fn find_nav_manifest_item(opf: &OpfDocument) -> Option<&ManifestItem> {
-    opf.manifest.values().find(|item| {
-        item.properties.as_deref().map(|properties| properties.split_whitespace().any(|token| token == "nav")).unwrap_or(false)
-    })
+    opf.manifest
+        .values()
+        .find(|item| item.properties.as_deref().map(|properties| properties.split_whitespace().any(|token| token == "nav")).unwrap_or(false))
 }
 
 /// Parse a navigation XHTML document into nested TOC entries.
@@ -69,12 +69,9 @@ fn nav_entries_from_xhtml(xhtml: &[u8]) -> Result<Vec<NavEntry>, FormatError> {
     Ok(parse_nav_list_from_element(nav))
 }
 
-fn find_navigation_element<'a>(
-    view: &'a HtmlDocumentView<'a>,
-    document: &'a oak_html::HtmlDocument,
-) -> Result<&'a Element, FormatError> {
-    let (_, nav_elements) = select_css_elements(view, "nav", QueryBudget::default())
-        .map_err(|error| FormatError::parse("epub", error.to_string()))?;
+fn find_navigation_element<'a>(view: &'a HtmlDocumentView<'a>, document: &'a oak_html::HtmlDocument) -> Result<&'a Element, FormatError> {
+    let (_, nav_elements) =
+        select_css_elements(view, "nav", QueryBudget::default()).map_err(|error| FormatError::parse("epub", error.to_string()))?;
     if let Some(nav) = nav_elements.iter().find(|element| is_toc_navigation(element)).or(nav_elements.first()) {
         return Ok(nav);
     }
@@ -101,12 +98,8 @@ fn parse_nav_list_from_element(nav: &Element) -> Vec<NavEntry> {
     }
 
     let view = HtmlDocumentView::from_element(nav);
-    let anchors =
-        select_css_elements(&view, "a[href]", QueryBudget::default()).map(|(_, elements)| elements).unwrap_or_default();
-    anchors
-        .into_iter()
-        .filter_map(|anchor| first_anchor(anchor).map(|(label, href)| NavEntry { label, href, children: Vec::new() }))
-        .collect()
+    let anchors = select_css_elements(&view, "a[href]", QueryBudget::default()).map(|(_, elements)| elements).unwrap_or_default();
+    anchors.into_iter().filter_map(|anchor| first_anchor(anchor).map(|(label, href)| NavEntry { label, href, children: Vec::new() })).collect()
 }
 
 fn parse_list_items(list: &Element) -> Vec<NavEntry> {

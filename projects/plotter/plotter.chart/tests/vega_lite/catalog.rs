@@ -37,8 +37,7 @@ const SHIPPED: [&str; 22] = [
 #[test]
 fn the_catalog_documents_every_chart_code_and_invents_none() {
     let docs = code_docs();
-    let documented: BTreeSet<&str> =
-        docs.iter().map(|doc| doc.code.as_str()).filter(|code| code.starts_with("davinci.chart.")).collect();
+    let documented: BTreeSet<&str> = docs.iter().map(|doc| doc.code.as_str()).filter(|code| code.starts_with("davinci.chart.")).collect();
 
     for code in SHIPPED {
         assert!(documented.contains(code), "`{code}` is emitted but missing from the catalog");

@@ -78,8 +78,8 @@ fn notedown_import_lowers_underscore_emphasis() {
 
 #[test]
 fn notedown_table_cells_preserve_emphasis() {
-    let graph = import_notedown_bytes("styled-table.nd", "| Name | Value |\n|------|-------|\n| **Alpha** | *one* |\n")
-        .expect("import notedown");
+    let graph =
+        import_notedown_bytes("styled-table.nd", "| Name | Value |\n|------|-------|\n| **Alpha** | *one* |\n").expect("import notedown");
     let (head, body) = graph
         .blocks
         .iter()
@@ -260,9 +260,7 @@ fn notedown_inline_forms_never_lower_to_an_unnamed_span_style() {
     assert!(!styles.contains(&"span"), "a grouping node must not become a style: {styles:?}");
 
     let markdown = export_markdown(&graph).expect("export markdown");
-    for expected in
-        ["**bold**", "*italic*", "~~old~~", "`code`", "[home](https://example.com)", "![diagram](assets/diagram.png)"]
-    {
+    for expected in ["**bold**", "*italic*", "~~old~~", "`code`", "[home](https://example.com)", "![diagram](assets/diagram.png)"] {
         assert!(markdown.contains(expected), "{expected} missing from {markdown:?}");
     }
 }
@@ -390,12 +388,7 @@ fn notedown_round_trip_preserves_supported_semantics() {
 fn notedown_import_reports_unresolved_target_with_provenance() {
     let source = "See [missing note] for context.\n";
     let graph = import_notedown_bytes("unresolved.nd", source).expect("import notedown");
-    let index = graph
-        .coverage
-        .loss
-        .iter()
-        .position(|loss| loss.code == "import.notedown.unresolved_target")
-        .expect("unresolved target loss");
+    let index = graph.coverage.loss.iter().position(|loss| loss.code == "import.notedown.unresolved_target").expect("unresolved target loss");
     assert_eq!(graph.coverage.loss[index].status, SemanticStatus::Unresolved);
     let span = graph.loss_span(index).expect("loss span");
     let authored = &source[span.start as usize..span.end as usize];

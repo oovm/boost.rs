@@ -424,12 +424,7 @@ impl XlsxSheet {
 
     /// Height of a row in points, falling back to the default.
     pub fn row_height(&self, row: u32) -> f64 {
-        self.rows
-            .iter()
-            .rev()
-            .find(|record| record.index == row)
-            .and_then(|record| record.height)
-            .unwrap_or(self.default_row_height)
+        self.rows.iter().rev().find(|record| record.index == row).and_then(|record| record.height).unwrap_or(self.default_row_height)
     }
 
     /// Whether a row is hidden.
@@ -439,12 +434,7 @@ impl XlsxSheet {
 
     /// Whether a column is hidden.
     pub fn column_hidden(&self, column: u32) -> bool {
-        self.columns
-            .iter()
-            .rev()
-            .find(|record| record.min <= column && column <= record.max)
-            .map(|record| record.hidden)
-            .unwrap_or(false)
+        self.columns.iter().rev().find(|record| record.min <= column && column <= record.max).map(|record| record.hidden).unwrap_or(false)
     }
 
     /// Merge range that starts at the given cell.
@@ -454,9 +444,10 @@ impl XlsxSheet {
 
     /// Merge range that covers the given cell.
     pub fn merge_covering(&self, row: u32, column: u32) -> Option<CellRange> {
-        self.merged.iter().copied().find(|range| {
-            range.start_row <= row && row <= range.end_row && range.start_column <= column && column <= range.end_column
-        })
+        self.merged
+            .iter()
+            .copied()
+            .find(|range| range.start_row <= row && row <= range.end_row && range.start_column <= column && column <= range.end_column)
     }
 
     /// Comment attached to the given cell.

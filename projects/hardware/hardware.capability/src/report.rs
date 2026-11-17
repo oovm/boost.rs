@@ -20,18 +20,8 @@ pub struct CapabilityReport {
 
 impl CapabilityReport {
     /// Build a report from `(name, features)` pairs.
-    pub fn from_backends(
-        items: impl IntoIterator<Item = (impl Into<String>, FeatureSet)>,
-    ) -> Self {
-        Self {
-            backends: items
-                .into_iter()
-                .map(|(name, features)| BackendCapabilities {
-                    name: name.into(),
-                    features,
-                })
-                .collect(),
-        }
+    pub fn from_backends(items: impl IntoIterator<Item = (impl Into<String>, FeatureSet)>) -> Self {
+        Self { backends: items.into_iter().map(|(name, features)| BackendCapabilities { name: name.into(), features }).collect() }
     }
 
     /// Stable text lines: `name: feat1, feat2` or `name: (none)`.
@@ -39,14 +29,11 @@ impl CapabilityReport {
         self.backends
             .iter()
             .map(|row| {
-                let mut feats: Vec<String> = row
-                    .features
-                    .iter()
-                    .map(|f| format!("{f:?}"))
-                    .collect();
+                let mut feats: Vec<String> = row.features.iter().map(|f| format!("{f:?}")).collect();
                 if feats.is_empty() {
                     format!("{}: (none)", row.name)
-                } else {
+                }
+                else {
                     feats.sort();
                     format!("{}: {}", row.name, feats.join(", "))
                 }

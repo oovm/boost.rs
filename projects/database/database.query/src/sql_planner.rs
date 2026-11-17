@@ -228,12 +228,7 @@ pub fn plan_select_for_dialect(
 
     // 单列唯一索引的候选集探测。`pk_prefix` 非空时不能用：`pk LIKE 'x%'` 的前缀
     // 已经从 remaining 里抽走，索引候选集不再受它约束，会漏行。
-    let index = if pk_prefix.is_none() {
-        secondary_index_probe(remaining_predicate.as_ref(), table, &namespace)
-    }
-    else {
-        None
-    };
+    let index = if pk_prefix.is_none() { secondary_index_probe(remaining_predicate.as_ref(), table, &namespace) } else { None };
     // 相关子查询在执行期替换外层值后可能落到这些字段的等值上；执行层据此重建探针。
     let unique_indexes: Vec<u64> = table
         .unique_constraints
@@ -522,19 +517,10 @@ fn plan_join_select(
     // 3. 每个来源只解码自己表的字段。
     let mut field_types: std::collections::BTreeMap<u64, crate::catalog_bind::SqlFieldType> = std::collections::BTreeMap::new();
     let mut field_defaults: std::collections::BTreeMap<u64, DefaultValue> = std::collections::BTreeMap::new();
-    let base =
-        join_source_plan(base, None, crate::sql::SqlBoundJoinKind::Inner, catalog, &needed, &mut field_types, &mut field_defaults)?;
+    let base = join_source_plan(base, None, crate::sql::SqlBoundJoinKind::Inner, catalog, &needed, &mut field_types, &mut field_defaults)?;
     let mut join_sources = Vec::with_capacity(joins.len());
     for join in joins {
-        join_sources.push(join_source_plan(
-            join.table,
-            Some(join.on),
-            join.kind,
-            catalog,
-            &needed,
-            &mut field_types,
-            &mut field_defaults,
-        )?);
+        join_sources.push(join_source_plan(join.table, Some(join.on), join.kind, catalog, &needed, &mut field_types, &mut field_defaults)?);
     }
 
     Ok(SqlExecutionPlan::Join(JoinPlan {
@@ -650,10 +636,7 @@ pub fn plan_insert(insert: SqlCatalogBoundInsert, catalog: &SqlCatalog, dialect:
         if target_fields.iter().any(|target| target.field_id == field.field_id) {
             continue;
         }
-        return Err(SqlFrontendError::new(
-            SqlErrorKind::MissingDefault,
-            format!("Field '{}' doesn't have a default value", field.name),
-        ));
+        return Err(SqlFrontendError::new(SqlErrorKind::MissingDefault, format!("Field '{}' doesn't have a default value", field.name)));
     }
     if let Some(select) = select {
         return plan_insert_select(*select, target_fields, namespace, field_types, unique_constraints, catalog, dialect, conflict, returning);
@@ -1145,10 +1128,12 @@ fn literal_from_expression(expr: &SqlCatalogBoundExpression) -> Result<SqlBoundL
                     .map(SqlBoundLiteral::Integer)
                     .ok_or_else(|| planner_error("integer literal is outside the signed 64-bit range")),
                 (SqlBoundUnaryOperator::Plus, SqlBoundLiteral::Number(number)) => Ok(SqlBoundLiteral::Number(number)),
-                (SqlBoundUnaryOperator::Minus, SqlBoundLiteral::Number(number)) => Ok(SqlBoundLiteral::Number(match number.strip_prefix('-') {
-                    Some(rest) => rest.to_string(),
-                    None => format!("-{number}"),
-                })),
+                (SqlBoundUnaryOperator::Minus, SqlBoundLiteral::Number(number)) => {
+                    Ok(SqlBoundLiteral::Number(match number.strip_prefix('-') {
+                        Some(rest) => rest.to_string(),
+                        None => format!("-{number}"),
+                    }))
+                }
                 _ => Err(planner_error("SQL gateway write values must be simple literals")),
             }
         }
@@ -1633,11 +1618,7 @@ pub struct DeleteScanPlan {
 /// `point_read_allowed` 为 `false` 时等值也不抽取（聚合 / GROUP BY / 窗口只在扫描
 /// 路径求值，点读承载不了；等值被抽走又没人按 key 读，行级过滤就丢了这一条）。
 /// 此时等值原样留在 remaining，由扫描逐行求值。
-fn extract_pk_range(
-    predicate: SqlCatalogBoundExpression,
-    pk_row_id: u64,
-    point_read_allowed: bool,
-) -> Result<PkPredicate, SqlFrontendError> {
+fn extract_pk_range(predicate: SqlCatalogBoundExpression, pk_row_id: u64, point_read_allowed: bool) -> Result<PkPredicate, SqlFrontendError> {
     match predicate {
         // AND 拆分 — 两侧分别提取，再合并。
         SqlCatalogBoundExpression::Binary { left, operator: SqlBoundBinaryOperator::And, right } => {
@@ -1653,8 +1634,10 @@ fn extract_pk_range(
 
         // 所有其他 Binary 表达式 —— 尝试识别 pk 条件。
         SqlCatalogBoundExpression::Binary { left, operator, right } => {
-            let original = |left: SqlCatalogBoundExpression, operator, right: SqlCatalogBoundExpression| {
-                SqlCatalogBoundExpression::Binary { left: Box::new(left), operator, right: Box::new(right) }
+            let original = |left: SqlCatalogBoundExpression, operator, right: SqlCatalogBoundExpression| SqlCatalogBoundExpression::Binary {
+                left: Box::new(left),
+                operator,
+                right: Box::new(right),
             };
             match (operator, *left, *right) {
                 // pk = literal
@@ -1677,7 +1660,11 @@ fn extract_pk_range(
                     if prefix.is_empty() && !matches!(&lit, SqlBoundLiteral::String(s) if s == "%") {
                         // LIKE 模式不只是 prefix%，下推成 remaining
                         return Ok(PkPredicate {
-                            remaining: Some(original(SqlCatalogBoundExpression::Column(col), operator, SqlCatalogBoundExpression::Literal(lit))),
+                            remaining: Some(original(
+                                SqlCatalogBoundExpression::Column(col),
+                                operator,
+                                SqlCatalogBoundExpression::Literal(lit),
+                            )),
                             ..PkPredicate::default()
                         });
                     }
@@ -1685,13 +1672,16 @@ fn extract_pk_range(
                 }
 
                 // pk 比较范围：只作为扫描边界提示，原谓词留在 remaining 保证语义。
-                (op @ (SqlBoundBinaryOperator::Greater
-                | SqlBoundBinaryOperator::GreaterEqual
-                | SqlBoundBinaryOperator::Less
-                | SqlBoundBinaryOperator::LessEqual), SqlCatalogBoundExpression::Column(col), SqlCatalogBoundExpression::Literal(lit))
-                    if col.row_id == pk_row_id =>
-                {
-                    let Some(bound) = pk_bound_from(&lit, op) else {
+                (
+                    op @ (SqlBoundBinaryOperator::Greater
+                    | SqlBoundBinaryOperator::GreaterEqual
+                    | SqlBoundBinaryOperator::Less
+                    | SqlBoundBinaryOperator::LessEqual),
+                    SqlCatalogBoundExpression::Column(col),
+                    SqlCatalogBoundExpression::Literal(lit),
+                ) if col.row_id == pk_row_id => {
+                    let Some(bound) = pk_bound_from(&lit, op)
+                    else {
                         return Ok(PkPredicate {
                             remaining: Some(original(SqlCatalogBoundExpression::Column(col), op, SqlCatalogBoundExpression::Literal(lit))),
                             ..PkPredicate::default()
@@ -1706,14 +1696,17 @@ fn extract_pk_range(
                 }
 
                 // 反向比较 `literal > pk` 等价于 `pk < literal`。
-                (op @ (SqlBoundBinaryOperator::Greater
-                | SqlBoundBinaryOperator::GreaterEqual
-                | SqlBoundBinaryOperator::Less
-                | SqlBoundBinaryOperator::LessEqual), SqlCatalogBoundExpression::Literal(lit), SqlCatalogBoundExpression::Column(col))
-                    if col.row_id == pk_row_id =>
-                {
+                (
+                    op @ (SqlBoundBinaryOperator::Greater
+                    | SqlBoundBinaryOperator::GreaterEqual
+                    | SqlBoundBinaryOperator::Less
+                    | SqlBoundBinaryOperator::LessEqual),
+                    SqlCatalogBoundExpression::Literal(lit),
+                    SqlCatalogBoundExpression::Column(col),
+                ) if col.row_id == pk_row_id => {
                     let flipped = flip_comparison(op);
-                    let Some(bound) = pk_bound_from(&lit, flipped) else {
+                    let Some(bound) = pk_bound_from(&lit, flipped)
+                    else {
                         return Ok(PkPredicate {
                             remaining: Some(original(SqlCatalogBoundExpression::Literal(lit), op, SqlCatalogBoundExpression::Column(col))),
                             ..PkPredicate::default()
@@ -1846,12 +1839,7 @@ fn pk_scan_bound(lower: &PkBound, upper: &PkBound) -> Option<(Vec<u8>, Vec<u8>)>
     }
     let width = lower_text.len();
     let after = if lower.inclusive {
-        if lower.value == 0 {
-            Vec::new()
-        }
-        else {
-            format!("{:0width$}", lower.value - 1, width = width).into_bytes()
-        }
+        if lower.value == 0 { Vec::new() } else { format!("{:0width$}", lower.value - 1, width = width).into_bytes() }
     }
     else {
         lower_text.into_bytes()
@@ -2019,26 +2007,22 @@ fn index_condition(expression: &SqlCatalogBoundExpression, row_id: u64) -> Optio
         return None;
     };
     match (left.as_ref(), right.as_ref()) {
-        (SqlCatalogBoundExpression::Column(column), SqlCatalogBoundExpression::Literal(literal)) if column.row_id == row_id => {
-            match operator {
-                SqlBoundBinaryOperator::Equal => Some(IndexCondition::Equal(literal.clone())),
-                SqlBoundBinaryOperator::Greater => integer_literal(literal).map(|value| IndexCondition::Greater(value, false)),
-                SqlBoundBinaryOperator::GreaterEqual => integer_literal(literal).map(|value| IndexCondition::Greater(value, true)),
-                SqlBoundBinaryOperator::Less => integer_literal(literal).map(|value| IndexCondition::Less(value, false)),
-                SqlBoundBinaryOperator::LessEqual => integer_literal(literal).map(|value| IndexCondition::Less(value, true)),
-                _ => None,
-            }
-        }
-        (SqlCatalogBoundExpression::Literal(literal), SqlCatalogBoundExpression::Column(column)) if column.row_id == row_id => {
-            match operator {
-                SqlBoundBinaryOperator::Equal => Some(IndexCondition::Equal(literal.clone())),
-                SqlBoundBinaryOperator::Greater => integer_literal(literal).map(|value| IndexCondition::Less(value, false)),
-                SqlBoundBinaryOperator::GreaterEqual => integer_literal(literal).map(|value| IndexCondition::Less(value, true)),
-                SqlBoundBinaryOperator::Less => integer_literal(literal).map(|value| IndexCondition::Greater(value, false)),
-                SqlBoundBinaryOperator::LessEqual => integer_literal(literal).map(|value| IndexCondition::Greater(value, true)),
-                _ => None,
-            }
-        }
+        (SqlCatalogBoundExpression::Column(column), SqlCatalogBoundExpression::Literal(literal)) if column.row_id == row_id => match operator {
+            SqlBoundBinaryOperator::Equal => Some(IndexCondition::Equal(literal.clone())),
+            SqlBoundBinaryOperator::Greater => integer_literal(literal).map(|value| IndexCondition::Greater(value, false)),
+            SqlBoundBinaryOperator::GreaterEqual => integer_literal(literal).map(|value| IndexCondition::Greater(value, true)),
+            SqlBoundBinaryOperator::Less => integer_literal(literal).map(|value| IndexCondition::Less(value, false)),
+            SqlBoundBinaryOperator::LessEqual => integer_literal(literal).map(|value| IndexCondition::Less(value, true)),
+            _ => None,
+        },
+        (SqlCatalogBoundExpression::Literal(literal), SqlCatalogBoundExpression::Column(column)) if column.row_id == row_id => match operator {
+            SqlBoundBinaryOperator::Equal => Some(IndexCondition::Equal(literal.clone())),
+            SqlBoundBinaryOperator::Greater => integer_literal(literal).map(|value| IndexCondition::Less(value, false)),
+            SqlBoundBinaryOperator::GreaterEqual => integer_literal(literal).map(|value| IndexCondition::Less(value, true)),
+            SqlBoundBinaryOperator::Less => integer_literal(literal).map(|value| IndexCondition::Greater(value, false)),
+            SqlBoundBinaryOperator::LessEqual => integer_literal(literal).map(|value| IndexCondition::Greater(value, true)),
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -2495,10 +2479,12 @@ mod default_value_tests {
 #[cfg(test)]
 mod write_plan_type_tests {
     use super::{SqlExecutionPlan, plan_insert};
-    use crate::catalog_bind::{SqlCatalogBoundStatement, SqlFieldType, bind_sql_catalog};
-    use crate::sql::{SqlDialect, SqlErrorKind};
-    use crate::sql_ddl::parse_ddl;
-    use crate::sql_schema::SqlSchemaRegistry;
+    use crate::{
+        catalog_bind::{SqlCatalogBoundStatement, SqlFieldType, bind_sql_catalog},
+        sql::{SqlDialect, SqlErrorKind},
+        sql_ddl::parse_ddl,
+        sql_schema::SqlSchemaRegistry,
+    };
 
     fn apply_ddl(registry: &SqlSchemaRegistry, sql: &str) {
         let statement = parse_ddl(sql, SqlDialect::Mysql).expect("parse").expect("DDL statement");
@@ -2507,7 +2493,8 @@ mod write_plan_type_tests {
 
     fn plan_mysql_insert(registry: &SqlSchemaRegistry, sql: &str) -> Result<SqlExecutionPlan, crate::sql::SqlFrontendError> {
         let catalog = registry.catalog();
-        let SqlCatalogBoundStatement::Insert(insert) = bind_sql_catalog(sql, &catalog, catalog.schema_version(), SqlDialect::Mysql).expect("bind")
+        let SqlCatalogBoundStatement::Insert(insert) =
+            bind_sql_catalog(sql, &catalog, catalog.schema_version(), SqlDialect::Mysql).expect("bind")
         else {
             panic!("expected INSERT");
         };
@@ -2557,10 +2544,12 @@ mod write_plan_type_tests {
 #[cfg(test)]
 mod pk_range_pushdown_tests {
     use super::{SqlExecutionPlan, plan_statement_for_dialect};
-    use crate::catalog_bind::{SqlCatalog, SqlCatalogBoundExpression, bind_sql_catalog};
-    use crate::sql::{SqlBoundBinaryOperator, SqlDialect};
-    use crate::sql_ddl::parse_ddl;
-    use crate::sql_schema::SqlSchemaRegistry;
+    use crate::{
+        catalog_bind::{SqlCatalog, SqlCatalogBoundExpression, bind_sql_catalog},
+        sql::{SqlBoundBinaryOperator, SqlDialect},
+        sql_ddl::parse_ddl,
+        sql_schema::SqlSchemaRegistry,
+    };
 
     fn mysql_catalog(ddl: &str) -> SqlCatalog {
         let registry = SqlSchemaRegistry::new_in_memory();
@@ -2587,7 +2576,10 @@ mod pk_range_pushdown_tests {
             "SELECT id FROM t WHERE id BETWEEN 6 AND 46",
             "SELECT id FROM t WHERE id > 6 AND id < 46",
         ] {
-            let SqlExecutionPlan::Scan(scan) = plan_mysql(&catalog, sql) else { panic!("`{sql}` must plan to a scan") };
+            let SqlExecutionPlan::Scan(scan) = plan_mysql(&catalog, sql)
+            else {
+                panic!("`{sql}` must plan to a scan")
+            };
             assert!(scan.rowid_after.is_none(), "`{sql}` must not push a byte lower bound");
             assert!(scan.rowid_before.is_none(), "`{sql}` must not push a byte upper bound");
             assert!(scan.remaining_predicate.is_some(), "`{sql}` must keep the range as a row filter");
@@ -2600,10 +2592,16 @@ mod pk_range_pushdown_tests {
     #[test]
     fn update_and_delete_range_stays_row_level() {
         let catalog = mysql_catalog("CREATE TABLE t (id INT NOT NULL PRIMARY KEY, v INT)");
-        let SqlExecutionPlan::UpdateScan(update) = plan_mysql(&catalog, "UPDATE t SET v = 1 WHERE id > 6") else { panic!("UPDATE must scan") };
+        let SqlExecutionPlan::UpdateScan(update) = plan_mysql(&catalog, "UPDATE t SET v = 1 WHERE id > 6")
+        else {
+            panic!("UPDATE must scan")
+        };
         assert!(update.rowid_after.is_none() && update.rowid_before.is_none());
         assert!(update.predicate.is_some(), "UPDATE must keep the range as a row filter");
-        let SqlExecutionPlan::DeleteScan(delete) = plan_mysql(&catalog, "DELETE FROM t WHERE id >= 50") else { panic!("DELETE must scan") };
+        let SqlExecutionPlan::DeleteScan(delete) = plan_mysql(&catalog, "DELETE FROM t WHERE id >= 50")
+        else {
+            panic!("DELETE must scan")
+        };
         assert!(delete.rowid_after.is_none() && delete.rowid_before.is_none());
         assert!(delete.predicate.is_some(), "DELETE must keep the range as a row filter");
     }
@@ -2612,7 +2610,10 @@ mod pk_range_pushdown_tests {
     #[test]
     fn pk_equality_still_reads_one_rowid_point() {
         let catalog = mysql_catalog("CREATE TABLE t (id INT NOT NULL PRIMARY KEY, v INT)");
-        let SqlExecutionPlan::Read(read) = plan_mysql(&catalog, "SELECT id FROM t WHERE id = 42") else { panic!("equality must plan to a point read") };
+        let SqlExecutionPlan::Read(read) = plan_mysql(&catalog, "SELECT id FROM t WHERE id = 42")
+        else {
+            panic!("equality must plan to a point read")
+        };
         assert_eq!(read.rowid, b"42".to_vec());
         assert!(read.remaining_predicate.is_none());
     }
@@ -2621,7 +2622,10 @@ mod pk_range_pushdown_tests {
     #[test]
     fn pk_equality_with_conjunct_keeps_remaining_filter() {
         let catalog = mysql_catalog("CREATE TABLE t (id INT NOT NULL PRIMARY KEY, v INT)");
-        let SqlExecutionPlan::Read(read) = plan_mysql(&catalog, "SELECT id FROM t WHERE id = 42 AND v > 1") else { panic!("equality must plan to a point read") };
+        let SqlExecutionPlan::Read(read) = plan_mysql(&catalog, "SELECT id FROM t WHERE id = 42 AND v > 1")
+        else {
+            panic!("equality must plan to a point read")
+        };
         assert_eq!(read.rowid, b"42".to_vec());
         assert!(read.remaining_predicate.is_some());
     }
@@ -2630,7 +2634,10 @@ mod pk_range_pushdown_tests {
     #[test]
     fn string_pk_like_prefix_still_pushes_down() {
         let catalog = mysql_catalog("CREATE TABLE s (name TEXT NOT NULL PRIMARY KEY, v INT)");
-        let SqlExecutionPlan::Scan(scan) = plan_mysql(&catalog, "SELECT name FROM s WHERE name LIKE 'abc%'") else { panic!("LIKE prefix must plan to a scan") };
+        let SqlExecutionPlan::Scan(scan) = plan_mysql(&catalog, "SELECT name FROM s WHERE name LIKE 'abc%'")
+        else {
+            panic!("LIKE prefix must plan to a scan")
+        };
         assert_eq!(scan.rowid_prefix, b"abc".to_vec());
         assert!(scan.remaining_predicate.is_none(), "prefix LIKE is fully pushed down");
     }
@@ -2639,7 +2646,10 @@ mod pk_range_pushdown_tests {
     #[test]
     fn like_pattern_beyond_prefix_stays_row_level() {
         let catalog = mysql_catalog("CREATE TABLE s (name TEXT NOT NULL PRIMARY KEY, v INT)");
-        let SqlExecutionPlan::Scan(scan) = plan_mysql(&catalog, "SELECT name FROM s WHERE name LIKE 'a%c'") else { panic!("LIKE must plan to a scan") };
+        let SqlExecutionPlan::Scan(scan) = plan_mysql(&catalog, "SELECT name FROM s WHERE name LIKE 'a%c'")
+        else {
+            panic!("LIKE must plan to a scan")
+        };
         assert!(scan.rowid_prefix.is_empty());
         assert!(scan.remaining_predicate.is_some());
     }
@@ -2649,13 +2659,22 @@ mod pk_range_pushdown_tests {
     fn update_set_carries_bound_row_expressions() {
         use super::UpdateAssignment;
         let catalog = mysql_catalog("CREATE TABLE inv (id INT NOT NULL PRIMARY KEY, stock INT, name TEXT)");
-        let SqlExecutionPlan::Update(update) = plan_mysql(&catalog, "UPDATE inv SET stock = stock - 1 WHERE id = 1") else { panic!("point update") };
+        let SqlExecutionPlan::Update(update) = plan_mysql(&catalog, "UPDATE inv SET stock = stock - 1 WHERE id = 1")
+        else {
+            panic!("point update")
+        };
         let UpdateAssignment { field_name, value, .. } = &update.fields[0];
         assert_eq!(field_name, "stock");
-        let SqlCatalogBoundExpression::Binary { operator, .. } = value else { panic!("arithmetic RHS must stay a Binary expression") };
+        let SqlCatalogBoundExpression::Binary { operator, .. } = value
+        else {
+            panic!("arithmetic RHS must stay a Binary expression")
+        };
         assert_eq!(*operator, SqlBoundBinaryOperator::Minus);
         // 字面量右值保持原形状。
-        let SqlExecutionPlan::Update(literal_update) = plan_mysql(&catalog, "UPDATE inv SET stock = 5 WHERE id = 1") else { panic!("point update") };
+        let SqlExecutionPlan::Update(literal_update) = plan_mysql(&catalog, "UPDATE inv SET stock = 5 WHERE id = 1")
+        else {
+            panic!("point update")
+        };
         assert!(matches!(&literal_update.fields[0].value, SqlCatalogBoundExpression::Literal(crate::sql::SqlBoundLiteral::Integer(5))));
         // 字面量的类型校验仍在计划期报错。
         let error = bind_and_plan_err(&catalog, "UPDATE inv SET stock = 'abc' WHERE id = 1");
@@ -2671,10 +2690,12 @@ mod pk_range_pushdown_tests {
 #[cfg(test)]
 mod secondary_index_plan_tests {
     use super::{ScanPlan, SqlExecutionPlan, plan_statement_for_dialect};
-    use crate::catalog_bind::{SqlCatalog, bind_sql_catalog};
-    use crate::sql::SqlDialect;
-    use crate::sql_ddl::parse_ddl;
-    use crate::sql_schema::SqlSchemaRegistry;
+    use crate::{
+        catalog_bind::{SqlCatalog, bind_sql_catalog},
+        sql::SqlDialect,
+        sql_ddl::parse_ddl,
+        sql_schema::SqlSchemaRegistry,
+    };
 
     fn mysql_catalog(ddl: &str) -> SqlCatalog {
         let registry = SqlSchemaRegistry::new_in_memory();

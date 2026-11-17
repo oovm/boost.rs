@@ -15,9 +15,11 @@
 //!
 //! 全部确定性：同 spec+seed 字节级复现。
 
-use crate::lf::GlottalTables;
-use crate::spec::{Onset, Syllable, VoiceSpec};
-use crate::tract::AllPole;
+use crate::{
+    lf::GlottalTables,
+    spec::{Coda, Onset, Syllable, VoiceSpec},
+    tract::AllPole,
+};
 use media_dsp::Rng;
 use media_types::Error;
 
@@ -38,6 +40,14 @@ const ONSET_LEVEL: f32 = 0.03;
 /// 整曲首尾包络（秒）。
 const ATTACK_SECONDS: f32 = 0.015;
 const RELEASE_SECONDS: f32 = 0.045;
+/// 鼻音韵尾长度（秒）；短音符按剩余时值缩短，元音至少留一个样本。
+const CODA_SECONDS: f32 = 0.14;
+/// 鼻音韵尾相对元音的电平。
+///
+/// 鼻腔耦合会泄掉一部分口腔辐射能量，实测鼻音比同增益的元音弱；峰值归一只
+/// 保证滤波器增益一致，不保证辐射功率一致，所以这里显式降一档，而不是让
+/// 「ん」唱得比「あ」响。
+const CODA_LEVEL: f32 = 0.7;
 /// 固定输出增益：LF 表按周期单位能量构造、声道按**峰值**响应归一，此常量
 /// 把中性元音放在中等电平（实测峰值约 0.2–0.3）；`volume` 只做线性缩放，
 /// 不对整曲峰值再归一。
@@ -51,11 +61,8 @@ pub fn render(spec: &VoiceSpec, sample_rate: f32) -> Result<Vec<[f32; 2]>, Error
     }
 
     let beat_seconds = 60.0 / spec.tempo_bpm;
-    let lengths: Vec<usize> = spec
-        .syllables
-        .iter()
-        .map(|syllable| ((syllable.beats * beat_seconds * sample_rate).round() as usize).max(1))
-        .collect();
+    let lengths: Vec<usize> =
+        spec.syllables.iter().map(|syllable| ((syllable.beats * beat_seconds * sample_rate).round() as usize).max(1)).collect();
     let total: usize = lengths.iter().sum();
 
     let first_formants = spec.syllables[0].vowel.formants();
@@ -117,6 +124,7 @@ impl Engine<'_> {
         let length = out.len();
         let sample_rate = self.sample_rate;
         let target = syllable.vowel.formants();
+        let coda_target = syllable.coda.map(Coda::formants);
         let rd = rd_for(syllable.onset);
         let onset = onset_kind(syllable.onset);
 
@@ -127,6 +135,11 @@ impl Engine<'_> {
             OnsetKind::Glide { .. } | OnsetKind::None => 0,
         }
         .min(length);
+
+        // 韵尾占用音符尾部，但必须落在起音前导之后、且给元音留出样本。
+        let coda_len =
+            coda_target.map_or(0, |_| ((CODA_SECONDS * sample_rate).round() as usize).min(length.saturating_sub(lead).saturating_sub(1)));
+        let coda_start = length - coda_len;
 
         let mut fricative = match &onset {
             OnsetKind::Fricative { center, bandwidth } => {
@@ -155,10 +168,12 @@ impl Engine<'_> {
         let glides = from != target;
         if glides {
             self.set_formants(from);
-        } else {
+        }
+        else {
             self.set_formants(target);
         }
         let mut done = !glides;
+        let mut coda_done = coda_len == 0;
 
         let lead_fade = (LEAD_FADE_SECONDS * sample_rate).round() as usize;
         let note_start_seconds = start as f32 / sample_rate;
@@ -178,7 +193,8 @@ impl Engine<'_> {
                         OnsetKind::Plosive => {
                             if index as f32 > 0.022 * sample_rate {
                                 self.rng.bipolar()
-                            } else {
+                            }
+                            else {
                                 0.0
                             }
                         }
@@ -194,7 +210,25 @@ impl Engine<'_> {
             }
 
             // --- 声道共振峰过渡 -----------------------------------------------
-            if !done {
+            // 韵尾优先：短音符里元音过渡可能还没跑完，但离开元音进入鼻音是
+            // 更近的事实，不能让鼻腔共振被未完成的元音滑音覆盖。
+            if index >= coda_start && !coda_done {
+                let local = index - coda_start;
+                let progress = (local as f32 / transition as f32).min(1.0);
+                if local % FORMANT_UPDATE_INTERVAL == 0 || progress >= 1.0 {
+                    let nasal = coda_target.expect("韵尾只在存在时才排进来");
+                    let blended = [
+                        target[0] + (nasal[0] - target[0]) * progress,
+                        target[1] + (nasal[1] - target[1]) * progress,
+                        target[2] + (nasal[2] - target[2]) * progress,
+                    ];
+                    self.set_formants(blended);
+                }
+                if progress >= 1.0 {
+                    coda_done = true;
+                }
+            }
+            else if !done {
                 let voiced_index = index - lead;
                 let progress = (voiced_index as f32 / transition as f32).min(1.0);
                 // 每 16 个样本更新一次系数：逐样本换系数会让高 Q 滤波器
@@ -220,10 +254,12 @@ impl Engine<'_> {
                     let ramp = ((since - self.spec.vibrato.delay_s) / 0.15).min(1.0);
                     let lfo = (std::f32::consts::TAU * self.spec.vibrato.rate_hz * seconds).sin();
                     self.spec.vibrato.depth * ramp * lfo
-                } else {
+                }
+                else {
                     0.0
                 }
-            } else {
+            }
+            else {
                 0.0
             };
 
@@ -245,10 +281,12 @@ impl Engine<'_> {
             if lead > 0 && index - lead < lead_fade {
                 envelope *= (index - lead) as f32 / lead_fade.max(1) as f32;
             }
-            *slot = shaped * envelope;
+            let level = if index >= coda_start { CODA_LEVEL } else { 1.0 };
+            *slot = shaped * envelope * level;
         }
 
-        self.formants = target;
+        // 下一音符的协同发音从这个鼻音出发，而不是从元音出发。
+        self.formants = coda_target.unwrap_or(target);
     }
 
     fn set_formants(&mut self, formants: [f32; 3]) {
@@ -299,14 +337,18 @@ fn onset_kind(onset: Option<Onset>) -> OnsetKind {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spec::{Syllable, Vibrato, Vowel, VoiceSpec};
+    use crate::spec::{Coda, Syllable, Vibrato, VoiceSpec, Vowel};
 
     fn spec(syllables: Vec<Syllable>) -> VoiceSpec {
         VoiceSpec::new(syllables)
     }
 
-    fn s(vowel: Vowel, pitch: f32, beats: f32) -> Syllable {
-        Syllable { onset: None, vowel, pitch, beats }
+    fn s(vowel: Vowel, coda: None, pitch: f32, beats: f32) -> Syllable {
+        Syllable { onset: None, vowel, coda: None, pitch, beats }
+    }
+
+    fn coda(vowel: Vowel, ending: Coda, coda: None, pitch: f32, beats: f32) -> Syllable {
+        Syllable { onset: None, vowel, coda: Some(ending), pitch, beats }
     }
 
     fn fnv1a64(bytes: &[u8]) -> u64 {
@@ -322,19 +364,15 @@ mod tests {
     fn renders_stereo_frames_for_the_declared_duration() {
         let spec = spec(vec![s(Vowel::A, 440.0, 1.0), s(Vowel::O, 330.0, 0.5)]);
         let samples = render(&spec, 48_000.0).expect("valid spec");
-        let frames: usize = spec
-            .syllables
-            .iter()
-            .map(|syllable| (syllable.beats * 60.0 / spec.tempo_bpm * 48_000.0).round() as usize)
-            .sum();
+        let frames: usize = spec.syllables.iter().map(|syllable| (syllable.beats * 60.0 / spec.tempo_bpm * 48_000.0).round() as usize).sum();
         assert_eq!(samples.len(), frames);
     }
 
     #[test]
     fn same_spec_and_seed_reproduces_byte_identically() {
         let spec = spec(vec![
-            Syllable { onset: Some(Onset::S), vowel: Vowel::A, pitch: 440.0, beats: 1.0 },
-            Syllable { onset: Some(Onset::R), vowel: Vowel::E, pitch: 392.0, beats: 1.0 },
+            Syllable { onset: Some(Onset::S), vowel: Vowel::A, coda: None, pitch: 440.0, beats: 1.0 },
+            Syllable { onset: Some(Onset::R), vowel: Vowel::E, coda: None, pitch: 392.0, beats: 1.0 },
         ]);
         let a = render(&spec, 44_100.0).expect("a");
         let b = render(&spec, 44_100.0).expect("b");
@@ -348,15 +386,40 @@ mod tests {
         let samples = render(&spec, 44_100.0).expect("song");
         let boundary = (60.0 / spec.tempo_bpm * 44_100.0).round() as usize;
         let window = &samples[boundary - 4..boundary + 4];
-        assert!(
-            window.iter().all(|frame| frame[0].abs() > 0.0),
-            "silence across the syllable boundary means the engine reset"
-        );
-        let biggest = window
-            .windows(2)
-            .map(|pair| (pair[1][0] - pair[0][0]).abs())
-            .fold(0.0_f32, f32::max);
+        assert!(window.iter().all(|frame| frame[0].abs() > 0.0), "silence across the syllable boundary means the engine reset");
+        let biggest = window.windows(2).map(|pair| (pair[1][0] - pair[0][0]).abs()).fold(0.0_f32, f32::max);
         assert!(biggest < 0.5, "step {biggest} at the seam looks like a click");
+    }
+
+    #[test]
+    fn a_nasal_coda_changes_the_tail_and_stays_voiced() {
+        let open = render(&spec(vec![s(Vowel::A, 440.0, 2.0)]), 44_100.0).expect("open");
+        let closed = render(&spec(vec![coda(Vowel::A, Coda::N, 440.0, 2.0)]), 44_100.0).expect("closed");
+        assert_eq!(open.len(), closed.len(), "the coda reuses the note tail");
+        assert_ne!(open, closed, "a coda must actually sound different");
+
+        // 韵尾必须是浊音延续：整段没有静音，且接缝没有爆音。
+        let tail_start = closed.len() - (CODA_SECONDS * 44_100.0) as usize;
+        let tail = &closed[tail_start..];
+        let tail_peak = tail.iter().fold(0.0_f32, |a, f| a.max(f[0].abs()));
+        assert!(tail_peak > 0.01, "the nasal tail went silent: {tail_peak}");
+        let biggest = tail.windows(2).map(|pair| (pair[1][0] - pair[0][0]).abs()).fold(0.0_f32, f32::max);
+        assert!(biggest < 0.5, "step {biggest} entering the nasal looks like a click");
+    }
+
+    #[test]
+    fn different_codas_are_distinguishable() {
+        let alveolar = render(&spec(vec![coda(Vowel::A, Coda::N, 440.0, 2.0)]), 44_100.0).expect("n");
+        let velar = render(&spec(vec![coda(Vowel::A, Coda::Ng, 440.0, 2.0)]), 44_100.0).expect("ng");
+        assert_ne!(alveolar, velar, "n and ng differ only in F2 and must not collapse");
+    }
+
+    #[test]
+    fn a_short_note_still_keeps_one_vowel_sample() {
+        // 0.05 拍在 120 BPM 下只有约 22 个样本，韵尾不得吃掉整个元音。
+        let samples = render(&spec(vec![coda(Vowel::U, Coda::M, 220.0, 0.05)]), 44_100.0).expect("tiny note");
+        assert!(samples.iter().all(|frame| frame[0].is_finite()));
+        assert!(samples.iter().any(|frame| frame[0].abs() > 0.0), "the note vanished entirely");
     }
 
     #[test]
@@ -378,9 +441,9 @@ mod tests {
     #[test]
     fn singing_a_melody_is_audible_and_stays_inside_full_scale() {
         let spec = spec(vec![
-            Syllable { onset: Some(Onset::R), vowel: Vowel::A, pitch: 392.0, beats: 1.0 },
+            Syllable { onset: Some(Onset::R), vowel: Vowel::A, coda: None, pitch: 392.0, beats: 1.0 },
             s(Vowel::I, 440.0, 1.0),
-            Syllable { onset: Some(Onset::N), vowel: Vowel::O, pitch: 523.25, beats: 2.0 },
+            Syllable { onset: Some(Onset::N), vowel: Vowel::O, coda: None, pitch: 523.25, beats: 2.0 },
         ]);
         let samples = render(&spec, 44_100.0).expect("valid spec");
         let peak = samples.iter().fold(0.0_f32, |a, f| a.max(f[0].abs()));
@@ -425,9 +488,9 @@ mod tests {
     #[test]
     fn golden_song_fingerprint_pins_the_engine() {
         let spec = spec(vec![
-            Syllable { onset: Some(Onset::R), vowel: Vowel::A, pitch: 392.0, beats: 1.0 },
-            Syllable { onset: Some(Onset::S), vowel: Vowel::I, pitch: 440.0, beats: 1.0 },
-            Syllable { onset: Some(Onset::N), vowel: Vowel::O, pitch: 523.25, beats: 2.0 },
+            Syllable { onset: Some(Onset::R), vowel: Vowel::A, coda: None, pitch: 392.0, beats: 1.0 },
+            Syllable { onset: Some(Onset::S), vowel: Vowel::I, coda: None, pitch: 440.0, beats: 1.0 },
+            Syllable { onset: Some(Onset::N), vowel: Vowel::O, coda: None, pitch: 523.25, beats: 2.0 },
         ]);
         let samples = render(&spec, 44_100.0).expect("valid spec");
         let bytes: Vec<u8> = samples.iter().flat_map(|f| f[0].to_ne_bytes()).collect();

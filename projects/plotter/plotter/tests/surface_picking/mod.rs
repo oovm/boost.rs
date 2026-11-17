@@ -45,10 +45,8 @@ fn point_cloud_compiles_and_renders() {
         .unwrap()
         .push_float("z", vec![0.0, 0.2, 0.1])
         .unwrap();
-    let plot = PlotSpec::new(table)
-        .mapping(Mapping::xyz("x", "y", "z"))
-        .coordinates(CoordinateSpec::cartesian_3d())
-        .layer(LayerSpec::geom_point3d());
+    let plot =
+        PlotSpec::new(table).mapping(Mapping::xyz("x", "y", "z")).coordinates(CoordinateSpec::cartesian_3d()).layer(LayerSpec::geom_point3d());
     let scene = compile_plot(&plot, CompileOptions::golden()).unwrap();
     assert!(scene.nodes.nodes().iter().any(|n| matches!(n.kind, SceneNodeKind::Points3(_))));
     let image = render_rgba8(&scene).unwrap();

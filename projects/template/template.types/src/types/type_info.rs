@@ -41,8 +41,7 @@ impl DejavuType {
                 if args.len() != other_args.len() {
                     return false;
                 }
-                args.iter().zip(other_args.iter()).all(|(arg, other_arg)| arg.is_subtype_of(other_arg))
-                    && ret.is_subtype_of(other_ret)
+                args.iter().zip(other_args.iter()).all(|(arg, other_arg)| arg.is_subtype_of(other_arg)) && ret.is_subtype_of(other_ret)
             }
             _ => false,
         }

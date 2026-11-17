@@ -25,8 +25,6 @@ pub use media_particles as particles;
 pub use media_pixel as pixel;
 #[cfg(feature = "post")]
 pub use media_post as post;
-#[cfg(feature = "voice")]
-pub use media_voice as voice;
 #[cfg(feature = "raster")]
 pub use media_raster as raster;
 #[cfg(any(
@@ -46,23 +44,25 @@ pub use media_synthesis as synthesis;
 pub use media_text as text;
 #[cfg(feature = "vector")]
 pub use media_vector as vector;
+#[cfg(feature = "voice")]
+pub use media_voice as voice;
 #[cfg(feature = "voxel")]
 pub use media_voxel as voxel;
 
+#[cfg(feature = "voice-export")]
+pub use media_render::write_voice;
+#[cfg(feature = "layout-export")]
+pub use media_render::{ExportedPage, FontAssets, LayoutAssets, MediaImages, render_overview, render_page, write_overview, write_page};
 #[cfg(feature = "vector-export")]
 pub use media_render::{ExportedVector, VectorFormat, render_frame, write_vector};
 #[cfg(feature = "voxel-export")]
 pub use media_render::{ExportedVoxel, VoxelFormat, render_preview, write_voxel};
-#[cfg(feature = "layout-export")]
-pub use media_render::{ExportedPage, FontAssets, LayoutAssets, MediaImages, render_overview, render_page, write_overview, write_page};
-#[cfg(feature = "image-pipeline")]
-pub use media_render::{ImageOperation, ProcessedImage, process_image};
 #[cfg(feature = "render")]
 pub use media_render::{FrameRange, PreviewStats, RenderOptions, RenderStats, preview_frame, render_project, render_project_with};
-#[cfg(feature = "sfx-export")]
-pub use media_render::{write_sfx, write_sfx_catalogue};
+#[cfg(feature = "image-pipeline")]
+pub use media_render::{ImageOperation, ProcessedImage, process_image};
 #[cfg(feature = "sfx-export")]
 pub use media_render::{write_instrument, write_instrument_catalogue, write_pattern, write_pattern_catalogue};
-#[cfg(feature = "voice-export")]
-pub use media_render::write_voice;
+#[cfg(feature = "sfx-export")]
+pub use media_render::{write_sfx, write_sfx_catalogue};
 pub use media_types::Error;

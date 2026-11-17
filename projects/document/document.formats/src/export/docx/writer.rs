@@ -119,11 +119,7 @@ fn write_block(
         // Run-level bookmarks must sit inside a paragraph. A block that is not a
         // paragraph carries its anchor in a zero-content paragraph right before
         // it, so `w:hyperlink w:anchor` has something to resolve to.
-        let _ = write!(
-            out,
-            "<w:p><w:bookmarkStart w:id=\"{}\" w:name=\"node_{}\"/><w:bookmarkEnd w:id=\"{}\"/></w:p>",
-            id.0, id.0, id.0
-        );
+        let _ = write!(out, "<w:p><w:bookmarkStart w:id=\"{}\" w:name=\"node_{}\"/><w:bookmarkEnd w:id=\"{}\"/></w:p>", id.0, id.0, id.0);
     }
     match block {
         Block::Paragraph { content } => {
@@ -143,9 +139,7 @@ fn write_block(
             write_inlines(out, title, graph, rels)?;
             out.push_str("</w:p>");
             for child_id in children {
-                let child = graph
-                    .block(*child_id)
-                    .ok_or_else(|| FormatError::invalid_input(format!("missing section child {child_id:?}")))?;
+                let child = graph.block(*child_id).ok_or_else(|| FormatError::invalid_input(format!("missing section child {child_id:?}")))?;
                 write_block(out, *child_id, &child.block, graph, rels, bookmarks, numbering)?;
             }
         }
@@ -200,9 +194,7 @@ fn write_block(
                 out.push_str("<w:p><w:pPr><w:pStyle w:val=\"Quote\"/></w:pPr></w:p>");
             }
             for child_id in children {
-                let child = graph
-                    .block(*child_id)
-                    .ok_or_else(|| FormatError::invalid_input(format!("missing quote child {child_id:?}")))?;
+                let child = graph.block(*child_id).ok_or_else(|| FormatError::invalid_input(format!("missing quote child {child_id:?}")))?;
                 if let Block::Paragraph { content } = &child.block {
                     out.push_str("<w:p><w:pPr><w:pStyle w:val=\"Quote\"/></w:pPr>");
                     if bookmarks.contains(child_id) {
@@ -596,24 +588,14 @@ fn column_widths(total: i64, columns: usize) -> Vec<i64> {
     (0..columns).map(|index| base + i64::from((index as i64) < remainder)).collect()
 }
 
-fn write_inlines(
-    out: &mut String,
-    inlines: &[Inline],
-    graph: &DocumentGraph,
-    rels: &mut DocumentRelsRegistry,
-) -> Result<(), FormatError> {
+fn write_inlines(out: &mut String, inlines: &[Inline], graph: &DocumentGraph, rels: &mut DocumentRelsRegistry) -> Result<(), FormatError> {
     for inline in inlines {
         write_inline(out, inline, graph, rels)?;
     }
     Ok(())
 }
 
-fn write_inline(
-    out: &mut String,
-    inline: &Inline,
-    graph: &DocumentGraph,
-    rels: &mut DocumentRelsRegistry,
-) -> Result<(), FormatError> {
+fn write_inline(out: &mut String, inline: &Inline, graph: &DocumentGraph, rels: &mut DocumentRelsRegistry) -> Result<(), FormatError> {
     write_inline_with_properties(out, inline, graph, rels, "")
 }
 
@@ -652,8 +634,7 @@ fn write_inline_with_properties(
                     return Err(FormatError::unsupported("docx", format!("invalid color style `{style}`")));
                 }
                 let property = format!("<w:color w:val=\"{value}\"/>");
-                let combined =
-                    if properties.contains(&property) { properties.to_owned() } else { format!("{properties}{property}") };
+                let combined = if properties.contains(&property) { properties.to_owned() } else { format!("{properties}{property}") };
                 for child in children {
                     write_inline_with_properties(out, child, graph, rels, &combined)?;
                 }
@@ -683,9 +664,7 @@ fn write_inline_with_properties(
             }
             style if style.strip_prefix("highlight:").is_some() => {
                 let value = style.strip_prefix("highlight:").unwrap_or_default();
-                if value.is_empty()
-                    || value.chars().any(|character| character.is_control() || matches!(character, '<' | '>' | '"' | '\''))
-                {
+                if value.is_empty() || value.chars().any(|character| character.is_control() || matches!(character, '<' | '>' | '"' | '\'')) {
                     return Err(FormatError::unsupported("docx", format!("invalid highlight style `{style}`")));
                 }
                 let property = format!("<w:highlight w:val=\"{}\"/>", escape_xml_attr(value));
@@ -704,8 +683,7 @@ fn write_inline_with_properties(
                     "subscript" => "<w:vertAlign w:val=\"subscript\"/>",
                     _ => unreachable!(),
                 };
-                let combined =
-                    if properties.contains(property) { properties.to_owned() } else { format!("{properties}{property}") };
+                let combined = if properties.contains(property) { properties.to_owned() } else { format!("{properties}{property}") };
                 for child in children {
                     write_inline_with_properties(out, child, graph, rels, &combined)?;
                 }
@@ -716,14 +694,10 @@ fn write_inline_with_properties(
                 // itself. Refusing the whole export would be worse than writing
                 // a run style Word falls back on.
                 if other.chars().any(char::is_control) {
-                    return Err(FormatError::unsupported(
-                        "docx",
-                        format!("inline style `{other}` contains control characters"),
-                    ));
+                    return Err(FormatError::unsupported("docx", format!("inline style `{other}` contains control characters")));
                 }
                 let property = format!("<w:rStyle w:val=\"{}\"/>", escape_xml_attr(other));
-                let combined =
-                    if properties.contains(&property) { properties.to_owned() } else { format!("{properties}{property}") };
+                let combined = if properties.contains(&property) { properties.to_owned() } else { format!("{properties}{property}") };
                 for child in children {
                     write_inline_with_properties(out, child, graph, rels, &combined)?;
                 }
@@ -763,8 +737,7 @@ fn write_inline_with_properties(
             // An authored HTML `id` maps onto a Word bookmark. The bookmark must
             // sit inside a paragraph but outside the runs, so the wrapped runs
             // stay reachable under the authored name.
-            let bookmark =
-                attributes.id.as_deref().map(str::trim).filter(|id| !id.is_empty()).map(|id| (id, inline_bookmark_id(id)));
+            let bookmark = attributes.id.as_deref().map(str::trim).filter(|id| !id.is_empty()).map(|id| (id, inline_bookmark_id(id)));
             if let Some((name, id)) = &bookmark {
                 write!(out, "<w:bookmarkStart w:id=\"{id}\" w:name=\"{}\"/>", escape_xml_attr(name)).map_err(map_fmt_error)?;
             }
@@ -791,10 +764,7 @@ fn write_inline_with_properties(
         Inline::Link { target, display, title } => {
             let RelationEndpoint::ExternalUri(url) = target
             else {
-                return Err(FormatError::unsupported(
-                    "docx",
-                    format!("link target `{target:?}` has no DOCX hyperlink mapping"),
-                ));
+                return Err(FormatError::unsupported("docx", format!("link target `{target:?}` has no DOCX hyperlink mapping")));
             };
             let rel_id = rels.id_for_hyperlink(url);
             let tooltip = title
@@ -1128,18 +1098,10 @@ fn delimiter_char(delimiter: Option<&MathDelimiter>, open: bool) -> String {
     }
 }
 
-fn write_image_drawing(
-    out: &mut String,
-    rel_id: &str,
-    alt: &str,
-    title: Option<&str>,
-    extent: (u64, u64),
-) -> Result<(), FormatError> {
+fn write_image_drawing(out: &mut String, rel_id: &str, alt: &str, title: Option<&str>, extent: (u64, u64)) -> Result<(), FormatError> {
     let (width, height) = extent;
-    let title_attribute = title
-        .filter(|title| !title.is_empty())
-        .map(|title| format!(" title=\"{}\"", escape_xml_attr(title)))
-        .unwrap_or_default();
+    let title_attribute =
+        title.filter(|title| !title.is_empty()).map(|title| format!(" title=\"{}\"", escape_xml_attr(title))).unwrap_or_default();
     write!(
         out,
         r#"<w:r><w:drawing><wp:inline xmlns:wp="{WP_NS}" xmlns:a="{A_NS}" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><wp:extent cx="{width}" cy="{height}"/><wp:docPr id="1" name="Picture" descr="{descr}"{title_attribute}/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="{descr}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="{rel_id}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{width}" cy="{height}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"#,
@@ -1170,10 +1132,7 @@ fn image_extent(bytes: &[u8]) -> Result<(u64, u64), FormatError> {
 }
 
 fn png_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
-    if !bytes.starts_with(b"\x89PNG\r\n\x1a\n")
-        || bytes.get(8..12)? != 13u32.to_be_bytes()
-        || bytes.get(12..16)? != b"IHDR"
-        || bytes.len() < 33
+    if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") || bytes.get(8..12)? != 13u32.to_be_bytes() || bytes.get(12..16)? != b"IHDR" || bytes.len() < 33
     {
         return None;
     }
@@ -1224,9 +1183,8 @@ fn jpeg_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
 /// A bound asset keeps its bytes when the storage location is renamed, so the
 /// identity has to win over the authored `source` string.
 fn image_bytes_for_inline(graph: &DocumentGraph, source: &str, asset: Option<AssetId>) -> Option<Vec<u8>> {
-    if let Some(bytes) = asset
-        .and_then(|asset_id| graph.assets.iter().find(|candidate| candidate.id == asset_id))
-        .and_then(|asset| asset.bytes.clone())
+    if let Some(bytes) =
+        asset.and_then(|asset_id| graph.assets.iter().find(|candidate| candidate.id == asset_id)).and_then(|asset| asset.bytes.clone())
     {
         return Some(bytes);
     }
@@ -1244,12 +1202,7 @@ fn image_bytes_for_target(graph: &DocumentGraph, target: &str) -> Option<Vec<u8>
 /// Writes one authored string as run content, honoring accumulated run
 /// properties and keeping inline footnote tokens in text without properties.
 fn write_literal_text(out: &mut String, text: &str, properties: &str, notes: &FootnoteCatalog) -> Result<(), FormatError> {
-    if properties.is_empty() {
-        write_text_with_footnotes(out, text, notes)
-    }
-    else {
-        write_run_with_properties(out, text, properties)
-    }
+    if properties.is_empty() { write_text_with_footnotes(out, text, notes) } else { write_run_with_properties(out, text, properties) }
 }
 
 fn write_text_with_footnotes(out: &mut String, text: &str, notes: &FootnoteCatalog) -> Result<(), FormatError> {

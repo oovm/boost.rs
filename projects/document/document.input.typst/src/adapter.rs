@@ -10,9 +10,7 @@ use document_ir::DocumentGraph;
 use document_layout::{BodyMetrics, Diagrams, LayoutHint, document::layout_with_diagnostics};
 use document_presentation::build_display_presentation;
 
-use crate::report::{
-    IMPORT_FAILED, INVALID_GRAPH, MAX_SOURCE_BYTES, SOURCE_TOO_LARGE, build_diagnostics, build_report, unterminated_group,
-};
+use crate::report::{IMPORT_FAILED, INVALID_GRAPH, MAX_SOURCE_BYTES, SOURCE_TOO_LARGE, build_diagnostics, build_report, unterminated_group};
 
 /// Outcome of a Typst import: the document graph, its conversion report, and
 /// the diagnostics the lowering produced.
@@ -60,14 +58,7 @@ impl TypstError {
     }
 
     pub(crate) fn import_failed(message: impl Into<String>) -> Self {
-        Self {
-            diagnostic: Diagnostic {
-                code: IMPORT_FAILED.to_string(),
-                severity: Severity::Error,
-                message: message.into(),
-                span: None,
-            },
-        }
+        Self { diagnostic: Diagnostic { code: IMPORT_FAILED.to_string(), severity: Severity::Error, message: message.into(), span: None } }
     }
 }
 
@@ -94,8 +85,8 @@ impl std::error::Error for TypstError {}
 /// [`validate_graph`] before any report is built.
 pub fn import_source(label: &str, source: &str) -> Result<TypstDocument, TypstError> {
     ensure_source_budget(source)?;
-    let graph = document_formats::import::typst::import_typst_bytes(label, source)
-        .map_err(|error| TypstError::import_failed(error.to_string()))?;
+    let graph =
+        document_formats::import::typst::import_typst_bytes(label, source).map_err(|error| TypstError::import_failed(error.to_string()))?;
     validate_graph(&graph)?;
     if let Some(diagnostic) = unterminated_group(&graph, source) {
         return Err(TypstError::from(diagnostic));
@@ -128,8 +119,8 @@ pub fn validate_graph(graph: &DocumentGraph) -> Result<(), TypstError> {
 /// Read a Typst file and import it with the file path as the document label.
 pub fn import_path(path: impl AsRef<Path>) -> Result<TypstDocument, TypstError> {
     let path = path.as_ref();
-    let source = std::fs::read_to_string(path)
-        .map_err(|error| TypstError::import_failed(format!("failed to read {}: {error}", path.display())))?;
+    let source =
+        std::fs::read_to_string(path).map_err(|error| TypstError::import_failed(format!("failed to read {}: {error}", path.display())))?;
     import_source(&path.display().to_string(), &source)
 }
 
@@ -148,8 +139,7 @@ fn ensure_source_budget(source: &str) -> Result<(), TypstError> {
 /// Import Typst source and run it through layout, presentation, and SVG output.
 pub fn render_svg(label: &str, source: &str) -> Result<TypstRender, TypstError> {
     let TypstDocument { graph, report, mut diagnostics } = import_source(label, source)?;
-    let (plan, layout_diagnostics) =
-        layout_with_diagnostics(&graph, &LayoutHint::a4(), &Diagrams::new(), &BodyMetrics::default());
+    let (plan, layout_diagnostics) = layout_with_diagnostics(&graph, &LayoutHint::a4(), &Diagrams::new(), &BodyMetrics::default());
     diagnostics.extend(layout_diagnostics);
     let display = build_display_presentation(&plan);
     let pages = display.pages.len();

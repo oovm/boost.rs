@@ -13,12 +13,7 @@ pub fn grid(cols: u32, rows: u32, width: f32, height: f32, margin: f32, gutter: 
     let mut rects = Vec::with_capacity((cols * rows) as usize);
     for row in 0..rows {
         for col in 0..cols {
-            rects.push([
-                margin + col as f32 * (cell_w + gutter),
-                margin + row as f32 * (cell_h + gutter),
-                cell_w,
-                cell_h,
-            ]);
+            rects.push([margin + col as f32 * (cell_w + gutter), margin + row as f32 * (cell_h + gutter), cell_w, cell_h]);
         }
     }
     rects

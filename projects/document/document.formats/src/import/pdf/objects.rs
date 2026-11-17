@@ -170,11 +170,7 @@ pub(crate) fn page_media_boxes(bodies: &[(u32, Vec<u8>)]) -> Vec<(f64, f64)> {
             }
         }
     }
-    bodies
-        .iter()
-        .filter(|(_, body)| dictionary_type_is(body, b"/Page"))
-        .filter_map(|(_, body)| media_box(body, bodies))
-        .collect()
+    bodies.iter().filter(|(_, body)| dictionary_type_is(body, b"/Page")).filter_map(|(_, body)| media_box(body, bodies)).collect()
 }
 
 fn collect_page_boxes(
@@ -221,9 +217,7 @@ fn media_box(body: &[u8], bodies: &[(u32, Vec<u8>)]) -> Option<(f64, f64)> {
 }
 
 fn parse_media_box(values: &[u8]) -> Option<(f64, f64)> {
-    let numbers = split_pdf_whitespace(values)
-        .filter_map(|token| std::str::from_utf8(token).ok()?.parse::<f64>().ok())
-        .collect::<Vec<_>>();
+    let numbers = split_pdf_whitespace(values).filter_map(|token| std::str::from_utf8(token).ok()?.parse::<f64>().ok()).collect::<Vec<_>>();
     let [x0, y0, x1, y1] = numbers.as_slice()
     else {
         return None;
@@ -247,8 +241,7 @@ pub(crate) fn dictionary_type_is(body: &[u8], expected: &[u8]) -> bool {
     else {
         return false;
     };
-    value == expected
-        && body.get(start + expected.len()).is_none_or(|byte| byte.is_ascii_whitespace() || b"/<>[]()".contains(byte))
+    value == expected && body.get(start + expected.len()).is_none_or(|byte| byte.is_ascii_whitespace() || b"/<>[]()".contains(byte))
 }
 
 pub(crate) fn dictionary_subtype_is(body: &[u8], expected: &[u8]) -> bool {
@@ -261,8 +254,7 @@ pub(crate) fn dictionary_subtype_is(body: &[u8], expected: &[u8]) -> bool {
     else {
         return false;
     };
-    value == expected
-        && body.get(start + expected.len()).is_none_or(|byte| byte.is_ascii_whitespace() || b"/<>[]()".contains(byte))
+    value == expected && body.get(start + expected.len()).is_none_or(|byte| byte.is_ascii_whitespace() || b"/<>[]()".contains(byte))
 }
 
 pub(crate) fn body_reference_values(body: &[u8], key: &[u8]) -> Option<Vec<u32>> {
@@ -282,8 +274,7 @@ pub(crate) fn object_bodies(bytes: &[u8]) -> Vec<(u32, Vec<u8>)> {
             continue;
         };
         let start = marker + 4;
-        let end =
-            bytes[start..].windows(6).position(|window| window == b"endobj").map_or(bytes.len(), |position| start + position);
+        let end = bytes[start..].windows(6).position(|window| window == b"endobj").map_or(bytes.len(), |position| start + position);
         result.push((id, bytes[start..end].to_vec()));
         search = end.saturating_add(6);
         if search >= bytes.len() {
@@ -406,9 +397,7 @@ pub(crate) fn reference_ids(bytes: &[u8]) -> Vec<u32> {
     let mut tokens = tokens.peekable();
     while let Some(token) = tokens.next() {
         if let Ok(id) = std::str::from_utf8(token).unwrap_or("").parse::<u32>() {
-            if tokens.next().is_some_and(|generation| generation == b"0")
-                && tokens.next().is_some_and(|reference| reference == b"R")
-            {
+            if tokens.next().is_some_and(|generation| generation == b"0") && tokens.next().is_some_and(|reference| reference == b"R") {
                 ids.push(id);
             }
         }

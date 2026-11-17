@@ -125,9 +125,68 @@ impl Onset {
             "w" => Ok(Self::W),
             "y" => Ok(Self::Y),
             "f" => Ok(Self::F),
-            other => Err(Error::invalid_input(format!(
-                "unknown onset `{other}` (s|t|n|r|w|y|f)"
-            ))),
+            other => Err(Error::invalid_input(format!("unknown onset `{other}` (s|t|n|r|w|y|f)"))),
+        }
+    }
+}
+
+/// A syllable-final nasal coda.
+///
+/// Sung syllables in Japanese and Mandarin end on a nasal far more often than
+/// on an open vowel, so without codas 「ほん」 can only ever be sung as 「ほ」.
+/// Only the three voiced nasal codas are contracted: they continue the one
+/// phonation chain instead of interrupting it. Oral stops and fricative codas
+/// are not part of this contract and must not be smuggled in as strings.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Coda {
+    /// Alveolar nasal 「ん / n / 恩」.
+    N,
+    /// Bilabial nasal 「m / む」.
+    M,
+    /// Velar nasal 「ng / エヌ」.
+    Ng,
+}
+
+impl Coda {
+    /// Every contracted coda, in canonical order.
+    pub const ALL: [Self; 3] = [Self::N, Self::M, Self::Ng];
+
+    /// kebab-case spelling, authoritative for spec parsing.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::N => "n",
+            Self::M => "m",
+            Self::Ng => "ng",
+        }
+    }
+
+    /// Parses the kebab-case spelling.
+    ///
+    /// # Errors
+    /// Unknown names are an explicit `invalid_input`, never a silent coda
+    /// fallback.
+    pub fn parse(raw: &str) -> Result<Self, Error> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "n" => Ok(Self::N),
+            "m" => Ok(Self::M),
+            "ng" => Ok(Self::Ng),
+            other => Err(Error::invalid_input(format!("unknown coda `{other}` (n|m|ng)"))),
+        }
+    }
+
+    /// Nasal formant centres (F1, F2, F3) in Hz.
+    ///
+    /// F1 sits at the nasal low-frequency resonance and F3 keeps the tract order
+    /// identical to a vowel, so switching into a coda never rebuilds the filter
+    /// and never drops the shared vocal-tract state.
+    #[must_use]
+    pub const fn formants(self) -> [f32; 3] {
+        match self {
+            Self::N => [250.0, 1000.0, 2400.0],
+            Self::M => [250.0, 800.0, 2400.0],
+            Self::Ng => [250.0, 2100.0, 2400.0],
         }
     }
 }
@@ -141,6 +200,9 @@ pub struct Syllable {
     pub onset: Option<Onset>,
     /// The vowel the syllable settles on.
     pub vowel: Vowel,
+    /// Nasal coda closing the syllable; `None` ends on the open vowel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coda: Option<Coda>,
     /// Fundamental frequency in Hz (40..1200).
     pub pitch: f32,
     /// Duration in beats at the song tempo (0.05..8).
@@ -193,14 +255,7 @@ impl VoiceSpec {
     /// A spec with defaults for tempo, vibrato, breath, volume and seed.
     #[must_use]
     pub fn new(syllables: Vec<Syllable>) -> Self {
-        Self {
-            syllables,
-            tempo_bpm: 120.0,
-            vibrato: Vibrato::default(),
-            breath: 0.08,
-            volume: 0.8,
-            seed: 1,
-        }
+        Self { syllables, tempo_bpm: 120.0, vibrato: Vibrato::default(), breath: 0.08, volume: 0.8, seed: 1 }
     }
 
     /// Total duration in seconds at the song tempo.
@@ -222,10 +277,7 @@ impl VoiceSpec {
             return Err(Error::invalid_input("voice: the lyric must have at least one syllable"));
         }
         if !(20.0..=400.0).contains(&self.tempo_bpm) || !self.tempo_bpm.is_finite() {
-            return Err(Error::invalid_input(format!(
-                "voice: tempo {} outside 20..400 bpm",
-                self.tempo_bpm
-            )));
+            return Err(Error::invalid_input(format!("voice: tempo {} outside 20..400 bpm", self.tempo_bpm)));
         }
         if !(0.0..=1.0).contains(&self.volume) || !self.volume.is_finite() {
             return Err(Error::invalid_input(format!("voice: volume {} outside 0..1", self.volume)));
@@ -234,35 +286,20 @@ impl VoiceSpec {
             return Err(Error::invalid_input(format!("voice: breath {} outside 0..1", self.breath)));
         }
         if !(0.0..=10.0).contains(&self.vibrato.rate_hz) || !self.vibrato.rate_hz.is_finite() {
-            return Err(Error::invalid_input(format!(
-                "voice: vibrato rate {} outside 0..10 Hz",
-                self.vibrato.rate_hz
-            )));
+            return Err(Error::invalid_input(format!("voice: vibrato rate {} outside 0..10 Hz", self.vibrato.rate_hz)));
         }
         if !(0.0..=0.3).contains(&self.vibrato.depth) || !self.vibrato.depth.is_finite() {
-            return Err(Error::invalid_input(format!(
-                "voice: vibrato depth {} outside 0..0.3",
-                self.vibrato.depth
-            )));
+            return Err(Error::invalid_input(format!("voice: vibrato depth {} outside 0..0.3", self.vibrato.depth)));
         }
         if !(0.0..=2.0).contains(&self.vibrato.delay_s) || !self.vibrato.delay_s.is_finite() {
-            return Err(Error::invalid_input(format!(
-                "voice: vibrato delay {} outside 0..2 s",
-                self.vibrato.delay_s
-            )));
+            return Err(Error::invalid_input(format!("voice: vibrato delay {} outside 0..2 s", self.vibrato.delay_s)));
         }
         for (index, syllable) in self.syllables.iter().enumerate() {
             if !(40.0..=1200.0).contains(&syllable.pitch) || !syllable.pitch.is_finite() {
-                return Err(Error::invalid_input(format!(
-                    "voice: syllable {index} pitch {} outside 40..1200 Hz",
-                    syllable.pitch
-                )));
+                return Err(Error::invalid_input(format!("voice: syllable {index} pitch {} outside 40..1200 Hz", syllable.pitch)));
             }
             if !(0.05..=8.0).contains(&syllable.beats) || !syllable.beats.is_finite() {
-                return Err(Error::invalid_input(format!(
-                    "voice: syllable {index} beats {} outside 0.05..8",
-                    syllable.beats
-                )));
+                return Err(Error::invalid_input(format!("voice: syllable {index} beats {} outside 0.05..8", syllable.beats)));
             }
         }
         Ok(())
@@ -280,7 +317,7 @@ mod tests {
     use super::*;
 
     fn syllable(vowel: Vowel, pitch: f32, beats: f32) -> Syllable {
-        Syllable { onset: None, vowel, pitch, beats }
+        Syllable { onset: None, vowel, coda: None, pitch, beats }
     }
 
     #[test]
@@ -293,6 +330,17 @@ mod tests {
             assert_eq!(Onset::parse(onset.as_str()).expect("parses"), onset);
         }
         assert_eq!(Onset::parse("q").unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn coda_parses_kebab_and_rejects_unknown() {
+        for coda in [Coda::N, Coda::M, Coda::Ng] {
+            assert_eq!(Coda::parse(coda.as_str()).expect("parses"), coda);
+        }
+        assert_eq!(Coda::parse("p").unwrap_err().code(), "invalid_input");
+        // F1 落在鼻腔低频共振，F3 保持与元音同样的三阶声道。
+        assert_eq!(Coda::N.formants(), [250.0, 1000.0, 2400.0]);
+        assert!(Coda::ALL.iter().all(|coda| coda.formants()[2] > 2000.0));
     }
 
     #[test]

@@ -22,11 +22,8 @@ impl DocumentRelsRegistry {
     /// Registers an external hyperlink target and returns a stable relationship
     /// id.
     pub fn id_for_hyperlink(&mut self, url: &str) -> String {
-        if let Some((index, _)) = self
-            .entries
-            .iter()
-            .enumerate()
-            .find(|(_, entry)| matches!(entry, RelEntry::Hyperlink { url: existing } if existing == url))
+        if let Some((index, _)) =
+            self.entries.iter().enumerate().find(|(_, entry)| matches!(entry, RelEntry::Hyperlink { url: existing } if existing == url))
         {
             return format!("rId{}", index + 1);
         }
@@ -36,11 +33,8 @@ impl DocumentRelsRegistry {
 
     /// Registers an embedded image part and returns a stable relationship id.
     pub fn id_for_image(&mut self, target: &str, bytes: Vec<u8>) -> String {
-        if let Some((index, _)) = self
-            .entries
-            .iter()
-            .enumerate()
-            .find(|(_, entry)| matches!(entry, RelEntry::Image { target: existing, .. } if existing == target))
+        if let Some((index, _)) =
+            self.entries.iter().enumerate().find(|(_, entry)| matches!(entry, RelEntry::Image { target: existing, .. } if existing == target))
         {
             return format!("rId{}", index + 1);
         }
@@ -136,16 +130,12 @@ impl DocumentRelsRegistry {
             xml.push_str("\" ");
             match entry {
                 RelEntry::Hyperlink { url } => {
-                    xml.push_str(
-                        "Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"",
-                    );
+                    xml.push_str("Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"");
                     xml.push_str(&escape_xml_attr(url));
                     xml.push_str("\" TargetMode=\"External\"/>");
                 }
                 RelEntry::Image { target, .. } => {
-                    xml.push_str(
-                        "Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"",
-                    );
+                    xml.push_str("Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"");
                     xml.push_str(&escape_xml_attr(target));
                     xml.push_str("\"/>");
                 }

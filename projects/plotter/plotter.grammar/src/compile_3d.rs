@@ -35,13 +35,7 @@ pub(crate) fn compile_plot_3d(spec: &PlotSpec, options: CompileOptions, cartesia
                 else {
                     return Err(Diagnostic::error(DiagnosticCode::UnsupportedSpec, "geom_point3d 需要 ColumnTable"));
                 };
-                children.push(arena.insert(SceneNodeKind::Points3(points3_from_table(
-                    table,
-                    &mapping,
-                    point.size,
-                    theme,
-                    interaction,
-                )?)));
+                children.push(arena.insert(SceneNodeKind::Points3(points3_from_table(table, &mapping, point.size, theme, interaction)?)));
             }
             _ => {
                 return Err(Diagnostic::error(DiagnosticCode::UnsupportedSpec, "三维坐标系仅支持 surface / point3d")
@@ -67,12 +61,9 @@ fn points3_from_table(
     theme: &ThemeSpec,
     interaction: Option<InteractionId>,
 ) -> Result<Points3Node> {
-    let x_name =
-        mapping.x.as_ref().ok_or_else(|| Diagnostic::error(DiagnosticCode::MissingMapping, "缺少 x mapping"))?.column_name();
-    let y_name =
-        mapping.y.as_ref().ok_or_else(|| Diagnostic::error(DiagnosticCode::MissingMapping, "缺少 y mapping"))?.column_name();
-    let z_name =
-        mapping.z.as_ref().ok_or_else(|| Diagnostic::error(DiagnosticCode::MissingMapping, "缺少 z mapping"))?.column_name();
+    let x_name = mapping.x.as_ref().ok_or_else(|| Diagnostic::error(DiagnosticCode::MissingMapping, "缺少 x mapping"))?.column_name();
+    let y_name = mapping.y.as_ref().ok_or_else(|| Diagnostic::error(DiagnosticCode::MissingMapping, "缺少 y mapping"))?.column_name();
+    let z_name = mapping.z.as_ref().ok_or_else(|| Diagnostic::error(DiagnosticCode::MissingMapping, "缺少 z mapping"))?.column_name();
     let xs = &table.float_column(x_name)?.values;
     let ys = &table.float_column(y_name)?.values;
     let zs = &table.float_column(z_name)?.values;

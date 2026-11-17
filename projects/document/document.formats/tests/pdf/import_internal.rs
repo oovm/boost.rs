@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 use document_formats::import::pdf::test_support::{
-    decode_pdf_string, decode_text_bytes, decode_with_font, increment_unicode, parse_inline_jpeg, parse_to_unicode_cmap,
-    split_pdf_paragraphs,
+    decode_pdf_string, decode_text_bytes, decode_with_font, increment_unicode, parse_inline_jpeg, parse_to_unicode_cmap, split_pdf_paragraphs,
 };
 
 #[test]
@@ -59,10 +58,8 @@ fn decodes_multiple_code_units_in_range_targets() {
 
 #[test]
 fn codespace_ranges_control_multibyte_grouping() {
-    let map = parse_to_unicode_cmap(
-        b"1 begincodespacerange\n<0000> <00FF>\nendcodespacerange\n1 beginbfchar\n<0102> <4F60>\nendbfchar",
-    )
-    .expect("CMap");
+    let map = parse_to_unicode_cmap(b"1 begincodespacerange\n<0000> <00FF>\nendcodespacerange\n1 beginbfchar\n<0102> <4F60>\nendbfchar")
+        .expect("CMap");
     assert_eq!(map.decode(&[1, 2]), "你");
     assert_eq!(map.decode(&[1, 2, 3]), "你\u{FFFD}");
 }

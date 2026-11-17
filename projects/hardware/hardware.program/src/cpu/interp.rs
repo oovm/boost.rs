@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 
-use crate::error::ProgramError;
-use crate::expr::{BinOp, Expr, UnOp};
-use crate::program::{Function, Program};
-use crate::stmt::{CfgInstruction, CfgTerminator, Stmt};
-use crate::validate::validate_program;
+use crate::{
+    error::ProgramError,
+    expr::{BinOp, Expr, UnOp},
+    program::{Function, Program},
+    stmt::{CfgInstruction, CfgTerminator, Stmt},
+    validate::validate_program,
+};
 
 use super::value::Value;
 
@@ -138,11 +140,7 @@ impl CpuInterpreter {
                         let index = value_index(values.get(index).cloned().ok_or_else(|| missing_ssa(*index))?)?;
                         let buffer = self.buffers.get(resource).ok_or(ProgramError::MissingBuffer(*resource))?;
                         let length = buffer.len();
-                        let value = buffer.get(index).cloned().ok_or(ProgramError::BufferOutOfBounds {
-                            resource: *resource,
-                            index,
-                            length,
-                        })?;
+                        let value = buffer.get(index).cloned().ok_or(ProgramError::BufferOutOfBounds { resource: *resource, index, length })?;
                         values.insert(*result, value);
                     }
                     CfgInstruction::GlobalId { result } => {
@@ -172,8 +170,7 @@ impl CpuInterpreter {
                     }
                     CfgInstruction::Select { result, cond, then_, else_ } => {
                         let condition = values.get(cond).cloned().ok_or_else(|| missing_ssa(*cond))?;
-                        let selected =
-                            if condition.as_bool().map_err(|_| type_mismatch("bool", &condition))? { then_ } else { else_ };
+                        let selected = if condition.as_bool().map_err(|_| type_mismatch("bool", &condition))? { then_ } else { else_ };
                         values.insert(*result, values.get(selected).cloned().ok_or_else(|| missing_ssa(*selected))?);
                     }
                     CfgInstruction::StoreBuffer { resource, index, value } => {
@@ -181,11 +178,7 @@ impl CpuInterpreter {
                         let value = values.get(value).cloned().ok_or_else(|| missing_ssa(*value))?;
                         let buffer = self.buffers.get_mut(resource).ok_or(ProgramError::MissingBuffer(*resource))?;
                         let length = buffer.len();
-                        *buffer.get_mut(index).ok_or(ProgramError::BufferOutOfBounds {
-                            resource: *resource,
-                            index,
-                            length,
-                        })? = value;
+                        *buffer.get_mut(index).ok_or(ProgramError::BufferOutOfBounds { resource: *resource, index, length })? = value;
                     }
                 }
             }
@@ -200,7 +193,8 @@ impl CpuInterpreter {
                     let condition = values.get(condition).cloned().ok_or_else(|| missing_ssa(*condition))?;
                     let (target, args) = if condition.as_bool().map_err(|_| type_mismatch("bool", &condition))? {
                         (*then_block, then_args)
-                    } else {
+                    }
+                    else {
                         (*else_block, else_args)
                     };
                     let target_block = blocks.iter().find(|candidate| candidate.id == target).ok_or(ProgramError::BadControlFlow)?;
@@ -237,8 +231,7 @@ impl CpuInterpreter {
                     let value = self.eval_expr(value, program, locals, parallel)?;
                     let buffer = self.buffers.get_mut(resource).ok_or(ProgramError::MissingBuffer(*resource))?;
                     let length = buffer.len();
-                    let slot =
-                        buffer.get_mut(index).ok_or(ProgramError::BufferOutOfBounds { resource: *resource, index, length })?;
+                    let slot = buffer.get_mut(index).ok_or(ProgramError::BufferOutOfBounds { resource: *resource, index, length })?;
                     *slot = value;
                 }
                 Stmt::If { cond, then_body, else_body } => {
@@ -316,10 +309,9 @@ impl CpuInterpreter {
             Expr::ConstF64(v) => Ok(Value::F64(*v)),
             Expr::ConstBool(v) => Ok(Value::Bool(*v)),
             Expr::ConstU32(v) => Ok(Value::U32(*v)),
-            Expr::LoadLocal(id) => locals
-                .get(id)
-                .cloned()
-                .ok_or(ProgramError::TypeMismatch { expected: format!("local {}", id), actual: "missing".into() }),
+            Expr::LoadLocal(id) => {
+                locals.get(id).cloned().ok_or(ProgramError::TypeMismatch { expected: format!("local {}", id), actual: "missing".into() })
+            }
             Expr::LoadUniform(slot) => self.uniforms.get(slot).cloned().ok_or(ProgramError::MissingUniform(*slot)),
             Expr::LoadBuffer { resource, index } => {
                 let index = value_index(self.eval_expr(index, program, locals, parallel)?)?;
@@ -341,7 +333,8 @@ impl CpuInterpreter {
                 let c = self.eval_expr(cond, program, locals, parallel)?;
                 if c.as_bool().map_err(|_| type_mismatch("bool", &c))? {
                     self.eval_expr(then_, program, locals, parallel)
-                } else {
+                }
+                else {
                     self.eval_expr(else_, program, locals, parallel)
                 }
             }
@@ -391,7 +384,9 @@ impl CpuInterpreter {
                 BinOp::Mod => Some(left % right),
                 _ => None,
             };
-            if let Some(result) = result { return Ok(Value::U32(result)); }
+            if let Some(result) = result {
+                return Ok(Value::U32(result));
+            }
         }
         if let (Value::F32(left), Value::F32(right)) = (&l, &r) {
             let result = match op {
@@ -405,7 +400,9 @@ impl CpuInterpreter {
                 BinOp::Pow => Some(left.powf(*right)),
                 _ => None,
             };
-            if let Some(result) = result { return Ok(Value::F32(result)); }
+            if let Some(result) = result {
+                return Ok(Value::F32(result));
+            }
         }
         match op {
             BinOp::Dot => {
@@ -503,13 +500,16 @@ impl CpuInterpreter {
                 UnOp::Ln => Some(value.ln()),
                 _ => None,
             };
-            if let Some(result) = result { return Ok(Value::F32(result)); }
+            if let Some(result) = result {
+                return Ok(Value::F32(result));
+            }
         }
         match op {
             UnOp::Neg => {
                 if let Ok(x) = v.as_f64() {
                     Ok(Value::F64(-x))
-                } else {
+                }
+                else {
                     let a = v.as_vec3().map_err(|_| ProgramError::UnsupportedOp("neg".into()))?;
                     Ok(Value::Vec3([-a[0], -a[1], -a[2]]))
                 }
@@ -561,7 +561,10 @@ fn coerce_binding_value(value: Value, ty: &crate::Ty) -> Result<Value, ProgramEr
             let scalar = value.as_f64().unwrap();
             if scalar.is_finite() && (0.0..=u32::MAX as f64).contains(&scalar) && scalar.fract() == 0.0 {
                 Ok(Value::U32(scalar as u32))
-            } else { Err(type_mismatch("u32 binding", &value)) }
+            }
+            else {
+                Err(type_mismatch("u32 binding", &value))
+            }
         }
         _ => Err(type_mismatch(&format!("{ty:?} binding"), &value)),
     }
@@ -571,18 +574,12 @@ fn missing_ssa(id: u32) -> ProgramError {
     ProgramError::TypeMismatch { expected: format!("ssa value {id}"), actual: "missing".into() }
 }
 
-fn bind_cfg_parameters(
-    block: &crate::CfgBlock,
-    args: &[u32],
-    values: &mut HashMap<u32, Value>,
-) -> Result<(), ProgramError> {
+fn bind_cfg_parameters(block: &crate::CfgBlock, args: &[u32], values: &mut HashMap<u32, Value>) -> Result<(), ProgramError> {
     if block.parameters.len() != args.len() {
         return Err(ProgramError::BadControlFlow);
     }
-    let incoming = args
-        .iter()
-        .map(|argument| values.get(argument).cloned().ok_or_else(|| missing_ssa(*argument)))
-        .collect::<Result<Vec<_>, _>>()?;
+    let incoming =
+        args.iter().map(|argument| values.get(argument).cloned().ok_or_else(|| missing_ssa(*argument))).collect::<Result<Vec<_>, _>>()?;
     for (parameter, value) in block.parameters.iter().zip(incoming) {
         values.insert(parameter.value, value);
     }

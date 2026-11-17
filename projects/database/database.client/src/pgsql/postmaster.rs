@@ -80,9 +80,7 @@ pub(crate) fn decode_catalog_shard_id(bytes: &[u8]) -> Result<String, PostgresEr
 fn catalog_error(error: ClusterError) -> PostgresError {
     match error {
         ClusterError::InvalidShardId { .. } => protocol("catalog shard id is unusable"),
-        ClusterError::Unsupported(reason)
-            if reason == "catalog registers no shard" || reason == "catalog registers more than one shard" =>
-        {
+        ClusterError::Unsupported(reason) if reason == "catalog registers no shard" || reason == "catalog registers more than one shard" => {
             protocol("unsupported catalog shard count")
         }
         other => protocol(&format!("invalid .yyds catalog: {}", catalog_reason(other))),
@@ -152,11 +150,9 @@ pub enum ServerChange {
 impl ServerChange {
     fn into_shard_change(self) -> ShardChange {
         match self {
-            Self::Put { namespace, key, value } => ShardChange::Put {
-                key: Key::new(&namespace, key),
-                value: StoredValue::Inline(InlineValue(value)),
-                expires_at: None,
-            },
+            Self::Put { namespace, key, value } => {
+                ShardChange::Put { key: Key::new(&namespace, key), value: StoredValue::Inline(InlineValue(value)), expires_at: None }
+            }
             Self::Delete { namespace, key } => ShardChange::Delete { key: Key::new(&namespace, key) },
         }
     }
@@ -298,10 +294,7 @@ fn take_lock(dir: &Path) -> Result<PathBuf, PostgresError> {
     let mut file = match OpenOptions::new().write(true).create_new(true).open(&lock) {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            return Err(protocol(&format!(
-                "lock file \"{}\" already exists: another server owns this data directory",
-                lock.display()
-            )));
+            return Err(protocol(&format!("lock file \"{}\" already exists: another server owns this data directory", lock.display())));
         }
         Err(error) => return Err(io_error(error)),
     };

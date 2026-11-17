@@ -41,8 +41,8 @@ pub use psql::PsqlOptions;
 pub use store::Store;
 
 pub use client::{
-    BackendKeyData, ClientConfig, Column, Connection, CopyInReport, CopyOutReport, Notification, Param, Portal, PortalReport,
-    Prepared, Report, TypedColumn, TypedResult,
+    BackendKeyData, ClientConfig, Column, Connection, CopyInReport, CopyOutReport, Notification, Param, Portal, PortalReport, Prepared, Report,
+    TypedColumn, TypedResult,
 };
 
 /// One textual cell from a result set (bytes preserved when non-UTF-8).

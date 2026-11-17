@@ -1,8 +1,6 @@
 use acorn_codec::compression::{deflate::DeflateLevel, zlib::Zlib};
 use document_formats::{export::pdf::export_pdf_bytes, import::pdf::import_pdf_bytes};
-use document_ir::{
-    Asset, AssetId, AssetKind, Block, DocumentGraph, DocumentId, DocumentMetadata, Inline, ListItem, NodeId, SemanticStatus,
-};
+use document_ir::{Asset, AssetId, AssetKind, Block, DocumentGraph, DocumentId, DocumentMetadata, Inline, ListItem, NodeId, SemanticStatus};
 
 fn jpeg_frame_fixture(width: u16, height: u16, components: u8) -> Vec<u8> {
     let mut bytes = vec![0xff, 0xd8, 0xff, 0xc0];
@@ -62,12 +60,7 @@ fn generated_pdf_reopens_text() {
     graph.push_block(Block::Paragraph { content: vec![Inline::Text { text: "Body (round trip)".into() }] });
     let bytes = export_pdf_bytes(&graph).expect("export PDF");
     let reopened = import_pdf_bytes("generated.pdf", &bytes).expect("import PDF");
-    assert!(
-        reopened
-            .blocks
-            .iter()
-            .any(|node| matches!(&node.block, Block::Paragraph { content } if format!("{content:?}").contains("Body")))
-    );
+    assert!(reopened.blocks.iter().any(|node| matches!(&node.block, Block::Paragraph { content } if format!("{content:?}").contains("Body"))));
 }
 
 #[test]
@@ -94,8 +87,7 @@ fn decodes_winansi_font_without_tounicode_map() {
 #[test]
 fn pdf_generation_and_reopen_preserve_text_whitespace_after_editing() {
     let mut graph = DocumentGraph::new(DocumentId(28));
-    graph
-        .push_block(Block::Paragraph { content: vec![Inline::Text { text: "  first  words\tend  \n  second line  ".into() }] });
+    graph.push_block(Block::Paragraph { content: vec![Inline::Text { text: "  first  words\tend  \n  second line  ".into() }] });
     let bytes = export_pdf_bytes(&graph).expect("generate whitespace PDF");
     let mut reopened = import_pdf_bytes("whitespace.pdf", &bytes).expect("reopen whitespace PDF");
     let Block::Paragraph { content } = &mut reopened.blocks[0].block
@@ -179,8 +171,7 @@ fn page_tree_order_wins_over_physical_object_order() {
 #[test]
 fn reads_flate_decode_stream_and_tj_array() {
     let compressed = Zlib::encode(b"BT [(Hello) 20 ( PDF)] TJ ET", DeflateLevel::default());
-    let mut bytes =
-        format!("%PDF-1.4\n1 0 obj\n<< /Length {} /Filter /FlateDecode >>\nstream\n", compressed.len()).into_bytes();
+    let mut bytes = format!("%PDF-1.4\n1 0 obj\n<< /Length {} /Filter /FlateDecode >>\nstream\n", compressed.len()).into_bytes();
     bytes.extend_from_slice(&compressed);
     bytes.extend_from_slice(b"\nendstream\nendobj\n%%EOF");
     let graph = import_pdf_bytes("compressed.pdf", &bytes).expect("import PDF");
@@ -200,8 +191,7 @@ fn pdf_tj_spacing_is_reported_while_text_remains_editable() {
         panic!("paragraph expected")
     };
     *content = vec![Inline::Text { text: "Edited".into() }];
-    let reopened = import_pdf_bytes("edited-spacing.pdf", &export_pdf_bytes(&graph).expect("generate edited PDF"))
-        .expect("reopen edited PDF");
+    let reopened = import_pdf_bytes("edited-spacing.pdf", &export_pdf_bytes(&graph).expect("generate edited PDF")).expect("reopen edited PDF");
     assert!(format!("{:?}", reopened.blocks[0].block).contains("Edited"));
 }
 
@@ -291,9 +281,12 @@ fn imports_surrogate_pair_range_as_ir_text() {
         cmap.len()
     );
     let graph = import_pdf_bytes("emoji-range.pdf", bytes.as_bytes()).expect("import surrogate pair range");
-    assert!(graph.blocks.iter().any(
-        |node| matches!(&node.block, Block::Paragraph { content } if content == &vec![Inline::Text { text: "😀😁😂".into() }])
-    ));
+    assert!(
+        graph
+            .blocks
+            .iter()
+            .any(|node| matches!(&node.block, Block::Paragraph { content } if content == &vec![Inline::Text { text: "😀😁😂".into() }]))
+    );
 }
 
 #[test]
@@ -322,8 +315,7 @@ fn imports_unfiltered_rgb_xobject_as_ir_asset() {
 fn imports_jpeg_xobject_from_inherited_page_resources() {
     let bytes = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Resources 8 0 R /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /Contents 4 0 R >>\nendobj\n4 0 obj\n<< /Length 9 >>\nstream\n/Im1 Do\nendstream\nendobj\n7 0 obj\n<< /Subtype /Image /Filter /DCTDecode /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 4 >>\nstream\n\xFF\xD8\x02\xD9\nendstream\nendobj\n8 0 obj\n<< /XObject << /Im1 7 0 R >> >>\nendobj\n%%EOF";
     let graph = import_pdf_bytes("inherited-image.pdf", bytes).expect("import inherited PDF image");
-    let image =
-        graph.assets.iter().find(|asset| asset.media_type.as_deref() == Some("image/jpeg")).expect("inherited JPEG asset");
+    let image = graph.assets.iter().find(|asset| asset.media_type.as_deref() == Some("image/jpeg")).expect("inherited JPEG asset");
     assert_eq!(image.bytes.as_deref(), Some(&b"\xFF\xD8\x02\xD9"[..]));
 }
 
@@ -383,11 +375,7 @@ fn jpeg_asset_round_trips_through_pdf_writer() {
     assert!(String::from_utf8_lossy(&exported).contains("/Width 640 /Height 480 /ColorSpace /DeviceRGB"));
     assert!(String::from_utf8_lossy(&exported).contains("q 400 0 0 300 106 470 cm"));
     let reopened = import_pdf_bytes("edited-image.pdf", &exported).expect("re-import JPEG XObject");
-    let image = reopened
-        .assets
-        .iter()
-        .find(|asset| asset.media_type.as_deref() == Some("image/jpeg"))
-        .expect("round-tripped JPEG asset");
+    let image = reopened.assets.iter().find(|asset| asset.media_type.as_deref() == Some("image/jpeg")).expect("round-tripped JPEG asset");
     assert_eq!(image.bytes, Some(jpeg_frame_fixture(640, 480, 3)));
 }
 
@@ -408,8 +396,7 @@ fn multiple_jpeg_assets_keep_their_resource_bindings() {
             content: vec![Inline::Image { source: source.into(), alt: Vec::new(), title: None, asset: Some(AssetId(id)) }],
         });
     }
-    let reopened =
-        import_pdf_bytes("multiple-images.pdf", &export_pdf_bytes(&graph).expect("export images")).expect("re-import images");
+    let reopened = import_pdf_bytes("multiple-images.pdf", &export_pdf_bytes(&graph).expect("export images")).expect("re-import images");
     let bytes = reopened.assets.iter().filter_map(|asset| asset.bytes.as_deref()).collect::<Vec<_>>();
     assert!(bytes.contains(&jpeg_frame_fixture(640, 480, 3).as_slice()));
     assert!(bytes.contains(&jpeg_frame_fixture(200, 600, 1).as_slice()));
@@ -429,12 +416,7 @@ fn jpeg_writer_rejects_missing_or_unsupported_frame_metadata() {
             bytes: Some(bytes),
         });
         graph.push_block(Block::Paragraph {
-            content: vec![Inline::Image {
-                source: "invalid.jpg".into(),
-                alt: Vec::new(),
-                title: None,
-                asset: Some(AssetId(1)),
-            }],
+            content: vec![Inline::Image { source: "invalid.jpg".into(), alt: Vec::new(), title: None, asset: Some(AssetId(1)) }],
         });
         assert!(export_pdf_bytes(&graph).is_err());
     }
@@ -501,11 +483,7 @@ fn pdf_writer_converts_8bit_png_to_predictor_flate_image() {
     assert!(text.contains("/Width 2 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode"));
     assert!(text.contains("/Predictor 15 /Colors 3 /BitsPerComponent 8 /Columns 2"));
     let reopened = import_pdf_bytes("png-round-trip.pdf", &exported).expect("reopen PNG PDF");
-    let image = reopened
-        .assets
-        .iter()
-        .find(|asset| asset.media_type.as_deref() == Some("image/png"))
-        .expect("PNG asset after re-import");
+    let image = reopened.assets.iter().find(|asset| asset.media_type.as_deref() == Some("image/png")).expect("PNG asset after re-import");
     assert_eq!(image.bytes.as_deref(), Some(png.as_slice()));
 }
 
@@ -533,12 +511,7 @@ fn pdf_writer_rejects_indexed_and_alpha_pngs() {
             bytes: Some(png),
         });
         graph.push_block(Block::Paragraph {
-            content: vec![Inline::Image {
-                source: "unsupported.png".into(),
-                alt: Vec::new(),
-                title: None,
-                asset: Some(AssetId(1)),
-            }],
+            content: vec![Inline::Image { source: "unsupported.png".into(), alt: Vec::new(), title: None, asset: Some(AssetId(1)) }],
         });
         assert!(export_pdf_bytes(&graph).is_err());
     }
@@ -601,8 +574,7 @@ fn metadata_round_trips_through_ir_edit_and_pdf() {
     edited.metadata.title = Some("Edited title".into());
     edited.metadata.authors = vec!["Edited author".into()];
     edited.metadata.tags = vec!["edited".into()];
-    let reopened =
-        import_pdf_bytes("edited-metadata.pdf", &export_pdf_bytes(&edited).expect("export edited PDF")).expect("re-import PDF");
+    let reopened = import_pdf_bytes("edited-metadata.pdf", &export_pdf_bytes(&edited).expect("export edited PDF")).expect("re-import PDF");
     assert_eq!(reopened.metadata.title.as_deref(), Some("Edited title"));
     assert_eq!(reopened.metadata.authors, vec!["Edited author"]);
     assert_eq!(reopened.metadata.tags, vec!["edited"]);
@@ -639,11 +611,8 @@ fn pdf_doc_encoding_body_text_round_trips_through_ir_edit_and_generation() {
         panic!("text expected")
     };
     text.push_str(" edited");
-    let reopened = import_pdf_bytes(
-        "pdfdoc-body-edited.pdf",
-        &export_pdf_bytes(&imported).expect("export edited PDFDocEncoding body text"),
-    )
-    .expect("re-import edited PDFDocEncoding body text");
+    let reopened = import_pdf_bytes("pdfdoc-body-edited.pdf", &export_pdf_bytes(&imported).expect("export edited PDFDocEncoding body text"))
+        .expect("re-import edited PDFDocEncoding body text");
     let Block::Paragraph { content } = &reopened.blocks[0].block
     else {
         panic!("paragraph expected")
@@ -683,13 +652,7 @@ endstream endobj
     let graph = import_pdf_bytes("structures.pdf", bytes).expect("import structural PDF");
     assert!(graph.coverage.loss.iter().any(|loss| loss.code == "import.pdf.annotations"));
     assert!(graph.coverage.loss.iter().any(|loss| loss.code == "import.pdf.forms"));
-    assert!(
-        graph
-            .coverage
-            .loss
-            .iter()
-            .any(|loss| loss.code == "import.pdf.encryption" && loss.status == SemanticStatus::Unsupported)
-    );
+    assert!(graph.coverage.loss.iter().any(|loss| loss.code == "import.pdf.encryption" && loss.status == SemanticStatus::Unsupported));
 }
 
 #[test]
@@ -703,8 +666,7 @@ fn pdf_import_reports_unresolved_named_xobjects() {
 fn imports_flate_images_with_predictor_one_without_filter_bytes() {
     let rows = [&[0x10, 0x20, 0x30, 0x40, 0x50, 0x60][..], &[0x70, 0x80, 0x90, 0xa0, 0xb0, 0xc0][..]];
     let encoded = rows.concat();
-    let graph =
-        import_pdf_bytes("predictor-one.pdf", &flate_image_pdf(1, &rows, &encoded)).expect("import predictor one image");
+    let graph = import_pdf_bytes("predictor-one.pdf", &flate_image_pdf(1, &rows, &encoded)).expect("import predictor one image");
     let image = graph.assets.iter().find(|asset| asset.media_type.as_deref() == Some("image/png")).expect("PNG asset");
     assert_eq!(
         image.bytes.as_deref(),
@@ -749,8 +711,7 @@ fn imports_flate_images_with_all_png_predictor_filters() {
             }
             previous.copy_from_slice(raw);
         }
-        let graph =
-            import_pdf_bytes("predictor-filter.pdf", &flate_image_pdf(15, &raw_rows, &encoded)).expect("import filtered image");
+        let graph = import_pdf_bytes("predictor-filter.pdf", &flate_image_pdf(15, &raw_rows, &encoded)).expect("import filtered image");
         let image = graph.assets.iter().find(|asset| asset.media_type.as_deref() == Some("image/png")).expect("PNG asset");
         assert_eq!(
             image.bytes.as_deref(),
@@ -970,8 +931,7 @@ fn pdf_writer_uses_device_gray_for_grayscale_images_and_keeps_aspect_ratio() {
     assert!(text.contains("/ColorSpace /DeviceGray"), "{text}");
     assert!(text.contains("/Predictor 15 /Colors 1 /BitsPerComponent 8 /Columns 2"), "{text}");
     let reopened = import_pdf_bytes("gray-round-trip.pdf", &exported).expect("reopen grayscale PNG");
-    let image =
-        reopened.assets.iter().find(|asset| asset.media_type.as_deref() == Some("image/png")).expect("grayscale PNG asset");
+    let image = reopened.assets.iter().find(|asset| asset.media_type.as_deref() == Some("image/png")).expect("grayscale PNG asset");
     assert_eq!(image.bytes.as_deref(), Some(png.as_slice()));
 }
 
@@ -983,11 +943,7 @@ fn unsupported_inline_images_are_skipped_as_whole_blocks() {
     bytes.extend_from_slice(b"\nendstream\nendobj\n%%EOF");
     let graph = import_pdf_bytes("unsupported-inline.pdf", &bytes).expect("import unsupported inline image");
     assert!(
-        graph
-            .coverage
-            .loss
-            .iter()
-            .any(|loss| loss.code == "import.pdf.unsupported_inline_image" && loss.status == SemanticStatus::Unsupported),
+        graph.coverage.loss.iter().any(|loss| loss.code == "import.pdf.unsupported_inline_image" && loss.status == SemanticStatus::Unsupported),
         "{:?}",
         graph.coverage.loss
     );

@@ -2,8 +2,8 @@
 //! inheritance, and SVG equivalence.
 
 use plotter_scene::{
-    DisplayScene, NodeKind, PathData, Point, Rect, ResourceRef, SceneNode, SceneResolver, SemanticKind, SemanticNode,
-    SemanticRole, SemanticScene, ShapeStyle, Size, SourceRef, Transform,
+    DisplayScene, NodeKind, PathData, Point, Rect, ResourceRef, SceneNode, SceneResolver, SemanticKind, SemanticNode, SemanticRole,
+    SemanticScene, ShapeStyle, Size, SourceRef, Transform,
 };
 
 fn resolver() -> SceneResolver {
@@ -24,9 +24,7 @@ fn find<'a>(scene: &'a DisplayScene, id: &str) -> &'a SceneNode {
 }
 
 fn rect_node(id: &str, rect: Rect, transform: Transform) -> SemanticNode {
-    SemanticNode::new(SemanticKind::Rect { rect, style: ShapeStyle::filled(plotter_scene::Color::BLACK) })
-        .with_id(id)
-        .with_transform(transform)
+    SemanticNode::new(SemanticKind::Rect { rect, style: ShapeStyle::filled(plotter_scene::Color::BLACK) }).with_id(id).with_transform(transform)
 }
 
 #[test]
@@ -53,9 +51,7 @@ fn resolution_preserves_identity_source_and_hit_region() {
     assert_eq!(node.source.as_ref().and_then(|source| source.span), Some((3, 9)));
     assert_eq!(node.hit_region, Some(Rect::new(-1.0, -1.0, 22.0, 12.0)));
     assert_eq!(node.transform, Transform::translate(10.0, 20.0));
-    assert!(
-        matches!(&node.kind, NodeKind::Image { resource, opacity, .. } if resource.href == "assets/a.png" && *opacity == 0.75)
-    );
+    assert!(matches!(&node.kind, NodeKind::Image { resource, opacity, .. } if resource.href == "assets/a.png" && *opacity == 0.75));
 
     assert_eq!(scene.resolve(&resolver()), display, "resolution must be deterministic");
 }
@@ -110,12 +106,9 @@ fn resolved_svg_matches_the_equivalent_flat_display_tree() {
     scene.push(
         SemanticNode::group(vec![
             SemanticNode::group(vec![
-                SemanticNode::new(SemanticKind::Path {
-                    path: path.clone(),
-                    style: ShapeStyle::stroked(plotter_scene::Color::BLACK, 1.0),
-                })
-                .with_id("line")
-                .with_role(SemanticRole::Edge),
+                SemanticNode::new(SemanticKind::Path { path: path.clone(), style: ShapeStyle::stroked(plotter_scene::Color::BLACK, 1.0) })
+                    .with_id("line")
+                    .with_role(SemanticRole::Edge),
             ])
             .with_id("inner")
             .with_transform(Transform::translate(5.0, 0.0)),

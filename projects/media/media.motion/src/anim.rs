@@ -94,12 +94,9 @@ impl Animated {
 
     /// Reports motion that cannot be evaluated, with the node it belongs to.
     pub fn validate(&self, where_: &str, problems: &mut Vec<String>) {
-        for (name, track) in [
-            ("x", self.x.as_ref()),
-            ("y", self.y.as_ref()),
-            ("opacity", self.opacity.as_ref()),
-            ("progress", self.progress.as_ref()),
-        ] {
+        for (name, track) in
+            [("x", self.x.as_ref()), ("y", self.y.as_ref()), ("opacity", self.opacity.as_ref()), ("progress", self.progress.as_ref())]
+        {
             if let Some(track) = track {
                 if track.keys.is_empty() {
                     problems.push(format!("{where_}: `{name}` track has no keys"));
@@ -126,11 +123,13 @@ impl Follow {
     pub fn point_at(&self, progress: f32) -> Option<[f32; 2]> {
         let points = if self.smooth {
             geometry::smooth_polyline(&self.points, self.closed, 12)
-        } else if self.closed && !self.points.is_empty() {
+        }
+        else if self.closed && !self.points.is_empty() {
             let mut points = self.points.clone();
             points.push(self.points[0]);
             points
-        } else {
+        }
+        else {
             self.points.clone()
         };
         if points.len() < 2 {
@@ -194,10 +193,8 @@ mod tests {
 
     #[test]
     fn follow_without_progress_is_reported() {
-        let animated = Animated {
-            follow: Some(Follow { points: vec![[0.0, 0.0], [1.0, 1.0]], smooth: false, closed: false }),
-            ..Animated::default()
-        };
+        let animated =
+            Animated { follow: Some(Follow { points: vec![[0.0, 0.0], [1.0, 1.0]], smooth: false, closed: false }), ..Animated::default() };
         let mut problems = Vec::new();
         animated.validate("node a", &mut problems);
         assert_eq!(problems.len(), 1);

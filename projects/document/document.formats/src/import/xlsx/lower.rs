@@ -8,8 +8,8 @@
 use std::{collections::BTreeSet, fs, path::Path};
 
 use document_ir::{
-    Asset, AssetKind, AttributePair, Attributes, Block, BreakKind, DocumentGraph, DocumentId, DocumentMetadata, IdAllocator,
-    Inline, LossMarker, SemanticStatus, TableCell, TableRow,
+    Asset, AssetKind, AttributePair, Attributes, Block, BreakKind, DocumentGraph, DocumentId, DocumentMetadata, IdAllocator, Inline,
+    LossMarker, SemanticStatus, TableCell, TableRow,
 };
 
 use super::{
@@ -36,8 +36,7 @@ impl Default for GraphOptions {
 /// Imports an XLSX file and projects it into `notedown-ir`.
 pub fn import_xlsx_graph(path: impl AsRef<Path>) -> Result<DocumentGraph, FormatError> {
     let path = path.as_ref();
-    let bytes =
-        fs::read(path).map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
+    let bytes = fs::read(path).map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
     import_xlsx_graph_bytes(&path.display().to_string(), &bytes)
 }
 
@@ -72,11 +71,8 @@ pub fn workbook_to_graph(workbook: &XlsxWorkbook, options: &GraphOptions) -> Doc
             });
             continue;
         }
-        let section_id = graph.push_block(Block::Section {
-            level: 1,
-            title: vec![Inline::Text { text: sheet.name.clone() }],
-            children: Vec::new(),
-        });
+        let section_id =
+            graph.push_block(Block::Section { level: 1, title: vec![Inline::Text { text: sheet.name.clone() }], children: Vec::new() });
         let mut children = Vec::new();
 
         if let Some(table_id) = push_sheet_table(&mut graph, sheet, workbook) {
@@ -99,19 +95,14 @@ pub fn workbook_to_graph(workbook: &XlsxWorkbook, options: &GraphOptions) -> Doc
             children.push(graph.push_block(Block::Paragraph {
                 content: vec![Inline::Image {
                     source: image.media_path.clone(),
-                    alt: vec![Inline::Text {
-                        text: format!("Image anchored at {}", anchor_label(image.from.column, image.from.row)),
-                    }],
+                    alt: vec![Inline::Text { text: format!("Image anchored at {}", anchor_label(image.from.column, image.from.row)) }],
                     title: None,
                     asset: Some(asset_id),
                 }],
             }));
             graph.push_loss(LossMarker {
                 code: codes::IMAGE_ANCHOR.into(),
-                message: format!(
-                    "image `{}` is projected after the sheet table because the IR has no cell anchor",
-                    image.media_path
-                ),
+                message: format!("image `{}` is projected after the sheet table because the IR has no cell anchor", image.media_path),
                 status: SemanticStatus::Partial,
             });
         }
@@ -165,16 +156,11 @@ fn push_sheet_table(graph: &mut DocumentGraph, sheet: &XlsxSheet, workbook: &Xls
                 column += 1;
                 continue;
             }
-            cells.push(TableCell {
-                children: cell_children(graph, cell_inlines(sheet, workbook, row, column)),
-                colspan: 1,
-                rowspan: 1,
-            });
+            cells.push(TableCell { children: cell_children(graph, cell_inlines(sheet, workbook, row, column)), colspan: 1, rowspan: 1 });
             column += 1;
         }
         let is_header = row == range.start_row
-            && (range.start_column..=range.end_column)
-                .any(|column| sheet.cell(row, column).map(|cell| cell.style.bold).unwrap_or(false));
+            && (range.start_column..=range.end_column).any(|column| sheet.cell(row, column).map(|cell| cell.style.bold).unwrap_or(false));
         let table_row = TableRow { cells };
         if is_header {
             head.push(table_row);
@@ -235,8 +221,7 @@ fn cell_inlines(sheet: &XlsxSheet, workbook: &XlsxWorkbook, row: u32, column: u3
         pairs.push(AttributePair { key: "xlsx.font-color".into(), value: color.to_owned() });
     }
     if !pairs.is_empty() {
-        content =
-            vec![Inline::Attributed { attributes: Attributes { id: None, classes: Vec::new(), pairs }, children: content }];
+        content = vec![Inline::Attributed { attributes: Attributes { id: None, classes: Vec::new(), pairs }, children: content }];
     }
     content
 }

@@ -78,12 +78,10 @@ impl I18n {
                     break;
                 }
                 if let Some(idx) = seen.iter().position(|s| *s == cur) {
-                    let cycle: Vec<&str> =
-                        seen[idx..].iter().map(String::as_str).chain(std::iter::once(cur.as_str())).collect();
+                    let cycle: Vec<&str> = seen[idx..].iter().map(String::as_str).chain(std::iter::once(cur.as_str())).collect();
                     let key = cycle.join(" -> ");
                     if reported.insert(key.clone()) {
-                        diagnostics
-                            .push(Diagnostic::error(FALLBACK_CYCLE_CODE, format!("`[i18n.fallback]` forms a cycle: {key}")));
+                        diagnostics.push(Diagnostic::error(FALLBACK_CYCLE_CODE, format!("`[i18n.fallback]` forms a cycle: {key}")));
                     }
                     break;
                 }
@@ -105,10 +103,8 @@ impl I18n {
             let path = locales_dir.join(format!("{locale}.json5"));
             if !path.is_file() {
                 if dir_exists {
-                    let mut d = Diagnostic::warning(
-                        MISSING_CATALOG_CODE,
-                        format!("locale `{locale}` is enabled but has no catalog at `{rel}`"),
-                    );
+                    let mut d =
+                        Diagnostic::warning(MISSING_CATALOG_CODE, format!("locale `{locale}` is enabled but has no catalog at `{rel}`"));
                     d.file = Some(rel.clone());
                     diagnostics.push(d);
                 }
@@ -136,8 +132,7 @@ impl I18n {
             match parse_json5(text) {
                 Ok((value, issues)) => {
                     if !value.is_object() {
-                        let mut d =
-                            Diagnostic::error(CATALOG_SYNTAX_CODE, format!("`{rel}` must be a JSON5 object at the top level"));
+                        let mut d = Diagnostic::error(CATALOG_SYNTAX_CODE, format!("`{rel}` must be a JSON5 object at the top level"));
                         d.file = Some(rel.clone());
                         diagnostics.push(d);
                         continue;
@@ -163,10 +158,7 @@ impl I18n {
                 Err(issue) => {
                     let mut d = Diagnostic::error(
                         CATALOG_SYNTAX_CODE,
-                        format!(
-                            "JSON5 syntax error in `{rel}`: {} (line {}, column {})",
-                            issue.message, issue.line, issue.column
-                        ),
+                        format!("JSON5 syntax error in `{rel}`: {} (line {}, column {})", issue.message, issue.line, issue.column),
                     );
                     d.file = Some(rel.clone());
                     diagnostics.push(d);
@@ -254,10 +246,8 @@ impl I18n {
                 }
             };
         }
-        let d = Diagnostic::warning(
-            MISSING_KEY_CODE,
-            format!("missing message key `{key}` for locale `{locale}` (tried: {})", chain.join(" -> ")),
-        );
+        let d =
+            Diagnostic::warning(MISSING_KEY_CODE, format!("missing message key `{key}` for locale `{locale}` (tried: {})", chain.join(" -> ")));
         (key.to_string(), Some(d))
     }
 }
@@ -653,9 +643,7 @@ impl Json5Parser {
             let num = if tok.starts_with('-') {
                 match i64::try_from(mag) {
                     Ok(v) => Value::Number((-v).into()),
-                    Err(_) => Value::Number(
-                        serde_json::Number::from_f64(-(mag as f64)).ok_or_else(|| self.error("hex number out of range"))?,
-                    ),
+                    Err(_) => Value::Number(serde_json::Number::from_f64(-(mag as f64)).ok_or_else(|| self.error("hex number out of range"))?),
                 }
             }
             else if let Ok(v) = i64::try_from(mag) {
@@ -836,10 +824,7 @@ mod tests {
             ..ProjectConfig::default()
         };
         let (_i18n, diagnostics) = I18n::load(dir.path(), &config);
-        assert!(
-            diagnostics.iter().any(|d| d.code == MISSING_CATALOG_CODE && d.file.as_deref() == Some("locales/zh.json5")),
-            "{diagnostics:?}"
-        );
+        assert!(diagnostics.iter().any(|d| d.code == MISSING_CATALOG_CODE && d.file.as_deref() == Some("locales/zh.json5")), "{diagnostics:?}");
         assert!(diagnostics.iter().any(|d| d.code == FALLBACK_CYCLE_CODE), "{diagnostics:?}");
     }
 

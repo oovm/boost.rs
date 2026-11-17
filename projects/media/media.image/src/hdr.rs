@@ -26,12 +26,7 @@ pub struct Framebuffer {
 impl Framebuffer {
     pub fn new(width: u32, height: u32) -> Self {
         let len = (width as usize) * (height as usize);
-        Self {
-            width,
-            height,
-            pixels: vec![LinearRgb::BLACK; len],
-            encoding: FramebufferEncoding::LinearHdr,
-        }
+        Self { width, height, pixels: vec![LinearRgb::BLACK; len], encoding: FramebufferEncoding::LinearHdr }
     }
 
     pub fn set(&mut self, x: u32, y: u32, color: LinearRgb) {
@@ -46,12 +41,7 @@ impl Framebuffer {
         let mut out = Vec::with_capacity(self.pixels.len() * 4);
         for px in &self.pixels {
             let c = px.clamp01();
-            out.extend_from_slice(&[
-                (c.r * 255.0).round() as u8,
-                (c.g * 255.0).round() as u8,
-                (c.b * 255.0).round() as u8,
-                255,
-            ]);
+            out.extend_from_slice(&[(c.r * 255.0).round() as u8, (c.g * 255.0).round() as u8, (c.b * 255.0).round() as u8, 255]);
         }
         out
     }

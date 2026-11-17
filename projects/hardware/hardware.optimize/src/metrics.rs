@@ -2,21 +2,14 @@
 
 /// Fused-multiply-add count for a naive dense `f32` MatMul: `2 * m * n * k`.
 pub fn matmul_flops(m: u64, n: u64, k: u64) -> u64 {
-    m.saturating_mul(n)
-        .saturating_mul(k)
-        .saturating_mul(2)
+    m.saturating_mul(n).saturating_mul(k).saturating_mul(2)
 }
 
 /// Nominal FLOPs for naive multi-head attention matmuls (QKᵀ + PV), ignoring softmax.
 ///
 /// `4 * batch * heads * seq * seq * dim`.
 pub fn attention_flops(batch: u64, heads: u64, seq: u64, dim: u64) -> u64 {
-    batch
-        .saturating_mul(heads)
-        .saturating_mul(seq)
-        .saturating_mul(seq)
-        .saturating_mul(dim)
-        .saturating_mul(4)
+    batch.saturating_mul(heads).saturating_mul(seq).saturating_mul(seq).saturating_mul(dim).saturating_mul(4)
 }
 
 /// Timed MatMul sample used to derive throughput / optional MFU.
@@ -37,13 +30,7 @@ pub struct MatmulMetrics {
 impl MatmulMetrics {
     /// Build metrics from shape and elapsed nanoseconds.
     pub fn new(m: u32, n: u32, k: u32, elapsed_nanos: u128) -> Self {
-        Self {
-            m,
-            n,
-            k,
-            flops: matmul_flops(m as u64, n as u64, k as u64),
-            elapsed_nanos,
-        }
+        Self { m, n, k, flops: matmul_flops(m as u64, n as u64, k as u64), elapsed_nanos }
     }
 
     /// Achieved floating-point operations per second (`0.0` if elapsed is 0).
@@ -83,14 +70,7 @@ pub struct AttentionMetrics {
 impl AttentionMetrics {
     /// Build metrics from shape and elapsed nanoseconds.
     pub fn new(batch: u32, heads: u32, seq: u32, dim: u32, elapsed_nanos: u128) -> Self {
-        Self {
-            batch,
-            heads,
-            seq,
-            dim,
-            flops: attention_flops(batch as u64, heads as u64, seq as u64, dim as u64),
-            elapsed_nanos,
-        }
+        Self { batch, heads, seq, dim, flops: attention_flops(batch as u64, heads as u64, seq as u64, dim as u64), elapsed_nanos }
     }
 
     /// Achieved floating-point operations per second (`0.0` if elapsed is 0).

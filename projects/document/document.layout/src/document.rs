@@ -134,12 +134,7 @@ struct TextMeasure<'a> {
 
 impl<'a> TextMeasure<'a> {
     fn new(faces: &'a BodyMetrics) -> Self {
-        Self {
-            heuristic: builtin_font_metrics(),
-            faces,
-            missing: RefCell::new(BTreeSet::new()),
-            named_fallback: RefCell::new(BTreeMap::new()),
-        }
+        Self { heuristic: builtin_font_metrics(), faces, missing: RefCell::new(BTreeSet::new()), named_fallback: RefCell::new(BTreeMap::new()) }
     }
 
     /// Advance width of one character in em units under `face`.
@@ -368,9 +363,7 @@ fn inline_style_dropped_diagnostic(style: &str) -> Diagnostic {
     Diagnostic {
         code: "export.pdf.inline_style_dropped".to_string(),
         severity: Severity::Warning,
-        message: format!(
-            "the PDF target has no slot for the inline style `{style}`, so the characters keep the body face without it"
-        ),
+        message: format!("the PDF target has no slot for the inline style `{style}`, so the characters keep the body face without it"),
         span: None,
     }
 }
@@ -383,9 +376,7 @@ fn opaque_metadata_dropped_diagnostic(kind: &str) -> Diagnostic {
     Diagnostic {
         code: "export.pdf.opaque_metadata_dropped".to_string(),
         severity: Severity::Warning,
-        message: format!(
-            "the PDF target has no slot for the opaque block kind `{kind}`, so the payload text is laid out without the kind"
-        ),
+        message: format!("the PDF target has no slot for the opaque block kind `{kind}`, so the payload text is laid out without the kind"),
         span: None,
     }
 }
@@ -463,10 +454,7 @@ fn reference_target_dropped_diagnostic(target: NodeId) -> Diagnostic {
     Diagnostic {
         code: "export.pdf.reference_target_dropped".to_string(),
         severity: Severity::Warning,
-        message: format!(
-            "intra-document reference to node {} has no PDF destination map, so only the display text is painted",
-            target.0
-        ),
+        message: format!("intra-document reference to node {} has no PDF destination map, so only the display text is painted", target.0),
         span: None,
     }
 }
@@ -569,9 +557,7 @@ pub fn layout_with_metrics(
             vec![Diagnostic {
                 code: "vutex.layout.text_family_unregistered".to_string(),
                 severity: Severity::Error,
-                message: format!(
-                    "text font family `{name}` is not registered by the supplied body faces, so no page was laid out"
-                ),
+                message: format!("text font family `{name}` is not registered by the supplied body faces, so no page was laid out"),
                 span: None,
             }],
         );
@@ -588,11 +574,7 @@ pub fn layout_with_metrics(
 ///
 /// Without an explicit family the pass keeps the host-installed default, so
 /// existing callers observe exactly the face they installed at startup.
-fn lay_formula(
-    formula: &MathFormula,
-    size: f64,
-    hint: &LayoutHint,
-) -> MathResult<(FormulaLayoutResult, LayoutNode, Vec<Diagnostic>)> {
+fn lay_formula(formula: &MathFormula, size: f64, hint: &LayoutHint) -> MathResult<(FormulaLayoutResult, LayoutNode, Vec<Diagnostic>)> {
     match hint.math_font {
         Some(family) => layout_formula_for(formula, size, family),
         None => layout_formula(formula, size),
@@ -739,23 +721,12 @@ impl PendingText {
     /// styled span or a link into its own [`LayoutItem`], so emphasis and link
     /// metadata survive into every renderer without swallowing the neighbouring
     /// text.
-    fn push(
-        &mut self,
-        text: &str,
-        face: TextFace,
-        href: Option<&str>,
-        anchor: Option<&str>,
-        title: Option<&str>,
-        atoms: &mut Vec<InlineAtom>,
-    ) {
+    fn push(&mut self, text: &str, face: TextFace, href: Option<&str>, anchor: Option<&str>, title: Option<&str>, atoms: &mut Vec<InlineAtom>) {
         if text.is_empty() {
             return;
         }
         if !self.is_empty()
-            && (self.face != face
-                || self.href.as_deref() != href
-                || self.anchor.as_deref() != anchor
-                || self.title.as_deref() != title)
+            && (self.face != face || self.href.as_deref() != href || self.anchor.as_deref() != anchor || self.title.as_deref() != title)
         {
             self.flush(atoms);
         }
@@ -772,13 +743,7 @@ impl PendingText {
             self.text.clear();
             return;
         }
-        atoms.extend(split_inline_atoms(
-            &self.text,
-            self.face,
-            self.href.as_deref(),
-            self.anchor.as_deref(),
-            self.title.as_deref(),
-        ));
+        atoms.extend(split_inline_atoms(&self.text, self.face, self.href.as_deref(), self.anchor.as_deref(), self.title.as_deref()));
         self.text.clear();
     }
 }
@@ -804,10 +769,7 @@ struct AtomFlow {
 impl AtomFlow {
     /// Start a flow whose unstyled text uses `face`.
     fn new(face: TextFace) -> Self {
-        Self {
-            atoms: Vec::new(),
-            pending: PendingText { text: String::new(), face, href: None, anchor: None, title: None, numeric: false },
-        }
+        Self { atoms: Vec::new(), pending: PendingText { text: String::new(), face, href: None, anchor: None, title: None, numeric: false } }
     }
 
     /// Close the buffered text into atoms and return the composed flow.
@@ -917,8 +879,7 @@ struct PageBuilder<'a> {
 
 impl<'a> PageBuilder<'a> {
     fn new(hint: LayoutHint, diagrams: &'a Diagrams, faces: &'a BodyMetrics, graph: &DocumentGraph) -> Self {
-        let asset_sources =
-            graph.assets.iter().filter_map(|asset| asset.source.as_ref().map(|source| (asset.id, source.clone()))).collect();
+        let asset_sources = graph.assets.iter().filter_map(|asset| asset.source.as_ref().map(|source| (asset.id, source.clone()))).collect();
         let asset_aspects = graph
             .assets
             .iter()
@@ -1088,8 +1049,7 @@ impl<'a> PageBuilder<'a> {
             self.push(LayoutItem::Anchor { name: node_anchor(node), y });
         }
         self.section_starts.push((self.pages.len().saturating_sub(1), index));
-        let face =
-            if tokens.heading_bold { TextFace { family: self.body_family(), style: FontStyle::Bold } } else { self.body_face };
+        let face = if tokens.heading_bold { TextFace { family: self.body_family(), style: FontStyle::Bold } } else { self.body_face };
         let atoms = self.compose_atoms(title, size, indent, face, ImageMode::AltText);
         self.emit_inline_lines_aligned(atoms, size, indent, tokens.heading_align);
         if level == 1 && tokens.heading_rule > 0.0 {
@@ -1137,14 +1097,7 @@ impl<'a> PageBuilder<'a> {
     ///
     /// Paragraphs and every other inline-bearing block share this composition
     /// path, so emphasis keeps the same semantics wherever it appears.
-    fn compose_atoms(
-        &mut self,
-        content: &[Inline],
-        size: f64,
-        indent: f64,
-        face: TextFace,
-        image_mode: ImageMode,
-    ) -> Vec<InlineAtom> {
+    fn compose_atoms(&mut self, content: &[Inline], size: f64, indent: f64, face: TextFace, image_mode: ImageMode) -> Vec<InlineAtom> {
         let mut flow = AtomFlow::new(face);
         self.compose_inline(content, size, indent, &mut flow, face, None, None, None, image_mode);
         flow.finish()
@@ -1177,11 +1130,7 @@ impl<'a> PageBuilder<'a> {
                     }
                     let alt_text: String = alt.iter().map(Inline::plain_text).collect();
                     let aspect = asset.as_ref().and_then(|asset| self.asset_aspects.get(asset)).copied();
-                    let source = asset
-                        .as_ref()
-                        .and_then(|asset| self.asset_sources.get(asset))
-                        .cloned()
-                        .unwrap_or_else(|| source.clone());
+                    let source = asset.as_ref().and_then(|asset| self.asset_sources.get(asset)).cloned().unwrap_or_else(|| source.clone());
                     match image_mode {
                         ImageMode::Placeholder => {
                             if !alt_text.trim().is_empty() {
@@ -1201,8 +1150,7 @@ impl<'a> PageBuilder<'a> {
                             Ok((result, _root, math_diagnostics)) => {
                                 self.diagnostics.extend(math_diagnostics);
                                 let metrics = &result.metrics;
-                                let (width, height, depth) =
-                                    (metrics.width.to_f64(), metrics.height.to_f64(), metrics.depth.to_f64());
+                                let (width, height, depth) = (metrics.width.to_f64(), metrics.height.to_f64(), metrics.depth.to_f64());
                                 flow.atoms.push(InlineAtom::Math(MathAtom { result, width, height, depth }));
                             }
                             Err(error) => {
@@ -1227,17 +1175,7 @@ impl<'a> PageBuilder<'a> {
                     if !is_known_inline_style(style) {
                         self.diagnostics.push(inline_style_dropped_diagnostic(style));
                     }
-                    self.compose_inline(
-                        children,
-                        size,
-                        indent,
-                        flow,
-                        self.face_for_style(style),
-                        href,
-                        anchor,
-                        title,
-                        image_mode,
-                    );
+                    self.compose_inline(children, size, indent, flow, self.face_for_style(style), href, anchor, title, image_mode);
                 }
                 Inline::InlineCode { text } => flow.pending.push(text, CODE_FACE, href, anchor, title, &mut flow.atoms),
                 // Attributes carry no printable face, but their wrapped content
@@ -1279,9 +1217,7 @@ impl<'a> PageBuilder<'a> {
                     self.diagnostics.push(citation_degraded_diagnostic(key));
                     flow.pending.flush(&mut flow.atoms);
                     match display {
-                        Some(display) => {
-                            self.compose_inline(display, size, indent, flow, face, href, anchor, title, image_mode)
-                        }
+                        Some(display) => self.compose_inline(display, size, indent, flow, face, href, anchor, title, image_mode),
                         None => flow.atoms.extend(split_inline_atoms(&format!("[{key}]"), face, href, anchor, title)),
                     }
                 }
@@ -1430,12 +1366,8 @@ impl<'a> PageBuilder<'a> {
                     }
                     // A pair that crosses an atom boundary is still one painted
                     // pair when both atoms stay in the same run.
-                    let cross = run
-                        .text
-                        .chars()
-                        .last()
-                        .zip(text.chars().next())
-                        .map_or(0.0, |(left, right)| self.text.kern(left, right, *face, size));
+                    let cross =
+                        run.text.chars().last().zip(text.chars().next()).map_or(0.0, |(left, right)| self.text.kern(left, right, *face, size));
                     run.text.push_str(text);
                     x += self.text.measure(text, size, *face) + cross;
                 }
@@ -1554,14 +1486,7 @@ impl<'a> PageBuilder<'a> {
         self.ensure_space(height);
         let x = self.left(indent);
         let source = (!source.trim().is_empty()).then(|| source.to_string());
-        self.push(LayoutItem::ImagePlaceholder(ImagePlaceholder {
-            x,
-            y: self.cursor,
-            width,
-            height,
-            alt: alt.to_string(),
-            source,
-        }));
+        self.push(LayoutItem::ImagePlaceholder(ImagePlaceholder { x, y: self.cursor, width, height, alt: alt.to_string(), source }));
         self.cursor += height;
         self.pad(size * 0.4);
     }
@@ -1588,14 +1513,7 @@ impl<'a> PageBuilder<'a> {
         self.pad(size * 0.4);
         self.ensure_space(height);
         let x = self.left(indent);
-        self.push(LayoutItem::Graphic(Graphic {
-            x,
-            y: self.cursor,
-            width,
-            height,
-            scene: diagram.scene.clone(),
-            alt: diagram.alt.clone(),
-        }));
+        self.push(LayoutItem::Graphic(Graphic { x, y: self.cursor, width, height, scene: diagram.scene.clone(), alt: diagram.alt.clone() }));
         self.cursor += height;
         self.pad(size * 0.6);
         true
@@ -1615,8 +1533,7 @@ impl<'a> PageBuilder<'a> {
             // drawn as a stroked rectangle plus a tick, because painting the
             // checked state as text would hide it inside a character that
             // downstream extraction cannot tell from body text.
-            let marker_width =
-                if item.is_task { TASK_BOX_SIZE_EM * size } else { self.text.measure(&marker, size, self.body_face) };
+            let marker_width = if item.is_task { TASK_BOX_SIZE_EM * size } else { self.text.measure(&marker, size, self.body_face) };
             let content_indent = indent + tokens.list_indent.max(marker_width + tokens.list_marker_gap);
             let atoms = self.compose_atoms(&item.content, size, content_indent, self.body_face, ImageMode::AltText);
             self.pad(tokens.list_gap_before);
@@ -1660,22 +1577,8 @@ impl<'a> PageBuilder<'a> {
             let start = (x + side * 0.18, y + side * 0.42);
             let middle = (x + side * 0.44, y + side * 0.64);
             let end = (x + side * 0.84, y + side * 0.20);
-            self.push(LayoutItem::Rule(Rule {
-                x1: start.0,
-                y1: start.1,
-                x2: middle.0,
-                y2: middle.1,
-                thickness,
-                color: Some(tokens.ink),
-            }));
-            self.push(LayoutItem::Rule(Rule {
-                x1: middle.0,
-                y1: middle.1,
-                x2: end.0,
-                y2: end.1,
-                thickness,
-                color: Some(tokens.ink),
-            }));
+            self.push(LayoutItem::Rule(Rule { x1: start.0, y1: start.1, x2: middle.0, y2: middle.1, thickness, color: Some(tokens.ink) }));
+            self.push(LayoutItem::Rule(Rule { x1: middle.0, y1: middle.1, x2: end.0, y2: end.1, thickness, color: Some(tokens.ink) }));
         }
     }
 
@@ -1759,24 +1662,16 @@ impl<'a> PageBuilder<'a> {
         foot: &[TableRow],
         indent: f64,
     ) {
-        let rows: Vec<(&TableRow, bool)> = head
-            .iter()
-            .map(|row| (row, true))
-            .chain(body.iter().map(|row| (row, false)))
-            .chain(foot.iter().map(|row| (row, false)))
-            .collect();
+        let rows: Vec<(&TableRow, bool)> =
+            head.iter().map(|row| (row, true)).chain(body.iter().map(|row| (row, false))).chain(foot.iter().map(|row| (row, false))).collect();
         let tokens = self.hint.style;
         let size = self.body_size();
         let line_box = self.line_box(size);
         let x = self.left(indent);
         let width = self.content_width(indent);
         let padding = tokens.table_pad_h;
-        let columns = rows
-            .iter()
-            .map(|(row, _)| row.cells.iter().map(|cell| cell.colspan.max(1) as usize).sum::<usize>())
-            .max()
-            .unwrap_or(1)
-            .max(1);
+        let columns =
+            rows.iter().map(|(row, _)| row.cells.iter().map(|cell| cell.colspan.max(1) as usize).sum::<usize>()).max().unwrap_or(1).max(1);
         let column_width = width / columns as f64;
         if let Some(caption) = caption {
             self.pad(size * 0.3);
@@ -1816,12 +1711,8 @@ impl<'a> PageBuilder<'a> {
 
         let mut cell_rows: Vec<Vec<CellLines>> = Vec::with_capacity(rows.len());
         for &(row, is_header) in rows.iter() {
-            let header_face = if is_header && tokens.heading_bold {
-                TextFace { family: self.body_family(), style: FontStyle::Bold }
-            }
-            else {
-                self.body_face
-            };
+            let header_face =
+                if is_header && tokens.heading_bold { TextFace { family: self.body_family(), style: FontStyle::Bold } } else { self.body_face };
             let cells: Vec<CellLines> = row
                 .cells
                 .iter()
@@ -1876,16 +1767,7 @@ impl<'a> PageBuilder<'a> {
             row_tops[row_index] = top;
             row_pages[row_index] = self.pages.len();
             if *is_header && let Some(tint) = tokens.table_header_tint {
-                self.push(LayoutItem::Rect(Rect {
-                    x,
-                    y: top,
-                    width,
-                    height,
-                    filled: true,
-                    fill: Some(tint),
-                    stroke: None,
-                    stroke_width: 0.0,
-                }));
+                self.push(LayoutItem::Rect(Rect { x, y: top, width, height, filled: true, fill: Some(tint), stroke: None, stroke_width: 0.0 }));
             }
             let header_thickness = if *is_header { tokens.table_header_rule } else { tokens.table_row_rule };
             if header_thickness > 0.0 {
@@ -1895,9 +1777,7 @@ impl<'a> PageBuilder<'a> {
                 let mut blocked: Vec<(f64, f64)> = spanning
                     .iter()
                     .filter(|&&(start, _, _, span_rows, _)| start < row_index && start + span_rows > row_index)
-                    .map(|&(_, column, span_cols, _, _)| {
-                        (x + column_width * column as f64, x + column_width * (column + span_cols) as f64)
-                    })
+                    .map(|&(_, column, span_cols, _, _)| (x + column_width * column as f64, x + column_width * (column + span_cols) as f64))
                     .collect();
                 blocked.sort_by(|left, right| left.0.partial_cmp(&right.0).unwrap_or(std::cmp::Ordering::Equal));
                 let mut cursor_x = x;
@@ -2059,17 +1939,15 @@ impl<'a> PageBuilder<'a> {
             ChromeHeader::None => None,
             ChromeHeader::Literal(text) => Some(text.to_string()),
             ChromeHeader::Title => {
-                graph.metadata.title.as_deref().map(str::trim).filter(|title| !title.is_empty()).map(str::to_string).or_else(
-                    || {
-                        graph.blocks.iter().find_map(|node| match &node.block {
-                            Block::Section { level: 1, title, .. } => {
-                                let text = title.iter().map(Inline::plain_text).collect::<String>();
-                                (!text.trim().is_empty()).then_some(text)
-                            }
-                            _ => None,
-                        })
-                    },
-                )
+                graph.metadata.title.as_deref().map(str::trim).filter(|title| !title.is_empty()).map(str::to_string).or_else(|| {
+                    graph.blocks.iter().find_map(|node| match &node.block {
+                        Block::Section { level: 1, title, .. } => {
+                            let text = title.iter().map(Inline::plain_text).collect::<String>();
+                            (!text.trim().is_empty()).then_some(text)
+                        }
+                        _ => None,
+                    })
+                })
             }
         }
     }
@@ -2162,14 +2040,7 @@ impl<'a> PageBuilder<'a> {
         let x = self.left(indent);
         let width = self.content_width(indent);
         let y = self.cursor;
-        self.push(LayoutItem::Rule(Rule {
-            x1: x,
-            y1: y,
-            x2: x + width,
-            y2: y,
-            thickness: 0.6,
-            color: Some(tokens.rule_strong),
-        }));
+        self.push(LayoutItem::Rule(Rule { x1: x, y1: y, x2: x + width, y2: y, thickness: 0.6, color: Some(tokens.rule_strong) }));
         self.cursor += size * 0.6;
     }
 
@@ -2233,9 +2104,7 @@ impl<'a> PageBuilder<'a> {
                     }
                 }
                 Block::Math { formula } => self.emit_math(formula, indent),
-                Block::Table { caption, head, body, foot } => {
-                    self.emit_table(graph, caption.as_deref(), head, body, foot, indent)
-                }
+                Block::Table { caption, head, body, foot } => self.emit_table(graph, caption.as_deref(), head, body, foot, indent),
                 Block::Opaque { kind, .. } if kind == "thematic_break" => self.emit_thematic_break(indent),
                 // An imported TeX picture environment carries no geometry
                 // itself; the host-supplied scene is the only source of its
@@ -2341,13 +2210,7 @@ fn split_footnote_definition(payload: &str) -> Option<(String, String)> {
 
 /// Split text into paragraph atoms: words, spaces, CJK glyphs, and hard breaks.
 /// Authored newlines stay forced line endings instead of collapsing into spaces.
-fn split_inline_atoms(
-    text: &str,
-    face: TextFace,
-    href: Option<&str>,
-    anchor: Option<&str>,
-    title: Option<&str>,
-) -> Vec<InlineAtom> {
+fn split_inline_atoms(text: &str, face: TextFace, href: Option<&str>, anchor: Option<&str>, title: Option<&str>) -> Vec<InlineAtom> {
     let mut atoms = Vec::new();
     let mut word = String::new();
     let mut in_space = false;
@@ -2399,13 +2262,7 @@ fn split_inline_atoms(
 ///
 /// Formula atoms are never split; one that does not fit starts the next line,
 /// and one wider than the whole column occupies a line of its own.
-fn break_inline_atoms(
-    widths: &TextMeasure<'_>,
-    atoms: Vec<InlineAtom>,
-    size: f64,
-    max_width: f64,
-    first_indent: f64,
-) -> Vec<Vec<InlineAtom>> {
+fn break_inline_atoms(widths: &TextMeasure<'_>, atoms: Vec<InlineAtom>, size: f64, max_width: f64, first_indent: f64) -> Vec<Vec<InlineAtom>> {
     let mut lines: Vec<Vec<InlineAtom>> = Vec::new();
     let mut current: Vec<InlineAtom> = Vec::new();
     let mut width = 0.0f64;
@@ -2418,16 +2275,11 @@ fn break_inline_atoms(
                 // Adjacent atoms that stay in one painted run are kerned as one
                 // pair, so breaking must reserve that pair as well.
                 let tail = match current.last() {
-                    Some(InlineAtom::Text {
-                        text: last,
-                        face: last_face,
-                        href: last_href,
-                        anchor: last_anchor,
-                        title: last_title,
-                    }) if *last_face == face
-                        && last_href.as_deref() == href.as_deref()
-                        && last_anchor.as_deref() == anchor.as_deref()
-                        && last_title.as_deref() == title.as_deref() =>
+                    Some(InlineAtom::Text { text: last, face: last_face, href: last_href, anchor: last_anchor, title: last_title })
+                        if *last_face == face
+                            && last_href.as_deref() == href.as_deref()
+                            && last_anchor.as_deref() == anchor.as_deref()
+                            && last_title.as_deref() == title.as_deref() =>
                     {
                         last.chars().last()
                     }
@@ -2454,8 +2306,7 @@ fn break_inline_atoms(
                     let mut chunk_width = 0.0;
                     let mut previous = None;
                     for ch in text.chars() {
-                        let advance =
-                            widths.advance_em(ch, face) * size + previous.map_or(0.0, |left| widths.kern(left, ch, face, size));
+                        let advance = widths.advance_em(ch, face) * size + previous.map_or(0.0, |left| widths.kern(left, ch, face, size));
                         if !chunk.is_empty() && chunk_width + advance > line_width {
                             lines.push(vec![InlineAtom::Text {
                                 text: chunk.trim_end().to_string(),
@@ -2615,9 +2466,9 @@ fn is_numeric_content(content: &[Inline]) -> bool {
     let text: String = content.iter().map(Inline::plain_text).collect();
     let text = text.trim();
     text.chars().any(|ch| ch.is_ascii_digit())
-        && text.chars().all(|ch| {
-            ch.is_ascii_digit() || matches!(ch, '.' | ',' | '-' | '+' | '%' | '/' | ':' | ' ' | '(' | ')' | '$' | '¥' | '€')
-        })
+        && text
+            .chars()
+            .all(|ch| ch.is_ascii_digit() || matches!(ch, '.' | ',' | '-' | '+' | '%' | '/' | ':' | ' ' | '(' | ')' | '$' | '¥' | '€'))
 }
 
 /// Close one line: drop trailing spaces and keep it only when it has content.
@@ -2692,9 +2543,7 @@ fn heuristic_advance_em(metrics: &FontMetricsSystem, ch: char, face: TextFace) -
     let key = GlyphKey::from_char(ch, Some("default".to_string()), FontStyle::Normal);
     let base = metrics.get_metrics(&key).map(|glyph| glyph.width.to_f64()).unwrap_or(0.5);
     match ch {
-        'i' | 'l' | 'j' | 't' | 'f' | 'r' | 'I' | '.' | ',' | '\'' | '!' | '|' | ':' | ';' | '(' | ')' | '[' | ']' => {
-            base * 0.62
-        }
+        'i' | 'l' | 'j' | 't' | 'f' | 'r' | 'I' | '.' | ',' | '\'' | '!' | '|' | ':' | ';' | '(' | ')' | '[' | ']' => base * 0.62,
         'W' | 'M' | 'm' | 'w' | '@' => base * 1.7,
         'A'..='Z' => base * 1.25,
         '0'..='9' => base * 1.1,
@@ -2749,8 +2598,7 @@ fn wrap_text(widths: &TextMeasure<'_>, text: &str, size: f64, max_width: f64, bo
             // The pair between the previous line end and this atom is painted,
             // so it counts toward the column even though the atoms are separate
             // strings.
-            let cross =
-                line.chars().last().zip(atom.chars().next()).map_or(0.0, |(left, right)| widths.kern(left, right, body, size));
+            let cross = line.chars().last().zip(atom.chars().next()).map_or(0.0, |(left, right)| widths.kern(left, right, body, size));
             if atom.trim().is_empty() {
                 if line.is_empty() || width + atom_width + cross > max_width {
                     continue;
@@ -2772,8 +2620,7 @@ fn wrap_text(widths: &TextMeasure<'_>, text: &str, size: f64, max_width: f64, bo
                 let mut chunk_width = 0.0;
                 let mut previous = None;
                 for ch in atom.chars() {
-                    let advance =
-                        widths.advance_em(ch, body) * size + previous.map_or(0.0, |left| widths.kern(left, ch, body, size));
+                    let advance = widths.advance_em(ch, body) * size + previous.map_or(0.0, |left| widths.kern(left, ch, body, size));
                     if !chunk.is_empty() && chunk_width + advance > max_width {
                         lines.push(chunk.trim_end().to_string());
                         chunk = String::new();
@@ -2857,8 +2704,7 @@ mod kerning_tests {
     fn wrap_text_counts_the_pair_between_atoms() {
         let widths = measure();
         let size = 10.0;
-        let without_cross =
-            widths.measure("A", size, BODY_FACE) + widths.measure(" ", size, BODY_FACE) + widths.measure("V", size, BODY_FACE);
+        let without_cross = widths.measure("A", size, BODY_FACE) + widths.measure(" ", size, BODY_FACE) + widths.measure("V", size, BODY_FACE);
         let with_cross = widths.measure("A V", size, BODY_FACE);
         assert!(with_cross < without_cross, "the pairs must narrow the line");
         let lines = wrap_text(&widths, "A V", size, without_cross - 0.01, BODY_FACE);
@@ -2870,8 +2716,7 @@ mod kerning_tests {
         let widths = measure();
         let size = 10.0;
         let max_width =
-            widths.measure("A", size, BODY_FACE) + widths.measure(" ", size, BODY_FACE) + widths.measure("V", size, BODY_FACE)
-                - 0.01;
+            widths.measure("A", size, BODY_FACE) + widths.measure(" ", size, BODY_FACE) + widths.measure("V", size, BODY_FACE) - 0.01;
         let lines = break_inline_atoms(&widths, vec![atom("A"), atom(" "), atom("V")], size, max_width, 0.0);
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].len(), 3);
@@ -2883,10 +2728,7 @@ mod kerning_tests {
         // of a zeroed buffer are not a parseable TrueType face.
         let damaged: &[u8] = &[0u8; 64];
         let metrics = BodyMetrics::from_faces([(
-            document_fonts::BodyFaceKey {
-                family: document_fonts::BodyFamily::Serif,
-                style: document_fonts::BodyFaceStyle::Regular,
-            },
+            document_fonts::BodyFaceKey { family: document_fonts::BodyFamily::Serif, style: document_fonts::BodyFaceStyle::Regular },
             "damaged/Tinos".to_string(),
             damaged,
         )]);
@@ -2945,8 +2787,7 @@ mod kerning_tests {
         graph.push_block(Block::Paragraph { content: vec![Inline::Text { text: "Body".to_string() }] });
 
         let mut hint = LayoutHint::a4();
-        hint.chrome =
-            ChromeHint { header: ChromeHeader::Literal("ACME REPORT"), folio: false, start_page: 1, sections: [None; 4] };
+        hint.chrome = ChromeHint { header: ChromeHeader::Literal("ACME REPORT"), folio: false, start_page: 1, sections: [None; 4] };
         let (plan, _) = layout_with_metrics(&graph, &hint, &Diagrams::new(), &metrics);
 
         let runs: Vec<&TextRun> = plan.pages[0]
@@ -2957,10 +2798,7 @@ mod kerning_tests {
                 _ => None,
             })
             .collect();
-        assert!(
-            runs.iter().any(|run| run.artifact && !run.numeric && run.text == "ACME REPORT"),
-            "the template header paints on page one"
-        );
+        assert!(runs.iter().any(|run| run.artifact && !run.numeric && run.text == "ACME REPORT"), "the template header paints on page one");
         assert!(!runs.iter().any(|run| run.artifact && run.numeric), "folio is off for this template");
     }
 
@@ -3006,11 +2844,7 @@ mod kerning_tests {
     fn template_style_reflow_changes_body_and_heading_sizes() {
         let metrics = metrics();
         let mut graph = DocumentGraph::new(document_ir::DocumentId(13));
-        graph.push_block(Block::Section {
-            level: 1,
-            title: vec![Inline::Text { text: "Heading".to_string() }],
-            children: Vec::new(),
-        });
+        graph.push_block(Block::Section { level: 1, title: vec![Inline::Text { text: "Heading".to_string() }], children: Vec::new() });
         graph.push_block(Block::Paragraph { content: vec![Inline::Text { text: "Body".to_string() }] });
 
         let mut hint = LayoutHint::a4();
@@ -3044,11 +2878,7 @@ mod kerning_tests {
     /// defaults and the wiring stays observable.
     fn named_serif_pack() -> document_fonts::BodyFaceSet {
         let base = host_pack();
-        let mono = base
-            .faces()
-            .iter()
-            .find(|face| face.family == document_fonts::BodyFamily::Mono)
-            .expect("the pack carries a mono face");
+        let mono = base.faces().iter().find(|face| face.family == document_fonts::BodyFamily::Mono).expect("the pack carries a mono face");
         let mut faces = base.faces().to_vec();
         faces.push(document_fonts::BodyFace::new(
             document_fonts::BodyFamily::Named("Test Serif"),

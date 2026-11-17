@@ -15,14 +15,10 @@ use plotter_types::{Color, Diagnostic, DiagnosticSeverity, Point, Size, codes, d
 
 use crate::{
     error::EngravingError,
-    plan::{
-        ArcPlan, BarlinePlan, BeamPlan, DotPlan, EngravingOptions, EngravingPlan, GlyphPlan, LinePlan, NotePlan, SystemPlan,
-        TextPlan,
-    },
+    plan::{ArcPlan, BarlinePlan, BeamPlan, DotPlan, EngravingOptions, EngravingPlan, GlyphPlan, LinePlan, NotePlan, SystemPlan, TextPlan},
     smufl,
     spec::{
-        Accidental, Articulation, Barline, Beam, Clef, EventKind, KeySignature, Pitch, ScoreSpec, SlurState, Step, TieState,
-        TimeSignature,
+        Accidental, Articulation, Barline, Beam, Clef, EventKind, KeySignature, Pitch, ScoreSpec, SlurState, Step, TieState, TimeSignature,
     },
 };
 
@@ -115,12 +111,8 @@ const FLAT_ORDER: [Step; 7] = [Step::B, Step::E, Step::A, Step::D, Step::G, Step
 fn key_steps(key: KeySignature) -> Vec<(Step, Accidental)> {
     match key {
         KeySignature::Natural => Vec::new(),
-        KeySignature::Sharps(count) => {
-            SHARP_ORDER[..usize::from(count.min(7))].iter().map(|step| (*step, Accidental::Sharp)).collect()
-        }
-        KeySignature::Flats(count) => {
-            FLAT_ORDER[..usize::from(count.min(7))].iter().map(|step| (*step, Accidental::Flat)).collect()
-        }
+        KeySignature::Sharps(count) => SHARP_ORDER[..usize::from(count.min(7))].iter().map(|step| (*step, Accidental::Sharp)).collect(),
+        KeySignature::Flats(count) => FLAT_ORDER[..usize::from(count.min(7))].iter().map(|step| (*step, Accidental::Flat)).collect(),
     }
 }
 
@@ -178,9 +170,7 @@ fn validate(spec: &ScoreSpec) -> Result<Vec<f64>, EngravingError> {
     if let KeySignature::Sharps(count) | KeySignature::Flats(count) = spec.key
         && count > 7
     {
-        return Err(EngravingError::unsupported(format!(
-            "key signature with {count} accidentals exceeds the 7 sharp or flat limit"
-        )));
+        return Err(EngravingError::unsupported(format!("key signature with {count} accidentals exceeds the 7 sharp or flat limit")));
     }
     let capacity = measure_capacity(spec.time)?;
     let mut durations = Vec::with_capacity(spec.measures.len());
@@ -188,11 +178,7 @@ fn validate(spec: &ScoreSpec) -> Result<Vec<f64>, EngravingError> {
         let mut total = 0.0;
         for event in &measure.events {
             if event.duration <= 0.0 {
-                return Err(EngravingError::unsupported(format!(
-                    "measure {} declares a non-positive duration {}",
-                    index + 1,
-                    event.duration
-                )));
+                return Err(EngravingError::unsupported(format!("measure {} declares a non-positive duration {}", index + 1, event.duration)));
             }
             if split_duration(event.duration).is_none() {
                 return Err(EngravingError::unsupported(format!(
@@ -356,15 +342,8 @@ pub fn engrave(spec: &ScoreSpec, options: &EngravingOptions) -> Result<Engraving
             && let Some(bpm) = spec.tempo_bpm
         {
             let baseline = origin.y - 2.5 * space;
-            plan.tempo_glyph = Some(
-                GlyphPlan::bravura(smufl::NOTE_QUARTER, Point::new(origin.x, baseline), space).with_id("tempo-glyph"),
-            );
-            plan.tempo = Some(body_text(
-                &format!("= {bpm}"),
-                Point::new(origin.x + 1.2 * space, baseline),
-                1.3 * space,
-                TextAnchor::Start,
-            ));
+            plan.tempo_glyph = Some(GlyphPlan::bravura(smufl::NOTE_QUARTER, Point::new(origin.x, baseline), space).with_id("tempo-glyph"));
+            plan.tempo = Some(body_text(&format!("= {bpm}"), Point::new(origin.x + 1.2 * space, baseline), 1.3 * space, TextAnchor::Start));
         }
 
         // 小节与事件。
@@ -425,12 +404,8 @@ pub fn engrave(spec: &ScoreSpec, options: &EngravingOptions) -> Result<Engraving
                             if let Some(accidental) = event_accidental(spec, pitch) {
                                 let adv = accidental_advance(accidental) * space;
                                 note.accidentals.push(
-                                    GlyphPlan::bravura(
-                                        accidental_glyph(accidental),
-                                        Point::new(note_x - adv - 0.15 * space, y),
-                                        space,
-                                    )
-                                    .with_id(format!("acc-{measure_index}-{event_index}-{pitch_index}")),
+                                    GlyphPlan::bravura(accidental_glyph(accidental), Point::new(note_x - adv - 0.15 * space, y), space)
+                                        .with_id(format!("acc-{measure_index}-{event_index}-{pitch_index}")),
                                 );
                                 half_width = half_width.max(adv + 0.15 * space);
                             }
@@ -448,8 +423,7 @@ pub fn engrave(spec: &ScoreSpec, options: &EngravingOptions) -> Result<Engraving
                         let avg = ys.iter().sum::<f64>() / ys.len() as f64;
                         let stem_up = avg >= origin.y + 2.0 * space;
                         half_width = half_width.max(head_advance(base) * space * 0.5);
-                        let stem_x =
-                            if stem_up { note_x + head_advance(base) * space - 0.08 * space } else { note_x - 0.08 * space };
+                        let stem_x = if stem_up { note_x + head_advance(base) * space - 0.08 * space } else { note_x - 0.08 * space };
                         let tip_y = avg + if stem_up { -STEM_LENGTH * space } else { STEM_LENGTH * space };
                         // 全音符无符杆；二分及更短都有符杆。
                         if base < 4.0 - EPS {
@@ -467,8 +441,7 @@ pub fn engrave(spec: &ScoreSpec, options: &EngravingOptions) -> Result<Engraving
                             match articulation {
                                 Articulation::Staccato => {
                                     let y = if stem_up { avg + 0.7 * space } else { avg - 0.7 * space };
-                                    note.articulation_dots
-                                        .push(DotPlan { center: Point::new(note_x + 0.5 * space, y), radius: 0.16 * space });
+                                    note.articulation_dots.push(DotPlan { center: Point::new(note_x + 0.5 * space, y), radius: 0.16 * space });
                                 }
                                 Articulation::Tenuto => {
                                     let y = if stem_up { avg + 0.6 * space } else { avg - 0.6 * space };
@@ -523,24 +496,12 @@ pub fn engrave(spec: &ScoreSpec, options: &EngravingOptions) -> Result<Engraving
             plan.barlines.push(BarlinePlan { x: bar_x, kind: measure.barline });
             match measure.barline {
                 Barline::RepeatEnd => {
-                    plan.repeat_dots.push(DotPlan {
-                        center: Point::new(bar_x - 0.7 * space, origin.y + 1.5 * space),
-                        radius: 0.15 * space,
-                    });
-                    plan.repeat_dots.push(DotPlan {
-                        center: Point::new(bar_x - 0.7 * space, origin.y + 2.5 * space),
-                        radius: 0.15 * space,
-                    });
+                    plan.repeat_dots.push(DotPlan { center: Point::new(bar_x - 0.7 * space, origin.y + 1.5 * space), radius: 0.15 * space });
+                    plan.repeat_dots.push(DotPlan { center: Point::new(bar_x - 0.7 * space, origin.y + 2.5 * space), radius: 0.15 * space });
                 }
                 Barline::RepeatStart => {
-                    plan.repeat_dots.push(DotPlan {
-                        center: Point::new(bar_x + 0.9 * space, origin.y + 1.5 * space),
-                        radius: 0.15 * space,
-                    });
-                    plan.repeat_dots.push(DotPlan {
-                        center: Point::new(bar_x + 0.9 * space, origin.y + 2.5 * space),
-                        radius: 0.15 * space,
-                    });
+                    plan.repeat_dots.push(DotPlan { center: Point::new(bar_x + 0.9 * space, origin.y + 1.5 * space), radius: 0.15 * space });
+                    plan.repeat_dots.push(DotPlan { center: Point::new(bar_x + 0.9 * space, origin.y + 2.5 * space), radius: 0.15 * space });
                 }
                 Barline::Regular | Barline::Final => {}
             }
@@ -563,16 +524,15 @@ pub fn engrave(spec: &ScoreSpec, options: &EngravingOptions) -> Result<Engraving
     pair_arcs(&mut system_plans, &geoms);
 
     // 4. 画布。
-    let canvas = Size::new(
-        max_width + 2.0 * MARGIN * space,
-        y_cursor - 2.0 * space + if spec.composer.is_some() { 2.5 * space } else { 0.0 },
-    );
-    let title = spec.title.as_ref().map(|text| {
-        body_text(text, Point::new(canvas.width * 0.5, MARGIN * space + 0.8 * space), 2.0 * space, TextAnchor::Middle)
-    });
-    let composer = spec.composer.as_ref().map(|text| {
-        body_text(text, Point::new(canvas.width - MARGIN * space, canvas.height - 1.2 * space), 1.4 * space, TextAnchor::End)
-    });
+    let canvas = Size::new(max_width + 2.0 * MARGIN * space, y_cursor - 2.0 * space + if spec.composer.is_some() { 2.5 * space } else { 0.0 });
+    let title = spec
+        .title
+        .as_ref()
+        .map(|text| body_text(text, Point::new(canvas.width * 0.5, MARGIN * space + 0.8 * space), 2.0 * space, TextAnchor::Middle));
+    let composer = spec
+        .composer
+        .as_ref()
+        .map(|text| body_text(text, Point::new(canvas.width - MARGIN * space, canvas.height - 1.2 * space), 1.4 * space, TextAnchor::End));
 
     Ok(EngravingPlan { canvas, space, systems: system_plans, title, composer, diagnostics })
 }
@@ -624,24 +584,19 @@ fn push_time_glyphs(plan: &mut SystemPlan, time: TimeSignature, origin: Point, s
     match time {
         TimeSignature::Common | TimeSignature::Cut => {
             let glyph = if time == TimeSignature::Common { smufl::TIME_COMMON } else { smufl::TIME_CUT };
-            plan.header_glyphs
-                .push(GlyphPlan::bravura(glyph, Point::new(x0 + 0.2 * space, origin.y + 2.0 * space), space).with_id("time"));
+            plan.header_glyphs.push(GlyphPlan::bravura(glyph, Point::new(x0 + 0.2 * space, origin.y + 2.0 * space), space).with_id("time"));
         }
         TimeSignature::Explicit { beats, beat_unit } => {
             let mut x = x0 + 0.2 * space;
             for digit in digits(beats) {
-                plan.header_glyphs.push(
-                    GlyphPlan::bravura(smufl::time_digit(digit), Point::new(x, origin.y + 2.0 * space), space)
-                        .with_id("time-num"),
-                );
+                plan.header_glyphs
+                    .push(GlyphPlan::bravura(smufl::time_digit(digit), Point::new(x, origin.y + 2.0 * space), space).with_id("time-num"));
                 x += 0.5 * space;
             }
             let mut x = x0 + 0.2 * space;
             for digit in digits(beat_unit) {
-                plan.header_glyphs.push(
-                    GlyphPlan::bravura(smufl::time_digit(digit), Point::new(x, origin.y + 4.0 * space), space)
-                        .with_id("time-den"),
-                );
+                plan.header_glyphs
+                    .push(GlyphPlan::bravura(smufl::time_digit(digit), Point::new(x, origin.y + 4.0 * space), space).with_id("time-den"));
                 x += 0.5 * space;
             }
         }
@@ -668,14 +623,7 @@ fn body_text(text: &str, at: Point, size: f64, anchor: TextAnchor) -> TextPlan {
     TextPlan {
         text: text.to_string(),
         at,
-        style: TextStyle {
-            fill: Some(Color::BLACK),
-            opacity: 1.0,
-            font_family: None,
-            font_size: size,
-            font_weight: None,
-            text_anchor: anchor,
-        },
+        style: TextStyle { fill: Some(Color::BLACK), opacity: 1.0, font_family: None, font_size: size, font_weight: None, text_anchor: anchor },
     }
 }
 
@@ -686,8 +634,7 @@ fn named_loss(message: &str) -> Diagnostic {
 
 /// 符尾字形：八分一枚，十六分两枚。
 fn push_flags(note: &mut NotePlan, stem_x: f64, tip_y: f64, stem_up: bool, sixteenth: bool, space: f64) {
-    let (first, second) =
-        if stem_up { (smufl::FLAG_8TH_UP, smufl::FLAG_16TH_UP) } else { (smufl::FLAG_8TH_DOWN, smufl::FLAG_16TH_DOWN) };
+    let (first, second) = if stem_up { (smufl::FLAG_8TH_UP, smufl::FLAG_16TH_UP) } else { (smufl::FLAG_8TH_DOWN, smufl::FLAG_16TH_DOWN) };
     let x = if stem_up { stem_x + 0.02 * space } else { stem_x - 1.1 * space };
     note.flags.push(GlyphPlan::bravura(first, Point::new(x, tip_y), space));
     if sixteenth {
@@ -732,8 +679,7 @@ fn beam_groups(plan: &mut SystemPlan, placed: &mut [PlacedEvent], space: f64, di
 fn emit_beam(plan: &mut SystemPlan, group: &[PlacedEvent], space: f64, diagnostics: &mut Vec<Diagnostic>) {
     let first = group.first().expect("group checked");
     let last = group.last().expect("group checked");
-    let tips: Vec<f64> =
-        group.iter().map(|event| event.y + if event.stem_up { -STEM_LENGTH * space } else { STEM_LENGTH * space }).collect();
+    let tips: Vec<f64> = group.iter().map(|event| event.y + if event.stem_up { -STEM_LENGTH * space } else { STEM_LENGTH * space }).collect();
     let lo = tips.iter().cloned().fold(f64::INFINITY, f64::min);
     let hi = tips.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
     if hi - lo > 0.5 * space {

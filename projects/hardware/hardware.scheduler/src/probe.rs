@@ -17,11 +17,7 @@ pub struct BackendProbeEvent {
 impl BackendProbeEvent {
     /// Construct a probe for `backend`.
     pub fn new(backend: impl Into<String>, kind: ProbeKind, shader_key: Option<u64>) -> Self {
-        Self {
-            backend: backend.into(),
-            kind,
-            shader_key,
-        }
+        Self { backend: backend.into(), kind, shader_key }
     }
 }
 

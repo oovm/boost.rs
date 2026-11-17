@@ -37,10 +37,7 @@ fn decodes_gzip_and_rejects_unknown_encoding() {
         url.clone(),
         url.clone(),
         200,
-        std::collections::BTreeMap::from([
-            ("content-type".into(), "application/xml".into()),
-            ("content-encoding".into(), "gzip".into()),
-        ]),
+        std::collections::BTreeMap::from([("content-type".into(), "application/xml".into()), ("content-encoding".into(), "gzip".into())]),
         BodyStorage::inline(compressed),
         Vec::new(),
         TransportProvenance::Test,

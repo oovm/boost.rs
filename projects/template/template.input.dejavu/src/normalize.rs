@@ -26,8 +26,7 @@ pub fn normalize_value(value: Value) -> Value {
                 out.insert(k, nv);
             }
             // Drop empty Text objects
-            if out.get("type") == Some(&Value::String("Text".into())) && out.get("value") == Some(&Value::String(String::new()))
-            {
+            if out.get("type") == Some(&Value::String("Text".into())) && out.get("value") == Some(&Value::String(String::new())) {
                 return Value::Null;
             }
             Value::Object(sort_keys(out))

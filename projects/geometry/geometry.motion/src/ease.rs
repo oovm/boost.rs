@@ -27,7 +27,8 @@ pub fn apply(ease: Ease, t: f32) -> f32 {
         Ease::InOutCubic => {
             if t < 0.5 {
                 4.0 * t * t * t
-            } else {
+            }
+            else {
                 1.0 - (-2.0 * t + 2.0).powi(3) / 2.0
             }
         }
@@ -38,14 +39,16 @@ pub fn apply(ease: Ease, t: f32) -> f32 {
         Ease::OutExpo => {
             if t >= 1.0 {
                 1.0
-            } else {
+            }
+            else {
                 1.0 - (-10.0 * t).exp2()
             }
         }
         Ease::InExpo => {
             if t <= 0.0 {
                 0.0
-            } else {
+            }
+            else {
                 (-10.0 * (1.0 - t)).exp2()
             }
         }
@@ -53,7 +56,8 @@ pub fn apply(ease: Ease, t: f32) -> f32 {
         Ease::InOutQuart => {
             if t < 0.5 {
                 8.0 * t * t * t * t
-            } else {
+            }
+            else {
                 1.0 - (-2.0 * t + 2.0).powi(4) / 2.0
             }
         }
@@ -86,10 +90,12 @@ pub fn fade(local: u32, dur: u32, fade_in: u32, fade_out: u32) -> f32 {
     let fade_out = fade_out.min(dur / 2 + 1);
     if local < fade_in {
         apply(Ease::OutCubic, local as f32 / (fade_in.max(1)) as f32)
-    } else if local + fade_out > dur {
+    }
+    else if local + fade_out > dur {
         let remain = dur - local;
         apply(Ease::OutCubic, remain as f32 / (fade_out.max(1)) as f32)
-    } else {
+    }
+    else {
         1.0
     }
 }

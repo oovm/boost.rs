@@ -2,9 +2,7 @@
 
 use plotter_data::{ColumnTable, GraphData, GridData, TreeData};
 
-use crate::{
-    coordinate::CoordinateSpec, facet::FacetSpec, layer::LayerSpec, mapping::Mapping, scale::ScaleSpec, theme::ThemeSpec,
-};
+use crate::{coordinate::CoordinateSpec, facet::FacetSpec, layer::LayerSpec, mapping::Mapping, scale::ScaleSpec, theme::ThemeSpec};
 
 /// 图级数据引用。
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

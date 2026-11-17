@@ -19,10 +19,9 @@ pub use error::{Result, StoreError};
 pub use memory::{MemoryStore, frontier_item_from_contract};
 pub use store::Store;
 pub use types::{
-    BrowserSessionPersistence, BrowserSessionRecord, BrowserSnapshotInput, BrowserSnapshotRecord, ChallengePauseRecord,
-    CheckpointClaim, CheckpointView, ClaimToken, DEFAULT_CLAIM_LEASE, ObjectKind, ObjectRef, PageAssetBinding, PagePhase,
-    PageTxHandle, ReleaseOutcome, ResumeState, RunHandle, RunSpec, StoreConfig, StoreDiagnosticReport, StoreDoctorIssue,
-    StoreDoctorSeverity, StoreNamespaceStats,
+    BrowserSessionPersistence, BrowserSessionRecord, BrowserSnapshotInput, BrowserSnapshotRecord, ChallengePauseRecord, CheckpointClaim,
+    CheckpointView, ClaimToken, DEFAULT_CLAIM_LEASE, ObjectKind, ObjectRef, PageAssetBinding, PagePhase, PageTxHandle, ReleaseOutcome,
+    ResumeState, RunHandle, RunSpec, StoreConfig, StoreDiagnosticReport, StoreDoctorIssue, StoreDoctorSeverity, StoreNamespaceStats,
 };
 
 #[cfg(feature = "yydb")]

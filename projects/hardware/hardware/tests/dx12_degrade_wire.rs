@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use hardware_backend_dx12::Dx12Backend;
 use hardware_capability::{DescriptorStrategy, PipelineStrategy, SyncStrategy};
 use hardware_ir::{
-    Access, DepEdge, DepKind, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph,
-    ResourceId, ResourceKind, ResourceNode, ShaderId, TaskGraph, TaskId, TaskKind, TaskNode,
+    Access, DepEdge, DepKind, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph, ResourceId, ResourceKind, ResourceNode, ShaderId,
+    TaskGraph, TaskId, TaskKind, TaskNode,
 };
 use hardware_scheduler::Backend;
 use hardware_types::ResourceId as Rid;
@@ -43,21 +43,10 @@ fn f(key: &str, v: f64) -> (String, ParamValue) {
 
 fn fill_graph() -> Graph {
     Graph {
-        resources: ResourceGraph {
-            nodes: vec![buffer(1, 4)],
-        },
+        resources: ResourceGraph { nodes: vec![buffer(1, 4)] },
         tasks: TaskGraph {
-            nodes: vec![task(
-                10,
-                TaskKind::Fill,
-                BTreeMap::from([i("dst", 1), f("value", 1.0)]),
-            )],
-            edges: vec![DepEdge {
-                from_task: None,
-                from_resource: Some(ResourceId(1)),
-                to_task: TaskId(10),
-                kind: DepKind::Data,
-            }],
+            nodes: vec![task(10, TaskKind::Fill, BTreeMap::from([i("dst", 1), f("value", 1.0)]))],
+            edges: vec![DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data }],
         },
     }
 }
@@ -88,12 +77,7 @@ fn raster_graph() -> Graph {
                     ("draw".into(), ParamValue::Str("tri".into())),
                 ]),
             )],
-            edges: vec![DepEdge {
-                from_task: None,
-                from_resource: Some(ResourceId(1)),
-                to_task: TaskId(10),
-                kind: DepKind::Data,
-            }],
+            edges: vec![DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data }],
         },
     }
 }
@@ -112,10 +96,7 @@ fn dx12_wires_degrade_strategies_soft_skip() {
     assert_eq!(s.descriptor, DescriptorStrategy::ResourceDescriptorHeap);
     assert_eq!(s.pipeline, PipelineStrategy::PsoPrecache);
     assert_eq!(s.sync, SyncStrategy::EnhancedBarriers);
-    eprintln!(
-        "dx12 strategies: descriptor={:?} pipeline={:?} sync={:?}",
-        s.descriptor, s.pipeline, s.sync
-    );
+    eprintln!("dx12 strategies: descriptor={:?} pipeline={:?} sync={:?}", s.descriptor, s.pipeline, s.sync);
 
     let fill = fill_graph();
     if let Err(err) = dx.prepare(&fill) {
@@ -150,10 +131,5 @@ fn dx12_wires_degrade_strategies_soft_skip() {
     }
     assert_eq!(dx.last_sync_path(), "enhanced_barriers");
     assert_eq!(dx.last_pipeline_path(), "pso_precache");
-    eprintln!(
-        "dx12 wired paths: descriptor={} pipeline={} sync={}",
-        dx.last_descriptor_path(),
-        dx.last_pipeline_path(),
-        dx.last_sync_path()
-    );
+    eprintln!("dx12 wired paths: descriptor={} pipeline={} sync={}", dx.last_descriptor_path(), dx.last_pipeline_path(), dx.last_sync_path());
 }

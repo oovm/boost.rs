@@ -53,10 +53,7 @@ pub fn molecule_to_scene(spec: &MoleculeSpec) -> Result<LoweredDepiction, Depict
 }
 
 /// 带描绘调参的 [`molecule_to_scene`]。
-pub fn molecule_to_scene_with_options(
-    spec: &MoleculeSpec,
-    options: &DepictionOptions,
-) -> Result<LoweredDepiction, DepictionError> {
+pub fn molecule_to_scene_with_options(spec: &MoleculeSpec, options: &DepictionOptions) -> Result<LoweredDepiction, DepictionError> {
     let plan = depict_molecule(spec, options)?;
     Ok(finish(plan))
 }
@@ -67,10 +64,7 @@ pub fn reaction_to_scene(spec: &ReactionSpec) -> Result<LoweredDepiction, Depict
 }
 
 /// 带描绘调参的 [`reaction_to_scene`]。
-pub fn reaction_to_scene_with_options(
-    spec: &ReactionSpec,
-    options: &DepictionOptions,
-) -> Result<LoweredDepiction, DepictionError> {
+pub fn reaction_to_scene_with_options(spec: &ReactionSpec, options: &DepictionOptions) -> Result<LoweredDepiction, DepictionError> {
     let plan = depict_reaction(spec, options)?;
     Ok(finish(plan))
 }

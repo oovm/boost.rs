@@ -11,7 +11,7 @@ use std::{
     collections::HashMap,
     io::{self, Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
-    sync::{atomic::AtomicBool, Arc},
+    sync::{Arc, atomic::AtomicBool},
     thread,
     time::Duration,
 };
@@ -19,13 +19,13 @@ use std::{
 use database_cluster::topology::ShardMap;
 use database_execution::cluster::{KeyValueExecutor, LocalExecutor};
 use database_server::yyds::redis::{
+    EmbeddedServerFace,
     blocking::BlockingRegistry,
     connection::{KeyAccessTracker, serve_cancellable_with_executor_and_tracker},
     execute_server_command,
     pubsub::PubSubRegistry,
     resp::RequestLimits,
     server_face::ClientRegistry,
-    EmbeddedServerFace,
 };
 use database_storage::cluster_kv::MemoryShard;
 use database_types::cluster::{ShardEpoch, ShardId};
@@ -263,7 +263,8 @@ fn mask_info(text: &str) -> String {
 
 /// 命名字段的批量文本按行归一化；`CLIENT LIST` 用空格分行，`INFO` 用 CRLF。
 fn mask_bulk(command: &[&str], body: &str) -> String {
-    let Some(first) = command.first() else {
+    let Some(first) = command.first()
+    else {
         return body.to_string();
     };
     let name = first.to_ascii_uppercase();
@@ -295,7 +296,8 @@ fn canonical(command: &[&str], frame: &Frame) -> String {
 
 /// `CONFIG GET *` 的端口值两面天然不同，除了它就是逐字比较。
 fn canonical_config(command: &[&str], frame: &Frame) -> String {
-    let Frame::Array(Some(items)) = frame else {
+    let Frame::Array(Some(items)) = frame
+    else {
         return canonical(command, frame);
     };
     let mut masked = Vec::with_capacity(items.len());
@@ -313,7 +315,8 @@ fn canonical_config(command: &[&str], frame: &Frame) -> String {
 
 #[test]
 fn two_face_parity() {
-    let Ok(ts_address) = std::env::var("FACE_PARITY_TS_ADDR") else {
+    let Ok(ts_address) = std::env::var("FACE_PARITY_TS_ADDR")
+    else {
         eprintln!("face parity skipped: FACE_PARITY_TS_ADDR is not set");
         return;
     };
@@ -333,8 +336,7 @@ fn two_face_parity() {
             }
         };
         compared += 1;
-        let mask = if command.len() >= 2 && command[0].eq_ignore_ascii_case("CONFIG") && command[1].eq_ignore_ascii_case("GET")
-        {
+        let mask = if command.len() >= 2 && command[0].eq_ignore_ascii_case("CONFIG") && command[1].eq_ignore_ascii_case("GET") {
             canonical_config(command, &left)
         }
         else if command[0].eq_ignore_ascii_case("CLIENT") && command.get(1).is_some_and(|sub| sub.eq_ignore_ascii_case("ID")) {
@@ -343,8 +345,7 @@ fn two_face_parity() {
         else {
             canonical(command, &left)
         };
-        let other = if command.len() >= 2 && command[0].eq_ignore_ascii_case("CONFIG") && command[1].eq_ignore_ascii_case("GET")
-        {
+        let other = if command.len() >= 2 && command[0].eq_ignore_ascii_case("CONFIG") && command[1].eq_ignore_ascii_case("GET") {
             canonical_config(command, &right)
         }
         else if command[0].eq_ignore_ascii_case("CLIENT") && command.get(1).is_some_and(|sub| sub.eq_ignore_ascii_case("ID")) {
@@ -386,10 +387,7 @@ fn embedded_server_face_keeps_session_state() {
     assert_eq!(run(&mut session, 2, &[b"CLIENT", b"SETNAME", b"entry"]), "+OK\r\n");
     assert_eq!(run(&mut session, 2, &[b"CLIENT", b"GETNAME"]), "$5\r\nentry\r\n");
     assert_eq!(run(&mut session, 2, &[b"CONFIG", b"SET", b"maxmemory", b"100mb"]), "+OK\r\n");
-    assert_eq!(
-        run(&mut session, 2, &[b"CONFIG", b"GET", b"maxmemory"]),
-        "*2\r\n$9\r\nmaxmemory\r\n$9\r\n104857600\r\n"
-    );
+    assert_eq!(run(&mut session, 2, &[b"CONFIG", b"GET", b"maxmemory"]), "*2\r\n$9\r\nmaxmemory\r\n$9\r\n104857600\r\n");
     assert!(run(&mut session, 2, &[b"COMMAND", b"COUNT"]).starts_with(':'));
     assert_eq!(run(&mut session, 2, &[b"INFO", b"bogus"]), "$0\r\n\r\n");
     assert_eq!(run(&mut session, 2, &[b"ACL", b"GETUSER", b"nosuch"]), "$-1\r\n");

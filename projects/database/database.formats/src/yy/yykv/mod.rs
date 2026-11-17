@@ -7,8 +7,8 @@ mod value;
 
 pub use key::Key;
 pub use kv::{
-    LEGACY_MAGIC as KV_LEGACY_MAGIC, MAGIC as KV_MAGIC, Snapshot, decode_snapshot, decode_snapshot_inline_only,
-    decode_snapshot_strict, encode_snapshot,
+    LEGACY_MAGIC as KV_LEGACY_MAGIC, MAGIC as KV_MAGIC, Snapshot, decode_snapshot, decode_snapshot_inline_only, decode_snapshot_strict,
+    encode_snapshot,
 };
 pub use record::Record;
 pub use value::{InlineValue, ObjectRef, StoredValue};

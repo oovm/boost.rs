@@ -1,9 +1,11 @@
 //! 通用程序构造器。
 
-use crate::expr::{BinOp, Expr, UnOp};
-use crate::program::{Function, Program};
-use crate::stmt::Stmt;
-use crate::types::Ty;
+use crate::{
+    expr::{BinOp, Expr, UnOp},
+    program::{Function, Program},
+    stmt::Stmt,
+    types::Ty,
+};
 
 fn c(v: f64) -> Expr {
     Expr::ConstF64(v)
@@ -36,11 +38,7 @@ pub fn scalar_step_once() -> Program {
             name: "scalar_step_once".into(),
             params: vec![],
             locals: vec![],
-            body: vec![Stmt::Return(bin(
-                BinOp::Add,
-                Expr::LoadUniform(0),
-                bin(BinOp::Mul, Expr::LoadUniform(1), Expr::LoadUniform(2)),
-            ))],
+            body: vec![Stmt::Return(bin(BinOp::Add, Expr::LoadUniform(0), bin(BinOp::Mul, Expr::LoadUniform(1), Expr::LoadUniform(2))))],
             ret: Ty::f64(),
         }],
         entry: 0,
@@ -103,8 +101,7 @@ pub fn tone_map_aces() -> Program {
     fn channel(x: Expr) -> Expr {
         let x = bin(BinOp::Max, x, c(0.0));
         let num = bin(BinOp::Mul, x.clone(), bin(BinOp::Add, bin(BinOp::Mul, c(2.51), x.clone()), c(0.03)));
-        let den =
-            bin(BinOp::Add, bin(BinOp::Mul, x.clone(), bin(BinOp::Add, bin(BinOp::Mul, c(2.43), x.clone()), c(0.59))), c(0.14));
+        let den = bin(BinOp::Add, bin(BinOp::Mul, x.clone(), bin(BinOp::Add, bin(BinOp::Mul, c(2.43), x.clone()), c(0.59))), c(0.14));
         bin(BinOp::Min, c(1.0), bin(BinOp::Max, c(0.0), bin(BinOp::Div, num, den)))
     }
     let color = Expr::LoadUniform(0);

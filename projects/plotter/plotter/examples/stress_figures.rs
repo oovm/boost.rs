@@ -3,9 +3,7 @@
 use std::{env, fs, path::Path};
 
 fn write(name: &str, scene: plotter::scene::DisplayScene, out: &Path) {
-    let svg = scene
-        .to_svg_with_authored_hooks(&format!("{name}-scene"), name, &plotter::types::DIAGRAM_THEME)
-        .expect("scene serializes");
+    let svg = scene.to_svg_with_authored_hooks(&format!("{name}-scene"), name, &plotter::types::DIAGRAM_THEME).expect("scene serializes");
     fs::write(out.join(format!("{name}.svg")), svg).expect("write svg");
 }
 

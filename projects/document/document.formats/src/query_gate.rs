@@ -68,10 +68,9 @@ impl QueryLimits {
 pub fn ensure_complete(format: &str, selector: &str, outcome: SelectorOutcome, matched: usize) -> Result<(), FormatError> {
     match outcome {
         SelectorOutcome::Matched => Ok(()),
-        SelectorOutcome::BudgetExceeded => Err(FormatError::budget(
-            format,
-            format!("selector `{selector}` stopped after {matched} matches at the query budget"),
-        )),
+        SelectorOutcome::BudgetExceeded => {
+            Err(FormatError::budget(format, format!("selector `{selector}` stopped after {matched} matches at the query budget")))
+        }
         SelectorOutcome::Unsupported => {
             Err(FormatError::unsupported(format, format!("selector `{selector}` is not supported by the active executor")))
         }

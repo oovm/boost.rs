@@ -30,9 +30,7 @@ mod variants;
 
 pub use constants::{MathConstantValue, MathConstants};
 pub use kern::{CornerKern, GlyphKerns, KernCorner, KernStep, MathKernInfo};
-pub use variants::{
-    AssemblyPart, AssemblyPlan, GlyphAssembly, GlyphConstruction, MathVariant, MathVariants, StretchAxis, StretchPlan,
-};
+pub use variants::{AssemblyPart, AssemblyPlan, GlyphAssembly, GlyphConstruction, MathVariant, MathVariants, StretchAxis, StretchPlan};
 
 use super::opentype::MathFontFamily;
 
@@ -272,16 +270,10 @@ fn glyph_construction(
                 height: match axis {
                     // Ink above the baseline is what a vertical variant grows;
                     // ink below the baseline is not part of that extent.
-                    StretchAxis::Vertical => {
-                        face.glyph_bounding_box(glyph).map(|bbox| Fixed::from_f64((bbox.y_max as f64 / one_em).max(0.0)))
-                    }
+                    StretchAxis::Vertical => face.glyph_bounding_box(glyph).map(|bbox| Fixed::from_f64((bbox.y_max as f64 / one_em).max(0.0))),
                     StretchAxis::Horizontal => None,
                 },
-                italic_correction: math
-                    .glyph_info
-                    .italic_correction
-                    .get(&glyph)
-                    .map(|correction| Fixed::from_f64(*correction as f64 / one_em)),
+                italic_correction: math.glyph_info.italic_correction.get(&glyph).map(|correction| Fixed::from_f64(*correction as f64 / one_em)),
             }
         })
         .collect();
@@ -314,8 +306,7 @@ fn extract_glyph_math(info: &MathGlyphInfo, one_em: f64) -> BTreeMap<GlyphId, Ma
         glyphs.entry(GlyphId::new(glyph)).or_default().italic_correction = Some(Fixed::from_f64(correction as f64 / one_em));
     }
     for (&glyph, &attachment) in &info.top_accent_attachment {
-        glyphs.entry(GlyphId::new(glyph)).or_default().top_accent_attachment =
-            Some(Fixed::from_f64(attachment as f64 / one_em));
+        glyphs.entry(GlyphId::new(glyph)).or_default().top_accent_attachment = Some(Fixed::from_f64(attachment as f64 / one_em));
     }
     glyphs
 }

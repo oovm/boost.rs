@@ -2,9 +2,7 @@ use std::collections::HashMap;
 
 use crate::FormatError;
 
-use super::xml_extensions::{
-    attribute_value, child_element, document_root, elements_by_local_name, parse_xml_bytes, u32_attribute,
-};
+use super::xml_extensions::{attribute_value, child_element, document_root, elements_by_local_name, parse_xml_bytes, u32_attribute};
 
 /// Resolved list marker styles from `word/numbering.xml`.
 #[derive(Debug, Default, Clone)]

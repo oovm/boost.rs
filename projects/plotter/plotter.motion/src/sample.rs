@@ -5,10 +5,7 @@ use std::collections::HashMap;
 use plotter_scene::{DisplayScene, NodeKind, Rect, SceneNode, Transform};
 
 use crate::{
-    internal::{
-        first_paths, lerp, lerp_transform, multiply_node_opacity, set_node_extent, set_node_opacity, trim_path,
-        trim_subtree,
-    },
+    internal::{first_paths, lerp, lerp_transform, multiply_node_opacity, set_node_extent, set_node_opacity, trim_path, trim_subtree},
     plan::{Channel, ChannelValue, CorrespondenceKind, EnterPolicy, ExitPolicy, Track, TransitionPlan},
 };
 
@@ -227,9 +224,10 @@ fn collect_exits<'a>(
 /// Path of the nearest surviving ancestor, used as the insertion point for an
 /// exiting subtree.
 fn exit_host(ancestors: &[&str], index: &SampleIndex<'_>) -> Option<Vec<usize>> {
-    ancestors.iter().rev().find_map(|id| {
-        if index.kinds.get(*id) == Some(&CorrespondenceKind::Update) { index.next_paths.get(*id).cloned() } else { None }
-    })
+    ancestors
+        .iter()
+        .rev()
+        .find_map(|id| if index.kinds.get(*id) == Some(&CorrespondenceKind::Update) { index.next_paths.get(*id).cloned() } else { None })
 }
 
 /// Append an exiting node at its host path, falling back to the scene roots.

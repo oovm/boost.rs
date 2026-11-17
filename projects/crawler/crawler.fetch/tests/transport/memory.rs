@@ -10,11 +10,7 @@ fn serves_registered_response() {
     let mut transport = MemoryTransport::new();
     transport.insert(
         "https://example.com/page.html",
-        MemoryEntry {
-            status: 200,
-            headers: BTreeMap::from([("content-type".into(), "text/html".into())]),
-            body: b"<html></html>".to_vec(),
-        },
+        MemoryEntry { status: 200, headers: BTreeMap::from([("content-type".into(), "text/html".into())]), body: b"<html></html>".to_vec() },
     );
     let artifact = transport
         .fetch(&FetchRequest { url: Url::parse("https://example.com/page.html").expect("url"), headers: BTreeMap::new() })

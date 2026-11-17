@@ -91,14 +91,7 @@ fn push_paint(node: &PaintNode, ox: f64, oy: f64, items: &mut Vec<LayoutItem>, d
             let thickness = above.max(MIN_RULE_THICKNESS);
             if drop <= 0.0 {
                 let centre = baseline_page - thickness / 2.0;
-                items.push(LayoutItem::Rule(Rule {
-                    x1: left,
-                    y1: centre,
-                    x2: left + bar_width,
-                    y2: centre,
-                    thickness,
-                    color: None,
-                }));
+                items.push(LayoutItem::Rule(Rule { x1: left, y1: centre, x2: left + bar_width, y2: centre, thickness, color: None }));
             }
             else {
                 // A rule that descends below the baseline needs its full box,

@@ -59,10 +59,7 @@ pub fn render_depictions(graph: &DocumentGraph) -> RenderedDepictions {
         let lowered = if language.eq_ignore_ascii_case("smiles") {
             smiles_to_scene(source)
         }
-        else if language.eq_ignore_ascii_case("mol")
-            || language.eq_ignore_ascii_case("mdl")
-            || language.eq_ignore_ascii_case("sdf")
-        {
+        else if language.eq_ignore_ascii_case("mol") || language.eq_ignore_ascii_case("mdl") || language.eq_ignore_ascii_case("sdf") {
             mdl_to_scene(source)
         }
         else {
@@ -104,21 +101,14 @@ pub fn render_depictions(graph: &DocumentGraph) -> RenderedDepictions {
                     );
                     continue;
                 }
-                match lowered.scene.to_svg_with_authored_hooks(
-                    &format!("depiction-{}", node.id.0),
-                    "depiction",
-                    &plotter_types::DIAGRAM_THEME,
-                ) {
+                match lowered.scene.to_svg_with_authored_hooks(&format!("depiction-{}", node.id.0), "depiction", &plotter_types::DIAGRAM_THEME)
+                {
                     Ok(svg) => {
                         rendered.scenes.insert(node.id, RenderedDiagram { svg });
                     }
                     Err(error) => {
                         rendered.push_loss(
-                            LossMarker {
-                                code: error.code().to_string(),
-                                message: error.message().to_string(),
-                                status: SemanticStatus::Lossy,
-                            },
+                            LossMarker { code: error.code().to_string(), message: error.message().to_string(), status: SemanticStatus::Lossy },
                             block_span,
                         );
                     }
@@ -126,11 +116,7 @@ pub fn render_depictions(graph: &DocumentGraph) -> RenderedDepictions {
             }
             Err(error) => {
                 rendered.push_loss(
-                    LossMarker {
-                        code: error.code().to_string(),
-                        message: error.message().to_string(),
-                        status: SemanticStatus::Unsupported,
-                    },
+                    LossMarker { code: error.code().to_string(), message: error.message().to_string(), status: SemanticStatus::Unsupported },
                     absolute_span(block_span, error.span()),
                 );
             }

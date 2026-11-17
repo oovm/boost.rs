@@ -1,6 +1,6 @@
 use document_ir::{
-    Asset, AssetKind, Block, DocumentGraph, IdAllocator, Inline, Relation, RelationEndpoint, RelationKind, SemanticStatus,
-    SourceKind, SourceRef, ValidationIssue,
+    Asset, AssetKind, Block, DocumentGraph, IdAllocator, Inline, Relation, RelationEndpoint, RelationKind, SemanticStatus, SourceKind,
+    SourceRef, ValidationIssue,
 };
 
 #[test]
@@ -9,8 +9,8 @@ fn unknown_inline_reference() {
     let mut graph = DocumentGraph::new(ids.document_id());
     let _allocated = ids.node_id();
     let missing = ids.node_id();
-    let _paragraph = graph
-        .push_block(Block::Paragraph { content: vec![Inline::Reference { target: missing, display: "missing".to_string() }] });
+    let _paragraph =
+        graph.push_block(Block::Paragraph { content: vec![Inline::Reference { target: missing, display: "missing".to_string() }] });
 
     let report = graph.validate();
     assert!(!report.is_valid());
@@ -83,23 +83,11 @@ fn duplicate_node_and_link_ids() {
 #[test]
 fn missing_source_and_relation_endpoints() {
     let mut graph = DocumentGraph::new(document_ir::DocumentId(1));
-    graph.attach_source(SourceRef {
-        node: document_ir::NodeId(10),
-        kind: SourceKind::Manual,
-        precision: SemanticStatus::Unresolved,
-    });
+    graph.attach_source(SourceRef { node: document_ir::NodeId(10), kind: SourceKind::Manual, precision: SemanticStatus::Unresolved });
     for (id, source, target) in [
-        (
-            1,
-            RelationEndpoint::Node(document_ir::NodeId(11)),
-            RelationEndpoint::ExternalUri("https://example.test/".to_string()),
-        ),
+        (1, RelationEndpoint::Node(document_ir::NodeId(11)), RelationEndpoint::ExternalUri("https://example.test/".to_string())),
         (2, RelationEndpoint::Asset(document_ir::AssetId(12)), RelationEndpoint::Node(document_ir::NodeId(13))),
-        (
-            3,
-            RelationEndpoint::Document(document_ir::DocumentId(2)),
-            RelationEndpoint::Unresolved { label: "unknown".to_string() },
-        ),
+        (3, RelationEndpoint::Document(document_ir::DocumentId(2)), RelationEndpoint::Unresolved { label: "unknown".to_string() }),
     ] {
         graph.push_relation(Relation { id: document_ir::LinkId(id), kind: RelationKind::References, source, target });
     }
@@ -109,10 +97,7 @@ fn missing_source_and_relation_endpoints() {
         issue,
         ValidationIssue::UnknownNode { id } if *id == document_ir::NodeId(10)
     )));
-    assert_eq!(
-        report.issues.iter().filter(|issue| matches!(issue, ValidationIssue::UnknownRelationEndpoint { .. })).count(),
-        3
-    );
+    assert_eq!(report.issues.iter().filter(|issue| matches!(issue, ValidationIssue::UnknownRelationEndpoint { .. })).count(), 3);
 }
 
 #[test]
@@ -121,12 +106,7 @@ fn missing_section_and_list_children() {
     graph.push_block(Block::Section { level: 1, title: Vec::new(), children: vec![document_ir::NodeId(20)] });
     graph.push_block(Block::List {
         ordered: false,
-        items: vec![document_ir::ListItem {
-            content: Vec::new(),
-            children: vec![document_ir::NodeId(21)],
-            number: None,
-            ..Default::default()
-        }],
+        items: vec![document_ir::ListItem { content: Vec::new(), children: vec![document_ir::NodeId(21)], number: None, ..Default::default() }],
     });
 
     let report = graph.validate();
@@ -145,10 +125,7 @@ fn missing_section_and_list_children() {
 #[test]
 fn containment_cycles_rejected_relation_cycles_allowed() {
     let mut cyclic = DocumentGraph::new(document_ir::DocumentId(1));
-    cyclic.push_block_with_id(
-        document_ir::NodeId(1),
-        Block::Section { level: 1, title: Vec::new(), children: vec![document_ir::NodeId(2)] },
-    );
+    cyclic.push_block_with_id(document_ir::NodeId(1), Block::Section { level: 1, title: Vec::new(), children: vec![document_ir::NodeId(2)] });
     cyclic.push_block_with_id(
         document_ir::NodeId(2),
         Block::List {
@@ -245,19 +222,11 @@ fn ordered_list_zero_or_non_increasing_numbers_are_rejected() {
         let mut graph = DocumentGraph::new(document_ir::DocumentId(1));
         graph.push_block(Block::List {
             ordered: true,
-            items: vec![document_ir::ListItem {
-                content: Vec::new(),
-                children: Vec::new(),
-                number: Some(0),
-                ..Default::default()
-            }],
+            items: vec![document_ir::ListItem { content: Vec::new(), children: Vec::new(), number: Some(0), ..Default::default() }],
         });
         let report = graph.validate();
         assert!(
-            report
-                .issues
-                .iter()
-                .any(|issue| matches!(issue, ValidationIssue::OutOfOrderListItemNumber { item_index: 0, found: Some(0), .. }))
+            report.issues.iter().any(|issue| matches!(issue, ValidationIssue::OutOfOrderListItemNumber { item_index: 0, found: Some(0), .. }))
         );
     }
 
@@ -273,10 +242,12 @@ fn ordered_list_zero_or_non_increasing_numbers_are_rejected() {
             ],
         });
         let report = graph.validate();
-        assert!(report.issues.iter().any(|issue| matches!(
-            issue,
-            ValidationIssue::OutOfOrderListItemNumber { item_index: 1, found: Some(1), previous: Some(1), .. }
-        )));
+        assert!(
+            report.issues.iter().any(|issue| matches!(
+                issue,
+                ValidationIssue::OutOfOrderListItemNumber { item_index: 1, found: Some(1), previous: Some(1), .. }
+            ))
+        );
     }
 
     // Reverse order
@@ -290,10 +261,12 @@ fn ordered_list_zero_or_non_increasing_numbers_are_rejected() {
             ],
         });
         let report = graph.validate();
-        assert!(report.issues.iter().any(|issue| matches!(
-            issue,
-            ValidationIssue::OutOfOrderListItemNumber { item_index: 1, found: Some(2), previous: Some(5), .. }
-        )));
+        assert!(
+            report.issues.iter().any(|issue| matches!(
+                issue,
+                ValidationIssue::OutOfOrderListItemNumber { item_index: 1, found: Some(2), previous: Some(5), .. }
+            ))
+        );
     }
 }
 
@@ -308,12 +281,7 @@ fn unordered_list_must_not_carry_number() {
         ],
     });
     let report = graph.validate();
-    assert!(
-        report
-            .issues
-            .iter()
-            .any(|issue| matches!(issue, ValidationIssue::UnexpectedListItemNumber { item_index: 1, found: 7, .. }))
-    );
+    assert!(report.issues.iter().any(|issue| matches!(issue, ValidationIssue::UnexpectedListItemNumber { item_index: 1, found: 7, .. })));
 }
 
 #[test]
@@ -328,12 +296,7 @@ fn nested_ordered_lists_have_independent_numbering() {
     });
     graph.push_block(Block::List {
         ordered: true,
-        items: vec![document_ir::ListItem {
-            content: Vec::new(),
-            children: vec![inner],
-            number: Some(1),
-            ..Default::default()
-        }],
+        items: vec![document_ir::ListItem { content: Vec::new(), children: vec![inner], number: Some(1), ..Default::default() }],
     });
     assert!(graph.validate().is_valid());
 }
@@ -376,9 +339,7 @@ fn zero_colspan_is_rejected() {
         foot: Vec::new(),
     });
     let report = graph.validate();
-    assert!(
-        report.issues.iter().any(|issue| matches!(issue, ValidationIssue::ZeroColspan { row_index: 0, cell_index: 0, .. }))
-    );
+    assert!(report.issues.iter().any(|issue| matches!(issue, ValidationIssue::ZeroColspan { row_index: 0, cell_index: 0, .. })));
 }
 
 #[test]
@@ -391,9 +352,7 @@ fn zero_rowspan_is_rejected() {
         foot: Vec::new(),
     });
     let report = graph.validate();
-    assert!(
-        report.issues.iter().any(|issue| matches!(issue, ValidationIssue::ZeroRowspan { row_index: 0, cell_index: 0, .. }))
-    );
+    assert!(report.issues.iter().any(|issue| matches!(issue, ValidationIssue::ZeroRowspan { row_index: 0, cell_index: 0, .. })));
 }
 
 #[test]
@@ -410,10 +369,12 @@ fn colspan_out_of_bounds_is_rejected() {
         foot: Vec::new(),
     });
     let report = graph.validate();
-    assert!(report.issues.iter().any(|issue| matches!(
-        issue,
-        ValidationIssue::ColspanOutOfBounds { row_index: 1, cell_index: 0, found: 10, max_columns: 2, .. }
-    )));
+    assert!(
+        report
+            .issues
+            .iter()
+            .any(|issue| matches!(issue, ValidationIssue::ColspanOutOfBounds { row_index: 1, cell_index: 0, found: 10, max_columns: 2, .. }))
+    );
 }
 
 #[test]
@@ -438,17 +399,16 @@ fn rowspan_out_of_bounds_is_rejected() {
     graph.push_block(Block::Table {
         caption: None,
         head: Vec::new(),
-        body: vec![
-            document_ir::TableRow { cells: vec![empty_cell(1, 5)] },
-            document_ir::TableRow { cells: vec![empty_cell(1, 1)] },
-        ],
+        body: vec![document_ir::TableRow { cells: vec![empty_cell(1, 5)] }, document_ir::TableRow { cells: vec![empty_cell(1, 1)] }],
         foot: Vec::new(),
     });
     let report = graph.validate();
-    assert!(report.issues.iter().any(|issue| matches!(
-        issue,
-        ValidationIssue::RowspanOutOfBounds { row_index: 0, cell_index: 0, found: 5, total_rows: 2, .. }
-    )));
+    assert!(
+        report
+            .issues
+            .iter()
+            .any(|issue| matches!(issue, ValidationIssue::RowspanOutOfBounds { row_index: 0, cell_index: 0, found: 5, total_rows: 2, .. }))
+    );
 }
 
 #[test]
@@ -464,14 +424,9 @@ fn table_with_caption_and_spans_roundtrips_via_serde() {
         document_ir::TableRow { cells: vec![text_cell(&mut graph, "Top-1", 1, 1), text_cell(&mut graph, "Top-5", 1, 1)] },
     ];
     let body = vec![document_ir::TableRow {
-        cells: vec![
-            text_cell(&mut graph, "ResNet", 1, 1),
-            text_cell(&mut graph, "77%", 1, 1),
-            text_cell(&mut graph, "93%", 1, 1),
-        ],
+        cells: vec![text_cell(&mut graph, "ResNet", 1, 1), text_cell(&mut graph, "77%", 1, 1), text_cell(&mut graph, "93%", 1, 1)],
     }];
-    let table_id =
-        graph.push_block(Block::Table { caption: Some("表 1：总体准确率".into()), head, body, foot: Vec::new() });
+    let table_id = graph.push_block(Block::Table { caption: Some("表 1：总体准确率".into()), head, body, foot: Vec::new() });
 
     assert!(graph.validate().is_valid());
 

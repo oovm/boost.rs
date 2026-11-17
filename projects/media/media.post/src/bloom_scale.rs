@@ -51,9 +51,19 @@ impl UcfDownsample2xRgbBuilder {
             let offset = builder.const_u32(channel);
             let indices = [
                 b(&builder, BinOp::Add, b(&builder, BinOp::Mul, source_pixel.clone(), builder.const_u32(3)), offset.clone()),
-                b(&builder, BinOp::Add, b(&builder, BinOp::Mul, b(&builder, BinOp::Add, source_pixel.clone(), builder.const_u32(1)), builder.const_u32(3)), offset.clone()),
+                b(
+                    &builder,
+                    BinOp::Add,
+                    b(&builder, BinOp::Mul, b(&builder, BinOp::Add, source_pixel.clone(), builder.const_u32(1)), builder.const_u32(3)),
+                    offset.clone(),
+                ),
                 b(&builder, BinOp::Add, b(&builder, BinOp::Mul, next_pixel.clone(), builder.const_u32(3)), offset.clone()),
-                b(&builder, BinOp::Add, b(&builder, BinOp::Mul, b(&builder, BinOp::Add, next_pixel.clone(), builder.const_u32(1)), builder.const_u32(3)), offset),
+                b(
+                    &builder,
+                    BinOp::Add,
+                    b(&builder, BinOp::Mul, b(&builder, BinOp::Add, next_pixel.clone(), builder.const_u32(1)), builder.const_u32(3)),
+                    offset,
+                ),
             ];
             let values = indices.map(|index| builder.load_buffer(1, index));
             builder.store_buffer(2, b(&builder, BinOp::Add, output.clone(), builder.const_u32(channel)), channel_sum(&builder, values));
@@ -118,8 +128,11 @@ impl UcfUpsampleRgbBuilder {
         let output = b(&builder, BinOp::Mul, gid, builder.const_u32(3));
         for channel in 0..3u32 {
             let value = builder.load_buffer(1, b(&builder, BinOp::Add, source_base.clone(), builder.const_u32(channel)));
-            builder.store_buffer(2, b(&builder, BinOp::Add, output.clone(), builder.const_u32(channel)),
-                b(&builder, BinOp::Mul, value, builder.const_f32(self.weight)));
+            builder.store_buffer(
+                2,
+                b(&builder, BinOp::Add, output.clone(), builder.const_u32(channel)),
+                b(&builder, BinOp::Mul, value, builder.const_f32(self.weight)),
+            );
         }
         ProgramBuilder::new()
             .structured_entry(builder, Ty::f32(), Expr::ConstF32(0.0))

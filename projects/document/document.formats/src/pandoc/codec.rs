@@ -9,9 +9,8 @@ use serde_json::{Map, Value};
 use crate::FormatError;
 
 use super::model::{
-    API_VERSION, Alignment, Attr, Block, Caption, Cell, Citation, CitationMode, ColSpec, Inline, ListNumberDelim,
-    ListNumberStyle, MathType, MetaValue, OrderedList, PandocDocument, QuoteType, Row, Table, TableBody, TableFoot, TableHead,
-    Target,
+    API_VERSION, Alignment, Attr, Block, Caption, Cell, Citation, CitationMode, ColSpec, Inline, ListNumberDelim, ListNumberStyle, MathType,
+    MetaValue, OrderedList, PandocDocument, QuoteType, Row, Table, TableBody, TableFoot, TableHead, Target,
 };
 
 /// Format identifier used in diagnostics and the capability table.
@@ -37,13 +36,9 @@ impl Default for PandocBudget {
 /// Decode Pandoc JSON bytes into the typed model.
 pub fn decode(bytes: &[u8], budget: &PandocBudget) -> Result<PandocDocument, FormatError> {
     if bytes.len() > budget.max_bytes {
-        return Err(FormatError::budget(
-            FORMAT_ID,
-            format!("input is {} bytes but the limit is {} bytes", bytes.len(), budget.max_bytes),
-        ));
+        return Err(FormatError::budget(FORMAT_ID, format!("input is {} bytes but the limit is {} bytes", bytes.len(), budget.max_bytes)));
     }
-    let value: Value =
-        serde_json::from_slice(bytes).map_err(|error| FormatError::parse(FORMAT_ID, format!("invalid JSON: {error}")))?;
+    let value: Value = serde_json::from_slice(bytes).map_err(|error| FormatError::parse(FORMAT_ID, format!("invalid JSON: {error}")))?;
     let mut decoder = Decoder { budget: *budget, nodes: 0 };
     decoder.decode_document(&value)
 }
@@ -52,13 +47,9 @@ pub fn decode(bytes: &[u8], budget: &PandocBudget) -> Result<PandocDocument, For
 pub fn encode(document: &PandocDocument, budget: &PandocBudget) -> Result<String, FormatError> {
     let mut encoder = Encoder { budget: *budget, nodes: 0 };
     let value = encoder.encode_document(document)?;
-    let text = serde_json::to_string(&value)
-        .map_err(|error| FormatError::parse(FORMAT_ID, format!("failed to serialize JSON: {error}")))?;
+    let text = serde_json::to_string(&value).map_err(|error| FormatError::parse(FORMAT_ID, format!("failed to serialize JSON: {error}")))?;
     if text.len() > budget.max_bytes {
-        return Err(FormatError::budget(
-            FORMAT_ID,
-            format!("output is {} bytes but the limit is {} bytes", text.len(), budget.max_bytes),
-        ));
+        return Err(FormatError::budget(FORMAT_ID, format!("output is {} bytes but the limit is {} bytes", text.len(), budget.max_bytes)));
     }
     Ok(text)
 }
@@ -147,20 +138,14 @@ impl Decoder {
     fn count_node(&mut self, pointer: &str) -> Result<(), FormatError> {
         self.nodes += 1;
         if self.nodes > self.budget.max_nodes {
-            return Err(FormatError::budget(
-                FORMAT_ID,
-                format!("{pointer}: node count exceeds the limit of {}", self.budget.max_nodes),
-            ));
+            return Err(FormatError::budget(FORMAT_ID, format!("{pointer}: node count exceeds the limit of {}", self.budget.max_nodes)));
         }
         Ok(())
     }
 
     fn check_depth(&self, depth: usize, pointer: &str) -> Result<(), FormatError> {
         if depth > self.budget.max_depth {
-            return Err(FormatError::budget(
-                FORMAT_ID,
-                format!("{pointer}: nesting depth exceeds the limit of {}", self.budget.max_depth),
-            ));
+            return Err(FormatError::budget(FORMAT_ID, format!("{pointer}: nesting depth exceeds the limit of {}", self.budget.max_depth)));
         }
         Ok(())
     }
@@ -227,9 +212,9 @@ impl Decoder {
                 }
                 Ok(MetaValue::List(decoded))
             }
-            "MetaBool" => Ok(MetaValue::Bool(
-                payload(object, pointer)?.as_bool().ok_or_else(|| decode_error(&c_pointer, "expected a boolean"))?,
-            )),
+            "MetaBool" => {
+                Ok(MetaValue::Bool(payload(object, pointer)?.as_bool().ok_or_else(|| decode_error(&c_pointer, "expected a boolean"))?))
+            }
             "MetaString" => Ok(MetaValue::String(as_string(payload(object, pointer)?, &c_pointer)?.to_string())),
             "MetaInlines" => {
                 let inlines = self.decode_inlines(payload(object, pointer)?, &c_pointer, depth + 1)?;
@@ -336,11 +321,7 @@ impl Decoder {
                     let definitions_pointer = index_pointer(&entry_pointer, 1);
                     let mut definitions = Vec::with_capacity(definitions_value.len());
                     for (definition_index, definition) in definitions_value.iter().enumerate() {
-                        definitions.push(self.decode_blocks(
-                            definition,
-                            &index_pointer(&definitions_pointer, definition_index),
-                            depth + 1,
-                        )?);
+                        definitions.push(self.decode_blocks(definition, &index_pointer(&definitions_pointer, definition_index), depth + 1)?);
                     }
                     decoded.push((term, definitions));
                 }
@@ -391,10 +372,7 @@ impl Decoder {
             let item_pointer = index_pointer(&colspecs_pointer, index);
             let pair = exact_arity(colspec, 2, &item_pointer)?;
             colspecs.push(ColSpec {
-                alignment: decode_alignment(
-                    as_string(&pair[0], &index_pointer(&item_pointer, 0))?,
-                    &index_pointer(&item_pointer, 0),
-                )?,
+                alignment: decode_alignment(as_string(&pair[0], &index_pointer(&item_pointer, 0))?, &index_pointer(&item_pointer, 0))?,
                 width: as_f64(&pair[1], &index_pointer(&item_pointer, 1))?,
             });
         }
@@ -513,10 +491,7 @@ impl Decoder {
             "Quoted" => {
                 let parts = exact_arity(payload(object, pointer)?, 2, &c_pointer)?;
                 Ok(Inline::Quoted {
-                    kind: decode_quote_type(
-                        as_string(&parts[0], &index_pointer(&c_pointer, 0))?,
-                        &index_pointer(&c_pointer, 0),
-                    )?,
+                    kind: decode_quote_type(as_string(&parts[0], &index_pointer(&c_pointer, 0))?, &index_pointer(&c_pointer, 0))?,
                     inlines: self.decode_inlines(&parts[1], &index_pointer(&c_pointer, 1), depth + 1)?,
                 })
             }
@@ -528,10 +503,7 @@ impl Decoder {
                 for (index, citation) in citations_value.iter().enumerate() {
                     citations.push(self.decode_citation(citation, &index_pointer(&citations_pointer, index), depth + 1)?);
                 }
-                Ok(Inline::Cite {
-                    citations,
-                    inlines: self.decode_inlines(&parts[1], &index_pointer(&c_pointer, 1), depth + 1)?,
-                })
+                Ok(Inline::Cite { citations, inlines: self.decode_inlines(&parts[1], &index_pointer(&c_pointer, 1), depth + 1)? })
             }
             "Code" => {
                 let parts = exact_arity(payload(object, pointer)?, 2, &c_pointer)?;
@@ -555,10 +527,7 @@ impl Decoder {
             "Math" => {
                 let parts = exact_arity(payload(object, pointer)?, 2, &c_pointer)?;
                 Ok(Inline::Math {
-                    display: decode_math_type(
-                        as_string(&parts[0], &index_pointer(&c_pointer, 0))?,
-                        &index_pointer(&c_pointer, 0),
-                    )?,
+                    display: decode_math_type(as_string(&parts[0], &index_pointer(&c_pointer, 0))?, &index_pointer(&c_pointer, 0))?,
                     text: as_string(&parts[1], &index_pointer(&c_pointer, 1))?.to_string(),
                 })
             }
@@ -579,12 +548,7 @@ impl Decoder {
                     url: as_string(&target_parts[0], &index_pointer(&target_pointer, 0))?.to_string(),
                     title: as_string(&target_parts[1], &index_pointer(&target_pointer, 1))?.to_string(),
                 };
-                if tag == "Link" {
-                    Ok(Inline::Link { attr, inlines, target })
-                }
-                else {
-                    Ok(Inline::Image { attr, inlines, target })
-                }
+                if tag == "Link" { Ok(Inline::Link { attr, inlines, target }) } else { Ok(Inline::Image { attr, inlines, target }) }
             }
             "Note" => Ok(Inline::Note(self.decode_blocks(payload(object, pointer)?, &c_pointer, depth + 1)?)),
             "Span" => {
@@ -602,10 +566,8 @@ impl Decoder {
         self.check_depth(depth, pointer)?;
         let object = as_object(value, pointer)?;
         for key in object.keys() {
-            if !matches!(
-                key.as_str(),
-                "citationId" | "citationPrefix" | "citationSuffix" | "citationMode" | "citationNoteNum" | "citationHash"
-            ) {
+            if !matches!(key.as_str(), "citationId" | "citationPrefix" | "citationSuffix" | "citationMode" | "citationNoteNum" | "citationHash")
+            {
                 return Err(decode_error(pointer, format!("unknown citation field `{key}`")));
             }
         }
@@ -619,10 +581,7 @@ impl Decoder {
             id: as_string(id, &join_pointer(pointer, "citationId"))?.to_string(),
             prefix: self.decode_inlines(prefix, &join_pointer(pointer, "citationPrefix"), depth + 1)?,
             suffix: self.decode_inlines(suffix, &join_pointer(pointer, "citationSuffix"), depth + 1)?,
-            mode: decode_citation_mode(
-                as_string(mode, &join_pointer(pointer, "citationMode"))?,
-                &join_pointer(pointer, "citationMode"),
-            )?,
+            mode: decode_citation_mode(as_string(mode, &join_pointer(pointer, "citationMode"))?, &join_pointer(pointer, "citationMode"))?,
             note_num: as_i64(note_num, &join_pointer(pointer, "citationNoteNum"))?,
             hash: as_i64(hash, &join_pointer(pointer, "citationHash"))?,
         })
@@ -708,20 +667,14 @@ impl Encoder {
     /// limit.
     fn check_depth(&self, depth: usize) -> Result<(), FormatError> {
         if depth > self.budget.max_depth {
-            return Err(FormatError::budget(
-                FORMAT_ID,
-                format!("nesting depth {depth} exceeds the limit of {}", self.budget.max_depth),
-            ));
+            return Err(FormatError::budget(FORMAT_ID, format!("nesting depth {depth} exceeds the limit of {}", self.budget.max_depth)));
         }
         Ok(())
     }
 
     fn encode_document(&mut self, document: &PandocDocument) -> Result<Value, FormatError> {
         if document.api_version != API_VERSION {
-            return Err(FormatError::parse(
-                FORMAT_ID,
-                format!("cannot encode unsupported `pandoc-api-version` {:?}", document.api_version),
-            ));
+            return Err(FormatError::parse(FORMAT_ID, format!("cannot encode unsupported `pandoc-api-version` {:?}", document.api_version)));
         }
         self.check_depth(0)?;
         let mut object = Map::new();
@@ -798,9 +751,7 @@ impl Encoder {
                 }
                 Ok(tagged("LineBlock", Value::Array(encoded)))
             }
-            Block::CodeBlock(attr, text) => {
-                Ok(tagged("CodeBlock", Value::Array(vec![self.encode_attr(attr), Value::String(text.clone())])))
-            }
+            Block::CodeBlock(attr, text) => Ok(tagged("CodeBlock", Value::Array(vec![self.encode_attr(attr), Value::String(text.clone())]))),
             Block::RawBlock(format, text) => {
                 Ok(tagged("RawBlock", Value::Array(vec![Value::String(format.clone()), Value::String(text.clone())])))
             }
@@ -831,20 +782,13 @@ impl Encoder {
                     for definition in definitions {
                         definition_values.push(Value::Array(self.encode_blocks(definition, depth + 1)?));
                     }
-                    encoded.push(Value::Array(vec![
-                        Value::Array(self.encode_inlines(term, depth + 1)?),
-                        Value::Array(definition_values),
-                    ]));
+                    encoded.push(Value::Array(vec![Value::Array(self.encode_inlines(term, depth + 1)?), Value::Array(definition_values)]));
                 }
                 Ok(tagged("DefinitionList", Value::Array(encoded)))
             }
             Block::Header { level, attr, inlines } => Ok(tagged(
                 "Header",
-                Value::Array(vec![
-                    Value::from(*level),
-                    self.encode_attr(attr),
-                    Value::Array(self.encode_inlines(inlines, depth + 1)?),
-                ]),
+                Value::Array(vec![Value::from(*level), self.encode_attr(attr), Value::Array(self.encode_inlines(inlines, depth + 1)?)]),
             )),
             Block::HorizontalRule => Ok(tagged_nullary("HorizontalRule")),
             Block::Table(table) => Ok(tagged("Table", self.encode_table(table, depth + 1)?)),
@@ -856,10 +800,9 @@ impl Encoder {
                     Value::Array(self.encode_blocks(blocks, depth + 1)?),
                 ]),
             )),
-            Block::Div { attr, blocks } => Ok(tagged(
-                "Div",
-                Value::Array(vec![self.encode_attr(attr), Value::Array(self.encode_blocks(blocks, depth + 1)?)]),
-            )),
+            Block::Div { attr, blocks } => {
+                Ok(tagged("Div", Value::Array(vec![self.encode_attr(attr), Value::Array(self.encode_blocks(blocks, depth + 1)?)])))
+            }
         }
     }
 
@@ -867,10 +810,7 @@ impl Encoder {
         self.check_depth(depth)?;
         let mut colspecs = Vec::with_capacity(table.colspecs.len());
         for colspec in &table.colspecs {
-            colspecs.push(Value::Array(vec![
-                Value::String(encode_alignment(colspec.alignment).into()),
-                Value::from(colspec.width),
-            ]));
+            colspecs.push(Value::Array(vec![Value::String(encode_alignment(colspec.alignment).into()), Value::from(colspec.width)]));
         }
         let mut bodies = Vec::with_capacity(table.bodies.len());
         for body in &table.bodies {
@@ -885,15 +825,9 @@ impl Encoder {
             self.encode_attr(&table.attr),
             self.encode_caption(&table.caption, depth + 1)?,
             Value::Array(colspecs),
-            Value::Array(vec![
-                self.encode_attr(&table.head.attr),
-                Value::Array(self.encode_rows(&table.head.rows, depth + 1)?),
-            ]),
+            Value::Array(vec![self.encode_attr(&table.head.attr), Value::Array(self.encode_rows(&table.head.rows, depth + 1)?)]),
             Value::Array(bodies),
-            Value::Array(vec![
-                self.encode_attr(&table.foot.attr),
-                Value::Array(self.encode_rows(&table.foot.rows, depth + 1)?),
-            ]),
+            Value::Array(vec![self.encode_attr(&table.foot.attr), Value::Array(self.encode_rows(&table.foot.rows, depth + 1)?)]),
         ]))
     }
 
@@ -929,10 +863,7 @@ impl Encoder {
             Value::String(attr.id.clone()),
             Value::Array(attr.classes.iter().cloned().map(Value::String).collect()),
             Value::Array(
-                attr.pairs
-                    .iter()
-                    .map(|(key, value)| Value::Array(vec![Value::String(key.clone()), Value::String(value.clone())]))
-                    .collect(),
+                attr.pairs.iter().map(|(key, value)| Value::Array(vec![Value::String(key.clone()), Value::String(value.clone())])).collect(),
             ),
         ])
     }
@@ -951,55 +882,37 @@ impl Encoder {
             Inline::SmallCaps(inlines) => Ok(tagged("SmallCaps", Value::Array(self.encode_inlines(inlines, depth + 1)?))),
             Inline::Quoted { kind, inlines } => Ok(tagged(
                 "Quoted",
-                Value::Array(vec![
-                    Value::String(encode_quote_type(*kind).into()),
-                    Value::Array(self.encode_inlines(inlines, depth + 1)?),
-                ]),
+                Value::Array(vec![Value::String(encode_quote_type(*kind).into()), Value::Array(self.encode_inlines(inlines, depth + 1)?)]),
             )),
             Inline::Cite { citations, inlines } => {
                 let mut encoded = Vec::with_capacity(citations.len());
                 for citation in citations {
                     encoded.push(self.encode_citation(citation, depth + 1)?);
                 }
-                Ok(tagged(
-                    "Cite",
-                    Value::Array(vec![Value::Array(encoded), Value::Array(self.encode_inlines(inlines, depth + 1)?)]),
-                ))
+                Ok(tagged("Cite", Value::Array(vec![Value::Array(encoded), Value::Array(self.encode_inlines(inlines, depth + 1)?)])))
             }
-            Inline::Code { attr, text } => {
-                Ok(tagged("Code", Value::Array(vec![self.encode_attr(attr), Value::String(text.clone())])))
-            }
+            Inline::Code { attr, text } => Ok(tagged("Code", Value::Array(vec![self.encode_attr(attr), Value::String(text.clone())]))),
             Inline::Space => Ok(tagged_nullary("Space")),
             Inline::SoftBreak => Ok(tagged_nullary("SoftBreak")),
             Inline::LineBreak => Ok(tagged_nullary("LineBreak")),
-            Inline::Math { display, text } => Ok(tagged(
-                "Math",
-                Value::Array(vec![Value::String(encode_math_type(*display).into()), Value::String(text.clone())]),
-            )),
+            Inline::Math { display, text } => {
+                Ok(tagged("Math", Value::Array(vec![Value::String(encode_math_type(*display).into()), Value::String(text.clone())])))
+            }
             Inline::RawInline { format, text } => {
                 Ok(tagged("RawInline", Value::Array(vec![Value::String(format.clone()), Value::String(text.clone())])))
             }
             Inline::Link { attr, inlines, target } => Ok(tagged(
                 "Link",
-                Value::Array(vec![
-                    self.encode_attr(attr),
-                    Value::Array(self.encode_inlines(inlines, depth + 1)?),
-                    encode_target(target),
-                ]),
+                Value::Array(vec![self.encode_attr(attr), Value::Array(self.encode_inlines(inlines, depth + 1)?), encode_target(target)]),
             )),
             Inline::Image { attr, inlines, target } => Ok(tagged(
                 "Image",
-                Value::Array(vec![
-                    self.encode_attr(attr),
-                    Value::Array(self.encode_inlines(inlines, depth + 1)?),
-                    encode_target(target),
-                ]),
+                Value::Array(vec![self.encode_attr(attr), Value::Array(self.encode_inlines(inlines, depth + 1)?), encode_target(target)]),
             )),
             Inline::Note(blocks) => Ok(tagged("Note", Value::Array(self.encode_blocks(blocks, depth + 1)?))),
-            Inline::Span { attr, inlines } => Ok(tagged(
-                "Span",
-                Value::Array(vec![self.encode_attr(attr), Value::Array(self.encode_inlines(inlines, depth + 1)?)]),
-            )),
+            Inline::Span { attr, inlines } => {
+                Ok(tagged("Span", Value::Array(vec![self.encode_attr(attr), Value::Array(self.encode_inlines(inlines, depth + 1)?)])))
+            }
         }
     }
 

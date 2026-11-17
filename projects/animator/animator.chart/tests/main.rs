@@ -1,9 +1,7 @@
 //! 图表数据时间轴：状态编译、取样差异与错误定位。
 
 use animator_chart::{ChartState, ChartTimeline, ChartTimelineError};
-use plotter_chart::{
-    ChannelEncoding, ChartOptions, ChartSpec, DataColumn, DataSnapshot, FieldKind, FieldRef, Mark, Value,
-};
+use plotter_chart::{ChannelEncoding, ChartOptions, ChartSpec, DataColumn, DataSnapshot, FieldKind, FieldRef, Mark, Value};
 use plotter_scene::{DisplayScene, NodeKind};
 
 /// 两栏柱状图：`cat` 是分类，`value` 是高度。
@@ -18,34 +16,19 @@ fn spec() -> ChartSpec {
 /// 两份观察，只有第二列数值不同。
 fn data(values: [f64; 2]) -> DataSnapshot {
     DataSnapshot::new(vec![
-        DataColumn::new(
-            "cat",
-            FieldKind::Nominal,
-            vec![Value::Text("a".to_string()), Value::Text("b".to_string())],
-        ),
+        DataColumn::new("cat", FieldKind::Nominal, vec![Value::Text("a".to_string()), Value::Text("b".to_string())]),
         DataColumn::new("value", FieldKind::Quantitative, values.iter().copied().map(Value::Number).collect()),
     ])
 }
 
 /// 找到 id 为 `chart-bar-1` 的节点横向平移；柱高变化体现为 transform 差异。
 fn bar_x(scene: &DisplayScene, id: &str) -> f64 {
-    scene
-        .nodes
-        .iter()
-        .find(|node| node.id.as_deref() == Some(id))
-        .unwrap_or_else(|| panic!("场景里没有 id 为 `{id}` 的节点"))
-        .transform
-        .e()
+    scene.nodes.iter().find(|node| node.id.as_deref() == Some(id)).unwrap_or_else(|| panic!("场景里没有 id 为 `{id}` 的节点")).transform.e()
 }
 
 /// 找到 id 为 `chart-bar-1` 的节点的矩形高度；柱高变化体现为 `Extent` 插值。
 fn bar_height(scene: &DisplayScene, id: &str) -> f64 {
-    match &scene
-        .nodes
-        .iter()
-        .find(|node| node.id.as_deref() == Some(id))
-        .unwrap_or_else(|| panic!("场景里没有 id 为 `{id}` 的节点"))
-        .kind
+    match &scene.nodes.iter().find(|node| node.id.as_deref() == Some(id)).unwrap_or_else(|| panic!("场景里没有 id 为 `{id}` 的节点")).kind
     {
         NodeKind::Rect { rect, .. } => rect.height,
         other => panic!("预期矩形节点，实际为 {other:?}"),
@@ -63,10 +46,7 @@ fn transition_count_must_match_states() {
     let mut timeline = ChartTimeline::new(
         spec(),
         ChartOptions::default(),
-        vec![
-            ChartState { at: 0.0, data: data([1.0, 2.0]) },
-            ChartState { at: 2.0, data: data([3.0, 4.0]) },
-        ],
+        vec![ChartState { at: 0.0, data: data([1.0, 2.0]) }, ChartState { at: 2.0, data: data([3.0, 4.0]) }],
     );
     timeline.transitions = vec![];
     // 空过渡是允许的（走缺省），显式给错数量才拒绝。
@@ -81,10 +61,7 @@ fn data_states_change_the_sampled_scene() {
     let timeline = ChartTimeline::new(
         spec(),
         ChartOptions::default(),
-        vec![
-            ChartState { at: 0.0, data: data([1.0, 2.0]) },
-            ChartState { at: 2.0, data: data([1.0, 6.0]) },
-        ],
+        vec![ChartState { at: 0.0, data: data([1.0, 2.0]) }, ChartState { at: 2.0, data: data([1.0, 6.0]) }],
     );
     let compiled = timeline.program().expect("程序合法").compile().expect("时间轴合法");
     let start = compiled.sample(0.0);
@@ -106,10 +83,7 @@ fn bar_height_interpolates_with_the_data() {
     let mut timeline = ChartTimeline::new(
         spec(),
         ChartOptions::default(),
-        vec![
-            ChartState { at: 0.0, data: data([1.0, 2.0]) },
-            ChartState { at: 2.0, data: data([1.0, 6.0]) },
-        ],
+        vec![ChartState { at: 0.0, data: data([1.0, 2.0]) }, ChartState { at: 2.0, data: data([1.0, 6.0]) }],
     );
     timeline.shared_domain = true;
     let compiled = timeline.program().expect("程序合法").compile().expect("时间轴合法");
@@ -117,10 +91,7 @@ fn bar_height_interpolates_with_the_data() {
     let middle = bar_height(&compiled.sample(0.2), "chart-bar-1");
     let end = bar_height(&compiled.sample(0.4), "chart-bar-1");
     assert_ne!(start, end, "数据变化必须改变柱高");
-    assert!(
-        (middle - (start + end) / 2.0).abs() < 1e-9,
-        "中间帧应为线性中点，实际 {middle}，首末 {start}/{end}"
-    );
+    assert!((middle - (start + end) / 2.0).abs() < 1e-9, "中间帧应为线性中点，实际 {middle}，首末 {start}/{end}");
 }
 
 /// 同一输入重复编译，任意时刻取样完全相同。
@@ -130,10 +101,7 @@ fn compilation_is_deterministic() {
         ChartTimeline::new(
             spec(),
             ChartOptions::default(),
-            vec![
-                ChartState { at: 0.0, data: data([1.0, 2.0]) },
-                ChartState { at: 1.5, data: data([2.0, 5.0]) },
-            ],
+            vec![ChartState { at: 0.0, data: data([1.0, 2.0]) }, ChartState { at: 1.5, data: data([2.0, 5.0]) }],
         )
         .program()
         .expect("程序合法")

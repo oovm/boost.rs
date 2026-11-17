@@ -23,12 +23,7 @@ impl ImageDoc {
     #[must_use]
     pub fn new(width: u32, height: u32, background: Rgba) -> Self {
         let (width, height) = (width.max(1), height.max(1));
-        Self {
-            width,
-            height,
-            background,
-            stack: LayerStack::new(width, height),
-        }
+        Self { width, height, background, stack: LayerStack::new(width, height) }
     }
 
     /// 加一个透明层，返回索引。
@@ -40,10 +35,7 @@ impl ImageDoc {
     /// 不缩放，RGBA 四通道原样拷贝（源 alpha 直通）。
     pub fn add_image(&mut self, name: impl Into<String>, image: &Frame) -> usize {
         let index = self.stack.add_layer(name);
-        let target = self
-            .stack
-            .layer_mut(index)
-            .expect("the layer was just added");
+        let target = self.stack.layer_mut(index).expect("the layer was just added");
         let width = target.width.min(image.width);
         let height = target.height.min(image.height);
         for y in 0..height {
@@ -94,9 +86,7 @@ mod tests {
         let base = doc.add_layer("base");
         doc.layer_mut(base).expect("frame").fill(Rgba([200, 0, 0, 255]));
         let overlay = doc.add_layer("overlay");
-        doc.layer_mut(overlay)
-            .expect("frame")
-            .fill(Rgba([0, 0, 200, 255]));
+        doc.layer_mut(overlay).expect("frame").fill(Rgba([0, 0, 200, 255]));
         doc.layer_entry(overlay).expect("layer").opacity = 0.5;
         let frame = doc.render();
         assert!(frame.pixels[0] > 80 && frame.pixels[2] > 80, "{:?}", &frame.pixels[0..3]);

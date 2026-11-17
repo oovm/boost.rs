@@ -4,14 +4,9 @@ use crate::FormatError;
 
 use super::{
     encoding::win_ansi_encoding,
-    objects::{
-        body_contains_name, body_reference, dictionary_subtype_is, page_resource_sections, reference_ids,
-        resource_font_references,
-    },
+    objects::{body_contains_name, body_reference, dictionary_subtype_is, page_resource_sections, reference_ids, resource_font_references},
     streams::decode_stream,
-    syntax::{
-        dictionary_value, hex_bytes, is_pdf_number_start, pdf_delimiter, skip_pdf_number, skip_space, split_pdf_syntax_tokens,
-    },
+    syntax::{dictionary_value, hex_bytes, is_pdf_number_start, pdf_delimiter, skip_pdf_number, skip_space, split_pdf_syntax_tokens},
     types::PdfStream,
 };
 
@@ -45,9 +40,7 @@ impl ToUnicodeMap {
             return None;
         }
         if self.entries.is_empty() && self.winansi_fallback {
-            let advance = bytes
-                .iter()
-                .fold(Some(0.0f32), |total, byte| combine_advance(total, self.advance_for(std::slice::from_ref(byte))));
+            let advance = bytes.iter().fold(Some(0.0f32), |total, byte| combine_advance(total, self.advance_for(std::slice::from_ref(byte))));
             return Some((bytes.iter().map(|byte| win_ansi_encoding(*byte)).collect(), advance));
         }
         let mut output = String::new();
@@ -101,10 +94,7 @@ fn combine_advance(total: Option<f32>, next: Option<f32>) -> Option<f32> {
 /// A `/F1` name is page-scoped, so two pages may legally bind the same name to
 /// different fonts. Keeping one map per page stops the last page's binding from
 /// decoding every earlier page's text.
-pub(crate) fn page_font_maps(
-    bodies: &[(u32, Vec<u8>)],
-    streams: &[PdfStream<'_>],
-) -> Result<Vec<HashMap<String, ToUnicodeMap>>, FormatError> {
+pub(crate) fn page_font_maps(bodies: &[(u32, Vec<u8>)], streams: &[PdfStream<'_>]) -> Result<Vec<HashMap<String, ToUnicodeMap>>, FormatError> {
     let mut result = Vec::new();
     for resources in page_resource_sections(bodies) {
         let mut page = HashMap::new();
@@ -319,10 +309,9 @@ fn apply_cmap_widths(bytes: &[u8], map: &mut ToUnicodeMap) {
                 }
                 continue;
             }
-            if let (Some(last), Some(width)) = (
-                tokens.get(index + 1).and_then(|token| parse_u32(token)),
-                tokens.get(index + 2).and_then(|token| parse_f32(token)),
-            ) && token_is(tokens.get(index + 3), b"W")
+            if let (Some(last), Some(width)) =
+                (tokens.get(index + 1).and_then(|token| parse_u32(token)), tokens.get(index + 2).and_then(|token| parse_f32(token)))
+                && token_is(tokens.get(index + 3), b"W")
             {
                 if first <= last && last - first < 65_536 {
                     for cid in first..=last {
@@ -332,8 +321,7 @@ fn apply_cmap_widths(bytes: &[u8], map: &mut ToUnicodeMap) {
                 index += 4;
                 continue;
             }
-            if let (Some(width), Some(operator)) =
-                (tokens.get(index + 1).and_then(|token| parse_f32(token)), tokens.get(index + 2).copied())
+            if let (Some(width), Some(operator)) = (tokens.get(index + 1).and_then(|token| parse_f32(token)), tokens.get(index + 2).copied())
                 && is_token(operator, b"w")
             {
                 map.widths.insert(first, width / 1000.0);
@@ -375,10 +363,7 @@ fn cmap_tokens(bytes: &[u8]) -> Vec<&[u8]> {
             continue;
         }
         if byte == b'%' {
-            cursor = bytes[cursor..]
-                .iter()
-                .position(|byte| matches!(byte, b'\r' | b'\n'))
-                .map_or(bytes.len(), |offset| cursor + offset);
+            cursor = bytes[cursor..].iter().position(|byte| matches!(byte, b'\r' | b'\n')).map_or(bytes.len(), |offset| cursor + offset);
             continue;
         }
         let start = cursor;
@@ -436,8 +421,7 @@ pub(crate) fn parse_to_unicode_cmap(bytes: &[u8]) -> Option<ToUnicodeMap> {
     while index < tokens.len() {
         match tokens[index] {
             "begincodespacerange" => {
-                let count =
-                    tokens.get(index.wrapping_sub(1)).and_then(|value| value.parse::<usize>().ok()).unwrap_or(usize::MAX);
+                let count = tokens.get(index.wrapping_sub(1)).and_then(|value| value.parse::<usize>().ok()).unwrap_or(usize::MAX);
                 index += 1;
                 for _ in 0..count {
                     if index + 1 >= tokens.len() || tokens[index] == "endcodespacerange" {
@@ -452,24 +436,20 @@ pub(crate) fn parse_to_unicode_cmap(bytes: &[u8]) -> Option<ToUnicodeMap> {
                 }
             }
             "beginbfchar" => {
-                let count =
-                    tokens.get(index.wrapping_sub(1)).and_then(|value| value.parse::<usize>().ok()).unwrap_or(usize::MAX);
+                let count = tokens.get(index.wrapping_sub(1)).and_then(|value| value.parse::<usize>().ok()).unwrap_or(usize::MAX);
                 index += 1;
                 for _ in 0..count {
                     if index + 1 >= tokens.len() || tokens[index] == "endbfchar" {
                         break;
                     }
-                    if let (Some(source), Some(destination)) =
-                        (parse_hex_token(tokens[index]), parse_hex_token(tokens[index + 1]))
-                    {
+                    if let (Some(source), Some(destination)) = (parse_hex_token(tokens[index]), parse_hex_token(tokens[index + 1])) {
                         add_cmap_entry(&mut map, source, destination);
                     }
                     index += 2;
                 }
             }
             "beginbfrange" => {
-                let count =
-                    tokens.get(index.wrapping_sub(1)).and_then(|value| value.parse::<usize>().ok()).unwrap_or(usize::MAX);
+                let count = tokens.get(index.wrapping_sub(1)).and_then(|value| value.parse::<usize>().ok()).unwrap_or(usize::MAX);
                 index += 1;
                 for _ in 0..count {
                     if index + 2 >= tokens.len() || tokens[index] == "endbfrange" {

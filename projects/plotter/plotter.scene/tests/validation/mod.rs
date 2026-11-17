@@ -21,10 +21,7 @@ fn non_finite_geometry_is_rejected() {
 
 #[test]
 fn negative_rect_and_radius_are_rejected() {
-    let rect = scene_with(SceneNode::new(NodeKind::Rect {
-        rect: Rect::new(0.0, 0.0, -1.0, 10.0),
-        style: ShapeStyle::filled(Color::BLACK),
-    }));
+    let rect = scene_with(SceneNode::new(NodeKind::Rect { rect: Rect::new(0.0, 0.0, -1.0, 10.0), style: ShapeStyle::filled(Color::BLACK) }));
     assert_eq!(rect.validate().expect_err("negative width").code(), codes::INVALID_GEOMETRY);
 
     let rounded = scene_with(SceneNode::new(NodeKind::RoundedRect {
@@ -62,10 +59,7 @@ fn non_finite_transform_is_rejected() {
 
 #[test]
 fn scene_error_exposes_structured_diagnostic() {
-    let scene = scene_with(SceneNode::new(NodeKind::Rect {
-        rect: Rect::new(0.0, 0.0, 10.0, -1.0),
-        style: ShapeStyle::filled(Color::BLACK),
-    }));
+    let scene = scene_with(SceneNode::new(NodeKind::Rect { rect: Rect::new(0.0, 0.0, 10.0, -1.0), style: ShapeStyle::filled(Color::BLACK) }));
     let error = scene.to_svg().expect_err("negative height");
     let record = error.diagnostic();
     assert_eq!(record.code().as_str(), codes::INVALID_GEOMETRY);

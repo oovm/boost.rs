@@ -5,8 +5,8 @@ use super::{
     fonts::ToUnicodeMap,
     images::{parse_inline_jpeg, skip_inline_image},
     syntax::{
-        hex_bytes, is_pdf_number_start, literal_close, pdf_delimiter, pdf_operator_at, skip_content_space, skip_pdf_comment,
-        skip_pdf_number, skip_space,
+        hex_bytes, is_pdf_number_start, literal_close, pdf_delimiter, pdf_operator_at, skip_content_space, skip_pdf_comment, skip_pdf_number,
+        skip_space,
     },
     types::{ExtractedLine, ExtractedText, LineRun, PageItem},
 };
@@ -71,16 +71,7 @@ impl TextTransform {
     fn concat(self, matrix: [f32; 6]) -> Self {
         let [a, b, c, d, e, f] = matrix;
         let [na, nb, nc, nd, ne, nf] = self.matrix;
-        Self {
-            matrix: [
-                a * na + b * nc,
-                a * nb + b * nd,
-                c * na + d * nc,
-                c * nb + d * nd,
-                e * na + f * nc + ne,
-                e * nb + f * nd + nf,
-            ],
-        }
+        Self { matrix: [a * na + b * nc, a * nb + b * nd, c * na + d * nc, c * nb + d * nd, e * na + f * nc + ne, e * nb + f * nd + nf] }
     }
 
     fn geometry(self, geometry: RunGeometry) -> RunGeometry {
@@ -166,13 +157,8 @@ impl PageSink {
                     line.runs.push(run);
                 }
                 None => {
-                    self.current = Some(ExtractedLine {
-                        text: segment.to_owned(),
-                        x: geometry.x,
-                        y: geometry.y,
-                        size: geometry.size,
-                        runs: vec![run],
-                    });
+                    self.current =
+                        Some(ExtractedLine { text: segment.to_owned(), x: geometry.x, y: geometry.y, size: geometry.size, runs: vec![run] });
                 }
             }
         }
@@ -201,11 +187,7 @@ impl PageSink {
     }
 }
 
-pub(crate) fn extract_text_operators(
-    stream: &[u8],
-    font_maps: &HashMap<String, ToUnicodeMap>,
-    sink: &mut PageSink,
-) -> ExtractedText {
+pub(crate) fn extract_text_operators(stream: &[u8], font_maps: &HashMap<String, ToUnicodeMap>, sink: &mut PageSink) -> ExtractedText {
     let mut spacing_adjustments = false;
     let mut unsupported_inline_images = false;
     let mut unresolved_fonts = std::collections::BTreeSet::new();
@@ -315,8 +297,7 @@ pub(crate) fn extract_text_operators(
                 cursor = close + 1;
             }
             b'<' if stream.get(cursor + 1) != Some(&b'<') => {
-                let Some(close) =
-                    stream[cursor + 1..].iter().position(|byte| *byte == b'>').map(|position| cursor + 1 + position)
+                let Some(close) = stream[cursor + 1..].iter().position(|byte| *byte == b'>').map(|position| cursor + 1 + position)
                 else {
                     break;
                 };
@@ -613,12 +594,10 @@ fn push_decoded_run(
 }
 
 fn text_font_operator(stream: &[u8], cursor: usize) -> Option<(String, f32, usize)> {
-    let name_end =
-        stream[cursor + 1..].iter().position(|byte| byte.is_ascii_whitespace()).map(|position| cursor + 1 + position)?;
+    let name_end = stream[cursor + 1..].iter().position(|byte| byte.is_ascii_whitespace()).map(|position| cursor + 1 + position)?;
     let name = std::str::from_utf8(&stream[cursor + 1..name_end]).ok()?.to_owned();
     let number_start = skip_space(stream, name_end);
-    let number_end =
-        stream[number_start..].iter().position(|byte| byte.is_ascii_whitespace()).map(|position| number_start + position)?;
+    let number_end = stream[number_start..].iter().position(|byte| byte.is_ascii_whitespace()).map(|position| number_start + position)?;
     let size = std::str::from_utf8(&stream[number_start..number_end]).ok()?.parse().ok()?;
     let operator = skip_space(stream, number_end);
     pdf_operator_at(stream, operator, b"Tf").then_some((name, size, operator + 2))
@@ -672,20 +651,13 @@ fn note_text_position(text_position: &mut Option<(f32, f32)>, next: (f32, f32), 
 }
 
 fn resource_operator(stream: &[u8], cursor: usize, expected: &str) -> Option<(String, usize)> {
-    let name_end =
-        stream[cursor + 1..].iter().position(|byte| byte.is_ascii_whitespace()).map(|position| cursor + 1 + position)?;
+    let name_end = stream[cursor + 1..].iter().position(|byte| byte.is_ascii_whitespace()).map(|position| cursor + 1 + position)?;
     let name = std::str::from_utf8(&stream[cursor + 1..name_end]).ok()?.to_owned();
     let operator_start = skip_space(stream, name_end);
     let operator_end = operator_start.checked_add(expected.len())?;
     pdf_operator_at(stream, operator_start, expected.as_bytes()).then_some((name, operator_end))
 }
-fn push_text_event(
-    sink: &mut PageSink,
-    mut text: String,
-    separation: &mut Separation,
-    last_char: &mut Option<char>,
-    geometry: RunGeometry,
-) {
+fn push_text_event(sink: &mut PageSink, mut text: String, separation: &mut Separation, last_char: &mut Option<char>, geometry: RunGeometry) {
     if text.is_empty() {
         return;
     }

@@ -116,10 +116,7 @@ impl DrumPattern {
             return Err(Error::invalid_input(format!("pattern bpm {} must be within 20..=300", self.bpm)));
         }
         if !(1..=32).contains(&self.steps_per_bar) {
-            return Err(Error::invalid_input(format!(
-                "pattern steps per bar {} must be within 1..=32",
-                self.steps_per_bar
-            )));
+            return Err(Error::invalid_input(format!("pattern steps per bar {} must be within 1..=32", self.steps_per_bar)));
         }
         if !(1..=32).contains(&self.bars) {
             return Err(Error::invalid_input(format!("pattern bars {} must be within 1..=32", self.bars)));
@@ -137,16 +134,12 @@ impl DrumPattern {
             }
             for (step, velocity) in track.steps.iter().enumerate() {
                 if !velocity.is_finite() || !(0.0..=1.0).contains(velocity) {
-                    return Err(Error::invalid_input(format!(
-                        "pattern track {index} step {step} velocity {velocity} must be within 0..=1"
-                    )));
+                    return Err(Error::invalid_input(format!("pattern track {index} step {step} velocity {velocity} must be within 0..=1")));
                 }
             }
             for (name, value) in [("tone", track.tone), ("decay", track.decay)] {
                 if !value.is_finite() || !(0.0..=1.0).contains(&value) {
-                    return Err(Error::invalid_input(format!(
-                        "pattern track {index} {name} {value} must be within 0..=1"
-                    )));
+                    return Err(Error::invalid_input(format!("pattern track {index} {name} {value} must be within 0..=1")));
                 }
             }
             if !track.pan.is_finite() {
@@ -209,11 +202,7 @@ pub fn render_pattern(pattern: &DrumPattern, sample_rate: f32) -> Result<Vec<[f3
             if *velocity <= 0.0 {
                 continue;
             }
-            let duration = if track.instrument.is_pitched() {
-                (step_seconds * 0.9).max(0.06)
-            } else {
-                track.instrument.natural_duration()
-            };
+            let duration = if track.instrument.is_pitched() { (step_seconds * 0.9).max(0.06) } else { track.instrument.natural_duration() };
             let spec = InstrumentSpec {
                 instrument: track.instrument,
                 seed: 1 + track_index as u32 * 101 + step as u32,
@@ -425,10 +414,7 @@ mod tests {
         bad.tracks.clear();
         assert_eq!(render_pattern(&bad, 44_100.0).expect_err("empty").code(), "invalid_input");
 
-        assert_eq!(
-            render_pattern(&pattern_preset("rock").expect("preset"), 0.0).expect_err("rate").code(),
-            "invalid_input"
-        );
+        assert_eq!(render_pattern(&pattern_preset("rock").expect("preset"), 0.0).expect_err("rate").code(), "invalid_input");
     }
 
     #[test]

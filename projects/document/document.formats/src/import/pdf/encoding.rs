@@ -12,12 +12,7 @@ pub(crate) struct DecodedRun {
     pub(crate) advance: Option<f32>,
 }
 
-pub(crate) fn decode_with_font(
-    bytes: &[u8],
-    font: Option<&str>,
-    maps: &HashMap<String, ToUnicodeMap>,
-    literal: bool,
-) -> Option<DecodedRun> {
+pub(crate) fn decode_with_font(bytes: &[u8], font: Option<&str>, maps: &HashMap<String, ToUnicodeMap>, literal: bool) -> Option<DecodedRun> {
     match font {
         Some(name) => {
             let map = maps.get(name)?;
@@ -32,9 +27,7 @@ pub(crate) fn decode_with_font(
             let (text, advance) = map.decode_run(decoded)?;
             Some(DecodedRun { text, advance })
         }
-        None => {
-            Some(DecodedRun { text: if literal { decode_pdf_string(bytes) } else { decode_text_bytes(bytes) }, advance: None })
-        }
+        None => Some(DecodedRun { text: if literal { decode_pdf_string(bytes) } else { decode_text_bytes(bytes) }, advance: None }),
     }
 }
 pub(crate) fn win_ansi_encoding(byte: u8) -> char {

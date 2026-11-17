@@ -7,8 +7,7 @@ use document_layout::{
     plan::{Graphic, LayoutItem, LayoutPage, LayoutPlan},
 };
 use document_presentation::{
-    DisplayItem, FlowBlock, FlowListItem, FlowRun, FlowTableRow, build_display_presentation, build_flow_presentation,
-    display::DisplayTextRun,
+    DisplayItem, FlowBlock, FlowListItem, FlowRun, FlowTableRow, build_display_presentation, build_flow_presentation, display::DisplayTextRun,
 };
 use plotter_scene::{Color, DisplayScene, NodeKind, Rect, SceneNode, ShapeStyle, Size};
 
@@ -39,20 +38,8 @@ fn sample_graph() -> DocumentGraph {
     graph.push_block(Block::List {
         ordered: true,
         items: vec![
-            ListItem {
-                content: vec![text("First item")],
-                children: Vec::new(),
-                number: Some(1),
-                is_task: false,
-                is_checked: None,
-            },
-            ListItem {
-                content: vec![text("Second item")],
-                children: Vec::new(),
-                number: Some(2),
-                is_task: false,
-                is_checked: None,
-            },
+            ListItem { content: vec![text("First item")], children: Vec::new(), number: Some(1), is_task: false, is_checked: None },
+            ListItem { content: vec![text("Second item")], children: Vec::new(), number: Some(2), is_task: false, is_checked: None },
         ],
     });
     graph
@@ -118,9 +105,7 @@ fn flow_lowering_keeps_block_semantics() {
 
     assert_eq!(presentation.root_tag, "article");
     assert_eq!(presentation.blocks.len(), 3);
-    assert!(
-        matches!(&presentation.blocks[0], FlowBlock::Heading { level: 1, runs } if runs == &vec![run("Flow heading", FontStyle::Normal)])
-    );
+    assert!(matches!(&presentation.blocks[0], FlowBlock::Heading { level: 1, runs } if runs == &vec![run("Flow heading", FontStyle::Normal)]));
     assert!(matches!(
         &presentation.blocks[1],
         FlowBlock::Paragraph { runs } if runs.len() == 1 && runs[0].text == "Flow paragraph."
@@ -143,11 +128,7 @@ fn flow_lowering_keeps_block_semantics() {
 #[test]
 fn flow_heading_runs_preserve_bold() {
     let mut graph = DocumentGraph::new(DocumentId(2));
-    graph.push_block(Block::Section {
-        level: 2,
-        title: vec![text("Plain "), styled("bold", vec![text("heavy")])],
-        children: Vec::new(),
-    });
+    graph.push_block(Block::Section { level: 2, title: vec![text("Plain "), styled("bold", vec![text("heavy")])], children: Vec::new() });
 
     let presentation = build_flow_presentation(&graph);
 
@@ -193,23 +174,11 @@ fn flow_nested_list_stays_inside_parent_item() {
     let mut graph = DocumentGraph::new(DocumentId(11));
     let child = graph.push_block(Block::List {
         ordered: false,
-        items: vec![ListItem {
-            content: vec![text("child")],
-            children: Vec::new(),
-            number: None,
-            is_task: false,
-            is_checked: None,
-        }],
+        items: vec![ListItem { content: vec![text("child")], children: Vec::new(), number: None, is_task: false, is_checked: None }],
     });
     graph.push_block(Block::List {
         ordered: false,
-        items: vec![ListItem {
-            content: vec![text("parent")],
-            children: vec![child],
-            number: None,
-            is_task: false,
-            is_checked: None,
-        }],
+        items: vec![ListItem { content: vec![text("parent")], children: vec![child], number: None, is_task: false, is_checked: None }],
     });
 
     let presentation = build_flow_presentation(&graph);
@@ -226,11 +195,7 @@ fn flow_nested_list_stays_inside_parent_item() {
                 number: None,
                 children: vec![FlowBlock::List {
                     ordered: false,
-                    items: vec![FlowListItem {
-                        runs: vec![run("child", FontStyle::Normal)],
-                        number: None,
-                        children: Vec::new(),
-                    }],
+                    items: vec![FlowListItem { runs: vec![run("child", FontStyle::Normal)], number: None, children: Vec::new() }],
                 }],
             }],
         }]
@@ -240,9 +205,8 @@ fn flow_nested_list_stays_inside_parent_item() {
 #[test]
 fn flow_quote_runs_keep_inline_code_as_monospace() {
     let mut graph = DocumentGraph::new(DocumentId(4));
-    let quote = graph.push_block(Block::Paragraph {
-        content: vec![text("Use "), Inline::InlineCode { text: "vutex".to_string() }, text(" here.")],
-    });
+    let quote =
+        graph.push_block(Block::Paragraph { content: vec![text("Use "), Inline::InlineCode { text: "vutex".to_string() }, text(" here.")] });
     graph.push_block(Block::Quote { children: vec![quote] });
 
     let presentation = build_flow_presentation(&graph);
@@ -276,10 +240,7 @@ fn flow_table_cell_runs_preserve_bold_and_header_role() {
             caption: Some("Scores".to_string()),
             rows: vec![
                 FlowTableRow { is_header: true, cells: vec![vec![run("Metric", FontStyle::Bold)]] },
-                FlowTableRow {
-                    is_header: false,
-                    cells: vec![vec![run("Accuracy", FontStyle::Normal)], vec![run("0.9", FontStyle::Bold)]],
-                },
+                FlowTableRow { is_header: false, cells: vec![vec![run("Accuracy", FontStyle::Normal)], vec![run("0.9", FontStyle::Bold)]] },
             ],
         }]
     );
@@ -389,13 +350,7 @@ fn flow_list_item_numbers_follow_authored_markers() {
     });
     graph.push_block(Block::List {
         ordered: false,
-        items: vec![ListItem {
-            content: vec![text("bullet")],
-            children: Vec::new(),
-            number: None,
-            is_task: false,
-            is_checked: None,
-        }],
+        items: vec![ListItem { content: vec![text("bullet")], children: Vec::new(), number: None, is_task: false, is_checked: None }],
     });
 
     let presentation = build_flow_presentation(&graph);
@@ -503,19 +458,14 @@ fn flow_strike_span_lowers_to_strike_run() {
 #[test]
 fn code_block_lowering_keeps_verbatim_lines_over_a_background() {
     let mut graph = DocumentGraph::new(DocumentId(9));
-    graph.push_block(Block::Code {
-        language: Some("rust".to_string()),
-        content: "fn main() {\n    let value = 42;\n}".to_string(),
-    });
+    graph.push_block(Block::Code { language: Some("rust".to_string()), content: "fn main() {\n    let value = 42;\n}".to_string() });
 
     let plan = layout(&graph);
     let presentation = build_display_presentation(&plan);
     let items = &presentation.pages[0].items;
 
-    let background = items
-        .iter()
-        .position(|item| matches!(item, DisplayItem::Rect(rect) if rect.filled))
-        .expect("code block paints a filled background");
+    let background =
+        items.iter().position(|item| matches!(item, DisplayItem::Rect(rect) if rect.filled)).expect("code block paints a filled background");
     let runs: Vec<&DisplayTextRun> = items
         .iter()
         .filter_map(|item| match item {
@@ -532,8 +482,5 @@ fn code_block_lowering_keeps_verbatim_lines_over_a_background() {
     assert!(runs.iter().all(|run| run.font_family == "monospace"), "code runs use the monospace face");
     let first_run = items.iter().position(|item| matches!(item, DisplayItem::TextRun(_))).expect("code text");
     assert!(background < first_run, "background paints before its lines");
-    assert!(
-        runs.iter().all(|run| !run.text.contains("rust") && !run.text.contains("```")),
-        "fence and language tag never become body text"
-    );
+    assert!(runs.iter().all(|run| !run.text.contains("rust") && !run.text.contains("```")), "fence and language tag never become body text");
 }

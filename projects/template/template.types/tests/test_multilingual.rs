@@ -117,4 +117,3 @@ fn test_locale_fallback_chain() {
     let result = translator.translate("greeting", None, "fr").unwrap();
     assert_eq!(result, "Hello!");
 }
-

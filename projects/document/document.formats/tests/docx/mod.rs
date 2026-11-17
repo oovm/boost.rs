@@ -203,8 +203,7 @@ fn docx_imports_underline_and_strike_without_losing_markdown_strike() {
         matches!(&content[3], Inline::Styled { style, children } if style == "bold" && matches!(&children[0], Inline::Styled { style, children } if style == "italic" && matches!(&children[0], Inline::Styled { style, .. } if style == "underline")))
     );
     assert!(export_markdown(&graph).is_err(), "Markdown must not silently drop underline");
-    let strike_only =
-        document_ir::Inline::Styled { style: "strike".into(), children: vec![Inline::Text { text: "crossed".into() }] };
+    let strike_only = document_ir::Inline::Styled { style: "strike".into(), children: vec![Inline::Text { text: "crossed".into() }] };
     let mut strike_graph = document_ir::DocumentGraph::new(document_ir::DocumentId(55));
     strike_graph.push_block(Block::Paragraph { content: vec![strike_only] });
     assert!(export_markdown(&strike_graph).expect("Markdown strike").contains("~~crossed~~"));
@@ -289,11 +288,8 @@ fn docx_import_reads_hyperlink_tooltips_and_image_titles() {
     Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
     Target="media/logo.png"/>
 </Relationships>"#;
-    let zip = stored_zip(&[
-        ("word/document.xml", document_xml),
-        ("word/_rels/document.xml.rels", rels_xml),
-        ("media/logo.png", b"\x89PNG\r\n"),
-    ]);
+    let zip =
+        stored_zip(&[("word/document.xml", document_xml), ("word/_rels/document.xml.rels", rels_xml), ("media/logo.png", b"\x89PNG\r\n")]);
     let graph = import_docx_bytes("titles.docx", &zip).expect("import titles DOCX");
 
     let Block::Paragraph { content } = &graph.blocks[0].block
@@ -359,10 +355,8 @@ fn docx_import_reports_unmapped_character_properties() {
     let mut document_xml = document_xml.to_vec();
     let marker = b"</w:body>";
     let insertion = document_xml.windows(marker.len()).position(|window| window == marker).expect("body marker");
-    document_xml.splice(
-        insertion..insertion,
-        br#"<w:p><w:r><w:rPr><w:spacing w:val="20"/></w:rPr><w:t>unsupported</w:t></w:r></w:p>"#.iter().copied(),
-    );
+    document_xml
+        .splice(insertion..insertion, br#"<w:p><w:r><w:rPr><w:spacing w:val="20"/></w:rPr><w:t>unsupported</w:t></w:r></w:p>"#.iter().copied());
     let graph = import_docx_bytes("character-properties.docx", &docx_zip(&document_xml)).expect("import character properties");
     assert!(graph.coverage.loss.iter().any(|loss| loss.code == "reader.docx.character_properties"));
     assert!(format!("{:?}", graph.blocks).contains("colored text"));
@@ -456,11 +450,8 @@ fn docx_imports_embedded_images() {
     Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
     Target="media/logo.png"/>
 </Relationships>"#;
-    let zip = stored_zip(&[
-        ("word/document.xml", document_xml),
-        ("word/_rels/document.xml.rels", rels_xml),
-        ("media/logo.png", b"\x89PNG\r\n"),
-    ]);
+    let zip =
+        stored_zip(&[("word/document.xml", document_xml), ("word/_rels/document.xml.rels", rels_xml), ("media/logo.png", b"\x89PNG\r\n")]);
     let graph = import_docx_bytes("image.docx", &zip).expect("import docx");
     assert_eq!(graph.assets.len(), 1);
     let markdown = export_markdown(&graph).expect("export markdown");
@@ -531,8 +522,7 @@ fn docx_import_reports_numbering_formats_that_the_ir_cannot_carry() {
 </w:document>"#;
     let zip = stored_zip(&[("word/document.xml", document_xml), ("word/numbering.xml", ROMAN_NUMBERING_XML)]);
     let graph = import_docx_bytes("roman.docx", &zip).expect("import docx");
-    let loss =
-        graph.coverage.loss.iter().find(|loss| loss.code == "reader.docx.numbering_format").expect("numbering format loss");
+    let loss = graph.coverage.loss.iter().find(|loss| loss.code == "reader.docx.numbering_format").expect("numbering format loss");
     assert_eq!(loss.status, SemanticStatus::Partial);
     assert!(loss.message.contains("lowerRoman"), "{}", loss.message);
     // The list stays an ordered list with sequential numbers, so only the
@@ -788,8 +778,7 @@ fn docx_import_records_footnotes_part_provenance() {
 <w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
   <w:footnote w:id="1"><w:p><w:r><w:t>Footnote body.</w:t></w:r></w:p></w:footnote>
 </w:footnotes>"#;
-    let graph =
-        import_docx_bytes("footnotes.docx", &docx_zip_with_footnotes(document_xml, footnotes_xml)).expect("import docx");
+    let graph = import_docx_bytes("footnotes.docx", &docx_zip_with_footnotes(document_xml, footnotes_xml)).expect("import docx");
 
     let definition = graph
         .blocks

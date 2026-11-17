@@ -12,10 +12,10 @@
 //! 不改几何、不重新排版，也不读时钟。画布尺寸在整条时间轴上必须一致，尺寸变化会
 //! 显式失败，避免宿主拿到一套无法直接编码为视频的帧。
 
-use std::fmt;
-use std::fs;
-use std::io;
-use std::path::{Path, PathBuf};
+use std::{
+    fmt, fs, io,
+    path::{Path, PathBuf},
+};
 
 use animator_core::Compiled;
 
@@ -130,8 +130,7 @@ pub fn frame_svg(compiled: &Compiled, fps: u32, frame: u32) -> Result<String, Br
 pub fn write_frames(compiled: &Compiled, fps: u32, directory: impl AsRef<Path>) -> Result<BridgeReport, BridgeError> {
     let plan = plan_frames(compiled, fps)?;
     let directory = directory.as_ref();
-    fs::create_dir_all(directory)
-        .map_err(|source| BridgeError::Io { frame: 0, path: directory.to_path_buf(), source })?;
+    fs::create_dir_all(directory).map_err(|source| BridgeError::Io { frame: 0, path: directory.to_path_buf(), source })?;
 
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
     let mut size: Option<(f64, f64)> = None;

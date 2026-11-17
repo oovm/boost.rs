@@ -52,10 +52,7 @@ fn keep(path: &Path) -> bool {
     if path.components().any(|part| matches!(part.as_os_str().to_str(), Some("node_modules" | "target"))) {
         return false;
     }
-    matches!(
-        path.extension().and_then(|extension| extension.to_str()),
-        Some("rs" | "mjs" | "js" | "ts" | "yml" | "yaml" | "ps1" | "sh")
-    )
+    matches!(path.extension().and_then(|extension| extension.to_str()), Some("rs" | "mjs" | "js" | "ts" | "yml" | "yaml" | "ps1" | "sh"))
 }
 
 fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -120,28 +117,14 @@ fn the_scanner_flags_a_system_chrome_launch() {
         "chromium.launch({ channel: 'chrome', executablePath: 'C:/chrome.exe' });\n",
     );
     let found = violations_in(sample);
-    assert!(
-        found.iter().any(|(pattern, line)| *pattern == "chrome.exe" && *line == 1),
-        "the scanner missed `chrome.exe`: {found:?}"
-    );
-    assert!(
-        found.iter().any(|(pattern, line)| *pattern == "--headless" && *line == 2),
-        "the scanner missed a raw browser CLI: {found:?}"
-    );
-    assert!(
-        found.iter().any(|(pattern, _)| *pattern == "program files/google"),
-        "the scanner missed the install path: {found:?}"
-    );
-    assert!(
-        found.iter().any(|(pattern, _)| *pattern == "channel: 'chrome'"),
-        "the scanner missed the `channel` override: {found:?}"
-    );
+    assert!(found.iter().any(|(pattern, line)| *pattern == "chrome.exe" && *line == 1), "the scanner missed `chrome.exe`: {found:?}");
+    assert!(found.iter().any(|(pattern, line)| *pattern == "--headless" && *line == 2), "the scanner missed a raw browser CLI: {found:?}");
+    assert!(found.iter().any(|(pattern, _)| *pattern == "program files/google"), "the scanner missed the install path: {found:?}");
+    assert!(found.iter().any(|(pattern, _)| *pattern == "channel: 'chrome'"), "the scanner missed the `channel` override: {found:?}");
     assert!(found.iter().any(|(pattern, _)| *pattern == "executablepath:"), "the scanner missed `executablePath`: {found:?}");
 
     // A domain field and a prose mention must stay green.
-    let benign = concat!(
-        "pub struct Encoding { pub channel: Channel }\n",
-        "// `chromium.launch()` with no `channel` and no `executablePath`\n",
-    );
+    let benign =
+        concat!("pub struct Encoding { pub channel: Channel }\n", "// `chromium.launch()` with no `channel` and no `executablePath`\n",);
     assert!(violations_in(benign).is_empty(), "the scanner must not flag domain fields or prose: {:?}", violations_in(benign));
 }

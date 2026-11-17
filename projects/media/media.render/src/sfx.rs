@@ -17,10 +17,8 @@ pub fn write_sfx(spec: &SfxSpec, path: &str, sample_rate: u32) -> Result<(), Err
         return Err(Error::invalid_input("sfx export: sample rate must be positive"));
     }
     let samples = render(spec, sample_rate as f32)?;
-    let pcm: Vec<i16> = samples
-        .iter()
-        .flat_map(|frame| frame.iter().map(|sample| (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16))
-        .collect();
+    let pcm: Vec<i16> =
+        samples.iter().flat_map(|frame| frame.iter().map(|sample| (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)).collect();
     write_wav(path, &pcm, sample_rate)
 }
 
@@ -97,9 +95,6 @@ mod tests {
         let mut spec = SfxSpec::new(Family::Tick, 0.1);
         spec.duration = 0.001;
         assert_eq!(write_sfx(&spec, "unused.wav", 44_100).expect_err("invalid duration").code(), "invalid_input");
-        assert_eq!(
-            write_sfx(&SfxSpec::new(Family::Tick, 0.1), "unused.wav", 0).expect_err("zero rate").code(),
-            "invalid_input"
-        );
+        assert_eq!(write_sfx(&SfxSpec::new(Family::Tick, 0.1), "unused.wav", 0).expect_err("zero rate").code(), "invalid_input");
     }
 }

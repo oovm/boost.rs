@@ -31,8 +31,7 @@ impl TreeLayout for TidyTreeLayout {
             let px = prelim[node.id.as_str()];
             let depth = depths[&node.id.as_str()];
             let x = options.margin + (px + 0.5) / max_x * options.inner_width();
-            let y = options.margin + options.inner_height()
-                - (depth as f64 + 0.5) / (max_depth as f64 + 1.0).max(1.0) * options.inner_height();
+            let y = options.margin + options.inner_height() - (depth as f64 + 0.5) / (max_depth as f64 + 1.0).max(1.0) * options.inner_height();
             positions.push((node.id.clone(), LayoutPoint::new(x, y)));
         }
         let routes = straight_routes(tree.edges().into_iter().map(|e| (e.parent, e.child)), &positions);
@@ -40,12 +39,7 @@ impl TreeLayout for TidyTreeLayout {
     }
 }
 
-fn assign_prelim<'a>(
-    id: &'a str,
-    children: &HashMap<&str, Vec<&'a str>>,
-    prelim: &mut HashMap<&'a str, f64>,
-    next_x: &mut f64,
-) {
+fn assign_prelim<'a>(id: &'a str, children: &HashMap<&str, Vec<&'a str>>, prelim: &mut HashMap<&'a str, f64>, next_x: &mut f64) {
     let kids = children.get(id).map(Vec::as_slice).unwrap_or(&[]);
     if kids.is_empty() {
         prelim.insert(id, *next_x);

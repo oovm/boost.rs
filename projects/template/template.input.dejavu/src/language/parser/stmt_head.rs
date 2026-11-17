@@ -82,39 +82,20 @@ struct Spanned {
 }
 
 /// `content` is the trimmed code interior; `content_base` is its absolute offset in source.
-pub(crate) fn classify_code<'a>(
-    source: &str,
-    file: &str,
-    content: &'a str,
-    content_base: usize,
-) -> Result<CodeHead<'a>, ParseError> {
+pub(crate) fn classify_code<'a>(source: &str, file: &str, content: &'a str, content_base: usize) -> Result<CodeHead<'a>, ParseError> {
     let mut spans = Vec::new();
     let mut lex = CodeToken::lexer(content);
     while let Some(tok) = lex.next() {
         let span = lex.span();
         match tok {
             Ok(CodeToken::CodeEnd) => {
-                return Err(ParseError::at(
-                    source,
-                    file,
-                    content_base + span.start,
-                    span.len(),
-                    "unexpected `%>` inside code",
-                    "here",
-                )
-                .with_code(codes::PARSE_UNEXPECTED_TOKEN));
+                return Err(ParseError::at(source, file, content_base + span.start, span.len(), "unexpected `%>` inside code", "here")
+                    .with_code(codes::PARSE_UNEXPECTED_TOKEN));
             }
             Ok(t) => spans.push(Spanned { tok: t, start: span.start, end: span.end }),
             Err(()) => {
-                return Err(ParseError::at(
-                    source,
-                    file,
-                    content_base + span.start,
-                    span.len().max(1),
-                    "invalid token in code",
-                    "bad token",
-                )
-                .with_code(codes::PARSE_UNEXPECTED_TOKEN));
+                return Err(ParseError::at(source, file, content_base + span.start, span.len().max(1), "invalid token in code", "bad token")
+                    .with_code(codes::PARSE_UNEXPECTED_TOKEN));
             }
         }
     }
@@ -209,13 +190,10 @@ pub(crate) fn classify_code<'a>(
         CodeToken::Ident(name) if name == "from" => {
             let bad = |message: &str, label: &str, idx: usize| {
                 let span = spans.get(idx).map(|s| (s.start, (s.end - s.start).max(1))).unwrap_or((spans[0].start, 1));
-                ParseError::at(source, file, content_base + span.0, span.1, message, label)
-                    .with_code(codes::PARSE_UNEXPECTED_TOKEN)
+                ParseError::at(source, file, content_base + span.0, span.1, message, label).with_code(codes::PARSE_UNEXPECTED_TOKEN)
             };
-            let CodeToken::String(path) = &spans
-                .get(1)
-                .map(|s| &s.tok)
-                .ok_or_else(|| bad("`from` requires a quoted template path", "expected string literal", 0))?
+            let CodeToken::String(path) =
+                &spans.get(1).map(|s| &s.tok).ok_or_else(|| bad("`from` requires a quoted template path", "expected string literal", 0))?
             else {
                 return Err(bad("`from` requires a quoted template path", "expected string literal", 1));
             };
@@ -232,10 +210,8 @@ pub(crate) fn classify_code<'a>(
                 let mut alias = None;
                 if let Some(CodeToken::Ident(k)) = spans.get(i + 1).map(|s| &s.tok) {
                     if k == "as" {
-                        let CodeToken::Ident(target) = &spans
-                            .get(i + 2)
-                            .map(|s| &s.tok)
-                            .ok_or_else(|| bad("`as` requires a local name", "expected ident", i + 1))?
+                        let CodeToken::Ident(target) =
+                            &spans.get(i + 2).map(|s| &s.tok).ok_or_else(|| bad("`as` requires a local name", "expected ident", i + 1))?
                         else {
                             return Err(bad("`as` requires a local name", "expected ident", i + 2));
                         };
@@ -269,8 +245,7 @@ pub(crate) fn classify_code<'a>(
         CodeToken::Ident(name) if name == "macro" => {
             let macro_diag = |message: &str, label: &str, idx: usize| {
                 let span = spans.get(idx).map(|s| (s.start, (s.end - s.start).max(1))).unwrap_or((spans[0].start, 1));
-                ParseError::at(source, file, content_base + span.0, span.1, message, label)
-                    .with_code(codes::PARSE_UNEXPECTED_TOKEN)
+                ParseError::at(source, file, content_base + span.0, span.1, message, label).with_code(codes::PARSE_UNEXPECTED_TOKEN)
             };
             if spans.len() < 3 {
                 return Err(macro_diag("macro requires a name and a parameter list", "expected `macro name(...)`", 0));
@@ -293,8 +268,7 @@ pub(crate) fn classify_code<'a>(
         CodeToken::Ident(name) if name == "call" => {
             let call_diag = |message: &str, label: &str, idx: usize| {
                 let span = spans.get(idx).map(|s| (s.start, (s.end - s.start).max(1))).unwrap_or((spans[0].start, 1));
-                ParseError::at(source, file, content_base + span.0, span.1, message, label)
-                    .with_code(codes::PARSE_UNEXPECTED_TOKEN)
+                ParseError::at(source, file, content_base + span.0, span.1, message, label).with_code(codes::PARSE_UNEXPECTED_TOKEN)
             };
             let mut next = 1;
             let mut params = None;
@@ -357,15 +331,8 @@ pub(crate) fn classify_code<'a>(
         }
         CodeToken::Ident(name) if name == "super" => {
             if spans.len() != 1 {
-                return Err(ParseError::at(
-                    source,
-                    file,
-                    content_base + spans[1].start,
-                    1,
-                    "unexpected tokens after `super`",
-                    "unexpected",
-                )
-                .with_code(codes::PARSE_UNEXPECTED_TOKEN));
+                return Err(ParseError::at(source, file, content_base + spans[1].start, 1, "unexpected tokens after `super`", "unexpected")
+                    .with_code(codes::PARSE_UNEXPECTED_TOKEN));
             }
             Ok(CodeHead::Super)
         }
@@ -476,15 +443,8 @@ fn classify_include<'a>(
     spans: &[Spanned],
 ) -> Result<CodeHead<'a>, ParseError> {
     let err = |idx: usize, message: &str, label: &str| {
-        ParseError::at(
-            source,
-            file,
-            content_base + spans[idx].start,
-            (spans[idx].end - spans[idx].start).max(1),
-            message,
-            label,
-        )
-        .with_code(codes::PARSE_UNEXPECTED_TOKEN)
+        ParseError::at(source, file, content_base + spans[idx].start, (spans[idx].end - spans[idx].start).max(1), message, label)
+            .with_code(codes::PARSE_UNEXPECTED_TOKEN)
     };
     let slice = |from: usize, to: usize| -> (&'a str, usize) {
         if from >= to {

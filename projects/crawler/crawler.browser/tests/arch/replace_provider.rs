@@ -39,13 +39,7 @@ fn snapshot_extract_runs_through_replaceable_provider() {
     let snapshot = provider.capture_snapshot(&url).expect("snapshot");
     let html = HtmlExtractor;
     let extractors: [&dyn crawler_extract::Extractor; 1] = [&html];
-    let result = run_extract_from_snapshot(
-        &snapshot,
-        ChallengePolicy::Stop,
-        &extractors,
-        ExtractBudget::default(),
-        &ExtractContext::default(),
-    )
-    .expect("extract");
+    let result = run_extract_from_snapshot(&snapshot, ChallengePolicy::Stop, &extractors, ExtractBudget::default(), &ExtractContext::default())
+        .expect("extract");
     assert!(result.document.is_some());
 }

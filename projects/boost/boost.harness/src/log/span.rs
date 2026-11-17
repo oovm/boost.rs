@@ -1,6 +1,8 @@
 use alloc::{string::String, vec::Vec};
-use core::cell::RefCell;
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::{
+    cell::RefCell,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use crate::log::field::{Field, Fields};
 

@@ -121,14 +121,8 @@ mod tests {
         // `summarize` 已经拒绝空样本；这里直接构造一个带 NaN 的 Stats，
         // 证明绘图入口自身也不会把非有限值画成图。
         let nan = crate::bench::Stats { median_ms: f64::NAN, p95_ms: f64::NAN, min_ms: f64::NAN, max_ms: f64::NAN, rounds: 0 };
-        let rows = [BenchRow {
-            workload: "scan".into(),
-            unit: "ms".into(),
-            ours: nan,
-            reference: None,
-            reference_engine: None,
-            provenance: None,
-        }];
+        let rows =
+            [BenchRow { workload: "scan".into(), unit: "ms".into(), ours: nan, reference: None, reference_engine: None, provenance: None }];
         assert!(bench_chart_svg(&rows, BenchMetric::Median, "nan").is_err());
     }
 

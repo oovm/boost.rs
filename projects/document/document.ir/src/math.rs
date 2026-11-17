@@ -52,19 +52,9 @@ impl MathFormula {
     ///
     /// The source stays visible for preview and round-trip, but consumers must
     /// treat the formula as unsupported instead of guessing a grammar.
-    pub fn unsupported(
-        source: impl Into<String>,
-        language: Option<String>,
-        display: MathDisplay,
-        kind: impl Into<String>,
-    ) -> Self {
+    pub fn unsupported(source: impl Into<String>, language: Option<String>, display: MathDisplay, kind: impl Into<String>) -> Self {
         let source = source.into();
-        Self {
-            expression: MathExpression::Unsupported { kind: kind.into(), source: source.clone(), span: None },
-            source,
-            language,
-            display,
-        }
+        Self { expression: MathExpression::Unsupported { kind: kind.into(), source: source.clone(), span: None }, source, language, display }
     }
 }
 

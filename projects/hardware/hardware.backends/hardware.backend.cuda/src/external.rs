@@ -1,14 +1,10 @@
 //! CUDA [`ExternalBuffer`] / [`ExecStream`] / [`ExecEvent`] adapters.
 
-use std::any::Any;
-use std::sync::Arc;
+use std::{any::Any, sync::Arc};
 
-use hardware_scheduler::{
-    Error as SchedulerError, ExecEvent, ExecStream, ExternalBuffer, Result as SchedulerResult,
-    StreamEventBridge,
-};
+use hardware_scheduler::{Error as SchedulerError, ExecEvent, ExecStream, ExternalBuffer, Result as SchedulerResult, StreamEventBridge};
 
-use crate::driver::{CudaDriver, CUdeviceptr, CUevent, CUstream, DriverError};
+use crate::driver::{CUdeviceptr, CUevent, CUstream, CudaDriver, DriverError};
 
 fn map_driver(err: DriverError) -> SchedulerError {
     SchedulerError::Backend("cuda".into(), err.to_string())
@@ -122,62 +118,22 @@ impl<'a> CudaStreamEventBridge<'a> {
 
 impl StreamEventBridge for CudaStreamEventBridge<'_> {
     fn wait_event(&self, stream: &dyn ExecStream, event: &dyn ExecEvent) -> SchedulerResult<()> {
-        let stream = stream
-            .as_any()
-            .downcast_ref::<CudaExecStream>()
-            .ok_or_else(|| {
-                SchedulerError::Backend(
-                    "cuda".into(),
-                    format!(
-                        "wait_event expects CudaExecStream, got backend `{}`",
-                        stream.backend_name()
-                    ),
-                )
-            })?;
-        let event = event
-            .as_any()
-            .downcast_ref::<CudaExecEvent>()
-            .ok_or_else(|| {
-                SchedulerError::Backend(
-                    "cuda".into(),
-                    format!(
-                        "wait_event expects CudaExecEvent, got backend `{}`",
-                        event.backend_name()
-                    ),
-                )
-            })?;
-        self.driver
-            .stream_wait_event(stream.raw(), event.raw())
-            .map_err(map_driver)
+        let stream = stream.as_any().downcast_ref::<CudaExecStream>().ok_or_else(|| {
+            SchedulerError::Backend("cuda".into(), format!("wait_event expects CudaExecStream, got backend `{}`", stream.backend_name()))
+        })?;
+        let event = event.as_any().downcast_ref::<CudaExecEvent>().ok_or_else(|| {
+            SchedulerError::Backend("cuda".into(), format!("wait_event expects CudaExecEvent, got backend `{}`", event.backend_name()))
+        })?;
+        self.driver.stream_wait_event(stream.raw(), event.raw()).map_err(map_driver)
     }
 
     fn record_event(&self, stream: &dyn ExecStream, event: &dyn ExecEvent) -> SchedulerResult<()> {
-        let stream = stream
-            .as_any()
-            .downcast_ref::<CudaExecStream>()
-            .ok_or_else(|| {
-                SchedulerError::Backend(
-                    "cuda".into(),
-                    format!(
-                        "record_event expects CudaExecStream, got backend `{}`",
-                        stream.backend_name()
-                    ),
-                )
-            })?;
-        let event = event
-            .as_any()
-            .downcast_ref::<CudaExecEvent>()
-            .ok_or_else(|| {
-                SchedulerError::Backend(
-                    "cuda".into(),
-                    format!(
-                        "record_event expects CudaExecEvent, got backend `{}`",
-                        event.backend_name()
-                    ),
-                )
-            })?;
-        self.driver
-            .event_record(event.raw(), stream.raw())
-            .map_err(map_driver)
+        let stream = stream.as_any().downcast_ref::<CudaExecStream>().ok_or_else(|| {
+            SchedulerError::Backend("cuda".into(), format!("record_event expects CudaExecStream, got backend `{}`", stream.backend_name()))
+        })?;
+        let event = event.as_any().downcast_ref::<CudaExecEvent>().ok_or_else(|| {
+            SchedulerError::Backend("cuda".into(), format!("record_event expects CudaExecEvent, got backend `{}`", event.backend_name()))
+        })?;
+        self.driver.event_record(event.raw(), stream.raw()).map_err(map_driver)
     }
 }

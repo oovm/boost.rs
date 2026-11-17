@@ -10,65 +10,25 @@ use geometry::Rgba;
 /// One drawing primitive. Coordinates are absolute pixels.
 #[derive(Clone, Debug)]
 pub enum Shape {
-    Path {
-        points: Vec<[f32; 2]>,
-        smooth: bool,
-        closed: bool,
-        fill: Option<Rgba>,
-        stroke: Option<Rgba>,
-        width: f32,
-    },
-    Rect {
-        origin: [f32; 2],
-        size: [f32; 2],
-        radius: f32,
-        fill: Option<Rgba>,
-        stroke: Option<Rgba>,
-        width: f32,
-    },
-    Circle {
-        center: [f32; 2],
-        radius: f32,
-        fill: Option<Rgba>,
-        stroke: Option<Rgba>,
-        width: f32,
-    },
+    Path { points: Vec<[f32; 2]>, smooth: bool, closed: bool, fill: Option<Rgba>, stroke: Option<Rgba>, width: f32 },
+    Rect { origin: [f32; 2], size: [f32; 2], radius: f32, fill: Option<Rgba>, stroke: Option<Rgba>, width: f32 },
+    Circle { center: [f32; 2], radius: f32, fill: Option<Rgba>, stroke: Option<Rgba>, width: f32 },
 }
 
 impl Shape {
     #[must_use]
     pub fn path(points: Vec<[f32; 2]>) -> Self {
-        Self::Path {
-            points,
-            smooth: false,
-            closed: false,
-            fill: None,
-            stroke: None,
-            width: 2.0,
-        }
+        Self::Path { points, smooth: false, closed: false, fill: None, stroke: None, width: 2.0 }
     }
 
     #[must_use]
     pub fn rect(origin: [f32; 2], size: [f32; 2], radius: f32) -> Self {
-        Self::Rect {
-            origin,
-            size,
-            radius,
-            fill: None,
-            stroke: None,
-            width: 2.0,
-        }
+        Self::Rect { origin, size, radius, fill: None, stroke: None, width: 2.0 }
     }
 
     #[must_use]
     pub fn circle(center: [f32; 2], radius: f32) -> Self {
-        Self::Circle {
-            center,
-            radius,
-            fill: None,
-            stroke: None,
-            width: 2.0,
-        }
+        Self::Circle { center, radius, fill: None, stroke: None, width: 2.0 }
     }
 
     #[must_use]
@@ -100,18 +60,7 @@ impl Shape {
     #[must_use]
     pub fn stroked(mut self, color: Rgba, width: f32) -> Self {
         match &mut self {
-            Self::Path {
-                stroke,
-                width: w, ..
-            }
-            | Self::Rect {
-                stroke,
-                width: w, ..
-            }
-            | Self::Circle {
-                stroke,
-                width: w, ..
-            } => {
+            Self::Path { stroke, width: w, .. } | Self::Rect { stroke, width: w, .. } | Self::Circle { stroke, width: w, .. } => {
                 *stroke = Some(color);
                 *w = width;
             }
@@ -127,17 +76,8 @@ impl Shape {
     #[must_use]
     pub fn outline(&self) -> Vec<[f32; 2]> {
         match self {
-            Self::Path {
-                points,
-                smooth,
-                closed,
-                ..
-            } => {
-                let mut outline = if *smooth {
-                    crate::norm::expand_smooth(points, *closed)
-                } else {
-                    points.clone()
-                };
+            Self::Path { points, smooth, closed, .. } => {
+                let mut outline = if *smooth { crate::norm::expand_smooth(points, *closed) } else { points.clone() };
                 if *closed && !*smooth && !outline.is_empty() {
                     outline.push(outline[0]);
                 }
@@ -160,12 +100,7 @@ pub struct VectorLayer {
 impl VectorLayer {
     #[must_use]
     pub fn new(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            opacity: 1.0,
-            visible: true,
-            shapes: Vec::new(),
-        }
+        Self { name: name.into(), opacity: 1.0, visible: true, shapes: Vec::new() }
     }
 }
 
@@ -181,12 +116,7 @@ pub struct VectorDoc {
 impl VectorDoc {
     #[must_use]
     pub fn new(width: u32, height: u32, background: Rgba) -> Self {
-        Self {
-            width: width.max(1),
-            height: height.max(1),
-            background,
-            layers: Vec::new(),
-        }
+        Self { width: width.max(1), height: height.max(1), background, layers: Vec::new() }
     }
 
     #[must_use]

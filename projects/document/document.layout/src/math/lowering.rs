@@ -8,13 +8,13 @@
 use document_compose::{
     Diagnostic, Severity, SourceSpan,
     math::{
-        Alignment, EnvironmentKind, EnvironmentRow, Fixed, FontStyle, FormulaNode, FormulaTree, GlyphKey, LimitsPolicy,
-        LineStyle, MathEnvironment as LayoutEnvironment, MathStyle as LayoutStyle, Numbering, SymbolRole,
+        Alignment, EnvironmentKind, EnvironmentRow, Fixed, FontStyle, FormulaNode, FormulaTree, GlyphKey, LimitsPolicy, LineStyle,
+        MathEnvironment as LayoutEnvironment, MathStyle as LayoutStyle, Numbering, SymbolRole,
     },
 };
 use document_ir::{
-    MathClass, MathColumnAlignment, MathDelimiter, MathEnvironment, MathEnvironmentKind, MathExpression, MathFormula,
-    MathRowNumbering, MathSpace, MathSpan, MathStyle, MathStyleKind,
+    MathClass, MathColumnAlignment, MathDelimiter, MathEnvironment, MathEnvironmentKind, MathExpression, MathFormula, MathRowNumbering,
+    MathSpace, MathSpan, MathStyle, MathStyleKind,
 };
 
 use super::layout::array_strut;
@@ -79,12 +79,8 @@ fn formula_node(expression: &MathExpression, face: Option<FontStyle>, diagnostic
                     sub: Box::new(formula_node(sub, face, diagnostics)),
                     sup: Box::new(formula_node(sup, face, diagnostics)),
                 },
-                (Some(sub), None) => {
-                    FormulaNode::Subscript { base: Box::new(base), sub: Box::new(formula_node(sub, face, diagnostics)) }
-                }
-                (None, Some(sup)) => {
-                    FormulaNode::Superscript { base: Box::new(base), sup: Box::new(formula_node(sup, face, diagnostics)) }
-                }
+                (Some(sub), None) => FormulaNode::Subscript { base: Box::new(base), sub: Box::new(formula_node(sub, face, diagnostics)) },
+                (None, Some(sup)) => FormulaNode::Superscript { base: Box::new(base), sup: Box::new(formula_node(sup, face, diagnostics)) },
                 (None, None) => base,
             }
         }
@@ -125,10 +121,9 @@ fn formula_node(expression: &MathExpression, face: Option<FontStyle>, diagnostic
                 span: span_of(*span),
             }
         }
-        MathExpression::StackAbove { over, base } => FormulaNode::OverSet {
-            top: Box::new(formula_node(over, face, diagnostics)),
-            base: Box::new(formula_node(base, face, diagnostics)),
-        },
+        MathExpression::StackAbove { over, base } => {
+            FormulaNode::OverSet { top: Box::new(formula_node(over, face, diagnostics)), base: Box::new(formula_node(base, face, diagnostics)) }
+        }
         MathExpression::StackBelow { under, base } => FormulaNode::UnderSet {
             bot: Box::new(formula_node(under, face, diagnostics)),
             base: Box::new(formula_node(base, face, diagnostics)),
@@ -141,9 +136,7 @@ fn formula_node(expression: &MathExpression, face: Option<FontStyle>, diagnostic
             MathStyleKind::Script => LayoutStyle::Script,
             MathStyleKind::ScriptScript => LayoutStyle::ScriptScript,
         }),
-        MathExpression::LimitsPolicy { limits } => {
-            FormulaNode::LimitsSpec(if *limits { LimitsPolicy::Limits } else { LimitsPolicy::NoLimits })
-        }
+        MathExpression::LimitsPolicy { limits } => FormulaNode::LimitsSpec(if *limits { LimitsPolicy::Limits } else { LimitsPolicy::NoLimits }),
         MathExpression::Environment(environment) => environment_node(environment, face, diagnostics),
         MathExpression::Text { text, span } => FormulaNode::Text {
             text: text.clone(),
@@ -160,11 +153,7 @@ fn formula_node(expression: &MathExpression, face: Option<FontStyle>, diagnostic
             // or `\middle` as running text.  The engine rejects the construct and
             // leaves the documented placeholder box in its place, so the gap in the
             // formula is visible instead of silently drawn as backslash source.
-            FormulaNode::Symbol {
-                glyph_key: GlyphKey::from_char('\u{25A1}', None, FontStyle::Normal),
-                role: SymbolRole::Ordinary,
-                span,
-            }
+            FormulaNode::Symbol { glyph_key: GlyphKey::from_char('\u{25A1}', None, FontStyle::Normal), role: SymbolRole::Ordinary, span }
         }
     }
 }
@@ -256,18 +245,12 @@ fn space_width(kind: MathSpace) -> Fixed {
 }
 
 fn delimiter_key(delimiter: &Option<MathDelimiter>) -> Option<GlyphKey> {
-    delimiter
-        .as_ref()
-        .and_then(|delimiter| delimiter.character)
-        .map(|character| GlyphKey::from_char(character, None, FontStyle::Normal))
+    delimiter.as_ref().and_then(|delimiter| delimiter.character).map(|character| GlyphKey::from_char(character, None, FontStyle::Normal))
 }
 
 fn environment_node(environment: &MathEnvironment, face: Option<FontStyle>, diagnostics: &mut Vec<Diagnostic>) -> FormulaNode {
-    let rows: Vec<Vec<FormulaNode>> = environment
-        .rows
-        .iter()
-        .map(|row| row.cells.iter().map(|cell| formula_node(cell, face, diagnostics)).collect())
-        .collect();
+    let rows: Vec<Vec<FormulaNode>> =
+        environment.rows.iter().map(|row| row.cells.iter().map(|cell| formula_node(cell, face, diagnostics)).collect()).collect();
     match environment.kind {
         MathEnvironmentKind::Matrix | MathEnvironmentKind::Cases => {
             let columns = rows.iter().map(|row| row.len()).max().unwrap_or(0);
@@ -348,8 +331,7 @@ fn environment_node(environment: &MathEnvironment, face: Option<FontStyle>, diag
                 })
                 .collect();
             let col_spacing = match kind.anchors() {
-                document_compose::math::AlignmentAnchors::ColumnPairs
-                | document_compose::math::AlignmentAnchors::SingleEquation => 0.0,
+                document_compose::math::AlignmentAnchors::ColumnPairs | document_compose::math::AlignmentAnchors::SingleEquation => 0.0,
                 _ => 0.8,
             };
             FormulaNode::Environment(LayoutEnvironment {
@@ -362,10 +344,7 @@ fn environment_node(environment: &MathEnvironment, face: Option<FontStyle>, diag
                 col_spacing: Fixed::from_f64(col_spacing),
             })
         }
-        MathEnvironmentKind::AlignAt
-        | MathEnvironmentKind::FlAlign
-        | MathEnvironmentKind::EqnArray
-        | MathEnvironmentKind::Other(_) => {
+        MathEnvironmentKind::AlignAt | MathEnvironmentKind::FlAlign | MathEnvironmentKind::EqnArray | MathEnvironmentKind::Other(_) => {
             let span = span_of(environment.span);
             diagnostics.push(unsupported("environment", &environment.name, span));
             FormulaNode::Text { text: environment.name.clone(), font_style: FontStyle::Normal, span }
@@ -433,9 +412,7 @@ fn unsupported(kind: &str, source: &str, span: Option<SourceSpan>) -> Diagnostic
     Diagnostic {
         code: "vutex.math.unsupported_expression".into(),
         severity: Severity::Warning,
-        message: format!(
-            "math {kind} has no VuTeX layout mapping and is rejected: the page keeps a placeholder box instead of `{source}`"
-        ),
+        message: format!("math {kind} has no VuTeX layout mapping and is rejected: the page keeps a placeholder box instead of `{source}`"),
         span,
     }
 }

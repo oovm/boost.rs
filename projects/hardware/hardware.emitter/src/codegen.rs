@@ -203,7 +203,10 @@ pub fn encode_program(program: &Program, entry: &str, isa: TargetIsa, options: C
         TargetIsa::Spirv => emit_program_spirv(program, entry).map_err(|error| CodegenError::Encode { isa, message: error.to_string() })?,
         TargetIsa::Dxbc => emit_program_dxbc(program, entry).map_err(|error| CodegenError::Encode { isa, message: error.to_string() })?,
         _ => {
-            return Err(CodegenError::Unsupported { isa, reason: "generic UCF programs still lack a program-level encoder for this ISA".into() })
+            return Err(CodegenError::Unsupported {
+                isa,
+                reason: "generic UCF programs still lack a program-level encoder for this ISA".into(),
+            });
         }
     };
     Ok(EncodedModule { isa, bytes })

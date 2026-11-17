@@ -571,11 +571,7 @@ impl ChartSpec {
                 if !effective.is_quantitative() {
                     diagnostics.push(chart_error(
                         codes::INVALID_SPEC,
-                        format!(
-                            "the `opacity` channel needs a quantitative field, but `{}` is {}",
-                            field.name,
-                            field.kind.as_str()
-                        ),
+                        format!("the `opacity` channel needs a quantitative field, but `{}` is {}", field.name, field.kind.as_str()),
                     ));
                 }
             }
@@ -627,8 +623,7 @@ impl ChartSpec {
                 }
             }
             if let Some(spec) = self.scales.channel(channel) {
-                if let Some(record) =
-                    scale_conflict(channel, field.kind, encoding.aggregate, self.transforms.channel(channel).is_some(), *spec)
+                if let Some(record) = scale_conflict(channel, field.kind, encoding.aggregate, self.transforms.channel(channel).is_some(), *spec)
                 {
                     diagnostics.push(record);
                 }
@@ -637,8 +632,7 @@ impl ChartSpec {
 
         if let Some(opacity) = self.mark_opacity {
             if !opacity.is_finite() || !(0.0..=1.0).contains(&opacity) {
-                diagnostics
-                    .push(chart_error(codes::INVALID_SPEC, "chart mark opacity must be a finite number within 0.0..=1.0"));
+                diagnostics.push(chart_error(codes::INVALID_SPEC, "chart mark opacity must be a finite number within 0.0..=1.0"));
             }
         }
 
@@ -650,8 +644,7 @@ impl ChartSpec {
                 ));
             }
             if channel == Channel::X || channel == Channel::Y {
-                diagnostics
-                    .push(chart_error(codes::INVALID_SPEC, "`dodge` needs a non-positional channel for its sub-categories"));
+                diagnostics.push(chart_error(codes::INVALID_SPEC, "`dodge` needs a non-positional channel for its sub-categories"));
             }
             else {
                 match self.encoding.channel(channel) {
@@ -691,10 +684,7 @@ impl ChartSpec {
             diagnostics.push(chart_error(codes::INVALID_SPEC, "chart encoding must bind at least one of `x` or `y`"));
         }
         else if self.mark != Mark::Rule && (self.encoding.x.is_none() || self.encoding.y.is_none()) {
-            diagnostics.push(chart_error(
-                codes::INVALID_SPEC,
-                format!("mark `{}` needs both `x` and `y` bindings", self.mark.as_str()),
-            ));
+            diagnostics.push(chart_error(codes::INVALID_SPEC, format!("mark `{}` needs both `x` and `y` bindings", self.mark.as_str())));
         }
         diagnostics
     }
@@ -708,13 +698,7 @@ fn supports(mark: Mark, channel: Channel) -> bool {
     }
 }
 
-fn scale_conflict(
-    channel: Channel,
-    kind: FieldKind,
-    aggregate: Option<Aggregate>,
-    transformed: bool,
-    spec: ScaleSpec,
-) -> Option<Diagnostic> {
+fn scale_conflict(channel: Channel, kind: FieldKind, aggregate: Option<Aggregate>, transformed: bool, spec: ScaleSpec) -> Option<Diagnostic> {
     let effective = if transformed {
         FieldKind::Ordinal
     }
@@ -742,10 +726,9 @@ fn scale_conflict(
                 }
             }
             match channel {
-                Channel::Color | Channel::Shape => Some(chart_error(
-                    codes::INVALID_SCALE,
-                    format!("the `{}` channel uses a nominal scale in this slice", channel.as_str()),
-                )),
+                Channel::Color | Channel::Shape => {
+                    Some(chart_error(codes::INVALID_SCALE, format!("the `{}` channel uses a nominal scale in this slice", channel.as_str())))
+                }
                 Channel::Size | Channel::X | Channel::Y | Channel::Opacity => {
                     if effective.is_quantitative() {
                         None
@@ -787,10 +770,7 @@ fn scale_conflict(
                         ))
                     }
                 }
-                _ => Some(chart_error(
-                    codes::INVALID_SCALE,
-                    format!("only `x` and `y` use log or sqrt scales, not `{}`", channel.as_str()),
-                )),
+                _ => Some(chart_error(codes::INVALID_SCALE, format!("only `x` and `y` use log or sqrt scales, not `{}`", channel.as_str()))),
             }
         }
         ScaleSpec::Band { padding } | ScaleSpec::Point { padding } => {
@@ -801,10 +781,9 @@ fn scale_conflict(
                 ));
             }
             match channel {
-                Channel::Color | Channel::Shape | Channel::Size | Channel::Opacity => Some(chart_error(
-                    codes::INVALID_SCALE,
-                    format!("only `x` and `y` use band or point scales, not `{}`", channel.as_str()),
-                )),
+                Channel::Color | Channel::Shape | Channel::Size | Channel::Opacity => {
+                    Some(chart_error(codes::INVALID_SCALE, format!("only `x` and `y` use band or point scales, not `{}`", channel.as_str())))
+                }
                 Channel::X | Channel::Y => {
                     if effective.is_categorical() {
                         None

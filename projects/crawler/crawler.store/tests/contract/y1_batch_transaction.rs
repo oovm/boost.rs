@@ -53,10 +53,7 @@ fn y1_page_commit_is_one_batch_and_abort_leaves_no_ghost() {
         store.page_tx_put_fetch("fetch/b", b"beta").expect("put fetch");
         store.page_tx_put_ir("ir/b", b"beta-ir").expect("put ir");
         store.abort_page_tx().expect("abort");
-        assert!(
-            matches!(store.page_phase(&second.item_id), Err(StoreError::StoreNotFound(_))),
-            "aborted page must not leave a visible record"
-        );
+        assert!(matches!(store.page_phase(&second.item_id), Err(StoreError::StoreNotFound(_))), "aborted page must not leave a visible record");
         assert_eq!(store.event_count().expect("events"), 1, "abort must not append an event");
     });
 }

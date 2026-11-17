@@ -22,9 +22,7 @@
 use std::fmt::Write as _;
 
 use document_presentation::display::DisplayGraphic;
-use plotter_scene::{
-    DisplayScene, MarkerShape, NodeKind, PathCommand, PathData, ResourceRef, SceneNode, ShapeStyle, TextAnchor, TextStyle,
-};
+use plotter_scene::{DisplayScene, MarkerShape, NodeKind, PathCommand, PathData, ResourceRef, SceneNode, ShapeStyle, TextAnchor, TextStyle};
 use plotter_types::{Color, Point, Rect, Transform};
 
 use document_compose::Diagnostic;
@@ -293,16 +291,8 @@ fn write_rounded_rect(out: &mut String, rect: Rect, radius: f64) {
     let (left, top, right, bottom) = (rect.x, rect.y, rect.right(), rect.bottom());
     let _ = write!(out, "{} {} m\n", num(left + radius), num(top));
     let _ = write!(out, "{} {} l\n", num(right - radius), num(top));
-    let _ = write!(
-        out,
-        "{} {} {} {} {} {} c\n",
-        num(right - control),
-        num(top),
-        num(right),
-        num(top + control),
-        num(right),
-        num(top + radius),
-    );
+    let _ =
+        write!(out, "{} {} {} {} {} {} c\n", num(right - control), num(top), num(right), num(top + control), num(right), num(top + radius),);
     let _ = write!(out, "{} {} l\n", num(right), num(bottom - radius));
     let _ = write!(
         out,
@@ -326,16 +316,7 @@ fn write_rounded_rect(out: &mut String, rect: Rect, radius: f64) {
         num(bottom - radius),
     );
     let _ = write!(out, "{} {} l\n", num(left), num(top + radius));
-    let _ = write!(
-        out,
-        "{} {} {} {} {} {} c\n",
-        num(left),
-        num(top + control),
-        num(left + control),
-        num(top),
-        num(left + radius),
-        num(top),
-    );
+    let _ = write!(out, "{} {} {} {} {} {} c\n", num(left), num(top + control), num(left + control), num(top), num(left + radius), num(top),);
     out.push_str("h\n");
 }
 
@@ -397,10 +378,7 @@ fn write_path_data(out: &mut String, path: &PathData) {
             }
             PathCommand::QuadraticTo { control, to } => {
                 // PDF has no quadratic segment, so lift it to an equivalent cubic.
-                let c1 = Point::new(
-                    current.x + 2.0 / 3.0 * (control.x - current.x),
-                    current.y + 2.0 / 3.0 * (control.y - current.y),
-                );
+                let c1 = Point::new(current.x + 2.0 / 3.0 * (control.x - current.x), current.y + 2.0 / 3.0 * (control.y - current.y));
                 let c2 = Point::new(to.x + 2.0 / 3.0 * (control.x - to.x), to.y + 2.0 / 3.0 * (control.y - to.y));
                 let _ = write!(out, "{} {} {} {} {} {} c\n", num(c1.x), num(c1.y), num(c2.x), num(c2.y), num(to.x), num(to.y));
                 current = to;
@@ -514,14 +492,8 @@ fn write_image<'d>(out: &mut String, rect: Rect, resource: &ResourceRef, painter
         return;
     }
     if let Some(name) = painter.images.raster(&resource.href) {
-        let _ = write!(
-            out,
-            "q\n{} 0 0 {} {} {} cm\n/{name} Do\nQ\n",
-            num(rect.width),
-            num(-rect.height),
-            num(rect.x),
-            num(rect.y + rect.height),
-        );
+        let _ =
+            write!(out, "q\n{} 0 0 {} {} {} cm\n/{name} Do\nQ\n", num(rect.width), num(-rect.height), num(rect.x), num(rect.y + rect.height),);
         return;
     }
     if let Some(scene) = painter.images.scene(&resource.href)
@@ -559,12 +531,5 @@ fn all_finite(values: &[f64]) -> bool {
 
 /// Reserved image slot for a reference this backend could not resolve.
 fn write_image_placeholder(out: &mut String, rect: Rect) {
-    let _ = write!(
-        out,
-        "0.6 G\n0.5 w\n[3 2] 0 d\n{} {} {} {} re\nS\n[] 0 d\n",
-        num(rect.x),
-        num(rect.y),
-        num(rect.width),
-        num(rect.height),
-    );
+    let _ = write!(out, "0.6 G\n0.5 w\n[3 2] 0 d\n{} {} {} {} re\nS\n[] 0 d\n", num(rect.x), num(rect.y), num(rect.width), num(rect.height),);
 }

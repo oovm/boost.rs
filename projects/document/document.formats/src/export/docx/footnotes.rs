@@ -124,8 +124,7 @@ pub fn parse_footnote_definition(payload: &str) -> Option<(String, String)> {
     }
     let close = trimmed.find(']')?;
     let label = trimmed[2..close].trim();
-    let body =
-        trimmed.get(close + 1..).and_then(|rest| rest.strip_prefix(':')).map(str::trim).filter(|body| !body.is_empty())?;
+    let body = trimmed.get(close + 1..).and_then(|rest| rest.strip_prefix(':')).map(str::trim).filter(|body| !body.is_empty())?;
     Some((label.to_string(), body.to_string()))
 }
 

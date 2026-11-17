@@ -81,13 +81,7 @@ fn entering_paths_are_drawn_on_with_trim() {
     // Three quarters crosses the corner and stops halfway through the second leg.
     let at_most = sample(&plan, &previous, &next, 0.75);
     let most = path_of(&at_most, "line");
-    assert_eq!(
-        most,
-        &PathData::new()
-            .move_to(Point::new(0.0, 0.0))
-            .line_to(Point::new(10.0, 0.0))
-            .line_to(Point::new(15.0, 0.0))
-    );
+    assert_eq!(most, &PathData::new().move_to(Point::new(0.0, 0.0)).line_to(Point::new(10.0, 0.0)).line_to(Point::new(15.0, 0.0)));
     // Nothing is drawn at the very start.
     let at_start = sample(&plan, &previous, &next, 0.0);
     assert_eq!(path_of(&at_start, "line"), &PathData::new());
@@ -95,10 +89,7 @@ fn entering_paths_are_drawn_on_with_trim() {
     let at_end = sample(&plan, &previous, &next, 1.0);
     assert_eq!(
         path_of(&at_end, "line"),
-        &PathData::new()
-            .move_to(Point::new(0.0, 0.0))
-            .line_to(Point::new(10.0, 0.0))
-            .line_to(Point::new(20.0, 0.0))
+        &PathData::new().move_to(Point::new(0.0, 0.0)).line_to(Point::new(10.0, 0.0)).line_to(Point::new(20.0, 0.0))
     );
 }
 

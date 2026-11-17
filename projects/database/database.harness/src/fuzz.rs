@@ -293,11 +293,7 @@ struct Expander<'g, 'i> {
 impl<'g, 'i> Expander<'g, 'i> {
     /// 展开一个类型标签：先选规则（决策点内），再进入 `expand_rule`。
     fn expand_tag(&mut self, tag: &str, remaining: u32) -> Result<Vec<String>> {
-        let candidates = self
-            .index
-            .by_tag
-            .get(tag)
-            .ok_or_else(|| fuzz_error(format!("未知类型标签 {tag}")))?;
+        let candidates = self.index.by_tag.get(tag).ok_or_else(|| fuzz_error(format!("未知类型标签 {tag}")))?;
         let rule = if self.point < self.forced.len() {
             let entry = &self.forced[self.point];
             let found = candidates.iter().position(|candidate| candidate.id == entry.rule);
@@ -334,7 +330,12 @@ impl<'g, 'i> Expander<'g, 'i> {
                 return Err(fuzz_error(format!("trace 第 {0} 点期望规则 {1}，实际到达 {2}", self.point, entry.rule, rule.id)));
             }
             if entry.choices != eligible.len() {
-                return Err(fuzz_error(format!("trace 第 {0} 点可选数量 {1} 与当前语法 {2} 不一致", self.point, entry.choices, eligible.len())));
+                return Err(fuzz_error(format!(
+                    "trace 第 {0} 点可选数量 {1} 与当前语法 {2} 不一致",
+                    self.point,
+                    entry.choices,
+                    eligible.len()
+                )));
             }
             if !eligible.contains(&entry.alternative) {
                 return Err(fuzz_error(format!("trace 第 {0} 点 alternative {1} 不在当前可选集", self.point, entry.alternative)));
@@ -644,12 +645,7 @@ mod tests {
                 rules: vec![rule("a", "stmt", vec![vec![slot("empty")]])],
                 pools: vec![pool("empty", &[])],
             },
-            Grammar {
-                version: 1,
-                start: "stmt".to_owned(),
-                rules: vec![rule("a", "stmt", vec![vec![]])],
-                pools: vec![],
-            },
+            Grammar { version: 1, start: "stmt".to_owned(), rules: vec![rule("a", "stmt", vec![vec![]])], pools: vec![] },
         ];
         for grammar in cases {
             assert!(matches!(generate(&grammar, &FuzzPlan { seed: 0, depth: 1, count: 1 }), Err(HarnessError::Fuzz(_))), "{grammar:?}");

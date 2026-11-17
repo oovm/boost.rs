@@ -6,8 +6,7 @@ use std::{
 };
 
 use plotter_types::{
-    Diagnostic, DiagnosticLabel, DiagnosticLocation, DiagnosticSeverity, LabelRole, Message, NAMESPACE, SourceRef, codes,
-    diagnostic,
+    Diagnostic, DiagnosticLabel, DiagnosticLocation, DiagnosticSeverity, LabelRole, Message, NAMESPACE, SourceRef, codes, diagnostic,
 };
 
 /// A fatal diagram parsing or lowering failure.

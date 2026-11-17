@@ -20,8 +20,7 @@ pub(crate) fn stream_contents(bytes: &[u8]) -> Vec<PdfStream<'_>> {
     let mut offset = 0;
     while let Some(relative) = bytes[offset..].windows(6).position(|window| window == b"stream") {
         let marker = offset + relative;
-        let dictionary_start =
-            bytes[..marker].windows(3).rposition(|window| window == b"obj").map_or(0, |position| position + 3);
+        let dictionary_start = bytes[..marker].windows(3).rposition(|window| window == b"obj").map_or(0, |position| position + 3);
         let object_id = object_id(bytes, dictionary_start);
         let dictionary = &bytes[dictionary_start..marker];
         let mut start = marker + 6;
@@ -39,10 +38,7 @@ pub(crate) fn stream_contents(bytes: &[u8]) -> Vec<PdfStream<'_>> {
             .and_then(|length| start.checked_add(length).filter(|end| *end <= bytes.len()))
             .filter(|end| bytes[skip_space(bytes, *end)..].starts_with(b"endstream"))
             .unwrap_or_else(|| {
-                bytes[start..]
-                    .windows(9)
-                    .position(|window| window == b"endstream")
-                    .map_or(bytes.len(), |position| start + position)
+                bytes[start..].windows(9).position(|window| window == b"endstream").map_or(bytes.len(), |position| start + position)
             });
         if end > start {
             streams.push(PdfStream { object_id, dictionary, data: &bytes[start..end] });

@@ -16,15 +16,15 @@ use acorn_docx::{OpcPackage, OpcRelationship};
 use oak_xml::ast::XmlElement;
 
 use super::model::{
-    BodyProperties, ChartRef, ChartSeries, Fill, IssueStatus, Line, Paragraph, PlaceholderKind, PlaceholderRef, PptxIssue,
-    PptxPresentation, PptxStats, PptxTable, PptxTableCell, PptxTableRow, Run, Shape, ShapeKind, Slide, SlideImage, SlideSize,
-    TextFrame, TextStyle, Transform, codes,
+    BodyProperties, ChartRef, ChartSeries, Fill, IssueStatus, Line, Paragraph, PlaceholderKind, PlaceholderRef, PptxIssue, PptxPresentation,
+    PptxStats, PptxTable, PptxTableCell, PptxTableRow, Run, Shape, ShapeKind, Slide, SlideImage, SlideSize, TextFrame, TextStyle, Transform,
+    codes,
 };
 use crate::{
     FormatError,
     import::office::{
-        attribute_value, child_named, children_named, descendants_named, document_root, element_is, element_text, local_name,
-        parse_xml, u32_attribute,
+        attribute_value, child_named, children_named, descendants_named, document_root, element_is, element_text, local_name, parse_xml,
+        u32_attribute,
     },
 };
 
@@ -35,8 +35,7 @@ const DEFAULT_CY: i64 = 6858000;
 /// Imports a PPTX presentation from disk.
 pub fn import_pptx(path: impl AsRef<Path>) -> Result<PptxPresentation, FormatError> {
     let path = path.as_ref();
-    let bytes =
-        fs::read(path).map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
+    let bytes = fs::read(path).map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
     import_pptx_bytes(&path.display().to_string(), &bytes)
 }
 
@@ -60,13 +59,7 @@ pub fn import_pptx_bytes(label: &str, bytes: &[u8]) -> Result<PptxPresentation, 
     let title = read_core_title(&package, &mut ledger);
 
     if package.part_paths().iter().any(|path| local_name(path).eq_ignore_ascii_case("vbaProject.bin")) {
-        issues.push(issue(
-            codes::MACRO,
-            "VBA project detected and refused by the PPTX reader",
-            IssueStatus::Unsupported,
-            None,
-            None,
-        ));
+        issues.push(issue(codes::MACRO, "VBA project detected and refused by the PPTX reader", IssueStatus::Unsupported, None, None));
     }
 
     let masters = parse_masters(&package, &mut ledger, presentation_root, &presentation_rels, &mut issues);
@@ -99,22 +92,15 @@ pub fn import_pptx_bytes(label: &str, bytes: &[u8]) -> Result<PptxPresentation, 
         };
         let Ok(slide_xml) = package.read_part(&target, &mut ledger)
         else {
-            issues.push(issue(
-                codes::GROUP,
-                format!("slide {index} part `{target}` is missing"),
-                IssueStatus::Unsupported,
-                Some(index),
-                None,
-            ));
+            issues.push(issue(codes::GROUP, format!("slide {index} part `{target}` is missing"), IssueStatus::Unsupported, Some(index), None));
             continue;
         };
         let slide_value = parse_xml(&slide_xml, "pptx")?;
         let slide_root = document_root(&slide_value, "pptx")?;
         let slide_rels = read_rels(&package, &mut ledger, &target);
         let layout_part = find_part(&slide_rels, "/slideLayout", &target);
-        let layout = layout_part
-            .as_deref()
-            .and_then(|part| masters.iter().flat_map(|master| master.layouts.iter()).find(|layout| layout.part == part));
+        let layout =
+            layout_part.as_deref().and_then(|part| masters.iter().flat_map(|master| master.layouts.iter()).find(|layout| layout.part == part));
         let master = masters
             .iter()
             .find(|master| master.layouts.iter().any(|candidate| Some(&candidate.part) == layout_part.as_ref()))
@@ -160,17 +146,7 @@ pub fn import_pptx_bytes(label: &str, bytes: &[u8]) -> Result<PptxPresentation, 
                 ));
             }
             for child in children_named(tree, "pic") {
-                shapes.extend(parse_picture(
-                    &package,
-                    &mut ledger,
-                    child,
-                    &slide_rels,
-                    &target,
-                    index,
-                    &theme_colors,
-                    &clr_map,
-                    &mut issues,
-                ));
+                shapes.extend(parse_picture(&package, &mut ledger, child, &slide_rels, &target, index, &theme_colors, &clr_map, &mut issues));
             }
             for child in children_named(tree, "graphicFrame") {
                 shapes.extend(parse_graphic_frame(
@@ -399,13 +375,7 @@ fn parse_masters(
         };
         let Some(master_value) = parse_part(package, ledger, &target)
         else {
-            issues.push(issue(
-                codes::GROUP,
-                format!("slide master part `{target}` is missing"),
-                IssueStatus::Unsupported,
-                None,
-                None,
-            ));
+            issues.push(issue(codes::GROUP, format!("slide master part `{target}` is missing"), IssueStatus::Unsupported, None, None));
             continue;
         };
         let Ok(root) = document_root(&master_value, "pptx")
@@ -431,13 +401,7 @@ fn parse_masters(
             let part = resolve_target(&target, &relationship.target);
             let Some(layout_value) = parse_part(package, ledger, &part)
             else {
-                issues.push(issue(
-                    codes::GROUP,
-                    format!("slide layout part `{part}` is missing"),
-                    IssueStatus::Unsupported,
-                    None,
-                    None,
-                ));
+                issues.push(issue(codes::GROUP, format!("slide layout part `{part}` is missing"), IssueStatus::Unsupported, None, None));
                 continue;
             };
             let Ok(layout_root) = document_root(&layout_value, "pptx")
@@ -461,16 +425,7 @@ fn parse_masters(
                 None,
             ));
         }
-        masters.push(MasterRecord {
-            part: target,
-            theme,
-            clr_map,
-            layouts,
-            placeholders,
-            title_style,
-            body_style,
-            other_style,
-        });
+        masters.push(MasterRecord { part: target, theme, clr_map, layouts, placeholders, title_style, body_style, other_style });
     }
     masters
 }
@@ -520,20 +475,15 @@ fn resolve_scheme(name: &str, theme: &BTreeMap<String, String>, clr_map: &HashMa
     theme.get(mapped).cloned().or_else(|| theme.get(name).cloned())
 }
 
-fn parse_placeholders(
-    root: &XmlElement,
-    theme: &BTreeMap<String, String>,
-    clr_map: &HashMap<String, String>,
-) -> Vec<PlaceholderStyle> {
+fn parse_placeholders(root: &XmlElement, theme: &BTreeMap<String, String>, clr_map: &HashMap<String, String>) -> Vec<PlaceholderStyle> {
     let Some(tree) = child_named(root, "cSld").and_then(|cld| child_named(cld, "spTree"))
     else {
         return Vec::new();
     };
     let mut placeholders = Vec::new();
     for shape in children_named(tree, "sp") {
-        let Some(reference) = parse_placeholder(
-            child_named(shape, "nvSpPr").and_then(|nv| child_named(nv, "nvPr")).and_then(|nv| child_named(nv, "ph")),
-        )
+        let Some(reference) =
+            parse_placeholder(child_named(shape, "nvSpPr").and_then(|nv| child_named(nv, "nvPr")).and_then(|nv| child_named(nv, "ph")))
         else {
             continue;
         };
@@ -545,10 +495,7 @@ fn parse_placeholders(
             fill: properties.and_then(|properties| parse_fill(properties, theme, clr_map)),
             line: properties.and_then(|properties| parse_line(properties, theme, clr_map)),
             body: body.and_then(|body| child_named(body, "bodyPr")).map(parse_body).unwrap_or_default(),
-            levels: body
-                .and_then(|body| child_named(body, "lstStyle"))
-                .map(|style| parse_levels_from(Some(style)))
-                .unwrap_or_default(),
+            levels: body.and_then(|body| child_named(body, "lstStyle")).map(|style| parse_levels_from(Some(style))).unwrap_or_default(),
         });
     }
     placeholders
@@ -596,9 +543,7 @@ fn parse_levels_from(style: Option<&XmlElement>) -> Vec<LevelStyle> {
             bold: defaults.and_then(|defaults| attribute_value(defaults, "b")).map(|value| value == "1").unwrap_or(false),
             italic: defaults.and_then(|defaults| attribute_value(defaults, "i")).map(|value| value == "1").unwrap_or(false),
             color: None,
-            font: defaults
-                .and_then(|defaults| child_named(defaults, "latin"))
-                .and_then(|latin| attribute_value(latin, "typeface")),
+            font: defaults.and_then(|defaults| child_named(defaults, "latin")).and_then(|latin| attribute_value(latin, "typeface")),
         });
     }
     levels
@@ -617,10 +562,7 @@ fn parse_transform(xfrm: Option<&XmlElement>) -> Option<Transform> {
         y: attribute_value(offset, "y").and_then(|value| value.parse().ok())?,
         cx: attribute_value(extent, "cx").and_then(|value| value.parse().ok())?,
         cy: attribute_value(extent, "cy").and_then(|value| value.parse().ok())?,
-        rotation_deg: attribute_value(xfrm, "rot")
-            .and_then(|value| value.parse::<f64>().ok())
-            .map(|value| value / 60000.0)
-            .unwrap_or(0.0),
+        rotation_deg: attribute_value(xfrm, "rot").and_then(|value| value.parse::<f64>().ok()).map(|value| value / 60000.0).unwrap_or(0.0),
     })
 }
 
@@ -653,8 +595,7 @@ fn color_from(fill: &XmlElement, theme: &BTreeMap<String, String>, clr_map: &Has
 
 fn parse_line(element: &XmlElement, theme: &BTreeMap<String, String>, clr_map: &HashMap<String, String>) -> Option<Line> {
     let line = child_named(element, "ln")?;
-    let width_pt =
-        attribute_value(line, "w").and_then(|value| value.parse::<f64>().ok()).map(|value| value / 12700.0).unwrap_or(1.0);
+    let width_pt = attribute_value(line, "w").and_then(|value| value.parse::<f64>().ok()).map(|value| value / 12700.0).unwrap_or(1.0);
     let color = child_named(line, "solidFill").and_then(|fill| color_from(fill, theme, clr_map));
     if color.is_none() && child_named(line, "noFill").is_some() {
         return None;
@@ -691,16 +632,13 @@ fn parse_shape(
     let id = shape_id(element, 0);
     let name = shape_name(element, "shape");
     let properties = child_named(element, "spPr");
-    let placeholder = parse_placeholder(
-        child_named(element, "nvSpPr").and_then(|nv| child_named(nv, "nvPr")).and_then(|nv| child_named(nv, "ph")),
-    );
+    let placeholder =
+        parse_placeholder(child_named(element, "nvSpPr").and_then(|nv| child_named(nv, "nvPr")).and_then(|nv| child_named(nv, "ph")));
     let mut transform = properties.and_then(|properties| parse_transform(child_named(properties, "xfrm")));
     let mut inherited = false;
     let mut fill = properties.and_then(|properties| parse_fill(properties, theme, clr_map));
     let mut line = properties.and_then(|properties| parse_line(properties, theme, clr_map));
-    let geometry = properties
-        .and_then(|properties| child_named(properties, "prstGeom"))
-        .and_then(|geometry| attribute_value(geometry, "prst"));
+    let geometry = properties.and_then(|properties| child_named(properties, "prstGeom")).and_then(|geometry| attribute_value(geometry, "prst"));
 
     let layout_placeholder = placeholder
         .as_ref()
@@ -710,9 +648,7 @@ fn parse_shape(
         .and_then(|reference| find_placeholder(master.map(|master| master.placeholders.as_slice()).unwrap_or(&[]), reference));
 
     if transform.is_none() {
-        transform = layout_placeholder
-            .and_then(|style| style.transform)
-            .or_else(|| master_placeholder.and_then(|style| style.transform));
+        transform = layout_placeholder.and_then(|style| style.transform).or_else(|| master_placeholder.and_then(|style| style.transform));
         inherited = transform.is_some();
         if inherited {
             issues.push(issue(
@@ -725,14 +661,10 @@ fn parse_shape(
         }
     }
     if fill.is_none() {
-        fill = layout_placeholder
-            .and_then(|style| style.fill.clone())
-            .or_else(|| master_placeholder.and_then(|style| style.fill.clone()));
+        fill = layout_placeholder.and_then(|style| style.fill.clone()).or_else(|| master_placeholder.and_then(|style| style.fill.clone()));
     }
     if line.is_none() {
-        line = layout_placeholder
-            .and_then(|style| style.line.clone())
-            .or_else(|| master_placeholder.and_then(|style| style.line.clone()));
+        line = layout_placeholder.and_then(|style| style.line.clone()).or_else(|| master_placeholder.and_then(|style| style.line.clone()));
     }
     if properties.and_then(|properties| child_named(properties, "gradFill")).is_some() {
         issues.push(issue(
@@ -818,9 +750,8 @@ fn inherited_levels<'a>(
 
 fn find_placeholder<'a>(placeholders: &'a [PlaceholderStyle], reference: &PlaceholderRef) -> Option<&'a PlaceholderStyle> {
     if let Some(index) = reference.index {
-        if let Some(matched) = placeholders
-            .iter()
-            .find(|placeholder| placeholder.reference.as_ref().and_then(|reference| reference.index) == Some(index))
+        if let Some(matched) =
+            placeholders.iter().find(|placeholder| placeholder.reference.as_ref().and_then(|reference| reference.index) == Some(index))
         {
             return Some(matched);
         }
@@ -850,9 +781,8 @@ fn parse_picture(
     let name = shape_name(element, "picture");
     let properties = child_named(element, "spPr");
     let transform = properties.and_then(|properties| parse_transform(child_named(properties, "xfrm")));
-    let embed = child_named(element, "blipFill")
-        .and_then(|fill| child_named(fill, "blip"))
-        .and_then(|blip| relationship_attribute(blip, "embed"));
+    let embed =
+        child_named(element, "blipFill").and_then(|fill| child_named(fill, "blip")).and_then(|blip| relationship_attribute(blip, "embed"));
     let image = embed.and_then(|id| rels.get(&id)).map(|relationship| {
         let part = resolve_target(owner, &relationship.target);
         let bytes = read_part_optional(package, ledger, &part);
@@ -1047,11 +977,8 @@ fn parse_text_frame(
     let mut paragraphs = Vec::new();
     for paragraph in children_named(body, "p") {
         let properties = child_named(paragraph, "pPr");
-        let level = properties
-            .and_then(|properties| attribute_value(properties, "lvl"))
-            .and_then(|value| value.parse::<u8>().ok())
-            .unwrap_or(0)
-            .min(8);
+        let level =
+            properties.and_then(|properties| attribute_value(properties, "lvl")).and_then(|value| value.parse::<u8>().ok()).unwrap_or(0).min(8);
         let align = properties.and_then(|properties| attribute_value(properties, "algn"));
         let mut runs = Vec::new();
         for child in &paragraph.children {
@@ -1068,11 +995,9 @@ fn parse_text_frame(
                         .and_then(|link| relationship_attribute(link, "id")),
                 }),
                 "br" => runs.push(Run { text: "\n".to_owned(), style: TextStyle::default(), hyperlink: None }),
-                "fld" => runs.push(Run {
-                    text: element_text(element),
-                    style: run_style(element, level, levels, theme, clr_map),
-                    hyperlink: None,
-                }),
+                "fld" => {
+                    runs.push(Run { text: element_text(element), style: run_style(element, level, levels, theme, clr_map), hyperlink: None })
+                }
                 _ => {}
             }
         }
@@ -1098,22 +1023,10 @@ fn run_style(
         .and_then(|value| value.parse::<f64>().ok())
         .map(|value| value / 100.0);
     TextStyle {
-        bold: properties
-            .and_then(|properties| attribute_value(properties, "b"))
-            .map(|value| value == "1")
-            .unwrap_or(inherited.bold),
-        italic: properties
-            .and_then(|properties| attribute_value(properties, "i"))
-            .map(|value| value == "1")
-            .unwrap_or(inherited.italic),
-        underline: properties
-            .and_then(|properties| attribute_value(properties, "u"))
-            .map(|value| value != "none")
-            .unwrap_or(false),
-        strike: properties
-            .and_then(|properties| attribute_value(properties, "strike"))
-            .map(|value| value != "noStrike")
-            .unwrap_or(false),
+        bold: properties.and_then(|properties| attribute_value(properties, "b")).map(|value| value == "1").unwrap_or(inherited.bold),
+        italic: properties.and_then(|properties| attribute_value(properties, "i")).map(|value| value == "1").unwrap_or(inherited.italic),
+        underline: properties.and_then(|properties| attribute_value(properties, "u")).map(|value| value != "none").unwrap_or(false),
+        strike: properties.and_then(|properties| attribute_value(properties, "strike")).map(|value| value != "noStrike").unwrap_or(false),
         size_pt: declared_size.or(inherited.size_pt).or(Some(18.0)),
         color: properties
             .and_then(|properties| child_named(properties, "solidFill"))
@@ -1128,8 +1041,7 @@ fn run_style(
 }
 
 fn read_chart_ref(package: &OpcPackage, ledger: &mut BudgetTracker, part: &str) -> ChartRef {
-    let mut reference =
-        ChartRef { part: part.to_owned(), kind: None, series_count: 0, categories: Vec::new(), series: Vec::new() };
+    let mut reference = ChartRef { part: part.to_owned(), kind: None, series_count: 0, categories: Vec::new(), series: Vec::new() };
     let Some(value) = parse_part(package, ledger, part)
     else {
         return reference;
@@ -1154,18 +1066,14 @@ fn read_chart_ref(package: &OpcPackage, ledger: &mut BudgetTracker, part: &str) 
             .map(|points| {
                 descendants_named(points, "pt")
                     .iter()
-                    .filter_map(|point| {
-                        child_named(point, "v").map(element_text).and_then(|text| text.trim().parse::<f64>().ok())
-                    })
+                    .filter_map(|point| child_named(point, "v").map(element_text).and_then(|text| text.trim().parse::<f64>().ok()))
                     .collect::<Vec<f64>>()
             })
             .unwrap_or_default();
         if reference.categories.is_empty() {
             if let Some(categories) = child_named(entry, "cat") {
-                reference.categories = descendants_named(categories, "pt")
-                    .iter()
-                    .filter_map(|point| child_named(point, "v").map(element_text))
-                    .collect();
+                reference.categories =
+                    descendants_named(categories, "pt").iter().filter_map(|point| child_named(point, "v").map(element_text)).collect();
             }
         }
         reference.series.push(ChartSeries { name, values });
@@ -1173,12 +1081,7 @@ fn read_chart_ref(package: &OpcPackage, ledger: &mut BudgetTracker, part: &str) 
     reference
 }
 
-fn read_notes(
-    package: &OpcPackage,
-    ledger: &mut BudgetTracker,
-    rels: &HashMap<String, OpcRelationship>,
-    owner: &str,
-) -> Option<String> {
+fn read_notes(package: &OpcPackage, ledger: &mut BudgetTracker, rels: &HashMap<String, OpcRelationship>, owner: &str) -> Option<String> {
     let part = find_part(rels, "/notesSlide", owner)?;
     let value = parse_part(package, ledger, &part)?;
     let root = document_root(&value, "pptx").ok()?;
@@ -1238,10 +1141,7 @@ fn shape_id(element: &XmlElement, fallback: u32) -> u32 {
     else {
         None
     };
-    holder
-        .and_then(|holder| child_named(holder, "cNvPr"))
-        .and_then(|non_visual| u32_attribute(non_visual, "id"))
-        .unwrap_or(fallback)
+    holder.and_then(|holder| child_named(holder, "cNvPr")).and_then(|non_visual| u32_attribute(non_visual, "id")).unwrap_or(fallback)
 }
 
 fn shape_name(element: &XmlElement, fallback: &str) -> String {

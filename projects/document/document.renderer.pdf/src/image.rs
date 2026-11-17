@@ -352,11 +352,7 @@ fn decode_png(raw: &[u8]) -> Option<Raster> {
             let (rgb, alpha) = split_alpha(&samples, channels, depth)?;
             (narrow(rgb, depth), "DeviceRGB", Some(narrow(alpha, depth)))
         }
-        3 => (
-            expand_palette(&samples, palette.as_deref()?),
-            "DeviceRGB",
-            expand_palette_alpha(&samples, transparency.as_deref()),
-        ),
+        3 => (expand_palette(&samples, palette.as_deref()?), "DeviceRGB", expand_palette_alpha(&samples, transparency.as_deref())),
         _ => (narrow(samples, depth), "DeviceRGB", None),
     };
     Some(raster(header.width, header.height, color_space, None, data, sharp))
@@ -415,9 +411,7 @@ fn deinterlace(scanlines: &[u8], width: usize, height: usize, pixel_bytes: usize
                 let x = x_origin.checked_add(column.checked_mul(x_step)?)?;
                 let source = row.checked_mul(row_bytes)?.checked_add(column.checked_mul(pixel_bytes)?)?;
                 let target = y.checked_mul(width)?.checked_add(x)?.checked_mul(pixel_bytes)?;
-                samples
-                    .get_mut(target..target.checked_add(pixel_bytes)?)?
-                    .copy_from_slice(rows.get(source..source.checked_add(pixel_bytes)?)?);
+                samples.get_mut(target..target.checked_add(pixel_bytes)?)?.copy_from_slice(rows.get(source..source.checked_add(pixel_bytes)?)?);
             }
         }
         at = at.checked_add(length)?;

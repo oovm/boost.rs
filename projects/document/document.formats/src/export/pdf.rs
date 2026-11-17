@@ -106,11 +106,8 @@ pub fn export_pdf_bytes(graph: &DocumentGraph) -> Result<Vec<u8>, FormatError> {
         objects.push(content_object);
     }
     objects.push(
-        format!(
-            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding /ToUnicode {} 0 R >>",
-            info_object + 1
-        )
-        .into_bytes(),
+        format!("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding /ToUnicode {} 0 R >>", info_object + 1)
+            .into_bytes(),
     );
     objects.push(metadata_object.into_bytes());
     let cmap = win_ansi_cmap();
@@ -120,10 +117,9 @@ pub fn export_pdf_bytes(graph: &DocumentGraph) -> Result<Vec<u8>, FormatError> {
         let color_space = if components == 1 { "DeviceGray" } else { "DeviceRGB" };
         let (filter, decode_parms) = match payload.filter {
             ImageFilter::Dct => ("/DCTDecode".to_owned(), String::new()),
-            ImageFilter::Flate { colors } => (
-                "/FlateDecode".to_owned(),
-                format!(" /DecodeParms << /Predictor 15 /Colors {colors} /BitsPerComponent 8 /Columns {width} >>"),
-            ),
+            ImageFilter::Flate { colors } => {
+                ("/FlateDecode".to_owned(), format!(" /DecodeParms << /Predictor 15 /Colors {colors} /BitsPerComponent 8 /Columns {width} >>"))
+            }
         };
         objects.push(format!("<< /Type /XObject /Subtype /Image /Width {width} /Height {height} /ColorSpace /{color_space} /BitsPerComponent 8 /Filter {filter}{decode_parms} /Length {} >>\nstream\n", payload.stream.len()).into_bytes());
         let object = objects.last_mut().expect("image object header");
@@ -144,12 +140,7 @@ pub fn export_pdf_bytes(graph: &DocumentGraph) -> Result<Vec<u8>, FormatError> {
     for offset in offsets {
         writeln!(&mut pdf, "{offset:010} 00000 n ").unwrap();
     }
-    write!(
-        &mut pdf,
-        "trailer\n<< /Size {} /Root 1 0 R /Info {info_object} 0 R >>\nstartxref\n{xref}\n%%EOF\n",
-        objects.len() + 1
-    )
-    .unwrap();
+    write!(&mut pdf, "trailer\n<< /Size {} /Root 1 0 R /Info {info_object} 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1).unwrap();
     Ok(pdf)
 }
 
@@ -182,18 +173,16 @@ fn render_block(lines: &mut Vec<RenderLine>, graph: &DocumentGraph, block: &Bloc
         Block::Section { title, children, .. } => {
             lines.push(RenderLine::Text(inline_text(graph, title)?));
             for child_id in children {
-                let child = graph
-                    .block(*child_id)
-                    .ok_or_else(|| FormatError::invalid_input(format!("missing PDF section child {child_id:?}")))?;
+                let child =
+                    graph.block(*child_id).ok_or_else(|| FormatError::invalid_input(format!("missing PDF section child {child_id:?}")))?;
                 render_block(lines, graph, &child.block)?;
             }
         }
         Block::Paragraph { content } => push_inline_lines(lines, graph, content)?,
         Block::Quote { children } => {
             for child_id in children {
-                let child = graph
-                    .block(*child_id)
-                    .ok_or_else(|| FormatError::invalid_input(format!("missing PDF quote child {child_id:?}")))?;
+                let child =
+                    graph.block(*child_id).ok_or_else(|| FormatError::invalid_input(format!("missing PDF quote child {child_id:?}")))?;
                 render_block(lines, graph, &child.block)?;
             }
         }
@@ -201,17 +190,14 @@ fn render_block(lines: &mut Vec<RenderLine>, graph: &DocumentGraph, block: &Bloc
         | Block::Diagram { source: content, .. }
         | Block::Chart { source: content, .. }
         | Block::Engraving { source: content, .. }
-        | Block::Depiction { source: content, .. } => {
-            lines.extend(content.lines().map(|line| RenderLine::Text(line.to_owned())))
-        }
+        | Block::Depiction { source: content, .. } => lines.extend(content.lines().map(|line| RenderLine::Text(line.to_owned()))),
         Block::Math { formula } => lines.extend(formula.source.lines().map(|line| RenderLine::Text(line.to_owned()))),
         Block::List { items, .. } => {
             for item in items {
                 lines.push(RenderLine::Text(format!("- {}", inline_text(graph, &item.content)?)));
                 for child_id in &item.children {
-                    let child = graph
-                        .block(*child_id)
-                        .ok_or_else(|| FormatError::invalid_input(format!("missing PDF list child {child_id:?}")))?;
+                    let child =
+                        graph.block(*child_id).ok_or_else(|| FormatError::invalid_input(format!("missing PDF list child {child_id:?}")))?;
                     render_block(lines, graph, &child.block)?;
                 }
             }
@@ -219,8 +205,7 @@ fn render_block(lines: &mut Vec<RenderLine>, graph: &DocumentGraph, block: &Bloc
         Block::Table { head, body, foot, .. } => {
             for (band, prefix) in [(head, "H: "), (body, ""), (foot, "")] {
                 for row in band {
-                    let text =
-                        row.cells.iter().map(|cell| table_cell_text(graph, cell)).collect::<Result<Vec<_>, _>>()?.join(" | ");
+                    let text = row.cells.iter().map(|cell| table_cell_text(graph, cell)).collect::<Result<Vec<_>, _>>()?.join(" | ");
                     lines.push(RenderLine::Text(format!("{prefix}{text}")));
                 }
             }
@@ -247,9 +232,7 @@ fn nested_block_ids(graph: &DocumentGraph) -> HashSet<NodeId> {
 fn table_cell_text(graph: &DocumentGraph, cell: &document_ir::TableCell) -> Result<String, FormatError> {
     let mut parts = Vec::new();
     for child_id in &cell.children {
-        let child = graph
-            .block(*child_id)
-            .ok_or_else(|| FormatError::invalid_input(format!("missing PDF table cell child {child_id:?}")))?;
+        let child = graph.block(*child_id).ok_or_else(|| FormatError::invalid_input(format!("missing PDF table cell child {child_id:?}")))?;
         let Block::Paragraph { content } = &child.block
         else {
             return Err(FormatError::unsupported("pdf", "table cell block other than a paragraph is not representable"));
@@ -297,33 +280,22 @@ fn push_inline_lines(lines: &mut Vec<RenderLine>, graph: &DocumentGraph, content
     if let Some((target, bound)) = inline_image_target(content) {
         let asset = bound
             .and_then(|asset_id| graph.assets.iter().find(|asset| asset.id == asset_id))
-            .or_else(|| {
-                graph
-                    .assets
-                    .iter()
-                    .find(|asset| asset.kind == AssetKind::Image && asset.source.as_deref() == Some(target.as_str()))
-            })
+            .or_else(|| graph.assets.iter().find(|asset| asset.kind == AssetKind::Image && asset.source.as_deref() == Some(target.as_str())))
             .ok_or_else(|| FormatError::unsupported("pdf", format!("image asset `{target}` is not registered")))?;
-        let bytes = asset
-            .bytes
-            .clone()
-            .ok_or_else(|| FormatError::unsupported("pdf", format!("image asset `{target}` has no materialized bytes")))?;
+        let bytes =
+            asset.bytes.clone().ok_or_else(|| FormatError::unsupported("pdf", format!("image asset `{target}` has no materialized bytes")))?;
         let payload = if asset.media_type.as_deref() == Some("image/jpeg") {
             if !bytes.starts_with(&[0xFF, 0xD8]) {
                 return Err(FormatError::unsupported("pdf", format!("image asset `{target}` is not a valid JPEG payload")));
             }
             let frame = jpeg_frame(&bytes).ok_or_else(|| {
-                FormatError::unsupported(
-                    "pdf",
-                    format!("image asset `{target}` needs a complete 8-bit grayscale or RGB JPEG frame"),
-                )
+                FormatError::unsupported("pdf", format!("image asset `{target}` needs a complete 8-bit grayscale or RGB JPEG frame"))
             })?;
             PdfImagePayload { stream: bytes, frame, filter: ImageFilter::Dct }
         }
         else if asset.media_type.as_deref() == Some("image/png") {
-            png_payload(&bytes).ok_or_else(|| {
-                FormatError::unsupported("pdf", format!("image asset `{target}` needs an 8-bit grayscale or RGB PNG"))
-            })?
+            png_payload(&bytes)
+                .ok_or_else(|| FormatError::unsupported("pdf", format!("image asset `{target}` needs an 8-bit grayscale or RGB PNG")))?
         }
         else {
             return Err(FormatError::unsupported("pdf", "only image/jpeg and 8-bit image/png assets can be embedded"));
@@ -363,10 +335,7 @@ fn inline_text(graph: &DocumentGraph, inlines: &[Inline]) -> Result<String, Form
                 BreakKind::Hard => output.push('\n'),
             },
             Inline::Citation { .. } => {
-                return Err(FormatError::unsupported(
-                    "pdf",
-                    "inline semantic node is not representable by the conservative PDF exporter yet",
-                ));
+                return Err(FormatError::unsupported("pdf", "inline semantic node is not representable by the conservative PDF exporter yet"));
             }
             // The PDF exporter has no HTML renderer, but collapsing the node
             // to nothing would silently erase authored content. Its visible
@@ -384,9 +353,10 @@ fn page_content(page: &[RenderLine], image_ids: &HashMap<String, usize>) -> Resu
         match line {
             RenderLine::Text(value) => {
                 content.extend_from_slice(format!("BT\n/F1 12 Tf\n72 {cursor_y} Td\n").as_bytes());
-                content.extend_from_slice(&pdf_literal(value).ok_or_else(|| {
-                    FormatError::unsupported("pdf", "text contains characters outside the WinAnsiEncoding subset")
-                })?);
+                content.extend_from_slice(
+                    &pdf_literal(value)
+                        .ok_or_else(|| FormatError::unsupported("pdf", "text contains characters outside the WinAnsiEncoding subset"))?,
+                );
                 content.extend_from_slice(b" Tj\nET\n");
             }
             RenderLine::Image { source, payload } => {
@@ -396,9 +366,7 @@ fn page_content(page: &[RenderLine], image_ids: &HashMap<String, usize>) -> Resu
                 let (draw_width, draw_height) = fit_image(payload.frame.width, payload.frame.height, 468, 300);
                 let draw_x = 72 + (468 - draw_width) / 2;
                 let draw_y = cursor_y - draw_height;
-                content.extend_from_slice(
-                    format!("q {draw_width} 0 0 {draw_height} {draw_x} {draw_y} cm /Im{name} Do Q\n").as_bytes(),
-                );
+                content.extend_from_slice(format!("q {draw_width} 0 0 {draw_height} {draw_x} {draw_y} cm /Im{name} Do Q\n").as_bytes());
             }
         }
         cursor_y -= line_height(line);
@@ -538,9 +506,7 @@ fn png_payload(bytes: &[u8]) -> Option<PdfImagePayload> {
         return None;
     }
     let colors = colors?;
-    let expected = usize::try_from(height)
-        .ok()?
-        .checked_mul(usize::try_from(width).ok()?.checked_mul(usize::from(colors))?.checked_add(1)?)?;
+    let expected = usize::try_from(height).ok()?.checked_mul(usize::try_from(width).ok()?.checked_mul(usize::from(colors))?.checked_add(1)?)?;
     if expected as u64 > MAX_PNG_SCANLINES {
         return None;
     }
@@ -554,11 +520,7 @@ fn png_payload(bytes: &[u8]) -> Option<PdfImagePayload> {
         return None;
     }
     let stream = Zlib::encode(&scanlines, DeflateLevel::default());
-    Some(PdfImagePayload {
-        stream,
-        frame: JpegFrame { width, height, components: colors },
-        filter: ImageFilter::Flate { colors },
-    })
+    Some(PdfImagePayload { stream, frame: JpegFrame { width, height, components: colors }, filter: ImageFilter::Flate { colors } })
 }
 
 fn pdf_literal(value: &str) -> Option<Vec<u8>> {

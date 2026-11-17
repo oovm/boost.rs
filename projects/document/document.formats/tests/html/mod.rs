@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use document_formats::export::html::{RenderedDiagram, export_html, export_html_report, export_html_with_diagrams};
 use document_ir::{
-    Asset, AssetId, AssetKind, Block, DocumentGraph, DocumentId, DocumentMetadata, IdAllocator, Inline, ListItem, NodeId,
-    RelationEndpoint, SemanticStatus, TableCell, TableRow,
+    Asset, AssetId, AssetKind, Block, DocumentGraph, DocumentId, DocumentMetadata, IdAllocator, Inline, ListItem, NodeId, RelationEndpoint,
+    SemanticStatus, TableCell, TableRow,
 };
 use oak_core::{Builder, SourceText, parser::session::ParseSession};
 use oak_html::{
@@ -15,13 +15,8 @@ use oak_html::{
 fn html_export_preserves_structure_and_escapes_content() {
     let mut ids = IdAllocator::default();
     let mut graph = DocumentGraph::new(ids.document_id());
-    graph.metadata = DocumentMetadata {
-        title: Some("<Title>".into()),
-        language: None,
-        authors: Vec::new(),
-        tags: Vec::new(),
-        properties: Vec::new(),
-    };
+    graph.metadata =
+        DocumentMetadata { title: Some("<Title>".into()), language: None, authors: Vec::new(), tags: Vec::new(), properties: Vec::new() };
     graph.push_block(Block::Paragraph {
         content: vec![
             Inline::Text { text: "a < b".into() },
@@ -50,11 +45,8 @@ fn html_export_writes_section_children_and_reference_targets() {
     let mut ids = IdAllocator::default();
     let mut graph = DocumentGraph::new(ids.document_id());
     let paragraph = graph.push_block(Block::Paragraph { content: vec![Inline::Text { text: "child".into() }] });
-    let section = graph.push_block(Block::Section {
-        level: 2,
-        title: vec![Inline::Text { text: "Section".into() }],
-        children: vec![paragraph],
-    });
+    let section =
+        graph.push_block(Block::Section { level: 2, title: vec![Inline::Text { text: "Section".into() }], children: vec![paragraph] });
     graph.push_block(Block::Paragraph { content: vec![Inline::Reference { display: "go".into(), target: section }] });
 
     let html = export_html(&graph).expect("html export");
@@ -113,10 +105,7 @@ fn html_export_writes_image_inline_semantics() {
 fn html_export_keeps_an_unrepresentable_inline_style_as_a_class() {
     let mut graph = DocumentGraph::new(IdAllocator::default().document_id());
     graph.push_block(Block::Paragraph {
-        content: vec![Inline::Styled {
-            style: "small_caps".into(),
-            children: vec![Inline::Text { text: "meaningful".into() }],
-        }],
+        content: vec![Inline::Styled { style: "small_caps".into(), children: vec![Inline::Text { text: "meaningful".into() }] }],
     });
 
     let html = export_html(&graph).expect("a style with no HTML tag still has a class slot");
@@ -183,12 +172,7 @@ fn html_export_rejects_list_containment_cycles() {
     let mut graph = DocumentGraph::new(IdAllocator::default().document_id());
     graph.push_block(Block::List {
         ordered: false,
-        items: vec![document_ir::ListItem {
-            content: Vec::new(),
-            children: vec![document_ir::NodeId(1)],
-            number: None,
-            ..Default::default()
-        }],
+        items: vec![document_ir::ListItem { content: Vec::new(), children: vec![document_ir::NodeId(1)], number: None, ..Default::default() }],
     });
     let error = export_html(&graph).expect_err("containment cycles must not recurse");
     assert!(error.to_string().contains("invalid document graph"));
@@ -204,17 +188,13 @@ fn diagram_graph(source: &str) -> (DocumentGraph, NodeId) {
 fn html_export_embeds_rendered_diagram_svg_in_a_figure() {
     let (graph, id) = diagram_graph("flowchart TD\n  A[Start] --> B[Stop]");
     let mut diagrams = HashMap::new();
-    diagrams
-        .insert(id, RenderedDiagram { svg: r##"<svg viewBox="0 0 10 10"><rect width="10" height="10"/></svg>"##.to_string() });
+    diagrams.insert(id, RenderedDiagram { svg: r##"<svg viewBox="0 0 10 10"><rect width="10" height="10"/></svg>"##.to_string() });
 
     let html = export_html_with_diagrams(&graph, &diagrams).expect("html export with rendered diagram");
     assert!(html.contains(r#"<figure class="diagram" data-diagram-language="mermaid""#), "{html}");
     assert!(html.contains(r##"<svg viewBox="0 0 10 10"><rect width="10" height="10"/></svg>"##), "{html}");
     assert!(html.contains("data-diagram-source-hex="), "{html}");
-    assert!(
-        !html.contains(r#"<pre class="diagram" data-diagram-language"#),
-        "rendered diagrams must not keep the source fallback: {html}"
-    );
+    assert!(!html.contains(r#"<pre class="diagram" data-diagram-language"#), "rendered diagrams must not keep the source fallback: {html}");
 }
 
 #[test]
@@ -252,20 +232,13 @@ fn html_export_report_names_degraded_and_unresolved_semantics() {
             Inline::Image { source: "assets/unresolved.png".into(), alt: Vec::new(), title: None, asset: None },
         ],
     });
-    graph.push_block(Block::Opaque {
-        kind: "tex.newcommand".into(),
-        payload_hint: "\\foo".into(),
-        status: SemanticStatus::Partial,
-    });
+    graph.push_block(Block::Opaque { kind: "tex.newcommand".into(), payload_hint: "\\foo".into(), status: SemanticStatus::Partial });
 
     let export = export_html_report(&graph).expect("html export report");
     let codes: Vec<&str> = export.losses.iter().map(|loss| loss.code.as_str()).collect();
-    for expected in [
-        "export.html.citation_degraded",
-        "export.html.unresolved_link",
-        "export.html.image_asset_unresolved",
-        "export.html.opaque_projection",
-    ] {
+    for expected in
+        ["export.html.citation_degraded", "export.html.unresolved_link", "export.html.image_asset_unresolved", "export.html.opaque_projection"]
+    {
         assert!(codes.contains(&expected), "{expected} missing from {codes:?}");
     }
     assert_eq!(export.losses.len(), 4, "{codes:?}");
@@ -280,8 +253,7 @@ fn html_export_report_names_degraded_and_unresolved_semantics() {
     let mut session = ParseSession::<HtmlLanguage>::default();
     let document = builder.build(&source, &[], &mut session).result.expect("Oak HTML reopen");
     let view = HtmlDocumentView::from_document(&document);
-    let (_, unresolved) =
-        select_css_elements(&view, "span.unresolved-link", Default::default()).expect("unresolved link selector");
+    let (_, unresolved) = select_css_elements(&view, "span.unresolved-link", Default::default()).expect("unresolved link selector");
     let (_, citations) = select_css_elements(&view, "span.citation", Default::default()).expect("citation selector");
     assert_eq!(unresolved.len(), 1);
     assert_eq!(citations.len(), 1);
@@ -325,35 +297,15 @@ fn html_export_keeps_table_caption_and_ordered_list_numbers() {
     let nested = graph.push_block(Block::List {
         ordered: true,
         items: vec![
-            ListItem {
-                content: vec![Inline::Text { text: "three".into() }],
-                children: Vec::new(),
-                number: Some(3),
-                ..Default::default()
-            },
-            ListItem {
-                content: vec![Inline::Text { text: "five".into() }],
-                children: Vec::new(),
-                number: Some(5),
-                ..Default::default()
-            },
+            ListItem { content: vec![Inline::Text { text: "three".into() }], children: Vec::new(), number: Some(3), ..Default::default() },
+            ListItem { content: vec![Inline::Text { text: "five".into() }], children: Vec::new(), number: Some(5), ..Default::default() },
         ],
     });
     graph.push_block(Block::List {
         ordered: true,
         items: vec![
-            ListItem {
-                content: vec![Inline::Text { text: "five".into() }],
-                children: vec![nested],
-                number: Some(5),
-                ..Default::default()
-            },
-            ListItem {
-                content: vec![Inline::Text { text: "seven".into() }],
-                children: Vec::new(),
-                number: Some(7),
-                ..Default::default()
-            },
+            ListItem { content: vec![Inline::Text { text: "five".into() }], children: vec![nested], number: Some(5), ..Default::default() },
+            ListItem { content: vec![Inline::Text { text: "seven".into() }], children: Vec::new(), number: Some(7), ..Default::default() },
         ],
     });
     let last_cell = graph.push_block(Block::Paragraph { content: vec![Inline::Text { text: "last".into() }] });

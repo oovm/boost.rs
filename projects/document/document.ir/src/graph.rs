@@ -280,13 +280,7 @@ impl DocumentGraph {
         Self {
             id,
             revision: 0,
-            metadata: DocumentMetadata {
-                title: None,
-                language: None,
-                authors: Vec::new(),
-                tags: Vec::new(),
-                properties: Vec::new(),
-            },
+            metadata: DocumentMetadata { title: None, language: None, authors: Vec::new(), tags: Vec::new(), properties: Vec::new() },
             blocks: Vec::new(),
             relations: Vec::new(),
             assets: Vec::new(),
@@ -412,10 +406,7 @@ impl DocumentGraph {
 
     /// Indexed backlink edges pointing at `target`.
     pub fn backlinks_to(&self, target: &RelationEndpoint) -> Vec<&Relation> {
-        self.relations
-            .iter()
-            .filter(|relation| relation.kind == RelationKind::Backlink && relation.target.matches(target))
-            .collect()
+        self.relations.iter().filter(|relation| relation.kind == RelationKind::Backlink && relation.target.matches(target)).collect()
     }
 }
 
@@ -508,10 +499,7 @@ impl DocumentGraph {
         let node = self.blocks.iter_mut().find(|n| n.id == parent_id).ok_or(TransformError::NotFound(parent_id))?;
         match &mut node.block {
             Block::Section { children, .. } => {
-                let pos = children
-                    .iter()
-                    .position(|c| *c == child)
-                    .ok_or(TransformError::ChildNotFound { parent: parent_id, child })?;
+                let pos = children.iter().position(|c| *c == child).ok_or(TransformError::ChildNotFound { parent: parent_id, child })?;
                 children.remove(pos);
             }
             _ => return Err(TransformError::InvalidParent(parent_id)),

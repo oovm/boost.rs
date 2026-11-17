@@ -156,9 +156,7 @@ impl Inline {
     pub fn plain_text(&self) -> String {
         match self {
             Self::Text { text } | Self::InlineCode { text } => text.clone(),
-            Self::Styled { children, .. } | Self::Attributed { children, .. } => {
-                children.iter().map(Self::plain_text).collect()
-            }
+            Self::Styled { children, .. } | Self::Attributed { children, .. } => children.iter().map(Self::plain_text).collect(),
             Self::InlineMath { formula } => formula.source.clone(),
             Self::Reference { display, .. } => display.clone(),
             Self::Link { display, .. } => display.iter().map(Self::plain_text).collect(),

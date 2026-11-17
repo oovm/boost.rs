@@ -78,8 +78,7 @@ impl Graph {
     }
 
     fn check_edges(&self) -> Result<()> {
-        let resources: BTreeSet<ResourceId> =
-            self.resources.nodes.iter().map(|n| n.id).collect();
+        let resources: BTreeSet<ResourceId> = self.resources.nodes.iter().map(|n| n.id).collect();
         let tasks: BTreeSet<TaskId> = self.tasks.nodes.iter().map(|n| n.id).collect();
 
         for edge in &self.tasks.edges {
@@ -116,24 +115,17 @@ impl TaskGraph {
             indegree.insert(node.id, 0);
         }
         for edge in &self.edges {
-            let Some(from) = edge.from_task else {
+            let Some(from) = edge.from_task
+            else {
                 continue;
             };
             if !task_ids.contains(&from) || !task_ids.contains(&edge.to_task) {
-                return Err(Error::UnknownTask(if !task_ids.contains(&from) {
-                    from.0
-                } else {
-                    edge.to_task.0
-                }));
+                return Err(Error::UnknownTask(if !task_ids.contains(&from) { from.0 } else { edge.to_task.0 }));
             }
             *indegree.get_mut(&edge.to_task).expect("edge target") += 1;
         }
 
-        let mut ready: Vec<TaskId> = indegree
-            .iter()
-            .filter(|(_, deg)| **deg == 0)
-            .map(|(id, _)| *id)
-            .collect();
+        let mut ready: Vec<TaskId> = indegree.iter().filter(|(_, deg)| **deg == 0).map(|(id, _)| *id).collect();
         ready.sort_by_key(|id| id.0);
 
         let mut order = Vec::with_capacity(self.nodes.len());

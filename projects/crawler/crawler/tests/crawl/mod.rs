@@ -9,15 +9,14 @@ use std::{
 };
 
 use crawler::{
-    CancelSignal, CrawlOptions, Extractor, FixtureBrowserProvider, HtmlExtractor, resume_crawl_from_store, run_crawl,
-    run_crawl_with_options, run_crawl_with_store, run_extract,
+    CancelSignal, CrawlOptions, Extractor, FixtureBrowserProvider, HtmlExtractor, resume_crawl_from_store, run_crawl, run_crawl_with_options,
+    run_crawl_with_store, run_extract,
 };
 use crawler_fetch::{FetchRequest, MemoryEntry, MemoryTransport, Transport, build_artifact};
 use crawler_store::{MemoryStore, Store, StoreConfig};
 use crawler_types::{
-    BodyStorage, BrowserFallbackPolicy, BrowserSnapshot, ChallengePolicy, CrawlBudgetStatus, CrawlEvent, CrawlRequest,
-    CrawlScope, ExtractBudget, ExtractContext, ExtractStatus, FetchArtifact, PageChallengeState, PolitenessProfile,
-    TransportProvenance, diagnostics as pd,
+    BodyStorage, BrowserFallbackPolicy, BrowserSnapshot, ChallengePolicy, CrawlBudgetStatus, CrawlEvent, CrawlRequest, CrawlScope,
+    ExtractBudget, ExtractContext, ExtractStatus, FetchArtifact, PageChallengeState, PolitenessProfile, TransportProvenance, diagnostics as pd,
 };
 use url::Url;
 
@@ -558,14 +557,9 @@ fn cancellation_after_a_page_keeps_the_remainder_pending() {
     let html = HtmlExtractor;
     let extractors: [&dyn Extractor; 1] = [&html];
     let mut store = MemoryStore::open(StoreConfig::memory()).expect("store");
-    let output = run_crawl_with_store(
-        request,
-        transport,
-        &extractors,
-        CrawlOptions { cancel: Some(&Flag(flag)), ..Default::default() },
-        &mut store,
-    )
-    .expect("crawl");
+    let output =
+        run_crawl_with_store(request, transport, &extractors, CrawlOptions { cancel: Some(&Flag(flag)), ..Default::default() }, &mut store)
+            .expect("crawl");
     assert_eq!(output.report.committed, 1);
     assert_eq!(output.report.budget_status, CrawlBudgetStatus::Cancelled);
     assert_eq!(output.report.remaining_frontier, 1);
@@ -704,8 +698,7 @@ fn store_requeues_a_retryable_status_and_commits_after_success() {
     let html = HtmlExtractor;
     let extractors: [&dyn Extractor; 1] = [&html];
     let mut store = MemoryStore::open(StoreConfig::memory()).expect("store");
-    let output =
-        run_crawl_with_store(request, transport.clone(), &extractors, CrawlOptions::default(), &mut store).expect("crawl");
+    let output = run_crawl_with_store(request, transport.clone(), &extractors, CrawlOptions::default(), &mut store).expect("crawl");
     assert_eq!(output.report.committed, 1);
     assert_eq!(transport.attempts(), 2);
     assert_eq!(store.pending_frontier_count().expect("frontier count"), 0);
@@ -719,12 +712,9 @@ fn store_completes_exhausted_retries_without_leaving_a_pending_item() {
     let html = HtmlExtractor;
     let extractors: [&dyn Extractor; 1] = [&html];
     let mut store = MemoryStore::open(StoreConfig::memory()).expect("store");
-    let output =
-        run_crawl_with_store(request, transport.clone(), &extractors, CrawlOptions::default(), &mut store).expect("crawl");
+    let output = run_crawl_with_store(request, transport.clone(), &extractors, CrawlOptions::default(), &mut store).expect("crawl");
     assert_eq!(transport.attempts(), 5);
     assert_eq!(output.report.failed, 1);
     assert_eq!(store.pending_frontier_count().expect("frontier count"), 0, "exhausted items leave the frontier");
-    assert!(
-        output.report.diagnostics.diagnostics.iter().any(|diagnostic| diagnostic.code().as_str() == pd::FETCH_RETRY_EXHAUSTED)
-    );
+    assert!(output.report.diagnostics.diagnostics.iter().any(|diagnostic| diagnostic.code().as_str() == pd::FETCH_RETRY_EXHAUSTED));
 }

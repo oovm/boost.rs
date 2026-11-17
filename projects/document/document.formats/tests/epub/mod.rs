@@ -6,8 +6,8 @@ use document_formats::{
     import::epub::import_epub_bytes,
 };
 use document_ir::{
-    Asset, AssetId, AssetKind, Block, DocumentGraph, DocumentId, DocumentMetadata, Inline, ListItem, MetadataEntry,
-    MetadataValue, SemanticStatus, SourceKind, TableCell, TableRow,
+    Asset, AssetId, AssetKind, Block, DocumentGraph, DocumentId, DocumentMetadata, Inline, ListItem, MetadataEntry, MetadataValue,
+    SemanticStatus, SourceKind, TableCell, TableRow,
 };
 
 fn stored_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
@@ -354,8 +354,7 @@ fn epub_import_registers_embedded_images() {
 #[test]
 fn epub_missing_image_member_is_unresolved_and_reported() {
     let graph = import_epub_bytes("missing-image.epub", &epub_with_image_member(false)).expect("import");
-    let image =
-        graph.assets.iter().find(|asset| asset.source.as_deref() == Some("OEBPS/images/cover.png")).expect("image asset");
+    let image = graph.assets.iter().find(|asset| asset.source.as_deref() == Some("OEBPS/images/cover.png")).expect("image asset");
     assert!(image.bytes.is_none());
     assert_eq!(image.status, document_ir::SemanticStatus::Unresolved);
     assert!(
@@ -718,9 +717,7 @@ fn epub_import_maps_inline_styles_to_canonical_ir_names() {
     let styles = content
         .iter()
         .filter_map(|inline| match inline {
-            Inline::Styled { style, children } => {
-                Some((style.as_str(), children.iter().map(Inline::plain_text).collect::<String>()))
-            }
+            Inline::Styled { style, children } => Some((style.as_str(), children.iter().map(Inline::plain_text).collect::<String>())),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -877,8 +874,7 @@ fn epub_spine_idref_missing_from_manifest_is_reported_and_later_pages_continue()
             .coverage
             .loss
             .iter()
-            .any(|loss| loss.code == "import.epub.spine_item_unresolved"
-                && loss.status == document_ir::SemanticStatus::Unresolved),
+            .any(|loss| loss.code == "import.epub.spine_item_unresolved" && loss.status == document_ir::SemanticStatus::Unresolved),
         "{:?}",
         graph.coverage.loss
     );
@@ -914,8 +910,7 @@ fn epub_missing_spine_member_is_reported_and_later_pages_continue() {
             .coverage
             .loss
             .iter()
-            .any(|loss| loss.code == "import.epub.spine_member_missing"
-                && loss.status == document_ir::SemanticStatus::Unresolved),
+            .any(|loss| loss.code == "import.epub.spine_member_missing" && loss.status == document_ir::SemanticStatus::Unresolved),
         "{:?}",
         graph.coverage.loss
     );
@@ -943,11 +938,7 @@ fn epub_empty_spine_is_reported_instead_of_silently_succeeding() {
     ]);
     let graph = import_epub_bytes("empty-spine.epub", &zip).expect("import epub");
     assert!(
-        graph
-            .coverage
-            .loss
-            .iter()
-            .any(|loss| loss.code == "import.epub.spine_empty" && loss.status == document_ir::SemanticStatus::Unresolved),
+        graph.coverage.loss.iter().any(|loss| loss.code == "import.epub.spine_empty" && loss.status == document_ir::SemanticStatus::Unresolved),
         "{:?}",
         graph.coverage.loss
     );
@@ -957,8 +948,7 @@ fn epub_empty_spine_is_reported_instead_of_silently_succeeding() {
 fn epub_assets_carry_content_identity_after_hydration() {
     let zip = epub_with_image_zip();
     let graph = import_epub_bytes("identity.epub", &zip).expect("import epub");
-    let image =
-        graph.assets.iter().find(|asset| asset.source.as_deref() == Some("OEBPS/images/cover.png")).expect("cover asset");
+    let image = graph.assets.iter().find(|asset| asset.source.as_deref() == Some("OEBPS/images/cover.png")).expect("cover asset");
     let expected = blake3::hash(b"\x89PNG\r\n").to_hex().to_string();
     assert_eq!(image.content_identity.as_deref(), Some(expected.as_str()));
 }
@@ -974,13 +964,9 @@ fn container_xml() -> &'static [u8] {
 
 #[test]
 fn epub_inspect_reports_members_without_decoding_or_exposing_archive_types() {
-    let zip = stored_zip(&[
-        ("mimetype", b"application/epub+zip"),
-        ("META-INF/container.xml", container_xml()),
-        ("OEBPS/content.opf", b"<package/>"),
-    ]);
-    let inspect = document_formats::inspect_epub_bytes("inspect.epub", &zip, document_formats::InspectBudget::default())
-        .expect("inspect epub");
+    let zip =
+        stored_zip(&[("mimetype", b"application/epub+zip"), ("META-INF/container.xml", container_xml()), ("OEBPS/content.opf", b"<package/>")]);
+    let inspect = document_formats::inspect_epub_bytes("inspect.epub", &zip, document_formats::InspectBudget::default()).expect("inspect epub");
     assert_eq!(inspect.format, "epub");
     assert_eq!(inspect.outer, "zip");
     assert_eq!(inspect.inner, "ocf");
@@ -993,11 +979,8 @@ fn epub_inspect_reports_members_without_decoding_or_exposing_archive_types() {
 
 #[test]
 fn epub_inspect_enforces_container_member_and_declared_size_budgets() {
-    let zip = stored_zip(&[
-        ("mimetype", b"application/epub+zip"),
-        ("META-INF/container.xml", container_xml()),
-        ("OEBPS/content.opf", b"<package/>"),
-    ]);
+    let zip =
+        stored_zip(&[("mimetype", b"application/epub+zip"), ("META-INF/container.xml", container_xml()), ("OEBPS/content.opf", b"<package/>")]);
     let members = document_formats::InspectBudget { max_container_members: 2, ..Default::default() };
     let error = document_formats::inspect_epub_bytes("too-many-members.epub", &zip, members).expect_err("member budget");
     assert!(matches!(error, document_formats::FormatError::Budget { ref format, .. } if format == "epub"), "{error:?}");
@@ -1130,12 +1113,7 @@ fn markdown_image_without_bytes_is_reported_and_absent_from_the_package() {
     let export = export_epub_report(&graph).expect("epub export");
     let codes: Vec<&str> = export.losses.iter().map(|loss| loss.code.as_str()).collect();
     assert!(codes.contains(&"export.epub.image_asset_unresolved"), "{codes:?}");
-    assert!(
-        export
-            .losses
-            .iter()
-            .all(|loss| loss.code != "export.epub.image_asset_unresolved" || loss.status == SemanticStatus::Unresolved)
-    );
+    assert!(export.losses.iter().all(|loss| loss.code != "export.epub.image_asset_unresolved" || loss.status == SemanticStatus::Unresolved));
 
     let package = String::from_utf8_lossy(&export.bytes);
     assert!(package.contains(r#"src="pic.png""#), "the chapter keeps the unresolved source: {package}");

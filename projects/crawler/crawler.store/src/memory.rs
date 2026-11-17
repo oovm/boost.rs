@@ -6,9 +6,9 @@ use crate::{
     error::{Result, StoreError},
     session::StoreSession,
     types::{
-        BrowserSessionRecord, BrowserSnapshotInput, BrowserSnapshotRecord, ChallengePauseRecord, CheckpointView, ClaimToken,
-        ObjectKind, ObjectRef, PageAssetBinding, PagePhase, PageTxHandle, ReleaseOutcome, ResumeState, RunHandle, RunSpec,
-        StoreConfig, StoreDiagnosticReport, StoreNamespaceStats,
+        BrowserSessionRecord, BrowserSnapshotInput, BrowserSnapshotRecord, ChallengePauseRecord, CheckpointView, ClaimToken, ObjectKind,
+        ObjectRef, PageAssetBinding, PagePhase, PageTxHandle, ReleaseOutcome, ResumeState, RunHandle, RunSpec, StoreConfig,
+        StoreDiagnosticReport, StoreNamespaceStats,
     },
 };
 
@@ -206,12 +206,7 @@ impl Store for MemoryStore {
         self.session.get_browser_snapshot(snapshot_key)
     }
 
-    fn record_challenge_pause(
-        &mut self,
-        item_id: &str,
-        page_url: &str,
-        state: PageChallengeState,
-    ) -> Result<ChallengePauseRecord> {
+    fn record_challenge_pause(&mut self, item_id: &str, page_url: &str, state: PageChallengeState) -> Result<ChallengePauseRecord> {
         self.session.record_challenge_pause(item_id, page_url, state)
     }
 

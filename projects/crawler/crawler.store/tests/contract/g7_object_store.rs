@@ -29,8 +29,7 @@ fn g7_object_store_dedupes_bytes_by_fingerprint() {
     assert_both!("g7", LONG_LEASE, |store| {
         let payload = b"shared-asset-bytes";
         let first = store.put_object(ObjectKind::AssetBytes, Some("image/png"), payload).expect("put asset");
-        let second =
-            store.put_object(ObjectKind::Attachment, Some("application/octet-stream"), payload).expect("put duplicate");
+        let second = store.put_object(ObjectKind::Attachment, Some("application/octet-stream"), payload).expect("put duplicate");
         assert_eq!(first.fingerprint, second.fingerprint, "identical bytes must share one fingerprint");
         assert_eq!(second.kind, ObjectKind::AssetBytes, "the first metadata record stays authoritative");
         assert_eq!(second.media_type.as_deref(), Some("image/png"));
@@ -51,8 +50,7 @@ fn g7_object_store_dedupes_bytes_by_fingerprint() {
 fn g7_large_objects_survive_reopen_on_yydx_layout() {
     assert_both!("g7-large", LONG_LEASE, |store| {
         let large: Vec<u8> = (0..(8 * 1024 + 3)).map(|index| (index % 251) as u8).collect();
-        let first =
-            store.put_object(ObjectKind::Attachment, Some("application/octet-stream"), &large).expect("large object write");
+        let first = store.put_object(ObjectKind::Attachment, Some("application/octet-stream"), &large).expect("large object write");
         let second = store.put_object(ObjectKind::Attachment, None, &large).expect("duplicate large write");
         assert_eq!(first.fingerprint, second.fingerprint, "large bytes deduplicate by fingerprint");
         assert_eq!(first.size, large.len() as u64, "payload exceeds the 4 KiB single-file inline limit");
@@ -109,9 +107,7 @@ fn g7_page_objects_route_through_the_object_store() {
                     bytes: b"shared-asset-bytes".to_vec(),
                 })
                 .expect("bind asset");
-            store
-                .page_tx_put_event(&CrawlEvent::Committed { page_identity: format!("https://example.com{slot}") })
-                .expect("stage event");
+            store.page_tx_put_event(&CrawlEvent::Committed { page_identity: format!("https://example.com{slot}") }).expect("stage event");
             store.commit_page_tx().expect("commit");
 
             let refs = store.page_object_refs(&claim.item_id).expect("page object refs");

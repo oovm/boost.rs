@@ -3,8 +3,7 @@
 use std::{fs, path::PathBuf};
 
 use document_formats::import::xlsx::{
-    CellValue, DateKind, GraphOptions, RenderOptions, SheetVisibility, import_xlsx_bytes, render_workbook_html,
-    workbook_to_graph,
+    CellValue, DateKind, GraphOptions, RenderOptions, SheetVisibility, import_xlsx_bytes, render_workbook_html, workbook_to_graph,
 };
 use document_ir::{Block, DocumentGraph, Inline, SemanticStatus, TableCell};
 
@@ -47,11 +46,7 @@ fn cell_values_cover_shared_strings_dates_booleans_errors_and_formula_caches() {
     let b13 = sheet.cell(13, 2).unwrap();
     assert!(matches!(&b13.value, CellValue::Error { code } if code == "#N/A"), "{:?}", b13.value);
     let b14 = sheet.cell(14, 2).unwrap();
-    assert!(
-        matches!(&b14.value, CellValue::SharedString { text, .. } | CellValue::Text(text) if text == "shared string"),
-        "{:?}",
-        b14.value
-    );
+    assert!(matches!(&b14.value, CellValue::SharedString { text, .. } | CellValue::Text(text) if text == "shared string"), "{:?}", b14.value);
     assert!(matches!(&sheet.cell(1, 1).unwrap().value, CellValue::SharedString { text, .. } if text == "Quarterly Revenue"));
 }
 
@@ -93,8 +88,7 @@ fn refused_constructs_carry_structured_codes() {
 fn ir_projection_keeps_tables_and_reports_hidden_sheet_loss() {
     let workbook = workbook();
     let graph = workbook_to_graph(&workbook, &GraphOptions::default());
-    let tables: Vec<&Block> =
-        graph.blocks.iter().map(|node| &node.block).filter(|block| matches!(block, Block::Table { .. })).collect();
+    let tables: Vec<&Block> = graph.blocks.iter().map(|node| &node.block).filter(|block| matches!(block, Block::Table { .. })).collect();
     assert_eq!(tables.len(), 2, "visible sheets become tables");
     let data = tables[0];
     let Block::Table { caption, head, body, .. } = data
@@ -136,9 +130,8 @@ fn render_emits_paginated_pages_and_evidence_html() {
     assert!(render.issues.iter().any(|issue| issue.code == "render.xlsx.frozen-repeated"));
     assert!(render.issues.iter().all(|issue| !issue.code.is_empty()));
 
-    let evidence = std::env::var("CARGO_TARGET_TMPDIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| std::env::temp_dir().join("document-rs-evidence"));
+    let evidence =
+        std::env::var("CARGO_TARGET_TMPDIR").map(PathBuf::from).unwrap_or_else(|_| std::env::temp_dir().join("document-rs-evidence"));
     let output = evidence.join("office-evidence/xlsx/multi-sheet.html");
     fs::create_dir_all(output.parent().unwrap()).expect("evidence dir");
     fs::write(&output, &render.html).expect("evidence html");
@@ -380,8 +373,7 @@ const CHART: &str = r##"<?xml version="1.0" encoding="UTF-8"?><c:chartSpace xmln
 const TABLE: &str = r##"<?xml version="1.0" encoding="UTF-8"?><table id="1" name="RevenueTable" displayName="RevenueTable" ref="A3:F7" headerRowCount="1" xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><autoFilter ref="A3:F7"/><tableColumns count="6"><tableColumn id="1" name="Region"/><tableColumn id="2" name="Q1"/><tableColumn id="3" name="Q2"/><tableColumn id="4" name="Q3"/><tableColumn id="5" name="Q4"/><tableColumn id="6" name="Updated"/></tableColumns><tableStyleInfo name="TableStyleMedium2" showRowStripes="1"/></table>"##;
 
 const PNG: &[u8] = &[
-    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01,
-    0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41,
-    0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
-    0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+    0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01,
+    0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
 ];

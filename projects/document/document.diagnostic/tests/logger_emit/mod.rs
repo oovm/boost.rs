@@ -1,12 +1,9 @@
 use serial_test::serial;
 use std::sync::{Arc, Mutex};
 
-use boost_harness::log::{
-    EventKind, Filter, Level, LogEvent, LogSink, VecSink, clear_global_sink, dropped_events, reset_dropped_events,
-};
+use boost_harness::log::{EventKind, Filter, Level, LogEvent, LogSink, VecSink, clear_global_sink, dropped_events, reset_dropped_events};
 use document_diagnostic::{
-    adapter_error_to_log_event, diagnostics_from_graph, emit_adapter_error, emit_diagnostic_set, from_adapter_error,
-    to_log_event,
+    adapter_error_to_log_event, diagnostics_from_graph, emit_adapter_error, emit_diagnostic_set, from_adapter_error, to_log_event,
 };
 use document_ir::{DocumentGraph, IdAllocator, LossMarker, SemanticStatus};
 use document_types::AdapterError;

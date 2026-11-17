@@ -121,7 +121,8 @@ pub(crate) fn trim_path(path: &PathData, fraction: f64) -> PathData {
     let mut budget = total * fraction;
     let mut out = PathData::new();
     for (points, closed) in &subpaths {
-        let Some(first) = points.first().copied() else {
+        let Some(first) = points.first().copied()
+        else {
             continue;
         };
         out.commands.push(PathCommand::MoveTo(first));
@@ -232,10 +233,7 @@ fn lerp_point(from: Point, to: Point, t: f64) -> Point {
 
 fn quadratic(from: Point, control: Point, to: Point, t: f64) -> Point {
     let u = 1.0 - t;
-    Point::new(
-        u * u * from.x + 2.0 * u * t * control.x + t * t * to.x,
-        u * u * from.y + 2.0 * u * t * control.y + t * t * to.y,
-    )
+    Point::new(u * u * from.x + 2.0 * u * t * control.x + t * t * to.x, u * u * from.y + 2.0 * u * t * control.y + t * t * to.y)
 }
 
 fn cubic(from: Point, control1: Point, control2: Point, to: Point, t: f64) -> Point {

@@ -1,7 +1,11 @@
-use alloc::string::{String, ToString};
-use alloc::vec::Vec;
-use core::error::Error;
-use core::fmt::{self, Display, Formatter};
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
+use core::{
+    error::Error,
+    fmt::{self, Display, Formatter},
+};
 
 #[cfg(feature = "std")]
 use std::env;

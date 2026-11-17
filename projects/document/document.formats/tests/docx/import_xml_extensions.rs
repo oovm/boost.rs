@@ -35,12 +35,10 @@ fn parses_wordprocessingml_footnote_reference_run() {
     let root = document_root(&value).expect("root");
     let body = child_element(root, "body").expect("body");
     let paragraph = child_element(body, "p").expect("paragraph");
-    let runs =
-        paragraph.children.iter().filter_map(XmlValue::as_element).filter(|child| element_is(child, "r")).collect::<Vec<_>>();
+    let runs = paragraph.children.iter().filter_map(XmlValue::as_element).filter(|child| element_is(child, "r")).collect::<Vec<_>>();
     assert_eq!(runs.len(), 3);
     let footnote_run = runs[1];
-    let names =
-        footnote_run.children.iter().filter_map(XmlValue::as_element).map(|child| child.name.clone()).collect::<Vec<_>>();
+    let names = footnote_run.children.iter().filter_map(XmlValue::as_element).map(|child| child.name.clone()).collect::<Vec<_>>();
     assert!(child_element(footnote_run, "footnoteReference").is_some(), "expected footnoteReference child, got {names:?}");
 }
 
@@ -59,8 +57,7 @@ fn parses_wordprocessingml_run_properties() {
     let root = document_root(&value).expect("root");
     let body = child_element(root, "body").expect("body");
     let paragraph = child_element(body, "p").expect("paragraph");
-    let runs =
-        paragraph.children.iter().filter_map(XmlValue::as_element).filter(|child| element_is(child, "r")).collect::<Vec<_>>();
+    let runs = paragraph.children.iter().filter_map(XmlValue::as_element).filter(|child| element_is(child, "r")).collect::<Vec<_>>();
     assert_eq!(runs.len(), 2);
     let italic_r_pr = child_element(runs[1], "rPr").expect("rPr");
     assert!(

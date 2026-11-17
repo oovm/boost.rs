@@ -12,10 +12,7 @@ pub struct TimedSample {
 impl TimedSample {
     /// Build a sample from a label and elapsed duration.
     pub fn new(label: impl Into<String>, elapsed_nanos: u128) -> Self {
-        Self {
-            label: label.into(),
-            elapsed_nanos,
-        }
+        Self { label: label.into(), elapsed_nanos }
     }
 
     /// Elapsed seconds as `f64`.
@@ -43,9 +40,7 @@ pub struct PerfReport {
 impl PerfReport {
     /// Build from `(backend, samples)` pairs.
     pub fn from_rows(rows: impl IntoIterator<Item = BackendPerfRow>) -> Self {
-        Self {
-            rows: rows.into_iter().collect(),
-        }
+        Self { rows: rows.into_iter().collect() }
     }
 
     /// Stable text lines: `backend/label: <nanos> ns (<secs> s)`.
@@ -53,13 +48,7 @@ impl PerfReport {
         let mut out = Vec::new();
         for row in &self.rows {
             for sample in &row.samples {
-                out.push(format!(
-                    "{}/{}: {} ns ({:.6} s)",
-                    row.backend,
-                    sample.label,
-                    sample.elapsed_nanos,
-                    sample.elapsed_secs()
-                ));
+                out.push(format!("{}/{}: {} ns ({:.6} s)", row.backend, sample.label, sample.elapsed_nanos, sample.elapsed_secs()));
             }
         }
         out
@@ -67,15 +56,7 @@ impl PerfReport {
 
     /// Look up a sample by backend name and label.
     pub fn sample_nanos(&self, backend: &str, label: &str) -> Option<u128> {
-        self.rows
-            .iter()
-            .find(|r| r.backend == backend)
-            .and_then(|r| {
-                r.samples
-                    .iter()
-                    .find(|s| s.label == label)
-                    .map(|s| s.elapsed_nanos)
-            })
+        self.rows.iter().find(|r| r.backend == backend).and_then(|r| r.samples.iter().find(|s| s.label == label).map(|s| s.elapsed_nanos))
     }
 
     /// Ratio `a / b` for the same label across two backends (`None` if missing or `b==0`).

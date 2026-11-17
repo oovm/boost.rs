@@ -17,21 +17,11 @@ pub(crate) fn analyze(graph: &DocumentGraph) -> (ConversionReport, Vec<Diagnosti
         match marker.status {
             SemanticStatus::Unsupported => {
                 unsupported.push(UnsupportedItem { code: marker.code.clone(), detail: marker.message.clone() });
-                diagnostics.push(Diagnostic {
-                    code: marker.code.clone(),
-                    severity: Severity::Error,
-                    message: marker.message.clone(),
-                    span,
-                });
+                diagnostics.push(Diagnostic { code: marker.code.clone(), severity: Severity::Error, message: marker.message.clone(), span });
             }
             SemanticStatus::Unresolved | SemanticStatus::Partial | SemanticStatus::Inferred | SemanticStatus::Lossy => {
                 lossy.push(LossyItem { code: marker.code.clone(), detail: marker.message.clone() });
-                diagnostics.push(Diagnostic {
-                    code: marker.code.clone(),
-                    severity: Severity::Warning,
-                    message: marker.message.clone(),
-                    span,
-                });
+                diagnostics.push(Diagnostic { code: marker.code.clone(), severity: Severity::Warning, message: marker.message.clone(), span });
             }
             SemanticStatus::Resolved => {}
         }

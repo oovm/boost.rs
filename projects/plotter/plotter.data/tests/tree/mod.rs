@@ -5,11 +5,8 @@ use plotter_types::plot::DiagnosticCode;
 
 #[test]
 fn accepts_small_tree() {
-    let tree = TreeData::new(
-        "r",
-        vec![TreeNode::root("r"), TreeNode::child("a", "r"), TreeNode::child("b", "r"), TreeNode::child("c", "a")],
-    )
-    .unwrap();
+    let tree =
+        TreeData::new("r", vec![TreeNode::root("r"), TreeNode::child("a", "r"), TreeNode::child("b", "r"), TreeNode::child("c", "a")]).unwrap();
     assert_eq!(tree.edges().len(), 3);
 }
 

@@ -27,7 +27,8 @@
 //! doc.add_layer("ink");
 //! doc.add_shape(0, Shape::circle([64.0, 48.0], 20.0).filled(Rgba([255, 200, 120, 255])));
 //! let norm = doc.normalize();
-//! let NormGeometry::Disc { center, radius } = norm.layers[0].shapes[0].geometry else {
+//! let NormGeometry::Disc { center, radius } = norm.layers[0].shapes[0].geometry
+//! else {
 //!     panic!("a circle normalizes to a disc");
 //! };
 //! assert_eq!((center, radius), ([64.0, 48.0], 20.0));
@@ -42,9 +43,7 @@ pub use doc::{Shape, VectorDoc, VectorLayer};
 // and hosts can name a paint without importing `geometry` themselves.
 pub use geometry::{Rgba, Vec2};
 pub use input::{DEFAULT_BACKGROUND, DEFAULT_LAYER_NAME, DEFAULT_STROKE_WIDTH, LayerSpec, ShapeSpec, VectorSpec};
-pub use norm::{
-    MIN_LAYER_OPACITY, NormDoc, NormGeometry, NormLayer, NormShape, ROUNDED_CORNER_SEGMENTS, SMOOTH_SEGMENTS, normalize,
-};
+pub use norm::{MIN_LAYER_OPACITY, NormDoc, NormGeometry, NormLayer, NormShape, ROUNDED_CORNER_SEGMENTS, SMOOTH_SEGMENTS, normalize};
 
 impl VectorDoc {
     /// Resolves the document into the shared normalized representation both
@@ -63,25 +62,16 @@ mod tests {
     fn sample() -> VectorDoc {
         let mut doc = VectorDoc::new(64, 48, Rgba([10, 12, 20, 255]));
         let _ = doc.add_layer("base");
-        doc.add_shape(
-            0,
-            Shape::rect([4.0, 4.0], [40.0, 24.0], 6.0)
-                .filled(Rgba([30, 40, 70, 255]))
-                .stroked(Rgba([120, 160, 255, 255]), 2.0),
-        );
-        doc.add_shape(
-            0,
-            Shape::path(vec![[8.0, 30.0], [24.0, 12.0], [56.0, 28.0]])
-                .smooth()
-                .stroked(Rgba([255, 200, 120, 255]), 3.0),
-        );
+        doc.add_shape(0, Shape::rect([4.0, 4.0], [40.0, 24.0], 6.0).filled(Rgba([30, 40, 70, 255])).stroked(Rgba([120, 160, 255, 255]), 2.0));
+        doc.add_shape(0, Shape::path(vec![[8.0, 30.0], [24.0, 12.0], [56.0, 28.0]]).smooth().stroked(Rgba([255, 200, 120, 255]), 3.0));
         doc
     }
 
     #[test]
     fn smooth_paths_expand_with_the_locked_segment_count() {
         let norm = sample().normalize();
-        let NormGeometry::Outline { points, closed } = &norm.layers[0].shapes[1].geometry else {
+        let NormGeometry::Outline { points, closed } = &norm.layers[0].shapes[1].geometry
+        else {
             panic!("a path normalizes to an outline");
         };
         // 3 input points, open: 2 segments x 12 samples plus the true endpoint.
@@ -95,7 +85,8 @@ mod tests {
         let mut doc = VectorDoc::new(32, 32, Rgba::default());
         let _ = doc.add_layer("ink");
         doc.add_shape(0, Shape::path(vec![[4.0, 4.0], [20.0, 4.0], [12.0, 20.0]]).closed().filled(Rgba([1, 2, 3, 255])));
-        let NormGeometry::Outline { points, closed } = &doc.normalize().layers[0].shapes[0].geometry else {
+        let NormGeometry::Outline { points, closed } = &doc.normalize().layers[0].shapes[0].geometry
+        else {
             panic!("outline");
         };
         assert!(closed);
@@ -104,7 +95,8 @@ mod tests {
 
         // A smooth closed curve drops the duplicated seam point too.
         doc.add_shape(0, Shape::path(vec![[4.0, 4.0], [20.0, 4.0], [12.0, 20.0]]).smooth().closed());
-        let NormGeometry::Outline { points, closed } = &doc.normalize().layers[0].shapes[1].geometry else {
+        let NormGeometry::Outline { points, closed } = &doc.normalize().layers[0].shapes[1].geometry
+        else {
             panic!("outline");
         };
         assert!(closed);
@@ -120,15 +112,18 @@ mod tests {
         doc.add_shape(0, Shape::rect([0.0, 0.0], [30.0, 10.0], 0.005));
         doc.add_shape(0, Shape::rect([0.0, 0.0], [30.0, 10.0], -3.0));
         let norm = doc.normalize();
-        let NormGeometry::RoundRect { radius, .. } = norm.layers[0].shapes[0].geometry else {
+        let NormGeometry::RoundRect { radius, .. } = norm.layers[0].shapes[0].geometry
+        else {
             panic!("rect");
         };
         assert_eq!(radius, 5.0, "clamped to half the short edge");
-        let NormGeometry::RoundRect { radius, .. } = norm.layers[0].shapes[1].geometry else {
+        let NormGeometry::RoundRect { radius, .. } = norm.layers[0].shapes[1].geometry
+        else {
             panic!("rect");
         };
         assert_eq!(radius, 0.0, "sub-0.01 radii are sharp, matching the raster cutoff");
-        let NormGeometry::RoundRect { radius, .. } = norm.layers[0].shapes[2].geometry else {
+        let NormGeometry::RoundRect { radius, .. } = norm.layers[0].shapes[2].geometry
+        else {
             panic!("rect");
         };
         assert_eq!(radius, 0.0, "negative radii clamp to zero");
@@ -189,7 +184,8 @@ mod tests {
         let _ = doc.add_layer("ink");
         doc.add_shape(0, Shape::circle([4.0, 4.0], -7.0).stroked(Rgba([9, 9, 9, 255]), -3.0));
         let shape = &doc.normalize().layers[0].shapes[0];
-        let NormGeometry::Disc { radius, .. } = shape.geometry else {
+        let NormGeometry::Disc { radius, .. } = shape.geometry
+        else {
             panic!("disc");
         };
         assert_eq!(radius, 0.0);

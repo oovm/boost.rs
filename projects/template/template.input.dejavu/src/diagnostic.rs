@@ -431,11 +431,7 @@ mod tests {
 
     #[test]
     fn related_spans_serialize() {
-        let d = Diagnostic::new(Severity::Warning, codes::PARSE_UNEXPECTED_TOKEN, Stage::Parse).span(10, 15).related(
-            20,
-            30,
-            "expected here",
-        );
+        let d = Diagnostic::new(Severity::Warning, codes::PARSE_UNEXPECTED_TOKEN, Stage::Parse).span(10, 15).related(20, 30, "expected here");
         let json = serde_json::to_string(&d).unwrap();
         assert!(json.contains("related"));
         assert!(json.contains("expected here"));

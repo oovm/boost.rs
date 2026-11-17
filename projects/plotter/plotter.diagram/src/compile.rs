@@ -7,8 +7,8 @@ use std::{
 
 use plotter_scene::{Point, Rect, Size};
 use plotter_types::{
-    ByteRange, Diagnostic, DiagnosticLabel, DiagnosticLocation, DiagnosticSeverity, LabelRole, Message, NAMESPACE, SourceRef,
-    codes, diagnostic, measure_line, wrap_label,
+    ByteRange, Diagnostic, DiagnosticLabel, DiagnosticLocation, DiagnosticSeverity, LabelRole, Message, NAMESPACE, SourceRef, codes,
+    diagnostic, measure_line, wrap_label,
 };
 
 use crate::{
@@ -195,13 +195,8 @@ pub fn compile_layered_with_source(spec: &DiagramSpec, options: &LayoutOptions, 
 
     let memberships = node_memberships(&clusters, nodes.len());
     let anchors = {
-        let mut resolver = EndpointResolver {
-            nodes: &nodes,
-            rects: &rects,
-            ports: &ports,
-            direction: spec.direction,
-            reported_ports: BTreeSet::new(),
-        };
+        let mut resolver =
+            EndpointResolver { nodes: &nodes, rects: &rects, ports: &ports, direction: spec.direction, reported_ports: BTreeSet::new() };
         edges
             .iter()
             .map(|edge| {
@@ -224,10 +219,7 @@ pub fn compile_layered_with_source(spec: &DiagramSpec, options: &LayoutOptions, 
         let points = route_avoiding(from, to, spec.direction, &obstacles, &mut lanes).unwrap_or_else(|| {
             diagnostics.push(located(
                 codes::APPROXIMATED,
-                format!(
-                    "edge `{}->{}` found no channel that clears every node and keeps the direct route",
-                    edge.from.node, edge.to.node
-                ),
+                format!("edge `{}->{}` found no channel that clears every node and keeps the direct route", edge.from.node, edge.to.node),
                 source.edge(edge.spec_index),
                 source,
             ));
@@ -236,9 +228,8 @@ pub fn compile_layered_with_source(spec: &DiagramSpec, options: &LayoutOptions, 
         let label = edge.label.as_deref().and_then(|label| {
             prepare_edge_label(label, &edge.from.node, &edge.to.node, edge_label_font_size(options.font_size), &mut diagnostics)
         });
-        let label_box = label
-            .as_ref()
-            .map(|label| estimate_label_box(label, polyline_midpoint(&points), edge_label_font_size(options.font_size)));
+        let label_box =
+            label.as_ref().map(|label| estimate_label_box(label, polyline_midpoint(&points), edge_label_font_size(options.font_size)));
         routed.push(RoutedEdge { from: edge.from.clone(), to: edge.to.clone(), points, label, label_box, style: edge.style });
     }
 
@@ -249,9 +240,7 @@ pub fn compile_layered_with_source(spec: &DiagramSpec, options: &LayoutOptions, 
         let foreign_labels: Vec<Rect> = routed
             .iter()
             .enumerate()
-            .filter_map(|(other, edge)| {
-                (other != index).then_some(edge.label_box?).map(|rect| inflate(rect, ROUTE_LABEL_CLEARANCE))
-            })
+            .filter_map(|(other, edge)| (other != index).then_some(edge.label_box?).map(|rect| inflate(rect, ROUTE_LABEL_CLEARANCE)))
             .collect();
         if foreign_labels.is_empty() || !route_hits_obstacles(&routed[index].points, &foreign_labels) {
             continue;
@@ -360,24 +349,13 @@ pub fn compile_sequence_with_source(spec: &DiagramSpec, options: &LayoutOptions,
     compile_time_ordered(spec, &sequence, options, source)
 }
 
-fn compile_time_ordered(
-    spec: &DiagramSpec,
-    sequence: &SequenceLayout,
-    options: &LayoutOptions,
-    source: &SourceMap,
-) -> DiagramLayoutPlan {
+fn compile_time_ordered(spec: &DiagramSpec, sequence: &SequenceLayout, options: &LayoutOptions, source: &SourceMap) -> DiagramLayoutPlan {
     let mut diagnostics = Vec::new();
     if !spec.clusters.is_empty() {
-        diagnostics.push(warning(
-            codes::APPROXIMATED,
-            format!("sequence layout ignores {} cluster declarations", spec.clusters.len()),
-        ));
+        diagnostics.push(warning(codes::APPROXIMATED, format!("sequence layout ignores {} cluster declarations", spec.clusters.len())));
     }
     if !spec.constraints.is_empty() {
-        diagnostics.push(warning(
-            codes::APPROXIMATED,
-            format!("sequence layout ignores {} ordering constraints", spec.constraints.len()),
-        ));
+        diagnostics.push(warning(codes::APPROXIMATED, format!("sequence layout ignores {} ordering constraints", spec.constraints.len())));
     }
 
     let axis = declared_axis(spec, sequence, &mut diagnostics);
@@ -386,12 +364,7 @@ fn compile_time_ordered(
     for spec_index in axis {
         let node = &spec.nodes[spec_index];
         if node.id.is_empty() {
-            diagnostics.push(located(
-                codes::APPROXIMATED,
-                "sequence participant with an empty id is ignored",
-                source.node(spec_index),
-                source,
-            ));
+            diagnostics.push(located(codes::APPROXIMATED, "sequence participant with an empty id is ignored", source.node(spec_index), source));
             continue;
         }
         if indices.contains_key(&node.id) {
@@ -449,10 +422,7 @@ fn compile_time_ordered(
             let missing = if indices.contains_key(&edge.from.node) { edge.to.node.as_str() } else { edge.from.node.as_str() };
             diagnostics.push(located(
                 codes::APPROXIMATED,
-                format!(
-                    "sequence message `{}->{}` references unknown participant `{missing}` and is skipped",
-                    edge.from.node, edge.to.node
-                ),
+                format!("sequence message `{}->{}` references unknown participant `{missing}` and is skipped", edge.from.node, edge.to.node),
                 source.edge(edge_index),
                 source,
             ));
@@ -475,30 +445,17 @@ fn compile_time_ordered(
             prepare_edge_label(label, &edge.from.node, &edge.to.node, edge_label_font_size(options.font_size), &mut diagnostics)
         });
         let label_box = label.as_ref().map(|label| {
-            estimate_label_box(
-                label,
-                Point::new((from.x + to.x) * 0.5, line_y - options.font_size),
-                edge_label_font_size(options.font_size),
-            )
+            estimate_label_box(label, Point::new((from.x + to.x) * 0.5, line_y - options.font_size), edge_label_font_size(options.font_size))
         });
-        messages.push(RoutedEdge {
-            from: edge.from.clone(),
-            to: edge.to.clone(),
-            points: vec![from, to],
-            label,
-            label_box,
-            style: edge.style,
-        });
+        messages.push(RoutedEdge { from: edge.from.clone(), to: edge.to.clone(), points: vec![from, to], label, label_box, style: edge.style });
     }
 
     let mut activations = Vec::new();
     for activation in &sequence.activations {
         let Some(&participant_index) = indices.get(&activation.participant)
         else {
-            diagnostics.push(warning(
-                codes::APPROXIMATED,
-                format!("activation on unknown participant `{}` is ignored", activation.participant),
-            ));
+            diagnostics
+                .push(warning(codes::APPROXIMATED, format!("activation on unknown participant `{}` is ignored", activation.participant)));
             continue;
         };
         if activation.from_message > activation.to_message || activation.to_message >= row_centers.len() {
@@ -571,8 +528,7 @@ fn declared_axis(spec: &DiagramSpec, sequence: &SequenceLayout, diagnostics: &mu
                 consumed.insert(index);
                 ordered.push(index);
             }
-            None => diagnostics
-                .push(warning(codes::APPROXIMATED, format!("sequence axis names unknown participant `{id}` and is ignored"))),
+            None => diagnostics.push(warning(codes::APPROXIMATED, format!("sequence axis names unknown participant `{id}` and is ignored"))),
         }
     }
     ordered.extend((0..spec.nodes.len()).filter(|&index| !consumed.contains(&index)));
@@ -614,10 +570,7 @@ fn resolve_nodes(spec: &DiagramSpec, diagnostics: &mut Vec<Diagnostic>, source: 
             Some(&index) => {
                 diagnostics.push(located(
                     codes::APPROXIMATED,
-                    format!(
-                        "duplicate node id `{}`, the first definition is kept and later port declarations are merged",
-                        node.id
-                    ),
+                    format!("duplicate node id `{}`, the first definition is kept and later port declarations are merged", node.id),
                     source.node(spec_index),
                     source,
                 ));
@@ -652,10 +605,7 @@ fn resolve_clusters(
 
     for cluster in &spec.clusters {
         if !declared.insert(cluster.id.clone()) {
-            diagnostics.push(warning(
-                codes::APPROXIMATED,
-                format!("duplicate cluster id `{}`, later definitions are ignored", cluster.id),
-            ));
+            diagnostics.push(warning(codes::APPROXIMATED, format!("duplicate cluster id `{}`, later definitions are ignored", cluster.id)));
             continue;
         }
 
@@ -675,11 +625,9 @@ fn resolve_clusters(
             }
         }
 
-        let members: Vec<usize> =
-            member_flags.iter().enumerate().filter_map(|(index, &present)| present.then_some(index)).collect();
+        let members: Vec<usize> = member_flags.iter().enumerate().filter_map(|(index, &present)| present.then_some(index)).collect();
         if members.is_empty() {
-            diagnostics
-                .push(warning(codes::APPROXIMATED, format!("cluster `{}` has no members and produces no frame", cluster.id)));
+            diagnostics.push(warning(codes::APPROXIMATED, format!("cluster `{}` has no members and produces no frame", cluster.id)));
             continue;
         }
         clusters.push(ResolvedCluster { id: cluster.id.clone(), label: cluster.label.clone(), members });
@@ -730,10 +678,7 @@ fn resolve_edges(
             (None, _) => {
                 diagnostics.push(located(
                     codes::APPROXIMATED,
-                    format!(
-                        "edge `{}->{}` references unknown node `{}` and is skipped",
-                        edge.from.node, edge.to.node, edge.from.node
-                    ),
+                    format!("edge `{}->{}` references unknown node `{}` and is skipped", edge.from.node, edge.to.node, edge.from.node),
                     span,
                     source,
                 ));
@@ -742,10 +687,7 @@ fn resolve_edges(
             (_, None) => {
                 diagnostics.push(located(
                     codes::APPROXIMATED,
-                    format!(
-                        "edge `{}->{}` references unknown node `{}` and is skipped",
-                        edge.from.node, edge.to.node, edge.to.node
-                    ),
+                    format!("edge `{}->{}` references unknown node `{}` and is skipped", edge.from.node, edge.to.node, edge.to.node),
                     span,
                     source,
                 ));
@@ -867,8 +809,7 @@ fn assign_layers(
                     }
                 }
                 if group.is_empty() {
-                    diagnostics
-                        .push(warning(codes::APPROXIMATED, "same-rank constraint references no known nodes and is ignored"));
+                    diagnostics.push(warning(codes::APPROXIMATED, "same-rank constraint references no known nodes and is ignored"));
                 }
                 else {
                     groups.push(group);
@@ -1020,8 +961,7 @@ fn place_rects(sizes: &[Size], layers: &[usize], direction: Direction, options: 
     let mut cross_extents = Vec::with_capacity(groups.len());
     for group in &groups {
         let primary_extent = group.iter().map(|&index| primary(index)).fold(0.0, f64::max);
-        let cross_extent =
-            group.iter().map(|&index| cross(index)).sum::<f64>() + options.node_gap * group.len().saturating_sub(1) as f64;
+        let cross_extent = group.iter().map(|&index| cross(index)).sum::<f64>() + options.node_gap * group.len().saturating_sub(1) as f64;
         primary_extents.push(primary_extent);
         cross_extents.push(cross_extent);
     }
@@ -1082,12 +1022,7 @@ fn canvas_shift(rects: &[Rect], cluster_rects: &[Option<Rect>], options: &Layout
     (shift_x, shift_y, canvas)
 }
 
-fn build_ports(
-    node: &ResolvedNode,
-    rect: Rect,
-    diagnostics: &mut Vec<Diagnostic>,
-    source: &SourceMap,
-) -> BTreeMap<String, Point> {
+fn build_ports(node: &ResolvedNode, rect: Rect, diagnostics: &mut Vec<Diagnostic>, source: &SourceMap) -> BTreeMap<String, Point> {
     let mut ports = BTreeMap::new();
     for port in &node.ports {
         if port.id.is_empty() {
@@ -1287,20 +1222,13 @@ fn route_hits_obstacles(points: &[Point], obstacles: &[Rect]) -> bool {
 ///
 /// Lanes claimed by earlier edges are spaced at least
 /// [`ROUTE_CHANNEL_SPACING`] apart so parallel detours never overlap.
-fn route_avoiding(
-    from: Point,
-    to: Point,
-    direction: Direction,
-    obstacles: &[Rect],
-    lanes: &mut Vec<UsedLane>,
-) -> Option<Vec<Point>> {
+fn route_avoiding(from: Point, to: Point, direction: Direction, obstacles: &[Rect], lanes: &mut Vec<UsedLane>) -> Option<Vec<Point>> {
     let direct = route(from, to, direction);
     if !route_hits_obstacles(&direct, obstacles) {
         return Some(direct);
     }
     let vertical = matches!(direction, Direction::TopDown | Direction::BottomUp);
-    let (start, end, start_cross, end_cross) =
-        if vertical { (from.y, to.y, from.x, to.x) } else { (from.x, to.x, from.y, to.y) };
+    let (start, end, start_cross, end_cross) = if vertical { (from.y, to.y, from.x, to.x) } else { (from.x, to.x, from.y, to.y) };
     let sign = if end >= start { 1.0 } else { -1.0 };
     let (span_low, span_high) = if start <= end { (start, end) } else { (end, start) };
 
@@ -1309,12 +1237,8 @@ fn route_avoiding(
     let mut candidates: Vec<f64> = obstacles
         .iter()
         .flat_map(|rect| {
-            let (rect_low, rect_high, rect_cross_low, rect_high_cross) = if vertical {
-                (rect.y, rect.bottom(), rect.x, rect.right())
-            }
-            else {
-                (rect.x, rect.right(), rect.y, rect.bottom())
-            };
+            let (rect_low, rect_high, rect_cross_low, rect_high_cross) =
+                if vertical { (rect.y, rect.bottom(), rect.x, rect.right()) } else { (rect.x, rect.right(), rect.y, rect.bottom()) };
             if rect_high > span_low && rect_low < span_high {
                 vec![rect_cross_low - ROUTE_LANE_CLEARANCE, rect_high_cross + ROUTE_LANE_CLEARANCE]
             }
@@ -1325,11 +1249,7 @@ fn route_avoiding(
         .collect();
     let reference = (start_cross + end_cross) * 0.5;
     candidates.sort_by(|left, right| {
-        (left - reference)
-            .abs()
-            .partial_cmp(&(right - reference).abs())
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then(left.total_cmp(right))
+        (left - reference).abs().partial_cmp(&(right - reference).abs()).unwrap_or(std::cmp::Ordering::Equal).then(left.total_cmp(right))
     });
     candidates.dedup();
 
@@ -1337,9 +1257,8 @@ fn route_avoiding(
         // Parallel detours with overlapping spans keep the channel spacing.
         let mut lane = candidate;
         loop {
-            let conflict = lanes.iter().any(|used| {
-                used.high > span_low && used.low < span_high && (used.coordinate - lane).abs() < ROUTE_CHANNEL_SPACING
-            });
+            let conflict =
+                lanes.iter().any(|used| used.high > span_low && used.low < span_high && (used.coordinate - lane).abs() < ROUTE_CHANNEL_SPACING);
             if !conflict {
                 break;
             }
@@ -1356,24 +1275,10 @@ fn route_avoiding(
             (stub, rejoin)
         };
         let points = if vertical {
-            vec![
-                from,
-                Point::new(start_cross, stub),
-                Point::new(lane, stub),
-                Point::new(lane, rejoin),
-                Point::new(end_cross, rejoin),
-                to,
-            ]
+            vec![from, Point::new(start_cross, stub), Point::new(lane, stub), Point::new(lane, rejoin), Point::new(end_cross, rejoin), to]
         }
         else {
-            vec![
-                from,
-                Point::new(stub, start_cross),
-                Point::new(stub, lane),
-                Point::new(rejoin, lane),
-                Point::new(rejoin, end_cross),
-                to,
-            ]
+            vec![from, Point::new(stub, start_cross), Point::new(stub, lane), Point::new(rejoin, lane), Point::new(rejoin, end_cross), to]
         };
         let points = dedupe_points(points);
         if !route_hits_obstacles(&points, obstacles) {
@@ -1403,8 +1308,7 @@ fn merge_converging_tracks(routed: &mut [RoutedEdge], direction: Direction) {
         let sign = if anchor >= previous_along { 1.0 } else { -1.0 };
         let merge = anchor - sign * ROUTE_MERGE_STUB;
         // Only split a straight final approach that spans the merge point.
-        let final_is_axial =
-            if vertical { (previous.x - cross).abs() < f64::EPSILON } else { (previous.y - cross).abs() < f64::EPSILON };
+        let final_is_axial = if vertical { (previous.x - cross).abs() < f64::EPSILON } else { (previous.y - cross).abs() < f64::EPSILON };
         let spans_merge = sign * (anchor - previous_along) > ROUTE_MERGE_STUB * 2.0;
         if final_is_axial && spans_merge {
             let point = if vertical { Point::new(cross, merge) } else { Point::new(merge, cross) };
@@ -1507,8 +1411,7 @@ fn located(code: &'static str, message: impl Into<String>, span: Option<Range<us
     else {
         return record;
     };
-    let (Ok(source_ref), Ok(range)) =
-        (SourceRef::new(NAMESPACE, source.family()), ByteRange::new(span.start as u64, span.end as u64))
+    let (Ok(source_ref), Ok(range)) = (SourceRef::new(NAMESPACE, source.family()), ByteRange::new(span.start as u64, span.end as u64))
     else {
         return record;
     };

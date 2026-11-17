@@ -21,9 +21,7 @@ pub fn write_document_docx(graph: &mut DocumentGraph) -> Result<Vec<u8>> {
     for source in unresolved_image_sources(graph) {
         graph.push_loss(LossMarker {
             code: "export.docx.image_unresolved".into(),
-            message: format!(
-                "image `{source}` has no captured bytes. DOCX keeps the marker text instead of an embedded picture"
-            ),
+            message: format!("image `{source}` has no captured bytes. DOCX keeps the marker text instead of an embedded picture"),
             status: SemanticStatus::Partial,
         });
     }

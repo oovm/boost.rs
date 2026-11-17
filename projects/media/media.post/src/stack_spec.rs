@@ -20,11 +20,13 @@ use serde::Deserialize;
 
 use media_types::Error;
 
-use crate::display_ops::{Blur, Chroma, Displace, Grain, Sweep};
-use crate::effect::{Effect, EffectStack};
-use crate::generative::{BeamsEffect, ParticlesEffect};
-use crate::post::{DEFAULT_BLOOM_INTENSITY, DEFAULT_BLOOM_THRESHOLD};
-use crate::stack_bloom::Bloom;
+use crate::{
+    display_ops::{Blur, Chroma, Displace, Grain, Sweep},
+    effect::{Effect, EffectStack},
+    generative::{BeamsEffect, ParticlesEffect},
+    post::{DEFAULT_BLOOM_INTENSITY, DEFAULT_BLOOM_THRESHOLD},
+    stack_bloom::Bloom,
+};
 use media_particles::{Beams, Particles};
 
 /// 一份完整的效果栈声明。
@@ -39,7 +41,9 @@ pub struct StackSpec {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum EffectSpec {
-    Blur { amount: f32 },
+    Blur {
+        amount: f32,
+    },
     /// 线性 HDR 物理泛光（成文域转换见 [`crate::contract`]），缺省即
     /// [`crate::DEFAULT_BLOOM_THRESHOLD`] / [`crate::DEFAULT_BLOOM_INTENSITY`]。
     Bloom {
@@ -48,7 +52,9 @@ pub enum EffectSpec {
         #[serde(default)]
         intensity: Option<f64>,
     },
-    Chroma { amount: f32 },
+    Chroma {
+        amount: f32,
+    },
     Displace {
         amount: f32,
         frequency: f32,
@@ -61,7 +67,10 @@ pub enum EffectSpec {
         color: String,
         strength: f32,
     },
-    Grain { strength: f32, density: f32 },
+    Grain {
+        strength: f32,
+        density: f32,
+    },
     Particles {
         count: u32,
         seed: u32,
@@ -151,23 +160,12 @@ impl EffectSpec {
                 let speed = finite("particles", "speed", *speed)?;
                 let drift = finite("particles", "drift", *drift)?;
                 let twinkle = in_range("particles", "twinkle", *twinkle, 0.0, 1.0)?;
-                Ok(Box::new(ParticlesEffect(Particles {
-                    count: *count,
-                    seed: *seed,
-                    color,
-                    size,
-                    speed,
-                    drift,
-                    twinkle,
-                })))
+                Ok(Box::new(ParticlesEffect(Particles { count: *count, seed: *seed, color, size, speed, drift, twinkle })))
             }
             Self::Beams { count, seed, color, origin, strength, sway } => {
                 let color = parse_color("beams", color)?;
                 let origin = match origin {
-                    Some([x, y]) => [
-                        in_range("beams", "origin.x", *x, 0.0, 1.0)?,
-                        in_range("beams", "origin.y", *y, 0.0, 1.0)?,
-                    ],
+                    Some([x, y]) => [in_range("beams", "origin.x", *x, 0.0, 1.0)?, in_range("beams", "origin.y", *y, 0.0, 1.0)?],
                     None => [0.5, 0.28],
                 };
                 let strength = match strength {
@@ -178,14 +176,7 @@ impl EffectSpec {
                     Some(v) => finite("beams", "sway", *v)?,
                     None => 6.0,
                 };
-                Ok(Box::new(BeamsEffect(Beams {
-                    count: *count,
-                    seed: *seed,
-                    color,
-                    origin,
-                    strength,
-                    sway,
-                })))
+                Ok(Box::new(BeamsEffect(Beams { count: *count, seed: *seed, color, origin, strength, sway })))
             }
         }
     }
@@ -195,10 +186,9 @@ impl EffectSpec {
 fn in_range(op: &str, param: &str, value: f32, min: f32, max: f32) -> Result<f32, Error> {
     if value.is_finite() && value >= min && value <= max {
         Ok(value)
-    } else {
-        Err(Error::invalid_input(format!(
-            "{op}.{param} must be within {min}..={max}, got {value}"
-        )))
+    }
+    else {
+        Err(Error::invalid_input(format!("{op}.{param} must be within {min}..={max}, got {value}")))
     }
 }
 
@@ -206,27 +196,20 @@ fn in_range(op: &str, param: &str, value: f32, min: f32, max: f32) -> Result<f32
 fn in_range_f64(op: &str, param: &str, value: f64, min: f64, max: f64) -> Result<f64, Error> {
     if value.is_finite() && value >= min && value <= max {
         Ok(value)
-    } else {
-        Err(Error::invalid_input(format!(
-            "{op}.{param} must be within {min}..={max}, got {value}"
-        )))
+    }
+    else {
+        Err(Error::invalid_input(format!("{op}.{param} must be within {min}..={max}, got {value}")))
     }
 }
 
 /// 只要求有限。
 fn finite(op: &str, param: &str, value: f32) -> Result<f32, Error> {
-    if value.is_finite() {
-        Ok(value)
-    } else {
-        Err(Error::invalid_input(format!("{op}.{param} must be finite, got {value}")))
-    }
+    if value.is_finite() { Ok(value) } else { Err(Error::invalid_input(format!("{op}.{param} must be finite, got {value}"))) }
 }
 
 /// `#rgb`、`#rrggbb`、`#rrggbbaa`。
 fn parse_color(op: &str, input: &str) -> Result<Rgba, Error> {
-    geometry_types::parse(input).ok_or_else(|| {
-        Error::invalid_input(format!("{op}.color: not a hex color: {input}"))
-    })
+    geometry_types::parse(input).ok_or_else(|| Error::invalid_input(format!("{op}.color: not a hex color: {input}")))
 }
 
 #[cfg(test)]
@@ -286,10 +269,7 @@ mod tests {
     fn bloom_defaults_to_the_physical_path_constants() {
         // Omitted HDR parameters land on the shared CPU/UCF defaults, byte for
         // byte identical to stating them explicitly.
-        let implicit = StackSpec::from_json(r#"{"effects":[{"kind":"bloom"}]}"#)
-            .unwrap()
-            .compile()
-            .unwrap();
+        let implicit = StackSpec::from_json(r#"{"effects":[{"kind":"bloom"}]}"#).unwrap().compile().unwrap();
         let explicit = StackSpec::from_json(&format!(
             r#"{{"effects":[{{"kind":"bloom","threshold":{DEFAULT_BLOOM_THRESHOLD},"intensity":{DEFAULT_BLOOM_INTENSITY}}}]}}"#
         ))
@@ -338,7 +318,11 @@ mod tests {
         assert!(error.is_ok());
         let error = StackSpec::from_json(r#"{"effects":[{"kind":"sharpen","amount":1}]}"#).err().unwrap();
         assert_eq!(error.code(), "invalid_input");
-        let error = StackSpec::from_json(r#"{"effects":[{"kind":"sweep","angle":0,"speed":1,"width":0.5,"color":"red","strength":1}]}"#).unwrap().compile().err().unwrap();
+        let error = StackSpec::from_json(r#"{"effects":[{"kind":"sweep","angle":0,"speed":1,"width":0.5,"color":"red","strength":1}]}"#)
+            .unwrap()
+            .compile()
+            .err()
+            .unwrap();
         assert_eq!(error.code(), "invalid_input");
     }
 

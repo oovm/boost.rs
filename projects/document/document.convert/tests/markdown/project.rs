@@ -49,15 +49,11 @@ fn docx_to_markdown_project_writes_index_assets_and_report() {
     Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
     Target="media/logo.png"/>
 </Relationships>"#;
-    let zip = stored_zip(&[
-        ("word/document.xml", document_xml),
-        ("word/_rels/document.xml.rels", rels_xml),
-        ("word/media/logo.png", b"\x89PNG\r\n"),
-    ]);
+    let zip =
+        stored_zip(&[("word/document.xml", document_xml), ("word/_rels/document.xml.rels", rels_xml), ("word/media/logo.png", b"\x89PNG\r\n")]);
 
     let output_dir = std::env::temp_dir().join(format!("panduck-md-project-{}", std::process::id()));
-    let (output, published) =
-        convert_to_markdown_project("docx", "image.docx", zip, &output_dir, None).expect("convert project");
+    let (output, published) = convert_to_markdown_project("docx", "image.docx", zip, &output_dir, None).expect("convert project");
 
     assert_eq!(output.published_assets.len(), 1);
     let asset_path = &output.published_assets[0];
@@ -120,11 +116,8 @@ fn docx_to_markdown_project_materializes_jpeg_embedded_image() {
     Target="media/photo.jpg"/>
 </Relationships>"#;
     let jpeg_bytes = b"\xFF\xD8\xFF\xE0\x00\x10JFIF\x00photo";
-    let zip = stored_zip(&[
-        ("word/document.xml", document_xml),
-        ("word/_rels/document.xml.rels", rels_xml),
-        ("word/media/photo.jpg", jpeg_bytes),
-    ]);
+    let zip =
+        stored_zip(&[("word/document.xml", document_xml), ("word/_rels/document.xml.rels", rels_xml), ("word/media/photo.jpg", jpeg_bytes)]);
 
     let output_dir = std::env::temp_dir().join(format!("panduck-docx-jpeg-{}", std::process::id()));
     let (output, published) = convert_to_markdown_project("docx", "jpeg.docx", zip, &output_dir, None).expect("convert");
@@ -203,10 +196,7 @@ fn docx_to_markdown_project_is_deterministic_across_repeated_runs() {
     // Report JSON must be identical (no timestamps or nondeterministic fields).
     assert_eq!(output_a.report_json, output_b.report_json);
     assert_eq!(published_a.index_path, dir_a.join("index.md"));
-    assert_eq!(
-        fs::read_to_string(&published_a.index_path).expect("a"),
-        fs::read_to_string(&published_b.index_path).expect("b")
-    );
+    assert_eq!(fs::read_to_string(&published_a.index_path).expect("a"), fs::read_to_string(&published_b.index_path).expect("b"));
 
     let _ = fs::remove_dir_all(&base);
 }
@@ -321,8 +311,8 @@ fn epub_with_image_zip() -> Vec<u8> {
 #[test]
 fn epub_to_markdown_project_materializes_chapter_image() {
     let output_dir = std::env::temp_dir().join(format!("panduck-epub-image-project-{}", std::process::id()));
-    let (output, published) = convert_to_markdown_project("epub", "image.epub", epub_with_image_zip(), &output_dir, None)
-        .expect("convert epub project");
+    let (output, published) =
+        convert_to_markdown_project("epub", "image.epub", epub_with_image_zip(), &output_dir, None).expect("convert epub project");
 
     assert!(output.published_chapters.is_empty());
     assert_eq!(output.published_assets.len(), 1);
@@ -389,8 +379,8 @@ fn multi_chapter_epub_zip() -> Vec<u8> {
 #[test]
 fn epub_to_markdown_project_splits_spine_into_chapters() {
     let output_dir = std::env::temp_dir().join(format!("panduck-epub-chapters-{}", std::process::id()));
-    let (output, published) = convert_to_markdown_project("epub", "book.epub", multi_chapter_epub_zip(), &output_dir, None)
-        .expect("convert epub project");
+    let (output, published) =
+        convert_to_markdown_project("epub", "book.epub", multi_chapter_epub_zip(), &output_dir, None).expect("convert epub project");
 
     assert_eq!(output.published_chapters.len(), 2);
     assert!(output.index_markdown.contains("# Sample Book"));
@@ -417,8 +407,7 @@ fn html_to_markdown_project_writes_index_and_reopens_semantics() {
     assert!(supports_markdown_project_source("html"));
     let output_dir = std::env::temp_dir().join(format!("panduck-html-project-{}", std::process::id()));
     let html = br#"<html><body><h1>Title</h1><p>Hello HTML.</p></body></html>"#.to_vec();
-    let (output, published) =
-        convert_to_markdown_project("html", "page.html", html, &output_dir, None).expect("convert html project");
+    let (output, published) = convert_to_markdown_project("html", "page.html", html, &output_dir, None).expect("convert html project");
 
     assert!(output.index_markdown.contains("# Title"));
     assert!(output.published_chapters.is_empty());
@@ -441,8 +430,7 @@ fn html_to_markdown_project_writes_index_and_reopens_semantics() {
 fn html_to_markdown_project_reports_raw_passthrough_elements_in_panduck_report() {
     let output_dir = std::env::temp_dir().join(format!("panduck-html-loss-project-{}", std::process::id()));
     let html = br#"<html><body><h1>Title</h1><p>Before script.</p><script>alert(1)</script></body></html>"#.to_vec();
-    let (output, published) =
-        convert_to_markdown_project("html", "page.html", html, &output_dir, None).expect("convert html project");
+    let (output, published) = convert_to_markdown_project("html", "page.html", html, &output_dir, None).expect("convert html project");
 
     assert_convert_project_report(&output, &published);
     assert_report_contains_loss_codes(&output.report_json, &["import.html.partial_coverage", "import.html.raw_script"]);
@@ -564,21 +552,14 @@ fn pdf_to_markdown_project_writes_index_and_reopens_text() {
     use document_convert::convert_bytes_with_body_faces;
 
     assert!(supports_markdown_project_source("pdf"));
-    let pdf = convert_bytes_with_body_faces(
-        "markdown",
-        "pdf",
-        "sample.md",
-        b"# Heading\n\nBody text.\n".to_vec(),
-        None,
-        &common::pdf_body_faces(),
-    )
-    .expect("write pdf")
-    .binary
-    .expect("pdf bytes");
+    let pdf =
+        convert_bytes_with_body_faces("markdown", "pdf", "sample.md", b"# Heading\n\nBody text.\n".to_vec(), None, &common::pdf_body_faces())
+            .expect("write pdf")
+            .binary
+            .expect("pdf bytes");
 
     let output_dir = std::env::temp_dir().join(format!("panduck-pdf-project-{}", std::process::id()));
-    let (output, published) =
-        convert_to_markdown_project("pdf", "sample.pdf", pdf, &output_dir, None).expect("convert pdf project");
+    let (output, published) = convert_to_markdown_project("pdf", "sample.pdf", pdf, &output_dir, None).expect("convert pdf project");
 
     assert!(output.index_markdown.contains("Heading"));
     assert!(output.index_markdown.contains("Body text."));

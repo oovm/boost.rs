@@ -239,12 +239,7 @@ impl Parser<'_> {
         trim_end: TrimMode,
         pending: Vec<&'static str>,
     ) -> Result<(NativeNode, usize, Vec<&'static str>), ParseError> {
-        let params = if params_src.trim().is_empty() {
-            Vec::new()
-        }
-        else {
-            parse_params(self.source, self.file, params_src, params_base)?
-        };
+        let params = if params_src.trim().is_empty() { Vec::new() } else { parse_params(self.source, self.file, params_src, params_base)? };
         if params.iter().any(|p| p.name == "caller") {
             return Err(ParseError::at(
                 self.source,
@@ -325,15 +320,8 @@ impl Parser<'_> {
         let (mut body, i2) = self.parse_until(i, &["end call"])?;
         i = i2;
         if i >= self.source.len() {
-            return Err(ParseError::at(
-                self.source,
-                self.file,
-                open,
-                1,
-                "unclosed `call` block, expected `end call`",
-                "call block opens here",
-            )
-            .with_code(codes::PARSE_UNCLOSED_BLOCK));
+            return Err(ParseError::at(self.source, self.file, open, 1, "unclosed `call` block, expected `end call`", "call block opens here")
+                .with_code(codes::PARSE_UNCLOSED_BLOCK));
         }
         let end_tag = self.scan_tag(i)?;
         let end_trim = end_tag.inner.trim();
@@ -415,11 +403,7 @@ impl Parser<'_> {
 
 /// Standalone left of an `else` / `else if` / `end if` closer trims the tail
 /// of the branch that has just been completed.
-fn trim_branch_tail(
-    consequent: &mut Vec<NativeNode>,
-    else_ifs: &mut [(NativeExpr, Vec<NativeNode>)],
-    alternate: &mut Option<Vec<NativeNode>>,
-) {
+fn trim_branch_tail(consequent: &mut Vec<NativeNode>, else_ifs: &mut [(NativeExpr, Vec<NativeNode>)], alternate: &mut Option<Vec<NativeNode>>) {
     if let Some(alt) = alternate.as_mut() {
         trim_last_text(alt);
     }
@@ -466,12 +450,7 @@ fn first_text(kind: &mut NativeKind) -> Option<&mut String> {
 }
 
 /// Parse a `partial` parameter list: `name`, `name = <literal>`, comma separated.
-pub(crate) fn parse_params(
-    source: &str,
-    file: &str,
-    params_src: &str,
-    params_base: usize,
-) -> Result<Vec<NativeParam>, ParseError> {
+pub(crate) fn parse_params(source: &str, file: &str, params_src: &str, params_base: usize) -> Result<Vec<NativeParam>, ParseError> {
     let mut tokens: Vec<(CodeToken, std::ops::Range<usize>)> = Vec::new();
     let mut lex = CodeToken::lexer(params_src);
     while let Some(tok) = lex.next() {

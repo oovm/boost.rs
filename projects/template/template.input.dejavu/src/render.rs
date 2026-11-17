@@ -217,9 +217,9 @@ pub fn render_ir_opts<'a>(
 /// IR 渲染路径拿不到源文本，源预算在解析入口由宿主调用本函数。
 pub fn check_source_budget(source: &str, limits: &RenderLimits) -> Result<(), Diagnostic> {
     let budget = RenderBudget::new(*limits);
-    budget.source(source).map_err(|_| {
-        Diagnostic::new(Severity::Error, codes::SOURCE_BUDGET, Stage::Load).arg("limit", limits.max_source_bytes as i64)
-    })
+    budget
+        .source(source)
+        .map_err(|_| Diagnostic::new(Severity::Error, codes::SOURCE_BUDGET, Stage::Load).arg("limit", limits.max_source_bytes as i64))
 }
 
 // ---------------------------------------------------------------------------
@@ -366,10 +366,7 @@ impl<'a> Renderer<'a> {
                 if crate::registry::function_spec(name).is_some() {
                     return Err(diag_render(codes::MACRO_CONFLICT).arg("name", name.clone()));
                 }
-                table.insert(
-                    name.clone(),
-                    MacroDef { name: name.clone(), params: params.clone(), body: body.clone(), module: id.to_string() },
-                );
+                table.insert(name.clone(), MacroDef { name: name.clone(), params: params.clone(), body: body.clone(), module: id.to_string() });
             }
         }
         self.macro_modules.insert(id.to_string(), table);
@@ -440,8 +437,7 @@ impl<'a> Renderer<'a> {
             return spec.capability == Capability::SafeOutput;
         }
         self.custom.is_some_and(|registry| {
-            custom_entry(registry.entries(), Namespace::Filter, filter)
-                .is_some_and(|entry| entry.capability == Capability::SafeOutput)
+            custom_entry(registry.entries(), Namespace::Filter, filter).is_some_and(|entry| entry.capability == Capability::SafeOutput)
         })
     }
 
@@ -485,9 +481,7 @@ impl<'a> Renderer<'a> {
         }
         for (i, param) in mac.params.iter().enumerate() {
             if i >= args.len() && param.default.is_none() {
-                return Err(diag_render(codes::MISSING_MACRO_ARGUMENT)
-                    .arg("macro", mac.name.clone())
-                    .arg("name", param.name.clone()));
+                return Err(diag_render(codes::MISSING_MACRO_ARGUMENT).arg("macro", mac.name.clone()).arg("name", param.name.clone()));
             }
         }
         if self.macro_depth >= MACRO_RECURSION_LIMIT {
@@ -712,9 +706,7 @@ impl<'a> Renderer<'a> {
                 let items = match iter_val {
                     Value::Array(a) => a,
                     other => {
-                        return Err(diag_render(codes::INVALID_ITERABLE)
-                            .arg("expected", "array")
-                            .arg("got", format!("{other:?}")));
+                        return Err(diag_render(codes::INVALID_ITERABLE).arg("expected", "array").arg("got", format!("{other:?}")));
                     }
                 };
                 let length = items.len();
@@ -724,9 +716,7 @@ impl<'a> Renderer<'a> {
                 // partial and `only` include boundaries swap the whole scope,
                 // so depth restarts there by construction.
                 let depth = match self.scope.get(FORLOOP_NAME) {
-                    Some(Value::Object(map)) => {
-                        map.get("depth").and_then(|v| v.as_i64()).filter(|d| *d >= 1).map(|d| d + 1).unwrap_or(1)
-                    }
+                    Some(Value::Object(map)) => map.get("depth").and_then(|v| v.as_i64()).filter(|d| *d >= 1).map(|d| d + 1).unwrap_or(1),
                     _ => 1,
                 };
                 let mut out = String::new();
@@ -890,9 +880,7 @@ impl<'a> Renderer<'a> {
                 if self.strict_undefined {
                     if let Value::Object(map) = &obj {
                         if !map.contains_key(property) {
-                            return Err(diag_render(codes::UNDEFINED_MEMBER)
-                                .arg("name", property.clone())
-                                .arg("path", access_path(expr)));
+                            return Err(diag_render(codes::UNDEFINED_MEMBER).arg("name", property.clone()).arg("path", access_path(expr)));
                         }
                     }
                 }
@@ -920,9 +908,7 @@ impl<'a> Renderer<'a> {
                         }
                         (Value::Object(map), Value::String(k)) => {
                             if !map.contains_key(k) {
-                                return Err(diag_render(codes::UNDEFINED_INDEX)
-                                    .arg("name", k.clone())
-                                    .arg("path", access_path(expr)));
+                                return Err(diag_render(codes::UNDEFINED_INDEX).arg("name", k.clone()).arg("path", access_path(expr)));
                             }
                         }
                         _ => {}
@@ -956,14 +942,7 @@ impl<'a> Renderer<'a> {
             IrNode::ExprTest { expression, test, arguments, negated, .. } => {
                 let value = self.eval(expression)?;
                 let args: Result<Vec<_>, _> = arguments.iter().map(|a| self.eval(a)).collect();
-                Ok(Value::Bool(crate::builtins::call_test_with(
-                    test,
-                    &value,
-                    &args?,
-                    *negated,
-                    self.capabilities,
-                    self.custom,
-                )?))
+                Ok(Value::Bool(crate::builtins::call_test_with(test, &value, &args?, *negated, self.capabilities, self.custom)?))
             }
             IrNode::ExprBinary { operator, left, right, .. } => {
                 let l = self.eval(left)?;
@@ -1207,9 +1186,7 @@ fn apply_filter(
             if !capabilities.allows(entry.capability) {
                 return Err(capability_denied(&entry.name, entry.capability));
             }
-            return registry
-                .apply_filter(&entry.name, &value, args)
-                .map_err(|error| custom_failure(Namespace::Filter, &entry.name, error));
+            return registry.apply_filter(&entry.name, &value, args).map_err(|error| custom_failure(Namespace::Filter, &entry.name, error));
         }
         Err(FilterLookupError::Arity { spec }) => {
             return Err(diag_render(codes::FILTER_ARITY)
@@ -1568,12 +1545,7 @@ fn classify_url_scheme(s: &str) -> UrlScheme {
         if let Some(first) = chars.next() {
             if first.is_ascii_alphabetic() && chars.all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.') {
                 let scheme = head.to_lowercase();
-                return if matches!(scheme.as_str(), "http" | "https" | "mailto") {
-                    UrlScheme::Allowed
-                }
-                else {
-                    UrlScheme::Rejected(scheme)
-                };
+                return if matches!(scheme.as_str(), "http" | "https" | "mailto") { UrlScheme::Allowed } else { UrlScheme::Rejected(scheme) };
             }
         }
     }
@@ -1607,11 +1579,7 @@ fn escape_url_value(s: &str, warnings: Option<&WarningSink>) -> Value {
         UrlScheme::Allowed => Value::String(percent_encode(s)),
         UrlScheme::Rejected(scheme) => {
             if let Some(sink) = warnings {
-                sink.push(
-                    Diagnostic::new(Severity::Warning, codes::URL_SCHEME_REJECTED, Stage::Render)
-                        .arg("scheme", scheme)
-                        .arg("url", s),
-                );
+                sink.push(Diagnostic::new(Severity::Warning, codes::URL_SCHEME_REJECTED, Stage::Render).arg("scheme", scheme).arg("url", s));
             }
             Value::Null
         }

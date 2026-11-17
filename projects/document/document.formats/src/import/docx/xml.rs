@@ -1,8 +1,8 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use document_ir::{
-    Asset, AssetId, AssetKind, Block, BreakKind, DocumentGraph, DocumentId, Inline, ListItem, LossMarker, MathDisplay, NodeId,
-    PageSetup, RelationEndpoint, SemanticStatus, TableCell,
+    Asset, AssetId, AssetKind, Block, BreakKind, DocumentGraph, DocumentId, Inline, ListItem, LossMarker, MathDisplay, NodeId, PageSetup,
+    RelationEndpoint, SemanticStatus, TableCell,
 };
 use oak_xml::ast::{XmlElement, XmlValue};
 
@@ -13,8 +13,8 @@ use super::{
     styles::StyleDefaults,
     table::{TableState, push_table_block},
     xml_extensions::{
-        attribute_value, bool_from_element, child_element, document_root, element_is, element_text, elements_by_local_name,
-        parse_xml_bytes, u32_attribute,
+        attribute_value, bool_from_element, child_element, document_root, element_is, element_text, elements_by_local_name, parse_xml_bytes,
+        u32_attribute,
     },
 };
 use crate::{FormatError, import::math_latex::record_math_unsupported};
@@ -39,13 +39,10 @@ pub fn parse_document_xml(
             status: SemanticStatus::Partial,
         });
     }
-    if !elements_by_local_name(root, "commentReference")?.is_empty()
-        || !elements_by_local_name(root, "commentRangeStart")?.is_empty()
-    {
+    if !elements_by_local_name(root, "commentReference")?.is_empty() || !elements_by_local_name(root, "commentRangeStart")?.is_empty() {
         graph.push_loss(LossMarker {
             code: "reader.docx.comments".into(),
-            message: "comment markers are detected but comment bodies and range identity are not represented in notedown-ir"
-                .into(),
+            message: "comment markers are detected but comment bodies and range identity are not represented in notedown-ir".into(),
             status: SemanticStatus::Partial,
         });
     }
@@ -87,26 +84,19 @@ pub fn parse_document_xml(
     if unsupported_run_properties {
         graph.push_loss(LossMarker {
             code: "reader.docx.character_properties".into(),
-            message:
-                "DOCX run properties beyond the mapped character styles are detected but are not represented in notedown-ir"
-                    .into(),
+            message: "DOCX run properties beyond the mapped character styles are detected but are not represented in notedown-ir".into(),
             status: SemanticStatus::Partial,
         });
     }
-    if elements_by_local_name(root, "br")?
-        .iter()
-        .any(|element| matches!(attribute_value(element, "type").as_deref(), Some("page" | "column")))
+    if elements_by_local_name(root, "br")?.iter().any(|element| matches!(attribute_value(element, "type").as_deref(), Some("page" | "column")))
     {
         graph.push_loss(LossMarker {
             code: "reader.docx.page_breaks".into(),
-            message: "page and column breaks are projected to ordinary line breaks because notedown-ir has no page-break node"
-                .into(),
+            message: "page and column breaks are projected to ordinary line breaks because notedown-ir has no page-break node".into(),
             status: SemanticStatus::Partial,
         });
     }
-    if !elements_by_local_name(root, "pageBreakBefore")?.is_empty()
-        || !elements_by_local_name(root, "lastRenderedPageBreak")?.is_empty()
-    {
+    if !elements_by_local_name(root, "pageBreakBefore")?.is_empty() || !elements_by_local_name(root, "lastRenderedPageBreak")?.is_empty() {
         graph.push_loss(LossMarker {
             code: "reader.docx.page_breaks".into(),
             message: "paragraph and layout page-break markers are projected to ordinary content because notedown-ir has no page-break node"
@@ -125,9 +115,7 @@ pub fn parse_document_xml(
     if layout_loss {
         graph.push_loss(LossMarker {
             code: "reader.docx.section_layout".into(),
-            message:
-                "document grid and header/footer references are detected but their layout is not represented in notedown-ir"
-                    .into(),
+            message: "document grid and header/footer references are detected but their layout is not represented in notedown-ir".into(),
             status: SemanticStatus::Partial,
         });
     }
@@ -172,8 +160,8 @@ pub fn parse_document_xml(
 /// defaults from `word/styles.xml` fill the body size and line height the
 /// section does not declare.
 fn section_page_setup(body: &XmlElement, defaults: &StyleDefaults) -> PageSetup {
-    let section = child_element(body, "sectPr")
-        .or_else(|| elements_by_local_name(body, "sectPr").ok().and_then(|elements| elements.last().copied()));
+    let section =
+        child_element(body, "sectPr").or_else(|| elements_by_local_name(body, "sectPr").ok().and_then(|elements| elements.last().copied()));
     let mut page = PageSetup::default();
     if let Some(section) = section {
         if let Some(size) = child_element(section, "pgSz") {
@@ -346,9 +334,7 @@ fn parse_paragraph_element(
                 // The exporter writes the semantic key into `w:instr` and the
                 // authored display into the field result, so both sides of a
                 // citation survive a DOCX round trip.
-                paragraph
-                    .inlines
-                    .push(Inline::Citation { key, display: if display.is_empty() { None } else { Some(display) } });
+                paragraph.inlines.push(Inline::Citation { key, display: if display.is_empty() { None } else { Some(display) } });
             }
             else {
                 // An unmapped field keeps its visible result; the document-level
@@ -413,10 +399,8 @@ fn append_paragraph_run(
             for (index, blip) in elements_by_local_name(child, "blip")?.iter().enumerate() {
                 if let Some(rel_id) = attribute_value(blip, "embed") {
                     paragraph.pending_image_alt = doc_prs.get(index).and_then(|doc_pr| attribute_value(doc_pr, "descr"));
-                    paragraph.pending_image_title = doc_prs
-                        .get(index)
-                        .and_then(|doc_pr| attribute_value(doc_pr, "title"))
-                        .filter(|title| !title.is_empty());
+                    paragraph.pending_image_title =
+                        doc_prs.get(index).and_then(|doc_pr| attribute_value(doc_pr, "title")).filter(|title| !title.is_empty());
                     paragraph.push_image(&rel_id, rels, graph);
                 }
             }
@@ -438,11 +422,7 @@ fn parse_hyperlink_element(
     footnotes: &FootnoteCatalog,
     referenced_footnotes: &mut HashSet<u32>,
 ) -> Result<HyperlinkState, FormatError> {
-    let mut link = HyperlinkState {
-        rel_id: attribute_value(element, "id"),
-        title: attribute_value(element, "tooltip"),
-        inlines: Vec::new(),
-    };
+    let mut link = HyperlinkState { rel_id: attribute_value(element, "id"), title: attribute_value(element, "tooltip"), inlines: Vec::new() };
     for child in element.children.iter().filter_map(XmlValue::as_element) {
         if element_is(child, "r") {
             let mut paragraph = ParagraphState::default();
@@ -619,9 +599,7 @@ impl ParagraphState {
         if link.inlines.iter().any(is_image_inline) {
             graph.push_loss(LossMarker {
                 code: "reader.docx.image_hyperlink".into(),
-                message:
-                    "hyperlinked images retain their image assets and inline order, but image click targets are not retained"
-                        .into(),
+                message: "hyperlinked images retain their image assets and inline order, but image click targets are not retained".into(),
                 status: SemanticStatus::Partial,
             });
             let mut segment = HyperlinkState { rel_id: link.rel_id.clone(), title: link.title.clone(), inlines: Vec::new() };
@@ -645,11 +623,7 @@ impl ParagraphState {
         if let Some(url) = url {
             push_inline(
                 &mut self.inlines,
-                Inline::Link {
-                    target: RelationEndpoint::ExternalUri(url.clone()),
-                    display: link.inlines.clone(),
-                    title: link.title.clone(),
-                },
+                Inline::Link { target: RelationEndpoint::ExternalUri(url.clone()), display: link.inlines.clone(), title: link.title.clone() },
             );
             return;
         }
@@ -908,15 +882,8 @@ fn flush_pending_list(graph: &mut DocumentGraph, body: &mut BodyState, numbering
         }
     }
     let mut cursor = 0;
-    let items = build_nested_items(
-        graph,
-        &list.items,
-        &mut cursor,
-        list.items.first().map_or(0, |item| item.level),
-        list.num_id,
-        ordered,
-        numbering,
-    );
+    let items =
+        build_nested_items(graph, &list.items, &mut cursor, list.items.first().map_or(0, |item| item.level), list.num_id, ordered, numbering);
     graph.push_block(Block::List { ordered, items });
 }
 
@@ -943,8 +910,7 @@ fn build_nested_items(
         // explicit non-zero number for every ordered item, so the sequential
         // position within this level is the resolved marker value.
         let number = ordered.then_some(items.len() as u32 + 1);
-        let mut item =
-            ListItem { content: current.content.clone(), children: Vec::new(), number, is_task: false, is_checked: None };
+        let mut item = ListItem { content: current.content.clone(), children: Vec::new(), number, is_task: false, is_checked: None };
         if *cursor < pending.len() && pending[*cursor].level > level {
             let child_level = pending[*cursor].level;
             let child_ordered = num_id.and_then(|id| numbering.is_ordered(id, child_level)).unwrap_or(ordered);

@@ -81,11 +81,7 @@ fn markdown_fences_keep_language_and_source_across_long_and_indented_fences() {
 
     let source = "```mermaid\n  A-->B\n    B-->C\n```\n";
     let (graph, reopened, markdown) = round_trip("fence-indented", source);
-    assert_eq!(
-        graph.blocks[0].block,
-        Block::Diagram { language: "mermaid".into(), source: "  A-->B\n    B-->C".into() },
-        "{markdown}"
-    );
+    assert_eq!(graph.blocks[0].block, Block::Diagram { language: "mermaid".into(), source: "  A-->B\n    B-->C".into() }, "{markdown}");
     assert_eq!(blocks(&reopened), blocks(&graph));
 }
 
@@ -101,10 +97,7 @@ fn markdown_table_cells_keep_inline_shapes_and_escaped_pipes() {
             _ => None,
         })
         .unwrap_or_else(|| panic!("table expected: {:#?}", graph.blocks));
-    assert!(
-        matches!(&cell_inlines(&graph, &head[0].cells[0])[0], Inline::Styled { style, .. } if style == "bold"),
-        "{markdown}"
-    );
+    assert!(matches!(&cell_inlines(&graph, &head[0].cells[0])[0], Inline::Styled { style, .. } if style == "bold"), "{markdown}");
     assert!(
         matches!(&cell_inlines(&graph, &head[0].cells[1])[0], Inline::Link { target, .. } if *target == RelationEndpoint::ExternalUri("https://e.com".into()))
     );

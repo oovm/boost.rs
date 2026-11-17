@@ -124,8 +124,7 @@ fn named_face_font(advances: &[(char, u16)]) -> Vec<u8> {
         loca.extend_from_slice(&0u16.to_be_bytes());
     }
 
-    let mut entries: Vec<(u16, u16)> =
-        advances.iter().enumerate().map(|(index, (ch, _))| (*ch as u16, index as u16 + 1)).collect();
+    let mut entries: Vec<(u16, u16)> = advances.iter().enumerate().map(|(index, (ch, _))| (*ch as u16, index as u16 + 1)).collect();
     entries.sort_by_key(|(code, _)| *code);
 
     assemble_sfnt(&[

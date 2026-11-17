@@ -70,7 +70,6 @@ pub trait Paint {
 
     /// Deterministic star field: hash-based positions, sine twinkle, slow drift.
     fn starfield(&mut self, count: u32, tint: Rgba, drift_px_per_sec: f32, twinkle: f32, seconds: f32);
-
 }
 
 #[inline]
@@ -126,7 +125,8 @@ fn stamp_disc(frame: &mut Frame, cx: f32, cy: f32, radius: f32, c: Rgba, additiv
             if dx * dx + dy * dy <= radius * radius {
                 if additive {
                     frame.add_pixel(px, py, c);
-                } else {
+                }
+                else {
                     frame.blend(px, py, c);
                 }
             }
@@ -239,16 +239,20 @@ impl Paint for Frame {
                 let fy = py as f32;
                 let cx = if fx < x + r {
                     x + r
-                } else if fx > x + w - r {
+                }
+                else if fx > x + w - r {
                     x + w - r
-                } else {
+                }
+                else {
                     fx
                 };
                 let cy = if fy < y + r {
                     y + r
-                } else if fy > y + h - r {
+                }
+                else if fy > y + h - r {
                     y + h - r
-                } else {
+                }
+                else {
                     fy
                 };
                 let dx = fx - cx;
@@ -285,7 +289,8 @@ impl Paint for Frame {
                 let sy = (focus[1] + rv) * src.height as f32 - 0.5;
                 let texel = if taps == 1 {
                     src.sample(sx, sy)
-                } else {
+                }
+                else {
                     let mut acc = [0.0f32; 4];
                     let half = (taps as f32 - 1.0) / 2.0;
                     for ty in 0..taps {
@@ -404,7 +409,8 @@ impl Paint for Frame {
                 let color = Rgba([c.0[0], c.0[1], c.0[2], alpha as u8]);
                 if additive {
                     self.add_pixel(px, row, color);
-                } else {
+                }
+                else {
                     self.blend(px, row, color);
                 }
             }
@@ -577,7 +583,6 @@ impl Paint for Frame {
             self.rect(x, y, size, size, c);
         }
     }
-
 }
 
 /// Euclidean distance between two points.
@@ -597,8 +602,7 @@ pub fn smooth_polyline(points: &[[f32; 2]], closed: bool, segments: u32) -> Vec<
     }
     let count = points.len();
     let at = |i: isize| -> [f32; 2] {
-        let index =
-            if closed { ((i % count as isize) + count as isize) % count as isize } else { i.clamp(0, count as isize - 1) };
+        let index = if closed { ((i % count as isize) + count as isize) % count as isize } else { i.clamp(0, count as isize - 1) };
         points[index as usize]
     };
     let mut out = Vec::with_capacity(count * segments as usize + 1);
@@ -622,10 +626,9 @@ pub fn smooth_polyline(points: &[[f32; 2]], closed: bool, segments: u32) -> Vec<
     }
     if closed {
         out.push(out[0]);
-    } else {
+    }
+    else {
         out.push(points[count - 1]);
     }
     out
 }
-
-

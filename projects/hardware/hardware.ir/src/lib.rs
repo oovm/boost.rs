@@ -9,13 +9,13 @@ mod builder;
 mod error;
 mod graph;
 
-pub use binary::{decode, encode, MAGIC, WIRE_MAJOR};
-pub use builder::{chain_edges, GraphBuilder};
+pub use binary::{MAGIC, WIRE_MAJOR, decode, encode};
+pub use builder::{GraphBuilder, chain_edges};
 pub use error::{Error, Result};
 pub use graph::{DepEdge, Graph, ResourceGraph, TaskGraph};
 
 // Re-export shared types so existing `hardware_ir::TaskId` imports keep working.
 pub use hardware_types::{
-    Access, DepKind, Dispatch, Domain, Objective, ParamValue, Priority, ResourceId,
-    ResourceKind, ResourceNode, ShaderId, TaskId, TaskKind, TaskNode,
+    Access, DepKind, Dispatch, Domain, Objective, ParamValue, Priority, ResourceId, ResourceKind, ResourceNode, ShaderId, TaskId, TaskKind,
+    TaskNode,
 };

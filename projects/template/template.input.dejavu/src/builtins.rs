@@ -14,10 +14,7 @@ use serde_json::Value;
 
 use crate::{
     IrError, codes, diag_render,
-    registry::{
-        CapabilitySet, CustomEntry, FunctionLookupError, Namespace, TestLookupError, custom_entry, validate_function,
-        validate_test,
-    },
+    registry::{CapabilitySet, CustomEntry, FunctionLookupError, Namespace, TestLookupError, custom_entry, validate_function, validate_test},
     render::CustomRegistry,
 };
 
@@ -73,13 +70,7 @@ pub fn call_function_with(
 ///
 /// `negated` is the `is not` form. Callers must pass `negated=false` when the
 /// source had no `not` marker.
-pub fn call_test(
-    name: &str,
-    value: &Value,
-    args: &[Value],
-    negated: bool,
-    capabilities: CapabilitySet,
-) -> Result<bool, IrError> {
+pub fn call_test(name: &str, value: &Value, args: &[Value], negated: bool, capabilities: CapabilitySet) -> Result<bool, IrError> {
     call_test_with(name, value, args, negated, capabilities, None)
 }
 
@@ -162,11 +153,9 @@ fn function_lookup_error(err: FunctionLookupError, got: usize) -> IrError {
 fn test_lookup_error(err: TestLookupError, got: usize) -> IrError {
     match err {
         TestLookupError::Unknown => diag_render(codes::UNKNOWN_TEST),
-        TestLookupError::Arity { spec } => diag_render(codes::TEST_ARITY)
-            .arg("test", spec.name)
-            .arg("minArgs", spec.min_args)
-            .arg("maxArgs", spec.max_args)
-            .arg("got", got),
+        TestLookupError::Arity { spec } => {
+            diag_render(codes::TEST_ARITY).arg("test", spec.name).arg("minArgs", spec.min_args).arg("maxArgs", spec.max_args).arg("got", got)
+        }
         TestLookupError::NotAllowed { spec } => crate::render::capability_denied(spec.name, spec.capability),
     }
 }

@@ -122,9 +122,7 @@ fn nodes_without_ids_do_not_block_their_neighbors() {
 #[test]
 fn hit_targets_carry_role_and_source() {
     let mut scene = empty_scene();
-    let node = rect_node(Some("n1"), 0.0, 0.0, 20.0, 20.0)
-        .with_role(SemanticRole::Node)
-        .with_source(SourceRef::element("n1").with_span(3, 9));
+    let node = rect_node(Some("n1"), 0.0, 0.0, 20.0, 20.0).with_role(SemanticRole::Node).with_source(SourceRef::element("n1").with_span(3, 9));
     scene.push(node);
 
     let hit = hit_test(&scene, Point::new(10.0, 10.0)).expect("node should hit");

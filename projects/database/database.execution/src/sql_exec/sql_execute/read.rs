@@ -200,7 +200,8 @@ pub(crate) fn execute_join(
             for (_key_str, (group_key_vals, bucket_rows)) in &buckets {
                 let mut row_values: Vec<SqlValue> = Vec::new();
                 for (field_id, _display_name) in &plan.projection_fields {
-                    let Some(idx) = group_exprs.iter().position(|ge| matches!(ge, SqlCatalogBoundExpression::Column(col) if col.row_id == *field_id))
+                    let Some(idx) =
+                        group_exprs.iter().position(|ge| matches!(ge, SqlCatalogBoundExpression::Column(col) if col.row_id == *field_id))
                     else {
                         return Err(internal_error("grouped projection references a column outside the GROUP BY key"));
                     };
@@ -315,8 +316,7 @@ fn join_hash_columns(
     right_row_ids: &[u64],
     field_types: &std::collections::BTreeMap<u64, database_query::catalog_bind::SqlFieldType>,
 ) -> Vec<(u64, u64)> {
-    use database_query::catalog_bind::SqlCatalogBoundExpression;
-    use database_query::sql::SqlBoundBinaryOperator;
+    use database_query::{catalog_bind::SqlCatalogBoundExpression, sql::SqlBoundBinaryOperator};
     let mut pairs = Vec::new();
     fn collect(
         expression: &SqlCatalogBoundExpression,
@@ -342,7 +342,8 @@ fn join_hash_columns(
                 }
                 let (left_row_id, right_row_id) =
                     if left_is_right { (right_column.row_id, left_column.row_id) } else { (left_column.row_id, right_column.row_id) };
-                let (Some(left_type), Some(right_type)) = (field_types.get(&left_row_id), field_types.get(&right_row_id)) else {
+                let (Some(left_type), Some(right_type)) = (field_types.get(&left_row_id), field_types.get(&right_row_id))
+                else {
                     return;
                 };
                 if hash_compatible(left_type, right_type) {
@@ -388,11 +389,7 @@ fn join_hash_key(row: &RowFieldValues, columns: &[(u64, u64)], plan: &JoinPlan) 
     join_hash_row_key(row, columns.iter().map(|(left, _)| *left), plan)
 }
 
-fn join_hash_row_key(
-    row: &RowFieldValues,
-    row_ids: impl Iterator<Item = u64>,
-    plan: &JoinPlan,
-) -> Option<String> {
+fn join_hash_row_key(row: &RowFieldValues, row_ids: impl Iterator<Item = u64>, plan: &JoinPlan) -> Option<String> {
     let mut values = Vec::new();
     for row_id in row_ids {
         let value = projected_value(row, row_id, &plan.field_types, &plan.field_defaults);
@@ -458,12 +455,8 @@ pub(crate) fn read_batch(
     commands: &[KeyValueCommand],
 ) -> Result<Vec<database_query::cluster_kv::KeyValueResult>, SqlFrontendError> {
     match transaction {
-        Some(handle) => handle
-            .execute_read_batch(commands)
-            .map_err(|e| internal_error(&format!("TransactionHandle.read_batch failed: {e}"))),
-        None => executor
-            .execute_read_batch(None, commands)
-            .map_err(|e| internal_error(&format!("KeyValueExecutor.read_batch failed: {e}"))),
+        Some(handle) => handle.execute_read_batch(commands).map_err(|e| internal_error(&format!("TransactionHandle.read_batch failed: {e}"))),
+        None => executor.execute_read_batch(None, commands).map_err(|e| internal_error(&format!("KeyValueExecutor.read_batch failed: {e}"))),
     }
 }
 
@@ -689,12 +682,7 @@ pub(crate) fn execute_scan(
         // `COUNT(*)` 一类不读任何列的聚合不需要解码行；只有带 WHERE 时才必须解码。
         let decode_needed = !needed_ids.is_empty() || plan.remaining_predicate.is_some();
         for (_rowid, value_bytes) in scanned {
-            let row = if decode_needed {
-                decode_row_fields(&value_bytes, &needed_ids)?
-            }
-            else {
-                RowFieldValues::new()
-            };
+            let row = if decode_needed { decode_row_fields(&value_bytes, &needed_ids)? } else { RowFieldValues::new() };
             if let Some(ref predicate) = plan.remaining_predicate {
                 let v = eval_row_expression(predicate, &row, &plan.field_types, dialect, executor, transaction)?;
                 if !truthy(&v) {
@@ -884,12 +872,7 @@ pub(crate) fn execute_scan(
                 if !truthy(&v) {
                     continue;
                 }
-                if ids.len() == needed_ids.len() {
-                    candidate
-                }
-                else {
-                    decode_row_fields(&value_bytes, &needed_ids)?
-                }
+                if ids.len() == needed_ids.len() { candidate } else { decode_row_fields(&value_bytes, &needed_ids)? }
             }
             None => {
                 let row = decode_row_fields(&value_bytes, &needed_ids)?;

@@ -12,10 +12,7 @@ use media_synthesis::{DrumPattern, INSTRUMENT_PRESETS, InstrumentSpec, pattern_p
 use media_types::Error;
 
 fn to_pcm(samples: &[[f32; 2]]) -> Vec<i16> {
-    samples
-        .iter()
-        .flat_map(|frame| frame.iter().map(|sample| (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16))
-        .collect()
+    samples.iter().flat_map(|frame| frame.iter().map(|sample| (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)).collect()
 }
 
 /// Renders one instrument hit at `sample_rate` and writes it as PCM16 stereo WAV.
@@ -122,14 +119,9 @@ mod tests {
     #[test]
     fn zero_rate_is_rejected_before_io() {
         assert_eq!(
-            write_instrument(&instrument_preset("kick-tight").expect("preset"), "unused.wav", 0)
-                .expect_err("zero rate")
-                .code(),
+            write_instrument(&instrument_preset("kick-tight").expect("preset"), "unused.wav", 0).expect_err("zero rate").code(),
             "invalid_input"
         );
-        assert_eq!(
-            write_pattern(&pattern_preset("lofi").expect("preset"), "unused.wav", 0).expect_err("zero rate").code(),
-            "invalid_input"
-        );
+        assert_eq!(write_pattern(&pattern_preset("lofi").expect("preset"), "unused.wav", 0).expect_err("zero rate").code(), "invalid_input");
     }
 }

@@ -29,16 +29,10 @@ fn nested_array_entries_resolve_to_their_own_cell() {
 #[test]
 fn unsupported_constructs_point_at_the_construct_not_the_document() {
     for (document, path) in [
-        (
-            r#"{"data":{"values":[]},"mark":"bar","encoding":{"x":{"field":"c","type":"nominal"}},"transform":[]}"#,
-            "$.transform",
-        ),
+        (r#"{"data":{"values":[]},"mark":"bar","encoding":{"x":{"field":"c","type":"nominal"}},"transform":[]}"#, "$.transform"),
         (r#"{"data":{"values":[]},"mark":"bar","encoding":{"x":{"field":"c","type":"nominal"}},"layer":[]}"#, "$.layer"),
         (r#"{"data":{"values":[]},"mark":"bar","encoding":{"x":{"field":"c","type":"nominal"}},"params":[]}"#, "$.params"),
-        (
-            r#"{"data":{"url":"https://example.com"},"mark":"bar","encoding":{"x":{"field":"c","type":"nominal"}}}"#,
-            "$.data.url",
-        ),
+        (r#"{"data":{"url":"https://example.com"},"mark":"bar","encoding":{"x":{"field":"c","type":"nominal"}}}"#, "$.data.url"),
     ] {
         let error = vega_lite::lower(document).expect_err("this document must be refused");
         assert_eq!(error.path(), Some(path), "{}", error.message());

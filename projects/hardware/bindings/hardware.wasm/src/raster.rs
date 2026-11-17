@@ -2,12 +2,12 @@
 
 use std::collections::BTreeMap;
 
-use hardware::prelude::*;
-use hardware::ParamValue;
-use hardware::SchedulerErrorCode as ErrorCode;
+use hardware::{ParamValue, SchedulerErrorCode as ErrorCode, prelude::*};
 
-use crate::contract::error_code_to_i32;
-use crate::host::{l2_raster_clear_webgpu_via_host, l2_raster_tri_webgpu_via_host};
+use crate::{
+    contract::error_code_to_i32,
+    host::{l2_raster_clear_webgpu_via_host, l2_raster_tri_webgpu_via_host},
+};
 
 /// 与 DX12 `raster_clear` 同参的 Raster 清屏图。
 pub fn raster_clear_graph(width: u32, height: u32, rgba: [f32; 4]) -> Graph {
@@ -53,12 +53,7 @@ fn raster_graph(width: u32, height: u32, rgba: [f32; 4], draw: Option<&str>) -> 
                 objective: Objective::MaxThroughput,
                 priority: Priority::Batch,
             }],
-            edges: vec![DepEdge {
-                from_task: None,
-                from_resource: Some(ResourceId(1)),
-                to_task: TaskId(10),
-                kind: DepKind::Data,
-            }],
+            edges: vec![DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data }],
         },
     }
 }
@@ -71,10 +66,7 @@ fn run_raster_graph(graph: &Graph, width: u32, height: u32) -> Result<Vec<u8>, E
     session.prepare(graph).map_err(|e| e.code())?;
     session.run_prepared(graph).map_err(|e| e.code())?;
     session.flush().map_err(|e| e.code())?;
-    let need = (width as usize)
-        .checked_mul(height as usize)
-        .and_then(|p| p.checked_mul(4))
-        .ok_or(ErrorCode::Backend)?;
+    let need = (width as usize).checked_mul(height as usize).and_then(|p| p.checked_mul(4)).ok_or(ErrorCode::Backend)?;
     let store = session.store();
     let guard = store.lock().map_err(|_| ErrorCode::Backend)?;
     let bytes = guard.bytes(ResourceId(1)).map_err(|_| ErrorCode::Backend)?;
@@ -94,11 +86,7 @@ fn rgba_bytes_from_linear(rgba: [f32; 4]) -> [u8; 4] {
 }
 
 /// CPU 跑 Raster 清屏并读回 RGBA8。
-pub fn run_raster_clear_rgba8(
-    width: u32,
-    height: u32,
-    rgba: [f32; 4],
-) -> Result<Vec<u8>, ErrorCode> {
+pub fn run_raster_clear_rgba8(width: u32, height: u32, rgba: [f32; 4]) -> Result<Vec<u8>, ErrorCode> {
     if width == 0 || height == 0 {
         return Ok(Vec::new());
     }
@@ -116,11 +104,7 @@ pub fn run_raster_tri_rgba8(width: u32, height: u32) -> Result<Vec<u8>, ErrorCod
 }
 
 /// L2：CPU Raster 校验后 WebGPU 清屏。
-pub fn run_l2_raster_clear_webgpu(
-    width: u32,
-    height: u32,
-    rgba: [f32; 4],
-) -> Result<(), ErrorCode> {
+pub fn run_l2_raster_clear_webgpu(width: u32, height: u32, rgba: [f32; 4]) -> Result<(), ErrorCode> {
     let read = run_raster_clear_rgba8(width, height, rgba)?;
     let expect = rgba_bytes_from_linear(rgba);
     if read.len() >= 4 && read[0..4] != expect {
@@ -134,20 +118,8 @@ pub fn run_l2_raster_clear_webgpu(
     Ok(())
 }
 
-pub fn l2_raster_clear_webgpu_status(
-    width: u32,
-    height: u32,
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8,
-) -> i32 {
-    let rgba = [
-        f32::from(r) / 255.0,
-        f32::from(g) / 255.0,
-        f32::from(b) / 255.0,
-        f32::from(a) / 255.0,
-    ];
+pub fn l2_raster_clear_webgpu_status(width: u32, height: u32, r: u8, g: u8, b: u8, a: u8) -> i32 {
+    let rgba = [f32::from(r) / 255.0, f32::from(g) / 255.0, f32::from(b) / 255.0, f32::from(a) / 255.0];
     match run_l2_raster_clear_webgpu(width, height, rgba) {
         Ok(()) => 0,
         Err(code) => error_code_to_i32(code),
@@ -159,10 +131,7 @@ fn validate_raster_tri_readback(read: &[u8], width: u32, height: u32) -> Result<
         return Ok(());
     }
     let w = width as usize;
-    let need = w
-        .checked_mul(height as usize)
-        .and_then(|p| p.checked_mul(4))
-        .ok_or(ErrorCode::Backend)?;
+    let need = w.checked_mul(height as usize).and_then(|p| p.checked_mul(4)).ok_or(ErrorCode::Backend)?;
     if read.len() < need {
         return Err(ErrorCode::Backend);
     }
@@ -205,27 +174,12 @@ pub fn l2_raster_tri_webgpu_status(width: u32, height: u32) -> i32 {
 /// # Safety
 ///
 /// `out` must address at least `width * height * 4` bytes.
-pub unsafe fn write_raster_clear_rgba8(
-    width: u32,
-    height: u32,
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8,
-    out: *mut u8,
-) -> i32 {
+pub unsafe fn write_raster_clear_rgba8(width: u32, height: u32, r: u8, g: u8, b: u8, a: u8, out: *mut u8) -> i32 {
     if out.is_null() {
         return -10;
     }
-    let rgba = [
-        f32::from(r) / 255.0,
-        f32::from(g) / 255.0,
-        f32::from(b) / 255.0,
-        f32::from(a) / 255.0,
-    ];
-    let need = (width as usize)
-        .saturating_mul(height as usize)
-        .saturating_mul(4);
+    let rgba = [f32::from(r) / 255.0, f32::from(g) / 255.0, f32::from(b) / 255.0, f32::from(a) / 255.0];
+    let need = (width as usize).saturating_mul(height as usize).saturating_mul(4);
     match run_raster_clear_rgba8(width, height, rgba) {
         Ok(bytes) => {
             if bytes.len() != need {
@@ -249,9 +203,7 @@ pub unsafe fn write_raster_tri_rgba8(width: u32, height: u32, out: *mut u8) -> i
     if out.is_null() {
         return -10;
     }
-    let need = (width as usize)
-        .saturating_mul(height as usize)
-        .saturating_mul(4);
+    let need = (width as usize).saturating_mul(height as usize).saturating_mul(4);
     match run_raster_tri_rgba8(width, height) {
         Ok(bytes) => {
             if bytes.len() != need {

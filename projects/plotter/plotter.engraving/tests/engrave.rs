@@ -7,8 +7,8 @@ use plotter_engraving::{
     plan::EngravingOptions,
     score_to_scene_with_options, smufl,
     spec::{
-        Accidental, Articulation, Barline, Beam, Clef, Event, EventKind, KeySignature, Measure, Pitch, ScoreSpec, SlurState,
-        Step, TieState, TimeSignature, Tuplet,
+        Accidental, Articulation, Barline, Beam, Clef, Event, EventKind, KeySignature, Measure, Pitch, ScoreSpec, SlurState, Step, TieState,
+        TimeSignature, Tuplet,
     },
 };
 
@@ -78,8 +78,7 @@ fn measure_below_capacity_reports_the_implicit_rest_pad() {
     spec.measures.push(Measure { events: vec![Event::note(pitch(Step::C, 4), 2.0)], barline: Barline::Regular });
 
     let lowered = score_to_scene_with_options(&spec, &EngravingOptions::default()).expect("short measure still engraves");
-    let approximated: Vec<_> =
-        lowered.diagnostics.iter().filter(|d| d.code().as_str() == codes::ENGRAVING_APPROXIMATED).collect();
+    let approximated: Vec<_> = lowered.diagnostics.iter().filter(|d| d.code().as_str() == codes::ENGRAVING_APPROXIMATED).collect();
     assert_eq!(approximated.len(), 1);
     assert!(approximated[0].message().to_string().contains("implicit rest"), "the loss names the padding");
 }
@@ -87,10 +86,8 @@ fn measure_below_capacity_reports_the_implicit_rest_pad() {
 #[test]
 fn measure_over_capacity_is_refused() {
     let mut spec = ScoreSpec::new();
-    spec.measures.push(Measure {
-        events: vec![Event::note(pitch(Step::C, 4), 4.0), Event::note(pitch(Step::D, 4), 1.0)],
-        barline: Barline::Regular,
-    });
+    spec.measures
+        .push(Measure { events: vec![Event::note(pitch(Step::C, 4), 4.0), Event::note(pitch(Step::D, 4), 1.0)], barline: Barline::Regular });
 
     let error = score_to_scene_with_options(&spec, &EngravingOptions::default()).expect_err("overfull measure is refused");
     assert_eq!(error.code(), codes::ENGRAVING_UNSUPPORTED);
@@ -99,8 +96,7 @@ fn measure_over_capacity_is_refused() {
 
 #[test]
 fn empty_score_is_refused_with_the_empty_code() {
-    let error =
-        score_to_scene_with_options(&ScoreSpec::new(), &EngravingOptions::default()).expect_err("empty score is refused");
+    let error = score_to_scene_with_options(&ScoreSpec::new(), &EngravingOptions::default()).expect_err("empty score is refused");
     assert_eq!(error.code(), codes::ENGRAVING_EMPTY_SCORE);
 }
 
@@ -126,11 +122,8 @@ fn key_signature_emits_accidentals_and_no_key_glyph_for_c_major() {
     let mut natural = melody();
     natural.key = KeySignature::Natural;
     let lowered = score_to_scene_with_options(&natural, &EngravingOptions::default()).expect("C major engraves");
-    let key_glyphs = lowered.plan.systems[0]
-        .header_glyphs
-        .iter()
-        .filter(|glyph| glyph.id.as_deref().is_some_and(|id| id.starts_with("key-")))
-        .count();
+    let key_glyphs =
+        lowered.plan.systems[0].header_glyphs.iter().filter(|glyph| glyph.id.as_deref().is_some_and(|id| id.starts_with("key-"))).count();
     assert_eq!(key_glyphs, 0, "no key glyph when the signature is natural");
 }
 

@@ -1,13 +1,11 @@
 //! Host-side [`ExternalBuffer`] for the CPU reference backend.
 
-use std::any::Any;
-use std::sync::Arc;
+use std::{any::Any, sync::Arc};
 
 use hardware_scheduler::{Error as SchedulerError, ExternalBuffer, Result as SchedulerResult};
 use hardware_types::ResourceId;
 
-use crate::params::BackendError;
-use crate::store::SharedHostStore;
+use crate::{params::BackendError, store::SharedHostStore};
 
 /// External host buffer living in a [`SharedHostStore`].
 ///
@@ -20,21 +18,13 @@ pub struct HostExternalBuffer {
 
 impl HostExternalBuffer {
     /// Allocate (or re-ensure) `byte_size` bytes for `id` in `store`.
-    pub fn allocate(
-        store: SharedHostStore,
-        id: ResourceId,
-        byte_size: u64,
-    ) -> SchedulerResult<Arc<Self>> {
+    pub fn allocate(store: SharedHostStore, id: ResourceId, byte_size: u64) -> SchedulerResult<Arc<Self>> {
         store
             .lock()
             .map_err(|_| SchedulerError::Backend("cpu".into(), "host store poisoned".into()))?
             .ensure(id, byte_size as usize)
             .map_err(|e: BackendError| SchedulerError::Backend("cpu".into(), e.0))?;
-        Ok(Arc::new(Self {
-            store,
-            id,
-            byte_size,
-        }))
+        Ok(Arc::new(Self { store, id, byte_size }))
     }
 
     /// Resource id this buffer backs.

@@ -27,9 +27,8 @@ pub use graph::{DocumentGraph, DocumentMetadata, IdAllocator};
 pub use id::{AssetId, DocumentId, LinkId, NodeId};
 pub use inline::{AttributePair, Attributes, BreakKind, Inline};
 pub use math::{
-    MathAtom, MathClass, MathColumnAlignment, MathDelimiter, MathDelimiterKind, MathDisplay, MathEnvironment,
-    MathEnvironmentKind, MathExpression, MathFormula, MathFractionLine, MathRow, MathRowNumbering, MathRowPlacement, MathSpace,
-    MathSpan, MathStyle, MathStyleKind,
+    MathAtom, MathClass, MathColumnAlignment, MathDelimiter, MathDelimiterKind, MathDisplay, MathEnvironment, MathEnvironmentKind,
+    MathExpression, MathFormula, MathFractionLine, MathRow, MathRowNumbering, MathRowPlacement, MathSpace, MathSpan, MathStyle, MathStyleKind,
 };
 pub use metadata::{MetadataEntry, MetadataValue};
 pub use page::PageSetup;

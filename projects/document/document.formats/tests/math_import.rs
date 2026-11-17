@@ -58,8 +58,7 @@ fn contains_expression(expression: &MathExpression, predicate: &impl Fn(&MathExp
             contains_expression(numerator, predicate) || contains_expression(denominator, predicate)
         }
         MathExpression::Radical { index, radicand, .. } => {
-            index.as_deref().is_some_and(|item| contains_expression(item, predicate))
-                || contains_expression(radicand, predicate)
+            index.as_deref().is_some_and(|item| contains_expression(item, predicate)) || contains_expression(radicand, predicate)
         }
         MathExpression::Delimited { body, middles, .. } => {
             contains_expression(body, predicate) || middles.iter().any(|item| contains_expression(item, predicate))
@@ -68,12 +67,8 @@ fn contains_expression(expression: &MathExpression, predicate: &impl Fn(&MathExp
             contains_expression(body, predicate)
         }
         MathExpression::Accent { base, .. } => contains_expression(base, predicate),
-        MathExpression::StackAbove { over, base } => {
-            contains_expression(over, predicate) || contains_expression(base, predicate)
-        }
-        MathExpression::StackBelow { under, base } => {
-            contains_expression(under, predicate) || contains_expression(base, predicate)
-        }
+        MathExpression::StackAbove { over, base } => contains_expression(over, predicate) || contains_expression(base, predicate),
+        MathExpression::StackBelow { under, base } => contains_expression(under, predicate) || contains_expression(base, predicate),
         MathExpression::Environment(environment) => {
             environment.rows.iter().flat_map(|row| row.cells.iter()).any(|cell| contains_expression(cell, predicate))
         }
@@ -129,26 +124,31 @@ mod docx_omml {
         assert!(sources.iter().any(|source| source.contains("\\left[")), "{sources:?}");
         assert!(sources.iter().any(|source| source.contains("\\sum_{")), "{sources:?}");
         assert!(sources.iter().any(|source| source.contains("\\begin{matrix}")), "{sources:?}");
-        assert!(formulas.iter().any(|formula| contains_expression(&formula.expression, &|expression| matches!(
-            expression,
-            MathExpression::Script { .. }
-        ))));
-        assert!(formulas.iter().any(|formula| contains_expression(&formula.expression, &|expression| matches!(
-            expression,
-            MathExpression::Fraction { .. }
-        ))));
-        assert!(formulas.iter().any(|formula| contains_expression(&formula.expression, &|expression| matches!(
-            expression,
-            MathExpression::Radical { .. }
-        ))));
-        assert!(formulas.iter().any(|formula| contains_expression(&formula.expression, &|expression| matches!(
-            expression,
-            MathExpression::Delimited { .. }
-        ))));
-        assert!(formulas.iter().any(|formula| contains_expression(&formula.expression, &|expression| matches!(
-            expression,
-            MathExpression::Environment(_)
-        ))));
+        assert!(
+            formulas
+                .iter()
+                .any(|formula| contains_expression(&formula.expression, &|expression| matches!(expression, MathExpression::Script { .. })))
+        );
+        assert!(
+            formulas
+                .iter()
+                .any(|formula| contains_expression(&formula.expression, &|expression| matches!(expression, MathExpression::Fraction { .. })))
+        );
+        assert!(
+            formulas
+                .iter()
+                .any(|formula| contains_expression(&formula.expression, &|expression| matches!(expression, MathExpression::Radical { .. })))
+        );
+        assert!(
+            formulas
+                .iter()
+                .any(|formula| contains_expression(&formula.expression, &|expression| matches!(expression, MathExpression::Delimited { .. })))
+        );
+        assert!(
+            formulas
+                .iter()
+                .any(|formula| contains_expression(&formula.expression, &|expression| matches!(expression, MathExpression::Environment(_))))
+        );
         assert!(!has_loss(&graph, "import.docx.math_unsupported"), "{:?}", graph.coverage.loss);
     }
 
@@ -159,12 +159,8 @@ mod docx_omml {
         assert_eq!(count_block_math(&graph), 1, "{:?}", graph.blocks.iter().map(|node| &node.block).collect::<Vec<_>>());
         let formula = graph.blocks.iter().find_map(|node| block_math(&node.block)).expect("formula survived");
         assert!(formula.source.contains("kept text"), "{}", formula.source);
-        let marker = graph
-            .coverage
-            .loss
-            .iter()
-            .find(|marker| marker.code == "import.docx.math_unsupported")
-            .expect("unsupported OMML must be reported");
+        let marker =
+            graph.coverage.loss.iter().find(|marker| marker.code == "import.docx.math_unsupported").expect("unsupported OMML must be reported");
         assert_eq!(marker.status, SemanticStatus::Partial);
         assert!(marker.message.contains("omml.customConstruct"), "{}", marker.message);
     }
@@ -192,11 +188,7 @@ mod html_mathml {
         assert_eq!(formulas.len(), 5, "{:?}", formulas.iter().map(|formula| &formula.source).collect::<Vec<_>>());
         assert_eq!(formulas[0].display, MathDisplay::Inline);
         assert_eq!(formulas[1].display, MathDisplay::Display);
-        assert!(
-            formulas.iter().any(|formula| formula.source.contains("^{2}")),
-            "{:?}",
-            formulas.iter().map(|f| &f.source).collect::<Vec<_>>()
-        );
+        assert!(formulas.iter().any(|formula| formula.source.contains("^{2}")), "{:?}", formulas.iter().map(|f| &f.source).collect::<Vec<_>>());
         assert!(
             formulas.iter().any(|formula| formula.source.contains("\\frac{")),
             "{:?}",
@@ -222,22 +214,26 @@ mod html_mathml {
             "{:?}",
             formulas.iter().map(|f| &f.source).collect::<Vec<_>>()
         );
-        assert!(formulas.iter().any(|formula| contains_expression(&formula.expression, &|expression| matches!(
-            expression,
-            MathExpression::Fraction { .. }
-        ))));
-        assert!(formulas.iter().any(|formula| contains_expression(&formula.expression, &|expression| matches!(
-            expression,
-            MathExpression::Radical { .. }
-        ))));
-        assert!(formulas.iter().any(|formula| contains_expression(&formula.expression, &|expression| matches!(
-            expression,
-            MathExpression::Delimited { .. }
-        ))));
-        assert!(formulas.iter().any(|formula| contains_expression(&formula.expression, &|expression| matches!(
-            expression,
-            MathExpression::Environment(_)
-        ))));
+        assert!(
+            formulas
+                .iter()
+                .any(|formula| contains_expression(&formula.expression, &|expression| matches!(expression, MathExpression::Fraction { .. })))
+        );
+        assert!(
+            formulas
+                .iter()
+                .any(|formula| contains_expression(&formula.expression, &|expression| matches!(expression, MathExpression::Radical { .. })))
+        );
+        assert!(
+            formulas
+                .iter()
+                .any(|formula| contains_expression(&formula.expression, &|expression| matches!(expression, MathExpression::Delimited { .. })))
+        );
+        assert!(
+            formulas
+                .iter()
+                .any(|formula| contains_expression(&formula.expression, &|expression| matches!(expression, MathExpression::Environment(_))))
+        );
         assert!(!has_loss(&graph, "import.html.math_unsupported"), "{:?}", graph.coverage.loss);
     }
 

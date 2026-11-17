@@ -1,7 +1,6 @@
 //! Soft-skip Attention kernel: Out = (Q Kᵀ) V (no softmax), timed via `AttentionMetrics`.
 
-use std::collections::BTreeMap;
-use std::time::Instant;
+use std::{collections::BTreeMap, time::Instant};
 
 use hardware::prelude::*;
 use hardware_backend_cuda::CudaBackend;
@@ -66,24 +65,9 @@ fn attention_graph() -> Graph {
                 ]),
             )],
             edges: vec![
-                DepEdge {
-                    from_task: None,
-                    from_resource: Some(ResourceId(1)),
-                    to_task: TaskId(10),
-                    kind: DepKind::Data,
-                },
-                DepEdge {
-                    from_task: None,
-                    from_resource: Some(ResourceId(2)),
-                    to_task: TaskId(10),
-                    kind: DepKind::Data,
-                },
-                DepEdge {
-                    from_task: None,
-                    from_resource: Some(ResourceId(3)),
-                    to_task: TaskId(10),
-                    kind: DepKind::Data,
-                },
+                DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data },
+                DepEdge { from_task: None, from_resource: Some(ResourceId(2)), to_task: TaskId(10), kind: DepKind::Data },
+                DepEdge { from_task: None, from_resource: Some(ResourceId(3)), to_task: TaskId(10), kind: DepKind::Data },
             ],
         },
     }
@@ -115,17 +99,13 @@ fn attention_kernel_rocm_or_cuda_soft_skip() {
                         let metrics = AttentionMetrics::new(1, 1, 2, 2, elapsed.as_nanos());
                         assert_eq!(metrics.flops, 32);
                         assert!(metrics.flop_per_s() > 0.0);
-                        eprintln!(
-                            "rocm attention: {} FLOPs in {:?} → {:.3e} FLOP/s",
-                            metrics.flops,
-                            elapsed,
-                            metrics.flop_per_s()
-                        );
+                        eprintln!("rocm attention: {} FLOPs in {:?} → {:.3e} FLOP/s", metrics.flops, elapsed, metrics.flop_per_s());
                         ran = true;
                     }
                     Err(err) => eprintln!("skip rocm attention (run): {err}"),
                 }
-            } else {
+            }
+            else {
                 eprintln!("skip rocm attention (prepare/seed)");
             }
         }
@@ -148,17 +128,13 @@ fn attention_kernel_rocm_or_cuda_soft_skip() {
                         let metrics = AttentionMetrics::new(1, 1, 2, 2, elapsed.as_nanos());
                         assert_eq!(metrics.flops, 32);
                         assert!(metrics.flop_per_s() > 0.0);
-                        eprintln!(
-                            "cuda attention: {} FLOPs in {:?} → {:.3e} FLOP/s",
-                            metrics.flops,
-                            elapsed,
-                            metrics.flop_per_s()
-                        );
+                        eprintln!("cuda attention: {} FLOPs in {:?} → {:.3e} FLOP/s", metrics.flops, elapsed, metrics.flop_per_s());
                         ran = true;
                     }
                     Err(err) => eprintln!("skip cuda attention (run): {err}"),
                 }
-            } else {
+            }
+            else {
                 eprintln!("skip cuda attention (prepare/seed)");
             }
         }

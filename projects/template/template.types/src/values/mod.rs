@@ -426,8 +426,7 @@ impl Context {
             serde_json::Value::String(s) => Value::String(s.clone()),
             serde_json::Value::Array(arr) => Value::Array(arr.iter().map(Self::json_to_value).collect()),
             serde_json::Value::Object(obj) => {
-                let map: std::collections::HashMap<String, Value> =
-                    obj.iter().map(|(k, v)| (k.clone(), Self::json_to_value(v))).collect();
+                let map: std::collections::HashMap<String, Value> = obj.iter().map(|(k, v)| (k.clone(), Self::json_to_value(v))).collect();
                 Value::Object(map)
             }
         }

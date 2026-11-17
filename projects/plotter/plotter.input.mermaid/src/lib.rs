@@ -7,16 +7,15 @@ use oak_core::{Builder, SourceText, errors::OakError, parser::session::ParseSess
 use oak_mermaid::{
     MermaidBuilder, MermaidLanguage,
     ast::{
-        ClassDiagram, EdgeStyle as MermaidEdgeStyle, ErCardinality, ErDiagram, ErEntity, ErKey, ErRelation, FlowElement,
-        Flowchart, MermaidDiagram, MermaidRoot, MessageArrow, NodeShape as MermaidNodeShape, ParticipantKind, SequenceDiagram,
-        StateDiagram, StateElement, StateEndpoint, StateKind,
+        ClassDiagram, EdgeStyle as MermaidEdgeStyle, ErCardinality, ErDiagram, ErEntity, ErKey, ErRelation, FlowElement, Flowchart,
+        MermaidDiagram, MermaidRoot, MessageArrow, NodeShape as MermaidNodeShape, ParticipantKind, SequenceDiagram, StateDiagram, StateElement,
+        StateEndpoint, StateKind,
     },
 };
 use oak_uml::model::{Class, RelationKind};
 use plotter_scene::SceneResolver;
 use plotter_types::{
-    ByteRange, Diagnostic, DiagnosticLabel, DiagnosticLocation, DiagnosticSeverity, LabelRole, Message, NAMESPACE, SourceRef,
-    codes, diagnostic,
+    ByteRange, Diagnostic, DiagnosticLabel, DiagnosticLocation, DiagnosticSeverity, LabelRole, Message, NAMESPACE, SourceRef, codes, diagnostic,
 };
 
 use plotter_diagram::{
@@ -24,9 +23,7 @@ use plotter_diagram::{
     compile::{LayoutOptions, compile},
     error::DiagramError,
     render::render,
-    spec::{
-        Cluster, DiagramEdge, DiagramNode, DiagramSpec, Direction, EdgeStyle, Endpoint, LayoutModel, NodeShape, SequenceLayout,
-    },
+    spec::{Cluster, DiagramEdge, DiagramNode, DiagramSpec, Direction, EdgeStyle, Endpoint, LayoutModel, NodeShape, SequenceLayout},
 };
 
 /// Flowchart statements that `oak-mermaid` parses and then discards.
@@ -34,8 +31,7 @@ use plotter_diagram::{
 /// Styling, interaction, accessibility metadata and inner-direction overrides
 /// never reach the spec, so lowering them would drop authored meaning. The
 /// guard refuses the statement instead and keeps the source visible.
-const DROPPED_FLOWCHART_STATEMENTS: &[&str] =
-    &["style", "classDef", "class", "linkStyle", "click", "direction", "accTitle", "accDescr"];
+const DROPPED_FLOWCHART_STATEMENTS: &[&str] = &["style", "classDef", "class", "linkStyle", "click", "direction", "accTitle", "accDescr"];
 
 /// Class-diagram statements that `oak-mermaid` parses and then discards.
 ///
@@ -97,20 +93,8 @@ const DROPPED_SEQUENCE_STATEMENTS: &[&str] = &[
 /// Styling, notes, and accessibility metadata never reach the AST, so lowering
 /// the rest of the diagram would drop authored meaning. The guard refuses the
 /// statement instead and keeps the source visible.
-const DROPPED_STATE_STATEMENTS: &[&str] = &[
-    "direction",
-    "note",
-    "Note",
-    "style",
-    "classDef",
-    "class",
-    "click",
-    "linkStyle",
-    "title",
-    "acctitle",
-    "accTitle",
-    "accDescr",
-];
+const DROPPED_STATE_STATEMENTS: &[&str] =
+    &["direction", "note", "Note", "style", "classDef", "class", "click", "linkStyle", "title", "acctitle", "accTitle", "accDescr"];
 
 /// Entity-relationship statements that `oak-mermaid` parses and then discards.
 ///
@@ -127,8 +111,7 @@ const DROPPED_ER_STATEMENTS: &[&str] =
 /// but contribute nothing, so an empty tree would surface as a whole-body
 /// `ast-unavailable`. Naming the authored family header keeps the refusal
 /// precise and locatable.
-const SUPPORTED_FAMILIES: &[&str] =
-    &["flowchart", "graph", "classDiagram", "sequenceDiagram", "stateDiagram-v2", "stateDiagram", "erDiagram"];
+const SUPPORTED_FAMILIES: &[&str] = &["flowchart", "graph", "classDiagram", "sequenceDiagram", "stateDiagram-v2", "stateDiagram", "erDiagram"];
 
 struct NodeSeed {
     id: String,
@@ -273,11 +256,7 @@ impl Collector {
             suffix += 1;
         }
         let label = title.trim();
-        self.clusters.push(Cluster {
-            id: id.clone(),
-            label: (!label.is_empty()).then(|| label.to_string()),
-            members: Vec::new(),
-        });
+        self.clusters.push(Cluster { id: id.clone(), label: (!label.is_empty()).then(|| label.to_string()), members: Vec::new() });
         id
     }
 
@@ -414,10 +393,8 @@ fn flowchart_spec(flowchart: &Flowchart, source: &str) -> Result<DiagramSpec, Di
         return Err(DiagramError::unsupported(format!("unsupported flowchart orientation `{line}`")).with_span(range));
     }
     if let Some((range, keyword)) = locate_dropped_statement(source, DROPPED_FLOWCHART_STATEMENTS, false) {
-        return Err(DiagramError::unsupported(format!(
-            "flowchart statement `{keyword}` is not lowered, the diagram falls back to its source"
-        ))
-        .with_span(range));
+        return Err(DiagramError::unsupported(format!("flowchart statement `{keyword}` is not lowered, the diagram falls back to its source"))
+            .with_span(range));
     }
     if let Some((range, line)) = locate_flowchart_conjunction(source) {
         return Err(DiagramError::unsupported(format!(
@@ -426,10 +403,8 @@ fn flowchart_spec(flowchart: &Flowchart, source: &str) -> Result<DiagramSpec, Di
         .with_span(range));
     }
     if let Some((range, shape)) = locate_unsupported_shape(source) {
-        return Err(DiagramError::unsupported(format!(
-            "flowchart node shape `{shape}` is not lowered, the diagram falls back to its source"
-        ))
-        .with_span(range));
+        return Err(DiagramError::unsupported(format!("flowchart node shape `{shape}` is not lowered, the diagram falls back to its source"))
+            .with_span(range));
     }
     let direction = direction(&flowchart.orientation).ok_or_else(|| {
         DiagramError::unsupported(format!("unsupported flowchart orientation `{}`", flowchart.orientation))
@@ -502,13 +477,7 @@ fn sequence_spec(sequence: &SequenceDiagram) -> Result<DiagramSpec, DiagramError
         }
         for endpoint in [from, to] {
             if known.insert(endpoint.to_string()) {
-                spec.nodes.push(DiagramNode {
-                    id: endpoint.to_string(),
-                    label: None,
-                    shape: NodeShape::Box,
-                    ports: Vec::new(),
-                    cluster: None,
-                });
+                spec.nodes.push(DiagramNode { id: endpoint.to_string(), label: None, shape: NodeShape::Box, ports: Vec::new(), cluster: None });
             }
         }
         spec.edges.push(DiagramEdge {
@@ -561,10 +530,8 @@ struct ClassRelationLine {
 /// This keeps `A <|-- B` and `A --|> B` pointing at the same superclass.
 fn class_spec(diagram: &ClassDiagram, source: &str) -> Result<DiagramSpec, DiagramError> {
     if let Some((range, keyword)) = locate_dropped_statement(source, DROPPED_CLASS_STATEMENTS, true) {
-        return Err(DiagramError::unsupported(format!(
-            "class statement `{keyword}` is not lowered, the diagram falls back to its source"
-        ))
-        .with_span(range));
+        return Err(DiagramError::unsupported(format!("class statement `{keyword}` is not lowered, the diagram falls back to its source"))
+            .with_span(range));
     }
     let mut spec = DiagramSpec::new(Direction::BottomUp);
     let mut known: BTreeSet<String> = BTreeSet::new();
@@ -594,13 +561,7 @@ fn class_spec(diagram: &ClassDiagram, source: &str) -> Result<DiagramSpec, Diagr
         }
         for endpoint in [source_name, target_name] {
             if known.insert(endpoint.to_string()) {
-                spec.nodes.push(DiagramNode {
-                    id: endpoint.to_string(),
-                    label: None,
-                    shape: NodeShape::Box,
-                    ports: Vec::new(),
-                    cluster: None,
-                });
+                spec.nodes.push(DiagramNode { id: endpoint.to_string(), label: None, shape: NodeShape::Box, ports: Vec::new(), cluster: None });
             }
         }
 
@@ -662,10 +623,8 @@ fn class_edge_style(kind: &RelationKind) -> EdgeStyle {
 /// `davinci.diagram.approximated`; it is never dropped without a diagnostic.
 fn state_spec(diagram: &StateDiagram, source: &str) -> Result<DiagramSpec, DiagramError> {
     if let Some((range, keyword)) = locate_dropped_statement(source, DROPPED_STATE_STATEMENTS, false) {
-        return Err(DiagramError::unsupported(format!(
-            "state statement `{keyword}` is not lowered, the diagram falls back to its source"
-        ))
-        .with_span(range));
+        return Err(DiagramError::unsupported(format!("state statement `{keyword}` is not lowered, the diagram falls back to its source"))
+            .with_span(range));
     }
 
     let mut collector = Collector::default();
@@ -802,13 +761,7 @@ fn er_spec(diagram: &ErDiagram, source: &str) -> Result<DiagramSpec, DiagramErro
         let right = require_id(&relation.right)?;
         for name in [&left, &right] {
             if known.insert(name.clone()) {
-                spec.nodes.push(DiagramNode {
-                    id: name.clone(),
-                    label: None,
-                    shape: NodeShape::Box,
-                    ports: Vec::new(),
-                    cluster: None,
-                });
+                spec.nodes.push(DiagramNode { id: name.clone(), label: None, shape: NodeShape::Box, ports: Vec::new(), cluster: None });
             }
         }
         spec.edges.push(DiagramEdge {
@@ -1059,10 +1012,8 @@ fn validate_sequence_source(source: &str) -> Result<(), DiagramError> {
         if line.contains("-->>") || line.contains("->>") || line.contains("-->") || line.contains("->") {
             continue;
         }
-        return Err(DiagramError::unsupported(format!(
-            "sequence statement `{keyword}` is not lowered, the diagram falls back to its source"
-        ))
-        .with_span(range));
+        return Err(DiagramError::unsupported(format!("sequence statement `{keyword}` is not lowered, the diagram falls back to its source"))
+            .with_span(range));
     }
     Ok(())
 }
@@ -1253,8 +1204,7 @@ fn locate_second_header(source: &str) -> Option<std::ops::Range<usize>> {
 }
 
 fn starts_with_keyword(line: &str, keyword: &str) -> bool {
-    line.strip_prefix(keyword)
-        .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace) || rest.starts_with(':'))
+    line.strip_prefix(keyword).is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace) || rest.starts_with(':'))
 }
 
 fn require_id(id: &str) -> Result<String, DiagramError> {

@@ -55,23 +55,22 @@ pub use geometry::Rgba;
 pub use grid::grid;
 pub use media_image::Fit;
 pub use media_text::FontId;
-pub use metrics::{TextMeasure, TextBox, anchor_origin, text_box};
+pub use metrics::{TextBox, TextMeasure, anchor_origin, text_box};
 pub use model::{Border, ComicDoc, Page, Panel, TextItem, TextKind};
 pub use paths::{rect_path, round_rect_path, tail_base};
 pub use plan::{DrawOp, ImageStore, PagePlan, page_plan};
 pub use sheet::{SheetCell, SheetPlan, sheet_plan};
 pub use spec::{
-    ComicSpec, BorderSpec, MAX_SHEET_SCALE, MIN_SHEET_SCALE, MIN_TEXT_SIZE, PageSpec, PanelSpec, TextSpec, DEFAULT_BACKGROUND,
-    DEFAULT_BORDER_COLOR, DEFAULT_BORDER_WIDTH, DEFAULT_PANEL_FILL, DEFAULT_TEXT_AT, DEFAULT_TEXT_COLOR, DEFAULT_TEXT_FILL,
-    DEFAULT_TEXT_MAX_WIDTH, DEFAULT_TEXT_SIZE, DEFAULT_TEXT_STROKE,
+    BorderSpec, ComicSpec, DEFAULT_BACKGROUND, DEFAULT_BORDER_COLOR, DEFAULT_BORDER_WIDTH, DEFAULT_PANEL_FILL, DEFAULT_TEXT_AT,
+    DEFAULT_TEXT_COLOR, DEFAULT_TEXT_FILL, DEFAULT_TEXT_MAX_WIDTH, DEFAULT_TEXT_SIZE, DEFAULT_TEXT_STROKE, MAX_SHEET_SCALE, MIN_SHEET_SCALE,
+    MIN_TEXT_SIZE, PageSpec, PanelSpec, TextSpec,
 };
 
 #[cfg(test)]
 pub(crate) mod testutil {
     use media_types::Error;
 
-    use crate::metrics::TextMeasure;
-    use crate::plan::ImageStore;
+    use crate::{metrics::TextMeasure, plan::ImageStore};
 
     /// A scripted measurer: fixed lines, fixed advance per character. Enough
     /// to pin the box formulas without binding the suite to any installed
@@ -105,9 +104,7 @@ pub(crate) mod testutil {
 
     impl KeyStore {
         pub fn new(keys: &[&str]) -> Self {
-            Self {
-                store: keys.iter().map(|key| (key.to_string(), media_image::Bitmap::new(1, 1, vec![0, 0, 0, 0]))).collect(),
-            }
+            Self { store: keys.iter().map(|key| (key.to_string(), media_image::Bitmap::new(1, 1, vec![0, 0, 0, 0]))).collect() }
         }
     }
 

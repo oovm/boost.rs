@@ -244,13 +244,6 @@ pub struct DiagramSpec {
 impl DiagramSpec {
     /// Create an empty diagram with the given direction.
     pub fn new(direction: Direction) -> Self {
-        Self {
-            direction,
-            layout: LayoutModel::Layered,
-            nodes: Vec::new(),
-            edges: Vec::new(),
-            clusters: Vec::new(),
-            constraints: Vec::new(),
-        }
+        Self { direction, layout: LayoutModel::Layered, nodes: Vec::new(), edges: Vec::new(), clusters: Vec::new(), constraints: Vec::new() }
     }
 }

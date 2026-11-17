@@ -2,10 +2,12 @@
 
 use hardware_backend_vulkan::VulkanBackend;
 use hardware_capability::Feature;
-use hardware_scheduler::Backend;
-use std::collections::BTreeMap;
 use hardware_ir::{Dispatch, Graph, ResourceGraph, TaskGraph};
-use hardware_types::{Access, Domain, Objective, ParamValue, Priority, ResourceId, ResourceKind, ResourceNode, ShaderId, TaskId, TaskKind, TaskNode};
+use hardware_scheduler::Backend;
+use hardware_types::{
+    Access, Domain, Objective, ParamValue, Priority, ResourceId, ResourceKind, ResourceNode, ShaderId, TaskId, TaskKind, TaskNode,
+};
+use std::collections::BTreeMap;
 
 #[test]
 fn native_program_advertises_only_implemented_precision() {
@@ -22,15 +24,37 @@ fn incompatible_float64_output_layout_fails_without_writing_output() {
     builder.return_value(value).unwrap();
     let program = hardware_program::ProgramBuilder::new().entry(builder).unwrap().finish().unwrap();
     let graph = Graph {
-        resources: ResourceGraph { nodes: vec![ResourceNode { id: ResourceId(1), kind: ResourceKind::Buffer,
-            domain: Domain::Vram, access: Access::ReadWrite, byte_size: Some(4) }] },
-        tasks: TaskGraph { nodes: vec![TaskNode { id: TaskId(1), kind: TaskKind::Dispatch,
-            shader: ShaderId(1), params: BTreeMap::from([
-                ("program".into(), ParamValue::Program { version: program.version,
-                    hash: hardware_program::program_hash(&program), body: serde_json::to_string(&program).unwrap() }),
-                ("output".into(), ParamValue::I64(1)),
-            ]), dispatch: Dispatch::Explicit { x: 1, y: 1, z: 1 },
-            objective: Objective::MaxUtilization, priority: Priority::Batch }], edges: vec![] },
+        resources: ResourceGraph {
+            nodes: vec![ResourceNode {
+                id: ResourceId(1),
+                kind: ResourceKind::Buffer,
+                domain: Domain::Vram,
+                access: Access::ReadWrite,
+                byte_size: Some(4),
+            }],
+        },
+        tasks: TaskGraph {
+            nodes: vec![TaskNode {
+                id: TaskId(1),
+                kind: TaskKind::Dispatch,
+                shader: ShaderId(1),
+                params: BTreeMap::from([
+                    (
+                        "program".into(),
+                        ParamValue::Program {
+                            version: program.version,
+                            hash: hardware_program::program_hash(&program),
+                            body: serde_json::to_string(&program).unwrap(),
+                        },
+                    ),
+                    ("output".into(), ParamValue::I64(1)),
+                ]),
+                dispatch: Dispatch::Explicit { x: 1, y: 1, z: 1 },
+                objective: Objective::MaxUtilization,
+                priority: Priority::Batch,
+            }],
+            edges: vec![],
+        },
     };
     graph.validate().unwrap();
     let mut backend = VulkanBackend::new().expect("native Vulkan device required for precision verification");
@@ -51,17 +75,39 @@ fn native_float64_program_preserves_precision_and_uniform_alignment() {
     builder.return_value(result).unwrap();
     let program = hardware_program::ProgramBuilder::new().entry(builder).unwrap().finish().unwrap();
     let graph = Graph {
-        resources: ResourceGraph { nodes: vec![ResourceNode { id: ResourceId(1), kind: ResourceKind::Buffer,
-            domain: Domain::Vram, access: Access::ReadWrite, byte_size: Some(8) }] },
-        tasks: TaskGraph { nodes: vec![TaskNode { id: TaskId(1), kind: TaskKind::Dispatch,
-            shader: ShaderId(1), params: BTreeMap::from([
-                ("program".into(), ParamValue::Program { version: program.version,
-                    hash: hardware_program::program_hash(&program), body: serde_json::to_string(&program).unwrap() }),
-                ("output".into(), ParamValue::I64(1)),
-                ("uniform_0".into(), ParamValue::F64(16777216.0)),
-                ("uniform_1".into(), ParamValue::F64(0.125)),
-            ]), dispatch: Dispatch::Explicit { x: 1, y: 1, z: 1 },
-            objective: Objective::MaxUtilization, priority: Priority::Batch }], edges: vec![] },
+        resources: ResourceGraph {
+            nodes: vec![ResourceNode {
+                id: ResourceId(1),
+                kind: ResourceKind::Buffer,
+                domain: Domain::Vram,
+                access: Access::ReadWrite,
+                byte_size: Some(8),
+            }],
+        },
+        tasks: TaskGraph {
+            nodes: vec![TaskNode {
+                id: TaskId(1),
+                kind: TaskKind::Dispatch,
+                shader: ShaderId(1),
+                params: BTreeMap::from([
+                    (
+                        "program".into(),
+                        ParamValue::Program {
+                            version: program.version,
+                            hash: hardware_program::program_hash(&program),
+                            body: serde_json::to_string(&program).unwrap(),
+                        },
+                    ),
+                    ("output".into(), ParamValue::I64(1)),
+                    ("uniform_0".into(), ParamValue::F64(16777216.0)),
+                    ("uniform_1".into(), ParamValue::F64(0.125)),
+                ]),
+                dispatch: Dispatch::Explicit { x: 1, y: 1, z: 1 },
+                objective: Objective::MaxUtilization,
+                priority: Priority::Batch,
+            }],
+            edges: vec![],
+        },
     };
     graph.validate().unwrap();
     backend.prepare(&graph).unwrap();
@@ -89,17 +135,43 @@ fn native_float64_buffers_loops_and_sqrt_match_interpreter() {
     builder.store_buffer(2, builder.global_id(), result.clone());
     let program = ProgramBuilder::new().structured_entry(builder, Ty::f64(), result).unwrap().finish().unwrap();
     let graph = Graph {
-        resources: ResourceGraph { nodes: [(1, Access::Write), (2, Access::Read), (3, Access::Write)].into_iter()
-            .map(|(id, access)| ResourceNode { id: ResourceId(id), kind: ResourceKind::Buffer,
-                domain: Domain::Vram, access, byte_size: Some(16) }).collect() },
-        tasks: TaskGraph { nodes: vec![TaskNode { id: TaskId(2), kind: TaskKind::Dispatch,
-            shader: ShaderId(2), params: BTreeMap::from([
-                ("program".into(), ParamValue::Program { version: program.version,
-                    hash: hardware_program::program_hash(&program), body: serde_json::to_string(&program).unwrap() }),
-                ("output".into(), ParamValue::I64(1)), ("buffer_0".into(), ParamValue::I64(2)),
-                ("buffer_1".into(), ParamValue::I64(2)), ("buffer_2".into(), ParamValue::I64(3)),
-            ]), dispatch: Dispatch::Explicit { x: 2, y: 1, z: 1 },
-            objective: Objective::MaxUtilization, priority: Priority::Batch }], edges: vec![] },
+        resources: ResourceGraph {
+            nodes: [(1, Access::Write), (2, Access::Read), (3, Access::Write)]
+                .into_iter()
+                .map(|(id, access)| ResourceNode {
+                    id: ResourceId(id),
+                    kind: ResourceKind::Buffer,
+                    domain: Domain::Vram,
+                    access,
+                    byte_size: Some(16),
+                })
+                .collect(),
+        },
+        tasks: TaskGraph {
+            nodes: vec![TaskNode {
+                id: TaskId(2),
+                kind: TaskKind::Dispatch,
+                shader: ShaderId(2),
+                params: BTreeMap::from([
+                    (
+                        "program".into(),
+                        ParamValue::Program {
+                            version: program.version,
+                            hash: hardware_program::program_hash(&program),
+                            body: serde_json::to_string(&program).unwrap(),
+                        },
+                    ),
+                    ("output".into(), ParamValue::I64(1)),
+                    ("buffer_0".into(), ParamValue::I64(2)),
+                    ("buffer_1".into(), ParamValue::I64(2)),
+                    ("buffer_2".into(), ParamValue::I64(3)),
+                ]),
+                dispatch: Dispatch::Explicit { x: 2, y: 1, z: 1 },
+                objective: Objective::MaxUtilization,
+                priority: Priority::Batch,
+            }],
+            edges: vec![],
+        },
     };
     graph.validate().unwrap();
     let mut backend = VulkanBackend::new().expect("native Vulkan device required for precision verification");

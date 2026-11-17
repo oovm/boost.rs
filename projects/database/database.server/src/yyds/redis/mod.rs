@@ -12,8 +12,8 @@ use database_query::version_label;
 use database_types::{Error, Result};
 
 pub mod blocking;
-pub mod connection;
 mod collections;
+pub mod connection;
 pub mod pubsub;
 pub mod server_face;
 pub mod service;
@@ -60,10 +60,7 @@ pub fn execute_hash_command(
     namespace: &database_types::cluster::Namespace,
     protocol: u8,
 ) -> io::Result<()> {
-    let request = resp::Request {
-        arguments: arguments.to_vec(),
-        consumed: 0,
-    };
+    let request = resp::Request { arguments: arguments.to_vec(), consumed: 0 };
     collections::handle_hash(stream, &request, Some(executor), namespace, protocol)
 }
 
@@ -80,10 +77,7 @@ pub fn execute_set_command(
     namespace: &database_types::cluster::Namespace,
     protocol: u8,
 ) -> io::Result<()> {
-    let request = resp::Request {
-        arguments: arguments.to_vec(),
-        consumed: 0,
-    };
+    let request = resp::Request { arguments: arguments.to_vec(), consumed: 0 };
     collections::handle_set(stream, &request, Some(executor), namespace, protocol)
 }
 
@@ -99,10 +93,7 @@ pub fn execute_list_command(
     namespace: &database_types::cluster::Namespace,
     protocol: u8,
 ) -> io::Result<()> {
-    let request = resp::Request {
-        arguments: arguments.to_vec(),
-        consumed: 0,
-    };
+    let request = resp::Request { arguments: arguments.to_vec(), consumed: 0 };
     let registry = blocking::BlockingRegistry::new();
     collections::handle_list(stream, &request, Some(executor), namespace, protocol, &registry, false)
 }
@@ -119,10 +110,7 @@ pub fn execute_zset_command(
     namespace: &database_types::cluster::Namespace,
     protocol: u8,
 ) -> io::Result<()> {
-    let request = resp::Request {
-        arguments: arguments.to_vec(),
-        consumed: 0,
-    };
+    let request = resp::Request { arguments: arguments.to_vec(), consumed: 0 };
     collections::handle_zset(stream, &request, Some(executor), namespace, protocol)
 }
 
@@ -138,10 +126,7 @@ pub fn execute_hyperloglog_command(
     executor: &dyn KeyValueExecutor,
     namespace: &database_types::cluster::Namespace,
 ) -> io::Result<()> {
-    let request = resp::Request {
-        arguments: arguments.to_vec(),
-        consumed: 0,
-    };
+    let request = resp::Request { arguments: arguments.to_vec(), consumed: 0 };
     collections::handle_hyperloglog(stream, &request, Some(executor), namespace)
 }
 
@@ -158,10 +143,7 @@ pub fn execute_string_command(
     namespace: &database_types::cluster::Namespace,
     protocol: u8,
 ) -> io::Result<()> {
-    let request = resp::Request {
-        arguments: arguments.to_vec(),
-        consumed: 0,
-    };
+    let request = resp::Request { arguments: arguments.to_vec(), consumed: 0 };
     if connection::handle_string(stream, &request, Some(executor), Some(executor), None, namespace, protocol)? {
         return Ok(());
     }
@@ -180,10 +162,7 @@ pub fn execute_keyspace_command(
     namespace: &database_types::cluster::Namespace,
     protocol: u8,
 ) -> io::Result<()> {
-    let request = resp::Request {
-        arguments: arguments.to_vec(),
-        consumed: 0,
-    };
+    let request = resp::Request { arguments: arguments.to_vec(), consumed: 0 };
     if connection::handle_keyspace(stream, &request, Some(executor), Some(executor), None, namespace, protocol)? {
         return Ok(());
     }

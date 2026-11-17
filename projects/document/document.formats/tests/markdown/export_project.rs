@@ -1,7 +1,6 @@
 use document_formats::export::markdown_project::export_markdown_project;
 use document_ir::{
-    Asset, AssetId, AssetKind, Block, DocumentGraph, DocumentId, Inline, ListItem, NodeId, SemanticStatus, SourceKind,
-    SourceRef,
+    Asset, AssetId, AssetKind, Block, DocumentGraph, DocumentId, Inline, ListItem, NodeId, SemanticStatus, SourceKind, SourceRef,
 };
 
 #[test]
@@ -52,12 +51,7 @@ fn export_markdown_project_derives_asset_extension_from_media_type() {
     graph.push_block_with_id(
         NodeId(1),
         Block::Paragraph {
-            content: vec![Inline::Image {
-                source: "pdf-object-7".into(),
-                alt: Vec::new(),
-                title: None,
-                asset: Some(AssetId(1)),
-            }],
+            content: vec![Inline::Image { source: "pdf-object-7".into(), alt: Vec::new(), title: None, asset: Some(AssetId(1)) }],
         },
     );
 
@@ -135,21 +129,13 @@ fn export_markdown_project_keeps_unresolved_sources_in_markdown() {
 fn export_markdown_project_splits_epub_spine_members_into_chapters() {
     let mut graph = DocumentGraph::new(DocumentId(1));
     graph.metadata.title = Some("Sample Book".into());
-    let first = graph.push_block(Block::Section {
-        level: 1,
-        title: vec![Inline::Text { text: "Chapter One".into() }],
-        children: vec![],
-    });
+    let first = graph.push_block(Block::Section { level: 1, title: vec![Inline::Text { text: "Chapter One".into() }], children: vec![] });
     graph.attach_source(SourceRef {
         node: first,
         kind: SourceKind::PackageMember { path: "OEBPS/chapter-one.xhtml".into() },
         precision: SemanticStatus::Partial,
     });
-    let second = graph.push_block(Block::Section {
-        level: 1,
-        title: vec![Inline::Text { text: "Chapter Two".into() }],
-        children: vec![],
-    });
+    let second = graph.push_block(Block::Section { level: 1, title: vec![Inline::Text { text: "Chapter Two".into() }], children: vec![] });
     graph.attach_source(SourceRef {
         node: second,
         kind: SourceKind::PackageMember { path: "OEBPS/chapter-two.xhtml".into() },
@@ -184,11 +170,7 @@ fn export_markdown_project_reports_omitted_navigation_member() {
         kind: SourceKind::PackageMember { path: "OEBPS/nav.xhtml".into() },
         precision: SemanticStatus::Partial,
     });
-    let chapter = graph.push_block(Block::Section {
-        level: 1,
-        title: vec![Inline::Text { text: "Chapter One".into() }],
-        children: vec![],
-    });
+    let chapter = graph.push_block(Block::Section { level: 1, title: vec![Inline::Text { text: "Chapter One".into() }], children: vec![] });
     graph.attach_source(SourceRef {
         node: chapter,
         kind: SourceKind::PackageMember { path: "OEBPS/chapter.xhtml".into() },
@@ -197,8 +179,7 @@ fn export_markdown_project_reports_omitted_navigation_member() {
 
     let project = export_markdown_project(&graph).expect("export project");
     assert_eq!(project.chapters.len(), 1);
-    let loss =
-        project.losses.iter().find(|loss| loss.code == "export.markdown_project.navigation_omitted").expect("navigation loss");
+    let loss = project.losses.iter().find(|loss| loss.code == "export.markdown_project.navigation_omitted").expect("navigation loss");
     assert_eq!(loss.status, SemanticStatus::Lossy);
     assert!(loss.message.contains("OEBPS/nav.xhtml"), "{}", loss.message);
     assert!(loss.message.contains("#part-a"), "{}", loss.message);

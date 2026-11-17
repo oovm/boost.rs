@@ -9,8 +9,8 @@
 use std::path::Path;
 
 use document_ir::{
-    Attributes, Block as IrBlock, BreakKind, DocumentGraph, DocumentId, Inline as IrInline, ListItem, LossMarker, MathDisplay,
-    MathFormula, RelationEndpoint, SemanticStatus, SourceKind, SourceRef, TableCell, TableRow,
+    Attributes, Block as IrBlock, BreakKind, DocumentGraph, DocumentId, Inline as IrInline, ListItem, LossMarker, MathDisplay, MathFormula,
+    RelationEndpoint, SemanticStatus, SourceKind, SourceRef, TableCell, TableRow,
 };
 
 use crate::{FormatError, import::register_image_assets};
@@ -18,8 +18,8 @@ use crate::{FormatError, import::register_image_assets};
 use super::{
     codec::{self, FORMAT_ID, PandocBudget},
     model::{
-        Alignment, Attr, Block, Caption, Cell, CitationMode, Inline, ListNumberDelim, ListNumberStyle, MathType, MetaValue,
-        OrderedList, PandocDocument, QuoteType, Table,
+        Alignment, Attr, Block, Caption, Cell, CitationMode, Inline, ListNumberDelim, ListNumberStyle, MathType, MetaValue, OrderedList,
+        PandocDocument, QuoteType, Table,
     },
 };
 
@@ -58,8 +58,7 @@ impl PandocImportOptions {
 /// Import a Pandoc JSON file, rejecting unmapped constructs.
 pub fn import_pandoc_json(path: impl AsRef<Path>) -> Result<DocumentGraph, FormatError> {
     let path = path.as_ref();
-    let bytes = std::fs::read(path)
-        .map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
+    let bytes = std::fs::read(path).map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
     import_pandoc_json_bytes(&path.display().to_string(), &bytes)
 }
 
@@ -74,11 +73,7 @@ pub fn import_pandoc_json_text(label: &str, text: &str) -> Result<DocumentGraph,
 }
 
 /// Import Pandoc JSON bytes with explicit policy and budgets.
-pub fn import_pandoc_json_bytes_with(
-    label: &str,
-    bytes: &[u8],
-    options: &PandocImportOptions,
-) -> Result<DocumentGraph, FormatError> {
+pub fn import_pandoc_json_bytes_with(label: &str, bytes: &[u8], options: &PandocImportOptions) -> Result<DocumentGraph, FormatError> {
     let document = codec::decode(bytes, &options.budget)?;
     Importer::new(label, options.policy).lower(document)
 }
@@ -102,8 +97,7 @@ impl Importer {
             self.graph.push_loss(loss);
         }
         register_image_assets(&mut self.graph);
-        let asset_sources: Vec<String> =
-            self.graph.assets.iter().map(|asset| asset.source.clone().unwrap_or_default()).collect();
+        let asset_sources: Vec<String> = self.graph.assets.iter().map(|asset| asset.source.clone().unwrap_or_default()).collect();
         for source in asset_sources {
             self.graph.push_loss(LossMarker {
                 code: "import.pandoc-json.asset_unresolved".into(),
@@ -170,9 +164,7 @@ impl Importer {
             _ => {
                 self.losses.push(LossMarker {
                     code: "import.pandoc-json.meta_shape".into(),
-                    message: format!(
-                        "metadata at `{pointer}` is not a string, inline or block value, so only its existence is reported"
-                    ),
+                    message: format!("metadata at `{pointer}` is not a string, inline or block value, so only its existence is reported"),
                     status: SemanticStatus::Partial,
                 });
                 Ok(String::new())
@@ -198,12 +190,7 @@ impl Importer {
     /// The returned ids are the sequence's roots. Sections own their children,
     /// so a heading inside a quote, list item, or table cell never changes the
     /// outer document outline.
-    fn lower_sequence(
-        &mut self,
-        blocks: &[Block],
-        array_pointer: &str,
-        start: usize,
-    ) -> Result<Vec<document_ir::NodeId>, FormatError> {
+    fn lower_sequence(&mut self, blocks: &[Block], array_pointer: &str, start: usize) -> Result<Vec<document_ir::NodeId>, FormatError> {
         let mut roots = Vec::new();
         let mut stack: Vec<(document_ir::NodeId, i64)> = Vec::new();
         for (index, block) in blocks.iter().enumerate().skip(start) {
@@ -269,12 +256,7 @@ impl Importer {
         id
     }
 
-    fn append_child(
-        &mut self,
-        parent: document_ir::NodeId,
-        child: document_ir::NodeId,
-        pointer: &str,
-    ) -> Result<(), FormatError> {
+    fn append_child(&mut self, parent: document_ir::NodeId, child: document_ir::NodeId, pointer: &str) -> Result<(), FormatError> {
         self.graph.append_child(parent, child).map_err(|error| FormatError::parse(FORMAT_ID, format!("{pointer}: {error}")))
     }
 
@@ -284,18 +266,11 @@ impl Importer {
                 if let [Inline::Math { display: MathType::Display, text }] = inlines.as_slice() {
                     self.losses.push(LossMarker {
                         code: "import.pandoc-json.math_source_only".into(),
-                        message: format!(
-                            "math at `{pointer}` keeps its authored source because the IR has no Pandoc math lowering profile"
-                        ),
+                        message: format!("math at `{pointer}` keeps its authored source because the IR has no Pandoc math lowering profile"),
                         status: SemanticStatus::Partial,
                     });
                     return Ok(IrBlock::Math {
-                        formula: MathFormula::unsupported(
-                            text.clone(),
-                            Some("latex".into()),
-                            MathDisplay::Display,
-                            "pandoc-json",
-                        ),
+                        formula: MathFormula::unsupported(text.clone(), Some("latex".into()), MathDisplay::Display, "pandoc-json"),
                     });
                 }
                 Ok(IrBlock::Paragraph { content: self.lower_inlines(inlines, &format!("{pointer}/c"))? })
@@ -328,11 +303,7 @@ impl Importer {
                         &format!("raw `{format}` block has no IR semantics and stays an opaque payload"),
                         SemanticStatus::Partial,
                     )?;
-                    Ok(IrBlock::Opaque {
-                        kind: format!("pandoc.raw.{format}"),
-                        payload_hint: text.clone(),
-                        status: SemanticStatus::Partial,
-                    })
+                    Ok(IrBlock::Opaque { kind: format!("pandoc.raw.{format}"), payload_hint: text.clone(), status: SemanticStatus::Partial })
                 }
             }
             Block::BlockQuote(blocks) => self.lower_quote(blocks, pointer),
@@ -356,11 +327,7 @@ impl Importer {
                     let entry_pointer = format!("{pointer}/c/{index}");
                     let mut children = Vec::new();
                     for (definition_index, definition) in definitions.iter().enumerate() {
-                        children.extend(self.lower_sequence(
-                            definition,
-                            &format!("{entry_pointer}/1/{definition_index}"),
-                            0,
-                        )?);
+                        children.extend(self.lower_sequence(definition, &format!("{entry_pointer}/1/{definition_index}"), 0)?);
                     }
                     items.push(ListItem {
                         content: self.lower_inlines(term, &format!("{entry_pointer}/0"))?,
@@ -372,14 +339,10 @@ impl Importer {
                 }
                 Ok(IrBlock::List { ordered: false, items })
             }
-            Block::Header { .. } => {
-                Err(FormatError::parse(FORMAT_ID, format!("{pointer}: header reached a non-sequence lowering path")))
+            Block::Header { .. } => Err(FormatError::parse(FORMAT_ID, format!("{pointer}: header reached a non-sequence lowering path"))),
+            Block::HorizontalRule => {
+                Ok(IrBlock::Opaque { kind: "thematic_break".into(), payload_hint: "---".into(), status: SemanticStatus::Partial })
             }
-            Block::HorizontalRule => Ok(IrBlock::Opaque {
-                kind: "thematic_break".into(),
-                payload_hint: "---".into(),
-                status: SemanticStatus::Partial,
-            }),
             Block::Table(table) => self.lower_table(table, pointer),
             Block::Figure { .. } => {
                 self.structural_loss(
@@ -418,10 +381,8 @@ impl Importer {
 
     fn lower_code_block(&mut self, attr: &Attr, text: &str, pointer: &str) -> Result<IrBlock, FormatError> {
         let mut remaining_classes = attr.classes.clone();
-        if let Some(marker) = remaining_classes
-            .first()
-            .filter(|class| matches!(class.as_str(), "diagram" | "chart" | "engraving" | "depiction"))
-            .cloned()
+        if let Some(marker) =
+            remaining_classes.first().filter(|class| matches!(class.as_str(), "diagram" | "chart" | "engraving" | "depiction")).cloned()
         {
             remaining_classes.remove(0);
             let language = remaining_classes.first().cloned().unwrap_or_default();
@@ -504,11 +465,7 @@ impl Importer {
                 )?;
             }
             let fallback = (index + 1) as u32;
-            items.push(self.lower_list_item(
-                item,
-                Some(number.unwrap_or(fallback).max(1)),
-                &format!("{pointer}/c/1/{index}"),
-            )?);
+            items.push(self.lower_list_item(item, Some(number.unwrap_or(fallback).max(1)), &format!("{pointer}/c/1/{index}"))?);
         }
         Ok(IrBlock::List { ordered: true, items })
     }
@@ -676,9 +633,9 @@ impl Importer {
                     return Ok(None);
                 }
                 let details_lost = citations.len() > 1
-                    || citations.iter().any(|citation| {
-                        !citation.prefix.is_empty() || !citation.suffix.is_empty() || citation.mode != CitationMode::Normal
-                    });
+                    || citations
+                        .iter()
+                        .any(|citation| !citation.prefix.is_empty() || !citation.suffix.is_empty() || citation.mode != CitationMode::Normal);
                 if details_lost {
                     self.structural_loss(
                         pointer,
@@ -690,8 +647,7 @@ impl Importer {
                 // An absent display and an empty display are different: a
                 // `Cite` without `inlines` carries no authored text, and a
                 // `Some([])` would force every writer to print an empty run.
-                let display =
-                    if inlines.is_empty() { None } else { Some(self.lower_inlines(inlines, &format!("{pointer}/c/1"))?) };
+                let display = if inlines.is_empty() { None } else { Some(self.lower_inlines(inlines, &format!("{pointer}/c/1"))?) };
                 Ok(Some(IrInline::Citation { key, display }))
             }
             Inline::Code { attr, text } => {
@@ -711,18 +667,14 @@ impl Importer {
             Inline::Math { display, text } => {
                 self.losses.push(LossMarker {
                     code: "import.pandoc-json.math_source_only".into(),
-                    message: format!(
-                        "math at `{pointer}` keeps its authored source because the IR has no Pandoc math lowering profile"
-                    ),
+                    message: format!("math at `{pointer}` keeps its authored source because the IR has no Pandoc math lowering profile"),
                     status: SemanticStatus::Partial,
                 });
                 let display = match display {
                     MathType::Display => MathDisplay::Display,
                     MathType::Inline => MathDisplay::Inline,
                 };
-                Ok(Some(IrInline::InlineMath {
-                    formula: MathFormula::unsupported(text.clone(), Some("latex".into()), display, "pandoc-json"),
-                }))
+                Ok(Some(IrInline::InlineMath { formula: MathFormula::unsupported(text.clone(), Some("latex".into()), display, "pandoc-json") }))
             }
             Inline::RawInline { format, text } => {
                 if format.eq_ignore_ascii_case("html") {
@@ -754,11 +706,7 @@ impl Importer {
                 else {
                     RelationEndpoint::ExternalUri(target.url.clone())
                 };
-                Ok(Some(IrInline::Link {
-                    target: endpoint,
-                    display,
-                    title: (!target.title.is_empty()).then(|| target.title.clone()),
-                }))
+                Ok(Some(IrInline::Link { target: endpoint, display, title: (!target.title.is_empty()).then(|| target.title.clone()) }))
             }
             Inline::Image { attr, inlines, target } => {
                 if !attr.is_empty() {
@@ -784,10 +732,7 @@ impl Importer {
                     };
                     let label = format!("pandoc-note-{}", self.next_note);
                     self.next_note += 1;
-                    return Ok(Some(IrInline::Note {
-                        label,
-                        display: Some(self.lower_inlines(inlines, &format!("{pointer}/c/0/c"))?),
-                    }));
+                    return Ok(Some(IrInline::Note { label, display: Some(self.lower_inlines(inlines, &format!("{pointer}/c/0/c"))?) }));
                 }
                 self.structural_loss(
                     pointer,
@@ -880,9 +825,7 @@ impl Importer {
                         }
                         flattened.extend(self.lower_inlines(term, &format!("{pointer}/c/{entry_index}/0"))?);
                         for (definition_index, definition) in definitions.iter().enumerate() {
-                            flattened.extend(
-                                self.flatten_blocks(definition, &format!("{pointer}/c/{entry_index}/1/{definition_index}"))?,
-                            );
+                            flattened.extend(self.flatten_blocks(definition, &format!("{pointer}/c/{entry_index}/1/{definition_index}"))?);
                         }
                     }
                 }
@@ -910,11 +853,7 @@ fn attributes(attr: &Attr) -> Attributes {
     Attributes {
         id: (!attr.id.is_empty()).then(|| attr.id.clone()),
         classes: attr.classes.clone(),
-        pairs: attr
-            .pairs
-            .iter()
-            .map(|(key, value)| document_ir::AttributePair { key: key.clone(), value: value.clone() })
-            .collect(),
+        pairs: attr.pairs.iter().map(|(key, value)| document_ir::AttributePair { key: key.clone(), value: value.clone() }).collect(),
     }
 }
 
@@ -964,9 +903,7 @@ fn blocks_text(blocks: &[Block]) -> String {
             Block::Plain(inlines) | Block::Para(inlines) | Block::Header { inlines, .. } => model_inline_text(inlines),
             Block::LineBlock(lines) => lines.iter().map(|line| model_inline_text(line)).collect::<Vec<_>>().join(" "),
             Block::CodeBlock(_, text) | Block::RawBlock(_, text) => text.clone(),
-            Block::BlockQuote(inner) | Block::Figure { blocks: inner, .. } | Block::Div { blocks: inner, .. } => {
-                blocks_text(inner)
-            }
+            Block::BlockQuote(inner) | Block::Figure { blocks: inner, .. } | Block::Div { blocks: inner, .. } => blocks_text(inner),
             Block::OrderedList(list) => list.items.iter().map(|item| blocks_text(item)).collect::<Vec<_>>().join(" "),
             Block::BulletList(items) => items.iter().map(|item| blocks_text(item)).collect::<Vec<_>>().join(" "),
             Block::DefinitionList(entries) => entries

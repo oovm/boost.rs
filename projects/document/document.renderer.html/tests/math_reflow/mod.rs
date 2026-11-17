@@ -69,9 +69,8 @@ fn math_context() -> FlowMathContext {
 #[cfg_attr(not(math_font_pack), ignore = "needs a math font pack: set `VUTEX_FONT_DIR` to `VuTeX/projects/vutex.rs/fonts`")]
 fn inline_formulas_typeset_into_baseline_aligned_svg() {
     install_host_math_fonts();
-    let flow = presentation(vec![FlowBlock::Paragraph {
-        runs: vec![text_run("Area "), math_run(fraction(MathDisplay::Inline)), text_run(" units")],
-    }]);
+    let flow =
+        presentation(vec![FlowBlock::Paragraph { runs: vec![text_run("Area "), math_run(fraction(MathDisplay::Inline)), text_run(" units")] }]);
     let html = render_html_reflow_with_math(&flow, &math_context()).expect("reflow");
     assert!(html.markup.contains("<span class=\"vutex-math\""), "{}", html.markup);
     assert!(html.markup.contains("vertical-align:-"), "{}", html.markup);
@@ -118,11 +117,7 @@ fn repeated_formulas_share_each_outline_once() {
 fn defined_outline_ids(html: &str) -> Vec<String> {
     let start = html.find("<svg class=\"vutex-math-defs\"").expect("defs container");
     let end = start + html[start..].find("</svg>").expect("defs container end");
-    html[start..end]
-        .split("<path id=\"")
-        .skip(1)
-        .map(|chunk| chunk[..chunk.find('"').expect("id terminator")].to_string())
-        .collect()
+    html[start..end].split("<path id=\"").skip(1).map(|chunk| chunk[..chunk.find('"').expect("id terminator")].to_string()).collect()
 }
 
 /// Ids referenced by `<use>` anywhere in the document, in document order.
@@ -210,9 +205,5 @@ fn a_formula_with_no_typesetting_language_keeps_source_and_warns() {
     let flow = presentation(vec![FlowBlock::Math { formula }]);
     let html = render_html_reflow_with_math(&flow, &math_context()).expect("reflow");
     assert!(html.markup.contains("<pre data-vutex-block=\"code\"><code>x^2</code></pre>"), "{}", html.markup);
-    assert!(
-        html.diagnostics.iter().any(|diagnostic| diagnostic.code == "vutex.render.html.math.not-typeset"),
-        "{:?}",
-        html.diagnostics
-    );
+    assert!(html.diagnostics.iter().any(|diagnostic| diagnostic.code == "vutex.render.html.math.not-typeset"), "{:?}", html.diagnostics);
 }

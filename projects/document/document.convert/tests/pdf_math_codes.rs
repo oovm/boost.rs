@@ -11,9 +11,7 @@ mod common;
 use std::sync::Arc;
 
 use document_convert::write_document_pdf;
-use document_fonts::{
-    BodyFace, BodyFaceSet, BodyFaceStyle, BodyFamily, BodyMetrics, BodyScript, MathFontPack, install_math_fonts,
-};
+use document_fonts::{BodyFace, BodyFaceSet, BodyFaceStyle, BodyFamily, BodyMetrics, BodyScript, MathFontPack, install_math_fonts};
 use document_formats::lower_tex_formula_source;
 use document_ir::{Block, DocumentGraph, DocumentId, Inline, MathDisplay};
 use document_layout::{Diagrams, LayoutHint};

@@ -45,9 +45,8 @@ use std::{
 };
 
 use document_ir::{
-    AttributePair, Attributes, Block, DocumentGraph, DocumentId, DocumentMetadata, Inline, LinkId, ListItem, LossMarker,
-    MathDisplay, NodeId, Relation, RelationEndpoint, RelationKind, SemanticStatus, SourceKind, SourceRef, SourceSpan,
-    TableCell, TableRow,
+    AttributePair, Attributes, Block, DocumentGraph, DocumentId, DocumentMetadata, Inline, LinkId, ListItem, LossMarker, MathDisplay, NodeId,
+    Relation, RelationEndpoint, RelationKind, SemanticStatus, SourceKind, SourceRef, SourceSpan, TableCell, TableRow,
 };
 use oak_core::{Builder, SourceText, parser::session::ParseSession};
 use oak_tex::{
@@ -64,8 +63,8 @@ use crate::FormatError;
 /// Import a TeX file from disk into `notedown-ir`.
 pub fn import_tex(path: impl AsRef<Path>) -> Result<DocumentGraph, FormatError> {
     let path = path.as_ref();
-    let text = std::fs::read_to_string(path)
-        .map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
+    let text =
+        std::fs::read_to_string(path).map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
     import_tex_bytes(&path.display().to_string(), &text)
 }
 
@@ -296,8 +295,7 @@ impl<'a> TexLowerer<'a> {
                 sink.inlines.extend(inlines);
             }
             TexItem::Superscript(superscript) => {
-                let children =
-                    self.collect_inlines(&superscript.content.items, superscript.span.start, superscript.span.end, true);
+                let children = self.collect_inlines(&superscript.content.items, superscript.span.start, superscript.span.end, true);
                 sink.inlines.push(Inline::Styled { style: "superscript".into(), children });
             }
             TexItem::Subscript(subscript) => {
@@ -414,8 +412,7 @@ impl<'a> TexLowerer<'a> {
         let raw = self.raw(command.span.start, command.span.end);
         let name = command_name(raw);
         if let Some(level) = section_level(&name) {
-            let mut title =
-                self.required_argument(command).map(|fragment| self.lower_inline_fragment(fragment)).unwrap_or_default();
+            let mut title = self.required_argument(command).map(|fragment| self.lower_inline_fragment(fragment)).unwrap_or_default();
             if command.starred {
                 self.state.last_number = None;
                 self.loss(
@@ -479,10 +476,7 @@ impl<'a> TexLowerer<'a> {
                             SemanticStatus::Unsupported,
                         );
                     }
-                    self.push_block(
-                        sink,
-                        Block::Opaque { kind, payload_hint: raw.trim().to_string(), status: SemanticStatus::Partial },
-                    );
+                    self.push_block(sink, Block::Opaque { kind, payload_hint: raw.trim().to_string(), status: SemanticStatus::Partial });
                 }
             },
         }
@@ -500,19 +494,10 @@ impl<'a> TexLowerer<'a> {
             "document" => self.lower_root(&environment.content.items, environment.span.start, environment.span.end, sink),
             "verbatim" | "lstlisting" | "minted" | "Verbatim" => {
                 let content = self.code_environment_content(environment.span.start, environment.span.end);
-                self.push_spanned_block(
-                    sink,
-                    Block::Code { language: None, content },
-                    environment.span.start,
-                    environment.span.end,
-                );
+                self.push_spanned_block(sink, Block::Code { language: None, content }, environment.span.start, environment.span.end);
             }
-            "itemize" | "enumerate" | "description" => {
-                self.lower_list(&name, environment.span.start, environment.span.end, sink)
-            }
-            "figure" | "figure*" => {
-                self.lower_root(&environment.content.items, environment.span.start, environment.span.end, sink)
-            }
+            "itemize" | "enumerate" | "description" => self.lower_list(&name, environment.span.start, environment.span.end, sink),
+            "figure" | "figure*" => self.lower_root(&environment.content.items, environment.span.start, environment.span.end, sink),
             "tabular" | "array" => self.lower_table(environment.span.start, environment.span.end, sink),
             _ => {
                 self.loss(
@@ -520,12 +505,8 @@ impl<'a> TexLowerer<'a> {
                     format!("unknown TeX environment kept opaque: {}", environment.name),
                     SemanticStatus::Unsupported,
                 );
-                let kind =
-                    if name.is_empty() { "tex.environment.unknown".to_string() } else { format!("tex.environment.{name}") };
-                self.push_block(
-                    sink,
-                    Block::Opaque { kind, payload_hint: raw.trim().to_string(), status: SemanticStatus::Partial },
-                );
+                let kind = if name.is_empty() { "tex.environment.unknown".to_string() } else { format!("tex.environment.{name}") };
+                self.push_block(sink, Block::Opaque { kind, payload_hint: raw.trim().to_string(), status: SemanticStatus::Partial });
             }
         }
     }
@@ -553,8 +534,7 @@ impl<'a> TexLowerer<'a> {
             );
         }
         if environment.name == "math" {
-            sink.inlines
-                .push(Inline::InlineMath { formula: lower_tex_environment(environment, self.source, MathDisplay::Inline) });
+            sink.inlines.push(Inline::InlineMath { formula: lower_tex_environment(environment, self.source, MathDisplay::Inline) });
             return;
         }
         let formula = lower_tex_environment(environment, self.source, MathDisplay::Display);
@@ -636,8 +616,7 @@ impl<'a> TexLowerer<'a> {
             );
             return;
         };
-        let end_name =
-            raw[footer..].strip_prefix("\\end{").and_then(|rest| rest.split('}').next()).map(|name| name.trim()).unwrap_or("");
+        let end_name = raw[footer..].strip_prefix("\\end{").and_then(|rest| rest.split('}').next()).map(|name| name.trim()).unwrap_or("");
         if end_name != begin_name {
             self.loss(
                 "import.tex.mismatched_end",
@@ -671,8 +650,7 @@ impl<'a> TexLowerer<'a> {
         }
         match name.as_str() {
             "textbf" | "textsc" | "texttt" | "underline" | "textit" | "emph" | "text" => {
-                let children =
-                    self.required_argument(command).map(|fragment| self.lower_inline_fragment(fragment)).unwrap_or_default();
+                let children = self.required_argument(command).map(|fragment| self.lower_inline_fragment(fragment)).unwrap_or_default();
                 if children.is_empty() {
                     return InlineOutcome::Dropped;
                 }
@@ -723,8 +701,7 @@ impl<'a> TexLowerer<'a> {
                 InlineOutcome::Dropped
             }
             "footnote" => {
-                let body =
-                    self.required_argument(command).map(|fragment| self.lower_inline_fragment(fragment)).unwrap_or_default();
+                let body = self.required_argument(command).map(|fragment| self.lower_inline_fragment(fragment)).unwrap_or_default();
                 self.state.footnote += 1;
                 let label = self.state.footnote.to_string();
                 self.loss(
@@ -736,18 +713,13 @@ impl<'a> TexLowerer<'a> {
             }
             "cite" => {
                 let authored = self.required_argument(command).unwrap_or_default().trim().to_string();
-                let keys: Vec<String> =
-                    authored.split(',').map(|key| key.trim().to_string()).filter(|key| !key.is_empty()).collect();
+                let keys: Vec<String> = authored.split(',').map(|key| key.trim().to_string()).filter(|key| !key.is_empty()).collect();
                 if keys.is_empty() {
                     self.loss("import.tex.empty_citation", "citation command has no key", SemanticStatus::Partial);
                     return InlineOutcome::Dropped;
                 }
                 if command.arguments.iter().any(|argument| matches!(argument, TexArgument::Optional(_))) {
-                    self.loss(
-                        "import.tex.citation_note",
-                        "citation note argument has no IR carrier and is dropped",
-                        SemanticStatus::Partial,
-                    );
+                    self.loss("import.tex.citation_note", "citation note argument has no IR carrier and is dropped", SemanticStatus::Partial);
                 }
                 self.loss(
                     "import.tex.citation_marker",
@@ -771,16 +743,9 @@ impl<'a> TexLowerer<'a> {
             }
             "href" => {
                 let target = self.nth_required_argument(command, 0).unwrap_or_default().trim().to_string();
-                let display = self
-                    .nth_required_argument(command, 1)
-                    .map(|fragment| self.lower_inline_fragment(fragment))
-                    .unwrap_or_default();
+                let display = self.nth_required_argument(command, 1).map(|fragment| self.lower_inline_fragment(fragment)).unwrap_or_default();
                 if target.is_empty() {
-                    self.loss(
-                        "import.tex.empty_link_target",
-                        "link command has no readable destination",
-                        SemanticStatus::Partial,
-                    );
+                    self.loss("import.tex.empty_link_target", "link command has no readable destination", SemanticStatus::Partial);
                     return if display.is_empty() { InlineOutcome::Dropped } else { InlineOutcome::Inlines(display) };
                 }
                 let display = if display.is_empty() { vec![Inline::Text { text: target.clone() }] } else { display };
@@ -821,10 +786,7 @@ impl<'a> TexLowerer<'a> {
                 InlineOutcome::Inline(Inline::Image { source, alt: Vec::new(), title: None, asset: None })
             }
             "caption" => {
-                let children = self
-                    .nth_required_argument(command, 0)
-                    .map(|fragment| self.lower_inline_fragment(fragment))
-                    .unwrap_or_default();
+                let children = self.nth_required_argument(command, 0).map(|fragment| self.lower_inline_fragment(fragment)).unwrap_or_default();
                 if children.is_empty() {
                     self.loss("import.tex.empty_caption", "caption command has no readable text", SemanticStatus::Partial);
                     return InlineOutcome::Dropped;
@@ -858,10 +820,7 @@ impl<'a> TexLowerer<'a> {
                         id: None,
                         classes: vec!["tex-ref".into()],
                         pairs: vec![
-                            AttributePair {
-                                key: "data-tex-ref-kind".into(),
-                                value: if eqref { "eqref".into() } else { "ref".into() },
-                            },
+                            AttributePair { key: "data-tex-ref-kind".into(), value: if eqref { "eqref".into() } else { "ref".into() } },
                             AttributePair { key: "data-tex-ref-label".into(), value: label },
                         ],
                     },
@@ -930,8 +889,7 @@ impl<'a> TexLowerer<'a> {
             // argument is lowered as plain inlines and the missing style is
             // recorded.
             "mathbf" | "mathit" | "mathrm" | "mathcal" | "mathbb" | "mathfrak" => {
-                let children =
-                    self.required_argument(command).map(|fragment| self.lower_inline_fragment(fragment)).unwrap_or_default();
+                let children = self.required_argument(command).map(|fragment| self.lower_inline_fragment(fragment)).unwrap_or_default();
                 self.loss(
                     "import.tex.math_style_in_text",
                     "math-mode style command used in text mode keeps its argument without the style",
@@ -939,9 +897,7 @@ impl<'a> TexLowerer<'a> {
                 );
                 if children.is_empty() { InlineOutcome::Dropped } else { InlineOutcome::Inlines(children) }
             }
-            "displaystyle" | "textstyle" | "scriptstyle" | "scriptscriptstyle" | "limits" | "nolimits" => {
-                InlineOutcome::Dropped
-            }
+            "displaystyle" | "textstyle" | "scriptstyle" | "scriptscriptstyle" | "limits" | "nolimits" => InlineOutcome::Dropped,
             _ => InlineOutcome::Unknown,
         }
     }
@@ -1206,11 +1162,7 @@ impl<'a> TexLowerer<'a> {
             }
             let Some(environment_end) = matching_environment_end(self.source, begin, end)
             else {
-                self.loss(
-                    "import.tex.unclosed_environment",
-                    format!("environment {name} has no closing marker"),
-                    SemanticStatus::Unsupported,
-                );
+                self.loss("import.tex.unclosed_environment", format!("environment {name} has no closing marker"), SemanticStatus::Unsupported);
                 return;
             };
             match name.as_str() {
@@ -1291,13 +1243,11 @@ impl<'a> TexLowerer<'a> {
                     inlines.extend(nested);
                 }
                 TexItem::Superscript(superscript) => {
-                    let children =
-                        self.collect_inlines(&superscript.content.items, superscript.span.start, superscript.span.end, true);
+                    let children = self.collect_inlines(&superscript.content.items, superscript.span.start, superscript.span.end, true);
                     inlines.push(Inline::Styled { style: "superscript".into(), children });
                 }
                 TexItem::Subscript(subscript) => {
-                    let children =
-                        self.collect_inlines(&subscript.content.items, subscript.span.start, subscript.span.end, true);
+                    let children = self.collect_inlines(&subscript.content.items, subscript.span.start, subscript.span.end, true);
                     inlines.push(Inline::Styled { style: "subscript".into(), children });
                 }
                 TexItem::Math(math) => {
@@ -1312,11 +1262,7 @@ impl<'a> TexLowerer<'a> {
                             inlines.push(Inline::InlineCode { text: content });
                         }
                         else {
-                            self.loss(
-                                "import.tex.verb_unterminated",
-                                "verb command has no closing delimiter",
-                                SemanticStatus::Partial,
-                            );
+                            self.loss("import.tex.verb_unterminated", "verb command has no closing delimiter", SemanticStatus::Partial);
                         }
                         continue;
                     }
@@ -1346,9 +1292,7 @@ impl<'a> TexLowerer<'a> {
                     }
                     else if environment.is_math {
                         self.check_environment_boundaries(environment);
-                        inlines.push(Inline::InlineMath {
-                            formula: lower_tex_environment(environment, self.source, MathDisplay::Inline),
-                        });
+                        inlines.push(Inline::InlineMath { formula: lower_tex_environment(environment, self.source, MathDisplay::Inline) });
                     }
                     else {
                         self.loss(
@@ -1445,12 +1389,7 @@ fn command_name(raw: &str) -> String {
     else {
         return String::new();
     };
-    if first.is_ascii_alphabetic() {
-        name.chars().take_while(|character| character.is_ascii_alphabetic()).collect()
-    }
-    else {
-        first.to_string()
-    }
+    if first.is_ascii_alphabetic() { name.chars().take_while(|character| character.is_ascii_alphabetic()).collect() } else { first.to_string() }
 }
 
 /// Parse a `\begin{name}` header at the start of `raw`.
@@ -1565,8 +1504,7 @@ fn fix_pending_refs(inlines: &mut Vec<Inline>, labels: &HashMap<String, LabelInf
     for inline in inlines.iter_mut() {
         match inline {
             Inline::Attributed { attributes, children } if attributes.classes.iter().any(|class| class == "tex-ref") => {
-                let Some(label) =
-                    attributes.pairs.iter().find(|pair| pair.key == "data-tex-ref-label").map(|pair| pair.value.clone())
+                let Some(label) = attributes.pairs.iter().find(|pair| pair.key == "data-tex-ref-label").map(|pair| pair.value.clone())
                 else {
                     continue;
                 };
@@ -1583,17 +1521,14 @@ fn fix_pending_refs(inlines: &mut Vec<Inline>, labels: &HashMap<String, LabelInf
                             *target = RelationEndpoint::Node(node);
                         }
                         if let Some(number) = &info.number {
-                            let eqref =
-                                attributes.pairs.iter().any(|pair| pair.key == "data-tex-ref-kind" && pair.value == "eqref");
+                            let eqref = attributes.pairs.iter().any(|pair| pair.key == "data-tex-ref-kind" && pair.value == "eqref");
                             *display = vec![Inline::Text { text: if eqref { format!("({number})") } else { number.clone() } }];
                         }
                     }
                     None => unresolved.push(label),
                 }
             }
-            Inline::Attributed { children, .. } | Inline::Styled { children, .. } => {
-                fix_pending_refs(children, labels, unresolved)
-            }
+            Inline::Attributed { children, .. } | Inline::Styled { children, .. } => fix_pending_refs(children, labels, unresolved),
             Inline::Link { display, .. } => fix_pending_refs(display, labels, unresolved),
             Inline::Image { alt, .. } => fix_pending_refs(alt, labels, unresolved),
             Inline::Note { display, .. } | Inline::Citation { display, .. } => {

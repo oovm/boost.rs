@@ -120,10 +120,8 @@ impl FaceMetrics {
     /// `head` / `hmtx` / `maxp`, is rejected.
     pub fn parse(bytes: &[u8]) -> Result<Self, MetricsError> {
         let mut face = acorn_ttf::FontFace::load(bytes).map_err(|error| MetricsError::Unreadable(error.to_string()))?;
-        let units_per_em =
-            face.head().map(|head| head.units_per_em).ok_or_else(|| MetricsError::Unreadable("missing `head`".to_string()))?;
-        let num_glyphs =
-            face.maxp().map(|maxp| maxp.num_glyphs).ok_or_else(|| MetricsError::Unreadable("missing `maxp`".to_string()))?;
+        let units_per_em = face.head().map(|head| head.units_per_em).ok_or_else(|| MetricsError::Unreadable("missing `head`".to_string()))?;
+        let num_glyphs = face.maxp().map(|maxp| maxp.num_glyphs).ok_or_else(|| MetricsError::Unreadable("missing `maxp`".to_string()))?;
         if face.hmtx().is_none() {
             return Err(MetricsError::Unreadable("missing `hmtx`".to_string()));
         }
@@ -210,9 +208,7 @@ impl BodyMetrics {
     /// exactly as [`Self::from_faces`] does.
     pub fn from_set(set: &BodyFaceSet) -> Self {
         let mut metrics = Self::from_faces(
-            set.faces()
-                .iter()
-                .map(|face| (BodyFaceKey { family: face.family, style: face.style }, face_label(face), face.bytes.as_ref())),
+            set.faces().iter().map(|face| (BodyFaceKey { family: face.family, style: face.style }, face_label(face), face.bytes.as_ref())),
         );
         for face in set.faces() {
             if let BodyFamily::Named(name) = face.family {
@@ -374,8 +370,7 @@ mod tests {
             hmtx.extend_from_slice(&0i16.to_be_bytes());
         }
 
-        let mut entries: Vec<(u16, u16)> =
-            advances.iter().enumerate().map(|(index, (ch, _))| (*ch as u16, index as u16 + 1)).collect();
+        let mut entries: Vec<(u16, u16)> = advances.iter().enumerate().map(|(index, (ch, _))| (*ch as u16, index as u16 + 1)).collect();
         entries.sort_by_key(|(code, _)| *code);
 
         let mut loca = Vec::new();
@@ -383,14 +378,7 @@ mod tests {
             loca.extend_from_slice(&0u16.to_be_bytes());
         }
 
-        assemble(&[
-            (*b"head", head),
-            (*b"hhea", hhea),
-            (*b"maxp", maxp),
-            (*b"hmtx", hmtx),
-            (*b"cmap", cmap_table(&entries)),
-            (*b"loca", loca),
-        ])
+        assemble(&[(*b"head", head), (*b"hhea", hhea), (*b"maxp", maxp), (*b"hmtx", hmtx), (*b"cmap", cmap_table(&entries)), (*b"loca", loca)])
     }
 
     /// Lay tables out into one sfnt with a table directory.
@@ -473,18 +461,8 @@ mod tests {
                 BodyFaceStyle::Regular,
                 synthetic_font(2048, &[('a', 1000), ('b', 1200)]),
             ),
-            BodyFace::new(
-                BodyFamily::Serif,
-                crate::BodyScript::Cjk,
-                BodyFaceStyle::Regular,
-                synthetic_font(1000, &[('同', 1000)]),
-            ),
-            BodyFace::new(
-                BodyFamily::Mono,
-                crate::BodyScript::Latin,
-                BodyFaceStyle::Regular,
-                synthetic_font(2048, &[('i', 1229)]),
-            ),
+            BodyFace::new(BodyFamily::Serif, crate::BodyScript::Cjk, BodyFaceStyle::Regular, synthetic_font(1000, &[('同', 1000)])),
+            BodyFace::new(BodyFamily::Mono, crate::BodyScript::Latin, BodyFaceStyle::Regular, synthetic_font(2048, &[('i', 1229)])),
         ])
         .expect("every face carries a distinct triple")
     }
@@ -499,18 +477,8 @@ mod tests {
                 BodyFaceStyle::Regular,
                 synthetic_font(2048, &[('a', 1000), ('b', 1200)]),
             ),
-            BodyFace::new(
-                BodyFamily::Serif,
-                crate::BodyScript::Cjk,
-                BodyFaceStyle::Regular,
-                synthetic_font(1000, &[('同', 1000)]),
-            ),
-            BodyFace::new(
-                BodyFamily::Mono,
-                crate::BodyScript::Latin,
-                BodyFaceStyle::Regular,
-                synthetic_font(2048, &[('i', 1229)]),
-            ),
+            BodyFace::new(BodyFamily::Serif, crate::BodyScript::Cjk, BodyFaceStyle::Regular, synthetic_font(1000, &[('同', 1000)])),
+            BodyFace::new(BodyFamily::Mono, crate::BodyScript::Latin, BodyFaceStyle::Regular, synthetic_font(2048, &[('i', 1229)])),
             BodyFace::new(
                 BodyFamily::Named("Test Serif"),
                 crate::BodyScript::Latin,
@@ -623,11 +591,7 @@ mod tests {
         assert_eq!(metrics.advance_em(key, 'a'), Some(1500.0 / 2048.0));
         let serif = key_for_run(BodyFamily::Serif, FontStyle::Normal);
         assert_eq!(metrics.advance_em(serif, 'a'), Some(1000.0 / 2048.0));
-        assert_ne!(
-            metrics.advance_em(key, 'a'),
-            metrics.advance_em(serif, 'a'),
-            "the named face must not fold onto the prose face"
-        );
+        assert_ne!(metrics.advance_em(key, 'a'), metrics.advance_em(serif, 'a'), "the named face must not fold onto the prose face");
     }
 
     #[test]
@@ -742,8 +706,7 @@ fn read_gpos_kern(data: &[u8]) -> Result<Option<BTreeMap<(u16, u16), i16>>, Kern
         if index >= lookup_count {
             return Err(KernReadError::Malformed);
         }
-        let lookup =
-            lookup_list + usize::from(u16_at(data, lookup_list + 2 + usize::from(index) * 2).ok_or(KernReadError::Malformed)?);
+        let lookup = lookup_list + usize::from(u16_at(data, lookup_list + 2 + usize::from(index) * 2).ok_or(KernReadError::Malformed)?);
         read_lookup_pairs(data, lookup, &mut pairs)?;
     }
     Ok(Some(pairs))
@@ -776,8 +739,7 @@ fn read_lookup_pairs(data: &[u8], offset: usize, pairs: &mut BTreeMap<(u16, u16)
                 }
                 let inner_type = u16_at(data, subtable + 2).ok_or(KernReadError::Malformed)?;
                 let inner = subtable
-                    + usize::try_from(u32_at(data, subtable + 4).ok_or(KernReadError::Malformed)?)
-                        .map_err(|_| KernReadError::Malformed)?;
+                    + usize::try_from(u32_at(data, subtable + 4).ok_or(KernReadError::Malformed)?).map_err(|_| KernReadError::Malformed)?;
                 if inner_type == 2 {
                     read_pair_pos(data, inner, pairs)?;
                 }
@@ -822,8 +784,7 @@ fn read_pair_pos(data: &[u8], offset: usize, pairs: &mut BTreeMap<(u16, u16), i1
                 adjustment += i32::from(i16_at(data, record + 2 + at).ok_or(KernReadError::Malformed)?);
             }
             if let Some(at) = x_advance2 {
-                adjustment +=
-                    i32::from(i16_at(data, record + 2 + value_record_len(value_format1) + at).ok_or(KernReadError::Malformed)?);
+                adjustment += i32::from(i16_at(data, record + 2 + value_record_len(value_format1) + at).ok_or(KernReadError::Malformed)?);
             }
             if adjustment != 0 {
                 pairs.insert((left, right), i16::try_from(adjustment).map_err(|_| KernReadError::Malformed)?);

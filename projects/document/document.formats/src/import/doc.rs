@@ -41,7 +41,6 @@ pub fn split_doc_paragraphs(text: &str) -> impl Iterator<Item = &str> {
 /// Import a legacy `.doc` file from disk.
 pub fn import_doc(path: impl AsRef<std::path::Path>) -> Result<DocumentGraph, FormatError> {
     let path = path.as_ref();
-    let bytes = std::fs::read(path)
-        .map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
+    let bytes = std::fs::read(path).map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
     import_doc_bytes(&path.display().to_string(), &bytes)
 }

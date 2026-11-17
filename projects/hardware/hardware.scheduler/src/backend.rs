@@ -1,9 +1,11 @@
 use hardware_capability::FeatureSet;
 use hardware_ir::{Graph, TaskNode};
 
-use crate::error::Result;
-use crate::exec::{ExecStream, ExecutionBindings, StreamEventBridge};
-use crate::probe::BackendProbeEvent;
+use crate::{
+    error::Result,
+    exec::{ExecStream, ExecutionBindings, StreamEventBridge},
+    probe::BackendProbeEvent,
+};
 
 /// Maps UCF IR onto a concrete API (CUDA, DX12, Vulkan, CPU, …).
 pub trait Backend: Send + Sync {

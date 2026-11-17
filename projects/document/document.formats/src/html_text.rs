@@ -64,11 +64,8 @@ pub fn project(html: &str) -> HtmlTextProjection {
         }
         let closing = inner.starts_with('/');
         inner = inner.trim_start_matches('/');
-        let name: String = inner
-            .chars()
-            .take_while(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | ':' | '_'))
-            .collect::<String>()
-            .to_ascii_lowercase();
+        let name: String =
+            inner.chars().take_while(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | ':' | '_')).collect::<String>().to_ascii_lowercase();
         if name.is_empty() {
             continue;
         }

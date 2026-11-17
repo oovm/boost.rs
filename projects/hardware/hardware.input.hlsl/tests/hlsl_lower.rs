@@ -109,10 +109,7 @@ void main(uint3 gid : SV_DispatchThreadID) {
     let uniform = &lowered.uniforms[0];
     assert_eq!(uniform.name, "Params");
     assert_eq!(uniform.binding, 0);
-    assert_eq!(uniform.fields, vec![
-        ("scale".to_owned(), Ty::Scalar(ScalarTy::F32)),
-        ("bias".to_owned(), Ty::Scalar(ScalarTy::F32)),
-    ]);
+    assert_eq!(uniform.fields, vec![("scale".to_owned(), Ty::Scalar(ScalarTy::F32)), ("bias".to_owned(), Ty::Scalar(ScalarTy::F32)),]);
 
     let mut interpreter = CpuInterpreter::new();
     interpreter.with_uniform(0, Value::F32(3.0));

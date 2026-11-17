@@ -63,8 +63,7 @@ const CASES: &[(&str, &str, &str)] = &[
 ];
 
 fn layout(source: &str) -> FormulaLayoutResult {
-    let (result, _root, _diagnostics) =
-        layout_formula_source(source, true, 16.0).unwrap_or_else(|e| panic!("failed to lay out {source}: {e}"));
+    let (result, _root, _diagnostics) = layout_formula_source(source, true, 16.0).unwrap_or_else(|e| panic!("failed to lay out {source}: {e}"));
     result
 }
 
@@ -177,10 +176,8 @@ fn parse_svg_viewport(svg: &str, source: &str) -> (f64, f64, f64, f64, f64, f64)
     let attr_w: f64 = attr("width=\"").parse().expect("svg width number");
     let attr_h: f64 = attr("height=\"").parse().expect("svg height number");
     let box_attr = attr("viewBox=\"");
-    let nums: Vec<f64> = box_attr
-        .split_whitespace()
-        .map(|token| token.parse().unwrap_or_else(|_| panic!("{source}: bad viewBox number {token}")))
-        .collect();
+    let nums: Vec<f64> =
+        box_attr.split_whitespace().map(|token| token.parse().unwrap_or_else(|_| panic!("{source}: bad viewBox number {token}"))).collect();
     assert_eq!(nums.len(), 4, "{source}: viewBox carries four numbers, got {box_attr}");
     (nums[0], nums[1], nums[2], nums[3], attr_w, attr_h)
 }

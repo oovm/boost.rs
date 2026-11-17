@@ -90,17 +90,7 @@ impl Instrument {
     /// 是否按 MIDI 音高发声（鼓组忽略音高，只做音色微调）。
     #[must_use]
     pub const fn is_pitched(self) -> bool {
-        matches!(
-            self,
-            Self::Bass
-                | Self::Pluck
-                | Self::Pad
-                | Self::Lead
-                | Self::Bell
-                | Self::Marimba
-                | Self::Keys
-                | Self::Strings
-        )
+        matches!(self, Self::Bass | Self::Pluck | Self::Pad | Self::Lead | Self::Bell | Self::Marimba | Self::Keys | Self::Strings)
     }
 
     /// 打击类的自然尾音长度（秒），用于节奏型里没有显式时值的音符。
@@ -187,10 +177,7 @@ impl InstrumentSpec {
     /// 越界或非有限值为 `invalid_input`。
     pub fn validate(&self) -> Result<(), Error> {
         if !self.duration.is_finite() || !(0.02..=8.0).contains(&self.duration) {
-            return Err(Error::invalid_input(format!(
-                "instrument duration {} must be within 0.02..=8 seconds",
-                self.duration
-            )));
+            return Err(Error::invalid_input(format!("instrument duration {} must be within 0.02..=8 seconds", self.duration)));
         }
         if !(21..=108).contains(&self.note) {
             return Err(Error::invalid_input(format!("instrument note {} must be within 21..=108", self.note)));
@@ -418,10 +405,12 @@ fn poly_blep(t: f32, dt: f32) -> f32 {
     if t < dt {
         let x = t / dt;
         x + x - x * x - 1.0
-    } else if t > 1.0 - dt {
+    }
+    else if t > 1.0 - dt {
         let x = (t - 1.0) / dt;
         x * x + x + x + 1.0
-    } else {
+    }
+    else {
         0.0
     }
 }
@@ -572,8 +561,7 @@ fn keys(spec: &InstrumentSpec, sample_rate: f32, frames: usize, frequency: f32) 
         modulator = (modulator + frequency * 14.0 / sample_rate) % 1.0;
         let mod_signal = (std::f32::consts::TAU * modulator).sin() * index_amount;
         carrier = (carrier + frequency / sample_rate) % 1.0;
-        let tone = (std::f32::consts::TAU * carrier + mod_signal).sin()
-            + (std::f32::consts::TAU * carrier * 2.0).sin() * 0.2;
+        let tone = (std::f32::consts::TAU * carrier + mod_signal).sin() + (std::f32::consts::TAU * carrier * 2.0).sin() * 0.2;
         let envelope = shaped(t, duration, 0.004, 0.12) * (-t * 2.6).exp();
         out.push(tone * envelope * 0.5);
     }
@@ -615,7 +603,9 @@ const fn preset_spec(instrument: Instrument, note: u8, duration: f32, decay: f32
 /// 常用乐器预设目录。
 pub const INSTRUMENT_PRESETS: &[InstrumentPreset] = &[
     InstrumentPreset { name: "kick-808", description: "长尾 808 底鼓", spec: preset_spec(Instrument::Kick, 36, 0.9, 0.85, 0.4, 0.0) },
-    InstrumentPreset { name: "kick-tight", description: "短促的 house 底鼓", spec: preset_spec(Instrument::Kick, 36, 0.32, 0.15, 0.6, 0.0) },
+    InstrumentPreset {
+        name: "kick-tight", description: "短促的 house 底鼓", spec: preset_spec(Instrument::Kick, 36, 0.32, 0.15, 0.6, 0.0)
+    },
     InstrumentPreset { name: "snare-crack", description: "明亮军鼓", spec: preset_spec(Instrument::Snare, 60, 0.3, 0.35, 0.75, 0.0) },
     InstrumentPreset { name: "snare-soft", description: "柔和军鼓", spec: preset_spec(Instrument::Snare, 60, 0.28, 0.6, 0.35, 0.0) },
     InstrumentPreset { name: "clap-wide", description: "宽拍手", spec: preset_spec(Instrument::Clap, 60, 0.4, 0.5, 0.55, 0.0) },
@@ -727,10 +717,7 @@ mod tests {
         spec.gain = 1.5;
         assert_eq!(render_instrument(&spec, 44_100.0).expect_err("gain").code(), "invalid_input");
 
-        assert_eq!(
-            render_instrument(&InstrumentSpec::new(Instrument::Pluck, 60), f32::NAN).expect_err("rate").code(),
-            "invalid_input"
-        );
+        assert_eq!(render_instrument(&InstrumentSpec::new(Instrument::Pluck, 60), f32::NAN).expect_err("rate").code(), "invalid_input");
     }
 
     #[test]

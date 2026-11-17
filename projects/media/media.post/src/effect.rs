@@ -130,17 +130,11 @@ mod tests {
     fn the_stack_applies_front_to_back() {
         let ctx = EffectContext::new(0, TimeBase::from_fps(30));
         let mut frame = Frame::new(2, 2);
-        EffectStack::new()
-            .push(SetChannel { name: "first", value: 10 })
-            .push(SetChannel { name: "second", value: 20 })
-            .apply(&mut frame, &ctx);
+        EffectStack::new().push(SetChannel { name: "first", value: 10 }).push(SetChannel { name: "second", value: 20 }).apply(&mut frame, &ctx);
         assert_eq!(frame.pixels[0], 20, "later effect wins");
 
         let mut frame = Frame::new(2, 2);
-        EffectStack::new()
-            .push(SetChannel { name: "second", value: 20 })
-            .push(SetChannel { name: "first", value: 10 })
-            .apply(&mut frame, &ctx);
+        EffectStack::new().push(SetChannel { name: "second", value: 20 }).push(SetChannel { name: "first", value: 10 }).apply(&mut frame, &ctx);
         assert_eq!(frame.pixels[0], 10, "order is observable");
     }
 

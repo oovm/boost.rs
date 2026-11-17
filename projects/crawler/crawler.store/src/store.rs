@@ -3,9 +3,9 @@ use crawler_types::{CrawlEvent, FetchArtifact, FrontierItem, PageChallengeState}
 use crate::{
     error::Result,
     types::{
-        BrowserSessionRecord, BrowserSnapshotInput, BrowserSnapshotRecord, ChallengePauseRecord, CheckpointView, ClaimToken,
-        ObjectKind, ObjectRef, PageAssetBinding, PagePhase, PageTxHandle, ReleaseOutcome, ResumeState, RunHandle, RunSpec,
-        StoreConfig, StoreDiagnosticReport,
+        BrowserSessionRecord, BrowserSnapshotInput, BrowserSnapshotRecord, ChallengePauseRecord, CheckpointView, ClaimToken, ObjectKind,
+        ObjectRef, PageAssetBinding, PagePhase, PageTxHandle, ReleaseOutcome, ResumeState, RunHandle, RunSpec, StoreConfig,
+        StoreDiagnosticReport,
     },
 };
 
@@ -146,12 +146,7 @@ pub trait Store {
     fn get_browser_snapshot(&self, snapshot_key: &str) -> Result<Option<BrowserSnapshotRecord>>;
 
     /// Record a challenge pause in the active run state and append its report event.
-    fn record_challenge_pause(
-        &mut self,
-        item_id: &str,
-        page_url: &str,
-        state: PageChallengeState,
-    ) -> Result<ChallengePauseRecord>;
+    fn record_challenge_pause(&mut self, item_id: &str, page_url: &str, state: PageChallengeState) -> Result<ChallengePauseRecord>;
 
     /// Read the challenge pause recorded for one frontier item.
     fn challenge_pause(&self, item_id: &str) -> Result<Option<ChallengePauseRecord>>;

@@ -12,8 +12,7 @@ pub fn inspect_snapshot(
     stage: InspectStage,
     budget: ExtractBudget,
 ) -> crawler_types::InspectReport {
-    let mut report =
-        crawler_extract::inspect_artifact(&crawler_browser::snapshot_to_fetch_artifact(snapshot), extractors, stage, budget);
+    let mut report = crawler_extract::inspect_artifact(&crawler_browser::snapshot_to_fetch_artifact(snapshot), extractors, stage, budget);
     report.challenge_state = Some(snapshot.challenge_state);
     report.challenge_outcome = Some(apply_challenge_policy(snapshot.challenge_state, policy));
     report

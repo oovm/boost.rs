@@ -143,8 +143,7 @@ impl CrawlRequest {
                 pd::code(pd::REQUEST_INVALID),
                 DiagnosticSeverity::Error,
                 pd::origin_fetch(),
-                Message::new("crawler.diagnostic.seedsEmpty")
-                    .with_fallback("at least one seed URL is required to build a CrawlRequest"),
+                Message::new("crawler.diagnostic.seedsEmpty").with_fallback("at least one seed URL is required to build a CrawlRequest"),
             );
             return Err(CrawlError::from(diag));
         }

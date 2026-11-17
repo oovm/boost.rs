@@ -35,29 +35,13 @@ impl Particles {
     /// Slow upward motes: size 0.0035, speed 0.05, drift 0.02, twinkle 0.6.
     #[must_use]
     pub fn dust(count: u32, seed: u32, color: Rgba) -> Self {
-        Self {
-            count,
-            seed,
-            color,
-            size: 0.0035,
-            speed: 0.05,
-            drift: 0.02,
-            twinkle: 0.6,
-        }
+        Self { count, seed, color, size: 0.0035, speed: 0.05, drift: 0.02, twinkle: 0.6 }
     }
 
     /// Fast rising embers: size 0.0025, speed -0.18, drift 0.04, twinkle 0.85.
     #[must_use]
     pub fn sparks(count: u32, seed: u32, color: Rgba) -> Self {
-        Self {
-            count,
-            seed,
-            color,
-            size: 0.0025,
-            speed: -0.18,
-            drift: 0.04,
-            twinkle: 0.85,
-        }
+        Self { count, seed, color, size: 0.0025, speed: -0.18, drift: 0.04, twinkle: 0.85 }
     }
 
     /// Stamps every particle at its position for `seconds`, additively.
@@ -74,10 +58,7 @@ impl Particles {
             let x = (u * width + (seconds * self.drift + phase).sin() * width * 0.01).rem_euclid(width);
             let travel = seconds * self.speed * (0.4 + v);
             let y = (v * height + travel * height).rem_euclid(height);
-            let blink = 0.55
-                + 0.45
-                    * (seconds * (0.6 + v) * 6.28 + phase).sin()
-                    * self.twinkle.clamp(0.0, 1.0);
+            let blink = 0.55 + 0.45 * (seconds * (0.6 + v) * 6.28 + phase).sin() * self.twinkle.clamp(0.0, 1.0);
             stamp(frame, x, y, radius, self.color, blink.clamp(0.0, 1.0));
         }
     }
@@ -100,14 +81,7 @@ impl Beams {
     /// Default stage: origin `[0.5, 0.28]`, strength 0.35, sway 6°.
     #[must_use]
     pub fn new(count: u32, seed: u32, color: Rgba) -> Self {
-        Self {
-            count,
-            seed,
-            color,
-            origin: [0.5, 0.28],
-            strength: 0.35,
-            sway: 6.0,
-        }
+        Self { count, seed, color, origin: [0.5, 0.28], strength: 0.35, sway: 6.0 }
     }
 
     /// Marches every wedge from the origin for `seconds`, additively.

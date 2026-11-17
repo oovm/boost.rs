@@ -101,9 +101,5 @@ pub fn fingerprint(bytes: &[u8]) -> String {
 }
 
 fn asset_loss(code: &str, source: &str, message: impl Into<String>) -> LossMarker {
-    LossMarker {
-        code: format!("crawler.asset.{code}"),
-        message: format!("{source}: {}", message.into()),
-        status: SemanticStatus::Partial,
-    }
+    LossMarker { code: format!("crawler.asset.{code}"), message: format!("{source}: {}", message.into()), status: SemanticStatus::Partial }
 }

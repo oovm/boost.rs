@@ -5,8 +5,8 @@ mod stmt;
 mod stmt_head;
 
 use crate::{
-    IrDocument, Language, NativeKind, NativeNode, NativeTemplate, TemplateConfig, default_language, diagnostic::codes,
-    encode_native, types::Span,
+    IrDocument, Language, NativeKind, NativeNode, NativeTemplate, TemplateConfig, default_language, diagnostic::codes, encode_native,
+    types::Span,
 };
 use expr::parse_expr;
 use stmt_head::{CodeHead, classify_code, head_stop_kind};
@@ -168,10 +168,9 @@ impl<'a> Parser<'a> {
                 NativeKind::Partial { .. } | NativeKind::Comment(_) => {}
                 NativeKind::Text(value) if value.trim().is_empty() => {}
                 _ => {
-                    return Err(self.partial_layout_error(
-                        child,
-                        "`partial` must wrap the whole template; other top-level content is not allowed",
-                    ));
+                    return Err(
+                        self.partial_layout_error(child, "`partial` must wrap the whole template; other top-level content is not allowed")
+                    );
                 }
             }
         }
@@ -312,15 +311,8 @@ impl<'a> Parser<'a> {
     pub(crate) fn scan_tag(&self, i: usize) -> Result<TagScan, ParseError> {
         let ds = &self.delimiters;
         if !self.source[i..].starts_with(&ds.code_start) {
-            return Err(ParseError::at(
-                self.source,
-                self.file,
-                i,
-                1,
-                format!("expected code open `{}`", ds.code_start),
-                "here",
-            )
-            .with_code(codes::PARSE_UNEXPECTED_TOKEN));
+            return Err(ParseError::at(self.source, self.file, i, 1, format!("expected code open `{}`", ds.code_start), "here")
+                .with_code(codes::PARSE_UNEXPECTED_TOKEN));
         }
         let start_len = ds.code_start_len();
         let end_len = ds.code_end_len();
@@ -336,8 +328,7 @@ impl<'a> Parser<'a> {
         }
         let rest = &self.source[j..];
         let end = rest.find(&ds.code_end).ok_or_else(|| {
-            ParseError::at(self.source, self.file, i, start_len, "unclosed code block", "opens here")
-                .with_code(codes::PARSE_UNCLOSED_BLOCK)
+            ParseError::at(self.source, self.file, i, start_len, "unclosed code block", "opens here").with_code(codes::PARSE_UNCLOSED_BLOCK)
         })?;
         // Closing marker: the byte right before the close delimiter.
         let mut inner_end = j + end;
@@ -443,10 +434,7 @@ impl<'a> Parser<'a> {
                 let open = i;
                 let after_open = i + cs_len;
                 // `<%!` escapes the code open delimiter as literal text.
-                if after_open < self.source.len()
-                    && TrimMode::from_byte(bytes[after_open]).is_none()
-                    && bytes[after_open] == b'!'
-                {
+                if after_open < self.source.len() && TrimMode::from_byte(bytes[after_open]).is_none() && bytes[after_open] == b'!' {
                     push_text(&mut children, cs.clone(), i, after_open + 1, &mut pending);
                     i = after_open + 1;
                     continue;
@@ -478,15 +466,8 @@ impl<'a> Parser<'a> {
                         if sa_right {
                             pending.extend_from_slice(&STANDALONE_RIGHT);
                         }
-                        let (node, new_i, after) = self.parse_if(
-                            open,
-                            next_i,
-                            test_src,
-                            test_base,
-                            tag.trim_left,
-                            tag.trim_right,
-                            std::mem::take(&mut pending),
-                        )?;
+                        let (node, new_i, after) =
+                            self.parse_if(open, next_i, test_src, test_base, tag.trim_left, tag.trim_right, std::mem::take(&mut pending))?;
                         pending = after;
                         children.push(node);
                         i = new_i;
@@ -595,16 +576,8 @@ impl<'a> Parser<'a> {
                         if sa_right {
                             pending.extend_from_slice(&STANDALONE_RIGHT);
                         }
-                        let (node, new_i, after) = self.parse_call(
-                            open,
-                            next_i,
-                            src,
-                            base,
-                            params,
-                            tag.trim_left,
-                            tag.trim_right,
-                            std::mem::take(&mut pending),
-                        )?;
+                        let (node, new_i, after) =
+                            self.parse_call(open, next_i, src, base, params, tag.trim_left, tag.trim_right, std::mem::take(&mut pending))?;
                         pending = after;
                         children.push(node);
                         i = new_i;

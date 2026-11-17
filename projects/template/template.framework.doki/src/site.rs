@@ -147,10 +147,7 @@ impl SiteModel {
                         diagnostics.push(Diagnostic {
                             code: ROUTE_CONFLICT_CODE.into(),
                             severity: Severity::Error,
-                            message: format!(
-                                "content `{}` and `{}` both map to route `{route}`",
-                                previous.rel_path, node.rel_path
-                            ),
+                            message: format!("content `{}` and `{}` both map to route `{route}`", previous.rel_path, node.rel_path),
                             file: Some(node.rel_path.clone()),
                             help: Some("give one of the contents a distinct path or remove the other".into()),
                             plugin: None,
@@ -180,8 +177,7 @@ impl SiteModel {
         }
 
         let mut taxonomies = BTreeMap::new();
-        let content_len =
-            derive_tag_taxonomies(&mut pages, &mut by_route, &mut taxonomies, include_drafts, default_locale, &mut diagnostics);
+        let content_len = derive_tag_taxonomies(&mut pages, &mut by_route, &mut taxonomies, include_drafts, default_locale, &mut diagnostics);
 
         (Self { pages, by_rel, by_route, taxonomies, content_len }, diagnostics)
     }
@@ -308,8 +304,7 @@ fn derive_tag_taxonomies(
     }
 
     // Member ordering mirrors `site.posts` (date desc, then route asc).
-    let mut ordered: Vec<usize> =
-        members.values().flat_map(|ids| ids.iter().copied()).collect::<BTreeSet<_>>().into_iter().collect();
+    let mut ordered: Vec<usize> = members.values().flat_map(|ids| ids.iter().copied()).collect::<BTreeSet<_>>().into_iter().collect();
     ordered.sort_by(|&a, &b| pages[b].date.cmp(&pages[a].date).then_with(|| pages[a].route.cmp(&pages[b].route)));
     let ranks: BTreeMap<usize, usize> = ordered.into_iter().enumerate().map(|(rank, index)| (index, rank)).collect();
     for ids in members.values_mut() {
@@ -461,9 +456,7 @@ fn resolve_locale(node: &ContentNode, default_locale: &str, diagnostics: &mut Ve
         severity: Severity::Warning,
         message: format!("content `{}` declares invalid front matter `lang` `{raw}`", node.rel_path),
         file: Some(node.rel_path.clone()),
-        help: Some(
-            "use a BCP-47 style locale id such as `en`, `zh` or `zh-CN`; the page falls back to the site default locale".into(),
-        ),
+        help: Some("use a BCP-47 style locale id such as `en`, `zh` or `zh-CN`; the page falls back to the site default locale".into()),
         plugin: None,
         phase: None,
     });
@@ -594,12 +587,7 @@ mod tests {
     fn tagged_post(rel: &str, date: &str, tags: &[&str], draft: bool) -> ContentNode {
         node(
             rel,
-            FrontMatter {
-                date: Some(date.into()),
-                draft,
-                tags: tags.iter().map(|tag| (*tag).to_string()).collect(),
-                ..FrontMatter::default()
-            },
+            FrontMatter { date: Some(date.into()), draft, tags: tags.iter().map(|tag| (*tag).to_string()).collect(), ..FrontMatter::default() },
         )
     }
 
@@ -625,23 +613,14 @@ mod tests {
         assert_eq!(model.page("notes/deep.md").unwrap().page_type, PageType::Page);
         assert_eq!(model.page("posts/2025-06-15-welcome.md").unwrap().page_type, PageType::Post);
         assert_eq!(model.page("posts/index.md").unwrap().page_type, PageType::Post);
-        assert_eq!(
-            model.page("guides/hello.md").unwrap().page_type,
-            PageType::Post,
-            "`layout: post` promotes before the directory rule"
-        );
-        assert_eq!(
-            model.page("posts/override.md").unwrap().page_type,
-            PageType::Page,
-            "front matter `type` wins over the directory rule"
-        );
+        assert_eq!(model.page("guides/hello.md").unwrap().page_type, PageType::Post, "`layout: post` promotes before the directory rule");
+        assert_eq!(model.page("posts/override.md").unwrap().page_type, PageType::Page, "front matter `type` wins over the directory rule");
         assert_eq!(model.page("about-home.md").unwrap().page_type, PageType::Home);
     }
 
     #[test]
     fn unknown_type_reports_a_diagnostic_without_guessing() {
-        let (model, diagnostics) =
-            SiteModel::build(&graph(vec![typed("about.md", "article"), typed("posts/a.md", "blog")]), false, "en");
+        let (model, diagnostics) = SiteModel::build(&graph(vec![typed("about.md", "article"), typed("posts/a.md", "blog")]), false, "en");
         assert_eq!(diagnostics.len(), 2, "{diagnostics:?}");
         assert!(diagnostics.iter().all(|d| d.code == INVALID_TYPE_CODE && d.severity == Severity::Warning));
         assert!(diagnostics[0].message.contains("article"));
@@ -674,8 +653,7 @@ mod tests {
 
     #[test]
     fn route_collisions_report_both_ids_and_leave_the_route_ambiguous() {
-        let (model, diagnostics) =
-            SiteModel::build(&graph(vec![plain("posts/hello.md"), plain("posts/2025-06-15-hello.md")]), false, "en");
+        let (model, diagnostics) = SiteModel::build(&graph(vec![plain("posts/hello.md"), plain("posts/2025-06-15-hello.md")]), false, "en");
         assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
         let conflict = &diagnostics[0];
         assert_eq!(conflict.code, ROUTE_CONFLICT_CODE);
@@ -724,28 +702,16 @@ mod tests {
             plain("posts/2025-06-15-welcome-to-fate.md"),
             plain("posts/2025-10-20-building-a-theme.md"),
         ]);
-        assert_eq!(
-            model.resolve_link("posts/welcome-to-fate/", "index.md").as_deref(),
-            Some("/pages/posts/2025-06-15-welcome-to-fate.html")
-        );
+        assert_eq!(model.resolve_link("posts/welcome-to-fate/", "index.md").as_deref(), Some("/pages/posts/2025-06-15-welcome-to-fate.html"));
         assert_eq!(model.resolve_link("about/", "index.md").as_deref(), Some("/pages/about.html"));
-        assert_eq!(
-            model.resolve_link("/gallery/", "posts/2025-06-15-welcome-to-fate.md").as_deref(),
-            Some("/pages/gallery.html")
-        );
+        assert_eq!(model.resolve_link("/gallery/", "posts/2025-06-15-welcome-to-fate.md").as_deref(), Some("/pages/gallery.html"));
         assert_eq!(model.resolve_link("/", "tags.md").as_deref(), Some("/pages/index.html"));
-        assert_eq!(
-            model.resolve_link("../about/", "posts/2025-06-15-welcome-to-fate.md").as_deref(),
-            Some("/pages/about.html")
-        );
+        assert_eq!(model.resolve_link("../about/", "posts/2025-06-15-welcome-to-fate.md").as_deref(), Some("/pages/about.html"));
         assert_eq!(
             model.resolve_link("./building-a-theme/", "posts/2025-06-15-welcome-to-fate.md").as_deref(),
             Some("/pages/posts/2025-10-20-building-a-theme.html")
         );
-        assert_eq!(
-            model.resolve_link("posts/welcome-to-fate", "index.md").as_deref(),
-            Some("/pages/posts/2025-06-15-welcome-to-fate.html")
-        );
+        assert_eq!(model.resolve_link("posts/welcome-to-fate", "index.md").as_deref(), Some("/pages/posts/2025-06-15-welcome-to-fate.html"));
     }
 
     #[test]
@@ -777,11 +743,7 @@ mod tests {
             assert_eq!(model.resolve_link(href, "index.md"), None, "`{href}` must stay verbatim");
         }
         assert_eq!(model.resolve_link("about/#team", "index.md").as_deref(), Some("/pages/about.html#team"));
-        assert_eq!(
-            model.resolve_link("/gallery/?size=lg", "index.md"),
-            None,
-            "unknown routes keep their query suffix untouched"
-        );
+        assert_eq!(model.resolve_link("/gallery/?size=lg", "index.md"), None, "unknown routes keep their query suffix untouched");
     }
 
     #[test]
@@ -853,14 +815,7 @@ mod tests {
         let ids: Vec<&str> = model.pages().iter().map(|p| p.id.0.as_str()).collect();
         assert_eq!(
             ids,
-            [
-                "about.md",
-                "posts/2025-06-15-a.md",
-                "posts/2025-10-20-b.md",
-                TAGS_INDEX_ID,
-                "taxonomy:tag/meta",
-                "taxonomy:tag/技术",
-            ],
+            ["about.md", "posts/2025-06-15-a.md", "posts/2025-10-20-b.md", TAGS_INDEX_ID, "taxonomy:tag/meta", "taxonomy:tag/技术",],
             "content pages first, then the index and tag pages by slug"
         );
         assert_eq!(model.content_pages().len(), 3);
@@ -891,11 +846,7 @@ mod tests {
     #[test]
     fn content_wins_taxonomy_routes_and_skips_aggregates_with_warnings() {
         let (model, diagnostics) = SiteModel::build(
-            &graph(vec![
-                plain("tags.md"),
-                plain("tags/meta.md"),
-                tagged_post("posts/2025-06-15-a.md", "2025-06-15", &["Meta"], false),
-            ]),
+            &graph(vec![plain("tags.md"), plain("tags/meta.md"), tagged_post("posts/2025-06-15-a.md", "2025-06-15", &["Meta"], false)]),
             false,
             "en",
         );
@@ -956,12 +907,7 @@ mod tests {
     #[test]
     fn non_default_locales_prefix_the_route_and_default_stays_unprefixed() {
         let (model, diagnostics) = SiteModel::build(
-            &graph(vec![
-                plain("index.md"),
-                localized("blog/index.md", "zh-CN"),
-                localized("about.md", "zh-CN"),
-                plain("about.en.md"),
-            ]),
+            &graph(vec![plain("index.md"), localized("blog/index.md", "zh-CN"), localized("about.md", "zh-CN"), plain("about.en.md")]),
             false,
             "en",
         );
@@ -985,17 +931,12 @@ mod tests {
             Some("/pages/about.html"),
             "locale-prefixed routes resolve like any authored route"
         );
-        assert_eq!(
-            model.page("blog/index.md").unwrap().output,
-            "pages/blog/index.html",
-            "output and url keep following the content path"
-        );
+        assert_eq!(model.page("blog/index.md").unwrap().output, "pages/blog/index.html", "output and url keep following the content path");
     }
 
     #[test]
     fn prefixed_locale_routes_conflict_like_any_other_routes() {
-        let (model, diagnostics) =
-            SiteModel::build(&graph(vec![plain("zh-CN/about.md"), localized("about.md", "zh-CN")]), false, "en");
+        let (model, diagnostics) = SiteModel::build(&graph(vec![plain("zh-CN/about.md"), localized("about.md", "zh-CN")]), false, "en");
         assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
         let conflict = &diagnostics[0];
         assert_eq!(conflict.code, ROUTE_CONFLICT_CODE);
@@ -1055,11 +996,8 @@ mod tests {
 
     #[test]
     fn sites_without_tagged_posts_get_no_taxonomy_pages() {
-        let (model, diagnostics) = SiteModel::build(
-            &graph(vec![plain("index.md"), plain("about.md"), plain("posts/2025-06-15-untagged.md")]),
-            false,
-            "en",
-        );
+        let (model, diagnostics) =
+            SiteModel::build(&graph(vec![plain("index.md"), plain("about.md"), plain("posts/2025-06-15-untagged.md")]), false, "en");
         assert!(diagnostics.is_empty(), "{diagnostics:?}");
         assert_eq!(model.pages().len(), 3);
         assert_eq!(model.content_pages().len(), 3);

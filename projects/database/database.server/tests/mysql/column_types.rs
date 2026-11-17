@@ -234,7 +234,10 @@ fn date_and_datetime_columns_report_their_own_mysql_type_codes() {
     let (columns, rows) = result_set(&mut client, "SELECT id, d, dt FROM truth_types ORDER BY id");
     assert_eq!(column_names(&columns), vec!["id", "d", "dt"]);
     assert_eq!(column_types(&columns), vec![MYSQL_TYPE_LONG, MYSQL_TYPE_DATE, MYSQL_TYPE_DATETIME]);
-    assert_eq!(rows, vec![vec![Some("1".into()), Some("2024-01-02".into()), Some("2024-01-02 03:04:05".into())], vec![Some("2".into()), None, None]]);
+    assert_eq!(
+        rows,
+        vec![vec![Some("1".into()), Some("2024-01-02".into()), Some("2024-01-02 03:04:05".into())], vec![Some("2".into()), None, None]]
+    );
 
     // 日期谓词按文本比较命中写入的行。
     let (_, rows) = result_set(&mut client, "SELECT id FROM truth_types WHERE d = '2024-01-02'");
@@ -349,7 +352,10 @@ fn exact_aggregates_and_decimal_columns_report_newdecimal_text() {
     // truth.json `aggregates` 场景：整数列 SUM 上报 NEWDECIMAL、值为十进制文本。
     let (mut client, directory) = connect_gateway("aggregates");
     affected(&mut client, "CREATE TABLE truth_agg (id INT NOT NULL PRIMARY KEY, team INT, score INT)");
-    assert_eq!(affected(&mut client, "INSERT INTO truth_agg VALUES (1, 1, 10), (2, 1, 20), (3, 2, 30), (4, 2, NULL), (5, NULL, 20), (6, 3, NULL)"), 6);
+    assert_eq!(
+        affected(&mut client, "INSERT INTO truth_agg VALUES (1, 1, 10), (2, 1, 20), (3, 2, 30), (4, 2, NULL), (5, NULL, 20), (6, 3, NULL)"),
+        6
+    );
 
     let (columns, rows) = result_set(&mut client, "SELECT SUM(score) AS s, MIN(score) AS mi, MAX(score) AS ma FROM truth_agg");
     assert_eq!(column_names(&columns), vec!["s", "mi", "ma"]);

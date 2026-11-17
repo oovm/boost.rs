@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::stmt::Stmt;
-use crate::types::Ty;
+use crate::{stmt::Stmt, types::Ty};
 
 /// 单函数定义。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

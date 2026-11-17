@@ -5,7 +5,7 @@
 
 use database_client::pgsql::{Cell, Param, TypedQueryResult};
 use database_query::ir::{CmpOp, LiteralKind, PhysicalOp, PhysicalPlan, Pred, ProjectField, StringMatchOp, WriteField};
-use odm_types::{is_date, is_decimal, is_time, is_utc_datetime, hex_to_bytes, Row, RowWrite, Value};
+use odm_types::{Row, RowWrite, Value, hex_to_bytes, is_date, is_decimal, is_time, is_utc_datetime};
 
 use crate::{Error, Result};
 
@@ -144,8 +144,7 @@ fn execute_write_plan(session: &mut Session, plan: &PhysicalPlan) -> Result<Vec<
 pub(crate) fn insert_row(session: &mut Session, write: &RowWrite) -> Result<()> {
     let mut bindings = Bindings::default();
     let cols: Vec<String> = write.fields.keys().map(|name| format!("\"{name}\"")).collect();
-    let placeholders: Vec<String> =
-        write.fields.values().map(|value| value_to_binding(value, &mut bindings)).collect::<Result<Vec<_>>>()?;
+    let placeholders: Vec<String> = write.fields.values().map(|value| value_to_binding(value, &mut bindings)).collect::<Result<Vec<_>>>()?;
     let sql = format!("INSERT INTO \"{}\" ({}) VALUES ({})", write.table, cols.join(", "), placeholders.join(", "));
     let params = bindings.as_params();
     session.execute_with_params(&sql, &params).map_err(Error::Wire)?;
@@ -212,7 +211,12 @@ fn decode_cell(cell: Cell, type_oid: u32) -> Result<Value> {
             if value.is_finite() { Ok(Value::Float(value)) } else { Err(Error::Policy("PostgreSQL returned a non-finite float".into())) }
         }
         OID_NUMERIC => {
-            if is_decimal(&text) { Ok(Value::Decimal(text.into_owned())) } else { Err(Error::Policy(format!("PostgreSQL returned `{text}` for a numeric column"))) }
+            if is_decimal(&text) {
+                Ok(Value::Decimal(text.into_owned()))
+            }
+            else {
+                Err(Error::Policy(format!("PostgreSQL returned `{text}` for a numeric column")))
+            }
         }
         OID_BYTEA => match text.strip_prefix("\\x").and_then(hex_to_bytes) {
             Some(octets) => Ok(Value::Bytes(octets)),
@@ -307,7 +311,12 @@ fn literal_to_binding(text: &str, kind: LiteralKind, bindings: &mut Bindings) ->
             "false" => Ok(bindings.text(Some("false"))),
             other => Err(Error::Policy(format!("`{other}` is not a boolean literal"))),
         },
-        LiteralKind::Int | LiteralKind::UInt | LiteralKind::Decimal | LiteralKind::Date | LiteralKind::Time | LiteralKind::DateTime
+        LiteralKind::Int
+        | LiteralKind::UInt
+        | LiteralKind::Decimal
+        | LiteralKind::Date
+        | LiteralKind::Time
+        | LiteralKind::DateTime
         | LiteralKind::Str => Ok(bindings.text(Some(text))),
         LiteralKind::Float => match text.parse::<f64>() {
             Ok(value) if value.is_finite() => Ok(bindings.text(Some(text))),

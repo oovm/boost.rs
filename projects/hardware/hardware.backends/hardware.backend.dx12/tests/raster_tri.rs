@@ -2,20 +2,14 @@ use std::collections::BTreeMap;
 
 use hardware_backend_dx12::Dx12Backend;
 use hardware_ir::{
-    Access, DepEdge, DepKind, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph,
-    ResourceId, ResourceKind, ResourceNode, ShaderId, TaskGraph, TaskId, TaskKind, TaskNode,
+    Access, DepEdge, DepKind, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph, ResourceId, ResourceKind, ResourceNode, ShaderId,
+    TaskGraph, TaskId, TaskKind, TaskNode,
 };
 use hardware_scheduler::Backend;
 use hardware_types::ResourceId as Rid;
 
 fn buffer(id: u64, bytes: u64) -> ResourceNode {
-    ResourceNode {
-        id: ResourceId(id),
-        kind: ResourceKind::Buffer,
-        domain: Domain::Vram,
-        access: Access::ReadWrite,
-        byte_size: Some(bytes),
-    }
+    ResourceNode { id: ResourceId(id), kind: ResourceKind::Buffer, domain: Domain::Vram, access: Access::ReadWrite, byte_size: Some(bytes) }
 }
 
 fn task(id: u64, kind: TaskKind, params: BTreeMap<String, ParamValue>) -> TaskNode {
@@ -52,9 +46,7 @@ fn dx12_raster_triangle_paints_center_yellow() {
     let width = 32i64;
     let height = 32i64;
     let graph = Graph {
-        resources: ResourceGraph {
-            nodes: vec![buffer(1, (width * height * 4) as u64)],
-        },
+        resources: ResourceGraph { nodes: vec![buffer(1, (width * height * 4) as u64)] },
         tasks: TaskGraph {
             nodes: vec![task(
                 10,
@@ -70,12 +62,7 @@ fn dx12_raster_triangle_paints_center_yellow() {
                     s("draw", "tri"),
                 ]),
             )],
-            edges: vec![DepEdge {
-                from_task: None,
-                from_resource: Some(ResourceId(1)),
-                to_task: TaskId(10),
-                kind: DepKind::Data,
-            }],
+            edges: vec![DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data }],
         },
     };
 

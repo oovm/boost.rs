@@ -8,8 +8,7 @@ mod eval;
 mod parse;
 
 use template::{
-    RenderBudget, RenderOutput, RenderRequest, TemplateCapability, TemplateContentKind, TemplateEngine, TemplateError,
-    TemplateStatus,
+    RenderBudget, RenderOutput, RenderRequest, TemplateCapability, TemplateContentKind, TemplateEngine, TemplateError, TemplateStatus,
 };
 
 /// Jinja2 syntax subset engine.

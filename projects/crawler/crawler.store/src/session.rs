@@ -11,9 +11,8 @@ use crate::{
     error::{Result, StoreError},
     keyspace::{item_id_from_url, run_id_from_seed},
     types::{
-        BrowserSessionRecord, BrowserSnapshotInput, BrowserSnapshotRecord, ChallengePauseRecord, CheckpointClaim,
-        CheckpointView, ClaimToken, ObjectKind, ObjectRef, PageAssetBinding, PagePhase, PageTxHandle, ReleaseOutcome,
-        ResumeState, RunHandle, RunSpec,
+        BrowserSessionRecord, BrowserSnapshotInput, BrowserSnapshotRecord, ChallengePauseRecord, CheckpointClaim, CheckpointView, ClaimToken,
+        ObjectKind, ObjectRef, PageAssetBinding, PagePhase, PageTxHandle, ReleaseOutcome, ResumeState, RunHandle, RunSpec,
     },
 };
 
@@ -205,11 +204,8 @@ impl StoreSession {
         if let Some(run_id) = &self.active_run_id {
             if let Some(run) = self.runs.get(run_id) {
                 if let Some((item_id, claim)) = run.claims.iter().next() {
-                    self.last_claim = Some(ClaimToken {
-                        item_id: item_id.clone(),
-                        worker_id: claim.worker_id.clone(),
-                        fencing_token: claim.fencing_token,
-                    });
+                    self.last_claim =
+                        Some(ClaimToken { item_id: item_id.clone(), worker_id: claim.worker_id.clone(), fencing_token: claim.fencing_token });
                 }
             }
         }
@@ -307,11 +303,8 @@ impl StoreSession {
             if let Some(claim) = run.claims.get(item_id) {
                 if claim.lease_until_ms > now {
                     if claim.worker_id == worker_id {
-                        let token = ClaimToken {
-                            item_id: item_id.clone(),
-                            worker_id: worker_id.to_owned(),
-                            fencing_token: claim.fencing_token,
-                        };
+                        let token =
+                            ClaimToken { item_id: item_id.clone(), worker_id: worker_id.to_owned(), fencing_token: claim.fencing_token };
                         self.last_claim = Some(token.clone());
                         return Ok(Some(token));
                     }
@@ -320,15 +313,10 @@ impl StoreSession {
                 // Expired claims are reclaimable with a fresh fencing token.
             }
             run.next_fencing += 1;
-            let token =
-                ClaimToken { item_id: item_id.clone(), worker_id: worker_id.to_owned(), fencing_token: run.next_fencing };
+            let token = ClaimToken { item_id: item_id.clone(), worker_id: worker_id.to_owned(), fencing_token: run.next_fencing };
             run.claims.insert(
                 item_id.clone(),
-                ClaimRecord {
-                    worker_id: worker_id.to_owned(),
-                    fencing_token: run.next_fencing,
-                    lease_until_ms: now + lease_millis,
-                },
+                ClaimRecord { worker_id: worker_id.to_owned(), fencing_token: run.next_fencing, lease_until_ms: now + lease_millis },
             );
             self.last_claim = Some(token.clone());
             self.persist_snapshot();
@@ -339,8 +327,7 @@ impl StoreSession {
 
     pub(crate) fn second_worker_claim(&mut self, worker_id: &str) -> Result<()> {
         let run = self.active_run()?;
-        let item_id =
-            run.claims.keys().next().cloned().ok_or_else(|| StoreError::StoreInvalidState("no claimed item".into()))?;
+        let item_id = run.claims.keys().next().cloned().ok_or_else(|| StoreError::StoreInvalidState("no claimed item".into()))?;
         self.last_claim = Some(ClaimToken { item_id, worker_id: worker_id.to_owned(), fencing_token: 0 });
         Ok(())
     }
@@ -428,8 +415,7 @@ impl StoreSession {
 
     pub(crate) fn page_tx_put_fetch(&mut self, fixture: &str, bytes: &[u8]) -> Result<()> {
         let reference = self.insert_object(ObjectKind::ResponseBody, None, bytes)?;
-        let page_id =
-            self.active_page_tx.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no page tx".into()))?.page_id.clone();
+        let page_id = self.active_page_tx.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no page tx".into()))?.page_id.clone();
         let run = self.active_run_mut()?;
         let page = run.pages.get_mut(&page_id).ok_or_else(|| StoreError::StoreNotFound(page_id.clone()))?;
         page.fetch_fixture = Some(fixture.to_owned());
@@ -441,8 +427,7 @@ impl StoreSession {
 
     pub(crate) fn page_tx_put_ir(&mut self, fixture: &str, bytes: &[u8]) -> Result<()> {
         let reference = self.insert_object(ObjectKind::IrPackage, None, bytes)?;
-        let page_id =
-            self.active_page_tx.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no page tx".into()))?.page_id.clone();
+        let page_id = self.active_page_tx.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no page tx".into()))?.page_id.clone();
         let run = self.active_run_mut()?;
         let page = run.pages.get_mut(&page_id).ok_or_else(|| StoreError::StoreNotFound(page_id.clone()))?;
         page.ir_fixture = Some(fixture.to_owned());
@@ -454,8 +439,7 @@ impl StoreSession {
 
     pub(crate) fn page_tx_bind_asset(&mut self, binding: &PageAssetBinding) -> Result<()> {
         let reference = self.insert_object(ObjectKind::AssetBytes, binding.media_type.as_deref(), &binding.bytes)?;
-        let page_id =
-            self.active_page_tx.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no page tx".into()))?.page_id.clone();
+        let page_id = self.active_page_tx.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no page tx".into()))?.page_id.clone();
         let run = self.active_run_mut()?;
         let page = run.pages.get_mut(&page_id).ok_or_else(|| StoreError::StoreNotFound(page_id.clone()))?;
         page.asset_refs.push(reference);
@@ -465,8 +449,7 @@ impl StoreSession {
     }
 
     pub(crate) fn page_tx_admit_links(&mut self, items: Vec<FrontierItem>) -> Result<()> {
-        let page_id =
-            self.active_page_tx.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no page tx".into()))?.page_id.clone();
+        let page_id = self.active_page_tx.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no page tx".into()))?.page_id.clone();
         let run = self.active_run_mut()?;
         let page = run.pages.get_mut(&page_id).ok_or_else(|| StoreError::StoreNotFound(page_id.clone()))?;
         page.admitted_links.extend(items);
@@ -474,8 +457,7 @@ impl StoreSession {
     }
 
     pub(crate) fn page_tx_put_event(&mut self, event: &CrawlEvent) -> Result<()> {
-        let page_id =
-            self.active_page_tx.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no page tx".into()))?.page_id.clone();
+        let page_id = self.active_page_tx.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no page tx".into()))?.page_id.clone();
         let run = self.active_run_mut()?;
         let page = run.pages.get_mut(&page_id).ok_or_else(|| StoreError::StoreNotFound(page_id.clone()))?;
         page.events.push(event.clone());
@@ -483,17 +465,14 @@ impl StoreSession {
     }
 
     pub(crate) fn commit_page_tx(&mut self) -> Result<()> {
-        let page_id =
-            self.active_page_tx.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no page tx".into()))?.page_id.clone();
+        let page_id = self.active_page_tx.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no page tx".into()))?.page_id.clone();
         let run = self.active_run_mut()?;
         let claim = run.claims.get(&page_id).ok_or(StoreError::StoreFencingMismatch)?;
         if claim.lease_until_ms <= Self::now_millis() {
             return Err(StoreError::StoreLeaseExpired);
         }
-        let admitted =
-            run.pages.get(&page_id).ok_or_else(|| StoreError::StoreNotFound(page_id.clone()))?.admitted_links.clone();
-        let event_count =
-            run.pages.get(&page_id).ok_or_else(|| StoreError::StoreNotFound(page_id.clone()))?.events.len().max(1);
+        let admitted = run.pages.get(&page_id).ok_or_else(|| StoreError::StoreNotFound(page_id.clone()))?.admitted_links.clone();
+        let event_count = run.pages.get(&page_id).ok_or_else(|| StoreError::StoreNotFound(page_id.clone()))?.events.len().max(1);
         // Links and events land with the page phase in one in-memory step so a
         // failed commit never exposes a page without its frontier admissions.
         for item in admitted {
@@ -509,8 +488,7 @@ impl StoreSession {
     }
 
     pub(crate) fn abort_page_tx(&mut self) -> Result<()> {
-        let page_id =
-            self.active_page_tx.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no page tx".into()))?.page_id.clone();
+        let page_id = self.active_page_tx.as_ref().ok_or_else(|| StoreError::StoreInvalidState("no page tx".into()))?.page_id.clone();
         let run = self.active_run_mut()?;
         run.pages.remove(&page_id);
         self.active_page_tx = None;
@@ -595,12 +573,8 @@ impl StoreSession {
         if let Some(existing) = self.objects.get(&fingerprint) {
             return Ok(existing.reference.clone());
         }
-        let reference = ObjectRef {
-            fingerprint: fingerprint.clone(),
-            size: bytes.len() as u64,
-            media_type: media_type.map(str::to_owned),
-            kind,
-        };
+        let reference =
+            ObjectRef { fingerprint: fingerprint.clone(), size: bytes.len() as u64, media_type: media_type.map(str::to_owned), kind };
         self.objects.insert(fingerprint, StoredObject { reference: reference.clone(), bytes: bytes.to_vec() });
         self.persist_snapshot();
         Ok(reference)
@@ -659,8 +633,7 @@ impl StoreSession {
         else {
             return Ok(None);
         };
-        let mut artifact: FetchArtifact =
-            serde_json::from_slice(bytes).map_err(|error| StoreError::StoreCorrupt(error.to_string()))?;
+        let mut artifact: FetchArtifact = serde_json::from_slice(bytes).map_err(|error| StoreError::StoreCorrupt(error.to_string()))?;
         artifact.transport_provenance = TransportProvenance::CacheHit;
         Ok(Some(artifact))
     }
@@ -698,9 +671,7 @@ impl StoreSession {
                 .response_cache
                 .iter()
                 .min_by_key(|(_, bytes)| {
-                    serde_json::from_slice::<FetchArtifact>(bytes)
-                        .map(|artifact| artifact.retrieved_at_epoch)
-                        .unwrap_or_default()
+                    serde_json::from_slice::<FetchArtifact>(bytes).map(|artifact| artifact.retrieved_at_epoch).unwrap_or_default()
                 })
                 .map(|(key, _)| key.clone());
             let Some(victim) = victim
@@ -724,8 +695,7 @@ impl StoreSession {
 
     pub(crate) fn put_robots_cache(&mut self, site_key: &str, body: &[u8], ttl: Duration) -> Result<()> {
         let expires_at_ms = Self::now_millis().saturating_add(ttl.as_millis() as u64);
-        self.robots_cache
-            .insert(site_key.to_string(), RobotsCacheEntry { body: body.to_vec(), expires_at_ms: Some(expires_at_ms) });
+        self.robots_cache.insert(site_key.to_string(), RobotsCacheEntry { body: body.to_vec(), expires_at_ms: Some(expires_at_ms) });
         self.persist_snapshot();
         Ok(())
     }
@@ -762,20 +732,10 @@ impl StoreSession {
         Ok(Some(record.clone()))
     }
 
-    pub(crate) fn record_challenge_pause(
-        &mut self,
-        item_id: &str,
-        page_url: &str,
-        state: PageChallengeState,
-    ) -> Result<ChallengePauseRecord> {
-        let url = Url::parse(page_url)
-            .map_err(|error| StoreError::StoreInvalidState(format!("challenge pause url is invalid: {error}")))?;
-        let record = ChallengePauseRecord {
-            item_id: item_id.to_owned(),
-            page_url: page_url.to_owned(),
-            state,
-            paused_at_ms: Self::now_millis(),
-        };
+    pub(crate) fn record_challenge_pause(&mut self, item_id: &str, page_url: &str, state: PageChallengeState) -> Result<ChallengePauseRecord> {
+        let url = Url::parse(page_url).map_err(|error| StoreError::StoreInvalidState(format!("challenge pause url is invalid: {error}")))?;
+        let record =
+            ChallengePauseRecord { item_id: item_id.to_owned(), page_url: page_url.to_owned(), state, paused_at_ms: Self::now_millis() };
         let run = self.active_run_mut()?;
         run.challenge_pauses.insert(item_id.to_owned(), record.clone());
         run.events.push(CrawlEvent::PausedForOperator { url, challenge_state: state });

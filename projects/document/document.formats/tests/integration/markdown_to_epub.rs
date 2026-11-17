@@ -128,8 +128,7 @@ fn epub_exports_multi_chapter_markdown_project() {
     assert!(project.chapters[0].markdown.contains("First chapter body."));
     assert!(project.chapters[1].markdown.contains("# Chapter Two"));
 
-    let reopened =
-        import_markdown_bytes("chapters/000-chapter-one.md", &project.chapters[0].markdown).expect("reopen chapter one");
+    let reopened = import_markdown_bytes("chapters/000-chapter-one.md", &project.chapters[0].markdown).expect("reopen chapter one");
     assert!(reopened.validate().is_valid());
     assert!(reopened.blocks.iter().any(|node| matches!(
         &node.block,

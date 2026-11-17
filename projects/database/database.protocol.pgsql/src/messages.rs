@@ -3,8 +3,10 @@
 //! Every function is a pure transformation over bytes, so callers can be tested
 //! without a socket.
 
-use crate::encode_message;
-use crate::error::{MessageField, Notice, PostgresError};
+use crate::{
+    encode_message,
+    error::{MessageField, Notice, PostgresError},
+};
 
 /// Protocol 3.0 as encoded in the startup packet.
 pub const PROTOCOL_VERSION: u32 = 196_608;
@@ -18,12 +20,7 @@ fn truncated(what: &str) -> PostgresError {
 /// One startup packet carrying the user, database and application name.
 pub fn startup_packet(user: &str, database: &str) -> Vec<u8> {
     let mut parameters = Vec::new();
-    for (key, value) in [
-        ("user", user),
-        ("database", database),
-        ("client_encoding", "UTF8"),
-        ("application_name", "postgres-psql"),
-    ] {
+    for (key, value) in [("user", user), ("database", database), ("client_encoding", "UTF8"), ("application_name", "postgres-psql")] {
         parameters.extend_from_slice(key.as_bytes());
         parameters.push(0);
         parameters.extend_from_slice(value.as_bytes());
@@ -87,7 +84,8 @@ pub fn message_fields(payload: &[u8]) -> Result<Vec<MessageField>, PostgresError
     while offset < payload.len() && payload[offset] != 0 {
         let kind = payload[offset];
         offset += 1;
-        let Some(end) = payload[offset..].iter().position(|byte| *byte == 0).map(|index| index + offset) else {
+        let Some(end) = payload[offset..].iter().position(|byte| *byte == 0).map(|index| index + offset)
+        else {
             return Err(PostgresError::Protocol("malformed PostgreSQL error response".into()));
         };
         fields.push(MessageField::new(kind, String::from_utf8_lossy(&payload[offset..end]).into_owned()));
@@ -107,16 +105,9 @@ pub fn error_response(payload: &[u8]) -> PostgresError {
         Ok(fields) => fields,
         Err(error) => return error,
     };
-    let code = fields
-        .iter()
-        .find(|field| field.kind == b'C')
-        .map(|field| field.value.clone())
-        .unwrap_or_else(|| "unknown".to_owned());
-    let message = fields
-        .iter()
-        .find(|field| field.kind == b'M')
-        .map(|field| field.value.clone())
-        .unwrap_or_else(|| "PostgreSQL error".to_owned());
+    let code = fields.iter().find(|field| field.kind == b'C').map(|field| field.value.clone()).unwrap_or_else(|| "unknown".to_owned());
+    let message =
+        fields.iter().find(|field| field.kind == b'M').map(|field| field.value.clone()).unwrap_or_else(|| "PostgreSQL error".to_owned());
     PostgresError::Server { code, message, fields }
 }
 
@@ -141,7 +132,8 @@ pub fn row_description(payload: &[u8]) -> Result<Vec<ColumnDescription>, Postgre
     let mut columns = Vec::with_capacity(count);
     let mut offset = 2;
     for _ in 0..count {
-        let Some(end) = payload[offset..].iter().position(|byte| *byte == 0).map(|index| index + offset) else {
+        let Some(end) = payload[offset..].iter().position(|byte| *byte == 0).map(|index| index + offset)
+        else {
             return Err(truncated("column description"));
         };
         if end + 19 > payload.len() {
@@ -150,11 +142,9 @@ pub fn row_description(payload: &[u8]) -> Result<Vec<ColumnDescription>, Postgre
         // After the name and its NUL: tableOID(4), attribute(2), typeOID(4),
         // typeSize(2), typeModifier(4) and format(2).
         let base = end + 1;
-        let type_oid =
-            u32::from_be_bytes([payload[base + 6], payload[base + 7], payload[base + 8], payload[base + 9]]);
+        let type_oid = u32::from_be_bytes([payload[base + 6], payload[base + 7], payload[base + 8], payload[base + 9]]);
         let type_size = i16::from_be_bytes([payload[base + 10], payload[base + 11]]);
-        let type_modifier =
-            i32::from_be_bytes([payload[base + 12], payload[base + 13], payload[base + 14], payload[base + 15]]);
+        let type_modifier = i32::from_be_bytes([payload[base + 12], payload[base + 13], payload[base + 14], payload[base + 15]]);
         let format = u16::from_be_bytes([payload[base + 16], payload[base + 17]]);
         columns.push(ColumnDescription {
             name: String::from_utf8_lossy(&payload[offset..end]).into_owned(),
@@ -216,10 +206,7 @@ pub fn data_row(payload: &[u8], columns: usize) -> Result<Vec<Option<String>>, P
 
 /// Cell values carried by a `DataRow`, decoded according to the type and format
 /// each column declared in `RowDescription`.
-pub fn data_row_with_formats(
-    payload: &[u8],
-    columns: &[ColumnDescription],
-) -> Result<Vec<Option<String>>, PostgresError> {
+pub fn data_row_with_formats(payload: &[u8], columns: &[ColumnDescription]) -> Result<Vec<Option<String>>, PostgresError> {
     if payload.len() < 2 || u16::from_be_bytes([payload[0], payload[1]]) as usize != columns.len() {
         return Err(PostgresError::Protocol("invalid DataRow column count".into()));
     }
@@ -240,11 +227,7 @@ pub fn data_row_with_formats(
         }
         let end = offset + length as usize;
         let bytes = &payload[offset..end];
-        values.push(Some(if column.format == 0 {
-            String::from_utf8_lossy(bytes).into_owned()
-        } else {
-            binary_value(column.type_oid, bytes)?
-        }));
+        values.push(Some(if column.format == 0 { String::from_utf8_lossy(bytes).into_owned() } else { binary_value(column.type_oid, bytes)? }));
         offset = end;
     }
     if offset != payload.len() {
@@ -331,11 +314,13 @@ fn numeric_value(bytes: &[u8]) -> Result<String, PostgresError> {
             let value = digits.get(group as usize).copied().unwrap_or(0);
             if integer.is_empty() {
                 integer.push_str(&value.to_string());
-            } else {
+            }
+            else {
                 integer.push_str(&format!("{value:04}"));
             }
         }
-    } else {
+    }
+    else {
         integer.push('0');
     }
 
@@ -395,7 +380,8 @@ fn format_time_of_day(micros: i64) -> String {
     let fraction = micros % MICROS_PER_SECOND;
     if fraction == 0 {
         format!("{total_hours:02}:{minutes:02}:{seconds:02}")
-    } else {
+    }
+    else {
         let mut digits = format!("{fraction:06}");
         while digits.ends_with('0') {
             digits.pop();
@@ -507,9 +493,7 @@ fn frame(tag: u8, payload: Vec<u8>) -> Result<Vec<u8>, PostgresError> {
 /// the statement, and may be shorter than the highest `$n` the statement uses.
 pub fn parse_packet(name: &str, sql: &str, param_types: &[u32]) -> Result<Vec<u8>, PostgresError> {
     if param_types.len() > MAX_PARAMETERS {
-        return Err(PostgresError::Protocol(format!(
-            "at most {MAX_PARAMETERS} parameter types can be declared"
-        )));
+        return Err(PostgresError::Protocol(format!("at most {MAX_PARAMETERS} parameter types can be declared")));
     }
     let mut payload = Vec::with_capacity(name.len() + sql.len() + 4 + param_types.len() * 4);
     push_text(&mut payload, name);
@@ -525,12 +509,7 @@ pub fn parse_packet(name: &str, sql: &str, param_types: &[u32]) -> Result<Vec<u8
 ///
 /// `result_format` is `0` for text result columns and `1` for binary ones, which
 /// the wire expresses as one format code shared by every column.
-pub fn bind_packet(
-    portal: &str,
-    statement: &str,
-    params: &[Option<&str>],
-    result_format: u16,
-) -> Result<Vec<u8>, PostgresError> {
+pub fn bind_packet(portal: &str, statement: &str, params: &[Option<&str>], result_format: u16) -> Result<Vec<u8>, PostgresError> {
     if result_format > 1 {
         return Err(PostgresError::Protocol(format!("invalid result format code {result_format}")));
     }
@@ -553,17 +532,13 @@ pub fn bind_packet_with_formats(
     result_formats: &[u16],
 ) -> Result<Vec<u8>, PostgresError> {
     if params.len() > MAX_PARAMETERS {
-        return Err(PostgresError::Protocol(format!(
-            "at most {MAX_PARAMETERS} parameters can be bound"
-        )));
+        return Err(PostgresError::Protocol(format!("at most {MAX_PARAMETERS} parameters can be bound")));
     }
     if !param_formats.is_empty() && param_formats.len() != 1 && param_formats.len() != params.len() {
         return Err(PostgresError::Protocol("parameter format count must be 0, 1 or the parameter count".into()));
     }
     if !result_formats.is_empty() && result_formats.len() > MAX_PARAMETERS {
-        return Err(PostgresError::Protocol(format!(
-            "at most {MAX_PARAMETERS} result formats can be declared"
-        )));
+        return Err(PostgresError::Protocol(format!("at most {MAX_PARAMETERS} result formats can be declared")));
     }
     if param_formats.iter().any(|code| *code > 1) || result_formats.iter().any(|code| *code > 1) {
         return Err(PostgresError::Protocol("format codes are 0 for text and 1 for binary".into()));
@@ -580,8 +555,7 @@ pub fn bind_packet_with_formats(
         match param {
             None => payload.extend_from_slice(&(-1_i32).to_be_bytes()),
             Some(value) => {
-                let length = i32::try_from(value.len())
-                    .map_err(|_| PostgresError::Protocol("parameter value is too long".into()))?;
+                let length = i32::try_from(value.len()).map_err(|_| PostgresError::Protocol("parameter value is too long".into()))?;
                 payload.extend_from_slice(&length.to_be_bytes());
                 payload.extend_from_slice(value);
             }
@@ -727,12 +701,7 @@ pub fn parameter_description(payload: &[u8]) -> Result<Vec<u32>, PostgresError> 
     let mut oids = Vec::with_capacity(count);
     for index in 0..count {
         let offset = 2 + index * 4;
-        oids.push(u32::from_be_bytes([
-            payload[offset],
-            payload[offset + 1],
-            payload[offset + 2],
-            payload[offset + 3],
-        ]));
+        oids.push(u32::from_be_bytes([payload[offset], payload[offset + 1], payload[offset + 2], payload[offset + 3]]));
     }
     Ok(oids)
 }
@@ -930,10 +899,7 @@ mod tests {
 
     #[test]
     fn parameter_description_reads_oids_in_order() {
-        assert_eq!(
-            parameter_description(&[0, 2, 0, 0, 0, 23, 0, 0, 6, 164]).unwrap(),
-            vec![23, 1700]
-        );
+        assert_eq!(parameter_description(&[0, 2, 0, 0, 0, 23, 0, 0, 6, 164]).unwrap(), vec![23, 1700]);
         assert!(parameter_description(&[0, 2, 0, 0, 0, 23]).is_err());
         assert!(parameter_description(&[]).is_err());
     }
@@ -1020,17 +986,15 @@ mod tests {
             (1082, &[0, 0, 0x22, 0x79], "2024-02-29"),
             (1083, &[0, 0, 0, 0x0a, 0x8b, 0xe6, 0x26, 0x08], "12:34:56.789"),
             (1114, &[0, 2, 0xb5, 0x83, 0x41, 0x72, 0x86, 0x08], "2024-02-29 12:34:56.789"),
-            (2950, &[0x0f, 0x8f, 0xad, 0x5b, 0xd9, 0xcb, 0x46, 0x9f, 0xa1, 0x65, 0x70, 0x86, 0x77, 0x28, 0x95, 0x0e], "0f8fad5b-d9cb-469f-a165-70867728950e"),
+            (
+                2950,
+                &[0x0f, 0x8f, 0xad, 0x5b, 0xd9, 0xcb, 0x46, 0x9f, 0xa1, 0x65, 0x70, 0x86, 0x77, 0x28, 0x95, 0x0e],
+                "0f8fad5b-d9cb-469f-a165-70867728950e",
+            ),
             (3802, &[1, b'{', b'"', b'a', b'"', b':', b' ', b'1', b'}'], "{\"a\": 1}"),
         ];
         for (oid, bytes, expected) in binaries {
-            let columns = vec![ColumnDescription {
-                name: "c".into(),
-                type_oid: *oid,
-                type_size: 0,
-                type_modifier: -1,
-                format: 1,
-            }];
+            let columns = vec![ColumnDescription { name: "c".into(), type_oid: *oid, type_size: 0, type_modifier: -1, format: 1 }];
             let row = data_row_with_formats(&data_row_payload(&[Some(*bytes)]), &columns).unwrap();
             assert_eq!(row, vec![Some((*expected).to_owned())], "oid {oid}");
         }
@@ -1044,23 +1008,15 @@ mod tests {
             ColumnDescription { name: "c".into(), type_oid: 23, type_size: 4, type_modifier: -1, format: 1 },
         ];
         let payload = data_row_payload(&[Some(&[0, 0, 0, 42]), Some(b"plain"), None]);
-        assert_eq!(
-            data_row_with_formats(&payload, &columns).unwrap(),
-            vec![Some("42".into()), Some("plain".into()), None]
-        );
+        assert_eq!(data_row_with_formats(&payload, &columns).unwrap(), vec![Some("42".into()), Some("plain".into()), None]);
     }
 
     #[test]
     fn data_row_with_formats_refuses_unsupported_binary_types() {
-        let columns = vec![
-            ColumnDescription { name: "f".into(), type_oid: 701, type_size: 8, type_modifier: -1, format: 1 },
-        ];
-        let error = data_row_with_formats(&data_row_payload(&[Some(&[0, 0, 0, 0, 0, 0, 0, 0])]), &columns)
-            .unwrap_err();
+        let columns = vec![ColumnDescription { name: "f".into(), type_oid: 701, type_size: 8, type_modifier: -1, format: 1 }];
+        let error = data_row_with_formats(&data_row_payload(&[Some(&[0, 0, 0, 0, 0, 0, 0, 0])]), &columns).unwrap_err();
         assert_eq!(error.feature(), Some("binary-result-type-701"));
-        let unknown = vec![
-            ColumnDescription { name: "u".into(), type_oid: 999999, type_size: 4, type_modifier: -1, format: 1 },
-        ];
+        let unknown = vec![ColumnDescription { name: "u".into(), type_oid: 999999, type_size: 4, type_modifier: -1, format: 1 }];
         let error = data_row_with_formats(&data_row_payload(&[Some(&[0, 0, 0, 1])]), &unknown).unwrap_err();
         assert_eq!(error.feature(), Some("binary-result-type-999999"));
     }

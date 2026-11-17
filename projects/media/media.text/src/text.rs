@@ -66,12 +66,9 @@ impl Fonts {
     /// bytes are an `io`-coded error naming the role that failed.
     pub fn from_bytes(regular: &[u8], bold: &[u8], mono: &[u8]) -> Result<Self, media_types::Error> {
         let settings = FontSettings { collection_index: 0, ..Default::default() };
-        let regular = Font::from_bytes(regular.to_vec(), settings)
-            .map_err(|e| media_types::Error::io(format!("regular font: {e}")))?;
-        let bold =
-            Font::from_bytes(bold.to_vec(), settings).map_err(|e| media_types::Error::io(format!("bold font: {e}")))?;
-        let mono =
-            Font::from_bytes(mono.to_vec(), settings).map_err(|e| media_types::Error::io(format!("mono font: {e}")))?;
+        let regular = Font::from_bytes(regular.to_vec(), settings).map_err(|e| media_types::Error::io(format!("regular font: {e}")))?;
+        let bold = Font::from_bytes(bold.to_vec(), settings).map_err(|e| media_types::Error::io(format!("bold font: {e}")))?;
+        let mono = Font::from_bytes(mono.to_vec(), settings).map_err(|e| media_types::Error::io(format!("mono font: {e}")))?;
         Ok(Self { regular, bold, mono, cache: HashMap::new() })
     }
 
@@ -96,39 +93,21 @@ impl Fonts {
     /// first, matching [`Fonts::resolve`].
     #[must_use]
     pub fn covers(&self, ch: char, mono: bool) -> bool {
-        if mono {
-            self.mono.has_glyph(ch) || self.regular.has_glyph(ch)
-        } else {
-            self.regular.has_glyph(ch) || self.bold.has_glyph(ch)
-        }
+        if mono { self.mono.has_glyph(ch) || self.regular.has_glyph(ch) } else { self.regular.has_glyph(ch) || self.bold.has_glyph(ch) }
     }
 
     fn glyph(&mut self, id: FontId, ch: char, size: f32) -> Glyph {
         let id = self.resolve(id, ch);
         let key = (id, ch, (size * 4.0) as u32);
         if let Some(hit) = self.cache.get(&key) {
-            return Glyph {
-                advance: hit.0,
-                xmin: hit.1,
-                top_from_baseline: hit.2,
-                width: hit.3,
-                height: hit.4,
-                bitmap: hit.5.clone(),
-            };
+            return Glyph { advance: hit.0, xmin: hit.1, top_from_baseline: hit.2, width: hit.3, height: hit.4, bitmap: hit.5.clone() };
         }
         let font = self.font(id);
         let (metrics, bitmap) = font.rasterize(ch, size);
         // `metrics.width`/`height` are the bitmap size in whole pixels and are
         // exactly the row stride fontdue packs; `bounds` is only the ink box.
         let top_from_baseline = (metrics.ymin + metrics.height as i32) as f32;
-        let entry = (
-            metrics.advance_width,
-            metrics.xmin as f32,
-            top_from_baseline,
-            metrics.width as f32,
-            metrics.height as f32,
-            bitmap,
-        );
+        let entry = (metrics.advance_width, metrics.xmin as f32, top_from_baseline, metrics.width as f32, metrics.height as f32, bitmap);
         self.cache.insert(key, entry.clone());
         Glyph { advance: entry.0, xmin: entry.1, top_from_baseline: entry.2, width: entry.3, height: entry.4, bitmap: entry.5 }
     }
@@ -138,9 +117,11 @@ impl Fonts {
     pub fn measure(&mut self, text: &str, size: f32, bold: bool, mono: bool) -> f32 {
         let id = if mono {
             FontId::Mono
-        } else if bold {
+        }
+        else if bold {
             FontId::Bold
-        } else {
+        }
+        else {
             FontId::Regular
         };
         let mut pen = 0.0f32;
@@ -156,14 +137,17 @@ impl Fonts {
     pub fn wrap(&mut self, text: &str, size: f32, bold: bool, mono: bool, max_width: Option<f32>) -> Vec<String> {
         let id = if mono {
             FontId::Mono
-        } else if bold {
+        }
+        else if bold {
             FontId::Bold
-        } else {
+        }
+        else {
             FontId::Regular
         };
         let mut lines: Vec<String> = Vec::new();
         for hard in text.split('\n') {
-            let Some(limit) = max_width else {
+            let Some(limit) = max_width
+            else {
                 lines.push(hard.to_string());
                 continue;
             };
@@ -184,7 +168,8 @@ impl Fonts {
             }
             if !current.is_empty() {
                 lines.push(current);
-            } else if lines.is_empty() || hard.is_empty() {
+            }
+            else if lines.is_empty() || hard.is_empty() {
                 lines.push(String::new());
             }
         }
@@ -355,7 +340,8 @@ fn split_units(line: &str) -> Vec<String> {
                 units.push(std::mem::take(&mut current));
             }
             units.push(ch.to_string());
-        } else {
+        }
+        else {
             current.push(ch);
             if ch == ' ' {
                 units.push(std::mem::take(&mut current));
@@ -396,8 +382,8 @@ pub fn format_number(value: f64, decimals: u32) -> String {
 #[cfg(feature = "blocks")]
 fn highlight(line: &str) -> Vec<(String, Tone)> {
     let keywords = [
-        "const", "let", "var", "new", "import", "from", "export", "await", "async", "return", "if", "else", "for", "in", "fn",
-        "pub", "struct", "class", "this", "default",
+        "const", "let", "var", "new", "import", "from", "export", "await", "async", "return", "if", "else", "for", "in", "fn", "pub", "struct",
+        "class", "this", "default",
     ];
     let trimmed_start = line.len() - line.trim_start().len();
     let mut out: Vec<(String, Tone)> = Vec::new();
@@ -459,9 +445,11 @@ fn highlight(line: &str) -> Vec<(String, Tone)> {
             flush(&mut plain, &mut out);
             let tone = if keywords.contains(&word.as_str()) {
                 Tone::Keyword
-            } else if chars.get(i) == Some(&'(') {
+            }
+            else if chars.get(i) == Some(&'(') {
                 Tone::Fn
-            } else {
+            }
+            else {
                 Tone::Plain
             };
             out.push((word, tone));

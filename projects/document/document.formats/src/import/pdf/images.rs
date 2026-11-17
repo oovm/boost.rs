@@ -23,10 +23,7 @@ fn pdf_image_zlib_limits() -> CodecLimits {
 /// Image resource maps keyed by page-tree position.
 ///
 /// XObject names are page-scoped, so each page keeps its own `/Im1` binding.
-pub(crate) fn page_images(
-    bodies: &[(u32, Vec<u8>)],
-    streams: &[PdfStream<'_>],
-) -> Result<Vec<HashMap<String, PdfImage>>, FormatError> {
+pub(crate) fn page_images(bodies: &[(u32, Vec<u8>)], streams: &[PdfStream<'_>]) -> Result<Vec<HashMap<String, PdfImage>>, FormatError> {
     let mut result = Vec::new();
     for resources in page_resource_sections(bodies) {
         let mut page = HashMap::new();
@@ -128,14 +125,10 @@ fn image_geometry(dictionary: &[u8], bodies: &[(u32, Vec<u8>)]) -> Result<(u32, 
     Ok((width, height, colors))
 }
 
-pub(crate) fn decode_pdf_image_png(
-    dictionary: &[u8],
-    stream: &[u8],
-    bodies: &[(u32, Vec<u8>)],
-) -> Result<Vec<u8>, FormatError> {
+pub(crate) fn decode_pdf_image_png(dictionary: &[u8], stream: &[u8], bodies: &[(u32, Vec<u8>)]) -> Result<Vec<u8>, FormatError> {
     let (width, height, colors) = image_geometry(dictionary, bodies)?;
-    let facts = Zlib::decode(stream, pdf_image_zlib_limits())
-        .map_err(|error| FormatError::parse("pdf", format!("invalid Flate image: {error}")))?;
+    let facts =
+        Zlib::decode(stream, pdf_image_zlib_limits()).map_err(|error| FormatError::parse("pdf", format!("invalid Flate image: {error}")))?;
     let filtered = facts.value;
     if filtered.len() > MAX_IMAGE_BYTES as usize {
         return Err(FormatError::unsupported("pdf", "decoded image exceeds the 32 MiB limit"));
@@ -175,11 +168,7 @@ pub(crate) fn decode_pdf_image_png(
 /// Reopen an image stream that carries no `/Filter`, which is how our own PDF
 /// renderer writes its RGB samples. The raw stream must exactly cover the
 /// declared geometry, so a filtered or truncated stream is rejected here.
-pub(crate) fn decode_pdf_raw_image_png(
-    dictionary: &[u8],
-    stream: &[u8],
-    bodies: &[(u32, Vec<u8>)],
-) -> Result<Vec<u8>, FormatError> {
+pub(crate) fn decode_pdf_raw_image_png(dictionary: &[u8], stream: &[u8], bodies: &[(u32, Vec<u8>)]) -> Result<Vec<u8>, FormatError> {
     let (width, height, colors) = image_geometry(dictionary, bodies)?;
     let expected = usize::try_from(width)
         .ok()
@@ -230,8 +219,7 @@ fn unfilter_png_rows(filtered: &[u8], row_bytes: usize, bytes_per_pixel: usize) 
         for offset in 0..current.len() {
             let left = if offset >= bytes_per_pixel { current[offset - bytes_per_pixel] } else { 0 };
             let up = prior.get(offset).copied().unwrap_or(0);
-            let upper_left =
-                if offset >= bytes_per_pixel { prior.get(offset - bytes_per_pixel).copied().unwrap_or(0) } else { 0 };
+            let upper_left = if offset >= bytes_per_pixel { prior.get(offset - bytes_per_pixel).copied().unwrap_or(0) } else { 0 };
             current[offset] = match filter {
                 0 => current[offset],
                 1 => current[offset].wrapping_add(left),
@@ -318,8 +306,7 @@ pub(crate) fn skip_inline_image(stream: &[u8], cursor: usize) -> Option<usize> {
     let mut search = data_start;
     while let Some(relative) = stream[search..].windows(2).position(|window| window == b"EI") {
         let end = search + relative;
-        if end > 0 && stream[end - 1].is_ascii_whitespace() && stream.get(end + 2).is_none_or(|byte| byte.is_ascii_whitespace())
-        {
+        if end > 0 && stream[end - 1].is_ascii_whitespace() && stream.get(end + 2).is_none_or(|byte| byte.is_ascii_whitespace()) {
             return Some(end + 2);
         }
         search = end + 1;
@@ -342,10 +329,7 @@ pub(crate) fn parse_inline_jpeg(stream: &[u8], cursor: usize) -> Option<(PdfImag
         let data_end = search + relative + 2;
         let end = skip_space(stream, data_end);
         let after = end + 2;
-        if end > data_end
-            && stream.get(end..after) == Some(b"EI")
-            && stream.get(after).is_none_or(|byte| byte.is_ascii_whitespace())
-        {
+        if end > data_end && stream.get(end..after) == Some(b"EI") && stream.get(after).is_none_or(|byte| byte.is_ascii_whitespace()) {
             return Some((
                 PdfImage {
                     bytes: stream[data_start..data_end].to_vec(),

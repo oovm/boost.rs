@@ -193,9 +193,7 @@ impl IndexMaintenance {
     /// 值无法编码时摘掉完备标记，让所有读路径退回整表扫描。
     fn deactivate(&mut self) {
         self.broken = true;
-        self.deletes.extend(
-            self.indexes.iter().map(|index| index_delete(&index.namespace, database_query::sql_index::READY_KEY.to_vec())),
-        );
+        self.deletes.extend(self.indexes.iter().map(|index| index_delete(&index.namespace, database_query::sql_index::READY_KEY.to_vec())));
     }
 }
 
@@ -227,9 +225,7 @@ pub(crate) fn apply_index_commands_in_transaction(
     commands: &[KeyValueCommand],
 ) -> Result<(), SqlFrontendError> {
     for command in commands {
-        transaction
-            .execute(command.clone())
-            .map_err(|e| internal_error(&format!("TransactionHandle.index_write failed: {e}")))?;
+        transaction.execute(command.clone()).map_err(|e| internal_error(&format!("TransactionHandle.index_write failed: {e}")))?;
     }
     Ok(())
 }

@@ -134,10 +134,8 @@ pub fn inspect_docx_bytes(
     if paths.len() as u64 > budget.max_container_members {
         return Err(FormatError::budget("docx", "container member budget exhausted"));
     }
-    let declared_uncompressed = paths
-        .iter()
-        .filter_map(|path| package.part(path))
-        .fold(0u64, |total, member| total.saturating_add(member.uncompressed_size));
+    let declared_uncompressed =
+        paths.iter().filter_map(|path| package.part(path)).fold(0u64, |total, member| total.saturating_add(member.uncompressed_size));
     if declared_uncompressed > budget.max_declared_uncompressed_bytes {
         return Err(FormatError::budget(
             "docx",
@@ -148,11 +146,8 @@ pub fn inspect_docx_bytes(
         ));
     }
 
-    let limits = Budget {
-        max_decoded_bytes: budget.max_decoded_bytes,
-        max_container_members: budget.max_container_members,
-        ..Budget::default()
-    };
+    let limits =
+        Budget { max_decoded_bytes: budget.max_decoded_bytes, max_container_members: budget.max_container_members, ..Budget::default() };
     let mut ledger = BudgetTracker::new(limits);
     let mut decoded_total = 0u64;
     let mut parts = Vec::with_capacity(paths.len());
@@ -219,11 +214,8 @@ pub fn verify_docx_bytes(label: &str, bytes: &[u8], budget: InspectBudget) -> Re
         return Err(FormatError::parse("docx", "written package layout does not index every member"));
     }
 
-    let limits = Budget {
-        max_decoded_bytes: budget.max_decoded_bytes,
-        max_container_members: budget.max_container_members,
-        ..Budget::default()
-    };
+    let limits =
+        Budget { max_decoded_bytes: budget.max_decoded_bytes, max_container_members: budget.max_container_members, ..Budget::default() };
     let mut ledger = BudgetTracker::new(limits);
     let mut parsed_xml_members = 0usize;
     for part in &inspect.parts {
@@ -272,10 +264,8 @@ pub fn inspect_epub_bytes(label: &str, bytes: &[u8], budget: InspectBudget) -> R
     if paths.len() as u64 > budget.max_container_members {
         return Err(FormatError::budget("epub", "container member budget exhausted"));
     }
-    let declared_uncompressed = paths
-        .iter()
-        .filter_map(|path| package.member(path))
-        .fold(0u64, |total, member| total.saturating_add(member.uncompressed_size));
+    let declared_uncompressed =
+        paths.iter().filter_map(|path| package.member(path)).fold(0u64, |total, member| total.saturating_add(member.uncompressed_size));
     if declared_uncompressed > budget.max_declared_uncompressed_bytes {
         return Err(FormatError::budget(
             "epub",

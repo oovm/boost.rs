@@ -12,10 +12,10 @@ fn execute(expression: Expr, ty: Ty) -> Value {
 
 #[test]
 fn structured_f32_rounds_each_operation_while_f64_preserves_precision() {
-    let f32_expression = binary(BinOp::Sub,
-        binary(BinOp::Add, Expr::ConstF32(16_777_216.0), Expr::ConstF32(1.0)), Expr::ConstF32(16_777_216.0));
-    let f64_expression = binary(BinOp::Sub,
-        binary(BinOp::Add, Expr::ConstF64(16_777_216.0), Expr::ConstF64(1.0)), Expr::ConstF64(16_777_216.0));
+    let f32_expression =
+        binary(BinOp::Sub, binary(BinOp::Add, Expr::ConstF32(16_777_216.0), Expr::ConstF32(1.0)), Expr::ConstF32(16_777_216.0));
+    let f64_expression =
+        binary(BinOp::Sub, binary(BinOp::Add, Expr::ConstF64(16_777_216.0), Expr::ConstF64(1.0)), Expr::ConstF64(16_777_216.0));
     assert_eq!(execute(f32_expression, Ty::f32()), Value::F32(0.0));
     assert_eq!(execute(f64_expression, Ty::f64()), Value::F64(1.0));
 }
@@ -48,16 +48,25 @@ fn cfg_uniform_binding_obeys_declared_float_precision() {
 #[test]
 fn scalar_f32_operations_preserve_runtime_type_and_rounding() {
     for (op, expected) in [
-        (BinOp::Add, 2.3f32 + 0.7), (BinOp::Sub, 2.3f32 - 0.7),
-        (BinOp::Mul, 2.3f32 * 0.7), (BinOp::Div, 2.3f32 / 0.7),
-        (BinOp::Min, 2.3f32.min(0.7)), (BinOp::Max, 2.3f32.max(0.7)),
-        (BinOp::Mod, 2.3f32 % 0.7), (BinOp::Pow, 2.3f32.powf(0.7)),
+        (BinOp::Add, 2.3f32 + 0.7),
+        (BinOp::Sub, 2.3f32 - 0.7),
+        (BinOp::Mul, 2.3f32 * 0.7),
+        (BinOp::Div, 2.3f32 / 0.7),
+        (BinOp::Min, 2.3f32.min(0.7)),
+        (BinOp::Max, 2.3f32.max(0.7)),
+        (BinOp::Mod, 2.3f32 % 0.7),
+        (BinOp::Pow, 2.3f32.powf(0.7)),
     ] {
         assert_eq!(execute(binary(op, Expr::ConstF32(2.3), Expr::ConstF32(0.7)), Ty::f32()), Value::F32(expected), "{op:?}");
     }
     for (op, expected) in [
-        (UnOp::Neg, -2.3f32), (UnOp::Sqrt, 2.3f32.sqrt()), (UnOp::Sin, 2.3f32.sin()),
-        (UnOp::Cos, 2.3f32.cos()), (UnOp::Atan, 2.3f32.atan()), (UnOp::Abs, 2.3f32.abs()), (UnOp::Ln, 2.3f32.ln()),
+        (UnOp::Neg, -2.3f32),
+        (UnOp::Sqrt, 2.3f32.sqrt()),
+        (UnOp::Sin, 2.3f32.sin()),
+        (UnOp::Cos, 2.3f32.cos()),
+        (UnOp::Atan, 2.3f32.atan()),
+        (UnOp::Abs, 2.3f32.abs()),
+        (UnOp::Ln, 2.3f32.ln()),
     ] {
         assert_eq!(execute(Expr::UnOp { op, arg: Box::new(Expr::ConstF32(2.3)) }, Ty::f32()), Value::F32(expected), "{op:?}");
     }
@@ -65,13 +74,25 @@ fn scalar_f32_operations_preserve_runtime_type_and_rounding() {
 
 #[test]
 fn scalar_float_domain_errors_are_observable_non_finite_values() {
-    let Value::F32(infinity) = execute(binary(BinOp::Div, Expr::ConstF32(1.0), Expr::ConstF32(0.0)), Ty::f32()) else { panic!("lost f32 type"); };
+    let Value::F32(infinity) = execute(binary(BinOp::Div, Expr::ConstF32(1.0), Expr::ConstF32(0.0)), Ty::f32())
+    else {
+        panic!("lost f32 type");
+    };
     assert!(infinity.is_infinite());
-    let Value::F32(nan) = execute(Expr::UnOp { op: UnOp::Sqrt, arg: Box::new(Expr::ConstF32(-1.0)) }, Ty::f32()) else { panic!("lost f32 type"); };
+    let Value::F32(nan) = execute(Expr::UnOp { op: UnOp::Sqrt, arg: Box::new(Expr::ConstF32(-1.0)) }, Ty::f32())
+    else {
+        panic!("lost f32 type");
+    };
     assert!(nan.is_nan());
-    let Value::F64(nan) = execute(binary(BinOp::Div, Expr::ConstF64(0.0), Expr::ConstF64(0.0)), Ty::f64()) else { panic!("lost f64 type"); };
+    let Value::F64(nan) = execute(binary(BinOp::Div, Expr::ConstF64(0.0), Expr::ConstF64(0.0)), Ty::f64())
+    else {
+        panic!("lost f64 type");
+    };
     assert!(nan.is_nan());
-    let Value::F32(nan) = execute(binary(BinOp::Mod, Expr::ConstF32(1.0), Expr::ConstF32(0.0)), Ty::f32()) else { panic!("lost f32 type"); };
+    let Value::F32(nan) = execute(binary(BinOp::Mod, Expr::ConstF32(1.0), Expr::ConstF32(0.0)), Ty::f32())
+    else {
+        panic!("lost f32 type");
+    };
     assert!(nan.is_nan());
     let finite = Expr::UnOp { op: UnOp::IsFinite, arg: Box::new(binary(BinOp::Div, Expr::ConstF32(1.0), Expr::ConstF32(0.0))) };
     assert_eq!(execute(finite, Ty::Scalar(hardware_program::ScalarTy::Bool)), Value::Bool(false));
@@ -89,7 +110,8 @@ fn atan2_preserves_quadrants_and_axis_boundaries() {
     ];
     for (y, x, expected) in cases {
         let actual = execute(binary(BinOp::Atan2, Expr::ConstF32(y), Expr::ConstF32(x)), Ty::f32());
-        let Value::F32(actual) = actual else {
+        let Value::F32(actual) = actual
+        else {
             panic!("atan2 lost f32 type");
         };
         assert!((actual - expected).abs() < 1.0e-6, "atan2({y}, {x}) = {actual}, expected {expected}");

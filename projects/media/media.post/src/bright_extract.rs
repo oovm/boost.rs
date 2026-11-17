@@ -18,33 +18,51 @@ pub struct HdrBrightExtractBuilder;
 
 impl HdrBrightExtractBuilder {
     /// 创建 HDR 亮部提取 Builder。
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 
     /// 展开通用 F32 亮度、阈值和资源写入程序。
     pub fn build(self) -> Result<Program, Error> {
         let mut builder = StructuredFunctionBuilder::new("hdr_bright_extract");
         let input = b(&builder, BinOp::Mul, builder.global_id(), builder.const_u32(3));
         let output = b(&builder, BinOp::Mul, builder.global_id(), builder.const_u32(3));
-        let rgb: [Expr; 3] = std::array::from_fn(|index| builder.load_buffer(1,
-            b(&builder, BinOp::Add, input.clone(), builder.const_u32(index as u32))));
+        let rgb: [Expr; 3] =
+            std::array::from_fn(|index| builder.load_buffer(1, b(&builder, BinOp::Add, input.clone(), builder.const_u32(index as u32))));
         let threshold = builder.load_uniform(0);
-        let luminance = b(&builder, BinOp::Add,
-            b(&builder, BinOp::Add,
+        let luminance = b(
+            &builder,
+            BinOp::Add,
+            b(
+                &builder,
+                BinOp::Add,
                 b(&builder, BinOp::Mul, rgb[0].clone(), builder.const_f32(0.2126)),
-                b(&builder, BinOp::Mul, rgb[1].clone(), builder.const_f32(0.7152))),
-            b(&builder, BinOp::Mul, rgb[2].clone(), builder.const_f32(0.0722)));
+                b(&builder, BinOp::Mul, rgb[1].clone(), builder.const_f32(0.7152)),
+            ),
+            b(&builder, BinOp::Mul, rgb[2].clone(), builder.const_f32(0.0722)),
+        );
         let luminance = Expr::LoadLocal(builder.let_value(Ty::f32(), luminance));
-        let finite = rgb.iter().fold(builder.unary(UnOp::IsFinite, threshold.clone()), |valid, value|
-            builder.select(valid, builder.unary(UnOp::IsFinite, value.clone()), Expr::ConstBool(false)));
+        let finite = rgb.iter().fold(builder.unary(UnOp::IsFinite, threshold.clone()), |valid, value| {
+            builder.select(valid, builder.unary(UnOp::IsFinite, value.clone()), Expr::ConstBool(false))
+        });
         let active = b(&builder, BinOp::Gt, luminance.clone(), threshold.clone());
-        let scale = b(&builder, BinOp::Div,
+        let scale = b(
+            &builder,
+            BinOp::Div,
             b(&builder, BinOp::Sub, luminance.clone(), threshold),
-            b(&builder, BinOp::Max, luminance.clone(), builder.const_f32(1.0e-9)));
+            b(&builder, BinOp::Max, luminance.clone(), builder.const_f32(1.0e-9)),
+        );
         for (index, value) in rgb.into_iter().enumerate() {
             let bright = b(&builder, BinOp::Mul, value, scale.clone());
-            builder.store_buffer(2, b(&builder, BinOp::Add, output.clone(), builder.const_u32(index as u32)),
-                builder.select(b(&builder, BinOp::Eq, finite.clone(), Expr::ConstBool(true)),
-                    builder.select(active.clone(), bright, builder.const_f32(0.0)), builder.const_f32(0.0)));
+            builder.store_buffer(
+                2,
+                b(&builder, BinOp::Add, output.clone(), builder.const_u32(index as u32)),
+                builder.select(
+                    b(&builder, BinOp::Eq, finite.clone(), Expr::ConstBool(true)),
+                    builder.select(active.clone(), bright, builder.const_f32(0.0)),
+                    builder.const_f32(0.0),
+                ),
+            );
         }
         let status = builder.select(finite, builder.const_f32(1.0), builder.const_f32(2.0));
         ProgramBuilder::new()

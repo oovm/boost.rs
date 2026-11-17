@@ -90,10 +90,8 @@ fn place_before_constraints_delay_the_after_node() {
 #[test]
 fn declared_ports_anchor_edges_and_routes_stay_orthogonal() {
     let mut source = node("A");
-    source.ports = vec![
-        Port { id: "out".to_string(), side: Side::Bottom, offset: 0.25 },
-        Port { id: "in".to_string(), side: Side::Top, offset: 1.0 },
-    ];
+    source.ports =
+        vec![Port { id: "out".to_string(), side: Side::Bottom, offset: 0.25 }, Port { id: "in".to_string(), side: Side::Top, offset: 1.0 }];
     let mut spec = DiagramSpec::new(Direction::TopDown);
     spec.nodes = vec![source, node("B")];
     spec.edges = vec![DiagramEdge {
@@ -128,11 +126,8 @@ fn compilation_is_deterministic() {
     second.cluster = Some("group".to_string());
     spec.nodes = vec![first, second, node("C")];
     spec.edges = vec![edge("A", "B"), DiagramEdge { label: Some("maybe".to_string()), ..edge("B", "C") }];
-    spec.clusters = vec![Cluster {
-        id: "group".to_string(),
-        label: Some("Group".to_string()),
-        members: vec!["A".to_string(), "B".to_string()],
-    }];
+    spec.clusters =
+        vec![Cluster { id: "group".to_string(), label: Some("Group".to_string()), members: vec!["A".to_string(), "B".to_string()] }];
     spec.constraints = vec![Constraint::PlaceBefore { before: "A".to_string(), after: "C".to_string() }];
 
     let first_plan = compile_spec(&spec);
@@ -332,11 +327,7 @@ fn the_bypass_edge_visibly_detours_around_the_intermediate_node() {
         .map(|point| point.x)
         .fold(f64::NAN, f64::min)
         .min(bypass.points.iter().map(|point| point.x).fold(f64::NAN, f64::max));
-    assert!(
-        lane_x <= h.rect.x - 4.0 || lane_x >= h.rect.right() + 4.0,
-        "the detour lane must clear H by the gap: {lane_x} vs {:?}",
-        h.rect
-    );
+    assert!(lane_x <= h.rect.x - 4.0 || lane_x >= h.rect.right() + 4.0, "the detour lane must clear H by the gap: {lane_x} vs {:?}", h.rect);
 }
 
 #[test]
@@ -347,10 +338,7 @@ fn converging_edges_share_a_track_in_front_of_the_target() {
     let merge_y = anchor.y - 16.0;
     for routed in plan.edges.iter().filter(|routed| routed.to.node == "G") {
         assert!(
-            routed
-                .points
-                .iter()
-                .any(|point| (point.x - anchor.x).abs() < f64::EPSILON && (point.y - merge_y).abs() < f64::EPSILON),
+            routed.points.iter().any(|point| (point.x - anchor.x).abs() < f64::EPSILON && (point.y - merge_y).abs() < f64::EPSILON),
             "edge {}->G must pass the shared merge point ({}, {merge_y}): {:?}",
             routed.from.node,
             anchor.x,
@@ -371,11 +359,7 @@ fn an_edge_to_an_undeclared_node_is_refused_at_its_statement() {
     spec.edges = vec![edge("A", "missing")];
 
     let plan = compile_spec(&spec);
-    assert!(
-        has_message(&plan, "references unknown node `missing`"),
-        "the diagnostic must name the missing node: {:?}",
-        plan.diagnostics
-    );
+    assert!(has_message(&plan, "references unknown node `missing`"), "the diagnostic must name the missing node: {:?}", plan.diagnostics);
     assert!(plan.edges.is_empty(), "the dangling edge is dropped and the remaining nodes still lay out");
 }
 

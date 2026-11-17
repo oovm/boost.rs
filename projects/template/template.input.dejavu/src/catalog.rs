@@ -118,12 +118,7 @@ pub fn canonical_id(root_name: &str, path: &str) -> String {
 }
 
 /// 解析引用：catalog 索引 + ref + 可选 canonical `from`。
-pub fn resolve_ref(
-    roots: &[ResolveRoot],
-    extensions: &[String],
-    reference: &str,
-    from: Option<&str>,
-) -> Result<ResolveHit, Diagnostic> {
+pub fn resolve_ref(roots: &[ResolveRoot], extensions: &[String], reference: &str, from: Option<&str>) -> Result<ResolveHit, Diagnostic> {
     let raw = reference.replace('\\', "/");
     let raw = raw.trim();
     if raw.is_empty() {
@@ -150,8 +145,7 @@ pub fn resolve_ref(
         else {
             return Err(load_diag(codes::TEMPLATE_RELATIVE_WITHOUT_FROM, reference));
         };
-        let non_canonical_from =
-            || load_diag(codes::TEMPLATE_INVALID_REF, reference).arg("reason", "non-canonical-from").arg("from", from);
+        let non_canonical_from = || load_diag(codes::TEMPLATE_INVALID_REF, reference).arg("reason", "non-canonical-from").arg("from", from);
         // 规范形判定由共享合同完成，宿主只把 id 前缀映射到 root 下标。
         let Ok(parsed) = TemplateId::parse(from)
         else {
@@ -240,8 +234,8 @@ fn load_diag(code: &str, reference: &str) -> Diagnostic {
 }
 
 fn not_found(reference: &str, from: Option<&str>, searched: Vec<String>) -> Diagnostic {
-    let mut diag = load_diag(codes::TEMPLATE_NOT_FOUND, reference)
-        .arg("searched", searched.into_iter().map(crate::ArgValue::String).collect::<Vec<_>>());
+    let mut diag =
+        load_diag(codes::TEMPLATE_NOT_FOUND, reference).arg("searched", searched.into_iter().map(crate::ArgValue::String).collect::<Vec<_>>());
     if let Some(from) = from {
         diag = diag.arg("from", from);
     }
@@ -261,15 +255,8 @@ fn shared_or_missing(error: template::TemplateError, reference: &str, from: Opti
 }
 
 /// 同一 priority 下多个 root 命中同一 bare 引用：拒绝按 catalog 顺序静默取胜。
-fn ambiguous_ref(
-    reference: &str,
-    from: Option<&str>,
-    priority: i32,
-    hits: &[(usize, String)],
-    roots: &[ResolveRoot],
-) -> Diagnostic {
-    let names: Vec<crate::ArgValue> =
-        hits.iter().map(|(index, _)| crate::ArgValue::String(roots[*index].name.clone())).collect();
+fn ambiguous_ref(reference: &str, from: Option<&str>, priority: i32, hits: &[(usize, String)], roots: &[ResolveRoot]) -> Diagnostic {
+    let names: Vec<crate::ArgValue> = hits.iter().map(|(index, _)| crate::ArgValue::String(roots[*index].name.clone())).collect();
     let candidates: Vec<String> = hits.iter().map(|(index, path)| canonical_id(&roots[*index].name, path)).collect();
     let mut diag = load_diag(codes::TEMPLATE_AMBIGUOUS_REF, reference)
         .message(format!(

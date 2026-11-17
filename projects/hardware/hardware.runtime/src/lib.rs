@@ -6,12 +6,10 @@ mod diagnostics;
 mod runtime;
 
 pub use capacity::{
-    apply_capacity, check_soft_limit, domain_bytes, migrate_overflow_to_host,
-    migrate_overflow_to_host_logged, CapacityPolicy, ResourceMigration,
+    CapacityPolicy, ResourceMigration, apply_capacity, check_soft_limit, domain_bytes, migrate_overflow_to_host,
+    migrate_overflow_to_host_logged,
 };
-pub use diagnostics::{
-    kinds as event_kinds, ExecutionDiagnostics, ExecutionEvent, ExecutionEventBuilder,
-};
+pub use diagnostics::{ExecutionDiagnostics, ExecutionEvent, ExecutionEventBuilder, kinds as event_kinds};
 pub use runtime::Runtime;
 
 use hardware_ir::Graph;

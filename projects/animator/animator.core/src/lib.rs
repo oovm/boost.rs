@@ -19,8 +19,7 @@
 //!   过渡结束后到下一个状态开始之前保持下一个状态的画面。
 //! - `duration == 0` 是显式硬切，不是“很短的一段过渡”。
 
-use std::collections::BTreeSet;
-use std::fmt;
+use std::{collections::BTreeSet, fmt};
 
 use plotter_motion::{EnterPolicy, ExitPolicy, InterruptionPolicy, MotionIntent, TransitionPlan, plan_transition, sample};
 use plotter_scene::DisplayScene;

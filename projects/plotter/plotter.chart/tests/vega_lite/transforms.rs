@@ -187,12 +187,9 @@ fn every_advertised_time_unit_is_accepted_with_an_optional_utc_prefix() {
         for keyword in [unit.as_str().to_string(), format!("utc:{}", unit.as_str())] {
             let document = bar(
                 r#"{"t":1705276800000},{"t":1706918400000}"#,
-                &format!(
-                    r#"{{"x":{{"field":"t","type":"temporal","timeUnit":"{keyword}"}},"y":{{"field":"t","type":"temporal"}}}}"#
-                ),
+                &format!(r#"{{"x":{{"field":"t","type":"temporal","timeUnit":"{keyword}"}},"y":{{"field":"t","type":"temporal"}}}}"#),
             );
-            let chart =
-                vega_lite::lower(&document).unwrap_or_else(|error| panic!("`{keyword}` must be accepted: {}", error.message()));
+            let chart = vega_lite::lower(&document).unwrap_or_else(|error| panic!("`{keyword}` must be accepted: {}", error.message()));
             assert_eq!(chart.spec.transforms, Transforms { x: Some(ChannelTransform::TimeUnit(unit)), y: None });
         }
     }
@@ -203,9 +200,7 @@ fn unlisted_time_units_and_local_prefixes_are_refused_with_a_path() {
     for keyword in ["quarter", "dayofyear", "week", "local:yearmonth"] {
         let document = bar(
             r#"{"t":1705276800000}"#,
-            &format!(
-                r#"{{"x":{{"field":"t","type":"temporal","timeUnit":"{keyword}"}},"y":{{"field":"t","type":"temporal"}}}}"#
-            ),
+            &format!(r#"{{"x":{{"field":"t","type":"temporal","timeUnit":"{keyword}"}},"y":{{"field":"t","type":"temporal"}}}}"#),
         );
         let error = vega_lite::lower(&document).expect_err("this unit is outside the subset");
         assert_eq!(error.code(), codes::UNSUPPORTED_ENCODING);
@@ -229,14 +224,8 @@ fn unsupported_bin_options_are_refused_before_any_scene_is_built() {
             r#"{"x":{"field":"v","type":"quantitative","bin":{"extent":[10,0]}},"y":{"field":"v","type":"quantitative"}}"#,
             "$.encoding.x.bin.extent",
         ),
-        (
-            r#"{"x":{"field":"v","type":"quantitative","bin":{"bins":5}},"y":{"field":"v","type":"quantitative"}}"#,
-            "$.encoding.x.bin.bins",
-        ),
-        (
-            r#"{"x":{"field":"v","type":"quantitative","bin":true,"timeUnit":"year"},"y":{"field":"v","type":"quantitative"}}"#,
-            "$.encoding.x",
-        ),
+        (r#"{"x":{"field":"v","type":"quantitative","bin":{"bins":5}},"y":{"field":"v","type":"quantitative"}}"#, "$.encoding.x.bin.bins"),
+        (r#"{"x":{"field":"v","type":"quantitative","bin":true,"timeUnit":"year"},"y":{"field":"v","type":"quantitative"}}"#, "$.encoding.x"),
     ];
     for (encoding, path) in cases {
         let document = bar(r#"{"v":0},{"v":24}"#, encoding);

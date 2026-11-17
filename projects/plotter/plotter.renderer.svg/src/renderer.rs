@@ -1,13 +1,10 @@
 //! SVG 渲染器实现。
 
 use plotter_renderer::{
-    Capability, Drawable, FrameReport, PreparedScene, RenderTarget, Renderer, RendererCapabilities, color_to_css,
-    walk_drawables,
+    Capability, Drawable, FrameReport, PreparedScene, RenderTarget, Renderer, RendererCapabilities, color_to_css, walk_drawables,
 };
 use plotter_types::plot::{Diagnostic, DiagnosticCode, Result};
-use plotter_view::{
-    AxisNode, Mesh3Node, MeshNode, Point2, Points3Node, PointsNode, PolylineNode, Scene, TextNode, try_project_to_screen,
-};
+use plotter_view::{AxisNode, Mesh3Node, MeshNode, Point2, Points3Node, PointsNode, PolylineNode, Scene, TextNode, try_project_to_screen};
 
 /// SVG 渲染器。
 #[derive(Debug, Default, Clone, Copy)]
@@ -151,10 +148,7 @@ fn mesh_svg(mesh: &MeshNode, height: f64) -> String {
         let a = flip_y(mesh.positions[tri[0] as usize], height);
         let b = flip_y(mesh.positions[tri[1] as usize], height);
         let c = flip_y(mesh.positions[tri[2] as usize], height);
-        out.push_str(&format!(
-            r#"<polygon fill="{fill}" points="{:.3},{:.3} {:.3},{:.3} {:.3},{:.3}"/>"#,
-            a.0, a.1, b.0, b.1, c.0, c.1
-        ));
+        out.push_str(&format!(r#"<polygon fill="{fill}" points="{:.3},{:.3} {:.3},{:.3} {:.3},{:.3}"/>"#, a.0, a.1, b.0, b.1, c.0, c.1));
         out.push('\n');
     }
     out
@@ -186,10 +180,7 @@ fn mesh3_svg(scene: &Scene, mesh: &Mesh3Node) -> String {
         let a = flip_y(Point2::new(pa.x, pa.y), height);
         let b = flip_y(Point2::new(pb.x, pb.y), height);
         let c = flip_y(Point2::new(pc.x, pc.y), height);
-        out.push_str(&format!(
-            r#"<polygon fill="{fill}" points="{:.3},{:.3} {:.3},{:.3} {:.3},{:.3}"/>"#,
-            a.0, a.1, b.0, b.1, c.0, c.1
-        ));
+        out.push_str(&format!(r#"<polygon fill="{fill}" points="{:.3},{:.3} {:.3},{:.3} {:.3},{:.3}"/>"#, a.0, a.1, b.0, b.1, c.0, c.1));
         out.push('\n');
     }
     out
@@ -215,8 +206,13 @@ fn points3_svg(scene: &Scene, points: &Points3Node) -> (String, u32) {
 
 fn text_svg(text: &TextNode, height: f64) -> String {
     let (x, y) = flip_y(text.position, height);
+    let anchor = match text.anchor {
+        plotter_view::TextAnchor::Start => "start",
+        plotter_view::TextAnchor::Middle => "middle",
+        plotter_view::TextAnchor::End => "end",
+    };
     format!(
-        r#"<text x="{x:.3}" y="{y:.3}" font-size="{size}" fill="{fill}" font-family="monospace">{content}</text>"#,
+        r#"<text x="{x:.3}" y="{y:.3}" font-size="{size}" fill="{fill}" font-family="monospace" text-anchor="{anchor}">{content}</text>"#,
         size = text.size,
         fill = color_to_css(text.color),
         content = xml_escape(&text.content)
@@ -229,12 +225,7 @@ fn xml_escape(input: &str) -> String {
 
 fn axis_svg(axis: &AxisNode, height: f64) -> (String, u32) {
     let origin = axis.origin;
-    let end = if axis.horizontal {
-        Point2::new(origin.x + axis.length, origin.y)
-    }
-    else {
-        Point2::new(origin.x, origin.y + axis.length)
-    };
+    let end = if axis.horizontal { Point2::new(origin.x + axis.length, origin.y) } else { Point2::new(origin.x, origin.y + axis.length) };
     let (x0, y0) = flip_y(origin, height);
     let (x1, y1) = flip_y(end, height);
     let stroke = color_to_css(axis.stroke);
@@ -255,9 +246,7 @@ fn axis_svg(axis: &AxisNode, height: f64) -> (String, u32) {
         };
         let (sx, sy) = flip_y(start, height);
         let (ex, ey) = flip_y(end, height);
-        out.push_str(&format!(
-            r#"<line x1="{sx:.3}" y1="{sy:.3}" x2="{ex:.3}" y2="{ey:.3}" stroke="{stroke}" stroke-width="1"/>"#
-        ));
+        out.push_str(&format!(r#"<line x1="{sx:.3}" y1="{sy:.3}" x2="{ex:.3}" y2="{ey:.3}" stroke="{stroke}" stroke-width="1"/>"#));
         out.push('\n');
         count += 1;
     }

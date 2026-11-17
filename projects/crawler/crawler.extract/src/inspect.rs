@@ -3,12 +3,7 @@ use crawler_types::{ExtractBudget, ExtractContext, ExtractStatus, FetchArtifact,
 use super::{Extractor, import_html_page, link_candidates_from_import, run_extract, select_extractor};
 
 /// Inspect a fetch artifact without committing IR.
-pub fn inspect_artifact(
-    artifact: &FetchArtifact,
-    extractors: &[&dyn Extractor],
-    stage: InspectStage,
-    budget: ExtractBudget,
-) -> InspectReport {
+pub fn inspect_artifact(artifact: &FetchArtifact, extractors: &[&dyn Extractor], stage: InspectStage, budget: ExtractBudget) -> InspectReport {
     let mut report = InspectReport::empty(artifact.final_url.clone(), stage);
     report.content_type = artifact.content_type.clone();
     report.body_bytes = artifact.body_bytes().map(|body| body.len() as u64).unwrap_or(0);
@@ -22,8 +17,7 @@ pub fn inspect_artifact(
     if matches!(stage, InspectStage::Links | InspectStage::ExtractPlan) {
         if let Some(bytes) = artifact.body_bytes() {
             if let Ok(import) = import_html_page(&artifact.final_url, bytes) {
-                report.discovered_links =
-                    link_candidates_from_import(&artifact.final_url, import.base_href.as_deref(), &import.links);
+                report.discovered_links = link_candidates_from_import(&artifact.final_url, import.base_href.as_deref(), &import.links);
             }
         }
     }

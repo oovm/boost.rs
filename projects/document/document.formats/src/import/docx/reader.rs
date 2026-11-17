@@ -23,8 +23,7 @@ const NUMBERING_RELATIONSHIP_TYPE: &str = "http://schemas.openxmlformats.org/off
 /// Import a DOCX file from disk into `notedown-ir`.
 pub fn import_docx(path: impl AsRef<Path>) -> Result<DocumentGraph, FormatError> {
     let path = path.as_ref();
-    let bytes =
-        fs::read(path).map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
+    let bytes = fs::read(path).map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
     import_docx_bytes(&path.display().to_string(), &bytes)
 }
 
@@ -39,8 +38,7 @@ pub fn import_docx_bytes(label: &str, bytes: &[u8]) -> Result<DocumentGraph, For
 
     let package = OpcPackage::open(label.to_string(), bytes.to_vec()).map_err(map_opc_error)?;
     let mut ledger = BudgetTracker::new(Budget::default());
-    let document_part =
-        package.main_document_part_path(&mut ledger).map_err(map_opc_error)?.unwrap_or_else(|| DOCUMENT_XML.to_string());
+    let document_part = package.main_document_part_path(&mut ledger).map_err(map_opc_error)?.unwrap_or_else(|| DOCUMENT_XML.to_string());
     let xml = package.read_part(&document_part, &mut ledger).map_err(map_opc_error)?;
 
     let rels = read_document_relationships(&package, &document_part, &mut ledger)?;
@@ -73,11 +71,7 @@ pub fn import_docx_bytes(label: &str, bytes: &[u8]) -> Result<DocumentGraph, For
 fn attach_xml_part_source(graph: &mut DocumentGraph, start: usize, part_path: &str) {
     let nodes: Vec<_> = graph.blocks[start..].iter().map(|node| node.id).collect();
     for node in nodes {
-        graph.attach_source(SourceRef {
-            node,
-            kind: SourceKind::XmlRange { path: part_path.to_string() },
-            precision: SemanticStatus::Partial,
-        });
+        graph.attach_source(SourceRef { node, kind: SourceKind::XmlRange { path: part_path.to_string() }, precision: SemanticStatus::Partial });
     }
 }
 
@@ -108,13 +102,7 @@ fn hydrate_core_metadata(package: &OpcPackage, ledger: &mut BudgetTracker, graph
     };
     let tags = text("keywords")
         .map(|value| {
-            value
-                .split(',')
-                .flat_map(|part| part.split(';'))
-                .map(str::trim)
-                .filter(|item| !item.is_empty())
-                .map(str::to_owned)
-                .collect()
+            value.split(',').flat_map(|part| part.split(';')).map(str::trim).filter(|item| !item.is_empty()).map(str::to_owned).collect()
         })
         .unwrap_or_default();
     graph.metadata = DocumentMetadata {
@@ -150,8 +138,7 @@ fn numbering_part_path(package: &OpcPackage, document_part: &str, ledger: &mut B
     relationships
         .into_iter()
         .find(|relationship| {
-            relationship.relationship_type == NUMBERING_RELATIONSHIP_TYPE
-                && relationship.target_mode.as_deref() != Some("External")
+            relationship.relationship_type == NUMBERING_RELATIONSHIP_TYPE && relationship.target_mode.as_deref() != Some("External")
         })
         .map(|relationship| resolve_opc_target(document_part, &relationship.target))
 }

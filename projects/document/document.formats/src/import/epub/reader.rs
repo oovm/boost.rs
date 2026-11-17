@@ -15,8 +15,7 @@ use crate::FormatError;
 /// Import an EPUB file from disk into `notedown-ir`.
 pub fn import_epub(path: impl AsRef<Path>) -> Result<DocumentGraph, FormatError> {
     let path = path.as_ref();
-    let bytes = std::fs::read(path)
-        .map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
+    let bytes = std::fs::read(path).map_err(|error| FormatError::invalid_input(format!("failed to read {}: {error}", path.display())))?;
     import_epub_bytes(&path.display().to_string(), &bytes)
 }
 
@@ -29,8 +28,7 @@ pub fn import_epub_bytes(label: &str, bytes: &[u8]) -> Result<DocumentGraph, For
     let package = OcfPackage::open(label.to_string(), bytes.to_vec()).map_err(map_ocf_error)?;
     let mut ledger = BudgetTracker::new(Budget::default());
     let opf_xml = package.read_member(package.root_opf_path(), &mut ledger).map_err(map_ocf_error)?;
-    let opf =
-        acorn_epub::parse_opf_xml(package.root_opf_path(), &opf_xml).map_err(|error| FormatError::parse("epub", error))?;
+    let opf = acorn_epub::parse_opf_xml(package.root_opf_path(), &opf_xml).map_err(|error| FormatError::parse("epub", error))?;
 
     let mut graph = DocumentGraph::new(document_id_for(label));
     graph.metadata = DocumentMetadata {

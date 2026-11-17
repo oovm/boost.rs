@@ -2412,8 +2412,7 @@ mod tests {
         });
         let options = super::RenderOptions { range: Some(super::FrameRange { start: 20, end: 45 }), cancel: None, ..Default::default() };
         let stats = super::render_project_with(&film.to_string(), &out, &options, &mut |_, _| {}).expect("range render");
-        let spans: Vec<(&str, [u32; 2], bool)> =
-            stats.scenes.iter().map(|span| (span.id.as_str(), span.range, span.rendered)).collect();
+        let spans: Vec<(&str, [u32; 2], bool)> = stats.scenes.iter().map(|span| (span.id.as_str(), span.range, span.rendered)).collect();
         assert_eq!(spans, vec![("cold-open", [0, 20], false), ("mechanism", [20, 45], true), ("scene-2", [45, 60], false)]);
     }
 

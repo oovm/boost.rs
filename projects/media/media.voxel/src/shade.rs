@@ -101,8 +101,7 @@ mod tests {
     #[test]
     fn uniform_shading_scales_every_direction_equally() {
         let shading = Shading::Uniform(0.5);
-        for direction in [Direction::PosY, Direction::NegY, Direction::PosX, Direction::NegX, Direction::PosZ, Direction::NegZ]
-        {
+        for direction in [Direction::PosY, Direction::NegY, Direction::PosX, Direction::NegX, Direction::PosZ, Direction::NegZ] {
             assert_eq!(shading.factor(direction), 0.5);
             assert_eq!(shading.paint(direction, SOURCE_COLOR), Rgba([100, 60, 30, 255]));
         }

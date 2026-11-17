@@ -60,10 +60,7 @@ pub struct DriverError {
 
 impl DriverError {
     pub fn new(code: CUresult, message: impl Into<String>) -> Self {
-        Self {
-            code,
-            message: message.into(),
-        }
+        Self { code, message: message.into() }
     }
 }
 
@@ -86,45 +83,24 @@ pub type CuMemFree = unsafe extern "C" fn(CUdeviceptr) -> CUresult;
 pub type CuMemcpyHtoD = unsafe extern "C" fn(CUdeviceptr, *const c_void, usize) -> CUresult;
 pub type CuMemcpyDtoH = unsafe extern "C" fn(*mut c_void, CUdeviceptr, usize) -> CUresult;
 pub type CuMemcpyDtoD = unsafe extern "C" fn(CUdeviceptr, CUdeviceptr, usize) -> CUresult;
-pub type CuMemcpyDtoDAsync =
-    unsafe extern "C" fn(CUdeviceptr, CUdeviceptr, usize, CUstream) -> CUresult;
+pub type CuMemcpyDtoDAsync = unsafe extern "C" fn(CUdeviceptr, CUdeviceptr, usize, CUstream) -> CUresult;
 pub type CuModuleLoadData = unsafe extern "C" fn(*mut CUmodule, *const c_void) -> CUresult;
 pub type CuModuleUnload = unsafe extern "C" fn(CUmodule) -> CUresult;
-pub type CuModuleGetFunction =
-    unsafe extern "C" fn(*mut CUfunction, CUmodule, *const i8) -> CUresult;
-pub type CuLaunchKernel = unsafe extern "C" fn(
-    CUfunction,
-    u32,
-    u32,
-    u32,
-    u32,
-    u32,
-    u32,
-    u32,
-    CUstream,
-    *mut *mut c_void,
-    *mut c_void,
-) -> CUresult;
+pub type CuModuleGetFunction = unsafe extern "C" fn(*mut CUfunction, CUmodule, *const i8) -> CUresult;
+pub type CuLaunchKernel =
+    unsafe extern "C" fn(CUfunction, u32, u32, u32, u32, u32, u32, u32, CUstream, *mut *mut c_void, *mut c_void) -> CUresult;
 pub type CuStreamCreate = unsafe extern "C" fn(*mut CUstream, u32) -> CUresult;
 pub type CuStreamSynchronize = unsafe extern "C" fn(CUstream) -> CUresult;
 pub type CuStreamDestroy = unsafe extern "C" fn(CUstream) -> CUresult;
-pub type CuStreamBeginCapture =
-    unsafe extern "C" fn(CUstream, u32) -> CUresult;
+pub type CuStreamBeginCapture = unsafe extern "C" fn(CUstream, u32) -> CUresult;
 pub type CuStreamEndCapture = unsafe extern "C" fn(CUstream, *mut CUgraph) -> CUresult;
-pub type CuGraphInstantiateWithFlags =
-    unsafe extern "C" fn(*mut CUgraphExec, CUgraph, u64) -> CUresult;
+pub type CuGraphInstantiateWithFlags = unsafe extern "C" fn(*mut CUgraphExec, CUgraph, u64) -> CUresult;
 pub type CuGraphLaunch = unsafe extern "C" fn(CUgraphExec, CUstream) -> CUresult;
 pub type CuGraphDestroy = unsafe extern "C" fn(CUgraph) -> CUresult;
 pub type CuGraphExecDestroy = unsafe extern "C" fn(CUgraphExec) -> CUresult;
-pub type CuImportExternalMemory = unsafe extern "C" fn(
-    *mut CUexternalMemory,
-    *const CUDA_EXTERNAL_MEMORY_HANDLE_DESC,
-) -> CUresult;
-pub type CuExternalMemoryGetMappedBuffer = unsafe extern "C" fn(
-    *mut CUdeviceptr,
-    CUexternalMemory,
-    *const CUDA_EXTERNAL_MEMORY_BUFFER_DESC,
-) -> CUresult;
+pub type CuImportExternalMemory = unsafe extern "C" fn(*mut CUexternalMemory, *const CUDA_EXTERNAL_MEMORY_HANDLE_DESC) -> CUresult;
+pub type CuExternalMemoryGetMappedBuffer =
+    unsafe extern "C" fn(*mut CUdeviceptr, CUexternalMemory, *const CUDA_EXTERNAL_MEMORY_BUFFER_DESC) -> CUresult;
 pub type CuDestroyExternalMemory = unsafe extern "C" fn(CUexternalMemory) -> CUresult;
 pub type CuEventCreate = unsafe extern "C" fn(*mut CUevent, u32) -> CUresult;
 pub type CuEventDestroy = unsafe extern "C" fn(CUevent) -> CUresult;

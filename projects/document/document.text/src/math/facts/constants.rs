@@ -117,10 +117,7 @@ impl MathConstants {
             (MathConstant::FractionNumeratorShiftUp, units(table.fraction_numerator_shift_up)),
             (MathConstant::FractionNumeratorDisplayStyleShiftUp, units(table.fraction_numerator_display_style_shift_up)),
             (MathConstant::FractionDenominatorShiftDown, units(table.fraction_denominator_shift_down)),
-            (
-                MathConstant::FractionDenominatorDisplayStyleShiftDown,
-                units(table.fraction_denominator_display_style_shift_down),
-            ),
+            (MathConstant::FractionDenominatorDisplayStyleShiftDown, units(table.fraction_denominator_display_style_shift_down)),
             (MathConstant::FractionNumeratorGapMin, units(table.fraction_numerator_gap_min)),
             (MathConstant::FractionNumDisplayStyleGapMin, units(table.fraction_num_display_style_gap_min)),
             (MathConstant::FractionRuleThickness, units(table.fraction_rule_thickness)),
@@ -296,11 +293,7 @@ mod tests {
         assert!(gap.is_synthetic(), "a missing table must not answer an unmarked value");
         assert!(!gap.is_from_font());
         assert_eq!(gap.font_value(), None, "no font value exists behind a fallback");
-        assert_eq!(
-            gap.value(),
-            Some(default_math_constant(MathConstant::UpperLimitGapMin)),
-            "the fallback comes from the one synthetic table"
-        );
+        assert_eq!(gap.value(), Some(default_math_constant(MathConstant::UpperLimitGapMin)), "the fallback comes from the one synthetic table");
     }
 
     #[test]

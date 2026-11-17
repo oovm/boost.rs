@@ -9,9 +9,9 @@ use crawler_fetch::{FetchClient, FetchRequest, RobotsPolicy, Transport, site_key
 use crawler_frontier::{FrontierQueue, FrontierSink, frontier_from_links};
 use crawler_store::{ClaimToken, PageAssetBinding, ResumeState, RunSpec, Store, keyspace::item_id_from_url};
 use crawler_types::{
-    AdmissionDecision, BrowserFallbackPolicy, BrowserFallbackTrigger, ChallengeOutcome, ChallengePolicy, CrawlBudgetStatus,
-    CrawlError, CrawlEvent, CrawlReport, CrawlRequest, ExtractBudget, ExtractContext, ExtractResult, ExtractStatus,
-    FetchArtifact, FrontierItem, PageChallengeState, Result, apply_challenge_policy, diagnostics as pd,
+    AdmissionDecision, BrowserFallbackPolicy, BrowserFallbackTrigger, ChallengeOutcome, ChallengePolicy, CrawlBudgetStatus, CrawlError,
+    CrawlEvent, CrawlReport, CrawlRequest, ExtractBudget, ExtractContext, ExtractResult, ExtractStatus, FetchArtifact, FrontierItem,
+    PageChallengeState, Result, apply_challenge_policy, diagnostics as pd,
 };
 use document_ir::{Block, DocumentGraph, Inline};
 
@@ -220,9 +220,10 @@ pub fn resume_crawl_from_store<T: Transport>(
     options: CrawlOptions<'_>,
     store: &mut dyn Store,
 ) -> Result<CrawlOutput> {
-    let request = resume.request.clone().ok_or_else(|| {
-        store_error("run has no persisted request and cannot be resumed without a JSON checkpoint".to_string())
-    })?;
+    let request = resume
+        .request
+        .clone()
+        .ok_or_else(|| store_error("run has no persisted request and cannot be resumed without a JSON checkpoint".to_string()))?;
     validate_resume_strategy(&resume, options)?;
     let state = CrawlState {
         request: request.clone(),
@@ -243,8 +244,7 @@ const STORE_WORKER_ID: &str = "crawl-local";
 
 fn begin_store_run(store: &mut dyn Store, request: &CrawlRequest, options: CrawlOptions<'_>) -> Result<String> {
     let seed_url = request.seeds.first().map(|seed| seed.url.to_string()).unwrap_or_default();
-    let strategy_fingerprint =
-        options.strategy_fingerprint.map(str::to_string).unwrap_or_else(|| default_strategy_fingerprint(options));
+    let strategy_fingerprint = options.strategy_fingerprint.map(str::to_string).unwrap_or_else(|| default_strategy_fingerprint(options));
     store
         .begin_run(RunSpec { seed_url, request: Some(request.clone()), strategy_fingerprint: Some(strategy_fingerprint) })
         .map(|handle| handle.run_id)
@@ -580,10 +580,7 @@ fn retry_or_exhaust(state: &mut CrawlState, item: &FrontierItem, reason: &str, r
     let attempt_number = item.attempts.saturating_add(1);
     if attempt_number >= MAX_FETCH_ATTEMPTS {
         state.report.failed += 1;
-        state
-            .report
-            .events
-            .push(CrawlEvent::Failed { url: item.request_url.clone(), reason: format!("retry-exhausted:{reason}") });
+        state.report.events.push(CrawlEvent::Failed { url: item.request_url.clone(), reason: format!("retry-exhausted:{reason}") });
         let diagnostic = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::FETCH_RETRY_EXHAUSTED),
             DiagnosticSeverity::Warning,
@@ -592,10 +589,7 @@ fn retry_or_exhaust(state: &mut CrawlState, item: &FrontierItem, reason: &str, r
                 .with_arg("url", MessageArg::Text(item.request_url.to_string()))
                 .with_arg("attempts", MessageArg::U64(u64::from(attempt_number)))
                 .with_arg("reason", MessageArg::Text(reason.to_string()))
-                .with_fallback(format!(
-                    "retry attempts exhausted for `{}` after {attempt_number} attempt(s): {reason}",
-                    item.request_url
-                )),
+                .with_fallback(format!("retry attempts exhausted for `{}` after {attempt_number} attempt(s): {reason}", item.request_url)),
         );
         state.report.push_diagnostic(diagnostic);
         WorkOutcome::Done
@@ -681,12 +675,7 @@ fn accept_browser_snapshot(
 }
 
 /// Record a failed render fallback without swallowing the provider diagnostic.
-fn record_browser_fallback_failure(
-    state: &mut CrawlState,
-    item: &FrontierItem,
-    trigger: BrowserFallbackTrigger,
-    error: CrawlError,
-) {
+fn record_browser_fallback_failure(state: &mut CrawlState, item: &FrontierItem, trigger: BrowserFallbackTrigger, error: CrawlError) {
     let diagnostic_code = error.code().unwrap_or(pd::BROWSER_FALLBACK_FAILED).to_string();
     let provider_code = error.text_arg("workerCode").filter(|code| !code.is_empty()).map(str::to_string);
     let reason = error.to_string();
@@ -910,12 +899,8 @@ fn write_page_transaction(
                 continue;
             }
             let fingerprint = asset.content_identity.clone().unwrap_or_else(|| crate::assets::fingerprint(bytes));
-            let binding = PageAssetBinding {
-                asset_id: asset.id.0.to_string(),
-                fingerprint,
-                media_type: asset.media_type.clone(),
-                bytes: bytes.to_vec(),
-            };
+            let binding =
+                PageAssetBinding { asset_id: asset.id.0.to_string(), fingerprint, media_type: asset.media_type.clone(), bytes: bytes.to_vec() };
             store.page_tx_bind_asset(&binding).map_err(store_error)?;
         }
     }
@@ -978,10 +963,9 @@ fn block_text_chars(block: &Block) -> Option<u64> {
         Block::Quote { .. } => return None,
         Block::Code { content, .. } => content.chars().count() as u64,
         Block::Math { formula } => formula.source.chars().count() as u64,
-        Block::Diagram { source, .. }
-        | Block::Chart { source, .. }
-        | Block::Engraving { source, .. }
-        | Block::Depiction { source, .. } => source.chars().count() as u64,
+        Block::Diagram { source, .. } | Block::Chart { source, .. } | Block::Engraving { source, .. } | Block::Depiction { source, .. } => {
+            source.chars().count() as u64
+        }
         Block::Opaque { .. } | Block::RawHtml { .. } => return None,
     };
     Some(chars)
@@ -1019,10 +1003,7 @@ fn find_ascii_case_insensitive(haystack: &[u8], needle: &[u8], from: usize) -> O
     }
     let last = haystack.len() - needle.len();
     (from..=last).find(|start| {
-        haystack
-            .get(*start..)
-            .and_then(|rest| rest.get(..needle.len()))
-            .is_some_and(|window| window.eq_ignore_ascii_case(needle))
+        haystack.get(*start..).and_then(|rest| rest.get(..needle.len())).is_some_and(|window| window.eq_ignore_ascii_case(needle))
     })
 }
 
@@ -1075,9 +1056,7 @@ fn validate_resume_strategy(resume: &ResumeState, options: CrawlOptions<'_>) -> 
                 Message::new("crawler.diagnostic.resumeStrategyMismatch")
                     .with_arg("checkpoint", MessageArg::Text(expected.clone()))
                     .with_arg("current", MessageArg::Text(actual.clone()))
-                    .with_fallback(format!(
-                        "resume strategy mismatch: checkpoint `{expected}` does not match current `{actual}`"
-                    )),
+                    .with_fallback(format!("resume strategy mismatch: checkpoint `{expected}` does not match current `{actual}`")),
             );
             return Err(CrawlError::from(diag));
         }

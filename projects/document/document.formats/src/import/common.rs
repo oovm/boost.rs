@@ -1,6 +1,4 @@
-use document_ir::{
-    Asset, AssetId, AssetKind, Block, DocumentGraph, Inline, LinkId, Relation, RelationEndpoint, RelationKind, SemanticStatus,
-};
+use document_ir::{Asset, AssetId, AssetKind, Block, DocumentGraph, Inline, LinkId, Relation, RelationEndpoint, RelationKind, SemanticStatus};
 
 #[cfg(any(feature = "markdown", feature = "notedown"))]
 pub(super) fn decode_escaped_text(text: &str) -> String {
@@ -92,11 +90,7 @@ pub fn cell_children(graph: &mut DocumentGraph, content: Vec<Inline>) -> Vec<doc
     if content.is_empty() { Vec::new() } else { vec![graph.push_block(Block::Paragraph { content })] }
 }
 
-fn bind_inline_image_assets(
-    node: document_ir::NodeId,
-    inlines: &mut [Inline],
-    references: &mut Vec<(document_ir::NodeId, String)>,
-) {
+fn bind_inline_image_assets(node: document_ir::NodeId, inlines: &mut [Inline], references: &mut Vec<(document_ir::NodeId, String)>) {
     for inline in inlines {
         match inline {
             Inline::Image { source, asset, alt, .. } => {
@@ -108,9 +102,7 @@ fn bind_inline_image_assets(
                 *asset = Some(asset_id);
                 references.push((node, source.clone()));
             }
-            Inline::Styled { children, .. } | Inline::Attributed { children, .. } => {
-                bind_inline_image_assets(node, children, references)
-            }
+            Inline::Styled { children, .. } | Inline::Attributed { children, .. } => bind_inline_image_assets(node, children, references),
             Inline::Link { display: children, .. } => bind_inline_image_assets(node, children, references),
             Inline::Note { display: Some(children), .. } | Inline::Citation { display: Some(children), .. } => {
                 bind_inline_image_assets(node, children, references)

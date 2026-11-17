@@ -19,8 +19,8 @@ use crate::{
     graph::{ContentGraph, ContentId, discover_markdown_content, load_markdown_node},
     i18n::I18n,
     protocol::{
-        BuildMode, BuildPhase, BuildPlan, BuildResult, ExplainRebuild, ExtensionKind, ExtensionSourceKind, FileChange,
-        FileChangeKind, HookKind, HookWorkItem, InvalidationResult, PluginResult, ResolvedExtension,
+        BuildMode, BuildPhase, BuildPlan, BuildResult, ExplainRebuild, ExtensionKind, ExtensionSourceKind, FileChange, FileChangeKind,
+        HookKind, HookWorkItem, InvalidationResult, PluginResult, ResolvedExtension,
     },
     render::{RenderedPage, render_page, render_taxonomy_page},
     site::{ROUTE_CONFLICT_CODE, SiteModel, SitePage, output_rel},
@@ -204,8 +204,7 @@ impl BuildSession {
         let staging = StagingArea::create(&output_root, &build_id)?;
 
         let (site, mut diagnostics) = SiteModel::build(&self.graph, self.include_drafts(mode), &self.config.lang);
-        let conflicts: Vec<Diagnostic> =
-            diagnostics.iter().filter(|diagnostic| diagnostic.code == ROUTE_CONFLICT_CODE).cloned().collect();
+        let conflicts: Vec<Diagnostic> = diagnostics.iter().filter(|diagnostic| diagnostic.code == ROUTE_CONFLICT_CODE).cloned().collect();
 
         let (i18n, i18n_diagnostics) = I18n::load(&self.paths.root, &self.config);
         let i18n_errors: Vec<Diagnostic> =
@@ -227,20 +226,14 @@ impl BuildSession {
 
         if !conflicts.is_empty() {
             active.staging.discard();
-            let message = conflicts
-                .iter()
-                .map(|diagnostic| format!("{}: {}", diagnostic.code, diagnostic.message))
-                .collect::<Vec<_>>()
-                .join("\n");
+            let message =
+                conflicts.iter().map(|diagnostic| format!("{}: {}", diagnostic.code, diagnostic.message)).collect::<Vec<_>>().join("\n");
             return Err(CoreError::build(message));
         }
         if !i18n_errors.is_empty() {
             active.staging.discard();
-            let message = i18n_errors
-                .iter()
-                .map(|diagnostic| format!("{}: {}", diagnostic.code, diagnostic.message))
-                .collect::<Vec<_>>()
-                .join("\n");
+            let message =
+                i18n_errors.iter().map(|diagnostic| format!("{}: {}", diagnostic.code, diagnostic.message)).collect::<Vec<_>>().join("\n");
             return Err(CoreError::build(message));
         }
 
@@ -336,13 +329,8 @@ impl BuildSession {
         let include_drafts = self.include_drafts(mode);
         // The manifest `content` list stays content-backed; derived taxonomy
         // pages appear only under `pages` / `files`.
-        let content_ids: Vec<ContentId> = active
-            .site
-            .content_pages()
-            .iter()
-            .filter(|page| include_drafts || !page.draft)
-            .map(|page| page.id.clone())
-            .collect();
+        let content_ids: Vec<ContentId> =
+            active.site.content_pages().iter().filter(|page| include_drafts || !page.draft).map(|page| page.id.clone()).collect();
         let pages: Vec<&SitePage> = active.site.pages().iter().filter(|page| include_drafts || !page.draft).collect();
         let page_files: Vec<String> = pages.iter().map(|page| page.output.clone()).collect();
         let manifest = json!({
@@ -402,13 +390,7 @@ impl BuildSession {
             self.last_committed.insert(manifest_rel.into());
         }
 
-        Ok(BuildResult {
-            build_id,
-            output_dir: self.config.output_dir.clone(),
-            content_ids,
-            committed_files: committed,
-            diagnostics,
-        })
+        Ok(BuildResult { build_id, output_dir: self.config.output_dir.clone(), content_ids, committed_files: committed, diagnostics })
     }
 
     /// Replace extension list with Node-resolved absolute paths (same ids).
@@ -435,12 +417,7 @@ impl BuildSession {
         else {
             "no rebuild required for this path".into()
         };
-        Ok(ExplainRebuild {
-            path: change.path,
-            rebuild_required: inv.rebuild_required,
-            reason,
-            invalidated_content: inv.invalidated_content,
-        })
+        Ok(ExplainRebuild { path: change.path, rebuild_required: inv.rebuild_required, reason, invalidated_content: inv.invalidated_content })
     }
 
     /// Apply filesystem changes to the content graph and dirty set.
@@ -725,10 +702,8 @@ fn apply_artifact_patch(staging: &mut StagingArea, patch: &serde_json::Value) ->
         if norm.is_empty() || norm.starts_with('/') || norm.contains("..") || PathBuf::from(&norm).is_absolute() {
             return Err(CoreError::build(format!("refusing unsafe artifact path `{norm}`")));
         }
-        let contents = item
-            .get("contents")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| CoreError::build(format!("artifact `{norm}` missing contents")))?;
+        let contents =
+            item.get("contents").and_then(|v| v.as_str()).ok_or_else(|| CoreError::build(format!("artifact `{norm}` missing contents")))?;
         staging.write_file(&norm, contents.as_bytes())?;
     }
     Ok(())
@@ -765,15 +740,7 @@ fn resolve_declared_extensions(config: &ProjectConfig) -> Vec<ResolvedExtension>
             (ExtensionSourceKind::Package, None, theme.package.clone())
         };
         let id = path.clone().or_else(|| package.clone()).unwrap_or_else(|| "theme".into());
-        out.push(ResolvedExtension {
-            id,
-            kind: ExtensionKind::Theme,
-            source,
-            path,
-            package,
-            resolved_path: None,
-            enabled: true,
-        });
+        out.push(ResolvedExtension { id, kind: ExtensionKind::Theme, source, path, package, resolved_path: None, enabled: true });
     }
     for (i, plugin) in config.plugins.iter().enumerate() {
         let (source, path, package) = if plugin.path.is_some() {
@@ -783,15 +750,7 @@ fn resolve_declared_extensions(config: &ProjectConfig) -> Vec<ResolvedExtension>
             (ExtensionSourceKind::Package, None, plugin.package.clone())
         };
         let id = path.clone().or_else(|| package.clone()).unwrap_or_else(|| format!("plugin-{i}"));
-        out.push(ResolvedExtension {
-            id,
-            kind: ExtensionKind::Plugin,
-            source,
-            path,
-            package,
-            resolved_path: None,
-            enabled: plugin.enabled,
-        });
+        out.push(ResolvedExtension { id, kind: ExtensionKind::Plugin, source, path, package, resolved_path: None, enabled: plugin.enabled });
     }
     out
 }
@@ -903,10 +862,7 @@ incremental = true
         fs::write(dir.path().join("content/hello.md"), "---\ntitle: Hello v2\n---\n\nupdated\n").unwrap();
         let inv = session.invalidate(&[FileChange { path: "content/hello.md".into(), kind: FileChangeKind::Modify }]).unwrap();
         assert!(inv.rebuild_required);
-        assert_eq!(
-            session.graph().nodes.get(&ContentId("hello.md".into())).unwrap().front_matter.title.as_deref(),
-            Some("Hello v2")
-        );
+        assert_eq!(session.graph().nodes.get(&ContentId("hello.md".into())).unwrap().front_matter.title.as_deref(), Some("Hello v2"));
 
         let plan = session.prepare_build(BuildMode::Production).unwrap();
         assert_eq!(plan.content_count, 1); // only dirty hello
@@ -1035,11 +991,7 @@ enabled = false
         write_min_project(dir.path());
         fs::create_dir_all(dir.path().join("content/posts")).unwrap();
         fs::write(dir.path().join("content/index.md"), "---\ntitle: Home\n---\n\nhome\n").unwrap();
-        fs::write(
-            dir.path().join("content/posts/2025-08-11-first.md"),
-            "---\ntitle: First post\ndate: 2026-08-11\n---\n\npost\n",
-        )
-        .unwrap();
+        fs::write(dir.path().join("content/posts/2025-08-11-first.md"), "---\ntitle: First post\ndate: 2026-08-11\n---\n\npost\n").unwrap();
         fs::write(dir.path().join("content/secret.md"), "---\ntitle: Secret\ndraft: true\n---\n\nhidden\n").unwrap();
         fs::write(
             dir.path().join("doki.toml"),
@@ -1119,19 +1071,13 @@ enabled = true
     fn build_rewrites_content_links_to_output_permalinks() {
         let dir = tempfile::tempdir().unwrap();
         write_min_project(dir.path());
-        fs::write(
-            dir.path().join("content/hello.md"),
-            "---\ntitle: Hello\n---\n\nsee [About](about/) and [ext](https://example.com/)\n",
-        )
-        .unwrap();
+        fs::write(dir.path().join("content/hello.md"), "---\ntitle: Hello\n---\n\nsee [About](about/) and [ext](https://example.com/)\n")
+            .unwrap();
         let mut session = BuildSession::open_project(dir.path(), LoadOptions::default()).unwrap();
         session.prepare_build(BuildMode::Production).unwrap();
         session.commit_build().unwrap();
         let html = fs::read_to_string(dir.path().join("dist/pages/hello.html")).unwrap();
-        assert!(
-            html.contains(r#"<a href="/pages/about.html">"#),
-            "relative content route should resolve to the built page, got: {html}"
-        );
+        assert!(html.contains(r#"<a href="/pages/about.html">"#), "relative content route should resolve to the built page, got: {html}");
         assert!(html.contains(r#"<a href="https://example.com/">"#));
     }
 

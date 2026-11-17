@@ -145,10 +145,8 @@ fn every_case_points_at_an_exact_authored_slice() {
             case.language
         );
         assert!(SEVERITIES.contains(&case.severity.as_str()), "`{}` has severity `{}`", case.id, case.severity);
-        let at = case
-            .source
-            .find(&case.span_text)
-            .unwrap_or_else(|| panic!("`{}`: `span_text` does not occur in the authored source", case.id));
+        let at =
+            case.source.find(&case.span_text).unwrap_or_else(|| panic!("`{}`: `span_text` does not occur in the authored source", case.id));
         assert_eq!(&case.source[at..at + case.span_text.len()], case.span_text, "`{}` must be byte-exact", case.id);
     }
 }

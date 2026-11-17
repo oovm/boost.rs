@@ -45,11 +45,7 @@ fn every_catalog_rejection_reports_the_documented_code_severity_and_span() {
             .find(|loss| loss["code"] == case.code.as_str())
             .unwrap_or_else(|| panic!("`{}`: expected `{}` in {losses:?}", case.id, case.code));
 
-        assert_eq!(
-            loss["severity"], case.severity,
-            "`{}`: severity {} but the catalog says {}",
-            case.id, loss["severity"], case.severity
-        );
+        assert_eq!(loss["severity"], case.severity, "`{}`: severity {} but the catalog says {}", case.id, loss["severity"], case.severity);
 
         let span = loss.get("span").expect("loss span key");
         assert!(!span.is_null(), "`{}`: the rejection carries an authored span: {losses:?}", case.id);
@@ -67,8 +63,7 @@ fn every_catalog_rejection_is_stable_across_two_runs() {
     for case in cases() {
         let document = format!("# Catalog\n\n```{}\n{}\n```\n", case.language, case.source);
         let first = convert_bytes("markdown", "html", "catalog.md", document.as_bytes().to_vec(), None).expect("first convert");
-        let second =
-            convert_bytes("markdown", "html", "catalog.md", document.as_bytes().to_vec(), None).expect("second convert");
+        let second = convert_bytes("markdown", "html", "catalog.md", document.as_bytes().to_vec(), None).expect("second convert");
         assert_eq!(first.report_json, second.report_json, "`{}`: the rejection report must be deterministic", case.id);
     }
 }

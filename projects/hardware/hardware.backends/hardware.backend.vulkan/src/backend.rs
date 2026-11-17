@@ -1,17 +1,20 @@
-use std::collections::BTreeMap;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::{
+    collections::BTreeMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use hardware_capability::{Feature, FeatureSet, WiredStrategies};
 use hardware_emitter::{emit_program_spirv, emit_raster_tri_spirv, emit_spirv, program_from_task};
 use hardware_ir::{Graph, TaskKind, TaskNode};
+use hardware_program::{Program, program_hash};
 use hardware_scheduler::{Backend, Error as SchedulerError, Result};
 use hardware_types::{Dispatch, ParamValue, ResourceId};
-use hardware_program::{program_hash, Program};
 
-use crate::driver::ffi::*;
-use crate::driver::VulkanDriver;
-use crate::params::{f32_param, resource_param, str_param, u32_param, BackendError};
+use crate::{
+    driver::{VulkanDriver, ffi::*},
+    params::{BackendError, f32_param, resource_param, str_param, u32_param},
+};
 
 struct DeviceBuffer {
     buffer: VkBuffer,
@@ -151,14 +154,9 @@ impl VulkanBackend {
     /// Upload host `f32` values into an allocated device buffer.
     pub fn write_f32(&mut self, id: ResourceId, values: &[f32]) -> Result<()> {
         let bytes = values.len() * 4;
-        let buf = self.buffers.get(&id).ok_or_else(|| {
-            map_backend_err(BackendError(format!("resource {} not allocated", id.0)))
-        })?;
+        let buf = self.buffers.get(&id).ok_or_else(|| map_backend_err(BackendError(format!("resource {} not allocated", id.0))))?;
         if buf.bytes != bytes {
-            return Err(map_backend_err(BackendError(format!(
-                "resource {} expected {} bytes, got {bytes}",
-                id.0, buf.bytes
-            ))));
+            return Err(map_backend_err(BackendError(format!("resource {} expected {} bytes, got {bytes}", id.0, buf.bytes))));
         }
         let mut host = Vec::with_capacity(bytes);
         for v in values {
@@ -169,18 +167,9 @@ impl VulkanBackend {
 
     /// Download a device buffer as `f32` values.
     pub fn read_f32(&mut self, id: ResourceId) -> Result<Vec<f32>> {
-        let bytes = self
-            .buffers
-            .get(&id)
-            .ok_or_else(|| {
-                map_backend_err(BackendError(format!("resource {} not allocated", id.0)))
-            })?
-            .bytes;
+        let bytes = self.buffers.get(&id).ok_or_else(|| map_backend_err(BackendError(format!("resource {} not allocated", id.0))))?.bytes;
         let host = self.readback(id, bytes)?;
-        Ok(host
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect())
+        Ok(host.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect())
     }
 
     /// 上传同质 F64 资源，尺寸必须精确匹配，不截断为 F32。
@@ -202,41 +191,30 @@ impl VulkanBackend {
 
     /// Download a device buffer as raw bytes (e.g. `R8G8B8A8` raster readback).
     pub fn read_u8(&mut self, id: ResourceId) -> Result<Vec<u8>> {
-        let bytes = self
-            .buffers
-            .get(&id)
-            .ok_or_else(|| {
-                map_backend_err(BackendError(format!("resource {} not allocated", id.0)))
-            })?
-            .bytes;
+        let bytes = self.buffers.get(&id).ok_or_else(|| map_backend_err(BackendError(format!("resource {} not allocated", id.0))))?.bytes;
         self.readback(id, bytes)
     }
 
     /// Run every task on this backend. Caller must [`prepare`] and seed inputs first.
     pub fn run_prepared(&mut self, graph: &Graph) -> Result<()> {
         graph.validate().map_err(SchedulerError::from)?;
-        let order = graph
-            .tasks
-            .topological_order()
-            .map_err(SchedulerError::from)?;
+        let order = graph.tasks.topological_order().map_err(SchedulerError::from)?;
         for task_id in order {
-            let task = graph
-                .tasks
-                .nodes
-                .iter()
-                .find(|t| t.id == task_id)
-                .expect("task in order must exist");
+            let task = graph.tasks.nodes.iter().find(|t| t.id == task_id).expect("task in order must exist");
             self.submit_task(graph, task)?;
         }
         Ok(())
     }
 
     fn upload(&mut self, id: ResourceId, bytes: &[u8]) -> Result<()> {
-        let (staging, staging_mem) = self.driver.create_buffer(
-            bytes.len(),
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        ).map_err(vk_err)?;
+        let (staging, staging_mem) = self
+            .driver
+            .create_buffer(
+                bytes.len(),
+                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            )
+            .map_err(vk_err)?;
         {
             let ptr = self.driver.map_memory(staging_mem, bytes.len()).map_err(vk_err)?;
             unsafe {
@@ -253,11 +231,10 @@ impl VulkanBackend {
     }
 
     fn readback(&mut self, id: ResourceId, bytes: usize) -> Result<Vec<u8>> {
-        let (staging, staging_mem) = self.driver.create_buffer(
-            bytes,
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        ).map_err(vk_err)?;
+        let (staging, staging_mem) = self
+            .driver
+            .create_buffer(bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+            .map_err(vk_err)?;
         let src = self.buffers.get(&id).unwrap().buffer;
         self.with_commands(|cmd| {
             self.driver.cmd_copy_buffer(cmd, src, staging, bytes);
@@ -272,30 +249,16 @@ impl VulkanBackend {
         Ok(out)
     }
 
-    fn create_buffer(
-        &self,
-        bytes: usize,
-        usage: u32,
-        props: u32,
-    ) -> Result<(VkBuffer, VkDeviceMemory)> {
+    fn create_buffer(&self, bytes: usize, usage: u32, props: u32) -> Result<(VkBuffer, VkDeviceMemory)> {
         self.driver.create_buffer(bytes, usage, props).map_err(vk_err)
     }
 
-    fn create_image(
-        &self,
-        width: u32,
-        height: u32,
-        usage: u32,
-        props: u32,
-    ) -> Result<(VkImage, VkDeviceMemory)> {
+    fn create_image(&self, width: u32, height: u32, usage: u32, props: u32) -> Result<(VkImage, VkDeviceMemory)> {
         self.driver.create_image(width, height, usage, props).map_err(vk_err)
     }
 
     fn with_commands(&self, record: impl FnOnce(VkCommandBuffer)) -> Result<()> {
-        let cmd = self
-            .driver
-            .allocate_command_buffer(self.command_pool)
-            .map_err(vk_err)?;
+        let cmd = self.driver.allocate_command_buffer(self.command_pool).map_err(vk_err)?;
         self.driver.begin_command_buffer(cmd).map_err(vk_err)?;
         record(cmd);
         self.driver.end_command_buffer(cmd).map_err(vk_err)?;
@@ -310,9 +273,7 @@ impl VulkanBackend {
         let src_bytes = self.buf_bytes(src)?;
         let dst_bytes = self.buf_bytes(dst)?;
         if src_bytes != dst_bytes {
-            return Err(map_backend_err(BackendError(format!(
-                "copy size mismatch: src {src_bytes} dst {dst_bytes}"
-            ))));
+            return Err(map_backend_err(BackendError(format!("copy size mismatch: src {src_bytes} dst {dst_bytes}"))));
         }
         let src_buf = self.buffers.get(&src).unwrap().buffer;
         let dst_buf = self.buffers.get(&dst).unwrap().buffer;
@@ -326,22 +287,13 @@ impl VulkanBackend {
         let _value = f32_param(task, "value").map_err(map_backend_err)?;
         let bytes = self.buf_bytes(dst)?;
         if bytes % 4 != 0 {
-            return Err(map_backend_err(BackendError(format!(
-                "fill destination {} length {bytes} is not a multiple of 4",
-                dst.0
-            ))));
+            return Err(map_backend_err(BackendError(format!("fill destination {} length {bytes} is not a multiple of 4", dst.0))));
         }
         let count = (bytes / 4) as u32;
         let program = program_from_task(task).map_err(|err| map_emit_err(err.to_string()))?;
         let spirv = emit_spirv(&program).map_err(map_emit_err)?;
         let dst_buf = self.buffers.get(&dst).unwrap().buffer;
-        self.dispatch_compute(
-            &spirv,
-            &program.entry,
-            &[dst_buf],
-            &count.to_ne_bytes(),
-            count.div_ceil(64).max(1),
-        )
+        self.dispatch_compute(&spirv, &program.entry, &[dst_buf], &count.to_ne_bytes(), count.div_ceil(64).max(1))
     }
 
     fn run_matmul(&mut self, task: &TaskNode) -> Result<()> {
@@ -364,29 +316,20 @@ impl VulkanBackend {
         push[0..4].copy_from_slice(&m.to_ne_bytes());
         push[4..8].copy_from_slice(&n.to_ne_bytes());
         push[8..12].copy_from_slice(&k.to_ne_bytes());
-        self.dispatch_compute(
-            &spirv,
-            &program.entry,
-            &[a_buf, b_buf, out_buf],
-            &push,
-            (m * n).div_ceil(64).max(1),
-        )
+        self.dispatch_compute(&spirv, &program.entry, &[a_buf, b_buf, out_buf], &push, (m * n).div_ceil(64).max(1))
     }
 
     fn lowered_program(&mut self, task: &TaskNode) -> Result<Arc<LoweredProgram>> {
         let (version, expected_hash, body) = match task.params.get("program") {
             Some(ParamValue::Program { version, hash, body }) => (*version, *hash, body),
-            _ => return Err(map_backend_err(BackendError(
-                "Dispatch requires a serialized generic UCF program".into(),
-            ))),
+            _ => return Err(map_backend_err(BackendError("Dispatch requires a serialized generic UCF program".into()))),
         };
         if version != 1 {
-            return Err(map_backend_err(BackendError(format!(
-                "unsupported generic UCF program version {version}"
-            ))));
+            return Err(map_backend_err(BackendError(format!("unsupported generic UCF program version {version}"))));
         }
-        if let Some(index) = self.program_cache.iter().position(|entry|
-            entry.version == version && entry.hash == expected_hash && entry.body == *body) {
+        if let Some(index) =
+            self.program_cache.iter().position(|entry| entry.version == version && entry.hash == expected_hash && entry.body == *body)
+        {
             self.program_cache_stats.hits += 1;
             let entry = self.program_cache.remove(index);
             let lowered = Arc::clone(&entry.lowered);
@@ -394,9 +337,8 @@ impl VulkanBackend {
             return Ok(lowered);
         }
         self.program_cache_stats.misses += 1;
-        let program: Program = serde_json::from_str(body).map_err(|e| {
-            map_backend_err(BackendError(format!("invalid generic UCF program body: {e}")))
-        })?;
+        let program: Program =
+            serde_json::from_str(body).map_err(|e| map_backend_err(BackendError(format!("invalid generic UCF program body: {e}"))))?;
         let actual_hash = program_hash(&program);
         if actual_hash != expected_hash {
             return Err(map_backend_err(BackendError(format!(
@@ -418,12 +360,13 @@ impl VulkanBackend {
             .flatten()
             .max();
         let started = Instant::now();
-        let spirv = emit_program_spirv(&program, "hardware_program_main")
-            .map_err(|e| map_emit_err(e.to_string()))?;
+        let spirv = emit_program_spirv(&program, "hardware_program_main").map_err(|e| map_emit_err(e.to_string()))?;
         self.program_cache_stats.lowering_time += started.elapsed();
         self.program_cache_stats.lowerings += 1;
         let lowered = Arc::new(LoweredProgram { float64, max_resource, spirv });
-        if self.program_cache.len() == 16 { self.program_cache.remove(0); }
+        if self.program_cache.len() == 16 {
+            self.program_cache.remove(0);
+        }
         self.program_cache.push(ProgramCacheEntry { version, hash: expected_hash, body: body.clone(), lowered: Arc::clone(&lowered) });
         Ok(lowered)
     }
@@ -440,19 +383,14 @@ impl VulkanBackend {
                 output.0
             ))));
         }
-        let output_count = u32::try_from(bytes / scalar_bytes).map_err(|_| {
-            map_backend_err(BackendError("generic UCF output element count exceeds u32".into()))
-        })?;
+        let output_count = u32::try_from(bytes / scalar_bytes)
+            .map_err(|_| map_backend_err(BackendError("generic UCF output element count exceeds u32".into())))?;
         let dispatch_count = match task.dispatch {
             Dispatch::Explicit { x, y, z } => x
                 .checked_mul(y)
                 .and_then(|value| value.checked_mul(z))
                 .ok_or_else(|| map_backend_err(BackendError("generic UCF dispatch dimensions overflow".into())))?,
-            Dispatch::Auto => {
-                return Err(map_backend_err(BackendError(
-                    "generic UCF dispatch requires explicit dimensions".into(),
-                )))
-            }
+            Dispatch::Auto => return Err(map_backend_err(BackendError("generic UCF dispatch requires explicit dimensions".into()))),
         };
         if dispatch_count > output_count {
             return Err(map_backend_err(BackendError(format!(
@@ -468,12 +406,15 @@ impl VulkanBackend {
                     Some(_) => return Err(map_backend_err(BackendError(format!("{key} must be a non-negative resource id")))),
                     None => return Err(map_backend_err(BackendError(format!("generic UCF program requires {key}")))),
                 };
-                let buffer = self.buffers.get(&resource).ok_or_else(|| {
-                    map_backend_err(BackendError(format!("generic UCF input resource {} is not allocated", resource.0)))
-                })?;
+                let buffer = self
+                    .buffers
+                    .get(&resource)
+                    .ok_or_else(|| map_backend_err(BackendError(format!("generic UCF input resource {} is not allocated", resource.0))))?;
                 if buffer.bytes % scalar_bytes != 0 {
                     return Err(map_backend_err(BackendError(format!(
-                        "generic UCF resource {} must contain {scalar_bytes}-byte scalar elements", resource.0))));
+                        "generic UCF resource {} must contain {scalar_bytes}-byte scalar elements",
+                        resource.0
+                    ))));
                 }
                 dispatch_buffers.push(buffer.buffer);
             }
@@ -485,9 +426,7 @@ impl VulkanBackend {
                 let value = match value {
                     ParamValue::F64(value) => *value,
                     ParamValue::I64(value) => *value as f64,
-                    _ => return Err(map_backend_err(BackendError(format!(
-                        "uniform_{slot} must be numeric"
-                    )))),
+                    _ => return Err(map_backend_err(BackendError(format!("uniform_{slot} must be numeric")))),
                 };
                 let offset = scalar_bytes * (slot as usize + 1);
                 if float64 {
@@ -495,18 +434,13 @@ impl VulkanBackend {
                         return Err(map_backend_err(BackendError("F64 push constants support at most fifteen uniforms".into())));
                     }
                     push[offset..offset + 8].copy_from_slice(&value.to_ne_bytes());
-                } else {
+                }
+                else {
                     push[offset..offset + 4].copy_from_slice(&(value as f32).to_ne_bytes());
                 }
             }
         }
-        self.dispatch_compute(
-            &lowered.spirv,
-            "hardware_program_main",
-            &dispatch_buffers,
-            &push,
-            dispatch_count.div_ceil(64).max(1),
-        )
+        self.dispatch_compute(&lowered.spirv, "hardware_program_main", &dispatch_buffers, &push, dispatch_count.div_ceil(64).max(1))
     }
 
     /// Rasterize into an R8G8B8A8 image and copy packed pixels into buffer `dst`.
@@ -518,20 +452,14 @@ impl VulkanBackend {
         let width = u32_param(task, "width").map_err(map_backend_err)?;
         let height = u32_param(task, "height").map_err(map_backend_err)?;
         if width == 0 || height == 0 {
-            return Err(map_backend_err(BackendError(
-                "raster width/height must be > 0".into(),
-            )));
+            return Err(map_backend_err(BackendError("raster width/height must be > 0".into())));
         }
         let draw = str_param(task, "draw").unwrap_or("clear");
         if draw != "clear" && draw != "tri" {
-            return Err(map_backend_err(BackendError(format!(
-                "raster draw must be `clear` or `tri`, got `{draw}`"
-            ))));
+            return Err(map_backend_err(BackendError(format!("raster draw must be `clear` or `tri`, got `{draw}`"))));
         }
         if draw == "tri" && !self.graphics {
-            return Err(map_backend_err(BackendError(
-                "raster draw=tri requires a graphics queue".into(),
-            )));
+            return Err(map_backend_err(BackendError("raster draw=tri requires a graphics queue".into())));
         }
         let r = f32_param(task, "r").unwrap_or(0.0);
         let g = f32_param(task, "g").unwrap_or(0.0);
@@ -543,27 +471,18 @@ impl VulkanBackend {
             .ok_or_else(|| map_backend_err(BackendError("raster size overflow".into())))?;
         let dst_bytes = self.buf_bytes(dst)?;
         if dst_bytes < need {
-            return Err(map_backend_err(BackendError(format!(
-                "raster destination {} has {dst_bytes} bytes, need at least {need}",
-                dst.0
-            ))));
+            return Err(map_backend_err(BackendError(format!("raster destination {} has {dst_bytes} bytes, need at least {need}", dst.0))));
         }
 
         if draw == "tri" {
             self.run_raster_tri(dst, width, height, need, [r, g, b, a])
-        } else {
+        }
+        else {
             self.run_raster_clear(dst, width, height, need, [r, g, b, a])
         }
     }
 
-    fn run_raster_clear(
-        &mut self,
-        dst: ResourceId,
-        width: u32,
-        height: u32,
-        need: usize,
-        color: [f32; 4],
-    ) -> Result<()> {
+    fn run_raster_clear(&mut self, dst: ResourceId, width: u32, height: u32, need: usize, color: [f32; 4]) -> Result<()> {
         let (image, image_mem) = self.create_image(
             width,
             height,
@@ -599,8 +518,7 @@ impl VulkanBackend {
                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             );
-            self.driver
-                .cmd_copy_image_to_buffer(cmd, image, staging, width, height);
+            self.driver.cmd_copy_image_to_buffer(cmd, image, staging, width, height);
         })?;
 
         let pixels = self.map_staging_pixels(staging_mem, need)?;
@@ -609,60 +527,27 @@ impl VulkanBackend {
         self.upload(dst, &pixels)
     }
 
-    fn run_raster_tri(
-        &mut self,
-        dst: ResourceId,
-        width: u32,
-        height: u32,
-        need: usize,
-        clear_color: [f32; 4],
-    ) -> Result<()> {
+    fn run_raster_tri(&mut self, dst: ResourceId, width: u32, height: u32, need: usize, clear_color: [f32; 4]) -> Result<()> {
         let spirv = emit_raster_tri_spirv().map_err(map_emit_err)?;
         let (image, image_mem) = self.create_image(
             width,
             height,
-            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
-                | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
-                | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         )?;
         let view = self.driver.create_image_view(image).map_err(vk_err)?;
-        let render_pass = self
-            .driver
-            .create_color_render_pass(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)
-            .map_err(vk_err)?;
-        let framebuffer = self
-            .driver
-            .create_framebuffer(render_pass, view, width, height)
-            .map_err(vk_err)?;
+        let render_pass = self.driver.create_color_render_pass(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL).map_err(vk_err)?;
+        let framebuffer = self.driver.create_framebuffer(render_pass, view, width, height).map_err(vk_err)?;
 
-        let words: Vec<u32> = spirv
-            .module
-            .chunks_exact(4)
-            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect();
+        let words: Vec<u32> = spirv.module.chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
         let module = self.driver.create_shader_module(&words).map_err(vk_err)?;
-        let pipeline_layout = self
-            .driver
-            .create_pipeline_layout(None, 0, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
-            .map_err(vk_err)?;
-        let (vs_name, fs_name) = (
-            std::ffi::CString::new("vs_main").unwrap(),
-            std::ffi::CString::new("fs_main").unwrap(),
-        );
+        let pipeline_layout =
+            self.driver.create_pipeline_layout(None, 0, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT).map_err(vk_err)?;
+        let (vs_name, fs_name) = (std::ffi::CString::new("vs_main").unwrap(), std::ffi::CString::new("fs_main").unwrap());
         self.mark_pipeline_path();
         let pipeline = self
             .driver
-            .create_triangle_pipeline(
-                module,
-                &vs_name,
-                module,
-                &fs_name,
-                pipeline_layout,
-                render_pass,
-                width,
-                height,
-            )
+            .create_triangle_pipeline(module, &vs_name, module, &fs_name, pipeline_layout, render_pass, width, height)
             .map_err(vk_err)?;
 
         let (staging, staging_mem) = self.create_buffer(
@@ -673,10 +558,8 @@ impl VulkanBackend {
 
         self.mark_sync_path();
         self.with_commands(|cmd| {
-            self.driver
-                .cmd_draw_triangle(cmd, render_pass, framebuffer, width, height, clear_color);
-            self.driver
-                .cmd_bind_pipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            self.driver.cmd_draw_triangle(cmd, render_pass, framebuffer, width, height, clear_color);
+            self.driver.cmd_bind_pipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
             self.driver.cmd_draw(cmd);
             self.driver.cmd_end_render_pass(cmd);
 
@@ -690,8 +573,7 @@ impl VulkanBackend {
                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             );
-            self.driver
-                .cmd_copy_image_to_buffer(cmd, image, staging, width, height);
+            self.driver.cmd_copy_image_to_buffer(cmd, image, staging, width, height);
         })?;
 
         let pixels = self.map_staging_pixels(staging_mem, need)?;
@@ -718,48 +600,22 @@ impl VulkanBackend {
         Ok(pixels)
     }
 
-    fn dispatch_compute(
-        &mut self,
-        spirv_bytes: &[u8],
-        entry: &str,
-        buffers: &[VkBuffer],
-        push_bytes: &[u8],
-        groups_x: u32,
-    ) -> Result<()> {
+    fn dispatch_compute(&mut self, spirv_bytes: &[u8], entry: &str, buffers: &[VkBuffer], push_bytes: &[u8], groups_x: u32) -> Result<()> {
         let cache_index = if let Some(index) = self.compute_pipelines.iter().position(|cached| {
-            cached.spirv == spirv_bytes
-                && cached.entry == entry
-                && cached.buffer_count == buffers.len()
-                && cached.push_size == push_bytes.len()
+            cached.spirv == spirv_bytes && cached.entry == entry && cached.buffer_count == buffers.len() && cached.push_size == push_bytes.len()
         }) {
             index
-        } else {
-            let words: Vec<u32> = spirv_bytes
-                .chunks_exact(4)
-                .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                .collect();
+        }
+        else {
+            let words: Vec<u32> = spirv_bytes.chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
             let module = self.driver.create_shader_module(&words).map_err(vk_err)?;
             self.mark_descriptor_path();
-            let set_layout = self
-                .driver
-                .create_storage_set_layout(buffers.len() as u32, VK_SHADER_STAGE_COMPUTE_BIT)
-                .map_err(vk_err)?;
-            let pipeline_layout = self
-                .driver
-                .create_pipeline_layout(
-                    Some(set_layout),
-                    push_bytes.len() as u32,
-                    VK_SHADER_STAGE_COMPUTE_BIT,
-                )
-                .map_err(vk_err)?;
-            let entry_c = std::ffi::CString::new(entry).map_err(|e| {
-                map_backend_err(BackendError(format!("invalid entry `{entry}`: {e}")))
-            })?;
+            let set_layout = self.driver.create_storage_set_layout(buffers.len() as u32, VK_SHADER_STAGE_COMPUTE_BIT).map_err(vk_err)?;
+            let pipeline_layout =
+                self.driver.create_pipeline_layout(Some(set_layout), push_bytes.len() as u32, VK_SHADER_STAGE_COMPUTE_BIT).map_err(vk_err)?;
+            let entry_c = std::ffi::CString::new(entry).map_err(|e| map_backend_err(BackendError(format!("invalid entry `{entry}`: {e}"))))?;
             self.mark_pipeline_path();
-            let pipeline = self
-                .driver
-                .create_compute_pipeline(module, &entry_c, pipeline_layout)
-                .map_err(vk_err)?;
+            let pipeline = self.driver.create_compute_pipeline(module, &entry_c, pipeline_layout).map_err(vk_err)?;
             self.compute_pipelines.push(ComputePipelineCache {
                 spirv: spirv_bytes.to_vec(),
                 entry: entry.to_owned(),
@@ -789,13 +645,10 @@ impl VulkanBackend {
                 VK_ACCESS_MEMORY_WRITE_BIT,
                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
             );
-            self.driver
-                .cmd_bind_pipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
-            self.driver
-                .cmd_bind_descriptor_set(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, set);
+            self.driver.cmd_bind_pipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+            self.driver.cmd_bind_descriptor_set(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, set);
             if !push_bytes.is_empty() {
-                self.driver
-                    .cmd_push_constants(cmd, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, push_bytes);
+                self.driver.cmd_push_constants(cmd, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, push_bytes);
             }
             self.driver.cmd_dispatch(cmd, groups_x);
             self.driver.cmd_memory_barrier(
@@ -812,10 +665,7 @@ impl VulkanBackend {
     }
 
     fn buf_bytes(&self, id: ResourceId) -> Result<usize> {
-        self.buffers
-            .get(&id)
-            .map(|b| b.bytes)
-            .ok_or_else(|| map_backend_err(BackendError(format!("resource {} not allocated", id.0))))
+        self.buffers.get(&id).map(|b| b.bytes).ok_or_else(|| map_backend_err(BackendError(format!("resource {} not allocated", id.0))))
     }
 }
 
@@ -826,15 +676,26 @@ fn hardware_program_resource_slots(stmt: &hardware_program::Stmt) -> std::result
                 slots.push(*resource);
                 expr_slots(index, slots);
             }
-            hardware_program::Expr::BinOp { lhs, rhs, .. } => { expr_slots(lhs, slots); expr_slots(rhs, slots); }
+            hardware_program::Expr::BinOp { lhs, rhs, .. } => {
+                expr_slots(lhs, slots);
+                expr_slots(rhs, slots);
+            }
             hardware_program::Expr::UnOp { arg, .. } => expr_slots(arg, slots),
             hardware_program::Expr::Select { cond, then_, else_ } => {
-                expr_slots(cond, slots); expr_slots(then_, slots); expr_slots(else_, slots);
+                expr_slots(cond, slots);
+                expr_slots(then_, slots);
+                expr_slots(else_, slots);
             }
             hardware_program::Expr::Vec3Compose { x, y, z } => {
-                expr_slots(x, slots); expr_slots(y, slots); expr_slots(z, slots);
+                expr_slots(x, slots);
+                expr_slots(y, slots);
+                expr_slots(z, slots);
             }
-            hardware_program::Expr::Call { args, .. } => for arg in args { expr_slots(arg, slots); },
+            hardware_program::Expr::Call { args, .. } => {
+                for arg in args {
+                    expr_slots(arg, slots);
+                }
+            }
             _ => {}
         }
     }
@@ -845,14 +706,20 @@ fn hardware_program_resource_slots(stmt: &hardware_program::Stmt) -> std::result
         | hardware_program::Stmt::Return(init)
         | hardware_program::Stmt::Expr(init) => expr_slots(init, &mut slots),
         hardware_program::Stmt::StoreBuffer { resource, index, value } => {
-            slots.push(*resource); expr_slots(index, &mut slots); expr_slots(value, &mut slots);
+            slots.push(*resource);
+            expr_slots(index, &mut slots);
+            expr_slots(value, &mut slots);
         }
         hardware_program::Stmt::If { cond, then_body, else_body } => {
             expr_slots(cond, &mut slots);
-            for nested in then_body.iter().chain(else_body) { slots.extend(hardware_program_resource_slots(nested)?); }
+            for nested in then_body.iter().chain(else_body) {
+                slots.extend(hardware_program_resource_slots(nested)?);
+            }
         }
         hardware_program::Stmt::For { body, .. } | hardware_program::Stmt::While { body, .. } => {
-            for nested in body { slots.extend(hardware_program_resource_slots(nested)?); }
+            for nested in body {
+                slots.extend(hardware_program_resource_slots(nested)?);
+            }
         }
         hardware_program::Stmt::Break | hardware_program::Stmt::Continue => {}
         hardware_program::Stmt::Cfg { blocks, .. } => {
@@ -904,12 +771,10 @@ impl Backend for VulkanBackend {
 
     fn prepare(&mut self, graph: &Graph) -> Result<()> {
         for node in &graph.resources.nodes {
-            let bytes = node.byte_size.ok_or_else(|| {
-                map_backend_err(BackendError(format!(
-                    "resource {} needs byte_size for vulkan backend",
-                    node.id.0
-                )))
-            })? as usize;
+            let bytes = node
+                .byte_size
+                .ok_or_else(|| map_backend_err(BackendError(format!("resource {} needs byte_size for vulkan backend", node.id.0))))?
+                as usize;
             if let Some(existing) = self.buffers.get(&node.id) {
                 if existing.bytes != bytes {
                     return Err(map_backend_err(BackendError(format!(
@@ -921,19 +786,10 @@ impl Backend for VulkanBackend {
             }
             let (buffer, memory) = self.create_buffer(
                 bytes,
-                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
-                    | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
-                    | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             )?;
-            self.buffers.insert(
-                node.id,
-                DeviceBuffer {
-                    buffer,
-                    memory,
-                    bytes,
-                },
-            );
+            self.buffers.insert(node.id, DeviceBuffer { buffer, memory, bytes });
             let zeros = vec![0u8; bytes];
             self.upload(node.id, &zeros)?;
         }
@@ -947,22 +803,15 @@ impl Backend for VulkanBackend {
             TaskKind::MatMul => self.run_matmul(task),
             TaskKind::Dispatch => self.run_program_task(task),
             TaskKind::Raster => self.run_raster(task),
-            TaskKind::RtTrace => Err(map_backend_err(BackendError(
-                "ray tracing is not in the vulkan thin gate".into(),
-            ))),
-            other => Err(map_backend_err(BackendError(format!(
-                "vulkan backend does not implement {other:?}"
-            )))),
+            TaskKind::RtTrace => Err(map_backend_err(BackendError("ray tracing is not in the vulkan thin gate".into()))),
+            other => Err(map_backend_err(BackendError(format!("vulkan backend does not implement {other:?}")))),
         }
     }
 }
 
 fn expect_bytes(id: ResourceId, have: usize, need: usize) -> Result<()> {
     if have != need {
-        return Err(map_backend_err(BackendError(format!(
-            "resource {} has {have} bytes, expected {need}",
-            id.0
-        ))));
+        return Err(map_backend_err(BackendError(format!("resource {} has {have} bytes, expected {need}", id.0))));
     }
     Ok(())
 }

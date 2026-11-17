@@ -44,10 +44,7 @@ fn snapshot_unstyled_runs_keep_their_original_style_attribute() {
     let html = snapshot(vec![text("Plain body")]);
 
     assert!(html.contains("<div class=\"vutex-text\" data-vutex-item=\"text\" style=\"left:"), "{html}");
-    assert!(
-        html.contains(";font-family:serif;color:#1A1A1A\">Plain body</div>"),
-        "ink stays the only extra declaration: {html}"
-    );
+    assert!(html.contains(";font-family:serif;color:#1A1A1A\">Plain body</div>"), "ink stays the only extra declaration: {html}");
     assert!(!html.contains("font-weight"), "{html}");
     assert!(!html.contains("font-style"), "{html}");
 }
@@ -69,9 +66,7 @@ fn reflow_paragraphs_render_styled_tags() {
     let html = render_html_reflow(&build_flow_presentation(&graph)).expect("reflow html");
 
     assert!(
-        html.contains(
-            "<p data-vutex-block=\"paragraph\">Plain <strong>bold</strong> and <em>italic</em> and <code>mono</code>.</p>"
-        ),
+        html.contains("<p data-vutex-block=\"paragraph\">Plain <strong>bold</strong> and <em>italic</em> and <code>mono</code>.</p>"),
         "{html}"
     );
     assert_eq!(html.matches("<strong>").count(), 1, "adjacent same-style runs are merged: {html}");
@@ -80,9 +75,7 @@ fn reflow_paragraphs_render_styled_tags() {
 #[test]
 fn reflow_merges_adjacent_runs_of_the_same_style() {
     let mut graph = DocumentGraph::new(DocumentId(53));
-    graph.push_block(Block::Paragraph {
-        content: vec![styled("strong", vec![text("one "), styled("bold", vec![text("two")])])],
-    });
+    graph.push_block(Block::Paragraph { content: vec![styled("strong", vec![text("one "), styled("bold", vec![text("two")])])] });
     let html = render_html_reflow(&build_flow_presentation(&graph)).expect("reflow html");
 
     assert!(html.contains("<p data-vutex-block=\"paragraph\"><strong>one two</strong></p>"), "{html}");
@@ -146,9 +139,8 @@ fn reflow_list_items_emit_italic_inline() {
 #[test]
 fn reflow_quote_emits_code_inline() {
     let mut graph = DocumentGraph::new(DocumentId(57));
-    let quote = graph.push_block(Block::Paragraph {
-        content: vec![text("Run "), Inline::InlineCode { text: "vutex".to_string() }, text(" first")],
-    });
+    let quote =
+        graph.push_block(Block::Paragraph { content: vec![text("Run "), Inline::InlineCode { text: "vutex".to_string() }, text(" first")] });
     graph.push_block(Block::Quote { children: vec![quote] });
     let html = render_html_reflow(&build_flow_presentation(&graph)).expect("reflow html");
 
@@ -180,11 +172,7 @@ fn reflow_table_cells_emit_strong_and_escape_text() {
 #[test]
 fn reflow_heading_escapes_text_inside_styled_runs() {
     let mut graph = DocumentGraph::new(DocumentId(59));
-    graph.push_block(Block::Section {
-        level: 1,
-        title: vec![styled("bold", vec![text("<tag> & text")])],
-        children: Vec::new(),
-    });
+    graph.push_block(Block::Section { level: 1, title: vec![styled("bold", vec![text("<tag> & text")])], children: Vec::new() });
     let html = render_html_reflow(&build_flow_presentation(&graph)).expect("reflow html");
 
     assert!(html.contains("<h1 data-vutex-block=\"heading\"><strong>&lt;tag&gt; &amp; text</strong></h1>"), "{html}");

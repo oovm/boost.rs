@@ -1,5 +1,7 @@
-use alloc::string::{String, ToString};
-use alloc::vec::Vec;
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 
 #[cfg(feature = "std")]
 use std::time::SystemTime;

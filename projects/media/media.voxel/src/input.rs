@@ -50,10 +50,7 @@ impl VoxelSpec {
         let mut grid = VoxelGrid::new();
         for entry in &self.voxels {
             let color = parse(&entry.color).ok_or_else(|| {
-                Error::invalid_input(format!(
-                    "voxel at [{}, {}, {}]: invalid color '{}'",
-                    entry.at[0], entry.at[1], entry.at[2], entry.color
-                ))
+                Error::invalid_input(format!("voxel at [{}, {}, {}]: invalid color '{}'", entry.at[0], entry.at[1], entry.at[2], entry.color))
             })?;
             grid.set(entry.at, color);
         }

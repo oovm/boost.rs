@@ -1,13 +1,17 @@
 //! One socket, one connection, no global state.
 
-use std::collections::HashMap;
-use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
-use std::ops::Range;
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    io::{Read, Write},
+    net::{SocketAddr, TcpStream, ToSocketAddrs},
+    ops::Range,
+    time::Duration,
+};
 
-use super::auth::{md5_password, ScramClient};
-use super::error::{Notice, PostgresError};
+use super::{
+    auth::{ScramClient, md5_password},
+    error::{Notice, PostgresError},
+};
 use database_protocol_pgsql::{self as protocol, MAX_MESSAGE_BYTES};
 
 const TIMEOUT: Duration = Duration::from_secs(5);
@@ -56,9 +60,7 @@ impl Transport {
             }
             let read = self.stream.read(&mut self.buffer[self.filled..]).map_err(io_error)?;
             if read == 0 {
-                return Err(PostgresError::Io(
-                    "the server closed the connection before the message was complete".into(),
-                ));
+                return Err(PostgresError::Io("the server closed the connection before the message was complete".into()));
             }
             self.filled += read;
         }
@@ -145,11 +147,7 @@ pub struct TypedResult {
 impl TypedResult {
     /// Drops the type OIDs when only the textual result is needed.
     pub fn into_query_result(self) -> QueryResult {
-        QueryResult {
-            columns: self.columns.into_iter().map(|column| Column { name: column.name }).collect(),
-            rows: self.rows,
-            tag: self.tag,
-        }
+        QueryResult { columns: self.columns.into_iter().map(|column| Column { name: column.name }).collect(), rows: self.rows, tag: self.tag }
     }
 }
 
@@ -319,10 +317,7 @@ impl Connection {
         stream.set_read_timeout(Some(TIMEOUT)).map_err(io_error)?;
         stream.set_write_timeout(Some(TIMEOUT)).map_err(io_error)?;
         stream.set_nodelay(true).map_err(io_error)?;
-        let session_tag = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|elapsed| elapsed.subsec_nanos())
-            .unwrap_or(0);
+        let session_tag = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.subsec_nanos()).unwrap_or(0);
         let mut connection = Self {
             reader: Transport::new(stream),
             config: config.clone(),
@@ -350,16 +345,13 @@ impl Connection {
     /// PostgreSQL answers nothing on this connection, so `Ok` means the packet
     /// left this process. The main socket is untouched and stays usable.
     pub fn cancel(&self) -> Result<(), PostgresError> {
-        let Some(key) = self.backend_key else {
+        let Some(key) = self.backend_key
+        else {
             return Err(PostgresError::Protocol("server sent no BackendKeyData to cancel".into()));
         };
         let address = resolve_address(&self.config)?;
-        let mut stream = TcpStream::connect_timeout(&address, TIMEOUT).map_err(|error| {
-            PostgresError::Io(format!(
-                "cancel connection to {}:{} failed: {error}",
-                self.config.host, self.config.port
-            ))
-        })?;
+        let mut stream = TcpStream::connect_timeout(&address, TIMEOUT)
+            .map_err(|error| PostgresError::Io(format!("cancel connection to {}:{} failed: {error}", self.config.host, self.config.port)))?;
         stream.set_write_timeout(Some(TIMEOUT)).map_err(io_error)?;
         stream.write_all(&protocol::cancel_request_packet(key.process_id, key.secret_key)).map_err(io_error)?;
         stream.shutdown(std::net::Shutdown::Both).map_err(io_error)?;
@@ -387,10 +379,7 @@ impl Connection {
     }
 
     fn startup(&mut self, config: &ClientConfig) -> Result<(), PostgresError> {
-        self.reader
-            .stream
-            .write_all(&protocol::startup_packet(&config.user, &config.database))
-            .map_err(io_error)?;
+        self.reader.stream.write_all(&protocol::startup_packet(&config.user, &config.database)).map_err(io_error)?;
         let mut authenticated = false;
         let mut scram: Option<ScramClient> = None;
         loop {
@@ -506,7 +495,8 @@ impl Connection {
                     current = Some((protocol::column_names(payload)?, Vec::new()));
                 }
                 b'D' => {
-                    let Some((columns, rows)) = current.as_mut() else {
+                    let Some((columns, rows)) = current.as_mut()
+                    else {
                         return Err(PostgresError::Protocol("DataRow without RowDescription".into()));
                     };
                     rows.push(protocol::data_row(payload, columns.len())?);
@@ -514,11 +504,7 @@ impl Connection {
                 b'C' => {
                     let command = protocol::command_tag(payload)?;
                     let (columns, rows) = current.take().unwrap_or_default();
-                    results.push(QueryResult {
-                        columns: columns.into_iter().map(|name| Column { name }).collect(),
-                        rows,
-                        tag: command,
-                    });
+                    results.push(QueryResult { columns: columns.into_iter().map(|name| Column { name }).collect(), rows, tag: command });
                 }
                 b'I' => {
                     if !payload.is_empty() || current.is_some() {
@@ -544,12 +530,7 @@ impl Connection {
 
     /// Runs one parameterised statement through the extended protocol using the
     /// unnamed prepared statement, so nothing stays on the server afterwards.
-    pub fn execute_with_params(
-        &mut self,
-        sql: &str,
-        params: &[Option<&str>],
-        param_types: &[u32],
-    ) -> Result<Vec<QueryResult>, PostgresError> {
+    pub fn execute_with_params(&mut self, sql: &str, params: &[Option<&str>], param_types: &[u32]) -> Result<Vec<QueryResult>, PostgresError> {
         let params: Vec<Param<'_>> = params.iter().map(|value| Param::text(*value)).collect();
         self.execute_with_param_formats(sql, &params, param_types, &[])
     }
@@ -712,10 +693,7 @@ impl Connection {
                 return Err(error);
             }
         };
-        Ok(PortalReport {
-            results: outcome.results.into_iter().map(TypedResult::into_query_result).collect(),
-            suspended: outcome.suspended,
-        })
+        Ok(PortalReport { results: outcome.results.into_iter().map(TypedResult::into_query_result).collect(), suspended: outcome.suspended })
     }
 
     /// Closes a portal on the server. Closing an unknown name still answers
@@ -824,11 +802,7 @@ impl Connection {
                     }
                     return Ok(CopyOutcome { tag, error: None });
                 }
-                other => {
-                    return Err(PostgresError::Protocol(format!(
-                        "unsupported PostgreSQL copy-in response tag {other}"
-                    )))
-                }
+                other => return Err(PostgresError::Protocol(format!("unsupported PostgreSQL copy-in response tag {other}"))),
             }
         }
     }
@@ -867,20 +841,12 @@ impl Connection {
                     }
                     return Ok((data, CopyOutcome { tag, error: None }));
                 }
-                other => {
-                    return Err(PostgresError::Protocol(format!(
-                        "unsupported PostgreSQL copy-out response tag {other}"
-                    )))
-                }
+                other => return Err(PostgresError::Protocol(format!("unsupported PostgreSQL copy-out response tag {other}"))),
             }
         }
     }
 
-    fn read_extended(
-        &mut self,
-        packet: &[u8],
-        expected: Option<&[protocol::ColumnDescription]>,
-    ) -> Result<ExtendedOutcome, PostgresError> {
+    fn read_extended(&mut self, packet: &[u8], expected: Option<&[protocol::ColumnDescription]>) -> Result<ExtendedOutcome, PostgresError> {
         self.reader.stream.write_all(packet).map_err(io_error)?;
         let mut results = Vec::new();
         let mut parameters = Vec::new();
@@ -933,7 +899,8 @@ impl Connection {
                     current = Some((Vec::new(), Vec::new()));
                 }
                 b'D' => {
-                    let Some((columns, rows)) = current.as_mut() else {
+                    let Some((columns, rows)) = current.as_mut()
+                    else {
                         return Err(PostgresError::Protocol("DataRow without RowDescription".into()));
                     };
                     match protocol::data_row_with_formats(payload, columns) {
@@ -1098,15 +1065,15 @@ fn authentication_answer(
         }
         11 => {
             let client = scram.as_mut().ok_or(PostgresError::Protocol("SASLContinue arrived before SASLInitialResponse".into()))?;
-            let server_first = std::str::from_utf8(data)
-                .map_err(|_| PostgresError::Protocol("SCRAM server-first is not valid UTF-8".into()))?;
+            let server_first =
+                std::str::from_utf8(data).map_err(|_| PostgresError::Protocol("SCRAM server-first is not valid UTF-8".into()))?;
             let client_final = client.continue_with(server_first)?;
             Ok(Some(protocol::sasl_response_packet(client_final.as_bytes())?))
         }
         12 => {
             let client = scram.as_ref().ok_or(PostgresError::Protocol("SASLFinal arrived before SASLInitialResponse".into()))?;
-            let server_final = std::str::from_utf8(data)
-                .map_err(|_| PostgresError::Protocol("SCRAM server-final is not valid UTF-8".into()))?;
+            let server_final =
+                std::str::from_utf8(data).map_err(|_| PostgresError::Protocol("SCRAM server-final is not valid UTF-8".into()))?;
             client.verify(server_final)?;
             Ok(None)
         }
@@ -1124,7 +1091,8 @@ fn required_password<'a>(config: &'a ClientConfig, method: &str) -> Result<&'a s
 /// Wire format codes for a parameter list: empty when every parameter is text,
 /// one shared code when they agree, and one code per parameter otherwise.
 fn param_format_codes(params: &[Param<'_>]) -> Vec<u16> {
-    let Some(first) = params.first() else {
+    let Some(first) = params.first()
+    else {
         return Vec::new();
     };
     if params.iter().all(|param| param.format == 0) {

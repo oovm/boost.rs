@@ -1,8 +1,6 @@
 //! L0 降级：UCF CPU Fill → RGBA8 readback（Web 上屏薄门）。
 
-use hardware::prelude::*;
-use hardware::ParamValue;
-use hardware::SchedulerErrorCode as ErrorCode;
+use hardware::{ParamValue, SchedulerErrorCode as ErrorCode, prelude::*};
 
 use crate::contract::error_code_to_i32;
 
@@ -52,20 +50,12 @@ fn fill_graph(floats: usize, value: f64) -> Graph {
                 id: TaskId(10),
                 kind: TaskKind::Fill,
                 shader: ShaderId(10),
-                params: BTreeMap::from([
-                    ("dst".into(), ParamValue::I64(1)),
-                    ("value".into(), ParamValue::F64(value)),
-                ]),
+                params: BTreeMap::from([("dst".into(), ParamValue::I64(1)), ("value".into(), ParamValue::F64(value))]),
                 dispatch: Default::default(),
                 objective: Objective::MaxThroughput,
                 priority: Priority::Batch,
             }],
-            edges: vec![DepEdge {
-                from_task: None,
-                from_resource: Some(ResourceId(1)),
-                to_task: TaskId(10),
-                kind: DepKind::Data,
-            }],
+            edges: vec![DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data }],
         },
     }
 }
@@ -75,12 +65,7 @@ fn fill_graph(floats: usize, value: f64) -> Graph {
 /// # Safety
 ///
 /// `out` must address at least `width * height * 4` bytes.
-pub unsafe fn write_color_fill_rgba8(
-    width: u32,
-    height: u32,
-    rgba: [u8; 4],
-    out: *mut u8,
-) -> i32 {
+pub unsafe fn write_color_fill_rgba8(width: u32, height: u32, rgba: [u8; 4], out: *mut u8) -> i32 {
     if out.is_null() {
         return -10;
     }

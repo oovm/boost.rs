@@ -5,8 +5,10 @@ use std::{
     io::{Cursor, Read, Write},
 };
 
-use database_types::cluster::{Error, Result};
-use database_types::ReasonCode;
+use database_types::{
+    ReasonCode,
+    cluster::{Error, Result},
+};
 
 use super::{InlineValue, Key, ObjectRef, Record, StoredValue};
 
@@ -135,8 +137,7 @@ fn decode_with(bytes: &[u8], revision_mode: RevisionMode, value_mode: ValueMode)
     let mut revisions = HashSet::with_capacity(count);
     let mut legacy_revision = false;
     for _ in 0..count {
-        let namespace = String::from_utf8(read_bytes(&mut cursor)?)
-            .map_err(|_| corrupt(ReasonCode::UnknownTag, "shard namespace utf8"))?;
+        let namespace = String::from_utf8(read_bytes(&mut cursor)?).map_err(|_| corrupt(ReasonCode::UnknownTag, "shard namespace utf8"))?;
         let key = read_bytes(&mut cursor)?;
         let revision = read_u64(&mut cursor)?;
         if revision == 0 || revision > next_revision || !revisions.insert(revision) {
@@ -175,9 +176,9 @@ fn decode_with(bytes: &[u8], revision_mode: RevisionMode, value_mode: ValueMode)
     if next_revision == 0 {
         // Legacy empty shard: the next allocation was stored as `0`.
         next_revision = 1;
-    } else if legacy_revision {
-        next_revision =
-            next_revision.checked_add(1).ok_or(Error::Corrupt("legacy shard revision space exhausted"))?;
+    }
+    else if legacy_revision {
+        next_revision = next_revision.checked_add(1).ok_or(Error::Corrupt("legacy shard revision space exhausted"))?;
     }
     Ok(Snapshot { next_revision, records })
 }

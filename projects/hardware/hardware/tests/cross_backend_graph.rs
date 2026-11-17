@@ -1,14 +1,16 @@
 //! Same graph: DX12 Fill → flush → CUDA Copy/MatMul over a shared buffer.
 
-use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+};
 
 use hardware_backend_cuda::CudaBackend;
 use hardware_backend_dx12::Dx12Backend;
 use hardware_capability::FeatureSet;
 use hardware_ir::{
-    Access, DepEdge, DepKind, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph,
-    ResourceId, ResourceKind, ResourceNode, ShaderId, TaskGraph, TaskId, TaskKind, TaskNode,
+    Access, DepEdge, DepKind, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph, ResourceId, ResourceKind, ResourceNode, ShaderId,
+    TaskGraph, TaskId, TaskKind, TaskNode,
 };
 use hardware_scheduler::{Backend, Result, Scheduler};
 use hardware_types::ResourceId as Rid;
@@ -73,63 +75,21 @@ fn s(key: &str, v: &str) -> (String, ParamValue) {
 
 fn cross_graph() -> Graph {
     Graph {
-        resources: ResourceGraph {
-            nodes: vec![
-                buffer(1, 4),
-                buffer(2, 4),
-                buffer(3, 4),
-                buffer(4, 4),
-            ],
-        },
+        resources: ResourceGraph { nodes: vec![buffer(1, 4), buffer(2, 4), buffer(3, 4), buffer(4, 4)] },
         tasks: TaskGraph {
             nodes: vec![
-                task(
-                    10,
-                    TaskKind::Copy,
-                    BTreeMap::from([i("src", 1), i("dst", 2), s("backend", "cuda")]),
-                ),
-                task(
-                    11,
-                    TaskKind::Fill,
-                    BTreeMap::from([
-                        i("dst", 3),
-                        f("value", 1.0),
-                        s("backend", "dx12"),
-                    ]),
-                ),
+                task(10, TaskKind::Copy, BTreeMap::from([i("src", 1), i("dst", 2), s("backend", "cuda")])),
+                task(11, TaskKind::Fill, BTreeMap::from([i("dst", 3), f("value", 1.0), s("backend", "dx12")])),
                 task(
                     12,
                     TaskKind::MatMul,
-                    BTreeMap::from([
-                        i("a", 2),
-                        i("b", 3),
-                        i("out", 4),
-                        i("m", 2),
-                        i("n", 2),
-                        i("k", 2),
-                        s("backend", "cuda"),
-                    ]),
+                    BTreeMap::from([i("a", 2), i("b", 3), i("out", 4), i("m", 2), i("n", 2), i("k", 2), s("backend", "cuda")]),
                 ),
             ],
             edges: vec![
-                DepEdge {
-                    from_task: None,
-                    from_resource: Some(ResourceId(1)),
-                    to_task: TaskId(10),
-                    kind: DepKind::Data,
-                },
-                DepEdge {
-                    from_task: Some(TaskId(10)),
-                    from_resource: None,
-                    to_task: TaskId(12),
-                    kind: DepKind::Execution,
-                },
-                DepEdge {
-                    from_task: Some(TaskId(11)),
-                    from_resource: None,
-                    to_task: TaskId(12),
-                    kind: DepKind::Execution,
-                },
+                DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(10), kind: DepKind::Data },
+                DepEdge { from_task: Some(TaskId(10)), from_resource: None, to_task: TaskId(12), kind: DepKind::Execution },
+                DepEdge { from_task: Some(TaskId(11)), from_resource: None, to_task: TaskId(12), kind: DepKind::Execution },
             ],
         },
     }
@@ -198,10 +158,6 @@ fn dx12_fill_then_cuda_matmul_over_shared_buffer() {
         return;
     }
 
-    let out = cuda
-        .lock()
-        .unwrap()
-        .read_f32(Rid(4))
-        .expect("cuda read out");
+    let out = cuda.lock().unwrap().read_f32(Rid(4)).expect("cuda read out");
     assert_eq!(out, vec![3.0, 3.0, 7.0, 7.0]);
 }

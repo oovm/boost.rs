@@ -22,8 +22,8 @@ use std::collections::{BTreeMap, HashMap};
 use acorn_ttf::{FontFace, OutlineBuilder};
 
 use document_compose::math::{
-    DelimiterComponent, DelimiterConstruction, DelimiterVariant, Fixed, FontMetricsData, FontStyle, GlyphKey, GlyphMetrics,
-    alphalect_sources, alphalect_styles, math_alphalect,
+    DelimiterComponent, DelimiterConstruction, DelimiterVariant, Fixed, FontMetricsData, FontStyle, GlyphKey, GlyphMetrics, alphalect_sources,
+    alphalect_styles, math_alphalect,
 };
 
 use super::facts::{GlyphId, MathFontFacts, StretchAxis};
@@ -264,11 +264,10 @@ impl OutlineBuilder for SvgPathBuilder {
 /// `<` and `>` never fall back to a host font. This list adds the symbols the
 /// math parser can emit beyond ASCII.
 const TARGET_SYMBOLS: &[char] = &[
-    'α', 'β', 'γ', 'δ', 'ε', 'ζ', 'η', 'θ', 'ι', 'κ', 'λ', 'μ', 'ν', 'ξ', 'ο', 'π', 'ρ', 'σ', 'τ', 'υ', 'φ', 'χ', 'ψ', 'ω',
-    'Γ', 'Δ', 'Θ', 'Λ', 'Ξ', 'Π', 'Σ', 'Φ', 'Ψ', 'Ω', '±', '×', '÷', '≤', '≥', '≠', '≈', '≡', '≅', '∼', '≃', '≪', '≫', '∓',
-    '→', '←', '↑', '↓', '↔', '⇒', '⇐', '⇔', '↦', '∞', '√', '∑', '∏', '∫', '∮', '∂', '∇', '∅', '∈', '∉', '∋', '⊂', '⊃', '⊆',
-    '⊇', '∪', '∩', '∧', '∨', '¬', '∀', '∃', '⋅', '∘', '∗', '†', '‡', '…', '⋯', '′', '″', '⊥', '∥', '|', '‖', '⟨', '⟩', '−',
-    'ℝ', 'ℕ', 'ℤ', 'ℚ', 'ℂ', 'ℓ', 'ℏ', 'ℜ', 'ℑ', 'ℵ',
+    'α', 'β', 'γ', 'δ', 'ε', 'ζ', 'η', 'θ', 'ι', 'κ', 'λ', 'μ', 'ν', 'ξ', 'ο', 'π', 'ρ', 'σ', 'τ', 'υ', 'φ', 'χ', 'ψ', 'ω', 'Γ', 'Δ', 'Θ', 'Λ',
+    'Ξ', 'Π', 'Σ', 'Φ', 'Ψ', 'Ω', '±', '×', '÷', '≤', '≥', '≠', '≈', '≡', '≅', '∼', '≃', '≪', '≫', '∓', '→', '←', '↑', '↓', '↔', '⇒', '⇐', '⇔',
+    '↦', '∞', '√', '∑', '∏', '∫', '∮', '∂', '∇', '∅', '∈', '∉', '∋', '⊂', '⊃', '⊆', '⊇', '∪', '∩', '∧', '∨', '¬', '∀', '∃', '⋅', '∘', '∗', '†',
+    '‡', '…', '⋯', '′', '″', '⊥', '∥', '|', '‖', '⟨', '⟩', '−', 'ℝ', 'ℕ', 'ℤ', 'ℚ', 'ℂ', 'ℓ', 'ℏ', 'ℜ', 'ℑ', 'ℵ',
 ];
 
 /// Accent characters the math parser stacks over a base.
@@ -292,11 +291,8 @@ const ACCENT_SYMBOLS: &[char] = &['ˆ', '¯', '˜', '˙', '¨', '˘', 'ˇ', '˚'
 /// extracts — otherwise the real italic face would never be found and every
 /// variable would fall back to the upright cmap entry of the authored letter.
 fn alphalect_targets() -> Vec<char> {
-    let mut targets: Vec<char> = alphalect_styles()
-        .iter()
-        .flat_map(|style| alphalect_sources().iter().map(move |c| math_alphalect(*style, *c)))
-        .flatten()
-        .collect();
+    let mut targets: Vec<char> =
+        alphalect_styles().iter().flat_map(|style| alphalect_sources().iter().map(move |c| math_alphalect(*style, *c))).flatten().collect();
     targets.sort_unstable();
     targets.dedup();
     targets
@@ -586,21 +582,14 @@ fn read_coverage(data: &[u8], offset: usize) -> Option<Vec<u16>> {
 ///
 /// The math metrics come from the facts' glyph coverage: a glyph the font does
 /// not cover is stored with [`UNCOVERED_MATH_METRIC`] rather than a guess.
-fn extract_glyph_metrics_and_outlines(
-    face: &mut FontFace,
-    facts: &MathFontFacts,
-    data: &mut FontMetricsData,
-    one_em: f64,
-    family: &str,
-) {
+fn extract_glyph_metrics_and_outlines(face: &mut FontFace, facts: &MathFontFacts, data: &mut FontMetricsData, one_em: f64, family: &str) {
     let family = Some(family.to_string());
     let alternates = ssty_alternates(face);
 
     // U+0020 is included: text-mode spaces are horizontal advances taken from
     // the font, and skipping it made every `\text{a b}` space fall back to the
     // synthetic 0.5em default instead of the font's 0.332em advance.
-    for ch in (' '..='~').chain(TARGET_SYMBOLS.iter().copied()).chain(ACCENT_SYMBOLS.iter().copied()).chain(alphalect_targets())
-    {
+    for ch in (' '..='~').chain(TARGET_SYMBOLS.iter().copied()).chain(ACCENT_SYMBOLS.iter().copied()).chain(alphalect_targets()) {
         let Some(glyph) = facts.glyph_for_char(ch)
         else {
             continue;
@@ -676,13 +665,7 @@ fn extract_glyph_metrics_and_outlines(
 /// Which designs exist, in which order, with which connector lengths comes
 /// from the facts. Only glyph geometry — `hmtx` advances, ink boxes and
 /// outlines — is read from the face.
-fn extract_delimiter_constructions(
-    face: &mut FontFace,
-    facts: &MathFontFacts,
-    data: &mut FontMetricsData,
-    one_em: f64,
-    family: &str,
-) {
+fn extract_delimiter_constructions(face: &mut FontFace, facts: &MathFontFacts, data: &mut FontMetricsData, one_em: f64, family: &str) {
     let family = Some(family.to_string());
 
     for &ch in DELIMITER_CHARS.iter().chain(LARGE_OPERATOR_CHARS).chain(RADICAL_CHARS) {
@@ -702,8 +685,8 @@ fn extract_delimiter_constructions(
         // constructions advance horizontally, where the measurement *is* the
         // advance.
         let vertical = facts.variants().construction(glyph, StretchAxis::Vertical).map(|c| (StretchAxis::Vertical, c));
-        let Some((axis, construction)) = vertical
-            .or_else(|| facts.variants().construction(glyph, StretchAxis::Horizontal).map(|c| (StretchAxis::Horizontal, c)))
+        let Some((axis, construction)) =
+            vertical.or_else(|| facts.variants().construction(glyph, StretchAxis::Horizontal).map(|c| (StretchAxis::Horizontal, c)))
         else {
             continue;
         };
@@ -716,21 +699,13 @@ fn extract_delimiter_constructions(
         for (index, variant) in construction.variants.iter().enumerate() {
             let variant_glyph_id = variant.glyph.get();
 
-            let variant_key = GlyphKey {
-                char: Some(ch),
-                glyph_id: Some(variant_glyph_id),
-                font_family: family.clone(),
-                style: FontStyle::Math,
-            };
+            let variant_key =
+                GlyphKey { char: Some(ch), glyph_id: Some(variant_glyph_id), font_family: family.clone(), style: FontStyle::Math };
 
             // Variant metrics so callers can ask for the ink and the width of a
             // stretched design.
-            let variant_advance = if is_vertical_construction {
-                advance_em(face, variant_glyph_id, one_em)
-            }
-            else {
-                variant.stretch_measurement.to_f64()
-            };
+            let variant_advance =
+                if is_vertical_construction { advance_em(face, variant_glyph_id, one_em) } else { variant.stretch_measurement.to_f64() };
             let ink = ink_from_bounds(face, variant_glyph_id, one_em).unwrap_or_else(|| synthesized_variant_ink(index));
             // Variant designs are real glyph ids, so MATH publishes their own
             // italic correction. Side scripts of a display operator need it:
@@ -772,12 +747,8 @@ fn extract_delimiter_constructions(
                     // Same rule as variants: `full_advance` measures the
                     // stacking direction (kept in the component table), while a
                     // vertical part's horizontal advance is `hmtx`.
-                    let part_advance = if is_vertical_construction {
-                        advance_em(face, part_glyph_id, one_em)
-                    }
-                    else {
-                        part.full_advance.to_f64()
-                    };
+                    let part_advance =
+                        if is_vertical_construction { advance_em(face, part_glyph_id, one_em) } else { part.full_advance.to_f64() };
                     data.glyphs.insert(
                         part_key.clone(),
                         GlyphMetrics {
@@ -800,10 +771,7 @@ fn extract_delimiter_constructions(
         }
 
         if !construction_variants.is_empty() || !construction_components.is_empty() {
-            data.delimiters.insert(
-                base_key,
-                DelimiterConstruction { variants: construction_variants, components: construction_components },
-            );
+            data.delimiters.insert(base_key, DelimiterConstruction { variants: construction_variants, components: construction_components });
         }
     }
 }
@@ -951,11 +919,7 @@ mod tests {
             let construction = math.variants.vert_constructions.get(&gid).expect("vertical construction");
             let key = GlyphKey::from_char(ch, family.clone(), FontStyle::Math);
             let reported = data.delimiters.get(&key).expect("extracted construction");
-            assert_eq!(
-                reported.variants.len(),
-                construction.variants.len(),
-                "`{ch}`: every prepared variant must be extracted"
-            );
+            assert_eq!(reported.variants.len(), construction.variants.len(), "`{ch}`: every prepared variant must be extracted");
 
             for (source, extracted) in construction.variants.iter().zip(&reported.variants) {
                 let hmtx = face.glyph_hor_advance(source.variant_glyph).expect("variant hmtx") as f64 / one_em;
@@ -984,10 +948,7 @@ mod tests {
             }
         }
 
-        assert!(
-            widest_measurement_gap > 1.0,
-            "no variant's stacking advance exceeds its hmtx width by an em, so this test proves nothing"
-        );
+        assert!(widest_measurement_gap > 1.0, "no variant's stacking advance exceeds its hmtx width by an em, so this test proves nothing");
     }
 
     #[test]

@@ -780,8 +780,7 @@ fn truncate_with_ellipsis(line: &str, font_size: f64, max_width: f64) -> String 
     let ellipsis_width = advance_of('…') * font_size / UNITS_PER_EM;
     let mut kept = String::new();
     for character in line.chars() {
-        let candidate_width =
-            measure_line(&kept, font_size) + advance_of(character) * font_size / UNITS_PER_EM + ellipsis_width;
+        let candidate_width = measure_line(&kept, font_size) + advance_of(character) * font_size / UNITS_PER_EM + ellipsis_width;
         if candidate_width > max_width {
             break;
         }

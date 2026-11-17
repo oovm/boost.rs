@@ -60,8 +60,8 @@ mod tests {
     use std::collections::BTreeMap as Map;
 
     use hardware_ir::{
-        Access, DepEdge, DepKind, Domain, Graph, Objective, Priority, ResourceGraph, ResourceId,
-        ResourceKind, ResourceNode, ShaderId, TaskGraph, TaskKind, TaskNode,
+        Access, DepEdge, DepKind, Domain, Graph, Objective, Priority, ResourceGraph, ResourceId, ResourceKind, ResourceNode, ShaderId,
+        TaskGraph, TaskKind, TaskNode,
     };
 
     fn task(id: u64, objective: Objective) -> TaskNode {
@@ -77,12 +77,7 @@ mod tests {
     }
 
     fn edge(from: u64, to: u64) -> DepEdge {
-        DepEdge {
-            from_task: Some(TaskId(from)),
-            from_resource: None,
-            to_task: TaskId(to),
-            kind: DepKind::Execution,
-        }
+        DepEdge { from_task: Some(TaskId(from)), from_resource: None, to_task: TaskId(to), kind: DepKind::Execution }
     }
 
     #[test]
@@ -118,10 +113,7 @@ mod tests {
         let graph = Graph {
             resources: ResourceGraph { nodes: vec![] },
             tasks: TaskGraph {
-                nodes: vec![
-                    task(1, Objective::MinLatency { deadline_micros: 100 }),
-                    task(2, Objective::MinLatency { deadline_micros: 1000 }),
-                ],
+                nodes: vec![task(1, Objective::MinLatency { deadline_micros: 100 }), task(2, Objective::MinLatency { deadline_micros: 1000 })],
                 edges: vec![edge(1, 2)],
             },
         };

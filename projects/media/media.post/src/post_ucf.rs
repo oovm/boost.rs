@@ -6,41 +6,29 @@ use geometry_types::LinearRgb;
 use hardware_program::{CpuInterpreter, Program, Value};
 use media_image::{Framebuffer, FramebufferEncoding};
 
-use crate::bloom_scale::{UcfDownsample2xRgbBuilder, UcfUpsampleRgbBuilder};
-use crate::box_blur::UcfBoxBlur3x3Builder;
-use crate::post_bloom_extract;
-use crate::tone_map_aces;
+use crate::{
+    bloom_scale::{UcfDownsample2xRgbBuilder, UcfUpsampleRgbBuilder},
+    box_blur::UcfBoxBlur3x3Builder,
+    post_bloom_extract, tone_map_aces,
+};
 
 fn run_bloom_extract(cpu: &mut CpuInterpreter, color: LinearRgb, threshold: f64) -> LinearRgb {
     cpu.with_uniform(0, Value::Vec3([color.r, color.g, color.b]));
     cpu.with_uniform(1, Value::F64(threshold));
-    let v = cpu
-        .run(&post_bloom_extract())
-        .expect("post_bloom_extract")
-        .value
-        .as_vec3()
-        .expect("vec3");
+    let v = cpu.run(&post_bloom_extract()).expect("post_bloom_extract").value.as_vec3().expect("vec3");
     LinearRgb::new(v[0], v[1], v[2])
 }
 
 fn run_tone_map(cpu: &mut CpuInterpreter, color: LinearRgb) -> LinearRgb {
     cpu.with_uniform(0, Value::Vec3([color.r, color.g, color.b]));
-    let v = cpu
-        .run(&tone_map_aces())
-        .expect("tone_map_aces")
-        .value
-        .as_vec3()
-        .expect("vec3");
+    let v = cpu.run(&tone_map_aces()).expect("tone_map_aces").value.as_vec3().expect("vec3");
     LinearRgb::new(v[0], v[1], v[2])
 }
 
 /// 阈值亮部提取：每像素执行 UCF `post_bloom_extract`。
 pub fn extract_bright_pass_ucf(pixels: &[LinearRgb], threshold: f64) -> Vec<LinearRgb> {
     let mut cpu = CpuInterpreter::new();
-    pixels
-        .iter()
-        .map(|px| run_bloom_extract(&mut cpu, *px, threshold))
-        .collect()
+    pixels.iter().map(|px| run_bloom_extract(&mut cpu, *px, threshold)).collect()
 }
 
 /// 泛光：UCF 亮部提取 + 宿主多尺度模糊合成。
@@ -57,8 +45,7 @@ pub fn bloom_pass_ucf(fb: &mut Framebuffer, threshold: f64, intensity: f64) {
 
 fn execute_rgb_stage(program: &Program, input: &[f32], count: u32) -> Vec<f32> {
     let mut cpu = CpuInterpreter::new();
-    cpu.with_buffer(1, input.iter().copied().map(Value::F32).collect())
-        .with_buffer(2, vec![Value::F32(0.0); count as usize * 3]);
+    cpu.with_buffer(1, input.iter().copied().map(Value::F32).collect()).with_buffer(2, vec![Value::F32(0.0); count as usize * 3]);
     cpu.run_parallel(program, count).expect("UCF RGB stage");
     cpu.buffer(2).expect("UCF RGB output").iter().map(|value| value.as_f64().expect("UCF F32 output") as f32).collect()
 }
@@ -91,12 +78,14 @@ fn multi_scale_bloom_ucf(src: &[LinearRgb], width: u32, height: u32) -> Vec<Line
             l2 = execute_rgb_stage(&upsample2, &up2_mid, count);
         }
     }
-    input.chunks_exact(3).zip(l0.chunks_exact(3)).zip(l1.chunks_exact(3)).zip(l2.chunks_exact(3))
-        .map(|(((base, a), b), c)| LinearRgb::new(
-            (base[0] + a[0] + b[0] + c[0]) as f64,
-            (base[1] + a[1] + b[1] + c[1]) as f64,
-            (base[2] + a[2] + b[2] + c[2]) as f64,
-        ))
+    input
+        .chunks_exact(3)
+        .zip(l0.chunks_exact(3))
+        .zip(l1.chunks_exact(3))
+        .zip(l2.chunks_exact(3))
+        .map(|(((base, a), b), c)| {
+            LinearRgb::new((base[0] + a[0] + b[0] + c[0]) as f64, (base[1] + a[1] + b[1] + c[1]) as f64, (base[2] + a[2] + b[2] + c[2]) as f64)
+        })
         .collect()
 }
 
@@ -134,11 +123,7 @@ mod tests {
 
     #[test]
     fn ucf_bloom_extract_matches_native() {
-        let samples = [
-            LinearRgb::new(0.2, 0.1, 0.05),
-            LinearRgb::new(1.2, 0.8, 0.3),
-            LinearRgb::new(4.0, 2.0, 0.5),
-        ];
+        let samples = [LinearRgb::new(0.2, 0.1, 0.05), LinearRgb::new(1.2, 0.8, 0.3), LinearRgb::new(4.0, 2.0, 0.5)];
         let threshold = DEFAULT_BLOOM_THRESHOLD;
         let native = extract_bright_pass(&samples, threshold);
         let ucf = extract_bright_pass_ucf(&samples, threshold);

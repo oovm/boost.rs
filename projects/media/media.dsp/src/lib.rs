@@ -114,7 +114,8 @@ impl Biquad {
 pub fn env_ad(t: f32, attack: f32, decay: f32) -> f32 {
     if t < attack {
         if attack <= 0.0 { 1.0 } else { (t / attack).clamp(0.0, 1.0) }
-    } else {
+    }
+    else {
         let x = (t - attack) / decay.max(1e-4);
         (-4.5 * x).exp().clamp(0.0, 1.0)
     }

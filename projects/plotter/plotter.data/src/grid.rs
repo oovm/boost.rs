@@ -46,8 +46,9 @@ impl GridData {
         }
         for (name, values) in [("x", &self.x), ("y", &self.y), ("z", &self.z)] {
             if values.iter().any(|v| !v.is_finite()) {
-                return Err(Diagnostic::error(DiagnosticCode::ValidationFailed, format!("GridData.{name} 含非有限值"))
-                    .with_param("field", name));
+                return Err(
+                    Diagnostic::error(DiagnosticCode::ValidationFailed, format!("GridData.{name} 含非有限值")).with_param("field", name)
+                );
             }
         }
         Ok(())

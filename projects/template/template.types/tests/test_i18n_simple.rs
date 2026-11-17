@@ -262,4 +262,3 @@ welcome = Welcome to DejaVu!
     let result = translator.translate("welcome", None, "en").unwrap();
     assert_eq!(result, "Welcome to DejaVu!");
 }
-

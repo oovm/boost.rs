@@ -1,6 +1,5 @@
 use hardware_program::{
-    bounded_accumulate, parallel_path_steps, program_hash, scalar_step_once, validate_program,
-    vector_math_normalize, CpuInterpreter, Value,
+    CpuInterpreter, Value, bounded_accumulate, parallel_path_steps, program_hash, scalar_step_once, validate_program, vector_math_normalize,
 };
 
 #[test]
@@ -20,30 +19,18 @@ fn structured_loop_control_flow_is_preserved() {
                     limit: 8,
                     body: vec![
                         Stmt::If {
-                            cond: Expr::BinOp {
-                                op: BinOp::Eq,
-                                lhs: Box::new(Expr::LoadLocal(1)),
-                                rhs: Box::new(Expr::ConstU32(2)),
-                            },
+                            cond: Expr::BinOp { op: BinOp::Eq, lhs: Box::new(Expr::LoadLocal(1)), rhs: Box::new(Expr::ConstU32(2)) },
                             then_body: vec![Stmt::Continue],
                             else_body: Vec::new(),
                         },
                         Stmt::If {
-                            cond: Expr::BinOp {
-                                op: BinOp::Eq,
-                                lhs: Box::new(Expr::LoadLocal(1)),
-                                rhs: Box::new(Expr::ConstU32(5)),
-                            },
+                            cond: Expr::BinOp { op: BinOp::Eq, lhs: Box::new(Expr::LoadLocal(1)), rhs: Box::new(Expr::ConstU32(5)) },
                             then_body: vec![Stmt::Break],
                             else_body: Vec::new(),
                         },
                         Stmt::StoreLocal {
                             id: 0,
-                            value: Expr::BinOp {
-                                op: BinOp::Add,
-                                lhs: Box::new(Expr::LoadLocal(0)),
-                                rhs: Box::new(Expr::ConstF64(1.0)),
-                            },
+                            value: Expr::BinOp { op: BinOp::Add, lhs: Box::new(Expr::LoadLocal(0)), rhs: Box::new(Expr::ConstF64(1.0)) },
                         },
                     ],
                 },
@@ -71,16 +58,8 @@ fn resource_load_store_is_bounds_checked() {
             locals: vec![(0, Ty::Scalar(ScalarTy::U32)), (1, Ty::f64())],
             body: vec![
                 Stmt::Let { id: 0, ty: Ty::Scalar(ScalarTy::U32), init: Expr::GlobalId },
-                Stmt::Let {
-                    id: 1,
-                    ty: Ty::f64(),
-                    init: Expr::LoadBuffer { resource: 0, index: Box::new(Expr::LoadLocal(0)) },
-                },
-                Stmt::StoreBuffer {
-                    resource: 1,
-                    index: Expr::LoadLocal(0),
-                    value: Expr::LoadLocal(1),
-                },
+                Stmt::Let { id: 1, ty: Ty::f64(), init: Expr::LoadBuffer { resource: 0, index: Box::new(Expr::LoadLocal(0)) } },
+                Stmt::StoreBuffer { resource: 1, index: Expr::LoadLocal(0), value: Expr::LoadLocal(1) },
                 Stmt::Return(Expr::LoadLocal(1)),
             ],
             ret: Ty::f64(),
@@ -94,10 +73,7 @@ fn resource_load_store_is_bounds_checked() {
     assert_eq!(results[2].value, Value::F64(8.0));
     assert_eq!(cpu.buffer(1).unwrap()[1], Value::F64(4.0));
 
-    let error = cpu
-        .with_buffer(0, vec![Value::F64(1.0)])
-        .run_parallel(&program, 2)
-        .expect_err("out of bounds must fail");
+    let error = cpu.with_buffer(0, vec![Value::F64(1.0)]).run_parallel(&program, 2).expect_err("out of bounds must fail");
     assert!(error.to_string().contains("out of bounds"));
 }
 

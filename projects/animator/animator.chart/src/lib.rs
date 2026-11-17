@@ -14,9 +14,7 @@
 //! 对应，而不是按下标。
 
 use animator_core::{Program, SceneState, Transition};
-use plotter_chart::{
-    Channel, ChartError, ChartOptions, ChartSpec, DataSnapshot, Mark, ScaleSpec, lower,
-};
+use plotter_chart::{Channel, ChartError, ChartOptions, ChartSpec, DataSnapshot, Mark, ScaleSpec, lower};
 use plotter_scene::SceneResolver;
 
 /// 时间轴上的一个数据状态。
@@ -99,10 +97,7 @@ impl ChartTimeline {
             return Err(ChartTimelineError::NoStates);
         }
         if !self.transitions.is_empty() && self.transitions.len() + 1 != self.states.len() {
-            return Err(ChartTimelineError::TransitionCount {
-                states: self.states.len(),
-                transitions: self.transitions.len(),
-            });
+            return Err(ChartTimelineError::TransitionCount { states: self.states.len(), transitions: self.transitions.len() });
         }
         let resolver = SceneResolver::new();
         let spec = if self.shared_domain { self.shared_domain_spec() } else { self.spec.clone() };
@@ -111,12 +106,8 @@ impl ChartTimeline {
             let lowered = lower(&spec, &state.data, &self.options)?;
             states.push(SceneState { at: state.at, scene: resolver.resolve(&lowered.scene) });
         }
-        let transitions = if self.transitions.is_empty() {
-            vec![Transition::default(); states.len().saturating_sub(1)]
-        }
-        else {
-            self.transitions.clone()
-        };
+        let transitions =
+            if self.transitions.is_empty() { vec![Transition::default(); states.len().saturating_sub(1)] } else { self.transitions.clone() };
         Ok(Program { states, transitions })
     }
 
@@ -127,7 +118,8 @@ impl ChartTimeline {
     fn shared_domain_spec(&self) -> ChartSpec {
         let mut spec = self.spec.clone();
         for channel in [Channel::X, Channel::Y] {
-            let Some(encoding) = spec.encoding.channel(channel) else {
+            let Some(encoding) = spec.encoding.channel(channel)
+            else {
                 continue;
             };
             let name = encoding.field.name.clone();
@@ -136,11 +128,13 @@ impl ChartTimeline {
             }
             let (mut min, mut max) = (f64::INFINITY, f64::NEG_INFINITY);
             for state in &self.states {
-                let Some(column) = state.data.columns.iter().find(|column| column.name == name) else {
+                let Some(column) = state.data.columns.iter().find(|column| column.name == name)
+                else {
                     continue;
                 };
                 for value in &column.values {
-                    let Some(number) = value.as_number() else {
+                    let Some(number) = value.as_number()
+                    else {
                         continue;
                     };
                     if number.is_finite() {

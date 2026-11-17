@@ -220,10 +220,8 @@ fn collect_unresolved_images(graph: &DocumentGraph, inlines: &[document_ir::Inli
     for inline in inlines {
         match inline {
             document_ir::Inline::Image { source, alt, asset, .. } => {
-                let resolved = asset
-                    .and_then(|id| graph.assets.iter().find(|asset| asset.id == id))
-                    .and_then(|asset| asset.bytes.as_ref())
-                    .is_some();
+                let resolved =
+                    asset.and_then(|id| graph.assets.iter().find(|asset| asset.id == id)).and_then(|asset| asset.bytes.as_ref()).is_some();
                 if !resolved {
                     sources.push(source.clone());
                 }

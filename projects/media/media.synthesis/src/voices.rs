@@ -265,38 +265,14 @@ mod tests {
     #[test]
     fn every_family_matches_the_source_waveform() {
         let cases = [
-            (
-                Family::Whoosh,
-                Golden { frames: 26_460, digest: 0x6b10_3865_b612_7dfd, sum: 19.544_872_251_184_53, peak: 0.204_734_76 },
-            ),
-            (
-                Family::Impact,
-                Golden { frames: 26_460, digest: 0xdcb6_9391_5d4f_76e9, sum: 44.622_097_919_723_83, peak: 0.658_452_1 },
-            ),
-            (
-                Family::Riser,
-                Golden { frames: 26_460, digest: 0x67b3_b998_d4fd_4065, sum: 2.468_728_439_973_07, peak: 0.419_208_68 },
-            ),
-            (
-                Family::Tick,
-                Golden { frames: 26_460, digest: 0x090d_50bb_dc41_c4e9, sum: -0.754_346_335_420_101_9, peak: 0.696_040_5 },
-            ),
-            (
-                Family::Glitch,
-                Golden { frames: 26_460, digest: 0x88a5_ffd9_d099_f48d, sum: -0.494_974_732_398_986_8, peak: 0.247_487_37 },
-            ),
-            (
-                Family::Sub,
-                Golden { frames: 26_460, digest: 0x55b6_3f14_2cae_7959, sum: -34.712_438_108_681_07, peak: 0.705_396_6 },
-            ),
-            (
-                Family::Ambience,
-                Golden { frames: 26_460, digest: 0x0dc8_b1ff_7747_7c71, sum: 6.672_510_154_879_813, peak: 0.034_578_606 },
-            ),
-            (
-                Family::Sparkle,
-                Golden { frames: 26_460, digest: 0x1fca_0dca_5881_0141, sum: -1.145_603_428_921_045_7, peak: 0.410_707_62 },
-            ),
+            (Family::Whoosh, Golden { frames: 26_460, digest: 0x6b10_3865_b612_7dfd, sum: 19.544_872_251_184_53, peak: 0.204_734_76 }),
+            (Family::Impact, Golden { frames: 26_460, digest: 0xdcb6_9391_5d4f_76e9, sum: 44.622_097_919_723_83, peak: 0.658_452_1 }),
+            (Family::Riser, Golden { frames: 26_460, digest: 0x67b3_b998_d4fd_4065, sum: 2.468_728_439_973_07, peak: 0.419_208_68 }),
+            (Family::Tick, Golden { frames: 26_460, digest: 0x090d_50bb_dc41_c4e9, sum: -0.754_346_335_420_101_9, peak: 0.696_040_5 }),
+            (Family::Glitch, Golden { frames: 26_460, digest: 0x88a5_ffd9_d099_f48d, sum: -0.494_974_732_398_986_8, peak: 0.247_487_37 }),
+            (Family::Sub, Golden { frames: 26_460, digest: 0x55b6_3f14_2cae_7959, sum: -34.712_438_108_681_07, peak: 0.705_396_6 }),
+            (Family::Ambience, Golden { frames: 26_460, digest: 0x0dc8_b1ff_7747_7c71, sum: 6.672_510_154_879_813, peak: 0.034_578_606 }),
+            (Family::Sparkle, Golden { frames: 26_460, digest: 0x1fca_0dca_5881_0141, sum: -1.145_603_428_921_045_7, peak: 0.410_707_62 }),
         ];
         for (family, want) in cases {
             let got = render(&SfxSpec::new(family, 0.6), SR).expect("valid");
@@ -389,16 +365,9 @@ mod tests {
 
     #[test]
     fn every_family_produces_audible_samples() {
-        for family in [
-            Family::Whoosh,
-            Family::Impact,
-            Family::Riser,
-            Family::Tick,
-            Family::Glitch,
-            Family::Sub,
-            Family::Ambience,
-            Family::Sparkle,
-        ] {
+        for family in
+            [Family::Whoosh, Family::Impact, Family::Riser, Family::Tick, Family::Glitch, Family::Sub, Family::Ambience, Family::Sparkle]
+        {
             let samples = render(&SfxSpec::new(family, 0.6), SR).expect("valid");
             let peak = samples.iter().flat_map(|s| s.iter()).fold(0.0f32, |a, b| a.max(b.abs()));
             assert!(peak > 0.02, "{family:?} too quiet: {peak}");

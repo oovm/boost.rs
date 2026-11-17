@@ -2955,8 +2955,7 @@ impl Engine {
                 Statement::Transaction { action: TransactionAction::Begin | TransactionAction::Commit, .. } => {}
                 // 只追加行的普通 `INSERT` 不改变既有索引内容:语句提交后会把新行
                 // 增量并入探针,这里先全量失效只会让补丁失去对齐基准。
-                Statement::Insert { schema: None, table, conflict: None, replace: false, .. }
-                    if self.insert_keeps_index_content(table) => {}
+                Statement::Insert { schema: None, table, conflict: None, replace: false, .. } if self.insert_keeps_index_content(table) => {}
                 _ => match self.statement_table_key(&statement) {
                     Some(key) => self.invalidate_table_indexes(&key),
                     None => self.invalidate_all_indexes(),
@@ -8974,7 +8973,8 @@ impl Engine {
         else {
             return Ok(None);
         };
-        let Some(rowids) = self.index_probe_rowids(index, &[probe]) else {
+        let Some(rowids) = self.index_probe_rowids(index, &[probe])
+        else {
             return Ok(None);
         };
         for rowid in rowids {
@@ -9104,10 +9104,7 @@ impl Engine {
             return None;
         };
         let table_key = def.name.to_ascii_lowercase();
-        let Some(index) = self
-            .indexes
-            .values()
-            .find(|index| !index.managed && index.table == table_key && index.columns.as_slice() == [slot])
+        let Some(index) = self.indexes.values().find(|index| !index.managed && index.table == table_key && index.columns.as_slice() == [slot])
         else {
             return None;
         };
@@ -9612,8 +9609,7 @@ impl Engine {
     /// 而首次查询 / 区间删除不必再整份解码索引项。
     fn install_empty_index_probe(&self, name: &str) {
         let epoch = self.index_version(name);
-        let probe =
-            IndexProbe { epoch, map: HashMap::new(), entries: Vec::new(), sorted: true, deleted: HashSet::new(), poisoned: false };
+        let probe = IndexProbe { epoch, map: HashMap::new(), entries: Vec::new(), sorted: true, deleted: HashSet::new(), poisoned: false };
         self.index_probes.borrow_mut().insert(name.to_ascii_lowercase(), probe);
     }
 
@@ -9733,8 +9729,7 @@ impl Engine {
                     // 常见形态保持 `sorted`,范围探针继续走二分。
                     if probe.sorted {
                         let collation = index.collations.first().copied().unwrap_or_default();
-                        if let (Some(last), Some(next)) =
-                            (probe.entries.last().and_then(|(cells, _)| cells.first()), key_cells.first())
+                        if let (Some(last), Some(next)) = (probe.entries.last().and_then(|(cells, _)| cells.first()), key_cells.first())
                             && compare_cells_with(last, next, collation) == Ordering::Greater
                         {
                             probe.sorted = false;
@@ -14199,10 +14194,7 @@ fn join_rows(
     // 会为未匹配的右行补一行左 `NULL`,提前丢弃左行会改变「哪些右行算未匹配」。
     // `USING` / `NATURAL` 的合并列在两侧都绑定后才成立,同样不做提前裁剪。
     let prunable = relation.using.iter().all(|pairs| pairs.is_empty())
-        && relation
-            .sources
-            .iter()
-            .all(|source| matches!(source.join, None | Some(JoinKind::Inner) | Some(JoinKind::Left)));
+        && relation.sources.iter().all(|source| matches!(source.join, None | Some(JoinKind::Inner) | Some(JoinKind::Left)));
     for (index, source) in relation.sources.iter().enumerate() {
         let width = source.width();
         let pairs = &relation.using[index];
@@ -19754,9 +19746,7 @@ mod tests {
         ]);
         assert_eq!(
             engine
-                .execute_one(
-                    "SELECT count(*) FROM outer_t WHERE EXISTS (SELECT 1 FROM inner_t WHERE inner_t.label = outer_t.label)"
-                )
+                .execute_one("SELECT count(*) FROM outer_t WHERE EXISTS (SELECT 1 FROM inner_t WHERE inner_t.label = outer_t.label)")
                 .expect("exists")
                 .rows,
             vec![vec![Cell::Integer(0)]]

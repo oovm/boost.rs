@@ -155,4 +155,3 @@ fn test_locale_switching_performance() {
     let zh_result = i18n.t("key_0", None).unwrap();
     assert!(zh_result.contains("中文"));
 }
-

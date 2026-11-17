@@ -15,8 +15,8 @@ use crawler_types::{CrawlEvent, CrawlRequest, FetchArtifact, FrontierItem, PageC
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use url::Url;
 use yydb::{
-    Batch, Connection, Error as YydbError, LeaseExpectation, LeaseToken, ObjectKind as YydbObjectKind,
-    ObjectRef as YydbObjectRef, ReleaseOutcome as YydbReleaseOutcome,
+    Batch, Connection, Error as YydbError, LeaseExpectation, LeaseToken, ObjectKind as YydbObjectKind, ObjectRef as YydbObjectRef,
+    ReleaseOutcome as YydbReleaseOutcome,
 };
 
 use crate::{
@@ -25,10 +25,9 @@ use crate::{
     keyspace,
     session::StoreSession,
     types::{
-        BrowserSessionRecord, BrowserSnapshotInput, BrowserSnapshotRecord, ChallengePauseRecord, CheckpointClaim,
-        CheckpointView, ClaimToken, ObjectKind, ObjectRef, PageAssetBinding, PagePhase, PageTxHandle, ReleaseOutcome,
-        ResumeState, RunHandle, RunSpec, StoreConfig, StoreDiagnosticReport, StoreDoctorIssue, StoreDoctorSeverity,
-        StoreNamespaceStats,
+        BrowserSessionRecord, BrowserSnapshotInput, BrowserSnapshotRecord, ChallengePauseRecord, CheckpointClaim, CheckpointView, ClaimToken,
+        ObjectKind, ObjectRef, PageAssetBinding, PagePhase, PageTxHandle, ReleaseOutcome, ResumeState, RunHandle, RunSpec, StoreConfig,
+        StoreDiagnosticReport, StoreDoctorIssue, StoreDoctorSeverity, StoreNamespaceStats,
     },
 };
 
@@ -130,17 +129,14 @@ impl YydbStore {
         else {
             return Ok((None, None));
         };
-        let run_id =
-            String::from_utf8(bytes).map_err(|error| StoreError::StoreCorrupt(format!("active run is not UTF-8: {error}")))?;
+        let run_id = String::from_utf8(bytes).map_err(|error| StoreError::StoreCorrupt(format!("active run is not UTF-8: {error}")))?;
         let prefix = keyspace::claim_prefix(&run_id);
         let first = conn.scan_prefix(&prefix, None, 1).map_err(map_yydb_error)?;
         let claim = match first.into_iter().next() {
             Some((key, bytes)) => {
                 let record: ClaimRecord = decode(&bytes, "claim")?;
-                let item_id = key
-                    .strip_prefix(&prefix)
-                    .ok_or_else(|| StoreError::StoreCorrupt("claim key does not match its prefix".into()))?
-                    .to_owned();
+                let item_id =
+                    key.strip_prefix(&prefix).ok_or_else(|| StoreError::StoreCorrupt("claim key does not match its prefix".into()))?.to_owned();
                 Some(ClaimToken { item_id, worker_id: record.worker_id, fencing_token: record.fencing_token })
             }
             None => None,
@@ -233,10 +229,8 @@ impl YydbStore {
             let page = self.connection()?.scan_prefix(&prefix, after.as_deref(), SCAN_PAGE).map_err(map_yydb_error)?;
             let fetched = page.len();
             for (key, bytes) in &page {
-                let item_id = key
-                    .strip_prefix(&prefix)
-                    .ok_or_else(|| StoreError::StoreCorrupt("claim key does not match its prefix".into()))?
-                    .to_owned();
+                let item_id =
+                    key.strip_prefix(&prefix).ok_or_else(|| StoreError::StoreCorrupt("claim key does not match its prefix".into()))?.to_owned();
                 claims.insert(item_id, decode(bytes, "claim")?);
             }
             if fetched < SCAN_PAGE {
@@ -278,8 +272,7 @@ impl YydbStore {
         let key = keyspace::run_fencing(run_id);
         loop {
             let current = conn.get(&key).map_err(map_yydb_error)?;
-            let next =
-                current.as_deref().and_then(|bytes| <[u8; 8]>::try_from(bytes).ok()).map(u64::from_le_bytes).unwrap_or(0) + 1;
+            let next = current.as_deref().and_then(|bytes| <[u8; 8]>::try_from(bytes).ok()).map(u64::from_le_bytes).unwrap_or(0) + 1;
             let next_bytes = next.to_le_bytes();
             if conn.compare_exchange(&key, current.as_deref(), Some(next_bytes.as_slice())).map_err(map_yydb_error)? {
                 return Ok(next);
@@ -315,11 +308,7 @@ impl YydbStore {
                     if existing.worker_id == worker_id {
                         let active = conn.lease_until_millis(&claim_key).map_err(map_yydb_error)?;
                         if active.is_some_and(|until| until > now) {
-                            return Ok(Some(ClaimToken {
-                                item_id,
-                                worker_id: worker_id.to_owned(),
-                                fencing_token: existing.fencing_token,
-                            }));
+                            return Ok(Some(ClaimToken { item_id, worker_id: worker_id.to_owned(), fencing_token: existing.fencing_token }));
                         }
                     }
                 }
@@ -379,14 +368,7 @@ impl Store for YydbStore {
         ensure_yydx_layout(&path)?;
         let conn = Connection::open(&path).map_err(map_yydb_error)?;
         prepare_store(&conn)?;
-        let mut store = Self {
-            path,
-            conn: Some(conn),
-            active_run_id: None,
-            last_claim: None,
-            page_tx: None,
-            claim_lease: config.claim_lease,
-        };
+        let mut store = Self { path, conn: Some(conn), active_run_id: None, last_claim: None, page_tx: None, claim_lease: config.claim_lease };
         store.reload_after_open()?;
         Ok(store)
     }
@@ -406,12 +388,7 @@ impl Store for YydbStore {
 
     fn begin_run(&mut self, spec: RunSpec) -> Result<RunHandle> {
         let run_id = keyspace::run_id_from_seed(&spec.seed_url);
-        let meta = RunMeta {
-            seed_url: spec.seed_url,
-            event_count: 0,
-            request: spec.request,
-            strategy_fingerprint: spec.strategy_fingerprint,
-        };
+        let meta = RunMeta { seed_url: spec.seed_url, event_count: 0, request: spec.request, strategy_fingerprint: spec.strategy_fingerprint };
         let mut batch = Batch::new();
         batch.put(keyspace::run_meta(&run_id), encode(&meta)?);
         batch.put(keyspace::active_run(), run_id.as_bytes());
@@ -434,10 +411,8 @@ impl Store for YydbStore {
             let page = conn.scan_prefix(&prefix, after.as_deref(), SCAN_PAGE).map_err(map_yydb_error)?;
             let fetched = page.len();
             for (key, bytes) in &page {
-                let item_id = key
-                    .strip_prefix(&prefix)
-                    .ok_or_else(|| StoreError::StoreCorrupt("claim key does not match its prefix".into()))?
-                    .to_owned();
+                let item_id =
+                    key.strip_prefix(&prefix).ok_or_else(|| StoreError::StoreCorrupt("claim key does not match its prefix".into()))?.to_owned();
                 let record: ClaimRecord = decode(bytes, "claim")?;
                 if record.lease_until_ms <= now {
                     expired.push((key.clone(), item_id, record));
@@ -534,10 +509,8 @@ impl Store for YydbStore {
         let prefix = keyspace::claim_prefix(&run_id);
         let first = self.connection()?.scan_prefix(&prefix, None, 1).map_err(map_yydb_error)?;
         let (key, _) = first.into_iter().next().ok_or_else(|| StoreError::StoreInvalidState("no claimed item".into()))?;
-        let item_id = key
-            .strip_prefix(&prefix)
-            .ok_or_else(|| StoreError::StoreCorrupt("claim key does not match its prefix".into()))?
-            .to_owned();
+        let item_id =
+            key.strip_prefix(&prefix).ok_or_else(|| StoreError::StoreCorrupt("claim key does not match its prefix".into()))?.to_owned();
         self.last_claim = Some(ClaimToken { item_id, worker_id: worker_id.to_owned(), fencing_token: 0 });
         Ok(())
     }
@@ -697,16 +670,8 @@ impl Store for YydbStore {
             admitted_links: staging.links.iter().map(|item| keyspace::item_id_from_url(item.request_url.as_str())).collect(),
         };
         batch.put(keyspace::page_state(&run_id, &staging.handle.page_id), encode(&record)?);
-        attach_object(
-            &mut batch,
-            keyspace::page_object(&run_id, &staging.handle.page_id, "fetch"),
-            fetch.as_ref().map(|(_, object)| object),
-        );
-        attach_object(
-            &mut batch,
-            keyspace::page_object(&run_id, &staging.handle.page_id, "ir"),
-            ir.as_ref().map(|(_, object)| object),
-        );
+        attach_object(&mut batch, keyspace::page_object(&run_id, &staging.handle.page_id, "fetch"), fetch.as_ref().map(|(_, object)| object));
+        attach_object(&mut batch, keyspace::page_object(&run_id, &staging.handle.page_id, "ir"), ir.as_ref().map(|(_, object)| object));
         for (binding, (_, object)) in &assets {
             let slot = format!("asset-{}", binding.asset_id);
             attach_object(&mut batch, keyspace::page_object(&run_id, &staging.handle.page_id, &slot), Some(object));
@@ -719,18 +684,12 @@ impl Store for YydbStore {
         }
         // Report events staged by the page commit share the same batch.
         if staging.events.is_empty() {
-            batch.put(
-                keyspace::report_event(&run_id, commit_sequence),
-                encode(&EventRecord { sequence: commit_sequence, event: None })?,
-            );
+            batch.put(keyspace::report_event(&run_id, commit_sequence), encode(&EventRecord { sequence: commit_sequence, event: None })?);
         }
         else {
             for (offset, event) in staging.events.iter().enumerate() {
                 let sequence = base + offset as u64 + 1;
-                batch.put(
-                    keyspace::report_event(&run_id, sequence),
-                    encode(&EventRecord { sequence, event: Some(event.clone()) })?,
-                );
+                batch.put(keyspace::report_event(&run_id, sequence), encode(&EventRecord { sequence, event: Some(event.clone()) })?);
             }
         }
         batch.put(
@@ -919,12 +878,7 @@ impl Store for YydbStore {
                 message: format!("checkpoint lags commit by {checkpoint_lag_records} records"),
             });
         }
-        Ok(StoreDiagnosticReport {
-            orphan_object_count: report.orphan_object_count,
-            checkpoint_lag_records,
-            namespaces,
-            issues,
-        })
+        Ok(StoreDiagnosticReport { orphan_object_count: report.orphan_object_count, checkpoint_lag_records, namespaces, issues })
     }
 
     fn get_response_cache(&self, cache_key: &str) -> Result<Option<FetchArtifact>> {
@@ -933,8 +887,7 @@ impl Store for YydbStore {
         else {
             return Ok(None);
         };
-        let mut artifact: FetchArtifact =
-            serde_json::from_slice(&bytes).map_err(|error| StoreError::StoreCorrupt(error.to_string()))?;
+        let mut artifact: FetchArtifact = serde_json::from_slice(&bytes).map_err(|error| StoreError::StoreCorrupt(error.to_string()))?;
         artifact.transport_provenance = crawler_types::TransportProvenance::CacheHit;
         Ok(Some(artifact))
     }
@@ -964,8 +917,7 @@ impl Store for YydbStore {
         }
         let conn = self.connection()?;
         let mut batch = Batch::new();
-        let (snapshot_ref, object) =
-            stage_object(conn, &mut batch, ObjectKind::BrowserArchive, input.media_type.as_deref(), &input.archive)?;
+        let (snapshot_ref, object) = stage_object(conn, &mut batch, ObjectKind::BrowserArchive, input.media_type.as_deref(), &input.archive)?;
         let record = BrowserSnapshotRecord {
             snapshot_key: input.snapshot_key.clone(),
             page_url: input.page_url,
@@ -993,22 +945,11 @@ impl Store for YydbStore {
         Ok(Some(record))
     }
 
-    fn record_challenge_pause(
-        &mut self,
-        item_id: &str,
-        page_url: &str,
-        state: PageChallengeState,
-    ) -> Result<ChallengePauseRecord> {
+    fn record_challenge_pause(&mut self, item_id: &str, page_url: &str, state: PageChallengeState) -> Result<ChallengePauseRecord> {
         let run_id = self.active_run_id.clone().ok_or_else(|| StoreError::StoreInvalidState("no active run".into()))?;
-        let url = Url::parse(page_url)
-            .map_err(|error| StoreError::StoreInvalidState(format!("challenge pause url is invalid: {error}")))?;
+        let url = Url::parse(page_url).map_err(|error| StoreError::StoreInvalidState(format!("challenge pause url is invalid: {error}")))?;
         let meta = self.read_run_meta(&run_id)?;
-        let record = ChallengePauseRecord {
-            item_id: item_id.to_owned(),
-            page_url: page_url.to_owned(),
-            state,
-            paused_at_ms: now_millis(),
-        };
+        let record = ChallengePauseRecord { item_id: item_id.to_owned(), page_url: page_url.to_owned(), state, paused_at_ms: now_millis() };
         let sequence = meta.event_count + 1;
         let mut batch = Batch::new();
         batch.put(keyspace::challenge_pause(&run_id, item_id), encode(&record)?);
@@ -1115,9 +1056,7 @@ impl YydbStore {
             after = Some(last.0.clone());
             let full = page.len() == PAGE;
             for (key, value) in page {
-                let epoch = serde_json::from_slice::<FetchArtifact>(&value)
-                    .map(|artifact| artifact.retrieved_at_epoch)
-                    .unwrap_or_default();
+                let epoch = serde_json::from_slice::<FetchArtifact>(&value).map(|artifact| artifact.retrieved_at_epoch).unwrap_or_default();
                 entries.push((key, epoch, value.len() as u64));
             }
             if !full {
@@ -1137,11 +1076,8 @@ impl YydbStore {
         let mut bytes_used: u64 = entries.iter().map(|(_, _, len)| *len).sum();
         let mut victims = Vec::new();
         while (entries.len() as u64) > max_records || bytes_used > max_bytes {
-            let Some(index) = entries
-                .iter()
-                .enumerate()
-                .min_by(|(_, a), (_, b)| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)))
-                .map(|(index, _)| index)
+            let Some(index) =
+                entries.iter().enumerate().min_by(|(_, a), (_, b)| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0))).map(|(index, _)| index)
             else {
                 break;
             };
@@ -1230,12 +1166,7 @@ fn stage_object(
     let reference = match conn.get(&meta_key).map_err(map_yydb_error)? {
         Some(bytes) => decode(&bytes, "object metadata")?,
         None => {
-            let reference = ObjectRef {
-                fingerprint: fingerprint.clone(),
-                size: object.size,
-                media_type: media_type.map(str::to_owned),
-                kind,
-            };
+            let reference = ObjectRef { fingerprint: fingerprint.clone(), size: object.size, media_type: media_type.map(str::to_owned), kind };
             batch.put(meta_key, encode(&reference)?);
             batch.attach_object(&object, keyspace::object_blob(&fingerprint));
             reference
@@ -1252,8 +1183,7 @@ fn decode_hash_hex(fingerprint: &str) -> Result<[u8; 32]> {
     let mut hash = [0u8; 32];
     for (index, chunk) in fingerprint.as_bytes().chunks(2).enumerate() {
         let text = std::str::from_utf8(chunk).map_err(|error| StoreError::StoreCorrupt(error.to_string()))?;
-        hash[index] =
-            u8::from_str_radix(text, 16).map_err(|error| StoreError::StoreCorrupt(format!("object fingerprint: {error}")))?;
+        hash[index] = u8::from_str_radix(text, 16).map_err(|error| StoreError::StoreCorrupt(format!("object fingerprint: {error}")))?;
     }
     Ok(hash)
 }
@@ -1300,9 +1230,7 @@ fn prepare_store(conn: &Connection) -> Result<()> {
                 .map(u32::from_le_bytes)
                 .ok_or_else(|| StoreError::StoreCorrupt("store schema version record is malformed".into()))?;
             if found > SCHEMA_VERSION {
-                return Err(StoreError::StoreCorrupt(format!(
-                    "store schema version {found} is newer than supported {SCHEMA_VERSION}"
-                )));
+                return Err(StoreError::StoreCorrupt(format!("store schema version {found} is newer than supported {SCHEMA_VERSION}")));
             }
             if found < SCHEMA_VERSION {
                 migrate_legacy_session(conn)?;
@@ -1324,8 +1252,7 @@ fn migrate_legacy_session(conn: &Connection) -> Result<()> {
         let session = StoreSession::from_bytes(&bytes)?;
         let (active_run_id, runs) = session.legacy_export();
         for run in runs {
-            let meta =
-                RunMeta { seed_url: run.seed_url, event_count: run.event_count, request: None, strategy_fingerprint: None };
+            let meta = RunMeta { seed_url: run.seed_url, event_count: run.event_count, request: None, strategy_fingerprint: None };
             changes.push((keyspace::run_meta(&run.run_id), Some(encode(&meta)?)));
             for item in run.frontier {
                 let item_id = keyspace::item_id_from_url(item.request_url.as_str());

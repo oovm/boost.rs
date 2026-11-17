@@ -1,12 +1,10 @@
 //! Browser boundary fixtures: session expiry, frames, shadow roots and downloads.
 
-use crawler_browser::{
-    BrowserProvider, ChallengeBlocked, FixtureBrowserProvider, run_extract_from_snapshot, snapshot_to_fetch_artifact,
-};
+use crawler_browser::{BrowserProvider, ChallengeBlocked, FixtureBrowserProvider, run_extract_from_snapshot, snapshot_to_fetch_artifact};
 use crawler_extract::{Extractor, HtmlExtractor};
 use crawler_types::{
-    BrowserBoundary, BrowserDownload, BrowserFrame, BrowserShadowRoot, BrowserSnapshot, ChallengeOutcome, ChallengePolicy,
-    ExtractBudget, ExtractContext, ExtractResult, PageChallengeState,
+    BrowserBoundary, BrowserDownload, BrowserFrame, BrowserShadowRoot, BrowserSnapshot, ChallengeOutcome, ChallengePolicy, ExtractBudget,
+    ExtractContext, ExtractResult, PageChallengeState,
 };
 use url::Url;
 
@@ -174,7 +172,6 @@ fn boundary_metadata_round_trips_through_snapshot_json() {
     let json = serde_json::to_string(&snapshot).expect("snapshot json");
     let restored: BrowserSnapshot = serde_json::from_str(&json).expect("snapshot restore");
     assert_eq!(restored.boundary, snapshot.boundary);
-    let legacy: BrowserSnapshot =
-        serde_json::from_str(&json.replace(",\"boundary\":", ",\"ignored\":")).expect("legacy snapshot");
+    let legacy: BrowserSnapshot = serde_json::from_str(&json.replace(",\"boundary\":", ",\"ignored\":")).expect("legacy snapshot");
     assert_eq!(legacy.boundary, BrowserBoundary::default());
 }

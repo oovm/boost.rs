@@ -208,8 +208,8 @@ pub(crate) fn parse(raw: &[u8]) -> Option<DisplayScene> {
                     finished = Some(build_scene(size, transform, frame.nodes));
                 }
                 else if frame.tag == "g" || frame.tag == "a" {
-                    let node = SceneNode::new(NodeKind::Group { children: frame.nodes, opacity: frame.opacity })
-                        .with_transform(frame.transform);
+                    let node =
+                        SceneNode::new(NodeKind::Group { children: frame.nodes, opacity: frame.opacity }).with_transform(frame.transform);
                     frames.last_mut()?.nodes.push(node);
                 }
             }
@@ -278,21 +278,10 @@ fn is_shape(name: &str) -> bool {
 ///
 /// The outer `Option` reports an unsupported or malformed attribute, which
 /// makes the whole document fall back to the placeholder.
-fn shape(
-    name: &str,
-    attrs: &[(String, String)],
-    style: &Style,
-    local_opacity: f64,
-    transform: Transform,
-) -> Option<Option<SceneNode>> {
+fn shape(name: &str, attrs: &[(String, String)], style: &Style, local_opacity: f64, transform: Transform) -> Option<Option<SceneNode>> {
     let opacity = if style.fill.is_some() { local_opacity * style.fill_opacity } else { local_opacity };
-    let shape_style = ShapeStyle {
-        fill: style.fill,
-        stroke: style.stroke,
-        stroke_width: style.stroke_width,
-        dash: None,
-        opacity: opacity.clamp(0.0, 1.0),
-    };
+    let shape_style =
+        ShapeStyle { fill: style.fill, stroke: style.stroke, stroke_width: style.stroke_width, dash: None, opacity: opacity.clamp(0.0, 1.0) };
     let kind = match name {
         "path" => {
             let data = attr(attrs, "d")?;
@@ -407,8 +396,7 @@ fn svg_box(attrs: &[(String, String)]) -> Option<(Size, Transform)> {
             if !(width > 0.0 && height > 0.0) {
                 return None;
             }
-            let transform =
-                view_box_transform(min_x, min_y, box_width, box_height, width, height, attr(attrs, "preserveaspectratio"))?;
+            let transform = view_box_transform(min_x, min_y, box_width, box_height, width, height, attr(attrs, "preserveaspectratio"))?;
             Some((Size::new(width, height), transform))
         }
         (None, Some(width), Some(height)) => {
@@ -504,9 +492,9 @@ fn parse_transform(value: &str) -> Option<Transform> {
             },
             "rotate" => match arguments.as_slice() {
                 [angle] => Transform::rotate_degrees(*angle),
-                [angle, cx, cy] => Transform::translate(*cx, *cy)
-                    .then(Transform::rotate_degrees(*angle))
-                    .then(Transform::translate(-*cx, -*cy)),
+                [angle, cx, cy] => {
+                    Transform::translate(*cx, *cy).then(Transform::rotate_degrees(*angle)).then(Transform::translate(-*cx, -*cy))
+                }
                 _ => return None,
             },
             "matrix" => match arguments.as_slice() {

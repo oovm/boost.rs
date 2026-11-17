@@ -472,12 +472,7 @@ pub struct VkMemoryAllocateInfo {
 
 impl Default for VkMemoryAllocateInfo {
     fn default() -> Self {
-        Self {
-            s_type: s_type::MEMORY_ALLOCATE_INFO,
-            p_next: std::ptr::null(),
-            allocation_size: 0,
-            memory_type_index: 0,
-        }
+        Self { s_type: s_type::MEMORY_ALLOCATE_INFO, p_next: std::ptr::null(), allocation_size: 0, memory_type_index: 0 }
     }
 }
 
@@ -718,13 +713,7 @@ pub struct VkShaderModuleCreateInfo {
 
 impl Default for VkShaderModuleCreateInfo {
     fn default() -> Self {
-        Self {
-            s_type: s_type::SHADER_MODULE_CREATE_INFO,
-            p_next: std::ptr::null(),
-            flags: 0,
-            code_size: 0,
-            p_code: std::ptr::null(),
-        }
+        Self { s_type: s_type::SHADER_MODULE_CREATE_INFO, p_next: std::ptr::null(), flags: 0, code_size: 0, p_code: std::ptr::null() }
     }
 }
 
@@ -1084,13 +1073,7 @@ pub struct VkDescriptorSetLayoutBinding {
 
 impl Default for VkDescriptorSetLayoutBinding {
     fn default() -> Self {
-        Self {
-            binding: 0,
-            descriptor_type: 0,
-            descriptor_count: 0,
-            stage_flags: 0,
-            p_immutable_samplers: std::ptr::null(),
-        }
+        Self { binding: 0, descriptor_type: 0, descriptor_count: 0, stage_flags: 0, p_immutable_samplers: std::ptr::null() }
     }
 }
 
@@ -1291,12 +1274,7 @@ pub struct VkMemoryBarrier {
 
 impl Default for VkMemoryBarrier {
     fn default() -> Self {
-        Self {
-            s_type: s_type::MEMORY_BARRIER,
-            p_next: std::ptr::null(),
-            src_access_mask: 0,
-            dst_access_mask: 0,
-        }
+        Self { s_type: s_type::MEMORY_BARRIER, p_next: std::ptr::null(), src_access_mask: 0, dst_access_mask: 0 }
     }
 }
 
@@ -1312,12 +1290,7 @@ pub struct VkCommandPoolCreateInfo {
 
 impl Default for VkCommandPoolCreateInfo {
     fn default() -> Self {
-        Self {
-            s_type: s_type::COMMAND_POOL_CREATE_INFO,
-            p_next: std::ptr::null(),
-            flags: 0,
-            queue_family_index: 0,
-        }
+        Self { s_type: s_type::COMMAND_POOL_CREATE_INFO, p_next: std::ptr::null(), flags: 0, queue_family_index: 0 }
     }
 }
 
@@ -1356,12 +1329,7 @@ pub struct VkCommandBufferBeginInfo {
 
 impl Default for VkCommandBufferBeginInfo {
     fn default() -> Self {
-        Self {
-            s_type: s_type::COMMAND_BUFFER_BEGIN_INFO,
-            p_next: std::ptr::null(),
-            flags: 0,
-            p_inheritance_info: std::ptr::null(),
-        }
+        Self { s_type: s_type::COMMAND_BUFFER_BEGIN_INFO, p_next: std::ptr::null(), flags: 0, p_inheritance_info: std::ptr::null() }
     }
 }
 
@@ -1466,10 +1434,7 @@ pub struct DriverError {
 impl DriverError {
     /// Build an error from a Vulkan result code and operation name.
     pub fn new(code: VkResult, message: impl Into<String>) -> Self {
-        Self {
-            code,
-            message: message.into(),
-        }
+        Self { code, message: message.into() }
     }
 }
 
@@ -1483,9 +1448,5 @@ impl std::error::Error for DriverError {}
 
 /// Abort on a non-success Vulkan result.
 pub fn check(code: VkResult, api: &str) -> Result<VkResult, DriverError> {
-    if code == VK_SUCCESS || code == VK_INCOMPLETE || code >= 0 {
-        Ok(code)
-    } else {
-        Err(DriverError::new(code, api))
-    }
+    if code == VK_SUCCESS || code == VK_INCOMPLETE || code >= 0 { Ok(code) } else { Err(DriverError::new(code, api)) }
 }

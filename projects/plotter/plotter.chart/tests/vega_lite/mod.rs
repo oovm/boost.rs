@@ -86,11 +86,7 @@ fn constant_mark_color_and_opacity_reach_the_existing_style_channel() {
     assert_eq!(chart.spec.mark_color, Some(plotter_scene::Color::rgb(0x33, 0x66, 0xcc)));
     assert_eq!(chart.spec.mark_opacity, Some(0.6));
     for instance in &chart.plan.marks {
-        assert_eq!(
-            instance.style.fill,
-            Some(plotter_scene::Color::rgb(0x33, 0x66, 0xcc)),
-            "the constant color fills every bar"
-        );
+        assert_eq!(instance.style.fill, Some(plotter_scene::Color::rgb(0x33, 0x66, 0xcc)), "the constant color fills every bar");
         assert_eq!(instance.style.opacity, 0.6, "the constant opacity reaches `MarkStyle`");
     }
 
@@ -190,10 +186,7 @@ fn page_hooks_namespace_every_chart_id_and_keep_mark_colors() {
 
     assert!(left.contains(".chart line.chart-axis { stroke:"), "the palette must own axis chrome: {left}");
     assert!(left.contains(".chart text.chart-tick { fill:"), "the palette must own tick labels");
-    assert!(
-        left.contains(".chart .chart-mark { fill: none; stroke: none }"),
-        "the palette must declare a neutral mark default"
-    );
+    assert!(left.contains(".chart .chart-mark { fill: none; stroke: none }"), "the palette must declare a neutral mark default");
 }
 
 #[test]
@@ -247,10 +240,7 @@ fn zero_and_nice_are_opt_in_scale_options() {
 
     let line_svg = vega_lite::lower(line).expect("line chart").to_svg().expect("line svg");
     let explicit_svg = vega_lite::lower(line_explicit_defaults).expect("explicit line chart").to_svg().expect("explicit svg");
-    assert_eq!(
-        line_svg, explicit_svg,
-        "on a line chart, explicit `zero: false` and `nice: false` stay byte-identical to the default"
-    );
+    assert_eq!(line_svg, explicit_svg, "on a line chart, explicit `zero: false` and `nice: false` stay byte-identical to the default");
 
     let chart = vega_lite::lower(bar).expect("bar chart");
     let y_scale = chart.plan.scale(Channel::Y).and_then(Scale::linear).expect("bar y scale");
@@ -369,10 +359,6 @@ fn every_rejection_is_structured_and_named_with_a_json_path() {
     for (document, expected_code, expected_path) in REJECTIONS {
         let error = vega_lite::lower(document).expect_err("this document must be refused");
         assert_eq!(error.code(), *expected_code, "document `{document}` produced `{}`", error.message());
-        assert!(
-            error.message().contains(expected_path),
-            "document `{document}` must name `{expected_path}`, got `{}`",
-            error.message()
-        );
+        assert!(error.message().contains(expected_path), "document `{document}` must name `{expected_path}`, got `{}`", error.message());
     }
 }

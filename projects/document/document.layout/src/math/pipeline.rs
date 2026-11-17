@@ -26,8 +26,7 @@ pub fn default_base_size(display: bool) -> f64 {
 /// The syntax stays in Oak and the semantics in `notedown-ir`; this function is
 /// orchestration for hosts that own only a formula string, such as WaTeX.
 pub fn lower_formula(source: &str, display: bool) -> MathResult<(FormulaTree, Vec<Diagnostic>)> {
-    let formula =
-        document_formats::lower_tex_formula_source(source, if display { MathDisplay::Display } else { MathDisplay::Inline });
+    let formula = document_formats::lower_tex_formula_source(source, if display { MathDisplay::Display } else { MathDisplay::Inline });
     lower_formula_tree(&formula)
 }
 
@@ -92,11 +91,7 @@ pub fn layout_formula_for_with_conformance(
 }
 
 /// Lower and lay out an authored TeX formula string with the host-installed default family.
-pub fn layout_formula_source(
-    source: &str,
-    display: bool,
-    base_size: f64,
-) -> MathResult<(FormulaLayoutResult, LayoutNode, Vec<Diagnostic>)> {
+pub fn layout_formula_source(source: &str, display: bool, base_size: f64) -> MathResult<(FormulaLayoutResult, LayoutNode, Vec<Diagnostic>)> {
     let family = MathFontFamily::builtin_default()
         .ok_or_else(|| MathError::font_error("math", "no math font installed; call install_math_font from the host product"))?;
     layout_formula_source_for(source, display, base_size, family)
@@ -121,7 +116,6 @@ pub fn layout_formula_source_with_conformance(
     family: MathFontFamily,
     conformance: FontConformance,
 ) -> MathResult<(FormulaLayoutResult, LayoutNode, Vec<Diagnostic>)> {
-    let formula =
-        document_formats::lower_tex_formula_source(source, if display { MathDisplay::Display } else { MathDisplay::Inline });
+    let formula = document_formats::lower_tex_formula_source(source, if display { MathDisplay::Display } else { MathDisplay::Inline });
     layout_formula_for_with_conformance(&formula, base_size, family, conformance)
 }

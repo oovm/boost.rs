@@ -4,8 +4,7 @@ use plotter::{
     data::{GraphData, GraphEdge, GraphNode, TreeData, TreeNode},
     grammar::{CompileOptions, CoordinateSpec, GraphLayoutKind, LayerSpec, PlotSpec, TreeLayoutKind, compile_plot},
     layout::{
-        CircularLayout, ForceLayout, GraphLayout, GridLayout, LayeredLayout, LayoutOptions, RadialTreeLayout, TidyTreeLayout,
-        TreeLayout,
+        CircularLayout, ForceLayout, GraphLayout, GridLayout, LayeredLayout, LayoutOptions, RadialTreeLayout, TidyTreeLayout, TreeLayout,
     },
     renderer::{render_rgba8, svg::render_svg},
     view::SceneNodeKind,
@@ -22,13 +21,7 @@ fn sample_graph() -> GraphData {
 fn sample_tree() -> TreeData {
     TreeData::new(
         "r",
-        vec![
-            TreeNode::root("r"),
-            TreeNode::child("a", "r"),
-            TreeNode::child("b", "r"),
-            TreeNode::child("c", "a"),
-            TreeNode::child("d", "a"),
-        ],
+        vec![TreeNode::root("r"), TreeNode::child("a", "r"), TreeNode::child("b", "r"), TreeNode::child("c", "a"), TreeNode::child("d", "a")],
     )
     .unwrap()
 }

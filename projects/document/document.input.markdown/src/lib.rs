@@ -130,22 +130,17 @@ fn import_source_for_flow(label: &str, source: &str) -> Result<MarkdownDocument,
     import_source_with_footnotes(label, source, true)
 }
 
-fn import_source_with_footnotes(
-    label: &str,
-    source: &str,
-    flow_footnotes: bool,
-) -> Result<MarkdownDocument, MarkdownInputError> {
+fn import_source_with_footnotes(label: &str, source: &str, flow_footnotes: bool) -> Result<MarkdownDocument, MarkdownInputError> {
     ensure_source_budget(source)?;
     let graph =
-        if flow_footnotes { import_markdown_bytes_for_flow(label, source) } else { import_markdown_bytes(label, source) }
-            .map_err(|error| {
-                MarkdownInputError::from(Diagnostic {
-                    code: codes::PARSE_FAILED.to_owned(),
-                    severity: Severity::Error,
-                    message: error.to_string(),
-                    span: None,
-                })
-            })?;
+        if flow_footnotes { import_markdown_bytes_for_flow(label, source) } else { import_markdown_bytes(label, source) }.map_err(|error| {
+            MarkdownInputError::from(Diagnostic {
+                code: codes::PARSE_FAILED.to_owned(),
+                severity: Severity::Error,
+                message: error.to_string(),
+                span: None,
+            })
+        })?;
     finish(graph)
 }
 
@@ -226,21 +221,11 @@ fn analyze(graph: &DocumentGraph) -> (ConversionReport, Vec<Diagnostic>) {
         match marker.status {
             SemanticStatus::Unsupported => {
                 unsupported.push(UnsupportedItem { code: marker.code.clone(), detail: marker.message.clone() });
-                diagnostics.push(Diagnostic {
-                    code: marker.code.clone(),
-                    severity: Severity::Error,
-                    message: marker.message.clone(),
-                    span,
-                });
+                diagnostics.push(Diagnostic { code: marker.code.clone(), severity: Severity::Error, message: marker.message.clone(), span });
             }
             SemanticStatus::Unresolved | SemanticStatus::Partial | SemanticStatus::Inferred | SemanticStatus::Lossy => {
                 lossy.push(LossyItem { code: marker.code.clone(), detail: marker.message.clone() });
-                diagnostics.push(Diagnostic {
-                    code: marker.code.clone(),
-                    severity: Severity::Warning,
-                    message: marker.message.clone(),
-                    span,
-                });
+                diagnostics.push(Diagnostic { code: marker.code.clone(), severity: Severity::Warning, message: marker.message.clone(), span });
             }
             SemanticStatus::Resolved => {}
         }
@@ -255,12 +240,7 @@ fn analyze(graph: &DocumentGraph) -> (ConversionReport, Vec<Diagnostic>) {
                 let span = graph.block_span(node.id).map(|span| SourceSpan { start: span.start, end: span.end });
                 let detail = format!("opaque `{kind}` block retained without semantic lowering");
                 opaque.push(OpaqueItem { code: codes::OPAQUE_BLOCK.to_owned(), detail: detail.clone() });
-                diagnostics.push(Diagnostic {
-                    code: codes::OPAQUE_BLOCK.to_owned(),
-                    severity: Severity::Info,
-                    message: detail.clone(),
-                    span,
-                });
+                diagnostics.push(Diagnostic { code: codes::OPAQUE_BLOCK.to_owned(), severity: Severity::Info, message: detail.clone(), span });
                 if *status == SemanticStatus::Unsupported {
                     unsupported.push(UnsupportedItem { code: codes::OPAQUE_BLOCK.to_owned(), detail });
                     diagnostics.push(Diagnostic {
@@ -333,11 +313,7 @@ mod tests {
     #[test]
     fn invalid_graph_is_rejected_before_layout() {
         let mut graph = DocumentGraph::new(DocumentId(13));
-        graph.push_block(Block::Section {
-            level: 1,
-            title: vec![Inline::Text { text: "Title".into() }],
-            children: vec![NodeId(999)],
-        });
+        graph.push_block(Block::Section { level: 1, title: vec![Inline::Text { text: "Title".into() }], children: vec![NodeId(999)] });
 
         let error = finish(graph).expect_err("dangling section children must be rejected");
         assert!(!error.diagnostics().is_empty());

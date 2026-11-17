@@ -32,9 +32,7 @@ pub(crate) fn normalize_self_closing_math_elements(text: &str) -> Cow<'_, str> {
         }
         let name_start = index + 1;
         let mut name_end = name_start;
-        while name_end < bytes.len()
-            && (bytes[name_end].is_ascii_alphanumeric() || bytes[name_end] == b'-' || bytes[name_end] == b':')
-        {
+        while name_end < bytes.len() && (bytes[name_end].is_ascii_alphanumeric() || bytes[name_end] == b'-' || bytes[name_end] == b':') {
             name_end += 1;
         }
         let name = text[name_start..name_end].to_ascii_lowercase();
@@ -201,23 +199,7 @@ fn expanded_tag(text: &str, start: usize, name_end: usize, tag_end: usize) -> St
 }
 
 fn is_void_html_element(name: &str) -> bool {
-    matches!(
-        name,
-        "area"
-            | "base"
-            | "br"
-            | "col"
-            | "embed"
-            | "hr"
-            | "img"
-            | "input"
-            | "link"
-            | "meta"
-            | "param"
-            | "source"
-            | "track"
-            | "wbr"
-    )
+    matches!(name, "area" | "base" | "br" | "col" | "embed" | "hr" | "img" | "input" | "link" | "meta" | "param" | "source" | "track" | "wbr")
 }
 
 /// The lowercase tag name and the offset just past it.
@@ -284,9 +266,7 @@ fn find_svg_close_end(text: &str, from: usize) -> Option<usize> {
         if bytes.get(start + 1) == Some(&b'/') {
             let name_start = start + 2;
             let mut name_end = name_start;
-            while name_end < bytes.len()
-                && (bytes[name_end].is_ascii_alphanumeric() || bytes[name_end] == b'-' || bytes[name_end] == b':')
-            {
+            while name_end < bytes.len() && (bytes[name_end].is_ascii_alphanumeric() || bytes[name_end] == b'-' || bytes[name_end] == b':') {
                 name_end += 1;
             }
             if text[name_start..name_end].eq_ignore_ascii_case("svg") {
@@ -390,18 +370,18 @@ impl Builder {
     fn lower(&mut self, element: &Element) {
         let tag = tag_of(element);
         match tag.as_str() {
-            "math" | "mrow" | "mstyle" | "mphantom" | "menclose" | "mbox" | "mstack" | "msgroup" | "mfrac" | "msup"
-            | "msub" | "msubsup" | "msqrt" | "mroot" | "mfenced" | "mtable" | "mtr" | "mtd" | "mover" | "munder"
-            | "munderover" | "mspace" | "mtext" | "mi" | "mn" | "mo" | "semantics" | "none" | "mpadded" | "merror" | "br"
-            | "wbr" => self.lower_supported(tag.as_str(), element),
+            "math" | "mrow" | "mstyle" | "mphantom" | "menclose" | "mbox" | "mstack" | "msgroup" | "mfrac" | "msup" | "msub" | "msubsup"
+            | "msqrt" | "mroot" | "mfenced" | "mtable" | "mtr" | "mtd" | "mover" | "munder" | "munderover" | "mspace" | "mtext" | "mi"
+            | "mn" | "mo" | "semantics" | "none" | "mpadded" | "merror" | "br" | "wbr" => self.lower_supported(tag.as_str(), element),
             other => self.lower_unknown(other, element),
         }
     }
 
     fn lower_supported(&mut self, tag: &str, element: &Element) {
         match tag {
-            "math" | "mrow" | "mstyle" | "mphantom" | "menclose" | "mbox" | "mstack" | "msgroup" | "mpadded" | "merror"
-            | "mtr" | "mtd" => self.lower_children(element),
+            "math" | "mrow" | "mstyle" | "mphantom" | "menclose" | "mbox" | "mstack" | "msgroup" | "mpadded" | "merror" | "mtr" | "mtd" => {
+                self.lower_children(element)
+            }
             "semantics" => {
                 // The first child is the presentation tree. `annotation` and
                 // `annotation-xml` carry the authored source instead, so they
@@ -536,8 +516,7 @@ impl Builder {
     }
 
     fn lower_table(&mut self, element: &Element) {
-        let rows: Vec<&Element> =
-            element.children.iter().filter_map(as_element).filter(|child| tag_of(child) == "mtr").collect();
+        let rows: Vec<&Element> = element.children.iter().filter_map(as_element).filter(|child| tag_of(child) == "mtr").collect();
         if rows.is_empty() {
             self.note_unsupported("mtable.empty");
             self.lower_children(element);
@@ -548,8 +527,7 @@ impl Builder {
             if row_index > 0 {
                 self.out.push_str(" \\\\ ");
             }
-            let cells: Vec<&Element> =
-                row.children.iter().filter_map(as_element).filter(|child| tag_of(child) == "mtd").collect();
+            let cells: Vec<&Element> = row.children.iter().filter_map(as_element).filter(|child| tag_of(child) == "mtd").collect();
             if cells.is_empty() {
                 self.lower_children(row);
             }
@@ -595,11 +573,7 @@ fn tag_of(element: &Element) -> String {
 }
 
 fn attribute_value(element: &Element, name: &str) -> Option<String> {
-    element
-        .attributes
-        .iter()
-        .find(|attribute| attribute.name.eq_ignore_ascii_case(name))
-        .and_then(|attribute| attribute.value.clone())
+    element.attributes.iter().find(|attribute| attribute.name.eq_ignore_ascii_case(name)).and_then(|attribute| attribute.value.clone())
 }
 
 fn first_two_children(element: &Element) -> (Option<&Element>, Option<&Element>) {

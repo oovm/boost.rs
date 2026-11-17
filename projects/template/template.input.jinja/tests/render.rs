@@ -1,7 +1,6 @@
 use serde_json::json;
 use template::{
-    MapTemplateLoader, RenderLimits, RenderOptions, RenderOutput, RenderRequest, TemplateEngine, TemplateError, TemplateId,
-    TemplateRoot, codes,
+    MapTemplateLoader, RenderLimits, RenderOptions, RenderOutput, RenderRequest, TemplateEngine, TemplateError, TemplateId, TemplateRoot, codes,
 };
 use template_input_jinja::{JinjaEngine, codes as jinja_codes};
 
@@ -155,18 +154,9 @@ fn strict_undefined_is_reported() {
 
 #[test]
 fn unsupported_tags_and_constructs_fail_closed() {
-    assert_eq!(
-        code(render_with("{% block title %}{% endblock %}", &json!({}), None, RenderOptions::default())),
-        jinja_codes::UNSUPPORTED_TAG
-    );
-    assert_eq!(
-        code(render_with("{% raw %}x{% endraw %}", &json!({}), None, RenderOptions::default())),
-        jinja_codes::UNSUPPORTED_TAG
-    );
-    assert_eq!(
-        code(render_with("{{ 1 is 1 }}", &json!({}), None, RenderOptions::default())),
-        jinja_codes::UNSUPPORTED_CONSTRUCT
-    );
+    assert_eq!(code(render_with("{% block title %}{% endblock %}", &json!({}), None, RenderOptions::default())), jinja_codes::UNSUPPORTED_TAG);
+    assert_eq!(code(render_with("{% raw %}x{% endraw %}", &json!({}), None, RenderOptions::default())), jinja_codes::UNSUPPORTED_TAG);
+    assert_eq!(code(render_with("{{ 1 is 1 }}", &json!({}), None, RenderOptions::default())), jinja_codes::UNSUPPORTED_CONSTRUCT);
     assert_eq!(
         code(render_with("{% for a, b in items %}{% endfor %}", &json!({ "items": [] }), None, RenderOptions::default())),
         jinja_codes::UNSUPPORTED_CONSTRUCT
@@ -184,33 +174,18 @@ fn unsupported_tags_and_constructs_fail_closed() {
 #[test]
 fn filter_and_operator_failures_use_stable_codes() {
     assert_eq!(code(render_with("{{ x|bogus }}", &json!({}), None, RenderOptions::default())), jinja_codes::UNKNOWN_FILTER);
-    assert_eq!(
-        code(render_with("{{ x|upper(\"a\") }}", &json!({}), None, RenderOptions::default())),
-        jinja_codes::FILTER_ARITY
-    );
+    assert_eq!(code(render_with("{{ x|upper(\"a\") }}", &json!({}), None, RenderOptions::default())), jinja_codes::FILTER_ARITY);
     assert_eq!(code(render_with("{{ 1|upper }}", &json!({}), None, RenderOptions::default())), jinja_codes::FILTER_VALUE);
-    assert_eq!(
-        code(render_with("{{ \"a\" + \"b\" }}", &json!({}), None, RenderOptions::default())),
-        jinja_codes::OPERATOR_TYPE
-    );
-    assert_eq!(
-        code(render_with("{{ \"a\" < \"b\" }}", &json!({}), None, RenderOptions::default())),
-        jinja_codes::OPERATOR_TYPE
-    );
+    assert_eq!(code(render_with("{{ \"a\" + \"b\" }}", &json!({}), None, RenderOptions::default())), jinja_codes::OPERATOR_TYPE);
+    assert_eq!(code(render_with("{{ \"a\" < \"b\" }}", &json!({}), None, RenderOptions::default())), jinja_codes::OPERATOR_TYPE);
     assert_eq!(code(render_with("{{ 1 / 0 }}", &json!({}), None, RenderOptions::default())), jinja_codes::ARITHMETIC);
     assert_eq!(code(render_with("{{ 7 % 0 }}", &json!({}), None, RenderOptions::default())), jinja_codes::ARITHMETIC);
-    assert_eq!(
-        code(render_with("{{ 9223372036854775807 + 1 }}", &json!({}), None, RenderOptions::default())),
-        jinja_codes::ARITHMETIC
-    );
+    assert_eq!(code(render_with("{{ 9223372036854775807 + 1 }}", &json!({}), None, RenderOptions::default())), jinja_codes::ARITHMETIC);
 }
 
 #[test]
 fn for_over_non_iterable_values_fails_closed() {
-    assert_eq!(
-        code(render_with("{% for x in 1 %}x{% endfor %}", &json!({}), None, RenderOptions::default())),
-        jinja_codes::ITERATION_TYPE
-    );
+    assert_eq!(code(render_with("{% for x in 1 %}x{% endfor %}", &json!({}), None, RenderOptions::default())), jinja_codes::ITERATION_TYPE);
     assert_eq!(
         code(render_with("{% for x in nothing %}x{% endfor %}", &json!({}), None, RenderOptions::default())),
         jinja_codes::ITERATION_TYPE
@@ -229,19 +204,15 @@ fn malformed_sources_are_parse_failures() {
 
 #[test]
 fn budgets_are_hard_ceilings() {
-    let options =
-        RenderOptions { limits: RenderLimits { max_output_bytes: 4, ..RenderLimits::default() }, ..RenderOptions::default() };
+    let options = RenderOptions { limits: RenderLimits { max_output_bytes: 4, ..RenderLimits::default() }, ..RenderOptions::default() };
     assert_eq!(code(render_with("hello", &json!({}), None, options)), codes::OUTPUT_BUDGET);
 
-    let options =
-        RenderOptions { limits: RenderLimits { max_source_bytes: 4, ..RenderLimits::default() }, ..RenderOptions::default() };
+    let options = RenderOptions { limits: RenderLimits { max_source_bytes: 4, ..RenderLimits::default() }, ..RenderOptions::default() };
     assert_eq!(code(render_with("hello", &json!({}), None, options)), codes::SOURCE_BUDGET);
 
-    let options =
-        RenderOptions { limits: RenderLimits { max_steps: 1, ..RenderLimits::default() }, ..RenderOptions::default() };
+    let options = RenderOptions { limits: RenderLimits { max_steps: 1, ..RenderLimits::default() }, ..RenderOptions::default() };
     assert_eq!(code(render_with("{% set x = 1 %}{{ x }}", &json!({}), None, options)), codes::STEP_BUDGET);
 
-    let options =
-        RenderOptions { limits: RenderLimits { max_include_depth: 1, ..RenderLimits::default() }, ..RenderOptions::default() };
+    let options = RenderOptions { limits: RenderLimits { max_include_depth: 1, ..RenderLimits::default() }, ..RenderOptions::default() };
     assert_eq!(code(render_with("{% include \"loop.jinja\" %}", &json!({}), None, options)), codes::INCLUDE_DEPTH);
 }
