@@ -3,18 +3,19 @@
 //! 私钥是 32 字节宿主熵，以 [`SecretBytes`](crate::secret::SecretBytes) 承载；派生的共享秘密同样
 //! 返回 `SecretBytes`。本模块只做原始 DH 数学，不做协议层的密钥确认。
 
-use crate::{CryptoError, Result, entropy::HostEntropy, secret::SecretBytes};
+use crate::{CryptoError, Result, entropy::fill_host, secret::SecretBytes};
 use x25519_dalek::{PublicKey, StaticSecret};
 
 /// X25519 私钥长度（字节）。
 const SECRET_LEN: usize = 32;
 
 /// 用宿主安全熵生成 X25519 私钥。
+///
+/// 熵读取失败按 [`CryptoError::Entropy`] 传回，不返回可用私钥。
 pub fn generate_secret_key() -> Result<SecretBytes> {
-    let mut entropy = HostEntropy::new();
-    let mut bytes = vec![0u8; SECRET_LEN];
-    entropy.fill(&mut bytes)?;
-    Ok(SecretBytes::new(bytes))
+    let mut bytes = [0u8; SECRET_LEN];
+    fill_host(&mut bytes)?;
+    Ok(SecretBytes::new(bytes.to_vec()))
 }
 
 /// 由私钥派生 32 字节公钥（X25519(u, 9)）。

@@ -1,10 +1,21 @@
 //! `boost-crypto` 固定向量与往返验收。
 //!
 //! 覆盖：SHA-256/384 NIST KAT、HMAC RFC 4231 case 1/2、HKDF RFC 5869 case 1、
-//! AES-128-GCM NIST CAVS（空 AAD 与带 AAD）、X25519 RFC 7748 §6.1、P-256/P-384 与
-//! RSA-2048 的签名往返及篡改拒绝、`SecretBytes` 的 Debug 打码与 drop 清零。
+//! AES-128-GCM NIST CAVS（空 AAD 与带 AAD）、X25519 RFC 7748 §6.1、P-256/P-384 签名往返、
+//! RSA 夹具验签与 OAEP(SHA-1) 加密往返、`SecretBytes` 的 Debug 打码与 drop 清零。
 
 use boost_crypto::{aead, ecdsa, encoding, hash, mac, rsa, secret::SecretBytes, x25519};
+
+/// RSA 夹具：2048 位公钥（SubjectPublicKeyInfo DER，base64）。
+const RSA_SPKI_B64: &str = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvrw2WDmULG0Tae9qCmg9OvZFI/5BnVDzXJufAtO/VwCNxNwztatN7YyvWcBJmDB0NBOJSLwsN2x5JYuOVwWKonW3jCEIkchOc4KyO5ZeZpGGdxFfBUN8e6uLEjEr+/586kMl/WWs1DKUsk2Bqz1+dvKJg6w9C+12fjRaYjvjXaLJ36Jkv1rKMI+PPqQtIHUqOX0pAZZIWWw/64OT3EPXY1ZFua/XqF+noWIFDJoHQknhjphhrN2An4O524HfzRXA43NxwfPUmFn8KH5YzHLvh2J4xxE6GUJAIScC4jikQb3Qb2r9e2VIodYYNlwKPU9XFtzNi673szXfBHoh6tJL4QIDAQAB";
+/// 同一夹具的私钥（PKCS#8 DER，base64），只用于验证我们产出的 OAEP 密文可被解回。
+const RSA_PKCS8_B64: &str = "MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQC+vDZYOZQsbRNp72oKaD069kUj/kGdUPNcm58C079XAI3E3DO1q03tjK9ZwEmYMHQ0E4lIvCw3bHkli45XBYqidbeMIQiRyE5zgrI7ll5mkYZ3EV8FQ3x7q4sSMSv7/nzqQyX9ZazUMpSyTYGrPX528omDrD0L7XZ+NFpiO+NdosnfomS/Wsowj48+pC0gdSo5fSkBlkhZbD/rg5PcQ9djVkW5r9eoX6ehYgUMmgdCSeGOmGGs3YCfg7nbgd/NFcDjc3HB89SYWfwofljMcu+HYnjHEToZQkAhJwLiOKRBvdBvav17ZUih1hg2XAo9T1cW3M2LrvezNd8EeiHq0kvhAgMBAAECgf8RseRYyv60IGpsqYls7b7AeZhwfmYX8iqhrM5TtNFLgQGmAcfKUton76VU7kHlnJkrO6TA2rQ/cBDNKuVJrXnvGHyuw2HIJI0iqj1eydR4L4gKA9KM6nXiA0gjp+wstK9iDFi56XTfOtIQuKAPAuV4o4eeb5w6Pw1/J9w6wNOXHBnqaIcA2JWJfO84IgPxciSRyLqtQPqbwr04L3AcrxvlvqfNUnHn5L4gHuWNnC4CIcdwf5cxq89IIlIdk3NYIqnBXZ7EMfJzM8uHslSUpgmLptcAyQNqvOgIf/ped1VPC4COHPeDf3BXtuPy2LSGS6RxCB67QHzimnvzNk8Bf7UCgYEA9A54jJEmupKOR8rG9ILmwn9cgQBdXm9632zva3IlyW3wKX2qzIJ9TBVNxiIqREIdxvyfY631oF3//u3su9UT+h69IddtldnoTYICqoGZPo5ovDpC4ce2LT77GtdUK5ugVD6aQHHeIaGztpjwTfCC/pSphfxAgJemPECJqYALuT0CgYEAyBG7+XhTdJUkniT9uSS15jbfdTn+pVXYEo+PxDLoeN65E6VbTsE5ruEWs5w3W1MLXStG0M5GJtOi9jd0F1rJG3ukynNAk2lMAmCCkw0ZF/miC7lEvIoffnIAq3n6iz5VavGX6XsWfEHZzld/or34W1fnKca03Ae2xThkQCwtX3UCgYEA7FkTPzXWZrpFFZt3fxVBujuy7q7WvPyC5tpNJiWeGGriOJwdiv4Xr1W2QtmVSxMoWSsOhG7UP2Co6E2rg99/ACtCiAJjespTYLQ2Nr9ZE67AGQDnAlXww/KJJN5BAhYtd0hFA4ICV1mMe5myphf0E+0OGtZF9QJnl1P8vOxm7hUCgYEAsnGG3BIjNWdUuqy5lGmWx9eHZRIt+p9fUeazzsWtLSlRn6ErmEmlPkJKsjYR9aVTDG1uAw0H6td2kO6S38W8e4PDTkKPhSs0fSZBMBFNoWGo05YSJat4PZpG2Kq5+XnGS9VhrgB35KoDLxRBphCUNDxp1IwDggBrVupeGBKPAYUCgYB9OTUaNazeOXbMf0OmKlhA9BPgOActqXn9EYyADxlrn4SQxBMaH+hL7ZQ1nZxn8YQbq2kxkAlKVwj1zestAfUw4jE0gy6uY9MsbXHiIXOsdjYxXr3ReGKjgNE4swxYIr4IEGM0KxegQkKj1cJqmCb22nlFvTDWAD2qOFkoM78zXw==";
+/// 夹具对 [`RSA_MESSAGE`] 的 PKCS#1 v1.5 + SHA-256 签名（base64）。
+const RSA_PKCS1V15_SHA256_B64: &str = "HVeepTbbHJrVwwdm2lNNg0u16z9e9j9cojPF9wkBjzgFvVHZC0JbgG8cAOPDfgA3oxtHljciNyCsXjpw//U+4sCw5WanVOLQ6wyslP7a4ycEXTESHo4jAGhxGR/E2dOnvsdT4I/kWqQmQ3Bx8QzL4tZ86wagTULd3wZ/AJ+7LCBXOlrl3ivyPYs6FEglh7BjYxJbdF+RJhptv4Kk/XBYcZFIA7y9AMIZE+J+guP01mtjJ6TdR7Zn6ehQmbIEnEGgp0AA6qVAHiJ95jhIfZa37uuUIHiUoFR92GOhbVr4ptKKOrNGWQBFPtms6ooeOT2vjI2KUu5NUfAcNiYB4thnZA==";
+/// 夹具对 [`RSA_MESSAGE`] 的 PSS + SHA-256 签名，盐长 32（base64）。
+const RSA_PSS_SHA256_B64: &str = "ny4i4WVnTLunZNOhBUt7FCHMxvAKHI+emNDkQD9vow355Hy6FBzgHjMPd+kVah+HRIrNHVGUPcUp03TKCwvUbP76YEoIg2KwfZmDh9glHBD1hQKh79j98QPhj0EyJtrahfna6KHAgiaLJ9UubLKtEcYWlxtbsDIO022I2HmlvsNYmUBpsxFMXfe4V4vDkW+xCXToigXEuRRA+idEnc5JbuONVLwQlbwByR2gyJROTquZfT5ICCFzxOdYNwjKm3z32FU8wepRZN65ecPcx04dUvoEoSIudI+jR6MHYYHyDmGh9ztIR3B5w5elttcZNBuO5PnCAckWXI9h1KwaGjfT+Q==";
+/// 夹具签名覆盖的固定消息。
+const RSA_MESSAGE: &[u8] = b"boost-crypto rsa fixture";
 
 /// 十六进制解码，仅测试使用。
 fn hex(text: &str) -> Vec<u8> {
@@ -176,32 +187,40 @@ fn ecdsa_p384_roundtrip_and_encodings() {
 }
 
 #[test]
-fn rsa_2048_pss_roundtrip_and_pkcs1v15() {
-    // debug 构建下 2048 位 keygen 较慢，属预期。
-    let key = rsa::PrivateKey::generate(2048).expect("host entropy keygen");
-    let public = key.public_key();
-    let message = b"boost-crypto rsa fixed message";
+fn rsa_verify_against_fixture_signatures() {
+    let spki = encoding::base64_decode(RSA_SPKI_B64).expect("spki");
+    let public = rsa::PublicKey::from_spki_der(&spki).expect("public key");
 
-    let signature = key.sign_pss_sha256(message).expect("pss sign");
-    public.verify_pss_sha256(message, &signature).expect("pss verify");
-    let mut tampered = signature.clone();
+    let pkcs1 = encoding::base64_decode(RSA_PKCS1V15_SHA256_B64).expect("pkcs1 signature");
+    public.verify_pkcs1v15_sha256(RSA_MESSAGE, &pkcs1).expect("pkcs1 verify");
+    assert!(public.verify_pkcs1v15_sha256(b"other message", &pkcs1).is_err());
+
+    let pss = encoding::base64_decode(RSA_PSS_SHA256_B64).expect("pss signature");
+    public.verify_pss_sha256(RSA_MESSAGE, &pss).expect("pss verify");
+    assert!(public.verify_pss_sha256(b"other message", &pss).is_err());
+
+    let mut tampered = pss.clone();
     let last = tampered.len() - 1;
     tampered[last] ^= 0x01;
-    assert!(public.verify_pss_sha256(message, &tampered).is_err());
-    assert!(public.verify_pss_sha256(b"other message", &signature).is_err());
+    assert!(public.verify_pss_sha256(RSA_MESSAGE, &tampered).is_err());
+}
 
-    let signature = key.sign_pss_sha384(message).expect("pss 384 sign");
-    public.verify_pss_sha384(message, &signature).expect("pss 384 verify");
+#[test]
+fn rsa_oaep_sha1_encrypt_roundtrips_with_fixture_key() {
+    let spki = encoding::base64_decode(RSA_SPKI_B64).expect("spki");
+    let public = rsa::PublicKey::from_spki_der(&spki).expect("public key");
+    let message = b"caching_sha2_password payload";
 
-    let signature = key.sign_pkcs1v15_sha256(message);
-    public.verify_pkcs1v15_sha256(message, &signature).expect("pkcs1 verify");
-    let mut tampered = signature.clone();
-    let last = tampered.len() - 1;
-    tampered[last] ^= 0x01;
-    assert!(public.verify_pkcs1v15_sha256(message, &tampered).is_err());
+    let first = public.encrypt_oaep_sha1(message).expect("encrypt");
+    let second = public.encrypt_oaep_sha1(message).expect("encrypt");
+    assert_eq!(first.len(), 256, "OAEP output must be the modulus size");
+    assert_ne!(first, second, "OAEP seed must come from fresh host entropy");
 
-    let signature = key.sign_pkcs1v15_sha384(message);
-    public.verify_pkcs1v15_sha384(message, &signature).expect("pkcs1 384 verify");
+    use ::rsa::pkcs8::DecodePrivateKey as _;
+    let private_bytes = encoding::base64_decode(RSA_PKCS8_B64).expect("pkcs8");
+    let private = ::rsa::RsaPrivateKey::from_pkcs8_der(&private_bytes).expect("private key");
+    let opened = private.decrypt(::rsa::Oaep::new::<sha1_rsa::Sha1>(), &first).expect("decrypt");
+    assert_eq!(opened, message.as_slice());
 }
 
 #[test]

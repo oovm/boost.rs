@@ -21,8 +21,8 @@ rsa = { workspace = true }
 signature = { workspace = true }
 x25519-dalek = { workspace = true }
 base64 = { workspace = true }
+sha1-rsa = { workspace = true }
 zeroize = { workspace = true }
-rand_core = { workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true

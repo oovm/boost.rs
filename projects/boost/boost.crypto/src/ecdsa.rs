@@ -5,7 +5,7 @@
 
 /// ECDSA/P-256。
 pub mod p256 {
-    use crate::{CryptoError, Result, entropy::HostEntropy};
+    use crate::{CryptoError, Result, entropy::fill_host};
     use ::p256::ecdsa::{self, SigningKey as InnerSigningKey, VerifyingKey as InnerVerifyingKey};
     use signature::{Signer as _, Verifier as _};
 
@@ -13,11 +13,19 @@ pub mod p256 {
     pub struct SigningKey(InnerSigningKey);
 
     impl SigningKey {
-        /// 用宿主安全熵生成新私钥。熵缺失时返回 [`CryptoError::Entropy`]。
+        /// 用宿主安全熵生成新私钥。
+        ///
+        /// 熵读取失败按 [`CryptoError::Entropy`] 传回。标量落在合法区间外时有限重试，
+        /// 超出预算返回 [`CryptoError::InvalidInput`]。
         pub fn generate() -> Result<Self> {
-            let mut entropy = HostEntropy::new();
-            entropy.probe()?;
-            Ok(Self(InnerSigningKey::random(&mut entropy)))
+            for _ in 0..8 {
+                let mut bytes = [0u8; 32];
+                fill_host(&mut bytes)?;
+                if let Ok(key) = InnerSigningKey::from_slice(&bytes) {
+                    return Ok(Self(key));
+                }
+            }
+            Err(CryptoError::InvalidInput)
         }
 
         /// 从 32 字节标量恢复私钥。
@@ -91,7 +99,7 @@ pub mod p256 {
 
 /// ECDSA/P-384。
 pub mod p384 {
-    use crate::{CryptoError, Result, entropy::HostEntropy};
+    use crate::{CryptoError, Result, entropy::fill_host};
     use ::p384::ecdsa::{self, SigningKey as InnerSigningKey, VerifyingKey as InnerVerifyingKey};
     use signature::{Signer as _, Verifier as _};
 
@@ -99,11 +107,19 @@ pub mod p384 {
     pub struct SigningKey(InnerSigningKey);
 
     impl SigningKey {
-        /// 用宿主安全熵生成新私钥。熵缺失时返回 [`CryptoError::Entropy`]。
+        /// 用宿主安全熵生成新私钥。
+        ///
+        /// 熵读取失败按 [`CryptoError::Entropy`] 传回。标量落在合法区间外时有限重试，
+        /// 超出预算返回 [`CryptoError::InvalidInput`]。
         pub fn generate() -> Result<Self> {
-            let mut entropy = HostEntropy::new();
-            entropy.probe()?;
-            Ok(Self(InnerSigningKey::random(&mut entropy)))
+            for _ in 0..8 {
+                let mut bytes = [0u8; 48];
+                fill_host(&mut bytes)?;
+                if let Ok(key) = InnerSigningKey::from_slice(&bytes) {
+                    return Ok(Self(key));
+                }
+            }
+            Err(CryptoError::InvalidInput)
         }
 
         /// 从 48 字节标量恢复私钥。
