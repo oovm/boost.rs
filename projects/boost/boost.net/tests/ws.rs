@@ -11,7 +11,7 @@ use boost_net::{
     NetError, Url,
     ws::{WebSocket, WsConfig, WsMessage},
 };
-use sha1::{Digest, Sha1};
+use boost_crypto::hash::sha1;
 
 const GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
@@ -35,7 +35,7 @@ fn header<'a>(head: &'a str, name: &str) -> Option<&'a str> {
 
 fn handshake_response(head: &str) -> String {
     let key = header(head, "sec-websocket-key").expect("client key");
-    let accept = STANDARD.encode(Sha1::digest(format!("{key}{GUID}").as_bytes()));
+    let accept = STANDARD.encode(sha1(format!("{key}{GUID}").as_bytes()));
     format!(
         "HTTP/1.1 101 Switching Protocols\r\n\
          Upgrade: websocket\r\n\

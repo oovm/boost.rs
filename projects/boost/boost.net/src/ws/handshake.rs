@@ -3,7 +3,7 @@
 use std::io::{Read, Write};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use sha1::{Digest, Sha1};
+use boost_crypto::hash::sha1;
 use url::Url;
 
 use crate::NetError;
@@ -52,7 +52,7 @@ pub(crate) fn perform<R: Read + Write>(stream: &mut R, url: &Url) -> Result<(), 
     if !head.contains_token("connection", "upgrade") {
         return Err(NetError::Protocol("handshake response is missing `Connection: Upgrade`".into()));
     }
-    let expected = STANDARD.encode(Sha1::digest(format!("{key}{GUID}").as_bytes()));
+    let expected = STANDARD.encode(sha1(format!("{key}{GUID}").as_bytes()));
     let actual =
         head.header("sec-websocket-accept").ok_or_else(|| NetError::Protocol("handshake response is missing Sec-WebSocket-Accept".into()))?;
     if !actual.eq(&expected) {

@@ -21,19 +21,27 @@ Boost 家族的共享密码基础能力：hash、HMAC/HKDF、AEAD、签名/验�
 | `encoding` | base64 标准填充与无填充两种编解码 |
 | `secret` | `SecretBytes` 秘密字节生命周期类型 |
 
+## 自有实现
+
+下列能力已由本 crate 自行实现，不依赖外部 crate，并按标准已知答案向量验收：
+
+| 能力 | 说明 |
+|------|------|
+| SHA-1 / SHA-224 / SHA-256 / SHA-384 / SHA-512 | FIPS 180-4 一次性摘要（`hash`） |
+| HMAC-SHA256 | RFC 2104，含恒定时间标签比较（`mac`） |
+| HKDF-SHA256 | RFC 5869 Extract / Expand（`mac`） |
+| RSAES-OAEP(SHA-1) 填充 | RFC 8017，含 `MGF1`，模幂用 `rsa` 提供的 `BigUint`（`rsa`） |
+
 ## 依赖台账
 
 按外部依赖吸收准入逐条登记。许可证以 registry 实际元数据为准。
 
 | crate | 版本 | 许可证 | 用途 |
 |-------|------|--------|------|
-| `sha2` | 0.11.1 | MIT OR Apache-2.0 | SHA-256/384/512 摘要核心（`oid` feature 提供算法标识） |
-| `hmac` | 0.13.0 | MIT OR Apache-2.0 | HMAC 构造与恒定时间验证 |
-| `hkdf` | 0.13.0 | MIT OR Apache-2.0 | RFC 5869 HKDF-Extract/Expand |
 | `aes-gcm` | 0.10.3 | Apache-2.0 OR MIT | AES-GCM AEAD（含 `aes`/`ghash`/`ctr` 传递实现） |
 | `p256` | 0.13.2 | Apache-2.0 OR MIT | NIST P-256 ECDSA（`ecdsa` feature） |
 | `p384` | 0.13.1 | Apache-2.0 OR MIT | NIST P-384 ECDSA（`ecdsa` feature） |
-| `rsa` | 0.9.10 | MIT OR Apache-2.0 | RSA 公钥解析、验签与模幂 |
+| `rsa` | 0.9.10 | MIT OR Apache-2.0 | RSA 公钥解析、验签与 `BigUint` 模幂 |
 | `signature` | 2.2.0 | Apache-2.0 OR MIT | `Signer`/`Verifier` 签名 trait 层（与 `p256`/`p384`/`rsa` 同版本） |
 | `x25519-dalek` | 2.0.1 | BSD-3-Clause | X25519 DH 与 `StaticSecret`（`static_secrets` feature） |
 | `base64` | 0.23.1 | MIT OR Apache-2.0 | base64 标准与无填充编解码 |

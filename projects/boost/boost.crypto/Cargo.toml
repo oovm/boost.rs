@@ -10,14 +10,11 @@ edition.workspace = true
 
 [dependencies]
 boost-random = { workspace = true, features = ["std", "system"] }
-sha2 = { workspace = true }
-sha2-rsa = { workspace = true }
-hmac = { workspace = true }
-hkdf = { workspace = true }
 aes-gcm = { workspace = true }
 p256 = { workspace = true }
 p384 = { workspace = true }
 rsa = { workspace = true }
+sha2-rsa = { workspace = true }
 signature = { workspace = true }
 x25519-dalek = { workspace = true }
 base64 = { workspace = true }
