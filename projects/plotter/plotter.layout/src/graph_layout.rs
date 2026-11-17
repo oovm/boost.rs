@@ -1,5 +1,6 @@
 //! 图布局算法。
 
+use boost_collection::{GraphRead, MemoryGraph, OutgoingEdges};
 use plotter_data::GraphData;
 use plotter_types::plot::{Diagnostic, DiagnosticCode, Result};
 use std::collections::{HashMap, VecDeque};
@@ -65,7 +66,7 @@ pub struct LayeredLayout;
 impl GraphLayout for LayeredLayout {
     fn layout(&self, graph: &GraphData, options: &LayoutOptions) -> Result<LayoutResult> {
         graph.validate()?;
-        let levels = assign_levels(graph);
+        let levels = assign_levels(graph)?;
         let max_level = levels.values().copied().max().unwrap_or(0);
         let mut by_level: Vec<Vec<&str>> = vec![Vec::new(); max_level + 1];
         for node in &graph.nodes {
@@ -91,34 +92,50 @@ impl GraphLayout for LayeredLayout {
     }
 }
 
-fn assign_levels(graph: &GraphData) -> HashMap<&str, usize> {
-    let adj = graph.adjacency();
+/// 把领域图转成 collection 的内存图，供布局算法消费出边与端点能力。
+///
+/// 平行边逐条保留，无向边只计一条逻辑边；`GraphData::validate` 已保证顶点
+/// 唯一且端点存在，这里仍把 collection 的拒绝映射为诊断，避免静默丢数据。
+fn memory_graph(graph: &GraphData) -> Result<MemoryGraph<&str>> {
+    let mut memory = MemoryGraph::new(graph.directed);
+    for node in &graph.nodes {
+        memory
+            .add_vertex(node.id.as_str())
+            .map_err(|error| Diagnostic::error(DiagnosticCode::ValidationFailed, format!("图顶点无效：{error}")))?;
+    }
+    for edge in &graph.edges {
+        memory
+            .add_edge(edge.source.as_str(), edge.target.as_str(), ())
+            .map_err(|error| Diagnostic::error(DiagnosticCode::ValidationFailed, format!("图边无效：{error}")))?;
+    }
+    Ok(memory)
+}
+
+fn assign_levels(graph: &GraphData) -> Result<HashMap<&str, usize>> {
+    let memory = memory_graph(graph)?;
     let mut level: HashMap<&str, usize> = HashMap::new();
     let mut queue = VecDeque::new();
 
     if graph.directed {
-        let mut indeg: HashMap<&str, usize> = graph.nodes.iter().map(|n| (n.id.as_str(), 0usize)).collect();
-        for edge in &graph.edges {
-            *indeg.get_mut(edge.target.as_str()).unwrap() += 1;
-        }
-        let mut sources: Vec<&str> = indeg.iter().filter(|(_, d)| **d == 0).map(|(k, _)| *k).collect();
+        let mut sources: Vec<&str> = memory.vertices().filter(|vertex| memory.incoming(vertex).next().is_none()).copied().collect();
         sources.sort_unstable();
         if sources.is_empty() {
             sources.push(graph.nodes[0].id.as_str());
         }
-        for s in sources {
-            level.insert(s, 0);
-            queue.push_back(s);
+        for source in sources {
+            level.insert(source, 0);
+            queue.push_back(source);
         }
         while let Some(u) = queue.pop_front() {
             let lu = level[&u];
-            for &v in adj.get(u).into_iter().flatten() {
+            for edge in memory.outgoing(&u) {
+                let (_, target) = memory.endpoints(edge).expect("edge descriptors come from the memory graph");
                 let next = lu + 1;
-                match level.get(&v).copied() {
+                match level.get(target).copied() {
                     Some(cur) if next <= cur => {}
                     _ => {
-                        level.insert(v, next);
-                        queue.push_back(v);
+                        level.insert(*target, next);
+                        queue.push_back(*target);
                     }
                 }
             }
@@ -130,10 +147,11 @@ fn assign_levels(graph: &GraphData) -> HashMap<&str, usize> {
         queue.push_back(start);
         while let Some(u) = queue.pop_front() {
             let lu = level[&u];
-            for &v in adj.get(u).into_iter().flatten() {
-                if let std::collections::hash_map::Entry::Vacant(e) = level.entry(v) {
-                    e.insert(lu + 1);
-                    queue.push_back(v);
+            for edge in memory.outgoing(&u) {
+                let (_, target) = memory.endpoints(edge).expect("edge descriptors come from the memory graph");
+                if let std::collections::hash_map::Entry::Vacant(entry) = level.entry(*target) {
+                    entry.insert(lu + 1);
+                    queue.push_back(*target);
                 }
             }
         }
@@ -142,7 +160,7 @@ fn assign_levels(graph: &GraphData) -> HashMap<&str, usize> {
     for node in &graph.nodes {
         level.entry(node.id.as_str()).or_insert(0);
     }
-    level
+    Ok(level)
 }
 
 /// 确定性力导向（固定种子与迭代，非随机）。
@@ -174,13 +192,13 @@ impl GraphLayout for ForceLayout {
         let mut pos: Vec<LayoutPoint> = result.positions.iter().map(|(_, p)| *p).collect();
         let area = options.inner_width() * options.inner_height();
         let k = (area / n as f64).sqrt().max(1.0);
-        let adj = graph.adjacency();
+        let memory = memory_graph(graph)?;
         let mut neighbors: Vec<Vec<usize>> = vec![Vec::new(); n];
-        for (u, neis) in &adj {
-            let ui = index[*u];
-            for v in neis {
-                let vi = index[*v];
-                neighbors[ui].push(vi);
+        for vertex in memory.vertices() {
+            let ui = index[*vertex];
+            for edge in memory.outgoing(vertex) {
+                let (_, target) = memory.endpoints(edge).expect("edge descriptors come from the memory graph");
+                neighbors[ui].push(index[*target]);
             }
         }
         for list in &mut neighbors {

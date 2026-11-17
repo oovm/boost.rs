@@ -8,6 +8,7 @@ description = "Apollo：2D/3D、图、树与标签布局"
 publish = false
 
 [dependencies]
+boost-collection = { workspace = true }
 plotter-types = { workspace = true }
 plotter-data = { workspace = true }
 
