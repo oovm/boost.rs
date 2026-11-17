@@ -4,7 +4,7 @@
 //! 乘积溢出与长度不匹配拒绝、非 Copy 元素的初始化/移动/释放、
 //! 二维行切片，以及编译期固定形状与 `array!` 元组展开。
 
-use boost_collection::{Array2D, Array3D, ArrayND, CollectionError, array};
+use boost_collection::{Array2D, Array2DRead, Array3D, ArrayND, CollectionError, array};
 use std::{cell::Cell, rc::Rc};
 
 #[test]
@@ -157,4 +157,62 @@ fn compile_time_three_dimensional_shape() {
     let source = [[[1_u8, 2], [3, 4]], [[5, 6], [7, 8]]];
     let converted: Array3D<u8, 2, 2, 2> = Array3D::from(source);
     assert_eq!(converted.into_inner(), source);
+}
+
+#[test]
+fn view_exposes_roi_and_transpose_mappings() {
+    let grid = ArrayND::new([2, 3], |[row, column]| (row * 3 + column) as i32).expect("shape fits");
+    let view = grid.view();
+    assert_eq!(view.shape(), [2, 3]);
+    assert!(view.is_contiguous());
+    assert_eq!(view.as_slice(), Some(&[0, 1, 2, 3, 4, 5][..]));
+
+    let transposed = view.transpose();
+    assert_eq!(transposed.shape(), [3, 2]);
+    assert!(!transposed.is_contiguous());
+    assert_eq!(transposed.as_slice(), None);
+    assert_eq!(transposed.get([0, 1]), Some(&3));
+    assert_eq!(transposed.get([2, 0]), Some(&2));
+    assert_eq!(transposed.get([3, 0]), None);
+    assert_eq!(transposed.iter().copied().collect::<Vec<_>>(), vec![0, 3, 1, 4, 2, 5]);
+
+    let roi = grid.view_rect(0..2, 1..3).expect("in-bounds rect");
+    assert_eq!(roi.shape(), [2, 2]);
+    assert_eq!(roi.get([0, 0]), Some(&1));
+    assert_eq!(roi.get([1, 1]), Some(&5));
+    assert!(!roi.is_contiguous());
+    assert_eq!(roi.iter().copied().collect::<Vec<_>>(), vec![1, 2, 4, 5]);
+    assert!(grid.view_rect(0..3, 0..1).is_none());
+    assert!(grid.view_rect(1..0, 0..1).is_none());
+
+    // 转置视图上的 ROI 仍映射回原坐标。
+    let corner = transposed.rect(1..3, 0..2).expect("in-bounds rect");
+    assert_eq!(corner.shape(), [2, 2]);
+    assert_eq!(corner.get([0, 0]), Some(&1));
+    assert_eq!(corner.get([1, 1]), Some(&5));
+
+    let zero = ArrayND::<u8, 2>::new([0, 4], |_| unreachable!("no element is generated")).expect("empty shape");
+    let empty = zero.view();
+    assert!(empty.is_contiguous());
+    assert_eq!(empty.as_slice(), Some(&[][..]));
+    assert_eq!(empty.iter().count(), 0);
+}
+
+#[test]
+fn one_read_algorithm_consumes_array_and_view() {
+    fn column_sums<A: Array2DRead<i32>>(array: &A) -> Vec<i32> {
+        let [rows, columns] = array.shape();
+        let mut sums = vec![0; columns];
+        for row in 0..rows {
+            for column in 0..columns {
+                sums[column] += array.get([row, column]).copied().unwrap_or(0);
+            }
+        }
+        sums
+    }
+
+    let grid = ArrayND::new([2, 3], |[row, column]| (row * 3 + column) as i32).expect("shape fits");
+    assert_eq!(column_sums(&grid), vec![3, 5, 7]);
+    // 同一算法直接消费转置视图，不需要重写，也不要求视图连续。
+    assert_eq!(column_sums(&grid.view().transpose()), vec![3, 12]);
 }
