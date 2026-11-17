@@ -9,6 +9,7 @@ authors.workspace = true
 publish.workspace = true
 
 [dependencies]
+boost-collection = { workspace = true }
 media-dsp = { workspace = true }
 media-types = { workspace = true }
 serde = { workspace = true }

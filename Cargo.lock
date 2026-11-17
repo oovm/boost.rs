@@ -1547,6 +1547,7 @@ dependencies = [
 name = "document-layout"
 version = "0.1.0"
 dependencies = [
+ "boost-collection",
  "document-compose",
  "document-fonts",
  "document-formats",
@@ -2977,6 +2978,7 @@ dependencies = [
 name = "media-voice"
 version = "0.1.0"
 dependencies = [
+ "boost-collection",
  "media-dsp",
  "media-types",
  "serde",
