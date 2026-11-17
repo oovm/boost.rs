@@ -16,8 +16,9 @@
 //!
 //! 稀疏、strided/分块、磁盘或设备载体尚未交付，等原因类型真实出现再抽能力；
 //! 真正不等长的分段数据（邻接表、变长字节串、独立增长的段落）不因词面
-//! 嵌套而强迁这里。二维只读视图（ROI、转置）已提供坐标映射，可变视图、
-//! 三维视图与非 affine 布局留到后续阶段。
+//! 嵌套而强迁这里。二维只读与可写视图（ROI、转置）已提供坐标映射，可写
+//! 视图要求独占借用与单射映射；三维视图、reshape 与非 affine 布局留到
+//! 后续阶段。
 
 #![doc = include_str!("../readme.md")]
 #![deny(missing_docs)]
@@ -32,7 +33,7 @@ mod graph;
 
 pub use array::ArrayND;
 pub use array_read::Array2DRead;
-pub use array_view::ArrayView2D;
+pub use array_view::{ArrayView2D, ArrayViewMut2D};
 pub use array2d::Array2D;
 pub use array3d::Array3D;
 pub use boost_collection_macro::array;

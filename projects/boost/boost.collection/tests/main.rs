@@ -199,6 +199,27 @@ fn view_exposes_roi_and_transpose_mappings() {
 }
 
 #[test]
+fn mutable_view_writes_through_roi_and_transpose() {
+    let mut grid = ArrayND::new([2, 3], |[row, column]| (row * 3 + column) as i32).expect("shape fits");
+    {
+        let mut view = grid.view_mut();
+        assert!(view.as_slice().is_some());
+        view.as_mut_slice().expect("the full view is contiguous")[0] = 5;
+
+        let mut corner = view.rect(0..2, 1..3).expect("in-bounds rect");
+        assert!(corner.as_mut_slice().is_none(), "a column ROI is not contiguous");
+        *corner.get_mut([1, 0]).expect("in bounds") = 20;
+
+        let mut transposed = corner.transpose();
+        *transposed.get_mut([1, 0]).expect("in bounds") = 30;
+        assert_eq!(transposed.get([2, 0]), None);
+    }
+    assert_eq!(grid[[0, 0]], 5);
+    assert_eq!(grid[[1, 1]], 20);
+    assert_eq!(grid[[0, 2]], 30);
+}
+
+#[test]
 fn one_read_algorithm_consumes_array_and_view() {
     fn column_sums<A: Array2DRead<i32>>(array: &A) -> Vec<i32> {
         let [rows, columns] = array.shape();
@@ -215,4 +236,7 @@ fn one_read_algorithm_consumes_array_and_view() {
     assert_eq!(column_sums(&grid), vec![3, 5, 7]);
     // 同一算法直接消费转置视图，不需要重写，也不要求视图连续。
     assert_eq!(column_sums(&grid.view().transpose()), vec![3, 12]);
+
+    let mut mutable = grid.clone();
+    assert_eq!(column_sums(&mutable.view_mut()), vec![3, 5, 7]);
 }

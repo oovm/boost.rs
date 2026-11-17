@@ -1,4 +1,4 @@
-use crate::{ArrayND, ArrayView2D};
+use crate::{ArrayND, ArrayView2D, ArrayViewMut2D};
 
 /// 二维数组的只读访问能力。
 ///
@@ -30,5 +30,15 @@ impl<T> Array2DRead<T> for ArrayView2D<'_, T> {
 
     fn get(&self, index: [usize; 2]) -> Option<&T> {
         ArrayView2D::get(self, index)
+    }
+}
+
+impl<T> Array2DRead<T> for ArrayViewMut2D<'_, T> {
+    fn shape(&self) -> [usize; 2] {
+        ArrayViewMut2D::shape(self)
+    }
+
+    fn get(&self, index: [usize; 2]) -> Option<&T> {
+        ArrayViewMut2D::get(self, index)
     }
 }
