@@ -14,6 +14,7 @@
 use std::{collections::BTreeMap, path::Path};
 
 use database_execution::engine::{Connection, QueryRow};
+use database_execution::engine::catalog::RenameMap;
 use database_types::{Error as DbError, Value, scalar};
 use serde_json::{Map as JsonMap, Value as JsonValue, json};
 
@@ -63,6 +64,20 @@ impl EmbedDb {
     /// 确保 schema 与 `document`（VOS 文档）一致；重复调用必须幂等。
     pub fn ensure_schema(&self, document: &str) -> Result<()> {
         self.conn.ensure_schema(document)?;
+        Ok(())
+    }
+
+    /// 当前持久化的 VOS schema 文档；空库返回 `None`。
+    pub fn schema_document(&self) -> Result<Option<String>> {
+        Ok(self.conn.schema()?.map(|schema| schema.document))
+    }
+
+    /// 以新的 VOS 文档推进 schema 版本，保留既有类型与字段身份。
+    ///
+    /// 文档必须包含全部既有表：`migrate_schema` 只演进，不删除未列出的定义。
+    /// 新库请先 [`Self::ensure_schema`]。
+    pub fn migrate_schema(&self, document: &str) -> Result<()> {
+        self.conn.migrate_schema(document, &RenameMap::default())?;
         Ok(())
     }
 

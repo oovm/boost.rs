@@ -92,3 +92,41 @@ fn rejects_non_yydx_path() {
     let error = EmbedDb::open(dir.join("app.db")).expect_err("must reject non-yydx path");
     assert!(error.to_string().contains("yydx"), "unexpected error: {error}");
 }
+
+/// 多表 schema 的 identity 与 contract 远超一页，落盘必须分块并在重开后重组。
+#[test]
+fn large_schema_survives_reopen() {
+    let mut document = String::new();
+    for index in 0..8 {
+        document.push_str(&format!(
+            "table Sheet{index} {{\n    @@id: utf8\n    title: utf8\n    owner: utf8\n    body: utf8\n    revision: i64\n    updated_at: i64\n}}\n\n"
+        ));
+    }
+    let path = temp_yydx("large-schema");
+    {
+        let db = EmbedDb::open(&path).unwrap();
+        db.ensure_schema(&document).unwrap();
+        db.execute(
+            "Sheet7.insert({ id: $id, title: $title, owner: $owner, body: $body, revision: $revision, updated_at: $updated_at })",
+            &params(&[
+                ("id", json!("s-1")),
+                ("title", json!("chunked")),
+                ("owner", json!("me")),
+                ("body", json!("bind")),
+                ("revision", json!(1)),
+                ("updated_at", json!(0)),
+            ]),
+        )
+        .unwrap();
+    }
+
+    let reopened = EmbedDb::open(&path).unwrap();
+    assert_eq!(reopened.schema_document().unwrap().as_deref(), Some(document.as_str()));
+    let rows = reopened.query("Sheet7.all().collect()", &JsonMap::new()).unwrap();
+    assert_eq!(rows.len(), 1, "rows after reopen: {rows:?}");
+    assert_eq!(rows[0]["title"], json!("chunked"));
+
+    // 追加表走 schema 演进，既有表身份保持不变。
+    reopened.migrate_schema(&format!("{document}\ntable Sheet8 {{\n    @@id: utf8\n    title: utf8\n}}\n")).unwrap();
+    assert_eq!(reopened.query("Sheet7.all().collect()", &JsonMap::new()).unwrap().len(), 1);
+}
