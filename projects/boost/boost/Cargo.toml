@@ -18,6 +18,7 @@ boost-crypto = { workspace = true, optional = true }
 boost-fs = { workspace = true, optional = true }
 boost-harness = { workspace = true, optional = true }
 boost-harness-macro = { workspace = true, optional = true }
+boost-math = { workspace = true, optional = true }
 boost-random = { workspace = true, optional = true }
 boost-source = { workspace = true, optional = true }
 boost-terminal = { workspace = true, optional = true }
@@ -32,6 +33,7 @@ diagnostic = ["dep:boost-harness"]
 fmt = ["dep:boost-console"]
 fs = ["dep:boost-fs"]
 log = ["dep:boost-harness"]
+math = ["dep:boost-math"]
 random = ["dep:boost-random"]
 source = ["dep:boost-source"]
 terminal = ["dep:boost-terminal"]

@@ -49,6 +49,12 @@ pub mod log {
     pub use boost_harness::log::*;
 }
 
+#[cfg(feature = "math")]
+pub mod math {
+    //! Arbitrary-precision integers, graph theory, and owned scalar kernels.
+    pub use boost_math::*;
+}
+
 #[cfg(feature = "random")]
 pub mod random {
     //! Random sources, sampling, and distributions.
