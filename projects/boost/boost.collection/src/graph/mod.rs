@@ -35,6 +35,16 @@ pub trait OutgoingEdges: GraphRead {
     fn outgoing(&self, vertex: &Self::Vertex) -> impl Iterator<Item = Self::Edge>;
 }
 
+/// 入边能力；只有实际维护反向索引的表示实现它。
+///
+/// 需要双向邻接的算法显式要求本能力，其余图不必为它付出索引成本。
+/// 无向图没有方向意义上的入边，实现返回空迭代器；只读 CSR 不实现本能力，
+/// 需要入边时应显式物化反向 CSR。
+pub trait IncomingEdges: GraphRead {
+    /// 顶点关联的入边；未知顶点返回空迭代器。
+    fn incoming(&self, vertex: &Self::Vertex) -> impl Iterator<Item = Self::Edge>;
+}
+
 /// 图构造与遍历的失败。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum GraphError {
@@ -150,12 +160,6 @@ impl<K: Clone + Eq + Hash, E> MemoryGraph<K, E> {
     pub fn edge_payload(&self, edge: usize) -> Option<&E> {
         self.edges.get(edge).map(MemoryEdge::payload)
     }
-
-    /// 有向图的入边标识；无向图与未知顶点返回空迭代器。
-    #[must_use]
-    pub fn incoming(&self, vertex: &K) -> impl Iterator<Item = usize> {
-        self.incoming.as_ref().and_then(|incoming| incoming.get(vertex)).into_iter().flatten().copied()
-    }
 }
 
 impl<K: Clone + Eq + Hash, E> GraphRead for MemoryGraph<K, E> {
@@ -190,6 +194,12 @@ impl<K: Clone + Eq + Hash, E> GraphRead for MemoryGraph<K, E> {
 impl<K: Clone + Eq + Hash, E> OutgoingEdges for MemoryGraph<K, E> {
     fn outgoing(&self, vertex: &Self::Vertex) -> impl Iterator<Item = Self::Edge> {
         self.outgoing.get(vertex).into_iter().flatten().copied()
+    }
+}
+
+impl<K: Clone + Eq + Hash, E> IncomingEdges for MemoryGraph<K, E> {
+    fn incoming(&self, vertex: &Self::Vertex) -> impl Iterator<Item = Self::Edge> {
+        self.incoming.as_ref().and_then(|incoming| incoming.get(vertex)).into_iter().flatten().copied()
     }
 }
 

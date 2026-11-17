@@ -1,6 +1,6 @@
 //! 图布局算法。
 
-use boost_collection::{GraphRead, MemoryGraph, OutgoingEdges};
+use boost_collection::{GraphRead, IncomingEdges, MemoryGraph, OutgoingEdges};
 use plotter_data::GraphData;
 use plotter_types::plot::{Diagnostic, DiagnosticCode, Result};
 use std::collections::{HashMap, VecDeque};

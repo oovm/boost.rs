@@ -3,7 +3,7 @@
 //! 覆盖：内存图的身份、平行边与自环策略、空图与孤点、拓扑序的确定性与
 //! 环失败、无向图拒绝，以及同一算法直接消费只读 CSR 表示。
 
-use boost_collection::{CsrGraph, GraphError, GraphRead, MemoryGraph, OutgoingEdges, topological_order};
+use boost_collection::{CsrGraph, GraphError, GraphRead, IncomingEdges, MemoryGraph, OutgoingEdges, topological_order};
 
 fn chain() -> MemoryGraph<&'static str> {
     let mut graph = MemoryGraph::<&'static str>::new(true);
@@ -98,6 +98,30 @@ fn the_same_algorithm_consumes_the_csr_representation() {
     assert_eq!(csr.edge_count(), 2);
     assert_eq!(csr.outgoing(&0).collect::<Vec<_>>(), vec![0, 1]);
     assert_eq!(topological_order(&csr), Ok(vec![0, 1]));
+}
+
+#[test]
+fn incoming_edges_are_an_optional_capability() {
+    fn in_degree<G: IncomingEdges>(graph: &G, vertex: &G::Vertex) -> usize {
+        graph.incoming(vertex).count()
+    }
+
+    let graph = chain();
+    assert_eq!(in_degree(&graph, &"b"), 1);
+    assert_eq!(in_degree(&graph, &"a"), 0);
+
+    let mut parallel = MemoryGraph::<&'static str>::new(true);
+    parallel.add_vertex("a").expect("unique vertex");
+    parallel.add_vertex("b").expect("unique vertex");
+    parallel.add_edge("a", "b", ()).expect("known endpoints");
+    parallel.add_edge("a", "b", ()).expect("known endpoints");
+    assert_eq!(in_degree(&parallel, &"b"), 2);
+
+    let mut undirected = MemoryGraph::<&'static str>::new(false);
+    undirected.add_vertex("a").expect("unique vertex");
+    undirected.add_vertex("b").expect("unique vertex");
+    undirected.add_edge("a", "b", ()).expect("known endpoints");
+    assert_eq!(in_degree(&undirected, &"b"), 0);
 }
 
 #[test]
