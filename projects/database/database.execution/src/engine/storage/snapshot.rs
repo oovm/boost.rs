@@ -14,28 +14,87 @@ use crate::engine::{
     objects::{EMBEDDED_OBJECT_PREFIX, ObjectStore, references::OBJECT_REF_PREFIX},
 };
 
-const META_SCHEMA: &[u8] = b"__yydb/meta/schema";
-const META_IDENTITY: &[u8] = b"__yydb/meta/identity";
-const META_CONTRACT: &[u8] = b"__yydb/meta/contract";
-const META_UNIQUE: &[u8] = b"__yydb/meta/unique";
+const META_SCHEMA: &str = "__yydb/meta/schema";
+const META_IDENTITY: &str = "__yydb/meta/identity";
+const META_CONTRACT: &str = "__yydb/meta/contract";
+const META_UNIQUE: &str = "__yydb/meta/unique";
 const META_PREFIX: &str = "__yydb/meta/";
+
+/// Typed metadata rows are chunked because each stored value must fit one leaf
+/// page (4 KiB minus headers). A realistic VOS document resolves to an identity
+/// ledger and a contract far larger than that after JSON encoding, so a single
+/// row per typed field cannot hold even a handful of tables.
+const META_CHUNK_BYTES: usize = 2048;
 
 /// `__yydb/meta/` rows owned by typed [`State`] fields rather than the records
 /// map. Every other metadata row (commit/checkpoint sequence, fencing counter,
 /// future reserved rows) round-trips through `State.records` so counters stay
 /// durable across reopen.
-const TYPED_META_KEYS: [&[u8]; 4] = [META_SCHEMA, META_IDENTITY, META_CONTRACT, META_UNIQUE];
+const TYPED_META_PREFIXES: [&str; 4] = [META_SCHEMA, META_IDENTITY, META_CONTRACT, META_UNIQUE];
+
+fn is_typed_meta_key(key: &[u8]) -> bool {
+    TYPED_META_PREFIXES.iter().any(|prefix| {
+        let prefix = prefix.as_bytes();
+        key == prefix || (key.starts_with(prefix) && key.get(prefix.len()) == Some(&b'/'))
+    })
+}
+
+/// Split one typed payload into leaf-page-sized rows under `prefix/0000`.
+fn chunk_rows(prefix: &str, payload: Vec<u8>) -> Vec<(Vec<u8>, Vec<u8>)> {
+    payload
+        .chunks(META_CHUNK_BYTES)
+        .enumerate()
+        .map(|(index, chunk)| (format!("{prefix}/{index:04}").into_bytes(), chunk.to_vec()))
+        .collect()
+}
+
+/// Reassemble a chunked typed payload.
+///
+/// Metadata rows are additive, so a shrinking payload leaves higher chunk rows
+/// behind. The payload header carries its own length; assembly stops as soon as
+/// that many bytes are collected and never lets stale tail chunks corrupt the
+/// value.
+fn assemble_chunked(metadata: &BTreeMap<Vec<u8>, Vec<u8>>, prefix: &str) -> Option<Vec<u8>> {
+    let head = format!("{prefix}/").into_bytes();
+    let mut bytes = Vec::new();
+    let mut seen = false;
+    for (key, value) in metadata.range(head.clone()..) {
+        if !key.starts_with(&head) {
+            break;
+        }
+        seen = true;
+        bytes.extend_from_slice(value);
+        if let Some(expected) = payload_len(&bytes) {
+            if bytes.len() >= expected {
+                bytes.truncate(expected);
+                break;
+            }
+        }
+    }
+    seen.then_some(bytes)
+}
+
+/// Byte length of a complete typed payload, judged from its header.
+fn payload_len(bytes: &[u8]) -> Option<usize> {
+    match bytes.first()? {
+        0 => Some(1),
+        1 if bytes.len() >= 5 => {
+            Some(5 + u32::from_le_bytes(bytes[1..5].try_into().ok()?) as usize)
+        }
+        _ => None,
+    }
+}
 
 /// Decode engine [`State`] from a durable snapshot.
 pub(crate) fn state_from_snapshot(snapshot: &Snapshot) -> Result<State> {
-    let schema = decode_schema(snapshot.metadata.get(META_SCHEMA).cloned())?;
-    let identity_history = decode_identity(snapshot.metadata.get(META_IDENTITY).cloned())?;
-    let resolved_contract = decode_contract(snapshot.metadata.get(META_CONTRACT).cloned())?;
-    let unique_constraints = decode_unique_constraints(snapshot.metadata.get(META_UNIQUE).cloned())?;
+    let schema = decode_schema(assemble_chunked(&snapshot.metadata, META_SCHEMA))?;
+    let identity_history = decode_identity(assemble_chunked(&snapshot.metadata, META_IDENTITY))?;
+    let resolved_contract = decode_contract(assemble_chunked(&snapshot.metadata, META_CONTRACT))?;
+    let unique_constraints = decode_unique_constraints(assemble_chunked(&snapshot.metadata, META_UNIQUE))?;
     let mut records: BTreeMap<String, Vec<u8>> =
         snapshot.records.iter().filter(|(key, _)| !key.starts_with(META_PREFIX)).map(|(key, value)| (key.clone(), value.clone())).collect();
     for (key, value) in &snapshot.metadata {
-        if TYPED_META_KEYS.contains(&key.as_slice()) {
+        if is_typed_meta_key(key) {
             continue;
         }
         let key = String::from_utf8(key.clone()).map_err(|_| Error::Corrupt("metadata key is not UTF-8"))?;
@@ -70,7 +129,7 @@ pub(crate) fn state_with_window(mut state: State, snapshot: Snapshot) -> Result<
 pub(crate) fn metadata_from_state(state: &State) -> Result<BTreeMap<Vec<u8>, Vec<u8>>> {
     let mut metadata = typed_metadata(state)?;
     for (key, value) in &state.records {
-        if !key.starts_with(META_PREFIX) || TYPED_META_KEYS.contains(&key.as_bytes()) {
+        if !key.starts_with(META_PREFIX) || is_typed_meta_key(key.as_bytes()) {
             continue;
         }
         metadata.insert(key.as_bytes().to_vec(), value.clone());
@@ -81,11 +140,11 @@ pub(crate) fn metadata_from_state(state: &State) -> Result<BTreeMap<Vec<u8>, Vec
 /// Typed `State` fields as their reserved metadata rows.
 fn typed_metadata(state: &State) -> Result<BTreeMap<Vec<u8>, Vec<u8>>> {
     let mut metadata = BTreeMap::new();
-    metadata.insert(META_SCHEMA.to_vec(), encode_schema(&state.schema)?);
-    metadata.insert(META_IDENTITY.to_vec(), encode_identity(&state.identity_history)?);
-    metadata.insert(META_CONTRACT.to_vec(), encode_contract(&state.resolved_contract)?);
+    metadata.extend(chunk_rows(META_SCHEMA, encode_schema(&state.schema)?));
+    metadata.extend(chunk_rows(META_IDENTITY, encode_identity(&state.identity_history)?));
+    metadata.extend(chunk_rows(META_CONTRACT, encode_contract(&state.resolved_contract)?));
     if !state.unique_constraints.is_empty() {
-        metadata.insert(META_UNIQUE.to_vec(), encode_unique_constraints(&state.unique_constraints)?);
+        metadata.extend(chunk_rows(META_UNIQUE, encode_unique_constraints(&state.unique_constraints)?));
     }
     Ok(metadata)
 }
@@ -98,7 +157,7 @@ pub(crate) fn snapshot_from_state(state: &State) -> Result<Snapshot> {
         if key.starts_with(META_PREFIX) {
             // Typed fields own their rows; the records copy must not override
             // the encoding produced from the typed field above.
-            if TYPED_META_KEYS.contains(&key.as_bytes()) {
+            if is_typed_meta_key(key.as_bytes()) {
                 continue;
             }
             metadata.insert(key.as_bytes().to_vec(), value.clone());
@@ -213,10 +272,12 @@ fn encode_schema(schema: &Option<database_types::SchemaVersion>) -> Result<Vec<u
         None => Ok(vec![0]),
         Some(schema) => {
             let doc = schema.document.as_bytes();
+            // `[marker][body_len][version][doc]`: every typed payload shares
+            // the marker + body length header so chunk assembly can find its end.
             let mut bytes = Vec::with_capacity(1 + 4 + 4 + doc.len());
             bytes.push(1);
+            bytes.extend(((4 + doc.len()) as u32).to_le_bytes());
             bytes.extend(schema.version.to_le_bytes());
-            bytes.extend((doc.len() as u32).to_le_bytes());
             bytes.extend(doc);
             Ok(bytes)
         }
@@ -231,12 +292,12 @@ fn decode_schema(bytes: Option<Vec<u8>>) -> Result<Option<database_types::Schema
             if bytes.len() < 9 {
                 return Err(Error::Corrupt("schema meta truncated"));
             }
-            let version = u32::from_le_bytes(bytes[1..5].try_into().unwrap());
-            let doc_len = u32::from_le_bytes(bytes[5..9].try_into().unwrap()) as usize;
-            let end = 9 + doc_len;
-            if bytes.len() != end {
+            let body_len = u32::from_le_bytes(bytes[1..5].try_into().unwrap()) as usize;
+            let end = 5 + body_len;
+            if bytes.len() != end || body_len < 4 {
                 return Err(Error::Corrupt("schema meta length mismatch"));
             }
+            let version = u32::from_le_bytes(bytes[5..9].try_into().unwrap());
             Ok(Some(database_types::SchemaVersion {
                 version,
                 document: String::from_utf8(bytes[9..end].to_vec()).map_err(|_| Error::Corrupt("schema document is not UTF-8"))?,
