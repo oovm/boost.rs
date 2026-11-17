@@ -23,7 +23,7 @@ generator-aot = ["generate", "odm-generate/aot", "odm-generate/templates-host"]
 # 浏览器 / 边缘 wasm 桥：`iris::wasm`。
 wasm-bridge = ["generate", "dep:serde_json"]
 # 托管推送迁移：`iris::migrate_plan` / `iris::migrate_run`。
-migrate = ["types", "adapter", "dep:von"]
+migrate = ["types", "adapter", "dep:schema-input-von"]
 # 完整 Node 绑定面。
 napi = ["host", "generator-aot", "wasm-bridge", "migrate"]
 # 完整 Python 绑定面。
@@ -43,4 +43,4 @@ odm-input-vos = { workspace = true, optional = true }
 odm-input-sql = { workspace = true, optional = true }
 odm-input-graphql = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
-von = { workspace = true, optional = true }
+schema-input-von = { workspace = true, optional = true }

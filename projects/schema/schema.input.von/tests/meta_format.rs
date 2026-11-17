@@ -1,0 +1,30 @@
+use schema_input_von::{from_str, to_string_indented, VonParser};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+struct ProjectMeta {
+    format: String,
+    version: i64,
+    name: String,
+    scenes: Vec<String>,
+}
+
+#[test]
+fn meta_round_trips_through_canonical_von() {
+    let meta = ProjectMeta { format: "example.project".to_owned(), version: 1, name: "Starter Game".to_owned(), scenes: vec!["scenes/main.scene.von".to_owned()] };
+
+    let source = to_string_indented(&meta).expect("meta serializes");
+    assert_eq!(
+        source,
+        "{\n  format: \"example.project\",\n  name: \"Starter Game\",\n  scenes: [\n    \"scenes/main.scene.von\"\n  ],\n  version: 1\n}"
+    );
+    assert_eq!(VonParser::parse(&source).expect("canonical source parses"), VonParser::parse(&source).unwrap());
+    assert_eq!(from_str::<ProjectMeta>(&source).expect("meta deserializes"), meta);
+}
+
+#[test]
+fn comments_and_unquoted_meta_keys_parse() {
+    let source = "# project metadata\n{ format: example.project, version: 1, enabled: true }";
+    let value = VonParser::parse(source).expect("VON parses");
+    assert_eq!(value.as_object().unwrap().get("format").unwrap().as_str(), Some("example.project"));
+}

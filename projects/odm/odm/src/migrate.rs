@@ -70,7 +70,7 @@ pub fn migrate_plan(config: &Path, source: &str, out: Option<&Path>) -> Result<P
         }
     };
     let out_path = out.map(Path::to_path_buf).unwrap_or_else(|| default_migration_plan(&project_dir, source));
-    let text = von::to_string_indented(&plan).map_err(|e| e.to_string())?;
+    let text = schema_input_von::to_string_indented(&plan).map_err(|e| e.to_string())?;
     write_file(&out_path, &text)?;
     Ok(out_path)
 }
@@ -82,7 +82,7 @@ pub fn migrate_apply(config: &Path, source: &str, plan_path: &Path) -> Result<Ap
     refuse_redis_migrate(ds.kind)?;
     let schema = read_schema(&project_dir, &project)?;
     let plan_text = std::fs::read_to_string(plan_path).map_err(|e| e.to_string())?;
-    let plan: LogicalMigrationPlan = von::from_str(&plan_text).map_err(|e| e.to_string())?;
+    let plan: LogicalMigrationPlan = schema_input_von::from_str(&plan_text).map_err(|e| e.to_string())?;
     let (plan_id, created) = match ds.kind {
         DatasourceKind::Sqlite => {
             let path = resolve_path(&project_dir, &expand_endpoint(ds, source)?);

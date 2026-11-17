@@ -143,6 +143,9 @@ members = [
     "projects/plotter/plotter.scene",
     "projects/plotter/plotter.types",
     "projects/plotter/plotter.view",
+    "projects/schema/schema.input.von",
+    "projects/schema/schema.input.von.ast",
+    "projects/schema/schema.input.von.parser",
     "projects/searcher/searcher",
     "projects/searcher/searcher.document",
     "projects/searcher/searcher.index",
@@ -322,6 +325,11 @@ template-types = { path = "projects/template/template.types" }
 mongo = { path = "projects/database/facades/mongo" }
 sqlite = { path = "projects/database/facades/sqlite" }
 
+# schema 能力树
+schema-input-von = { path = "projects/schema/schema.input.von", features = ["serde"] }
+schema-input-von-ast = { path = "projects/schema/schema.input.von.ast" }
+schema-input-von-parser = { path = "projects/schema/schema.input.von.parser" }
+
 # 外部库
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
@@ -374,7 +382,6 @@ encoding_rs = "0.8.35"
 
 # --- Upstream sources: pinned to full 40-character revisions ---
 vos = { git = "https://github.com/voml/vos-language.git", rev = "387d9fc3c9a556ddb8a433c627a866a2918d0186" }
-von = { git = "https://github.com/voml/von-language.git", rev = "ccc58c90c8f94c0be3dfcacb3b0caec98a6ae3e4", features = ["serde"] }
 
 acorn-core = { git = "https://github.com/yggdrasil-language/acorn.rs.git", rev = "2033ca05fcdc74d8484b1426beb4c204ef2fc613" }
 acorn-codec = { git = "https://github.com/yggdrasil-language/acorn.rs.git", rev = "2033ca05fcdc74d8484b1426beb4c204ef2fc613", default-features = false, features = ["compression"] }

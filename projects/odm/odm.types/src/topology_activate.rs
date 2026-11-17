@@ -74,7 +74,7 @@ pub fn load_activation(state_dir: impl AsRef<Path>, topology_id: &str) -> Result
         return Ok(None);
     }
     let text = fs::read_to_string(&path).map_err(TopologyError::Io)?;
-    let act: TopologyActivation = von::from_str(&text).map_err(TopologyError::Von)?;
+    let act: TopologyActivation = schema_input_von::from_str(&text).map_err(TopologyError::Von)?;
     if act.format != TOPOLOGY_ACTIVATION_FORMAT {
         return Err(TopologyError::Invalid(format!("unsupported activation format {}", act.format)));
     }
@@ -163,7 +163,7 @@ pub fn activate_topology(
     };
 
     let path = activation_path(state_dir, &topo.id);
-    let text = von::to_string_indented(&activation).map_err(TopologyError::Von)?;
+    let text = schema_input_von::to_string_indented(&activation).map_err(TopologyError::Von)?;
     let tmp = path.with_extension("von.tmp");
     fs::write(&tmp, &text).map_err(TopologyError::Io)?;
     fs::rename(&tmp, &path).map_err(TopologyError::Io)?;

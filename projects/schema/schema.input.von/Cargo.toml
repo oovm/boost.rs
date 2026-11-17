@@ -1,0 +1,22 @@
+# `schema-input-von`：VON 值/文档输入面，组合值模型、解析与可选 Serde 转换。
+[package]
+name = "schema-input-von"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[features]
+default = []
+serde = ["dep:serde", "schema-input-von-ast/serde"]
+
+[dependencies]
+schema-input-von-ast = { workspace = true }
+schema-input-von-parser = { workspace = true }
+serde = { workspace = true, optional = true }
+
+[[test]]
+name = "meta_format"
+required-features = ["serde"]

@@ -195,7 +195,7 @@ impl LocalProjectionStore {
         doc.generation = handle.generation.clone();
         let path = self.doc_path(&handle.component, handle.generation.as_str(), &doc.entity_id);
         let existed = path.exists();
-        let text = von::to_string_indented(&doc).map_err(|e| ProjectionStoreError::Codec(format!("serialize projection doc: {e}")))?;
+        let text = schema_input_von::to_string_indented(&doc).map_err(|e| ProjectionStoreError::Codec(format!("serialize projection doc: {e}")))?;
         fs::write(path, text).map_err(ProjectionStoreError::Io)?;
         if !existed {
             meta.doc_count = meta.doc_count.saturating_add(1);
@@ -289,7 +289,7 @@ impl LocalProjectionStore {
             return Ok(None);
         }
         let text = fs::read_to_string(&path)?;
-        let alias: AliasWire = von::from_str(&text).map_err(|e| ProjectionStoreError::Codec(format!("corrupt alias: {e}")))?;
+        let alias: AliasWire = schema_input_von::from_str(&text).map_err(|e| ProjectionStoreError::Codec(format!("corrupt alias: {e}")))?;
         Ok(alias.active_generation)
     }
 
@@ -448,7 +448,7 @@ impl LocalProjectionStore {
     }
 
     fn write_alias(&self, component: &str, alias: &AliasWire) -> ProjectionStoreResult<()> {
-        let text = von::to_string_indented(alias).map_err(|e| ProjectionStoreError::Codec(format!("serialize alias: {e}")))?;
+        let text = schema_input_von::to_string_indented(alias).map_err(|e| ProjectionStoreError::Codec(format!("serialize alias: {e}")))?;
         let path = self.alias_path(component);
         let tmp = path.with_extension("von.tmp");
         fs::write(&tmp, &text)?;
@@ -457,7 +457,7 @@ impl LocalProjectionStore {
     }
 
     fn write_gen_meta(&self, component: &str, gen_id: &str, meta: &GenerationMetaWire) -> ProjectionStoreResult<()> {
-        let text = von::to_string_indented(meta).map_err(|e| ProjectionStoreError::Codec(format!("serialize generation meta: {e}")))?;
+        let text = schema_input_von::to_string_indented(meta).map_err(|e| ProjectionStoreError::Codec(format!("serialize generation meta: {e}")))?;
         fs::write(self.gen_dir(component, gen_id).join("meta.von"), text)?;
         Ok(())
     }
@@ -468,7 +468,7 @@ impl LocalProjectionStore {
             return Err(ProjectionStoreError::NotFound(format!("generation `{gen_id}` not found for `{component}`")));
         }
         let text = fs::read_to_string(path)?;
-        von::from_str(&text).map_err(|e| ProjectionStoreError::Codec(format!("corrupt generation meta: {e}")))
+        schema_input_von::from_str(&text).map_err(|e| ProjectionStoreError::Codec(format!("corrupt generation meta: {e}")))
     }
 
     fn load_docs(&self, component: &str, gen_id: &str) -> ProjectionStoreResult<Vec<ProjectionDocument>> {
@@ -481,7 +481,7 @@ impl LocalProjectionStore {
             let entry = entry?;
             let text = fs::read_to_string(entry.path())?;
             let doc: ProjectionDocument =
-                von::from_str(&text).map_err(|e| ProjectionStoreError::Codec(format!("corrupt projection doc: {e}")))?;
+                schema_input_von::from_str(&text).map_err(|e| ProjectionStoreError::Codec(format!("corrupt projection doc: {e}")))?;
             out.push(doc);
         }
         Ok(out)

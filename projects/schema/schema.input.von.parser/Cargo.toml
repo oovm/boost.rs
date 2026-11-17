@@ -1,0 +1,12 @@
+# `schema-input-von-parser`：VON 手写词法与递归下降解析，含无损 CST。
+[package]
+name = "schema-input-von-parser"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+schema-input-von-ast = { workspace = true }

@@ -197,7 +197,7 @@ pub struct TopologyContract {
 impl TopologyContract {
     /// Parse and validate VON text.
     pub fn parse(text: &str) -> Result<Self, TopologyError> {
-        let topo: Self = von::from_str(text).map_err(TopologyError::Von)?;
+        let topo: Self = schema_input_von::from_str(text).map_err(TopologyError::Von)?;
         topo.validate()?;
         Ok(topo)
     }
@@ -211,7 +211,7 @@ impl TopologyContract {
     /// Canonical VON.
     pub fn to_von(&self) -> Result<String, TopologyError> {
         self.validate()?;
-        von::to_string_indented(self).map_err(TopologyError::Von)
+        schema_input_von::to_string_indented(self).map_err(TopologyError::Von)
     }
 
     /// Structural validation (Phase 10-A offline gates).
@@ -689,7 +689,7 @@ pub enum TopologyError {
     /// I/O.
     Io(std::io::Error),
     /// VON.
-    Von(von::VonError),
+    Von(schema_input_von::VonError),
     /// Bad format discriminator.
     UnsupportedFormat(String),
     /// Bad version.

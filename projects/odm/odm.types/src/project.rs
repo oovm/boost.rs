@@ -213,7 +213,7 @@ impl IrisProject {
 
     /// Parse VON text.
     pub fn parse(text: &str) -> Result<Self, ProjectError> {
-        let project: Self = von::from_str(text).map_err(ProjectError::Von)?;
+        let project: Self = schema_input_von::from_str(text).map_err(ProjectError::Von)?;
         project.validate()?;
         Ok(project)
     }
@@ -228,7 +228,7 @@ impl IrisProject {
     /// Canonical VON text.
     pub fn to_von(&self) -> Result<String, ProjectError> {
         self.validate()?;
-        von::to_string_indented(self).map_err(ProjectError::Von)
+        schema_input_von::to_string_indented(self).map_err(ProjectError::Von)
     }
 
     /// Write canonical VON to disk.
@@ -280,12 +280,12 @@ impl IrisLock {
 
     /// Canonical VON.
     pub fn to_von(&self) -> Result<String, ProjectError> {
-        von::to_string_indented(self).map_err(ProjectError::Von)
+        schema_input_von::to_string_indented(self).map_err(ProjectError::Von)
     }
 
     /// Parse lock file.
     pub fn parse(text: &str) -> Result<Self, ProjectError> {
-        let lock: Self = von::from_str(text).map_err(ProjectError::Von)?;
+        let lock: Self = schema_input_von::from_str(text).map_err(ProjectError::Von)?;
         if lock.format != LOCK_FORMAT {
             return Err(ProjectError::UnsupportedFormat(lock.format));
         }
@@ -495,7 +495,7 @@ pub enum ProjectError {
     /// I/O.
     Io(std::io::Error),
     /// VON parse/serialize.
-    Von(von::VonError),
+    Von(schema_input_von::VonError),
     /// JSON parse.
     Json(serde_json::Error),
     /// Unknown format discriminator.

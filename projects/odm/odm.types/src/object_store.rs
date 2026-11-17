@@ -168,7 +168,7 @@ impl FsObjectStore {
             return Ok(None);
         }
         let text = fs::read_to_string(&path).map_err(io_err)?;
-        let wire: ObjectRefWire = von::from_str(&text).map_err(|e| ObjectError::Policy(format!("corrupt object reference: {e}")))?;
+        let wire: ObjectRefWire = schema_input_von::from_str(&text).map_err(|e| ObjectError::Policy(format!("corrupt object reference: {e}")))?;
         if wire.reference.state != ObjectLifecycleState::Committed {
             return Err(ObjectError::Policy("reference document is not committed".into()));
         }
@@ -309,11 +309,11 @@ impl FsObjectStore {
             return Err(ObjectError::NotFound(format!("object `{id}` not found")));
         }
         let text = fs::read_to_string(&path).map_err(io_err)?;
-        von::from_str(&text).map_err(|e| ObjectError::Policy(format!("corrupt object meta: {e}")))
+        schema_input_von::from_str(&text).map_err(|e| ObjectError::Policy(format!("corrupt object meta: {e}")))
     }
 
     fn write_meta(&self, meta: &ObjectMeta) -> ObjectResult<()> {
-        let text = von::to_string_indented(meta).map_err(|e| ObjectError::Policy(format!("serialize object meta: {e}")))?;
+        let text = schema_input_von::to_string_indented(meta).map_err(|e| ObjectError::Policy(format!("serialize object meta: {e}")))?;
         fs::write(self.meta_path(&meta.object_id), text).map_err(io_err)
     }
 
@@ -322,7 +322,7 @@ impl FsObjectStore {
             return Err(ObjectError::Policy("refusing to publish non-committed object reference".into()));
         }
         let wire = ObjectRefWire { format: OBJECT_REF_FORMAT.into(), version: 1, reference: reference.clone() };
-        let text = von::to_string_indented(&wire).map_err(|e| ObjectError::Policy(format!("serialize object ref: {e}")))?;
+        let text = schema_input_von::to_string_indented(&wire).map_err(|e| ObjectError::Policy(format!("serialize object ref: {e}")))?;
         fs::write(self.ref_path(&reference.object_id), text).map_err(io_err)
     }
 

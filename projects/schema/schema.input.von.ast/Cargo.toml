@@ -1,0 +1,15 @@
+# `schema-input-von-ast`：VON 纯值模型（null/bool/i64/string/array/object）。
+[package]
+name = "schema-input-von-ast"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[features]
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { workspace = true, optional = true }
