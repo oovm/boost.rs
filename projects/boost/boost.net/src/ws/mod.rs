@@ -168,7 +168,9 @@ impl WebSocket {
 
     fn send_frame(&mut self, opcode: u8, payload: &[u8]) -> Result<(), NetError> {
         let mut mask = [0u8; 4];
-        getrandom::fill(&mut mask).map_err(|error| NetError::Transport(format!("cannot generate a frame mask: {error}")))?;
+        boost_random::Secure::system()
+            .fill(&mut mask)
+            .map_err(|error| NetError::Transport(format!("cannot generate a frame mask: {error}")))?;
         frame::write(&mut self.stream, opcode, true, payload, mask)
     }
 }

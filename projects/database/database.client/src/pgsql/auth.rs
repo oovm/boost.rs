@@ -115,7 +115,9 @@ impl ScramClient {
     /// Builds the client-first message and returns it for the SASL initial response.
     pub(crate) fn new(user: &str, password: &str) -> Result<(Self, String), PostgresError> {
         let mut random = [0u8; 18];
-        getrandom::fill(&mut random).map_err(|error| PostgresError::Protocol(format!("cannot generate a SCRAM nonce: {error}")))?;
+        boost_random::Secure::system()
+            .fill(&mut random)
+            .map_err(|error| PostgresError::Protocol(format!("cannot generate a SCRAM nonce: {error}")))?;
         Ok(Self::with_nonce(user, password, &STANDARD.encode(random)))
     }
 

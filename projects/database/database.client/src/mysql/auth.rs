@@ -61,8 +61,6 @@ pub(crate) fn sha2_scramble(password: &str, nonce: &[u8]) -> Vec<u8> {
 /// MySQL 用 OpenSSL 的 `RSA_PKCS1_OAEP_PADDING`，其 OAEP 摘要固定为 SHA-1，不是
 /// 密钥长度对应的 SHA-256。明文是「密码 + 结尾 NUL」与 scramble nonce 逐字节循环 XOR。
 pub(crate) fn rsa_encrypt(password: &str, nonce: &[u8], public_key_pem: &[u8]) -> Result<Vec<u8>> {
-    use rsa::{Oaep, RsaPublicKey, pkcs8::DecodePublicKey};
-
     if nonce.is_empty() {
         return Err(Error::Protocol { message: "caching_sha2_password sent no scramble nonce".into() });
     }
@@ -74,10 +72,9 @@ pub(crate) fn rsa_encrypt(password: &str, nonce: &[u8], public_key_pem: &[u8]) -
     }
     let pem = std::str::from_utf8(public_key_pem)
         .map_err(|_| Error::Protocol { message: "caching_sha2_password public key is not valid UTF-8".into() })?;
-    let key = RsaPublicKey::from_public_key_pem(pem)
+    let key = boost_crypto::rsa::PublicKey::from_pem(pem)
         .map_err(|error| Error::Protocol { message: format!("caching_sha2_password public key cannot be parsed: {error}") })?;
-    let mut rng = rsa::rand_core::OsRng;
-    key.encrypt(&mut rng, Oaep::new::<sha1_rsa::Sha1>(), &plaintext)
+    key.encrypt_oaep_sha1(&plaintext)
         .map_err(|error| Error::Protocol { message: format!("caching_sha2_password RSA encryption failed: {error}") })
 }
 

@@ -17,7 +17,9 @@ const MAX_HEADER_BYTES: usize = 64 * 1024;
 /// the frame reader.
 pub(crate) fn perform<R: Read + Write>(stream: &mut R, url: &Url) -> Result<(), NetError> {
     let mut nonce = [0u8; 16];
-    getrandom::fill(&mut nonce).map_err(|error| NetError::Transport(format!("cannot generate a WebSocket key: {error}")))?;
+    boost_random::Secure::system()
+        .fill(&mut nonce)
+        .map_err(|error| NetError::Transport(format!("cannot generate a WebSocket key: {error}")))?;
     let key = STANDARD.encode(nonce);
     let host = url.host_str().ok_or_else(|| NetError::Unsupported("URL has no host".into()))?;
     let host_header = match url.port() {

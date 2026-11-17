@@ -13,7 +13,7 @@ edition.workspace = true
 # `url` is pinned locally so the no_std build does not inherit the workspace
 # `serde` feature, which needs an allocator-aware serde build.
 url = { version = "2.5.8", default-features = false }
-getrandom = { workspace = true, optional = true }
+boost-random = { workspace = true, optional = true }
 sha1 = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
@@ -21,7 +21,7 @@ webpki-roots = { workspace = true, optional = true }
 
 [features]
 default = ["std", "tls"]
-std = ["dep:getrandom", "dep:sha1", "dep:base64", "url/std"]
+std = ["dep:boost-random", "dep:sha1", "dep:base64", "url/std"]
 tls = ["std", "dep:rustls", "dep:webpki-roots"]
 
 [dev-dependencies]
