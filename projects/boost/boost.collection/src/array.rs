@@ -136,6 +136,25 @@ impl<T, const N: usize> ArrayND<T, N> {
         self.offset(index).and_then(|offset| self.data.get_mut(offset))
     }
 
+    /// 复用当前缓冲，按行主序线性化后套用新形状。
+    ///
+    /// 元素顺序保持行主序，不复制、不重新分配；rank 可以改变，但逻辑元素数
+    /// 必须与当前元素数一致。改变元素数要走单独的构建或重建动作，不在普通
+    /// 访问路径上隐式分配。零 extent 的新形状同样保留完整形状信息。
+    ///
+    /// # Errors
+    ///
+    /// 新形状乘积溢出返回 [`CollectionError::ShapeOverflow`]，元素数不一致
+    /// 返回 [`CollectionError::ElementCountMismatch`]；失败时原数组被消费，
+    /// 不产生半成品。
+    pub fn reshaped<const M: usize>(self, shape: [usize; M]) -> Result<ArrayND<T, M>> {
+        let expected = element_count(&shape)?;
+        if expected != self.data.len() {
+            return Err(CollectionError::ElementCountMismatch { shape: expected, elements: self.data.len() });
+        }
+        Ok(ArrayND { data: self.data, shape })
+    }
+
     /// 逐轴校验边界后计算行主序偏移，所有算术均为检查运算。
     fn offset(&self, index: [usize; N]) -> Option<usize> {
         let mut offset = 0usize;

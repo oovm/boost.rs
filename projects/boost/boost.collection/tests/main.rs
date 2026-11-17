@@ -220,6 +220,29 @@ fn mutable_view_writes_through_roi_and_transpose() {
 }
 
 #[test]
+fn reshape_reuses_the_buffer_and_keeps_row_major_order() {
+    let grid = ArrayND::new([2, 3], |[row, column]| (row * 3 + column) as i32).expect("shape fits");
+    let transposed = grid.clone().reshaped([3, 2]).expect("same element count");
+    assert_eq!(transposed.shape(), [3, 2]);
+    assert_eq!(transposed.as_slice(), &[0, 1, 2, 3, 4, 5]);
+    assert_eq!(transposed[[1, 1]], 3);
+
+    let flat = grid.clone().reshaped([6]).expect("rank may change");
+    assert_eq!(flat.shape(), [6]);
+    assert_eq!(flat[[4]], 4);
+
+    let scalar = ArrayND::from_vec(vec![7_i32], []).expect("one scalar").reshaped([1, 1]).expect("same element count");
+    assert_eq!(scalar.shape(), [1, 1]);
+    assert_eq!(scalar[[0, 0]], 7);
+
+    let empty = ArrayND::<u8, 2>::new([0, 4], |_| unreachable!("no element is generated")).expect("empty shape");
+    assert_eq!(empty.reshaped([3, 0]).expect("empty shapes reshape").shape(), [3, 0]);
+
+    let error = grid.reshaped([4, 2]).unwrap_err();
+    assert_eq!(error, CollectionError::ElementCountMismatch { shape: 8, elements: 6 });
+}
+
+#[test]
 fn one_read_algorithm_consumes_array_and_view() {
     fn column_sums<A: Array2DRead<i32>>(array: &A) -> Vec<i32> {
         let [rows, columns] = array.shape();
