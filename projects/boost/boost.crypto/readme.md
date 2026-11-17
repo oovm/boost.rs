@@ -30,6 +30,7 @@ Boost 家族的共享密码基础能力：hash、HMAC/HKDF、AEAD、签名/验�
 | SHA-1 / SHA-224 / SHA-256 / SHA-384 / SHA-512 | FIPS 180-4 一次性摘要（`hash`） |
 | HMAC-SHA256 | RFC 2104，含恒定时间标签比较（`mac`） |
 | HKDF-SHA256 | RFC 5869 Extract / Expand（`mac`） |
+| AES-128 / AES-256 与 GCM | FIPS 197 分组加密、NIST SP 800-38D 的 CTR 与 GHASH 认证（`aead`），S-box 由 GF(2^8) 逆元现算 |
 | RSAES-OAEP(SHA-1) 填充 | RFC 8017，含 `MGF1`，模幂用 `rsa` 提供的 `BigUint`（`rsa`） |
 
 ## 依赖台账
@@ -38,7 +39,6 @@ Boost 家族的共享密码基础能力：hash、HMAC/HKDF、AEAD、签名/验�
 
 | crate | 版本 | 许可证 | 用途 |
 |-------|------|--------|------|
-| `aes-gcm` | 0.10.3 | Apache-2.0 OR MIT | AES-GCM AEAD（含 `aes`/`ghash`/`ctr` 传递实现） |
 | `p256` | 0.13.2 | Apache-2.0 OR MIT | NIST P-256 ECDSA（`ecdsa` feature） |
 | `p384` | 0.13.1 | Apache-2.0 OR MIT | NIST P-384 ECDSA（`ecdsa` feature） |
 | `rsa` | 0.9.10 | MIT OR Apache-2.0 | RSA 公钥解析、验签与 `BigUint` 模幂 |

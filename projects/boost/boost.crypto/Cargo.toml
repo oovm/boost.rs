@@ -10,7 +10,6 @@ edition.workspace = true
 
 [dependencies]
 boost-random = { workspace = true, features = ["std", "system"] }
-aes-gcm = { workspace = true }
 p256 = { workspace = true }
 p384 = { workspace = true }
 rsa = { workspace = true }

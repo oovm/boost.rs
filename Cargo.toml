@@ -358,7 +358,6 @@ sha2 = { version = "0.11.1", features = ["oid"] }
 sha1-rsa = { package = "sha1", version = "0.10" }
 rsa = { version = "0.9.10", features = ["sha2"] }
 base64 = "0.23.1"
-aes-gcm = "0.10.3"
 p256 = { version = "0.13.2", features = ["ecdsa"] }
 p384 = { version = "0.13.1", features = ["ecdsa"] }
 signature = "2.2.0"

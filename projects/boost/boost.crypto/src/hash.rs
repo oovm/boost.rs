@@ -230,7 +230,7 @@ fn pad(data: &[u8], block: usize, length_bytes: usize) -> Vec<u8> {
     let mut out = Vec::with_capacity(data.len() + block + length_bytes);
     out.extend_from_slice(data);
     out.push(0x80);
-    while (out.len() + length_bytes) % block != 0 {
+    while !(out.len() + length_bytes).is_multiple_of(block) {
         out.push(0);
     }
     let bit_len = (data.len() as u128) * 8;
