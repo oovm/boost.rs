@@ -1423,6 +1423,8 @@ fn mysql_error_code(kind: SqlErrorKind) -> (u16, &'static str) {
         NumericOverflow => (1690, "22003"),
         // PostgreSQL-only 分类：MySQL 对负长度返回空串，因此不会走到这里。
         InvalidSubstringLength => (1105, "HY000"),
+        // PostgreSQL-only 分类：MySQL 的 CAST 对非法输入返回 0/NULL。
+        InvalidTextRepresentation => (1105, "HY000"),
         TableAlreadyExists => (1050, "42S01"),
         ColumnAlreadyExists => (1060, "42S21"),
         IndexAlreadyExists => (1061, "42000"),
