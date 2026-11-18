@@ -233,7 +233,6 @@ pub struct TriggerDef {
 
 /// The catalog container: every schema object the engine resolves names
 /// against, plus the temp-table allocator state.
-#[derive(Default)]
 pub struct SqliteCatalog {
     /// Base tables in creation order.
     pub tables: Vec<TableDef>,
@@ -273,6 +272,27 @@ pub struct SqliteCatalog {
     /// The temp database was materialized once, so `PRAGMA database_list`
     /// keeps listing it even after its last object was dropped.
     pub temp_created: bool,
+}
+
+impl Default for SqliteCatalog {
+    fn default() -> Self {
+        Self {
+            tables: Vec::new(),
+            table_lookup: BTreeMap::new(),
+            indexes: BTreeMap::new(),
+            index_sequence: 0,
+            views: BTreeMap::new(),
+            temp_views: BTreeMap::new(),
+            triggers: BTreeMap::new(),
+            trigger_sequence: 0,
+            temp_tables: Vec::new(),
+            temp_lookup: BTreeMap::new(),
+            temp_next_page: 2,
+            temp_free_pages: BTreeSet::new(),
+            temp_next_rowid: 1,
+            temp_created: false,
+        }
+    }
 }
 
 impl SqliteCatalog {
