@@ -13,9 +13,7 @@ mod format;
 mod serializer;
 
 pub use schema_input_von_ast::VonValue;
-pub use schema_input_von_parser::{
-    Lexer, Token, TokenKind, VonCstElement, VonCstParser, VonCstRoot, VonParseError, VonParser,
-};
+pub use schema_input_von_parser::{Lexer, Token, TokenKind, VonCstElement, VonCstParser, VonCstRoot, VonParseError, VonParser};
 
 #[cfg(feature = "serde")]
 pub use deserializer::{VonDeserializer, from_str, from_value};

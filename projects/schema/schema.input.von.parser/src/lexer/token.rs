@@ -55,9 +55,6 @@ pub struct Token {
 
 impl Token {
     pub(crate) fn eof(span: usize) -> Self {
-        Self {
-            kind: TokenKind::Eof,
-            span: span..span,
-        }
+        Self { kind: TokenKind::Eof, span: span..span }
     }
 }

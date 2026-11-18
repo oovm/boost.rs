@@ -18,11 +18,7 @@ impl<'a> VonParser<'a> {
     /// 解析 VON 文本为 `VonValue`。
     pub fn parse(source: &'a str) -> Result<VonValue, VonParseError> {
         let tokens = Lexer::tokenize(source)?;
-        let mut parser = Self {
-            source,
-            tokens,
-            index: 0,
-        };
+        let mut parser = Self { source, tokens, index: 0 };
         let value = parser.parse_value()?;
         if !parser.is_at_end() {
             return Err(parser.error("unexpected trailing input"));
@@ -119,12 +115,9 @@ impl<'a> VonParser<'a> {
         let token = self.advance();
         let start = token.span.start;
         let raw = &self.source[token.span];
-        let inner = raw
-            .strip_prefix('"')
-            .and_then(|text| text.strip_suffix('"'))
-            .ok_or_else(|| self.error_at(start, "invalid string literal"))?;
-        let decoded = lexical::decode_string_literal(inner)
-            .map_err(|message| self.error_at(start, message))?;
+        let inner =
+            raw.strip_prefix('"').and_then(|text| text.strip_suffix('"')).ok_or_else(|| self.error_at(start, "invalid string literal"))?;
+        let decoded = lexical::decode_string_literal(inner).map_err(|message| self.error_at(start, message))?;
         Ok(VonValue::String(decoded))
     }
 
@@ -132,9 +125,7 @@ impl<'a> VonParser<'a> {
         let token = self.advance();
         let start = token.span.start;
         let text = &self.source[token.span];
-        let number = text
-            .parse::<i64>()
-            .map_err(|_| self.error_at(start, "invalid integer"))?;
+        let number = text.parse::<i64>().map_err(|_| self.error_at(start, "invalid integer"))?;
         Ok(VonValue::Number(number))
     }
 
@@ -147,7 +138,8 @@ impl<'a> VonParser<'a> {
         if self.check(kind) {
             self.advance();
             Ok(())
-        } else {
+        }
+        else {
             Err(self.error(format!("expected {:?}", kind)))
         }
     }
@@ -156,7 +148,8 @@ impl<'a> VonParser<'a> {
         if self.check(kind) {
             self.advance();
             true
-        } else {
+        }
+        else {
             false
         }
     }
@@ -166,10 +159,7 @@ impl<'a> VonParser<'a> {
     }
 
     fn peek_kind(&self) -> TokenKind {
-        self.tokens
-            .get(self.index)
-            .map(|token| token.kind)
-            .unwrap_or(TokenKind::Eof)
+        self.tokens.get(self.index).map(|token| token.kind).unwrap_or(TokenKind::Eof)
     }
 
     fn advance(&mut self) -> Token {
@@ -185,11 +175,7 @@ impl<'a> VonParser<'a> {
     }
 
     fn error(&self, message: impl Into<String>) -> VonParseError {
-        let position = self
-            .tokens
-            .get(self.index)
-            .map(|token| token.span.start)
-            .unwrap_or(self.source.len());
+        let position = self.tokens.get(self.index).map(|token| token.span.start).unwrap_or(self.source.len());
         VonParseError::new(position, message)
     }
 

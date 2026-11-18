@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use serde::{
     Serialize,
     ser::{
-        self, Impossible, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant,
-        SerializeTuple, SerializeTupleStruct, SerializeTupleVariant,
+        self, Impossible, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant, SerializeTuple, SerializeTupleStruct,
+        SerializeTupleVariant,
     },
 };
 
@@ -56,8 +56,7 @@ impl ser::Serializer for VonSerializer {
     }
 
     fn serialize_u64(self, value: u64) -> Result<Self::Ok, Self::Error> {
-        let number = i64::try_from(value)
-            .map_err(|_| VonSerdeError::new("VON 不支持超过 i64 范围的整数"))?;
+        let number = i64::try_from(value).map_err(|_| VonSerdeError::new("VON 不支持超过 i64 范围的整数"))?;
         Ok(VonValue::Number(number))
     }
 
@@ -78,12 +77,7 @@ impl ser::Serializer for VonSerializer {
     }
 
     fn serialize_bytes(self, value: &[u8]) -> Result<Self::Ok, Self::Error> {
-        Ok(VonValue::Array(
-            value
-                .iter()
-                .map(|item| VonValue::Number(i64::from(*item)))
-                .collect(),
-        ))
+        Ok(VonValue::Array(value.iter().map(|item| VonValue::Number(i64::from(*item))).collect()))
     }
 
     fn serialize_none(self) -> Result<Self::Ok, Self::Error> {
@@ -105,20 +99,11 @@ impl ser::Serializer for VonSerializer {
         Ok(VonValue::Null)
     }
 
-    fn serialize_unit_variant(
-        self,
-        _name: &'static str,
-        _variant_index: u32,
-        variant: &'static str,
-    ) -> Result<Self::Ok, Self::Error> {
+    fn serialize_unit_variant(self, _name: &'static str, _variant_index: u32, variant: &'static str) -> Result<Self::Ok, Self::Error> {
         Ok(VonValue::String(variant.to_owned()))
     }
 
-    fn serialize_newtype_struct<T>(
-        self,
-        _name: &'static str,
-        value: &T,
-    ) -> Result<Self::Ok, Self::Error>
+    fn serialize_newtype_struct<T>(self, _name: &'static str, value: &T) -> Result<Self::Ok, Self::Error>
     where
         T: ?Sized + Serialize,
     {
@@ -141,20 +126,14 @@ impl ser::Serializer for VonSerializer {
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
-        Ok(VonSerializeSeq {
-            values: Vec::with_capacity(len.unwrap_or(0)),
-        })
+        Ok(VonSerializeSeq { values: Vec::with_capacity(len.unwrap_or(0)) })
     }
 
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple, Self::Error> {
         self.serialize_seq(Some(len))
     }
 
-    fn serialize_tuple_struct(
-        self,
-        _name: &'static str,
-        len: usize,
-    ) -> Result<Self::SerializeTupleStruct, Self::Error> {
+    fn serialize_tuple_struct(self, _name: &'static str, len: usize) -> Result<Self::SerializeTupleStruct, Self::Error> {
         self.serialize_seq(Some(len))
     }
 
@@ -165,24 +144,14 @@ impl ser::Serializer for VonSerializer {
         variant: &'static str,
         len: usize,
     ) -> Result<Self::SerializeTupleVariant, Self::Error> {
-        Ok(VonSerializeTupleVariant {
-            variant: variant.to_owned(),
-            values: Vec::with_capacity(len),
-        })
+        Ok(VonSerializeTupleVariant { variant: variant.to_owned(), values: Vec::with_capacity(len) })
     }
 
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
-        Ok(VonSerializeMap {
-            entries: BTreeMap::new(),
-            next_key: None,
-        })
+        Ok(VonSerializeMap { entries: BTreeMap::new(), next_key: None })
     }
 
-    fn serialize_struct(
-        self,
-        _name: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeStruct, Self::Error> {
+    fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeStruct, Self::Error> {
         self.serialize_map(None)
     }
 
@@ -193,10 +162,7 @@ impl ser::Serializer for VonSerializer {
         variant: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeStructVariant, Self::Error> {
-        Ok(VonSerializeStructVariant {
-            variant: variant.to_owned(),
-            entries: BTreeMap::new(),
-        })
+        Ok(VonSerializeStructVariant { variant: variant.to_owned(), entries: BTreeMap::new() })
     }
 
     fn is_human_readable(&self) -> bool {
@@ -302,10 +268,7 @@ impl SerializeMap for VonSerializeMap {
     where
         T: ?Sized + Serialize,
     {
-        let key = self
-            .next_key
-            .take()
-            .ok_or_else(|| VonSerdeError::new("serialize_value 在 serialize_key 之前调用"))?;
+        let key = self.next_key.take().ok_or_else(|| VonSerdeError::new("serialize_value 在 serialize_key 之前调用"))?;
         self.entries.insert(key, value.serialize(VonSerializer)?);
         Ok(())
     }
@@ -323,8 +286,7 @@ impl SerializeStruct for VonSerializeMap {
     where
         T: ?Sized + Serialize,
     {
-        self.entries
-            .insert(key.to_owned(), value.serialize(VonSerializer)?);
+        self.entries.insert(key.to_owned(), value.serialize(VonSerializer)?);
         Ok(())
     }
 
@@ -346,8 +308,7 @@ impl SerializeStructVariant for VonSerializeStructVariant {
     where
         T: ?Sized + Serialize,
     {
-        self.entries
-            .insert(key.to_owned(), value.serialize(VonSerializer)?);
+        self.entries.insert(key.to_owned(), value.serialize(VonSerializer)?);
         Ok(())
     }
 
@@ -446,20 +407,11 @@ impl ser::Serializer for VonKeySerializer {
         self.serialize_unit()
     }
 
-    fn serialize_unit_variant(
-        self,
-        _name: &'static str,
-        _variant_index: u32,
-        variant: &'static str,
-    ) -> Result<Self::Ok, Self::Error> {
+    fn serialize_unit_variant(self, _name: &'static str, _variant_index: u32, variant: &'static str) -> Result<Self::Ok, Self::Error> {
         Ok(variant.to_owned())
     }
 
-    fn serialize_newtype_struct<T>(
-        self,
-        _name: &'static str,
-        value: &T,
-    ) -> Result<Self::Ok, Self::Error>
+    fn serialize_newtype_struct<T>(self, _name: &'static str, value: &T) -> Result<Self::Ok, Self::Error>
     where
         T: ?Sized + Serialize,
     {
@@ -487,11 +439,7 @@ impl ser::Serializer for VonKeySerializer {
         Err(VonSerdeError::new("VON 对象键不支持元组"))
     }
 
-    fn serialize_tuple_struct(
-        self,
-        _name: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeTupleStruct, Self::Error> {
+    fn serialize_tuple_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeTupleStruct, Self::Error> {
         Err(VonSerdeError::new("VON 对象键不支持元组结构"))
     }
 
@@ -509,11 +457,7 @@ impl ser::Serializer for VonKeySerializer {
         Err(VonSerdeError::new("VON 对象键不支持对象"))
     }
 
-    fn serialize_struct(
-        self,
-        _name: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeStruct, Self::Error> {
+    fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeStruct, Self::Error> {
         Err(VonSerdeError::new("VON 对象键不支持结构体"))
     }
 

@@ -14,7 +14,6 @@ database-formats = { workspace = true }
 database-types = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-vos = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true }

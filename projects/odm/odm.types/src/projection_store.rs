@@ -195,7 +195,8 @@ impl LocalProjectionStore {
         doc.generation = handle.generation.clone();
         let path = self.doc_path(&handle.component, handle.generation.as_str(), &doc.entity_id);
         let existed = path.exists();
-        let text = schema_input_von::to_string_indented(&doc).map_err(|e| ProjectionStoreError::Codec(format!("serialize projection doc: {e}")))?;
+        let text =
+            schema_input_von::to_string_indented(&doc).map_err(|e| ProjectionStoreError::Codec(format!("serialize projection doc: {e}")))?;
         fs::write(path, text).map_err(ProjectionStoreError::Io)?;
         if !existed {
             meta.doc_count = meta.doc_count.saturating_add(1);
@@ -457,7 +458,8 @@ impl LocalProjectionStore {
     }
 
     fn write_gen_meta(&self, component: &str, gen_id: &str, meta: &GenerationMetaWire) -> ProjectionStoreResult<()> {
-        let text = schema_input_von::to_string_indented(meta).map_err(|e| ProjectionStoreError::Codec(format!("serialize generation meta: {e}")))?;
+        let text =
+            schema_input_von::to_string_indented(meta).map_err(|e| ProjectionStoreError::Codec(format!("serialize generation meta: {e}")))?;
         fs::write(self.gen_dir(component, gen_id).join("meta.von"), text)?;
         Ok(())
     }

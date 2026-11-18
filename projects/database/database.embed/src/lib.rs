@@ -13,8 +13,7 @@
 
 use std::{collections::BTreeMap, path::Path};
 
-use database_execution::engine::{Connection, QueryRow};
-use database_execution::engine::catalog::RenameMap;
+use database_execution::engine::{Connection, QueryRow, catalog::RenameMap};
 use database_types::{Error as DbError, Value, scalar};
 use serde_json::{Map as JsonMap, Value as JsonValue, json};
 

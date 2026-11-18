@@ -1,0 +1,16 @@
+# `schema-input-vos`：VOS 的 schema 输入链（Oak 语法消费、四阶段语义、identity provider）。
+[package]
+name = "schema-input-vos"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+schema-types = { workspace = true }
+oak-vos = { workspace = true }
+uuid = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

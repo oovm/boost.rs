@@ -70,8 +70,7 @@ impl<'de> de::Deserializer<'de> for VonDeserializer {
         V: Visitor<'de>,
     {
         let value = deserialize_signed(self.input, "i16")?;
-        let converted =
-            i16::try_from(value).map_err(|_| VonSerdeError::new("整数超出 i16 范围"))?;
+        let converted = i16::try_from(value).map_err(|_| VonSerdeError::new("整数超出 i16 范围"))?;
         visitor.visit_i16(converted)
     }
 
@@ -80,8 +79,7 @@ impl<'de> de::Deserializer<'de> for VonDeserializer {
         V: Visitor<'de>,
     {
         let value = deserialize_signed(self.input, "i32")?;
-        let converted =
-            i32::try_from(value).map_err(|_| VonSerdeError::new("整数超出 i32 范围"))?;
+        let converted = i32::try_from(value).map_err(|_| VonSerdeError::new("整数超出 i32 范围"))?;
         visitor.visit_i32(converted)
     }
 
@@ -113,8 +111,7 @@ impl<'de> de::Deserializer<'de> for VonDeserializer {
         V: Visitor<'de>,
     {
         let value = deserialize_unsigned(self.input, "u16")?;
-        let converted =
-            u16::try_from(value).map_err(|_| VonSerdeError::new("整数超出 u16 范围"))?;
+        let converted = u16::try_from(value).map_err(|_| VonSerdeError::new("整数超出 u16 范围"))?;
         visitor.visit_u16(converted)
     }
 
@@ -123,8 +120,7 @@ impl<'de> de::Deserializer<'de> for VonDeserializer {
         V: Visitor<'de>,
     {
         let value = deserialize_unsigned(self.input, "u32")?;
-        let converted =
-            u32::try_from(value).map_err(|_| VonSerdeError::new("整数超出 u32 范围"))?;
+        let converted = u32::try_from(value).map_err(|_| VonSerdeError::new("整数超出 u32 范围"))?;
         visitor.visit_u32(converted)
     }
 
@@ -169,7 +165,8 @@ impl<'de> de::Deserializer<'de> for VonDeserializer {
         match self.input {
             VonValue::String(value) => {
                 let mut chars = value.chars();
-                let Some(first) = chars.next() else {
+                let Some(first) = chars.next()
+                else {
                     return Err(VonSerdeError::new("空字符串不能反序列化为 char"));
                 };
                 if chars.next().is_some() {
@@ -207,8 +204,7 @@ impl<'de> de::Deserializer<'de> for VonDeserializer {
                 let bytes = values
                     .into_iter()
                     .map(|value| match value {
-                        VonValue::Number(number) => u8::try_from(number)
-                            .map_err(|_| VonSerdeError::new("字节数组元素必须位于 0..=255")),
+                        VonValue::Number(number) => u8::try_from(number).map_err(|_| VonSerdeError::new("字节数组元素必须位于 0..=255")),
                         other => Err(invalid_value("u8", &other)),
                     })
                     .collect::<Result<Vec<_>, _>>()?;
@@ -245,22 +241,14 @@ impl<'de> de::Deserializer<'de> for VonDeserializer {
         }
     }
 
-    fn deserialize_unit_struct<V>(
-        self,
-        _name: &'static str,
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
+    fn deserialize_unit_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
         self.deserialize_unit(visitor)
     }
 
-    fn deserialize_newtype_struct<V>(
-        self,
-        _name: &'static str,
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
+    fn deserialize_newtype_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
@@ -287,12 +275,7 @@ impl<'de> de::Deserializer<'de> for VonDeserializer {
         self.deserialize_seq(visitor)
     }
 
-    fn deserialize_tuple_struct<V>(
-        self,
-        _name: &'static str,
-        _len: usize,
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
+    fn deserialize_tuple_struct<V>(self, _name: &'static str, _len: usize, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
@@ -312,44 +295,29 @@ impl<'de> de::Deserializer<'de> for VonDeserializer {
         }
     }
 
-    fn deserialize_struct<V>(
-        self,
-        _name: &'static str,
-        _fields: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
+    fn deserialize_struct<V>(self, _name: &'static str, _fields: &'static [&'static str], visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
         self.deserialize_map(visitor)
     }
 
-    fn deserialize_enum<V>(
-        self,
-        _name: &'static str,
-        _variants: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
+    fn deserialize_enum<V>(self, _name: &'static str, _variants: &'static [&'static str], visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
         match self.input {
-            VonValue::String(variant) => visitor.visit_enum(VonEnumDeserializer {
-                variant,
-                value: None,
-            }),
+            VonValue::String(variant) => visitor.visit_enum(VonEnumDeserializer { variant, value: None }),
             VonValue::Object(entries) => {
                 let mut iter = entries.into_iter();
-                let Some((variant, value)) = iter.next() else {
+                let Some((variant, value)) = iter.next()
+                else {
                     return Err(VonSerdeError::new("枚举对象不能为空"));
                 };
                 if iter.next().is_some() {
                     return Err(VonSerdeError::new("枚举对象只能包含一个变体"));
                 }
-                visitor.visit_enum(VonEnumDeserializer {
-                    variant,
-                    value: Some(value),
-                })
+                visitor.visit_enum(VonEnumDeserializer { variant, value: Some(value) })
             }
             other => Err(invalid_value("enum", &other)),
         }
@@ -410,9 +378,7 @@ impl<'de> de::VariantAccess<'de> for VonVariantDeserializer {
     where
         T: de::DeserializeSeed<'de>,
     {
-        let value = self
-            .value
-            .ok_or_else(|| VonSerdeError::new("缺少枚举变体的值"))?;
+        let value = self.value.ok_or_else(|| VonSerdeError::new("缺少枚举变体的值"))?;
         seed.deserialize(VonDeserializer::new(value))
     }
 
@@ -430,11 +396,7 @@ impl<'de> de::VariantAccess<'de> for VonVariantDeserializer {
         }
     }
 
-    fn struct_variant<V>(
-        self,
-        _fields: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
+    fn struct_variant<V>(self, _fields: &'static [&'static str], visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
@@ -473,8 +435,7 @@ fn deserialize_signed(value: VonValue, expected: &str) -> Result<i64, VonSerdeEr
 
 fn deserialize_unsigned(value: VonValue, expected: &str) -> Result<u64, VonSerdeError> {
     match value {
-        VonValue::Number(number) => u64::try_from(number)
-            .map_err(|_| VonSerdeError::new(format!("{} 不能从负数反序列化", expected))),
+        VonValue::Number(number) => u64::try_from(number).map_err(|_| VonSerdeError::new(format!("{} 不能从负数反序列化", expected))),
         other => Err(invalid_value(expected, &other)),
     }
 }

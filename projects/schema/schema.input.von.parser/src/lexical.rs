@@ -16,9 +16,7 @@ pub fn decode_string_literal(source: &str) -> Result<String, String> {
     let mut chars = source.chars();
     while let Some(ch) = chars.next() {
         if ch == '\\' {
-            let escaped = chars
-                .next()
-                .ok_or_else(|| "unterminated string escape".to_string())?;
+            let escaped = chars.next().ok_or_else(|| "unterminated string escape".to_string())?;
             match escaped {
                 '"' => buffer.push('"'),
                 '\\' => buffer.push('\\'),
@@ -27,7 +25,8 @@ pub fn decode_string_literal(source: &str) -> Result<String, String> {
                 't' => buffer.push('\t'),
                 other => buffer.push(other),
             }
-        } else {
+        }
+        else {
             buffer.push(ch);
         }
     }

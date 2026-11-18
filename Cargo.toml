@@ -144,9 +144,11 @@ members = [
     "projects/plotter/plotter.scene",
     "projects/plotter/plotter.types",
     "projects/plotter/plotter.view",
+    "projects/schema/schema.input.vos",
     "projects/schema/schema.input.von",
     "projects/schema/schema.input.von.ast",
     "projects/schema/schema.input.von.parser",
+    "projects/schema/schema.types",
     "projects/searcher/searcher",
     "projects/searcher/searcher.document",
     "projects/searcher/searcher.index",
@@ -328,9 +330,11 @@ mongo = { path = "projects/database/facades/mongo" }
 sqlite = { path = "projects/database/facades/sqlite" }
 
 # schema 能力树
+schema-input-vos = { path = "projects/schema/schema.input.vos" }
 schema-input-von = { path = "projects/schema/schema.input.von", features = ["serde"] }
 schema-input-von-ast = { path = "projects/schema/schema.input.von.ast" }
 schema-input-von-parser = { path = "projects/schema/schema.input.von.parser" }
+schema-types = { path = "projects/schema/schema.types" }
 
 # 外部库
 serde = { version = "1.0.229", features = ["derive"] }
@@ -372,7 +376,7 @@ rsa = { version = "0.9.10", features = ["sha2"] }
 base64 = "0.23.1"
 zeroize = { version = "1.9.1", features = ["derive"] }
 sha2-rsa = { package = "sha2", version = "0.10.9", features = ["oid"] }
-uuid = { version = "1", features = ["serde", "v4"] }
+uuid = { version = "1", features = ["serde", "v4", "v7", "rng-getrandom"] }
 once_cell = "1"
 glob = "0.3"
 libc = { version = "0.2", default-features = false }
@@ -412,6 +416,7 @@ oak-abc = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "d1337
 oak-smiles = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "d1337eb4d289505c85d988cd8f80b96023f1e63a", default-features = false, features = ["serde"] }
 oak-mdl = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "d1337eb4d289505c85d988cd8f80b96023f1e63a", default-features = false, features = ["serde"] }
 oak-sql = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "d1337eb4d289505c85d988cd8f80b96023f1e63a", default-features = false, features = ["serde"] }
+oak-vos = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "d1337eb4d289505c85d988cd8f80b96023f1e63a" }
 
 [profile.release]
 lto = true

@@ -41,11 +41,7 @@ fn is_typed_meta_key(key: &[u8]) -> bool {
 
 /// Split one typed payload into leaf-page-sized rows under `prefix/0000`.
 fn chunk_rows(prefix: &str, payload: Vec<u8>) -> Vec<(Vec<u8>, Vec<u8>)> {
-    payload
-        .chunks(META_CHUNK_BYTES)
-        .enumerate()
-        .map(|(index, chunk)| (format!("{prefix}/{index:04}").into_bytes(), chunk.to_vec()))
-        .collect()
+    payload.chunks(META_CHUNK_BYTES).enumerate().map(|(index, chunk)| (format!("{prefix}/{index:04}").into_bytes(), chunk.to_vec())).collect()
 }
 
 /// Reassemble a chunked typed payload.
@@ -78,9 +74,7 @@ fn assemble_chunked(metadata: &BTreeMap<Vec<u8>, Vec<u8>>, prefix: &str) -> Opti
 fn payload_len(bytes: &[u8]) -> Option<usize> {
     match bytes.first()? {
         0 => Some(1),
-        1 if bytes.len() >= 5 => {
-            Some(5 + u32::from_le_bytes(bytes[1..5].try_into().ok()?) as usize)
-        }
+        1 if bytes.len() >= 5 => Some(5 + u32::from_le_bytes(bytes[1..5].try_into().ok()?) as usize),
         _ => None,
     }
 }

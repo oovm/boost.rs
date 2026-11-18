@@ -40,35 +40,20 @@ fn format_array(values: &[VonValue], indent: Option<usize>, depth: usize) -> Str
         return "[]".to_owned();
     }
     match indent {
-        None => format!(
-            "[{}]",
-            values
-                .iter()
-                .map(|value| format_value(value, None, depth))
-                .collect::<Vec<_>>()
-                .join(",")
-        ),
+        None => format!("[{}]", values.iter().map(|value| format_value(value, None, depth)).collect::<Vec<_>>().join(",")),
         Some(width) => {
             let prefix = " ".repeat(width * (depth + 1));
             let suffix = " ".repeat(width * depth);
             format!(
                 "[\n{}\n{}]",
-                values
-                    .iter()
-                    .map(|value| format!("{prefix}{}", format_value(value, indent, depth + 1)))
-                    .collect::<Vec<_>>()
-                    .join(",\n"),
+                values.iter().map(|value| format!("{prefix}{}", format_value(value, indent, depth + 1))).collect::<Vec<_>>().join(",\n"),
                 suffix
             )
         }
     }
 }
 
-fn format_object(
-    entries: &std::collections::BTreeMap<String, VonValue>,
-    indent: Option<usize>,
-    depth: usize,
-) -> String {
+fn format_object(entries: &std::collections::BTreeMap<String, VonValue>, indent: Option<usize>, depth: usize) -> String {
     if entries.is_empty() {
         return "{}".to_owned();
     }
@@ -77,11 +62,7 @@ fn format_object(
             "{{{}}}",
             entries
                 .iter()
-                .map(|(key, value)| format!(
-                    "{}:{}",
-                    format_key(key),
-                    format_value(value, None, depth)
-                ))
+                .map(|(key, value)| format!("{}:{}", format_key(key), format_value(value, None, depth)))
                 .collect::<Vec<_>>()
                 .join(",")
         ),
@@ -92,11 +73,7 @@ fn format_object(
                 "{{\n{}\n{}}}",
                 entries
                     .iter()
-                    .map(|(key, value)| format!(
-                        "{prefix}{}: {}",
-                        format_key(key),
-                        format_value(value, indent, depth + 1)
-                    ))
+                    .map(|(key, value)| format!("{prefix}{}: {}", format_key(key), format_value(value, indent, depth + 1)))
                     .collect::<Vec<_>>()
                     .join(",\n"),
                 suffix
@@ -106,17 +83,12 @@ fn format_object(
 }
 
 fn format_key(key: &str) -> String {
-    if is_identifier(key) && !matches!(key, "null" | "true" | "false") {
-        key.to_owned()
-    } else {
-        quote(key)
-    }
+    if is_identifier(key) && !matches!(key, "null" | "true" | "false") { key.to_owned() } else { quote(key) }
 }
 
 fn is_identifier(key: &str) -> bool {
     let mut chars = key.chars();
-    chars.next().is_some_and(schema_input_von_parser::is_identifier_start)
-        && chars.all(schema_input_von_parser::is_identifier_continue)
+    chars.next().is_some_and(schema_input_von_parser::is_identifier_start) && chars.all(schema_input_von_parser::is_identifier_continue)
 }
 
 fn quote(value: &str) -> String {
@@ -129,9 +101,7 @@ fn quote(value: &str) -> String {
             '\n' => output.push_str("\\n"),
             '\r' => output.push_str("\\r"),
             '\t' => output.push_str("\\t"),
-            _ => output
-                .write_char(ch)
-                .expect("writing to String cannot fail"),
+            _ => output.write_char(ch).expect("writing to String cannot fail"),
         }
     }
     output.push('"');

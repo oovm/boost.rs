@@ -26,7 +26,6 @@ mongo = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha1 = { workspace = true }
-vos = { workspace = true }
 
 [dev-dependencies]
 boost-fs = { workspace = true }

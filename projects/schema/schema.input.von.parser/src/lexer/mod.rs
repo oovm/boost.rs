@@ -24,11 +24,7 @@ impl<'a> Lexer<'a> {
 
     /// 含 trivia 的完整 token 流（CST / formatter）。
     pub fn tokenize_lossless(source: &'a str) -> Result<Vec<Token>, VonParseError> {
-        let mut lexer = Self {
-            source,
-            offset: 0,
-            tokens: Vec::new(),
-        };
+        let mut lexer = Self { source, offset: 0, tokens: Vec::new() };
         while lexer.offset < source.len() {
             if lexer.lex_trivia()? {
                 continue;
@@ -50,7 +46,8 @@ impl<'a> Lexer<'a> {
 
     fn lex_trivia(&mut self) -> Result<bool, VonParseError> {
         let start = self.offset;
-        let Some(remaining) = self.source.get(self.offset..) else {
+        let Some(remaining) = self.source.get(self.offset..)
+        else {
             return Ok(false);
         };
         if remaining.starts_with('#') {
@@ -60,21 +57,16 @@ impl<'a> Lexer<'a> {
                     break;
                 }
             }
-            self.tokens.push(Token {
-                kind: TokenKind::LineComment,
-                span: span(start, self.offset),
-            });
+            self.tokens.push(Token { kind: TokenKind::LineComment, span: span(start, self.offset) });
             return Ok(true);
         }
-        let Some(ch) = self.peek_char() else {
+        let Some(ch) = self.peek_char()
+        else {
             return Ok(false);
         };
         if ch.is_whitespace() {
             self.offset += ch.len_utf8();
-            self.tokens.push(Token {
-                kind: TokenKind::Whitespace,
-                span: span(start, self.offset),
-            });
+            self.tokens.push(Token { kind: TokenKind::Whitespace, span: span(start, self.offset) });
             return Ok(true);
         }
         Ok(false)
@@ -87,7 +79,8 @@ impl<'a> Lexer<'a> {
 
     fn lex_token(&mut self) -> Result<(), VonParseError> {
         let start = self.offset;
-        let Some(ch) = self.peek_char() else {
+        let Some(ch) = self.peek_char()
+        else {
             return Ok(());
         };
 
@@ -128,18 +121,12 @@ impl<'a> Lexer<'a> {
             _ => return Err(self.error(start, format!("unexpected character '{ch}'"))),
         };
 
-        self.tokens.push(Token {
-            kind,
-            span: span(start, self.offset),
-        });
+        self.tokens.push(Token { kind, span: span(start, self.offset) });
         Ok(())
     }
 
     fn lex_identifier(&mut self, start: usize) -> Result<TokenKind, VonParseError> {
-        while self
-            .peek_char()
-            .is_some_and(lexical::is_identifier_continue)
-        {
+        while self.peek_char().is_some_and(lexical::is_identifier_continue) {
             self.offset += self.peek_char().unwrap().len_utf8();
         }
         let text = &self.source[start..self.offset];
@@ -159,9 +146,7 @@ impl<'a> Lexer<'a> {
             match self.next_char() {
                 Some('"') => return Ok(()),
                 Some('\\') => {
-                    let _ = self
-                        .next_char()
-                        .ok_or_else(|| self.error(start, "unterminated string escape"))?;
+                    let _ = self.next_char().ok_or_else(|| self.error(start, "unterminated string escape"))?;
                 }
                 Some(_) => {}
                 None => return Err(self.error(start, "unterminated string")),
@@ -195,10 +180,7 @@ impl<'a> Lexer<'a> {
     fn expect_char(&mut self, expected: char) -> Result<(), VonParseError> {
         match self.next_char() {
             Some(ch) if ch == expected => Ok(()),
-            Some(_) => Err(self.error(
-                self.offset.saturating_sub(1),
-                format!("expected '{expected}'"),
-            )),
+            Some(_) => Err(self.error(self.offset.saturating_sub(1), format!("expected '{expected}'"))),
             None => Err(self.error(self.offset, format!("expected '{expected}'"))),
         }
     }

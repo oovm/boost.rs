@@ -1,0 +1,14 @@
+# `schema-types`：共享 schema 纯模型（canonical 类型、identity manifest、resolved contract、artifact 与值模型）。
+[package]
+name = "schema-types"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }

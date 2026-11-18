@@ -1,4 +1,4 @@
-use schema_input_von::{from_str, to_string_indented, VonParser};
+use schema_input_von::{VonParser, from_str, to_string_indented};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
@@ -11,7 +11,12 @@ struct ProjectMeta {
 
 #[test]
 fn meta_round_trips_through_canonical_von() {
-    let meta = ProjectMeta { format: "example.project".to_owned(), version: 1, name: "Starter Game".to_owned(), scenes: vec!["scenes/main.scene.von".to_owned()] };
+    let meta = ProjectMeta {
+        format: "example.project".to_owned(),
+        version: 1,
+        name: "Starter Game".to_owned(),
+        scenes: vec!["scenes/main.scene.von".to_owned()],
+    };
 
     let source = to_string_indented(&meta).expect("meta serializes");
     assert_eq!(

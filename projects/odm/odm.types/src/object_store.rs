@@ -168,7 +168,8 @@ impl FsObjectStore {
             return Ok(None);
         }
         let text = fs::read_to_string(&path).map_err(io_err)?;
-        let wire: ObjectRefWire = schema_input_von::from_str(&text).map_err(|e| ObjectError::Policy(format!("corrupt object reference: {e}")))?;
+        let wire: ObjectRefWire =
+            schema_input_von::from_str(&text).map_err(|e| ObjectError::Policy(format!("corrupt object reference: {e}")))?;
         if wire.reference.state != ObjectLifecycleState::Committed {
             return Err(ObjectError::Policy("reference document is not committed".into()));
         }

@@ -9,20 +9,13 @@ pub struct VonParseError {
 
 impl VonParseError {
     pub(crate) fn new(position: usize, message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-            position,
-        }
+        Self { message: message.into(), position }
     }
 }
 
 impl Display for VonParseError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            formatter,
-            "VON parse error at {}: {}",
-            self.position, self.message
-        )
+        write!(formatter, "VON parse error at {}: {}", self.position, self.message)
     }
 }
 

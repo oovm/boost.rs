@@ -901,7 +901,6 @@ dependencies = [
  "serde_json",
  "sha1 0.11.0",
  "sha2 0.11.1",
- "vos",
 ]
 
 [[package]]
@@ -980,7 +979,6 @@ dependencies = [
  "oak-sql",
  "serde",
  "serde_json",
- "vos",
 ]
 
 [[package]]
@@ -1083,7 +1081,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha1 0.11.0",
- "vos",
 ]
 
 [[package]]
@@ -1096,7 +1093,6 @@ dependencies = [
  "libc",
  "serde_json",
  "sha2 0.11.1",
- "vos",
  "windows-sys 0.61.2",
 ]
 
@@ -3137,6 +3133,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "oak-vos"
+version = "0.0.12"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
+dependencies = [
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
+]
+
+[[package]]
 name = "oak-wgsl"
 version = "0.0.12"
 source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
@@ -4012,6 +4016,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "schema-input-vos"
+version = "0.1.0"
+dependencies = [
+ "oak-vos 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
+ "schema-types",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "schema-types"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+]
+
+[[package]]
 name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4832,7 +4856,7 @@ name = "vos"
 version = "0.0.3"
 source = "git+https://github.com/voml/vos-language.git?rev=387d9fc3c9a556ddb8a433c627a866a2918d0186#387d9fc3c9a556ddb8a433c627a866a2918d0186"
 dependencies = [
- "oak-vos",
+ "oak-vos 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=820bb47292f08d4304607d730f7c32969e17639a)",
  "serde",
  "serde_json",
  "uuid",
@@ -4846,7 +4870,7 @@ name = "vos-format"
 version = "0.0.3"
 source = "git+https://github.com/voml/vos-language.git?rev=387d9fc3c9a556ddb8a433c627a866a2918d0186#387d9fc3c9a556ddb8a433c627a866a2918d0186"
 dependencies = [
- "oak-vos",
+ "oak-vos 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=820bb47292f08d4304607d730f7c32969e17639a)",
 ]
 
 [[package]]
