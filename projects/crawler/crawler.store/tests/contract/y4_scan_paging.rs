@@ -11,7 +11,7 @@ const ITEMS: usize = 20;
 #[cfg(feature = "yydb")]
 #[test]
 fn y4_prefix_scan_pages_ten_thousand_records() {
-    use yydb::{Batch, Connection};
+    use database::execution::engine::{Batch, Connection};
 
     const KEYS: usize = 10_000;
     const PAGE: usize = 128;

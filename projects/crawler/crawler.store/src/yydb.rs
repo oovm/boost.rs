@@ -14,9 +14,9 @@ use std::{
 use crawler_types::{CrawlEvent, CrawlRequest, FetchArtifact, FrontierItem, PageChallengeState};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use url::Url;
-use yydb::{
-    Batch, Connection, Error as YydbError, LeaseExpectation, LeaseToken, ObjectKind as YydbObjectKind, ObjectRef as YydbObjectRef,
-    ReleaseOutcome as YydbReleaseOutcome,
+use database::execution::engine::{
+    Batch, Connection, DoctorSeverity, Error as YydbError, HashAlgo, LeaseExpectation, LeaseToken, ObjectKind as YydbObjectKind,
+    ObjectRef as YydbObjectRef, ReleaseOutcome as YydbReleaseOutcome,
 };
 
 use crate::{
@@ -60,8 +60,9 @@ struct ClaimRecord {
     worker_id: String,
     /// Store-visible monotonic fencing token handed to workers.
     fencing_token: u64,
-    /// Upstream lease fencing token, kept because the pinned YYDB revision drops
-    /// `__yydb/meta/*` on read and therefore always hands out `1`.
+    /// Engine lease fencing token, kept so the lease handle can be rebuilt
+    /// after reopen. The store-visible `fencing_token` stays the authority the
+    /// crawler contract hands to workers.
     lease_fencing_token: u64,
     lease_until_ms: u64,
 }
@@ -170,9 +171,8 @@ impl YydbStore {
 
     /// Validate a worker token against the stored claim and rebuild its lease handle.
     ///
-    /// The upstream lease record is not trusted for fencing because the pinned
-    /// YYDB revision drops `__yydb/meta/*` on read, so the check uses the claim
-    /// record this layer wrote at claim time.
+    /// The claim record this layer wrote at claim time stays the fencing
+    /// authority; the engine token is only used to rebuild the lease handle.
     fn active_lease(&self, token: &ClaimToken) -> Result<(String, ClaimRecord, LeaseToken)> {
         let run_id = self.active_run_id.clone().ok_or_else(|| StoreError::StoreInvalidState("no active run".into()))?;
         let claim_key = keyspace::claim_state(&run_id, &token.item_id);
@@ -781,7 +781,7 @@ impl Store for YydbStore {
             return Ok(None);
         };
         let object = YydbObjectRef {
-            algo: yydb::HashAlgo::Blake3,
+            algo: HashAlgo::Blake3,
             hash: decode_hash_hex(&reference.fingerprint)?,
             size: reference.size,
             kind: YydbObjectKind::Blob,
@@ -815,10 +815,16 @@ impl Store for YydbStore {
         let mut issues = report
             .issues
             .into_iter()
+            // The engine's physical WAL fold lag has no memory-backend counterpart
+            // and fires after every write, so it is filtered to keep both backends'
+            // contract surface identical. Corruption-class issues still pass
+            // through, and the store's own logical checkpoint lag below remains the
+            // crawler-facing signal.
+            .filter(|issue| issue.code != "database.doctor.checkpoint_stale")
             .map(|issue| StoreDoctorIssue {
                 severity: match issue.severity {
-                    yydb::DoctorSeverity::Warn => StoreDoctorSeverity::Warn,
-                    yydb::DoctorSeverity::Error => StoreDoctorSeverity::Error,
+                    DoctorSeverity::Warn => StoreDoctorSeverity::Warn,
+                    DoctorSeverity::Error => StoreDoctorSeverity::Error,
                 },
                 code: issue.code,
                 message: issue.message,
@@ -861,9 +867,9 @@ impl Store for YydbStore {
                 ttl_expired_pending: 0,
             });
         }
-        // Upstream checkpoint lag resets on every read because `__yydb/meta/*`
-        // is dropped by the pinned format, so the store keeps its own
-        // `run/{run_id}/checkpoint/{sequence}` records as the source of truth.
+        // The store's per-run checkpoint contract lives in its own
+        // `run/{run_id}/checkpoint/{sequence}` records, so the crawler-facing lag
+        // is measured against those, not against the engine's WAL fold position.
         let checkpoint_lag_records = match self.active_run_id.as_ref() {
             Some(run_id) => {
                 let events = self.read_run_meta(run_id)?.event_count;
@@ -1015,11 +1021,8 @@ impl YydbStore {
 
     /// Bound a namespace such as `cache/response/` by bytes and records.
     ///
-    /// The bound lives in a crawler store record instead of the upstream quota
-    /// table because the pinned YYDB revision drops `__yydb/meta/*` on every
-    /// reload, which resets the LRU clock and turns its eviction order into
-    /// lexical key order. Enforcing here keeps eviction oldest-first and
-    /// identical to the memory backend.
+    /// The bound lives in a crawler store record and eviction is enforced here
+    /// so the order stays oldest-first and identical to the memory backend.
     pub fn set_namespace_quota(&self, namespace: &str, max_bytes: u64, max_records: u64) -> Result<()> {
         let key = keyspace::namespace_quota(namespace);
         self.connection()?.put(key, encode_quota(max_bytes, max_records)).map_err(map_yydb_error)

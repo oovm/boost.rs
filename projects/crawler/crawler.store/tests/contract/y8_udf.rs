@@ -1,6 +1,6 @@
 //! Y-8 版本化纯 UDF：同输入同输出，旧版本不受新版本注册影响。
 
-use yydb::{Connection, Error, Value};
+use database::execution::engine::{Connection, Error, Value};
 
 #[test]
 fn y8_versioned_pure_udf_probe() {

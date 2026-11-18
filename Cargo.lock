@@ -776,6 +776,7 @@ dependencies = [
  "blake3",
  "boost-harness",
  "crawler-types",
+ "database",
  "serde",
  "serde_json",
  "url",

@@ -2,7 +2,7 @@ use std::path::Path;
 
 use boost_harness::diagnostic::{DiagnosticSeverity, Message, MessageArg};
 use crawler_types::{CrawlError, FetchArtifact, Result, TransportProvenance, diagnostics as pd};
-use yydb::{Connection, OpenFlags};
+use database::execution::engine::{Connection, OpenFlags};
 
 use crate::keyspace;
 
@@ -95,7 +95,7 @@ impl YydbResponseCache {
     }
 }
 
-fn map_yydb(error: yydb::Error) -> CrawlError {
+fn map_yydb(error: database::execution::engine::Error) -> CrawlError {
     let diag = boost_harness::diagnostic::Diagnostic::new(
         pd::code(pd::STORE_TRANSACTION_FAILED),
         DiagnosticSeverity::Error,

@@ -7,7 +7,7 @@ use crate::contract::support::{HOST, TEST_LEASE, assert_both, item};
 #[cfg(feature = "yydb")]
 #[test]
 fn y2_compare_exchange_has_a_single_winner() {
-    use yydb::Connection;
+    use database::execution::engine::Connection;
 
     let conn = Connection::open_in_memory().expect("open in memory");
     let key = "run/cas/only";

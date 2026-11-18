@@ -7,7 +7,7 @@ use crate::contract::support::{HOST, LONG_LEASE, assert_both, item};
 #[cfg(feature = "yydb")]
 #[test]
 fn y1_batch_commits_many_keys_and_abort_leaves_none() {
-    use yydb::{Batch, Connection};
+    use database::execution::engine::{Batch, Connection};
 
     const KEYS: usize = 64;
     let conn = Connection::open_in_memory().expect("open in memory");

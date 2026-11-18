@@ -14,15 +14,15 @@ publish = false
 blake3 = { workspace = true }
 boost-harness = { workspace = true }
 crawler-types = { workspace = true }
+database = { workspace = true, optional = true, default-features = false, features = ["execution"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 url = { workspace = true, features = ["serde"] }
 
 [features]
 default = []
-# `YydbStore` stays behind a feature, but the `yydb` crate is not a member of
-# this workspace: its published revisions need a VOS semantic model that no
-# longer shares a revision with the parser frontends here. Enabling this feature
-# requires restoring that dependency deliberately, not silently.
-yydb = []
+# `YydbStore` consumes the in-workspace YYDB embedded engine through the
+# `database` facade's `execution` capability. The dependency direction is a
+# DAG: crawler (high-level consumer) depends on database, never the reverse.
+yydb = ["dep:database"]
 
