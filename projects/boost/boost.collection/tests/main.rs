@@ -4,12 +4,12 @@
 //! 乘积溢出与长度不匹配拒绝、非 Copy 元素的初始化/移动/释放、
 //! 二维行切片，以及编译期固定形状与 `array!` 元组展开。
 
-use boost_collection::{Array2D, Array2DRead, Array3D, ArrayND, CollectionError, array};
+use boost_collection::{Array2D, CollectionError, DenseArrayND, InlineArray2D, InlineArray3D, array};
 use std::{cell::Cell, rc::Rc};
 
 #[test]
 fn row_major_generation_and_access() {
-    let grid = ArrayND::new([2, 3], |[row, column]| (row * 3 + column) as i32).expect("shape fits");
+    let grid = DenseArrayND::new([2, 3], |[row, column]| (row * 3 + column) as i32).expect("shape fits");
     assert_eq!(grid.shape(), [2, 3]);
     assert_eq!(grid.len(), 6);
     assert_eq!(grid.as_slice(), &[0, 1, 2, 3, 4, 5]);
@@ -22,21 +22,21 @@ fn row_major_generation_and_access() {
 
 #[test]
 fn zero_extents_keep_their_shape() {
-    let rowless = ArrayND::<u8, 2>::new([0, 5], |_| unreachable!("no element is generated")).expect("empty shape");
-    let columnless = ArrayND::<u8, 2>::new([3, 0], |_| unreachable!("no element is generated")).expect("empty shape");
+    let rowless = DenseArrayND::<u8, 2>::new([0, 5], |_| unreachable!("no element is generated")).expect("empty shape");
+    let columnless = DenseArrayND::<u8, 2>::new([3, 0], |_| unreachable!("no element is generated")).expect("empty shape");
     assert!(rowless.is_empty() && columnless.is_empty());
     assert_eq!(rowless.shape(), [0, 5]);
     assert_eq!(columnless.shape(), [3, 0]);
 
     // 零 extent 必须先于非零轴的乘积检查，合法空数组不能因溢出被拒。
     let huge_empty =
-        ArrayND::<u8, 2>::new([0, usize::MAX], |_| unreachable!("no element is generated")).expect("zero extent wins over the product");
+        DenseArrayND::<u8, 2>::new([0, usize::MAX], |_| unreachable!("no element is generated")).expect("zero extent wins over the product");
     assert_eq!(huge_empty.len(), 0);
 }
 
 #[test]
 fn rank_zero_is_one_scalar_slot() {
-    let scalar = ArrayND::new([], |[]| 7_u8).expect("rank zero");
+    let scalar = DenseArrayND::new([], |[]| 7_u8).expect("rank zero");
     assert_eq!(scalar.rank(), 0);
     assert_eq!(scalar.len(), 1);
     assert_eq!(scalar.get([]), Some(&7));
@@ -46,15 +46,15 @@ fn rank_zero_is_one_scalar_slot() {
 
 #[test]
 fn shape_overflow_and_length_mismatch_are_rejected() {
-    assert_eq!(ArrayND::<u8, 2>::new([usize::MAX, 2], |_| 0).unwrap_err(), CollectionError::ShapeOverflow);
+    assert_eq!(DenseArrayND::<u8, 2>::new([usize::MAX, 2], |_| 0).unwrap_err(), CollectionError::ShapeOverflow);
 
-    let error = ArrayND::from_vec(vec![1_u8, 2, 3], [2, 2]).unwrap_err();
+    let error = DenseArrayND::from_vec(vec![1_u8, 2, 3], [2, 2]).unwrap_err();
     assert_eq!(error, CollectionError::ElementCountMismatch { shape: 4, elements: 3 });
 }
 
 #[test]
 fn elements_are_writable_without_changing_the_shape() {
-    let mut grid = ArrayND::filled([2, 2], 0_u8).expect("shape fits");
+    let mut grid = DenseArrayND::filled([2, 2], 0_u8).expect("shape fits");
     grid[[0, 0]] = 9;
     *grid.get_mut([1, 1]).expect("in bounds") = 4;
     grid.as_mut_slice()[1] = 2;
@@ -64,7 +64,7 @@ fn elements_are_writable_without_changing_the_shape() {
 
 #[test]
 fn row_slices_are_bounded() {
-    let mut grid = ArrayND::from_vec(vec![1_u8, 2, 3, 4, 5, 6], [2, 3]).expect("shape matches");
+    let mut grid = DenseArrayND::from_vec(vec![1_u8, 2, 3, 4, 5, 6], [2, 3]).expect("shape matches");
     assert_eq!(grid.row(1), Some(&[4, 5, 6][..]));
     assert_eq!(grid.row(2), None);
     grid.row_mut(0).expect("in bounds").copy_from_slice(&[7, 8, 9]);
@@ -92,7 +92,7 @@ impl Drop for Token {
 #[test]
 fn non_copy_elements_move_and_drop_exactly_once() {
     let dropped = Rc::new(Cell::new(0));
-    let grid = ArrayND::new([2, 2], |[row, column]| Token::new((row * 2 + column) as u32, &dropped)).expect("shape fits");
+    let grid = DenseArrayND::new([2, 2], |[row, column]| Token::new((row * 2 + column) as u32, &dropped)).expect("shape fits");
     assert_eq!(grid[[1, 0]].value, 2);
     assert_eq!(dropped.get(), 0);
 
@@ -121,14 +121,14 @@ fn compile_time_shape_and_tuple_macro() {
     assert_eq!(Inline::new(|[row, column]| (row * 4 + column) as u8).shape(), [2, 4]);
 
     let source = [[1_u8, 2], [3, 4]];
-    let converted: Array2D<u8, 2, 2> = Array2D::from(source);
+    let converted: InlineArray2D<u8, 2, 2> = InlineArray2D::from(source);
     assert_eq!(converted.iter().copied().collect::<Vec<_>>(), vec![1, 2, 3, 4]);
     assert_eq!(converted.into_inner(), source);
 }
 
 #[test]
 fn compile_time_shape_keeps_zero_extents() {
-    let empty = Array2D::<u8, 0, 4>::new(|_| unreachable!("no element is generated"));
+    let empty = InlineArray2D::<u8, 0, 4>::new(|_| unreachable!("no element is generated"));
     assert!(empty.is_empty());
     assert_eq!(empty.shape(), [0, 4]);
     assert_eq!(empty.get([0, 0]), None);
@@ -152,16 +152,16 @@ fn compile_time_three_dimensional_shape() {
 
     type Flat = array!(u8, 1, 2, 3);
     assert_eq!(Flat::filled(0).len(), 6);
-    assert_eq!(Array3D::<u8, 1, 0, 3>::new(|_| unreachable!("no element is generated")).shape(), [1, 0, 3]);
+    assert_eq!(InlineArray3D::<u8, 1, 0, 3>::new(|_| unreachable!("no element is generated")).shape(), [1, 0, 3]);
 
     let source = [[[1_u8, 2], [3, 4]], [[5, 6], [7, 8]]];
-    let converted: Array3D<u8, 2, 2, 2> = Array3D::from(source);
+    let converted: InlineArray3D<u8, 2, 2, 2> = InlineArray3D::from(source);
     assert_eq!(converted.into_inner(), source);
 }
 
 #[test]
 fn view_exposes_roi_and_transpose_mappings() {
-    let grid = ArrayND::new([2, 3], |[row, column]| (row * 3 + column) as i32).expect("shape fits");
+    let grid = DenseArrayND::new([2, 3], |[row, column]| (row * 3 + column) as i32).expect("shape fits");
     let view = grid.view();
     assert_eq!(view.shape(), [2, 3]);
     assert!(view.is_contiguous());
@@ -183,7 +183,7 @@ fn view_exposes_roi_and_transpose_mappings() {
     assert!(!roi.is_contiguous());
     assert_eq!(roi.iter().copied().collect::<Vec<_>>(), vec![1, 2, 4, 5]);
     assert!(grid.view_rect(0..3, 0..1).is_none());
-    assert!(grid.view_rect(1..0, 0..1).is_none());
+    assert!(grid.view_rect(std::ops::Range { start: 1, end: 0 }, 0..1).is_none());
 
     // 转置视图上的 ROI 仍映射回原坐标。
     let corner = transposed.rect(1..3, 0..2).expect("in-bounds rect");
@@ -191,7 +191,7 @@ fn view_exposes_roi_and_transpose_mappings() {
     assert_eq!(corner.get([0, 0]), Some(&1));
     assert_eq!(corner.get([1, 1]), Some(&5));
 
-    let zero = ArrayND::<u8, 2>::new([0, 4], |_| unreachable!("no element is generated")).expect("empty shape");
+    let zero = DenseArrayND::<u8, 2>::new([0, 4], |_| unreachable!("no element is generated")).expect("empty shape");
     let empty = zero.view();
     assert!(empty.is_contiguous());
     assert_eq!(empty.as_slice(), Some(&[][..]));
@@ -200,7 +200,7 @@ fn view_exposes_roi_and_transpose_mappings() {
 
 #[test]
 fn mutable_view_writes_through_roi_and_transpose() {
-    let mut grid = ArrayND::new([2, 3], |[row, column]| (row * 3 + column) as i32).expect("shape fits");
+    let mut grid = DenseArrayND::new([2, 3], |[row, column]| (row * 3 + column) as i32).expect("shape fits");
     {
         let mut view = grid.view_mut();
         assert!(view.as_slice().is_some());
@@ -221,7 +221,7 @@ fn mutable_view_writes_through_roi_and_transpose() {
 
 #[test]
 fn reshape_reuses_the_buffer_and_keeps_row_major_order() {
-    let grid = ArrayND::new([2, 3], |[row, column]| (row * 3 + column) as i32).expect("shape fits");
+    let grid = DenseArrayND::new([2, 3], |[row, column]| (row * 3 + column) as i32).expect("shape fits");
     let transposed = grid.clone().reshaped([3, 2]).expect("same element count");
     assert_eq!(transposed.shape(), [3, 2]);
     assert_eq!(transposed.as_slice(), &[0, 1, 2, 3, 4, 5]);
@@ -231,11 +231,11 @@ fn reshape_reuses_the_buffer_and_keeps_row_major_order() {
     assert_eq!(flat.shape(), [6]);
     assert_eq!(flat[[4]], 4);
 
-    let scalar = ArrayND::from_vec(vec![7_i32], []).expect("one scalar").reshaped([1, 1]).expect("same element count");
+    let scalar = DenseArrayND::from_vec(vec![7_i32], []).expect("one scalar").reshaped([1, 1]).expect("same element count");
     assert_eq!(scalar.shape(), [1, 1]);
     assert_eq!(scalar[[0, 0]], 7);
 
-    let empty = ArrayND::<u8, 2>::new([0, 4], |_| unreachable!("no element is generated")).expect("empty shape");
+    let empty = DenseArrayND::<u8, 2>::new([0, 4], |_| unreachable!("no element is generated")).expect("empty shape");
     assert_eq!(empty.reshaped([3, 0]).expect("empty shapes reshape").shape(), [3, 0]);
 
     let error = grid.reshaped([4, 2]).unwrap_err();
@@ -244,22 +244,26 @@ fn reshape_reuses_the_buffer_and_keeps_row_major_order() {
 
 #[test]
 fn one_read_algorithm_consumes_array_and_view() {
-    fn column_sums<A: Array2DRead<i32>>(array: &A) -> Vec<i32> {
+    fn column_sums<A: Array2D<i32>>(array: &A) -> Vec<i32> {
         let [rows, columns] = array.shape();
         let mut sums = vec![0; columns];
         for row in 0..rows {
-            for column in 0..columns {
-                sums[column] += array.get([row, column]).copied().unwrap_or(0);
+            for (column, sum) in sums.iter_mut().enumerate() {
+                *sum += array.get([row, column]).copied().unwrap_or(0);
             }
         }
         sums
     }
 
-    let grid = ArrayND::new([2, 3], |[row, column]| (row * 3 + column) as i32).expect("shape fits");
+    let grid = DenseArrayND::new([2, 3], |[row, column]| (row * 3 + column) as i32).expect("shape fits");
     assert_eq!(column_sums(&grid), vec![3, 5, 7]);
     // 同一算法直接消费转置视图，不需要重写，也不要求视图连续。
     assert_eq!(column_sums(&grid.view().transpose()), vec![3, 12]);
 
     let mut mutable = grid.clone();
     assert_eq!(column_sums(&mutable.view_mut()), vec![3, 5, 7]);
+
+    // 同一算法也直接消费编译期形状的内联表示，无需重写。
+    let inline = InlineArray2D::<i32, 2, 3>::new(|[row, column]| (row * 3 + column) as i32);
+    assert_eq!(column_sums(&inline), vec![3, 5, 7]);
 }

@@ -10,7 +10,7 @@
 //! GFD 为中心差分——连续无跳变保证谐波快衰减；每行单位能量归一并
 //! 对齐负峰（GOLF §3.1）。全部确定性：同参数同表，逐位复现。
 
-use boost_collection::ArrayND;
+use boost_collection::DenseArrayND;
 
 /// 预计算行数（R_d 网格）与每周期采样数。
 pub const ROWS: usize = 33;
@@ -21,13 +21,13 @@ pub const PERIOD: usize = 1024;
 /// 规则二维坐标域，连续行主序存储：整张表只分配一次，构建时复用行内
 /// scratch 直接写入最终缓冲，不再逐行持有独立 `Vec`。
 pub struct GlottalTables {
-    rows: ArrayND<f32, 2>,
+    rows: DenseArrayND<f32, 2>,
 }
 
 impl GlottalTables {
     #[must_use]
     pub fn new() -> Self {
-        let mut rows = ArrayND::new([ROWS, PERIOD], |_| 0.0_f32).expect("the fixed wavetable shape fits in memory");
+        let mut rows = DenseArrayND::new([ROWS, PERIOD], |_| 0.0_f32).expect("the fixed wavetable shape fits in memory");
         let mut flow = vec![0.0_f64; PERIOD + 1];
         let mut cycle = vec![0.0_f64; PERIOD];
         for index in 0..ROWS {

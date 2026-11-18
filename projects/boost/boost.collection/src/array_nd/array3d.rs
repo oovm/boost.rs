@@ -3,19 +3,19 @@ use core::{
     ops::{Index, IndexMut},
 };
 
-/// 编译期固定形状的三维内存实现。
+/// 编译期固定形状的三维内联内存表示。
 ///
-/// 逻辑模型与 [`ArrayND`](crate::ArrayND) 同源：规则三维坐标域；本类型是
-/// 自有、连续行主序、无堆元数据的固定尺寸载体。形状直接进类型：
-/// `Array3D<f32, 2, 3, 4>` 是 2×3×4，存储为 `[[[T; D3]; D2]; D1]`，
-/// 第一轴最外层、末轴相邻。需要元组书写时用 [`array!`](crate::array) 宏：
-/// `type Cube = array!(f32, (2, 3, 4));`。
+/// [`Array3D`](crate::Array3D) 抽象只规定规则三维坐标域与读取能力；本类型
+/// 是它的一种具体表示：自有、连续行主序、无堆元数据的固定尺寸载体。
+/// 形状直接进类型：`InlineArray3D<f32, 2, 3, 4>` 是 2×3×4，存储为
+/// `[[[T; D3]; D2]; D1]`，第一轴最外层、末轴相邻。需要元组书写时用
+/// [`array!`](crate::array) 宏：`type Cube = array!(f32, (2, 3, 4));`。
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Array3D<T, const D1: usize, const D2: usize, const D3: usize> {
+pub struct InlineArray3D<T, const D1: usize, const D2: usize, const D3: usize> {
     cells: [[[T; D3]; D2]; D1],
 }
 
-impl<T, const D1: usize, const D2: usize, const D3: usize> Array3D<T, D1, D2, D3> {
+impl<T, const D1: usize, const D2: usize, const D3: usize> InlineArray3D<T, D1, D2, D3> {
     /// 按逻辑坐标 `[first, second, third]` 逐个生成元素，行主序推进。
     ///
     /// 生成直接写入最终存储，不经过逐层临时集合；闭包 panic 时已初始化
@@ -96,13 +96,13 @@ impl<T, const D1: usize, const D2: usize, const D3: usize> Array3D<T, D1, D2, D3
     }
 }
 
-impl<T, const D1: usize, const D2: usize, const D3: usize> From<[[[T; D3]; D2]; D1]> for Array3D<T, D1, D2, D3> {
+impl<T, const D1: usize, const D2: usize, const D3: usize> From<[[[T; D3]; D2]; D1]> for InlineArray3D<T, D1, D2, D3> {
     fn from(cells: [[[T; D3]; D2]; D1]) -> Self {
         Self { cells }
     }
 }
 
-impl<T, const D1: usize, const D2: usize, const D3: usize> Index<[usize; 3]> for Array3D<T, D1, D2, D3> {
+impl<T, const D1: usize, const D2: usize, const D3: usize> Index<[usize; 3]> for InlineArray3D<T, D1, D2, D3> {
     type Output = T;
 
     fn index(&self, [first, second, third]: [usize; 3]) -> &Self::Output {
@@ -110,7 +110,7 @@ impl<T, const D1: usize, const D2: usize, const D3: usize> Index<[usize; 3]> for
     }
 }
 
-impl<T, const D1: usize, const D2: usize, const D3: usize> IndexMut<[usize; 3]> for Array3D<T, D1, D2, D3> {
+impl<T, const D1: usize, const D2: usize, const D3: usize> IndexMut<[usize; 3]> for InlineArray3D<T, D1, D2, D3> {
     fn index_mut(&mut self, [first, second, third]: [usize; 3]) -> &mut Self::Output {
         &mut self.cells[first][second][third]
     }

@@ -3,7 +3,7 @@
 
 use std::{cell::RefCell, collections::BTreeSet, sync::OnceLock};
 
-use boost_collection::ArrayND;
+use boost_collection::DenseArrayND;
 use document_text::math::{FontMetricsSystem, GlyphId, KernCorner, MathFontFacts, MathFontFamily, StretchAxis, StretchPlan};
 use serde::{Deserialize, Serialize};
 
@@ -2369,7 +2369,7 @@ impl LayoutEngine {
         // missing cells, so an absent cell is an empty kern rather than a
         // narrower row.  The padded grid is one contiguous workspace: build
         // straight into its final storage instead of a row of nested `Vec`s.
-        let mut cell_layouts = ArrayND::new([environment.rows.len(), columns], |_| LayoutNode::Kern(Fixed::ZERO))
+        let mut cell_layouts = DenseArrayND::new([environment.rows.len(), columns], |_| LayoutNode::Kern(Fixed::ZERO))
             .map_err(|error| MathError::internal_error(format!("cell workspace: {error}")))?;
         for (row_index, row) in environment.rows.iter().enumerate() {
             for (column, cell) in row.cells.iter().take(columns).enumerate() {
@@ -2505,7 +2505,7 @@ impl LayoutEngine {
     }
 
     /// Column widths of an anchor grid: every column is as wide as its widest cell.
-    fn anchor_column_widths(cell_layouts: &ArrayND<LayoutNode, 2>) -> Vec<Fixed> {
+    fn anchor_column_widths(cell_layouts: &DenseArrayND<LayoutNode, 2>) -> Vec<Fixed> {
         let [rows, columns] = cell_layouts.shape();
         let mut col_widths = vec![Fixed::ZERO; columns];
         for row in 0..rows {

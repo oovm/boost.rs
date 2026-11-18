@@ -3,22 +3,22 @@ use core::{
     ops::{Index, IndexMut},
 };
 
-/// 编译期固定形状的二维内存实现。
+/// 编译期固定形状的二维内联内存表示。
 ///
-/// 逻辑模型与 [`ArrayND`](crate::ArrayND) 同源：规则二维坐标域；本类型是
-/// 自有、连续行主序、无堆元数据的固定尺寸载体。形状直接进类型：
-/// `Array2D<f32, 3, 3>` 是 3 行 3 列，存储为 `[[T; COLUMNS]; ROWS]`。
-/// 稳定 Rust 的 const 泛型参数不能是元组，所以 `Array2D<f32, (3, 3)>`
-/// 不成立；需要元组书写时用 [`array!`](crate::array) 宏：
+/// [`Array2D`](crate::Array2D) 抽象只规定规则二维坐标域与读取能力；本类型
+/// 是它的一种具体表示：自有、连续行主序、无堆元数据的固定尺寸载体。
+/// 形状直接进类型：`InlineArray2D<f32, 3, 3>` 是 3 行 3 列，存储为
+/// `[[T; COLUMNS]; ROWS]`。稳定 Rust 的 const 泛型参数不能是元组，所以
+/// `InlineArray2D<f32, (3, 3)>` 不成立；需要元组书写时用 [`array!`](crate::array) 宏：
 /// `type Grid = array!(f32, (3, 3));`。
 ///
-/// 形状运行时才确定时用 [`ArrayND<T, 2>`](crate::ArrayND)。
+/// 形状运行时才确定时用 [`DenseArrayND<T, 2>`](crate::DenseArrayND)。
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Array2D<T, const ROWS: usize, const COLUMNS: usize> {
+pub struct InlineArray2D<T, const ROWS: usize, const COLUMNS: usize> {
     cells: [[T; COLUMNS]; ROWS],
 }
 
-impl<T, const ROWS: usize, const COLUMNS: usize> Array2D<T, ROWS, COLUMNS> {
+impl<T, const ROWS: usize, const COLUMNS: usize> InlineArray2D<T, ROWS, COLUMNS> {
     /// 按逻辑坐标 `[row, column]` 逐个生成元素，行主序推进。
     ///
     /// 生成直接写入最终存储，不经过逐行临时集合；闭包 panic 时已初始化
@@ -105,13 +105,13 @@ impl<T, const ROWS: usize, const COLUMNS: usize> Array2D<T, ROWS, COLUMNS> {
     }
 }
 
-impl<T, const ROWS: usize, const COLUMNS: usize> From<[[T; COLUMNS]; ROWS]> for Array2D<T, ROWS, COLUMNS> {
+impl<T, const ROWS: usize, const COLUMNS: usize> From<[[T; COLUMNS]; ROWS]> for InlineArray2D<T, ROWS, COLUMNS> {
     fn from(cells: [[T; COLUMNS]; ROWS]) -> Self {
         Self { cells }
     }
 }
 
-impl<T, const ROWS: usize, const COLUMNS: usize> Index<[usize; 2]> for Array2D<T, ROWS, COLUMNS> {
+impl<T, const ROWS: usize, const COLUMNS: usize> Index<[usize; 2]> for InlineArray2D<T, ROWS, COLUMNS> {
     type Output = T;
 
     fn index(&self, [row, column]: [usize; 2]) -> &Self::Output {
@@ -119,7 +119,7 @@ impl<T, const ROWS: usize, const COLUMNS: usize> Index<[usize; 2]> for Array2D<T
     }
 }
 
-impl<T, const ROWS: usize, const COLUMNS: usize> IndexMut<[usize; 2]> for Array2D<T, ROWS, COLUMNS> {
+impl<T, const ROWS: usize, const COLUMNS: usize> IndexMut<[usize; 2]> for InlineArray2D<T, ROWS, COLUMNS> {
     fn index_mut(&mut self, [row, column]: [usize; 2]) -> &mut Self::Output {
         &mut self.cells[row][column]
     }

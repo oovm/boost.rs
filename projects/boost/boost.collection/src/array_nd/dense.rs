@@ -4,30 +4,30 @@ use core::{
     slice,
 };
 
-/// ArrayND 的首个内存实现：静态 rank、构造时确定 extent 的连续多维数组。
+/// ArrayND 的稠密内存表示：静态 rank、构造时确定 extent 的连续行主序数组。
 ///
-/// 逻辑模型只规定坐标域、shape 与元素对应关系；本类型是自有、连续、
-/// 行主序、`usize` 范围的内存载体，不是 ArrayND 的唯一或默认表示。
-/// `N` 是轴数（rank），不是任何一轴的长度。各轴长度在构造时给出，
-/// 之后保持不变；元素区是单一连续缓冲，默认行主序，末轴相邻。
+/// [`ArrayND`](crate::ArrayND) 是坐标域与读取能力的抽象，本类型是它的首个
+/// 具体表示：自有、连续、行主序、`usize` 范围的 `Vec` 载体，不是 ArrayND
+/// 的唯一或默认表示。`N` 是轴数（rank），不是任何一轴的长度。各轴长度在
+/// 构造时给出，之后保持不变；元素区是单一连续缓冲，默认行主序，末轴相邻。
 /// 允许写入已有坐标，但不提供行级 `push`/`pop`，也不交出能改变缓冲
-/// 长度的逃逸入口。形状进类型的固定尺寸需求见 [`Array2D`](crate::Array2D)。
+/// 长度的逃逸入口。编译期形状的内联表示见 [`InlineArray2D`](crate::InlineArray2D)。
 ///
 /// ```
-/// use boost_collection::ArrayND;
+/// use boost_collection::DenseArrayND;
 ///
-/// let grid = ArrayND::new([2, 3], |[row, column]| (row * 3 + column) as i32).expect("shape fits");
+/// let grid = DenseArrayND::new([2, 3], |[row, column]| (row * 3 + column) as i32).expect("shape fits");
 /// assert_eq!(grid.shape(), [2, 3]);
 /// assert_eq!(grid[[1, 2]], 5);
 /// assert_eq!(grid.as_slice(), &[0, 1, 2, 3, 4, 5]);
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ArrayND<T, const N: usize> {
+pub struct DenseArrayND<T, const N: usize> {
     data: Vec<T>,
     shape: [usize; N],
 }
 
-impl<T, const N: usize> ArrayND<T, N> {
+impl<T, const N: usize> DenseArrayND<T, N> {
     /// 按逻辑坐标逐个生成元素，行主序推进。
     ///
     /// 构造前先校验形状；零 extent 先被识别，不会因其它轴的乘积溢出而
@@ -54,7 +54,7 @@ impl<T, const N: usize> ArrayND<T, N> {
     ///
     /// # Errors
     ///
-    /// 与 [`ArrayND::new`] 相同。
+    /// 与 [`DenseArrayND::new`] 相同。
     pub fn filled(shape: [usize; N], value: T) -> Result<Self>
     where
         T: Clone,
@@ -147,12 +147,12 @@ impl<T, const N: usize> ArrayND<T, N> {
     /// 新形状乘积溢出返回 [`CollectionError::ShapeOverflow`]，元素数不一致
     /// 返回 [`CollectionError::ElementCountMismatch`]；失败时原数组被消费，
     /// 不产生半成品。
-    pub fn reshaped<const M: usize>(self, shape: [usize; M]) -> Result<ArrayND<T, M>> {
+    pub fn reshaped<const M: usize>(self, shape: [usize; M]) -> Result<DenseArrayND<T, M>> {
         let expected = element_count(&shape)?;
         if expected != self.data.len() {
             return Err(CollectionError::ElementCountMismatch { shape: expected, elements: self.data.len() });
         }
-        Ok(ArrayND { data: self.data, shape })
+        Ok(DenseArrayND { data: self.data, shape })
     }
 
     /// 逐轴校验边界后计算行主序偏移，所有算术均为检查运算。
@@ -170,7 +170,7 @@ impl<T, const N: usize> ArrayND<T, N> {
     }
 }
 
-impl<T> ArrayND<T, 2> {
+impl<T> DenseArrayND<T, 2> {
     /// 一行的只读切片；行号越界返回 `None`。
     #[must_use]
     pub fn row(&self, row: usize) -> Option<&[T]> {
@@ -189,7 +189,7 @@ impl<T> ArrayND<T, 2> {
     }
 }
 
-impl<T, const N: usize> Index<[usize; N]> for ArrayND<T, N> {
+impl<T, const N: usize> Index<[usize; N]> for DenseArrayND<T, N> {
     type Output = T;
 
     fn index(&self, index: [usize; N]) -> &Self::Output {
@@ -197,14 +197,14 @@ impl<T, const N: usize> Index<[usize; N]> for ArrayND<T, N> {
     }
 }
 
-impl<T, const N: usize> IndexMut<[usize; N]> for ArrayND<T, N> {
+impl<T, const N: usize> IndexMut<[usize; N]> for DenseArrayND<T, N> {
     fn index_mut(&mut self, index: [usize; N]) -> &mut Self::Output {
         let shape = self.shape;
         self.get_mut(index).unwrap_or_else(|| panic!("coordinate {index:?} is outside shape {shape:?}"))
     }
 }
 
-impl<T, const N: usize> IntoIterator for ArrayND<T, N> {
+impl<T, const N: usize> IntoIterator for DenseArrayND<T, N> {
     type Item = T;
     type IntoIter = std::vec::IntoIter<T>;
 
@@ -213,7 +213,7 @@ impl<T, const N: usize> IntoIterator for ArrayND<T, N> {
     }
 }
 
-impl<'a, T, const N: usize> IntoIterator for &'a ArrayND<T, N> {
+impl<'a, T, const N: usize> IntoIterator for &'a DenseArrayND<T, N> {
     type Item = &'a T;
     type IntoIter = slice::Iter<'a, T>;
 

@@ -1,4 +1,4 @@
-use crate::ArrayND;
+use crate::DenseArrayND;
 use core::ops::Range;
 
 /// 二维数组的只读借用视图。
@@ -101,7 +101,7 @@ impl<'a, T> ArrayView2D<'a, T> {
     }
 }
 
-impl<T> ArrayND<T, 2> {
+impl<T> DenseArrayND<T, 2> {
     /// 整个数组的只读视图。
     #[must_use]
     pub fn view(&self) -> ArrayView2D<'_, T> {
@@ -137,7 +137,7 @@ impl<T> ArrayND<T, 2> {
 
 /// 二维数组的可写借用视图。
 ///
-/// 只能由 `&mut ArrayND` 独占借出。构造时除了地址范围，还要求坐标映射
+/// 只能由 `&mut DenseArrayND` 独占借出。构造时除了地址范围，还要求坐标映射
 /// 单射：所有可写坐标映射到互不重叠的元素。裁剪与转置消费当前视图并重新
 /// 校验，不复制元素；写入通过 `get_mut`/`as_mut_slice` 显式进行，不把
 /// 复制藏在访问里。
