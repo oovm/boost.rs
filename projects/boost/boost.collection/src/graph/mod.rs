@@ -56,6 +56,8 @@ pub enum GraphError {
     UndirectedTraversal,
     /// 拓扑排序遇到环，包括自环。
     Cycle,
+    /// 加权路径的累计权重超出可表示范围。
+    DistanceOverflow,
 }
 
 impl Display for GraphError {
@@ -65,6 +67,7 @@ impl Display for GraphError {
             Self::UnknownVertex => f.write_str("the vertex identifier is not part of this graph"),
             Self::UndirectedTraversal => f.write_str("the traversal requires a directed graph"),
             Self::Cycle => f.write_str("the graph contains a cycle"),
+            Self::DistanceOverflow => f.write_str("the accumulated path weight exceeds the representable range"),
         }
     }
 }

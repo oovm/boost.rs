@@ -316,17 +316,127 @@ where
     Ok(components.into_iter().map(|members| graph.collect(&members)).collect())
 }
 
+/// 从 `start` 到 `goal` 的一条非负权最短路。
+///
+/// 权重由调用方按边给出，类型是 `u64`：负权与 `NaN` 在该表示下不可表达，
+/// 因而不需要额外的“拒绝负权”分支。累计距离用检查加法，溢出返回
+/// [`GraphError::DistanceOverflow`]，不静默饱和。平行边各自参与松弛；自环
+/// 不会制造更短路径。无向图的两个方向都参与松弛。
+///
+/// 返回 `Ok(None)` 表示不可达；起止点不在图中返回 [`GraphError::UnknownVertex`]。
+/// 同权路径的选择由顶点顺序与边顺序决定，结果是确定的。
+pub fn shortest_path_non_negative<G, F>(
+    graph: &G,
+    start: &G::Vertex,
+    goal: &G::Vertex,
+    weight: F,
+) -> GraphResult<Option<ShortestPath<G::Vertex>>>
+where
+    G: GraphRead,
+    F: Fn(G::Edge) -> u64,
+{
+    let graph = IndexedGraph::weighted(graph, weight)?;
+    let start = *graph.position(start).ok_or(GraphError::UnknownVertex)?;
+    let goal = *graph.position(goal).ok_or(GraphError::UnknownVertex)?;
+
+    let mut adjacency: Vec<Vec<(usize, u64)>> = vec![Vec::new(); graph.vertices.len()];
+    for (edge, &(from, to)) in graph.weighted_edges.iter().enumerate() {
+        adjacency[from].push((to, graph.edge_weights[edge]));
+        if !graph.directed && from != to {
+            adjacency[to].push((from, graph.edge_weights[edge]));
+        }
+    }
+
+    let mut distance: Vec<Option<u64>> = vec![None; graph.vertices.len()];
+    let mut previous = vec![None; graph.vertices.len()];
+    let mut relaxations = 0_u64;
+    let mut ready: BinaryHeap<Reverse<(u64, usize)>> = BinaryHeap::new();
+    distance[start] = Some(0);
+    ready.push(Reverse((0, start)));
+
+    while let Some(Reverse((cost, node))) = ready.pop() {
+        if cost > distance[node].unwrap_or(u64::MAX) {
+            continue;
+        }
+        if node == goal {
+            break;
+        }
+        for &(next, edge_weight) in &adjacency[node] {
+            let candidate = cost.checked_add(edge_weight).ok_or(GraphError::DistanceOverflow)?;
+            relaxations += 1;
+            let improves = match distance[next] {
+                Some(existing) => candidate < existing,
+                None => true,
+            };
+            if improves {
+                distance[next] = Some(candidate);
+                previous[next] = Some(node);
+                ready.push(Reverse((candidate, next)));
+            }
+        }
+    }
+
+    let Some(total) = distance[goal]
+    else {
+        return Ok(None);
+    };
+
+    let mut path = vec![goal];
+    let mut cursor = goal;
+    while cursor != start {
+        let Some(parent) = previous[cursor] else {
+            return Err(GraphError::UnknownVertex);
+        };
+        path.push(parent);
+        cursor = parent;
+    }
+    path.reverse();
+
+    Ok(Some(ShortestPath { distance: total, path: graph.collect(&path), relaxations }))
+}
+
+/// 非负权最短路的返回值。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ShortestPath<V> {
+    /// 起点到终点的累计权重。
+    pub distance: u64,
+    /// 顶点序列，首元素是起点，末元素是终点。
+    pub path: Vec<V>,
+    /// 成功松弛的边次数，供领域证书记录算法工作量。
+    pub relaxations: u64,
+}
+
 /// 顶点引用加正向/反向邻接索引；算法共用的一次性投影。
 struct IndexedGraph<'a, V> {
     vertices: Vec<&'a V>,
+    index: HashMap<&'a V, usize>,
     forward: Vec<Vec<usize>>,
     reverse: Vec<Vec<usize>>,
+    weighted_edges: Vec<(usize, usize)>,
+    edge_weights: Vec<u64>,
+    directed: bool,
 }
 
 impl<'a, V: Eq + core::hash::Hash> IndexedGraph<'a, V> {
     fn new<G>(graph: &'a G) -> GraphResult<Self>
     where
         G: GraphRead<Vertex = V>,
+    {
+        Self::build(graph, |_| 0)
+    }
+
+    fn weighted<G, F>(graph: &'a G, weight: F) -> GraphResult<Self>
+    where
+        G: GraphRead<Vertex = V>,
+        F: Fn(G::Edge) -> u64,
+    {
+        Self::build(graph, weight)
+    }
+
+    fn build<G, F>(graph: &'a G, weight: F) -> GraphResult<Self>
+    where
+        G: GraphRead<Vertex = V>,
+        F: Fn(G::Edge) -> u64,
     {
         let vertices: Vec<&'a V> = graph.vertices().collect();
         let mut index: HashMap<&'a V, usize> = HashMap::with_capacity(vertices.len());
@@ -336,6 +446,8 @@ impl<'a, V: Eq + core::hash::Hash> IndexedGraph<'a, V> {
 
         let mut forward = vec![Vec::new(); vertices.len()];
         let mut reverse = vec![Vec::new(); vertices.len()];
+        let mut weighted_edges = Vec::with_capacity(graph.edge_count());
+        let mut edge_weights = Vec::with_capacity(graph.edge_count());
         for edge in graph.edges() {
             let (from, to) = graph.endpoints(edge).ok_or(GraphError::UnknownVertex)?;
             let from = *index.get(from).ok_or(GraphError::UnknownVertex)?;
@@ -346,9 +458,15 @@ impl<'a, V: Eq + core::hash::Hash> IndexedGraph<'a, V> {
                 forward[to].push(from);
                 reverse[from].push(to);
             }
+            weighted_edges.push((from, to));
+            edge_weights.push(weight(edge));
         }
 
-        Ok(Self { vertices, forward, reverse })
+        Ok(Self { vertices, index, forward, reverse, weighted_edges, edge_weights, directed: graph.is_directed() })
+    }
+
+    fn position(&self, vertex: &V) -> Option<&usize> {
+        self.index.get(vertex)
     }
 
     fn collect(&self, positions: &[usize]) -> Vec<V>

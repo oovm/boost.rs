@@ -4,10 +4,10 @@
 //! 拓扑序的确定性、空图与孤点、环（含自环）失败、无向图拒绝方向遍历，
 //! 以及可达集合的广度优先顺序、环安全与未知起点失败。
 
-use boost_collection::{CsrGraph, GraphError, MemoryGraph};
+use boost_collection::{CsrGraph, GraphError, GraphView, MemoryGraph};
 use boost_math::graph_theory::{
-    connected_components, cycle_path, reachable_from, strongly_connected_components, topological_order,
-    topological_order_by,
+    ShortestPath, connected_components, cycle_path, reachable_from, shortest_path_non_negative,
+    strongly_connected_components, topological_order, topological_order_by,
 };
 
 fn chain() -> MemoryGraph<&'static str> {
@@ -200,7 +200,7 @@ fn strongly_connected_components_split_directed_cycles() {
 
 #[test]
 fn a_borrowed_view_feeds_the_same_algorithms() {
-    use boost_collection::{GraphRead, GraphView};
+    use boost_collection::GraphRead;
 
     let names = ["a", "b", "c"];
     let mut view = GraphView::new(true);
@@ -213,4 +213,67 @@ fn a_borrowed_view_feeds_the_same_algorithms() {
     assert_eq!(topological_order(&view), Err(GraphError::Cycle));
     assert_eq!(cycle_path(&view), Ok(Some(vec![&names[0], &names[1], &names[2], &names[0]])));
     assert_eq!(strongly_connected_components(&view), Ok(vec![vec![&names[0], &names[1], &names[2]]]));
+}
+
+fn weighted() -> MemoryGraph<&'static str, u64> {
+    let mut graph = MemoryGraph::new(true);
+    for vertex in ["a", "b", "c", "d"] {
+        graph.add_vertex(vertex).expect("unique vertex");
+    }
+    // 直连 a->d 昂贵，绕行 a->b->c->d 更便宜。
+    graph.add_edge("a", "d", 10).expect("known endpoints");
+    graph.add_edge("a", "b", 1).expect("known endpoints");
+    graph.add_edge("b", "c", 2).expect("known endpoints");
+    graph.add_edge("c", "d", 3).expect("known endpoints");
+    graph
+}
+
+#[test]
+fn shortest_path_prefers_the_cheaper_route_not_the_shorter_one() {
+    let graph = weighted();
+    let found = shortest_path_non_negative(&graph, &"a", &"d", |edge| *graph.edge_payload(edge).expect("edge payload"))
+        .expect("weights are representable")
+        .expect("reachable");
+    assert_eq!(found.distance, 6);
+    assert_eq!(found.path, vec!["a", "b", "c", "d"]);
+    assert!(found.relaxations >= 4);
+}
+
+#[test]
+fn shortest_path_reports_unreachable_and_unknown_endpoints() {
+    let mut graph = weighted();
+    graph.add_vertex("island").expect("unique vertex");
+    assert_eq!(
+        shortest_path_non_negative(&graph, &"a", &"island", |edge| *graph.edge_payload(edge).expect("edge payload")),
+        Ok(None)
+    );
+    assert_eq!(
+        shortest_path_non_negative(&graph, &"a", &"missing", |edge| *graph.edge_payload(edge).expect("edge payload")),
+        Err(GraphError::UnknownVertex)
+    );
+}
+
+#[test]
+fn shortest_path_checks_accumulated_weight() {
+    let mut graph = MemoryGraph::new(true);
+    graph.add_vertex("a").expect("unique vertex");
+    graph.add_vertex("b").expect("unique vertex");
+    graph.add_vertex("c").expect("unique vertex");
+    graph.add_edge("a", "b", u64::MAX).expect("known endpoints");
+    graph.add_edge("b", "c", 1).expect("known endpoints");
+    assert_eq!(
+        shortest_path_non_negative(&graph, &"a", &"c", |edge| *graph.edge_payload(edge).expect("edge payload")),
+        Err(GraphError::DistanceOverflow)
+    );
+}
+
+#[test]
+fn shortest_path_returns_a_typed_result() {
+    let graph = weighted();
+    let found: ShortestPath<&'static str> =
+        shortest_path_non_negative(&graph, &"b", &"c", |edge| *graph.edge_payload(edge).expect("edge payload"))
+            .expect("weights are representable")
+            .expect("reachable");
+    assert_eq!(found.distance, 2);
+    assert_eq!(found.path, vec!["b", "c"]);
 }
