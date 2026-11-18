@@ -18,7 +18,6 @@ doctest = false
 boost-harness = { workspace = true }
 document-ir = { workspace = true }
 url = { workspace = true, features = ["serde"] }
-byteorder = { workspace = true }
 serde = { workspace = true }
 
 [dev-dependencies]

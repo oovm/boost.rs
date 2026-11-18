@@ -1,41 +1,37 @@
 #![doc = include_str!("readme.md")]
 
 pub use self::token::Token;
-use byteorder::{ByteOrder, ReadBytesExt};
-use std::{
-    io::{Read, Seek, SeekFrom},
-    marker::PhantomData,
-};
+use std::io::{Read, Seek, SeekFrom};
 
 mod token;
 
-/// 二进制读取器，用于从实现了 ReadBytesExt trait 的类型中读取数据
+/// 小端二进制读取器。
 ///
-/// 这是一个泛型结构体，可以包装任何实现了 ReadBytesExt trait 的类型，
-/// 提供二进制数据的读取功能。
+/// 包装任意 [`Read`]（以及可选 [`Seek`]）的底层流，并在读取固定宽度数值时
+/// 维护自身的字节位置。端序固定为小端，不引入通用端序框架；需要大端或
+/// 其它布局的调用方按自身协议直接使用标准库的 `from_be_bytes` 等能力。
 #[derive(Debug)]
-pub struct BinaryReader<R, E> {
+pub struct BinaryReader<R> {
     reader: R,
     position: u64,
-    endian: PhantomData<E>,
 }
 
-impl<R: Read, E> Read for BinaryReader<R, E> {
+impl<R: Read> Read for BinaryReader<R> {
     fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
         self.reader.read(buffer)
     }
 }
 
-impl<R, E> BinaryReader<R, E> {
+impl<R> BinaryReader<R> {
     /// 创建新的二进制读取器
     ///
     /// # Arguments
-    /// * `lexer` - 要读取的数据
+    /// * `reader` - 要读取的数据
     ///
     /// # Returns
     /// 返回新的 BinaryReader 实例
     pub fn new(reader: R) -> Self {
-        Self { reader, position: 0, endian: Default::default() }
+        Self { reader, position: 0 }
     }
 
     /// 获取当前读取位置
@@ -69,14 +65,13 @@ impl<R, E> BinaryReader<R, E> {
     }
 }
 
-impl<R: ReadBytesExt, E: ByteOrder> BinaryReader<R, E> {
+impl<R: Read> BinaryReader<R> {
     /// 读取 u8
     ///
     /// # Returns
     /// 返回读取的 u8 值或 IO 错误
     pub fn read_u8(&mut self) -> std::io::Result<u8> {
-        let value = self.reader.read_u8()?;
-        self.position += 1;
+        let value = self.read_array::<1>()?[0];
         Ok(value)
     }
 
@@ -85,9 +80,7 @@ impl<R: ReadBytesExt, E: ByteOrder> BinaryReader<R, E> {
     /// # Returns
     /// 返回读取的 u16 值或 IO 错误
     pub fn read_u16(&mut self) -> std::io::Result<u16> {
-        let value = self.reader.read_u16::<E>()?;
-        self.position += 2;
-        Ok(value)
+        Ok(u16::from_le_bytes(self.read_array::<2>()?))
     }
 
     /// 读取 i16
@@ -95,9 +88,7 @@ impl<R: ReadBytesExt, E: ByteOrder> BinaryReader<R, E> {
     /// # Returns
     /// 返回读取的 i16 值或 IO 错误
     pub fn read_i16(&mut self) -> std::io::Result<i16> {
-        let value = self.reader.read_i16::<E>()?;
-        self.position += 2;
-        Ok(value)
+        Ok(i16::from_le_bytes(self.read_array::<2>()?))
     }
 
     /// 读取 u32
@@ -105,9 +96,7 @@ impl<R: ReadBytesExt, E: ByteOrder> BinaryReader<R, E> {
     /// # Returns
     /// 返回读取的 u32 值或 IO 错误
     pub fn read_u32(&mut self) -> std::io::Result<u32> {
-        let value = self.reader.read_u32::<E>()?;
-        self.position += 4;
-        Ok(value)
+        Ok(u32::from_le_bytes(self.read_array::<4>()?))
     }
 
     /// 读取 u64
@@ -115,9 +104,7 @@ impl<R: ReadBytesExt, E: ByteOrder> BinaryReader<R, E> {
     /// # Returns
     /// 返回读取的 u64 值或 IO 错误
     pub fn read_u64(&mut self) -> std::io::Result<u64> {
-        let value = self.reader.read_u64::<E>()?;
-        self.position += 8;
-        Ok(value)
+        Ok(u64::from_le_bytes(self.read_array::<8>()?))
     }
 
     /// 读取指定长度的字节数组
@@ -164,7 +151,7 @@ impl<R: ReadBytesExt, E: ByteOrder> BinaryReader<R, E> {
     }
 }
 
-impl<R: Seek, E: ByteOrder> BinaryReader<R, E> {
+impl<R: Seek> BinaryReader<R> {
     /// Seeks the underlying reader and leaves [`BinaryReader::position`] unchanged.
     pub fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
         self.reader.seek(pos)
