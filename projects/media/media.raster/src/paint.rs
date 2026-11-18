@@ -114,22 +114,64 @@ fn add_pixel_line(frame: &mut Frame, x0: f32, y0: f32, x1: f32, y1: f32, c: Rgba
 }
 
 fn stamp_disc(frame: &mut Frame, cx: f32, cy: f32, radius: f32, c: Rgba, additive: bool) {
-    let x0 = (cx - radius).max(0.0) as u32;
-    let y0 = (cy - radius).max(0.0) as u32;
-    let x1 = (cx + radius).min(frame.width as f32 - 1.0) as u32;
-    let y1 = (cy + radius).min(frame.height as f32 - 1.0) as u32;
+    let pad = radius + 1.0;
+    let x0 = (cx - pad).max(0.0) as u32;
+    let y0 = (cy - pad).max(0.0) as u32;
+    let x1 = (cx + pad).min(frame.width as f32 - 1.0) as u32;
+    let y1 = (cy + pad).min(frame.height as f32 - 1.0) as u32;
     for py in y0..=y1 {
         for px in x0..=x1 {
             let dx = px as f32 - cx;
             let dy = py as f32 - cy;
-            if dx * dx + dy * dy <= radius * radius {
-                if additive {
-                    frame.add_pixel(px, py, c);
-                }
-                else {
-                    frame.blend(px, py, c);
-                }
-            }
+            let d = (dx * dx + dy * dy).sqrt();
+            blend_cover(frame, px, py, c, radius + 0.5 - d, additive);
+        }
+    }
+}
+
+/// Foundations of a soft edge: the coverage a pixel receives from a shape whose
+/// signed distance is `cover`. One full pixel of falloff is enough to remove the
+/// staircase from lines, rings and rounded corners without blurring the fill.
+#[inline]
+fn blend_cover(frame: &mut Frame, x: u32, y: u32, c: Rgba, cover: f32, additive: bool) {
+    if cover <= 0.002 {
+        return;
+    }
+    let alpha = (c.0[3] as f32 * cover.min(1.0) + 0.5) as u32;
+    if alpha == 0 {
+        return;
+    }
+    let color = Rgba([c.0[0], c.0[1], c.0[2], alpha.min(255) as u8]);
+    if additive {
+        frame.add_pixel(x, y, color);
+    }
+    else {
+        frame.blend(x, y, color);
+    }
+}
+
+/// Rasterises one segment by sampling its distance field, so a pixel the stroke
+/// only clips gets partial coverage instead of a hard on/off decision. Compositing
+/// once per pixel also stops a semi-transparent line from stacking into a darker
+/// one wherever the old disc stamps overlapped.
+fn stroke_segment(frame: &mut Frame, a: [f32; 2], b: [f32; 2], half: f32, c: Rgba, additive: bool) {
+    let pad = half + 1.0;
+    let x0 = (a[0].min(b[0]) - pad).max(0.0) as u32;
+    let y0 = (a[1].min(b[1]) - pad).max(0.0) as u32;
+    let x1 = (a[0].max(b[0]) + pad).min(frame.width as f32 - 1.0) as u32;
+    let y1 = (a[1].max(b[1]) + pad).min(frame.height as f32 - 1.0) as u32;
+    let dx = b[0] - a[0];
+    let dy = b[1] - a[1];
+    let len_sq = (dx * dx + dy * dy).max(1e-6);
+    for py in y0..=y1 {
+        for px in x0..=x1 {
+            let fx = px as f32;
+            let fy = py as f32;
+            let t = (((fx - a[0]) * dx + (fy - a[1]) * dy) / len_sq).clamp(0.0, 1.0);
+            let nx = a[0] + dx * t;
+            let ny = a[1] + dy * t;
+            let d = ((fx - nx) * (fx - nx) + (fy - ny) * (fy - ny)).sqrt();
+            blend_cover(frame, px, py, c, half + 0.5 - d, additive);
         }
     }
 }
@@ -228,38 +270,23 @@ impl Paint for Frame {
             self.rect(x, y, w, h, c);
             return;
         }
-        let r = radius.min(w / 2.0).min(h / 2.0);
-        let x0 = x.max(0.0) as u32;
-        let y0 = y.max(0.0) as u32;
-        let x1 = (x + w).min(self.width as f32) as u32;
-        let y1 = (y + h).min(self.height as f32) as u32;
-        for py in y0..y1 {
-            for px in x0..x1 {
-                let fx = px as f32;
-                let fy = py as f32;
-                let cx = if fx < x + r {
-                    x + r
-                }
-                else if fx > x + w - r {
-                    x + w - r
-                }
-                else {
-                    fx
-                };
-                let cy = if fy < y + r {
-                    y + r
-                }
-                else if fy > y + h - r {
-                    y + h - r
-                }
-                else {
-                    fy
-                };
-                let dx = fx - cx;
-                let dy = fy - cy;
-                if dx * dx + dy * dy <= r * r {
-                    self.blend(px, py, c);
-                }
+        let r = radius.min(w / 2.0).min(h / 2.0).max(0.0);
+        let x0 = (x - 1.0).max(0.0) as u32;
+        let y0 = (y - 1.0).max(0.0) as u32;
+        let x1 = (x + w + 1.0).min(self.width as f32 - 1.0) as u32;
+        let y1 = (y + h + 1.0).min(self.height as f32 - 1.0) as u32;
+        let cx = x + w / 2.0;
+        let cy = y + h / 2.0;
+        let half_w = w / 2.0;
+        let half_h = h / 2.0;
+        for py in y0..=y1 {
+            for px in x0..=x1 {
+                // Signed distance to the rounded box: negative inside, so a
+                // pixel straddling the border gets partial coverage.
+                let qx = (px as f32 - cx).abs() - (half_w - r);
+                let qy = (py as f32 - cy).abs() - (half_h - r);
+                let outside = (qx.max(0.0) * qx.max(0.0) + qy.max(0.0) * qy.max(0.0)).sqrt() + qx.max(qy).min(0.0);
+                blend_cover(self, px, py, c, 0.5 - (outside - r), false);
             }
         }
     }
@@ -362,7 +389,10 @@ impl Paint for Frame {
         }
         let samples = 4u32;
         let mut xs: Vec<f32> = Vec::with_capacity(16);
-        let mut coverage = vec![0u8; self.width as usize];
+        // Coverage per pixel in 1/255 units is counted vertically by the
+        // supersample passes and horizontally by the fractional span, so a
+        // sloped polygon edge lands on a soft run of pixels instead of a stair.
+        let mut coverage = vec![0u32; self.width as usize];
         for row in min_y.floor() as u32..=max_y.ceil() as u32 {
             if row >= self.height {
                 break;
@@ -390,23 +420,28 @@ impl Paint for Frame {
                     if x1 <= x0 {
                         continue;
                     }
-                    let start = x0.max(0.0) as u32;
-                    let end = x1.min(self.width as f32 - 1.0) as u32;
+                    let start = x0.max(0.0).floor() as u32;
+                    let end = x1.min(self.width as f32 - 1.0).floor() as u32;
                     for px in start..=end {
-                        coverage[px as usize] = coverage[px as usize].saturating_add(1);
+                        let left = (px as f32).max(x0);
+                        let right = ((px + 1) as f32).min(x1);
+                        if right > left {
+                            let add = ((right - left) * 255.0).round() as u32;
+                            coverage[px as usize] = coverage[px as usize].saturating_add(add);
+                        }
                     }
                 }
             }
             for px in 0..self.width {
-                let covered = coverage[px as usize];
-                if covered == 0 {
+                let covered = coverage[px as usize] as f32;
+                if covered <= 0.0 {
                     continue;
                 }
-                let alpha = c.0[3] as f32 * covered as f32 / samples as f32;
+                let alpha = c.0[3] as f32 * covered / (samples as f32 * 255.0);
                 if alpha < 1.0 {
                     continue;
                 }
-                let color = Rgba([c.0[0], c.0[1], c.0[2], alpha as u8]);
+                let color = Rgba([c.0[0], c.0[1], c.0[2], alpha.min(255.0) as u8]);
                 if additive {
                     self.add_pixel(px, row, color);
                 }
@@ -418,7 +453,7 @@ impl Paint for Frame {
     }
 
     fn stroke_polyline(&mut self, points: &[[f32; 2]], width: f32, c: Rgba, progress: f32, additive: bool) {
-        if points.len() < 2 {
+        if points.len() < 2 || c.0[3] == 0 {
             return;
         }
         let progress = progress.clamp(0.0, 1.0);
@@ -430,8 +465,16 @@ impl Paint for Frame {
             return;
         }
         let limit = total * progress;
+        if limit <= 0.0 {
+            // At progress 0 the stroke does not exist yet: no caps, no dots.
+            return;
+        }
         let mut walked = 0.0f32;
         let half = (width / 2.0).max(0.5);
+        // Round caps and joints come from soft discs, the body of every segment
+        // from its distance field, so the outline stays smooth on any slope.
+        stamp_disc(self, points[0][0], points[0][1], half, c, additive);
+        let mut last = points[0];
         for i in 1..points.len() {
             let (a, b) = (points[i - 1], points[i]);
             let segment = distance(a, b);
@@ -444,51 +487,55 @@ impl Paint for Frame {
             }
             let t = usable / segment;
             let end = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
-            let steps = (usable * 1.5).max(2.0) as u32;
-            for s in 0..=steps {
-                let f = s as f32 / steps as f32;
-                let px = a[0] + (end[0] - a[0]) * f;
-                let py = a[1] + (end[1] - a[1]) * f;
-                stamp_disc(self, px, py, half, c, additive);
+            stroke_segment(self, a, end, half, c, additive);
+            last = end;
+            if usable < segment {
+                break;
+            }
+            if i + 1 < points.len() {
+                stamp_disc(self, b[0], b[1], half, c, additive);
             }
             walked += usable;
             if walked >= limit {
                 break;
             }
         }
+        stamp_disc(self, last[0], last[1], half, c, additive);
     }
 
     fn circle(&mut self, cx: f32, cy: f32, radius: f32, c: Rgba, stroke: Option<f32>) {
-        let r = radius;
-        let x0 = (cx - r).max(0.0) as u32;
-        let y0 = (cy - r).max(0.0) as u32;
-        let x1 = (cx + r).min(self.width as f32 - 1.0) as u32;
-        let y1 = (cy + r).min(self.height as f32 - 1.0) as u32;
+        let r = radius.max(0.0);
+        if r <= 0.0 || c.0[3] == 0 {
+            return;
+        }
+        let pad = r + 1.0;
+        let x0 = (cx - pad).max(0.0) as u32;
+        let y0 = (cy - pad).max(0.0) as u32;
+        let x1 = (cx + pad).min(self.width as f32 - 1.0) as u32;
+        let y1 = (cy + pad).min(self.height as f32 - 1.0) as u32;
         let inner = stroke.map(|s| (r - s).max(0.0));
         for py in y0..=y1 {
             for px in x0..=x1 {
                 let dx = px as f32 - cx;
                 let dy = py as f32 - cy;
                 let d = (dx * dx + dy * dy).sqrt();
-                if d <= r && inner.is_none_or(|ri| d >= ri) {
-                    self.blend(px, py, c);
-                }
+                let cover = match inner {
+                    None => r + 0.5 - d,
+                    Some(ri) => (r + 0.5 - d).min(d - ri + 0.5),
+                };
+                blend_cover(self, px, py, c, cover, false);
             }
         }
     }
 
     fn line(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, thickness: f32, c: Rgba) {
-        let dx = x1 - x0;
-        let dy = y1 - y0;
-        let len = (dx * dx + dy * dy).max(0.001);
-        let steps = (len * 2.0) as u32;
-        let half = thickness / 2.0;
-        for s in 0..=steps {
-            let t = s as f32 / steps as f32;
-            let px = x0 + dx * t;
-            let py = y0 + dy * t;
-            self.circle(px, py, half, c, None);
+        if c.0[3] == 0 {
+            return;
         }
+        let half = (thickness / 2.0).max(0.5);
+        stroke_segment(self, [x0, y0], [x1, y1], half, c, false);
+        stamp_disc(self, x0, y0, half, c, false);
+        stamp_disc(self, x1, y1, half, c, false);
     }
 
     fn glow(&mut self, cx: f32, cy: f32, radius: f32, c: Rgba) {
@@ -591,6 +638,62 @@ pub fn distance(a: [f32; 2], b: [f32; 2]) -> f32 {
     let dx = b[0] - a[0];
     let dy = b[1] - a[1];
     (dx * dx + dy * dy).sqrt()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use media_image::Frame;
+
+    fn red(frame: &Frame, x: u32, y: u32) -> u8 {
+        frame.pixels[((y * frame.width + x) as usize) * 4]
+    }
+
+    fn partial_pixels(frame: &Frame) -> u32 {
+        let mut partial = 0;
+        for y in 0..frame.height {
+            for x in 0..frame.width {
+                let v = red(frame, x, y);
+                if v > 8 && v < 247 {
+                    partial += 1;
+                }
+            }
+        }
+        partial
+    }
+
+    /// A sloped stroke must feather its edge. Without coverage the border is
+    /// either fully painted or not at all, which is exactly the staircase a
+    /// viewer reads as "no anti-aliasing".
+    #[test]
+    fn polyline_edges_are_antialiased() {
+        let mut frame = Frame::new(64, 64);
+        frame.fill(Rgba([0, 0, 0, 255]));
+        frame.stroke_polyline(&[[6.0, 6.0], [58.0, 58.0]], 3.0, Rgba([255, 255, 255, 255]), 1.0, false);
+        assert!(partial_pixels(&frame) > 20, "sloped stroke must feather its edge");
+        assert_eq!(red(&frame, 32, 32), 255, "the centre of the stroke stays solid");
+    }
+
+    /// A sloped polygon edge is feathered the same way by the horizontal
+    /// coverage term, so filled shapes do not stair-step either.
+    #[test]
+    fn polygon_edges_are_antialiased() {
+        let mut frame = Frame::new(64, 64);
+        frame.fill(Rgba([0, 0, 0, 255]));
+        frame.fill_polygon(&[[4.0, 4.0], [60.0, 22.0], [4.0, 60.0]], Rgba([255, 255, 255, 255]), false);
+        assert!(partial_pixels(&frame) > 10, "sloped polygon edge must feather");
+    }
+
+    /// A ring keeps its stroke width and smooth outline; the interior stays
+    /// untouched so the edge is the only soft part.
+    #[test]
+    fn ring_edges_are_antialiased() {
+        let mut frame = Frame::new(64, 64);
+        frame.fill(Rgba([0, 0, 0, 255]));
+        frame.circle(32.0, 32.0, 24.0, Rgba([255, 255, 255, 255]), Some(4.0));
+        assert!(partial_pixels(&frame) > 10, "ring edge must feather");
+        assert_eq!(red(&frame, 32, 32), 0, "the ring leaves its interior empty");
+    }
 }
 
 /// Resamples a polyline as a Catmull-Rom curve, so a handful of control points
