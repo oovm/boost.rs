@@ -62,6 +62,24 @@ pub enum PgObjectStatement {
         /// Roles that stop being members.
         members: Vec<String>,
     },
+    /// `GRANT privilege[, ...] ON ALL TABLES IN SCHEMA name TO role[, ...]`.
+    GrantAllTables {
+        /// Schema the grant covers.
+        schema: String,
+        /// Privileges to add.
+        privileges: Vec<PgPrivilege>,
+        /// Grantee roles.
+        roles: Vec<String>,
+    },
+    /// `REVOKE privilege[, ...] ON ALL TABLES IN SCHEMA name FROM role[, ...]`.
+    RevokeAllTables {
+        /// Schema the revoke covers.
+        schema: String,
+        /// Privileges to remove.
+        privileges: Vec<PgPrivilege>,
+        /// Roles the privileges are removed from.
+        roles: Vec<String>,
+    },
 }
 
 /// Parses one cluster-object statement, or `Ok(None)` when the text is not one.
@@ -74,6 +92,20 @@ pub fn parse_pg_object_statement(source: &str) -> Result<Option<PgObjectStatemen
     let tail = trimmed[keyword.len()..].trim_start();
     match keyword.to_ascii_uppercase().as_str() {
         "CREATE" => parse_create(tail),
+        "ALTER" => {
+            // `ALTER DEFAULT PRIVILEGES` would change what *future* objects
+            // grant. `GRANT ... ON ALL TABLES IN SCHEMA` only covers existing
+            // relations, so this stays an explicit rejection instead of
+            // pretending the bulk grant reaches later tables.
+            if let Some(after) = strip_keyword(tail, "DEFAULT") {
+                strip_keyword(after, "PRIVILEGES").ok_or_else(|| syntax("`ALTER DEFAULT` requires `PRIVILEGES`"))?;
+                return Err(unsupported(
+                    "`ALTER DEFAULT PRIVILEGES` is not supported by the cluster SQL gateway: `GRANT ... ON ALL TABLES IN SCHEMA` covers the tables that exist when it runs, exactly like PostgreSQL, and nothing applies to tables created later",
+                ));
+            }
+            // Other `ALTER` statements belong to the schema registry.
+            Ok(None)
+        }
         "GRANT" => parse_grant(tail, true).map(Some),
         "REVOKE" => parse_grant(tail, false).map(Some),
         _ => Ok(None),
@@ -191,9 +223,9 @@ fn parse_grant(tail: &str, granting: bool) -> Result<PgObjectStatement, SqlFront
         return parse_membership(rest, granting);
     }
     let upper = rest.to_ascii_uppercase();
-    if upper.contains("TABLES IN SCHEMA") || upper.contains("SEQUENCES IN SCHEMA") || upper.contains("ALL TABLES") {
+    if upper.contains("SEQUENCES IN SCHEMA") {
         return Err(unsupported(
-            "`GRANT ... ON ALL TABLES IN SCHEMA` is not supported by the cluster SQL gateway, name each table",
+            "`GRANT ... ON ALL SEQUENCES IN SCHEMA` is not supported by the cluster SQL gateway, only `ALL TABLES` is",
         ));
     }
     if !granting {
@@ -208,7 +240,12 @@ fn parse_grant(tail: &str, granting: bool) -> Result<PgObjectStatement, SqlFront
     let (privileges_text, after_privileges) = split_keyword(rest, "ON")
         .ok_or_else(|| syntax(if granting { "`GRANT` requires `ON <table>`" } else { "`REVOKE` requires `ON <table>`" }))?;
     let privileges = parse_privileges(&privileges_text)?;
-    let mut rest = after_privileges.trim_start();
+    let object = after_privileges.trim_start();
+    let upper_object = object.to_ascii_uppercase();
+    if upper_object.starts_with("ALL TABLES") || upper_object.starts_with("ALL SEQUENCES") {
+        return parse_bulk_grant(object, privileges, granting);
+    }
+    let mut rest = object;
     if let Some(after) = strip_keyword(rest, "TABLE") {
         rest = after.trim_start();
     }
@@ -240,6 +277,46 @@ fn parse_grant(tail: &str, granting: bool) -> Result<PgObjectStatement, SqlFront
     }
     else {
         PgObjectStatement::Revoke { privileges, table, roles }
+    })
+}
+
+/// Parses `ALL TABLES IN SCHEMA <name> TO|FROM <roles>`.
+///
+/// `ALL SEQUENCES IN SCHEMA` has no privilege model in this gateway, so it stays
+/// an explicit rejection instead of granting something it never checks.
+fn parse_bulk_grant(
+    object: &str,
+    privileges: Vec<PgPrivilege>,
+    granting: bool,
+) -> Result<PgObjectStatement, SqlFrontendError> {
+    let (kind, rest) = if let Some(rest) = strip_keyword(object, "ALL") {
+        let rest = rest.trim_start();
+        let kind = first_word(rest).ok_or_else(|| syntax("`ON ALL` requires `TABLES IN SCHEMA`"))?;
+        (kind.to_ascii_uppercase(), rest[kind.len()..].trim_start())
+    }
+    else {
+        return Err(syntax("expected `ALL TABLES IN SCHEMA`"));
+    };
+    if kind != "TABLES" {
+        return Err(unsupported(format!(
+            "`GRANT ... ON ALL {kind} IN SCHEMA` is not supported by the cluster SQL gateway, only `ALL TABLES` is"
+        )));
+    }
+    let rest = strip_keyword(rest, "IN").ok_or_else(|| syntax("`ON ALL TABLES` requires `IN SCHEMA`"))?.trim_start();
+    let rest = strip_keyword(rest, "SCHEMA").ok_or_else(|| syntax("`ON ALL TABLES IN` requires `SCHEMA`"))?.trim_start();
+    let (schema, rest) = take_identifier(rest)?;
+    let separator = if granting { "TO" } else { "FROM" };
+    let rest = strip_keyword(rest.trim_start(), separator)
+        .ok_or_else(|| syntax(format!("`ON ALL TABLES IN SCHEMA` requires `{separator} <role>`")))?;
+    let roles = split_identifiers(rest)?;
+    if roles.is_empty() {
+        return Err(syntax("the statement names no role"));
+    }
+    Ok(if granting {
+        PgObjectStatement::GrantAllTables { schema, privileges, roles }
+    }
+    else {
+        PgObjectStatement::RevokeAllTables { schema, privileges, roles }
     })
 }
 
@@ -477,6 +554,32 @@ mod tests {
             SqlErrorKind::Unsupported
         );
         assert_eq!(parse_pg_object_statement("GRANT reader TO").unwrap_err().kind, SqlErrorKind::Syntax);
+    }
+
+    #[test]
+    fn bulk_grants_name_a_schema_and_reject_alter_default_privileges() {
+        assert_eq!(
+            parse_pg_object_statement("GRANT SELECT, INSERT ON ALL TABLES IN SCHEMA public TO reader").unwrap(),
+            Some(PgObjectStatement::GrantAllTables {
+                schema: "public".to_owned(),
+                privileges: vec![PgPrivilege::Select, PgPrivilege::Insert],
+                roles: vec!["reader".to_owned()],
+            })
+        );
+        assert_eq!(
+            parse_pg_object_statement("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM reader").unwrap(),
+            Some(PgObjectStatement::RevokeAllTables {
+                schema: "public".to_owned(),
+                privileges: vec![PgPrivilege::Select, PgPrivilege::Insert, PgPrivilege::Update, PgPrivilege::Delete],
+                roles: vec!["reader".to_owned()],
+            })
+        );
+        for statement in [
+            "GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO reader",
+            "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO reader",
+        ] {
+            assert_eq!(parse_pg_object_statement(statement).unwrap_err().kind, SqlErrorKind::Unsupported, "{statement}");
+        }
     }
 
     #[test]

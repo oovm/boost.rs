@@ -372,7 +372,33 @@ fn apply_object_statement(
             }
             Ok(StatementOutcome::Command("REVOKE ROLE"))
         }
+        PgObjectStatement::GrantAllTables { schema, privileges, roles } => {
+            let tables = schema_tables(&schema, &catalog).map_err(|error| failure(session, error))?;
+            for role in &roles {
+                objects.grant_tables(role, &tables, &privileges).map_err(|error| failure(session, error))?;
+            }
+            Ok(StatementOutcome::Command("GRANT"))
+        }
+        PgObjectStatement::RevokeAllTables { schema, privileges, roles } => {
+            let tables = schema_tables(&schema, &catalog).map_err(|error| failure(session, error))?;
+            for role in &roles {
+                objects.revoke_tables(role, &tables, &privileges).map_err(|error| failure(session, error))?;
+            }
+            Ok(StatementOutcome::Command("REVOKE"))
+        }
     }
+}
+
+/// Tables `GRANT ... ON ALL TABLES IN SCHEMA name` expands over.
+///
+/// The gateway publishes one schema, so any other name is `3F000` instead of a
+/// silent no-op. The expansion only covers the relations that exist now, which
+/// is PostgreSQL's bulk-grant rule.
+fn schema_tables(schema: &str, catalog: &database_query::SqlCatalog) -> Result<Vec<String>, database_storage::pgsql::ObjectError> {
+    if !schema.eq_ignore_ascii_case("public") {
+        return Err(database_storage::pgsql::ObjectError::UnknownSchema(schema.to_string()));
+    }
+    Ok(catalog.tables().iter().map(|table| table.name.clone()).collect())
 }
 
 /// Renders a `SET` value the way the GUC parser expects it.

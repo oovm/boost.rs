@@ -257,6 +257,51 @@ fn role_membership_inherits_privileges_and_reports_cycles() {
 }
 
 #[test]
+fn bulk_grants_cover_existing_tables_only() {
+    let mut gateway = Gateway::new("bulk-grant");
+    gateway.command("CREATE TABLE orders (id BIGINT PRIMARY KEY, total BIGINT)");
+    gateway.command("CREATE TABLE invoices (id BIGINT PRIMARY KEY)");
+    gateway.command("CREATE ROLE reader");
+    assert_eq!(gateway.command("GRANT SELECT ON ALL TABLES IN SCHEMA public TO reader"), "GRANT");
+
+    gateway.session.set_user("reader".to_owned());
+    assert_eq!(gateway.scalar("SELECT COUNT(*)::int8 FROM orders"), SqlValue::Integer(0));
+    assert_eq!(gateway.scalar("SELECT COUNT(*)::int8 FROM invoices"), SqlValue::Integer(0));
+
+    // PostgreSQL's bulk grant only covers relations that exist when it runs.
+    gateway.session.set_user("postgres".to_owned());
+    gateway.command("CREATE TABLE later (id BIGINT PRIMARY KEY)");
+    gateway.session.set_user("reader".to_owned());
+    let (code, message) = match gateway.sql("SELECT COUNT(*)::int8 FROM later") {
+        Ok(_) => panic!("a table created after the bulk grant must not be covered"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42501", "unexpected message: {message}");
+
+    gateway.session.set_user("postgres".to_owned());
+    assert_eq!(gateway.command("REVOKE SELECT ON ALL TABLES IN SCHEMA public FROM reader"), "REVOKE");
+    gateway.session.set_user("reader".to_owned());
+    let (code, _) = match gateway.sql("SELECT COUNT(*)::int8 FROM orders") {
+        Ok(_) => panic!("the revoked bulk grant must no longer allow reads"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42501");
+
+    // Only `public` exists; another schema name is `3F000`.
+    gateway.session.set_user("postgres".to_owned());
+    let (code, message) = match gateway.sql("GRANT SELECT ON ALL TABLES IN SCHEMA missing TO reader") {
+        Ok(_) => panic!("an unknown schema must be rejected"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "3F000", "unexpected message: {message}");
+    let (code, _) = match gateway.sql("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO reader") {
+        Ok(_) => panic!("`ALTER DEFAULT PRIVILEGES` must stay an explicit rejection"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "0A000");
+}
+
+#[test]
 fn statement_timeout_reports_57014_and_rolls_the_block_back() {
     let mut gateway = Gateway::new("timeout");
     gateway.command("CREATE TABLE bulk (id BIGINT PRIMARY KEY)");

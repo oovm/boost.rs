@@ -200,6 +200,8 @@ pub enum ObjectError {
     },
     /// The table named by a grant or revoke is not registered (`42P01`).
     UnknownTable(String),
+    /// The schema a bulk grant names is not published by the gateway (`3F000`).
+    UnknownSchema(String),
     /// The document could not be read or written.
     Persistence(String),
 }
@@ -213,6 +215,7 @@ impl ObjectError {
             Self::UnknownRole(_) => "42704",
             Self::CircularMembership { .. } => "0LP01",
             Self::UnknownTable(_) => "42P01",
+            Self::UnknownSchema(_) => "3F000",
             Self::Persistence(_) => "58P01",
         }
     }
@@ -225,6 +228,7 @@ impl ObjectError {
             Self::UnknownRole(name) => format!("role \"{name}\" does not exist"),
             Self::CircularMembership { role, member } => format!("role \"{role}\" is a member of role \"{member}\""),
             Self::UnknownTable(name) => format!("relation \"{name}\" does not exist"),
+            Self::UnknownSchema(name) => format!("schema \"{name}\" does not exist"),
             Self::Persistence(detail) => detail.clone(),
         }
     }
@@ -374,6 +378,59 @@ impl PgObjectCatalog {
             }
         }
         next.grants.sort_by(|left, right| (&left.role, &left.table, left.privilege).cmp(&(&right.role, &right.table, right.privilege)));
+        next.revision = next.revision.saturating_add(1);
+        self.save(&next)?;
+        *state = next;
+        Ok(())
+    }
+
+    /// Adds one privilege set to `role` on every named table in one save.
+    ///
+    /// This is `GRANT ... ON ALL TABLES IN SCHEMA`'s expansion: the caller
+    /// supplies the tables the statement must cover, so a later `CREATE TABLE`
+    /// is not covered — PostgreSQL's bulk grant only touches existing
+    /// relations, and `ALTER DEFAULT PRIVILEGES` is what changes the future.
+    pub fn grant_tables(
+        &self,
+        role: &str,
+        tables: &[String],
+        privileges: &[PgPrivilege],
+    ) -> Result<(), ObjectError> {
+        let mut state = self.lock();
+        if !state.roles.iter().any(|existing| existing.name == role) {
+            return Err(ObjectError::UnknownRole(role.to_string()));
+        }
+        let mut next = state.clone();
+        for table in tables {
+            for privilege in privileges {
+                let grant = PgGrant { role: role.to_string(), table: table.clone(), privilege: *privilege };
+                if !next.grants.contains(&grant) {
+                    next.grants.push(grant);
+                }
+            }
+        }
+        next.grants.sort_by(|left, right| (&left.role, &left.table, left.privilege).cmp(&(&right.role, &right.table, right.privilege)));
+        next.revision = next.revision.saturating_add(1);
+        self.save(&next)?;
+        *state = next;
+        Ok(())
+    }
+
+    /// Removes one privilege set from `role` on every named table in one save.
+    pub fn revoke_tables(
+        &self,
+        role: &str,
+        tables: &[String],
+        privileges: &[PgPrivilege],
+    ) -> Result<(), ObjectError> {
+        let mut state = self.lock();
+        if !state.roles.iter().any(|existing| existing.name == role) {
+            return Err(ObjectError::UnknownRole(role.to_string()));
+        }
+        let mut next = state.clone();
+        next.grants.retain(|grant| {
+            grant.role != role || !tables.contains(&grant.table) || !privileges.contains(&grant.privilege)
+        });
         next.revision = next.revision.saturating_add(1);
         self.save(&next)?;
         *state = next;
