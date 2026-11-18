@@ -10,16 +10,22 @@
 //! facades and the constraint guards ([`guards`]) validate uniqueness,
 //! foreign keys and `CHECK` constraints against the same read view. The DDL
 //! and schema-persistence machinery ([`ddl`]) evolves the catalog and the
-//! stored `sqlite_master` text for the facades.
+//! stored `sqlite_master` text for the facades. The read-only statement
+//! metadata machinery ([`describe`]), the schematic `EXPLAIN` rows ([`explain`])
+//! and the catalog-shaped `PRAGMA` rows ([`pragma`]) derive their result sets
+//! from the same read view without executing anything.
 
 pub mod cells;
 pub mod datetime;
 pub mod ddl;
+pub mod describe;
 pub mod dml;
 pub mod eval;
+pub mod explain;
 pub mod guards;
 pub mod host;
 pub mod json;
+pub mod pragma;
 pub mod probe;
 pub mod scalar;
 pub mod select;

@@ -333,7 +333,7 @@ impl<'a> StmtContext<'a> {
     }
 
     /// 把推迟的索引 / 聚簇树重建落进当前镜像。
-    fn flush_pending_materialization(&mut self, statement: &'static str) -> Result<(), SqlError> {
+    pub(super) fn flush_pending_materialization(&mut self, statement: &'static str) -> Result<(), SqlError> {
         if *self.pending_indexes {
             self.writer.materialize_indexes().map_err(|error| storage_failure(error).in_statement(statement))?;
             *self.pending_indexes = false;
