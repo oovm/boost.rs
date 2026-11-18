@@ -16,6 +16,7 @@
 //! from the same read view without executing anything.
 
 pub mod cells;
+pub mod cursor;
 pub mod datetime;
 pub mod ddl;
 pub mod describe;

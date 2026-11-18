@@ -12,7 +12,6 @@
 //!   再改名冒充备份。
 
 use std::{
-    collections::BTreeMap,
     fs::{self, File, OpenOptions, TryLockError},
     io::{ErrorKind, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
@@ -25,9 +24,11 @@ use crate::{
     sql::{Cell, Engine, ExecResult, SqlError, Statement, TransactionAction, parameter_slots, storage_failure},
 };
 
-use database_execution::sqlite::select::LazyCursor;
+use database_execution::sqlite::cursor::CursorTable;
 use database_storage::sqlite::journal;
 use database_udf::{HostMicroDefinition, HostRuntimeAdapter};
+
+pub use database_execution::sqlite::cursor::{CursorBatch, CursorOpen};
 
 /// 把存储层错误映射为结构化的 SQL 拒绝。
 fn storage_error(error: impl std::fmt::Display) -> SqlError {
@@ -242,51 +243,6 @@ impl Prepared {
     }
 }
 
-/// 打开游标时返回的句柄与结果列标签。
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CursorOpen {
-    /// 连接内的游标句柄;后续 [`Connection::cursor_next`] 与
-    /// [`Connection::cursor_close`] 都以它定位游标。
-    pub handle: u64,
-    /// 本次执行产生的结果列标签。
-    pub columns: Vec<String>,
-    /// `true` 表示游标按表 b-tree 页顺序惰性扫描,`false` 表示结果集在
-    /// 打开时已经全部物化。只有简单单表 `SELECT` 会走惰性路径,`JOIN`、
-    /// 聚合、`DISTINCT`、窗口、非 rowid 顺序的 `ORDER BY` 等仍是物化的。
-    pub lazy: bool,
-}
-
-/// 一次 [`Connection::cursor_next`] 返回的有界行窗口。
-#[derive(Clone, Debug, PartialEq)]
-pub struct CursorBatch {
-    /// 本窗口的行,保持结果顺序。
-    pub rows: Vec<Vec<Cell>>,
-    /// 游标是否已经到达结果集末尾。
-    pub done: bool,
-}
-
-/// 连接内的一个结果集来源。
-///
-/// 简单单表扫描走 [`CursorRows::Lazy`],按 b-tree 页顺序从打开时的整页
-/// 快照分批解码;其余语句在打开时一次性物化,`cursor_next` 只按窗口切片。
-enum CursorRows {
-    /// 完整结果集,按执行顺序。
-    Materialized { rows: Vec<Vec<Cell>>, position: usize },
-    /// 打开时固定的页快照上的惰性表扫描。
-    Lazy(LazyCursor),
-}
-
-/// 连接内的一个已执行结果集及其读取位置。
-struct Cursor {
-    /// 行集来源:惰性扫描或打开时物化。
-    rows: CursorRows,
-    /// 打开时所属事务的代数;`None` 表示在 autocommit 下打开。
-    ///
-    /// 事务结束时 [`Connection::transaction_epoch`] 前进,旧代数的游标随
-    /// 之以 `cursor-expired` 拒绝,与 SQLite 在事务结束后让语句失效一致。
-    transaction_epoch: Option<u64>,
-}
-
 /// 一个真实连接:引擎句柄、文件归属与提交边界都在这里。
 ///
 /// 文件写连接在打开时取得跨进程写锁并持有到 [`Connection::close`] 或句柄
@@ -311,12 +267,9 @@ pub struct Connection {
     journal_mode: JournalMode,
     /// 落盘时是否 `fsync`;回滚日志与恢复写回共用同一强度。
     synchronous: bool,
-    /// 本连接打开的结果游标表,以句柄为键。
-    cursors: BTreeMap<u64, Cursor>,
-    /// 下一个游标句柄。
-    next_cursor: u64,
-    /// 事务代数:每次事务结束(提交或回滚)前进一格。
-    transaction_epoch: u64,
+    /// 本连接打开的结果游标表,以句柄为键;游标状态机归
+    /// `database.execution::sqlite::cursor`。
+    cursors: CursorTable,
     /// 仅测试使用的发布失败注入,用于在真实崩溃窗口上取证。
     #[cfg(test)]
     fail_point: Option<FailPoint>,
@@ -382,9 +335,7 @@ impl Connection {
             closed: false,
             journal_mode,
             synchronous,
-            cursors: BTreeMap::new(),
-            next_cursor: 0,
-            transaction_epoch: 0,
+            cursors: CursorTable::new(),
             #[cfg(test)]
             fail_point: None,
         };
@@ -496,20 +447,18 @@ impl Connection {
             return Err(SqlError::new("bind-parameter", format!("statement expects {required} parameters, got {}", parameters.len()))
                 .in_statement(prepared.statement_name()));
         }
-        let transaction_epoch = self.engine.in_transaction().then_some(self.transaction_epoch);
-        let handle = self.next_cursor;
-        self.next_cursor = self.next_cursor.wrapping_add(1);
+        let transaction_epoch = self.engine.in_transaction().then_some(self.cursors.epoch());
         if let Some(lazy) = self.engine.open_lazy_cursor(&prepared.statement, parameters)? {
             let columns = lazy.columns().to_vec();
-            self.cursors.insert(handle, Cursor { rows: CursorRows::Lazy(lazy), transaction_epoch });
+            let handle = self.cursors.open_lazy(lazy, transaction_epoch);
             return Ok(CursorOpen { handle, columns, lazy: true });
         }
         let was_in_transaction = self.engine.in_transaction();
         let ExecResult { columns, rows, .. } = self.engine.execute_statement(&prepared.statement, parameters)?;
         self.advance_epoch_if_transaction_ended(was_in_transaction);
         self.after_statement(prepared.is_write(), &prepared.statement)?;
-        let transaction_epoch = self.engine.in_transaction().then_some(self.transaction_epoch);
-        self.cursors.insert(handle, Cursor { rows: CursorRows::Materialized { rows, position: 0 }, transaction_epoch });
+        let transaction_epoch = self.engine.in_transaction().then_some(self.cursors.epoch());
+        let handle = self.cursors.open_materialized(rows, transaction_epoch);
         Ok(CursorOpen { handle, columns, lazy: false })
     }
 
@@ -520,32 +469,14 @@ impl Connection {
     /// `cursor-expired` 拒绝,已关闭的连接以 `db-closed` 拒绝。
     pub fn cursor_next(&mut self, handle: u64, limit: usize) -> Result<CursorBatch, SqlError> {
         self.guard_open()?;
-        let epoch = self.transaction_epoch;
-        let cursor = self.cursors.get_mut(&handle).ok_or_else(|| SqlError::new("cursor-not-found", format!("cursor {handle} is not open")))?;
-        if let Some(opened) = cursor.transaction_epoch
-            && opened != epoch
-        {
-            return Err(SqlError::new("cursor-expired", "cursor was opened inside a transaction that has already ended"));
-        }
-        match &mut cursor.rows {
-            CursorRows::Materialized { rows, position } => {
-                let remaining = rows.len() - *position;
-                let end = *position + limit.min(remaining);
-                let window = rows[*position..end].to_vec();
-                *position = end;
-                Ok(CursorBatch { rows: window, done: *position == rows.len() })
-            }
-            CursorRows::Lazy(lazy) => {
-                let batch = self.engine.lazy_cursor_next(lazy, limit)?;
-                Ok(CursorBatch { rows: batch.rows, done: batch.done })
-            }
-        }
+        let Self { cursors, engine, .. } = self;
+        cursors.next(handle, limit, |lazy, limit| engine.lazy_cursor_next(lazy, limit))
     }
 
     /// 释放一个游标。未知句柄视为已释放,便于宿主在 `finally` 里安全清理。
     pub fn cursor_close(&mut self, handle: u64) -> Result<(), SqlError> {
         self.guard_open()?;
-        self.cursors.remove(&handle);
+        self.cursors.close(handle);
         Ok(())
     }
 
@@ -557,9 +488,7 @@ impl Connection {
 
     /// 事务结束时让代数前进,使事务内打开的游标失效。
     fn advance_epoch_if_transaction_ended(&mut self, was_in_transaction: bool) {
-        if was_in_transaction && !self.engine.in_transaction() {
-            self.transaction_epoch = self.transaction_epoch.wrapping_add(1);
-        }
+        self.cursors.advance_if_transaction_ended(was_in_transaction, self.engine.in_transaction());
     }
 
     /// 把当前镜像完整写入 `path`,即真正的备份。
