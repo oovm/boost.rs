@@ -3,7 +3,7 @@
 use plotter_renderer::RgbaImage;
 use plotter_renderer_dx12::{RenderError, is_available, render_rgba8};
 use plotter_types::plot::Rgba;
-use plotter_view::{MeshNode, Point2, PointsNode, PolylineNode, Rect2, Scene, SceneArena, SceneNodeKind, TextNode, Viewport};
+use plotter_view::{MeshNode, Point2, PointsNode, PolylineNode, Rect2, Scene, SceneArena, SceneNodeKind, TextAnchor, TextNode, Viewport};
 
 const RED: Rgba = Rgba { r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
 const GREEN: Rgba = Rgba { r: 0.0, g: 1.0, b: 0.0, a: 1.0 };
@@ -79,6 +79,7 @@ fn text_nodes_rasterise_through_system_fonts() {
         content: "Hi".to_string(),
         size: 32.0,
         color: Rgba::WHITE,
+        anchor: TextAnchor::Start,
     }));
     let root = arena.insert(SceneNodeKind::Group { children: vec![text] });
     let scene = Scene::from_arena(root, arena, Viewport::new(128.0, 64.0));
