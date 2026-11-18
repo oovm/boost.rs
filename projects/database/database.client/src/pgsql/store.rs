@@ -2,12 +2,12 @@
 //!
 //! Both byte formats are owned by `database-formats`, and the shard write path
 //! is owned by `database-storage`: [`Store`] is only an adapter around
-//! [`database_storage::cluster_kv::FileShard`]. The snapshot bytes are the
-//! shared `.yykv` codec (magic `YYKV\x03`, FNV-1a body checksum, then
-//! `next_revision u64`, record count `u32`, and records made of namespace, key,
-//! revision `u64`, deadline `u64`, value tag `u8` and value bytes), which
-//! `FileShard` writes through a temp file and an atomic replace on every
-//! mutation.
+//! [`database_storage::cluster_kv::FileShard`]. The file is the shared `.yykv`
+//! codec (magic `YYKV\x04`, a base section made of `next_revision u64`, record
+//! count `u32` and records of namespace, key, revision `u64`, deadline `u64`,
+//! value tag `u8` and value bytes, followed by checksummed append-only delta
+//! frames), which `FileShard` makes durable by appending and fsyncing just the
+//! bytes each commit changed.
 //!
 //! This module only keeps what PostgreSQL owns:
 //!
@@ -28,7 +28,7 @@ use std::{
     sync::Mutex,
 };
 
-use database_formats::yy::yykv::{KV_LEGACY_MAGIC, KV_MAGIC, Snapshot, decode_snapshot_strict};
+use database_formats::yy::yykv::{KV_LEGACY_MAGIC, KV_MAGIC, KV_PREVIOUS_MAGIC, Snapshot, decode_snapshot_strict};
 use database_storage::cluster_kv::{FileShard, InlineValue, Key, KvStore, StoredValue};
 use database_types::{
     ReasonCode,
@@ -102,7 +102,7 @@ fn decode_shard(bytes: &[u8]) -> Result<(usize, u64), PostgresError> {
     if bytes.starts_with(KV_LEGACY_MAGIC) {
         return Err(protocol("legacy .yykv v2 snapshot carries no checksum: delete the shard and let the node recreate it"));
     }
-    if !bytes.starts_with(KV_MAGIC) {
+    if !bytes.starts_with(KV_MAGIC) && !bytes.starts_with(KV_PREVIOUS_MAGIC) {
         return Err(protocol("unknown .yykv header"));
     }
     if bytes.len() < KV_MAGIC.len() + 8 {
@@ -268,7 +268,7 @@ mod tests {
 
     use database_formats::yy::{
         yyds::{CATALOG_MAGIC, encode_catalog},
-        yykv::{InlineValue as TestInlineValue, Key as TestKey, Record as ShardRecord, encode_snapshot},
+        yykv::{InlineValue as TestInlineValue, Key as TestKey, Record as ShardRecord, decode_shard_image, encode_snapshot},
     };
     use database_types::cluster::ShardId;
 
@@ -431,7 +431,9 @@ mod tests {
             snapshot.records[&TestKey::new("public.users", b"u2".to_vec())].value,
             StoredValue::Inline(TestInlineValue(b"bob".to_vec()))
         );
-        assert_eq!(encode_snapshot(&snapshot.records, snapshot.next_revision).unwrap(), bytes);
+        let image = decode_shard_image(&bytes).unwrap();
+        assert_eq!(image.records, snapshot.records);
+        assert!(image.delta_len > 0, "a commit appends a delta frame instead of rewriting the shard");
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -455,7 +457,9 @@ mod tests {
             shared_record("public.seed", b"b", b"2", 2),
             shared_record("public.seed", b"c", b"3", 3),
         ]);
-        assert_eq!(fs::read(store.shard_path()).unwrap(), encode_snapshot(&expected, 4).unwrap());
+        let image = decode_shard_image(&fs::read(store.shard_path()).unwrap()).unwrap();
+        assert_eq!(image.records, expected);
+        assert_eq!(image.next_revision, 4);
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -466,12 +470,12 @@ mod tests {
         let bytes = fs::read(store.shard_path()).unwrap();
         let hex = bytes.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
         // Same empty-shard bytes the TS and PY corpora seed in `store.json`.
-        assert_eq!(hex, "59594b5603e42b42c2392d245f010000000000000000000000");
+        assert_eq!(hex, "59594b56040c00000000000000e42b42c2392d245f010000000000000000000000");
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn every_write_matches_a_full_encode() {
+    fn every_commit_decodes_back_to_the_committed_state() {
         let dir = temporary("incremental-bytes");
         let store = Store::open(&dir).unwrap();
         let big = [9_u8; 257];
@@ -502,12 +506,13 @@ mod tests {
                     expected.remove(&(namespace.to_owned(), key.to_vec()));
                 }
             }
-            let written = fs::read(store.shard_path()).unwrap();
+            let written = decode_shard_image(&fs::read(store.shard_path()).unwrap()).unwrap();
             let snapshot = expected
                 .iter()
                 .map(|((namespace, key), (revision, value))| shared_record(namespace, key, value, *revision))
                 .collect::<BTreeMap<_, _>>();
-            assert_eq!(written, encode_snapshot(&snapshot, next_revision).unwrap(), "step {namespace}/{key:?}");
+            assert_eq!(written.records, snapshot, "step {namespace}/{key:?}");
+            assert_eq!(written.next_revision, next_revision, "step {namespace}/{key:?}");
         }
         drop(store);
         let reopened = Store::open(&dir).unwrap();

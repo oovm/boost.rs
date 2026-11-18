@@ -1,25 +1,21 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, OpenOptions},
-    io::Write,
+    io::{Seek, SeekFrom, Write},
     ops::Bound,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use database_formats::yy::yykv::{KV_MAGIC, Key, Record, StoredValue, decode_snapshot, encode_snapshot, kv_format::checksum as yykv_checksum};
+use database_formats::yy::yykv::{
+    DeltaOp, KV_MAGIC, Key, Record, StoredValue, decode_shard_image, encode_delta_frame, encode_snapshot,
+};
 use database_types::cluster::{Error, Namespace, Result, SweepReport};
 
-/// Offset of the snapshot body inside the file: magic + body checksum. The checksum covers
-/// the whole body, including the `next_revision` and record-count header fields.
-const BODY_OFFSET: usize = KV_MAGIC.len() + 8;
-
-/// Byte length of a snapshot header: magic + body checksum + `next_revision` + record count.
-///
-/// Everything after this prefix is a concatenation of per-record segments in key order, and
-/// each segment depends only on its own record, so a clean record's bytes can be reused
-/// verbatim across commits. `file_shard` tests pin this against a full `encode_snapshot`.
-const RECORD_AREA_OFFSET: usize = BODY_OFFSET + 8 + 4;
+/// Smallest delta area kept before a commit compacts the shard back into one base snapshot.
+const COMPACT_MIN_DELTA_BYTES: usize = 8 * 1024 * 1024;
+/// Upper bound of the compaction threshold, so a large shard still reclaims space regularly.
+const COMPACT_MAX_DELTA_BYTES: usize = 256 * 1024 * 1024;
 
 /// Current wall clock as Unix epoch milliseconds, used for record expiry deadlines.
 pub fn now_unix_ms() -> i64 {
@@ -222,12 +218,14 @@ impl KvStore for MemoryShard {
 ///
 /// Changes staged inside the scope are applied to memory (so later reads and later
 /// statements in the same command see them) but are only made durable when the
-/// outermost scope ends. If that durable write fails, `journal` restores the exact
+/// outermost scope ends. If that durable write fails, `pre_images` restores the exact
 /// pre-scope memory state and `start_revision` is restored with it.
 #[derive(Debug)]
 struct WriteBatch {
     start_revision: u64,
-    journal: CommitJournal,
+    pre_images: CommitJournal,
+    /// Final state of every key touched in the scope; `None` means the key is deleted.
+    staged: BTreeMap<Key, Option<Record>>,
     depth: usize,
     /// Thread that opened the scope. Writes from any other thread are settled
     /// durably first, so one host's deferred writes are never carried into
@@ -235,19 +233,23 @@ struct WriteBatch {
     owner: std::thread::ThreadId,
 }
 
-/// File-backed shard storing one namespace.using the native `.yykv` snapshot format.
+/// File-backed shard: one compacted base snapshot followed by append-only delta frames.
+///
+/// A commit appends exactly the bytes it changed and fsyncs them; it never rewrites the
+/// whole file. When the delta area grows past its threshold the shard is compacted back
+/// into a single base snapshot, which is also what reclaims the space held by superseded
+/// versions of rewritten or deleted keys.
 #[derive(Debug)]
 pub struct FileShard {
     path: PathBuf,
     records: BTreeMap<Key, Record>,
-    /// Snapshot bytes of every record as of the last durable publish, keyed and ordered
-    /// exactly like `records`. A commit re-encodes only the records its changes touch and
-    /// reuses these segments verbatim for the rest, so the assembled snapshot stays
-    /// byte-identical to a full `encode_snapshot` of the same state.
-    encoded: BTreeMap<Key, Vec<u8>>,
-    /// Total byte length of the `encoded` segments; sizes the assembled snapshot.
-    encoded_len: usize,
     next_revision: u64,
+    /// Byte length of the durable base section, file header included.
+    base_len: usize,
+    /// Byte length of the delta frames appended after the base section.
+    delta_len: usize,
+    /// Set when a failed append could not be truncated back to the last frame boundary.
+    tail_unverified: bool,
     /// Resume point for a budgeted expiry pass; process-local and not persisted.
     sweep_cursor: Option<Key>,
     /// Open write-batch scope, if any.
@@ -257,29 +259,7 @@ pub struct FileShard {
 impl FileShard {
     /// Opens an existing shard or creates an empty shard at `path`.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        let path = path.as_ref().to_path_buf();
-        if path.exists() {
-            let bytes = fs::read(&path)?;
-            decode(&path, &bytes)
-        }
-        else {
-            if let Some(parent) = path.parent() {
-                if !parent.as_os_str().is_empty() {
-                    fs::create_dir_all(parent)?;
-                }
-            }
-            let shard = Self {
-                path,
-                records: BTreeMap::new(),
-                encoded: BTreeMap::new(),
-                encoded_len: 0,
-                next_revision: 1,
-                sweep_cursor: None,
-                batch: None,
-            };
-            shard.persist()?;
-            Ok(shard)
-        }
+        open_shard(path.as_ref(), true)
     }
 
     /// Opens a shard that must already exist.
@@ -288,12 +268,7 @@ impl FileShard {
     /// being created. Hosts that only read existing data use this so a typo in
     /// a shard path cannot silently install an empty shard.
     pub fn open_existing(path: impl AsRef<Path>) -> Result<Self> {
-        let path = path.as_ref().to_path_buf();
-        if !path.exists() {
-            return Err(Error::NotFound { key: path.display().to_string() });
-        }
-        let bytes = fs::read(&path)?;
-        decode(&path, &bytes)
+        open_shard(path.as_ref(), false)
     }
 
     /// Returns the backing `.yykv` path.
@@ -301,150 +276,102 @@ impl FileShard {
         &self.path
     }
 
-    /// Persists the current shard snapshot.
-    pub fn flush(&self) -> Result<()> {
-        self.persist()
+    /// Rewrites the shard as one compacted base snapshot.
+    ///
+    /// Commits only append delta frames; this is the explicit space-reclaim entry point.
+    pub fn flush(&mut self) -> Result<()> {
+        self.compact()
     }
 
-    /// Full re-encode of the shard through the durable commit boundary.
+    /// Bytes the delta area may grow to before a commit compacts the shard.
+    fn compaction_threshold(&self) -> usize {
+        (self.base_len / 4).clamp(COMPACT_MIN_DELTA_BYTES, COMPACT_MAX_DELTA_BYTES)
+    }
+
+    /// Publishes the whole shard as a fresh base snapshot and drops the delta frames.
     ///
-    /// This is the byte-for-byte oracle for the incremental path below: it calls the format
-    /// encoder directly and is the only persist that does not consult the `encoded` cache.
-    fn persist(&self) -> Result<()> {
+    /// This is the only path that rewrites the file: it collapses superseded versions of
+    /// rewritten and deleted keys, so the on-disk size tracks live data instead of history.
+    fn compact(&mut self) -> Result<()> {
         let bytes = encode_snapshot(&self.records, self.next_revision)?;
-        write_snapshot_durable(&self.path, &bytes)
+        write_snapshot_durable(&self.path, &bytes)?;
+        self.base_len = bytes.len();
+        self.delta_len = 0;
+        self.tail_unverified = false;
+        Ok(())
     }
 
-    /// Encodes the snapshot segment of one record.
+    /// Appends one delta frame carrying `next_revision` and every op in the commit.
+    fn append_frame(&mut self, next_revision: u64, ops: &[DeltaOp]) -> Result<()> {
+        let frame = encode_delta_frame(next_revision, ops)?;
+        self.append_bytes(&frame)
+    }
+
+    /// Makes `frame` durable by appending it after the last committed frame.
     ///
-    /// The `.yykv` body is a fixed header followed by per-record segments in key order, and a
-    /// segment depends only on its own record, so running the full encoder over a one-entry
-    /// map reproduces exactly the bytes the whole-shard encoder would write for this record.
-    /// Reusing the format encoder (instead of a second copy of its record writer) keeps the
-    /// cache byte-identical to a full re-encode by construction.
-    fn encode_record(record: &Record) -> Result<Vec<u8>> {
-        let next_revision = record.revision.checked_add(1).ok_or(Error::Corrupt("shard revision exhausted"))?;
-        let mut single = BTreeMap::new();
-        single.insert(record.key.clone(), record.clone());
-        let bytes = encode_snapshot(&single, next_revision)?;
-        bytes.get(RECORD_AREA_OFFSET..).map(<[u8]>::to_vec).ok_or(Error::Corrupt("yykv single-record encoding missing body"))
-    }
-
-    /// Rebuilds the per-record byte cache from `records`; done once when a shard is opened.
-    fn rebuild_encoded(&mut self) -> Result<()> {
-        let mut encoded = BTreeMap::new();
-        let mut encoded_len = 0;
-        for record in self.records.values() {
-            let bytes = Self::encode_record(record)?;
-            encoded_len += bytes.len();
-            encoded.insert(record.key.clone(), bytes);
+    /// The fsync is the commit point: memory is only published after it returns `Ok`, so a
+    /// crash or storage failure leaves the previous commit boundary intact. A failed append
+    /// is truncated back to that boundary; if even the truncation fails, the shard refuses
+    /// further writes until a reopen cuts the torn tail.
+    fn append_bytes(&mut self, frame: &[u8]) -> Result<()> {
+        if self.tail_unverified {
+            return Err(Error::Corrupt("yykv shard tail is unverified: reopen the shard before writing"));
         }
-        self.encoded = encoded;
-        self.encoded_len = encoded_len;
+        let offset = (self.base_len + self.delta_len) as u64;
+        let mut file = OpenOptions::new().write(true).open(&self.path)?;
+        let appended = (|| -> std::io::Result<()> {
+            file.seek(SeekFrom::Start(offset))?;
+            file.write_all(frame)?;
+            file.sync_all()
+        })();
+        if let Err(error) = appended {
+            if file.set_len(offset).is_err() {
+                self.tail_unverified = true;
+            }
+            return Err(Error::Io(error));
+        }
+        self.delta_len += frame.len();
+        if self.delta_len >= self.compaction_threshold() {
+            // The commit is already durable, so a failed compaction must not fail the write.
+            // The frames stay valid and the next commit retries the compaction.
+            let _ = self.compact();
+        }
         Ok(())
     }
 
-    fn put_encoded(&mut self, key: Key, bytes: Vec<u8>) -> Option<Vec<u8>> {
-        self.encoded_len += bytes.len();
-        let previous = self.encoded.insert(key, bytes);
-        if let Some(previous) = &previous {
-            self.encoded_len -= previous.len();
-        }
-        previous
+    /// Applies one record to memory.
+    fn apply_put(&mut self, record: Record) {
+        self.records.insert(record.key.clone(), record);
     }
 
-    fn remove_encoded(&mut self, key: &Key) -> Option<Vec<u8>> {
-        let previous = self.encoded.remove(key);
-        if let Some(previous) = &previous {
-            self.encoded_len -= previous.len();
-        }
-        previous
-    }
-
-    /// Assembles the snapshot from the per-record byte cache: only the segments the caller
-    /// just re-encoded are new; every clean record is copied verbatim. The header, the
-    /// record validation and the body checksum reproduce `encode_snapshot` exactly, so the
-    /// output is byte-identical to a full re-encode of the same state.
-    fn assemble_snapshot(&self, next_revision: u64) -> Result<Vec<u8>> {
-        if next_revision == 0 {
-            return Err(Error::Unsupported("yykv next_revision must be at least 1"));
-        }
-        let count = u32::try_from(self.records.len()).map_err(|_| Error::Unsupported("too many shard records"))?;
-        if self.records.len() != self.encoded.len() {
-            return Err(Error::Corrupt("shard record encoding cache out of sync"));
-        }
-        let mut bytes = Vec::with_capacity(RECORD_AREA_OFFSET + self.encoded_len);
-        bytes.extend_from_slice(KV_MAGIC);
-        bytes.extend_from_slice(&0_u64.to_le_bytes());
-        bytes.extend_from_slice(&next_revision.to_le_bytes());
-        bytes.extend_from_slice(&count.to_le_bytes());
-        for ((key, record), (cached_key, segment)) in self.records.iter().zip(self.encoded.iter()) {
-            if key != cached_key {
-                return Err(Error::Corrupt("shard record encoding cache out of sync"));
-            }
-            if record.revision == 0 || record.revision >= next_revision {
-                return Err(Error::Unsupported("yykv revision must be below next_revision"));
-            }
-            bytes.extend_from_slice(segment);
-        }
-        let body_checksum = yykv_checksum(&bytes[BODY_OFFSET..]);
-        bytes[KV_MAGIC.len()..BODY_OFFSET].copy_from_slice(&body_checksum.to_le_bytes());
-        Ok(bytes)
-    }
-
-    /// Incremental counterpart of [`Self::persist`]: assemble from the byte cache and write
-    /// through the same durable commit boundary.
-    fn persist_incremental(&mut self, next_revision: u64) -> Result<()> {
-        let bytes = self.assemble_snapshot(next_revision)?;
-        // Durable commit point: the full post-commit snapshot is fsynced to a temp file and
-        // atomically replaces the shard. Memory is only published after this returns `Ok`,
-        // so a crash or storage failure here leaves the previous snapshot both visible and
-        // durable — never a half-applied batch.
-        //
-        // The one exception is a directory-sync failure after the rename already happened:
-        // that error means durability is unproven, not that nothing was committed. The on-disk
-        // snapshot may already be the post-commit one, so the in-memory state is deliberately
-        // not published and the caller must reopen the shard instead of assuming a clean
-        // rollback to the previous snapshot.
-        write_snapshot_durable(&self.path, &bytes)
-    }
-
-    fn apply_put(&mut self, record: Record) -> Result<()> {
-        let encoded = Self::encode_record(&record)?;
-        let key = record.key.clone();
-        self.records.insert(key.clone(), record);
-        self.put_encoded(key, encoded);
-        Ok(())
-    }
-
+    /// Removes one key from memory.
     fn apply_delete(&mut self, key: &Key) {
         self.records.remove(key);
-        self.remove_encoded(key);
     }
 
     fn insert(&mut self, key: Key, value: StoredValue, expires_at: Option<i64>) -> Result<u64> {
         let revision = self.next_revision;
         let next_revision = revision.checked_add(1).ok_or(Error::Corrupt("shard revision exhausted"))?;
+        let record = Record { key: key.clone(), value, revision, expires_at };
         let mut journal = CommitJournal::new();
         journal.capture(self, &key);
-        if let Err(error) = self.apply_put(Record { key, value, revision, expires_at }) {
-            journal.restore(self);
-            return Err(error);
-        }
+        self.apply_put(record.clone());
         if self.owns_batch() {
+            self.stage(&key, Some(record));
             self.absorb(journal);
             self.next_revision = next_revision;
             return Ok(revision);
         }
         if self.batch.is_some() {
-            if let Err(error) = self.persist_staged(next_revision) {
+            self.stage(&key, Some(record));
+            if let Err(error) = self.flush_staged(next_revision) {
                 journal.restore(self);
                 return Err(error);
             }
             self.next_revision = next_revision;
             return Ok(revision);
         }
-        if let Err(error) = self.persist_incremental(next_revision) {
+        if let Err(error) = self.append_frame(next_revision, &[DeltaOp::Put(record)]) {
             journal.restore(self);
             return Err(error);
         }
@@ -461,83 +388,87 @@ impl FileShard {
     ///
     /// Inside the scope every write is applied to memory immediately (readers, including
     /// later statements of the same command, see it) but only the outermost
-    /// [`Self::end_write_batch`] writes a snapshot. Scopes nest; the innermost `flush` of
-    /// durability is the outermost end.
+    /// [`Self::end_write_batch`] appends a delta frame. Scopes nest; the innermost `flush`
+    /// of durability is the outermost end.
     pub fn begin_write_batch(&mut self) {
         match self.batch.as_mut() {
             Some(batch) => batch.depth += 1,
             None => {
-                self.batch = Some(WriteBatch {
-                    start_revision: self.next_revision,
-                    journal: CommitJournal::new(),
-                    depth: 1,
-                    owner: std::thread::current().id(),
-                });
+                self.batch =
+                    Some(WriteBatch { start_revision: self.next_revision, pre_images: CommitJournal::new(), staged: BTreeMap::new(), depth: 1, owner: std::thread::current().id() });
             }
         }
     }
 
-    /// Closes a write-batch scope and makes its staged writes durable with one snapshot write.
+    /// Records the final state of one key inside the open scope.
+    fn stage(&mut self, key: &Key, record: Option<Record>) {
+        if let Some(batch) = self.batch.as_mut() {
+            batch.staged.insert(key.clone(), record);
+        }
+    }
+
+    /// Closes a write-batch scope and makes every staged write durable with one delta frame.
     ///
     /// A failed durable write restores the exact state from before the outermost scope, so a
     /// caller that reports the failure can never leave a half-committed command visible.
     pub fn end_write_batch(&mut self) -> Result<()> {
-        let Some(batch) = self.batch.as_mut()
+        let Some(batch) = self.batch.as_ref()
         else {
             return Ok(());
         };
         if batch.depth > 1 {
-            batch.depth -= 1;
+            if let Some(batch) = self.batch.as_mut() {
+                batch.depth -= 1;
+            }
             return Ok(());
         }
-        let WriteBatch { start_revision, journal, .. } = self.batch.take().expect("batch was just read");
-        // A scope that staged nothing must not rewrite the snapshot.
-        if journal.entries.is_empty() && self.next_revision == start_revision {
+        let start_revision = batch.start_revision;
+        // A scope that staged nothing must not append a frame.
+        if batch.staged.is_empty() && self.next_revision == start_revision {
+            self.batch = None;
             return Ok(());
         }
-        if let Err(error) = self.persist_incremental(self.next_revision) {
-            journal.restore(self);
+        let pre_images = std::mem::take(&mut self.batch.as_mut().expect("batch was just read").pre_images);
+        let next_revision = self.next_revision;
+        if let Err(error) = self.flush_staged(next_revision) {
+            pre_images.restore(self);
             self.next_revision = start_revision;
+            self.batch = None;
             return Err(error);
         }
+        self.batch = None;
         Ok(())
     }
 
-    /// Persists everything currently in memory and rebases an open scope onto that snapshot.
+    /// Appends every staged key of the open scope as one frame and rebases the scope onto it.
     ///
-    /// A write from a thread that does not own the open scope settles it this way: the
-    /// staged state becomes durable together with the new write, and the scope journal
-    /// (pre-images older than the snapshot) is dropped so a later rollback can never move
-    /// the disk state backwards.
-    fn persist_staged(&mut self, next_revision: u64) -> Result<()> {
-        self.persist_incremental(next_revision)?;
-        if let Some(batch) = self.batch.as_mut() {
-            batch.journal = CommitJournal::new();
-            batch.start_revision = next_revision;
-        }
-        Ok(())
-    }
-
-    /// Applies one batch of changes starting at the current revision.
-    ///
-    /// The caller owns the pre-images (`CommitJournal`) and either restores them on failure
-    /// or hands them to [`Self::absorb`] when the scope stays open.
-    fn stage_locked(&mut self, changes: &[ShardChange]) -> Result<()> {
-        let mut revision = self.next_revision;
-        for change in changes {
-            let applied = match change {
-                ShardChange::Put { key, value, expires_at } => {
-                    self.apply_put(Record { key: key.clone(), value: value.clone(), revision, expires_at: *expires_at })
+    /// This also settles a scope owned by another thread: its staged state becomes durable
+    /// together with the caller's write, and its pre-images are dropped so a later rollback
+    /// can never move the disk state backwards.
+    fn flush_staged(&mut self, next_revision: u64) -> Result<()> {
+        let Some(batch) = self.batch.as_mut()
+        else {
+            return Ok(());
+        };
+        let staged = std::mem::take(&mut batch.staged);
+        let ops: Vec<DeltaOp> = staged
+            .iter()
+            .map(|(key, record)| match record {
+                Some(record) => DeltaOp::Put(record.clone()),
+                None => DeltaOp::Delete(key.clone()),
+            })
+            .collect();
+        if !ops.is_empty() {
+            if let Err(error) = self.append_frame(next_revision, &ops) {
+                if let Some(batch) = self.batch.as_mut() {
+                    batch.staged = staged;
                 }
-                ShardChange::Delete { key } => {
-                    self.apply_delete(key);
-                    Ok(())
-                }
-            };
-            applied?;
-            if matches!(change, ShardChange::Put { .. }) {
-                revision += 1;
+                return Err(error);
             }
+        }
+        if let Some(batch) = self.batch.as_mut() {
+            batch.pre_images = CommitJournal::new();
+            batch.start_revision = next_revision;
         }
         Ok(())
     }
@@ -551,9 +482,9 @@ impl FileShard {
         else {
             return;
         };
-        for (key, record, segment) in journal.entries {
-            if batch.journal.seen.insert(key.clone()) {
-                batch.journal.entries.push((key, record, segment));
+        for (key, record) in journal.entries {
+            if batch.pre_images.seen.insert(key.clone()) {
+                batch.pre_images.entries.push((key, record));
             }
         }
     }
@@ -561,10 +492,10 @@ impl FileShard {
 
 /// Pre-images of the keys one commit touches, so a failed durable write restores the exact
 /// pre-commit memory state instead of leaving a half-applied batch visible to readers.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct CommitJournal {
     seen: BTreeSet<Key>,
-    entries: Vec<(Key, Option<Record>, Option<Vec<u8>>)>,
+    entries: Vec<(Key, Option<Record>)>,
 }
 
 impl CommitJournal {
@@ -575,26 +506,18 @@ impl CommitJournal {
     /// Records the pre-image of `key` once; repeated touches in the same batch are no-ops.
     fn capture(&mut self, shard: &FileShard, key: &Key) {
         if self.seen.insert(key.clone()) {
-            self.entries.push((key.clone(), shard.records.get(key).cloned(), shard.encoded.get(key).cloned()));
+            self.entries.push((key.clone(), shard.records.get(key).cloned()));
         }
     }
 
     fn restore(self, shard: &mut FileShard) {
-        for (key, record, segment) in self.entries.into_iter().rev() {
+        for (key, record) in self.entries.into_iter().rev() {
             match record {
                 Some(record) => {
-                    shard.records.insert(key.clone(), record);
+                    shard.records.insert(key, record);
                 }
                 None => {
                     shard.records.remove(&key);
-                }
-            }
-            match segment {
-                Some(segment) => {
-                    shard.put_encoded(key, segment);
-                }
-                None => {
-                    shard.remove_encoded(&key);
                 }
             }
         }
@@ -630,17 +553,19 @@ impl KvStore for FileShard {
         journal.capture(self, key);
         self.apply_delete(key);
         if self.owns_batch() {
+            self.stage(key, None);
             self.absorb(journal);
             return Ok(true);
         }
         if self.batch.is_some() {
-            if let Err(error) = self.persist_staged(self.next_revision) {
+            self.stage(key, None);
+            if let Err(error) = self.flush_staged(self.next_revision) {
                 journal.restore(self);
                 return Err(error);
             }
             return Ok(true);
         }
-        if let Err(error) = self.persist_incremental(self.next_revision) {
+        if let Err(error) = self.append_frame(self.next_revision, &[DeltaOp::Delete(key.clone())]) {
             journal.restore(self);
             return Err(error);
         }
@@ -659,17 +584,37 @@ impl KvStore for FileShard {
         for change in &changes {
             journal.capture(self, change_key(change));
         }
-        // Stage in place: only the touched records are re-encoded; every clean record keeps
-        // its cached snapshot bytes. A failure at any step restores the journaled pre-images,
-        // so the visible state is either the whole batch or nothing.
-        if let Err(error) = self.stage_locked(&changes) {
-            journal.restore(self);
-            return Err(error);
+        // Stage into memory and collect the frame ops in one pass. A failure anywhere restores
+        // the journaled pre-images, so the visible state is either the whole batch or nothing.
+        let mut ops = Vec::with_capacity(changes.len());
+        let mut revision = self.next_revision;
+        for change in changes {
+            match change {
+                ShardChange::Put { key, value, expires_at } => {
+                    let record = Record { key, value, revision, expires_at };
+                    revision = revision.checked_add(1).ok_or(Error::Corrupt("shard revision exhausted"))?;
+                    self.apply_put(record.clone());
+                    ops.push(DeltaOp::Put(record));
+                }
+                ShardChange::Delete { key } => {
+                    self.apply_delete(&key);
+                    ops.push(DeltaOp::Delete(key));
+                }
+            }
+        }
+        let staged = self.batch.is_some();
+        if staged {
+            for op in &ops {
+                match op {
+                    DeltaOp::Put(record) => self.stage(&record.key, Some(record.clone())),
+                    DeltaOp::Delete(key) => self.stage(key, None),
+                }
+            }
         }
         match self.batch.as_ref() {
             Some(batch) if batch.owner == std::thread::current().id() => {
                 // Inside the owning thread's scope the change is only published to memory;
-                // the scope owner makes it durable with one snapshot write when the command
+                // the scope owner makes it durable with one delta frame when the command
                 // finishes.
                 self.absorb(journal);
                 self.next_revision = next_revision;
@@ -677,10 +622,10 @@ impl KvStore for FileShard {
             }
             Some(_) => {
                 // Another thread's scope is open. Its staged state and this change are
-                // persisted together right away, and the scope is rebased onto that snapshot,
-                // so this write is neither deferred behind the other scope nor rolled back
-                // with it.
-                if let Err(error) = self.persist_staged(next_revision) {
+                // appended together right away, and the scope is rebased onto that frame, so
+                // this write is neither deferred behind the other scope nor rolled back with
+                // it.
+                if let Err(error) = self.flush_staged(next_revision) {
                     journal.restore(self);
                     return Err(error);
                 }
@@ -689,7 +634,7 @@ impl KvStore for FileShard {
             }
             None => {}
         }
-        if let Err(error) = self.persist_incremental(next_revision) {
+        if let Err(error) = self.append_frame(next_revision, &ops) {
             journal.restore(self);
             return Err(error);
         }
@@ -839,18 +784,53 @@ fn write_snapshot_durable(path: &Path, bytes: &[u8]) -> Result<()> {
     result
 }
 
-fn decode(path: &Path, bytes: &[u8]) -> Result<FileShard> {
-    let snapshot = decode_snapshot(bytes)?;
+/// Opens a shard file, replaying its delta frames and normalizing it to the current layout.
+fn open_shard(path: &Path, create_missing: bool) -> Result<FileShard> {
+    if !path.exists() {
+        if !create_missing {
+            return Err(Error::NotFound { key: path.display().to_string() });
+        }
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                fs::create_dir_all(parent)?;
+            }
+        }
+        let mut shard = FileShard {
+            path: path.to_path_buf(),
+            records: BTreeMap::new(),
+            next_revision: 1,
+            base_len: 0,
+            delta_len: 0,
+            tail_unverified: false,
+            sweep_cursor: None,
+            batch: None,
+        };
+        shard.compact()?;
+        return Ok(shard);
+    }
+    let bytes = fs::read(path)?;
+    let image = decode_shard_image(&bytes)?;
+    let committed = image.base_len + image.delta_len;
     let mut shard = FileShard {
         path: path.to_path_buf(),
-        records: snapshot.records,
-        encoded: BTreeMap::new(),
-        encoded_len: 0,
-        next_revision: snapshot.next_revision,
+        records: image.records,
+        next_revision: image.next_revision,
+        base_len: image.base_len,
+        delta_len: image.delta_len,
+        tail_unverified: false,
         sweep_cursor: None,
         batch: None,
     };
-    shard.rebuild_encoded()?;
+    if committed != bytes.len() {
+        // An interrupted append never crossed a commit boundary: cut the partial frame so the
+        // next append starts on a frame boundary.
+        OpenOptions::new().write(true).open(path)?.set_len(committed as u64)?;
+    }
+    if !bytes.starts_with(KV_MAGIC) {
+        // A version 3 shard is rewritten once as a version 4 base so later commits append
+        // frames instead of replacing the whole file.
+        shard.compact()?;
+    }
     Ok(shard)
 }
 
