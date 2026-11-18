@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// Structured diagnostic shared with N-API / CLI (miette maps into this for wire format).
+/// Structured diagnostic shared with N-API / CLI.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Diagnostic {

@@ -14,7 +14,6 @@ template-framework = { workspace = true }
 template-input-dejavu = { workspace = true }
 figment = { workspace = true }
 hex = { workspace = true }
-miette = { workspace = true }
 document-formats = { workspace = true }
 document-ir = { workspace = true }
 serde = { workspace = true }
