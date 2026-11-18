@@ -11,8 +11,11 @@ members = [
     "projects/animator/animator.bridge",
     "projects/animator/animator.chart",
     "projects/animator/animator.core",
+    "projects/atlas/atlas",
     "projects/atlas/atlas.cloud",
     "projects/atlas/atlas.harness",
+    "projects/atlas/atlas.macro",
+    "projects/atlas/atlas.wire",
     "projects/boost/boost",
     "projects/boost/boost-console",
     "projects/boost/boost.crypto",
@@ -228,9 +231,12 @@ repository = "https://github.com/oovm/rust-boost"
 publish = false
 
 [workspace.dependencies]
-# 云服务
+# 云服务与运行时装配
+atlas = { path = "projects/atlas/atlas" }
 atlas-cloud = { path = "projects/atlas/atlas.cloud" }
 atlas-harness = { path = "projects/atlas/atlas.harness" }
+atlas-macro = { path = "projects/atlas/atlas.macro" }
+atlas-wire = { path = "projects/atlas/atlas.wire" }
 # 动画扩展
 animator-bridge = { path = "projects/animator/animator.bridge" }
 animator-chart = { path = "projects/animator/animator.chart" }

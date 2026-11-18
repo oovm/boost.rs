@@ -1,0 +1,11 @@
+[package]
+name = "atlas-wire"
+version.workspace = true
+authors.workspace = true
+description = "Atlas 运行时装配：类型化注册、作用域、冻结验证与构造期字段注入"
+repository = "https://github.com/oovm/rust-boost"
+license.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]

@@ -1,0 +1,17 @@
+[package]
+name = "atlas"
+version.workspace = true
+authors.workspace = true
+description = "Atlas 门面：重导出字段注入运行时与 `Component` derive"
+repository = "https://github.com/oovm/rust-boost"
+license.workspace = true
+edition.workspace = true
+publish = false
+
+[features]
+default = ["macro"]
+macro = ["dep:atlas-macro"]
+
+[dependencies]
+atlas-macro = { workspace = true, optional = true }
+atlas-wire = { workspace = true }

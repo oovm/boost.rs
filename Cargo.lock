@@ -280,6 +280,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas"
+version = "0.1.0"
+dependencies = [
+ "atlas-macro",
+ "atlas-wire",
+]
+
+[[package]]
 name = "atlas-cloud"
 version = "0.1.0"
 dependencies = [
@@ -293,10 +301,26 @@ dependencies = [
 name = "atlas-harness"
 version = "0.1.0"
 dependencies = [
+ "atlas",
  "atlas-cloud",
+ "atlas-macro",
+ "atlas-wire",
  "boost-net",
  "serde_json",
 ]
+
+[[package]]
+name = "atlas-macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.10",
+]
+
+[[package]]
+name = "atlas-wire"
+version = "0.1.0"
 
 [[package]]
 name = "autocfg"
@@ -622,6 +646,7 @@ dependencies = [
  "compiler-emitter",
  "compiler-target",
  "compiler-types",
+ "document-formats",
  "interpreter-vm-ovm",
  "language-format",
  "language-highlight",
@@ -4855,6 +4880,7 @@ name = "yydb"
 version = "0.1.0"
 dependencies = [
  "database",
+ "schema-types",
  "yydb-client",
 ]
 
