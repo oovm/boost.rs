@@ -322,8 +322,22 @@ impl Production {
     /// usually has several, and fixing them one error per run is how stale
     /// references survive.
     pub fn validate(&self) -> Result<(), Error> {
-        let mut problems = Vec::new();
+        let problems = self.problems();
+        if problems.is_empty() {
+            Ok(())
+        }
+        else {
+            Err(Error::invalid_input(problems.join("\n")))
+        }
+    }
 
+    /// The problems [`Production::validate`] would report, one per entry.
+    ///
+    /// Hosts expose this list directly so a review page can point at the exact
+    /// broken reference instead of a joined message.
+    #[must_use]
+    pub fn problems(&self) -> Vec<String> {
+        let mut problems = Vec::new();
         let scenes = self.scene_index(&mut problems);
         self.check_ids(&mut problems);
         self.check_assets(&mut problems);
@@ -331,13 +345,7 @@ impl Production {
         self.check_cues(&scenes, &mut problems);
         self.check_tasks(&mut problems);
         self.check_delivery(&mut problems);
-
-        if problems.is_empty() {
-            Ok(())
-        }
-        else {
-            Err(Error::invalid_input(problems.join("\n")))
-        }
+        problems
     }
 
     /// Scene identities keyed for shot lookup, reporting blanks and duplicates.
