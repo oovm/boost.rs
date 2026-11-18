@@ -149,28 +149,33 @@ fn width_snapshot_matches_previous_implementation() {
     }
 }
 
-/// 与 `unicode-width 0.2.3` 已知不一致的字符，记录当前实现的取值与差异原因。
+/// 与 `unicode-width 0.2.3` 曾不一致、现已对齐的字符。
 ///
-/// 两类原因：旧库的数据表基于 Unicode 18.0.0（本 crate 冻结在 16.0.0），以及旧库按
-/// `Grapheme_Extend` / `Default_Ignorable` 等额外属性判定零宽，而本 crate 只看
-/// `General_Category` 与 `East_Asian_Width`。
+/// 旧库的零宽集合是 `Grapheme_Extend` ∪ `Default_Ignorable_Code_Point` ∪ Hangul 组合字母
+/// `V`/`T` ∪ 少量特例；本 crate 升级到 Unicode 18.0.0 后改为同一口径，并保留旧库对
+/// `U+17D8`、`U+17A4`、`U+A8FA`、`U+3164` 等标量的显式取值。
 #[test]
-fn documented_divergences_from_previous_implementation() {
-    // Mark 类（`Mc`）在这里一律 0 宽；旧库只把 `Grapheme_Extend` 的 `Mc` 算 0 宽，
-    // 因而 U+0903 在旧库是 1。
-    assert_eq!(char_width('\u{903}'), Some(0));
-    // `Default_Ignorable` 的 `Cf`：旧库 U+0600 为 1，这里统一按 `Cf` 取 0。
-    assert_eq!(char_width('\u{600}'), Some(0));
-    // Hangul 中声/终声字母（`Lo`，`East_Asian_Width` 为 `N`）：旧库按 `Hangul_Syllable_Type`
-    // 取 0，这里没有该属性，取 1。
-    assert_eq!(char_width('\u{1160}'), Some(1));
-    assert_eq!(char_width('\u{11A8}'), Some(1));
-    // 旧库为少数标量写死特例：U+17D8 为 3 宽，U+17A4 为 2 宽，U+A8FA 为 0 宽，U+3164 为 0 宽。
-    assert_eq!(char_width('\u{17D8}'), Some(1));
-    assert_eq!(char_width('\u{17A4}'), Some(1));
-    assert_eq!(char_width('\u{A8FA}'), Some(1));
-    assert_eq!(char_width('\u{3164}'), Some(2));
-    // 未指派（`Cn`）且落在 CJK 默认宽区段之外的码点：旧库随 18.0.0 判定为 0 或 2，
-    // 这里按 16.0.0 的数据取 `N`。
-    assert_eq!(char_width('\u{1ACF}'), Some(1));
+fn previously_divergent_scalars_now_match_previous_implementation() {
+    // Mark 类里只有 `Grapheme_Extend` 才是 0 宽：`U+0903`（`Mc`）不在该属性内，取 1。
+    assert_eq!(char_width('\u{903}'), Some(1));
+    // `Cf` 里只有 `Default_Ignorable_Code_Point` 才是 0 宽：`U+0600` 取 1。
+    assert_eq!(char_width('\u{600}'), Some(1));
+    // Hangul 组合字母（`Lo`，`East_Asian_Width` 为 `N`）按 0 宽处理。
+    assert_eq!(char_width('\u{1160}'), Some(0));
+    assert_eq!(char_width('\u{11A8}'), Some(0));
+    assert_eq!(char_width('\u{D7B0}'), Some(0));
+    assert_eq!(char_width('\u{D7FB}'), Some(0));
+    // 旧库写死的宽度特例。
+    assert_eq!(char_width('\u{17D8}'), Some(3));
+    assert_eq!(char_width('\u{17A4}'), Some(2));
+    assert_eq!(char_width('\u{A8FA}'), Some(0));
+    assert_eq!(char_width('\u{3164}'), Some(0));
+    assert_eq!(char_width('\u{115F}'), Some(2));
+    assert_eq!(char_width('\u{FFA0}'), Some(0));
+    // `Grapheme_Extend` 里的两个例外与 Tifinagh 连接符按 1 列计。
+    assert_eq!(char_width('\u{2D7F}'), Some(1));
+    assert_eq!(char_width('\u{FF9E}'), Some(1));
+    assert_eq!(char_width('\u{FF9F}'), Some(1));
+    // Unicode 18.0.0 新增的 `Mn`：落在 `Grapheme_Extend` 区间内，取 0。
+    assert_eq!(char_width('\u{1ACF}'), Some(0));
 }

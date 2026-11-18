@@ -10,7 +10,7 @@ import hashlib
 import os
 
 GENERATOR_VERSION = 1
-UNICODE_VERSION = "16.0.0"
+UNICODE_VERSION = "18.0.0"
 INPUT_RELATIVE = "../unicode.types/data/ucd/%s/EastAsianWidth.txt" % UNICODE_VERSION
 MAX_CODE_POINT = 0x10FFFF
 
