@@ -45,6 +45,12 @@ pub enum Type {
         /// Number of vector components.
         dimension: u32,
     },
+    /// Ordered list declared as `[T]`.
+    ///
+    /// The element type is a write-side coercion rule, not part of the physical
+    /// row layout, so the layout contract only records that the column is a
+    /// list. Readers decode elements from the row record's own value tags.
+    List,
     /// Schema-identified record with a fixed number of fields.
     Record {
         /// Stable schema identity assigned by the catalog.

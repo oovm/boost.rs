@@ -1178,8 +1178,21 @@ pub fn compare_values(left: &Value, right: &Value) -> std::cmp::Ordering {
             .dim
             .cmp(&b.dim)
             .then_with(|| a.data.iter().map(|component| component.to_bits()).cmp(b.data.iter().map(|component| component.to_bits()))),
+        // Lists compare lexicographically: element by element, then by length.
+        (Value::List(a), Value::List(b)) => compare_lists(a, b),
         _ => value_kind_rank(left).cmp(&value_kind_rank(right)),
     }
+}
+
+/// Lexicographic order over two lists.
+fn compare_lists(left: &[Value], right: &[Value]) -> std::cmp::Ordering {
+    for (left_item, right_item) in left.iter().zip(right.iter()) {
+        let order = compare_values(left_item, right_item);
+        if order != std::cmp::Ordering::Equal {
+            return order;
+        }
+    }
+    left.len().cmp(&right.len())
 }
 
 /// Kind family used to order values that have no common comparison domain.
@@ -1200,9 +1213,10 @@ fn value_kind_rank(value: &Value) -> u8 {
         Value::Vector(_) => 10,
         Value::Object(_) => 11,
         Value::Row(_) => 12,
+        Value::List(_) => 13,
         // `Value` is non-exhaustive; unknown future kinds order after every
         // modelled family.
-        _ => 13,
+        _ => 14,
     }
 }
 

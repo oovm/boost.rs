@@ -296,7 +296,7 @@ fn insert_rows(
         for field in fields {
             let slot = catalog::field_on_table(entry, &field.name)?;
             let value = resolve_value(&field.value, bound_values)?;
-            row.insert(field.name.clone(), coerce::value_to_scalar(value.clone(), &slot.canonical_type)?);
+            row.insert(field.name.clone(), coerce::value_to_scalar(value.clone(), &slot.canonical_type, contract)?);
         }
         let pk = row.get(&pk_field).ok_or_else(|| write_error(format!("insert into `{table}` is missing primary key field `{pk_field}`")))?;
         let pk_text = constraints::value_text(pk)?;
@@ -310,6 +310,7 @@ fn insert_rows(
                     let Some(updated) = conflict_update_row(
                         table,
                         entry,
+                        contract,
                         &pk_field,
                         &working[index].row,
                         assignments,
@@ -450,6 +451,7 @@ fn validate_returning_column(entry: &ResolvedTypeContract, table: &str, path: &[
 fn conflict_update_row(
     table: &str,
     entry: &ResolvedTypeContract,
+    contract: &ResolvedContract,
     pk_field: &str,
     matched: &QueryRow,
     assignments: &[WriteAssignment],
@@ -474,7 +476,7 @@ fn conflict_update_row(
             return Err(write_error(format!("primary key field `{pk_field}` cannot be updated")));
         }
         let value = eval_write_expr(&assignment.value, matched, bound_values)?;
-        row.insert(assignment.field.clone(), coerce::value_to_scalar(value, &slot.canonical_type)?);
+        row.insert(assignment.field.clone(), coerce::value_to_scalar(value, &slot.canonical_type, contract)?);
     }
 
     let matched_pk =
@@ -590,7 +592,7 @@ fn update_rows(
                     return Err(write_error(format!("primary key field `{pk_field}` cannot be updated")));
                 }
                 let value = eval_write_expr(&assignment.value, &row, bound_values)?;
-                row.insert(assignment.field.clone(), coerce::value_to_scalar(value, &slot.canonical_type)?);
+                row.insert(assignment.field.clone(), coerce::value_to_scalar(value, &slot.canonical_type, contract)?);
             }
             replacements.push((key, row));
         }

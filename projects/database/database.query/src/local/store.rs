@@ -295,6 +295,7 @@ pub fn upsert_row(records: &mut BTreeMap<String, Vec<u8>>, table: &str, pk: &str
 /// decoding it fails closed with a migration hint instead of guessing a shape.
 pub const ROW_CODEC_VERSION: u8 = 1;
 
+const TAG_NULL: u8 = 0x00;
 const TAG_BOOL: u8 = 0x01;
 const TAG_I64: u8 = 0x02;
 const TAG_F64: u8 = 0x03;
@@ -308,6 +309,13 @@ const TAG_BYTES: u8 = 0x0A;
 const TAG_VECTOR: u8 = 0x0B;
 const TAG_OBJECT: u8 = 0x0C;
 const TAG_FILE: u8 = 0x0D;
+const TAG_LIST: u8 = 0x0E;
+
+/// Deepest list nesting the row codec encodes or decodes.
+///
+/// A corrupt or hostile record could otherwise nest lists until the stack
+/// overflows, so both directions fail closed past this depth.
+const MAX_LIST_DEPTH: u8 = 32;
 
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 
@@ -337,7 +345,7 @@ fn encode_row(row: &QueryRow) -> Result<Vec<u8>> {
         if matches!(value, Value::Null) {
             continue;
         }
-        encode_value(&mut out, value)?;
+        encode_value(&mut out, value, 0)?;
     }
     Ok(out)
 }
@@ -348,9 +356,13 @@ fn put_len(out: &mut Vec<u8>, len: usize, _what: &str) -> Result<()> {
     Ok(())
 }
 
-fn encode_value(out: &mut Vec<u8>, value: &Value) -> Result<()> {
+fn encode_value(out: &mut Vec<u8>, value: &Value, depth: u8) -> Result<()> {
     match value {
-        Value::Null => return Err(Error::Corrupt("null columns are carried by the row null bitmap")),
+        // A row column's null is carried by the row null bitmap, but a list
+        // element needs its own tag because there is no bitmap inside a list.
+        Value::Null => {
+            out.push(TAG_NULL);
+        }
         Value::Bool(flag) => {
             out.push(TAG_BOOL);
             out.push(u8::from(*flag));
@@ -440,10 +452,22 @@ fn encode_value(out: &mut Vec<u8>, value: &Value) -> Result<()> {
             out.extend_from_slice(&file.manifest.hash);
             out.extend_from_slice(&file.manifest.size.to_le_bytes());
         }
+        Value::List(items) => {
+            out.push(TAG_LIST);
+            let count = u32::try_from(items.len()).map_err(|_| Error::Unsupported("row record list has more than 4294967295 elements"))?;
+            out.extend_from_slice(&count.to_le_bytes());
+            let nested = depth
+                .checked_add(1)
+                .filter(|nested| *nested <= MAX_LIST_DEPTH)
+                .ok_or(Error::Unsupported("row record list nests deeper than the supported depth"))?;
+            for item in items {
+                encode_value(out, item, nested)?;
+            }
+        }
         _ => {
             return Err(Error::Unsupported(
                 "query row encoding supports null, bool, i64, real, text, uuid, bytes, vector, date, time, timestamp, \
-                 decimal, bytes object references, and file descriptors only",
+                 decimal, bytes object references, file descriptors, and lists only",
             ));
         }
     }
@@ -578,7 +602,7 @@ fn parse_row(bytes: &[u8], references: &mut Option<RowReferences>, resolve: bool
             row.insert(name, Value::Null);
             continue;
         }
-        let value = decode_value(&mut values, references, resolve)?;
+        let value = decode_value(&mut values, references, resolve, 0)?;
         row.insert(name, value);
     }
     if values.remaining() != 0 {
@@ -659,8 +683,9 @@ impl<'a> RowCursor<'a> {
     }
 }
 
-fn decode_value(cursor: &mut RowCursor<'_>, references: &mut Option<RowReferences>, resolve: bool) -> Result<Value> {
+fn decode_value(cursor: &mut RowCursor<'_>, references: &mut Option<RowReferences>, resolve: bool, depth: u8) -> Result<Value> {
     Ok(match cursor.u8()? {
+        TAG_NULL => Value::Null,
         TAG_BOOL => match cursor.u8()? {
             0 => Value::Bool(false),
             1 => Value::Bool(true),
@@ -734,6 +759,23 @@ fn decode_value(cursor: &mut RowCursor<'_>, references: &mut Option<RowReference
                 references.files.push(descriptor.clone());
             }
             Value::File(descriptor)
+        }
+        TAG_LIST => {
+            let count = cursor.u32()? as usize;
+            // Every element takes at least one tag byte, so a count larger than
+            // the remaining bytes cannot be a valid record.
+            if count > cursor.remaining() {
+                return Err(Error::Corrupt("row record list length exceeds the remaining bytes"));
+            }
+            let nested = depth
+                .checked_add(1)
+                .filter(|nested| *nested <= MAX_LIST_DEPTH)
+                .ok_or(Error::Corrupt("row record list nests deeper than the supported depth"))?;
+            let mut items = Vec::with_capacity(count);
+            for _ in 0..count {
+                items.push(decode_value(cursor, references, resolve, nested)?);
+            }
+            Value::List(items)
         }
         _ => return Err(Error::Corrupt("row record value tag is unknown")),
     })

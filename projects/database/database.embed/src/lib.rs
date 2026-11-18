@@ -224,8 +224,9 @@ fn bind(params: &JsonMap<String, JsonValue>) -> Result<BTreeMap<String, Value>> 
 
 /// JSON → VOS 绑定值。
 ///
-/// 覆盖标量、字节（tagged `bytes`）、UUID/时标（tagged 形态）与嵌套行；
-/// 数组与对象不是 VOS 绑定接受的标量形状，显式报错而不是静默丢字段。
+/// 覆盖标量、字节（tagged `bytes`）、UUID/时标（tagged 形态）、列表与嵌套行；
+/// 数组映射为 `[T]` 列表值，对象映射为嵌套行。对象与数组都不是标量，但都是
+/// VOS schema 声明过的容器形态，因此这里保留结构而不是静默丢字段。
 pub fn json_to_value(json: &JsonValue) -> Result<Value> {
     if let Some(tagged) = scalar::tagged_value_from_json(json) {
         return tagged.map_err(|error| EmbedError::UnsupportedJson(error.to_string()));
@@ -253,7 +254,13 @@ pub fn json_to_value(json: &JsonValue) -> Result<Value> {
             }
             Ok(Value::Row(row))
         }
-        JsonValue::Array(_) => Err(EmbedError::UnsupportedJson("array is not a bindable scalar".into())),
+        JsonValue::Array(items) => {
+            let mut list = Vec::with_capacity(items.len());
+            for item in items {
+                list.push(json_to_value(item)?);
+            }
+            Ok(Value::List(list))
+        }
     }
 }
 
@@ -287,6 +294,7 @@ pub fn value_to_json(value: &Value) -> JsonValue {
             }
             JsonValue::Object(object)
         }
+        Value::List(items) => JsonValue::Array(items.iter().map(value_to_json).collect()),
         // 向量 / 对象 / 文件不参与应用数据面；保底给出 kind 标签，避免 panic。
         other => json!({ "$database": "unsupported", "kind": other.kind() }),
     }

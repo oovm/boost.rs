@@ -6,11 +6,15 @@
 //! updates type their values through one implementation.
 
 use database_types::{Error, Result, Value};
+use schema_input_vos::ResolvedContract;
 use schema_types::ResolvedCanonicalType;
 
 fn coerce_error(message: impl Into<String>) -> Error {
     Error::Schema { message: message.into() }
 }
+
+/// Deepest `Optional` / `Reference` / `List` nesting coercion follows.
+const MAX_TYPE_DEPTH: u8 = 32;
 
 /// Exact scalar target declared by a VOS canonical type.
 #[derive(Debug, Clone, Copy)]
@@ -62,7 +66,14 @@ pub(crate) fn scalar_target(ty: &ResolvedCanonicalType) -> Option<ScalarTarget> 
     }
 }
 
-/// Coerce an already-evaluated frontend value into the column's scalar type.
+/// Coerce an already-evaluated frontend value into the column's declared type.
+///
+/// `T?`, `&T` and `[T]` are transparent wrappers:
+///
+/// - `T?` accepts null and otherwise coerces exactly like `T`,
+/// - `&T` stores the referenced row's primary key, so it coerces as that key's
+///   type (`&User` with a `utf8` key is `utf8`),
+/// - `[T]` accepts a list and coerces every element as `T`.
 ///
 /// Canonical scalars outside the local execution set are rejected instead of
 /// being stored untyped, so a declared `utf16` or narrow integer never degrades
@@ -70,7 +81,72 @@ pub(crate) fn scalar_target(ty: &ResolvedCanonicalType) -> Option<ScalarTarget> 
 /// spelling, so a UUID value and a UUID text literal normalize to the same
 /// value. A `vector<N>` column keeps exactly `N` finite components. Columns
 /// without a scalar target (records and user types) accept the value unchanged.
-pub(crate) fn value_to_scalar(value: Value, ty: &ResolvedCanonicalType) -> Result<Value> {
+pub(crate) fn value_to_scalar(value: Value, ty: &ResolvedCanonicalType, contract: &ResolvedContract) -> Result<Value> {
+    coerce_value(value, ty, contract, 0)
+}
+
+fn coerce_value(value: Value, ty: &ResolvedCanonicalType, contract: &ResolvedContract, depth: u8) -> Result<Value> {
+    if depth > MAX_TYPE_DEPTH {
+        return Err(coerce_error("declared type nests deeper than the supported depth"));
+    }
+    match ty {
+        ResolvedCanonicalType::Optional(inner) => match value {
+            Value::Null => Ok(Value::Null),
+            other => coerce_value(other, inner, contract, depth + 1),
+        },
+        // A reference stores the target's primary key, not the target row.
+        ResolvedCanonicalType::Reference(inner) => match inner.as_ref() {
+            ResolvedCanonicalType::User { type_id, .. } => {
+                let key = primary_key_type(contract, *type_id)?;
+                coerce_value(value, key, contract, depth + 1)
+            }
+            other => coerce_value(value, other, contract, depth + 1),
+        },
+        ResolvedCanonicalType::List(inner) => match value {
+            Value::Null => Ok(Value::Null),
+            Value::List(items) => {
+                let mut coerced = Vec::with_capacity(items.len());
+                for item in items {
+                    coerced.push(coerce_value(item, inner, contract, depth + 1)?);
+                }
+                Ok(Value::List(coerced))
+            }
+            other => Err(coerce_error(format!("column type `[T]` requires a list value, got `{}`", other.kind()))),
+        },
+        _ => coerce_exact(value, ty),
+    }
+}
+
+/// Primary-key type of one resolved table type.
+pub(crate) fn primary_key_type(contract: &ResolvedContract, type_id: u64) -> Result<&ResolvedCanonicalType> {
+    let target = contract
+        .types
+        .iter()
+        .find(|entry| entry.type_id == type_id)
+        .ok_or_else(|| coerce_error(format!("reference targets unknown type id `{type_id}`")))?;
+    let field = target
+        .fields
+        .iter()
+        .find(|field| field.attributes.iter().any(|attribute| attribute.name == "primary"))
+        .ok_or_else(|| coerce_error(format!("reference target `{}` has no primary key field", target.canonical_path.join("::"))))?;
+    Ok(&field.canonical_type)
+}
+
+/// Keep a value only when it already has the column's exact kind.
+///
+/// `i64`, `bool` and `utf8` are the three scalars the row codec stores as their
+/// own kind, so a value of another kind would either be misread later or fail
+/// at encode time. `null` stays accepted because a nullable column is declared
+/// as `T?` and the write path may still see an explicit null.
+fn coerce_kind(value: Value, kind: &'static str, matches_kind: impl Fn(&Value) -> bool) -> Result<Value> {
+    if matches!(value, Value::Null) || matches_kind(&value) {
+        return Ok(value);
+    }
+    Err(coerce_error(format!("column type `{kind}` requires a `{kind}` value, got `{}`", value.kind())))
+}
+
+/// Coerce a value whose declared type is already unwrapped.
+fn coerce_exact(value: Value, ty: &ResolvedCanonicalType) -> Result<Value> {
     use schema_types::CanonicalScalar;
     // A REAL value belongs in an `f64` column. Every other declared column
     // keeps an exact value, so a REAL is rejected before the write is staged
@@ -113,7 +189,9 @@ pub(crate) fn value_to_scalar(value: Value, ty: &ResolvedCanonicalType) -> Resul
     }
     match ty {
         ResolvedCanonicalType::Scalar(CanonicalScalar::Uuid) => coerce_uuid(value),
-        ResolvedCanonicalType::Scalar(CanonicalScalar::I64 | CanonicalScalar::Bool | CanonicalScalar::Utf8) => Ok(value),
+        ResolvedCanonicalType::Scalar(CanonicalScalar::I64) => coerce_kind(value, "i64", |value| matches!(value, Value::I64(_))),
+        ResolvedCanonicalType::Scalar(CanonicalScalar::Bool) => coerce_kind(value, "bool", |value| matches!(value, Value::Bool(_))),
+        ResolvedCanonicalType::Scalar(CanonicalScalar::Utf8) => coerce_kind(value, "utf8", |value| matches!(value, Value::Text(_))),
         ResolvedCanonicalType::Scalar(scalar) => {
             let target =
                 scalar_target(ty).ok_or_else(|| coerce_error(format!("VOS scalar `{scalar}` is not in the local execution scalar set")))?;

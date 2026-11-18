@@ -468,7 +468,7 @@ fn lower_keyed_write(
     else {
         return Err(Error::Unsupported("Phase 1 keyed writes require a plain `{ … }` object, not a lambda or projection"));
     };
-    let object = lower_field_inits(entry, &fields, params)?;
+    let object = lower_field_inits(entry, contract, &fields, params)?;
     let pk_field = primary_field_name(entry)?;
     let pk = object.get(pk_field).ok_or_else(|| dml_error(format!("`.{verb}()` object must carry the primary key field `{pk_field}`")))?;
     let pk_text = constraints::value_text(pk)?;
@@ -559,7 +559,7 @@ fn lower_insert(expr: &VosExpr, contract: &ResolvedContract, bindings: &[(String
         else {
             return Err(dml_error("Phase 1 execute expects `Type::insert({ … })` with an object literal"));
         };
-        let row = lower_field_inits(entry, &fields, params)?;
+        let row = lower_field_inits(entry, contract, &fields, params)?;
         return Ok((table, row));
     }
     if !args.is_empty() {
@@ -572,7 +572,7 @@ fn lower_insert(expr: &VosExpr, contract: &ResolvedContract, bindings: &[(String
         return Err(dml_error("Phase 1 execute supports `Type { … }.insert()` or `Type::insert({ … })`"));
     };
     let entry = table_type_by_name(contract, &ty)?;
-    let row = lower_field_inits(entry, &fields, params)?;
+    let row = lower_field_inits(entry, contract, &fields, params)?;
     Ok((ty, row))
 }
 
@@ -588,18 +588,18 @@ fn table_display_name(entry: &ResolvedTypeContract) -> String {
     entry.canonical_path.join("::")
 }
 
-fn lower_field_inits(entry: &ResolvedTypeContract, fields: &[VosFieldInit], params: &[Value]) -> Result<QueryRow> {
+fn lower_field_inits(entry: &ResolvedTypeContract, contract: &ResolvedContract, fields: &[VosFieldInit], params: &[Value]) -> Result<QueryRow> {
     let mut row = QueryRow::new();
     for init in fields {
         let slot = field_on_table(entry, &init.name)
             .map_err(|_| dml_error(format!("unknown field `{}` on `{}`", init.name, table_display_name(entry))))?;
         let value = init.value.as_ref().ok_or_else(|| dml_error(format!("field `{}` requires an explicit initializer", init.name)))?;
-        row.insert(init.name.clone(), eval_literal(value, &slot.canonical_type, params)?);
+        row.insert(init.name.clone(), eval_literal(value, &slot.canonical_type, contract, params)?);
     }
     Ok(row)
 }
 
-fn eval_literal(expr: &VosExpr, ty: &ResolvedCanonicalType, params: &[Value]) -> Result<Value> {
+fn eval_literal(expr: &VosExpr, ty: &ResolvedCanonicalType, contract: &ResolvedContract, params: &[Value]) -> Result<Value> {
     match expr {
         VosExpr::Literal(literal) => {
             let raw = match literal {
@@ -609,7 +609,7 @@ fn eval_literal(expr: &VosExpr, ty: &ResolvedCanonicalType, params: &[Value]) ->
                 VosLiteral::String(text) => Value::Text(text.clone()),
                 VosLiteral::Float(text) => Value::F64(text.parse().map_err(|_| dml_error(format!("invalid REAL literal `{text}`")))?),
             };
-            coerce::value_to_scalar(raw, ty)
+            coerce::value_to_scalar(raw, ty, contract)
         }
         VosExpr::Name { name, .. } => {
             let Some(slot) = name.strip_prefix(super::params::PARAM_PREFIX)
@@ -618,7 +618,7 @@ fn eval_literal(expr: &VosExpr, ty: &ResolvedCanonicalType, params: &[Value]) ->
             };
             let index: usize = slot.parse().map_err(|_| dml_error(format!("malformed parameter slot `{name}`")))?;
             let value = params.get(index).ok_or_else(|| dml_error(format!("parameter slot {index} has no bound value")))?;
-            coerce::value_to_scalar(value.clone(), ty)
+            coerce::value_to_scalar(value.clone(), ty, contract)
         }
         _ => Err(dml_error("Phase 1 execute only supports literal field initializers and bound parameters")),
     }

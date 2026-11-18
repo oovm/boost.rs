@@ -140,6 +140,43 @@ fn the_handle_is_send_and_sync() {
     assert_send_sync::<EmbedDb>();
 }
 
+/// `T?`, `&T` and `[T]` columns through the host JSON boundary.
+///
+/// The host binds a JSON array to a `[T]` column and reads it back as an array,
+/// a `&T` column stores the referenced row's primary key, and an optional column
+/// keeps an explicit null.
+#[test]
+fn optional_reference_and_list_columns_round_trip() {
+    const CONTAINER_SCHEMA: &str = r#"
+table Owner {
+    @@id: utf8
+    label: utf8
+}
+
+table Item {
+    @@id: i64
+    note: utf8?
+    owner: &Owner
+    tags: [utf8]
+    scores: [i64]
+}
+"#;
+    let db = EmbedDb::open_in_memory().unwrap();
+    db.ensure_schema(CONTAINER_SCHEMA).unwrap();
+    db.execute(
+        "Item.insert({ id: $id, note: $note, owner: $owner, tags: $tags, scores: $scores })",
+        &params(&[("id", json!(1)), ("note", JsonValue::Null), ("owner", json!("o1")), ("tags", json!(["a", "b"])), ("scores", json!([4, 9]))]),
+    )
+    .expect("container insert binds");
+
+    let rows = db.query("Item.all().collect()", &JsonMap::new()).unwrap();
+    assert_eq!(rows.len(), 1, "rows: {rows:?}");
+    assert_eq!(rows[0]["note"], JsonValue::Null);
+    assert_eq!(rows[0]["owner"], json!("o1"));
+    assert_eq!(rows[0]["tags"], json!(["a", "b"]));
+    assert_eq!(rows[0]["scores"], json!([4, 9]));
+}
+
 #[test]
 fn rejects_non_yydx_path() {
     let dir = std::env::temp_dir().join(format!("database-embed-bad-{}", std::process::id()));

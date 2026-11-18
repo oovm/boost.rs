@@ -352,7 +352,7 @@ pub fn execution_catalog_from_resolved_contract(contract: &schema_input_vos::Res
             let virtual_field_index = field.virtual_field_index.ok_or_else(|| Error::Schema {
                 message: format!("resolved VOS field `{}` has no durable virtual slot", field.canonical_name),
             })?;
-            let ty = resolved_execution_type(&field.canonical_type)?;
+            let ty = resolved_execution_type(&field.canonical_type, contract)?;
             let handle = FieldHandle::new(item.type_id, field.field_id, virtual_field_index, ty)
                 .map_err(|_| Error::Schema { message: "resolved VOS contract emitted an invalid field identity".into() })?;
             if kind == ExecutionTypeKind::Table && field.attributes.iter().any(|attribute| attribute.name == "unique") {
@@ -451,19 +451,61 @@ pub fn remap_unique_constraints(
 /// becomes the execution vector of the declared dimension. VOS fixes the
 /// element precision and the dimension and leaves distance metrics to query
 /// capabilities, so no metric is bound here.
-fn resolved_execution_type(ty: &schema_types::ResolvedCanonicalType) -> Result<Type> {
+///
+/// `T?`, `&T` and `[T]` are physical wrappers rather than new storage kinds:
+///
+/// - `T?` is transparent because a nullable column is a `null` value in the row,
+/// - `&T` stores the referenced row's primary key, so it lowers as that key,
+/// - `[T]` lowers to a list whose elements are checked at write time.
+fn resolved_execution_type(ty: &schema_types::ResolvedCanonicalType, contract: &schema_input_vos::ResolvedContract) -> Result<Type> {
+    resolved_execution_type_at(ty, contract, 0)
+}
+
+fn resolved_execution_type_at(
+    ty: &schema_types::ResolvedCanonicalType,
+    contract: &schema_input_vos::ResolvedContract,
+    depth: u8,
+) -> Result<Type> {
     use schema_types::ResolvedCanonicalType;
+    if depth > MAX_TYPE_DEPTH {
+        return Err(Error::Schema { message: "resolved VOS type nests deeper than the supported depth".into() });
+    }
     match ty {
         ResolvedCanonicalType::Scalar(scalar) => execution_type_for_scalar(*scalar),
         ResolvedCanonicalType::Generic { path, arguments } if path == &["Decimal"] => decimal_type_from_arguments(arguments),
         ResolvedCanonicalType::File => Ok(Type::File),
         ResolvedCanonicalType::Vector { dimension, .. } => Ok(Type::Vector { dimension: *dimension }),
-        ResolvedCanonicalType::Optional(_)
-        | ResolvedCanonicalType::Reference(_)
-        | ResolvedCanonicalType::List(_)
-        | ResolvedCanonicalType::User { .. }
-        | ResolvedCanonicalType::Generic { .. } => Err(Error::Unsupported("resolved VOS composite type is not in the execution slice")),
+        // A nullable column stores the same execution type; absence is a null value.
+        ResolvedCanonicalType::Optional(inner) => resolved_execution_type_at(inner, contract, depth + 1),
+        // A reference stores the target row's primary key, not the row.
+        ResolvedCanonicalType::Reference(inner) => match inner.as_ref() {
+            ResolvedCanonicalType::User { type_id, .. } => {
+                let key = reference_key_type(contract, *type_id)?;
+                resolved_execution_type_at(key, contract, depth + 1)
+            }
+            other => resolved_execution_type_at(other, contract, depth + 1),
+        },
+        ResolvedCanonicalType::List(_) => Ok(Type::List),
+        ResolvedCanonicalType::User { .. } | ResolvedCanonicalType::Generic { .. } => {
+            Err(Error::Unsupported("resolved VOS composite type is not in the execution slice"))
+        }
     }
+}
+
+/// Deepest `Optional` / `Reference` nesting the catalog follows.
+const MAX_TYPE_DEPTH: u8 = 32;
+
+/// Primary-key type of the table a reference points at.
+fn reference_key_type(contract: &schema_input_vos::ResolvedContract, type_id: u64) -> Result<&schema_types::ResolvedCanonicalType> {
+    let target = contract
+        .types
+        .iter()
+        .find(|entry| entry.type_id == type_id)
+        .ok_or_else(|| Error::Schema { message: format!("resolved reference targets unknown type id `{type_id}`") })?;
+    let field = target.fields.iter().find(|field| field.attributes.iter().any(|attribute| attribute.name == "primary")).ok_or_else(|| {
+        Error::Schema { message: format!("resolved reference target `{}` has no primary key field", target.canonical_path.join("::")) }
+    })?;
+    Ok(&field.canonical_type)
 }
 
 /// Maps a canonical VOS scalar to the exact 本地 execution scalar.

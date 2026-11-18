@@ -31,6 +31,12 @@ pub enum Value {
     File(FileDescriptor),
     /// Nested row embedded in query projection results (not persisted inline).
     Row(BTreeMap<String, Value>),
+    /// Ordered list of scalar values, persisted inline in the row record.
+    ///
+    /// VOS declares a list as `[T]`. The element type is enforced by the write
+    /// coercion of the declaring column, not by this envelope, so one list can
+    /// hold any scalar the row codec already encodes.
+    List(Vec<Value>),
     /// Calendar date without time or zone.
     Date(Date),
     /// Wall-clock time with nanosecond resolution, no zone.
@@ -57,6 +63,7 @@ impl Value {
             Self::Object(_) => "object",
             Self::File(_) => "file",
             Self::Row(_) => "row",
+            Self::List(_) => "list",
             Self::Date(_) => "date",
             Self::Time(_) => "time",
             Self::Timestamp(_) => "timestamp",
@@ -85,6 +92,16 @@ impl Value {
             }
             Self::Object(object) => {
                 format!("o:{}:{}:{}", object.algo.as_str(), object.hash_hex(), object.size)
+            }
+            // A list key is the ordered concatenation of its elements, each
+            // length-prefixed so `["ab", "c"]` never collides with `["a", "bc"]`.
+            Self::List(items) => {
+                let mut key = format!("l:{}:", items.len());
+                for item in items {
+                    let component = item.key_component();
+                    key.push_str(&format!("{}:{component}", component.len()));
+                }
+                key
             }
             Self::Row(_) | Self::Vector(_) | Self::File(_) => {
                 format!("x:{}", self.kind())
