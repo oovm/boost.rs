@@ -1,0 +1,17 @@
+[package]
+name = "atlas-cloud"
+version.workspace = true
+authors.workspace = true
+description = "Atlas 云服务：腾讯云 SMS 与 COS 的原生调用面"
+repository = "https://github.com/oovm/rust-boost"
+license.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+boost-crypto = { workspace = true }
+boost-net = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+boost-net = { workspace = true }

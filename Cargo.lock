@@ -299,6 +299,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-cloud"
+version = "0.1.0"
+dependencies = [
+ "boost-crypto",
+ "boost-net",
+ "serde_json",
+]
+
+[[package]]
 name = "atomic"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
