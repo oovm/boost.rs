@@ -576,6 +576,7 @@ dependencies = [
 name = "compiler-valkyrie"
 version = "0.1.0"
 dependencies = [
+ "boost-harness",
  "compiler-analysis",
  "compiler-emitter",
  "compiler-target",

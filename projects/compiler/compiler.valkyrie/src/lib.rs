@@ -15,8 +15,9 @@
 //!
 //! 交付侧（`asgard`）与编排（`legion`）文件已随迁入，但它们依赖仍在产品仓的
 //! `nyar-runner` / `nyar-workspace` / `nyar-package-manager`；这些迁入 `package.*` / 工程服务前，
-//! 两个模块不参与编译。
+//! 两个模块不参与编译。横切工具（`utilities`）不依赖产品仓，已随本 crate 编译。
 
 #![allow(missing_docs)]
 
 pub mod compiler;
+pub mod utilities;

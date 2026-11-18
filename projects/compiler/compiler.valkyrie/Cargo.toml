@@ -12,6 +12,7 @@ default = []
 serde = ["compiler-types/serde"]
 
 [dependencies]
+boost-harness = { workspace = true }
 compiler-analysis = { workspace = true }
 compiler-emitter = { workspace = true }
 compiler-target = { workspace = true }
