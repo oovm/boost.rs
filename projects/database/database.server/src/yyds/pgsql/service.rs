@@ -53,7 +53,7 @@ impl PgsqlService {
         schema: Arc<SqlSchemaRegistry>,
         auth: PgAuthentication,
     ) -> io::Result<Self> {
-        let runtime = Arc::new(PgsqlSqlRuntime { schema, executor });
+        let runtime = Arc::new(PgsqlSqlRuntime::new(schema, executor));
         Self::start_inner(owner, address, Some(runtime), auth)
     }
 

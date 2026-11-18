@@ -7,12 +7,14 @@
 
 pub mod cursors;
 pub mod explain;
+pub mod notify;
 pub mod prepared;
 pub mod session;
 pub mod statement;
 
 pub use cursors::execute_cursor_utility;
 pub use explain::execute_explain;
+pub use notify::{Notification, NotificationHub};
 pub use prepared::execute_utility;
 pub use session::{
     ABORTED_BLOCK, DEFAULT_SEARCH_PATH, PgsqlSqlRuntime, PreparedSqlStatement, SessionCursor, TransactionControl, TransactionSession,

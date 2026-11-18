@@ -74,6 +74,15 @@ pub struct PgsqlSqlRuntime {
     pub schema: Arc<SqlSchemaRegistry>,
     /// KV execution plane.
     pub executor: Arc<dyn KeyValueExecutor>,
+    /// Listener/notify fan-out shared by every session of this runtime.
+    pub notifications: Arc<super::notify::NotificationHub>,
+}
+
+impl PgsqlSqlRuntime {
+    /// Builds a runtime with an empty notification hub.
+    pub fn new(schema: Arc<SqlSchemaRegistry>, executor: Arc<dyn KeyValueExecutor>) -> Self {
+        Self { schema, executor, notifications: Arc::new(super::notify::NotificationHub::new()) }
+    }
 }
 
 /// Session-scoped transaction state: the PostgreSQL wire protocol ReadyForQuery
@@ -101,6 +110,10 @@ pub struct TransactionSession {
     prepared: BTreeMap<String, PreparedSqlStatement>,
     /// SQL-level cursors owned by this session.
     cursors: BTreeMap<String, SessionCursor>,
+    /// Notification hub this session subscribed to, when it ever listened.
+    notifications: Option<Arc<super::notify::NotificationHub>>,
+    /// Sink id inside [`Self::notifications`].
+    listener: Option<u64>,
 }
 
 impl TransactionSession {
@@ -116,6 +129,8 @@ impl TransactionSession {
             schema_checkpoint: None,
             prepared: BTreeMap::new(),
             cursors: BTreeMap::new(),
+            notifications: None,
+            listener: None,
         }
     }
 
@@ -370,6 +385,65 @@ impl TransactionSession {
         }
         else {
             self.cursors.clear();
+        }
+    }
+
+    /// Subscribes this session to `channel`.
+    pub fn listen(&mut self, runtime: &PgsqlSqlRuntime, channel: &str) {
+        let hub = Arc::clone(&runtime.notifications);
+        let sink = self.sink(&hub);
+        hub.listen(sink, channel);
+    }
+
+    /// Removes one subscription, or every subscription when `channel` is `None`.
+    pub fn unlisten(&mut self, channel: Option<&str>) {
+        let (Some(hub), Some(sink)) = (&self.notifications, self.listener)
+        else {
+            return;
+        };
+        match channel {
+            Some(channel) => hub.unlisten(sink, channel),
+            None => hub.unlisten_all(sink),
+        }
+    }
+
+    /// Queues one notification for every subscriber of `channel`.
+    pub fn notify(&self, runtime: &PgsqlSqlRuntime, channel: &str, payload: &str, process_id: u32) {
+        runtime.notifications.notify(super::notify::Notification {
+            process_id,
+            channel: channel.to_owned(),
+            payload: payload.to_owned(),
+        });
+    }
+
+    /// Drains the notifications queued for this session.
+    pub fn take_notifications(&mut self) -> Vec<super::notify::Notification> {
+        let (Some(hub), Some(sink)) = (&self.notifications, self.listener)
+        else {
+            return Vec::new();
+        };
+        hub.take(sink)
+    }
+
+    /// Lazily registers the session sink on `hub`.
+    fn sink(&mut self, hub: &Arc<super::notify::NotificationHub>) -> u64 {
+        if let (Some(existing), Some(sink)) = (&self.notifications, self.listener) {
+            if Arc::ptr_eq(existing, hub) {
+                return sink;
+            }
+            existing.unregister(sink);
+        }
+        let sink = hub.register();
+        self.notifications = Some(Arc::clone(hub));
+        self.listener = Some(sink);
+        sink
+    }
+}
+
+impl Drop for TransactionSession {
+    fn drop(&mut self) {
+        if let (Some(hub), Some(sink)) = (&self.notifications, self.listener) {
+            hub.unregister(sink);
         }
     }
 }

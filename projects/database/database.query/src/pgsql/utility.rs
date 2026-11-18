@@ -60,6 +60,23 @@ pub enum PgUtilityStatement {
         /// Explained statement.
         sql: String,
     },
+    /// `LISTEN channel`.
+    Listen {
+        /// Channel name.
+        channel: String,
+    },
+    /// `UNLISTEN { channel | * }`; `None` clears every subscription.
+    Unlisten {
+        /// Channel name, or `None` for `*`.
+        channel: Option<String>,
+    },
+    /// `NOTIFY channel [, 'payload']`.
+    Notify {
+        /// Channel name.
+        channel: String,
+        /// Payload, empty when omitted.
+        payload: String,
+    },
 }
 
 /// How much of a cursor one `FETCH` returns.
@@ -92,8 +109,65 @@ pub fn parse_pg_utility(source: &str) -> Result<Option<PgUtilityStatement>, SqlF
         "FETCH" => parse_fetch(&trimmed[keyword.len()..]).map(Some),
         "CLOSE" => parse_close(&trimmed[keyword.len()..]).map(Some),
         "EXPLAIN" => parse_explain(&trimmed[keyword.len()..]).map(Some),
+        "LISTEN" => parse_listen(&trimmed[keyword.len()..]).map(Some),
+        "UNLISTEN" => parse_unlisten(&trimmed[keyword.len()..]).map(Some),
+        "NOTIFY" => parse_notify(&trimmed[keyword.len()..]).map(Some),
         _ => Ok(None),
     }
+}
+
+fn parse_listen(tail: &str) -> Result<PgUtilityStatement, SqlFrontendError> {
+    let (channel, trailing) = take_name(tail.trim_start())?;
+    if !trailing.trim().is_empty() {
+        return Err(syntax("LISTEN accepts one channel name"));
+    }
+    validate_channel(&channel)?;
+    Ok(PgUtilityStatement::Listen { channel })
+}
+
+fn parse_unlisten(tail: &str) -> Result<PgUtilityStatement, SqlFrontendError> {
+    let rest = tail.trim();
+    if rest == "*" {
+        return Ok(PgUtilityStatement::Unlisten { channel: None });
+    }
+    let (channel, trailing) = take_name(rest)?;
+    if !trailing.trim().is_empty() {
+        return Err(syntax("UNLISTEN accepts one channel name or `*`"));
+    }
+    validate_channel(&channel)?;
+    Ok(PgUtilityStatement::Unlisten { channel: Some(channel) })
+}
+
+fn parse_notify(tail: &str) -> Result<PgUtilityStatement, SqlFrontendError> {
+    let (channel, rest) = take_name(tail.trim_start())?;
+    validate_channel(&channel)?;
+    let rest = rest.trim_start();
+    if rest.is_empty() {
+        return Ok(PgUtilityStatement::Notify { channel, payload: String::new() });
+    }
+    let Some(inner) = rest.strip_prefix(',')
+    else {
+        return Err(syntax("NOTIFY accepts `channel [, 'payload']`"));
+    };
+    let inner = inner.trim_start();
+    let Some(literal) = inner.strip_prefix('\'') else {
+        return Err(syntax("NOTIFY payload must be a string literal"));
+    };
+    let Some(end) = literal.rfind('\'') else {
+        return Err(syntax("unterminated NOTIFY payload"));
+    };
+    if !literal[end + 1..].trim().is_empty() {
+        return Err(syntax("NOTIFY accepts `channel [, 'payload']`"));
+    }
+    Ok(PgUtilityStatement::Notify { channel, payload: literal[..end].replace("''", "'") })
+}
+
+/// Channel names follow PostgreSQL's identifier length (`NAMEDATALEN - 1`).
+fn validate_channel(channel: &str) -> Result<(), SqlFrontendError> {
+    if channel.is_empty() || channel.len() > 63 {
+        return Err(syntax("notification channel must be 1 to 63 bytes"));
+    }
+    Ok(())
 }
 
 fn parse_explain(tail: &str) -> Result<PgUtilityStatement, SqlFrontendError> {
@@ -308,7 +382,7 @@ fn take_name(source: &str) -> Result<(String, &str), SqlFrontendError> {
         };
         return Ok((inner[..end].to_owned(), &inner[end + 1..]));
     }
-    let end = source.find(|character: char| character.is_whitespace() || character == '(').unwrap_or(source.len());
+    let end = source.find(|character: char| character.is_whitespace() || character == '(' || character == ',' || character == ')').unwrap_or(source.len());
     if end == 0 {
         return Err(syntax("expected a statement name"));
     }

@@ -33,8 +33,10 @@ impl Gateway {
             Vec::new(),
         )
         .unwrap();
-        let runtime =
-            std::sync::Arc::new(PgsqlSqlRuntime { schema: std::sync::Arc::new(SqlSchemaRegistry::new_in_memory()), executor: std::sync::Arc::new(executor) });
+        let runtime = std::sync::Arc::new(PgsqlSqlRuntime::new(
+            std::sync::Arc::new(SqlSchemaRegistry::new_in_memory()),
+            std::sync::Arc::new(executor),
+        ));
         Self { runtime, session: TransactionSession::new(), directory }
     }
 
@@ -72,6 +74,45 @@ impl Drop for Gateway {
         let _ = fs::remove_file(self.directory.join("local-0.yykv"));
         let _ = fs::remove_dir(&self.directory);
     }
+}
+
+#[test]
+fn listen_and_notify_queue_messages_for_the_same_session() {
+    let mut gateway = Gateway::new("notify");
+    assert_eq!(gateway.command("LISTEN events"), "LISTEN");
+    assert_eq!(gateway.command("NOTIFY events, 'hello'"), "NOTIFY");
+    let pending = gateway.session.take_notifications();
+    assert_eq!(
+        pending,
+        vec![database_execution::pgsql::Notification { process_id: std::process::id(), channel: "events".to_owned(), payload: "hello".to_owned() }]
+    );
+
+    assert_eq!(gateway.command("UNLISTEN events"), "UNLISTEN");
+    gateway.command("NOTIFY events, 'lost'");
+    assert!(gateway.session.take_notifications().is_empty());
+
+    gateway.command("LISTEN audit");
+    gateway.command("UNLISTEN *");
+    gateway.command("NOTIFY audit, 'lost'");
+    assert!(gateway.session.take_notifications().is_empty());
+}
+
+#[test]
+fn notify_errors_report_their_sqlstates() {
+    let mut gateway = Gateway::new("notify-errors");
+    let long_channel = "c".repeat(64);
+    let (code, _) = match gateway.sql(&format!("LISTEN {long_channel}")) {
+        Ok(_) => panic!("oversized channel names must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42601");
+
+    let long_payload = "p".repeat(8001);
+    let (code, _) = match gateway.sql(&format!("NOTIFY events, '{long_payload}'")) {
+        Ok(_) => panic!("oversized payloads must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "22001");
 }
 
 #[test]

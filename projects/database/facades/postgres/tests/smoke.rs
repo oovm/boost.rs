@@ -142,6 +142,27 @@ fn ddl_survives_a_restart_and_rollback_restores_the_persisted_state() {
 }
 
 #[test]
+fn listen_and_notify_reach_another_connection_before_its_next_ready() {
+    let dir = TempDir::new("notify");
+    let engine = PostgreSQL::open(dir.options("smoke")).unwrap();
+    let listener = engine.listen("127.0.0.1:0".parse::<SocketAddr>().unwrap()).unwrap();
+    let port = listener.endpoint().port();
+    let mut subscriber = PostgreSQLClient::open(&ClientConfig::new("127.0.0.1", port, "postgres", "smoke")).unwrap();
+    subscriber.execute("LISTEN events").unwrap();
+    let mut publisher = PostgreSQLClient::open(&ClientConfig::new("127.0.0.1", port, "postgres", "smoke")).unwrap();
+    publisher.execute("NOTIFY events, 'payload'").unwrap();
+    subscriber.execute("SELECT 1").unwrap();
+    let notifications = subscriber.take_notifications();
+    assert_eq!(notifications.len(), 1, "expected one notification, got {notifications:?}");
+    assert_eq!(notifications[0].channel, "events");
+    assert_eq!(notifications[0].payload, "payload");
+    publisher.close();
+    subscriber.close();
+    listener.close();
+    engine.close().unwrap();
+}
+
+#[test]
 fn listeners_require_the_configured_password_authentication() {
     use std::error::Error as _;
 

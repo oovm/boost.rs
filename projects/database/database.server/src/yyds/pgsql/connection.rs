@@ -139,7 +139,7 @@ fn serve_session(
         send_parameter(&mut stream, "application_name", application_name)?;
     }
     send_backend_key(&mut stream)?;
-    send_ready(&mut stream, &session)?;
+    send_ready(&mut stream, &mut session)?;
 
     let mut extended = ExtendedSession::default();
     let mut extended_failed = false;
@@ -172,7 +172,7 @@ fn serve_session(
                 else {
                     write_error_response(&mut stream, "08P01", "malformed PostgreSQL simple-query message")?;
                     session.fail();
-                    send_ready(&mut stream, &session)?;
+                    send_ready(&mut stream, &mut session)?;
                     continue;
                 };
                 if sql_bytes.contains(&0) {
@@ -186,7 +186,7 @@ fn serve_session(
                     write_error_response(&mut stream, "22021", "query is not valid UTF-8")?;
                     session.fail();
                 }
-                send_ready(&mut stream, &session)?;
+                send_ready(&mut stream, &mut session)?;
             }
             tag @ (b'P' | b'B' | b'D' | b'E' | b'C' | b'H' | b'S') => {
                 if extended_failed && !matches!(tag, b'S' | b'H') {
@@ -202,7 +202,7 @@ fn serve_session(
                     b'H' => stream.flush().map(|_| ExtendedStep::Continue),
                     b'S' => {
                         extended_failed = false;
-                        send_ready(&mut stream, &session).map(|_| ExtendedStep::Continue)
+                        send_ready(&mut stream, &mut session).map(|_| ExtendedStep::Continue)
                     }
                     _ => Ok(ExtendedStep::Continue),
                 }?;
@@ -216,7 +216,7 @@ fn serve_session(
             }
             _ => {
                 write_error_response(&mut stream, "08P01", "unsupported PostgreSQL frontend message")?;
-                send_ready(&mut stream, &session)?;
+                send_ready(&mut stream, &mut session)?;
             }
         }
     }
@@ -1831,7 +1831,21 @@ fn send_backend_key(stream: &mut impl Write) -> io::Result<()> {
     write_message(stream, b'K', &payload)
 }
 
-fn send_ready(stream: &mut impl Write, session: &TransactionSession) -> io::Result<()> {
+/// Writes every queued `NotificationResponse` ('A'), then `ReadyForQuery`.
+///
+/// PostgreSQL delivers notifications before the next ready message, so a
+/// client that ran `LISTEN` in an earlier statement observes a `NOTIFY` from
+/// another session at the end of its next command.
+fn send_ready(stream: &mut impl Write, session: &mut TransactionSession) -> io::Result<()> {
+    for notification in session.take_notifications() {
+        let mut payload = Vec::with_capacity(8 + notification.channel.len() + notification.payload.len());
+        payload.extend_from_slice(&notification.process_id.to_be_bytes());
+        payload.extend_from_slice(notification.channel.as_bytes());
+        payload.push(0);
+        payload.extend_from_slice(notification.payload.as_bytes());
+        payload.push(0);
+        write_message(stream, b'A', &payload)?;
+    }
     let ready = session.ready_byte();
     write_message(stream, b'Z', &[ready])
 }

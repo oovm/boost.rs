@@ -32,6 +32,29 @@ pub fn execute_utility(
             super::cursors::execute_cursor_utility(utility, runtime, session)
         }
         PgUtilityStatement::Explain { analyze, sql } => super::explain::execute_explain(sql, *analyze, runtime, session),
+        PgUtilityStatement::Listen { channel } => {
+            let Some(runtime) = runtime
+            else {
+                return Err(StatementError::new("0A000", "LISTEN requires a runtime-backed session"));
+            };
+            session.listen(runtime, channel);
+            Ok(StatementOutcome::Command("LISTEN"))
+        }
+        PgUtilityStatement::Unlisten { channel } => {
+            session.unlisten(channel.as_deref());
+            Ok(StatementOutcome::Command("UNLISTEN"))
+        }
+        PgUtilityStatement::Notify { channel, payload } => {
+            let Some(runtime) = runtime
+            else {
+                return Err(StatementError::new("0A000", "NOTIFY requires a runtime-backed session"));
+            };
+            if payload.len() > 8000 {
+                return Err(StatementError::new("22001", "NOTIFY payload must be shorter than 8000 bytes"));
+            }
+            session.notify(runtime, channel, payload, std::process::id());
+            Ok(StatementOutcome::Command("NOTIFY"))
+        }
         PgUtilityStatement::Deallocate { name } => {
             let removed = session.deallocate_statement(name.as_deref());
             if let Some(name) = name {

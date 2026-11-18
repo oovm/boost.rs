@@ -237,7 +237,7 @@ impl PostgreSQL {
         // by one run is read back by the next one instead of asking the caller
         // to replay it.
         let schema = SqlSchemaRegistry::open(instance.schema_path()).map_err(|error| Error::State(error.message))?;
-        let runtime = Arc::new(PgsqlSqlRuntime { schema: Arc::new(schema), executor: Arc::new(executor) });
+        let runtime = Arc::new(PgsqlSqlRuntime::new(Arc::new(schema), Arc::new(executor)));
         Ok(Self {
             runtime,
             instance: Mutex::new(Some(instance)),
