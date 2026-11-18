@@ -88,6 +88,36 @@ fn concat_operator_propagates_null() {
 }
 
 #[test]
+fn scalar_functions_nullif_greatest_least_date_trunc() {
+    let dir = TempDir::new("scalars");
+    let engine = PostgreSQL::open(dir.options("smoke")).unwrap();
+    engine.execute("CREATE TABLE t (id BIGINT PRIMARY KEY, created_at TEXT)").unwrap();
+    engine.execute("INSERT INTO t (id, created_at) VALUES (1, '2026-11-18 13:45:30')").unwrap();
+    let row = engine.query("SELECT NULLIF(1, 1), NULLIF(2, 1), GREATEST(3, 7, 5), LEAST(3, 7, 5), GREATEST(3, NULL) FROM t").unwrap();
+    // PostgreSQL 的 GREATEST/LEAST 忽略 NULL 实参。
+    assert_eq!(rows_of(&row), vec![vec!["Null", "2", "7", "3", "3"]]);
+    let times = engine.query("SELECT DATE_TRUNC('day', created_at), DATE_TRUNC('month', created_at), DATE_TRUNC('hour', created_at) FROM t").unwrap();
+    assert_eq!(rows_of(&times), vec![vec!["2026-11-18 00:00:00", "2026-11-01 00:00:00", "2026-11-18 13:00:00"]]);
+    engine.close().unwrap();
+}
+
+#[test]
+fn boolean_aggregates_ignore_nulls() {
+    let dir = TempDir::new("bool-agg");
+    let engine = PostgreSQL::open(dir.options("smoke")).unwrap();
+    engine.execute("CREATE TABLE t (id BIGINT PRIMARY KEY, flag BOOLEAN)").unwrap();
+    engine.execute("INSERT INTO t (id, flag) VALUES (1, TRUE), (2, NULL), (3, TRUE)").unwrap();
+    let row = engine.query("SELECT BOOL_AND(flag), BOOL_OR(flag) FROM t").unwrap();
+    assert_eq!(rows_of(&row), vec![vec!["Boolean(true)", "Boolean(true)"]]);
+    engine.execute("INSERT INTO t (id, flag) VALUES (4, FALSE)").unwrap();
+    let row = engine.query("SELECT BOOL_AND(flag), BOOL_OR(flag) FROM t").unwrap();
+    assert_eq!(rows_of(&row), vec![vec!["Boolean(false)", "Boolean(true)"]]);
+    let empty = engine.query("SELECT BOOL_AND(flag) FROM t WHERE id = 99").unwrap();
+    assert!(matches!(empty.rows[0][0], SqlValue::Null));
+    engine.close().unwrap();
+}
+
+#[test]
 fn listen_answers_protocol_v3_clients() {
     let dir = TempDir::new("listen");
     let engine = PostgreSQL::open(dir.options("smoke")).unwrap();

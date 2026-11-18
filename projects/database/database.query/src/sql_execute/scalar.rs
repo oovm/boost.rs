@@ -205,6 +205,87 @@ pub fn eval_scalar_function(function: SqlScalarFunction, args: &[SqlValue], dial
                 Some(_) => Number(0.0),
             }
         }
+        SqlScalarFunction::NullIf => {
+            let (Some(a), Some(b)) = (args.first(), args.get(1)) else {
+                return Ok(Null);
+            };
+            if !matches!(a, Null) && !matches!(b, Null) && compare_values(Some(a), Some(b)) == std::cmp::Ordering::Equal {
+                Null
+            }
+            else {
+                a.clone()
+            }
+        }
+        SqlScalarFunction::Greatest | SqlScalarFunction::Least => {
+            // MySQL：任一实参为 NULL 结果即 NULL；PostgreSQL：忽略 NULL 实参，全 NULL 才返回 NULL。
+            if dialect == SqlDialect::Mysql && args.iter().any(|value| matches!(value, Null)) {
+                return Ok(Null);
+            }
+            let mut best: Option<&SqlValue> = None;
+            for value in args.iter().filter(|value| !matches!(value, Null)) {
+                best = Some(match best {
+                    None => value,
+                    Some(current) => {
+                        let greater = compare_values(Some(value), Some(current)) == std::cmp::Ordering::Greater;
+                        if matches!(function, SqlScalarFunction::Greatest) == greater { value } else { current }
+                    }
+                });
+            }
+            best.cloned().unwrap_or(Null)
+        }
+        SqlScalarFunction::DateTrunc => {
+            // `DATE_TRUNC` 是 PostgreSQL 拼写，MySQL 没有等价函数。
+            if dialect == SqlDialect::Mysql {
+                return Err(SqlFrontendError::new(
+                    SqlErrorKind::UnknownFunction,
+                    "DATE_TRUNC() is a PostgreSQL function, MySQL has no equivalent",
+                ));
+            }
+            let (Some(field), Some(source)) = (scalar_text(args, 0), scalar_text(args, 1)) else {
+                return Ok(Null);
+            };
+            date_trunc_value(&field, &source)?
+        }
+    })
+}
+
+/// `DATE_TRUNC(field, source)`：把规范 `YYYY-MM-DD [HH:MM:SS]` 文本按 `field` 粒度截断。
+///
+/// 网关的时间表示是 UTC 文本，截断是纯文本算术；小数秒与时区后缀在秒位之后被丢弃。
+fn date_trunc_value(field: &str, source: &str) -> Result<SqlValue, SqlFrontendError> {
+    let invalid = || {
+        SqlFrontendError::new(SqlErrorKind::TypeMismatch, format!("DATE_TRUNC source `{source}` is not a date or timestamp"))
+    };
+    let (date_part, time_part) = match source.split_once([' ', 'T']) {
+        Some((date, time)) => (date, time),
+        None => (source, ""),
+    };
+    let mut dates = date_part.split('-');
+    let (Some(year), Some(month), Some(day)) = (dates.next(), dates.next(), dates.next()) else {
+        return Err(invalid());
+    };
+    let (Ok(year), Ok(month), Ok(day)) = (year.parse::<u32>(), month.parse::<u32>(), day.parse::<u32>()) else {
+        return Err(invalid());
+    };
+    let digits = |text: Option<&str>| -> u32 {
+        text.unwrap_or("0").chars().take_while(char::is_ascii_digit).collect::<String>().parse().unwrap_or(0)
+    };
+    let mut times = time_part.split(':');
+    let (hour, minute, second) = (digits(times.next()), digits(times.next()), digits(times.next()));
+    let date = format!("{year:04}-{month:02}-{day:02}");
+    Ok(match field.to_ascii_lowercase().as_str() {
+        "year" => SqlValue::String(format!("{year:04}-01-01 00:00:00")),
+        "month" => SqlValue::String(format!("{year:04}-{month:02}-01 00:00:00")),
+        "day" => SqlValue::String(format!("{date} 00:00:00")),
+        "hour" => SqlValue::String(format!("{date} {hour:02}:00:00")),
+        "minute" => SqlValue::String(format!("{date} {hour:02}:{minute:02}:00")),
+        "second" => SqlValue::String(format!("{date} {hour:02}:{minute:02}:{second:02}")),
+        other => {
+            return Err(SqlFrontendError::new(
+                SqlErrorKind::Unsupported,
+                format!("DATE_TRUNC field `{other}` is outside the gateway subset, use YEAR, MONTH, DAY, HOUR, MINUTE or SECOND"),
+            ));
+        }
     })
 }
 

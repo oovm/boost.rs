@@ -498,6 +498,27 @@ pub(crate) fn eval_aggregate(
             }
             Ok(best.unwrap_or(SqlValue::Null))
         }
+        SqlAggregateFunction::BOOL_AND | SqlAggregateFunction::BOOL_OR => {
+            // PostgreSQL 语义：忽略 `NULL` 实参；`BOOL_AND` 见 `FALSE` 即假，`BOOL_OR`
+            // 见 `TRUE` 即真；全 `NULL` 或空组返回 `NULL`。
+            let want_true = agg == SqlAggregateFunction::BOOL_OR;
+            let mut saw_value = false;
+            for row in rows {
+                match eval_expression(&args[0], row, field_types, dialect)? {
+                    SqlValue::Boolean(flag) => {
+                        saw_value = true;
+                        if flag == want_true {
+                            return Ok(SqlValue::Boolean(want_true));
+                        }
+                    }
+                    SqlValue::Null => {}
+                    other => {
+                        return Err(internal_error(&format!("{} requires a boolean argument, got {other:?}", agg.name())));
+                    }
+                }
+            }
+            if saw_value { Ok(SqlValue::Boolean(!want_true)) } else { Ok(SqlValue::Null) }
+        }
     }
 }
 

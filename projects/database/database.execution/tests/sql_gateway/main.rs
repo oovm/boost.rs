@@ -339,6 +339,14 @@ fn insert_select_writes_every_source_row() {
     assert_eq!(gateway.scalar_integer("SELECT SUM(v) FROM dst"), 50);
 }
 
+/// `DATE_TRUNC` 是 PostgreSQL 拼写，MySQL 方言报未知函数。
+#[test]
+fn mysql_dialect_rejects_date_trunc() {
+    let gateway = Gateway::new("date-trunc");
+    let error = gateway.sql("SELECT DATE_TRUNC('day', '2026-11-18 13:45:30')").expect_err("MySQL has no DATE_TRUNC");
+    assert_eq!(error.kind, database_query::SqlErrorKind::UnknownFunction);
+}
+
 /// `CHECK` 约束在写入前对最终行值求值：只有 FALSE 违反，`NULL` 通过（SQL 三值
 /// 逻辑，与 PostgreSQL 一致），违反按 `CheckViolation` 上报。
 #[test]

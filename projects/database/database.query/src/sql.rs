@@ -1044,6 +1044,10 @@ pub enum SqlAggregateFunction {
     MAX,
     /// `MIN(...)`.
     MIN,
+    /// `BOOL_AND(flag)`.
+    BOOL_AND,
+    /// `BOOL_OR(flag)`.
+    BOOL_OR,
 }
 
 impl SqlAggregateFunction {
@@ -1055,6 +1059,8 @@ impl SqlAggregateFunction {
             "AVG" => Some(Self::AVG),
             "MAX" => Some(Self::MAX),
             "MIN" => Some(Self::MIN),
+            "BOOL_AND" => Some(Self::BOOL_AND),
+            "BOOL_OR" => Some(Self::BOOL_OR),
             _ => None,
         }
     }
@@ -1066,6 +1072,8 @@ impl SqlAggregateFunction {
             Self::AVG => "AVG",
             Self::MAX => "MAX",
             Self::MIN => "MIN",
+            Self::BOOL_AND => "BOOL_AND",
+            Self::BOOL_OR => "BOOL_OR",
         }
     }
 }
@@ -1162,6 +1170,14 @@ pub enum SqlScalarFunction {
     Concat,
     /// `COALESCE(a, b, ...)` / `IFNULL(a, b)`.
     Coalesce,
+    /// `NULLIF(a, b)` — `NULL` when both sides are equal, otherwise the first value.
+    NullIf,
+    /// `GREATEST(a, b, ...)`.
+    Greatest,
+    /// `LEAST(a, b, ...)`.
+    Least,
+    /// `DATE_TRUNC(field, source)` — PostgreSQL-only timestamp truncation.
+    DateTrunc,
     /// `ABS(x)`.
     Abs,
     /// `ROUND(x[, digits])`.
@@ -1199,6 +1215,10 @@ impl SqlScalarFunction {
             "REPLACE" => Some(Self::Replace),
             "CONCAT" => Some(Self::Concat),
             "COALESCE" | "IFNULL" => Some(Self::Coalesce),
+            "NULLIF" => Some(Self::NullIf),
+            "GREATEST" => Some(Self::Greatest),
+            "LEAST" => Some(Self::Least),
+            "DATE_TRUNC" => Some(Self::DateTrunc),
             "ABS" => Some(Self::Abs),
             "ROUND" => Some(Self::Round),
             // 文本谓词：两种方言各用各的拼写，跨方言调用在求值期报未知函数。
@@ -1246,6 +1266,10 @@ impl SqlScalarFunction {
             Self::Replace => "REPLACE",
             Self::Concat => "CONCAT",
             Self::Coalesce => "COALESCE",
+            Self::NullIf => "NULLIF",
+            Self::Greatest => "GREATEST",
+            Self::Least => "LEAST",
+            Self::DateTrunc => "DATE_TRUNC",
             Self::Abs => "ABS",
             Self::Round => "ROUND",
             Self::Instr => "INSTR",
@@ -1273,7 +1297,8 @@ impl SqlScalarFunction {
             Self::Trim | Self::Ltrim | Self::Rtrim => (1, Some(2)),
             Self::Replace => (3, Some(3)),
             Self::Instr | Self::Strpos | Self::Left | Self::Right => (2, Some(2)),
-            Self::Concat | Self::Coalesce => (1, None),
+            Self::Concat | Self::Coalesce | Self::Greatest | Self::Least => (1, None),
+            Self::NullIf | Self::DateTrunc => (2, Some(2)),
         }
     }
 }
