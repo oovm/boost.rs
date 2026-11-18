@@ -44,5 +44,6 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+boost-fs = { workspace = true }
 package-registry = { workspace = true }
 package-resolve = { workspace = true }

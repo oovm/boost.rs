@@ -294,7 +294,6 @@ dependencies = [
  "atlas-cloud",
  "boost-net",
  "serde_json",
- "sqlite",
 ]
 
 [[package]]
@@ -637,6 +636,7 @@ dependencies = [
  "base64",
  "boost-fs",
  "boost-harness",
+ "boost-math",
  "compiler-analysis",
  "compiler-emitter",
  "compiler-target",
@@ -649,7 +649,6 @@ dependencies = [
  "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs?rev=a0416cb1cba9a348df175d3ca230f794ec562484)",
  "oak-valkyrie",
  "oak-von",
- "ordered-float",
  "package-registry",
  "package-resolve",
  "serde",
@@ -1233,7 +1232,6 @@ dependencies = [
  "document-ir",
  "document-types",
  "serde_json",
- "serial_test 3.5.0",
 ]
 
 [[package]]
@@ -1685,12 +1683,6 @@ dependencies = [
  "libc",
  "r-efi",
 ]
-
-[[package]]
-name = "glob"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
 
 [[package]]
 name = "hardware"
@@ -2972,8 +2964,8 @@ name = "odm-types"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "boost-fs",
  "database-query",
- "glob",
  "oak-vos",
  "schema-input-von",
  "schema-input-vos",
@@ -2988,15 +2980,6 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
-
-[[package]]
-name = "ordered-float"
-version = "5.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f59006ce1e204c30956638535b74d317bca99477b9356dfaec54c37f6f600ab"
-dependencies = [
- "num-traits",
-]
 
 [[package]]
 name = "package-cache"
@@ -3023,6 +3006,7 @@ dependencies = [
  "acorn-x64",
  "acorn-zip 0.0.1 (git+https://github.com/yggdrasil-language/acorn.rs?rev=beccbdf77374dbb2ca67395be19af3e2048c57ca)",
  "base64",
+ "boost-fs",
  "boost-harness",
  "compiler-analysis",
  "compiler-emitter",
