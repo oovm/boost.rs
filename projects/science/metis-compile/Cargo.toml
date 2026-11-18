@@ -1,0 +1,14 @@
+[package]
+name = "metis-compile"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license = "MPL-2.0"
+description = "Parse and lower .metis sources (oak-metis AST)"
+
+[dependencies]
+oak-metis = { workspace = true }
+metis-types = { workspace = true }
+metis-island = { workspace = true }
+metis-graph = { workspace = true }
+metis-ir = { workspace = true }

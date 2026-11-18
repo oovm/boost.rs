@@ -163,6 +163,16 @@ members = [
     "projects/science/athena-testing",
     "projects/science/athena-types",
     "projects/science/athena-vm",
+    "projects/science/metis",
+    "projects/science/metis-compile",
+    "projects/science/metis-example",
+    "projects/science/metis-graph",
+    "projects/science/metis-ir",
+    "projects/science/metis-island",
+    "projects/science/metis-jit",
+    "projects/science/metis-types",
+    "projects/science/metis-verify",
+    "projects/science/metis-vm",
     "projects/searcher/searcher",
     "projects/searcher/searcher.document",
     "projects/searcher/searcher.index",
@@ -365,6 +375,16 @@ athena-table = { path = "projects/science/athena-table" }
 athena-testing = { path = "projects/science/athena-testing" }
 athena-types = { path = "projects/science/athena-types" }
 athena-vm = { path = "projects/science/athena-vm" }
+metis = { path = "projects/science/metis" }
+metis-compile = { path = "projects/science/metis-compile" }
+metis-example = { path = "projects/science/metis-example" }
+metis-graph = { path = "projects/science/metis-graph" }
+metis-ir = { path = "projects/science/metis-ir" }
+metis-island = { path = "projects/science/metis-island" }
+metis-jit = { path = "projects/science/metis-jit" }
+metis-types = { path = "projects/science/metis-types" }
+metis-verify = { path = "projects/science/metis-verify" }
+metis-vm = { path = "projects/science/metis-vm" }
 
 # 外部库
 clap = { version = "4.5.48", features = ["derive"] }
@@ -446,6 +466,10 @@ oak-smiles = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "d1
 oak-mdl = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "d1337eb4d289505c85d988cd8f80b96023f1e63a", default-features = false, features = ["serde"] }
 oak-sql = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "d1337eb4d289505c85d988cd8f80b96023f1e63a", default-features = false, features = ["serde"] }
 oak-vos = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "d1337eb4d289505c85d988cd8f80b96023f1e63a" }
+
+# `metis-compile` 的 `.metis` 前端仍来自另一 oaks 镜像仓（`ygg-lang`），P2 原样保留，
+# 与上方 `yggdrasil-language` pin 的合并处置归 P3。
+oak-metis = { git = "https://github.com/ygg-lang/oaks.git", rev = "7c4c631967228daadde86a85da38c8617f149216", default-features = false }
 
 [profile.release]
 lto = true

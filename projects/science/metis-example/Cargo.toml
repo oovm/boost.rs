@@ -1,0 +1,15 @@
+[package]
+name = "metis-example"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license = "MPL-2.0"
+description = "Metis foundation smoke example"
+publish = false
+
+[[bin]]
+name = "metis-example"
+path = "src/main.rs"
+
+[dependencies]
+metis = { workspace = true }

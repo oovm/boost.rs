@@ -1,0 +1,19 @@
+[package]
+name = "metis"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license = "MPL-2.0"
+description = "Metis stable facade: graph, islands, compile, verify, JIT"
+
+[dependencies]
+metis-types = { workspace = true }
+metis-graph = { workspace = true }
+metis-island = { workspace = true }
+metis-verify = { workspace = true }
+metis-ir = { workspace = true }
+metis-compile = { workspace = true }
+metis-vm = { workspace = true }
+metis-jit = { workspace = true }
+athena-gc = { workspace = true }
+oak-metis = { workspace = true }

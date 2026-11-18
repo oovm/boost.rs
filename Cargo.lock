@@ -3131,6 +3131,105 @@ dependencies = [
 ]
 
 [[package]]
+name = "metis"
+version = "0.1.0"
+dependencies = [
+ "athena-gc",
+ "metis-compile",
+ "metis-graph",
+ "metis-ir",
+ "metis-island",
+ "metis-jit",
+ "metis-types",
+ "metis-verify",
+ "metis-vm",
+ "oak-metis",
+]
+
+[[package]]
+name = "metis-compile"
+version = "0.1.0"
+dependencies = [
+ "metis-graph",
+ "metis-ir",
+ "metis-island",
+ "metis-types",
+ "oak-metis",
+]
+
+[[package]]
+name = "metis-example"
+version = "0.1.0"
+dependencies = [
+ "metis",
+]
+
+[[package]]
+name = "metis-graph"
+version = "0.1.0"
+dependencies = [
+ "athena-gc",
+ "athena-graph",
+ "metis-types",
+]
+
+[[package]]
+name = "metis-ir"
+version = "0.1.0"
+dependencies = [
+ "metis-types",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "metis-island"
+version = "0.1.0"
+dependencies = [
+ "metis-graph",
+ "metis-types",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "metis-jit"
+version = "0.1.0"
+dependencies = [
+ "metis-graph",
+ "metis-ir",
+ "metis-island",
+ "metis-types",
+ "metis-vm",
+]
+
+[[package]]
+name = "metis-types"
+version = "0.1.0"
+dependencies = [
+ "athena-graph",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "metis-verify"
+version = "0.1.0"
+dependencies = [
+ "metis-graph",
+ "metis-types",
+]
+
+[[package]]
+name = "metis-vm"
+version = "0.1.0"
+dependencies = [
+ "athena-gc",
+ "metis-graph",
+ "metis-ir",
+ "metis-types",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "miette"
 version = "7.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3295,6 +3394,16 @@ dependencies = [
 [[package]]
 name = "oak-core"
 version = "0.0.12"
+source = "git+https://github.com/ygg-lang/oaks.git?rev=7c4c631967228daadde86a85da38c8617f149216#7c4c631967228daadde86a85da38c8617f149216"
+dependencies = [
+ "smallvec",
+ "triomphe",
+ "twox-hash",
+]
+
+[[package]]
+name = "oak-core"
+version = "0.0.12"
 source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
  "serde",
@@ -3389,6 +3498,14 @@ dependencies = [
  "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "oak-uml",
  "serde",
+]
+
+[[package]]
+name = "oak-metis"
+version = "0.0.12"
+source = "git+https://github.com/ygg-lang/oaks.git?rev=7c4c631967228daadde86a85da38c8617f149216#7c4c631967228daadde86a85da38c8617f149216"
+dependencies = [
+ "oak-core 0.0.12 (git+https://github.com/ygg-lang/oaks.git?rev=7c4c631967228daadde86a85da38c8617f149216)",
 ]
 
 [[package]]

@@ -1,0 +1,12 @@
+[package]
+name = "metis-graph"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license = "MPL-2.0"
+description = "Metis relation semantics on athena-graph (hash-cons, judgment edges)"
+
+[dependencies]
+athena-gc = { workspace = true }
+athena-graph = { workspace = true }
+metis-types = { workspace = true }
