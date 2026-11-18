@@ -1,7 +1,7 @@
 //! Reliability tests for internationalization functionality
 
-use std::collections::HashMap;
-use template_types::i18n::*;
+use std::{cell::Cell, collections::HashMap, rc::Rc};
+use template_types::{DejavuResult, i18n::*};
 
 #[test]
 fn test_edge_cases() {
@@ -112,4 +112,72 @@ fn test_cache_behavior() {
     // Test adding translations clears cache
     i18n.add_translations("zh", HashMap::new()).unwrap();
     assert_eq!(i18n.cache_size(), 0);
+}
+
+/// 统计调用次数的翻译器，用来区分「命中了空翻译」与「合法空结果被当成 miss」。
+#[derive(Debug)]
+struct CountingTranslator {
+    calls: Rc<Cell<usize>>,
+}
+
+impl TranslationProvider for CountingTranslator {
+    fn translate(&self, _key: &str, _args: Option<&HashMap<String, String>>, _locale: &str) -> DejavuResult<String> {
+        self.calls.set(self.calls.get() + 1);
+        Ok(String::new())
+    }
+
+    fn get_locale(&self) -> &str {
+        "en"
+    }
+
+    fn set_locale(&mut self, _locale: &str) {}
+
+    fn clone_box(&self) -> Box<dyn TranslationProvider> {
+        Box::new(Self { calls: Rc::clone(&self.calls) })
+    }
+}
+
+#[test]
+fn test_empty_translation_is_cached_as_a_hit() {
+    let calls = Rc::new(Cell::new(0));
+    let mut i18n = I18nContext::new(Box::new(CountingTranslator { calls: Rc::clone(&calls) }));
+
+    let keys = vec![("empty".to_string(), None)];
+    assert_eq!(i18n.t_batch(&keys).unwrap(), vec![String::new()]);
+    assert_eq!(calls.get(), 1);
+
+    // 空字符串是合法翻译，第二次批量请求必须命中缓存而不是再次翻译。
+    assert_eq!(i18n.t_batch(&keys).unwrap(), vec![String::new()]);
+    assert_eq!(calls.get(), 1);
+    assert_eq!(i18n.cache_size(), 1);
+}
+
+#[test]
+fn test_argument_identity_keeps_the_full_arguments() {
+    let mut translator = SimpleTranslator::new("en", "en");
+    let mut en_translations = HashMap::new();
+    en_translations.insert("greeting".to_string(), "{first} and {second}".to_string());
+    translator.add_translations("en", en_translations);
+
+    let mut i18n = I18nContext::new(Box::new(translator));
+
+    let mut forward = HashMap::new();
+    forward.insert("first".to_string(), "Alice".to_string());
+    forward.insert("second".to_string(), "Bob".to_string());
+
+    let mut swapped = HashMap::new();
+    swapped.insert("second".to_string(), "Bob".to_string());
+    swapped.insert("first".to_string(), "Alice".to_string());
+
+    let mut other = HashMap::new();
+    other.insert("first".to_string(), "Carol".to_string());
+    other.insert("second".to_string(), "Bob".to_string());
+
+    assert_eq!(i18n.t("greeting", Some(&forward)).unwrap(), "Alice and Bob");
+    assert_eq!(i18n.t("greeting", Some(&other)).unwrap(), "Carol and Bob");
+    assert_eq!(i18n.cache_size(), 2);
+
+    // 相同参数按不同插入顺序仍属于同一缓存条目。
+    assert_eq!(i18n.t("greeting", Some(&swapped)).unwrap(), "Alice and Bob");
+    assert_eq!(i18n.cache_size(), 2);
 }

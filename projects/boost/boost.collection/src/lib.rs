@@ -23,11 +23,15 @@
 //! 独立增长的段落）不因词面嵌套而强迁这里。可写视图要求独占借用与
 //! 单射映射；`DenseArrayND::reshaped` 复用缓冲并保持行主序线性化。
 //! 三维视图与非 affine 布局留到后续阶段。
+//!
+//! [`LruCache`] 提供有容量约束的内存 LRU 映射：只拥有容量、访问
+//! 顺序与淘汰，不承担领域失效策略、持久缓存或数据库页管理。
 
 #![doc = include_str!("readme.md")]
 #![deny(missing_docs)]
 
 mod array_nd;
+mod cache;
 mod error;
 mod graph;
 
@@ -36,5 +40,6 @@ pub use array_nd::{
     array_view::{ArrayView2D, ArrayViewMut2D},
 };
 pub use boost_collection_macro::array;
+pub use cache::{LruCache, LruIter, PutOutcome};
 pub use error::{CollectionError, Result};
 pub use graph::{CsrGraph, GraphError, GraphRead, GraphResult, IncomingEdges, MemoryEdge, MemoryGraph, OutgoingEdges};

@@ -15,4 +15,4 @@ fluent = { workspace = true }
 fluent-syntax = { workspace = true }
 fluent-bundle = { workspace = true }
 unic-langid = { workspace = true }
-lru = { workspace = true }
+boost-collection = { workspace = true }

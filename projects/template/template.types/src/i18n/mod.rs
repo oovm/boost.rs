@@ -1,9 +1,9 @@
 //! Internationalization support for Dejavu templates
 
 use crate::DejavuResult;
+use boost_collection::LruCache;
 use fluent_bundle::{FluentBundle, FluentResource};
-use lru::LruCache;
-use std::{collections::HashMap, fmt::Debug, fs, hash::Hash, path::Path, time::SystemTime};
+use std::{collections::HashMap, fmt::Debug, fs, path::Path, time::SystemTime};
 use unic_langid::LanguageIdentifier;
 
 /// Translation provider trait for internationalization
@@ -132,33 +132,20 @@ pub struct TranslationCacheKey {
     key: String,
     /// Locale
     locale: String,
-    /// Arguments hash
-    args_hash: u64,
+    /// Normalized arguments: sorted key/value pairs, so identical argument maps
+    /// produce identical keys and different values never collide into one entry.
+    args: Option<Vec<(String, String)>>,
 }
 
 impl TranslationCacheKey {
     /// Create a new cache key
     pub fn new(key: &str, locale: &str, args: Option<&HashMap<String, String>>) -> Self {
-        // Generate a more robust hash for arguments
-        let args_hash = match args {
-            Some(args) => {
-                use std::{collections::hash_map::DefaultHasher, hash::Hasher};
-
-                let mut hasher = DefaultHasher::new();
-                // Sort keys to ensure consistent hashing regardless of insertion order
-                let mut sorted_keys: Vec<&String> = args.keys().collect();
-                sorted_keys.sort();
-
-                for k in sorted_keys {
-                    k.hash(&mut hasher);
-                    args.get(k).unwrap().hash(&mut hasher);
-                }
-                hasher.finish()
-            }
-            None => 0,
-        };
-
-        Self { key: key.to_string(), locale: locale.to_string(), args_hash }
+        let args = args.map(|args| {
+            let mut pairs: Vec<(String, String)> = args.iter().map(|(name, value)| (name.clone(), value.clone())).collect();
+            pairs.sort();
+            pairs
+        });
+        Self { key: key.to_string(), locale: locale.to_string(), args }
     }
 }
 
@@ -210,39 +197,34 @@ impl I18nContext {
 
         // Translate and cache the result
         let result = self.translator.translate(key, args, locale)?;
-        self.translation_cache.put(cache_key, result.clone());
+        let _ = self.translation_cache.put(cache_key, result.clone());
         Ok(result)
     }
 
     /// Batch translate multiple keys at once
     pub fn t_batch(&mut self, keys: &[(String, Option<HashMap<String, String>>)]) -> DejavuResult<Vec<String>> {
         let locale = self.translator.get_locale();
-        let mut results = Vec::with_capacity(keys.len());
-        let mut missing = Vec::new();
+        // `None` 表示未命中，避免把合法的空翻译当作 miss。
+        let mut results: Vec<Option<String>> = Vec::with_capacity(keys.len());
 
         // First check cache for all keys
         for (key, args) in keys {
             let cache_key = TranslationCacheKey::new(key, locale, args.as_ref());
-            if let Some(cached) = self.translation_cache.get(&cache_key) {
-                results.push(cached.clone());
-            }
-            else {
-                missing.push((key.clone(), args.clone()));
-                results.push(String::new()); // Placeholder
-            }
+            results.push(self.translation_cache.get(&cache_key).cloned());
         }
 
         // Translate missing keys
-        for (i, (key, args)) in keys.iter().enumerate() {
-            if results[i].is_empty() {
-                let result = self.translator.translate(key, args.as_ref(), locale)?;
-                let cache_key = TranslationCacheKey::new(key, locale, args.as_ref());
-                self.translation_cache.put(cache_key, result.clone());
-                results[i] = result;
+        for (index, (key, args)) in keys.iter().enumerate() {
+            if results[index].is_some() {
+                continue;
             }
+            let result = self.translator.translate(key, args.as_ref(), locale)?;
+            let cache_key = TranslationCacheKey::new(key, locale, args.as_ref());
+            let _ = self.translation_cache.put(cache_key, result.clone());
+            results[index] = Some(result);
         }
 
-        Ok(results)
+        Ok(results.into_iter().map(|result| result.unwrap_or_default()).collect())
     }
 
     /// Get the current locale
