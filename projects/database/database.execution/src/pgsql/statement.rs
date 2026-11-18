@@ -9,10 +9,10 @@
 use std::sync::Arc;
 
 use database_query::{
-    OnCommit, SqlCatalogBoundProjection, SqlCatalogBoundStatement, SqlColumn, SqlDdlStatement, SqlDialect, SqlErrorKind, SqlExecutionPlan,
-    SqlFrontendError, SqlSessionCommand, SqlTransactionAction, SqlValue, analyze_meta_query, apply_auto_increment, bind_sql_catalog,
-    describe_plan, is_ddl_statement, parse_ddl, parse_pg_utility, parse_session_command, plan_statement_for_dialect,
-    rewrite_double_colon_casts, rewrite_escape_strings, rewrite_pg_temp_references,
+    OnCommit, PgObjectStatement, SqlCatalogBoundProjection, SqlCatalogBoundStatement, SqlColumn, SqlDdlStatement, SqlDialect, SqlErrorKind,
+    SqlExecutionPlan, SqlFrontendError, SqlSessionCommand, SqlTransactionAction, SqlValue, analyze_meta_query, apply_auto_increment,
+    bind_sql_catalog, describe_plan, is_ddl_statement, parse_ddl, parse_pg_object_statement, parse_pg_utility, parse_session_command,
+    plan_statement_for_dialect, rewrite_double_colon_casts, rewrite_escape_strings, rewrite_pg_temp_references,
 };
 
 use crate::cluster::TransactionHandle;
@@ -120,6 +120,12 @@ pub fn dispatch_statement(
     // DDL resolves against the local schema registry before the Oak session
     // parser, so a `CREATE` / `ALTER` / `DROP` outside the supported subset is
     // reported as such instead of being misclassified as an unknown table.
+    if let Some(object) = parse_pg_object_statement(trimmed).map_err(|error| {
+        session.fail();
+        StatementError::new(pg_sqlstate(error.kind), format!("SQL object error: {}", error.message))
+    })? {
+        return apply_object_statement(object, runtime, session);
+    }
     match parse_ddl(trimmed, SqlDialect::Postgres) {
         Err(error) => {
             session.fail();
@@ -232,6 +238,115 @@ pub fn dispatch_statement(
             run_statement(trimmed, runtime, session).map(StatementOutcome::Result).map_err(|(sqlstate, message)| {
                 StatementError::new(sqlstate, message)
             })
+        }
+    }
+}
+
+/// Table privilege one plan requires, when the shape names exactly one table.
+fn required_privilege(plan: &SqlExecutionPlan) -> Option<(database_storage::pgsql::PgPrivilege, &str)> {
+    use database_storage::pgsql::PgPrivilege;
+    match plan {
+        SqlExecutionPlan::Read(plan) => Some((PgPrivilege::Select, plan.namespace.as_str())),
+        SqlExecutionPlan::Scan(plan) => Some((PgPrivilege::Select, plan.namespace.as_str())),
+        SqlExecutionPlan::Insert(plan) => Some((PgPrivilege::Insert, plan.namespace.as_str())),
+        SqlExecutionPlan::MultiInsert(plans) => plans.first().map(|plan| (PgPrivilege::Insert, plan.namespace.as_str())),
+        SqlExecutionPlan::Update(plan) => Some((PgPrivilege::Update, plan.namespace.as_str())),
+        SqlExecutionPlan::UpdateScan(plan) => Some((PgPrivilege::Update, plan.namespace.as_str())),
+        SqlExecutionPlan::Delete(plan) => Some((PgPrivilege::Delete, plan.namespace.as_str())),
+        SqlExecutionPlan::DeleteScan(plan) => Some((PgPrivilege::Delete, plan.namespace.as_str())),
+        SqlExecutionPlan::Join(_)
+        | SqlExecutionPlan::Scalar(_)
+        | SqlExecutionPlan::SetOperation(_)
+        | SqlExecutionPlan::InsertSelect(_) => None,
+    }
+}
+
+/// Checks the session role's table grants against the plan.
+///
+/// The check participates in the same authorization path authentication uses:
+/// the role comes from the startup `user`, and only a role the catalog knows and
+/// that is not a superuser is restricted. A role the catalog does not know keeps
+/// the pre-catalog behaviour, and a temporary table is always reachable by the
+/// session that created it. A shape the check cannot classify is refused with
+/// `0A000` for a restricted role instead of being silently allowed.
+fn enforce_privileges(
+    plan: &SqlExecutionPlan,
+    catalog: &database_query::SqlCatalog,
+    runtime: &Arc<PgsqlSqlRuntime>,
+    role: &str,
+    is_temp_type: impl Fn(u64) -> bool,
+) -> Result<(), (String, String)> {
+    let Some(entry) = runtime.objects.role(role)
+    else {
+        return Ok(());
+    };
+    if entry.superuser {
+        return Ok(());
+    }
+    let Some((privilege, namespace)) = required_privilege(plan)
+    else {
+        return Err((
+            "0A000".to_string(),
+            format!("statement shape cannot be authorized for role \"{role}\": only single-table reads and writes are supported"),
+        ));
+    };
+    let Some(type_id) = namespace.strip_prefix("table:").and_then(|id| id.parse::<u64>().ok())
+    else {
+        return Ok(());
+    };
+    if is_temp_type(type_id) {
+        return Ok(());
+    }
+    let Some(table) = catalog.tables().iter().find(|table| table.type_id == type_id)
+    else {
+        return Ok(());
+    };
+    if runtime.objects.has_privilege(role, &table.name, privilege) {
+        return Ok(());
+    }
+    Err(("42501".to_string(), format!("permission denied for table {}", table.name)))
+}
+
+/// Applies a `CREATE DATABASE` / `CREATE ROLE` / `GRANT` / `REVOKE` statement.
+fn apply_object_statement(
+    statement: PgObjectStatement,
+    runtime: Option<&Arc<PgsqlSqlRuntime>>,
+    session: &mut TransactionSession,
+) -> Result<StatementOutcome, StatementError> {
+    if session.is_aborted() {
+        return Err(StatementError::new("25P02", ABORTED_BLOCK));
+    }
+    let Some(runtime) = runtime
+    else {
+        return Err(StatementError::new("0A000", "YYDS PostgreSQL SQL execution is not implemented (no SQL runtime)"));
+    };
+    let objects = Arc::clone(&runtime.objects);
+    let catalog = session.catalog(&runtime.schema);
+    let table_exists = |name: &str| catalog.tables().iter().any(|table| table.name == name);
+    let failure = |session: &mut TransactionSession, error: database_storage::pgsql::ObjectError| {
+        session.fail();
+        StatementError::new(error.sqlstate(), error.message())
+    };
+    match statement {
+        PgObjectStatement::CreateDatabase { name, if_not_exists } => {
+            objects.create_database(&name, if_not_exists).map_err(|error| failure(session, error))?;
+            Ok(StatementOutcome::Command("CREATE DATABASE"))
+        }
+        PgObjectStatement::CreateRole { role, if_not_exists } => {
+            objects.create_role(role, if_not_exists).map_err(|error| failure(session, error))?;
+            Ok(StatementOutcome::Command("CREATE ROLE"))
+        }
+        PgObjectStatement::Grant { privileges, table, roles } => {
+            for role in &roles {
+                objects.grant(role, &table, &privileges, table_exists).map_err(|error| failure(session, error))?;
+            }
+            Ok(StatementOutcome::Command("GRANT"))
+        }
+        PgObjectStatement::Revoke { privileges, table, roles } => {
+            for role in &roles {
+                objects.revoke(role, &table, &privileges, table_exists).map_err(|error| failure(session, error))?;
+            }
+            Ok(StatementOutcome::Command("REVOKE"))
         }
     }
 }
@@ -420,6 +535,7 @@ fn run_statement_inner(
         session.fail();
         statement_error("plan", error)
     })?;
+    enforce_privileges(&plan, &catalog, runtime, session.user(), |type_id| session.owns_temp_type(type_id))?;
     let is_read = matches!(
         &plan,
         SqlExecutionPlan::Read(_)

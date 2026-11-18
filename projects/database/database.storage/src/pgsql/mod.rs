@@ -13,6 +13,8 @@ pub mod store;
 pub mod shard;
 /// One directory lease plus the `shards/<shard-id>/` table-group layout.
 pub mod instance;
+/// Databases, roles and table grants, persisted beside the schema.
+pub mod objects;
 
 pub use catalog::{CATALOG_FILE, DEFAULT_SHARD_ID, LEGACY_CATALOG_FILE, LOCK_FILE};
 pub use instance::{
@@ -20,3 +22,4 @@ pub use instance::{
 };
 pub use shard::Store;
 pub use store::{ServerChange, ServerRow, ServerStore};
+pub use objects::{OBJECTS_CONTRACT, OBJECTS_FILE, ObjectError, PgGrant, PgObjectCatalog, PgPrivilege, PgRole};

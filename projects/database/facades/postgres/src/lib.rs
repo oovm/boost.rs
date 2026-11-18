@@ -237,7 +237,11 @@ impl PostgreSQL {
         // by one run is read back by the next one instead of asking the caller
         // to replay it.
         let schema = SqlSchemaRegistry::open(instance.schema_path()).map_err(|error| Error::State(error.message))?;
-        let runtime = Arc::new(PgsqlSqlRuntime::new(Arc::new(schema), Arc::new(executor)));
+        // Databases, roles and grants are cluster objects of the same data
+        // directory, so a restart sees the same catalog.
+        let objects = database_storage::pgsql::PgObjectCatalog::open(options.storage.directory.join(database_storage::pgsql::OBJECTS_FILE))
+            .map_err(|error| Error::State(error.message()))?;
+        let runtime = Arc::new(PgsqlSqlRuntime::with_objects(Arc::new(schema), Arc::new(executor), Arc::new(objects)));
         Ok(Self {
             runtime,
             instance: Mutex::new(Some(instance)),

@@ -26,8 +26,8 @@ pub use catalog_bind::{
     project_resolved_type,
 };
 pub use pgsql::{
-    CopyFormat, FetchDirection, PgUtilityStatement, parse_pg_utility, rewrite_double_colon_casts, rewrite_escape_strings,
-    rewrite_pg_temp_references,
+    CopyFormat, FetchDirection, PgObjectStatement, PgUtilityStatement, parse_pg_object_statement, parse_pg_utility,
+    rewrite_double_colon_casts, rewrite_escape_strings, rewrite_pg_temp_references,
 };
 pub use sql::{
     DiscardTarget, MYSQL_BLOB_CAPACITY, SavepointIntent, SqlBoundBinaryOperator, SqlBoundConflict, SqlBoundConflictAction, SqlBoundCte,

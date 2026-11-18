@@ -99,12 +99,29 @@ pub struct PgsqlSqlRuntime {
     pub executor: Arc<dyn KeyValueExecutor>,
     /// Listener/notify fan-out shared by every session of this runtime.
     pub notifications: Arc<super::notify::NotificationHub>,
+    /// Cluster-wide databases, roles and table grants.
+    pub objects: Arc<database_storage::pgsql::PgObjectCatalog>,
 }
 
 impl PgsqlSqlRuntime {
-    /// Builds a runtime with an empty notification hub.
+    /// Builds a runtime with an empty notification hub and an in-memory object
+    /// catalog seeded with `postgres`.
     pub fn new(schema: Arc<SqlSchemaRegistry>, executor: Arc<dyn KeyValueExecutor>) -> Self {
-        Self { schema, executor, notifications: Arc::new(super::notify::NotificationHub::new()) }
+        Self {
+            schema,
+            executor,
+            notifications: Arc::new(super::notify::NotificationHub::new()),
+            objects: Arc::new(database_storage::pgsql::PgObjectCatalog::new_in_memory()),
+        }
+    }
+
+    /// Builds a runtime whose object catalog is persisted by the caller.
+    pub fn with_objects(
+        schema: Arc<SqlSchemaRegistry>,
+        executor: Arc<dyn KeyValueExecutor>,
+        objects: Arc<database_storage::pgsql::PgObjectCatalog>,
+    ) -> Self {
+        Self { schema, executor, notifications: Arc::new(super::notify::NotificationHub::new()), objects }
     }
 }
 
@@ -126,6 +143,8 @@ pub struct TransactionSession {
     search_path: String,
     /// Startup `database` parameter, reported by synthesized `current_database()`.
     database: String,
+    /// Startup `user` parameter: the role this session's statements run as.
+    user: String,
     /// Registry snapshot captured at `BEGIN`. The catalog rides the same
     /// transaction as rows: `COMMIT` keeps it, every rollback path restores it.
     schema_checkpoint: Option<SqlSchemaCheckpoint>,
@@ -158,6 +177,7 @@ impl TransactionSession {
             failed: false,
             search_path: DEFAULT_SEARCH_PATH.to_string(),
             database: "postgres".to_string(),
+            user: "postgres".to_string(),
             schema_checkpoint: None,
             prepared: BTreeMap::new(),
             cursors: BTreeMap::new(),
@@ -437,6 +457,11 @@ impl TransactionSession {
         Ok(outcome)
     }
 
+    /// Whether the session owns a temporary table with this type identity.
+    pub fn owns_temp_type(&self, type_id: u64) -> bool {
+        self.temp.as_ref().is_some_and(|temp| temp.registry.catalog().tables().iter().any(|table| table.type_id == type_id))
+    }
+
     /// Whether the session owns a temporary table with this name.
     pub fn temp_table_exists(&self, name: &str) -> bool {
         self.temp.as_ref().is_some_and(|temp| temp.registry.catalog().tables().iter().any(|table| table.name == name))
@@ -488,6 +513,17 @@ impl TransactionSession {
     /// Applies the startup `database` parameter.
     pub fn set_database(&mut self, database: String) {
         self.database = database;
+    }
+
+    /// Applies the startup `user` parameter, which is the role table grants are
+    /// checked against.
+    pub fn set_user(&mut self, user: String) {
+        self.user = user;
+    }
+
+    /// Role this session runs statements as.
+    pub fn user(&self) -> &str {
+        &self.user
     }
 
     /// Open transaction handle, when this session owns a runtime transaction.

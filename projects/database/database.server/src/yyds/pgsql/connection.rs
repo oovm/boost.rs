@@ -122,6 +122,7 @@ fn serve_session(
     };
 
     session.set_database(parameters.database().to_string());
+    session.set_user(parameters.user().to_string());
 
     if let Some(failure) = authenticate(&mut stream, &mut pending, &parameters, auth.as_deref())? {
         write_fatal(&mut stream, failure.sqlstate, &failure.message)?;

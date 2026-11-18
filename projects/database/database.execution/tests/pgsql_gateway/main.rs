@@ -117,6 +117,80 @@ fn generated_identity_and_added_constraints_are_enforced() {
 }
 
 #[test]
+fn databases_roles_and_grants_are_cataloged_and_enforced() {
+    let mut gateway = Gateway::new("objects");
+    gateway.command("CREATE TABLE orders (id BIGINT PRIMARY KEY, total BIGINT)");
+    assert_eq!(gateway.command("CREATE DATABASE app"), "CREATE DATABASE");
+    assert_eq!(gateway.command("CREATE ROLE reader WITH LOGIN"), "CREATE ROLE");
+    assert_eq!(gateway.command("GRANT SELECT, INSERT ON orders TO reader"), "GRANT");
+    gateway.command("INSERT INTO orders (id, total) VALUES (1, 10)");
+
+    gateway.session.set_user("reader".to_owned());
+    assert_eq!(gateway.scalar("SELECT total FROM orders WHERE id = 1"), SqlValue::Integer(10));
+    gateway.command("INSERT INTO orders (id, total) VALUES (2, 20)");
+    let (code, message) = match gateway.sql("DELETE FROM orders WHERE id = 1") {
+        Ok(_) => panic!("a role without DELETE must be refused"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42501", "unexpected message: {message}");
+    let (code, _) = match gateway.sql("SELECT o1.id FROM orders o1 JOIN orders o2 ON o1.id = o2.id") {
+        Ok(_) => panic!("a shape the check cannot classify must be refused for a restricted role"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "0A000");
+
+    gateway.session.set_user("postgres".to_owned());
+    gateway.command("REVOKE SELECT ON orders FROM reader");
+    gateway.session.set_user("reader".to_owned());
+    let (code, _) = match gateway.sql("SELECT id FROM orders") {
+        Ok(_) => panic!("a revoked SELECT must be refused"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42501");
+}
+
+#[test]
+fn object_statement_errors_report_their_sqlstates() {
+    let mut gateway = Gateway::new("objects-errors");
+    gateway.command("CREATE TABLE orders (id BIGINT PRIMARY KEY)");
+    let (code, message) = match gateway.sql("CREATE DATABASE postgres") {
+        Ok(_) => panic!("the bootstrap database already exists"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42P04", "unexpected message: {message}");
+    let (code, _) = match gateway.sql("CREATE ROLE postgres") {
+        Ok(_) => panic!("the bootstrap role already exists"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42710");
+    gateway.command("CREATE ROLE reader");
+    let (code, _) = match gateway.sql("GRANT SELECT ON orders TO ghost") {
+        Ok(_) => panic!("a grant to an unknown role must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42704");
+    let (code, _) = match gateway.sql("GRANT SELECT ON missing TO reader") {
+        Ok(_) => panic!("a grant on an unknown table must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42P01");
+
+    // Unsupported clauses name their reason instead of being silently accepted.
+    for statement in [
+        "CREATE DATABASE other TEMPLATE template0",
+        "CREATE ROLE app PASSWORD 'x'",
+        "CREATE SEQUENCE s",
+        "GRANT ALL TABLES IN SCHEMA public TO reader",
+    ] {
+        let (code, message) = match gateway.sql(statement) {
+            Ok(_) => panic!("`{statement}` must be rejected"),
+            Err(error) => error,
+        };
+        assert_eq!(code, "0A000", "unexpected message for `{statement}`: {message}");
+    }
+}
+
+#[test]
 fn statement_timeout_reports_57014_and_rolls_the_block_back() {
     let mut gateway = Gateway::new("timeout");
     gateway.command("CREATE TABLE bulk (id BIGINT PRIMARY KEY)");
