@@ -75,6 +75,70 @@ impl Drop for Gateway {
 }
 
 #[test]
+fn cursors_fetch_forward_absolute_and_relative_rows() {
+    let mut gateway = Gateway::new("cursors");
+    gateway.command("CREATE TABLE cursor_rows (id BIGINT PRIMARY KEY, name TEXT)");
+    gateway.command("INSERT INTO cursor_rows (id, name) VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd')");
+    assert_eq!(gateway.command("BEGIN"), "BEGIN");
+    assert_eq!(gateway.command("DECLARE c NO SCROLL CURSOR FOR SELECT id FROM cursor_rows ORDER BY id"), "DECLARE CURSOR");
+    assert_eq!(gateway.expect("FETCH NEXT FROM c").rows, vec![vec![SqlValue::Integer(1)]]);
+    assert_eq!(gateway.expect("FETCH 2 FROM c").rows, vec![vec![SqlValue::Integer(2)], vec![SqlValue::Integer(3)]]);
+    assert_eq!(gateway.expect("FETCH ABSOLUTE 1 FROM c").rows, vec![vec![SqlValue::Integer(1)]]);
+    assert_eq!(gateway.expect("FETCH RELATIVE 2 FROM c").rows, vec![vec![SqlValue::Integer(4)]]);
+    assert_eq!(gateway.expect("FETCH ALL FROM c").rows.len(), 0);
+    assert_eq!(gateway.expect("FETCH ABSOLUTE -1 FROM c").rows, vec![vec![SqlValue::Integer(4)]]);
+    assert_eq!(gateway.command("CLOSE c"), "CLOSE CURSOR");
+    let (code, _) = match gateway.sql("FETCH ALL FROM c") {
+        Ok(_) => panic!("a closed cursor must not be fetchable"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "34000");
+    assert_eq!(gateway.command("COMMIT"), "COMMIT");
+}
+
+#[test]
+fn cursor_errors_report_their_sqlstates() {
+    let mut gateway = Gateway::new("cursor-errors");
+    let (code, message) = match gateway.sql("DECLARE c CURSOR FOR SELECT 1") {
+        Ok(_) => panic!("DECLARE outside a transaction block must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "25P01", "unexpected message: {message}");
+
+    gateway.command("BEGIN");
+    gateway.command("DECLARE c CURSOR FOR SELECT 1");
+    let (code, _) = match gateway.sql("DECLARE c CURSOR FOR SELECT 2") {
+        Ok(_) => panic!("a duplicate cursor name must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42P03");
+
+    let (code, _) = match gateway.sql("FETCH ALL FROM missing") {
+        Ok(_) => panic!("FETCH of an unknown cursor must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "34000");
+    gateway.command("COMMIT");
+}
+
+#[test]
+fn a_holdable_cursor_survives_commit_and_a_plain_one_does_not() {
+    let mut gateway = Gateway::new("cursor-hold");
+    gateway.command("CREATE TABLE hold_rows (id BIGINT PRIMARY KEY)");
+    gateway.command("INSERT INTO hold_rows (id) VALUES (1), (2)");
+    gateway.command("BEGIN");
+    gateway.command("DECLARE held CURSOR WITH HOLD FOR SELECT id FROM hold_rows ORDER BY id");
+    gateway.command("DECLARE plain CURSOR FOR SELECT id FROM hold_rows ORDER BY id");
+    assert_eq!(gateway.command("COMMIT"), "COMMIT");
+    assert_eq!(gateway.expect("FETCH ALL FROM held").rows.len(), 2);
+    let (code, _) = match gateway.sql("FETCH ALL FROM plain") {
+        Ok(_) => panic!("a cursor without HOLD closes at COMMIT"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "34000");
+}
+
+#[test]
 fn prepared_statements_execute_with_arguments_and_returning() {
     let mut gateway = Gateway::new("prepare");
     gateway.command("CREATE TABLE prepared (id BIGINT PRIMARY KEY, name TEXT)");

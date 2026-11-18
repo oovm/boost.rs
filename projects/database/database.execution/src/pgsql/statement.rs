@@ -92,7 +92,12 @@ pub fn dispatch_statement(
         session.fail();
         StatementError::new(pg_sqlstate(error.kind), format!("SQL utility error: {}", error.message))
     })? {
-        return super::prepared::execute_utility(&utility, runtime, session);
+        return match &utility {
+            database_query::PgUtilityStatement::DeclareCursor { .. }
+            | database_query::PgUtilityStatement::Fetch { .. }
+            | database_query::PgUtilityStatement::CloseCursor { .. } => super::cursors::execute_cursor_utility(&utility, runtime, session),
+            _ => super::prepared::execute_utility(&utility, runtime, session),
+        };
     }
     // DDL resolves against the local schema registry before the Oak session
     // parser, so a `CREATE` / `ALTER` / `DROP` outside the supported subset is

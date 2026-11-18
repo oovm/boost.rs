@@ -28,6 +28,9 @@ pub fn execute_utility(
             }
             Ok(StatementOutcome::Command("PREPARE"))
         }
+        PgUtilityStatement::DeclareCursor { .. } | PgUtilityStatement::Fetch { .. } | PgUtilityStatement::CloseCursor { .. } => {
+            super::cursors::execute_cursor_utility(utility, runtime, session)
+        }
         PgUtilityStatement::Deallocate { name } => {
             let removed = session.deallocate_statement(name.as_deref());
             if let Some(name) = name {

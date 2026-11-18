@@ -13,7 +13,7 @@ use std::{
 };
 
 use crate::cluster::{KeyValueExecutor, TransactionHandle};
-use database_query::{SqlSchemaCheckpoint, SqlSchemaRegistry};
+use database_query::{SqlColumn, SqlSchemaCheckpoint, SqlSchemaRegistry, SqlValue};
 
 /// One SQL-level prepared statement registered through `PREPARE`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +22,25 @@ pub struct PreparedSqlStatement {
     pub sql: String,
     /// Declared parameter types, as written.
     pub parameter_types: Vec<String>,
+}
+
+/// One materialized cursor declared through `DECLARE`.
+///
+/// The gateway has no streaming cursor: `DECLARE` runs the query once and keeps
+/// its rows, so `FETCH` only slices that result. `with_hold` rows survive a
+/// `COMMIT`, matching PostgreSQL's holdable cursor rule.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SessionCursor {
+    /// Query text the cursor materialized.
+    pub sql: String,
+    /// Result shape.
+    pub description: Vec<SqlColumn>,
+    /// Materialized rows.
+    pub rows: Vec<Vec<SqlValue>>,
+    /// Index of the next row `FETCH NEXT` returns.
+    pub position: usize,
+    /// Whether `WITH HOLD` was written.
+    pub with_hold: bool,
 }
 
 /// PostgreSQL's default `search_path`, also the value `RESET search_path` and
@@ -80,6 +99,8 @@ pub struct TransactionSession {
     schema_checkpoint: Option<SqlSchemaCheckpoint>,
     /// SQL-level prepared statements owned by this session.
     prepared: BTreeMap<String, PreparedSqlStatement>,
+    /// SQL-level cursors owned by this session.
+    cursors: BTreeMap<String, SessionCursor>,
 }
 
 impl TransactionSession {
@@ -94,6 +115,7 @@ impl TransactionSession {
             database: "postgres".to_string(),
             schema_checkpoint: None,
             prepared: BTreeMap::new(),
+            cursors: BTreeMap::new(),
         }
     }
 
@@ -147,6 +169,7 @@ impl TransactionSession {
             self.handle = None;
             self.protocol_only_transaction = false;
             self.failed = false;
+            self.drop_cursors(false);
             // `COMMIT` of an aborted block is a rollback: the catalog goes with the rows.
             self.restore_schema(runtime)?;
             return Ok(TransactionControl::Done("ROLLBACK"));
@@ -167,6 +190,8 @@ impl TransactionSession {
         self.handle = None;
         self.protocol_only_transaction = false;
         self.failed = false;
+        // Holdable cursors survive the commit, everything else closes.
+        self.drop_cursors(true);
         // The commit point publishes the schema revision as well.
         self.schema_checkpoint = None;
         Ok(TransactionControl::Done("COMMIT"))
@@ -181,6 +206,7 @@ impl TransactionSession {
         self.handle = None;
         self.protocol_only_transaction = false;
         self.failed = false;
+        self.drop_cursors(false);
         self.restore_schema(runtime)?;
         Ok(TransactionControl::Done("ROLLBACK"))
     }
@@ -218,6 +244,7 @@ impl TransactionSession {
         self.protocol_only_transaction = false;
         self.failed = false;
         self.prepared.clear();
+        self.cursors.clear();
         // `DISCARD ALL` is rejected inside a transaction block, so there is no
         // pending checkpoint here; dropping the slot keeps the invariant that
         // only an open block owns schema rollback.
@@ -301,6 +328,48 @@ impl TransactionSession {
                 had_any
             }
             Some(name) => self.prepared.remove(name).is_some(),
+        }
+    }
+
+    /// Registers a declared cursor. Returns `false` when the name is taken,
+    /// which PostgreSQL reports as `42P03`.
+    pub fn declare_cursor(&mut self, name: &str, cursor: SessionCursor) -> bool {
+        if self.cursors.contains_key(name) {
+            return false;
+        }
+        self.cursors.insert(name.to_owned(), cursor);
+        true
+    }
+
+    /// Looks up a cursor by name.
+    pub fn cursor(&self, name: &str) -> Option<&SessionCursor> {
+        self.cursors.get(name)
+    }
+
+    /// Mutable cursor access for `FETCH`.
+    pub fn cursor_mut(&mut self, name: &str) -> Option<&mut SessionCursor> {
+        self.cursors.get_mut(name)
+    }
+
+    /// Closes one cursor, or every cursor for `CLOSE ALL`.
+    pub fn close_cursor(&mut self, name: Option<&str>) -> bool {
+        match name {
+            None => {
+                let had_any = !self.cursors.is_empty();
+                self.cursors.clear();
+                had_any
+            }
+            Some(name) => self.cursors.remove(name).is_some(),
+        }
+    }
+
+    /// Closes non-holdable cursors (`keep_hold`) or every cursor.
+    fn drop_cursors(&mut self, keep_hold: bool) {
+        if keep_hold {
+            self.cursors.retain(|_, cursor| cursor.with_hold);
+        }
+        else {
+            self.cursors.clear();
         }
     }
 }

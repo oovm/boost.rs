@@ -10,4 +10,4 @@ pub mod casts;
 pub mod utility;
 
 pub use casts::rewrite_double_colon_casts;
-pub use utility::{PgUtilityStatement, parse_pg_utility};
+pub use utility::{FetchDirection, PgUtilityStatement, parse_pg_utility};

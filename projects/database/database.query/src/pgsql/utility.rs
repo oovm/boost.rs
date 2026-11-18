@@ -32,6 +32,42 @@ pub enum PgUtilityStatement {
         /// Statement name, or `None` for `ALL`.
         name: Option<String>,
     },
+    /// `DECLARE name [BINARY] [INSENSITIVE] CURSOR [WITH HOLD] FOR <query>`.
+    DeclareCursor {
+        /// Cursor name.
+        name: String,
+        /// Whether `WITH HOLD` was written.
+        with_hold: bool,
+        /// Query the cursor materializes.
+        sql: String,
+    },
+    /// `FETCH <direction> [FROM|IN] name`.
+    Fetch {
+        /// Cursor name.
+        name: String,
+        /// Position and row count to return.
+        direction: FetchDirection,
+    },
+    /// `CLOSE name`.
+    CloseCursor {
+        /// Cursor name.
+        name: String,
+    },
+}
+
+/// How much of a cursor one `FETCH` returns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FetchDirection {
+    /// `NEXT` or a bare `FETCH name`.
+    Next,
+    /// `ALL` or `FORWARD ALL`: everything from the current position.
+    All,
+    /// `FORWARD n`: `n` rows forward.
+    Forward(i64),
+    /// `ABSOLUTE n`: the `n`-th row, 1-based, negative counting from the end.
+    Absolute(i64),
+    /// `RELATIVE n`: `n` rows from the current position.
+    Relative(i64),
 }
 
 /// Parses one utility statement, or `Ok(None)` when the text is not one.
@@ -45,8 +81,136 @@ pub fn parse_pg_utility(source: &str) -> Result<Option<PgUtilityStatement>, SqlF
         "PREPARE" => parse_prepare(&trimmed[keyword.len()..]).map(Some),
         "EXECUTE" => parse_execute(&trimmed[keyword.len()..]).map(Some),
         "DEALLOCATE" => parse_deallocate(&trimmed[keyword.len()..]).map(Some),
+        "DECLARE" => parse_declare(&trimmed[keyword.len()..]).map(Some),
+        "FETCH" => parse_fetch(&trimmed[keyword.len()..]).map(Some),
+        "CLOSE" => parse_close(&trimmed[keyword.len()..]).map(Some),
         _ => Ok(None),
     }
+}
+
+fn parse_declare(tail: &str) -> Result<PgUtilityStatement, SqlFrontendError> {
+    let (name, rest) = take_name(tail.trim_start())?;
+    let mut rest = rest.trim_start();
+    // Optional cursor attributes before `CURSOR`.
+    loop {
+        if let Some(after) = strip_keyword(rest, "BINARY") {
+            rest = after.trim_start();
+        }
+        else if let Some(after) = strip_keyword(rest, "INSENSITIVE") {
+            rest = after.trim_start();
+        }
+        else if let Some(after) = strip_keyword(rest, "ASENSITIVE") {
+            rest = after.trim_start();
+        }
+        else if let Some(after) = strip_keyword(rest, "SCROLL") {
+            rest = after.trim_start();
+        }
+        else if let Some(after) = strip_keyword(rest, "NO") {
+            // `NO SCROLL`
+            rest = strip_keyword(after, "SCROLL").ok_or_else(|| syntax("DECLARE only accepts `NO SCROLL` after `NO`"))?.trim_start();
+        }
+        else {
+            break;
+        }
+    }
+    let Some(rest) = strip_keyword(rest, "CURSOR")
+    else {
+        return Err(syntax("DECLARE requires the `CURSOR` keyword"));
+    };
+    let mut rest = rest.trim_start();
+    let with_hold = if let Some(after) = strip_keyword(rest, "WITH") {
+        let after = strip_keyword(after, "HOLD").ok_or_else(|| syntax("DECLARE only accepts `WITH HOLD` after `WITH`"))?;
+        rest = after.trim_start();
+        true
+    }
+    else if let Some(after) = strip_keyword(rest, "WITHOUT") {
+        rest = strip_keyword(after, "HOLD").ok_or_else(|| syntax("DECLARE only accepts `WITHOUT HOLD` after `WITHOUT`"))?.trim_start();
+        false
+    }
+    else {
+        false
+    };
+    let Some(sql) = strip_keyword(rest, "FOR")
+    else {
+        return Err(syntax("DECLARE CURSOR requires `FOR <query>`"));
+    };
+    if sql.trim().is_empty() {
+        return Err(syntax("DECLARE CURSOR requires a query after `FOR`"));
+    }
+    Ok(PgUtilityStatement::DeclareCursor { name, with_hold, sql: sql.trim().to_owned() })
+}
+
+fn parse_fetch(tail: &str) -> Result<PgUtilityStatement, SqlFrontendError> {
+    let mut rest = tail.trim();
+    let direction = if let Some(after) = strip_keyword(rest, "NEXT") {
+        rest = after.trim_start();
+        FetchDirection::Next
+    }
+    else if let Some(after) = strip_keyword(rest, "ALL") {
+        rest = after.trim_start();
+        FetchDirection::All
+    }
+    else if let Some(after) = strip_keyword(rest, "FORWARD") {
+        let after = after.trim_start();
+        if let Some(after_all) = strip_keyword(after, "ALL") {
+            rest = after_all.trim_start();
+            FetchDirection::All
+        }
+        else {
+            let (count, after_count) = take_signed_integer(after)?;
+            rest = after_count.trim_start();
+            FetchDirection::Forward(count)
+        }
+    }
+    else if let Some(after) = strip_keyword(rest, "ABSOLUTE") {
+        let (count, after_count) = take_signed_integer(after)?;
+        rest = after_count.trim_start();
+        FetchDirection::Absolute(count)
+    }
+    else if let Some(after) = strip_keyword(rest, "RELATIVE") {
+        let (count, after_count) = take_signed_integer(after)?;
+        rest = after_count.trim_start();
+        FetchDirection::Relative(count)
+    }
+    else if rest.starts_with(|character: char| character.is_ascii_digit() || character == '-' || character == '+') {
+        let (count, after_count) = take_signed_integer(rest)?;
+        rest = after_count.trim_start();
+        FetchDirection::Forward(count)
+    }
+    else {
+        FetchDirection::Next
+    };
+    // Optional `FROM` / `IN`.
+    let rest = strip_keyword(rest, "FROM").or_else(|| strip_keyword(rest, "IN")).unwrap_or(rest).trim();
+    let (name, trailing) = take_name(rest)?;
+    if !trailing.trim().is_empty() {
+        return Err(syntax("FETCH accepts one cursor name"));
+    }
+    Ok(PgUtilityStatement::Fetch { name, direction })
+}
+
+fn parse_close(tail: &str) -> Result<PgUtilityStatement, SqlFrontendError> {
+    let (name, trailing) = take_name(tail.trim())?;
+    if !trailing.trim().is_empty() {
+        return Err(syntax("CLOSE accepts one cursor name"));
+    }
+    Ok(PgUtilityStatement::CloseCursor { name })
+}
+
+/// Reads `[+|-]digits`, leaving the rest untouched.
+fn take_signed_integer(source: &str) -> Result<(i64, &str), SqlFrontendError> {
+    let trimmed = source.trim_start();
+    let bytes = trimmed.as_bytes();
+    let mut end = usize::from(bytes.first().is_some_and(|byte| *byte == b'+' || *byte == b'-'));
+    let digits_start = end;
+    while end < bytes.len() && bytes[end].is_ascii_digit() {
+        end += 1;
+    }
+    if end == digits_start {
+        return Err(syntax("expected an integer after the fetch direction"));
+    }
+    let count = trimmed[..end].parse::<i64>().map_err(|_| syntax("fetch direction is out of range"))?;
+    Ok((count, &trimmed[end..]))
 }
 
 fn parse_prepare(tail: &str) -> Result<PgUtilityStatement, SqlFrontendError> {
