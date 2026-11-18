@@ -104,6 +104,23 @@ impl Connection {
         Ok(self.schema()?.map(|schema| schema.version))
     }
 
+    /// Installs a schema made of several source documents as one contract.
+    ///
+    /// Each document carries its own `namespace`, so joining them lets a reference such
+    /// as `&oai_autos::User` resolve against the other document instead of failing as an
+    /// unknown type. The joined text is the persisted schema document, so a later
+    /// `ensure_schema` with the same list must produce the same bytes.
+    pub fn ensure_schema_files(&self, documents: &[&str]) -> Result<()> {
+        let joined = join_schema_documents(documents);
+        self.ensure_schema(&joined)
+    }
+
+    /// Evolves a multi-document schema to the next version.
+    pub fn migrate_schema_files(&self, documents: &[&str], renames: &schema::RenameMap) -> Result<()> {
+        let joined = join_schema_documents(documents);
+        self.migrate_schema(&joined, renames)
+    }
+
     /// Persist the database-truth VOS schema on first use, then require an exact
     /// document match on later calls.
     ///
@@ -170,6 +187,15 @@ impl Connection {
 
 fn schema_document(state: &super::State) -> Option<String> {
     state.schema.as_ref().map(|schema| schema.document.clone())
+}
+
+/// Joins schema documents into one source text.
+///
+/// A document may declare its own `namespace`, and the projection switches namespace at
+/// each declaration, so concatenation keeps every type under its own namespace without
+/// rewriting any path.
+fn join_schema_documents(documents: &[&str]) -> String {
+    documents.iter().map(|document| document.trim_end()).filter(|document| !document.is_empty()).collect::<Vec<_>>().join("\n\n")
 }
 
 /// Reproject a document against persisted identities and verify the ledger.
