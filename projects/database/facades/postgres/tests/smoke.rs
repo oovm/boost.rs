@@ -134,3 +134,25 @@ fn listen_answers_protocol_v3_clients() {
     engine.close().unwrap();
 }
 
+#[test]
+fn listeners_share_one_engine_and_close_independently() {
+    let dir = TempDir::new("listeners");
+    let engine = PostgreSQL::open(dir.options("smoke")).unwrap();
+    engine.execute("CREATE TABLE t (id BIGINT PRIMARY KEY, name TEXT)").unwrap();
+    engine.execute("INSERT INTO t (id, name) VALUES (1, 'shared')").unwrap();
+    let first = engine.listen("127.0.0.1:0".parse::<SocketAddr>().unwrap()).unwrap();
+    let second = engine.listen("127.0.0.1:0".parse::<SocketAddr>().unwrap()).unwrap();
+    assert_ne!(first.endpoint().port(), second.endpoint().port());
+
+    let mut closed = PostgreSQLClient::open(&ClientConfig::new("127.0.0.1", first.endpoint().port(), "postgres", "smoke")).unwrap();
+    first.close();
+    assert!(closed.execute("SELECT 1").is_err());
+    closed.close();
+
+    let mut open = PostgreSQLClient::open(&ClientConfig::new("127.0.0.1", second.endpoint().port(), "postgres", "smoke")).unwrap();
+    let results = open.execute("SELECT name FROM t WHERE id = 1").unwrap();
+    assert_eq!(results[0].cell(0, 0), Some(Some("shared")));
+    open.close();
+    engine.close().unwrap();
+}
+

@@ -18,7 +18,7 @@
 //!   `authentication` request fails explicitly until the gateway implements it.
 
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     error,
     fmt,
     io,
@@ -26,7 +26,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, Mutex, MutexGuard,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread::{self, JoinHandle},
     time::Duration,
@@ -41,6 +41,12 @@ use database_server::yyds::pgsql::connection::{
 };
 use database_storage::cluster_kv::FileShard;
 use database_types::cluster::{ShardEpoch, ShardId};
+
+pub mod instance;
+
+pub use instance::{
+    ServerInstance, clear_stale_lock, process_exists, shard_directory, validate_shard_id, SHARD_DIRECTORY_FILES, SHARD_ROOT,
+};
 
 pub use database_query::{SqlColumn, SqlValue};
 
@@ -180,13 +186,15 @@ pub struct PostgreSQL {
     /// store only holds `postmaster.pid` and the `.yyds` catalog.
     store: Mutex<Option<ServerStore>>,
     session: Mutex<TransactionSession>,
-    accept: Mutex<Option<AcceptLoop>>,
+    listeners: Arc<ListenerRegistry>,
     database: String,
 }
 
 impl PostgreSQL {
     /// Opens (creating when absent) the data directory described by `options`.
+    /// A `postmaster.pid` whose holder process is gone is reclaimed first.
     pub fn open(options: PostgreSQLOptions) -> Result<Self, Error> {
+        clear_stale_lock(&options.storage.directory);
         let store = ServerStore::open(options.storage.directory)?;
         let shard_path = store.shard_path().to_owned();
         let shard_id = ShardId(store.shard_id().to_owned());
@@ -198,7 +206,7 @@ impl PostgreSQL {
             runtime,
             store: Mutex::new(Some(store)),
             session: Mutex::new(TransactionSession::new()),
-            accept: Mutex::new(None),
+            listeners: Arc::new(ListenerRegistry::default()),
             database: options.database,
         })
     }
@@ -251,17 +259,13 @@ impl PostgreSQL {
     }
 
     /// Starts the protocol-v3 server on a loopback `endpoint` (`port` 0 picks a
-    /// free port). The accept loop lives until [`PostgreSQL::close`] or the
-    /// next engine teardown; the returned [`Listener`] is the address handle.
+    /// free port). One engine may serve several listeners; each [`Listener`]
+    /// stops its own accept loop without closing the engine.
     pub fn listen(&self, endpoint: SocketAddr) -> Result<Listener, Error> {
         if !endpoint.ip().is_loopback() {
             return Err(Error::Unsupported(
                 "the gateway accepts loopback connections only until authentication and TLS land upstream".to_owned(),
             ));
-        }
-        let mut slot = self.lock(&self.accept)?;
-        if slot.is_some() {
-            return Err(Error::Unsupported("this engine already has a live listener".to_owned()));
         }
         let runtime = Arc::clone(&self.runtime);
         let tcp = bind_with_retry(endpoint)?;
@@ -287,16 +291,13 @@ impl PostgreSQL {
                 }
             }
         });
-        *slot = Some(AcceptLoop { stopping, joiner: Mutex::new(Some(joiner)) });
-        Ok(Listener { endpoint: bound, database: self.database.clone() })
+        let id = self.listeners.register(AcceptLoop { stopping, joiner: Mutex::new(Some(joiner)) });
+        Ok(Listener { id, endpoint: bound, database: self.database.clone(), registry: Arc::clone(&self.listeners) })
     }
 
-    /// Stops the listener, releases the directory lock and consumes the engine.
+    /// Stops every listener, releases the directory lock and consumes the engine.
     pub fn close(self) -> Result<(), Error> {
-        let accept = self.accept.lock().map_err(|_| poisoned())?.take();
-        if let Some(accept) = accept {
-            accept.stop();
-        }
+        self.listeners.stop_all();
         let store = self.store.lock().map_err(|_| poisoned())?.take().ok_or_else(|| Error::Engine("store already closed".to_owned()))?;
         store.close().map_err(Error::from)
     }
@@ -382,12 +383,14 @@ impl Transaction<'_> {
     }
 }
 
-/// Address handle for the engine's live protocol-v3 listener. The accept loop
-/// itself is owned by the engine and stopped by [`PostgreSQL::close`].
-#[derive(Debug, Clone)]
+/// Address handle for one of the engine's live protocol-v3 listeners.
+/// Dropping the handle keeps the listener running; [`PostgreSQL::close`] stops
+/// every listener the engine still owns.
 pub struct Listener {
+    id: u64,
     endpoint: SocketAddr,
     database: String,
+    registry: Arc<ListenerRegistry>,
 }
 
 impl Listener {
@@ -399,6 +402,45 @@ impl Listener {
     /// Connection string pointing at this listener (`sqlx`-compatible).
     pub fn connection_string(&self) -> String {
         format!("postgres://postgres@{}/{}", self.endpoint, self.database)
+    }
+
+    /// Stops this listener's accept loop. The engine stays open.
+    pub fn close(self) {
+        self.registry.stop(self.id);
+    }
+}
+
+/// Every accept loop one engine started, addressed by a monotonic id.
+#[derive(Default)]
+struct ListenerRegistry {
+    next: AtomicU64,
+    loops: Mutex<BTreeMap<u64, AcceptLoop>>,
+}
+
+impl ListenerRegistry {
+    fn register(&self, accept: AcceptLoop) -> u64 {
+        let id = self.next.fetch_add(1, Ordering::AcqRel);
+        if let Ok(mut loops) = self.loops.lock() {
+            loops.insert(id, accept);
+        }
+        id
+    }
+
+    fn stop(&self, id: u64) {
+        let accept = self.loops.lock().ok().and_then(|mut loops| loops.remove(&id));
+        if let Some(accept) = accept {
+            accept.stop();
+        }
+    }
+
+    fn stop_all(&self) {
+        let accepts: Vec<AcceptLoop> = match self.loops.lock() {
+            Ok(mut loops) => std::mem::take(&mut *loops).into_values().collect(),
+            Err(_) => Vec::new(),
+        };
+        for accept in accepts {
+            accept.stop();
+        }
     }
 }
 
