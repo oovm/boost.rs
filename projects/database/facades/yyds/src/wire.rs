@@ -20,11 +20,6 @@ use database::{
 /// YY 原生线协议没有命名空间概念,统一落在固定命名空间。
 pub const DEFAULT_NAMESPACE: &str = "default";
 
-/// 内核侧失败统一按协议错误回复,诊断文本保留原始 `Display`。
-fn kernel_error(message: impl Into<String>) -> DatabaseError {
-    DatabaseError::Protocol { message: message.into() }
-}
-
 /// 分片执行器后端:一条连接一个实例,共享同一个 `KeyValueExecutor` 与 catalog。
 pub struct KvBackend {
     executor: Arc<dyn KeyValueExecutor>,
@@ -59,8 +54,9 @@ impl ServeBackend for KvBackend {
             return Err(DatabaseError::Unsupported("YYDS wire catalog is not wired up yet"));
         };
         let mut guard = catalog.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        guard.ensure_schema(version, document).map_err(|error| kernel_error(error.to_string()))?;
-        guard.flush().map_err(|error| kernel_error(error.to_string()))
+        guard.ensure_schema(version, document)?;
+        guard.flush()?;
+        Ok(())
     }
 
     fn kv_get(&self, key: &str) -> DatabaseResult<Option<Vec<u8>>> {
@@ -71,8 +67,8 @@ impl ServeBackend for KvBackend {
         };
         match self.executor.execute(None, command) {
             Ok(KeyValueResult::Get(value)) => Ok(value),
-            Ok(_) => Err(kernel_error("executor returned unexpected result for Get")),
-            Err(error) => Err(kernel_error(error.to_string())),
+            Ok(_) => Err(DatabaseError::Protocol { message: "executor returned unexpected result for Get".to_owned() }),
+            Err(error) => Err(DatabaseError::from(error)),
         }
     }
 
@@ -84,8 +80,8 @@ impl ServeBackend for KvBackend {
         };
         match self.executor.execute(None, command) {
             Ok(KeyValueResult::Put { .. }) => Ok(()),
-            Ok(_) => Err(kernel_error("executor returned unexpected result for Put")),
-            Err(error) => Err(kernel_error(error.to_string())),
+            Ok(_) => Err(DatabaseError::Protocol { message: "executor returned unexpected result for Put".to_owned() }),
+            Err(error) => Err(DatabaseError::from(error)),
         }
     }
 }
@@ -140,12 +136,12 @@ mod tests {
     use super::*;
     use database::{
         cluster::topology::ShardMap,
-        execution::cluster::LocalExecutor,
+        execution::cluster::{KeyValueExecutor, LocalExecutor},
         server::yydb::WireServe,
         storage::cluster_kv::MemoryShard,
-        types::cluster::{ShardEpoch, ShardId},
+        types::cluster::{Error as ClusterError, FenceToken, Result as ClusterResult, ShardEpoch, ShardId},
     };
-    use database_protocol_yy::{Frame, MessageType, encode_authenticate, encode_kv_get, encode_kv_put, read_frame, write_frame};
+    use database_protocol_yy::{Frame, MessageType, decode_error, encode_authenticate, encode_kv_get, encode_kv_put, read_frame, write_frame};
     use std::{
         collections::HashMap,
         net::TcpStream,
@@ -232,6 +228,39 @@ mod tests {
             };
             assert!(error.contains("parsed to no entries"));
         });
+    }
+
+    /// 每个命令都返回存储错误的后端，用于验证错误类别不被压成协议错误。
+    #[derive(Debug)]
+    struct FailingExecutor;
+
+    impl KeyValueExecutor for FailingExecutor {
+        fn execute(&self, _fence: Option<&FenceToken>, _command: KeyValueCommand) -> ClusterResult<KeyValueResult> {
+            Err(ClusterError::Corrupt("shard payload is unreadable"))
+        }
+    }
+
+    #[test]
+    fn storage_errors_keep_their_category_on_the_wire() {
+        let factory = Arc::new(KvBackendFactory::new(Arc::new(FailingExecutor), None));
+        let serve = WireServe::start(options_with_tokens(&["t-secret"]), factory).expect("start wire server");
+        let mut stream = TcpStream::connect(serve.address()).expect("connect");
+        stream.set_read_timeout(Some(Duration::from_secs(5))).expect("read timeout");
+
+        write_frame(&mut stream, &Frame::new(MessageType::Hello, 1, Vec::new())).expect("write hello");
+        assert_eq!(read_frame(&mut stream).expect("read hello ok").msg_type, MessageType::HelloOk);
+        write_frame(&mut stream, &Frame::new(MessageType::Authenticate, 2, encode_authenticate("t-secret"))).expect("write authenticate");
+        assert_eq!(read_frame(&mut stream).expect("read authenticate ok").msg_type, MessageType::AuthenticateOk);
+
+        write_frame(&mut stream, &Frame::new(MessageType::KvGet, 3, encode_kv_get("k1"))).expect("write kv get");
+        let error = read_frame(&mut stream).expect("read error frame");
+        assert_eq!(error.msg_type, MessageType::Error);
+        let wire = decode_error(&error.body).expect("decode error body");
+        assert_eq!(wire.code, "database.shard.corrupt", "the storage failure category must survive the wire frame");
+        assert_eq!(wire.operation, "io");
+        assert!(!wire.retryable);
+
+        serve.stop().expect("stop wire server");
     }
 
     #[test]

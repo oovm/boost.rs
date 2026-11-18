@@ -14,6 +14,9 @@ pub mod canonical;
 /// Catalog uniqueness metadata.
 pub mod constraint;
 
+/// Mongo 领域标识：ObjectId 生成。
+pub mod mongo;
+
 /// Machine-readable corruption reasons.
 pub mod reason;
 
@@ -336,6 +339,12 @@ pub enum Error {
         /// Lock mode the caller asked for (`writer` or `reader`).
         mode: &'static str,
     },
+    /// 分片与集群路径抛出的原始错误。
+    ///
+    /// 边界层（线服务、宿主 FFI）用它把执行与存储失败原样带出：诊断码、操作
+    /// 类别与参数都由 [`cluster::Error`] 自己提供，不压成 [`Self::Protocol`]
+    /// 或字符串。
+    Shard(crate::cluster::Error),
 }
 
 impl fmt::Display for Error {
@@ -412,6 +421,7 @@ impl fmt::Display for Error {
             Self::Busy { path, mode } => {
                 write!(f, "database busy: the {mode} lock on {path} is held by another holder")
             }
+            Self::Shard(error) => error.fmt(f),
         }
     }
 }
@@ -460,6 +470,7 @@ impl Error {
             Self::ResultFormat { .. } => "database.result.format",
             Self::VectorDimensionExceeded { .. } => "database.schema.vector_dimension_exceeded",
             Self::Busy { .. } => "database.busy",
+            Self::Shard(error) => error.code(),
         }
     }
 
@@ -543,6 +554,7 @@ impl Error {
             Self::VectorDimensionExceeded { .. } => "schema",
             Self::Busy { .. } => "io",
             Self::Remote { .. } => "remote",
+            Self::Shard(error) => error.operation(),
         }
     }
 
@@ -610,6 +622,7 @@ impl Error {
                 vec![("dimension", dimension.to_string()), ("max", max.to_string())]
             }
             Self::Busy { path, mode } => vec![("path", path.clone()), ("mode", (*mode).to_owned())],
+            Self::Shard(error) => return error.params(),
         };
         Some(p)
     }
@@ -620,7 +633,10 @@ impl Error {
     /// `LeaseUnavailable`, `LeaseExpired`). All other variants are non-retryable
     /// and require the caller to fix the underlying cause.
     pub fn retryable(&self) -> bool {
-        matches!(self, Self::Io(_) | Self::Busy { .. } | Self::Protocol { .. } | Self::LeaseUnavailable { .. } | Self::LeaseExpired { .. })
+        matches!(
+            self,
+            Self::Io(_) | Self::Busy { .. } | Self::Protocol { .. } | Self::LeaseUnavailable { .. } | Self::LeaseExpired { .. }
+        ) || matches!(self, Self::Shard(error) if error.retryable())
     }
 
     /// Encode the full diagnostic contract as a JSON object.
@@ -812,6 +828,7 @@ impl error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
             Self::Io(error) => Some(error),
+            Self::Shard(error) => Some(error),
             _ => None,
         }
     }
@@ -820,6 +837,13 @@ impl error::Error for Error {
 impl From<io::Error> for Error {
     fn from(error: io::Error) -> Self {
         Self::Io(error)
+    }
+}
+
+/// 分片与集群错误保留结构进入统一错误面，供线协议与宿主边界原样带出。
+impl From<cluster::Error> for Error {
+    fn from(error: cluster::Error) -> Self {
+        Self::Shard(error)
     }
 }
 

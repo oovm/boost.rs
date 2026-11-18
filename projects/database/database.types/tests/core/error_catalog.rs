@@ -28,3 +28,24 @@ fn engine_codes_are_unique_and_unbranded() {
         assert!(!code.starts_with("yyds."), "`{code}` must not use product-branded prefix");
     }
 }
+
+#[test]
+fn shard_failures_keep_their_own_diagnostic_category() {
+    use database_types::{Error, cluster::Error as ClusterError};
+
+    let corrupt = Error::from(ClusterError::Corrupt("payload is unreadable"));
+    assert_eq!(corrupt.code(), "database.shard.corrupt");
+    assert_eq!(corrupt.operation(), "io");
+    assert!(!corrupt.retryable());
+
+    let conflict = Error::from(ClusterError::CasConflict { key: "ns:k".to_owned() });
+    assert_eq!(conflict.code(), "database.shard.cas.conflict");
+    assert_eq!(conflict.operation(), "cas");
+    assert_eq!(conflict.params().and_then(|pairs| pairs.into_iter().find(|(name, _)| *name == "key")).map(|(_, value)| value), Some("ns:k".to_owned()));
+
+    let io = Error::from(ClusterError::Io(std::io::Error::other("disk gone")));
+    assert_eq!(io.code(), "database.shard.io");
+    assert!(io.retryable());
+
+    assert_ne!(corrupt.code(), "database.protocol", "storage failures must not collapse into the protocol category");
+}

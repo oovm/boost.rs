@@ -86,6 +86,68 @@ impl Error {
             _ => None,
         }
     }
+
+    /// 稳定诊断码，与线协议和宿主错误码同一形状。
+    ///
+    /// 分片与目录路径的错误不压成通用 `protocol` 或字符串：每个变体返回自己的
+    /// `database.shard.*` 码，边界层据此把失败类别原样带出。
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Io(_) => "database.shard.io",
+            Self::Corrupt(_) | Self::CorruptReason { .. } => "database.shard.corrupt",
+            Self::InvalidShardId { .. } => "database.shard.invalid_id",
+            Self::NotFound { .. } => "database.shard.not_found",
+            Self::SchemaConflict { .. } => "database.shard.schema.conflict",
+            Self::RoutingConflict { .. } => "database.shard.routing.conflict",
+            Self::Schema { .. } => "database.shard.schema.invalid",
+            Self::Unsupported(_) => "database.shard.unsupported",
+            Self::InvalidIntegerValue => "database.shard.invalid_integer",
+            Self::IntegerOverflow => "database.shard.integer_overflow",
+            Self::CasConflict { .. } => "database.shard.cas.conflict",
+            Self::Udf { .. } => "database.shard.udf",
+            Self::FencingRejected { .. } => "database.shard.fencing.rejected",
+        }
+    }
+
+    /// 高层操作类别，供诊断目录选择分区。
+    pub fn operation(&self) -> &'static str {
+        match self {
+            Self::Io(_) | Self::Corrupt(_) | Self::CorruptReason { .. } | Self::InvalidShardId { .. } | Self::NotFound { .. } => "io",
+            Self::SchemaConflict { .. } | Self::Schema { .. } => "schema",
+            Self::RoutingConflict { .. } => "routing",
+            Self::CasConflict { .. } => "cas",
+            Self::Udf { .. } => "udf",
+            Self::FencingRejected { .. } => "fencing",
+            Self::Unsupported(_) | Self::InvalidIntegerValue | Self::IntegerOverflow => "unsupported",
+        }
+    }
+
+    /// 退避后是否可重试。
+    pub fn retryable(&self) -> bool {
+        matches!(self, Self::Io(_) | Self::CasConflict { .. })
+    }
+
+    /// 诊断模板用的结构化键值参数。
+    pub fn params(&self) -> Option<Vec<(&'static str, String)>> {
+        let pairs: Vec<(&'static str, String)> = match self {
+            Self::Io(_) | Self::Corrupt(_) | Self::Unsupported(_) | Self::InvalidIntegerValue | Self::IntegerOverflow => return None,
+            Self::CorruptReason { reason, message } => vec![("reason", reason.as_str().to_owned()), ("detail", (*message).to_owned())],
+            Self::InvalidShardId { value } => vec![("value", value.clone())],
+            Self::NotFound { key } => vec![("key", key.clone())],
+            Self::SchemaConflict { expected, found } => vec![("expected", expected.to_string()), ("found", found.to_string())],
+            Self::RoutingConflict { expected, found } => vec![("expected", expected.to_string()), ("found", found.to_string())],
+            Self::Schema { message } => vec![("message", message.clone())],
+            Self::CasConflict { key } => vec![("key", key.clone())],
+            Self::Udf { name, message } => vec![("name", name.clone()), ("message", message.clone())],
+            Self::FencingRejected { fence, current } => vec![
+                ("epoch", fence.epoch.0.to_string()),
+                ("term", fence.term.0.to_string()),
+                ("leader", fence.leader_node_id.0.clone()),
+                ("current", current.to_string()),
+            ],
+        };
+        Some(pairs)
+    }
 }
 
 impl fmt::Display for Error {
