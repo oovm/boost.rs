@@ -121,6 +121,7 @@ members = [
     "projects/odm/odm.input.sql",
     "projects/odm/odm.input.vos",
     "projects/odm/odm.types",
+    "projects/plotter/apollo",
     "projects/plotter/plotter",
     "projects/plotter/plotter.chart",
     "projects/plotter/plotter.data",
@@ -315,6 +316,7 @@ odm-input-sql = { path = "projects/odm/odm.input.sql" }
 odm-input-vos = { path = "projects/odm/odm.input.vos" }
 odm-types = { path = "projects/odm/odm.types" }
 
+plotter = { path = "projects/plotter/plotter" }
 plotter-chart = { path = "projects/plotter/plotter.chart" }
 plotter-data = { path = "projects/plotter/plotter.data" }
 plotter-depiction = { path = "projects/plotter/plotter.depiction" }
