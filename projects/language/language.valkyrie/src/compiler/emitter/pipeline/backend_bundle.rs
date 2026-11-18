@@ -17,7 +17,7 @@ use super::{context::CompilerBuildContext, evidence::CompilerCompileEvidence};
 
 /// Wasm artifact surface 合同校验失败（结构化，不包装成 Display 文本）。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ArtifactSurfaceError {
+pub enum ArtifactSurfaceError {
     /// `artifact: library` 要求至少一个已解析的 export。
     LibraryMissingExport,
     /// `artifact: binary` 要求一个已解析的 main entry。

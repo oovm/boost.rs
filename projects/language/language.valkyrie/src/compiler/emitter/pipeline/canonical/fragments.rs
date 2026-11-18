@@ -14,7 +14,7 @@ use crate::compiler::mir::MirModule;
 
 use super::errors::error;
 
-pub(crate) fn canonical_fragments(
+pub fn canonical_fragments(
     module: &MirModule,
     linked: &LinkedSemanticProgram,
     functions: &BTreeMap<ItemInstanceId, ValkyrieMirFunction>,

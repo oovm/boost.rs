@@ -44,7 +44,7 @@ fn expr_diagnostic_source(module: &HirModule, expr: &HirExpr, inherited: &Diagno
 }
 
 /// 前端统一验证调用身份、枚举判别与完整语义合同，不按错误文本放行。
-pub(crate) fn validate_hir_contract(hir: &HirModule) -> Result<(), HirError> {
+pub fn validate_hir_contract(hir: &HirModule) -> Result<(), HirError> {
     validate_export_case_annotations(hir)?;
     validate_resolved_call_contracts(hir)?;
     crate::compiler::hir::lowering::nominal_declarations::validate_enum_discriminators(hir)?;
@@ -56,7 +56,7 @@ pub(crate) fn validate_hir_contract(hir: &HirModule) -> Result<(), HirError> {
 /// `parse_export_spec_from_annotations` 对非法 `case` 返回 `None` 是失败闭合，但若不在
 /// 注解处报出，下游只会看到「库缺少已解析导出」的二级错误：数量、定位与原因都已失真
 /// （63 个题解曾因此被误记为导出缺失）。诊断逐条进入暂存汇，控制流仍返回首个错误。
-pub(crate) fn validate_export_case_annotations(hir: &HirModule) -> Result<(), HirError> {
+pub fn validate_export_case_annotations(hir: &HirModule) -> Result<(), HirError> {
     let mut errors = Vec::new();
     collect_module_export_cases(hir, &module_source(hir), &mut errors);
     let mut errors = errors.into_iter();
@@ -138,7 +138,7 @@ fn collect_function_export_case(module: &HirModule, function: &HirFunction, sour
 ///
 /// 同一编译单元内**全部**未解析调用/构造在此收集并记入诊断暂存汇（多诊断报告），
 /// 控制流保持返回首个错误：编译在阶段边界仍然 fail-closed，不放宽任何语义检查。
-pub(crate) fn validate_resolved_call_contracts(hir: &HirModule) -> Result<(), HirError> {
+pub fn validate_resolved_call_contracts(hir: &HirModule) -> Result<(), HirError> {
     let mut errors = Vec::new();
     collect_module_call_contracts(hir, &module_source(hir), &mut errors);
     let mut errors = errors.into_iter();
@@ -226,9 +226,9 @@ fn collect_module_call_contracts(hir: &HirModule, source: &DiagnosticSource, err
     }
 }
 
-// 仅保留给 `lowering::mod` 的 pub(crate) 门面 re-export；收集式遍历不再经此入口。
+// 仅保留给 `lowering::mod` 的 pub 门面 re-export；收集式遍历不再经此入口。
 #[allow(dead_code)]
-pub(crate) fn validate_function_call_contracts(function: &HirFunction, source: &DiagnosticSource) -> Result<(), HirError> {
+pub fn validate_function_call_contracts(function: &HirFunction, source: &DiagnosticSource) -> Result<(), HirError> {
     let mut errors = Vec::new();
     collect_function_call_contracts(&HirModule::default(), function, source, &mut errors, false);
     errors.into_iter().next().map_or(Ok(()), Err)
@@ -244,9 +244,9 @@ fn collect_function_call_contracts(
     collect_block_call_contracts(module, &function.body, &function.name.to_string(), source, errors, require_closed_instance);
 }
 
-// 仅保留给 `lowering::mod` 的 pub(crate) 门面 re-export；收集式遍历不再经此入口。
+// 仅保留给 `lowering::mod` 的 pub 门面 re-export；收集式遍历不再经此入口。
 #[allow(dead_code)]
-pub(crate) fn validate_block_call_contracts(block: &HirBlock, function: &str, source: &DiagnosticSource) -> Result<(), HirError> {
+pub fn validate_block_call_contracts(block: &HirBlock, function: &str, source: &DiagnosticSource) -> Result<(), HirError> {
     let mut errors = Vec::new();
     collect_block_call_contracts(&HirModule::default(), block, function, source, &mut errors, false);
     errors.into_iter().next().map_or(Ok(()), Err)

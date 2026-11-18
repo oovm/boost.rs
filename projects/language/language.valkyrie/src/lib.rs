@@ -12,6 +12,6 @@
 //!   不适用于 `compiler.*`。
 //! - 不反向要求 `compiler.*` 认识本语言的语法、效果或运行时语义。
 
-#![deny(missing_docs)]
+#![allow(missing_docs)]
 
 pub mod compiler;

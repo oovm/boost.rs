@@ -994,7 +994,7 @@ fn lower_quote_literal_kind(literal: &QuoteLiteral, source_id: SourceID) -> Resu
 /// 后缀由 lexer 只在数字 token 内接受；HIR 只做剥离，不改数值。当前字面量载体
 /// 只有 `Integer64`/`Float64`，因此只识别 `i64`/`f64`；十六进制/二进制/八进制
 /// 前缀内的字母不是后缀，不能剥离。
-pub(crate) fn split_numeric_type_suffix(text: &str) -> (&str, Option<&'static str>) {
+pub fn split_numeric_type_suffix(text: &str) -> (&str, Option<&'static str>) {
     if text.starts_with("0x")
         || text.starts_with("0X")
         || text.starts_with("0b")

@@ -164,7 +164,7 @@ pub struct MirModule {
 }
 
 /// 向 callable 诊断表写入条目；instance 与 ABI 标签均必须唯一。
-pub(crate) fn register_callable_symbol_entry(
+pub fn register_callable_symbol_entry(
     table: &mut BTreeMap<ItemInstanceId, String>,
     instance: ItemInstanceId,
     symbol: String,
@@ -190,7 +190,7 @@ pub(crate) fn register_callable_symbol_entry(
 /// 既有 ABI/glue 合同的逐字标签。
 ///
 /// 同一 `instance` 登记不同标签才是身份矛盾，返回 `Err` 交给调用方转成结构化诊断。
-pub(crate) fn register_callable_label_entry(
+pub fn register_callable_label_entry(
     table: &mut BTreeMap<ItemInstanceId, String>,
     instance: ItemInstanceId,
     symbol: String,
@@ -216,11 +216,11 @@ pub(crate) fn register_callable_label_entry(
 
 impl MirModule {
     /// 登记 callable 的 ABI 诊断标签；instance 与标签均必须唯一。
-    pub(crate) fn register_callable_symbol(&mut self, instance: ItemInstanceId, symbol: String) -> Result<(), String> {
+    pub fn register_callable_symbol(&mut self, instance: ItemInstanceId, symbol: String) -> Result<(), String> {
         register_callable_symbol_entry(&mut self.callable_symbols, instance, symbol)
     }
 
-    pub(crate) fn contains_callable_instance(&self, instance: ItemInstanceId) -> bool {
+    pub fn contains_callable_instance(&self, instance: ItemInstanceId) -> bool {
         self.callable_symbols.contains_key(&instance)
             || self.functions.iter().any(|function| function.instance == Some(instance))
             || self.external_calls.iter().any(|contract| contract.instance == Some(instance))

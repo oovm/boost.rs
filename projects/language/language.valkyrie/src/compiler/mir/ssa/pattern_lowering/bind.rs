@@ -1,5 +1,5 @@
 impl MirBuilder {
-    pub(crate) fn record_static_binding(&mut self, pattern: &HirPattern, initializer: Option<&HirExpr>) {
+    pub fn record_static_binding(&mut self, pattern: &HirPattern, initializer: Option<&HirExpr>) {
         match pattern {
             HirPattern::Variable(identifier) => {
                 if let Some(expr) = initializer {
@@ -33,7 +33,7 @@ impl MirBuilder {
         }
     }
 
-    pub(crate) fn bind_pattern_from_expr(&mut self, pattern: &HirPattern, expr: &HirExpr, ty: Option<ValkyrieType>) {
+    pub fn bind_pattern_from_expr(&mut self, pattern: &HirPattern, expr: &HirExpr, ty: Option<ValkyrieType>) {
         let resolved_expr = self.resolve_static_expr(expr).unwrap_or_else(|| expr.clone());
         match pattern {
             HirPattern::Tuple(items) => {
@@ -55,11 +55,11 @@ impl MirBuilder {
         self.bind_pattern_from_operand(pattern, operand, ty);
     }
 
-    pub(crate) fn bind_pattern_from_operand(&mut self, pattern: &HirPattern, operand: MirOperand, ty: Option<ValkyrieType>) {
+    pub fn bind_pattern_from_operand(&mut self, pattern: &HirPattern, operand: MirOperand, ty: Option<ValkyrieType>) {
         self.bind_pattern_from_operand_with_payload(pattern, operand, ty, None);
     }
 
-    pub(crate) fn bind_pattern_from_operand_with_payload(
+    pub fn bind_pattern_from_operand_with_payload(
         &mut self,
         pattern: &HirPattern,
         operand: MirOperand,
@@ -222,7 +222,7 @@ impl MirBuilder {
         }
     }
 
-    pub(crate) fn lower_pattern_match_operand(&mut self, pattern: &HirPattern, value: MirOperand) -> MirOperand {
+    pub fn lower_pattern_match_operand(&mut self, pattern: &HirPattern, value: MirOperand) -> MirOperand {
         match pattern {
             HirPattern::Wildcard | HirPattern::Variable(_) | HirPattern::Else => MirOperand::Constant(MirConstant::Bool(true)),
             HirPattern::Literal(literal) => self.lower_literal_pattern_match_operand(literal, value),
@@ -246,7 +246,7 @@ impl MirBuilder {
         }
     }
 
-    pub(crate) fn lower_pattern_match_probe(&mut self, pattern: &HirPattern, value: MirOperand) -> (MirOperand, Option<ProbePayload>) {
+    pub fn lower_pattern_match_probe(&mut self, pattern: &HirPattern, value: MirOperand) -> (MirOperand, Option<ProbePayload>) {
         match pattern {
             HirPattern::Extractor(extractor) => {
                 // Tagged unite/enum：按 tag 判别（空字段与带字段均适用）。
@@ -271,7 +271,7 @@ impl MirBuilder {
     /// 调用点必须保证当前块只从「tag 判别已成功」的边可达：nullary 变体的载荷槽
     /// 按合同为 null（见 `HirPattern::Extractor` 空字段早退），在 check 块急切提取
     /// 会让 wasm 的 `ref.cast`/`struct.get` 在 `None` scrutinee 上 trap。
-    pub(crate) fn materialize_probe_payload(&mut self, payload: ProbePayload) -> MirOperand {
+    pub fn materialize_probe_payload(&mut self, payload: ProbePayload) -> MirOperand {
         match payload {
             ProbePayload::Materialized(operand) => operand,
             ProbePayload::DeferredSum(spec) => {
@@ -292,7 +292,7 @@ impl MirBuilder {
         }
     }
 
-    pub(crate) fn lower_type_pattern_match_operand(
+    pub fn lower_type_pattern_match_operand(
         &mut self,
         name: &NamePath,
         declaration: Option<compiler_types::ItemId>,
@@ -401,14 +401,14 @@ impl MirBuilder {
         resolved.extractor_payload_type.clone().filter(|ty| !looks_like_unbound_type_parameter(ty))
     }
 
-    pub(crate) fn lower_tuple_pattern_match_operand(&mut self, items: &[HirPattern], value: MirOperand) -> MirOperand {
+    pub fn lower_tuple_pattern_match_operand(&mut self, items: &[HirPattern], value: MirOperand) -> MirOperand {
         // tuple projection 已删除：元组位置匹配没有名义字段身份，一律结构化失败。
         let _ = value;
         self.lower_fallback_pattern_match(HirPattern::Tuple(items.to_vec()), MirOperand::Constant(MirConstant::Unit))
     }
 
     /// extractor 命中条件：先对空字段 unite 臂做 `tag` 比较；带 payload 的臂仍走 `T?`/`null`。
-    pub(crate) fn lower_extractor_pattern_match_operand(&mut self, extractor: &HirExtractorPattern, value: MirOperand) -> MirOperand {
+    pub fn lower_extractor_pattern_match_operand(&mut self, extractor: &HirExtractorPattern, value: MirOperand) -> MirOperand {
         if let Some((condition, _)) = self.try_lower_sum_constructor_tag_match(extractor, value.clone()) {
             return condition;
         }
@@ -499,7 +499,7 @@ impl MirBuilder {
         Some(self.materialize_probe_payload(ProbePayload::DeferredSum(spec)))
     }
 
-    pub(crate) fn lower_literal_pattern_match_operand(&mut self, literal: &HirLiteral, value: MirOperand) -> MirOperand {
+    pub fn lower_literal_pattern_match_operand(&mut self, literal: &HirLiteral, value: MirOperand) -> MirOperand {
         let actual_type_hint = infer_builder_operand_type(&value, &self.value_types);
         let (constant, expected_type) = match lower_literal(literal, actual_type_hint.as_ref()) {
             Ok(pair) => pair,
@@ -597,7 +597,7 @@ impl MirBuilder {
         }
     }
 
-    pub(crate) fn lower_range_pattern_match_operand(
+    pub fn lower_range_pattern_match_operand(
         &mut self,
         start: Option<&HirLiteral>,
         end: Option<&HirLiteral>,

@@ -137,7 +137,7 @@ impl MirSumDeclaration {
 ///
 /// Canonical 的声明级与实例级 sum 布局共用这条链路，避免两套拼写口径。
 /// 未登记（含泛型实例尚未生成记录布局）一律返回 `None`，由调用方失败关闭。
-pub(crate) fn record_payload_layout(record: &ValkyrieType, layouts: &AggregateLayoutPlan) -> Option<SemanticType> {
+pub fn record_payload_layout(record: &ValkyrieType, layouts: &AggregateLayoutPlan) -> Option<SemanticType> {
     let ValkyrieType::Nominal { declaration, .. } = record
     else {
         return None;

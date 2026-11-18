@@ -15,7 +15,7 @@ use crate::compiler::{
 };
 
 /// 枚举类型的 nominal 形状（泛型参数化为 Generic binder）。
-pub(crate) fn enum_apply_type(enum_def: &crate::compiler::types::hir::HirEnum) -> ValkyrieType {
+pub fn enum_apply_type(enum_def: &crate::compiler::types::hir::HirEnum) -> ValkyrieType {
     let arguments = enum_def.generics.iter().map(|generic| ValkyrieType::Generic(generic.clone())).collect::<Vec<_>>();
     if let Some(declaration) = enum_def.declaration {
         // 枚举不是 `[primitive]` 声明，没有自举身份。
@@ -30,7 +30,7 @@ pub(crate) fn enum_apply_type(enum_def: &crate::compiler::types::hir::HirEnum) -
     }
 }
 
-pub(crate) fn struct_apply_type(struct_def: &crate::compiler::types::hir::HirStruct, array_owner: Option<compiler_types::ItemId>) -> ValkyrieType {
+pub fn struct_apply_type(struct_def: &crate::compiler::types::hir::HirStruct, array_owner: Option<compiler_types::ItemId>) -> ValkyrieType {
     let arguments = struct_def.generics.iter().map(|generic| ValkyrieType::Generic(generic.clone())).collect::<Vec<_>>();
     // 冻结数组 owner 的结构形态才是 `[T]` 的唯一规范表示：`Array<T>` 与 `[T]` 同身份，
     // 不得在候选/构造结果里另铸 `Nominal{Array}`。
@@ -57,7 +57,7 @@ pub(crate) fn struct_apply_type(struct_def: &crate::compiler::types::hir::HirStr
     }
 }
 
-pub(crate) fn variant_payload_type(variant: &crate::compiler::types::hir::HirVariant) -> ValkyrieType {
+pub fn variant_payload_type(variant: &crate::compiler::types::hir::HirVariant) -> ValkyrieType {
     if !variant.fields.is_empty() {
         if variant.fields.len() == 1 {
             return variant.fields[0].ty.clone();
@@ -67,17 +67,17 @@ pub(crate) fn variant_payload_type(variant: &crate::compiler::types::hir::HirVar
     ValkyrieType::Unit
 }
 
-pub(crate) fn nullable_union_type(payload: ValkyrieType) -> ValkyrieType {
+pub fn nullable_union_type(payload: ValkyrieType) -> ValkyrieType {
     ValkyrieType::Nullable(Box::new(payload))
 }
 
 /// 空数组字面量：自身没有元素类型事实，只能由调用形式的参数类型定型。
-pub(crate) fn is_empty_array_literal(expr: &HirExpr) -> bool {
+pub fn is_empty_array_literal(expr: &HirExpr) -> bool {
     matches!(&expr.kind, HirExprKind::ArrayLiteral { items } if items.is_empty())
 }
 
 /// 形式参数是否是空数组字面量可以落入的数组形状。
-pub(crate) fn accepts_array_shape(expected: &ValkyrieType) -> bool {
+pub fn accepts_array_shape(expected: &ValkyrieType) -> bool {
     match expected {
         ValkyrieType::Array(_) => true,
         ValkyrieType::FixedArray { length, .. } => *length == 0,
@@ -86,7 +86,7 @@ pub(crate) fn accepts_array_shape(expected: &ValkyrieType) -> bool {
 }
 
 /// 字段身份的唯一冻结入口：按已注册聚合布局读取 `HirField::id`，不在此重新编号。
-pub(crate) fn field_identity_from_type(
+pub fn field_identity_from_type(
     object_type: &ValkyrieType,
     field: &Identifier,
     struct_fields: &AggregateFieldIndex,
@@ -95,7 +95,7 @@ pub(crate) fn field_identity_from_type(
 }
 
 /// 成员类型查询：带标签元组走与位置解析相同的字段表，禁止另开按名分支。
-pub(crate) fn lookup_struct_field_type(
+pub fn lookup_struct_field_type(
     object_type: &ValkyrieType,
     field: &Identifier,
     struct_fields: &AggregateFieldIndex,
@@ -124,7 +124,7 @@ fn instantiate_declared_type(declared: &ValkyrieType, generics: &[GenericType], 
     crate::compiler::hir::overload::substitute_type_vars(declared, &substitutions)
 }
 
-pub(crate) fn payload_field_scrutinee_types(payload: &ValkyrieType, struct_fields: &AggregateFieldIndex) -> Vec<Option<ValkyrieType>> {
+pub fn payload_field_scrutinee_types(payload: &ValkyrieType, struct_fields: &AggregateFieldIndex) -> Vec<Option<ValkyrieType>> {
     match payload {
         ValkyrieType::Tuple(items) => items.iter().map(|item| Some(item.clone())).collect(),
         ValkyrieType::LabeledTuple(items) => items.iter().map(|item| Some(item.ty.clone())).collect(),
@@ -141,7 +141,7 @@ pub(crate) fn payload_field_scrutinee_types(payload: &ValkyrieType, struct_field
 ///
 /// 多字段 unite/enum 变体的字段名登记在变体声明身份上（不是可解析类型名），
 /// 因此优先按 `resolved.sum_variant` 取声明字段。
-pub(crate) fn extractor_payload_field_names(
+pub fn extractor_payload_field_names(
     resolved: Option<&crate::compiler::types::hir::HirResolvedCall>,
     payload: &ValkyrieType,
     struct_fields: &AggregateFieldIndex,
@@ -163,7 +163,7 @@ pub(crate) fn extractor_payload_field_names(
 }
 
 /// 查找 object pattern 字段的 scrutinee 类型。
-pub(crate) fn object_field_scrutinee_type<'a>(
+pub fn object_field_scrutinee_type<'a>(
     object_name: Option<&crate::compiler::types::NamePath>,
     field_name: &Identifier,
     struct_fields: &'a AggregateFieldIndex,
@@ -173,7 +173,7 @@ pub(crate) fn object_field_scrutinee_type<'a>(
 }
 
 /// 把局部根的 `a.b.c` 点分路径规范化为嵌套 `FieldAccess`，并冻结每级字段身份。
-pub(crate) fn normalize_local_field_chain(expr: &mut HirExpr, locals: &BTreeMap<String, ValkyrieType>, struct_fields: &AggregateFieldIndex) {
+pub fn normalize_local_field_chain(expr: &mut HirExpr, locals: &BTreeMap<String, ValkyrieType>, struct_fields: &AggregateFieldIndex) {
     let HirExprKind::Path(path) = &expr.kind
     else {
         return;
@@ -212,7 +212,7 @@ pub(crate) fn normalize_local_field_chain(expr: &mut HirExpr, locals: &BTreeMap<
 }
 
 /// 单段小写名字模式只能是 Variable；如果是 Name 形式则应解析为类型测试模式。
-pub(crate) fn should_resolve_name_pattern_as_type(name: &crate::compiler::types::NamePath, actual_type: &ValkyrieType) -> bool {
+pub fn should_resolve_name_pattern_as_type(name: &crate::compiler::types::NamePath, actual_type: &ValkyrieType) -> bool {
     if name.parts().len() != 1 {
         return false;
     }
@@ -223,7 +223,7 @@ pub(crate) fn should_resolve_name_pattern_as_type(name: &crate::compiler::types:
     }
 }
 
-pub(crate) fn pattern_type_declaration(
+pub fn pattern_type_declaration(
     path: &crate::compiler::types::NamePath,
     type_relations: &TypeRelationContext,
 ) -> Option<compiler_types::ItemId> {
@@ -234,17 +234,17 @@ pub(crate) fn pattern_type_declaration(
     type_relations.nominal_type_for_name(name).and_then(|ty| ty.nominal_declaration())
 }
 
-pub(crate) fn canonical_extractor_callee(name: &crate::compiler::types::NamePath) -> crate::compiler::types::NamePath {
+pub fn canonical_extractor_callee(name: &crate::compiler::types::NamePath) -> crate::compiler::types::NamePath {
     let mut parts = name.parts().to_vec();
     parts.push(Identifier::new("extractor"));
     crate::compiler::types::NamePath::new(parts)
 }
 
-pub(crate) fn is_null_type(ty: &ValkyrieType) -> bool {
+pub fn is_null_type(ty: &ValkyrieType) -> bool {
     matches!(ty, ValkyrieType::Named(name) if name.as_str() == "null")
 }
 
-pub(crate) fn infer_catch_scrutinee_type(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) -> Option<ValkyrieType> {
+pub fn infer_catch_scrutinee_type(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) -> Option<ValkyrieType> {
     match &expr.kind {
         HirExprKind::Raise(inner) => infer_expr_type(inner, locals),
         HirExprKind::Block(block) => block.expr.as_ref().and_then(|inner| infer_catch_scrutinee_type(inner, locals)),
@@ -383,7 +383,7 @@ pub fn infer_scrutinee_type(
     }
 }
 
-pub(crate) fn compute_call_match_kind(
+pub fn compute_call_match_kind(
     type_relations: &TypeRelationContext,
     actual_types: &[ValkyrieType],
     expected_types: &[ValkyrieType],
@@ -424,7 +424,7 @@ pub(crate) fn compute_call_match_kind(
     }
 }
 
-pub(crate) fn render_valkyrie_type_name(ty: &ValkyrieType) -> String {
+pub fn render_valkyrie_type_name(ty: &ValkyrieType) -> String {
     match ty {
         ValkyrieType::Named(name) => name.as_str().to_string(),
         ValkyrieType::Tuple(items) => {

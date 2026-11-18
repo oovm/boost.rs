@@ -112,16 +112,16 @@ const JVM_OPERATOR_BINDING_ATTRIBUTE: &str = "jvm_operator";
 const CLR_OPERATOR_BINDING_ATTRIBUTE: &str = "clr_operator";
 
 /// 当剝外部导入链接覝求的能力标签。
-pub(crate) fn required_capability(_link: &ExternalImportLink) -> CapabilityTag {
+pub fn required_capability(_link: &ExternalImportLink) -> CapabilityTag {
     CapabilityTag::new("host-interop")
 }
 
 /// 当剝外部导入链接覝求的违行时需求。
-pub(crate) fn runtime_requirement(_link: &ExternalImportLink) -> RuntimeRequirement {
+pub fn runtime_requirement(_link: &ExternalImportLink) -> RuntimeRequirement {
     RuntimeRequirement { key: "host-interop".to_string(), value: "required".to_string() }
 }
 
-pub(crate) fn validate_interop_surface(module: &HirModule) -> Result<(), BackendContractError> {
+pub fn validate_interop_surface(module: &HirModule) -> Result<(), BackendContractError> {
     let source = module_source_label(module);
     let scope = module_path_label(module);
     for function in &module.functions {
@@ -174,7 +174,7 @@ pub(crate) fn validate_interop_surface(module: &HirModule) -> Result<(), Backend
 /// - 目标绑定属性直接生成宿主 external_call。
 /// 无体声明被判定为抽象后不得降低成空体函数，否则调用静默落到空实现。
 /// `[intrinsic(...)]` 已退役，不再使声明成为抽象，由 [`validate_interop_surface`] 显式拒绝。
-pub(crate) fn annotations_declare_external_import(annotations: &[HirAttribute]) -> bool {
+pub fn annotations_declare_external_import(annotations: &[HirAttribute]) -> bool {
     annotations
         .iter()
         .any(|attribute| attribute_to_interop_contract(attribute).is_some() || attribute_name(attribute).as_deref() == Some("host_contract"))
@@ -204,7 +204,7 @@ pub fn function_interop_contract(function: &HirFunction) -> Option<ExternalImpor
 ///
 /// 该函数返回 provider 所实现的 host_contract 的陝定坝。
 /// 例如 `[host_provider(std::console::write_line)]` 返回 `std::console::write_line`。
-pub(crate) fn function_host_provider_target(function: &HirFunction) -> Option<QualifiedName> {
+pub fn function_host_provider_target(function: &HirFunction) -> Option<QualifiedName> {
     function.annotations.iter().find_map(|attribute| {
         let name = attribute_name(attribute)?;
         if name != "host_provider" {

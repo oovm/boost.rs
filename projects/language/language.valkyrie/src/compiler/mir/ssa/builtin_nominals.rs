@@ -9,7 +9,7 @@ use super::model::MirStruct;
 
 /// 由 MIR 聚合声明决定 carrier 语义；builtin 名义类型必须有明确值语义。
 /// 若 `is_value_type = false`，说明聚合未声明值语义，直接 panic 阻止默认 Reference 回填。
-pub(crate) fn semantics_for_declared_aggregate(aggregate: &MirStruct) -> NominalValueSemantics {
+pub fn semantics_for_declared_aggregate(aggregate: &MirStruct) -> NominalValueSemantics {
     if aggregate.is_value_type {
         NominalValueSemantics::Value
     }
@@ -23,6 +23,6 @@ pub(crate) fn semantics_for_declared_aggregate(aggregate: &MirStruct) -> Nominal
 }
 
 /// 由冻结的声明 `ItemId` 在模块聚合表中查找语义。
-pub(crate) fn semantics_for_item_declaration(module: &super::model::MirModule, item_id: ItemId) -> Option<NominalValueSemantics> {
+pub fn semantics_for_item_declaration(module: &super::model::MirModule, item_id: ItemId) -> Option<NominalValueSemantics> {
     module.structs.iter().find(|aggregate| aggregate.declaration == Some(item_id)).map(semantics_for_declared_aggregate)
 }

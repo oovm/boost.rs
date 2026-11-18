@@ -14,7 +14,7 @@ use crate::compiler::{
 
 use crate::compiler::emitter::pipeline::diagnostics::fail_stage;
 
-pub(crate) fn ensure_instantiated_signature(function: &MirFunction) -> Result<(), StructuredDiagnosticSet> {
+pub fn ensure_instantiated_signature(function: &MirFunction) -> Result<(), StructuredDiagnosticSet> {
     if function
         .param_types
         .iter()
@@ -27,7 +27,7 @@ pub(crate) fn ensure_instantiated_signature(function: &MirFunction) -> Result<()
         Ok(())
     }
 }
-pub(crate) fn type_id(ids: &BTreeMap<ValkyrieType, TypeId>, ty: &ValkyrieType) -> Result<TypeId, StructuredDiagnosticSet> {
+pub fn type_id(ids: &BTreeMap<ValkyrieType, TypeId>, ty: &ValkyrieType) -> Result<TypeId, StructuredDiagnosticSet> {
     ids.get(ty)
         .copied()
         .or_else(|| {
@@ -48,13 +48,13 @@ fn canonical_normalize_named_primitive(ty: &ValkyrieType) -> ValkyrieType {
 fn item_id(index: u32) -> ItemId {
     ItemId::from_index(index).expect("item identity overflow")
 }
-pub(crate) fn error_without_module(code: &'static str, message: impl Into<String>) -> StructuredDiagnosticSet {
+pub fn error_without_module(code: &'static str, message: impl Into<String>) -> StructuredDiagnosticSet {
     fail_stage::<()>(CompileStage::SemanticMir, code, "", message).err().unwrap()
 }
-pub(crate) fn error(module: &MirModule, code: &'static str, message: impl Into<String>) -> StructuredDiagnosticSet {
+pub fn error(module: &MirModule, code: &'static str, message: impl Into<String>) -> StructuredDiagnosticSet {
     fail_stage::<()>(CompileStage::SemanticMir, code, &module.name, message).err().unwrap()
 }
-pub(crate) fn canonical_error(module: &MirModule, program: &ValkyrieMirProgram, error: ValkyrieMirError) -> StructuredDiagnosticSet {
+pub fn canonical_error(module: &MirModule, program: &ValkyrieMirProgram, error: ValkyrieMirError) -> StructuredDiagnosticSet {
     let detail = match &error {
         ValkyrieMirError::OperationResultTypeMismatch { function, instruction } => {
             format!("canonical MIR 校验失败: {error:?}{}", describe_operation_result_mismatch(module, program, *function, *instruction))

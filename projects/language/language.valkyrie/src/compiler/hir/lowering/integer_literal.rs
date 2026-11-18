@@ -13,7 +13,7 @@
 use crate::compiler::types::hir::ValkyrieType;
 
 /// 未定型整数字面量的默认宽度：`i32` → `i64` → `u64`（有符号优先）。
-pub(crate) fn default_integer_type(value: i128) -> ValkyrieType {
+pub fn default_integer_type(value: i128) -> ValkyrieType {
     if (i32::MIN as i128..=i32::MAX as i128).contains(&value) {
         return ValkyrieType::Integer32 { signed: true };
     }
@@ -47,7 +47,7 @@ fn integer_type_fits(value: i128, ty: &ValkyrieType) -> Option<bool> {
 
 /// 结算结果：`bits` 是该整数类型下的 64 位位模式（无符号值按补码存位），
 /// `ty` 是冻结后的类型；二者必须一起消费，不得只取其一。
-pub(crate) fn settle_integer(value: i128, expected: Option<&ValkyrieType>) -> Result<(i64, ValkyrieType), String> {
+pub fn settle_integer(value: i128, expected: Option<&ValkyrieType>) -> Result<(i64, ValkyrieType), String> {
     if let Some(expected) = expected
         && let Some(fits) = integer_type_fits(value, expected)
     {
@@ -64,7 +64,7 @@ pub(crate) fn settle_integer(value: i128, expected: Option<&ValkyrieType>) -> Re
 
 /// 字节字面量的唯一定型：整数目标按该类型检查范围并采纳目标类型；无整数目标时
 /// 保持字节固有载体 `u8`。与 [`settle_integer`] 同属 HIR 结算，MIR 只消费结果。
-pub(crate) fn settle_byte(value: u8, expected: Option<&ValkyrieType>) -> Result<(i64, ValkyrieType), String> {
+pub fn settle_byte(value: u8, expected: Option<&ValkyrieType>) -> Result<(i64, ValkyrieType), String> {
     if let Some(expected) = expected
         && integer_type_fits(i128::from(value), expected) == Some(false)
     {

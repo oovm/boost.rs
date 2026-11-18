@@ -13,7 +13,7 @@ use crate::compiler::{
     },
 };
 
-pub(crate) fn freeze_generic_binders(generics: &mut [GenericType], owner: compiler_types::ItemId) {
+pub fn freeze_generic_binders(generics: &mut [GenericType], owner: compiler_types::ItemId) {
     for (ordinal, generic) in generics.iter_mut().enumerate() {
         if generic.binder.is_none() {
             generic.binder = Some(GenericBinderId { owner, ordinal: ordinal as u32 });
@@ -21,7 +21,7 @@ pub(crate) fn freeze_generic_binders(generics: &mut [GenericType], owner: compil
     }
 }
 
-pub(crate) fn propagate_declared_generic_binders(ty: &mut ValkyrieType, generics: &[GenericType]) {
+pub fn propagate_declared_generic_binders(ty: &mut ValkyrieType, generics: &[GenericType]) {
     match ty {
         ValkyrieType::Named(name) => {
             if let Some(declared) = generics.iter().find(|item| item.name == *name) {
@@ -84,7 +84,7 @@ pub(crate) fn propagate_declared_generic_binders(ty: &mut ValkyrieType, generics
     }
 }
 
-pub(crate) fn propagate_generic_binders_in_block(block: &mut HirBlock, generics: &[GenericType]) {
+pub fn propagate_generic_binders_in_block(block: &mut HirBlock, generics: &[GenericType]) {
     for statement in &mut block.statements {
         match &mut statement.kind {
             HirStatementKind::Let { ty, initializer, .. } => {
@@ -103,7 +103,7 @@ pub(crate) fn propagate_generic_binders_in_block(block: &mut HirBlock, generics:
     }
 }
 
-pub(crate) fn propagate_generic_binders_in_expr(expr: &mut HirExpr, generics: &[GenericType]) {
+pub fn propagate_generic_binders_in_expr(expr: &mut HirExpr, generics: &[GenericType]) {
     match &mut expr.kind {
         HirExprKind::Cast { ty, expr: inner, .. } => {
             propagate_declared_generic_binders(ty, generics);
@@ -222,7 +222,7 @@ pub(crate) fn propagate_generic_binders_in_expr(expr: &mut HirExpr, generics: &[
     }
 }
 
-pub(crate) fn freeze_function_generic_binders(function: &mut HirFunction) {
+pub fn freeze_function_generic_binders(function: &mut HirFunction) {
     let Some(owner) = function.declaration
     else {
         return;
@@ -250,7 +250,7 @@ pub(crate) fn freeze_function_generic_binders(function: &mut HirFunction) {
 ///
 /// 成员（方法/构造器/默认实现）自身可能没有泛型参数，其签名里的 `T` 来自 owner
 /// 声明。这类 binder 必须在声明冻结期与 owner 声明一起写定，调用点只读不重建。
-pub(crate) fn freeze_member_generic_binders(function: &mut HirFunction, owner_generics: &[GenericType]) {
+pub fn freeze_member_generic_binders(function: &mut HirFunction, owner_generics: &[GenericType]) {
     freeze_function_generic_binders(function);
     if owner_generics.is_empty() {
         return;
@@ -263,7 +263,7 @@ pub(crate) fn freeze_member_generic_binders(function: &mut HirFunction, owner_ge
     propagate_generic_binders_in_block(&mut function.body, owner_generics);
 }
 
-pub(crate) fn freeze_enum_generic_binders(enum_definition: &mut HirEnum) {
+pub fn freeze_enum_generic_binders(enum_definition: &mut HirEnum) {
     let Some(owner) = enum_definition.declaration
     else {
         return;
@@ -279,7 +279,7 @@ pub(crate) fn freeze_enum_generic_binders(enum_definition: &mut HirEnum) {
     }
 }
 
-pub(crate) fn freeze_struct_generic_binders(structure: &mut HirStruct) {
+pub fn freeze_struct_generic_binders(structure: &mut HirStruct) {
     let Some(owner) = structure.constructor_declaration
     else {
         return;
@@ -294,7 +294,7 @@ pub(crate) fn freeze_struct_generic_binders(structure: &mut HirStruct) {
     }
 }
 
-pub(crate) fn freeze_trait_generic_binders(trait_definition: &mut HirTrait) {
+pub fn freeze_trait_generic_binders(trait_definition: &mut HirTrait) {
     let Some(owner) = trait_definition.declaration
     else {
         return;
@@ -323,7 +323,7 @@ pub(crate) fn freeze_trait_generic_binders(trait_definition: &mut HirTrait) {
 /// - trait 成员：trait 声明泛型（trait binder）。
 ///
 /// 调用点只读取该结果，不再按 receiver 实参回填。
-pub(crate) fn freeze_impl_generic_binders(implementation: &mut HirImpl, module: &HirModule) -> Result<(), HirError> {
+pub fn freeze_impl_generic_binders(implementation: &mut HirImpl, module: &HirModule) -> Result<(), HirError> {
     let owner_generics = owner_generics_for_target(module, &implementation.target);
     let trait_generics = implementation
         .trait_declaration
@@ -494,7 +494,7 @@ fn unfrozen_generic_name(ty: &ValkyrieType) -> Option<&Identifier> {
 ///
 /// 两相执行：先把所有 owner 声明的泛型列表写出身份（含子模块与跨引用），
 /// 再让成员按 owner 上下文写定。反过来会让 impl 在 owner 尚未冻结时读到空 binder。
-pub(crate) fn freeze_module_generic_binders(module: &mut HirModule) -> Result<(), HirError> {
+pub fn freeze_module_generic_binders(module: &mut HirModule) -> Result<(), HirError> {
     freeze_owner_generic_lists(module);
     freeze_member_generic_binders_in_module(module)
 }
@@ -566,7 +566,7 @@ fn freeze_member_generic_binders_in_module(module: &mut HirModule) -> Result<(),
     Ok(())
 }
 
-pub(crate) fn lower_trait_method(mut method: HirFunction, associated_names: &std::collections::BTreeSet<Identifier>) -> HirFunction {
+pub fn lower_trait_method(mut method: HirFunction, associated_names: &std::collections::BTreeSet<Identifier>) -> HirFunction {
     let generic_names = method.generics.iter().map(|generic| generic.name.clone()).collect::<std::collections::BTreeSet<_>>();
     for param in &mut method.params {
         param.ty = lower_trait_associated_type_references(&param.ty, associated_names, &generic_names);
@@ -586,7 +586,7 @@ pub(crate) fn lower_trait_method(mut method: HirFunction, associated_names: &std
     method
 }
 
-pub(crate) fn lower_trait_associated_type_references(
+pub fn lower_trait_associated_type_references(
     ty: &ValkyrieType,
     associated_names: &std::collections::BTreeSet<Identifier>,
     generic_names: &std::collections::BTreeSet<Identifier>,

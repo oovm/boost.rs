@@ -50,7 +50,7 @@ use super::{
 };
 
 /// Constructor domain 专属解析路径。
-pub(crate) fn try_resolve_constructor_call(
+pub fn try_resolve_constructor_call(
     callee: &HirExpr,
     args: &[HirCallArgument],
     candidates: &[OverloadCandidate],
@@ -173,7 +173,7 @@ pub(crate) fn try_resolve_constructor_call(
     None
 }
 
-pub(crate) fn build_constructor_resolved_call(
+pub fn build_constructor_resolved_call(
     callee: &HirExpr,
     args: &[HirCallArgument],
     resolved: OverloadCandidate,
@@ -204,7 +204,7 @@ pub(crate) fn build_constructor_resolved_call(
     call
 }
 
-pub(crate) fn try_resolve_qualified_free_function(
+pub fn try_resolve_qualified_free_function(
     path: &NamePath,
     args: &[HirCallArgument],
     explicit_generic_arguments: &[ValkyrieType],
@@ -330,7 +330,7 @@ pub fn match_singleton_method_candidate(
     Some(matched)
 }
 
-pub(crate) fn try_resolve_singleton_method(
+pub fn try_resolve_singleton_method(
     owner: &Identifier,
     method_name: &Identifier,
     args: &[HirCallArgument],
@@ -386,7 +386,7 @@ pub(crate) fn try_resolve_singleton_method(
     })
 }
 
-pub(crate) fn try_resolve_type_static_method(
+pub fn try_resolve_type_static_method(
     type_owner: &Identifier,
     method_name: &Identifier,
     args: &[HirCallArgument],
@@ -509,7 +509,7 @@ fn numeric_literal_value_fits(value: i128, expected: &ValkyrieType) -> bool {
 /// 返回结构化结果：无候选或形参失配是 `NoMatch`，多个同具体度候选并列是
 /// `Ambiguous`。调用方必须把歧义作为独立失败类别上报，不得用 `.ok()` 折算成
 /// 「无一候选」，否则显式 impl 的同具体度冲突会退化成 `NoViableOverload`。
-pub(crate) fn try_resolve_instance_method(
+pub fn try_resolve_instance_method(
     receiver: &HirExpr,
     method_name: &Identifier,
     args: &[HirCallArgument],
@@ -537,7 +537,7 @@ pub(crate) fn try_resolve_instance_method(
 /// 运算符成员（`infix -` 等）由 `core` 的裸字面量分支调用此入口；期望类型存在时
 /// 它是权威上下文，优先于字面量默认宽度推断。
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn try_resolve_instance_method_with_context(
+pub fn try_resolve_instance_method_with_context(
     receiver: &HirExpr,
     method_name: &Identifier,
     args: &[HirCallArgument],

@@ -21,22 +21,22 @@ use super::hir_identity::nominal_type_name;
 /// `target` 是声明侧接收者类型（可含 owner 的泛型 binder），`instance` 是对应
 /// 方法已物化的 callable 身份。分派只做结构化目标统一，不从短名或符号字符串恢复身份。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct MirDispatchEntry {
+pub struct MirDispatchEntry {
     /// trait 实现的 trait 声明身份；inherent 成员/运算符为空。
-    pub(crate) trait_declaration: Option<ItemId>,
+    pub trait_declaration: Option<ItemId>,
     /// 声明侧接收者类型。
-    pub(crate) target: ValkyrieType,
+    pub target: ValkyrieType,
     /// 成员选择名（运算符为 `{fixity} {lexeme}`）。
-    pub(crate) member: crate::compiler::types::Identifier,
+    pub member: crate::compiler::types::Identifier,
     /// 方法实例身份。
-    pub(crate) instance: ItemInstanceId,
+    pub instance: ItemInstanceId,
 }
 
 /// 从完整源码闭包的 HIR 收集成员分派表。
 ///
 /// 只收已分配 callable instance 的方法：泛型种子的实例由单态化按调用点生成，
 /// 未实例化时不在声明期猜测 witness。
-pub(crate) fn collect_dispatch_entries(modules: &[&HirModule]) -> Vec<MirDispatchEntry> {
+pub fn collect_dispatch_entries(modules: &[&HirModule]) -> Vec<MirDispatchEntry> {
     let mut entries = Vec::new();
     for module in modules {
         collect_module_dispatch(module, &mut entries);
@@ -95,7 +95,7 @@ fn collect_module_dispatch(module: &HirModule, entries: &mut Vec<MirDispatchEntr
 }
 
 /// 类型中是否仍有未代入的泛型 binder。
-pub(crate) fn contains_unresolved_generic(ty: &ValkyrieType) -> bool {
+pub fn contains_unresolved_generic(ty: &ValkyrieType) -> bool {
     match ty {
         ValkyrieType::Generic(_) => true,
         ValkyrieType::Nominal { arguments, .. } => arguments.iter().any(contains_unresolved_generic),
@@ -113,7 +113,7 @@ pub(crate) fn contains_unresolved_generic(ty: &ValkyrieType) -> bool {
 }
 
 /// 若 `concrete` 实例化 `template`，返回 binder → 实参代入表。
-pub(crate) fn collect_generic_substitutions(
+pub fn collect_generic_substitutions(
     template: &ValkyrieType,
     concrete: &ValkyrieType,
 ) -> Option<BTreeMap<GenericBinderId, ValkyrieType>> {
@@ -122,12 +122,12 @@ pub(crate) fn collect_generic_substitutions(
 }
 
 /// 判断 `concrete` 是否为 `template` 在某一组 binder 代入下的实例。
-pub(crate) fn type_instantiates_generic_signature(template: &ValkyrieType, concrete: &ValkyrieType) -> bool {
+pub fn type_instantiates_generic_signature(template: &ValkyrieType, concrete: &ValkyrieType) -> bool {
     collect_generic_substitutions(template, concrete).is_some()
 }
 
 /// 按声明参数身份代入类型；未解析名称不能被当作泛型形参。
-pub(crate) fn apply_type_substitution(ty: &ValkyrieType, substitutions: &BTreeMap<GenericBinderId, ValkyrieType>) -> ValkyrieType {
+pub fn apply_type_substitution(ty: &ValkyrieType, substitutions: &BTreeMap<GenericBinderId, ValkyrieType>) -> ValkyrieType {
     match ty {
         ValkyrieType::Generic(generic) => generic.binder.and_then(|binder| substitutions.get(&binder)).cloned().unwrap_or_else(|| ty.clone()),
         ValkyrieType::Nominal { declaration, arguments, primitive_identity } => ValkyrieType::Nominal {
@@ -159,7 +159,7 @@ pub(crate) fn apply_type_substitution(ty: &ValkyrieType, substitutions: &BTreeMa
     }
 }
 
-pub(crate) fn unify_generic_instantiation(
+pub fn unify_generic_instantiation(
     template: &ValkyrieType,
     concrete: &ValkyrieType,
     substitutions: &mut BTreeMap<GenericBinderId, ValkyrieType>,
@@ -219,7 +219,7 @@ pub(crate) fn unify_generic_instantiation(
 }
 
 /// 按接收者类型与成员名查找已冻结的 callable 实例（inherent 成员/运算符）。
-pub(crate) fn lookup_member_dispatch(
+pub fn lookup_member_dispatch(
     dispatch: &[MirDispatchEntry],
     subject: &ValkyrieType,
     member: &crate::compiler::types::Identifier,

@@ -1092,7 +1092,7 @@ fn unify_call_signature(
 /// `NominalInstanceRecord::ty` 保存声明形状，而调用点可能携带已经代入的
 /// 泛型参数。两者的参数列表不应被当成不同的 owner；名义 declaration
 /// identity 才是 ADT/字段/variant 所属关系的事实来源。
-pub(crate) fn canonical_nominal_owner_matches(linked: &LinkedSemanticProgram, actual: TypeId, owner: TypeId) -> bool {
+pub fn canonical_nominal_owner_matches(linked: &LinkedSemanticProgram, actual: TypeId, owner: TypeId) -> bool {
     if actual == owner {
         return true;
     }
@@ -1116,7 +1116,7 @@ pub(crate) fn canonical_nominal_owner_matches(linked: &LinkedSemanticProgram, ac
     }
 }
 
-pub(crate) fn canonical_types_compatible(linked: &LinkedSemanticProgram, actual: TypeId, expected: TypeId) -> bool {
+pub fn canonical_types_compatible(linked: &LinkedSemanticProgram, actual: TypeId, expected: TypeId) -> bool {
     if actual == expected || canonical_text_encoding_compatible(linked, actual, expected) {
         return true;
     }
@@ -1165,7 +1165,7 @@ pub(crate) fn canonical_types_compatible(linked: &LinkedSemanticProgram, actual:
 }
 
 /// 文本编码基元与文本载体名义类型之间是否等价。
-pub(crate) fn canonical_text_encoding_compatible(linked: &LinkedSemanticProgram, left: TypeId, right: TypeId) -> bool {
+pub fn canonical_text_encoding_compatible(linked: &LinkedSemanticProgram, left: TypeId, right: TypeId) -> bool {
     fn encoding(linked: &LinkedSemanticProgram, ty: TypeId) -> Option<CanonicalPrimitiveType> {
         match linked.types.get(&ty).map(|record| &record.kind) {
             Some(CanonicalTypeKind::Primitive(primitive @ (CanonicalPrimitiveType::Utf8 | CanonicalPrimitiveType::Utf16))) => {
@@ -1268,7 +1268,7 @@ fn shadows_registered_identity(linked: &LinkedSemanticProgram, name: &Identifier
 }
 
 /// 验证整个类型闭包，不限于当前函数引用到的行。
-pub(crate) fn validate_linked_types(linked: &LinkedSemanticProgram) -> Result<(), ValkyrieMirError> {
+pub fn validate_linked_types(linked: &LinkedSemanticProgram) -> Result<(), ValkyrieMirError> {
     for (owner, record) in &linked.types {
         let references = match &record.kind {
             CanonicalTypeKind::Primitive(primitive) => {
@@ -1398,7 +1398,7 @@ pub(crate) fn validate_linked_types(linked: &LinkedSemanticProgram) -> Result<()
     Ok(())
 }
 
-pub(crate) fn validate_nominal_value_type(
+pub fn validate_nominal_value_type(
     linked: &LinkedSemanticProgram,
     ty: TypeId,
     nominal_types: &std::collections::BTreeSet<TypeId>,

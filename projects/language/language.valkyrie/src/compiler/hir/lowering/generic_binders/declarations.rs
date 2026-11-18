@@ -46,7 +46,7 @@ fn collect_visible_structs(module: &HirModule, out: &mut Vec<HirStruct>) {
 
 /// 在结构体/枚举已分配 declaration ItemId 之后，把唯一可解析的 `Named`/`Apply(Named, …)`
 /// 绑定为 [`ValkyrieType::Nominal`]。这是 Resolver→HIR 的声明身份冻结，不是短名改写或后置补丁。
-pub(crate) fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), HirError> {
+pub fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), HirError> {
     // `[T]` owner 在本层绑定期即冻结：多候选是结构化失败，下游候选/解析只查询结果，不另铸形态。
     array_owner_declaration(module)?;
     fn qualified_struct(item: &HirStruct) -> Identifier {
@@ -615,13 +615,13 @@ fn freeze_array_owner(structs: &[HirStruct]) -> Result<Option<compiler_types::It
 }
 
 /// 模块（含可见依赖导出与子模块）内冻结的 `[T]` owner 声明。
-pub(crate) fn array_owner_declaration(module: &HirModule) -> Result<Option<compiler_types::ItemId>, HirError> {
+pub fn array_owner_declaration(module: &HirModule) -> Result<Option<compiler_types::ItemId>, HirError> {
     let mut structs = Vec::new();
     collect_visible_structs(module, &mut structs);
     freeze_array_owner(&structs)
 }
 
-pub(crate) fn lookup_owner_generics_by_declaration(module: &HirModule, declaration: compiler_types::ItemId) -> Vec<GenericType> {
+pub fn lookup_owner_generics_by_declaration(module: &HirModule, declaration: compiler_types::ItemId) -> Vec<GenericType> {
     if let Some(item) = module.enums.iter().find(|item| item.declaration == Some(declaration)) {
         return item.generics.clone();
     }
@@ -645,7 +645,7 @@ pub(crate) fn lookup_owner_generics_by_declaration(module: &HirModule, declarati
     Vec::new()
 }
 
-pub(crate) fn combined_impl_generic_context(module: &HirModule, implementation: &HirImpl) -> Vec<GenericType> {
+pub fn combined_impl_generic_context(module: &HirModule, implementation: &HirImpl) -> Vec<GenericType> {
     let mut generics = implementation.generics.clone();
     let owner_generics = match &implementation.target {
         ValkyrieType::Nominal { declaration, .. } => lookup_owner_generics_by_declaration(module, *declaration),
@@ -664,7 +664,7 @@ pub(crate) fn combined_impl_generic_context(module: &HirModule, implementation: 
     generics
 }
 
-pub(crate) fn propagate_generic_binders_in_where_constraints(constraints: &mut [HirWhereConstraint], generics: &[GenericType]) {
+pub fn propagate_generic_binders_in_where_constraints(constraints: &mut [HirWhereConstraint], generics: &[GenericType]) {
     for constraint in constraints {
         propagate_declared_generic_binders(&mut constraint.target, generics);
         for bound in &mut constraint.bounds {
@@ -679,7 +679,7 @@ pub(crate) fn propagate_generic_binders_in_where_constraints(constraints: &mut [
 }
 
 /// 整份 HIR 模块（含子模块）已冻结 `ItemId` 的最大下标。
-pub(crate) fn max_hir_declaration_index(module: &HirModule) -> Option<u32> {
+pub fn max_hir_declaration_index(module: &HirModule) -> Option<u32> {
     fn consider(declaration: Option<compiler_types::ItemId>, max: &mut Option<u32>) {
         if let Some(declaration) = declaration {
             let index = declaration.index();
@@ -735,7 +735,7 @@ pub(crate) fn max_hir_declaration_index(module: &HirModule) -> Option<u32> {
 }
 
 /// 整份 HIR 模块（含子模块）已冻结 callable `ItemInstanceId` 的最大下标。
-pub(crate) fn max_hir_callable_instance_index(module: &HirModule) -> Option<u32> {
+pub fn max_hir_callable_instance_index(module: &HirModule) -> Option<u32> {
     fn consider(instance: Option<compiler_types::ItemInstanceId>, max: &mut Option<u32>) {
         if let Some(instance) = instance {
             let index = instance.index();
@@ -794,7 +794,7 @@ pub(crate) fn max_hir_callable_instance_index(module: &HirModule) -> Option<u32>
     max
 }
 
-pub(crate) fn register_function_declarations(module: &mut HirModule, next: &mut u32, next_instance: &mut u32) -> Result<(), HirError> {
+pub fn register_function_declarations(module: &mut HirModule, next: &mut u32, next_instance: &mut u32) -> Result<(), HirError> {
     fn register(function: &mut HirFunction, next: &mut u32, next_instance: &mut u32, owner_monomorphic: bool) -> Result<(), HirError> {
         let owner = function.name.to_string();
         if function.declaration.is_some() || function.instance.is_some() {
@@ -922,7 +922,7 @@ fn parent_slot_field_type(parent: &HirParent) -> ValkyrieType {
 /// 顺序是确定的：父类槽位按继承声明自上而下在前，自身声明字段原序在后。
 /// 合成前先拒绝槽位重名（多父类归一到同一槽位、或自身字段遮蔽父类槽位），
 /// 不允许后写入静默覆盖。
-pub(crate) fn synthesize_parent_fields(module: &mut HirModule) -> Result<(), HirError> {
+pub fn synthesize_parent_fields(module: &mut HirModule) -> Result<(), HirError> {
     fn conflict(aggregate: &HirStruct, slot: Identifier, kind: &str) -> HirError {
         HirError::ParentSlotConflict {
             aggregate: aggregate.name.to_string(),
@@ -970,7 +970,7 @@ pub(crate) fn synthesize_parent_fields(module: &mut HirModule) -> Result<(), Hir
 }
 
 /// 为结构体、枚举变体与 singleton 字段分配全局唯一 [`compiler_types::FieldId`]。
-pub(crate) fn register_field_declarations(module: &mut HirModule, next: &mut u32) -> Result<(), HirError> {
+pub fn register_field_declarations(module: &mut HirModule, next: &mut u32) -> Result<(), HirError> {
     fn register_fields(fields: &mut [HirField], next: &mut u32) -> Result<(), HirError> {
         for field in fields {
             let owner = field.name.to_string();

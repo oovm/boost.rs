@@ -730,7 +730,7 @@ fn apply_primitive_carriers(ty: &ValkyrieType, carriers: &BTreeMap<compiler_type
 ///
 /// 数值短名（`i32`/`usize`/`byte` …）即使拼写与内建同名也不得经此桥，
 /// 数值载体只认规范身份；`usize`/`isize` 由 std 的指针宽度别名结算成定宽整数。
-pub(crate) fn encoding_spelling_carrier(spelling: &str) -> Option<compiler_types::SemanticType> {
+pub fn encoding_spelling_carrier(spelling: &str) -> Option<compiler_types::SemanticType> {
     // 只认语言表面的文本/字符编码拼写；数值短名即使与内建同名也不得经此桥，
     // 数值载体只认规范 `[primitive]` 身份。
     let simple = spelling.rsplit([':', '.']).next().unwrap_or(spelling);

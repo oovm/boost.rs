@@ -45,11 +45,11 @@ use super::constructors::{
 };
 
 /// 候选是否以 `self` 为首个形参。
-pub(crate) fn candidate_has_receiver_parameter(candidate: &OverloadCandidate) -> bool {
+pub fn candidate_has_receiver_parameter(candidate: &OverloadCandidate) -> bool {
     candidate.param_specs.first().is_some_and(|parameter| parameter.name.name.as_str() == "self")
 }
 
-pub(crate) fn overload_symbol_path(candidate: &OverloadCandidate) -> NamePath {
+pub fn overload_symbol_path(candidate: &OverloadCandidate) -> NamePath {
     if let Some(owner) = &candidate.owner {
         let parts = candidate.symbol.parts();
         if parts.first().is_some_and(|head| head == owner) {
@@ -75,7 +75,7 @@ fn is_untyped_numeric_literal(expr: &HirExpr) -> bool {
     )
 }
 
-pub(crate) fn is_unresolved_variant_reference(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) -> bool {
+pub fn is_unresolved_variant_reference(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) -> bool {
     match &expr.kind {
         HirExprKind::Variable(identifier) => !locals.contains_key(identifier.name.as_str()),
         HirExprKind::Path(path) => path.parts().len() == 1 && !locals.contains_key(path.parts()[0].as_str()),
@@ -83,7 +83,7 @@ pub(crate) fn is_unresolved_variant_reference(expr: &HirExpr, locals: &BTreeMap<
     }
 }
 
-pub(crate) fn peel_explicit_generic_arguments(callee: &HirExpr) -> (Vec<ValkyrieType>, &HirExpr) {
+pub fn peel_explicit_generic_arguments(callee: &HirExpr) -> (Vec<ValkyrieType>, &HirExpr) {
     match &callee.kind {
         HirExprKind::GenericApply { callee, arguments } => (arguments.clone(), callee.as_ref()),
         _ => (Vec::new(), callee),
@@ -414,7 +414,7 @@ fn record_method_resolution_failure(span: &SourceSpan, callee: String, error: Ov
     });
 }
 
-pub(crate) fn try_resolve_call(
+pub fn try_resolve_call(
     callee: &HirExpr,
     args: &[HirCallArgument],
     candidates: &[OverloadCandidate],

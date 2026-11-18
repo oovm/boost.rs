@@ -18,11 +18,11 @@ use super::{
 };
 
 impl MirBuilder {
-    pub(crate) fn lower_expr_to_operand(&mut self, expr: &HirExpr) -> MirOperand {
+    pub fn lower_expr_to_operand(&mut self, expr: &HirExpr) -> MirOperand {
         self.lower_expr_to_operand_with_hint(expr, None)
     }
 
-    pub(crate) fn lower_expr_to_operand_with_hint(&mut self, expr: &HirExpr, expected_type: Option<&ValkyrieType>) -> MirOperand {
+    pub fn lower_expr_to_operand_with_hint(&mut self, expr: &HirExpr, expected_type: Option<&ValkyrieType>) -> MirOperand {
         match &expr.kind {
             HirExprKind::Literal(literal) => {
                 let (constant, ty) = match lower_literal(literal, expected_type) {
@@ -822,7 +822,7 @@ impl MirBuilder {
     }
 }
 
-pub(crate) fn infer_array_literal_element_type(items: &[HirExpr], hint: Option<&ValkyrieType>) -> ValkyrieType {
+pub fn infer_array_literal_element_type(items: &[HirExpr], hint: Option<&ValkyrieType>) -> ValkyrieType {
     if let Some(hint) = hint {
         return hint.clone();
     }

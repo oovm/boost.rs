@@ -503,7 +503,7 @@ pub fn apply_host_provider_bindings(
 /// 说明实现来源缺失，禁止静默编码成空体或默认值。
 /// 闭包提升但从未被可达代码调用的合同不在此失败——链接 BFS 不会把
 /// 不可达成员与合同并入 consumer。
-pub(crate) fn enforce_resolved_host_contract_bindings(
+pub fn enforce_resolved_host_contract_bindings(
     module: &MirModule,
     gated_out: &[CompilerGatedOutHostProvider],
     bindings: &[ResolvedHostProviderBinding],
@@ -804,7 +804,7 @@ pub(super) fn remap_call_targets(function: &mut MirFunction, remaps: &BTreeMap<I
 /// 调用随之闭合，合同与实现共用同一条实例化路径。只覆盖两侧均为单一声明
 /// 身份的绑定，歧义留给 [`resolve_host_provider_bindings`] 结构化拒绝；
 /// 非泛型 provider 无需播种（声明级实例本身闭合，配对直接命中）。
-pub(crate) fn host_provider_instantiation_seeds(
+pub fn host_provider_instantiation_seeds(
     hirs: &[HirModule],
     bindings: &[CompilerHostProviderBinding],
 ) -> Result<BTreeMap<u32, u32>, ParseError> {
@@ -833,7 +833,7 @@ pub(crate) fn host_provider_instantiation_seeds(
 /// 与 [`resolve_host_provider_bindings`] 共用同一族查找事实源（精确匹配 +
 /// 忽略 `source_path` 的 fallback）。provider 体必须物化：合同重映射在链接
 /// 边界要求 provider 实例存在于 MIR，否则报「host provider 未在源码闭包中定义」。
-pub(crate) fn host_provider_root_declarations(
+pub fn host_provider_root_declarations(
     hirs: &[&HirModule],
     bindings: &[CompilerHostProviderBinding],
 ) -> Result<BTreeSet<ItemId>, ParseError> {

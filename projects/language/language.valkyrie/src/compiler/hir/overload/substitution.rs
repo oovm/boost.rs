@@ -24,7 +24,7 @@ use super::{
 ///
 /// 这类接收者无法在声明期唯一选择 impl；调用只能冻结成员要求，由单态化按
 /// 完整代入选择 witness。
-pub(crate) fn has_unresolved_generic_arguments(ty: &ValkyrieType) -> bool {
+pub fn has_unresolved_generic_arguments(ty: &ValkyrieType) -> bool {
     match ty {
         ValkyrieType::Generic(generic) => generic.binder.is_some(),
         ValkyrieType::Nominal { arguments, .. } => arguments.iter().any(has_unresolved_generic_arguments),
@@ -43,7 +43,7 @@ pub(crate) fn has_unresolved_generic_arguments(ty: &ValkyrieType) -> bool {
     }
 }
 
-pub(crate) fn owner_type_generic_binders(ty: &ValkyrieType) -> std::collections::BTreeSet<GenericBinderId> {
+pub fn owner_type_generic_binders(ty: &ValkyrieType) -> std::collections::BTreeSet<GenericBinderId> {
     fn collect(ty: &ValkyrieType, binders: &mut std::collections::BTreeSet<GenericBinderId>) {
         match ty {
             ValkyrieType::Generic(generic) => {
@@ -77,7 +77,7 @@ pub(crate) fn owner_type_generic_binders(ty: &ValkyrieType) -> std::collections:
 /// 只消费**完全具体**的期望类型：含开放 binder 的上下文（例如无标注 `let` 继承的
 /// 外层返回类型）不是本次调用的求解证据，绑定它会把两个不同作用域的 binder 混为
 /// 一谈。收敛结果写回合同签名与 binder 解，供单态化与后续校验直接消费。
-pub(crate) fn converge_call_with_context(
+pub fn converge_call_with_context(
     call: &mut crate::compiler::types::hir::HirResolvedCall,
     contextual_type: &ValkyrieType,
     type_relations: &TypeRelationContext,
@@ -106,7 +106,7 @@ pub(crate) fn converge_call_with_context(
 
 /// `self` 上的 `AutoType`/`Self` 必须在候选阶段换成完整 owner（可为 `Nominal{ItemId}`）。
 /// 禁止留给 `match_call_candidate` 再收成 `Named(短名)`，否则与已绑定字段类型对不上。
-pub(crate) fn specialize_method_param_type(
+pub fn specialize_method_param_type(
     ty: &ValkyrieType,
     index: usize,
     param_specs: &[HirParam],
@@ -205,7 +205,7 @@ pub fn substitute_type_self(ty: &ValkyrieType, replacement: &ValkyrieType) -> Va
 }
 
 /// Replace `Self` with the imply/class owner so instance dispatch is nominal.
-pub(crate) fn substitute_self_type(ty: &ValkyrieType, owner: Option<&Identifier>) -> ValkyrieType {
+pub fn substitute_self_type(ty: &ValkyrieType, owner: Option<&Identifier>) -> ValkyrieType {
     if matches!(ty, ValkyrieType::r#SelfType) {
         return match owner {
             Some(owner) => ValkyrieType::Named(owner.clone()),
@@ -237,7 +237,7 @@ pub fn substitute_associated_equations(
 /// 与 [`substitute_associated_equations`] 的区别是解来源不预先给定等式表：调用方
 /// 可以在回调里按投影基类型查 trait 实现的关联类型见证，投影基类型仍是开放 binder
 /// 时由回调拒绝解析，保持 fail-closed。
-pub(crate) fn rewrite_associated_projections(
+pub fn rewrite_associated_projections(
     ty: &ValkyrieType,
     resolve: &mut impl FnMut(&AssociatedType) -> Option<ValkyrieType>,
 ) -> ValkyrieType {
@@ -250,7 +250,7 @@ pub(crate) fn rewrite_associated_projections(
 }
 
 /// 用 bound 的 trait 声明、实参与关联等式实例化成员签名。
-pub(crate) fn instantiate_trait_bound_candidate(
+pub fn instantiate_trait_bound_candidate(
     candidate: &OverloadCandidate,
     subject: &ValkyrieType,
     bound: &HirTraitBound,
@@ -285,7 +285,7 @@ pub(crate) fn instantiate_trait_bound_candidate(
 }
 
 /// 未声明 bound 的泛型接收者：把成员实例化为 trait 方法合同本身。
-pub(crate) fn instantiate_trait_method_candidate(candidate: &OverloadCandidate, subject: &ValkyrieType) -> Option<OverloadCandidate> {
+pub fn instantiate_trait_method_candidate(candidate: &OverloadCandidate, subject: &ValkyrieType) -> Option<OverloadCandidate> {
     let trait_id = candidate.trait_owner?;
     let mut candidate = substitute_trait_self(candidate, subject);
     if candidate.generic_binders.iter().any(|binder| binder.owner == trait_id) {
@@ -305,7 +305,7 @@ pub(crate) fn instantiate_trait_method_candidate(candidate: &OverloadCandidate, 
 }
 
 /// 把候选中的 SelfType 全部替换为 owner_type，并处理 where 约束中的类型。
-pub(crate) fn substitute_trait_self(candidate: &OverloadCandidate, owner_type: &ValkyrieType) -> OverloadCandidate {
+pub fn substitute_trait_self(candidate: &OverloadCandidate, owner_type: &ValkyrieType) -> OverloadCandidate {
     let mut candidate = candidate.clone();
     candidate.signature.params = candidate.signature.params.iter().map(|ty| substitute_type_self(ty, owner_type)).collect();
     candidate.signature.return_type = substitute_type_self(&candidate.signature.return_type, owner_type);
@@ -337,7 +337,7 @@ pub(crate) fn substitute_trait_self(candidate: &OverloadCandidate, owner_type: &
     candidate
 }
 
-pub(crate) fn unify_call_type_binders(
+pub fn unify_call_type_binders(
     expected: &ValkyrieType,
     actual: &ValkyrieType,
     binders: &std::collections::BTreeSet<GenericBinderId>,
@@ -446,7 +446,7 @@ pub(crate) fn unify_call_type_binders(
     }
 }
 
-pub(crate) fn specialize_call_literals(
+pub fn specialize_call_literals(
     args: &[crate::compiler::types::hir::HirCallArgument],
     actual: &[Option<ValkyrieType>],
     expected: &[ValkyrieType],
@@ -456,7 +456,7 @@ pub(crate) fn specialize_call_literals(
     specialize_call_literal_exprs(&exprs, actual, expected, type_relations)
 }
 
-pub(crate) fn specialize_call_literal_exprs(
+pub fn specialize_call_literal_exprs(
     exprs: &[crate::compiler::types::hir::HirExpr],
     actual: &[Option<ValkyrieType>],
     expected: &[ValkyrieType],
@@ -470,7 +470,7 @@ pub(crate) fn specialize_call_literal_exprs(
 }
 
 /// 单个实参按形参类型做字面量特化；形参必须是已代入泛型后的具体类型。
-pub(crate) fn specialize_literal_expr_type(
+pub fn specialize_literal_expr_type(
     expr: &crate::compiler::types::hir::HirExpr,
     actual: &ValkyrieType,
     expected: &ValkyrieType,
@@ -568,7 +568,7 @@ pub(crate) fn specialize_literal_expr_type(
 }
 
 /// 成员调用的实参上下文类型（不含接收者槽）。
-pub(crate) fn member_call_argument_contexts(
+pub fn member_call_argument_contexts(
     callee: &crate::compiler::types::hir::HirExpr,
     args: &[HirCallArgument],
     candidates: &[OverloadCandidate],
@@ -698,7 +698,7 @@ pub(crate) fn member_call_argument_contexts(
 /// 槽位类型必须按调用点期望类型代入候选 binder：`Some(Some(5))` 的外层载荷槽
 /// 只有代入后才是 `Option<i64>`，否则内层拿到的是开放 binder，字面量退化成默认
 /// 宽度（`Option<i32>`）。代入只消费已冻结的候选签名与调用点上下文，不猜名字。
-pub(crate) fn free_call_argument_contexts(
+pub fn free_call_argument_contexts(
     callee: &crate::compiler::types::hir::HirExpr,
     candidates: &[OverloadCandidate],
     type_relations: &TypeRelationContext,
@@ -791,11 +791,11 @@ pub(crate) fn free_call_argument_contexts(
     contexts
 }
 
-pub(crate) fn try_resolve_qualified_free_function_substitute_vars_only() {
+pub fn try_resolve_qualified_free_function_substitute_vars_only() {
     // no-op placeholder
 }
 
-pub(crate) fn extract_singleton_type_name(
+pub fn extract_singleton_type_name(
     expr: &crate::compiler::types::hir::HirExpr,
     locals: &BTreeMap<String, ValkyrieType>,
     singleton_names: &std::collections::BTreeSet<Identifier>,
@@ -813,7 +813,7 @@ pub(crate) fn extract_singleton_type_name(
 }
 
 /// 由声明 owner 的泛型实参位置代入 receiver 的具体参数（用于 singleton method 实参类型特化）。
-pub(crate) fn substitute_type_parameters(ty: &ValkyrieType, receiver: &ValkyrieType, actual: &ValkyrieType) -> ValkyrieType {
+pub fn substitute_type_parameters(ty: &ValkyrieType, receiver: &ValkyrieType, actual: &ValkyrieType) -> ValkyrieType {
     // Apply 与 Nominal 的类型参数槽同位：按槽位把声明 binder 代入实际参数。
     // 不得再要求表面名为 Option/Result；declaration identity 已由候选 sum_owner 携带。
     let (receiver_args, actual_args) = match (receiver, actual) {
@@ -838,7 +838,7 @@ pub(crate) fn substitute_type_parameters(ty: &ValkyrieType, receiver: &ValkyrieT
     substitute_type_vars(ty, &substitutions)
 }
 
-pub(crate) fn substitute_type_vars(ty: &ValkyrieType, substitutions: &BTreeMap<GenericBinderId, ValkyrieType>) -> ValkyrieType {
+pub fn substitute_type_vars(ty: &ValkyrieType, substitutions: &BTreeMap<GenericBinderId, ValkyrieType>) -> ValkyrieType {
     if let ValkyrieType::Generic(generic) = ty {
         return generic.binder.and_then(|binder| substitutions.get(&binder)).cloned().unwrap_or_else(|| ty.clone());
     }

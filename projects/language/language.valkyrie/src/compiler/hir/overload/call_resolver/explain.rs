@@ -28,7 +28,7 @@ use crate::compiler::{
 };
 
 /// 在 `try_resolve_call` 返回 `None` 的同一现场推导失败原因分类。
-pub(crate) fn explain_unresolved_call(
+pub fn explain_unresolved_call(
     callee: &HirExpr,
     args: &[HirCallArgument],
     candidates: &[OverloadCandidate],

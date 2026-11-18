@@ -29,7 +29,7 @@ use crate::compiler::hir::lowering::{diagnostics::plan_source, errors::HirError,
 use crate::compiler::types::hir::{HirKind, ValkyrieType};
 
 /// Extract `[tag(N)]` / `[tag(N, default)]` into a discriminator literal for `unite` layouts.
-pub(crate) fn tag_attribute_discriminator(annotations: &[Attribute], source_id: SourceID, span: Range<usize>) -> Option<HirExpr> {
+pub fn tag_attribute_discriminator(annotations: &[Attribute], source_id: SourceID, span: Range<usize>) -> Option<HirExpr> {
     for attribute in annotations {
         if attribute.name.name != "tag" {
             continue;
@@ -40,7 +40,7 @@ pub(crate) fn tag_attribute_discriminator(annotations: &[Attribute], source_id: 
     None
 }
 
-pub(crate) fn lower_trait_associated_type(item: &AssociatedType, source_id: SourceID) -> Result<HirAssociatedType, HirError> {
+pub fn lower_trait_associated_type(item: &AssociatedType, source_id: SourceID) -> Result<HirAssociatedType, HirError> {
     Ok(HirAssociatedType {
         name: Identifier::new(&item.name.name),
         doc: lower_documentation(&item.annotations),
@@ -51,7 +51,7 @@ pub(crate) fn lower_trait_associated_type(item: &AssociatedType, source_id: Sour
     })
 }
 
-pub(crate) fn lower_attribute(attribute: &Attribute, source_id: SourceID, fallback_span: Range<usize>) -> Result<HirAttribute, HirError> {
+pub fn lower_attribute(attribute: &Attribute, source_id: SourceID, fallback_span: Range<usize>) -> Result<HirAttribute, HirError> {
     let arguments = attribute
         .args
         .iter()
@@ -67,11 +67,11 @@ pub(crate) fn lower_attribute(attribute: &Attribute, source_id: SourceID, fallba
 
 /// 原样下降整组特性标注：不筛选、不解释语义，未知属性一并保留，
 /// 目标映射属性的形态合法性由 backend contract 阶段统一校验。
-pub(crate) fn lower_attributes(annotations: &[Attribute], source_id: SourceID, fallback_span: Range<usize>) -> Result<Vec<HirAttribute>, HirError> {
+pub fn lower_attributes(annotations: &[Attribute], source_id: SourceID, fallback_span: Range<usize>) -> Result<Vec<HirAttribute>, HirError> {
     annotations.iter().map(|attribute| lower_attribute(attribute, source_id, fallback_span.clone())).collect()
 }
 
-pub(crate) fn lower_attribute_argument_expression(
+pub fn lower_attribute_argument_expression(
     expr: &TermExpression,
     source_id: SourceID,
     fallback_span: Range<usize>,
@@ -84,11 +84,11 @@ pub(crate) fn lower_attribute_argument_expression(
     }
 }
 
-pub(crate) fn lower_documentation(_annotations: &[Attribute]) -> HirDocumentation {
+pub fn lower_documentation(_annotations: &[Attribute]) -> HirDocumentation {
     HirDocumentation::default()
 }
 
-pub(crate) fn lower_visibility(annotations: &[Attribute]) -> HirVisibility {
+pub fn lower_visibility(annotations: &[Attribute]) -> HirVisibility {
     if has_modifier(annotations, "private") {
         HirVisibility::private()
     }
@@ -103,16 +103,16 @@ pub(crate) fn lower_visibility(annotations: &[Attribute]) -> HirVisibility {
     }
 }
 
-pub(crate) fn has_modifier(annotations: &[Attribute], name: &str) -> bool {
+pub fn has_modifier(annotations: &[Attribute], name: &str) -> bool {
     annotations.iter().any(|attribute| attribute.name.name == name)
 }
 
 /// 统计变体声明上 `[constructor]` 的出现次数；重复标注由 AST 校验 fail-closed。
-pub(crate) fn auto_constructor_attribute_count(annotations: &[Attribute]) -> usize {
+pub fn auto_constructor_attribute_count(annotations: &[Attribute]) -> usize {
     annotations.iter().filter(|attribute| attribute.name.name == "constructor").count()
 }
 
-pub(crate) fn lower_derives(annotations: &[Attribute]) -> Vec<NamePath> {
+pub fn lower_derives(annotations: &[Attribute]) -> Vec<NamePath> {
     annotations
         .iter()
         .find(|attribute| attribute.name.name == "derive")
@@ -120,11 +120,11 @@ pub(crate) fn lower_derives(annotations: &[Attribute]) -> Vec<NamePath> {
         .unwrap_or_default()
 }
 
-pub(crate) fn lower_parent(parent: &Parent) -> HirParent {
+pub fn lower_parent(parent: &Parent) -> HirParent {
     HirParent::full(lower_name_path(&parent.name), parent.alias.as_ref().map(|alias| Identifier::new(&alias.name)), Vec::new())
 }
 
-pub(crate) fn lower_field(field: &FieldDeclaration) -> Result<HirField, HirError> {
+pub fn lower_field(field: &FieldDeclaration) -> Result<HirField, HirError> {
     Ok(HirField {
         id: None,
         name: Identifier::new(&field.name.name),
@@ -135,17 +135,17 @@ pub(crate) fn lower_field(field: &FieldDeclaration) -> Result<HirField, HirError
     })
 }
 
-pub(crate) fn lower_generic_parameters(parameters: &[GenericParam]) -> Vec<GenericType> {
+pub fn lower_generic_parameters(parameters: &[GenericParam]) -> Vec<GenericType> {
     parameters.iter().map(lower_generic_parameter).collect()
 }
 
 /// 声明域拥有的泛型形参短名；用于 [`GenericBinderScope`] 的可见性事实。
-pub(crate) fn generic_parameter_names(parameters: &[GenericParam]) -> Vec<String> {
+pub fn generic_parameter_names(parameters: &[GenericParam]) -> Vec<String> {
     parameters.iter().map(|parameter| parameter.name.name.clone()).collect()
 }
 
 /// `imply Option<T>` 的 `<T>` 是 impl 的类型形参声明位置。
-pub(crate) fn imply_generic_parameter_names(imply: &ImplyDeclaration) -> Vec<String> {
+pub fn imply_generic_parameter_names(imply: &ImplyDeclaration) -> Vec<String> {
     fn collect(ty: &TypeExpression, out: &mut Vec<String>) {
         match ty {
             TypeExpression::Namepath(path) if path.parts.len() == 1 => {
@@ -171,7 +171,7 @@ pub(crate) fn imply_generic_parameter_names(imply: &ImplyDeclaration) -> Vec<Str
     names
 }
 
-pub(crate) fn lower_generic_parameter(parameter: &GenericParam) -> GenericType {
+pub fn lower_generic_parameter(parameter: &GenericParam) -> GenericType {
     GenericType {
         binder: None,
         name: Identifier::new(&parameter.name.name),
@@ -180,11 +180,11 @@ pub(crate) fn lower_generic_parameter(parameter: &GenericParam) -> GenericType {
     }
 }
 
-pub(crate) fn lower_bound_identifier(bound: &frontend::ast::TypeExpression) -> Identifier {
+pub fn lower_bound_identifier(bound: &frontend::ast::TypeExpression) -> Identifier {
     Identifier::new(&render_type_expression(bound))
 }
 
-pub(crate) fn lower_param(param: &Param, source_id: SourceID, fallback_span: Range<usize>) -> Result<HirParam, HirError> {
+pub fn lower_param(param: &Param, source_id: SourceID, fallback_span: Range<usize>) -> Result<HirParam, HirError> {
     let span_range = if param.span.is_empty() { fallback_span } else { frontend::std_range(&param.span) };
     Ok(HirParam {
         name: crate::compiler::types::hir::HirIdentifier {
@@ -204,12 +204,12 @@ pub(crate) fn lower_param(param: &Param, source_id: SourceID, fallback_span: Ran
     })
 }
 
-pub(crate) fn lower_method_params(method: &MethodDeclaration, source_id: SourceID) -> Result<Vec<HirParam>, HirError> {
+pub fn lower_method_params(method: &MethodDeclaration, source_id: SourceID) -> Result<Vec<HirParam>, HirError> {
     let span = frontend::std_range(&method.span);
     method.parameters.iter().map(|param| lower_param(param, source_id, span.clone())).collect()
 }
 
-pub(crate) fn lower_using(using: &UsingDeclaration) -> Result<HirImport, HirError> {
+pub fn lower_using(using: &UsingDeclaration) -> Result<HirImport, HirError> {
     // 只有真正缺 path 的畸形 `using` 在这里 fail-closed；`using!` 是主空间导入，
     // 由 oak 正常产出非空 path，并通过 `primary` 身份进入 HIR，不再走这条拒绝路径。
     if using.path.parts.is_empty() {
@@ -231,18 +231,18 @@ pub(crate) fn lower_using(using: &UsingDeclaration) -> Result<HirImport, HirErro
 ///
 /// 所有身份读取集中在这里，不散落字段访问。
 #[inline]
-pub(crate) fn using_is_primary(using: &UsingDeclaration) -> bool {
+pub fn using_is_primary(using: &UsingDeclaration) -> bool {
     using.primary
 }
 
 /// `namespace!` 的主空间身份由 oak 的 `NamespaceDeclaration.primary` 决定。
 #[inline]
-pub(crate) fn namespace_is_primary(namespace: &NamespaceDeclaration) -> bool {
+pub fn namespace_is_primary(namespace: &NamespaceDeclaration) -> bool {
     namespace.primary
 }
 
 /// 主空间声明的规范名字，只用于结构化诊断文本。
-pub(crate) fn lower_namespace_name(namespace: &NamespaceDeclaration) -> String {
+pub fn lower_namespace_name(namespace: &NamespaceDeclaration) -> String {
     namespace.name.parts.iter().map(|part| part.name.clone()).collect::<Vec<_>>().join("::")
 }
 
@@ -250,7 +250,7 @@ pub(crate) fn lower_namespace_name(namespace: &NamespaceDeclaration) -> String {
 ///
 /// `in_primary` 只表示当前 body 由 `namespace!` 引入；嵌套普通 namespace 不会继承主空间身份。
 /// 主空间 `using!` 进入 `primary_imports`，文件局部 `using` 进入 `imports`。
-pub(crate) fn lower_namespace_body_imports(
+pub fn lower_namespace_body_imports(
     items: &[StatementNode],
     in_primary: bool,
     imports: &mut Vec<HirImport>,
@@ -287,7 +287,7 @@ pub(crate) fn lower_namespace_body_imports(
     Ok(())
 }
 
-pub(crate) fn lower_trait_path_from_type(ty: &TypeExpression) -> NamePath {
+pub fn lower_trait_path_from_type(ty: &TypeExpression) -> NamePath {
     match ty {
         TypeExpression::Namepath(path) => lower_name_path(path),
         TypeExpression::Apply(node) => lower_trait_path_from_type(&node.base),
@@ -295,29 +295,29 @@ pub(crate) fn lower_trait_path_from_type(ty: &TypeExpression) -> NamePath {
     }
 }
 
-pub(crate) fn lower_name_path(path: &AstNamePath) -> NamePath {
+pub fn lower_name_path(path: &AstNamePath) -> NamePath {
     let parts = path.parts.iter().flat_map(|part| part.name.split('.').filter(|segment| !segment.is_empty())).map(Identifier::new).collect();
     NamePath::new(parts)
 }
 
-pub(crate) fn default_module_name() -> NamePath {
+pub fn default_module_name() -> NamePath {
     NamePath::new(vec![Identifier::new("main")])
 }
 
-pub(crate) fn with_source(span: &Range<usize>, source_id: SourceID) -> SourceSpan {
+pub fn with_source(span: &Range<usize>, source_id: SourceID) -> SourceSpan {
     SourceSpan::new(source_id, span.start as u32, span.end as u32)
 }
 
-pub(crate) fn oak_identifier(id: &frontend::ast::Identifier) -> Identifier {
+pub fn oak_identifier(id: &frontend::ast::Identifier) -> Identifier {
     Identifier::new(&id.name)
 }
 
 /// 运算符声明（`infix \`+\`` / `prefix \`-\`` / `suffix \`[]\``）的 HIR 成员名。
-pub(crate) fn operator_member_name(declared: &frontend::ast::Identifier, annotations: &[Attribute]) -> Identifier {
+pub fn operator_member_name(declared: &frontend::ast::Identifier, annotations: &[Attribute]) -> Identifier {
     Identifier::new(&operator_members::declared_member_name(&declared.name, annotations))
 }
 
-pub(crate) fn lower_where_constraints(
+pub fn lower_where_constraints(
     constraints: &[oak_valkyrie::ast::type_nodes::WhereConstraint],
     source_id: SourceID,
 ) -> Result<Vec<HirWhereConstraint>, HirError> {

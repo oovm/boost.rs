@@ -7,7 +7,7 @@ use crate::compiler::{
     types::hir::{HirEnum, HirExpr, HirExprKind, HirLiteral, HirModule, HirVariant},
 };
 
-pub(crate) fn compute_nominal_declarations(
+pub fn compute_nominal_declarations(
     module: &HirModule,
     nominal_offset: u32,
     diagnostics: &mut Vec<crate::compiler::mir::MirDiagnostic>,
@@ -15,7 +15,7 @@ pub(crate) fn compute_nominal_declarations(
     (collect_sum_declarations(module, nominal_offset, diagnostics), collect_flags_layouts(module))
 }
 
-pub(crate) fn collect_sum_declarations(
+pub fn collect_sum_declarations(
     module: &HirModule,
     nominal_offset: u32,
     diagnostics: &mut Vec<crate::compiler::mir::MirDiagnostic>,
@@ -134,7 +134,7 @@ fn integer_literal_u32(expr: &HirExpr) -> Option<u32> {
 
 /// Resolve the next variant tag for `unite` (`[tag(N)]` or declaration order) and
 /// `enums` (`Variant = N` or auto-increment after the last assigned tag).
-pub(crate) fn resolve_sum_variant_tag(
+pub fn resolve_sum_variant_tag(
     owner: &crate::compiler::types::Identifier,
     variant: &HirVariant,
     next_implicit: &mut u32,
@@ -160,7 +160,7 @@ pub(crate) fn resolve_sum_variant_tag(
     Ok(tag)
 }
 
-pub(crate) fn validate_sum_type_discriminators(owner: &crate::compiler::types::Identifier, variants: &[HirVariant]) -> Result<(), HirError> {
+pub fn validate_sum_type_discriminators(owner: &crate::compiler::types::Identifier, variants: &[HirVariant]) -> Result<(), HirError> {
     use std::collections::BTreeSet;
 
     let mut next_implicit = 0u32;
@@ -194,6 +194,6 @@ pub fn validate_enum_discriminators(module: &HirModule) -> Result<(), HirError> 
     Ok(())
 }
 
-pub(crate) fn collect_flags_layouts(module: &HirModule) -> Vec<FlagsLayout> {
+pub fn collect_flags_layouts(module: &HirModule) -> Vec<FlagsLayout> {
     module.flags.iter().map(|flags| FlagsLayout { name: flags.name.to_string() }).collect()
 }

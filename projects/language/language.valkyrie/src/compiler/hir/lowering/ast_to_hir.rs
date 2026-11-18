@@ -121,7 +121,7 @@ impl AstToHir {
     }
 
     /// 仅物化 HIR；调用身份必须由完整源码组阶段统一解析。
-    pub(crate) fn lower_root_without_call_resolution(
+    pub fn lower_root_without_call_resolution(
         &self,
         root: &crate::compiler::syntax::oak::ValkyrieRoot,
         imported_semantic_exports: &[HirDependencySemanticExport],
@@ -135,7 +135,7 @@ impl AstToHir {
     }
 
     /// 降低一个已完成宏/模板展开、且别名作用域已经建立的源码根。
-    pub(crate) fn lower_prepared_root(
+    pub fn lower_prepared_root(
         &self,
         root: &crate::compiler::syntax::oak::ValkyrieRoot,
         imported_semantic_exports: &[HirDependencySemanticExport],

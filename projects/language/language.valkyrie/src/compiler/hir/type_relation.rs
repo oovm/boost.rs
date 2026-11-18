@@ -151,27 +151,27 @@ impl TypeRelationContext {
     }
 
     /// 记录当前 impl 的目标类型，供方法体内 `Self` 声明代入。
-    pub(crate) fn with_impl_owner(&self, owner: ValkyrieType) -> Self {
+    pub fn with_impl_owner(&self, owner: ValkyrieType) -> Self {
         Self { impl_owner: Some(owner), ..self.clone() }
     }
 
     /// 当前 impl 的目标类型。
-    pub(crate) fn impl_owner(&self) -> Option<&ValkyrieType> {
+    pub fn impl_owner(&self) -> Option<&ValkyrieType> {
         self.impl_owner.as_ref()
     }
 
     /// 记录当前 trait 声明作用域；默认体里的 `self` 绑定与成员查找据此收敛到本 trait。
-    pub(crate) fn with_trait_self_scope(&self, declaration: compiler_types::ItemId) -> Self {
+    pub fn with_trait_self_scope(&self, declaration: compiler_types::ItemId) -> Self {
         Self { trait_self_scope: Some(declaration), ..self.clone() }
     }
 
     /// 候选的 trait 归属是否正是当前声明作用域。
-    pub(crate) fn is_trait_self_scope(&self, trait_owner: Option<compiler_types::ItemId>) -> bool {
+    pub fn is_trait_self_scope(&self, trait_owner: Option<compiler_types::ItemId>) -> bool {
         self.trait_self_scope.is_some() && self.trait_self_scope == trait_owner
     }
 
     /// 语言级迭代协议 trait 的声明身份（`std.iterator::{IntoIterator, Iterator}`）。
-    pub(crate) fn protocol_trait_declaration(&self, name: &str) -> Option<compiler_types::ItemId> {
+    pub fn protocol_trait_declaration(&self, name: &str) -> Option<compiler_types::ItemId> {
         self.traits.declaration_at_namespace(&crate::compiler::semantic::operator_members::FOR_IN_PROTOCOL_NAMESPACE, name)
     }
 
@@ -181,7 +181,7 @@ impl TypeRelationContext {
     /// - glob 导入：候选符号以导入模块为前缀，调用名比较末段。
     ///
     /// 这里只承认模块声明的导入事实，不做跨命名空间的末段回退。
-    pub(crate) fn symbol_matches_import(&self, symbol: &NamePath, callee_name: &Identifier) -> bool {
+    pub fn symbol_matches_import(&self, symbol: &NamePath, callee_name: &Identifier) -> bool {
         self.imported_symbols.iter().any(|imported| {
             if imported.glob {
                 let module_parts = imported.module.parts();
@@ -208,7 +208,7 @@ impl TypeRelationContext {
     ///
     /// 该谓词只服务自由函数通道，**不**参与成员方法派发：`x.method()` 的第三层扩展
     /// micro 只认显式导入与依赖导出。
-    pub(crate) fn symbol_matches_group_scope(&self, symbol: &NamePath, callee_name: &Identifier) -> bool {
+    pub fn symbol_matches_group_scope(&self, symbol: &NamePath, callee_name: &Identifier) -> bool {
         self.group_scope_namespaces.iter().any(|namespace| {
             let namespace_parts = namespace.parts();
             !namespace_parts.is_empty()
@@ -219,13 +219,13 @@ impl TypeRelationContext {
     }
 
     /// 限定当前模块作用域，供无限定自由函数 overload 解析使用。
-    pub(crate) fn with_enclosing_module(&self, module: &NamePath) -> Self {
+    pub fn with_enclosing_module(&self, module: &NamePath) -> Self {
         let mut context = self.clone();
         context.enclosing_module = module.clone();
         context
     }
 
-    pub(crate) fn enclosing_module(&self) -> &NamePath {
+    pub fn enclosing_module(&self) -> &NamePath {
         &self.enclosing_module
     }
 
@@ -311,7 +311,7 @@ impl TypeRelationContext {
     /// 与 MIR 的 `text_carriers_equivalent` 同源。关系对称：生成单元的 ABI 形参
     /// 按内建 carrier 解析、实参来自名义字段，依赖侧则是名义形参收编码实参，两侧同一判定。
     /// 只归一同一编码：`Utf8` 不接受 `Utf16Text`，反之亦然；带泛型实参的名义声明不在此列。
-    pub(crate) fn text_carriers_equivalent(&self, left: &ValkyrieType, right: &ValkyrieType) -> bool {
+    pub fn text_carriers_equivalent(&self, left: &ValkyrieType, right: &ValkyrieType) -> bool {
         self.text_builtin_anchors_declaration(left, right) || self.text_builtin_anchors_declaration(right, left)
     }
 
@@ -341,7 +341,7 @@ impl TypeRelationContext {
     /// 折叠出的名义声明；文本身份：内建编码 carrier 或锚定该编码的名义声明（`text`
     /// 共享载体默认 `Utf8`）；数值身份沿用 `is_numeric_type` 的已冻结 `[primitive]` 口径。
     /// `Nullable` 收窄到内层。其余目标捕获一律不绑定。
-    pub(crate) fn capture_target_kind(&self, ty: &ValkyrieType) -> crate::compiler::hir::lowering::quote_literal::CaptureTargetKind {
+    pub fn capture_target_kind(&self, ty: &ValkyrieType) -> crate::compiler::hir::lowering::quote_literal::CaptureTargetKind {
         use crate::compiler::hir::lowering::quote_literal::CaptureTargetKind;
         if let ValkyrieType::Nullable(inner) = ty {
             return self.capture_target_kind(inner);
@@ -901,7 +901,7 @@ fn collect_relation_structs(
 ///
 /// 不参与数值身份判定（`TypeRelation::is_numeric_type` 只认 `[primitive]` 身份）；
 /// 这里不生产任何低层 carrier，carrier 由表示阶段拥有。
-pub(crate) fn is_numeric_type_name(name: &str) -> bool {
+pub fn is_numeric_type_name(name: &str) -> bool {
     matches!(
         name,
         "usize"
@@ -935,7 +935,7 @@ fn is_float_type_name(name: &str) -> bool {
 ///
 /// `Named("i32")` 这类未绑定声明的拼写不再算数值——按名字猜身份会让同名普通
 /// class 通过字面量特化；缺别名/缺身份必须失败关闭。
-pub(crate) fn is_numeric_type_name_of(ty: &ValkyrieType) -> bool {
+pub fn is_numeric_type_name_of(ty: &ValkyrieType) -> bool {
     matches!(
         ty,
         ValkyrieType::Integer8 { .. }
@@ -952,7 +952,7 @@ pub(crate) fn is_numeric_type_name_of(ty: &ValkyrieType) -> bool {
 ///
 /// `char` 是 u32 码位的编码型内建（§4.12 字符合同）；声明面已折叠成 `Character`，
 /// 未绑定声明只可能以源码短名出现。
-pub(crate) fn is_character_type_name_of(ty: &ValkyrieType) -> bool {
+pub fn is_character_type_name_of(ty: &ValkyrieType) -> bool {
     match ty {
         ValkyrieType::Character => true,
         ValkyrieType::Named(name) => matches!(name.as_str(), "char" | "std::text::char"),

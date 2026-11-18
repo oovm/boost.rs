@@ -5,8 +5,8 @@ mod pattern_policy;
 mod resolve;
 mod validate;
 
-pub(crate) use failure_sink::record_failure;
-pub(crate) use pattern_policy::pattern_extractor_receiver_type;
-pub(crate) use resolve::bind_pattern_type;
+pub use failure_sink::record_failure;
+pub use pattern_policy::pattern_extractor_receiver_type;
+pub use resolve::bind_pattern_type;
 pub use resolve::resolve_hir_calls;
 pub use validate::validate_extractor_patterns;

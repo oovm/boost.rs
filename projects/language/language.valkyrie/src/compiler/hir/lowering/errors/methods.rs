@@ -23,12 +23,12 @@ impl HirError {
     }
 
     /// TGrammar 模板展开失败；span 指向触发失败的模板 token 流。
-    pub(crate) fn template_expansion_failed(construct: TemplateConstruct, failure: TemplateFailure, span: DiagnosticSpan) -> Self {
+    pub fn template_expansion_failed(construct: TemplateConstruct, failure: TemplateFailure, span: DiagnosticSpan) -> Self {
         Self::TemplateExpansionFailed { construct, failure, source: DiagnosticSource { id: "<template>".into(), revision: None }, span }
     }
 
     /// `match` 源码恢复失败；span 指向被恢复的 `match` 块。
-    pub(crate) fn match_recovery_failed(stage: MatchRecoveryStage, pattern: Option<String>, span: DiagnosticSpan) -> Self {
+    pub fn match_recovery_failed(stage: MatchRecoveryStage, pattern: Option<String>, span: DiagnosticSpan) -> Self {
         Self::MatchRecoveryFailed { stage, pattern, source: DiagnosticSource { id: "<match>".into(), revision: None }, span }
     }
 
@@ -37,7 +37,7 @@ impl HirError {
     /// 恢复（recovery）设计只保证单个坏项不阻断同文件兄弟项的解析；批处理编译单元
     /// 不得带着被丢弃的项继续物化，否则下游会以缺项事实生产误导性级联错误。
     /// 收口只读取不取走：全部诊断留在暂存汇中，由失败路径一次性渲染。
-    pub(crate) fn reject_pending_errors() -> Result<(), Self> {
+    pub fn reject_pending_errors() -> Result<(), Self> {
         let (count, first) = crate::compiler::diagnostics::pending::pending_error_summary();
         if count == 0 {
             return Ok(());
@@ -48,7 +48,7 @@ impl HirError {
         Err(Self::PendingErrorsRejected { count, source, span })
     }
 
-    pub(crate) fn code(&self) -> &'static str {
+    pub fn code(&self) -> &'static str {
         match self {
             Self::UnresolvedCall { .. } => "valkyrie.hir.unresolved_call",
             Self::UnresolvedConstructor { .. } => "valkyrie.hir.unresolved_constructor",

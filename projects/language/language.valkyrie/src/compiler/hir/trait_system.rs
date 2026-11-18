@@ -226,7 +226,7 @@ impl TraitModuleView {
     ///
     /// 语言规范把迭代协议固定在 `std.iterator` 下；身份必须来自 trait 声明本身，
     /// 不得从接收者成员名或 impl 短名反推。
-    pub(crate) fn declaration_at_namespace(&self, namespace: &[&str], name: &str) -> Option<compiler_types::ItemId> {
+    pub fn declaration_at_namespace(&self, namespace: &[&str], name: &str) -> Option<compiler_types::ItemId> {
         let name = Identifier::new(name);
         self.declarations
             .iter()
@@ -241,7 +241,7 @@ impl TraitModuleView {
     ///
     /// 候选装配必须按身份解析：impl 的 `trait_declaration` 是跨模块绑定的，
     /// 用短名在「当前模块/当前导出」里查表会漏掉兄弟子模块与其它命名空间的声明。
-    pub(crate) fn declaration(&self, identity: compiler_types::ItemId) -> Option<&HirTrait> {
+    pub fn declaration(&self, identity: compiler_types::ItemId) -> Option<&HirTrait> {
         self.declarations.get(&identity)
     }
 
@@ -392,7 +392,7 @@ fn alpha_method_binder_substitution(generics: &[GenericType]) -> BTreeMap<Generi
     /// `[primitive]` 自举身份时折叠为内建类型），enum 取枚举声明身份；
     /// 同名 struct/enum 并存、跨包不可见、缺声明身份的一律保留 `Named`，
     /// 由调用方按 `Named` 与 `Nominal` 不等失败闭合。
-    pub(crate) fn canonical_member_type(&self, ty: &HirType) -> HirType {
+    pub fn canonical_member_type(&self, ty: &HirType) -> HirType {
         match ty {
             HirType::Named(name) => self.canonical_named_type(name).unwrap_or_else(|| ty.clone()),
             HirType::Nominal { declaration, arguments, primitive_identity } => HirType::Nominal {
@@ -456,7 +456,7 @@ fn alpha_method_binder_substitution(generics: &[GenericType]) -> BTreeMap<Generi
         self.satisfy_explicit_type_at(candidate, bound, 0)
     }
 
-    pub(crate) fn satisfy_explicit_type_at(
+    pub fn satisfy_explicit_type_at(
         &self,
         candidate: &ValkyrieType,
         bound: &HirTraitBound,

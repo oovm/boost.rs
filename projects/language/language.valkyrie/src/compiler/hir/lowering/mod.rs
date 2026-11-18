@@ -31,7 +31,7 @@ pub mod errors;
 mod expr_lowering;
 mod generic_binders;
 mod generic_instantiation;
-pub(crate) mod integer_literal;
+pub mod integer_literal;
 mod interpolation;
 mod macro_expand;
 mod match_pattern_recovery;
@@ -41,7 +41,7 @@ mod quote_settle;
 mod source_context;
 mod source_group;
 mod template_const;
-pub(crate) mod template_expand;
+pub mod template_expand;
 mod trait_binding;
 mod vx;
 
@@ -49,31 +49,31 @@ pub use super::CaptureAnalyzer;
 pub use errors::HirError;
 
 // Re-export sub-module symbols at the lowering facade boundary.
-pub(crate) use attribute_lowering::auto_constructor_attribute_count;
-pub(crate) use diagnostics::{
+pub use attribute_lowering::auto_constructor_attribute_count;
+pub use diagnostics::{
     CompileWarningScope, identity_duplicated, index_exhausted, pipeline_rejected, push_compile_warning, take_compile_warnings,
 };
 use diagnostics::{plan_source, plan_span};
 
 pub use contract_validation::validate_expr_call_contracts;
-pub(crate) use contract_validation::{
+pub use contract_validation::{
     validate_block_call_contracts, validate_function_call_contracts, validate_hir_contract, validate_resolved_call_contracts,
 };
 
 #[doc(hidden)]
 pub use nominal_declarations::validate_enum_discriminators;
-pub(crate) use nominal_declarations::{
+pub use nominal_declarations::{
     collect_flags_layouts, collect_sum_declarations, compute_nominal_declarations, resolve_sum_variant_tag, validate_sum_type_discriminators,
 };
-pub(crate) use quote_settle::settle_quote_literal_captures;
+pub use quote_settle::settle_quote_literal_captures;
 
-pub(crate) use source_group::{
+pub use source_group::{
     SelfOwnerPath, compiled_program_from_hir_module, exportable_dependency_functions, register_root_type_alias_targets,
     root_type_alias_declarations, visible_nominal_type_names, visible_type_aliases,
 };
 pub use source_group::{build_generated_group, build_source_input_with_generated, compose_source_input_groups, validate_source_groups};
 
-pub(crate) use generic_binders::{
+pub use generic_binders::{
     array_owner_declaration, bind_declared_nominal_types, combined_impl_generic_context, freeze_enum_generic_binders,
     freeze_function_generic_binders, freeze_generic_binders, freeze_impl_generic_binders, freeze_module_generic_binders,
     freeze_struct_generic_binders, freeze_trait_generic_binders, lookup_owner_generics_by_declaration, lower_trait_associated_type_references,
@@ -82,14 +82,14 @@ pub(crate) use generic_binders::{
     register_field_declarations, register_function_declarations, synthesize_parent_fields,
 };
 
-pub(crate) use generic_instantiation::{
+pub use generic_instantiation::{
     GenericInstantiationState, declaration_body_is_closed, instantiate_generic_callables, substitute_impl_self_declarations,
     unify_instantiation,
 };
 #[doc(hidden)]
 pub use generic_instantiation::{MAX_FIXPOINT_ROUNDS, MAX_GENERIC_INSTANCES};
 
-pub(crate) use attribute_lowering::{
+pub use attribute_lowering::{
     default_module_name, generic_parameter_names, has_modifier, imply_generic_parameter_names, lower_attribute,
     lower_attribute_argument_expression, lower_bound_identifier, lower_derives, lower_documentation, lower_field, lower_generic_parameter,
     lower_generic_parameters, lower_method_params, lower_name_path, lower_param, lower_parent, lower_trait_associated_type,
@@ -148,7 +148,7 @@ impl ValkyrieCompiler {
     /// 生成单元的类型位置是它自己生成的宿主 ABI 面，不该被依赖包别名改写；普通应用组
     /// 仍经依赖可见性拿到别名。无内建身份的依赖别名（`usize`/`isize` 等指针宽度别名）
     /// 不受此收窄影响，照常可见。判据见 `type_lowering::short_alias_entry`。
-    pub(crate) fn with_suppressed_imported_builtin_short_names(mut self) -> Self {
+    pub fn with_suppressed_imported_builtin_short_names(mut self) -> Self {
         self.suppress_imported_builtin_short_names = true;
         self
     }
@@ -397,7 +397,7 @@ impl ValkyrieCompiler {
     /// 门在调用解析之后、单态化之前于 HIR 冻结调用图上求根可达闭包；
     /// 不可达 callable 不得进入泛型实例化、MIR 降低与后端物化集合。
     /// 闭包上界与 closure hash 不受门影响。
-    pub(crate) fn resolve_source_groups_with_materialization_gate(
+    pub fn resolve_source_groups_with_materialization_gate(
         &self,
         groups: &[CompilerSourceGroup],
         host_bindings: &[crate::compiler::emitter::pipeline::CompilerHostProviderBinding],

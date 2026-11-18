@@ -44,14 +44,14 @@ use super::{
     patterns::sum_declaration_of_type,
 };
 
-pub(crate) fn paired_sum_identity_facts(sum_owner: Option<compiler_types::ItemId>, sum_variant: Option<compiler_types::ItemId>) -> bool {
+pub fn paired_sum_identity_facts(sum_owner: Option<compiler_types::ItemId>, sum_variant: Option<compiler_types::ItemId>) -> bool {
     sum_owner.is_none() == sum_variant.is_none()
 }
-pub(crate) fn sum_apply_context(ty: &ValkyrieType) -> Option<ValkyrieType> {
+pub fn sum_apply_context(ty: &ValkyrieType) -> Option<ValkyrieType> {
     if is_option_apply_type(ty) || is_result_apply_type(ty) { Some(ty.clone()) } else { None }
 }
 
-pub(crate) fn option_apply_hint(
+pub fn option_apply_hint(
     contextual_type: Option<&ValkyrieType>,
     call_return_type: &ValkyrieType,
     explicit_generic_arguments: &[ValkyrieType],
@@ -61,7 +61,7 @@ pub(crate) fn option_apply_hint(
     contextual_type.and_then(sum_apply_context).or_else(|| sum_apply_context(call_return_type))
 }
 
-pub(crate) fn enrich_unite_variant_constructor_facts(
+pub fn enrich_unite_variant_constructor_facts(
     callee: &HirExpr,
     args: &[HirCallArgument],
     call: &mut HirResolvedCall,
@@ -129,7 +129,7 @@ fn variant_constructor_facts_from_declaration(
 /// 名义头的可比较标签：`Nominal` 取声明身份，路径形态取名，apply 递归取基。
 /// 两侧都有头且不同即 owner 不同；任一侧无头则不判（无可判别事实）。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum NominalHeadLabel {
+pub enum NominalHeadLabel {
     /// 名义声明身份。
     Declaration(compiler_types::ItemId),
     /// 路径/短名形态的类型名。
@@ -137,7 +137,7 @@ pub(crate) enum NominalHeadLabel {
 }
 
 /// 取类型的名义头标签；`Generic`、函数、tuple 等无名义头的类型返回 `None`。
-pub(crate) fn nominal_head_label(ty: &ValkyrieType) -> Option<NominalHeadLabel> {
+pub fn nominal_head_label(ty: &ValkyrieType) -> Option<NominalHeadLabel> {
     match ty {
         ValkyrieType::Nominal { declaration, .. } => Some(NominalHeadLabel::Declaration(*declaration)),
         ValkyrieType::Named(name) => Some(NominalHeadLabel::Name(name.to_string())),
@@ -147,7 +147,7 @@ pub(crate) fn nominal_head_label(ty: &ValkyrieType) -> Option<NominalHeadLabel> 
     }
 }
 
-pub(crate) fn instantiate_candidate_for_context(
+pub fn instantiate_candidate_for_context(
     candidate: &OverloadCandidate,
     contextual_type: &ValkyrieType,
     type_relations: &TypeRelationContext,

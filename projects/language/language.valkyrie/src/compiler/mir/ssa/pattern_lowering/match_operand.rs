@@ -1,5 +1,5 @@
 impl MirBuilder {
-    pub(crate) fn lower_object_pattern_match_operand(
+    pub fn lower_object_pattern_match_operand(
         &mut self,
         name: &Option<NamePath>,
         type_declaration: Option<compiler_types::ItemId>,
@@ -54,7 +54,7 @@ impl MirBuilder {
         accumulated.unwrap_or(MirOperand::Constant(MirConstant::Bool(true)))
     }
 
-    pub(crate) fn lower_or_pattern_match_operand(&mut self, patterns: &[HirPattern], value: MirOperand) -> MirOperand {
+    pub fn lower_or_pattern_match_operand(&mut self, patterns: &[HirPattern], value: MirOperand) -> MirOperand {
         let mut accumulated: Option<MirOperand> = None;
         for pattern in patterns {
             let candidate = self.lower_pattern_match_operand(pattern, value.clone());
@@ -63,7 +63,7 @@ impl MirBuilder {
         accumulated.unwrap_or(MirOperand::Constant(MirConstant::Bool(false)))
     }
 
-    pub(crate) fn has_known_struct_layout(&self, actual_type: &ValkyrieType) -> bool {
+    pub fn has_known_struct_layout(&self, actual_type: &ValkyrieType) -> bool {
         match actual_type {
             ValkyrieType::Nominal { declaration, .. } => {
                 crate::compiler::mir::ssa::MirStruct::find_by_declaration(&self.field_declarations, *declaration).is_some()
@@ -131,7 +131,7 @@ impl MirBuilder {
             .or(Some(ensured))
     }
 
-    pub(crate) fn lower_extractor_call_operand(&mut self, resolved: &HirResolvedCall, value: MirOperand) -> MirOperand {
+    pub fn lower_extractor_call_operand(&mut self, resolved: &HirResolvedCall, value: MirOperand) -> MirOperand {
         use crate::compiler::types::hir::HirCallableDomain;
         if resolved.domain == HirCallableDomain::Extractor {
             if let Some(payload) = self.try_lower_result_option_extractor(resolved, value.clone()) {
@@ -175,7 +175,7 @@ impl MirBuilder {
         Some((field.id, field_types.get(slot)?.clone()))
     }
 
-    pub(crate) fn variant_record_field_by_name(
+    pub fn variant_record_field_by_name(
         &self,
         payload_ty: &ValkyrieType,
         name: &compiler_types::Identifier,
@@ -246,7 +246,7 @@ impl MirBuilder {
     }
 
     /// 表达式字段读取：身份由 HIR 冻结，MIR 只按 `FieldId` 发出 `FieldGet`。
-    pub(crate) fn lower_object_field_get_operand(
+    pub fn lower_object_field_get_operand(
         &mut self,
         object: MirOperand,
         field: compiler_types::FieldId,
@@ -261,17 +261,17 @@ impl MirBuilder {
         MirOperand::Value(output)
     }
 
-    pub(crate) fn lower_eq_constant_operand(&mut self, lhs: MirOperand, rhs: MirConstant, ty: &ValkyrieType) -> MirOperand {
+    pub fn lower_eq_constant_operand(&mut self, lhs: MirOperand, rhs: MirConstant, ty: &ValkyrieType) -> MirOperand {
         let rhs_operand = self.materialize_pattern_constant_operand(rhs, ty);
         self.lower_binary_operator_operand("infix ==", lhs, rhs_operand, ty)
     }
 
-    pub(crate) fn lower_lt_constant_operand(&mut self, lhs: MirOperand, rhs: MirConstant, ty: &ValkyrieType) -> MirOperand {
+    pub fn lower_lt_constant_operand(&mut self, lhs: MirOperand, rhs: MirConstant, ty: &ValkyrieType) -> MirOperand {
         let rhs_operand = self.materialize_pattern_constant_operand(rhs, ty);
         self.lower_lt_operands(lhs, rhs_operand, ty)
     }
 
-    pub(crate) fn lower_lt_operands(&mut self, lhs: MirOperand, rhs: MirOperand, ty: &ValkyrieType) -> MirOperand {
+    pub fn lower_lt_operands(&mut self, lhs: MirOperand, rhs: MirOperand, ty: &ValkyrieType) -> MirOperand {
         self.lower_binary_operator_operand("infix <", lhs, rhs, ty)
     }
 
@@ -322,7 +322,7 @@ impl MirBuilder {
     }
 
     /// Short-circuit `!value`: `if value { false } else { true }`.
-    pub(crate) fn lower_logical_not_operand(&mut self, value: MirOperand) -> MirOperand {
+    pub fn lower_logical_not_operand(&mut self, value: MirOperand) -> MirOperand {
         let pre_bindings = self.bindings.clone();
         let cond_block = self.current_block;
         let then_block = self.new_block("not_then");
@@ -355,7 +355,7 @@ impl MirBuilder {
     }
 
     /// Short-circuit `lhs && rhs`: `if lhs { rhs } else { false }`.
-    pub(crate) fn lower_logical_and_operand(&mut self, lhs: MirOperand, rhs: MirOperand) -> MirOperand {
+    pub fn lower_logical_and_operand(&mut self, lhs: MirOperand, rhs: MirOperand) -> MirOperand {
         let pre_bindings = self.bindings.clone();
         let cond_block = self.current_block;
         let then_block = self.new_block("and_then");
@@ -388,7 +388,7 @@ impl MirBuilder {
     }
 
     /// Short-circuit `lhs || rhs`: `if lhs { true } else { rhs }`.
-    pub(crate) fn lower_logical_or_operand(&mut self, lhs: MirOperand, rhs: MirOperand) -> MirOperand {
+    pub fn lower_logical_or_operand(&mut self, lhs: MirOperand, rhs: MirOperand) -> MirOperand {
         let pre_bindings = self.bindings.clone();
         let cond_block = self.current_block;
         let then_block = self.new_block("or_then");
@@ -420,7 +420,7 @@ impl MirBuilder {
         exit_value.map(MirOperand::Value).unwrap_or(MirOperand::Constant(MirConstant::Bool(false)))
     }
 
-    pub(crate) fn merge_pattern_match_operands(&mut self, lhs: Option<MirOperand>, rhs: MirOperand) -> MirOperand {
+    pub fn merge_pattern_match_operands(&mut self, lhs: Option<MirOperand>, rhs: MirOperand) -> MirOperand {
         match (lhs, rhs) {
             (None, rhs) => rhs,
             (Some(MirOperand::Constant(MirConstant::Bool(false))), _) => MirOperand::Constant(MirConstant::Bool(false)),
@@ -431,7 +431,7 @@ impl MirBuilder {
         }
     }
 
-    pub(crate) fn merge_pattern_match_any_operands(&mut self, lhs: Option<MirOperand>, rhs: MirOperand) -> MirOperand {
+    pub fn merge_pattern_match_any_operands(&mut self, lhs: Option<MirOperand>, rhs: MirOperand) -> MirOperand {
         match (lhs, rhs) {
             (None, rhs) => rhs,
             (Some(MirOperand::Constant(MirConstant::Bool(true))), _) => MirOperand::Constant(MirConstant::Bool(true)),
@@ -443,7 +443,7 @@ impl MirBuilder {
     }
 
     /// 类型模式只按已冻结的声明身份判定；缺失时由调用方返回结构化失败，禁止按拼写重建继承关系。
-    pub(crate) fn type_pattern_matches(&self, actual_type: &ValkyrieType, expected: compiler_types::ItemId) -> bool {
+    pub fn type_pattern_matches(&self, actual_type: &ValkyrieType, expected: compiler_types::ItemId) -> bool {
         let Some(actual) = actual_type.nominal_declaration()
         else {
             return false;
@@ -471,7 +471,7 @@ impl MirBuilder {
     }
 
     /// 把 extractor payload 绑定到 extractor 各字段的模式绑定上。
-    pub(crate) fn bind_extractor_pattern_from_payload(&mut self, extractor: &HirExtractorPattern, payload: MirOperand) {
+    pub fn bind_extractor_pattern_from_payload(&mut self, extractor: &HirExtractorPattern, payload: MirOperand) {
         let resolved = extractor_resolved_call(extractor);
         match extractor {
             HirExtractorPattern::Constructor { fields, .. } => {
@@ -522,7 +522,7 @@ impl MirBuilder {
         }
     }
 
-    pub(crate) fn bind_object_pattern_from_operand(
+    pub fn bind_object_pattern_from_operand(
         &mut self,
         fields: &[(Identifier, HirPattern)],
         field_ids: &[Option<compiler_types::FieldId>],
@@ -566,7 +566,7 @@ impl MirBuilder {
         }
     }
 
-    pub(crate) fn bind_unknown_pattern_bindings(&mut self, pattern: &HirPattern) {
+    pub fn bind_unknown_pattern_bindings(&mut self, pattern: &HirPattern) {
         match pattern {
             HirPattern::Wildcard | HirPattern::Else => {}
             HirPattern::Variable(identifier) => {
@@ -622,7 +622,7 @@ impl MirBuilder {
     /// 模式类型或 extractor 未 resolved 时，scrutinee 的 tuple/object 形状无法验证，
     /// 这里记录 `MirDiagnostic::PatternLoweringFailed` 并返回 `Bool(false)`，
     /// 由 emit 阶段决定 trap 还是保留 `PatternMatch` 检查。
-    pub(crate) fn lower_fallback_pattern_match(&mut self, pattern: HirPattern, _value: MirOperand) -> MirOperand {
+    pub fn lower_fallback_pattern_match(&mut self, pattern: HirPattern, _value: MirOperand) -> MirOperand {
         self.diagnostics
             .push(MirDiagnostic::PatternLoweringFailed {
                 pattern, reason: "模式 lowering 缺少 MIR 可验证的 extractor 身份".to_string()

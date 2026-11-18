@@ -30,12 +30,12 @@ pub(super) fn type_contains_placeholder(ty: &ValkyrieType, include_generic_binde
 }
 
 /// Canonical 类型表只收录可无损 lower 的形状；泛型形参与 `Self`/关联类型保留在 MIR 局部语义中。
-pub(crate) fn type_contains_unresolved_reference(ty: &ValkyrieType) -> bool {
+pub fn type_contains_unresolved_reference(ty: &ValkyrieType) -> bool {
     type_contains_placeholder(ty, true)
 }
 
 /// 函数签名允许携带泛型形参，但不允许 `Self`/关联类型占位。
-pub(crate) fn type_contains_non_monomorphic_signature_reference(ty: &ValkyrieType) -> bool {
+pub fn type_contains_non_monomorphic_signature_reference(ty: &ValkyrieType) -> bool {
     type_contains_placeholder(ty, false)
 }
 

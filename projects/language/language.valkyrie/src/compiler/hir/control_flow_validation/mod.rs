@@ -21,15 +21,15 @@ use crate::compiler::{
 
 use compiler_types::{DiagnosticSource, DiagnosticSpan};
 
-pub(crate) mod compatibility;
+pub mod compatibility;
 mod module_walk;
 mod pattern;
 mod state;
 mod suspend;
 mod validate;
 
-pub(crate) use pattern::collect_pattern_bound_names_into;
-pub(crate) use state::{HirValidationState, boolean_declarations_in_module, numeric_declarations_in_module};
+pub use pattern::collect_pattern_bound_names_into;
+pub use state::{HirValidationState, boolean_declarations_in_module, numeric_declarations_in_module};
 
 pub use compatibility::{control_flow_value_type_compatible, display_type};
 pub use module_walk::validate_control_flow_module;

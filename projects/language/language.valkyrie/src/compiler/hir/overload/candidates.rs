@@ -185,7 +185,7 @@ fn build_method_candidate(function: &HirFunction, owner: Option<Identifier>, tra
 /// 将方法声明绑定到完整的名义 owner；仅保留 owner 的短名用于 callable identity。
 /// `Self` 和 impl 泛型必须在候选进入实参统一前完成替换，否则泛型实例方法会
 /// 被降成非泛型 nominal 类型，函数体中的 receiver 也会失去同一份代入事实。
-pub(crate) fn specialize_method_candidate(
+pub fn specialize_method_candidate(
     mut candidate: OverloadCandidate,
     owner_type: &ValkyrieType,
     owner_generics: &[GenericType],

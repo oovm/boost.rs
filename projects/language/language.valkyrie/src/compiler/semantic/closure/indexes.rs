@@ -38,7 +38,7 @@ impl DeclarationIndexes {
     ///
     /// 成员声明（`method` / `imply_method`）只进入待连接的拥有者关联，不进入任何短名索引；
     /// 类型别名记录目标引用，供成员拥有者解析时穿透别名取到真正的名义聚合。
-    pub(crate) fn register(&mut self, entry: DeclarationIndexEntry) {
+    pub fn register(&mut self, entry: DeclarationIndexEntry) {
         let DeclarationIndexEntry { key, link, .. } = entry;
         if key.kind.is_member() {
             // 拥有者引用不可解析（例如 imply 目标不是名字路径）时 fail-closed：
@@ -61,7 +61,7 @@ impl DeclarationIndexes {
     }
 
     /// 登记 unity 变体名与它的拥有者 sum/unite 声明。
-    pub(crate) fn register_variant(&mut self, variant: &str, owner: &DeclarationKey) {
+    pub fn register_variant(&mut self, variant: &str, owner: &DeclarationKey) {
         self.variant_owners.entry(variant.to_string()).or_default().insert(owner.clone());
     }
 
@@ -70,7 +70,7 @@ impl DeclarationIndexes {
     /// 连接发生在整个 inventory 索引完成后：拥有者与成员可以在同组的不同文件里，也可以在不同的
     /// 依赖组里。拥有者引用按成员所属组的可见性解析，因此未声明的依赖组不会成为拥有者；
     /// 解析不到拥有者时成员关联不成立，也不会被名字回退补上。
-    pub(crate) fn link(&mut self, visibility: &BTreeMap<String, BTreeSet<String>>) {
+    pub fn link(&mut self, visibility: &BTreeMap<String, BTreeSet<String>>) {
         let empty = BTreeSet::new();
         for member in std::mem::take(&mut self.pending_members) {
             let visible = visibility.get(&member.group).unwrap_or(&empty);
@@ -102,13 +102,13 @@ impl DeclarationIndexes {
     }
 
     /// 该声明身份是否为携带成员的名义聚合。
-    pub(crate) fn is_owner(&self, key: &DeclarationKey) -> bool {
+    pub fn is_owner(&self, key: &DeclarationKey) -> bool {
         self.members.contains_key(key)
     }
 
     /// 该聚合上「确实出现在闭包需求中」的成员：选择名是需求事实，拥有者是声明身份，
     /// 两者都成立才提升，不做全库同名成员回退。
-    pub(crate) fn selected_members(&self, aggregate: &DeclarationKey, selectors: &BTreeSet<String>) -> BTreeSet<DeclarationKey> {
+    pub fn selected_members(&self, aggregate: &DeclarationKey, selectors: &BTreeSet<String>) -> BTreeSet<DeclarationKey> {
         self.members
             .get(aggregate)
             .map(|members| members.iter().filter(|member| selectors.contains(&member.name)).cloned().collect())
@@ -125,7 +125,7 @@ impl DeclarationIndexes {
     /// 与 [`Self::resolve`] 的引用解析不同，这里没有 namespace 前缀、短名回退或成员
     /// 兜底——来源引用必须指名唯一位置；namespace 段按 `.` 展开与声明身份同一口径。
     /// 命中集合就是可验证来源：空集与多义集都由调用方结构化拒绝（fail-closed）。
-    pub(crate) fn resolve_qualified(&self, reference: &[String], visible: &BTreeSet<String>) -> BTreeSet<DeclarationKey> {
+    pub fn resolve_qualified(&self, reference: &[String], visible: &BTreeSet<String>) -> BTreeSet<DeclarationKey> {
         let mut hits = BTreeSet::new();
         for ((namespace, name), keys) in &self.names {
             let mut qualified = namespace.iter().flat_map(|segment| segment.split('.')).chain(std::iter::once(name.as_str()));
@@ -143,7 +143,7 @@ impl DeclarationIndexes {
     /// 穿透依据是 Resolver 记录的别名目标链接，不是短名近似。绝对限定位置只认最初
     /// 的身份引用，别名目标按其自身 namespace 解析。别名链断裂或末端不唯一时返回空集
     /// 或多义集，由调用方 fail-closed。
-    pub(crate) fn resolve_identity_source(&self, reference: &[String], visible: &BTreeSet<String>) -> BTreeSet<DeclarationKey> {
+    pub fn resolve_identity_source(&self, reference: &[String], visible: &BTreeSet<String>) -> BTreeSet<DeclarationKey> {
         let mut terminals = BTreeSet::new();
         let mut frontier: Vec<(Vec<String>, Option<Vec<String>>)> = vec![(reference.to_vec(), None)];
         let mut visited = BTreeSet::new();
@@ -177,7 +177,7 @@ impl DeclarationIndexes {
     /// - 单段名字在 namespace 链未命中时，只在可见组内按短名回退，且**只接受非成员声明**：
     ///   成员调用按接收者类型解析的事实由「聚合身份 + 已出现的选择名」提供；
     /// - 都不是时只允许变体名命中其拥有者 sum/unite 声明这一条结构化路径。
-    pub(crate) fn resolve(&self, reference: &[String], namespace: &[String], visible: &BTreeSet<String>) -> BTreeSet<DeclarationKey> {
+    pub fn resolve(&self, reference: &[String], namespace: &[String], visible: &BTreeSet<String>) -> BTreeSet<DeclarationKey> {
         let name = match reference.last() {
             Some(name) => name,
             None => return BTreeSet::new(),

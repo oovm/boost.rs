@@ -8,7 +8,7 @@ use crate::compiler::{
 
 use crate::compiler::mir::ssa::{MirConstant, MirOperand, infer_builder_operand_type};
 
-pub(crate) fn lower_literal(literal: &HirLiteral, expected_type: Option<&ValkyrieType>) -> Result<(MirConstant, Option<ValkyrieType>), String> {
+pub fn lower_literal(literal: &HirLiteral, expected_type: Option<&ValkyrieType>) -> Result<(MirConstant, Option<ValkyrieType>), String> {
     Ok(match literal {
         HirLiteral::Integer(value) => {
             // 宽度、有符号性与范围由 HIR 的 `integer_literal` 唯一结算；
@@ -62,7 +62,7 @@ pub(crate) fn lower_literal(literal: &HirLiteral, expected_type: Option<&Valkyri
 /// Prefer the contextual sum apply when both sides already share Nominal declaration identity.
 /// payload 只投影调用方经 `parameter_types` / `instantiate_payload` 已结算的事实；
 /// 禁止变体短名认亲，也禁止从实参操作数的推断类型回填 payload。
-pub(crate) fn concretize_variant_constructor_types(
+pub fn concretize_variant_constructor_types(
     ctor_return: &ValkyrieType,
     payload_type: Option<ValkyrieType>,
     expected_type: Option<&ValkyrieType>,
@@ -82,7 +82,7 @@ fn same_sum_owner(left: &ValkyrieType, right: &ValkyrieType) -> bool {
 }
 
 /// 失败诊断只引用已冻结的声明身份；缺失时给出稳定占位，禁止从拼写重发现 variant。
-pub(crate) fn unresolved_variant_labels(resolved: Option<&HirResolvedCall>) -> (String, String) {
+pub fn unresolved_variant_labels(resolved: Option<&HirResolvedCall>) -> (String, String) {
     let sum_type = resolved.and_then(|call| call.sum_owner).map_or_else(|| "<unresolved sum owner>".to_string(), |owner| owner.to_string());
     let variant =
         resolved.and_then(|call| call.sum_variant).map_or_else(|| "<unresolved sum variant>".to_string(), |variant| variant.to_string());
@@ -90,7 +90,7 @@ pub(crate) fn unresolved_variant_labels(resolved: Option<&HirResolvedCall>) -> (
 }
 
 /// Map a resolved unite/enum constructor call onto `SumNew` parts.
-pub(crate) fn sum_new_parts_from_constructor(
+pub fn sum_new_parts_from_constructor(
     call: &HirResolvedCall,
     arguments: &[MirOperand],
     sum_types: &[crate::compiler::mir::ssa::MirSumDeclaration],
@@ -113,7 +113,7 @@ pub(crate) fn sum_new_parts_from_constructor(
     Some((sum_type, type_args, variant.name.clone(), payload_type, arguments.to_vec(), multi_field))
 }
 
-pub(crate) fn type_args_from_sum_shaped(ty: &ValkyrieType) -> Vec<ValkyrieType> {
+pub fn type_args_from_sum_shaped(ty: &ValkyrieType) -> Vec<ValkyrieType> {
     match ty {
         ValkyrieType::Nominal { arguments, .. } => arguments.clone(),
         ValkyrieType::Apply(_, args) => args.clone(),

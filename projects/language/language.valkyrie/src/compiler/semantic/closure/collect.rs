@@ -9,7 +9,7 @@ use super::{
     name_path_segments,
 };
 
-pub(crate) fn collect_items(builder: &mut FileBuilder, current_namespace: &[String], items: &[ast::StatementNode]) {
+pub fn collect_items(builder: &mut FileBuilder, current_namespace: &[String], items: &[ast::StatementNode]) {
     let mut namespace = current_namespace.to_vec();
     for item in items {
         match item {
@@ -190,7 +190,7 @@ pub fn imply_owner_name(imply: &ast::ImplyDeclaration) -> Option<String> {
 }
 
 /// imply 实施的 trait 短名：`imply Person: Same` → `Same`；无 trait 的 impl 返回 `None`。
-pub(crate) fn imply_trait_name(imply: &ast::ImplyDeclaration) -> Option<String> {
+pub fn imply_trait_name(imply: &ast::ImplyDeclaration) -> Option<String> {
     imply.trait_type.as_ref().and_then(type_target_reference).and_then(|segments| segments.last().cloned())
 }
 

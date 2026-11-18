@@ -9,22 +9,22 @@ use crate::compiler::syntax::oak::{ast, parse_source_with_identity};
 
 use super::{ScopedReference, collect::collect_items};
 
-pub(crate) struct IndexedFile {
-    pub(crate) source_digest: String,
-    pub(crate) declarations: Vec<DeclarationIndexEntry>,
+pub struct IndexedFile {
+    pub source_digest: String,
+    pub declarations: Vec<DeclarationIndexEntry>,
     /// 变体名 → 拥有该变体的 sum/unite 声明。
-    pub(crate) variant_members: Vec<(String, DeclarationKey)>,
+    pub variant_members: Vec<(String, DeclarationKey)>,
     /// 携带 `[primitive("…")]` 注解的声明身份 → 注解给出的身份字符串。
-    pub(crate) primitive_identities: Vec<(DeclarationKey, String)>,
+    pub primitive_identities: Vec<(DeclarationKey, String)>,
     /// 文件级语句（`using`、顶层 `let`/表达式）的自由名引用。
-    pub(crate) module_references: BTreeSet<ScopedReference>,
+    pub module_references: BTreeSet<ScopedReference>,
     /// 文件级语句的成员选择名；与声明级选择名一样只参与成员提升。
-    pub(crate) module_selectors: BTreeSet<String>,
+    pub module_selectors: BTreeSet<String>,
     /// 首参为 `self` 的自由 `micro` 声明身份：方法位置调用的候选来源。
-    pub(crate) extension_functions: BTreeSet<DeclarationKey>,
+    pub extension_functions: BTreeSet<DeclarationKey>,
 }
 
-pub(crate) fn index_source_file(dependency_key: &str, path: &str, source: &str, arch: &str) -> Result<IndexedFile, String> {
+pub fn index_source_file(dependency_key: &str, path: &str, source: &str, arch: &str) -> Result<IndexedFile, String> {
     let mut root = parse_source_with_identity(source, path).map_err(|error| error.to_string())?;
     // TGrammar 模板分支必须按编译架构展开后再建索引：入口声明可能只在某个分支里，
     // 直接索引模板节点会让 `[export]` / `[main]` 在索引阶段不可见。
@@ -57,16 +57,16 @@ pub fn index_parsed_root(
 
 /// 单个文件索引过程中收集到的声明与文件级引用。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct FileBuilder {
+pub struct FileBuilder {
     dependency_key: String,
     source_path: String,
     declarations: Vec<DeclarationIndexEntry>,
-    pub(crate) variant_members: Vec<(String, DeclarationKey)>,
-    pub(crate) primitive_identities: Vec<(DeclarationKey, String)>,
+    pub variant_members: Vec<(String, DeclarationKey)>,
+    pub primitive_identities: Vec<(DeclarationKey, String)>,
     module_references: BTreeSet<ScopedReference>,
     module_selectors: BTreeSet<String>,
     import_paths: BTreeSet<String>,
-    pub(crate) extension_functions: BTreeSet<DeclarationKey>,
+    pub extension_functions: BTreeSet<DeclarationKey>,
 }
 
 impl FileBuilder {
@@ -74,7 +74,7 @@ impl FileBuilder {
         Self { dependency_key: dependency_key.to_string(), source_path: source_path.to_string(), ..Self::default() }
     }
 
-    pub(crate) fn register(
+    pub fn register(
         &mut self,
         namespace: &[String],
         kind: DeclarationKind,
@@ -105,7 +105,7 @@ impl FileBuilder {
 
     /// 登记首参为 `self` 的自由 `micro`：它只能被方法位置调用命中，
     /// 名字引用图无法从 `.name()` 得到这条声明，必须由闭包按选择名单独提升。
-    pub(crate) fn register_extension_function(&mut self, key: DeclarationKey) {
+    pub fn register_extension_function(&mut self, key: DeclarationKey) {
         self.extension_functions.insert(key);
     }
 
@@ -113,11 +113,11 @@ impl FileBuilder {
     ///
     /// 这里只保存「声明身份 → 注解字符串」的原始配对；形态校验与唯一性建表
     /// 在整个 inventory 完成后由 `build_primitive_identity_table` 统一执行。
-    pub(crate) fn register_primitive_identity(&mut self, key: DeclarationKey, identity: String) {
+    pub fn register_primitive_identity(&mut self, key: DeclarationKey, identity: String) {
         self.primitive_identities.push((key, identity));
     }
 
-    pub(crate) fn register_module_references(&mut self, namespace: &[String], references: References) {
+    pub fn register_module_references(&mut self, namespace: &[String], references: References) {
         for path in references.paths {
             self.module_references.insert((namespace.to_vec(), path));
         }
@@ -129,17 +129,17 @@ impl FileBuilder {
 /// 单个声明（或文件级语句）引用的自由名路径、成员选择名与 import 路径。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct References {
-    pub(crate) paths: BTreeSet<ReferencePath>,
+    pub paths: BTreeSet<ReferencePath>,
     /// 真实调用点的 callee 路径；与 `paths` 同一次遍历产生，但不含类型/名字出现。
     ///
     /// 装配层的宿主能力闭包沿这张表传播：能力只来自「被调用」的声明，不来自
     /// 「被提到」的声明。解析仍由同一个声明索引与可见性合同完成。
-    pub(crate) calls: BTreeSet<ReferencePath>,
+    pub calls: BTreeSet<ReferencePath>,
     /// 成员选择名；只能与拥有聚合身份结合参与成员提升，不参与自由名解析。
-    pub(crate) selectors: BTreeSet<String>,
-    pub(crate) imports: BTreeSet<String>,
+    pub selectors: BTreeSet<String>,
+    pub imports: BTreeSet<String>,
 }
 
-pub(crate) fn name_path_segments(path: &ast::NamePath) -> Vec<String> {
+pub fn name_path_segments(path: &ast::NamePath) -> Vec<String> {
     path.parts.iter().map(|part| part.name.clone()).collect()
 }

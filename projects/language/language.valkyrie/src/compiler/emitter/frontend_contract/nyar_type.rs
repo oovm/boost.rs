@@ -22,7 +22,7 @@ impl ConcretizeError {
     }
 
     /// 附上布局/声明位置，供结构化诊断定位；不改错误类别，只补上下文。
-    pub(crate) fn at(mut self, location: impl fmt::Display) -> Self {
+    pub fn at(mut self, location: impl fmt::Display) -> Self {
         self.message = format!("{} (at {location})", self.message);
         self
     }

@@ -1223,7 +1223,7 @@ fn reorder_object_pattern_fields(fields: &[(Identifier, HirPattern)], slots: &[u
     ordered
 }
 
-pub(crate) fn bind_pattern_type(pattern: &HirPattern, ty: &ValkyrieType, locals: &mut BTreeMap<String, ValkyrieType>) {
+pub fn bind_pattern_type(pattern: &HirPattern, ty: &ValkyrieType, locals: &mut BTreeMap<String, ValkyrieType>) {
     match pattern {
         HirPattern::Variable(identifier) => {
             locals.insert(identifier.name.to_string(), ty.clone());

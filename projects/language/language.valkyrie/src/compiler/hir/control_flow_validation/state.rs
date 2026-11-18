@@ -30,31 +30,31 @@ use super::{control_flow_source, expr_diagnostic_span};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalBinding {
     /// 绑定的静态类型事实。
-    pub(crate) ty: ValkyrieType,
+    pub ty: ValkyrieType,
     /// 声明面是否可变（`let mut`、`mut` 形参、pattern `mut` / `pin mut`）。
-    pub(crate) is_mutable: bool,
+    pub is_mutable: bool,
     /// 体内赋值是否应被拒绝：不可变 `let` 且带初始化时，赋值是对已绑定值的改值。
     /// 形参（规范对重绑定沉默）与无初始化 `let`（延迟初始化，首次赋值即绑定）为 false。
-    pub(crate) rejects_assignment: bool,
+    pub rejects_assignment: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct HirValidationState {
-    pub(crate) current_function: Option<String>,
-    pub(crate) in_guard: bool,
-    pub(crate) self_type_stack: Vec<ValkyrieType>,
-    pub(crate) return_type_stack: Vec<ValkyrieType>,
-    pub(crate) local_scopes: Vec<BTreeMap<String, LocalBinding>>,
+    pub current_function: Option<String>,
+    pub in_guard: bool,
+    pub self_type_stack: Vec<ValkyrieType>,
+    pub return_type_stack: Vec<ValkyrieType>,
+    pub local_scopes: Vec<BTreeMap<String, LocalBinding>>,
     /// Unified loop / try / case chain / catch / generator / async scope tracking.
-    pub(crate) control_flow: ControlFlowContext,
+    pub control_flow: ControlFlowContext,
     /// 本模块内已冻结为声明身份的数值 primitive（`std/primitive` 的 `structure`）。
     /// 只有这份声明事实能判定「期望类型是数值」；不得改成对调用点写的类型名做特判。
-    pub(crate) numeric_declarations: BTreeSet<compiler_types::ItemId>,
+    pub numeric_declarations: BTreeSet<compiler_types::ItemId>,
     /// `std::primitive::bool` 的声明身份；字面量与注解 `bool` 的 `Boolean` 形态与之等价。
-    pub(crate) boolean_declarations: BTreeSet<compiler_types::ItemId>,
+    pub boolean_declarations: BTreeSet<compiler_types::ItemId>,
     /// 本模块内已冻结为声明身份的文本 primitive（`std::text` 的 `utf8`/`utf16`/`text` 载体）。
     /// 值是该身份的编码家族；只有这份声明事实能判定「期望类型是文本」与「哪一族编码」。
-    pub(crate) text_declarations: BTreeMap<compiler_types::ItemId, HirTextEncoding>,
+    pub text_declarations: BTreeMap<compiler_types::ItemId, HirTextEncoding>,
 }
 
 pub type LoopValidationContext = crate::compiler::semantic::control_flow::LoopScopeData;

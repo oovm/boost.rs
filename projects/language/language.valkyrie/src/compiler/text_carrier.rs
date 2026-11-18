@@ -12,7 +12,7 @@ use crate::compiler::types::hir::{HirTextEncoding, ValkyrieType};
 
 /// `[primitive("…")]` 文本身份对应的编码家族。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TextPrimitiveFamily {
+pub enum TextPrimitiveFamily {
     /// 仅 UTF-8 载体（`std::text::utf8`）。
     Utf8,
     /// 仅 UTF-16 载体（`std::text::utf16`）。
@@ -22,7 +22,7 @@ pub(crate) enum TextPrimitiveFamily {
 }
 
 /// 按规范身份查文本家族；表外一律 `None`，调用方不得回退到声明拼写。
-pub(crate) fn text_primitive_family(identity: &str) -> Option<TextPrimitiveFamily> {
+pub fn text_primitive_family(identity: &str) -> Option<TextPrimitiveFamily> {
     match identity {
         "std::text::utf8" => Some(TextPrimitiveFamily::Utf8),
         "std::text::utf16" => Some(TextPrimitiveFamily::Utf16),
@@ -33,7 +33,7 @@ pub(crate) fn text_primitive_family(identity: &str) -> Option<TextPrimitiveFamil
 
 impl TextPrimitiveFamily {
     /// 该文本身份是否锚定这个内建编码 carrier。
-    pub(crate) fn anchors(self, carrier: &ValkyrieType) -> bool {
+    pub fn anchors(self, carrier: &ValkyrieType) -> bool {
         matches!(
             (self, carrier),
             (Self::Utf8, ValkyrieType::Utf8) | (Self::Utf16, ValkyrieType::Utf16) | (Self::Shared, ValkyrieType::Utf8 | ValkyrieType::Utf16)
@@ -41,7 +41,7 @@ impl TextPrimitiveFamily {
     }
 
     /// 字面量/期望的编码：共享载体按默认规则落 `Utf8`。
-    pub(crate) fn encoding(self) -> HirTextEncoding {
+    pub fn encoding(self) -> HirTextEncoding {
         match self {
             Self::Utf16 => HirTextEncoding::Utf16,
             Self::Utf8 | Self::Shared => HirTextEncoding::Utf8,

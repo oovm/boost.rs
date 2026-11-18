@@ -26,7 +26,7 @@ use crate::compiler::{
 ///
 /// 必须与 `collection_init::transform_collection_literals` 在同一阶段运行：调用解析
 /// 之前，这样新增的 `display` 与 `infix ++` 调用能被正常冻结。
-pub(crate) fn desugar_string_interpolations(module: &mut HirModule) -> Result<(), HirError> {
+pub fn desugar_string_interpolations(module: &mut HirModule) -> Result<(), HirError> {
     transform_module(module)
 }
 

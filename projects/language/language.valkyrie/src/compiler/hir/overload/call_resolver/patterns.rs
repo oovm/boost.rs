@@ -63,7 +63,7 @@ fn enriched_sum_owner_variant(
         .find_map(|candidate| candidate.sum_owner.zip(candidate.sum_variant))
 }
 
-pub(crate) fn try_resolve_pattern_extractor(
+pub fn try_resolve_pattern_extractor(
     canonical_callee: &NamePath,
     actual_type: &ValkyrieType,
     candidates: &[OverloadCandidate],
@@ -137,7 +137,7 @@ fn variant_segment_from_extractor_callee(canonical_callee: &NamePath) -> Option<
 /// `unite` 变体与普通 `enums` 变体共用这条 Constructor 路径：前者另有 extractor
 /// 候选，后者没有，但两边的 `sum_owner` / `sum_variant` 都是声明期冻结的 tag 身份。
 /// 不得因缺少 extractor 证据把普通 `enums` 的 `case <variant>` 留在 `Name` 回退里。
-pub(crate) fn resolve_variant_pattern_constructor(
+pub fn resolve_variant_pattern_constructor(
     canonical_callee: &NamePath,
     actual_type: &ValkyrieType,
     candidates: &[OverloadCandidate],
@@ -181,7 +181,7 @@ pub(crate) fn resolve_variant_pattern_constructor(
     })
 }
 
-pub(crate) fn try_resolve_try_propagate_ok_variant(operand_type: &ValkyrieType, candidates: &[OverloadCandidate]) -> Option<HirResolvedCall> {
+pub fn try_resolve_try_propagate_ok_variant(operand_type: &ValkyrieType, candidates: &[OverloadCandidate]) -> Option<HirResolvedCall> {
     let declaration = sum_declaration_of_type(operand_type)?;
     let (variant_name, payload_type) = if is_result_apply_type(operand_type) {
         ("Fine", result_variant_payload_type(operand_type, "Fine"))

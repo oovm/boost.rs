@@ -26,7 +26,7 @@ use crate::compiler::{
 };
 
 /// 对模块内全部未定型引号捕获执行唯一定型结算。
-pub(crate) fn settle_quote_literal_captures(module: &mut HirModule) -> Result<(), HirError> {
+pub fn settle_quote_literal_captures(module: &mut HirModule) -> Result<(), HirError> {
     let relations = TypeRelationContext::from_module(module);
     let struct_fields = collect_aggregate_field_map(module);
     let singleton_names = module.singletons.iter().map(|singleton| singleton.name.clone()).collect::<BTreeSet<_>>();

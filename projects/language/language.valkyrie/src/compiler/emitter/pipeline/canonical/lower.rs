@@ -17,7 +17,7 @@ use crate::compiler::{
 use super::errors::{error_without_module, type_id};
 use super::identities::VariantRecordBinding;
 
-pub(crate) fn lower_function(
+pub fn lower_function(
     function: &MirFunction,
     instance: ItemInstanceId,
     ids: &BTreeMap<ValkyrieType, TypeId>,

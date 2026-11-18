@@ -126,7 +126,7 @@ impl OverloadCandidate {
         self
     }
 
-    pub(crate) fn with_where_constraints(mut self, constraints: Vec<HirWhereConstraint>) -> Self {
+    pub fn with_where_constraints(mut self, constraints: Vec<HirWhereConstraint>) -> Self {
         self.where_constraints = constraints;
         self
     }
@@ -197,7 +197,7 @@ pub enum OverloadResolutionError {
 /// 实参字面量的值能否落入形参类型，`coercions` 表示相对字面量自然类型需要改绑的
 /// 宽度层数。两项仍不能唯一裁决时继续走声明身份 / inherent 规则，最后如实报歧义。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct NumericLiteralBinding {
+pub struct NumericLiteralBinding {
     /// 实参字面量的值是否都能落入候选的数值形参类型。
     pub fits: bool,
     /// 相对字面量自然类型需要改绑的宽度层数（越少越接近默认推导）。
@@ -211,7 +211,7 @@ pub fn resolve_overload(candidates: &[OverloadCandidate]) -> Result<OverloadCand
 
 /// 与 [`resolve_overload`] 相同，但当全部并列候选都带数字字面量绑定代价时，
 /// 先按「值可落入形参类型 → 改绑层数最少」裁决；无法唯一裁决时回落既定规则。
-pub(crate) fn resolve_overload_with_numeric_literals(
+pub fn resolve_overload_with_numeric_literals(
     candidates: &[OverloadCandidate],
     bindings: &[Option<NumericLiteralBinding>],
     contextual_type: Option<&ValkyrieType>,
@@ -306,7 +306,7 @@ fn select_by_numeric_literal_binding<'a>(
     }
 }
 
-pub(crate) fn rank(match_kind: &OverloadMatchKind) -> (u8, usize) {
+pub fn rank(match_kind: &OverloadMatchKind) -> (u8, usize) {
     match match_kind {
         OverloadMatchKind::NominalExact => (0, 0),
         OverloadMatchKind::NominalSubtype { distance } => (1, *distance),

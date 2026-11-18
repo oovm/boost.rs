@@ -572,7 +572,7 @@ fn transform_module(module: &mut HirModule, context: &TransformContext<'_>) -> R
 /// 合同识别只认限定路径 `std::collection::LiteralSequence` 且声明身份唯一；
 /// 路径缺失或歧义时合同事实为空集——此时 nominal 声明 + 字面量仍在构造点
 /// 结构化拒绝，其余字面量（`Array`/`[T]` 声明、`auto` 推断）保持 `ArrayLiteral` 原样。
-pub(crate) fn transform_collection_literals(module: &mut HirModule) -> Result<(), HirError> {
+pub fn transform_collection_literals(module: &mut HirModule) -> Result<(), HirError> {
     let index = trait_declaration_index(module)?;
     let facts = match index.get(&contract_path()) {
         Some(entries) if entries.len() == 1 => collect_contract_facts(module, entries[0].0),

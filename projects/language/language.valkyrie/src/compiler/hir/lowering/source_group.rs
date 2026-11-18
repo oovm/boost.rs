@@ -137,7 +137,7 @@ pub fn validate_source_groups(groups: &[CompilerSourceGroup]) -> Result<(), HirE
 
 /// 集成测试夹具：从 HIR 构造阶段载荷，不作为生产源码闭包入口。
 #[doc(hidden)]
-pub(crate) fn compiled_program_from_hir_module(hir_module: HirModule) -> Result<crate::compiler::valkyrie_mir::CompiledValkyrieProgram, HirError> {
+pub fn compiled_program_from_hir_module(hir_module: HirModule) -> Result<crate::compiler::valkyrie_mir::CompiledValkyrieProgram, HirError> {
     let semantic_mir = crate::compiler::mir::MirLowerer::lower_module_semantic(&hir_module);
     let compiled_program = crate::compiler::emitter::pipeline::compile_linked_semantic_mir(&semantic_mir).map_err(pipeline_rejected)?;
     Ok(compiled_program)
@@ -145,7 +145,7 @@ pub(crate) fn compiled_program_from_hir_module(hir_module: HirModule) -> Result<
 
 /// 同名时本组声明遮蔽依赖别名。不可见组的别名不在返回值里，因此既不会被展开，
 /// 也不能遮蔽同名内建类型；本组声明此时只有名字可见（`target: None`）。
-pub(crate) fn visible_type_aliases(
+pub fn visible_type_aliases(
     roots: &[&crate::compiler::syntax::oak::ValkyrieRoot],
     imported_semantic_exports: &[HirDependencySemanticExport],
 ) -> Vec<VisibleTypeAlias> {
@@ -172,7 +172,7 @@ pub(crate) fn visible_type_aliases(
 ///
 /// 全部可见名字在填目标之前已经注册，因此别名之间可以互相引用（含前向引用）；
 /// 展开在引用点进行，环由 `expand_module_type_alias` 的 visiting 集合拒绝。
-pub(crate) fn register_root_type_alias_targets(roots: &[&crate::compiler::syntax::oak::ValkyrieRoot]) -> Result<(), HirError> {
+pub fn register_root_type_alias_targets(roots: &[&crate::compiler::syntax::oak::ValkyrieRoot]) -> Result<(), HirError> {
     for root in roots {
         for (namespace, alias) in root_type_alias_declarations(root) {
             let target = lower_type_expression(&alias.target)?;
@@ -186,7 +186,7 @@ pub(crate) fn register_root_type_alias_targets(roots: &[&crate::compiler::syntax
 ///
 /// 只登记会进入 `HirStruct`/`HirEnum` 的声明；每条记录保留声明 namespace，
 /// 供限定路径按完整身份匹配。
-pub(crate) fn visible_nominal_type_names(
+pub fn visible_nominal_type_names(
     roots: &[&crate::compiler::syntax::oak::ValkyrieRoot],
     imported_semantic_exports: &[HirDependencySemanticExport],
 ) -> Vec<VisibleNominalType> {
@@ -248,7 +248,7 @@ pub(crate) fn visible_nominal_type_names(
 }
 
 /// 收集一个源码根内全部 `type` 别名声明（含 namespace body 与包装语句）。
-pub(crate) fn root_type_alias_declarations(root: &crate::compiler::syntax::oak::ValkyrieRoot) -> Vec<(Vec<String>, &TypeAliasDeclaration)> {
+pub fn root_type_alias_declarations(root: &crate::compiler::syntax::oak::ValkyrieRoot) -> Vec<(Vec<String>, &TypeAliasDeclaration)> {
     fn walk<'a>(items: &'a [StatementNode], namespace: &[String], out: &mut Vec<(Vec<String>, &'a TypeAliasDeclaration)>) {
         for item in items {
             match item {
@@ -283,19 +283,19 @@ pub(crate) fn root_type_alias_declarations(root: &crate::compiler::syntax::oak::
 /// `construct_path` 与 `overload::struct_constructor_path` 使用同一组成（namespace + name），
 /// 因此 `Self { … }` 会精确命中 owner 自己的构造器候选；`name` 是候选 owner 使用的短名，
 /// 供 `Self::member` 限定路径改写。两者都只是名称解析结果，声明身份仍由候选冻结。
-pub(crate) struct SelfOwnerPath {
-    pub(crate) construct_path: NamePath,
-    pub(crate) name: Identifier,
+pub struct SelfOwnerPath {
+    pub construct_path: NamePath,
+    pub name: Identifier,
 }
 
 impl SelfOwnerPath {
-    pub(crate) fn from_struct(item: &crate::compiler::types::hir::HirStruct) -> Self {
+    pub fn from_struct(item: &crate::compiler::types::hir::HirStruct) -> Self {
         let mut parts = item.namespace.clone();
         parts.push(item.name.clone());
         Self { construct_path: NamePath::new(parts), name: item.name.clone() }
     }
 
-    pub(crate) fn named(namespace: &[Identifier], name: &Identifier) -> Self {
+    pub fn named(namespace: &[Identifier], name: &Identifier) -> Self {
         let mut parts = namespace.to_vec();
         parts.push(name.clone());
         Self { construct_path: NamePath::new(parts), name: name.clone() }
@@ -303,12 +303,12 @@ impl SelfOwnerPath {
 }
 
 /// `[host_provider(...)]` 实现只通过 Resolver 绑定进入 consumer，不作为依赖导出 API。
-pub(crate) fn exportable_dependency_functions(
+pub fn exportable_dependency_functions(
     functions: &[crate::compiler::types::hir::HirFunction],
 ) -> Vec<crate::compiler::types::hir::HirFunction> {
     functions.iter().filter(|function| function_host_provider_target(function).is_none()).cloned().collect()
 }
 
-pub(crate) fn _integer_literal_u32_placeholder() -> Option<u32> {
+pub fn _integer_literal_u32_placeholder() -> Option<u32> {
     None
 }

@@ -78,7 +78,7 @@ struct InstanceRequest {
 /// 铸造体内调用点实例，否则 MIR 只能退化成 Unit 占位。账本按
 /// `(声明, 代入, self)` 复用已铸造实例，重入不会重复铸造同一请求。
 #[derive(Default)]
-pub(crate) struct GenericInstantiationState {
+pub struct GenericInstantiationState {
     instances: BTreeMap<InstanceRequest, compiler_types::ItemInstanceId>,
     per_declaration: BTreeMap<u32, usize>,
     next_instance: Option<u32>,
@@ -336,7 +336,7 @@ fn derive_witness_substitution(
 /// 声明下标」映射：合同调用点的具体代入同时为 provider 声明插入同代入请求，
 /// provider 的闭合副本在同一个固定点铸造，其体内宿主导入调用随之闭合；
 /// 实例身份、签名与实现全部来自声明与 provider 本身，不存在名字表或空体兜底。
-pub(crate) fn instantiate_generic_callables(
+pub fn instantiate_generic_callables(
     modules: &mut [HirModule],
     gate: Option<&crate::compiler::hir::reachability::HirMaterializationGate>,
     provider_seeds: &BTreeMap<u32, u32>,
@@ -837,7 +837,7 @@ fn derive_lambda_substitution(
 }
 
 /// 结构化统一：只认已冻结的 binder 与名义声明身份，不做短名匹配。
-pub(crate) fn unify_instantiation(template: &ValkyrieType, concrete: &ValkyrieType, substitution: &mut Substitution) -> bool {
+pub fn unify_instantiation(template: &ValkyrieType, concrete: &ValkyrieType, substitution: &mut Substitution) -> bool {
     match template {
         ValkyrieType::Generic(generic) => {
             let Some(binder) = generic.binder
@@ -962,7 +962,7 @@ fn instantiate_declared_type(
 /// 把声明侧类型里的 binder 换成代入结果。
 /// Generic binder 可能指向另一个 Generic binder（如跨结构委托：67 → 109），
 /// 这里用循环 resolve 到底，直到到达具体类型或无进一步代入。
-pub(crate) fn substitute_type(ty: &ValkyrieType, substitution: &Substitution) -> ValkyrieType {
+pub fn substitute_type(ty: &ValkyrieType, substitution: &Substitution) -> ValkyrieType {
     match ty {
         ValkyrieType::Generic(generic) => {
             let Some(mut current) = generic.binder
@@ -1043,7 +1043,7 @@ fn substitute_where_constraint(
 /// 之前。方法体里 `let`/cast/lambda 等声明槽位若保留未代入的 `SelfType`，局部变量就会
 /// 带上一个与 owner 不同的类型身份，成员调用只看到 owner 上的候选却拿 `SelfType` 去
 /// 匹配，最终报 `unresolved_call`。
-pub(crate) fn substitute_impl_self_declarations(block: &mut HirBlock, owner: &ValkyrieType) {
+pub fn substitute_impl_self_declarations(block: &mut HirBlock, owner: &ValkyrieType) {
     let substitution = Substitution::new();
     let equations = BTreeMap::new();
     substitute_block(block, &substitution, Some(owner), &equations);
@@ -1454,7 +1454,7 @@ fn visit_module_calls(
 /// §4 的实例身份含完整泛型替换。开放 binder 只允许在克隆体上逐层结算；把实例写回
 /// 仍含开放 binder 的声明体，等于把单态化中间态冻进声明——该实例随后会被声明可达性
 /// 当作真实 callee 收进物化集，最终在链接期表现为「调用实例没有定义或显式导入合同」。
-pub(crate) fn declaration_body_is_closed(function: &HirFunction) -> bool {
+pub fn declaration_body_is_closed(function: &HirFunction) -> bool {
     if !function.generics.is_empty()
         || function.params.iter().any(|param| has_unresolved_generic_arguments(&param.ty))
         || has_unresolved_generic_arguments(&function.return_type)

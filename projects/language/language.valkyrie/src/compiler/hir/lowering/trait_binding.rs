@@ -46,7 +46,7 @@ fn trait_associated_type_index(module: &HirModule) -> Result<BTreeMap<ItemId, BT
 ///
 /// `bind_trait_declarations` 与集合字面量合同识别共用同一份声明面事实；
 /// 索引口径（本组声明 + 依赖导出 + 子模块）与语义闭包的可见性合同一致，禁止两处各自索引。
-pub(crate) fn trait_declaration_index(module: &HirModule) -> Result<BTreeMap<NamePath, Vec<(ItemId, usize)>>, HirError> {
+pub fn trait_declaration_index(module: &HirModule) -> Result<BTreeMap<NamePath, Vec<(ItemId, usize)>>, HirError> {
     fn collect_trait(item: &HirTrait, declarations: &mut BTreeMap<NamePath, Vec<(ItemId, usize)>>) -> Result<(), HirError> {
         let identity = item
             .declaration

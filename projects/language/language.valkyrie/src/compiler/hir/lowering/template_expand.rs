@@ -262,7 +262,7 @@ fn statement_node_to_statement(item: StatementNode, span: DiagnosticSpan) -> Res
 }
 
 /// 顶层语句节点的稳定类别短名（不使用 `Debug` 输出参与诊断）。
-pub(crate) fn statement_node_kind(item: &StatementNode) -> &'static str {
+pub fn statement_node_kind(item: &StatementNode) -> &'static str {
     match item {
         StatementNode::Namespace(_) => "namespace",
         StatementNode::Using(_) => "using",

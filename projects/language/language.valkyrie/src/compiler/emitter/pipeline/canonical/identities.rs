@@ -15,17 +15,17 @@ use crate::compiler::{
 
 use super::errors::{error, error_without_module, type_id};
 
-pub(crate) type AggregateIdentity = (TypeId, NominalValueSemantics);
+pub type AggregateIdentity = (TypeId, NominalValueSemantics);
 
 /// 聚合声明登记结果：声明 nominal、声明字段，以及 declaration TypeId → 声明 nominal 的映射。
-pub(crate) struct AggregateDeclarations {
+pub struct AggregateDeclarations {
     pub nominals: BTreeMap<NominalInstanceId, AggregateIdentity>,
     pub field_records: BTreeMap<FieldId, FieldRecord>,
     /// 声明 TypeId → 声明 `NominalInstanceId`；禁止按名称反查 owner。
     pub declaration_nominals: BTreeMap<TypeId, NominalInstanceId>,
 }
 
-pub(crate) fn collect_aggregate_identities(
+pub fn collect_aggregate_identities(
     module: &MirModule,
     types: &BTreeMap<ValkyrieType, TypeId>,
 ) -> Result<AggregateDeclarations, StructuredDiagnosticSet> {
@@ -75,7 +75,7 @@ pub(crate) fn collect_aggregate_identities(
 
 /// 具体泛型聚合实例的登记结果。
 #[derive(Debug, Default)]
-pub(crate) struct AggregateInstanceBindings {
+pub struct AggregateInstanceBindings {
     /// 实例类型 TypeId（含声明 TypeId）→ nominal 实例。
     pub by_type: BTreeMap<TypeId, NominalInstanceId>,
     /// (nominal 实例, 声明字段) → 实例字段；声明侧保留恒等映射。
@@ -88,7 +88,7 @@ pub(crate) struct AggregateInstanceBindings {
 /// 再冻结为独立 `FieldId` 与 `FieldRecord`。已闭合的实例额外登记实例级物理布局；
 /// 仍含开放形参的实例只有语义身份与字段身份，禁止复用声明布局来伪造偏移。
 /// 代入后的字段类型没有类型事实时失败关闭。
-pub(crate) fn register_aggregate_nominal_instances(
+pub fn register_aggregate_nominal_instances(
     module: &MirModule,
     type_values: &BTreeMap<ValkyrieType, TypeId>,
     declaration_nominals: &BTreeMap<TypeId, NominalInstanceId>,
@@ -205,7 +205,7 @@ pub(crate) fn register_aggregate_nominal_instances(
 ///
 /// `A<A<A<…>>>` 型嵌套实例每轮固定点必新增一层派生类型，总量无界即病态输入；
 /// 正常闭包的 canonical 类型表远低于该量级。上限处 fail-closed，不许静默截断。
-pub(crate) const MAX_INTERNED_TYPES: usize = 65_536;
+pub const MAX_INTERNED_TYPES: usize = 65_536;
 
 /// 为实例级字段类型补齐 canonical 类型身份。
 ///
@@ -216,7 +216,7 @@ pub(crate) const MAX_INTERNED_TYPES: usize = 65_536;
 ///
 /// 循环只有「无增长」一个正常退出；总量超过 [`MAX_INTERNED_TYPES`] 判定为不收敛
 /// 的嵌套实例（`A<A<A<…>>>`），按 CAN059 结构化失败并给出模块与当前规模上下文。
-pub(crate) fn intern_instance_field_types(
+pub fn intern_instance_field_types(
     module: &MirModule,
     type_values: &mut BTreeMap<ValkyrieType, TypeId>,
 ) -> Result<(), StructuredDiagnosticSet> {
@@ -275,7 +275,7 @@ pub(crate) fn intern_instance_field_types(
 /// 记录身份 = 变体自身冻结 `ItemId` + 枚举实参。声明记录（零实参）与每个具体实例记录
 /// 都必须进类型表；记录字段是已按 binder 代入的变体字段类型，也要 intern，供
 /// `FieldRecord` 与随后生成的 `TypeDef` / 布局引用。单字段 payload 不是记录，跳过。
-pub(crate) fn intern_variant_record_types(
+pub fn intern_variant_record_types(
     module: &MirModule,
     type_values: &mut BTreeMap<ValkyrieType, TypeId>,
 ) -> Result<(), StructuredDiagnosticSet> {
@@ -329,7 +329,7 @@ pub(crate) fn intern_variant_record_types(
 /// 这条键，但跨模块引用或外部 std 依赖可能在链接后的合并表里丢失；这里在
 /// `collect_aggregate_identities` 之前做最后一道防线——缺了就按稠密 `TypeId` 追加。
 /// 非泛型声明同理统一处理，不做条件分支。
-pub(crate) fn ensure_declaration_aggregate_types(
+pub fn ensure_declaration_aggregate_types(
     module: &MirModule,
     type_values: &mut BTreeMap<ValkyrieType, TypeId>,
 ) -> Result<(), StructuredDiagnosticSet> {
@@ -401,7 +401,7 @@ fn intern_type(ids: &mut BTreeMap<ValkyrieType, TypeId>, ty: &ValkyrieType, next
     Ok(())
 }
 
-pub(crate) fn validate_callable_identities(module: &MirModule) -> Result<(), StructuredDiagnosticSet> {
+pub fn validate_callable_identities(module: &MirModule) -> Result<(), StructuredDiagnosticSet> {
     let mut instances = BTreeMap::new();
     for function in &module.functions {
         let Some(identity) = function.instance
@@ -425,7 +425,7 @@ pub(crate) fn validate_callable_identities(module: &MirModule) -> Result<(), Str
     Ok(())
 }
 
-pub(crate) fn collect_types(module: &MirModule) -> Result<BTreeMap<ValkyrieType, TypeId>, StructuredDiagnosticSet> {
+pub fn collect_types(module: &MirModule) -> Result<BTreeMap<ValkyrieType, TypeId>, StructuredDiagnosticSet> {
     if module.type_identities.is_empty() && (!module.functions.is_empty() || !module.external_calls.is_empty() || !module.structs.is_empty()) {
         return Err(error(module, "CAN035", "Semantic MIR 缺少 Compiler type identity 表"));
     }
@@ -435,7 +435,7 @@ pub(crate) fn collect_types(module: &MirModule) -> Result<BTreeMap<ValkyrieType,
 /// 语言侧可作为数组下标 / `ArrayLength` 结果的类型：原生整数，或 `usize`/`isize` 等名义原语。
 ///
 /// 登记进 `array_index_types` 后，Canonical 用 TypeId 集合认整数形状，不把 `Nominal{usize}` 改写成 Primitive。
-pub(crate) fn is_array_index_valkyrie_type(ty: &ValkyrieType, module: &MirModule) -> bool {
+pub fn is_array_index_valkyrie_type(ty: &ValkyrieType, module: &MirModule) -> bool {
     match ty {
         ValkyrieType::Integer8 { .. }
         | ValkyrieType::Integer16 { .. }
@@ -454,7 +454,7 @@ pub(crate) fn is_array_index_valkyrie_type(ty: &ValkyrieType, module: &MirModule
     }
 }
 
-pub(crate) fn canonical_type_kind(
+pub fn canonical_type_kind(
     ty: &ValkyrieType,
     ids: &BTreeMap<ValkyrieType, TypeId>,
 ) -> Result<CanonicalTypeKind, StructuredDiagnosticSet> {
@@ -531,7 +531,7 @@ pub(crate) fn canonical_type_kind(
 ///
 /// 同一枚举的两个变体各有独立记录身份（`variant.declaration` 不同），不共享一个。
 #[derive(Debug, Clone)]
-pub(crate) struct VariantRecordBinding {
+pub struct VariantRecordBinding {
     /// 记录自身的 nominal 实例身份。
     pub nominal: NominalInstanceId,
     /// 记录类型在 canonical 类型表中的 `TypeId`。
@@ -597,7 +597,7 @@ fn register_variant_record(
 }
 
 /// 为每个具体 `Nominal{ItemId, args}` 注册 sum 实例与已代入 payload；SumNew 按结果类型选取实例。
-pub(crate) fn register_sum_nominal_instances(
+pub fn register_sum_nominal_instances(
     module: &MirModule,
     type_values: &BTreeMap<ValkyrieType, TypeId>,
     declaration_spellings: &BTreeMap<TypeId, Identifier>,

@@ -150,7 +150,7 @@ fn is_extractor_receiver_param(param: &HirParam) -> bool {
         )
 }
 
-pub(crate) fn pattern_extractor_receiver_type(candidate: &OverloadCandidate) -> Option<ValkyrieType> {
+pub fn pattern_extractor_receiver_type(candidate: &OverloadCandidate) -> Option<ValkyrieType> {
     if let Some(param) = candidate.param_specs.first().filter(|param| is_extractor_receiver_param(param)) {
         if matches!(param.ty, ValkyrieType::r#SelfType | ValkyrieType::AutoType) {
             if let Some(owner) = &candidate.owner {

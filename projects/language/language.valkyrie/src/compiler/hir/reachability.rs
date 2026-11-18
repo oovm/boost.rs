@@ -39,12 +39,12 @@ pub struct HirMaterializationGate {
 
 impl HirMaterializationGate {
     /// callable 声明身份是否允许物化；无声明身份的对象不裁剪。
-    pub(crate) fn permits_declaration(&self, declaration: Option<ItemId>) -> bool {
+    pub fn permits_declaration(&self, declaration: Option<ItemId>) -> bool {
         declaration.is_none_or(|declaration| self.reachable_declarations.contains(&declaration))
     }
 
     /// callable 实例身份是否允许物化；无实例身份的对象不裁剪。
-    pub(crate) fn permits_instance(&self, instance: Option<ItemInstanceId>) -> bool {
+    pub fn permits_instance(&self, instance: Option<ItemInstanceId>) -> bool {
         instance.is_none_or(|instance| self.reachable_instances.contains(&instance))
     }
 
@@ -73,7 +73,7 @@ impl HirMaterializationGate {
     /// 声明级实例来自被允许声明的 callable；铸造实例来自被允许声明 callable 体内
     /// 已回填的 resolved callee（含 witness 消解到 impl 成员的实例——其声明身份不在
     /// 可达集，但实例被可达调用点直接引用）。
-    pub(crate) fn finalize_instances(&mut self, modules: &[HirModule]) {
+    pub fn finalize_instances(&mut self, modules: &[HirModule]) {
         let mut callables = Vec::new();
         for module in modules {
             collect_module_callables(module, &mut callables);

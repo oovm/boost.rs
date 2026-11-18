@@ -17,6 +17,6 @@ mod intrinsics;
 mod literals;
 mod operand;
 
-pub(crate) use literals::{
+pub use literals::{
     concretize_variant_constructor_types, lower_literal, sum_new_parts_from_constructor, type_args_from_sum_shaped, unresolved_variant_labels,
 };

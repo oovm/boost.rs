@@ -74,7 +74,7 @@ impl PrimitiveIdentityTable {
 ///
 /// 只认「单个位置字符串字面量参数」形态：带命名键、含插值或没有 `primitive` 注解时
 /// 返回 `None`。形态合法性（`::` 限定名段）由 [`build_primitive_identity_table`] 统一校验。
-pub(crate) fn primitive_annotation_identity(annotations: &[ast::Attribute]) -> Option<String> {
+pub fn primitive_annotation_identity(annotations: &[ast::Attribute]) -> Option<String> {
     for attribute in annotations {
         if attribute.name.name != "primitive" {
             continue;
@@ -106,7 +106,7 @@ pub(crate) fn primitive_annotation_identity(annotations: &[ast::Attribute]) -> O
 /// 来源解析落空、位置歧义、投影目标不是 owner、或多个携带者并列自命中，都无法证明
 /// 同源，结构化拒绝（fail-closed）；唯一携带者没有豁免。先按身份聚合再裁决，结果与
 /// 输入登记顺序无关。
-pub(crate) fn build_primitive_identity_table(
+pub fn build_primitive_identity_table(
     records: impl IntoIterator<Item = (DeclarationKey, String)>,
     indexes: &DeclarationIndexes,
     visibility: &BTreeMap<String, BTreeSet<String>>,

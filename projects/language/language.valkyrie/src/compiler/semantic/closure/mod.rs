@@ -204,14 +204,14 @@ mod plan;
 mod primitive_identity;
 mod retain;
 
-pub(crate) use primitive_identity::primitive_annotation_identity;
+pub use primitive_identity::primitive_annotation_identity;
 pub use primitive_identity::{PrimitiveIdentity, PrimitiveIdentityTable};
 
-pub(crate) use collect::{collect_method, collect_micro, imply_owner_name};
-pub(crate) use index_file::{References, index_parsed_root, name_path_segments};
-pub(crate) use indexes::DeclarationIndexes;
-pub(crate) type ScopedReference = (Vec<String>, ReferencePath);
+pub use collect::{collect_method, collect_micro, imply_owner_name};
+pub use index_file::{References, index_parsed_root, name_path_segments};
+pub use indexes::DeclarationIndexes;
+pub type ScopedReference = (Vec<String>, ReferencePath);
 
 pub use plan::{micro_declaration_key, plan_semantic_closure, plan_semantic_closure_with_host_bindings};
-pub(crate) use plan::{source_group_closure, source_group_closure_with_host_bindings};
+pub use plan::{source_group_closure, source_group_closure_with_host_bindings};
 pub use retain::retain_demanded_declarations;

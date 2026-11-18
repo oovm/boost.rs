@@ -38,9 +38,9 @@ thread_local! {
 
 /// 一条可见名义类型声明：短名 + 声明 namespace（不含短名本身）。
 #[derive(Debug, Clone)]
-pub(crate) struct VisibleNominalType {
-    pub(crate) namespace: Vec<String>,
-    pub(crate) name: String,
+pub struct VisibleNominalType {
+    pub namespace: Vec<String>,
+    pub name: String,
 }
 
 /// 进入一次 lowering 作用域时可见的单条类型别名。
@@ -48,7 +48,7 @@ pub(crate) struct VisibleNominalType {
 /// `target` 为 `None` 表示该别名声明在本组，目标尚未降低：名字已经可见（因此遮蔽同名内建），
 /// 展开则要等目标填入后再进行。可见依赖组导出的别名携带已冻结的目标。
 #[derive(Debug, Clone)]
-pub(crate) struct VisibleTypeAlias {
+pub struct VisibleTypeAlias {
     /// 别名短名。
     pub name: String,
     /// 声明该别名的 namespace（不含别名本身），用于限定路径的身份匹配。
@@ -88,7 +88,7 @@ struct ModuleTypeAliasFrame {
 /// 作用域内容就是「本组（或本根）的 `type` 声明 + 可见依赖导出的别名」，与语义闭包的
 /// 可见性合同一致：不可见组的别名不进入作用域，内建遮蔽同样只认作用域内的名字。
 #[derive(Debug)]
-pub(crate) struct ModuleTypeAliasScope;
+pub struct ModuleTypeAliasScope;
 
 impl ModuleTypeAliasScope {
     /// 进入一次 lowering 作用域并注册可见别名。
@@ -99,7 +99,7 @@ impl ModuleTypeAliasScope {
     /// `suppress_imported_builtin_short_names` 只由生成源码组（`GeneratedOnly` 入口）传入
     /// `true`：依赖导出的别名若与既有内建同名，则不参与短名遮蔽（判据见
     /// [`short_alias_entry`]）。普通应用组传 `false`，保持既有的依赖可见性合同。
-    pub(crate) fn enter(visible: Vec<VisibleTypeAlias>, suppress_imported_builtin_short_names: bool) -> Self {
+    pub fn enter(visible: Vec<VisibleTypeAlias>, suppress_imported_builtin_short_names: bool) -> Self {
         let mut aliases = BTreeMap::new();
         for alias in visible {
             let imported = alias.target.is_some();
@@ -113,7 +113,7 @@ impl ModuleTypeAliasScope {
     }
 
     /// 填入本组别名的目标类型；名字必须已由 [`ModuleTypeAliasScope::enter`] 注册。
-    pub(crate) fn register_alias(name: &str, namespace: Vec<String>, params: Vec<String>, target: ValkyrieType) {
+    pub fn register_alias(name: &str, namespace: Vec<String>, params: Vec<String>, target: ValkyrieType) {
         MODULE_TYPE_ALIASES.with(|stack| {
             if let Some(top) = stack.borrow_mut().last_mut() {
                 top.aliases.insert(name.to_string(), ModuleTypeAliasEntry { namespace, params, target: Some(target), imported: false });
@@ -144,11 +144,11 @@ struct GenericBinderFrame {
 /// 与 [`ModuleTypeAliasScope`] 同构：进入时压入一帧，`Drop` 时出栈；嵌套声明域
 /// （例如 `structure` 里的 method）逐层向外查找，因此内层域可以看到外层的形参。
 #[derive(Debug)]
-pub(crate) struct GenericBinderScope;
+pub struct GenericBinderScope;
 
 impl GenericBinderScope {
     /// 进入一次声明域作用域并注册该域拥有的名字。
-    pub(crate) fn enter(type_params: &[String], associated: &[String]) -> Self {
+    pub fn enter(type_params: &[String], associated: &[String]) -> Self {
         GENERIC_BINDER_SCOPE.with(|stack| {
             stack.borrow_mut().push(GenericBinderFrame {
                 type_params: type_params.iter().cloned().collect(),
@@ -173,11 +173,11 @@ impl Drop for GenericBinderScope {
 /// 是两份独立事实，不能塞进别名表：别名要展开目标，名义名只产出待 `bind_declared_nominal_types`
 /// 冻结声明身份的 `Named`。
 #[derive(Debug)]
-pub(crate) struct NominalTypeScope;
+pub struct NominalTypeScope;
 
 impl NominalTypeScope {
     /// 进入一次 lowering 作用域并注册可见的名义类型声明身份。
-    pub(crate) fn enter(names: Vec<VisibleNominalType>) -> Self {
+    pub fn enter(names: Vec<VisibleNominalType>) -> Self {
         DECLARED_NOMINAL_TYPES.with(|stack| {
             stack.borrow_mut().push(names);
         });
@@ -219,7 +219,7 @@ fn is_declared_qualified_nominal_type(parts: &[&str]) -> bool {
 ///
 /// 供 `imply Option<T>` 这类把形参写在目标类型实参位置的声明入口筛选真正的形参名；
 /// 已占据的名字不得再被登记为新形参。
-pub(crate) fn is_bound_type_name(name: &str) -> bool {
+pub fn is_bound_type_name(name: &str) -> bool {
     has_module_type_alias(name) || is_declared_nominal_type(name) || canonical_builtin_type(name).is_some() || is_numeric_type_name(name)
 }
 
@@ -392,7 +392,7 @@ fn flatten_nullable_type(inner: ValkyrieType) -> ValkyrieType {
 }
 
 /// 渲染类型表达式，供错误消息与回退路径使用。
-pub(crate) fn render_type_expression(ty: &TypeExpression) -> String {
+pub fn render_type_expression(ty: &TypeExpression) -> String {
     match ty {
         TypeExpression::Namepath(path) => path.parts.iter().map(|part| part.name.as_str()).collect::<Vec<_>>().join("::"),
         TypeExpression::Generic(generic) => generic.name.name.clone(),
@@ -566,7 +566,7 @@ fn encoding_builtin_type(name: &str) -> Option<ValkyrieType> {
 ///
 /// 这里是**显式转换**的目标形态，与类型名的声明身份无关：源码写出 `i32` 仍指
 /// `std/primitive` 的 `structure` 声明，只有转换表达式才需要低层 carrier。
-pub(crate) fn numeric_builtin_cast_type(name: &str) -> Option<ValkyrieType> {
+pub fn numeric_builtin_cast_type(name: &str) -> Option<ValkyrieType> {
     match name {
         "i8" => Some(ValkyrieType::Integer8 { signed: true }),
         "i16" => Some(ValkyrieType::Integer16 { signed: true }),

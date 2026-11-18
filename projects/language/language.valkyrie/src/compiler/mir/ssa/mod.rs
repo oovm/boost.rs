@@ -1,9 +1,9 @@
 #![doc = include_str!("readme.md")]
 
 mod builder;
-pub(crate) mod builtin_nominals;
+pub mod builtin_nominals;
 mod callable_types;
-pub(crate) mod contracts;
+pub mod contracts;
 mod control_flow_context;
 mod control_flow_lowering;
 mod effect_lowering;
@@ -11,7 +11,7 @@ mod exit_lowering;
 mod expr_helpers;
 mod expr_lowering;
 mod function_lowering;
-pub(crate) mod generic_call_instantiation;
+pub mod generic_call_instantiation;
 mod hir_identity;
 mod lambda_lowering;
 mod lowerer;
@@ -33,7 +33,7 @@ pub use value_semantics::{
     SumVariantLayout, compute_aggregate_layout_plan, ensure_layout_for_type, instance_layout_for_type, instantiate_fields, layout_id_for_type,
     storage_kind_for_type,
 };
-pub(crate) use value_semantics::encoding_spelling_carrier;
+pub use value_semantics::encoding_spelling_carrier;
 
 // 集成测试入口：仅暴露被迁移的 `tests/` 目标所需的最小内部 item。
 #[doc(hidden)]
@@ -48,7 +48,7 @@ use builder::MirBuilder;
 use callable_types::CallableReturnTypes;
 use function_lowering::lower_function_semantic;
 use struct_facts::resolve_self_type_with_owner;
-pub(crate) use type_analysis::type_contains_non_monomorphic_signature_reference;
+pub use type_analysis::type_contains_non_monomorphic_signature_reference;
 pub use type_analysis::type_identity_table;
 
 // 以下导入同时是子模块通过 `super::` 或 `use super::*;` 依赖的名称，

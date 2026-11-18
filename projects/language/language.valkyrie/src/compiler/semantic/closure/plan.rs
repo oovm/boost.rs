@@ -13,7 +13,7 @@ use super::{
 
 const CLOSURE_PLANNER_VERSION: &str = "semantic-closure-v1";
 
-pub(crate) fn source_group_closure(
+pub fn source_group_closure(
     groups: &[crate::compiler::input::CompilerSourceGroup],
     arch: &str,
 ) -> Result<SemanticClosure, SemanticClosureError> {
@@ -24,7 +24,7 @@ pub(crate) fn source_group_closure(
 /// 被本次入口闭包引用的合同，其选定 provider 声明必须进入 body lowering。
 ///
 /// 未被引用的合同不物化 provider：装配层的选择基于声明库存，不掌握入口可达性。
-pub(crate) fn source_group_closure_with_host_bindings(
+pub fn source_group_closure_with_host_bindings(
     groups: &[crate::compiler::input::CompilerSourceGroup],
     host_bindings: &[crate::compiler::emitter::pipeline::CompilerHostProviderBinding],
     arch: &str,

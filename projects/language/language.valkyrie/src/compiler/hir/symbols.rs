@@ -6,7 +6,7 @@ use crate::compiler::types::{Identifier, NamePath, QualifiedName, hir::HirFuncti
 /// Structured [`NamePath`] segments carry module + name; this is the only
 /// production encoding for host contracts and callable identity tables.
 /// Does not normalize `::` and `.` against each other.
-pub(crate) fn stable_symbol_key(path: &NamePath) -> String {
+pub fn stable_symbol_key(path: &NamePath) -> String {
     let parts = path.parts();
     match parts {
         [] => String::new(),
@@ -20,7 +20,7 @@ pub(crate) fn stable_symbol_key(path: &NamePath) -> String {
 }
 
 /// 生成 `HIR` 顶层函数的稳定限定名。
-pub(crate) fn stable_function_symbol(module_name: &NamePath, function_name: &Identifier) -> String {
+pub fn stable_function_symbol(module_name: &NamePath, function_name: &Identifier) -> String {
     let module = module_name.to_string();
     if module.is_empty() { function_name.to_string() } else { format!("{module}::{function_name}") }
 }
@@ -54,7 +54,7 @@ pub fn stable_hir_function_name_path(module_name: &NamePath, function: &HirFunct
 ///
 /// 这里保留 ASCII 字母、数字与下划线，其余字符编码为 `_xNN_` / `_uNNNN_`
 /// 形式，避免不同逻辑符号在 emit 阶段被压扁成同名条目。
-pub(crate) fn mangle_emitted_symbol(symbol: &str) -> String {
+pub fn mangle_emitted_symbol(symbol: &str) -> String {
     let mut emitted = String::with_capacity(symbol.len());
     for ch in symbol.chars() {
         if ch.is_ascii_alphanumeric() || ch == '_' {

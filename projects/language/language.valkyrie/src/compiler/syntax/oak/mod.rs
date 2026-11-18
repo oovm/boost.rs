@@ -8,7 +8,7 @@ mod namespace;
 mod naming;
 mod staging;
 
-pub(crate) use namespace::{namespace_is_declaration_only, namespace_items, namespace_items_mut};
+pub use namespace::{namespace_is_declaration_only, namespace_items, namespace_items_mut};
 
 use oak_core::{Builder, ParseSession, SourceText};
 use oak_valkyrie::{ValkyrieBuilder, ValkyrieLanguage};

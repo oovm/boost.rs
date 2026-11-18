@@ -28,13 +28,13 @@ fn contains_open_generic(ty: &ValkyrieType) -> bool {
 }
 
 /// 编译器内建的 workload phase 宿主调用；实例身份在 lowering 前冻结。
-pub(crate) struct HostRuntimeCallables {
+pub struct HostRuntimeCallables {
     pub contracts: Vec<MirExternalCallContract>,
     pub by_name: BTreeMap<String, ItemInstanceId>,
 }
 
 /// 跨源码组程序闭包：在全部 HIR 实例池之后分配唯一 host runtime 身份。
-pub(crate) fn allocate_program_host_runtime(modules: &[&HirModule]) -> HostRuntimeCallables {
+pub fn allocate_program_host_runtime(modules: &[&HirModule]) -> HostRuntimeCallables {
     let declaration_base = modules
         .iter()
         .filter_map(|module| crate::compiler::hir::lowering::max_hir_declaration_index(module))
@@ -50,7 +50,7 @@ pub(crate) fn allocate_program_host_runtime(modules: &[&HirModule]) -> HostRunti
     collect_host_runtime_callables(declaration_base, instance_base)
 }
 
-pub(crate) fn collect_host_runtime_callables(declaration_base: u32, instance_base: u32) -> HostRuntimeCallables {
+pub fn collect_host_runtime_callables(declaration_base: u32, instance_base: u32) -> HostRuntimeCallables {
     let mut contracts = Vec::new();
     let mut by_name = BTreeMap::new();
     for (offset, name) in [(0u32, "begin_phase"), (1u32, "end_phase")] {

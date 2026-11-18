@@ -5,7 +5,7 @@ use crate::compiler::types::{
     hir::{HirDependencySemanticExport, HirEnum, HirFunction, HirStruct, HirTrait, HirVariant, ValkyrieType},
 };
 
-pub(crate) fn impl_nominal_type_name(ty: &ValkyrieType) -> Option<&str> {
+pub fn impl_nominal_type_name(ty: &ValkyrieType) -> Option<&str> {
     match ty {
         ValkyrieType::Array(_) => Some("Array"),
         ValkyrieType::Named(name) => Some(name.as_str()),
@@ -31,7 +31,7 @@ pub(crate) fn impl_nominal_type_name(ty: &ValkyrieType) -> Option<&str> {
 }
 
 /// imply owner 短名：优先 declaration → 结构/sum 名；禁止把 Nominal 当无名丢弃。
-pub(crate) fn impl_owner_identifier(module: &crate::compiler::types::hir::HirModule, ty: &ValkyrieType) -> Option<Identifier> {
+pub fn impl_owner_identifier(module: &crate::compiler::types::hir::HirModule, ty: &ValkyrieType) -> Option<Identifier> {
     match ty {
         ValkyrieType::Nominal { declaration, .. } => {
             find_struct_name_by_declaration(module, *declaration).or_else(|| find_enum_name_by_declaration(module, *declaration))
@@ -41,7 +41,7 @@ pub(crate) fn impl_owner_identifier(module: &crate::compiler::types::hir::HirMod
     }
 }
 
-pub(crate) fn impl_owner_identifier_from_export(export: &HirDependencySemanticExport, ty: &ValkyrieType) -> Option<Identifier> {
+pub fn impl_owner_identifier_from_export(export: &HirDependencySemanticExport, ty: &ValkyrieType) -> Option<Identifier> {
     match ty {
         ValkyrieType::Nominal { declaration, .. } => export
             .structs
@@ -54,7 +54,7 @@ pub(crate) fn impl_owner_identifier_from_export(export: &HirDependencySemanticEx
     }
 }
 
-pub(crate) fn find_struct_name_by_declaration(
+pub fn find_struct_name_by_declaration(
     module: &crate::compiler::types::hir::HirModule,
     declaration: compiler_types::ItemId,
 ) -> Option<Identifier> {
@@ -78,7 +78,7 @@ pub(crate) fn find_struct_name_by_declaration(
     None
 }
 
-pub(crate) fn find_enum_name_by_declaration(
+pub fn find_enum_name_by_declaration(
     module: &crate::compiler::types::hir::HirModule,
     declaration: compiler_types::ItemId,
 ) -> Option<Identifier> {

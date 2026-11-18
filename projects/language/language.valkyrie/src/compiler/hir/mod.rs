@@ -29,7 +29,7 @@ pub mod reachability;
 /// Row 类型相关能力。
 pub mod row;
 /// Stable symbol keys for linker / MIR contracts.
-pub(crate) mod symbols;
+pub mod symbols;
 /// Trait 系统相关能力。
 pub mod trait_system;
 /// `expr?` 传播语义。
@@ -41,7 +41,7 @@ pub mod type_relation;
 pub use crate::compiler::types::hir::*;
 pub use anonymous_class_hoist::hoist_anonymous_classes;
 pub use lambda_hoist::{bind_lambda_environments, hoist_lambdas};
-pub(crate) use ast_validation::validate_ast_root;
+pub use ast_validation::validate_ast_root;
 pub use capture_analysis::CaptureAnalyzer;
 pub use construct_binding::bind_construct_fields;
 pub use control_flow_validation::{
@@ -58,7 +58,7 @@ pub use try_propagate::{
     TryPropagateKind, classify_try_operand, is_nullable_type, is_option_apply_type, is_result_apply_type, nullable_payload_type,
     validate_try_propagate_module,
 };
-pub(crate) use type_lowering::{
+pub use type_lowering::{
     GenericBinderScope, ModuleTypeAliasScope, NominalTypeScope, VisibleTypeAlias, is_bound_type_name, lower_type_expression,
     numeric_builtin_cast_type, render_type_expression,
 };
