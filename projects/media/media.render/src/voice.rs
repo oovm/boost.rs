@@ -62,8 +62,8 @@ mod tests {
         let dir = temp_dir("single");
         let path = dir.join("song.wav");
         let spec = VoiceSpec::new(vec![
-            Syllable { onset: None, vowel: Vowel::A, pitch: 440.0, beats: 1.0 },
-            Syllable { onset: None, vowel: Vowel::O, pitch: 330.0, beats: 1.0 },
+            Syllable { onset: None, vowel: Vowel::A, coda: None, pitch: 440.0, beats: 1.0 },
+            Syllable { onset: None, vowel: Vowel::O, coda: None, pitch: 330.0, beats: 1.0 },
         ]);
         write_voice(&spec, path.to_str().unwrap(), 48_000).expect("write");
         let wav = parse_wav_pcm16(&std::fs::read(&path).expect("read")).expect("decode");
@@ -77,7 +77,7 @@ mod tests {
     #[test]
     fn same_spec_reproduces_byte_identically_and_invalid_inputs_reject() {
         let dir = temp_dir("repro");
-        let spec = VoiceSpec::new(vec![Syllable { onset: None, vowel: Vowel::E, pitch: 392.0, beats: 0.5 }]);
+        let spec = VoiceSpec::new(vec![Syllable { onset: None, vowel: Vowel::E, coda: None, pitch: 392.0, beats: 0.5 }]);
         let a = dir.join("a.wav");
         let b = dir.join("b.wav");
         write_voice(&spec, a.to_str().unwrap(), 44_100).expect("a");
@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn frames_and_one_shot_export_agree() {
         let dir = temp_dir("frames");
-        let spec = VoiceSpec::new(vec![Syllable { onset: None, vowel: Vowel::U, pitch: 520.0, beats: 0.5 }]);
+        let spec = VoiceSpec::new(vec![Syllable { onset: None, vowel: Vowel::U, coda: None, pitch: 520.0, beats: 0.5 }]);
         let frames = voice_samples(&spec, 44_100).expect("samples");
         assert_eq!(frames.len(), (spec.duration_seconds() * 44_100.0).ceil() as usize);
         let direct = dir.join("direct.wav");
