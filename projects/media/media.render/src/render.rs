@@ -1640,15 +1640,9 @@ fn paint_item(
                     let thickness = stroke.unwrap_or(2.0) * s;
                     match blend {
                         Blend::Normal => frame.line(cx, cy, ex, ey, thickness, c),
-                        Blend::Add => {
-                            let steps = ((ex - cx).abs().max((ey - cy).abs()) as u32).max(1);
-                            for step in 0..=steps {
-                                let t = step as f32 / steps as f32;
-                                let point = (cx + (ex - cx) * t, cy + (ey - cy) * t);
-                                frame.add_pixel(point.0 as u32, point.1 as u32, c);
-                                frame.add_pixel(point.0 as u32 + 1, point.1 as u32, c);
-                            }
-                        }
+                        // Additive light gets the same coverage rasterizer as a
+                        // normal stroke, so a glow line is not a pixel staircase.
+                        Blend::Add => frame.stroke_polyline(&[[cx, cy], [ex, ey]], thickness, c, 1.0, true),
                     }
                     if p > 0.01 && p < 0.999 {
                         frame.glow(ex, ey, thickness * 5.0, c);
