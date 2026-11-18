@@ -2,7 +2,9 @@
 #![warn(missing_docs)]
 
 pub mod design;
+pub mod production;
 pub mod scene;
 
 pub use design::*;
+pub use production::*;
 pub use scene::*;
