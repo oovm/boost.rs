@@ -4,7 +4,7 @@
 //! 由消费者构造后经 [`EGraphHost::saturate`](crate::EGraphHost::saturate) 消费。
 
 use crate::{
-    contract::{CapabilityTag, Identifier, QualifiedName},
+    CapabilityTag, Identifier, QualifiedName,
     egraph::StructuredRewrite,
     pattern::{TermPattern, atom_pattern},
 };

@@ -1,22 +1,32 @@
-//! 语言无关的 `E-Graph` 重写底座：结构化项、模式匹配、饱和与成本抽取。
+//! 语言无关的 `E-Graph` 重写底座：结构化项、模式匹配、饱和、成本抽取与优化会话。
 //!
 //! 本 crate 只拥有可复用的重写机制：hashcons `E-Graph`、union-find、congruence rebuild、
-//! 模式重写饱和、由消费者显式提交的常量折叠解释与基于成本模型的代表元抽取。
-//! 语言语义、操作命名空间、目标投影规划与程序边界模型都不在此处，仍由对应语言或产品持有。
+//! 模式重写饱和、由消费者显式提交的常量折叠解释与基于成本模型的代表元抽取，
+//! 以及把上述机制组装的优化会话与目标投影计划。
 //!
-//! 分层：[`contract`]（最小中立名称合同） · [`term`] · [`pattern`] · [`egraph`] · [`extract`] · [`theory`]。
+//! 语言语义与操作命名空间由语言提交：底座不内置任何语言的操作名，
+//! 默认的 `core.*` 代数恒等式作为可替换的内建理论提供。
+//!
+//! 分层：[`egraph`] · [`term`] · [`pattern`] · [`extract`] · [`theory`] · [`session`] · [`core_theory`]。
 
-mod contract;
+mod core_theory;
 mod egraph;
 mod extract;
 mod pattern;
+mod session;
 mod term;
 mod theory;
 
-pub use contract::{CapabilityTag, Identifier, QualifiedName};
+pub use compiler_types::{CapabilityTag, Identifier, QualifiedName};
+pub use core_theory::{CoreConstantInterpreter, builtin_core_rewrite_theory, builtin_core_term_rewrites, core_lit_name};
 pub use egraph::{ConstantInterpreter, EClassId, EGraphHost, EGraphStats, StructuredRewrite};
 pub use extract::{ExtractCost, extract_class};
 pub use pattern::{EGraphMatchView, Substitution, TermPattern, atom_pattern, instantiate_pattern, match_pattern, parse_pattern};
+pub use session::{
+    AlgebraicTerm, EGraphSnapshot, FutamuraProjectionFamily, HostProjectionBoundary, ObjectAlgebraicBuilder, ObjectAlgebraicDimension,
+    ObjectAlgebraicInterpreter, ObjectAlgebraicProgram, OptimizationRequest, OptimizationResult, OptimizationSession, ProjectionPlan,
+    ProjectionPolicy, RewriteRule, RewriteTheory, TheoryBundle,
+};
 pub use term::{Term, parse_term, qualified_from_dotted};
 pub use theory::{
     RewriteEquation, RewritePhase, TermRewrite, filter_equations, filter_term_rewrites, structured_rewrite_from_equation,

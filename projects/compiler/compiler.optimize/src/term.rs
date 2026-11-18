@@ -1,6 +1,6 @@
 //! 结构化代数项，供 `E-Graph` 吸收与抽取。
 
-use crate::contract::{Identifier, QualifiedName};
+use compiler_types::{Identifier, QualifiedName};
 use std::fmt;
 
 /// 可进入 `E-Graph` 的结构化项。

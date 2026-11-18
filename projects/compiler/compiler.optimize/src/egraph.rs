@@ -3,7 +3,7 @@
 //! 常量折叠语义不硬编码任何语言操作命名空间，由消费者经 [`ConstantInterpreter`] 显式提交。
 
 use crate::{
-    contract::{Identifier, QualifiedName},
+    Identifier, QualifiedName,
     extract::{ExtractCost, extract_class},
     pattern::{EGraphMatchView, Substitution, TermPattern, match_pattern},
     term::Term,

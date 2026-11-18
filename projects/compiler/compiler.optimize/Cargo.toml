@@ -1,6 +1,6 @@
 [package]
 name = "compiler-optimize"
-description = "Language-agnostic E-graph rewriting, constant folding and cost-model extraction for compilers"
+description = "Language-agnostic E-graph rewriting, constant folding, theory bundles and projection planning for compilers"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,3 +10,7 @@ publish = false
 [lints.rust]
 missing_docs = "warn"
 unsafe_code = "forbid"
+
+[dependencies]
+compiler-types = { workspace = true }
+serde = { workspace = true }
