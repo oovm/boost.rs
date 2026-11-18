@@ -5,11 +5,20 @@ use crate::engine::{
     journal::JournalMode,
     kv::{lease, retention as ttl},
     objects::EMBEDDED_OBJECT_PREFIX,
-    storage::snapshot,
+    storage::{snapshot, spill},
 };
 use database_storage::local::snapshot::RecordWindow;
 
 use super::{Backend, Connection, State, TxnJournal, is_yydx_main_path};
+
+/// Window covering the chunk rows of oversized values.
+///
+/// Every read that decodes rows needs those chunks to rebuild the values they
+/// belong to, so the window travels with the statement window rather than
+/// forcing a full record-tree scan.
+fn spill_window() -> RecordWindow {
+    RecordWindow { start: spill::SPILL_PREFIX.to_owned(), end: Some(spill::SPILL_END.to_owned()) }
+}
 
 impl Connection {
     /// Reconcile expired leases without materializing the whole record tree.
@@ -219,6 +228,7 @@ impl Connection {
         match self.backend.as_ref() {
             Backend::File { database, .. } => {
                 let mut windows = vec![RecordWindow { start: window.start.clone(), end: window.end.clone() }];
+                windows.push(spill_window());
                 if self.is_single_file_yydb() {
                     windows.push(RecordWindow { start: EMBEDDED_OBJECT_PREFIX.to_owned(), end: Some(format!("{EMBEDDED_OBJECT_PREFIX}g")) });
                 }
@@ -304,6 +314,7 @@ impl Connection {
             Backend::File { database, .. } => {
                 let mut record_windows: Vec<RecordWindow> =
                     windows.iter().map(|window| RecordWindow { start: window.start.clone(), end: window.end.clone() }).collect();
+                record_windows.push(spill_window());
                 if self.is_single_file_yydb() {
                     record_windows
                         .push(RecordWindow { start: EMBEDDED_OBJECT_PREFIX.to_owned(), end: Some(format!("{EMBEDDED_OBJECT_PREFIX}g")) });
@@ -312,8 +323,11 @@ impl Connection {
                     let mut database = database.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                     database.snapshot_windows(&record_windows)?
                 };
+                // The delta needs what the image stored for these rows, so the
+                // pre-image is taken before spilled chunks are folded back into
+                // their records.
+                let prior = snapshot::prior_records(&snapshot.records);
                 let mut state = snapshot::state_with_window(metadata, snapshot)?;
-                let prior = snapshot::prior_records(&state.records);
                 if self.is_single_file_yydb() {
                     self.objects.take_embedded_records(&mut state.records)?;
                 }
@@ -501,9 +515,22 @@ impl Connection {
         for key in &journal.keys {
             match (state.records.get(key), journal.prior.get(key)) {
                 (Some(value), Some(old)) if value == old => {}
-                (Some(value), _) => delta.puts.push((key.clone(), value.clone())),
+                (Some(value), _) => {
+                    let (header, chunks) = spill::encode_one(key, value);
+                    delta.puts.push((key.clone(), header));
+                    delta.puts.extend(chunks);
+                }
                 (None, Some(_)) => delta.deletes.push(key.clone()),
                 (None, None) => {}
+            }
+            // A rewrite that no longer needs every former chunk must drop the
+            // tail rows, because chunk names are deterministic and the record
+            // delta only names the keys it knows changed.
+            if let Some(old) = journal.prior.get(key) {
+                let keep = state.records.get(key).map(|value| spill::chunk_count(value.len())).unwrap_or(0);
+                for index in keep..spill::chunk_count(old.len()) {
+                    delta.deletes.push(spill::chunk_key(key, index));
+                }
             }
         }
         // Embedded object rows are content addressed, so an absent key means an

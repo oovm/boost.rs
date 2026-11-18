@@ -16,6 +16,13 @@ pub(crate) const META_PREFIX_TEXT: &str = "__yydb/meta/";
 /// Smallest key above every `__yydb/meta/` key: `'0'` (0x30) follows the
 /// separator `'/'` (0x2F), so the prefix range ends before it.
 const META_END_TEXT: &str = "__yydb/meta0";
+/// Reserved record prefix holding the chunks of values too large for one leaf
+/// cell. The codec belongs to the engine; storage only keeps those rows out of
+/// the user-row view and loads them whenever it loads a row window, because a
+/// borrowed row is unreadable without the chunks that complete it.
+pub const SPILLED_PREFIX: &str = "__yydb/v0/spill/";
+/// Smallest record name above every [`SPILLED_PREFIX`] name.
+pub const SPILLED_END: &str = "__yydb/v0/spill0";
 
 /// Durable database image handed between storage and the engine.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -284,7 +291,7 @@ impl<'a> Iterator for RowWindowIter<'a> {
                 if cell.key.tree_id != TREE_RECORD || cell.key.key_kind != KEY_KIND_USER {
                     continue;
                 }
-                if cell.key.encoded.starts_with(META_PREFIX) {
+                if cell.key.encoded.starts_with(META_PREFIX) || cell.key.encoded.starts_with(SPILLED_PREFIX.as_bytes()) {
                     continue;
                 }
                 return Some(
@@ -317,6 +324,12 @@ impl<'a> Iterator for RowWindowIter<'a> {
 pub fn read_snapshot_windows_with_rows<P: PagerKv>(pager: &mut P, windows: &[RecordWindow]) -> Result<(Snapshot, RowWindow)> {
     let mut snapshot = Snapshot::default();
     for (key, value) in pager.scan_kv_range(META_PREFIX_TEXT, Some(META_END_TEXT))? {
+        insert_row(&mut snapshot, key, value)?;
+    }
+    // Chunk rows complete oversized values, and a borrowed row cannot be
+    // reassembled from the page view alone, so they are decoded into the owned
+    // snapshot instead of staying in the window.
+    for (key, value) in pager.scan_kv_range(SPILLED_PREFIX, Some(SPILLED_END))? {
         insert_row(&mut snapshot, key, value)?;
     }
     let mut segments = Vec::with_capacity(windows.len());

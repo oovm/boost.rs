@@ -12,6 +12,7 @@ use database_types::{Error, Result};
 use crate::engine::{
     connection::State,
     objects::{EMBEDDED_OBJECT_PREFIX, ObjectStore, references::OBJECT_REF_PREFIX},
+    storage::spill,
 };
 
 const META_SCHEMA: &str = "__yydb/meta/schema";
@@ -94,6 +95,7 @@ pub(crate) fn state_from_snapshot(snapshot: &Snapshot) -> Result<State> {
         let key = String::from_utf8(key.clone()).map_err(|_| Error::Corrupt("metadata key is not UTF-8"))?;
         records.insert(key, value.clone());
     }
+    spill::assemble(&mut records)?;
     Ok(State { schema, identity_history, resolved_contract, records, unique_constraints })
 }
 
@@ -111,6 +113,7 @@ pub(crate) fn state_with_window(mut state: State, snapshot: Snapshot) -> Result<
         }
         state.records.insert(key, value);
     }
+    spill::assemble(&mut state.records)?;
     Ok(state)
 }
 
@@ -160,6 +163,7 @@ pub(crate) fn snapshot_from_state(state: &State) -> Result<Snapshot> {
             records.insert(key.clone(), value.clone());
         }
     }
+    spill::encode(&mut records);
     Ok(Snapshot { metadata, records })
 }
 

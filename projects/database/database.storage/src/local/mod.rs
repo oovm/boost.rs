@@ -16,7 +16,9 @@ pub use blob::BlobStore;
 pub use database::{Database, file_is_ydpg, snapshot_from_main_bytes, snapshot_to_main_bytes};
 pub use journal::{JournalMode, OpenFlags, shm_path, wal_path};
 pub use lock::{LockMode, WriterLock};
-pub use snapshot::{PagerKv, RecordDelta, RecordWindow, RowRecord, RowWindow, Snapshot, read_snapshot_windows_with_rows};
+pub use snapshot::{
+    PagerKv, RecordDelta, RecordWindow, RowRecord, RowWindow, SPILLED_END, SPILLED_PREFIX, Snapshot, read_snapshot_windows_with_rows,
+};
 
 // 上层只需一跳拿到的物理布局词表：CAS 块哈希与 WAL blob-manifest 增量属持久化面。
 pub use crate::local_io::{FilePager, MemoryPager, PublishStats, WalWriteStats, diagnose_file, pager::DecodedPage};
