@@ -22,10 +22,12 @@
 //! `media.codec` behind its `voice-export` feature.
 #![warn(missing_docs)]
 
+pub mod backend;
 pub mod formant;
 pub mod lf;
 pub mod spec;
 pub mod tract;
 
+pub use backend::{BackendCapability, CostModel, Execution, Timing, VoiceArtifact, VoiceFeature, VoiceRequest, check_request, request_fingerprint};
 pub use formant::render;
 pub use spec::{Coda, Onset, Syllable, Vibrato, VoiceSpec, Vowel};
