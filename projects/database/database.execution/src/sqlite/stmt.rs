@@ -1,7 +1,8 @@
 //! SQLite 门面的语句分发与触发器 drain / fire 机器。
 //!
-//! 门面 `Engine` 只保留事务、`ATTACH` / `DETACH`、`VACUUM`、`PRAGMA` 与
-//! `EXPLAIN` 六类语句臂;其余语句臂、`run_statement` 分发路由、schema 限定名
+//! 门面 `Engine` 保留事务、`ATTACH` / `DETACH`、`VACUUM`、`PRAGMA` 与
+//! `EXPLAIN` 六类语句臂的分发点,其中事务臂委托 [`super::txn`](super::txn)
+//! 机器;其余语句臂、`run_statement` 分发路由、schema 限定名
 //! 解析、附加库递归执行与触发器事件队列的 drain / fire 循环全部住在
 //! [`StmtContext`] 上。触发体语句与附加库语句都经由本模块递归,不再回到门面。
 //! 本模块不得反向依赖任何产品门面。
@@ -19,6 +20,7 @@ use super::{
     host::HostFunctionTable,
     select::{ExecContext, SqliteExecState, TableScope, join_product, row_matches},
     trigger::{self, MAX_TRIGGER_DEPTH, TriggerState, event_statement, trigger_event_matches},
+    txn::TransactionState,
     view::{self, view_relation},
 };
 
@@ -248,8 +250,9 @@ pub struct StmtContext<'a> {
     pub foreign_keys: bool,
     /// `PRAGMA recursive_triggers` 的当前值。
     pub recursive_triggers: bool,
-    /// 是否处于显式事务中(延迟外键检查与附加库落盘时机的判定)。
-    pub in_transaction: bool,
+    /// 事务与 savepoint 栈的可变借用;状态类型与变更语义 owner 在
+    /// [`super::txn`](super::txn)(C9b),实例存放在门面 `Engine` 的连接级字段。
+    pub transaction: &'a mut Option<TransactionState>,
     /// `ATTACH DATABASE` 的每个附加库各自的语句槽位,按 attach 顺序。
     pub attached: Vec<AttachedSlot<'a>>,
 }
@@ -290,7 +293,7 @@ impl<'a> StmtContext<'a> {
             last_insert_rowid: &mut *self.last_insert_rowid,
             foreign_keys: self.foreign_keys,
             recursive_triggers: self.recursive_triggers,
-            in_transaction: self.in_transaction,
+            in_transaction: self.transaction.is_some(),
             scope: *self.scope,
         }
     }
@@ -314,7 +317,7 @@ impl<'a> StmtContext<'a> {
 
     /// Whether an explicit transaction or savepoint scope is open.
     pub fn in_transaction(&self) -> bool {
-        self.in_transaction
+        self.transaction.is_some()
     }
 
     /// 写完一条语句后标记索引 b-tree 需要重建。
@@ -830,14 +833,14 @@ impl<'a> StmtContext<'a> {
         let result = result?;
         *self.last_insert_rowid = rowid;
         *self.attached[index].dirty = true;
-        if !self.in_transaction {
+        if !self.in_transaction() {
             self.persist_attached(index)?;
         }
         Ok(result)
     }
 
     /// Flushes one attached database image back to its file.
-    fn persist_attached(&mut self, index: usize) -> Result<(), SqlError> {
+    pub(super) fn persist_attached(&mut self, index: usize) -> Result<(), SqlError> {
         if !self.attached.get(index).is_some_and(|attached| *attached.dirty) {
             return Ok(());
         }
@@ -852,9 +855,10 @@ impl<'a> StmtContext<'a> {
     fn run_statement_inner(&mut self, statement: Statement) -> Result<ExecResult, SqlError> {
         match statement {
             // 事务、`ATTACH` / `DETACH`、`VACUUM`、`PRAGMA` 与 `EXPLAIN` 的
-            // 语句臂留在门面 `Engine`;它们依赖门面的事务簿记、附加库引擎
+            // 语句臂留在门面 `Engine` 分发(事务臂委托 `sqlite::txn` 机器);
+            // 它们依赖门面的连接级状态槽、附加库引擎
             // 集合与宿主函数注册。只有触发体语句才可能带着它们进入本机器,
-            // 此时按不可达臂如实拒绝。
+            // 此时按不可达臂如实拒绝(C9a 偏离口径,保持不变)。
             Statement::Explain { .. }
             | Statement::Transaction { .. }
             | Statement::Attach { .. }

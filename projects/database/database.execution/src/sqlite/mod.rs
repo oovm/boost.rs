@@ -25,5 +25,6 @@ pub mod scalar;
 pub mod select;
 pub mod stmt;
 pub mod trigger;
+pub mod txn;
 pub mod view;
 pub mod window;
