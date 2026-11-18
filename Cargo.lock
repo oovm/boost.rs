@@ -2956,6 +2956,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "package-resolve"
+version = "0.1.0"
+dependencies = [
+ "oak-von",
+ "package-registry",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "parking"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
