@@ -66,7 +66,7 @@ fn local_engine_statements_and_transactions() {
 
     let failed = engine.transaction(|tx| {
         tx.execute("INSERT INTO t (id, name) VALUES (5, 'e')")?;
-        Err::<(), Error>(Error::Engine("rollback requested by test".to_owned()))
+        Err::<(), Error>(Error::State("rollback requested by test".to_owned()))
     });
     assert!(failed.is_err());
     let rolled_back = engine.query("SELECT id FROM t WHERE id = 5").unwrap();

@@ -58,9 +58,13 @@ pub type PostgreSQLClient = Connection;
 
 pub use database_client::pgsql::{Cell, ClientConfig};
 
-/// Failure raised by the facade. `sqlstate` carries the PostgreSQL class shared
-/// with the wire path; `Unsupported` marks boundaries the engine rejects
-/// explicitly instead of faking success.
+/// Failure raised by the facade. Structured fields are kept until the FFI or
+/// wire boundary, where the caller renders one envelope.
+///
+/// `Sql::sqlstate` carries the PostgreSQL class shared with the wire path;
+/// `Unsupported` marks boundaries the engine rejects explicitly instead of
+/// faking success; `Storage` keeps the protocol error class of a data-directory
+/// or shard failure instead of flattening it to text.
 #[derive(Debug)]
 pub enum Error {
     /// Statement or transaction failure with the PostgreSQL SQLSTATE class.
@@ -72,8 +76,16 @@ pub enum Error {
     },
     /// Capability the facade refuses explicitly (auth, savepoints, GUC commands).
     Unsupported(String),
-    /// Data directory, storage or transport failure.
-    Engine(String),
+    /// Data-directory, catalog, shard or transport failure of the protocol layer.
+    Storage(PostgresError),
+    /// Shard routing or topology failure.
+    Routing(database_cluster::topology::routing::RoutingError),
+    /// Storage-contract failure raised by `database-types`.
+    Cluster(database_types::cluster::Error),
+    /// Host I/O failure: directory, socket bind or thread lifecycle.
+    Io(io::Error),
+    /// Engine lifecycle state: a closed store or a poisoned lock.
+    State(String),
 }
 
 impl Error {
@@ -87,39 +99,54 @@ impl fmt::Display for Error {
         match self {
             Self::Sql { sqlstate, message } => write!(formatter, "{sqlstate}: {message}"),
             Self::Unsupported(message) => write!(formatter, "unsupported: {message}"),
-            Self::Engine(message) => write!(formatter, "engine failure: {message}"),
+            Self::Storage(error) => write!(formatter, "storage failure: {error}"),
+            Self::Routing(error) => write!(formatter, "routing failure: {error:?}"),
+            Self::Cluster(error) => write!(formatter, "cluster failure: {error:?}"),
+            Self::Io(error) => write!(formatter, "io failure: {error}"),
+            Self::State(message) => write!(formatter, "engine state: {message}"),
         }
     }
 }
 
-impl error::Error for Error {}
+impl error::Error for Error {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match self {
+            Self::Storage(error) => Some(error),
+            Self::Io(error) => Some(error),
+            _ => None,
+        }
+    }
+}
 
 impl From<io::Error> for Error {
     fn from(error: io::Error) -> Self {
-        Self::Engine(error.to_string())
+        Self::Io(error)
     }
 }
 
 impl From<PostgresError> for Error {
     fn from(error: PostgresError) -> Self {
-        Self::Engine(error.to_string())
+        match error {
+            PostgresError::Server { code, message, .. } => Self::sql(code, message),
+            other => Self::Storage(other),
+        }
     }
 }
 
 impl From<database_types::cluster::Error> for Error {
     fn from(error: database_types::cluster::Error) -> Self {
-        Self::Engine(error.to_string())
+        Self::Cluster(error)
     }
 }
 
 impl From<database_cluster::topology::routing::RoutingError> for Error {
     fn from(error: database_cluster::topology::routing::RoutingError) -> Self {
-        Self::Engine(format!("{error:?}"))
+        Self::Routing(error)
     }
 }
 
 fn poisoned() -> Error {
-    Error::Engine("postgres facade lock poisoned".to_owned())
+    Error::State("postgres facade lock poisoned".to_owned())
 }
 
 /// Where the local engine keeps its data directory.
@@ -218,7 +245,7 @@ impl PostgreSQL {
 
     /// Absolute data directory.
     pub fn data_dir(&self) -> Result<String, Error> {
-        Ok(self.lock(&self.instance)?.as_ref().ok_or_else(|| Error::Engine("store already closed".to_owned()))?.data_dir())
+        Ok(self.lock(&self.instance)?.as_ref().ok_or_else(|| Error::State("store already closed".to_owned()))?.data_dir())
     }
 
     /// Runs one statement on the direct path: DDL applies to the shared
@@ -247,7 +274,7 @@ impl PostgreSQL {
             body(&mut transaction)
         };
         match result {
-            Ok(value) => match session.commit(Some(&self.runtime)).map_err(|error| Error::Engine(error.to_string()))? {
+            Ok(value) => match session.commit(Some(&self.runtime)).map_err(Error::from)? {
                 TransactionControl::Done(_) => Ok(value),
                 TransactionControl::Rejected { code, message } => Err(Error::sql(code, message)),
             },
@@ -298,7 +325,7 @@ impl PostgreSQL {
     /// Stops every listener, releases the directory lock and consumes the engine.
     pub fn close(self) -> Result<(), Error> {
         self.listeners.stop_all();
-        let instance = self.instance.lock().map_err(|_| poisoned())?.take().ok_or_else(|| Error::Engine("store already closed".to_owned()))?;
+        let instance = self.instance.lock().map_err(|_| poisoned())?.take().ok_or_else(|| Error::State("store already closed".to_owned()))?;
         instance.close().map_err(Error::from)
     }
 
