@@ -226,6 +226,74 @@ pub fn retimed(cue: &Cue, text: String) -> Cue {
     Cue { text, ..cue.clone() }
 }
 
+/// What one cue edit affects.
+///
+/// A line change is local, but it can outgrow its line budget or its frame
+/// range. Reporting the affected shots and panels lets a host re-render only
+/// those storyboard rows instead of the whole book.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CueRevision {
+    /// Cue handle that was edited.
+    pub cue: CueId,
+    /// New lines, or the reason the text cannot fit.
+    pub lines: Result<Vec<String>, String>,
+    /// Absolute frame range after the edit.
+    pub range: [u32; 2],
+    /// Shots whose panels overlap the cue.
+    pub shots: Vec<String>,
+    /// Panels whose range overlaps the cue.
+    pub panels: Vec<String>,
+    /// Reading-speed problem, when the new text is too fast for its range.
+    pub reading: Option<String>,
+}
+
+/// Recomputes one cue after its text changes, without mutating the book.
+///
+/// The caller writes the new text only when `lines` and `reading` are both
+/// clean; a revision that no longer fits reports what to fix instead of
+/// silently shrinking type or extending the cue.
+pub fn revise_cue(project: &Project, production: &Production, cue: &CueId, text: &str, style: &SubtitleStyle) -> Result<CueRevision, Error> {
+    let Some(existing) = production.cues.iter().find(|existing_cue| &existing_cue.id == cue) else {
+        return Err(Error::invalid_input(format!("cue `{cue}` does not exist")));
+    };
+    let Some(shot) = production.shots.iter().find(|shot| shot.id == existing.shot) else {
+        return Err(Error::invalid_input(format!("cue `{cue}` references unknown shot `{}`", existing.shot)));
+    };
+    let Some(scene) = project.scenes.iter().find(|scene| scene.id.as_deref() == Some(shot.scene.as_str())) else {
+        return Err(Error::invalid_input(format!("shot `{}` references unknown scene `{}`", shot.id, shot.scene)));
+    };
+
+    let start = scene.start + existing.range[0];
+    let end = scene.start + existing.range[1];
+    let lines = wrap_text(text, style.max_chars, style.max_lines).map_err(|error| Error::invalid_input(error.message));
+    let reading = match &lines {
+        Ok(lines) => {
+            let candidate = AbsoluteCue { id: existing.id.clone(), start, end, lines: lines.clone() };
+            check_reading(std::slice::from_ref(&candidate), style, project.time_base()).err().map(|error| error.message)
+        }
+        Err(_) => None,
+    };
+
+    let mut panels = Vec::new();
+    for panel in &shot.panels {
+        let panel_start = scene.start + panel.range[0];
+        let panel_end = scene.start + panel.range[1];
+        if panel_start < end && start < panel_end {
+            panels.push(panel.id.to_string());
+        }
+    }
+    let shots = if panels.is_empty() { Vec::new() } else { vec![shot.id.to_string()] };
+
+    Ok(CueRevision {
+        cue: existing.id.clone(),
+        lines: lines.map_err(|error| error.message),
+        range: [start, end],
+        shots,
+        panels,
+        reading,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -264,5 +332,75 @@ mod tests {
         }];
         let error = check_reading(&cues, &SubtitleStyle::default(), time_base()).expect_err("too fast");
         assert!(error.message.contains("crowded"), "{}", error.message);
+    }
+
+    fn book() -> (Project, Production) {
+        use crate::production::{CueTiming, Panel, PanelId, Shot, ShotId};
+        use serde_json::json;
+
+        let project: Project = serde_json::from_value(json!({
+            "width": 320, "height": 180, "fps": 30, "duration_frames": 120,
+            "scenes": [
+                { "id": "a", "start": 0, "duration": 60, "background": { "kind": "solid", "color": "#101820" }, "items": [] },
+                { "id": "b", "start": 60, "duration": 60, "background": { "kind": "solid", "color": "#202830" }, "items": [] }
+            ],
+            "audio": null
+        }))
+        .expect("project");
+        let mut production = Production::new(project.clone());
+        production.shots.push(Shot {
+            id: ShotId::new("s1").unwrap(),
+            scene: "a".to_owned(),
+            locked: false,
+            panels: vec![Panel {
+                id: PanelId::new("p1").unwrap(),
+                range: [0, 60],
+                purpose: "open".to_owned(),
+                composition: "wide".to_owned(),
+                dialogue: Some("先看".to_owned()),
+                camera: None,
+                sound: None,
+                safe_area: None,
+                notes: Vec::new(),
+            }],
+        });
+        production.cues.push(Cue {
+            id: CueId::new("c1").unwrap(),
+            shot: ShotId::new("s1").unwrap(),
+            range: [0, 60],
+            text: "先看".to_owned(),
+            speaker: None,
+            timing: CueTiming::Measured { source: "recording".to_owned() },
+        });
+        (project, production)
+    }
+
+    #[test]
+    fn a_revision_keeps_identity_and_names_the_affected_panel() {
+        let (project, production) = book();
+        let revision = revise_cue(&project, &production, &CueId::new("c1").unwrap(), "先看请求", &SubtitleStyle::default()).expect("revision");
+        assert_eq!(revision.cue.as_str(), "c1");
+        assert_eq!(revision.range, [0, 60]);
+        assert_eq!(revision.lines.expect("fits"), vec!["先看请求".to_owned()]);
+        assert_eq!(revision.shots, vec!["s1".to_owned()]);
+        assert_eq!(revision.panels, vec!["p1".to_owned()]);
+        assert!(revision.reading.is_none());
+    }
+
+    #[test]
+    fn a_revision_that_outgrows_its_lines_reports_the_reason() {
+        let (project, production) = book();
+        let long = "这一段明显超过两行十八字的容量所以要被拒绝而不是缩字号并且继续加长保证一定超出限制范围";
+        let revision = revise_cue(&project, &production, &CueId::new("c1").unwrap(), long, &SubtitleStyle::default()).expect("revision");
+        let error = revision.lines.expect_err("too many lines");
+        assert!(error.contains("more than 2"), "{error}");
+        assert_eq!(revision.panels, vec!["p1".to_owned()], "the affected page is still reported");
+    }
+
+    #[test]
+    fn editing_an_unknown_cue_is_an_error() {
+        let (project, production) = book();
+        let error = revise_cue(&project, &production, &CueId::new("ghost").unwrap(), "x", &SubtitleStyle::default()).expect_err("unknown cue");
+        assert!(error.message.contains("ghost"), "{}", error.message);
     }
 }
