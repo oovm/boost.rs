@@ -19,7 +19,7 @@ use media_scene::{Production, Project, Scene};
 use media_text::{FontId, Fonts};
 use media_types::Error;
 
-use crate::render::{render_frame_at, resolve_fonts};
+use crate::render::{RenderStats, render_frame_at, resolve_fonts};
 
 /// Page geometry and type scale for storyboard output.
 #[derive(Clone, Debug)]
@@ -96,6 +96,11 @@ struct PanelBlock {
     purpose: String,
     composition: String,
     dialogue: Option<String>,
+    camera: Option<String>,
+    sound: Option<String>,
+    safe_area: Option<[f32; 4]>,
+    /// Absolute start and end of the panel, for the timeline page.
+    span: [u32; 2],
 }
 
 /// Writes the storyboard, one page per `options.rows` panels.
@@ -236,6 +241,10 @@ fn plan_blocks(project: &Project, production: &Production) -> Result<Vec<PanelBl
                 purpose: panel.purpose.clone(),
                 composition: panel.composition.clone(),
                 dialogue: panel.dialogue.clone(),
+                camera: panel.camera.clone(),
+                sound: panel.sound.clone(),
+                safe_area: panel.safe_area,
+                span: [scene.start + start, scene.start + end],
             });
         }
     }
@@ -261,7 +270,7 @@ fn draw_panel_row(
     row_height: f32,
 ) -> Result<(), Error> {
     let content_width = options.width as f32 - options.margin * 2.0;
-    let caption_height = options.label_size * 3.6;
+    let caption_height = options.label_size * 4.6;
     let thumb_height = (row_height - caption_height).max(options.label_size * 3.0);
     // One panel row always carries exactly three key frames.
     let columns = 3;
@@ -270,8 +279,25 @@ fn draw_panel_row(
     for (index, frame_index) in block.frames.iter().enumerate() {
         let x = options.margin + (thumb_width + options.gap) * index as f32;
         let frame = render_frame_at(json, *frame_index)?;
+        let (source_width, source_height) = (frame.width as f32, frame.height as f32);
         page.round_rect(x, top, thumb_width, thumb_height, 4.0, rgba([18, 22, 30], 255));
         page.draw_bitmap(&bitmap(frame), x, top, thumb_width, thumb_height, Fit::Contain, 1.0, 4.0);
+        if index == 0 {
+            if let Some(area) = block.safe_area {
+                // The safe area is declared against the picture, so it maps to
+                // the contained image box, not the padded thumbnail cell.
+                let scale = (thumb_width / source_width).min(thumb_height / source_height);
+                let image_width = source_width * scale;
+                let image_height = source_height * scale;
+                let box_rect = [
+                    x + (thumb_width - image_width) / 2.0,
+                    top + (thumb_height - image_height) / 2.0,
+                    image_width,
+                    image_height,
+                ];
+                draw_safe_area(page, area, box_rect);
+            }
+        }
         let tag = match index {
             0 => "first",
             1 => "middle",
@@ -282,14 +308,178 @@ fn draw_panel_row(
     }
 
     let baseline = top + thumb_height + options.label_size * 2.1;
-    let header = format!("{} · {} · frames {}..{}", block.shot, block.panel, block.frames[0], block.frames[2] + 1);
+    let header = format!("{} · {} · frames {}..{}", block.shot, block.panel, block.span[0], block.span[1]);
     draw_text(fonts, page, options, &header, options.margin, baseline, options.label_size * 1.15, content_width);
     let detail = match &block.dialogue {
         Some(line) => format!("{} / {} / \u{201c}{line}\u{201d}", block.purpose, block.composition),
         None => format!("{} / {}", block.purpose, block.composition),
     };
     draw_text(fonts, page, options, &detail, options.margin, baseline + options.label_size * 1.5, options.label_size, content_width);
+    let notes: Vec<String> = [
+        block.camera.as_ref().map(|camera| format!("camera: {camera}")),
+        block.sound.as_ref().map(|sound| format!("sound: {sound}")),
+        block.safe_area.map(|_| "safe area: outlined".to_owned()),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    if !notes.is_empty() {
+        draw_text(
+            fonts,
+            page,
+            options,
+            &notes.join("  ·  "),
+            options.margin,
+            baseline + options.label_size * 2.9,
+            options.label_size * 0.9,
+            content_width,
+        );
+    }
     Ok(())
+}
+
+/// Writes a timeline overview: one row per shot, panel ticks inside the bar and
+/// cue ticks in a strip below.
+///
+/// The page is a projection of the same book the storyboard uses, so a row maps
+/// back to `Shot.id` and every tick to a `Panel.id` or `Cue.id`.
+pub fn write_timeline(
+    json: &str,
+    production: &Production,
+    out: &Path,
+    options: &StoryboardOptions,
+) -> Result<StoryboardPage, Error> {
+    production.validate()?;
+    let project = parse_project(json)?;
+    let mut fonts = fonts_for(&project)?;
+    if production.shots.is_empty() {
+        return Err(Error::invalid("the production declares no shot to place on a timeline"));
+    }
+    let mut page = Frame::new(options.width, options.height);
+    page.fill(rgba(options.background, 255));
+    draw_title(&mut fonts, &mut page, options, "Timeline");
+
+    let total = project.duration_frames.max(1) as f32;
+    let label_width = 190.0;
+    let left = options.margin + label_width;
+    let right = options.width as f32 - options.margin;
+    let top = options.margin + options.title_size + options.gap * 2.0;
+    let row_height = 54.0;
+    let row_gap = 12.0;
+    let bar = rgba([122, 162, 255], 255);
+    let tick = rgba([20, 26, 36], 255);
+    let mut cells = Vec::new();
+
+    for (row, shot) in production.shots.iter().enumerate() {
+        let Some(scene) = scene_of(&project, &shot.scene) else {
+            return Err(Error::invalid(format!("shot `{}` references unknown scene `{}`", shot.id, shot.scene)));
+        };
+        let y = top + row as f32 * (row_height + row_gap);
+        let x0 = left + (scene.start as f32 / total) * (right - left);
+        let x1 = left + ((scene.start + scene.duration) as f32 / total) * (right - left);
+        page.round_rect(x0, y, (x1 - x0).max(2.0), row_height, 6.0, bar);
+        draw_text(&mut fonts, &mut page, options, shot.id.as_str(), options.margin, y + row_height * 0.68, options.label_size, label_width);
+
+        for panel in &shot.panels {
+            let px = left + ((scene.start + panel.range[0]) as f32 / total) * (right - left);
+            page.rect(px, y, 1.5, row_height, tick);
+            let label = format!("{}", panel.id);
+            draw_text(
+                &mut fonts,
+                &mut page,
+                options,
+                &label,
+                px + 3.0,
+                y + options.label_size,
+                options.label_size * 0.72,
+                (x1 - px).max(20.0),
+            );
+        }
+        cells.push(StoryboardCell {
+            shot: shot.id.to_string(),
+            panel: String::new(),
+            frames: vec![scene.start, scene.start + scene.duration],
+            dialogue: None,
+        });
+    }
+
+    // Cue strip: one tick per cue at its absolute frame.
+    let cue_top = top + production.shots.len() as f32 * (row_height + row_gap) + options.gap;
+    let cue_height = 28.0;
+    page.round_rect(left, cue_top, right - left, cue_height, 4.0, rgba([226, 232, 244], 255));
+    for cue in &production.cues {
+        let Some(shot) = production.shots.iter().find(|shot| shot.id == cue.shot) else {
+            continue;
+        };
+        let Some(scene) = scene_of(&project, &shot.scene) else {
+            continue;
+        };
+        let x = left + ((scene.start + cue.range[0]) as f32 / total) * (right - left);
+        page.rect(x, cue_top, 2.0, cue_height, rgba([232, 184, 109], 255));
+    }
+    draw_text(
+        &mut fonts,
+        &mut page,
+        options,
+        "cues",
+        options.margin,
+        cue_top + cue_height * 0.72,
+        options.label_size * 0.85,
+        label_width,
+    );
+    let frames_note = format!("{} frames · {:.1}s", project.duration_frames, project.duration_frames as f32 / project.fps.max(1) as f32);
+    draw_text(
+        &mut fonts,
+        &mut page,
+        options,
+        &frames_note,
+        right - 260.0,
+        cue_top + cue_height + options.label_size * 1.6,
+        options.label_size * 0.85,
+        260.0,
+    );
+
+    if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent).map_err(|e| Error::io(format!("cannot create {}: {e}", parent.display())))?;
+    }
+    write_page(out, &page)?;
+    Ok(StoryboardPage { index: 0, path: out.to_string_lossy().into_owned(), cells })
+}
+
+/// Renders a low-detail motion preview of the whole film.
+///
+/// Dynamic storyboarding is the same project at a smaller raster, not a second
+/// edit: the preview keeps every timing decision and drops resolution, so a
+/// reviewer sees movement without paying for a master render.
+pub fn write_motion_preview(
+    json: &str,
+    production: &Production,
+    out: &Path,
+    scale: f32,
+    progress: &mut dyn FnMut(u32, u32),
+) -> Result<RenderStats, Error> {
+    production.validate()?;
+    let mut project = parse_project(json)?;
+    let scale = scale.clamp(0.1, 1.0);
+    project.width = ((project.width as f32 * scale).round() as u32).max(2);
+    project.height = ((project.height as f32 * scale).round() as u32).max(2);
+    project.supersample = None;
+    let json = serde_json::to_string(&project).map_err(|e| Error::invalid(format!("project json: {e}")))?;
+    crate::render::render_project_with(&json, out, &crate::render::RenderOptions::default(), progress)
+}
+
+/// Draws a thin safe-area outline inside `box` (`[x, y, width, height]`).
+fn draw_safe_area(page: &mut Frame, area: [f32; 4], box_rect: [f32; 4]) {
+    let [bx, by, bw, bh] = box_rect;
+    let [x0, y0, x1, y1] = area;
+    let (left, top) = (bx + bw * x0, by + bh * y0);
+    let (right, bottom) = (bx + bw * x1, by + bh * y1);
+    let thickness = 2.0;
+    let ink = Rgba([255, 214, 120, 220]);
+    page.rect(left, top, right - left, thickness, ink);
+    page.rect(left, bottom - thickness, right - left, thickness, ink);
+    page.rect(left, top, thickness, bottom - top, ink);
+    page.rect(right - thickness, top, thickness, bottom - top, ink);
 }
 
 /// Draws one line clipped to `max_width` with an ellipsis.
@@ -349,6 +539,9 @@ mod tests {
                 purpose: "show the request entering".to_owned(),
                 composition: "node graph, left to right".to_owned(),
                 dialogue: Some("先看请求怎么进来".to_owned()),
+                camera: Some("push in 1.0 -> 1.2".to_owned()),
+                sound: Some("typing starts".to_owned()),
+                safe_area: Some([0.1, 0.1, 0.9, 0.85]),
                 notes: Vec::new(),
             }],
         });
@@ -362,6 +555,9 @@ mod tests {
                 purpose: "establish the room".to_owned(),
                 composition: "wide, foreground props".to_owned(),
                 dialogue: None,
+                camera: None,
+                sound: None,
+                safe_area: None,
                 notes: Vec::new(),
             }],
         });
@@ -416,5 +612,25 @@ mod tests {
         let error = write_storyboard(&json, &production, &dir, &StoryboardOptions::default()).expect_err("broken reference must fail");
         assert!(error.message.contains("unknown scene `missing`"), "{}", error.message);
         assert!(!dir.exists(), "nothing is written for a broken book");
+    }
+
+    #[test]
+    fn timeline_places_every_shot_and_cue() {
+        let (json, production) = fixture();
+        let out = out_dir().join("timeline.png");
+        let page = write_timeline(&json, &production, &out, &StoryboardOptions::default()).expect("timeline");
+        assert_eq!(page.cells.len(), 2, "one row per shot");
+        assert_eq!(page.cells[1].frames, vec![60, 120], "the second shot maps to frames 60..120");
+        assert!(out.exists());
+    }
+
+    #[test]
+    fn motion_preview_keeps_timing_and_drops_resolution() {
+        let (json, production) = fixture();
+        let out = out_dir().join("motion-preview.mp4");
+        let stats = write_motion_preview(&json, &production, &out, 0.5, &mut |_, _| {}).expect("motion preview");
+        assert_eq!((stats.width, stats.height), (160, 90), "half raster keeps the aspect");
+        assert_eq!(stats.frames, 120, "every frame of the film is previewed");
+        assert!(out.exists());
     }
 }

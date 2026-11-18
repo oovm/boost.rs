@@ -35,7 +35,9 @@ pub use render::{FrameRange, PreviewStats, RenderOptions, RenderStats, lower_aud
 pub mod storyboard;
 
 #[cfg(all(feature = "scene", feature = "layout-export"))]
-pub use storyboard::{StoryboardCell, StoryboardOptions, StoryboardPage, write_contact_sheet, write_storyboard};
+pub use storyboard::{
+    StoryboardCell, StoryboardOptions, StoryboardPage, write_contact_sheet, write_motion_preview, write_storyboard, write_timeline,
+};
 
 #[cfg(all(feature = "scene", feature = "trace"))]
 pub use render::{TracedRender, render_project_traced};

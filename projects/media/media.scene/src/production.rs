@@ -157,7 +157,7 @@ pub struct Asset {
 /// The drawing side (poses, arrows, safe areas) is a later work package; what
 /// I0 fixes is that a panel has an identity, belongs to exactly one shot and
 /// covers a real frame range.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Panel {
     /// Stable handle.
@@ -171,13 +171,23 @@ pub struct Panel {
     /// Line spoken while the panel is on screen, if any.
     #[serde(default)]
     pub dialogue: Option<String>,
+    /// Camera note for this panel, e.g. a move or a focal change.
+    #[serde(default)]
+    pub camera: Option<String>,
+    /// Sound anchor: what has to be heard at this moment.
+    #[serde(default)]
+    pub sound: Option<String>,
+    /// Safe area in normalized panel coordinates `[x0, y0, x1, y1]`.
+    /// Overlays, subtitles and logos are expected to stay inside it.
+    #[serde(default)]
+    pub safe_area: Option<[f32; 4]>,
     /// Review notes attached to this panel.
     #[serde(default)]
     pub notes: Vec<String>,
 }
 
 /// One shot: a scene plus its panels and lock state.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Shot {
     /// Stable handle that panels, cues and review notes point at.
@@ -520,6 +530,15 @@ impl Production {
                 if panel.range[0] >= panel.range[1] {
                     problems.push(format!("panel `{}` has an empty frame range {:?}", panel.id, panel.range));
                 }
+                if let Some([x0, y0, x1, y1]) = panel.safe_area {
+                    let inside = x0 >= 0.0 && y0 >= 0.0 && x1 <= 1.0 && y1 <= 1.0 && x0 < x1 && y0 < y1;
+                    if !inside {
+                        problems.push(format!(
+                            "panel `{}` safe area {:?} must be a non-empty box inside 0..=1",
+                            panel.id, panel.safe_area
+                        ));
+                    }
+                }
             }
         }
 
@@ -781,6 +800,9 @@ mod tests {
                         purpose: "show the request entering".to_owned(),
                         composition: "node graph, left to right".to_owned(),
                         dialogue: Some("先看请求怎么进来".to_owned()),
+                        camera: Some("push in from 1.0 to 1.2".to_owned()),
+                        sound: Some("typing starts".to_owned()),
+                        safe_area: Some([0.08, 0.08, 0.92, 0.86]),
                         notes: Vec::new(),
                     }],
                 },
@@ -794,6 +816,9 @@ mod tests {
                         purpose: "establish the room".to_owned(),
                         composition: "wide, foreground props".to_owned(),
                         dialogue: None,
+                        camera: None,
+                        sound: None,
+                        safe_area: None,
                         notes: vec!["keep the window light".to_owned()],
                     }],
                 },
