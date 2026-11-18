@@ -74,10 +74,6 @@ members = [
     "projects/database/facades/yydb-client",
     "projects/database/facades/yyds",
     "projects/database/facades/yyds-client",
-    "projects/database/facades/yydb",
-    "projects/database/facades/yydb-client",
-    "projects/database/facades/yyds",
-    "projects/database/facades/yyds-client",
     "projects/document/document",
     "projects/document/document.compose",
     "projects/document/document.convert",
@@ -420,10 +416,6 @@ unicode-width = { path = "projects/unicode/unicode.width" }
 mongo = { path = "projects/database/facades/mongo" }
 postgres = { path = "projects/database/facades/postgres" }
 sqlite = { path = "projects/database/facades/sqlite" }
-yydb = { path = "projects/database/facades/yydb" }
-yydb-client = { path = "projects/database/facades/yydb-client" }
-yyds = { path = "projects/database/facades/yyds" }
-yyds-client = { path = "projects/database/facades/yyds-client" }
 yydb = { path = "projects/database/facades/yydb" }
 yydb-client = { path = "projects/database/facades/yydb-client" }
 yyds = { path = "projects/database/facades/yyds" }

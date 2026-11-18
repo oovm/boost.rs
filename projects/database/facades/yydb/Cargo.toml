@@ -1,0 +1,18 @@
+# `yydb` 是嵌入式 YYDB 数据库的产品门面：作者面能力、网关服务与远程客户端。
+[package]
+name = "yydb"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "YYDB embedded database facade over the shared database capability tree"
+publish = false
+readme = "readme.md"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+database = { workspace = true, features = ["harness"] }
+yydb-client = { workspace = true }

@@ -1,0 +1,24 @@
+# `yyds` 是分布式 YYDS 数据库的产品门面：节点资源组装、线服务装配与网关服务。
+[package]
+name = "yyds"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "YYDS distributed node facade: directory assembly, wire serve and capability re-exports"
+publish = false
+readme = "readme.md"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+database = { workspace = true, features = ["harness"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+yyds-client = { workspace = true }
+
+[dev-dependencies]
+database-protocol-yy = { workspace = true }

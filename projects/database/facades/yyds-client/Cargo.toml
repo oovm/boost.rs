@@ -1,0 +1,17 @@
+# `yyds-client` 是 YY 远程客户端的产品门面。
+[package]
+name = "yyds-client"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "YYDS remote client facade over the shared YY wire client"
+publish = false
+readme = "readme.md"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+database = { workspace = true }

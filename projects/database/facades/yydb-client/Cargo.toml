@@ -1,0 +1,17 @@
+# `yydb-client` 是 YYDB 远程客户端的产品门面。
+[package]
+name = "yydb-client"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "YYDB remote client facade over the shared YY wire client"
+publish = false
+readme = "readme.md"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+database = { workspace = true }
