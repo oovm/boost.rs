@@ -198,6 +198,33 @@ pub struct RowRecord<'a> {
     pub bytes: &'a [u8],
 }
 
+/// Storage view that hands out borrowed rows for one record-key prefix.
+///
+/// A narrowed read keeps row bytes in the leaf pages instead of copying them
+/// into a record map. The engine owns that view and passes it to the operator
+/// for the duration of one statement execution.
+pub trait RowSource {
+    /// Rows whose record name starts with `prefix`, in ascending key order.
+    ///
+    /// The iterator borrows `self`, so the source must outlive it. It owns its
+    /// copy of `prefix`, so the caller may pass a temporary string.
+    fn rows_with_prefix<'a>(&'a self, prefix: &str) -> Box<dyn Iterator<Item = Result<RowRecord<'a>>> + 'a>;
+
+    /// Exact row lookup by full record key.
+    ///
+    /// Defaults to the first row of [`Self::rows_with_prefix`]: a source yields
+    /// ascending keys, so a longer key sharing the requested prefix means the
+    /// exact row is absent.
+    fn row_at<'a>(&'a self, key: &str) -> Option<Result<RowRecord<'a>>> {
+        let first = self.rows_with_prefix(key).next()?;
+        match first {
+            Ok(row) if row.key == key => Some(Ok(row)),
+            Ok(_) => None,
+            Err(error) => Some(Err(error)),
+        }
+    }
+}
+
 /// Leaf pages one window reaches, plus the half-open key range it names.
 #[derive(Debug)]
 struct WindowSegment {
@@ -234,6 +261,17 @@ impl RowWindow {
     /// Number of decoded leaf pages backing this view.
     pub fn leaf_count(&self) -> usize {
         self.segments.iter().map(|segment| segment.leaves.len()).sum()
+    }
+}
+
+impl RowSource for RowWindow {
+    fn rows_with_prefix<'a>(&'a self, prefix: &str) -> Box<dyn Iterator<Item = Result<RowRecord<'a>>> + 'a> {
+        let prefix = prefix.to_owned();
+        Box::new(self.iter().filter_map(move |row| match row {
+            Ok(row) if row.key.starts_with(&prefix) => Some(Ok(row)),
+            Ok(_) => None,
+            Err(error) => Some(Err(error)),
+        }))
     }
 }
 
