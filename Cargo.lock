@@ -538,6 +538,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "compiler-analysis"
+version = "0.1.0"
+dependencies = [
+ "compiler-types",
+]
+
+[[package]]
 name = "compiler-optimize"
 version = "0.1.0"
 

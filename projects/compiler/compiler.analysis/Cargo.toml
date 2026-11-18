@@ -1,0 +1,15 @@
+[package]
+name = "compiler-analysis"
+description = "Language-neutral frontend analysis facts: entry, import, export, function and nominal type definition contracts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"
+
+[dependencies]
+compiler-types = { workspace = true }
