@@ -21,6 +21,7 @@
 
 #![deny(missing_docs)]
 
+mod advisory;
 mod artifact;
 mod conda;
 mod error;
@@ -37,6 +38,7 @@ use std::{
     sync::Arc,
 };
 
+pub use advisory::{Advisory, OSV_ENDPOINT, OsvClient, osv_ecosystem};
 pub use artifact::{extract_tarball, sha256_hex, verify_sri};
 pub use conda::CondaRegistry;
 pub use error::RegistryError;

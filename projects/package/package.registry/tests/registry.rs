@@ -41,6 +41,50 @@ fn sri_verification_accepts_matching_digest_and_rejects_mismatch() {
 }
 
 #[test]
+fn osv_client_posts_without_auth_and_maps_advisories() {
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        thread,
+    };
+
+    use package_registry::{HttpClient, OsvClient, RetryConfig, osv_ecosystem};
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+    let address = listener.local_addr().expect("address");
+    let (sender, receiver) = std::sync::mpsc::channel();
+    thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept");
+        let mut request = Vec::new();
+        let mut byte = [0u8; 1];
+        while !request.ends_with(b"\r\n\r\n") {
+            if stream.read_exact(&mut byte).is_err() {
+                break;
+            }
+            request.push(byte[0]);
+        }
+        let body = r#"{"vulns":[{"id":"OSV-1","summary":"demo issue","aliases":["CVE-2026-1"],"database_specific":{"severity":"HIGH"},"affected":[{"ranges":[{"events":[{"fixed":"1.2.3"}]}]}],"references":[{"url":"https://example.invalid/OSV-1"}]}]}"#;
+        let response = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+        let _ = sender.send(String::from_utf8_lossy(&request).into_owned());
+        let _ = stream.write_all(response.as_bytes());
+    });
+
+    let client = OsvClient::with_http(HttpClient::new(RetryConfig::default()).expect("client"))
+        .with_endpoint(format!("http://{address}/v1/query"));
+    let advisories = client.query("demo", "1.0.0", osv_ecosystem("npm").expect("npm ecosystem")).expect("query");
+
+    assert_eq!(advisories.len(), 1);
+    assert_eq!(advisories[0].id.as_deref(), Some("OSV-1"));
+    assert_eq!(advisories[0].severity, "HIGH");
+    assert_eq!(advisories[0].fixed_version.as_deref(), Some("1.2.3"));
+    assert!(osv_ecosystem("valhalla").is_none());
+
+    let head = receiver.recv().expect("request head");
+    assert!(head.starts_with("POST /v1/query HTTP/1.1\r\n"), "{head}");
+    assert!(!head.to_ascii_lowercase().contains("authorization"), "{head}");
+}
+
+#[test]
 fn tarball_extraction_strips_package_prefix_and_rejects_escapes() {
     let directory = std::env::temp_dir().join(format!("package-registry-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&directory);

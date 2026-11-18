@@ -174,6 +174,11 @@ impl HttpClient {
         self.send(Method::Post, url, AuthHeader::Raw(authorization), &[], Some(body), content_type, true)
     }
 
+    /// POST 原始正文，不带认证头（例如公共查询接口）。
+    pub fn post_body(&self, url: &str, body: &[u8], content_type: &str) -> Result<HttpResponse, RegistryError> {
+        self.send(Method::Post, url, AuthHeader::None, &[], Some(body), content_type, true)
+    }
+
     /// POST 原始正文，`token` 以 Bearer 形式发送。
     pub fn post_bytes(&self, url: &str, body: &[u8], token: &str, content_type: &str) -> Result<HttpResponse, RegistryError> {
         self.send(Method::Post, url, AuthHeader::Bearer(token), &[], Some(body), content_type, true)
