@@ -346,7 +346,7 @@ mod tests {
 
     #[test]
     fn loads_path_and_package_plugins() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         fs::write(
             dir.path().join("doki.toml"),
             r#"
@@ -379,7 +379,7 @@ enabled = true
 
     #[test]
     fn rejects_theme_with_both_path_and_package() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         fs::write(
             dir.path().join("doki.toml"),
             r#"
@@ -398,7 +398,7 @@ package = "@scope/theme"
 
     #[test]
     fn local_overlay_only_when_allowed() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         fs::write(
             dir.path().join("doki.toml"),
             r#"
@@ -425,7 +425,7 @@ title = "LocalDev"
 
     #[test]
     fn theme_defaults_under_path_theme_merge_before_doki_toml() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         let theme = dir.path().join("themes/docs");
         fs::create_dir_all(&theme).unwrap();
         fs::write(
@@ -457,7 +457,7 @@ path = "./themes/docs"
 
     #[test]
     fn explicit_theme_defaults_path_for_package_themes() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         let defaults = dir.path().join("vendor/theme/doki.defaults.toml");
         fs::create_dir_all(defaults.parent().unwrap()).unwrap();
         fs::write(&defaults, "lang = \"ja\"\n").unwrap();
@@ -477,7 +477,7 @@ package = "@acme/theme"
 
     #[test]
     fn i18n_block_loads_and_chains_are_validated() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         fs::write(
             dir.path().join("doki.toml"),
             r#"

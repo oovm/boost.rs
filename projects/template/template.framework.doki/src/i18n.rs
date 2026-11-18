@@ -808,7 +808,7 @@ mod tests {
 
     #[test]
     fn load_reports_missing_catalog_warning_and_cycle_error() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         write_catalog(dir.path(), "en", "{ hello: \"Hi\" }");
         let config = ProjectConfig {
             lang: "en".into(),
@@ -830,7 +830,7 @@ mod tests {
 
     #[test]
     fn translate_walks_fallback_and_flags_missing_key() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         write_catalog(dir.path(), "en", "{ greet: \"Hello {name}\", only_en: \"x\" }");
         write_catalog(dir.path(), "zh", "{ greet: \"你好 {name}\" }");
         let config = ProjectConfig {
@@ -864,7 +864,7 @@ mod tests {
 
     #[test]
     fn single_locale_project_without_locales_dir_is_clean() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         let config = ProjectConfig { lang: "en".into(), ..ProjectConfig::default() };
         let (i18n, diagnostics) = I18n::load(dir.path(), &config);
         assert!(diagnostics.is_empty(), "{diagnostics:?}");

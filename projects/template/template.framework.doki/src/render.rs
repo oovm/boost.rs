@@ -506,13 +506,13 @@ mod tests {
     }
 
     fn single_i18n() -> crate::i18n::I18n {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         crate::i18n::I18n::load(dir.path(), &ProjectConfig::default()).0
     }
 
     #[test]
     fn builtin_layout_renders_markdown_html() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         let cfg = ProjectConfig { title: "Site".into(), ..ProjectConfig::default() };
         let node = node_from_md("hello.md", "---\ntitle: Hello\n---\n\n# Heading\n\npara\n");
         let site = site_of(&[node.clone()]);
@@ -525,7 +525,7 @@ mod tests {
 
     #[test]
     fn page_front_matter_lang_overrides_site_lang() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         let cfg = ProjectConfig::default();
         let node = node_from_md("fr.md", "---\nlang: fr\n---\n\nbonjour\n");
         let site = site_of(&[node.clone()]);
@@ -535,7 +535,7 @@ mod tests {
 
     #[test]
     fn path_theme_layout_wins() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         let layouts = dir.path().join("themes/docs/layouts");
         std::fs::create_dir_all(&layouts).unwrap();
         std::fs::write(layouts.join("layout.dejavu"), "<wrap><% title %>:<% content |> safe %></wrap>\n").unwrap();
@@ -554,7 +554,7 @@ mod tests {
 
     #[test]
     fn layout_precedence_prefers_front_matter_then_page_type_then_generic() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         let layouts = dir.path().join("themes/docs/layouts");
         std::fs::create_dir_all(&layouts).unwrap();
         std::fs::write(layouts.join("layout.dejavu"), "<generic><% title %></generic>\n").unwrap();
@@ -589,7 +589,7 @@ mod tests {
 
     #[test]
     fn page_type_layout_uses_the_extension_order() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         let layouts = dir.path().join("themes/docs/layouts");
         std::fs::create_dir_all(&layouts).unwrap();
         std::fs::write(layouts.join("home.doki"), "<home-doki>{% title %}</home-doki>\n").unwrap();
@@ -609,7 +609,7 @@ mod tests {
 
     #[test]
     fn site_posts_entries_carry_tags() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         let layouts = dir.path().join("themes/docs/layouts");
         std::fs::create_dir_all(&layouts).unwrap();
         std::fs::write(layouts.join("layout.doki"), "<tags>{% loop post in site.posts %}[{% post.tags %}]{% end loop %}</tags>\n").unwrap();
@@ -626,7 +626,7 @@ mod tests {
 
     #[test]
     fn template_context_exposes_site_page_fields() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         let layouts = dir.path().join("themes/docs/layouts");
         std::fs::create_dir_all(&layouts).unwrap();
         std::fs::write(layouts.join("layout.doki"), "<ctx>{% page.type %}|{% page.route %}|{% page.url %}|{% page.permalink %}</ctx>\n")
@@ -663,7 +663,7 @@ mod tests {
 
     #[test]
     fn taxonomy_context_exposes_index_and_tag_views() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         let layouts = dir.path().join("themes/docs/layouts");
         std::fs::create_dir_all(&layouts).unwrap();
         std::fs::write(
@@ -705,7 +705,7 @@ mod tests {
 
     #[test]
     fn taxonomy_layout_falls_back_to_page_then_builtin() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         let layouts = dir.path().join("themes/docs/layouts");
         std::fs::create_dir_all(&layouts).unwrap();
         std::fs::write(layouts.join("page.dejavu"), "<page-fallback><% title %></page-fallback>\n").unwrap();
@@ -780,7 +780,7 @@ mod tests {
 
     #[test]
     fn registry_t_and_locale_follow_the_page_locale() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         let layouts = dir.path().join("themes/docs/layouts");
         std::fs::create_dir_all(&layouts).unwrap();
         std::fs::write(
@@ -801,7 +801,7 @@ mod tests {
 
     #[test]
     fn t_falls_back_along_the_chain_without_warning() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         let layouts = dir.path().join("themes/docs/layouts");
         std::fs::create_dir_all(&layouts).unwrap();
         std::fs::write(layouts.join("layout.doki"), "<fb>{% t(\"only_en\") %}</fb>\n").unwrap();
@@ -814,7 +814,7 @@ mod tests {
 
     #[test]
     fn missing_key_renders_the_literal_and_warns_with_the_attempted_chain() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         let layouts = dir.path().join("themes/docs/layouts");
         std::fs::create_dir_all(&layouts).unwrap();
         std::fs::write(layouts.join("layout.doki"), "<miss>{% t(\"nope\") %}</miss>\n").unwrap();

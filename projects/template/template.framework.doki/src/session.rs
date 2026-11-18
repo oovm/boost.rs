@@ -794,7 +794,7 @@ incremental = true
 
     #[test]
     fn open_parses_front_matter() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         write_min_project(dir.path());
         let session = BuildSession::open_project(dir.path(), LoadOptions::default()).unwrap();
         assert_eq!(session.graph().len(), 2);
@@ -805,7 +805,7 @@ incremental = true
 
     #[test]
     fn production_skips_drafts() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         write_min_project(dir.path());
         fs::write(dir.path().join("content/secret.md"), "---\ntitle: Secret\ndraft: true\n---\n\nhidden\n").unwrap();
         let mut session = BuildSession::open_project(dir.path(), LoadOptions::default()).unwrap();
@@ -828,7 +828,7 @@ incremental = true
 
     #[test]
     fn build_without_plugins_commits_mirrored_pages() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         write_min_project(dir.path());
         let mut session = BuildSession::open_project(dir.path(), LoadOptions::default()).unwrap();
         let plan = session.prepare_build(BuildMode::Production).unwrap();
@@ -853,7 +853,7 @@ incremental = true
 
     #[test]
     fn invalidate_reloads_and_incremental_rebuild() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         write_min_project(dir.path());
         let mut session = BuildSession::open_project(dir.path(), LoadOptions::default()).unwrap();
         session.prepare_build(BuildMode::Production).unwrap();
@@ -875,7 +875,7 @@ incremental = true
 
     #[test]
     fn invalidate_remove_drops_node() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         write_min_project(dir.path());
         let mut session = BuildSession::open_project(dir.path(), LoadOptions::default()).unwrap();
         fs::remove_file(dir.path().join("content/about.md")).unwrap();
@@ -886,7 +886,7 @@ incremental = true
 
     #[test]
     fn incremental_remove_deletes_output() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         write_min_project(dir.path());
         let mut session = BuildSession::open_project(dir.path(), LoadOptions::default()).unwrap();
         session.prepare_build(BuildMode::Production).unwrap();
@@ -903,7 +903,7 @@ incremental = true
 
     #[test]
     fn full_rebuild_removes_stale_outputs() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         write_min_project(dir.path());
         let mut session = BuildSession::open_project(dir.path(), LoadOptions::default()).unwrap();
         session.prepare_build(BuildMode::Production).unwrap();
@@ -922,7 +922,7 @@ incremental = true
 
     #[test]
     fn prepare_emits_validate_hooks_for_plugins() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         write_min_project(dir.path());
         fs::write(
             dir.path().join("doki.toml"),
@@ -987,7 +987,7 @@ enabled = false
 
     #[test]
     fn hook_payloads_carry_site_pages_and_site_summary() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         write_min_project(dir.path());
         fs::create_dir_all(dir.path().join("content/posts")).unwrap();
         fs::write(dir.path().join("content/index.md"), "---\ntitle: Home\n---\n\nhome\n").unwrap();
@@ -1049,7 +1049,7 @@ enabled = true
 
     #[test]
     fn prepare_build_fails_on_route_conflict() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         write_min_project(dir.path());
         fs::create_dir_all(dir.path().join("content/posts")).unwrap();
         fs::write(dir.path().join("content/posts/hello.md"), "---\ntitle: Plain\n---\n\nplain\n").unwrap();
@@ -1069,7 +1069,7 @@ enabled = true
 
     #[test]
     fn build_rewrites_content_links_to_output_permalinks() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         write_min_project(dir.path());
         fs::write(dir.path().join("content/hello.md"), "---\ntitle: Hello\n---\n\nsee [About](about/) and [ext](https://example.com/)\n")
             .unwrap();
@@ -1083,7 +1083,7 @@ enabled = true
 
     #[test]
     fn dispose_blocks_further_builds() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = boost_fs::temp::create_folder().unwrap();
         write_min_project(dir.path());
         let mut session = BuildSession::open_project(dir.path(), LoadOptions::default()).unwrap();
         session.dispose();
