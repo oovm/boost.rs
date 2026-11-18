@@ -668,7 +668,7 @@ fn check_node(project: &Project, where_: &str, node: &Node, problems: &mut Vec<S
     // cannot express is a located error instead of a silently ignored track.
     let (supports_position, supports_progress) = match &node.item {
         Item::Bands { .. } | Item::Grain { .. } | Item::Layer { .. } => (false, false),
-        Item::Path { .. } | Item::Chart { .. } => (true, true),
+        Item::Path { .. } | Item::Chart { .. } | Item::Callout { .. } => (true, true),
         Item::Shape { shape, .. } => (true, *shape == ShapeKind::Line),
         _ => (true, false),
     };
@@ -850,6 +850,12 @@ fn check_item_colors(where_: &str, item: &Item, problems: &mut Vec<String>) {
             }
             check_color(where_, axis.as_deref(), problems);
             check_color(where_, grid.as_deref(), problems);
+        }
+        Item::Callout { dur, color, text_color, panel, .. } => {
+            check_dur(where_, *dur, problems);
+            check_color(where_, color.as_deref(), problems);
+            check_color(where_, text_color.as_deref(), problems);
+            check_color(where_, panel.as_deref(), problems);
         }
     }
 }
@@ -1115,6 +1121,12 @@ fn item_texts(item: &Item) -> Vec<(bool, String)> {
         Item::Chart { y_ticks, x_labels, .. } => {
             out.extend(y_ticks.iter().map(|tick| (false, tick.label.clone())));
             out.extend(x_labels.iter().map(|label| (false, label.clone())));
+        }
+        Item::Callout { text, note, .. } => {
+            out.push((false, text.clone()));
+            if let Some(note) = note {
+                out.push((false, note.clone()));
+            }
         }
         Item::Layer { items, .. } => {
             for child in items {
@@ -1828,7 +1840,27 @@ fn paint_item(
             let t = frame_index as f32 / project.duration_frames as f32;
             frame.round_rect(margin, bar_y, full * t, 4.0 * s, 2.0 * s, fill);
         }
-        Item::Chart { at, dur, x, y, w, h, fade_in, fade_out, domain, bars, lines, axis, grid, y_ticks, x_labels, label_size, progress } => {
+        Item::Chart {
+            at,
+            dur,
+            x,
+            y,
+            w,
+            h,
+            fade_in,
+            fade_out,
+            domain,
+            bars,
+            lines,
+            axis,
+            grid,
+            y_ticks,
+            x_labels,
+            label_size,
+            progress,
+            value_labels,
+            value_decimals,
+        } => {
             if local < *at || local >= *at + *dur {
                 return Ok(());
             }
@@ -1887,6 +1919,35 @@ fn paint_item(
                     if height > 0.5 {
                         frame.round_rect(left, top.min(baseline), bar_w * 0.9, height, (bar_w * 0.12).min(6.0 * s), c);
                     }
+                    // Values print only once the bar has fully grown, so the
+                    // number never floats over a half-drawn column.
+                    if *value_labels && slot_reveal(slot) >= 0.999 {
+                        let value_px = label_px * 0.8;
+                        let formatted = match value_decimals {
+                            Some(decimals) => format!("{:.*}", *decimals as usize, value),
+                            None => {
+                                if (*value - value.round()).abs() < 0.005 {
+                                    format!("{:.0}", value)
+                                }
+                                else {
+                                    format!("{value:.1}")
+                                }
+                            }
+                        };
+                        let label_y = if *value >= 0.0 { top - 6.0 * s - value_px } else { top + 6.0 * s };
+                        fonts.draw_block(
+                            frame,
+                            &formatted,
+                            left + bar_w * 0.45,
+                            label_y,
+                            value_px,
+                            false,
+                            label_color,
+                            Align::Center,
+                            None,
+                            1.0,
+                        );
+                    }
                 }
             }
             for series in lines {
@@ -1927,6 +1988,96 @@ fn paint_item(
                     label_px,
                     false,
                     label_color,
+                    Align::Center,
+                    None,
+                    1.0,
+                );
+            }
+        }
+        Item::Callout { at, dur, ax, ay, x, y, text, note, size, color, text_color, panel, elbow, progress, fade_in, fade_out } => {
+            if local < *at || local >= *at + *dur {
+                return Ok(());
+            }
+            let life = local - *at;
+            let alpha = fade(life, *dur, *fade_in, *fade_out) * alpha_mul;
+            if alpha <= 0.001 {
+                return Ok(());
+            }
+            let reveal = progress_of(*progress).clamp(0.0, 1.0);
+            let leader_color = parse_or(color.as_deref(), Rgba([93, 111, 140, 255]));
+            let ink = parse_or(text_color.as_deref(), parse_or(color.as_deref(), Rgba([230, 238, 250, 255])));
+            let anchor = [px(x_of(*ax), fw as u32), px(y_of(*ay), fh as u32)];
+            let center = [px(x_of(*x), fw as u32), px(y_of(*y), fh as u32)];
+            let text_px = size * s;
+            let note_px = text_px * 0.8;
+            let text_w = fonts.measure(text, text_px, true, false);
+            let note_w = note.as_deref().map_or(0.0, |line| fonts.measure(line, note_px, false, false));
+            let label_w = text_w.max(note_w);
+            let line_h = text_px * 1.35;
+            let label_h = if note.is_some() { line_h * 2.0 } else { line_h };
+            let box_left = center[0] - label_w / 2.0;
+            let box_right = center[0] + label_w / 2.0;
+            let box_top = center[1] - label_h / 2.0;
+            let box_bottom = center[1] + label_h / 2.0;
+            // The leader never enters the label box: it stops on the edge the
+            // anchor faces, with an extra gap when the routing bends.
+            let leader_points: Vec<[f32; 2]> = if *elbow {
+                let gap = 8.0 * s;
+                let edge_x = if center[0] >= anchor[0] { box_left - gap } else { box_right + gap };
+                vec![anchor, [anchor[0], center[1]], [edge_x, center[1]]]
+            }
+            else {
+                let endpoint = if anchor[1] < box_top {
+                    [center[0], box_top]
+                }
+                else if anchor[1] > box_bottom {
+                    [center[0], box_bottom]
+                }
+                else if anchor[0] < center[0] {
+                    [box_left, center[1]]
+                }
+                else {
+                    [box_right, center[1]]
+                };
+                vec![anchor, endpoint]
+            };
+            let line_reveal = (reveal / 0.65).clamp(0.0, 1.0);
+            frame.stroke_polyline(&leader_points, 2.0 * s, leader_color.with_alpha(alpha), line_reveal, false);
+            // The anchor dot marks the exact data point, so it lands first.
+            let dot_alpha = alpha * (reveal / 0.25).clamp(0.0, 1.0);
+            if dot_alpha > 0.001 {
+                frame.glow(anchor[0], anchor[1], 10.0 * s, leader_color.with_alpha(dot_alpha * 0.35));
+                let radius = 5.0 * s;
+                let dot: Vec<[f32; 2]> = (0..16)
+                    .map(|step| {
+                        let angle = std::f32::consts::TAU * step as f32 / 16.0;
+                        [anchor[0] + angle.cos() * radius, anchor[1] + angle.sin() * radius]
+                    })
+                    .collect();
+                frame.fill_polygon(&dot, leader_color.with_alpha(dot_alpha), false);
+            }
+            let label_alpha = alpha * ((reveal - 0.45) / 0.3).clamp(0.0, 1.0);
+            if label_alpha <= 0.001 {
+                return Ok(());
+            }
+            if let Some(panel_color) = panel {
+                let pad_x = 10.0 * s;
+                let pad_y = 8.0 * s;
+                let fill = parse_or(Some(panel_color), Rgba([13, 21, 38, 255])).with_alpha(label_alpha);
+                frame.round_rect(box_left - pad_x, box_top - pad_y, label_w + pad_x * 2.0, label_h + pad_y * 2.0, 8.0 * s, fill);
+            }
+            let text_top = center[1] - label_h / 2.0;
+            let text_alpha = ink.with_alpha(label_alpha);
+            fonts.draw_block(frame, text, center[0], text_top, text_px, false, text_alpha, Align::Center, None, 1.35);
+            if let Some(note) = note {
+                fonts.draw_block(
+                    frame,
+                    note,
+                    center[0],
+                    text_top + line_h,
+                    note_px,
+                    false,
+                    ink.with_alpha(label_alpha * 0.8),
                     Align::Center,
                     None,
                     1.0,
@@ -2820,5 +2971,34 @@ mod tests {
         let (_, _, shown) = preview_pixels(&film(1.0).to_string(), 15, "chart-progress-1.png");
         assert_eq!(count_blue(&hidden), 0, "progress 0 must not paint the bars");
         assert!(count_blue(&shown) > 100, "progress 1 must paint the bars");
+    }
+
+    /// A callout draws its leader and anchor dot before fading the label in:
+    /// progress 0 paints nothing, progress 1 paints the declared leader color.
+    #[test]
+    fn callout_progress_reveals_leader_then_label() {
+        let film = |progress: f32| {
+            serde_json::json!({
+                "width": 320, "height": 180, "fps": 30, "duration_frames": 30,
+                "scenes": [{ "start": 0, "duration": 30,
+                    "background": { "kind": "solid", "color": "#05070f" },
+                    "items": [{
+                        "kind": "callout", "at": 0, "dur": 30,
+                        "ax": 0.2, "ay": 0.7, "x": 0.65, "y": 0.3,
+                        "text": "3.4x", "note": "vs baseline",
+                        "size": 26.0, "color": "#e8b86d", "panel": "#132038",
+                        "elbow": true, "progress": progress,
+                        "fade_in": 0, "fade_out": 0
+                    }]
+                }],
+                "audio": null
+            })
+        };
+        let count_leader = |pixels: &[u8]| pixels.chunks(4).filter(|p| p[0] == 0xe8 && p[1] == 0xb8 && p[2] == 0x6d).count();
+        let (_, _, hidden) = preview_pixels(&film(0.0).to_string(), 15, "callout-progress-0.png");
+        let (_, _, shown) = preview_pixels(&film(1.0).to_string(), 15, "callout-progress-1.png");
+        assert_eq!(count_leader(&hidden), 0, "progress 0 must not paint the leader");
+        assert!(count_leader(&shown) > 20, "progress 1 must paint the leader and anchor dot");
+        assert_ne!(hidden, shown, "the two frames must differ");
     }
 }

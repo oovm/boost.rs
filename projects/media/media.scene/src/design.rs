@@ -365,6 +365,11 @@ fn resolve_item(
             resolve_optional(axis, scene, node, &format!("{base}.axis"), map, report)?;
             resolve_optional(grid, scene, node, &format!("{base}.grid"), map, report)?;
         }
+        Item::Callout { color, text_color, panel, .. } => {
+            resolve_optional(color, scene, node, &format!("{base}.color"), map, report)?;
+            resolve_optional(text_color, scene, node, &format!("{base}.text_color"), map, report)?;
+            resolve_optional(panel, scene, node, &format!("{base}.panel"), map, report)?;
+        }
         Item::Grain { .. } | Item::Instance { .. } | Item::Image { .. } | Item::Video { .. } => {}
     }
     Ok(())

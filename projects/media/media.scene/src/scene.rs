@@ -224,6 +224,10 @@ fn default_one_f32() -> f32 {
     1.0
 }
 
+fn default_true() -> bool {
+    true
+}
+
 /// Horizontal anchor of a text-anchored item.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -722,6 +726,50 @@ pub enum Item {
         /// Reveal fraction along the category axis, `0.0..=1.0`.
         #[serde(default = "default_one_f32")]
         progress: f32,
+        /// Paint each bar's value above it.
+        #[serde(default)]
+        value_labels: bool,
+        /// Fixed number of decimals for value labels; the default trims
+        /// trailing zeros.
+        #[serde(default)]
+        value_decimals: Option<u32>,
+    },
+    /// An annotation: a leader line from an anchor point to a label box.
+    /// `progress` draws the leader first, then fades the label in.
+    Callout {
+        at: u32,
+        dur: u32,
+        /// Anchor point the leader starts from, normalized.
+        ax: f32,
+        ay: f32,
+        /// Label box center, normalized.
+        x: f32,
+        y: f32,
+        /// Primary label line.
+        text: String,
+        /// Optional secondary line painted under `text`.
+        #[serde(default)]
+        note: Option<String>,
+        #[serde(default = "default_note_size")]
+        size: f32,
+        /// Leader, dot and default text color.
+        #[serde(default)]
+        color: Option<String>,
+        /// Label text color; defaults to `color` then a neutral ink.
+        #[serde(default)]
+        text_color: Option<String>,
+        /// Label background panel; `None` paints bare text.
+        #[serde(default)]
+        panel: Option<String>,
+        /// `true` bends the leader with an elbow, `false` draws it straight.
+        #[serde(default = "default_true")]
+        elbow: bool,
+        #[serde(default = "default_one_f32")]
+        progress: f32,
+        #[serde(default = "default_fade")]
+        fade_in: u32,
+        #[serde(default = "default_fade")]
+        fade_out: u32,
     },
 }
 
@@ -1010,7 +1058,9 @@ mod tests {
             "y_ticks": [{ "value": 1.0, "label": "1" }],
             "x_labels": ["a", "b"],
             "label_size": 18.0,
-            "progress": 0.5
+            "progress": 0.5,
+            "value_labels": true,
+            "value_decimals": 2
         });
         let item: Item = serde_json::from_value(json.clone()).expect("chart parses");
         let back = serde_json::to_value(&item).expect("chart serializes");
@@ -1037,6 +1087,8 @@ mod tests {
         assert_eq!(back["x_labels"], serde_json::json!([]));
         assert!(back["axis"].is_null());
         assert!(back["grid"].is_null());
+        assert_eq!(back["value_labels"], serde_json::json!(false));
+        assert!(back["value_decimals"].is_null());
     }
 
     /// A line series omits its stroke width independently of the color.
@@ -1045,5 +1097,42 @@ mod tests {
         let series: LineSeries =
             serde_json::from_value(serde_json::json!({ "points": [0.1], "color": "#ffffff" })).expect("line series parses");
         assert_eq!(series.stroke, 3.0);
+    }
+
+    /// A fully declared callout survives the wire round trip unchanged.
+    #[test]
+    fn callout_wire_round_trip() {
+        let json = serde_json::json!({
+            "kind": "callout", "at": 4, "dur": 40,
+            "ax": 0.25, "ay": 0.75, "x": 0.5, "y": 0.25,
+            "text": "960 GB/s", "note": "measured",
+            "size": 30.0, "color": "#e8b86d", "text_color": "#0d1526",
+            "panel": "#e8b86d", "elbow": false, "progress": 0.5,
+            "fade_in": 6, "fade_out": 6
+        });
+        let item: Item = serde_json::from_value(json.clone()).expect("callout parses");
+        let back = serde_json::to_value(&item).expect("callout serializes");
+        assert_eq!(json, back);
+    }
+
+    /// A callout with only the anchor, label and timing takes the documented
+    /// defaults: an elbow leader at full reveal.
+    #[test]
+    fn callout_defaults() {
+        let minimal = serde_json::json!({
+            "kind": "callout", "at": 0, "dur": 30,
+            "ax": 0.2, "ay": 0.7, "x": 0.6, "y": 0.3, "text": "note"
+        });
+        let item: Item = serde_json::from_value(minimal).expect("minimal callout parses");
+        let back = serde_json::to_value(&item).expect("callout serializes");
+        assert_eq!(back["elbow"], serde_json::json!(true));
+        assert_eq!(back["progress"], serde_json::json!(1.0));
+        assert_eq!(back["size"], serde_json::json!(26.0));
+        assert_eq!(back["fade_in"], serde_json::json!(10));
+        assert_eq!(back["fade_out"], serde_json::json!(10));
+        assert!(back["note"].is_null());
+        assert!(back["color"].is_null());
+        assert!(back["text_color"].is_null());
+        assert!(back["panel"].is_null());
     }
 }
