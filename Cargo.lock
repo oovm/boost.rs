@@ -904,6 +904,7 @@ dependencies = [
  "database-formats",
  "database-harness",
  "database-input",
+ "database-migration",
  "database-protocol",
  "database-protocol-mongo",
  "database-protocol-mysql",
@@ -1017,6 +1018,13 @@ dependencies = [
  "oak-sql",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "database-migration"
+version = "0.1.0"
+dependencies = [
+ "database-client",
 ]
 
 [[package]]

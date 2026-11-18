@@ -42,6 +42,7 @@ members = [
     "projects/database/database.formats",
     "projects/database/database.harness",
     "projects/database/database.input",
+    "projects/database/database.migration",
     "projects/database/database.protocol",
     "projects/database/database.protocol.mongo",
     "projects/database/database.protocol.mysql",
@@ -244,6 +245,7 @@ database-execution = { path = "projects/database/database.execution" }
 database-formats = { path = "projects/database/database.formats" }
 database-harness = { path = "projects/database/database.harness" }
 database-input = { path = "projects/database/database.input" }
+database-migration = { path = "projects/database/database.migration" }
 database-protocol = { path = "projects/database/database.protocol" }
 database-protocol-mongo = { path = "projects/database/database.protocol.mongo" }
 database-protocol-mysql = { path = "projects/database/database.protocol.mysql" }

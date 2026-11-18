@@ -1,0 +1,21 @@
+# `database-migration` 把一个外部 PostgreSQL 源的表结构与数据搬进本地引擎。
+#
+# 源与目标都经 trait 注入：源默认走 `database-client` 的 PostgreSQL wire 客户端，
+# 目标由调用方提供（facades 或产品门面），因此本 crate 不绑定任何具体存储。
+[package]
+name = "database-migration"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Schema and data migration from an external PostgreSQL source into a local database engine"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+database-client = { workspace = true }
+
+[dev-dependencies]

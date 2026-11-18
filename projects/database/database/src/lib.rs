@@ -107,6 +107,12 @@ pub mod server {
     pub use database_server::*;
 }
 
+/// 外部 PostgreSQL 源到本地引擎的表结构与数据迁移。
+#[cfg(feature = "migration")]
+pub mod migration {
+    pub use database_migration::*;
+}
+
 /// 测试与基准判定协议：语料身份、已知差异台账与报告信封。
 #[cfg(feature = "harness")]
 pub mod harness {
