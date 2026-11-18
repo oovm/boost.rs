@@ -4021,6 +4021,7 @@ dependencies = [
 name = "science-cas"
 version = "0.1.0"
 dependencies = [
+ "plotter",
  "science-gc",
  "science-graph",
  "science-harness",

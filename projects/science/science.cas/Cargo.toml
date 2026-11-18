@@ -22,6 +22,7 @@ science-vm = { workspace = true }
 science-jit = { workspace = true, optional = true }
 science-graph = { workspace = true }
 science-ndarray = { workspace = true }
+plotter = { workspace = true }
 
 [dev-dependencies]
 science-harness = { workspace = true }
