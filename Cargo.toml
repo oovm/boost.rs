@@ -503,6 +503,10 @@ encoding_rs = "0.8.35"
 
 # --- Upstream sources: pinned to full 40-character revisions ---
 acorn-core = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "2033ca05fcdc74d8484b1426beb4c204ef2fc613" }
+acorn-dex = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "beccbdf77374dbb2ca67395be19af3e2048c57ca" }
+acorn-host = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "beccbdf77374dbb2ca67395be19af3e2048c57ca" }
+acorn-mach-o = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "beccbdf77374dbb2ca67395be19af3e2048c57ca" }
+acorn-zip = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "beccbdf77374dbb2ca67395be19af3e2048c57ca" }
 acorn-codec = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "2033ca05fcdc74d8484b1426beb4c204ef2fc613", default-features = false, features = ["compression"] }
 acorn-doc = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "2033ca05fcdc74d8484b1426beb4c204ef2fc613" }
 acorn-docx = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "2033ca05fcdc74d8484b1426beb4c204ef2fc613" }

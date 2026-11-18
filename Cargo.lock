@@ -37,6 +37,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "acorn-dex"
+version = "0.0.1"
+source = "git+https://github.com/yggdrasil-language/acorn.rs?rev=beccbdf77374dbb2ca67395be19af3e2048c57ca#beccbdf77374dbb2ca67395be19af3e2048c57ca"
+dependencies = [
+ "acorn-jvm",
+]
+
+[[package]]
 name = "acorn-doc"
 version = "0.0.1"
 source = "git+https://github.com/yggdrasil-language/acorn.rs?rev=2033ca05fcdc74d8484b1426beb4c204ef2fc613#2033ca05fcdc74d8484b1426beb4c204ef2fc613"
@@ -77,6 +85,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "acorn-host"
+version = "0.0.1"
+source = "git+https://github.com/yggdrasil-language/acorn.rs?rev=beccbdf77374dbb2ca67395be19af3e2048c57ca#beccbdf77374dbb2ca67395be19af3e2048c57ca"
+dependencies = [
+ "acorn-mach-o",
+ "acorn-x64",
+]
+
+[[package]]
 name = "acorn-jvm"
 version = "0.0.1"
 source = "git+https://github.com/yggdrasil-language/acorn.rs?rev=beccbdf77374dbb2ca67395be19af3e2048c57ca#beccbdf77374dbb2ca67395be19af3e2048c57ca"
@@ -86,6 +103,11 @@ dependencies = [
  "acorn-zip 0.0.1 (git+https://github.com/yggdrasil-language/acorn.rs?rev=beccbdf77374dbb2ca67395be19af3e2048c57ca)",
  "serde",
 ]
+
+[[package]]
+name = "acorn-mach-o"
+version = "0.0.1"
+source = "git+https://github.com/yggdrasil-language/acorn.rs?rev=beccbdf77374dbb2ca67395be19af3e2048c57ca#beccbdf77374dbb2ca67395be19af3e2048c57ca"
 
 [[package]]
 name = "acorn-odin"
@@ -149,6 +171,14 @@ source = "git+https://github.com/yggdrasil-language/acorn.rs?rev=beccbdf77374dbb
 dependencies = [
  "acorn-codec 0.0.1 (git+https://github.com/yggdrasil-language/acorn.rs?rev=beccbdf77374dbb2ca67395be19af3e2048c57ca)",
  "serde",
+]
+
+[[package]]
+name = "acorn-x64"
+version = "0.0.1"
+source = "git+https://github.com/yggdrasil-language/acorn.rs?rev=beccbdf77374dbb2ca67395be19af3e2048c57ca#beccbdf77374dbb2ca67395be19af3e2048c57ca"
+dependencies = [
+ "acorn-pe",
 ]
 
 [[package]]
@@ -576,11 +606,17 @@ dependencies = [
 name = "compiler-valkyrie"
 version = "0.1.0"
 dependencies = [
+ "acorn-dex",
+ "acorn-host",
+ "acorn-jvm",
+ "acorn-mach-o",
+ "acorn-zip 0.0.1 (git+https://github.com/yggdrasil-language/acorn.rs?rev=beccbdf77374dbb2ca67395be19af3e2048c57ca)",
  "boost-harness",
  "compiler-analysis",
  "compiler-emitter",
  "compiler-target",
  "compiler-types",
+ "interpreter-vm-ovm",
  "language-format",
  "language-highlight",
  "oak-awsl",

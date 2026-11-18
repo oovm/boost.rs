@@ -12,16 +12,25 @@ default = []
 serde = ["compiler-types/serde"]
 
 [dependencies]
+acorn-dex = { workspace = true }
+acorn-host = { workspace = true }
+acorn-jvm = { workspace = true }
+acorn-mach-o = { workspace = true }
+acorn-zip = { workspace = true }
 boost-harness = { workspace = true }
 compiler-analysis = { workspace = true }
 compiler-emitter = { workspace = true }
 compiler-target = { workspace = true }
 compiler-types = { workspace = true }
+interpreter-vm-ovm = { workspace = true }
 oak-awsl = { workspace = true }
 oak-core = { workspace = true }
-language-format = { workspace = true }
+language-format = { workspace = true, features = ["serde"] }
 language-highlight = { workspace = true }
 oak-valkyrie = { workspace = true }
 oak-von = { workspace = true }
 ordered-float = "5.5.0"
+package-resolve = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }

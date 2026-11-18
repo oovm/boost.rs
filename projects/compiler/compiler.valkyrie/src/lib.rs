@@ -19,5 +19,8 @@
 
 #![allow(missing_docs)]
 
-pub mod compiler;
+#[macro_use]
 pub mod utilities;
+pub mod asgard;
+pub mod compiler;
+pub mod legion;
