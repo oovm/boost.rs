@@ -1629,8 +1629,13 @@ fn paint_item(
                     let height = px(*h, fh as u32);
                     frame.round_rect(cx - width / 2.0, cy - height / 2.0, width, height, *radius * s, c);
                 }
-                ShapeKind::Circle => frame.circle(cx, cy, px(*w, fw as u32) / 2.0, c, None),
-                ShapeKind::Ring => frame.circle(cx, cy, px(*w, fw as u32) / 2.0, c, stroke.map(|v| v * s).or(Some(3.0 * s))),
+                // Radial shapes fill their `w` × `h` box just like `rect`, so a
+                // non-square box is an ellipse instead of a circle that silently
+                // drops `h`.
+                ShapeKind::Circle => frame.ellipse(cx, cy, px(*w, fw as u32) / 2.0, px(*h, fh as u32) / 2.0, c, None),
+                ShapeKind::Ring => {
+                    frame.ellipse(cx, cy, px(*w, fw as u32) / 2.0, px(*h, fh as u32) / 2.0, c, stroke.map(|v| v * s).or(Some(3.0 * s)))
+                }
                 ShapeKind::Line => {
                     // `progress` lets a line draw itself, which is how motion
                     // reads as intent rather than as a slideshow.
@@ -2855,6 +2860,29 @@ mod tests {
         let (_, _, late) = preview_pixels(&json, 28, "follow-late.png");
         assert!(brightest_column(w, h, &early) < 20, "follow starts at the path head");
         assert!(brightest_column(w, h, &late) > 44, "follow ends at the path tail");
+    }
+
+    /// A radial shape fills its `w` × `h` box: a wide, short `circle` paints out
+    /// to `w` horizontally and stops at `h` vertically, so the height is no
+    /// longer a silently discarded field.
+    #[test]
+    fn radial_shape_fills_both_axes() {
+        let film = serde_json::json!({
+            "width": 64, "height": 64, "fps": 15, "duration_frames": 4,
+            "scenes": [{ "start": 0, "duration": 4,
+                "background": { "kind": "solid", "color": "#000000" },
+                "items": [{
+                    "kind": "shape", "shape": "circle", "at": 0, "dur": 4,
+                    "x": 0.5, "y": 0.5, "w": 0.8, "h": 0.2, "color": "#ffffff",
+                    "fade_in": 0, "fade_out": 0
+                }]
+            }],
+            "audio": null
+        });
+        let (w, h, rgba) = preview_pixels(&film.to_string(), 1, "shape-ellipse.png");
+        let lit = |x: u32, y: u32| u32::from(rgba[((y * w + x) * 4) as usize]);
+        assert!(lit(w / 2 + 12, h / 2) > 200, "the horizontal radius reaches `w`");
+        assert_eq!(lit(w / 2, h / 2 + 12), 0, "nothing is painted past `h / 2`");
     }
 
     /// One component definition, two instances: the definition is painted at

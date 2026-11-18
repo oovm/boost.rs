@@ -56,6 +56,12 @@ pub trait Paint {
     /// Ring or disc.
     fn circle(&mut self, cx: f32, cy: f32, radius: f32, c: Rgba, stroke: Option<f32>);
 
+    /// Ellipse or elliptical ring with an `rx` × `ry` box.
+    ///
+    /// The box is the primitive, not the radius: a scene shape declares `w` and
+    /// `h`, and both must reach the silhouette. `circle` is the `rx == ry` case.
+    fn ellipse(&mut self, cx: f32, cy: f32, rx: f32, ry: f32, c: Rgba, stroke: Option<f32>);
+
     /// Straight line with thickness.
     fn line(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, thickness: f32, c: Rgba);
 
@@ -148,6 +154,25 @@ fn blend_cover(frame: &mut Frame, x: u32, y: u32, c: Rgba, cover: f32, additive:
     else {
         frame.blend(x, y, color);
     }
+}
+
+/// Signed pixel distance from an ellipse boundary (positive inside), taken to
+/// first order along the outward normal. The gradient correction is what keeps
+/// the one-pixel feather even around a stretched silhouette instead of thinning
+/// on the wide axis; for `rx == ry` it collapses to the plain `r - d` distance.
+#[inline]
+fn ellipse_cover(dx: f32, dy: f32, rx: f32, ry: f32) -> f32 {
+    let gx = dx / (rx * rx);
+    let gy = dy / (ry * ry);
+    let g = (dx * gx + dy * gy).sqrt();
+    if g <= 1e-6 {
+        return rx.min(ry);
+    }
+    let grad = (gx * gx + gy * gy).sqrt();
+    if grad <= 1e-6 {
+        return rx.min(ry);
+    }
+    (1.0 - g) * g / grad
 }
 
 /// Rasterises one segment by sampling its distance field, so a pixel the stroke
@@ -504,25 +529,29 @@ impl Paint for Frame {
     }
 
     fn circle(&mut self, cx: f32, cy: f32, radius: f32, c: Rgba, stroke: Option<f32>) {
-        let r = radius.max(0.0);
-        if r <= 0.0 || c.0[3] == 0 {
+        self.ellipse(cx, cy, radius, radius, c, stroke);
+    }
+
+    fn ellipse(&mut self, cx: f32, cy: f32, rx: f32, ry: f32, c: Rgba, stroke: Option<f32>) {
+        let (rx, ry) = (rx.max(0.0), ry.max(0.0));
+        if rx <= 0.0 || ry <= 0.0 || c.0[3] == 0 {
             return;
         }
-        let pad = r + 1.0;
+        let pad = rx.max(ry) + 1.0;
         let x0 = (cx - pad).max(0.0) as u32;
         let y0 = (cy - pad).max(0.0) as u32;
         let x1 = (cx + pad).min(self.width as f32 - 1.0) as u32;
         let y1 = (cy + pad).min(self.height as f32 - 1.0) as u32;
-        let inner = stroke.map(|s| (r - s).max(0.0));
+        // A stroke wider than the narrow axis leaves no interior.
+        let inner = stroke.map(|s| (rx - s, ry - s)).filter(|(ix, iy)| *ix > 0.0 && *iy > 0.0);
         for py in y0..=y1 {
             for px in x0..=x1 {
                 let dx = px as f32 - cx;
                 let dy = py as f32 - cy;
-                let d = (dx * dx + dy * dy).sqrt();
-                let cover = match inner {
-                    None => r + 0.5 - d,
-                    Some(ri) => (r + 0.5 - d).min(d - ri + 0.5),
-                };
+                let mut cover = ellipse_cover(dx, dy, rx, ry) + 0.5;
+                if let Some((ix, iy)) = inner {
+                    cover = cover.min(-ellipse_cover(dx, dy, ix, iy) + 0.5);
+                }
                 blend_cover(self, px, py, c, cover, false);
             }
         }
@@ -693,6 +722,30 @@ mod tests {
         frame.circle(32.0, 32.0, 24.0, Rgba([255, 255, 255, 255]), Some(4.0));
         assert!(partial_pixels(&frame) > 10, "ring edge must feather");
         assert_eq!(red(&frame, 32, 32), 0, "the ring leaves its interior empty");
+    }
+
+    /// Both radii of an ellipse reach the silhouette: the wide axis is painted
+    /// out to `rx` and the flat axis stops at `ry`.
+    #[test]
+    fn ellipse_honours_both_radii() {
+        let mut frame = Frame::new(64, 64);
+        frame.fill(Rgba([0, 0, 0, 255]));
+        frame.ellipse(32.0, 32.0, 28.0, 12.0, Rgba([255, 255, 255, 255]), None);
+        assert!(red(&frame, 58, 32) > 200, "the wide axis reaches `rx`");
+        assert_eq!(red(&frame, 32, 50), 0, "the flat axis stops at `ry`");
+        assert!(partial_pixels(&frame) > 10, "the ellipse edge must feather");
+    }
+
+    /// A stroke follows the elliptical outline, so the ring leaves an elliptical
+    /// hole instead of falling back to a circular one.
+    #[test]
+    fn elliptical_ring_keeps_its_outline() {
+        let mut frame = Frame::new(64, 64);
+        frame.fill(Rgba([0, 0, 0, 255]));
+        frame.ellipse(32.0, 32.0, 28.0, 12.0, Rgba([255, 255, 255, 255]), Some(3.0));
+        assert_eq!(red(&frame, 32, 32), 0, "the ring leaves its interior empty");
+        assert!(red(&frame, 58, 32) > 200, "the wide edge is painted");
+        assert_eq!(red(&frame, 32, 50), 0, "outside the flat edge stays empty");
     }
 }
 
