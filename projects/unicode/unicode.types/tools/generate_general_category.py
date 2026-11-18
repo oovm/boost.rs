@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""生成 `src/tables/general_category.rs`。
+"""生成 `src/tables/general_category.rs` 与 `src/tables/derived_core.rs`。
 
 只读取仓内入库的 UCD 输入文件，不联网、不依赖第三方库，重复运行产出逐字节相同的文件。
 用法：`python tools/generate_general_category.py`
@@ -8,14 +8,18 @@
 import hashlib
 import os
 
-GENERATOR_VERSION = 1
-UNICODE_VERSION = "16.0.0"
+GENERATOR_VERSION = 2
+UNICODE_VERSION = "18.0.0"
 INPUT_NAME = "UnicodeData.txt"
+DERIVED_INPUT_NAME = "DerivedCoreProperties.txt"
 MAX_CODE_POINT = 0x10FFFF
 
 CRATE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-INPUT_PATH = os.path.join(CRATE_ROOT, "data", "ucd", UNICODE_VERSION, INPUT_NAME)
+UCD_DIR = os.path.join(CRATE_ROOT, "data", "ucd", UNICODE_VERSION)
+INPUT_PATH = os.path.join(UCD_DIR, INPUT_NAME)
+DERIVED_INPUT_PATH = os.path.join(UCD_DIR, DERIVED_INPUT_NAME)
 OUTPUT_PATH = os.path.join(CRATE_ROOT, "src", "tables", "general_category.rs")
+DERIVED_OUTPUT_PATH = os.path.join(CRATE_ROOT, "src", "tables", "derived_core.rs")
 
 # Unicode 标准的 30 个 General_Category 值，顺序固定为 UCD 的官方排列。
 GENERAL_CATEGORIES = [
@@ -28,9 +32,15 @@ GENERAL_CATEGORIES = [
     "Cc", "Cf", "Cs", "Co", "Cn",
 ]
 
+# 从 `DerivedCoreProperties.txt` 提取的派生属性，映射到生成的常量名。
+DERIVED_PROPERTIES = [
+    ("Grapheme_Extend", "GRAPHEME_EXTEND"),
+    ("Default_Ignorable_Code_Point", "DEFAULT_IGNORABLE"),
+]
 
-def read_input():
-    with open(INPUT_PATH, "rb") as handle:
+
+def read_input(path):
+    with open(path, "rb") as handle:
         return handle.read()
 
 
@@ -97,6 +107,41 @@ def build_runs(intervals):
     return runs
 
 
+def parse_property(raw, property_name):
+    """提取 `DerivedCoreProperties.txt` 里单个属性的显式区间，合并相邻并校验不重叠。"""
+    intervals = []
+    for line in raw.decode("utf-8").splitlines():
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        fields = [field.strip() for field in line.split(";")]
+        if len(fields) < 2:
+            raise ValueError("unexpected DerivedCoreProperties line: %r" % line)
+        code_range, name = fields[0], fields[1]
+        if name != property_name:
+            continue
+        if ".." in code_range:
+            start_text, end_text = code_range.split("..")
+            start, end = int(start_text, 16), int(end_text, 16)
+        else:
+            start = end = int(code_range, 16)
+        if end < start:
+            raise ValueError("inverted range: %r" % line)
+        intervals.append((start, end))
+    intervals.sort()
+    merged = []
+    for start, end in intervals:
+        if merged and start <= merged[-1][1]:
+            raise ValueError("overlapping intervals at U+%04X" % start)
+        if merged and merged[-1][1] + 1 == start:
+            merged[-1] = (merged[-1][0], end)
+        else:
+            merged.append((start, end))
+    if not merged:
+        raise ValueError("no intervals for %r" % property_name)
+    return merged
+
+
 def render(runs, sha256):
     lines = []
     lines.append("// 本文件由 `tools/generate_general_category.py` 生成，请勿手工修改。")
@@ -117,15 +162,46 @@ def render(runs, sha256):
     return "\n".join(lines) + "\n"
 
 
+def render_derived(properties, sha256):
+    lines = []
+    lines.append("// 本文件由 `tools/generate_general_category.py` 生成，请勿手工修改。")
+    lines.append("// 输入文件：`data/ucd/%s/%s`" % (UNICODE_VERSION, DERIVED_INPUT_NAME))
+    lines.append("// 输入 SHA-256：%s" % sha256)
+    lines.append("// 生成器版本：%d" % GENERATOR_VERSION)
+    lines.append("// Unicode 版本：%s" % UNICODE_VERSION)
+    for property_name, constant in DERIVED_PROPERTIES:
+        lines.append("")
+        lines.append("/// 派生属性 `%s` 的码点区间表。" % property_name)
+        lines.append("///")
+        lines.append("/// 按码点升序排列，区间互不重叠，只覆盖该属性为真的码点。")
+        lines.append("pub const %s: &[(u32, u32)] = &[" % constant)
+        for start, end in properties[property_name]:
+            lines.append("    (0x%04X, 0x%04X)," % (start, end))
+        lines.append("];")
+    return "\n".join(lines) + "\n"
+
+
+def write(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+
+
 def main():
-    raw = read_input()
+    raw = read_input(INPUT_PATH)
     sha256 = hashlib.sha256(raw).hexdigest()
     runs = build_runs(parse_intervals(raw))
-    text = render(runs, sha256)
-    os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
-    with open(OUTPUT_PATH, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(text)
+    write(OUTPUT_PATH, render(runs, sha256))
     print("wrote %s (%d runs)" % (os.path.relpath(OUTPUT_PATH, CRATE_ROOT), len(runs)))
+
+    derived_raw = read_input(DERIVED_INPUT_PATH)
+    derived_sha256 = hashlib.sha256(derived_raw).hexdigest()
+    properties = {
+        name: parse_property(derived_raw, name) for name, _ in DERIVED_PROPERTIES
+    }
+    write(DERIVED_OUTPUT_PATH, render_derived(properties, derived_sha256))
+    summary = ", ".join("%s=%d" % (name, len(properties[name])) for name, _ in DERIVED_PROPERTIES)
+    print("wrote %s (%s)" % (os.path.relpath(DERIVED_OUTPUT_PATH, CRATE_ROOT), summary))
 
 
 if __name__ == "__main__":

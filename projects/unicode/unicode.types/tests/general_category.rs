@@ -1,6 +1,9 @@
 //! `unicode-types` 的 General_Category 查询与区间表结构验收。
 
-use unicode_types::{GeneralCategory, UNICODE_VERSION, general_category, general_category_runs, is_mark};
+use unicode_types::{
+    GeneralCategory, UNICODE_VERSION, default_ignorable_runs, general_category, general_category_runs, grapheme_extend_runs,
+    is_default_ignorable, is_grapheme_extend, is_mark,
+};
 
 const MAX_CODE_POINT: u32 = 0x10FFFF;
 
@@ -95,7 +98,43 @@ fn run_boundaries_resolve_to_their_own_category() {
 
 #[test]
 fn unicode_version_matches_manifest() {
-    assert_eq!(UNICODE_VERSION, "16.0.0");
+    assert_eq!(UNICODE_VERSION, "18.0.0");
+}
+
+#[test]
+fn derived_properties_match_ucd_facts() {
+    // `Grapheme_Extend` 覆盖全部 `Mn` / `Me`，并只覆盖一部分 `Mc`。
+    assert!(is_grapheme_extend('\u{301}'));
+    assert!(is_grapheme_extend('\u{483}'));
+    assert!(is_grapheme_extend('\u{1D165}'));
+    assert!(!is_grapheme_extend('\u{903}'));
+    assert!(!is_grapheme_extend('\u{4E00}'));
+    // `Default_Ignorable_Code_Point` 不等于 `Cf` 全集。
+    assert!(is_default_ignorable('\u{AD}'));
+    assert!(is_default_ignorable('\u{200D}'));
+    assert!(is_default_ignorable('\u{FE0F}'));
+    assert!(is_default_ignorable('\u{3164}'));
+    assert!(!is_default_ignorable('\u{600}'));
+    assert!(!is_default_ignorable('\u{4E00}'));
+}
+
+#[test]
+fn derived_property_runs_are_sorted_and_disjoint() {
+    fn check(runs: &[(u32, u32)], inside: fn(char) -> bool) {
+        assert!(!runs.is_empty(), "派生属性区间表不应为空");
+        for (index, (start, end)) in runs.iter().enumerate() {
+            assert!(start <= end, "区间 #{index} 起点晚于终点");
+            if let Some((next_start, _)) = runs.get(index + 1) {
+                assert!(end + 1 < *next_start, "区间 #{index} 与下一区间重叠或未合并");
+            }
+            for code_point in [*start, *end] {
+                let ch = char::from_u32(code_point).expect("派生属性的边界必须是标量");
+                assert!(inside(ch), "区间边界 U+{code_point:04X} 未落在属性内");
+            }
+        }
+    }
+    check(grapheme_extend_runs(), is_grapheme_extend);
+    check(default_ignorable_runs(), is_default_ignorable);
 }
 
 #[test]
