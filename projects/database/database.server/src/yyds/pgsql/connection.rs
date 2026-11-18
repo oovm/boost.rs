@@ -283,6 +283,9 @@ fn run_session_command(
                     if name.trim().eq_ignore_ascii_case("search_path") {
                         session.reset_parameters();
                     }
+                    else if name.trim().eq_ignore_ascii_case("statement_timeout") {
+                        session.set_statement_timeout("0");
+                    }
                 }
             }
             Ok(if name.is_none() { "RESET ALL" } else { "RESET" })
@@ -560,8 +563,11 @@ fn handle_session_command(
                 return write_error_response(stream, "25P02", ABORTED_BLOCK);
             }
             let needle = name.trim().to_ascii_lowercase();
-            let value: Option<String> =
-                if needle == "search_path" { Some(session.search_path().to_string()) } else { pg_parameter(&name).map(|s| s.to_string()) };
+            let value: Option<String> = match needle.as_str() {
+                "search_path" => Some(session.search_path().to_string()),
+                "statement_timeout" => Some(session.statement_timeout_text().to_string()),
+                _ => pg_parameter(&name).map(|s| s.to_string()),
+            };
             match value {
                 Some(value) => {
                     write_row_description(stream, &[SqlColumn { name: name.clone(), field_type: SqlFieldType::String, field_id: None }], &[0])?;
@@ -1523,6 +1529,7 @@ const PG_PARAMETERS: &[(&str, &str)] = &[
     ("intervalstyle", "postgres"),
     ("server_encoding", "UTF8"),
     ("search_path", DEFAULT_SEARCH_PATH),
+    ("statement_timeout", "0"),
     ("standard_conforming_strings", "on"),
     ("timezone", "UTC"),
     ("transaction_isolation", "read committed"),

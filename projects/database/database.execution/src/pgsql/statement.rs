@@ -191,7 +191,38 @@ pub fn dispatch_statement(
                 TransactionControl::Rejected { code, message } => Err(StatementError::new(code, message)),
             }
         }
-        Some(command) => Ok(StatementOutcome::Session(command)),
+        Some(command) => {
+            // `statement_timeout` is per-statement execution state, so the base
+            // dispatch applies it for the wire session and the local engine
+            // alike. Every other GUC stays a protocol-session surface.
+            match &command {
+                SqlSessionCommand::SetVariable { name, value, .. } if name.trim().eq_ignore_ascii_case("statement_timeout") => {
+                    if session.is_aborted() {
+                        return Err(StatementError::new("25P02", ABORTED_BLOCK));
+                    }
+                    let rendered = render_setting(value);
+                    if !session.set_statement_timeout(&rendered) {
+                        session.fail();
+                        return Err(StatementError::new(
+                            "22023",
+                            format!("invalid value for parameter \"statement_timeout\": \"{rendered}\""),
+                        ));
+                    }
+                    return Ok(StatementOutcome::Command("SET"));
+                }
+                SqlSessionCommand::ResetVariables { name }
+                    if name.as_deref().is_some_and(|name| name.trim().eq_ignore_ascii_case("statement_timeout")) =>
+                {
+                    if session.is_aborted() {
+                        return Err(StatementError::new("25P02", ABORTED_BLOCK));
+                    }
+                    session.set_statement_timeout("0");
+                    return Ok(StatementOutcome::Command("RESET"));
+                }
+                _ => {}
+            }
+            Ok(StatementOutcome::Session(command))
+        }
         None => {
             let Some(runtime) = runtime
             else {
@@ -202,6 +233,19 @@ pub fn dispatch_statement(
                 StatementError::new(sqlstate, message)
             })
         }
+    }
+}
+
+/// Renders a `SET` value the way the GUC parser expects it.
+fn render_setting(value: &database_query::SqlBoundExpression) -> String {
+    use database_query::{SqlBoundExpression, SqlBoundLiteral};
+    match value {
+        SqlBoundExpression::Literal(SqlBoundLiteral::String(text)) => text.clone(),
+        SqlBoundExpression::Literal(SqlBoundLiteral::Integer(number)) => number.to_string(),
+        SqlBoundExpression::Literal(SqlBoundLiteral::Number(text)) => text.clone(),
+        SqlBoundExpression::Literal(SqlBoundLiteral::Boolean(flag)) => flag.to_string(),
+        SqlBoundExpression::Identifier(name) => name.clone(),
+        _ => String::new(),
     }
 }
 
@@ -283,7 +327,36 @@ fn backfill_added_generated_column(
 }
 
 /// bind → plan → execute，错误已映射为 SQLSTATE，并已标记事务失败。
+/// Runs one already-rendered statement and enforces the session's
+/// `statement_timeout`.
+///
+/// The engine executes synchronously and cannot preempt a running operator, so
+/// the deadline is checked when the statement returns: the result is discarded,
+/// `57014` is reported and an open block is aborted, which rolls its writes
+/// back. A timeout outside a block leaves the already-published statement in
+/// place, exactly like a client-side cancel that arrived after the commit.
 pub fn run_statement(
+    sql: &str,
+    runtime: &Arc<PgsqlSqlRuntime>,
+    session: &mut TransactionSession,
+) -> Result<ExecutionOutcome, (String, String)> {
+    // An aborted block rejects every later statement without executing it, so a
+    // stale `statement_timeout` cannot mask the `25P02` the client must see.
+    if session.is_aborted() {
+        return Err(("25P02".to_string(), ABORTED_BLOCK.to_string()));
+    }
+    let started = std::time::Instant::now();
+    let outcome = run_statement_inner(sql, runtime, session)?;
+    if let Some(timeout) = session.statement_timeout()
+        && started.elapsed() > timeout
+    {
+        session.fail();
+        return Err(("57014".to_string(), "canceling statement due to statement timeout".to_string()));
+    }
+    Ok(outcome)
+}
+
+fn run_statement_inner(
     sql: &str,
     runtime: &Arc<PgsqlSqlRuntime>,
     session: &mut TransactionSession,

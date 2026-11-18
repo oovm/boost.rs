@@ -10,6 +10,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     io,
     sync::Arc,
+    time::Duration,
 };
 
 use crate::cluster::{KeyValueExecutor, TransactionHandle};
@@ -141,6 +142,10 @@ pub struct TransactionSession {
     /// Temporary-registry snapshot captured at `BEGIN`, so a rollback drops the
     /// temp tables the block created.
     temp_checkpoint: Option<SqlSchemaCheckpoint>,
+    /// `statement_timeout` in effect for this session, `None` when disabled.
+    statement_timeout: Option<Duration>,
+    /// Text form `SHOW statement_timeout` reports back.
+    statement_timeout_text: String,
 }
 
 impl TransactionSession {
@@ -160,6 +165,8 @@ impl TransactionSession {
             listener: None,
             temp: None,
             temp_checkpoint: None,
+            statement_timeout: None,
+            statement_timeout_text: "0".to_string(),
         }
     }
 
@@ -278,6 +285,49 @@ impl TransactionSession {
     /// restoring them is already satisfied by the static default table.
     pub fn reset_parameters(&mut self) {
         self.search_path = DEFAULT_SEARCH_PATH.to_string();
+        self.statement_timeout = None;
+        self.statement_timeout_text = "0".to_string();
+    }
+
+    /// Applies a `SET statement_timeout = ...` value.
+    ///
+    /// PostgreSQL accepts an integer number of milliseconds or a text value with
+    /// a `ms` / `s` / `min` unit; `0` disables the limit. Returns whether the
+    /// value was understood, so the caller can report `22023` for junk instead
+    /// of silently accepting it.
+    pub fn set_statement_timeout(&mut self, text: &str) -> bool {
+        let trimmed = text.trim();
+        let lower = trimmed.to_ascii_lowercase();
+        let (digits, millis_per_unit) = if let Some(value) = lower.strip_suffix("ms") {
+            (value, 1u64)
+        }
+        else if let Some(value) = lower.strip_suffix("min") {
+            (value, 60_000)
+        }
+        else if let Some(value) = lower.strip_suffix('s') {
+            (value, 1_000)
+        }
+        else {
+            (lower.as_str(), 1)
+        };
+        let Ok(amount) = digits.trim().parse::<u64>()
+        else {
+            return false;
+        };
+        let millis = amount.saturating_mul(millis_per_unit);
+        self.statement_timeout = (millis > 0).then(|| Duration::from_millis(millis));
+        self.statement_timeout_text = if millis == 0 { "0".to_string() } else { format!("{millis}ms") };
+        true
+    }
+
+    /// Effective per-statement limit, `None` when disabled.
+    pub fn statement_timeout(&self) -> Option<Duration> {
+        self.statement_timeout
+    }
+
+    /// Text `SHOW statement_timeout` reports.
+    pub fn statement_timeout_text(&self) -> &str {
+        &self.statement_timeout_text
     }
 
     /// `DISCARD ALL`: full session cleanup. PostgreSQL only lets the statement run

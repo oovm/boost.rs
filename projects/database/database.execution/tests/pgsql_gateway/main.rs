@@ -117,6 +117,43 @@ fn generated_identity_and_added_constraints_are_enforced() {
 }
 
 #[test]
+fn statement_timeout_reports_57014_and_rolls_the_block_back() {
+    let mut gateway = Gateway::new("timeout");
+    gateway.command("CREATE TABLE bulk (id BIGINT PRIMARY KEY)");
+    gateway.command("BEGIN");
+    assert_eq!(gateway.command("SET statement_timeout = 1"), "SET");
+    let values: Vec<String> = (0..20_000).map(|id| format!("({id})")).collect();
+    let (code, message) = match gateway.sql(&format!("INSERT INTO bulk (id) VALUES {}", values.join(","))) {
+        Ok(_) => panic!("a statement above the deadline must report `57014`"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "57014", "unexpected message: {message}");
+    // The failed statement aborts the block, and the rollback discards its rows.
+    let (code, _) = match gateway.sql("SELECT COUNT(*)::int8 FROM bulk") {
+        Ok(_) => panic!("an aborted block rejects later statements"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "25P02");
+    assert_eq!(gateway.command("ROLLBACK"), "ROLLBACK");
+    assert_eq!(gateway.scalar("SELECT COUNT(*)::int8 FROM bulk"), SqlValue::Integer(0));
+
+    // Outside a block the session survives the timeout.
+    assert_eq!(gateway.command("SET statement_timeout = '1ms'"), "SET");
+    assert_eq!(gateway.command("SET statement_timeout = 0"), "SET");
+    assert_eq!(gateway.scalar("SELECT 1::int8"), SqlValue::Integer(1));
+}
+
+#[test]
+fn an_invalid_statement_timeout_value_reports_22023() {
+    let mut gateway = Gateway::new("timeout-errors");
+    let (code, message) = match gateway.sql("SET statement_timeout = 'soon'") {
+        Ok(_) => panic!("a non-numeric timeout must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "22023", "unexpected message: {message}");
+}
+
+#[test]
 fn escape_string_literals_decode_backslash_sequences() {
     let mut gateway = Gateway::new("estring");
     assert_eq!(gateway.scalar("SELECT E'a\\nb'"), SqlValue::String("a\nb".to_owned()));
