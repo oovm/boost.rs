@@ -10,6 +10,7 @@
 //! - [`Track`] animates one property through [`Key`]s and easing.
 //! - [`TimeWindow`] maps project frames to the local frames a track uses.
 //! - [`Animated`] is the authoring shape; [`Motion`] is its evaluated value.
+#![warn(missing_docs)]
 
 mod anim;
 mod id;

@@ -10,9 +10,9 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
-# `url` is pinned locally so the no_std build does not inherit the workspace
-# `serde` feature, which needs an allocator-aware serde build.
-url = { version = "2.5.8", default-features = false }
+# 继承 workspace 版本；关闭 default features 以保持 no_std 构建，
+# 公共条目不带 `serde`，std 消费者各自本地声明。
+url = { workspace = true, default-features = false }
 boost-random = { workspace = true, optional = true }
 boost-crypto = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }

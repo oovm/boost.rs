@@ -3,6 +3,7 @@
 //! 表示 null、布尔、有符号 64 位整数、字符串、数组与字符串键对象。该格式
 //! 不带运行时、场景或数据库 schema 语义：文档含义由消费者拥有。解析成功
 //! 只说明输入是合法 VON，不说明满足任何 schema。
+#![warn(missing_docs)]
 #[cfg(feature = "serde")]
 mod deserializer;
 #[cfg(feature = "serde")]

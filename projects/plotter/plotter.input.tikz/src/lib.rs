@@ -1,4 +1,5 @@
 #![doc = include_str!("readme.md")]
+#![warn(missing_docs)]
 
 //! TikZ 前端：`tikzpicture` 源直接降到 [`DisplayScene`]。
 //!

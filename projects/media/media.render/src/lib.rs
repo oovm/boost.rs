@@ -23,6 +23,7 @@
 //!   `media.raster` and the `paint` layer of `media.text`, and encode a PNG
 //!   through `media.codec` — fonts and images are explicit resource inputs,
 //!   no scene and no audio in the dependency graph.
+#![warn(missing_docs)]
 
 #[cfg(feature = "scene")]
 pub mod render;

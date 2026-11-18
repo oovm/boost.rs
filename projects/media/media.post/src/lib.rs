@@ -15,6 +15,7 @@
 //! （[`presets`]）共同构成效果栈；栈的 `bloom` 绑定 [`post`] 的线性 HDR 物理
 //! 路径，其显式域转换由 [`stack_bloom`] 执行、合同成文于 [`contract`]。
 //! 粒子与光束的生成求值归 `media.particles`，本 crate 只做栈适配。
+#![warn(missing_docs)]
 
 mod bloom_scale;
 mod box_blur;

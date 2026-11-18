@@ -28,7 +28,7 @@ crawler-frontier = { workspace = true }
 crawler-browser = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-url = { workspace = true }
+url = { workspace = true, features = ["serde"] }
 oak-xml = { workspace = true }
 
 [dev-dependencies]

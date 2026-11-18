@@ -20,6 +20,7 @@
 //!
 //! File IO lives elsewhere: `media.render` composes this render with
 //! `media.codec` behind its `voice-export` feature.
+#![warn(missing_docs)]
 
 pub mod formant;
 pub mod lf;

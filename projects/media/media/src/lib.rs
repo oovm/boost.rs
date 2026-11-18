@@ -4,6 +4,7 @@
 //! and a consumer turns off the features it does not need. `media.types` is
 //! the unconditional base contract (error, hash, time base); a pure-audio
 //! consumer can enable only `audio` and never pull in the visual stack.
+#![warn(missing_docs)]
 
 pub use media_types as types;
 

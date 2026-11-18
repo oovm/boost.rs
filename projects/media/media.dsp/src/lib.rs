@@ -20,6 +20,7 @@
 //! let mut b = Rng::new(7);
 //! assert_eq!(a.next_u32(), b.next_u32());
 //! ```
+#![warn(missing_docs)]
 
 /// xorshift32: the only randomness in the audio domain, seeded per sound.
 pub struct Rng(u32);

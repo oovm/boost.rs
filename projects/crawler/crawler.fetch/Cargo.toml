@@ -13,7 +13,7 @@ publish = false
 [dependencies]
 crawler-types = { workspace = true }
 serde = { workspace = true }
-url = { workspace = true }
+url = { workspace = true, features = ["serde"] }
 boost-net = { workspace = true }
 boost-harness = { workspace = true }
 

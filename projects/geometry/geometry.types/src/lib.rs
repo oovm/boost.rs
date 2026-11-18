@@ -3,6 +3,7 @@
 //! Nothing here rasterizes, allocates frames or talks to a device: this crate
 //! owns the meaning of points, colors, transforms and cameras so that scene
 //! data, raster backends and downstream products agree on the same math.
+#![warn(missing_docs)]
 
 pub mod color;
 pub mod geom;

@@ -13,5 +13,5 @@ doctest = false
 [dependencies]
 document-ir = { workspace = true }
 serde = { workspace = true }
-url = { workspace = true }
+url = { workspace = true, features = ["serde"] }
 boost-harness = { workspace = true }

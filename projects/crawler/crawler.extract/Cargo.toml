@@ -15,4 +15,4 @@ document-formats = { workspace = true, features = ["html"] }
 document-ir = { workspace = true }
 crawler-types = { workspace = true }
 encoding_rs = { workspace = true }
-url = { workspace = true }
+url = { workspace = true, features = ["serde"] }

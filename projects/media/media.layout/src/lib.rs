@@ -40,6 +40,7 @@
 //! let doc = spec.resolve().expect("valid document");
 //! assert_eq!(doc.pages[0].panels[0].fill, Rgba([180, 40, 40, 255]));
 //! ```
+#![warn(missing_docs)]
 
 pub mod grid;
 pub mod metrics;

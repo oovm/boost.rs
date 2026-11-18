@@ -18,6 +18,7 @@
 //! let composed = stack.composite(Rgba([0, 0, 0, 255]));
 //! assert_eq!(composed.width, 64);
 //! ```
+#![warn(missing_docs)]
 
 pub mod brush;
 pub mod doc;

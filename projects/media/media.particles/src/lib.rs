@@ -18,6 +18,7 @@
 //! Particles::sparks(40, 7, Rgba([255, 180, 90, 255])).apply(&mut frame, 1.5);
 //! assert!(frame.pixels.iter().any(|v| *v > 0));
 //! ```
+#![warn(missing_docs)]
 
 pub mod generative;
 

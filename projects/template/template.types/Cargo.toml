@@ -11,8 +11,8 @@ edition.workspace = true
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
-fluent = "0.16.0"
-fluent-syntax = "0.11.0"
-fluent-bundle = "0.15.0"
-unic-langid = "0.9.0"
-lru = "0.7.0"
+fluent = { workspace = true }
+fluent-syntax = { workspace = true }
+fluent-bundle = { workspace = true }
+unic-langid = { workspace = true }
+lru = { workspace = true }

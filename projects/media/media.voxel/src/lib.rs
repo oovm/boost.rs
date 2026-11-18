@@ -34,6 +34,7 @@
 //! grid.set([0, 0, 0], Rgba([120, 180, 255, 255]));
 //! assert_eq!(faces(&grid).len(), 6, "a lone cube shows six faces");
 //! ```
+#![warn(missing_docs)]
 
 pub mod input;
 pub mod mesh;

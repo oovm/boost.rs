@@ -7,6 +7,7 @@
 //! The `obj` feature adds the OBJ writer. It consumes the exposed-face mesh
 //! view from `media.voxel` one-way, for the same reason: the artifact and
 //! the isometric preview are driven by the one face list.
+#![warn(missing_docs)]
 
 pub mod decode;
 pub mod encode;

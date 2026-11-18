@@ -15,7 +15,7 @@ crate-type = ["cdylib", "rlib"]
 path = "src/lib.rs"
 
 [dependencies]
-hardware = { path = "../../hardware", default-features = false, features = ["cpu"] }
+hardware = { workspace = true, default-features = false, features = ["cpu"] }
 
 [dev-dependencies]
 wasmtime = "28"

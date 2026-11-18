@@ -1,4 +1,5 @@
 //! UCF 通用程序 IR 与 CPU 参考解释器。
+#![warn(missing_docs)]
 
 mod builder;
 mod cpu;

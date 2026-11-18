@@ -1,4 +1,5 @@
 //! Hand-written VON lexer and recursive-descent parser.
+#![warn(missing_docs)]
 
 mod cst;
 mod error;

@@ -4,6 +4,7 @@
 //! render target `Frame`, the layout `Fit` and the linear HDR `Framebuffer`.
 //! Painting lives in `media.raster`, post-processing semantics in
 //! `media.post`, file encoding in `media.codec`.
+#![warn(missing_docs)]
 
 mod bitmap;
 mod fit;

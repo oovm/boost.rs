@@ -32,6 +32,7 @@
 //! let samples = render(&spec, 44_100.0).expect("valid spec");
 //! assert!(samples.len() > 1000);
 //! ```
+#![warn(missing_docs)]
 
 pub mod instruments;
 pub mod patterns;

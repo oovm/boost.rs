@@ -28,6 +28,7 @@
 //! let bitmap = canvas.to_bitmap(&Palette::default());
 //! assert_eq!((bitmap.width, bitmap.height), (8, 8));
 //! ```
+#![warn(missing_docs)]
 
 pub mod canvas;
 pub mod palette;

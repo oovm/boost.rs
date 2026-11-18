@@ -17,4 +17,4 @@ crate-type = ["rlib"]
 crawler-types = { workspace = true }
 
 [dev-dependencies]
-url = { workspace = true }
+url = { workspace = true, features = ["serde"] }

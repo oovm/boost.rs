@@ -1,4 +1,5 @@
 //! Motion curves for geometry: easing, keyed camera curves and envelopes.
+#![warn(missing_docs)]
 
 pub mod curve;
 pub mod ease;

@@ -33,6 +33,7 @@
 //! };
 //! assert_eq!((center, radius), ([64.0, 48.0], 20.0));
 //! ```
+#![warn(missing_docs)]
 
 pub mod doc;
 pub mod input;

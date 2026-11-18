@@ -2,6 +2,7 @@
 //!
 //! This crate only re-exports: value types live in `geometry.types` and motion
 //! curves in `geometry.motion`.
+#![warn(missing_docs)]
 
 pub use geometry_motion as motion;
 pub use geometry_types as types;

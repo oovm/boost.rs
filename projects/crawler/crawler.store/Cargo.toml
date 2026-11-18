@@ -16,7 +16,7 @@ boost-harness = { workspace = true }
 crawler-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-url = { workspace = true }
+url = { workspace = true, features = ["serde"] }
 
 [features]
 default = []

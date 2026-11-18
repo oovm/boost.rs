@@ -121,7 +121,6 @@ members = [
     "projects/odm/odm.input.sql",
     "projects/odm/odm.input.vos",
     "projects/odm/odm.types",
-    "projects/plotter/apollo",
     "projects/plotter/plotter",
     "projects/plotter/plotter.chart",
     "projects/plotter/plotter.data",
@@ -269,6 +268,7 @@ geometry = { path = "projects/geometry/geometry" }
 geometry-motion = { path = "projects/geometry/geometry.motion" }
 geometry-types = { path = "projects/geometry/geometry.types" }
 
+hardware = { path = "projects/hardware/hardware" }
 hardware-backend-cpu = { path = "projects/hardware/hardware.backends/hardware.backend.cpu" }
 hardware-backend-cuda = { path = "projects/hardware/hardware.backends/hardware.backend.cuda" }
 hardware-backend-dx12 = { path = "projects/hardware/hardware.backends/hardware.backend.dx12" }
@@ -316,7 +316,6 @@ odm-input-sql = { path = "projects/odm/odm.input.sql" }
 odm-input-vos = { path = "projects/odm/odm.input.vos" }
 odm-types = { path = "projects/odm/odm.types" }
 
-plotter = { path = "projects/plotter/plotter" }
 plotter-chart = { path = "projects/plotter/plotter.chart" }
 plotter-data = { path = "projects/plotter/plotter.data" }
 plotter-depiction = { path = "projects/plotter/plotter.depiction" }
@@ -394,7 +393,9 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 thiserror = "2"
 unicode-width = "0.2.3"
-url = { version = "2.5.8", features = ["serde"] }
+# `serde` 特性由需要它的 std 消费者本地声明，不放进公共条目：
+# `boost-net` 的 no_std 构建不能继承 allocator 感知的 serde 依赖。
+url = "2.5.8"
 rustls = { version = "0.23.45", default-features = false, features = ["std", "ring", "tls12"] }
 webpki-roots = "1.0.9"
 syn = "3.0.10"
@@ -427,6 +428,18 @@ sha2 = { version = "0.11.1", features = ["oid"] }
 sha1-rsa = { package = "sha1", version = "0.10" }
 rsa = { version = "0.9.10", features = ["sha2"] }
 base64 = "0.23.1"
+figment = { version = "0.10", features = ["toml", "env"] }
+hex = "0.4"
+miette = { version = "7", features = ["fancy"] }
+serde_yaml = "0.9"
+toml = "0.8"
+toml_edit = "0.25"
+unicode-normalization = "0.1"
+fluent = "0.16.0"
+fluent-syntax = "0.11.0"
+fluent-bundle = "0.15.0"
+unic-langid = "0.9.0"
+lru = "0.7.0"
 zeroize = { version = "1.9.1", features = ["derive"] }
 sha2-rsa = { package = "sha2", version = "0.10.9", features = ["oid"] }
 uuid = { version = "1", features = ["serde", "v4", "v7", "rng-getrandom"] }
@@ -458,6 +471,7 @@ oak-notedown = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "
 oak-html = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "d1337eb4d289505c85d988cd8f80b96023f1e63a", default-features = false, features = ["serde"] }
 oak-xml = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "d1337eb4d289505c85d988cd8f80b96023f1e63a", default-features = false, features = ["serde"] }
 oak-tex = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "d1337eb4d289505c85d988cd8f80b96023f1e63a", default-features = false, features = ["serde"] }
+
 oak-typst = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "d1337eb4d289505c85d988cd8f80b96023f1e63a", default-features = false, features = ["serde"] }
 oak-dot = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "d1337eb4d289505c85d988cd8f80b96023f1e63a", default-features = false, features = ["serde"] }
 oak-mermaid = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "d1337eb4d289505c85d988cd8f80b96023f1e63a", default-features = false, features = ["serde"] }
@@ -472,6 +486,9 @@ oak-vos = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "d1337
 # `metis-compile` 的 `.metis` 前端仍来自另一 oaks 镜像仓（`ygg-lang`），P2 原样保留，
 # 与上方 `yggdrasil-language` pin 的合并处置归 P3。
 oak-metis = { git = "https://github.com/ygg-lang/oaks.git", rev = "7c4c631967228daadde86a85da38c8617f149216", default-features = false }
+
+notedown-formats = { git = "https://github.com/notedge/notedown.git", rev = "3c01bea86d5824771ff12e26dd50494f0199c0e7", default-features = false, features = ["markdown"] }
+notedown-ir = { git = "https://github.com/notedge/notedown.git", rev = "3c01bea86d5824771ff12e26dd50494f0199c0e7" }
 
 [profile.release]
 lto = true

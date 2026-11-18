@@ -1,4 +1,5 @@
 #![doc = include_str!("../readme.md")]
+#![warn(missing_docs)]
 
 //! Dejavu 模板语言（`template.input.dejavu`）。
 //!

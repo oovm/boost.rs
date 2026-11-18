@@ -13,11 +13,11 @@ template = { workspace = true }
 template-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-unicode-normalization = "0.1"
+unicode-normalization = { workspace = true }
 once_cell = { workspace = true }
-figment = { version = "0.10", features = ["toml", "env"], optional = true }
-toml = { version = "0.8", optional = true }
-toml_edit = { version = "0.25", optional = true }
+figment = { workspace = true, optional = true }
+toml = { workspace = true, optional = true }
+toml_edit = { workspace = true, optional = true }
 
 [dev-dependencies]
 boost-fs = { workspace = true }

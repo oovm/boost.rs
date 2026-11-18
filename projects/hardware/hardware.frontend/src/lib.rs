@@ -4,6 +4,7 @@
 //! `hardware-input-glsl`) convert their own syntax trees into [`ast::ShaderModule`]
 //! and hand it to [`lower_module`]. This crate never parses shader text and never
 //! emits a target ISA.
+#![warn(missing_docs)]
 
 /// Language-neutral shader syntax.
 pub mod ast;
