@@ -8,10 +8,13 @@
 //!
 //! The statement-level DML machinery ([`dml`]) writes rows for the product
 //! facades and the constraint guards ([`guards`]) validate uniqueness,
-//! foreign keys and `CHECK` constraints against the same read view.
+//! foreign keys and `CHECK` constraints against the same read view. The DDL
+//! and schema-persistence machinery ([`ddl`]) evolves the catalog and the
+//! stored `sqlite_master` text for the facades.
 
 pub mod cells;
 pub mod datetime;
+pub mod ddl;
 pub mod dml;
 pub mod eval;
 pub mod guards;

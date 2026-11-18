@@ -14,6 +14,7 @@ use std::{
 
 use database_execution::sqlite::{
     cells::truthiness,
+    ddl::{self, DdlContext},
     dml::{self, DmlContext},
     eval::{Budget, EvalContext, EvalExpr, EvalReturningPlan},
     host::HostFunctionTable,
@@ -29,10 +30,8 @@ use crate::{
 };
 
 use super::{
-    AlterAction, Assignment, ColumnRef, CompoundTerm, DropColumnConflict, Expr, InsertValue, Limit, Literal, OrderKey, SelectCore, SelectItems,
-    SqlError, Statement, TableRef, TransactionAction, TriggerEvent, TriggerTiming, json_string, parse, parse_with_host_functions,
-    rewrite_create_index_column, rewrite_create_index_table, rewrite_create_table_column, rewrite_create_table_drop_column,
-    rewrite_create_table_name, rewrite_view_column, rewrite_view_table, statement_references, storage_failure, strip_schema_qualifiers,
+    Assignment, CompoundTerm, Expr, InsertValue, Limit, Literal, OrderKey, SelectCore, SelectItems, SqlError, Statement, TableRef,
+    TransactionAction, TriggerEvent, TriggerTiming, json_string, parse_with_host_functions, storage_failure, strip_schema_qualifiers,
 };
 
 use super::{bind::*, catalog::*, value::*};
@@ -203,100 +202,6 @@ fn event_statement(event: &TriggerEvent) -> &'static str {
     }
 }
 
-/// SQLite's standard type name for one declared type: the affinity class the
-/// type text resolves to, or an empty string for the BLOB affinity.
-fn standard_affinity_name(declared: &str) -> String {
-    let upper = declared.to_ascii_uppercase();
-    let name = if upper.contains("INT") {
-        "INT"
-    }
-    else if upper.contains("CHAR") || upper.contains("CLOB") || upper.contains("TEXT") {
-        "TEXT"
-    }
-    else if declared.is_empty() || upper.contains("BLOB") {
-        ""
-    }
-    else if upper.contains("REAL") || upper.contains("FLOA") || upper.contains("DOUB") {
-        "REAL"
-    }
-    else {
-        "NUM"
-    };
-    name.to_string()
-}
-
-/// Resolves a `column` reference of a CTAS output item to the unique source
-/// column that defines it.
-fn ctas_lookup_column<'a>(reference: &ColumnRef, sources: &'a [(String, Vec<(String, String)>)]) -> Option<&'a (String, String)> {
-    let qualifier = reference.qualifier.as_deref();
-    let mut found = None;
-    for (label, columns) in sources {
-        if let Some(qualifier) = qualifier {
-            if !label.eq_ignore_ascii_case(qualifier) {
-                continue;
-            }
-        }
-        for column in columns {
-            if column.0.eq_ignore_ascii_case(&reference.name) {
-                if found.is_some() {
-                    return None;
-                }
-                found = Some(column);
-            }
-        }
-    }
-    found
-}
-
-/// Output label of one CTAS item: the source column's own spelling for a bare
-/// reference, otherwise the expression's label.
-fn ctas_expression_label(expression: &Expr, sources: &[(String, Vec<(String, String)>)]) -> String {
-    if let Expr::Column(reference) = expression {
-        if let Some(column) = ctas_lookup_column(reference, sources) {
-            return column.0.clone();
-        }
-    }
-    expression.label()
-}
-
-/// Declared type of one CTAS output item: a bare column reference copies its
-/// source affinity, every other expression gets no declared type.
-fn ctas_expression_type(expression: &Expr, sources: &[(String, Vec<(String, String)>)]) -> String {
-    match expression {
-        Expr::Alias { value, .. } => ctas_expression_type(value, sources),
-        Expr::Column(reference) => ctas_lookup_column(reference, sources).map(|column| standard_affinity_name(&column.1)).unwrap_or_default(),
-        _ => String::new(),
-    }
-}
-
-/// Quotes a schema identifier when the generated `CREATE TABLE` text needs it.
-fn ctas_quote_name(name: &str) -> String {
-    let plain = !name.is_empty()
-        && name.chars().next().is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
-        && name.chars().all(|character| character.is_ascii_alphanumeric() || character == '_');
-    if plain { name.to_string() } else { format!("\"{}\"", name.replace('"', "\"\"")) }
-}
-
-/// `sqlite_master.sql` text of a `CREATE TABLE ... AS SELECT` result, built the
-/// same way SQLite generates it. SQLite switches to a multi-line layout for
-/// long definitions; the compact form is emitted here because every reader
-/// (including this parser) accepts it.
-fn ctas_schema_sql(name: &str, columns: &[ColumnSpec]) -> String {
-    let mut sql = format!("CREATE TABLE {}(", ctas_quote_name(name));
-    for (index, column) in columns.iter().enumerate() {
-        if index > 0 {
-            sql.push(',');
-        }
-        sql.push_str(&ctas_quote_name(&column.name));
-        if !column.declared_type.is_empty() {
-            sql.push(' ');
-            sql.push_str(&column.declared_type);
-        }
-    }
-    sql.push(')');
-    sql
-}
-
 /// A `FROM`-shape over one view's output, so view DML can resolve its filter
 /// and assignments with the regular expression path.
 fn view_relation<'a>(label: &str, names: &[String], trigger: Option<&'a TriggerFrame>) -> Relation<'a> {
@@ -329,22 +234,9 @@ fn trigger_event_matches(defined: &TriggerEvent, incoming: &TriggerEvent) -> boo
     }
 }
 
-/// `sqlite_master` and its aliases.
-fn is_schema_table(name: &str) -> bool {
-    matches!(name.to_ascii_lowercase().as_str(), "sqlite_master" | "sqlite_schema" | "sqlite_temp_master" | "sqlite_temp_schema")
-}
-
-/// SQLite reserves every `sqlite_` name for internal objects.
-fn check_reserved_object_name(name: &str, statement: &'static str) -> Result<(), SqlError> {
-    if name.to_ascii_lowercase().starts_with("sqlite_") {
-        return Err(SqlError::new("reserved-name", format!("object name reserved for internal use: {name}")).in_statement(statement));
-    }
-    Ok(())
-}
-
 /// The schema tables are read-only for user writes.
 fn check_readonly_table(name: &str, statement: &'static str) -> Result<(), SqlError> {
-    if is_schema_table(name) || name.eq_ignore_ascii_case("sqlite_sequence") {
+    if ddl::is_schema_table(name) || name.eq_ignore_ascii_case("sqlite_sequence") {
         return Err(SqlError::new("readonly-system-table", format!("table {name} may not be modified")).in_statement(statement));
     }
     Ok(())
@@ -447,7 +339,7 @@ impl Engine {
             pending_indexes: false,
             pending_without_rowid: false,
         };
-        engine.load_catalog()?;
+        ddl::load_catalog(&engine.writer, &mut engine.catalog)?;
         Ok(engine)
     }
 
@@ -582,7 +474,7 @@ impl Engine {
         self.catalog.indexes.clear();
         self.catalog.views.clear();
         self.catalog.triggers.clear();
-        self.load_catalog()
+        ddl::load_catalog(&self.writer, &mut self.catalog)
     }
 
     /// `PRAGMA integrity_check`: walks the header, the schema, every table and
@@ -833,7 +725,7 @@ impl Engine {
             || self.catalog.temp_lookup.contains_key(&key)
             || self.catalog.views.contains_key(&key)
             || self.catalog.temp_views.contains_key(&key)
-            || is_schema_table(name)
+            || ddl::is_schema_table(name)
             || SystemTable::from_name(name).is_some()
             || key == "sqlite_sequence"
     }
@@ -952,13 +844,6 @@ impl Engine {
         }
         rows.push(program_row(halt, "Halt", 0, 0, 0, None, 0));
         rows
-    }
-
-    /// Replays the stored `CREATE TABLE` / `CREATE INDEX` text of every
-    /// schema row into the in-memory catalog without touching storage.
-    fn load_catalog(&mut self) -> Result<(), SqlError> {
-        let objects = self.writer.schema_objects(TableLimits::default()).map_err(storage_error)?;
-        self.catalog.load_schema(&objects)
     }
 
     /// Executes exactly one statement.
@@ -1133,6 +1018,24 @@ impl Engine {
             foreign_keys: self.foreign_keys,
             recursive_triggers: self.recursive_triggers,
             in_transaction: self.transaction.is_some(),
+            scope: self.scope,
+        }
+    }
+
+    /// 组装本引擎的 DDL / schema 持久化执行上下文:机器在 `database.execution::sqlite::ddl`,
+    /// 信封与会话状态(`attached`、事务)仍由门面持有。
+    fn ddl(&mut self) -> DdlContext<'_> {
+        DdlContext {
+            writer: &mut self.writer,
+            catalog: &mut self.catalog,
+            exec_state: &self.exec_state,
+            host_functions: &self.host_functions,
+            parameters: &self.parameters,
+            upsert_excluded: &self.upsert_excluded,
+            trigger_frames: &self.trigger_frames,
+            alias: self.alias.as_deref(),
+            attached: self.attached.iter().map(|db| db.engine.exec()).collect::<Vec<_>>().into(),
+            attached_lookup: &self.attached_lookup,
             scope: self.scope,
         }
     }
@@ -1823,44 +1726,8 @@ impl Engine {
         if self.attached.len() >= 10 {
             return Err(SqlError::new("too-many-databases", "too many attached databases - max 10").in_statement("attach"));
         }
-        let memory = file.is_empty() || file.eq_ignore_ascii_case(":memory:");
-        let (engine, path, display) = if memory {
-            (Engine::new(Some(self.page_size()))?, None, String::new())
-        }
-        else {
-            let requested = PathBuf::from(file);
-            let path = if requested.is_absolute() {
-                requested.clone()
-            }
-            else {
-                std::env::current_dir().map(|cwd| cwd.join(&requested)).unwrap_or_else(|_| requested.clone())
-            };
-            let writer = if requested.is_dir() {
-                return Err(SqlError::new("unable-to-open", format!("unable to open database: {file}")).in_statement("attach"));
-            }
-            else if requested.exists() && std::fs::metadata(&requested).map(|meta| meta.len() > 0).unwrap_or(false) {
-                SqliteWriter::open(&requested).map_err(|_| SqlError::new("not-a-database", "file is not a database").in_statement("attach"))?
-            }
-            else {
-                // SQLite creates the file at ATTACH time but leaves it empty
-                // until the first change.
-                if let Some(parent) = requested.parent() {
-                    if !parent.as_os_str().is_empty() && !parent.exists() {
-                        return Err(SqlError::new("unable-to-open", format!("unable to open database: {file}")).in_statement("attach"));
-                    }
-                }
-                std::fs::OpenOptions::new()
-                    .write(true)
-                    .create(true)
-                    .truncate(false)
-                    .open(&requested)
-                    .map_err(|_| SqlError::new("unable-to-open", format!("unable to open database: {file}")))?;
-                SqliteWriter::create(self.page_size() as usize).map_err(|error| storage_failure(error))?
-            };
-            let engine = Engine::from_writer(writer)?;
-            (engine, Some(path.clone()), path.to_string_lossy().into_owned())
-        };
-        let mut engine = Box::new(engine);
+        let (writer, path, display) = ddl::open_attached_database(file, self.page_size() as usize)?;
+        let mut engine = Box::new(Engine::from_writer(writer)?);
         engine.alias = Some(name.to_string());
         // 宿主函数在本会话注册一次后对之后 `ATTACH` 的库同样生效;表内只存放
         // `Arc` 句柄,克隆不会复制宿主实现。
@@ -1910,14 +1777,14 @@ impl Engine {
             if let Some(expression) = into {
                 let target = self.vacuum_target(expression)?;
                 let empty = SqliteWriter::create(self.writer.page_size()).map_err(|error| storage_failure(error).in_statement("vacuum"))?;
-                self.write_vacuum_image(&target, empty.pages())?;
+                ddl::write_vacuum_image(&target, empty.pages())?;
             }
             return Ok(ExecResult { statement: "vacuum", columns: Vec::new(), rows: Vec::new(), affected: 0 });
         }
         let image = self.vacuum_image()?;
         if let Some(expression) = into {
             let target = self.vacuum_target(expression)?;
-            self.write_vacuum_image(&target, &image)?;
+            ddl::write_vacuum_image(&target, &image)?;
         }
         else {
             let synchronous = self.writer.synchronous();
@@ -1939,25 +1806,6 @@ impl Engine {
             Cell::Text(target) => Ok(target),
             _ => Err(SqlError::new("SQLITE_ERROR", "non-text filename").in_statement("vacuum")),
         }
-    }
-
-    /// 把重建镜像写到 `target`,`VACUUM INTO` 的真实落盘步骤。
-    ///
-    /// 空文件名与 `:memory:` 与上游一样不产生文件,命令仍然成功。目标已存在
-    /// 时不覆盖;父目录缺失、目标是目录或写入失败都报 `unable to open database`。
-    fn write_vacuum_image(&self, target: &str, image: &[u8]) -> Result<(), SqlError> {
-        if target.is_empty() || target.eq_ignore_ascii_case(":memory:") {
-            return Ok(());
-        }
-        let unable = || SqlError::new("SQLITE_CANTOPEN", format!("unable to open database: {target}")).in_statement("vacuum");
-        let path = PathBuf::from(target);
-        if path.is_dir() || path.parent().is_some_and(|parent| !parent.as_os_str().is_empty() && !parent.exists()) {
-            return Err(unable());
-        }
-        if path.exists() {
-            return Err(SqlError::new("SQLITE_ERROR", "output file already exists").in_statement("vacuum"));
-        }
-        std::fs::write(&path, image).map_err(|_| unable())
     }
 
     /// 生成 `VACUUM` 的重建镜像。
@@ -2072,180 +1920,6 @@ impl Engine {
         Ok(fresh.writer.pages().to_vec())
     }
 
-    /// Executes `CREATE TABLE name AS SELECT ...`.
-    ///
-    /// The declared columns are derived from the query output: a bare column
-    /// reference copies its source column's affinity as SQLite's standard
-    /// type name (`INT`, `TEXT`, `REAL`, `NUM`), and every other expression
-    /// gets no declared type. Duplicate output labels are numbered `:1`, `:2`.
-    fn create_table_as(&mut self, name: String, if_not_exists: bool, temp: bool, query: &Statement) -> Result<ExecResult, SqlError> {
-        let key = name.to_ascii_lowercase();
-        check_reserved_object_name(&name, "create-table")?;
-        let temp_target = temp || self.scope == TableScope::Temp;
-        if temp_target {
-            if self.catalog.temp_lookup.contains_key(&key) || self.catalog.temp_views.contains_key(&key) {
-                if if_not_exists {
-                    return Ok(ExecResult { statement: "create-table", columns: Vec::new(), rows: Vec::new(), affected: 0 });
-                }
-                return Err(SqlError::new("table-exists", format!("table {name} already exists")).in_statement("create-table"));
-            }
-        }
-        else {
-            if self.catalog.indexes.contains_key(&key) {
-                return Err(SqlError::new("index-exists", format!("there is already an index named {name}")).in_statement("create-table"));
-            }
-            if self.catalog.views.contains_key(&key) {
-                return Err(SqlError::new("view-exists", format!("there is already a view named {name}")).in_statement("create-table"));
-            }
-            if self.catalog.table_lookup.contains_key(&key) {
-                if if_not_exists {
-                    return Ok(ExecResult { statement: "create-table", columns: Vec::new(), rows: Vec::new(), affected: 0 });
-                }
-                return Err(SqlError::new("table-exists", format!("table {name} already exists")).in_statement("create-table"));
-            }
-        }
-        let budget = Budget::new();
-        let selected = self.exec().select_statement(query, &[], &budget, None)?;
-        let labels = unique_output_names(&selected.columns);
-        let mut types: Vec<String> = self.ctas_statement_columns(query, &BTreeMap::new())?.into_iter().map(|(_, declared)| declared).collect();
-        types.resize(labels.len(), String::new());
-        types.truncate(labels.len());
-        let columns: Vec<ColumnSpec> = labels
-            .iter()
-            .zip(types)
-            .map(|(name, declared_type)| ColumnSpec {
-                name: name.clone(),
-                declared_type,
-                not_null: false,
-                default_value: None,
-                default_text: None,
-                primary_key: false,
-                unique: false,
-                autoincrement: false,
-                collate: None,
-            })
-            .collect();
-        let sql = ctas_schema_sql(&name, &columns);
-        let mut def = SqliteCatalog::table_entry(name.clone(), columns.clone(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), false, false)?;
-        if temp_target {
-            def.temp = true;
-            let rootpage = match self.catalog.temp_free_pages.pop_first() {
-                Some(page) => page,
-                None => {
-                    let page = self.catalog.temp_next_page;
-                    self.catalog.temp_next_page += 1;
-                    page
-                }
-            };
-            let master_rowid = self.catalog.temp_next_rowid;
-            self.catalog.temp_next_rowid += 1;
-            let mut rows = BTreeMap::new();
-            for row in &selected.rows {
-                let slots: Vec<Option<crate::WriteValue>> = row.iter().map(|cell| Some(dml::cell_write_value(cell))).collect();
-                dml::temp_insert_row(&def, &mut rows, &slots, &[])?;
-            }
-            let position = self.catalog.temp_tables.len();
-            self.catalog.temp_lookup.insert(key, position);
-            self.catalog.temp_tables.push(TempTable { def, sql, rootpage, master_rowid, rows });
-            self.catalog.temp_created = true;
-            return Ok(ExecResult { statement: "create-table", columns: Vec::new(), rows: Vec::new(), affected: 0 });
-        }
-        self.writer
-            .create_table_with_primary_key_sql(&name, &columns, &[], Some(&sql))
-            .map_err(|error| storage_failure(error).in_statement("create-table"))?;
-        if !selected.rows.is_empty() {
-            self.writer.begin().map_err(|error| storage_failure(error).in_statement("create-table"))?;
-            for row in &selected.rows {
-                let slots: Vec<Option<crate::WriteValue>> = row.iter().map(|cell| Some(dml::cell_write_value(cell))).collect();
-                if let Err(error) = self.writer.insert(&name, &slots) {
-                    let _ = self.writer.rollback();
-                    return Err(storage_failure(error).in_statement("create-table"));
-                }
-            }
-            self.writer.commit().map_err(|error| storage_failure(error).in_statement("create-table"))?;
-        }
-        let position = self.catalog.tables.len();
-        self.catalog.table_lookup.insert(key, position);
-        self.catalog.tables.push(def);
-        Ok(ExecResult { statement: "create-table", columns: Vec::new(), rows: Vec::new(), affected: 0 })
-    }
-
-    /// Output column labels and copied declared types of one query, used to
-    /// build the schema of `CREATE TABLE ... AS SELECT`.
-    fn ctas_statement_columns(
-        &self,
-        statement: &Statement,
-        inherited: &BTreeMap<String, Vec<(String, String)>>,
-    ) -> Result<Vec<(String, String)>, SqlError> {
-        let Statement::Select { with, first, .. } = statement
-        else {
-            return Ok(Vec::new());
-        };
-        let mut ctes = inherited.clone();
-        for entry in with {
-            let mut columns = self.ctas_statement_columns(&entry.query, &ctes)?;
-            if let Some(names) = &entry.columns {
-                if names.len() == columns.len() {
-                    for (column, name) in columns.iter_mut().zip(names) {
-                        column.0 = name.clone();
-                    }
-                }
-            }
-            ctes.insert(entry.name.to_ascii_lowercase(), columns);
-        }
-        let mut sources: Vec<(String, Vec<(String, String)>)> = Vec::with_capacity(first.from.len());
-        for table in &first.from {
-            let label = table.alias.clone().unwrap_or_else(|| table.name.clone());
-            sources.push((label, self.ctas_table_columns(table, &ctes)?));
-        }
-        let mut output = Vec::new();
-        match &first.items {
-            SelectItems::Named(expressions) => {
-                for expression in expressions {
-                    let label = ctas_expression_label(expression, &sources);
-                    let declared = ctas_expression_type(expression, &sources);
-                    output.push((label, declared));
-                }
-            }
-            SelectItems::CountAll => output.push(("count(*)".to_string(), String::new())),
-            SelectItems::Star => {
-                for (_, columns) in &sources {
-                    output.extend(columns.iter().cloned());
-                }
-            }
-        }
-        Ok(output)
-    }
-
-    /// Columns one `FROM` item exposes to the output of a CTAS query.
-    fn ctas_table_columns(&self, table: &TableRef, ctes: &BTreeMap<String, Vec<(String, String)>>) -> Result<Vec<(String, String)>, SqlError> {
-        if let Some(query) = &table.query {
-            return self.ctas_statement_columns(query, ctes);
-        }
-        let name = table.name.to_ascii_lowercase();
-        if let Some(columns) = ctes.get(&name) {
-            return Ok(columns.clone());
-        }
-        if let Some(def) = self.catalog.tables.iter().find(|def| def.name.eq_ignore_ascii_case(&table.name)) {
-            return Ok(def.columns.iter().map(|column| (column.name.clone(), standard_affinity_name(&column.declared_type))).collect());
-        }
-        if let Some(temp) = self.catalog.temp_tables.iter().find(|temp| temp.def.name.eq_ignore_ascii_case(&table.name)) {
-            return Ok(temp.def.columns.iter().map(|column| (column.name.clone(), standard_affinity_name(&column.declared_type))).collect());
-        }
-        if let Some(view) = self.catalog.views.get(&name) {
-            let mut columns = self.ctas_statement_columns(&view.query, ctes)?;
-            if let Some(names) = &view.columns {
-                if names.len() == columns.len() {
-                    for (column, name) in columns.iter_mut().zip(names) {
-                        column.0 = name.clone();
-                    }
-                }
-            }
-            return Ok(columns);
-        }
-        Ok(Vec::new())
-    }
-
     fn run_statement_inner(&mut self, statement: Statement) -> Result<ExecResult, SqlError> {
         match statement {
             Statement::Explain { query_plan, statement } => self.explain_statement(query_plan, &statement),
@@ -2269,7 +1943,8 @@ impl Engine {
                 sql,
             } => {
                 if let Some(query) = query {
-                    return self.create_table_as(name, if_not_exists, temp, &query);
+                    self.ddl().create_table_as(name, if_not_exists, temp, &query)?;
+                    return Ok(ExecResult { statement: "create-table", columns: Vec::new(), rows: Vec::new(), affected: 0 });
                 }
                 let key = name.to_ascii_lowercase();
                 // A WITHOUT ROWID table's writer call needs the key columns
@@ -2280,7 +1955,7 @@ impl Engine {
                 else {
                     primary_key.clone()
                 };
-                check_reserved_object_name(&name, "create-table")?;
+                ddl::check_reserved_object_name(&name, "create-table")?;
                 if temp {
                     // The temp schema owns a separate namespace: a main object
                     // with the same name can coexist and temp wins in name
@@ -2353,7 +2028,7 @@ impl Engine {
             }
             Statement::CreateView { schema, name, if_not_exists, columns, query, temp, sql } => {
                 let key = name.to_ascii_lowercase();
-                check_reserved_object_name(&name, "create-view")?;
+                ddl::check_reserved_object_name(&name, "create-view")?;
                 // `CREATE TEMP VIEW` and `CREATE VIEW temp.v` both target the
                 // connection-owned schema, whose objects shadow main ones.
                 let temp_target =
@@ -2434,7 +2109,7 @@ impl Engine {
             }
             Statement::CreateTrigger { schema: _, name, if_not_exists, timing, event, table_schema: _, table, when, body, sql } => {
                 let key = name.to_ascii_lowercase();
-                check_reserved_object_name(&name, "create-trigger")?;
+                ddl::check_reserved_object_name(&name, "create-trigger")?;
                 if self.catalog.triggers.contains_key(&key) {
                     if if_not_exists {
                         return Ok(ExecResult { statement: "create-trigger", columns: Vec::new(), rows: Vec::new(), affected: 0 });
@@ -2914,7 +2589,7 @@ impl Engine {
             }
             Statement::CreateIndex { schema: _, name, table, if_not_exists, unique, columns, predicate, sql } => {
                 let table_key = table.to_ascii_lowercase();
-                if is_schema_table(&table) {
+                if ddl::is_schema_table(&table) {
                     return Err(
                         SqlError::new("readonly-system-table", format!("table {table} may not be indexed")).in_statement("create-index")
                     );
@@ -2922,7 +2597,7 @@ impl Engine {
                 if self.catalog.views.contains_key(&table_key) {
                     return Err(SqlError::new("readonly-view", "views may not be indexed").in_statement("create-index"));
                 }
-                check_reserved_object_name(&name, "create-index")?;
+                ddl::check_reserved_object_name(&name, "create-index")?;
                 let position = *self
                     .catalog
                     .table_lookup
@@ -3644,7 +3319,7 @@ impl Engine {
                 }
             }
             Statement::DropTable { schema: _, name, if_exists } => {
-                if is_schema_table(&name) {
+                if ddl::is_schema_table(&name) {
                     return Err(SqlError::new("readonly-system-table", format!("table {name} may not be dropped")).in_statement("drop-table"));
                 }
                 let key = name.to_ascii_lowercase();
@@ -3660,11 +3335,11 @@ impl Engine {
                     // next temp table reuses it like SQLite does.
                     self.catalog.temp_free_pages.insert(dropped.rootpage);
                     self.catalog.temp_lookup.remove(&key);
-                    self.reindex_temp_tables();
+                    ddl::reindex_temp_tables(&mut self.catalog);
                     self.catalog.triggers.retain(|_, trigger| !(trigger.temp && trigger.table == key));
                     return Ok(ExecResult { statement: "drop-table", columns: Vec::new(), rows: Vec::new(), affected: 1 });
                 }
-                let objects = self.schema_objects("drop-table")?;
+                let objects = ddl::schema_objects(&self.writer, "drop-table")?;
                 let present = objects.iter().any(|object| object.kind == SchemaObjectKind::Table && object.name.eq_ignore_ascii_case(&name));
                 if !present {
                     if objects.iter().any(|object| object.kind == SchemaObjectKind::View && object.name.eq_ignore_ascii_case(&name)) {
@@ -3700,7 +3375,7 @@ impl Engine {
                 }
                 self.writer.commit().map_err(|error| storage_failure(error).in_statement("drop-table"))?;
                 self.catalog.tables.remove(position);
-                self.reindex_tables();
+                ddl::reindex_tables(&mut self.catalog);
                 self.catalog.indexes.retain(|_, index| index.table != key);
                 self.catalog.triggers.retain(|_, trigger| trigger.table != key);
                 Ok(ExecResult { statement: "drop-table", columns: Vec::new(), rows: Vec::new(), affected: 1 })
@@ -3736,7 +3411,10 @@ impl Engine {
                 self.catalog.indexes.remove(&name.to_ascii_lowercase());
                 Ok(ExecResult { statement: "drop-index", columns: Vec::new(), rows: Vec::new(), affected: 1 })
             }
-            Statement::AlterTable { schema: _, table, action } => self.run_alter_table(table, action),
+            Statement::AlterTable { schema: _, table, action } => {
+                ddl::run_alter_table(&mut self.writer, &mut self.catalog, table, action)?;
+                Ok(ExecResult { statement: "alter-table", columns: Vec::new(), rows: Vec::new(), affected: 1 })
+            }
             Statement::Select { with, recursive, first, compounds, order, limit } => {
                 // One budget per statement, shared by every nested subquery, so
                 // deep correlation reports a structured error instead of
@@ -3744,368 +3422,6 @@ impl Engine {
                 let budget = Budget::new();
                 let outcome = self.exec().run_select(&with, recursive, &first, &compounds, order, limit, &[], &budget, None)?;
                 Ok(ExecResult { statement: "select", columns: outcome.columns, rows: outcome.rows, affected: 0 })
-            }
-        }
-    }
-
-    /// Reads the live schema rows with a statement-tagged storage error.
-    fn schema_objects(&self, statement: &'static str) -> Result<Vec<crate::SchemaObject>, SqlError> {
-        self.writer.schema_objects(TableLimits::default()).map_err(|error| storage_failure(error).in_statement(statement))
-    }
-
-    /// Rebuilds the lowercase name to position map after a table is removed.
-    fn reindex_tables(&mut self) {
-        self.catalog.table_lookup.clear();
-        for (position, table) in self.catalog.tables.iter().enumerate() {
-            self.catalog.table_lookup.insert(table.name.to_ascii_lowercase(), position);
-        }
-    }
-
-    /// Rebuilds the temp schema name map after a temp table is removed.
-    fn reindex_temp_tables(&mut self) {
-        self.catalog.temp_lookup.clear();
-        for (position, table) in self.catalog.temp_tables.iter().enumerate() {
-            self.catalog.temp_lookup.insert(table.def.name.to_ascii_lowercase(), position);
-        }
-    }
-
-    /// Executes the `ALTER TABLE` forms: `RENAME TO`, `RENAME COLUMN`, `ADD
-    /// COLUMN` and `DROP COLUMN`. A drop rewrites every stored record and the
-    /// stored `CREATE TABLE` text, refusing columns still read by an index,
-    /// a view, a trigger or a table-level constraint.
-    fn run_alter_table(&mut self, table: String, action: AlterAction) -> Result<ExecResult, SqlError> {
-        if is_schema_table(&table) {
-            return Err(SqlError::new("readonly-system-table", format!("table {table} may not be altered")).in_statement("alter-table"));
-        }
-        let objects = self.schema_objects("alter-table")?;
-        if table.eq_ignore_ascii_case("sqlite_sequence") {
-            let present = objects.iter().any(|object| object.kind == SchemaObjectKind::Table && object.name.eq_ignore_ascii_case(&table));
-            if present {
-                return Err(SqlError::new("readonly-system-table", format!("table {table} may not be altered")).in_statement("alter-table"));
-            }
-            return Err(SqlError::new("unknown-table", format!("no such table: {table}")).in_statement("alter-table"));
-        }
-        let key = table.to_ascii_lowercase();
-        let position = *self
-            .catalog
-            .table_lookup
-            .get(&key)
-            .ok_or_else(|| SqlError::new("unknown-table", format!("no such table: {table}")).in_statement("alter-table"))?;
-        let stored = objects
-            .iter()
-            .find(|object| object.kind == SchemaObjectKind::Table && object.name.eq_ignore_ascii_case(&self.catalog.tables[position].name))
-            .and_then(|object| object.sql.clone())
-            .ok_or_else(|| SqlError::new("storage", "sqlite table has no stored text").in_statement("alter-table"))?;
-        match action {
-            AlterAction::RenameTable { new_name } => {
-                check_reserved_object_name(&new_name, "alter-table")?;
-                let new_key = new_name.to_ascii_lowercase();
-                if self.catalog.table_lookup.contains_key(&new_key)
-                    || self.catalog.indexes.contains_key(&new_key)
-                    || self.catalog.views.contains_key(&new_key)
-                {
-                    return Err(SqlError::new("table-exists", format!("there is already another table or index with this name: {new_name}"))
-                        .in_statement("alter-table"));
-                }
-                let old_name = self.catalog.tables[position].name.clone();
-                let new_sql = rewrite_create_table_name(&stored, &new_name)
-                    .ok_or_else(|| SqlError::new("storage", "sqlite stored table text unrecognized").in_statement("alter-table"))?;
-                let mut pending = Vec::new();
-                for object in &objects {
-                    if object.kind != SchemaObjectKind::Index || !object.table_name.eq_ignore_ascii_case(&old_name) {
-                        continue;
-                    }
-                    if let Some(text) = &object.sql {
-                        let rewritten = rewrite_create_index_table(text, &new_name)
-                            .ok_or_else(|| SqlError::new("storage", "sqlite stored index text unrecognized").in_statement("alter-table"))?;
-                        pending.push((object.name.clone(), rewritten));
-                    }
-                }
-                // Every view that names the old table follows the rename, and
-                // SQLite rewrites its stored text so a later reopen resolves.
-                let mut pending_views = Vec::new();
-                for object in &objects {
-                    if object.kind != SchemaObjectKind::View {
-                        continue;
-                    }
-                    let Some(view) = self.catalog.views.get(&object.name.to_ascii_lowercase())
-                    else {
-                        continue;
-                    };
-                    let Some(text) = &object.sql
-                    else {
-                        continue;
-                    };
-                    if !statement_references(&view.query, &old_name) {
-                        continue;
-                    }
-                    if let Some(rewritten) = rewrite_view_table(text, &old_name, &new_name) {
-                        pending_views.push((view.name.clone(), rewritten));
-                    }
-                }
-                self.writer.begin().map_err(|error| storage_failure(error).in_statement("alter-table"))?;
-                if let Err(error) = self.writer.rename_table_schema(&old_name, &new_name, &new_sql, &pending) {
-                    let _ = self.writer.rollback();
-                    return Err(storage_failure(error).in_statement("alter-table"));
-                }
-                self.writer.commit().map_err(|error| storage_failure(error).in_statement("alter-table"))?;
-                if !pending_views.is_empty() {
-                    self.writer.begin().map_err(|error| storage_failure(error).in_statement("alter-table"))?;
-                    for (name, text) in &pending_views {
-                        if let Err(error) = self.writer.rewrite_view_sql(name, text) {
-                            let _ = self.writer.rollback();
-                            return Err(storage_failure(error).in_statement("alter-table"));
-                        }
-                    }
-                    self.writer.commit().map_err(|error| storage_failure(error).in_statement("alter-table"))?;
-                }
-                self.catalog.tables[position].name = new_name;
-                self.reindex_tables();
-                for index in self.catalog.indexes.values_mut() {
-                    if index.table == key {
-                        index.table = new_key.clone();
-                    }
-                }
-                for trigger in self.catalog.triggers.values_mut() {
-                    if trigger.table == key {
-                        trigger.table = new_key.clone();
-                    }
-                }
-                for (name, text) in pending_views {
-                    if let Some(Statement::CreateView { query, .. }) = parse(&text).ok().and_then(|statements| statements.into_iter().next()) {
-                        if let Some(view) = self.catalog.views.get_mut(&name.to_ascii_lowercase()) {
-                            view.query = *query;
-                        }
-                    }
-                }
-                Ok(ExecResult { statement: "alter-table", columns: Vec::new(), rows: Vec::new(), affected: 1 })
-            }
-            AlterAction::RenameColumn { old, new } => {
-                let def = &self.catalog.tables[position];
-                let column = def
-                    .columns
-                    .iter()
-                    .position(|column| column.name.eq_ignore_ascii_case(&old))
-                    .ok_or_else(|| SqlError::new("unknown-column", format!("no such column: \"{old}\"")).in_statement("alter-table"))?;
-                if def.columns.iter().enumerate().any(|(index, existing)| index != column && existing.name.eq_ignore_ascii_case(&new)) {
-                    return Err(SqlError::new("duplicate-column", format!("duplicate column name: {new}")).in_statement("alter-table"));
-                }
-                if old.eq_ignore_ascii_case(&new) {
-                    return Ok(ExecResult { statement: "alter-table", columns: Vec::new(), rows: Vec::new(), affected: 1 });
-                }
-                let name = def.name.clone();
-                let old_column = old;
-                let new_sql = rewrite_create_table_column(&stored, &old_column, &new)
-                    .ok_or_else(|| SqlError::new("storage", "sqlite stored table text unrecognized").in_statement("alter-table"))?;
-                let mut pending = Vec::new();
-                for object in &objects {
-                    if object.kind != SchemaObjectKind::Index || !object.table_name.eq_ignore_ascii_case(&name) {
-                        continue;
-                    }
-                    if let Some(text) = &object.sql {
-                        let rewritten = rewrite_create_index_column(text, &old_column, &new)
-                            .ok_or_else(|| SqlError::new("storage", "sqlite stored index text unrecognized").in_statement("alter-table"))?;
-                        pending.push((object.name.clone(), rewritten));
-                    }
-                }
-                // Views keep the renamed column reference spelled correctly in
-                // their stored text, exactly like SQLite rewrites them.
-                let mut pending_views = Vec::new();
-                for object in &objects {
-                    if object.kind != SchemaObjectKind::View {
-                        continue;
-                    }
-                    let Some(view) = self.catalog.views.get(&object.name.to_ascii_lowercase())
-                    else {
-                        continue;
-                    };
-                    let Some(text) = &object.sql
-                    else {
-                        continue;
-                    };
-                    if !statement_mentions_column(&view.query, &old_column, None) {
-                        continue;
-                    }
-                    if let Some(rewritten) = rewrite_view_column(text, &old_column, &new) {
-                        pending_views.push((view.name.clone(), rewritten));
-                    }
-                }
-                self.writer.begin().map_err(|error| storage_failure(error).in_statement("alter-table"))?;
-                if let Err(error) = self.writer.rename_column_schema(&name, &new_sql, &pending) {
-                    let _ = self.writer.rollback();
-                    return Err(storage_failure(error).in_statement("alter-table"));
-                }
-                self.writer.commit().map_err(|error| storage_failure(error).in_statement("alter-table"))?;
-                if !pending_views.is_empty() {
-                    self.writer.begin().map_err(|error| storage_failure(error).in_statement("alter-table"))?;
-                    for (view, text) in &pending_views {
-                        if let Err(error) = self.writer.rewrite_view_sql(view, text) {
-                            let _ = self.writer.rollback();
-                            return Err(storage_failure(error).in_statement("alter-table"));
-                        }
-                    }
-                    self.writer.commit().map_err(|error| storage_failure(error).in_statement("alter-table"))?;
-                }
-                for (view, text) in pending_views {
-                    if let Some(Statement::CreateView { query, .. }) = parse(&text).ok().and_then(|statements| statements.into_iter().next()) {
-                        if let Some(view) = self.catalog.views.get_mut(&view.to_ascii_lowercase()) {
-                            view.query = *query;
-                        }
-                    }
-                }
-                self.catalog.tables[position].columns[column].name = new;
-                Ok(ExecResult { statement: "alter-table", columns: Vec::new(), rows: Vec::new(), affected: 1 })
-            }
-            AlterAction::AddColumn { column, checks, foreign_keys, sql } => {
-                let def = &self.catalog.tables[position];
-                if def.columns.iter().any(|existing| existing.name.eq_ignore_ascii_case(&column.name)) {
-                    return Err(
-                        SqlError::new("duplicate-column", format!("duplicate column name: {}", column.name)).in_statement("alter-table")
-                    );
-                }
-                if column.primary_key {
-                    return Err(SqlError::new("invalid-alter", "Cannot add a PRIMARY KEY column").in_statement("alter-table"));
-                }
-                if column.unique {
-                    return Err(SqlError::new("invalid-alter", "Cannot add a UNIQUE column").in_statement("alter-table"));
-                }
-                if !foreign_keys.is_empty() && matches!(&column.default_value, Some(value) if !matches!(value, crate::WriteValue::Null)) {
-                    return Err(SqlError::new("invalid-alter", "Cannot add a REFERENCES column with non-NULL default value")
-                        .in_statement("alter-table"));
-                }
-                // SQLite only refuses when an existing row would read back
-                // NULL; on an empty table the same definition is accepted.
-                let has_rows = !self
-                    .writer
-                    .table_rows(&def.name, TableLimits::default())
-                    .map_err(|error| storage_failure(error).in_statement("alter-table"))?
-                    .is_empty();
-                if column.not_null && matches!(column.default_value, None | Some(crate::WriteValue::Null)) && has_rows {
-                    return Err(
-                        SqlError::new("invalid-alter", "Cannot add a NOT NULL column with default value NULL").in_statement("alter-table")
-                    );
-                }
-                let mut columns = def.columns.clone();
-                columns.push(column.clone());
-                let resolved = resolve_checks(&def.name, &columns, &checks, "alter-table", def.without_rowid)?;
-                let resolved_foreign_keys = resolve_foreign_keys(&columns, &foreign_keys)?;
-                let open = stored
-                    .rfind(')')
-                    .ok_or_else(|| SqlError::new("storage", "sqlite stored table text has no column list").in_statement("alter-table"))?;
-                let new_sql = format!("{}, {}{}", &stored[..open], sql, &stored[open..]);
-                self.writer.begin().map_err(|error| storage_failure(error).in_statement("alter-table"))?;
-                if let Err(error) = self.writer.rewrite_table_sql(&def.name, &new_sql) {
-                    let _ = self.writer.rollback();
-                    return Err(storage_failure(error).in_statement("alter-table"));
-                }
-                self.writer.commit().map_err(|error| storage_failure(error).in_statement("alter-table"))?;
-                self.catalog.tables[position].columns.push(column);
-                self.catalog.tables[position].checks.extend(resolved);
-                self.catalog.tables[position].foreign_keys.extend(resolved_foreign_keys);
-                Ok(ExecResult { statement: "alter-table", columns: Vec::new(), rows: Vec::new(), affected: 1 })
-            }
-            AlterAction::DropColumn { column } => {
-                let def = &self.catalog.tables[position];
-                let column_position = def
-                    .columns
-                    .iter()
-                    .position(|existing| existing.name.eq_ignore_ascii_case(&column))
-                    .ok_or_else(|| SqlError::new("unknown-column", format!("no such column: \"{column}\"")).in_statement("alter-table"))?;
-                let primary = def.rowid_alias == Some(column_position)
-                    || def.primary_key.contains(&column_position)
-                    || def.columns[column_position].primary_key;
-                if primary {
-                    return Err(
-                        SqlError::new("invalid-alter", format!("cannot drop PRIMARY KEY column: \"{column}\"")).in_statement("alter-table")
-                    );
-                }
-                if def.columns[column_position].unique {
-                    return Err(SqlError::new("invalid-alter", format!("cannot drop UNIQUE column: \"{column}\"")).in_statement("alter-table"));
-                }
-                if def.columns.len() == 1 {
-                    return Err(SqlError::new("invalid-alter", format!("cannot drop column \"{column}\": no other columns exist"))
-                        .in_statement("alter-table"));
-                }
-                if let Some((name, _)) =
-                    self.catalog.indexes.iter().find(|(_, index)| index.table == key && index.columns.contains(&column_position))
-                {
-                    return Err(SqlError::new("invalid-alter", format!("error in index {name} after drop column: no such column: {column}"))
-                        .in_statement("alter-table"));
-                }
-                let new_sql = match rewrite_create_table_drop_column(&stored, &def.columns[column_position].name) {
-                    Ok(Some(text)) => text,
-                    Ok(None) => {
-                        return Err(SqlError::new("storage", "sqlite stored table text unrecognized").in_statement("alter-table"));
-                    }
-                    Err(DropColumnConflict::TableCheck) => {
-                        return Err(SqlError::new(
-                            "invalid-alter",
-                            format!("error in table {} after drop column: no such column: {column}", def.name),
-                        )
-                        .in_statement("alter-table"));
-                    }
-                    Err(DropColumnConflict::TableForeignKey) => {
-                        return Err(SqlError::new(
-                            "invalid-alter",
-                            format!("error in table {} after drop column: unknown column \"{column}\" in foreign key definition", def.name),
-                        )
-                        .in_statement("alter-table"));
-                    }
-                };
-                if let Some((name, _)) = self.catalog.views.iter().find(|(_, view)| statement_mentions_column(&view.query, &column, None)) {
-                    return Err(SqlError::new("invalid-alter", format!("error in view {name} after drop column: no such column: {column}"))
-                        .in_statement("alter-table"));
-                }
-                if let Some((name, _)) = self.catalog.triggers.iter().find(|(_, trigger)| {
-                    trigger.table == key
-                        && trigger.body.iter().any(|statement| statement_mentions_column(statement, &column, Some(&["new", "old"])))
-                }) {
-                    return Err(SqlError::new("invalid-alter", format!("error in trigger {name} after drop column: no such column: {column}"))
-                        .in_statement("alter-table"));
-                }
-                // The catalog is re-derived from the rewritten DDL so checks,
-                // foreign keys and the rowid alias all follow the new column
-                // positions instead of being patched by hand.
-                let mut statements = parse(&new_sql)
-                    .map_err(|_| SqlError::new("storage", "sqlite stored table text unrecognized").in_statement("alter-table"))?;
-                let Some(Statement::CreateTable {
-                    name,
-                    columns,
-                    primary_key,
-                    table_constraints,
-                    checks,
-                    foreign_keys,
-                    strict,
-                    without_rowid,
-                    ..
-                }) = statements.drain(..).next()
-                else {
-                    return Err(SqlError::new("storage", "sqlite stored table text unrecognized").in_statement("alter-table"));
-                };
-                let derived =
-                    SqliteCatalog::table_entry(name, columns, primary_key, table_constraints, checks, foreign_keys, strict, without_rowid)?;
-                self.writer.begin().map_err(|error| storage_failure(error).in_statement("alter-table"))?;
-                if let Err(error) = self.writer.drop_column(&def.name, column_position) {
-                    let _ = self.writer.rollback();
-                    return Err(storage_failure(error).in_statement("alter-table"));
-                }
-                if let Err(error) = self.writer.rewrite_table_sql(&def.name, &new_sql) {
-                    let _ = self.writer.rollback();
-                    return Err(storage_failure(error).in_statement("alter-table"));
-                }
-                self.writer.commit().map_err(|error| storage_failure(error).in_statement("alter-table"))?;
-                for index in self.catalog.indexes.values_mut() {
-                    if index.table != key {
-                        continue;
-                    }
-                    for position in &mut index.columns {
-                        if *position > column_position {
-                            *position -= 1;
-                        }
-                    }
-                }
-                self.catalog.tables[position] = derived;
-                Ok(ExecResult { statement: "alter-table", columns: Vec::new(), rows: Vec::new(), affected: 1 })
             }
         }
     }
