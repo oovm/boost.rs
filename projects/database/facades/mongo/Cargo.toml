@@ -16,9 +16,10 @@ path = "src/lib.rs"
 default = ["storage"]
 # `.yykv` / `.yyds` 文档存储与命令语义。只做 BSON / JSON / wire 编解码的
 # wasm 目标关闭它，避免把 `std::fs` 编进目标。
-storage = ["dep:database-types", "dep:database-storage", "dep:database-cluster", "dep:regex", "dep:boost-crypto", "dep:boost-random"]
+storage = ["dep:database-formats", "dep:database-types", "dep:database-storage", "dep:database-cluster", "dep:regex", "dep:boost-crypto", "dep:boost-random"]
 
 [dependencies]
+database-formats = { workspace = true, optional = true }
 database-protocol-mongo = { workspace = true }
 database-types = { workspace = true, optional = true }
 database-storage = { workspace = true, optional = true }

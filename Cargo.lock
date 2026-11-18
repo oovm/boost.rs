@@ -941,8 +941,10 @@ name = "database-formats"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "database-protocol-mongo",
  "database-types",
  "schema-types",
+ "serde_json",
 ]
 
 [[package]]
@@ -2464,6 +2466,7 @@ dependencies = [
  "boost-crypto",
  "boost-random",
  "database-cluster",
+ "database-formats",
  "database-protocol-mongo",
  "database-storage",
  "database-types",

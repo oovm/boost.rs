@@ -1,0 +1,470 @@
+//! Mongo 文档存储合同。
+//!
+//! 命令语义只写一份，底座差异收敛在 [`MongoStorage`] 的实现里：
+//!
+//! - 产品壳 `MongoDB` 注入 `.yykv` 后端，数据落在 shard，集合与索引元数据落在
+//!   `.yyds` catalog。
+//! - `yyds` 侧注入 `KeyValueExecutor` 适配器，数据落在执行器承载的 KV 命名空间。
+//!
+//! 两个后端都必须满足同一组语义：`_id` 唯一、扫描按编码 `_id` 有序、目录是
+//! namespace 存在性的权威来源、事务未提交前只对所属会话可见、oplog 按封顶容量
+//! 淘汰。命令层不得感知后端类型，也不得各自携带一份存储实现。
+//!
+//! 记录编码（集合/索引 catalog 记录、oplog 条目）归 [`database_formats::mongo`]，
+//! 本模块只持有后端合同与在途会话/事务/目录语义。
+
+pub use database_formats::mongo::*;
+
+/// Default `ttlMonitorSleepSecs`, matching `mongod 8.0.9`.
+pub const DEFAULT_TTL_MONITOR_SLEEP_SECONDS: u32 = 60;
+
+/// TTL monitor state shared by every command call.
+///
+/// `expireAfterSeconds` deletion is periodic in `mongod`: the monitor wakes up
+/// every `sleep_seconds` and removes whatever expired since the previous
+/// wake-up. Any expired document therefore stays visible for at most one
+/// window before it disappears, never at its exact deadline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TtlMonitorState {
+    /// Wake-up interval, `ttlMonitorSleepSecs`.
+    pub sleep_seconds: u32,
+    /// Clock reading of the last pass, `None` until the first pass.
+    pub last_scan_ms: Option<i64>,
+}
+
+impl Default for TtlMonitorState {
+    fn default() -> Self {
+        Self { sleep_seconds: DEFAULT_TTL_MONITOR_SLEEP_SECONDS, last_scan_ms: None }
+    }
+}
+
+/// Outcome of one `insert` batch.
+#[derive(Debug, Default)]
+pub struct InsertReport {
+    /// Documents written.
+    pub inserted: i64,
+    /// Positions whose `_id` already existed.
+    pub duplicates: Vec<usize>,
+    /// Positions that were not documents at all.
+    pub invalid: Vec<usize>,
+}
+
+/// One in-flight transaction: staged writes plus the store version it started
+/// from. `writes` is `None` for a staged delete.
+#[derive(Debug, Clone)]
+pub struct TransactionState {
+    /// Store version observed when the transaction started.
+    pub start_version: u64,
+    /// Staged `(namespace, encoded _id) -> document bytes`.
+    pub writes: std::collections::BTreeMap<(String, Vec<u8>), Option<Vec<u8>>>,
+    /// Set when a write conflict or `abortTransaction` ended the transaction.
+    pub aborted: bool,
+}
+
+/// Result of staging one write inside a transaction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransactionWrite {
+    /// The write was recorded in the transaction overlay.
+    Staged,
+    /// Another active transaction already staged the same document.
+    Conflict,
+}
+
+/// Lifecycle of the newest transaction number a session used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionState {
+    /// The transaction is open and accepts reads and writes.
+    Active,
+    /// The newest transaction number was committed.
+    Committed,
+    /// The newest transaction number was aborted, by the client or a conflict.
+    Aborted,
+}
+
+/// Result of starting a transaction for one session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransactionBegin {
+    /// A transaction was opened at the requested number.
+    Started,
+    /// The same number is already active, committed, or aborted.
+    AlreadyStarted,
+    /// The requested number is older than the session's newest number.
+    TooOld {
+        /// Newest number recorded for the session.
+        newer: i64,
+    },
+}
+
+/// What the session state allows for a write outside `startTransaction`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionWriteState {
+    /// The write belongs to the open transaction.
+    Active,
+    /// The number is older than the session's newest number.
+    TooOld {
+        /// Newest number recorded for the session.
+        newer: i64,
+    },
+    /// The number was already committed and cannot be reused.
+    AlreadyCommitted,
+    /// The number was already aborted and cannot be reused.
+    AlreadyAborted,
+    /// The number does not match any in-progress transaction.
+    NoTransaction {
+        /// Newest number recorded for the session.
+        active: i64,
+    },
+}
+
+/// Result of committing a transaction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransactionCommit {
+    /// The staged writes were applied.
+    Committed,
+    /// A document was modified after the transaction started.
+    Conflict,
+    /// The number was already committed, so the commit is a no-op success.
+    AlreadyCommitted,
+    /// The number was aborted earlier, by the client or a conflict.
+    AlreadyAborted,
+    /// The number is older than the session's newest number.
+    TooOld {
+        /// Newest number recorded for the session.
+        newer: i64,
+    },
+    /// The number does not match the newest transaction of the session.
+    NoTransaction {
+        /// Newest number recorded for the session.
+        active: i64,
+    },
+}
+
+/// Result of aborting a transaction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransactionAbort {
+    /// The open transaction was dropped.
+    Aborted,
+    /// The number belongs to a committed transaction.
+    AlreadyCommitted,
+    /// The number was already aborted.
+    AlreadyAborted,
+    /// The number is older than the session's newest number.
+    TooOld {
+        /// Newest number recorded for the session.
+        newer: i64,
+    },
+    /// The number does not match the newest transaction of the session.
+    NoTransaction {
+        /// Newest number recorded for the session.
+        active: i64,
+    },
+}
+
+/// 事务视图下的一页文档。
+///
+/// 分页扫描只在事务没有暂存写入时才能按游标推进；一旦本命名空间有暂存写入，
+/// 合并视图就不保证编码 `_id` 顺序，调用方必须退回整段合并读取。
+pub enum TransactionPage {
+    /// 会话没有开启事务，调用方读已提交数据。
+    None,
+    /// 事务视图的一页，已按 `after` / `limit` 裁剪。
+    Page(Vec<(Vec<u8>, Vec<u8>)>),
+    /// 事务对本命名空间有暂存写入，合并视图无法按游标分页。
+    Merged,
+}
+
+/// 一次提交内要落地的多个命名空间写入。
+///
+/// 写命令经常要同时改文档与索引项（`insert` / `update` / `delete` 各写 1–3 个
+/// 命名空间）。逐个命名空间提交会让同一条命令落盘多次，因此命令层把整条命令的
+/// 写入收成一个 [`MongoStorage::commit_namespaces`] 调用，后端能合并时只提交一次。
+///
+/// 先应用 `deletes` 再应用 `puts`：同一条命令里同一个键不会既删又写，顺序只为
+/// 让默认实现与合并实现的可见结果一致。
+#[derive(Debug, Clone, Copy)]
+pub struct NamespaceWrite<'a> {
+    /// 目标命名空间，文档集合或索引项保留命名空间。
+    pub namespace: &'a str,
+    /// 覆盖写或新增的键值对。
+    pub puts: &'a [(Vec<u8>, Vec<u8>)],
+    /// 要删除的键。
+    pub deletes: &'a [Vec<u8>],
+}
+
+/// MongoDB 文档存储后端。
+///
+/// 所有方法都以 namespace 为第一参数，namespace 是 `<database>.<collection>`。
+/// 实现必须是线程安全的：同一个实例会被命令层的多个调用共享。
+pub trait MongoStorage: Send + Sync {
+    /// 读取一个文档，按编码后的 `_id` 定位。
+    ///
+    /// 读取失败必须作为 `Err` 上报：把失败当成「文档不存在」会让客户端看到
+    /// 一份静默缺失的数据。
+    fn get(&self, namespace: &str, key: &[u8]) -> Result<Option<Vec<u8>>, StoreError>;
+
+    /// 原子条件写：仅当 `_id` 尚不存在时写入一条文档，返回是否落地。
+    ///
+    /// `_id` 唯一性只能由这条原语保证。实现必须使用底座的原子条件写，不得
+    /// 先探测再写；否则并发插入同一 `_id` 会同时成功。
+    fn insert_if_absent(&self, namespace: &str, key: Vec<u8>, value: Vec<u8>) -> Result<bool, StoreError>;
+
+    /// 写入一批文档，返回写入数、重复 `_id` 位置与非法位置。
+    ///
+    /// 默认实现逐条走 [`Self::insert_if_absent`]，因此并发下也不会出现两个
+    /// 相同 `_id`。`ordered` 为真时遇到第一个重复就停止，否则跳过重复继续写。
+    /// 后端可以覆盖为一次批量提交，但必须保持同样的条件写语义。
+    fn insert(&self, namespace: &str, documents: &[(Vec<u8>, Vec<u8>)], ordered: bool) -> Result<InsertReport, StoreError> {
+        let mut report = InsertReport::default();
+        for (position, (key, value)) in documents.iter().enumerate() {
+            if self.insert_if_absent(namespace, key.clone(), value.clone())? {
+                report.inserted += 1;
+            }
+            else {
+                report.duplicates.push(position);
+                if ordered {
+                    break;
+                }
+            }
+        }
+        Ok(report)
+    }
+
+    /// 按编码 `_id` 升序读取整个 namespace。
+    ///
+    /// 扫描失败必须作为 `Err` 上报：把失败当成空集合会让查询静默返回不完整
+    /// 的结果。
+    fn scan(&self, namespace: &str) -> Result<Vec<(Vec<u8>, Vec<u8>)>, StoreError>;
+
+    /// 按编码 `_id` 升序读取一页文档。
+    ///
+    /// `after` 是排他游标，`limit` 是这一页最多返回的条数。默认实现整段扫描后
+    /// 裁剪，能下推游标的后端应覆盖它，避免为了早停把整个集合读进内存。
+    fn scan_page(&self, namespace: &str, after: Option<&[u8]>, limit: usize) -> Result<Vec<(Vec<u8>, Vec<u8>)>, StoreError> {
+        let mut entries = self.scan(namespace)?;
+        entries.retain(|(key, _)| after.is_none_or(|after| key.as_slice() > after));
+        if limit > 0 {
+            entries.truncate(limit);
+        }
+        Ok(entries)
+    }
+
+    /// `scan_page` 是否真的把游标下推到底层。
+    ///
+    /// 默认实现先整段读取再裁剪，调用方若据此推迟扫描，每页都会重读整个命名
+    /// 空间，反而更慢；只有覆盖了 [`Self::scan_page`] 的后端返回 `true`。
+    fn supports_page_scan(&self) -> bool {
+        false
+    }
+
+    /// 删除给定的编码 `_id`，返回实际存在的条数。
+    fn delete(&self, namespace: &str, keys: &[Vec<u8>]) -> Result<usize, StoreError>;
+
+    /// 覆盖写一批文档，不做重复检查，供 `update` 使用。
+    fn replace(&self, namespace: &str, documents: &[(Vec<u8>, Vec<u8>)]) -> Result<usize, StoreError>;
+
+    /// 扫描保留命名空间下以 `prefix` 开头的键值对。
+    ///
+    /// 索引项与文档共用同一 shard，只是命名空间不进入目录，因此这里既没有
+    /// 第二套存储后端，也不改变 `.yykv` 的字节布局。默认实现整段扫描后按
+    /// 前缀过滤，后端可以覆盖成原生前缀扫描。
+    fn scan_reserved(&self, namespace: &str, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>, StoreError> {
+        Ok(self.scan(namespace)?.into_iter().filter(|(key, _)| key.starts_with(prefix)).collect())
+    }
+
+    /// 在保留命名空间下做有界区间扫描。
+    ///
+    /// 语义与 [`Self::scan_reserved`] 相同，但只返回键严格大于 `after`（不含）
+    /// 且严格小于 `before`（不含）的条目，`limit` 为 `0` 表示不设上限。
+    /// 默认实现先整段取出再裁剪，能覆盖的后端应下推到原生游标，避免为了
+    /// 早停而把整段索引前缀读进内存。
+    fn scan_reserved_range(
+        &self,
+        namespace: &str,
+        prefix: &[u8],
+        after: Option<&[u8]>,
+        before: Option<&[u8]>,
+        limit: usize,
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, StoreError> {
+        let mut entries = self.scan_reserved(namespace, prefix)?;
+        entries.retain(|(key, _)| after.is_none_or(|after| key.as_slice() > after) && before.is_none_or(|before| key.as_slice() < before));
+        if limit > 0 {
+            entries.truncate(limit);
+        }
+        Ok(entries)
+    }
+
+    /// 写入保留命名空间，返回写入条数。
+    ///
+    /// 实现不得把该命名空间登记进目录：索引命名空间只承载键值，不参与
+    /// `listCollections` / `listDatabases`，也不出现在 `drop_namespace` 的目录账目里。
+    fn put_reserved(&self, namespace: &str, entries: &[(Vec<u8>, Vec<u8>)]) -> Result<usize, StoreError>;
+
+    /// 判断保留命名空间是否至少有一条条目。
+    ///
+    /// 索引项为空而集合非空只可能来自旧目录未重建或中断的删除，查询层据此
+    /// 退回集合扫描，避免把「索引里没有」误判成「数据不存在」。
+    fn reserved_has_entries(&self, namespace: &str) -> Result<bool, StoreError> {
+        Ok(!self.scan_reserved(namespace, b"")?.is_empty())
+    }
+
+    /// 清空一个保留命名空间，返回删除条数。
+    fn clear_reserved(&self, namespace: &str) -> Result<usize, StoreError> {
+        let keys: Vec<Vec<u8>> = self.scan_reserved(namespace, b"")?.into_iter().map(|(key, _)| key).collect();
+        if keys.is_empty() { Ok(0) } else { self.delete(namespace, &keys) }
+    }
+
+    /// 覆盖写一批文档，不做重复检查，供 `mongodump` 导入使用。
+    fn import(&self, namespace: &str, documents: &[(Vec<u8>, Vec<u8>)]) -> Result<usize, StoreError>;
+
+    /// 一条写命令的全部落地动作，按 [`NamespaceWrite`] 的顺序应用。
+    ///
+    /// 返回每个写入实际落地的变更条数（新增/覆盖的 `puts` 加上真实存在的
+    /// `deletes`），与逐个调用 [`Self::import`] / [`Self::delete`] 的计数一致。
+    /// 默认实现逐条回退，因此后端不覆盖它也只是慢一点，语义不变。
+    fn commit_namespaces(&self, writes: &[NamespaceWrite<'_>]) -> Result<Vec<usize>, StoreError> {
+        let mut applied = Vec::with_capacity(writes.len());
+        for write in writes {
+            let mut count = 0;
+            if !write.deletes.is_empty() {
+                count += self.delete(write.namespace, write.deletes)?;
+            }
+            if !write.puts.is_empty() {
+                let written = if is_index_namespace(write.namespace) {
+                    self.put_reserved(write.namespace, write.puts)?
+                }
+                else {
+                    self.import(write.namespace, write.puts)?
+                };
+                count += written;
+            }
+            applied.push(count);
+        }
+        Ok(applied)
+    }
+
+    /// 开启一个写入批处理作用域：作用域内的写入立即对读可见，落盘推迟到
+    /// [`Self::end_write_batch`]。
+    ///
+    /// 这是“一条命令一次落盘”的手段：`bulkWrite` 之类由多条语句组成的命令把整个
+    /// 命令收进一个作用域，各条语句之间仍然读得到前序写入。默认实现什么都不做，
+    /// 后端不参与合并提交时每次写入照旧各自落盘。
+    fn begin_write_batch(&self) {}
+
+    /// 结束写入批处理作用域，把作用域内的全部写入一次落盘。
+    ///
+    /// 返回错误表示这次落盘失败；能回滚的后端必须把内存恢复到作用域开始前的状态。
+    fn end_write_batch(&self) -> Result<(), StoreError> {
+        Ok(())
+    }
+
+    /// 已注册的 namespace，按字典序排列。
+    fn namespaces(&self) -> Result<Vec<String>, StoreError>;
+
+    /// namespace 是否已在目录中注册。
+    fn namespace_exists(&self, namespace: &str) -> Result<bool, StoreError>;
+
+    /// 创建集合，已存在时返回 `false`。
+    fn create_collection(&self, namespace: &str, options: CollectionOptions) -> Result<bool, StoreError>;
+
+    /// 删除集合：文档、用户索引与集合选项一并删除，返回集合此前是否存在。
+    fn drop_namespace(&self, namespace: &str) -> Result<bool, StoreError>;
+
+    /// 删除整个数据库下的集合、索引与选项，返回目录中列出的集合数。
+    fn drop_database(&self, database: &str) -> Result<usize, StoreError>;
+
+    /// 读取集合选项，目录无记录时返回默认值。
+    fn collection_options(&self, namespace: &str) -> Result<CollectionOptions, StoreError>;
+
+    /// 写入集合选项并注册 namespace。
+    fn set_collection_options(&self, namespace: &str, options: CollectionOptions) -> Result<(), StoreError>;
+
+    /// 一个 namespace 的用户索引，按创建顺序排列，不含 `_id_`。
+    fn index_specs(&self, namespace: &str) -> Result<Vec<IndexSpec>, StoreError>;
+
+    /// 注册 namespace 并追加索引定义。
+    fn add_indexes(&self, namespace: &str, indexes: &[IndexSpec]) -> Result<(), StoreError>;
+
+    /// 把一个索引标记为 multikey（索引字段出现过数组值）。
+    ///
+    /// 标记一旦置上就不撤销：数组元素分布决定了两侧范围谓词在 multikey 上
+    /// 不能只按同一元素取值，查询层需要据此退回集合扫描。后端若无法持久化
+    /// 该标记，必须返回 `Err`，不能假装成功。
+    fn mark_index_multikey(&self, namespace: &str, name: &str) -> Result<(), StoreError> {
+        let _ = (namespace, name);
+        Err(StoreError::Catalog("store does not persist index metadata".to_string()))
+    }
+
+    /// 删除指定用户索引，`name` 为 `*` 时删除全部用户索引，返回删除条数。
+    fn drop_indexes(&self, namespace: &str, name: &str) -> Result<usize, StoreError>;
+
+    /// 当前 TTL 监视器状态。
+    fn ttl_monitor_state(&self) -> TtlMonitorState;
+
+    /// 修改 `ttlMonitorSleepSecs`，`0` 按 `mongod` 语义夹到 `1`。
+    fn set_ttl_monitor_sleep_seconds(&self, seconds: u32);
+
+    /// 睡眠窗口过去后占用一次监视器扫描，返回本次是否该扫描。
+    fn claim_ttl_pass(&self, now_ms: i64) -> bool;
+
+    /// 打开 `local.oplog.rs` 持久化与封顶容量。
+    fn enable_oplog(&self, namespace: &str, max_bytes: i64) -> Result<(), StoreError>;
+
+    /// 是否配置了副本集 oplog。
+    fn oplog_enabled(&self) -> bool;
+
+    /// 已配置的 oplog namespace。
+    fn oplog_namespace(&self) -> Option<String>;
+
+    /// 封顶容量账目：namespace、`max_bytes`、条数、字节数。
+    fn oplog_status(&self) -> Option<(String, i64, i64, i64)>;
+
+    /// 暂存一条待提交的 oplog 条目；oplog 未启用时为空操作。
+    fn stage_oplog(&self, entry: OplogEntry);
+
+    /// 丢弃命令失败时暂存的条目，避免漏入下一次提交。
+    fn discard_staged_oplog(&self);
+
+    /// 按递增时间戳持久化全部暂存条目，返回最后一条的时间戳。
+    fn commit_oplog(&self, wall_millis: i64) -> Result<Option<(u32, u32)>, StoreError>;
+
+    /// 为一个逻辑会话开启事务。比会话最新编号更旧或相同的编号会被拒绝。
+    fn begin_transaction(&self, session: &str, txn_number: i64) -> TransactionBegin;
+
+    /// 不带 `startTransaction` 的命令，当前会话状态允许它做什么。
+    fn session_write_state(&self, session: &str, txn_number: i64) -> SessionWriteState;
+
+    /// 会话当前是否有可用事务。
+    fn transaction_active(&self, session: &str) -> bool;
+
+    /// 在事务里暂存一条写入，被其他活跃事务占用时返回冲突。
+    fn transaction_write(&self, session: &str, namespace: &str, key: &[u8], value: Option<Vec<u8>>) -> TransactionWrite;
+
+    /// 事务视角下的整个 namespace；会话无活跃事务时返回 `None`，调用方读已提交数据。
+    fn transaction_scan(&self, session: &str, namespace: &str) -> Result<Option<Vec<(Vec<u8>, Vec<u8>)>>, StoreError>;
+
+    /// 事务视角下的一页文档，语义与 [`Self::scan_page`] 一致。
+    ///
+    /// 默认实现整段合并后裁剪，保证语义正确；能把游标下推到已提交数据、只在
+    /// 本命名空间有暂存写入时才退回整段的实现应覆盖它。
+    fn transaction_scan_page(&self, session: &str, namespace: &str, after: Option<&[u8]>, limit: usize) -> Result<TransactionPage, StoreError> {
+        let Some(documents) = self.transaction_scan(session, namespace)?
+        else {
+            return Ok(TransactionPage::None);
+        };
+        let mut page: Vec<(Vec<u8>, Vec<u8>)> =
+            documents.into_iter().filter(|(key, _)| after.is_none_or(|after| key.as_slice() > after)).collect();
+        if limit > 0 {
+            page.truncate(limit);
+        }
+        Ok(TransactionPage::Page(page))
+    }
+
+    /// 事务视角下的单个文档。外层 `None` 表示该键未被暂存，调用方读已提交值。
+    fn transaction_get(&self, session: &str, namespace: &str, key: &[u8]) -> Result<Option<Option<Vec<u8>>>, StoreError>;
+
+    /// 提交事务；被其他事务改过的文档会让本次提交冲突。
+    fn transaction_commit(&self, session: &str, txn_number: i64) -> TransactionCommit;
+
+    /// 放弃事务；已提交或已放弃的编号会按各自状态返回。
+    fn transaction_abort(&self, session: &str, txn_number: i64) -> TransactionAbort;
+}

@@ -21,7 +21,6 @@ pub use database_protocol_mongo::{bson, json, wire};
 
 pub mod cursor;
 pub mod id;
-pub mod oplog;
 
 #[cfg(feature = "storage")]
 pub mod authorization;
@@ -29,6 +28,8 @@ pub mod authorization;
 pub mod commands;
 #[cfg(feature = "storage")]
 pub mod import;
+#[cfg(feature = "storage")]
+pub mod oplog;
 #[cfg(feature = "storage")]
 pub mod replica;
 #[cfg(feature = "storage")]
