@@ -11,6 +11,7 @@
 //! subqueries, a second table, non-text range bounds — returns `None` and the
 //! caller falls back to a full read.
 
+use database_formats::yy::row::{row_key, table_prefix};
 use database_types::{Error, Result, Value};
 use schema_types::{CanonicalScalar, ResolvedCanonicalType, ResolvedContract, ResolvedTypeContract};
 
@@ -18,7 +19,6 @@ use super::{
     catalog::{self, primary_field_name, table_row_key_name, table_type_by_name},
     constraints,
     ops::{BoundValue, CmpOp, Expr, Pred, QueryOp, ReturningProjection, WriteOp},
-    store,
 };
 
 /// Half-open window over the record keys of one table.
@@ -73,7 +73,7 @@ pub fn read_window(ops: &[QueryOp], contract: &ResolvedContract, bound_values: &
     if start.is_none() && end.is_none() {
         return Ok(None);
     }
-    Ok(Some(ReadWindow { start: start.unwrap_or_else(|| store::row_key(&storage_table, "")), end }))
+    Ok(Some(ReadWindow { start: start.unwrap_or_else(|| row_key(&storage_table, "")), end }))
 }
 
 /// Any operator that reads rows outside the leading scan.
@@ -174,7 +174,7 @@ fn apply_comparison(
         (value, CmpOp::Eq) => constraints::value_text(value)?,
         _ => return Ok(()),
     };
-    let key = store::row_key(storage_table, &text);
+    let key = row_key(storage_table, &text);
     match op {
         CmpOp::Eq => {
             lift_start(start, key.clone());
@@ -317,7 +317,7 @@ pub fn write_windows(
 /// smallest character after it, so every row of the table falls inside the
 /// half-open range and no other table does.
 fn table_window(storage_table: &str) -> ReadWindow {
-    let start = store::table_prefix(storage_table);
+    let start = table_prefix(storage_table);
     let mut end = start.clone();
     // Replace the trailing `/` with `0`, the next character after it: every key
     // that starts with the prefix sorts below that bound and nothing else does.
@@ -343,6 +343,6 @@ fn predicate_window(predicate: &Pred, entry: &ResolvedTypeContract, storage_tabl
 
 /// The one record a `table` row with primary-key text `pk_text` occupies.
 fn single_key_window(storage_table: &str, pk_text: &str) -> ReadWindow {
-    let key = store::row_key(storage_table, pk_text);
+    let key = row_key(storage_table, pk_text);
     ReadWindow { end: Some(format!("{key}\u{0}")), start: key }
 }

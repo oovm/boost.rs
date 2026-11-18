@@ -561,25 +561,6 @@ impl Connection {
     }
 }
 
-/// Borrowed table rows handed to a narrowed read.
-///
-/// A window read keeps row bytes in the decoded leaf pages, so the query layer
-/// receives references that live exactly as long as the window does. Every row
-/// is decoded into an owned `QueryRow` inside the operator, so no borrow crosses
-/// this boundary.
-pub(crate) struct WindowRows<'a>(pub(crate) &'a database_storage::local::RowWindow);
-
-impl database_query::local::RowSource for WindowRows<'_> {
-    fn rows_with_prefix<'a>(&'a self, prefix: &str) -> Box<dyn Iterator<Item = Result<database_query::local::BorrowedRow<'a>>> + 'a> {
-        let prefix = prefix.to_owned();
-        Box::new(self.0.iter().filter_map(move |row| match row {
-            Ok(row) if row.key.starts_with(&prefix) => Some(Ok(database_query::local::BorrowedRow { key: row.key, bytes: row.bytes })),
-            Ok(_) => None,
-            Err(error) => Some(Err(error)),
-        }))
-    }
-}
-
 /// Rows inside `windows`, copied so a failing statement can restore them.
 fn window_rows(records: &BTreeMap<String, Vec<u8>>, windows: &[database_query::local::ReadWindow]) -> Vec<(String, Vec<u8>)> {
     let mut rows = Vec::new();

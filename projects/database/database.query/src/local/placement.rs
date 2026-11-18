@@ -1,15 +1,14 @@
-//! Table row persistence inside the local record map.
+//! Host placement hooks for values that may leave the row inline.
+//!
+//! `bytes` and `vector<N>` are the two value kinds a host may keep outside the
+//! row: the threshold that decides between inline storage and an object
+//! reference is a physical property of the store, so the query layer owns only
+//! the port. A host installs a hook for the duration of one write execution and
+//! receives either the original inline value or a reference it created itself.
 
 use std::{cell::RefCell, sync::Arc};
 
 use database_types::{Result, Value, Vector};
-
-pub use database_formats::yy::row::{
-    ObjectResolver, ROW_PREFIX, RowReferences, row_key, row_references, select_encoded, table_prefix, with_object_resolver,
-};
-pub use database_storage::local::{
-    ReadRows, RowRecord as BorrowedRow, RowSource, load_row, load_table, load_table_entries, remove_row, scan_selected, upsert_row,
-};
 
 /// Storage hook that decides where a written `bytes` value is kept.
 ///
@@ -23,8 +22,8 @@ pub trait BytesPlacementHook: Send + Sync {
 
 /// Storage hook that decides where a written `vector<N>` value is kept.
 ///
-/// Small vectors stay inline in the row's tagged JSON form; larger ones become
-/// a content-addressed object reference (`ObjectKind::VectorPayload`). The
+/// Small vectors stay inline in the row's tagged form; larger ones become a
+/// content-addressed object reference (`ObjectKind::VectorPayload`). The
 /// dimension threshold belongs to the host (same design as `bytes`), so the
 /// query layer never picks one.
 pub trait VectorPlacementHook: Send + Sync {
@@ -77,8 +76,8 @@ pub fn with_bytes_placement<T>(hook: Option<SharedPlacementHook>, body: impl FnO
 
 /// Runs `body` with `hook` installed for `vector<N>` placement on this thread.
 ///
-/// Without a hook every vector stays inline in the row's tagged JSON form,
-/// which matches hosts with no object store.
+/// Without a hook every vector stays inline in the row's tagged form, which
+/// matches hosts with no object store.
 pub fn with_vector_placement<T>(hook: Option<SharedVectorHook>, body: impl FnOnce() -> T) -> T {
     let previous = VECTOR_PLACEMENT.with(|slot| slot.replace(hook));
     let _guard = VectorPlacementGuard(previous);

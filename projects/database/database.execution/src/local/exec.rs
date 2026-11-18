@@ -10,6 +10,7 @@ use std::{
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use database_storage::local::{ReadRows, RowSource};
 use database_types::{Error, Result, Timestamp, Value};
 use schema_types::ResolvedContract;
 
@@ -21,7 +22,6 @@ use database_query::local::{
         AggregateField, BinaryOp, BoundValue, CmpOp, CountExpr, Expr, JoinKind, OUTER_ROW_MARKER, Pred, ProjectExpr, ProjectField, QueryOp,
         QueryRow, ScalarFunction, SetOpKind, TextOp, WindowField, WindowFrame, WindowFrameBound, WindowFrameUnit, WindowFunction,
     },
-    store::{ReadRows, RowSource},
 };
 
 use super::resolve;

@@ -22,9 +22,9 @@ pub mod lower;
 pub mod ops;
 #[doc(hidden)]
 pub mod params;
-mod sql;
 #[doc(hidden)]
-pub mod store;
+pub mod placement;
+mod sql;
 mod window;
 #[doc(hidden)]
 pub mod write_plan;
@@ -41,9 +41,6 @@ pub use params::{
 };
 #[doc(hidden)]
 pub use params::{Dialect, prepare_sql};
-pub use store::{
-    BorrowedRow, BytesPlacementHook, ObjectResolver, ROW_PREFIX, RowReferences, RowSource, VectorPlacementHook, row_references, upsert_row,
-    with_bytes_placement, with_object_resolver, with_vector_placement,
-};
+pub use placement::{BytesPlacementHook, VectorPlacementHook, with_bytes_placement, with_vector_placement};
 pub use window::{ReadWindow, read_window, write_windows};
 

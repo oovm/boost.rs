@@ -10,7 +10,8 @@
 
 use std::sync::Arc;
 
-use database_query::local::{BytesPlacementHook, ObjectResolver, VectorPlacementHook};
+use database_formats::yy::row::ObjectResolver;
+use database_query::local::{BytesPlacementHook, VectorPlacementHook};
 use database_types::{INLINE_BYTES_MAX, ObjectKind, ObjectRef, Result, Value, Vector};
 use schema_types::{BytesPlacement, BytesPlacementPolicy};
 

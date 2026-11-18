@@ -8,7 +8,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use database_query::local::{ROW_PREFIX, row_references};
+use database_formats::yy::row::{ROW_PREFIX, row_references};
 use database_types::{FileDescriptor, ObjectRef, Result, Value, scalar};
 use serde_json::Value as JsonValue;
 

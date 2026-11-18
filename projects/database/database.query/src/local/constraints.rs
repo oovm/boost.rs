@@ -8,10 +8,12 @@
 
 use std::collections::BTreeMap;
 
+use database_formats::yy::row::{row_key, select_encoded};
+use database_storage::local::scan_selected;
 use database_types::{Error, Result, TableUniqueConstraint, UniqueConstraint, Value};
 use schema_types::{ResolvedContract, TypeContractKind};
 
-use super::{catalog, ops::QueryRow, store};
+use super::{catalog, ops::QueryRow};
 
 /// Derives single-column unique constraints declared with the VOS `@` attribute.
 pub fn from_contract(contract: &ResolvedContract) -> Result<Vec<TableUniqueConstraint>> {
@@ -75,16 +77,16 @@ pub fn check(
     if applicable.is_empty() {
         return Ok(());
     }
-    let target_key = store::row_key(table, pk_text);
+    let target_key = row_key(table, pk_text);
 
     for constraint in applicable {
         let names: Vec<&str> = constraint.columns().iter().map(String::as_str).collect();
-        let incoming = store::select_encoded(row, &names)?;
+        let incoming = select_encoded(row, &names)?;
         if incoming.iter().any(Option::is_none) && constraint.nulls_distinct() {
             continue;
         }
         let mut violation = false;
-        store::scan_selected(records, table, &names, |key, stored| {
+        scan_selected(records, table, &names, |key, stored| {
             if key == target_key {
                 return Ok(());
             }

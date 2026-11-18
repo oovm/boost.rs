@@ -262,7 +262,7 @@ fn coerce_exact(value: Value, ty: &ResolvedCanonicalType) -> Result<Value> {
     if let Value::Bytes(_) = &value {
         return match scalar_target(ty) {
             Some(ScalarTarget::Bytes) => match value {
-                Value::Bytes(octets) => super::store::place_bytes(octets),
+                Value::Bytes(octets) => super::placement::place_bytes(octets),
                 other => Ok(other),
             },
             _ => Err(coerce_error(
@@ -336,7 +336,7 @@ fn coerce_vector(value: Value, dimension: u32) -> Result<Value> {
                     "column type `vector<{dimension}>` requires finite components, component {index} is not finite"
                 )));
             }
-            super::store::place_vector(vector)
+            super::placement::place_vector(vector)
         }
         other => Err(coerce_error(format!("column type `vector<{dimension}>` requires a vector value, got `{}`", other.kind()))),
     }
@@ -373,7 +373,7 @@ fn coerce_to(value: Value, target: ScalarTarget) -> Result<Value> {
         (Value::Text(_) | Value::Bool(_), ScalarTarget::Real) => {
             Err(coerce_error("column type `f64` requires an integer or REAL numeric literal"))
         }
-        (Value::Bytes(bytes), ScalarTarget::Bytes) => super::store::place_bytes(bytes),
+        (Value::Bytes(bytes), ScalarTarget::Bytes) => super::placement::place_bytes(bytes),
         (Value::Object(object), ScalarTarget::Bytes) => Ok(Value::Object(object)),
         (Value::Text(_), ScalarTarget::Bytes) => Err(coerce_error(
             "column type `bytes` requires a BLOB value: 本地 never converts text into BLOB implicitly, use \

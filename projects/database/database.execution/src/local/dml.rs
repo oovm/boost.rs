@@ -21,13 +21,14 @@ use schema_input_vos::{
     types::{ResolvedCanonicalType, ResolvedContract, ResolvedTypeContract},
 };
 
+use database_formats::yy::row::row_key;
+use database_storage::local::{load_row, remove_row, upsert_row};
 use database_types::{Error, Result, TableUniqueConstraint, Value};
 
 use database_query::local::{
     catalog::{field_on_table, primary_field_name, table_storage_name, table_type_by_name},
     coerce, constraints,
     ops::QueryRow,
-    store,
     write_plan::{expand_program, has_write_call, is_macro_call},
 };
 
@@ -296,7 +297,7 @@ fn plan_point_key(
     if constraints::has_rules(constraints, storage_name) && !holds_every_row {
         return Ok(None);
     }
-    Ok(Some(store::row_key(storage_name, &pk_text)))
+    Ok(Some(row_key(storage_name, &pk_text)))
 }
 
 fn apply_write(
@@ -382,16 +383,16 @@ fn apply_update(
     let pk_field = primary_field_name(entry)?;
     let storage_name = table_storage_name(entry)?.to_string();
     let mut merged = {
-        if !records.contains_key(&store::row_key(&storage_name, pk_text)) {
+        if !records.contains_key(&row_key(&storage_name, pk_text)) {
             return Err(dml_error(format!("update target `{table}` primary key `{pk_text}` does not exist")));
         }
-        store::load_row(records, &storage_name, pk_text)?
+        load_row(records, &storage_name, pk_text)?
     };
     for (field, value) in patch {
         merged.insert(field.clone(), value.clone());
     }
     constraints::check(records, constraints, &storage_name, pk_field, pk_text, &merged)?;
-    store::upsert_row(records, &storage_name, pk_text, &merged)
+    upsert_row(records, &storage_name, pk_text, &merged)
 }
 
 fn apply_delete(contract: &ResolvedContract, records: &mut BTreeMap<String, Vec<u8>>, table: &str, pk_text: &str) -> Result<()> {
@@ -400,7 +401,7 @@ fn apply_delete(contract: &ResolvedContract, records: &mut BTreeMap<String, Vec<
     // The object argument may carry more than the key, but only the key is
     // matched, so a stale caller still deletes exactly one row and a key that
     // is already gone is a no-op.
-    store::remove_row(records, &store::row_key(&storage_name, pk_text));
+    remove_row(records, &row_key(&storage_name, pk_text));
     Ok(())
 }
 
@@ -430,7 +431,7 @@ fn upsert_row_for_table(
     let pk_text = constraints::value_text(pk)?;
     let storage_name = table_storage_name(entry)?.to_string();
     constraints::check(records, constraints, &storage_name, pk_field, &pk_text, row)?;
-    store::upsert_row(records, &storage_name, &pk_text, row)?;
+    upsert_row(records, &storage_name, &pk_text, row)?;
     Ok(row.clone())
 }
 

@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use database_formats::yy::row::{decode_row, encode_row, row_key, select_stored, table_prefix};
 use database_types::{Error, Result, Value};
 
-use super::snapshot::{RowRecord, RowSource};
+use super::snapshot::RowSource;
 
 /// One decoded table row.
 pub type Row = BTreeMap<String, Value>;

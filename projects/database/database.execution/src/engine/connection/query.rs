@@ -15,7 +15,11 @@ use crate::engine::{
     Error, Result,
     bytes::{ObjectStoreResolver, YydbBytesPolicy, YydbVectorPolicy},
 };
-use database_query::local::{PreparedStatement, QueryRow, fingerprint as fp, prepare as prepare_source};
+use database_formats::yy::row::{ObjectResolver, with_object_resolver};
+use database_query::local::{
+    BytesPlacementHook, PreparedStatement, QueryRow, VectorPlacementHook, fingerprint as fp, prepare as prepare_source,
+    with_bytes_placement, with_vector_placement,
+};
 use database_types::Value;
 
 use super::{Backend, Connection};
@@ -58,15 +62,15 @@ fn tick_nanos(started: Tick) -> u128 {
 }
 
 impl Connection {
-    fn object_resolver(&self) -> Arc<dyn database_query::local::ObjectResolver> {
+    fn object_resolver(&self) -> Arc<dyn ObjectResolver> {
         Arc::new(ObjectStoreResolver::new(Arc::clone(&self.objects)))
     }
 
-    fn bytes_policy(&self) -> Arc<dyn database_query::local::BytesPlacementHook> {
+    fn bytes_policy(&self) -> Arc<dyn BytesPlacementHook> {
         Arc::new(YydbBytesPolicy::new(Arc::clone(&self.objects)))
     }
 
-    fn vector_policy(&self) -> Arc<dyn database_query::local::VectorPlacementHook> {
+    fn vector_policy(&self) -> Arc<dyn VectorPlacementHook> {
         Arc::new(YydbVectorPolicy::new(Arc::clone(&self.objects)))
     }
 
@@ -77,9 +81,9 @@ impl Connection {
     /// both must see the same storage policies or a keyed plan could disagree
     /// with the row the executor builds.
     fn with_write_hooks<T>(&self, body: impl FnOnce() -> T) -> T {
-        database_query::local::with_object_resolver(Some(self.object_resolver()), || {
-            database_query::local::with_bytes_placement(Some(self.bytes_policy()), || {
-                database_query::local::with_vector_placement(Some(self.vector_policy()), body)
+        with_object_resolver(Some(self.object_resolver()), || {
+            with_bytes_placement(Some(self.bytes_policy()), || {
+                with_vector_placement(Some(self.vector_policy()), body)
             })
         })
     }
@@ -256,7 +260,7 @@ impl Connection {
         contract: &schema_input_vos::ResolvedContract,
         records: &BTreeMap<String, Vec<u8>>,
     ) -> Result<Vec<QueryRow>> {
-        database_query::local::with_object_resolver(Some(self.object_resolver()), || {
+        with_object_resolver(Some(self.object_resolver()), || {
             crate::local::execute_prepared(stmt, values, Some(contract), records)
         })
     }
@@ -274,7 +278,7 @@ impl Connection {
             return self.execute_with(stmt, values, contract, records);
         };
         let started = tick();
-        let (rows, exec) = database_query::local::with_object_resolver(Some(self.object_resolver()), || {
+        let (rows, exec) = with_object_resolver(Some(self.object_resolver()), || {
             crate::local::execute_prepared_profiled(stmt, values, Some(contract), records)
         })?;
         self.add_exec_profile(profile, started, &exec, rows.len());
@@ -300,17 +304,16 @@ impl Connection {
             // Memory-backed reads already own every row, so they run unwindowed.
             return self.execute_with_profiled(stmt, values, contract, records, profile);
         };
-        let source = super::state::WindowRows(rows);
         let Some(profile) = profile
         else {
-            let (out, _) = database_query::local::with_object_resolver(Some(self.object_resolver()), || {
-                crate::local::execute_prepared_borrowed(stmt, values, Some(contract), records, &source, false)
+            let (out, _) = with_object_resolver(Some(self.object_resolver()), || {
+                crate::local::execute_prepared_borrowed(stmt, values, Some(contract), records, rows, false)
             })?;
             return Ok(out);
         };
         let started = tick();
-        let (out, exec) = database_query::local::with_object_resolver(Some(self.object_resolver()), || {
-            crate::local::execute_prepared_borrowed(stmt, values, Some(contract), records, &source, true)
+        let (out, exec) = with_object_resolver(Some(self.object_resolver()), || {
+            crate::local::execute_prepared_borrowed(stmt, values, Some(contract), records, rows, true)
         })?;
         self.add_exec_profile(profile, started, &exec, out.len());
         Ok(out)
@@ -512,9 +515,9 @@ impl Connection {
                 // The write executor mutates `state.records`, so it cannot hold a
                 // borrow of the contract inside the same state.
                 let contract = resolved_contract(state)?.clone();
-                let outcome = database_query::local::with_object_resolver(Some(self.object_resolver()), || {
-                    database_query::local::with_bytes_placement(Some(self.bytes_policy()), || {
-                        database_query::local::with_vector_placement(Some(self.vector_policy()), || {
+                let outcome = with_object_resolver(Some(self.object_resolver()), || {
+                    with_bytes_placement(Some(self.bytes_policy()), || {
+                        with_vector_placement(Some(self.vector_policy()), || {
                             crate::local::execute_write_prepared(
                                 &stmt,
                                 &values,

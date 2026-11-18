@@ -5,7 +5,8 @@
 
 use std::collections::BTreeMap;
 
-use database_query::local::{PreparedStatement, QueryKind, QueryRow, bind_ordered, prepare_sql, store::RowSource};
+use database_query::local::{PreparedStatement, QueryKind, QueryRow, bind_ordered, prepare_sql};
+use database_storage::local::RowSource;
 use database_types::{Error, Result, TableUniqueConstraint, Value};
 use schema_types::ResolvedContract;
 

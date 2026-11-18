@@ -6,6 +6,8 @@
 
 use std::collections::BTreeMap;
 
+use database_formats::yy::row::row_key;
+use database_storage::local::{ReadRows, load_table_entries, remove_row, upsert_row};
 use database_types::{Error, Result, TableUniqueConstraint, UniqueConstraint, Value};
 use schema_types::{ResolvedContract, ResolvedTypeContract};
 
@@ -15,7 +17,6 @@ use database_query::local::{
         BoundValue, ConflictAction, ConflictClause, Expr, Pred, ProjectExpr, ProjectField, QueryOp, QueryRow, ReturningProjection,
         WriteAssignment, WriteBinOp, WriteExpr, WriteField, WriteOp,
     },
-    store::{self, ReadRows},
 };
 
 use super::exec;
@@ -283,7 +284,7 @@ fn insert_rows(
     // Uniqueness checks and conflict detection both compare against the current
     // table contents, so the rows are loaded whenever either is in play.
     let mut working: Vec<WorkingRow> = if target.is_some() || constraints::has_rules(declared, &storage) {
-        store::load_table_entries(records, &storage)?.into_iter().map(|(key, row)| WorkingRow { key, row }).collect()
+        load_table_entries(records, &storage)?.into_iter().map(|(key, row)| WorkingRow { key, row }).collect()
     }
     else {
         Vec::new()
@@ -333,7 +334,7 @@ fn insert_rows(
                         .get(&pk_field)
                         .ok_or_else(|| write_error(format!("updated `{table}` row lost primary key field `{pk_field}`")))?;
                     let matched_pk_text = constraints::value_text(matched_pk)?;
-                    store::upsert_row(&mut pending, &storage, &matched_pk_text, &updated)?;
+                    upsert_row(&mut pending, &storage, &matched_pk_text, &updated)?;
                     working[index].row = updated.clone();
                     written.push(project_returned(returning, &updated, table, contract, records, bound_values)?);
                     continue;
@@ -351,8 +352,8 @@ fn insert_rows(
         let known: Vec<QueryRow> = working.iter().map(|candidate| candidate.row.clone()).collect();
         constraints::check_against_rows(&known, declared, &storage, &pk_field, &pk_text, &row)?;
 
-        let key = store::row_key(&storage, &pk_text);
-        store::upsert_row(&mut pending, &storage, &pk_text, &row)?;
+        let key = row_key(&storage, &pk_text);
+        upsert_row(&mut pending, &storage, &pk_text, &row)?;
         match working.iter_mut().find(|candidate| candidate.key == key) {
             Some(existing) => existing.row = row.clone(),
             None => working.push(WorkingRow { key, row: row.clone() }),
@@ -581,7 +582,7 @@ fn update_rows(
 
     let mut replacements: Vec<(String, QueryRow)> = Vec::new();
     {
-        let entries = store::load_table_entries(records, &storage)?;
+        let entries = load_table_entries(records, &storage)?;
         for (key, mut row) in entries {
             if let Some(predicate) = predicate {
                 if !exec::eval_pred(predicate, &row, table, None, &ReadRows::owned(records), bound_values)? {
@@ -604,8 +605,8 @@ fn update_rows(
         let pk = row.get(&pk_field).ok_or_else(|| write_error(format!("updated `{table}` row lost primary key field `{pk_field}`")))?;
         let pk_text = constraints::value_text(pk)?;
         constraints::check(records, declared, &storage, &pk_field, &pk_text, row)?;
-        store::remove_row(records, key);
-        store::upsert_row(records, &storage, &pk_text, row)?;
+        remove_row(records, key);
+        upsert_row(records, &storage, &pk_text, row)?;
     }
     Ok(replacements.len())
 }
@@ -623,7 +624,7 @@ fn delete_rows(
     let predicate = predicate.as_ref();
     let mut doomed: Vec<String> = Vec::new();
     {
-        let entries = store::load_table_entries(records, &storage)?;
+        let entries = load_table_entries(records, &storage)?;
         for (key, row) in entries {
             if let Some(predicate) = predicate {
                 if !exec::eval_pred(predicate, &row, table, None, &ReadRows::owned(records), bound_values)? {
@@ -635,7 +636,7 @@ fn delete_rows(
     }
     let mut removed = 0;
     for key in doomed {
-        if store::remove_row(records, &key) {
+        if remove_row(records, &key) {
             removed += 1;
         }
     }

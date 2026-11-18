@@ -2,12 +2,12 @@
 
 use schema_types::ResolvedContract;
 
+use database_storage::local::ReadRows;
 use database_types::{Error, Result, Value};
 
 use database_query::local::{
     catalog::{field_on_table, reference_target_storage_name, table_type_by_name},
     ops::QueryRow,
-    store::ReadRows,
 };
 
 fn resolve_error(message: impl Into<String>) -> Error {
