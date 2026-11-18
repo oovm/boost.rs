@@ -35,6 +35,12 @@ pub mod delivery;
 pub use delivery::{AudioReport, DeliveryReport, SampleReport, inspect_delivery};
 
 #[cfg(feature = "scene")]
+pub mod archive;
+
+#[cfg(feature = "scene")]
+pub use archive::{ArchiveReport, AssetCheck, check_archive};
+
+#[cfg(feature = "scene")]
 pub use render::{FrameRange, PreviewStats, RenderOptions, RenderStats, lower_audio, preview_frame, render_frame_at, render_project, render_project_with};
 
 #[cfg(all(feature = "scene", feature = "layout-export"))]
