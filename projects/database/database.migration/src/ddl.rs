@@ -90,7 +90,7 @@ pub fn create_table(shape: &TableShape) -> Result<String, Error> {
         if !column.nullable {
             definition.push_str(" NOT NULL");
         }
-        if let Some(default) = &column.default {
+        if let Some(default) = column.default.as_deref().and_then(safe_default) {
             definition.push_str(&format!(" DEFAULT {default}"));
         }
         definitions.push(definition);
@@ -196,6 +196,23 @@ pub fn select_ordered(shape: &TableShape, order: &[String], offset: u64, limit: 
         quote_ident(&shape.name),
         keys.join(", ")
     )
+}
+
+/// Keeps a source default only when the target can replay it.
+///
+/// PostgreSQL spells many defaults with a `::type` cast the target DDL parser
+/// rejects, so the cast is stripped and the literal kept. A sequence default is
+/// dropped entirely: identity belongs to the source, and the target must not
+/// invent its own generator.
+fn safe_default(default: &str) -> Option<String> {
+    if default.contains("nextval(") {
+        return None;
+    }
+    let literal = match default.split_once("::") {
+        Some((value, _cast)) => value.trim(),
+        None => default.trim(),
+    };
+    if literal.is_empty() { None } else { Some(literal.to_owned()) }
 }
 
 /// Double-quoted identifier with embedded quotes doubled.

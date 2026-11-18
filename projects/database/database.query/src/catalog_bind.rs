@@ -1112,6 +1112,22 @@ fn bind_insert(
     Ok(SqlCatalogBoundInsert { table, fields: bound_fields, rows, select: None, conflict, returning })
 }
 
+/// Strips one level of identifier quoting, turning `"user_id"` or `` `user_id` ``
+/// into `user_id` and unescaping doubled quotes. Bare names pass through.
+fn unquote_ident(name: &str) -> String {
+    let trimmed = name.trim();
+    let bytes = trimmed.as_bytes();
+    if trimmed.len() >= 2 {
+        let open = bytes[0];
+        let close = bytes[trimmed.len() - 1];
+        if (open == b'"' && close == b'"') || (open == b'`' && close == b'`') {
+            let inner = &trimmed[1..trimmed.len() - 1];
+            return inner.replace("\"\"", "\"").replace("``", "`");
+        }
+    }
+    trimmed.to_owned()
+}
+
 /// Normalizes the `EXCLUDED` qualifier of an `ON CONFLICT DO UPDATE` value.
 ///
 /// `EXCLUDED` is a keyword rather than a table name, and PostgreSQL folds
@@ -1123,7 +1139,13 @@ fn canonicalize_excluded(expression: SqlBoundExpression) -> SqlBoundExpression {
     use SqlBoundExpression::*;
     match expression {
         Identifier(name) => match name.split_once('.') {
-            Some((qualifier, column)) if qualifier.trim().eq_ignore_ascii_case("excluded") => Identifier(format!("EXCLUDED.{column}")),
+            // `EXCLUDED."user_id"` is legal PostgreSQL and is what a quoted
+            // writer emits, so the qualifier and column are unquoted before the
+            // sentinel spelling is rebuilt. Matching the raw quoted text would
+            // miss the catalog field.
+            Some((qualifier, column)) if unquote_ident(qualifier).eq_ignore_ascii_case("excluded") => {
+                Identifier(format!("EXCLUDED.{}", unquote_ident(column)))
+            }
             _ => Identifier(name),
         },
         Binary { left, operator, right } => {
