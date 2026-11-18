@@ -52,8 +52,21 @@ pub struct RenderStats {
     /// silent or clipped bed is visible in the report instead of only in the
     /// file. A film without audio reports `None`, never a zero level.
     pub audio_level: Option<media_harness::LevelStats>,
+    /// What the delivery limiter did, when one was requested.
+    pub limiter: Option<LimiterStats>,
     /// Declared optional resources that were absent; each is documented silence.
     pub optional_missing: Vec<String>,
+}
+
+/// Report of one limiter pass, in the render's own serializable shape.
+#[derive(serde::Serialize, Debug, Clone, Copy)]
+pub struct LimiterStats {
+    /// Deepest gain reduction applied, in dB (negative or zero).
+    pub max_reduction_db: f32,
+    /// Peak of the limited output, in dBFS.
+    pub output_peak_db: f32,
+    /// Samples that pulled the gain down.
+    pub limited: usize,
 }
 
 /// One declared external resource and the bytes that were loaded for it.
@@ -129,6 +142,10 @@ pub struct RenderOptions<'a> {
     /// to FLAC); naming one makes a missing encoder an error instead of a
     /// silent substitution.
     pub audio_codec: Option<&'a str>,
+    /// Peak ceiling in dBFS applied to the mixed bed before encoding. `None`
+    /// delivers the mix untouched; a value runs the shared limiter and never
+    /// raises a quieter signal.
+    pub limiter_ceiling_db: Option<f32>,
 }
 
 impl RenderOptions<'_> {
@@ -303,6 +320,22 @@ pub fn render_project_with(
     }
     let assets = fingerprint_assets(&project, &plan, &optional_missing);
     let audio = build_audio(&plan, &mut media, limits)?;
+    // The limiter runs on the mixed bed, before any measurement, so the level
+    // in the report describes what the encoder actually receives.
+    let mut limiter = None;
+    let mut audio = audio;
+    if let Some(ceiling) = options.limiter_ceiling_db {
+        let mut floats: Vec<f32> = audio.iter().map(|sample| *sample as f32 / i16::MAX as f32).collect();
+        let report = media_dsp::limit_interleaved(&mut floats, ceiling, 60.0, plan.sample_rate as f32);
+        for (index, value) in floats.iter().enumerate() {
+            audio[index] = (value * i16::MAX as f32).round().clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+        }
+        limiter = Some(LimiterStats {
+            max_reduction_db: report.max_reduction_db,
+            output_peak_db: report.output_peak_db,
+            limited: report.limited,
+        });
+    }
     let audio_level = has_audio.then(|| media_harness::measure_pcm16(&audio));
     if options.cancelled() {
         return Err(Error::cancelled("render cancelled after the audio bed was built"));
@@ -367,6 +400,7 @@ pub fn render_project_with(
         assets,
         scenes,
         audio_level,
+        limiter,
         optional_missing,
     })
 }
@@ -2232,6 +2266,27 @@ mod tests {
         let error = super::render_project_with(&project.to_string(), &out, &options, &mut |_, _| {}).expect_err("unknown codec is refused");
         assert!(error.to_string().contains("opus"), "{error}");
         assert!(!out.exists(), "a refused profile publishes nothing");
+    }
+
+    /// A requested ceiling limits the delivered bed and the report says what it
+    /// did, measured after limiting rather than before.
+    #[test]
+    fn a_limiter_ceiling_changes_the_delivered_bed_and_is_reported() {
+        let project = serde_json::json!({
+            "width": 160, "height": 90, "fps": 15, "duration_frames": 15,
+            "scenes": [{ "start": 0, "duration": 15,
+                "background": { "kind": "solid", "color": "#101820" }, "items": [] }],
+            "audio": { "bgm": { "volume": 1.0, "mood": "pad" }, "sfx": [{ "at": 0, "kind": "whoosh", "volume": 1.0 }] }
+        });
+        let dir = std::env::temp_dir().join("opencut-limiter-tests");
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("limited.mp4");
+        let options = super::RenderOptions { limiter_ceiling_db: Some(-1.0), ..Default::default() };
+        let stats = super::render_project_with(&project.to_string(), &out, &options, &mut |_, _| {}).expect("render");
+        let limiter = stats.limiter.expect("a requested limiter reports what it did");
+        assert!(limiter.output_peak_db <= -1.0 + 1e-3, "{}", limiter.output_peak_db);
+        let level = stats.audio_level.expect("the limited bed is measured");
+        assert!(level.peak_db <= -1.0 + 1e-2, "the report describes the limited bed: {}", level.peak_db);
     }
 
     /// Renders a tiny film end to end: rasterize, synthesize audio, encode MP4.

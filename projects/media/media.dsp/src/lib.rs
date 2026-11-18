@@ -136,9 +136,73 @@ pub fn pan_gains(pan: f32) -> (f32, f32) {
     (p.cos(), p.sin())
 }
 
+/// What a limiter pass did.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LimiterReport {
+    /// Deepest gain reduction applied, in dB (negative or zero).
+    pub max_reduction_db: f32,
+    /// Peak of the output, in dBFS.
+    pub output_peak_db: f32,
+    /// Samples whose peak exceeded the ceiling before limiting.
+    pub limited: usize,
+}
+
+/// Limits interleaved samples to a ceiling with a release envelope.
+///
+/// The gain drops instantly on an over-ceiling sample and recovers linearly
+/// over `release_ms`; every sample stays at or below `ceiling_db` because the
+/// gain is computed from the sample that needs it. This is a delivery
+/// safeguard, not a loudness normalizer: it never raises a quiet signal.
+#[must_use]
+pub fn limit_interleaved(samples: &mut [f32], ceiling_db: f32, release_ms: f32, sample_rate: f32) -> LimiterReport {
+    let ceiling = 10f32.powf(ceiling_db / 20.0);
+    let release = (release_ms.max(0.0) / 1000.0 * sample_rate.max(1.0)).max(1.0);
+    let step = 1.0 / release;
+    let mut gain = 1.0f32;
+    let mut limited = 0usize;
+    let mut out_peak = 0.0f32;
+    let mut max_reduction = 0.0f32;
+    for sample in samples.iter_mut() {
+        let magnitude = sample.abs();
+        let needed = if magnitude > ceiling { ceiling / magnitude } else { 1.0 };
+        if needed < gain {
+            gain = needed;
+            limited += 1;
+            max_reduction = max_reduction.min(20.0 * gain.log10());
+        }
+        else {
+            gain = (gain + step).min(1.0);
+        }
+        *sample *= gain;
+        out_peak = out_peak.max(sample.abs());
+    }
+    LimiterReport { max_reduction_db: max_reduction, output_peak_db: 20.0 * out_peak.max(1e-9).log10(), limited }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_limiter_keeps_every_sample_under_its_ceiling() {
+        let mut samples = vec![0.2f32, 2.0, -3.5, 0.1, 1.4];
+        let report = limit_interleaved(&mut samples, -1.0, 50.0, 48_000.0);
+        let ceiling = 10f32.powf(-1.0 / 20.0);
+        assert!(samples.iter().all(|sample| sample.abs() <= ceiling + 1e-5), "{samples:?}");
+        assert_eq!(report.limited, 2, "two samples had to pull the gain down; the rest ride the release");
+        assert!(report.max_reduction_db < -8.0, "{}", report.max_reduction_db);
+        assert!(report.output_peak_db <= -1.0 + 1e-3, "{}", report.output_peak_db);
+    }
+
+    #[test]
+    fn a_limiter_never_raises_a_quiet_signal() {
+        let original = vec![0.01f32, -0.02, 0.03];
+        let mut samples = original.clone();
+        let report = limit_interleaved(&mut samples, -1.0, 50.0, 48_000.0);
+        assert_eq!(samples, original, "quiet samples pass unchanged");
+        assert_eq!(report.limited, 0);
+        assert_eq!(report.max_reduction_db, 0.0);
+    }
 
     #[test]
     fn seed_zero_and_one_share_one_stream() {
