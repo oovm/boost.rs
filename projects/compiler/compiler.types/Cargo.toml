@@ -1,0 +1,21 @@
+[package]
+name = "compiler-types"
+description = "Language-neutral compiler contract types: semantic ids, linked program facts, layout plans, provenance contracts and diagnostic wire rows"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[features]
+default = []
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { workspace = true, optional = true, features = ["rc"] }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+compiler-types = { path = ".", features = ["serde"] }

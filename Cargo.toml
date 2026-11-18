@@ -22,6 +22,7 @@ members = [
     "projects/boost/boost-source",
     "projects/boost/boost-terminal",
     "projects/compiler/compiler.optimize",
+    "projects/compiler/compiler.types",
     "projects/crawler/crawler",
     "projects/crawler/crawler.browser",
     "projects/crawler/crawler.extract",
@@ -220,6 +221,7 @@ boost-source = { path = "projects/boost/boost-source" }
 boost-terminal = { path = "projects/boost/boost-terminal" }
 # 编译基础设施
 compiler-optimize = { path = "projects/compiler/compiler.optimize" }
+compiler-types = { path = "projects/compiler/compiler.types" }
 # 内部库
 crawler-browser = { path = "projects/crawler/crawler.browser" }
 crawler-extract = { path = "projects/crawler/crawler.extract" }

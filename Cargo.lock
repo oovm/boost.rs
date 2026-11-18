@@ -542,6 +542,16 @@ name = "compiler-optimize"
 version = "0.1.0"
 
 [[package]]
+name = "compiler-types"
+version = "0.1.0"
+dependencies = [
+ "compiler-types",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+]
+
+[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
