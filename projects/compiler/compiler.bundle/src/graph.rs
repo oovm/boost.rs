@@ -25,6 +25,7 @@ use std::path::{Path, PathBuf};
 use crate::diag::PackDiagnostic;
 use crate::module::{ImportFact, ModuleFactSource, ModuleRecord};
 use crate::resolve::{ResolveRequest, Resolved, Target, resolve};
+use crate::source::SourceReader;
 
 /// 模块节点身份：canonical 后的真实文件路径。
 pub type ModuleId = PathBuf;
@@ -159,8 +160,14 @@ impl ModuleGraph {
 ///
 /// 入口本身解析失败（读文件/parse）记入图级诊断并跳过该入口；
 /// 依赖边解析失败保留为 `Err` 诊断边，遍历不因单点失败中断。
-pub fn build_graph(facts: &dyn ModuleFactSource, entries: &[(String, PathBuf)], target: Target, root: &Path) -> ModuleGraph {
-    build_graph_with_roots(facts, entries, target, root, None, &HashMap::new())
+pub fn build_graph(
+    facts: &dyn ModuleFactSource,
+    reader: &dyn SourceReader,
+    entries: &[(String, PathBuf)],
+    target: Target,
+    root: &Path,
+) -> ModuleGraph {
+    build_graph_with_roots(facts, reader, entries, target, root, None, &HashMap::new())
 }
 
 /// [`build_graph`] 的 provenance 变体（无输出树根）：`origins` 把 canonical
@@ -169,12 +176,13 @@ pub fn build_graph(facts: &dyn ModuleFactSource, entries: &[(String, PathBuf)], 
 /// 的包发现以来源位置为上溯起点，使产物图表现得像模块仍住在源包里。
 pub fn build_graph_with_origins(
     facts: &dyn ModuleFactSource,
+    reader: &dyn SourceReader,
     entries: &[(String, PathBuf)],
     target: Target,
     root: &Path,
     origins: &HashMap<PathBuf, PathBuf>,
 ) -> ModuleGraph {
-    build_graph_with_roots(facts, entries, target, root, None, origins)
+    build_graph_with_roots(facts, reader, entries, target, root, None, origins)
 }
 
 /// 带输出树根的完整变体：`out_root` 是本次产物的输出目录。落在其下的
@@ -182,6 +190,7 @@ pub fn build_graph_with_origins(
 /// chunk id；其余节点（源树 / 依赖包）仍按项目根相对命名。
 pub fn build_graph_with_roots(
     facts: &dyn ModuleFactSource,
+    reader: &dyn SourceReader,
     entries: &[(String, PathBuf)],
     target: Target,
     root: &Path,
@@ -251,7 +260,7 @@ pub fn build_graph_with_roots(
     while let Some(resolved) = queue.pop_front() {
         let id = resolved.path.clone();
         let index = by_id[&id];
-        let node = expand(facts, &resolved, target, root, origins, &mut edge_resolved, &mut graph.diagnostics);
+        let node = expand(facts, reader, &resolved, target, root, origins, &mut edge_resolved, &mut graph.diagnostics);
         let edges_static = node.static_edges.clone();
         let edges_dynamic = node.dynamic_edges.clone();
         graph.nodes[index] = node;
@@ -279,10 +288,11 @@ pub fn build_graph_with_roots(
     graph
 }
 
-/// 展开单个文件为节点：读源码 → Oak 事实 → 逐说明符解析身份。
+/// 展开单个文件为节点：经注入端口读源码 → Oak 事实 → 逐说明符解析身份。
 /// `edge_resolved` 逐边登记完整解析结果（stub 等身份不能只按路径重建）。
 fn expand(
     facts: &dyn ModuleFactSource,
+    reader: &dyn SourceReader,
     resolved: &Resolved,
     target: Target,
     root: &Path,
@@ -327,7 +337,7 @@ fn expand(
             diagnostics: Vec::new(),
         };
     }
-    let source = match std::fs::read_to_string(path) {
+    let source = match reader.read_to_string(path) {
         Ok(source) => source,
         Err(err) => {
             graph_diags.push(

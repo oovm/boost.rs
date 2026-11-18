@@ -9,6 +9,7 @@
 //! - [`graph`]：把记录与解析粘成从入口可达的模块图。
 //! - [`link`]：语句级活跃不动点。
 //! - [`chunk`]：保留集合上的确定性多入口分包计划。
+//! - [`source`]：按已解析身份读取源码与资源字节的只读端口（宿主注入）。
 //!
 //! 不归本 crate 的内容：
 //!
@@ -25,6 +26,8 @@ pub mod graph;
 pub mod link;
 pub mod module;
 pub mod resolve;
+pub mod source;
 
 pub use diag::PackDiagnostic;
 pub use module::ModuleFactSource;
+pub use source::{SourceReader, StdSourceReader};

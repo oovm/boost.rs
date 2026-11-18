@@ -3081,7 +3081,7 @@ pub(crate) fn json_text(
     }
     let path = &context.graph.nodes[node].resolved.path;
     let path_display = normalize_path(path);
-    let built = match std::fs::read_to_string(path) {
+    let built = match context.reader.read_to_string(path) {
         Ok(text) => Some(text),
         Err(err) => {
             errors.push(

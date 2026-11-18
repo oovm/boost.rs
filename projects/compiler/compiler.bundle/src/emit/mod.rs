@@ -51,9 +51,10 @@
 //!   携带精确原因清单，chunk id `isolated/…` 前缀即 manifest 标注
 //!   （Living §同 chunk 作用域隔离：隔离即独立发射）。
 //!
-//! [`plan_emit`] 是纯计算（只按 [`crate::graph::ModuleNode::resolved`] 路径
-//! 重读模块源码与资源字节，IO 姿态与 `graph` 层一致）；[`write_emit_with`]
-//! 是唯一写盘的函数。输入必须是同一目标图上的 [`crate::graph::ModuleGraph`]、
+//! [`plan_emit`] 是纯计算：模块源码、JSON 文本与资源字节一律经调用方注入的
+//! [`crate::source::SourceReader`] 按 [`crate::graph::ModuleNode::resolved`]
+//! 身份读取，本层不直接触碰文件系统；[`write_emit_with`] 是唯一的写盘函数。
+//! 输入必须是同一目标图上的 [`crate::graph::ModuleGraph`]、
 //! [`crate::link::LinkPlan`] 与 [`crate::chunk::ChunkPlan`]，形状不一致
 //! （越界、重复归属、未被链接保留）按 `vmz::pack::emit::input_inconsistent`
 //! 拒绝。
@@ -72,6 +73,7 @@ use crate::chunk::ChunkPlan;
 use crate::diag::PackDiagnostic;
 use crate::graph::ModuleGraph;
 use crate::link::{LinkPlan, LinkedModule, effectful_modules};
+use crate::source::SourceReader;
 
 pub use cache::EmitCache;
 pub use write::{OutputSink, write_emit_incremental_with, write_emit_with};
@@ -191,6 +193,8 @@ pub struct EmitPlan {
 /// assemble 与 manifest 共享的只读上下文。
 pub(crate) struct EmitContext<'a> {
     pub graph: &'a ModuleGraph,
+    /// 源码/资源字节的只读端口（宿主注入）。
+    pub reader: &'a dyn SourceReader,
     pub chunks: &'a ChunkPlan,
     /// 节点 → 所属 chunk 索引（已校验越界与重复归属）。
     pub node_chunk: Vec<Option<usize>>,
@@ -226,9 +230,10 @@ pub fn plan_emit(
     link: &LinkPlan,
     chunks: &ChunkPlan,
     options: &EmitOptions,
+    reader: &dyn SourceReader,
 ) -> Result<EmitPlan, Vec<PackDiagnostic>> {
     let mut cache = EmitCache::disabled();
-    plan_emit_with_cache(graph, link, chunks, options, &mut cache)
+    plan_emit_with_cache(graph, link, chunks, options, reader, &mut cache)
 }
 
 /// 带增量缓存的产物计划入口。
@@ -236,11 +241,13 @@ pub fn plan_emit(
 /// 调用方负责缓存 IO（[`EmitCache::load`] / [`EmitCache::store`]），本函数
 /// 只做纯计算：先绑定本次 `graphDigest` / `inputDigest`，图结构变化即丢弃
 /// 全部旧条目；随后逐 chunk 以内容摘要键复用压缩文本与 source map。
+/// 模块源码、JSON 文本与资源字节一律经注入的 [`SourceReader`] 读取。
 pub fn plan_emit_with_cache(
     graph: &ModuleGraph,
     link: &LinkPlan,
     chunks: &ChunkPlan,
     options: &EmitOptions,
+    reader: &dyn SourceReader,
     cache: &mut EmitCache,
 ) -> Result<EmitPlan, Vec<PackDiagnostic>> {
     let mut errors: Vec<PackDiagnostic> = Vec::new();
@@ -364,7 +371,7 @@ pub fn plan_emit_with_cache(
                 );
                 continue;
             }
-            match std::fs::read_to_string(&module_node.resolved.path) {
+            match reader.read_to_string(&module_node.resolved.path) {
                 Ok(source) => {
                     sources.insert(node, source);
                 }
@@ -387,7 +394,7 @@ pub fn plan_emit_with_cache(
     }
 
     let (mut asset_index, mut by_disk, asset_errors) =
-        collect_assets(graph, chunks, &node_chunk, &linked, options);
+        collect_assets(graph, chunks, &node_chunk, &linked, options, reader);
     errors.extend(asset_errors);
 
     // Style 聚合：CSS 文本读取、`@import` 拒绝与 `url()` 搬迁复用同一
@@ -399,6 +406,7 @@ pub fn plan_emit_with_cache(
         &mut asset_index,
         &mut by_disk,
         options,
+        reader,
         &mut errors,
     );
     if !errors.is_empty() {
@@ -407,6 +415,7 @@ pub fn plan_emit_with_cache(
 
     let mut context = EmitContext {
         graph,
+        reader,
         chunks,
         node_chunk,
         retained,
@@ -470,6 +479,7 @@ fn collect_assets(
     node_chunk: &[Option<usize>],
     linked: &[Option<&LinkedModule>],
     options: &EmitOptions,
+    reader: &dyn SourceReader,
 ) -> (
     BTreeMap<(String, String), AssetArtifact>,
     HashMap<PathBuf, (String, String)>,
@@ -526,7 +536,7 @@ fn collect_assets(
                 let (file_name, url) = match by_disk.get(&disk) {
                     Some(cached) => cached.clone(),
                     None => {
-                        let bytes = match std::fs::read(&disk) {
+                        let bytes = match reader.read(&disk) {
                             Ok(bytes) => bytes,
                             Err(err) => {
                                 errors.push(asset_unresolved(

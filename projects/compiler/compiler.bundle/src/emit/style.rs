@@ -19,6 +19,7 @@ use std::path::PathBuf;
 use crate::chunk::ChunkPlan;
 use crate::diag::PackDiagnostic;
 use crate::graph::{ModuleGraph, NodeKind};
+use crate::source::SourceReader;
 
 use super::assemble::apply_replacements;
 use super::manifest::hex;
@@ -34,6 +35,7 @@ pub(crate) fn collect_styles(
     asset_index: &mut BTreeMap<(String, String), AssetArtifact>,
     by_disk: &mut HashMap<PathBuf, (String, String)>,
     options: &EmitOptions,
+    reader: &dyn SourceReader,
     errors: &mut Vec<PackDiagnostic>,
 ) -> Vec<StyleArtifact> {
     // 节点重写文本缓存：`None` = 已失败（诊断已推入，不重复报）。
@@ -71,6 +73,7 @@ pub(crate) fn collect_styles(
                             asset_index,
                             by_disk,
                             options,
+                            reader,
                             errors,
                         );
                         cache.insert(target, built.clone());
@@ -114,11 +117,12 @@ fn rewrite_style_file(
     asset_index: &mut BTreeMap<(String, String), AssetArtifact>,
     by_disk: &mut HashMap<PathBuf, (String, String)>,
     options: &EmitOptions,
+    reader: &dyn SourceReader,
     errors: &mut Vec<PackDiagnostic>,
 ) -> Option<String> {
     let path = &graph.nodes[node].resolved.path;
     let path_display = normalize_path(path);
-    let text = match std::fs::read_to_string(path) {
+    let text = match reader.read_to_string(path) {
         Ok(text) => text,
         Err(err) => {
             errors.push(
@@ -160,7 +164,7 @@ fn rewrite_style_file(
                 let (file_name, url) = match by_disk.get(&disk) {
                     Some(cached) => cached.clone(),
                     None => {
-                        let bytes = match std::fs::read(&disk) {
+                        let bytes = match reader.read(&disk) {
                             Ok(bytes) => bytes,
                             Err(err) => {
                                 errors.push(
