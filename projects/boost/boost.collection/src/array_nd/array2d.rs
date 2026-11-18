@@ -14,11 +14,11 @@ use core::{
 ///
 /// 形状运行时才确定时用 [`DenseArrayND<T, 2>`](crate::DenseArrayND)。
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct InlineArray2D<T, const ROWS: usize, const COLUMNS: usize> {
+pub struct FixedArray2D<T, const ROWS: usize, const COLUMNS: usize> {
     cells: [[T; COLUMNS]; ROWS],
 }
 
-impl<T, const ROWS: usize, const COLUMNS: usize> InlineArray2D<T, ROWS, COLUMNS> {
+impl<T, const ROWS: usize, const COLUMNS: usize> FixedArray2D<T, ROWS, COLUMNS> {
     /// 按逻辑坐标 `[row, column]` 逐个生成元素，行主序推进。
     ///
     /// 生成直接写入最终存储，不经过逐行临时集合；闭包 panic 时已初始化
@@ -105,13 +105,13 @@ impl<T, const ROWS: usize, const COLUMNS: usize> InlineArray2D<T, ROWS, COLUMNS>
     }
 }
 
-impl<T, const ROWS: usize, const COLUMNS: usize> From<[[T; COLUMNS]; ROWS]> for InlineArray2D<T, ROWS, COLUMNS> {
+impl<T, const ROWS: usize, const COLUMNS: usize> From<[[T; COLUMNS]; ROWS]> for FixedArray2D<T, ROWS, COLUMNS> {
     fn from(cells: [[T; COLUMNS]; ROWS]) -> Self {
         Self { cells }
     }
 }
 
-impl<T, const ROWS: usize, const COLUMNS: usize> Index<[usize; 2]> for InlineArray2D<T, ROWS, COLUMNS> {
+impl<T, const ROWS: usize, const COLUMNS: usize> Index<[usize; 2]> for FixedArray2D<T, ROWS, COLUMNS> {
     type Output = T;
 
     fn index(&self, [row, column]: [usize; 2]) -> &Self::Output {
@@ -119,7 +119,7 @@ impl<T, const ROWS: usize, const COLUMNS: usize> Index<[usize; 2]> for InlineArr
     }
 }
 
-impl<T, const ROWS: usize, const COLUMNS: usize> IndexMut<[usize; 2]> for InlineArray2D<T, ROWS, COLUMNS> {
+impl<T, const ROWS: usize, const COLUMNS: usize> IndexMut<[usize; 2]> for FixedArray2D<T, ROWS, COLUMNS> {
     fn index_mut(&mut self, [row, column]: [usize; 2]) -> &mut Self::Output {
         &mut self.cells[row][column]
     }

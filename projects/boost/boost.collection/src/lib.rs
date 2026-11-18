@@ -12,7 +12,7 @@
 //!
 //! - [`DenseArrayND`]：静态 rank、各轴 extent 在构造时确定（运行时形状）、
 //!   连续行主序 `Vec` 载体。
-//! - [`InlineArray2D`] / [`InlineArray3D`]：形状直接进类型的编译期内联
+//! - [`FixedArray2D`] / [`FixedArray3D`]：形状直接进类型的编译期内联
 //!   载体，用 [`array!`] 宏接受元组书写：`type Grid = array!(f32, (3, 3));`、
 //!   `type Cube = array!(f32, (2, 3, 4));`。
 //! - [`ArrayView2D`] / [`ArrayViewMut2D`]：借用 strided 的二维只读与可写
@@ -28,12 +28,13 @@
 #![deny(missing_docs)]
 
 mod array_nd;
-mod array_view;
 mod error;
 mod graph;
 
-pub use array_nd::{Array1D, Array2D, Array3D, ArrayND, DenseArrayND, InlineArray2D, InlineArray3D};
-pub use array_view::{ArrayView2D, ArrayViewMut2D};
+pub use array_nd::{
+    Array1D, Array2D, Array3D, ArrayND, DenseArrayND, FixedArray2D, FixedArray3D,
+    array_view::{ArrayView2D, ArrayViewMut2D},
+};
 pub use boost_collection_macro::array;
 pub use error::{CollectionError, Result};
 pub use graph::{CsrGraph, GraphError, GraphRead, GraphResult, IncomingEdges, MemoryEdge, MemoryGraph, OutgoingEdges};

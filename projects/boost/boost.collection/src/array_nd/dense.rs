@@ -11,12 +11,13 @@ use core::{
 /// 的唯一或默认表示。`N` 是轴数（rank），不是任何一轴的长度。各轴长度在
 /// 构造时给出，之后保持不变；元素区是单一连续缓冲，默认行主序，末轴相邻。
 /// 允许写入已有坐标，但不提供行级 `push`/`pop`，也不交出能改变缓冲
-/// 长度的逃逸入口。编译期形状的内联表示见 [`InlineArray2D`](crate::InlineArray2D)。
+/// 长度的逃逸入口。编译期形状的内联表示见 [`InlineArray2D`](crate::FixedArray2D)。
 ///
 /// ```
 /// use boost_collection::DenseArrayND;
 ///
-/// let grid = DenseArrayND::new([2, 3], |[row, column]| (row * 3 + column) as i32).expect("shape fits");
+/// let grid =
+///     DenseArrayND::new([2, 3], |[row, column]| (row * 3 + column) as i32).expect("shape fits");
 /// assert_eq!(grid.shape(), [2, 3]);
 /// assert_eq!(grid[[1, 2]], 5);
 /// assert_eq!(grid.as_slice(), &[0, 1, 2, 3, 4, 5]);

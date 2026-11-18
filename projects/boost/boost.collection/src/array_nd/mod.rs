@@ -8,10 +8,11 @@
 
 mod array2d;
 mod array3d;
+pub mod array_view;
 mod dense;
 
-pub use array2d::InlineArray2D;
-pub use array3d::InlineArray3D;
+pub use array2d::FixedArray2D;
+pub use array3d::FixedArray3D;
 pub use dense::DenseArrayND;
 
 use crate::{ArrayView2D, ArrayViewMut2D};
@@ -52,23 +53,23 @@ impl<T, const N: usize> ArrayND<T, N> for DenseArrayND<T, N> {
     }
 }
 
-impl<T, const ROWS: usize, const COLUMNS: usize> ArrayND<T, 2> for InlineArray2D<T, ROWS, COLUMNS> {
+impl<T, const ROWS: usize, const COLUMNS: usize> ArrayND<T, 2> for FixedArray2D<T, ROWS, COLUMNS> {
     fn shape(&self) -> [usize; 2] {
-        InlineArray2D::shape(self)
+        FixedArray2D::shape(self)
     }
 
     fn get(&self, index: [usize; 2]) -> Option<&T> {
-        InlineArray2D::get(self, index)
+        FixedArray2D::get(self, index)
     }
 }
 
-impl<T, const D1: usize, const D2: usize, const D3: usize> ArrayND<T, 3> for InlineArray3D<T, D1, D2, D3> {
+impl<T, const D1: usize, const D2: usize, const D3: usize> ArrayND<T, 3> for FixedArray3D<T, D1, D2, D3> {
     fn shape(&self) -> [usize; 3] {
-        InlineArray3D::shape(self)
+        FixedArray3D::shape(self)
     }
 
     fn get(&self, index: [usize; 3]) -> Option<&T> {
-        InlineArray3D::get(self, index)
+        FixedArray3D::get(self, index)
     }
 }
 

@@ -11,11 +11,11 @@ use core::{
 /// `[[[T; D3]; D2]; D1]`，第一轴最外层、末轴相邻。需要元组书写时用
 /// [`array!`](crate::array) 宏：`type Cube = array!(f32, (2, 3, 4));`。
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct InlineArray3D<T, const D1: usize, const D2: usize, const D3: usize> {
+pub struct FixedArray3D<T, const D1: usize, const D2: usize, const D3: usize> {
     cells: [[[T; D3]; D2]; D1],
 }
 
-impl<T, const D1: usize, const D2: usize, const D3: usize> InlineArray3D<T, D1, D2, D3> {
+impl<T, const D1: usize, const D2: usize, const D3: usize> FixedArray3D<T, D1, D2, D3> {
     /// 按逻辑坐标 `[first, second, third]` 逐个生成元素，行主序推进。
     ///
     /// 生成直接写入最终存储，不经过逐层临时集合；闭包 panic 时已初始化
@@ -96,13 +96,13 @@ impl<T, const D1: usize, const D2: usize, const D3: usize> InlineArray3D<T, D1, 
     }
 }
 
-impl<T, const D1: usize, const D2: usize, const D3: usize> From<[[[T; D3]; D2]; D1]> for InlineArray3D<T, D1, D2, D3> {
+impl<T, const D1: usize, const D2: usize, const D3: usize> From<[[[T; D3]; D2]; D1]> for FixedArray3D<T, D1, D2, D3> {
     fn from(cells: [[[T; D3]; D2]; D1]) -> Self {
         Self { cells }
     }
 }
 
-impl<T, const D1: usize, const D2: usize, const D3: usize> Index<[usize; 3]> for InlineArray3D<T, D1, D2, D3> {
+impl<T, const D1: usize, const D2: usize, const D3: usize> Index<[usize; 3]> for FixedArray3D<T, D1, D2, D3> {
     type Output = T;
 
     fn index(&self, [first, second, third]: [usize; 3]) -> &Self::Output {
@@ -110,7 +110,7 @@ impl<T, const D1: usize, const D2: usize, const D3: usize> Index<[usize; 3]> for
     }
 }
 
-impl<T, const D1: usize, const D2: usize, const D3: usize> IndexMut<[usize; 3]> for InlineArray3D<T, D1, D2, D3> {
+impl<T, const D1: usize, const D2: usize, const D3: usize> IndexMut<[usize; 3]> for FixedArray3D<T, D1, D2, D3> {
     fn index_mut(&mut self, [first, second, third]: [usize; 3]) -> &mut Self::Output {
         &mut self.cells[first][second][third]
     }

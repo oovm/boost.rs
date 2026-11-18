@@ -4,7 +4,7 @@
 //! 乘积溢出与长度不匹配拒绝、非 Copy 元素的初始化/移动/释放、
 //! 二维行切片，以及编译期固定形状与 `array!` 元组展开。
 
-use boost_collection::{Array2D, CollectionError, DenseArrayND, InlineArray2D, InlineArray3D, array};
+use boost_collection::{Array2D, CollectionError, DenseArrayND, FixedArray2D, FixedArray3D, array};
 use std::{cell::Cell, rc::Rc};
 
 #[test]
@@ -121,14 +121,14 @@ fn compile_time_shape_and_tuple_macro() {
     assert_eq!(Inline::new(|[row, column]| (row * 4 + column) as u8).shape(), [2, 4]);
 
     let source = [[1_u8, 2], [3, 4]];
-    let converted: InlineArray2D<u8, 2, 2> = InlineArray2D::from(source);
+    let converted: FixedArray2D<u8, 2, 2> = FixedArray2D::from(source);
     assert_eq!(converted.iter().copied().collect::<Vec<_>>(), vec![1, 2, 3, 4]);
     assert_eq!(converted.into_inner(), source);
 }
 
 #[test]
 fn compile_time_shape_keeps_zero_extents() {
-    let empty = InlineArray2D::<u8, 0, 4>::new(|_| unreachable!("no element is generated"));
+    let empty = FixedArray2D::<u8, 0, 4>::new(|_| unreachable!("no element is generated"));
     assert!(empty.is_empty());
     assert_eq!(empty.shape(), [0, 4]);
     assert_eq!(empty.get([0, 0]), None);
@@ -152,10 +152,10 @@ fn compile_time_three_dimensional_shape() {
 
     type Flat = array!(u8, 1, 2, 3);
     assert_eq!(Flat::filled(0).len(), 6);
-    assert_eq!(InlineArray3D::<u8, 1, 0, 3>::new(|_| unreachable!("no element is generated")).shape(), [1, 0, 3]);
+    assert_eq!(FixedArray3D::<u8, 1, 0, 3>::new(|_| unreachable!("no element is generated")).shape(), [1, 0, 3]);
 
     let source = [[[1_u8, 2], [3, 4]], [[5, 6], [7, 8]]];
-    let converted: InlineArray3D<u8, 2, 2, 2> = InlineArray3D::from(source);
+    let converted: FixedArray3D<u8, 2, 2, 2> = FixedArray3D::from(source);
     assert_eq!(converted.into_inner(), source);
 }
 
@@ -264,6 +264,6 @@ fn one_read_algorithm_consumes_array_and_view() {
     assert_eq!(column_sums(&mutable.view_mut()), vec![3, 5, 7]);
 
     // 同一算法也直接消费编译期形状的内联表示，无需重写。
-    let inline = InlineArray2D::<i32, 2, 3>::new(|[row, column]| (row * 3 + column) as i32);
+    let inline = FixedArray2D::<i32, 2, 3>::new(|[row, column]| (row * 3 + column) as i32);
     assert_eq!(column_sums(&inline), vec![3, 5, 7]);
 }
