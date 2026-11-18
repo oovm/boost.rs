@@ -588,7 +588,10 @@ dependencies = [
  "oak-valkyrie",
  "oak-von",
  "ordered-float",
+ "package-resolve",
  "serde",
+ "serde_json",
+ "sha2 0.11.1",
 ]
 
 [[package]]
@@ -2937,6 +2940,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f59006ce1e204c30956638535b74d317bca99477b9356dfaec54c37f6f600ab"
 dependencies = [
  "num-traits",
+]
+
+[[package]]
+name = "package-cache"
+version = "0.1.0"
+dependencies = [
+ "acorn-odin",
+ "oak-von",
+ "serde",
+ "sha2 0.11.1",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

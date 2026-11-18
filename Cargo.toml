@@ -135,6 +135,7 @@ members = [
     "projects/media/media.vector",
     "projects/media/media.voice",
     "projects/media/media.voxel",
+    "projects/package/package.cache",
     "projects/package/package.registry",
     "projects/package/package.resolve",
     "projects/odm/odm",
@@ -352,6 +353,7 @@ media-vector = { path = "projects/media/media.vector" }
 media-voice = { path = "projects/media/media.voice" }
 media-voxel = { path = "projects/media/media.voxel" }
 
+package-cache = { path = "projects/package/package.cache" }
 package-registry = { path = "projects/package/package.registry" }
 package-resolve = { path = "projects/package/package.resolve" }
 

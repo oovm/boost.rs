@@ -1,0 +1,16 @@
+[package]
+name = "package-cache"
+description = "包缓存：已安装包的本地索引缓存与内容寻址的制品桶存储"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository = "https://github.com/oovm/rust-boost/tree/dev/projects/package/package.cache"
+publish = false
+
+[dependencies]
+acorn-odin = { workspace = true }
+oak-von = { workspace = true }
+serde = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
