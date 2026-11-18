@@ -323,14 +323,15 @@ where
 /// [`GraphError::DistanceOverflow`]，不静默饱和。平行边各自参与松弛；自环
 /// 不会制造更短路径。无向图的两个方向都参与松弛。
 ///
-/// 返回 `Ok(None)` 表示不可达；起止点不在图中返回 [`GraphError::UnknownVertex`]。
+/// 返回 `distance` 为 `None` 表示不可达（`distances` 仍保留其余顶点的真实距离）；
+/// 起止点不在图中返回 [`GraphError::UnknownVertex`]。
 /// 同权路径的选择由顶点顺序与边顺序决定，结果是确定的。
 pub fn shortest_path_non_negative<G, F>(
     graph: &G,
     start: &G::Vertex,
     goal: &G::Vertex,
     weight: F,
-) -> GraphResult<Option<ShortestPath<G::Vertex>>>
+) -> GraphResult<ShortestPath<G::Vertex>>
 where
     G: GraphRead,
     F: Fn(G::Edge) -> u64,
@@ -378,7 +379,13 @@ where
 
     let Some(total) = distance[goal]
     else {
-        return Ok(None);
+        return Ok(ShortestPath {
+            distance: None,
+            path: Vec::new(),
+            relaxations,
+            distances: distance.clone(),
+            predecessors: previous.iter().map(|previous| previous.map(|node| graph.vertices[node].clone())).collect(),
+        });
     };
 
     let mut path = vec![goal];
@@ -392,18 +399,31 @@ where
     }
     path.reverse();
 
-    Ok(Some(ShortestPath { distance: total, path: graph.collect(&path), relaxations }))
+    Ok(ShortestPath {
+        distance: Some(total),
+        path: graph.collect(&path),
+        relaxations,
+        distances: distance.clone(),
+        predecessors: previous.iter().map(|previous| previous.map(|node| graph.vertices[node].clone())).collect(),
+    })
 }
 
 /// 非负权最短路的返回值。
+///
+/// `distances` 与 `predecessors` 按来源的顶点顺序排列，与本模块其它算法的
+/// 顺序约定一致，供领域证书记录完整结果；不可达顶点为 `None`。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ShortestPath<V> {
-    /// 起点到终点的累计权重。
-    pub distance: u64,
-    /// 顶点序列，首元素是起点，末元素是终点。
+    /// 起点到终点的累计权重；不可达时为 `None`。
+    pub distance: Option<u64>,
+    /// 顶点序列，首元素是起点，末元素是终点；不可达时为空。
     pub path: Vec<V>,
     /// 成功松弛的边次数，供领域证书记录算法工作量。
     pub relaxations: u64,
+    /// 每个顶点的最短距离，按来源顶点顺序排列。
+    pub distances: Vec<Option<u64>>,
+    /// 每个顶点在最短路树上的前驱，按来源顶点顺序排列。
+    pub predecessors: Vec<Option<V>>,
 }
 
 /// 顶点引用加正向/反向邻接索引；算法共用的一次性投影。

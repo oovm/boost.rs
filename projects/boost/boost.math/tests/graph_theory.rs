@@ -232,21 +232,21 @@ fn weighted() -> MemoryGraph<&'static str, u64> {
 fn shortest_path_prefers_the_cheaper_route_not_the_shorter_one() {
     let graph = weighted();
     let found = shortest_path_non_negative(&graph, &"a", &"d", |edge| *graph.edge_payload(edge).expect("edge payload"))
-        .expect("weights are representable")
-        .expect("reachable");
-    assert_eq!(found.distance, 6);
+        .expect("weights are representable");
+    assert_eq!(found.distance, Some(6));
     assert_eq!(found.path, vec!["a", "b", "c", "d"]);
     assert!(found.relaxations >= 4);
+    assert_eq!(found.distances[3], Some(6));
 }
 
 #[test]
 fn shortest_path_reports_unreachable_and_unknown_endpoints() {
     let mut graph = weighted();
     graph.add_vertex("island").expect("unique vertex");
-    assert_eq!(
-        shortest_path_non_negative(&graph, &"a", &"island", |edge| *graph.edge_payload(edge).expect("edge payload")),
-        Ok(None)
-    );
+    let unreachable =
+        shortest_path_non_negative(&graph, &"a", &"island", |edge| *graph.edge_payload(edge).expect("edge payload")).expect("weights are representable");
+    assert_eq!(unreachable.distance, None);
+    assert!(unreachable.path.is_empty());
     assert_eq!(
         shortest_path_non_negative(&graph, &"a", &"missing", |edge| *graph.edge_payload(edge).expect("edge payload")),
         Err(GraphError::UnknownVertex)
@@ -272,8 +272,7 @@ fn shortest_path_returns_a_typed_result() {
     let graph = weighted();
     let found: ShortestPath<&'static str> =
         shortest_path_non_negative(&graph, &"b", &"c", |edge| *graph.edge_payload(edge).expect("edge payload"))
-            .expect("weights are representable")
-            .expect("reachable");
-    assert_eq!(found.distance, 2);
+            .expect("weights are representable");
+    assert_eq!(found.distance, Some(2));
     assert_eq!(found.path, vec!["b", "c"]);
 }

@@ -13,6 +13,8 @@ portable = []
 jit = ["dep:science-jit"]
 
 [dependencies]
+boost-collection = { workspace = true }
+boost-math = { workspace = true }
 science-types = { workspace = true }
 science-gc = { workspace = true }
 science-numeric = { workspace = true }

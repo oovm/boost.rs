@@ -1,7 +1,7 @@
-//! 非负权最短路（Dijkstra）。
+//! 非负权最短路（共享 Dijkstra）。
 
-use std::{cmp::Ordering, collections::BinaryHeap};
-
+use boost_collection::GraphView;
+use boost_math::graph_theory::shortest_path_non_negative as shared_shortest_path;
 use science_types::{Diagnostic, DiagnosticCode};
 
 use super::{
@@ -10,106 +10,88 @@ use super::{
     result::ShortestPathResult,
 };
 
-#[derive(Eq, PartialEq)]
-struct State {
-    cost: u64,
-    node: GraphNodeId,
-}
-
-impl Ord for State {
-    fn cmp(&self, other: &Self) -> Ordering {
-        other.cost.cmp(&self.cost)
-    }
-}
-
-impl PartialOrd for State {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
 /// 非负权 Dijkstra；无权域边权按 1 计。
-pub fn shortest_path_non_negative(graph: &GraphObject, source: GraphNodeId, target: GraphNodeId) -> Result<ShortestPathResult, Diagnostic> {
+///
+/// 算法由 `boost-math` 的共享图论核提供，本函数只负责把 `GraphObject` 投影成
+/// 借用视图、映射权重域与节点身份，并按领域合同生成完整证书（距离表、
+/// 前驱表、边权表与松弛次数均来自共享核的真实输出）。
+pub fn shortest_path_non_negative(
+    graph: &GraphObject,
+    source: GraphNodeId,
+    target: GraphNodeId,
+) -> Result<ShortestPathResult, Diagnostic> {
     validate_weight_domain(graph)?;
-    let inner = graph.to_science_graph();
     let n = graph.node_count();
     if source.0 >= n || target.0 >= n {
         return Err(Diagnostic::new(DiagnosticCode::DomainError).detail("domain", "graph_theory").detail("field", "node"));
     }
+
     let unit_weight = matches!(graph.semantics.weight_domain, WeightDomain::Unweighted);
-    let mut dist = vec![u64::MAX; n as usize];
-    let mut prev: Vec<Option<GraphNodeId>> = vec![None; n as usize];
-    dist[source.0 as usize] = 0;
-    let mut heap = BinaryHeap::new();
-    heap.push(State { cost: 0, node: source });
-    let mut relaxations = 0u64;
-    while let Some(State { cost, node }) = heap.pop() {
-        if cost > dist[node.0 as usize] {
-            continue;
-        }
-        if node == target {
-            break;
-        }
-        for next in inner.out_neighbors(node) {
-            let w = edge_weight(&graph.memory, node, next, unit_weight)?;
-            let next_cost = cost.checked_add(w).ok_or_else(|| {
-                Diagnostic::new(DiagnosticCode::NumericResourceLimit).detail("domain", "graph_theory").detail("field", "distance")
-            })?;
-            relaxations += 1;
-            let idx = next.0 as usize;
-            if next_cost < dist[idx] {
-                dist[idx] = next_cost;
-                prev[idx] = Some(node);
-                heap.push(State { cost: next_cost, node: next });
-            }
-        }
+    let ids: Vec<GraphNodeId> = (0..n).map(science_graph::NodeId).collect();
+    let mut view = GraphView::new(true);
+    for id in &ids {
+        view.add_vertex(id);
+    }
+    for (from, to, _) in &graph.memory.edges {
+        view.add_edge(&ids[from.0 as usize], &ids[to.0 as usize]);
     }
 
-    let edge_weights = collect_edge_weights(&graph.memory, unit_weight);
-    let dist_opt: Vec<Option<u64>> = dist.iter().map(|&d| if d == u64::MAX { None } else { Some(d) }).collect();
-    let dual = GraphCertificate::ShortestPathDual {
-        algorithm: "dijkstra",
-        source,
-        target,
-        dist: dist_opt,
-        pred: prev.clone(),
-        edge_weights,
-        nonnegative_assumed: true,
-        relaxations,
-    };
+    let found = shared_shortest_path(&view, &&ids[source.0 as usize], &&ids[target.0 as usize], |edge| {
+        if unit_weight { 1 } else { graph.memory.edges[edge].2 }
+    })
+    .map_err(|error| match error {
+        boost_collection::GraphError::DistanceOverflow => {
+            Diagnostic::new(DiagnosticCode::NumericResourceLimit).detail("domain", "graph_theory").detail("field", "distance")
+        }
+        _ => Diagnostic::new(DiagnosticCode::DomainError).detail("domain", "graph_theory").detail("field", "node"),
+    })?;
 
-    if dist[target.0 as usize] == u64::MAX {
+    let edge_weights = collect_edge_weights(&graph.memory, unit_weight);
+    let predecessors: Vec<Option<GraphNodeId>> =
+        found.predecessors.iter().map(|previous| previous.as_ref().map(|id| (*id).clone())).collect();
+
+    let Some(distance) = found.distance
+    else {
         return Ok(ShortestPathResult::Unreachable {
             property: GraphPropertyResult {
                 kind: GraphPropertyKind::Reachability,
                 state: GraphPropertyState::ProvenFalse,
                 value: (),
-                certificate: Some(dual),
+                certificate: Some(GraphCertificate::ShortestPathDual {
+                    algorithm: "dijkstra",
+                    source,
+                    target,
+                    dist: found.distances,
+                    pred: predecessors,
+                    edge_weights,
+                    nonnegative_assumed: true,
+                    relaxations: found.relaxations,
+                }),
                 strength: super::property::CertificateStrength::Summary,
                 algorithm: "dijkstra",
                 snapshot: graph.snapshot.clone(),
             },
         });
-    }
-    let mut path = vec![target];
-    let mut cur = target;
-    while cur != source {
-        let Some(p) = prev[cur.0 as usize]
-        else {
-            return Err(Diagnostic::new(DiagnosticCode::DomainError).detail("domain", "graph_theory").detail("field", "path_reconstruct"));
-        };
-        path.push(p);
-        cur = p;
-    }
-    path.reverse();
+    };
+
+    let path: Vec<GraphNodeId> = found.path.iter().map(|id| (*id).clone()).collect();
     Ok(ShortestPathResult::Found {
-        distance: dist[target.0 as usize],
+        distance,
         path,
         property: GraphPropertyResult {
             kind: GraphPropertyKind::Reachability,
             state: GraphPropertyState::ProvenTrue,
-            value: dist[target.0 as usize],
-            certificate: Some(dual),
+            value: distance,
+            certificate: Some(GraphCertificate::ShortestPathDual {
+                algorithm: "dijkstra",
+                source,
+                target,
+                dist: found.distances,
+                pred: predecessors,
+                edge_weights,
+                nonnegative_assumed: true,
+                relaxations: found.relaxations,
+            }),
             strength: super::property::CertificateStrength::Summary,
             algorithm: "dijkstra",
             snapshot: graph.snapshot.clone(),
@@ -125,16 +107,4 @@ fn validate_weight_domain(graph: &GraphObject) -> Result<(), Diagnostic> {
     match graph.semantics.weight_domain {
         WeightDomain::Unweighted | WeightDomain::NonNegativeInteger => Ok(()),
     }
-}
-
-fn edge_weight(memory: &MemoryGraph, source: GraphNodeId, target: GraphNodeId, unit_weight: bool) -> Result<u64, Diagnostic> {
-    if unit_weight {
-        return Ok(1);
-    }
-    memory
-        .edges
-        .iter()
-        .find(|(s, t, _)| *s == source && *t == target)
-        .map(|(_, _, w)| *w)
-        .ok_or_else(|| Diagnostic::new(DiagnosticCode::DomainError).detail("domain", "graph_theory").detail("field", "edge"))
 }
