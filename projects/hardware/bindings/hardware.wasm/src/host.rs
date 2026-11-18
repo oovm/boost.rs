@@ -2,7 +2,7 @@
 
 #[cfg(target_arch = "wasm32")]
 #[link(wasm_import_module = "ucf_host")]
-extern "C" {
+unsafe extern "C" {
     /// Bind a host-side external buffer handle to logical `resource_id`.
     ///
     /// Returns `0` on success or a negative stable error code.
