@@ -64,6 +64,10 @@ pub struct DeliveryReport {
     pub samples: Vec<SampleReport>,
     /// Audio facts, when the file carries a decodable track.
     pub audio: Option<AudioReport>,
+    /// Duration the samples were spread over. `None` means the file has no
+    /// audio track, so the duration is unknown and only the opening seconds
+    /// were sampled.
+    pub span_seconds: Option<f64>,
     /// Human-readable suspects; empty means nothing looked wrong.
     pub suspects: Vec<String>,
 }
@@ -105,29 +109,18 @@ pub fn inspect_delivery(path: &Path, probes: usize, sample_rate: u32) -> Result<
         _ => None,
     };
 
-    // Without an audio track the duration is unknown, so probe forward until
-    // the decoder stops returning frames. Costs a handful of decodes and keeps
-    // samples inside the file instead of past its end.
-    let span = match &audio {
-        Some(audio) => audio.seconds.max(0.001),
-        None => {
-            let mut last_ok = 0.25f64;
-            let mut step = 0.5f64;
-            while step < 3_600.0 {
-                match library.video_frame(&display, step, limits) {
-                    Ok(_) => last_ok = step,
-                    Err(_) => break,
-                }
-                step *= 2.0;
-            }
-            last_ok
-        }
-    };
+    // A video-only file gives no duration: the decoder clamps a late request to
+    // the last frame instead of failing, so walking forward would report a fake
+    // span. Sample the opening seconds at a fixed step and say so.
+    let span = audio.as_ref().map(|audio| audio.seconds.max(0.001));
     let mut samples = Vec::with_capacity(probes);
     let mut previous: Option<Vec<u8>> = None;
     let (mut width, mut height) = (0u32, 0u32);
     for index in 0..probes {
-        let seconds = span * (index as f64 + 0.5) / probes as f64;
+        let seconds = match span {
+            Some(span) => span * (index as f64 + 0.5) / probes as f64,
+            None => 0.25 + index as f64 * 0.25,
+        };
         let frame = library.video_frame(&display, seconds, limits)?;
         width = frame.width;
         height = frame.height;
@@ -156,7 +149,7 @@ pub fn inspect_delivery(path: &Path, probes: usize, sample_rate: u32) -> Result<
         }
     }
 
-    Ok(DeliveryReport { path: display, width, height, samples, audio, suspects })
+    Ok(DeliveryReport { path: display, width, height, samples, audio, span_seconds: span, suspects })
 }
 
 /// Mean luminance in `0..=1`.
@@ -198,6 +191,8 @@ mod tests {
         assert_eq!((report.width, report.height), (160, 90));
         assert_eq!(report.samples.len(), 4);
         assert!(report.audio.is_none(), "a film without audio has no track");
+        assert!(report.span_seconds.is_none(), "without audio the duration is unknown instead of invented");
+        assert!(report.samples.iter().all(|sample| sample.seconds < 2.0), "samples stay near the start of a video-only file");
         assert!(report.samples.iter().all(|sample| sample.mean_luma > 0.0), "the frames are decoded, not blank");
     }
 
