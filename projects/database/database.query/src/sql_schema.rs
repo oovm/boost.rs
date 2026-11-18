@@ -837,6 +837,8 @@ fn map_sql_type(sql_type: &str) -> Result<(SqlFieldType, Option<u32>), SqlFronte
         // `DECIMAL(p,s)` keeps its value as decimal text; the declared precision
         // and scale are dialect display facts and do not narrow the gateway type.
         "DECIMAL" | "NUMERIC" | "DEC" | "FIXED" => SqlFieldType::Decimal,
+        // JSON/JSONB 以文本存储（与 SQLite 同口径）；键路径访问运算符另行建设。
+        "JSON" | "JSONB" => SqlFieldType::String,
         "BINARY" | "VARBINARY" | "BLOB" | "TINYBLOB" | "MEDIUMBLOB" | "LONGBLOB" | "BYTEA" => SqlFieldType::Bytes,
         _ => {
             return Err(SqlFrontendError::unsupported(format!("column type `{sql_type}` has no 集群 SQL gateway equivalent")));
