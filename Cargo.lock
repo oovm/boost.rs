@@ -525,7 +525,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test 4.0.1",
- "unicode-width 0.2.3",
+ "unicode-width 0.1.0",
 ]
 
 [[package]]
@@ -5256,6 +5256,13 @@ dependencies = [
 [[package]]
 name = "unicode-types"
 version = "0.1.0"
+
+[[package]]
+name = "unicode-width"
+version = "0.1.0"
+dependencies = [
+ "unicode-types",
+]
 
 [[package]]
 name = "unicode-width"

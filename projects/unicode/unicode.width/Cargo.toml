@@ -1,0 +1,11 @@
+[package]
+name = "unicode-width"
+description = "Unicode 终端列宽估计：East_Asian_Width 查询与显式 width profile，登记为 unicode.width"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+unicode-types = { workspace = true }
