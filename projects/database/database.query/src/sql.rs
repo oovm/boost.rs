@@ -80,6 +80,12 @@ pub enum SqlErrorKind {
     IndexAlreadyExists,
     /// `DROP INDEX` names an index the local schema registry does not hold.
     UnknownIndex,
+    /// A write produced a row that fails a `CHECK` constraint. PostgreSQL
+    /// reports `23514`; MySQL 8 reports `3819` with SQLSTATE `HY000`.
+    CheckViolation,
+    /// A write supplied a foreign key value with no matching parent row.
+    /// PostgreSQL reports `23503`, MySQL `1452` with SQLSTATE `23000`.
+    ForeignKeyViolation,
 }
 
 /// Structured failure from the Oak SQL frontend or gateway binder.

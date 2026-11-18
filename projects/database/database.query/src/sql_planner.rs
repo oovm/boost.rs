@@ -22,7 +22,7 @@ use crate::{
         SqlCatalog, SqlCatalogBoundColumn, SqlCatalogBoundConflict, SqlCatalogBoundConflictAction, SqlCatalogBoundDelete,
         SqlCatalogBoundExpression, SqlCatalogBoundInsert, SqlCatalogBoundOrderByItem, SqlCatalogBoundProjection, SqlCatalogBoundSelect,
         SqlCatalogBoundSetOperand, SqlCatalogBoundSetOperation, SqlCatalogBoundStatement, SqlCatalogBoundTable, SqlCatalogBoundUpdate,
-        SqlCatalogOuterColumn, SqlFieldType, collect_column_ids, reject_unknown_field,
+        SqlCatalogOuterColumn, SqlCatalogTable, SqlFieldType, bind_sql_catalog, collect_column_ids, reject_unknown_field,
     },
     sql::{
         SqlAggregateFunction, SqlBoundBinaryOperator, SqlBoundExpression, SqlBoundLiteral, SqlBoundOrderByItem, SqlBoundOrderDirection,
@@ -611,6 +611,83 @@ fn plan_source_less_select(
     Ok(SqlExecutionPlan::Scalar(ScalarPlan { projections, suppress_row }))
 }
 
+/// 把表存储的 `CHECK` 原文（表级与列内联）绑定成执行层对最终行求值的表达式。
+///
+/// 原文走正常前端绑定，拼成单投影的 `SELECT`；绑定失败（列被改名、表达式不再
+/// 合法）时整条语句报错，不会静默跳过约束。
+fn plan_check_constraints(
+    table: &SqlCatalogTable,
+    catalog: &SqlCatalog,
+    dialect: SqlDialect,
+) -> Result<Vec<CheckConstraintPlan>, SqlFrontendError> {
+    let mut plans = Vec::new();
+    let quoted = match dialect {
+        SqlDialect::Postgres => format!("\"{}\"", table.name),
+        SqlDialect::Mysql => format!("`{}`", table.name),
+    };
+    for text in table.check_constraints.iter().chain(table.fields.iter().filter_map(|field| field.check.as_ref())) {
+        let source = format!("SELECT ({text}) FROM {quoted}");
+        let SqlCatalogBoundStatement::Select(select) = bind_sql_catalog(&source, catalog, catalog.schema_version(), dialect)? else {
+            return Err(SqlFrontendError::internal("`CHECK` constraint binding produced a non-SELECT statement"));
+        };
+        let projection = select
+            .projections
+            .into_iter()
+            .next()
+            .ok_or_else(|| SqlFrontendError::internal("`CHECK` constraint binding produced no projection"))?;
+        let SqlCatalogBoundProjection::Expression { expression, .. } = projection else {
+            return Err(SqlFrontendError::internal("`CHECK` constraint binding produced a star projection"));
+        };
+        if expression_has_subquery(&expression) {
+            return Err(SqlFrontendError::unsupported("subqueries are not allowed inside `CHECK` constraints"));
+        }
+        plans.push(CheckConstraintPlan { text: text.clone(), expression });
+    }
+    Ok(plans)
+}
+
+/// 绑定后的表达式是否仍含子查询节点。
+fn expression_has_subquery(expression: &SqlCatalogBoundExpression) -> bool {
+    match expression {
+        SqlCatalogBoundExpression::InSubquery { .. }
+        | SqlCatalogBoundExpression::ScalarSubquery { .. }
+        | SqlCatalogBoundExpression::Exists { .. } => true,
+        SqlCatalogBoundExpression::Column(_)
+        | SqlCatalogBoundExpression::OuterColumn(_)
+        | SqlCatalogBoundExpression::Literal(_)
+        | SqlCatalogBoundExpression::Wildcard => false,
+        SqlCatalogBoundExpression::Function { args, .. } => args.iter().any(expression_has_subquery),
+        SqlCatalogBoundExpression::Binary { left, right, .. } => expression_has_subquery(left) || expression_has_subquery(right),
+        SqlCatalogBoundExpression::Unary { expression, .. } => expression_has_subquery(expression),
+        SqlCatalogBoundExpression::InValues { expression, .. } => expression_has_subquery(expression),
+        SqlCatalogBoundExpression::Case { branches, else_branch } => {
+            branches.iter().any(|(when, then)| expression_has_subquery(when) || expression_has_subquery(then))
+                || else_branch.as_deref().is_some_and(expression_has_subquery)
+        }
+        SqlCatalogBoundExpression::Cast { expr, .. } => expression_has_subquery(expr),
+    }
+}
+
+/// 把表声明的外键解析成父表主键点查。
+///
+/// 集群按主键 rowid 存行，只有单列引用父表主键的形态可以点查强制；其余形态在
+/// 规划期显式拒绝，不会静默跳过。
+fn plan_foreign_keys(table: &SqlCatalogTable, catalog: &SqlCatalog) -> Result<Vec<ForeignKeyPlan>, SqlFrontendError> {
+    let mut plans = Vec::new();
+    for key in &table.foreign_keys {
+        let parent = find_table(catalog, key.parent_type_id)?;
+        let pk = primary_key_of(parent)?;
+        if key.columns.len() != 1 || key.parent_columns != [pk.field_id] {
+            return Err(SqlFrontendError::unsupported(format!(
+                "foreign key from table `{}` to `{}` must reference the parent primary key with exactly one column before the gateway can enforce it",
+                table.name, parent.name
+            )));
+        }
+        plans.push(ForeignKeyPlan { namespace: format!("table:{}", parent.type_id), parent_name: parent.name.clone(), column: key.columns[0] });
+    }
+    Ok(plans)
+}
+
 /// 计划一个 INSERT。每行 VALUES 要求第一个值是主键 literal。多行 VALUES 会产出
 /// `SqlExecutionPlan::MultiInsert`，单行保持 `SqlExecutionPlan::Insert`。
 ///
@@ -625,6 +702,8 @@ pub fn plan_insert(insert: SqlCatalogBoundInsert, catalog: &SqlCatalog, dialect:
     let conflict = plan_on_conflict(conflict, table, dialect)?;
     let returning = plan_returning(returning, table, dialect)?;
     let unique_constraints = unique_constraints_of(table);
+    let check_constraints = plan_check_constraints(table, catalog, dialect)?;
+    let foreign_keys = plan_foreign_keys(table, catalog)?;
     // 真实 MySQL 对「INSERT 未点名、且列 NOT NULL 又无 DEFAULT」整条语句报 `1364`，
     // 而不是静默写入 NULL。带 DEFAULT 的缺列沿用读取路径的默认值回填，可空列缺列
     // 仍按缺失字段解码为 NULL；`AUTO_INCREMENT` 列在计划前已由 `apply_auto_increment`
@@ -639,7 +718,19 @@ pub fn plan_insert(insert: SqlCatalogBoundInsert, catalog: &SqlCatalog, dialect:
         return Err(SqlFrontendError::new(SqlErrorKind::MissingDefault, format!("Field '{}' doesn't have a default value", field.name)));
     }
     if let Some(select) = select {
-        return plan_insert_select(*select, target_fields, namespace, field_types, unique_constraints, catalog, dialect, conflict, returning);
+        return plan_insert_select(
+            *select,
+            target_fields,
+            namespace,
+            field_types,
+            unique_constraints,
+            check_constraints,
+            foreign_keys,
+            catalog,
+            dialect,
+            conflict,
+            returning,
+        );
     }
 
     let mut plans = Vec::with_capacity(rows.len());
@@ -671,6 +762,8 @@ pub fn plan_insert(insert: SqlCatalogBoundInsert, catalog: &SqlCatalog, dialect:
             conflict: conflict.clone(),
             returning: returning.clone(),
             unique_constraints: unique_constraints.clone(),
+            check_constraints: check_constraints.clone(),
+            foreign_keys: foreign_keys.clone(),
         });
     }
     if plans.len() == 1 { Ok(SqlExecutionPlan::Insert(plans.into_iter().next().unwrap())) } else { Ok(SqlExecutionPlan::MultiInsert(plans)) }
@@ -828,6 +921,8 @@ fn plan_insert_select(
     namespace: String,
     field_types: std::collections::BTreeMap<u64, crate::catalog_bind::SqlFieldType>,
     unique_constraints: Vec<UniqueConstraintPlan>,
+    check_constraints: Vec<CheckConstraintPlan>,
+    foreign_keys: Vec<ForeignKeyPlan>,
     catalog: &SqlCatalog,
     dialect: SqlDialect,
     conflict: Option<ConflictPolicy>,
@@ -873,6 +968,8 @@ fn plan_insert_select(
         conflict,
         returning,
         unique_constraints,
+        check_constraints,
+        foreign_keys,
     }))
 }
 
@@ -898,6 +995,8 @@ pub fn plan_update(update: SqlCatalogBoundUpdate, catalog: &SqlCatalog, dialect:
     let field_types: std::collections::BTreeMap<u64, crate::catalog_bind::SqlFieldType> =
         table.fields.iter().map(|f| (f.field_id, f.field_type.clone())).collect();
     let unique_constraints = unique_constraints_of(table);
+    let check_constraints = plan_check_constraints(table, catalog, dialect)?;
+    let foreign_keys = plan_foreign_keys(table, catalog)?;
 
     let mut write_fields = Vec::new();
     for (field, value_expr) in &update.assignments {
@@ -927,6 +1026,8 @@ pub fn plan_update(update: SqlCatalogBoundUpdate, catalog: &SqlCatalog, dialect:
             predicate: None,
             field_types,
             unique_constraints,
+            check_constraints,
+            foreign_keys,
         }));
     };
 
@@ -941,6 +1042,8 @@ pub fn plan_update(update: SqlCatalogBoundUpdate, catalog: &SqlCatalog, dialect:
             remaining_predicate: remaining,
             field_types,
             unique_constraints,
+            check_constraints,
+            foreign_keys,
         }));
     }
     let (rowid_after, rowid_before) = pk_scan_bounds(is_integer_primary_key(pk_field), lower, upper);
@@ -953,6 +1056,8 @@ pub fn plan_update(update: SqlCatalogBoundUpdate, catalog: &SqlCatalog, dialect:
         predicate: remaining,
         field_types,
         unique_constraints,
+        check_constraints,
+        foreign_keys,
     }))
 }
 
@@ -1400,6 +1505,36 @@ pub struct WritePlan {
     pub returning: Option<ReturningProjections>,
     /// 该表声明的 `UNIQUE` 约束，执行层在写入前逐条校验。
     pub unique_constraints: Vec<UniqueConstraintPlan>,
+    /// 该表声明的 `CHECK` 约束，执行层对最终行求值，只有 FALSE 违反。
+    pub check_constraints: Vec<CheckConstraintPlan>,
+    /// 该表声明的 `FOREIGN KEY` 约束，执行层在发布行前点查父表。
+    pub foreign_keys: Vec<ForeignKeyPlan>,
+}
+
+/// 规划期绑定的一条 `CHECK` 约束。
+///
+/// 表达式来自 DDL 存储的原文，经前端重新绑定；执行层对最终行求值，遵循 SQL
+/// 三值逻辑：只有 FALSE 违反，`NULL` 通过（与 PostgreSQL 一致）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckConstraintPlan {
+    /// DDL 存储的表达式原文，诊断信息用。
+    pub text: String,
+    /// 已绑定到表列的表达式。
+    pub expression: SqlCatalogBoundExpression,
+}
+
+/// 规划期解析的一条 `FOREIGN KEY` 点查。
+///
+/// 集群按主键 rowid 存行，因此只支持单列引用父表主键的形态；其余形态在规划期
+/// 显式拒绝，不会静默跳过强制检查。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ForeignKeyPlan {
+    /// 父表 namespace，形如 `table:{parent_type_id}`。
+    pub namespace: String,
+    /// 父表名，诊断信息用。
+    pub parent_name: String,
+    /// 子列 field_id。
+    pub column: u64,
 }
 
 /// `RETURNING` 投影：对最终落库行求值的表达式 + 展示列名。
@@ -1462,6 +1597,10 @@ pub struct InsertSelectPlan {
     pub returning: Option<ReturningProjections>,
     /// 该表声明的 `UNIQUE` 约束，执行层在写入前逐条校验。
     pub unique_constraints: Vec<UniqueConstraintPlan>,
+    /// 该表声明的 `CHECK` 约束，执行层对最终行求值，只有 FALSE 违反。
+    pub check_constraints: Vec<CheckConstraintPlan>,
+    /// 该表声明的 `FOREIGN KEY` 约束，执行层在发布行前点查父表。
+    pub foreign_keys: Vec<ForeignKeyPlan>,
 }
 
 /// `INSERT ... SELECT` 的一个目标列绑定。
@@ -1493,6 +1632,10 @@ pub struct UpdatePlan {
     pub field_types: std::collections::BTreeMap<u64, crate::catalog_bind::SqlFieldType>,
     /// 该表声明的 `UNIQUE` 约束，执行层在写入前逐条校验。
     pub unique_constraints: Vec<UniqueConstraintPlan>,
+    /// 该表声明的 `CHECK` 约束，执行层对改写后的最终行求值，只有 FALSE 违反。
+    pub check_constraints: Vec<CheckConstraintPlan>,
+    /// 该表声明的 `FOREIGN KEY` 约束，执行层在发布行前点查父表。
+    pub foreign_keys: Vec<ForeignKeyPlan>,
 }
 
 /// UPDATE 的一条 SET 赋值。
@@ -1580,6 +1723,10 @@ pub struct UpdateScanPlan {
     pub field_types: std::collections::BTreeMap<u64, crate::catalog_bind::SqlFieldType>,
     /// 该表声明的 `UNIQUE` 约束，执行层在写入前逐条校验。
     pub unique_constraints: Vec<UniqueConstraintPlan>,
+    /// 该表声明的 `CHECK` 约束，执行层对改写后的最终行求值，只有 FALSE 违反。
+    pub check_constraints: Vec<CheckConstraintPlan>,
+    /// 该表声明的 `FOREIGN KEY` 约束，执行层在发布行前点查父表。
+    pub foreign_keys: Vec<ForeignKeyPlan>,
 }
 
 /// 多行 DELETE 执行计划：扫描 rowid 区间，逐行评估完整 WHERE 后删除。
