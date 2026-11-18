@@ -25,7 +25,10 @@ pub use catalog_bind::{
     SqlCatalogForeignKey, SqlCatalogOuterColumn, SqlCatalogTable, SqlFieldType, bind_sql_catalog, bind_sql_catalog_with_variables,
     project_resolved_type,
 };
-pub use pgsql::{CopyFormat, FetchDirection, PgUtilityStatement, parse_pg_utility, rewrite_double_colon_casts, rewrite_pg_temp_references};
+pub use pgsql::{
+    CopyFormat, FetchDirection, PgUtilityStatement, parse_pg_utility, rewrite_double_colon_casts, rewrite_escape_strings,
+    rewrite_pg_temp_references,
+};
 pub use sql::{
     DiscardTarget, MYSQL_BLOB_CAPACITY, SavepointIntent, SqlBoundBinaryOperator, SqlBoundConflict, SqlBoundConflictAction, SqlBoundCte,
     SqlBoundExpression, SqlBoundJoin, SqlBoundJoinKind, SqlBoundLiteral, SqlBoundProjection, SqlBoundSelect, SqlBoundSetOperand,

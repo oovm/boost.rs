@@ -8,8 +8,10 @@
 
 pub mod casts;
 pub mod qualifiers;
+pub mod strings;
 pub mod utility;
 
 pub use casts::rewrite_double_colon_casts;
 pub use qualifiers::rewrite_pg_temp_references;
+pub use strings::rewrite_escape_strings;
 pub use utility::{CopyFormat, FetchDirection, PgUtilityStatement, parse_pg_utility};

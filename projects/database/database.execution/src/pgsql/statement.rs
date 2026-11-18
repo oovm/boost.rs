@@ -12,7 +12,7 @@ use database_query::{
     OnCommit, SqlCatalogBoundProjection, SqlCatalogBoundStatement, SqlColumn, SqlDdlStatement, SqlDialect, SqlErrorKind, SqlExecutionPlan,
     SqlFrontendError, SqlSessionCommand, SqlTransactionAction, SqlValue, analyze_meta_query, apply_auto_increment, bind_sql_catalog,
     describe_plan, is_ddl_statement, parse_ddl, parse_pg_utility, parse_session_command, plan_statement_for_dialect,
-    rewrite_double_colon_casts, rewrite_pg_temp_references,
+    rewrite_double_colon_casts, rewrite_escape_strings, rewrite_pg_temp_references,
 };
 
 use crate::cluster::TransactionHandle;
@@ -80,24 +80,28 @@ pub fn dispatch_statement(
     if trimmed.is_empty() {
         return Ok(StatementOutcome::Command(""));
     }
-    // `expr::type` is lowered onto the shared `CAST(...)` node before any other
-    // stage sees the text, so DDL detection, the session-command pre-filter and
-    // the binder all agree with the PostgreSQL spelling.
-    let normalized = rewrite_double_colon_casts(trimmed, SqlDialect::Postgres).map_err(|error| {
+    // `E'...'` literals decode to the standard spelling first, so every later
+    // stage — the cast lowering included — sees one literal form.
+    let escaped = rewrite_escape_strings(trimmed).map_err(|error| {
+        session.fail();
+        StatementError::new(pg_sqlstate(error.kind), format!("SQL literal error: {}", error.message))
+    })?;
+    let escaped = escaped.as_str();
+    let normalized = rewrite_double_colon_casts(escaped, SqlDialect::Postgres).map_err(|error| {
         session.fail();
         StatementError::new(pg_sqlstate(error.kind), format!("SQL cast error: {}", error.message))
     })?;
-    let trimmed = normalized.as_ref();
+    let escaped = normalized.as_ref();
     // `pg_temp.<table>` names the session's temporary schema; the shared binder
     // only resolves bare names, so the qualifier is lowered onto the bare name
     // for every table this session owns. DDL keeps its qualifier because the DDL
     // parser owns the `CREATE TEMP TABLE pg_temp.x` spelling.
     let temp_rewritten;
-    let trimmed = if is_ddl_statement(trimmed) {
-        trimmed
+    let trimmed = if is_ddl_statement(escaped) {
+        escaped
     }
     else {
-        temp_rewritten = rewrite_pg_temp_references(trimmed, |name| session.temp_table_exists(name));
+        temp_rewritten = rewrite_pg_temp_references(escaped, |name| session.temp_table_exists(name));
         temp_rewritten.as_str()
     };
     // `PREPARE` / `EXECUTE` / `DEALLOCATE` wrap another statement, so they run
@@ -291,7 +295,11 @@ pub fn run_statement(
         session.fail();
         statement_error("cast", error)
     })?;
-    let sql = normalized.as_ref();
+    let escaped = rewrite_escape_strings(&normalized).map_err(|error| {
+        session.fail();
+        statement_error("literal", error)
+    })?;
+    let sql = escaped.as_str();
     // The extended protocol reaches this function without `dispatch_statement`,
     // so the temporary-schema rewrite happens here as well.
     let temp_rewritten = rewrite_pg_temp_references(sql, |name| session.temp_table_exists(name));

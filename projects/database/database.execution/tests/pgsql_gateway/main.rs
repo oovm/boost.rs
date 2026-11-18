@@ -117,6 +117,28 @@ fn generated_identity_and_added_constraints_are_enforced() {
 }
 
 #[test]
+fn escape_string_literals_decode_backslash_sequences() {
+    let mut gateway = Gateway::new("estring");
+    assert_eq!(gateway.scalar("SELECT E'a\\nb'"), SqlValue::String("a\nb".to_owned()));
+    assert_eq!(gateway.scalar("SELECT E'col\\there'"), SqlValue::String("col\there".to_owned()));
+    assert_eq!(gateway.scalar("SELECT E'\\x41\\x42'"), SqlValue::String("AB".to_owned()));
+    assert_eq!(gateway.scalar("SELECT E'it\\'s'"), SqlValue::String("it's".to_owned()));
+    assert_eq!(gateway.scalar("SELECT E'back\\\\slash'"), SqlValue::String("back\\slash".to_owned()));
+    // A standard literal keeps its backslash: `standard_conforming_strings` is on.
+    assert_eq!(gateway.scalar("SELECT 'a\\nb'"), SqlValue::String("a\\nb".to_owned()));
+}
+
+#[test]
+fn an_unterminated_escape_literal_reports_a_syntax_error() {
+    let mut gateway = Gateway::new("estring-errors");
+    let (code, message) = match gateway.sql("SELECT E'abc") {
+        Ok(_) => panic!("an unterminated escape literal must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42601", "unexpected message: {message}");
+}
+
+#[test]
 fn stored_generated_columns_are_computed_on_every_write() {
     let mut gateway = Gateway::new("generated");
     gateway.command(

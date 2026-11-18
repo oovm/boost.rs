@@ -2192,7 +2192,10 @@ fn find_aggregate_call(expression: &SqlBoundExpression) -> Option<&str> {
 fn bind_literal(literal: &Literal) -> Result<SqlBoundLiteral, SqlFrontendError> {
     match literal {
         Literal::Number(text, _) => bind_number_literal(text),
-        Literal::String(value, _) => Ok(SqlBoundLiteral::String(value.to_string())),
+        // The lexer keeps a doubled quote as two characters, so the literal
+        // value carries the SQL escape and is collapsed here. `''` inside a
+        // single-quoted literal means one quote in every supported dialect.
+        Literal::String(value, _) => Ok(SqlBoundLiteral::String(value.replace("''", "'"))),
         Literal::Boolean(value, _) => Ok(SqlBoundLiteral::Boolean(*value)),
         Literal::Null(_) => Ok(SqlBoundLiteral::Null),
     }
