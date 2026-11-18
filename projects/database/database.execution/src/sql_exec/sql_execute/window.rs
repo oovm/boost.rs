@@ -609,7 +609,7 @@ pub(crate) fn eval_having(
         }
         SqlCatalogBoundExpression::Cast { expr, target } => {
             let inner = eval_having(expr, bucket_rows, group_exprs, field_types, dialect)?;
-            eval_cast(inner, target, matches!(expr.as_ref(), SqlCatalogBoundExpression::Literal(_)))?
+            eval_cast_for_dialect(inner, target, matches!(expr.as_ref(), SqlCatalogBoundExpression::Literal(_)), dialect)?
         }
     })
 }

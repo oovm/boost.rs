@@ -20,7 +20,7 @@ use database_query::{
     DiscardTarget, SqlBoundExpression, SqlBoundLiteral, SqlColumn, SqlDialect, SqlParameterStyle, SqlSessionCommand, SqlFieldType,
     SqlValue, SqlCatalog, SqlCatalogBoundStatement, analyze_meta_query, bind_sql_catalog, describe_bound_insert,
     describe_plan, detect_session_reset_statement, encode_hex, neutralized_sql_parameters, pg_server_version,
-    plan_statement_for_dialect, split_sql_batch, substitute_sql_parameters,
+    plan_statement_for_dialect, rewrite_double_colon_casts, split_sql_batch, substitute_sql_parameters,
 };
 
 /// PostgreSQL type OIDs supported by the gateway.
@@ -1080,6 +1080,10 @@ fn statement_description(
     else {
         return Err(("0A000".to_string(), "PostgreSQL query execution is not implemented (no SQL runtime)".to_string()));
     };
+    // Lower `expr::type` before the metadata and binder stages, exactly like the
+    // execution path does.
+    let normalized = rewrite_double_colon_casts(sql, SqlDialect::Postgres).map_err(|error| statement_error("cast", error))?;
+    let sql = normalized.as_ref();
     if let Some(parameters) = parameters {
         let rendered =
             substitute_sql_parameters(sql, parameters, SqlParameterStyle::DollarNumber).map_err(|error| statement_error("parameter", error))?;

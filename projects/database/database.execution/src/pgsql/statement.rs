@@ -11,7 +11,7 @@ use std::sync::Arc;
 use database_query::{
     SqlColumn, SqlDialect, SqlErrorKind, SqlExecutionPlan, SqlFrontendError, SqlSessionCommand, SqlTransactionAction, SqlValue,
     analyze_meta_query, apply_auto_increment, bind_sql_catalog, describe_plan, parse_ddl, parse_session_command,
-    plan_statement_for_dialect,
+    plan_statement_for_dialect, rewrite_double_colon_casts,
 };
 
 use crate::cluster::TransactionHandle;
@@ -78,6 +78,14 @@ pub fn dispatch_statement(
     if trimmed.is_empty() {
         return Ok(StatementOutcome::Command(""));
     }
+    // `expr::type` is lowered onto the shared `CAST(...)` node before any other
+    // stage sees the text, so DDL detection, the session-command pre-filter and
+    // the binder all agree with the PostgreSQL spelling.
+    let normalized = rewrite_double_colon_casts(trimmed, SqlDialect::Postgres).map_err(|error| {
+        session.fail();
+        StatementError::new(pg_sqlstate(error.kind), format!("SQL cast error: {}", error.message))
+    })?;
+    let trimmed = normalized.as_ref();
     // DDL resolves against the local schema registry before the Oak session
     // parser, so a `CREATE` / `ALTER` / `DROP` outside the supported subset is
     // reported as such instead of being misclassified as an unknown table.
@@ -150,6 +158,14 @@ pub fn run_statement(
     runtime: &Arc<PgsqlSqlRuntime>,
     session: &mut TransactionSession,
 ) -> Result<ExecutionOutcome, (String, String)> {
+    // The extended protocol reaches this function without going through
+    // `dispatch_statement`, so the cast lowering happens here as well. It is
+    // idempotent: an already-lowered statement carries no `::`.
+    let normalized = rewrite_double_colon_casts(sql, SqlDialect::Postgres).map_err(|error| {
+        session.fail();
+        statement_error("cast", error)
+    })?;
+    let sql = normalized.as_ref();
     // Metadata views are synthesized from the local schema registry. They never
     // bind into the catalog or touch the executor, so they branch off before the
     // regular session-command/bind path.
@@ -262,6 +278,7 @@ pub fn pg_sqlstate(kind: SqlErrorKind) -> &'static str {
         UnknownIndex => "42704",
         CheckViolation => "23514",
         ForeignKeyViolation => "23503",
+        InvalidTextRepresentation => "22P02",
     }
 }
 

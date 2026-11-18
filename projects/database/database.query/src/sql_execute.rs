@@ -16,7 +16,7 @@ mod values;
 pub(crate) use self::expression::eval_constant;
 pub use self::{
     expression::{
-        compare_values, compare_values_with_nulls, eval_binary, eval_cast, eval_expression, eval_in_values, eval_unary,
+        compare_values, compare_values_with_nulls, eval_binary, eval_cast, eval_cast_for_dialect, eval_expression, eval_in_values, eval_unary,
         normalize_integer_values, order_nulls_first, projected_rows_equal, retain_distinct_projected_rows, values_equal,
     },
     scalar::{eval_scalar_function, format_number},

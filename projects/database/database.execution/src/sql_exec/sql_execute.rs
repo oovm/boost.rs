@@ -24,8 +24,8 @@ use database_query::{
     },
     sql_execute::{
         RowFieldValues, SqlResult, SqlValue, compare_values, compare_values_with_nulls, decode_row, decode_row_fields, encode_row, eval_binary,
-        eval_cast, eval_expression, eval_in_values, eval_scalar_function, eval_unary, format_number, order_nulls_first, projected_rows_equal,
-        retain_distinct_projected_rows,
+        eval_cast, eval_cast_for_dialect, eval_expression, eval_in_values, eval_scalar_function, eval_unary, format_number, order_nulls_first,
+        projected_rows_equal, retain_distinct_projected_rows,
     },
     sql_planner::{
         CheckConstraintPlan, ConflictAssignment, ConflictPolicy, DeletePlan, DeleteScanPlan, ForeignKeyPlan, IndexProbe, InsertSelectPlan,

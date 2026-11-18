@@ -86,6 +86,9 @@ pub enum SqlErrorKind {
     /// A write supplied a foreign key value with no matching parent row.
     /// PostgreSQL reports `23503`, MySQL `1452` with SQLSTATE `23000`.
     ForeignKeyViolation,
+    /// Text input does not parse as the requested cast target. PostgreSQL
+    /// reports `22P02` and aborts the statement instead of returning `NULL`.
+    InvalidTextRepresentation,
 }
 
 /// Structured failure from the Oak SQL frontend or gateway binder.
@@ -2211,55 +2214,6 @@ pub fn is_binary_type_name(target: &str) -> bool {
     let upper = target.trim().to_ascii_uppercase();
     let base = upper.split('(').next().unwrap_or(&upper);
     matches!(base, "BYTEA" | "BLOB" | "TINYBLOB" | "MEDIUMBLOB" | "LONGBLOB" | "BINARY" | "VARBINARY" | "BYTES")
-}
-
-/// Rejects the `::<type>` cast operator.
-///
-/// Oak's SQL surface lexes `::` but does not build a cast node, so the suffix
-/// is dropped at bind time. Accepting it would silently change both the
-/// projected column name and the declared type, and `'…'::bytea` would be
-/// stored as UTF-8 text instead of the raw octets the client meant to send.
-/// The gateway refuses every `::` spelling instead of returning wrong metadata
-/// or a lossy value. Only code positions are inspected, so `::` inside string
-/// literals, quoted identifiers and comments is left alone.
-pub fn reject_cast_operator(sql: &str) -> Result<(), SqlFrontendError> {
-    let bytes = sql.as_bytes();
-    let mut index = 0;
-    while index < bytes.len() {
-        match bytes[index] {
-            quote @ (b'\'' | b'"' | b'`') => index = skip_quoted_bytes(bytes, index, quote),
-            b'-' if bytes.get(index + 1) == Some(&b'-') => {
-                index += 2;
-                while index < bytes.len() && bytes[index] != b'\n' {
-                    index += 1;
-                }
-            }
-            b'/' if bytes.get(index + 1) == Some(&b'*') => {
-                index += 2;
-                while index < bytes.len() {
-                    if bytes[index] == b'*' && bytes.get(index + 1) == Some(&b'/') {
-                        index += 2;
-                        break;
-                    }
-                    index += 1;
-                }
-            }
-            b':' if bytes.get(index + 1) == Some(&b':') => {
-                let target: String =
-                    sql[index + 2..].chars().take_while(|character| character.is_alphanumeric() || *character == '_').collect();
-                if is_binary_type_name(&target) {
-                    return Err(SqlFrontendError::unsupported(format!(
-                        "`::{target}` casts to a binary type are not supported, send the binary wire format or a hexadecimal `CAST(... AS {target})`"
-                    )));
-                }
-                return Err(SqlFrontendError::unsupported(format!(
-                    "the `::{target}` cast operator is not supported, write `CAST(<expression> AS {target})`"
-                )));
-            }
-            _ => index += 1,
-        }
-    }
-    Ok(())
 }
 
 /// 把 `LEFT(...)` / `RIGHT(...)` 的保留字函数拼写改写成引号标识符。

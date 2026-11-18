@@ -61,9 +61,118 @@ pub fn eval_expression(
         SqlCatalogBoundExpression::Case { branches, else_branch } => eval_case(branches, else_branch, row, field_types, dialect)?,
         SqlCatalogBoundExpression::Cast { expr, target } => {
             let inner = eval_expression(expr, row, field_types, dialect)?;
-            eval_cast(inner, target, matches!(expr.as_ref(), SqlCatalogBoundExpression::Literal(_)))?
+            eval_cast_for_dialect(inner, target, matches!(expr.as_ref(), SqlCatalogBoundExpression::Literal(_)), dialect)?
         }
     })
+}
+
+/// PostgreSQL `CAST` / `expr::type` semantics.
+///
+/// The PostgreSQL type namespace is wider than the shared alias list
+/// (`int8`, `bool`, `float8`, `numeric`, …) and invalid text input is an error
+/// rather than `NULL`, so the statement aborts with `22P02` exactly like a real
+/// server. Unsupported targets keep the historical `NULL` result instead of
+/// inventing a conversion.
+fn eval_postgres_cast(value: SqlValue, target: &str, from_literal: bool) -> Result<SqlValue, SqlFrontendError> {
+    let upper = target.trim().to_ascii_uppercase();
+    let base = upper.split('(').next().unwrap_or(&upper).trim().trim_end_matches("[]").trim();
+    match (value, base) {
+        (SqlValue::Null, _) => Ok(SqlValue::Null),
+        (SqlValue::Integer(n), "INT2" | "INT4" | "INT8" | "SMALLINT" | "INTEGER" | "INT" | "BIGINT" | "OID") => Ok(SqlValue::Integer(n)),
+        (SqlValue::Integer(n), "REAL" | "FLOAT4" | "FLOAT8" | "DOUBLE PRECISION" | "DOUBLE" | "FLOAT" | "NUMERIC" | "DECIMAL") => {
+            Ok(SqlValue::Number(n as f64))
+        }
+        (SqlValue::Integer(n), "BOOLEAN" | "BOOL") => Ok(SqlValue::Boolean(n != 0)),
+        (SqlValue::Integer(n), base) if is_postgres_text_type(base) => Ok(SqlValue::String(n.to_string())),
+        (SqlValue::Number(n), "INT2" | "INT4" | "INT8" | "SMALLINT" | "INTEGER" | "INT" | "BIGINT" | "OID") => Ok(SqlValue::Integer(n as i64)),
+        (SqlValue::Number(n), "REAL" | "FLOAT4" | "FLOAT8" | "DOUBLE PRECISION" | "DOUBLE" | "FLOAT" | "NUMERIC" | "DECIMAL") => {
+            Ok(SqlValue::Number(n))
+        }
+        (SqlValue::Number(n), "BOOLEAN" | "BOOL") => Ok(SqlValue::Boolean(n != 0.0)),
+        (SqlValue::Number(n), base) if is_postgres_text_type(base) => Ok(SqlValue::String(format_number(n))),
+        (SqlValue::String(text), "INT2" | "INT4" | "INT8" | "SMALLINT" | "INTEGER" | "INT" | "BIGINT" | "OID") => text
+            .trim()
+            .parse::<i64>()
+            .map(SqlValue::Integer)
+            .map_err(|_| invalid_text_representation(&text, "integer")),
+        (SqlValue::String(text), "REAL" | "FLOAT4" | "FLOAT8" | "DOUBLE PRECISION" | "DOUBLE" | "FLOAT" | "NUMERIC" | "DECIMAL") => text
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite())
+            .map(SqlValue::Number)
+            .ok_or_else(|| invalid_text_representation(&text, "double precision")),
+        (SqlValue::String(text), "BOOLEAN" | "BOOL") => postgres_boolean(&text).ok_or_else(|| invalid_text_representation(&text, "boolean")),
+        (SqlValue::String(text), base) if crate::sql::is_binary_type_name(base) => {
+            if from_literal {
+                crate::sql::decode_binary_literal(&text).map(SqlValue::Bytes)
+            }
+            else {
+                Ok(SqlValue::Bytes(text.into_bytes()))
+            }
+        }
+        (SqlValue::String(text), base) if is_postgres_text_type(base) => Ok(SqlValue::String(text)),
+        (SqlValue::Boolean(flag), "INT2" | "INT4" | "INT8" | "SMALLINT" | "INTEGER" | "INT" | "BIGINT" | "OID") => {
+            Ok(SqlValue::Integer(i64::from(flag)))
+        }
+        (SqlValue::Boolean(flag), "REAL" | "FLOAT4" | "FLOAT8" | "DOUBLE PRECISION" | "DOUBLE" | "FLOAT" | "NUMERIC" | "DECIMAL") => {
+            Ok(SqlValue::Number(f64::from(u8::from(flag))))
+        }
+        (SqlValue::Boolean(flag), "BOOLEAN" | "BOOL") => Ok(SqlValue::Boolean(flag)),
+        (SqlValue::Boolean(flag), base) if is_postgres_text_type(base) => {
+            Ok(SqlValue::String(if flag { "true" } else { "false" }.to_string()))
+        }
+        (SqlValue::Bytes(bytes), base) if crate::sql::is_binary_type_name(base) => Ok(SqlValue::Bytes(bytes)),
+        (SqlValue::Bytes(bytes), base) if is_postgres_text_type(base) => Ok(SqlValue::String(format!("\\x{}", crate::sql::encode_hex(&bytes)))),
+        _ => Ok(SqlValue::Null),
+    }
+}
+
+/// Target types PostgreSQL treats as text-compatible spellings, so a value
+/// keeps its textual form instead of falling through to `NULL`.
+fn is_postgres_text_type(base: &str) -> bool {
+    matches!(
+        base,
+        "TEXT"
+            | "VARCHAR"
+            | "CHARACTER VARYING"
+            | "CHAR"
+            | "CHARACTER"
+            | "BPCHAR"
+            | "NAME"
+            | "UUID"
+            | "DATE"
+            | "TIMESTAMP"
+            | "TIMESTAMPTZ"
+            | "TIMESTAMP WITH TIME ZONE"
+            | "TIMESTAMP WITHOUT TIME ZONE"
+            | "TIME"
+            | "TIMETZ"
+            | "INTERVAL"
+            | "JSON"
+            | "JSONB"
+            | "XML"
+            | "INET"
+            | "CIDR"
+            | "MACADDR"
+            | "MONEY"
+    )
+}
+
+/// PostgreSQL boolean input literals.
+fn postgres_boolean(text: &str) -> Option<SqlValue> {
+    match text.trim().to_ascii_lowercase().as_str() {
+        "t" | "true" | "yes" | "on" | "1" => Some(SqlValue::Boolean(true)),
+        "f" | "false" | "no" | "off" | "0" => Some(SqlValue::Boolean(false)),
+        _ => None,
+    }
+}
+
+fn invalid_text_representation(text: &str, target: &str) -> SqlFrontendError {
+    SqlFrontendError::new(
+        crate::sql::SqlErrorKind::InvalidTextRepresentation,
+        format!("invalid input syntax for type {target}: \"{text}\""),
+    )
 }
 
 /// 对 CASE WHEN ... THEN ... [ELSE ...] END 求值。
@@ -102,6 +211,23 @@ pub(crate) fn eval_case(
 ///
 /// 类型不支持或无法转换时返回 NULL（与 SQLite/Postgres CAST 行为一致），而不是报错。
 pub fn eval_cast(value: SqlValue, target: &str, from_literal: bool) -> Result<SqlValue, SqlFrontendError> {
+    eval_cast_for_dialect(value, target, from_literal, SqlDialect::Mysql)
+}
+
+/// 方言相关的 CAST 求值。
+///
+/// PostgreSQL 的 `CAST` / `expr::type` 使用自己的类型名（`int8`、`bool`、
+/// `float8`、`numeric` 等），并且非法输入是错误（`22P02`）而不是 `NULL`。
+/// 其它方言沿用 [`eval_cast`] 的历史宽松语义。
+pub fn eval_cast_for_dialect(
+    value: SqlValue,
+    target: &str,
+    from_literal: bool,
+    dialect: SqlDialect,
+) -> Result<SqlValue, SqlFrontendError> {
+    if dialect == SqlDialect::Postgres {
+        return eval_postgres_cast(value, target, from_literal);
+    }
     let t = target.trim().to_ascii_uppercase();
     // 忽略括号里的长度修饰，如 VARCHAR(32)
     let base_type = t.split('(').next().unwrap_or(&t);

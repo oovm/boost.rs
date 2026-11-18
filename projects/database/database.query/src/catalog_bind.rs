@@ -823,8 +823,10 @@ pub fn bind_sql_catalog_with_variables(
             catalog.schema_version
         )));
     }
-    // `::<type>` 在 Oak 里只有词法没有节点，收下就等于静默丢掉转换和列名。
-    crate::sql::reject_cast_operator(source)?;
+    // `::<type>` 在 Oak 里只有词法没有节点，PostgreSQL 方言先降为 `CAST(...)`，
+    // 其它方言直接拒绝，绝不静默丢掉转换和列名。
+    let cast_rewritten = crate::pgsql::rewrite_double_colon_casts(source, dialect)?;
+    let source = cast_rewritten.as_ref();
     // MySQL 的 `||` 是逻辑 OR 而不是拼接；本方言的拼接一律写 `CONCAT(...)`。
     if dialect == SqlDialect::Mysql && find_keyword_outside_literals(source, "||").is_some() {
         return Err(SqlFrontendError::syntax("the || operator is not supported in the MySQL dialect, write CONCAT(...)"));
