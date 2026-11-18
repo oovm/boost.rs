@@ -518,6 +518,55 @@ impl Production {
         }
         Ok(id)
     }
+}
+
+/// What covers one absolute project frame.
+///
+/// This is the reverse lookup a review page needs: given a frame the author
+/// points at, which shots, panels and cues are on screen. A frame inside no
+/// shot returns empty lists instead of an error, because a film may have gaps.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct FrameLookup {
+    /// Frame that was asked about.
+    pub frame: u32,
+    /// Shots whose scene covers the frame.
+    pub shots: Vec<String>,
+    /// Panels whose range covers the frame.
+    pub panels: Vec<String>,
+    /// Cues whose range covers the frame.
+    pub cues: Vec<String>,
+}
+
+impl Production {
+    /// Looks up which shots, panels and cues cover `frame`.
+    ///
+    /// Ranges are shot-local in the book and absolute here: the scene start is
+    /// added once, so the answer matches the timeline the renderer uses.
+    #[must_use]
+    pub fn at_frame(&self, frame: u32) -> FrameLookup {
+        let mut lookup = FrameLookup { frame, shots: Vec::new(), panels: Vec::new(), cues: Vec::new() };
+        for shot in &self.shots {
+            let Some(scene) = self.project.scenes.iter().find(|scene| scene.id.as_deref() == Some(shot.scene.as_str())) else {
+                continue;
+            };
+            let local = frame.checked_sub(scene.start);
+            let Some(local) = local.filter(|local| *local < scene.duration) else {
+                continue;
+            };
+            lookup.shots.push(shot.id.to_string());
+            for panel in &shot.panels {
+                if local >= panel.range[0] && local < panel.range[1] {
+                    lookup.panels.push(panel.id.to_string());
+                }
+            }
+            for cue in self.cues.iter().filter(|cue| cue.shot == shot.id) {
+                if local >= cue.range[0] && local < cue.range[1] {
+                    lookup.cues.push(cue.id.to_string());
+                }
+            }
+        }
+        lookup
+    }
 
     /// The problems [`Production::validate`] would report, one per entry.
     ///
@@ -1070,6 +1119,53 @@ mod tests {
         assert!(current.is_current(&production.tasks[0]));
         let upgraded = production.tasks[0].is_fresh("req-a", "edge-tts 7.0.0");
         assert!(!upgraded, "the previous engine version is stale even with the same text");
+    }
+
+    #[test]
+    fn a_frame_lookup_names_the_shot_panel_and_cue_on_screen() {
+        let panel = |id: &str, range: [u32; 2]| Panel {
+            id: PanelId::new(id).unwrap(),
+            range,
+            purpose: String::new(),
+            composition: String::new(),
+            dialogue: None,
+            camera: None,
+            sound: None,
+            safe_area: None,
+            notes: Vec::new(),
+        };
+        let production = Production {
+            project: project_with(true),
+            assets: Vec::new(),
+            shots: vec![
+                Shot { id: ShotId::new("shot-mechanism").unwrap(), scene: "mechanism".to_owned(), locked: false, panels: vec![panel("panel-1", [0, 90])] },
+                Shot { id: ShotId::new("shot-spatial").unwrap(), scene: "spatial".to_owned(), locked: false, panels: vec![panel("panel-2", [0, 60])] },
+            ],
+            cues: vec![Cue {
+                id: CueId::new("cue-1").unwrap(),
+                shot: ShotId::new("shot-mechanism").unwrap(),
+                range: [0, 30],
+                text: "先看请求".to_owned(),
+                speaker: None,
+                timing: CueTiming::Estimated,
+            }],
+            tasks: Vec::new(),
+            runs: Vec::new(),
+            delivery: Vec::new(),
+        };
+
+        let second = production.at_frame(120);
+        assert_eq!(second.shots, vec!["shot-spatial"], "the second scene starts at frame 90 and its panel covers 90..150");
+        assert_eq!(second.panels, vec!["panel-2"]);
+        assert!(second.cues.is_empty(), "no cue covers the spatial shot");
+
+        let first = production.at_frame(10);
+        assert_eq!(first.shots, vec!["shot-mechanism"]);
+        assert_eq!(first.panels, vec!["panel-1"]);
+        assert_eq!(first.cues, vec!["cue-1"]);
+
+        let outside = production.at_frame(5000);
+        assert!(outside.shots.is_empty() && outside.panels.is_empty() && outside.cues.is_empty());
     }
 
     #[test]
