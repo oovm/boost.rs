@@ -13,6 +13,102 @@ fn coerce_error(message: impl Into<String>) -> Error {
     Error::Schema { message: message.into() }
 }
 
+/// `CAST(expr AS <target>)` supporting the four standard SQL target types.
+///
+/// Returns an `Err` when the conversion is not representable (e.g. text that
+/// does not parse as integer) so the caller can surface a diagnostic rather
+/// than silently producing an incorrect value. Casting `NULL` preserves NULL.
+pub fn eval_cast(value: &Value, target: &str) -> Result<Value> {
+    // NULL stays NULL regardless of target type.
+    if matches!(value, Value::Null) {
+        return Ok(Value::Null);
+    }
+    let target = target.trim().to_ascii_uppercase();
+    match target.as_str() {
+        "INTEGER" | "INT" | "BIGINT" => cast_to_integer(value),
+        "REAL" | "FLOAT" | "DOUBLE" => cast_to_real(value),
+        "TEXT" | "VARCHAR" | "CHAR" | "STRING" => cast_to_text(value),
+        "BLOB" | "BYTEA" | "BYTES" => cast_to_blob(value),
+        other => Err(coerce_error(format!("unsupported CAST target type `{other}`"))),
+    }
+}
+
+fn cast_to_integer(value: &Value) -> Result<Value> {
+    let n = match value {
+        Value::Bool(b) => {
+            if *b {
+                1
+            }
+            else {
+                0
+            }
+        }
+        Value::I64(n) => return Ok(Value::I64(*n)),
+        Value::U64(n) => {
+            let clamped = (*n).min(i64::MAX as u64) as i64;
+            return Ok(Value::I64(clamped));
+        }
+        Value::F64(n) => {
+            if n.is_nan() {
+                return Err(coerce_error("CAST NaN to INTEGER is not representable"));
+            }
+            *n as i64
+        }
+        Value::Text(s) => s.trim().parse::<i64>().map_err(|_| coerce_error(format!("CAST text `{s}` to INTEGER failed")))?,
+        _ => return Err(coerce_error(format!("CAST from `{:?}` to INTEGER is not supported", value))),
+    };
+    Ok(Value::I64(n))
+}
+
+fn cast_to_real(value: &Value) -> Result<Value> {
+    let n = match value {
+        Value::Bool(b) => {
+            if *b {
+                1.0
+            }
+            else {
+                0.0
+            }
+        }
+        Value::I64(n) => *n as f64,
+        Value::U64(n) => *n as f64,
+        Value::F64(n) => return Ok(Value::F64(*n)),
+        Value::Text(s) => s.trim().parse::<f64>().map_err(|_| coerce_error(format!("CAST text `{s}` to REAL failed")))?,
+        _ => return Err(coerce_error(format!("CAST from `{:?}` to REAL is not supported", value))),
+    };
+    Ok(Value::F64(n))
+}
+
+fn cast_to_text(value: &Value) -> Result<Value> {
+    let text = match value {
+        Value::Null => return Ok(Value::Null),
+        Value::Bool(b) => if *b { "TRUE" } else { "FALSE" }.to_string(),
+        Value::I64(n) => n.to_string(),
+        Value::U64(n) => n.to_string(),
+        Value::F64(n) => {
+            // Use the canonical float representation, trimmed of trailing zeros.
+            // Format specifier `.15` matches SQLite-like display precision.
+            let s = format!("{n:.15}");
+            let trimmed = s.trim_end_matches('0').trim_end_matches('.').to_string();
+            if trimmed.contains('.') { trimmed } else { format!("{trimmed}.0") }
+        }
+        Value::Text(s) => return Ok(Value::Text(s.clone())),
+        Value::Uuid(u) => u.to_string(),
+        _ => return Err(coerce_error(format!("CAST from `{:?}` to TEXT is not supported", value))),
+    };
+    Ok(Value::Text(text))
+}
+
+fn cast_to_blob(value: &Value) -> Result<Value> {
+    let bytes = match value {
+        Value::Null => return Ok(Value::Null),
+        Value::Bytes(b) => return Ok(Value::Bytes(b.clone())),
+        Value::Text(s) => s.as_bytes().to_vec(),
+        _ => return Err(coerce_error(format!("CAST from `{:?}` to BLOB is not supported", value))),
+    };
+    Ok(Value::Bytes(bytes))
+}
+
 /// Deepest `Optional` / `Reference` / `List` nesting coercion follows.
 const MAX_TYPE_DEPTH: u8 = 32;
 
@@ -81,7 +177,7 @@ pub(crate) fn scalar_target(ty: &ResolvedCanonicalType) -> Option<ScalarTarget> 
 /// spelling, so a UUID value and a UUID text literal normalize to the same
 /// value. A `vector<N>` column keeps exactly `N` finite components. Columns
 /// without a scalar target (records and user types) accept the value unchanged.
-pub(crate) fn value_to_scalar(value: Value, ty: &ResolvedCanonicalType, contract: &ResolvedContract) -> Result<Value> {
+pub fn value_to_scalar(value: Value, ty: &ResolvedCanonicalType, contract: &ResolvedContract) -> Result<Value> {
     coerce_value(value, ty, contract, 0)
 }
 

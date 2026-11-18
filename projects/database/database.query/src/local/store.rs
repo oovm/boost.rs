@@ -187,24 +187,24 @@ pub trait RowSource {
 ///
 /// A full read owns every row in the map. A narrowed read owns only metadata
 /// rows and borrows the statement's window from [`RowSource`].
-pub(crate) struct ReadRows<'a> {
+pub struct ReadRows<'a> {
     records: &'a BTreeMap<String, Vec<u8>>,
     source: Option<&'a dyn RowSource>,
 }
 
 impl<'a> ReadRows<'a> {
     /// Rows come from the owned record map only.
-    pub(crate) fn owned(records: &'a BTreeMap<String, Vec<u8>>) -> Self {
+    pub fn owned(records: &'a BTreeMap<String, Vec<u8>>) -> Self {
         Self { records, source: None }
     }
 
     /// Rows come from `source`; `records` still answers metadata lookups.
-    pub(crate) fn borrowed(records: &'a BTreeMap<String, Vec<u8>>, source: &'a dyn RowSource) -> Self {
+    pub fn borrowed(records: &'a BTreeMap<String, Vec<u8>>, source: &'a dyn RowSource) -> Self {
         Self { records, source: Some(source) }
     }
 
     /// Decode every row of `table`, whichever side holds the bytes.
-    pub(crate) fn load_table(&self, table: &str) -> Result<Vec<QueryRow>> {
+    pub fn load_table(&self, table: &str) -> Result<Vec<QueryRow>> {
         match self.source {
             Some(source) => load_table_borrowed(source, table),
             None => load_table(self.records, table),
@@ -212,7 +212,7 @@ impl<'a> ReadRows<'a> {
     }
 
     /// Decode one row addressed by table and primary key.
-    pub(crate) fn load_row(&self, table: &str, pk: &str) -> Result<QueryRow> {
+    pub fn load_row(&self, table: &str, pk: &str) -> Result<QueryRow> {
         let key = row_key(table, pk);
         match self.source {
             Some(source) => match source.row_at(&key) {
@@ -228,7 +228,7 @@ impl<'a> ReadRows<'a> {
     /// A primary-key equality filter must answer "no rows" for a key that was
     /// never written, which is different from the missing-row error a keyed
     /// write raises.
-    pub(crate) fn load_row_optional(&self, table: &str, pk: &str) -> Result<Option<QueryRow>> {
+    pub fn load_row_optional(&self, table: &str, pk: &str) -> Result<Option<QueryRow>> {
         let key = row_key(table, pk);
         match self.source {
             Some(source) => match source.row_at(&key) {

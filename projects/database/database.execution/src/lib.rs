@@ -8,6 +8,8 @@
 pub mod cluster;
 /// 嵌入式引擎（连接 / 会话 / 存储协调）。
 pub mod engine;
+/// 本地记录图上的算子与写约束执行（模型与计划在 `database.query`）。
+pub mod local;
 /// 执行程序表示与求值。
 pub mod program;
 pub mod sql_exec;

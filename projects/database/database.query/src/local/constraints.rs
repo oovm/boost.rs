@@ -156,7 +156,7 @@ pub fn check_against_rows(
 /// Both key halves are compared, and a key that contains `NULL` never collides
 /// when the constraint declares NULLs as distinct — the same rule [`check`]
 /// applies, exposed so an `ON CONFLICT` clause can detect the row it targets.
-pub(crate) fn keys_conflict(constraint: &UniqueConstraint, existing: &QueryRow, incoming: &QueryRow) -> bool {
+pub fn keys_conflict(constraint: &UniqueConstraint, existing: &QueryRow, incoming: &QueryRow) -> bool {
     let (candidate, candidate_null) = constraint_key(existing, constraint.columns());
     if candidate_null && constraint.nulls_distinct() {
         return false;
@@ -183,7 +183,8 @@ fn constraint_key(row: &QueryRow, columns: &[String]) -> (String, bool) {
     (parts.join("\u{1f}"), has_null)
 }
 
-pub(crate) fn value_text(value: &Value) -> Result<String> {
+/// Renders a value as its canonical text form for key comparison.
+pub fn value_text(value: &Value) -> Result<String> {
     Ok(match value {
         Value::Text(text) => text.clone(),
         Value::Uuid(id) => id.to_string(),

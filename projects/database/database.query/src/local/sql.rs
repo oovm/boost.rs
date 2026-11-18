@@ -1342,7 +1342,7 @@ fn lower_bound_value(expr: &Expression, parameters: &[ParameterDescriptor]) -> R
             else {
                 return Err(sql_error("CAST over a parameter cannot be used as a comparison value"));
             };
-            Ok(BoundValue::Literal(super::exec::eval_cast(&value, target)?))
+            Ok(BoundValue::Literal(super::coerce::eval_cast(&value, target)?))
         }
         _ => Err(sql_error("unsupported SQL value expression")),
     }

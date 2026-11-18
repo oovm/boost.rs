@@ -257,7 +257,7 @@ impl Connection {
         records: &BTreeMap<String, Vec<u8>>,
     ) -> Result<Vec<QueryRow>> {
         database_query::local::with_object_resolver(Some(self.object_resolver()), || {
-            database_query::local::execute_prepared(stmt, values, Some(contract), records)
+            crate::local::execute_prepared(stmt, values, Some(contract), records)
         })
     }
 
@@ -275,7 +275,7 @@ impl Connection {
         };
         let started = tick();
         let (rows, exec) = database_query::local::with_object_resolver(Some(self.object_resolver()), || {
-            database_query::local::execute_prepared_profiled(stmt, values, Some(contract), records)
+            crate::local::execute_prepared_profiled(stmt, values, Some(contract), records)
         })?;
         self.add_exec_profile(profile, started, &exec, rows.len());
         Ok(rows)
@@ -304,19 +304,19 @@ impl Connection {
         let Some(profile) = profile
         else {
             let (out, _) = database_query::local::with_object_resolver(Some(self.object_resolver()), || {
-                database_query::local::execute_prepared_borrowed(stmt, values, Some(contract), records, &source, false)
+                crate::local::execute_prepared_borrowed(stmt, values, Some(contract), records, &source, false)
             })?;
             return Ok(out);
         };
         let started = tick();
         let (out, exec) = database_query::local::with_object_resolver(Some(self.object_resolver()), || {
-            database_query::local::execute_prepared_borrowed(stmt, values, Some(contract), records, &source, true)
+            crate::local::execute_prepared_borrowed(stmt, values, Some(contract), records, &source, true)
         })?;
         self.add_exec_profile(profile, started, &exec, out.len());
         Ok(out)
     }
 
-    fn add_exec_profile(&self, profile: &mut ReadProfile, started: Tick, exec: &database_query::local::ExecProfile, row_count: usize) {
+    fn add_exec_profile(&self, profile: &mut ReadProfile, started: Tick, exec: &crate::local::ExecProfile, row_count: usize) {
         profile.exec_ns += tick_nanos(started);
         profile.scanned_rows += row_count;
         profile.scan_ns += exec.scan_ns;
@@ -515,7 +515,7 @@ impl Connection {
                 let outcome = database_query::local::with_object_resolver(Some(self.object_resolver()), || {
                     database_query::local::with_bytes_placement(Some(self.bytes_policy()), || {
                         database_query::local::with_vector_placement(Some(self.vector_policy()), || {
-                            database_query::local::execute_write_prepared(
+                            crate::local::execute_write_prepared(
                                 &stmt,
                                 &values,
                                 &contract,

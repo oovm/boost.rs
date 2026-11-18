@@ -18,10 +18,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use database_types::{Error, Result, Value};
 
 use super::{
-    exec, lower,
-    ops::{BoundValue, QueryOp, QueryRow, SessionOp, SlotTy, WriteOp},
+    lower,
+    ops::{BoundValue, QueryOp, SessionOp, SlotTy, WriteOp},
     sql,
-    write::{self, WriteOutcome},
 };
 use oak_vos::{VosExpr, VosProgram, VosStmt};
 
@@ -336,67 +335,6 @@ pub fn bind_ordered(stmt: &PreparedStatement, values: &[Value]) -> Result<Vec<Va
         bound[param.index as usize] = value.clone();
     }
     Ok(bound)
-}
-
-/// Execute a prepared-and-bound statement against stored rows.
-pub fn execute_prepared(
-    stmt: &PreparedStatement,
-    values: &[Value],
-    contract: Option<&schema_types::ResolvedContract>,
-    records: &BTreeMap<String, Vec<u8>>,
-) -> Result<Vec<QueryRow>> {
-    exec::execute_ops(&stmt.ops, contract, records, values)
-}
-
-/// Execute a prepared-and-bound statement, also reporting per-operator timings.
-///
-/// Diagnostics only: the engine never reads the profile.
-pub fn execute_prepared_profiled(
-    stmt: &PreparedStatement,
-    values: &[Value],
-    contract: Option<&schema_types::ResolvedContract>,
-    records: &BTreeMap<String, Vec<u8>>,
-) -> Result<(Vec<QueryRow>, exec::ExecProfile)> {
-    exec::execute_ops_profiled(&stmt.ops, contract, records, values)
-}
-
-/// Execute a prepared read against a borrowed storage window.
-///
-/// Metadata rows stay in `records`; table scans decode rows from `source`, which
-/// the caller must keep alive for the duration of the call. Every row leaves the
-/// pipeline owned, so no borrow crosses this boundary.
-#[doc(hidden)]
-pub fn execute_prepared_borrowed(
-    stmt: &PreparedStatement,
-    values: &[Value],
-    contract: Option<&schema_types::ResolvedContract>,
-    records: &BTreeMap<String, Vec<u8>>,
-    source: &dyn super::store::RowSource,
-    profiled: bool,
-) -> Result<(Vec<QueryRow>, exec::ExecProfile)> {
-    if profiled {
-        exec::execute_ops_borrowed_profiled(&stmt.ops, contract, records, source, values)
-    }
-    else {
-        exec::execute_ops_borrowed(&stmt.ops, contract, records, source, values).map(|rows| (rows, exec::ExecProfile::default()))
-    }
-}
-
-/// Execute a prepared-and-bound write statement against stored rows.
-///
-/// Returns [`Error::Unsupported`] for read statements so callers cannot
-/// accidentally treat a `SELECT` plan as a mutation.
-pub fn execute_write_prepared(
-    stmt: &PreparedStatement,
-    values: &[Value],
-    contract: &schema_types::ResolvedContract,
-    declared: &[database_types::TableUniqueConstraint],
-    records: &mut BTreeMap<String, Vec<u8>>,
-) -> Result<WriteOutcome> {
-    if stmt.write_ops.is_empty() {
-        return Err(Error::Unsupported("statement is a read pipeline, not a write program"));
-    }
-    write::execute_ops(&stmt.write_ops, contract, declared, records, values)
 }
 
 /// Convert a `Name("__yydb_param_<index>")` identifier (emitted by the
