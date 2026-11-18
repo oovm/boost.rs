@@ -180,6 +180,160 @@ pub fn write_storyboard_selected(
     Ok(pages)
 }
 
+/// One before/after page.
+#[derive(Clone, Debug)]
+pub struct ComparisonPage {
+    /// Written file path.
+    pub path: String,
+    /// Panels compared on this page, in order.
+    pub panels: Vec<String>,
+}
+
+/// Writes a before/after page: each panel's middle frame from two revisions.
+///
+/// Both revisions are rendered with the same painter, so a colour or layout
+/// change shows as the real difference instead of a re-encode artifact. The
+/// panel set and layout come from the current book; a panel that only exists in
+/// `before` is not shown, because the review is about the current storyboard.
+pub fn write_comparison(
+    before_json: &str,
+    after_json: &str,
+    production: &Production,
+    out: &Path,
+    only_panels: &[String],
+    options: &StoryboardOptions,
+) -> Result<ComparisonPage, Error> {
+    production.validate()?;
+    let before = parse_project(before_json)?;
+    let after = parse_project(after_json)?;
+    let mut fonts = fonts_for(&after)?;
+    let blocks = plan_blocks(&after, production)?;
+    let selected: Vec<&PanelBlock> = blocks
+        .iter()
+        .filter(|block| only_panels.is_empty() || only_panels.iter().any(|panel| panel == &block.panel))
+        .collect();
+    if selected.is_empty() {
+        return Err(Error::invalid("the production declares no panel to compare"));
+    }
+
+    let mut page = Frame::new(options.width, options.height);
+    page.fill(rgba(options.background, 255));
+    draw_title(&mut fonts, &mut page, options, "Before / after");
+    let top = options.margin + options.title_size + options.gap;
+    let content_width = options.width as f32 - options.margin * 2.0;
+    let row_height = ((options.height as f32 - top - options.margin - options.gap * (selected.len().saturating_sub(1)) as f32) / selected.len() as f32).max(80.0);
+    let thumb_width = (content_width - options.gap) / 2.0;
+    let label_height = options.label_size * 2.0;
+
+    for (row, block) in selected.iter().enumerate() {
+        let y = top + (row_height + options.gap) * row as f32;
+        let image_height = (row_height - label_height).max(40.0);
+        // A frame that only exists in the old revision still maps by the same
+        // panel range, so the comparison stays on the same moment.
+        let before_frame = block.frames[1].min(before.duration_frames.saturating_sub(1));
+        let left = render_frame_at(before_json, before_frame)?;
+        let right = render_frame_at(after_json, block.frames[1])?;
+        page.draw_bitmap(&bitmap(left), options.margin, y, thumb_width, image_height, Fit::Contain, 1.0, 4.0);
+        page.draw_bitmap(&bitmap(right), options.margin + thumb_width + options.gap, y, thumb_width, image_height, Fit::Contain, 1.0, 4.0);
+        draw_text(&mut fonts, &mut page, options, "before", options.margin, y + image_height + options.label_size, options.label_size * 0.85, thumb_width);
+        draw_text(
+            &mut fonts,
+            &mut page,
+            options,
+            "after",
+            options.margin + thumb_width + options.gap,
+            y + image_height + options.label_size,
+            options.label_size * 0.85,
+            thumb_width,
+        );
+        let header = format!("{} · {} · f{}", block.shot, block.panel, block.frames[1]);
+        draw_text(&mut fonts, &mut page, options, &header, options.margin, y + image_height + options.label_size * 1.9, options.label_size, content_width);
+    }
+
+    if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent).map_err(|e| Error::io(format!("cannot create {}: {e}", parent.display())))?;
+    }
+    write_page(out, &page)?;
+    Ok(ComparisonPage { path: out.to_string_lossy().into_owned(), panels: selected.iter().map(|block| block.panel.clone()).collect() })
+}
+
+/// Writes a chapter overview: one row per shot with its first and last frame.
+///
+/// The pair at the top of each row is also the seam check: the previous row's
+/// last frame and this row's first frame are the two frames a cut hinges on.
+pub fn write_chapters(
+    json: &str,
+    production: &Production,
+    out: &Path,
+    options: &StoryboardOptions,
+) -> Result<StoryboardPage, Error> {
+    production.validate()?;
+    let project = parse_project(json)?;
+    let mut fonts = fonts_for(&project)?;
+    if production.shots.is_empty() {
+        return Err(Error::invalid("the production declares no shot to list as a chapter"));
+    }
+    let mut page = Frame::new(options.width, options.height);
+    page.fill(rgba(options.background, 255));
+    draw_title(&mut fonts, &mut page, options, "Chapters");
+    let top = options.margin + options.title_size + options.gap;
+    let row_height = ((options.height as f32 - top - options.margin) / production.shots.len() as f32).max(90.0);
+    let label_width = 200.0;
+    let content_width = options.width as f32 - options.margin * 2.0 - label_width;
+    let thumb_width = (content_width - options.gap) / 2.0;
+    let mut cells = Vec::new();
+
+    for (row, shot) in production.shots.iter().enumerate() {
+        let Some(scene) = scene_of(&project, &shot.scene) else {
+            return Err(Error::invalid(format!("shot `{}` references unknown scene `{}`", shot.id, shot.scene)));
+        };
+        let y = top + row_height * row as f32;
+        let image_height = (row_height - options.label_size * 1.6).max(40.0);
+        let first = scene.start;
+        let last = scene.start + scene.duration.saturating_sub(1);
+        let left = render_frame_at(json, first)?;
+        let right = render_frame_at(json, last)?;
+        page.draw_bitmap(&bitmap(left), options.margin + label_width, y, thumb_width, image_height, Fit::Contain, 1.0, 4.0);
+        page.draw_bitmap(&bitmap(right), options.margin + label_width + thumb_width + options.gap, y, thumb_width, image_height, Fit::Contain, 1.0, 4.0);
+        let label = format!("{}", shot.id);
+        draw_text(&mut fonts, &mut page, options, &label, options.margin, y + options.label_size, options.label_size, label_width);
+        let timing = format!("{}–{} · {:.1}s", first, last, scene.duration as f32 / project.fps.max(1) as f32);
+        draw_text(&mut fonts, &mut page, options, &timing, options.margin, y + options.label_size * 2.0, options.label_size * 0.85, label_width);
+        draw_text(
+            &mut fonts,
+            &mut page,
+            options,
+            "first",
+            options.margin + label_width,
+            y + image_height + options.label_size,
+            options.label_size * 0.8,
+            thumb_width,
+        );
+        draw_text(
+            &mut fonts,
+            &mut page,
+            options,
+            "last",
+            options.margin + label_width + thumb_width + options.gap,
+            y + image_height + options.label_size,
+            options.label_size * 0.8,
+            thumb_width,
+        );
+        cells.push(StoryboardCell {
+            shot: shot.id.to_string(),
+            panel: String::new(),
+            frames: vec![first, last],
+            dialogue: None,
+        });
+    }
+
+    if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent).map_err(|e| Error::io(format!("cannot create {}: {e}", parent.display())))?;
+    }
+    write_page(out, &page)?;
+    Ok(StoryboardPage { index: 0, path: out.to_string_lossy().into_owned(), cells })
+}
+
 /// One scored cover candidate.
 #[derive(Clone, Debug)]
 pub struct CoverCandidate {
@@ -741,6 +895,29 @@ mod tests {
         assert!(pages[0].path.ends_with("storyboard-002.png"), "{}", pages[0].path);
         assert_eq!(pages[0].cells.len(), 1);
         assert_eq!(pages[0].cells[0].panel, "panel-room");
+    }
+
+    #[test]
+    fn a_comparison_pair_renders_both_revisions() {
+        let (json, production) = fixture();
+        let before = json.replacen("#101820", "#203040", 1);
+        let out = out_dir().join("comparison.png");
+        let page = write_comparison(&before, &json, &production, &out, &[], &StoryboardOptions::default()).expect("comparison");
+        assert_eq!(page.panels, vec!["panel-open".to_owned(), "panel-room".to_owned()]);
+        let mut library = media_codec::MediaLibrary::new();
+        let bitmap = library.image(&page.path, media_codec::DecodeLimits::unbounded()).expect("decode comparison");
+        assert_eq!((bitmap.width, bitmap.height), (1600, 1200));
+    }
+
+    #[test]
+    fn chapters_pair_each_shot_with_its_edges() {
+        let (json, production) = fixture();
+        let out = out_dir().join("chapters.png");
+        let page = write_chapters(&json, &production, &out, &StoryboardOptions::default()).expect("chapters");
+        assert_eq!(page.cells.len(), 2);
+        assert_eq!(page.cells[0].frames, vec![0, 59], "first and last frame of shot-a");
+        assert_eq!(page.cells[1].frames, vec![60, 119], "first and last frame of shot-b");
+        assert!(out.exists());
     }
 
     #[test]

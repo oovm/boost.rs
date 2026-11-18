@@ -36,8 +36,8 @@ pub mod storyboard;
 
 #[cfg(all(feature = "scene", feature = "layout-export"))]
 pub use storyboard::{
-    CoverCandidate, StoryboardCell, StoryboardOptions, StoryboardPage, write_contact_sheet, write_cover_candidates, write_motion_preview,
-    write_storyboard, write_storyboard_selected, write_timeline,
+    ComparisonPage, CoverCandidate, StoryboardCell, StoryboardOptions, StoryboardPage, write_chapters, write_comparison, write_contact_sheet,
+    write_cover_candidates, write_motion_preview, write_storyboard, write_storyboard_selected, write_timeline,
 };
 
 #[cfg(all(feature = "scene", feature = "trace"))]
