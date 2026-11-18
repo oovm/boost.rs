@@ -13,6 +13,8 @@ pub mod cursor;
 pub mod import;
 /// 单成员副本集状态、集群时间与 `replSet*` 命令。
 pub mod replica;
+/// 重试写的登记表、键推导与应答重放。
+pub mod retry;
 /// `writeConcern` / `$readPreference` 校验与写应答装饰。
 pub mod write_concern;
 /// ObjectId 生成，合同与实现归 `database.types`。

@@ -13,6 +13,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use boost_random::Secure;
 use database_protocol_mongo::bson::{BinaryData, BsonDocument, BsonValue};
 
+use crate::mongo::{
+    commands::{self, CommandError},
+    cursor::CursorStore,
+    storage::MongoStorage,
+    write_concern,
+};
+
 /// 为宿主安全随机填充字节；失败按错误上报，不回退弱随机。
 fn random_bytes(length: usize) -> Result<Vec<u8>, String> {
     let mut bytes = vec![0_u8; length];
@@ -565,6 +572,80 @@ impl ReplicaSet {
         self.seconds = (self.elected_at / 1000) as u32;
         self.increment = 1;
         Ok(true)
+    }
+}
+
+/// 一次写命令落定后的 oplog 提交或丢弃。
+///
+/// 成功的写把暂存条目提交到 oplog 并用最后一条的时间戳推进副本集 optime；
+/// 失败的写必须把暂存条目丢弃，否则失败的数据会进入 oplog。不产生应答确认
+/// 的命令（非写命令）不动 oplog。`mongod` 在应答前完成同样的提交。
+pub fn settle_write(
+    store: &dyn MongoStorage,
+    replica: &mut ReplicaSet,
+    name: &str,
+    ok: bool,
+    wall_millis: i64,
+) -> Result<Option<(u32, u32)>, CommandError> {
+    if !write_concern::is_write_concern_command(name) {
+        return Ok(None);
+    }
+    if !ok {
+        store.discard_staged_oplog();
+        return Ok(None);
+    }
+    let last = store.commit_oplog(wall_millis)?;
+    if let Some(optime) = last {
+        replica.note_write(Some(optime));
+    }
+    Ok(last)
+}
+
+/// 从 `local.system.replset` 读回集合配置并恢复成当前状态。
+///
+/// `mongod` 启动时同样读这个集合；没有文档或文档形态不可用时成员保持未初始化。
+pub fn restore_stored_config(store: &dyn MongoStorage, replica: &mut ReplicaSet) -> Result<bool, CommandError> {
+    let Some(stored) = stored_config(store)? else {
+        return Ok(false);
+    };
+    replica.restore_config(&stored).map_err(|message| CommandError::new(96, message))
+}
+
+/// 把当前集合配置写进 `local.system.replset`，与 `mongod` 的 initiate 一致。
+///
+/// 集合文档是复制元数据而非数据，因此这次写入暂存的 oplog 条目一律丢弃。
+pub fn persist_config(store: &dyn MongoStorage, replica: &ReplicaSet) -> Result<bool, CommandError> {
+    let Some(config) = replica.config() else {
+        return Ok(false);
+    };
+    let mut command = BsonDocument::new();
+    command.push("insert".to_string(), BsonValue::String("system.replset".to_string()));
+    command.push("documents".to_string(), BsonValue::Array(vec![BsonValue::Document(config.clone())]));
+    command.push("$db".to_string(), BsonValue::String("local".to_string()));
+    let stored = match commands::insert(&command, store) {
+        Ok(reply) => matches!(reply.get("ok"), Some(BsonValue::Double(value)) if *value == 1.0),
+        Err(_) => false,
+    };
+    store.discard_staged_oplog();
+    Ok(stored)
+}
+
+/// `local.system.replset` 里的第一份集合文档。
+fn stored_config(store: &dyn MongoStorage) -> Result<Option<BsonDocument>, CommandError> {
+    let mut command = BsonDocument::new();
+    command.push("find".to_string(), BsonValue::String("system.replset".to_string()));
+    command.push("filter".to_string(), BsonValue::Document(BsonDocument::new()));
+    command.push("$db".to_string(), BsonValue::String("local".to_string()));
+    let reply = commands::find(&command, store, &mut CursorStore::new())?;
+    let Some(BsonValue::Document(cursor)) = reply.get("cursor") else {
+        return Ok(None);
+    };
+    match cursor.get("firstBatch") {
+        Some(BsonValue::Array(batch)) => match batch.first() {
+            Some(BsonValue::Document(document)) => Ok(Some(document.clone())),
+            _ => Ok(None),
+        },
+        _ => Ok(None),
     }
 }
 
