@@ -18,7 +18,8 @@ compiler-target = { workspace = true }
 compiler-types = { workspace = true }
 oak-awsl = { workspace = true }
 oak-core = { workspace = true }
-oak-formats = { workspace = true }
+language-format = { workspace = true }
+language-highlight = { workspace = true }
 oak-valkyrie = { workspace = true }
 oak-von = { workspace = true }
 ordered-float = "5.5.0"

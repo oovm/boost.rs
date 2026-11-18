@@ -1,12 +1,12 @@
 //! Valkyrie 语言语法高亮插件（多 pass：Lexical + Semantic）。
 //!
-//! 依赖平台层 [`oak_formats::highlight`]：
+//! 依赖平台层 [`language_highlight`]：
 //! - [`ValkyrieLexicalHighlighter`]：lexer 快速着色（文档 / 编辑实时）
 //! - [`ValkyrieSemanticHighlighter`]：语义高亮（核心类型名 `Option` / `Result` 及其变体）
 
 use std::collections::HashMap;
 
-use oak_formats::highlight::{
+use language_highlight::{
     HighlightKind, HighlightRequest, HighlightSpan, Highlighter, HighlighterKind, HighlighterProvider, render_spans_html,
 };
 use oak_core::{Lexer, NoLexerCache, SourceText, Token, TokenType};

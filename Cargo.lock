@@ -697,9 +697,10 @@ dependencies = [
  "compiler-emitter",
  "compiler-target",
  "compiler-types",
+ "language-format",
+ "language-highlight",
  "oak-awsl",
  "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs?rev=a0416cb1cba9a348df175d3ca230f794ec562484)",
- "oak-formats",
  "oak-valkyrie",
  "oak-von",
  "ordered-float",
@@ -2601,6 +2602,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "language-format"
+version = "0.1.0"
+dependencies = [
+ "oak-awsl",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs?rev=a0416cb1cba9a348df175d3ca230f794ec562484)",
+ "oak-von",
+ "serde",
+]
+
+[[package]]
+name = "language-highlight"
+version = "0.1.0"
+
+[[package]]
 name = "lazy_static"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3170,17 +3185,6 @@ source = "git+https://github.com/yggdrasil-language/oak.rs?rev=a0416cb1cba9a348d
 dependencies = [
  "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs?rev=a0416cb1cba9a348df175d3ca230f794ec562484)",
  "serde",
-]
-
-[[package]]
-name = "oak-formats"
-version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oak.rs?rev=a0416cb1cba9a348df175d3ca230f794ec562484#a0416cb1cba9a348df175d3ca230f794ec562484"
-dependencies = [
- "oak-awsl",
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs?rev=a0416cb1cba9a348df175d3ca230f794ec562484)",
- "oak-formatter",
- "oak-von",
 ]
 
 [[package]]

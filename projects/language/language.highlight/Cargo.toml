@@ -1,0 +1,10 @@
+[package]
+name = "language-highlight"
+description = "Cross-language highlight service: provider dispatch and host result adaptation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]

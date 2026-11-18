@@ -62,9 +62,9 @@ pub const VON_EXTENSIONS: &[&str] = &["von"];
 
 /// Asgard 模板（与 `.v`/`.vx` 不同语言面）。
 ///
-/// 单一事实源为 [`oak_formats::formatter::AWSL_EXTENSIONS`]（`.awsl` 规范拼写、`.w` 同义缩写），
+/// 单一事实源为 [`language_format::formatter::AWSL_EXTENSIONS`]（`.awsl` 规范拼写、`.w` 同义缩写），
 /// 本常量只是别名，不得在此另立集合。
-pub const AWSL_EXTENSIONS: &[&str] = oak_formats::formatter::AWSL_EXTENSIONS;
+pub const AWSL_EXTENSIONS: &[&str] = language_format::formatter::AWSL_EXTENSIONS;
 
 /// 路径扩展名是否属于任一已知的 Valkyrie 族源文件（`.v` / `.valkyrie` / `.vx`）。
 pub fn is_valkyrie_family_extension(ext: &str) -> bool {

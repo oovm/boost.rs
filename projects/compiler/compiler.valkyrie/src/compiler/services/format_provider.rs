@@ -6,7 +6,7 @@
 
 use std::any::Any;
 
-use oak_formats::contract::{
+use language_format::contract::{
     FormatError, FormatOptions, FormattedOutput, PrintStyle, Printer, PrinterProvider, SourceFormatter, SourceFormatterProvider,
 };
 use oak_valkyrie::ast::ValkyrieRoot;
@@ -109,6 +109,6 @@ fn map_print_error(error: oak_valkyrie::printer::PrintError) -> FormatError {
 
 /// 向 `nyar-format` 注册 Valkyrie formatter / printer provider（幂等，可在入口重复调用）。
 pub fn register_format_providers() {
-    oak_formats::formatter::register_source_provider(&ValkyrieSourceFormatterProvider);
-    oak_formats::printer::register_printer_provider(&ValkyriePrinterProvider);
+    language_format::formatter::register_source_provider(&ValkyrieSourceFormatterProvider);
+    language_format::printer::register_printer_provider(&ValkyriePrinterProvider);
 }

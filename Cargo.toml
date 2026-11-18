@@ -42,6 +42,8 @@ members = [
     "projects/interpreter/interpreter.vm.ovm",
     "projects/interpreter/interpreter.vm.wasm",
     "projects/compiler/compiler.valkyrie",
+    "projects/language/language.format",
+    "projects/language/language.highlight",
     "projects/database/database",
     "projects/database/database.client",
     "projects/database/database.cluster",
@@ -240,6 +242,8 @@ compiler-specialize = { path = "projects/compiler/compiler.specialize" }
 compiler-target = { path = "projects/compiler/compiler.target" }
 compiler-types = { path = "projects/compiler/compiler.types" }
 compiler-valkyrie = { path = "projects/compiler/compiler.valkyrie" }
+language-format = { path = "projects/language/language.format" }
+language-highlight = { path = "projects/language/language.highlight" }
 # 内部库
 crawler-browser = { path = "projects/crawler/crawler.browser" }
 crawler-extract = { path = "projects/crawler/crawler.extract" }
