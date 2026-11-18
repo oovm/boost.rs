@@ -16,9 +16,11 @@ use database_protocol_mongo::bson::{
 use database_protocol_mongo::{decimal128::Decimal128, json};
 
 use database_query::mongo::{
-    ExpressionContext, ExpressionVariables, ProjectionPlan, ProjectionRule, collect_field, compare_values, count_value, equality_candidates,
-    expression_truthy, has_operator, int_value, integer_of, integral_i64, lookup_field, matches, matches_with_variables, normalize_query,
-    number_of, operator_matches, parse_count, parse_projection, validate_filter, values_equal,
+    ExpressionContext, ExpressionVariables, Hint, HintedPlan, IndexCatalog, ProjectionPlan, ProjectionRule, automatic_candidates,
+    build_hinted_plan, collect_field, compare_values, count_value, equality_candidates, expression_truthy, has_operator, hex_text,
+    hinted_count_plan, hinted_find_plan, index_executable, index_tuple, int_value, integer_of, integral_i64, lookup_field, matches,
+    matches_with_variables, multi_key_fields, normalize_query, number_of, operator_matches, parse_count, parse_projection, plan::IndexSpan,
+    plan_spans, render_shell_value, scan_stage_document, validate_filter, values_equal, winning_plan,
 };
 
 use crate::mongo::{
@@ -40,6 +42,30 @@ impl ExpressionContext for AggregationExpressions {
     fn evaluate(&self, document: &BsonDocument, expression: &BsonValue, variables: &ExpressionVariables) -> Result<BsonValue, CommandError> {
         evaluate_expression_vars(document, expression, variables)
     }
+}
+
+/// `hint` 解析需要的最小目录视图，读存储留在执行层。
+struct StoreCatalog<'a>(&'a dyn MongoStorage);
+
+impl IndexCatalog for StoreCatalog<'_> {
+    fn namespace_exists(&self, namespace: &str) -> Result<bool, CommandError> {
+        Ok(self.0.namespace_exists(namespace)?)
+    }
+
+    fn index_specs(&self, namespace: &str) -> Result<Vec<IndexSpec>, CommandError> {
+        Ok(self.0.index_specs(namespace)?)
+    }
+}
+
+fn resolve_hint(
+    command: &BsonDocument,
+    store: &dyn MongoStorage,
+    namespace: &str,
+    filter: &BsonDocument,
+    sort: Option<&BsonValue>,
+    projection: Option<&BsonValue>,
+) -> Result<Hint, CommandError> {
+    database_query::mongo::plan::resolve_hint(&StoreCatalog(store), command.get("hint"), namespace, filter, sort, projection)
 }
 
 fn document_matches(document: &BsonDocument, filter: &BsonDocument) -> Result<bool, CommandError> {
@@ -610,17 +636,6 @@ fn parallel_array_error(document: &BsonDocument, indexes: &[IndexSpec]) -> Optio
     None
 }
 
-/// Length-prefixed key so two adjacent tuples can never be confused.
-fn index_tuple(values: &[BsonValue]) -> Vec<u8> {
-    let mut tuple = Vec::new();
-    for value in values {
-        let key = value_to_key(value);
-        tuple.extend_from_slice(&(key.len() as u32).to_be_bytes());
-        tuple.extend_from_slice(&key);
-    }
-    tuple
-}
-
 fn duplicate_index_error(index: usize, namespace: &str, specification: &IndexSpec, values: &[BsonValue]) -> WriteError {
     let mut key_value = BsonDocument::new();
     for ((field, _), value) in specification.key.fields.iter().zip(values) {
@@ -636,604 +651,6 @@ fn duplicate_index_error(index: usize, namespace: &str, specification: &IndexSpe
     )
 }
 
-/// A `hint` resolved against the catalog.
-enum Hint {
-    /// No hint, or `hint: {}` which `mongod 8.0.9` ignores.
-    None,
-    /// `{$natural: 1}` or `{$natural: -1}`.
-    Natural(i32),
-    /// A named or key-pattern hint that matched one visible index.
-    Index(IndexSpec),
-}
-
-/// One equality, `$in` or range bound the executor actually probes on the leading key field.
-enum KeyBound {
-    Full,
-    Eq(BsonValue),
-    In(Vec<BsonValue>),
-    /// 首键字段的数值范围；`bool` 表示闭区间，缺省一侧为无界。
-    Range {
-        lower: Option<(BsonValue, bool)>,
-        upper: Option<(BsonValue, bool)>,
-    },
-}
-
-/// Bounds rendered as `startKey` / `endKey` documents in plan output.
-struct CountRange {
-    start: BsonValue,
-    start_inclusive: bool,
-    end: BsonValue,
-    end_inclusive: bool,
-}
-
-struct FieldPlan {
-    field: String,
-    bound: KeyBound,
-    count: CountRange,
-}
-
-struct HintedPlan {
-    spec: IndexSpec,
-    fields: Vec<FieldPlan>,
-    residual: BsonDocument,
-    direction: &'static str,
-    sort_covered: bool,
-    is_multi_key: bool,
-}
-
-/// Resolves `hint` exactly as `mongod 8.0.9` does for `find` and `count`.
-///
-/// A hint against a namespace that does not exist is ignored (the command
-/// simply returns no documents), while the same hint against an existing
-/// collection fails. A named index must exist and must not be hidden; a key
-/// pattern must match one index key document, including field order.
-fn resolve_hint(
-    command: &BsonDocument,
-    store: &dyn MongoStorage,
-    namespace: &str,
-    filter: &BsonDocument,
-    sort: Option<&BsonValue>,
-    projection: Option<&BsonValue>,
-) -> Result<Hint, CommandError> {
-    let Some(value) = command.get("hint")
-    else {
-        return Ok(Hint::None);
-    };
-    match value {
-        BsonValue::String(_) | BsonValue::Document(_) => {}
-        _ => return Err(CommandError::new(9, "Hint must be a string or an object")),
-    }
-    if !store.namespace_exists(namespace)? {
-        return Ok(Hint::None);
-    }
-    let planner_error = || hint_planner_error(namespace, filter, sort, projection);
-    match value {
-        BsonValue::String(name) => store
-            .index_specs(namespace)?
-            .into_iter()
-            .find(|spec| spec.is_visible() && spec.name == *name)
-            .map(Hint::Index)
-            .ok_or_else(planner_error),
-        BsonValue::Document(document) => {
-            if document.fields.is_empty() {
-                return Ok(Hint::None);
-            }
-            if let Some(direction) = document.get("$natural") {
-                if document.fields.len() == 1
-                    && let Some(number) = int_value(direction)
-                    && (number == 1 || number == -1)
-                {
-                    return Ok(Hint::Natural(number as i32));
-                }
-                return Err(CommandError::new(2, "$natural hint cannot be set to a value other than -1 or 1."));
-            }
-            store
-                .index_specs(namespace)?
-                .into_iter()
-                .find(|spec| spec.is_visible() && spec.key == *document)
-                .map(Hint::Index)
-                .ok_or_else(planner_error)
-        }
-        _ => Ok(Hint::None),
-    }
-}
-
-fn hint_planner_error(namespace: &str, filter: &BsonDocument, sort: Option<&BsonValue>, projection: Option<&BsonValue>) -> CommandError {
-    CommandError::new(
-        2,
-        format!(
-            "error processing query: ns={namespace}Tree: {}\nSort: {}\nProj: {}\n planner returned error :: caused by :: hint provided does not correspond to an existing index",
-            render_query_tree(filter),
-            render_inline_document(sort),
-            render_inline_document(projection)
-        ),
-    )
-}
-
-/// Renders the parsed filter the way the planner's `Tree:` line does.
-fn render_query_tree(filter: &BsonDocument) -> String {
-    let normalized = normalize_query(filter);
-    if filter.fields.is_empty() {
-        return "$and".to_string();
-    }
-    match normalized.get("$and") {
-        Some(BsonValue::Array(clauses)) => {
-            let mut text = "$and".to_string();
-            for clause in clauses {
-                if let BsonValue::Document(clause) = clause {
-                    for line in render_clause_lines(clause) {
-                        text.push_str("\n    ");
-                        text.push_str(&line);
-                    }
-                }
-            }
-            text
-        }
-        _ => render_clause_lines(&normalized).join("\n    "),
-    }
-}
-
-fn render_clause_lines(clause: &BsonDocument) -> Vec<String> {
-    let mut lines = Vec::new();
-    for (field, value) in &clause.fields {
-        match value {
-            BsonValue::Document(operators) if has_operator(operators) => {
-                for (operator, operand) in &operators.fields {
-                    if operator == "$options" {
-                        continue;
-                    }
-                    lines.push(format!("{field} {operator} {}", render_tree_value(operand)));
-                }
-            }
-            other => lines.push(format!("{field} $eq {}", render_tree_value(other))),
-        }
-    }
-    lines
-}
-
-fn render_tree_value(value: &BsonValue) -> String {
-    match value {
-        BsonValue::String(text) => format!("{text:?}"),
-        BsonValue::Array(items) => {
-            format!("[ {}]", items.iter().map(render_tree_value).collect::<Vec<_>>().join(" "))
-        }
-        BsonValue::Document(document) => render_inline_document(Some(&BsonValue::Document(document.clone()))),
-        _ => scalar_text(value),
-    }
-}
-
-/// `{ a: -1 }` / `{}` rendering used by the `Sort:` and `Proj:` lines.
-fn render_inline_document(value: Option<&BsonValue>) -> String {
-    match value {
-        Some(BsonValue::Document(document)) if !document.fields.is_empty() => format!(
-            "{{ {} }}",
-            document.fields.iter().map(|(field, value)| format!("{field}: {}", render_tree_value(value))).collect::<Vec<_>>().join(", ")
-        ),
-        _ => "{}".to_string(),
-    }
-}
-
-fn scalar_text(value: &BsonValue) -> String {
-    match value {
-        BsonValue::Int32(number) => number.to_string(),
-        BsonValue::Int64(number) => number.to_string(),
-        BsonValue::Double(number) => {
-            if number.is_nan() {
-                "nan.0".to_string()
-            }
-            else if number.is_infinite() {
-                if number.is_sign_positive() { "inf.0".to_string() } else { "-inf.0".to_string() }
-            }
-            else {
-                format!("{number:?}")
-            }
-        }
-        BsonValue::Decimal128(number) => number.as_str(),
-        BsonValue::String(text) => format!("{text:?}"),
-        BsonValue::Bool(flag) => flag.to_string(),
-        BsonValue::Null => "null".to_string(),
-        BsonValue::Undefined => "undefined".to_string(),
-        BsonValue::MinKey => "MinKey".to_string(),
-        BsonValue::MaxKey => "MaxKey".to_string(),
-        BsonValue::ObjectId(bytes) => format!("ObjectId('{}')", hex_text(bytes)),
-        BsonValue::Binary(binary) => format!("BinData({}, {})", binary.subtype, hex_text(&binary.bytes)),
-        BsonValue::DateTime(milliseconds) => format!("new Date({milliseconds})"),
-        BsonValue::Timestamp { t, i } => format!("Timestamp({t}, {i})"),
-        BsonValue::Symbol(text) => format!("{text:?}"),
-        BsonValue::Regex { pattern, options } => format!("/{pattern}/{options}"),
-        BsonValue::Code(code) => code.clone(),
-        BsonValue::CodeWithScope { code, scope } => {
-            format!("CodeWScope( {code}, {} )", render_shell_value(&BsonValue::Document(scope.clone())))
-        }
-        BsonValue::DbPointer { namespace, id } => {
-            format!("DBPointer( \"{namespace}\", ObjectId('{}') )", hex_text(id))
-        }
-        other => format!("{other:?}"),
-    }
-}
-
-fn min_key_value() -> BsonValue {
-    let mut document = BsonDocument::new();
-    document.push("$minKey".to_string(), BsonValue::Int32(1));
-    BsonValue::Document(document)
-}
-
-fn max_key_value() -> BsonValue {
-    let mut document = BsonDocument::new();
-    document.push("$maxKey".to_string(), BsonValue::Int32(1));
-    BsonValue::Document(document)
-}
-
-fn full_count_range() -> CountRange {
-    CountRange { start: min_key_value(), start_inclusive: true, end: max_key_value(), end_inclusive: true }
-}
-
-fn field_holds_array(documents: &[BsonDocument], field: &str) -> bool {
-    documents.iter().any(|document| match document.get(field) {
-        Some(BsonValue::Array(items)) => !items.is_empty(),
-        _ => false,
-    })
-}
-
-/// 可执行的首键字段边界。
-///
-/// 等值、`$in` 与整数边界的范围可以直接切成索引项区间。范围只接受整数边界：
-/// 索引项键把整数值编码成定长保序键，非整数（double 位模式、decimal 系数）在
-/// 现有编码里不保序，硬切区间会漏掉落在区间外的元素，因此如实退回 `COLLSCAN`。
-fn executable_field_plan(field: &str, predicate: Option<&BsonValue>) -> FieldPlan {
-    let full = || FieldPlan { field: field.to_string(), bound: KeyBound::Full, count: full_count_range() };
-    let equality = |value: &BsonValue| -> Option<FieldPlan> {
-        if matches!(value, BsonValue::Regex { .. }) || matches!(value, BsonValue::Document(document) if has_operator(document)) {
-            return None;
-        }
-        Some(FieldPlan {
-            field: field.to_string(),
-            bound: KeyBound::Eq(value.clone()),
-            count: CountRange { start: value.clone(), start_inclusive: true, end: value.clone(), end_inclusive: true },
-        })
-    };
-    let range = |operators: &BsonDocument| -> Option<FieldPlan> {
-        let mut lower: Option<(BsonValue, bool)> = None;
-        let mut upper: Option<(BsonValue, bool)> = None;
-        for (operator, operand) in &operators.fields {
-            let (slot, inclusive) = match operator.as_str() {
-                "$gt" => (&mut lower, false),
-                "$gte" => (&mut lower, true),
-                "$lt" => (&mut upper, false),
-                "$lte" => (&mut upper, true),
-                _ => return None,
-            };
-            numeric_range_bound(operand)?;
-            *slot = Some((operand.clone(), inclusive));
-        }
-        if lower.is_none() && upper.is_none() {
-            return None;
-        }
-        // 数值范围缺边即 ±无穷，`COUNT_SCAN` 的 `startKey`/`endKey` 如实渲染。
-        let count = CountRange {
-            start: lower.as_ref().map(|(value, _)| value.clone()).unwrap_or_else(|| BsonValue::Double(f64::NEG_INFINITY)),
-            start_inclusive: lower.as_ref().is_none_or(|(_, inclusive)| *inclusive),
-            end: upper.as_ref().map(|(value, _)| value.clone()).unwrap_or_else(|| BsonValue::Double(f64::INFINITY)),
-            end_inclusive: upper.as_ref().is_none_or(|(_, inclusive)| *inclusive),
-        };
-        Some(FieldPlan { field: field.to_string(), bound: KeyBound::Range { lower, upper }, count })
-    };
-    let Some(predicate) = predicate
-    else {
-        return full();
-    };
-    match predicate {
-        BsonValue::Document(operators) if has_operator(operators) => {
-            if operators.fields.len() == 1 {
-                if let Some(value) = operators.get("$eq")
-                    && let Some(plan) = equality(value)
-                {
-                    return plan;
-                }
-                if let Some(BsonValue::Array(values)) = operators.get("$in")
-                    && values.iter().all(|value| {
-                        !matches!(value, BsonValue::Regex { .. }) && !matches!(value, BsonValue::Document(document) if has_operator(document))
-                    })
-                {
-                    return FieldPlan { field: field.to_string(), bound: KeyBound::In(values.clone()), count: full_count_range() };
-                }
-            }
-            range(operators).unwrap_or_else(full)
-        }
-        BsonValue::Regex { .. } => full(),
-        other => equality(other).unwrap_or_else(full),
-    }
-}
-
-/// 范围边界里能精确落到整数键上的值；非整数边界不进索引区间。
-fn numeric_range_bound(value: &BsonValue) -> Option<i64> {
-    match value {
-        BsonValue::Int32(number) => Some(*number as i64),
-        BsonValue::Int64(number) => Some(*number),
-        BsonValue::Double(number) => integral_value(*number),
-        BsonValue::Decimal128(number) => number.as_i64(),
-        _ => None,
-    }
-}
-
-/// 构建执行器真正会消费的索引计划。
-///
-/// 首个键字段按谓词切探针边界；前面字段全是等值时，后续字段的等值谓词继续
-/// 收窄同一前缀，遇到范围或非谓词字段即停。边界已完整消费的谓词从 `residual`
-/// 移除，`explain` 的 `FETCH.filter` 只报告回表复核真正还要再查的条件。排序与
-/// 索引键完全同向或反向时按索引序交付（反向即 `backward` 扫描），否则内存排序。
-/// hint 指向部分索引而查询不被 `partialFilterExpression` 蕴含时，索引域与查询
-/// 域不相交，按全范围扫描整个部分索引，与 `mongod` 的 hint 行为一致。
-fn build_hinted_plan(documents: &[BsonDocument], spec: &IndexSpec, filter: &BsonDocument, sort: &[(String, i32)]) -> HintedPlan {
-    let mut fields = Vec::with_capacity(spec.key.fields.len());
-    let mut consumed: Vec<String> = Vec::new();
-    let partial_outside = spec.partial_filter_expression.as_ref().is_some_and(|partial| !query_implies_partial(filter, partial));
-    if partial_outside {
-        for (field, _) in &spec.key.fields {
-            fields.push(FieldPlan { field: field.clone(), bound: KeyBound::Full, count: full_count_range() });
-        }
-    }
-    else {
-        let mut narrowing = true;
-        for (position, (field, _)) in spec.key.fields.iter().enumerate() {
-            if position == 0 {
-                let plan = executable_field_plan(field, filter.get(field));
-                if !matches!(plan.bound, KeyBound::Full) {
-                    consumed.push(field.clone());
-                }
-                narrowing = matches!(plan.bound, KeyBound::Eq(_));
-                fields.push(plan);
-            }
-            else if narrowing {
-                match equality_bound(filter.get(field)) {
-                    Some(value) => {
-                        consumed.push(field.clone());
-                        fields.push(FieldPlan {
-                            field: field.clone(),
-                            bound: KeyBound::Eq(value.clone()),
-                            count: equality_count_range(&value),
-                        });
-                    }
-                    None => {
-                        narrowing = false;
-                        fields.push(FieldPlan { field: field.clone(), bound: KeyBound::Full, count: full_count_range() });
-                    }
-                }
-            }
-            else {
-                fields.push(FieldPlan { field: field.clone(), bound: KeyBound::Full, count: full_count_range() });
-            }
-        }
-    }
-    let mut residual = BsonDocument::new();
-    for (field, value) in &filter.fields {
-        if !field.starts_with('$') && consumed.iter().any(|consumed| consumed == field) {
-            continue;
-        }
-        // `FETCH.filter` 报告解析后的形态：裸等值渲染成 `$eq`。
-        let normalized = match value {
-            BsonValue::Document(operators) if has_operator(operators) => value.clone(),
-            other => {
-                let mut equality = BsonDocument::new();
-                equality.push("$eq".to_string(), other.clone());
-                BsonValue::Document(equality)
-            }
-        };
-        residual.push(field.clone(), normalized);
-    }
-    let key_matches = |reverse: bool| {
-        sort.len() == spec.key.fields.len()
-            && sort.iter().zip(spec.key.fields.iter()).all(|((sort_field, sort_direction), (field, key_direction))| {
-                sort_field == field
-                    && int_value(key_direction).is_some_and(|key| i64::from(*sort_direction) == if reverse { -key } else { key })
-            })
-    };
-    let multi_paths = spec.key.fields.iter().map(|(field, _)| field_holds_array(documents, field)).collect::<Vec<_>>();
-    HintedPlan {
-        spec: spec.clone(),
-        fields,
-        residual,
-        direction: if key_matches(true) { "backward" } else { "forward" },
-        sort_covered: sort.is_empty() || key_matches(false) || key_matches(true),
-        is_multi_key: multi_paths.iter().any(|flag| *flag),
-    }
-}
-
-/// 复合索引前缀可用的等值谓词值；非等值返回 `None`。
-fn equality_bound(predicate: Option<&BsonValue>) -> Option<BsonValue> {
-    match predicate? {
-        BsonValue::Document(document) if has_operator(document) => {
-            if document.fields.len() == 1 {
-                return document.get("$eq").cloned();
-            }
-            None
-        }
-        BsonValue::Regex { .. } => None,
-        other => Some(other.clone()),
-    }
-}
-
-fn equality_count_range(value: &BsonValue) -> CountRange {
-    CountRange { start: value.clone(), start_inclusive: true, end: value.clone(), end_inclusive: true }
-}
-
-/// `partialFilterExpression` 的每个字段都要求查询里有一条同字段条件，且该
-/// 条件落在部分索引域内（等值直接对表达式求值，复杂条件要求逐字相同）；
-/// 不满足就不用这个部分索引。
-fn query_implies_partial(filter: &BsonDocument, partial: &BsonDocument) -> bool {
-    partial.fields.iter().all(|(field, expected)| {
-        let Some(actual) = filter.get(field)
-        else {
-            return false;
-        };
-        match plain_equality(actual) {
-            Some(plain) => {
-                let mut probe = BsonDocument::new();
-                probe.push(field.clone(), plain.clone());
-                let mut clause = BsonDocument::new();
-                clause.push(field.clone(), expected.clone());
-                document_matches(&probe, &clause).unwrap_or(false)
-            }
-            None => actual == expected,
-        }
-    })
-}
-
-fn plain_equality(value: &BsonValue) -> Option<&BsonValue> {
-    match value {
-        BsonValue::Document(operators) if has_operator(operators) => operators.get("$eq"),
-        other => Some(other),
-    }
-}
-
-/// 首个键字段的探针值；全范围扫描返回 `None`。
-fn plan_probes(plan: &HintedPlan) -> Option<Vec<BsonValue>> {
-    match plan.fields.first().map(|field| &field.bound) {
-        Some(KeyBound::Eq(value)) => Some(vec![value.clone()]),
-        Some(KeyBound::In(values)) => Some(values.clone()),
-        _ => None,
-    }
-}
-
-/// 一次索引读取的区间：前缀加上排他游标。
-struct IndexSpan {
-    prefix: Vec<u8>,
-    after: Option<Vec<u8>>,
-    before: Option<Vec<u8>>,
-}
-
-/// 首键字段要读的索引区间；`None` 表示整段读取（无谓词的 hint 全索引扫描）。
-///
-/// 前面字段全是等值时，探针前缀沿索引键逐个拼接，复合等值一次落到区间上。
-fn plan_spans(plan: &HintedPlan) -> Option<Vec<IndexSpan>> {
-    match plan.fields.first().map(|field| &field.bound)? {
-        KeyBound::Full => None,
-        KeyBound::Eq(_) => {
-            let prefix: Vec<BsonValue> = plan
-                .fields
-                .iter()
-                .take_while(|field| matches!(field.bound, KeyBound::Eq(_)))
-                .filter_map(|field| match &field.bound {
-                    KeyBound::Eq(value) => Some(value.clone()),
-                    _ => None,
-                })
-                .collect();
-            Some(vec![IndexSpan { prefix: index_tuple(&prefix), after: None, before: None }])
-        }
-        KeyBound::In(values) => Some(values.iter().map(equality_span).collect()),
-        KeyBound::Range { lower, upper } => Some(range_spans(lower.as_ref(), upper.as_ref())),
-    }
-}
-
-fn equality_span(value: &BsonValue) -> IndexSpan {
-    IndexSpan { prefix: index_tuple(std::slice::from_ref(value)), after: None, before: None }
-}
-
-/// 整数范围切出定长保序区间，非整数 double / decimal 整段读取后由回表过滤收敛。
-///
-/// 索引项键是「键长度（4 字节）+ 键字节 + 文档键」，整数键固定 9 字节，
-/// 因此整数区间可以按长度前缀定位；double 位模式与 decimal 系数在现有编码里
-/// 不保序，硬切会漏数据，只能整段读。
-fn range_spans(lower: Option<&(BsonValue, bool)>, upper: Option<&(BsonValue, bool)>) -> Vec<IndexSpan> {
-    let mut spans = Vec::new();
-    let start = match lower {
-        None => Ok(None),
-        Some((value, inclusive)) => match numeric_range_bound(value) {
-            Some(number) if *inclusive => Ok(Some(number)),
-            Some(number) => number.checked_add(1).map(Some).ok_or(()),
-            None => Err(()),
-        },
-    };
-    let end = match upper {
-        None => Ok(None),
-        Some((value, inclusive)) => match numeric_range_bound(value) {
-            Some(number) if *inclusive => Ok(Some(number)),
-            Some(number) => number.checked_sub(1).map(Some).ok_or(()),
-            None => Err(()),
-        },
-    };
-    if let (Ok(start), Ok(end)) = (start, end)
-        && (start.is_none() || end.is_none() || start <= end)
-    {
-        let entry_length = 9u32;
-        let region = numeric_entry_prefix(b'n', entry_length as usize);
-        let mut span = IndexSpan { prefix: region, after: None, before: None };
-        if let Some(start) = start {
-            let mut key = entry_length.to_be_bytes().to_vec();
-            key.extend_from_slice(&value_to_key(&BsonValue::Int64(start)));
-            span.after = Some(key);
-        }
-        if let Some(end) = end {
-            let mut key = entry_length.to_be_bytes().to_vec();
-            key.extend_from_slice(&value_to_key(&BsonValue::Int64(end)));
-            span.before = prefix_successor(&key);
-        }
-        spans.push(span);
-    }
-    spans.push(IndexSpan { prefix: numeric_entry_prefix(b'd', 9), after: None, before: None });
-    spans.push(IndexSpan { prefix: numeric_entry_prefix(b'D', 22), after: None, before: None });
-    spans
-}
-
-/// 单字段索引项的前缀：键长度（4 字节大端）+ 类型字节。
-fn numeric_entry_prefix(type_byte: u8, key_len: usize) -> Vec<u8> {
-    let mut prefix = Vec::with_capacity(5);
-    prefix.extend_from_slice(&(key_len as u32).to_be_bytes());
-    prefix.push(type_byte);
-    prefix
-}
-
-/// 严格大于所有以 `prefix` 开头的键的最小键；全 `0xFF` 时返回 `None`。
-fn prefix_successor(prefix: &[u8]) -> Option<Vec<u8>> {
-    let mut successor = prefix.to_vec();
-    for position in (0..successor.len()).rev() {
-        if successor[position] == u8::MAX {
-            successor.truncate(position);
-        }
-        else {
-            successor[position] += 1;
-            return Some(successor);
-        }
-    }
-    None
-}
-
-/// 这个索引计划能否被当前执行器如实执行。
-///
-/// 排序规则、稀疏索引的 null 等值、无法被查询蕴含的部分索引都会让索引项与
-/// 匹配语义不再一一对应，遇到这些情况一律退回 `COLLSCAN`。显式 `hint` 指向
-/// 部分索引时例外：`mongod` 照样扫描整个部分索引，`build_hinted_plan` 已把
-/// 边界收敛为全范围。
-fn index_executable(plan: &HintedPlan, filter: &BsonDocument, explicit_hint: bool) -> bool {
-    let specification = &plan.spec;
-    if !specification.is_visible() || specification.collation.is_some() {
-        return false;
-    }
-    // 数组字段上两侧范围可以分别由不同元素满足，单元素区间会漏掉
-    // `{a: [3, 12]}` 这类文档。标记为 multikey 后只允许单侧范围。
-    if specification.multikey
-        && matches!(plan.fields.first().map(|field| &field.bound), Some(KeyBound::Range { lower: Some(_), upper: Some(_) }))
-    {
-        return false;
-    }
-    if specification.is_sparse() {
-        let Some(values) = plan_probes(plan)
-        else {
-            return false;
-        };
-        if values.iter().any(|value| matches!(value, BsonValue::Null | BsonValue::Undefined)) {
-            return false;
-        }
-    }
-    if !explicit_hint
-        && let Some(partial) = &specification.partial_filter_expression
-        && !query_implies_partial(filter, partial)
-    {
-        return false;
-    }
-    true
-}
-
 /// 索引项是否已经真实落地。
 ///
 /// 空索引可能来自旧目录未重建或中断的删除；此时无法区分「没有匹配」与
@@ -1244,185 +661,15 @@ fn index_has_entries(store: &dyn MongoStorage, namespace: &str, specification: &
         .map_err(|error| CommandError::new(1, format!("index lookup failed: {error}")))
 }
 
-/// 没有显式 hint 时按过滤条件挑一个可执行索引：只看首个键字段上的等值/`$in`。
+/// 没有显式 hint 时按过滤条件挑一个可执行索引，并按目录顺序核对索引项已落地。
 fn automatic_index(store: &dyn MongoStorage, namespace: &str, filter: &BsonDocument) -> Result<Option<IndexSpec>, CommandError> {
-    let candidates: Vec<String> = filter.fields.iter().filter(|(field, _)| !field.starts_with('$')).map(|(field, _)| field.clone()).collect();
-    if candidates.is_empty() {
-        return Ok(None);
-    }
-    for specification in store.index_specs(namespace)? {
-        let Some((first, _)) = specification.key.fields.first()
-        else {
-            continue;
-        };
-        if !candidates.iter().any(|field| field == first) {
-            continue;
-        }
-        let plan = build_hinted_plan(&[], &specification, filter, &[]);
-        if plan_spans(&plan).is_some() && index_executable(&plan, filter, false) && index_has_entries(store, namespace, &specification)? {
+    let specs = store.index_specs(namespace)?;
+    for specification in automatic_candidates(&specs, filter, &AggregationExpressions) {
+        if index_has_entries(store, namespace, &specification)? {
             return Ok(Some(specification));
         }
     }
     Ok(None)
-}
-
-fn bound_text(bound: &KeyBound, backward: bool) -> Vec<String> {
-    match bound {
-        KeyBound::Full => vec![if backward { "[MaxKey, MinKey]".to_string() } else { "[MinKey, MaxKey]".to_string() }],
-        KeyBound::Eq(value) => vec![format!("[{}, {}]", scalar_text(value), scalar_text(value))],
-        KeyBound::In(values) => values.iter().map(|value| format!("[{}, {}]", scalar_text(value), scalar_text(value))).collect(),
-        KeyBound::Range { lower, upper } => {
-            let (start_value, start_inclusive) = match lower {
-                Some((value, inclusive)) => (scalar_text(value), *inclusive),
-                None => ("-inf.0".to_string(), true),
-            };
-            let (end_value, end_inclusive) = match upper {
-                Some((value, inclusive)) => (scalar_text(value), *inclusive),
-                None => ("inf.0".to_string(), true),
-            };
-            let (first, first_inclusive, last, last_inclusive) = if backward {
-                (end_value, end_inclusive, start_value, start_inclusive)
-            }
-            else {
-                (start_value, start_inclusive, end_value, end_inclusive)
-            };
-            vec![format!("{}{}, {}{}", if first_inclusive { "[" } else { "(" }, first, last, if last_inclusive { "]" } else { ")" })]
-        }
-    }
-}
-
-fn plan_key_pattern(plan: &HintedPlan) -> BsonDocument {
-    plan.spec.key.clone()
-}
-
-fn plan_multi_key_paths(plan: &HintedPlan, documents: &[BsonDocument]) -> BsonDocument {
-    let mut paths = BsonDocument::new();
-    for (field, _) in &plan.spec.key.fields {
-        let mut values = Vec::new();
-        if field_holds_array(documents, field) {
-            values.push(BsonValue::String(field.clone()));
-        }
-        paths.push(field.clone(), BsonValue::Array(values));
-    }
-    paths
-}
-
-/// `IXSCAN` / `COUNT_SCAN` shared metadata.
-fn scan_stage_document(plan: &HintedPlan, documents: &[BsonDocument], count_scan: bool) -> BsonDocument {
-    let mut stage = BsonDocument::new();
-    stage.push("stage".to_string(), BsonValue::String(if count_scan { "COUNT_SCAN" } else { "IXSCAN" }.to_string()));
-    stage.push("keyPattern".to_string(), BsonValue::Document(plan_key_pattern(plan)));
-    stage.push("indexName".to_string(), BsonValue::String(plan.spec.name.clone()));
-    stage.push("isMultiKey".to_string(), BsonValue::Bool(plan.is_multi_key));
-    stage.push("multiKeyPaths".to_string(), BsonValue::Document(plan_multi_key_paths(plan, documents)));
-    stage.push("isUnique".to_string(), BsonValue::Bool(plan.spec.unique));
-    stage.push("isSparse".to_string(), BsonValue::Bool(plan.spec.is_sparse()));
-    stage.push("isPartial".to_string(), BsonValue::Bool(plan.spec.partial_filter_expression.is_some()));
-    stage.push("indexVersion".to_string(), BsonValue::Int32(2));
-    if count_scan {
-        let mut bounds = BsonDocument::new();
-        let mut start = BsonDocument::new();
-        let mut end = BsonDocument::new();
-        let mut start_inclusive = true;
-        let mut end_inclusive = true;
-        for field in &plan.fields {
-            start.push(field.field.clone(), field.count.start.clone());
-            end.push(field.field.clone(), field.count.end.clone());
-            start_inclusive &= field.count.start_inclusive;
-            end_inclusive &= field.count.end_inclusive;
-        }
-        bounds.push("startKey".to_string(), BsonValue::Document(start));
-        bounds.push("startKeyInclusive".to_string(), BsonValue::Bool(start_inclusive));
-        bounds.push("endKey".to_string(), BsonValue::Document(end));
-        bounds.push("endKeyInclusive".to_string(), BsonValue::Bool(end_inclusive));
-        stage.push("indexBounds".to_string(), BsonValue::Document(bounds));
-    }
-    else {
-        stage.push("direction".to_string(), BsonValue::String(plan.direction.to_string()));
-        let mut bounds = BsonDocument::new();
-        for field in &plan.fields {
-            let backward = plan.direction == "backward";
-            bounds.push(field.field.clone(), BsonValue::Array(bound_text(&field.bound, backward).into_iter().map(BsonValue::String).collect()));
-        }
-        stage.push("indexBounds".to_string(), BsonValue::Document(bounds));
-    }
-    stage
-}
-
-fn add_fetch_wrapper(stage: BsonDocument, filter: &BsonDocument) -> BsonDocument {
-    let mut fetch = BsonDocument::new();
-    fetch.push("stage".to_string(), BsonValue::String("FETCH".to_string()));
-    if !filter.fields.is_empty() {
-        fetch.push("filter".to_string(), BsonValue::Document(filter.clone()));
-    }
-    fetch.push("inputStage".to_string(), BsonValue::Document(stage));
-    fetch
-}
-
-fn hinted_find_plan(plan: &HintedPlan, documents: &[BsonDocument], skip: usize, limit: usize, sort: &[(String, i32)]) -> BsonDocument {
-    let pushed = skip > 0 && plan.residual.fields.is_empty() && (sort.is_empty() || plan.sort_covered);
-    let mut scan = scan_stage_document(plan, documents, false);
-    if pushed {
-        // `skip` 下推到索引层：`SKIP` 夹在 `IXSCAN` 与 `FETCH` 之间，跳过的命中不回表。
-        let mut skipped = BsonDocument::new();
-        skipped.push("stage".to_string(), BsonValue::String("SKIP".to_string()));
-        skipped.push("skipAmount".to_string(), count_value(skip as i64));
-        skipped.push("inputStage".to_string(), BsonValue::Document(scan));
-        scan = skipped;
-    }
-    let mut stage = add_fetch_wrapper(scan, &plan.residual);
-    if !plan.sort_covered {
-        let mut pattern = BsonDocument::new();
-        for (field, direction) in sort {
-            pattern.push(field.clone(), BsonValue::Int32(*direction));
-        }
-        let mut sorted = BsonDocument::new();
-        sorted.push("stage".to_string(), BsonValue::String("SORT".to_string()));
-        sorted.push("sortPattern".to_string(), BsonValue::Document(pattern));
-        sorted.push("memLimit".to_string(), BsonValue::Int32(104857600));
-        sorted.push("type".to_string(), BsonValue::String("simple".to_string()));
-        sorted.push("inputStage".to_string(), BsonValue::Document(stage));
-        stage = sorted;
-    }
-    if skip > 0 && !pushed {
-        let mut skipped = BsonDocument::new();
-        skipped.push("stage".to_string(), BsonValue::String("SKIP".to_string()));
-        skipped.push("skipAmount".to_string(), count_value(skip as i64));
-        skipped.push("inputStage".to_string(), BsonValue::Document(stage));
-        stage = skipped;
-    }
-    if limit > 0 {
-        let mut limited = BsonDocument::new();
-        limited.push("stage".to_string(), BsonValue::String("LIMIT".to_string()));
-        limited.push("limitAmount".to_string(), count_value(limit as i64));
-        limited.push("inputStage".to_string(), BsonValue::Document(stage));
-        stage = limited;
-    }
-    let mut cached = BsonDocument::new();
-    cached.push("isCached".to_string(), BsonValue::Bool(false));
-    for (field, value) in stage.fields {
-        cached.push(field, value);
-    }
-    cached
-}
-
-fn hinted_count_plan(plan: &HintedPlan, documents: &[BsonDocument]) -> BsonDocument {
-    // 边界完整消费查询时计数不回表，`mongod` 用 `COUNT_SCAN` 直接数索引项。
-    let stage = if plan.residual.fields.is_empty() {
-        scan_stage_document(plan, documents, true)
-    }
-    else {
-        add_fetch_wrapper(scan_stage_document(plan, documents, false), &plan.residual)
-    };
-    let mut counted = BsonDocument::new();
-    counted.push("stage".to_string(), BsonValue::String("COUNT".to_string()));
-    counted.push("inputStage".to_string(), BsonValue::Document(stage));
-    let mut cached = BsonDocument::new();
-    cached.push("isCached".to_string(), BsonValue::Bool(false));
-    for (field, value) in counted.fields {
-        cached.push(field, value);
-    }
-    cached
 }
 
 fn execution_base(stage: &str, advanced: i64, works: i64, eof: bool) -> BsonDocument {
@@ -1444,10 +691,10 @@ fn execution_base(stage: &str, advanced: i64, works: i64, eof: bool) -> BsonDocu
 ///
 /// `keys_examined` 与实际扫描的索引项数一致，`advanced` 是交付给上层的命中数
 /// （含在索引层被 `skip` 跳过的项）；早停时不计读到区间末尾的那次额外 work。
-fn index_scan_stage(plan: &HintedPlan, documents: &[BsonDocument], keys_examined: i64, advanced: i64, exhausted: bool) -> BsonDocument {
+fn index_scan_stage(plan: &HintedPlan, keys_examined: i64, advanced: i64, exhausted: bool) -> BsonDocument {
     let works = keys_examined + i64::from(exhausted);
     let mut stage = execution_base("IXSCAN", advanced, works, exhausted);
-    for (field, value) in scan_stage_document(plan, documents, false).fields.into_iter().skip(1) {
+    for (field, value) in scan_stage_document(plan, false).fields.into_iter().skip(1) {
         stage.push(field, value);
     }
     stage.push("keysExamined".to_string(), count_value(keys_examined));
@@ -1461,30 +708,22 @@ fn index_scan_stage(plan: &HintedPlan, documents: &[BsonDocument], keys_examined
 ///
 /// 计数不回表；`keysExamined` 连同收尾探针一并计入，与 `mongod` 数索引项的
 /// 账目一致。
-fn count_scan_stage(plan: &HintedPlan, documents: &[BsonDocument], keys_examined: i64, advanced: i64, exhausted: bool) -> BsonDocument {
+fn count_scan_stage(plan: &HintedPlan, keys_examined: i64, advanced: i64, exhausted: bool) -> BsonDocument {
     let works = keys_examined + i64::from(exhausted);
     let mut stage = execution_base("COUNT_SCAN", advanced, works, exhausted);
-    for (field, value) in scan_stage_document(plan, documents, true).fields.into_iter().skip(1) {
+    for (field, value) in scan_stage_document(plan, true).fields.into_iter().skip(1) {
         stage.push(field, value);
     }
     stage.push("keysExamined".to_string(), count_value(works));
     stage
 }
 
-fn reported_find_stats(
-    plan: &HintedPlan,
-    documents: &[BsonDocument],
-    outcome: &ScanOutcome,
-    matched: usize,
-    skip: usize,
-    limit: usize,
-    all_plans: bool,
-) -> BsonDocument {
+fn reported_find_stats(plan: &HintedPlan, outcome: &ScanOutcome, matched: usize, skip: usize, limit: usize, all_plans: bool) -> BsonDocument {
     let keys_examined = outcome.keys_examined;
     let documents_examined = outcome.documents_examined;
     let skipped = outcome.skipped_at_index as i64;
     let works = keys_examined + i64::from(outcome.exhausted);
-    let mut stage = index_scan_stage(plan, documents, keys_examined, documents_examined + skipped, outcome.exhausted);
+    let mut stage = index_scan_stage(plan, keys_examined, documents_examined + skipped, outcome.exhausted);
     if skipped > 0 {
         // `skip` 下推到索引层：`SKIP` 夹在 `IXSCAN` 与 `FETCH` 之间，跳过的命中不回表。
         let mut skipped_stage = execution_base("SKIP", documents_examined, works, outcome.exhausted);
@@ -1537,26 +776,18 @@ fn reported_find_stats(
     stats
 }
 
-fn reported_count_stats(
-    plan: &HintedPlan,
-    documents: &[BsonDocument],
-    outcome: &ScanOutcome,
-    matched: usize,
-    skip: usize,
-    limit: usize,
-    all_plans: bool,
-) -> BsonDocument {
+fn reported_count_stats(plan: &HintedPlan, outcome: &ScanOutcome, matched: usize, skip: usize, limit: usize, all_plans: bool) -> BsonDocument {
     let keys_examined = outcome.keys_examined;
     let documents_examined = outcome.documents_examined;
     let advanced = documents_examined + outcome.skipped_at_index as i64;
     let exhausted = outcome.exhausted;
     let index_only = plan.residual.fields.is_empty();
     let input = if index_only {
-        count_scan_stage(plan, documents, keys_examined, advanced, exhausted)
+        count_scan_stage(plan, keys_examined, advanced, exhausted)
     }
     else {
         let works = keys_examined + i64::from(exhausted);
-        let stage = index_scan_stage(plan, documents, keys_examined, advanced, exhausted);
+        let stage = index_scan_stage(plan, keys_examined, advanced, exhausted);
         let mut fetch = execution_base("FETCH", advanced, works, exhausted);
         fetch.push("filter".to_string(), BsonValue::Document(plan.residual.clone()));
         fetch.push("docsExamined".to_string(), count_value(documents_examined));
@@ -1642,8 +873,8 @@ fn choose_access(
     match hint {
         Hint::Natural(direction) => Ok(QueryAccess::Collection { direction: *direction }),
         Hint::Index(specification) => {
-            let plan = build_hinted_plan(documents, specification, filter, sort);
-            if index_executable(&plan, filter, true) && index_has_entries(store, namespace, specification)? {
+            let plan = build_hinted_plan(&multi_key_fields(documents, specification), specification, filter, sort, &AggregationExpressions);
+            if index_executable(&plan, filter, true, &AggregationExpressions) && index_has_entries(store, namespace, specification)? {
                 Ok(QueryAccess::Index(plan))
             }
             else {
@@ -1651,7 +882,13 @@ fn choose_access(
             }
         }
         Hint::None => match automatic_index(store, namespace, filter)? {
-            Some(specification) => Ok(QueryAccess::Index(build_hinted_plan(documents, &specification, filter, sort))),
+            Some(specification) => Ok(QueryAccess::Index(build_hinted_plan(
+                &multi_key_fields(documents, &specification),
+                &specification,
+                filter,
+                sort,
+                &AggregationExpressions,
+            ))),
             None => Ok(QueryAccess::Collection { direction: 1 }),
         },
     }
@@ -2056,8 +1293,8 @@ pub fn explain(command: &BsonDocument, store: &dyn MongoStorage) -> Result<BsonD
     query_planner.push("maxScansToExplodeReached".to_string(), BsonValue::Bool(false));
     query_planner.push("prunedSimilarIndexes".to_string(), BsonValue::Bool(false));
     let plan = match (&access, name) {
-        (QueryAccess::Index(plan), "find") => hinted_find_plan(plan, &all_documents, skip, limit, &sort),
-        (QueryAccess::Index(plan), _) => hinted_count_plan(plan, &all_documents),
+        (QueryAccess::Index(plan), "find") => hinted_find_plan(plan, skip, limit, &sort),
+        (QueryAccess::Index(plan), _) => hinted_count_plan(plan),
         (QueryAccess::Collection { .. }, _) => winning_plan(name, &normalized, skip, limit, direction),
     };
     query_planner.push("winningPlan".to_string(), BsonValue::Document(plan));
@@ -2072,12 +1309,8 @@ pub fn explain(command: &BsonDocument, store: &dyn MongoStorage) -> Result<BsonD
     }
     if verbosity != "queryPlanner" {
         let stats = match (&access, name) {
-            (QueryAccess::Index(plan), "find") => {
-                reported_find_stats(plan, &all_documents, &outcome, matched, skip, limit, verbosity == "allPlansExecution")
-            }
-            (QueryAccess::Index(plan), _) => {
-                reported_count_stats(plan, &all_documents, &outcome, matched, skip, limit, verbosity == "allPlansExecution")
-            }
+            (QueryAccess::Index(plan), "find") => reported_find_stats(plan, &outcome, matched, skip, limit, verbosity == "allPlansExecution"),
+            (QueryAccess::Index(plan), _) => reported_count_stats(plan, &outcome, matched, skip, limit, verbosity == "allPlansExecution"),
             (QueryAccess::Collection { .. }, _) => explain_execution_stats(ExecutionStats {
                 command: name,
                 filter: &normalized,
@@ -2121,47 +1354,6 @@ fn explain_skip_limit(command: &BsonDocument) -> Result<(usize, usize), CommandE
         None => 0,
     };
     Ok((skip, limit))
-}
-
-fn winning_plan(command: &str, filter: &BsonDocument, skip: usize, limit: usize, direction: &str) -> BsonDocument {
-    let mut scan = BsonDocument::new();
-    scan.push("stage".to_string(), BsonValue::String("COLLSCAN".to_string()));
-    if !filter.fields.is_empty() {
-        scan.push("filter".to_string(), BsonValue::Document(filter.clone()));
-    }
-    scan.push("direction".to_string(), BsonValue::String(direction.to_string()));
-    let mut stage = if command == "count" {
-        let mut counted = BsonDocument::new();
-        counted.push("stage".to_string(), BsonValue::String("COUNT".to_string()));
-        counted.push("inputStage".to_string(), BsonValue::Document(scan));
-        counted
-    }
-    else {
-        scan
-    };
-    if command == "find" {
-        if skip > 0 {
-            let mut skipped = BsonDocument::new();
-            skipped.push("stage".to_string(), BsonValue::String("SKIP".to_string()));
-            skipped.push("skipAmount".to_string(), count_value(skip as i64));
-            skipped.push("inputStage".to_string(), BsonValue::Document(stage));
-            stage = skipped;
-        }
-        if limit > 0 {
-            let mut limited = BsonDocument::new();
-            limited.push("stage".to_string(), BsonValue::String("LIMIT".to_string()));
-            limited.push("limitAmount".to_string(), count_value(limit as i64));
-            limited.push("inputStage".to_string(), BsonValue::Document(stage));
-            stage = limited;
-        }
-    }
-    // `isCached` marks only the outermost stage; nested input stages omit it.
-    let mut cached = BsonDocument::new();
-    cached.push("isCached".to_string(), BsonValue::Bool(false));
-    for (field, value) in stage.fields {
-        cached.push(field, value);
-    }
-    cached
 }
 
 struct ExecutionStats<'a> {
@@ -3656,63 +2848,6 @@ fn multiply_value(current: &BsonValue, amount: &BsonValue) -> Option<BsonValue> 
         return Some(BsonValue::Int64(product as i64));
     }
     if let Ok(value) = i32::try_from(product as i64) { Some(BsonValue::Int32(value)) } else { Some(BsonValue::Int64(product as i64)) }
-}
-
-/// Renders one value the way `mongod` prints it inside update error messages.
-///
-/// Every shape below was read back from a `mongod 8.0.9` duplicate-key `errmsg`;
-/// dates print as `new Date(<milliseconds>)`, not as `ISODate("...")`.
-fn render_shell_value(value: &BsonValue) -> String {
-    match value {
-        BsonValue::Document(document) => {
-            if document.fields.is_empty() {
-                "{}".to_string()
-            }
-            else {
-                let fields: Vec<String> =
-                    document.fields.iter().map(|(field, value)| format!("{field}: {}", render_shell_value(value))).collect();
-                format!("{{ {} }}", fields.join(", "))
-            }
-        }
-        BsonValue::Array(items) => {
-            if items.is_empty() {
-                "[]".to_string()
-            }
-            else {
-                let items: Vec<String> = items.iter().map(render_shell_value).collect();
-                format!("[ {} ]", items.join(", "))
-            }
-        }
-        BsonValue::String(text) => format!("\"{text}\""),
-        BsonValue::Int32(number) => number.to_string(),
-        BsonValue::Int64(number) => number.to_string(),
-        BsonValue::Double(number) => number.to_string(),
-        BsonValue::Decimal128(number) => number.as_str(),
-        BsonValue::Bool(flag) => if *flag { "true" } else { "false" }.to_string(),
-        BsonValue::Null => "null".to_string(),
-        BsonValue::Undefined => "undefined".to_string(),
-        BsonValue::ObjectId(bytes) => format!("ObjectId('{}')", hex_text(bytes)),
-        BsonValue::Binary(binary) => format!("BinData({}, {})", binary.subtype, hex_text(&binary.bytes)),
-        BsonValue::DateTime(milliseconds) => format!("new Date({milliseconds})"),
-        BsonValue::Timestamp { t, i } => format!("Timestamp({t}, {i})"),
-        BsonValue::MinKey => "MinKey".to_string(),
-        BsonValue::MaxKey => "MaxKey".to_string(),
-        BsonValue::Symbol(text) => format!("\"{text}\""),
-        BsonValue::Regex { pattern, options } => format!("/{pattern}/{options}"),
-        BsonValue::Code(code) => code.clone(),
-        BsonValue::CodeWithScope { code, scope } => {
-            format!("CodeWScope( {code}, {} )", render_shell_value(&BsonValue::Document(scope.clone())))
-        }
-        // DBPointer is obsolete and `mongod 8.0.9` no longer emits it in error
-        // messages, so this shape follows the classic shell form.
-        BsonValue::DbPointer { namespace, id } => {
-            format!("DBPointer( \"{namespace}\", ObjectId('{}') )", hex_text(id))
-        }
-    }
-}
-
-fn hex_text(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 /// Whether a requested key pattern names the same index key as `specification`.

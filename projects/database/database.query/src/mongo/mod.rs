@@ -4,6 +4,7 @@
 //! 扫描、求值驱动与命令执行归 `database.execution::mongo`。
 
 pub mod filter;
+pub mod plan;
 pub mod projection;
 pub mod value;
 
@@ -11,10 +12,14 @@ pub use filter::{
     ExpressionContext, ExpressionVariables, FILTER_OPERATORS, LOGICAL_OPERATORS, collect_field, equality_candidates, has_operator, matches,
     matches_with_variables, normalize_query, operator_matches, validate_filter,
 };
+pub use plan::{
+    CountRange, FieldPlan, Hint, HintedPlan, IndexCatalog, IndexSpan, KeyBound, automatic_candidates, build_hinted_plan, hinted_count_plan,
+    hinted_find_plan, index_executable, multi_key_fields, plan_spans, resolve_hint, scan_stage_document, winning_plan,
+};
 pub use projection::{ProjectionMode, ProjectionPlan, ProjectionRule, parse_projection, rule_is_exclusion, rule_is_inclusion};
 pub use value::{
-    compare_values, count_value, expression_truthy, int_value, integer_of, integral_i64, lookup_field, number_of, parse_count, value_rank,
-    values_equal,
+    compare_values, count_value, expression_truthy, hex_text, index_tuple, int_value, integer_of, integral_i64, lookup_field, number_of,
+    parse_count, render_shell_value, value_rank, values_equal,
 };
 
 use database_formats::mongo::StoreError;

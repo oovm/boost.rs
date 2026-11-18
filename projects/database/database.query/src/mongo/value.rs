@@ -4,7 +4,7 @@
 
 use std::cmp::Ordering;
 
-use database_protocol_mongo::bson::{BsonDocument, BsonValue, encode_bson, integral_value};
+use database_protocol_mongo::bson::{BsonDocument, BsonValue, encode_bson, integral_value, value_to_key};
 
 /// Aggregation truthiness: `false`, `0`, `null`, and missing are false.
 pub fn expression_truthy(value: &BsonValue) -> bool {
@@ -162,4 +162,73 @@ pub fn int_value(value: &BsonValue) -> Option<i64> {
         BsonValue::Double(number) => Some(*number as i64),
         _ => None,
     }
+}
+
+/// Length-prefixed key so two adjacent tuples can never be confused.
+pub fn index_tuple(values: &[BsonValue]) -> Vec<u8> {
+    let mut tuple = Vec::new();
+    for value in values {
+        let key = value_to_key(value);
+        tuple.extend_from_slice(&(key.len() as u32).to_be_bytes());
+        tuple.extend_from_slice(&key);
+    }
+    tuple
+}
+
+/// Renders one value the way `mongod` prints it inside update error messages.
+///
+/// Every shape below was read back from a `mongod 8.0.9` duplicate-key `errmsg`;
+/// dates print as `new Date(<milliseconds>)`, not as `ISODate("...")`.
+pub fn render_shell_value(value: &BsonValue) -> String {
+    match value {
+        BsonValue::Document(document) => {
+            if document.fields.is_empty() {
+                "{}".to_string()
+            }
+            else {
+                let fields: Vec<String> =
+                    document.fields.iter().map(|(field, value)| format!("{field}: {}", render_shell_value(value))).collect();
+                format!("{{ {} }}", fields.join(", "))
+            }
+        }
+        BsonValue::Array(items) => {
+            if items.is_empty() {
+                "[]".to_string()
+            }
+            else {
+                let items: Vec<String> = items.iter().map(render_shell_value).collect();
+                format!("[ {} ]", items.join(", "))
+            }
+        }
+        BsonValue::String(text) => format!("\"{text}\""),
+        BsonValue::Int32(number) => number.to_string(),
+        BsonValue::Int64(number) => number.to_string(),
+        BsonValue::Double(number) => number.to_string(),
+        BsonValue::Decimal128(number) => number.as_str(),
+        BsonValue::Bool(flag) => if *flag { "true" } else { "false" }.to_string(),
+        BsonValue::Null => "null".to_string(),
+        BsonValue::Undefined => "undefined".to_string(),
+        BsonValue::ObjectId(bytes) => format!("ObjectId('{}')", hex_text(bytes)),
+        BsonValue::Binary(binary) => format!("BinData({}, {})", binary.subtype, hex_text(&binary.bytes)),
+        BsonValue::DateTime(milliseconds) => format!("new Date({milliseconds})"),
+        BsonValue::Timestamp { t, i } => format!("Timestamp({t}, {i})"),
+        BsonValue::MinKey => "MinKey".to_string(),
+        BsonValue::MaxKey => "MaxKey".to_string(),
+        BsonValue::Symbol(text) => format!("\"{text}\""),
+        BsonValue::Regex { pattern, options } => format!("/{pattern}/{options}"),
+        BsonValue::Code(code) => code.clone(),
+        BsonValue::CodeWithScope { code, scope } => {
+            format!("CodeWScope( {code}, {} )", render_shell_value(&BsonValue::Document(scope.clone())))
+        }
+        // DBPointer is obsolete and `mongod 8.0.9` no longer emits it in error
+        // messages, so this shape follows the classic shell form.
+        BsonValue::DbPointer { namespace, id } => {
+            format!("DBPointer( \"{namespace}\", ObjectId('{}') )", hex_text(id))
+        }
+    }
+}
+
+/// Lowercase hex of one byte slice.
+pub fn hex_text(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
