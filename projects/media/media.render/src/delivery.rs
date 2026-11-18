@@ -105,7 +105,24 @@ pub fn inspect_delivery(path: &Path, probes: usize, sample_rate: u32) -> Result<
         _ => None,
     };
 
-    let span = audio.as_ref().map_or(probes as f64, |audio| audio.seconds.max(0.001));
+    // Without an audio track the duration is unknown, so probe forward until
+    // the decoder stops returning frames. Costs a handful of decodes and keeps
+    // samples inside the file instead of past its end.
+    let span = match &audio {
+        Some(audio) => audio.seconds.max(0.001),
+        None => {
+            let mut last_ok = 0.25f64;
+            let mut step = 0.5f64;
+            while step < 3_600.0 {
+                match library.video_frame(&display, step, limits) {
+                    Ok(_) => last_ok = step,
+                    Err(_) => break,
+                }
+                step *= 2.0;
+            }
+            last_ok
+        }
+    };
     let mut samples = Vec::with_capacity(probes);
     let mut previous: Option<Vec<u8>> = None;
     let (mut width, mut height) = (0u32, 0u32);
