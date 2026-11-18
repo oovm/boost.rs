@@ -19,6 +19,10 @@
 
 extern crate alloc;
 
+// `graph_theory` 的 `HashMap` / `HashSet` 只在 `std` 特性下可用。
+#[cfg(feature = "std")]
+extern crate std;
+
 pub mod bigint;
 #[cfg(feature = "std")]
 pub mod graph_theory;

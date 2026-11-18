@@ -38,4 +38,4 @@ pub use array2d::Array2D;
 pub use array3d::Array3D;
 pub use boost_collection_macro::array;
 pub use error::{CollectionError, Result};
-pub use graph::{CsrGraph, GraphError, GraphRead, GraphResult, IncomingEdges, MemoryEdge, MemoryGraph, OutgoingEdges, topological_order};
+pub use graph::{CsrGraph, GraphError, GraphRead, GraphResult, IncomingEdges, MemoryEdge, MemoryGraph, OutgoingEdges};

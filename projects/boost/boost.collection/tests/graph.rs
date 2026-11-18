@@ -1,9 +1,10 @@
-//! `boost-collection` 图能力与跨表示验收。
+//! `boost-collection` 图容器与访问能力验收。
 //!
-//! 覆盖：内存图的身份、平行边与自环策略、空图与孤点、拓扑序的确定性与
-//! 环失败、无向图拒绝，以及同一算法直接消费只读 CSR 表示。
+//! 覆盖：内存图的身份、平行边与自环策略、空图与孤点、无向边的双向枚举，
+//! 以及只读 CSR 表示交出同样的访问能力。图论算法（拓扑序、可达集合）归
+//! `boost-math` 的 `graph_theory`，其用例见该 crate 的测试，不在本文件。
 
-use boost_collection::{CsrGraph, GraphError, GraphRead, IncomingEdges, MemoryGraph, OutgoingEdges, topological_order};
+use boost_collection::{CsrGraph, GraphError, GraphRead, IncomingEdges, MemoryGraph, OutgoingEdges};
 
 fn chain() -> MemoryGraph<&'static str> {
     let mut graph = MemoryGraph::<&'static str>::new(true);
@@ -43,51 +44,41 @@ fn memory_graph_rejects_duplicate_vertices_and_unknown_endpoints() {
 }
 
 #[test]
-fn topological_order_is_deterministic_and_reports_cycles() {
-    let graph = chain();
-    assert_eq!(topological_order(&graph), Ok(vec!["a", "b", "c"]));
-
-    let mut cycle = chain();
-    cycle.add_edge("c", "a", ()).expect("known endpoints");
-    assert_eq!(topological_order(&cycle), Err(GraphError::Cycle));
-
-    let mut self_loop = MemoryGraph::<&'static str>::new(true);
-    self_loop.add_vertex("a").expect("unique vertex");
-    self_loop.add_edge("a", "a", ()).expect("known endpoints");
-    assert_eq!(topological_order(&self_loop), Err(GraphError::Cycle));
-}
-
-#[test]
 fn empty_graph_and_isolated_vertices_stay_visible() {
     let empty = MemoryGraph::<&'static str>::new(true);
-    assert_eq!(topological_order(&empty), Ok(Vec::new()));
+    assert_eq!(empty.vertex_count(), 0);
+    assert_eq!(empty.edge_count(), 0);
+    assert_eq!(empty.vertices().count(), 0);
 
     let mut graph = MemoryGraph::<&'static str>::new(true);
     graph.add_vertex("solo").expect("unique vertex");
-    assert_eq!(topological_order(&graph), Ok(vec!["solo"]));
+    assert_eq!(graph.vertices().copied().collect::<Vec<_>>(), vec!["solo"]);
+    assert_eq!(graph.edge_count(), 0);
+    assert_eq!(graph.outgoing(&"solo").count(), 0);
 }
 
 #[test]
-fn undirected_graphs_reject_directional_traversal() {
+fn undirected_edges_are_outgoing_in_both_directions() {
     let mut graph = MemoryGraph::<&'static str>::new(false);
     graph.add_vertex("a").expect("unique vertex");
     graph.add_vertex("b").expect("unique vertex");
     graph.add_edge("a", "b", ()).expect("known endpoints");
     assert_eq!(graph.edge_count(), 1);
+    assert!(!graph.is_directed());
+    assert_eq!(graph.outgoing(&"a").collect::<Vec<_>>(), vec![0]);
     assert_eq!(graph.outgoing(&"b").collect::<Vec<_>>(), vec![0]);
-    assert_eq!(topological_order(&graph), Err(GraphError::UndirectedTraversal));
 }
 
 #[test]
-fn the_same_algorithm_consumes_the_csr_representation() {
+fn the_csr_representation_exposes_the_same_access() {
     let memory = chain();
     let csr = CsrGraph::from_graph(&memory);
     assert_eq!(csr.vertex_count(), 3);
     assert_eq!(csr.edge_count(), 2);
+    assert!(csr.is_directed());
     // 顶点顺序沿用来源：c=0, a=1, b=2。
     assert_eq!(csr.endpoints(0), Some((&1, &2)));
     assert_eq!(csr.outgoing(&1).collect::<Vec<_>>(), vec![0]);
-    assert_eq!(topological_order(&csr), Ok(vec![1, 2, 0]));
 
     let mut parallel = MemoryGraph::<&'static str>::new(true);
     parallel.add_vertex("a").expect("unique vertex");
@@ -97,7 +88,6 @@ fn the_same_algorithm_consumes_the_csr_representation() {
     let csr = CsrGraph::from_graph(&parallel);
     assert_eq!(csr.edge_count(), 2);
     assert_eq!(csr.outgoing(&0).collect::<Vec<_>>(), vec![0, 1]);
-    assert_eq!(topological_order(&csr), Ok(vec![0, 1]));
 }
 
 #[test]

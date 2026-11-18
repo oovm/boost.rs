@@ -2,7 +2,7 @@ use core::{
     fmt::{self, Display, Formatter},
     hash::Hash,
 };
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 /// 图读取能力：顶点、边、端点与方向。
 ///
@@ -296,43 +296,4 @@ impl OutgoingEdges for CsrGraph {
         let end = end.min(self.edge_ids.len());
         self.edge_ids[start.min(end)..end].iter().copied()
     }
-}
-
-/// 有向图的拓扑序。
-///
-/// 只要求出边与端点能力，因此内存图与 CSR 表示共用同一实现。零入度顶点
-/// 按来源的顶点顺序入队，结果是确定性的；空图返回空序，遇到环（含自环）
-/// 返回 [`GraphError::Cycle`]，两者不能混淆。无向图返回
-/// [`GraphError::UndirectedTraversal`]。
-pub fn topological_order<G>(graph: &G) -> GraphResult<Vec<G::Vertex>>
-where
-    G: OutgoingEdges,
-{
-    if !graph.is_directed() {
-        return Err(GraphError::UndirectedTraversal);
-    }
-    let mut indegree: HashMap<&G::Vertex, usize> = HashMap::with_capacity(graph.vertex_count());
-    for vertex in graph.vertices() {
-        indegree.insert(vertex, 0);
-    }
-    for edge in graph.edges() {
-        let (_, target) = graph.endpoints(edge).ok_or(GraphError::UnknownVertex)?;
-        *indegree.get_mut(target).ok_or(GraphError::UnknownVertex)? += 1;
-    }
-
-    let mut ready: VecDeque<&G::Vertex> = graph.vertices().filter(|vertex| indegree.get(*vertex) == Some(&0)).collect();
-    let mut order = Vec::with_capacity(graph.vertex_count());
-    while let Some(vertex) = ready.pop_front() {
-        order.push(vertex.clone());
-        for edge in graph.outgoing(vertex) {
-            let (_, target) = graph.endpoints(edge).ok_or(GraphError::UnknownVertex)?;
-            let remaining = indegree.get_mut(target).ok_or(GraphError::UnknownVertex)?;
-            *remaining -= 1;
-            if *remaining == 0 {
-                ready.push_back(target);
-            }
-        }
-    }
-
-    if order.len() == graph.vertex_count() { Ok(order) } else { Err(GraphError::Cycle) }
 }
