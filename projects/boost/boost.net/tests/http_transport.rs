@@ -64,3 +64,70 @@ fn rejects_response_header_budget() {
     let transport = HttpTransport::with_config(HttpTransportConfig { max_header_bytes: 10, ..HttpTransportConfig::default() });
     assert!(matches!(transport.send(&Request::new(Method::Get, url)), Err(NetError::HeaderTooLarge { limit: 10 })));
 }
+
+/// Serves one request on a fake proxy and reports the received request head.
+fn serve_proxy(response: &'static str) -> (std::net::SocketAddr, std::sync::mpsc::Receiver<String>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = Vec::new();
+        let mut byte = [0u8; 1];
+        while !request.ends_with(b"\r\n\r\n") {
+            if stream.read_exact(&mut byte).is_err() {
+                break;
+            }
+            request.push(byte[0]);
+        }
+        let _ = sender.send(String::from_utf8_lossy(&request).into_owned());
+        let _ = stream.write_all(response.as_bytes());
+    });
+    (address, receiver)
+}
+
+#[test]
+fn routes_plain_http_through_proxy_with_absolute_form() {
+    let (address, received) = serve_proxy("HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nproxy");
+    let proxy = boost_net::http::ProxyConfig::parse(&format!("http://user:secret@{address}")).unwrap();
+    let transport = HttpTransport::with_config(HttpTransportConfig { proxy: Some(proxy), ..HttpTransportConfig::default() });
+    let url = Url::parse("http://proxied.example/resource?part=1").unwrap();
+
+    let response = transport.send(&Request::new(Method::Get, url)).unwrap();
+    assert_eq!(response.body, b"proxy");
+
+    let head = received.recv().unwrap();
+    assert!(head.starts_with("GET http://proxied.example/resource?part=1 HTTP/1.1\r\n"), "{head}");
+    // `user:secret` 的 Basic 凭据。
+    assert!(head.contains("Proxy-Authorization: Basic dXNlcjpzZWNyZXQ=\r\n"), "{head}");
+}
+
+#[test]
+fn no_proxy_entries_skip_the_proxy() {
+    let proxy = boost_net::http::ProxyConfig::parse("http://127.0.0.1:1").unwrap().with_no_proxy(["localhost".to_string(), ".internal.test".to_string()]);
+    assert!(proxy.bypasses("localhost"));
+    assert!(proxy.bypasses("build.internal.test"));
+    assert!(proxy.bypasses("internal.test"));
+    assert!(!proxy.bypasses("registry.npmjs.org"));
+}
+
+#[test]
+fn https_targets_open_a_connect_tunnel() {
+    let (address, received) = serve_proxy("HTTP/1.1 200 Connection Established\r\n\r\n");
+    let proxy = boost_net::http::ProxyConfig::parse(&format!("http://{address}")).unwrap();
+    let transport = HttpTransport::with_config(HttpTransportConfig { proxy: Some(proxy), ..HttpTransportConfig::default() });
+    let url = Url::parse("https://secure.example/api").unwrap();
+
+    // 假代理在 200 之后立即关闭连接，TLS 握手必然失败；这里只验证隧道请求本身。
+    assert!(transport.send(&Request::new(Method::Get, url)).is_err());
+    let head = received.recv().unwrap();
+    assert!(head.starts_with("CONNECT secure.example:443 HTTP/1.1\r\n"), "{head}");
+}
+
+#[test]
+fn rejects_proxy_entries_without_host_port_or_with_path() {
+    assert!(boost_net::http::ProxyConfig::parse("127.0.0.1:7897").is_err());
+    assert!(boost_net::http::ProxyConfig::parse("http://127.0.0.1").is_err());
+    assert!(boost_net::http::ProxyConfig::parse("http://127.0.0.1:7897/proxy").is_err());
+    assert!(boost_net::http::ProxyConfig::parse("socks5://127.0.0.1:7897").is_err());
+}

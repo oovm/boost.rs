@@ -9,21 +9,28 @@ use crate::{
     tls::TlsConfig,
 };
 
+use url::Url;
+
 use super::{Headers, Method, Redirect, Request, Response, Transport, is_token};
 
-/// Configuration for the built-in HTTP/1.1 transport.
+/// 配置内置 HTTP/1.1 传输。
 #[derive(Debug, Clone)]
 pub struct HttpTransportConfig {
-    /// Maximum response body size after transfer decoding.
+    /// 解码 transfer framing 之后的响应正文上限。
     pub max_body_bytes: usize,
-    /// Maximum number of redirects to follow.
+    /// 最多跟随的重定向次数。
     pub max_redirects: u32,
-    /// Whole request-chain timeout.
+    /// 整条请求链的超时。
     pub timeout: Duration,
-    /// Maximum response header block size.
+    /// 响应头块的上限。
     pub max_header_bytes: usize,
-    /// TLS protocol versions offered for `https` URLs.
+    /// `https` URL 允许的 TLS 协议版本。
     pub tls: TlsConfig,
+    /// 显式配置的代理；`None` 表示直连。
+    ///
+    /// 传输层不读取 `HTTPS_PROXY` 一类环境变量：是否采用环境代理是调用方策略，
+    /// 需要时用 [`ProxyConfig::from_env`] 自行取值后填在这里。
+    pub proxy: Option<ProxyConfig>,
 }
 
 impl Default for HttpTransportConfig {
@@ -34,7 +41,95 @@ impl Default for HttpTransportConfig {
             timeout: Duration::from_secs(30),
             max_header_bytes: 64 * 1024,
             tls: TlsConfig::default(),
+            proxy: None,
         }
+    }
+}
+
+/// 显式代理策略：一个 HTTP 代理地址与可选的直连名单。
+///
+/// `http` 目标经代理发送 absolute-form 请求行，`https` 目标先建立 `CONNECT` 隧道再握手 TLS。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProxyConfig {
+    endpoint: Url,
+    no_proxy: Vec<String>,
+}
+
+impl ProxyConfig {
+    /// 解析 `http://[user:password@]host:port` 形式的代理地址。
+    pub fn parse(input: &str) -> Result<Self, NetError> {
+        let endpoint = Url::parse(input.trim()).map_err(|error| NetError::Unsupported(format!("invalid proxy URL `{input}`: {error}")))?;
+        if endpoint.scheme() != "http" {
+            return Err(NetError::Unsupported(format!("proxy scheme `{}` is not HTTP", endpoint.scheme())));
+        }
+        if endpoint.host_str().is_none() || endpoint.port().is_none() {
+            return Err(NetError::Unsupported("proxy URL needs an explicit host and port".into()));
+        }
+        if !matches!(endpoint.path(), "" | "/") || endpoint.query().is_some() || endpoint.fragment().is_some() {
+            return Err(NetError::Unsupported("proxy URL must not carry a path, query or fragment".into()));
+        }
+        Ok(Self { endpoint, no_proxy: Vec::new() })
+    }
+
+    /// 从 `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` 取值；这是显式调用才生效的策略。
+    pub fn from_env() -> Result<Option<Self>, NetError> {
+        for name in ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"] {
+            let Ok(value) = std::env::var(name)
+            else {
+                continue;
+            };
+            let value = value.trim();
+            if value.is_empty() || value.eq_ignore_ascii_case("none") {
+                continue;
+            }
+            let mut config = Self::parse(value)?;
+            if let Ok(no_proxy) = std::env::var("NO_PROXY").or_else(|_| std::env::var("no_proxy")) {
+                config = config.with_no_proxy(no_proxy.split(',').map(str::trim).filter(|item| !item.is_empty()).map(str::to_string));
+            }
+            return Ok(Some(config));
+        }
+        Ok(None)
+    }
+
+    /// 追加直连条目：完整主机名、`.suffix` 后缀或 `*`。
+    pub fn with_no_proxy(mut self, entries: impl IntoIterator<Item = String>) -> Self {
+        self.no_proxy.extend(entries);
+        self
+    }
+
+    /// 代理地址。
+    pub fn endpoint(&self) -> &Url {
+        &self.endpoint
+    }
+
+    /// 直连名单。
+    pub fn no_proxy(&self) -> &[String] {
+        &self.no_proxy
+    }
+
+    /// 该目标主机是否应跳过代理。
+    pub fn bypasses(&self, host: &str) -> bool {
+        let host = host.trim_start_matches('[').trim_end_matches(']').to_ascii_lowercase();
+        self.no_proxy.iter().any(|entry| {
+            let entry = entry.to_ascii_lowercase();
+            if entry == "*" {
+                return true;
+            }
+            match entry.strip_prefix('.') {
+                Some(suffix) => host == suffix || host.ends_with(&format!(".{suffix}")),
+                None => host == entry,
+            }
+        })
+    }
+
+    /// `Proxy-Authorization` 头取值；代理地址不含用户信息时为 `None`。
+    fn authorization(&self) -> Option<String> {
+        let username = self.endpoint.username();
+        if username.is_empty() {
+            return None;
+        }
+        let credentials = format!("{}:{}", username, self.endpoint.password().unwrap_or_default());
+        Some(format!("Basic {}", base64::Engine::encode(&base64::engine::general_purpose::STANDARD, credentials)))
     }
 }
 
@@ -113,19 +208,33 @@ impl HttpTransport {
         let network_host = host.trim_start_matches('[').trim_end_matches(']');
         let deadline = Instant::now().checked_add(timeout).ok_or_else(|| NetError::Unsupported("timeout is too large".into()))?;
         let port = url.port_or_known_default().ok_or_else(|| NetError::Unsupported("URL has no port".into()))?;
-        let tcp = connection::dial(network_host, port, deadline)?;
-        let mut connection: Connection<DeadlineSocket> =
-            connection::secure(url.scheme(), network_host, DeadlineSocket::new(tcp, deadline), &self.config.tls)?;
+        let proxy = self.config.proxy.as_ref().filter(|proxy| !proxy.bypasses(network_host));
+        let (dial_host, dial_port) = match proxy {
+            Some(proxy) => {
+                let proxy_host = proxy.endpoint().host_str().ok_or_else(|| NetError::Unsupported("proxy URL has no host".into()))?;
+                let proxy_port = proxy.endpoint().port().ok_or_else(|| NetError::Unsupported("proxy URL has no port".into()))?;
+                (proxy_host.to_string(), proxy_port)
+            }
+            None => (network_host.to_string(), port),
+        };
+        let tcp = connection::dial(&dial_host, dial_port, deadline)?;
+        let mut socket = DeadlineSocket::new(tcp, deadline);
+        if let Some(proxy) = proxy.filter(|_| url.scheme() == "https") {
+            tunnel_through_proxy(&mut socket, network_host, port, proxy.authorization().as_deref(), self.config.max_header_bytes)?;
+        }
+        let mut connection: Connection<DeadlineSocket> = connection::secure(url.scheme(), network_host, socket, &self.config.tls)?;
         let path = match url.query() {
             Some(query) => format!("{}?{query}", if url.path().is_empty() { "/" } else { url.path() }),
             None if url.path().is_empty() => "/".to_string(),
             None => url.path().to_string(),
         };
+        // 明文 HTTP 经代理走 absolute-form；HTTPS 已建立隧道，仍用 origin-form。
+        let target = if proxy.is_some() && url.scheme() == "http" { url.as_str().to_string() } else { path };
         let host_header = match url.port() {
             Some(port) => format!("{host}:{port}"),
             None => host.to_string(),
         };
-        let mut wire = format!("{} {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n", method.as_str(), path, host_header);
+        let mut wire = format!("{} {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n", method.as_str(), target, host_header);
         if headers.get_all("content-length").len() > 1 {
             return Err(NetError::Unsupported("request has more than one Content-Length header".into()));
         }
@@ -145,6 +254,9 @@ impl HttpTransport {
             wire.push_str(value);
             wire.push_str("\r\n");
         }
+        if let Some(authorization) = proxy.filter(|_| url.scheme() == "http").and_then(ProxyConfig::authorization) {
+            wire.push_str(&format!("Proxy-Authorization: {authorization}\r\n"));
+        }
         if !headers.contains("content-length") {
             wire.push_str(&format!("Content-Length: {}\r\n", body.len()));
         }
@@ -154,6 +266,47 @@ impl HttpTransport {
         connection.flush().map_err(NetError::Body)?;
         read_response(&mut BufReader::new(connection), url.clone(), method, self.config.max_header_bytes, self.config.max_body_bytes)
     }
+}
+
+/// 建立 `CONNECT` 隧道，成功后同一 socket 可直接承载 TLS 会话。
+fn tunnel_through_proxy<S: Read + Write>(
+    socket: &mut S,
+    host: &str,
+    port: u16,
+    authorization: Option<&str>,
+    max_header_bytes: usize,
+) -> Result<(), NetError> {
+    let authority = format!("{host}:{port}");
+    let mut request = format!("CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n");
+    if let Some(value) = authorization {
+        request.push_str(&format!("Proxy-Authorization: {value}\r\n"));
+    }
+    request.push_str("\r\n");
+    socket.write_all(request.as_bytes()).map_err(NetError::Body)?;
+    socket.flush().map_err(NetError::Body)?;
+
+    let mut head = Vec::new();
+    let mut byte = [0u8; 1];
+    while !head.ends_with(b"\r\n\r\n") {
+        if head.len() >= max_header_bytes {
+            return Err(NetError::HeaderTooLarge { limit: max_header_bytes });
+        }
+        socket.read_exact(&mut byte).map_err(NetError::Body)?;
+        head.push(byte[0]);
+    }
+    let text = std::str::from_utf8(&head).map_err(|error| NetError::Transport(format!("proxy response is not UTF-8: {error}")))?;
+    let status_line = text.split("\r\n").next().unwrap_or("");
+    let mut parts = status_line.splitn(3, ' ');
+    let version = parts.next().unwrap_or("");
+    let code = parts.next().unwrap_or("");
+    if !version.starts_with("HTTP/1.") || code.len() != 3 || !code.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(NetError::Transport("invalid proxy CONNECT status line".into()));
+    }
+    let status = code.parse::<u16>().map_err(|_| NetError::Transport("invalid proxy CONNECT status code".into()))?;
+    if !(200..300).contains(&status) {
+        return Err(NetError::Transport(format!("proxy CONNECT to {authority} failed with status {status}")));
+    }
+    Ok(())
 }
 
 fn read_response<R: Read>(

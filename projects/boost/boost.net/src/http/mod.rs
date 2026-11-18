@@ -240,4 +240,4 @@ pub(crate) fn is_token(value: &str) -> bool {
 mod transport;
 
 #[cfg(feature = "std")]
-pub use transport::{HttpTransport, HttpTransportConfig};
+pub use transport::{HttpTransport, HttpTransportConfig, ProxyConfig};
