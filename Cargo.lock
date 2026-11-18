@@ -445,6 +445,7 @@ dependencies = [
 name = "boost-random"
 version = "0.1.0"
 dependencies = [
+ "boost-math",
  "wasm-bindgen",
 ]
 

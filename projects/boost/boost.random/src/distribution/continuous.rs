@@ -1,6 +1,6 @@
 //! Normal and exponential distributions.
 //!
-//! Both models need a transcendental function, so both sample with the crate's own arithmetic kernel
+//! Both models need a transcendental function, so both sample with the `boost-math` numeric kernel
 //! instead of a platform math library. The kernel is IEEE arithmetic, but an error bound rather than
 //! a bit-for-bit promise describes its output, so both distributions are published as a numerical
 //! contract: the domain, the support, and the statistical quality are fixed, while the exact bits
@@ -10,7 +10,8 @@
 //! express them. A capability that cannot be expressed is absent rather than faked: the normal CDF
 //! needs an error function, which this crate does not implement, so `Normal` has no `cdf`.
 
-use crate::{error::RandomError, math, sampling, source::RandomSource};
+use boost_math::numeric as math;
+use crate::{error::RandomError, sampling, source::RandomSource};
 
 /// Square root of two pi, used by the normal density.
 const SQRT_TWO_PI: f64 = 2.506_628_274_631_000_7;

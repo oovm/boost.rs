@@ -6,7 +6,6 @@ pub mod algorithms;
 pub mod distribution;
 mod entropy;
 mod error;
-mod math;
 mod random;
 mod sampling;
 mod secure;
