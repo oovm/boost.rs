@@ -1,0 +1,27 @@
+[package]
+name = "package-registry"
+description = "包注册表渠道合同与通用适配器：包身份与版本元数据、制品位置、发布与令牌校验"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository = "https://github.com/oovm/rust-boost/tree/dev/projects/package/package.registry"
+publish = false
+
+[dependencies]
+acorn-codec = { workspace = true }
+acorn-tar = { workspace = true }
+base64 = { workspace = true }
+boost-net = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha1 = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+acorn-tar = { workspace = true }
+base64 = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }

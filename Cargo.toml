@@ -135,6 +135,7 @@ members = [
     "projects/media/media.vector",
     "projects/media/media.voice",
     "projects/media/media.voxel",
+    "projects/package/package.registry",
     "projects/odm/odm",
     "projects/odm/odm.adapter",
     "projects/odm/odm.generate",
@@ -350,6 +351,8 @@ media-vector = { path = "projects/media/media.vector" }
 media-voice = { path = "projects/media/media.voice" }
 media-voxel = { path = "projects/media/media.voxel" }
 
+package-registry = { path = "projects/package/package.registry" }
+
 odm-adapter = { path = "projects/odm/odm.adapter" }
 odm-generate = { path = "projects/odm/odm.generate" }
 odm-input-graphql = { path = "projects/odm/odm.input.graphql" }
@@ -506,6 +509,7 @@ acorn-ttf = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "203
 acorn-spirv = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "2033ca05fcdc74d8484b1426beb4c204ef2fc613" }
 acorn-dxbc = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "2033ca05fcdc74d8484b1426beb4c204ef2fc613" }
 acorn-odin = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "2033ca05fcdc74d8484b1426beb4c204ef2fc613" }
+acorn-tar = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "2033ca05fcdc74d8484b1426beb4c204ef2fc613" }
 acorn-jvm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "beccbdf77374dbb2ca67395be19af3e2048c57ca" }
 acorn-pe = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "beccbdf77374dbb2ca67395be19af3e2048c57ca" }
 acorn-wasm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "beccbdf77374dbb2ca67395be19af3e2048c57ca" }
