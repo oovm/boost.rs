@@ -42,4 +42,4 @@ pub use array_nd::{
 pub use boost_collection_macro::array;
 pub use cache::{LruCache, LruIter, PutOutcome};
 pub use error::{CollectionError, Result};
-pub use graph::{CsrGraph, GraphError, GraphRead, GraphResult, IncomingEdges, MemoryEdge, MemoryGraph, OutgoingEdges};
+pub use graph::{CsrGraph, GraphError, GraphRead, GraphResult, GraphView, IncomingEdges, MemoryEdge, MemoryGraph, OutgoingEdges};

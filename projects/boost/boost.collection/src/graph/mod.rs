@@ -297,3 +297,100 @@ impl OutgoingEdges for CsrGraph {
         self.edge_ids[start.min(end)..end].iter().copied()
     }
 }
+
+/// 借用邻接视图：只保存顶点与边的引用，不复制载荷。
+///
+/// 领域对象保留自己的业务身份、载荷与生命周期，用本视图把现有邻接投影成
+/// [`GraphRead`]/[`OutgoingEdges`]/[`IncomingEdges`] 能力，就能直接消费
+/// `boost-math` 的图论算法。视图只做身份与端点投影，不含任何算法；构建时
+/// 一次建立索引，之后不再访问领域容器。需要长期持有或跨修订复用时应重新
+/// 构建，本视图不追踪来源变化。
+pub struct GraphView<'a, V> {
+    directed: bool,
+    vertices: Vec<&'a V>,
+    edges: Vec<(&'a V, &'a V)>,
+    outgoing: HashMap<&'a V, Vec<usize>>,
+    incoming: Option<HashMap<&'a V, Vec<usize>>>,
+}
+
+impl<'a, V: Eq + Hash> GraphView<'a, V> {
+    /// 建立空视图；有向图同时维护入边索引，无向图不建。
+    #[must_use]
+    pub fn new(directed: bool) -> Self {
+        Self {
+            directed,
+            vertices: Vec::new(),
+            edges: Vec::new(),
+            outgoing: HashMap::new(),
+            incoming: directed.then(HashMap::new),
+        }
+    }
+
+    /// 登记一个顶点；重复登记不增加计数。
+    pub fn add_vertex(&mut self, vertex: &'a V) {
+        if !self.outgoing.contains_key(vertex) {
+            self.outgoing.insert(vertex, Vec::new());
+            if let Some(incoming) = &mut self.incoming {
+                incoming.insert(vertex, Vec::new());
+            }
+            self.vertices.push(vertex);
+        }
+    }
+
+    /// 添加一条边并返回其标识；端点未登记时自动登记。
+    ///
+    /// 平行边各自保留为独立标识，自环允许。
+    pub fn add_edge(&mut self, from: &'a V, to: &'a V) -> usize {
+        self.add_vertex(from);
+        self.add_vertex(to);
+        let edge = self.edges.len();
+        self.edges.push((from, to));
+        self.outgoing.get_mut(from).expect("registered source").push(edge);
+        if let Some(incoming) = &mut self.incoming {
+            incoming.get_mut(to).expect("registered target").push(edge);
+        }
+        edge
+    }
+}
+
+impl<'a, V: Eq + Hash> GraphRead for GraphView<'a, V> {
+    type Vertex = &'a V;
+    type Edge = usize;
+
+    fn is_directed(&self) -> bool {
+        self.directed
+    }
+
+    fn vertex_count(&self) -> usize {
+        self.vertices.len()
+    }
+
+    fn edge_count(&self) -> usize {
+        self.edges.len()
+    }
+
+    fn vertices(&self) -> impl Iterator<Item = &Self::Vertex> {
+        self.vertices.iter()
+    }
+
+    fn edges(&self) -> impl Iterator<Item = Self::Edge> {
+        0..self.edges.len()
+    }
+
+    fn endpoints(&self, edge: Self::Edge) -> Option<(&Self::Vertex, &Self::Vertex)> {
+        let (from, to) = self.edges.get(edge)?;
+        Some((from, to))
+    }
+}
+
+impl<V: Eq + Hash> OutgoingEdges for GraphView<'_, V> {
+    fn outgoing(&self, vertex: &Self::Vertex) -> impl Iterator<Item = Self::Edge> {
+        self.outgoing.get(*vertex).into_iter().flatten().copied()
+    }
+}
+
+impl<V: Eq + Hash> IncomingEdges for GraphView<'_, V> {
+    fn incoming(&self, vertex: &Self::Vertex) -> impl Iterator<Item = Self::Edge> {
+        self.incoming.as_ref().and_then(|incoming| incoming.get(*vertex)).into_iter().flatten().copied()
+    }
+}

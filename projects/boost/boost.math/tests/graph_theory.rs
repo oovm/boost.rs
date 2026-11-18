@@ -5,7 +5,10 @@
 //! 以及可达集合的广度优先顺序、环安全与未知起点失败。
 
 use boost_collection::{CsrGraph, GraphError, MemoryGraph};
-use boost_math::graph_theory::{reachable_from, topological_order};
+use boost_math::graph_theory::{
+    connected_components, cycle_path, reachable_from, strongly_connected_components, topological_order,
+    topological_order_by,
+};
 
 fn chain() -> MemoryGraph<&'static str> {
     let mut graph = MemoryGraph::<&'static str>::new(true);
@@ -115,4 +118,99 @@ fn reachable_from_consumes_the_csr_representation() {
     let csr = CsrGraph::from_graph(&chain());
     assert_eq!(reachable_from(&csr, &1), Ok(vec![1, 2, 0]));
     assert_eq!(reachable_from(&csr, &0), Ok(vec![0]));
+}
+
+#[test]
+fn priority_selection_keeps_the_smallest_ready_vertex() {
+    // a 与 b 都是零入度；按 FIFO 会先出 a，按最小键会先出 b。
+    let mut graph = MemoryGraph::<&'static str>::new(true);
+    for vertex in ["a", "b", "c"] {
+        graph.add_vertex(vertex).expect("unique vertex");
+    }
+    graph.add_edge("a", "c", ()).expect("known endpoints");
+    graph.add_edge("b", "c", ()).expect("known endpoints");
+
+    assert_eq!(topological_order(&graph), Ok(vec!["a", "b", "c"]));
+    assert_eq!(topological_order_by(&graph, |vertex| *vertex), Ok(vec!["a", "b", "c"]));
+
+    // 逆序键证明选择策略真的生效，而不是恰好与插入顺序相同。
+    assert_eq!(topological_order_by(&graph, |vertex| std::cmp::Reverse(*vertex)), Ok(vec!["b", "a", "c"]));
+}
+
+#[test]
+fn priority_selection_reports_cycles_and_undirected_graphs() {
+    let mut cycle = chain();
+    cycle.add_edge("c", "a", ()).expect("known endpoints");
+    assert_eq!(topological_order_by(&cycle, |vertex| *vertex), Err(GraphError::Cycle));
+
+    let mut undirected = MemoryGraph::<&'static str>::new(false);
+    undirected.add_vertex("a").expect("unique vertex");
+    assert_eq!(topological_order_by(&undirected, |vertex| *vertex), Err(GraphError::UndirectedTraversal));
+}
+
+#[test]
+fn cycle_path_names_the_closed_walk() {
+    let mut graph = chain();
+    graph.add_edge("c", "a", ()).expect("known endpoints");
+    assert_eq!(cycle_path(&graph), Ok(Some(vec!["c", "a", "b", "c"])));
+
+    assert_eq!(cycle_path(&chain()), Ok(None));
+
+    let mut self_loop = MemoryGraph::<&'static str>::new(true);
+    self_loop.add_vertex("a").expect("unique vertex");
+    self_loop.add_edge("a", "a", ()).expect("known endpoints");
+    assert_eq!(cycle_path(&self_loop), Ok(Some(vec!["a", "a"])));
+
+    let undirected = MemoryGraph::<&'static str>::new(false);
+    assert_eq!(cycle_path(&undirected), Err(GraphError::UndirectedTraversal));
+}
+
+#[test]
+fn connected_components_groups_weakly_reachable_vertices() {
+    let mut graph = MemoryGraph::<&'static str>::new(true);
+    for vertex in ["a", "b", "c", "island"] {
+        graph.add_vertex(vertex).expect("unique vertex");
+    }
+    graph.add_edge("a", "b", ()).expect("known endpoints");
+    graph.add_edge("c", "b", ()).expect("known endpoints");
+
+    assert_eq!(connected_components(&graph), Ok(vec![vec!["a", "b", "c"], vec!["island"]]));
+}
+
+#[test]
+fn strongly_connected_components_split_directed_cycles() {
+    let mut graph = MemoryGraph::<&'static str>::new(true);
+    for vertex in ["a", "b", "c", "d"] {
+        graph.add_vertex(vertex).expect("unique vertex");
+    }
+    graph.add_edge("a", "b", ()).expect("known endpoints");
+    graph.add_edge("b", "a", ()).expect("known endpoints");
+    graph.add_edge("b", "c", ()).expect("known endpoints");
+    graph.add_edge("d", "c", ()).expect("known endpoints");
+
+    assert_eq!(strongly_connected_components(&graph), Ok(vec![vec!["a", "b"], vec!["c"], vec!["d"]]));
+    assert_eq!(strongly_connected_components(&CsrGraph::from_graph(&graph)).map(|mut components| {
+        components.sort();
+        components
+    }), Ok(vec![vec![0, 1], vec![2], vec![3]]));
+
+    let undirected = MemoryGraph::<&'static str>::new(false);
+    assert_eq!(strongly_connected_components(&undirected), Err(GraphError::UndirectedTraversal));
+}
+
+#[test]
+fn a_borrowed_view_feeds_the_same_algorithms() {
+    use boost_collection::{GraphRead, GraphView};
+
+    let names = ["a", "b", "c"];
+    let mut view = GraphView::new(true);
+    view.add_edge(&names[0], &names[1]);
+    view.add_edge(&names[1], &names[2]);
+    view.add_edge(&names[2], &names[0]);
+
+    assert_eq!(view.vertex_count(), 3);
+    assert_eq!(view.edge_count(), 3);
+    assert_eq!(topological_order(&view), Err(GraphError::Cycle));
+    assert_eq!(cycle_path(&view), Ok(Some(vec![&names[0], &names[1], &names[2], &names[0]])));
+    assert_eq!(strongly_connected_components(&view), Ok(vec![vec![&names[0], &names[1], &names[2]]]));
 }
