@@ -12,3 +12,8 @@ pub mod client {
 }
 
 pub use database::{cluster, embed, execution, formats, harness, input, migration, protocol, query, server, storage, types, udf};
+
+/// 文件对象与 schema 合同（对象 API 的描述符与读取窗口类型）。
+pub mod schema {
+    pub use schema_types::*;
+}

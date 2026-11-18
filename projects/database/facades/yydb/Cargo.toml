@@ -15,4 +15,5 @@ path = "src/lib.rs"
 
 [dependencies]
 database = { workspace = true, features = ["harness"] }
+schema-types = { workspace = true }
 yydb-client = { workspace = true }
