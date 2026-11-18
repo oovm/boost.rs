@@ -8,10 +8,12 @@
 //! | [`yysm`] | `-shm` 边车 | 可重建的共享内存协调块 |
 //! | [`yyds`] | `.yyds` | 控制面目录文件与副本日志帧 |
 //! | [`yykv`] | `.yykv` | 分片 KV 快照与记录模型 |
+//! | [`row`] | `.yydb` 记录值 | 表行记录编解码与记录名布局 |
 //!
 //! `.yydb` 与 `.yydx` 的主文件共用 `yydb` 的页格式，只有 `storage_layout`
 //! 区分；`.yydx` 独有的部分只有 Blob chunk。
 
+pub mod row;
 pub mod yydb;
 pub mod yyds;
 pub mod yydx;

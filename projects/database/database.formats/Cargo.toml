@@ -14,3 +14,4 @@ database-protocol-mongo = { workspace = true }
 database-types = { workspace = true }
 schema-types = { workspace = true }
 serde_json = { workspace = true }
+uuid = { workspace = true }
