@@ -20,6 +20,8 @@ pub mod datetime;
 pub mod ddl;
 pub mod describe;
 pub mod dml;
+/// 连接级执行会话：引擎状态、附加库递归会话与语句分发。
+pub mod engine;
 pub mod eval;
 pub mod explain;
 pub mod guards;

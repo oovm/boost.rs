@@ -4123,7 +4123,6 @@ dependencies = [
  "database-formats",
  "database-query",
  "database-storage",
- "database-types",
  "database-udf",
 ]
 

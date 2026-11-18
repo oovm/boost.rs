@@ -11,7 +11,18 @@ use std::{
     sync::Arc,
 };
 
-use database_execution::sqlite::{
+use database_formats::sqlite::{RecordLimits, RecordValue, WriteValue, decode_library_version};
+use database_query::sqlite::{
+    SqlError,
+    catalog::*,
+    frontend::{Expr, Statement, TransactionAction, parse_with_host_functions},
+    storage_failure,
+    value::*,
+};
+use database_storage::sqlite::{ColumnSpec, SchemaObjectKind, SqliteWriter, TableLimits, TextEncoding, decode_record};
+use database_udf::{HostMicroDefinition, HostRuntimeAdapter};
+
+use crate::sqlite::{
     ddl, describe, dml, explain,
     host::HostFunctionTable,
     pragma,
@@ -20,15 +31,8 @@ use database_execution::sqlite::{
     trigger::TriggerState,
     txn::{self, TransactionState},
 };
-use database_udf::{HostMicroDefinition, HostRuntimeAdapter};
 
-pub use database_execution::sqlite::stmt::ExecResult;
-
-use crate::{ColumnSpec, RecordLimits, SchemaObjectKind, SqliteWriter, TableLimits, TextEncoding, decode_library_version, decode_record};
-
-use super::{Expr, SqlError, Statement, TransactionAction, parse_with_host_functions, storage_failure};
-
-use super::{catalog::*, value::*};
+pub use crate::sqlite::stmt::ExecResult;
 
 /// One database attached with `ATTACH DATABASE`.
 struct AttachedDb {
@@ -263,7 +267,7 @@ impl Engine {
     ///
     /// 计划在此刻一次成型,整页快照也在这一刻克隆;之后的逐页解码不再回到
     /// 目录,因此游标读取与并发写入完全隔离。
-    pub(crate) fn open_lazy_cursor(&mut self, statement: &Statement, parameters: &[Cell]) -> Result<Option<LazyCursor>, SqlError> {
+    pub fn open_lazy_cursor(&mut self, statement: &Statement, parameters: &[Cell]) -> Result<Option<LazyCursor>, SqlError> {
         let Some(plan) = self.exec().plan_lazy_scan(statement)?
         else {
             return Ok(None);
@@ -274,7 +278,7 @@ impl Engine {
     }
 
     /// 从惰性游标读取至多 limit 行,保持 b-tree 扫描顺序。
-    pub(crate) fn lazy_cursor_next(&mut self, cursor: &mut LazyCursor, limit: usize) -> Result<LazyBatch, SqlError> {
+    pub fn lazy_cursor_next(&mut self, cursor: &mut LazyCursor, limit: usize) -> Result<LazyBatch, SqlError> {
         if cursor.finished || limit == 0 {
             return Ok(LazyBatch { rows: Vec::new(), done: cursor.finished });
         }
@@ -687,14 +691,14 @@ impl Engine {
                 let cells: Vec<Cell> = values
                     .iter()
                     .map(|value| match value {
-                        crate::RecordValue::Null => Cell::Null,
-                        crate::RecordValue::Integer(value) => Cell::Integer(*value),
-                        crate::RecordValue::Real(value) => Cell::Real(*value),
-                        crate::RecordValue::Text(value) => Cell::Text(value.clone()),
-                        crate::RecordValue::Blob(value) => Cell::Blob(value.to_vec()),
+                        RecordValue::Null => Cell::Null,
+                        RecordValue::Integer(value) => Cell::Integer(*value),
+                        RecordValue::Real(value) => Cell::Real(*value),
+                        RecordValue::Text(value) => Cell::Text(value.clone()),
+                        RecordValue::Blob(value) => Cell::Blob(value.to_vec()),
                     })
                     .collect();
-                let slots: Vec<Option<crate::WriteValue>> = cells.iter().map(|cell| Some(dml::cell_write_value(cell))).collect();
+                let slots: Vec<Option<WriteValue>> = cells.iter().map(|cell| Some(dml::cell_write_value(cell))).collect();
                 fresh.writer.insert("sqlite_sequence", &slots).map_err(|error| storage_failure(error).in_statement("vacuum"))?;
             }
         }
@@ -703,7 +707,7 @@ impl Engine {
                 continue;
             }
             for (_, cells) in self.exec().live_rows(&def, "vacuum")? {
-                let slots: Vec<Option<crate::WriteValue>> = cells.iter().map(|cell| Some(dml::cell_write_value(cell))).collect();
+                let slots: Vec<Option<WriteValue>> = cells.iter().map(|cell| Some(dml::cell_write_value(cell))).collect();
                 fresh.writer.insert(&def.name, &slots).map_err(|error| storage_failure(error).in_statement("vacuum"))?;
             }
         }

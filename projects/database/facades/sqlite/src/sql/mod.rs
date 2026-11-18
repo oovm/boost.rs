@@ -1,9 +1,10 @@
-//! SQL execution core shared by the Node-API, PyO3 and WebAssembly hosts.
+//! SQL execution surface shared by the Node-API, PyO3 and WebAssembly hosts.
 //!
 //! The statement subset, its AST and structured rejections live in
-//! `database_query::sqlite` (the SQLite dialect query frontend); this module
-//! re-exports them and owns only the execution engine, the host-function
-//! bridge and the JSON envelope:
+//! `database_query::sqlite` (the SQLite dialect query frontend); the execution
+//! engine, the host-function bridge and the JSON envelope live in
+//! `database_execution::sqlite`. This module only re-exports them under the
+//! stable `sqlite::sql::*` paths the hosts and downstream bindings consume:
 //!
 //! - [`Engine::execute_one`] executes exactly one statement.
 //! - [`Engine::execute_batch`] executes a list of statements in order.
@@ -12,9 +13,11 @@
 //! Every statement runs over the pure-Rust format-3 writer, so the resulting
 //! image is a real `.sqlite3` file, not a simulation layer.
 
-pub mod engine;
-
-pub use database_execution::sqlite::host::HostFunctionTable;
+pub use database_execution::sqlite::{
+    engine::{Engine, results_json},
+    host::HostFunctionTable,
+    stmt::ExecResult,
+};
 pub use database_query::sqlite::{
     SqlError,
     frontend::{
@@ -28,6 +31,5 @@ pub use database_query::sqlite::{
     },
     value::Cell,
 };
-pub use engine::{Engine, ExecResult, results_json};
 
-pub(crate) use database_query::sqlite::{bind, catalog, storage_failure, value};
+pub(crate) use database_query::sqlite::storage_failure;
