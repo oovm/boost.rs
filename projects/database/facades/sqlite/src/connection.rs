@@ -13,7 +13,7 @@
 
 use std::{
     fs::{self, File, OpenOptions, TryLockError},
-    io::{ErrorKind, Seek, SeekFrom, Write},
+    io::{Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
@@ -633,47 +633,10 @@ impl Connection {
 
 /// 读取主文件并回放热日志。
 ///
-/// 写连接把回滚后的镜像原子写回主文件,再按模式清理日志;只读连接只在内存
-/// 里返回回滚结果,不改动磁盘上的任何文件。
+/// 文件字节与回滚日志的重放机制归 `database.storage::sqlite::journal`;
+/// 本连接只把日志模式映射成存储层的发布形状。
 fn load_recovered(path: &Path, read_only: bool, journal_mode: JournalMode, synchronous: bool) -> Result<Vec<u8>, SqlError> {
-    let main = fs::read(path).map_err(storage_error)?;
-    let journal_path = journal::sidecar(path);
-    let journal_bytes = match fs::read(&journal_path) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(main),
-        Err(error) => return Err(storage_error(error)),
-    };
-    let Some(recovered) = journal::apply(&main, &journal_bytes)
-    else {
-        return Ok(main);
-    };
-    if !read_only {
-        restore_atomic(path, &recovered, synchronous)?;
-        journal::finish(path, journal_mode == JournalMode::Truncate).map_err(storage_failure)?;
-    }
-    Ok(recovered)
-}
-
-/// 把回滚结果原子写回主文件,使清理日志前的磁盘状态已是旧镜像。
-fn restore_atomic(path: &Path, image: &[u8], synchronous: bool) -> Result<(), SqlError> {
-    let mut temporary = path.as_os_str().to_os_string();
-    temporary.push(format!(".{}.recover", std::process::id()));
-    let temporary = PathBuf::from(temporary);
-    let result = (|| -> std::io::Result<()> {
-        if synchronous {
-            let mut file = File::create(&temporary)?;
-            file.write_all(image)?;
-            file.sync_all()?;
-        }
-        else {
-            fs::write(&temporary, image)?;
-        }
-        fs::rename(&temporary, path)
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    result.map_err(storage_error)
+    journal::recover(path, read_only, journal_mode == JournalMode::Truncate, synchronous).map_err(storage_failure)
 }
 
 impl std::fmt::Debug for Connection {

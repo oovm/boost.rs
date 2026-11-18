@@ -100,6 +100,53 @@ pub fn finish(database: &Path, truncate: bool) -> Result<()> {
     }
 }
 
+/// Reads the main file and replays a hot journal over it.
+///
+/// A write connection writes the rolled-back image back to the main file
+/// atomically and then clears the journal (`truncate` selects the steady-state
+/// sidecar shape); a read-only connection only rolls the pages back in memory
+/// and leaves every file on disk untouched.
+pub fn recover(database: &Path, read_only: bool, truncate: bool, synchronous: bool) -> Result<Vec<u8>> {
+    let main = fs::read(database).map_err(Error::Io)?;
+    let journal_bytes = match fs::read(sidecar(database)) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(main),
+        Err(error) => return Err(Error::Io(error)),
+    };
+    let Some(recovered) = apply(&main, &journal_bytes)
+    else {
+        return Ok(main);
+    };
+    if !read_only {
+        restore_atomic(database, &recovered, synchronous)?;
+        finish(database, truncate)?;
+    }
+    Ok(recovered)
+}
+
+/// Writes the rolled-back image back to the main file atomically, so the disk
+/// state is already the old image before the journal is cleared.
+fn restore_atomic(database: &Path, image: &[u8], synchronous: bool) -> Result<()> {
+    let mut temporary = database.as_os_str().to_os_string();
+    temporary.push(format!(".{}.recover", std::process::id()));
+    let temporary = PathBuf::from(temporary);
+    let result = (|| -> std::io::Result<()> {
+        if synchronous {
+            let mut file = fs::File::create(&temporary)?;
+            file.write_all(image)?;
+            file.sync_all()?;
+        }
+        else {
+            fs::write(&temporary, image)?;
+        }
+        fs::rename(&temporary, database)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result.map_err(Error::Io)
+}
+
 /// Checksum seed for one journal. SQLite uses random bytes; a clock/PID mix is
 /// enough to keep adjacent journals distinct.
 fn checksum_seed() -> u32 {
