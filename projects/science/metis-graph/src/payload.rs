@@ -1,7 +1,7 @@
-//! Payload types carried on the ordinary [`athena_graph::GraphBuilder`] base.
+//! Payload types carried on the ordinary [`science_graph::GraphBuilder`] base.
 //!
 //! Metis keeps hash-cons / label sidecars only. Structural vs judgment flags live in
-//! [`EdgePayload`] on the athena edge table (no parallel `edge_meta` map).
+//! [`EdgePayload`] on the science edge table (no parallel `edge_meta` map).
 
 use metis_types::EdgeKind;
 

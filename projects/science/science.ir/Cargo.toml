@@ -1,0 +1,16 @@
+[package]
+name = "science-ir"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+authors.workspace = true
+description = "science Core CAS IR — TermStore, nodes, builder, verifier"
+publish = false
+
+[dependencies]
+science-types = { workspace = true }
+science-numeric = { workspace = true }
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"

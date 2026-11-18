@@ -1,0 +1,113 @@
+//! `DomainPlan` 的 `SelectRepresentation`。
+//!
+//! 记录请求当前活跃的 `DomainObject` / 项表示族。
+//! 引导期：确认每个领域唯一支持的表示族（无静默算法分支）。
+//! 日后规划器可在此于竞争表示之间择优。
+
+use science_types::{Diagnostic, DiagnosticCode};
+
+use crate::{
+    domains::{
+        dispatch::DomainRequest,
+        linear_algebra::LinearAlgebraRequest,
+        polynomial::{PolynomialRequest, refs_from_request},
+    },
+    runtime::session::Session,
+};
+
+/// 供审计 / 恢复用的所选表示标签（稳定字符串 · 非方言名）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SelectedRepresentation {
+    /// 机器可读的表示族 id。
+    pub family: &'static str,
+}
+
+/// 相对 `Session` 存储为 `request` 选择 / 确认表示。
+pub fn select_domain_representation(session: &Session, request: &DomainRequest) -> Result<SelectedRepresentation, Diagnostic> {
+    match request {
+        DomainRequest::Polynomial(req) => select_polynomial(session, req),
+        DomainRequest::LinearAlgebra(req) => select_linear_algebra(session, req),
+        DomainRequest::Calculus(_) => Ok(SelectedRepresentation { family: "term_store" }),
+        DomainRequest::NumberTheory(_) => Ok(SelectedRepresentation { family: "integer_numeric" }),
+        DomainRequest::GroupTheory(_) => Ok(SelectedRepresentation { family: "permutation_presentation" }),
+        DomainRequest::FieldTheory(_) => Ok(SelectedRepresentation { family: "field_presentation" }),
+        DomainRequest::GaloisTheory(_) => Ok(SelectedRepresentation { family: "extension_presentation" }),
+        DomainRequest::GraphTheory(_) => Ok(SelectedRepresentation { family: "graph_object" }),
+        DomainRequest::Optimization(_) => Ok(SelectedRepresentation { family: "optimization_problem" }),
+        DomainRequest::Solve(_) => Ok(SelectedRepresentation { family: "solve_problem" }),
+    }
+}
+
+fn select_polynomial(session: &Session, request: &PolynomialRequest) -> Result<SelectedRepresentation, Diagnostic> {
+    for r in refs_from_request(request) {
+        let poly = session.polynomial_objects.get(r).ok_or_else(|| {
+            Diagnostic::new(DiagnosticCode::UnsupportedOperation)
+                .detail("domain", "plan_select")
+                .detail("reason", "missing_polynomial_ref")
+                .arg("ref", r.0)
+        })?;
+        if session.rings.get(poly.ring()).is_none() {
+            return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
+                .detail("domain", "plan_select")
+                .detail("reason", "missing_ring_for_polynomial")
+                .arg("ring", poly.ring().0));
+        }
+    }
+    Ok(SelectedRepresentation { family: "canonical_distributed_sparse" })
+}
+
+fn select_linear_algebra(session: &Session, request: &LinearAlgebraRequest) -> Result<SelectedRepresentation, Diagnostic> {
+    let check = |r: crate::domains::linear_algebra::MatrixRef| -> Result<(), Diagnostic> {
+        if session.matrix_objects.get(r).is_some() {
+            Ok(())
+        }
+        else {
+            Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
+                .detail("domain", "plan_select")
+                .detail("reason", "missing_matrix_ref")
+                .arg("ref", r.0))
+        }
+    };
+    let check_op = |op: crate::domains::linear_algebra::MatrixOperand| -> Result<(), Diagnostic> {
+        match op {
+            crate::domains::linear_algebra::MatrixOperand::Object(matrix) => check(matrix),
+            crate::domains::linear_algebra::MatrixOperand::Binding(_) => Ok(()),
+        }
+    };
+    match *request {
+        LinearAlgebraRequest::Transpose { matrix }
+        | LinearAlgebraRequest::ConjugateTranspose { matrix }
+        | LinearAlgebraRequest::Rank { matrix }
+        | LinearAlgebraRequest::Det { matrix }
+        | LinearAlgebraRequest::Rref { matrix }
+        | LinearAlgebraRequest::Inverse { matrix }
+        | LinearAlgebraRequest::Trace { matrix }
+        | LinearAlgebraRequest::Eigenvalues { matrix, .. }
+        | LinearAlgebraRequest::Eigenvectors { matrix, .. }
+        | LinearAlgebraRequest::NullSpace { matrix, .. }
+        | LinearAlgebraRequest::Norm { matrix }
+        | LinearAlgebraRequest::ConditionNumber { matrix }
+        | LinearAlgebraRequest::Tril { matrix }
+        | LinearAlgebraRequest::Triu { matrix }
+        | LinearAlgebraRequest::IsDiagonal { matrix }
+        | LinearAlgebraRequest::IsTriangular { matrix, .. }
+        | LinearAlgebraRequest::IsSymmetric { matrix }
+        | LinearAlgebraRequest::Reshape { matrix, .. }
+        | LinearAlgebraRequest::NumElements { matrix }
+        | LinearAlgebraRequest::MatrixExp { matrix } => check_op(matrix)?,
+        LinearAlgebraRequest::Index { matrix, .. } => check(matrix)?,
+        LinearAlgebraRequest::MatMul { lhs, rhs }
+        | LinearAlgebraRequest::Hadamard { lhs, rhs }
+        | LinearAlgebraRequest::ElementwiseDivide { lhs, rhs }
+        | LinearAlgebraRequest::ElementwisePower { lhs, rhs }
+        | LinearAlgebraRequest::Solve { a: lhs, b: rhs }
+        | LinearAlgebraRequest::RightSolve { a: lhs, b: rhs }
+        | LinearAlgebraRequest::Dot { lhs, rhs }
+        | LinearAlgebraRequest::Cross { lhs, rhs }
+        | LinearAlgebraRequest::Kronecker { lhs, rhs } => {
+            check_op(lhs)?;
+            check_op(rhs)?;
+        }
+    }
+    Ok(SelectedRepresentation { family: "matrix_object_store" })
+}

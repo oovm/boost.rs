@@ -1,6 +1,6 @@
 //! Path and query JIT stubs for Metis.
 //!
-//! This is not `athena-jit` (KernelIR). It compiles Metis path/query routines.
+//! This is not `science-jit` (KernelIR). It compiles Metis path/query routines.
 
 use metis_types::{MetisError, NodeId};
 

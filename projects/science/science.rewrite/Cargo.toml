@@ -1,0 +1,17 @@
+[package]
+name = "science-rewrite"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+authors.workspace = true
+description = "science rewriter — canonicalization, rules, simplification"
+publish = false
+
+[dependencies]
+science-types = { workspace = true }
+science-ir = { workspace = true }
+science-numeric = { workspace = true }
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"

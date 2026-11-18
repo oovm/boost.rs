@@ -1,11 +1,11 @@
 //! Metis domain handles and diagnostics.
 //!
-//! Node / edge wire ids are [`athena_graph`]'s ordinary-graph handles.
+//! Node / edge wire ids are [`science_graph`]'s ordinary-graph handles.
 //! Island ids and relation kinds stay Metis-specific.
 
 use core::{fmt, num::NonZeroU32};
 
-pub use athena_graph::{EdgeId, NodeId};
+pub use science_graph::{EdgeId, NodeId};
 
 /// Island namespace id (stable within a loaded graph store).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

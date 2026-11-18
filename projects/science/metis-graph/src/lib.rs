@@ -1,7 +1,7 @@
-//! Metis relation semantics on [`athena_graph`].
+//! Metis relation semantics on [`science_graph`].
 //!
 //! - Bottom layer: ordinary discrete adjacency via [`GraphBuilder`] with [`NodePayload`] /
-//!   [`EdgePayload`] (not CAS M-Graph). Indexed scans use athena `out_edges` / `in_edges`.
+//!   [`EdgePayload`] (not CAS M-Graph). Indexed scans use science `out_edges` / `in_edges`.
 //! - Metis layer: hash-cons, label atoms, structural vs judgment edges, EQ paths.
 //! - Staging keeps an unfinished builder. Seal with [`Graph::seal`] / [`Graph::seal_on_heap`].
 //! - Core contract stubs: [`admission`], [`connection`], [`derivation`], [`evidence`], [`transform`], [`conflict`], [`rules`], [`eval`].
@@ -12,8 +12,8 @@ use std::{
     rc::Rc,
 };
 
-use athena_gc::{GcHeap, HeapBudget};
-use athena_graph::{
+use science_gc::{GcHeap, HeapBudget};
+use science_graph::{
     GraphBuilder, GraphDirection, GraphSemantics, ImmutableGraph, MultiplicityPolicy, PublishedImmutableGraph, SelfLoopDegree,
 };
 use metis_types::{EdgeId, EdgeKind, MetisError, NodeId};
@@ -142,7 +142,7 @@ impl Graph {
         Ok(())
     }
 
-    /// Underlying athena builder (ordinary discrete graph).
+    /// Underlying science builder (ordinary discrete graph).
     pub fn base(&self) -> &GraphBuilder<NodePayload, EdgePayload> {
         &self.builder
     }
@@ -268,7 +268,7 @@ impl Graph {
         self.incoming_filtered(id, Some(false))
     }
 
-    /// Outgoing judgment edges of a specific kind (athena adjacency + payload filter).
+    /// Outgoing judgment edges of a specific kind (science adjacency + payload filter).
     pub fn judgment_outgoing_of_kind(&self, id: NodeId, kind: EdgeKind) -> Result<Vec<(EdgeId, NodeId)>, MetisError> {
         self.ensure_known(id)?;
         let mut out = Vec::new();
@@ -280,7 +280,7 @@ impl Graph {
         Ok(out)
     }
 
-    /// Incoming judgment edges of a specific kind (athena adjacency + payload filter).
+    /// Incoming judgment edges of a specific kind (science adjacency + payload filter).
     pub fn judgment_incoming_of_kind(&self, id: NodeId, kind: EdgeKind) -> Result<Vec<(EdgeId, NodeId)>, MetisError> {
         self.ensure_known(id)?;
         let mut out = Vec::new();
@@ -328,7 +328,7 @@ impl Graph {
         out
     }
 
-    /// Payload stored on the ordinary athena edge.
+    /// Payload stored on the ordinary science edge.
     pub fn edge_payload(&self, id: EdgeId) -> Result<EdgePayload, MetisError> {
         self.builder.graph().edge_value(id).copied().ok_or(MetisError::EdgeNotFound)
     }

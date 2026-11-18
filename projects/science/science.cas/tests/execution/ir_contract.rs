@@ -1,0 +1,150 @@
+//! `ExecutionIR` 编译期合同：effects、指纹与再校验。
+
+use science_cas::{
+    api::request::{CasRequest, ControlPlan, DomainGoal, SessionCommand},
+    domains::{dispatch::DomainRequest, number_theory::NumberTheoryRequest},
+    execution::{
+        compiler::ExecutionCompiler,
+        ir::{EffectKind, ModuleFingerprint, OperationKind, verify_module},
+    },
+    runtime::Session,
+};
+use science_numeric::Integer;
+use science_types::{BindingEvaluationPolicy, BindingKind};
+
+fn compile(session: &mut Session, request: CasRequest) -> science_cas::execution::ir::ExecutionModule {
+    ExecutionCompiler::new().compile(session, &request).expect("compile")
+}
+
+#[test]
+fn compiled_module_fingerprint_matches_recompute() {
+    let mut session = Session::new();
+    let term = session.builder().int(1, Default::default());
+    let module = compile(&mut session, CasRequest::Term(term));
+    assert_eq!(module.fingerprint, ModuleFingerprint::of_module(&module));
+    verify_module(&module).expect("re-verify");
+}
+
+#[test]
+fn define_emits_write_binding_effect_chain() {
+    let mut session = Session::new();
+    let sym_term = session.builder().symbol("x", Default::default());
+    let symbol = match session.arena.get(sym_term) {
+        Some(science_ir::TermNode::Atom(science_ir::Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol, got {other:?}"),
+    };
+    let value = session.builder().int(3, Default::default());
+    let module = compile(
+        &mut session,
+        CasRequest::Command(SessionCommand::Define {
+            symbol,
+            value,
+            kind: BindingKind::Session,
+            evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+        }),
+    );
+    assert!(module.effect_edges.iter().any(|e| matches!(e.kind, EffectKind::WriteBinding)));
+    assert!(module.regions[0].blocks.iter().any(|b| {
+        b.operations.iter().any(|op| matches!(op.kind, OperationKind::WriteBinding { .. }) && op.effect_in.is_some() && op.effect_out.is_some())
+    }));
+    verify_module(&module).expect("define effects");
+}
+
+#[test]
+fn branch_module_has_three_blocks_and_stable_fingerprint() {
+    let mut session = Session::new();
+    let cond = session.builder().boolean(true, Default::default());
+    let then_term = session.builder().int(1, Default::default());
+    let else_term = session.builder().int(0, Default::default());
+    let module = compile(
+        &mut session,
+        CasRequest::Control(ControlPlan::Branch {
+            condition: cond,
+            then_branch: Box::new(CasRequest::Term(then_term)),
+            else_branch: Some(Box::new(CasRequest::Term(else_term))),
+        }),
+    );
+    assert_eq!(module.regions[0].blocks.len(), 3);
+    let again = ModuleFingerprint::of_module(&module);
+    assert_eq!(module.fingerprint, again);
+    verify_module(&module).expect("branch");
+}
+
+#[test]
+fn loop_while_emits_budget_check_effect() {
+    let mut session = Session::new();
+    let cond = session.builder().boolean(false, Default::default());
+    let body = session.builder().int(1, Default::default());
+    let module =
+        compile(&mut session, CasRequest::Control(ControlPlan::LoopWhile { condition: cond, body: Box::new(CasRequest::Term(body)) }));
+    assert!(module.effect_edges.iter().any(|e| matches!(e.kind, EffectKind::BudgetCheck)));
+    verify_module(&module).expect("loop budget");
+}
+
+#[test]
+fn goal_provider_call_publishes_with_effect_pair() {
+    let mut session = Session::new();
+    let make_request = || {
+        CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::NumberTheory(NumberTheoryRequest::Gcd {
+            a: Integer::from_i64(12),
+            b: Integer::from_i64(8),
+        })))
+    };
+    let module = compile(&mut session, make_request());
+    assert_eq!(module.provider_calls.len(), 1);
+    assert!(module.effect_edges.iter().any(|e| matches!(e.kind, EffectKind::CallProvider)));
+    assert!(module.effect_edges.iter().any(|e| matches!(e.kind, EffectKind::PublishResult)));
+    assert!(
+        module.regions[0]
+            .blocks
+            .iter()
+            .any(|b| { b.operations.iter().any(|op| matches!(op.kind, OperationKind::CallProvider { .. }) && op.effect_in.is_some()) })
+    );
+    verify_module(&module).expect("provider effects");
+
+    let result_id = science_cas::execution::execute_ir_request(&mut session, make_request()).expect("execute");
+    let loaded = session.results.get(result_id).expect("result");
+    let provenance = loaded.provenance.as_ref().expect("provenance");
+    assert_eq!(provenance.request_kind, "CallProvider");
+    assert!(provenance.capability_fingerprint.is_some());
+}
+
+#[test]
+fn tampered_fingerprint_fails_reverify() {
+    let mut session = Session::new();
+    let term = session.builder().int(9, Default::default());
+    let mut module = compile(&mut session, CasRequest::Term(term));
+    module.fingerprint = ModuleFingerprint(0);
+    let err = verify_module(&module).expect_err("tampered");
+    assert_eq!(err.details.get("reason").map(|v| v.to_string()).as_deref(), Some("fingerprint_mismatch"));
+}
+
+#[test]
+fn collection_term_emits_construct_collection() {
+    use science_types::CollectionKind;
+    let mut session = Session::new();
+    let a = session.builder().int(1, Default::default());
+    let b = session.builder().int(2, Default::default());
+    let list = session.builder().collection(CollectionKind::OrderedCollection, vec![a, b], Default::default());
+    let module = compile(&mut session, CasRequest::Term(list));
+    assert!(module.regions.iter().flat_map(|r| &r.blocks).any(|block| {
+        block.operations.iter().any(|op| matches!(op.kind, OperationKind::ConstructCollection { kind: CollectionKind::OrderedCollection, .. }))
+    }));
+}
+
+#[test]
+fn typed_pattern_constraint_rejects_non_integer() {
+    use science_cas::{
+        execution::builtins::patterns::match_term_pattern,
+        reasoning::trs::{PatternConstraint, TermPattern},
+    };
+    use science_types::ValueTypeId;
+    let mut session = Session::new();
+    let n = session.builder().int(7, Default::default());
+    let sym = session.builder().symbol("x", Default::default());
+    let pat =
+        TermPattern::Constrained { pattern: Box::new(TermPattern::Any), constraint: PatternConstraint::ValueType(ValueTypeId::ExactInteger) };
+    let mut binds = std::collections::HashMap::new();
+    assert!(match_term_pattern(&session, n, &pat, &mut binds));
+    assert!(!match_term_pattern(&session, sym, &pat, &mut binds));
+}

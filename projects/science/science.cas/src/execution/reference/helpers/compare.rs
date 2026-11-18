@@ -1,0 +1,268 @@
+//! Reference 执行器的比较 / 布尔辅助。
+
+use std::cmp::Ordering;
+
+use science_ir::SemanticOperator;
+use science_numeric::{Number, compare as num_compare};
+use science_types::{Diagnostic, DiagnosticCode, Result, TermId};
+
+use super::{super::Slot, diag};
+use crate::{
+    execution::{number_of, push_number, push_semantic},
+    runtime::{
+        session::Session,
+        values::{arena::push_list, numeric_clone::clone_number},
+    },
+};
+
+#[cfg(test)]
+mod collection_equal_tests {
+    use super::collection_structural_equal;
+    use crate::runtime::{Session, values::arena::{push_int, push_list}};
+
+    #[test]
+    fn detects_unequal_lists() {
+        let mut s = Session::new();
+        let i1 = push_int(&mut s, 1);
+        let i2 = push_int(&mut s, 2);
+        let i3 = push_int(&mut s, 3);
+        let a = push_list(&mut s, vec![i1, i2, i3]);
+        let b = push_list(&mut s, vec![i3, i2, i1]);
+        assert_eq!(collection_structural_equal(&s, a, b), Some(false));
+    }
+
+    #[test]
+    fn elementwise_unequal_broadcasts_per_pair() {
+        use super::compare_list_broadcast;
+        use science_ir::SemanticOperator;
+
+        let mut s = Session::new();
+        let i1 = push_int(&mut s, 1);
+        let i2 = push_int(&mut s, 2);
+        let i3 = push_int(&mut s, 3);
+        let a = push_list(&mut s, vec![i1, i2]);
+        let b = push_list(&mut s, vec![i1, i3]);
+        let pick = |o: std::cmp::Ordering| o != std::cmp::Ordering::Equal;
+        let out = compare_list_broadcast(&mut s, SemanticOperator::Unequal, a, b, pick).expect("broadcast").expect("list");
+        let items = match s.arena.get(out) {
+            Some(science_ir::TermNode::Collection { elements, .. }) => elements.clone(),
+            _ => panic!("expected boolean list"),
+        };
+        assert_eq!(items.len(), 2);
+        assert!(matches!(s.arena.get(items[0]), Some(science_ir::TermNode::Atom(science_ir::Atom::Boolean(false)))));
+        assert!(matches!(s.arena.get(items[1]), Some(science_ir::TermNode::Atom(science_ir::Atom::Boolean(true)))));
+    }
+}
+
+/// 两棵集合 term 是否逐元素结构相等（`===` 列表语义，非逐元素广播）。
+pub(crate) fn collection_structural_equal(session: &Session, left: TermId, right: TermId) -> Option<bool> {
+    let (xs, ys) = match (session.arena.get(left), session.arena.get(right)) {
+        (Some(science_ir::TermNode::Collection { elements: xs, .. }), Some(science_ir::TermNode::Collection { elements: ys, .. })) => {
+            (xs, ys)
+        }
+        _ => return None,
+    };
+    if xs.len() != ys.len() {
+        return Some(false);
+    }
+    for (x, y) in xs.iter().zip(ys.iter()) {
+        if !session.arena.structural_eq(*x, *y) {
+            return Some(false);
+        }
+    }
+    Some(true)
+}
+
+pub(crate) fn compare_list_broadcast(
+    session: &mut Session,
+    op: SemanticOperator,
+    left: TermId,
+    right: TermId,
+    pick: fn(Ordering) -> bool,
+) -> Result<Option<TermId>> {
+    let l_list = matches!(session.arena.get(left), Some(science_ir::TermNode::Collection { elements: _, .. }));
+    let r_list = matches!(session.arena.get(right), Some(science_ir::TermNode::Collection { elements: _, .. }));
+    match (l_list, r_list) {
+        (false, false) => Ok(None),
+        (true, true) => {
+            let xs = match session.arena.get(left) {
+                Some(science_ir::TermNode::Collection { elements: items, .. }) => items.clone(),
+                _ => return Ok(None),
+            };
+            let ys = match session.arena.get(right) {
+                Some(science_ir::TermNode::Collection { elements: items, .. }) => items.clone(),
+                _ => return Ok(None),
+            };
+            if xs.len() != ys.len() {
+                return Ok(Some(push_semantic(session, op, vec![left, right])));
+            }
+            let mut out = Vec::with_capacity(xs.len());
+            for (a, b) in xs.into_iter().zip(ys.into_iter()) {
+                out.push(compare_pair_term(session, op, a, b, pick)?);
+            }
+            Ok(Some(push_list(session, out)))
+        }
+        (true, false) => {
+            let xs = match session.arena.get(left) {
+                Some(science_ir::TermNode::Collection { elements: items, .. }) => items.clone(),
+                _ => return Ok(None),
+            };
+            let mut out = Vec::with_capacity(xs.len());
+            for a in xs {
+                out.push(compare_pair_term(session, op, a, right, pick)?);
+            }
+            Ok(Some(push_list(session, out)))
+        }
+        (false, true) => {
+            let ys = match session.arena.get(right) {
+                Some(science_ir::TermNode::Collection { elements: items, .. }) => items.clone(),
+                _ => return Ok(None),
+            };
+            let mut out = Vec::with_capacity(ys.len());
+            for b in ys {
+                out.push(compare_pair_term(session, op, left, b, pick)?);
+            }
+            Ok(Some(push_list(session, out)))
+        }
+    }
+}
+
+pub(crate) fn compare_pair_term(
+    session: &mut Session,
+    op: SemanticOperator,
+    left: TermId,
+    right: TermId,
+    pick: fn(Ordering) -> bool,
+) -> Result<TermId> {
+    // 嵌套列表经广播递归。
+    if matches!(session.arena.get(left), Some(science_ir::TermNode::Collection { elements: _, .. }))
+        || matches!(session.arena.get(right), Some(science_ir::TermNode::Collection { elements: _, .. }))
+    {
+        return Ok(compare_list_broadcast(session, op, left, right, pick)?.unwrap_or_else(|| push_semantic(session, op, vec![left, right])));
+    }
+    match (number_of(session, left).map(clone_number), number_of(session, right).map(clone_number)) {
+        (Some(a), Some(b)) => {
+            let ord = num_compare(&a, &b).ok_or_else(|| diag("compare_failed"))?;
+            Ok(session.builder().boolean(pick(ord), Default::default()))
+        }
+        _ => Ok(push_semantic(session, op, vec![left, right])),
+    }
+}
+
+/// Reference 与 `ExecutionHost` 共用的比较链求值。
+///
+/// 全为数值时返回 Boolean 槽语义（`Ok(Either::Left)`）；否则返回 Term（广播 / 残差）。
+pub(crate) fn evaluate_compare_terms(session: &mut Session, op: SemanticOperator, terms: Vec<TermId>) -> Result<CompareOutcome> {
+    if terms.len() < 2 {
+        return Err(diag("semantic_operator_arity"));
+    }
+    let pick = match op {
+        SemanticOperator::Less => |o: Ordering| o == Ordering::Less,
+        SemanticOperator::Greater => |o: Ordering| o == Ordering::Greater,
+        SemanticOperator::LessEqual => |o: Ordering| o != Ordering::Greater,
+        SemanticOperator::GreaterEqual => |o: Ordering| o != Ordering::Less,
+        _ => return Err(diag("semantic_operator_not_implemented")),
+    };
+    if terms.len() == 2 {
+        if let Some(broadcast) = compare_list_broadcast(session, op, terms[0], terms[1], pick)? {
+            return Ok(CompareOutcome::Term(broadcast));
+        }
+    }
+    let numbers = terms.iter().map(|t| number_of(session, *t).map(clone_number)).collect::<Option<Vec<_>>>();
+    let Some(nums) = numbers
+    else {
+        return Ok(CompareOutcome::Term(push_semantic(session, op, terms)));
+    };
+    let mut ok = true;
+    for window in nums.windows(2) {
+        let ord = num_compare(&window[0], &window[1]).ok_or_else(|| diag("compare_failed"))?;
+        if !pick(ord) {
+            ok = false;
+            break;
+        }
+    }
+    Ok(CompareOutcome::Boolean(ok))
+}
+
+fn flatten_min_max_args(session: &Session, terms: Vec<TermId>) -> Vec<TermId> {
+    if terms.len() == 1 {
+        if let Some(science_ir::TermNode::Collection { elements, .. }) = session.arena.get(terms[0]) {
+            return elements.clone();
+        }
+    }
+    terms
+}
+
+/// `Max` / `Min`：全为数值时折叠为极值，否则残差语义应用。
+pub(crate) fn evaluate_min_max_terms(session: &mut Session, op: SemanticOperator, terms: Vec<TermId>) -> Result<TermId> {
+    if terms.is_empty() {
+        return Err(diag("semantic_operator_arity"));
+    }
+    let pick_max = match op {
+        SemanticOperator::Max => true,
+        SemanticOperator::Min => false,
+        _ => return Err(diag("semantic_operator_not_implemented")),
+    };
+    let flat = flatten_min_max_args(session, terms);
+    if flat.is_empty() {
+        return Err(diag("semantic_operator_arity"));
+    }
+    let numbers: Option<Vec<_>> = flat.iter().map(|t| number_of(session, *t).map(clone_number)).collect();
+    let Some(nums) = numbers else {
+        return Ok(push_semantic(session, op, flat));
+    };
+    let mut acc = clone_number(&nums[0]);
+    for n in nums.iter().skip(1) {
+        let ord = num_compare(&acc, n).ok_or_else(|| diag("compare_failed"))?;
+        let better = if pick_max { ord == Ordering::Less } else { ord == Ordering::Greater };
+        if better {
+            acc = clone_number(n);
+        }
+    }
+    Ok(push_number(session, acc))
+}
+
+/// 比较求值结果（数值链 → Boolean；广播 / 残差 → Term）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CompareOutcome {
+    Boolean(bool),
+    Term(TermId),
+}
+
+/// 逻辑运算：Boolean 原子 · `True`/`False` · 精确 `0`/`1`。
+pub(crate) fn slot_as_boolean_like(session: &Session, slot: Slot) -> Option<bool> {
+    match slot {
+        Slot::Boolean(v) => Some(v),
+        Slot::Term(term) => as_boolean_like_term(session, term),
+        _ => None,
+    }
+}
+
+pub(crate) fn as_boolean_like_term(session: &Session, term: TermId) -> Option<bool> {
+    match session.arena.get(term) {
+        Some(science_ir::TermNode::Atom(science_ir::Atom::Boolean(v))) => Some(*v),
+        Some(science_ir::TermNode::Atom(science_ir::Atom::Number(n))) => {
+            if n.is_zero() {
+                Some(false)
+            }
+            else if *n == Number::small_int(1) {
+                Some(true)
+            }
+            else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+pub(crate) fn coerce_branch_predicate(session: &Session, term: TermId) -> Result<bool> {
+    match session.arena.get(term) {
+        Some(science_ir::TermNode::Atom(science_ir::Atom::Boolean(v))) => Ok(*v),
+        Some(science_ir::TermNode::Atom(science_ir::Atom::Number(n))) => Ok(!n.is_zero()),
+        Some(science_ir::TermNode::Atom(science_ir::Atom::Null)) => Ok(false),
+        _ => Err(Diagnostic::new(DiagnosticCode::NonBooleanCondition)
+            .detail("component", "ReferenceExecutor")
+            .detail("reason", "branch_term_not_boolean")),
+    }
+}

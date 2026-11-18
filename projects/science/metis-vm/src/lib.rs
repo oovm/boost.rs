@@ -4,7 +4,7 @@
 //! orchestration contracts. Does **not** mint admitted tokens, mutate sealed
 //! worlds, or depend on JIT. Kernel interaction goes through [`KernelView`].
 
-use athena_gc::GcMode;
+use science_gc::GcMode;
 use metis_graph::{
     Graph,
     admission::WorldId,
@@ -350,7 +350,7 @@ pub enum VmError {
 pub struct Vm {
     pub budget: Budget,
     pub gc_mode: GcMode,
-    /// Placeholder for InFlight root tokens once plans live on `athena-gc`.
+    /// Placeholder for InFlight root tokens once plans live on `science-gc`.
     pub in_flight_roots: u32,
 }
 

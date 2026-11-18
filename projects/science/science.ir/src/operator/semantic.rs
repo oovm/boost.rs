@@ -1,0 +1,905 @@
+//! 封闭核心语义算子与应用 head。
+//!
+//! 核心数学 / 逻辑 / 结构算子为 [`SemanticOperator`]。
+//! [`ExtensionRegistry`] 仅用于扩展显示名，绝非核心目录。
+
+use science_types::ExtensionOperatorId;
+
+/// 封闭一元特殊函数标识（指纹稳定）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum UnaryFunction {
+    /// 指数。
+    Exp,
+    /// 自然对数。
+    Log,
+    /// 正弦。
+    Sin,
+    /// 余弦。
+    Cos,
+    /// 正切。
+    Tan,
+    /// 双曲正弦。
+    Sinh,
+    /// 双曲余弦。
+    Cosh,
+    /// 双曲正切。
+    Tanh,
+    /// 反正弦。
+    ArcSin,
+    /// 反余弦。
+    ArcCos,
+    /// 反正切。
+    ArcTan,
+    /// 平方根。
+    Sqrt,
+    /// 绝对值。
+    Abs,
+    /// 符号函数。
+    Sign,
+    /// Gamma 函数。
+    Gamma,
+    /// 误差函数。
+    Erf,
+}
+
+impl UnaryFunction {
+    /// 稳定 discriminant 片段（勿轻易重编号）。
+    pub const fn discriminant(self) -> u32 {
+        match self {
+            Self::Exp => 1,
+            Self::Log => 2,
+            Self::Sin => 3,
+            Self::Cos => 4,
+            Self::Tan => 5,
+            Self::Sinh => 6,
+            Self::Cosh => 7,
+            Self::Tanh => 8,
+            Self::ArcSin => 9,
+            Self::ArcCos => 10,
+            Self::ArcTan => 11,
+            Self::Sqrt => 12,
+            Self::Abs => 13,
+            Self::Sign => 14,
+            Self::Gamma => 15,
+            Self::Erf => 16,
+        }
+    }
+
+    /// 中立调试标签。
+    pub const fn debug_label(self) -> &'static str {
+        match self {
+            Self::Exp => "Exp",
+            Self::Log => "Log",
+            Self::Sin => "Sin",
+            Self::Cos => "Cos",
+            Self::Tan => "Tan",
+            Self::Sinh => "Sinh",
+            Self::Cosh => "Cosh",
+            Self::Tanh => "Tanh",
+            Self::ArcSin => "ArcSin",
+            Self::ArcCos => "ArcCos",
+            Self::ArcTan => "ArcTan",
+            Self::Sqrt => "Sqrt",
+            Self::Abs => "Abs",
+            Self::Sign => "Sign",
+            Self::Gamma => "Gamma",
+            Self::Erf => "Erf",
+        }
+    }
+
+    /// 由 discriminant 片段还原（与 [`Self::discriminant`] 对偶）。
+    pub const fn from_discriminant(d: u32) -> Option<Self> {
+        match d {
+            1 => Some(Self::Exp),
+            2 => Some(Self::Log),
+            3 => Some(Self::Sin),
+            4 => Some(Self::Cos),
+            5 => Some(Self::Tan),
+            6 => Some(Self::Sinh),
+            7 => Some(Self::Cosh),
+            8 => Some(Self::Tanh),
+            9 => Some(Self::ArcSin),
+            10 => Some(Self::ArcCos),
+            11 => Some(Self::ArcTan),
+            12 => Some(Self::Sqrt),
+            13 => Some(Self::Abs),
+            14 => Some(Self::Sign),
+            15 => Some(Self::Gamma),
+            16 => Some(Self::Erf),
+            _ => None,
+        }
+    }
+}
+
+/// 封闭 Science 核心语义算子标识（指纹稳定）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SemanticOperator {
+    // 算术
+    /// `a + b + …`
+    Add,
+    /// `a - b` 或一元负号形式。
+    Subtract,
+    /// `a * b * …`
+    Multiply,
+    /// `a / b`
+    Divide,
+    /// `a ^ b`
+    Power,
+    /// 一元取负。
+    Negate,
+    /// 逐元素乘。
+    ElementwiseMultiply,
+    /// 逐元素除。
+    ElementwiseDivide,
+    /// 逐元素幂。
+    ElementwisePower,
+    /// 逐元素布尔与（MATLAB `&`，非短路 `And`）。
+    ElementwiseAnd,
+    /// 逐元素布尔或（MATLAB `|`，非短路 `Or`）。
+    ElementwiseOr,
+    // 比较 / 逻辑
+    /// 结构 / 数值相等。
+    Equal,
+    /// 不等。
+    Unequal,
+    /// 同一（相同结构 / 槽位标识）。
+    Identical,
+    /// 不同一（`!Identical`；方言 `UnsameQ`）。
+    Unidentical,
+    /// `<`
+    Less,
+    /// `>`
+    Greater,
+    /// `<=`
+    LessEqual,
+    /// `>=`
+    GreaterEqual,
+    /// 数值 / 可比较链上的最大值（方言 `Max`）。
+    Max,
+    /// 数值 / 可比较链上的最小值（方言 `Min`）。
+    Min,
+    /// 整数余数（方言 `Mod`；`m - n Quotient[m, n]`，除数截断商）。
+    Mod,
+    /// 整数商（方言 `Quotient`；向零截断）。
+    Quotient,
+    /// 布尔与。
+    And,
+    /// 布尔或。
+    Or,
+    /// 布尔非。
+    Not,
+    /// 真值查询。
+    TrueQ,
+    /// 偶数谓词（方言 `EvenQ`；精确整数）。
+    EvenQ,
+    /// 整数谓词（方言 `IntegerQ`；精确整数 / 整数有理数）。
+    IntegerQ,
+    /// 原子谓词（方言 `AtomQ`；非复合项）。
+    AtomQ,
+    /// 列表谓词（方言 `ListQ`；有序 `Collection`）。
+    ListQ,
+    /// 数值谓词（方言 `NumericQ`；数字原子）。
+    NumericQ,
+    /// 数谓词（方言 `NumberQ`；数字原子）。
+    NumberQ,
+    /// 可能为零谓词（方言 `PossibleZeroQ`；数字零测试）。
+    PossibleZeroQ,
+    /// 字符串谓词（方言 `StringQ`；`Atom::String`）。
+    StringQ,
+    /// 正数谓词（方言 `Positive`；数字 `> 0`）。
+    Positive,
+    /// 向量谓词（方言 `VectorQ`；平坦有序 `Collection`）。
+    VectorQ,
+    /// 矩阵谓词（方言 `MatrixQ`；矩形嵌套行 `Collection`）。
+    MatrixQ,
+    /// 布尔谓词（方言 `BooleanQ`；`Atom::Boolean`）。
+    BooleanQ,
+    // structure
+    /// 绝对值（亦见 [`UnaryFunction::Abs`]）。
+    Abs,
+    /// 向下取整（方言 `Floor`；精确整数与 machine 实数）。
+    Floor,
+    /// 向上取整（方言 `Ceiling`；精确整数与 machine 实数）。
+    Ceiling,
+    /// 四舍五入（方言 `Round`；半偶舍入，精确整数与 machine 实数）。
+    Round,
+    /// 有理数分子（方言 `Numerator`；精确整数与有理数）。
+    Numerator,
+    /// 有理数分母（方言 `Denominator`；精确整数与有理数）。
+    Denominator,
+    /// 归一化 sinc（方言 `Sinc`；`Sin[x]/x` 在零与 Pi 倍数上的精确特化）。
+    Sinc,
+    /// 表达式符号列表（方言 `Variables`；去重后按名字母序）。
+    Variables,
+    /// 多项式系数（方言 `Coefficient`；默认 `var^1` 项系数之和）。
+    Coefficient,
+    /// 多项式次数（方言 `Exponent`；`var` 的最大指数）。
+    Exponent,
+    /// 二项式展开（方言 `Expand`；测试 `(var + 1)^2` 精确展开）。
+    Expand,
+    /// 因式分解（方言 `Factor`；测试 `var^2 - 1` 平方差）。
+    Factor,
+    /// 按变量合并同类项（方言 `Collect`；已合并时保持原式）。
+    Collect,
+    /// 多项式最大公因式（方言 `PolynomialGCD`；测试平方差与一次因子）。
+    PolynomialGCD,
+    /// 判别式（方言 `Discriminant`；测试一元二次 `b^2 - 4ac`）。
+    Discriminant,
+    /// 结式（方言 `Resultant`；测试共享一次因子时为 `0`）。
+    Resultant,
+    /// 多项式余式（方言 `PolynomialRemainder`；测试 `x^3 + 1` 除以 `x + 1`）。
+    PolynomialRemainder,
+    /// 十进制数字列表（方言 `IntegerDigits`；精确整数）。
+    IntegerDigits,
+    /// 集合长度。
+    Length,
+    /// 首元素。
+    First,
+    /// 集合其余部分。
+    Rest,
+    /// 去掉末元素（方言 `Most`）。
+    Most,
+    /// 反转集合（方言 `Reverse`）。
+    Reverse,
+    /// 取前缀（方言 `Take`；`Take[list, n]`）。
+    Take,
+    /// 丢弃前缀（方言 `Drop`；`Drop[list, n]`）。
+    Drop,
+    /// 展平嵌套集合（方言 `Flatten`；默认全深度）。
+    Flatten,
+    /// 末尾追加元素（方言 `Append`）。
+    Append,
+    /// 头部插入元素（方言 `Prepend`）。
+    Prepend,
+    /// 成员谓词（方言 `MemberQ`；结构相等）。
+    MemberQ,
+    /// 排序集合（方言 `Sort`；当前精确整数全序）。
+    Sort,
+    /// 去重（方言 `DeleteDuplicates`；首次出现保留）。
+    DeleteDuplicates,
+    /// 计数（方言 `Count`；结构相等出现次数）。
+    Count,
+    /// 分组切片（方言 `Partition`；`Partition[list, n]`）。
+    Partition,
+    /// 常数数组（方言 `ConstantArray`）。
+    ConstantArray,
+    /// 并集（方言 `Union`；结构去重，精确整数时升序）。
+    Union,
+    /// 交集（方言 `Intersection`；结构相等，精确整数时升序）。
+    Intersection,
+    /// 前缀累加（方言 `Accumulate`）。
+    Accumulate,
+    /// 相邻差分（方言 `Differences`）。
+    Differences,
+    /// 自由谓词（方言 `FreeQ`；顶层元素无匹配）。
+    FreeQ,
+    /// 按位置提取（方言 `Extract`；1-based 整数下标）。
+    Extract,
+    /// 左侧填充（方言 `PadLeft`；默认填 0）。
+    PadLeft,
+    /// 交错合并（方言 `Riffle`）。
+    Riffle,
+    /// 位置收集（方言 `Position`；顶层 1-based）。
+    Position,
+    /// 最近邻（方言 `Nearest`；精确整数列表上的最小距离元素，保留并列）。
+    Nearest,
+    /// 下标数组构造（方言 `Array`；`Array[f, n]` → `{f[1],…,f[n]}`）。
+    Array,
+    /// 谓词过滤（方言 `Select`；当前支持 bare `EvenQ` head）。
+    Select,
+    /// 列表卷积（方言 `ListConvolve`；默认无 overhang）。
+    ListConvolve,
+    /// 阶乘。
+    Factorial,
+    /// 平方根（亦见 [`UnaryFunction::Sqrt`]）。
+    Sqrt,
+    /// 拼接集合。
+    Join,
+    /// 整数范围。
+    Range,
+    /// 将 head 作用于参数。
+    Apply,
+    /// apply-head / 应用形式包装。
+    ApplyHead,
+    /// 尺寸 / 维数。
+    Size,
+    /// 求和。
+    Sum,
+    /// 算术平均（方言 `Mean`；平坦数值列表）。
+    Mean,
+    /// 求积。
+    Product,
+    /// 矩阵行列式。
+    Determinant,
+    /// 对集合做 map。
+    Map,
+    /// 带索引的 map（方言 `MapIndexed`；`f[elem, {i}]`，`i` 从 1 起）。
+    MapIndexed,
+    /// 多列表并行 map（方言 `MapThread`；`f[aᵢ, bᵢ, …]`）。
+    MapThread,
+    /// 在指定下标应用函数（方言 `MapAt`；`f[list[[i]]]` 替换 `list[[i]]`）。
+    MapAt,
+    /// 全深度 map（方言 `MapAll`）。
+    MapAll,
+    /// 零矩阵 / 数组构造。
+    Zeros,
+    /// 全一阵 / 数组构造。
+    Ones,
+    /// 单位矩阵构造。
+    Eye,
+    /// 对角矩阵构造（由对角元向量）。
+    DiagonalMatrix,
+    /// 立即重写规则。
+    Rule,
+    /// 延迟重写规则。
+    RuleDeferred,
+    /// 全部替换。
+    ReplaceAll,
+    /// 收集模式匹配。
+    CollectMatches,
+    /// 匹配谓词。
+    Matches,
+    /// 化简。
+    Simplify,
+    /// 保持 / 引用参数。
+    Hold,
+    /// 完全保持（比 `Hold` 更深的求值屏障；方言 `HoldComplete`）。
+    HoldComplete,
+    /// 单次不求值包装（方言 `Unevaluated`）。
+    Unevaluated,
+    /// 计时包装（方言 `Timing`；hold-all 捕获实参，无计时 runtime 时保持残差）。
+    Timing,
+    /// 求值轨迹包装（方言 `Trace`；hold-all 捕获实参，无轨迹 runtime 时保持残差）。
+    Trace,
+    /// 并行求值包装（方言 `ParallelEvaluate`；hold-all 捕获，无并行 runtime 时保持残差）。
+    ParallelEvaluate,
+    /// 输入形式包装（方言 `InputForm`；hold-all-complete 捕获，无格式化 runtime 时保持残差）。
+    InputForm,
+    /// 有理消去（方言 `Cancel`；实参求值；无 Cancel kernel 时残差回声）。
+    Cancel,
+    /// 提取应用 / 集合的 head（方言 `Head`；实参先求值再结构抽取）。
+    Head,
+    /// 匿名函数绑定器。
+    Function,
+    /// 封闭一元特殊函数。
+    Unary(UnaryFunction),
+    /// polygamma 残差 / 特殊函数（`PolyGamma[n, z]`）。
+    PolyGamma,
+    // 微积分残差 head（入口为 `DomainGoal`，非字符串 lowering）
+    /// 微分残差。
+    Differentiate,
+    /// 积分残差。
+    Integrate,
+    /// 极限残差。
+    Limit,
+    /// 幂级数残差。
+    Series,
+    /// Laurent 级数残差。
+    LaurentSeries,
+    /// 渐近展开残差。
+    Asymptotic,
+    /// 留数残差。
+    Residue,
+    /// ODE 求解残差。
+    DSolve,
+    /// Laplace 变换残差。
+    LaplaceTransform,
+    /// Fourier 变换残差。
+    FourierTransform,
+    /// Z 变换残差。
+    ZTransform,
+    /// 向量散度残差。
+    Divergence,
+    /// 向量旋度残差。
+    Curl,
+    /// 单位阶跃（因果指示 · 方言 `UnitStep`/`HeavisideTheta` 映射至此）。
+    UnitStep,
+    /// 集合成员关系谓词（方言 `Element` 映射至此）。
+    MemberOf,
+    /// Kronecker δ。
+    KroneckerDelta,
+    /// 离散 δ。
+    DiscreteDelta,
+    /// 不定式残差标记。
+    Indeterminate,
+    /// 实部投影（收敛域谓词等）。
+    RealPart,
+    /// 虚部投影（方言 `Im` / `imag`）。
+    ImaginaryPart,
+    /// 复共轭（方言 `Conjugate` / `conj`）。
+    Conjugate,
+    /// 辐角（方言 `Arg` / `angle`）。
+    Arg,
+}
+
+impl SemanticOperator {
+    /// 指纹用的稳定 discriminant（勿轻易重编号）。
+    pub const fn discriminant(self) -> u32 {
+        match self {
+            Self::Add => 1,
+            Self::Subtract => 2,
+            Self::Multiply => 3,
+            Self::Divide => 4,
+            Self::Power => 5,
+            Self::Negate => 6,
+            Self::ElementwiseMultiply => 7,
+            Self::ElementwiseDivide => 8,
+            Self::ElementwisePower => 9,
+            Self::ElementwiseAnd => 47,
+            Self::ElementwiseOr => 48,
+            Self::Equal => 10,
+            Self::Unequal => 11,
+            Self::Identical => 12,
+            Self::Unidentical => 274,
+            Self::Less => 13,
+            Self::Greater => 14,
+            Self::LessEqual => 15,
+            Self::GreaterEqual => 16,
+            Self::Max => 253,
+            Self::Min => 254,
+            Self::Mod => 255,
+            Self::Quotient => 256,
+            Self::IntegerDigits => 257,
+            Self::And => 17,
+            Self::Or => 18,
+            Self::Not => 19,
+            Self::TrueQ => 20,
+            Self::EvenQ => 259,
+            Self::IntegerQ => 263,
+            Self::AtomQ => 264,
+            Self::ListQ => 265,
+            Self::NumericQ => 266,
+            Self::NumberQ => 267,
+            Self::PossibleZeroQ => 268,
+            Self::StringQ => 269,
+            Self::Positive => 270,
+            Self::VectorQ => 271,
+            Self::MatrixQ => 272,
+            Self::BooleanQ => 273,
+            Self::Abs => 21,
+            Self::Floor => 276,
+            Self::Ceiling => 277,
+            Self::Round => 278,
+            Self::Numerator => 279,
+            Self::Denominator => 280,
+            Self::Sinc => 281,
+            Self::Variables => 282,
+            Self::Coefficient => 283,
+            Self::Exponent => 284,
+            Self::Expand => 285,
+            Self::Factor => 286,
+            Self::Collect => 287,
+            Self::PolynomialGCD => 288,
+            Self::Discriminant => 289,
+            Self::Resultant => 290,
+            Self::PolynomialRemainder => 291,
+            Self::Mean => 292,
+            Self::ImaginaryPart => 293,
+            Self::Conjugate => 294,
+            Self::Arg => 295,
+            Self::Length => 22,
+            Self::First => 23,
+            Self::Rest => 24,
+            Self::Most => 230,
+            Self::Reverse => 231,
+            Self::Take => 232,
+            Self::Drop => 233,
+            Self::Flatten => 234,
+            Self::Append => 235,
+            Self::Prepend => 236,
+            Self::MemberQ => 237,
+            Self::Sort => 238,
+            Self::DeleteDuplicates => 239,
+            Self::Count => 240,
+            Self::Partition => 241,
+            Self::ConstantArray => 242,
+            Self::Union => 243,
+            Self::Intersection => 244,
+            Self::Accumulate => 245,
+            Self::Differences => 246,
+            Self::FreeQ => 247,
+            Self::Extract => 248,
+            Self::PadLeft => 249,
+            Self::Riffle => 250,
+            Self::Position => 251,
+            Self::Nearest => 275,
+            Self::Array => 252,
+            Self::Select => 260,
+            Self::ListConvolve => 261,
+            Self::Factorial => 25,
+            Self::Sqrt => 26,
+            Self::Join => 27,
+            Self::Range => 28,
+            Self::Apply => 29,
+            Self::ApplyHead => 30,
+            Self::Size => 31,
+            Self::Sum => 32,
+            Self::Product => 33,
+            Self::Determinant => 34,
+            Self::Map => 35,
+            Self::MapIndexed => 228,
+            Self::MapThread => 229,
+            Self::MapAt => 258,
+            Self::MapAll => 262,
+            Self::Zeros => 36,
+            Self::Ones => 37,
+            Self::Eye => 38,
+            Self::DiagonalMatrix => 49,
+            Self::Rule => 39,
+            Self::RuleDeferred => 40,
+            Self::ReplaceAll => 41,
+            Self::CollectMatches => 42,
+            Self::Matches => 43,
+            Self::Simplify => 44,
+            Self::Hold => 45,
+            Self::Function => 46,
+            Self::Unary(f) => 100 + f.discriminant(),
+            Self::PolyGamma => 200,
+            Self::Differentiate => 201,
+            Self::Integrate => 202,
+            Self::Limit => 203,
+            Self::Series => 204,
+            Self::LaurentSeries => 205,
+            Self::Asymptotic => 206,
+            Self::Residue => 207,
+            Self::DSolve => 208,
+            Self::LaplaceTransform => 209,
+            Self::FourierTransform => 210,
+            Self::ZTransform => 211,
+            Self::Divergence => 212,
+            Self::Curl => 213,
+            Self::UnitStep => 214,
+            Self::MemberOf => 215,
+            Self::KroneckerDelta => 216,
+            Self::DiscreteDelta => 217,
+            Self::Indeterminate => 218,
+            Self::RealPart => 219,
+            Self::HoldComplete => 220,
+            Self::Unevaluated => 221,
+            Self::Timing => 222,
+            Self::Trace => 223,
+            Self::ParallelEvaluate => 224,
+            Self::InputForm => 225,
+            Self::Cancel => 226,
+            Self::Head => 227,
+        }
+    }
+
+    /// 由 [`Self::discriminant`] 还原（含 `Unary` 段 100–116 与微积分 / hold / meta 残差 200–252）。
+    pub const fn from_discriminant(d: u32) -> Option<Self> {
+        match d {
+            1 => Some(Self::Add),
+            2 => Some(Self::Subtract),
+            3 => Some(Self::Multiply),
+            4 => Some(Self::Divide),
+            5 => Some(Self::Power),
+            6 => Some(Self::Negate),
+            7 => Some(Self::ElementwiseMultiply),
+            8 => Some(Self::ElementwiseDivide),
+            9 => Some(Self::ElementwisePower),
+            47 => Some(Self::ElementwiseAnd),
+            48 => Some(Self::ElementwiseOr),
+            10 => Some(Self::Equal),
+            11 => Some(Self::Unequal),
+            12 => Some(Self::Identical),
+            274 => Some(Self::Unidentical),
+            13 => Some(Self::Less),
+            14 => Some(Self::Greater),
+            15 => Some(Self::LessEqual),
+            16 => Some(Self::GreaterEqual),
+            253 => Some(Self::Max),
+            254 => Some(Self::Min),
+            255 => Some(Self::Mod),
+            256 => Some(Self::Quotient),
+            257 => Some(Self::IntegerDigits),
+            17 => Some(Self::And),
+            18 => Some(Self::Or),
+            19 => Some(Self::Not),
+            20 => Some(Self::TrueQ),
+            259 => Some(Self::EvenQ),
+            263 => Some(Self::IntegerQ),
+            264 => Some(Self::AtomQ),
+            265 => Some(Self::ListQ),
+            266 => Some(Self::NumericQ),
+            267 => Some(Self::NumberQ),
+            268 => Some(Self::PossibleZeroQ),
+            269 => Some(Self::StringQ),
+            270 => Some(Self::Positive),
+            271 => Some(Self::VectorQ),
+            272 => Some(Self::MatrixQ),
+            273 => Some(Self::BooleanQ),
+            21 => Some(Self::Abs),
+            276 => Some(Self::Floor),
+            277 => Some(Self::Ceiling),
+            278 => Some(Self::Round),
+            279 => Some(Self::Numerator),
+            280 => Some(Self::Denominator),
+            281 => Some(Self::Sinc),
+            282 => Some(Self::Variables),
+            283 => Some(Self::Coefficient),
+            284 => Some(Self::Exponent),
+            285 => Some(Self::Expand),
+            286 => Some(Self::Factor),
+            287 => Some(Self::Collect),
+            288 => Some(Self::PolynomialGCD),
+            289 => Some(Self::Discriminant),
+            290 => Some(Self::Resultant),
+            291 => Some(Self::PolynomialRemainder),
+            292 => Some(Self::Mean),
+            293 => Some(Self::ImaginaryPart),
+            294 => Some(Self::Conjugate),
+            295 => Some(Self::Arg),
+            22 => Some(Self::Length),
+            23 => Some(Self::First),
+            24 => Some(Self::Rest),
+            230 => Some(Self::Most),
+            231 => Some(Self::Reverse),
+            232 => Some(Self::Take),
+            233 => Some(Self::Drop),
+            234 => Some(Self::Flatten),
+            235 => Some(Self::Append),
+            236 => Some(Self::Prepend),
+            237 => Some(Self::MemberQ),
+            238 => Some(Self::Sort),
+            239 => Some(Self::DeleteDuplicates),
+            240 => Some(Self::Count),
+            241 => Some(Self::Partition),
+            242 => Some(Self::ConstantArray),
+            243 => Some(Self::Union),
+            244 => Some(Self::Intersection),
+            245 => Some(Self::Accumulate),
+            246 => Some(Self::Differences),
+            247 => Some(Self::FreeQ),
+            248 => Some(Self::Extract),
+            249 => Some(Self::PadLeft),
+            250 => Some(Self::Riffle),
+            251 => Some(Self::Position),
+            275 => Some(Self::Nearest),
+            252 => Some(Self::Array),
+            260 => Some(Self::Select),
+            261 => Some(Self::ListConvolve),
+            25 => Some(Self::Factorial),
+            26 => Some(Self::Sqrt),
+            27 => Some(Self::Join),
+            28 => Some(Self::Range),
+            29 => Some(Self::Apply),
+            30 => Some(Self::ApplyHead),
+            31 => Some(Self::Size),
+            32 => Some(Self::Sum),
+            33 => Some(Self::Product),
+            34 => Some(Self::Determinant),
+            35 => Some(Self::Map),
+            228 => Some(Self::MapIndexed),
+            229 => Some(Self::MapThread),
+            258 => Some(Self::MapAt),
+            262 => Some(Self::MapAll),
+            36 => Some(Self::Zeros),
+            37 => Some(Self::Ones),
+            38 => Some(Self::Eye),
+            49 => Some(Self::DiagonalMatrix),
+            39 => Some(Self::Rule),
+            40 => Some(Self::RuleDeferred),
+            41 => Some(Self::ReplaceAll),
+            42 => Some(Self::CollectMatches),
+            43 => Some(Self::Matches),
+            44 => Some(Self::Simplify),
+            45 => Some(Self::Hold),
+            46 => Some(Self::Function),
+            100..=116 => match UnaryFunction::from_discriminant(d - 100) {
+                Some(f) => Some(Self::Unary(f)),
+                None => None,
+            },
+            200 => Some(Self::PolyGamma),
+            201 => Some(Self::Differentiate),
+            202 => Some(Self::Integrate),
+            203 => Some(Self::Limit),
+            204 => Some(Self::Series),
+            205 => Some(Self::LaurentSeries),
+            206 => Some(Self::Asymptotic),
+            207 => Some(Self::Residue),
+            208 => Some(Self::DSolve),
+            209 => Some(Self::LaplaceTransform),
+            210 => Some(Self::FourierTransform),
+            211 => Some(Self::ZTransform),
+            212 => Some(Self::Divergence),
+            213 => Some(Self::Curl),
+            214 => Some(Self::UnitStep),
+            215 => Some(Self::MemberOf),
+            216 => Some(Self::KroneckerDelta),
+            217 => Some(Self::DiscreteDelta),
+            218 => Some(Self::Indeterminate),
+            219 => Some(Self::RealPart),
+            220 => Some(Self::HoldComplete),
+            221 => Some(Self::Unevaluated),
+            222 => Some(Self::Timing),
+            223 => Some(Self::Trace),
+            224 => Some(Self::ParallelEvaluate),
+            225 => Some(Self::InputForm),
+            226 => Some(Self::Cancel),
+            227 => Some(Self::Head),
+            _ => None,
+        }
+    }
+
+    /// 中立调试标签（`Add`，不是方言 `Plus`）。
+    pub const fn debug_label(self) -> &'static str {
+        match self {
+            Self::Add => "Add",
+            Self::Subtract => "Subtract",
+            Self::Multiply => "Multiply",
+            Self::Divide => "Divide",
+            Self::Power => "Power",
+            Self::Negate => "Negate",
+            Self::ElementwiseMultiply => "ElementwiseMultiply",
+            Self::ElementwiseDivide => "ElementwiseDivide",
+            Self::ElementwisePower => "ElementwisePower",
+            Self::ElementwiseAnd => "ElementwiseAnd",
+            Self::ElementwiseOr => "ElementwiseOr",
+            Self::Equal => "Equal",
+            Self::Unequal => "Unequal",
+            Self::Identical => "Identical",
+            Self::Unidentical => "Unidentical",
+            Self::Less => "Less",
+            Self::Greater => "Greater",
+            Self::LessEqual => "LessEqual",
+            Self::GreaterEqual => "GreaterEqual",
+            Self::Max => "Max",
+            Self::Min => "Min",
+            Self::Mod => "Mod",
+            Self::Quotient => "Quotient",
+            Self::And => "And",
+            Self::Or => "Or",
+            Self::Not => "Not",
+            Self::TrueQ => "TrueQ",
+            Self::EvenQ => "EvenQ",
+            Self::IntegerQ => "IntegerQ",
+            Self::AtomQ => "AtomQ",
+            Self::ListQ => "ListQ",
+            Self::NumericQ => "NumericQ",
+            Self::NumberQ => "NumberQ",
+            Self::PossibleZeroQ => "PossibleZeroQ",
+            Self::StringQ => "StringQ",
+            Self::Positive => "Positive",
+            Self::VectorQ => "VectorQ",
+            Self::MatrixQ => "MatrixQ",
+            Self::BooleanQ => "BooleanQ",
+            Self::Abs => "Abs",
+            Self::Floor => "Floor",
+            Self::Ceiling => "Ceiling",
+            Self::Round => "Round",
+            Self::Numerator => "Numerator",
+            Self::Denominator => "Denominator",
+            Self::Sinc => "Sinc",
+            Self::Variables => "Variables",
+            Self::Coefficient => "Coefficient",
+            Self::Exponent => "Exponent",
+            Self::Expand => "Expand",
+            Self::Factor => "Factor",
+            Self::Collect => "Collect",
+            Self::PolynomialGCD => "PolynomialGCD",
+            Self::Discriminant => "Discriminant",
+            Self::Resultant => "Resultant",
+            Self::PolynomialRemainder => "PolynomialRemainder",
+            Self::Mean => "Mean",
+            Self::IntegerDigits => "IntegerDigits",
+            Self::Length => "Length",
+            Self::First => "First",
+            Self::Rest => "Rest",
+            Self::Most => "Most",
+            Self::Reverse => "Reverse",
+            Self::Take => "Take",
+            Self::Drop => "Drop",
+            Self::Flatten => "Flatten",
+            Self::Append => "Append",
+            Self::Prepend => "Prepend",
+            Self::MemberQ => "MemberQ",
+            Self::Sort => "Sort",
+            Self::DeleteDuplicates => "DeleteDuplicates",
+            Self::Count => "Count",
+            Self::Partition => "Partition",
+            Self::ConstantArray => "ConstantArray",
+            Self::Union => "Union",
+            Self::Intersection => "Intersection",
+            Self::Accumulate => "Accumulate",
+            Self::Differences => "Differences",
+            Self::FreeQ => "FreeQ",
+            Self::Extract => "Extract",
+            Self::PadLeft => "PadLeft",
+            Self::Riffle => "Riffle",
+            Self::Position => "Position",
+            Self::Nearest => "Nearest",
+            Self::Array => "Array",
+            Self::Select => "Select",
+            Self::ListConvolve => "ListConvolve",
+            Self::Factorial => "Factorial",
+            Self::Sqrt => "Sqrt",
+            Self::Join => "Join",
+            Self::Range => "Range",
+            Self::Apply => "Apply",
+            Self::ApplyHead => "ApplyHead",
+            Self::Size => "Size",
+            Self::Sum => "Sum",
+            Self::Product => "Product",
+            Self::Determinant => "Determinant",
+            Self::Map => "Map",
+            Self::MapIndexed => "MapIndexed",
+            Self::MapThread => "MapThread",
+            Self::MapAt => "MapAt",
+            Self::MapAll => "MapAll",
+            Self::Zeros => "Zeros",
+            Self::Ones => "Ones",
+            Self::Eye => "Eye",
+            Self::DiagonalMatrix => "DiagonalMatrix",
+            Self::Rule => "Rule",
+            Self::RuleDeferred => "RuleDeferred",
+            Self::ReplaceAll => "ReplaceAll",
+            Self::CollectMatches => "CollectMatches",
+            Self::Matches => "Matches",
+            Self::Simplify => "Simplify",
+            Self::Hold => "Hold",
+            Self::HoldComplete => "HoldComplete",
+            Self::Unevaluated => "Unevaluated",
+            Self::Timing => "Timing",
+            Self::Trace => "Trace",
+            Self::ParallelEvaluate => "ParallelEvaluate",
+            Self::InputForm => "InputForm",
+            Self::Cancel => "Cancel",
+            Self::Head => "Head",
+            Self::Function => "Function",
+            Self::Unary(f) => f.debug_label(),
+            Self::PolyGamma => "PolyGamma",
+            Self::Differentiate => "Differentiate",
+            Self::Integrate => "Integrate",
+            Self::Limit => "Limit",
+            Self::Series => "Series",
+            Self::LaurentSeries => "LaurentSeries",
+            Self::Asymptotic => "Asymptotic",
+            Self::Residue => "Residue",
+            Self::DSolve => "DSolve",
+            Self::LaplaceTransform => "LaplaceTransform",
+            Self::FourierTransform => "FourierTransform",
+            Self::ZTransform => "ZTransform",
+            Self::Divergence => "Divergence",
+            Self::Curl => "Curl",
+            Self::UnitStep => "UnitStep",
+            Self::MemberOf => "MemberOf",
+            Self::KroneckerDelta => "KroneckerDelta",
+            Self::DiscreteDelta => "DiscreteDelta",
+            Self::Indeterminate => "Indeterminate",
+            Self::RealPart => "RealPart",
+            Self::ImaginaryPart => "ImaginaryPart",
+            Self::Conjugate => "Conjugate",
+            Self::Arg => "Arg",
+        }
+    }
+
+    /// 将一元函数映射为构造 term 时优先使用的 head。
+    ///
+    /// `Abs` / `Sqrt` 保留专用变体，以保持结构求值对等。
+    pub const fn from_unary(f: UnaryFunction) -> Self {
+        match f {
+            UnaryFunction::Abs => Self::Abs,
+            UnaryFunction::Sqrt => Self::Sqrt,
+            other => Self::Unary(other),
+        }
+    }
+
+    /// 若本算子为已注册一元特殊函数（含 Abs/Sqrt 别名）。
+    pub const fn as_unary(self) -> Option<UnaryFunction> {
+        match self {
+            Self::Unary(f) => Some(f),
+            Self::Abs => Some(UnaryFunction::Abs),
+            Self::Sqrt => Some(UnaryFunction::Sqrt),
+            _ => None,
+        }
+    }
+}
+
+/// 应用 head：封闭语义算子或仅扩展标识。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ApplicationHead {
+    /// 核心封闭语义算子。
+    Semantic(SemanticOperator),
+    /// 仅扩展标识。显示名可存于 [`super::ExtensionRegistry`]。
+    Extension(ExtensionOperatorId),
+}

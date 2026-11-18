@@ -1,0 +1,4346 @@
+use science_cas::{
+    Session,
+    api::request::{CasRequest, ControlPlan, SessionCommand},
+    execution::{
+        compiler::ExecutionCompiler,
+        ir::{CapturedRoot, EffectKind, OperationKind},
+        reference::ReferenceExecutor,
+    },
+};
+use science_ir::{ApplicationHead, Atom, SemanticOperator, TermNode};
+use science_types::ComputationStatus;
+
+#[test]
+fn compile_and_execute_boolean_branch() {
+    let mut session = Session::new();
+    let cond = session.builder().boolean(true, Default::default());
+    let then_term = session.builder().int(1, Default::default());
+    let else_term = session.builder().int(0, Default::default());
+    let request = CasRequest::Control(ControlPlan::Branch {
+        condition: cond,
+        then_branch: Box::new(CasRequest::Term(then_term)),
+        else_branch: Some(Box::new(CasRequest::Term(else_term))),
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("branch");
+    assert_eq!(module.regions[0].blocks.len(), 3);
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let loaded = session.results.get(result_id).expect("result");
+    assert_eq!(loaded.symbolic_term, Some(then_term));
+    assert_eq!(loaded.status, ComputationStatus::Exact);
+}
+
+#[test]
+fn compile_and_execute_define_write_binding() {
+    use science_cas::api::request::SessionCommand;
+    use science_types::{BindingEvaluationPolicy, BindingKind};
+
+    let mut session = Session::new();
+    let sym_term = session.builder().symbol("x", Default::default());
+    let symbol = match session.arena.get(sym_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol atom, got {other:?}"),
+    };
+    let value = session.builder().int(42, Default::default());
+    let request = CasRequest::Command(SessionCommand::Define {
+        symbol,
+        value,
+        kind: BindingKind::Session,
+        evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("define");
+    assert!(!module.effect_edges.is_empty());
+    ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    assert_eq!(session.defs.binding(symbol), Some(value));
+}
+
+#[test]
+fn compile_and_execute_define_matrix() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let sym_term = session.builder().symbol("A", Default::default());
+    let symbol = match session.arena.get(sym_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol atom, got {other:?}"),
+    };
+    let matrix = MatrixValue::from_integers_row_major(1, 2, vec![Integer::from(1), Integer::from(2)]).expect("matrix");
+    let matrix_ref = session.matrix_objects.intern(matrix);
+    let request = CasRequest::Command(SessionCommand::DefineMatrix { symbol, matrix: matrix_ref });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("define matrix");
+    assert!(!module.effect_edges.is_empty());
+    ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    assert_eq!(session.matrix_binding(symbol), Some(matrix_ref));
+    assert_eq!(session.defs.binding(symbol), None);
+}
+
+#[test]
+fn compile_and_execute_index_on_matrix_binding() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_numeric::Integer;
+    use science_types::{IndexSpec, IntegerIndex};
+
+    let mut session = Session::new();
+    let a = session.builder().symbol("A", Default::default());
+    let symbol = match session.arena.get(a) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol atom, got {other:?}"),
+    };
+    let matrix = MatrixValue::from_integers_row_major(2, 2, vec![Integer::from(1), Integer::from(2), Integer::from(3), Integer::from(4)]).expect("matrix");
+    let matrix_ref = session.matrix_objects.intern(matrix);
+    let define = CasRequest::Command(SessionCommand::DefineMatrix { symbol, matrix: matrix_ref });
+    let read = CasRequest::Control(ControlPlan::Index {
+        target: a,
+        axes: vec![IndexSpec::Scalar(IntegerIndex(1)), IndexSpec::Scalar(IntegerIndex(2))],
+    });
+    let request = CasRequest::Control(ControlPlan::Sequence { steps: vec![define, read] });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("index matrix");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    match session.arena.get(session.results.get(result_id).expect("result").symbolic_term.expect("term")) {
+        Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2) => {}
+        other => panic!("expected A(1,2) == 2, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_index_row_on_matrix_binding() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_numeric::Integer;
+    use science_types::{IndexSpec, IntegerIndex};
+
+    let mut session = Session::new();
+    let a = session.builder().symbol("A", Default::default());
+    let symbol = match session.arena.get(a) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol atom, got {other:?}"),
+    };
+    let matrix = MatrixValue::from_integers_row_major(2, 2, vec![Integer::from(1), Integer::from(2), Integer::from(3), Integer::from(4)]).expect("matrix");
+    let matrix_ref = session.matrix_objects.intern(matrix);
+    let define = CasRequest::Command(SessionCommand::DefineMatrix { symbol, matrix: matrix_ref });
+    let read = CasRequest::Control(ControlPlan::Index {
+        target: a,
+        axes: vec![IndexSpec::Scalar(IntegerIndex(2))],
+    });
+    let request = CasRequest::Control(ControlPlan::Sequence { steps: vec![define, read] });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("index row");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: cells, .. }) if cells.len() == 2 => {
+            assert!(matches!(session.arena.get(cells[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(3)));
+            assert!(matches!(session.arena.get(cells[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(4)));
+        }
+        other => panic!("expected A[[2]] == {{3, 4}}, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_store_index_on_matrix_binding() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_numeric::Integer;
+    use science_types::{IndexSpec, IntegerIndex};
+
+    let mut session = Session::new();
+    let a = session.builder().symbol("A", Default::default());
+    let symbol = match session.arena.get(a) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol atom, got {other:?}"),
+    };
+    let nine = session.builder().int(9, Default::default());
+    let matrix = MatrixValue::from_integers_row_major(2, 2, vec![Integer::from(1), Integer::from(2), Integer::from(3), Integer::from(4)]).expect("matrix");
+    let matrix_ref = session.matrix_objects.intern(matrix);
+    assert_eq!(session.matrix_objects.revision(matrix_ref), Some(0));
+    let define = CasRequest::Command(SessionCommand::DefineMatrix { symbol, matrix: matrix_ref });
+    let store = CasRequest::Control(ControlPlan::StoreIndex {
+        target: a,
+        axes: vec![IndexSpec::Scalar(IntegerIndex(1)), IndexSpec::Scalar(IntegerIndex(2))],
+        value: nine,
+    });
+    let read = CasRequest::Control(ControlPlan::Index {
+        target: a,
+        axes: vec![IndexSpec::Scalar(IntegerIndex(1)), IndexSpec::Scalar(IntegerIndex(2))],
+    });
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![define, store, read],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("store matrix");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    match session.arena.get(session.results.get(result_id).expect("result").symbolic_term.expect("term")) {
+        Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(9) => {}
+        other => panic!("expected A(1,2) == 9 after StoreIndex, got {other:?}"),
+    }
+    let after = session.matrix_binding(symbol).expect("matrix own");
+    assert_eq!(after, matrix_ref, "Living 16: StoreIndex keeps MatrixRef identity");
+    assert_eq!(session.matrix_objects.revision(after), Some(1), "Living 16: StoreIndex bumps revision");
+    assert!(session.defs.binding(symbol).is_none());
+}
+
+#[test]
+fn compile_and_execute_store_index_grows_matrix_row_vector() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_numeric::Integer;
+    use science_types::{IndexSpec, IntegerIndex, IntegerOffset};
+
+    let mut session = Session::new();
+    let a = session.builder().symbol("A", Default::default());
+    let symbol = match session.arena.get(a) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol atom, got {other:?}"),
+    };
+    let five = session.builder().int(5, Default::default());
+    let matrix = MatrixValue::from_integers_row_major(1, 4, vec![
+        Integer::from(1),
+        Integer::from(2),
+        Integer::from(3),
+        Integer::from(4),
+    ])
+    .expect("row");
+    let matrix_ref = session.matrix_objects.intern(matrix);
+    let define = CasRequest::Command(SessionCommand::DefineMatrix { symbol, matrix: matrix_ref });
+    let store = CasRequest::Control(ControlPlan::StoreIndex {
+        target: a,
+        axes: vec![IndexSpec::EndRelative(IntegerOffset(1))],
+        value: five,
+    });
+    let read = CasRequest::Term(a);
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![define, store, read],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("grow row");
+    let _result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let bound = session.matrix_binding(symbol).expect("matrix own");
+    assert_eq!(bound, matrix_ref, "Living 16: grow StoreIndex keeps MatrixRef identity");
+    assert_eq!(session.matrix_objects.revision(bound), Some(1));
+    let grown = session.matrix_objects.resolve_owning(bound).expect("value");
+    assert_eq!(grown.shape().rows, 1);
+    assert_eq!(grown.shape().cols, 5);
+    assert_eq!(grown.get(0, 4).expect("cell").owning_copy(), science_cas::domains::linear_algebra::MatrixEntry::Integer(Integer::from(5)));
+}
+
+#[test]
+fn compile_and_execute_read_matrix_binding_as_nested_list() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let a = session.builder().symbol("A", Default::default());
+    let symbol = match session.arena.get(a) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol atom, got {other:?}"),
+    };
+    let matrix = MatrixValue::from_integers_row_major(2, 2, vec![Integer::from(1), Integer::from(2), Integer::from(3), Integer::from(4)]).expect("matrix");
+    let matrix_ref = session.matrix_objects.intern(matrix);
+    let define = CasRequest::Command(SessionCommand::DefineMatrix { symbol, matrix: matrix_ref });
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![define, CasRequest::Term(a)],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("read matrix");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    // Nested list {{1,2},{3,4}} shape for dialect render.
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: rows, .. }) if rows.len() == 2 => {}
+        other => panic!("expected nested list matrix projection, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_accumulate_on_row_matrix_binding() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::{MatrixEntry, MatrixValue};
+    use science_cas::runtime::RuntimeValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let matrix = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 3, vec![Integer::from(1), Integer::from(2), Integer::from(3)]).expect("matrix"));
+    let acc = session
+        .builder()
+        .application(ApplicationHead::Semantic(SemanticOperator::Accumulate), vec![a_term], Default::default());
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix }),
+            CasRequest::Term(acc),
+        ],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("accumulate");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let value_id = session.results.get(result_id).expect("result").value.expect("value");
+    let matrix_ref = match session.values.get(value_id) {
+        Some(RuntimeValue::Matrix(m)) => *m,
+        other => panic!("expected Matrix RuntimeValue, got {other:?}"),
+    };
+    let out = session.matrix_objects.resolve_owning(matrix_ref).expect("payload");
+    assert_eq!(out.shape().rows, 1);
+    assert_eq!(out.shape().cols, 3);
+    // prefix sums 1, 3, 6
+    let e0 = out.get(0, 0).expect("e0");
+    let e1 = out.get(0, 1).expect("e1");
+    let e2 = out.get(0, 2).expect("e2");
+    assert!(matches!(e0, MatrixEntry::Rational(ref r) if r.is_integer() && r.numerator().to_i64() == Some(1)));
+    assert!(matches!(e1, MatrixEntry::Rational(ref r) if r.is_integer() && r.numerator().to_i64() == Some(3)));
+    assert!(matches!(e2, MatrixEntry::Rational(ref r) if r.is_integer() && r.numerator().to_i64() == Some(6)));
+}
+
+#[test]
+fn compile_and_execute_differences_on_row_matrix_binding() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::{MatrixEntry, MatrixValue};
+    use science_cas::runtime::RuntimeValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let matrix = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 3, vec![Integer::from(1), Integer::from(3), Integer::from(6)]).expect("matrix"));
+    let diffs = session
+        .builder()
+        .application(ApplicationHead::Semantic(SemanticOperator::Differences), vec![a_term], Default::default());
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix }),
+            CasRequest::Term(diffs),
+        ],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("differences");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let value_id = session.results.get(result_id).expect("result").value.expect("value");
+    let matrix_ref = match session.values.get(value_id) {
+        Some(RuntimeValue::Matrix(m)) => *m,
+        other => panic!("expected Matrix RuntimeValue, got {other:?}"),
+    };
+    let out = session.matrix_objects.resolve_owning(matrix_ref).expect("payload");
+    assert_eq!(out.shape().rows, 1);
+    assert_eq!(out.shape().cols, 2);
+    let e0 = out.get(0, 0).expect("e0");
+    let e1 = out.get(0, 1).expect("e1");
+    assert!(matches!(e0, MatrixEntry::Rational(ref r) if r.is_integer() && r.numerator().to_i64() == Some(2)));
+    assert!(matches!(e1, MatrixEntry::Rational(ref r) if r.is_integer() && r.numerator().to_i64() == Some(3)));
+}
+
+#[test]
+fn compile_and_execute_sum_on_matrix_binding() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let matrix = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(2, 2, vec![
+            Integer::from(1),
+            Integer::from(2),
+            Integer::from(3),
+            Integer::from(4),
+        ]).expect("matrix"));
+    let sum = session
+        .builder()
+        .application(ApplicationHead::Semantic(SemanticOperator::Sum), vec![a_term], Default::default());
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix }),
+            CasRequest::Term(sum),
+        ],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("sum");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    // Column sums {1+3, 2+4} = {4, 6}
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements, .. }) if elements.len() == 2 => {
+            assert!(matches!(session.arena.get(elements[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(4)));
+            assert!(matches!(session.arena.get(elements[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(6)));
+        }
+        other => panic!("expected column-sum list, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_product_on_matrix_binding() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let matrix = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(2, 2, vec![
+            Integer::from(1),
+            Integer::from(2),
+            Integer::from(3),
+            Integer::from(4),
+        ]).expect("matrix"));
+    let product = session
+        .builder()
+        .application(ApplicationHead::Semantic(SemanticOperator::Product), vec![a_term], Default::default());
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix }),
+            CasRequest::Term(product),
+        ],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("product");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    // Column products {1*3, 2*4} = {3, 8}
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements, .. }) if elements.len() == 2 => {
+            assert!(matches!(session.arena.get(elements[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(3)));
+            assert!(matches!(session.arena.get(elements[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(8)));
+        }
+        other => panic!("expected column-product list, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_product_on_row_matrix_binding() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let matrix = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 3, vec![Integer::from(2), Integer::from(3), Integer::from(4)]).expect("matrix"));
+    let product = session
+        .builder()
+        .application(ApplicationHead::Semantic(SemanticOperator::Product), vec![a_term], Default::default());
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix }),
+            CasRequest::Term(product),
+        ],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("product row");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    assert!(matches!(session.arena.get(term), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(24)));
+}
+
+#[test]
+fn compile_and_execute_length_on_matrix_binding() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let matrix = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(2, 3, vec![
+            Integer::from(1),
+            Integer::from(2),
+            Integer::from(3),
+            Integer::from(4),
+            Integer::from(5),
+            Integer::from(6),
+        ]).expect("matrix"));
+    let length = session
+        .builder()
+        .application(ApplicationHead::Semantic(SemanticOperator::Length), vec![a_term], Default::default());
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix }),
+            CasRequest::Term(length),
+        ],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("length");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    assert!(matches!(session.arena.get(term), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2)));
+}
+
+#[test]
+fn compile_and_execute_constant_array_returns_matrix_value() {
+    use science_cas::runtime::RuntimeValue;
+    use science_ir::ApplicationHead;
+
+    let mut session = Session::new();
+    let seven = session.builder().int(7, Default::default());
+    let three = session.builder().int(3, Default::default());
+    let term = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::ConstantArray),
+        vec![seven, three],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(&mut session, &CasRequest::Term(term))
+        .expect("constant_array");
+    let result_id = ReferenceExecutor::new()
+        .execute(&mut session, &module)
+        .expect("execute constant_array");
+    let value_id = session.results.get(result_id).expect("result").value.expect("value");
+    let matrix_ref = match session.values.get(value_id) {
+        Some(RuntimeValue::Matrix(m)) => *m,
+        other => panic!("expected Matrix RuntimeValue, got {other:?}"),
+    };
+    let matrix = session.matrix_objects.resolve_owning(matrix_ref).expect("payload");
+    assert_eq!(matrix.shape().rows, 1);
+    assert_eq!(matrix.shape().cols, 3);
+    for j in 0..3 {
+        match matrix.get(0, j).expect("entry") {
+            science_cas::domains::linear_algebra::MatrixEntry::Integer(z) => {
+                assert_eq!(z.to_i64(), Some(7));
+            }
+            other => panic!("expected Integer, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn compile_and_execute_constant_array_2d_returns_matrix_value() {
+    use science_cas::runtime::RuntimeValue;
+    use science_ir::ApplicationHead;
+    use science_types::CollectionKind;
+
+    let mut session = Session::new();
+    let five = session.builder().int(5, Default::default());
+    let two = session.builder().int(2, Default::default());
+    let three = session.builder().int(3, Default::default());
+    let dims = session
+        .builder()
+        .collection(CollectionKind::OrderedCollection, vec![two, three], Default::default());
+    let term = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::ConstantArray),
+        vec![five, dims],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(&mut session, &CasRequest::Term(term))
+        .expect("constant_array_2d");
+    let result_id = ReferenceExecutor::new()
+        .execute(&mut session, &module)
+        .expect("execute constant_array_2d");
+    let value_id = session.results.get(result_id).expect("result").value.expect("value");
+    let matrix_ref = match session.values.get(value_id) {
+        Some(RuntimeValue::Matrix(m)) => *m,
+        other => panic!("expected Matrix RuntimeValue, got {other:?}"),
+    };
+    let matrix = session.matrix_objects.resolve_owning(matrix_ref).expect("payload");
+    assert_eq!(matrix.shape().rows, 2);
+    assert_eq!(matrix.shape().cols, 3);
+    for i in 0..2 {
+        for j in 0..3 {
+            match matrix.get(i, j).expect("entry") {
+                science_cas::domains::linear_algebra::MatrixEntry::Integer(z) => {
+                    assert_eq!(z.to_i64(), Some(5));
+                }
+                other => panic!("expected Integer, got {other:?}"),
+            }
+        }
+    }
+}
+
+#[test]
+fn compile_and_execute_range_returns_matrix_value() {
+    use science_cas::runtime::RuntimeValue;
+    use science_ir::ApplicationHead;
+
+    let mut session = Session::new();
+    let three = session.builder().int(3, Default::default());
+    let term = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Range),
+        vec![three],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(&mut session, &CasRequest::Term(term))
+        .expect("range");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute range");
+    let value_id = session.results.get(result_id).expect("result").value.expect("value");
+    let matrix_ref = match session.values.get(value_id) {
+        Some(RuntimeValue::Matrix(m)) => *m,
+        other => panic!("expected Matrix RuntimeValue, got {other:?}"),
+    };
+    let matrix = session.matrix_objects.resolve_owning(matrix_ref).expect("payload");
+    assert_eq!(matrix.shape().rows, 1);
+    assert_eq!(matrix.shape().cols, 3);
+    for (j, expect) in [1i64, 2, 3].into_iter().enumerate() {
+        match matrix.get(0, j as u64).expect("entry") {
+            science_cas::domains::linear_algebra::MatrixEntry::Integer(z) => {
+                assert_eq!(z.to_i64(), Some(expect));
+            }
+            other => panic!("expected Integer, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn compile_and_execute_diagonal_matrix_from_matrix_binding() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_cas::runtime::RuntimeValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let v_term = session.builder().symbol("V", Default::default());
+    let sv = match session.arena.get(v_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol V, got {other:?}"),
+    };
+    let v = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 3, vec![
+            Integer::from(1),
+            Integer::from(2),
+            Integer::from(3),
+        ]).expect("v"));
+    let diag = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::DiagonalMatrix),
+        vec![v_term],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sv, matrix: v }),
+                    CasRequest::Term(diag),
+                ],
+            }),
+        )
+        .expect("diag_from_matrix");
+    let result_id = ReferenceExecutor::new()
+        .execute(&mut session, &module)
+        .expect("execute diag_from_matrix");
+    let value_id = session.results.get(result_id).expect("result").value.expect("value");
+    let matrix_ref = match session.values.get(value_id) {
+        Some(RuntimeValue::Matrix(m)) => *m,
+        other => panic!("expected Matrix RuntimeValue, got {other:?}"),
+    };
+    let matrix = session.matrix_objects.resolve_owning(matrix_ref).expect("payload");
+    assert_eq!(matrix.shape().rows, 3);
+    assert_eq!(matrix.shape().cols, 3);
+    for i in 0..3u64 {
+        for j in 0..3u64 {
+            let expect = if i == j { (i + 1) as i64 } else { 0 };
+            match matrix.get(i, j).expect("entry") {
+                science_cas::domains::linear_algebra::MatrixEntry::Rational(r) => {
+                    assert_eq!(r.numerator().to_i64(), Some(expect));
+                }
+                other => panic!("expected Rational diagonal entry, got {other:?}"),
+            }
+        }
+    }
+}
+
+#[test]
+fn compile_and_execute_diagonal_matrix_returns_matrix_value() {
+    use science_cas::runtime::RuntimeValue;
+    use science_ir::ApplicationHead;
+    use science_types::CollectionKind;
+
+    let mut session = Session::new();
+    let d0 = session.builder().int(1, Default::default());
+    let d1 = session.builder().int(2, Default::default());
+    let diag = session.builder().collection(CollectionKind::OrderedCollection, vec![d0, d1], Default::default());
+    let call = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::DiagonalMatrix),
+        vec![diag],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(&mut session, &CasRequest::Term(call))
+        .expect("diag");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let value_id = session.results.get(result_id).expect("result").value.expect("value");
+    let matrix_ref = match session.values.get(value_id) {
+        Some(RuntimeValue::Matrix(m)) => *m,
+        other => panic!("expected Matrix RuntimeValue, got {other:?}"),
+    };
+    let matrix = session.matrix_objects.resolve_owning(matrix_ref).expect("payload");
+    assert_eq!(matrix.shape().rows, 2);
+    assert_eq!(matrix.shape().cols, 2);
+}
+
+#[test]
+fn compile_and_execute_eye_returns_matrix_value() {
+    use science_ir::ApplicationHead;
+    use science_cas::runtime::RuntimeValue;
+
+    let mut session = Session::new();
+    let n = session.builder().int(2, Default::default());
+    let eye = session
+        .builder()
+        .application(ApplicationHead::Semantic(SemanticOperator::Eye), vec![n], Default::default());
+    let module = ExecutionCompiler::new()
+        .compile(&mut session, &CasRequest::Term(eye))
+        .expect("eye");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let value_id = session.results.get(result_id).expect("result").value.expect("value");
+    let matrix_ref = match session.values.get(value_id) {
+        Some(RuntimeValue::Matrix(m)) => *m,
+        other => panic!("expected Matrix RuntimeValue, got {other:?}"),
+    };
+    let matrix = session.matrix_objects.resolve_owning(matrix_ref).expect("payload");
+    assert_eq!(matrix.shape().rows, 2);
+    assert_eq!(matrix.shape().cols, 2);
+}
+
+#[test]
+fn compile_and_execute_elementwise_multiply_matrix_bindings_via_hadamard() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let b_term = session.builder().symbol("B", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let sb = match session.arena.get(b_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol B, got {other:?}"),
+    };
+    let a = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(2, 2, vec![Integer::from(1), Integer::from(2), Integer::from(3), Integer::from(4)]).expect("a"));
+    let b = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(2, 2, vec![Integer::from(5), Integer::from(6), Integer::from(7), Integer::from(8)]).expect("b"));
+    let product = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::ElementwiseMultiply),
+        vec![a_term, b_term],
+        Default::default(),
+    );
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix: a }),
+            CasRequest::Command(SessionCommand::DefineMatrix { symbol: sb, matrix: b }),
+            CasRequest::Term(product),
+        ],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("ew mul");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: rows, .. }) if rows.len() == 2 => {
+            let r0 = match session.arena.get(rows[0]) {
+                Some(TermNode::Collection { elements: cells, .. }) => cells.clone(),
+                other => panic!("row0: {other:?}"),
+            };
+            assert!(matches!(session.arena.get(r0[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(5)));
+            assert!(matches!(session.arena.get(r0[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(12)));
+        }
+        other => panic!("expected Hadamard nested list, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_elementwise_divide_matrix_bindings() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let b_term = session.builder().symbol("B", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let sb = match session.arena.get(b_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol B, got {other:?}"),
+    };
+    let a = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 2, vec![Integer::from(6), Integer::from(8)]).expect("a"));
+    let b = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 2, vec![Integer::from(2), Integer::from(4)]).expect("b"));
+    let quotient = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::ElementwiseDivide),
+        vec![a_term, b_term],
+        Default::default(),
+    );
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix: a }),
+            CasRequest::Command(SessionCommand::DefineMatrix { symbol: sb, matrix: b }),
+            CasRequest::Term(quotient),
+        ],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("ew div");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    // Living 16: Dot projection flattens 1×n MatrixResult for elementwise divide.
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: cells, .. }) if cells.len() == 2 => {
+            assert!(matches!(session.arena.get(cells[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(3)));
+            assert!(matches!(session.arena.get(cells[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2)));
+        }
+        other => panic!("expected flat quotient list, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_elementwise_power_matrix_bindings() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let b_term = session.builder().symbol("B", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let sb = match session.arena.get(b_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol B, got {other:?}"),
+    };
+    let a = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 2, vec![Integer::from(2), Integer::from(3)]).expect("a"));
+    let b = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 2, vec![Integer::from(3), Integer::from(2)]).expect("b"));
+    let powered = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::ElementwisePower),
+        vec![a_term, b_term],
+        Default::default(),
+    );
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix: a }),
+            CasRequest::Command(SessionCommand::DefineMatrix { symbol: sb, matrix: b }),
+            CasRequest::Term(powered),
+        ],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("ew pow");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: cells, .. }) if cells.len() == 2 => {
+            assert!(matches!(session.arena.get(cells[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(8)));
+            assert!(matches!(session.arena.get(cells[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(9)));
+        }
+        other => panic!("expected flat power list, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_first_rest_flatten_matrix_bindings() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let a = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(2, 2, vec![
+            Integer::from(1),
+            Integer::from(2),
+            Integer::from(3),
+            Integer::from(4),
+        ]).expect("a"));
+    let first = session
+        .builder()
+        .application(ApplicationHead::Semantic(SemanticOperator::First), vec![a_term], Default::default());
+
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix: a }),
+                    CasRequest::Term(first),
+                ],
+            }),
+        )
+        .expect("first");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute first");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    // First row of 2×2 projects as flat 1×2 Own surface.
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: cells, .. }) if cells.len() == 2 => {
+            assert!(matches!(session.arena.get(cells[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(1)));
+            assert!(matches!(session.arena.get(cells[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2)));
+        }
+        other => panic!("expected First row list, got {other:?}"),
+    }
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let a = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(2, 2, vec![
+            Integer::from(1),
+            Integer::from(2),
+            Integer::from(3),
+            Integer::from(4),
+        ]).expect("a"));
+    let rest = session
+        .builder()
+        .application(ApplicationHead::Semantic(SemanticOperator::Rest), vec![a_term], Default::default());
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix: a }),
+                    CasRequest::Term(rest),
+                ],
+            }),
+        )
+        .expect("rest");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute rest");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    // Remaining single row is Own-surface 1×2 → flat list.
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: cells, .. }) if cells.len() == 2 => {
+            assert!(matches!(session.arena.get(cells[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(3)));
+            assert!(matches!(session.arena.get(cells[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(4)));
+        }
+        other => panic!("expected Rest row list, got {other:?}"),
+    }
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let a = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(2, 2, vec![
+            Integer::from(1),
+            Integer::from(2),
+            Integer::from(3),
+            Integer::from(4),
+        ]).expect("a"));
+    let flat = session
+        .builder()
+        .application(ApplicationHead::Semantic(SemanticOperator::Flatten), vec![a_term], Default::default());
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix: a }),
+                    CasRequest::Term(flat),
+                ],
+            }),
+        )
+        .expect("flatten");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute flatten");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: cells, .. }) if cells.len() == 4 => {
+            assert!(matches!(session.arena.get(cells[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(1)));
+            assert!(matches!(session.arena.get(cells[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2)));
+            assert!(matches!(session.arena.get(cells[2]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(3)));
+            assert!(matches!(session.arena.get(cells[3]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(4)));
+        }
+        other => panic!("expected Flatten flat list, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_join_matrix_bindings() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let b_term = session.builder().symbol("B", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let sb = match session.arena.get(b_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol B, got {other:?}"),
+    };
+    let a = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(2, 2, vec![
+            Integer::from(1),
+            Integer::from(2),
+            Integer::from(3),
+            Integer::from(4),
+        ]).expect("a"));
+    let b = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 2, vec![Integer::from(5), Integer::from(6)]).expect("b"));
+    let join = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Join),
+        vec![a_term, b_term],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix: a }),
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sb, matrix: b }),
+                    CasRequest::Term(join),
+                ],
+            }),
+        )
+        .expect("join");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute join");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: rows, .. }) if rows.len() == 3 => {
+            let r2 = match session.arena.get(rows[2]) {
+                Some(TermNode::Collection { elements: cells, .. }) => cells.clone(),
+                other => panic!("row2: {other:?}"),
+            };
+            assert!(matches!(session.arena.get(r2[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(5)));
+            assert!(matches!(session.arena.get(r2[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(6)));
+        }
+        other => panic!("expected Join nested list, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_append_prepend_matrix_bindings() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    // Append two row matrices = Join along columns (`{1,2}`+`{3,4}` → `{1,2,3,4}`).
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let b_term = session.builder().symbol("B", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let sb = match session.arena.get(b_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol B, got {other:?}"),
+    };
+    let a = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 2, vec![Integer::from(1), Integer::from(2)]).expect("a"));
+    let b = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 2, vec![Integer::from(3), Integer::from(4)]).expect("b"));
+    let append = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Append),
+        vec![a_term, b_term],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix: a }),
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sb, matrix: b }),
+                    CasRequest::Term(append),
+                ],
+            }),
+        )
+        .expect("append");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute append");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: cells, .. }) if cells.len() == 4 => {
+            assert!(matches!(session.arena.get(cells[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(1)));
+            assert!(matches!(session.arena.get(cells[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2)));
+            assert!(matches!(session.arena.get(cells[2]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(3)));
+            assert!(matches!(session.arena.get(cells[3]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(4)));
+        }
+        other => panic!("expected Append row Join, got {other:?}"),
+    }
+
+    // Append matrix + row = vertical Join.
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let b_term = session.builder().symbol("B", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let sb = match session.arena.get(b_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol B, got {other:?}"),
+    };
+    let a = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(2, 2, vec![
+            Integer::from(1),
+            Integer::from(2),
+            Integer::from(3),
+            Integer::from(4),
+        ]).expect("a"));
+    let b = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 2, vec![Integer::from(5), Integer::from(6)]).expect("b"));
+    let append = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Append),
+        vec![a_term, b_term],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix: a }),
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sb, matrix: b }),
+                    CasRequest::Term(append),
+                ],
+            }),
+        )
+        .expect("append rows");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute append rows");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: rows, .. }) if rows.len() == 3 => {
+            let r2 = match session.arena.get(rows[2]) {
+                Some(TermNode::Collection { elements: cells, .. }) => cells.clone(),
+                other => panic!("row2: {other:?}"),
+            };
+            assert!(matches!(session.arena.get(r2[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(5)));
+            assert!(matches!(session.arena.get(r2[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(6)));
+        }
+        other => panic!("expected Append nested list, got {other:?}"),
+    }
+
+    // Prepend scalar onto 1×n row vector.
+    let mut session = Session::new();
+    let v_term = session.builder().symbol("V", Default::default());
+    let sv = match session.arena.get(v_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol V, got {other:?}"),
+    };
+    let v = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 2, vec![Integer::from(2), Integer::from(3)]).expect("v"));
+    let zero = session.builder().int(0, Default::default());
+    let prepend = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Prepend),
+        vec![v_term, zero],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sv, matrix: v }),
+                    CasRequest::Term(prepend),
+                ],
+            }),
+        )
+        .expect("prepend");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute prepend");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: cells, .. }) if cells.len() == 3 => {
+            assert!(matches!(session.arena.get(cells[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(0)));
+            assert!(matches!(session.arena.get(cells[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2)));
+            assert!(matches!(session.arena.get(cells[2]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(3)));
+        }
+        other => panic!("expected Prepend row list, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_sort_partition_matrix_bindings() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let v_term = session.builder().symbol("V", Default::default());
+    let sv = match session.arena.get(v_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol V, got {other:?}"),
+    };
+    let v = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 3, vec![
+            Integer::from(3),
+            Integer::from(1),
+            Integer::from(2),
+        ]).expect("v"));
+    let sort = session
+        .builder()
+        .application(ApplicationHead::Semantic(SemanticOperator::Sort), vec![v_term], Default::default());
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sv, matrix: v }),
+                    CasRequest::Term(sort),
+                ],
+            }),
+        )
+        .expect("sort");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute sort");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: cells, .. }) if cells.len() == 3 => {
+            assert!(matches!(session.arena.get(cells[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(1)));
+            assert!(matches!(session.arena.get(cells[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2)));
+            assert!(matches!(session.arena.get(cells[2]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(3)));
+        }
+        other => panic!("expected Sort flat list, got {other:?}"),
+    }
+
+    let mut session = Session::new();
+    let v_term = session.builder().symbol("V", Default::default());
+    let sv = match session.arena.get(v_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol V, got {other:?}"),
+    };
+    let v = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 4, vec![
+            Integer::from(1),
+            Integer::from(2),
+            Integer::from(3),
+            Integer::from(4),
+        ]).expect("v"));
+    let two = session.builder().int(2, Default::default());
+    let part = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Partition),
+        vec![v_term, two],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sv, matrix: v }),
+                    CasRequest::Term(part),
+                ],
+            }),
+        )
+        .expect("partition");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute partition");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: rows, .. }) if rows.len() == 2 => {
+            let r0 = match session.arena.get(rows[0]) {
+                Some(TermNode::Collection { elements: cells, .. }) => cells.clone(),
+                other => panic!("row0: {other:?}"),
+            };
+            assert!(matches!(session.arena.get(r0[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(1)));
+            assert!(matches!(session.arena.get(r0[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2)));
+        }
+        other => panic!("expected Partition nested list, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_delete_duplicates_matrix_bindings() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let v_term = session.builder().symbol("V", Default::default());
+    let sv = match session.arena.get(v_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol V, got {other:?}"),
+    };
+    let v = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 5, vec![
+            Integer::from(1),
+            Integer::from(2),
+            Integer::from(1),
+            Integer::from(3),
+            Integer::from(2),
+        ]).expect("v"));
+    let dedupe = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::DeleteDuplicates),
+        vec![v_term],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sv, matrix: v }),
+                    CasRequest::Term(dedupe),
+                ],
+            }),
+        )
+        .expect("delete_duplicates");
+    let result_id = ReferenceExecutor::new()
+        .execute(&mut session, &module)
+        .expect("execute delete_duplicates");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: cells, .. }) if cells.len() == 3 => {
+            assert!(matches!(session.arena.get(cells[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(1)));
+            assert!(matches!(session.arena.get(cells[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2)));
+            assert!(matches!(session.arena.get(cells[2]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(3)));
+        }
+        other => panic!("expected DeleteDuplicates flat list, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_free_q_position_matrix_bindings() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let v_term = session.builder().symbol("V", Default::default());
+    let sv = match session.arena.get(v_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol V, got {other:?}"),
+    };
+    let v = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 3, vec![
+            Integer::from(1),
+            Integer::from(2),
+            Integer::from(1),
+        ]).expect("v"));
+    let three = session.builder().int(3, Default::default());
+    let free = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::FreeQ),
+        vec![v_term, three],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sv, matrix: v }),
+                    CasRequest::Term(free),
+                ],
+            }),
+        )
+        .expect("free_q");
+    let result_id = ReferenceExecutor::new()
+        .execute(&mut session, &module)
+        .expect("execute free_q");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    assert!(matches!(session.arena.get(term), Some(TermNode::Atom(Atom::Boolean(true)))));
+
+    let mut session = Session::new();
+    let v_term = session.builder().symbol("V", Default::default());
+    let sv = match session.arena.get(v_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol V, got {other:?}"),
+    };
+    let v = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 3, vec![
+            Integer::from(1),
+            Integer::from(2),
+            Integer::from(1),
+        ]).expect("v"));
+    let one = session.builder().int(1, Default::default());
+    let position = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Position),
+        vec![v_term, one],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sv, matrix: v }),
+                    CasRequest::Term(position),
+                ],
+            }),
+        )
+        .expect("position");
+    let result_id = ReferenceExecutor::new()
+        .execute(&mut session, &module)
+        .expect("execute position");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: rows, .. }) if rows.len() == 2 => {
+            for (row, expect) in rows.iter().zip([1i64, 3]) {
+                match session.arena.get(*row) {
+                    Some(TermNode::Collection { elements: cells, .. }) if cells.len() == 1 => {
+                        assert!(matches!(
+                            session.arena.get(cells[0]),
+                            Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(expect)
+                        ));
+                    }
+                    other => panic!("expected singleton index list, got {other:?}"),
+                }
+            }
+        }
+        other => panic!("expected Position nested list, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_pad_left_riffle_matrix_bindings() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let v_term = session.builder().symbol("V", Default::default());
+    let sv = match session.arena.get(v_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol V, got {other:?}"),
+    };
+    let v = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 2, vec![Integer::from(1), Integer::from(2)]).expect("v"));
+    let four = session.builder().int(4, Default::default());
+    let pad = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::PadLeft),
+        vec![v_term, four],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sv, matrix: v }),
+                    CasRequest::Term(pad),
+                ],
+            }),
+        )
+        .expect("pad_left");
+    let result_id = ReferenceExecutor::new()
+        .execute(&mut session, &module)
+        .expect("execute pad_left");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: cells, .. }) if cells.len() == 4 => {
+            for (cell, expect) in cells.iter().zip([0i64, 0, 1, 2]) {
+                assert!(matches!(
+                    session.arena.get(*cell),
+                    Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(expect)
+                ));
+            }
+        }
+        other => panic!("expected PadLeft row, got {other:?}"),
+    }
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let b_term = session.builder().symbol("B", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let sb = match session.arena.get(b_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol B, got {other:?}"),
+    };
+    let a = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 2, vec![Integer::from(1), Integer::from(2)]).expect("a"));
+    let b = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 2, vec![Integer::from(9), Integer::from(8)]).expect("b"));
+    let riffle = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Riffle),
+        vec![a_term, b_term],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix: a }),
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sb, matrix: b }),
+                    CasRequest::Term(riffle),
+                ],
+            }),
+        )
+        .expect("riffle");
+    let result_id = ReferenceExecutor::new()
+        .execute(&mut session, &module)
+        .expect("execute riffle");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: cells, .. }) if cells.len() == 4 => {
+            for (cell, expect) in cells.iter().zip([1i64, 9, 2, 8]) {
+                assert!(matches!(
+                    session.arena.get(*cell),
+                    Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(expect)
+                ));
+            }
+        }
+        other => panic!("expected Riffle row, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_union_intersection_matrix_bindings() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let b_term = session.builder().symbol("B", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let sb = match session.arena.get(b_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol B, got {other:?}"),
+    };
+    let a = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 3, vec![
+            Integer::from(3),
+            Integer::from(1),
+            Integer::from(2),
+        ]).expect("a"));
+    let b = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 3, vec![
+            Integer::from(2),
+            Integer::from(4),
+            Integer::from(1),
+        ]).expect("b"));
+    let union = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Union),
+        vec![a_term, b_term],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix: a }),
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sb, matrix: b }),
+                    CasRequest::Term(union),
+                ],
+            }),
+        )
+        .expect("union");
+    let result_id = ReferenceExecutor::new()
+        .execute(&mut session, &module)
+        .expect("execute union");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: cells, .. }) if cells.len() == 4 => {
+            for (cell, expect) in cells.iter().zip([1i64, 2, 3, 4]) {
+                assert!(matches!(
+                    session.arena.get(*cell),
+                    Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(expect)
+                ));
+            }
+        }
+        other => panic!("expected Union row, got {other:?}"),
+    }
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let b_term = session.builder().symbol("B", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let sb = match session.arena.get(b_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol B, got {other:?}"),
+    };
+    let a = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 3, vec![
+            Integer::from(3),
+            Integer::from(1),
+            Integer::from(2),
+        ]).expect("a"));
+    let b = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 3, vec![
+            Integer::from(2),
+            Integer::from(4),
+            Integer::from(1),
+        ]).expect("b"));
+    let intersection = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Intersection),
+        vec![a_term, b_term],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix: a }),
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sb, matrix: b }),
+                    CasRequest::Term(intersection),
+                ],
+            }),
+        )
+        .expect("intersection");
+    let result_id = ReferenceExecutor::new()
+        .execute(&mut session, &module)
+        .expect("execute intersection");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: cells, .. }) if cells.len() == 2 => {
+            for (cell, expect) in cells.iter().zip([1i64, 2]) {
+                assert!(matches!(
+                    session.arena.get(*cell),
+                    Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(expect)
+                ));
+            }
+        }
+        other => panic!("expected Intersection row, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_extract_matrix_bindings() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let v_term = session.builder().symbol("V", Default::default());
+    let sv = match session.arena.get(v_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol V, got {other:?}"),
+    };
+    let v = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 3, vec![
+            Integer::from(10),
+            Integer::from(20),
+            Integer::from(30),
+        ]).expect("v"));
+    let two = session.builder().int(2, Default::default());
+    let extract = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Extract),
+        vec![v_term, two],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sv, matrix: v }),
+                    CasRequest::Term(extract),
+                ],
+            }),
+        )
+        .expect("extract_vec");
+    let result_id = ReferenceExecutor::new()
+        .execute(&mut session, &module)
+        .expect("execute extract_vec");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    assert!(matches!(
+        session.arena.get(term),
+        Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(20)
+    ));
+}
+
+#[test]
+fn compile_and_execute_extract_collection_binding_with_symbol_index() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::execution::execute_ir_request;
+    use science_ir::ApplicationHead;
+    use science_ir::TermNode;
+    use science_numeric::Integer;
+    use science_types::BindingEvaluationPolicy;
+
+    let mut session = Session::new();
+    let three = session.builder().int(3, Default::default());
+    let list = session.builder().list(vec![three, three], Default::default());
+    let two = session.builder().int(2, Default::default());
+    let nums_term = session.builder().symbol("nums", Default::default());
+    let nums = match session.arena.get(nums_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol nums, got {other:?}"),
+    };
+    let i_term = session.builder().symbol("i", Default::default());
+    let i = match session.arena.get(i_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol i, got {other:?}"),
+    };
+    let extract = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Extract),
+        vec![nums_term, i_term],
+        Default::default(),
+    );
+    let result_id = execute_ir_request(
+        &mut session,
+        CasRequest::Control(ControlPlan::Sequence {
+            steps: vec![
+                CasRequest::Command(SessionCommand::Define {
+                    symbol: nums,
+                    value: list,
+                    kind: science_types::BindingKind::Session,
+                    evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+                }),
+                CasRequest::Command(SessionCommand::Define {
+                    symbol: i,
+                    value: two,
+                    kind: science_types::BindingKind::Session,
+                    evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+                }),
+                CasRequest::Term(extract),
+            ],
+        }),
+    )
+    .expect("extract collection binding");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    assert!(
+        matches!(
+            session.arena.get(term),
+            Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(3)
+        ),
+        "expected 3, got {term:?}"
+    );
+
+    let mut session = Session::new();
+    let three = session.builder().int(3, Default::default());
+    let list = session.builder().list(vec![three, three], Default::default());
+    let one = session.builder().int(1, Default::default());
+    let nums_term = session.builder().symbol("nums", Default::default());
+    let nums = match session.arena.get(nums_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol nums, got {other:?}"),
+    };
+    let i_term = session.builder().symbol("i", Default::default());
+    let i = match session.arena.get(i_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol i, got {other:?}"),
+    };
+    let out_term = session.builder().symbol("out", Default::default());
+    let out = match session.arena.get(out_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol out, got {other:?}"),
+    };
+    let extract = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Extract),
+        vec![nums_term, i_term],
+        Default::default(),
+    );
+    let result_id = execute_ir_request(
+        &mut session,
+        CasRequest::Control(ControlPlan::Sequence {
+            steps: vec![
+                CasRequest::Command(SessionCommand::Define {
+                    symbol: nums,
+                    value: list,
+                    kind: science_types::BindingKind::Session,
+                    evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+                }),
+                CasRequest::Command(SessionCommand::Define {
+                    symbol: i,
+                    value: one,
+                    kind: science_types::BindingKind::Session,
+                    evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+                }),
+                CasRequest::Command(SessionCommand::Define {
+                    symbol: out,
+                    value: extract,
+                    kind: science_types::BindingKind::Session,
+                    evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+                }),
+                CasRequest::Control(ControlPlan::EarlyReturn { value: out_term }),
+            ],
+        }),
+    )
+    .expect("extract via out binding");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    assert!(
+        matches!(
+            session.arena.get(term),
+            Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(3)
+        ),
+        "expected early return 3, got {term:?}"
+    );
+}
+
+#[test]
+fn compile_and_execute_extract_matrix_bindings_row() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let a = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(2, 2, vec![
+            Integer::from(1),
+            Integer::from(2),
+            Integer::from(3),
+            Integer::from(4),
+        ]).expect("a"));
+    let two = session.builder().int(2, Default::default());
+    let extract = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Extract),
+        vec![a_term, two],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix: a }),
+                    CasRequest::Term(extract),
+                ],
+            }),
+        )
+        .expect("extract_row");
+    let result_id = ReferenceExecutor::new()
+        .execute(&mut session, &module)
+        .expect("execute extract_row");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: cells, .. }) if cells.len() == 2 => {
+            assert!(matches!(session.arena.get(cells[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(3)));
+            assert!(matches!(session.arena.get(cells[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(4)));
+        }
+        other => panic!("expected Extract row, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_member_q_count_matrix_bindings() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let v_term = session.builder().symbol("V", Default::default());
+    let sv = match session.arena.get(v_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol V, got {other:?}"),
+    };
+    let v = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 4, vec![
+            Integer::from(1),
+            Integer::from(2),
+            Integer::from(1),
+            Integer::from(3),
+        ]).expect("v"));
+    let two = session.builder().int(2, Default::default());
+    let member = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::MemberQ),
+        vec![v_term, two],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sv, matrix: v }),
+                    CasRequest::Term(member),
+                ],
+            }),
+        )
+        .expect("member_q");
+    let result_id = ReferenceExecutor::new()
+        .execute(&mut session, &module)
+        .expect("execute member_q");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    assert!(matches!(session.arena.get(term), Some(TermNode::Atom(Atom::Boolean(true)))));
+
+    let mut session = Session::new();
+    let v_term = session.builder().symbol("V", Default::default());
+    let sv = match session.arena.get(v_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol V, got {other:?}"),
+    };
+    let v = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 4, vec![
+            Integer::from(1),
+            Integer::from(2),
+            Integer::from(1),
+            Integer::from(3),
+        ]).expect("v"));
+    let one = session.builder().int(1, Default::default());
+    let count = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Count),
+        vec![v_term, one],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sv, matrix: v }),
+                    CasRequest::Term(count),
+                ],
+            }),
+        )
+        .expect("count");
+    let result_id = ReferenceExecutor::new()
+        .execute(&mut session, &module)
+        .expect("execute count");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    assert!(matches!(session.arena.get(term), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2)));
+}
+
+#[test]
+fn compile_and_execute_take_drop_matrix_bindings() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let a = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(3, 2, vec![
+            Integer::from(1),
+            Integer::from(2),
+            Integer::from(3),
+            Integer::from(4),
+            Integer::from(5),
+            Integer::from(6),
+        ]).expect("a"));
+    let two = session.builder().int(2, Default::default());
+    let take = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Take),
+        vec![a_term, two],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix: a }),
+                    CasRequest::Term(take),
+                ],
+            }),
+        )
+        .expect("take");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute take");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: rows, .. }) if rows.len() == 2 => {
+            let r0 = match session.arena.get(rows[0]) {
+                Some(TermNode::Collection { elements: cells, .. }) => cells.clone(),
+                other => panic!("row0: {other:?}"),
+            };
+            assert!(matches!(session.arena.get(r0[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(1)));
+            assert!(matches!(session.arena.get(r0[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2)));
+        }
+        other => panic!("expected Take nested list, got {other:?}"),
+    }
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let a = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(3, 2, vec![
+            Integer::from(1),
+            Integer::from(2),
+            Integer::from(3),
+            Integer::from(4),
+            Integer::from(5),
+            Integer::from(6),
+        ]).expect("a"));
+    let one = session.builder().int(1, Default::default());
+    let drop = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Drop),
+        vec![a_term, one],
+        Default::default(),
+    );
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix: a }),
+                    CasRequest::Term(drop),
+                ],
+            }),
+        )
+        .expect("drop");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute drop");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: rows, .. }) if rows.len() == 2 => {
+            let r0 = match session.arena.get(rows[0]) {
+                Some(TermNode::Collection { elements: cells, .. }) => cells.clone(),
+                other => panic!("row0: {other:?}"),
+            };
+            assert!(matches!(session.arena.get(r0[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(3)));
+            assert!(matches!(session.arena.get(r0[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(4)));
+        }
+        other => panic!("expected Drop nested list, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_most_reverse_matrix_bindings() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let a = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(2, 2, vec![
+            Integer::from(1),
+            Integer::from(2),
+            Integer::from(3),
+            Integer::from(4),
+        ]).expect("a"));
+    let most = session
+        .builder()
+        .application(ApplicationHead::Semantic(SemanticOperator::Most), vec![a_term], Default::default());
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix: a }),
+                    CasRequest::Term(most),
+                ],
+            }),
+        )
+        .expect("most");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute most");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    // Most of 2×2 drops last row → 1×2 Own surface flat list.
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: cells, .. }) if cells.len() == 2 => {
+            assert!(matches!(session.arena.get(cells[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(1)));
+            assert!(matches!(session.arena.get(cells[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2)));
+        }
+        other => panic!("expected Most row list, got {other:?}"),
+    }
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let a = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(1, 3, vec![
+            Integer::from(1),
+            Integer::from(2),
+            Integer::from(3),
+        ]).expect("a"));
+    let rev = session
+        .builder()
+        .application(ApplicationHead::Semantic(SemanticOperator::Reverse), vec![a_term], Default::default());
+    let module = ExecutionCompiler::new()
+        .compile(
+            &mut session,
+            &CasRequest::Control(ControlPlan::Sequence {
+                steps: vec![
+                    CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix: a }),
+                    CasRequest::Term(rev),
+                ],
+            }),
+        )
+        .expect("reverse");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute reverse");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: cells, .. }) if cells.len() == 3 => {
+            assert!(matches!(session.arena.get(cells[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(3)));
+            assert!(matches!(session.arena.get(cells[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2)));
+            assert!(matches!(session.arena.get(cells[2]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(1)));
+        }
+        other => panic!("expected Reverse flat list, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_det_on_matrix_binding() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let matrix = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(2, 2, vec![
+            Integer::from(1),
+            Integer::from(2),
+            Integer::from(3),
+            Integer::from(4),
+        ]).expect("matrix"));
+    let det = session
+        .builder()
+        .application(ApplicationHead::Semantic(SemanticOperator::Determinant), vec![a_term], Default::default());
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix }),
+            CasRequest::Term(det),
+        ],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("det matrix");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    assert!(matches!(session.arena.get(term), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(-2)));
+}
+
+#[test]
+fn compile_and_execute_det_on_nested_list_inters_then_det() {
+    use science_ir::ApplicationHead;
+    use science_types::CollectionKind;
+
+    let mut session = Session::new();
+    let a00 = session.builder().int(1, Default::default());
+    let a01 = session.builder().int(2, Default::default());
+    let a10 = session.builder().int(3, Default::default());
+    let a11 = session.builder().int(4, Default::default());
+    let row0 = session
+        .builder()
+        .collection(CollectionKind::OrderedCollection, vec![a00, a01], Default::default());
+    let row1 = session
+        .builder()
+        .collection(CollectionKind::OrderedCollection, vec![a10, a11], Default::default());
+    let matrix = session
+        .builder()
+        .collection(CollectionKind::OrderedCollection, vec![row0, row1], Default::default());
+    let det = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Determinant),
+        vec![matrix],
+        Default::default(),
+    );
+    let before = session.matrix_objects.len();
+    let module = ExecutionCompiler::new()
+        .compile(&mut session, &CasRequest::Term(det))
+        .expect("det_literal");
+    let result_id = ReferenceExecutor::new()
+        .execute(&mut session, &module)
+        .expect("execute det_literal");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    assert!(matches!(
+        session.arena.get(term),
+        Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(-2)
+    ));
+    assert!(
+        session.matrix_objects.len() > before,
+        "Living 16: nested Det literal should intern MatrixRef before Bareiss"
+    );
+}
+
+#[test]
+fn compile_and_execute_size_on_matrix_binding() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let matrix = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(2, 3, vec![
+            Integer::from(1),
+            Integer::from(2),
+            Integer::from(3),
+            Integer::from(4),
+            Integer::from(5),
+            Integer::from(6),
+        ]).expect("matrix"));
+    let size = session
+        .builder()
+        .application(ApplicationHead::Semantic(SemanticOperator::Size), vec![a_term], Default::default());
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix }),
+            CasRequest::Term(size),
+        ],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("size matrix");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements, .. }) if elements.len() == 2 => {
+            assert!(matches!(session.arena.get(elements[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2)));
+            assert!(matches!(session.arena.get(elements[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(3)));
+        }
+        other => panic!("expected Size dimensions list, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_multiply_matrix_bindings_via_hadamard() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::domains::linear_algebra::MatrixValue;
+    use science_ir::ApplicationHead;
+    use science_numeric::Integer;
+
+    // Living 16: `Multiply` on two `RuntimeValue::Matrix` slots is Hadamard, not MatMul /
+    // nested-List reverse recognition. MatMul requires an explicit Domain goal.
+    let mut session = Session::new();
+    let a_term = session.builder().symbol("A", Default::default());
+    let b_term = session.builder().symbol("B", Default::default());
+    let sa = match session.arena.get(a_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol A, got {other:?}"),
+    };
+    let sb = match session.arena.get(b_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol B, got {other:?}"),
+    };
+    let a = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(2, 2, vec![Integer::from(1), Integer::from(2), Integer::from(3), Integer::from(4)]).expect("a"));
+    let b = session
+        .matrix_objects
+        .intern(MatrixValue::from_integers_row_major(2, 2, vec![Integer::from(5), Integer::from(6), Integer::from(7), Integer::from(8)]).expect("b"));
+    let product = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Multiply), vec![a_term, b_term], Default::default());
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::DefineMatrix { symbol: sa, matrix: a }),
+            CasRequest::Command(SessionCommand::DefineMatrix { symbol: sb, matrix: b }),
+            CasRequest::Term(product),
+        ],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("mul matrix");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    // Hadamard [[5,12],[21,32]]
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements: rows, .. }) if rows.len() == 2 => {
+            let r0 = match session.arena.get(rows[0]) {
+                Some(TermNode::Collection { elements: cells, .. }) => cells.clone(),
+                other => panic!("row0: {other:?}"),
+            };
+            assert!(matches!(session.arena.get(r0[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(5)));
+            assert!(matches!(session.arena.get(r0[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(12)));
+        }
+        other => panic!("expected Hadamard nested list, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_define_deferred_evaluates_on_read() {
+    use science_cas::api::request::SessionCommand;
+    use science_types::{BindingEvaluationPolicy, BindingKind};
+
+    let mut session = Session::new();
+    let plus = ApplicationHead::Semantic(SemanticOperator::Add);
+    let a = session.builder().int(1, Default::default());
+    let b = session.builder().int(1, Default::default());
+    let rhs = session.builder().application(plus, vec![a, b], Default::default());
+    let sym_term = session.builder().symbol("a", Default::default());
+    let symbol = match session.arena.get(sym_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol, got {other:?}"),
+    };
+    let request = CasRequest::Command(SessionCommand::Define {
+        symbol,
+        value: rhs,
+        kind: BindingKind::Session,
+        evaluation: BindingEvaluationPolicy::StoreResidualTerm,
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("define residual");
+    ReferenceExecutor::new().execute(&mut session, &module).expect("define exec");
+    assert!(session.defs.binding(symbol).is_none());
+    assert_eq!(session.defs.residual_binding(symbol), Some(rhs));
+
+    let read_module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(sym_term)).expect("read");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &read_module).expect("read exec");
+    let loaded = session.results.get(result_id).expect("result");
+    let out = loaded.symbolic_term.expect("term");
+    match session.arena.get(out) {
+        Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2) => {}
+        other => panic!("expected residual Plus[1,1] == 2, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_define_then_read_binding() {
+    use science_cas::api::request::SessionCommand;
+    use science_types::{BindingEvaluationPolicy, BindingKind};
+
+    let mut session = Session::new();
+    let sym_term = session.builder().symbol("y", Default::default());
+    let symbol = match session.arena.get(sym_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol atom, got {other:?}"),
+    };
+    let value = session.builder().int(7, Default::default());
+    let define = CasRequest::Command(SessionCommand::Define {
+        symbol,
+        value,
+        kind: BindingKind::Session,
+        evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+    });
+    let define_module = ExecutionCompiler::new().compile(&mut session, &define).expect("define");
+    ReferenceExecutor::new().execute(&mut session, &define_module).expect("define exec");
+
+    let read = CasRequest::Term(sym_term);
+    let read_module = ExecutionCompiler::new().compile(&mut session, &read).expect("read");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &read_module).expect("read exec");
+    let loaded = session.results.get(result_id).expect("result");
+    assert_eq!(loaded.symbolic_term, Some(value));
+}
+
+#[test]
+fn compile_and_execute_sequence_define_read_clear() {
+    use science_cas::api::request::SessionCommand;
+    use science_types::{BindingEvaluationPolicy, BindingKind};
+
+    let mut session = Session::new();
+    let sym_term = session.builder().symbol("z", Default::default());
+    let symbol = match session.arena.get(sym_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol atom, got {other:?}"),
+    };
+    let value = session.builder().int(5, Default::default());
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::Define {
+                symbol,
+                value,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+            CasRequest::Term(sym_term),
+            CasRequest::Command(SessionCommand::ClearDefinition { symbol }),
+        ],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("sequence");
+    assert_eq!(module.regions[0].blocks.len(), 3);
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let loaded = session.results.get(result_id).expect("result");
+    // 最后一步清除；结果为 Unit → Null 项。
+    match session.arena.get(loaded.symbolic_term.expect("term")) {
+        Some(TermNode::Atom(Atom::Null)) => {}
+        other => panic!("expected Null after clear, got {other:?}"),
+    }
+    assert!(session.defs.binding(symbol).is_none());
+}
+
+#[test]
+fn compile_and_execute_counted_loop_unroll() {
+    let mut session = Session::new();
+    let var = session.builder().symbol("i", Default::default());
+    let a = session.builder().int(1, Default::default());
+    let b = session.builder().int(2, Default::default());
+    let c = session.builder().int(3, Default::default());
+    let iter = session.builder().list(vec![a, b, c], Default::default());
+    let request = CasRequest::Control(ControlPlan::CountedLoop { variable: var, iterator: iter, body: Box::new(CasRequest::Term(var)) });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("counted");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let loaded = session.results.get(result_id).expect("result");
+    assert_eq!(loaded.symbolic_term, Some(c));
+    let symbol = match session.arena.get(var) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol, got {other:?}"),
+    };
+    assert_eq!(session.defs.binding(symbol), Some(c));
+}
+
+#[test]
+fn compile_and_execute_iterate_collects_collection() {
+    use science_types::BindingEvaluationPolicy;
+
+    let mut session = Session::new();
+    let var = session.builder().symbol("i", Default::default());
+    let a = session.builder().int(1, Default::default());
+    let b = session.builder().int(2, Default::default());
+    let c = session.builder().int(3, Default::default());
+    let range = session.builder().list(vec![a, b, c], Default::default());
+    let request = CasRequest::Control(ControlPlan::Iterate {
+        binder: var,
+        range,
+        body: Box::new(CasRequest::Term(var)),
+        evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("iterate");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements, .. }) => {
+            assert_eq!(elements.len(), 3);
+        }
+        other => panic!("expected collection, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_control_index_scalar() {
+    use science_types::{IndexSpec, IntegerIndex};
+
+    let mut session = Session::new();
+    let a = session.builder().int(10, Default::default());
+    let b = session.builder().int(20, Default::default());
+    let c = session.builder().int(30, Default::default());
+    let list = session.builder().list(vec![a, b, c], Default::default());
+    let request = CasRequest::Control(ControlPlan::Index { target: list, axes: vec![IndexSpec::Scalar(IntegerIndex(2))] });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("index");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    match session.arena.get(session.results.get(result_id).expect("result").symbolic_term.expect("term")) {
+        Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(20) => {}
+        other => panic!("expected Index[..., 2] == 20, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_control_index_resolves_own_binding() {
+    use science_types::{BindingEvaluationPolicy, BindingKind, IndexSpec, IntegerIndex};
+
+    let mut session = Session::new();
+    let a = session.builder().symbol("A", Default::default());
+    let ten = session.builder().int(10, Default::default());
+    let twenty = session.builder().int(20, Default::default());
+    let list = session.builder().list(vec![ten, twenty], Default::default());
+    let define = CasRequest::Command(SessionCommand::Define {
+        symbol: match session.arena.get(a) {
+            Some(TermNode::Atom(Atom::Symbol(s))) => *s,
+            other => panic!("expected symbol A, got {other:?}"),
+        },
+        value: list,
+        kind: BindingKind::Session,
+        evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+    });
+    let index = CasRequest::Control(ControlPlan::Index {
+        target: a,
+        axes: vec![IndexSpec::Scalar(IntegerIndex(2))],
+    });
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![define, index],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("define+index");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    match session.arena.get(session.results.get(result_id).expect("result").symbolic_term.expect("term")) {
+        Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(20) => {}
+        other => panic!("expected Own A then Index[..., 2] == 20, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_control_index_free_symbol_becomes_apply() {
+    use science_types::{IndexSpec, IntegerIndex};
+
+    let mut session = Session::new();
+    let speye = session.builder().symbol("speye", Default::default());
+    let request = CasRequest::Control(ControlPlan::Index {
+        target: speye,
+        axes: vec![IndexSpec::Scalar(IntegerIndex(2))],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("index free");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Application {
+            head: ApplicationHead::Semantic(SemanticOperator::ApplyHead),
+            arguments,
+        }) => {
+            assert_eq!(arguments.len(), 2, "ApplyHead[speye, 2], got {arguments:?}");
+            match session.arena.get(arguments[0]) {
+                Some(TermNode::Atom(Atom::Symbol(_))) => {}
+                other => panic!("expected speye symbol head, got {other:?}"),
+            }
+            match session.arena.get(arguments[1]) {
+                Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2) => {}
+                other => panic!("expected arg 2, got {other:?}"),
+            }
+        }
+        other => panic!("expected ApplyHead residual for free speye(2), got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_control_store_index_scalar() {
+    use science_types::{BindingEvaluationPolicy, BindingKind, IndexSpec, IntegerIndex};
+
+    let mut session = Session::new();
+    let a = session.builder().symbol("A", Default::default());
+    let one = session.builder().int(1, Default::default());
+    let two = session.builder().int(2, Default::default());
+    let three = session.builder().int(3, Default::default());
+    let nine = session.builder().int(9, Default::default());
+    let list = session.builder().list(vec![one, two, three], Default::default());
+    let define = CasRequest::Command(SessionCommand::Define {
+        symbol: match session.arena.get(a) {
+            Some(TermNode::Atom(Atom::Symbol(s))) => *s,
+            other => panic!("expected symbol A, got {other:?}"),
+        },
+        value: list,
+        kind: BindingKind::Session,
+        evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+    });
+    let store = CasRequest::Control(ControlPlan::StoreIndex {
+        target: a,
+        axes: vec![IndexSpec::Scalar(IntegerIndex(2))],
+        value: nine,
+    });
+    let read = CasRequest::Control(ControlPlan::Index {
+        target: a,
+        axes: vec![IndexSpec::Scalar(IntegerIndex(2))],
+    });
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![define, store, read],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("store index");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    match session.arena.get(session.results.get(result_id).expect("result").symbolic_term.expect("term")) {
+        Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(9) => {}
+        other => panic!("expected A(2) == 9 after StoreIndex, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_control_store_index_literal_returns_updated_collection() {
+    use science_types::{IndexSpec, IntegerIndex};
+
+    let mut session = Session::new();
+    let one = session.builder().int(1, Default::default());
+    let two = session.builder().int(2, Default::default());
+    let three = session.builder().int(3, Default::default());
+    let nine = session.builder().int(9, Default::default());
+    let list = session.builder().list(vec![one, two, three], Default::default());
+    let store = CasRequest::Control(ControlPlan::StoreIndex {
+        target: list,
+        axes: vec![IndexSpec::Scalar(IntegerIndex(2))],
+        value: nine,
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &store).expect("literal store");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements, .. }) => {
+            let nums: Vec<i64> = elements
+                .iter()
+                .map(|id| match session.arena.get(*id) {
+                    Some(TermNode::Atom(Atom::Number(n))) => n.as_exact_integer().expect("int"),
+                    other => panic!("expected int, got {other:?}"),
+                })
+                .collect();
+            assert_eq!(nums, vec![1, 9, 3]);
+        }
+        other => panic!("expected list, got {other:?}"),
+    }
+
+    let mut session = Session::new();
+    let one = session.builder().int(1, Default::default());
+    let two = session.builder().int(2, Default::default());
+    let three = session.builder().int(3, Default::default());
+    let four = session.builder().int(4, Default::default());
+    let nine = session.builder().int(9, Default::default());
+    let row0 = session.builder().list(vec![one, two], Default::default());
+    let row1 = session.builder().list(vec![three, four], Default::default());
+    let matrix = session.builder().list(vec![row0, row1], Default::default());
+    let store = CasRequest::Control(ControlPlan::StoreIndex {
+        target: matrix,
+        axes: vec![IndexSpec::Scalar(IntegerIndex(1)), IndexSpec::Scalar(IntegerIndex(2))],
+        value: nine,
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &store).expect("literal matrix store");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    let rows = match session.arena.get(term) {
+        Some(TermNode::Collection { elements, .. }) => elements.clone(),
+        other => panic!("expected matrix list, got {other:?}"),
+    };
+    assert_eq!(rows.len(), 2);
+    let cell = match session.arena.get(rows[0]) {
+        Some(TermNode::Collection { elements, .. }) => elements[1],
+        other => panic!("expected row, got {other:?}"),
+    };
+    match session.arena.get(cell) {
+        Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(9) => {}
+        other => panic!("expected updated cell 9, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_control_store_index_matrix_cell() {
+    use science_types::{BindingEvaluationPolicy, BindingKind, IndexSpec, IntegerIndex};
+
+    let mut session = Session::new();
+    let m = session.builder().symbol("M", Default::default());
+    let one = session.builder().int(1, Default::default());
+    let two = session.builder().int(2, Default::default());
+    let three = session.builder().int(3, Default::default());
+    let four = session.builder().int(4, Default::default());
+    let nine = session.builder().int(9, Default::default());
+    let r0 = session.builder().list(vec![one, two], Default::default());
+    let r1 = session.builder().list(vec![three, four], Default::default());
+    let matrix = session.builder().list(vec![r0, r1], Default::default());
+    let define = CasRequest::Command(SessionCommand::Define {
+        symbol: match session.arena.get(m) {
+            Some(TermNode::Atom(Atom::Symbol(s))) => *s,
+            other => panic!("expected symbol M, got {other:?}"),
+        },
+        value: matrix,
+        kind: BindingKind::Session,
+        evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+    });
+    let store = CasRequest::Control(ControlPlan::StoreIndex {
+        target: m,
+        axes: vec![IndexSpec::Scalar(IntegerIndex(1)), IndexSpec::Scalar(IntegerIndex(2))],
+        value: nine,
+    });
+    let read = CasRequest::Control(ControlPlan::Index {
+        target: m,
+        axes: vec![IndexSpec::Scalar(IntegerIndex(1)), IndexSpec::Scalar(IntegerIndex(2))],
+    });
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![define, store, read],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("store matrix");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    match session.arena.get(session.results.get(result_id).expect("result").symbolic_term.expect("term")) {
+        Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(9) => {}
+        other => panic!("expected M(1,2) == 9 after StoreIndex, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_control_store_index_grow_flat() {
+    use science_types::{BindingEvaluationPolicy, BindingKind, IndexSpec, IntegerIndex, IntegerOffset};
+
+    let mut session = Session::new();
+    let a = session.builder().symbol("A", Default::default());
+    let one = session.builder().int(1, Default::default());
+    let two = session.builder().int(2, Default::default());
+    let three = session.builder().int(3, Default::default());
+    let five = session.builder().int(5, Default::default());
+    let list = session.builder().list(vec![one, two, three], Default::default());
+    let define = CasRequest::Command(SessionCommand::Define {
+        symbol: match session.arena.get(a) {
+            Some(TermNode::Atom(Atom::Symbol(s))) => *s,
+            other => panic!("expected symbol A, got {other:?}"),
+        },
+        value: list,
+        kind: BindingKind::Session,
+        evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+    });
+    // A(end+1)=5 → [1, 2, 3, 5]
+    let store = CasRequest::Control(ControlPlan::StoreIndex {
+        target: a,
+        axes: vec![IndexSpec::EndRelative(IntegerOffset(1))],
+        value: five,
+    });
+    let read = CasRequest::Term(a);
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![define, store, read],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("store grow");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(out) {
+        Some(TermNode::Collection { elements, .. }) => {
+            assert_eq!(elements.len(), 4);
+            let vals: Vec<_> = elements
+                .iter()
+                .map(|e| match session.arena.get(*e) {
+                    Some(TermNode::Atom(Atom::Number(n))) => n.as_exact_integer().expect("int"),
+                    other => panic!("expected int, got {other:?}"),
+                })
+                .collect();
+            assert_eq!(vals, vec![1, 2, 3, 5]);
+        }
+        other => panic!("expected grown list, got {other:?}"),
+    }
+
+    // A(5)=9 on [1,2,3] pads with 0 → [1,2,3,0,9]
+    let mut session = Session::new();
+    let a = session.builder().symbol("A", Default::default());
+    let one = session.builder().int(1, Default::default());
+    let two = session.builder().int(2, Default::default());
+    let three = session.builder().int(3, Default::default());
+    let nine = session.builder().int(9, Default::default());
+    let list = session.builder().list(vec![one, two, three], Default::default());
+    let define = CasRequest::Command(SessionCommand::Define {
+        symbol: match session.arena.get(a) {
+            Some(TermNode::Atom(Atom::Symbol(s))) => *s,
+            other => panic!("expected symbol A, got {other:?}"),
+        },
+        value: list,
+        kind: BindingKind::Session,
+        evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+    });
+    let store = CasRequest::Control(ControlPlan::StoreIndex {
+        target: a,
+        axes: vec![IndexSpec::Scalar(IntegerIndex(5))],
+        value: nine,
+    });
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![define, store, CasRequest::Term(a)],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("store pad");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(out) {
+        Some(TermNode::Collection { elements, .. }) => {
+            let vals: Vec<_> = elements
+                .iter()
+                .map(|e| match session.arena.get(*e) {
+                    Some(TermNode::Atom(Atom::Number(n))) => n.as_exact_integer().expect("int"),
+                    other => panic!("expected int, got {other:?}"),
+                })
+                .collect();
+            assert_eq!(vals, vec![1, 2, 3, 0, 9]);
+        }
+        other => panic!("expected padded list, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_control_store_index_grow_matrix() {
+    use science_types::{BindingEvaluationPolicy, BindingKind, IndexSpec, IntegerIndex};
+
+    let mut session = Session::new();
+    let m = session.builder().symbol("M", Default::default());
+    let one = session.builder().int(1, Default::default());
+    let two = session.builder().int(2, Default::default());
+    let three = session.builder().int(3, Default::default());
+    let four = session.builder().int(4, Default::default());
+    let nine = session.builder().int(9, Default::default());
+    let r0 = session.builder().list(vec![one, two], Default::default());
+    let r1 = session.builder().list(vec![three, four], Default::default());
+    let matrix = session.builder().list(vec![r0, r1], Default::default());
+    let define = CasRequest::Command(SessionCommand::Define {
+        symbol: match session.arena.get(m) {
+            Some(TermNode::Atom(Atom::Symbol(s))) => *s,
+            other => panic!("expected symbol M, got {other:?}"),
+        },
+        value: matrix,
+        kind: BindingKind::Session,
+        evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+    });
+    // M(3,3)=9 on 2×2 → 3×3 with zero pad
+    let store = CasRequest::Control(ControlPlan::StoreIndex {
+        target: m,
+        axes: vec![IndexSpec::Scalar(IntegerIndex(3)), IndexSpec::Scalar(IntegerIndex(3))],
+        value: nine,
+    });
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![define, store, CasRequest::Term(m)],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("grow matrix");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(out) {
+        Some(TermNode::Collection { elements: rows, .. }) => {
+            assert_eq!(rows.len(), 3);
+            let mut grid = Vec::new();
+            for row in rows.clone() {
+                match session.arena.get(row) {
+                    Some(TermNode::Collection { elements: cols, .. }) => {
+                        assert_eq!(cols.len(), 3);
+                        for c in cols {
+                            match session.arena.get(*c) {
+                                Some(TermNode::Atom(Atom::Number(n))) => {
+                                    grid.push(n.as_exact_integer().expect("int"));
+                                }
+                                other => panic!("expected int cell, got {other:?}"),
+                            }
+                        }
+                    }
+                    other => panic!("expected row collection, got {other:?}"),
+                }
+            }
+            assert_eq!(grid, vec![1, 2, 0, 3, 4, 0, 0, 0, 9]);
+        }
+        other => panic!("expected grown matrix, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_control_index_column_major_flatten() {
+    use science_types::IndexSpec;
+
+    let mut session = Session::new();
+    // [1, 2; 3, 4] → column-major flatten [1; 3; 2; 4]
+    let one = session.builder().int(1, Default::default());
+    let two = session.builder().int(2, Default::default());
+    let three = session.builder().int(3, Default::default());
+    let four = session.builder().int(4, Default::default());
+    let r0 = session.builder().list(vec![one, two], Default::default());
+    let r1 = session.builder().list(vec![three, four], Default::default());
+    let matrix = session.builder().list(vec![r0, r1], Default::default());
+    let request = CasRequest::Control(ControlPlan::Index {
+        target: matrix,
+        axes: vec![IndexSpec::ColumnMajorFlatten],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("flatten");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(out) {
+        Some(TermNode::Collection { elements: rows, .. }) => {
+            assert_eq!(rows.len(), 4, "expected 4×1 column vector");
+            let rows = rows.clone();
+            let mut vals = Vec::with_capacity(4);
+            for row in rows {
+                match session.arena.get(row) {
+                    Some(TermNode::Collection { elements: cols, .. }) => {
+                        assert_eq!(cols.len(), 1);
+                        match session.arena.get(cols[0]) {
+                            Some(TermNode::Atom(Atom::Number(n))) => vals.push(n.as_exact_integer().expect("int")),
+                            other => panic!("expected number cell, got {other:?}"),
+                        }
+                    }
+                    other => panic!("expected row collection, got {other:?}"),
+                }
+            }
+            assert_eq!(vals, vec![1, 3, 2, 4]);
+        }
+        other => panic!("expected flattened collection, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_term_counted_loop_range() {
+    let mut session = Session::new();
+    let var = session.builder().symbol("i", Default::default());
+    let one = session.builder().int(1, Default::default());
+    let three = session.builder().int(3, Default::default());
+    let range_op = ApplicationHead::Semantic(SemanticOperator::Range);
+    let iter = session.builder().application(range_op, vec![one, three], Default::default());
+    let request = CasRequest::Control(ControlPlan::CountedLoop { variable: var, iterator: iter, body: Box::new(CasRequest::Term(var)) });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("counted range");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    match session.arena.get(session.results.get(result_id).expect("result").symbolic_term.expect("term")) {
+        Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(3) => {}
+        other => panic!("expected CountedLoop range last value == 3, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_loop_while_false() {
+    let mut session = Session::new();
+    let cond = session.builder().boolean(false, Default::default());
+    let body = session.builder().int(1, Default::default());
+    let request = CasRequest::Control(ControlPlan::LoopWhile { condition: cond, body: Box::new(CasRequest::Term(body)) });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("loop");
+    assert!(module.effect_edges.iter().any(|e| matches!(e.kind, EffectKind::BudgetCheck)));
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let loaded = session.results.get(result_id).expect("result");
+    match session.arena.get(loaded.symbolic_term.expect("term")) {
+        Some(TermNode::Atom(Atom::Null)) => {}
+        other => panic!("expected Unit/Null after zero-trip loop, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_term_loop_while_zero() {
+    let mut session = Session::new();
+    let zero = session.builder().int(0, Default::default());
+    let body = session.builder().int(1, Default::default());
+    let request = CasRequest::Control(ControlPlan::LoopWhile { condition: zero, body: Box::new(CasRequest::Term(body)) });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("loop control");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let loaded = session.results.get(result_id).expect("result");
+    match session.arena.get(loaded.symbolic_term.expect("term")) {
+        Some(TermNode::Atom(Atom::Null)) => {}
+        other => panic!("expected Null after LoopWhile[0,1], got {other:?}"),
+    }
+}
+
+#[test]
+fn execute_verified_cfg_on_vm_rejects_infinite_loop_while_under_root_budget() {
+    use science_cas::execution::vm::execute_verified_cfg_on_vm;
+    use std::time::Instant;
+
+    let mut session = Session::new();
+    let cond = session.builder().boolean(true, Default::default());
+    let body = session.builder().null(Default::default());
+    let request = CasRequest::Control(ControlPlan::LoopWhile { condition: cond, body: Box::new(CasRequest::Term(body)) });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("loop");
+    let started = Instant::now();
+    let err = execute_verified_cfg_on_vm(&mut session, &module).expect_err("budget");
+    assert!(started.elapsed().as_secs() < 60, "infinite LoopWhile must trip step budget, not hang");
+    assert_eq!(err.details.get("reason").map(|v| v.to_string()).as_deref(), Some("budget_exceeded"));
+}
+
+#[test]
+fn compile_and_execute_goal_call_provider_dispatches_domain() {
+    use science_cas::{
+        api::request::DomainGoal,
+        domains::{dispatch::DomainRequest, number_theory::NumberTheoryRequest},
+        execution::execute_ir_request,
+        runtime::values::RuntimeValue,
+    };
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let request = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::NumberTheory(NumberTheoryRequest::Gcd {
+        a: Integer::from_i64(12),
+        b: Integer::from_i64(8),
+    })));
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("goal");
+    assert_eq!(module.provider_calls.len(), 1);
+    assert!(module.effect_edges.iter().any(|e| matches!(e.kind, EffectKind::CallProvider)));
+    assert!(module.effect_edges.iter().any(|e| matches!(e.kind, EffectKind::PublishResult)));
+    let result_id = execute_ir_request(&mut session, request).expect("execute");
+    let loaded = session.results.get(result_id).expect("result");
+    assert_eq!(loaded.coverage, science_cas::runtime::results::CoverageStatus::Full);
+    let value_id = loaded.value.expect("value");
+    match session.values.get(value_id).expect("runtime") {
+        RuntimeValue::Domain(science_cas::domains::dispatch::DomainResult::NumberTheory(
+            science_cas::domains::number_theory::NumberTheoryResult::Exact {
+                value: science_cas::domains::number_theory::NumberTheoryValue::Integer(n),
+            },
+        )) => assert_eq!(n, &Integer::from_i64(4)),
+        other => panic!("expected NumberTheory Exact Integer gcd, got {other:?}"),
+    }
+}
+
+#[test]
+fn call_provider_without_payload_hard_fails() {
+    use science_cas::{
+        api::request::DomainGoal,
+        domains::{dispatch::DomainRequest, number_theory::NumberTheoryRequest},
+    };
+    use science_numeric::Integer;
+
+    let mut session = Session::new();
+    let request = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::NumberTheory(NumberTheoryRequest::Gcd {
+        a: Integer::from_i64(12),
+        b: Integer::from_i64(8),
+    })));
+    let mut module = ExecutionCompiler::new().compile(&mut session, &request).expect("goal");
+    assert_eq!(module.provider_calls.len(), 1);
+    // 模拟未绑定 payload 的 CallProvider：不得靠 host 侧通道补救。
+    module.provider_calls[0].payload = None;
+    module.fingerprint = science_cas::execution::ir::ModuleFingerprint::of_module(&module);
+    let err = ReferenceExecutor::new().execute(&mut session, &module).expect_err("unbound payload must hard-fail");
+    assert_eq!(err.details.get("reason").map(|v| v.to_string()).as_deref(), Some("provider_payload_unbound"));
+}
+
+#[test]
+fn compile_and_execute_recover_success_body() {
+    let mut session = Session::new();
+    let body = session.builder().int(8, Default::default());
+    let handler = session.builder().int(9, Default::default());
+    let request = CasRequest::Control(ControlPlan::Recover {
+        body: Box::new(CasRequest::Term(body)),
+        handler: Box::new(CasRequest::Term(handler)),
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("recover");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let loaded = session.results.get(result_id).expect("result");
+    assert_eq!(loaded.symbolic_term, Some(body));
+}
+
+#[test]
+fn compile_and_execute_recover_reject_and_success() {
+    let mut session = Session::new();
+    let one = session.builder().int(1, Default::default());
+    let err_req = CasRequest::Control(ControlPlan::Recover {
+        body: Box::new(CasRequest::Control(ControlPlan::Reject)),
+        handler: Box::new(CasRequest::Term(one)),
+    });
+    let err_mod = ExecutionCompiler::new().compile(&mut session, &err_req).expect("recover reject");
+    let err_id = ReferenceExecutor::new().execute(&mut session, &err_mod).expect("err exec");
+    let err_out = session.results.get(err_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(err_out) {
+        Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(1) => {}
+        other => panic!("expected Recover[Reject,1] == 1, got {other:?}"),
+    }
+
+    let two = session.builder().int(2, Default::default());
+    let three = session.builder().int(3, Default::default());
+    let ok_req = CasRequest::Control(ControlPlan::Recover {
+        body: Box::new(CasRequest::Term(two)),
+        handler: Box::new(CasRequest::Term(three)),
+    });
+    let ok_mod = ExecutionCompiler::new().compile(&mut session, &ok_req).expect("recover ok");
+    let ok_id = ReferenceExecutor::new().execute(&mut session, &ok_mod).expect("ok exec");
+    let ok_out = session.results.get(ok_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(ok_out) {
+        Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2) => {}
+        other => panic!("expected Recover[2,3] == 2, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_cond_second_arm() {
+    let mut session = Session::new();
+    let c0 = session.builder().boolean(false, Default::default());
+    let c1 = session.builder().boolean(true, Default::default());
+    let a0 = session.builder().int(10, Default::default());
+    let a1 = session.builder().int(20, Default::default());
+    let otherwise = session.builder().int(30, Default::default());
+    let request = CasRequest::Control(ControlPlan::Cond {
+        arms: vec![(c0, Box::new(CasRequest::Term(a0))), (c1, Box::new(CasRequest::Term(a1)))],
+        otherwise: Some(Box::new(CasRequest::Term(otherwise))),
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("cond");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let loaded = session.results.get(result_id).expect("result");
+    assert_eq!(loaded.symbolic_term, Some(a1));
+}
+
+#[test]
+fn compile_and_execute_local_scope_body() {
+    let mut session = Session::new();
+    let term = session.builder().int(11, Default::default());
+    let request = CasRequest::Control(ControlPlan::LocalScope { body: Box::new(CasRequest::Term(term)) });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("scope");
+    assert!(module.effect_edges.iter().any(|e| matches!(e.kind, EffectKind::EnterScope)));
+    assert!(module.effect_edges.iter().any(|e| matches!(e.kind, EffectKind::ExitScope)));
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let loaded = session.results.get(result_id).expect("result");
+    assert_eq!(loaded.symbolic_term, Some(term));
+}
+
+#[test]
+fn compile_and_execute_local_scope_shadows_session() {
+    use science_cas::api::request::SessionCommand;
+    use science_types::{BindingEvaluationPolicy, BindingKind};
+
+    let mut session = Session::new();
+    let sym_term = session.builder().symbol("s", Default::default());
+    let symbol = match session.arena.get(sym_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol, got {other:?}"),
+    };
+    let global = session.builder().int(1, Default::default());
+    let local = session.builder().int(2, Default::default());
+    session.defs.write_binding(symbol, global);
+
+    let request = CasRequest::Control(ControlPlan::LocalScope {
+        body: Box::new(CasRequest::Control(ControlPlan::Sequence {
+            steps: vec![
+                CasRequest::Command(SessionCommand::Define {
+                    symbol,
+                    value: local,
+                    kind: BindingKind::Session,
+                    evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+                }),
+                CasRequest::Term(sym_term),
+            ],
+        })),
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("scope");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let loaded = session.results.get(result_id).expect("result");
+    assert_eq!(loaded.symbolic_term, Some(local));
+    // 局部作用域退出后 Session Own 不变。
+    assert_eq!(session.defs.binding(symbol), Some(global));
+}
+
+#[test]
+fn compile_and_execute_local_scope_clear_hides_session_own() {
+    use science_cas::api::request::SessionCommand;
+
+    let mut session = Session::new();
+    let sym_term = session.builder().symbol("b", Default::default());
+    let symbol = match session.arena.get(sym_term) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol, got {other:?}"),
+    };
+    let global = session.builder().int(5, Default::default());
+    session.defs.write_binding(symbol, global);
+
+    let request = CasRequest::Control(ControlPlan::DynamicScope {
+        body: Box::new(CasRequest::Control(ControlPlan::Sequence {
+            steps: vec![
+                CasRequest::Command(SessionCommand::ClearDefinition { symbol }),
+                CasRequest::Term(sym_term),
+            ],
+        })),
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("scope clear");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let loaded = session.results.get(result_id).expect("result");
+    match session.arena.get(loaded.symbolic_term.expect("term")) {
+        Some(TermNode::Atom(Atom::Symbol(id))) if *id == symbol => {}
+        other => panic!("expected cleared local to yield symbol b, got {other:?}"),
+    }
+    assert_eq!(session.defs.binding(symbol), Some(global));
+}
+
+#[test]
+fn compile_and_execute_boolean_not_and() {
+    let mut session = Session::new();
+    let t = session.builder().boolean(true, Default::default());
+    let f = session.builder().boolean(false, Default::default());
+    let and = ApplicationHead::Semantic(SemanticOperator::And);
+    let not = ApplicationHead::Semantic(SemanticOperator::Not);
+    let and_term = session.builder().application(and, vec![t, f], Default::default());
+    let term = session.builder().application(not, vec![and_term], Default::default());
+    let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(term)).expect("bool ops");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let loaded = session.results.get(result_id).expect("result");
+    let out = loaded.symbolic_term.expect("term");
+    match session.arena.get(out) {
+        Some(TermNode::Atom(Atom::Boolean(true))) => {}
+        other => panic!("expected Not[And[True,False]] == True, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_control_branch_boolean() {
+    let mut session = Session::new();
+    let cond = session.builder().boolean(true, Default::default());
+    let then_term = session.builder().int(11, Default::default());
+    let else_term = session.builder().int(22, Default::default());
+    let request = CasRequest::Control(ControlPlan::Branch {
+        condition: cond,
+        then_branch: Box::new(CasRequest::Term(then_term)),
+        else_branch: Some(Box::new(CasRequest::Term(else_term))),
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("branch");
+    assert_eq!(module.regions[0].blocks.len(), 3);
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    assert_eq!(session.results.get(result_id).expect("result").symbolic_term, Some(then_term));
+}
+
+#[test]
+fn compile_and_execute_sequence_and_hold() {
+    let mut session = Session::new();
+    let one = session.builder().int(1, Default::default());
+    let two = session.builder().int(2, Default::default());
+    let three = session.builder().int(3, Default::default());
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![CasRequest::Term(one), CasRequest::Term(two), CasRequest::Term(three)],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("sequence");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    assert_eq!(session.results.get(result_id).expect("result").symbolic_term, Some(three));
+
+    let plus = ApplicationHead::Semantic(SemanticOperator::Add);
+    let hold = ApplicationHead::Semantic(SemanticOperator::Hold);
+    let inner = session.builder().application(plus, vec![one, one], Default::default());
+    let held = session.builder().application(hold, vec![inner], Default::default());
+    let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(held)).expect("hold");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(out) {
+        Some(TermNode::Application { head, arguments })
+            if matches!(*head, ApplicationHead::Semantic(SemanticOperator::Hold))
+                && arguments.len() == 1
+                && session.arena.structural_eq(arguments[0], inner) => {}
+        other => panic!("expected Hold[Add[1,1]] unevaluated, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_cond_picks_true_arm() {
+    let mut session = Session::new();
+    let one = session.builder().int(1, Default::default());
+    let two = session.builder().int(2, Default::default());
+    let three = session.builder().int(3, Default::default());
+    let fals = session.builder().boolean(false, Default::default());
+    let tru = session.builder().boolean(true, Default::default());
+    let request = CasRequest::Control(ControlPlan::Cond {
+        arms: vec![
+            (fals, Box::new(CasRequest::Term(one))),
+            (tru, Box::new(CasRequest::Term(two))),
+            (tru, Box::new(CasRequest::Term(three))),
+        ],
+        otherwise: None,
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("cond");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    assert_eq!(session.results.get(result_id).expect("result").symbolic_term, Some(two));
+}
+
+#[test]
+fn compile_and_execute_define_in_sequence() {
+    use science_cas::api::request::SessionCommand;
+    use science_types::{BindingEvaluationPolicy, BindingKind};
+
+    let mut session = Session::new();
+    let x = session.builder().symbol("x", Default::default());
+    let symbol = match session.arena.get(x) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol, got {other:?}"),
+    };
+    let five = session.builder().int(5, Default::default());
+    let one = session.builder().int(1, Default::default());
+    let plus = ApplicationHead::Semantic(SemanticOperator::Add);
+    let use_x = session.builder().application(plus, vec![x, one], Default::default());
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::Define {
+                symbol,
+                value: five,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+            CasRequest::Term(use_x),
+        ],
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("define seq");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    match session.arena.get(session.results.get(result_id).expect("result").symbolic_term.expect("term")) {
+        Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(6) => {}
+        other => panic!("expected Define then Add == 6, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_branch_then_sequence_with_define() {
+    use science_cas::api::request::SessionCommand;
+    use science_cas::execution::execute_ir_request;
+    use science_types::{BindingEvaluationPolicy, BindingKind};
+
+    let mut session = Session::new();
+    let z = session.builder().symbol("z", Default::default());
+    let symbol = match session.arena.get(z) {
+        Some(TermNode::Atom(Atom::Symbol(id))) => *id,
+        other => panic!("expected symbol, got {other:?}"),
+    };
+    let seven = session.builder().int(7, Default::default());
+    let tru = session.builder().boolean(true, Default::default());
+    let fals = session.builder().boolean(false, Default::default());
+    let request = CasRequest::Control(ControlPlan::Branch {
+        condition: tru,
+        then_branch: Box::new(CasRequest::Control(ControlPlan::Sequence {
+            steps: vec![
+                CasRequest::Command(SessionCommand::Define {
+                    symbol,
+                    value: seven,
+                    kind: BindingKind::Session,
+                    evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+                }),
+                CasRequest::Term(tru),
+            ],
+        })),
+        else_branch: Some(Box::new(CasRequest::Term(fals))),
+    });
+    let result_id = execute_ir_request(&mut session, request).expect("branch+sequence");
+    let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(out) {
+        Some(TermNode::Atom(Atom::Boolean(true))) => {}
+        other => panic!("expected True from then Sequence, got {other:?}"),
+    }
+    assert_eq!(session.defs.binding(symbol), Some(seven));
+}
+
+#[test]
+fn compile_and_execute_runtime_branch() {
+    let mut session = Session::new();
+    let one = session.builder().int(1, Default::default());
+    let seven = session.builder().int(7, Default::default());
+    let eight = session.builder().int(8, Default::default());
+    let equal = ApplicationHead::Semantic(SemanticOperator::Equal);
+    let cond = session.builder().application(equal, vec![one, one], Default::default());
+    let request = CasRequest::Control(ControlPlan::Branch {
+        condition: cond,
+        then_branch: Box::new(CasRequest::Term(seven)),
+        else_branch: Some(Box::new(CasRequest::Term(eight))),
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("branch");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    assert_eq!(session.results.get(result_id).expect("result").symbolic_term, Some(seven));
+
+    let fals = session.builder().boolean(false, Default::default());
+    let request = CasRequest::Control(ControlPlan::Branch {
+        condition: fals,
+        then_branch: Box::new(CasRequest::Term(seven)),
+        else_branch: Some(Box::new(CasRequest::Term(eight))),
+    });
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("branch false");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    assert_eq!(session.results.get(result_id).expect("result").symbolic_term, Some(eight));
+}
+
+#[test]
+fn compile_and_execute_sameq_and_trueq() {
+    let mut session = Session::new();
+    let t = session.builder().boolean(true, Default::default());
+    let f = session.builder().boolean(false, Default::default());
+    let same = ApplicationHead::Semantic(SemanticOperator::Identical);
+    let true_q = ApplicationHead::Semantic(SemanticOperator::TrueQ);
+    let same_term = session.builder().application(same, vec![t, f], Default::default());
+    let term = session.builder().application(true_q, vec![same_term], Default::default());
+    // `TrueQ[SameQ[True,False]]` == `TrueQ[False]` == `False`
+    let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(term)).expect("sameq");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let loaded = session.results.get(result_id).expect("result");
+    match session.arena.get(loaded.symbolic_term.expect("term")) {
+        Some(TermNode::Atom(Atom::Boolean(false))) => {}
+        other => panic!("expected False, got {other:?}"),
+    }
+
+    let a = session.builder().int(3, Default::default());
+    let b = session.builder().int(3, Default::default());
+    let eq = ApplicationHead::Semantic(SemanticOperator::Equal);
+    let eq_term = session.builder().application(eq, vec![a, b], Default::default());
+    let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(eq_term)).expect("equal");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let loaded = session.results.get(result_id).expect("result");
+    match session.arena.get(loaded.symbolic_term.expect("term")) {
+        Some(TermNode::Atom(Atom::Boolean(true))) => {}
+        other => panic!("expected Equal[3,3] == True, got {other:?}"),
+    }
+}
+
+#[test]
+fn equal_symbolic_stays_residual_identical_is_structural() {
+    use science_ir::{ApplicationHead, SemanticOperator, TermNode};
+    let mut session = Session::new();
+    let x = session.builder().symbol("x", Default::default());
+    let one = session.builder().int(1, Default::default());
+    let two = session.builder().int(2, Default::default());
+    let pow = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Power), vec![x, two], Default::default());
+    let eq = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Equal), vec![pow, one], Default::default());
+    let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(eq)).expect("eq");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
+    match session.arena.get(out) {
+        Some(TermNode::Application { head, .. }) if matches!(*head, ApplicationHead::Semantic(SemanticOperator::Equal)) => {}
+        other => panic!("expected residual Equal, got {other:?}"),
+    }
+    let same = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Identical), vec![one, two], Default::default());
+    let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(same)).expect("same");
+    let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
+    match session.arena.get(session.results.get(result_id).expect("result").symbolic_term.expect("term")) {
+        Some(TermNode::Atom(Atom::Boolean(false))) => {}
+        other => panic!("expected Identical false, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_loop_while_early_return() {
+    use science_cas::execution::execute_ir_request;
+    use science_cas::runtime::values::arena::{push_int, push_list, push_null, push_symbol_name};
+    use science_types::{BindingEvaluationPolicy, BindingKind};
+
+    let mut session = Session::new();
+    let i = push_symbol_name(&mut session, "i");
+    let n = push_int(&mut session, 2);
+    let two = push_int(&mut session, 2);
+    let three = push_int(&mut session, 3);
+    let one = push_int(&mut session, 1);
+    let zero = push_int(&mut session, 0);
+    let one = push_int(&mut session, 1);
+    let ret = push_list(&mut session, vec![zero, one]);
+    let null = push_null(&mut session);
+    let cond = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::LessEqual),
+        vec![i, n],
+        Default::default(),
+    );
+    let eq_i2 = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Equal),
+        vec![i, two],
+        Default::default(),
+    );
+    let i_sym = session.arena.symbols_mut().intern("i");
+    let body = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Control(ControlPlan::Branch {
+                condition: eq_i2,
+                then_branch: Box::new(CasRequest::Control(ControlPlan::EarlyReturn { value: ret })),
+                else_branch: None,
+            }),
+            CasRequest::Command(SessionCommand::Define {
+                symbol: i_sym,
+                value: two,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+        ],
+    });
+    let init = CasRequest::Command(SessionCommand::Define {
+        symbol: i_sym,
+        value: one,
+        kind: BindingKind::Session,
+        evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+    });
+    let while_loop = CasRequest::Control(ControlPlan::LoopWhile {
+        condition: cond,
+        body: Box::new(body),
+    });
+    let request = CasRequest::Control(ControlPlan::LocalScope {
+        body: Box::new(CasRequest::Control(ControlPlan::Sequence {
+            steps: vec![init, while_loop, CasRequest::Term(null)],
+        })),
+    });
+    let result_id = execute_ir_request(&mut session, request).expect("loop while early return");
+    let term = session.results.require_symbolic_term(result_id).expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements, .. }) if elements.len() == 2 => {}
+        other => panic!("expected early-return list, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_module_while_return_wolfram_shape() {
+    use science_cas::execution::execute_ir_request;
+    use science_cas::runtime::values::arena::{push_int, push_list, push_null, push_symbol_name};
+    use science_types::{BindingEvaluationPolicy, BindingKind};
+
+    let mut session = Session::new();
+    let i = push_symbol_name(&mut session, "i");
+    let two = push_int(&mut session, 2);
+    let n = two;
+    let zero = push_int(&mut session, 0);
+    let one = push_int(&mut session, 1);
+    let ret = push_list(&mut session, vec![zero, one]);
+    let null = push_null(&mut session);
+    let i_sym = session.arena.symbols_mut().intern("i");
+    let n_sym = session.arena.symbols_mut().intern("n");
+    let cond = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::LessEqual),
+        vec![i, n],
+        Default::default(),
+    );
+    let eq_i2 = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Equal),
+        vec![i, two],
+        Default::default(),
+    );
+    let next_i = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Add),
+        vec![i, one],
+        Default::default(),
+    );
+    let body = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Control(ControlPlan::Branch {
+                condition: eq_i2,
+                then_branch: Box::new(CasRequest::Control(ControlPlan::EarlyReturn { value: ret })),
+                else_branch: None,
+            }),
+            CasRequest::Command(SessionCommand::Define {
+                symbol: i_sym,
+                value: next_i,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+        ],
+    });
+    let while_loop = CasRequest::Control(ControlPlan::LoopWhile {
+        condition: cond,
+        body: Box::new(body),
+    });
+    let request = CasRequest::Control(ControlPlan::LocalScope {
+        body: Box::new(CasRequest::Control(ControlPlan::Sequence {
+            steps: vec![
+                CasRequest::Command(SessionCommand::Define {
+                    symbol: n_sym,
+                    value: two,
+                    kind: BindingKind::Session,
+                    evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+                }),
+                CasRequest::Command(SessionCommand::Define {
+                    symbol: i_sym,
+                    value: one,
+                    kind: BindingKind::Session,
+                    evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+                }),
+                while_loop,
+                CasRequest::Term(null),
+            ],
+        })),
+    });
+    let result_id = execute_ir_request(&mut session, request).expect("module while early return");
+    let term = session.results.require_symbolic_term(result_id).expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements, .. }) if elements.len() == 2 => {}
+        other => panic!("expected early-return list, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_loop_while_readbinding_end() {
+    use science_cas::execution::execute_ir_request;
+    use science_cas::runtime::values::arena::{push_int, push_list, push_null, push_symbol_name};
+    use science_types::{BindingEvaluationPolicy, BindingKind};
+
+    let mut session = Session::new();
+    let i = push_symbol_name(&mut session, "i");
+    let n = push_symbol_name(&mut session, "n");
+    let two = push_int(&mut session, 2);
+    let one = push_int(&mut session, 1);
+    let zero = push_int(&mut session, 0);
+    let ret = push_list(&mut session, vec![zero, one]);
+    let null = push_null(&mut session);
+    let i_sym = session.arena.symbols_mut().intern("i");
+    let n_sym = session.arena.symbols_mut().intern("n");
+    let cond = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::LessEqual),
+        vec![i, n],
+        Default::default(),
+    );
+    let eq_i2 = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Equal),
+        vec![i, two],
+        Default::default(),
+    );
+    let next_i = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Add),
+        vec![i, one],
+        Default::default(),
+    );
+    let body = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Control(ControlPlan::Branch {
+                condition: eq_i2,
+                then_branch: Box::new(CasRequest::Control(ControlPlan::EarlyReturn { value: ret })),
+                else_branch: None,
+            }),
+            CasRequest::Command(SessionCommand::Define {
+                symbol: i_sym,
+                value: next_i,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+        ],
+    });
+    let while_loop = CasRequest::Control(ControlPlan::LoopWhile {
+        condition: cond,
+        body: Box::new(body),
+    });
+    let request = CasRequest::Control(ControlPlan::LocalScope {
+        body: Box::new(CasRequest::Control(ControlPlan::Sequence {
+            steps: vec![
+                CasRequest::Command(SessionCommand::Define {
+                    symbol: n_sym,
+                    value: two,
+                    kind: BindingKind::Session,
+                    evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+                }),
+                CasRequest::Command(SessionCommand::Define {
+                    symbol: i_sym,
+                    value: one,
+                    kind: BindingKind::Session,
+                    evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+                }),
+                while_loop,
+                CasRequest::Term(null),
+            ],
+        })),
+    });
+    let result_id = execute_ir_request(&mut session, request).expect("loop while readbinding end");
+    let term = session.results.require_symbolic_term(result_id).expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements, .. }) if elements.len() == 2 => {}
+        other => panic!("expected early-return list, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_dynamic_do_return_lexical_n() {
+    use science_cas::execution::execute_ir_request;
+    use science_cas::runtime::values::arena::{push_int, push_list, push_null, push_symbol_name};
+    use science_types::{BindingEvaluationPolicy, BindingKind};
+
+    let mut session = Session::new();
+    let i = push_symbol_name(&mut session, "i");
+    let n = push_symbol_name(&mut session, "n");
+    let two = push_int(&mut session, 2);
+    let one = push_int(&mut session, 1);
+    let zero = push_int(&mut session, 0);
+    let ret = push_list(&mut session, vec![zero, one]);
+    let null = push_null(&mut session);
+    let i_sym = session.arena.symbols_mut().intern("i");
+    let n_sym = session.arena.symbols_mut().intern("n");
+    let cond = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::LessEqual),
+        vec![i, n],
+        Default::default(),
+    );
+    let eq_i2 = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Equal),
+        vec![i, two],
+        Default::default(),
+    );
+    let next_i = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Add),
+        vec![i, one],
+        Default::default(),
+    );
+    let if_body = CasRequest::Control(ControlPlan::Branch {
+        condition: eq_i2,
+        then_branch: Box::new(CasRequest::Control(ControlPlan::EarlyReturn { value: ret })),
+        else_branch: None,
+    });
+    let loop_body = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            if_body,
+            CasRequest::Command(SessionCommand::Define {
+                symbol: i_sym,
+                value: next_i,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+        ],
+    });
+    let while_loop = CasRequest::Control(ControlPlan::LoopWhile {
+        condition: cond,
+        body: Box::new(loop_body),
+    });
+    let init_i = CasRequest::Command(SessionCommand::Define {
+        symbol: i_sym,
+        value: one,
+        kind: BindingKind::Session,
+        evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+    });
+    let request = CasRequest::Control(ControlPlan::LocalScope {
+        body: Box::new(CasRequest::Control(ControlPlan::Sequence {
+            steps: vec![
+                CasRequest::Command(SessionCommand::Define {
+                    symbol: n_sym,
+                    value: two,
+                    kind: BindingKind::Lexical,
+                    evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+                }),
+                init_i,
+                while_loop,
+                CasRequest::Term(null),
+            ],
+        })),
+    });
+    let result_id = execute_ir_request(&mut session, request).expect("dynamic do return");
+    let term = session.results.require_symbolic_term(result_id).expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements, .. }) if elements.len() == 2 => {}
+        other => panic!("expected early-return list, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_dynamic_do_return_dynamic_scope_n() {
+    use science_cas::execution::execute_ir_request;
+    use science_cas::runtime::values::arena::{push_int, push_list, push_null, push_symbol_name};
+    use science_types::{BindingEvaluationPolicy, BindingKind};
+
+    let mut session = Session::new();
+    let i = push_symbol_name(&mut session, "i");
+    let n = push_symbol_name(&mut session, "n");
+    let two = push_int(&mut session, 2);
+    let one = push_int(&mut session, 1);
+    let zero = push_int(&mut session, 0);
+    let ret = push_list(&mut session, vec![zero, one]);
+    let null = push_null(&mut session);
+    let i_sym = session.arena.symbols_mut().intern("i");
+    let n_sym = session.arena.symbols_mut().intern("n");
+    let cond = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::LessEqual),
+        vec![i, n],
+        Default::default(),
+    );
+    let eq_i2 = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Equal),
+        vec![i, two],
+        Default::default(),
+    );
+    let next_i = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Add),
+        vec![i, one],
+        Default::default(),
+    );
+    let if_body = CasRequest::Control(ControlPlan::Branch {
+        condition: eq_i2,
+        then_branch: Box::new(CasRequest::Control(ControlPlan::EarlyReturn { value: ret })),
+        else_branch: None,
+    });
+    let loop_body = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            if_body,
+            CasRequest::Command(SessionCommand::Define {
+                symbol: i_sym,
+                value: next_i,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+        ],
+    });
+    let while_loop = CasRequest::Control(ControlPlan::LoopWhile {
+        condition: cond,
+        body: Box::new(loop_body),
+    });
+    let init_i = CasRequest::Command(SessionCommand::Define {
+        symbol: i_sym,
+        value: one,
+        kind: BindingKind::Session,
+        evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+    });
+    let request = CasRequest::Control(ControlPlan::DynamicScope {
+        body: Box::new(CasRequest::Control(ControlPlan::Sequence {
+            steps: vec![
+                CasRequest::Command(SessionCommand::Define {
+                    symbol: n_sym,
+                    value: two,
+                    kind: BindingKind::Dynamic,
+                    evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+                }),
+                init_i,
+                while_loop,
+                CasRequest::Term(null),
+            ],
+        })),
+    });
+    let result_id = execute_ir_request(&mut session, request).expect("dynamic scope do return");
+    let term = session.results.require_symbolic_term(result_id).expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Collection { elements, .. }) if elements.len() == 2 => {}
+        other => panic!("expected early-return list, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_loop_while_sequence_body_without_inner() {
+    use science_cas::execution::execute_ir_request;
+    use science_cas::runtime::values::arena::{push_int, push_symbol_name};
+    use science_types::{BindingEvaluationPolicy, BindingKind};
+
+    let mut session = Session::new();
+    let i = push_symbol_name(&mut session, "i");
+    let j = push_symbol_name(&mut session, "j");
+    let n = push_symbol_name(&mut session, "n");
+    let n_sym = session.arena.symbols_mut().intern("n");
+    let i_sym = session.arena.symbols_mut().intern("i");
+    let j_sym = session.arena.symbols_mut().intern("j");
+    let five = push_int(&mut session, 5);
+    let one = push_int(&mut session, 1);
+    let zero = push_int(&mut session, 0);
+
+    let outer_cond = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Less),
+        vec![i, n],
+        Default::default(),
+    );
+    let j_plus_1 = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Add),
+        vec![j, one],
+        Default::default(),
+    );
+    let i_plus_1 = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Add),
+        vec![i, one],
+        Default::default(),
+    );
+
+    let outer_body = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::Define {
+                symbol: j_sym,
+                value: zero,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+            CasRequest::Command(SessionCommand::Define {
+                symbol: j_sym,
+                value: j_plus_1,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+            CasRequest::Command(SessionCommand::Define {
+                symbol: i_sym,
+                value: i_plus_1,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+        ],
+    });
+    let outer_loop = CasRequest::Control(ControlPlan::LoopWhile {
+        condition: outer_cond,
+        body: Box::new(outer_body),
+    });
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::Define {
+                symbol: n_sym,
+                value: five,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+            CasRequest::Command(SessionCommand::Define {
+                symbol: i_sym,
+                value: zero,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+            outer_loop,
+            CasRequest::Term(i),
+        ],
+    });
+
+    let result_id = execute_ir_request(&mut session, request).expect("sequence body without inner loop");
+    let term = session.results.require_symbolic_term(result_id).expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Atom(Atom::Number(num))) => assert_eq!(num.as_exact_integer(), Some(5)),
+        other => panic!("expected i=5, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_nested_loop_while_counting() {
+    use science_cas::execution::execute_ir_request;
+    use science_cas::runtime::values::arena::{push_int, push_symbol_name};
+    use science_types::{BindingEvaluationPolicy, BindingKind};
+
+    let mut session = Session::new();
+    let i = push_symbol_name(&mut session, "i");
+    let j = push_symbol_name(&mut session, "j");
+    let n = push_symbol_name(&mut session, "n");
+    let n_sym = session.arena.symbols_mut().intern("n");
+    let five = push_int(&mut session, 5);
+    let two = push_int(&mut session, 2);
+    let one = push_int(&mut session, 1);
+    let zero = push_int(&mut session, 0);
+
+    let outer_cond = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Less),
+        vec![i, n],
+        Default::default(),
+    );
+    let inner_cond = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Less),
+        vec![j, two],
+        Default::default(),
+    );
+    let j_plus_1 = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Add),
+        vec![j, one],
+        Default::default(),
+    );
+    let i_plus_1 = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Add),
+        vec![i, one],
+        Default::default(),
+    );
+    let j_sym = session.arena.symbols_mut().intern("j");
+    let i_sym = session.arena.symbols_mut().intern("i");
+
+    let inner_body = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![CasRequest::Command(SessionCommand::Define {
+            symbol: j_sym,
+            value: j_plus_1,
+            kind: BindingKind::Session,
+            evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+        })],
+    });
+    let inner_loop = CasRequest::Control(ControlPlan::LoopWhile {
+        condition: inner_cond,
+        body: Box::new(inner_body),
+    });
+    let outer_body = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::Define {
+                symbol: j_sym,
+                value: zero,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+            inner_loop,
+            CasRequest::Command(SessionCommand::Define {
+                symbol: i_sym,
+                value: i_plus_1,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+        ],
+    });
+    let outer_loop = CasRequest::Control(ControlPlan::LoopWhile {
+        condition: outer_cond,
+        body: Box::new(outer_body),
+    });
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::Define {
+                symbol: n_sym,
+                value: five,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+            CasRequest::Command(SessionCommand::Define {
+                symbol: i_sym,
+                value: zero,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+            outer_loop,
+            CasRequest::Term(i),
+        ],
+    });
+
+    let module = ExecutionCompiler::new().compile(&mut session, &request).expect("compile nested loops");
+    let result_id = match execute_ir_request(&mut session, request) {
+        Ok(id) => id,
+        Err(err) => panic!("execute nested loops failed: {err:?} (module blocks={})", module.regions[0].blocks.len()),
+    };
+    let term = session.results.require_symbolic_term(result_id).expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Atom(Atom::Number(num))) => assert_eq!(num.as_exact_integer(), Some(5)),
+        other => panic!("expected i=5, got {other:?}"),
+    }
+}
+
+#[test]
+fn extension_request_rule_nested_loop_while_with_early_return() {
+    use science_cas::execution::execute_ir_request;
+    use science_cas::reasoning::trs::TermPattern;
+    use science_cas::runtime::values::arena::{push_int, push_symbol_name};
+    use science_types::{BindingEvaluationPolicy, BindingKind};
+
+    let mut session = Session::new();
+    let i = push_symbol_name(&mut session, "i");
+    let j = push_symbol_name(&mut session, "j");
+    let y = push_symbol_name(&mut session, "y");
+    let n = push_symbol_name(&mut session, "n");
+    let n_sym = session.arena.symbols_mut().intern("n");
+    let i_sym = session.arena.symbols_mut().intern("i");
+    let j_sym = session.arena.symbols_mut().intern("j");
+    let y_sym = session.arena.symbols_mut().intern("y");
+    let two = push_int(&mut session, 2);
+    let one = push_int(&mut session, 1);
+    let zero = push_int(&mut session, 0);
+
+    let outer_cond = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Less),
+        vec![i, n],
+        Default::default(),
+    );
+    let inner_cond = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Less),
+        vec![j, two],
+        Default::default(),
+    );
+    let j_plus_1 = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Add),
+        vec![j, one],
+        Default::default(),
+    );
+    let i_plus_1 = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Add),
+        vec![i, one],
+        Default::default(),
+    );
+    let inner_body = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![CasRequest::Command(SessionCommand::Define {
+            symbol: j_sym,
+            value: j_plus_1,
+            kind: BindingKind::Session,
+            evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+        })],
+    });
+    let inner_loop = CasRequest::Control(ControlPlan::LoopWhile {
+        condition: inner_cond,
+        body: Box::new(inner_body),
+    });
+    let outer_body = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::Define {
+                symbol: j_sym,
+                value: zero,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+            inner_loop,
+            CasRequest::Command(SessionCommand::Define {
+                symbol: i_sym,
+                value: i_plus_1,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+        ],
+    });
+    let outer_loop = CasRequest::Control(ControlPlan::LoopWhile {
+        condition: outer_cond,
+        body: Box::new(outer_body),
+    });
+    let function_body = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::Define {
+                symbol: i_sym,
+                value: zero,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+            outer_loop,
+            CasRequest::Command(SessionCommand::Define {
+                symbol: y_sym,
+                value: i,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+            CasRequest::Control(ControlPlan::EarlyReturn { value: y }),
+        ],
+    });
+
+    let f_op = session.extensions.intern("f");
+    let pattern = TermPattern::Application {
+        operator: ApplicationHead::Extension(f_op),
+        arguments: vec![TermPattern::Bind {
+            name: n_sym,
+            inner: Box::new(TermPattern::Any),
+        }],
+    };
+    session.defs.register_extension_request_rule(f_op, pattern, function_body);
+
+    let five = push_int(&mut session, 5);
+    let call = session.builder().application(ApplicationHead::Extension(f_op), vec![five], Default::default());
+    let result_id = match execute_ir_request(&mut session, CasRequest::Term(call)) {
+        Ok(id) => id,
+        Err(err) => panic!("extension nested while failed: {err:?}"),
+    };
+    let term = session.results.require_symbolic_term(result_id).expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Atom(Atom::Number(num))) => assert_eq!(num.as_exact_integer(), Some(5)),
+        other => panic!("expected y=5, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_loop_while_greater_equal_countdown() {
+    use science_cas::execution::execute_ir_request;
+    use science_cas::runtime::values::arena::{push_int, push_symbol_name};
+    use science_types::{BindingEvaluationPolicy, BindingKind};
+
+    let mut session = Session::new();
+    let a = push_symbol_name(&mut session, "a");
+    let a_sym = session.arena.symbols_mut().intern("a");
+    let three = push_int(&mut session, 3);
+    let ten = push_int(&mut session, 10);
+
+    let cond = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::GreaterEqual),
+        vec![a, three],
+        Default::default(),
+    );
+    let a_minus_3 = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Subtract),
+        vec![a, three],
+        Default::default(),
+    );
+    let body = CasRequest::Command(SessionCommand::Define {
+        symbol: a_sym,
+        value: a_minus_3,
+        kind: BindingKind::Session,
+        evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+    });
+    let loop_while = CasRequest::Control(ControlPlan::LoopWhile {
+        condition: cond,
+        body: Box::new(body),
+    });
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::Define {
+                symbol: a_sym,
+                value: ten,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+            loop_while,
+            CasRequest::Term(a),
+        ],
+    });
+
+    let result_id = execute_ir_request(&mut session, request).expect("greater-equal loop");
+    let term = session.results.require_symbolic_term(result_id).expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Atom(Atom::Number(num))) => assert_eq!(num.as_exact_integer(), Some(1)),
+        other => panic!("expected a=1 after countdown, got {other:?}"),
+    }
+}
+
+#[test]
+fn extension_request_rule_loop_while_greater_equal_lhs_update() {
+    use science_cas::execution::execute_ir_request;
+    use science_cas::reasoning::trs::TermPattern;
+    use science_cas::runtime::values::arena::{push_int, push_symbol_name};
+    use science_types::{BindingEvaluationPolicy, BindingKind};
+
+    let mut session = Session::new();
+    let a = push_symbol_name(&mut session, "a");
+    let b = push_symbol_name(&mut session, "b");
+    let y = push_symbol_name(&mut session, "y");
+    let a_sym = session.arena.symbols_mut().intern("a");
+    let b_sym = session.arena.symbols_mut().intern("b");
+    let y_sym = session.arena.symbols_mut().intern("y");
+    let three = push_int(&mut session, 3);
+    let one = push_int(&mut session, 1);
+    let zero = push_int(&mut session, 0);
+
+    let cond = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::GreaterEqual),
+        vec![a, b],
+        Default::default(),
+    );
+    let a_minus_b = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Subtract),
+        vec![a, b],
+        Default::default(),
+    );
+    let q_plus_1 = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Add),
+        vec![y, one],
+        Default::default(),
+    );
+    let body = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::Define {
+                symbol: a_sym,
+                value: a_minus_b,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+            CasRequest::Command(SessionCommand::Define {
+                symbol: y_sym,
+                value: q_plus_1,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+        ],
+    });
+    let loop_while = CasRequest::Control(ControlPlan::LoopWhile {
+        condition: cond,
+        body: Box::new(body),
+    });
+    let function_body = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::Define {
+                symbol: y_sym,
+                value: zero,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+            loop_while,
+            CasRequest::Term(y),
+        ],
+    });
+
+    let f_op = session.extensions.intern("f");
+    let pattern = TermPattern::Application {
+        operator: ApplicationHead::Extension(f_op),
+        arguments: vec![
+            TermPattern::Bind { name: a_sym, inner: Box::new(TermPattern::Any) },
+            TermPattern::Bind { name: b_sym, inner: Box::new(TermPattern::Any) },
+        ],
+    };
+    session.defs.register_extension_request_rule(f_op, pattern, function_body);
+
+    let ten = push_int(&mut session, 10);
+    let call = session.builder().application(
+        ApplicationHead::Extension(f_op),
+        vec![ten, three],
+        Default::default(),
+    );
+    let result_id = execute_ir_request(&mut session, CasRequest::Term(call)).expect("extension ge loop");
+    let term = session.results.require_symbolic_term(result_id).expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Atom(Atom::Number(num))) => assert_eq!(num.as_exact_integer(), Some(3)),
+        other => panic!("expected q=3, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_branch_on_boolean_symbol_binding() {
+    use science_cas::execution::execute_ir_request;
+    use science_cas::runtime::values::arena::{push_bool, push_int, push_symbol_name};
+    use science_types::{BindingEvaluationPolicy, BindingKind};
+
+    let mut session = Session::new();
+    let flag = push_symbol_name(&mut session, "flag");
+    let q = push_symbol_name(&mut session, "q");
+    let flag_sym = session.arena.symbols_mut().intern("flag");
+    let q_sym = session.arena.symbols_mut().intern("q");
+    let three = push_int(&mut session, 3);
+    let neg_three = push_int(&mut session, -3);
+    let then_body = CasRequest::Command(SessionCommand::Define {
+        symbol: q_sym,
+        value: neg_three,
+        kind: BindingKind::Session,
+        evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+    });
+    let branch = CasRequest::Control(ControlPlan::Branch {
+        condition: flag,
+        then_branch: Box::new(then_body),
+        else_branch: None,
+    });
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::Define {
+                symbol: flag_sym,
+                value: push_bool(&mut session, false),
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+            CasRequest::Command(SessionCommand::Define {
+                symbol: q_sym,
+                value: three,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+            branch,
+            CasRequest::Term(q),
+        ],
+    });
+
+    let result_id = execute_ir_request(&mut session, request).expect("branch on symbol");
+    let term = session.results.require_symbolic_term(result_id).expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Atom(Atom::Number(num))) => assert_eq!(num.as_exact_integer(), Some(3)),
+        other => panic!("expected q=3 when flag false, got {other:?}"),
+    }
+}
+
+#[test]
+fn compile_and_execute_single_loop_while_less_readbinding_n() {
+    use science_cas::execution::execute_ir_request;
+    use science_cas::runtime::values::arena::{push_int, push_symbol_name};
+    use science_types::{BindingEvaluationPolicy, BindingKind};
+
+    let mut session = Session::new();
+    let i = push_symbol_name(&mut session, "i");
+    let n = push_symbol_name(&mut session, "n");
+    let n_sym = session.arena.symbols_mut().intern("n");
+    let i_sym = session.arena.symbols_mut().intern("i");
+    let five = push_int(&mut session, 5);
+    let one = push_int(&mut session, 1);
+    let zero = push_int(&mut session, 0);
+    let cond = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Less),
+        vec![i, n],
+        Default::default(),
+    );
+    let i_plus_1 = session.builder().application(
+        ApplicationHead::Semantic(SemanticOperator::Add),
+        vec![i, one],
+        Default::default(),
+    );
+    let body = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![CasRequest::Command(SessionCommand::Define {
+            symbol: i_sym,
+            value: i_plus_1,
+            kind: BindingKind::Session,
+            evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+        })],
+    });
+    let while_loop = CasRequest::Control(ControlPlan::LoopWhile {
+        condition: cond,
+        body: Box::new(body),
+    });
+    let request = CasRequest::Control(ControlPlan::Sequence {
+        steps: vec![
+            CasRequest::Command(SessionCommand::Define {
+                symbol: n_sym,
+                value: five,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+            CasRequest::Command(SessionCommand::Define {
+                symbol: i_sym,
+                value: zero,
+                kind: BindingKind::Session,
+                evaluation: BindingEvaluationPolicy::EvaluateBeforeStore,
+            }),
+            while_loop,
+            CasRequest::Term(i),
+        ],
+    });
+    let result_id = execute_ir_request(&mut session, request).expect("single less readbinding loop");
+    let term = session.results.require_symbolic_term(result_id).expect("term");
+    match session.arena.get(term) {
+        Some(TermNode::Atom(Atom::Number(num))) => assert_eq!(num.as_exact_integer(), Some(5)),
+        other => panic!("expected i=5, got {other:?}"),
+    }
+}

@@ -4,10 +4,10 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license = "MPL-2.0"
-description = "Metis handles and diagnostics (node/edge ids from athena-graph)"
+description = "Metis handles and diagnostics (node/edge ids from science-graph)"
 
 [dependencies]
-athena-graph = { workspace = true }
+science-graph = { workspace = true }
 serde = { workspace = true, optional = true }
 thiserror = { workspace = true }
 

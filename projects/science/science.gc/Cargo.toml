@@ -1,0 +1,16 @@
+[package]
+name = "science-gc"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+authors.workspace = true
+description = "Science CAS runtime GC heap — segmented arena, tracing roots, scratch, GcMode"
+publish = false
+
+[dependencies]
+science-types = { workspace = true }
+
+[lints.rust]
+missing_docs = "warn"
+# Segment / header / limb block 需要窄域 unsafe；其余模块保持 deny。
+unsafe_code = "deny"

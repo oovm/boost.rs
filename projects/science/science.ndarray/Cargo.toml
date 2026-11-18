@@ -1,0 +1,15 @@
+[package]
+name = "science-ndarray"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+authors.workspace = true
+description = "CAS arrays and out-of-core storage for Science"
+publish = false
+
+[dependencies]
+science-gc = { workspace = true }
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "allow"

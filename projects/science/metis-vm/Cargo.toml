@@ -10,7 +10,7 @@ description = "Metis register interpreter: frames, fuel, safepoint, and executio
 metis-types = { workspace = true }
 metis-ir = { workspace = true }
 metis-graph = { workspace = true }
-athena-gc = { workspace = true }
+science-gc = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

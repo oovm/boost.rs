@@ -1,0 +1,423 @@
+//! Gröbner 基 · 消元 · 验证 · 类型分型。
+
+use science_cas::{
+    domains::polynomial::{
+        CoefficientDomain, GroebnerComputation, GroebnerLimits, GroebnerStatus, MonomialOrder, PolynomialBuilder, PolynomialRequest,
+        PolynomialResult, RingTable, compute_groebner_basis, compute_groebner_basis_f4, ideal_membership, reduce_by_verified, reduce_ideal,
+        resume_groebner_basis_f4, verify_groebner_basis,
+    },
+    runtime::Session,
+};
+use science_numeric::Number;
+use science_types::SymbolId;
+
+fn q_xy_lex() -> (RingTable, science_cas::domains::polynomial::RingId) {
+    let mut rings = RingTable::new();
+    let id = rings.intern(CoefficientDomain::Rational, vec![SymbolId(0), SymbolId(1)], MonomialOrder::Lex).unwrap();
+    (rings, id)
+}
+
+fn q_xy_elim_x() -> (RingTable, science_cas::domains::polynomial::RingId) {
+    let mut rings = RingTable::new();
+    let id = rings
+        .intern(
+            CoefficientDomain::Rational,
+            vec![SymbolId(0), SymbolId(1)],
+            MonomialOrder::Elimination { eliminate: 1, rest: Box::new(MonomialOrder::Lex) },
+        )
+        .unwrap();
+    (rings, id)
+}
+
+fn build(
+    rings: &RingTable,
+    ring: science_cas::domains::polynomial::RingId,
+    terms: &[(i64, i64, Vec<u32>)],
+) -> science_cas::domains::polynomial::Polynomial {
+    let mut b = PolynomialBuilder::new(ring);
+    for &(num, den, ref exp) in terms {
+        let c = if den == 1 { Number::small_int(num) } else { Number::rational_i64(num, den).unwrap() };
+        b.push_term(c, exp.clone()).unwrap();
+    }
+    b.build(rings).unwrap()
+}
+
+fn contains_poly_with_leading_exp(gb: &[science_cas::domains::polynomial::Polynomial], exp: &[u32]) -> bool {
+    gb.iter().any(|p| p.terms().first().is_some_and(|t| t.exponents() == exp))
+}
+
+#[test]
+fn groebner_trivial_generators_to_verified_basis() {
+    let (rings, ring) = q_xy_lex();
+    let g1 = build(&rings, ring, &[(1, 1, vec![1, 0]), (-1, 1, vec![0, 1])]);
+    let g2 = build(&rings, ring, &[(1, 1, vec![0, 1]), (-1, 1, vec![0, 0])]);
+    let computation = compute_groebner_basis(vec![g1, g2], &rings, GroebnerLimits::default()).unwrap();
+    assert_eq!(computation.status(), GroebnerStatus::Verified);
+    let gb = computation.as_verified().expect("verified");
+    assert!(gb.certificate.complete);
+    assert!(gb.certificate.verification.is_proven());
+    assert!(gb.verification.all_s_pairs_reduce_to_zero);
+    assert_eq!(gb.certificate.algorithm, science_cas::domains::polynomial::GroebnerAlgorithm::Buchberger);
+    assert!(contains_poly_with_leading_exp(gb.basis(), &[1, 0]) || contains_poly_with_leading_exp(gb.basis(), &[0, 1]));
+}
+
+#[test]
+fn groebner_f4_trivial_generators_to_verified_basis() {
+    let (rings, ring) = q_xy_lex();
+    let g1 = build(&rings, ring, &[(1, 1, vec![1, 0]), (-1, 1, vec![0, 1])]);
+    let g2 = build(&rings, ring, &[(1, 1, vec![0, 1]), (-1, 1, vec![0, 0])]);
+    let computation = compute_groebner_basis_f4(vec![g1, g2], &rings, GroebnerLimits::default()).unwrap();
+    assert_eq!(computation.status(), GroebnerStatus::Verified);
+    let gb = computation.as_verified().expect("verified");
+    assert!(gb.certificate.complete);
+    assert!(gb.certificate.verification.is_proven());
+    assert!(gb.verification.all_s_pairs_reduce_to_zero);
+    assert_eq!(gb.certificate.algorithm, science_cas::domains::polynomial::GroebnerAlgorithm::F4);
+    assert!(contains_poly_with_leading_exp(gb.basis(), &[1, 0]) || contains_poly_with_leading_exp(gb.basis(), &[0, 1]));
+}
+
+#[test]
+fn groebner_f4_inserts_and_verifies() {
+    let (rings, ring) = q_xy_lex();
+    let g1 = build(&rings, ring, &[(1, 1, vec![2, 0]), (-1, 1, vec![0, 1])]);
+    let g2 = build(&rings, ring, &[(1, 1, vec![1, 1]), (-1, 1, vec![0, 0])]);
+    let computation = compute_groebner_basis_f4(vec![g1, g2], &rings, GroebnerLimits::default()).unwrap();
+    assert_eq!(computation.status(), GroebnerStatus::Verified);
+    let gb = computation.as_verified().expect("verified");
+    assert_eq!(gb.certificate.algorithm, science_cas::domains::polynomial::GroebnerAlgorithm::F4);
+    assert!(gb.verification.all_s_pairs_reduce_to_zero);
+    assert!(contains_poly_with_leading_exp(gb.basis(), &[1, 0]));
+    assert!(contains_poly_with_leading_exp(gb.basis(), &[0, 3]) || gb.basis().len() >= 2);
+}
+
+#[test]
+fn groebner_f4_resume_from_partial_to_verified() {
+    let (rings, ring) = q_xy_lex();
+    let g1 = build(&rings, ring, &[(1, 1, vec![2, 0]), (-1, 1, vec![0, 1])]);
+    let g2 = build(&rings, ring, &[(1, 1, vec![1, 1]), (-1, 1, vec![0, 0])]);
+    let partial = compute_groebner_basis_f4(vec![g1, g2], &rings, GroebnerLimits { max_s_pairs: 0, max_basis_size: 128 }).unwrap();
+    assert_eq!(partial.status(), GroebnerStatus::Partial);
+    let frontier = match partial {
+        GroebnerComputation::Partial(f) => f,
+        other => panic!("expected Partial, got {other:?}"),
+    };
+    assert_eq!(frontier.certificate.algorithm, science_cas::domains::polynomial::GroebnerAlgorithm::F4);
+    let resumed = resume_groebner_basis_f4(frontier, &rings, GroebnerLimits::default()).unwrap();
+    assert_eq!(resumed.status(), GroebnerStatus::Verified);
+    let gb = resumed.as_verified().expect("verified");
+    assert_eq!(gb.certificate.algorithm, science_cas::domains::polynomial::GroebnerAlgorithm::F4);
+    assert!(gb.verification.all_s_pairs_reduce_to_zero);
+}
+
+#[test]
+fn reduce_by_verified_groebner_basis() {
+    let (rings, ring) = q_xy_lex();
+    let g = build(&rings, ring, &[(1, 1, vec![1, 0]), (-1, 1, vec![0, 0])]);
+    let computation = compute_groebner_basis(vec![g.owning_copy()], &rings, GroebnerLimits::default()).unwrap();
+    let gb = computation.as_verified().unwrap();
+    let f = build(&rings, ring, &[(1, 1, vec![2, 0])]);
+    let rem = reduce_by_verified(f.owning_copy(), gb, &rings).unwrap();
+    assert_eq!(rem.terms().len(), 1);
+    assert_eq!(rem.terms()[0].exponents(), vec![0, 0]);
+    assert!(!ideal_membership(f, gb, &rings).unwrap());
+    let zero_member = build(&rings, ring, &[(1, 1, vec![1, 0]), (-1, 1, vec![0, 0])]);
+    assert!(ideal_membership(zero_member, gb, &rings).unwrap());
+}
+
+#[test]
+fn heuristic_reduce_ideal_still_available() {
+    let (rings, ring) = q_xy_lex();
+    let g = build(&rings, ring, &[(1, 1, vec![1, 0]), (-1, 1, vec![0, 0])]);
+    let f = build(&rings, ring, &[(1, 1, vec![2, 0])]);
+    let rem = reduce_ideal(f, &[g], &rings).unwrap();
+    assert_eq!(rem.terms()[0].exponents(), vec![0, 0]);
+}
+
+#[test]
+fn elimination_ideal_in_y() {
+    let (rings, ring) = q_xy_elim_x();
+    let f1 = build(&rings, ring, &[(1, 1, vec![2, 0]), (1, 1, vec![0, 1]), (-1, 1, vec![0, 0])]);
+    let f2 = build(&rings, ring, &[(1, 1, vec![1, 0]), (1, 1, vec![0, 1]), (-1, 1, vec![0, 0])]);
+    let out = science_cas::domains::polynomial::compute_elimination_basis(vec![f1, f2], &rings, GroebnerLimits::default()).unwrap();
+    assert_eq!(out.status(), GroebnerStatus::Verified);
+    assert!(out.certificate().elimination_elements.is_some());
+    assert!(out.polynomials().iter().all(|p| p.terms().iter().all(|t| t.exponents()[0] == 0)));
+    assert!(!out.polynomials().is_empty());
+}
+
+#[test]
+fn integer_ring_groebner_rejected() {
+    let mut rings = RingTable::new();
+    let ring = rings.intern(CoefficientDomain::Integer, vec![SymbolId(0)], MonomialOrder::Lex).unwrap();
+    let g = build(&rings, ring, &[(1, 1, vec![1])]);
+    let err = compute_groebner_basis(vec![g], &rings, GroebnerLimits::default()).unwrap_err();
+    assert_eq!(err.code.as_str(), "SCIENCE_POLYNOMIAL_NON_FIELD_DIVISION");
+}
+
+#[test]
+fn session_groebner_via_execute_polynomial() {
+    let mut session = Session::default();
+    let ring = session.rings.intern(CoefficientDomain::Rational, vec![SymbolId(0)], MonomialOrder::Lex).unwrap();
+    let g = build(&session.rings, ring, &[(1, 1, vec![1]), (-1, 1, vec![0])]);
+    let generator = session.polynomial_objects.intern(g, &session.rings);
+    let out = session.execute_polynomial(PolynomialRequest::Groebner { generators: vec![generator], limits: GroebnerLimits::default() });
+    match out {
+        PolynomialResult::Exact { value } => match value {
+            science_cas::domains::polynomial::PolynomialDomainValue::GroebnerBasis(v) => {
+                assert_eq!(v.status, GroebnerStatus::Verified);
+                assert_eq!(v.basis.len(), 1);
+                assert!(v.certificate.complete);
+                assert!(v.certificate.verification.is_proven());
+            }
+            _ => panic!("expected GroebnerBasis"),
+        },
+        other => panic!("expected Exact, got {other:?}"),
+    }
+}
+
+#[test]
+fn session_groebner_f4_request_to_verified() {
+    let mut session = Session::default();
+    let ring = session.rings.intern(CoefficientDomain::Rational, vec![SymbolId(0), SymbolId(1)], MonomialOrder::Lex).unwrap();
+    let g1 = build(&session.rings, ring, &[(1, 1, vec![1, 0]), (-1, 1, vec![0, 1])]);
+    let g2 = build(&session.rings, ring, &[(1, 1, vec![0, 1]), (-1, 1, vec![0, 0])]);
+    let r1 = session.polynomial_objects.intern(g1, &session.rings);
+    let r2 = session.polynomial_objects.intern(g2, &session.rings);
+    let out = session.execute_polynomial(PolynomialRequest::GroebnerF4 { generators: vec![r1, r2], limits: GroebnerLimits::default() });
+    match out {
+        PolynomialResult::Exact { value } => match value {
+            science_cas::domains::polynomial::PolynomialDomainValue::GroebnerBasis(v) => {
+                assert_eq!(v.status, GroebnerStatus::Verified);
+                assert_eq!(v.certificate.algorithm, science_cas::domains::polynomial::GroebnerAlgorithm::F4);
+                assert!(v.certificate.complete);
+                assert!(v.certificate.verification.is_proven());
+            }
+            _ => panic!("expected GroebnerBasis"),
+        },
+        other => panic!("expected Exact, got {other:?}"),
+    }
+}
+
+#[test]
+fn session_resume_groebner_f4_request_reaches_verified() {
+    let mut session = Session::default();
+    let ring = session.rings.intern(CoefficientDomain::Rational, vec![SymbolId(0), SymbolId(1)], MonomialOrder::Lex).unwrap();
+    let g1 = build(&session.rings, ring, &[(1, 1, vec![2, 0]), (-1, 1, vec![0, 1])]);
+    let g2 = build(&session.rings, ring, &[(1, 1, vec![1, 1]), (-1, 1, vec![0, 0])]);
+    let r1 = session.polynomial_objects.intern(g1, &session.rings);
+    let r2 = session.polynomial_objects.intern(g2, &session.rings);
+    let partial = session.execute_polynomial(PolynomialRequest::GroebnerF4 {
+        generators: vec![r1, r2],
+        limits: GroebnerLimits { max_s_pairs: 0, max_basis_size: 128 },
+    });
+    let PolynomialResult::Exact { value: science_cas::domains::polynomial::PolynomialDomainValue::GroebnerBasis(gb) } = partial
+    else {
+        panic!("expected Partial GroebnerBasis, got {partial:?}");
+    };
+    assert_eq!(gb.status, GroebnerStatus::Partial);
+    assert_eq!(gb.certificate.algorithm, science_cas::domains::polynomial::GroebnerAlgorithm::F4);
+    let resume = gb.to_resume_request(&mut session.polynomial_objects, &session.rings, GroebnerLimits::default()).expect("resume request");
+    assert!(matches!(resume, PolynomialRequest::ResumeGroebnerF4 { .. }));
+    let out = session.execute_polynomial(resume);
+    match out {
+        PolynomialResult::Exact { value } => match value {
+            science_cas::domains::polynomial::PolynomialDomainValue::GroebnerBasis(v) => {
+                assert_eq!(v.status, GroebnerStatus::Verified);
+                assert_eq!(v.certificate.algorithm, science_cas::domains::polynomial::GroebnerAlgorithm::F4);
+            }
+            _ => panic!("expected GroebnerBasis"),
+        },
+        other => panic!("expected Exact, got {other:?}"),
+    }
+}
+
+#[test]
+fn session_partial_groebner_preserves_frontier_for_resume() {
+    let mut session = Session::default();
+    let ring = session.rings.intern(CoefficientDomain::Rational, vec![SymbolId(0), SymbolId(1)], MonomialOrder::Lex).unwrap();
+    let g1 = build(&session.rings, ring, &[(1, 1, vec![2, 0]), (-1, 1, vec![0, 1])]);
+    let g2 = build(&session.rings, ring, &[(1, 1, vec![1, 1]), (-1, 1, vec![0, 0])]);
+    let r1 = session.polynomial_objects.intern(g1, &session.rings);
+    let r2 = session.polynomial_objects.intern(g2, &session.rings);
+    let out = session.execute_polynomial(PolynomialRequest::Groebner {
+        generators: vec![r1, r2],
+        limits: GroebnerLimits { max_s_pairs: 0, max_basis_size: 128 },
+    });
+    let PolynomialResult::Exact { value: science_cas::domains::polynomial::PolynomialDomainValue::GroebnerBasis(gb) } = out
+    else {
+        panic!("expected Exact GroebnerBasis, got {out:?}");
+    };
+    assert_eq!(gb.status, GroebnerStatus::Partial);
+    assert!(gb.has_resumable_work());
+    let frontier_id = gb.register_frontier_on_session(&mut session, 0x6B0B_0001).expect("frontier store");
+    assert!(session.frontiers.contains(frontier_id));
+    assert_eq!(session.frontiers.get(frontier_id).unwrap().algorithm, Some("groebner_buchberger"));
+    let frontier = gb.into_frontier().expect("frontier");
+    let resumed = science_cas::domains::polynomial::resume_groebner_basis(frontier, &session.rings, GroebnerLimits::default()).unwrap();
+    assert_eq!(resumed.status(), GroebnerStatus::Verified);
+}
+
+#[test]
+fn session_resume_groebner_request_reaches_verified() {
+    let mut session = Session::default();
+    let ring = session.rings.intern(CoefficientDomain::Rational, vec![SymbolId(0), SymbolId(1)], MonomialOrder::Lex).unwrap();
+    let g1 = build(&session.rings, ring, &[(1, 1, vec![2, 0]), (-1, 1, vec![0, 1])]);
+    let g2 = build(&session.rings, ring, &[(1, 1, vec![1, 1]), (-1, 1, vec![0, 0])]);
+    let r1 = session.polynomial_objects.intern(g1, &session.rings);
+    let r2 = session.polynomial_objects.intern(g2, &session.rings);
+    let partial = session.execute_polynomial(PolynomialRequest::Groebner {
+        generators: vec![r1, r2],
+        limits: GroebnerLimits { max_s_pairs: 0, max_basis_size: 128 },
+    });
+    let PolynomialResult::Exact { value: science_cas::domains::polynomial::PolynomialDomainValue::GroebnerBasis(gb) } = partial
+    else {
+        panic!("expected Partial GroebnerBasis, got {partial:?}");
+    };
+    assert_eq!(gb.status, GroebnerStatus::Partial);
+    let resume = gb.to_resume_request(&mut session.polynomial_objects, &session.rings, GroebnerLimits::default()).expect("resume request");
+    let out = session.execute_polynomial(resume);
+    match out {
+        PolynomialResult::Exact { value: science_cas::domains::polynomial::PolynomialDomainValue::GroebnerBasis(done) } => {
+            assert_eq!(done.status, GroebnerStatus::Verified);
+            assert!(done.is_exact_witness());
+            assert!(!done.has_resumable_work());
+        }
+        other => panic!("expected Verified after ResumeGroebner, got {other:?}"),
+    }
+}
+
+#[test]
+fn eliminate_requires_elimination_order() {
+    let (rings, ring) = q_xy_lex();
+    let g = build(&rings, ring, &[(1, 1, vec![1, 0])]);
+    let err = science_cas::domains::polynomial::compute_elimination_basis(vec![g], &rings, GroebnerLimits::default()).unwrap_err();
+    assert_eq!(err.code.as_str(), "SCIENCE_POLYNOMIAL_ORDER_INVALID");
+}
+
+#[test]
+fn pair_budget_exhaustion_yields_partial_not_verified() {
+    let (rings, ring) = q_xy_lex();
+    // 首项共享 `x`，Buchberger 判据 1 不会跳过该对。
+    let g1 = build(&rings, ring, &[(1, 1, vec![2, 0]), (-1, 1, vec![0, 1])]);
+    let g2 = build(&rings, ring, &[(1, 1, vec![1, 1]), (-1, 1, vec![0, 0])]);
+    let computation = compute_groebner_basis(vec![g1, g2], &rings, GroebnerLimits { max_s_pairs: 0, max_basis_size: 128 }).unwrap();
+    assert!(matches!(computation, GroebnerComputation::Partial(_)));
+    assert_eq!(computation.status(), GroebnerStatus::Partial);
+    assert!(!computation.certificate().verification.is_proven());
+    assert!(!computation.certificate().complete);
+    assert!(computation.as_verified().is_none());
+    let GroebnerComputation::Partial(frontier) = computation
+    else {
+        panic!("expected Partial");
+    };
+    assert!(frontier.has_resumable_work());
+    assert!(!frontier.pending_pairs().is_empty());
+}
+
+#[test]
+fn resume_partial_groebner_frontier_to_verified() {
+    let (rings, ring) = q_xy_lex();
+    let g1 = build(&rings, ring, &[(1, 1, vec![2, 0]), (-1, 1, vec![0, 1])]);
+    let g2 = build(&rings, ring, &[(1, 1, vec![1, 1]), (-1, 1, vec![0, 0])]);
+    let partial = compute_groebner_basis(vec![g1, g2], &rings, GroebnerLimits { max_s_pairs: 0, max_basis_size: 128 }).unwrap();
+    let GroebnerComputation::Partial(frontier) = partial
+    else {
+        panic!("expected Partial");
+    };
+    let resumed = science_cas::domains::polynomial::resume_groebner_basis(frontier, &rings, GroebnerLimits::default()).unwrap();
+    assert_eq!(resumed.status(), GroebnerStatus::Verified);
+    let gb = resumed.as_verified().expect("verified after resume");
+    assert!(gb.certificate.complete);
+    assert!(gb.verification.all_s_pairs_reduce_to_zero);
+}
+
+#[test]
+fn buchberger_skips_coprime_leading_monomial_pairs() {
+    let (rings, ring) = q_xy_lex();
+    let g1 = build(&rings, ring, &[(1, 1, vec![1, 0])]);
+    let g2 = build(&rings, ring, &[(1, 1, vec![0, 1])]);
+    let computation = compute_groebner_basis(vec![g1, g2], &rings, GroebnerLimits { max_s_pairs: 0, max_basis_size: 128 }).unwrap();
+    assert_eq!(computation.status(), GroebnerStatus::Verified);
+    assert_eq!(computation.certificate().s_pair_steps, 0);
+    assert!(computation.as_verified().unwrap().verification.all_s_pairs_reduce_to_zero);
+}
+
+#[test]
+fn buchberger_with_chain_criterion_still_verifies() {
+    let (rings, ring) = q_xy_lex();
+    // 增长过程中会触发判据 2 的生成元。
+    let g1 = build(&rings, ring, &[(1, 1, vec![2, 0]), (-1, 1, vec![0, 1])]);
+    let g2 = build(&rings, ring, &[(1, 1, vec![1, 1]), (-1, 1, vec![0, 0])]);
+    let g3 = build(&rings, ring, &[(1, 1, vec![0, 2]), (-1, 1, vec![1, 0])]);
+    let computation = compute_groebner_basis(vec![g1, g2, g3], &rings, GroebnerLimits::default()).unwrap();
+    assert_eq!(computation.status(), GroebnerStatus::Verified);
+    assert!(computation.as_verified().unwrap().verification.all_s_pairs_reduce_to_zero);
+}
+
+#[test]
+fn resume_partial_with_tiny_budget_stays_partial() {
+    let (rings, ring) = q_xy_lex();
+    let g1 = build(&rings, ring, &[(1, 1, vec![2, 0]), (-1, 1, vec![0, 1])]);
+    let g2 = build(&rings, ring, &[(1, 1, vec![1, 1]), (-1, 1, vec![0, 0])]);
+    let partial = compute_groebner_basis(vec![g1, g2], &rings, GroebnerLimits { max_s_pairs: 0, max_basis_size: 128 }).unwrap();
+    let GroebnerComputation::Partial(frontier) = partial
+    else {
+        panic!("expected Partial");
+    };
+    let still =
+        science_cas::domains::polynomial::resume_groebner_basis(frontier, &rings, GroebnerLimits { max_s_pairs: 0, max_basis_size: 128 })
+            .unwrap();
+    let GroebnerComputation::Partial(again) = still
+    else {
+        panic!("expected Partial again");
+    };
+    assert!(again.has_resumable_work());
+}
+
+#[test]
+fn basis_size_limit_yields_resource_limited() {
+    let (rings, ring) = q_xy_lex();
+    let g1 = build(&rings, ring, &[(1, 1, vec![2, 0]), (-1, 1, vec![0, 1])]);
+    let g2 = build(&rings, ring, &[(1, 1, vec![1, 1]), (-1, 1, vec![0, 0])]);
+    let computation = compute_groebner_basis(vec![g1, g2], &rings, GroebnerLimits { max_s_pairs: 10_000, max_basis_size: 2 }).unwrap();
+    // 可能为 Partial 或 ResourceLimited（取决于何时触达规模上限）；二者均未验证。
+    assert!(!computation.is_verified());
+    assert!(matches!(
+        computation,
+        GroebnerComputation::ResourceLimited(_) | GroebnerComputation::Partial(_) | GroebnerComputation::Complete(_)
+    ));
+    if let GroebnerComputation::ResourceLimited(f) = &computation {
+        assert!(!f.certificate.verification.is_proven());
+    }
+}
+
+#[test]
+fn verify_groebner_basis_accepts_buchberger_output() {
+    let (rings, ring) = q_xy_lex();
+    let g = build(&rings, ring, &[(1, 1, vec![1, 0]), (-1, 1, vec![0, 0])]);
+    let computation = compute_groebner_basis(vec![g], &rings, GroebnerLimits::default()).unwrap();
+    let report = verify_groebner_basis(computation.polynomials(), &rings).unwrap();
+    assert!(report.all_s_pairs_reduce_to_zero);
+}
+
+#[test]
+fn verify_rejects_non_groebner_pair() {
+    let (rings, ring) = q_xy_lex();
+    // 经典非 Gröbner 基（lex，x > y）：{x^2 - y, x*y - 1}。S-对得到 y^2 - x，不可约化为 0。
+    let g1 = build(&rings, ring, &[(1, 1, vec![2, 0]), (-1, 1, vec![0, 1])]);
+    let g2 = build(&rings, ring, &[(1, 1, vec![1, 1]), (-1, 1, vec![0, 0])]);
+    let report = verify_groebner_basis(&[g1, g2], &rings).unwrap();
+    assert!(!report.all_s_pairs_reduce_to_zero);
+}
+
+#[test]
+fn reduce_by_verified_rejects_unverified_certificate() {
+    let (rings, ring) = q_xy_lex();
+    let g1 = build(&rings, ring, &[(1, 1, vec![2, 0]), (-1, 1, vec![0, 1])]);
+    let g2 = build(&rings, ring, &[(1, 1, vec![1, 1]), (-1, 1, vec![0, 0])]);
+    let computation = compute_groebner_basis(vec![g1, g2], &rings, GroebnerLimits { max_s_pairs: 0, max_basis_size: 128 }).unwrap();
+    assert!(matches!(computation, GroebnerComputation::Partial(_)));
+    // 经 API 构造证书不完整的假 `VerifiedGroebnerBasis` 必须不可行；
+    // membership / reduce_by_verified 仅接受来自 Complete 的 `VerifiedGroebnerBasis`。
+    assert!(computation.as_verified().is_none());
+}

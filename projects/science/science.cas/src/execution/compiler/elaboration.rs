@@ -1,0 +1,79 @@
+//! 语义 elaboration：实参求值策略（迁出 `lower_pure_expr` 内联表）。
+//!
+//! Living `04`：哪个算子对第几个参数 Evaluate / Capture，属于 semantic elaboration，
+//! 不得散落在 fused CFG lowering 的 `matches!` 里。本模块先收成显式表；
+//! 终态由方言 / 前端注入 policy，而不是 Science 内核猜整包持有求值策略。
+
+use science_ir::SemanticOperator;
+
+/// 单个实参的求值策略。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ArgumentEvaluationKind {
+    /// 递归 elaborate（求值后传入算子）。
+    Evaluate,
+    /// 捕获为 `LoadTerm`，不求值。
+    CaptureAsTerm,
+}
+
+/// 解析封闭语义算子在给定 arity / 下标上的实参策略。
+///
+/// 当前表仍是迁移期内核默认值（历史 evaluator 属性的显式化）。
+/// 禁止在 `lower_pure_expr` 外再复制一份 `Hold`/`Sum` 特例。
+pub fn argument_evaluation_for_semantic(operator: SemanticOperator, arg_count: usize, index: usize) -> ArgumentEvaluationKind {
+    // Migration-default captures. Prefer dialect-injected policy long-term (Living `04`).
+    // Hold / HoldComplete / Unevaluated / Function: true hold barriers.
+    // Timing / Trace / ParallelEvaluate: dialect hold-all capture is language-correct;
+    //   wall-clock / step-list / scheduler runtimes are still missing (residuals).
+    // InputForm: dialect hold-all-complete capture is language-correct until presentation runtime.
+    // Cancel: **not** Hold — args evaluate; residual echo until algebra Cancel kernel exists.
+    if matches!(
+        operator,
+        SemanticOperator::Hold
+            | SemanticOperator::HoldComplete
+            | SemanticOperator::Unevaluated
+            | SemanticOperator::Timing
+            | SemanticOperator::Trace
+            | SemanticOperator::ParallelEvaluate
+            | SemanticOperator::InputForm
+            | SemanticOperator::Function
+            | SemanticOperator::Simplify
+    ) {
+        return ArgumentEvaluationKind::CaptureAsTerm;
+    }
+    // `Rule` (`->`): evaluate RHS at construction. Capture LHS (patterns / unevaluated heads).
+    // `RuleDeferred` (`:>`): capture both sides until ReplaceAll applies the rule.
+    if matches!(operator, SemanticOperator::Rule | SemanticOperator::RuleDeferred) && arg_count >= 2 {
+        return if operator == SemanticOperator::Rule && index == 1 {
+            ArgumentEvaluationKind::Evaluate
+        }
+        else {
+            ArgumentEvaluationKind::CaptureAsTerm
+        };
+    }
+    if index == 0
+        && ((operator == SemanticOperator::Product && arg_count == 2)
+            || (operator == SemanticOperator::Sum && arg_count == 2)
+            || matches!(
+                operator,
+                SemanticOperator::Apply
+                    |                 SemanticOperator::Map
+                    | SemanticOperator::MapIndexed
+                    | SemanticOperator::MapThread
+                    | SemanticOperator::MapAt
+                    | SemanticOperator::MapAll
+                    // `Array` first arg is an operator value (`f` / 0-ary head), same capture as `Map`.
+                    | SemanticOperator::Array
+            ))
+    {
+        return ArgumentEvaluationKind::CaptureAsTerm;
+    }
+    if index == 1 && matches!(operator, SemanticOperator::Select) && arg_count >= 2 {
+        return ArgumentEvaluationKind::CaptureAsTerm;
+    }
+    if index == 1 && matches!(operator, SemanticOperator::CollectMatches | SemanticOperator::Matches) && arg_count >= 2 {
+        return ArgumentEvaluationKind::CaptureAsTerm;
+    }
+    // `Head` evaluates its argument (Mathematica default). Do **not** HoldFirst:
+    // `Head[1+2]` must see the value `3`, not unevaluated `Add`.
+    ArgumentEvaluationKind::Evaluate
+}

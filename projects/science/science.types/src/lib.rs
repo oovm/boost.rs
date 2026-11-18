@@ -1,0 +1,61 @@
+//! science 生态基础类型 — 仅合同，无求值 / 解析 / IO。
+//!
+//! 数值表示与运算在 [`science_numeric`]；本 crate 不拥有 `NumericDomain` / 执行态 `Number`。
+
+#![deny(missing_docs)]
+
+mod assumption;
+mod binding;
+mod collection;
+mod diagnostic;
+mod ids;
+mod index_spec;
+mod numeric_kind;
+mod pattern_ids;
+mod scope;
+mod status;
+/// 过渡期宿主 wire（十进制字符串）；执行路径请用 `science_numeric::NumericValue`。
+pub mod wire;
+
+pub use assumption::{AssumptionSet, Condition, Predicate};
+pub use binding::{BindingEvaluationPolicy, BindingKind};
+pub use collection::{CollectionKind, CollectionKindId};
+pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticPath, DiagnosticValue, Result, Severity};
+pub use ids::{
+    AlgebraMapId, AssumptionScopeId, AssumptionSetId, AutomorphismId, CoefficientRingId, DomainId, ExtensionId, ExtensionOperatorId, FieldId,
+    FieldPresentationId, FormId, FrontierId, GroupElementId, GroupId, GroupPresentationId, MatrixId, PolynomialId, PresentationId, ProofRef,
+    ResultId, RingId, SerializationVersion, SourceSpan, SubgroupId, SymbolId, TermId, TermRef, TheoryContextId, ValueId,
+};
+pub use index_spec::{IndexSpec, IndexSpecId, IntegerIndex, IntegerOffset};
+pub use numeric_kind::{ModulusId, NumericKind, NumericTypeId, PrecisionPolicyId};
+pub use pattern_ids::{CompiledRuleId, DispatchTableId, PredicateId, ValueTypeId};
+pub use scope::{
+    AssumptionBranchPolicy, AssumptionScope, ScopeApplicability, ScopeConflict, ScopeConflictKind, ScopeMergeOutcome, TheoryContext,
+};
+pub use status::ComputationStatus;
+pub use wire::{ExactNumber, RealNumber, WireNumber};
+
+/// 近似算术的舍入模式（合同）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RoundingMode {
+    /// 四舍六入五成双（最近偶数）。
+    #[default]
+    Nearest,
+    /// 向零舍入。
+    Truncate,
+    /// 向 +∞。
+    Ceiling,
+    /// 向 -∞。
+    Floor,
+}
+
+/// 精度策略（合同）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Precision {
+    /// 精确算术。
+    Exact,
+    /// IEEE binary64 浮点。
+    Machine,
+    /// 任意比特精度。
+    ArbitraryBits(u32),
+}

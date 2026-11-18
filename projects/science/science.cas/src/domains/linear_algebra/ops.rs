@@ -1,0 +1,1613 @@
+//! 矩阵算子：索引、切片、转置、矩阵乘、逐元素乘 / 除 / 幂。
+
+use science_numeric::{Integer, Rational};
+use science_types::{Diagnostic, DiagnosticCode};
+
+use super::{
+    index::IndexSpec,
+    parent::ElementParentKind,
+    shape::{MatrixShape, StorageOrder},
+    value::{MatrixEntry, MatrixValue},
+};
+use crate::runtime::values::numeric_clone::{clone_integer, clone_rational, resize_integers, resize_rationals};
+
+/// 标量索引（返回 1×1 矩阵以保持矩阵对象模型）。
+pub fn index_scalar(matrix: &MatrixValue, row: u64, col: u64) -> Result<MatrixValue, Diagnostic> {
+    IndexSpec::check_scalar(matrix.shape(), row, col)?;
+    let entry = matrix.get(row, col)?;
+    match entry {
+        MatrixEntry::Integer(x) => MatrixValue::from_integers_row_major(1, 1, vec![x]),
+        MatrixEntry::Rational(x) => MatrixValue::from_rationals_row_major(1, 1, vec![x]),
+        MatrixEntry::MachineF64(x) => MatrixValue::from_f64_row_major(1, 1, vec![x]),
+        MatrixEntry::ComplexExact { re, im } => MatrixValue::from_complex_exact_row_major(1, 1, vec![(re, im)]),
+    }
+}
+
+/// 按 [`IndexSpec`] 切片并物化为自有行主序矩阵。
+pub fn slice_matrix(matrix: &MatrixValue, spec: &IndexSpec) -> Result<MatrixValue, Diagnostic> {
+    match spec {
+        IndexSpec::Scalar { row, col } => index_scalar(matrix, *row, *col),
+        IndexSpec::Slice { rows, cols } => {
+            let row_ix = rows.resolve(matrix.shape().rows)?;
+            let col_ix = cols.resolve(matrix.shape().cols)?;
+            let out_rows = row_ix.len() as u64;
+            let out_cols = col_ix.len() as u64;
+            match matrix.parent().element {
+                ElementParentKind::ComplexExact => {
+                    let mut data = Vec::with_capacity((out_rows * out_cols) as usize);
+                    for &r in &row_ix {
+                        for &c in &col_ix {
+                            data.push(complex_exact_entry(matrix.get(r, c)?)?);
+                        }
+                    }
+                    MatrixValue::from_complex_exact_row_major(out_rows, out_cols, data)
+                }
+                ElementParentKind::Integers => {
+                    let mut data = Vec::with_capacity((out_rows * out_cols) as usize);
+                    for &r in &row_ix {
+                        for &c in &col_ix {
+                            match matrix.get(r, c)? {
+                                MatrixEntry::Integer(x) => data.push(x),
+                                _ => unreachable!(),
+                            }
+                        }
+                    }
+                    MatrixValue::from_integers_row_major(out_rows, out_cols, data)
+                }
+                ElementParentKind::Rationals => {
+                    let mut data = Vec::with_capacity((out_rows * out_cols) as usize);
+                    for &r in &row_ix {
+                        for &c in &col_ix {
+                            match matrix.get(r, c)? {
+                                MatrixEntry::Rational(x) => data.push(x),
+                                _ => unreachable!(),
+                            }
+                        }
+                    }
+                    MatrixValue::from_rationals_row_major(out_rows, out_cols, data)
+                }
+                ElementParentKind::MachineReal => {
+                    let mut data = Vec::with_capacity((out_rows * out_cols) as usize);
+                    for &r in &row_ix {
+                        for &c in &col_ix {
+                            match matrix.get(r, c)? {
+                                MatrixEntry::MachineF64(x) => data.push(x),
+                                _ => unreachable!(),
+                            }
+                        }
+                    }
+                    MatrixValue::from_f64_row_major(out_rows, out_cols, data)
+                }
+            }
+        }
+    }
+}
+
+/// 转置（视图；共享缓冲）。
+pub fn transpose(matrix: &MatrixValue) -> MatrixValue {
+    matrix.transpose_view()
+}
+
+/// 共轭转置。
+///
+/// 当前 parent 只有实数元素（整数 / 有理 / 机器实数），共轭是恒等，结果等于 [	ranspose]。
+/// 复数 parent 落地后必须先共轭再转置，不得继续把本函数当成实数别名。
+pub fn conjugate_transpose(matrix: &MatrixValue) -> MatrixValue {
+    match matrix.parent().element {
+        ElementParentKind::Integers | ElementParentKind::Rationals | ElementParentKind::MachineReal => transpose(matrix),
+        ElementParentKind::ComplexExact => {
+            let rows = matrix.shape().rows;
+            let cols = matrix.shape().cols;
+            let mut data = Vec::with_capacity((rows * cols) as usize);
+            for i in 0..cols {
+                for j in 0..rows {
+                    match matrix.get(j, i).expect("in-bounds conjugate_transpose") {
+                        MatrixEntry::ComplexExact { re, im } => data.push((re, im.neg())),
+                        _ => unreachable!("ComplexExact buffer"),
+                    }
+                }
+            }
+            MatrixValue::from_complex_exact_row_major(cols, rows, data).expect("shape matches buffer")
+        }
+    }
+}
+
+/// 下三角（含对角；严格上三角置零）。
+pub fn tril(matrix: &MatrixValue) -> Result<MatrixValue, Diagnostic> {
+    triangular_mask(matrix, true)
+}
+
+/// 上三角（含对角；严格下三角置零）。
+pub fn triu(matrix: &MatrixValue) -> Result<MatrixValue, Diagnostic> {
+    triangular_mask(matrix, false)
+}
+
+fn triangular_mask(matrix: &MatrixValue, lower: bool) -> Result<MatrixValue, Diagnostic> {
+    let rows = matrix.shape().rows;
+    let cols = matrix.shape().cols;
+    let zero = MatrixEntry::zero(matrix.parent().element)?;
+    match matrix.parent().element {
+        ElementParentKind::ComplexExact => {
+            let mut data = Vec::with_capacity((rows * cols) as usize);
+            for i in 0..rows {
+                for j in 0..cols {
+                    let keep = if lower { j <= i } else { j >= i };
+                    if keep {
+                        data.push(complex_exact_entry(matrix.get(i, j)?)?);
+                    } else {
+                        data.push((Rational::zero(), Rational::zero()));
+                    }
+                }
+            }
+            MatrixValue::from_complex_exact_row_major(rows, cols, data)
+        }
+        ElementParentKind::Integers => {
+            let mut data = Vec::with_capacity((rows * cols) as usize);
+            for i in 0..rows {
+                for j in 0..cols {
+                    let keep = if lower { j <= i } else { j >= i };
+                    if keep {
+                        match matrix.get(i, j)? {
+                            MatrixEntry::Integer(x) => data.push(x),
+                            _ => unreachable!(),
+                        }
+                    }
+                    else {
+                        match &zero {
+                            MatrixEntry::Integer(z) => data.push(crate::runtime::values::numeric_clone::clone_integer(z)),
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+            }
+            MatrixValue::from_integers_row_major(rows, cols, data)
+        }
+        ElementParentKind::Rationals => {
+            let mut data = Vec::with_capacity((rows * cols) as usize);
+            for i in 0..rows {
+                for j in 0..cols {
+                    let keep = if lower { j <= i } else { j >= i };
+                    if keep {
+                        match matrix.get(i, j)? {
+                            MatrixEntry::Rational(x) => data.push(x),
+                            _ => unreachable!(),
+                        }
+                    }
+                    else {
+                        match &zero {
+                            MatrixEntry::Rational(z) => data.push(crate::runtime::values::numeric_clone::clone_rational(z)),
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+            }
+            MatrixValue::from_rationals_row_major(rows, cols, data)
+        }
+        ElementParentKind::MachineReal => {
+            let mut data = Vec::with_capacity((rows * cols) as usize);
+            for i in 0..rows {
+                for j in 0..cols {
+                    let keep = if lower { j <= i } else { j >= i };
+                    if keep {
+                        match matrix.get(i, j)? {
+                            MatrixEntry::MachineF64(x) => data.push(x),
+                            _ => unreachable!(),
+                        }
+                    }
+                    else {
+                        data.push(0.0);
+                    }
+                }
+            }
+            MatrixValue::from_f64_row_major(rows, cols, data)
+        }
+    }
+}
+
+fn entry_is_zero(entry: &MatrixEntry) -> bool {
+    match entry {
+        MatrixEntry::Integer(x) => x.is_zero(),
+        MatrixEntry::Rational(x) => x.is_zero(),
+        MatrixEntry::MachineF64(x) => *x == 0.0,
+        MatrixEntry::ComplexExact { re, im } => re.is_zero() && im.is_zero(),
+    }
+}
+
+/// 对角阵判定（非对角元为零；允许非方阵）。
+pub fn is_diagonal(matrix: &MatrixValue) -> Result<bool, Diagnostic> {
+    let rows = matrix.shape().rows;
+    let cols = matrix.shape().cols;
+    for i in 0..rows {
+        for j in 0..cols {
+            if i != j && !entry_is_zero(&matrix.get(i, j)?) {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
+
+/// 下三角判定（严格上三角为零；含对角；允许非方阵）。
+pub fn is_lower_triangular(matrix: &MatrixValue) -> Result<bool, Diagnostic> {
+    let rows = matrix.shape().rows;
+    let cols = matrix.shape().cols;
+    for i in 0..rows {
+        for j in 0..cols {
+            if j > i && !entry_is_zero(&matrix.get(i, j)?) {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
+
+/// 上三角判定（严格下三角为零；含对角；允许非方阵）。
+pub fn is_upper_triangular(matrix: &MatrixValue) -> Result<bool, Diagnostic> {
+    let rows = matrix.shape().rows;
+    let cols = matrix.shape().cols;
+    for i in 0..rows {
+        for j in 0..cols {
+            if j < i && !entry_is_zero(&matrix.get(i, j)?) {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
+
+/// 对称判定（须方阵；`A[i,j] = A[j,i]`）。
+pub fn is_symmetric(matrix: &MatrixValue) -> Result<bool, Diagnostic> {
+    let n = matrix.shape().rows;
+    if n != matrix.shape().cols {
+        return Ok(false);
+    }
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let a = matrix.get(i, j)?;
+            let b = matrix.get(j, i)?;
+            if a != b {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
+
+/// 将布尔谓词投成 `1×1` 整数矩阵（供 `Dot` 表面压成标量 `0`/`1`）。
+pub fn flag_matrix(value: bool) -> Result<MatrixValue, Diagnostic> {
+    let bit = if value { Integer::one() } else { Integer::zero() };
+    MatrixValue::from_integers_row_major(1, 1, vec![bit])
+}
+
+/// Kronecker 积 `A ⊗ B`（块缩放）。
+pub fn kronecker(lhs: &MatrixValue, rhs: &MatrixValue) -> Result<MatrixValue, Diagnostic> {
+    require_same_element_parent(lhs, rhs)?;
+    let ar = lhs.shape().rows;
+    let ac = lhs.shape().cols;
+    let br = rhs.shape().rows;
+    let bc = rhs.shape().cols;
+    let out_rows =
+        ar.checked_mul(br).ok_or_else(|| Diagnostic::new(DiagnosticCode::ShapeMismatch).detail("reason", "kronecker_rows_overflow"))?;
+    let out_cols =
+        ac.checked_mul(bc).ok_or_else(|| Diagnostic::new(DiagnosticCode::ShapeMismatch).detail("reason", "kronecker_cols_overflow"))?;
+    match lhs.parent().element {
+        ElementParentKind::ComplexExact => {
+            let mut data = Vec::with_capacity((out_rows * out_cols) as usize);
+            for i in 0..ar {
+                for p in 0..br {
+                    for j in 0..ac {
+                        let a = complex_exact_entry(lhs.get(i, j)?)?;
+                        for q in 0..bc {
+                            let b = complex_exact_entry(rhs.get(p, q)?)?;
+                            data.push(complex_mul(&a, &b));
+                        }
+                    }
+                }
+            }
+            MatrixValue::from_complex_exact_row_major(out_rows, out_cols, data)
+        }
+        ElementParentKind::Integers => {
+            let mut data = Vec::with_capacity((out_rows * out_cols) as usize);
+            for i in 0..ar {
+                for p in 0..br {
+                    for j in 0..ac {
+                        let a = match lhs.get(i, j)? {
+                            MatrixEntry::Integer(x) => x,
+                            _ => unreachable!(),
+                        };
+                        for q in 0..bc {
+                            let b = match rhs.get(p, q)? {
+                                MatrixEntry::Integer(x) => x,
+                                _ => unreachable!(),
+                            };
+                            data.push(a.mul(&b));
+                        }
+                    }
+                }
+            }
+            MatrixValue::from_integers_row_major(out_rows, out_cols, data)
+        }
+        ElementParentKind::Rationals => {
+            let mut data = Vec::with_capacity((out_rows * out_cols) as usize);
+            for i in 0..ar {
+                for p in 0..br {
+                    for j in 0..ac {
+                        let a = match lhs.get(i, j)? {
+                            MatrixEntry::Rational(x) => x,
+                            _ => unreachable!(),
+                        };
+                        for q in 0..bc {
+                            let b = match rhs.get(p, q)? {
+                                MatrixEntry::Rational(x) => x,
+                                _ => unreachable!(),
+                            };
+                            data.push(a.mul(&b));
+                        }
+                    }
+                }
+            }
+            MatrixValue::from_rationals_row_major(out_rows, out_cols, data)
+        }
+        ElementParentKind::MachineReal => {
+            let mut data = Vec::with_capacity((out_rows * out_cols) as usize);
+            for i in 0..ar {
+                for p in 0..br {
+                    for j in 0..ac {
+                        let a = match lhs.get(i, j)? {
+                            MatrixEntry::MachineF64(x) => x,
+                            _ => unreachable!(),
+                        };
+                        for q in 0..bc {
+                            let b = match rhs.get(p, q)? {
+                                MatrixEntry::MachineF64(x) => x,
+                                _ => unreachable!(),
+                            };
+                            data.push(a * b);
+                        }
+                    }
+                }
+            }
+            MatrixValue::from_f64_row_major(out_rows, out_cols, data)
+        }
+    }
+}
+
+fn complex_exact_entry(entry: MatrixEntry) -> Result<(Rational, Rational), Diagnostic> {
+    match entry {
+        MatrixEntry::ComplexExact { re, im } => Ok((re, im)),
+        MatrixEntry::Rational(re) => Ok((re, Rational::zero())),
+        MatrixEntry::Integer(z) => Ok((Rational::from_integer(z), Rational::zero())),
+        _ => Err(Diagnostic::new(DiagnosticCode::TypeMismatch).detail("reason", "expected_exact_entry_for_complex")),
+    }
+}
+
+fn rational_entry(entry: MatrixEntry) -> Result<Rational, Diagnostic> {
+    match entry {
+        MatrixEntry::Rational(r) => Ok(r),
+        MatrixEntry::Integer(z) => Ok(Rational::from_integer(z)),
+        _ => Err(Diagnostic::new(DiagnosticCode::TypeMismatch).detail("reason", "expected_exact_rational_entry")),
+    }
+}
+
+/// Unify exact parents for Join / Riffle: `ComplexExact` wins over `ℤ`/`ℚ`, then `ℚ` over `ℤ`.
+fn unify_exact_element_parents(kinds: impl IntoIterator<Item = ElementParentKind>) -> Result<ElementParentKind, Diagnostic> {
+    let mut has_complex = false;
+    let mut has_rational = false;
+    let mut has_integer = false;
+    let mut has_machine = false;
+    for kind in kinds {
+        match kind {
+            ElementParentKind::ComplexExact => has_complex = true,
+            ElementParentKind::Rationals => has_rational = true,
+            ElementParentKind::Integers => has_integer = true,
+            ElementParentKind::MachineReal => has_machine = true,
+        }
+    }
+    if has_machine && (has_complex || has_rational || has_integer) {
+        return Err(Diagnostic::new(DiagnosticCode::TypeMismatch).detail("reason", "exact_machine_parent_mismatch"));
+    }
+    if has_machine {
+        return Ok(ElementParentKind::MachineReal);
+    }
+    if has_complex {
+        return Ok(ElementParentKind::ComplexExact);
+    }
+    if has_rational {
+        return Ok(ElementParentKind::Rationals);
+    }
+    if has_integer {
+        return Ok(ElementParentKind::Integers);
+    }
+    Err(Diagnostic::new(DiagnosticCode::TypeMismatch).detail("reason", "empty_parent_unify"))
+}
+
+fn complex_mul(a: &(Rational, Rational), b: &(Rational, Rational)) -> (Rational, Rational) {
+    let (ar, ai) = a;
+    let (br, bi) = b;
+    (
+        ar.mul(br).add(&ai.mul(bi).neg()),
+        ar.mul(bi).add(&ai.mul(br)),
+    )
+}
+
+fn complex_add(a: &(Rational, Rational), b: &(Rational, Rational)) -> (Rational, Rational) {
+    (a.0.add(&b.0), a.1.add(&b.1))
+}
+
+fn complex_pow(base: &(Rational, Rational), exp: u32) -> (Rational, Rational) {
+    let mut acc = (Rational::one(), Rational::zero());
+    if exp == 0 {
+        return acc;
+    }
+    let mut b = (clone_rational(&base.0), clone_rational(&base.1));
+    let mut e = exp;
+    while e > 0 {
+        if e & 1 == 1 {
+            acc = complex_mul(&acc, &b);
+        }
+        b = complex_mul(&b, &b);
+        e >>= 1;
+    }
+    acc
+}
+
+
+fn require_same_element_parent(a: &MatrixValue, b: &MatrixValue) -> Result<(), Diagnostic> {
+    if a.parent().element != b.parent().element {
+        return Err(Diagnostic::new(DiagnosticCode::TypeMismatch)
+            .detail("reason", "element_parent_mismatch")
+            .detail("lhs", format!("{:?}", a.parent().element))
+            .detail("rhs", format!("{:?}", b.parent().element)));
+    }
+    Ok(())
+}
+
+/// 矩阵乘（先做 checked shape inference）。
+pub fn matmul(lhs: &MatrixValue, rhs: &MatrixValue) -> Result<MatrixValue, Diagnostic> {
+    require_same_element_parent(lhs, rhs)?;
+    let out_shape = lhs.shape().matmul(rhs.shape())?;
+    match lhs.parent().element {
+        ElementParentKind::ComplexExact => {
+            let mut data = Vec::with_capacity(out_shape.element_count()?);
+            for i in 0..out_shape.rows {
+                for j in 0..out_shape.cols {
+                    let mut acc = (Rational::zero(), Rational::zero());
+                    for k in 0..lhs.shape().cols {
+                        let a = complex_exact_entry(lhs.get(i, k)?)?;
+                        let b = complex_exact_entry(rhs.get(k, j)?)?;
+                        acc = complex_add(&acc, &complex_mul(&a, &b));
+                    }
+                    data.push(acc);
+                }
+            }
+            MatrixValue::from_complex_exact_row_major(out_shape.rows, out_shape.cols, data)
+        }
+        ElementParentKind::Integers => {
+            let mut data = {
+                let mut __v = Vec::new();
+                resize_integers(&mut __v, out_shape.element_count()?, &Integer::zero());
+                __v
+            };
+            for i in 0..out_shape.rows {
+                for j in 0..out_shape.cols {
+                    let mut acc = Integer::zero();
+                    for k in 0..lhs.shape().cols {
+                        let a = match lhs.get(i, k)? {
+                            MatrixEntry::Integer(x) => x,
+                            _ => unreachable!(),
+                        };
+                        let b = match rhs.get(k, j)? {
+                            MatrixEntry::Integer(x) => x,
+                            _ => unreachable!(),
+                        };
+                        acc = acc.add(&a.mul(&b));
+                    }
+                    data[(i * out_shape.cols + j) as usize] = acc;
+                }
+            }
+            MatrixValue::from_integers_row_major(out_shape.rows, out_shape.cols, data)
+        }
+        ElementParentKind::Rationals => {
+            let mut data = {
+                let mut __v = Vec::new();
+                resize_rationals(&mut __v, out_shape.element_count()?, &Rational::zero());
+                __v
+            };
+            for i in 0..out_shape.rows {
+                for j in 0..out_shape.cols {
+                    let mut acc = Rational::zero();
+                    for k in 0..lhs.shape().cols {
+                        let a = match lhs.get(i, k)? {
+                            MatrixEntry::Rational(x) => x,
+                            _ => unreachable!(),
+                        };
+                        let b = match rhs.get(k, j)? {
+                            MatrixEntry::Rational(x) => x,
+                            _ => unreachable!(),
+                        };
+                        acc = acc.add(&a.mul(&b));
+                    }
+                    data[(i * out_shape.cols + j) as usize] = acc;
+                }
+            }
+            MatrixValue::from_rationals_row_major(out_shape.rows, out_shape.cols, data)
+        }
+        ElementParentKind::MachineReal => {
+            let mut data = vec![0.0; out_shape.element_count()?];
+            for i in 0..out_shape.rows {
+                for j in 0..out_shape.cols {
+                    let mut acc = 0.0;
+                    for k in 0..lhs.shape().cols {
+                        let a = match lhs.get(i, k)? {
+                            MatrixEntry::MachineF64(x) => x,
+                            _ => unreachable!(),
+                        };
+                        let b = match rhs.get(k, j)? {
+                            MatrixEntry::MachineF64(x) => x,
+                            _ => unreachable!(),
+                        };
+                        acc += a * b;
+                    }
+                    data[(i * out_shape.cols + j) as usize] = acc;
+                }
+            }
+            MatrixValue::from_f64_row_major(out_shape.rows, out_shape.cols, data)
+        }
+    }
+}
+
+/// 逐元素乘（Hadamard）；shape 必须一致。
+pub fn hadamard(lhs: &MatrixValue, rhs: &MatrixValue) -> Result<MatrixValue, Diagnostic> {
+    require_same_element_parent(lhs, rhs)?;
+    let out_shape = MatrixShape::hadamard(lhs.shape(), rhs.shape())?;
+    match lhs.parent().element {
+        ElementParentKind::ComplexExact => {
+            let mut data = Vec::with_capacity(out_shape.element_count()?);
+            for i in 0..out_shape.rows {
+                for j in 0..out_shape.cols {
+                    let a = complex_exact_entry(lhs.get(i, j)?)?;
+                    let b = complex_exact_entry(rhs.get(i, j)?)?;
+                    data.push(complex_mul(&a, &b));
+                }
+            }
+            MatrixValue::from_complex_exact_row_major(out_shape.rows, out_shape.cols, data)
+        }
+        ElementParentKind::Integers => {
+            let mut data = Vec::with_capacity(out_shape.element_count()?);
+            for i in 0..out_shape.rows {
+                for j in 0..out_shape.cols {
+                    let a = match lhs.get(i, j)? {
+                        MatrixEntry::Integer(x) => x,
+                        _ => unreachable!(),
+                    };
+                    let b = match rhs.get(i, j)? {
+                        MatrixEntry::Integer(x) => x,
+                        _ => unreachable!(),
+                    };
+                    data.push(a.mul(&b));
+                }
+            }
+            MatrixValue::from_integers_row_major(out_shape.rows, out_shape.cols, data)
+        }
+        ElementParentKind::Rationals => {
+            let mut data = Vec::with_capacity(out_shape.element_count()?);
+            for i in 0..out_shape.rows {
+                for j in 0..out_shape.cols {
+                    let a = match lhs.get(i, j)? {
+                        MatrixEntry::Rational(x) => x,
+                        _ => unreachable!(),
+                    };
+                    let b = match rhs.get(i, j)? {
+                        MatrixEntry::Rational(x) => x,
+                        _ => unreachable!(),
+                    };
+                    data.push(a.mul(&b));
+                }
+            }
+            MatrixValue::from_rationals_row_major(out_shape.rows, out_shape.cols, data)
+        }
+        ElementParentKind::MachineReal => {
+            let mut data = Vec::with_capacity(out_shape.element_count()?);
+            for i in 0..out_shape.rows {
+                for j in 0..out_shape.cols {
+                    let a = match lhs.get(i, j)? {
+                        MatrixEntry::MachineF64(x) => x,
+                        _ => unreachable!(),
+                    };
+                    let b = match rhs.get(i, j)? {
+                        MatrixEntry::MachineF64(x) => x,
+                        _ => unreachable!(),
+                    };
+                    data.push(a * b);
+                }
+            }
+            MatrixValue::from_f64_row_major(out_shape.rows, out_shape.cols, data)
+        }
+    }
+}
+
+/// 逐元素除；shape 必须一致。整数父域提升为精确有理。
+pub fn elementwise_divide(lhs: &MatrixValue, rhs: &MatrixValue) -> Result<MatrixValue, Diagnostic> {
+    require_same_element_parent(lhs, rhs)?;
+    let out_shape = MatrixShape::hadamard(lhs.shape(), rhs.shape())?;
+    match lhs.parent().element {
+        ElementParentKind::ComplexExact => {
+            let mut data = Vec::with_capacity(out_shape.element_count()?);
+            for i in 0..out_shape.rows {
+                for j in 0..out_shape.cols {
+                    let (ar, ai) = complex_exact_entry(lhs.get(i, j)?)?;
+                    let (br, bi) = complex_exact_entry(rhs.get(i, j)?)?;
+                    let denom = br.mul(&br).add(&bi.mul(&bi));
+                    if denom.is_zero() {
+                        return Err(Diagnostic::new(DiagnosticCode::DivideByZero)
+                            .detail("reason", "complex_elementwise_divide_zero"));
+                    }
+                    let re = ar.mul(&br).add(&ai.mul(&bi)).try_div(&denom)?;
+                    let im = ai.mul(&br).add(&ar.mul(&bi).neg()).try_div(&denom)?;
+                    data.push((re, im));
+                }
+            }
+            MatrixValue::from_complex_exact_row_major(out_shape.rows, out_shape.cols, data)
+        }
+        ElementParentKind::Integers => {
+            let mut data = Vec::with_capacity(out_shape.element_count()?);
+            for i in 0..out_shape.rows {
+                for j in 0..out_shape.cols {
+                    let a = match lhs.get(i, j)? {
+                        MatrixEntry::Integer(x) => Rational::from_integer(x),
+                        _ => unreachable!(),
+                    };
+                    let b = match rhs.get(i, j)? {
+                        MatrixEntry::Integer(x) => Rational::from_integer(x),
+                        _ => unreachable!(),
+                    };
+                    data.push(a.try_div(&b)?);
+                }
+            }
+            MatrixValue::from_rationals_row_major(out_shape.rows, out_shape.cols, data)
+        }
+        ElementParentKind::Rationals => {
+            let mut data = Vec::with_capacity(out_shape.element_count()?);
+            for i in 0..out_shape.rows {
+                for j in 0..out_shape.cols {
+                    let a = match lhs.get(i, j)? {
+                        MatrixEntry::Rational(x) => x,
+                        _ => unreachable!(),
+                    };
+                    let b = match rhs.get(i, j)? {
+                        MatrixEntry::Rational(x) => x,
+                        _ => unreachable!(),
+                    };
+                    data.push(a.try_div(&b)?);
+                }
+            }
+            MatrixValue::from_rationals_row_major(out_shape.rows, out_shape.cols, data)
+        }
+        ElementParentKind::MachineReal => {
+            let mut data = Vec::with_capacity(out_shape.element_count()?);
+            for i in 0..out_shape.rows {
+                for j in 0..out_shape.cols {
+                    let a = match lhs.get(i, j)? {
+                        MatrixEntry::MachineF64(x) => x,
+                        _ => unreachable!(),
+                    };
+                    let b = match rhs.get(i, j)? {
+                        MatrixEntry::MachineF64(x) => x,
+                        _ => unreachable!(),
+                    };
+                    data.push(a / b);
+                }
+            }
+            MatrixValue::from_f64_row_major(out_shape.rows, out_shape.cols, data)
+        }
+    }
+}
+
+/// 逐元素幂；shape 必须一致。
+///
+/// Exact parents require a non-negative integer exponent that fits `u32`. Machine real uses `powf`.
+pub fn elementwise_power(lhs: &MatrixValue, rhs: &MatrixValue) -> Result<MatrixValue, Diagnostic> {
+    require_same_element_parent(lhs, rhs)?;
+    let out_shape = MatrixShape::hadamard(lhs.shape(), rhs.shape())?;
+    match lhs.parent().element {
+        ElementParentKind::ComplexExact => {
+            let mut data = Vec::with_capacity(out_shape.element_count()?);
+            for i in 0..out_shape.rows {
+                for j in 0..out_shape.cols {
+                    let a = complex_exact_entry(lhs.get(i, j)?)?;
+                    let (br, bi) = complex_exact_entry(rhs.get(i, j)?)?;
+                    if !bi.is_zero() || !br.is_integer() {
+                        return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
+                            .detail("reason", "complex_elementwise_power_exp_not_nonneg_int"));
+                    }
+                    let Some(exp_i) = br.numerator().to_i64() else {
+                        return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
+                            .detail("reason", "elementwise_power_exp_too_large"));
+                    };
+                    if exp_i < 0 {
+                        return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
+                            .detail("reason", "elementwise_power_neg_exp"));
+                    }
+                    if exp_i > u32::MAX as i64 {
+                        return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
+                            .detail("reason", "elementwise_power_exp_too_large"));
+                    }
+                    data.push(complex_pow(&a, exp_i as u32));
+                }
+            }
+            MatrixValue::from_complex_exact_row_major(out_shape.rows, out_shape.cols, data)
+        }
+        ElementParentKind::Integers => {
+            let mut data = Vec::with_capacity(out_shape.element_count()?);
+            for i in 0..out_shape.rows {
+                for j in 0..out_shape.cols {
+                    let a = match lhs.get(i, j)? {
+                        MatrixEntry::Integer(x) => x,
+                        _ => unreachable!(),
+                    };
+                    let b = match rhs.get(i, j)? {
+                        MatrixEntry::Integer(x) => x,
+                        _ => unreachable!(),
+                    };
+                    let powered = a
+                        .pow(&b)
+                        .map_err(|_| Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "elementwise_power_integer"))?;
+                    data.push(powered);
+                }
+            }
+            MatrixValue::from_integers_row_major(out_shape.rows, out_shape.cols, data)
+        }
+        ElementParentKind::Rationals => {
+            let mut data = Vec::with_capacity(out_shape.element_count()?);
+            for i in 0..out_shape.rows {
+                for j in 0..out_shape.cols {
+                    let a = match lhs.get(i, j)? {
+                        MatrixEntry::Rational(x) => x,
+                        _ => unreachable!(),
+                    };
+                    let b = match rhs.get(i, j)? {
+                        MatrixEntry::Rational(x) => x,
+                        _ => unreachable!(),
+                    };
+                    if !b.is_integer() {
+                        return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "elementwise_power_exp_not_int"));
+                    }
+                    let Some(exp_i) = b.numerator().to_i64()
+                    else {
+                        return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "elementwise_power_exp_too_large"));
+                    };
+                    if exp_i < 0 {
+                        return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "elementwise_power_neg_exp"));
+                    }
+                    if exp_i > u32::MAX as i64 {
+                        return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "elementwise_power_exp_too_large"));
+                    }
+                    data.push(a.pow_u32(exp_i as u32)?);
+                }
+            }
+            MatrixValue::from_rationals_row_major(out_shape.rows, out_shape.cols, data)
+        }
+        ElementParentKind::MachineReal => {
+            let mut data = Vec::with_capacity(out_shape.element_count()?);
+            for i in 0..out_shape.rows {
+                for j in 0..out_shape.cols {
+                    let a = match lhs.get(i, j)? {
+                        MatrixEntry::MachineF64(x) => x,
+                        _ => unreachable!(),
+                    };
+                    let b = match rhs.get(i, j)? {
+                        MatrixEntry::MachineF64(x) => x,
+                        _ => unreachable!(),
+                    };
+                    data.push(a.powf(b));
+                }
+            }
+            MatrixValue::from_f64_row_major(out_shape.rows, out_shape.cols, data)
+        }
+    }
+}
+
+/// 行主序展平为 `1×(rows*cols)`（Mathematica `Flatten` 对矩形嵌套 List 的默认序）。
+pub fn flatten_row_major(matrix: &MatrixValue) -> Result<MatrixValue, Diagnostic> {
+    let rows = matrix.shape().rows;
+    let cols = matrix.shape().cols;
+    let n = matrix.shape().element_count()?;
+    let n_u64 = n as u64;
+    match matrix.parent().element {
+        ElementParentKind::ComplexExact => {
+            let mut data = Vec::with_capacity(n);
+            for i in 0..rows {
+                for j in 0..cols {
+                    data.push(complex_exact_entry(matrix.get(i, j)?)?);
+                }
+            }
+            MatrixValue::from_complex_exact_row_major(1, n_u64, data)
+        }
+        ElementParentKind::Integers => {
+            let mut data = Vec::with_capacity(n);
+            for i in 0..rows {
+                for j in 0..cols {
+                    match matrix.get(i, j)? {
+                        MatrixEntry::Integer(x) => data.push(x),
+                        _ => unreachable!(),
+                    }
+                }
+            }
+            MatrixValue::from_integers_row_major(1, n_u64, data)
+        }
+        ElementParentKind::Rationals => {
+            let mut data = Vec::with_capacity(n);
+            for i in 0..rows {
+                for j in 0..cols {
+                    match matrix.get(i, j)? {
+                        MatrixEntry::Rational(x) => data.push(x),
+                        _ => unreachable!(),
+                    }
+                }
+            }
+            MatrixValue::from_rationals_row_major(1, n_u64, data)
+        }
+        ElementParentKind::MachineReal => {
+            let mut data = Vec::with_capacity(n);
+            for i in 0..rows {
+                for j in 0..cols {
+                    match matrix.get(i, j)? {
+                        MatrixEntry::MachineF64(x) => data.push(x),
+                        _ => unreachable!(),
+                    }
+                }
+            }
+            MatrixValue::from_f64_row_major(1, n_u64, data)
+        }
+    }
+}
+
+fn column_major_linear_entries(matrix: &MatrixValue) -> Result<Vec<MatrixEntry>, Diagnostic> {
+    let (rows, cols) = (matrix.shape().rows, matrix.shape().cols);
+    let n = matrix.shape().element_count()?;
+    let mut linear = Vec::with_capacity(n);
+    for c in 0..cols {
+        for r in 0..rows {
+            linear.push(matrix.get(r, c)?);
+        }
+    }
+    Ok(linear)
+}
+
+fn matrix_from_column_major_linear(
+    parent: super::parent::MatrixParent,
+    new_rows: u64,
+    new_cols: u64,
+    linear: &[MatrixEntry],
+) -> Result<MatrixValue, Diagnostic> {
+    let new_shape = MatrixShape::new(new_rows, new_cols);
+    let expected = new_shape.element_count()?;
+    if linear.len() != expected {
+        return Err(Diagnostic::new(DiagnosticCode::ShapeMismatch).detail("op", "reshape_column_major").detail("reason", "linear_len"));
+    }
+    if expected == 0 {
+        return MatrixValue::zeros(parent, new_shape, StorageOrder::RowMajor);
+    }
+    match parent.element {
+        ElementParentKind::ComplexExact => {
+            let mut data = Vec::with_capacity(expected);
+            for _ in 0..expected {
+                data.push((Rational::zero(), Rational::zero()));
+            }
+            for i in 0..expected {
+                let r = i % new_rows as usize;
+                let c = i / new_rows as usize;
+                let out_idx = r * new_cols as usize + c;
+                data[out_idx] = match &linear[i] {
+                    MatrixEntry::ComplexExact { re, im } => (clone_rational(re), clone_rational(im)),
+                    MatrixEntry::Rational(re) => (clone_rational(re), Rational::zero()),
+                    MatrixEntry::Integer(z) => (Rational::from_integer(clone_integer(z)), Rational::zero()),
+                    _ => {
+                        return Err(Diagnostic::new(DiagnosticCode::TypeMismatch).detail("reason", "reshape_complex_entry"));
+                    }
+                };
+            }
+            MatrixValue::from_complex_exact_row_major(new_rows, new_cols, data)
+        }
+        ElementParentKind::Integers => {
+            let mut data = Vec::with_capacity(expected);
+            for _ in 0..expected {
+                data.push(Integer::zero());
+            }
+            for i in 0..expected {
+                let r = i % new_rows as usize;
+                let c = i / new_rows as usize;
+                let out_idx = r * new_cols as usize + c;
+                match &linear[i] {
+                    MatrixEntry::Integer(x) => data[out_idx] = clone_integer(x),
+                    _ => unreachable!(),
+                }
+            }
+            MatrixValue::from_integers_row_major(new_rows, new_cols, data)
+        }
+        ElementParentKind::Rationals => {
+            let mut data = Vec::with_capacity(expected);
+            for _ in 0..expected {
+                data.push(Rational::zero());
+            }
+            for i in 0..expected {
+                let r = i % new_rows as usize;
+                let c = i / new_rows as usize;
+                let out_idx = r * new_cols as usize + c;
+                match &linear[i] {
+                    MatrixEntry::Rational(x) => data[out_idx] = clone_rational(x),
+                    _ => unreachable!(),
+                }
+            }
+            MatrixValue::from_rationals_row_major(new_rows, new_cols, data)
+        }
+        ElementParentKind::MachineReal => {
+            let mut data = vec![0.0; expected];
+            for i in 0..expected {
+                let r = i % new_rows as usize;
+                let c = i / new_rows as usize;
+                let out_idx = r * new_cols as usize + c;
+                match linear[i] {
+                    MatrixEntry::MachineF64(x) => data[out_idx] = x,
+                    _ => unreachable!(),
+                }
+            }
+            MatrixValue::from_f64_row_major(new_rows, new_cols, data)
+        }
+    }
+}
+
+/// MATLAB 列优先 `reshape`（Living 16 形状变换；元素序按列主序读取再写入自有行主序缓冲）。
+pub fn reshape_column_major(matrix: &MatrixValue, new_rows: u64, new_cols: u64) -> Result<MatrixValue, Diagnostic> {
+    reshape_with_order(matrix, new_rows, new_cols, StorageOrder::ColumnMajor)
+}
+
+/// Mathematica `ArrayReshape` 行优先 reshape（Living 16；与 MATLAB 列优先明确分离）。
+pub fn reshape_row_major(matrix: &MatrixValue, new_rows: u64, new_cols: u64) -> Result<MatrixValue, Diagnostic> {
+    reshape_with_order(matrix, new_rows, new_cols, StorageOrder::RowMajor)
+}
+
+fn reshape_with_order(
+    matrix: &MatrixValue,
+    new_rows: u64,
+    new_cols: u64,
+    order: StorageOrder,
+) -> Result<MatrixValue, Diagnostic> {
+    let new_shape = MatrixShape::new(new_rows, new_cols);
+    let expected = new_shape.element_count()?;
+    let source_count = matrix.shape().element_count()?;
+    if expected != source_count {
+        let op = match order {
+            StorageOrder::ColumnMajor => "reshape_column_major",
+            StorageOrder::RowMajor => "reshape_row_major",
+        };
+        return Err(Diagnostic::new(DiagnosticCode::ShapeMismatch)
+            .detail("op", op)
+            .detail("source", format!("{}x{}", matrix.shape().rows, matrix.shape().cols))
+            .detail("target", format!("{new_rows}x{new_cols}")));
+    }
+    let linear = match order {
+        StorageOrder::ColumnMajor => column_major_linear_entries(matrix)?,
+        StorageOrder::RowMajor => row_major_linear_entries(matrix)?,
+    };
+    match order {
+        StorageOrder::ColumnMajor => matrix_from_column_major_linear(matrix.parent(), new_rows, new_cols, &linear),
+        StorageOrder::RowMajor => matrix_from_row_major_linear(matrix.parent(), new_rows, new_cols, &linear),
+    }
+}
+
+fn row_major_linear_entries(matrix: &MatrixValue) -> Result<Vec<MatrixEntry>, Diagnostic> {
+    let (rows, cols) = (matrix.shape().rows, matrix.shape().cols);
+    let n = matrix.shape().element_count()?;
+    let mut linear = Vec::with_capacity(n);
+    for r in 0..rows {
+        for c in 0..cols {
+            linear.push(matrix.get(r, c)?);
+        }
+    }
+    Ok(linear)
+}
+
+fn matrix_from_row_major_linear(
+    parent: super::parent::MatrixParent,
+    new_rows: u64,
+    new_cols: u64,
+    linear: &[MatrixEntry],
+) -> Result<MatrixValue, Diagnostic> {
+    let new_shape = MatrixShape::new(new_rows, new_cols);
+    let expected = new_shape.element_count()?;
+    if linear.len() != expected {
+        return Err(Diagnostic::new(DiagnosticCode::ShapeMismatch).detail("op", "reshape_row_major").detail("reason", "linear_len"));
+    }
+    if expected == 0 {
+        return MatrixValue::zeros(parent, new_shape, StorageOrder::RowMajor);
+    }
+    match parent.element {
+        ElementParentKind::ComplexExact => {
+            let mut data = Vec::with_capacity(expected);
+            for entry in linear {
+                data.push(match entry {
+                    MatrixEntry::ComplexExact { re, im } => (clone_rational(re), clone_rational(im)),
+                    MatrixEntry::Rational(re) => (clone_rational(re), Rational::zero()),
+                    MatrixEntry::Integer(z) => (Rational::from_integer(clone_integer(z)), Rational::zero()),
+                    _ => {
+                        return Err(Diagnostic::new(DiagnosticCode::TypeMismatch).detail("reason", "reshape_complex_entry"));
+                    }
+                });
+            }
+            MatrixValue::from_complex_exact_row_major(new_rows, new_cols, data)
+        }
+        ElementParentKind::Integers => {
+            let mut data = Vec::with_capacity(expected);
+            for entry in linear {
+                match entry {
+                    MatrixEntry::Integer(x) => data.push(clone_integer(x)),
+                    _ => unreachable!(),
+                }
+            }
+            MatrixValue::from_integers_row_major(new_rows, new_cols, data)
+        }
+        ElementParentKind::Rationals => {
+            let mut data = Vec::with_capacity(expected);
+            for entry in linear {
+                match entry {
+                    MatrixEntry::Rational(x) => data.push(clone_rational(x)),
+                    _ => unreachable!(),
+                }
+            }
+            MatrixValue::from_rationals_row_major(new_rows, new_cols, data)
+        }
+        ElementParentKind::MachineReal => {
+            let mut data = Vec::with_capacity(expected);
+            for entry in linear {
+                match entry {
+                    MatrixEntry::MachineF64(x) => data.push(*x),
+                    _ => unreachable!(),
+                }
+            }
+            MatrixValue::from_f64_row_major(new_rows, new_cols, data)
+        }
+    }
+}
+
+/// 元素个数标量（`1×1` 整数矩阵；MATLAB `numel` 投影面）。
+pub fn num_elements_scalar(matrix: &MatrixValue) -> Result<MatrixValue, Diagnostic> {
+    let count = matrix.shape().element_count()? as u64;
+    MatrixValue::from_integers_row_major(1, 1, vec![Integer::from(count as i64)])
+}
+
+/// `1×n` 按列反转；多行按行反转（Mathematica `Reverse` 对 List / 嵌套 List）。
+pub fn reverse_matrix(matrix: &MatrixValue) -> Result<MatrixValue, Diagnostic> {
+    let rows = matrix.shape().rows;
+    let cols = matrix.shape().cols;
+    if rows == 0 || cols == 0 {
+        return Ok(matrix.owning_copy());
+    }
+    if rows == 1 {
+        match matrix.parent().element {
+            ElementParentKind::ComplexExact => {
+                let mut data = Vec::with_capacity(cols as usize);
+                for j in (0..cols).rev() {
+                    data.push(complex_exact_entry(matrix.get(0, j)?)?);
+                }
+                MatrixValue::from_complex_exact_row_major(1, cols, data)
+            }
+            ElementParentKind::Integers => {
+                let mut data = Vec::with_capacity(cols as usize);
+                for j in (0..cols).rev() {
+                    match matrix.get(0, j)? {
+                        MatrixEntry::Integer(x) => data.push(x),
+                        _ => unreachable!(),
+                    }
+                }
+                MatrixValue::from_integers_row_major(1, cols, data)
+            }
+            ElementParentKind::Rationals => {
+                let mut data = Vec::with_capacity(cols as usize);
+                for j in (0..cols).rev() {
+                    match matrix.get(0, j)? {
+                        MatrixEntry::Rational(x) => data.push(x),
+                        _ => unreachable!(),
+                    }
+                }
+                MatrixValue::from_rationals_row_major(1, cols, data)
+            }
+            ElementParentKind::MachineReal => {
+                let mut data = Vec::with_capacity(cols as usize);
+                for j in (0..cols).rev() {
+                    match matrix.get(0, j)? {
+                        MatrixEntry::MachineF64(x) => data.push(x),
+                        _ => unreachable!(),
+                    }
+                }
+                MatrixValue::from_f64_row_major(1, cols, data)
+            }
+        }
+    }
+    else {
+        match matrix.parent().element {
+            ElementParentKind::ComplexExact => {
+                let mut data = Vec::with_capacity((rows * cols) as usize);
+                for i in (0..rows).rev() {
+                    for j in 0..cols {
+                        data.push(complex_exact_entry(matrix.get(i, j)?)?);
+                    }
+                }
+                MatrixValue::from_complex_exact_row_major(rows, cols, data)
+            }
+            ElementParentKind::Integers => {
+                let mut data = Vec::with_capacity((rows * cols) as usize);
+                for i in (0..rows).rev() {
+                    for j in 0..cols {
+                        match matrix.get(i, j)? {
+                            MatrixEntry::Integer(x) => data.push(x),
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+                MatrixValue::from_integers_row_major(rows, cols, data)
+            }
+            ElementParentKind::Rationals => {
+                let mut data = Vec::with_capacity((rows * cols) as usize);
+                for i in (0..rows).rev() {
+                    for j in 0..cols {
+                        match matrix.get(i, j)? {
+                            MatrixEntry::Rational(x) => data.push(x),
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+                MatrixValue::from_rationals_row_major(rows, cols, data)
+            }
+            ElementParentKind::MachineReal => {
+                let mut data = Vec::with_capacity((rows * cols) as usize);
+                for i in (0..rows).rev() {
+                    for j in 0..cols {
+                        match matrix.get(i, j)? {
+                            MatrixEntry::MachineF64(x) => data.push(x),
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+                MatrixValue::from_f64_row_major(rows, cols, data)
+            }
+        }
+    }
+}
+
+/// Join matrices with Mathematica list-level-1 semantics.
+///
+/// - All `1×n` → concatenate along columns (`1×Σn`)
+/// - Otherwise → stack along rows when column counts match
+pub fn join_matrices(parts: &[&MatrixValue]) -> Result<MatrixValue, Diagnostic> {
+    if parts.is_empty() {
+        return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "join_empty"));
+    }
+    let element = unify_exact_element_parents(parts.iter().map(|p| p.parent().element))?;
+    let all_rows = parts.iter().all(|p| p.shape().rows == 1);
+    if all_rows {
+        let cols: u64 = parts.iter().map(|p| p.shape().cols).sum();
+        match element {
+            ElementParentKind::ComplexExact => {
+                let mut data = Vec::with_capacity(cols as usize);
+                for p in parts {
+                    for j in 0..p.shape().cols {
+                        data.push(complex_exact_entry(p.get(0, j)?)?);
+                    }
+                }
+                MatrixValue::from_complex_exact_row_major(1, cols, data)
+            }
+            ElementParentKind::Integers => {
+                let mut data = Vec::with_capacity(cols as usize);
+                for p in parts {
+                    for j in 0..p.shape().cols {
+                        match p.get(0, j)? {
+                            MatrixEntry::Integer(x) => data.push(x),
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+                MatrixValue::from_integers_row_major(1, cols, data)
+            }
+            ElementParentKind::Rationals => {
+                let mut data = Vec::with_capacity(cols as usize);
+                for p in parts {
+                    for j in 0..p.shape().cols {
+                        data.push(rational_entry(p.get(0, j)?)?);
+                    }
+                }
+                MatrixValue::from_rationals_row_major(1, cols, data)
+            }
+            ElementParentKind::MachineReal => {
+                let mut data = Vec::with_capacity(cols as usize);
+                for p in parts {
+                    for j in 0..p.shape().cols {
+                        match p.get(0, j)? {
+                            MatrixEntry::MachineF64(x) => data.push(x),
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+                MatrixValue::from_f64_row_major(1, cols, data)
+            }
+        }
+    }
+    else {
+        let cols = parts[0].shape().cols;
+        for p in parts.iter().skip(1) {
+            if p.shape().cols != cols {
+                return Err(Diagnostic::new(DiagnosticCode::ShapeMismatch)
+                    .detail("reason", "join_column_mismatch")
+                    .detail("cols", cols.to_string())
+                    .detail("other_cols", p.shape().cols.to_string()));
+            }
+        }
+        let rows: u64 = parts.iter().map(|p| p.shape().rows).sum();
+        match element {
+            ElementParentKind::ComplexExact => {
+                let mut data = Vec::with_capacity((rows * cols) as usize);
+                for p in parts {
+                    for i in 0..p.shape().rows {
+                        for j in 0..cols {
+                            data.push(complex_exact_entry(p.get(i, j)?)?);
+                        }
+                    }
+                }
+                MatrixValue::from_complex_exact_row_major(rows, cols, data)
+            }
+            ElementParentKind::Integers => {
+                let mut data = Vec::with_capacity((rows * cols) as usize);
+                for p in parts {
+                    for i in 0..p.shape().rows {
+                        for j in 0..cols {
+                            match p.get(i, j)? {
+                                MatrixEntry::Integer(x) => data.push(x),
+                                _ => unreachable!(),
+                            }
+                        }
+                    }
+                }
+                MatrixValue::from_integers_row_major(rows, cols, data)
+            }
+            ElementParentKind::Rationals => {
+                let mut data = Vec::with_capacity((rows * cols) as usize);
+                for p in parts {
+                    for i in 0..p.shape().rows {
+                        for j in 0..cols {
+                            data.push(rational_entry(p.get(i, j)?)?);
+                        }
+                    }
+                }
+                MatrixValue::from_rationals_row_major(rows, cols, data)
+            }
+            ElementParentKind::MachineReal => {
+                let mut data = Vec::with_capacity((rows * cols) as usize);
+                for p in parts {
+                    for i in 0..p.shape().rows {
+                        for j in 0..cols {
+                            match p.get(i, j)? {
+                                MatrixEntry::MachineF64(x) => data.push(x),
+                                _ => unreachable!(),
+                            }
+                        }
+                    }
+                }
+                MatrixValue::from_f64_row_major(rows, cols, data)
+            }
+        }
+    }
+}
+
+/// Append / prepend a scalar onto a `1×n` vector matrix.
+pub fn extend_row_vector_scalar(matrix: &MatrixValue, scalar: MatrixEntry, prepend: bool) -> Result<MatrixValue, Diagnostic> {
+    use crate::runtime::values::numeric_clone::{clone_integer, clone_rational};
+
+    if matrix.shape().rows != 1 {
+        return Err(Diagnostic::new(DiagnosticCode::ShapeMismatch).detail("reason", "extend_requires_row_vector"));
+    }
+    let cols = matrix.shape().cols;
+    match (matrix.parent().element, scalar) {
+        (ElementParentKind::Integers, MatrixEntry::Integer(x)) => {
+            let mut data = Vec::with_capacity(cols as usize + 1);
+            if prepend {
+                data.push(clone_integer(&x));
+            }
+            for j in 0..cols {
+                match matrix.get(0, j)? {
+                    MatrixEntry::Integer(v) => data.push(v),
+                    _ => unreachable!(),
+                }
+            }
+            if !prepend {
+                data.push(x);
+            }
+            MatrixValue::from_integers_row_major(1, cols + 1, data)
+        }
+        (ElementParentKind::Rationals, MatrixEntry::Rational(x)) => {
+            let mut data = Vec::with_capacity(cols as usize + 1);
+            if prepend {
+                data.push(clone_rational(&x));
+            }
+            for j in 0..cols {
+                match matrix.get(0, j)? {
+                    MatrixEntry::Rational(v) => data.push(v),
+                    _ => unreachable!(),
+                }
+            }
+            if !prepend {
+                data.push(x);
+            }
+            MatrixValue::from_rationals_row_major(1, cols + 1, data)
+        }
+        (ElementParentKind::MachineReal, MatrixEntry::MachineF64(x)) => {
+            let mut data = Vec::with_capacity(cols as usize + 1);
+            if prepend {
+                data.push(x);
+            }
+            for j in 0..cols {
+                match matrix.get(0, j)? {
+                    MatrixEntry::MachineF64(v) => data.push(v),
+                    _ => unreachable!(),
+                }
+            }
+            if !prepend {
+                data.push(x);
+            }
+            MatrixValue::from_f64_row_major(1, cols + 1, data)
+        }
+        (ElementParentKind::ComplexExact, MatrixEntry::ComplexExact { re, im }) => {
+            let mut data = Vec::with_capacity(cols as usize + 1);
+            if prepend {
+                data.push((clone_rational(&re), clone_rational(&im)));
+            }
+            for j in 0..cols {
+                data.push(complex_exact_entry(matrix.get(0, j)?)?);
+            }
+            if !prepend {
+                data.push((re, im));
+            }
+            MatrixValue::from_complex_exact_row_major(1, cols + 1, data)
+        }
+        _ => Err(Diagnostic::new(DiagnosticCode::TypeMismatch).detail("reason", "extend_entry_parent_mismatch")),
+    }
+}
+
+/// `PadLeft` on a typed `1×n` row: pad with zeros on the left, or keep the trailing `n` entries.
+pub fn pad_left_row_vector(matrix: &MatrixValue, n: u64) -> Result<MatrixValue, Diagnostic> {
+    if matrix.shape().rows != 1 {
+        return Err(Diagnostic::new(DiagnosticCode::ShapeMismatch).detail("reason", "pad_left_requires_row_vector"));
+    }
+    let cols = matrix.shape().cols;
+    if cols >= n {
+        return slice_matrix(
+            matrix,
+            &IndexSpec::Slice { rows: super::index::AxisRange::All, cols: super::index::AxisRange::Range { start: cols - n, end: cols } },
+        );
+    }
+    let pad = n - cols;
+    match matrix.parent().element {
+        ElementParentKind::ComplexExact => {
+            let mut data = Vec::with_capacity(n as usize);
+            for _ in 0..pad {
+                data.push((Rational::zero(), Rational::zero()));
+            }
+            for j in 0..cols {
+                data.push(complex_exact_entry(matrix.get(0, j)?)?);
+            }
+            MatrixValue::from_complex_exact_row_major(1, n, data)
+        }
+        ElementParentKind::Integers => {
+            let mut data = Vec::with_capacity(n as usize);
+            for _ in 0..pad {
+                data.push(Integer::from(0));
+            }
+            for j in 0..cols {
+                match matrix.get(0, j)? {
+                    MatrixEntry::Integer(v) => data.push(v),
+                    _ => unreachable!(),
+                }
+            }
+            MatrixValue::from_integers_row_major(1, n, data)
+        }
+        ElementParentKind::Rationals => {
+            let mut data = Vec::with_capacity(n as usize);
+            for _ in 0..pad {
+                data.push(Rational::from_integer(Integer::from(0)));
+            }
+            for j in 0..cols {
+                match matrix.get(0, j)? {
+                    MatrixEntry::Rational(v) => data.push(v),
+                    _ => unreachable!(),
+                }
+            }
+            MatrixValue::from_rationals_row_major(1, n, data)
+        }
+        ElementParentKind::MachineReal => {
+            let mut data = Vec::with_capacity(n as usize);
+            for _ in 0..pad {
+                data.push(0.0);
+            }
+            for j in 0..cols {
+                match matrix.get(0, j)? {
+                    MatrixEntry::MachineF64(v) => data.push(v),
+                    _ => unreachable!(),
+                }
+            }
+            MatrixValue::from_f64_row_major(1, n, data)
+        }
+    }
+}
+
+/// `Riffle` of two typed `1×n` rows: interleave until the shorter length.
+pub fn riffle_row_vectors(left: &MatrixValue, right: &MatrixValue) -> Result<MatrixValue, Diagnostic> {
+    if left.shape().rows != 1 || right.shape().rows != 1 {
+        return Err(Diagnostic::new(DiagnosticCode::ShapeMismatch).detail("reason", "riffle_requires_row_vectors"));
+    }
+    let element = unify_exact_element_parents([left.parent().element, right.parent().element])?;
+    let n = left.shape().cols.min(right.shape().cols);
+    let out_cols = n.saturating_mul(2);
+    match element {
+        ElementParentKind::ComplexExact => {
+            let mut data = Vec::with_capacity(out_cols as usize);
+            for j in 0..n {
+                data.push(complex_exact_entry(left.get(0, j)?)?);
+                data.push(complex_exact_entry(right.get(0, j)?)?);
+            }
+            MatrixValue::from_complex_exact_row_major(1, out_cols, data)
+        }
+        ElementParentKind::Integers => {
+            let mut data = Vec::with_capacity(out_cols as usize);
+            for j in 0..n {
+                match left.get(0, j)? {
+                    MatrixEntry::Integer(v) => data.push(v),
+                    _ => unreachable!(),
+                }
+                match right.get(0, j)? {
+                    MatrixEntry::Integer(v) => data.push(v),
+                    _ => unreachable!(),
+                }
+            }
+            MatrixValue::from_integers_row_major(1, out_cols, data)
+        }
+        ElementParentKind::Rationals => {
+            let mut data = Vec::with_capacity(out_cols as usize);
+            for j in 0..n {
+                data.push(rational_entry(left.get(0, j)?)?);
+                data.push(rational_entry(right.get(0, j)?)?);
+            }
+            MatrixValue::from_rationals_row_major(1, out_cols, data)
+        }
+        ElementParentKind::MachineReal => {
+            let mut data = Vec::with_capacity(out_cols as usize);
+            for j in 0..n {
+                match left.get(0, j)? {
+                    MatrixEntry::MachineF64(v) => data.push(v),
+                    _ => unreachable!(),
+                }
+                match right.get(0, j)? {
+                    MatrixEntry::MachineF64(v) => data.push(v),
+                    _ => unreachable!(),
+                }
+            }
+            MatrixValue::from_f64_row_major(1, out_cols, data)
+        }
+    }
+}
+
+fn collect_integer_row(matrix: &MatrixValue) -> Result<Vec<i64>, Diagnostic> {
+    if matrix.shape().rows != 1 {
+        return Err(Diagnostic::new(DiagnosticCode::ShapeMismatch).detail("reason", "set_ops_require_row_vector"));
+    }
+    if matrix.parent().element != ElementParentKind::Integers {
+        return Err(Diagnostic::new(DiagnosticCode::TypeMismatch).detail("reason", "set_ops_require_integers"));
+    }
+    let mut values = Vec::with_capacity(matrix.shape().cols as usize);
+    for j in 0..matrix.shape().cols {
+        match matrix.get(0, j)? {
+            MatrixEntry::Integer(z) => {
+                let Some(i) = z.to_i64()
+                else {
+                    return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "set_ops_integer_overflow"));
+                };
+                values.push(i);
+            }
+            _ => unreachable!(),
+        }
+    }
+    Ok(values)
+}
+
+/// `Union` of typed integer `1×n` rows: unique values, ascending.
+pub fn union_integer_row_vectors(parts: &[&MatrixValue]) -> Result<MatrixValue, Diagnostic> {
+    if parts.is_empty() {
+        return MatrixValue::from_integers_row_major(1, 0, Vec::new());
+    }
+    let mut merged = Vec::new();
+    for part in parts {
+        for v in collect_integer_row(part)? {
+            if !merged.contains(&v) {
+                merged.push(v);
+            }
+        }
+    }
+    merged.sort_unstable();
+    let cols = merged.len() as u64;
+    let data: Vec<Integer> = merged.into_iter().map(Integer::from).collect();
+    MatrixValue::from_integers_row_major(1, cols, data)
+}
+
+/// `Intersection` of typed integer `1×n` rows: values in every part, unique, ascending.
+pub fn intersection_integer_row_vectors(parts: &[&MatrixValue]) -> Result<MatrixValue, Diagnostic> {
+    if parts.is_empty() {
+        return MatrixValue::from_integers_row_major(1, 0, Vec::new());
+    }
+    let lists: Result<Vec<Vec<i64>>, _> = parts.iter().map(|p| collect_integer_row(p)).collect();
+    let lists = lists?;
+    let first = &lists[0];
+    let mut out = Vec::new();
+    for v in first {
+        if out.contains(v) {
+            continue;
+        }
+        if lists[1..].iter().all(|list| list.contains(v)) {
+            out.push(*v);
+        }
+    }
+    out.sort_unstable();
+    let cols = out.len() as u64;
+    let data: Vec<Integer> = out.into_iter().map(Integer::from).collect();
+    MatrixValue::from_integers_row_major(1, cols, data)
+}
+
+/// Explicit matrix product for `Dot` operands (no shape guessing / auto-transpose).
+///
+/// Dialects must lower vectors with an explicit rank and orientation. A `1×n` row is not
+/// silently treated as an `n×1` column.
+pub fn dot(lhs: &MatrixValue, rhs: &MatrixValue) -> Result<MatrixValue, Diagnostic> {
+    require_same_element_parent(lhs, rhs)?;
+    matmul(lhs, rhs)
+}
+
+/// 三维叉积（`1×3` / `3×1` 向量）；结果为 `1×3` 行向量。
+pub fn cross(lhs: &MatrixValue, rhs: &MatrixValue) -> Result<MatrixValue, Diagnostic> {
+    require_same_element_parent(lhs, rhs)?;
+    if lhs.parent().element.is_machine() {
+        return Err(Diagnostic::new(DiagnosticCode::TypeMismatch).detail("reason", "cross_exact_only"));
+    }
+    let a = vector3_rationals(lhs)?;
+    let b = vector3_rationals(rhs)?;
+    let c0 = a[1].mul(&b[2]).sub(&a[2].mul(&b[1]));
+    let c1 = a[2].mul(&b[0]).sub(&a[0].mul(&b[2]));
+    let c2 = a[0].mul(&b[1]).sub(&a[1].mul(&b[0]));
+    MatrixValue::from_rationals_row_major(1, 3, vec![c0, c1, c2])
+}
+
+fn vector3_rationals(matrix: &MatrixValue) -> Result<[Rational; 3], Diagnostic> {
+    let rows = matrix.shape().rows;
+    let cols = matrix.shape().cols;
+    let entries = if rows == 1 && cols == 3 {
+        [matrix.get(0, 0)?, matrix.get(0, 1)?, matrix.get(0, 2)?]
+    }
+    else if rows == 3 && cols == 1 {
+        [matrix.get(0, 0)?, matrix.get(1, 0)?, matrix.get(2, 0)?]
+    }
+    else {
+        return Err(Diagnostic::new(DiagnosticCode::ShapeMismatch)
+            .detail("reason", "cross_requires_3_vector")
+            .detail("shape", format!("{rows}x{cols}")));
+    };
+    let mut out = [Rational::zero(), Rational::zero(), Rational::zero()];
+    for (i, entry) in entries.into_iter().enumerate() {
+        out[i] = match entry {
+            MatrixEntry::Integer(z) => Rational::from_integer(z),
+            MatrixEntry::Rational(r) => r,
+            MatrixEntry::MachineF64(_) => {
+                return Err(Diagnostic::new(DiagnosticCode::TypeMismatch).detail("reason", "cross_entry_machine"));
+            }
+            MatrixEntry::ComplexExact { .. } => {
+                return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "cross_entry_complex_pending"));
+            }
+        };
+    }
+    Ok(out)
+}

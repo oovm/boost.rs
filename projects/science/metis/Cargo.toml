@@ -15,5 +15,5 @@ metis-ir = { workspace = true }
 metis-compile = { workspace = true }
 metis-vm = { workspace = true }
 metis-jit = { workspace = true }
-athena-gc = { workspace = true }
+science-gc = { workspace = true }
 oak-metis = { workspace = true }

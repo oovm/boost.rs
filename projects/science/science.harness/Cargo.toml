@@ -1,0 +1,25 @@
+[package]
+name = "science-harness"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+authors.workspace = true
+description = "Science neutral test helpers — builders, asserts, and lib contract checks"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+doctest = false
+
+[dependencies]
+science = { workspace = true }
+science-types = { workspace = true }
+science-gc = { workspace = true }
+science-numeric = { workspace = true }
+science-ir = { workspace = true }
+science-rewrite = { workspace = true }
+science-cas = { workspace = true }
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"
