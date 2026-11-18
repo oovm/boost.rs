@@ -1,0 +1,16 @@
+[package]
+name = "interpreter-odin"
+description = "Odin bytecode VM substrate: module verification, interpreter loop, host boundary, and target runtime builtins over interpreter-gc and interpreter-jit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[lints.rust]
+missing_docs = "warn"
+
+[dependencies]
+acorn-odin = { workspace = true }
+interpreter-gc = { workspace = true }
+interpreter-jit = { workspace = true }
