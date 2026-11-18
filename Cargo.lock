@@ -553,6 +553,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "compiler-target"
+version = "0.1.0"
+dependencies = [
+ "compiler-analysis",
+ "compiler-optimize",
+ "compiler-types",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+]
+
+[[package]]
 name = "compiler-types"
 version = "0.1.0"
 dependencies = [
