@@ -11,7 +11,7 @@ pub enum Severity {
     Warning,
 }
 
-/// 稳定诊断码（`apollo_*`）。
+/// 稳定诊断码（`plotter_*`）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum DiagnosticCode {
     /// 空数据或不完整列。
@@ -38,15 +38,15 @@ impl DiagnosticCode {
     /// 线协议字符串。
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::EmptyData => "apollo_empty_data",
-            Self::UnknownColumn => "apollo_unknown_column",
-            Self::ColumnLengthMismatch => "apollo_column_length_mismatch",
-            Self::MissingMapping => "apollo_missing_mapping",
-            Self::InvalidLayer => "apollo_invalid_layer",
-            Self::UnsupportedSpec => "apollo_unsupported_spec",
-            Self::ValidationFailed => "apollo_validation_failed",
+            Self::EmptyData => "plotter_empty_data",
+            Self::UnknownColumn => "plotter_unknown_column",
+            Self::ColumnLengthMismatch => "plotter_column_length_mismatch",
+            Self::MissingMapping => "plotter_missing_mapping",
+            Self::InvalidLayer => "plotter_invalid_layer",
+            Self::UnsupportedSpec => "plotter_unsupported_spec",
+            Self::ValidationFailed => "plotter_validation_failed",
             Self::RenderFailed => "plotter_renderer_failed",
-            Self::UnsupportedTarget => "apollo_unsupported_target",
+            Self::UnsupportedTarget => "plotter_unsupported_target",
         }
     }
 }
@@ -95,5 +95,5 @@ impl fmt::Display for Diagnostic {
 
 impl std::error::Error for Diagnostic {}
 
-/// Apollo 合同层统一结果类型。
+/// Plotter 合同层统一结果类型。
 pub type Result<T> = core::result::Result<T, Diagnostic>;

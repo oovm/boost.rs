@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Apollo：Grammar of Graphics 的 PlotSpec 合同"
+description = "Plotter：Grammar of Graphics 的 PlotSpec 合同"
 publish = false
 
 [dependencies]

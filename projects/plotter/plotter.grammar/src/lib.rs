@@ -1,4 +1,4 @@
-//! Apollo Grammar of Graphics — `PlotSpec`、mapping、stat、geom、scale、coord、facet、theme。
+//! Plotter Grammar of Graphics — `PlotSpec`、mapping、stat、geom、scale、coord、facet、theme。
 //!
 //! 向 Scene IR 编译。不绘制像素，也不调用设备 API。
 

@@ -5,7 +5,7 @@ mod catalog;
 mod matrix;
 mod spans;
 mod transforms;
-// golden / playwright 像素与浏览器门禁：下游产品仓（APOLLO_FIXTURES），不进实现仓。
+// golden / playwright 像素与浏览器门禁：下游产品仓（`PLOTTER_FIXTURES`），不进实现仓。
 
 use plotter_chart::{Channel, Scale, codes, vega_lite};
 

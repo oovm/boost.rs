@@ -3,7 +3,7 @@
 //! 这三个前端是当前活跃输入，期望按真实渲染结果写，不写成拒绝。完整的
 //! 语法矩阵和像素基准由 TS / harness 侧消费。
 
-use apollo::input::{dot, mermaid, plantuml};
+use plotter::input::{dot, mermaid, plantuml};
 
 #[test]
 fn dot_lowers_a_labeled_digraph() {

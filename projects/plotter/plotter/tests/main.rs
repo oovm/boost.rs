@@ -2,6 +2,8 @@
 
 mod baseline_combo;
 
+mod chart_smoke;
+mod diagram_inputs;
 mod golden_geoms;
 mod graph_tree_layout;
 mod line_plot_spec;

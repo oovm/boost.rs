@@ -55,15 +55,14 @@ fn sample_scene() -> DisplayScene {
 
 #[test]
 fn svg_matches_golden_fixture() {
-    // Golden SVG lives in the apollo.rs product fixtures, not this crate.
-    let Some(root) = std::env::var_os("APOLLO_FIXTURES")
-    else {
-        return;
-    };
-    let path = std::path::PathBuf::from(root).join("davinci-scene").join("scene.svg");
-    let expected = std::fs::read_to_string(&path).unwrap_or_else(|err| panic!("missing host golden {}: {err}", path.display()));
+    // Golden SVG lives in the shared plotter fixtures, not this crate.
+    let root = std::env::var_os("PLOTTER_FIXTURES")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures"));
+    let path = root.join("davinci-scene").join("scene.svg");
+    let expected = std::fs::read_to_string(&path).unwrap_or_else(|err| panic!("missing golden {}: {err}", path.display()));
     let svg = sample_scene().to_svg().expect("valid scene");
-    assert_eq!(svg, expected);
+    assert_eq!(svg.replace("\r\n", "\n"), expected.replace("\r\n", "\n"));
 }
 
 #[test]

@@ -1,4 +1,4 @@
-//! Apollo SVG 矢量后端。
+//! Plotter SVG 矢量后端。
 //!
 //! 只消费 Scene IR。不是默认 GPU 路径；用于静态导出与文档。
 

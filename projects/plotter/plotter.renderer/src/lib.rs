@@ -1,4 +1,4 @@
-//! Apollo 渲染器合同 — CPU reference 与后端共用合同。
+//! Plotter 渲染器合同 — CPU reference 与后端共用合同。
 //!
 //! 只消费 Scene IR。不得重新推断 stat、scale 或 layout。
 //! SVG 实现在 `plotter.renderer.svg`；加速后端见门面 `plotter::renderer::gpu`。

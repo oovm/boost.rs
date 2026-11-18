@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Apollo: in-house Direct3D 12 render backend for Scene IR"
+description = "Plotter: in-house Direct3D 12 render backend for Scene IR"
 readme = "readme.md"
 publish = false
 

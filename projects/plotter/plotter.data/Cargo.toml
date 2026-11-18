@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Apollo：列式数据、视图与缺失值合同"
+description = "Plotter：列式数据、视图与缺失值合同"
 publish = false
 
 [dependencies]

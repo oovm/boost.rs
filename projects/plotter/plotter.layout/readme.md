@@ -10,5 +10,5 @@
 编译阶段消费。
 
 ```sh
-cargo test -p apollo-layout
+cargo test -p plotter-layout
 ```

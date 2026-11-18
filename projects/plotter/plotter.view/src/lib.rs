@@ -1,4 +1,4 @@
-//! Apollo Scene IR — 唯一的后端无关渲染合同。
+//! Plotter Scene IR — 唯一的后端无关渲染合同。
 //!
 //! Arena + 稳定 ID。不含 ggplot 语义，也不含设备 / GPU API。
 

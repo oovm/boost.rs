@@ -1,8 +1,8 @@
 //! A2 golden：point / bar / text 的 Scene + CPU/SVG 回归。
 //!
-//! Checked-in SVG / fingerprint goldens live in apollo.rs product fixtures
-//! (`APOLLO_FIXTURES/plotter-golden`). Without that host root this file still
-//! asserts scene shape; it never writes goldens back into this crate.
+//! SVG / fingerprint golden 语料随仓维护在 `projects/plotter/fixtures/plotter-golden`
+//! （原 apollo.rs 产品 fixtures）。`PLOTTER_FIXTURES` 可显式覆盖语料根目录，
+//! 本文件永不把 golden 写回 crate 自身。
 
 use std::{fs, path::PathBuf};
 
@@ -13,33 +13,30 @@ use plotter::{
     view::SceneNodeKind,
 };
 
-fn golden_dir() -> Option<PathBuf> {
-    std::env::var_os("APOLLO_FIXTURES").map(|root| PathBuf::from(root).join("plotter-golden"))
+fn golden_dir() -> PathBuf {
+    let root = std::env::var_os("PLOTTER_FIXTURES")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures"));
+    root.join("plotter-golden")
 }
 
 fn read_or_write_golden(name: &str, actual: &str) {
-    let Some(dir) = golden_dir()
-    else {
-        return;
-    };
+    let dir = golden_dir();
     let path = dir.join(name);
-    if std::env::var("APOLLO_UPDATE_GOLDEN").ok().as_deref() == Some("1") {
+    if std::env::var("PLOTTER_UPDATE_GOLDEN").ok().as_deref() == Some("1") {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, actual).unwrap();
         return;
     }
-    let expected = fs::read_to_string(&path).unwrap_or_else(|err| panic!("missing host golden {}: {err}", path.display()));
+    let expected = fs::read_to_string(&path).unwrap_or_else(|err| panic!("missing golden {}: {err}", path.display()));
     assert_eq!(expected.replace("\r\n", "\n"), actual.replace("\r\n", "\n"), "golden mismatch: {name}");
 }
 
 fn assert_cpu_fingerprint(name: &str, fingerprint: u64) {
-    let Some(dir) = golden_dir()
-    else {
-        return;
-    };
+    let dir = golden_dir();
     let path = dir.join(format!("{name}.fingerprint"));
     let actual = format!("{fingerprint:#018x}\n");
-    if std::env::var("APOLLO_UPDATE_GOLDEN").ok().as_deref() == Some("1") {
+    if std::env::var("PLOTTER_UPDATE_GOLDEN").ok().as_deref() == Some("1") {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, &actual).unwrap();
         return;

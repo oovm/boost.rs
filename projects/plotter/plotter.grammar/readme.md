@@ -1,4 +1,4 @@
-# `apollo-grammar`
+# `plotter.grammar`
 
 声明式 Grammar of Graphics 层，描述“数据如何成为图”。
 
@@ -12,5 +12,5 @@ IR，不直接调用 CPU、SVG 或 GPU 后端。
 本 crate 拥有 `PlotSpec`、mapping、layer、geom、stat、scale、coordinate、facet 和 theme 的公共定义与编译入口，不拥有渲染后端。
 
 ```sh
-cargo test -p apollo-grammar
+cargo test -p plotter-grammar
 ```

@@ -3,11 +3,8 @@
 //! 真实覆盖矩阵和图像基准由 TS / harness 侧消费，这里只证明上游 crate
 //! 在本仓库内可以编译、编译出 plan 并序列化 SVG。
 
-use apollo::{
-    chart::{
-        Channel, ChannelEncoding, ChartOptions, ChartSpec, DataColumn, DataSnapshot, FieldKind, FieldRef, Mark, Value, codes,
-        lower,
-    },
+use plotter::{
+    chart::{Channel, ChannelEncoding, ChartOptions, ChartSpec, DataColumn, DataSnapshot, FieldKind, FieldRef, Mark, Value, codes, lower},
     scene::SceneResolver,
 };
 
