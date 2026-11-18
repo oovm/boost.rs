@@ -47,6 +47,38 @@ pub struct StoryboardOptions {
     pub ink: [u8; 3],
 }
 
+impl StoryboardOptions {
+    /// Rejects a sheet too small for the text it has to carry.
+    ///
+    /// Readability is a contract, not a preference: shrinking the page must not
+    /// silently produce captions that cannot be read. A page needs room for the
+    /// margin, the title band and at least one caption line at the declared
+    /// sizes, and the caption itself must stay legible.
+    pub fn check(&self) -> Result<(), Error> {
+        if self.label_size < 10.0 || self.title_size < self.label_size {
+            return Err(Error::invalid_input(format!(
+                "storyboard text sizes are not readable: title {} and caption {} (caption must be at least 10 and the title at least as large)",
+                self.title_size, self.label_size
+            )));
+        }
+        let vertical_need = self.margin * 2.0 + self.title_size + self.gap + self.label_size * 2.0;
+        if (self.height as f32) < vertical_need {
+            return Err(Error::invalid_input(format!(
+                "storyboard page is {}x{}, too short for a {:.0} title and {:.0} captions",
+                self.width, self.height, self.title_size, self.label_size
+            )));
+        }
+        let horizontal_need = self.margin * 2.0 + self.label_size * 12.0;
+        if (self.width as f32) < horizontal_need {
+            return Err(Error::invalid_input(format!(
+                "storyboard page is {}x{}, too narrow for captions at {:.0}",
+                self.width, self.height, self.label_size
+            )));
+        }
+        Ok(())
+    }
+}
+
 impl Default for StoryboardOptions {
     fn default() -> Self {
         Self {
@@ -150,7 +182,7 @@ pub fn write_storyboard_selected(
         let path = out_dir.join(format!("storyboard-{:03}.png", page_index + 1));
         let mut page = Frame::new(options.width, options.height);
         page.fill(rgba(options.background, 255));
-        draw_title(&mut fonts, &mut page, options, &format!("Storyboard {} / {page_count}", page_index + 1));
+        draw_title(&mut fonts, &mut page, options, &format!("Storyboard {} / {page_count}", page_index + 1))?;
 
         let rows = chunk.len() as u32;
         let content_top = options.margin + options.title_size + options.gap;
@@ -218,7 +250,7 @@ pub fn write_comparison(
 
     let mut page = Frame::new(options.width, options.height);
     page.fill(rgba(options.background, 255));
-    draw_title(&mut fonts, &mut page, options, "Before / after");
+    draw_title(&mut fonts, &mut page, options, "Before / after")?;
     let top = options.margin + options.title_size + options.gap;
     let content_width = options.width as f32 - options.margin * 2.0;
     let row_height = (((options.height as f32 - top - options.margin - options.gap * (selected.len().saturating_sub(1)) as f32)
@@ -277,7 +309,7 @@ pub fn write_chapters(
     }
     let mut page = Frame::new(options.width, options.height);
     page.fill(rgba(options.background, 255));
-    draw_title(&mut fonts, &mut page, options, "Chapters");
+    draw_title(&mut fonts, &mut page, options, "Chapters")?;
     let top = options.margin + options.title_size + options.gap;
     let row_height = ((options.height as f32 - top - options.margin) / production.shots.len() as f32).clamp(110.0, 300.0);
     let label_width = 200.0;
@@ -424,7 +456,7 @@ pub fn write_contact_sheet(
     let rows = options.rows.max(1);
     let mut page = Frame::new(options.width, options.height);
     page.fill(rgba(options.background, 255));
-    draw_title(&mut fonts, &mut page, options, "Contact sheet");
+    draw_title(&mut fonts, &mut page, options, "Contact sheet")?;
 
     let content_top = options.margin + options.title_size + options.gap;
     let cell_width = (options.width as f32 - options.margin * 2.0 - options.gap * (columns - 1) as f32) / columns as f32;
@@ -501,8 +533,14 @@ fn scene_of<'a>(project: &'a Project, id: &str) -> Option<&'a Scene> {
     project.scenes.iter().find(|scene| scene.id.as_deref() == Some(id))
 }
 
-fn draw_title(fonts: &mut Fonts, page: &mut Frame, options: &StoryboardOptions, title: &str) {
+/// Checks the sheet and draws its title band.
+///
+/// Every page writer goes through here, so an unreadable sheet size is rejected
+/// before any page holds a half-drawn title.
+fn draw_title(fonts: &mut Fonts, page: &mut Frame, options: &StoryboardOptions, title: &str) -> Result<(), Error> {
+    options.check()?;
     fonts.draw_line(page, title, options.margin, options.margin + options.title_size, options.title_size, FontId::Bold, rgba(options.ink, 255));
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -603,7 +641,7 @@ pub fn write_timeline(
     }
     let mut page = Frame::new(options.width, options.height);
     page.fill(rgba(options.background, 255));
-    draw_title(&mut fonts, &mut page, options, "Timeline");
+    draw_title(&mut fonts, &mut page, options, "Timeline")?;
 
     let total = project.duration_frames.max(1) as f32;
     let label_width = 190.0;
@@ -707,7 +745,7 @@ pub fn write_scene_overview(json: &str, production: &Production, out: &Path, opt
     let mut fonts = fonts_for(&project)?;
     let mut page = Frame::new(options.width, options.height);
     page.fill(rgba(options.background, 255));
-    draw_title(&mut fonts, &mut page, options, "Scenes");
+    draw_title(&mut fonts, &mut page, options, "Scenes")?;
 
     let rows = project.scenes.len();
     let content_top = options.margin + options.title_size + options.gap;
@@ -764,7 +802,7 @@ pub fn write_seams(json: &str, production: &Production, out: &Path, options: &St
     }
     let mut page = Frame::new(options.width, options.height);
     page.fill(rgba(options.background, 255));
-    draw_title(&mut fonts, &mut page, options, "Seams");
+    draw_title(&mut fonts, &mut page, options, "Seams")?;
 
     let seams = production.shots.len() - 1;
     let content_top = options.margin + options.title_size + options.gap;
@@ -965,6 +1003,17 @@ mod tests {
             .image(&pages[0].path, media_codec::DecodeLimits::unbounded())
             .expect("decode page");
         assert_eq!((bitmap.width, bitmap.height), (1600, 1200));
+    }
+
+    #[test]
+    fn an_unreadable_sheet_is_rejected_before_any_page_is_drawn() {
+        let (json, production) = fixture();
+        let tiny = StoryboardOptions { width: 320, height: 200, ..StoryboardOptions::default() };
+        let error = write_storyboard(&json, &production, &out_dir().join("tiny"), &tiny).expect_err("a tiny sheet is refused");
+        assert!(error.to_string().contains("too short") || error.to_string().contains("too narrow"), "{error}");
+        let mut options = StoryboardOptions::default();
+        options.label_size = 6.0;
+        assert!(options.check().is_err(), "captions below 10 px are not readable");
     }
 
     #[test]
