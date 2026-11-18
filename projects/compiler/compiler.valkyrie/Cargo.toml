@@ -1,5 +1,5 @@
 [package]
-name = "language-valkyrie"
+name = "compiler-valkyrie"
 description = "Valkyrie language implementation: type model, HIR, MIR, semantic analysis and target adaptation"
 version.workspace = true
 edition.workspace = true

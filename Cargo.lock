@@ -624,17 +624,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
-name = "chacha20"
-version = "0.10.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65c35e4b699c7e15ccbe7ee35c005e4fc0a278d22238a2857e6ce2dadeda1b06"
-dependencies = [
- "cfg-if",
- "cpufeatures 0.3.1",
- "rand_core 0.10.1",
-]
-
-[[package]]
 name = "cobs"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -698,6 +687,23 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.1",
+]
+
+[[package]]
+name = "compiler-valkyrie"
+version = "0.1.0"
+dependencies = [
+ "compiler-analysis",
+ "compiler-emitter",
+ "compiler-target",
+ "compiler-types",
+ "oak-awsl",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs?rev=a0416cb1cba9a348df175d3ca230f794ec562484)",
+ "oak-formats",
+ "oak-valkyrie",
+ "oak-von",
+ "ordered-float",
+ "serde",
 ]
 
 [[package]]
@@ -1476,7 +1482,7 @@ dependencies = [
  "document-ir",
  "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs?rev=a0416cb1cba9a348df175d3ca230f794ec562484)",
  "oak-html",
- "oak-markdown 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs?rev=a0416cb1cba9a348df175d3ca230f794ec562484)",
+ "oak-markdown",
  "oak-notedown",
  "oak-tex",
  "oak-typst",
@@ -1972,7 +1978,6 @@ dependencies = [
  "cfg-if",
  "libc",
  "r-efi",
- "rand_core 0.10.1",
 ]
 
 [[package]]
@@ -2443,7 +2448,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af1955a75fa080c677d3972822ec4bad316169ab1cfc6c257a942c2265dbe5fe"
 dependencies = [
  "bitmaps",
- "rand_core 0.6.4",
+ "rand_core",
  "rand_xoshiro",
  "sized-chunks",
  "typenum",
@@ -2593,23 +2598,6 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "language-valkyrie"
-version = "0.1.0"
-dependencies = [
- "compiler-analysis",
- "compiler-emitter",
- "compiler-target",
- "compiler-types",
- "oak-awsl",
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs?rev=a0416cb1cba9a348df175d3ca230f794ec562484)",
- "oak-formats",
- "oak-valkyrie",
- "oak-von",
- "ordered-float",
- "serde",
 ]
 
 [[package]]
@@ -3020,25 +3008,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
 
 [[package]]
-name = "notedown-formats"
-version = "0.1.0"
-source = "git+https://github.com/notedge/notedown.git?rev=3c01bea86d5824771ff12e26dd50494f0199c0e7#3c01bea86d5824771ff12e26dd50494f0199c0e7"
-dependencies = [
- "boost-diagnostic",
- "notedown-ir",
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs.git?rev=59c7d479882bc08124c81f95d03b154b5cecdcbe)",
- "oak-markdown 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs.git?rev=59c7d479882bc08124c81f95d03b154b5cecdcbe)",
-]
-
-[[package]]
-name = "notedown-ir"
-version = "0.1.0"
-source = "git+https://github.com/notedge/notedown.git?rev=3c01bea86d5824771ff12e26dd50494f0199c0e7#3c01bea86d5824771ff12e26dd50494f0199c0e7"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "num"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3073,7 +3042,7 @@ dependencies = [
  "num-integer",
  "num-iter",
  "num-traits",
- "rand 0.8.8",
+ "rand",
  "smallvec",
  "zeroize",
 ]
@@ -3150,17 +3119,6 @@ dependencies = [
 name = "oak-core"
 version = "0.0.12"
 source = "git+https://github.com/yggdrasil-language/oaks.git?rev=541b204a3d6fe2806dea1f905736261bf1d0b4ae#541b204a3d6fe2806dea1f905736261bf1d0b4ae"
-dependencies = [
- "serde",
- "smallvec",
- "triomphe",
- "twox-hash",
-]
-
-[[package]]
-name = "oak-core"
-version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oak.rs.git?rev=59c7d479882bc08124c81f95d03b154b5cecdcbe#59c7d479882bc08124c81f95d03b154b5cecdcbe"
 dependencies = [
  "serde",
  "smallvec",
@@ -3274,22 +3232,11 @@ dependencies = [
 [[package]]
 name = "oak-markdown"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oak.rs.git?rev=59c7d479882bc08124c81f95d03b154b5cecdcbe#59c7d479882bc08124c81f95d03b154b5cecdcbe"
-dependencies = [
- "dashmap",
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs.git?rev=59c7d479882bc08124c81f95d03b154b5cecdcbe)",
- "oak-navigation 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs.git?rev=59c7d479882bc08124c81f95d03b154b5cecdcbe)",
- "serde",
-]
-
-[[package]]
-name = "oak-markdown"
-version = "0.0.12"
 source = "git+https://github.com/yggdrasil-language/oak.rs?rev=a0416cb1cba9a348df175d3ca230f794ec562484#a0416cb1cba9a348df175d3ca230f794ec562484"
 dependencies = [
  "dashmap",
  "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs?rev=a0416cb1cba9a348df175d3ca230f794ec562484)",
- "oak-navigation 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs?rev=a0416cb1cba9a348df175d3ca230f794ec562484)",
+ "oak-navigation",
  "serde",
 ]
 
@@ -3318,14 +3265,6 @@ version = "0.0.12"
 source = "git+https://github.com/yggdrasil-language/oak.rs?rev=a0416cb1cba9a348df175d3ca230f794ec562484#a0416cb1cba9a348df175d3ca230f794ec562484"
 dependencies = [
  "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs?rev=a0416cb1cba9a348df175d3ca230f794ec562484)",
-]
-
-[[package]]
-name = "oak-navigation"
-version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oak.rs.git?rev=59c7d479882bc08124c81f95d03b154b5cecdcbe#59c7d479882bc08124c81f95d03b154b5cecdcbe"
-dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs.git?rev=59c7d479882bc08124c81f95d03b154b5cecdcbe)",
 ]
 
 [[package]]
@@ -4075,18 +4014,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e058c7de0b26af77780c769414d6257830bb240f3c38477dbc2c16e5f54d6d4c"
 dependencies = [
  "rand_chacha",
- "rand_core 0.6.4",
-]
-
-[[package]]
-name = "rand"
-version = "0.10.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65c9fb96cbc91e3478eaae79a69fcd3f1ae4ad052e471fe6732fff548984b4af"
-dependencies = [
- "chacha20",
- "getrandom 0.4.3",
- "rand_core 0.10.1",
+ "rand_core",
 ]
 
 [[package]]
@@ -4096,7 +4024,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6c10a63a0fa32252be49d21e7709d4d4baf8d231c2dbce1eaa8141b9b127d88"
 dependencies = [
  "ppv-lite86",
- "rand_core 0.6.4",
+ "rand_core",
 ]
 
 [[package]]
@@ -4109,18 +4037,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "rand_core"
-version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69"
-
-[[package]]
 name = "rand_xoshiro"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6f97cdb2a36ed4183de61b2f824cc45c9f1037f28afe0a322e9fff4c108b5aaa"
 dependencies = [
- "rand_core 0.6.4",
+ "rand_core",
 ]
 
 [[package]]
@@ -4233,7 +4155,7 @@ dependencies = [
  "num-traits",
  "pkcs1",
  "pkcs8",
- "rand_core 0.6.4",
+ "rand_core",
  "sha2 0.10.9",
  "signature",
  "spki",
@@ -4839,7 +4761,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
 dependencies = [
  "digest 0.10.7",
- "rand_core 0.6.4",
+ "rand_core",
 ]
 
 [[package]]
@@ -5013,11 +4935,11 @@ dependencies = [
 name = "template-framework-doki"
 version = "0.1.0"
 dependencies = [
+ "document-formats",
+ "document-ir",
  "figment",
  "hex",
  "miette",
- "notedown-formats",
- "notedown-ir",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -5268,9 +5190,6 @@ name = "twox-hash"
 version = "2.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "86a801b3cea342a06d468c8710662aa29e5e05e4f5c0d62f00bbb7f2ad7941c2"
-dependencies = [
- "rand 0.10.3",
-]
 
 [[package]]
 name = "type-map"

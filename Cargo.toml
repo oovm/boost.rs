@@ -41,7 +41,7 @@ members = [
     "projects/interpreter/interpreter.vm.jvm",
     "projects/interpreter/interpreter.vm.ovm",
     "projects/interpreter/interpreter.vm.wasm",
-    "projects/language/language.valkyrie",
+    "projects/compiler/compiler.valkyrie",
     "projects/database/database",
     "projects/database/database.client",
     "projects/database/database.cluster",
@@ -239,7 +239,7 @@ compiler-emitter = { path = "projects/compiler/compiler.emitter" }
 compiler-specialize = { path = "projects/compiler/compiler.specialize" }
 compiler-target = { path = "projects/compiler/compiler.target" }
 compiler-types = { path = "projects/compiler/compiler.types" }
-language-valkyrie = { path = "projects/language/language.valkyrie" }
+compiler-valkyrie = { path = "projects/compiler/compiler.valkyrie" }
 # 内部库
 crawler-browser = { path = "projects/crawler/crawler.browser" }
 crawler-extract = { path = "projects/crawler/crawler.extract" }
@@ -521,14 +521,11 @@ oak-vos = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb
 
 # `.metis` 前端 `oak-metis` 与其余 oak 家族统一到同一 `yggdrasil-language` oaks pin。
 oak-metis = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484", default-features = false }
-# Valkyrie 语言前端所需的 Oak 语法 crate（language.* 专用例外）。
+# Valkyrie 语言实现所需的 Oak 语法 crate（`compiler.valkyrie` 专用例外）。
 oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484", features = ["serde"] }
 oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484" }
 oak-awsl = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484" }
 oak-formats = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484" }
-
-notedown-formats = { git = "https://github.com/notedge/notedown.git", rev = "3c01bea86d5824771ff12e26dd50494f0199c0e7", default-features = false, features = ["markdown"] }
-notedown-ir = { git = "https://github.com/notedge/notedown.git", rev = "3c01bea86d5824771ff12e26dd50494f0199c0e7" }
 
 [profile.release]
 lto = true
