@@ -18,19 +18,19 @@ use std::{
     time::Instant,
 };
 
-use database_execution::cluster::KeyValueExecutor;
-use database_query::cluster_kv::{KeyValueAction, KeyValueCommand};
+use database_execution::cluster::{
+    KeyValueExecutor,
+    redis::{
+        reply::{glob_match, write_bulk, write_error, write_null, write_unknown_command},
+        string as strings,
+    },
+};
 use database_storage::cluster_kv::now_unix_ms;
-use database_types::cluster::Namespace;
 
 use super::{
     connection::ConnectionState,
     pubsub::{ClientSink, PubSubState},
     resp::Request,
-};
-use database_execution::cluster::redis::{
-    collections::KeyKind,
-    reply::{glob_match, write_bulk, write_error, write_null, write_unknown_command},
 };
 
 /// 一条连接的会话投影。
@@ -1080,29 +1080,8 @@ fn info_stats(registry: &ClientRegistry, pubsub: &PubSubState) -> String {
 fn info_keyspace(executor: Option<&dyn KeyValueExecutor>) -> String {
     let mut lines = vec!["# Keyspace".to_string()];
     if let Some(executor) = executor {
-        for database in 0..16u32 {
-            let base = Namespace(format!("redis:{database}"));
-            let mut keys = 0_usize;
-            let mut expires = 0_usize;
-            for kind in KeyKind::ALL {
-                let target = kind.namespace(&base);
-                let Ok(records) = executor.execute_scan(None, &target, &[], None, None, 0)
-                else {
-                    continue;
-                };
-                keys += records.len();
-                for (key, _) in records {
-                    let command = KeyValueCommand { namespace: target.clone(), key, action: KeyValueAction::GetExpiry };
-                    if let Ok(database_query::cluster_kv::KeyValueResult::Expiry { present: true, expires_at: Some(_) }) =
-                        executor.execute(None, command)
-                    {
-                        expires += 1;
-                    }
-                }
-            }
-            if keys > 0 {
-                lines.push(format!("db{database}:keys={keys},expires={expires},avg_ttl=0,subexpiry=0"));
-            }
+        for count in strings::keyspace_stats(executor) {
+            lines.push(format!("db{}:keys={},expires={},avg_ttl=0,subexpiry=0", count.database, count.keys, count.expires));
         }
     }
     lines.push(String::new());

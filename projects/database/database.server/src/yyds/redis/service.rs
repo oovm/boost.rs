@@ -13,11 +13,13 @@ use std::{
 
 use database_cluster::control::NodeLease;
 
-use database_execution::cluster::KeyValueExecutor;
-use database_execution::cluster::redis::blocking::BlockingRegistry;
+use database_execution::cluster::{
+    KeyValueExecutor,
+    redis::{blocking::BlockingRegistry, string::KeyAccessTracker},
+};
 
 use super::{
-    connection::{KeyAccessTracker, serve_cancellable, serve_cancellable_with_executor_and_tracker},
+    connection::{serve_cancellable, serve_cancellable_with_executor_and_tracker},
     pubsub::PubSubRegistry,
     resp::RequestLimits,
     server_face::ClientRegistry,

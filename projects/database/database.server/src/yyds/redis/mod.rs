@@ -16,7 +16,7 @@ pub mod pubsub;
 pub mod server_face;
 pub mod service;
 
-use database_execution::cluster::redis::{blocking, collections, reply};
+use database_execution::cluster::redis::{blocking, collections};
 
 /// 命令绑定（来自 `database-protocol-redis`）。
 pub use database_protocol_redis::bind;
@@ -128,45 +128,6 @@ pub fn execute_hyperloglog_command(
 ) -> io::Result<()> {
     let request = resp::Request { arguments: arguments.to_vec(), consumed: 0 };
     collections::handle_hyperloglog(stream, &request, Some(executor), namespace)
-}
-
-/// Executes one string or key family request and writes the RESP reply.
-///
-/// Command semantics, reply framing and type checks stay in the redis connection
-/// handler. The caller only supplies the logical database namespace, the connection
-/// protocol version and the key-value backend, so an embedder such as a language
-/// binding can reuse this family without reimplementing it.
-pub fn execute_string_command(
-    stream: &mut dyn io::Write,
-    arguments: &[&[u8]],
-    executor: &dyn KeyValueExecutor,
-    namespace: &database_types::cluster::Namespace,
-    protocol: u8,
-) -> io::Result<()> {
-    let request = resp::Request { arguments: arguments.to_vec(), consumed: 0 };
-    if connection::handle_string(stream, &request, Some(executor), Some(executor), None, namespace, protocol)? {
-        return Ok(());
-    }
-    reply::write_unknown_command(stream, arguments)
-}
-
-/// Executes one keyspace-family request and writes the RESP reply.
-///
-/// `KEYS` / `SCAN` / `TYPE` / `OBJECT` 语义、回复分帧与类型探测都留在上游连接处理器，
-/// 调用方只提供逻辑库命名空间、协议版本与键值后端，嵌入宿主不必再实现键枚举、
-/// 游标分批或对象编码判定。
-pub fn execute_keyspace_command(
-    stream: &mut dyn io::Write,
-    arguments: &[&[u8]],
-    executor: &dyn KeyValueExecutor,
-    namespace: &database_types::cluster::Namespace,
-    protocol: u8,
-) -> io::Result<()> {
-    let request = resp::Request { arguments: arguments.to_vec(), consumed: 0 };
-    if connection::handle_keyspace(stream, &request, Some(executor), Some(executor), None, namespace, protocol)? {
-        return Ok(());
-    }
-    reply::write_unknown_command(stream, arguments)
 }
 
 /// Banner shown when a disguise server starts.

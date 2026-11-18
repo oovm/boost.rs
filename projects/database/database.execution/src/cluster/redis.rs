@@ -2,7 +2,8 @@
 //! hash / list / set / zset / HyperLogLog 的命令语义。
 //!
 //! 值种类命名空间解析、扁平值种类写入与删除由 [`RedisExecutor`] 表达；集合命令家族与
-//! 阻塞等待表在 [`collections`] / [`blocking`] 内，回复分帧 primitives 在 [`reply`]。
+//! 阻塞等待表在 [`collections`] / [`blocking`] 内，字符串与键空间命令族在 [`string`]，
+//! 事务会话在 [`session`]，回复分帧 primitives 在 [`reply`]。
 
 use std::sync::Mutex;
 
@@ -18,6 +19,7 @@ pub mod blocking;
 pub mod collections;
 pub mod reply;
 pub mod session;
+pub mod string;
 
 /// 一个分片上的键值执行器。
 ///
