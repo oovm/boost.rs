@@ -17,6 +17,7 @@
 
 use std::{collections::BTreeMap, sync::Arc};
 
+use database_query::sqlite::frontend::HostFunctionArity;
 use database_udf::{HostMicroDefinition, HostMicroImplementation, HostRuntimeAdapter, UdfError, UdfImplementation, UdfValue};
 
 use super::{Cell, SqlError};
@@ -66,6 +67,13 @@ impl HostFunctionTable {
     /// 当前注册的宿主函数名(折叠小写,字典序)。
     pub fn names(&self) -> Vec<String> {
         self.entries.keys().cloned().collect()
+    }
+}
+
+/// 解析期最小视图:前端只询问注册名与元数,派发语义仍由本表拥有。
+impl HostFunctionArity for HostFunctionTable {
+    fn expected_arity(&self, name: &str) -> Option<Option<usize>> {
+        HostFunctionTable::expected_arity(self, name)
     }
 }
 

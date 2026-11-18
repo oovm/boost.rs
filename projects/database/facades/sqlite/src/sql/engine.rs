@@ -21,20 +21,15 @@ use crate::{
 };
 
 use super::{
+    AggregateFunction, AlterAction, Assignment, BinaryOp, CastType, CheckConstraint, ColumnRef, CommonTable, CompareOp, CompoundOp, CompoundTerm,
+    ConflictAction, ConflictClause, DropColumnConflict, Expr, ForeignKey, ForeignKeyAction, Frame, FrameBound, FrameEdge, FrameExclude, FrameUnits,
+    IndexColumn, InsertValue, JoinKind, Limit, Literal, NamedWindow, OrderKey, ScalarFunction, SelectCore, SelectItems, SqlError, Statement,
+    TableConstraint, TableRef, TransactionAction, TriggerEvent, TriggerTiming, UnaryOp, WindowFunction, WindowSpec, core_references, json_string,
+    parse, parse_with_host_functions, rewrite_create_index_column, rewrite_create_index_table, rewrite_create_table_column,
+    rewrite_create_table_drop_column, rewrite_create_table_name, rewrite_view_column, rewrite_view_table, statement_references, storage_failure,
+    strip_schema_qualifiers,
     datetime::{self, DateTimeFunction},
-    error::SqlError,
     host::{HostFunctionTable, cell_to_udf_value, udf_error_to_sql_error, udf_value_to_cell},
-    json_string,
-    sql::{
-        AggregateFunction, AlterAction, Assignment, BinaryOp, CastType, CheckConstraint, ColumnRef, CommonTable, CompareOp, CompoundOp,
-        CompoundTerm, ConflictAction, ConflictClause, DropColumnConflict, Expr, ForeignKey, ForeignKeyAction, FrameBound, FrameEdge,
-        FrameExclude, FrameUnits, IndexColumn, InsertValue, JoinKind, Limit, Literal, NamedWindow, OrderKey, ScalarFunction, SelectCore,
-        SelectItems, Statement, TableConstraint, TableRef, TransactionAction, TriggerEvent, TriggerTiming, UnaryOp, WindowFunction, WindowSpec,
-        core_references, parse, parse_with_host_functions, rewrite_create_index_column, rewrite_create_index_table,
-        rewrite_create_table_column, rewrite_create_table_drop_column, rewrite_create_table_name, rewrite_view_column, rewrite_view_table,
-        statement_references, strip_schema_qualifiers,
-    },
-    storage_failure,
 };
 
 /// One cell surfaced to the host.
@@ -12934,7 +12929,7 @@ fn resolve_window(
 struct MergedWindow<'a> {
     partition: Vec<&'a Expr>,
     order: Vec<&'a OrderKey>,
-    frame: Option<&'a super::sql::Frame>,
+    frame: Option<&'a Frame>,
 }
 
 /// Follows `w1 -> w2 -> ...` references and rejects clauses that would
@@ -12998,7 +12993,7 @@ fn merge_window_spec<'a>(
 
 /// Resolves an explicit frame; offsets must be constant non-negative integers.
 fn resolve_frame(
-    frame: &super::sql::Frame,
+    frame: &Frame,
     _relation: &Relation,
     _outer: &[ScopeShape],
     _named: &[NamedWindow],
@@ -13008,7 +13003,7 @@ fn resolve_frame(
     // SQLite only accepts a literal non-negative integer here; `abs(-1)` and
     // `1.5` are both rejected at prepare time. Validating now keeps evaluation
     // free of column lookups, which a frame offset can never have.
-    let resolve_bound = |bound: &super::sql::FrameBound, which: &str| -> Result<ResolvedFrameBound, SqlError> {
+    let resolve_bound = |bound: &FrameBound, which: &str| -> Result<ResolvedFrameBound, SqlError> {
         let offset = match &bound.offset {
             Some(offset) => match offset.as_ref() {
                 Expr::Literal(Literal::Integer(value)) if *value >= 0 => Some(ResolvedExpr::Cell(Cell::Integer(*value))),

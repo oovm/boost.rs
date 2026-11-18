@@ -61,13 +61,13 @@ impl SqlError {
     /// Serializes the error as the documented JSON envelope.
     pub fn to_json(&self) -> String {
         let mut out = String::from("{\"code\":");
-        out.push_str(&crate::sql::json_string(self.code));
+        out.push_str(&super::json_string(self.code));
         out.push_str(",\"message\":");
-        out.push_str(&crate::sql::json_string(&self.message));
+        out.push_str(&super::json_string(&self.message));
         out.push_str(",\"statement\":");
-        out.push_str(&self.statement.map_or_else(|| "null".to_string(), crate::sql::json_string));
+        out.push_str(&self.statement.map_or_else(|| "null".to_string(), super::json_string));
         out.push_str(",\"clause\":");
-        out.push_str(&self.clause.as_deref().map_or_else(|| "null".to_string(), crate::sql::json_string));
+        out.push_str(&self.clause.as_deref().map_or_else(|| "null".to_string(), super::json_string));
         out.push_str(",\"position\":");
         out.push_str(&self.position.map_or_else(|| "null".to_string(), |value| value.to_string()));
         out.push('}');

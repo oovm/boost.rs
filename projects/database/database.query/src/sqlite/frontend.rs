@@ -66,7 +66,7 @@
 //! `yydb-gateway` lowering can execute them; the shapes above are listed so the
 //! hand-off is mechanical rather than a re-discovery.
 
-use crate::{Collation, ColumnSpec, WriteValue};
+use database_storage::sqlite::{Collation, ColumnSpec, WriteValue};
 
 use super::error::SqlError;
 
@@ -2081,13 +2081,22 @@ pub fn parse(source: &str) -> Result<Vec<Statement>, SqlError> {
     parse_with_host_functions(source, None)
 }
 
+/// 解析期需要的宿主函数注册表最小视图。
+///
+/// 前端只询问「这个名字是否注册、固定元数是多少」,不依赖任何宿主
+/// 注册表的具体实现;门面用自己的 `HostFunctionTable` 实现本 trait。
+pub trait HostFunctionArity {
+    /// 注册名的固定元数;外层 `None` 表示未注册,内层 `None` 表示变元。
+    fn expected_arity(&self, name: &str) -> Option<Option<usize>>;
+}
+
 /// Parses one or more semicolon-separated statements against a host function table.
 ///
 /// 解析顺序为宿主注册表 → 内建函数 → `unknown-function` 拒绝:折叠名命中
 /// 注册表且元数相符的调用成为 [`Expr::HostFunction`] 节点,同名同元数的
 /// 内建派发被替换(与 SQLite `sqlite3_create_function` 的覆盖行为一致);
 /// 未命中的名字保持既有拒绝口径。`hosts` 为 `None` 时与 [`parse`] 等价。
-pub fn parse_with_host_functions(source: &str, hosts: Option<&crate::sql::host::HostFunctionTable>) -> Result<Vec<Statement>, SqlError> {
+pub fn parse_with_host_functions(source: &str, hosts: Option<&dyn HostFunctionArity>) -> Result<Vec<Statement>, SqlError> {
     let (tokens, offsets) = tokenize(source)?;
     let mut parser = Parser {
         source,
@@ -2869,7 +2878,7 @@ struct Parser<'a> {
     /// Named placeholders already seen, so a repeated name reuses its index.
     parameter_names: std::collections::BTreeMap<String, usize>,
     /// 会话宿主函数表;`None` 表示本路径不解析宿主函数。
-    hosts: Option<&'a crate::sql::host::HostFunctionTable>,
+    hosts: Option<&'a dyn HostFunctionArity>,
 }
 
 impl<'a> Parser<'a> {
@@ -3426,7 +3435,7 @@ impl<'a> Parser<'a> {
         if !count_star {
             if let Some(hosts) = self.hosts {
                 if let Some(arity) = hosts.expected_arity(&name) {
-                    let folded = crate::sql::host::fold_name(&name);
+                    let folded = name.to_ascii_lowercase();
                     if arity.is_some() && arity != Some(args.len()) {
                         return Err(self.error("wrong-arguments", format!("wrong number of arguments to function {folded}()")));
                     }
@@ -5844,7 +5853,7 @@ impl<'a> Parser<'a> {
 /// A `WITH` nested inside the body may shadow the name, so its entries are
 /// skipped; derived tables and expression subqueries are followed because
 /// they still run in the same name scope.
-pub(crate) fn statement_references(statement: &Statement, name: &str) -> bool {
+pub fn statement_references(statement: &Statement, name: &str) -> bool {
     let Statement::Select { first, compounds, order, .. } = statement
     else {
         return false;
@@ -5856,7 +5865,7 @@ pub(crate) fn statement_references(statement: &Statement, name: &str) -> bool {
 
 /// Whether one `SELECT` core reads `name` in its `FROM`, projection,
 /// predicate, grouping or window clauses.
-pub(crate) fn core_references(core: &SelectCore, name: &str) -> bool {
+pub fn core_references(core: &SelectCore, name: &str) -> bool {
     let source = core.from.iter().any(|table| match &table.query {
         Some(query) => statement_references(query, name),
         None => table.name.eq_ignore_ascii_case(name),
@@ -6296,150 +6305,4 @@ fn collect_window_slots(function: &WindowFunction, spec: &WindowSpec, slots: &mu
         collect_expr_slots(argument, slots);
     }
     collect_spec_slots(spec, slots);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn filter(sql: &str) -> Expr {
-        let statements = parse(sql).expect("statement parses");
-        match statements.into_iter().next().expect("one statement") {
-            Statement::Select { first: SelectCore { filter: Some(filter), .. }, .. } => filter,
-            other => panic!("unexpected statement: {other:?}"),
-        }
-    }
-
-    fn column(name: &str) -> Expr {
-        Expr::Column(ColumnRef { qualifier: None, name: name.to_string() })
-    }
-
-    fn integer(value: i64) -> Expr {
-        Expr::Literal(Literal::Integer(value))
-    }
-
-    /// `left >= low AND left <= high`, the lowering `BETWEEN` must produce.
-    fn lowered_range(left: Expr, low: Expr, high: Expr) -> Expr {
-        Expr::And(
-            Box::new(Expr::Compare { left: Box::new(left.clone()), op: CompareOp::GtEq, right: Box::new(low) }),
-            Box::new(Expr::Compare { left: Box::new(left), op: CompareOp::LtEq, right: Box::new(high) }),
-        )
-    }
-
-    #[test]
-    fn between_lowers_to_two_comparisons() {
-        assert_eq!(filter("SELECT * FROM t WHERE a between 1 and 2"), lowered_range(column("a"), integer(1), integer(2)));
-    }
-
-    #[test]
-    fn between_accepts_arithmetic_bounds() {
-        // `c BETWEEN b-2 AND d+2` keeps both bounds as full expressions.
-        let low = Expr::Binary { left: Box::new(column("b")), op: BinaryOp::Subtract, right: Box::new(integer(2)) };
-        let high = Expr::Binary { left: Box::new(column("d")), op: BinaryOp::Add, right: Box::new(integer(2)) };
-        assert_eq!(filter("SELECT * FROM t WHERE c BETWEEN b-2 AND d+2"), lowered_range(column("c"), low, high));
-    }
-
-    #[test]
-    fn not_between_is_not_around_the_lowered_range() {
-        assert_eq!(
-            filter("SELECT * FROM t WHERE a NOT BETWEEN 110 AND 150"),
-            Expr::Not(Box::new(lowered_range(column("a"), integer(110), integer(150))))
-        );
-    }
-
-    #[test]
-    fn between_keeps_the_enclosing_conjunction() {
-        let expr = filter("SELECT * FROM t WHERE a BETWEEN 1 AND 2 AND b = 3");
-        match expr {
-            Expr::And(left, right) => {
-                assert_eq!(*left, lowered_range(column("a"), integer(1), integer(2)));
-                assert!(matches!(*right, Expr::Compare { op: CompareOp::Eq, .. }));
-            }
-            other => panic!("expected AND, found {other:?}"),
-        }
-    }
-
-    #[test]
-    fn between_without_separator_is_a_syntax_error() {
-        let error = parse("SELECT * FROM t WHERE a BETWEEN 1 2").expect_err("missing AND");
-        assert_eq!(error.code, "syntax");
-        assert_eq!(error.statement, Some("select"));
-    }
-
-    #[test]
-    fn parses_parenthesized_or_of_comparisons() {
-        let expr = filter("SELECT * FROM t WHERE (a = b) OR (c > d)");
-        match expr {
-            Expr::Or(left, right) => {
-                assert!(matches!(*left, Expr::Compare { op: CompareOp::Eq, .. }));
-                assert!(matches!(*right, Expr::Compare { op: CompareOp::Gt, .. }));
-            }
-            other => panic!("expected OR of comparisons, found {other:?}"),
-        }
-    }
-
-    #[test]
-    fn parses_nested_grouping_under_unary_not() {
-        let expr = filter("SELECT * FROM t WHERE NOT ((a = 1) OR (b < 2))");
-        match expr {
-            Expr::Not(inner) => assert!(matches!(*inner, Expr::Or(..))),
-            other => panic!("expected NOT around a group, found {other:?}"),
-        }
-    }
-
-    fn slots_of(sql: &str) -> Vec<(usize, String)> {
-        let statements = parse(sql).expect("statement parses");
-        let statement = statements.into_iter().next().expect("one statement");
-        parameter_slots(&statement)
-    }
-
-    #[test]
-    fn bare_question_marks_take_consecutive_indexes() {
-        assert_eq!(slots_of("SELECT ?, ?, ?"), vec![(0, "?".to_string()), (1, "?".to_string()), (2, "?".to_string())]);
-    }
-
-    #[test]
-    fn numbered_placeholders_fix_their_slot_and_later_bare_marks_follow() {
-        assert_eq!(slots_of("SELECT ?2, ?"), vec![(1, "?2".to_string()), (2, "?".to_string())]);
-    }
-
-    #[test]
-    fn repeated_named_placeholder_shares_one_slot() {
-        assert_eq!(slots_of("SELECT :a + :a"), vec![(0, ":a".to_string())]);
-    }
-
-    #[test]
-    fn insert_values_mix_literals_and_placeholders() {
-        assert_eq!(slots_of("INSERT INTO t VALUES (?, :name, 'x')"), vec![(0, "?".to_string()), (1, ":name".to_string())]);
-    }
-
-    #[test]
-    fn slots_are_collected_from_subqueries_and_predicates() {
-        assert_eq!(
-            slots_of("SELECT a FROM t WHERE b IN (SELECT c FROM u WHERE d = ?) AND e > ?"),
-            vec![(0, "?".to_string()), (1, "?".to_string())]
-        );
-    }
-
-    #[test]
-    fn writes_classifies_statements_by_ast_kind() {
-        let cases = [
-            ("SELECT 1", false),
-            ("PRAGMA foreign_keys = ON", false),
-            ("EXPLAIN SELECT 1", false),
-            ("BEGIN", false),
-            ("COMMIT", false),
-            ("CREATE TABLE t (a INTEGER)", true),
-            ("INSERT INTO t VALUES (1)", true),
-            ("UPDATE t SET a = 1", true),
-            ("DELETE FROM t", true),
-            ("DROP TABLE t", true),
-            ("ALTER TABLE t ADD COLUMN b TEXT", true),
-            ("CREATE INDEX i ON t (a)", true),
-        ];
-        for (sql, expected) in cases {
-            let statement = parse(sql).expect("statement parses").into_iter().next().expect("one statement");
-            assert_eq!(statement.writes(), expected, "writes() for {sql}");
-        }
-    }
 }

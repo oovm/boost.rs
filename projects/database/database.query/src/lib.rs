@@ -15,6 +15,7 @@ pub mod sql_meta;
 pub mod sql_parameters;
 pub mod sql_planner;
 pub mod sql_schema;
+pub mod sqlite;
 
 pub use catalog_bind::{
     SqlCatalog, SqlCatalogBoundColumn, SqlCatalogBoundExpression, SqlCatalogBoundJoin, SqlCatalogBoundProjection, SqlCatalogBoundSelect,
