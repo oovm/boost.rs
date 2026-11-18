@@ -112,6 +112,12 @@ impl From<crate::compiler::emitter::pipeline::PipelineError> for LegionError {
     }
 }
 
+impl From<crate::asgard::error::AsgardError> for LegionError {
+    fn from(value: crate::asgard::error::AsgardError) -> Self {
+        Self::msg(value.to_string())
+    }
+}
+
 impl From<serde_json::Error> for LegionError {
     fn from(value: serde_json::Error) -> Self {
         Self::msg(value.to_string())

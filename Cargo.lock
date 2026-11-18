@@ -610,7 +610,13 @@ dependencies = [
  "acorn-host",
  "acorn-jvm",
  "acorn-mach-o",
+ "acorn-odin",
+ "acorn-pe",
+ "acorn-wasm",
+ "acorn-x64",
  "acorn-zip 0.0.1 (git+https://github.com/yggdrasil-language/acorn.rs?rev=beccbdf77374dbb2ca67395be19af3e2048c57ca)",
+ "base64",
+ "boost-fs",
  "boost-harness",
  "compiler-analysis",
  "compiler-emitter",
@@ -2990,6 +2996,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "package-manager"
+version = "0.1.0"
+dependencies = [
+ "oak-von",
+ "package-cache",
+ "package-publish",
+ "package-registry",
+ "package-resolve",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "package-publish"
+version = "0.1.0"
+dependencies = [
+ "acorn-odin",
+ "acorn-tar",
+ "compiler-target",
+ "oak-von",
+ "package-registry",
+ "package-resolve",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "package-registry"
 version = "0.1.0"
 dependencies = [
@@ -4811,6 +4846,40 @@ dependencies = [
  "quote",
  "syn 3.0.10",
  "synstructure",
+]
+
+[[package]]
+name = "yydb"
+version = "0.1.0"
+dependencies = [
+ "database",
+ "yydb-client",
+]
+
+[[package]]
+name = "yydb-client"
+version = "0.1.0"
+dependencies = [
+ "database",
+]
+
+[[package]]
+name = "yyds"
+version = "0.1.0"
+dependencies = [
+ "database",
+ "database-protocol-yy",
+ "serde",
+ "serde_json",
+ "uuid",
+ "yyds-client",
+]
+
+[[package]]
+name = "yyds-client"
+version = "0.1.0"
+dependencies = [
+ "database",
 ]
 
 [[package]]

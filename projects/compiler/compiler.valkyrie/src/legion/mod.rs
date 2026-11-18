@@ -1,15 +1,24 @@
 #![doc = include_str!("readme.md")]
 #![deny(missing_docs)]
 
+pub mod api;
 pub mod artifact_formats;
+pub mod cache;
+pub mod cmds;
 pub mod error;
 pub mod forward;
+pub mod runner;
 pub mod targets;
 pub mod unity_export;
 pub mod von;
 pub mod workspace;
 
+pub use api::{
+    CompileOptions, CompilerSession, LegionBuildPlan, LegionCompileReport, LegionDiagnostic, LegionSemanticGroupSummary, LegionStage,
+    LegionStageStatus, PlanRequest, compile, compile_project, plan,
+};
 pub use artifact_formats::{artifact_format_from_extension, artifact_format_slug, artifact_formats_for_publish_format};
+pub use cmds::spy::{SpyMode, SpyOptions, SpyTargetOptions, SpyTargetPlatform, run as run_spy};
 pub use error::{LegionError, LegionResult};
 pub use workspace::{
     BuildPluginSpec, BuildTargetSpec, DependencySpec, LocalLegionConfig, ProjectArtifactKind, ProjectManifest, PublishTargetSpec,

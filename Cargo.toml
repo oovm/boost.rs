@@ -70,6 +70,10 @@ members = [
     "projects/database/facades/mongo",
     "projects/database/facades/postgres",
     "projects/database/facades/sqlite",
+    "projects/database/facades/yydb",
+    "projects/database/facades/yydb-client",
+    "projects/database/facades/yyds",
+    "projects/database/facades/yyds-client",
     "projects/document/document",
     "projects/document/document.compose",
     "projects/document/document.convert",
@@ -136,6 +140,8 @@ members = [
     "projects/media/media.voice",
     "projects/media/media.voxel",
     "projects/package/package.cache",
+    "projects/package/package.manager",
+    "projects/package/package.publish",
     "projects/package/package.registry",
     "projects/package/package.resolve",
     "projects/odm/odm",
@@ -354,6 +360,8 @@ media-voice = { path = "projects/media/media.voice" }
 media-voxel = { path = "projects/media/media.voxel" }
 
 package-cache = { path = "projects/package/package.cache" }
+package-manager = { path = "projects/package/package.manager" }
+package-publish = { path = "projects/package/package.publish" }
 package-registry = { path = "projects/package/package.registry" }
 package-resolve = { path = "projects/package/package.resolve" }
 
@@ -408,6 +416,10 @@ unicode-width = { path = "projects/unicode/unicode.width" }
 mongo = { path = "projects/database/facades/mongo" }
 postgres = { path = "projects/database/facades/postgres" }
 sqlite = { path = "projects/database/facades/sqlite" }
+yydb = { path = "projects/database/facades/yydb" }
+yydb-client = { path = "projects/database/facades/yydb-client" }
+yyds = { path = "projects/database/facades/yyds" }
+yyds-client = { path = "projects/database/facades/yyds-client" }
 
 # schema 能力树
 schema-input-vos = { path = "projects/schema/schema.input.vos" }
@@ -506,6 +518,7 @@ acorn-core = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "20
 acorn-dex = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "beccbdf77374dbb2ca67395be19af3e2048c57ca" }
 acorn-host = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "beccbdf77374dbb2ca67395be19af3e2048c57ca" }
 acorn-mach-o = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "beccbdf77374dbb2ca67395be19af3e2048c57ca" }
+acorn-x64 = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "beccbdf77374dbb2ca67395be19af3e2048c57ca" }
 acorn-zip = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "beccbdf77374dbb2ca67395be19af3e2048c57ca" }
 acorn-codec = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "2033ca05fcdc74d8484b1426beb4c204ef2fc613", default-features = false, features = ["compression"] }
 acorn-doc = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "2033ca05fcdc74d8484b1426beb4c204ef2fc613" }

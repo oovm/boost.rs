@@ -16,7 +16,12 @@ acorn-dex = { workspace = true }
 acorn-host = { workspace = true }
 acorn-jvm = { workspace = true }
 acorn-mach-o = { workspace = true }
+acorn-odin = { workspace = true }
+acorn-pe = { workspace = true }
+acorn-wasm = { workspace = true }
+acorn-x64 = { workspace = true }
 acorn-zip = { workspace = true }
+base64 = { workspace = true }
 boost-harness = { workspace = true }
 compiler-analysis = { workspace = true }
 compiler-emitter = { workspace = true }
@@ -34,3 +39,6 @@ package-resolve = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+
+[dev-dependencies]
+boost-fs = { workspace = true }
