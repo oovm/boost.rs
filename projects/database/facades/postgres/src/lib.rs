@@ -11,9 +11,12 @@
 //! local `query` and a `psql`/`sqlx` client observe identical behavior.
 //!
 //! Boundaries that remain explicit upstream work (rejected here, never faked):
-//! * Server-side authentication and TLS: an `authentication` request is served
-//!   by [`PostgreSQL::listen_with`]; TLS stays unimplemented, so a client that
-//!   requires it keeps talking plaintext loopback.
+//! * Remote binds: the engine serves loopback only, so a client that needs a
+//!   shared host keeps talking to a local gateway.
+//!
+//! TLS is closed: [`PostgreSQL::listen_secure`] answers `SSLRequest` with `S` and
+//! runs the protocol inside the tunnel, `listen`/`listen_with` keep answering `N`
+//! so a client without a configured certificate falls back to plaintext.
 //!
 //! SQL schema persistence is closed: DDL applies to a registry persisted as
 //! `<data-dir>/schema.json`, so a restart reads the same tables back.
@@ -40,8 +43,8 @@ use database_execution::pgsql::{
     PgsqlSqlRuntime, StatementOutcome, TransactionControl, TransactionSession, dispatch_statement,
 };
 use database_query::SqlSchemaRegistry;
-use database_server::yyds::pgsql::PgAuthentication;
-use database_server::yyds::pgsql::connection::serve_cancellable_with_auth;
+use database_server::yyds::pgsql::connection::serve_cancellable_with_auth_and_tls;
+use database_server::yyds::pgsql::{PgAuthentication, PgTls};
 use database_storage::cluster_kv::FileShard;
 use database_types::cluster::{ShardEpoch, ShardId};
 
@@ -55,6 +58,9 @@ pub use database_query::{SqlColumn, SqlValue};
 
 /// Authentication a listener requires before statements run.
 pub use database_server::yyds::pgsql::PgAuthentication as Authentication;
+
+/// Server TLS certificate and key a listener offers on `SSLRequest`.
+pub use database_server::yyds::pgsql::PgTls as Tls;
 
 /// Remote PostgreSQL-compatible client. Construction and semantics stay owned
 /// by `database.client`; the facade re-exports it so the product surface has a
@@ -308,6 +314,15 @@ impl PostgreSQL {
     /// Starts a listener that authenticates every client with `auth` before any
     /// statement runs.
     pub fn listen_with(&self, endpoint: SocketAddr, auth: PgAuthentication) -> Result<Listener, Error> {
+        self.listen_inner(endpoint, auth, None)
+    }
+
+    /// Starts a listener that offers `tls` to a client's `SSLRequest`.
+    pub fn listen_secure(&self, endpoint: SocketAddr, auth: PgAuthentication, tls: PgTls) -> Result<Listener, Error> {
+        self.listen_inner(endpoint, auth, Some(Arc::new(tls)))
+    }
+
+    fn listen_inner(&self, endpoint: SocketAddr, auth: PgAuthentication, tls: Option<Arc<PgTls>>) -> Result<Listener, Error> {
         if !endpoint.ip().is_loopback() {
             return Err(Error::Unsupported(
                 "the gateway accepts loopback connections only until TLS lands upstream".to_owned(),
@@ -329,8 +344,15 @@ impl PostgreSQL {
                         let conn_runtime = Arc::clone(&runtime);
                         let conn_stopping = Arc::clone(&acceptor);
                         let conn_auth = auth.clone();
+                        let conn_tls = tls.clone();
                         thread::spawn(move || {
-                            let _ = serve_cancellable_with_auth(stream, Arc::clone(&conn_stopping), Some(conn_runtime), conn_auth);
+                            let _ = serve_cancellable_with_auth_and_tls(
+                                stream,
+                                Arc::clone(&conn_stopping),
+                                Some(conn_runtime),
+                                conn_auth,
+                                conn_tls,
+                            );
                         });
                     }
                     Err(error) if error.kind() == io::ErrorKind::WouldBlock => thread::sleep(Duration::from_millis(5)),

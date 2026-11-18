@@ -61,6 +61,17 @@ pub fn serve_connection_with_auth(
     runtime: Option<Arc<PgsqlSqlRuntime>>,
     auth: PgAuthentication,
 ) -> io::Result<()> {
+    serve_connection_with_auth_and_tls(stream, runtime, auth, None)
+}
+
+/// Establishes a protocol-v3 session that authenticates with `auth` and offers
+/// the configured TLS certificate on `SSLRequest`.
+pub fn serve_connection_with_auth_and_tls(
+    stream: TcpStream,
+    runtime: Option<Arc<PgsqlSqlRuntime>>,
+    auth: PgAuthentication,
+    tls: Option<Arc<super::tls::PgTls>>,
+) -> io::Result<()> {
     if !stream.peer_addr()?.ip().is_loopback() {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
@@ -69,8 +80,12 @@ pub fn serve_connection_with_auth(
     }
     stream.set_read_timeout(Some(Duration::from_secs(30)))?;
     stream.set_write_timeout(Some(Duration::from_secs(30)))?;
-    serve_session(stream, runtime, Some(Arc::new(auth)))
+    serve_session_with_tls(Box::new(stream), runtime, Some(Arc::new(auth)), tls)
 }
+
+/// Byte stream a protocol-v3 session runs over: a plain socket or a TLS tunnel.
+trait SessionStream: Read + Write {}
+impl<T: Read + Write> SessionStream for T {}
 
 /// Serves a loopback session with cooperative service-stop cancellation.
 pub fn serve_cancellable(stream: TcpStream, stopping: Arc<AtomicBool>, runtime: Option<Arc<PgsqlSqlRuntime>>) -> io::Result<()> {
@@ -85,6 +100,18 @@ pub fn serve_cancellable_with_auth(
     runtime: Option<Arc<PgsqlSqlRuntime>>,
     auth: PgAuthentication,
 ) -> io::Result<()> {
+    serve_cancellable_with_auth_and_tls(stream, stopping, runtime, auth, None)
+}
+
+/// Serves a loopback session with cooperative service-stop cancellation, the
+/// configured authentication method and TLS.
+pub fn serve_cancellable_with_auth_and_tls(
+    stream: TcpStream,
+    stopping: Arc<AtomicBool>,
+    runtime: Option<Arc<PgsqlSqlRuntime>>,
+    auth: PgAuthentication,
+    tls: Option<Arc<super::tls::PgTls>>,
+) -> io::Result<()> {
     if !stream.peer_addr()?.ip().is_loopback() {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
@@ -92,32 +119,39 @@ pub fn serve_cancellable_with_auth(
         ));
     }
     stream.set_nonblocking(true)?;
-    serve_session(CancellableSocket { stream, stopping }, runtime, Some(Arc::new(auth)))
+    serve_session_with_tls(Box::new(CancellableSocket { stream, stopping }), runtime, Some(Arc::new(auth)), tls)
 }
 
-fn serve_session(
-    mut stream: impl Read + Write,
+/// Outcome of the startup exchange before the session starts.
+enum StartupOutcome {
+    /// The client sent a protocol-v3 `StartupMessage`.
+    Parameters(StartupParameters),
+    /// The client sent an `SSLRequest` and a certificate is configured.
+    Upgrade(Arc<super::tls::PgTls>),
+    /// The client asked to cancel a running query.
+    Cancelled,
+    /// A fatal startup failure was already rendered for the client.
+    Fatal,
+}
+
+fn serve_session_with_tls(
+    mut stream: Box<dyn SessionStream>,
     runtime: Option<Arc<PgsqlSqlRuntime>>,
     auth: Option<Arc<PgAuthentication>>,
+    tls: Option<Arc<super::tls::PgTls>>,
 ) -> io::Result<()> {
     let mut pending = Vec::new();
     let mut session = TransactionSession::new();
-    let parameters = loop {
-        let packet = read_startup(&mut stream, &mut pending)?;
-        match packet.code {
-            SSL_REQUEST | GSSENC_REQUEST => stream.write_all(b"N")?,
-            CANCEL_REQUEST => return Ok(()),
-            PROTOCOL_V3 => match StartupParameters::parse(&packet.payload) {
-                Ok(parameters) => break parameters,
-                Err(error) => {
-                    write_fatal(&mut stream, "08P01", &format_startup_error(error))?;
-                    return Ok(());
-                }
-            },
-            _ => {
-                write_fatal(&mut stream, "0A000", "unsupported PostgreSQL protocol version")?;
-                return Ok(());
-            }
+    let parameters = match read_startup_outcome(&mut stream, &mut pending, tls.as_ref())? {
+        StartupOutcome::Parameters(parameters) => parameters,
+        StartupOutcome::Cancelled | StartupOutcome::Fatal => return Ok(()),
+        StartupOutcome::Upgrade(tls) => {
+            // `S` promises the TLS handshake; the same session loop then runs over
+            // the tunnel, and a client that speaks plaintext into it fails the
+            // handshake instead of reaching SQL.
+            stream.write_all(b"S")?;
+            let mut secured = rustls::StreamOwned::new(tls.server_connection()?, stream);
+            return serve_session_with_tls(Box::new(secured), runtime, auth, None);
         }
     };
 
@@ -226,6 +260,40 @@ fn serve_session(
             _ => {
                 write_error_response(&mut stream, "08P01", "unsupported PostgreSQL frontend message")?;
                 send_ready(&mut stream, &mut session)?;
+            }
+        }
+    }
+}
+
+/// Reads startup packets until one of them either starts the session or asks
+/// for a TLS upgrade.
+///
+/// `SSLRequest` is answered `N` when no certificate is configured, which is the
+/// documented `psql` fallback, and answered by the caller with `S` when one is.
+fn read_startup_outcome(
+    stream: &mut (impl Read + Write),
+    pending: &mut Vec<u8>,
+    tls: Option<&Arc<super::tls::PgTls>>,
+) -> io::Result<StartupOutcome> {
+    loop {
+        let packet = read_startup(stream, pending)?;
+        match packet.code {
+            SSL_REQUEST => match tls {
+                Some(tls) => return Ok(StartupOutcome::Upgrade(Arc::clone(tls))),
+                None => stream.write_all(b"N")?,
+            },
+            GSSENC_REQUEST => stream.write_all(b"N")?,
+            CANCEL_REQUEST => return Ok(StartupOutcome::Cancelled),
+            PROTOCOL_V3 => match StartupParameters::parse(&packet.payload) {
+                Ok(parameters) => return Ok(StartupOutcome::Parameters(parameters)),
+                Err(error) => {
+                    write_fatal(stream, "08P01", &format_startup_error(error))?;
+                    return Ok(StartupOutcome::Fatal);
+                }
+            },
+            _ => {
+                write_fatal(stream, "0A000", "unsupported PostgreSQL protocol version")?;
+                return Ok(StartupOutcome::Fatal);
             }
         }
     }

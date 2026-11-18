@@ -11,9 +11,11 @@ use database_types::{Error, Result, cluster::version};
 pub mod auth;
 pub mod connection;
 pub mod service;
+pub mod tls;
 pub mod wire;
 
 pub use auth::{AuthFailure, PgAuthentication};
+pub use tls::{PgTls, TlsError};
 
 /// Gateway kind implemented by this crate.
 pub const GATEWAY_KIND: GatewayKind = GatewayKind::Pgsql;
