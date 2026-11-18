@@ -249,6 +249,10 @@ pub struct SqlCatalogField {
     pub default: Option<String>,
     /// Inline `CHECK` expression text from local DDL, when declared.
     pub check: Option<String>,
+    /// Stored generated-column expression text from local DDL, when declared.
+    /// A non-`None` value means the planner computes the column's value and
+    /// rejects a direct write of it.
+    pub generated: Option<String>,
 }
 
 /// The gateway's immutable view of one published VOS catalog revision.
@@ -305,6 +309,7 @@ impl SqlCatalog {
                             capacity: None,
                             default: None,
                             check: None,
+                            generated: None,
                         })
                     })
                     .collect::<Result<Vec<_>, _>>()?;

@@ -28,8 +28,8 @@ use database_query::{
         projected_rows_equal, retain_distinct_projected_rows,
     },
     sql_planner::{
-        CheckConstraintPlan, ConflictAssignment, ConflictPolicy, DeletePlan, DeleteScanPlan, ForeignKeyPlan, IndexProbe, InsertSelectPlan,
-        JoinPlan, JoinSourcePlan, ReadPlan, ReturningProjections, ScalarPlan, ScanPlan, SetOperationPlan, SqlExecutionPlan,
+        CheckConstraintPlan, ConflictAssignment, ConflictPolicy, DeletePlan, DeleteScanPlan, ForeignKeyPlan, GeneratedColumnPlan, IndexProbe,
+        InsertSelectPlan, JoinPlan, JoinSourcePlan, ReadPlan, ReturningProjections, ScalarPlan, ScanPlan, SetOperationPlan, SqlExecutionPlan,
         UniqueConstraintPlan, UpdatePlan, UpdateScanPlan, WriteField, WritePlan, check_write_literal, pk_literal_to_rowid,
     },
 };

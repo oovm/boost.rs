@@ -619,6 +619,56 @@ fn plan_source_less_select(
     Ok(SqlExecutionPlan::Scalar(ScalarPlan { projections, suppress_row }))
 }
 
+/// 把表声明的存储生成列绑定成执行层对最终行求值的表达式。
+///
+/// 与 `CHECK` 一样，原文走正常前端绑定；绑定失败时整条语句报错，不会静默跳过
+/// 生成列、把客户端写入的旧值留在行里。
+fn plan_generated_columns(
+    table: &SqlCatalogTable,
+    catalog: &SqlCatalog,
+    dialect: SqlDialect,
+) -> Result<Vec<GeneratedColumnPlan>, SqlFrontendError> {
+    let mut plans = Vec::new();
+    let quoted = match dialect {
+        SqlDialect::Postgres => format!("\"{}\"", table.name),
+        SqlDialect::Mysql => format!("`{}`", table.name),
+    };
+    for field in table.fields.iter().filter(|field| field.generated.is_some()) {
+        let text = field.generated.as_deref().unwrap_or_default();
+        let source = format!("SELECT ({text}) FROM {quoted}");
+        let SqlCatalogBoundStatement::Select(select) = bind_sql_catalog(&source, catalog, catalog.schema_version(), dialect)? else {
+            return Err(SqlFrontendError::internal("generated column binding produced a non-SELECT statement"));
+        };
+        let projection = select
+            .projections
+            .into_iter()
+            .next()
+            .ok_or_else(|| SqlFrontendError::internal("generated column binding produced no projection"))?;
+        let SqlCatalogBoundProjection::Expression { expression, .. } = projection else {
+            return Err(SqlFrontendError::internal("generated column binding produced a star projection"));
+        };
+        if expression_has_subquery(&expression) {
+            return Err(SqlFrontendError::unsupported("subqueries are not allowed inside generated column expressions"));
+        }
+        plans.push(GeneratedColumnPlan {
+            field_id: field.field_id,
+            name: field.name.clone(),
+            field_type: field.field_type.clone(),
+            capacity: field.capacity,
+            expression,
+        });
+    }
+    Ok(plans)
+}
+
+/// 拒绝把值直接写进生成列。
+fn reject_generated_write(column: &str, table: &str, operation: &str) -> SqlFrontendError {
+    SqlFrontendError::new(
+        SqlErrorKind::GeneratedColumnWrite,
+        format!("cannot {operation} column `{column}` of table `{table}` because it is a generated column"),
+    )
+}
+
 /// 把表存储的 `CHECK` 原文（表级与列内联）绑定成执行层对最终行求值的表达式。
 ///
 /// 原文走正常前端绑定，拼成单投影的 `SELECT`；绑定失败（列被改名、表达式不再
@@ -717,12 +767,25 @@ pub fn plan_insert(insert: SqlCatalogBoundInsert, catalog: &SqlCatalog, dialect:
     let unique_constraints = unique_constraints_of(table);
     let check_constraints = plan_check_constraints(table, catalog, dialect)?;
     let foreign_keys = plan_foreign_keys(table, catalog)?;
+    let generated = plan_generated_columns(table, catalog, dialect)?;
+    // A generated column is produced by its stored expression, so an INSERT that
+    // names it is rejected exactly like PostgreSQL rejects it.
+    for target in &target_fields {
+        if generated.iter().any(|column| column.field_id == target.field_id) {
+            return Err(reject_generated_write(&target.field_name, &table.name, "insert into"));
+        }
+    }
+    if select.is_some() && !generated.is_empty() {
+        return Err(SqlFrontendError::unsupported(
+            "`INSERT ... SELECT` into a table with generated columns is not supported by the cluster SQL gateway",
+        ));
+    }
     // 真实 MySQL 对「INSERT 未点名、且列 NOT NULL 又无 DEFAULT」整条语句报 `1364`，
     // 而不是静默写入 NULL。带 DEFAULT 的缺列沿用读取路径的默认值回填，可空列缺列
     // 仍按缺失字段解码为 NULL；`AUTO_INCREMENT` 列在计划前已由 `apply_auto_increment`
     // 补进目标列，不会走到这里误报。
     for field in &table.fields {
-        if field.field_type.is_nullable() || field.default.is_some() {
+        if field.field_type.is_nullable() || field.default.is_some() || field.generated.is_some() {
             continue;
         }
         if target_fields.iter().any(|target| target.field_id == field.field_id) {
@@ -778,6 +841,7 @@ pub fn plan_insert(insert: SqlCatalogBoundInsert, catalog: &SqlCatalog, dialect:
             unique_constraints: unique_constraints.clone(),
             check_constraints: check_constraints.clone(),
             foreign_keys: foreign_keys.clone(),
+            generated: generated.clone(),
         });
     }
     if plans.len() == 1 { Ok(SqlExecutionPlan::Insert(plans.into_iter().next().unwrap())) } else { Ok(SqlExecutionPlan::MultiInsert(plans)) }
@@ -1016,9 +1080,13 @@ pub fn plan_update(update: SqlCatalogBoundUpdate, catalog: &SqlCatalog, dialect:
     let unique_constraints = unique_constraints_of(table);
     let check_constraints = plan_check_constraints(table, catalog, dialect)?;
     let foreign_keys = plan_foreign_keys(table, catalog)?;
+    let generated = plan_generated_columns(table, catalog, dialect)?;
 
     let mut write_fields = Vec::new();
     for (field, value_expr) in &update.assignments {
+        if generated.iter().any(|column| column.field_id == field.field_id) {
+            return Err(reject_generated_write(&field.field_name, &table.name, "update"));
+        }
         let field_type = field_types.get(&field.field_id).cloned().unwrap_or(crate::catalog_bind::SqlFieldType::Unknown);
         // 纯字面量右值保持计划期类型校验；算术、列引用与标量函数表达式由执行层
         // 对每个命中行按当前行值求值，再走同一 `check_write_literal` 守卫。
@@ -1047,6 +1115,7 @@ pub fn plan_update(update: SqlCatalogBoundUpdate, catalog: &SqlCatalog, dialect:
             unique_constraints,
             check_constraints,
             foreign_keys,
+            generated,
         }));
     };
 
@@ -1063,6 +1132,7 @@ pub fn plan_update(update: SqlCatalogBoundUpdate, catalog: &SqlCatalog, dialect:
             unique_constraints,
             check_constraints,
             foreign_keys,
+            generated,
         }));
     }
     let (rowid_after, rowid_before) = pk_scan_bounds(is_integer_primary_key(pk_field), lower, upper);
@@ -1077,6 +1147,7 @@ pub fn plan_update(update: SqlCatalogBoundUpdate, catalog: &SqlCatalog, dialect:
         unique_constraints,
         check_constraints,
         foreign_keys,
+        generated,
     }))
 }
 
@@ -1536,10 +1607,29 @@ pub struct WritePlan {
     pub check_constraints: Vec<CheckConstraintPlan>,
     /// 该表声明的 `FOREIGN KEY` 约束，执行层在发布行前点查父表。
     pub foreign_keys: Vec<ForeignKeyPlan>,
+    /// 该表声明的存储生成列，执行层对最终行求值后写入该列。
+    pub generated: Vec<GeneratedColumnPlan>,
+}
+
+/// 规划期绑定的一条 `GENERATED ... AS (expression) STORED` 列。
+///
+/// 表达式来自 DDL 存储的原文，经前端重新绑定；执行层在行写入前对它求值，
+/// 因此客户端不能直接写入该列（规划期按 `428C9` 拒绝）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GeneratedColumnPlan {
+    /// 生成列的字段标识。
+    pub field_id: u64,
+    /// 生成列名，诊断信息用。
+    pub name: String,
+    /// 生成列声明的类型，执行层编码校验用。
+    pub field_type: crate::catalog_bind::SqlFieldType,
+    /// 生成列声明的字符/octet 容量。
+    pub capacity: Option<u32>,
+    /// 已绑定到表列的生成表达式。
+    pub expression: SqlCatalogBoundExpression,
 }
 
 /// 规划期绑定的一条 `CHECK` 约束。
-///
 /// 表达式来自 DDL 存储的原文，经前端重新绑定；执行层对最终行求值，遵循 SQL
 /// 三值逻辑：只有 FALSE 违反，`NULL` 通过（与 PostgreSQL 一致）。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1669,6 +1759,8 @@ pub struct UpdatePlan {
     pub check_constraints: Vec<CheckConstraintPlan>,
     /// 该表声明的 `FOREIGN KEY` 约束，执行层在发布行前点查父表。
     pub foreign_keys: Vec<ForeignKeyPlan>,
+    /// 该表声明的存储生成列，执行层对改写后的最终行求值后写入该列。
+    pub generated: Vec<GeneratedColumnPlan>,
 }
 
 /// UPDATE 的一条 SET 赋值。
@@ -1758,6 +1850,8 @@ pub struct UpdateScanPlan {
     pub check_constraints: Vec<CheckConstraintPlan>,
     /// 该表声明的 `FOREIGN KEY` 约束，执行层在发布行前点查父表。
     pub foreign_keys: Vec<ForeignKeyPlan>,
+    /// 该表声明的存储生成列，执行层对改写后的最终行求值后写入该列。
+    pub generated: Vec<GeneratedColumnPlan>,
 }
 
 /// 多行 DELETE 执行计划：扫描 rowid 区间，逐行评估完整 WHERE 后删除。

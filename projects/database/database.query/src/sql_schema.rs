@@ -106,6 +106,10 @@ pub(crate) struct SchemaField {
     /// Inline `CHECK` expression text, stored as written inside the
     /// parentheses and re-parsed by the SQL frontend when a write validates it.
     pub(crate) check: Option<String>,
+    /// Stored generated-column expression text. A non-`None` value means the
+    /// column is computed from the row on every write and cannot be written
+    /// directly.
+    pub(crate) generated: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -307,6 +311,7 @@ impl SqlSchemaRegistry {
                         auto_increment: false,
                         next_value: 1,
                         check: None,
+                        generated: None,
                     })
                     .collect(),
             })
@@ -542,6 +547,7 @@ fn catalog_from_state(state: &RegistryState) -> SqlCatalog {
                         capacity: field.capacity,
                         default: field.default.clone(),
                         check: field.check.clone(),
+                        generated: field.generated.clone(),
                     })
                     .collect(),
                 unique_constraints,
@@ -620,6 +626,44 @@ fn resolve_foreign_key(
         on_delete: reference.on_delete.clone(),
         on_update: reference.on_update.clone(),
     })
+}
+
+/// Rejects a generated column declaration the gateway cannot honour.
+///
+/// The expression must be non-empty, the column cannot own a value sequence,
+/// cannot carry a `DEFAULT` and cannot be part of the primary key, which are
+/// exactly the combinations PostgreSQL itself refuses.
+fn validate_generated_column(
+    table: &str,
+    column: &crate::sql_ddl::DdlColumn,
+    expression: &str,
+    primary_key: &[String],
+) -> Result<(), SqlFrontendError> {
+    if expression.trim().is_empty() {
+        return Err(SqlFrontendError::syntax(format!(
+            "generated column `{}` of table `{table}` declares an empty expression",
+            column.name
+        )));
+    }
+    if column.auto_increment {
+        return Err(SqlFrontendError::syntax(format!(
+            "generated column `{}` of table `{table}` cannot own a value sequence",
+            column.name
+        )));
+    }
+    if column.default.is_some() {
+        return Err(SqlFrontendError::syntax(format!(
+            "generated column `{}` of table `{table}` cannot declare a DEFAULT",
+            column.name
+        )));
+    }
+    if column.inline_primary_key || primary_key.iter().any(|candidate| candidate == &column.name) {
+        return Err(SqlFrontendError::syntax(format!(
+            "generated column `{}` of table `{table}` cannot be part of the primary key",
+            column.name
+        )));
+    }
+    Ok(())
 }
 
 fn apply_ddl(state: &mut RegistryState, statement: &SqlDdlStatement) -> Result<(SqlDdlOutcome, bool), SqlFrontendError> {
@@ -704,6 +748,9 @@ fn apply_ddl(state: &mut RegistryState, statement: &SqlDdlStatement) -> Result<(
             }
             let mut fields = Vec::with_capacity(columns.len());
             for column in columns {
+                if let Some(expression) = &column.generated {
+                    validate_generated_column(name, column, expression, &primary)?;
+                }
                 let (base, capacity) = column_type(column, name)?;
                 let not_null = column.not_null || primary.iter().any(|candidate| candidate == &column.name);
                 let field_type = if not_null { base } else { SqlFieldType::Optional(Box::new(base)) };
@@ -719,6 +766,7 @@ fn apply_ddl(state: &mut RegistryState, statement: &SqlDdlStatement) -> Result<(
                     auto_increment: column.auto_increment,
                     next_value: 1,
                     check: column.check.clone(),
+                    generated: column.generated.clone(),
                 });
             }
             let type_id = state.next_type_id;
@@ -759,6 +807,9 @@ fn apply_ddl(state: &mut RegistryState, statement: &SqlDdlStatement) -> Result<(
                 let key = resolve_foreign_key(state, table, std::slice::from_ref(&column.name), reference)?;
                 state.tables[index].foreign_keys.push(key);
             }
+            if let Some(expression) = &column.generated {
+                validate_generated_column(table, column, expression, &state.tables[index].primary_key.clone())?;
+            }
             let (base, capacity) = column_type(column, table)?;
             let not_null = column.not_null || column.inline_primary_key;
             let field_type = if not_null { base } else { SqlFieldType::Optional(Box::new(base)) };
@@ -774,6 +825,7 @@ fn apply_ddl(state: &mut RegistryState, statement: &SqlDdlStatement) -> Result<(
                 auto_increment: column.auto_increment,
                 next_value: 1,
                 check: column.check.clone(),
+                generated: column.generated.clone(),
             });
             if column.inline_primary_key {
                 state.tables[index].primary_key.push(column.name.clone());
@@ -997,6 +1049,26 @@ fn validate_state(state: &RegistryState) -> Result<(), SqlFrontendError> {
                     )));
                 }
             }
+            if let Some(expression) = &field.generated {
+                if expression.trim().is_empty() {
+                    return Err(SqlFrontendError::internal(format!(
+                        "SQL schema field `{}` of table `{}` declares an empty generated expression",
+                        field.name, table.name
+                    )));
+                }
+                if field.auto_increment {
+                    return Err(SqlFrontendError::internal(format!(
+                        "SQL schema field `{}` of table `{}` is generated and owns a sequence",
+                        field.name, table.name
+                    )));
+                }
+                if table.primary_key.iter().any(|column| column == &field.name) {
+                    return Err(SqlFrontendError::internal(format!(
+                        "SQL schema field `{}` of table `{}` is generated and part of the primary key",
+                        field.name, table.name
+                    )));
+                }
+            }
         }
         for constraint in &table.unique_constraints {
             if constraint.is_empty() {
@@ -1135,6 +1207,8 @@ struct FieldDocument {
     #[serde(default = "initial_next_value")]
     next_value: u64,
     check: Option<String>,
+    #[serde(default)]
+    generated: Option<String>,
 }
 
 /// First value handed out by a freshly created owned sequence.
@@ -1243,6 +1317,7 @@ impl SchemaDocument {
                             auto_increment: field.auto_increment,
                             next_value: field.next_value,
                             check: field.check.clone(),
+                            generated: field.generated.clone(),
                         })
                         .collect(),
                 })
@@ -1305,6 +1380,7 @@ impl SchemaDocument {
                                 auto_increment: field.auto_increment,
                                 next_value: field.next_value,
                                 check: field.check,
+                                generated: field.generated,
                             }
                         })
                         .collect(),

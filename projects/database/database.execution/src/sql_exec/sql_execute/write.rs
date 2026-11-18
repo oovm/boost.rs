@@ -30,7 +30,8 @@ pub(crate) fn insert_row_if_absent(
     do_nothing: bool,
     dialect: SqlDialect,
 ) -> Result<SqlResult, SqlFrontendError> {
-    let row = write_plan_to_row(plan)?;
+    let mut row = write_plan_to_row(plan)?;
+    apply_generated(&plan.generated, &plan.field_types, &mut row, dialect)?;
     let namespace = Namespace(plan.namespace.clone());
     let mut indexes = IndexMaintenance::open(executor, transaction, &plan.namespace, &plan.unique_constraints, &plan.field_types)?;
     // 唯一性复核与索引回填共用同一次全表快照；没有唯一约束时两者都不需要。
@@ -97,7 +98,8 @@ pub(crate) fn upsert_row(
         let (target_rowid, existing_bytes) = match existing_bytes {
             Some(bytes) => (plan.rowid.clone(), bytes),
             None => {
-                let proposed = write_plan_to_row(plan)?;
+                let mut proposed = write_plan_to_row(plan)?;
+                apply_generated(&plan.generated, &plan.field_types, &mut proposed, dialect)?;
                 match find_unique_conflict(executor, transaction, &plan.namespace, &plan.unique_constraints, &proposed)? {
                     Some((rowid, bytes)) => (rowid, bytes),
                     None => {
@@ -475,10 +477,9 @@ fn fold_insert_plans(
                     ));
                 }
                 order.push(plan.rowid.clone());
-                folded.insert(
-                    plan.rowid.clone(),
-                    BatchedRow { current: Some(write_plan_to_row(plan)?), applied: true, condition: CommitCondition::PutIfAbsent },
-                );
+                let mut current = write_plan_to_row(plan)?;
+                apply_generated(&plan.generated, &plan.field_types, &mut current, dialect)?;
+                folded.insert(plan.rowid.clone(), BatchedRow { current: Some(current), applied: true, condition: CommitCondition::PutIfAbsent });
             }
             Some(ConflictPolicy::DoNothing) => {
                 if folded.contains_key(&plan.rowid) {
@@ -487,7 +488,11 @@ fn fold_insert_plans(
                 let existing = preimages.get(&plan.rowid).cloned().flatten();
                 let (current, applied) = match &existing {
                     Some(bytes) => (Some(decode_row(bytes)?), false),
-                    None => (Some(write_plan_to_row(plan)?), true),
+                    None => {
+                        let mut row = write_plan_to_row(plan)?;
+                        apply_generated(&plan.generated, &plan.field_types, &mut row, dialect)?;
+                        (Some(row), true)
+                    }
                 };
                 order.push(plan.rowid.clone());
                 folded.insert(plan.rowid.clone(), BatchedRow { current, applied, condition: CommitCondition::PutIfAbsent });
@@ -509,7 +514,9 @@ fn fold_insert_plans(
                 let entry = folded.get_mut(&plan.rowid).expect("entry inserted above");
                 match &entry.current {
                     None => {
-                        entry.current = Some(write_plan_to_row(plan)?);
+                        let mut row = write_plan_to_row(plan)?;
+                        apply_generated(&plan.generated, &plan.field_types, &mut row, dialect)?;
+                        entry.current = Some(row);
                         entry.applied = true;
                     }
                     Some(existing_row) => {
@@ -591,6 +598,9 @@ pub(crate) fn conflict_updated_row(
             None => row.remove(field_id),
         }
     }
+    // A stored generated column is recomputed from the updated row, exactly as
+    // PostgreSQL does on every write that touches the row.
+    apply_generated(&plan.generated, &plan.field_types, &mut row, dialect)?;
     Ok(Some(row))
 }
 
@@ -635,6 +645,7 @@ pub(crate) fn execute_insert_select(
             unique_constraints: plan.unique_constraints.clone(),
             check_constraints: plan.check_constraints.clone(),
             foreign_keys: plan.foreign_keys.clone(),
+            generated: Vec::new(),
         });
     }
     // 没有冲突策略时，源行之间与目标表内都不能出现重复主键或次要 `UNIQUE`，
@@ -760,6 +771,7 @@ pub(crate) fn execute_update(
             None => row.remove(field_id),
         }
     }
+    apply_generated(&plan.generated, &plan.field_types, &mut row, dialect)?;
     if let Some(constraint) =
         unique_conflict_on_write(executor, transaction, &plan.namespace, &plan.unique_constraints, &row, Some(&plan.rowid))?
     {
@@ -950,6 +962,7 @@ pub(crate) fn execute_update_scan(
                 None => row.remove(field_id),
             }
         }
+        apply_generated(&plan.generated, &plan.field_types, &mut row, dialect)?;
         if !plan.unique_constraints.is_empty() {
             if unique_snapshot.is_none() {
                 let stored = scan_rows(executor, transaction, &namespace, &[], None, None, 0, "unique_check")?;
@@ -1212,6 +1225,58 @@ pub(crate) fn unique_conflict_on_write(
     unique_conflict_in_snapshot(constraints, candidate, excluded_rowid, &[], &stored)
 }
 
+/// 对最终行求值存储生成列，覆盖客户端不可能提供的值。
+///
+/// 在唯一性复核、`CHECK`/`FOREIGN KEY` 校验与落库之前调用，因此约束看到的是
+/// 生成列的最终值，与 PostgreSQL 的「先算生成列、再校验」顺序一致。
+pub(crate) fn apply_generated(
+    generated: &[GeneratedColumnPlan],
+    field_types: &BTreeMap<u64, database_query::catalog_bind::SqlFieldType>,
+    row: &mut RowFieldValues,
+    dialect: SqlDialect,
+) -> Result<(), SqlFrontendError> {
+    for column in generated {
+        let value = eval_expression(&column.expression, row, field_types, dialect)?;
+        let literal = value_to_literal(value);
+        check_write_literal(&literal, &column.field_type, &column.name, dialect, column.capacity)?;
+        match sql_value_to_bytes(&literal, &column.field_type)? {
+            Some(bytes) => {
+                row.insert(column.field_id, bytes);
+            }
+            None => {
+                row.remove(column.field_id);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `ALTER TABLE ... ADD COLUMN ... GENERATED ... STORED` 回填：为既有行计算新列。
+///
+/// 行与它的索引条目仍走同一条语句变更集，因此在一次 durable commit 内发布：
+/// 中途失败不会留下「列已注册、旧行没有生成值」的半状态。
+pub(crate) fn backfill_generated_column(
+    executor: &dyn KeyValueExecutor,
+    transaction: Option<&dyn TransactionHandle>,
+    namespace: &str,
+    column: &GeneratedColumnPlan,
+    field_types: &BTreeMap<u64, database_query::catalog_bind::SqlFieldType>,
+    dialect: SqlDialect,
+) -> Result<u64, SqlFrontendError> {
+    let namespace = Namespace(namespace.to_string());
+    let scanned = scan_rows(executor, transaction, &namespace, &[], None, None, 0, "generated_backfill")?;
+    let mut changes = Vec::with_capacity(scanned.len());
+    for (rowid, pre_image) in scanned {
+        let mut row = decode_row(&pre_image)?;
+        apply_generated(std::slice::from_ref(column), field_types, &mut row, dialect)?;
+        changes.push(StatementChange {
+            command: KeyValueCommand { namespace: namespace.clone(), key: rowid, action: KeyValueAction::Put(encode_row(&row)) },
+            pre_image,
+        });
+    }
+    apply_statement_changes(executor, transaction, changes, Vec::new(), &namespace, "generated_backfill")
+}
+
 /// `CHECK` 与 `FOREIGN KEY` 的最终行值门禁：写命令进入提交边界前逐条复核。
 ///
 /// `CHECK` 遵循 SQL 三值逻辑，只有 FALSE 违反，`NULL` 通过（与 PostgreSQL 一致）。
@@ -1229,14 +1294,12 @@ pub(crate) fn enforce_row_guards(
     for check in check_constraints {
         let value = eval_expression(&check.expression, row, field_types, dialect)?;
         if sql_truth(&value) == Some(false) {
-            return Err(SqlFrontendError::new(
-                SqlErrorKind::CheckViolation,
-                format!("new row violates check constraint: {}", check.text),
-            ));
+            return Err(SqlFrontendError::new(SqlErrorKind::CheckViolation, format!("new row violates check constraint: {}", check.text)));
         }
     }
     for key in foreign_keys {
-        let Some(value) = row.value_typed(key.column, field_types) else {
+        let Some(value) = row.value_typed(key.column, field_types)
+        else {
             continue;
         };
         if matches!(value, SqlValue::Null) {
@@ -1258,7 +1321,10 @@ pub(crate) fn duplicate_key_error(constraint: &str) -> SqlFrontendError {
     SqlFrontendError::new(SqlErrorKind::DuplicateKey, format!("duplicate key value violates unique constraint {constraint}"))
 }
 
-pub(crate) fn sql_value_to_bytes(lit: &SqlBoundLiteral, field_type: &database_query::catalog_bind::SqlFieldType) -> Result<Option<Vec<u8>>, SqlFrontendError> {
+pub(crate) fn sql_value_to_bytes(
+    lit: &SqlBoundLiteral,
+    field_type: &database_query::catalog_bind::SqlFieldType,
+) -> Result<Option<Vec<u8>>, SqlFrontendError> {
     // 存储形态由列类型决定：uuid 文本转成 16 字节原文，其余类型保留原有字节。
     field_type.storage_bytes_of(lit)
 }
@@ -1284,6 +1350,7 @@ mod tests {
             unique_constraints: constraints.to_vec(),
             check_constraints: Vec::new(),
             foreign_keys: Vec::new(),
+            generated: Vec::new(),
         }
     }
 

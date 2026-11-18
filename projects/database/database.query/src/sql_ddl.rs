@@ -127,6 +127,10 @@ pub struct DdlColumn {
     pub check: Option<String>,
     /// Inline `REFERENCES` clause, when written.
     pub reference: Option<DdlReference>,
+    /// Stored generated-column expression text, when the column declared
+    /// `GENERATED ALWAYS AS (expression) STORED`. The expression is re-parsed by
+    /// the SQL frontend on every write, so the registry only stores the text.
+    pub generated: Option<String>,
 }
 
 /// One `REFERENCES table [(column)] [ON DELETE action] [ON UPDATE action]`
@@ -765,6 +769,7 @@ impl Parser {
         let mut default = None;
         let mut check = None;
         let mut reference = None;
+        let mut generated = None;
         loop {
             match self.peek_keyword().as_deref() {
                 Some("NOT") => {
@@ -824,9 +829,13 @@ impl Parser {
                         }
                     }
                     else if self.peek_punct('(') {
-                        return Err(SqlFrontendError::unsupported(
-                            "`GENERATED ... AS (expression) STORED` columns are not supported by the cluster SQL gateway",
-                        ));
+                        generated = Some(self.capture_paren_group()?);
+                        // PostgreSQL only supports `STORED` for a generated
+                        // column, so a missing or `VIRTUAL` storage keyword is a
+                        // syntax error rather than a silent downgrade.
+                        if !self.eat_keyword("STORED") {
+                            return Err(SqlFrontendError::syntax("`GENERATED ... AS (expression)` requires `STORED`"));
+                        }
                     }
                     else {
                         return Err(SqlFrontendError::syntax("`GENERATED` requires `AS IDENTITY` or `AS (expression) STORED`"));
@@ -835,7 +844,18 @@ impl Parser {
                 _ => break,
             }
         }
-        Ok(DdlColumn { name, sql_type, not_null, inline_primary_key, inline_unique, auto_increment, default, check, reference })
+        Ok(DdlColumn {
+            name,
+            sql_type,
+            not_null,
+            inline_primary_key,
+            inline_unique,
+            auto_increment,
+            default,
+            check,
+            reference,
+            generated,
+        })
     }
 
     /// Captures one balanced parenthesised group as re-parseable SQL text.

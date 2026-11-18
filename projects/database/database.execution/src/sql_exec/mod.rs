@@ -2,3 +2,4 @@
 pub mod sql_execute;
 
 pub use sql_execute::execute_plan;
+pub(crate) use sql_execute::backfill_generated_column as backfill_generated_rows;

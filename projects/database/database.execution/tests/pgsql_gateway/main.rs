@@ -117,13 +117,51 @@ fn generated_identity_and_added_constraints_are_enforced() {
 }
 
 #[test]
-fn a_stored_generated_column_is_rejected_with_a_capability_error() {
-    let mut gateway = Gateway::new("ddl-generated");
-    let (code, message) = match gateway.sql("CREATE TABLE stored (id BIGINT PRIMARY KEY, total BIGINT GENERATED ALWAYS AS (id * 2) STORED)") {
-        Ok(_) => panic!("stored generated columns are not implemented yet"),
+fn stored_generated_columns_are_computed_on_every_write() {
+    let mut gateway = Gateway::new("generated");
+    gateway.command(
+        "CREATE TABLE stored (id BIGINT PRIMARY KEY, price BIGINT, total BIGINT GENERATED ALWAYS AS (price * 2) STORED)",
+    );
+    gateway.command("INSERT INTO stored (id, price) VALUES (1, 21)");
+    assert_eq!(gateway.scalar("SELECT total FROM stored WHERE id = 1"), SqlValue::Integer(42));
+    gateway.command("UPDATE stored SET price = 50 WHERE id = 1");
+    assert_eq!(gateway.scalar("SELECT total FROM stored WHERE id = 1"), SqlValue::Integer(100));
+    // Multi-row INSERT and a scan UPDATE go through the same computation.
+    gateway.command("INSERT INTO stored (id, price) VALUES (2, 1), (3, 2)");
+    assert_eq!(gateway.scalar("SELECT SUM(total)::int8 FROM stored"), SqlValue::Integer(106));
+    gateway.command("UPDATE stored SET price = price + 1");
+    assert_eq!(gateway.scalar("SELECT SUM(total)::int8 FROM stored"), SqlValue::Integer(112));
+
+    // `ALTER TABLE ... ADD COLUMN ... GENERATED` backfills existing rows.
+    gateway.command("ALTER TABLE stored ADD COLUMN doubled BIGINT GENERATED ALWAYS AS (price * 4) STORED");
+    assert_eq!(gateway.scalar("SELECT doubled FROM stored WHERE id = 1"), SqlValue::Integer(204));
+    assert_eq!(gateway.scalar("SELECT SUM(doubled)::int8 FROM stored"), SqlValue::Integer(224));
+}
+
+#[test]
+fn writing_a_generated_column_reports_the_generated_column_sqlstate() {
+    let mut gateway = Gateway::new("generated-errors");
+    gateway.command("CREATE TABLE stored (id BIGINT PRIMARY KEY, price BIGINT, total BIGINT GENERATED ALWAYS AS (price * 2) STORED)");
+    let (code, message) = match gateway.sql("INSERT INTO stored (id, price, total) VALUES (1, 10, 0)") {
+        Ok(_) => panic!("an INSERT naming a generated column must fail"),
         Err(error) => error,
     };
-    assert_eq!(code, "0A000", "unexpected message: {message}");
+    assert_eq!(code, "428C9", "unexpected message: {message}");
+
+    gateway.command("INSERT INTO stored (id, price) VALUES (1, 10)");
+    let (code, _) = match gateway.sql("UPDATE stored SET total = 1 WHERE id = 1") {
+        Ok(_) => panic!("an UPDATE assigning a generated column must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "428C9");
+
+    let (code, _) = match gateway.sql(
+        "CREATE TABLE broken (id BIGINT PRIMARY KEY, total BIGINT GENERATED ALWAYS AS (id * 2))",
+    ) {
+        Ok(_) => panic!("a generated column without `STORED` must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42601");
 }
 
 #[test]

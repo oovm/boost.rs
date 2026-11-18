@@ -89,6 +89,9 @@ pub enum SqlErrorKind {
     /// Text input does not parse as the requested cast target. PostgreSQL
     /// reports `22P02` and aborts the statement instead of returning `NULL`.
     InvalidTextRepresentation,
+    /// A statement tried to write a value into a generated column, which only
+    /// the stored expression may produce. PostgreSQL reports `428C9`.
+    GeneratedColumnWrite,
 }
 
 /// Structured failure from the Oak SQL frontend or gateway binder.

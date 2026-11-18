@@ -9,9 +9,10 @@
 use std::sync::Arc;
 
 use database_query::{
-    OnCommit, SqlColumn, SqlDdlStatement, SqlDialect, SqlErrorKind, SqlExecutionPlan, SqlFrontendError, SqlSessionCommand,
-    SqlTransactionAction, SqlValue, analyze_meta_query, apply_auto_increment, bind_sql_catalog, describe_plan, is_ddl_statement, parse_ddl,
-    parse_pg_utility, parse_session_command, plan_statement_for_dialect, rewrite_double_colon_casts, rewrite_pg_temp_references,
+    OnCommit, SqlCatalogBoundProjection, SqlCatalogBoundStatement, SqlColumn, SqlDdlStatement, SqlDialect, SqlErrorKind, SqlExecutionPlan,
+    SqlFrontendError, SqlSessionCommand, SqlTransactionAction, SqlValue, analyze_meta_query, apply_auto_increment, bind_sql_catalog,
+    describe_plan, is_ddl_statement, parse_ddl, parse_pg_utility, parse_session_command, plan_statement_for_dialect,
+    rewrite_double_colon_casts, rewrite_pg_temp_references,
 };
 
 use crate::cluster::TransactionHandle;
@@ -152,7 +153,12 @@ pub fn dispatch_statement(
                 runtime.schema.apply_ddl(&statement)
             };
             return match applied {
-                Ok(outcome) => Ok(StatementOutcome::Command(outcome.command_tag())),
+                Ok(outcome) => {
+                    if let Some(runtime) = runtime {
+                        backfill_added_generated_column(&statement, &outcome, session, runtime)?;
+                    }
+                    Ok(StatementOutcome::Command(outcome.command_tag()))
+                }
                 Err(error) => {
                     session.fail();
                     Err(StatementError::new(pg_sqlstate(error.kind), format!("SQL ddl error: {}", error.message)))
@@ -199,6 +205,77 @@ pub fn dispatch_statement(
 /// connection, so both entry points report it the same way.
 fn session_io_error(error: std::io::Error) -> StatementError {
     StatementError::new("XX000", error.to_string())
+}
+
+/// `ALTER TABLE ... ADD COLUMN ... GENERATED ... STORED`: computes the new column
+/// for every existing row right after the DDL lands.
+///
+/// PostgreSQL backfills generated columns inside the same statement, so the
+/// registry must never claim a generated column whose stored rows still carry
+/// no value. The backfill runs through the same change set as a statement
+/// write, so it publishes once and restores with a rolled-back block.
+fn backfill_added_generated_column(
+    statement: &SqlDdlStatement,
+    outcome: &database_query::SqlDdlOutcome,
+    session: &TransactionSession,
+    runtime: &Arc<PgsqlSqlRuntime>,
+) -> Result<(), StatementError> {
+    let SqlDdlStatement::AlterTableAddColumn { table, column, .. } = statement
+    else {
+        return Ok(());
+    };
+    let Some(expression) = &column.generated
+    else {
+        return Ok(());
+    };
+    if !matches!(outcome, database_query::SqlDdlOutcome::AlterTableAddColumn { added: true }) {
+        return Ok(());
+    }
+    let dialect = SqlDialect::Postgres;
+    let catalog = session.catalog(&runtime.schema);
+    let Some(table_entry) = catalog.tables().iter().find(|entry| &entry.name == table)
+    else {
+        return Err(StatementError::new("42P01", format!("relation \"{table}\" does not exist")));
+    };
+    let Some(field) = table_entry.fields.iter().find(|field| field.name == column.name.as_str())
+    else {
+        return Err(StatementError::new("42703", format!("column \"{}\" does not exist", column.name)));
+    };
+    let source = format!("SELECT ({expression}) FROM \"{}\"", table_entry.name);
+    let bound = bind_sql_catalog(&source, &catalog, catalog.schema_version(), dialect).map_err(|error| {
+        let (code, message) = statement_error("bind", error);
+        StatementError::new(code, message)
+    })?;
+    let SqlCatalogBoundStatement::Select(select) = bound
+    else {
+        return Err(StatementError::new("XX000", "generated column binding produced a non-SELECT statement"));
+    };
+    let Some(SqlCatalogBoundProjection::Expression { expression: bound_expression, .. }) = select.projections.into_iter().next()
+    else {
+        return Err(StatementError::new("XX000", "generated column binding produced no projection"));
+    };
+    let plan = database_query::GeneratedColumnPlan {
+        field_id: field.field_id,
+        name: field.name.clone(),
+        field_type: field.field_type.clone(),
+        capacity: field.capacity,
+        expression: bound_expression,
+    };
+    let field_types = table_entry.fields.iter().map(|field| (field.field_id, field.field_type.clone())).collect();
+    let namespace = format!("table:{}", table_entry.type_id);
+    crate::sql_exec::backfill_generated_rows(
+        runtime.executor.as_ref(),
+        session.transaction_handle(),
+        &namespace,
+        &plan,
+        &field_types,
+        dialect,
+    )
+    .map(|_| ())
+    .map_err(|error| {
+        let (code, message) = statement_error("backfill", error);
+        StatementError::new(code, message)
+    })
 }
 
 /// bind → plan → execute，错误已映射为 SQLSTATE，并已标记事务失败。
@@ -337,6 +414,7 @@ pub fn pg_sqlstate(kind: SqlErrorKind) -> &'static str {
         CheckViolation => "23514",
         ForeignKeyViolation => "23503",
         InvalidTextRepresentation => "22P02",
+        GeneratedColumnWrite => "428C9",
     }
 }
 
