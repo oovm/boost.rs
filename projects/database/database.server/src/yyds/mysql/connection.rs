@@ -1427,6 +1427,9 @@ fn mysql_error_code(kind: SqlErrorKind) -> (u16, &'static str) {
         ColumnAlreadyExists => (1060, "42S21"),
         IndexAlreadyExists => (1061, "42000"),
         UnknownIndex => (1091, "42000"),
+        // MySQL 8.0.16+ 报 `ER_CHECK_CONSTRAINT_VIOLATED`，外键孤儿引用报 `1452`。
+        CheckViolation => (3819, "HY000"),
+        ForeignKeyViolation => (1452, "23000"),
     }
 }
 

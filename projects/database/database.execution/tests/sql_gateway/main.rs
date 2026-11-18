@@ -338,3 +338,46 @@ fn insert_select_writes_every_source_row() {
     assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM dst"), 2);
     assert_eq!(gateway.scalar_integer("SELECT SUM(v) FROM dst"), 50);
 }
+
+/// `CHECK` 约束在写入前对最终行值求值：只有 FALSE 违反，`NULL` 通过（SQL 三值
+/// 逻辑，与 PostgreSQL 一致），违反按 `CheckViolation` 上报。
+#[test]
+fn check_constraint_rejects_false_and_allows_null() {
+    let gateway = Gateway::new("check");
+    gateway.expect_sql("CREATE TABLE guarded (id INT NOT NULL PRIMARY KEY, qty INT CHECK (qty >= 0), note TEXT)");
+    gateway.expect_sql("INSERT INTO guarded (id, qty, note) VALUES (1, 5, 'ok')");
+    // `NULL` 不违反 `CHECK`。
+    gateway.expect_sql("INSERT INTO guarded (id, qty, note) VALUES (2, NULL, 'null-ok')");
+    let error = gateway.sql("INSERT INTO guarded (id, qty, note) VALUES (3, -1, 'bad')").expect_err("negative qty must fail");
+    assert_eq!(error.kind, database_query::SqlErrorKind::CheckViolation);
+    // UPDATE 走同一门禁。
+    let error = gateway.sql("UPDATE guarded SET qty = -7 WHERE id = 1").expect_err("update into negative must fail");
+    assert_eq!(error.kind, database_query::SqlErrorKind::CheckViolation);
+    assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM guarded"), 2);
+    // 多行 INSERT 原子路径：违反行在提交边界前拦截，整批不发布。
+    let error = gateway.sql("INSERT INTO guarded (id, qty) VALUES (4, 1), (5, -2)").expect_err("batch must reject the violating row");
+    assert_eq!(error.kind, database_query::SqlErrorKind::CheckViolation);
+    assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM guarded"), 2);
+}
+
+/// `FOREIGN KEY` 写时强制孤儿引用：非空子列按父表主键点查，未命中按
+/// `ForeignKeyViolation` 上报；`NULL` 引用视为满足。
+#[test]
+fn foreign_key_rejects_orphan_references() {
+    let gateway = Gateway::new("foreign-key");
+    gateway.expect_sql("CREATE TABLE parent (id INT NOT NULL PRIMARY KEY, name TEXT)");
+    gateway.expect_sql("CREATE TABLE child (id INT NOT NULL PRIMARY KEY, parent_id INT REFERENCES parent (id))");
+    gateway.expect_sql("INSERT INTO parent (id, name) VALUES (1, 'p1')");
+    gateway.expect_sql("INSERT INTO child (id, parent_id) VALUES (10, 1)");
+    gateway.expect_sql("INSERT INTO child (id, parent_id) VALUES (11, NULL)");
+    let error = gateway.sql("INSERT INTO child (id, parent_id) VALUES (12, 99)").expect_err("orphan reference must fail");
+    assert_eq!(error.kind, database_query::SqlErrorKind::ForeignKeyViolation);
+    // UPDATE 走同一门禁。
+    let error = gateway.sql("UPDATE child SET parent_id = 98 WHERE id = 10").expect_err("update into orphan must fail");
+    assert_eq!(error.kind, database_query::SqlErrorKind::ForeignKeyViolation);
+    assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM child"), 2);
+    // 表级 `FOREIGN KEY` 与内联 `REFERENCES` 同口径。
+    gateway.expect_sql("CREATE TABLE child2 (id INT NOT NULL PRIMARY KEY, pid INT, FOREIGN KEY (pid) REFERENCES parent (id))");
+    let error = gateway.sql("INSERT INTO child2 (id, pid) VALUES (20, 77)").expect_err("table-level foreign key must be enforced");
+    assert_eq!(error.kind, database_query::SqlErrorKind::ForeignKeyViolation);
+}

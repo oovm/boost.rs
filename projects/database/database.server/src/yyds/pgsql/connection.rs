@@ -951,6 +951,8 @@ pub fn pg_sqlstate(kind: SqlErrorKind) -> &'static str {
         ColumnAlreadyExists => "42701",
         IndexAlreadyExists => "42P07",
         UnknownIndex => "42704",
+        CheckViolation => "23514",
+        ForeignKeyViolation => "23503",
     }
 }
 

@@ -47,6 +47,7 @@ pub(crate) fn insert_row_if_absent(
         }
         return Err(duplicate_key_error(&constraint));
     }
+    enforce_row_guards(executor, transaction, &plan.check_constraints, &plan.foreign_keys, &plan.field_types, &row, dialect)?;
     if indexes.needs_backfill() {
         indexes.backfill(&stored)?;
     }
@@ -100,6 +101,7 @@ pub(crate) fn upsert_row(
                 match find_unique_conflict(executor, transaction, &plan.namespace, &plan.unique_constraints, &proposed)? {
                     Some((rowid, bytes)) => (rowid, bytes),
                     None => {
+                        enforce_row_guards(executor, transaction, &plan.check_constraints, &plan.foreign_keys, &plan.field_types, &proposed, dialect)?;
                         indexes.remember_insert(&proposed, &plan.rowid);
                         let index_commands = indexes.take_commands();
                         let command = KeyValueCommand {
@@ -129,6 +131,7 @@ pub(crate) fn upsert_row(
         {
             return Err(duplicate_key_error(&constraint));
         }
+        enforce_row_guards(executor, transaction, &plan.check_constraints, &plan.foreign_keys, &plan.field_types, &row, dialect)?;
         indexes.remember_replace(Some(&existing_row), &row, &target_rowid);
         let index_commands = indexes.take_commands();
         let command = KeyValueCommand { namespace: namespace.clone(), key: target_rowid, action: KeyValueAction::Put(encode_row(&row)) };
@@ -362,6 +365,7 @@ pub(crate) fn execute_multi_insert_atomic(
                 continue;
             }
             let current = entry.current.as_ref().expect("applied entry carries a row");
+            enforce_row_guards(executor, None, &first.check_constraints, &first.foreign_keys, &first.field_types, current, dialect)?;
             let old_row = preimages.get(rowid).and_then(|bytes| bytes.as_ref()).map(|bytes| decode_row(bytes)).transpose()?;
             indexes.remember_replace(old_row.as_ref(), current, rowid);
         }
@@ -623,6 +627,8 @@ pub(crate) fn execute_insert_select(
             conflict: plan.conflict.clone(),
             returning: plan.returning.clone(),
             unique_constraints: plan.unique_constraints.clone(),
+            check_constraints: plan.check_constraints.clone(),
+            foreign_keys: plan.foreign_keys.clone(),
         });
     }
     // 没有冲突策略时，源行之间与目标表内都不能出现重复主键或次要 `UNIQUE`，
@@ -753,6 +759,7 @@ pub(crate) fn execute_update(
     {
         return Err(duplicate_key_error(&constraint));
     }
+    enforce_row_guards(executor, transaction, &plan.check_constraints, &plan.foreign_keys, &plan.field_types, &row, dialect)?;
     let mut indexes = IndexMaintenance::open(executor, transaction, &plan.namespace, &plan.unique_constraints, &plan.field_types)?;
     if indexes.needs_backfill() {
         let stored = index_snapshot(executor, transaction, &namespace)?;
@@ -948,6 +955,7 @@ pub(crate) fn execute_update_scan(
             }
             snapshot.remember(&rowid, &row);
         }
+        enforce_row_guards(executor, transaction, &plan.check_constraints, &plan.foreign_keys, &plan.field_types, &row, dialect)?;
         indexes.remember_replace(Some(&old_row), &row, &rowid);
         changes.push(StatementChange {
             command: KeyValueCommand { namespace: namespace.clone(), key: rowid, action: KeyValueAction::Put(encode_row(&row)) },
@@ -1196,6 +1204,47 @@ pub(crate) fn unique_conflict_on_write(
     unique_conflict_in_snapshot(constraints, candidate, excluded_rowid, &[], &stored)
 }
 
+/// `CHECK` 与 `FOREIGN KEY` 的最终行值门禁：写命令进入提交边界前逐条复核。
+///
+/// `CHECK` 遵循 SQL 三值逻辑，只有 FALSE 违反，`NULL` 通过（与 PostgreSQL 一致）。
+/// `FOREIGN KEY` 列缺失或为 `NULL` 视为满足；非空值按父表主键 rowid 在父表
+/// namespace 点查，未命中即孤儿引用，按 `ForeignKeyViolation` 上报。
+pub(crate) fn enforce_row_guards(
+    executor: &dyn KeyValueExecutor,
+    transaction: Option<&dyn TransactionHandle>,
+    check_constraints: &[CheckConstraintPlan],
+    foreign_keys: &[ForeignKeyPlan],
+    field_types: &BTreeMap<u64, database_query::catalog_bind::SqlFieldType>,
+    row: &RowFieldValues,
+    dialect: SqlDialect,
+) -> Result<(), SqlFrontendError> {
+    for check in check_constraints {
+        let value = eval_expression(&check.expression, row, field_types, dialect)?;
+        if sql_truth(&value) == Some(false) {
+            return Err(SqlFrontendError::new(
+                SqlErrorKind::CheckViolation,
+                format!("new row violates check constraint: {}", check.text),
+            ));
+        }
+    }
+    for key in foreign_keys {
+        let Some(value) = row.value_typed(key.column, field_types) else {
+            continue;
+        };
+        if matches!(value, SqlValue::Null) {
+            continue;
+        }
+        let rowid = pk_literal_to_rowid(&value_to_literal(value))?;
+        if read_row_bytes(executor, transaction, &Namespace(key.namespace.clone()), &rowid)?.is_none() {
+            return Err(SqlFrontendError::new(
+                SqlErrorKind::ForeignKeyViolation,
+                format!("foreign key constraint references no row in table: {}", key.parent_name),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// `UNIQUE` 冲突统一按 `DuplicateKey` 上报，由方言层映射成 `23505` / `1062`。
 pub(crate) fn duplicate_key_error(constraint: &str) -> SqlFrontendError {
     SqlFrontendError::new(SqlErrorKind::DuplicateKey, format!("duplicate key value violates unique constraint {constraint}"))
@@ -1231,6 +1280,8 @@ mod tests {
             conflict: None,
             returning: None,
             unique_constraints: constraints.to_vec(),
+            check_constraints: Vec::new(),
+            foreign_keys: Vec::new(),
         }
     }
 

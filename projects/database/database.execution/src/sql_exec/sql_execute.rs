@@ -28,9 +28,9 @@ use database_query::{
         retain_distinct_projected_rows,
     },
     sql_planner::{
-        ConflictAssignment, ConflictPolicy, DeletePlan, DeleteScanPlan, IndexProbe, InsertSelectPlan, JoinPlan, JoinSourcePlan, ReadPlan,
-        ReturningProjections, ScalarPlan, ScanPlan, SetOperationPlan, SqlExecutionPlan, UniqueConstraintPlan, UpdatePlan, UpdateScanPlan,
-        WriteField, WritePlan, check_write_literal, pk_literal_to_rowid,
+        CheckConstraintPlan, ConflictAssignment, ConflictPolicy, DeletePlan, DeleteScanPlan, ForeignKeyPlan, IndexProbe, InsertSelectPlan,
+        JoinPlan, JoinSourcePlan, ReadPlan, ReturningProjections, ScalarPlan, ScanPlan, SetOperationPlan, SqlExecutionPlan,
+        UniqueConstraintPlan, UpdatePlan, UpdateScanPlan, WriteField, WritePlan, check_write_literal, pk_literal_to_rowid,
     },
 };
 use database_types::cluster::Namespace;
