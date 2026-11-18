@@ -473,6 +473,52 @@ impl Production {
         }
     }
 
+    /// Declares or refreshes the voice task that produces one cue's audio.
+    ///
+    /// The task handle is derived from the cue, so re-planning replaces that
+    /// entry instead of accumulating duplicates. `request` is the backend's
+    /// request fingerprint and `backend`/`version` form the config fingerprint:
+    /// upgrading the engine invalidates the cache even when the text is
+    /// unchanged, because the old attempt no longer describes the new engine.
+    pub fn plan_voice_task(
+        &mut self,
+        cue: &CueId,
+        backend: &str,
+        version: &str,
+        request: &str,
+        output: impl Into<String>,
+    ) -> Result<TaskId, Error> {
+        if request.trim().is_empty() {
+            return Err(Error::invalid_input(format!("voice task for cue `{cue}` needs a request fingerprint")));
+        }
+        let output = output.into();
+        if output.trim().is_empty() {
+            return Err(Error::invalid_input(format!("voice task for cue `{cue}` needs an output path")));
+        }
+        let relative = !output.trim().is_empty()
+            && !output.starts_with('/')
+            && !output.starts_with("\\\\")
+            && !output.contains(':')
+            && !output.split(['/', '\\']).any(|segment| segment == "..");
+        if !relative {
+            return Err(Error::invalid_input(format!("voice output `{output}` must stay inside the production root")));
+        }
+        let id = TaskId::new(format!("voice-{cue}"))?;
+        let task = Task {
+            id: id.clone(),
+            capability: "media.voice".to_owned(),
+            input: request.to_owned(),
+            config: format!("{backend} {version}"),
+            deps: Vec::new(),
+            outputs: vec![output],
+        };
+        match self.tasks.iter_mut().find(|existing| existing.id == id) {
+            Some(slot) => *slot = task,
+            None => self.tasks.push(task),
+        }
+        Ok(id)
+    }
+
     /// The problems [`Production::validate`] would report, one per entry.
     ///
     /// Hosts expose this list directly so a review page can point at the exact
@@ -1003,5 +1049,35 @@ mod tests {
         assert!(!task.is_fresh("project:1", "h264/flac"), "a changed delivery config invalidates the cache");
         let anonymous = Task { input: String::new(), ..task };
         assert!(!anonymous.is_fresh("", "h264/aac"), "a task without inputs is never fresh");
+    }
+
+    #[test]
+    fn a_voice_task_is_keyed_by_cue_and_invalidated_by_engine_upgrade() {
+        let mut production = Production::new(project_with(false));
+        let cue = CueId::new("cue-1").unwrap();
+        let id = production.plan_voice_task(&cue, "edge-tts", "7.0.0", "req-a", "audio/cue-1.wav").expect("plan");
+        assert_eq!(id.as_str(), "voice-cue-1");
+        assert_eq!(production.tasks.len(), 1);
+        assert_eq!(production.tasks[0].capability, "media.voice");
+        assert!(production.problems().is_empty(), "{:?}", production.problems());
+
+        // Re-planning the same cue replaces the entry instead of adding a copy.
+        production.plan_voice_task(&cue, "edge-tts", "7.0.1", "req-a", "audio/cue-1.wav").expect("replan");
+        assert_eq!(production.tasks.len(), 1);
+        let last = production.runs.iter().rev().find(|run| run.task == id);
+        assert!(last.is_none(), "no attempt exists yet");
+        let current = TaskRun::succeeded(&production.tasks[0], vec!["audio/cue-1.wav".to_owned()]);
+        assert!(current.is_current(&production.tasks[0]));
+        let upgraded = production.tasks[0].is_fresh("req-a", "edge-tts 7.0.0");
+        assert!(!upgraded, "the previous engine version is stale even with the same text");
+    }
+
+    #[test]
+    fn a_voice_task_refuses_an_output_outside_the_root() {
+        let mut production = Production::new(project_with(false));
+        let cue = CueId::new("cue-1").unwrap();
+        assert!(production.plan_voice_task(&cue, "edge-tts", "7.0.0", "req-a", "../escape.wav").is_err());
+        assert!(production.plan_voice_task(&cue, "edge-tts", "7.0.0", "req-a", "C:/temp/x.wav").is_err());
+        assert!(production.plan_voice_task(&cue, "edge-tts", "7.0.0", "  ", "audio/cue-1.wav").is_err());
     }
 }
