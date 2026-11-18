@@ -30,4 +30,4 @@ pub use database_query::sqlite::{
 };
 pub use engine::{Engine, ExecResult, results_json};
 
-pub(crate) use database_query::sqlite::{bind, catalog, json_string, storage_failure, value};
+pub(crate) use database_query::sqlite::{bind, catalog, storage_failure, value};
