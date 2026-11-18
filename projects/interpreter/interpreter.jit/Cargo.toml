@@ -1,0 +1,12 @@
+[package]
+name = "interpreter-jit"
+description = "Language-agnostic JIT substrate: compile requests, conservative stack maps, deopt frame materialization, versioned scalar machine-code contract with pluggable format matchers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"

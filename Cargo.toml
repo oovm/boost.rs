@@ -30,6 +30,7 @@ members = [
     "projects/crawler/crawler.store",
     "projects/crawler/crawler.types",
     "projects/interpreter/interpreter.gc",
+    "projects/interpreter/interpreter.jit",
     "projects/database/database",
     "projects/database/database.client",
     "projects/database/database.cluster",
@@ -227,6 +228,7 @@ crawler-store = { path = "projects/crawler/crawler.store" }
 crawler-types = { path = "projects/crawler/crawler.types" }
 # 解释执行基础设施
 interpreter-gc = { path = "projects/interpreter/interpreter.gc" }
+interpreter-jit = { path = "projects/interpreter/interpreter.jit" }
 
 database = { path = "projects/database/database" }
 database-client = { path = "projects/database/database.client" }
