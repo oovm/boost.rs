@@ -504,6 +504,16 @@ fn catalog_from_state(state: &RegistryState) -> SqlCatalog {
                     })
                     .collect(),
                 unique_constraints,
+                indexes: state
+                    .indexes
+                    .iter()
+                    .filter(|index| !index.unique && index.table == table.name)
+                    .filter_map(|index| {
+                        let columns: Vec<u64> = index.columns.iter().filter_map(|name| field_id(table, name)).collect();
+                        // 单列二级索引才有条目维护与探测路径；多列索引用作全表扫描。
+                        (columns.len() == 1).then_some(columns)
+                    })
+                    .collect(),
                 check_constraints: table.check_constraints.clone(),
                 foreign_keys,
             }

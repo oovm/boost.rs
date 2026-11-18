@@ -808,7 +808,7 @@ pub(crate) fn execute_delete(
         }
         if indexes.is_active() {
             let row = decode_row(&existing_bytes)?;
-            indexes.remember_remove(Some(&row));
+            indexes.remember_remove(Some(&row), &plan.rowid);
         }
         Some(existing_bytes)
     }
@@ -1004,7 +1004,7 @@ pub(crate) fn execute_delete_scan(
         }
         if indexes.is_active() {
             let row = decode_row(&pre_image)?;
-            indexes.remember_remove(Some(&row));
+            indexes.remember_remove(Some(&row), &rowid);
         }
         changes.push(StatementChange {
             command: KeyValueCommand { namespace: namespace.clone(), key: rowid, action: KeyValueAction::Delete },
@@ -1043,7 +1043,7 @@ pub(crate) fn unique_conflict_between(
     candidate: &RowFieldValues,
     existing: &RowFieldValues,
 ) -> Option<String> {
-    constraints.iter().find_map(|constraint| {
+    constraints.iter().filter(|constraint| constraint.unique).find_map(|constraint| {
         let left = constraint_tuple(candidate, &constraint.columns)?;
         let right = constraint_tuple(existing, &constraint.columns)?;
         (left == right).then(|| {
@@ -1059,17 +1059,19 @@ pub(crate) fn unique_conflict_between(
 /// 逐行重扫并把每一行与候选行两两比较是 O(行数 × 命中数)；这里把约束元组
 /// 序列化成哈希 key，构建一次后每行只查自己的元组。
 struct UniqueSnapshot<'a> {
-    constraints: &'a [UniqueConstraintPlan],
+    constraints: Vec<&'a UniqueConstraintPlan>,
     buckets: Vec<std::collections::HashMap<Vec<u8>, Vec<Vec<u8>>>>,
 }
 
 impl<'a> UniqueSnapshot<'a> {
     fn build(constraints: &'a [UniqueConstraintPlan], stored: &[(Vec<u8>, Vec<u8>)]) -> Result<Self, SqlFrontendError> {
-        let mut snapshot = Self { constraints, buckets: constraints.iter().map(|_| std::collections::HashMap::new()).collect() };
-        if constraints.is_empty() {
+        let ids = constraint_field_ids(constraints);
+        // 普通二级索引只维护条目，不参与唯一性判定。
+        let constraints: Vec<&UniqueConstraintPlan> = constraints.iter().filter(|constraint| constraint.unique).collect();
+        let mut snapshot = Self { buckets: constraints.iter().map(|_| std::collections::HashMap::new()).collect(), constraints };
+        if snapshot.constraints.is_empty() {
             return Ok(snapshot);
         }
-        let ids = constraint_field_ids(constraints);
         for (rowid, bytes) in stored {
             let row = decode_row_fields(bytes, &ids)?;
             snapshot.remember(rowid, &row);
@@ -1287,7 +1289,7 @@ mod tests {
 
     #[test]
     fn later_statement_row_duplicating_a_unique_value_is_rejected() {
-        let constraints = vec![UniqueConstraintPlan { columns: vec![(1, "email".to_string())] }];
+        let constraints = vec![UniqueConstraintPlan { columns: vec![(1, "email".to_string())], unique: true }];
         let plans = vec![insert_plan(b"first", "same@example.com", &constraints), insert_plan(b"second", "same@example.com", &constraints)];
         let (order, folded) = fold_insert_plans(&plans, &BTreeMap::new(), SqlDialect::Postgres).expect("fold succeeds");
         let error = ensure_unique_rows(&constraints, &order, &folded, &[]).expect_err("the later row must clash");
@@ -1296,7 +1298,7 @@ mod tests {
 
     #[test]
     fn distinct_unique_values_pass_the_statement_check() {
-        let constraints = vec![UniqueConstraintPlan { columns: vec![(1, "email".to_string())] }];
+        let constraints = vec![UniqueConstraintPlan { columns: vec![(1, "email".to_string())], unique: true }];
         let plans = vec![insert_plan(b"first", "a@example.com", &constraints), insert_plan(b"second", "b@example.com", &constraints)];
         let (order, folded) = fold_insert_plans(&plans, &BTreeMap::new(), SqlDialect::Postgres).expect("fold succeeds");
         ensure_unique_rows(&constraints, &order, &folded, &[]).expect("distinct values must pass");

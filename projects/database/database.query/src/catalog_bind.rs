@@ -139,6 +139,12 @@ pub struct SqlCatalogTable {
     /// Each inner vector is one constraint. Writes are rejected when they would
     /// produce a duplicate tuple, matching PostgreSQL `23505` and MySQL `1062`.
     pub unique_constraints: Vec<Vec<u64>>,
+    /// Non-unique secondary indexes as field identities, one column each.
+    ///
+    /// The write path maintains entries for them, and the planner may probe them for
+    /// equality / integer-range predicates. Composite indexes are rejected by the
+    /// contract projection, so every inner vector holds exactly one field.
+    pub indexes: Vec<Vec<u64>>,
     /// Table-level `CHECK` expression texts from local DDL, re-parsed by the
     /// SQL frontend when a write validates them. Absent for catalog-seeded
     /// tables published from the VOS contract.
@@ -249,6 +255,12 @@ impl SqlCatalog {
                     name,
                     fields,
                     unique_constraints: Vec::new(),
+                    indexes: entry
+                        .fields
+                        .iter()
+                        .filter(|field| field.attributes.iter().any(|attribute| attribute.name == "index"))
+                        .map(|field| vec![field.field_id])
+                        .collect(),
                     check_constraints: Vec::new(),
                     foreign_keys: Vec::new(),
                 })

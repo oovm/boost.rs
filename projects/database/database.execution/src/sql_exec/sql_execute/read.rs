@@ -460,14 +460,15 @@ pub(crate) fn read_batch(
     }
 }
 
-/// 用单列唯一索引取候选 rowid，再按 rowid 批量取行。
+/// 用单列二级索引取候选 rowid，再按 rowid 批量取行。
 ///
 /// 返回 `Ok(None)` 表示索引没有完备标记（旧数据目录、或某次写入发现值无法编码），
 /// 调用方必须退回整表扫描——那是唯一能保证不漏行的路径。
 ///
-/// 候选 rowid 会按字节序排序后再取行：KV 扫描按 key 字节序返回，排序后结果顺序与
-/// 整表扫描完全一致，`ORDER BY` 与分页语义不受索引影响。索引里残留的已删除 rowid
-/// 取不到行，直接跳过。
+/// 条目键形如 `0x01 ++ escape(value) ++ 0x00 0x00 ++ rowid`，`rowid` 从键尾回读：
+/// 非唯一索引的同一列值会有多行，值里存 rowid 会互相覆盖。候选 rowid 会按字节序排序
+/// 后再取行：KV 扫描按 key 字节序返回，排序后结果顺序与整表扫描完全一致，
+/// `ORDER BY` 与分页语义不受索引影响。索引里残留的已删除 rowid 取不到行，直接跳过。
 pub(crate) fn scan_secondary_index(
     executor: &dyn KeyValueExecutor,
     transaction: Option<&dyn TransactionHandle>,
@@ -475,33 +476,27 @@ pub(crate) fn scan_secondary_index(
     table_namespace: &Namespace,
 ) -> Result<Option<Vec<(Vec<u8>, Vec<u8>)>>, SqlFrontendError> {
     let namespace = Namespace(index.namespace.clone());
-    let mut commands =
+    let commands =
         vec![KeyValueCommand { namespace: namespace.clone(), key: database_query::sql_index::READY_KEY.to_vec(), action: KeyValueAction::Get }];
-    if let Some(exact) = &index.exact {
-        commands.push(KeyValueCommand { namespace: namespace.clone(), key: exact.clone(), action: KeyValueAction::Get });
-    }
     let results = read_batch(executor, transaction, &commands)?;
     if !matches!(results.first(), Some(database_query::cluster_kv::KeyValueResult::Get(Some(_)))) {
         return Ok(None);
     }
     let mut rowids: Vec<Vec<u8>> = Vec::new();
-    if index.exact.is_some() {
-        if let Some(database_query::cluster_kv::KeyValueResult::Get(Some(rowid))) = results.get(1) {
-            rowids.push(rowid.clone());
+    let entries = scan_rows(
+        executor,
+        transaction,
+        &namespace,
+        &[database_query::sql_index::ENTRY_PREFIX],
+        index.after.as_deref(),
+        index.before.as_deref(),
+        0,
+        "index_scan",
+    )?;
+    for (key, _) in entries {
+        if let Some(rowid) = database_query::sql_index::rowid_of(&key) {
+            rowids.push(rowid.to_vec());
         }
-    }
-    else {
-        let entries = scan_rows(
-            executor,
-            transaction,
-            &namespace,
-            &[database_query::sql_index::ENTRY_PREFIX],
-            index.after.as_deref(),
-            index.before.as_deref(),
-            0,
-            "index_scan",
-        )?;
-        rowids.extend(entries.into_iter().map(|(_, rowid)| rowid));
     }
     rowids.sort();
     rowids.dedup();
@@ -559,11 +554,11 @@ fn runtime_index_probe(plan: &ScanPlan) -> Option<IndexProbe> {
             (database_query::catalog_bind::SqlFieldType::String, SqlBoundLiteral::String(text)) => text.as_bytes().to_vec(),
             _ => continue,
         };
+        let (after, before) = database_query::sql_index::equality_cursors(&payload);
         return Some(IndexProbe {
             namespace: database_query::sql_index::index_namespace(&plan.namespace, column.field_id),
-            exact: Some(database_query::sql_index::entry_key(&payload)),
-            after: None,
-            before: None,
+            after: Some(after),
+            before: Some(before),
         });
     }
     None

@@ -392,3 +392,39 @@ fn foreign_key_rejects_orphan_references() {
     let error = gateway.sql("INSERT INTO child2 (id, pid) VALUES (20, 77)").expect_err("table-level foreign key must be enforced");
     assert_eq!(error.kind, database_query::SqlErrorKind::ForeignKeyViolation);
 }
+
+/// 普通（非唯一）二级索引：同一列值可以有多行，条目不能互相覆盖。
+///
+/// 断言两件事：等值谓词真的走索引探针；插入、更新、删除都同步维护条目。
+#[test]
+fn non_unique_secondary_index_keeps_duplicates_and_tracks_writes() {
+    let gateway = Gateway::new("secondary-index");
+    gateway.expect_sql("CREATE TABLE events (id INT NOT NULL PRIMARY KEY, user_id INT NOT NULL, note VARCHAR(16))");
+    gateway.expect_sql("CREATE INDEX idx_events_user ON events (user_id)");
+    gateway.expect_sql("INSERT INTO events (id, user_id, note) VALUES (1, 7, 'a'), (2, 7, 'b'), (3, 9, 'c')");
+
+    // 等值条件必须规划成索引探针，而不是整表扫描。
+    let catalog = gateway.registry.catalog();
+    let bound = bind_sql_catalog("SELECT id FROM events WHERE user_id = 7", &catalog, catalog.schema_version(), SqlDialect::Mysql)
+        .expect("bind indexed equality");
+    let plan = plan_statement_for_dialect(bound, &catalog, SqlDialect::Mysql).expect("plan indexed equality");
+    let probe = match plan {
+        database_query::SqlExecutionPlan::Scan(scan) => scan.index,
+        other => panic!("expected a scan plan, got {other:?}"),
+    };
+    assert!(probe.is_some(), "equality on an indexed column must probe the index");
+
+    // 同一列值的三行都要被索引覆盖。
+    assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM events WHERE user_id = 7"), 2);
+    assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM events WHERE user_id = 9"), 1);
+    assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM events WHERE user_id = 8"), 0);
+
+    // 删除后条目同步摘除。
+    gateway.expect_sql("DELETE FROM events WHERE id = 1");
+    assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM events WHERE user_id = 7"), 1);
+
+    // 改写索引列：旧值条目消失、新值可查。
+    gateway.expect_sql("UPDATE events SET user_id = 10 WHERE id = 2");
+    assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM events WHERE user_id = 7"), 0);
+    assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM events WHERE user_id = 10"), 1);
+}

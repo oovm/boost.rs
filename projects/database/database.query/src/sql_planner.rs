@@ -230,9 +230,11 @@ pub fn plan_select_for_dialect(
     // 已经从 remaining 里抽走，索引候选集不再受它约束，会漏行。
     let index = if pk_prefix.is_none() { secondary_index_probe(remaining_predicate.as_ref(), table, &namespace) } else { None };
     // 相关子查询在执行期替换外层值后可能落到这些字段的等值上；执行层据此重建探针。
+    // 唯一约束与普通索引都可以被探测：两者的条目布局相同。
     let unique_indexes: Vec<u64> = table
         .unique_constraints
         .iter()
+        .chain(table.indexes.iter())
         .filter_map(|constraint| match constraint.as_slice() {
             [field_id] if *field_id != pk_field.field_id => table
                 .fields
@@ -1571,13 +1573,15 @@ pub struct ConflictAssignment {
     pub value: SqlCatalogBoundExpression,
 }
 
-/// 一条 `UNIQUE` 约束的绑定结果。
+/// 一条 `UNIQUE` 约束或普通二级索引的绑定结果。
 ///
 /// `columns` 非空：catalog 与 schema 校验都拒绝空约束。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UniqueConstraintPlan {
     /// 参与列 `(field_id, 列名)`，按约束声明顺序排列。
     pub columns: Vec<(u64, String)>,
+    /// `true` 表示唯一约束（写入前校验），`false` 表示只维护条目的普通索引。
+    pub unique: bool,
 }
 
 /// `INSERT ... SELECT` 执行计划：源查询先按读路径执行，再逐行对齐写入。
@@ -1671,18 +1675,16 @@ pub struct WriteField {
     pub capacity: Option<u32>,
 }
 
-/// 单列 `UNIQUE` 二级索引上的一次候选集探测。
+/// 单列二级索引上的一次候选集探测。
 ///
 /// 规划期只把顶层 `AND` 合取项里针对该列的等值或范围条件翻成索引键，因此候选集
 /// 一定是真实结果集的超集。行级复核仍由 [`ScanPlan::remaining_predicate`] 完成：
 /// 索引只是少读行，不改变哪一行入选。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexProbe {
-    /// 索引 namespace，形如 `table:{type_id}/idx/{field_id}`。
+    /// 索引 namespace，形如 `table:{type_id}/idx2/{field_id}`。
     pub namespace: String,
-    /// 等值点读的完整条目键；与 `after` / `before` 互斥。
-    pub exact: Option<Vec<u8>>,
-    /// 范围扫描下界（exclusive），以条目前缀 `0x01` 开头。
+    /// 范围扫描下界（exclusive）。
     pub after: Option<Vec<u8>>,
     /// 范围扫描上界（exclusive）。
     pub before: Option<Vec<u8>>,
@@ -2038,20 +2040,24 @@ fn primary_key_of(table: &crate::SqlCatalogTable) -> Result<&crate::SqlCatalogFi
     table.fields.first().ok_or_else(|| planner_error(&format!("table `{}` has no fields", table.name)))
 }
 
-/// 绑定表声明的次要 `UNIQUE` 约束。
+/// 绑定表声明的次要 `UNIQUE` 约束与普通二级索引。
 ///
 /// catalog 已校验约束只引用本表字段，这里把 field_id 映射成 `(field_id, 列名)`。
+/// `unique` 区分两者：唯一约束在写入前逐条校验，普通索引只维护条目。
 fn unique_constraints_of(table: &crate::SqlCatalogTable) -> Vec<UniqueConstraintPlan> {
     table
         .unique_constraints
         .iter()
-        .map(|constraint| UniqueConstraintPlan {
+        .map(|constraint| (constraint, true))
+        .chain(table.indexes.iter().map(|index| (index, false)))
+        .map(|(constraint, unique)| UniqueConstraintPlan {
             columns: constraint
                 .iter()
                 .filter_map(|field_id| {
                     table.fields.iter().find(|field| field.field_id == *field_id).map(|field| (*field_id, field.name.clone()))
                 })
                 .collect(),
+            unique,
         })
         .filter(|constraint| !constraint.columns.is_empty())
         .collect()
@@ -2078,7 +2084,7 @@ fn secondary_index_probe(
     split_index_conjuncts(predicate, &mut conjuncts);
     // 主键已有 rowid 直读 / 字节区间路径，重复建索引没有收益。
     let pk_field_id = table.fields.first()?.field_id;
-    for constraint in &table.unique_constraints {
+    for constraint in table.unique_constraints.iter().chain(table.indexes.iter()) {
         let [field_id] = constraint.as_slice()
         else {
             continue;
@@ -2109,7 +2115,8 @@ fn secondary_index_probe(
         let namespace = crate::sql_index::index_namespace(table_namespace, *field_id);
         if let Some(literal) = equality {
             let payload = index_payload(&literal, &field.field_type)?;
-            return Some(IndexProbe { namespace, exact: Some(crate::sql_index::entry_key(&payload)), after: None, before: None });
+            let (after, before) = crate::sql_index::equality_cursors(&payload);
+            return Some(IndexProbe { namespace, after: Some(after), before: Some(before) });
         }
         if !crate::sql_index::range_supported(&field.field_type) {
             continue;
@@ -2119,13 +2126,13 @@ fn secondary_index_probe(
         }
         let after = lower.map(|(value, inclusive)| {
             let payload = crate::sql_index::encode_integer(value);
-            if inclusive { crate::sql_index::inclusive_lower_cursor(&payload) } else { crate::sql_index::exclusive_lower_cursor(&payload) }
+            if inclusive { crate::sql_index::value_prefix(&payload) } else { crate::sql_index::value_upper(&payload) }
         });
         let before = upper.map(|(value, inclusive)| {
             let payload = crate::sql_index::encode_integer(value);
-            if inclusive { crate::sql_index::inclusive_upper_cursor(&payload) } else { crate::sql_index::exclusive_upper_cursor(&payload) }
+            if inclusive { crate::sql_index::value_upper(&payload) } else { crate::sql_index::value_prefix(&payload) }
         });
-        return Some(IndexProbe { namespace, exact: None, after, before });
+        return Some(IndexProbe { namespace, after, before });
     }
     None
 }
@@ -2875,22 +2882,21 @@ mod secondary_index_plan_tests {
         crate::sql_index::index_namespace(&format!("table:{}", table.type_id), field_id(catalog, table.name.as_str(), column))
     }
 
-    /// `uk = literal` 生成一次索引点读，同时保留原谓词做行级复核。
+    /// `uk = literal` 生成一次索引区间探测（等值即同一值的条目前缀），同时保留原谓词做行级复核。
     #[test]
     fn unique_equality_probes_the_index() {
         let catalog = mysql_catalog("CREATE TABLE t (id INT NOT NULL PRIMARY KEY, uk INT UNIQUE, tag VARCHAR(8) UNIQUE)");
         let scan = scan_plan(&catalog, "SELECT id FROM t WHERE uk = 7");
         let probe = scan.index.expect("unique equality must probe the index");
         assert_eq!(probe.namespace, index_namespace(&catalog, "t", "uk"));
-        assert!(probe.exact.is_some(), "equality must resolve to one entry key");
-        assert!(probe.after.is_none() && probe.before.is_none());
+        assert!(probe.after.is_some() && probe.before.is_some(), "equality must bound the value prefix");
         assert!(scan.remaining_predicate.is_some(), "the predicate must still be rechecked per row");
 
-        // 文本唯一列的等值同样可以点读。
+        // 文本唯一列的等值同样可以走索引。
         let scan = scan_plan(&catalog, "SELECT id FROM t WHERE tag = 'abc'");
         let probe = scan.index.expect("text unique equality must probe the index");
         assert_eq!(probe.namespace, index_namespace(&catalog, "t", "tag"));
-        assert!(probe.exact.is_some());
+        assert!(probe.after.is_some() && probe.before.is_some());
     }
 
     /// `BETWEEN` 脱糖成 `>= AND <=`，整数列翻译成索引范围游标。
@@ -2899,7 +2905,6 @@ mod secondary_index_plan_tests {
         let catalog = mysql_catalog("CREATE TABLE t (id INT NOT NULL PRIMARY KEY, uk INT UNIQUE)");
         let scan = scan_plan(&catalog, "SELECT id FROM t WHERE uk BETWEEN 10 AND 20");
         let probe = scan.index.expect("unique range must scan the index");
-        assert!(probe.exact.is_none());
         assert!(probe.after.is_some(), "inclusive lower bound must set a cursor");
         assert!(probe.before.is_some(), "inclusive upper bound must set a cursor");
 

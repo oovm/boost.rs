@@ -1,4 +1,4 @@
-//! 单列唯一二级索引的增量维护。
+//! 单列二级索引的增量维护（唯一约束与普通索引共用）。
 //!
 //! 索引条目由 DML 路径与行写入放进**同一个提交边界**：自动提交走
 //! `commit_batch`，事务内走 handle 的写入缓冲。因此回滚、savepoint 与崩溃恢复看到的
@@ -10,13 +10,16 @@
 //!
 //! 标记缺失时读路径绝不使用索引，因此「索引不全」只会让查询变慢，不会漏行。
 //!
+//! 条目键把 `rowid` 放在键尾（见 [`database_query::sql_index`]），所以非唯一索引的
+//! 同一列值可以有多行，不会互相覆盖。
+//!
 //! 语句内的命令分三段发出：回填 → 删除旧条目 → 写入新条目。唯一键整体平移
 //! （`uk = uk + 1`）时，必须先清掉所有旧值再写新值，否则后一行的删除会抹掉前一行
 //! 刚写好的条目。
 
 use super::*;
 
-/// 一个需要维护的单列唯一索引。
+/// 一个需要维护的单列索引。
 pub(crate) struct SecondaryIndex {
     namespace: String,
     field_id: u64,
@@ -25,10 +28,10 @@ pub(crate) struct SecondaryIndex {
 
 /// 一行在某个索引上的条目状态。
 enum EntryState {
-    /// 列值是 SQL `NULL`：`UNIQUE` 允许多行 NULL，不写条目。
+    /// 列值是 SQL `NULL`：索引不为 NULL 写条目，等值探测也匹配不到 NULL。
     Null,
-    /// 可编码的完整条目键。
-    Key(Vec<u8>),
+    /// 可编码的 payload（尚未拼上 rowid）。
+    Payload(Vec<u8>),
     /// 值无法按列类型编码，索引必须整体退回不可用。
     Unusable,
 }
@@ -38,7 +41,7 @@ pub(crate) struct IndexMaintenance {
     indexes: Vec<SecondaryIndex>,
     /// 所有索引都有完备标记。
     ready: bool,
-    /// 这张表是否有需要维护的单列唯一索引。
+    /// 这张表是否有需要维护的单列索引。
     configured: bool,
     /// 本次语句里出现过无法编码的值，索引必须停用。
     broken: bool,
@@ -51,7 +54,10 @@ pub(crate) struct IndexMaintenance {
 }
 
 impl IndexMaintenance {
-    /// 登记本次写入涉及的单列唯一索引，并一次性读取它们的完备标记。
+    /// 登记本次写入涉及的单列索引，并一次性读取它们的完备标记。
+    ///
+    /// `constraints` 同时包含唯一约束与普通索引：唯一性由写入前的约束校验负责，
+    /// 索引维护只关心「哪些列需要条目」。
     pub(crate) fn open(
         executor: &dyn KeyValueExecutor,
         transaction: Option<&dyn TransactionHandle>,
@@ -118,7 +124,7 @@ impl IndexMaintenance {
             let row = decode_row_fields(bytes, &field_ids)?;
             for index in &self.indexes {
                 match entry_state(index, &row) {
-                    EntryState::Key(key) => commands.push(index_put(&index.namespace, key, rowid)),
+                    EntryState::Payload(payload) => commands.push(index_put(&index.namespace, &payload, rowid)),
                     EntryState::Null => {}
                     EntryState::Unusable => {
                         self.deactivate();
@@ -128,7 +134,7 @@ impl IndexMaintenance {
             }
         }
         for index in &self.indexes {
-            commands.push(index_put(&index.namespace, database_query::sql_index::READY_KEY.to_vec(), &[]));
+            commands.push(index_put_ready(&index.namespace));
         }
         self.ready = true;
         self.backfill = commands;
@@ -142,7 +148,7 @@ impl IndexMaintenance {
         }
         for index in &self.indexes {
             match entry_state(index, row) {
-                EntryState::Key(key) => self.puts.push(index_put(&index.namespace, key, rowid)),
+                EntryState::Payload(payload) => self.puts.push(index_put(&index.namespace, &payload, rowid)),
                 EntryState::Null => {}
                 EntryState::Unusable => {
                     self.deactivate();
@@ -153,7 +159,9 @@ impl IndexMaintenance {
     }
 
     /// 登记一行的索引条目摘除（删除或改写前的旧行）。
-    pub(crate) fn remember_remove(&mut self, row: Option<&RowFieldValues>) {
+    ///
+    /// `rowid` 是旧行的主键：非唯一索引的条目键含 `rowid`，缺了它就删不到正确条目。
+    pub(crate) fn remember_remove(&mut self, row: Option<&RowFieldValues>, rowid: &[u8]) {
         if !self.is_active() {
             return;
         }
@@ -163,7 +171,7 @@ impl IndexMaintenance {
         };
         for index in &self.indexes {
             match entry_state(index, row) {
-                EntryState::Key(key) => self.deletes.push(index_delete(&index.namespace, key)),
+                EntryState::Payload(payload) => self.deletes.push(index_delete(&index.namespace, &payload, rowid)),
                 EntryState::Null => {}
                 EntryState::Unusable => {
                     self.deactivate();
@@ -175,7 +183,7 @@ impl IndexMaintenance {
 
     /// 改写一行：旧条目进删除段，新条目进写入段。
     pub(crate) fn remember_replace(&mut self, old: Option<&RowFieldValues>, new: &RowFieldValues, rowid: &[u8]) {
-        self.remember_remove(old);
+        self.remember_remove(old, rowid);
         self.remember_insert(new, rowid);
     }
 
@@ -193,7 +201,13 @@ impl IndexMaintenance {
     /// 值无法编码时摘掉完备标记，让所有读路径退回整表扫描。
     fn deactivate(&mut self) {
         self.broken = true;
-        self.deletes.extend(self.indexes.iter().map(|index| index_delete(&index.namespace, database_query::sql_index::READY_KEY.to_vec())));
+        self.deletes.extend(self.indexes.iter().map(|index| {
+            KeyValueCommand {
+                namespace: Namespace(index.namespace.clone()),
+                key: database_query::sql_index::READY_KEY.to_vec(),
+                action: KeyValueAction::Delete,
+            }
+        }));
     }
 }
 
@@ -201,19 +215,35 @@ fn entry_state(index: &SecondaryIndex, row: &RowFieldValues) -> EntryState {
     match row.get(index.field_id) {
         None => EntryState::Null,
         Some(bytes) => match database_query::sql_index::encode_value(bytes, &index.field_type) {
-            Ok(Some(payload)) => EntryState::Key(database_query::sql_index::entry_key(&payload)),
+            Ok(Some(payload)) => EntryState::Payload(payload),
             Ok(None) => EntryState::Null,
             Err(()) => EntryState::Unusable,
         },
     }
 }
 
-fn index_put(namespace: &str, key: Vec<u8>, rowid: &[u8]) -> KeyValueCommand {
-    KeyValueCommand { namespace: Namespace(namespace.to_string()), key, action: KeyValueAction::Put(rowid.to_vec()) }
+fn index_put(namespace: &str, payload: &[u8], rowid: &[u8]) -> KeyValueCommand {
+    KeyValueCommand {
+        namespace: Namespace(namespace.to_string()),
+        key: database_query::sql_index::entry_key(payload, rowid),
+        action: KeyValueAction::Put(Vec::new()),
+    }
 }
 
-fn index_delete(namespace: &str, key: Vec<u8>) -> KeyValueCommand {
-    KeyValueCommand { namespace: Namespace(namespace.to_string()), key, action: KeyValueAction::Delete }
+fn index_put_ready(namespace: &str) -> KeyValueCommand {
+    KeyValueCommand {
+        namespace: Namespace(namespace.to_string()),
+        key: database_query::sql_index::READY_KEY.to_vec(),
+        action: KeyValueAction::Put(Vec::new()),
+    }
+}
+
+fn index_delete(namespace: &str, payload: &[u8], rowid: &[u8]) -> KeyValueCommand {
+    KeyValueCommand {
+        namespace: Namespace(namespace.to_string()),
+        key: database_query::sql_index::entry_key(payload, rowid),
+        action: KeyValueAction::Delete,
+    }
 }
 
 /// 在事务里按顺序写入索引命令；写入缓冲保证 ROLLBACK / savepoint 一起丢弃。
