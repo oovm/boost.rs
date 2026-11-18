@@ -592,7 +592,7 @@ pub fn lower_audio(project: &Project) -> AudioPlan {
 /// Largest zoom the film asks for, clamped to a sane raster budget. The world
 /// is drawn at this scale so camera pushes never invent pixels.
 fn supersample(project: &Project) -> f32 {
-    let mut max_zoom = 1.0f32;
+    let mut max_zoom = project.supersample.unwrap_or(1.0).max(1.0);
     for key in &project.camera {
         max_zoom = max_zoom.max(key.zoom);
     }
@@ -620,6 +620,11 @@ fn validate(project: &Project) -> Result<(), Error> {
     if let Some(vignette) = project.post.vignette {
         if !vignette.is_finite() || !(0.0..=1.0).contains(&vignette) {
             return Err(Error::invalid(format!("post.vignette must be within 0..=1, got {vignette}")));
+        }
+    }
+    if let Some(ss) = project.supersample {
+        if !ss.is_finite() || !(1.0..=2.0).contains(&ss) {
+            return Err(Error::invalid(format!("supersample must be within 1..=2, got {ss}")));
         }
     }
     let mut problems = Vec::new();
@@ -1211,7 +1216,10 @@ fn paint_frame(
         // With a camera the scene renders off-screen, then that buffer is
         // pushed, pulled or panned into the output frame like a real lens.
         let camera = scene.camera.as_ref();
-        let offscreen = global || camera.is_some();
+        // A camera move always renders off-screen. An explicit supersample does
+        // the same even without a camera, so the extra resolution is downsampled
+        // instead of being thrown away.
+        let offscreen = global || camera.is_some() || supersample(project) > 1.0001;
         let mut scratch = if offscreen { Some(pool.take()) } else { None };
         let target: &mut Frame = match scratch.as_mut() {
             Some(buffer) => {
@@ -1243,6 +1251,10 @@ fn paint_frame(
             ];
             let buffer = scratch.as_ref().expect("scene camera renders off-screen");
             out.resample_from(buffer, zoom, focus, camera.rotate_to * eased);
+        }
+        else if let Some(buffer) = scratch.as_ref() {
+            // Supersampled world without a camera: a straight box downsample.
+            out.resample_from(buffer, 1.0, [0.5, 0.5], 0.0);
         }
         if let Some(buffer) = scratch.take() {
             pool.put(buffer);
@@ -3000,5 +3012,38 @@ mod tests {
         assert_eq!(count_leader(&hidden), 0, "progress 0 must not paint the leader");
         assert!(count_leader(&shown) > 20, "progress 1 must paint the leader and anchor dot");
         assert_ne!(hidden, shown, "the two frames must differ");
+    }
+
+    /// An explicit supersample renders the world larger and downsamples it, so
+    /// an edge that lands between pixels gains intermediate values even when the
+    /// film has no camera asking for that buffer.
+    #[test]
+    fn supersample_softens_edges_without_a_camera() {
+        let film = |ss: Option<f32>| {
+            serde_json::json!({
+                "width": 200, "height": 120, "fps": 30, "duration_frames": 1,
+                "supersample": ss,
+                "scenes": [{ "start": 0, "duration": 1,
+                    "background": { "kind": "solid", "color": "#000000" },
+                    "items": [{
+                        "kind": "shape", "at": 0, "dur": 1, "shape": "line",
+                        "x": 0.5, "y": 0.5, "w": 0.9, "h": 0.6,
+                        "color": "#ffffff", "stroke": 2.0, "progress": 1.0,
+                        "fade_in": 0, "fade_out": 0
+                    }]
+                }],
+                "audio": null
+            })
+        };
+        let partial = |pixels: &[u8]| pixels.chunks(4).filter(|p| p[0] > 8 && p[0] < 247).count();
+        let (_, _, plain) = preview_pixels(&film(None).to_string(), 0, "ss-1.png");
+        let (_, _, richer) = preview_pixels(&film(Some(2.0)).to_string(), 0, "ss-2.png");
+        assert!(partial(&plain) > 0, "a sloped stroke already feathers at 1x");
+        assert!(
+            partial(&richer) > partial(&plain),
+            "supersampling must widen the feathered edge: {} vs {}",
+            partial(&richer),
+            partial(&plain)
+        );
     }
 }

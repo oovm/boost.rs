@@ -46,6 +46,12 @@ pub struct Project {
     /// values and reports which scene and node used them.
     #[serde(default)]
     pub design: Option<crate::design::DesignSpec>,
+    /// Extra raster resolution before the frame is downsampled, `1.0..=2.0`.
+    /// Camera moves already force a supersampled world buffer; this lets a film
+    /// ask for the same treatment when it has no camera, which is what keeps
+    /// type and thin strokes smooth instead of stepped.
+    #[serde(default)]
+    pub supersample: Option<f32>,
 }
 
 /// Film-level visual output controls.
