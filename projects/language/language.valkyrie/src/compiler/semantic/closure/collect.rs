@@ -185,7 +185,7 @@ fn collect_imply(builder: &mut FileBuilder, namespace: &[String], imply: &ast::I
 }
 
 /// imply 目标类型的聚合短名：`imply HashMap<K, V>` / `imply std::collection::HashMap<K, V>` → `HashMap`。
-pub(crate) fn imply_owner_name(imply: &ast::ImplyDeclaration) -> Option<String> {
+pub fn imply_owner_name(imply: &ast::ImplyDeclaration) -> Option<String> {
     type_target_reference(&imply.target_type).and_then(|segments| segments.last().cloned())
 }
 
@@ -237,7 +237,7 @@ fn entry_point_annotation(annotations: &[ast::Attribute]) -> Option<EntryPointKi
     entry_point
 }
 
-pub(crate) fn collect_micro(micro: &ast::MicroDeclaration, references: &mut References) {
+pub fn collect_micro(micro: &ast::MicroDeclaration, references: &mut References) {
     for param in &micro.params {
         if let Some(ty) = &param.ty {
             collect_type_expression(ty, references);
@@ -250,7 +250,7 @@ pub(crate) fn collect_micro(micro: &ast::MicroDeclaration, references: &mut Refe
     collect_block(&micro.body, references);
 }
 
-pub(crate) fn collect_method(method: &ast::MethodDeclaration, references: &mut References) {
+pub fn collect_method(method: &ast::MethodDeclaration, references: &mut References) {
     for param in &method.parameters {
         if let Some(ty) = &param.ty {
             collect_type_expression(ty, references);

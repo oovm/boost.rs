@@ -36,7 +36,7 @@ pub(crate) fn index_source_file(dependency_key: &str, path: &str, source: &str, 
 ///
 /// 与 [`index_source_file`] 的区别只在入口：模板展开由调用方决定。装配层的 provider
 /// 库存本就按未展开 AST 收集，调用边闭包与它保持同一棵树，避免「库存看到 A、索引看到 B」。
-pub(crate) fn index_parsed_root(
+pub fn index_parsed_root(
     dependency_key: &str,
     path: &str,
     source: &str,
@@ -128,7 +128,7 @@ impl FileBuilder {
 
 /// 单个声明（或文件级语句）引用的自由名路径、成员选择名与 import 路径。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct References {
+pub struct References {
     pub(crate) paths: BTreeSet<ReferencePath>,
     /// 真实调用点的 callee 路径；与 `paths` 同一次遍历产生，但不含类型/名字出现。
     ///

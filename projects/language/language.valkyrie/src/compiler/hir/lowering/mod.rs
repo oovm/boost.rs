@@ -36,7 +36,7 @@ mod interpolation;
 mod macro_expand;
 mod match_pattern_recovery;
 mod nominal_declarations;
-pub(crate) mod quote_literal;
+pub mod quote_literal;
 mod quote_settle;
 mod source_context;
 mod source_group;

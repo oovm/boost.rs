@@ -8,7 +8,7 @@ use compiler_types::compiler_input::{DeclarationIndexEntry, DeclarationKey, Decl
 /// namespace 链与可见组回退都只是「目标模块能看见哪些声明」的上界判定，
 /// 精确重载解析、类型匹配与歧义判定仍由 HIR 完成。
 #[derive(Debug, Default)]
-pub(crate) struct DeclarationIndexes {
+pub struct DeclarationIndexes {
     /// `(namespace, 短名) → 自由声明`；namespace 链解析优先使用它。成员声明不登记：
     /// 成员选择名不建立全库同名索引，只能由「拥有者聚合身份 + 选择名」产生。
     names: BTreeMap<(Vec<String>, String), BTreeSet<DeclarationKey>>,
