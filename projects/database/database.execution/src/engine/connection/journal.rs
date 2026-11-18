@@ -32,7 +32,7 @@ impl Connection {
                     return Ok(());
                 }
                 let mut database = database.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-                let mut state = crate::engine::storage::snapshot::state_from_snapshot(&database.snapshot()?)?;
+                let mut state = crate::engine::storage::snapshot::state_from_snapshot(&database.snapshot()?, &self.contract_cache)?;
                 doctor::record_checkpoint(&mut state.records);
                 let next = crate::engine::storage::snapshot::snapshot_from_state(&state)?;
                 database.commit(&next, &[])?;

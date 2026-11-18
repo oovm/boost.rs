@@ -209,7 +209,7 @@ impl Connection {
         match self.backend.as_ref() {
             Backend::File { database, .. } => {
                 let mut database = database.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-                snapshot::state_from_snapshot(&database.snapshot_windows(&[])?)
+                snapshot::state_from_snapshot(&database.snapshot_windows(&[])?, &self.contract_cache)
             }
             Backend::Memory { state } => Ok(state.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone()),
         }
@@ -345,7 +345,7 @@ impl Connection {
         let mut state = match self.backend.as_ref() {
             Backend::File { database, .. } => {
                 let mut database = database.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-                snapshot::state_from_snapshot(&database.snapshot()?)?
+                snapshot::state_from_snapshot(&database.snapshot()?, &self.contract_cache)?
             }
             Backend::Memory { state } => state.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone(),
         };

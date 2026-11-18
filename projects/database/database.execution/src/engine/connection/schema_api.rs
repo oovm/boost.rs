@@ -14,7 +14,7 @@ impl Connection {
     }
 
     /// Current validated VOS resolved contract, if the database has one.
-    pub fn resolved_contract(&self) -> Result<Option<schema_input_vos::ResolvedContract>> {
+    pub fn resolved_contract(&self) -> Result<Option<std::sync::Arc<schema_input_vos::ResolvedContract>>> {
         Ok(self.read_state()?.resolved_contract)
     }
 
@@ -137,7 +137,7 @@ impl Connection {
             }
             let resolved = rebind_identities(&state, &projection)?;
             if state.resolved_contract.is_none() {
-                state.resolved_contract = Some(resolved);
+                state.resolved_contract = Some(std::sync::Arc::new(resolved));
                 self.write_state(&state)?;
             }
             return Ok(());
@@ -146,7 +146,7 @@ impl Connection {
         let manifest = schema::allocate_initial_manifest(&projection);
         let bound = schema::bind(&projection, &manifest)?;
         let history = schema::evolve(&schema::empty_history(), bound)?;
-        state.resolved_contract = Some(schema::resolve_contract(&history.snapshot)?);
+        state.resolved_contract = Some(std::sync::Arc::new(schema::resolve_contract(&history.snapshot)?));
         state.identity_history = Some(history);
         state.schema = Some(SchemaVersion { version, document: document.to_owned() });
         self.write_state(&state)?;
@@ -178,7 +178,7 @@ impl Connection {
         catalog.apply_declared_unique_constraints(&remapped)?;
         state.schema = Some(SchemaVersion { version, document: document.to_owned() });
         state.identity_history = Some(evolved);
-        state.resolved_contract = Some(resolved_contract);
+        state.resolved_contract = Some(std::sync::Arc::new(resolved_contract));
         state.unique_constraints = remapped;
         self.write_state(&state)?;
         Ok(())

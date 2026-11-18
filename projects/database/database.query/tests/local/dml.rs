@@ -290,22 +290,38 @@ fn a_non_key_sql_update_forces_the_full_path() {
     assert!(planned.is_none(), "a predicate that does not bound the primary key cannot name a window");
 }
 
-#[test]
-fn an_sql_insert_into_a_document_rule_table_forces_the_full_path() {
-    let planned = sql_windows("INSERT INTO Coded (name, code) VALUES (?1, ?2)", &[Value::Text("a".into()), Value::Text("A".into())]);
-    assert!(planned.is_none(), "a uniqueness rule declared in the schema needs the whole table");
+/// 一张表的完整记录区间：唯一性检查需要看到该表的每一行，但不需要整库。
+fn table_row_window(table: &str) -> ReadWindow {
+    let start = format!("__yydb/v0/row/{table}/");
+    let mut end = start.clone();
+    end.pop();
+    end.push('0');
+    ReadWindow { start, end: Some(end) }
 }
 
 #[test]
-fn an_sql_insert_into_a_host_rule_table_forces_the_full_path() {
+fn an_sql_insert_into_a_document_rule_table_narrows_to_its_table() {
+    let planned = sql_windows("INSERT INTO Coded (name, code) VALUES (?1, ?2)", &[Value::Text("a".into()), Value::Text("A".into())])
+        .expect("a uniqueness rule keeps the write narrowable");
+    assert_eq!(
+        planned.last(),
+        Some(&table_row_window("Coded")),
+        "a document-declared uniqueness rule needs every row of its table, not the whole database"
+    );
+}
+
+#[test]
+fn an_sql_insert_into_a_host_rule_table_narrows_to_its_table() {
     let contract = keyed_contract();
     let stmt = prepare_sql("INSERT INTO Doc (doc_id, title) VALUES (?1, ?2)").expect("prepare");
     let bound = database_query::local::bind_ordered(&stmt, &[Value::I64(7), Value::Text("seven".into())]).expect("bind");
     let rule =
         TableUniqueConstraint::new("Doc", UniqueConstraint::new("doc_title", vec!["title".into()], false).expect("rule")).expect("binding");
-    assert!(
-        write_windows(&stmt.write_ops, &contract, &[rule], &bound).expect("plan").is_none(),
-        "a host-declared rule needs the whole table exactly like a document rule"
+    let windows = write_windows(&stmt.write_ops, &contract, &[rule], &bound).expect("plan").expect("narrowable");
+    assert_eq!(
+        windows.last(),
+        Some(&table_row_window("Doc")),
+        "a host-declared rule needs every row of its table exactly like a document rule"
     );
 }
 

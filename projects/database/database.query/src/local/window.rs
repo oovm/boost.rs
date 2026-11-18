@@ -220,8 +220,13 @@ fn lower_end(slot: &mut Option<String>, candidate: String) {
 /// `INSERT … VALUES` names each stored key from the row's key column, and
 /// `UPDATE` / `DELETE` turn their primary-key predicate into a record-key
 /// range. Everything else — an `INSERT … SELECT` source, an `ON CONFLICT`
-/// clause, a `RETURNING` projection, a uniqueness rule on an updated table, an
-/// unbounded or subquery predicate — returns `None` and keeps the full read.
+/// clause, a `RETURNING` projection, an unbounded or subquery predicate —
+/// returns `None` and keeps the full read.
+///
+/// A table with uniqueness rules still needs every row of that table in the
+/// narrowed state, because the rule is enforced against the stored table. That
+/// widens the window to the whole table instead of the whole database, which is
+/// what a bulk load into one table actually touches.
 ///
 /// The union of the windows is a superset of every row the statement can
 /// change, so the executor can still filter inside it and a caller that
@@ -233,7 +238,7 @@ pub fn write_windows(
     bound_values: &[Value],
 ) -> Result<Option<Vec<ReadWindow>>> {
     // Uniqueness checks read the whole table, so both the rules the schema
-    // document declares and the ones a host adds must force the full path.
+    // document declares and the ones a host adds must widen the window.
     let rules = constraints::merge(constraints::from_contract(contract)?, declared);
     let mut windows = Vec::new();
     for op in ops {
@@ -245,9 +250,6 @@ pub fn write_windows(
                 let entry = table_type_by_name(contract, table)?;
                 let pk_field = primary_field_name(entry)?;
                 let storage = table_row_key_name(contract, table)?;
-                if constraints::has_rules(&rules, &storage) {
-                    return Ok(None);
-                }
                 for fields in rows {
                     // The primary-key column is matched through the catalog so a
                     // differently cased author name still resolves to the key.
@@ -270,18 +272,24 @@ pub fn write_windows(
                     };
                     windows.push(single_key_window(&storage, &text));
                 }
+                if constraints::has_rules(&rules, &storage) {
+                    // The check compares against every stored row of this table,
+                    // so the table must be present even though the write itself
+                    // names one key per row.
+                    windows.push(table_window(&storage));
+                }
             }
             WriteOp::Update { table, predicate: Some(predicate), .. } => {
                 let entry = table_type_by_name(contract, table)?;
                 let storage = table_row_key_name(contract, table)?;
-                if constraints::has_rules(&rules, &storage) {
-                    return Ok(None);
-                }
                 let Some(window) = predicate_window(predicate, entry, &storage, bound_values)?
                 else {
                     return Ok(None);
                 };
                 windows.push(window);
+                if constraints::has_rules(&rules, &storage) {
+                    windows.push(table_window(&storage));
+                }
             }
             WriteOp::Delete { table, predicate: Some(predicate) } => {
                 let entry = table_type_by_name(contract, table)?;
@@ -299,6 +307,21 @@ pub fn write_windows(
         return Ok(None);
     }
     Ok(Some(windows))
+}
+
+/// The whole record range of one table.
+///
+/// The trailing `/` of the row prefix is incremented to `0`, which is the
+/// smallest character after it, so every row of the table falls inside the
+/// half-open range and no other table does.
+fn table_window(storage_table: &str) -> ReadWindow {
+    let start = store::table_prefix(storage_table);
+    let mut end = start.clone();
+    // Replace the trailing `/` with `0`, the next character after it: every key
+    // that starts with the prefix sorts below that bound and nothing else does.
+    end.pop();
+    end.push('0');
+    ReadWindow { start, end: Some(end) }
 }
 
 /// The record-key range one `UPDATE` / `DELETE` predicate can match.

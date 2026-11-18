@@ -549,7 +549,7 @@ impl ReadProfile {
 }
 
 fn resolved_contract(state: &super::State) -> Result<&schema_input_vos::ResolvedContract> {
-    state.resolved_contract.as_ref().ok_or_else(|| Error::Schema { message: "query requires ensure_schema before execution".into() })
+    state.resolved_contract.as_deref().ok_or_else(|| Error::Schema { message: "query requires ensure_schema before execution".into() })
 }
 
 /// Durable schema identity a read window was derived from: the schema

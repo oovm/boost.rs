@@ -14,7 +14,8 @@ use database_types::{Error, Result, Timestamp, Value};
 use schema_types::ResolvedContract;
 
 use super::{
-    catalog::table_row_key_name,
+    catalog::{primary_field_name, table_row_key_name, table_type_by_name},
+    constraints,
     lower,
     ops::{
         AggregateField, BinaryOp, BoundValue, CmpOp, CountExpr, Expr, JoinKind, OUTER_ROW_MARKER, Pred, ProjectExpr, ProjectField, QueryOp,
@@ -245,11 +246,17 @@ fn execute_ops_in(
 
     let mut rows: Vec<QueryRow> = Vec::new();
     let mut current_table: Option<String> = None;
+    // Set when the scan already answered the following filter.
+    let mut skip_next = false;
     // Checked once per pipeline: an ordinary execution then pays nothing per
     // operator beyond a predictable branch.
     let profiling = EXEC_PROFILE.with(|slot| slot.borrow().is_some());
-    for op in ops {
+    for (index, op) in ops.iter().enumerate() {
         let started = profiling.then(Instant::now);
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
         match op {
             QueryOp::Scan { table } => {
                 let storage_table = match contract {
@@ -257,6 +264,24 @@ fn execute_ops_in(
                     None => table.clone(),
                 };
                 current_table = Some(table.clone());
+                // `Scan` followed by a primary-key equality names one stored row.
+                // Reading it directly turns a `get`-style query from a whole-table
+                // decode into one record lookup and one row decode.
+                if let (Some(contract), Some(next)) = (contract, ops.get(index + 1)) {
+                    if let QueryOp::Filter { predicate } = next {
+                        if let Some(key) = primary_key_lookup(predicate, contract, table, bound_values)? {
+                            rows = match key {
+                                Some(pk) => match records.load_row_optional(&storage_table, &pk)? {
+                                    Some(row) => vec![row],
+                                    None => Vec::new(),
+                                },
+                                None => Vec::new(),
+                            };
+                            skip_next = true;
+                            continue;
+                        }
+                    }
+                }
                 rows = records.load_table(&storage_table)?;
             }
             QueryOp::Qualify { prefix } => {
@@ -438,6 +463,47 @@ fn query_runtime_error(message: impl Into<String>) -> Error {
 /// sort-key vector per row. Larger sets keep the precomputed-key path, where
 /// the comparator stays O(1) per key.
 const INLINE_SORT_ROWS: usize = 4096;
+
+/// Primary-key text of a filter that names exactly one row.
+///
+/// `Ok(Some(Some(pk)))` means the scan can read that one record,
+/// `Ok(Some(None))` means the comparison can never hold (a `NULL` right-hand
+/// side), and `Ok(None)` keeps the ordinary table scan.
+fn primary_key_lookup(
+    predicate: &Pred,
+    contract: &ResolvedContract,
+    table: &str,
+    bound_values: &[Value],
+) -> Result<Option<Option<String>>> {
+    let entry = table_type_by_name(contract, table)?;
+    let pk_field = primary_field_name(entry)?;
+    let (path, op, value) = match predicate {
+        Pred::FieldCmp { path, op, value } => (path, *op, value),
+        Pred::ExprCmp { expr, op, value } => match expr.as_ref() {
+            Expr::Column { path } => (path, *op, value),
+            _ => return Ok(None),
+        },
+        _ => return Ok(None),
+    };
+    if op != CmpOp::Eq || path.len() != 1 || path[0] != pk_field {
+        return Ok(None);
+    }
+    let value = match value {
+        BoundValue::Literal(value) => value.clone(),
+        BoundValue::Slot { index, .. } => match bound_values.get(*index as usize) {
+            Some(value) => value.clone(),
+            None => return Ok(None),
+        },
+    };
+    if matches!(value, Value::Null) {
+        return Ok(Some(None));
+    }
+    match constraints::value_text(&value) {
+        Ok(text) => Ok(Some(Some(text))),
+        // A composite value cannot name a stored key, so the scan stays.
+        Err(_) => Ok(None),
+    }
+}
 
 fn compare_sort_field(left: Option<&Value>, right: Option<&Value>) -> std::cmp::Ordering {
     match (left, right) {

@@ -56,19 +56,55 @@ pub fn has_rules(constraints: &[TableUniqueConstraint], table: &str) -> bool {
 /// `row` replaces the row with `pk_text`, so that row never conflicts with itself.
 /// NULL components follow the constraint's `nulls_distinct` flag and missing
 /// fields count as NULL.
+///
+/// The comparison runs on the tagged bytes of the constraint columns instead of
+/// decoded rows: a bulk load inserts thousands of rows into the same table, and
+/// decoding each stored row into a map would make every insert cost a full table
+/// decode. Byte equality of one column is exactly value equality, so the rule
+/// does not get weaker.
 pub fn check(
     records: &BTreeMap<String, Vec<u8>>,
     constraints: &[TableUniqueConstraint],
     table: &str,
-    pk_field: &str,
+    _pk_field: &str,
     pk_text: &str,
     row: &QueryRow,
 ) -> Result<()> {
-    if !has_rules(constraints, table) {
+    let applicable: Vec<&UniqueConstraint> =
+        constraints.iter().filter(|candidate| candidate.table() == table).map(TableUniqueConstraint::constraint).collect();
+    if applicable.is_empty() {
         return Ok(());
     }
-    let existing_rows = store::load_table(records, table)?;
-    check_against_rows(&existing_rows, constraints, table, pk_field, pk_text, row)
+    let target_key = store::row_key(table, pk_text);
+
+    for constraint in applicable {
+        let names: Vec<&str> = constraint.columns().iter().map(String::as_str).collect();
+        let incoming = store::select_encoded(row, &names)?;
+        if incoming.iter().any(Option::is_none) && constraint.nulls_distinct() {
+            continue;
+        }
+        let mut violation = false;
+        store::scan_selected(records, table, &names, |key, stored| {
+            if key == target_key {
+                return Ok(());
+            }
+            if stored.iter().any(Option::is_none) && constraint.nulls_distinct() {
+                return Ok(());
+            }
+            if stored.iter().zip(&incoming).all(|(stored, incoming)| *stored == incoming.as_deref()) {
+                violation = true;
+            }
+            Ok(())
+        })?;
+        if violation {
+            return Err(Error::UniqueViolation {
+                table: table.to_owned(),
+                constraint: constraint.name().to_owned(),
+                columns: constraint.columns().to_vec(),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Same rule as [`check`], evaluated against rows the caller already loaded.

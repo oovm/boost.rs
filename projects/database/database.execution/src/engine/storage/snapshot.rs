@@ -80,11 +80,52 @@ fn payload_len(bytes: &[u8]) -> Option<usize> {
     }
 }
 
+/// Decoded contract of one schema basis.
+///
+/// Decoding the contract JSON costs orders of magnitude more than the record
+/// lookup a statement actually needs, and the contract only changes when the
+/// schema document or the identity revision does. The cache keeps the last
+/// decoded contract together with that basis, so repeated statements reuse it
+/// and a schema change misses instead of serving a stale contract.
+#[derive(Debug, Default)]
+pub(crate) struct ContractCache {
+    slot: std::sync::Mutex<Option<(String, u64, Option<std::sync::Arc<schema_input_vos::ResolvedContract>>)>>,
+}
+
+impl ContractCache {
+    /// Cached contract for `basis`, decoding `bytes` only on a miss.
+    pub(crate) fn contract(
+        &self,
+        basis: (String, u64),
+        bytes: Option<Vec<u8>>,
+    ) -> Result<Option<std::sync::Arc<schema_input_vos::ResolvedContract>>> {
+        let mut slot = self.slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some((fingerprint, revision, contract)) = slot.as_ref() {
+            if *fingerprint == basis.0 && *revision == basis.1 {
+                return Ok(contract.clone());
+            }
+        }
+        let decoded = decode_contract(bytes)?;
+        *slot = Some((basis.0, basis.1, decoded.clone()));
+        Ok(decoded)
+    }
+
+    /// Whether the cached contract still describes `basis`.
+    pub(crate) fn matches(&self, basis: (&str, u64)) -> bool {
+        let slot = self.slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        slot.as_ref().is_some_and(|(fingerprint, revision, _)| fingerprint == basis.0 && *revision == basis.1)
+    }
+}
+
 /// Decode engine [`State`] from a durable snapshot.
-pub(crate) fn state_from_snapshot(snapshot: &Snapshot) -> Result<State> {
+pub(crate) fn state_from_snapshot(snapshot: &Snapshot, cache: &ContractCache) -> Result<State> {
     let schema = decode_schema(assemble_chunked(&snapshot.metadata, META_SCHEMA))?;
     let identity_history = decode_identity(assemble_chunked(&snapshot.metadata, META_IDENTITY))?;
-    let resolved_contract = decode_contract(assemble_chunked(&snapshot.metadata, META_CONTRACT))?;
+    let basis = (
+        schema.as_ref().map(|schema| database_query::local::fingerprint(&schema.document)).unwrap_or_default(),
+        identity_history.as_ref().map(|history| history.revision).unwrap_or(0),
+    );
+    let resolved_contract = cache.contract(basis, assemble_chunked(&snapshot.metadata, META_CONTRACT))?;
     let unique_constraints = decode_unique_constraints(assemble_chunked(&snapshot.metadata, META_UNIQUE))?;
     let mut records: BTreeMap<String, Vec<u8>> =
         snapshot.records.iter().filter(|(key, _)| !key.starts_with(META_PREFIX)).map(|(key, value)| (key.clone(), value.clone())).collect();
@@ -343,7 +384,7 @@ fn decode_identity(bytes: Option<Vec<u8>>) -> Result<Option<schema_types::Identi
     }
 }
 
-fn encode_contract(contract: &Option<schema_input_vos::ResolvedContract>) -> Result<Vec<u8>> {
+fn encode_contract(contract: &Option<std::sync::Arc<schema_input_vos::ResolvedContract>>) -> Result<Vec<u8>> {
     match contract {
         None => Ok(vec![0]),
         Some(contract) => {
@@ -357,7 +398,7 @@ fn encode_contract(contract: &Option<schema_input_vos::ResolvedContract>) -> Res
     }
 }
 
-fn decode_contract(bytes: Option<Vec<u8>>) -> Result<Option<schema_input_vos::ResolvedContract>> {
+fn decode_contract(bytes: Option<Vec<u8>>) -> Result<Option<std::sync::Arc<schema_input_vos::ResolvedContract>>> {
     let bytes = bytes.unwrap_or(vec![0]);
     match bytes.first() {
         None | Some(0) => Ok(None),
@@ -370,12 +411,12 @@ fn decode_contract(bytes: Option<Vec<u8>>) -> Result<Option<schema_input_vos::Re
             if bytes.len() != end {
                 return Err(Error::Corrupt("resolved contract meta length mismatch"));
             }
-            Ok(Some(
+            Ok(Some(std::sync::Arc::new(
                 schema_input_vos::ResolvedContract::from_json(
                     &String::from_utf8(bytes[5..end].to_vec()).map_err(|_| Error::Corrupt("resolved contract is not UTF-8"))?,
                 )
                 .map_err(|_| Error::Corrupt("resolved contract meta is invalid"))?,
-            ))
+            )))
         }
         _ => Err(Error::Corrupt("unknown resolved contract meta marker")),
     }

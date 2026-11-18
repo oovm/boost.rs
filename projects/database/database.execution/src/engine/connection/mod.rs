@@ -37,7 +37,7 @@ pub use query::ReadProfile;
 pub(crate) struct State {
     pub(crate) schema: Option<SchemaVersion>,
     pub(crate) identity_history: Option<schema_types::IdentityHistory>,
-    pub(crate) resolved_contract: Option<schema_input_vos::ResolvedContract>,
+    pub(crate) resolved_contract: Option<std::sync::Arc<schema_input_vos::ResolvedContract>>,
     pub(crate) records: BTreeMap<String, Vec<u8>>,
     pub(crate) unique_constraints: Vec<database_types::TableUniqueConstraint>,
 }
@@ -92,6 +92,13 @@ pub struct Connection {
     /// consumed by `ROLLBACK TO SAVEPOINT` and `RELEASE SAVEPOINT`.
     /// Emptied when the enclosing transaction ends.
     pub(crate) savepoints: Mutex<Vec<(String, State)>>,
+    /// Decoded contract of the current schema basis.
+    ///
+    /// Every statement reads metadata, and decoding the contract JSON on each
+    /// read costs more than the record lookup itself. The cache is keyed by the
+    /// same schema basis that drift detection uses, so a schema change misses it
+    /// and a stale contract can never be served.
+    pub(crate) contract_cache: crate::engine::storage::snapshot::ContractCache,
     pub(crate) udfs: Mutex<UdfSubsystem>,
     pub(crate) objects: std::sync::Arc<ObjectStore>,
     pub(crate) closed: std::sync::Arc<AtomicBool>,
@@ -128,6 +135,7 @@ impl Connection {
             txn: Mutex::new(None),
             txn_journal: Mutex::new(TxnJournal::default()),
             savepoints: Mutex::new(Vec::new()),
+            contract_cache: Default::default(),
             backend: std::sync::Arc::new(Backend::File { path: path.clone(), database: Mutex::new(database) }),
             udfs: Mutex::new(UdfSubsystem::default()),
             objects: std::sync::Arc::new(if is_yydx_main_path(&path) {
@@ -152,6 +160,7 @@ impl Connection {
             txn: Mutex::new(None),
             txn_journal: Mutex::new(TxnJournal::default()),
             savepoints: Mutex::new(Vec::new()),
+            contract_cache: Default::default(),
             backend: std::sync::Arc::new(Backend::Memory { state: Mutex::new(State::default()) }),
             udfs: Mutex::new(UdfSubsystem::default()),
             objects: std::sync::Arc::new(ObjectStore::open_ephemeral()),
@@ -173,6 +182,7 @@ impl Connection {
             txn: Mutex::new(None),
             txn_journal: Mutex::new(TxnJournal::default()),
             savepoints: Mutex::new(Vec::new()),
+            contract_cache: Default::default(),
             udfs: Mutex::new(UdfSubsystem::default()),
             objects: std::sync::Arc::clone(&self.objects),
             closed: std::sync::Arc::clone(&self.closed),
@@ -231,7 +241,7 @@ impl Connection {
         match self.backend.as_ref() {
             Backend::Memory { .. } => {
                 let snapshot = snapshot_from_main_bytes(bytes)?;
-                let state = snapshot::state_from_snapshot(&snapshot)?;
+                let state = snapshot::state_from_snapshot(&snapshot, &self.contract_cache)?;
                 self.write_state(&state)?;
                 Ok(())
             }

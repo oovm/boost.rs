@@ -222,6 +222,25 @@ impl<'a> ReadRows<'a> {
             None => load_row(self.records, table, pk),
         }
     }
+
+    /// Decode one row addressed by table and primary key, `None` when absent.
+    ///
+    /// A primary-key equality filter must answer "no rows" for a key that was
+    /// never written, which is different from the missing-row error a keyed
+    /// write raises.
+    pub(crate) fn load_row_optional(&self, table: &str, pk: &str) -> Result<Option<QueryRow>> {
+        let key = row_key(table, pk);
+        match self.source {
+            Some(source) => match source.row_at(&key) {
+                Some(record) => Ok(Some(decode_row(record?.bytes)?)),
+                None => Ok(None),
+            },
+            None => match self.records.get(&key) {
+                Some(bytes) => Ok(Some(decode_row(bytes)?)),
+                None => Ok(None),
+            },
+        }
+    }
 }
 
 fn missing_row(table: &str, pk: &str) -> Error {
@@ -242,7 +261,8 @@ pub fn row_key(table: &str, pk: &str) -> String {
     format!("{ROW_PREFIX}{table}/{pk}")
 }
 
-fn table_prefix(table: &str) -> String {
+/// Record-key prefix every row of `table` shares.
+pub fn table_prefix(table: &str) -> String {
     format!("{ROW_PREFIX}{table}/")
 }
 
@@ -280,6 +300,96 @@ pub fn load_table_entries(records: &BTreeMap<String, Vec<u8>>, table: &str) -> R
 /// Remove the row stored under `key`. Returns whether a row was present.
 pub fn remove_row(records: &mut BTreeMap<String, Vec<u8>>, key: &str) -> bool {
     records.remove(key).is_some()
+}
+
+/// Visit every stored row of `table` exposing only the tagged bytes of `names`.
+///
+/// Uniqueness checks need a handful of columns from every row but never a full
+/// [`QueryRow`]: decoding the whole record would allocate a map and one string
+/// per column for each row. This walks the record layout once, captures the
+/// requested value slices and hands them to `visit` while the record is still
+/// borrowed, so a per-row check costs no allocation beyond one reusable buffer.
+///
+/// A column that is absent or stored as `NULL` yields `None`, matching
+/// [`QueryRow::get`] returning `None`/`Value::Null`.
+pub fn scan_selected<'a, F>(records: &'a BTreeMap<String, Vec<u8>>, table: &str, names: &[&str], mut visit: F) -> Result<()>
+where
+    F: FnMut(&str, &[Option<&'a [u8]>]) -> Result<()>,
+{
+    let prefix = table_prefix(table);
+    let mut selected: Vec<Option<&'a [u8]>> = vec![None; names.len()];
+    for (key, bytes) in records.range(prefix.clone()..) {
+        if !key.starts_with(&prefix) {
+            break;
+        }
+        selected.iter_mut().for_each(|slot| *slot = None);
+        select_stored(bytes, names, &mut selected)?;
+        visit(key, &selected)?;
+    }
+    Ok(())
+}
+
+/// Tagged bytes of `names` inside one in-memory row, in `names` order.
+///
+/// Values are encoded with the same codec the record uses, so equality of these
+/// byte blobs is exactly equality of the stored values. `NULL` is `None`.
+pub fn select_encoded(row: &QueryRow, names: &[&str]) -> Result<Vec<Option<Vec<u8>>>> {
+    let mut selected = vec![None; names.len()];
+    for (slot, name) in names.iter().enumerate() {
+        let Some(value) = row.get(*name) else {
+            continue;
+        };
+        if matches!(value, Value::Null) {
+            continue;
+        }
+        let mut encoded = Vec::new();
+        encode_value(&mut encoded, value, 0)?;
+        selected[slot] = Some(encoded);
+    }
+    Ok(selected)
+}
+
+/// Fill `selected` with the tagged bytes of `names` from one stored record.
+fn select_stored<'a>(bytes: &'a [u8], names: &[&str], selected: &mut [Option<&'a [u8]>]) -> Result<()> {
+    match bytes.first() {
+        Some(version) if *version == ROW_CODEC_VERSION => {}
+        Some(_) => {
+            return Err(Error::Unsupported(
+                "row record uses the retired JSON row encoding: rebuild the database from source data to use the \
+                 binary row format",
+            ));
+        }
+        None => return Err(Error::Corrupt("row record is empty")),
+    }
+    let mut cursor = RowCursor::new(bytes);
+    cursor.take(1)?;
+    let column_count = cursor.u16()? as usize;
+    let bitmap = cursor.take(column_count.div_ceil(8))?;
+    // Two cursors over one record: one reads the name table, the other the values
+    // that follow it, so a skipped value is never decoded.
+    let names_start = cursor;
+    let mut names_cursor = names_start;
+    for _ in 0..column_count {
+        names_cursor.skip_text()?;
+    }
+    let mut values = names_cursor;
+    let mut names_cursor = names_start;
+    for index in 0..column_count {
+        let name = names_cursor.text_slice()?;
+        // A NULL column carries no value bytes: the row bitmap already said so.
+        if bitmap[index / 8] & (1 << (index % 8)) != 0 {
+            continue;
+        }
+        let start = values.position;
+        let end = values.skip_value(0)?;
+        if let Some(slot) = names.iter().position(|wanted| *wanted == name) {
+            selected[slot] = Some(&bytes[start..end]);
+        }
+    }
+    if values.remaining() != 0 {
+        return Err(Error::Corrupt("row record has trailing bytes"));
+    }
+    Ok(())
 }
 
 /// Upsert one logical row keyed by `pk`.
@@ -669,6 +779,86 @@ impl<'a> RowCursor<'a> {
         let len = self.u16()? as usize;
         let bytes = self.take(len)?;
         String::from_utf8(bytes.to_vec()).map_err(|_| Error::Corrupt("row record text is not UTF-8"))
+    }
+
+    /// Borrow one length-prefixed UTF-8 string without allocating it.
+    fn text_slice(&mut self) -> Result<&'a str> {
+        let len = self.u16()? as usize;
+        std::str::from_utf8(self.take(len)?).map_err(|_| Error::Corrupt("row record text is not UTF-8"))
+    }
+
+    /// Advance past one tagged value without decoding it, returning the byte
+    /// offset just past it.
+    ///
+    /// Mirrors [`decode_value`] tag for tag; a mismatch here would desynchronize
+    /// a selected-column walk, so every tag the decoder accepts is covered.
+    fn skip_value(&mut self, depth: u8) -> Result<usize> {
+        match self.u8()? {
+            TAG_NULL => {}
+            TAG_BOOL => {
+                self.take(1)?;
+            }
+            TAG_I64 | TAG_F64 | TAG_TIME | TAG_TIMESTAMP => {
+                self.take(8)?;
+            }
+            TAG_TEXT => {
+                let len = self.u16()? as usize;
+                self.take(len)?;
+            }
+            TAG_UUID => {
+                self.take(16)?;
+            }
+            TAG_DATE => {
+                self.take(4)?;
+            }
+            TAG_DECIMAL => {
+                self.take(18)?;
+            }
+            TAG_BYTES => {
+                let len = self.u16()? as usize;
+                self.take(len)?;
+            }
+            TAG_VECTOR => {
+                let _dimension = self.u16()? as usize;
+                let payload_len = self.u32()? as usize;
+                self.take(payload_len)?;
+            }
+            TAG_OBJECT => {
+                self.take(1 + 1 + 32 + 8)?;
+            }
+            TAG_FILE => {
+                self.take(32)?;
+                self.take(8)?;
+                let flags = self.u8()?;
+                if flags & !0b11 != 0 {
+                    return Err(Error::Corrupt("row record file flags are invalid"));
+                }
+                if flags & 0b01 != 0 {
+                    let len = self.u16()? as usize;
+                    self.take(len)?;
+                }
+                if flags & 0b10 != 0 {
+                    let len = self.u16()? as usize;
+                    self.take(len)?;
+                }
+                self.take(32 + 8)?;
+            }
+            TAG_LIST => {
+                let count = self.u32()? as usize;
+                if count > self.remaining() {
+                    return Err(Error::Corrupt("row record list length exceeds the remaining bytes"));
+                }
+                let nested = depth
+                    .checked_add(1)
+                    .filter(|nested| *nested <= MAX_LIST_DEPTH)
+                    .ok_or(Error::Corrupt("row record list nests deeper than the supported depth"))?;
+                for _ in 0..count {
+                    self.skip_value(nested)?;
+                }
+            }
+            _ => return Err(Error::Corrupt("row record value tag is unknown")),
+        }
+        Ok(self.position)
     }
 
     /// Advance past one length-prefixed UTF-8 string without materializing it.
