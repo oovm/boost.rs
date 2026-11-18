@@ -15,7 +15,6 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 template-input-dejavu = { workspace = true }
 thiserror = { workspace = true }
-oak-vos = { workspace = true }
 schema-input-vos = { workspace = true }
 schema-types = { workspace = true }
 
