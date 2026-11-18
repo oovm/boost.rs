@@ -53,6 +53,13 @@ pub enum PgUtilityStatement {
         /// Cursor name.
         name: String,
     },
+    /// `EXPLAIN [(ANALYZE)] <statement>`.
+    Explain {
+        /// Whether the plan is also executed to report actual rows.
+        analyze: bool,
+        /// Explained statement.
+        sql: String,
+    },
 }
 
 /// How much of a cursor one `FETCH` returns.
@@ -84,8 +91,36 @@ pub fn parse_pg_utility(source: &str) -> Result<Option<PgUtilityStatement>, SqlF
         "DECLARE" => parse_declare(&trimmed[keyword.len()..]).map(Some),
         "FETCH" => parse_fetch(&trimmed[keyword.len()..]).map(Some),
         "CLOSE" => parse_close(&trimmed[keyword.len()..]).map(Some),
+        "EXPLAIN" => parse_explain(&trimmed[keyword.len()..]).map(Some),
         _ => Ok(None),
     }
+}
+
+fn parse_explain(tail: &str) -> Result<PgUtilityStatement, SqlFrontendError> {
+    let mut rest = tail.trim_start();
+    let mut analyze = false;
+    if let Some(inner) = rest.strip_prefix('(') {
+        let close = matching_paren(inner)?;
+        for option in split_top_level(&inner[..close]) {
+            let name = option.split_whitespace().next().unwrap_or("").to_ascii_uppercase();
+            match name.as_str() {
+                "ANALYZE" | "ANALYSE" => {
+                    analyze = true;
+                }
+                "VERBOSE" | "COSTS" | "BUFFERS" | "TIMING" | "SUMMARY" | "SETTINGS" | "FORMAT" | "WAL" | "GENERIC_PLAN" => {}
+                other => return Err(syntax(format!("unsupported EXPLAIN option `{other}`"))),
+            }
+        }
+        rest = inner[close + 1..].trim_start();
+    }
+    else if let Some(after) = strip_keyword(rest, "ANALYZE").or_else(|| strip_keyword(rest, "ANALYSE")) {
+        analyze = true;
+        rest = after.trim_start();
+    }
+    if rest.trim().is_empty() {
+        return Err(syntax("EXPLAIN requires a statement"));
+    }
+    Ok(PgUtilityStatement::Explain { analyze, sql: rest.trim().to_owned() })
 }
 
 fn parse_declare(tail: &str) -> Result<PgUtilityStatement, SqlFrontendError> {

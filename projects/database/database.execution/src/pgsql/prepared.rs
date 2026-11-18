@@ -31,6 +31,7 @@ pub fn execute_utility(
         PgUtilityStatement::DeclareCursor { .. } | PgUtilityStatement::Fetch { .. } | PgUtilityStatement::CloseCursor { .. } => {
             super::cursors::execute_cursor_utility(utility, runtime, session)
         }
+        PgUtilityStatement::Explain { analyze, sql } => super::explain::execute_explain(sql, *analyze, runtime, session),
         PgUtilityStatement::Deallocate { name } => {
             let removed = session.deallocate_statement(name.as_deref());
             if let Some(name) = name {

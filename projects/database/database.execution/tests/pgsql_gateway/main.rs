@@ -75,6 +75,35 @@ impl Drop for Gateway {
 }
 
 #[test]
+fn explain_reports_the_plan_and_analyze_reports_actual_rows() {
+    let mut gateway = Gateway::new("explain");
+    gateway.command("CREATE TABLE explained (id BIGINT PRIMARY KEY, name TEXT)");
+    gateway.command("INSERT INTO explained (id, name) VALUES (1, 'a'), (2, 'b')");
+
+    let plan = gateway.expect("EXPLAIN SELECT name FROM explained");
+    assert_eq!(plan.description[0].name, "QUERY PLAN");
+    let lines: Vec<String> = plan.rows.iter().map(|row| match &row[0] {
+        SqlValue::String(text) => text.clone(),
+        other => panic!("plan line must be text, got {other:?}"),
+    }).collect();
+    assert!(lines.iter().any(|line| line.contains("explained")), "plan must name the table: {lines:?}");
+    assert_eq!(plan.command_tag, "EXPLAIN");
+
+    let analyzed = gateway.expect("EXPLAIN ANALYZE SELECT name FROM explained");
+    let root = match &analyzed.rows[0][0] {
+        SqlValue::String(text) => text.clone(),
+        other => panic!("plan line must be text, got {other:?}"),
+    };
+    assert!(root.contains("actual rows=2"), "unexpected root line: {root}");
+
+    let (code, _) = match gateway.sql("EXPLAIN CREATE TABLE nope (id INT)") {
+        Ok(_) => panic!("EXPLAIN of DDL must be rejected"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "0A000");
+}
+
+#[test]
 fn cursors_fetch_forward_absolute_and_relative_rows() {
     let mut gateway = Gateway::new("cursors");
     gateway.command("CREATE TABLE cursor_rows (id BIGINT PRIMARY KEY, name TEXT)");
