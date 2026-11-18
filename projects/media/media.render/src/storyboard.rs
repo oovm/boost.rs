@@ -160,6 +160,76 @@ pub fn write_storyboard(
     Ok(pages)
 }
 
+/// One scored cover candidate.
+#[derive(Clone, Debug)]
+pub struct CoverCandidate {
+    /// Project frame the candidate was taken from.
+    pub frame: u32,
+    /// Written file path.
+    pub path: String,
+    /// Heuristic score: mean luminance plus contrast.
+    pub score: f32,
+}
+
+/// Writes the strongest frames as cover candidates.
+///
+/// The score is a documented heuristic (mean luminance plus contrast), not an
+/// aesthetic judgement: it exists to shortlist, and a human still picks. Frames
+/// come from every panel's middle frame plus an even spread across the film, so
+/// a candidate is always a frame the film actually shows.
+pub fn write_cover_candidates(
+    json: &str,
+    production: &Production,
+    out_dir: &Path,
+    count: u32,
+) -> Result<Vec<CoverCandidate>, Error> {
+    production.validate()?;
+    let project = parse_project(json)?;
+    let blocks = plan_blocks(&project, production)?;
+    if blocks.is_empty() {
+        return Err(Error::invalid("the production declares no panel to sample for a cover"));
+    }
+    let mut frames: Vec<u32> = blocks.iter().map(|block| block.frames[1]).collect();
+    let total = project.duration_frames.max(1);
+    for step in 1..=8u32 {
+        frames.push(total.saturating_mul(step) / 9);
+    }
+    frames.sort_unstable();
+    frames.dedup();
+
+    let mut scored: Vec<(f32, u32, Frame)> = Vec::new();
+    for frame in frames {
+        let raster = render_frame_at(json, frame)?;
+        scored.push((cover_score(&raster), frame, raster));
+    }
+    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    std::fs::create_dir_all(out_dir).map_err(|e| Error::io(format!("cannot create {}: {e}", out_dir.display())))?;
+    let take = count.clamp(1, scored.len() as u32) as usize;
+    let mut candidates = Vec::with_capacity(take);
+    for (index, (score, frame, raster)) in scored.into_iter().take(take).enumerate() {
+        let path = out_dir.join(format!("cover-{:02}.png", index + 1));
+        write_page(&path, &raster)?;
+        candidates.push(CoverCandidate { frame, path: path.to_string_lossy().into_owned(), score });
+    }
+    Ok(candidates)
+}
+
+/// Mean luminance plus contrast, both in `0..=1`, weighted for a shortlist.
+fn cover_score(frame: &Frame) -> f32 {
+    let pixels = (frame.width * frame.height).max(1) as f32;
+    let mut sum = 0.0f32;
+    let mut sum_sq = 0.0f32;
+    for chunk in frame.pixels.chunks_exact(4) {
+        let luma = (0.2126 * chunk[0] as f32 + 0.7152 * chunk[1] as f32 + 0.0722 * chunk[2] as f32) / 255.0;
+        sum += luma;
+        sum_sq += luma * luma;
+    }
+    let mean = sum / pixels;
+    let variance = (sum_sq / pixels - mean * mean).max(0.0);
+    0.6 * mean + 0.4 * variance.sqrt()
+}
+
 /// Writes one contact sheet: the middle frame of every panel in a grid.
 pub fn write_contact_sheet(
     json: &str,
@@ -638,6 +708,19 @@ mod tests {
         assert_eq!((stats.width, stats.height), (160, 90), "half raster keeps the aspect");
         assert_eq!(stats.frames, 120, "every frame of the film is previewed");
         assert!(out.exists());
+    }
+
+    #[test]
+    fn cover_candidates_shortlist_real_frames() {
+        let (json, production) = fixture();
+        let dir = out_dir().join("covers");
+        let candidates = write_cover_candidates(&json, &production, &dir, 3).expect("covers");
+        assert_eq!(candidates.len(), 3);
+        assert!(candidates.windows(2).all(|pair| pair[0].score >= pair[1].score), "the shortlist is sorted by score");
+        for candidate in &candidates {
+            assert!(std::path::Path::new(&candidate.path).exists(), "{} is written", candidate.path);
+            assert!(candidate.frame < 120, "a candidate is a frame the film shows");
+        }
     }
 
     #[test]
