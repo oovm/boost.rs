@@ -29,8 +29,10 @@ pub use database_storage::sqlite::{
 
 pub use database_formats::sqlite::{
     ENGINE_LIBRARY_VERSION, ENGINE_LIBRARY_VERSION_NUMBER, MAGIC, RecordLimits, RecordValue, blank_database, decode_library_version,
-    validate_database,
+    read_freelist_count, validate_database,
 };
+
+pub use database_udf::{HostFunctionHandle, HostMicroDefinition, HostRuntimeAdapter, Result as UdfResult, UdfError, UdfType, UdfValue};
 
 /// Adapter identifier used in logs and diagnostics.
 pub const BACKEND_ID: &str = "sqlite";
