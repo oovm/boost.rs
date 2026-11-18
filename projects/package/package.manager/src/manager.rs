@@ -128,6 +128,12 @@ impl PackageManager {
         self.publisher = PackagePublisher::new(self.registries.clone(), self.layout);
     }
 
+    /// 替换凭据策略（用于按注入注册表表打开的宿主）。
+    pub fn with_credentials(mut self, credentials: Arc<dyn crate::CredentialProvider>) -> Result<Self> {
+        self.vendor = VendorManager::open_with_provider(self.layout, credentials)?;
+        Ok(self)
+    }
+
     /// 项目根目录。
     pub fn base_directory(&self) -> &Path {
         self.mode.root()

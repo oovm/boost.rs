@@ -13,6 +13,7 @@ mod credentials;
 mod error;
 mod manager;
 mod registry_sources;
+/// 依赖漏洞与许可证审计。
 pub mod security;
 
 use std::sync::Arc;
