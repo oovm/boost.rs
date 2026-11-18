@@ -51,6 +51,10 @@ pub struct AudioReport {
     pub rms_db: f32,
     /// Samples at or beyond full scale.
     pub clipped: u64,
+    /// Gated integrated loudness in LUFS.
+    pub integrated_lufs: f32,
+    /// Interpolated true peak in dBFS.
+    pub true_peak_db: f32,
 }
 
 /// Facts read back from a delivered file.
@@ -133,6 +137,7 @@ pub fn inspect_delivery(path: &Path, probes: usize, sample_rate: u32) -> Result<
         Ok(pcm) if !pcm.is_empty() => {
             let interleaved: Vec<f32> = pcm.iter().flat_map(|frame| frame.iter().copied()).collect();
             let level = media_harness::measure_f32(&interleaved);
+            let loudness = media_dsp::measure_loudness(&interleaved, 2, sample_rate);
             let frames = pcm.len() as u64;
             Some(AudioReport {
                 sample_rate,
@@ -141,6 +146,8 @@ pub fn inspect_delivery(path: &Path, probes: usize, sample_rate: u32) -> Result<
                 peak_db: level.peak_db,
                 rms_db: level.rms_db,
                 clipped: level.clipped as u64,
+                integrated_lufs: loudness.integrated_lufs,
+                true_peak_db: loudness.true_peak_db,
             })
         }
         _ => None,
@@ -207,6 +214,12 @@ pub fn inspect_delivery(path: &Path, probes: usize, sample_rate: u32) -> Result<
         }
         if audio.peak_db > threshold::HEADROOM_PEAK_DB {
             suspects.push(format!("audio peak {:.1} dBFS leaves no delivery headroom", audio.peak_db));
+        }
+        if audio.true_peak_db > threshold::HEADROOM_PEAK_DB && audio.peak_db <= threshold::HEADROOM_PEAK_DB {
+            suspects.push(format!(
+                "inter-sample peak reaches {:.1} dBFS while sample peaks stay at {:.1} dBFS",
+                audio.true_peak_db, audio.peak_db
+            ));
         }
     }
 

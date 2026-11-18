@@ -22,6 +22,10 @@
 //! ```
 #![warn(missing_docs)]
 
+pub mod loudness;
+
+pub use loudness::{LoudnessReport, measure_loudness, true_peak_db};
+
 /// xorshift32: the only randomness in the audio domain, seeded per sound.
 pub struct Rng(u32);
 

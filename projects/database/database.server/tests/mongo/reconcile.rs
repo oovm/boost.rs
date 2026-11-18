@@ -19,7 +19,7 @@ use database_server::yyds::mongo::{
 };
 use database_storage::cluster_kv::MemoryShard;
 use database_types::cluster::{ShardEpoch, ShardId};
-use database_execution::mongo::cursor::CursorStore;
+use mongo::cursor::CursorStore;
 
 /// 结构化断言：真机 `createIndexes` 失败消息含随机 operation id 与集合 UUID，
 /// 只冻结稳定字段，不比较完整字符串。

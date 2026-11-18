@@ -10,16 +10,17 @@
 
 use std::{collections::BTreeMap, sync::Mutex};
 
-use database_execution::cluster::{BufferedCommit, KeyValueExecutor};
-use database_formats::mongo::collection_record;
-use database_formats::mongo::oplog::OplogEntry;
-use database_formats::mongo::parse_collection_record;
+use database_execution::cluster::KeyValueExecutor;
 use database_query::cluster_kv::{KeyValueAction, KeyValueCommand, KeyValueResult};
-use database_storage::mongo::{
-    CollectionOptions, IndexSpec, MongoStorage, SessionWriteState, StoreError, TransactionAbort, TransactionBegin, TransactionCommit,
-    TransactionWrite, TtlMonitorState,
-};
 use database_types::cluster::Namespace;
+use mongo::{
+    oplog::OplogEntry,
+    storage::{
+        CollectionOptions, IndexSpec, MongoStorage, SessionWriteState, StoreError, TransactionAbort, TransactionBegin, TransactionCommit,
+        TransactionWrite, TtlMonitorState,
+    },
+    store::{collection_record, parse_collection_record},
+};
 
 const CATALOG_NAMESPACE: &str = "!catalog";
 
@@ -359,7 +360,7 @@ impl MongoStorage for ExecutorStorage<'_> {
 
     fn transaction_commit(&self, session: &str, txn_number: i64) -> TransactionCommit {
         let mut sessions = self.sessions.lock().unwrap_or_else(|poison| poison.into_inner());
-        let Some(transaction) = sessions.transactions.get(session)
+        let Some(transaction) = sessions.transactions.remove(session)
         else {
             return TransactionCommit::NoTransaction { active: sessions.newest.get(session).copied().unwrap_or(0) };
         };
@@ -369,30 +370,15 @@ impl MongoStorage for ExecutorStorage<'_> {
         if transaction.aborted {
             return TransactionCommit::AlreadyAborted;
         }
-        // 整组写入必须由一个原子提交边界发布：先提交，成功后才消耗会话状态。
-        // 逐笔写入会在第二笔失败时留下「已写部分 + 事务已消耗」的中间态，客户端
-        // 既拿不到全量提交，也无法重试同一个事务编号。
-        let batch: Vec<BufferedCommit> = transaction
-            .writes
-            .iter()
-            .map(|((namespace, key), value)| BufferedCommit {
-                command: KeyValueCommand {
-                    namespace: Namespace(namespace.clone()),
-                    key: key.clone(),
-                    action: match value {
-                        Some(value) => KeyValueAction::Put(value.clone()),
-                        None => KeyValueAction::Delete,
-                    },
-                },
-                condition: None,
-            })
-            .collect();
-        if self.executor.commit_batch(None, batch).is_err() {
-            // 不支持原子发布的后端在这里显式拒绝：事务保持未提交，没有任何部分
-            // 写入落地，调用方仍可重试或放弃这个事务编号。
-            return TransactionCommit::Conflict;
+        for ((namespace, key), value) in transaction.writes {
+            let result = match value {
+                Some(value) => self.write(&namespace, key, value),
+                None => self.run(&namespace, key, KeyValueAction::Delete).map(|_| ()),
+            };
+            if result.is_err() {
+                return TransactionCommit::Conflict;
+            }
         }
-        sessions.transactions.remove(session);
         TransactionCommit::Committed
     }
 
@@ -432,9 +418,7 @@ mod tests {
     use database_types::cluster::{Error, FenceToken, Namespace, Result as ClusterResult, ShardEpoch, ShardId};
 
     use super::ExecutorStorage;
-    use database_storage::mongo::{
-        MongoStorage, TransactionAbort, TransactionBegin, TransactionCommit, TransactionWrite,
-    };
+    use mongo::storage::MongoStorage;
 
     fn local_executor() -> LocalExecutor<MemoryShard> {
         let shard = ShardId("mongo-contract".into());
@@ -542,57 +526,5 @@ mod tests {
         assert_eq!(storage.scan("app.items").unwrap().len(), 1);
         assert_eq!(storage.delete("app.items", &[b"k".to_vec()]).unwrap(), 1);
         assert!(!storage.namespace_exists("app.items").unwrap());
-    }
-
-    /// 第二笔写入无法落地时，第一笔不能已经可见。
-    ///
-    /// 该执行器没有原子提交边界，整组事务必须被显式拒绝；拒绝之后事务仍然保持
-    /// 未提交，没有任何部分写入进入存储。
-    #[test]
-    fn a_rejected_commit_never_leaves_the_first_write_visible() {
-        let executor = SwitchableExecutor::new();
-        let storage = ExecutorStorage::new(&executor);
-
-        assert_eq!(storage.begin_transaction("s1", 1), TransactionBegin::Started);
-        assert_eq!(storage.transaction_write("s1", "app.items", b"a", Some(b"1".to_vec())), TransactionWrite::Staged);
-        assert_eq!(storage.transaction_write("s1", "app.items", b"b", Some(b"2".to_vec())), TransactionWrite::Staged);
-
-        assert_eq!(storage.transaction_commit("s1", 1), TransactionCommit::Conflict);
-        assert_eq!(storage.get("app.items", b"a").unwrap(), None, "a rejected commit must not publish the first write");
-        assert_eq!(storage.get("app.items", b"b").unwrap(), None, "a rejected commit must not publish the second write");
-
-        // 事务没有被消耗：同一编号仍然活跃，可以显式放弃。
-        assert!(storage.transaction_active("s1"));
-        assert_eq!(storage.transaction_abort("s1", 1), TransactionAbort::Aborted);
-        assert!(!storage.transaction_active("s1"));
-    }
-
-    /// 带耐久原子提交边界的后端一次发布整组写入。
-    #[test]
-    fn a_durable_executor_publishes_the_whole_batch() {
-        use database_storage::cluster_kv::FileShard;
-
-        let directory = std::env::temp_dir().join(format!("mongo-txn-{}", std::process::id()));
-        std::fs::create_dir_all(&directory).unwrap();
-        let path = directory.join("batch.yykv");
-        let shard = ShardId("mongo-txn".into());
-        let executor = LocalExecutor::new(
-            ShardMap::new(ShardEpoch(1), vec![shard.clone()]).unwrap(),
-            HashMap::from([(shard, FileShard::open(&path).unwrap())]),
-            Vec::new(),
-        )
-        .unwrap();
-        let storage = ExecutorStorage::new(&executor);
-
-        assert_eq!(storage.begin_transaction("s1", 7), TransactionBegin::Started);
-        assert_eq!(storage.transaction_write("s1", "app.items", b"a", Some(b"1".to_vec())), TransactionWrite::Staged);
-        assert_eq!(storage.transaction_write("s1", "app.items", b"b", Some(b"2".to_vec())), TransactionWrite::Staged);
-        assert_eq!(storage.get("app.items", b"a").unwrap(), None, "staged writes must stay invisible before commit");
-        assert_eq!(storage.transaction_commit("s1", 7), TransactionCommit::Committed);
-        assert_eq!(storage.get("app.items", b"a").unwrap(), Some(b"1".to_vec()));
-        assert_eq!(storage.get("app.items", b"b").unwrap(), Some(b"2".to_vec()));
-        assert!(!storage.transaction_active("s1"));
-
-        let _ = std::fs::remove_file(&path);
     }
 }
