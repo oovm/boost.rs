@@ -212,12 +212,7 @@ fn resolve_fonts(project: &Project) -> Result<(Fonts, Vec<String>, Vec<String>),
 }
 
 fn fnv1a(bytes: &[u8]) -> String {
-    let mut state = 0xcbf2_9ce4_8422_2325u64;
-    for byte in bytes {
-        state ^= u64::from(*byte);
-        state = state.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    format!("{state:016x}")
+    media_types::digest(bytes)
 }
 
 /// Parses, validates and renders a project JSON string into `out`.

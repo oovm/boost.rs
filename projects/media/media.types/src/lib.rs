@@ -1,10 +1,12 @@
 //! Shared media values.
 #![warn(missing_docs)]
 
+pub mod digest;
 pub mod error;
 pub mod hash;
 pub mod time;
 
+pub use digest::digest;
 pub use error::Error;
 pub use hash::hash;
 pub use time::TimeBase;

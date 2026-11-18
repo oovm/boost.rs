@@ -265,6 +265,106 @@ impl Task {
     pub fn is_fresh(&self, input: &str, config: &str) -> bool {
         !self.input.is_empty() && self.input == input && self.config == config
     }
+
+    /// Whether this task has to run again, given its latest recorded attempt.
+    #[must_use]
+    pub fn needs_run(&self, last: Option<&TaskRun>) -> bool {
+        !last.is_some_and(|run| run.is_current(self))
+    }
+}
+
+/// Lifecycle of one task attempt.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum TaskStatus {
+    /// Declared but not started.
+    Pending,
+    /// Started and still running; a run left in this state is an interrupted
+    /// attempt, not evidence of success.
+    Running,
+    /// Finished and published its outputs.
+    Succeeded,
+    /// Failed and published nothing.
+    Failed,
+    /// Stopped by the host and published nothing.
+    Cancelled,
+}
+
+/// A failure reported by a run, using the same stable codes as the core.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct TaskFailure {
+    /// Stable code, e.g. `cancelled` or `encode`.
+    pub code: String,
+    /// Human-readable detail.
+    pub message: String,
+}
+
+/// One recorded task attempt.
+///
+/// Publishing is atomic: `outputs` is non-empty only for a succeeded run.
+/// A cancelled or failed attempt lists no outputs, because nothing it wrote
+/// was promoted over the previous good artifact.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct TaskRun {
+    /// Task this attempt belongs to.
+    pub task: TaskId,
+    /// How the attempt ended.
+    pub status: TaskStatus,
+    /// Input fingerprint the attempt ran against.
+    pub input: String,
+    /// Configuration fingerprint the attempt ran against.
+    pub config: String,
+    /// Published output paths, in the task's own order.
+    #[serde(default)]
+    pub outputs: Vec<String>,
+    /// Failure detail; present only for `failed`.
+    #[serde(default)]
+    pub failure: Option<TaskFailure>,
+}
+
+impl TaskRun {
+    /// Records a successful attempt that published `outputs`.
+    #[must_use]
+    pub fn succeeded(task: &Task, outputs: Vec<String>) -> Self {
+        Self { task: task.id.clone(), status: TaskStatus::Succeeded, input: task.input.clone(), config: task.config.clone(), outputs, failure: None }
+    }
+
+    /// Records a host cancellation. Nothing is published.
+    #[must_use]
+    pub fn cancelled(task: &Task) -> Self {
+        Self {
+            task: task.id.clone(),
+            status: TaskStatus::Cancelled,
+            input: task.input.clone(),
+            config: task.config.clone(),
+            outputs: Vec::new(),
+            failure: Some(TaskFailure { code: "cancelled".to_owned(), message: "cancelled by the host".to_owned() }),
+        }
+    }
+
+    /// Records a failure with the core's stable code.
+    #[must_use]
+    pub fn failed(task: &Task, error: &Error) -> Self {
+        Self {
+            task: task.id.clone(),
+            status: TaskStatus::Failed,
+            input: task.input.clone(),
+            config: task.config.clone(),
+            outputs: Vec::new(),
+            failure: Some(TaskFailure { code: error.code().to_owned(), message: error.message.clone() }),
+        }
+    }
+
+    /// Whether this attempt is a usable result for `task` as it stands now.
+    ///
+    /// Succeeded, same fingerprints, same published outputs. A run that merely
+    /// started (`running`) or ended without publishing is never current.
+    #[must_use]
+    pub fn is_current(&self, task: &Task) -> bool {
+        self.status == TaskStatus::Succeeded && self.input == task.input && self.config == task.config && self.outputs == task.outputs
+    }
 }
 
 /// One delivery target.
@@ -304,6 +404,10 @@ pub struct Production {
     /// Tasks that can be resumed or reused.
     #[serde(default)]
     pub tasks: Vec<Task>,
+    /// Recorded attempts, oldest first. The last entry for a task decides
+    /// whether it still has to run.
+    #[serde(default)]
+    pub runs: Vec<TaskRun>,
     /// Delivery targets.
     #[serde(default)]
     pub delivery: Vec<Delivery>,
@@ -313,7 +417,35 @@ impl Production {
     /// Wraps a render project with no production metadata yet.
     #[must_use]
     pub fn new(project: Project) -> Self {
-        Self { project, assets: Vec::new(), shots: Vec::new(), cues: Vec::new(), tasks: Vec::new(), delivery: Vec::new() }
+        Self { project, assets: Vec::new(), shots: Vec::new(), cues: Vec::new(), tasks: Vec::new(), runs: Vec::new(), delivery: Vec::new() }
+    }
+
+    /// Tasks whose latest attempt does not match the declared inputs.
+    ///
+    /// Order follows declaration, so a host can run them in the order the
+    /// author wrote. Dependency satisfaction is not evaluated here: a task
+    /// whose dependency is also pending will simply appear in the list too.
+    #[must_use]
+    pub fn pending_tasks(&self) -> Vec<&Task> {
+        self.tasks
+            .iter()
+            .filter(|task| {
+                let last = self.runs.iter().rev().find(|run| run.task == task.id);
+                task.needs_run(last)
+            })
+            .collect()
+    }
+
+    /// Tasks whose latest attempt is a current success.
+    #[must_use]
+    pub fn fresh_tasks(&self) -> Vec<&Task> {
+        self.tasks
+            .iter()
+            .filter(|task| {
+                let last = self.runs.iter().rev().find(|run| run.task == task.id);
+                last.is_some_and(|run| run.is_current(task))
+            })
+            .collect()
     }
 
     /// Checks identity, references, ranges and task dependencies.
@@ -499,6 +631,36 @@ impl Production {
                 }
             }
         }
+        let by_id: HashMap<&str, &Task> = self.tasks.iter().map(|task| (task.id.as_str(), task)).collect();
+        for (position, run) in self.runs.iter().enumerate() {
+            let Some(task) = by_id.get(run.task.as_str()) else {
+                problems.push(format!("runs[{position}] references unknown task `{}`", run.task));
+                continue;
+            };
+            if !run.outputs.is_empty() && run.status != TaskStatus::Succeeded {
+                problems.push(format!("run for `{}` is {:?} and must not publish outputs", run.task, run.status));
+            }
+            match run.status {
+                TaskStatus::Succeeded => {
+                    if run.outputs != task.outputs {
+                        problems.push(format!(
+                            "run for `{}` published {:?} but the task declares {:?}",
+                            run.task, run.outputs, task.outputs
+                        ));
+                    }
+                    if run.failure.is_some() {
+                        problems.push(format!("run for `{}` succeeded but carries a failure", run.task));
+                    }
+                }
+                TaskStatus::Failed => {
+                    if run.failure.as_ref().is_none_or(|failure| failure.code.trim().is_empty()) {
+                        problems.push(format!("run for `{}` failed without a stable code", run.task));
+                    }
+                }
+                TaskStatus::Pending | TaskStatus::Running | TaskStatus::Cancelled => {}
+            }
+        }
+
         if let Some(cycle) = task_cycle(&self.tasks) {
             problems.push(format!("task dependency cycle: {}", cycle.join(" -> ")));
         }
@@ -652,6 +814,7 @@ mod tests {
                 deps: Vec::new(),
                 outputs: vec!["out/master.mp4".to_owned()],
             }],
+            runs: Vec::new(),
             delivery: vec![Delivery {
                 name: "master".to_owned(),
                 container: "mp4".to_owned(),
@@ -746,6 +909,58 @@ mod tests {
         let error = production.validate().expect_err("cycles and collisions must fail");
         assert!(error.message.contains("dependency cycle"), "{}", error.message);
         assert!(error.message.contains("both write `out/a.mp4`"), "{}", error.message);
+    }
+
+    #[test]
+    fn only_a_current_success_clears_a_task() {
+        let mut production = Production::new(project_with(false));
+        let task = Task {
+            id: TaskId::new("render").unwrap(),
+            capability: "media.render".to_owned(),
+            input: "project:1".to_owned(),
+            config: "h264/aac".to_owned(),
+            deps: Vec::new(),
+            outputs: vec!["out/master.mp4".to_owned()],
+        };
+        production.tasks.push(task.clone());
+        assert_eq!(production.pending_tasks().len(), 1, "a declared task with no run is pending");
+
+        production.runs.push(TaskRun::cancelled(&task));
+        assert_eq!(production.pending_tasks().len(), 1, "a cancelled run publishes nothing");
+        assert!(production.fresh_tasks().is_empty());
+
+        production.runs.push(TaskRun::succeeded(&task, task.outputs.clone()));
+        production.validate().expect("a complete run is a valid record");
+        assert!(production.pending_tasks().is_empty(), "the latest attempt is current");
+        assert_eq!(production.fresh_tasks().len(), 1);
+
+        production.tasks[0].input = "project:2".to_owned();
+        assert_eq!(production.pending_tasks().len(), 1, "a newer input re-pends the task");
+    }
+
+    #[test]
+    fn a_run_cannot_claim_outputs_it_did_not_publish() {
+        let mut production = Production::new(project_with(false));
+        let task = Task {
+            id: TaskId::new("render").unwrap(),
+            capability: "media.render".to_owned(),
+            input: "project:1".to_owned(),
+            config: "h264/aac".to_owned(),
+            deps: Vec::new(),
+            outputs: vec!["out/master.mp4".to_owned()],
+        };
+        production.tasks.push(task);
+        production.runs.push(TaskRun::succeeded(&production.tasks[0], vec!["out/other.mp4".to_owned()]));
+        production.runs.push(TaskRun {
+            task: TaskId::new("ghost").unwrap(),
+            ..TaskRun::cancelled(&production.tasks[0])
+        });
+        production.runs.push(TaskRun { status: TaskStatus::Failed, failure: None, ..TaskRun::cancelled(&production.tasks[0]) });
+
+        let problems = production.problems();
+        assert!(problems.iter().any(|p| p.contains("but the task declares")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("unknown task `ghost`")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("failed without a stable code")), "{problems:?}");
     }
 
     #[test]
