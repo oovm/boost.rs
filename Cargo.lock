@@ -3631,6 +3631,7 @@ name = "plotter-types"
 version = "0.1.0"
 dependencies = [
  "boost-harness",
+ "boost-math",
  "serde",
  "serde_json",
 ]

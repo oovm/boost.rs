@@ -27,7 +27,8 @@ impl Vec3 {
 
     /// 点积。
     pub fn dot(self, other: Self) -> f64 {
-        self.x * other.x + self.y * other.y + self.z * other.z
+        // 长度恒等的固定数组，维度检查不会失败。
+        boost_math::vector::dot(&[self.x, self.y, self.z], &[other.x, other.y, other.z]).expect("两个三维向量的长度恒等")
     }
 
     /// 叉积。
@@ -35,9 +36,9 @@ impl Vec3 {
         Self::new(self.y * other.z - self.z * other.y, self.z * other.x - self.x * other.z, self.x * other.y - self.y * other.x)
     }
 
-    /// 长度。
+    /// 长度，按稳定 `L2` 范数计算，分量很大或很小时中间平方不溢出。
     pub fn length(self) -> f64 {
-        self.dot(self).sqrt()
+        boost_math::vector::norm(&[self.x, self.y, self.z])
     }
 
     /// 单位化；零向量返回 `None`。

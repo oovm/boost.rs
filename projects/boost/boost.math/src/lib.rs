@@ -10,6 +10,8 @@
 //!   （`std` feature）。容器身份、边属性与布局不进入本模块。
 //! - [`numeric`]：自有标量数值内核，不链接平台 `libm`，供 `boost-random`
 //!   等下游单向消费。
+//! - [`vector`]：点积与稳定 `L2` 范数，消费切片，固定数组与动态向量共用
+//!   同一实现。
 //!
 //! 误差、特殊值、溢出与失败语义按模块分别冻结；运算符可用不证明代数定律。
 
@@ -27,3 +29,4 @@ pub mod bigint;
 #[cfg(feature = "std")]
 pub mod graph_theory;
 pub mod numeric;
+pub mod vector;

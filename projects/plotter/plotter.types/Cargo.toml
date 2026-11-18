@@ -10,5 +10,6 @@ edition.workspace = true
 
 [dependencies]
 boost-harness = { workspace = true }
+boost-math = { workspace = true, default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
