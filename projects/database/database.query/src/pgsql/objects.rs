@@ -48,6 +48,20 @@ pub enum PgObjectStatement {
         /// Roles the privileges are removed from.
         roles: Vec<String>,
     },
+    /// `GRANT role[, ...] TO role[, ...]`.
+    GrantMembership {
+        /// Roles whose privileges are inherited.
+        roles: Vec<String>,
+        /// Roles that become members.
+        members: Vec<String>,
+    },
+    /// `REVOKE role[, ...] FROM role[, ...]`.
+    RevokeMembership {
+        /// Roles whose privileges were inherited.
+        roles: Vec<String>,
+        /// Roles that stop being members.
+        members: Vec<String>,
+    },
 }
 
 /// Parses one cluster-object statement, or `Ok(None)` when the text is not one.
@@ -102,7 +116,7 @@ fn parse_create_role(tail: &str, login_default: bool) -> Result<PgObjectStatemen
     let (mut rest, if_not_exists) = if_not_exists(tail);
     let (name, remaining) = take_identifier(rest)?;
     rest = remaining.trim_start();
-    let mut role = PgRole { name, superuser: false, createdb: false, login: login_default, password: None };
+    let mut role = PgRole { name, superuser: false, createdb: false, login: login_default, inherit: true, password: None };
     let mut password = None;
     if let Some(after) = strip_keyword(rest, "WITH") {
         rest = after.trim_start();
@@ -121,7 +135,9 @@ fn parse_create_role(tail: &str, login_default: bool) -> Result<PgObjectStatemen
             "NOSUPERUSER" => role.superuser = false,
             "CREATEDB" => role.createdb = true,
             "NOCREATEDB" => role.createdb = false,
-            "INHERIT" | "NOINHERIT" | "REPLICATION" | "NOREPLICATION" | "BYPASSRLS" | "NOBYPASSRLS" => {}
+            "INHERIT" => role.inherit = true,
+            "NOINHERIT" => role.inherit = false,
+            "REPLICATION" | "NOREPLICATION" | "BYPASSRLS" | "NOBYPASSRLS" => {}
             "PASSWORD" => {
                 let (value, remaining) = take_password(after)?;
                 password = value;
@@ -169,16 +185,15 @@ fn take_password(source: &str) -> Result<(Option<String>, &str), SqlFrontendErro
 
 fn parse_grant(tail: &str, granting: bool) -> Result<PgObjectStatement, SqlFrontendError> {
     let (mut rest, _) = if_not_exists(tail);
+    // `GRANT role[, ...] TO role[, ...]` carries no `ON`, so it is membership
+    // rather than a table privilege.
+    if split_keyword(rest, "ON").is_none() {
+        return parse_membership(rest, granting);
+    }
     let upper = rest.to_ascii_uppercase();
     if upper.contains("TABLES IN SCHEMA") || upper.contains("SEQUENCES IN SCHEMA") || upper.contains("ALL TABLES") {
         return Err(unsupported(
             "`GRANT ... ON ALL TABLES IN SCHEMA` is not supported by the cluster SQL gateway, name each table",
-        ));
-    }
-    if granting && split_keyword(rest, "ON").is_none() && split_keyword(rest, "TO").is_some() {
-        // `GRANT role TO role` is membership, not a table privilege.
-        return Err(unsupported(
-            "`GRANT <role> TO <role>` role membership is not supported by the cluster SQL gateway, only table privileges are",
         ));
     }
     if !granting {
@@ -225,6 +240,41 @@ fn parse_grant(tail: &str, granting: bool) -> Result<PgObjectStatement, SqlFront
     }
     else {
         PgObjectStatement::Revoke { privileges, table, roles }
+    })
+}
+
+/// Parses `GRANT role[, ...] TO member[, ...]` and its `REVOKE` form.
+fn parse_membership(rest: &str, granting: bool) -> Result<PgObjectStatement, SqlFrontendError> {
+    let rest = rest.trim_start();
+    let separator = if granting { "TO" } else { "FROM" };
+    if !granting
+        && let Some(after) = strip_keyword(rest, "ADMIN")
+    {
+        let after = strip_keyword(after, "OPTION").ok_or_else(|| syntax("`REVOKE ADMIN` requires `OPTION FOR`"))?;
+        strip_keyword(after.trim_start(), "FOR").ok_or_else(|| syntax("`REVOKE ADMIN OPTION` requires `FOR`"))?;
+        return Err(unsupported(
+            "`REVOKE ADMIN OPTION FOR` is not supported by the cluster SQL gateway, revoke the membership instead",
+        ));
+    }
+    let (roles_text, after_roles) = split_keyword(rest, separator)
+        .ok_or_else(|| syntax(format!("`{}` requires `{separator} <role>`", if granting { "GRANT" } else { "REVOKE" })))?;
+    let roles = split_identifiers(&roles_text)?;
+    if roles.is_empty() {
+        return Err(syntax("the statement names no role"));
+    }
+    let after_roles = after_roles.trim_start();
+    if granting && strip_keyword(after_roles, "WITH").is_some() {
+        return Err(unsupported("`GRANT ... WITH ADMIN OPTION` is not supported by the cluster SQL gateway"));
+    }
+    let members = split_identifiers(after_roles)?;
+    if members.is_empty() {
+        return Err(syntax("the statement names no member role"));
+    }
+    Ok(if granting {
+        PgObjectStatement::GrantMembership { roles, members }
+    }
+    else {
+        PgObjectStatement::RevokeMembership { roles, members }
     })
 }
 
@@ -353,7 +403,7 @@ mod tests {
         assert_eq!(
             parse_pg_object_statement("CREATE ROLE reader WITH LOGIN").unwrap(),
             Some(PgObjectStatement::CreateRole {
-                role: PgRole { name: "reader".to_owned(), superuser: false, createdb: false, login: true, password: None },
+                role: PgRole { name: "reader".to_owned(), superuser: false, createdb: false, login: true, inherit: true, password: None },
                 password: None,
                 if_not_exists: false,
             })
@@ -361,7 +411,7 @@ mod tests {
         assert_eq!(
             parse_pg_object_statement("CREATE USER app_user SUPERUSER").unwrap(),
             Some(PgObjectStatement::CreateRole {
-                role: PgRole { name: "app_user".to_owned(), superuser: true, createdb: false, login: true, password: None },
+                role: PgRole { name: "app_user".to_owned(), superuser: true, createdb: false, login: true, inherit: true, password: None },
                 password: None,
                 if_not_exists: false,
             })
@@ -369,7 +419,7 @@ mod tests {
         assert_eq!(
             parse_pg_object_statement("CREATE ROLE app PASSWORD 'it''s' NOLOGIN").unwrap(),
             Some(PgObjectStatement::CreateRole {
-                role: PgRole { name: "app".to_owned(), superuser: false, createdb: false, login: false, password: None },
+                role: PgRole { name: "app".to_owned(), superuser: false, createdb: false, login: false, inherit: true, password: None },
                 password: Some("it's".to_owned()),
                 if_not_exists: false,
             })
@@ -377,7 +427,7 @@ mod tests {
         assert_eq!(
             parse_pg_object_statement("CREATE ROLE blank PASSWORD NULL").unwrap(),
             Some(PgObjectStatement::CreateRole {
-                role: PgRole { name: "blank".to_owned(), superuser: false, createdb: false, login: false, password: None },
+                role: PgRole { name: "blank".to_owned(), superuser: false, createdb: false, login: false, inherit: true, password: None },
                 password: None,
                 if_not_exists: false,
             })
@@ -409,11 +459,32 @@ mod tests {
     }
 
     #[test]
+    fn membership_grants_parse_without_an_on_clause() {
+        assert_eq!(
+            parse_pg_object_statement("GRANT reader, writer TO app, worker").unwrap(),
+            Some(PgObjectStatement::GrantMembership {
+                roles: vec!["reader".to_owned(), "writer".to_owned()],
+                members: vec!["app".to_owned(), "worker".to_owned()],
+            })
+        );
+        assert_eq!(
+            parse_pg_object_statement("REVOKE reader FROM app").unwrap(),
+            Some(PgObjectStatement::RevokeMembership { roles: vec!["reader".to_owned()], members: vec!["app".to_owned()] })
+        );
+        // `WITH ADMIN OPTION` and `REVOKE ADMIN OPTION FOR` stay explicit rejections.
+        assert_eq!(
+            parse_pg_object_statement("REVOKE ADMIN OPTION FOR reader FROM app").unwrap_err().kind,
+            SqlErrorKind::Unsupported
+        );
+        assert_eq!(parse_pg_object_statement("GRANT reader TO").unwrap_err().kind, SqlErrorKind::Syntax);
+    }
+
+    #[test]
     fn unsupported_clauses_are_rejected_with_a_reason() {
         for statement in [
             "CREATE DATABASE app TEMPLATE template0",
             "GRANT ALL TABLES IN SCHEMA public TO app",
-            "GRANT reader TO app",
+            "GRANT reader TO app WITH ADMIN OPTION",
             "GRANT TRUNCATE ON orders TO app",
             "CREATE SEQUENCE s",
         ] {

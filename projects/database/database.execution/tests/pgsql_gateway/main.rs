@@ -212,6 +212,51 @@ fn role_passwords_are_cataloged_as_verifiers() {
 }
 
 #[test]
+fn role_membership_inherits_privileges_and_reports_cycles() {
+    let mut gateway = Gateway::new("membership");
+    gateway.command("CREATE TABLE orders (id BIGINT PRIMARY KEY, total BIGINT)");
+    gateway.command("CREATE ROLE reader");
+    gateway.command("CREATE ROLE app WITH LOGIN");
+    gateway.command("GRANT SELECT ON orders TO reader");
+    gateway.command("INSERT INTO orders (id, total) VALUES (1, 10)");
+
+    // The member starts without privileges.
+    gateway.session.set_user("app".to_owned());
+    let (code, message) = match gateway.sql("SELECT total FROM orders WHERE id = 1") {
+        Ok(_) => panic!("a role without a grant must be refused"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42501", "unexpected message: {message}");
+
+    gateway.session.set_user("postgres".to_owned());
+    assert_eq!(gateway.command("GRANT reader TO app"), "GRANT ROLE");
+    gateway.session.set_user("app".to_owned());
+    assert_eq!(gateway.scalar("SELECT total FROM orders WHERE id = 1"), SqlValue::Integer(10));
+
+    gateway.session.set_user("postgres".to_owned());
+    assert_eq!(gateway.command("REVOKE reader FROM app"), "REVOKE ROLE");
+    gateway.session.set_user("app".to_owned());
+    let (code, _) = match gateway.sql("SELECT total FROM orders WHERE id = 1") {
+        Ok(_) => panic!("the revoked membership must no longer grant access"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42501");
+
+    gateway.session.set_user("postgres".to_owned());
+    gateway.command("GRANT reader TO app");
+    let (code, message) = match gateway.sql("GRANT app TO reader") {
+        Ok(_) => panic!("a circular membership must be rejected"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "0LP01", "unexpected message: {message}");
+    let (code, _) = match gateway.sql("GRANT reader TO ghost") {
+        Ok(_) => panic!("a membership for an unknown role must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42704");
+}
+
+#[test]
 fn statement_timeout_reports_57014_and_rolls_the_block_back() {
     let mut gateway = Gateway::new("timeout");
     gateway.command("CREATE TABLE bulk (id BIGINT PRIMARY KEY)");

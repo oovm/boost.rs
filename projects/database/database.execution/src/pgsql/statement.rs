@@ -356,6 +356,22 @@ fn apply_object_statement(
             }
             Ok(StatementOutcome::Command("REVOKE"))
         }
+        PgObjectStatement::GrantMembership { roles, members } => {
+            for role in &roles {
+                for member in &members {
+                    objects.grant_membership(role, member).map_err(|error| failure(session, error))?;
+                }
+            }
+            Ok(StatementOutcome::Command("GRANT ROLE"))
+        }
+        PgObjectStatement::RevokeMembership { roles, members } => {
+            for role in &roles {
+                for member in &members {
+                    objects.revoke_membership(role, member).map_err(|error| failure(session, error))?;
+                }
+            }
+            Ok(StatementOutcome::Command("REVOKE ROLE"))
+        }
     }
 }
 

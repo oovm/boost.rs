@@ -70,10 +70,28 @@ pub struct PgRole {
     pub createdb: bool,
     /// Whether the role may log in.
     pub login: bool,
+    /// `INHERIT` flag: whether the role automatically uses the privileges of
+    /// roles it is a member of. PostgreSQL defaults to `INHERIT`.
+    #[serde(default = "default_true")]
+    pub inherit: bool,
     /// Stored password verifier, present when the role was created with a
     /// `PASSWORD`. A role without one cannot authenticate against this catalog.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password: Option<PgPassword>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// One role-membership edge: `member` is a member of `role`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PgMembership {
+    /// The role whose privileges are inherited.
+    pub role: String,
+    /// The role that inherits them.
+    pub member: String,
 }
 
 /// Password verifier a role persists instead of its plaintext.
@@ -173,6 +191,13 @@ pub enum ObjectError {
     DuplicateRole(String),
     /// The role named by a grant or revoke does not exist (`42704`).
     UnknownRole(String),
+    /// The membership would close a cycle (`0LP01`).
+    CircularMembership {
+        /// The role whose privileges were being granted.
+        role: String,
+        /// The member that already reaches `role`.
+        member: String,
+    },
     /// The table named by a grant or revoke is not registered (`42P01`).
     UnknownTable(String),
     /// The document could not be read or written.
@@ -186,6 +211,7 @@ impl ObjectError {
             Self::DuplicateDatabase(_) => "42P04",
             Self::DuplicateRole(_) => "42710",
             Self::UnknownRole(_) => "42704",
+            Self::CircularMembership { .. } => "0LP01",
             Self::UnknownTable(_) => "42P01",
             Self::Persistence(_) => "58P01",
         }
@@ -197,6 +223,7 @@ impl ObjectError {
             Self::DuplicateDatabase(name) => format!("database \"{name}\" already exists"),
             Self::DuplicateRole(name) => format!("role \"{name}\" already exists"),
             Self::UnknownRole(name) => format!("role \"{name}\" does not exist"),
+            Self::CircularMembership { role, member } => format!("role \"{role}\" is a member of role \"{member}\""),
             Self::UnknownTable(name) => format!("relation \"{name}\" does not exist"),
             Self::Persistence(detail) => detail.clone(),
         }
@@ -210,6 +237,8 @@ struct ObjectDocument {
     revision: u32,
     databases: Vec<String>,
     roles: Vec<PgRole>,
+    #[serde(default)]
+    memberships: Vec<PgMembership>,
     grants: Vec<PgGrant>,
 }
 
@@ -225,8 +254,10 @@ impl ObjectDocument {
                 superuser: true,
                 createdb: true,
                 login: true,
+                inherit: true,
                 password: None,
             }],
+            memberships: Vec::new(),
             grants: Vec::new(),
         }
     }
@@ -378,15 +409,83 @@ impl PgObjectCatalog {
     /// A role the catalog does not know, and a superuser, pass every check:
     /// authentication-only deployments never created a role, so enforcing a
     /// grant table for them would reject every statement.
+    ///
+    /// A role with `INHERIT` also holds what its granted roles hold, which is
+    /// PostgreSQL's `pg_has_role(new_role, role, 'USAGE')` rule the planner's
+    /// privilege check relies on.
     pub fn has_privilege(&self, role: &str, table: &str, privilege: PgPrivilege) -> bool {
         let state = self.lock();
-        let Some(entry) = state.roles.iter().find(|existing| existing.name == role) else {
-            return true;
-        };
-        if entry.superuser {
+        if !state.roles.iter().any(|existing| existing.name == role) {
             return true;
         }
-        state.grants.iter().any(|grant| grant.role == role && grant.table == table && grant.privilege == privilege)
+        let effective = effective_roles(&state, role);
+        if effective.iter().any(|name| state.roles.iter().any(|entry| &entry.name == name && entry.superuser)) {
+            return true;
+        }
+        state
+            .grants
+            .iter()
+            .any(|grant| effective.iter().any(|name| *name == grant.role) && grant.table == table && grant.privilege == privilege)
+    }
+
+    /// Registers one membership edge (`member` becomes a member of `role`).
+    ///
+    /// Returns `false` when the edge already existed, which PostgreSQL reports
+    /// as a notice rather than an error. A cycle is rejected with `0LP01`.
+    pub fn grant_membership(&self, role: &str, member: &str) -> Result<bool, ObjectError> {
+        let mut state = self.lock();
+        for name in [role, member] {
+            if !state.roles.iter().any(|existing| existing.name == name) {
+                return Err(ObjectError::UnknownRole(name.to_string()));
+            }
+        }
+        if role == member || reachable_roles(&state, role).iter().any(|name| name == member) {
+            return Err(ObjectError::CircularMembership { role: role.to_string(), member: member.to_string() });
+        }
+        let edge = PgMembership { role: role.to_string(), member: member.to_string() };
+        if state.memberships.contains(&edge) {
+            return Ok(false);
+        }
+        let mut next = state.clone();
+        next.memberships.push(edge);
+        next.memberships.sort();
+        next.revision = next.revision.saturating_add(1);
+        self.save(&next)?;
+        *state = next;
+        Ok(true)
+    }
+
+    /// Removes one membership edge. Returns `false` when it was not present,
+    /// which PostgreSQL reports as a warning rather than an error.
+    pub fn revoke_membership(&self, role: &str, member: &str) -> Result<bool, ObjectError> {
+        let mut state = self.lock();
+        for name in [role, member] {
+            if !state.roles.iter().any(|existing| existing.name == name) {
+                return Err(ObjectError::UnknownRole(name.to_string()));
+            }
+        }
+        let before = state.memberships.len();
+        let mut next = state.clone();
+        next.memberships.retain(|edge| !(edge.role == role && edge.member == member));
+        if next.memberships.len() == before {
+            return Ok(false);
+        }
+        next.revision = next.revision.saturating_add(1);
+        self.save(&next)?;
+        *state = next;
+        Ok(true)
+    }
+
+    /// Whether `member` is `role`, or reaches it through any edge. Membership
+    /// exists regardless of either role's `INHERIT` flag.
+    pub fn is_member_of(&self, member: &str, role: &str) -> bool {
+        let state = self.lock();
+        reachable_roles(&state, member).iter().any(|name| name == role)
+    }
+
+    /// One membership edge, when it exists.
+    pub fn memberships(&self) -> Vec<PgMembership> {
+        self.lock().memberships.clone()
     }
 
     /// Whether `role` exists and is a superuser.
@@ -439,6 +538,36 @@ pub fn role_names(catalog: &PgObjectCatalog) -> BTreeSet<String> {
     catalog.roles().into_iter().map(|role| role.name).collect()
 }
 
+/// Every role `role` reaches through membership edges, itself included.
+///
+/// This is PostgreSQL's `pg_has_role` answer: membership exists whether or not
+/// the role inherits, so cycle detection and `is_member_of` use it directly.
+fn reachable_roles(state: &ObjectDocument, role: &str) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    names.insert(role.to_string());
+    let mut frontier = vec![role.to_string()];
+    while let Some(current) = frontier.pop() {
+        for edge in state.memberships.iter().filter(|edge| edge.member == current) {
+            if names.insert(edge.role.clone()) {
+                frontier.push(edge.role.clone());
+            }
+        }
+    }
+    names
+}
+
+/// The roles whose privileges `role` automatically uses: itself, and every
+/// reachable role when it is `INHERIT`. A `NOINHERIT` role keeps the edges but
+/// does not use them for privilege checks, exactly like PostgreSQL.
+fn effective_roles(state: &ObjectDocument, role: &str) -> BTreeSet<String> {
+    if state.roles.iter().find(|entry| entry.name == role).is_none_or(|entry| entry.inherit) {
+        return reachable_roles(state, role);
+    }
+    let mut names = BTreeSet::new();
+    names.insert(role.to_string());
+    names
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -453,7 +582,7 @@ mod tests {
             assert!(!catalog.create_database("app", true).unwrap());
             assert_eq!(catalog.create_database("app", false).unwrap_err().sqlstate(), "42P04");
             catalog
-                .create_role(PgRole { name: "reader".into(), superuser: false, createdb: false, login: true, password: None }, false)
+                .create_role(PgRole { name: "reader".into(), superuser: false, createdb: false, login: true, inherit: true, password: None }, false)
                 .unwrap();
             catalog.grant("reader", "orders", &[PgPrivilege::Select], |table| table == "orders").unwrap();
             assert!(catalog.has_privilege("reader", "orders", PgPrivilege::Select));
@@ -479,7 +608,7 @@ mod tests {
             assert_eq!(salt.len(), 16);
             assert_eq!(verifier.stored_key.len(), 32);
             catalog
-                .create_role(PgRole { name: "app".into(), superuser: false, createdb: false, login: true, password: Some(password) }, false)
+                .create_role(PgRole { name: "app".into(), superuser: false, createdb: false, login: true, inherit: true, password: Some(password) }, false)
                 .unwrap();
         }
         let reopened = PgObjectCatalog::open(&path).unwrap();
@@ -491,10 +620,49 @@ mod tests {
     }
 
     #[test]
+    fn membership_edges_grant_privileges_transitively_and_reject_cycles() {
+        let catalog = PgObjectCatalog::new_in_memory();
+        let role = |name: &str, inherit: bool| PgRole {
+            name: name.into(),
+            superuser: false,
+            createdb: false,
+            login: true,
+            inherit,
+            password: None,
+        };
+        catalog.create_role(role("reader", true), false).unwrap();
+        catalog.create_role(role("app", true), false).unwrap();
+        catalog.create_role(role("worker", false), false).unwrap();
+        catalog.grant("reader", "orders", &[PgPrivilege::Select], |_| true).unwrap();
+
+        assert!(catalog.grant_membership("reader", "app").unwrap());
+        assert!(!catalog.grant_membership("reader", "app").unwrap(), "a repeated edge is a notice");
+        assert!(catalog.is_member_of("app", "reader"));
+        assert!(catalog.has_privilege("app", "orders", PgPrivilege::Select), "a member inherits the grant");
+        assert!(!catalog.has_privilege("app", "orders", PgPrivilege::Delete));
+
+        // Transitivity: `app` is a member of `reader`, so making `reader` a
+        // member of `app` would close a cycle.
+        let cycle = catalog.grant_membership("app", "reader").unwrap_err();
+        assert_eq!(cycle.sqlstate(), "0LP01");
+        assert_eq!(catalog.grant_membership("reader", "reader").unwrap_err().sqlstate(), "0LP01");
+        assert_eq!(catalog.grant_membership("reader", "ghost").unwrap_err().sqlstate(), "42704");
+
+        // `NOINHERIT` keeps the edge but not automatic privilege use.
+        catalog.grant_membership("reader", "worker").unwrap();
+        assert!(catalog.is_member_of("worker", "reader"));
+        assert!(!catalog.has_privilege("worker", "orders", PgPrivilege::Select));
+
+        assert!(catalog.revoke_membership("reader", "app").unwrap());
+        assert!(!catalog.revoke_membership("reader", "app").unwrap(), "a missing edge is a warning");
+        assert!(!catalog.has_privilege("app", "orders", PgPrivilege::Select));
+    }
+
+    #[test]
     fn grant_errors_carry_their_sqlstates() {
         let catalog = PgObjectCatalog::new_in_memory();
         assert_eq!(catalog.grant("ghost", "orders", &[PgPrivilege::Select], |_| true).unwrap_err().sqlstate(), "42704");
-        catalog.create_role(PgRole { name: "reader".into(), superuser: false, createdb: false, login: true, password: None }, false).unwrap();
+        catalog.create_role(PgRole { name: "reader".into(), superuser: false, createdb: false, login: true, inherit: true, password: None }, false).unwrap();
         assert_eq!(catalog.grant("reader", "missing", &[PgPrivilege::Select], |_| false).unwrap_err().sqlstate(), "42P01");
         assert!(catalog.has_privilege("unknown-role", "missing", PgPrivilege::Delete));
         assert!(catalog.is_superuser("postgres"));
