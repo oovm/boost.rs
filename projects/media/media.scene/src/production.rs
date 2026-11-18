@@ -349,11 +349,18 @@ impl Production {
     }
 
     /// Scene identities keyed for shot lookup, reporting blanks and duplicates.
+    ///
+    /// A scene only needs an id when something can reference it. Films that do
+    /// not declare shots yet keep working, but once a shot exists an unnamed
+    /// scene is a problem instead of an unreachable block.
     fn scene_index(&self, problems: &mut Vec<String>) -> HashMap<&str, usize> {
         let mut index = HashMap::new();
+        let referenced = !self.shots.is_empty();
         for (position, scene) in self.project.scenes.iter().enumerate() {
             let Some(id) = scene.id.as_deref() else {
-                problems.push(format!("scenes[{position}] has no id, so no shot can reference it"));
+                if referenced {
+                    problems.push(format!("scenes[{position}] has no id, so no shot can reference it"));
+                }
                 continue;
             };
             if id.trim().is_empty() {
@@ -660,6 +667,13 @@ mod tests {
         assert_eq!(back.shots.len(), 2);
         assert_eq!(back.cues[0].shot.as_str(), "shot-mechanism");
         assert_eq!(back.assets[0].path, "assets/deck.png");
+    }
+
+    #[test]
+    fn a_film_without_shots_needs_no_scene_ids() {
+        let mut project = project_with(false);
+        project.scenes[0].id = None;
+        Production::new(project).validate().expect("a render-only film stays valid");
     }
 
     #[test]
