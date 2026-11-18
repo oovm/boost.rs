@@ -54,8 +54,23 @@ pub struct RenderStats {
     pub audio_level: Option<media_harness::LevelStats>,
     /// What the delivery limiter did, when one was requested.
     pub limiter: Option<LimiterStats>,
+    /// What loudness normalization did, when a target was requested.
+    pub loudness: Option<LoudnessStats>,
     /// Declared optional resources that were absent; each is documented silence.
     pub optional_missing: Vec<String>,
+}
+
+/// Report of one loudness normalization pass.
+#[derive(serde::Serialize, Debug, Clone, Copy)]
+pub struct LoudnessStats {
+    /// Requested integrated loudness in LUFS.
+    pub target_lufs: f32,
+    /// Loudness measured before any gain.
+    pub measured_lufs: f32,
+    /// Loudness measured after the gain was applied.
+    pub achieved_lufs: f32,
+    /// Gain that was applied, in dB.
+    pub gain_db: f32,
 }
 
 /// Report of one limiter pass, in the render's own serializable shape.
@@ -146,6 +161,10 @@ pub struct RenderOptions<'a> {
     /// delivers the mix untouched; a value runs the shared limiter and never
     /// raises a quieter signal.
     pub limiter_ceiling_db: Option<f32>,
+    /// Integrated loudness target in LUFS applied to the mixed bed. The gain is
+    /// clamped to +/-24 dB and applied before any limiter, so the report names
+    /// the measured value, the gain and what the file actually achieved.
+    pub loudness_target_lufs: Option<f32>,
 }
 
 impl RenderOptions<'_> {
@@ -320,10 +339,30 @@ pub fn render_project_with(
     }
     let assets = fingerprint_assets(&project, &plan, &optional_missing);
     let audio = build_audio(&plan, &mut media, limits)?;
-    // The limiter runs on the mixed bed, before any measurement, so the level
-    // in the report describes what the encoder actually receives.
+    // Loudness normalization runs first, then the limiter: gaining toward a
+    // target can push peaks up, and the ceiling must be the last word.
+    let mut loudness = None;
     let mut limiter = None;
     let mut audio = audio;
+    if let Some(target) = options.loudness_target_lufs {
+        let mut floats: Vec<f32> = audio.iter().map(|sample| *sample as f32 / i16::MAX as f32).collect();
+        let measured = media_dsp::measure_loudness(&floats, 2, plan.sample_rate);
+        let gain_db = (target - measured.integrated_lufs).clamp(-24.0, 24.0);
+        let gain = 10f32.powf(gain_db / 20.0);
+        for sample in &mut floats {
+            *sample = (*sample * gain).clamp(-1.0, 1.0);
+        }
+        let achieved = media_dsp::measure_loudness(&floats, 2, plan.sample_rate);
+        for (index, value) in floats.iter().enumerate() {
+            audio[index] = (value * i16::MAX as f32).round().clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+        }
+        loudness = Some(LoudnessStats {
+            target_lufs: target,
+            measured_lufs: measured.integrated_lufs,
+            achieved_lufs: achieved.integrated_lufs,
+            gain_db,
+        });
+    }
     if let Some(ceiling) = options.limiter_ceiling_db {
         let mut floats: Vec<f32> = audio.iter().map(|sample| *sample as f32 / i16::MAX as f32).collect();
         let report = media_dsp::limit_interleaved(&mut floats, ceiling, 60.0, plan.sample_rate as f32);
@@ -401,6 +440,7 @@ pub fn render_project_with(
         scenes,
         audio_level,
         limiter,
+        loudness,
         optional_missing,
     })
 }
@@ -2287,6 +2327,28 @@ mod tests {
         assert!(limiter.output_peak_db <= -1.0 + 1e-3, "{}", limiter.output_peak_db);
         let level = stats.audio_level.expect("the limited bed is measured");
         assert!(level.peak_db <= -1.0 + 1e-2, "the report describes the limited bed: {}", level.peak_db);
+    }
+
+    /// A loudness target moves the bed toward the target and reports both the
+    /// measured value and what the delivered samples achieve.
+    #[test]
+    fn a_loudness_target_normalizes_the_bed_and_reports_both_values() {
+        let project = serde_json::json!({
+            "width": 160, "height": 90, "fps": 15, "duration_frames": 30,
+            "scenes": [{ "start": 0, "duration": 30,
+                "background": { "kind": "solid", "color": "#101820" }, "items": [] }],
+            "audio": { "bgm": { "volume": 0.15, "mood": "pad" } }
+        });
+        let dir = std::env::temp_dir().join("opencut-loudness-tests");
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("normalized.mp4");
+        let options = super::RenderOptions { loudness_target_lufs: Some(-18.0), ..Default::default() };
+        let stats = super::render_project_with(&project.to_string(), &out, &options, &mut |_, _| {}).expect("render");
+        let loudness = stats.loudness.expect("a requested target reports its numbers");
+        assert!((loudness.target_lufs + 18.0).abs() < 0.01);
+        assert!(loudness.gain_db > 0.0, "the quiet bed is gained up: {}", loudness.gain_db);
+        assert!((loudness.achieved_lufs + 18.0).abs() < 1.5, "{}", loudness.achieved_lufs);
+        assert!((loudness.achieved_lufs - loudness.measured_lufs - loudness.gain_db).abs() < 1.0);
     }
 
     /// Renders a tiny film end to end: rasterize, synthesize audio, encode MP4.
