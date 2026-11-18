@@ -7,9 +7,9 @@ pub mod cluster_kv;
 pub mod local;
 /// 页缓存 / BTree / WAL / SHM 原语。
 pub mod local_io;
-/// Mongo 文档存储合同、会话/事务/目录语义与 `.yykv` 后端。
-pub mod mongo;
 /// PostgreSQL 数据目录：catalog、`.yykv` shard 与 `postmaster.pid` lease。
 pub mod pgsql;
+/// Mongo 文档存储合同、会话/事务/目录语义与 `.yykv` 后端。
+pub mod mongo;
 /// SQLite format-3 存储面。
 pub mod sqlite;

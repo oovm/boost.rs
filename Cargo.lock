@@ -885,7 +885,6 @@ dependencies = [
  "database-protocol-pgsql",
  "database-protocol-redis",
  "database-protocol-yy",
- "database-storage",
  "database-types",
  "database-udf",
  "serde",
@@ -922,9 +921,12 @@ dependencies = [
 name = "database-execution"
 version = "0.1.0"
 dependencies = [
+ "boost-crypto",
  "boost-fs",
+ "boost-random",
  "database-cluster",
  "database-formats",
+ "database-protocol-mongo",
  "database-query",
  "database-storage",
  "database-types",
@@ -932,6 +934,7 @@ dependencies = [
  "js-sys",
  "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs?rev=a0416cb1cba9a348df175d3ca230f794ec562484)",
  "oak-sql",
+ "regex",
  "schema-input-vos",
  "schema-types",
  "serde",
@@ -1076,6 +1079,7 @@ dependencies = [
  "database-client",
  "database-cluster",
  "database-execution",
+ "database-formats",
  "database-protocol",
  "database-protocol-mongo",
  "database-protocol-mysql",
@@ -1086,7 +1090,6 @@ dependencies = [
  "database-storage",
  "database-types",
  "database-udf",
- "mongo",
  "serde",
  "serde_json",
  "sha1 0.11.0",
@@ -1098,7 +1101,9 @@ name = "database-storage"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "database-cluster",
  "database-formats",
+ "database-protocol-mongo",
  "database-protocol-pgsql",
  "database-types",
  "libc",
@@ -2375,6 +2380,7 @@ dependencies = [
  "geometry",
  "media-audio",
  "media-codec",
+ "media-dsp",
  "media-harness",
  "media-image",
  "media-layout",
@@ -2472,14 +2478,11 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 name = "mongo"
 version = "0.1.0"
 dependencies = [
- "boost-crypto",
- "boost-random",
- "database-cluster",
+ "database-execution",
  "database-formats",
  "database-protocol-mongo",
  "database-storage",
  "database-types",
- "regex",
  "serde_json",
 ]
 
