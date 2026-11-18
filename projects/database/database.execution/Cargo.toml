@@ -11,14 +11,12 @@ publish = false
 [dependencies]
 database-cluster = { workspace = true }
 database-formats = { workspace = true }
-database-protocol-mongo = { workspace = true }
 database-query = { workspace = true }
 database-storage = { workspace = true }
 database-types = { workspace = true }
 database-udf = { workspace = true }
 oak-core = { workspace = true }
 oak-sql = { workspace = true }
-regex = { workspace = true }
 schema-input-vos = { workspace = true }
 schema-types = { workspace = true }
 serde = { workspace = true }

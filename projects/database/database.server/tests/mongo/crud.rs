@@ -18,7 +18,7 @@ use database_server::yyds::mongo::{
 };
 use database_storage::cluster_kv::MemoryShard;
 use database_types::cluster::{ShardEpoch, ShardId};
-use database_execution::mongo::cursor::CursorStore;
+use mongo::cursor::CursorStore;
 
 fn executor_server() -> (TcpStream, thread::JoinHandle<()>) {
     let shard = ShardId("mongo-local".into());
