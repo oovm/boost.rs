@@ -11,11 +11,12 @@
 //! local `query` and a `psql`/`sqlx` client observe identical behavior.
 //!
 //! Boundaries that remain explicit upstream work (rejected here, never faked):
-//! * SQL schema persistence: DDL applies to the in-memory registry and is not
-//!   written to the `.yyds` catalog yet. Row data is durable; replaying the
-//!   schema DDL on open is the current bootstrap contract for products.
-//! * Server-side authentication and TLS: `listen` accepts loopback only and an
-//!   `authentication` request fails explicitly until the gateway implements it.
+//! * Server-side authentication and TLS: an `authentication` request is served
+//!   by [`PostgreSQL::listen_with`]; TLS stays unimplemented, so a client that
+//!   requires it keeps talking plaintext loopback.
+//!
+//! SQL schema persistence is closed: DDL applies to a registry persisted as
+//! `<data-dir>/schema.json`, so a restart reads the same tables back.
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -228,7 +229,11 @@ impl PostgreSQL {
         let routing = ShardMap::new(ShardEpoch(1), vec![shard_id.clone()])?;
         let shard = FileShard::open(shard_path)?;
         let executor = LocalExecutor::new(routing, HashMap::from([(shard_id, shard)]), Vec::new())?;
-        let runtime = Arc::new(PgsqlSqlRuntime { schema: Arc::new(SqlSchemaRegistry::new_in_memory()), executor: Arc::new(executor) });
+        // The schema registry is durable inside the data directory: DDL applied
+        // by one run is read back by the next one instead of asking the caller
+        // to replay it.
+        let schema = SqlSchemaRegistry::open(instance.schema_path()).map_err(|error| Error::State(error.message))?;
+        let runtime = Arc::new(PgsqlSqlRuntime { schema: Arc::new(schema), executor: Arc::new(executor) });
         Ok(Self {
             runtime,
             instance: Mutex::new(Some(instance)),

@@ -318,6 +318,22 @@ impl SqlSchemaRegistry {
         Ok(Self { state: Mutex::new(state), path: Some(path) })
     }
 
+    /// Opens a persisted registry, seeding it from `catalog` when the file is
+    /// still absent, and saving that seed so later restarts read it back.
+    ///
+    /// An existing file always wins: the catalog only seeds a directory that
+    /// has no schema document yet, so a restart never reverts the DDL applied
+    /// after the catalog was published.
+    pub fn open_or_seeded(path: impl Into<PathBuf>, catalog: &SqlCatalog, lane: u8) -> Result<Self, SqlFrontendError> {
+        let path = path.into();
+        if path.exists() {
+            return Self::open(path);
+        }
+        let seeded = Self::from_catalog_with_lane(catalog, lane)?;
+        save(&path, &seeded.lock())?;
+        Ok(seeded.with_persistence(path))
+    }
+
     /// Returns the current schema revision.
     pub fn revision(&self) -> u32 {
         self.lock().revision
@@ -438,6 +454,12 @@ impl SqlSchemaRegistry {
 
     fn lock(&self) -> MutexGuard<'_, RegistryState> {
         self.state.lock().unwrap_or_else(|poison| poison.into_inner())
+    }
+
+    /// Attaches the schema document path, turning later DDL into durable writes.
+    fn with_persistence(mut self, path: PathBuf) -> Self {
+        self.path = Some(path);
+        self
     }
 }
 

@@ -72,6 +72,21 @@ impl PgsqlService {
         Self::start_with_registry(owner, address, executor, Arc::new(schema))
     }
 
+    /// Starts a listener whose registry is durable at `schema_path`, seeding it
+    /// from `catalog` the first time the file does not exist yet.
+    pub fn start_with_persisted_registry(
+        owner: Arc<NodeLease>,
+        address: SocketAddr,
+        executor: Arc<dyn KeyValueExecutor>,
+        catalog: SqlCatalog,
+        lane: u8,
+        schema_path: impl Into<std::path::PathBuf>,
+    ) -> io::Result<Self> {
+        let schema =
+            SqlSchemaRegistry::open_or_seeded(schema_path, &catalog, lane).map_err(|error| io::Error::other(error.message))?;
+        Self::start_with_registry(owner, address, executor, Arc::new(schema))
+    }
+
     fn start_inner(owner: Arc<NodeLease>, address: SocketAddr, runtime: Option<Arc<PgsqlSqlRuntime>>) -> io::Result<Self> {
         if !address.ip().is_loopback() {
             return Err(io::Error::new(
