@@ -302,6 +302,7 @@ dependencies = [
 name = "atlas-cloud"
 version = "0.1.0"
 dependencies = [
+ "atlas-harness",
  "boost-crypto",
  "boost-net",
  "serde_json",

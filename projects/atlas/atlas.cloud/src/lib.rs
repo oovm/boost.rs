@@ -1,8 +1,10 @@
-//! Atlas 首批云服务：腾讯云 SMS 与 COS 的作者面。
+//! Atlas 云服务：AI 协议族与腾讯云 SMS / COS 的作者面。
 //!
 //! 本 crate 只依赖 `boost-net`（HTTP/1.1 与 TLS）、`boost-crypto`（摘要、HMAC 与编码）与
-//! `serde_json`，不引入厂商 SDK，也不建立厂商无关的统一抽象：对外只有 [`tencent::sms`]
-//! 与 [`tencent::cos`] 两个腾讯云原生命名空间。
+//! `serde_json`，不引入厂商 SDK，也不建立厂商无关的统一抽象：对外是
+//! [`openai`]（OpenAI 兼容 chat completions）、[`anthropic`]（messages）两个协议族，以及
+//! [`tencent::sms`] 与 [`tencent::cos`] 两个腾讯云原生命名空间。协议族的共享词汇
+//! （消息、用量与结果三态）在 [`ai`]。
 //!
 //! # 结果语义
 //!
@@ -40,4 +42,9 @@
 //! ```
 #![deny(missing_docs)]
 
+mod error;
+
+pub mod ai;
+pub mod anthropic;
+pub mod openai;
 pub mod tencent;

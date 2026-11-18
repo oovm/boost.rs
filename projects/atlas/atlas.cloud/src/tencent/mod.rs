@@ -9,10 +9,10 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use boost_net::NetError;
-
 pub mod cos;
 pub mod sms;
+
+pub(crate) use crate::error::{body_snippet, map_transport_error};
 
 /// SecretId 的环境变量名。
 const SECRET_ID_ENV: &str = "TENCENTCLOUD_SECRET_ID";
@@ -231,28 +231,4 @@ fn read_env(name: &'static str) -> Result<String, CloudError> {
 /// 当前的 Unix 秒。
 pub(crate) fn now_seconds() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|elapsed| elapsed.as_secs()).unwrap_or_default()
-}
-
-/// 把响应体压成可放进错误信息的片段。
-pub(crate) fn body_snippet(body: &[u8]) -> String {
-    const LIMIT: usize = 256;
-    let text = String::from_utf8_lossy(body);
-    let trimmed = text.trim();
-    let mut snippet: String = trimmed.chars().take(LIMIT).collect();
-    if trimmed.chars().count() > LIMIT {
-        snippet.push('…');
-    }
-    snippet
-}
-
-/// 传输层失败 → 分层错误。
-///
-/// [`NetError::Unsupported`] 是本地构造阶段被拒（非法 URL、非法头、缺少 TLS 能力），
-/// 请求确定没有发出；其余错误（拨号失败、超时、读响应中断、连接被关闭）都无法排除请求
-/// 已经到达服务端并生效，因此一律归入 [`CloudError::Indeterminate`]。
-pub(crate) fn map_transport_error(error: NetError) -> CloudError {
-    match error {
-        NetError::Unsupported(detail) => CloudError::Transport(detail),
-        other => CloudError::Indeterminate { reason: format!("传输层失败：{other}"), request_id: None },
-    }
 }
