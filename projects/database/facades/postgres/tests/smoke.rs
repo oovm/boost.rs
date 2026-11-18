@@ -118,6 +118,30 @@ fn boolean_aggregates_ignore_nulls() {
 }
 
 #[test]
+fn ddl_survives_a_restart_and_rollback_restores_the_persisted_state() {
+    let dir = TempDir::new("persist");
+    {
+        let engine = PostgreSQL::open(dir.options("smoke")).unwrap();
+        engine.execute("CREATE TABLE kept (id BIGINT PRIMARY KEY, name TEXT)").unwrap();
+        engine.execute("INSERT INTO kept (id, name) VALUES (1, 'durable')").unwrap();
+        // A rolled-back CREATE must not leave a table behind in the document.
+        engine
+            .transaction(|tx| {
+                tx.execute("CREATE TABLE discarded (id BIGINT PRIMARY KEY)")?;
+                Err::<(), Error>(Error::State("rollback requested by test".to_owned()))
+            })
+            .unwrap_err();
+        engine.close().unwrap();
+    }
+    let reopened = PostgreSQL::open(dir.options("smoke")).unwrap();
+    let rows = reopened.query("SELECT name FROM kept WHERE id = 1").unwrap();
+    assert_eq!(rows_of(&rows), vec![vec!["durable".to_owned()]]);
+    let missing = reopened.query("SELECT id FROM discarded").unwrap_err();
+    assert!(matches!(missing, Error::Sql { ref sqlstate, .. } if sqlstate == "42P01"), "unexpected error: {missing}");
+    reopened.close().unwrap();
+}
+
+#[test]
 fn listen_answers_protocol_v3_clients() {
     let dir = TempDir::new("listen");
     let engine = PostgreSQL::open(dir.options("smoke")).unwrap();

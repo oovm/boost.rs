@@ -31,6 +31,12 @@ use super::{
 /// Directory under the data directory holding one directory per table group.
 pub const SHARD_ROOT: &str = "shards";
 
+/// File inside the data directory holding the persisted SQL schema registry.
+///
+/// DDL applied by the gateway is written here, so a restart reopens the same
+/// tables instead of asking the caller to replay its DDL.
+pub const SCHEMA_FILE: &str = "schema.json";
+
 /// File names one table-group directory can ever hold, as written by
 /// [`ServerStore::open`] with the default catalog registration. Orphan cleanup
 /// deletes exactly these and nothing else, so an unexpected file keeps its
@@ -193,6 +199,12 @@ impl ServerInstance {
     /// Absolute `.yyds` catalog path of the primary store.
     pub fn catalog_path(&self) -> String {
         self.primary.catalog_path()
+    }
+
+    /// Absolute path of the persisted SQL schema registry inside the primary
+    /// data directory.
+    pub fn schema_path(&self) -> String {
+        Path::new(&self.primary.data_dir()).join(SCHEMA_FILE).to_string_lossy().into_owned()
     }
 
     /// Absolute `postmaster.pid` lock path of the primary store.
