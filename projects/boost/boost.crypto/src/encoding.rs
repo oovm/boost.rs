@@ -41,6 +41,18 @@ pub fn hex_decode(text: &str) -> Result<Vec<u8>> {
     Ok(out)
 }
 
+/// 无填充的 URL-safe base64 编码（`+`→`-`、`/`→`_`，省略 `=`）。
+///
+/// 用于 JOSE、ACME 与各类把摘要塞进 URL 或 JSON 字符串的协议。
+pub fn base64url_encode(bytes: &[u8]) -> String {
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+}
+
+/// 解码无填充的 URL-safe base64，同时接受带填充输入。
+pub fn base64url_decode(text: &str) -> Result<Vec<u8>> {
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(text.trim_end_matches('=')).map_err(|_| CryptoError::InvalidInput)
+}
+
 fn hex_digit(byte: u8) -> Result<u8> {
     match byte {
         b'0'..=b'9' => Ok(byte - b'0'),
@@ -111,5 +123,22 @@ mod tests {
         assert_eq!(hex_decode("abc"), Err(CryptoError::InvalidInput));
         assert_eq!(hex_decode("zz"), Err(CryptoError::InvalidInput));
         assert_eq!(hex_decode("0g"), Err(CryptoError::InvalidInput));
+    }
+
+    #[test]
+    fn base64url_is_unpadded_and_url_safe() {
+        // 这三组字节在标准 base64 里分别产生 `+`、`/` 与 `=`，URL-safe 形态必须全部避开。
+        assert_eq!(base64url_encode(&[0xfb, 0xff]), "-_8");
+        assert_eq!(base64url_encode(b"foob"), "Zm9vYg");
+        assert_eq!(base64url_encode(&[]), "");
+        assert!(!base64url_encode(&[0xff, 0xfe, 0xfd]).contains(['+', '/', '=']));
+    }
+
+    #[test]
+    fn base64url_roundtrip_accepts_padding() {
+        let bytes: Vec<u8> = (0..=255).collect();
+        assert_eq!(base64url_decode(&base64url_encode(&bytes)).expect("decode"), bytes);
+        assert_eq!(base64url_decode("Zm9vYg==").expect("decode"), b"foob");
+        assert_eq!(base64url_decode("-_8").expect("decode"), vec![0xfb, 0xff]);
     }
 }
