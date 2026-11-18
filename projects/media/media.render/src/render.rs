@@ -125,6 +125,10 @@ pub struct RenderOptions<'a> {
     /// Cues painted into the picture by the same painter that renders the film.
     /// Absent means the delivered file carries no burned subtitles.
     pub subtitles: Option<&'a [BurnInCue]>,
+    /// Audio codec the delivery promises. `None` negotiates (AAC, falling back
+    /// to FLAC); naming one makes a missing encoder an error instead of a
+    /// silent substitution.
+    pub audio_codec: Option<&'a str>,
 }
 
 impl RenderOptions<'_> {
@@ -308,7 +312,7 @@ pub fn render_project_with(
     if let Some(parent) = partial.path.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent).map_err(|e| Error::io(format!("cannot create output directory {}: {e}", parent.display())))?;
     }
-    let mut encoder = Encoder::open(&partial.path, w, h, fps, bitrate, plan.sample_rate, has_audio)?;
+    let mut encoder = Encoder::open_with_audio_codec(&partial.path, w, h, fps, bitrate, plan.sample_rate, has_audio, options.audio_codec)?;
     let audio_codec = encoder.audio_codec().to_string();
 
     let mut frame = Frame::new(w, h);
@@ -2209,6 +2213,25 @@ mod tests {
             frame.rgba[start..].chunks_exact(4).map(|px| px[0] as u64 + px[1] as u64 + px[2] as u64).sum()
         };
         assert!(band(&burned_frame) > band(&plain_frame), "the burned cue raises the bottom band");
+    }
+
+    /// A delivery profile that promises one audio codec must fail rather than
+    /// deliver another one.
+    #[test]
+    fn a_required_audio_codec_is_not_silently_replaced() {
+        let project = serde_json::json!({
+            "width": 160, "height": 90, "fps": 15, "duration_frames": 15,
+            "scenes": [{ "start": 0, "duration": 15,
+                "background": { "kind": "solid", "color": "#101820" }, "items": [] }],
+            "audio": { "bgm": { "volume": 0.2, "mood": "pad" } }
+        });
+        let dir = std::env::temp_dir().join("opencut-codec-tests");
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("strict.mp4");
+        let options = super::RenderOptions { audio_codec: Some("opus"), ..Default::default() };
+        let error = super::render_project_with(&project.to_string(), &out, &options, &mut |_, _| {}).expect_err("unknown codec is refused");
+        assert!(error.to_string().contains("opus"), "{error}");
+        assert!(!out.exists(), "a refused profile publishes nothing");
     }
 
     /// Renders a tiny film end to end: rasterize, synthesize audio, encode MP4.

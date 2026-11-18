@@ -28,13 +28,32 @@ impl Encoder {
         sample_rate: u32,
         with_audio: bool,
     ) -> Result<Self, Error> {
+        Self::open_with_audio_codec(out, width, height, fps, bitrate, sample_rate, with_audio, None)
+    }
+
+    /// Opens `out` requiring one audio codec instead of accepting a fallback.
+    ///
+    /// `required` is `None` to negotiate as [`Encoder::open`] does, or a codec
+    /// name (`aac`, `flac`). When a name is given and the machine cannot
+    /// provide it, this is an error: a delivery profile that promises AAC must
+    /// not quietly produce FLAC.
+    pub fn open_with_audio_codec(
+        out: &std::path::Path,
+        width: u32,
+        height: u32,
+        fps: u32,
+        bitrate: u32,
+        sample_rate: u32,
+        with_audio: bool,
+        required: Option<&str>,
+    ) -> Result<Self, Error> {
         #[cfg(windows)]
         {
-            Ok(Self { inner: WindowsEncoder::open(out, width, height, fps, bitrate, sample_rate, with_audio)? })
+            Ok(Self { inner: WindowsEncoder::open(out, width, height, fps, bitrate, sample_rate, with_audio, required)? })
         }
         #[cfg(not(windows))]
         {
-            let _ = (out, width, height, fps, bitrate, sample_rate, with_audio);
+            let _ = (out, width, height, fps, bitrate, sample_rate, with_audio, required);
             Err(Error::unsupported("OpenCut encoding currently requires Windows Media Foundation"))
         }
     }
@@ -147,7 +166,16 @@ mod windows_encoder {
     }
 
     impl WindowsEncoder {
-        pub fn open(out: &Path, width: u32, height: u32, fps: u32, bitrate: u32, sample_rate: u32, with_audio: bool) -> Result<Self, Error> {
+        pub fn open(
+            out: &Path,
+            width: u32,
+            height: u32,
+            fps: u32,
+            bitrate: u32,
+            sample_rate: u32,
+            with_audio: bool,
+            required: Option<&str>,
+        ) -> Result<Self, Error> {
             unsafe {
                 let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
                 mf::MFStartup(mf::MF_VERSION, mf::MFSTARTUP_FULL).map_err(|e| encode_error("MFStartup", e))?;
@@ -158,9 +186,21 @@ mod windows_encoder {
             else {
                 &[(&mf::MFAudioFormat_AAC, "none")]
             };
+            // A required codec removes the fallback instead of reordering it:
+            // the caller asked for one output, not for the closest available.
+            let candidates: Vec<(&windows::core::GUID, &str)> = match required {
+                Some(name) => {
+                    let selected: Vec<_> = candidates.iter().copied().filter(|(_, codec)| *codec == name).collect();
+                    if selected.is_empty() {
+                        return Err(Error::unsupported(format!("audio codec `{name}` is not an encoder option")));
+                    }
+                    selected
+                }
+                None => candidates.to_vec(),
+            };
             let mut last_error = None;
-            for (subtype, name) in candidates {
-                match Self::try_open(out, width, height, fps, bitrate, sample_rate, with_audio, subtype, name) {
+            for (subtype, name) in &candidates {
+                match Self::try_open(out, width, height, fps, bitrate, sample_rate, with_audio, *subtype, *name) {
                     Ok(encoder) => return Ok(encoder),
                     Err(error) => last_error = Some(error),
                 }
