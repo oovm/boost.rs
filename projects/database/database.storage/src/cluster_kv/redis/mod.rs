@@ -1,7 +1,7 @@
 //! `.yykv` 分片所有权：一个分片文件按逻辑数据库划分命名空间，承载 Redis 键空间。
 //!
 //! 键空间、值种类、revision、过期截止时间、`WATCH` 版本与持久化边界都归这里；
-//! 命令语义在 `database-server` 的 Redis 处理器，绑定层只做参数与结果映射。
+//! 集合命令语义归 `database.execution`，绑定层只做参数与结果映射。
 
 pub mod format;
 

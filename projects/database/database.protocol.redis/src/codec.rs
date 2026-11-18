@@ -5,7 +5,7 @@
 //!
 //! 所有解析器都接受字节前缀并报告消费了多少字节，因此宿主 socket 循环可以增量
 //! 喂入。解析器从不阻塞，也不持有连接状态。这里只做线协议；命令语义归
-//! `database-server` 的 Redis 处理器，命令参数绑定归 [`crate::bind`]。
+//! `database.execution` 的 Redis 命令处理器，命令参数绑定归 [`crate::bind`]。
 
 use std::io::Write;
 
