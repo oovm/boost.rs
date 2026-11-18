@@ -20,10 +20,12 @@
 //! inlining), and a per-include resolver. This lets `Stmt.Block`,
 //! `Stmt.Super`, and `Stmt.Include` emit meaningful JS instead of throwing.
 
-use once_cell::sync::Lazy;
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::LazyLock,
+};
 
 use crate::{
     ArgValue, Diagnostic, IrNode, Severity, Span, Stage, codes,
@@ -44,7 +46,7 @@ use crate::codegen::options::CodegenOptions;
 // so generated code runs cleanly in strict mode and inside async/generators.
 // ---------------------------------------------------------------------------
 
-static JS_RESERVED: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+static JS_RESERVED: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     let mut s = HashSet::new();
     for w in [
         // Keywords.

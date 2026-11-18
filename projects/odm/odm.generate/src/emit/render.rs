@@ -1,24 +1,27 @@
 //! Dejavu rendering entry points for generated artifacts.
 
 use super::*;
+use boost_collection::LruCache;
+use std::sync::{LazyLock, Mutex};
 use template_input_dejavu::{IrDocument, render_ir};
+
+/// 嵌入式 IR 的来源是程序内静态字符串，容量按静态集合上限封顶即可。
+///
+/// 键是完整静态文本而非指针：地址会随链接布局变化，也不保证内容身份。
+/// 锁只保护索引与发布，JSON 解析在锁外完成；并发首次未命中允许重复解析，
+/// 后写覆盖前写，两侧内容相同。
+const IR_CACHE_CAPACITY: usize = 64;
 
 #[allow(dead_code)]
 pub(crate) fn render_aot_ir(ir_json: &'static str, ctx: &Value) -> Result<String> {
-    static CACHE: OnceCell<Mutex<HashMap<usize, IrDocument>>> = OnceCell::new();
-    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let key = ir_json.as_ptr() as usize;
-    let doc = {
-        let mut guard = cache.lock().expect("ir cache lock");
-        if let Some(doc) = guard.get(&key) {
-            doc.clone()
-        }
-        else {
-            let doc: IrDocument = serde_json::from_str(ir_json).map_err(|e| Error::InvalidIr("embedded".into(), e.to_string()))?;
-            guard.insert(key, doc.clone());
-            doc
-        }
-    };
+    static CACHE: LazyLock<Mutex<LruCache<&'static str, IrDocument>>> = LazyLock::new(|| Mutex::new(LruCache::new(IR_CACHE_CAPACITY)));
+
+    if let Some(doc) = CACHE.lock().expect("ir cache lock").get(&ir_json).cloned() {
+        return render_ir(&doc, ctx).map_err(|e| Error::Dejavu(e.to_string()));
+    }
+
+    let doc: IrDocument = serde_json::from_str(ir_json).map_err(|e| Error::InvalidIr("embedded".into(), e.to_string()))?;
+    let _ = CACHE.lock().expect("ir cache lock").put(ir_json, doc.clone());
     render_ir(&doc, ctx).map_err(|e| Error::Dejavu(e.to_string()))
 }
 

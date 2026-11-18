@@ -6,16 +6,11 @@
 
 #![deny(missing_docs)]
 
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Mutex,
-};
-
-use once_cell::sync::OnceCell;
 use schema_input_vos::{CanonicalType, CanonicalTypeArgument, ContractDiagnostic, SchemaProjection, TypeContract, TypeContractKind};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use std::collections::{HashMap, HashSet};
 
 /// Generator errors.
 #[derive(Debug, thiserror::Error)]

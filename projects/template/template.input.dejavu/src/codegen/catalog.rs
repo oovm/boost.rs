@@ -71,9 +71,8 @@ pub fn parse_catalog_json(json: &str) -> Result<TemplateCatalog, String> {
 /// JavaScript reserved words that we suffix with `_` during sanitization.
 /// (Reuses the set in emit.rs — exposed here for the sanitize path.)
 fn is_js_reserved(name: &str) -> bool {
-    use once_cell::sync::Lazy;
-    use std::collections::HashSet;
-    static RESERVED: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+    use std::{collections::HashSet, sync::LazyLock};
+    static RESERVED: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
         let mut s = HashSet::new();
         for w in [
             "break",
