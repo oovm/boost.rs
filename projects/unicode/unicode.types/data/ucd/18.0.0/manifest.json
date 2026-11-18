@@ -1,0 +1,40 @@
+{
+  "unicodeVersion": "18.0.0",
+  "files": {
+    "UnicodeData.txt": {
+      "url": "https://www.unicode.org/Public/18.0.0/ucd/UnicodeData.txt",
+      "bytes": 2243593,
+      "sha256": "0736451de439ae7baf1425136617da495e09ee5afbe6e394374db7009ea08950",
+      "retrieved": "2026-11-18",
+      "generatorVersion": 1
+    },
+    "DerivedCoreProperties.txt": {
+      "url": "https://unicode.org/Public/18.0.0/ucd/DerivedCoreProperties.txt",
+      "bytes": 1159889,
+      "sha256": "09c928886a178fcafd93c29e4bd59073a058e5a100b716d425cb563ab50f68c9",
+      "retrieved": "2026-11-18",
+      "generatorVersion": 1
+    },
+    "CompositionExclusions.txt": {
+      "url": "https://www.unicode.org/Public/18.0.0/ucd/CompositionExclusions.txt",
+      "bytes": 9007,
+      "sha256": "c759b100e9ae8960ae6b50fc5765950a7581fd9f30d4ef95f68f25a6d97e818e",
+      "retrieved": "2026-11-18",
+      "generatorVersion": 1
+    },
+    "EastAsianWidth.txt": {
+      "url": "https://www.unicode.org/Public/18.0.0/ucd/EastAsianWidth.txt",
+      "bytes": 204705,
+      "sha256": "a0cf29eacd00cfcaec4381c6b7c281685f18dbb4e7ff82b4076ccb342ca839aa",
+      "retrieved": "2026-11-18",
+      "generatorVersion": 1
+    },
+    "LICENSE.txt": {
+      "url": "https://www.unicode.org/license.txt",
+      "bytes": 1995,
+      "sha256": "e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96",
+      "retrieved": "2026-11-18",
+      "generatorVersion": 1
+    }
+  }
+}
