@@ -11,9 +11,9 @@ pub fn collect_schema_paths(project_dir: &Path, schema_pattern: &str) -> Result<
     let resolved = resolve_path(project_dir, schema_pattern);
     if schema_pattern.contains('*') || schema_pattern.contains('?') {
         let pattern = resolved.to_string_lossy().replace('\\', "/");
-        let mut paths: Vec<PathBuf> = glob::glob(&pattern)
+        let mut paths: Vec<PathBuf> = boost_fs::glob::glob(&pattern)
             .map_err(|e| format!("invalid schema glob `{schema_pattern}`: {e}"))?
-            .filter_map(|entry| entry.ok())
+            .into_iter()
             .filter(|path| is_schema_file(path))
             .collect();
         paths.sort();
