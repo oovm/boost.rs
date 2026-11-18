@@ -8,6 +8,7 @@
 //! 冒充成功的发布。
 
 use std::{
+    collections::BTreeSet,
     fs::{File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
@@ -97,6 +98,13 @@ impl FsVolumeStore {
         self.db.as_path()
     }
 
+    /// `.yydx` 对象目录根：`<stem>-objects`（与主文件同级）。
+    pub fn blob_root(&self) -> PathBuf {
+        let parent = self.db.parent().unwrap_or_else(|| Path::new("."));
+        let stem = self.db.file_stem().and_then(|name| name.to_str()).unwrap_or("app");
+        parent.join(format!("{stem}-objects"))
+    }
+
     fn file_path(&self, file: &VolumeFile) -> PathBuf {
         match file {
             VolumeFile::Main => self.db.clone(),
@@ -104,9 +112,7 @@ impl FsVolumeStore {
             VolumeFile::Shm => shm_path(&self.db),
             VolumeFile::Blob(hash) => {
                 let prefix: String = hash.chars().take(2).collect();
-                let parent = self.db.parent().unwrap_or_else(|| Path::new("."));
-                let stem = self.db.file_stem().and_then(|name| name.to_str()).unwrap_or("app");
-                parent.join(format!("{stem}-objects")).join(prefix).join(format!("{hash}.blob"))
+                self.blob_root().join(prefix).join(format!("{hash}.blob"))
             }
         }
     }
@@ -213,6 +219,86 @@ impl<T: HostVolumeStore + ?Sized> HostVolumeStore for Box<T> {
     }
 }
 
+/// 宿主 blob 目录端口：段名枚举与按名删除无法用单文件句柄表达。
+///
+/// 主文件与旁车可以只靠 [`HostVolumeStore`] 的寻址读写完成，但 `.yydx` 的
+/// 不可变段还需要「目录里现在有什么」和「删掉这一段」。浏览器 OPFS 只能以
+/// 异步目录 API（`values()` / `removeEntry()`）提供这两件事，宿主在进入同步
+/// 调用前完成解析，本端口只承载解析结果与删除命令，不做提交顺序判断。
+///
+/// 段名就是 [`VolumeFile::Blob`] 的哈希，目录内部如何分片（前缀目录、平铺）
+/// 由宿主自己决定。
+pub trait HostBlobDirectory {
+    /// 目录内已存在的 blob 哈希，按字典序。
+    fn list(&mut self) -> Result<Vec<String>>;
+
+    /// 删除一个 blob 段；不存在视为成功。
+    fn remove(&mut self, hash: &str) -> Result<()>;
+}
+
+/// 文件系统参考实现：枚举 `<stem>-objects/` 下的 `<prefix>/<hash>.blob`。
+#[derive(Debug, Clone)]
+pub struct FsBlobDirectory {
+    blobs: FsVolumeStore,
+    root: PathBuf,
+}
+
+impl FsBlobDirectory {
+    /// 绑定 `<db>` 对应的 sibling 对象目录；仅解析名字，不触碰文件系统。
+    pub fn open(db: impl Into<PathBuf>) -> Self {
+        let blobs = FsVolumeStore::open(db);
+        let root = blobs.blob_root();
+        Self { blobs, root }
+    }
+
+    /// 对象目录根路径。
+    pub fn root(&self) -> &Path {
+        self.root.as_path()
+    }
+}
+
+impl HostBlobDirectory for FsBlobDirectory {
+    fn list(&mut self) -> Result<Vec<String>> {
+        let mut found = BTreeSet::new();
+        collect_blob_hashes(&self.root, &mut found)?;
+        Ok(found.into_iter().collect())
+    }
+
+    fn remove(&mut self, hash: &str) -> Result<()> {
+        self.blobs.remove(&VolumeFile::blob(hash))
+    }
+}
+
+impl<T: HostBlobDirectory + ?Sized> HostBlobDirectory for Box<T> {
+    fn list(&mut self) -> Result<Vec<String>> {
+        (**self).list()
+    }
+
+    fn remove(&mut self, hash: &str) -> Result<()> {
+        (**self).remove(hash)
+    }
+}
+
+fn collect_blob_hashes(dir: &Path, found: &mut BTreeSet<String>) -> Result<()> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(Error::Io(error)),
+    };
+    for entry in entries {
+        let path = entry?.path();
+        if path.is_dir() {
+            collect_blob_hashes(&path, found)?;
+        }
+        else if path.extension().and_then(|ext| ext.to_str()) == Some("blob") {
+            if let Some(hash) = path.file_stem().and_then(|stem| stem.to_str()) {
+                found.insert(hash.to_owned());
+            }
+        }
+    }
+    Ok(())
+}
+
 /// 单个写入调用交给宿主的字节上限。
 const WRITE_CHUNK_BYTES: usize = 1 << 20;
 
@@ -220,6 +306,7 @@ const WRITE_CHUNK_BYTES: usize = 1 << 20;
 pub struct VolumePublisher<S: HostVolumeStore> {
     path: String,
     store: S,
+    blobs: Option<Box<dyn HostBlobDirectory>>,
     generation: u64,
 }
 
@@ -231,7 +318,18 @@ impl<S: HostVolumeStore> VolumePublisher<S> {
             Some(bytes) => main_header(&bytes)?.slot.generation,
             None => 0,
         };
-        Ok(Self { path, store, generation })
+        Ok(Self { path, store, blobs: None, generation })
+    }
+
+    /// 绑定宿主 blob 目录；`.yydx` 的枚举与删除改由该端口承担。
+    pub fn with_blob_directory(mut self, blobs: Box<dyn HostBlobDirectory>) -> Self {
+        self.blobs = Some(blobs);
+        self
+    }
+
+    /// 是否绑定了宿主 blob 目录。
+    pub fn has_blob_directory(&self) -> bool {
+        self.blobs.is_some()
     }
 
     /// 逻辑数据库路径（例如 `app.yydb`）。
@@ -319,8 +417,25 @@ impl<S: HostVolumeStore> VolumePublisher<S> {
     }
 
     /// 删除一个 blob 段。
+    ///
+    /// 绑定了宿主目录时由目录端口负责（OPFS 只有异步 `removeEntry()` 能删），
+    /// 否则退回 [`HostVolumeStore::remove`] 的单文件语义。
     pub fn remove_blob(&mut self, hash: &str) -> Result<()> {
-        self.store.remove(&VolumeFile::blob(hash))
+        match self.blobs.as_deref_mut() {
+            Some(directory) => directory.remove(hash),
+            None => self.store.remove(&VolumeFile::blob(hash)),
+        }
+    }
+
+    /// 枚举已发布的 blob 段。
+    ///
+    /// 只有宿主目录端口能回答「目录里现在有什么」；没有目录时显式拒绝，
+    /// 不把未知当成空目录。
+    pub fn list_blobs(&mut self) -> Result<Vec<String>> {
+        match self.blobs.as_deref_mut() {
+            Some(directory) => directory.list(),
+            None => Err(Error::NativeCapabilityMissing { capability: "volume.blob_directory" }),
+        }
     }
 }
 
@@ -375,4 +490,69 @@ fn write_whole<S: HostVolumeStore>(store: &mut S, file: &VolumeFile, body: &[u8]
         store.write_at(file, (index * WRITE_CHUNK_BYTES) as u64, chunk)?;
     }
     store.truncate(file, body.len() as u64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_db(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("local-volume-dir-{name}-{}.yydx", std::process::id()))
+    }
+
+    fn cleanup(path: &Path) {
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(wal_path(path));
+        let _ = std::fs::remove_file(shm_path(path));
+        if let Some(parent) = path.parent() {
+            let stem = path.file_stem().and_then(|name| name.to_str()).unwrap_or("app");
+            let _ = std::fs::remove_dir_all(parent.join(format!("{stem}-objects")));
+        }
+    }
+
+    #[test]
+    fn blob_directory_lists_and_removes_published_segments() {
+        let path = temp_db("roundtrip");
+        cleanup(&path);
+        let mut publisher =
+            VolumePublisher::open(path.to_string_lossy().to_string(), FsVolumeStore::open(&path)).unwrap().with_blob_directory(Box::new(
+                FsBlobDirectory::open(&path),
+            ));
+        assert!(publisher.has_blob_directory());
+
+        publisher.publish_blob("abc1", b"first").unwrap();
+        publisher.publish_blob("abc2", b"second").unwrap();
+        assert_eq!(publisher.list_blobs().unwrap(), vec!["abc1".to_owned(), "abc2".to_owned()]);
+
+        publisher.remove_blob("abc1").unwrap();
+        assert_eq!(publisher.list_blobs().unwrap(), vec!["abc2".to_owned()]);
+        assert_eq!(publisher.read_blob("abc1").unwrap(), None, "a removed segment must read as absent");
+        assert_eq!(publisher.read_blob("abc2").unwrap(), Some(b"second".to_vec()));
+        cleanup(&path);
+    }
+
+    #[test]
+    fn listing_blobs_without_a_directory_is_a_capability_gap() {
+        let path = temp_db("no-directory");
+        cleanup(&path);
+        let mut publisher = VolumePublisher::open(path.to_string_lossy().to_string(), FsVolumeStore::open(&path)).unwrap();
+        assert!(!publisher.has_blob_directory());
+        let error = publisher.list_blobs().expect_err("no directory cannot enumerate segments");
+        assert!(
+            matches!(error, Error::NativeCapabilityMissing { capability: "volume.blob_directory" }),
+            "expected the blob directory capability gap, got {error}"
+        );
+        cleanup(&path);
+    }
+
+    #[test]
+    fn removing_a_blob_without_a_directory_keeps_the_store_semantics() {
+        let path = temp_db("store-remove");
+        cleanup(&path);
+        let mut publisher = VolumePublisher::open(path.to_string_lossy().to_string(), FsVolumeStore::open(&path)).unwrap();
+        publisher.publish_blob("def1", b"body").unwrap();
+        publisher.remove_blob("def1").unwrap();
+        assert_eq!(publisher.read_blob("def1").unwrap(), None);
+        cleanup(&path);
+    }
 }
