@@ -282,6 +282,15 @@ pub fn eval_binary(op: SqlBoundBinaryOperator, left: &SqlValue, right: &SqlValue
     if matches!(left, Null) || matches!(right, Null) {
         return Ok(Null);
     }
+    if op == SqlBoundBinaryOperator::Concat {
+        // `||` 两侧按 `text` 渲染后连接（PostgreSQL 语义），NULL 已在上方传播。
+        let left = eval_cast(left.clone(), "text", false)?;
+        let right = eval_cast(right.clone(), "text", false)?;
+        return Ok(match (left, right) {
+            (String(a), String(b)) => String(format!("{a}{b}")),
+            _ => Null,
+        });
+    }
     Ok(match (left, right) {
         (Integer(a), Integer(b)) => integer_binary(op, *a, *b, dialect)?,
         // 整数与浮点混合比较必须先走精确序关系，否则 2^53 以上的 `i64` 会先被
@@ -407,7 +416,10 @@ pub(crate) fn integer_binary(op: SqlBoundBinaryOperator, a: i64, b: i64, dialect
         SqlBoundBinaryOperator::Greater => Boolean(a > b),
         SqlBoundBinaryOperator::LessEqual => Boolean(a <= b),
         SqlBoundBinaryOperator::GreaterEqual => Boolean(a >= b),
-        SqlBoundBinaryOperator::Like | SqlBoundBinaryOperator::And | SqlBoundBinaryOperator::Or => SqlValue::Null,
+        // `Concat` 在 `eval_binary` 入口已按文本处理，不会走到数值分支。
+        SqlBoundBinaryOperator::Like | SqlBoundBinaryOperator::And | SqlBoundBinaryOperator::Or | SqlBoundBinaryOperator::Concat => {
+            SqlValue::Null
+        }
     })
 }
 
@@ -440,7 +452,7 @@ pub(crate) fn float_binary(op: SqlBoundBinaryOperator, a: f64, b: f64, dialect: 
         SqlBoundBinaryOperator::Greater => Boolean(a > b),
         SqlBoundBinaryOperator::LessEqual => Boolean(a <= b),
         SqlBoundBinaryOperator::GreaterEqual => Boolean(a >= b),
-        SqlBoundBinaryOperator::Like | SqlBoundBinaryOperator::And | SqlBoundBinaryOperator::Or => SqlValue::Null,
+        SqlBoundBinaryOperator::Like | SqlBoundBinaryOperator::And | SqlBoundBinaryOperator::Or | SqlBoundBinaryOperator::Concat => SqlValue::Null,
     })
 }
 

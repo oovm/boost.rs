@@ -75,6 +75,19 @@ fn local_engine_statements_and_transactions() {
 }
 
 #[test]
+fn concat_operator_propagates_null() {
+    let dir = TempDir::new("concat");
+    let engine = PostgreSQL::open(dir.options("smoke")).unwrap();
+    engine.execute("CREATE TABLE t (id BIGINT PRIMARY KEY, name TEXT)").unwrap();
+    engine.execute("INSERT INTO t (id, name) VALUES (1, 'a'), (2, NULL)").unwrap();
+    let joined = engine.query("SELECT name || '-x' || id FROM t WHERE id = 1").unwrap();
+    assert_eq!(rows_of(&joined), vec![vec!["a-x1".to_owned()]]);
+    let nulls = engine.query("SELECT name || '-x' FROM t WHERE id = 2").unwrap();
+    assert!(matches!(nulls.rows[0][0], SqlValue::Null));
+    engine.close().unwrap();
+}
+
+#[test]
 fn listen_answers_protocol_v3_clients() {
     let dir = TempDir::new("listen");
     let engine = PostgreSQL::open(dir.options("smoke")).unwrap();

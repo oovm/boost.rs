@@ -250,6 +250,7 @@ fn infer_expression_type(
             | SqlBoundBinaryOperator::GreaterEqual
             | SqlBoundBinaryOperator::Like => SqlFieldType::Bool,
             SqlBoundBinaryOperator::Divide | SqlBoundBinaryOperator::Modulo => SqlFieldType::Float64,
+            SqlBoundBinaryOperator::Concat => SqlFieldType::String,
             SqlBoundBinaryOperator::Plus | SqlBoundBinaryOperator::Minus | SqlBoundBinaryOperator::Multiply => {
                 merge_numeric(infer_expression_type(left, field_types, dialect), infer_expression_type(right, field_types, dialect))
             }

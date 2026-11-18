@@ -1328,6 +1328,8 @@ pub enum SqlBoundBinaryOperator {
     GreaterEqual,
     /// `LIKE`.
     Like,
+    /// `||` — PostgreSQL 文本拼接；MySQL 方言在 catalog 绑定层显式拒绝。
+    Concat,
 }
 
 /// SQL unary operator retained by the gateway.
@@ -2415,12 +2417,10 @@ fn bind_binary_operator(operator: BinaryOperator) -> Result<SqlBoundBinaryOperat
         BinaryOperator::LessEqual => SqlBoundBinaryOperator::LessEqual,
         BinaryOperator::GreaterEqual => SqlBoundBinaryOperator::GreaterEqual,
         BinaryOperator::Like => SqlBoundBinaryOperator::Like,
-        // `oak-sql` now keeps `||` in the AST instead of dropping it. The gateway
-        // dialects have no portable concat spelling (`||` is logical OR in MySQL,
-        // concat in PostgreSQL), so reject it explicitly instead of guessing.
-        BinaryOperator::Concat => {
-            return Err(SqlFrontendError::unsupported("operator `||` is not supported by the gateway SQL frontend"));
-        }
+        // `oak-sql` keeps `||` in the AST. PostgreSQL spells concat with `||`;
+        // MySQL's `||` is logical OR, so the MySQL dialect is rejected at the
+        // catalog-bind layer before this operator ever reaches evaluation.
+        BinaryOperator::Concat => SqlBoundBinaryOperator::Concat,
     })
 }
 

@@ -755,6 +755,10 @@ pub fn bind_sql_catalog_with_variables(
     }
     // `::<type>` 在 Oak 里只有词法没有节点，收下就等于静默丢掉转换和列名。
     crate::sql::reject_cast_operator(source)?;
+    // MySQL 的 `||` 是逻辑 OR 而不是拼接；本方言的拼接一律写 `CONCAT(...)`。
+    if dialect == SqlDialect::Mysql && find_keyword_outside_literals(source, "||").is_some() {
+        return Err(SqlFrontendError::syntax("the || operator is not supported in the MySQL dialect, write CONCAT(...)"));
+    }
     // MySQL 的 `ON DUPLICATE KEY UPDATE` 没有冲突目标，Oak 也不认这段语法。
     // 在绑定前把它改写成等价的 `ON CONFLICT (<primary key>) DO UPDATE`，冲突
     // 目标由 catalog 的主键补齐；写入语义仍由 planner/executor 的同一套冲突路径执行。

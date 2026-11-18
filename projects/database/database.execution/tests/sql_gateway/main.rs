@@ -376,6 +376,9 @@ fn foreign_key_rejects_orphan_references() {
     let error = gateway.sql("UPDATE child SET parent_id = 98 WHERE id = 10").expect_err("update into orphan must fail");
     assert_eq!(error.kind, database_query::SqlErrorKind::ForeignKeyViolation);
     assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM child"), 2);
+    // MySQL 方言的 `||` 是逻辑 OR，网关不把它当拼接，按源文本显式拒绝。
+    let error = gateway.sql("SELECT name || 'x' FROM parent").expect_err("MySQL dialect must reject `||`");
+    assert_eq!(error.kind, database_query::SqlErrorKind::Syntax);
     // 表级 `FOREIGN KEY` 与内联 `REFERENCES` 同口径。
     gateway.expect_sql("CREATE TABLE child2 (id INT NOT NULL PRIMARY KEY, pid INT, FOREIGN KEY (pid) REFERENCES parent (id))");
     let error = gateway.sql("INSERT INTO child2 (id, pid) VALUES (20, 77)").expect_err("table-level foreign key must be enforced");
