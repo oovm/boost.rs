@@ -222,7 +222,7 @@ mod ieee {
         }
         let shift = bits - 53;
         let (quotient, rem) = limb_kernel::shr_natural(sig.as_limbs(), shift as u32);
-        let mut mant = if quotient.len() == 1 && quotient[0] <= u64::MAX {
+        let mut mant = if quotient.len() == 1 {
             quotient[0]
         }
         else {

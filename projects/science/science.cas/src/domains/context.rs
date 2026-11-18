@@ -87,6 +87,7 @@ impl<'a> DomainExecutionContext<'a> {
 
     /// 短生命周期建项：仅 arena / extension intern，立即返回拥有 `TermId`。
     #[inline]
+    #[allow(clippy::mut_from_ref, reason = "有意内部可变：借用不越过本调用")]
     fn session_for_build(&self) -> &mut Session {
         // SAFETY: 原子建项不返回指向 Session 内部的引用；调用方不得在持有
         // `number_of` 等内部借用时嵌套调用本路径（`number_of` 已改为拥有副本）。
