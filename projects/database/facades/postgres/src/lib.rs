@@ -32,7 +32,7 @@ use std::{
     time::Duration,
 };
 
-use database_client::pgsql::{Connection, ServerStore, error::PostgresError};
+use database_client::pgsql::{Connection, error::PostgresError};
 use database_cluster::topology::ShardMap;
 use database_execution::cluster::LocalExecutor;
 use database_query::{SqlDialect, SqlSchemaRegistry, SqlSessionCommand, SqlTransactionAction, parse_ddl, parse_session_command};
@@ -40,6 +40,7 @@ use database_server::yyds::pgsql::connection::{
     PgsqlSqlRuntime, TransactionControl, TransactionSession, pg_sqlstate, run_statement, serve_cancellable,
 };
 use database_storage::cluster_kv::FileShard;
+use database_storage::pgsql::ServerStore;
 use database_types::cluster::{ShardEpoch, ShardId};
 
 pub mod instance;

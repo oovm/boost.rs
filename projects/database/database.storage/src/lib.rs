@@ -7,5 +7,7 @@ pub mod cluster_kv;
 pub mod local;
 /// 页缓存 / BTree / WAL / SHM 原语。
 pub mod local_io;
+/// PostgreSQL 数据目录：catalog、`.yykv` shard 与 `postmaster.pid` lease。
+pub mod pgsql;
 /// SQLite format-3 存储面。
 pub mod sqlite;

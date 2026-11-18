@@ -21,10 +21,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use database_client::pgsql::{
-    ServerChange, ServerRow, ServerStore,
-    error::PostgresError,
-    postmaster::LOCK_FILE,
+use database_protocol_pgsql::PostgresError;
+use database_storage::pgsql::{
+    LOCK_FILE,
+    store::{ServerChange, ServerRow, ServerStore},
 };
 
 /// Directory under the data directory holding one directory per table group.

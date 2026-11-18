@@ -1,24 +1,24 @@
-//! Client-side `.yyds` catalog plus `.yykv` shard store.
+//! Durable namespace/key store over one `.yyds` catalog and one `.yykv` shard.
 //!
 //! Both byte formats are owned by `database-formats`, and the shard write path
-//! is owned by `database-storage`: [`Store`] is only an adapter around
-//! [`database_storage::cluster_kv::FileShard`]. The file is the shared `.yykv`
-//! codec (magic `YYKV\x04`, a base section made of `next_revision u64`, record
-//! count `u32` and records of namespace, key, revision `u64`, deadline `u64`,
-//! value tag `u8` and value bytes, followed by checksummed append-only delta
-//! frames), which `FileShard` makes durable by appending and fsyncing just the
-//! bytes each commit changed.
+//! is owned by this crate: [`Store`] is only an adapter around
+//! [`crate::cluster_kv::FileShard`]. The file is the shared `.yykv` codec
+//! (magic `YYKV\x04`, a base section made of `next_revision u64`, record count
+//! `u32` and records of namespace, key, revision `u64`, deadline `u64`, value
+//! tag `u8` and value bytes, followed by checksummed append-only delta frames),
+//! which `FileShard` makes durable by appending and fsyncing just the bytes each
+//! commit changed.
 //!
 //! This module only keeps what PostgreSQL owns:
 //!
 //! - the catalog file (`local-0.yyds`) itself, written as the shared
 //!   contract-layout document (magic `YYDS\x01`, little-endian version, schema
 //!   slot, routing slot, shard registrations, resolved contract and owners);
-//! - the catalog shard id (`<id>.yykv` next to it) and the explicit rejection
-//!   of legacy big-endian catalogs (`postgres-0.yyds`), which are never sniffed
-//!   or guessed;
+//! - the catalog shard id (`<id>.yykv` next to it) and the explicit rejection of
+//!   legacy big-endian catalogs (`postgres-0.yyds`), which are never sniffed or
+//!   guessed;
 //! - namespace validation, because `database-formats`' `Key::new` accepts any
-//!   namespace string and the empty/NUL checks are this crate's contract;
+//!   namespace string and the empty/NUL checks are PostgreSQL's contract;
 //! - the exact error wording PostgreSQL users already see for shard failures,
 //!   mapped from the shared codec's reasons.
 
@@ -29,16 +29,15 @@ use std::{
 };
 
 use database_formats::yy::yykv::{KV_LEGACY_MAGIC, KV_MAGIC, KV_PREVIOUS_MAGIC, Snapshot, decode_snapshot_strict};
-use database_storage::cluster_kv::{FileShard, InlineValue, Key, KvStore, StoredValue};
+use database_protocol_pgsql::PostgresError;
 use database_types::{
     ReasonCode,
     cluster::{Error as ClusterError, Namespace},
 };
 
-use super::{
-    error::PostgresError,
-    postmaster::{CATALOG_FILE, LEGACY_CATALOG_FILE, catalog_shard_id, encode_catalog_bytes, write_atomic},
-};
+use crate::cluster_kv::{FileShard, InlineValue, Key, KvStore, StoredValue};
+
+use super::catalog::{CATALOG_FILE, LEGACY_CATALOG_FILE, catalog_shard_id, encode_catalog_bytes, write_atomic};
 
 fn io_error(error: impl std::fmt::Display) -> PostgresError {
     PostgresError::Io(error.to_string())
@@ -272,7 +271,7 @@ mod tests {
     };
     use database_types::cluster::ShardId;
 
-    use crate::pgsql::postmaster::{DEFAULT_SHARD_ID, decode_catalog_shard_id};
+    use crate::pgsql::catalog::{DEFAULT_SHARD_ID, decode_catalog_shard_id};
 
     /// Every test gets its own directory under the test binary directory.
     fn temporary(label: &str) -> PathBuf {
@@ -381,7 +380,6 @@ mod tests {
         let dir = temporary("catalog-interop-in");
         let bytes = encode_catalog(None, None, &[ShardId("custom-7".to_owned())], None, &[]).unwrap();
         let hex = bytes.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-        // Same catalog bytes the TS and PY corpora seed for `catalog-authoritative-shard-id`.
         assert_eq!(hex, "59594453010000000000000000000000000100000008000000637573746f6d2d370000000000000000");
 
         fs::create_dir_all(&dir).unwrap();
@@ -407,7 +405,7 @@ mod tests {
     }
 
     /// Assembles one shared-codec record, i.e. exactly what a node outside this
-    /// repo writes when `database-formats` owns the shard.
+    /// crate writes when `database-formats` owns the shard.
     fn shared_record(namespace: &str, key: &[u8], value: &[u8], revision: u64) -> (TestKey, ShardRecord) {
         let key = TestKey::new(namespace, key.to_vec());
         let stored = ShardRecord { key: key.clone(), value: StoredValue::Inline(TestInlineValue(value.to_vec())), revision, expires_at: None };
@@ -469,7 +467,6 @@ mod tests {
         let store = Store::open(&dir).unwrap();
         let bytes = fs::read(store.shard_path()).unwrap();
         let hex = bytes.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-        // Same empty-shard bytes the TS and PY corpora seed in `store.json`.
         assert_eq!(hex, "59594b56040c00000000000000e42b42c2392d245f010000000000000000000000");
         let _ = fs::remove_dir_all(&dir);
     }

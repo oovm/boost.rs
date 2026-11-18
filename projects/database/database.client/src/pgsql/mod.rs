@@ -1,8 +1,8 @@
 //! PostgreSQL protocol-v3 wire client (Iris / tooling entry).
 //!
-//! Server disguise lives in [`crate::connection`] / [`crate::service`]. This
-//! module is the matching client surface so adapters never depend on the
-//! third-party `postgres` / `r2d2` crates.
+//! This module is the client surface so adapters never depend on the
+//! third-party `postgres` / `r2d2` crates. Local data directories, catalogs and
+//! shards belong to `database-storage`; a remote client never opens one.
 //!
 //! The protocol semantics live in `database-protocol-pgsql`; this module owns
 //! the TCP session and maps wire errors into [`database_types::Error`].
@@ -22,13 +22,6 @@ pub mod error;
 /// `psql` argument surface: option parsing and result-line rendering.
 pub mod psql;
 
-/// Server-side data directory: catalog naming, `.yykv` shard and the
-/// `postmaster.pid` directory lock.
-pub mod postmaster;
-
-/// Client-side `.yyds` catalog plus `.yykv` shard store.
-pub mod store;
-
 /// Password authentication: MD5, cleartext and SCRAM-SHA-256.
 mod auth;
 
@@ -36,9 +29,7 @@ mod auth;
 #[allow(missing_docs)]
 pub mod client;
 
-pub use postmaster::{ServerChange, ServerRow, ServerStore};
 pub use psql::PsqlOptions;
-pub use store::Store;
 
 pub use client::{
     BackendKeyData, ClientConfig, Column, Connection, CopyInReport, CopyOutReport, Notification, Param, Portal, PortalReport, Prepared, Report,

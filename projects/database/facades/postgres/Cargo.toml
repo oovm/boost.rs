@@ -16,6 +16,7 @@ database-client = { workspace = true }
 database-cluster = { workspace = true }
 database-execution = { workspace = true }
 database-migration = { workspace = true }
+database-protocol-pgsql = { workspace = true }
 database-query = { workspace = true }
 database-server = { workspace = true }
 database-storage = { workspace = true }
