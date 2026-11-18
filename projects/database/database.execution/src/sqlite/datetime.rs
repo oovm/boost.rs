@@ -5,7 +5,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::Cell;
+use database_query::sqlite::value::Cell;
 
 /// 支持的日期时间函数。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

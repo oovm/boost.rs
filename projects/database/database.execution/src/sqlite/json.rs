@@ -5,7 +5,7 @@
 //! 接受 JSON5 输入，数字节点在标准写法下保存原始文本，从而让 `->` 与容器
 //! 重排都复现 SQLite 的逐字输出。`json_valid(x)` 只认严格 JSON。
 
-use super::{Cell, ScalarFunction, SqlError};
+use database_query::sqlite::{SqlError, frontend::ScalarFunction, value::Cell};
 
 /// 解析错误的固定消息。
 const MALFORMED_MESSAGE: &str = "malformed JSON";

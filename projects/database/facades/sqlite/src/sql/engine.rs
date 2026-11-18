@@ -13,7 +13,17 @@ use std::{
     sync::Arc,
 };
 
-use database_udf::{Budget as UdfBudget, HostMicroDefinition, HostRuntimeAdapter, UdfContext, UdfImplementation};
+use database_execution::sqlite::{
+    cells::{
+        Number, compare_cells, compare_cells_with, compare_ordered, compare_values, number_f64, numeric, row_signature, rows_equal_with,
+        text_form, truthiness,
+    },
+    eval::{
+        Budget, CteEnv, EvalContext, EvalExpr, EvalReturningPlan, Materialized, SortCompare, SqliteSubqueryRun, SubqueryCache, SubqueryOutcome,
+    },
+    host::HostFunctionTable,
+};
+use database_udf::{HostMicroDefinition, HostRuntimeAdapter, UdfImplementation};
 
 use crate::{
     Affinity, Collation, ColumnSpec, DropIndexOutcome, RecordLimits, SchemaObjectKind, SqliteWriter, TableLimits, TableRow, TextEncoding,
@@ -24,12 +34,9 @@ use super::{
     AggregateFunction, AlterAction, Assignment, BinaryOp, CastType, ColumnRef, CommonTable, CompareOp, CompoundOp, CompoundTerm,
     ConflictAction, ConflictClause, DropColumnConflict, Expr, ForeignKeyAction, FrameBound, FrameEdge, FrameExclude, FrameUnits, IndexColumn,
     InsertValue, JoinKind, Limit, Literal, OrderKey, ScalarFunction, SelectCore, SelectItems, SqlError, Statement, TableRef, TransactionAction,
-    TriggerEvent, TriggerTiming, UnaryOp, WindowSpec, core_references,
-    datetime::{self, DateTimeFunction},
-    host::{HostFunctionTable, cell_to_udf_value, udf_error_to_sql_error, udf_value_to_cell},
-    json_string, parse, parse_with_host_functions, rewrite_create_index_column, rewrite_create_index_table, rewrite_create_table_column,
-    rewrite_create_table_drop_column, rewrite_create_table_name, rewrite_view_column, rewrite_view_table, statement_references,
-    storage_failure, strip_schema_qualifiers,
+    TriggerEvent, TriggerTiming, UnaryOp, WindowSpec, core_references, json_string, parse, parse_with_host_functions,
+    rewrite_create_index_column, rewrite_create_index_table, rewrite_create_table_column, rewrite_create_table_drop_column,
+    rewrite_create_table_name, rewrite_view_column, rewrite_view_table, statement_references, storage_failure, strip_schema_qualifiers,
 };
 
 use super::{bind::*, catalog::*, value::*};
@@ -131,15 +138,6 @@ struct IndexProbe {
     /// A stored key the canonical form cannot reproduce; the probe is then
     /// never used and every query falls back to the full scan.
     poisoned: bool,
-}
-
-/// Memoized result of one uncorrelated subquery, valid for a single statement.
-enum SubqueryCache {
-    /// Rows of a scalar subquery or `EXISTS`, in evaluation order.
-    Rows(Vec<Vec<Cell>>),
-    /// Value set of `IN (SELECT ...)`; `keys` is `None` when a value has no
-    /// canonical signature, so membership falls back to the linear scan.
-    InList { values: Vec<Cell>, keys: Option<HashSet<ProbeKey>>, saw_null: bool },
 }
 
 /// 一个相关 `EXISTS` 的索引探针计划。
@@ -580,14 +578,63 @@ fn view_relation<'a>(label: &str, names: &[String], trigger: Option<&'a TriggerF
     }
 }
 
+/// Private seam adapter: runs nested `SELECT`s and the correlated-`EXISTS`
+/// probe through [`Engine`]'s statement machinery. C4 dissolves this once the
+/// select machinery itself moves into `database_execution::sqlite`.
+struct EngineSubqueryRun<'a>(&'a Engine);
+
+impl SqliteSubqueryRun for EngineSubqueryRun<'_> {
+    fn select_statement(
+        &self,
+        query: &Statement,
+        scopes: &[Scope],
+        budget: &Budget,
+        ctes: Option<&CteEnv>,
+    ) -> Result<SubqueryOutcome, SqlError> {
+        let result = self.0.select_statement(query, scopes, budget, ctes)?;
+        Ok(SubqueryOutcome { columns: result.columns, rows: result.rows })
+    }
+
+    fn correlated_exists(&self, query: &Statement, values: &[Cell], ctx: &EvalContext) -> Result<Option<bool>, SqlError> {
+        self.0.correlated_exists(query, values, ctx)
+    }
+}
+
 /// Evaluates an optional view-DML predicate against one output row.
 fn row_matches(predicate: &Option<ResolvedExpr>, row: &[Cell], engine: &Engine, shape: &ScopeShape, budget: &Budget) -> Result<bool, SqlError> {
     let Some(predicate) = predicate
     else {
         return Ok(true);
     };
-    let ctx = EvalContext { engine, outer: &[], current: shape, aggregates: &[], windows: &[], window_row: 0, budget, ctes: None };
+    let runner = EngineSubqueryRun(engine);
+    let ctx = EvalContext {
+        subquery: &runner,
+        parameters: &engine.parameters,
+        upsert_excluded: &engine.upsert_excluded,
+        trigger_frames: &engine.trigger_frames,
+        outer_read: &engine.outer_read,
+        subquery_cache: &engine.subquery_cache,
+        host_functions: &engine.host_functions,
+        outer: &[],
+        current: shape,
+        aggregates: &[],
+        windows: &[],
+        window_row: 0,
+        budget,
+        ctes: None,
+    };
     Ok(truthiness(&predicate.eval(row, &ctx)?) == Some(true))
+}
+
+/// Compares two rows under the resolved sort keys of an ORDER BY / window order.
+fn compare_key_rows(left: &[Cell], right: &[Cell], keys: &[(SortKey, SortDirection)]) -> Ordering {
+    for (index, (_, direction)) in keys.iter().enumerate() {
+        let ordering = direction.compare(&left[index], &right[index]);
+        if ordering != Ordering::Equal {
+            return ordering;
+        }
+    }
+    Ordering::Equal
 }
 
 /// Whether a definition's event covers an incoming statement event.
@@ -699,19 +746,6 @@ enum UpsertOutcome {
         /// `RETURNING` rows evaluated against the new values.
         rows: Vec<Vec<Cell>>,
     },
-}
-
-/// Transitional home for `RETURNING` projection evaluation until the
-/// evaluation closure moves the mechanism itself.
-trait EvalReturningPlan {
-    /// Evaluates the projection against one written row.
-    fn eval(&self, cells: &[Cell], ctx: &EvalContext) -> Result<Vec<Cell>, SqlError>;
-}
-
-impl EvalReturningPlan for ReturningPlan {
-    fn eval(&self, cells: &[Cell], ctx: &EvalContext) -> Result<Vec<Cell>, SqlError> {
-        self.items.iter().map(|item| item.eval(cells, ctx)).collect()
-    }
 }
 
 /// Reserved tables SQLite keeps in the schema itself and that this engine
@@ -1836,8 +1870,15 @@ impl Engine {
         let mut windows = Vec::new();
         let resolved = resolve_expr(when, &relation, &[], &[], &mut windows, &mut aggregates, false, false)?;
         let budget = Budget::new();
+        let runner = EngineSubqueryRun(self);
         let ctx = EvalContext {
-            engine: self,
+            subquery: &runner,
+            parameters: &self.parameters,
+            upsert_excluded: &self.upsert_excluded,
+            trigger_frames: &self.trigger_frames,
+            outer_read: &self.outer_read,
+            subquery_cache: &self.subquery_cache,
+            host_functions: &self.host_functions,
             outer: &[],
             current: &shape,
             aggregates: &[],
@@ -1860,8 +1901,15 @@ impl Engine {
         let resolved = resolve_expr(expression, &relation, &[], &[], &mut windows, &mut aggregates, false, false)
             .map_err(|error| error.in_statement(statement))?;
         let budget = Budget::new();
+        let runner = EngineSubqueryRun(self);
         let ctx = EvalContext {
-            engine: self,
+            subquery: &runner,
+            parameters: &self.parameters,
+            upsert_excluded: &self.upsert_excluded,
+            trigger_frames: &self.trigger_frames,
+            outer_read: &self.outer_read,
+            subquery_cache: &self.subquery_cache,
+            host_functions: &self.host_functions,
             outer: &[],
             current: &shape,
             aggregates: &[],
@@ -2135,8 +2183,15 @@ impl Engine {
                     break;
                 }
             }
+            let runner = EngineSubqueryRun(self);
             let ctx = EvalContext {
-                engine: self,
+                subquery: &runner,
+                parameters: &self.parameters,
+                upsert_excluded: &self.upsert_excluded,
+                trigger_frames: &self.trigger_frames,
+                outer_read: &self.outer_read,
+                subquery_cache: &self.subquery_cache,
+                host_functions: &self.host_functions,
                 outer: &[],
                 current: &shape,
                 aggregates: &[],
@@ -3351,8 +3406,15 @@ impl Engine {
                     // 才拼出来:普通插入路径不再为每行复制一份单元格向量。
                     let needs_cells = !def.checks.is_empty() || returning.is_some() || queue_triggers || watch_probes;
                     let cells = if needs_cells { check_row(def, slots, rowid) } else { Vec::new() };
+                    let runner = EngineSubqueryRun(self);
                     let ctx = EvalContext {
-                        engine: self,
+                        subquery: &runner,
+                        parameters: &self.parameters,
+                        upsert_excluded: &self.upsert_excluded,
+                        trigger_frames: &self.trigger_frames,
+                        outer_read: &self.outer_read,
+                        subquery_cache: &self.subquery_cache,
+                        host_functions: &self.host_functions,
                         outer: &[],
                         current: &check_shape,
                         aggregates: &[],
@@ -3744,8 +3806,15 @@ impl Engine {
                     let mut joined: BTreeMap<i64, Vec<Cell>> = BTreeMap::new();
                     if !product.is_empty() {
                         let live = self.live_rows(def, "update")?;
+                        let runner = EngineSubqueryRun(self);
                         let ctx = EvalContext {
-                            engine: self,
+                            subquery: &runner,
+                            parameters: &self.parameters,
+                            upsert_excluded: &self.upsert_excluded,
+                            trigger_frames: &self.trigger_frames,
+                            outer_read: &self.outer_read,
+                            subquery_cache: &self.subquery_cache,
+                            host_functions: &self.host_functions,
                             outer: &[],
                             current: &shape.scope,
                             aggregates: &[],
@@ -5010,8 +5079,15 @@ impl Engine {
         let budget = Budget::new();
         let aggregates: Vec<Cell> = Vec::new();
         let windows: Vec<Vec<Cell>> = Vec::new();
+        let runner = EngineSubqueryRun(self);
         let context = EvalContext {
-            engine: self,
+            subquery: &runner,
+            parameters: &self.parameters,
+            upsert_excluded: &self.upsert_excluded,
+            trigger_frames: &self.trigger_frames,
+            outer_read: &self.outer_read,
+            subquery_cache: &self.subquery_cache,
+            host_functions: &self.host_functions,
             outer: &[],
             current: &shape.scope,
             aggregates: &aggregates,
@@ -5167,8 +5243,23 @@ impl Engine {
         eval_cells.push(Cell::Integer(rowid));
         self.upsert_excluded = candidate[..width].to_vec();
         if let Some(filter) = &plan.filter {
-            let ctx =
-                EvalContext { engine: self, outer: &[], current: shape, aggregates: &[], windows: &[], window_row: 0, budget, ctes: None };
+            let runner = EngineSubqueryRun(self);
+            let ctx = EvalContext {
+                subquery: &runner,
+                parameters: &self.parameters,
+                upsert_excluded: &self.upsert_excluded,
+                trigger_frames: &self.trigger_frames,
+                outer_read: &self.outer_read,
+                subquery_cache: &self.subquery_cache,
+                host_functions: &self.host_functions,
+                outer: &[],
+                current: shape,
+                aggregates: &[],
+                windows: &[],
+                window_row: 0,
+                budget,
+                ctes: None,
+            };
             let keep = truthiness(&filter.eval(&eval_cells, &ctx)?) == Some(true);
             if !keep {
                 self.upsert_excluded.clear();
@@ -5600,8 +5691,15 @@ impl Engine {
         let windows: Vec<Vec<Cell>> = Vec::new();
         let mut entries = Vec::with_capacity(rows.len());
         for (rowid, cells) in rows {
+            let runner = EngineSubqueryRun(self);
             let context = EvalContext {
-                engine: self,
+                subquery: &runner,
+                parameters: &self.parameters,
+                upsert_excluded: &self.upsert_excluded,
+                trigger_frames: &self.trigger_frames,
+                outer_read: &self.outer_read,
+                subquery_cache: &self.subquery_cache,
+                host_functions: &self.host_functions,
                 outer: &[],
                 current: &shape.scope,
                 aggregates: &aggregates,
@@ -6213,8 +6311,23 @@ impl Engine {
                     eval_cells.push(Cell::Integer(*rowid));
                 }
             }
-            let ctx =
-                EvalContext { engine: self, outer: &[], current: shape, aggregates: &[], windows: &[], window_row: 0, budget, ctes: None };
+            let runner = EngineSubqueryRun(self);
+            let ctx = EvalContext {
+                subquery: &runner,
+                parameters: &self.parameters,
+                upsert_excluded: &self.upsert_excluded,
+                trigger_frames: &self.trigger_frames,
+                outer_read: &self.outer_read,
+                subquery_cache: &self.subquery_cache,
+                host_functions: &self.host_functions,
+                outer: &[],
+                current: shape,
+                aggregates: &[],
+                windows: &[],
+                window_row: 0,
+                budget,
+                ctes: None,
+            };
             if joined.is_none() {
                 if let Some(predicate) = predicate {
                     if truthiness(&predicate.eval(&eval_cells, &ctx)?) != Some(true) {
@@ -6338,8 +6451,23 @@ impl Engine {
             eval_cells.clear();
             eval_cells.extend_from_slice(cells);
             eval_cells.push(Cell::Integer(*rowid));
-            let ctx =
-                EvalContext { engine: self, outer: &[], current: shape, aggregates: &[], windows: &[], window_row: 0, budget, ctes: None };
+            let runner = EngineSubqueryRun(self);
+            let ctx = EvalContext {
+                subquery: &runner,
+                parameters: &self.parameters,
+                upsert_excluded: &self.upsert_excluded,
+                trigger_frames: &self.trigger_frames,
+                outer_read: &self.outer_read,
+                subquery_cache: &self.subquery_cache,
+                host_functions: &self.host_functions,
+                outer: &[],
+                current: shape,
+                aggregates: &[],
+                windows: &[],
+                window_row: 0,
+                budget,
+                ctes: None,
+            };
             if let Some(predicate) = predicate {
                 if truthiness(&predicate.eval(&eval_cells, &ctx)?) != Some(true) {
                     continue;
@@ -6621,8 +6749,23 @@ impl Engine {
             usize::MAX
         };
         let empty_aggregates: Vec<Cell> = Vec::new();
-        let ctx =
-            EvalContext { engine: self, outer, current: &shape, aggregates: &empty_aggregates, windows: &[], window_row: 0, budget, ctes };
+        let runner = EngineSubqueryRun(self);
+        let ctx = EvalContext {
+            subquery: &runner,
+            parameters: &self.parameters,
+            upsert_excluded: &self.upsert_excluded,
+            trigger_frames: &self.trigger_frames,
+            outer_read: &self.outer_read,
+            subquery_cache: &self.subquery_cache,
+            host_functions: &self.host_functions,
+            outer,
+            current: &shape,
+            aggregates: &empty_aggregates,
+            windows: &[],
+            window_row: 0,
+            budget,
+            ctes,
+        };
         let mut conjuncts = Vec::new();
         if let Some(predicate) = predicate {
             split_conjuncts(predicate, &mut conjuncts);
@@ -6679,8 +6822,23 @@ impl Engine {
             for group_rows in groups {
                 let aggregates = specs.iter().map(|spec| compute_aggregate(spec, &group_rows, &ctx)).collect::<Result<Vec<_>, _>>()?;
                 let representative = group_rows.first().cloned().unwrap_or_else(|| vec![Cell::Null; shape.columns.len()]);
-                let group_ctx =
-                    EvalContext { engine: self, outer, current: &shape, aggregates: &aggregates, windows: &[], window_row: 0, budget, ctes };
+                let runner = EngineSubqueryRun(self);
+                let group_ctx = EvalContext {
+                    subquery: &runner,
+                    parameters: &self.parameters,
+                    upsert_excluded: &self.upsert_excluded,
+                    trigger_frames: &self.trigger_frames,
+                    outer_read: &self.outer_read,
+                    subquery_cache: &self.subquery_cache,
+                    host_functions: &self.host_functions,
+                    outer,
+                    current: &shape,
+                    aggregates: &aggregates,
+                    windows: &[],
+                    window_row: 0,
+                    budget,
+                    ctes,
+                };
                 if let Some(having) = &having_expr {
                     if truthiness(&having.eval(&representative, &group_ctx)?) != Some(true) {
                         continue;
@@ -6697,8 +6855,15 @@ impl Engine {
             };
             let mut decorated: Vec<(Vec<Cell>, Vec<Cell>, usize)> = Vec::with_capacity(inputs.len());
             for (index, row) in inputs.iter().enumerate() {
+                let runner = EngineSubqueryRun(self);
                 let row_ctx = EvalContext {
-                    engine: self,
+                    subquery: &runner,
+                    parameters: &self.parameters,
+                    upsert_excluded: &self.upsert_excluded,
+                    trigger_frames: &self.trigger_frames,
+                    outer_read: &self.outer_read,
+                    subquery_cache: &self.subquery_cache,
+                    host_functions: &self.host_functions,
                     outer,
                     current: &shape,
                     aggregates: &row.aggregates,
@@ -6752,8 +6917,15 @@ impl Engine {
             // merged source row; evaluate both through the same evaluator.
             let mut sort_cells: Vec<Vec<Cell>> = Vec::with_capacity(rows.len());
             for (index, row) in rows.iter().enumerate() {
+                let runner = EngineSubqueryRun(self);
                 let row_ctx = EvalContext {
-                    engine: self,
+                    subquery: &runner,
+                    parameters: &self.parameters,
+                    upsert_excluded: &self.upsert_excluded,
+                    trigger_frames: &self.trigger_frames,
+                    outer_read: &self.outer_read,
+                    subquery_cache: &self.subquery_cache,
+                    host_functions: &self.host_functions,
                     outer,
                     current: &shape,
                     aggregates: &empty_aggregates,
@@ -6789,8 +6961,15 @@ impl Engine {
                 let cells = match items {
                     SelectItems::Named(_) => {
                         let nodes = projection.as_ref().expect("named projection is resolved up front");
+                        let runner = EngineSubqueryRun(self);
                         let row_ctx = EvalContext {
-                            engine: self,
+                            subquery: &runner,
+                            parameters: &self.parameters,
+                            upsert_excluded: &self.upsert_excluded,
+                            trigger_frames: &self.trigger_frames,
+                            outer_read: &self.outer_read,
+                            subquery_cache: &self.subquery_cache,
+                            host_functions: &self.host_functions,
                             outer,
                             current: &shape,
                             aggregates: &empty_aggregates,
@@ -6872,8 +7051,15 @@ impl Engine {
                 let nodes = projection.expect("named projection is resolved up front");
                 let mut out = Vec::with_capacity(final_rows.len());
                 for (index, values) in final_rows.iter().enumerate() {
+                    let runner = EngineSubqueryRun(self);
                     let row_ctx = EvalContext {
-                        engine: self,
+                        subquery: &runner,
+                        parameters: &self.parameters,
+                        upsert_excluded: &self.upsert_excluded,
+                        trigger_frames: &self.trigger_frames,
+                        outer_read: &self.outer_read,
+                        subquery_cache: &self.subquery_cache,
+                        host_functions: &self.host_functions,
                         outer,
                         current: &shape,
                         aggregates: &empty_aggregates,
@@ -6969,8 +7155,23 @@ impl Engine {
             split_conjuncts(resolved, &mut conjuncts);
         }
         let empty_aggregates: Vec<Cell> = Vec::new();
-        let ctx =
-            EvalContext { engine: self, outer, current: &shape, aggregates: &empty_aggregates, windows: &[], window_row: 0, budget, ctes };
+        let runner = EngineSubqueryRun(self);
+        let ctx = EvalContext {
+            subquery: &runner,
+            parameters: &self.parameters,
+            upsert_excluded: &self.upsert_excluded,
+            trigger_frames: &self.trigger_frames,
+            outer_read: &self.outer_read,
+            subquery_cache: &self.subquery_cache,
+            host_functions: &self.host_functions,
+            outer,
+            current: &shape,
+            aggregates: &empty_aggregates,
+            windows: &[],
+            window_row: 0,
+            budget,
+            ctes,
+        };
         let count = self.count_scan_rows(def, &keep, &conjuncts, &ctx)?;
         let labels = core_output_labels(&relation, &first.items);
         let visible = match limit {
@@ -7027,7 +7228,23 @@ impl Engine {
         let mut aggregates = Vec::new();
         let mut windows = Vec::new();
         let empty: Vec<Cell> = Vec::new();
-        let ctx = EvalContext { engine: self, outer, current: &shape, aggregates: &empty, windows: &[], window_row: 0, budget, ctes };
+        let runner = EngineSubqueryRun(self);
+        let ctx = EvalContext {
+            subquery: &runner,
+            parameters: &self.parameters,
+            upsert_excluded: &self.upsert_excluded,
+            trigger_frames: &self.trigger_frames,
+            outer_read: &self.outer_read,
+            subquery_cache: &self.subquery_cache,
+            host_functions: &self.host_functions,
+            outer,
+            current: &shape,
+            aggregates: &empty,
+            windows: &[],
+            window_row: 0,
+            budget,
+            ctes,
+        };
         let mut offset = 0usize;
         if let Some(expr) = &limit.offset {
             let resolved = resolve_expr(expr, &relation, &outer_shapes, &[], &mut windows, &mut aggregates, false, false)?;
@@ -7123,8 +7340,23 @@ impl Engine {
             let mut window_partitions: Vec<Vec<Cell>> = Vec::with_capacity(inputs.len());
             let mut window_orders: Vec<Vec<Cell>> = Vec::with_capacity(inputs.len());
             for row in inputs {
-                let ctx =
-                    EvalContext { engine: self, outer, current: shape, aggregates: &row.aggregates, windows: &[], window_row: 0, budget, ctes };
+                let runner = EngineSubqueryRun(self);
+                let ctx = EvalContext {
+                    subquery: &runner,
+                    parameters: &self.parameters,
+                    upsert_excluded: &self.upsert_excluded,
+                    trigger_frames: &self.trigger_frames,
+                    outer_read: &self.outer_read,
+                    subquery_cache: &self.subquery_cache,
+                    host_functions: &self.host_functions,
+                    outer,
+                    current: shape,
+                    aggregates: &row.aggregates,
+                    windows: &[],
+                    window_row: 0,
+                    budget,
+                    ctes,
+                };
                 let mut partition = Vec::with_capacity(window.partition.len());
                 for expr in &window.partition {
                     partition.push(expr.eval(&row.values, &ctx)?);
@@ -7239,7 +7471,8 @@ impl Engine {
                 }
             }
             ResolvedWindowFunction::Ntile(buckets) => {
-                let ctx = self.window_context(inputs, indices[0], shape, outer, budget, ctes);
+                let runner = EngineSubqueryRun(self);
+                let ctx = self.window_context(&runner, inputs, indices[0], shape, outer, budget, ctes);
                 let count = ntile_buckets(&buckets.eval(&inputs[indices[0]].values, &ctx)?)?;
                 // Bigger buckets first: the first `len % count` buckets hold one
                 // extra row.
@@ -7348,8 +7581,10 @@ impl Engine {
     }
 
     /// Context of one input row, carrying that row's whole-result aggregates.
+    #[allow(clippy::too_many_arguments)]
     fn window_context<'a>(
         &'a self,
+        runner: &'a EngineSubqueryRun<'a>,
         inputs: &'a [WindowRow],
         index: usize,
         shape: &'a ScopeShape,
@@ -7357,7 +7592,22 @@ impl Engine {
         budget: &'a Budget,
         ctes: Option<&'a CteEnv>,
     ) -> EvalContext<'a> {
-        EvalContext { engine: self, outer, current: shape, aggregates: &inputs[index].aggregates, windows: &[], window_row: 0, budget, ctes }
+        EvalContext {
+            subquery: runner,
+            parameters: &self.parameters,
+            upsert_excluded: &self.upsert_excluded,
+            trigger_frames: &self.trigger_frames,
+            outer_read: &self.outer_read,
+            subquery_cache: &self.subquery_cache,
+            host_functions: &self.host_functions,
+            outer,
+            current: shape,
+            aggregates: &inputs[index].aggregates,
+            windows: &[],
+            window_row: 0,
+            budget,
+            ctes,
+        }
     }
 
     /// `lag`/`lead`: the value of a row `offset` positions away.
@@ -7377,8 +7627,9 @@ impl Engine {
         ctes: Option<&CteEnv>,
     ) -> Result<(), SqlError> {
         let len = indices.len();
+        let runner = EngineSubqueryRun(self);
         for slot in 0..len {
-            let ctx = self.window_context(inputs, indices[slot], shape, outer, budget, ctes);
+            let ctx = self.window_context(&runner, inputs, indices[slot], shape, outer, budget, ctes);
             let step = match offset {
                 None => 1,
                 Some(expr) => match lag_offset(&expr.eval(&inputs[indices[slot]].values, &ctx)?) {
@@ -7402,7 +7653,7 @@ impl Engine {
                     continue;
                 }
             };
-            let target_ctx = self.window_context(inputs, indices[target], shape, outer, budget, ctes);
+            let target_ctx = self.window_context(&runner, inputs, indices[target], shape, outer, budget, ctes);
             column[indices[slot]] = value.eval(&inputs[indices[target]].values, &target_ctx)?;
         }
         Ok(())
@@ -7429,8 +7680,9 @@ impl Engine {
         ctes: Option<&CteEnv>,
     ) -> Result<(), SqlError> {
         let len = indices.len();
+        let runner = EngineSubqueryRun(self);
         for slot in 0..len {
-            let ctx = self.window_context(inputs, indices[slot], shape, outer, budget, ctes);
+            let ctx = self.window_context(&runner, inputs, indices[slot], shape, outer, budget, ctes);
             let (start, end) = self.frame_bounds(window, slot, len, indices, orders, peer_start, peer_end, group_of, &ctx)?;
             let exclude = window.frame.as_ref().map_or(FrameExclude::NoOthers, |frame| frame.exclude);
             // Every position still in the frame after EXCLUDE, in frame order.
@@ -7453,7 +7705,7 @@ impl Engine {
                 column[indices[slot]] = Cell::Null;
                 continue;
             };
-            let target_ctx = self.window_context(inputs, indices[wanted], shape, outer, budget, ctes);
+            let target_ctx = self.window_context(&runner, inputs, indices[wanted], shape, outer, budget, ctes);
             column[indices[slot]] = value.eval(&inputs[indices[wanted]].values, &target_ctx)?;
         }
         Ok(())
@@ -7485,8 +7737,9 @@ impl Engine {
     ) -> Result<(), SqlError> {
         let len = indices.len();
         let exclude = window.frame.as_ref().map_or(FrameExclude::NoOthers, |frame| frame.exclude);
+        let runner = EngineSubqueryRun(self);
         for slot in 0..len {
-            let ctx = self.window_context(inputs, indices[slot], shape, outer, budget, ctes);
+            let ctx = self.window_context(&runner, inputs, indices[slot], shape, outer, budget, ctes);
             let (start, end) = self.frame_bounds(window, slot, len, indices, orders, peer_start, peer_end, group_of, &ctx)?;
             let mut entries: Vec<(Cell, Cell, Vec<Cell>)> = Vec::new();
             for position in start.max(0)..=end.min(len as i64 - 1) {
@@ -7494,7 +7747,7 @@ impl Engine {
                     continue;
                 }
                 let row = &inputs[indices[position as usize]];
-                let row_ctx = self.window_context(inputs, indices[position as usize], shape, outer, budget, ctes);
+                let row_ctx = self.window_context(&runner, inputs, indices[position as usize], shape, outer, budget, ctes);
                 if let Some(filter) = filter {
                     if truthiness(&filter.eval(&row.values, &row_ctx)?) != Some(true) {
                         continue;
@@ -8287,8 +8540,15 @@ impl Engine {
             }
             let mut matched = true;
             if !plan.residual.is_empty() {
+                let runner = EngineSubqueryRun(self);
                 let eval = EvalContext {
-                    engine: self,
+                    subquery: &runner,
+                    parameters: &self.parameters,
+                    upsert_excluded: &self.upsert_excluded,
+                    trigger_frames: &self.trigger_frames,
+                    outer_read: &self.outer_read,
+                    subquery_cache: &self.subquery_cache,
+                    host_functions: &self.host_functions,
                     outer: &[],
                     current: &plan.shape,
                     aggregates: &[],
@@ -9325,8 +9585,15 @@ impl Engine {
             }
             let decoded = decode_stored_rows(&stored, &cursor.plan.def, cursor.plan.mask.as_deref())?;
             for values in decoded {
+                let runner = EngineSubqueryRun(self);
                 let ctx = EvalContext {
-                    engine: self,
+                    subquery: &runner,
+                    parameters: &self.parameters,
+                    upsert_excluded: &self.upsert_excluded,
+                    trigger_frames: &self.trigger_frames,
+                    outer_read: &self.outer_read,
+                    subquery_cache: &self.subquery_cache,
+                    host_functions: &self.host_functions,
                     outer: &[],
                     current: &shape,
                     aggregates: &empty_aggregates,
@@ -10503,72 +10770,6 @@ fn compound_order_keys(order: &[OrderKey], columns: &[String]) -> Result<Vec<(us
         .collect()
 }
 
-/// Upper bound on rows emitted by one statement, shared with every nested
-/// subquery. Counting emissions rather than wall-clock keeps the result
-/// deterministic across machines.
-const EXECUTION_BUDGET: usize = 1_000_000;
-
-/// Row budget for one statement.
-struct Budget {
-    remaining: std::cell::Cell<usize>,
-}
-
-impl Budget {
-    fn new() -> Self {
-        Self { remaining: std::cell::Cell::new(EXECUTION_BUDGET) }
-    }
-
-    fn charge(&self, rows: usize) -> Result<(), SqlError> {
-        let remaining = self.remaining.get();
-        if remaining < rows {
-            return Err(SqlError::new(
-                "execution-limit",
-                format!("statement exceeded the execution budget of {EXECUTION_BUDGET} rows, most likely from a correlated subquery over a large product"),
-            )
-            .in_statement("select"));
-        }
-        self.remaining.set(remaining - rows);
-        Ok(())
-    }
-}
-
-/// One CTE or derived table already reduced to rows.
-struct Materialized {
-    columns: Vec<String>,
-    rows: Vec<Vec<Cell>>,
-}
-
-/// `WITH` entries in scope, chained so a nested query keeps seeing the outer
-/// ones. A CTE shadows a base table with the same name.
-struct CteEnv<'a> {
-    parent: Option<&'a CteEnv<'a>>,
-    tables: BTreeMap<String, Materialized>,
-}
-
-impl<'a> CteEnv<'a> {
-    fn lookup(&self, name: &str) -> Option<&Materialized> {
-        self.tables.get(&name.to_ascii_lowercase()).or_else(|| self.parent.and_then(|parent| parent.lookup(name)))
-    }
-}
-
-/// Evaluation context shared by every expression of one `SELECT` core.
-struct EvalContext<'a> {
-    engine: &'a Engine,
-    /// Enclosing scopes, innermost first.
-    outer: &'a [Scope],
-    /// Column catalog of the core currently being evaluated.
-    current: &'a ScopeShape,
-    /// Whole-result aggregate values for the current row.
-    aggregates: &'a [Cell],
-    /// Already computed window values, one vector per window of this core.
-    windows: &'a [Vec<Cell>],
-    /// Row currently being projected, indexing into `windows`.
-    window_row: usize,
-    budget: &'a Budget,
-    /// CTEs visible to the current core, including enclosing `WITH` clauses.
-    ctes: Option<&'a CteEnv<'a>>,
-}
-
 /// Two result rows are equal when every cell compares equal under the engine's
 /// value rules; `NULL` equals `NULL`, as set operations require.
 fn rows_equal(left: &[Cell], right: &[Cell]) -> bool {
@@ -10655,400 +10856,6 @@ struct WindowRow {
     aggregates: Vec<Cell>,
 }
 
-/// Transitional home for key comparison: the direction shape lives in
-/// `database_query`, the cell comparison mechanism stays with the facade.
-trait SortCompare {
-    /// Compares two cells, honouring the direction and the `NULL` placement.
-    fn compare(self, left: &Cell, right: &Cell) -> Ordering;
-}
-
-impl SortCompare for SortDirection {
-    fn compare(self, left: &Cell, right: &Cell) -> Ordering {
-        match (left, right) {
-            (Cell::Null, Cell::Null) => Ordering::Equal,
-            (Cell::Null, _) | (_, Cell::Null) => {
-                let first = self.nulls_first.unwrap_or(!self.descending);
-                if matches!(left, Cell::Null) == first { Ordering::Less } else { Ordering::Greater }
-            }
-            _ => {
-                let ordering = compare_cells_with(left, right, self.collation);
-                if self.descending { ordering.reverse() } else { ordering }
-            }
-        }
-    }
-}
-
-/// Transitional home for expression evaluation: the resolved tree lives in
-/// `database_query`, the evaluation mechanism stays with the facade until
-/// the evaluation closure lands.
-trait EvalExpr {
-    /// Read-only evaluation: literals and bound columns borrow their cell
-    /// directly without copying.
-    fn eval_borrowed<'a>(&'a self, values: &'a [Cell]) -> Option<&'a Cell>;
-
-    /// Evaluates this expression against one merged row.
-    fn eval(&self, values: &[Cell], ctx: &EvalContext) -> Result<Cell, SqlError>;
-}
-
-impl EvalExpr for ResolvedExpr {
-    /// 只读求值:字面量与已绑定列直接借出,不复制单元格。
-    ///
-    /// 只读算子(比较、`IS NULL`、`LIKE`)把操作数按引用交给下游比较函数,
-    /// 因此逐行扫描不必为每个文本操作数克隆一份 `String`。其余形态返回
-    /// `None`,由 [`ResolvedExpr::eval`] 走完整求值。
-    fn eval_borrowed<'a>(&'a self, values: &'a [Cell]) -> Option<&'a Cell> {
-        match self {
-            Self::Cell(cell) => Some(cell),
-            Self::Column { index, .. } => values.get(*index),
-            _ => None,
-        }
-    }
-
-    /// Evaluates this expression against one merged row.
-    ///
-    /// Every position (projection, `WHERE`, `ORDER BY`, nested subquery) goes
-    /// through this single function, so SQLite's NULL propagation, integer
-    /// arithmetic and correlation rules cannot diverge between clauses.
-    fn eval(&self, values: &[Cell], ctx: &EvalContext) -> Result<Cell, SqlError> {
-        Ok(match self {
-            Self::Cell(cell) => cell.clone(),
-            Self::Parameter(index) => ctx.engine.parameters.get(*index).cloned().unwrap_or(Cell::Null),
-            Self::Column { index, .. } => values[*index].clone(),
-            Self::TriggerColumn { old, index } => ctx
-                .engine
-                .trigger_frames
-                .last()
-                .and_then(|frame| if *old { frame.old.as_ref() } else { frame.new.as_ref() })
-                .and_then(|cells| cells.get(*index))
-                .cloned()
-                .unwrap_or(Cell::Null),
-            Self::ExcludedColumn { index } => ctx.engine.upsert_excluded.get(*index).cloned().unwrap_or(Cell::Null),
-            Self::OuterColumn { depth, index } => {
-                ctx.engine.outer_read.set(true);
-                ctx.outer[*depth].columns[*index].value.clone()
-            }
-            Self::AggregateRef(index) => ctx.aggregates[*index].clone(),
-            Self::Window(index) => ctx.windows.get(*index).and_then(|column| column.get(ctx.window_row)).cloned().unwrap_or(Cell::Null),
-            Self::Unary { op, value } => {
-                let value = value.eval(values, ctx)?;
-                match op {
-                    UnaryOp::Negate => negate_cell(&value),
-                    UnaryOp::Plus => value,
-                    UnaryOp::BitNot => bit_not(&value),
-                }
-            }
-            Self::Binary { left, op: BinaryOp::Concat, right } => concat(&left.eval(values, ctx)?, &right.eval(values, ctx)?),
-            Self::Binary { left, op: BinaryOp::Arrow, right } => {
-                super::json::arrow(&left.eval(values, ctx)?, &right.eval(values, ctx)?, false)?
-            }
-            Self::Binary { left, op: BinaryOp::ArrowText, right } => {
-                super::json::arrow(&left.eval(values, ctx)?, &right.eval(values, ctx)?, true)?
-            }
-            Self::Binary { left, op, right } => arithmetic(*op, &left.eval(values, ctx)?, &right.eval(values, ctx)?),
-            Self::Compare { left, op, right, collation } => {
-                // 字面量与列操作数按引用比较:逐行扫描因此不克隆任何文本。
-                let comparison = match (left.eval_borrowed(values), right.eval_borrowed(values)) {
-                    (Some(left), Some(right)) => compare_values(left, right, *op, *collation),
-                    _ => compare_values(&left.eval(values, ctx)?, &right.eval(values, ctx)?, *op, *collation),
-                };
-                match comparison {
-                    Some(true) => Cell::Integer(1),
-                    Some(false) => Cell::Integer(0),
-                    None => Cell::Null,
-                }
-            }
-            Self::IsNull { value, negated } => {
-                let is_null = match value.eval_borrowed(values) {
-                    Some(cell) => matches!(cell, Cell::Null),
-                    None => matches!(value.eval(values, ctx)?, Cell::Null),
-                };
-                Cell::Integer(i64::from(is_null != *negated))
-            }
-            Self::IsTruth { value, truth, negated } => {
-                // `IS TRUE` is the SQLite truthiness test, not a comparison with 1,
-                // and it is never NULL: a NULL operand is simply not true (nor false).
-                let is_truth = truthiness(&value.eval(values, ctx)?) == Some(*truth);
-                Cell::Integer(i64::from(is_truth != *negated))
-            }
-            Self::Not(inner) => match truthiness(&inner.eval(values, ctx)?) {
-                Some(value) => Cell::Integer(i64::from(!value)),
-                None => Cell::Null,
-            },
-            // `AND` / `OR` 短路求值,与 SQLite 一致:左侧已能定案时不求值右侧,
-            // 既省掉一个操作数的求值,也让 `a = 1 OR b = 2` 这类谓词在命中的行上
-            // 少做一次比较。
-            Self::And(left, right) => {
-                let left = truthiness(&left.eval(values, ctx)?);
-                if left == Some(false) {
-                    return Ok(Cell::Integer(0));
-                }
-                match (left, truthiness(&right.eval(values, ctx)?)) {
-                    (Some(false), _) | (_, Some(false)) => Cell::Integer(0),
-                    (Some(true), Some(true)) => Cell::Integer(1),
-                    _ => Cell::Null,
-                }
-            }
-            Self::Or(left, right) => {
-                let left = truthiness(&left.eval(values, ctx)?);
-                if left == Some(true) {
-                    return Ok(Cell::Integer(1));
-                }
-                match (left, truthiness(&right.eval(values, ctx)?)) {
-                    (Some(true), _) | (_, Some(true)) => Cell::Integer(1),
-                    (Some(false), Some(false)) => Cell::Integer(0),
-                    _ => Cell::Null,
-                }
-            }
-            Self::Case { operand, branches, otherwise, collation } => {
-                match operand {
-                    None => {
-                        for (condition, result) in branches {
-                            if truthiness(&condition.eval(values, ctx)?) == Some(true) {
-                                return result.eval(values, ctx);
-                            }
-                        }
-                    }
-                    Some(operand) => {
-                        let base = operand.eval(values, ctx)?;
-                        for (candidate, result) in branches {
-                            // 分支自带的显式 `COLLATE` 优先于 CASE 操作数的列声明。
-                            let branch_collation = collation.or_else(|| match candidate {
-                                Self::Collate { collation, .. } => Some(*collation),
-                                _ => None,
-                            });
-                            if compare_values(&base, &candidate.eval(values, ctx)?, CompareOp::Eq, branch_collation.unwrap_or_default())
-                                == Some(true)
-                            {
-                                return result.eval(values, ctx);
-                            }
-                        }
-                    }
-                }
-                match otherwise {
-                    Some(expr) => expr.eval(values, ctx)?,
-                    None => Cell::Null,
-                }
-            }
-            Self::In { value, list, negated, collation, constant } => {
-                let value = value.eval(values, ctx)?;
-                if matches!(value, Cell::Null) {
-                    return Ok(Cell::Null);
-                }
-                if let Some(constant) = constant {
-                    let found = probe_key(&value, Collation::Binary).is_some_and(|key| constant.keys.contains(&key));
-                    return Ok(if found {
-                        Cell::Integer(i64::from(!*negated))
-                    }
-                    else if constant.saw_null {
-                        Cell::Null
-                    }
-                    else {
-                        Cell::Integer(i64::from(*negated))
-                    });
-                }
-                let mut saw_null = false;
-                for item in list {
-                    let item_value = item.eval(values, ctx)?;
-                    if matches!(item_value, Cell::Null) {
-                        saw_null = true;
-                        continue;
-                    }
-                    // 左操作数的显式 `COLLATE` 优先；否则取列表项自带的显式规则。
-                    let item_collation = match collation {
-                        Some(collation) => *collation,
-                        None => match item {
-                            Self::Collate { collation, .. } => *collation,
-                            _ => Collation::Binary,
-                        },
-                    };
-                    if compare_values(&value, &item_value, CompareOp::Eq, item_collation) == Some(true) {
-                        return Ok(Cell::Integer(i64::from(!*negated)));
-                    }
-                }
-                if saw_null { Cell::Null } else { Cell::Integer(i64::from(*negated)) }
-            }
-            Self::Function { name, args } => {
-                let values = args.iter().map(|arg| arg.eval(values, ctx)).collect::<Result<Vec<_>, _>>()?;
-                if name.is_json() {
-                    // SQLite 给 JSON 函数的结果打上 JSON 子类型，嵌套进
-                    // `json_array` / `json_object` / `json_set` 时按 JSON 值而不是
-                    // 普通文本处理。这里同样标记直接调用 JSON 函数的实参。
-                    let json_arguments =
-                        args.iter().map(|arg| matches!(arg, Self::Function { name, .. } if name.is_json())).collect::<Vec<_>>();
-                    super::json::eval(*name, &values, &json_arguments)?
-                }
-                else {
-                    eval_function(*name, &values)
-                }
-            }
-            Self::HostFunction { name, args } => {
-                let values = args.iter().map(|arg| arg.eval(values, ctx)).collect::<Result<Vec<_>, _>>()?;
-                let implementation = ctx
-                    .engine
-                    .host_functions
-                    .get(name)
-                    .ok_or_else(|| SqlError::new("unknown-function", format!("no such function: {name}")))?;
-                let arguments = values.iter().map(|cell| cell_to_udf_value(name, cell)).collect::<Result<Vec<_>, _>>()?;
-                let mut context = UdfContext::new(UdfBudget::new(ctx.budget.remaining.get() as u64));
-                implementation.invoke(&mut context, &arguments).map_err(|error| udf_error_to_sql_error(name, error)).map(udf_value_to_cell)?
-            }
-            Self::Cast { value, target } => cast_cell(&value.eval(values, ctx)?, *target),
-            Self::Collate { value, .. } => value.eval(values, ctx)?,
-            Self::IsDistinct { left, right, negated, collation } => {
-                let left = left.eval(values, ctx)?;
-                let right = right.eval(values, ctx)?;
-                // `NULL` is a value again: two `NULL`s are not distinct, while a
-                // `NULL` against anything else is. Non-NULL operands use the same
-                // storage-class ordering as `=`, so `1` and `1.0` are the same.
-                let distinct = match (&left, &right) {
-                    (Cell::Null, Cell::Null) => false,
-                    (Cell::Null, _) | (_, Cell::Null) => true,
-                    _ => compare_cells_with(&left, &right, *collation) != Ordering::Equal,
-                };
-                Cell::Integer(i64::from(distinct != *negated))
-            }
-            Self::Glob { value, pattern, negated } => {
-                let value = value.eval(values, ctx)?;
-                let pattern = pattern.eval(values, ctx)?;
-                // Both operands must be text: `NULL` propagates, and a blob never
-                // matches, unlike `LIKE` which unblobs its operand.
-                if matches!(value, Cell::Null) || matches!(pattern, Cell::Null) {
-                    return Ok(Cell::Null);
-                }
-                let matched = match (&value, &pattern) {
-                    (Cell::Blob(_), _) | (_, Cell::Blob(_)) => false,
-                    _ => {
-                        let value: Vec<char> = text_form(&value).unwrap_or_default().chars().collect();
-                        let pattern: Vec<char> = text_form(&pattern).unwrap_or_default().chars().collect();
-                        glob_match(&value, &pattern)
-                    }
-                };
-                Cell::Integer(i64::from(matched != *negated))
-            }
-            Self::Like { value, pattern, negated, escape } => {
-                // 两个操作数按引用取出,避免逐行克隆文本(全表 `LIKE` 扫描的热点)。
-                let owned_value;
-                let value = match value.eval_borrowed(values) {
-                    Some(cell) => cell,
-                    None => {
-                        owned_value = value.eval(values, ctx)?;
-                        &owned_value
-                    }
-                };
-                let owned_pattern;
-                let pattern = match pattern.eval_borrowed(values) {
-                    Some(cell) => cell,
-                    None => {
-                        owned_pattern = pattern.eval(values, ctx)?;
-                        &owned_pattern
-                    }
-                };
-                let escape = match escape {
-                    Some(escape) => {
-                        let text = text_form(&escape.eval(values, ctx)?);
-                        match text.as_deref().map(|text| text.chars().collect::<Vec<_>>()) {
-                            Some(chars) if chars.len() == 1 => Some(chars[0]),
-                            Some(_) => {
-                                return Err(
-                                    SqlError::new("invalid-escape", "ESCAPE expression must be a single character").in_statement("select")
-                                );
-                            }
-                            None => None,
-                        }
-                    }
-                    None => None,
-                };
-                // `LIKE` with a NULL value, pattern or escape yields NULL.
-                // Text operands match straight off the stored strings, which
-                // keeps a full-table `LIKE` scan from allocating a `String`
-                // copy and two `Vec<char>` per row. 纯前缀模式(`abc%`、`abc`)
-                // 再走一次前缀比较,不必启动逐字符匹配器。
-                let matched = match (value, pattern) {
-                    (Cell::Text(value), Cell::Text(pattern)) => match like_plain_prefix(pattern, escape) {
-                        Some((prefix, open)) => like_prefix_text(value, prefix, open),
-                        None => like_match_text(value, pattern, escape),
-                    },
-                    _ => {
-                        let (Some(value), Some(pattern)) = (text_form(value), text_form(pattern))
-                        else {
-                            return Ok(Cell::Null);
-                        };
-                        let characters: Vec<char> = value.chars().collect();
-                        let pattern: Vec<char> = pattern.chars().collect();
-                        like_match(&characters, &pattern, escape)
-                    }
-                };
-                Cell::Integer(i64::from(matched != *negated))
-            }
-            Self::Subquery(query) => {
-                let key = query.as_ref() as *const Statement as usize;
-                {
-                    let cache = ctx.engine.subquery_cache.borrow();
-                    if let Some(SubqueryCache::Rows(rows)) = cache.get(&key) {
-                        return Ok(rows.first().map_or(Cell::Null, |row| row[0].clone()));
-                    }
-                }
-                ctx.engine.outer_read.set(false);
-                let result = run_subquery(query, values, ctx)?;
-                check_single_column(&result)?;
-                if !ctx.engine.outer_read.get() {
-                    ctx.engine.subquery_cache.borrow_mut().insert(key, SubqueryCache::Rows(result.rows.clone()));
-                }
-                result.rows.first().map_or(Cell::Null, |row| row[0].clone())
-            }
-            Self::Exists(query) => {
-                // Existence is two-valued: no result value is consumed, so a
-                // surrounding `NOT` can never turn this into `NULL`.
-                let key = query.as_ref() as *const Statement as usize;
-                {
-                    let cache = ctx.engine.subquery_cache.borrow();
-                    if let Some(SubqueryCache::Rows(rows)) = cache.get(&key) {
-                        return Ok(Cell::Integer(i64::from(!rows.is_empty())));
-                    }
-                }
-                ctx.engine.outer_read.set(false);
-                if let Some(answer) = ctx.engine.correlated_exists(query, values, ctx)? {
-                    return Ok(Cell::Integer(i64::from(answer)));
-                }
-                let result = run_subquery(query, values, ctx)?;
-                if !ctx.engine.outer_read.get() {
-                    ctx.engine.subquery_cache.borrow_mut().insert(key, SubqueryCache::Rows(result.rows.clone()));
-                }
-                Cell::Integer(i64::from(!result.rows.is_empty()))
-            }
-            Self::InSubquery { value, query, negated } => {
-                let value = value.eval(values, ctx)?;
-                let key = query.as_ref() as *const Statement as usize;
-                {
-                    let cache = ctx.engine.subquery_cache.borrow();
-                    if let Some(SubqueryCache::InList { values: list, keys, saw_null }) = cache.get(&key) {
-                        return Ok(in_result_cached(&value, list, keys.as_ref(), *saw_null, *negated));
-                    }
-                }
-                ctx.engine.outer_read.set(false);
-                let result = run_subquery(query, values, ctx)?;
-                check_single_column(&result)?;
-                let correlated = ctx.engine.outer_read.get();
-                let mut list = Vec::with_capacity(result.rows.len());
-                let mut saw_null = false;
-                for row in &result.rows {
-                    let cell = row[0].clone();
-                    if matches!(cell, Cell::Null) {
-                        saw_null = true;
-                    }
-                    list.push(cell);
-                }
-                let keys = in_list_keys(&list);
-                let answer = in_result_cached(&value, &list, keys.as_ref(), saw_null, *negated);
-                if !correlated {
-                    ctx.engine.subquery_cache.borrow_mut().insert(key, SubqueryCache::InList { values: list, keys, saw_null });
-                }
-                answer
-            }
-        })
-    }
-}
-
 /// One resolved `ORDER BY` key.
 enum SortKey {
     /// Zero-based index into the projection output.
@@ -11063,33 +10870,6 @@ enum GroupKey {
     Projected(usize, Collation),
     /// Expression over the merged source row.
     Expression(ResolvedExpr, Collation),
-}
-
-/// Runs one nested `SELECT` with the current row as the innermost enclosing
-/// scope.
-///
-/// The subquery reuses the same `select` evaluator, so its `FROM`, predicates,
-/// ordering, compounds and further nesting all behave exactly like a top-level
-/// statement.
-fn run_subquery(query: &Statement, values: &[Cell], ctx: &EvalContext) -> Result<ExecResult, SqlError> {
-    ctx.budget.charge(1)?;
-    let mut scopes = Vec::with_capacity(ctx.outer.len() + 1);
-    scopes.push(ctx.current.instantiate(values));
-    scopes.extend(ctx.outer.iter().cloned());
-    // The subquery keeps the CTEs that are in scope where it appears, so
-    // `(select ... from c)` inside a `WITH` statement resolves too.
-    ctx.engine.select_statement(query, &scopes, ctx.budget, ctx.ctes)
-}
-
-/// A scalar subquery and an `IN (SELECT ...)` must produce exactly one column,
-/// as upstream SQLite enforces at prepare time.
-fn check_single_column(result: &ExecResult) -> Result<(), SqlError> {
-    if result.columns.len() != 1 {
-        return Err(
-            SqlError::new("arity-mismatch", format!("sub-select returns {} columns - expected 1", result.columns.len())).in_statement("select")
-        );
-    }
-    Ok(())
 }
 
 /// Which position of a frame `first_value`/`last_value`/`nth_value` reads.
@@ -12926,1765 +12706,6 @@ fn integral_rowid(value: f64) -> Option<i64> {
         return None;
     }
     Some(value as i64)
-}
-
-/// SQLite storage-class order: `NULL` < numbers < text < blob.
-fn storage_rank(cell: &Cell) -> u8 {
-    match cell {
-        Cell::Null => 0,
-        Cell::Integer(_) | Cell::Real(_) => 1,
-        Cell::Text(_) => 2,
-        Cell::Blob(_) => 3,
-    }
-}
-
-/// Compares two cells with the SQLite ordering rules.
-///
-/// Integers and reals compare numerically across the two storage classes, text
-/// compares with `BINARY`, and blobs compare byte by byte.
-fn compare_cells(left: &Cell, right: &Cell) -> Ordering {
-    compare_cells_with(left, right, Collation::Binary)
-}
-
-/// 按给定排序规则比较两个单元格，文本以外的比较不受排序规则影响。
-fn compare_cells_with(left: &Cell, right: &Cell, collation: Collation) -> Ordering {
-    use Ordering::Equal;
-    let (left_rank, right_rank) = (storage_rank(left), storage_rank(right));
-    if left_rank != right_rank {
-        return left_rank.cmp(&right_rank);
-    }
-    match (left, right) {
-        (Cell::Null, Cell::Null) => Equal,
-        (Cell::Integer(left), Cell::Integer(right)) => left.cmp(right),
-        (Cell::Real(left), Cell::Real(right)) => left.partial_cmp(right).unwrap_or(Equal),
-        (Cell::Integer(left), Cell::Real(right)) => (*left as f64).partial_cmp(right).unwrap_or(Equal),
-        (Cell::Real(left), Cell::Integer(right)) => left.partial_cmp(&(*right as f64)).unwrap_or(Equal),
-        (Cell::Text(left), Cell::Text(right)) => collation.compare_text(left, right),
-        (Cell::Blob(left), Cell::Blob(right)) => left.cmp(right),
-        _ => Equal,
-    }
-}
-
-/// Applies one comparison operator. `None` means the result is SQL `NULL`.
-fn compare_values(left: &Cell, right: &Cell, operator: CompareOp, collation: Collation) -> Option<bool> {
-    use Ordering::{Equal, Greater, Less};
-    if matches!(left, Cell::Null) || matches!(right, Cell::Null) {
-        return None;
-    }
-    let ordering = compare_cells_with(left, right, collation);
-    Some(match operator {
-        CompareOp::Eq => ordering == Equal,
-        CompareOp::NotEq => ordering != Equal,
-        CompareOp::Lt => ordering == Less,
-        CompareOp::LtEq => ordering != Greater,
-        CompareOp::Gt => ordering == Greater,
-        CompareOp::GtEq => ordering != Less,
-    })
-}
-
-/// SQLite boolean conversion: `NULL` stays unknown, numbers are true when
-/// non-zero, and text or blobs are converted numerically first (`'1'` and
-/// `x'31'` are true, `'abc'` and `x'01'` are false).
-fn truthiness(cell: &Cell) -> Option<bool> {
-    match cell {
-        Cell::Null => None,
-        Cell::Integer(value) => Some(*value != 0),
-        Cell::Real(value) => Some(*value != 0.0),
-        Cell::Text(text) => Some(number_truthy(&text_number(text))),
-        Cell::Blob(bytes) => Some(number_truthy(&text_number(&String::from_utf8_lossy(bytes)))),
-    }
-}
-
-fn compare_key_rows(left: &[Cell], right: &[Cell], keys: &[(SortKey, SortDirection)]) -> Ordering {
-    for (index, (_, direction)) in keys.iter().enumerate() {
-        let ordering = direction.compare(&left[index], &right[index]);
-        if ordering != Ordering::Equal {
-            return ordering;
-        }
-    }
-    Ordering::Equal
-}
-
-/// Compares two composite window sort keys, honouring each column's direction.
-fn compare_ordered(left: &[Cell], right: &[Cell], directions: &[SortDirection]) -> Ordering {
-    for (index, direction) in directions.iter().enumerate() {
-        let ordering = direction.compare(&left[index], &right[index]);
-        if ordering != Ordering::Equal {
-            return ordering;
-        }
-    }
-    Ordering::Equal
-}
-
-/// Numeric view of a cell used by arithmetic and the numeric functions.
-#[derive(Clone, Copy)]
-enum Number {
-    /// 64-bit integer.
-    Int(i64),
-    /// Binary64 value.
-    Real(f64),
-}
-
-/// SQLite numeric coercion: `NULL` has no numeric value, and text or blobs
-/// contribute their longest numeric prefix (unparseable input becomes zero).
-fn numeric(cell: &Cell) -> Option<Number> {
-    match cell {
-        Cell::Null => None,
-        Cell::Integer(value) => Some(Number::Int(*value)),
-        Cell::Real(value) => Some(Number::Real(*value)),
-        Cell::Text(text) => Some(text_number(text)),
-        // Blobs convert through their text form too, so `x'31' + 1` is 2.
-        Cell::Blob(bytes) => Some(text_number(&String::from_utf8_lossy(bytes))),
-    }
-}
-
-/// Numeric value of text: SQLite takes the longest numeric *prefix*
-/// (`sqlite3AtoF`), so `'2abc'` is 2 and `'abc'` is 0.
-fn text_number(text: &str) -> Number {
-    let trimmed = text.trim_start();
-    let bytes = trimmed.as_bytes();
-    let mut index = 0;
-    if matches!(bytes.first(), Some(b'+') | Some(b'-')) {
-        index = 1;
-    }
-    let integer_start = index;
-    while index < bytes.len() && bytes[index].is_ascii_digit() {
-        index += 1;
-    }
-    let mut has_digits = index > integer_start;
-    let mut is_real = false;
-    if index < bytes.len() && bytes[index] == b'.' {
-        is_real = true;
-        index += 1;
-        let fraction_start = index;
-        while index < bytes.len() && bytes[index].is_ascii_digit() {
-            index += 1;
-        }
-        has_digits |= index > fraction_start;
-    }
-    if !has_digits {
-        return Number::Int(0);
-    }
-    // An exponent only counts when it is followed by at least one digit;
-    // otherwise the number ends at the mantissa (`'1e'` is 1).
-    let mut end = index;
-    if index < bytes.len() && (bytes[index] == b'e' || bytes[index] == b'E') {
-        let mut probe = index + 1;
-        if probe < bytes.len() && matches!(bytes[probe], b'+' | b'-') {
-            probe += 1;
-        }
-        let exponent_start = probe;
-        while probe < bytes.len() && bytes[probe].is_ascii_digit() {
-            probe += 1;
-        }
-        if probe > exponent_start {
-            end = probe;
-            is_real = true;
-        }
-    }
-    let prefix = &trimmed[..end];
-    if is_real {
-        prefix.parse::<f64>().map(Number::Real).unwrap_or(Number::Int(0))
-    }
-    else {
-        prefix.parse::<i64>().map(Number::Int).unwrap_or_else(|_| prefix.parse::<f64>().map(Number::Real).unwrap_or(Number::Int(0)))
-    }
-}
-
-/// `CAST(expr AS type)`: SQLite converts between its five storage classes and
-/// keeps `NULL` unchanged.
-fn cast_cell(cell: &Cell, target: CastType) -> Cell {
-    if matches!(cell, Cell::Null) {
-        return Cell::Null;
-    }
-    match target {
-        CastType::Integer => Cell::Integer(cast_integer(cell)),
-        CastType::Real => Cell::Real(cast_real(cell)),
-        CastType::Text => Cell::Text(cast_text(cell)),
-        CastType::Blob => Cell::Blob(cast_text(cell).into_bytes()),
-        CastType::Numeric => cast_numeric(cell),
-    }
-}
-
-fn cast_integer(cell: &Cell) -> i64 {
-    match cell {
-        Cell::Integer(value) => *value,
-        // SQLite truncates toward zero and saturates at the `i64` bounds.
-        Cell::Real(value) => *value as i64,
-        Cell::Text(text) => integer_prefix(text),
-        // Blobs convert through their text form, so `cast(x'31' as integer)` is 1.
-        Cell::Blob(bytes) => integer_prefix(&String::from_utf8_lossy(bytes)),
-        Cell::Null => 0,
-    }
-}
-
-/// Parses the leading integer prefix of `text`, stopping at the first
-/// non-digit the way `sqlite3Atoi64` does. `'1e3'` therefore becomes `1`.
-fn integer_prefix(text: &str) -> i64 {
-    let trimmed = text.trim_start();
-    let bytes = trimmed.as_bytes();
-    let mut index = 0;
-    let negative = match bytes.first() {
-        Some(b'+') => {
-            index = 1;
-            false
-        }
-        Some(b'-') => {
-            index = 1;
-            true
-        }
-        _ => false,
-    };
-    let start = index;
-    while index < bytes.len() && bytes[index].is_ascii_digit() {
-        index += 1;
-    }
-    if index == start {
-        return 0;
-    }
-    let magnitude = trimmed[start..index].parse::<i128>().unwrap_or(i128::MAX);
-    let signed = if negative { -magnitude } else { magnitude };
-    signed.clamp(i64::MIN as i128, i64::MAX as i128) as i64
-}
-
-fn cast_real(cell: &Cell) -> f64 {
-    match cell {
-        Cell::Integer(value) => *value as f64,
-        Cell::Real(value) => *value,
-        Cell::Text(text) => real_prefix(text),
-        Cell::Blob(bytes) => real_prefix(&String::from_utf8_lossy(bytes)),
-        Cell::Null => 0.0,
-    }
-}
-
-/// Parses the leading real prefix of `text`, stopping at the first byte that
-/// cannot be part of a number, the way `sqlite3AtoF` does.
-fn real_prefix(text: &str) -> f64 {
-    let trimmed = text.trim_start();
-    let bytes = trimmed.as_bytes();
-    let mut index = 0;
-    if matches!(bytes.first(), Some(b'+') | Some(b'-')) {
-        index = 1;
-    }
-    let start = index;
-    while index < bytes.len() && bytes[index].is_ascii_digit() {
-        index += 1;
-    }
-    let mut has_dot = false;
-    if index < bytes.len() && bytes[index] == b'.' {
-        has_dot = true;
-        index += 1;
-        while index < bytes.len() && bytes[index].is_ascii_digit() {
-            index += 1;
-        }
-    }
-    if index == start && !has_dot {
-        return 0.0;
-    }
-    let mut end = index;
-    if index < bytes.len() && (bytes[index] == b'e' || bytes[index] == b'E') {
-        let mut cursor = index + 1;
-        if matches!(bytes.get(cursor), Some(b'+') | Some(b'-')) {
-            cursor += 1;
-        }
-        let exponent_start = cursor;
-        while cursor < bytes.len() && bytes[cursor].is_ascii_digit() {
-            cursor += 1;
-        }
-        if cursor > exponent_start {
-            end = cursor;
-        }
-    }
-    trimmed[..end].parse::<f64>().unwrap_or(0.0)
-}
-
-fn cast_text(cell: &Cell) -> String {
-    match cell {
-        Cell::Null => String::new(),
-        Cell::Integer(value) => value.to_string(),
-        Cell::Real(value) => sqlite_real_text(*value),
-        Cell::Text(text) => text.clone(),
-        Cell::Blob(bytes) => String::from_utf8_lossy(bytes).into_owned(),
-    }
-}
-
-fn cast_numeric(cell: &Cell) -> Cell {
-    match cell {
-        Cell::Integer(value) => Cell::Integer(*value),
-        Cell::Real(value) => Cell::Real(*value),
-        Cell::Text(text) => numeric_text(text),
-        Cell::Blob(bytes) => numeric_text(&String::from_utf8_lossy(bytes)),
-        Cell::Null => Cell::Integer(0),
-    }
-}
-
-/// Numeric view of text for `CAST(... AS NUMERIC)`: the same prefix rule as
-/// arithmetic, collapsed back to an integer when the value is integral.
-fn numeric_text(text: &str) -> Cell {
-    match text_number(text) {
-        Number::Int(value) => Cell::Integer(value),
-        Number::Real(value) if value.is_finite() && value.fract() == 0.0 && (i64::MIN as f64..=i64::MAX as f64).contains(&value) => {
-            Cell::Integer(value as i64)
-        }
-        Number::Real(value) => Cell::Real(value),
-    }
-}
-
-/// Text form shared by `LIKE` and `||`; `NULL` has none and short-circuits.
-fn text_form(cell: &Cell) -> Option<String> {
-    match cell {
-        Cell::Null => None,
-        Cell::Integer(value) => Some(value.to_string()),
-        Cell::Real(value) => Some(sqlite_real_text(*value)),
-        Cell::Text(text) => Some(text.clone()),
-        Cell::Blob(bytes) => Some(String::from_utf8_lossy(bytes).into_owned()),
-    }
-}
-
-/// `||`: concatenates the text forms of both sides. `NULL` propagates and the
-/// result is always `TEXT`, even when both operands are numbers.
-fn concat(left: &Cell, right: &Cell) -> Cell {
-    match (text_form(left), text_form(right)) {
-        (Some(left), Some(right)) => Cell::Text(format!("{left}{right}")),
-        _ => Cell::Null,
-    }
-}
-
-/// Renders a real the way SQLite does with `%!.15g`: 15 significant digits,
-/// always a decimal point, and an exponent only outside `[1e-4, 1e15)`.
-fn sqlite_real_text(value: f64) -> String {
-    if value == 0.0 {
-        return "0.0".to_string();
-    }
-    // `{:.14e}` carries 15 significant digits and always prints an exponent.
-    let scientific = format!("{value:.14e}");
-    let (mantissa, exponent) = scientific.split_once('e').unwrap_or((scientific.as_str(), "0"));
-    let exponent: i32 = exponent.parse().unwrap_or(0);
-    let negative = mantissa.starts_with('-');
-    let digits: String = mantissa.chars().filter(|character| character.is_ascii_digit()).collect();
-    let digits = digits.trim_end_matches('0');
-    let digits = if digits.is_empty() { "0" } else { digits };
-    let mut text = if exponent < -4 || exponent >= 15 {
-        let (head, tail) = digits.split_at(1);
-        let tail = if tail.is_empty() { "0" } else { tail };
-        format!("{head}.{tail}e{}{:02}", if exponent < 0 { '-' } else { '+' }, exponent.abs())
-    }
-    else {
-        let point = exponent + 1;
-        if point <= 0 {
-            format!("0.{}{digits}", "0".repeat((-point) as usize))
-        }
-        else if point as usize >= digits.len() {
-            format!("{digits}{}.0", "0".repeat(point as usize - digits.len()))
-        }
-        else {
-            format!("{}.{}", &digits[..point as usize], &digits[point as usize..])
-        }
-    };
-    if negative {
-        text.insert(0, '-');
-    }
-    text
-}
-
-/// Matches one `GLOB` pattern against a value, one character at a time.
-///
-/// `*` matches any run including the empty one, `?` matches exactly one
-/// character, and `[...]` is a class: `^` negates it, `a-c` is an inclusive
-/// range, a leading `]` is a literal member, and an unclosed `[` never matches.
-/// Unlike `LIKE`, every comparison is case sensitive.
-fn glob_match(value: &[char], pattern: &[char]) -> bool {
-    let Some((first, rest)) = pattern.split_first()
-    else {
-        return value.is_empty();
-    };
-    match *first {
-        '*' => glob_match(value, rest) || value.split_first().is_some_and(|(_, tail)| glob_match(tail, pattern)),
-        '?' => value.split_first().is_some_and(|(_, tail)| glob_match(tail, rest)),
-        '[' => {
-            let Some((candidate, tail)) = value.split_first()
-            else {
-                return false;
-            };
-            match glob_class(*candidate, rest) {
-                Some(true) => glob_match(tail, &rest[glob_class_width(rest)..]),
-                _ => false,
-            }
-        }
-        literal => value.split_first().is_some_and(|(candidate, tail)| *candidate == literal && glob_match(tail, rest)),
-    }
-}
-
-/// Width of the `[...]` class that starts at `pattern[0]`, including both
-/// brackets. Zero means the class is never closed.
-fn glob_class_width(pattern: &[char]) -> usize {
-    let mut index = usize::from(pattern.first() == Some(&'^'));
-    let mut first_item = true;
-    while index < pattern.len() {
-        if pattern[index] == ']' && !first_item {
-            return index + 1;
-        }
-        first_item = false;
-        // `a-c` is a range only when a member follows the dash.
-        if index + 2 < pattern.len() && pattern[index + 1] == '-' && pattern[index + 2] != ']' {
-            index += 3;
-        }
-        else {
-            index += 1;
-        }
-    }
-    0
-}
-
-/// Matches one character against the class body that follows `[`.
-fn glob_class(candidate: char, pattern: &[char]) -> Option<bool> {
-    let width = glob_class_width(pattern);
-    if width == 0 {
-        return None;
-    }
-    let invert = pattern.first() == Some(&'^');
-    let body = &pattern[usize::from(invert)..width - 1];
-    let mut matched = false;
-    let mut index = 0;
-    let mut first_item = true;
-    while index < body.len() {
-        // A leading `]` is a member instead of the closing bracket.
-        if body[index] == ']' && !first_item {
-            break;
-        }
-        first_item = false;
-        if index + 2 < body.len() && body[index + 1] == '-' && body[index + 2] != ']' {
-            if candidate >= body[index] && candidate <= body[index + 2] {
-                matched = true;
-            }
-            index += 3;
-        }
-        else {
-            if candidate == body[index] {
-                matched = true;
-            }
-            index += 1;
-        }
-    }
-    Some(if invert { !matched } else { matched })
-}
-
-/// `LIKE` folds case only for ASCII letters; every other character compares
-/// exactly, which is why `Ü` never matches `ü`.
-fn like_eq(left: char, right: char) -> bool {
-    if left.is_ascii() && right.is_ascii() { left.eq_ignore_ascii_case(&right) } else { left == right }
-}
-
-/// Matches one `LIKE` pattern against a value, one character at a time.
-///
-/// `%` matches any run including the empty one, `_` matches exactly one
-/// character, and the `ESCAPE` character turns the next pattern character into
-/// a literal.
-fn like_match(value: &[char], pattern: &[char], escape: Option<char>) -> bool {
-    let Some((first, rest)) = pattern.split_first()
-    else {
-        return value.is_empty();
-    };
-    if escape != Some(*first) && *first == '%' {
-        return like_match(value, rest, escape) || value.split_first().is_some_and(|(_, tail)| like_match(tail, pattern, escape));
-    }
-    let literal = if escape == Some(*first) {
-        // A trailing escape character has nothing left to quote.
-        match rest.split_first() {
-            Some((quoted, rest)) => (*quoted, rest),
-            None => return false,
-        }
-    }
-    else {
-        (*first, rest)
-    };
-    let Some((candidate, tail)) = value.split_first()
-    else {
-        return false;
-    };
-    if escape != Some(*first) && *first == '_' {
-        return like_match(tail, literal.1, escape);
-    }
-    like_eq(literal.0, *candidate) && like_match(tail, literal.1, escape)
-}
-
-/// One consumed pattern element.
-enum LikeElement {
-    /// The pattern ended.
-    End,
-    /// `_`: exactly one character.
-    Any,
-    /// A literal character, with any `ESCAPE` prefix already consumed.
-    Literal(char),
-}
-
-/// 纯前缀模式的快速形态:模式是 `<prefix>%` 或 `<prefix>`,且 `prefix` 内没有
-/// `%`、`_` 与转义字符。返回 `prefix` 与「是否允许更长」。
-///
-/// 命中时 `LIKE` 等价于一次前缀比较,不必启动逐字符匹配器。带 `ESCAPE` 的
-/// 模式保持原匹配器:转义字符自身也要参与判定。
-fn like_plain_prefix(pattern: &str, escape: Option<char>) -> Option<(&str, bool)> {
-    if escape.is_some() {
-        return None;
-    }
-    let (prefix, open) = match pattern.strip_suffix('%') {
-        Some(prefix) => (prefix, true),
-        None => (pattern, false),
-    };
-    if prefix.contains(['%', '_']) {
-        return None;
-    }
-    Some((prefix, open))
-}
-
-/// `LIKE` 前缀匹配:`value` 是否以 `prefix` 开头(`open` 为假时要求整串相等),
-/// ASCII 字母不区分大小写,与 [`like_eq`] 的逐字符规则一致。
-///
-/// UTF-8 是自同步编码,逐字节做 ASCII 折叠比较与前缀字符比较等价:多字节字符
-/// 必须逐字节相同,ASCII 字节也不会出现在多字节序列内部。
-fn like_prefix_text(value: &str, prefix: &str, open: bool) -> bool {
-    let value = value.as_bytes();
-    let prefix = prefix.as_bytes();
-    let matched_length = if open { value.len() >= prefix.len() } else { value.len() == prefix.len() };
-    matched_length && prefix.iter().zip(&value[..prefix.len()]).all(|(pattern, candidate)| pattern.eq_ignore_ascii_case(candidate))
-}
-
-/// Matches one `LIKE` pattern against one text value without allocating.
-///
-/// Same semantics as [`like_match`] — `%` matches any run including the empty
-/// one, `_` exactly one character, and the `ESCAPE` character quotes the next
-/// pattern character — but it walks `Chars` clones and remembers the last `%`
-/// as a backtracking point instead of materializing two `Vec<char>` per call.
-/// `Chars` is a pair of pointers, so cloning one is free.
-fn like_match_text(value: &str, pattern: &str, escape: Option<char>) -> bool {
-    let mut value: std::str::Chars<'_> = value.chars();
-    let mut pattern: std::str::Chars<'_> = pattern.chars();
-    // Pattern position right after the most recent `%`, plus the value
-    // position that `%` started at; together they are the retry point.
-    let mut retry_pattern: Option<std::str::Chars<'_>> = None;
-    let mut retry_value: Option<std::str::Chars<'_>> = None;
-    loop {
-        let mut rest = pattern.clone();
-        let element = match rest.next() {
-            Some(first) if escape != Some(first) && first == '%' => {
-                retry_pattern = Some(rest.clone());
-                retry_value = Some(value.clone());
-                pattern = rest;
-                continue;
-            }
-            Some(first) if escape == Some(first) => match rest.next() {
-                Some(quoted) => {
-                    pattern = rest;
-                    LikeElement::Literal(quoted)
-                }
-                // A trailing escape character has nothing left to quote.
-                None => return false,
-            },
-            Some('_') => {
-                pattern = rest;
-                LikeElement::Any
-            }
-            Some(first) => {
-                pattern = rest;
-                LikeElement::Literal(first)
-            }
-            None => LikeElement::End,
-        };
-        let matched = match element {
-            LikeElement::End => {
-                if value.clone().next().is_none() {
-                    return true;
-                }
-                // Extend the run the last `%` swallowed by one character and
-                // retry the (already exhausted) pattern against the shorter tail.
-                let Some(next_value) = retry_value.as_mut()
-                else {
-                    return false;
-                };
-                let Some(next_pattern) = retry_pattern.as_ref()
-                else {
-                    return false;
-                };
-                if next_value.next().is_none() {
-                    return false;
-                }
-                value = next_value.clone();
-                pattern = next_pattern.clone();
-                continue;
-            }
-            LikeElement::Any => value.next().is_some(),
-            LikeElement::Literal(literal) => matches!(value.next(), Some(candidate) if like_eq(literal, candidate)),
-        };
-        if matched {
-            continue;
-        }
-        // Extend the run the last `%` swallowed by one character and retry.
-        let Some(next_value) = retry_value.as_mut()
-        else {
-            return false;
-        };
-        let Some(next_pattern) = retry_pattern.as_ref()
-        else {
-            return false;
-        };
-        if next_value.next().is_none() {
-            return false;
-        }
-        value = next_value.clone();
-        pattern = next_pattern.clone();
-    }
-}
-
-fn number_truthy(number: &Number) -> bool {
-    match number {
-        Number::Int(value) => *value != 0,
-        Number::Real(value) => *value != 0.0,
-    }
-}
-
-fn number_f64(number: Number) -> f64 {
-    match number {
-        Number::Int(value) => value as f64,
-        Number::Real(value) => value,
-    }
-}
-
-/// Unary negation: integer negation that overflows becomes a real, and `NULL`
-/// stays `NULL`. Text and blobs are converted numerically first, as in SQLite.
-fn negate_cell(cell: &Cell) -> Cell {
-    match numeric(cell) {
-        None => Cell::Null,
-        Some(Number::Int(value)) => match value.checked_neg() {
-            Some(value) => Cell::Integer(value),
-            None => Cell::Real(-(value as f64)),
-        },
-        Some(Number::Real(value)) => Cell::Real(-value),
-    }
-}
-
-/// Arithmetic with SQLite rules: `NULL` propagates, integer operators truncate
-/// and fall back to a real on overflow, and division by zero yields `NULL`.
-fn arithmetic(op: BinaryOp, left: &Cell, right: &Cell) -> Cell {
-    let (Some(left), Some(right)) = (numeric(left), numeric(right))
-    else {
-        return Cell::Null;
-    };
-    match op {
-        BinaryOp::Add => match (left, right) {
-            (Number::Int(left), Number::Int(right)) => match left.checked_add(right) {
-                Some(value) => Cell::Integer(value),
-                None => Cell::Real(left as f64 + right as f64),
-            },
-            (left, right) => Cell::Real(number_f64(left) + number_f64(right)),
-        },
-        BinaryOp::Subtract => match (left, right) {
-            (Number::Int(left), Number::Int(right)) => match left.checked_sub(right) {
-                Some(value) => Cell::Integer(value),
-                None => Cell::Real(left as f64 - right as f64),
-            },
-            (left, right) => Cell::Real(number_f64(left) - number_f64(right)),
-        },
-        BinaryOp::Multiply => match (left, right) {
-            (Number::Int(left), Number::Int(right)) => match left.checked_mul(right) {
-                Some(value) => Cell::Integer(value),
-                None => Cell::Real(left as f64 * right as f64),
-            },
-            (left, right) => Cell::Real(number_f64(left) * number_f64(right)),
-        },
-        BinaryOp::Divide => match (left, right) {
-            // SQLite returns NULL rather than infinity for any zero divisor.
-            (_, Number::Int(0)) | (_, Number::Real(0.0)) => Cell::Null,
-            (Number::Int(left), Number::Int(right)) => match left.checked_div(right) {
-                Some(value) => Cell::Integer(value),
-                None => Cell::Real(left as f64 / right as f64),
-            },
-            (left, right) => Cell::Real(number_f64(left) / number_f64(right)),
-        },
-        // `%` converts both operands to 64-bit integers, keeps the dividend's
-        // sign, returns a real when either operand was real, and yields NULL
-        // when the truncated divisor is zero.
-        BinaryOp::Modulo => {
-            let real = matches!(&left, Number::Real(_)) || matches!(&right, Number::Real(_));
-            let (left, right) = (number_i64(left), number_i64(right));
-            if right == 0 {
-                Cell::Null
-            }
-            else {
-                // `i64::MIN % -1` overflows, and SQLite answers `0` for it.
-                let remainder = left.checked_rem(right).unwrap_or(0);
-                if real { Cell::Real(remainder as f64) } else { Cell::Integer(remainder) }
-            }
-        }
-        // `||` never reaches arithmetic: it is evaluated by its own branch.
-        BinaryOp::Concat => Cell::Null,
-        // `->` / `->>` 同样由独立分支求值，这里只是穷尽匹配。
-        BinaryOp::Arrow | BinaryOp::ArrowText => Cell::Null,
-        BinaryOp::ShiftLeft => Cell::Integer(shift(number_i64(left), number_i64(right), true)),
-        BinaryOp::ShiftRight => Cell::Integer(shift(number_i64(left), number_i64(right), false)),
-        BinaryOp::BitAnd => Cell::Integer(number_i64(left) & number_i64(right)),
-        BinaryOp::BitOr => Cell::Integer(number_i64(left) | number_i64(right)),
-    }
-}
-
-/// `~`: one's complement of the 64-bit integer conversion, `NULL` stays `NULL`.
-fn bit_not(cell: &Cell) -> Cell {
-    match numeric(cell) {
-        Some(number) => Cell::Integer(!number_i64(number)),
-        None => Cell::Null,
-    }
-}
-
-fn number_i64(number: Number) -> i64 {
-    match number {
-        Number::Int(value) => value,
-        Number::Real(value) => value as i64,
-    }
-}
-
-/// SQLite shifts 64-bit integers: a negative count reverses the direction,
-/// counts of 64 or more saturate, and `>>` keeps the sign bit.
-fn shift(value: i64, count: i64, left: bool) -> i64 {
-    let magnitude = count.unsigned_abs();
-    let leftward = left != (count < 0);
-    if leftward {
-        if magnitude >= 64 { 0 } else { ((value as u64) << magnitude) as i64 }
-    }
-    else if magnitude >= 64 {
-        if value < 0 { -1 } else { 0 }
-    }
-    else {
-        value >> magnitude
-    }
-}
-
-/// `IN` with three-valued logic: a hit is true (false for `NOT IN`), a miss
-/// with any `NULL` candidate is unknown, and a `NULL` probe is always unknown.
-fn in_result(value: &Cell, list: &[Cell], negated: bool) -> Cell {
-    if matches!(value, Cell::Null) {
-        return Cell::Null;
-    }
-    let mut saw_null = false;
-    for item in list {
-        if matches!(item, Cell::Null) {
-            saw_null = true;
-        }
-        else if compare_values(value, item, CompareOp::Eq, Collation::Binary) == Some(true) {
-            return Cell::Integer(i64::from(!negated));
-        }
-    }
-    if saw_null { Cell::Null } else { Cell::Integer(i64::from(negated)) }
-}
-
-/// Canonical key set for an `IN (SELECT ...)` value list, or `None` when an
-/// item has no canonical signature, so membership has to scan the list.
-fn in_list_keys(values: &[Cell]) -> Option<HashSet<ProbeKey>> {
-    let mut keys = HashSet::with_capacity(values.len());
-    for value in values {
-        match probe_key(value, Collation::Binary) {
-            Some(key) if !matches!(key, ProbeKey::Wide(_)) => {
-                keys.insert(key);
-            }
-            _ => return None,
-        }
-    }
-    Some(keys)
-}
-
-/// Membership with the same three-valued result as [`in_result`], using the
-/// canonical key set when the whole list had one.
-fn in_result_cached(value: &Cell, list: &[Cell], keys: Option<&HashSet<ProbeKey>>, saw_null: bool, negated: bool) -> Cell {
-    if matches!(value, Cell::Null) {
-        return Cell::Null;
-    }
-    if let Some(keys) = keys
-        && let Some(key) = probe_key(value, Collation::Binary)
-        && !matches!(key, ProbeKey::Wide(_))
-    {
-        return if keys.contains(&key) {
-            Cell::Integer(i64::from(!negated))
-        }
-        else if saw_null {
-            Cell::Null
-        }
-        else {
-            Cell::Integer(i64::from(negated))
-        };
-    }
-    in_result(value, list, negated)
-}
-
-/// Canonical hash signature of one output row, or `None` when a cell falls
-/// outside the canonical form and dedup must fall back to the linear scan.
-fn row_signature(row: &[Cell], collations: &[Collation]) -> Option<Vec<ProbeKey>> {
-    row.iter()
-        .enumerate()
-        .map(|(position, cell)| match probe_key(cell, collations.get(position).copied().unwrap_or_default()) {
-            Some(part) if !matches!(part, ProbeKey::Wide(_)) => Some(part),
-            _ => None,
-        })
-        .collect()
-}
-
-/// Row equality under the engine's comparison rules and the given collations.
-fn rows_equal_with(left: &[Cell], right: &[Cell], collations: &[Collation]) -> bool {
-    left.len() == right.len()
-        && left.iter().zip(right).enumerate().all(|(position, (first, second))| {
-            compare_cells_with(first, second, collations.get(position).copied().unwrap_or_default()) == Ordering::Equal
-        })
-}
-
-fn eval_function(name: ScalarFunction, args: &[Cell]) -> Cell {
-    match name {
-        // `abs()` 对整数保持整数，对实数与文本一律走二进制浮点，所以
-        // `typeof(abs('-7'))` 是 `real` 而不是 `integer`。
-        ScalarFunction::Abs => match &args[0] {
-            Cell::Null => Cell::Null,
-            Cell::Integer(value) => match value.checked_abs() {
-                Some(value) => Cell::Integer(value),
-                None => Cell::Real(-(*value as f64)),
-            },
-            cell => match numeric(cell) {
-                Some(Number::Int(value)) => Cell::Real((value as f64).abs()),
-                Some(Number::Real(value)) => Cell::Real(value.abs()),
-                None => Cell::Null,
-            },
-        },
-        ScalarFunction::Coalesce => args.iter().find(|cell| !matches!(cell, Cell::Null)).cloned().unwrap_or(Cell::Null),
-        ScalarFunction::Length => match &args[0] {
-            Cell::Null => Cell::Null,
-            Cell::Blob(bytes) => Cell::Integer(bytes.len() as i64),
-            Cell::Text(text) => Cell::Integer(text.chars().count() as i64),
-            other => Cell::Integer(number_text(other).chars().count() as i64),
-        },
-        ScalarFunction::Typeof => Cell::Text(
-            match &args[0] {
-                Cell::Null => "null",
-                Cell::Integer(_) => "integer",
-                Cell::Real(_) => "real",
-                Cell::Text(_) => "text",
-                Cell::Blob(_) => "blob",
-            }
-            .to_string(),
-        ),
-        ScalarFunction::Lower => match &args[0] {
-            Cell::Text(text) => Cell::Text(text.to_ascii_lowercase()),
-            other => other.clone(),
-        },
-        ScalarFunction::Upper => match &args[0] {
-            Cell::Text(text) => Cell::Text(text.to_ascii_uppercase()),
-            other => other.clone(),
-        },
-        ScalarFunction::Substr => substr_cell(args),
-        ScalarFunction::Round => round_cell(args),
-        // `hex()` hashes the text form, so `hex(255)` is `323535` and a blob
-        // keeps its bytes; `NULL` becomes the empty string.
-        ScalarFunction::Hex => Cell::Text(match text_form(&args[0]) {
-            Some(text) => text.bytes().map(|byte| format!("{byte:02X}")).collect(),
-            None => String::new(),
-        }),
-        ScalarFunction::Quote => Cell::Text(quote_text(&args[0])),
-        ScalarFunction::Random => Cell::Integer(next_random()),
-        ScalarFunction::RandomBlob => Cell::Blob(random_blob(&args[0])),
-        ScalarFunction::Instr => instr_cell(args),
-        ScalarFunction::Trim => trim_cell(args, true, true),
-        ScalarFunction::Ltrim => trim_cell(args, true, false),
-        ScalarFunction::Rtrim => trim_cell(args, false, true),
-        ScalarFunction::Replace => replace_cell(args),
-        ScalarFunction::IfNull => match &args[0] {
-            Cell::Null => args[1].clone(),
-            value => value.clone(),
-        },
-        // `nullif(x, y)` 与 `x = y` 共用比较语义，比较结果未知时返回 `x`。
-        ScalarFunction::NullIf => match compare_values(&args[0], &args[1], CompareOp::Eq, Collation::Binary) {
-            Some(true) => Cell::Null,
-            _ => args[0].clone(),
-        },
-        ScalarFunction::Printf => printf_cell(args),
-        ScalarFunction::Char => Cell::Text(args.iter().map(|cell| character_for_code(integer_argument(cell))).collect()),
-        ScalarFunction::Unicode => match &args[0] {
-            Cell::Null => Cell::Null,
-            cell => match cast_text(cell).chars().next() {
-                Some(character) => Cell::Integer(character as i64),
-                None => Cell::Null,
-            },
-        },
-        ScalarFunction::Soundex => soundex_cell(&args[0]),
-        ScalarFunction::Min => min_max_cell(args, false),
-        ScalarFunction::Max => min_max_cell(args, true),
-        ScalarFunction::Ceil => integral_or_real(args, f64::ceil),
-        ScalarFunction::Floor => integral_or_real(args, f64::floor),
-        ScalarFunction::Trunc => integral_or_real(args, f64::trunc),
-        ScalarFunction::Sqrt => real_function(args, f64::sqrt),
-        ScalarFunction::Pow => real_function2(args, f64::powf),
-        ScalarFunction::Mod => real_function2(args, |left, right| left % right),
-        ScalarFunction::Exp => real_function(args, f64::exp),
-        ScalarFunction::Ln => positive_real_function(args, f64::ln),
-        ScalarFunction::Log => log_cell(args),
-        ScalarFunction::Log2 => positive_real_function(args, f64::log2),
-        ScalarFunction::Log10 => positive_real_function(args, f64::log10),
-        ScalarFunction::Sin => real_function(args, f64::sin),
-        ScalarFunction::Cos => real_function(args, f64::cos),
-        ScalarFunction::Tan => real_function(args, f64::tan),
-        ScalarFunction::Asin => real_function(args, f64::asin),
-        ScalarFunction::Acos => real_function(args, f64::acos),
-        ScalarFunction::Atan => real_function(args, f64::atan),
-        ScalarFunction::Atan2 => real_function2(args, f64::atan2),
-        ScalarFunction::Sinh => real_function(args, f64::sinh),
-        ScalarFunction::Cosh => real_function(args, f64::cosh),
-        ScalarFunction::Tanh => real_function(args, f64::tanh),
-        ScalarFunction::Asinh => real_function(args, f64::asinh),
-        ScalarFunction::Acosh => real_function(args, f64::acosh),
-        ScalarFunction::Atanh => real_function(args, f64::atanh),
-        ScalarFunction::Degrees => real_function(args, f64::to_degrees),
-        ScalarFunction::Radians => real_function(args, f64::to_radians),
-        ScalarFunction::Pi => Cell::Real(std::f64::consts::PI),
-        ScalarFunction::Sign => sign_cell(args),
-        ScalarFunction::Date => datetime::eval(DateTimeFunction::Date, args),
-        ScalarFunction::Time => datetime::eval(DateTimeFunction::Time, args),
-        ScalarFunction::Datetime => datetime::eval(DateTimeFunction::Datetime, args),
-        ScalarFunction::JulianDay => datetime::eval(DateTimeFunction::JulianDay, args),
-        ScalarFunction::UnixEpoch => datetime::eval(DateTimeFunction::UnixEpoch, args),
-        ScalarFunction::Strftime => datetime::eval(DateTimeFunction::Strftime, args),
-        ScalarFunction::Timediff => datetime::eval(DateTimeFunction::Timediff, args),
-        // JSON 函数在进入本函数前已交给 JSON 模块，这里只为穷尽匹配。
-        ScalarFunction::JsonValid
-        | ScalarFunction::JsonType
-        | ScalarFunction::JsonArray
-        | ScalarFunction::JsonObject
-        | ScalarFunction::JsonQuote
-        | ScalarFunction::JsonExtract
-        | ScalarFunction::JsonArrayLength
-        | ScalarFunction::JsonRemove
-        | ScalarFunction::JsonSet
-        | ScalarFunction::JsonInsert
-        | ScalarFunction::JsonReplace
-        | ScalarFunction::JsonPatch => Cell::Null,
-    }
-}
-
-/// 多参数 `min` / `max`：任一参数为 `NULL` 时返回 `NULL`。`min` 在相等时
-/// 取后一个参数，`max` 在相等时保留前一个参数，与 SQLite 的比较循环一致。
-fn min_max_cell(args: &[Cell], want_max: bool) -> Cell {
-    if args.iter().any(|cell| matches!(cell, Cell::Null)) {
-        return Cell::Null;
-    }
-    let mut result = &args[0];
-    for candidate in &args[1..] {
-        let replace = if want_max {
-            compare_values(result, candidate, CompareOp::Lt, Collation::Binary) == Some(true)
-        }
-        else {
-            compare_values(result, candidate, CompareOp::GtEq, Collation::Binary) == Some(true)
-        };
-        if replace {
-            result = candidate;
-        }
-    }
-    result.clone()
-}
-
-fn character_for_code(code: i64) -> char {
-    u32::try_from(code).ok().and_then(char::from_u32).unwrap_or('\u{FFFD}')
-}
-
-/// `soundex`：首字母大写后按 SQLite 的分组追加数字，最多四位，不足补 `0`。
-fn soundex_cell(cell: &Cell) -> Cell {
-    let text = cast_text(cell);
-    let mut letters = text.chars().filter(|character| character.is_ascii_alphabetic());
-    let Some(first) = letters.next()
-    else {
-        return Cell::Text("?000".to_string());
-    };
-    let mut encoded = String::new();
-    encoded.push(first.to_ascii_uppercase());
-    let mut previous = soundex_code(first);
-    for letter in letters {
-        let code = soundex_code(letter);
-        if code == 0 {
-            previous = 0;
-            continue;
-        }
-        if code != previous {
-            encoded.push((b'0' + code) as char);
-            if encoded.len() == 4 {
-                break;
-            }
-        }
-        previous = code;
-    }
-    while encoded.len() < 4 {
-        encoded.push('0');
-    }
-    Cell::Text(encoded)
-}
-
-fn soundex_code(character: char) -> u8 {
-    match character.to_ascii_uppercase() {
-        'B' | 'F' | 'P' | 'V' => 1,
-        'C' | 'G' | 'J' | 'K' | 'Q' | 'S' | 'X' | 'Z' => 2,
-        'D' | 'T' => 3,
-        'L' => 4,
-        'M' | 'N' => 5,
-        'R' => 6,
-        _ => 0,
-    }
-}
-
-fn integer_argument(cell: &Cell) -> i64 {
-    match cast_numeric(cell) {
-        Cell::Integer(value) => value,
-        Cell::Real(value) => value as i64,
-        _ => 0,
-    }
-}
-
-fn real_argument(cell: &Cell) -> f64 {
-    match cast_numeric(cell) {
-        Cell::Integer(value) => value as f64,
-        Cell::Real(value) => value,
-        _ => 0.0,
-    }
-}
-
-/// `printf` / `format`：`NULL` 格式串返回 `NULL`，位置参数写法同样返回 `NULL`。
-fn printf_cell(args: &[Cell]) -> Cell {
-    let Some(format) = text_form(&args[0])
-    else {
-        return Cell::Null;
-    };
-    if format.contains('$') {
-        return Cell::Null;
-    }
-    let characters: Vec<char> = format.chars().collect();
-    let mut output = String::new();
-    let mut index = 0usize;
-    let mut argument = 1usize;
-    while index < characters.len() {
-        if characters[index] != '%' {
-            output.push(characters[index]);
-            index += 1;
-            continue;
-        }
-        index += 1;
-        if index >= characters.len() {
-            output.push('%');
-            break;
-        }
-        if characters[index] == '%' {
-            output.push('%');
-            index += 1;
-            continue;
-        }
-        let mut flags = String::new();
-        while index < characters.len() && "-+ 0#".contains(characters[index]) {
-            flags.push(characters[index]);
-            index += 1;
-        }
-        let mut width = 0usize;
-        while index < characters.len() && characters[index].is_ascii_digit() {
-            width = width.saturating_mul(10).saturating_add((characters[index] as u8 - b'0') as usize);
-            index += 1;
-        }
-        let mut precision = None;
-        if index < characters.len() && characters[index] == '.' {
-            index += 1;
-            let mut digits = 0usize;
-            while index < characters.len() && characters[index].is_ascii_digit() {
-                digits = digits.saturating_mul(10).saturating_add((characters[index] as u8 - b'0') as usize);
-                index += 1;
-            }
-            precision = Some(digits);
-        }
-        while index < characters.len() && "lhL".contains(characters[index]) {
-            index += 1;
-        }
-        if index >= characters.len() {
-            output.push('%');
-            break;
-        }
-        let conversion = characters[index];
-        index += 1;
-        // `%n` 不消费参数也不产出字符，解析继续。
-        if conversion == 'n' {
-            continue;
-        }
-        if !"diufFeEgGxXocszqQwp".contains(conversion) {
-            // 未知转换终止解析：已有输出原样返回，否则整体为 NULL。
-            return if output.is_empty() { Cell::Null } else { Cell::Text(output) };
-        }
-        let cell = args.get(argument).cloned().unwrap_or(Cell::Null);
-        argument += 1;
-        let rendered = render_conversion(conversion, &cell, &flags, width, precision);
-        output.push_str(&rendered);
-    }
-    Cell::Text(output)
-}
-
-fn render_conversion(conversion: char, cell: &Cell, flags: &str, width: usize, precision: Option<usize>) -> String {
-    let left = flags.contains('-');
-    let zero = flags.contains('0') && !left;
-    let plus = flags.contains('+');
-    let space = flags.contains(' ');
-    let alternate = flags.contains('#');
-    match conversion {
-        'd' | 'i' => {
-            let value = integer_argument(cell);
-            let digits = format!("{}", value.unsigned_abs());
-            let digits = apply_integer_precision(digits, precision);
-            let sign = if value < 0 {
-                "-"
-            }
-            else if plus {
-                "+"
-            }
-            else if space {
-                " "
-            }
-            else {
-                ""
-            };
-            pad_text(&format!("{sign}{digits}"), width, left, zero, sign.len())
-        }
-        'u' => {
-            let value = integer_argument(cell) as u64;
-            let digits = apply_integer_precision(value.to_string(), precision);
-            pad_text(&digits, width, left, zero, 0)
-        }
-        'x' | 'X' => {
-            let digits = format!("{:x}", integer_argument(cell) as u64);
-            let digits = apply_integer_precision(digits, precision);
-            let digits = if conversion == 'X' { digits.to_ascii_uppercase() } else { digits };
-            let prefix = if alternate && integer_argument(cell) != 0 { if conversion == 'X' { "0X" } else { "0x" } } else { "" };
-            pad_text(&format!("{prefix}{digits}"), width, left, zero, prefix.len())
-        }
-        'o' => {
-            let digits = format!("{:o}", integer_argument(cell) as u64);
-            let digits = apply_integer_precision(digits, precision);
-            let prefix = if alternate && !digits.starts_with('0') { "0" } else { "" };
-            pad_text(&format!("{prefix}{digits}"), width, left, zero, prefix.len())
-        }
-        'f' | 'F' => {
-            let value = real_argument(cell);
-            let keep = precision.unwrap_or(6);
-            let (integer, fraction) = fixed_parts(value.abs(), keep);
-            let mut body = integer;
-            if keep > 0 {
-                body.push('.');
-                body.push_str(&fraction);
-            }
-            else if alternate {
-                body.push('.');
-            }
-            let sign = if value.is_sign_negative() || value < 0.0 {
-                "-"
-            }
-            else if plus {
-                "+"
-            }
-            else if space {
-                " "
-            }
-            else {
-                ""
-            };
-            pad_text(&format!("{sign}{body}"), width, left, zero, sign.len())
-        }
-        'e' | 'E' => {
-            let value = real_argument(cell);
-            let keep = precision.unwrap_or(6);
-            let (integer, fraction, exponent) = scientific_parts(value.abs(), keep);
-            let letter = if conversion == 'E' { 'E' } else { 'e' };
-            let sign = if value.is_sign_negative() || value < 0.0 {
-                "-"
-            }
-            else if plus {
-                "+"
-            }
-            else if space {
-                " "
-            }
-            else {
-                ""
-            };
-            let body = if fraction.is_empty() {
-                format!("{integer}{letter}{}{:02}", if exponent < 0 { '-' } else { '+' }, exponent.unsigned_abs())
-            }
-            else {
-                format!("{integer}.{fraction}{letter}{}{:02}", if exponent < 0 { '-' } else { '+' }, exponent.unsigned_abs())
-            };
-            pad_text(&format!("{sign}{body}"), width, left, zero, sign.len())
-        }
-        'g' | 'G' => {
-            let value = real_argument(cell);
-            let significant = precision.unwrap_or(6).max(1);
-            let (integer, fraction, exponent) = scientific_parts(value.abs(), significant - 1);
-            let mut body = if exponent < -4 || exponent >= significant as i32 {
-                let fraction = trim_decimal_zeros(&fraction, alternate);
-                let letter = if conversion == 'G' { 'E' } else { 'e' };
-                let mantissa = if fraction.is_empty() { integer } else { format!("{integer}.{fraction}") };
-                format!("{mantissa}{letter}{}{:02}", if exponent < 0 { '-' } else { '+' }, exponent.unsigned_abs())
-            }
-            else {
-                let keep = (significant as i32 - 1 - exponent).max(0) as usize;
-                let (integer, fraction) = fixed_parts(value.abs(), keep);
-                let fraction = trim_decimal_zeros(&fraction, alternate);
-                if fraction.is_empty() { if alternate { format!("{integer}.") } else { integer } } else { format!("{integer}.{fraction}") }
-            };
-            if conversion == 'G' {
-                body = body.to_ascii_uppercase();
-            }
-            let sign = if value.is_sign_negative() || value < 0.0 {
-                "-"
-            }
-            else if plus {
-                "+"
-            }
-            else if space {
-                " "
-            }
-            else {
-                ""
-            };
-            pad_text(&format!("{sign}{body}"), width, left, zero, sign.len())
-        }
-        'c' => {
-            let first: String = cast_text(cell).chars().next().map(|character| character.to_string()).unwrap_or_else(|| "\u{0000}".to_string());
-            // 精度对 `%c` 表示重复次数，零与一都只输出一个字符。
-            let body = first.repeat(precision.unwrap_or(1).max(1));
-            // 字符串类转换忽略 `0` 标志，补位一律用空格。
-            pad_text(&body, width, left, false, 0)
-        }
-        's' | 'z' => {
-            let body = match (conversion, cell) {
-                ('z', Cell::Null) => String::new(),
-                _ => cast_text(cell),
-            };
-            let body = truncate_characters(body, precision);
-            pad_text(&body, width, left, false, 0)
-        }
-        'q' | 'w' => {
-            let body = match cell {
-                Cell::Null => "(NULL)".to_string(),
-                _ => {
-                    let text = truncate_characters(cast_text(cell), precision);
-                    if conversion == 'q' { text.replace('\'', "''") } else { text }
-                }
-            };
-            pad_text(&body, width, left, false, 0)
-        }
-        'Q' => {
-            let body = match cell {
-                Cell::Null => "NULL".to_string(),
-                _ => {
-                    let text = truncate_characters(cast_text(cell), precision);
-                    format!("'{}'", text.replace('\'', "''"))
-                }
-            };
-            pad_text(&body, width, left, false, 0)
-        }
-        'p' => {
-            let digits = format!("{:X}", integer_argument(cell) as u64);
-            let digits = apply_integer_precision(digits, precision);
-            let prefix = if alternate && integer_argument(cell) != 0 { "0x" } else { "" };
-            pad_text(&format!("{prefix}{digits}"), width, left, zero, prefix.len())
-        }
-        // SQLite 对未知转换按文本渲染，这里保持同样的宽松行为。
-        _ => pad_text(&cast_text(cell), width, left, zero, 0),
-    }
-}
-
-fn apply_integer_precision(digits: String, precision: Option<usize>) -> String {
-    match precision {
-        Some(minimum) if digits.len() < minimum => format!("{}{digits}", "0".repeat(minimum - digits.len())),
-        _ => digits,
-    }
-}
-
-fn truncate_characters(text: String, precision: Option<usize>) -> String {
-    match precision {
-        Some(limit) => text.chars().take(limit).collect(),
-        None => text,
-    }
-}
-
-fn pad_text(body: &str, width: usize, left: bool, zero: bool, prefix_len: usize) -> String {
-    if left {
-        let count = body.chars().count();
-        if count >= width {
-            return body.to_string();
-        }
-        return format!("{body}{}", " ".repeat(width - count));
-    }
-    if zero {
-        let prefix: String = body.chars().take(prefix_len).collect();
-        let rest: String = body.chars().skip(prefix_len).collect();
-        // 符号计入宽度，`0x` / 八进制前导 `0` 一类前缀不计入宽度。
-        let sign_like = prefix.starts_with('-') || prefix.starts_with('+') || prefix.starts_with(' ');
-        let measured = if sign_like { body.chars().count() } else { rest.chars().count() };
-        if measured >= width {
-            return body.to_string();
-        }
-        return format!("{prefix}{}{rest}", "0".repeat(width - measured));
-    }
-    let count = body.chars().count();
-    if count >= width {
-        return body.to_string();
-    }
-    format!("{}{body}", " ".repeat(width - count))
-}
-
-fn trim_decimal_zeros(fraction: &str, keep_zero: bool) -> String {
-    if keep_zero {
-        return fraction.to_string();
-    }
-    fraction.trim_end_matches('0').to_string()
-}
-
-/// 把 `value` 按十进制四舍五入到 `keep` 位小数，返回整数段与小数段。
-fn fixed_parts(value: f64, keep: usize) -> (String, String) {
-    let probe = format!("{value:.precision$}", precision = keep + 20);
-    let (probe_integer, probe_fraction) = probe.split_once('.').unwrap_or((probe.as_str(), ""));
-    let tail: String = probe_fraction.chars().skip(keep).collect();
-    if tail.starts_with('5') && tail.chars().skip(1).all(|character| character == '0') {
-        let mut digits: String = probe_integer.chars().chain(probe_fraction.chars().take(keep)).collect();
-        digits = increment_decimal(&digits);
-        let split = digits.len() - keep;
-        return (digits[..split].to_string(), digits[split..].to_string());
-    }
-    let rounded = format!("{value:.precision$}", precision = keep);
-    match rounded.split_once('.') {
-        Some((integer, fraction)) => (integer.to_string(), fraction.to_string()),
-        None => (rounded, String::new()),
-    }
-}
-
-/// 把 `value` 规格化为 `整数位.小数位 e 指数`，尾数按十进制四舍五入。
-fn scientific_parts(value: f64, keep: usize) -> (String, String, i32) {
-    if value == 0.0 {
-        return ("0".to_string(), "0".repeat(keep), 0);
-    }
-    let probe = format!("{value:.precision$e}", precision = keep + 20);
-    let (probe_mantissa, probe_exponent) = probe.split_once('e').unwrap_or((probe.as_str(), "0"));
-    let probe_digits: String = probe_mantissa.chars().filter(|character| character.is_ascii_digit()).collect();
-    let tail: String = probe_digits.chars().skip(keep + 1).collect();
-    let exponent: i32 = probe_exponent.parse().unwrap_or(0);
-    let digits = if tail.starts_with('5') && tail.chars().skip(1).all(|character| character == '0') {
-        increment_decimal(&probe_digits.chars().take(keep + 1).collect::<String>())
-    }
-    else {
-        let rounded = format!("{value:.precision$e}", precision = keep);
-        rounded
-            .split_once('e')
-            .map(|(mantissa, _)| mantissa.chars().filter(|character| character.is_ascii_digit()).collect())
-            .unwrap_or_else(|| "0".to_string())
-    };
-    if digits.len() > keep + 1 {
-        let digit = digits.chars().take(keep + 1).collect::<String>();
-        return (digit[..1].to_string(), digit[1..].to_string(), exponent + 1);
-    }
-    (digits[..1].to_string(), digits[1..].to_string(), exponent)
-}
-
-/// `trim` 家族：按字符集去除两端字符，第二个参数缺省时只去除空格。
-fn trim_cell(args: &[Cell], left: bool, right: bool) -> Cell {
-    let Some(text) = text_form(&args[0])
-    else {
-        return Cell::Null;
-    };
-    let set = match args.get(1) {
-        Some(cell) => match text_form(cell) {
-            Some(set) => set,
-            None => return Cell::Null,
-        },
-        None => " ".to_string(),
-    };
-    if set.is_empty() {
-        return Cell::Text(text);
-    }
-    let characters: Vec<char> = text.chars().collect();
-    let mut start = 0;
-    let mut end = characters.len();
-    if left {
-        while start < end && set.chars().any(|candidate| candidate == characters[start]) {
-            start += 1;
-        }
-    }
-    if right {
-        while end > start && set.chars().any(|candidate| candidate == characters[end - 1]) {
-            end -= 1;
-        }
-    }
-    Cell::Text(characters[start..end].iter().collect())
-}
-
-/// `replace(x, y, z)`：空 `y` 原样返回 `x`，任一参数为 `NULL` 时返回 `NULL`。
-fn replace_cell(args: &[Cell]) -> Cell {
-    let (Some(text), Some(pattern), Some(replacement)) = (text_form(&args[0]), text_form(&args[1]), text_form(&args[2]))
-    else {
-        return Cell::Null;
-    };
-    if pattern.is_empty() {
-        return Cell::Text(text);
-    }
-    Cell::Text(text.replace(&pattern, &replacement))
-}
-
-/// `instr(x, y)`: the one-based character position of the first `y` inside
-/// `x`, or zero when `y` does not occur. Either `NULL` propagates.
-fn instr_cell(args: &[Cell]) -> Cell {
-    match (text_form(&args[0]), text_form(&args[1])) {
-        (Some(haystack), Some(needle)) => match haystack.find(&needle) {
-            Some(byte) => Cell::Integer(haystack[..byte].chars().count() as i64 + 1),
-            None => Cell::Integer(0),
-        },
-        _ => Cell::Null,
-    }
-}
-
-/// `quote()` renders one SQL literal: text is single-quoted with doubled
-/// quotes, blobs become `X'..'`, `NULL` becomes the word `NULL`, and reals use
-/// the 15-digit form when it round-trips.
-fn quote_text(cell: &Cell) -> String {
-    match cell {
-        Cell::Null => "NULL".to_string(),
-        Cell::Integer(value) => value.to_string(),
-        Cell::Real(value) => quote_real(*value),
-        Cell::Text(text) => format!("'{}'", text.replace('\'', "''")),
-        Cell::Blob(bytes) => {
-            let digits: String = bytes.iter().map(|byte| format!("{byte:02X}")).collect();
-            format!("X'{digits}'")
-        }
-    }
-}
-
-fn quote_real(value: f64) -> String {
-    let text = sqlite_real_text(value);
-    if text.parse::<f64>() == Ok(value) {
-        return text;
-    }
-    // SQLite falls back to 18 fractional digits when the short form loses
-    // precision, with a sign and at least two exponent digits.
-    let formatted = format!("{value:.18e}");
-    match formatted.split_once('e') {
-        Some((mantissa, exponent)) => {
-            let exponent: i32 = exponent.parse().unwrap_or(0);
-            format!("{mantissa}e{}{:02}", if exponent < 0 { '-' } else { '+' }, exponent.abs())
-        }
-        None => formatted,
-    }
-}
-
-/// `random()` returns any 64-bit integer, so a counter-driven xorshift is
-/// enough: tests only check the type and range.
-fn next_random() -> i64 {
-    use std::{
-        sync::atomic::{AtomicU64, Ordering},
-        time::{SystemTime, UNIX_EPOCH},
-    };
-    static STATE: AtomicU64 = AtomicU64::new(0);
-    let mut state = STATE.load(Ordering::Relaxed);
-    if state == 0 {
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |elapsed| elapsed.as_nanos() as u64);
-        state = nanos ^ 0x9e37_79b9_7f4a_7c15;
-    }
-    // xorshift64*: cheap, deterministic and good enough for a random value.
-    let mut next = state ^ (state >> 12);
-    next ^= next << 25;
-    next ^= next >> 27;
-    STATE.store(next, Ordering::Relaxed);
-    (next.wrapping_mul(0x2545_f491_4f6c_dd1d)) as i64
-}
-
-/// `randomblob(n)` yields `n` random bytes; `n` below one means a single byte,
-/// which is also what a `NULL` argument produces.
-fn random_blob(size: &Cell) -> Vec<u8> {
-    let count = match numeric(size) {
-        Some(number) => number_i64(number).max(1) as usize,
-        None => 1,
-    };
-    let mut bytes = Vec::with_capacity(count);
-    while bytes.len() < count {
-        let mut value = next_random();
-        for _ in 0..8 {
-            if bytes.len() == count {
-                break;
-            }
-            bytes.push(value as u8);
-            value >>= 8;
-        }
-    }
-    bytes
-}
-
-/// Text form used by `length()` for numeric input.
-fn number_text(cell: &Cell) -> String {
-    match cell {
-        Cell::Integer(value) => value.to_string(),
-        Cell::Real(value) => {
-            if value.is_finite() && *value == value.trunc() && value.abs() < 1e15 {
-                format!("{value:.1}")
-            }
-            else {
-                value.to_string()
-            }
-        }
-        Cell::Text(text) => text.clone(),
-        Cell::Blob(_) => String::new(),
-        Cell::Null => String::new(),
-    }
-}
-
-fn substr_cell(args: &[Cell]) -> Cell {
-    let start = match numeric(&args[1]) {
-        Some(number) => match number {
-            Number::Int(value) => value,
-            Number::Real(value) => value as i64,
-        },
-        None => return Cell::Null,
-    };
-    let count = match args.get(2) {
-        None => None,
-        Some(cell) => match numeric(cell) {
-            Some(Number::Int(value)) => Some(value),
-            Some(Number::Real(value)) => Some(value as i64),
-            None => return Cell::Null,
-        },
-    };
-    match &args[0] {
-        Cell::Null => Cell::Null,
-        Cell::Blob(bytes) => {
-            let (begin, end) = substr_bounds(bytes.len(), start, count);
-            Cell::Blob(bytes[begin..end].to_vec())
-        }
-        _ => {
-            let text = match &args[0] {
-                Cell::Text(text) => text.clone(),
-                other => number_text(other),
-            };
-            let chars = text.chars().collect::<Vec<_>>();
-            let (begin, end) = substr_bounds(chars.len(), start, count);
-            Cell::Text(chars[begin..end].iter().collect())
-        }
-    }
-}
-
-/// SQLite `substr` bounds: positive start is 1-based, non-positive start counts
-/// from the right, and a negative length runs backwards from the start point.
-fn substr_bounds(length: usize, start: i64, count: Option<i64>) -> (usize, usize) {
-    let length = length as i64;
-    let begin = if start > 0 {
-        start - 1
-    }
-    else if start == 0 {
-        -1
-    }
-    else {
-        length + start
-    };
-    let (begin, end) = match count {
-        None => (begin, length),
-        Some(count) if count >= 0 => (begin, begin + count),
-        Some(count) => (begin + count, begin),
-    };
-    (begin.clamp(0, length) as usize, end.clamp(0, length) as usize)
-}
-
-fn round_cell(args: &[Cell]) -> Cell {
-    let value = match numeric(&args[0]) {
-        Some(Number::Int(value)) => value as f64,
-        Some(Number::Real(value)) => value,
-        None => return Cell::Null,
-    };
-    let digits = match args.get(1) {
-        None => 0,
-        Some(cell) => match numeric(cell) {
-            Some(Number::Int(value)) => value,
-            Some(Number::Real(value)) => value.trunc() as i64,
-            None => return Cell::Null,
-        },
-    };
-    Cell::Real(round_digits(value, digits))
-}
-
-/// SQLite's `round()`: the digit count is clamped to `0..=30`, a zero count
-/// truncates `value ± 0.5` toward zero, and every other count re-reads the
-/// fixed-point text its `printf` produces, which rounds an exact decimal tie
-/// away from zero.
-fn round_digits(value: f64, digits: i64) -> f64 {
-    if !value.is_finite() {
-        return value;
-    }
-    let digits = digits.clamp(0, 30) as usize;
-    if digits == 0 {
-        return if value < 0.0 { (value - 0.5).trunc() } else { (value + 0.5).trunc() };
-    }
-    let magnitude = value.abs();
-    let short = format!("{magnitude:.digits$}");
-    // A tie is a `5` directly after the kept digits with nothing but zeros
-    // behind it; Rust's own formatting rounds that tie to even, SQLite rounds
-    // it away from zero.
-    let wide = format!("{:.*}", digits + 25, magnitude);
-    let fraction = wide.split_once('.').map(|(_, fraction)| fraction).unwrap_or("");
-    let tie = fraction.len() > digits && fraction.as_bytes()[digits] == b'5' && fraction[digits + 1..].bytes().all(|byte| byte == b'0');
-    let text = if tie { increment_decimal(&short) } else { short };
-    let rounded: f64 = text.parse().unwrap_or(magnitude);
-    if value < 0.0 { -rounded } else { rounded }
-}
-
-/// 数学函数的取数口径：整数与实数原样，文本必须整体可解析为数值，`NULL`
-/// 与 blob 视为无值。SQLite 对文本套用 numeric affinity，因此 `'2abc'` 是
-/// `NULL` 而不是前缀 `2`。
-fn math_number(cell: &Cell) -> Option<Number> {
-    match cell {
-        Cell::Null => None,
-        Cell::Integer(value) => Some(Number::Int(*value)),
-        Cell::Real(value) => Some(Number::Real(*value)),
-        Cell::Text(text) => parse_full_number(text),
-        Cell::Blob(_) => None,
-    }
-}
-
-/// 整体解析一段文本：两端空白可有，中途出现任何非数值字符即拒绝。整数
-/// 字面量返回 [`Number::Int`]，带小数点或指数的返回 [`Number::Real`]。
-fn parse_full_number(text: &str) -> Option<Number> {
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    if let Ok(value) = trimmed.parse::<i64>() {
-        return Some(Number::Int(value));
-    }
-    match trimmed.parse::<f64>() {
-        Ok(value) if value.is_finite() => Some(Number::Real(value)),
-        _ => None,
-    }
-}
-
-/// 数学结果统一出口：`NaN` 记为 `NULL`，正负无穷保留为实数，与 SQLite 的
-/// `sqlite3_result_double` 一致。
-fn real_result(value: f64) -> Cell {
-    if value.is_nan() { Cell::Null } else { Cell::Real(value) }
-}
-
-/// 一元数学函数：入参按 [`math_number`] 取数，输出恒为实数。
-fn real_function(args: &[Cell], function: fn(f64) -> f64) -> Cell {
-    match args.first().and_then(math_number) {
-        Some(Number::Int(value)) => real_result(function(value as f64)),
-        Some(Number::Real(value)) => real_result(function(value)),
-        None => Cell::Null,
-    }
-}
-
-/// 二元数学函数：两个入参都按 [`math_number`] 取数，输出恒为实数。
-fn real_function2(args: &[Cell], function: fn(f64, f64) -> f64) -> Cell {
-    let left = match args.first().and_then(math_number) {
-        Some(Number::Int(value)) => value as f64,
-        Some(Number::Real(value)) => value,
-        None => return Cell::Null,
-    };
-    let right = match args.get(1).and_then(math_number) {
-        Some(Number::Int(value)) => value as f64,
-        Some(Number::Real(value)) => value,
-        None => return Cell::Null,
-    };
-    real_result(function(left, right))
-}
-
-/// 定义域为正数的数学函数（`ln`、`log2`、`log10`）：非正入参返回 `NULL`，
-/// 不把 `-inf` 泄漏成实数。
-fn positive_real_function(args: &[Cell], function: fn(f64) -> f64) -> Cell {
-    let value = match args.first().and_then(math_number) {
-        Some(Number::Int(value)) => value as f64,
-        Some(Number::Real(value)) => value,
-        None => return Cell::Null,
-    };
-    if value <= 0.0 {
-        return Cell::Null;
-    }
-    real_result(function(value))
-}
-
-/// `ceil` / `floor` / `trunc`：整数入参原样返回整数，实数入参返回取整后的
-/// 实数，非数值文本与 `NULL` 返回 `NULL`。
-fn integral_or_real(args: &[Cell], function: fn(f64) -> f64) -> Cell {
-    match args.first().and_then(math_number) {
-        Some(Number::Int(value)) => Cell::Integer(value),
-        Some(Number::Real(value)) => real_result(function(value)),
-        None => Cell::Null,
-    }
-}
-
-/// `sign()`：返回 `-1`、`0` 或 `1`，恒为整数；入参不是数值时返回 `NULL`。
-fn sign_cell(args: &[Cell]) -> Cell {
-    match args.first().and_then(math_number) {
-        Some(Number::Int(value)) => Cell::Integer(value.signum()),
-        Some(Number::Real(value)) => {
-            let sign = if value > 0.0 {
-                1
-            }
-            else if value < 0.0 {
-                -1
-            }
-            else {
-                0
-            };
-            Cell::Integer(sign)
-        }
-        None => Cell::Null,
-    }
-}
-
-/// `log()`：单参是十进制对数，双参时底数必须大于 1 且真数必须为正，否则
-/// 返回 `NULL`（底数为 1 时 SQLite 同样返回 `NULL` 而不是无穷）。
-fn log_cell(args: &[Cell]) -> Cell {
-    if args.len() == 1 {
-        let value = match args.first().and_then(math_number) {
-            Some(Number::Int(value)) => value as f64,
-            Some(Number::Real(value)) => value,
-            None => return Cell::Null,
-        };
-        if value <= 0.0 {
-            return Cell::Null;
-        }
-        return real_result(value.log10());
-    }
-    let base = match args.first().and_then(math_number) {
-        Some(Number::Int(value)) => value as f64,
-        Some(Number::Real(value)) => value,
-        None => return Cell::Null,
-    };
-    let value = match args.get(1).and_then(math_number) {
-        Some(Number::Int(value)) => value as f64,
-        Some(Number::Real(value)) => value,
-        None => return Cell::Null,
-    };
-    if base <= 1.0 || value <= 0.0 {
-        return Cell::Null;
-    }
-    real_result(value.ln() / base.ln())
-}
-
-/// Increments the last decimal digit of a non-negative fixed-point string,
-/// carrying through `9`s and into the integer part.
-fn increment_decimal(text: &str) -> String {
-    let mut characters: Vec<char> = text.chars().collect();
-    let mut index = characters.len();
-    loop {
-        if index == 0 {
-            characters.insert(0, '1');
-            break;
-        }
-        index -= 1;
-        match characters[index] {
-            '.' => continue,
-            '9' => characters[index] = '0',
-            digit => {
-                characters[index] = char::from(digit as u8 + 1);
-                break;
-            }
-        }
-    }
-    characters.into_iter().collect()
 }
 
 fn self_contained_arity(

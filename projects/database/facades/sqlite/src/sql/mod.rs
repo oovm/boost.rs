@@ -12,11 +12,9 @@
 //! Every statement runs over the pure-Rust format-3 writer, so the resulting
 //! image is a real `.sqlite3` file, not a simulation layer.
 
-pub(crate) mod datetime;
 pub mod engine;
-pub mod host;
-pub(crate) mod json;
 
+pub use database_execution::sqlite::host::HostFunctionTable;
 pub use database_query::sqlite::{
     SqlError,
     frontend::{
@@ -31,6 +29,5 @@ pub use database_query::sqlite::{
     value::Cell,
 };
 pub use engine::{Engine, ExecResult, results_json};
-pub use host::HostFunctionTable;
 
 pub(crate) use database_query::sqlite::{bind, catalog, json_string, storage_failure, value};

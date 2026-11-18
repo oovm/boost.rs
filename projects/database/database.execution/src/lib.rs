@@ -11,6 +11,8 @@ pub mod engine;
 /// 执行程序表示与求值。
 pub mod program;
 pub mod sql_exec;
+/// SQLite 方言的求值机制（表达式 / 单元格 / 标量函数 / 宿主函数桥）。
+pub mod sqlite;
 /// 执行程序 ↔ UDF 边界桥接。
 pub mod udf_bridge;
 

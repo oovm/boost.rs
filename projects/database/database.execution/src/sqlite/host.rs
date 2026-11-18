@@ -20,7 +20,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use database_query::sqlite::frontend::HostFunctionArity;
 use database_udf::{HostMicroDefinition, HostMicroImplementation, HostRuntimeAdapter, UdfError, UdfImplementation, UdfValue};
 
-use super::{Cell, SqlError};
+use database_query::sqlite::{SqlError, value::Cell};
 
 /// 宿主函数名的折叠:ASCII 小写,与内建函数派发同一口径。
 pub fn fold_name(name: &str) -> String {
@@ -83,7 +83,7 @@ fn registration_error(error: UdfError) -> SqlError {
 }
 
 /// 把调用期的合同错误映射为结构化 `SqlError`,错误码沿用引擎既有口径。
-pub(super) fn udf_error_to_sql_error(name: &str, error: UdfError) -> SqlError {
+pub(crate) fn udf_error_to_sql_error(name: &str, error: UdfError) -> SqlError {
     match error {
         UdfError::ArityMismatch => SqlError::new("wrong-arguments", format!("wrong number of arguments to function {name}()")),
         UdfError::SignatureMismatch | UdfError::UnsupportedType => {
@@ -98,7 +98,7 @@ pub(super) fn udf_error_to_sql_error(name: &str, error: UdfError) -> SqlError {
 ///
 /// Phase-1 UDF 边界只承载 `Null` / `I64` / `Text`;`Real` 与 `Blob`
 /// 在子集之外,如实以 `unsupported-type` 拒绝,不做有损编码。
-pub(super) fn cell_to_udf_value(name: &str, cell: &Cell) -> Result<UdfValue, SqlError> {
+pub(crate) fn cell_to_udf_value(name: &str, cell: &Cell) -> Result<UdfValue, SqlError> {
     match cell {
         Cell::Null => Ok(UdfValue::Null),
         Cell::Integer(value) => Ok(UdfValue::I64(*value)),
@@ -113,7 +113,7 @@ pub(super) fn cell_to_udf_value(name: &str, cell: &Cell) -> Result<UdfValue, Sql
 }
 
 /// 把合同的边界值折回引擎 `Cell`;SQLite 无布尔存储类别,`Bool` 落为整数。
-pub(super) fn udf_value_to_cell(value: UdfValue) -> Cell {
+pub(crate) fn udf_value_to_cell(value: UdfValue) -> Cell {
     match value {
         UdfValue::Null => Cell::Null,
         UdfValue::Bool(value) => Cell::Integer(i64::from(value)),
