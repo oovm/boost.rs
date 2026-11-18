@@ -1641,7 +1641,26 @@ fn paint_item(
             }
             frame.grain((*density as f32 * s * s) as u32, strength * opacity, frame_index.wrapping_add(1));
         }
-        Item::Path { at, dur, points, smooth, closed, fill, color, stroke, progress, rotate, scale, blend, fade_in, fade_out } => {
+        Item::Path {
+            at,
+            dur,
+            points,
+            smooth,
+            closed,
+            fill,
+            color,
+            stroke,
+            // Dash geometry is declared on the scene but has no rasteriser path
+            // yet, so the stroke stays solid until that lands.
+            dash: _,
+            gap: _,
+            progress,
+            rotate,
+            scale,
+            blend,
+            fade_in,
+            fade_out,
+        } => {
             if local < *at || local >= *at + *dur {
                 return Ok(());
             }
