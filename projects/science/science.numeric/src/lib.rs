@@ -8,7 +8,7 @@
 //! algorithm  — 数学策略（`AlgorithmPlanner`）
 //! kernel     — portable / x86_64 `KernelTable`（context 级绑定）
 //! dispatch   — 能力三分 · `NumericExecutor` · `PortableBackend`
-//! foreign    — oracle / native-accelerated（不进默认路径）
+//! foreign    — oracle 差分参考（不进默认路径）
 //! ```
 #![deny(missing_docs)]
 

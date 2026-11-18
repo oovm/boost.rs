@@ -10,9 +10,6 @@ publish = false
 [features]
 default = ["portable"]
 portable = []
-native-accelerated = []
-mkl = ["native-accelerated"]
-blas = ["native-accelerated"]
 # Batch-local `TemporaryNatural` / `TemporaryInteger`（历史别名 `Ephemeral*`）。
 ephemeral = []
 

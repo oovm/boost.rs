@@ -8,6 +8,3 @@
 
 /// 独立 schoolbook mpn 参考（差分 / fuzz；不进生产 `KernelTable`）。
 pub mod mpn_oracle;
-
-#[cfg(feature = "native-accelerated")]
-pub mod native;
