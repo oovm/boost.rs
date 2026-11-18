@@ -25,6 +25,7 @@ use database_execution::cluster::redis::{
     blocking::BlockingRegistry,
     collections::{self, KeyKind},
     reply::{glob_match, write_bulk, write_error, write_null, write_null_array, write_unknown_command},
+    session::{self, TransactionSession, lowercase_command, parse_database, parse_integer, watched_keys_modified},
 };
 use database_query::cluster_kv::{KeyValueAction, KeyValueCommand, KeyValueResult};
 use database_storage::cluster_kv::now_unix_ms;
@@ -57,78 +58,34 @@ fn to_kv_command(command: BoundCommand) -> KeyValueCommand {
     }
 }
 
-/// A `Request` whose arguments have been copied into owned buffers so it can outlive the
-/// RESP2 frame that decoded it. Used inside the MULTI transaction queue where commands are
-/// held and replayed later.
-#[derive(Debug)]
-struct OwnedRequest {
-    arguments: Vec<Vec<u8>>,
-}
-
-impl OwnedRequest {
-    /// Re-borrows the arguments as a `Request<'static>` pointing at our owned storage.
-    fn as_request(&self) -> Request<'_> {
-        Request { arguments: self.arguments.iter().map(|v| v.as_slice()).collect(), consumed: 0 }
-    }
-}
-
-/// One command buffered inside a `MULTI` block.
-#[derive(Debug)]
-struct QueuedCommand {
-    request: OwnedRequest,
-}
-
-/// One key pinned by `WATCH`, together with the record revision it had when the watch was taken.
-///
-/// The revision *is* the version used for optimistic locking: `EXEC` re-reads it through the
-/// KV contract and abandons the transaction on any difference. Every successful write path
-/// assigns a fresh shard-monotonic revision, so a byte-identical rewrite, an ABA overwrite and
-/// an expiry transition (the record disappears and its revision read becomes `None`) are all
-/// visible, which a value-byte comparison could not detect.
-#[derive(Debug, Clone)]
-struct WatchedKey {
-    /// Namespace (`SELECT` target) the key was watched in. Watches are per-database, like
-    /// upstream Redis.
-    namespace: Namespace,
-    /// Opaque key bytes.
-    key: Vec<u8>,
-    /// Revision observed at watch time (`None` means the key was absent).
-    revision: Option<u64>,
-}
-
 /// Per-connection state carried across RESP2 frames.
 ///
-/// Session-scoped by design: transaction queueing and the watch list belong to a single
-/// connection. Key expiry is *not* here — it is stored with each KV record and therefore
-/// shared by every connection and durable across restarts. Fields `CLIENT LIST` reports
-/// live in the shared [`ClientRecord`] instead, because other connections read them.
+/// Session-scoped by design: the transaction queue and watch list belong to a single
+/// connection and are owned by [`TransactionSession`]. Key expiry is *not* here — it is
+/// stored with each KV record and therefore shared by every connection and durable across
+/// restarts. Fields `CLIENT LIST` reports live in the shared [`ClientRecord`] instead,
+/// because other connections read them.
 #[derive(Debug)]
 pub(crate) struct ConnectionState {
     /// Protocol version negotiated through `HELLO`. Starts at 2 and becomes 3 once the
     /// client asks for it. Null and map replies are encoded with this version.
     pub(crate) protocol: u8,
-    /// Whether the connection is currently inside a `MULTI` block.
-    in_multi: bool,
-    /// Commands queued inside the active `MULTI` block.
-    queue: Vec<QueuedCommand>,
+    /// `MULTI` queue, watch list and per-command replay flags.
+    pub(crate) session: TransactionSession,
     /// 连接在监听器登记表里的投影，`CLIENT LIST` / `CLIENT INFO` / `CLIENT KILL` 读写它。
     pub(crate) record: Arc<ClientRecord>,
-    /// Keys pinned by `WATCH`, in first-watch order. Cleared by `UNWATCH`, `DISCARD`
-    /// and every `EXEC`, including an aborted one.
-    watched: Vec<WatchedKey>,
-    /// Whether a queued command was rejected, poisoning the whole transaction.
-    multi_error: bool,
-    /// Whether blocking commands must answer immediately instead of waiting.
-    ///
-    /// Commands replayed by `EXEC` run with this set: upstream Redis executes a queued
-    /// `BLPOP` like a non-blocking variant and answers nil at once, and waiting inside
-    /// `EXEC` would also block the connection that owns the transaction.
-    defer_blocking: bool,
 }
 
 impl ConnectionState {
     pub(crate) fn new(record: Arc<ClientRecord>) -> Self {
-        Self { protocol: 2, in_multi: false, queue: Vec::new(), record, watched: Vec::new(), multi_error: false, defer_blocking: false }
+        Self { protocol: 2, session: TransactionSession::new(), record }
+    }
+
+    /// Builds the state a queued command is replayed under: blocking commands answer at
+    /// once and the negotiated protocol is inherited, so replayed nulls keep the shape the
+    /// client handshaked for.
+    pub(crate) fn replaying(record: Arc<ClientRecord>, protocol: u8) -> Self {
+        Self { protocol, session: TransactionSession::deferred(), record }
     }
 }
 
@@ -710,7 +667,7 @@ fn handle_watch(
         stream.write_all(b"-ERR wrong number of arguments for 'watch' command\r\n")?;
         return Ok(());
     }
-    if state.in_multi {
+    if state.session.in_multi() {
         stream.write_all(b"-ERR WATCH inside MULTI is not allowed\r\n")?;
         return Ok(());
     }
@@ -720,17 +677,17 @@ fn handle_watch(
         return Ok(());
     };
     for key in &request.arguments[1..] {
-        if state.watched.iter().any(|entry| entry.namespace == *namespace && entry.key.as_slice() == *key) {
+        if state.session.is_watching(namespace, key) {
             continue;
         }
-        let revision = match key_revision(executor, namespace, key) {
+        let revision = match session::key_revision(executor, namespace, key) {
             Ok(revision) => revision,
             Err(message) => {
                 write_error(stream, &message)?;
                 return Ok(());
             }
         };
-        state.watched.push(WatchedKey { namespace: namespace.clone(), key: key.to_vec(), revision });
+        state.session.watch(namespace, key, revision);
     }
     stream.write_all(b"+OK\r\n")
 }
@@ -741,7 +698,7 @@ fn handle_unwatch(stream: &mut dyn Write, count: usize, state: &mut ConnectionSt
         stream.write_all(b"-ERR wrong number of arguments for 'unwatch' command\r\n")?;
         return Ok(());
     }
-    state.watched.clear();
+    state.session.unwatch();
     stream.write_all(b"+OK\r\n")
 }
 
@@ -868,11 +825,6 @@ fn find_bit(value: &[u8], start: usize, end: usize, target: u8) -> Option<usize>
 /// `INCRBYFLOAT` 的回复与存储格式：最短十进制表示，整数不带 `.0`。
 fn format_float(value: f64) -> String {
     value.to_string()
-}
-
-/// 命令名转小写，用于构造 `wrong number of arguments for '<name>' command`。
-fn lowercase_command(command: &[u8]) -> String {
-    String::from_utf8_lossy(command).to_ascii_lowercase()
 }
 
 /// `EXPIRE` 家族尾部的条件选项。
@@ -3048,15 +3000,13 @@ fn respond(
             stream.write_all(b"-ERR wrong number of arguments for 'multi' command\r\n")?;
             return Ok(true);
         }
-        if state.in_multi {
+        if state.session.in_multi() {
             // 真机把嵌套 `MULTI` 当作控制面拒绝：报错但不毒化事务，队列中的命令仍会被
-            // `EXEC` 执行。只有排队命令自身的语法/arity 失败才置 `multi_error`。
+            // `EXEC` 执行。只有排队命令自身的语法/arity 失败才置中毒标记。
             stream.write_all(b"-ERR MULTI calls can not be nested\r\n")?;
             return Ok(true);
         }
-        state.in_multi = true;
-        state.queue.clear();
-        state.multi_error = false;
+        state.session.begin_multi();
         state.record.set_multi(Some(0));
         stream.write_all(b"+OK\r\n")?;
         return Ok(true);
@@ -3067,44 +3017,37 @@ fn respond(
             stream.write_all(b"-ERR wrong number of arguments for 'exec' command\r\n")?;
             return Ok(true);
         }
-        if !state.in_multi {
+        if !state.session.in_multi() {
             stream.write_all(b"-ERR EXEC without MULTI\r\n")?;
             return Ok(true);
         }
         // A rejected queued command poisons the transaction: EXEC answers EXECABORT and
         // drops the whole queue without running anything.
-        if state.multi_error {
-            state.in_multi = false;
-            state.queue.clear();
-            state.watched.clear();
-            state.multi_error = false;
+        if state.session.multi_error() {
+            state.session.discard();
             state.record.set_multi(None);
             stream.write_all(b"-EXECABORT Transaction discarded because of previous errors.\r\n")?;
             return Ok(true);
         }
         // Optimistic locking: any write to a watched key since WATCH abandons the whole
         // transaction before a single queued command runs. The reply is the nil array.
-        if !state.watched.is_empty() {
+        if !state.session.watched().is_empty() {
             // 版本比对只读取修订号，不刷新访问计时，否则 `EXEC` 前的探测会把空闲时间清零。
             let modified = match probe {
-                Some(probe) => watched_keys_modified(probe, &state.watched),
+                Some(probe) => watched_keys_modified(probe, state.session.watched()),
                 None => Ok(true),
             };
             match modified {
                 Ok(false) => {}
                 Ok(true) => {
                     write_null_array(stream, state.protocol)?;
-                    state.in_multi = false;
-                    state.queue.clear();
-                    state.watched.clear();
+                    state.session.discard();
                     state.record.set_multi(None);
                     return Ok(true);
                 }
                 Err(message) => {
                     write_error(stream, &message)?;
-                    state.in_multi = false;
-                    state.queue.clear();
-                    state.watched.clear();
+                    state.session.discard();
                     state.record.set_multi(None);
                     return Ok(true);
                 }
@@ -3119,14 +3062,11 @@ fn respond(
             stream.write_all(b"-ERR wrong number of arguments for 'discard' command\r\n")?;
             return Ok(true);
         }
-        if !state.in_multi {
+        if !state.session.in_multi() {
             stream.write_all(b"-ERR DISCARD without MULTI\r\n")?;
             return Ok(true);
         }
-        state.in_multi = false;
-        state.queue.clear();
-        state.watched.clear();
-        state.multi_error = false;
+        state.session.discard();
         state.record.set_multi(None);
         stream.write_all(b"+OK\r\n")?;
         return Ok(true);
@@ -3140,13 +3080,12 @@ fn respond(
     }
 
     if command.eq_ignore_ascii_case(b"UNWATCH") {
-        if state.in_multi {
+        if state.session.in_multi() {
             if count != 1 {
                 stream.write_all(b"-ERR wrong number of arguments for 'unwatch' command\r\n")?;
                 return Ok(true);
             }
-            let owned = OwnedRequest { arguments: request.arguments.iter().map(|arg| arg.to_vec()).collect() };
-            state.queue.push(QueuedCommand { request: owned });
+            state.session.queue(&request.arguments);
             stream.write_all(b"+QUEUED\r\n")?;
             return Ok(true);
         }
@@ -3158,16 +3097,17 @@ fn respond(
     // Syntax / arity validation happens here so clients learn about bad commands at queue
     // time instead of at EXEC time. The actual runtime behaviour (wrong-type, NX failure,
     // etc.) is deferred to EXEC per Redis semantics.
-    if state.in_multi {
-        if let Err(error_bytes) = validate_command_for_queue(command, count, &request.arguments, executor, namespace) {
+    if state.session.in_multi() {
+        if let Err(error_bytes) =
+            session::validate_command_for_queue(command, count, &request.arguments, executor.is_some(), namespace)
+        {
             stream.write_all(&error_bytes)?;
             // 同 TypeScript 侧：规划失败立刻毒化事务，EXEC 整队丢弃。
-            state.multi_error = true;
+            state.session.poison();
             return Ok(true);
         }
-        let owned = OwnedRequest { arguments: request.arguments.iter().map(|arg| arg.to_vec()).collect() };
-        state.queue.push(QueuedCommand { request: owned });
-        state.record.set_multi(Some(state.queue.len()));
+        let queued = state.session.queue(&request.arguments);
+        state.record.set_multi(Some(queued));
         stream.write_all(b"+QUEUED\r\n")?;
         return Ok(true);
     }
@@ -3256,10 +3196,7 @@ fn respond(
         for (name, _) in pubsub.unsubscribe(client, &[], true) {
             let _ = name;
         }
-        state.in_multi = false;
-        state.queue.clear();
-        state.watched.clear();
-        state.multi_error = false;
+        state.session.discard();
         state.protocol = 2;
         state.record.set_protocol(2);
         state.record.set_multi(None);
@@ -3340,7 +3277,7 @@ fn respond(
         collections::handle_hash(stream, request, executor, namespace, state.protocol)?;
     }
     else if collections::is_list_command(command) {
-        collections::handle_list(stream, request, executor, namespace, state.protocol, registry, !state.defer_blocking)?;
+        collections::handle_list(stream, request, executor, namespace, state.protocol, registry, !state.session.defer_blocking())?;
     }
     else if collections::is_set_command(command) {
         collections::handle_set(stream, request, executor, namespace, state.protocol)?;
@@ -3376,13 +3313,11 @@ fn execute_transaction(
     namespace: &mut Namespace,
     state: &mut ConnectionState,
 ) -> io::Result<()> {
-    let count = state.queue.len();
-    let queued = std::mem::take(&mut state.queue);
+    let queued = state.session.finish_exec();
+    let count = queued.len();
     let protocol = state.protocol;
-    state.in_multi = false;
-    state.record.set_multi(None);
     // `EXEC` always releases the watched keys, whether the queue was non-empty or not.
-    state.watched.clear();
+    state.record.set_multi(None);
 
     write!(stream, "*{count}\r\n")?;
 
@@ -3397,8 +3332,7 @@ fn execute_transaction(
         // KV records, so queued commands see and write it through the executor like any
         // other state. Blocking commands never wait inside `EXEC`; they take the queued
         // command's immediate answer, which is the same as upstream.
-        let mut inner_state = ConnectionState { defer_blocking: true, ..ConnectionState::new(Arc::clone(&state.record)) };
-        inner_state.protocol = protocol;
+        let mut inner_state = ConnectionState::replaying(Arc::clone(&state.record), protocol);
         let _ = respond(
             &mut buf as &mut dyn Write,
             &inner_request,
@@ -3418,387 +3352,6 @@ fn execute_transaction(
     Ok(())
 }
 
-/// Lightweight arity / syntax check applied to every command before it is queued. Errors
-/// returned here are written back to the client immediately (not deferred to EXEC). Returns
-/// `Err(bytes)` with the exact RESP error to emit when syntax is wrong.
-fn validate_command_for_queue(
-    command: &[u8],
-    count: usize,
-    arguments: &[&[u8]],
-    executor: Option<&dyn KeyValueExecutor>,
-    namespace: &Namespace,
-) -> Result<(), Vec<u8>> {
-    // PING: 1 or 2 args
-    if command.eq_ignore_ascii_case(b"PING") {
-        if count > 2 {
-            return Err(b"-ERR wrong number of arguments for 'ping' command\r\n".to_vec());
-        }
-        return Ok(());
-    }
-    // ECHO: exactly 2
-    if command.eq_ignore_ascii_case(b"ECHO") {
-        if count != 2 {
-            return Err(b"-ERR wrong number of arguments for 'echo' command\r\n".to_vec());
-        }
-        return Ok(());
-    }
-    // QUIT: exactly 1
-    if command.eq_ignore_ascii_case(b"QUIT") {
-        if count != 1 {
-            return Err(b"-ERR wrong number of arguments for 'quit' command\r\n".to_vec());
-        }
-        return Ok(());
-    }
-    // AUTH: password or username + password. Upstream queues it and answers the
-    // no-password error at EXEC, so queueing only checks arity here.
-    if command.eq_ignore_ascii_case(b"AUTH") {
-        if !matches!(count, 2 | 3) {
-            return Err(b"-ERR wrong number of arguments for 'auth' command\r\n".to_vec());
-        }
-        return Ok(());
-    }
-    // SELECT: exactly 2, needs executor
-    if command.eq_ignore_ascii_case(b"SELECT") {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        if count != 2 {
-            return Err(b"-ERR wrong number of arguments for 'select' command\r\n".to_vec());
-        }
-        if parse_database(arguments[1]).is_none() {
-            return Err(b"-ERR DB index is out of range\r\n".to_vec());
-        }
-        return Ok(());
-    }
-    // EXPIRE / PEXPIRE: at least 3, need executor, integer check. Conditional options
-    // are validated when the command runs, like upstream.
-    if command.eq_ignore_ascii_case(b"EXPIRE") || command.eq_ignore_ascii_case(b"PEXPIRE") {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        if count < 3 {
-            return Err(b"-ERR wrong number of arguments for 'expire' command\r\n".to_vec());
-        }
-        if parse_integer(arguments[2]).is_none() {
-            return Err(b"-ERR value is not an integer or out of range\r\n".to_vec());
-        }
-        return Ok(());
-    }
-    // EXPIREAT / PEXPIREAT: at least 3, need executor, integer check.
-    if command.eq_ignore_ascii_case(b"EXPIREAT") || command.eq_ignore_ascii_case(b"PEXPIREAT") {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        if count < 3 {
-            return Err(b"-ERR wrong number of arguments for 'expireat' command\r\n".to_vec());
-        }
-        if parse_integer(arguments[2]).is_none() {
-            return Err(b"-ERR value is not an integer or out of range\r\n".to_vec());
-        }
-        return Ok(());
-    }
-    // RENAME / RENAMENX: exactly 3, need executor. Source presence and destination
-    // conflicts are runtime semantics and stay deferred to EXEC.
-    if command.eq_ignore_ascii_case(b"RENAME") || command.eq_ignore_ascii_case(b"RENAMENX") {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        if count != 3 {
-            let name = if command.eq_ignore_ascii_case(b"RENAMENX") { "renamenx" } else { "rename" };
-            return Err(format!("-ERR wrong number of arguments for '{name}' command\r\n").into_bytes());
-        }
-        return Ok(());
-    }
-    // GETEX: at least 2, needs executor, at most one well-formed expiry option
-    if command.eq_ignore_ascii_case(b"GETEX") {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        if count < 2 {
-            return Err(b"-ERR wrong number of arguments for 'getex' command\r\n".to_vec());
-        }
-        let mut seen_option = false;
-        let mut index = 2;
-        while index < count {
-            let option = arguments[index];
-            if seen_option {
-                return Err(b"-ERR syntax error\r\n".to_vec());
-            }
-            if option.eq_ignore_ascii_case(b"PERSIST") {
-                seen_option = true;
-                index += 1;
-            }
-            else if option.eq_ignore_ascii_case(b"EX")
-                || option.eq_ignore_ascii_case(b"PX")
-                || option.eq_ignore_ascii_case(b"EXAT")
-                || option.eq_ignore_ascii_case(b"PXAT")
-            {
-                let Some(raw) = arguments.get(index + 1)
-                else {
-                    return Err(b"-ERR syntax error\r\n".to_vec());
-                };
-                if parse_integer(raw).is_none() {
-                    return Err(b"-ERR value is not an integer or out of range\r\n".to_vec());
-                }
-                seen_option = true;
-                index += 2;
-            }
-            else {
-                return Err(b"-ERR syntax error\r\n".to_vec());
-            }
-        }
-        return Ok(());
-    }
-    // OBJECT: at least a subcommand, needs executor. The subcommand name and the key
-    // argument are runtime checks and stay deferred to EXEC, like upstream.
-    if command.eq_ignore_ascii_case(b"OBJECT") {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        if count < 2 {
-            return Err(b"-ERR wrong number of arguments for 'object' command\r\n".to_vec());
-        }
-        return Ok(());
-    }
-    // TTL / PTTL / TYPE / STRLEN: exactly 2
-    if command.eq_ignore_ascii_case(b"TTL")
-        || command.eq_ignore_ascii_case(b"PTTL")
-        || command.eq_ignore_ascii_case(b"TYPE")
-        || command.eq_ignore_ascii_case(b"STRLEN")
-    {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        if count != 2 {
-            return Err(b"-ERR wrong number of arguments\r\n".to_vec());
-        }
-        return Ok(());
-    }
-    // MGET: at least 2
-    if command.eq_ignore_ascii_case(b"MGET") {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        if count < 2 {
-            return Err(b"-ERR wrong number of arguments for 'mget' command\r\n".to_vec());
-        }
-        return Ok(());
-    }
-    // EXISTS: at least 2
-    if command.eq_ignore_ascii_case(b"EXISTS") {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        if count < 2 {
-            return Err(b"-ERR wrong number of arguments for 'exists' command\r\n".to_vec());
-        }
-        return Ok(());
-    }
-    // APPEND: exactly 3
-    if command.eq_ignore_ascii_case(b"APPEND") {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        if count != 3 {
-            return Err(b"-ERR wrong number of arguments for 'append' command\r\n".to_vec());
-        }
-        return Ok(());
-    }
-    // PERSIST: exactly 2
-    if command.eq_ignore_ascii_case(b"PERSIST") {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        if count != 2 {
-            return Err(b"-ERR wrong number of arguments for 'persist' command\r\n".to_vec());
-        }
-        return Ok(());
-    }
-    // SETEX: exactly 4 with a positive integer TTL
-    if command.eq_ignore_ascii_case(b"SETEX") {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        if count != 4 {
-            return Err(b"-ERR wrong number of arguments for 'setex' command\r\n".to_vec());
-        }
-        if parse_integer(arguments[2]).is_none_or(|seconds| seconds <= 0) {
-            return Err(b"-ERR invalid expire time in 'setex' command\r\n".to_vec());
-        }
-        return Ok(());
-    }
-    // CLIENT: only the session-local subcommands are queueable.
-    if command.eq_ignore_ascii_case(b"CLIENT") {
-        let Some(subcommand) = arguments.get(1)
-        else {
-            return Err(b"-ERR Unknown subcommand or wrong number of arguments for 'CLIENT'. Try CLIENT HELP.\r\n".to_vec());
-        };
-        if subcommand.eq_ignore_ascii_case(b"SETINFO") {
-            let valid = count == 4 && (arguments[2].eq_ignore_ascii_case(b"LIB-NAME") || arguments[2].eq_ignore_ascii_case(b"LIB-VER"));
-            if !valid {
-                return Err(b"-ERR wrong number of arguments for 'client|setinfo' command\r\n".to_vec());
-            }
-            return Ok(());
-        }
-        if subcommand.eq_ignore_ascii_case(b"SETNAME") {
-            if count != 3 {
-                return Err(b"-ERR wrong number of arguments for 'client|setname' command\r\n".to_vec());
-            }
-            return Ok(());
-        }
-        if subcommand.eq_ignore_ascii_case(b"GETNAME") {
-            if count != 2 {
-                return Err(b"-ERR wrong number of arguments for 'client|getname' command\r\n".to_vec());
-            }
-            return Ok(());
-        }
-        return Err(b"-ERR unsupported command\r\n".to_vec());
-    }
-    // Hash / list value commands: they need the executor. Their arity and type checks
-    // are runtime semantics and stay deferred to EXEC, like upstream queueing.
-    if collections::is_hash_command(command)
-        || collections::is_list_command(command)
-        || collections::is_set_command(command)
-        || collections::is_zset_command(command)
-        || collections::is_hyperloglog_command(command)
-    {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        return Ok(());
-    }
-    // RANDOMKEY / DBSIZE: exactly 1. FLUSHALL accepts an optional ASYNC / SYNC.
-    if command.eq_ignore_ascii_case(b"RANDOMKEY") || command.eq_ignore_ascii_case(b"DBSIZE") || command.eq_ignore_ascii_case(b"FLUSHALL") {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        let maximum = if command.eq_ignore_ascii_case(b"FLUSHALL") { 2 } else { 1 };
-        if count > maximum {
-            return Err(format!("-ERR wrong number of arguments for '{}' command\r\n", lowercase_command(command)).into_bytes());
-        }
-        return Ok(());
-    }
-    // COPY: at least 3, needs executor. Options are validated at runtime.
-    if command.eq_ignore_ascii_case(b"COPY") {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        if count < 3 {
-            return Err(b"-ERR wrong number of arguments for 'copy' command\r\n".to_vec());
-        }
-        return Ok(());
-    }
-    // EXPIRETIME / PEXPIRETIME: exactly 2.
-    if command.eq_ignore_ascii_case(b"EXPIRETIME") || command.eq_ignore_ascii_case(b"PEXPIRETIME") {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        if count != 2 {
-            return Err(format!("-ERR wrong number of arguments for '{}' command\r\n", lowercase_command(command)).into_bytes());
-        }
-        return Ok(());
-    }
-    // SCAN: cursor iteration, options are validated at runtime like upstream.
-    if command.eq_ignore_ascii_case(b"SCAN") {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        if count < 2 {
-            return Err(b"-ERR wrong number of arguments for 'scan' command\r\n".to_vec());
-        }
-        return Ok(());
-    }
-    // KEYS: exactly one pattern, needs executor.
-    if command.eq_ignore_ascii_case(b"KEYS") {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        if count != 2 {
-            return Err(b"-ERR wrong number of arguments for 'keys' command\r\n".to_vec());
-        }
-        return Ok(());
-    }
-    // DEL: one or more keys, mirrors the `-2` arity of the upstream command.
-    if command.eq_ignore_ascii_case(b"DEL") {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        if count < 2 {
-            return Err(b"-ERR wrong number of arguments for 'del' command\r\n".to_vec());
-        }
-        return Ok(());
-    }
-    // String range and bit commands: they need the executor. Argument values are
-    // validated at runtime, so queueing only checks arity like upstream.
-    if command.eq_ignore_ascii_case(b"GETRANGE") || command.eq_ignore_ascii_case(b"SETRANGE") || command.eq_ignore_ascii_case(b"SETBIT") {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        if count != 4 {
-            return Err(format!("-ERR wrong number of arguments for '{}' command\r\n", lowercase_command(command)).into_bytes());
-        }
-        return Ok(());
-    }
-    if command.eq_ignore_ascii_case(b"INCRBYFLOAT") || command.eq_ignore_ascii_case(b"GETBIT") {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        if count != 3 {
-            return Err(format!("-ERR wrong number of arguments for '{}' command\r\n", lowercase_command(command)).into_bytes());
-        }
-        return Ok(());
-    }
-    if command.eq_ignore_ascii_case(b"BITCOUNT") {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        if !matches!(count, 2 | 4 | 5) {
-            return Err(b"-ERR wrong number of arguments for 'bitcount' command\r\n".to_vec());
-        }
-        return Ok(());
-    }
-    if command.eq_ignore_ascii_case(b"BITPOS") {
-        if executor.is_none() {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
-        }
-        if !(3..=6).contains(&count) {
-            return Err(b"-ERR wrong number of arguments for 'bitpos' command\r\n".to_vec());
-        }
-        return Ok(());
-    }
-    // Fall back to bind()'s own syntax checks.
-    match bind(arguments, namespace.0.as_str()) {
-        Ok(_) => Ok(()),
-        Err(BindError::WrongArity) => {
-            Err(format!("-ERR wrong number of arguments for '{}' command\r\n", lowercase_command(command)).into_bytes())
-        }
-        Err(BindError::Syntax) => Err(b"-ERR syntax error\r\n".to_vec()),
-        Err(BindError::UnsupportedOptions) => Err(b"-ERR syntax error\r\n".to_vec()),
-        Err(BindError::InvalidInteger) => Err(b"-ERR value is not an integer or out of range\r\n".to_vec()),
-        Err(BindError::InvalidExpire) => Err(b"-ERR invalid expire time in 'set' command\r\n".to_vec()),
-        Err(BindError::EmptyCommand) => Err(b"-ERR empty command\r\n".to_vec()),
-        Err(BindError::UnsupportedCommand) => Err(b"-ERR unsupported command\r\n".to_vec()),
-    }
-}
-
-fn parse_database(bytes: &[u8]) -> Option<u8> {
-    if bytes.is_empty() || !bytes.iter().all(u8::is_ascii_digit) {
-        return None;
-    }
-    let database = bytes.iter().try_fold(0_u8, |value, digit| value.checked_mul(10)?.checked_add(digit - b'0'))?;
-    (database < 16).then_some(database)
-}
-
-fn parse_integer(bytes: &[u8]) -> Option<i64> {
-    let text = std::str::from_utf8(bytes).ok()?;
-    let value = text.parse::<i64>().ok()?;
-    // Reject "canonical form" — Redis rejects "+1", " 1", leading-zero-but-same-string, etc.
-    // For simplicity we just accept any round-tripable i64.
-    if value.to_string() != text {
-        return None;
-    }
-    Some(value)
-}
 
 /// Commands Redis still honours while a RESP2 connection is in subscriber mode.
 fn subscriber_command_allowed(command: &[u8]) -> bool {
@@ -3905,29 +3458,6 @@ fn write_pubsub_subcommand_error(stream: &mut dyn Write, subcommand: &[u8]) -> i
     stream.write_all(format!("-ERR unknown subcommand or wrong number of arguments for '{name}'. Try PUBSUB HELP.\r\n").as_bytes())
 }
 
-/// Reads the current record revision of one key, which is the version compared by `WATCH`.
-fn key_revision(executor: &dyn KeyValueExecutor, namespace: &Namespace, key: &[u8]) -> Result<Option<u64>, String> {
-    let command = KeyValueCommand { namespace: namespace.clone(), key: key.to_vec(), action: KeyValueAction::GetRevision };
-    match executor.execute(None, command) {
-        Ok(KeyValueResult::Revision(revision)) => Ok(revision),
-        Ok(_) => Err("WATCH executor returned unexpected result".into()),
-        Err(error) => Err(error.to_string()),
-    }
-}
-
-/// Compares every watched revision against the current record revision.
-///
-/// `true` means at least one watched key was written (or expired) after the watch was
-/// taken, so the caller must abandon the transaction instead of executing it. A
-/// byte-identical rewrite still advances the revision and is therefore visible here.
-fn watched_keys_modified(executor: &dyn KeyValueExecutor, watched: &[WatchedKey]) -> Result<bool, String> {
-    for entry in watched {
-        if key_revision(executor, &entry.namespace, &entry.key)? != entry.revision {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
 
 /// Writes the `HELLO` reply in the protocol version the client asked for:
 /// a RESP3 map for `HELLO 3`, or the same key/value pairs as a flat RESP2 array.

@@ -17,6 +17,7 @@ pub use database_storage::cluster_kv::redis::check_kind;
 pub mod blocking;
 pub mod collections;
 pub mod reply;
+pub mod session;
 
 /// 一个分片上的键值执行器。
 ///
