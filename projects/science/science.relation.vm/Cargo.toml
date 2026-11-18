@@ -1,0 +1,16 @@
+[package]
+name = "science-relation-vm"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license = "MPL-2.0"
+description = "Relation register interpreter: frames, fuel, safepoint, and execution lifecycle"
+
+[dependencies]
+science-relation-types = { workspace = true }
+science-relation-ir = { workspace = true }
+science-relation-graph = { workspace = true }
+science-gc = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]

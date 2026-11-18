@@ -1,0 +1,19 @@
+[package]
+name = "science-relation"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license = "MPL-2.0"
+description = "Relation facade: graph, islands, compile, verify, JIT"
+
+[dependencies]
+science-relation-types = { workspace = true }
+science-relation-graph = { workspace = true }
+science-relation-island = { workspace = true }
+science-relation-verify = { workspace = true }
+science-relation-ir = { workspace = true }
+science-relation-compile = { workspace = true }
+science-relation-vm = { workspace = true }
+science-relation-jit = { workspace = true }
+science-gc = { workspace = true }
+oak-metis = { workspace = true }

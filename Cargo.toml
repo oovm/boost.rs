@@ -149,16 +149,6 @@ members = [
     "projects/schema/schema.input.von.ast",
     "projects/schema/schema.input.von.parser",
     "projects/schema/schema.types",
-    "projects/science/metis",
-    "projects/science/metis-compile",
-    "projects/science/metis-example",
-    "projects/science/metis-graph",
-    "projects/science/metis-ir",
-    "projects/science/metis-island",
-    "projects/science/metis-jit",
-    "projects/science/metis-types",
-    "projects/science/metis-verify",
-    "projects/science/metis-vm",
     "projects/science/science",
     "projects/science/science.cas",
     "projects/science/science.gc",
@@ -168,6 +158,15 @@ members = [
     "projects/science/science.jit",
     "projects/science/science.ndarray",
     "projects/science/science.numeric",
+    "projects/science/science.relation",
+    "projects/science/science.relation.compile",
+    "projects/science/science.relation.graph",
+    "projects/science/science.relation.island",
+    "projects/science/science.relation.ir",
+    "projects/science/science.relation.jit",
+    "projects/science/science.relation.types",
+    "projects/science/science.relation.verify",
+    "projects/science/science.relation.vm",
     "projects/science/science.rewrite",
     "projects/science/science.table",
     "projects/science/science.types",
@@ -360,7 +359,7 @@ schema-input-von-ast = { path = "projects/schema/schema.input.von.ast" }
 schema-input-von-parser = { path = "projects/schema/schema.input.von.parser" }
 schema-types = { path = "projects/schema/schema.types" }
 
-# science 能力树（CAS 内核）
+# science 能力树（CAS 内核与关系层）
 science = { path = "projects/science/science" }
 science-cas = { path = "projects/science/science.cas" }
 science-gc = { path = "projects/science/science.gc" }
@@ -370,20 +369,19 @@ science-ir = { path = "projects/science/science.ir" }
 science-jit = { path = "projects/science/science.jit" }
 science-ndarray = { path = "projects/science/science.ndarray" }
 science-numeric = { path = "projects/science/science.numeric" }
+science-relation = { path = "projects/science/science.relation" }
+science-relation-compile = { path = "projects/science/science.relation.compile" }
+science-relation-graph = { path = "projects/science/science.relation.graph" }
+science-relation-island = { path = "projects/science/science.relation.island" }
+science-relation-ir = { path = "projects/science/science.relation.ir" }
+science-relation-jit = { path = "projects/science/science.relation.jit" }
+science-relation-types = { path = "projects/science/science.relation.types" }
+science-relation-verify = { path = "projects/science/science.relation.verify" }
+science-relation-vm = { path = "projects/science/science.relation.vm" }
 science-rewrite = { path = "projects/science/science.rewrite" }
 science-table = { path = "projects/science/science.table" }
 science-types = { path = "projects/science/science.types" }
 science-vm = { path = "projects/science/science.vm" }
-metis = { path = "projects/science/metis" }
-metis-compile = { path = "projects/science/metis-compile" }
-metis-example = { path = "projects/science/metis-example" }
-metis-graph = { path = "projects/science/metis-graph" }
-metis-ir = { path = "projects/science/metis-ir" }
-metis-island = { path = "projects/science/metis-island" }
-metis-jit = { path = "projects/science/metis-jit" }
-metis-types = { path = "projects/science/metis-types" }
-metis-verify = { path = "projects/science/metis-verify" }
-metis-vm = { path = "projects/science/metis-vm" }
 
 # 外部库
 clap = { version = "4.5.48", features = ["derive"] }
@@ -481,9 +479,8 @@ oak-mdl = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "d1337
 oak-sql = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "d1337eb4d289505c85d988cd8f80b96023f1e63a", default-features = false, features = ["serde"] }
 oak-vos = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "d1337eb4d289505c85d988cd8f80b96023f1e63a" }
 
-# `metis-compile` 的 `.metis` 前端仍来自另一 oaks 镜像仓（`ygg-lang`），P2 原样保留，
-# 与上方 `yggdrasil-language` pin 的合并处置归 P3。
-oak-metis = { git = "https://github.com/ygg-lang/oaks.git", rev = "7c4c631967228daadde86a85da38c8617f149216", default-features = false }
+# `.metis` 前端 `oak-metis` 与其余 oak 家族统一到同一 `yggdrasil-language` oaks pin。
+oak-metis = { git = "https://github.com/yggdrasil-language/oaks.git", rev = "d1337eb4d289505c85d988cd8f80b96023f1e63a", default-features = false }
 
 notedown-formats = { git = "https://github.com/notedge/notedown.git", rev = "3c01bea86d5824771ff12e26dd50494f0199c0e7", default-features = false, features = ["markdown"] }
 notedown-ir = { git = "https://github.com/notedge/notedown.git", rev = "3c01bea86d5824771ff12e26dd50494f0199c0e7" }

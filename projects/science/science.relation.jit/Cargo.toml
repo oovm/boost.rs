@@ -1,0 +1,14 @@
+[package]
+name = "science-relation-jit"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license = "MPL-2.0"
+description = "Relation path/query JIT compile units"
+
+[dependencies]
+science-relation-types = { workspace = true }
+science-relation-ir = { workspace = true }
+science-relation-vm = { workspace = true }
+science-relation-graph = { workspace = true }
+science-relation-island = { workspace = true }

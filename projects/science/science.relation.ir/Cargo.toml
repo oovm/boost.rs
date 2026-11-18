@@ -1,0 +1,13 @@
+[package]
+name = "science-relation-ir"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license = "MPL-2.0"
+description = "Typed relation plans, bytecode format, and structural validation"
+
+[dependencies]
+science-relation-types = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]

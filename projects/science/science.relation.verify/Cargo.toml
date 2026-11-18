@@ -1,0 +1,11 @@
+[package]
+name = "science-relation-verify"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license = "MPL-2.0"
+description = "Relation path/proof search and verification"
+
+[dependencies]
+science-relation-types = { workspace = true }
+science-relation-graph = { workspace = true }

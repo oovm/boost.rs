@@ -1,0 +1,14 @@
+[package]
+name = "science-relation-compile"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license = "MPL-2.0"
+description = "Parse and lower .metis sources (oak-metis AST)"
+
+[dependencies]
+oak-metis = { workspace = true }
+science-relation-types = { workspace = true }
+science-relation-island = { workspace = true }
+science-relation-graph = { workspace = true }
+science-relation-ir = { workspace = true }

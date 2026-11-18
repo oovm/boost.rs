@@ -261,7 +261,7 @@ impl<N, E> MutableGraph<N, E> {
 
     /// 出边 `(edge, neighbor, &payload)`。有向=出发边；无向=邻接边。
     ///
-    /// 复用内部 `outgoing` 索引，避免全边扫描。供上层（如 Metis）按 payload 过滤，
+    /// 复用内部 `outgoing` 索引，避免全边扫描。供上层（如 relation 层）按 payload 过滤，
     /// 而不平行维护第二套邻接表。
     pub fn out_edges(&self, node: NodeId) -> impl Iterator<Item = (EdgeId, NodeId, &E)> + '_ {
         self.outgoing.get(node.0 as usize).into_iter().flatten().map(move |&edge| {

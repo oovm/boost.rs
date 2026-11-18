@@ -2715,105 +2715,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "metis"
-version = "0.1.0"
-dependencies = [
- "metis-compile",
- "metis-graph",
- "metis-ir",
- "metis-island",
- "metis-jit",
- "metis-types",
- "metis-verify",
- "metis-vm",
- "oak-metis",
- "science-gc",
-]
-
-[[package]]
-name = "metis-compile"
-version = "0.1.0"
-dependencies = [
- "metis-graph",
- "metis-ir",
- "metis-island",
- "metis-types",
- "oak-metis",
-]
-
-[[package]]
-name = "metis-example"
-version = "0.1.0"
-dependencies = [
- "metis",
-]
-
-[[package]]
-name = "metis-graph"
-version = "0.1.0"
-dependencies = [
- "metis-types",
- "science-gc",
- "science-graph",
-]
-
-[[package]]
-name = "metis-ir"
-version = "0.1.0"
-dependencies = [
- "metis-types",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "metis-island"
-version = "0.1.0"
-dependencies = [
- "metis-graph",
- "metis-types",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "metis-jit"
-version = "0.1.0"
-dependencies = [
- "metis-graph",
- "metis-ir",
- "metis-island",
- "metis-types",
- "metis-vm",
-]
-
-[[package]]
-name = "metis-types"
-version = "0.1.0"
-dependencies = [
- "science-graph",
- "serde",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "metis-verify"
-version = "0.1.0"
-dependencies = [
- "metis-graph",
- "metis-types",
-]
-
-[[package]]
-name = "metis-vm"
-version = "0.1.0"
-dependencies = [
- "metis-graph",
- "metis-ir",
- "metis-types",
- "science-gc",
- "thiserror 2.0.21",
-]
-
-[[package]]
 name = "miette"
 version = "7.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2968,16 +2869,6 @@ dependencies = [
 [[package]]
 name = "oak-core"
 version = "0.0.12"
-source = "git+https://github.com/ygg-lang/oaks.git?rev=7c4c631967228daadde86a85da38c8617f149216#7c4c631967228daadde86a85da38c8617f149216"
-dependencies = [
- "smallvec",
- "triomphe",
- "twox-hash",
-]
-
-[[package]]
-name = "oak-core"
-version = "0.0.12"
 source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
  "serde",
@@ -3077,9 +2968,9 @@ dependencies = [
 [[package]]
 name = "oak-metis"
 version = "0.0.12"
-source = "git+https://github.com/ygg-lang/oaks.git?rev=7c4c631967228daadde86a85da38c8617f149216#7c4c631967228daadde86a85da38c8617f149216"
+source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
- "oak-core 0.0.12 (git+https://github.com/ygg-lang/oaks.git?rev=7c4c631967228daadde86a85da38c8617f149216)",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
 ]
 
 [[package]]
@@ -4149,6 +4040,98 @@ version = "0.1.0"
 dependencies = [
  "science-gc",
  "science-types",
+]
+
+[[package]]
+name = "science-relation"
+version = "0.1.0"
+dependencies = [
+ "oak-metis",
+ "science-gc",
+ "science-relation-compile",
+ "science-relation-graph",
+ "science-relation-ir",
+ "science-relation-island",
+ "science-relation-jit",
+ "science-relation-types",
+ "science-relation-verify",
+ "science-relation-vm",
+]
+
+[[package]]
+name = "science-relation-compile"
+version = "0.1.0"
+dependencies = [
+ "oak-metis",
+ "science-relation-graph",
+ "science-relation-ir",
+ "science-relation-island",
+ "science-relation-types",
+]
+
+[[package]]
+name = "science-relation-graph"
+version = "0.1.0"
+dependencies = [
+ "science-gc",
+ "science-graph",
+ "science-relation-types",
+]
+
+[[package]]
+name = "science-relation-ir"
+version = "0.1.0"
+dependencies = [
+ "science-relation-types",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "science-relation-island"
+version = "0.1.0"
+dependencies = [
+ "science-relation-graph",
+ "science-relation-types",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "science-relation-jit"
+version = "0.1.0"
+dependencies = [
+ "science-relation-graph",
+ "science-relation-ir",
+ "science-relation-island",
+ "science-relation-types",
+ "science-relation-vm",
+]
+
+[[package]]
+name = "science-relation-types"
+version = "0.1.0"
+dependencies = [
+ "science-graph",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "science-relation-verify"
+version = "0.1.0"
+dependencies = [
+ "science-relation-graph",
+ "science-relation-types",
+]
+
+[[package]]
+name = "science-relation-vm"
+version = "0.1.0"
+dependencies = [
+ "science-gc",
+ "science-relation-graph",
+ "science-relation-ir",
+ "science-relation-types",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
