@@ -380,7 +380,11 @@ fn check_reports_synced_and_drifted_tables() {
     let report = database_migration::check(&mut source, &mut drifted, &Options::default()).unwrap();
     assert!(!report.tables[0].synced);
     assert!(report.tables[0].note.as_deref().unwrap().contains("row count differs"));
-    assert!(drifted.statements.is_empty(), "check must not write");
+    assert!(
+        drifted.statements.iter().all(|sql| sql.starts_with("CREATE TABLE")),
+        "check only replays the schema and never writes rows: {:#?}",
+        drifted.statements
+    );
 }
 
 #[test]

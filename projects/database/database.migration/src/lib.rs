@@ -202,6 +202,10 @@ pub fn check(
     for name in tables {
         let table = name.as_str();
         let shape = source.shape(&options.schema, table)?;
+        // The local engine keeps DDL in an in-memory registry, so a fresh
+        // process must replay the table definition before it can read rows back.
+        // `CREATE TABLE IF NOT EXISTS` makes this a no-op for existing tables.
+        target.execute(&create_table(&shape)?)?;
         let source_rows = source.count(&options.schema, table)?;
         let target_rows = count_target(target, table)?;
         let order = shape.order_columns();
