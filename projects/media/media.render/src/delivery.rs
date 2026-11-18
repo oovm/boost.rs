@@ -80,6 +80,19 @@ impl DeliveryReport {
     }
 }
 
+/// Explicit thresholds used when flagging a delivery.
+///
+/// They are constants rather than hidden magic numbers so a report can be read
+/// against the same numbers that produced it.
+pub mod threshold {
+    /// A sampled frame darker than this is reported as near black.
+    pub const BLACK_LUMA: f32 = 0.02;
+    /// An audio track quieter than this across the whole file is reported as silent.
+    pub const SILENCE_RMS_DB: f32 = -60.0;
+    /// Peak above this leaves no headroom for lossy re-encoding downstream.
+    pub const HEADROOM_PEAK_DB: f32 = -0.1;
+}
+
 /// Reopens `path` and reports what the decoder sees.
 ///
 /// `probes` frames are taken evenly across the audio duration when a track
@@ -134,17 +147,29 @@ pub fn inspect_delivery(path: &Path, probes: usize, sample_rate: u32) -> Result<
     }
 
     let mut suspects = Vec::new();
-    if let Some(index) = samples.iter().position(|sample| sample.mean_luma < 0.02) {
-        suspects.push(format!("sample {} at {:.2}s is near black", index, samples[index].seconds));
-    }
-    if let Some(index) = samples.iter().position(|sample| sample.frozen) {
-        suspects.push(format!("sample {index} is byte-identical to the previous one; check for a frozen shot"));
+    for sample in &samples {
+        if sample.mean_luma < threshold::BLACK_LUMA {
+            suspects.push(format!("sample {} at {:.2}s is near black", sample.index, sample.seconds));
+        }
+        if sample.frozen {
+            suspects.push(format!(
+                "sample {} at {:.2}s is byte-identical to the previous one; check for a frozen shot",
+                sample.index, sample.seconds
+            ));
+        }
     }
     if let Some(audio) = &audio {
+        if audio.rms_db < threshold::SILENCE_RMS_DB {
+            suspects.push(format!(
+                "audio averages {:.1} dBFS, below the {:.0} dBFS silence threshold",
+                audio.rms_db,
+                threshold::SILENCE_RMS_DB
+            ));
+        }
         if audio.clipped > 0 {
             suspects.push(format!("audio clips on {} samples", audio.clipped));
         }
-        if audio.peak_db > -0.1 {
+        if audio.peak_db > threshold::HEADROOM_PEAK_DB {
             suspects.push(format!("audio peak {:.1} dBFS leaves no delivery headroom", audio.peak_db));
         }
     }
@@ -210,5 +235,31 @@ mod tests {
         let white = vec![255u8; 4 * 4];
         assert_eq!(mean_luma(&black), 0.0);
         assert!((mean_luma(&white) - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn a_silent_track_is_reported_against_the_stated_threshold() {
+        let dir = std::env::temp_dir().join("opencut-delivery-tests");
+        std::fs::create_dir_all(&dir).unwrap();
+        let wav = dir.join("silence.wav");
+        let zeros = vec![0i16; media_types::SAMPLE_RATE as usize * 2];
+        media_codec::write_wav(wav.to_str().unwrap(), &zeros, media_types::SAMPLE_RATE).expect("wav");
+        let out = dir.join("inspect-silent.mp4");
+        let film = serde_json::json!({
+            "width": 160, "height": 90, "fps": 15, "duration_frames": 30,
+            "scenes": [{ "start": 0, "duration": 30,
+                "background": { "kind": "solid", "color": "#203040" }, "items": [] }],
+            "audio": { "clips": [{ "src": wav.to_str().unwrap(), "at": 0, "volume": 1.0 }] }
+        });
+        render_project_with(&film.to_string(), &out, &RenderOptions::default(), &mut |_, _| {}).expect("render");
+
+        let report = inspect_delivery(&out, 4, media_types::SAMPLE_RATE).expect("inspect");
+        assert!(report.audio.is_some(), "the silent track is still a track");
+        assert!(report.span_seconds.is_some(), "a track gives the samples a real span");
+        assert!(
+            report.suspects.iter().any(|suspect| suspect.contains("silence threshold")),
+            "{:?}",
+            report.suspects
+        );
     }
 }
