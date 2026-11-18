@@ -163,6 +163,9 @@ mod windows_encoder {
         sample_rate: u32,
         started: bool,
         audio_codec: String,
+        /// Whether the negotiated input accepts 32-bit float (FLAC) instead of
+        /// 16-bit PCM (AAC).
+        audio_float: bool,
     }
 
     impl WindowsEncoder {
@@ -261,22 +264,37 @@ mod windows_encoder {
                 unsafe {
                     set_guid(&audio_out, &mf::MF_MT_MAJOR_TYPE, &mf::MFMediaType_Audio).map_err(|e| encode_error("audio major", e))?;
                     set_guid(&audio_out, &mf::MF_MT_SUBTYPE, audio_subtype).map_err(|e| encode_error("audio subtype", e))?;
-                    set_u32(&audio_out, &mf::MF_MT_AUDIO_BITS_PER_SAMPLE, 16).map_err(|e| encode_error("audio bits", e))?;
                     set_u32(&audio_out, &mf::MF_MT_AUDIO_NUM_CHANNELS, 2).map_err(|e| encode_error("audio channels", e))?;
                     set_u32(&audio_out, &mf::MF_MT_AUDIO_SAMPLES_PER_SECOND, sample_rate).map_err(|e| encode_error("audio rate", e))?;
                     if *audio_subtype == mf::MFAudioFormat_AAC {
+                        // The AAC output type describes the encoded stream:
+                        // bitrate and channel layout, not PCM bit depth.
                         set_u32(&audio_out, &mf::MF_MT_AUDIO_AVG_BYTES_PER_SECOND, 25_600).map_err(|e| encode_error("audio bitrate", e))?;
+                    }
+                    else {
+                        set_u32(&audio_out, &mf::MF_MT_AUDIO_BITS_PER_SAMPLE, 16).map_err(|e| encode_error("audio bits", e))?;
                     }
                 }
                 let audio_in = unsafe { mf::MFCreateMediaType().map_err(|e| encode_error("MFCreateMediaType(audio in)", e))? };
+                // The AAC encoder MFT accepts 16-bit PCM input; FLAC accepts
+                // 32-bit float. Picking the wrong one makes SetInputMediaType
+                // fail with a generic "unsupported" instead of saying which
+                // side mismatched, so the choice is made from the codec here.
+                let aac = *audio_subtype == mf::MFAudioFormat_AAC;
+                let (in_subtype, bits, block_align) = if aac {
+                    (&mf::MFAudioFormat_PCM, 16u32, 4u32)
+                }
+                else {
+                    (&mf::MFAudioFormat_Float, 32u32, 8u32)
+                };
                 unsafe {
                     set_guid(&audio_in, &mf::MF_MT_MAJOR_TYPE, &mf::MFMediaType_Audio).map_err(|e| encode_error("audio in major", e))?;
-                    set_guid(&audio_in, &mf::MF_MT_SUBTYPE, &mf::MFAudioFormat_Float).map_err(|e| encode_error("audio in subtype", e))?;
+                    set_guid(&audio_in, &mf::MF_MT_SUBTYPE, in_subtype).map_err(|e| encode_error("audio in subtype", e))?;
                     set_u32(&audio_in, &mf::MF_MT_AUDIO_NUM_CHANNELS, 2).map_err(|e| encode_error("audio in channels", e))?;
                     set_u32(&audio_in, &mf::MF_MT_AUDIO_SAMPLES_PER_SECOND, sample_rate).map_err(|e| encode_error("audio in rate", e))?;
-                    set_u32(&audio_in, &mf::MF_MT_AUDIO_BITS_PER_SAMPLE, 32).map_err(|e| encode_error("audio in bits", e))?;
-                    set_u32(&audio_in, &mf::MF_MT_AUDIO_BLOCK_ALIGNMENT, 8).map_err(|e| encode_error("audio block align", e))?;
-                    set_u32(&audio_in, &mf::MF_MT_AUDIO_AVG_BYTES_PER_SECOND, sample_rate * 8)
+                    set_u32(&audio_in, &mf::MF_MT_AUDIO_BITS_PER_SAMPLE, bits).map_err(|e| encode_error("audio in bits", e))?;
+                    set_u32(&audio_in, &mf::MF_MT_AUDIO_BLOCK_ALIGNMENT, block_align).map_err(|e| encode_error("audio block align", e))?;
+                    set_u32(&audio_in, &mf::MF_MT_AUDIO_AVG_BYTES_PER_SECOND, sample_rate * block_align)
                         .map_err(|e| encode_error("audio in avg bytes", e))?;
                 }
                 audio_index = Some(unsafe { writer.AddStream(&audio_out).map_err(|e| encode_error("AddStream(audio)", e))? });
@@ -287,7 +305,17 @@ mod windows_encoder {
                 }
             }
 
-            Ok(Self { writer, video_index, audio_index, width, height, sample_rate, started: false, audio_codec: codec_name.to_string() })
+            Ok(Self {
+                writer,
+                video_index,
+                audio_index,
+                width,
+                height,
+                sample_rate,
+                started: false,
+                audio_codec: codec_name.to_string(),
+                audio_float: codec_name != "aac",
+            })
         }
 
         pub fn write_video(&mut self, nv12: &[u8], frame: u32, fps: u32) -> Result<(), Error> {
@@ -325,14 +353,22 @@ mod windows_encoder {
                 unsafe { self.writer.BeginWriting().map_err(|e| encode_error("BeginWriting", e))? };
                 self.started = true;
             }
-            let floats: Vec<f32> = pcm.iter().map(|s| *s as f32 / 32768.0).collect();
-            let payload = floats.len() * 4;
+            // AAC takes the interleaved 16-bit samples as-is; FLAC takes float.
+            let (bytes, payload): (Vec<u8>, usize) = if self.audio_float {
+                let floats: Vec<f32> = pcm.iter().map(|s| *s as f32 / 32768.0).collect();
+                let bytes = floats.iter().flat_map(|value| value.to_ne_bytes()).collect();
+                (bytes, floats.len() * 4)
+            }
+            else {
+                let bytes = pcm.iter().flat_map(|value| value.to_le_bytes()).collect();
+                (bytes, pcm.len() * 2)
+            };
             unsafe {
                 let sample = mf::MFCreateSample().map_err(|e| encode_error("MFCreateSample(audio)", e))?;
                 let buffer = mf::MFCreateMemoryBuffer(payload as u32).map_err(|e| encode_error("MFCreateMemoryBuffer(audio)", e))?;
                 let mut ptr: *mut u8 = std::ptr::null_mut();
                 buffer.Lock(&mut ptr, None, None).map_err(|e| encode_error("Lock(audio)", e))?;
-                std::ptr::copy_nonoverlapping(bytemuck_f32(&floats).as_ptr(), ptr, payload);
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, payload);
                 buffer.Unlock().map_err(|e| encode_error("Unlock(audio)", e))?;
                 buffer.SetCurrentLength(payload as u32).map_err(|e| encode_error("SetCurrentLength(audio)", e))?;
                 sample.AddBuffer(&buffer).map_err(|e| encode_error("AddBuffer(audio)", e))?;
@@ -355,10 +391,6 @@ mod windows_encoder {
             }
             Ok(())
         }
-    }
-
-    fn bytemuck_f32(samples: &[f32]) -> &[u8] {
-        unsafe { std::slice::from_raw_parts(samples.as_ptr() as *const u8, samples.len() * 4) }
     }
 }
 
