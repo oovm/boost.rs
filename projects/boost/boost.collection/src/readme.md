@@ -20,10 +20,10 @@ Boost 家族的规则集合能力：逻辑模型、访问能力、表示布局�
 | 类型 | 种类 | 形状位置 | 存储 | 适用 |
 |------|------|----------|------|------|
 | `DenseArrayND<T, N>` | 具体表示 | 运行时构造（`N` 是轴数） | `Vec<T>` 连续区 | 维数固定、各轴长度运行时确定 |
-| `InlineArray2D<T, ROWS, COLUMNS>` / `InlineArray3D<T, D1, D2, D3>` | 具体表示 | 编译期类型参数 | `[[T; COLUMNS]; ROWS]` 等内联区 | 小尺寸、形状属于类型合同 |
+| `FixedArray2D<T, ROWS, COLUMNS>` / `FixedArray3D<T, D1, D2, D3>` | 具体表示 | 编译期类型参数 | `[[T; COLUMNS]; ROWS]` 等内联区 | 小尺寸、形状属于类型合同 |
 | `ArrayView2D` / `ArrayViewMut2D` | 具体表示（借用视图） | 派生自底层 | 借用 `slice` + strides | ROI、转置坐标映射 |
 
-稳定 Rust 不允许元组作为 const 泛型参数，因此 `InlineArray2D<f32, (3, 3)>` 不成立。需要元组书写时用宏：
+稳定 Rust 不允许元组作为 const 泛型参数，因此 `FixedArray2D<f32, (3, 3)>` 不成立。需要元组书写时用宏：
 
 ```rust
 use boost_collection::array;
@@ -44,7 +44,7 @@ let cube = Cube::filled(0.0);
 assert_eq!(cube.shape(), [2, 3, 4]);
 ```
 
-`array!(f32, 3, 3)` 与 `array!(f32, 2, 3, 4)` 分别和二维、三维元组写法等价，展开结果都是普通 `InlineArray2D` / `InlineArray3D` 类型。
+`array!(f32, 3, 3)` 与 `array!(f32, 2, 3, 4)` 分别和二维、三维元组写法等价，展开结果都是普通 `FixedArray2D` / `FixedArray3D` 类型。
 
 ## 图
 

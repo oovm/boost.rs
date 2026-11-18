@@ -1,9 +1,9 @@
 //! Procedural macros for `boost-collection` inline fixed-shape array types.
 //!
 //! Stable Rust cannot take a tuple as a const generic argument, so the tuple
-//! spelling `InlineArray2D<f32, (3, 3)>` is not a valid type. [`array!`] and
+//! spelling `FixedArray2D<f32, (3, 3)>` is not a valid type. [`array!`] and
 //! [`facade_array!`] split that tuple into the const parameters of
-//! `InlineArray2D` or `InlineArray3D` and expand to a plain type.
+//! `FixedArray2D` or `FixedArray3D` and expand to a plain type.
 
 #![deny(missing_docs)]
 
@@ -26,8 +26,8 @@ use syn::{
 /// type Inline = array!(u8, 2, 4);
 /// ```
 ///
-/// Two extents expand to `::boost_collection::InlineArray2D<Element, A, B>` and
-/// three expand to `::boost_collection::InlineArray3D<Element, A, B, C>`.
+/// Two extents expand to `::boost_collection::FixedArray2D<Element, A, B>` and
+/// three expand to `::boost_collection::FixedArray3D<Element, A, B, C>`.
 /// Extents may be any const expression, not only literals.
 #[proc_macro]
 pub fn array(input: TokenStream) -> TokenStream {
@@ -91,7 +91,7 @@ fn parse_extents(input: ParseStream<'_>) -> syn::Result<Vec<Expr>> {
 fn expand(ArrayInput { element, extents }: ArrayInput, root: TokenStream2) -> TokenStream {
     let [first, second] = [&extents[0], &extents[1]];
     match extents.get(2) {
-        None => quote! { #root::InlineArray2D<#element, { #first }, { #second }> }.into(),
-        Some(third) => quote! { #root::InlineArray3D<#element, { #first }, { #second }, { #third }> }.into(),
+        None => quote! { #root::FixedArray2D<#element, { #first }, { #second }> }.into(),
+        Some(third) => quote! { #root::FixedArray3D<#element, { #first }, { #second }, { #third }> }.into(),
     }
 }
