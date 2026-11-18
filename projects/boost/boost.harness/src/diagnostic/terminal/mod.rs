@@ -21,7 +21,6 @@ use core::{
     fmt::{Debug, Formatter},
     hash::Hash,
 };
-use unicode_width::UnicodeWidthChar;
 
 /// A type that represents a labelled section of identifier code.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -442,7 +441,7 @@ impl Config {
                 (' ', tab_end - col)
             }
             c if c.is_whitespace() => (' ', 1),
-            _ => (c, c.width().unwrap_or(1)),
+            _ => (c, unicode_width::char_width(c).unwrap_or(1)),
         }
     }
 }
