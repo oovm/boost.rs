@@ -221,7 +221,9 @@ pub fn write_comparison(
     draw_title(&mut fonts, &mut page, options, "Before / after");
     let top = options.margin + options.title_size + options.gap;
     let content_width = options.width as f32 - options.margin * 2.0;
-    let row_height = ((options.height as f32 - top - options.margin - options.gap * (selected.len().saturating_sub(1)) as f32) / selected.len() as f32).max(80.0);
+    let row_height = (((options.height as f32 - top - options.margin - options.gap * (selected.len().saturating_sub(1)) as f32)
+        / selected.len() as f32)
+        .clamp(120.0, 340.0));
     let thumb_width = (content_width - options.gap) / 2.0;
     let label_height = options.label_size * 2.0;
 
@@ -277,7 +279,7 @@ pub fn write_chapters(
     page.fill(rgba(options.background, 255));
     draw_title(&mut fonts, &mut page, options, "Chapters");
     let top = options.margin + options.title_size + options.gap;
-    let row_height = ((options.height as f32 - top - options.margin) / production.shots.len() as f32).max(90.0);
+    let row_height = ((options.height as f32 - top - options.margin) / production.shots.len() as f32).clamp(110.0, 300.0);
     let label_width = 200.0;
     let content_width = options.width as f32 - options.margin * 2.0 - label_width;
     let thumb_width = (content_width - options.gap) / 2.0;
