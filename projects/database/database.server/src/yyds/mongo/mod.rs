@@ -24,11 +24,11 @@ use std::{
 };
 
 use database_execution::cluster::KeyValueExecutor;
-use mongo::{
+use database_execution::mongo::{
     commands::{self, CommandError},
     cursor::CursorStore,
-    storage::MongoStorage,
 };
+use database_storage::mongo::MongoStorage;
 
 pub mod connection;
 pub mod service;

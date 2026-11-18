@@ -11,16 +11,15 @@
 use std::{collections::BTreeMap, sync::Mutex};
 
 use database_execution::cluster::KeyValueExecutor;
+use database_formats::mongo::collection_record;
+use database_formats::mongo::oplog::OplogEntry;
+use database_formats::mongo::parse_collection_record;
 use database_query::cluster_kv::{KeyValueAction, KeyValueCommand, KeyValueResult};
-use database_types::cluster::Namespace;
-use mongo::{
-    oplog::OplogEntry,
-    storage::{
-        CollectionOptions, IndexSpec, MongoStorage, SessionWriteState, StoreError, TransactionAbort, TransactionBegin, TransactionCommit,
-        TransactionWrite, TtlMonitorState,
-    },
-    store::{collection_record, parse_collection_record},
+use database_storage::mongo::{
+    CollectionOptions, IndexSpec, MongoStorage, SessionWriteState, StoreError, TransactionAbort, TransactionBegin, TransactionCommit,
+    TransactionWrite, TtlMonitorState,
 };
+use database_types::cluster::Namespace;
 
 const CATALOG_NAMESPACE: &str = "!catalog";
 

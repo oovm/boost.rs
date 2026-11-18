@@ -12,6 +12,7 @@ publish = false
 base64 = { workspace = true }
 database-cluster = { workspace = true }
 database-execution = { workspace = true }
+database-formats = { workspace = true }
 database-protocol = { workspace = true }
 database-protocol-mongo = { workspace = true }
 database-protocol-mysql = { workspace = true }
@@ -22,7 +23,6 @@ database-query = { workspace = true }
 database-storage = { workspace = true }
 database-types = { workspace = true }
 database-udf = { workspace = true }
-mongo = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha1 = { workspace = true }

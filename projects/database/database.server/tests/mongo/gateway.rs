@@ -15,7 +15,7 @@ use database_server::yyds::mongo::{
     connection::serve_cancellable,
     wire::{self, FrameLimits},
 };
-use mongo::cursor::CursorStore;
+use database_execution::mongo::cursor::CursorStore;
 
 /// Build a hello command OP_MSG frame — `{ hello: 1, $db: "admin" }`.
 /// OP_MSG body layout: [flags u32][kind u8=0x00][BSON doc].
