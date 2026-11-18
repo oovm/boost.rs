@@ -22,9 +22,10 @@ use std::{
 
 use crate::{
     SqliteWriter,
-    sql::{Cell, Engine, ExecResult, SqlError, Statement, TransactionAction, engine::LazyCursor, parameter_slots, storage_failure},
+    sql::{Cell, Engine, ExecResult, SqlError, Statement, TransactionAction, parameter_slots, storage_failure},
 };
 
+use database_execution::sqlite::select::LazyCursor;
 use database_storage::sqlite::journal;
 use database_udf::{HostMicroDefinition, HostRuntimeAdapter};
 

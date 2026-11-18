@@ -3,8 +3,9 @@
 //! The resolved syntax trees live in `database_query::sqlite`; this module owns
 //! their evaluation: the shared `EvalContext`, the row budget, the CTE scope
 //! chain, the subquery memo cache and the traits that attach `eval` to the
-//! resolved shapes. Nested `SELECT` execution stays with the product facade
-//! engine and re-enters through the [`SqliteSubqueryRun`] seam.
+//! resolved shapes. Nested `SELECT` execution lives in the statement
+//! machinery of [`super::select`] and reaches evaluation through
+//! [`super::select::ExecContext`].
 
 use std::{
     cmp::Ordering,
@@ -24,6 +25,7 @@ use super::{
     cells::*,
     host::{HostFunctionTable, cell_to_udf_value, udf_error_to_sql_error, udf_value_to_cell},
     scalar::eval_function,
+    select::ExecContext,
 };
 /// Memoized result of one uncorrelated subquery, valid for a single statement.
 pub enum SubqueryCache {
@@ -122,8 +124,8 @@ pub struct EvalContext<'a> {
     pub subquery_cache: &'a std::cell::RefCell<HashMap<usize, SubqueryCache>>,
     /// Host-registered scalar and table-valued functions of the session.
     pub host_functions: &'a HostFunctionTable,
-    /// Seam that runs nested `SELECT`s through the host engine.
-    pub subquery: &'a dyn SqliteSubqueryRun,
+    /// Statement machinery that runs nested `SELECT`s and correlated probes.
+    pub exec: ExecContext<'a>,
     /// Enclosing scopes, innermost first.
     pub outer: &'a [Scope],
     /// Column catalog of the core currently being evaluated.
@@ -485,7 +487,7 @@ impl EvalExpr for ResolvedExpr {
                     }
                 }
                 ctx.outer_read.set(false);
-                if let Some(answer) = ctx.subquery.correlated_exists(query, values, ctx)? {
+                if let Some(answer) = ctx.exec.correlated_exists(query, values, ctx)? {
                     return Ok(Cell::Integer(i64::from(answer)));
                 }
                 let result = run_subquery(query, values, ctx)?;
@@ -540,7 +542,7 @@ fn run_subquery(query: &Statement, values: &[Cell], ctx: &EvalContext) -> Result
     scopes.extend(ctx.outer.iter().cloned());
     // The subquery keeps the CTEs that are in scope where it appears, so
     // `(select ... from c)` inside a `WITH` statement resolves too.
-    ctx.subquery.select_statement(query, &scopes, ctx.budget, ctx.ctes)
+    ctx.exec.select_statement(query, &scopes, ctx.budget, ctx.ctes)
 }
 
 /// A scalar subquery and an `IN (SELECT ...)` must produce exactly one column,
@@ -559,23 +561,4 @@ pub struct SubqueryOutcome {
     pub columns: Vec<String>,
     /// Produced rows.
     pub rows: Vec<Vec<Cell>>,
-}
-
-/// Seam through which the evaluation machinery runs nested `SELECT`s and the
-/// correlated-`EXISTS` index probe. The statement machinery itself still lives
-/// with the product facade engine, which implements this trait with a private
-/// adapter that delegates to it.
-pub trait SqliteSubqueryRun {
-    /// Runs one nested statement with `scopes` as the enclosing scope chain.
-    fn select_statement(
-        &self,
-        query: &Statement,
-        scopes: &[Scope],
-        budget: &Budget,
-        ctes: Option<&CteEnv<'_>>,
-    ) -> Result<SubqueryOutcome, SqlError>;
-
-    /// Index-probe fast path for a correlated `EXISTS`; `None` when the probe
-    /// shape does not apply and the full subquery must run instead.
-    fn correlated_exists(&self, query: &Statement, values: &[Cell], ctx: &EvalContext<'_>) -> Result<Option<bool>, SqlError>;
 }
