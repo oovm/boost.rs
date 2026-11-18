@@ -12,6 +12,8 @@ use std::{
 };
 
 use super::wire::{FrameError, StartupParameterError, StartupParameters, decode_message, decode_startup, encode_message};
+use super::auth::{AuthFailure, PgAuthentication};
+use database_protocol_pgsql::auth::ScramServer;
 use database_execution::pgsql::{
     ABORTED_BLOCK, DEFAULT_SEARCH_PATH, ExecutionOutcome, PgsqlSqlRuntime, StatementOutcome, TransactionSession,
     dispatch_statement, pg_sqlstate, run_statement, statement_error,
@@ -48,30 +50,55 @@ static NEXT_SECRET: AtomicU32 = AtomicU32::new(1);
 ///
 /// The caller must restrict the peer to loopback until authentication and TLS are implemented.
 pub fn serve_connection(stream: TcpStream, runtime: Option<Arc<PgsqlSqlRuntime>>) -> io::Result<()> {
+    serve_connection_with_auth(stream, runtime, PgAuthentication::Trust)
+}
+
+/// Establishes a protocol-v3 session that authenticates with `auth` before any
+/// query runs.
+pub fn serve_connection_with_auth(
+    stream: TcpStream,
+    runtime: Option<Arc<PgsqlSqlRuntime>>,
+    auth: PgAuthentication,
+) -> io::Result<()> {
     if !stream.peer_addr()?.ip().is_loopback() {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
-            "PostgreSQL requires loopback until authentication and TLS are implemented",
+            "PostgreSQL requires loopback until TLS is implemented",
         ));
     }
     stream.set_read_timeout(Some(Duration::from_secs(30)))?;
     stream.set_write_timeout(Some(Duration::from_secs(30)))?;
-    serve_session(stream, runtime)
+    serve_session(stream, runtime, Some(Arc::new(auth)))
 }
 
 /// Serves a loopback session with cooperative service-stop cancellation.
 pub fn serve_cancellable(stream: TcpStream, stopping: Arc<AtomicBool>, runtime: Option<Arc<PgsqlSqlRuntime>>) -> io::Result<()> {
+    serve_cancellable_with_auth(stream, stopping, runtime, PgAuthentication::Trust)
+}
+
+/// Serves a loopback session with cooperative service-stop cancellation and the
+/// configured authentication method.
+pub fn serve_cancellable_with_auth(
+    stream: TcpStream,
+    stopping: Arc<AtomicBool>,
+    runtime: Option<Arc<PgsqlSqlRuntime>>,
+    auth: PgAuthentication,
+) -> io::Result<()> {
     if !stream.peer_addr()?.ip().is_loopback() {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
-            "PostgreSQL requires loopback until authentication and TLS are implemented",
+            "PostgreSQL requires loopback until TLS is implemented",
         ));
     }
     stream.set_nonblocking(true)?;
-    serve_session(CancellableSocket { stream, stopping }, runtime)
+    serve_session(CancellableSocket { stream, stopping }, runtime, Some(Arc::new(auth)))
 }
 
-fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<PgsqlSqlRuntime>>) -> io::Result<()> {
+fn serve_session(
+    mut stream: impl Read + Write,
+    runtime: Option<Arc<PgsqlSqlRuntime>>,
+    auth: Option<Arc<PgAuthentication>>,
+) -> io::Result<()> {
     let mut pending = Vec::new();
     let mut session = TransactionSession::new();
     let parameters = loop {
@@ -94,6 +121,11 @@ fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<PgsqlSqlRunt
     };
 
     session.set_database(parameters.database().to_string());
+
+    if let Some(failure) = authenticate(&mut stream, &mut pending, &parameters, auth.as_deref())? {
+        write_fatal(&mut stream, failure.sqlstate, &failure.message)?;
+        return Ok(());
+    }
 
     send_authentication_ok(&mut stream)?;
     send_parameter(&mut stream, "server_version", pg_server_version())?;
@@ -1643,6 +1675,144 @@ fn read_more(stream: &mut impl Read, pending: &mut Vec<u8>) -> io::Result<()> {
 
 fn send_authentication_ok(stream: &mut impl Write) -> io::Result<()> {
     write_message(stream, b'R', &0_u32.to_be_bytes())
+}
+
+/// Runs the configured authentication exchange.
+///
+/// `Ok(None)` means the client may proceed. `Ok(Some(failure))` carries the
+/// SQLSTATE and message the session reports as a fatal error, which is how
+/// PostgreSQL answers a rejected password (`28P01`) or an unsupported method
+/// (`28000`).
+fn authenticate(
+    stream: &mut (impl Read + Write),
+    pending: &mut Vec<u8>,
+    parameters: &StartupParameters,
+    auth: Option<&PgAuthentication>,
+) -> io::Result<Option<AuthFailure>> {
+    let Some(auth) = auth
+    else {
+        return Ok(None);
+    };
+    let user = parameters.user();
+    if !auth.matches_role(user) {
+        return Ok(Some(AuthFailure::password(user)));
+    }
+    match auth {
+        PgAuthentication::Trust => Ok(None),
+        PgAuthentication::Password { password, .. } => {
+            write_auth_request(stream, 3, &[])?;
+            let Some(message) = read_message(stream, pending)?
+            else {
+                return Ok(Some(AuthFailure::protocol("client disconnected during password authentication")));
+            };
+            let submitted = cstring(&message.payload);
+            let accepted = submitted.is_some_and(|submitted| constant_time_eq(submitted.as_bytes(), password.as_bytes()));
+            Ok((!accepted).then(|| AuthFailure::password(user)))
+        }
+        PgAuthentication::Md5 { .. } => {
+            let mut salt = [0u8; 4];
+            fill_random(&mut salt)?;
+            write_auth_request(stream, 5, &salt)?;
+            let Some(message) = read_message(stream, pending)?
+            else {
+                return Ok(Some(AuthFailure::protocol("client disconnected during MD5 authentication")));
+            };
+            let submitted = cstring(&message.payload);
+            let expected = auth.expected_md5(user, &salt).unwrap_or_default();
+            let accepted = submitted.is_some_and(|submitted| constant_time_eq(submitted.as_bytes(), expected.as_bytes()));
+            Ok((!accepted).then(|| AuthFailure::password(user)))
+        }
+        PgAuthentication::ScramSha256 { password, .. } => {
+            // `AuthenticationSASL` lists the offered mechanisms.
+            let mut mechanisms = Vec::new();
+            mechanisms.extend_from_slice(b"SCRAM-SHA-256\0\0");
+            write_auth_request(stream, 10, &mechanisms)?;
+            let Some(initial) = read_message(stream, pending)?
+            else {
+                return Ok(Some(AuthFailure::protocol("client disconnected before the SASL initial response")));
+            };
+            let mut cursor = 0;
+            let Some(mechanism) = take_cstring(&initial.payload, &mut cursor)
+            else {
+                return Ok(Some(AuthFailure::protocol("malformed SASL initial response")));
+            };
+            if mechanism != "SCRAM-SHA-256" {
+                return Ok(Some(AuthFailure::unsupported(format!(
+                    "the gateway only offers SCRAM-SHA-256, the client selected `{mechanism}`"
+                ))));
+            }
+            let Some(length) = take_i32(&initial.payload, &mut cursor)
+            else {
+                return Ok(Some(AuthFailure::protocol("malformed SASL initial response")));
+            };
+            if length < 0 {
+                return Ok(Some(AuthFailure::protocol("SASL initial response carries no client-first message")));
+            }
+            let Some(client_first) = take_bytes(&initial.payload, &mut cursor, length as usize) else {
+                return Ok(Some(AuthFailure::protocol("truncated SASL initial response")));
+            };
+            let Ok(client_first) = std::str::from_utf8(client_first)
+            else {
+                return Ok(Some(AuthFailure::protocol("SASL client-first is not valid UTF-8")));
+            };
+            let mut salt = [0u8; 16];
+            fill_random(&mut salt)?;
+            let mut suffix = [0u8; 18];
+            fill_random(&mut suffix)?;
+            let mut server = ScramServer::new(password.clone(), salt.to_vec(), 4096, base64_encode(&suffix));
+            let Ok(server_first) = server.begin(client_first)
+            else {
+                return Ok(Some(AuthFailure::protocol("malformed SCRAM client-first message")));
+            };
+            write_auth_request(stream, 11, server_first.as_bytes())?;
+            let Some(response) = read_message(stream, pending)?
+            else {
+                return Ok(Some(AuthFailure::protocol("client disconnected before the SASL response")));
+            };
+            let Ok(client_final) = std::str::from_utf8(&response.payload)
+            else {
+                return Ok(Some(AuthFailure::protocol("SASL client-final is not valid UTF-8")));
+            };
+            match server.finish(client_final) {
+                Ok(server_final) => {
+                    write_auth_request(stream, 12, server_final.as_bytes())?;
+                    Ok(None)
+                }
+                Err(_) => Ok(Some(AuthFailure::password(user))),
+            }
+        }
+    }
+}
+
+fn write_auth_request(stream: &mut impl Write, code: u32, extra: &[u8]) -> io::Result<()> {
+    let mut payload = Vec::with_capacity(4 + extra.len());
+    payload.extend_from_slice(&code.to_be_bytes());
+    payload.extend_from_slice(extra);
+    write_message(stream, b'R', &payload)
+}
+
+/// Reads a NUL-terminated string from a message payload.
+fn cstring(payload: &[u8]) -> Option<String> {
+    let end = payload.iter().position(|byte| *byte == 0)?;
+    std::str::from_utf8(&payload[..end]).ok().map(str::to_owned)
+}
+
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+    left.iter().zip(right).fold(0u8, |difference, (left, right)| difference | (left ^ right)) == 0
+}
+
+fn fill_random(bytes: &mut [u8]) -> io::Result<()> {
+    boost_random::Secure::system()
+        .fill(bytes)
+        .map_err(|error| io::Error::other(format!("cannot generate an authentication challenge: {error}")))
+}
+
+fn base64_encode(bytes: &[u8]) -> String {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    STANDARD.encode(bytes)
 }
 
 fn send_parameter(stream: &mut impl Write, key: &str, value: &str) -> io::Result<()> {

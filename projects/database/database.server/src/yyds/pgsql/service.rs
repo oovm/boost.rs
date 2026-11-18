@@ -16,7 +16,8 @@ use database_execution::cluster::KeyValueExecutor;
 use database_execution::pgsql::PgsqlSqlRuntime;
 use database_query::{SqlCatalog, SqlSchemaRegistry};
 
-use super::connection::serve_cancellable;
+use super::auth::PgAuthentication;
+use super::connection::serve_cancellable_with_auth;
 
 const MAX_CLIENTS: usize = 64;
 
@@ -31,7 +32,7 @@ pub struct PgsqlService {
 impl PgsqlService {
     /// Starts a listener without creating a node or cluster identity.
     pub fn start(owner: Arc<NodeLease>, address: SocketAddr) -> io::Result<Self> {
-        Self::start_inner(owner, address, None)
+        Self::start_inner(owner, address, None, PgAuthentication::Trust)
     }
 
     /// Starts a listener with a YYDS SQL runtime for SELECT, DML, and DDL execution.
@@ -41,8 +42,19 @@ impl PgsqlService {
         executor: Arc<dyn KeyValueExecutor>,
         schema: Arc<SqlSchemaRegistry>,
     ) -> io::Result<Self> {
+        Self::start_with_registry_auth(owner, address, executor, schema, PgAuthentication::Trust)
+    }
+
+    /// Starts a listener with a YYDS SQL runtime and the given authentication.
+    pub fn start_with_registry_auth(
+        owner: Arc<NodeLease>,
+        address: SocketAddr,
+        executor: Arc<dyn KeyValueExecutor>,
+        schema: Arc<SqlSchemaRegistry>,
+        auth: PgAuthentication,
+    ) -> io::Result<Self> {
         let runtime = Arc::new(PgsqlSqlRuntime { schema, executor });
-        Self::start_inner(owner, address, Some(runtime))
+        Self::start_inner(owner, address, Some(runtime), auth)
     }
 
     /// Starts a listener seeded from a published catalog.
@@ -87,11 +99,16 @@ impl PgsqlService {
         Self::start_with_registry(owner, address, executor, Arc::new(schema))
     }
 
-    fn start_inner(owner: Arc<NodeLease>, address: SocketAddr, runtime: Option<Arc<PgsqlSqlRuntime>>) -> io::Result<Self> {
+    fn start_inner(
+        owner: Arc<NodeLease>,
+        address: SocketAddr,
+        runtime: Option<Arc<PgsqlSqlRuntime>>,
+        auth: PgAuthentication,
+    ) -> io::Result<Self> {
         if !address.ip().is_loopback() {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
-                "PostgreSQL requires loopback until authentication and TLS are implemented",
+                "PostgreSQL requires loopback until TLS is implemented",
             ));
         }
         let listener = TcpListener::bind(address)?;
@@ -100,9 +117,10 @@ impl PgsqlService {
         let stopping = Arc::new(AtomicBool::new(false));
         let signal = Arc::clone(&stopping);
         let runtime_for_listen = runtime.clone();
+        let auth = Arc::new(auth);
         let worker = thread::Builder::new().name("yyds-pgsql-listener".into()).spawn(move || {
             let _owner = owner;
-            listen(listener, signal, runtime_for_listen)
+            listen(listener, signal, runtime_for_listen, auth)
         })?;
         Ok(Self { address, stopping, worker: Some(worker) })
     }
@@ -167,7 +185,12 @@ impl Drop for Clients {
     }
 }
 
-fn listen(listener: TcpListener, stopping: Arc<AtomicBool>, runtime: Option<Arc<PgsqlSqlRuntime>>) -> io::Result<()> {
+fn listen(
+    listener: TcpListener,
+    stopping: Arc<AtomicBool>,
+    runtime: Option<Arc<PgsqlSqlRuntime>>,
+    auth: Arc<PgAuthentication>,
+) -> io::Result<()> {
     let mut clients = Clients { workers: Vec::new(), stopping: Arc::clone(&stopping) };
     while !stopping.load(Ordering::Acquire) {
         clients.reap();
@@ -182,8 +205,9 @@ fn listen(listener: TcpListener, stopping: Arc<AtomicBool>, runtime: Option<Arc<
                 }
                 let cancellation = Arc::clone(&stopping);
                 let rt = runtime.clone();
+                let auth = Arc::clone(&auth);
                 let worker = thread::Builder::new().name("yyds-pgsql-client".into()).spawn(move || {
-                    let _ = serve_cancellable(stream, cancellation, rt);
+                    let _ = serve_cancellable_with_auth(stream, cancellation, rt, (*auth).clone());
                 })?;
                 clients.workers.push(worker);
             }

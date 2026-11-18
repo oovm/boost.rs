@@ -40,7 +40,8 @@ use database_execution::pgsql::{
     PgsqlSqlRuntime, StatementOutcome, TransactionControl, TransactionSession, dispatch_statement,
 };
 use database_query::SqlSchemaRegistry;
-use database_server::yyds::pgsql::connection::serve_cancellable;
+use database_server::yyds::pgsql::PgAuthentication;
+use database_server::yyds::pgsql::connection::serve_cancellable_with_auth;
 use database_storage::cluster_kv::FileShard;
 use database_types::cluster::{ShardEpoch, ShardId};
 
@@ -51,6 +52,9 @@ pub use database_storage::pgsql::instance::{
 };
 
 pub use database_query::{SqlColumn, SqlValue};
+
+/// Authentication a listener requires before statements run.
+pub use database_server::yyds::pgsql::PgAuthentication as Authentication;
 
 /// Remote PostgreSQL-compatible client. Construction and semantics stay owned
 /// by `database.client`; the facade re-exports it so the product surface has a
@@ -294,9 +298,15 @@ impl PostgreSQL {
     /// free port). One engine may serve several listeners; each [`Listener`]
     /// stops its own accept loop without closing the engine.
     pub fn listen(&self, endpoint: SocketAddr) -> Result<Listener, Error> {
+        self.listen_with(endpoint, PgAuthentication::Trust)
+    }
+
+    /// Starts a listener that authenticates every client with `auth` before any
+    /// statement runs.
+    pub fn listen_with(&self, endpoint: SocketAddr, auth: PgAuthentication) -> Result<Listener, Error> {
         if !endpoint.ip().is_loopback() {
             return Err(Error::Unsupported(
-                "the gateway accepts loopback connections only until authentication and TLS land upstream".to_owned(),
+                "the gateway accepts loopback connections only until TLS lands upstream".to_owned(),
             ));
         }
         let runtime = Arc::clone(&self.runtime);
@@ -314,8 +324,9 @@ impl PostgreSQL {
                         let _ = stream.set_nodelay(true);
                         let conn_runtime = Arc::clone(&runtime);
                         let conn_stopping = Arc::clone(&acceptor);
+                        let conn_auth = auth.clone();
                         thread::spawn(move || {
-                            let _ = serve_cancellable(stream, Arc::clone(&conn_stopping), Some(conn_runtime));
+                            let _ = serve_cancellable_with_auth(stream, Arc::clone(&conn_stopping), Some(conn_runtime), conn_auth);
                         });
                     }
                     Err(error) if error.kind() == io::ErrorKind::WouldBlock => thread::sleep(Duration::from_millis(5)),

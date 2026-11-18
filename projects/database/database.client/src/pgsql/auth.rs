@@ -1,106 +1,15 @@
 //! PostgreSQL password authentication: MD5 and SCRAM-SHA-256.
 //!
-//! Only the on-wire algorithms live here. SASLprep is not applied; the
-//! PostgreSQL server applies it to the stored verifier, and the common
-//! ASCII password path is byte-identical without normalization.
+//! The algorithms live in `database-protocol-pgsql` so the gateway verifier and
+//! this client run the same code. SASLprep is not applied; the common ASCII
+//! password path is byte-identical without normalization.
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use database_protocol_pgsql::auth::{hmac_sha256, md5_hex, pbkdf2_sha256, scram_escape};
+
+pub(crate) use database_protocol_pgsql::auth::md5_password;
 
 use super::error::PostgresError;
-
-/// `md5(md5(password || user) || salt)` formatted the way PostgreSQL expects
-/// in an MD5 password response.
-pub(crate) fn md5_password(password: &str, user: &str, salt: &[u8]) -> String {
-    let inner = md5_hex(format!("{password}{user}").as_bytes());
-    let mut material = inner.into_bytes();
-    material.extend_from_slice(salt);
-    format!("md5{}", md5_hex(&material))
-}
-
-/// RFC 1321 MD5 as lowercase hex.
-pub(crate) fn md5_hex(input: &[u8]) -> String {
-    const S: [u32; 64] = [
-        7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4,
-        11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
-    ];
-    const K: [u32; 64] = [
-        0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee, 0xf57c0faf, 0x4787c62a, 0xa8304613, 0xfd469501, 0x698098d8, 0x8b44f7af, 0xffff5bb1,
-        0x895cd7be, 0x6b901122, 0xfd987193, 0xa679438e, 0x49b40821, 0xf61e2562, 0xc040b340, 0x265e5a51, 0xe9b6c7aa, 0xd62f105d, 0x02441453,
-        0xd8a1e681, 0xe7d3fbc8, 0x21e1cde6, 0xc33707d6, 0xf4d50d87, 0x455a14ed, 0xa9e3e905, 0xfcefa3f8, 0x676f02d9, 0x8d2a4c8a, 0xfffa3942,
-        0x8771f681, 0x6d9d6122, 0xfde5380c, 0xa4beea44, 0x4bdecfa9, 0xf6bb4b60, 0xbebfbc70, 0x289b7ec6, 0xeaa127fa, 0xd4ef3085, 0x04881d05,
-        0xd9d4d039, 0xe6db99e5, 0x1fa27cf8, 0xc4ac5665, 0xf4292244, 0x432aff97, 0xab9423a7, 0xfc93a039, 0x655b59c3, 0x8f0ccc92, 0xffeff47d,
-        0x85845dd1, 0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1, 0xf7537e82, 0xbd3af235, 0x2ad7d2bb, 0xeb86d391,
-    ];
-
-    let mut padded = input.to_vec();
-    padded.push(0x80);
-    while padded.len() % 64 != 56 {
-        padded.push(0);
-    }
-    padded.extend_from_slice(&((input.len() as u64) * 8).to_le_bytes());
-
-    let mut state = [0x67452301u32, 0xefcdab89, 0x98badcfe, 0x10325476];
-    for chunk in padded.chunks(64) {
-        let mut words = [0u32; 16];
-        for (index, word) in words.iter_mut().enumerate() {
-            *word = u32::from_le_bytes([chunk[index * 4], chunk[index * 4 + 1], chunk[index * 4 + 2], chunk[index * 4 + 3]]);
-        }
-        let [mut a, mut b, mut c, mut d] = state;
-        for round in 0..64 {
-            let (mix, index) = match round {
-                0..=15 => ((b & c) | (!b & d), round),
-                16..=31 => ((d & b) | (!d & c), (5 * round + 1) % 16),
-                32..=47 => (b ^ c ^ d, (3 * round + 5) % 16),
-                _ => (c ^ (b | !d), (7 * round) % 16),
-            };
-            let rotated = a.wrapping_add(mix).wrapping_add(K[round]).wrapping_add(words[index]).rotate_left(S[round]);
-            a = d;
-            d = c;
-            c = b;
-            b = b.wrapping_add(rotated);
-        }
-        state[0] = state[0].wrapping_add(a);
-        state[1] = state[1].wrapping_add(b);
-        state[2] = state[2].wrapping_add(c);
-        state[3] = state[3].wrapping_add(d);
-    }
-
-    state.iter().flat_map(|word| word.to_le_bytes()).map(|byte| format!("{byte:02x}")).collect()
-}
-
-fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
-    use sha2::{Digest, Sha256};
-
-    let mut block = [0u8; 64];
-    if key.len() > 64 {
-        block[..32].copy_from_slice(&Sha256::digest(key));
-    }
-    else {
-        block[..key.len()].copy_from_slice(key);
-    }
-    let mut inner = Sha256::new();
-    inner.update(block.map(|byte| byte ^ 0x36));
-    inner.update(data);
-    let inner = inner.finalize();
-    let mut outer = Sha256::new();
-    outer.update(block.map(|byte| byte ^ 0x5c));
-    outer.update(inner);
-    outer.finalize().into()
-}
-
-fn pbkdf2_sha256(password: &[u8], salt: &[u8], iterations: u32) -> [u8; 32] {
-    let mut seeded = salt.to_vec();
-    seeded.extend_from_slice(&1u32.to_be_bytes());
-    let mut previous = hmac_sha256(password, &seeded);
-    let mut output = previous;
-    for _ in 1..iterations {
-        previous = hmac_sha256(password, &previous);
-        for (slot, value) in output.iter_mut().zip(previous) {
-            *slot ^= value;
-        }
-    }
-    output
-}
 
 /// One SCRAM-SHA-256 exchange driven by the server's challenge messages.
 pub(crate) struct ScramClient {
@@ -193,13 +102,22 @@ impl ScramClient {
     }
 }
 
-fn scram_escape(value: &str) -> String {
-    value.replace('=', "=3D").replace(',', "=2C")
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_gateway_verifier_accepts_a_client_exchange() {
+        use database_protocol_pgsql::auth::ScramServer;
+
+        let mut server = ScramServer::new("pencil", vec![9, 8, 7, 6, 5, 4, 3, 2], 4096, "SRVNONCE");
+        let (mut client, client_first) = ScramClient::with_nonce("user", "pencil", "CLIENTNONCE");
+        let server_first = server.begin(&client_first).expect("begin");
+        let client_final = client.continue_with(&server_first).expect("continue");
+        let server_final = server.finish(&client_final).expect("finish");
+        client.verify(&server_final).expect("verify");
+    }
 
     #[test]
     fn md5_matches_rfc1321_vectors() {

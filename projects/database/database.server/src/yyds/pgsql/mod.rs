@@ -8,9 +8,12 @@ use database_protocol::{GatewayConfig, GatewayKind, startup_banner as protocol_s
 use database_query::version_label;
 use database_types::{Error, Result, cluster::version};
 
+pub mod auth;
 pub mod connection;
 pub mod service;
 pub mod wire;
+
+pub use auth::{AuthFailure, PgAuthentication};
 
 /// Gateway kind implemented by this crate.
 pub const GATEWAY_KIND: GatewayKind = GatewayKind::Pgsql;

@@ -7,6 +7,9 @@ mod error;
 #[allow(missing_docs)]
 mod messages;
 
+/// Password authentication primitives shared by the client and the gateway.
+pub mod auth;
+
 pub use error::{MessageField, Notice, PostgresError};
 pub use messages::{
     CANCEL_REQUEST_BYTES, CANCEL_REQUEST_CODE, ColumnDescription, CopyResponse, MAX_MESSAGE_BYTES, MAX_PARAMETERS, PROTOCOL_VERSION,

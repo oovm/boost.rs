@@ -142,6 +142,52 @@ fn ddl_survives_a_restart_and_rollback_restores_the_persisted_state() {
 }
 
 #[test]
+fn listeners_require_the_configured_password_authentication() {
+    use std::error::Error as _;
+
+    let dir = TempDir::new("auth");
+    let engine = PostgreSQL::open(dir.options("smoke")).unwrap();
+    engine.execute("CREATE TABLE secret (id BIGINT PRIMARY KEY, name TEXT)").unwrap();
+    engine.execute("INSERT INTO secret (id, name) VALUES (1, 'guarded')").unwrap();
+    let endpoint = "127.0.0.1:0".parse::<SocketAddr>().unwrap();
+    for authentication in [
+        postgres::Authentication::Password { user: "postgres".to_owned(), password: "s3cret".to_owned() },
+        postgres::Authentication::Md5 { user: "postgres".to_owned(), password: "s3cret".to_owned() },
+        postgres::Authentication::ScramSha256 { user: "postgres".to_owned(), password: "s3cret".to_owned() },
+    ] {
+        let label = format!("{authentication:?}");
+        let listener = engine.listen_with(endpoint, authentication).unwrap();
+        let mut accepted = PostgreSQLClient::open(
+            &ClientConfig::new("127.0.0.1", listener.endpoint().port(), "postgres", "smoke").with_password("s3cret"),
+        )
+        .unwrap_or_else(|error| panic!("{label} rejected the configured password: {error}"));
+        let results = accepted.execute("SELECT name FROM secret WHERE id = 1").unwrap();
+        assert_eq!(results[0].cell(0, 0), Some(Some("guarded")));
+        accepted.close();
+
+        let rejected = PostgreSQLClient::open(
+            &ClientConfig::new("127.0.0.1", listener.endpoint().port(), "postgres", "smoke").with_password("wrong"),
+        );
+        let error = match rejected {
+            Ok(mut client) => {
+                let error = client.execute("SELECT 1").unwrap_err();
+                client.close();
+                error
+            }
+            Err(error) => error,
+        };
+        let text = format!("{error}");
+        let source = error.source().map(|source| format!("{source}"));
+        assert!(
+            text.contains("28P01") || source.as_deref().is_some_and(|source| source.contains("28P01")),
+            "{label} must reject a wrong password with 28P01, got {text} / {source:?}"
+        );
+        listener.close();
+    }
+    engine.close().unwrap();
+}
+
+#[test]
 fn listen_answers_protocol_v3_clients() {
     let dir = TempDir::new("listen");
     let engine = PostgreSQL::open(dir.options("smoke")).unwrap();

@@ -10,6 +10,7 @@ publish = false
 
 [dependencies]
 base64 = { workspace = true }
+boost-random = { workspace = true }
 database-cluster = { workspace = true }
 database-execution = { workspace = true }
 database-formats = { workspace = true }
