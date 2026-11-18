@@ -33,9 +33,40 @@ pub enum PgAuthentication {
         /// Expected password.
         password: String,
     },
+    /// Password exchange verified against the role's stored verifier in the
+    /// cluster object catalog, so `CREATE ROLE ... PASSWORD` owns the credential
+    /// instead of the listener configuration.
+    RolePassword(PgPasswordMethod),
+}
+
+/// Wire method a role-password listener offers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PgPasswordMethod {
+    /// `AuthenticationCleartextPassword` (`R` code 3).
+    Cleartext,
+    /// `AuthenticationMD5Password` (`R` code 5).
+    Md5,
+    /// `AuthenticationSASL` with SCRAM-SHA-256 (`R` codes 10/11/12).
+    ScramSha256,
+}
+
+impl PgPasswordMethod {
+    /// Method name reported by diagnostics.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Cleartext => "password",
+            Self::Md5 => "md5",
+            Self::ScramSha256 => "scram-sha-256",
+        }
+    }
 }
 
 impl PgAuthentication {
+    /// A listener that verifies logins against the role catalog.
+    pub fn role_password(method: PgPasswordMethod) -> Self {
+        Self::RolePassword(method)
+    }
+
     /// The loopback-only default every existing listener keeps.
     pub fn trust() -> Self {
         Self::Trust
@@ -44,7 +75,7 @@ impl PgAuthentication {
     /// Configured role, when the method authenticates one.
     pub fn user(&self) -> Option<&str> {
         match self {
-            Self::Trust => None,
+            Self::Trust | Self::RolePassword(_) => None,
             Self::Password { user, .. } | Self::Md5 { user, .. } | Self::ScramSha256 { user, .. } => Some(user),
         }
     }
@@ -52,7 +83,7 @@ impl PgAuthentication {
     /// Configured password, when the method verifies one.
     pub fn password(&self) -> Option<&str> {
         match self {
-            Self::Trust => None,
+            Self::Trust | Self::RolePassword(_) => None,
             Self::Password { password, .. } | Self::Md5 { password, .. } | Self::ScramSha256 { password, .. } => Some(password),
         }
     }
@@ -64,6 +95,7 @@ impl PgAuthentication {
             Self::Password { .. } => "password",
             Self::Md5 { .. } => "md5",
             Self::ScramSha256 { .. } => "scram-sha-256",
+            Self::RolePassword(method) => method.label(),
         }
     }
 

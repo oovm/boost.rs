@@ -954,6 +954,7 @@ dependencies = [
  "database-types",
  "schema-types",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -1025,9 +1026,11 @@ dependencies = [
 name = "database-protocol-pgsql"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "database-types",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
 ]
 
 [[package]]
@@ -1079,6 +1082,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "boost-fs",
+ "boost-random",
  "database-client",
  "database-cluster",
  "database-execution",
@@ -1093,6 +1097,7 @@ dependencies = [
  "database-storage",
  "database-types",
  "database-udf",
+ "rustls",
  "serde",
  "serde_json",
  "sha1 0.11.0",
@@ -1103,13 +1108,16 @@ dependencies = [
 name = "database-storage"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "blake3",
+ "boost-random",
  "database-cluster",
  "database-formats",
  "database-protocol-mongo",
  "database-protocol-pgsql",
  "database-types",
  "libc",
+ "serde",
  "serde_json",
  "sha2 0.11.1",
  "windows-sys 0.61.2",

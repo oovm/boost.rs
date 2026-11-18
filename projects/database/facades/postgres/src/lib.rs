@@ -59,6 +59,9 @@ pub use database_query::{SqlColumn, SqlValue};
 /// Authentication a listener requires before statements run.
 pub use database_server::yyds::pgsql::PgAuthentication as Authentication;
 
+/// Password method a role-password listener offers.
+pub use database_server::yyds::pgsql::PgPasswordMethod as PasswordMethod;
+
 /// Server TLS certificate and key a listener offers on `SSLRequest`.
 pub use database_server::yyds::pgsql::PgTls as Tls;
 

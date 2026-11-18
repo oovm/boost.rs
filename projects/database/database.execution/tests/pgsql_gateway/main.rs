@@ -178,7 +178,6 @@ fn object_statement_errors_report_their_sqlstates() {
     // Unsupported clauses name their reason instead of being silently accepted.
     for statement in [
         "CREATE DATABASE other TEMPLATE template0",
-        "CREATE ROLE app PASSWORD 'x'",
         "CREATE SEQUENCE s",
         "GRANT ALL TABLES IN SCHEMA public TO reader",
     ] {
@@ -188,6 +187,28 @@ fn object_statement_errors_report_their_sqlstates() {
         };
         assert_eq!(code, "0A000", "unexpected message for `{statement}`: {message}");
     }
+}
+
+#[test]
+fn role_passwords_are_cataloged_as_verifiers() {
+    let mut gateway = Gateway::new("role-password");
+    assert_eq!(gateway.command("CREATE ROLE app WITH LOGIN PASSWORD 'r0le'"), "CREATE ROLE");
+    let role = gateway.runtime.objects.role("app").expect("role is cataloged");
+    let password = role.password.clone().expect("the role keeps a verifier");
+    assert!(password.verifies_cleartext("r0le", "app"));
+    assert!(!password.verifies_cleartext("wrong", "app"));
+    assert!(!serde_json::to_string(&role).unwrap().contains("r0le"), "the document must not carry the plaintext");
+
+    // A role created without `PASSWORD` never authenticates.
+    gateway.command("CREATE ROLE quiet");
+    assert!(gateway.runtime.objects.role("quiet").expect("role is cataloged").password.is_none());
+
+    // `PASSWORD` outside a literal is a syntax error, not a silent ignore.
+    let (code, message) = match gateway.sql("CREATE ROLE broken PASSWORD hidden") {
+        Ok(_) => panic!("an unquoted password must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42601", "unexpected message: {message}");
 }
 
 #[test]

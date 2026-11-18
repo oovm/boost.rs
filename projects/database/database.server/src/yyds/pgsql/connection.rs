@@ -152,7 +152,9 @@ fn serve_session_with_tls(
     session.set_database(parameters.database().to_string());
     session.set_user(parameters.user().to_string());
 
-    if let Some(failure) = authenticate(&mut stream, &mut pending, &parameters, auth.as_deref())? {
+    if let Some(failure) =
+        authenticate(&mut stream, &mut pending, &parameters, auth.as_deref(), runtime.as_ref().map(|runtime| runtime.objects.as_ref()))?
+    {
         write_fatal(&mut stream, failure.sqlstate, &failure.message)?;
         return Ok(());
     }
@@ -1855,6 +1857,7 @@ fn authenticate(
     pending: &mut Vec<u8>,
     parameters: &StartupParameters,
     auth: Option<&PgAuthentication>,
+    objects: Option<&database_storage::pgsql::PgObjectCatalog>,
 ) -> io::Result<Option<AuthFailure>> {
     let Some(auth) = auth
     else {
@@ -1890,64 +1893,134 @@ fn authenticate(
             Ok((!accepted).then(|| AuthFailure::password(user)))
         }
         PgAuthentication::ScramSha256 { password, .. } => {
-            // `AuthenticationSASL` lists the offered mechanisms.
-            let mut mechanisms = Vec::new();
-            mechanisms.extend_from_slice(b"SCRAM-SHA-256\0\0");
-            write_auth_request(stream, 10, &mechanisms)?;
-            let Some(initial) = read_message(stream, pending)?
-            else {
-                return Ok(Some(AuthFailure::protocol("client disconnected before the SASL initial response")));
-            };
-            let mut cursor = 0;
-            let Some(mechanism) = take_cstring(&initial.payload, &mut cursor)
-            else {
-                return Ok(Some(AuthFailure::protocol("malformed SASL initial response")));
-            };
-            if mechanism != "SCRAM-SHA-256" {
-                return Ok(Some(AuthFailure::unsupported(format!(
-                    "the gateway only offers SCRAM-SHA-256, the client selected `{mechanism}`"
-                ))));
-            }
-            let Some(length) = take_i32(&initial.payload, &mut cursor)
-            else {
-                return Ok(Some(AuthFailure::protocol("malformed SASL initial response")));
-            };
-            if length < 0 {
-                return Ok(Some(AuthFailure::protocol("SASL initial response carries no client-first message")));
-            }
-            let Some(client_first) = take_bytes(&initial.payload, &mut cursor, length as usize) else {
-                return Ok(Some(AuthFailure::protocol("truncated SASL initial response")));
-            };
-            let Ok(client_first) = std::str::from_utf8(client_first)
-            else {
-                return Ok(Some(AuthFailure::protocol("SASL client-first is not valid UTF-8")));
-            };
-            let mut salt = [0u8; 16];
-            fill_random(&mut salt)?;
             let mut suffix = [0u8; 18];
             fill_random(&mut suffix)?;
-            let mut server = ScramServer::new(password.clone(), salt.to_vec(), 4096, base64_encode(&suffix));
-            let Ok(server_first) = server.begin(client_first)
+            let salt = scram_salt()?;
+            let mut server = ScramServer::new(password.clone(), salt, 4096, base64_encode(&suffix));
+            run_scram_exchange(stream, pending, &mut server, user)
+        }
+        PgAuthentication::RolePassword(method) => {
+            // The credential lives in the cluster catalog: a role without a
+            // stored verifier, or a role the catalog does not know, fails exactly
+            // like a wrong password.
+            let Some(objects) = objects
             else {
-                return Ok(Some(AuthFailure::protocol("malformed SCRAM client-first message")));
+                return Ok(Some(AuthFailure::unsupported("role password authentication requires the cluster object catalog")));
             };
-            write_auth_request(stream, 11, server_first.as_bytes())?;
-            let Some(response) = read_message(stream, pending)?
+            let Some(stored) = objects.role(user).and_then(|role| role.password)
             else {
-                return Ok(Some(AuthFailure::protocol("client disconnected before the SASL response")));
+                return Ok(Some(AuthFailure::password(user)));
             };
-            let Ok(client_final) = std::str::from_utf8(&response.payload)
-            else {
-                return Ok(Some(AuthFailure::protocol("SASL client-final is not valid UTF-8")));
-            };
-            match server.finish(client_final) {
-                Ok(server_final) => {
-                    write_auth_request(stream, 12, server_final.as_bytes())?;
-                    Ok(None)
+            match method {
+                super::auth::PgPasswordMethod::Cleartext => {
+                    write_auth_request(stream, 3, &[])?;
+                    let Some(message) = read_message(stream, pending)?
+                    else {
+                        return Ok(Some(AuthFailure::protocol("client disconnected during password authentication")));
+                    };
+                    let submitted = cstring(&message.payload);
+                    let accepted = submitted.is_some_and(|submitted| {
+                        let derived = database_protocol_pgsql::auth::md5_hex(format!("{submitted}{user}").as_bytes());
+                        constant_time_eq(derived.as_bytes(), stored.md5.as_bytes())
+                    });
+                    Ok((!accepted).then(|| AuthFailure::password(user)))
                 }
-                Err(_) => Ok(Some(AuthFailure::password(user))),
+                super::auth::PgPasswordMethod::Md5 => {
+                    let mut salt = [0u8; 4];
+                    fill_random(&mut salt)?;
+                    write_auth_request(stream, 5, &salt)?;
+                    let Some(message) = read_message(stream, pending)?
+                    else {
+                        return Ok(Some(AuthFailure::protocol("client disconnected during MD5 authentication")));
+                    };
+                    let submitted = cstring(&message.payload);
+                    let expected = stored.md5_response(&salt);
+                    let accepted = submitted.is_some_and(|submitted| constant_time_eq(submitted.as_bytes(), expected.as_bytes()));
+                    Ok((!accepted).then(|| AuthFailure::password(user)))
+                }
+                super::auth::PgPasswordMethod::ScramSha256 => {
+                    let Some((verifier, salt)) = stored.scram()
+                    else {
+                        return Ok(Some(AuthFailure::unsupported(format!(
+                            "the stored verifier of role \"{user}\" is malformed"
+                        ))));
+                    };
+                    let mut suffix = [0u8; 18];
+                    fill_random(&mut suffix)?;
+                    let mut server = ScramServer::from_verifier(verifier, salt, stored.scram.iterations, base64_encode(&suffix));
+                    run_scram_exchange(stream, pending, &mut server, user)
+                }
             }
         }
+    }
+}
+
+/// Server salt for a SCRAM exchange derived from the configured password.
+fn scram_salt() -> io::Result<Vec<u8>> {
+    let mut salt = [0u8; 16];
+    fill_random(&mut salt)?;
+    Ok(salt.to_vec())
+}
+
+/// Runs one SCRAM exchange: mechanism selection, challenge, and verification.
+fn run_scram_exchange(
+    stream: &mut (impl Read + Write),
+    pending: &mut Vec<u8>,
+    server: &mut ScramServer,
+    user: &str,
+) -> io::Result<Option<AuthFailure>> {
+    // `AuthenticationSASL` lists the offered mechanisms.
+    let mut mechanisms = Vec::new();
+    mechanisms.extend_from_slice(b"SCRAM-SHA-256\0\0");
+    write_auth_request(stream, 10, &mechanisms)?;
+    let Some(initial) = read_message(stream, pending)?
+    else {
+        return Ok(Some(AuthFailure::protocol("client disconnected before the SASL initial response")));
+    };
+    let mut cursor = 0;
+    let Some(mechanism) = take_cstring(&initial.payload, &mut cursor)
+    else {
+        return Ok(Some(AuthFailure::protocol("malformed SASL initial response")));
+    };
+    if mechanism != "SCRAM-SHA-256" {
+        return Ok(Some(AuthFailure::unsupported(format!(
+            "the gateway only offers SCRAM-SHA-256, the client selected `{mechanism}`"
+        ))));
+    }
+    let Some(length) = take_i32(&initial.payload, &mut cursor)
+    else {
+        return Ok(Some(AuthFailure::protocol("malformed SASL initial response")));
+    };
+    if length < 0 {
+        return Ok(Some(AuthFailure::protocol("SASL initial response carries no client-first message")));
+    }
+    let Some(client_first) = take_bytes(&initial.payload, &mut cursor, length as usize)
+    else {
+        return Ok(Some(AuthFailure::protocol("truncated SASL initial response")));
+    };
+    let Ok(client_first) = std::str::from_utf8(client_first)
+    else {
+        return Ok(Some(AuthFailure::protocol("SASL client-first is not valid UTF-8")));
+    };
+    let Ok(server_first) = server.begin(client_first)
+    else {
+        return Ok(Some(AuthFailure::protocol("malformed SCRAM client-first message")));
+    };
+    write_auth_request(stream, 11, server_first.as_bytes())?;
+    let Some(response) = read_message(stream, pending)?
+    else {
+        return Ok(Some(AuthFailure::protocol("client disconnected before the SASL response")));
+    };
+    let Ok(client_final) = std::str::from_utf8(&response.payload)
+    else {
+        return Ok(Some(AuthFailure::protocol("SASL client-final is not valid UTF-8")));
+    };
+    match server.finish(client_final) {
+        Ok(server_final) => {
+            write_auth_request(stream, 12, server_final.as_bytes())?;
+            Ok(None)
+        }
+        Err(_) => Ok(Some(AuthFailure::password(user))),
     }
 }
 

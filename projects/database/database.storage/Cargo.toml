@@ -9,7 +9,9 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+base64 = { workspace = true }
 blake3 = { workspace = true }
+boost-random = { workspace = true, features = ["system"] }
 database-cluster = { workspace = true }
 database-formats = { workspace = true }
 database-protocol-mongo = { workspace = true }

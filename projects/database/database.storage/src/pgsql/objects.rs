@@ -70,6 +70,86 @@ pub struct PgRole {
     pub createdb: bool,
     /// Whether the role may log in.
     pub login: bool,
+    /// Stored password verifier, present when the role was created with a
+    /// `PASSWORD`. A role without one cannot authenticate against this catalog.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<PgPassword>,
+}
+
+/// Password verifier a role persists instead of its plaintext.
+///
+/// Both forms are derived once, when the password is set: the MD5 hash keeps
+/// cleartext and MD5 logins working exactly like the listener's configured
+/// secret, and the SCRAM verifier keeps `scram-sha-256` logins working without
+/// the gateway ever reading the password back.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PgPassword {
+    /// `md5(password || role_name)` as lowercase hex.
+    pub md5: String,
+    /// SCRAM-SHA-256 verifier.
+    pub scram: PgScramVerifier,
+}
+
+/// SCRAM-SHA-256 verifier parameters, all base64 except the iteration count.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PgScramVerifier {
+    /// Salt handed to the client in `server-first`.
+    pub salt: String,
+    /// PBKDF2 iteration count.
+    pub iterations: u32,
+    /// Base64 `StoredKey`.
+    pub stored_key: String,
+    /// Base64 `ServerKey`.
+    pub server_key: String,
+}
+
+impl PgPassword {
+    /// Derives both verifiers from one plaintext password.
+    ///
+    /// The SCRAM salt comes from the host random source, so two roles that pick
+    /// the same password still carry different verifiers.
+    pub fn derive(password: &str, role: &str) -> Result<Self, ObjectError> {
+        use base64::{Engine as _, engine::general_purpose::STANDARD};
+        use database_protocol_pgsql::auth::{ScramVerifier, md5_hex, verifier_for};
+
+        let mut salt = [0u8; 16];
+        boost_random::Secure::system().fill(&mut salt).map_err(|error| ObjectError::Persistence(format!("cannot salt a role password: {error}")))?;
+        // PostgreSQL's default iteration count for `password_encryption = scram-sha-256`.
+        const ITERATIONS: u32 = 4096;
+        let ScramVerifier { stored_key, server_key } = verifier_for(password.as_bytes(), &salt, ITERATIONS);
+        Ok(Self {
+            md5: md5_hex(format!("{password}{role}").as_bytes()),
+            scram: PgScramVerifier {
+                salt: STANDARD.encode(salt),
+                iterations: ITERATIONS,
+                stored_key: STANDARD.encode(stored_key),
+                server_key: STANDARD.encode(server_key),
+            },
+        })
+    }
+
+    /// Whether a cleartext login submitted `password` for `role`.
+    pub fn verifies_cleartext(&self, password: &str, role: &str) -> bool {
+        database_protocol_pgsql::auth::md5_hex(format!("{password}{role}").as_bytes()) == self.md5
+    }
+
+    /// `md5(md5(password || role) || salt)` response an MD5 login must submit.
+    pub fn md5_response(&self, salt: &[u8]) -> String {
+        let mut material = self.md5.clone().into_bytes();
+        material.extend_from_slice(salt);
+        format!("md5{}", database_protocol_pgsql::auth::md5_hex(&material))
+    }
+
+    /// Decoded SCRAM parameters, or `None` when the stored document is corrupt.
+    pub fn scram(&self) -> Option<(database_protocol_pgsql::auth::ScramVerifier, Vec<u8>)> {
+        use base64::{Engine as _, engine::general_purpose::STANDARD};
+        let salt = STANDARD.decode(&self.scram.salt).ok()?;
+        let stored_key: [u8; 32] = STANDARD.decode(&self.scram.stored_key).ok()?.try_into().ok()?;
+        let server_key: [u8; 32] = STANDARD.decode(&self.scram.server_key).ok()?.try_into().ok()?;
+        Some((database_protocol_pgsql::auth::ScramVerifier { stored_key, server_key }, salt))
+    }
 }
 
 /// One table privilege granted to a role.
@@ -140,7 +220,13 @@ impl ObjectDocument {
             revision: 1,
             // The bootstrap database and role every gateway starts from.
             databases: vec!["postgres".to_string()],
-            roles: vec![PgRole { name: "postgres".to_string(), superuser: true, createdb: true, login: true }],
+            roles: vec![PgRole {
+                name: "postgres".to_string(),
+                superuser: true,
+                createdb: true,
+                login: true,
+                password: None,
+            }],
             grants: Vec::new(),
         }
     }
@@ -367,7 +453,7 @@ mod tests {
             assert!(!catalog.create_database("app", true).unwrap());
             assert_eq!(catalog.create_database("app", false).unwrap_err().sqlstate(), "42P04");
             catalog
-                .create_role(PgRole { name: "reader".into(), superuser: false, createdb: false, login: true }, false)
+                .create_role(PgRole { name: "reader".into(), superuser: false, createdb: false, login: true, password: None }, false)
                 .unwrap();
             catalog.grant("reader", "orders", &[PgPrivilege::Select], |table| table == "orders").unwrap();
             assert!(catalog.has_privilege("reader", "orders", PgPrivilege::Select));
@@ -381,10 +467,34 @@ mod tests {
     }
 
     #[test]
+    fn a_role_password_is_stored_as_a_verifier_and_survives_a_reopen() {
+        let path = std::env::temp_dir().join(format!("pg-role-password-{}.json", std::process::id()));
+        let _ = fs::remove_file(&path);
+        {
+            let catalog = PgObjectCatalog::open(&path).unwrap();
+            let password = PgPassword::derive("r0le", "app").unwrap();
+            assert!(password.verifies_cleartext("r0le", "app"));
+            assert!(!password.verifies_cleartext("wrong", "app"));
+            let (verifier, salt) = password.scram().expect("verifier decodes");
+            assert_eq!(salt.len(), 16);
+            assert_eq!(verifier.stored_key.len(), 32);
+            catalog
+                .create_role(PgRole { name: "app".into(), superuser: false, createdb: false, login: true, password: Some(password) }, false)
+                .unwrap();
+        }
+        let reopened = PgObjectCatalog::open(&path).unwrap();
+        let password = reopened.role("app").and_then(|role| role.password).expect("the verifier survived the reopen");
+        assert!(password.verifies_cleartext("r0le", "app"));
+        let source = fs::read_to_string(&path).unwrap();
+        assert!(!source.contains("r0le"), "the document must never hold the plaintext");
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
     fn grant_errors_carry_their_sqlstates() {
         let catalog = PgObjectCatalog::new_in_memory();
         assert_eq!(catalog.grant("ghost", "orders", &[PgPrivilege::Select], |_| true).unwrap_err().sqlstate(), "42704");
-        catalog.create_role(PgRole { name: "reader".into(), superuser: false, createdb: false, login: true }, false).unwrap();
+        catalog.create_role(PgRole { name: "reader".into(), superuser: false, createdb: false, login: true, password: None }, false).unwrap();
         assert_eq!(catalog.grant("reader", "missing", &[PgPrivilege::Select], |_| false).unwrap_err().sqlstate(), "42P01");
         assert!(catalog.has_privilege("unknown-role", "missing", PgPrivilege::Delete));
         assert!(catalog.is_superuser("postgres"));

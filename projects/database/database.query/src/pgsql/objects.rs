@@ -23,6 +23,10 @@ pub enum PgObjectStatement {
     CreateRole {
         /// Role definition.
         role: PgRole,
+        /// Plaintext password the statement set, `None` when it named none.
+        /// Execution derives the stored verifier, so the password never leaves
+        /// this one call.
+        password: Option<String>,
         /// Whether `IF NOT EXISTS` was written.
         if_not_exists: bool,
     },
@@ -98,11 +102,13 @@ fn parse_create_role(tail: &str, login_default: bool) -> Result<PgObjectStatemen
     let (mut rest, if_not_exists) = if_not_exists(tail);
     let (name, remaining) = take_identifier(rest)?;
     rest = remaining.trim_start();
-    let mut role = PgRole { name, superuser: false, createdb: false, login: login_default };
+    let mut role = PgRole { name, superuser: false, createdb: false, login: login_default, password: None };
+    let mut password = None;
     if let Some(after) = strip_keyword(rest, "WITH") {
         rest = after.trim_start();
     }
     while !rest.trim().is_empty() {
+        rest = rest.trim_start();
         let Some(word) = first_word(rest)
         else {
             return Err(syntax("unexpected token in `CREATE ROLE`"));
@@ -117,9 +123,10 @@ fn parse_create_role(tail: &str, login_default: bool) -> Result<PgObjectStatemen
             "NOCREATEDB" => role.createdb = false,
             "INHERIT" | "NOINHERIT" | "REPLICATION" | "NOREPLICATION" | "BYPASSRLS" | "NOBYPASSRLS" => {}
             "PASSWORD" => {
-                return Err(unsupported(
-                    "`CREATE ROLE ... PASSWORD` is not supported: listener authentication carries the credential, a catalog password would never be checked",
-                ));
+                let (value, remaining) = take_password(after)?;
+                password = value;
+                rest = remaining;
+                continue;
             }
             other => {
                 return Err(unsupported(format!(
@@ -129,7 +136,35 @@ fn parse_create_role(tail: &str, login_default: bool) -> Result<PgObjectStatemen
         }
         rest = after;
     }
-    Ok(PgObjectStatement::CreateRole { role, if_not_exists })
+    Ok(PgObjectStatement::CreateRole { role, password, if_not_exists })
+}
+
+/// Reads the value of a `PASSWORD` clause: a string literal or `NULL`.
+fn take_password(source: &str) -> Result<(Option<String>, &str), SqlFrontendError> {
+    let trimmed = source.trim_start();
+    if let Some(rest) = strip_keyword(trimmed, "NULL") {
+        return Ok((None, rest));
+    }
+    let Some(inner) = trimmed.strip_prefix('\'')
+    else {
+        return Err(syntax("`CREATE ROLE ... PASSWORD` requires a string literal or `NULL`"));
+    };
+    let mut value = String::with_capacity(inner.len());
+    let mut characters = inner.char_indices();
+    while let Some((index, character)) = characters.next() {
+        if character != '\'' {
+            value.push(character);
+            continue;
+        }
+        // `''` is an escaped quote; a single one closes the literal.
+        if inner[index + 1..].starts_with('\'') {
+            value.push('\'');
+            characters.next();
+            continue;
+        }
+        return Ok((Some(value), &inner[index + 1..]));
+    }
+    Err(syntax("unterminated `PASSWORD` literal"))
 }
 
 fn parse_grant(tail: &str, granting: bool) -> Result<PgObjectStatement, SqlFrontendError> {
@@ -318,14 +353,32 @@ mod tests {
         assert_eq!(
             parse_pg_object_statement("CREATE ROLE reader WITH LOGIN").unwrap(),
             Some(PgObjectStatement::CreateRole {
-                role: PgRole { name: "reader".to_owned(), superuser: false, createdb: false, login: true },
+                role: PgRole { name: "reader".to_owned(), superuser: false, createdb: false, login: true, password: None },
+                password: None,
                 if_not_exists: false,
             })
         );
         assert_eq!(
             parse_pg_object_statement("CREATE USER app_user SUPERUSER").unwrap(),
             Some(PgObjectStatement::CreateRole {
-                role: PgRole { name: "app_user".to_owned(), superuser: true, createdb: false, login: true },
+                role: PgRole { name: "app_user".to_owned(), superuser: true, createdb: false, login: true, password: None },
+                password: None,
+                if_not_exists: false,
+            })
+        );
+        assert_eq!(
+            parse_pg_object_statement("CREATE ROLE app PASSWORD 'it''s' NOLOGIN").unwrap(),
+            Some(PgObjectStatement::CreateRole {
+                role: PgRole { name: "app".to_owned(), superuser: false, createdb: false, login: false, password: None },
+                password: Some("it's".to_owned()),
+                if_not_exists: false,
+            })
+        );
+        assert_eq!(
+            parse_pg_object_statement("CREATE ROLE blank PASSWORD NULL").unwrap(),
+            Some(PgObjectStatement::CreateRole {
+                role: PgRole { name: "blank".to_owned(), superuser: false, createdb: false, login: false, password: None },
+                password: None,
                 if_not_exists: false,
             })
         );
@@ -359,13 +412,17 @@ mod tests {
     fn unsupported_clauses_are_rejected_with_a_reason() {
         for statement in [
             "CREATE DATABASE app TEMPLATE template0",
-            "CREATE ROLE app PASSWORD 'x'",
             "GRANT ALL TABLES IN SCHEMA public TO app",
             "GRANT reader TO app",
             "GRANT TRUNCATE ON orders TO app",
             "CREATE SEQUENCE s",
         ] {
             assert_eq!(parse_pg_object_statement(statement).unwrap_err().kind, SqlErrorKind::Unsupported, "{statement}");
+        }
+        // A password that is not a literal, or a literal that never closes, is a
+        // syntax error instead of an unsupported clause.
+        for statement in ["CREATE ROLE app PASSWORD hidden", "CREATE ROLE app PASSWORD 'unterminated"] {
+            assert_eq!(parse_pg_object_statement(statement).unwrap_err().kind, SqlErrorKind::Syntax, "{statement}");
         }
         assert_eq!(parse_pg_object_statement("SELECT 1").unwrap(), None);
     }

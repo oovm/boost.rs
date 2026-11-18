@@ -116,13 +116,32 @@ pub fn scram_escape(value: &str) -> String {
     value.replace('=', "=3D").replace(',', "=2C")
 }
 
+/// A SCRAM-SHA-256 verifier: the two keys a server keeps instead of the
+/// password. A catalog that persists a verifier can authenticate later without
+/// ever storing the plaintext.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScramVerifier {
+    /// `StoredKey = SHA-256(ClientKey)`.
+    pub stored_key: [u8; 32],
+    /// `ServerKey = HMAC(SaltedPassword, "Server Key")`.
+    pub server_key: [u8; 32],
+}
+
+/// What one server exchange verifies against.
+enum ScramSecret {
+    /// A password the server still holds, e.g. a listener's configured secret.
+    Password(String),
+    /// A verifier a catalog persisted earlier.
+    Verifier(ScramVerifier),
+}
+
 /// Server side of one SCRAM-SHA-256 exchange.
 ///
 /// The salt and nonce suffix are supplied by the caller so the exchange is
 /// reproducible in tests; production callers generate them from the host
 /// random source.
 pub struct ScramServer {
-    password: String,
+    secret: ScramSecret,
     salt: Vec<u8>,
     iterations: u32,
     nonce_suffix: String,
@@ -133,7 +152,40 @@ pub struct ScramServer {
 impl ScramServer {
     /// Builds a verifier for one password and challenge.
     pub fn new(password: impl Into<String>, salt: Vec<u8>, iterations: u32, nonce_suffix: impl Into<String>) -> Self {
-        Self { password: password.into(), salt, iterations, nonce_suffix: nonce_suffix.into(), client_first_bare: None, server_first: None }
+        Self {
+            secret: ScramSecret::Password(password.into()),
+            salt,
+            iterations,
+            nonce_suffix: nonce_suffix.into(),
+            client_first_bare: None,
+            server_first: None,
+        }
+    }
+
+    /// Builds an exchange that verifies against a stored verifier instead of a
+    /// plaintext password.
+    pub fn from_verifier(
+        verifier: ScramVerifier,
+        salt: Vec<u8>,
+        iterations: u32,
+        nonce_suffix: impl Into<String>,
+    ) -> Self {
+        Self {
+            secret: ScramSecret::Verifier(verifier),
+            salt,
+            iterations,
+            nonce_suffix: nonce_suffix.into(),
+            client_first_bare: None,
+            server_first: None,
+        }
+    }
+
+    /// `(StoredKey, ServerKey)` this exchange verifies against.
+    fn keys(&self) -> ScramVerifier {
+        match &self.secret {
+            ScramSecret::Password(password) => verifier_for(password.as_bytes(), &self.salt, self.iterations),
+            ScramSecret::Verifier(verifier) => *verifier,
+        }
     }
 
     /// Parses the client-first message and returns the server-first challenge.
@@ -178,19 +230,25 @@ impl ScramServer {
         if decoded.len() != 32 {
             return Err(ScramError::AuthenticationFailed);
         }
-        let salted = pbkdf2_sha256(self.password.as_bytes(), &self.salt, self.iterations);
-        let client_key = hmac_sha256(&salted, b"Client Key");
-        let stored_key: [u8; 32] = Sha256::digest(client_key).into();
+        let ScramVerifier { stored_key, server_key } = self.keys();
         let auth_message = format!("{client_first_bare},{server_first},{without_proof}");
         let client_signature = hmac_sha256(&stored_key, auth_message.as_bytes());
         let recovered: [u8; 32] = proof_material(&decoded, &client_signature);
         if <[u8; 32]>::from(Sha256::digest(recovered)) != stored_key {
             return Err(ScramError::AuthenticationFailed);
         }
-        let server_key = hmac_sha256(&salted, b"Server Key");
         let signature = hmac_sha256(&server_key, auth_message.as_bytes());
         Ok(format!("v={}", STANDARD.encode(signature)))
     }
+}
+
+/// Derives the `(StoredKey, ServerKey)` pair a verifier persists.
+pub fn verifier_for(password: &[u8], salt: &[u8], iterations: u32) -> ScramVerifier {
+    let salted = pbkdf2_sha256(password, salt, iterations);
+    let client_key = hmac_sha256(&salted, b"Client Key");
+    let stored_key: [u8; 32] = Sha256::digest(client_key).into();
+    let server_key = hmac_sha256(&salted, b"Server Key");
+    ScramVerifier { stored_key, server_key }
 }
 
 /// XORs the client proof with the expected client signature to recover the
@@ -256,6 +314,31 @@ mod tests {
         server.begin("n,,n=user,r=rOprNGfwEbeRWgbNEkqO").expect("begin");
         assert_eq!(
             server.finish("c=biws,r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,p=dHzbZapWIk4jUhN+Ute9ytag9zjfMHgsqmmiz7AndVQ="),
+            Err(ScramError::AuthenticationFailed)
+        );
+    }
+
+    #[test]
+    fn a_stored_verifier_accepts_the_same_exchange_as_the_password() {
+        let salt = STANDARD.decode("W22ZaJ0SNY7soEsUEjb6gQ==").unwrap();
+        let verifier = verifier_for(b"pencil", &salt, 4096);
+        let mut server = ScramServer::from_verifier(verifier, salt.clone(), 4096, "%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0");
+        assert_eq!(
+            server.begin("n,,n=user,r=rOprNGfwEbeRWgbNEkqO").expect("begin"),
+            "r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096"
+        );
+        assert_eq!(
+            server
+                .finish("c=biws,r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,p=dHzbZapWIk4jUhN+Ute9ytag9zjfMHgsqmmiz7AndVQ=")
+                .expect("finish"),
+            "v=6rriTRBi23WpRR/wtup+mMhUZUn/dB5nLTJRsjl95G4="
+        );
+
+        let other = verifier_for(b"wrong", &salt, 4096);
+        let mut rejected = ScramServer::from_verifier(other, salt, 4096, "%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0");
+        rejected.begin("n,,n=user,r=rOprNGfwEbeRWgbNEkqO").expect("begin");
+        assert_eq!(
+            rejected.finish("c=biws,r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,p=dHzbZapWIk4jUhN+Ute9ytag9zjfMHgsqmmiz7AndVQ="),
             Err(ScramError::AuthenticationFailed)
         );
     }

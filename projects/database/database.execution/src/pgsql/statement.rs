@@ -332,7 +332,15 @@ fn apply_object_statement(
             objects.create_database(&name, if_not_exists).map_err(|error| failure(session, error))?;
             Ok(StatementOutcome::Command("CREATE DATABASE"))
         }
-        PgObjectStatement::CreateRole { role, if_not_exists } => {
+        PgObjectStatement::CreateRole { role, password, if_not_exists } => {
+            let role = match password {
+                Some(password) => {
+                    let password = database_storage::pgsql::PgPassword::derive(&password, &role.name)
+                        .map_err(|error| failure(session, error))?;
+                    database_storage::pgsql::PgRole { password: Some(password), ..role }
+                }
+                None => role,
+            };
             objects.create_role(role, if_not_exists).map_err(|error| failure(session, error))?;
             Ok(StatementOutcome::Command("CREATE ROLE"))
         }

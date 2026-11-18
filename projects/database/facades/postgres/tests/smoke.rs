@@ -241,6 +241,69 @@ fn listeners_require_the_configured_password_authentication() {
 }
 
 #[test]
+fn listeners_verify_the_password_a_role_stores() {
+    use std::error::Error as _;
+
+    let dir = TempDir::new("role-auth");
+    let engine = PostgreSQL::open(dir.options("smoke")).unwrap();
+    engine.execute("CREATE TABLE secret (id BIGINT PRIMARY KEY, name TEXT)").unwrap();
+    engine.execute("INSERT INTO secret (id, name) VALUES (1, 'guarded')").unwrap();
+    engine.execute("CREATE ROLE app WITH LOGIN PASSWORD 'r0le'").unwrap();
+    engine.execute("GRANT SELECT ON secret TO app").unwrap();
+
+    let endpoint = "127.0.0.1:0".parse::<SocketAddr>().unwrap();
+    for method in [postgres::PasswordMethod::Cleartext, postgres::PasswordMethod::Md5, postgres::PasswordMethod::ScramSha256] {
+        let listener = engine.listen_with(endpoint, postgres::Authentication::role_password(method)).unwrap();
+        let mut accepted = PostgreSQLClient::open(
+            &ClientConfig::new("127.0.0.1", listener.endpoint().port(), "app", "smoke").with_password("r0le"),
+        )
+        .unwrap_or_else(|error| panic!("{method:?} rejected the catalog password: {error}"));
+        let results = accepted.execute("SELECT name FROM secret WHERE id = 1").unwrap();
+        assert_eq!(results[0].cell(0, 0), Some(Some("guarded")));
+        accepted.close();
+
+        let rejected = PostgreSQLClient::open(
+            &ClientConfig::new("127.0.0.1", listener.endpoint().port(), "app", "smoke").with_password("wrong"),
+        );
+        let error = match rejected {
+            Ok(mut client) => {
+                let error = client.execute("SELECT 1").unwrap_err();
+                client.close();
+                error
+            }
+            Err(error) => error,
+        };
+        let text = format!("{error}");
+        let source = error.source().map(|source| format!("{source}"));
+        assert!(
+            text.contains("28P01") || source.as_deref().is_some_and(|source| source.contains("28P01")),
+            "{method:?} must reject a wrong password with 28P01, got {text} / {source:?}"
+        );
+
+        // A role the catalog knows without a stored password cannot log in.
+        let unknown = PostgreSQLClient::open(
+            &ClientConfig::new("127.0.0.1", listener.endpoint().port(), "postgres", "smoke").with_password(""),
+        );
+        let error = match unknown {
+            Ok(mut client) => {
+                let error = client.execute("SELECT 1").unwrap_err();
+                client.close();
+                error
+            }
+            Err(error) => error,
+        };
+        let text = format!("{error}");
+        let source = error.source().map(|source| format!("{source}"));
+        assert!(
+            text.contains("28P01") || source.as_deref().is_some_and(|source| source.contains("28P01")),
+            "{method:?} must reject a role without a stored password with 28P01, got {text} / {source:?}"
+        );
+        listener.close();
+    }
+    engine.close().unwrap();
+}
+
+#[test]
 fn listen_answers_protocol_v3_clients() {
     let dir = TempDir::new("listen");
     let engine = PostgreSQL::open(dir.options("smoke")).unwrap();

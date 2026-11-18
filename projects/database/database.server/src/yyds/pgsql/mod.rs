@@ -14,7 +14,7 @@ pub mod service;
 pub mod tls;
 pub mod wire;
 
-pub use auth::{AuthFailure, PgAuthentication};
+pub use auth::{AuthFailure, PgAuthentication, PgPasswordMethod};
 pub use tls::{PgTls, TlsError};
 
 /// Gateway kind implemented by this crate.
