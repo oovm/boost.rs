@@ -10,6 +10,9 @@
 //! - [`oplog`]：`local.oplog.rs` 条目形态
 //! - `store`：`.yyds` catalog + `.yykv` shard 后端（`storage` feature）
 //! - `storage`：命令层唯一的存储入口 trait（`storage` feature）
+//! - `authorization`：内置角色表、权限展开与命令授权判定（`storage` feature）
+//! - `replica`：单成员副本集状态、集群时间与 `replSet*` 命令（`storage` feature）
+//! - `write_concern`：`writeConcern` / `$readPreference` 校验与写应答装饰（`storage` feature）
 //! - `import`：`mongodump` 形态 `.bson` 流导入（`storage` feature）
 
 #![deny(missing_docs)]
@@ -21,13 +24,19 @@ pub mod id;
 pub mod oplog;
 
 #[cfg(feature = "storage")]
+pub mod authorization;
+#[cfg(feature = "storage")]
 pub mod commands;
 #[cfg(feature = "storage")]
 pub mod import;
 #[cfg(feature = "storage")]
+pub mod replica;
+#[cfg(feature = "storage")]
 pub mod storage;
 #[cfg(feature = "storage")]
 pub mod store;
+#[cfg(feature = "storage")]
+pub mod write_concern;
 
 #[cfg(feature = "storage")]
 pub use storage::MongoStorage;

@@ -5392,6 +5392,43 @@ fn find_and_modify_validation_failure(info: BsonDocument) -> BsonDocument {
     response
 }
 
+/// `commitTransaction` / `abortTransaction` 的参数校验。
+///
+/// 判定顺序与 `mongod 8.0.9` 的实测一致：先看 `autocommit` 与 `txnNumber` 的
+/// 组合（`InvalidOptions` / `NotARetryableWriteCommand` / `CommandFailed`），最后
+/// 才看命令是否跑在 `admin` 上。校验通过返回 `None`。
+pub fn transaction_command_error(name: &str, command: &BsonDocument) -> Option<CommandError> {
+    let autocommit = command.get("autocommit");
+    let has_txn_number = command.get("txnNumber").is_some();
+    let has_lsid = command.get("lsid").is_some();
+    if matches!(autocommit, Some(BsonValue::Bool(true))) {
+        return Some(CommandError::new(72, "Specifying autocommit=true is not allowed."));
+    }
+    if matches!(autocommit, Some(BsonValue::Bool(false))) && !has_txn_number {
+        return Some(CommandError::new(72, "'autocommit' field requires a transaction number to also be specified"));
+    }
+    if has_txn_number && !has_lsid {
+        return Some(CommandError::new(72, "Transaction number requires a session ID to also be specified"));
+    }
+    if has_txn_number && autocommit.is_none() {
+        return Some(CommandError::new(
+            50768,
+            format!(
+                "txnNumber may only be provided for multi-document transactions and retryable write commands. autocommit:false was not provided, and {name} is not a retryable write command."
+            ),
+        )
+        .with_detail("codeName", BsonValue::String("NotARetryableWriteCommand".to_string())));
+    }
+    if !has_txn_number && autocommit.is_none() {
+        return Some(CommandError::new(125, format!("{name} must be run within a transaction"))
+            .with_detail("codeName", BsonValue::String("CommandFailed".to_string())));
+    }
+    if command.database() != "admin" {
+        return Some(CommandError::new(13, format!("{name} may only be run against the admin database.")));
+    }
+    None
+}
+
 /// `commitTransaction`: applies the session's staged writes, reporting a write
 /// conflict when another transaction changed one of those documents first.
 pub fn commit_transaction(command: &BsonDocument, store: &dyn MongoStorage) -> Result<BsonDocument, CommandError> {
