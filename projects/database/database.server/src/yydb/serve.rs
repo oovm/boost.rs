@@ -1,36 +1,36 @@
-//! Loopback-first binary serve (TCP + WebSocket `/wire`).
+//! Loopback-first binary serve (TCP + WebSocket `/wire`) over a [`ServeBackend`].
 //!
 //! Security gates (Phase 1 — enforced at startup and per-connection):
 //!
 //! 1. Default bind MUST be loopback. Non-loopback bind is rejected *unless*
-//!    an explicit auth bootstrap is configured (`YYDB_AUTH_TOKENS` with
-//!    at least one named principal). `--insecure-bind` alone is never
-//!    sufficient — the flag now accepts that explicit auth config is
-//!    *not* being used, but the flag cannot bypass it on non-loopback.
-//! 2. Max concurrent connections capped at `MAX_CONNECTIONS` (256).
-//! 3. Handshake timeout `HANDSHAKE_TIMEOUT` (5s) — connections that don't
+//!    an explicit auth bootstrap is configured with at least one named
+//!    principal. `--insecure-bind` alone is never sufficient.
+//! 2. Max concurrent connections capped at [`MAX_CONNECTIONS`].
+//! 3. Handshake timeout [`HANDSHAKE_TIMEOUT`] — connections that don't
 //!    complete Hello + Authenticate drop before accepting any other frame.
 //!
 //! Auth model (session registry):
 //!
 //! Every connection is unauthenticated until it sends a valid Authenticate
 //! frame. The server looks up the bearer token in a shared bootstrap
-//! registry (seeded from env), refuses anonymous principals from remote
-//! peers, and creates an in-memory [`Session`] bound to the token with a
-//! 1-hour TTL. Hello is the *only* frame accepted before auth; all
-//! others get a structured auth error. Prepared statements are tracked
-//! per-connection and drop when the connection closes.
+//! registry, refuses anonymous principals from remote peers, and creates an
+//! in-memory [`Session`] bound to the token with a 1-hour TTL. Hello is the
+//! *only* frame accepted before auth; all others get a structured auth error.
+//! Prepared statements are tracked per-connection and drop when the
+//! connection closes. A backend that serves anonymous loopback development
+//! can opt into a pre-authenticated loopback session via
+//! [`ServeOptions::anonymous_loopback`].
 
 use std::{
     io::{Read, Write},
-    net::{TcpListener, TcpStream},
+    net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs},
     path::Path,
     sync::{
         Arc, Condvar, Mutex,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread,
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 use database_execution::engine::Connection;
@@ -39,9 +39,9 @@ use database_types::Error;
 use sha1::{Digest, Sha1};
 
 use super::{
-    auth::{AuthBootstrap, SessionRegistry},
-    dispatch::{SessionState, dispatch, is_authenticated, is_loopback_host},
-    host_wire::TcpWireHostAdapter,
+    auth::{AuthBootstrap, Session, SessionRegistry},
+    dispatch::{SessionState, dispatch, is_loopback_host},
+    session::{BackendFactory, ServeBackend},
 };
 
 const WS_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -90,6 +90,83 @@ pub const MAX_CONNECTIONS: usize = 256;
 /// Handshake timeout — connection must complete Hello + Authenticate before
 /// any further frame is accepted. Connections that miss this window drop.
 pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// 线服务的启动参数。
+pub struct ServeOptions {
+    /// 监听地址。
+    pub bind: SocketAddr,
+    /// 启动时固定的 bootstrap 身份表。
+    pub bootstrap: AuthBootstrap,
+    /// 本机回环连接是否在进入时即为匿名开发会话(嵌入式产品语义)。
+    pub anonymous_loopback: bool,
+    /// 日志与诊断里的产品自述。
+    pub label: &'static str,
+}
+
+/// 运行中的线服务句柄;`stop` 或 drop 之外不占用监听端口以外的资源。
+pub struct WireServe {
+    stopping: Arc<AtomicBool>,
+    address: SocketAddr,
+    join: Option<thread::JoinHandle<()>>,
+}
+
+impl WireServe {
+    /// 绑定地址并启动接受线程。
+    ///
+    /// 非回环绑定要求 bootstrap 里至少有一个具名主体,否则拒绝启动。
+    pub fn start(options: ServeOptions, factory: Arc<dyn BackendFactory>) -> Result<Self, String> {
+        let bind_is_loopback = options.bind.ip().is_loopback();
+        if !bind_is_loopback && options.bootstrap.named_count() == 0 {
+            return Err(Error::AuthConfigMissing {
+                message: format!(
+                    "refusing to bind `{}` without explicit named auth — configure at least one named principal before starting serve",
+                    options.bind
+                ),
+            }
+            .to_string());
+        }
+        let listener = TcpListener::bind(options.bind).map_err(|error| format!("wire bind: {error}"))?;
+        let address = listener.local_addr().map_err(|error| format!("wire local_addr: {error}"))?;
+        let registry = Arc::new(SessionRegistry::new(&options.bootstrap));
+        let stopping = Arc::new(AtomicBool::new(false));
+        let join = thread::Builder::new()
+            .name(format!("{}-wire-accept", options.label))
+            .spawn({
+                let stopping = Arc::clone(&stopping);
+                let label = options.label;
+                move || accept_loop(listener, factory, registry, label, options.anonymous_loopback, stopping)
+            })
+            .map_err(|error| format!("wire spawn: {error}"))?;
+        Ok(Self { stopping, address, join: Some(join) })
+    }
+
+    /// 实际绑定的地址(端口为 0 时由操作系统选择)。
+    pub fn address(&self) -> SocketAddr {
+        self.address
+    }
+
+    /// 接受线程是否已结束。
+    pub fn is_finished(&self) -> bool {
+        self.join.as_ref().is_none_or(|join| join.is_finished())
+    }
+
+    /// 请求接受线程停止并等待其退出。幂等。
+    pub fn stop(mut self) -> Result<(), String> {
+        self.stopping.store(true, Ordering::Release);
+        if let Some(join) = self.join.take() {
+            join.join().map_err(|_| "wire accept thread panicked".to_string())?;
+        }
+        Ok(())
+    }
+
+    /// 阻塞等待接受线程结束(CLI 前台运行)。
+    pub fn wait(mut self) -> Result<(), String> {
+        if let Some(join) = self.join.take() {
+            join.join().map_err(|_| "wire accept thread panicked".to_string())?;
+        }
+        Ok(())
+    }
+}
 
 /// Resolve the effective insecure-bind flag from CLI and env var.
 /// Either source independently opts in. Internal helper for `run_serve`.
@@ -148,22 +225,28 @@ pub fn assert_bind_allowed(bind: &str, insecure_bind: bool, bootstrap: &AuthBoot
     Ok(())
 }
 
+/// 把一台嵌入式 `Connection` 作为后端的工厂。
+struct ConnectionFactory {
+    connection: Connection,
+}
+
+impl BackendFactory for ConnectionFactory {
+    fn open(&self, _peer_is_loopback: bool) -> Box<dyn ServeBackend> {
+        Box::new(self.connection.session())
+    }
+}
+
 /// Open the database and serve binary protocol v1 until the process exits.
 pub fn run_serve(path: &Path, bind: &str, insecure_bind: bool) -> Result<(), Box<dyn std::error::Error>> {
     let insecure_bind = insecure_bind_opted_in(insecure_bind);
-    let (host, _port) = split_bind(bind)?;
+    let (host, port) = split_bind(bind)?;
     let bind_is_loopback = is_loopback_host(&host);
 
     let bootstrap = AuthBootstrap::from_env(bind_is_loopback)?;
     assert_bind_allowed(bind, insecure_bind, &bootstrap)?;
 
-    let registry = Arc::new(SessionRegistry::new(&bootstrap));
-
     let conn = Connection::open(path)?;
-    let listener = TcpListener::bind(bind)?;
-
-    let limit = BoundedSemaphore::new(MAX_CONNECTIONS);
-    let next_id = Arc::new(AtomicU64::new(1));
+    let factory: Arc<dyn BackendFactory> = Arc::new(ConnectionFactory { connection: conn.session() });
 
     println!(
         "yydb serve {} on {bind} (wire v1: TCP + ws://{bind}/wire; max={MAX_CONNECTIONS}, handshake={}s)",
@@ -175,35 +258,80 @@ pub fn run_serve(path: &Path, bind: &str, insecure_bind: bool) -> Result<(), Box
         println!("⚠  Loopback-only anonymous bootstrap — dev mode. Set YYDB_AUTH_TOKENS for explicit principals.");
     }
 
-    for stream_res in listener.incoming() {
-        let permit = limit.acquire();
-        let connection_id = next_id.fetch_add(1, Ordering::Relaxed);
-        let stream = stream_res?;
-        let remote = !peer_is_loopback(&stream);
-        let registry_ref = registry.clone();
-        let session_state = Arc::new(Mutex::new(SessionState::new(connection_id, registry_ref, remote)));
-        let conn_ref = conn.session();
-
-        thread::spawn(move || {
-            let _permit = permit; // RAII — drops when thread exits
-            let _ = stream.set_read_timeout(Some(HANDSHAKE_TIMEOUT));
-            if let Err(error) = handle_client(stream, &conn_ref, session_state) {
-                eprintln!("client error: {error}");
-            }
-        });
-    }
+    let address = bind.to_socket_addrs()?.next().ok_or("wire bind resolved to no address")?;
+    let serve = WireServe::start(ServeOptions { bind: address, bootstrap, anonymous_loopback: false, label: "yydb" }, factory)?;
+    serve.wait()?;
     Ok(())
 }
 
-fn handle_client(stream: TcpStream, conn: &Connection, state: Arc<Mutex<SessionState>>) -> Result<(), Box<dyn std::error::Error>> {
-    let mut peek = [0_u8; 4];
-    let n = stream.peek(&mut peek)?;
-    if n >= 3 && &peek[..3] == b"GET" { handle_websocket(stream, conn, state) } else { handle_tcp(stream, conn, state) }
+fn accept_loop(
+    listener: TcpListener,
+    factory: Arc<dyn BackendFactory>,
+    registry: Arc<SessionRegistry>,
+    label: &'static str,
+    anonymous_loopback: bool,
+    stopping: Arc<AtomicBool>,
+) {
+    // Non-blocking accept so the loop can observe the stop flag without a live
+    // peer. Accepted streams are switched back to blocking because the
+    // per-connection handlers read and write with the blocking std API.
+    if listener.set_nonblocking(true).is_err() {
+        return;
+    }
+    let limit = BoundedSemaphore::new(MAX_CONNECTIONS);
+    let next_id = AtomicU64::new(1);
+    loop {
+        if stopping.load(Ordering::Acquire) {
+            return;
+        }
+        match listener.accept() {
+            Ok((stream, peer)) => {
+                let _ = stream.set_nonblocking(false);
+                let permit = limit.acquire();
+                let connection_id = next_id.fetch_add(1, Ordering::Relaxed);
+                let remote = !peer_is_loopback(&stream);
+                let state = Arc::new(SessionState::new(connection_id, Arc::clone(&registry), remote));
+                if anonymous_loopback && !remote {
+                    attach_anonymous_session(&state);
+                }
+                let backend = factory.open(!remote);
+                thread::Builder::new()
+                    .name(format!("{label}-wire-{peer}"))
+                    .spawn(move || {
+                        let _permit = permit;
+                        let _ = stream.set_read_timeout(Some(HANDSHAKE_TIMEOUT));
+                        if let Err(error) = handle_client(stream, backend.as_ref(), &state) {
+                            eprintln!("wire client {peer}: {error}");
+                        }
+                    })
+                    .ok();
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => thread::sleep(Duration::from_millis(1)),
+            Err(_) => return, // listener unusable
+        }
+    }
 }
 
-fn handle_tcp(mut stream: TcpStream, conn: &Connection, state: Arc<Mutex<SessionState>>) -> Result<(), Box<dyn std::error::Error>> {
-    let adapter = Arc::new(TcpWireHostAdapter::new(stream.try_clone()?));
-    conn.set_host_adapter(adapter);
+/// 回环匿名开发模式:连接进入即为匿名回环会话,业务帧无需 Authenticate。
+fn attach_anonymous_session(state: &SessionState) {
+    let now = SystemTime::now();
+    let session = Session {
+        principal: super::auth::Principal::anonymous_loopback(),
+        token: String::new(),
+        created_at: now,
+        expires_at: now + Session::TTL,
+    };
+    *state.session.lock().expect("session auth poisoned") = Some(session);
+}
+
+fn handle_client(stream: TcpStream, backend: &dyn ServeBackend, state: &Arc<SessionState>) -> Result<(), Box<dyn std::error::Error>> {
+    let mut peek = [0_u8; 4];
+    let n = stream.peek(&mut peek)?;
+    if n >= 3 && &peek[..3] == b"GET" { handle_websocket(stream, backend, state) } else { handle_tcp(stream, backend, state) }
+}
+
+fn handle_tcp(mut stream: TcpStream, backend: &dyn ServeBackend, state: &Arc<SessionState>) -> Result<(), Box<dyn std::error::Error>> {
+    backend.attach_transport(&stream)?;
     loop {
         let request = match read_frame(&mut stream) {
             Ok(frame) => frame,
@@ -214,16 +342,15 @@ fn handle_tcp(mut stream: TcpStream, conn: &Connection, state: Arc<Mutex<Session
                 return Err(error.into());
             }
         };
-        let response = dispatch(conn, &state.lock().unwrap(), &request);
+        let response = dispatch(backend, state, &request);
         write_frame(&mut stream, &response)?;
-        // After first Authenticate frame succeeds, clear handshake timeout
-        if is_authenticated(&state.lock().unwrap()) {
+        if super::dispatch::is_authenticated(state) {
             let _ = stream.set_read_timeout(None);
         }
     }
 }
 
-fn handle_websocket(mut stream: TcpStream, conn: &Connection, state: Arc<Mutex<SessionState>>) -> Result<(), Box<dyn std::error::Error>> {
+fn handle_websocket(mut stream: TcpStream, backend: &dyn ServeBackend, state: &Arc<SessionState>) -> Result<(), Box<dyn std::error::Error>> {
     let mut buf = Vec::new();
     let mut chunk = [0_u8; 1024];
     loop {
@@ -243,7 +370,7 @@ fn handle_websocket(mut stream: TcpStream, conn: &Connection, state: Arc<Mutex<S
     let request = String::from_utf8_lossy(&buf);
     let path_ok = request.lines().next().map(|line| line.contains(" /wire")).unwrap_or(false);
     if !path_ok {
-        let body = b"use path /wire for YYDB binary websocket\n";
+        let body = b"use path /wire for YY binary websocket\n";
         let resp = format!("HTTP/1.1 404 Not Found\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
         stream.write_all(resp.as_bytes())?;
         stream.write_all(body)?;
@@ -279,7 +406,7 @@ fn handle_websocket(mut stream: TcpStream, conn: &Connection, state: Arc<Mutex<S
             None => return Ok(()),
         };
         let request = Frame::decode(&payload)?;
-        let response = dispatch(conn, &state.lock().unwrap(), &request);
+        let response = dispatch(backend, state, &request);
         let encoded = response.encode()?;
         write_ws_binary(&mut stream, &encoded)?;
     }

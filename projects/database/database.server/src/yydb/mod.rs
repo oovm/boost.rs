@@ -11,9 +11,11 @@
 pub mod auth;
 pub mod dispatch;
 pub mod host_wire;
+pub mod session;
 
 mod serve;
 
 pub use auth::{AuthBootstrap, Permission, Principal, PrincipalKind, Role, Session, SessionRegistry};
 pub use dispatch::{PreparedPlan, SessionState, dispatch, is_loopback_host};
-pub use serve::{assert_bind_allowed, run_serve};
+pub use serve::{ServeOptions, WireServe, assert_bind_allowed, run_serve};
+pub use session::{BackendFactory, ServeBackend};

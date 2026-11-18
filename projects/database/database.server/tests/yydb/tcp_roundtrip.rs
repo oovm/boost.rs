@@ -27,7 +27,7 @@ fn remote_error_keeps_stable_code() {
         let state = SessionState::for_test(1);
         // Mock server — pre-authenticated via SessionState::for_test
         while let Ok(request) = read_frame(&mut stream) {
-            let response = dispatch(&server_conn, &state, &request);
+            let response = dispatch(server_conn.as_ref(), &state, &request);
             write_frame(&mut stream, &response).unwrap();
         }
     });
@@ -65,7 +65,7 @@ fn tcp_roundtrip_against_local_dispatch_server() {
         let state = SessionState::for_test(2);
         // Mock server — pre-authenticated via SessionState::for_test
         while let Ok(request) = read_frame(&mut stream) {
-            let response = dispatch(&server_conn, &state, &request);
+            let response = dispatch(server_conn.as_ref(), &state, &request);
             write_frame(&mut stream, &response).unwrap();
         }
     });

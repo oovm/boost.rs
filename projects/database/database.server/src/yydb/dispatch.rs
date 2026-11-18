@@ -1,10 +1,9 @@
-//! Request dispatch for `yydb serve`: wire frames mapped onto a `Connection`.
+//! Request dispatch for `yydb serve`: wire frames mapped onto a [`ServeBackend`].
 //!
 //! Kept out of `database.protocol.yy` because it executes database operations.
 
 use std::{collections::BTreeMap, sync::Mutex};
 
-use database_execution::engine::Connection;
 use database_protocol_yy::{
     Frame, MessageType, decode_authenticate, decode_execute_prepared, decode_kv_get, decode_kv_put, decode_micro_register, decode_prepare,
     decode_scalar_call, decode_schema_ensure, encode_authenticate_ok, encode_execute_prepared_ok, encode_kv_get_ok, encode_prepare_ok,
@@ -13,7 +12,10 @@ use database_protocol_yy::{
 use database_query::local::{PreparedStatement, QueryKind, SessionOp};
 use database_types::{Error, Result};
 
-use super::auth::{AuthBootstrap, Permission, Principal, Session, SessionRegistry};
+use super::{
+    auth::{AuthBootstrap, Permission, Principal, Session, SessionRegistry},
+    session::ServeBackend,
+};
 
 // ─── Per-connection session state ─────────────────────────────────────────
 
@@ -102,21 +104,9 @@ fn parse_params_json(json: &str) -> Result<BTreeMap<String, database_types::Valu
     Ok(m)
 }
 
-// ─── Info body ───────────────────────────────────────────────────────────
-
-fn info_body(conn: &Connection) -> Result<Vec<u8>> {
-    let path = conn.path().map(|p| p.display().to_string()).unwrap_or_else(|| "<memory>".to_owned());
-    let schema_line = match conn.schema()? {
-        Some(schema) => format!("schema.version={}", schema.version),
-        None => "schema.version=".to_owned(),
-    };
-    let text = format!("path={path}\n{schema_line}\nrecords={}\njournal_mode={}\n", conn.record_count()?, conn.journal_mode().as_str());
-    Ok(text.into_bytes())
-}
-
 // ─── Dispatch ────────────────────────────────────────────────────────────
 
-/// Dispatch one client request frame against an open [`Connection`], with
+/// Dispatch one client request frame against a [`ServeBackend`], with
 /// per-connection session enforcement via the shared [`SessionRegistry`].
 ///
 /// Connection lifecycle:
@@ -127,8 +117,8 @@ fn info_body(conn: &Connection) -> Result<Vec<u8>> {
 ///    session is attached
 ///
 /// Once authenticated, Prepare / ExecutePrepared hit the per-connection
-/// plan registry; all other frames dispatch directly to the connection.
-pub fn dispatch(conn: &Connection, state: &SessionState, request: &Frame) -> Frame {
+/// plan registry; all other frames dispatch directly to the backend.
+pub fn dispatch<B: ServeBackend + ?Sized>(backend: &B, state: &SessionState, request: &Frame) -> Frame {
     let id = request.request_id;
     match request.msg_type {
         // ── unauthenticated allowed ──────────────────────────────────────
@@ -156,12 +146,12 @@ pub fn dispatch(conn: &Connection, state: &SessionState, request: &Frame) -> Fra
                     },
                 );
             }
-            dispatch_authed(conn, state, request)
+            dispatch_authed(backend, state, request)
         }
     }
 }
 
-fn dispatch_authed(conn: &Connection, state: &SessionState, request: &Frame) -> Frame {
+fn dispatch_authed<B: ServeBackend + ?Sized>(backend: &B, state: &SessionState, request: &Frame) -> Frame {
     let id = request.request_id;
 
     // ── Permission gate ──────────────────────────────────────────────
@@ -178,44 +168,44 @@ fn dispatch_authed(conn: &Connection, state: &SessionState, request: &Frame) -> 
     }
 
     match request.msg_type {
-        MessageType::Info => match info_body(conn) {
+        MessageType::Info => match backend.info() {
             Ok(body) => Frame::new(MessageType::InfoOk, id, body),
             Err(error) => error_frame(id, &error),
         },
-        MessageType::SchemaGet => match conn.schema() {
+        MessageType::SchemaGet => match backend.schema() {
             Ok(schema) => Frame::new(MessageType::SchemaGetOk, id, encode_schema_ok(schema)),
             Err(error) => error_frame(id, &error),
         },
         MessageType::SchemaEnsure => match decode_schema_ensure(&request.body) {
-            Ok((_version, document)) => match conn.ensure_schema(&document) {
+            Ok((version, document)) => match backend.ensure_schema(version, &document) {
                 Ok(()) => Frame::new(MessageType::SchemaEnsureOk, id, Vec::new()),
                 Err(error) => error_frame(id, &error),
             },
             Err(error) => error_frame(id, &error),
         },
         MessageType::KvGet => match decode_kv_get(&request.body) {
-            Ok(key) => match conn.get(&key) {
+            Ok(key) => match backend.kv_get(&key) {
                 Ok(value) => Frame::new(MessageType::KvGetOk, id, encode_kv_get_ok(value)),
                 Err(error) => error_frame(id, &error),
             },
             Err(error) => error_frame(id, &error),
         },
         MessageType::KvPut => match decode_kv_put(&request.body) {
-            Ok((key, value)) => match conn.put(key, value) {
+            Ok((key, value)) => match backend.kv_put(key, value) {
                 Ok(()) => Frame::new(MessageType::KvPutOk, id, Vec::new()),
                 Err(error) => error_frame(id, &error),
             },
             Err(error) => error_frame(id, &error),
         },
         MessageType::MicroRegister => match decode_micro_register(&request.body) {
-            Ok(definition) => match conn.register_host_micro(definition) {
+            Ok(definition) => match backend.register_host_micro(definition) {
                 Ok(()) => Frame::new(MessageType::MicroRegisterOk, id, Vec::new()),
                 Err(error) => error_frame(id, &error),
             },
             Err(error) => error_frame(id, &error),
         },
         MessageType::ScalarCall => match decode_scalar_call(&request.body) {
-            Ok((name, version, args)) => match conn.call_scalar_version(&name, version, &args) {
+            Ok((name, version, args)) => match backend.call_scalar_version(&name, version, &args) {
                 Ok(value) => Frame::new(MessageType::ScalarCallOk, id, encode_scalar_call_ok(value)),
                 Err(error) => error_frame(id, &error),
             },
@@ -227,7 +217,7 @@ fn dispatch_authed(conn: &Connection, state: &SessionState, request: &Frame) -> 
                 Ok(s) => s,
                 Err(error) => return error_frame(id, &error),
             };
-            let stmt = match conn.prepare_vos(&source) {
+            let stmt = match backend.prepare(&source) {
                 Ok(s) => s,
                 Err(error) => return error_frame(id, &error),
             };
@@ -291,17 +281,17 @@ fn dispatch_authed(conn: &Connection, state: &SessionState, request: &Frame) -> 
                 QueryKind::Session => (|| -> Result<Vec<database_query::local::QueryRow>> {
                     for op in &plan.statement.session_ops {
                         match op {
-                            SessionOp::Begin => conn.begin()?,
-                            SessionOp::Commit => conn.commit()?,
-                            SessionOp::Rollback => conn.rollback()?,
-                            SessionOp::Savepoint(name) => conn.savepoint(name)?,
-                            SessionOp::RollbackToSavepoint(name) => conn.rollback_to_savepoint(name)?,
-                            SessionOp::ReleaseSavepoint(name) => conn.release_savepoint(name)?,
+                            SessionOp::Begin => backend.begin()?,
+                            SessionOp::Commit => backend.commit()?,
+                            SessionOp::Rollback => backend.rollback()?,
+                            SessionOp::Savepoint(name) => backend.savepoint(name)?,
+                            SessionOp::RollbackToSavepoint(name) => backend.rollback_to_savepoint(name)?,
+                            SessionOp::ReleaseSavepoint(name) => backend.release_savepoint(name)?,
                         }
                     }
                     Ok(Vec::new())
                 })(),
-                _ => conn.query_prepared(&plan.statement, &named_params),
+                _ => backend.query_prepared(&plan.statement, &named_params),
             };
             let rows = match rows_result {
                 Ok(r) => r,
