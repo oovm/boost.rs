@@ -1622,7 +1622,13 @@ fn paint_item(
             let cx = px(x_of(*x), fw as u32);
             let cy = px(y_of(*y), fh as u32);
             match shape {
-                ShapeKind::Rect => frame.round_rect(cx, cy, px(*w, fw as u32), px(*h, fh as u32), *radius * s, c),
+                // Every shape anchors at its centre. A block placed by its edge
+                // has to be a position thing, not a per-kind exception.
+                ShapeKind::Rect => {
+                    let width = px(*w, fw as u32);
+                    let height = px(*h, fh as u32);
+                    frame.round_rect(cx - width / 2.0, cy - height / 2.0, width, height, *radius * s, c);
+                }
                 ShapeKind::Circle => frame.circle(cx, cy, px(*w, fw as u32) / 2.0, c, None),
                 ShapeKind::Ring => frame.circle(cx, cy, px(*w, fw as u32) / 2.0, c, stroke.map(|v| v * s).or(Some(3.0 * s))),
                 ShapeKind::Line => {
@@ -2866,7 +2872,7 @@ mod tests {
             "components": [{
                 "id": "dot",
                 "items": [{ "kind": "shape", "shape": "rect", "at": 0, "dur": 10,
-                            "x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0, "color": "#ffffff",
+                            "x": 0.5, "y": 0.5, "w": 1.0, "h": 1.0, "color": "#ffffff",
                             "fade_in": 0, "fade_out": 0 }]
             }],
             "scenes": [{ "start": 0, "duration": 10,
