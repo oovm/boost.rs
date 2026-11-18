@@ -29,7 +29,13 @@
 pub mod render;
 
 #[cfg(feature = "scene")]
-pub use render::{FrameRange, PreviewStats, RenderOptions, RenderStats, lower_audio, preview_frame, render_project, render_project_with};
+pub use render::{FrameRange, PreviewStats, RenderOptions, RenderStats, lower_audio, preview_frame, render_frame_at, render_project, render_project_with};
+
+#[cfg(all(feature = "scene", feature = "layout-export"))]
+pub mod storyboard;
+
+#[cfg(all(feature = "scene", feature = "layout-export"))]
+pub use storyboard::{StoryboardCell, StoryboardOptions, StoryboardPage, write_contact_sheet, write_storyboard};
 
 #[cfg(all(feature = "scene", feature = "trace"))]
 pub use render::{TracedRender, render_project_traced};

@@ -173,7 +173,7 @@ const SYSTEM_FONTS: [(&str, &[&str]); 3] = [
 /// Declared project fonts are an input contract: a missing or undecodable file
 /// is an error, never a silent swap to another face. Without a declaration the
 /// host probes the system candidates and still reports which files it loaded.
-fn resolve_fonts(project: &Project) -> Result<(Fonts, Vec<String>, Vec<String>), Error> {
+pub(crate) fn resolve_fonts(project: &Project) -> Result<(Fonts, Vec<String>, Vec<String>), Error> {
     let (bytes, used) = match &project.fonts {
         Some(spec) => {
             let mut bytes = Vec::with_capacity(3);
@@ -430,6 +430,27 @@ pub struct PreviewStats {
 /// 137 is reviewing the frame the encoder will receive. It does not synthesize
 /// the audio bed: the preview is a picture.
 pub fn preview_frame(json: &str, frame: u32, out: &Path) -> Result<PreviewStats, Error> {
+    let (frame_buffer, font_paths) = render_frame_value(json, frame)?;
+    let (w, h) = (frame_buffer.width, frame_buffer.height);
+    if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent).map_err(|e| Error::io(format!("cannot create {}: {e}", parent.display())))?;
+    }
+    media_codec::write_png(out, w, h, &frame_buffer.pixels)?;
+    Ok(PreviewStats { frame, width: w, height: h, fonts: font_paths, project_hash: fnv1a(json.as_bytes()) })
+}
+
+/// Evaluates one project frame and returns the rasterized frame.
+///
+/// Same contract checks, design resolution, font resolution and painter as
+/// [`preview_frame`], so review tooling that composes frames (storyboards,
+/// contact sheets) shows the frame the encoder receives instead of a second
+/// interpretation of the scene.
+pub fn render_frame_at(json: &str, frame: u32) -> Result<Frame, Error> {
+    render_frame_value(json, frame).map(|(frame, _)| frame)
+}
+
+/// Shared body of the preview paths: paints `frame` and reports the fonts used.
+fn render_frame_value(json: &str, frame: u32) -> Result<(Frame, Vec<String>), Error> {
     let mut project: Project = serde_json::from_str(json).map_err(|e| Error::invalid(format!("project json: {e}")))?;
     resolve_design(&mut project)?;
     validate(&project)?;
@@ -448,11 +469,7 @@ pub fn preview_frame(json: &str, frame: u32, out: &Path) -> Result<PreviewStats,
     let mut frame_buffer = Frame::new(w, h);
     let vignette = project.post.vignette.map(Vignette::new);
     paint_frame(&project, &mut fonts, &mut media, vignette.as_ref(), &mut pool, frame, &mut frame_buffer, limits)?;
-    if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
-        std::fs::create_dir_all(parent).map_err(|e| Error::io(format!("cannot create {}: {e}", parent.display())))?;
-    }
-    media_codec::write_png(out, w, h, &frame_buffer.pixels)?;
-    Ok(PreviewStats { frame, width: w, height: h, fonts: font_paths, project_hash: fnv1a(json.as_bytes()) })
+    Ok((frame_buffer, font_paths))
 }
 
 /// Validates the requested interval against the film.
