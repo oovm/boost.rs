@@ -630,6 +630,8 @@ dependencies = [
  "oak-valkyrie",
  "oak-von",
  "ordered-float",
+ "package-manager",
+ "package-registry",
  "package-resolve",
  "serde",
  "serde_json",

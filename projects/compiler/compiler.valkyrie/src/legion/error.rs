@@ -118,6 +118,18 @@ impl From<crate::asgard::error::AsgardError> for LegionError {
     }
 }
 
+impl From<package_manager::ManagerError> for LegionError {
+    fn from(value: package_manager::ManagerError) -> Self {
+        Self::msg(value.to_string())
+    }
+}
+
+impl From<package_registry::RegistryError> for LegionError {
+    fn from(value: package_registry::RegistryError) -> Self {
+        Self::msg(value.to_string())
+    }
+}
+
 impl From<serde_json::Error> for LegionError {
     fn from(value: serde_json::Error) -> Self {
         Self::msg(value.to_string())

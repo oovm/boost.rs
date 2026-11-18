@@ -2,6 +2,8 @@
 
 pub mod error;
 
+/// 审计依赖漏洞与许可证。
+pub mod audit;
 pub mod bench;
 pub mod bootstrap;
 /// 构建项目并落盘产物。
@@ -12,19 +14,36 @@ pub mod check;
 pub mod clean;
 pub mod cov;
 pub mod fmt;
+/// 依赖安装/添加/移除/更新。
+pub mod install;
 /// 前端语义 lint（不生成后端产物）。
 pub mod lint;
+/// 注册表登录/登出/whoami。
+pub mod login;
 pub mod plan;
 pub mod project_input;
+/// 发布包到注册表。
+pub mod publish;
+/// 管理注册表源 endpoint。
+pub mod registry;
 pub mod report;
 /// 运行项目产物。
 pub mod run;
+/// 搜索/查看注册表中的包。
+pub mod search;
 pub mod source_hygiene;
 pub mod spy;
 pub mod test;
 pub mod test_engine;
+/// 注册表认证管理。
+pub mod vendor;
 
 use std::path::Path;
+
+/// 该渠道是否为官方 CLI 背书的第三方渠道（凭据来自 CLI 配置，不写入自有 auth 存储）。
+pub(crate) fn is_external_registry(registry: &str) -> bool {
+    matches!(registry.to_ascii_lowercase().as_str(), "npm" | "jsr" | "nuget" | "maven" | "conda")
+}
 
 /// legion 驱动栈预算（字节）。
 ///
