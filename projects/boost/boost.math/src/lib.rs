@@ -15,7 +15,7 @@
 //!
 //! 误差、特殊值、溢出与失败语义按模块分别冻结；运算符可用不证明代数定律。
 
-#![doc = include_str!("../readme.md")]
+#![doc = include_str!("readme.md")]
 #![deny(missing_docs)]
 #![no_std]
 

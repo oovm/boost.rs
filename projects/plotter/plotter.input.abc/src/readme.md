@@ -8,3 +8,4 @@ ABC 记谱前端：Oak AST → [`ScoreSpec`](../plotter.engraving/readme.md) / s
 其余按 approximations 记录；连音、圆滑线、连音组、歌词与和弦均映射到 `ScoreSpec`。
 
 本 crate 不拼 scene 节点或 SVG，也不解析文本语法——语法归 `oak-abc`。
+

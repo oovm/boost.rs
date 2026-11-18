@@ -24,7 +24,7 @@
 //! 单射映射；`DenseArrayND::reshaped` 复用缓冲并保持行主序线性化。
 //! 三维视图与非 affine 布局留到后续阶段。
 
-#![doc = include_str!("../readme.md")]
+#![doc = include_str!("readme.md")]
 #![deny(missing_docs)]
 
 mod array_nd;

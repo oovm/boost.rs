@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-#![doc = include_str!("../readme.md")]
+#![doc = include_str!("readme.md")]
 
 //! ABC 记谱前端：`oak-abc` 的 AST 降级进 `plotter.engraving` 的与源语言无关模型。
 //!

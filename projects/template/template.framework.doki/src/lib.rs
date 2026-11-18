@@ -1,4 +1,4 @@
-#![doc = include_str!("../readme.md")]
+#![doc = include_str!("readme.md")]
 #![warn(missing_docs)]
 
 //! `template.framework.doki`：Doki 构建框架与模板入口。

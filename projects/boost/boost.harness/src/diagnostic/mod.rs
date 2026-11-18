@@ -1,4 +1,4 @@
-//! Structured diagnostic data model with optional terminal rendering.
+#![doc = include_str!("readme.md")]
 
 pub mod collect;
 pub mod model;
