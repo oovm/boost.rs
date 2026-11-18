@@ -7,6 +7,11 @@ license.workspace = true
 authors.workspace = true
 publish = false
 
+[features]
+default = []
+# 正式 OVM 字节码发射与执行路径；未启用时该目标不进入内置后端能力清单。
+ovm-lane = []
+
 [lints.rust]
 missing_docs = "warn"
 
