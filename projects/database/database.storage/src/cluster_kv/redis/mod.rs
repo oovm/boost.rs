@@ -33,6 +33,11 @@ pub const NAMESPACE_PREFIX: &str = "redis:db";
 /// 六个命名空间互不重叠，因此同一个逻辑键在任一时刻只能被读成一种值种类。
 pub const KINDS: [&str; 6] = ["", "hash", "list", "set", "zset", "stream"];
 
+/// 校验值种类名是否属于分片承认的六种。
+pub fn check_kind(kind: &str) -> Result<(), String> {
+    KINDS.contains(&kind).then_some(()).ok_or_else(|| format!("unknown value kind `{kind}`"))
+}
+
 /// 一次清扫因截止时间已到而删除的一条逻辑键。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExpiredKey {

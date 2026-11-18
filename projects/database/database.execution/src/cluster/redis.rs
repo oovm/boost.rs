@@ -11,6 +11,8 @@ use database_types::cluster::{Error, FenceToken, Namespace};
 
 use super::KeyValueExecutor;
 
+pub use database_storage::cluster_kv::redis::check_kind;
+
 /// 一个分片上的键值执行器。
 ///
 /// `shard` 由宿主持有（绑定层一个 `Store` 对应一个分片），执行器只借用它，因此同一
@@ -25,11 +27,6 @@ impl<'a> RedisExecutor<'a> {
     pub fn new(shard: &'a Mutex<RedisShard>) -> Self {
         Self { shard }
     }
-}
-
-/// 校验值种类名是否属于分片承认的六种。
-pub fn check_kind(kind: &str) -> Result<(), String> {
-    if KINDS.contains(&kind) { Ok(()) } else { Err(format!("unknown value kind `{kind}`")) }
 }
 
 /// 把 `redis:db<db>[:kind]` 拆回数据库序号与值种类。
