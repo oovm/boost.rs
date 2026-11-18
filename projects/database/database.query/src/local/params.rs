@@ -286,6 +286,9 @@ pub struct BoundWrite {
     pub source: String,
     /// Bound values in ascending slot order.
     pub values: Vec<Value>,
+    /// The parsed and macro-expanded program, so a caller that plans and then
+    /// executes the same write does not parse and expand it twice.
+    pub program: oak_vos::VosProgram,
 }
 
 /// Rewrite `$name` parameters in a VOS write program and bind `named` values.
@@ -306,7 +309,7 @@ pub fn bind_vos_write(source: &str, named: &BTreeMap<String, Value>, schema_docu
         return Err(Error::Unsupported("VOS parameter binding for writes requires an insert, update, or delete program"));
     }
     let values = bind_values(&parameters, named)?;
-    Ok(BoundWrite { source: rewritten, values })
+    Ok(BoundWrite { source: rewritten, values, program: expanded })
 }
 
 /// Bind a prepared statement to an ordered value slice.

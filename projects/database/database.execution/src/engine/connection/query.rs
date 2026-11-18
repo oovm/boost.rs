@@ -406,10 +406,11 @@ impl Connection {
             |metadata, holds_every_row| {
                 let contract = resolved_contract(metadata)?;
                 let schema_document = metadata.schema.as_ref().map(|schema| schema.document.as_str());
+                let program = database_query::local::parse_write_program(source)?;
                 let keys = self
                     .with_write_hooks(|| {
-                        database_query::local::point_write_keys(
-                            source,
+                        database_query::local::point_write_keys_parsed(
+                            &program,
                             contract,
                             &metadata.unique_constraints,
                             schema_document,
@@ -418,9 +419,9 @@ impl Connection {
                         )
                     })
                     .map(|keys| keys.map(Self::key_windows))?;
-                Ok((keys, ()))
+                Ok((keys, program))
             },
-            |state, ()| {
+            |state, program| {
                 // The write executor mutates `state.records`, so it cannot hold a
                 // borrow of the contract inside the same state.
                 let contract = resolved_contract(state)?.clone();
@@ -428,7 +429,7 @@ impl Connection {
                 let records = &mut state.records;
                 let constraints = &state.unique_constraints;
                 self.with_write_hooks(|| {
-                    database_query::local::execute_write_with_constraints(source, &contract, constraints, schema_document, records)
+                    database_query::local::execute_write_parsed(&program, &contract, constraints, schema_document, records, &[])
                 })
             },
         )
@@ -451,8 +452,8 @@ impl Connection {
                 let plan = database_query::local::bind_vos_write(source, named, schema_document)?;
                 let keys = self
                     .with_write_hooks(|| {
-                        database_query::local::point_write_keys(
-                            &plan.source,
+                        database_query::local::point_write_keys_parsed(
+                            &plan.program,
                             contract,
                             &metadata.unique_constraints,
                             schema_document,
@@ -461,19 +462,18 @@ impl Connection {
                         )
                     })
                     .map(|keys| keys.map(Self::key_windows))?;
-                Ok((keys, ()))
+                Ok((keys, plan))
             },
-            |state, ()| {
+            |state, plan| {
                 // The write executor mutates `state.records`, so it cannot hold a
                 // borrow of the contract inside the same state.
                 let contract = resolved_contract(state)?.clone();
                 let schema_document = state.schema.as_ref().map(|schema| schema.document.as_str());
-                let plan = database_query::local::bind_vos_write(source, named, schema_document)?;
                 let records = &mut state.records;
                 let constraints = &state.unique_constraints;
                 let values = &plan.values;
                 self.with_write_hooks(|| {
-                    database_query::local::execute_write_with_params(&plan.source, &contract, constraints, schema_document, records, values)
+                    database_query::local::execute_write_parsed(&plan.program, &contract, constraints, schema_document, records, values)
                 })
             },
         )

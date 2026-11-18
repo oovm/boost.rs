@@ -91,9 +91,30 @@ pub fn execute_with_params(
     records: &mut BTreeMap<String, Vec<u8>>,
     params: &[Value],
 ) -> Result<()> {
-    let program = schema_input_vos::parse_program(source).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
+    let program = parse_write_program(source)?;
+    execute_parsed(&program, contract, declared, schema_document, records, params)
+}
+
+/// Parse one write program exactly once.
+///
+/// The engine plans a write (which keys it reaches) and then executes it, and
+/// both halves need the same program. Parsing it here lets the plan hand the
+/// program to the executor instead of making each half parse the source again.
+pub fn parse_write_program(source: &str) -> Result<VosProgram> {
+    schema_input_vos::parse_program(source).map_err(|diagnostics| Error::Schema { message: diagnostics })
+}
+
+/// Execute an already parsed write program.
+pub fn execute_parsed(
+    program: &VosProgram,
+    contract: &ResolvedContract,
+    declared: &[TableUniqueConstraint],
+    schema_document: Option<&str>,
+    records: &mut BTreeMap<String, Vec<u8>>,
+    params: &[Value],
+) -> Result<()> {
     let constraints = constraints::merge(constraints::from_contract(contract)?, declared);
-    execute_program_with_constraints(&program, contract, &constraints, schema_document, records, params)
+    execute_program_with_constraints(program, contract, &constraints, schema_document, records, params)
 }
 
 /// If `source` is a single `Type::insert({ … })` program, run it and return the stored row.
@@ -306,9 +327,21 @@ pub fn point_write_keys(
     params: &[Value],
     holds_every_row: bool,
 ) -> Result<Option<Vec<String>>> {
-    let program = schema_input_vos::parse_program(source).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
+    let program = parse_write_program(source)?;
+    point_write_keys_program(&program, contract, declared, schema_document, params, holds_every_row)
+}
+
+/// Same as [`point_write_keys`] over an already parsed program.
+pub fn point_write_keys_program(
+    program: &VosProgram,
+    contract: &ResolvedContract,
+    declared: &[TableUniqueConstraint],
+    schema_document: Option<&str>,
+    params: &[Value],
+    holds_every_row: bool,
+) -> Result<Option<Vec<String>>> {
     let constraints = constraints::merge(constraints::from_contract(contract)?, declared);
-    let Ok(expanded) = expand_program(&program, schema_document)
+    let Ok(expanded) = expand_program(program, schema_document)
     else {
         return Ok(None);
     };

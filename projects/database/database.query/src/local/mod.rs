@@ -84,6 +84,23 @@ pub fn execute_write_with_constraints(
     dml::execute_with_constraints(source, contract, declared, schema_document, records)
 }
 
+/// Parse one VOS write program exactly once for both planning and execution.
+pub fn parse_write_program(source: &str) -> database_types::Result<oak_vos::VosProgram> {
+    dml::parse_write_program(source)
+}
+
+/// Execute an already parsed VOS write program.
+pub fn execute_write_parsed(
+    program: &oak_vos::VosProgram,
+    contract: &ResolvedContract,
+    declared: &[database_types::TableUniqueConstraint],
+    schema_document: Option<&str>,
+    records: &mut BTreeMap<String, Vec<u8>>,
+    params: &[Value],
+) -> database_types::Result<()> {
+    dml::execute_parsed(program, contract, declared, schema_document, records, params)
+}
+
 /// Execute a VOS write program whose `__yydb_param_<index>` slots read `params`.
 ///
 /// `source` is the rewritten program produced by [`bind_vos_write`]; the values
@@ -112,6 +129,18 @@ pub fn point_write_keys(
     holds_every_row: bool,
 ) -> database_types::Result<Option<Vec<String>>> {
     dml::point_write_keys(source, contract, declared, schema_document, params, holds_every_row)
+}
+
+/// Same as [`point_write_keys`] over an already parsed program.
+pub fn point_write_keys_parsed(
+    program: &oak_vos::VosProgram,
+    contract: &ResolvedContract,
+    declared: &[TableUniqueConstraint],
+    schema_document: Option<&str>,
+    params: &[Value],
+    holds_every_row: bool,
+) -> database_types::Result<Option<Vec<String>>> {
+    dml::point_write_keys_program(program, contract, declared, schema_document, params, holds_every_row)
 }
 
 /// Run a single `Type::insert({ … })` program and return the stored row when recognized.
