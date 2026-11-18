@@ -117,7 +117,10 @@ fn half_gcd_capability_matches_lehmer_baseline_on_wide_odds() {
     let mut caps_l = CapabilityBundle::portable_default();
     caps_l.algorithm.half_gcd = false;
 
-    assert_eq!(science_numeric::algorithm::AlgorithmPlanner::new(caps_h).plan_gcd(a.as_limbs().len(), b.as_limbs().len()), GcdStrategy::HalfGcd);
+    assert_eq!(
+        science_numeric::algorithm::AlgorithmPlanner::new(caps_h).plan_gcd(a.as_limbs().len(), b.as_limbs().len()),
+        GcdStrategy::HalfGcd
+    );
     assert_eq!(science_numeric::algorithm::AlgorithmPlanner::new(caps_l).plan_gcd(a.as_limbs().len(), b.as_limbs().len()), GcdStrategy::Lehmer);
 
     let ctx_h = NumericContext::with_capabilities(ExecutionBudget::unlimited(), heap.clone(), caps_h);

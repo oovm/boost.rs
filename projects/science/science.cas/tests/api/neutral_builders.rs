@@ -1,7 +1,7 @@
 //! Neutral builders via `science-harness` .
 
-use science_ir::{ApplicationHead, SemanticOperator, TermNode, UnaryFunction};
 use science_harness::{SessionFixture, assert_exact_integer, assert_structural_eq, term_request};
+use science_ir::{ApplicationHead, SemanticOperator, TermNode, UnaryFunction};
 
 #[test]
 fn add_multiply_constructs_semantic_heads() {

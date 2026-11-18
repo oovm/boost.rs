@@ -57,9 +57,7 @@ mod tests {
             isl.items.iter().any(|it| match it {
                 Item::Rewrites(rw) => rw.rules.iter().any(|r| matches!(r, Formula::BinOp { op: BinOp::Iff, .. })),
                 Item::Connection(_) => true,
-                Item::Theorem(th) => {
-                    matches!(th.formula, Formula::BinOp { op: BinOp::Iff, .. }) || formula_has_iff(&th.formula)
-                }
+                Item::Theorem(th) => matches!(th.formula, Formula::BinOp { op: BinOp::Iff, .. }) || formula_has_iff(&th.formula),
                 _ => false,
             })
         });

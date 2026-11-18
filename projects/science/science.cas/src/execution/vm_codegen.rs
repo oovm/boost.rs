@@ -388,12 +388,7 @@ fn lower_ops(
                 bump(max_slot, value.0);
                 let axes_id = IndexAxesId(index_axes.len() as u32);
                 index_axes.push(axes.clone());
-                instructions.push(Instruction::StoreIndex {
-                    dst: result.0,
-                    target: target.0,
-                    value: value.0,
-                    axes: axes_id,
-                });
+                instructions.push(Instruction::StoreIndex { dst: result.0, target: target.0, value: value.0, axes: axes_id });
             }
             _ => return Err(diag("lower_unsupported_operation")),
         }

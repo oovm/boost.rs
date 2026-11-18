@@ -197,7 +197,9 @@ fn candidate_guarantee_is_rejected_by_admission_gate() {
                 summary: "forge".into(),
             },
         },
-        &VerificationPolicy::default(), None)
+        &VerificationPolicy::default(),
+        None,
+    )
     .unwrap_err();
     assert_eq!(err, science_cas::reasoning::mgraph::AdmissionRejectReason::InsufficientGuarantee);
     assert_eq!(semantic.relation_count(), 0);

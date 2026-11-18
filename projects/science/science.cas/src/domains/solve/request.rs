@@ -26,10 +26,7 @@ impl SolveRequest {
     pub fn owning_copy(&self) -> Self {
         match self {
             Self::UnivariateEquation { equation, unknown } => Self::UnivariateEquation { equation: *equation, unknown: *unknown },
-            Self::LinearEquations { equations, unknowns } => Self::LinearEquations {
-                equations: equations.clone(),
-                unknowns: unknowns.clone(),
-            },
+            Self::LinearEquations { equations, unknowns } => Self::LinearEquations { equations: equations.clone(), unknowns: unknowns.clone() },
         }
     }
 }

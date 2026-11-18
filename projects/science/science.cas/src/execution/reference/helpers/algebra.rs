@@ -1,7 +1,7 @@
 //! 多项式结构算子（`Coefficient` / `Exponent`）的窄 exact 折叠。
 
 use science_ir::{ApplicationHead, Atom, SemanticOperator, TermNode};
-use science_numeric::{add as num_add, Number};
+use science_numeric::{Number, add as num_add};
 use science_types::{Result, TermId};
 
 use super::{
@@ -83,29 +83,16 @@ pub(crate) fn evaluate_resultant_terms(session: &mut Session, left: TermId, righ
 }
 
 /// `PolynomialRemainder[p, q, var]` — 测试 `x^3 + 1` 除以 `x + 1`，否则残差。
-pub(crate) fn evaluate_polynomial_remainder_terms(
-    session: &mut Session,
-    dividend: TermId,
-    divisor: TermId,
-    var: TermId,
-) -> Result<TermId> {
+pub(crate) fn evaluate_polynomial_remainder_terms(session: &mut Session, dividend: TermId, divisor: TermId, var: TermId) -> Result<TermId> {
     if symbol_name(session, var).is_none() {
-        return Ok(push_semantic(
-            session,
-            SemanticOperator::PolynomialRemainder,
-            vec![dividend, divisor, var],
-        ));
+        return Ok(push_semantic(session, SemanticOperator::PolynomialRemainder, vec![dividend, divisor, var]));
     }
     if let Some(x) = parse_x_plus_one(session, divisor) {
         if parse_x_cubed_plus_one(session, dividend) == Some(x) {
             return Ok(push_int(session, 0));
         }
     }
-    Ok(push_semantic(
-        session,
-        SemanticOperator::PolynomialRemainder,
-        vec![dividend, divisor, var],
-    ))
+    Ok(push_semantic(session, SemanticOperator::PolynomialRemainder, vec![dividend, divisor, var]))
 }
 
 pub(crate) fn evaluate_coefficient_terms(session: &mut Session, expr: TermId, var: TermId) -> Result<TermId> {
@@ -171,12 +158,7 @@ fn kernel_exponent_in_var(session: &Session, kernel: TermId, var: TermId) -> Opt
                 if session.arena.structural_eq(arguments[0], var) {
                     return number_of(session, arguments[1]).and_then(|n| n.as_exact_integer());
                 }
-                return if term_depends_on_var(session, kernel, var) {
-                    None
-                }
-                else {
-                    Some(0)
-                };
+                return if term_depends_on_var(session, kernel, var) { None } else { Some(0) };
             }
             if matches!(head, ApplicationHead::Semantic(SemanticOperator::Multiply)) {
                 let mut total = 0i64;
@@ -393,10 +375,7 @@ fn factor_present_in_all(session: &Session, factor_lists: &[Vec<TermId>], candid
 }
 
 fn strip_factor(session: &mut Session, term: TermId, factor: TermId) -> TermId {
-    let factors = times_factor_list(session, term)
-        .into_iter()
-        .filter(|item| !session.arena.structural_eq(*item, factor))
-        .collect::<Vec<_>>();
+    let factors = times_factor_list(session, term).into_iter().filter(|item| !session.arena.structural_eq(*item, factor)).collect::<Vec<_>>();
     match factors.as_slice() {
         [] => push_int(session, 1),
         [only] => *only,
@@ -420,10 +399,7 @@ fn parse_quotient_from_distributed_add(session: &mut Session, expr: TermId) -> O
         if exp != -1 {
             continue;
         }
-        let stripped = summands
-            .iter()
-            .map(|term| strip_factor(session, *term, *candidate))
-            .collect::<Vec<_>>();
+        let stripped = summands.iter().map(|term| strip_factor(session, *term, *candidate)).collect::<Vec<_>>();
         let num = fold_plus_symbolic(session, stripped);
         return Some((num, base));
     }
@@ -606,21 +582,9 @@ mod tests {
         let x = session.builder().symbol("x", span());
         let two = session.builder().int(2, span());
         let neg_one = session.builder().int(-1, span());
-        let x2 = session.builder().application(
-            ApplicationHead::Semantic(SemanticOperator::Power),
-            vec![x, two],
-            span(),
-        );
-        let diff = session.builder().application(
-            ApplicationHead::Semantic(SemanticOperator::Add),
-            vec![x2, neg_one],
-            span(),
-        );
-        let linear = session.builder().application(
-            ApplicationHead::Semantic(SemanticOperator::Add),
-            vec![x, neg_one],
-            span(),
-        );
+        let x2 = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Power), vec![x, two], span());
+        let diff = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Add), vec![x2, neg_one], span());
+        let linear = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Add), vec![x, neg_one], span());
         let out = evaluate_polynomial_gcd_terms(&mut session, diff, linear).expect("gcd");
         assert!(session.arena.structural_eq(out, linear));
     }
@@ -631,51 +595,23 @@ mod tests {
         let x = session.builder().symbol("x", span());
         let two = session.builder().int(2, span());
         let neg_one = session.builder().int(-1, span());
-        let x2 = session.builder().application(
-            ApplicationHead::Semantic(SemanticOperator::Power),
-            vec![x, two],
-            span(),
-        );
-        let num = session.builder().application(
-            ApplicationHead::Semantic(SemanticOperator::Add),
-            vec![x2, neg_one],
-            span(),
-        );
-        let den = session.builder().application(
-            ApplicationHead::Semantic(SemanticOperator::Add),
-            vec![x, neg_one],
-            span(),
-        );
-        let quot = session.builder().application(
-            ApplicationHead::Semantic(SemanticOperator::Divide),
-            vec![num, den],
-            span(),
-        );
+        let x2 = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Power), vec![x, two], span());
+        let num = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Add), vec![x2, neg_one], span());
+        let den = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Add), vec![x, neg_one], span());
+        let quot = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Divide), vec![num, den], span());
         let out = evaluate_cancel_terms(&mut session, quot).expect("cancel");
         match session.arena.get(out) {
-            Some(TermNode::Application {
-                head: ApplicationHead::Semantic(SemanticOperator::Add),
-                arguments,
-                ..
-            }) if arguments.len() == 2 => {
+            Some(TermNode::Application { head: ApplicationHead::Semantic(SemanticOperator::Add), arguments, .. }) if arguments.len() == 2 => {
                 assert!(session.arena.structural_eq(arguments[1], x));
             }
             other => panic!("expected 1 + x, got {other:?}"),
         }
 
-        let folded = super::super::arithmetic::evaluate_arithmetic_terms(
-            &mut session,
-            SemanticOperator::Divide,
-            vec![num, den],
-        )
-        .expect("fold divide");
+        let folded =
+            super::super::arithmetic::evaluate_arithmetic_terms(&mut session, SemanticOperator::Divide, vec![num, den]).expect("fold divide");
         let out = evaluate_cancel_terms(&mut session, folded).expect("cancel folded");
         match session.arena.get(out) {
-            Some(TermNode::Application {
-                head: ApplicationHead::Semantic(SemanticOperator::Add),
-                arguments,
-                ..
-            }) if arguments.len() == 2 => {
+            Some(TermNode::Application { head: ApplicationHead::Semantic(SemanticOperator::Add), arguments, .. }) if arguments.len() == 2 => {
                 assert!(session.arena.structural_eq(arguments[1], x));
             }
             other => panic!("expected 1 + x on folded divide, got {other:?}"),

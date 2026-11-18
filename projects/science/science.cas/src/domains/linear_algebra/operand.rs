@@ -2,8 +2,10 @@
 
 use science_types::{Diagnostic, DiagnosticCode, SymbolId};
 
-use super::object_ref::{MatrixObjectStore, MatrixRef};
-use super::value::MatrixValue;
+use super::{
+    object_ref::{MatrixObjectStore, MatrixRef},
+    value::MatrixValue,
+};
 
 /// 矩阵操作数：已 intern 的 DomainObject，或执行期解析的符号绑定。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -56,7 +58,8 @@ impl MatrixOperand {
             Self::Object(matrix) => {
                 if store.get(matrix).is_some() {
                     Ok(matrix)
-                } else {
+                }
+                else {
                     Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
                         .detail("domain", "linear_algebra")
                         .detail("reason", "missing_matrix_ref")

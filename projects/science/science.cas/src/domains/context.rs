@@ -54,10 +54,7 @@ impl<'a> DomainExecutionContext<'a> {
 
     /// Kronecker / 离散 δ 中性算子头。
     pub(crate) fn is_delta(&self, head: ApplicationHead) -> bool {
-        matches!(
-            head,
-            ApplicationHead::Semantic(SemanticOperator::KroneckerDelta | SemanticOperator::DiscreteDelta)
-        )
+        matches!(head, ApplicationHead::Semantic(SemanticOperator::KroneckerDelta | SemanticOperator::DiscreteDelta))
     }
 
     /// 集合成员关系中性算子头。

@@ -53,8 +53,9 @@ pub fn obligation_from_domain_request(session: &mut Session, request: &DomainReq
         DomainRequest::Calculus(calc) => {
             let (predicate, expression, variable) = match calc {
                 CalculusRequest::Derivative { expression, variable, .. } => (predicates::DERIVATIVE_OF, *expression, *variable),
-                CalculusRequest::Integral { expression, variable, .. }
-                | CalculusRequest::DefiniteIntegral { expression, variable, .. } => (predicates::INTEGRAL_OF, *expression, *variable),
+                CalculusRequest::Integral { expression, variable, .. } | CalculusRequest::DefiniteIntegral { expression, variable, .. } => {
+                    (predicates::INTEGRAL_OF, *expression, *variable)
+                }
                 CalculusRequest::Series { expression, variable, .. }
                 | CalculusRequest::Laurent { expression, variable, .. }
                 | CalculusRequest::Asymptotic { expression, variable, .. } => (predicates::SERIES_EXPANSION, *expression, *variable),

@@ -548,7 +548,8 @@ fn reject_algebraic_empty_interval() {
 #[test]
 fn binary_finite_field_roundtrip() {
     let v = NumericValue::finite_field(
-        FiniteFieldValue::try_new(FieldId(4), science_types::FieldPresentationId(2), vec![Integer::from_i64(1), Integer::from_i64(-2)]).unwrap(),
+        FiniteFieldValue::try_new(FieldId(4), science_types::FieldPresentationId(2), vec![Integer::from_i64(1), Integer::from_i64(-2)])
+            .unwrap(),
     );
     let back = NumericValueWire::encode(&v).unwrap().decode().unwrap();
     assert_eq!(back, v);

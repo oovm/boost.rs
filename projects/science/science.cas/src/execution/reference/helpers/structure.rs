@@ -13,8 +13,8 @@ use crate::{
 };
 
 use super::{
-    evaluate_arithmetic_terms, fold_plus_symbolic, fold_subtract_symbolic, nested_list_shape,
-    re_eval_term, rebuild_application, symbol_name, terms::expand_span_3, try_apply_callable,
+    evaluate_arithmetic_terms, fold_plus_symbolic, fold_subtract_symbolic, nested_list_shape, re_eval_term, rebuild_application, symbol_name,
+    terms::expand_span_3, try_apply_callable,
 };
 
 /// `Join[list…]` — 展平有序集合；任一非集合则残差。
@@ -389,9 +389,7 @@ pub(crate) fn evaluate_even_q_terms(session: &mut Session, arg: TermId) -> Resul
 pub(crate) fn evaluate_integer_q_terms(session: &mut Session, arg: TermId) -> Result<TermId> {
     use crate::runtime::values::arena::push_bool;
     if let Some(num) = number_of(session, arg) {
-        let is_int = num.as_exact_integer().is_some()
-            || num.as_integer().is_some()
-            || num.as_rational().is_some_and(|r| r.is_integer());
+        let is_int = num.as_exact_integer().is_some() || num.as_integer().is_some() || num.as_rational().is_some_and(|r| r.is_integer());
         return Ok(push_bool(session, is_int));
     }
     Ok(push_semantic(session, SemanticOperator::IntegerQ, vec![arg]))
@@ -406,12 +404,9 @@ pub(crate) fn evaluate_atom_q_terms(session: &mut Session, arg: TermId) -> Resul
 
 /// `ListQ[expr]` — 有序 `Collection`（方言 List）。
 pub(crate) fn evaluate_list_q_terms(session: &mut Session, arg: TermId) -> Result<TermId> {
-    use science_types::CollectionKind;
     use crate::runtime::values::arena::push_bool;
-    let list = matches!(
-        session.arena.get(arg),
-        Some(science_ir::TermNode::Collection { kind: CollectionKind::OrderedCollection, .. })
-    );
+    use science_types::CollectionKind;
+    let list = matches!(session.arena.get(arg), Some(science_ir::TermNode::Collection { kind: CollectionKind::OrderedCollection, .. }));
     Ok(push_bool(session, list))
 }
 
@@ -443,16 +438,16 @@ pub(crate) fn evaluate_possible_zero_q_terms(session: &mut Session, arg: TermId)
 
 /// `StringQ[expr]` — `Atom::String`。
 pub(crate) fn evaluate_string_q_terms(session: &mut Session, arg: TermId) -> Result<TermId> {
-    use science_ir::{Atom, TermNode};
     use crate::runtime::values::arena::push_bool;
+    use science_ir::{Atom, TermNode};
     let string = matches!(session.arena.get(arg), Some(TermNode::Atom(Atom::String(_))));
     Ok(push_bool(session, string))
 }
 
 /// `Positive[expr]` — 数字严格大于零。
 pub(crate) fn evaluate_positive_terms(session: &mut Session, arg: TermId) -> Result<TermId> {
-    use science_numeric::{Number, compare as num_compare};
     use crate::runtime::values::arena::push_bool;
+    use science_numeric::{Number, compare as num_compare};
     use std::cmp::Ordering;
     if let Some(num) = number_of(session, arg) {
         let zero = Number::small_int(0);
@@ -464,8 +459,8 @@ pub(crate) fn evaluate_positive_terms(session: &mut Session, arg: TermId) -> Res
 
 /// `VectorQ[expr]` — 平坦有序 `Collection`（含 `{}`；非嵌套行块）。
 pub(crate) fn evaluate_vector_q_terms(session: &mut Session, arg: TermId) -> Result<TermId> {
-    use science_ir::TermNode;
     use crate::runtime::values::arena::push_bool;
+    use science_ir::TermNode;
     let vector = match session.arena.get(arg) {
         Some(TermNode::Collection { elements: rows, .. }) => {
             rows.is_empty() || !matches!(session.arena.get(rows[0]), Some(TermNode::Collection { .. }))
@@ -477,8 +472,8 @@ pub(crate) fn evaluate_vector_q_terms(session: &mut Session, arg: TermId) -> Res
 
 /// `MatrixQ[expr]` — 矩形嵌套行 `Collection`（`{{…},…}`；非空）。
 pub(crate) fn evaluate_matrix_q_terms(session: &mut Session, arg: TermId) -> Result<TermId> {
-    use science_ir::TermNode;
     use crate::runtime::values::arena::push_bool;
+    use science_ir::TermNode;
     let matrix = match session.arena.get(arg) {
         Some(TermNode::Collection { elements: rows, .. }) if !rows.is_empty() => {
             matches!(session.arena.get(rows[0]), Some(TermNode::Collection { .. })) && nested_list_shape(session, arg).is_some()
@@ -490,8 +485,8 @@ pub(crate) fn evaluate_matrix_q_terms(session: &mut Session, arg: TermId) -> Res
 
 /// `BooleanQ[expr]` — `Atom::Boolean`。
 pub(crate) fn evaluate_boolean_q_terms(session: &mut Session, arg: TermId) -> Result<TermId> {
-    use science_ir::{Atom, TermNode};
     use crate::runtime::values::arena::push_bool;
+    use science_ir::{Atom, TermNode};
     if matches!(session.arena.get(arg), Some(TermNode::Atom(Atom::Boolean(_)))) {
         return Ok(push_bool(session, true));
     }
@@ -500,8 +495,8 @@ pub(crate) fn evaluate_boolean_q_terms(session: &mut Session, arg: TermId) -> Re
 
 /// `MemberOf[elem, domain]` — `Element[elem, Integers]` 等集合成员测试。
 pub(crate) fn evaluate_member_of_terms(session: &mut Session, elem: TermId, domain: TermId) -> Result<TermId> {
-    use science_numeric::{Number, Real};
     use crate::runtime::values::arena::push_bool;
+    use science_numeric::{Number, Real};
     fn number_in_reals(num: &Number) -> bool {
         match num {
             Number::Integer(_) | Number::Rational(_) | Number::Real(_) => true,
@@ -518,9 +513,8 @@ pub(crate) fn evaluate_member_of_terms(session: &mut Session, elem: TermId, doma
     match symbol_name(session, domain).as_deref() {
         Some("Integers") => {
             if let Some(num) = number_of(session, elem) {
-                let in_integers = num.as_exact_integer().is_some()
-                    || num.as_integer().is_some()
-                    || num.as_rational().is_some_and(|r| r.is_integer());
+                let in_integers =
+                    num.as_exact_integer().is_some() || num.as_integer().is_some() || num.as_rational().is_some_and(|r| r.is_integer());
                 return Ok(push_bool(session, in_integers));
             }
             return Ok(push_bool(session, false));
@@ -825,12 +819,10 @@ pub(crate) fn evaluate_diagonal_matrix_terms(session: &mut Session, terms: Vec<T
 pub(crate) fn evaluate_elementwise_terms(session: &mut Session, op: SemanticOperator, left: TermId, right: TermId) -> Result<TermId> {
     let echo = push_semantic(session, op, vec![left, right]);
     match op {
-        SemanticOperator::ElementwiseAnd | SemanticOperator::ElementwiseOr => {
-            match elementwise_logical_zip(session, op, left, right)? {
-                Some(term) => Ok(term),
-                None => Ok(echo),
-            }
-        }
+        SemanticOperator::ElementwiseAnd | SemanticOperator::ElementwiseOr => match elementwise_logical_zip(session, op, left, right)? {
+            Some(term) => Ok(term),
+            None => Ok(echo),
+        },
         SemanticOperator::ElementwiseMultiply | SemanticOperator::ElementwiseDivide | SemanticOperator::ElementwisePower => {
             let scalar_op = match op {
                 SemanticOperator::ElementwiseMultiply => SemanticOperator::Multiply,
@@ -979,9 +971,12 @@ fn elementwise_zip(session: &mut Session, scalar_op: SemanticOperator, left: Ter
 #[cfg(test)]
 mod member_of_tests {
     use super::evaluate_member_of_terms;
+    use crate::runtime::{
+        Session,
+        values::arena::{push_int, push_symbol_name},
+    };
     use science_ir::{Atom, TermNode};
     use science_numeric::{BranchPolicy, Complex, Number, Real};
-    use crate::runtime::{Session, values::arena::{push_int, push_symbol_name}};
 
     #[test]
     fn member_of_reals_exact_integer() {
@@ -996,10 +991,7 @@ mod member_of_tests {
     fn member_of_reals_exact_rational() {
         let mut s = Session::new();
         let reals = push_symbol_name(&mut s, "Reals");
-        let half = s.arena.push(
-            TermNode::Atom(Atom::Number(Number::rational_i64(1, 2).expect("half"))),
-            Default::default(),
-        );
+        let half = s.arena.push(TermNode::Atom(Atom::Number(Number::rational_i64(1, 2).expect("half"))), Default::default());
         let out = evaluate_member_of_terms(&mut s, half, reals).expect("member");
         assert!(matches!(s.arena.get(out), Some(TermNode::Atom(Atom::Boolean(true)))));
     }
@@ -1039,7 +1031,10 @@ mod member_of_tests {
 #[cfg(test)]
 mod nearest_tests {
     use super::evaluate_nearest_terms;
-    use crate::runtime::{Session, values::arena::{push_int, push_list}};
+    use crate::runtime::{
+        Session,
+        values::arena::{push_int, push_list},
+    };
 
     #[test]
     fn nearest_exact_integer_ties() {

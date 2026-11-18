@@ -133,37 +133,21 @@ fn verify_calculus_admits_honest_derivative_and_rejects_forged_term() {
         let expression = dc.apply_semantic(SemanticOperator::Power, vec![xs, dc.in_(2)]);
         (expression, variable)
     };
-    let request = CalculusRequest::Derivative {
-        expression,
-        variable,
-        order: DerivativeOrder::First,
-        assumptions: AssumptionSet::empty(),
-    };
+    let request = CalculusRequest::Derivative { expression, variable, order: DerivativeOrder::First, assumptions: AssumptionSet::empty() };
     let honest = match execute_calculus(&mut session, request.owning_copy()) {
         science_cas::domains::calculus::CalculusResult::Exact {
-            value: science_cas::domains::calculus::CalculusValue::Expression(t),
-            ..
+            value: science_cas::domains::calculus::CalculusValue::Expression(t), ..
         } => t,
         other => panic!("expected Exact Expression, got {other:?}"),
     };
-    match EvidenceVerifier::verify_calculus(
-        &mut session,
-        &request,
-        CalculusRelationKind::DerivativeOf,
-        honest,
-        &VerificationPolicy::default(),
-    ) {
+    match EvidenceVerifier::verify_calculus(&mut session, &request, CalculusRelationKind::DerivativeOf, honest, &VerificationPolicy::default())
+    {
         AdmissionOutcome::Admitted(_) => {}
         other => panic!("honest derivative must admit, got {other:?}"),
     }
     let forged = session.builder().number(science_numeric::Number::small_int(999), Default::default());
-    match EvidenceVerifier::verify_calculus(
-        &mut session,
-        &request,
-        CalculusRelationKind::DerivativeOf,
-        forged,
-        &VerificationPolicy::default(),
-    ) {
+    match EvidenceVerifier::verify_calculus(&mut session, &request, CalculusRelationKind::DerivativeOf, forged, &VerificationPolicy::default())
+    {
         AdmissionOutcome::Rejected { reason: AdmissionRejectReason::NotExact, .. } => {}
         other => panic!("forged result must reject, got {other:?}"),
     }
@@ -264,7 +248,8 @@ fn structural_equality_of_identical_term_admits() {
             summary: "reflexive".into(),
         },
     };
-    AdmissionGate::admit_claim(&mut session.arena, &mut session.mgraph.semantic, claim, &VerificationPolicy::default(), None).expect("reflexive admit");
+    AdmissionGate::admit_claim(&mut session.arena, &mut session.mgraph.semantic, claim, &VerificationPolicy::default(), None)
+        .expect("reflexive admit");
     assert_eq!(session.mgraph.semantic.relation_count(), 1);
 }
 
@@ -300,11 +285,7 @@ fn forged_typed_rewrite_without_rules_is_rejected() {
         guarantee: Guarantee::ProvenExact,
         evidence: Evidence::TrustedKernel {
             provider: CapabilityProviderId(0),
-            certificate: EvidenceCertificate::TypedRewriteReplay {
-                rule: science_rewrite::RewriteRuleId(0),
-                left: TermId(0),
-                right: TermId(1),
-            },
+            certificate: EvidenceCertificate::TypedRewriteReplay { rule: science_rewrite::RewriteRuleId(0), left: TermId(0), right: TermId(1) },
             summary: "forged-rewrite".into(),
         },
     };

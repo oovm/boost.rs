@@ -23,7 +23,6 @@ mod property;
 mod subgroup;
 mod table;
 
-pub use science_types::{FieldPresentationId, GroupPresentationId};
 pub use bsgs::BsgsChain;
 pub use element::{AlgebraElement, ElementProvenance};
 pub use extension::FieldExtension;
@@ -50,5 +49,6 @@ pub use parent::{AlgebraParentId, CoefficientParent};
 pub use permutation::RawPerm;
 pub use presentation::{FieldPresentation, FieldPresentationKind, GroupPresentation, GroupPresentationKind};
 pub use property::{PropertyState, PropertyWitness};
+pub use science_types::{FieldPresentationId, GroupPresentationId};
 pub use subgroup::{coset_representatives, is_normal, quotient_generators};
 pub use table::FieldTable;

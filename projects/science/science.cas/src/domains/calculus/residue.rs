@@ -36,12 +36,14 @@ impl Residue {
 /// 计算 `Res(expression, variable → point)`。
 ///
 /// 引导实现：先尝试简单极点商式 `f/g`（含 `1/g`）；否则对 `point` 做 Laurent（正则部分阶 0），提取 `power == -1` 的系数。
-pub fn residue_checked(cc: &mut DomainExecutionContext<'_>, expression: TermId, variable: SymbolId, point: TermId) -> Result<CalculusResult<Residue>> {
+pub fn residue_checked(
+    cc: &mut DomainExecutionContext<'_>,
+    expression: TermId,
+    variable: SymbolId,
+    point: TermId,
+) -> Result<CalculusResult<Residue>> {
     if let Some(value) = try_simple_pole_quotient(cc, expression, variable, point)? {
-        return Ok(CalculusResult::Exact {
-            value: Residue { expression, variable, point, value, pole_order: 1 },
-            conditions: Vec::new(),
-        });
+        return Ok(CalculusResult::Exact { value: Residue { expression, variable, point, value, pole_order: 1 }, conditions: Vec::new() });
     }
     let zero = cc.in_(0);
     Ok(match laurent(cc, expression, variable, point, 0)? {
@@ -118,9 +120,7 @@ fn try_simple_pole_quotient(
 fn quotient_parts(cc: &mut DomainExecutionContext<'_>, expression: TermId) -> Option<(TermId, TermId)> {
     match cc.application_head(expression) {
         Some((ApplicationHead::Semantic(SemanticOperator::Divide), args)) if args.len() == 2 => Some((args[0], args[1])),
-        Some((ApplicationHead::Semantic(SemanticOperator::Power), args))
-            if args.len() == 2 && cc.int_exp(args[1]) == Some(-1) =>
-        {
+        Some((ApplicationHead::Semantic(SemanticOperator::Power), args)) if args.len() == 2 && cc.int_exp(args[1]) == Some(-1) => {
             Some((cc.in_(1), args[0]))
         }
         Some((ApplicationHead::Semantic(SemanticOperator::Multiply), args)) if !args.is_empty() => {
@@ -172,10 +172,7 @@ fn looks_singular_value(cc: &DomainExecutionContext<'_>, term: TermId) -> bool {
 fn contains_open_head(cc: &DomainExecutionContext<'_>, term: TermId) -> bool {
     match cc.application_head(term) {
         Some((ApplicationHead::Semantic(op), args)) => {
-            if matches!(
-                op,
-                SemanticOperator::Residue | SemanticOperator::Integrate | SemanticOperator::Limit | SemanticOperator::Series
-            ) {
+            if matches!(op, SemanticOperator::Residue | SemanticOperator::Integrate | SemanticOperator::Limit | SemanticOperator::Series) {
                 return true;
             }
             args.iter().any(|a| contains_open_head(cc, *a))

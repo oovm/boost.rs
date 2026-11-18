@@ -7,7 +7,7 @@
 //! This module is the general Derivation DAG *shape*. EQ linear steps and two-premise
 //! transforms remain bootstrap specializations that can be encoded into [`Evidence`].
 
-use science_relation_types::{EdgeId, EdgeKind, RelationError, NodeId};
+use science_relation_types::{EdgeId, EdgeKind, NodeId, RelationError};
 
 use super::{
     Graph,
@@ -89,12 +89,7 @@ pub fn concluded_judgment(graph: &Graph, evidence: &Evidence) -> Result<Judgment
 /// - empty + `left == right` → `app(equal_refl, [], Equal(left,right))`
 /// - one oriented step → `gen(edge)` or `app(equal_symmetry, [gen], …)` when reversed
 /// - many steps → nested `app(equal_transitivity, …)` over oriented step evidence
-pub fn evidence_from_equal_steps(
-    graph: &Graph,
-    left: NodeId,
-    right: NodeId,
-    steps: &[super::Step],
-) -> Result<Evidence, RelationError> {
+pub fn evidence_from_equal_steps(graph: &Graph, left: NodeId, right: NodeId, steps: &[super::Step]) -> Result<Evidence, RelationError> {
     if steps.is_empty() {
         if left != right {
             return Err(RelationError::ProofInvalid);
@@ -157,12 +152,7 @@ pub fn evidence_from_equal_steps(
 ///
 /// Empty `gamma` is the trusted-path case `W;∅ ⊢ e : J`.
 /// Uses the builtin EQ registry only.
-pub fn replay_evidence(
-    graph: &Graph,
-    world: WorldId,
-    evidence: &Evidence,
-    gamma: &[JudgmentAtom],
-) -> Result<AdmittedRelation, RelationError> {
+pub fn replay_evidence(graph: &Graph, world: WorldId, evidence: &Evidence, gamma: &[JudgmentAtom]) -> Result<AdmittedRelation, RelationError> {
     replay_evidence_with(graph, world, evidence, gamma, &DerivationRegistry::builtins())
 }
 

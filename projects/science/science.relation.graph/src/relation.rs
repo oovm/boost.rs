@@ -3,7 +3,7 @@
 //! These construct **candidates** or mint admissions only after replay. They do not
 //! invent judgment edges.
 
-use science_relation_types::{EdgeId, RelationError, NodeId};
+use science_relation_types::{EdgeId, NodeId, RelationError};
 
 use super::{
     Graph,
@@ -35,11 +35,7 @@ pub fn compose_equal_relations(left: AdmittedRelation, right: AdmittedRelation) 
 ///
 /// Missing path → [`RelationError::ProofInvalid`] (admission refused). Query APIs still
 /// surface [`QueryStatus::Unknown`] separately.
-pub fn admit_equal_relation(
-    graph: &Graph,
-    world: WorldId,
-    candidate: CandidateRelation,
-) -> Result<AdmittedRelation, RelationError> {
+pub fn admit_equal_relation(graph: &Graph, world: WorldId, candidate: CandidateRelation) -> Result<AdmittedRelation, RelationError> {
     if candidate.world != world {
         return Err(RelationError::ProofInvalid);
     }

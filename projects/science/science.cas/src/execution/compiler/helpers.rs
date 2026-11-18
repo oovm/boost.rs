@@ -56,13 +56,7 @@ pub(super) fn collect_compare_chain_args(session: &Session, op: SemanticOperator
 }
 
 pub(super) fn is_compare_operator(op: SemanticOperator) -> bool {
-    matches!(
-        op,
-        SemanticOperator::Less
-            | SemanticOperator::Greater
-            | SemanticOperator::LessEqual
-            | SemanticOperator::GreaterEqual
-    )
+    matches!(op, SemanticOperator::Less | SemanticOperator::Greater | SemanticOperator::LessEqual | SemanticOperator::GreaterEqual)
 }
 
 /// 收集混合比较链：`Greater[Less[a,b],c]` → values `[a,b,c]` · ops `[Less, Greater]`。
@@ -81,12 +75,7 @@ pub(super) fn flatten_mixed_compare_chain(session: &Session, term: TermId) -> Op
     Some((values, ops))
 }
 
-fn collect_mixed_compare_chain(
-    session: &Session,
-    term: TermId,
-    values: &mut Vec<TermId>,
-    ops: &mut Vec<SemanticOperator>,
-) -> bool {
+fn collect_mixed_compare_chain(session: &Session, term: TermId, values: &mut Vec<TermId>, ops: &mut Vec<SemanticOperator>) -> bool {
     let Some(TermNode::Application { head, arguments }) = session.arena.get(term)
     else {
         return false;
@@ -115,8 +104,8 @@ fn collect_mixed_compare_chain(
 #[cfg(test)]
 mod mixed_compare_chain_tests {
     use super::{flatten_mixed_compare_chain, is_compare_operator};
-    use science_ir::{ApplicationHead, SemanticOperator};
     use crate::runtime::{Session, values::arena::push_int};
+    use science_ir::{ApplicationHead, SemanticOperator};
 
     #[test]
     fn unpacks_greater_less_chain() {
@@ -124,16 +113,8 @@ mod mixed_compare_chain_tests {
         let one = push_int(&mut s, 1);
         let two = push_int(&mut s, 2);
         let three = push_int(&mut s, 3);
-        let inner = s.builder().application(
-            ApplicationHead::Semantic(SemanticOperator::Less),
-            vec![one, three],
-            Default::default(),
-        );
-        let term = s.builder().application(
-            ApplicationHead::Semantic(SemanticOperator::Greater),
-            vec![inner, two],
-            Default::default(),
-        );
+        let inner = s.builder().application(ApplicationHead::Semantic(SemanticOperator::Less), vec![one, three], Default::default());
+        let term = s.builder().application(ApplicationHead::Semantic(SemanticOperator::Greater), vec![inner, two], Default::default());
         let (values, ops) = flatten_mixed_compare_chain(&s, term).expect("mixed chain");
         assert_eq!(values.len(), 3);
         assert_eq!(ops, vec![SemanticOperator::Less, SemanticOperator::Greater]);

@@ -82,9 +82,7 @@ fn eval_exact_special_unary(session: &mut Session, function: UnaryFunction, arg:
             UnaryFunction::ArcSin if n.is_neg_one() => exact_neg_pi_over(session, 2),
             UnaryFunction::ArcCos if n.is_zero() => exact_pi_over(session, 2),
             UnaryFunction::ArcCos if n.is_one() => Some(session.builder().int(0, Default::default())),
-            UnaryFunction::ArcCos if n.is_neg_one() => {
-                Some(session.builder().constant(MathematicalConstant::Pi, Default::default()))
-            }
+            UnaryFunction::ArcCos if n.is_neg_one() => Some(session.builder().constant(MathematicalConstant::Pi, Default::default())),
             UnaryFunction::Sinh if n.is_zero() => Some(session.builder().int(0, Default::default())),
             UnaryFunction::Tanh if n.is_zero() => Some(session.builder().int(0, Default::default())),
             UnaryFunction::Cosh if n.is_zero() => Some(session.builder().int(1, Default::default())),
@@ -591,7 +589,6 @@ pub(crate) fn term_scalar_rational_session(session: &Session, term: TermId) -> O
     n.as_rational().map(clone_rational)
 }
 
-
 /// Exact complex scalar from arena terms (`I` / `i`, Add / Multiply / Negate / Subtract).
 pub(crate) fn term_scalar_complex_session(session: &Session, term: TermId) -> Option<(Rational, Rational)> {
     if let Some(q) = term_scalar_rational_session(session, term) {
@@ -600,47 +597,38 @@ pub(crate) fn term_scalar_complex_session(session: &Session, term: TermId) -> Op
     match session.arena.get(term)? {
         science_ir::TermNode::Atom(Atom::Symbol(_)) => {
             let name = symbol_name(session, term)?;
-            if name == "I" || name == "i" || name == "J" || name == "j" {
-                Some((Rational::zero(), Rational::one()))
-            } else {
-                None
-            }
+            if name == "I" || name == "i" || name == "J" || name == "j" { Some((Rational::zero(), Rational::one())) } else { None }
         }
-        science_ir::TermNode::Application { head, arguments, .. } => {
-            match head {
-                ApplicationHead::Semantic(SemanticOperator::Add) => {
-                    let mut re = Rational::zero();
-                    let mut im = Rational::zero();
-                    for &a in arguments {
-                        let (r, i) = term_scalar_complex_session(session, a)?;
-                        re = re.add(&r);
-                        im = im.add(&i);
-                    }
-                    Some((re, im))
+        science_ir::TermNode::Application { head, arguments, .. } => match head {
+            ApplicationHead::Semantic(SemanticOperator::Add) => {
+                let mut re = Rational::zero();
+                let mut im = Rational::zero();
+                for &a in arguments {
+                    let (r, i) = term_scalar_complex_session(session, a)?;
+                    re = re.add(&r);
+                    im = im.add(&i);
                 }
-                ApplicationHead::Semantic(SemanticOperator::Subtract) if arguments.len() == 2 => {
-                    let (ar, ai) = term_scalar_complex_session(session, arguments[0])?;
-                    let (br, bi) = term_scalar_complex_session(session, arguments[1])?;
-                    Some((ar.add(&br.neg()), ai.add(&bi.neg())))
-                }
-                ApplicationHead::Semantic(SemanticOperator::Negate) if arguments.len() == 1 => {
-                    let (re, im) = term_scalar_complex_session(session, arguments[0])?;
-                    Some((re.neg(), im.neg()))
-                }
-                ApplicationHead::Semantic(SemanticOperator::Multiply) if !arguments.is_empty() => {
-                    let mut acc = (Rational::one(), Rational::zero());
-                    for &a in arguments {
-                        let (br, bi) = term_scalar_complex_session(session, a)?;
-                        acc = (
-                            acc.0.mul(&br).add(&acc.1.mul(&bi).neg()),
-                            acc.0.mul(&bi).add(&acc.1.mul(&br)),
-                        );
-                    }
-                    Some(acc)
-                }
-                _ => None,
+                Some((re, im))
             }
-        }
+            ApplicationHead::Semantic(SemanticOperator::Subtract) if arguments.len() == 2 => {
+                let (ar, ai) = term_scalar_complex_session(session, arguments[0])?;
+                let (br, bi) = term_scalar_complex_session(session, arguments[1])?;
+                Some((ar.add(&br.neg()), ai.add(&bi.neg())))
+            }
+            ApplicationHead::Semantic(SemanticOperator::Negate) if arguments.len() == 1 => {
+                let (re, im) = term_scalar_complex_session(session, arguments[0])?;
+                Some((re.neg(), im.neg()))
+            }
+            ApplicationHead::Semantic(SemanticOperator::Multiply) if !arguments.is_empty() => {
+                let mut acc = (Rational::one(), Rational::zero());
+                for &a in arguments {
+                    let (br, bi) = term_scalar_complex_session(session, a)?;
+                    acc = (acc.0.mul(&br).add(&acc.1.mul(&bi).neg()), acc.0.mul(&bi).add(&acc.1.mul(&br)));
+                }
+                Some(acc)
+            }
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -677,11 +665,13 @@ pub(crate) fn term_to_exact_matrix_session(session: &Session, term: TermId) -> O
                 let ncols = cols.unwrap_or(0);
                 if any_imag {
                     MatrixValue::from_complex_exact_row_major(nrows, ncols, complexes).ok()
-                } else {
+                }
+                else {
                     let data: Vec<_> = complexes.into_iter().map(|(re, _)| re).collect();
                     MatrixValue::from_rationals_row_major(nrows, ncols, data).ok()
                 }
-            } else {
+            }
+            else {
                 for cell in rows {
                     let (re, im) = term_scalar_complex_session(session, *cell)?;
                     if !im.is_zero() {
@@ -692,7 +682,8 @@ pub(crate) fn term_to_exact_matrix_session(session: &Session, term: TermId) -> O
                 let n = complexes.len() as u64;
                 if any_imag {
                     MatrixValue::from_complex_exact_row_major(1, n, complexes).ok()
-                } else {
+                }
+                else {
                     let data: Vec<_> = complexes.into_iter().map(|(re, _)| re).collect();
                     MatrixValue::from_rationals_row_major(1, n, data).ok()
                 }
@@ -702,7 +693,8 @@ pub(crate) fn term_to_exact_matrix_session(session: &Session, term: TermId) -> O
             let (re, im) = term_scalar_complex_session(session, term)?;
             if im.is_zero() {
                 MatrixValue::from_rationals_row_major(1, 1, vec![re]).ok()
-            } else {
+            }
+            else {
                 MatrixValue::from_complex_exact_row_major(1, 1, vec![(re, im)]).ok()
             }
         }
@@ -768,7 +760,8 @@ pub(crate) fn complex_exact_to_term_session(session: &mut Session, re: &Rational
     let imag_factor = |session: &mut Session, abs_im: &Rational, i: TermId| -> TermId {
         if *abs_im == Rational::one() {
             i
-        } else {
+        }
+        else {
             let im_t = rational_to_term_session(session, abs_im);
             push_semantic(session, SemanticOperator::Multiply, vec![im_t, i])
         }
@@ -778,16 +771,14 @@ pub(crate) fn complex_exact_to_term_session(session: &mut Session, re: &Rational
         let times = imag_factor(session, &abs_im, i);
         if re.is_zero() {
             push_semantic(session, SemanticOperator::Negate, vec![times])
-        } else {
+        }
+        else {
             push_semantic(session, SemanticOperator::Subtract, vec![re_t, times])
         }
-    } else {
+    }
+    else {
         let times = imag_factor(session, im, i);
-        if re.is_zero() {
-            times
-        } else {
-            push_semantic(session, SemanticOperator::Add, vec![re_t, times])
-        }
+        if re.is_zero() { times } else { push_semantic(session, SemanticOperator::Add, vec![re_t, times]) }
     }
 }
 
@@ -941,10 +932,7 @@ fn solve_disposition_residual_term(
     head: &str,
     disposition: &crate::domains::linear_algebra::SolveDisposition,
 ) -> Option<TermId> {
-    use crate::{
-        domains::linear_algebra::SolveDisposition,
-        runtime::values::arena::push_extension,
-    };
+    use crate::{domains::linear_algebra::SolveDisposition, runtime::values::arena::push_extension};
 
     // Living 16 / R-4.1.14: none / affine must not masquerade as a plain solution list.
     let tag = match disposition {
@@ -958,7 +946,8 @@ fn solve_disposition_residual_term(
     let mut args = vec![session.builder().symbol(tag, Default::default())];
     if let SolveDisposition::Infinite { free_vars } = disposition {
         for index in free_vars {
-            let Ok(n) = i64::try_from(*index) else {
+            let Ok(n) = i64::try_from(*index)
+            else {
                 return None;
             };
             args.push(session.builder().int(n, Default::default()));

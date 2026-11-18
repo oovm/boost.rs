@@ -219,7 +219,10 @@ impl EvidenceVerifier {
                 return AdmissionOutcome::Rejected { reason: AdmissionRejectReason::NotExact, guarantee: Guarantee::Unknown };
             };
             if !conditions.is_empty() {
-                return AdmissionOutcome::Rejected { reason: AdmissionRejectReason::InsufficientGuarantee, guarantee: Guarantee::ConditionalExact };
+                return AdmissionOutcome::Rejected {
+                    reason: AdmissionRejectReason::InsufficientGuarantee,
+                    guarantee: Guarantee::ConditionalExact,
+                };
             }
             if !session.arena.structural_eq(replay_term, claimed_result) {
                 return AdmissionOutcome::Rejected { reason: AdmissionRejectReason::NotExact, guarantee: Guarantee::Unknown };
@@ -260,12 +263,7 @@ impl EvidenceVerifier {
     ///
     /// 通用 [`Self::verify_in`] 对 [`EvidenceCertificate::CongruenceExact`] 实质检查恒失败。
     /// `modulus_fingerprint` / `left` / `right` 在此入口解释为非负整数操作数（非任意哈希）。
-    pub fn verify_congruence(
-        modulus: u64,
-        left: u64,
-        right: u64,
-        policy: &VerificationPolicy,
-    ) -> AdmissionOutcome {
+    pub fn verify_congruence(modulus: u64, left: u64, right: u64, policy: &VerificationPolicy) -> AdmissionOutcome {
         if modulus == 0 {
             return AdmissionOutcome::Rejected { reason: AdmissionRejectReason::MalformedRelation, guarantee: Guarantee::Unknown };
         }
@@ -331,13 +329,7 @@ fn certificate_replays_proposition(claim: &Claim, policy: &VerificationPolicy) -
             EvidenceCertificate::CongruenceExact { modulus_fingerprint: m, left: l, right: r },
         ) => modulus_fingerprint == m && left == l && right == r,
         (
-            Proposition::CalculusRelation {
-                kind,
-                expression_fingerprint,
-                variable_fingerprint,
-                request_identity,
-                result_term,
-            },
+            Proposition::CalculusRelation { kind, expression_fingerprint, variable_fingerprint, request_identity, result_term },
             EvidenceCertificate::CalculusExact {
                 kind: k,
                 expression_fingerprint: e,

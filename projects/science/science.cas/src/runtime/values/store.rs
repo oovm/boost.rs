@@ -4,8 +4,7 @@ use std::collections::BTreeMap;
 
 use science_types::{TermId, ValueId};
 
-use crate::domains::dispatch::DomainResult;
-use crate::domains::linear_algebra::MatrixRef;
+use crate::domains::{dispatch::DomainResult, linear_algebra::MatrixRef};
 
 /// 运行时值载荷。
 ///

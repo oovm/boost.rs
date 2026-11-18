@@ -2,10 +2,9 @@
 
 use science_cas::{
     Session,
-    domains::{calculus::*, context::DomainExecutionContext},
-    execution::execute_ir_request,
     api::{CasRequest, DomainGoal},
-    domains::DomainRequest,
+    domains::{DomainRequest, calculus::*, context::DomainExecutionContext},
+    execution::execute_ir_request,
 };
 use science_ir::{Atom, MathematicalConstant, SemanticOperator, TermNode, UnaryFunction};
 use science_types::AssumptionSet;
@@ -20,10 +19,8 @@ fn series_exp_order_two_coefficients() {
         let expression = dc.apply_semantic(SemanticOperator::Unary(UnaryFunction::Exp), vec![xs]);
         (expression, variable, dc.in_(0))
     };
-    let result = execute_calculus(
-        &mut session,
-        CalculusRequest::Series { expression, variable, center, order: 2, assumptions: AssumptionSet::empty() },
-    );
+    let result =
+        execute_calculus(&mut session, CalculusRequest::Series { expression, variable, center, order: 2, assumptions: AssumptionSet::empty() });
     let series_ref = match result {
         CalculusResult::Exact { value: CalculusValue::Series(r), .. } => r,
         other => panic!("expected Exact Series, got {other:?}"),
@@ -75,27 +72,17 @@ fn definite_gaussian_exp_neg_square_is_sqrt_pi() {
     };
     let result = execute_calculus(
         &mut session,
-        CalculusRequest::DefiniteIntegral {
-            expression,
-            variable,
-            lower,
-            upper,
-            assumptions: AssumptionSet::empty(),
-        },
+        CalculusRequest::DefiniteIntegral { expression, variable, lower, upper, assumptions: AssumptionSet::empty() },
     );
     let term = match result {
         CalculusResult::Exact { value: CalculusValue::Expression(term), .. } => term,
         other => panic!("expected Exact Sqrt[Pi], got {other:?}"),
     };
     match session.arena.get(term) {
-        Some(TermNode::Application {
-            head: science_ir::ApplicationHead::Semantic(op),
-            arguments,
-        }) if op.as_unary() == Some(UnaryFunction::Sqrt) && arguments.len() == 1 => {
-            assert!(matches!(
-                session.arena.get(arguments[0]),
-                Some(TermNode::Atom(Atom::Constant(science_ir::MathematicalConstant::Pi)))
-            ));
+        Some(TermNode::Application { head: science_ir::ApplicationHead::Semantic(op), arguments })
+            if op.as_unary() == Some(UnaryFunction::Sqrt) && arguments.len() == 1 =>
+        {
+            assert!(matches!(session.arena.get(arguments[0]), Some(TermNode::Atom(Atom::Constant(science_ir::MathematicalConstant::Pi)))));
         }
         other => panic!("expected Sqrt[Pi], got {other:?}"),
     }
@@ -112,10 +99,7 @@ fn residue_shifted_simple_pole_is_one() {
         let expression = dc.apply_semantic(SemanticOperator::Divide, vec![dc.in_(1), den]);
         (expression, variable, dc.in_(1))
     };
-    let result = execute_calculus(
-        &mut session,
-        CalculusRequest::Residue { expression, variable, point, assumptions: AssumptionSet::empty() },
-    );
+    let result = execute_calculus(&mut session, CalculusRequest::Residue { expression, variable, point, assumptions: AssumptionSet::empty() });
     let value = match result {
         CalculusResult::Exact { value: CalculusValue::Residue(r), .. } => r.value,
         other => panic!("expected Exact Residue 1, got {other:?}"),
@@ -136,10 +120,7 @@ fn residue_exp_over_z_at_zero_is_one() {
         let expression = dc.apply_semantic(SemanticOperator::Divide, vec![exp, zs]);
         (expression, variable, dc.in_(0))
     };
-    let result = execute_calculus(
-        &mut session,
-        CalculusRequest::Residue { expression, variable, point, assumptions: AssumptionSet::empty() },
-    );
+    let result = execute_calculus(&mut session, CalculusRequest::Residue { expression, variable, point, assumptions: AssumptionSet::empty() });
     let value = match result {
         CalculusResult::Exact { value: CalculusValue::Residue(r), .. } => r.value,
         other => panic!("expected Exact Residue 1 for Exp[z]/z, got {other:?}"),
@@ -186,10 +167,7 @@ fn divergence_of_identity_field() {
         let y = dc.intern("y");
         (vec![dc.symbol_id(x), dc.symbol_id(y)], vec![x, y])
     };
-    let result = execute_calculus(
-        &mut session,
-        CalculusRequest::Divergence { components, variables, assumptions: AssumptionSet::empty() },
-    );
+    let result = execute_calculus(&mut session, CalculusRequest::Divergence { components, variables, assumptions: AssumptionSet::empty() });
     match result {
         CalculusResult::Exact { value: CalculusValue::Divergence(d), .. } => {
             assert!(matches!(session.arena.get(d.value), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2)));
@@ -209,10 +187,7 @@ fn curl_2d_rotation_field_is_two() {
         let fy = dc.symbol_id(x);
         (vec![fx, fy], vec![x, y])
     };
-    let result = execute_calculus(
-        &mut session,
-        CalculusRequest::Curl { components, variables, assumptions: AssumptionSet::empty() },
-    );
+    let result = execute_calculus(&mut session, CalculusRequest::Curl { components, variables, assumptions: AssumptionSet::empty() });
     match result {
         CalculusResult::Exact { value: CalculusValue::Curl(c), .. } => {
             assert_eq!(c.curl_components.len(), 1);
@@ -264,10 +239,7 @@ fn laplace_exp_neg_a_t_is_one_over_a_plus_s() {
     assert!(
         !matches!(
             session.arena.get(term),
-            Some(TermNode::Application {
-                head: science_ir::ApplicationHead::Semantic(SemanticOperator::LaplaceTransform),
-                ..
-            })
+            Some(TermNode::Application { head: science_ir::ApplicationHead::Semantic(SemanticOperator::LaplaceTransform), .. })
         ),
         "image should not re-wrap LaplaceTransform"
     );
@@ -301,10 +273,9 @@ fn fourier_exp_neg_x_squared_is_sqrt_pi_gaussian() {
     };
     fn has_unary(session: &Session, term: science_types::TermId, uf: UnaryFunction) -> bool {
         match session.arena.get(term) {
-            Some(TermNode::Application {
-                head: science_ir::ApplicationHead::Semantic(op),
-                arguments,
-            }) => op.as_unary() == Some(uf) || arguments.iter().any(|a| has_unary(session, *a, uf)),
+            Some(TermNode::Application { head: science_ir::ApplicationHead::Semantic(op), arguments }) => {
+                op.as_unary() == Some(uf) || arguments.iter().any(|a| has_unary(session, *a, uf))
+            }
             Some(TermNode::Collection { elements, .. }) => elements.iter().any(|a| has_unary(session, *a, uf)),
             _ => false,
         }
@@ -365,22 +336,16 @@ fn integrate_reciprocal_yields_log() {
         let expression = dc.apply_semantic(SemanticOperator::Power, vec![xs, dc.in_(-1)]);
         (expression, variable)
     };
-    let result = execute_calculus(
-        &mut session,
-        CalculusRequest::Integral { expression, variable, assumptions: AssumptionSet::empty() },
-    );
+    let result = execute_calculus(&mut session, CalculusRequest::Integral { expression, variable, assumptions: AssumptionSet::empty() });
     match result {
-        CalculusResult::Exact { value: CalculusValue::Expression(term), .. } => {
-            match session.arena.get(term) {
-                Some(TermNode::Application {
-                    head: science_ir::ApplicationHead::Semantic(op),
-                    arguments,
-                }) if op.as_unary() == Some(UnaryFunction::Log) && arguments.len() == 1 => {
-                    assert!(matches!(session.arena.get(arguments[0]), Some(TermNode::Atom(Atom::Symbol(s))) if *s == variable));
-                }
-                other => panic!("expected Log[x], got {other:?}"),
+        CalculusResult::Exact { value: CalculusValue::Expression(term), .. } => match session.arena.get(term) {
+            Some(TermNode::Application { head: science_ir::ApplicationHead::Semantic(op), arguments })
+                if op.as_unary() == Some(UnaryFunction::Log) && arguments.len() == 1 =>
+            {
+                assert!(matches!(session.arena.get(arguments[0]), Some(TermNode::Atom(Atom::Symbol(s))) if *s == variable));
             }
-        }
+            other => panic!("expected Log[x], got {other:?}"),
+        },
         other => panic!("expected Exact Log, got {other:?}"),
     }
 }
@@ -396,10 +361,7 @@ fn integrate_x_sin_x_by_parts() {
         let expression = dc.apply_semantic(SemanticOperator::Multiply, vec![xs, sin_x]);
         (expression, variable)
     };
-    let result = execute_calculus(
-        &mut session,
-        CalculusRequest::Integral { expression, variable, assumptions: AssumptionSet::empty() },
-    );
+    let result = execute_calculus(&mut session, CalculusRequest::Integral { expression, variable, assumptions: AssumptionSet::empty() });
     let term = match result {
         CalculusResult::Exact { value: CalculusValue::Expression(term), .. } => term,
         other => panic!("expected Exact by-parts antiderivative, got {other:?}"),
@@ -407,12 +369,10 @@ fn integrate_x_sin_x_by_parts() {
     // `-x Cos[x] + Sin[x]` folds to an `Add` that still contains `Sin` and `Cos` of `x`.
     fn contains_unary(session: &Session, term: science_types::TermId, uf: UnaryFunction, var: science_types::SymbolId) -> bool {
         match session.arena.get(term) {
-            Some(TermNode::Application {
-                head: science_ir::ApplicationHead::Semantic(op),
-                arguments,
-            }) if op.as_unary() == Some(uf)
-                && arguments.len() == 1
-                && matches!(session.arena.get(arguments[0]), Some(TermNode::Atom(Atom::Symbol(s))) if *s == var) =>
+            Some(TermNode::Application { head: science_ir::ApplicationHead::Semantic(op), arguments })
+                if op.as_unary() == Some(uf)
+                    && arguments.len() == 1
+                    && matches!(session.arena.get(arguments[0]), Some(TermNode::Atom(Atom::Symbol(s))) if *s == var) =>
             {
                 true
             }
@@ -425,10 +385,7 @@ fn integrate_x_sin_x_by_parts() {
     assert!(
         !matches!(
             session.arena.get(term),
-            Some(TermNode::Application {
-                head: science_ir::ApplicationHead::Semantic(SemanticOperator::Integrate),
-                ..
-            })
+            Some(TermNode::Application { head: science_ir::ApplicationHead::Semantic(SemanticOperator::Integrate), .. })
         ),
         "still residual Integrate"
     );
@@ -480,10 +437,7 @@ fn limit_one_plus_x_to_reciprocal_at_zero_is_e() {
     })));
     let result_id = execute_ir_request(&mut session, request).expect("e-limit");
     let term = session.results.get(result_id).expect("result").symbolic_term.expect("term");
-    assert!(matches!(
-        session.arena.get(term),
-        Some(TermNode::Atom(Atom::Constant(science_ir::MathematicalConstant::EulerNumber)))
-    ));
+    assert!(matches!(session.arena.get(term), Some(TermNode::Atom(Atom::Constant(science_ir::MathematicalConstant::EulerNumber)))));
 }
 
 #[test]

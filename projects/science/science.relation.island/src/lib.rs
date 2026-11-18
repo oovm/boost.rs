@@ -14,15 +14,15 @@ use science_relation_graph::{
     admission::{AdmittedRelation, AdmittedWorld, ObservationBoundary, QueryStatus, WorldId},
     conflict::{Incompatibility, detect_judgment_conflict},
     connection::{
-        AdmittedConnection, CandidateConnection, admit_connection, bidirectional_skeleton, transport_relation,
-        transport_relation_asserting, validate_candidate,
+        AdmittedConnection, CandidateConnection, admit_connection, bidirectional_skeleton, transport_relation, transport_relation_asserting,
+        validate_candidate,
     },
     eval::{EvalAttachment, eval_query_status},
     inner::InnerTable,
     rules::RuleTable,
     transform::TransformationSchema,
 };
-use science_relation_types::{EdgeId, EdgeKind, IslandId, RelationError, NodeId};
+use science_relation_types::{EdgeId, EdgeKind, IslandId, NodeId, RelationError};
 
 /// Named island entry.
 pub struct Island {
@@ -425,7 +425,8 @@ impl IslandStore {
         island: IslandId,
         left: science_relation_types::NodeId,
         right: science_relation_types::NodeId,
-    ) -> Result<(science_relation_graph::admission::QueryStatus, Option<science_relation_graph::admission::AdmittedRelation>), RelationError> {
+    ) -> Result<(science_relation_graph::admission::QueryStatus, Option<science_relation_graph::admission::AdmittedRelation>), RelationError>
+    {
         let entry = self.get(island)?;
         let world = entry.world_id(island);
         let (status, admitted) = science_relation_graph::derivation::search_and_admit_equal_checked(&entry.graph, world, left, right)?;
@@ -510,8 +511,7 @@ impl IslandStore {
         let entry = self.get(island)?;
         let world = entry.world_id(island);
         let registry = science_relation_graph::derivation_rules::registry_from_rule_table(&entry.rules);
-        let (rel, evidence) =
-            science_relation_graph::transform::replay_two_premise_checked_with(&entry.graph, world, schema, inst, &registry)?;
+        let (rel, evidence) = science_relation_graph::transform::replay_two_premise_checked_with(&entry.graph, world, schema, inst, &registry)?;
         self.inner.insert_checked(rel, evidence)?;
         Ok(rel)
     }

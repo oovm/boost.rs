@@ -8,8 +8,7 @@ use science_cas::{
     },
 };
 use science_ir::SemanticOperator;
-use science_numeric::Number;
-use science_numeric::to_f64_lossy;
+use science_numeric::{Number, to_f64_lossy};
 
 #[test]
 fn parameterized_plan_reuses_module_across_bindings() {

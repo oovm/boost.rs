@@ -134,7 +134,8 @@ fn triangular_mask(matrix: &MatrixValue, lower: bool) -> Result<MatrixValue, Dia
                     let keep = if lower { j <= i } else { j >= i };
                     if keep {
                         data.push(complex_exact_entry(matrix.get(i, j)?)?);
-                    } else {
+                    }
+                    else {
                         data.push((Rational::zero(), Rational::zero()));
                     }
                 }
@@ -424,10 +425,7 @@ fn unify_exact_element_parents(kinds: impl IntoIterator<Item = ElementParentKind
 fn complex_mul(a: &(Rational, Rational), b: &(Rational, Rational)) -> (Rational, Rational) {
     let (ar, ai) = a;
     let (br, bi) = b;
-    (
-        ar.mul(br).add(&ai.mul(bi).neg()),
-        ar.mul(bi).add(&ai.mul(br)),
-    )
+    (ar.mul(br).add(&ai.mul(bi).neg()), ar.mul(bi).add(&ai.mul(br)))
 }
 
 fn complex_add(a: &(Rational, Rational), b: &(Rational, Rational)) -> (Rational, Rational) {
@@ -450,7 +448,6 @@ fn complex_pow(base: &(Rational, Rational), exp: u32) -> (Rational, Rational) {
     }
     acc
 }
-
 
 fn require_same_element_parent(a: &MatrixValue, b: &MatrixValue) -> Result<(), Diagnostic> {
     if a.parent().element != b.parent().element {
@@ -639,8 +636,7 @@ pub fn elementwise_divide(lhs: &MatrixValue, rhs: &MatrixValue) -> Result<Matrix
                     let (br, bi) = complex_exact_entry(rhs.get(i, j)?)?;
                     let denom = br.mul(&br).add(&bi.mul(&bi));
                     if denom.is_zero() {
-                        return Err(Diagnostic::new(DiagnosticCode::DivideByZero)
-                            .detail("reason", "complex_elementwise_divide_zero"));
+                        return Err(Diagnostic::new(DiagnosticCode::DivideByZero).detail("reason", "complex_elementwise_divide_zero"));
                     }
                     let re = ar.mul(&br).add(&ai.mul(&bi)).try_div(&denom)?;
                     let im = ai.mul(&br).add(&ar.mul(&bi).neg()).try_div(&denom)?;
@@ -720,17 +716,15 @@ pub fn elementwise_power(lhs: &MatrixValue, rhs: &MatrixValue) -> Result<MatrixV
                         return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
                             .detail("reason", "complex_elementwise_power_exp_not_nonneg_int"));
                     }
-                    let Some(exp_i) = br.numerator().to_i64() else {
-                        return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
-                            .detail("reason", "elementwise_power_exp_too_large"));
+                    let Some(exp_i) = br.numerator().to_i64()
+                    else {
+                        return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "elementwise_power_exp_too_large"));
                     };
                     if exp_i < 0 {
-                        return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
-                            .detail("reason", "elementwise_power_neg_exp"));
+                        return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "elementwise_power_neg_exp"));
                     }
                     if exp_i > u32::MAX as i64 {
-                        return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
-                            .detail("reason", "elementwise_power_exp_too_large"));
+                        return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "elementwise_power_exp_too_large"));
                     }
                     data.push(complex_pow(&a, exp_i as u32));
                 }
@@ -967,12 +961,7 @@ pub fn reshape_row_major(matrix: &MatrixValue, new_rows: u64, new_cols: u64) -> 
     reshape_with_order(matrix, new_rows, new_cols, StorageOrder::RowMajor)
 }
 
-fn reshape_with_order(
-    matrix: &MatrixValue,
-    new_rows: u64,
-    new_cols: u64,
-    order: StorageOrder,
-) -> Result<MatrixValue, Diagnostic> {
+fn reshape_with_order(matrix: &MatrixValue, new_rows: u64, new_cols: u64, order: StorageOrder) -> Result<MatrixValue, Diagnostic> {
     let new_shape = MatrixShape::new(new_rows, new_cols);
     let expected = new_shape.element_count()?;
     let source_count = matrix.shape().element_count()?;

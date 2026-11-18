@@ -3,4 +3,3 @@
 mod computation_status;
 mod semantic_contract;
 mod wire_number;
-

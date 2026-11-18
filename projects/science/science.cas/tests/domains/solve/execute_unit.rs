@@ -3,7 +3,11 @@
 use science_cas::{
     Session,
     api::{CasRequest, DomainGoal},
-    domains::{DomainRequest, context::DomainExecutionContext, solve::{SolveRequest, SolveResult, execute_solve}},
+    domains::{
+        DomainRequest,
+        context::DomainExecutionContext,
+        solve::{SolveRequest, SolveResult, execute_solve},
+    },
     execution::execute_ir_request,
 };
 use science_ir::{Atom, SemanticOperator, TermNode};
@@ -40,10 +44,8 @@ fn solve_x_squared_eq_one_via_execute_solve() {
             panic!("expected rule list branch, got {:?}", session.arena.get(*branch));
         };
         assert_eq!(rules.len(), 1);
-        let Some(TermNode::Application {
-            head: science_ir::ApplicationHead::Semantic(SemanticOperator::Rule),
-            arguments,
-        }) = session.arena.get(rules[0])
+        let Some(TermNode::Application { head: science_ir::ApplicationHead::Semantic(SemanticOperator::Rule), arguments }) =
+            session.arena.get(rules[0])
         else {
             panic!("expected Rule, got {:?}", session.arena.get(rules[0]));
         };
@@ -94,10 +96,7 @@ fn solve_two_linear_equations_projects_rules() {
         let xs = dc.symbol_id(x);
         let ys = dc.symbol_id(y);
         let eq1 = dc.apply_semantic(SemanticOperator::Equal, vec![dc.apply_semantic(SemanticOperator::Add, vec![xs, ys]), dc.in_(3)]);
-        let eq2 = dc.apply_semantic(
-            SemanticOperator::Equal,
-            vec![dc.apply_semantic(SemanticOperator::Subtract, vec![xs, ys]), dc.in_(1)],
-        );
+        let eq2 = dc.apply_semantic(SemanticOperator::Equal, vec![dc.apply_semantic(SemanticOperator::Subtract, vec![xs, ys]), dc.in_(1)]);
         (vec![eq1, eq2], vec![x, y])
     };
     let result = execute_solve(&mut session, SolveRequest::LinearEquations { equations, unknowns: unknowns.clone() });
@@ -120,10 +119,8 @@ fn solve_two_linear_equations_projects_rules() {
     assert_eq!(rules.len(), 2);
     let mut got = Vec::new();
     for rule in rules {
-        let Some(TermNode::Application {
-            head: science_ir::ApplicationHead::Semantic(SemanticOperator::Rule),
-            arguments,
-        }) = session.arena.get(*rule)
+        let Some(TermNode::Application { head: science_ir::ApplicationHead::Semantic(SemanticOperator::Rule), arguments }) =
+            session.arena.get(*rule)
         else {
             panic!("expected Rule");
         };

@@ -428,7 +428,9 @@ fn egraph_extract_result_cost_prefers_admitted_rep() {
                     summary: "seed-one-add".into(),
                 },
             },
-            &VerificationPolicy::for_test_harness(), None)
+            &VerificationPolicy::for_test_harness(),
+            None,
+        )
         .expect("seed");
     }
     let class = fx.session().egraph.class_of_term(add).expect("class");
@@ -469,7 +471,9 @@ fn application_congruence_rebuild_admits_from_exact_uf() {
                     summary: "seed-xy".into(),
                 },
             },
-            &VerificationPolicy::for_test_harness(), None)
+            &VerificationPolicy::for_test_harness(),
+            None,
+        )
         .expect("seed");
     }
     {
@@ -514,7 +518,9 @@ fn typed_egraph_admit_pipeline_closes_application_congruence() {
                     summary: "seed-xy".into(),
                 },
             },
-            &VerificationPolicy::for_test_harness(), None)
+            &VerificationPolicy::for_test_harness(),
+            None,
+        )
         .expect("seed");
     }
     let report = fx.session_mut().run_typed_egraph_admit_pipeline(&[add_xz, add_yz], None, 8);
@@ -655,7 +661,9 @@ fn mgraph_closure_materializes_transitivity_in_proof_forest() {
                     summary: "seed".into(),
                 },
             },
-            &VerificationPolicy::for_test_harness(), None)
+            &VerificationPolicy::for_test_harness(),
+            None,
+        )
         .expect("seed");
     }
     assert_eq!(fx.session().mgraph.semantic.derived.proof_forest.len(), 2);

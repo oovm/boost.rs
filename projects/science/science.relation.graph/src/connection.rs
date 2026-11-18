@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 
-use science_relation_types::{EdgeId, EdgeKind, RelationError, NodeId};
+use science_relation_types::{EdgeId, EdgeKind, NodeId, RelationError};
 
 use super::admission::{AdmittedRelation, JudgmentLane, QueryStatus, WorldId, query_status_of_admitted};
 
@@ -173,11 +173,7 @@ pub fn admit_connection(c: &CandidateConnection) -> Result<AdmittedConnection, R
 /// Not part of the Living `10` trusted path. Does **not** establish
 /// `W; empty ⊢ e : J` in the target world and does **not** write a judgment edge
 /// into the target graph — it only mints a transported Outer token.
-pub fn transport_relation(
-    conn: &AdmittedConnection,
-    relation: AdmittedRelation,
-    kind: EdgeKind,
-) -> Result<AdmittedRelation, RelationError> {
+pub fn transport_relation(conn: &AdmittedConnection, relation: AdmittedRelation, kind: EdgeKind) -> Result<AdmittedRelation, RelationError> {
     bootstrap_transport_relation(conn, relation, kind)
 }
 
@@ -203,13 +199,7 @@ pub fn transport_relation_trusted(
 ) -> Result<AdmittedRelation, RelationError> {
     let _ = witness;
     let (_tgt_kind, outer) = transport_mapped(conn, relation, kind)?;
-    Ok(AdmittedRelation::mint(
-        outer.world(),
-        outer.kind(),
-        outer.endpoints(),
-        outer.evidence_tag(),
-        JudgmentLane::SingleWorldReplay,
-    ))
+    Ok(AdmittedRelation::mint(outer.world(), outer.kind(), outer.endpoints(), outer.evidence_tag(), JudgmentLane::SingleWorldReplay))
 }
 
 /// Query status for a transport result. Bootstrap Outer tokens stay non-Proven.
@@ -253,11 +243,7 @@ fn transport_mapped(
     }
     // Abstract identity: empty maps leave endpoints and kind unchanged.
     if conn.source == conn.target && conn.object_map.is_empty() && conn.relation_map.is_empty() {
-        let tag = conn
-            .evidence_tag
-            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-            .wrapping_add(relation.evidence_tag())
-            .wrapping_add(kind_tag(kind));
+        let tag = conn.evidence_tag.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(relation.evidence_tag()).wrapping_add(kind_tag(kind));
         let adm = AdmittedRelation::mint(conn.target, kind, relation.endpoints(), tag, JudgmentLane::BootstrapOuterTransport);
         return Ok((kind, adm));
     }
@@ -265,11 +251,7 @@ fn transport_mapped(
     let (left, right) = relation.endpoints();
     let left_t = *conn.object_map.get(&left).ok_or(RelationError::ConnectionInvalid)?;
     let right_t = *conn.object_map.get(&right).ok_or(RelationError::ConnectionInvalid)?;
-    let tag = conn
-        .evidence_tag
-        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-        .wrapping_add(relation.evidence_tag())
-        .wrapping_add(kind_tag(kind));
+    let tag = conn.evidence_tag.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(relation.evidence_tag()).wrapping_add(kind_tag(kind));
     let adm = AdmittedRelation::mint(conn.target, tgt_kind, (left_t, right_t), tag, JudgmentLane::BootstrapOuterTransport);
     Ok((tgt_kind, adm))
 }
@@ -470,8 +452,7 @@ mod tests {
         assert!(!moved.is_trusted_path_candidate());
         assert_eq!(moved.lane(), JudgmentLane::BootstrapOuterTransport);
 
-        let wrong_world =
-            AdmittedRelation::mint(b, EdgeKind::Equal, (NodeId(0), NodeId(1)), 1, JudgmentLane::SingleWorldReplay);
+        let wrong_world = AdmittedRelation::mint(b, EdgeKind::Equal, (NodeId(0), NodeId(1)), 1, JudgmentLane::SingleWorldReplay);
         assert_eq!(transport_relation(&conn, wrong_world, EdgeKind::Equal).unwrap_err(), RelationError::ConnectionInvalid);
         assert_eq!(transport_relation(&conn, rel, EdgeKind::In).unwrap_err(), RelationError::ConnectionInvalid);
     }

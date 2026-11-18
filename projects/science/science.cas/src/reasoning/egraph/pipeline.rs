@@ -70,13 +70,7 @@ pub fn admit_structural_candidates(
     candidates: &[CandidateEquivalence],
     policy: &VerificationPolicy,
 ) -> Vec<Result<crate::reasoning::mgraph::facts::FactId, AdmissionRejectReason>> {
-    let structural: Vec<_> = candidates
-        .iter()
-        .filter(|c| store.structural_eq(c.left_term, c.right_term))
-        .map(|c| (c.left_term, c.right_term))
-        .collect();
-    structural
-        .into_iter()
-        .map(|(left, right)| admit_structural_term_equality(store, semantic, left, right, policy))
-        .collect()
+    let structural: Vec<_> =
+        candidates.iter().filter(|c| store.structural_eq(c.left_term, c.right_term)).map(|c| (c.left_term, c.right_term)).collect();
+    structural.into_iter().map(|(left, right)| admit_structural_term_equality(store, semantic, left, right, policy)).collect()
 }

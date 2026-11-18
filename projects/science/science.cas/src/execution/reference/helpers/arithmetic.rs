@@ -417,11 +417,13 @@ pub(crate) fn evaluate_mod_quotient_terms(session: &mut Session, op: SemanticOpe
     };
     let a = number_of(session, terms[0]).map(clone_number);
     let b = number_of(session, terms[1]).map(clone_number);
-    let (Some(a), Some(b)) = (a, b) else {
+    let (Some(a), Some(b)) = (a, b)
+    else {
         return Ok(push_semantic(session, op, terms));
     };
     let (ai, bi) = (a.as_exact_integer(), b.as_exact_integer());
-    let (Some(ai), Some(bi)) = (ai, bi) else {
+    let (Some(ai), Some(bi)) = (ai, bi)
+    else {
         return Ok(push_semantic(session, op, terms));
     };
     if bi == 0 {

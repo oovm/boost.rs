@@ -197,15 +197,7 @@ pub fn canonicalize_request(request: &CasRequest) -> RequestProgram {
     let payload_tag = request_payload_tag(request);
     let kind = request.kind_name();
     let fingerprint = request_stage_fingerprint(kind, term_index, payload_tag);
-    RequestProgram {
-        kind,
-        term_index,
-        payload_tag,
-        domain_payload: None,
-        command: None,
-        control: None,
-        fingerprint,
-    }
+    RequestProgram { kind, term_index, payload_tag, domain_payload: None, command: None, control: None, fingerprint }
 }
 
 /// Request 阶段指纹（kind · term_index · payload_tag）。
@@ -259,8 +251,7 @@ fn session_command_tag(command: &SessionCommand) -> &'static str {
 }
 
 fn domain_goal_tag(goal: &crate::api::request::DomainGoal) -> &'static str {
-    use crate::api::request::DomainGoal;
-    use crate::domains::DomainRequest;
+    use crate::{api::request::DomainGoal, domains::DomainRequest};
     match goal {
         DomainGoal::Dispatch(DomainRequest::Calculus(_)) => "Calculus",
         DomainGoal::Dispatch(DomainRequest::NumberTheory(_)) => "NumberTheory",
@@ -312,10 +303,7 @@ pub fn elaborate_semantic(request: &RequestProgram, plan: &PlanProgram) -> Seman
         },
         PlanIntent::DomainProvider => vec![planned_op("CallProvider", "Result")],
     };
-    let effect_edge_count = operations
-        .iter()
-        .filter(|op| matches!(op.kind, "WriteBinding" | "RegisterCompiledRule" | "CallProvider"))
-        .count();
+    let effect_edge_count = operations.iter().filter(|op| matches!(op.kind, "WriteBinding" | "RegisterCompiledRule" | "CallProvider")).count();
     let provider_call_count = usize::from(plan.provider_required);
     let fingerprint = stage_fingerprint(CompileStageKind::Semantic, |h| {
         plan.fingerprint.0.hash(h);
@@ -327,13 +315,7 @@ pub fn elaborate_semantic(request: &RequestProgram, plan: &PlanProgram) -> Seman
         effect_edge_count.hash(h);
         provider_call_count.hash(h);
     });
-    SemanticProgram {
-        plan_fingerprint: plan.fingerprint,
-        operations,
-        effect_edge_count,
-        provider_call_count,
-        fingerprint,
-    }
+    SemanticProgram { plan_fingerprint: plan.fingerprint, operations, effect_edge_count, provider_call_count, fingerprint }
 }
 
 /// P4：在 lowering **前**由 Semantic 产出 CFG outline（不读 module、不 emit SSA）。
@@ -347,12 +329,7 @@ pub fn elaborate_cfg_outline(semantic: &SemanticProgram) -> CfgOutlineProgram {
         region_count.hash(h);
         entry_region.hash(h);
     });
-    CfgOutlineProgram {
-        semantic_fingerprint: semantic.fingerprint,
-        region_count,
-        entry_region,
-        fingerprint,
-    }
+    CfgOutlineProgram { semantic_fingerprint: semantic.fingerprint, region_count, entry_region, fingerprint }
 }
 
 /// 校验 outline 与物化 CFG 的粗粒度一致（region 数 / 入口 region）。
@@ -395,13 +372,7 @@ pub fn materialize_semantic(module: &ExecutionModule) -> SemanticProgram {
         effect_edge_count.hash(h);
         provider_call_count.hash(h);
     });
-    SemanticProgram {
-        plan_fingerprint: StageFingerprint(0),
-        operations,
-        effect_edge_count,
-        provider_call_count,
-        fingerprint,
-    }
+    SemanticProgram { plan_fingerprint: StageFingerprint(0), operations, effect_edge_count, provider_call_count, fingerprint }
 }
 
 /// 过渡：从已形成 module 物化 CFG SSA 程序。

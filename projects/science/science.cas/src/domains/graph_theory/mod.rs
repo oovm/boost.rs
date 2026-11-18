@@ -14,7 +14,6 @@ mod property;
 mod request;
 mod result;
 
-pub use science_graph::{GraphId, GraphRevision, GraphSnapshot, RepresentationId};
 pub use lifecycle::{GraphResidencyController, bind_algorithm_checkpoint, resume_from_algorithm_checkpoint};
 pub use object::{
     GraphAssumptions, GraphDomainSemantics, GraphHandle, GraphNodeId, GraphObject, GraphPresentation, GraphProvenance, MemoryGraph,
@@ -26,3 +25,4 @@ pub use result::{
     BipartiteResult, ConnectedComponentsResult, GraphTheoryResult, GraphTheoryValue, MinimumSpanningForestResult, ShortestPathResult,
     SpanningEdge, StronglyConnectedComponentsResult, execute_graph_theory, operation_name,
 };
+pub use science_graph::{GraphId, GraphRevision, GraphSnapshot, RepresentationId};

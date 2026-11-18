@@ -1,8 +1,8 @@
 //! 扩展表面名不得变成核心语义分派。
 
 use science_cas::runtime::values::arena::push_extension;
-use science_ir::{ApplicationHead, Atom, TermNode};
 use science_harness::SessionFixture;
+use science_ir::{ApplicationHead, Atom, TermNode};
 
 #[test]
 fn extension_named_plus_is_not_semantic_add() {

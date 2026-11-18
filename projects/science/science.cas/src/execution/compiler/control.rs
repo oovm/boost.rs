@@ -61,12 +61,7 @@ impl ExecutionCompiler {
     ) -> Result<SsaValueId> {
         let mut operations = Vec::new();
         let value_ssa = self.lower_pure_expr(session, builder, &mut operations, value)?;
-        blocks.push(BasicBlock {
-            id: entry,
-            parameters: Vec::new(),
-            operations,
-            terminator: Terminator::return_value(value_ssa),
-        });
+        blocks.push(BasicBlock { id: entry, parameters: Vec::new(), operations, terminator: Terminator::return_value(value_ssa) });
         builder.mark_early_return_block(entry);
         Ok(value_ssa)
     }
@@ -165,12 +160,7 @@ impl ExecutionCompiler {
             effect_in: None,
             effect_out: None,
         });
-        blocks.push(BasicBlock {
-            id: entry,
-            parameters: Vec::new(),
-            operations,
-            terminator: Terminator::return_value(indexed),
-        });
+        blocks.push(BasicBlock { id: entry, parameters: Vec::new(), operations, terminator: Terminator::return_value(indexed) });
         Ok(indexed)
     }
 
@@ -236,12 +226,7 @@ impl ExecutionCompiler {
             effect_in: Some(effect_in),
             effect_out: Some(effect_out),
         });
-        blocks.push(BasicBlock {
-            id: entry,
-            parameters: Vec::new(),
-            operations,
-            terminator: Terminator::return_value(rhs),
-        });
+        blocks.push(BasicBlock { id: entry, parameters: Vec::new(), operations, terminator: Terminator::return_value(rhs) });
         Ok(rhs)
     }
 
@@ -267,12 +252,7 @@ impl ExecutionCompiler {
             effect_in: None,
             effect_out: None,
         });
-        blocks.push(BasicBlock {
-            id: entry,
-            parameters: Vec::new(),
-            operations,
-            terminator: Terminator::return_value(stored),
-        });
+        blocks.push(BasicBlock { id: entry, parameters: Vec::new(), operations, terminator: Terminator::return_value(stored) });
         Ok(stored)
     }
 

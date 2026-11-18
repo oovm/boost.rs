@@ -11,10 +11,7 @@ use crate::{
 
 /// `Function[var, body]` 或 `Function[{v₁,…}, body]` 的 binder 符号列。
 fn function_binders(session: &Session, func: TermId) -> Option<Vec<SymbolId>> {
-    let TermNode::Application {
-        head: ApplicationHead::Semantic(SemanticOperator::Function),
-        arguments,
-    } = session.arena.get(func)?
+    let TermNode::Application { head: ApplicationHead::Semantic(SemanticOperator::Function), arguments } = session.arena.get(func)?
     else {
         return None;
     };
@@ -38,10 +35,7 @@ fn function_binders(session: &Session, func: TermId) -> Option<Vec<SymbolId>> {
 }
 
 fn function_body(session: &Session, func: TermId) -> Option<TermId> {
-    let TermNode::Application {
-        head: ApplicationHead::Semantic(SemanticOperator::Function),
-        arguments,
-    } = session.arena.get(func)?
+    let TermNode::Application { head: ApplicationHead::Semantic(SemanticOperator::Function), arguments } = session.arena.get(func)?
     else {
         return None;
     };
@@ -53,10 +47,11 @@ fn map_func_supported(session: &Session, func: TermId, arity: usize) -> bool {
         return binders.len() == arity;
     }
     match session.arena.get(func) {
-        Some(TermNode::Application {
-            head: ApplicationHead::Semantic(_) | ApplicationHead::Extension(_),
-            arguments,
-        }) if arguments.is_empty() && arity == 1 => true,
+        Some(TermNode::Application { head: ApplicationHead::Semantic(_) | ApplicationHead::Extension(_), arguments })
+            if arguments.is_empty() && arity == 1 =>
+        {
+            true
+        }
         _ => false,
     }
 }
@@ -193,50 +188,26 @@ pub(crate) fn evaluate_map_thread_terms(session: &mut Session, func: TermId, lis
 }
 
 /// `MapAt[func, list, index]` — 1-based 下标处应用 `func`，其余元素不变。
-pub(crate) fn evaluate_map_at_terms(
-    session: &mut Session,
-    func: TermId,
-    list: TermId,
-    index: TermId,
-) -> Result<TermId> {
+pub(crate) fn evaluate_map_at_terms(session: &mut Session, func: TermId, list: TermId, index: TermId) -> Result<TermId> {
     let Some(n) = number_of(session, index).and_then(|v| v.as_exact_integer())
     else {
-        return Ok(push_semantic(
-            session,
-            SemanticOperator::MapAt,
-            vec![func, list, index],
-        ));
+        return Ok(push_semantic(session, SemanticOperator::MapAt, vec![func, list, index]));
     };
     if n <= 0 {
-        return Ok(push_semantic(
-            session,
-            SemanticOperator::MapAt,
-            vec![func, list, index],
-        ));
+        return Ok(push_semantic(session, SemanticOperator::MapAt, vec![func, list, index]));
     }
     let Some(TermNode::Collection { elements: items, .. }) = session.arena.get(list)
     else {
-        return Ok(push_semantic(
-            session,
-            SemanticOperator::MapAt,
-            vec![func, list, index],
-        ));
+        return Ok(push_semantic(session, SemanticOperator::MapAt, vec![func, list, index]));
     };
     let items = items.clone();
     let idx = (n as usize).checked_sub(1);
-    let Some(idx) = idx.filter(|&i| i < items.len()) else {
-        return Ok(push_semantic(
-            session,
-            SemanticOperator::MapAt,
-            vec![func, list, index],
-        ));
+    let Some(idx) = idx.filter(|&i| i < items.len())
+    else {
+        return Ok(push_semantic(session, SemanticOperator::MapAt, vec![func, list, index]));
     };
     if !map_func_supported(session, func, 1) {
-        return Ok(push_semantic(
-            session,
-            SemanticOperator::MapAt,
-            vec![func, list, index],
-        ));
+        return Ok(push_semantic(session, SemanticOperator::MapAt, vec![func, list, index]));
     }
     let mapped = map_apply_one(session, func, items[idx])?;
     let mut out = items;
@@ -255,7 +226,8 @@ fn apply_surface_head(session: &mut Session, func: TermId, args: Vec<TermId>) ->
         }
         return re_eval_term(session, body).ok();
     }
-    let TermNode::Application { head, arguments } = session.arena.get(func)? else {
+    let TermNode::Application { head, arguments } = session.arena.get(func)?
+    else {
         return None;
     };
     if !arguments.is_empty() {

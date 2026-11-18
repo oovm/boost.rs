@@ -299,7 +299,9 @@ fn application_congruence_admits_when_args_exact_equal() {
                 summary: "seed-xy".into(),
             },
         },
-        &VerificationPolicy::for_test_harness(), None)
+        &VerificationPolicy::for_test_harness(),
+        None,
+    )
     .expect("seed");
 
     let mut graph = EGraph::new();
@@ -350,7 +352,9 @@ fn typed_admit_pipeline_runs_congruence_after_seed() {
                 summary: "seed-xy".into(),
             },
         },
-        &VerificationPolicy::for_test_harness(), None)
+        &VerificationPolicy::for_test_harness(),
+        None,
+    )
     .expect("seed");
 
     let report = session.run_typed_egraph_admit_pipeline(&[add_xz, add_yz], None, 8);

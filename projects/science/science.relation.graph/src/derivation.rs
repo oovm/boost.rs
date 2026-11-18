@@ -4,7 +4,7 @@
 //! an ordered list of judgment `Equal` steps, encoded into [`crate::evidence::Evidence`]
 //! before minting [`AdmittedRelation`]. Search may propose a diagram; only replay can mint.
 
-use science_relation_types::{RelationError, NodeId};
+use science_relation_types::{NodeId, RelationError};
 
 use super::{
     Graph, Step,
@@ -31,10 +31,7 @@ pub fn replay_equal_derivation(graph: &Graph, diagram: &DerivationDiagram) -> Re
 }
 
 /// Like [`replay_equal_derivation`], but also returns the checked evidence AST.
-pub fn replay_equal_derivation_checked(
-    graph: &Graph,
-    diagram: &DerivationDiagram,
-) -> Result<(AdmittedRelation, Evidence), RelationError> {
+pub fn replay_equal_derivation_checked(graph: &Graph, diagram: &DerivationDiagram) -> Result<(AdmittedRelation, Evidence), RelationError> {
     let (start, end) = diagram.conclusion;
     verify_equal_steps(graph, start, end, &diagram.steps)?;
     let evidence = evidence_from_equal_steps(graph, start, end, &diagram.steps)?;

@@ -4,7 +4,7 @@
 //! trusted evidence on the same endpoints, Core reports [`ConflictReport`] and
 //! may quarantine that world. It does **not** derive arbitrary conclusions.
 
-use science_relation_types::{EdgeKind, RelationError, NodeId};
+use science_relation_types::{EdgeKind, NodeId, RelationError};
 
 use super::{
     Graph,
@@ -45,11 +45,7 @@ pub fn detect_judgment_conflict(
 }
 
 /// Query status under an incompatibility policy (no failure-as-negation).
-pub fn query_under_incompatibility(
-    graph: &Graph,
-    endpoints: (NodeId, NodeId),
-    policy: Incompatibility,
-) -> Result<QueryStatus, RelationError> {
+pub fn query_under_incompatibility(graph: &Graph, endpoints: (NodeId, NodeId), policy: Incompatibility) -> Result<QueryStatus, RelationError> {
     let has_left = find_judgment(graph, policy.left_kind, endpoints)?.is_some();
     let has_right = find_judgment(graph, policy.right_kind, endpoints)?.is_some();
     Ok(match (has_left, has_right) {

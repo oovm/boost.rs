@@ -428,7 +428,8 @@ fn linear_algebra_paths() {
         vec![Rational::new(Integer::from_i64(2), Integer::from_i64(1)), Rational::new(Integer::from_i64(3), Integer::from_i64(1))],
     )
     .unwrap();
-    let request = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::Solve { a: a.into(), b: b.into() })));
+    let request =
+        CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::Solve { a: a.into(), b: b.into() })));
     let result_id = execution::execute_ir_request(&mut s, request).expect("goal");
     let loaded = s.results.get(result_id).expect("result");
     let value_id = loaded.value.expect("value");

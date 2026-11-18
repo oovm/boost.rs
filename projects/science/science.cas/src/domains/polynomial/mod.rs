@@ -35,7 +35,6 @@ pub mod ring_table;
 mod univariate;
 mod value;
 
-pub use science_types::CoefficientRingId;
 pub use builder::PolynomialBuilder;
 pub use cache_key::{PolynomialCacheKey, PolynomialCacheOp, cache_key_for_request};
 pub use canonical::canonicalize_polynomial;
@@ -82,6 +81,7 @@ pub use request::PolynomialRequest;
 pub use result::{PolynomialResult, execute_polynomial, execute_polynomial_with_rings};
 pub use ring::{CoefficientDomain, DivisionPolicy, RingCharacteristic, RingDescriptor};
 pub use ring_table::RingTable;
+pub use science_types::CoefficientRingId;
 pub use univariate::{UnivariateDivision, div_univariate, gcd_univariate, resultant_univariate};
 pub use value::{GroebnerBasisValue, PolynomialDomainValue, PolynomialValue, UnivariateDivisionValue};
 

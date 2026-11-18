@@ -2,14 +2,7 @@
 
 use science_types::{Diagnostic, DiagnosticCode, Result};
 
-use crate::{
-    complex::Complex,
-    execution_budget::NumericContext,
-    integer::Integer,
-    number::NumericValue,
-    rational::Rational,
-    real::Real,
-};
+use crate::{complex::Complex, execution_budget::NumericContext, integer::Integer, number::NumericValue, rational::Rational, real::Real};
 
 enum Lifted {
     Integer(Integer),

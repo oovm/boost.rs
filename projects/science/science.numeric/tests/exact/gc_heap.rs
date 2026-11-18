@@ -145,8 +145,8 @@ fn session_default_publishes_tracing_sweep_heap() {
 
 #[test]
 fn session_tracing_try_clone_in_is_deep_copy() {
-    use science_numeric::natural::Natural;
     use core::ptr::NonNull;
+    use science_numeric::natural::Natural;
 
     let ctx = NumericContext::session_default();
     let n = Natural::from_limbs_in(&ctx, vec![9, 8, 7, 6]).expect("n");
@@ -176,8 +176,8 @@ fn portable_default_also_publishes_tracing_sweep_heap() {
 
 #[test]
 fn portable_and_session_heap_naturals_are_rooted_published() {
-    use science_numeric::natural::Natural;
     use core::ptr::NonNull;
+    use science_numeric::natural::Natural;
 
     for ctx in [NumericContext::portable_default(), NumericContext::session_default()] {
         let n = Natural::from_limbs_in(&ctx, vec![3, 4, 5, 6]).expect("heap natural");

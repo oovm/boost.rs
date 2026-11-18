@@ -78,12 +78,7 @@ pub fn evaluate_term(session: &mut Session, expr: TermId) -> TermEvaluation {
                         .detail("reason", "result_has_no_symbolic_term")
                         .arg("result_id", result_id.0.to_string()),
                 );
-                return TermEvaluation {
-                    term: expr,
-                    kind: EvalKind::Unevaluated,
-                    status: result.status,
-                    diagnostics,
-                };
+                return TermEvaluation { term: expr, kind: EvalKind::Unevaluated, status: result.status, diagnostics };
             };
             let diagnostics = result.diagnostics.clone();
             let status = result.status;

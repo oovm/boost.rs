@@ -1,12 +1,14 @@
 //! 一元结构 / 数值算子求值（Reference 与 `ExecutionHost` 共用）。
 
 use science_ir::{ApplicationHead, Atom, SemanticOperator, TermNode};
-use science_numeric::{abs as num_abs, factorial as num_factorial, sqrt as num_sqrt, Integer, Number, Rational, Real};
+use science_numeric::{Integer, Number, Rational, Real, abs as num_abs, factorial as num_factorial, sqrt as num_sqrt};
 use science_types::{Result, TermId};
 use std::collections::BTreeSet;
 
-use super::diag;
-use super::terms::{exact_arg, exact_sinc};
+use super::{
+    diag,
+    terms::{exact_arg, exact_sinc},
+};
 use crate::{
     execution::{number_of, push_extension, push_number, push_semantic},
     runtime::{
@@ -288,12 +290,7 @@ fn exact_floor(n: &Number) -> Option<Number> {
             if !y.is_finite() {
                 return None;
             }
-            if y.fract() == 0.0 && y.abs() <= i64::MAX as f64 {
-                Some(Number::small_int(y as i64))
-            }
-            else {
-                Some(Number::machine(y))
-            }
+            if y.fract() == 0.0 && y.abs() <= i64::MAX as f64 { Some(Number::small_int(y as i64)) } else { Some(Number::machine(y)) }
         }
         _ => None,
     }
@@ -321,12 +318,7 @@ fn exact_ceiling(n: &Number) -> Option<Number> {
             if !y.is_finite() {
                 return None;
             }
-            if y.fract() == 0.0 && y.abs() <= i64::MAX as f64 {
-                Some(Number::small_int(y as i64))
-            }
-            else {
-                Some(Number::machine(y))
-            }
+            if y.fract() == 0.0 && y.abs() <= i64::MAX as f64 { Some(Number::small_int(y as i64)) } else { Some(Number::machine(y)) }
         }
         _ => None,
     }
@@ -354,12 +346,7 @@ fn exact_round(n: &Number) -> Option<Number> {
             if !y.is_finite() {
                 return None;
             }
-            if y.fract() == 0.0 && y.abs() <= i64::MAX as f64 {
-                Some(Number::small_int(y as i64))
-            }
-            else {
-                Some(Number::machine(y))
-            }
+            if y.fract() == 0.0 && y.abs() <= i64::MAX as f64 { Some(Number::small_int(y as i64)) } else { Some(Number::machine(y)) }
         }
         _ => None,
     }

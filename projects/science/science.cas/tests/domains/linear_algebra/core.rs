@@ -5,9 +5,11 @@ use science_cas::{
         DomainRequest, DomainResult, execute_domain,
         linear_algebra::{
             AlgorithmGuarantee, IndexSpec, LinearAlgebraRequest, LinearAlgebraResult, LinearAlgebraValue, MatrixEntry, MatrixEqualityKind,
-            MatrixParent, MatrixShape, MatrixValue, SolveDisposition, StorageOrder, conjugate_transpose, det_bareiss, elementwise_divide, execute_linear_algebra, flatten_row_major, num_elements_scalar, reshape_column_major, reshape_row_major, reverse_matrix, join_matrices, slice_matrix, riffle_row_vectors, pad_left_row_vector, elementwise_power,
-            hadamard, is_diagonal, is_lower_triangular, is_symmetric, kronecker, matmul, matrices_equal, rank_exact, right_solve_exact,
-            scalar_index_from_one_based, solve_exact, solve_machine, transpose, tril, triu,
+            MatrixParent, MatrixShape, MatrixValue, SolveDisposition, StorageOrder, conjugate_transpose, det_bareiss, elementwise_divide,
+            elementwise_power, execute_linear_algebra, flatten_row_major, hadamard, is_diagonal, is_lower_triangular, is_symmetric,
+            join_matrices, kronecker, matmul, matrices_equal, num_elements_scalar, pad_left_row_vector, rank_exact, reshape_column_major,
+            reshape_row_major, reverse_matrix, riffle_row_vectors, right_solve_exact, scalar_index_from_one_based, slice_matrix, solve_exact,
+            solve_machine, transpose, tril, triu,
         },
     },
     runtime::Session,
@@ -55,82 +57,31 @@ fn l0_conjugate_transpose_matches_transpose_on_reals() {
 
 #[test]
 fn l0_conjugate_transpose_negates_imag_on_complex_exact() {
-    let m = MatrixValue::from_complex_exact_row_major(
-        2,
-        2,
-        vec![(q(1, 1), q(2, 1)), (q(3, 1), q(4, 1)), (q(5, 1), q(6, 1)), (q(7, 1), q(8, 1))],
-    )
-    .expect("m");
+    let m =
+        MatrixValue::from_complex_exact_row_major(2, 2, vec![(q(1, 1), q(2, 1)), (q(3, 1), q(4, 1)), (q(5, 1), q(6, 1)), (q(7, 1), q(8, 1))])
+            .expect("m");
     let ct = conjugate_transpose(&m);
     assert_eq!(ct.shape(), MatrixShape::new(2, 2));
-    assert_eq!(
-        ct.get(0, 0).unwrap(),
-        MatrixEntry::ComplexExact {
-            re: q(1, 1),
-            im: q(-2, 1),
-        }
-    );
-    assert_eq!(
-        ct.get(0, 1).unwrap(),
-        MatrixEntry::ComplexExact {
-            re: q(5, 1),
-            im: q(-6, 1),
-        }
-    );
-    assert_eq!(
-        ct.get(1, 0).unwrap(),
-        MatrixEntry::ComplexExact {
-            re: q(3, 1),
-            im: q(-4, 1),
-        }
-    );
-    assert_eq!(
-        ct.get(1, 1).unwrap(),
-        MatrixEntry::ComplexExact {
-            re: q(7, 1),
-            im: q(-8, 1),
-        }
-    );
+    assert_eq!(ct.get(0, 0).unwrap(), MatrixEntry::ComplexExact { re: q(1, 1), im: q(-2, 1) });
+    assert_eq!(ct.get(0, 1).unwrap(), MatrixEntry::ComplexExact { re: q(5, 1), im: q(-6, 1) });
+    assert_eq!(ct.get(1, 0).unwrap(), MatrixEntry::ComplexExact { re: q(3, 1), im: q(-4, 1) });
+    assert_eq!(ct.get(1, 1).unwrap(), MatrixEntry::ComplexExact { re: q(7, 1), im: q(-8, 1) });
 }
 
 #[test]
 fn l0_complex_exact_matmul_and_hadamard() {
-    let a = MatrixValue::from_complex_exact_row_major(
-        2,
-        2,
-        vec![(q(1, 1), q(1, 1)), (q(0, 1), q(0, 1)), (q(0, 1), q(0, 1)), (q(1, 1), q(-1, 1))],
-    )
-    .expect("a");
-    let b = MatrixValue::from_complex_exact_row_major(
-        2,
-        2,
-        vec![(q(1, 1), q(0, 1)), (q(0, 1), q(1, 1)), (q(0, 1), q(-1, 1)), (q(1, 1), q(0, 1))],
-    )
-    .expect("b");
+    let a =
+        MatrixValue::from_complex_exact_row_major(2, 2, vec![(q(1, 1), q(1, 1)), (q(0, 1), q(0, 1)), (q(0, 1), q(0, 1)), (q(1, 1), q(-1, 1))])
+            .expect("a");
+    let b =
+        MatrixValue::from_complex_exact_row_major(2, 2, vec![(q(1, 1), q(0, 1)), (q(0, 1), q(1, 1)), (q(0, 1), q(-1, 1)), (q(1, 1), q(0, 1))])
+            .expect("b");
     let m = matmul(&a, &b).expect("matmul");
-    assert_eq!(
-        m.get(0, 0).unwrap(),
-        MatrixEntry::ComplexExact {
-            re: q(1, 1),
-            im: q(1, 1),
-        }
-    );
-    assert_eq!(
-        m.get(0, 1).unwrap(),
-        MatrixEntry::ComplexExact {
-            re: q(-1, 1),
-            im: q(1, 1),
-        }
-    );
+    assert_eq!(m.get(0, 0).unwrap(), MatrixEntry::ComplexExact { re: q(1, 1), im: q(1, 1) });
+    assert_eq!(m.get(0, 1).unwrap(), MatrixEntry::ComplexExact { re: q(-1, 1), im: q(1, 1) });
     let h = hadamard(&a, &a).expect("hadamard");
     // (1+i)^2 = 1+2i-1 = 2i
-    assert_eq!(
-        h.get(0, 0).unwrap(),
-        MatrixEntry::ComplexExact {
-            re: q(0, 1),
-            im: q(2, 1),
-        }
-    );
+    assert_eq!(h.get(0, 0).unwrap(), MatrixEntry::ComplexExact { re: q(0, 1), im: q(2, 1) });
 }
 
 #[test]
@@ -138,109 +89,46 @@ fn l0_complex_exact_elementwise_divide() {
     let a = MatrixValue::from_complex_exact_row_major(1, 1, vec![(q(1, 1), q(1, 1))]).expect("a");
     let b = MatrixValue::from_complex_exact_row_major(1, 1, vec![(q(1, 1), q(0, 1))]).expect("b");
     let d = elementwise_divide(&a, &b).expect("div");
-    assert_eq!(
-        d.get(0, 0).unwrap(),
-        MatrixEntry::ComplexExact {
-            re: q(1, 1),
-            im: q(1, 1),
-        }
-    );
+    assert_eq!(d.get(0, 0).unwrap(), MatrixEntry::ComplexExact { re: q(1, 1), im: q(1, 1) });
 }
 
 #[test]
 fn l0_complex_exact_tril_triu() {
-    let m = MatrixValue::from_complex_exact_row_major(
-        2,
-        2,
-        vec![(q(1, 1), q(1, 1)), (q(2, 1), q(0, 1)), (q(3, 1), q(0, 1)), (q(4, 1), q(-1, 1))],
-    )
-    .expect("m");
+    let m =
+        MatrixValue::from_complex_exact_row_major(2, 2, vec![(q(1, 1), q(1, 1)), (q(2, 1), q(0, 1)), (q(3, 1), q(0, 1)), (q(4, 1), q(-1, 1))])
+            .expect("m");
     let lower = tril(&m).expect("tril");
-    assert_eq!(
-        lower.get(0, 1).unwrap(),
-        MatrixEntry::ComplexExact {
-            re: q(0, 1),
-            im: q(0, 1),
-        }
-    );
-    assert_eq!(
-        lower.get(1, 0).unwrap(),
-        MatrixEntry::ComplexExact {
-            re: q(3, 1),
-            im: q(0, 1),
-        }
-    );
+    assert_eq!(lower.get(0, 1).unwrap(), MatrixEntry::ComplexExact { re: q(0, 1), im: q(0, 1) });
+    assert_eq!(lower.get(1, 0).unwrap(), MatrixEntry::ComplexExact { re: q(3, 1), im: q(0, 1) });
     let upper = triu(&m).expect("triu");
-    assert_eq!(
-        upper.get(1, 0).unwrap(),
-        MatrixEntry::ComplexExact {
-            re: q(0, 1),
-            im: q(0, 1),
-        }
-    );
-    assert_eq!(
-        upper.get(0, 1).unwrap(),
-        MatrixEntry::ComplexExact {
-            re: q(2, 1),
-            im: q(0, 1),
-        }
-    );
+    assert_eq!(upper.get(1, 0).unwrap(), MatrixEntry::ComplexExact { re: q(0, 1), im: q(0, 1) });
+    assert_eq!(upper.get(0, 1).unwrap(), MatrixEntry::ComplexExact { re: q(2, 1), im: q(0, 1) });
 }
 
 #[test]
 fn l0_complex_exact_flatten_row_major() {
-    let m = MatrixValue::from_complex_exact_row_major(
-        2,
-        2,
-        vec![(q(1, 1), q(1, 1)), (q(2, 1), q(0, 1)), (q(3, 1), q(0, 1)), (q(4, 1), q(0, 1))],
-    )
-    .expect("m");
+    let m =
+        MatrixValue::from_complex_exact_row_major(2, 2, vec![(q(1, 1), q(1, 1)), (q(2, 1), q(0, 1)), (q(3, 1), q(0, 1)), (q(4, 1), q(0, 1))])
+            .expect("m");
     let flat = flatten_row_major(&m).expect("flatten");
     assert_eq!(flat.shape(), MatrixShape::new(1, 4));
-    assert_eq!(
-        flat.get(0, 0).unwrap(),
-        MatrixEntry::ComplexExact {
-            re: q(1, 1),
-            im: q(1, 1),
-        }
-    );
-    assert_eq!(
-        flat.get(0, 2).unwrap(),
-        MatrixEntry::ComplexExact {
-            re: q(3, 1),
-            im: q(0, 1),
-        }
-    );
+    assert_eq!(flat.get(0, 0).unwrap(), MatrixEntry::ComplexExact { re: q(1, 1), im: q(1, 1) });
+    assert_eq!(flat.get(0, 2).unwrap(), MatrixEntry::ComplexExact { re: q(3, 1), im: q(0, 1) });
 }
 
 #[test]
 fn l0_complex_exact_reverse_join_slice() {
-    let m = MatrixValue::from_complex_exact_row_major(
-        2,
-        2,
-        vec![(q(1, 1), q(1, 1)), (q(2, 1), q(0, 1)), (q(3, 1), q(0, 1)), (q(4, 1), q(0, 1))],
-    )
-    .expect("m");
+    let m =
+        MatrixValue::from_complex_exact_row_major(2, 2, vec![(q(1, 1), q(1, 1)), (q(2, 1), q(0, 1)), (q(3, 1), q(0, 1)), (q(4, 1), q(0, 1))])
+            .expect("m");
     let rev = reverse_matrix(&m).expect("reverse");
-    assert_eq!(
-        rev.get(0, 0).unwrap(),
-        MatrixEntry::ComplexExact {
-            re: q(3, 1),
-            im: q(0, 1),
-        }
-    );
+    assert_eq!(rev.get(0, 0).unwrap(), MatrixEntry::ComplexExact { re: q(3, 1), im: q(0, 1) });
     let a = MatrixValue::from_complex_exact_row_major(1, 1, vec![(q(1, 1), q(1, 1))]).expect("a");
     let b = MatrixValue::from_complex_exact_row_major(1, 1, vec![(q(2, 1), q(0, 1))]).expect("b");
     let joined = join_matrices(&[&a, &b]).expect("join");
     assert_eq!(joined.shape(), MatrixShape::new(1, 2));
     let sliced = slice_matrix(&m, &IndexSpec::Scalar { row: 0, col: 1 }).expect("slice");
-    assert_eq!(
-        sliced.get(0, 0).unwrap(),
-        MatrixEntry::ComplexExact {
-            re: q(2, 1),
-            im: q(0, 1),
-        }
-    );
+    assert_eq!(sliced.get(0, 0).unwrap(), MatrixEntry::ComplexExact { re: q(2, 1), im: q(0, 1) });
 }
 
 #[test]
@@ -250,68 +138,28 @@ fn l0_complex_exact_kronecker_power_pad_riffle() {
     let k = kronecker(&a, &b).expect("kronecker");
     assert_eq!(k.shape(), MatrixShape::new(1, 2));
     // (1+i)*1 = 1+i
-    assert_eq!(
-        k.get(0, 0).unwrap(),
-        MatrixEntry::ComplexExact {
-            re: q(1, 1),
-            im: q(1, 1),
-        }
-    );
+    assert_eq!(k.get(0, 0).unwrap(), MatrixEntry::ComplexExact { re: q(1, 1), im: q(1, 1) });
     // (1+i)*i = i + i^2 = -1 + i
-    assert_eq!(
-        k.get(0, 1).unwrap(),
-        MatrixEntry::ComplexExact {
-            re: q(-1, 1),
-            im: q(1, 1),
-        }
-    );
+    assert_eq!(k.get(0, 1).unwrap(), MatrixEntry::ComplexExact { re: q(-1, 1), im: q(1, 1) });
 
     let base = MatrixValue::from_complex_exact_row_major(1, 1, vec![(q(1, 1), q(1, 1))]).expect("base");
     let exp = MatrixValue::from_complex_exact_row_major(1, 1, vec![(q(2, 1), q(0, 1))]).expect("exp");
     let p = elementwise_power(&base, &exp).expect("pow");
     // (1+i)^2 = 2i
-    assert_eq!(
-        p.get(0, 0).unwrap(),
-        MatrixEntry::ComplexExact {
-            re: q(0, 1),
-            im: q(2, 1),
-        }
-    );
+    assert_eq!(p.get(0, 0).unwrap(), MatrixEntry::ComplexExact { re: q(0, 1), im: q(2, 1) });
 
     let row = MatrixValue::from_complex_exact_row_major(1, 1, vec![(q(1, 1), q(1, 1))]).expect("row");
     let padded = pad_left_row_vector(&row, 3).expect("pad");
     assert_eq!(padded.shape(), MatrixShape::new(1, 3));
-    assert_eq!(
-        padded.get(0, 0).unwrap(),
-        MatrixEntry::ComplexExact {
-            re: q(0, 1),
-            im: q(0, 1),
-        }
-    );
-    assert_eq!(
-        padded.get(0, 2).unwrap(),
-        MatrixEntry::ComplexExact {
-            re: q(1, 1),
-            im: q(1, 1),
-        }
-    );
+    assert_eq!(padded.get(0, 0).unwrap(), MatrixEntry::ComplexExact { re: q(0, 1), im: q(0, 1) });
+    assert_eq!(padded.get(0, 2).unwrap(), MatrixEntry::ComplexExact { re: q(1, 1), im: q(1, 1) });
 
     let left = MatrixValue::from_complex_exact_row_major(1, 2, vec![(q(1, 1), q(0, 1)), (q(2, 1), q(0, 1))]).expect("L");
     let right = MatrixValue::from_complex_exact_row_major(1, 2, vec![(q(0, 1), q(1, 1)), (q(0, 1), q(2, 1))]).expect("R");
     let rif = riffle_row_vectors(&left, &right).expect("riffle");
     assert_eq!(rif.shape(), MatrixShape::new(1, 4));
-    assert_eq!(
-        rif.get(0, 1).unwrap(),
-        MatrixEntry::ComplexExact {
-            re: q(0, 1),
-            im: q(1, 1),
-        }
-    );
+    assert_eq!(rif.get(0, 1).unwrap(), MatrixEntry::ComplexExact { re: q(0, 1), im: q(1, 1) });
 }
-
-
-
-
 
 #[test]
 fn l0_matmul_and_hadamard_shape_checks() {
@@ -629,12 +477,8 @@ fn goal_exact_solve_inconsistent_projects_disposition_residual() {
     use science_types::ComputationStatus;
 
     let mut session = Session::new();
-    let a = session
-        .matrix_objects
-        .intern(MatrixValue::from_integers_row_major(2, 2, vec![i(1), i(2), i(2), i(4)]).unwrap());
-    let b = session
-        .matrix_objects
-        .intern(MatrixValue::from_integers_row_major(2, 1, vec![i(1), i(0)]).unwrap());
+    let a = session.matrix_objects.intern(MatrixValue::from_integers_row_major(2, 2, vec![i(1), i(2), i(2), i(4)]).unwrap());
+    let b = session.matrix_objects.intern(MatrixValue::from_integers_row_major(2, 1, vec![i(1), i(0)]).unwrap());
     let request =
         CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::Solve { a: a.into(), b: b.into() })));
     let result_id = execute_ir_request(&mut session, request).expect("exact inconsistent goal");
@@ -651,7 +495,6 @@ fn goal_exact_solve_inconsistent_projects_disposition_residual() {
     }
 }
 
-
 #[test]
 fn goal_exact_solve_infinite_projects_disposition_residual() {
     use science_cas::{
@@ -663,12 +506,8 @@ fn goal_exact_solve_infinite_projects_disposition_residual() {
     use science_types::ComputationStatus;
 
     let mut session = Session::new();
-    let a = session
-        .matrix_objects
-        .intern(MatrixValue::from_integers_row_major(2, 2, vec![i(1), i(2), i(2), i(4)]).unwrap());
-    let b = session
-        .matrix_objects
-        .intern(MatrixValue::from_integers_row_major(2, 1, vec![i(2), i(4)]).unwrap());
+    let a = session.matrix_objects.intern(MatrixValue::from_integers_row_major(2, 2, vec![i(1), i(2), i(2), i(4)]).unwrap());
+    let b = session.matrix_objects.intern(MatrixValue::from_integers_row_major(2, 1, vec![i(2), i(4)]).unwrap());
     let request =
         CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::Solve { a: a.into(), b: b.into() })));
     let result_id = execute_ir_request(&mut session, request).expect("exact infinite goal");
@@ -685,7 +524,6 @@ fn goal_exact_solve_infinite_projects_disposition_residual() {
         other => panic!("expected LinearSolve[Infinite, …], got {other:?}"),
     }
 }
-
 
 #[test]
 fn goal_rref_projects_nested_list_via_execution() {
@@ -730,8 +568,7 @@ fn goal_inverse_projects_nested_list_via_execution() {
 
     let mut session = Session::new();
     let matrix = session.matrix_objects.intern(MatrixValue::from_integers_row_major(2, 2, vec![i(1), i(0), i(0), i(1)]).unwrap());
-    let request =
-        CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::Inverse { matrix: matrix.into() })));
+    let request = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::Inverse { matrix: matrix.into() })));
     let result_id = execute_ir_request(&mut session, request).expect("inverse goal");
     let term = session.results.get(result_id).expect("result").symbolic_term.expect("projected");
     let TermNode::Collection { elements: rows, .. } = session.arena.get(term).expect("rows")
@@ -775,8 +612,7 @@ fn goal_inverse_singular_projects_residual() {
 
     let mut session = Session::new();
     let matrix = session.matrix_objects.intern(MatrixValue::from_integers_row_major(2, 2, vec![i(1), i(2), i(2), i(4)]).unwrap());
-    let request =
-        CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::Inverse { matrix: matrix.into() })));
+    let request = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::Inverse { matrix: matrix.into() })));
     let result_id = execute_ir_request(&mut session, request).expect("singular inverse goal");
     let result = session.results.get(result_id).expect("result");
     assert_eq!(result.status, ComputationStatus::Partial);
@@ -808,13 +644,12 @@ fn goal_eigenvalues_and_eigenvectors_diagonal() {
     use science_ir::{Atom, TermNode};
 
     let mut session = Session::new();
-    let matrix = session
-        .matrix_objects
-        .intern(MatrixValue::from_integers_row_major(2, 2, vec![i(1), i(0), i(0), i(2)]).unwrap());
+    let matrix = session.matrix_objects.intern(MatrixValue::from_integers_row_major(2, 2, vec![i(1), i(0), i(0), i(2)]).unwrap());
 
-    let eigenvalues = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(
-        LinearAlgebraRequest::Eigenvalues { matrix: matrix.into(), column_vector: false },
-    )));
+    let eigenvalues = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::Eigenvalues {
+        matrix: matrix.into(),
+        column_vector: false,
+    })));
     let result_id = execute_ir_request(&mut session, eigenvalues).expect("eigenvalues goal");
     let term = session.results.get(result_id).expect("result").symbolic_term.expect("projected");
     let TermNode::Collection { elements: items, .. } = session.arena.get(term).expect("list")
@@ -825,9 +660,10 @@ fn goal_eigenvalues_and_eigenvectors_diagonal() {
     assert!(matches!(session.arena.get(items[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2)));
     assert!(matches!(session.arena.get(items[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(1)));
 
-    let eigenvectors = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(
-        LinearAlgebraRequest::Eigenvectors { matrix: matrix.into(), column_basis: false },
-    )));
+    let eigenvectors = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::Eigenvectors {
+        matrix: matrix.into(),
+        column_basis: false,
+    })));
     let result_id = execute_ir_request(&mut session, eigenvectors).expect("eigenvectors goal");
     let term = session.results.get(result_id).expect("result").symbolic_term.expect("projected");
     let TermNode::Collection { elements: rows, .. } = session.arena.get(term).expect("matrix")
@@ -858,13 +694,12 @@ fn goal_eigenvalues_symmetric_2x2_and_matlab_column() {
     use science_ir::{Atom, TermNode};
 
     let mut session = Session::new();
-    let matrix = session
-        .matrix_objects
-        .intern(MatrixValue::from_integers_row_major(2, 2, vec![i(1), i(2), i(2), i(1)]).unwrap());
+    let matrix = session.matrix_objects.intern(MatrixValue::from_integers_row_major(2, 2, vec![i(1), i(2), i(2), i(1)]).unwrap());
 
-    let eigenvalues = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(
-        LinearAlgebraRequest::Eigenvalues { matrix: matrix.into(), column_vector: false },
-    )));
+    let eigenvalues = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::Eigenvalues {
+        matrix: matrix.into(),
+        column_vector: false,
+    })));
     let result_id = execute_ir_request(&mut session, eigenvalues).expect("symmetric eigenvalues goal");
     let term = session.results.get(result_id).expect("result").symbolic_term.expect("projected");
     let TermNode::Collection { elements: items, .. } = session.arena.get(term).expect("list")
@@ -875,9 +710,10 @@ fn goal_eigenvalues_symmetric_2x2_and_matlab_column() {
     assert!(matches!(session.arena.get(items[0]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(3)));
     assert!(matches!(session.arena.get(items[1]), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(-1)));
 
-    let eigenvalues_col = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(
-        LinearAlgebraRequest::Eigenvalues { matrix: matrix.into(), column_vector: true },
-    )));
+    let eigenvalues_col = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::Eigenvalues {
+        matrix: matrix.into(),
+        column_vector: true,
+    })));
     let result_id = execute_ir_request(&mut session, eigenvalues_col).expect("column eigenvalues goal");
     let term = session.results.get(result_id).expect("result").symbolic_term.expect("projected");
     let TermNode::Collection { elements: rows, .. } = session.arena.get(term).expect("column matrix")
@@ -908,13 +744,12 @@ fn goal_eigenvectors_symmetric_2x2() {
     use science_ir::{Atom, TermNode};
 
     let mut session = Session::new();
-    let matrix = session
-        .matrix_objects
-        .intern(MatrixValue::from_integers_row_major(2, 2, vec![i(1), i(2), i(2), i(1)]).unwrap());
+    let matrix = session.matrix_objects.intern(MatrixValue::from_integers_row_major(2, 2, vec![i(1), i(2), i(2), i(1)]).unwrap());
 
-    let eigenvectors = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(
-        LinearAlgebraRequest::Eigenvectors { matrix: matrix.into(), column_basis: false },
-    )));
+    let eigenvectors = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::Eigenvectors {
+        matrix: matrix.into(),
+        column_basis: false,
+    })));
     let result_id = execute_ir_request(&mut session, eigenvectors).expect("symmetric eigenvectors goal");
     let term = session.results.get(result_id).expect("result").symbolic_term.expect("projected");
     let TermNode::Collection { elements: rows, .. } = session.arena.get(term).expect("matrix")
@@ -945,13 +780,12 @@ fn goal_eigenvectors_symmetric_2x2_matlab_column_basis() {
     use science_ir::{Atom, TermNode};
 
     let mut session = Session::new();
-    let matrix = session
-        .matrix_objects
-        .intern(MatrixValue::from_integers_row_major(2, 2, vec![i(1), i(2), i(2), i(1)]).unwrap());
+    let matrix = session.matrix_objects.intern(MatrixValue::from_integers_row_major(2, 2, vec![i(1), i(2), i(2), i(1)]).unwrap());
 
-    let eigenvectors = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(
-        LinearAlgebraRequest::Eigenvectors { matrix: matrix.into(), column_basis: true },
-    )));
+    let eigenvectors = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::Eigenvectors {
+        matrix: matrix.into(),
+        column_basis: true,
+    })));
     let result_id = execute_ir_request(&mut session, eigenvectors).expect("column eigenvectors goal");
     let term = session.results.get(result_id).expect("result").symbolic_term.expect("projected");
     let TermNode::Collection { elements: rows, .. } = session.arena.get(term).expect("matrix")
@@ -983,8 +817,7 @@ fn goal_trace_projects_integer_via_execution() {
 
     let mut session = Session::new();
     let matrix = session.matrix_objects.intern(MatrixValue::from_integers_row_major(2, 2, vec![i(1), i(2), i(3), i(4)]).unwrap());
-    let request =
-        CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::Trace { matrix: matrix.into() })));
+    let request = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::Trace { matrix: matrix.into() })));
     let result_id = execute_ir_request(&mut session, request).expect("trace goal");
     let term = session.results.get(result_id).expect("result").symbolic_term.expect("projected");
     assert!(matches!(session.arena.get(term), Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(5)));
@@ -1207,9 +1040,8 @@ fn goal_condition_number_projects_machine_float() {
 
     let mut session = Session::new();
     let matrix = session.matrix_objects.intern(MatrixValue::from_f64_row_major(2, 2, vec![2.0, 0.0, 0.0, 2.0]).unwrap());
-    let request = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::ConditionNumber {
-        matrix: matrix.into(),
-    })));
+    let request =
+        CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::ConditionNumber { matrix: matrix.into() })));
     let result_id = execute_ir_request(&mut session, request).expect("cond goal");
     let result = session.results.get(result_id).expect("result");
     assert_eq!(result.status, ComputationStatus::Approximate);
@@ -1383,10 +1215,8 @@ fn goal_tril_and_kronecker_project_nested_list() {
 
     let a = session.matrix_objects.intern(MatrixValue::from_integers_row_major(1, 2, vec![i(1), i(2)]).unwrap());
     let b = session.matrix_objects.intern(MatrixValue::from_integers_row_major(1, 2, vec![i(3), i(4)]).unwrap());
-    let request = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::Kronecker {
-        lhs: a.into(),
-        rhs: b.into(),
-    })));
+    let request =
+        CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::Kronecker { lhs: a.into(), rhs: b.into() })));
     let result_id = execute_ir_request(&mut session, request).expect("kronecker goal");
     let result = session.results.get(result_id).expect("result");
     assert_eq!(result.status, ComputationStatus::Exact);
@@ -1521,9 +1351,8 @@ fn goal_matrix_exp_skew_symmetric_2x2_rotation_generator() {
 
     let mut session = Session::new();
     let matrix = session.matrix_objects.intern(generator);
-    let request = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::MatrixExp {
-        matrix: matrix.into(),
-    })));
+    let request =
+        CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::MatrixExp { matrix: matrix.into() })));
     let result_id = execute_ir_request(&mut session, request).expect("matrix exp goal");
     let result = session.results.get(result_id).expect("result");
     assert_eq!(result.status, ComputationStatus::Approximate);

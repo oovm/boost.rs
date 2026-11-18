@@ -45,4 +45,3 @@ fn score_candidate_is_stable_integer() {
     assert!(a.total >= 0);
     assert_ne!(a.tie_breaker, 0);
 }
-

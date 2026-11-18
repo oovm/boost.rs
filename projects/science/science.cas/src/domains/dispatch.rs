@@ -117,11 +117,9 @@ pub fn call_domain_provider(session: &mut Session, request: DomainRequest) -> Re
         DomainRequest::GraphTheory(req) => Ok(DomainResult::GraphTheory(execute_graph_theory(req))),
         DomainRequest::LinearAlgebra(req) => {
             let req = crate::domains::linear_algebra::resolve_own_numeric_bindings(session, req);
-            Ok(DomainResult::LinearAlgebra(execute_linear_algebra_with_bindings(
-                req,
-                &session.matrix_objects,
-                &|symbol| session.defs.matrix_binding(symbol),
-            )))
+            Ok(DomainResult::LinearAlgebra(execute_linear_algebra_with_bindings(req, &session.matrix_objects, &|symbol| {
+                session.defs.matrix_binding(symbol)
+            })))
         }
         DomainRequest::Optimization(req) => Ok(DomainResult::Optimization(execute_optimization(req))),
         DomainRequest::Solve(req) => Ok(DomainResult::Solve(execute_solve(session, req))),

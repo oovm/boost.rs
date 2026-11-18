@@ -1,6 +1,4 @@
-use science_ir::{
-    ApplicationHead, Atom, ExtensionRegistry, SemanticOperator, TermBuilder, TermNode, TermStore, canonical_hash, fnv1a64,
-};
+use science_ir::{ApplicationHead, Atom, ExtensionRegistry, SemanticOperator, TermBuilder, TermNode, TermStore, canonical_hash, fnv1a64};
 use science_types::SourceSpan;
 
 const SPAN: SourceSpan = SourceSpan { start: 0, end: 0 };

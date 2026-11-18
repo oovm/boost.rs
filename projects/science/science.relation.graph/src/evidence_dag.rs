@@ -132,8 +132,7 @@ mod tests {
     fn identical_subtrees_share_one_node() {
         let mut dag = EvidenceDag::new();
         let leaf = Evidence::Gen { edge: EdgeId(7) };
-        let left =
-            Evidence::App { rule: EQUAL_TRANSITIVITY.into(), premises: vec![leaf.clone(), leaf.clone()], conclusion: eq(0, 2) };
+        let left = Evidence::App { rule: EQUAL_TRANSITIVITY.into(), premises: vec![leaf.clone(), leaf.clone()], conclusion: eq(0, 2) };
         let id = dag.intern(&left).unwrap();
         // Gen once + App once = 2 nodes (not 3).
         assert_eq!(dag.len(), 2);

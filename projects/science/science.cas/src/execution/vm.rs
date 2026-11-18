@@ -104,9 +104,7 @@ fn execute_verified_cfg_on_vm_with_config_and_frames(
         let mut interpreter = Interpreter::new();
         let exit = {
             let mut host = match frames {
-                Some(frames) => {
-                    ExecutionHost::with_shared_frames(session, frames, module.provider_calls.clone(), lowered.index_axes.clone())
-                }
+                Some(frames) => ExecutionHost::with_shared_frames(session, frames, module.provider_calls.clone(), lowered.index_axes.clone()),
                 None => ExecutionHost::new(session, module.provider_calls.clone(), lowered.index_axes.clone()),
             };
             let mut ctx = VmExecutionContext::with_lease(&mut lease);
@@ -150,17 +148,16 @@ pub fn materialize_verified_vm_outcome(
     outcome: VerifiedVmOutcome,
     provenance_kind: &'static str,
 ) -> science_types::Result<science_types::ResultId> {
-    use crate::execution::reference::symbolic_term_from_value_id;
-    use crate::runtime::results::{ComputationResult, CoverageStatus, ResultProvenance};
+    use crate::{
+        execution::reference::symbolic_term_from_value_id,
+        runtime::results::{ComputationResult, CoverageStatus, ResultProvenance},
+    };
     use science_types::{ComputationStatus, Diagnostic, DiagnosticCode};
 
     // 分轴：residual → 未完成；无 residual 的 IR 宿主返回 → 可信内核完成（Exact/Full）。
     // 真正的搜索候选 / 领域保证由 `SlotValue::Result` 透传，不得在此一律降为 Candidate。
-    let (status, coverage) = if outcome.residual {
-        (ComputationStatus::Unknown, CoverageStatus::Partial)
-    } else {
-        (ComputationStatus::Exact, CoverageStatus::Full)
-    };
+    let (status, coverage) =
+        if outcome.residual { (ComputationStatus::Unknown, CoverageStatus::Partial) } else { (ComputationStatus::Exact, CoverageStatus::Full) };
     match outcome.value {
         SlotValue::Result(result_id) => Ok(result_id),
         SlotValue::Boolean(value) => {
@@ -223,7 +220,8 @@ pub fn vm_config_from_session(session: &Session) -> VmConfig {
     let gc_mode = session.heap().borrow().effective_mode();
     if let Some(ctrl) = session.shared_execution() {
         VmConfig { gc_mode, step_budget: ctrl.step_budget.clone(), cancellation: ctrl.cancellation.clone() }
-    } else {
+    }
+    else {
         VmConfig { gc_mode, step_budget: science_vm::StepBudget::unlimited(), cancellation: CancellationToken::new() }
     }
 }
@@ -233,7 +231,8 @@ fn root_vm_config_from_session(session: &Session) -> VmConfig {
     let gc_mode = session.heap().borrow().effective_mode();
     if let Some(ctrl) = session.shared_execution() {
         VmConfig { gc_mode, step_budget: ctrl.step_budget.clone(), cancellation: ctrl.cancellation.clone() }
-    } else {
+    }
+    else {
         let root = SharedExecutionControl::new_root();
         VmConfig { gc_mode, step_budget: root.step_budget, cancellation: root.cancellation }
     }

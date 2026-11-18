@@ -8,9 +8,7 @@ use std::collections::HashMap;
 
 use science_types::{DispatchTableId, ExtensionOperatorId, SymbolId, TermId};
 
-use crate::api::request::CasRequest;
-use crate::domains::linear_algebra::MatrixRef;
-use crate::reasoning::trs::TermPattern;
+use crate::{api::request::CasRequest, domains::linear_algebra::MatrixRef, reasoning::trs::TermPattern};
 
 /// 语句层定义（立即绑定 / 残余绑定 / 规则分派）。
 #[derive(Debug, Default)]

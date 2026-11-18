@@ -81,7 +81,8 @@ fn hash_term(s: &mut HashWalk<'_>, id: TermId) {
         mix_tag(&mut s.state, b"cycle");
         return;
     }
-    let Some(kind) = s.arena.get(id) else {
+    let Some(kind) = s.arena.get(id)
+    else {
         mix_tag(&mut s.state, b"invalid");
         return;
     };

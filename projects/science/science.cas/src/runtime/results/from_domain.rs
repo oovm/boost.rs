@@ -60,7 +60,8 @@ pub fn computation_from_domain(session: &mut Session, mut domain: DomainResult) 
 
 /// Intern owned matrix envelopes so published `MatrixResult` carries `matrix_ref` + revision.
 fn attach_linear_algebra_matrix_refs(session: &mut Session, domain: &mut DomainResult) {
-    let DomainResult::LinearAlgebra(LinearAlgebraResult::Ok { value }) = domain else {
+    let DomainResult::LinearAlgebra(LinearAlgebraResult::Ok { value }) = domain
+    else {
         return;
     };
     let envelope = match value {
@@ -135,11 +136,7 @@ fn map_calculus(session: &mut Session, result: &CalculusResult<CalculusValue>) -
             let term = calculus_bridge_term(session, value);
             let admitted = term.filter(|_| conditions.is_empty()).and_then(|t| calculus_admitted_fact(session, t));
             let (status, coverage, evidence) = match admitted {
-                Some(fact) => (
-                    ComputationStatus::Exact,
-                    CoverageStatus::Full,
-                    vec![ResultEvidence::AdmittedRelation { fact }],
-                ),
+                Some(fact) => (ComputationStatus::Exact, CoverageStatus::Full, vec![ResultEvidence::AdmittedRelation { fact }]),
                 None => (ComputationStatus::Candidate, CoverageStatus::Partial, Vec::new()),
             };
             DomainMeta {
@@ -175,11 +172,9 @@ fn map_calculus(session: &mut Session, result: &CalculusResult<CalculusValue>) -
 
 fn calculus_admitted_fact(session: &Session, result_term: TermId) -> Option<crate::reasoning::mgraph::FactId> {
     use crate::reasoning::mgraph::{FactId, Proposition};
-    session.mgraph.semantic.admission_journal().claims().iter().enumerate().find_map(|(i, verified)| {
-        match &verified.claim().proposition {
-            Proposition::CalculusRelation { result_term: t, .. } if *t == result_term => Some(FactId(i as u64)),
-            _ => None,
-        }
+    session.mgraph.semantic.admission_journal().claims().iter().enumerate().find_map(|(i, verified)| match &verified.claim().proposition {
+        Proposition::CalculusRelation { result_term: t, .. } if *t == result_term => Some(FactId(i as u64)),
+        _ => None,
     })
 }
 
@@ -188,20 +183,17 @@ fn polynomial_admitted_fact(
     session: &Session,
     value: &crate::domains::polynomial::PolynomialDomainValue,
 ) -> Option<crate::reasoning::mgraph::FactId> {
-    use crate::reasoning::mgraph::{FactId, Proposition, PolynomialCacheTier};
-    use crate::domains::polynomial::PolynomialResult;
+    use crate::{
+        domains::polynomial::PolynomialResult,
+        reasoning::mgraph::{FactId, PolynomialCacheTier, Proposition},
+    };
 
     for (i, verified) in session.mgraph.semantic.admission_journal().claims().iter().enumerate() {
         let Proposition::PolynomialResult { request_fingerprint, .. } = verified.claim().proposition
         else {
             continue;
         };
-        let Some(entry) = session
-            .mgraph
-            .operational
-            .result_cache
-            .polynomial
-            .get_by_request_fingerprint(request_fingerprint)
+        let Some(entry) = session.mgraph.operational.result_cache.polynomial.get_by_request_fingerprint(request_fingerprint)
         else {
             continue;
         };
@@ -367,9 +359,7 @@ fn map_linear_algebra(session: &mut Session, result: &LinearAlgebraResult) -> Do
 }
 
 /// Pull Living 16 `MatrixResult` diagnostics / residual / conditioning onto the session result.
-fn linear_algebra_envelope_meta(
-    value: &crate::domains::linear_algebra::LinearAlgebraValue,
-) -> (Vec<Diagnostic>, Vec<ResultEvidence>) {
+fn linear_algebra_envelope_meta(value: &crate::domains::linear_algebra::LinearAlgebraValue) -> (Vec<Diagnostic>, Vec<ResultEvidence>) {
     use crate::domains::linear_algebra::LinearAlgebraValue;
 
     let mut evidence = Vec::new();
@@ -392,10 +382,7 @@ fn linear_algebra_envelope_meta(
                 };
                 evidence.push(ResultEvidence::TrustedKernelSummary {
                     provider: ResultProviderId::LINEAR_ALGEBRA,
-                    summary: format!(
-                        "numerical_rank={} pivot_threshold={} {residual}",
-                        witness.numerical_rank, witness.pivot_threshold
-                    ),
+                    summary: format!("numerical_rank={} pivot_threshold={} {residual}", witness.numerical_rank, witness.pivot_threshold),
                 });
             }
         }
@@ -450,11 +437,9 @@ fn linear_algebra_envelope_meta(
         if let Some(conditioning) = envelope.conditioning {
             summary.push_str(&format!(" conditioning={conditioning}"));
         }
-        evidence.push(ResultEvidence::TrustedKernelSummary {
-            provider: ResultProviderId::LINEAR_ALGEBRA,
-            summary,
-        });
-    } else if let Some(conditioning) = envelope.conditioning {
+        evidence.push(ResultEvidence::TrustedKernelSummary { provider: ResultProviderId::LINEAR_ALGEBRA, summary });
+    }
+    else if let Some(conditioning) = envelope.conditioning {
         evidence.push(ResultEvidence::TrustedKernelSummary {
             provider: ResultProviderId::LINEAR_ALGEBRA,
             summary: format!("conditioning={conditioning}"),
@@ -616,10 +601,9 @@ fn solve_coverage_to_result(coverage: &crate::domains::solve::CoverageStatus) ->
     use crate::domains::solve::CoverageStatus as SolveCoverage;
     match coverage {
         SolveCoverage::Complete | SolveCoverage::CompleteUnderAssumptions => (ComputationStatus::Candidate, CoverageStatus::Full),
-        SolveCoverage::CertifiedSubset
-        | SolveCoverage::CertifiedSuperset
-        | SolveCoverage::LocalOnly
-        | SolveCoverage::Probable => (ComputationStatus::Candidate, CoverageStatus::Partial),
+        SolveCoverage::CertifiedSubset | SolveCoverage::CertifiedSuperset | SolveCoverage::LocalOnly | SolveCoverage::Probable => {
+            (ComputationStatus::Candidate, CoverageStatus::Partial)
+        }
         SolveCoverage::ResourceLimited { .. } => (ComputationStatus::ResourceLimited, CoverageStatus::Partial),
         SolveCoverage::Unsupported => (ComputationStatus::Unknown, CoverageStatus::Unsupported),
         SolveCoverage::Invalid => (ComputationStatus::Invalid, CoverageStatus::Unsupported),

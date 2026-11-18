@@ -48,11 +48,7 @@ impl MatrixObjectStore {
             return MatrixRef(idx as u64);
         }
         let id = self.entries.len() as u64;
-        self.entries.push(MatrixObjectEntry {
-            fingerprint,
-            revision: 0,
-            matrix,
-        });
+        self.entries.push(MatrixObjectEntry { fingerprint, revision: 0, matrix });
         MatrixRef(id)
     }
 

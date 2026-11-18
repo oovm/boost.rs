@@ -79,21 +79,13 @@ impl ExecutionCompiler {
             cfg_ssa.clone(),
         );
         verify_observation(&observation, &module)?;
-        Ok(StagedCompile {
-            request: request_prog,
-            plan: plan_prog,
-            semantic,
-            cfg_outline,
-            cfg_ssa,
-            module,
-        })
+        Ok(StagedCompile { request: request_prog, plan: plan_prog, semantic, cfg_outline, cfg_ssa, module })
     }
 
     /// 编译并产出 Living `04` 可观测 dump（Request / Plan / Semantic / CFG outline / CFG SSA）。
     pub fn compile_observed(&self, session: &mut Session, request: &CasRequest) -> Result<(ExecutionModule, CompileObservation)> {
         let staged = self.compile_staged(session, request)?;
-        let observation =
-            CompileObservation::from_programs(staged.request, staged.plan, staged.semantic, staged.cfg_outline, staged.cfg_ssa);
+        let observation = CompileObservation::from_programs(staged.request, staged.plan, staged.semantic, staged.cfg_outline, staged.cfg_ssa);
         Ok((staged.module, observation))
     }
 
@@ -131,9 +123,7 @@ impl ExecutionCompiler {
     ) -> Result<SsaValueId> {
         match plan.intent {
             PlanIntent::EvaluateTerm => {
-                let term = TermId(request_prog.term_index.ok_or_else(|| {
-                    stage_mismatch("plan_evaluate_term_missing_term_index")
-                })?);
+                let term = TermId(request_prog.term_index.ok_or_else(|| stage_mismatch("plan_evaluate_term_missing_term_index"))?);
                 self.lower_term(session, builder, blocks, block_id, term)
             }
             PlanIntent::RunControl => {
@@ -150,9 +140,7 @@ impl ExecutionCompiler {
                         .detail("component", "ExecutionCompiler")
                         .detail("reason", "plan_provider_required_false"));
                 }
-                let payload = request_prog
-                    .domain_payload
-                    .ok_or_else(|| stage_mismatch("plan_domain_provider_missing_payload"))?;
+                let payload = request_prog.domain_payload.ok_or_else(|| stage_mismatch("plan_domain_provider_missing_payload"))?;
                 self.lower_goal_provider(builder, blocks, block_id, payload)
             }
         }
@@ -291,9 +279,7 @@ impl ExecutionCompiler {
                     return self.lower_define_capture(session, builder, blocks, block_id, *symbol, *value, *evaluation);
                 }
                 match session.arena.get(*value) {
-                    Some(TermNode::Atom(Atom::Symbol(_))) => {
-                        self.lower_define_evaluated(session, builder, blocks, block_id, *symbol, *value)
-                    }
+                    Some(TermNode::Atom(Atom::Symbol(_))) => self.lower_define_evaluated(session, builder, blocks, block_id, *symbol, *value),
                     Some(TermNode::Atom(_)) => self.lower_define_capture(
                         session,
                         builder,
@@ -556,10 +542,7 @@ impl ExecutionCompiler {
                     ApplicationHead::Semantic(op) => {
                         if matches!(
                             op,
-                            SemanticOperator::Less
-                                | SemanticOperator::Greater
-                                | SemanticOperator::LessEqual
-                                | SemanticOperator::GreaterEqual
+                            SemanticOperator::Less | SemanticOperator::Greater | SemanticOperator::LessEqual | SemanticOperator::GreaterEqual
                         ) {
                             if let Some((values, ops)) = flatten_mixed_compare_chain(session, term) {
                                 let conjuncts: Vec<TermId> = ops
@@ -647,12 +630,8 @@ impl ExecutionCompiler {
             Some(TermNode::Collection { kind: coll_kind, elements: items }) => {
                 let coll_kind = *coll_kind;
                 let items = items.clone();
-                let materialized = items.iter().all(|id| {
-                    matches!(
-                        session.arena.get(*id),
-                        Some(TermNode::Atom(_)) | Some(TermNode::Collection { .. })
-                    )
-                });
+                let materialized =
+                    items.iter().all(|id| matches!(session.arena.get(*id), Some(TermNode::Atom(_)) | Some(TermNode::Collection { .. })));
                 // 小物化集合仍按合同发射 ConstructCollection；超过单条 host 实参宽度时走
                 // LoadTerm 保平坦形状（分块 ConstructCollection 会改变嵌套层级）。
                 if materialized && items.len() > MAX_HOST_ARGS {
@@ -778,9 +757,7 @@ fn term_yields_boolean_ssa(session: &Session, term: TermId) -> bool {
 }
 
 fn stage_mismatch(reason: &str) -> Diagnostic {
-    Diagnostic::new(DiagnosticCode::UnsupportedOperation)
-        .detail("component", "ExecutionCompiler")
-        .detail("reason", reason)
+    Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("component", "ExecutionCompiler").detail("reason", reason)
 }
 
 /// Compile 路径：canonicalize 后 intern Goal 载荷、克隆 Command、深拷贝 Control。

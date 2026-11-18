@@ -2,7 +2,7 @@
 //!
 //! This is not `science-jit` (KernelIR). It compiles Relation path/query routines.
 
-use science_relation_types::{RelationError, NodeId};
+use science_relation_types::{NodeId, RelationError};
 
 /// Opaque compile-unit identity for a path/query plan.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

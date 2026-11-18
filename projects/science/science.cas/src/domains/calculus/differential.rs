@@ -214,7 +214,12 @@ fn residual_of(cc: &mut DomainExecutionContext<'_>, dependent: SymbolId, indepen
 }
 
 /// `y' = g(x)`：右端不含因变量。
-fn try_rhs_independent_of_y(cc: &mut DomainExecutionContext<'_>, f: TermId, dependent: SymbolId, independent: SymbolId) -> Result<Option<TermId>> {
+fn try_rhs_independent_of_y(
+    cc: &mut DomainExecutionContext<'_>,
+    f: TermId,
+    dependent: SymbolId,
+    independent: SymbolId,
+) -> Result<Option<TermId>> {
     if contains_symbol(cc, f, dependent) {
         return Ok(None);
     }
@@ -227,7 +232,10 @@ fn try_rhs_independent_of_y(cc: &mut DomainExecutionContext<'_>, f: TermId, depe
 
 /// `y' = c y^n`（`n≠1`）。`n=2` ⇒ `y = -1/(c x)`。
 fn try_power_of_y(cc: &mut DomainExecutionContext<'_>, f: TermId, dependent: SymbolId, independent: SymbolId) -> Result<Option<TermId>> {
-    let Some((c, n)) = match_scaled_power_of_y(cc, f, dependent) else { return Ok(None) };
+    let Some((c, n)) = match_scaled_power_of_y(cc, f, dependent)
+    else {
+        return Ok(None);
+    };
     if n == 1 {
         return Ok(None);
     }
@@ -257,7 +265,10 @@ fn try_power_of_y(cc: &mut DomainExecutionContext<'_>, f: TermId, dependent: Sym
 /// 常系数 Bernoulli：`y' = a y + b y^n`（`n≠0,1`）。
 /// `a≠0` ⇒ 常数特解 `y^{n-1} = -a/b`（优先 `n=2` ⇒ `y = -a/b`）。
 fn try_bernoulli_const(cc: &mut DomainExecutionContext<'_>, f: TermId, dependent: SymbolId, independent: SymbolId) -> Result<Option<TermId>> {
-    let Some((a, b, n)) = match_bernoulli_const_rhs(cc, f, dependent) else { return Ok(None) };
+    let Some((a, b, n)) = match_bernoulli_const_rhs(cc, f, dependent)
+    else {
+        return Ok(None);
+    };
     if n == 0 || n == 1 {
         return Ok(None);
     }
@@ -282,8 +293,16 @@ fn try_bernoulli_const(cc: &mut DomainExecutionContext<'_>, f: TermId, dependent
 }
 
 /// 可分离 `y' = g(x) y^n`（引导实现：`n=2` ⇒ `y = -1/∫g`）。
-fn try_separable_g_y_power(cc: &mut DomainExecutionContext<'_>, f: TermId, dependent: SymbolId, independent: SymbolId) -> Result<Option<TermId>> {
-    let Some((g, n)) = match_g_times_y_power(cc, f, dependent) else { return Ok(None) };
+fn try_separable_g_y_power(
+    cc: &mut DomainExecutionContext<'_>,
+    f: TermId,
+    dependent: SymbolId,
+    independent: SymbolId,
+) -> Result<Option<TermId>> {
+    let Some((g, n)) = match_g_times_y_power(cc, f, dependent)
+    else {
+        return Ok(None);
+    };
     if n != 2 {
         return Ok(None);
     }
@@ -388,7 +407,10 @@ fn recognize_y_prime_equals(
     independent: SymbolId,
 ) -> Result<Option<FirstOrderRhs>> {
     // 形态：Equal[D[y,x], rhs]
-    let Some((h, args)) = cc.application_head(equation) else { return Ok(None) };
+    let Some((h, args)) = cc.application_head(equation)
+    else {
+        return Ok(None);
+    };
     if matches!(h, ApplicationHead::Semantic(SemanticOperator::Equal)) && args.len() == 2 && is_d_of(cc, args[0], dependent, independent) {
         return Ok(Some(FirstOrderRhs { f: args[1] }));
     }

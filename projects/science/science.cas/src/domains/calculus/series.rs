@@ -242,7 +242,10 @@ pub fn laurent(
                 if series.terms.iter().any(|(coeff, _)| term_has_singular_zero_power(cc, *coeff)) {
                     continue;
                 }
-                return Ok(CalculusResult::Conditional { value: remap_laurent_series(cc, series, variable, center, order, m, delta), conditions });
+                return Ok(CalculusResult::Conditional {
+                    value: remap_laurent_series(cc, series, variable, center, order, m, delta),
+                    conditions,
+                });
             }
             CalculusResult::Unevaluated { .. } => continue,
         }

@@ -75,8 +75,7 @@ fn loop_while_emits_budget_check_effect() {
     let mut session = Session::new();
     let cond = session.builder().boolean(false, Default::default());
     let body = session.builder().int(1, Default::default());
-    let module =
-        compile(&mut session, CasRequest::Control(ControlPlan::LoopWhile { condition: cond, body: Box::new(CasRequest::Term(body)) }));
+    let module = compile(&mut session, CasRequest::Control(ControlPlan::LoopWhile { condition: cond, body: Box::new(CasRequest::Term(body)) }));
     assert!(module.effect_edges.iter().any(|e| matches!(e.kind, EffectKind::BudgetCheck)));
     verify_module(&module).expect("loop budget");
 }

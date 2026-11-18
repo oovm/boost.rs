@@ -69,11 +69,7 @@ impl TermStore {
     ///
     /// 若 id 越界返回 `None`（不推进 epoch）。
     pub fn term_ref(&self, id: TermId) -> Option<TermRef> {
-        if (id.0 as usize) < self.nodes.len() {
-            Some(TermRef::new(id, self.epoch, self.store_id))
-        } else {
-            None
-        }
+        if (id.0 as usize) < self.nodes.len() { Some(TermRef::new(id, self.epoch, self.store_id)) } else { None }
     }
 
     /// 校验 [`TermRef`] 仍指向**本** store 当前代际中的有效节点。

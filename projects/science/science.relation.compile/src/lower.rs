@@ -6,9 +6,9 @@
 
 use std::collections::HashMap;
 
-use science_relation_island::IslandStore;
-use science_relation_types::{EdgeKind, IslandId, RelationError, NodeId};
 use oak_metis::{Item, Module};
+use science_relation_island::IslandStore;
+use science_relation_types::{EdgeKind, IslandId, NodeId, RelationError};
 
 /// Result of lowering a parsed module into a Core-facing store.
 #[derive(Default)]
@@ -216,8 +216,8 @@ pub fn lower_module(module: &Module) -> Result<LoweringResult, RelationError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use science_relation_graph::connection::ConnectionClass;
     use oak_metis::parse_module;
+    use science_relation_graph::connection::ConnectionClass;
 
     #[test]
     fn lowers_group_theory_declarations() {

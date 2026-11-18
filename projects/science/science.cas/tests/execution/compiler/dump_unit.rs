@@ -81,18 +81,25 @@ fn compile_observed_atom_term_stages() {
 
 #[test]
 fn compile_goal_consumes_domain_payload_from_request_program() {
-    use science_cas::domains::linear_algebra::{LinearAlgebraRequest, MatrixValue};
-    use science_cas::api::request::DomainGoal;
-    use science_cas::domains::DomainRequest;
+    use science_cas::{
+        api::request::DomainGoal,
+        domains::{
+            DomainRequest,
+            linear_algebra::{LinearAlgebraRequest, MatrixValue},
+        },
+    };
     use science_numeric::Integer;
 
     let mut session = Session::new();
-    let mat = session
-        .matrix_objects
-        .intern(MatrixValue::from_integers_row_major(2, 2, vec![Integer::from_i64(1), Integer::from_i64(2), Integer::from_i64(3), Integer::from_i64(4)]).unwrap());
-    let request = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::Transpose {
-        matrix: mat.into(),
-    })));
+    let mat = session.matrix_objects.intern(
+        MatrixValue::from_integers_row_major(
+            2,
+            2,
+            vec![Integer::from_i64(1), Integer::from_i64(2), Integer::from_i64(3), Integer::from_i64(4)],
+        )
+        .unwrap(),
+    );
+    let request = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::Transpose { matrix: mat.into() })));
     let staged = ExecutionCompiler::new().compile_staged(&mut session, &request).expect("goal staged");
     assert_eq!(staged.request.kind, "Goal");
     assert_eq!(staged.request.payload_tag, Some("LinearAlgebra"));
@@ -128,9 +135,7 @@ fn compile_control_consumes_owned_control_plan() {
     let mut session = Session::new();
     let one = session.builder().int(1, Default::default());
     let two = session.builder().int(2, Default::default());
-    let request = CasRequest::Control(ControlPlan::Sequence {
-        steps: vec![CasRequest::Term(one), CasRequest::Term(two)],
-    });
+    let request = CasRequest::Control(ControlPlan::Sequence { steps: vec![CasRequest::Term(one), CasRequest::Term(two)] });
     let staged = ExecutionCompiler::new().compile_staged(&mut session, &request).expect("control staged");
     assert_eq!(staged.request.payload_tag, Some("Sequence"));
     assert!(staged.request.control.is_some());
@@ -139,23 +144,27 @@ fn compile_control_consumes_owned_control_plan() {
 
 #[test]
 fn nested_goal_inside_sequence_uses_prepared_domain_payload() {
-    use science_cas::api::request::{ControlPlan, DomainGoal};
-    use science_cas::domains::linear_algebra::{LinearAlgebraRequest, MatrixValue};
-    use science_cas::domains::DomainRequest;
+    use science_cas::{
+        api::request::{ControlPlan, DomainGoal},
+        domains::{
+            DomainRequest,
+            linear_algebra::{LinearAlgebraRequest, MatrixValue},
+        },
+    };
     use science_numeric::Integer;
 
     let mut session = Session::new();
     let mat = session.matrix_objects.intern(
-        MatrixValue::from_integers_row_major(2, 2, vec![Integer::from_i64(1), Integer::from_i64(2), Integer::from_i64(3), Integer::from_i64(4)])
-            .unwrap(),
+        MatrixValue::from_integers_row_major(
+            2,
+            2,
+            vec![Integer::from_i64(1), Integer::from_i64(2), Integer::from_i64(3), Integer::from_i64(4)],
+        )
+        .unwrap(),
     );
-    let goal = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::Transpose {
-        matrix: mat.into(),
-    })));
+    let goal = CasRequest::Goal(DomainGoal::Dispatch(DomainRequest::LinearAlgebra(LinearAlgebraRequest::Transpose { matrix: mat.into() })));
     let one = session.builder().int(1, Default::default());
-    let request = CasRequest::Control(ControlPlan::Sequence {
-        steps: vec![goal, CasRequest::Term(one)],
-    });
+    let request = CasRequest::Control(ControlPlan::Sequence { steps: vec![goal, CasRequest::Term(one)] });
     let staged = ExecutionCompiler::new().compile_staged(&mut session, &request).expect("nested goal");
     assert_eq!(staged.plan.intent, PlanIntent::RunControl);
     assert!(staged.cfg_ssa.text.contains("CallProvider"));

@@ -33,10 +33,7 @@ fn calculus_forged_exact_term_fails_recompute() {
         order: DerivativeOrder::First,
         assumptions: AssumptionSet::empty(),
     });
-    let forged = DomainResult::Calculus(CalculusResult::Exact {
-        value: CalculusValue::Expression(TermId(999_999)),
-        conditions: Vec::new(),
-    });
+    let forged = DomainResult::Calculus(CalculusResult::Exact { value: CalculusValue::Expression(TermId(999_999)), conditions: Vec::new() });
     let err = verify_recompute_domain_result(&mut session, &snapshot, &forged).expect_err("forge");
     assert_eq!(err.details.get("reason").map(|v| v.to_string()).as_deref(), Some("calculus_recompute_mismatch"));
 }

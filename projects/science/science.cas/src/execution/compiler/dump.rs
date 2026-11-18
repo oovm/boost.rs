@@ -56,13 +56,7 @@ impl CompileObservation {
         cfg_outline: CfgOutlineProgram,
         cfg_ssa: CfgSsaProgram,
     ) -> Self {
-        Self {
-            request,
-            plan,
-            semantic,
-            cfg_outline,
-            cfg_ssa,
-        }
+        Self { request, plan, semantic, cfg_outline, cfg_ssa }
     }
 
     /// 渲染阶段稳定观测文本。

@@ -21,13 +21,7 @@ use super::pipeline::EGRAPH_PROVIDER_ID;
 /// 在规则表上重放 `match_pattern` + `substitute`，判断 `left → right` 是否由 `rule_id` 成立。
 ///
 /// 供 [`crate::reasoning::mgraph::admission::gate`] 实质证据检查调用（与构造 claim 同一判据）。
-pub(crate) fn typed_rewrite_holds(
-    store: &mut TermStore,
-    rules: &TypedRuleSet,
-    rule_id: RewriteRuleId,
-    left: TermId,
-    right: TermId,
-) -> bool {
+pub(crate) fn typed_rewrite_holds(store: &mut TermStore, rules: &TypedRuleSet, rule_id: RewriteRuleId, left: TermId, right: TermId) -> bool {
     let Some(rule) = rules.get(rule_id)
     else {
         return false;

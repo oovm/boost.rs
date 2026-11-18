@@ -32,12 +32,7 @@ impl HeapBudget {
         let max_arena_bytes = 16 * 1024 * 1024 * 1024;
         #[cfg(not(target_pointer_width = "64"))]
         let max_arena_bytes = 256 * 1024 * 1024;
-        Self {
-            max_arena_bytes,
-            max_segment_count: 1_048_576,
-            max_limbs: usize::MAX / 16,
-            max_scratch_bytes: 1024 * 1024 * 1024,
-        }
+        Self { max_arena_bytes, max_segment_count: 1_048_576, max_limbs: usize::MAX / 16, max_scratch_bytes: 1024 * 1024 * 1024 }
     }
 
     /// 检查新增 arena 字节后是否超限。

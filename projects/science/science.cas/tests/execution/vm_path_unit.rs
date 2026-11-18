@@ -195,9 +195,8 @@ fn execute_ir_request_define_and_read_uses_vm_binding() {
 
 #[test]
 fn execute_ir_request_materialized_list_residual_define_preserves_length() {
-    use science_cas::api::request::SessionCommand;
+    use science_cas::{api::request::SessionCommand, runtime::values::arena::push_list};
     use science_types::{BindingEvaluationPolicy, BindingKind};
-    use science_cas::runtime::values::arena::push_list;
 
     let mut session = Session::new();
     let elems: Vec<_> = (0..20).map(|i| session.builder().int(i, Default::default())).collect();
@@ -216,9 +215,7 @@ fn execute_ir_request_materialized_list_residual_define_preserves_length() {
     execute_ir_request(&mut session, define).expect("define");
 
     let len = session.builder().symbol("nums", Default::default());
-    let len_call = session
-        .builder()
-        .application(ApplicationHead::Semantic(SemanticOperator::Length), vec![len], Default::default());
+    let len_call = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Length), vec![len], Default::default());
     let read_id = execute_ir_request(&mut session, CasRequest::Term(len_call)).expect("length");
     let out = session.results.get(read_id).expect("result").symbolic_term.expect("term");
     match session.arena.get(out) {

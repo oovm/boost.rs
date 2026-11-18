@@ -18,9 +18,7 @@ use crate::{
         galois::{GaloisRequest, GaloisResult, execute_galois_with_tables},
         graph_theory::{GraphTheoryRequest, GraphTheoryResult, execute_graph_theory},
         group::{GroupRequest, GroupResult, execute_group_with_table_mut},
-        linear_algebra::{
-            LinearAlgebraRequest, LinearAlgebraResult, MatrixObjectStore, MatrixRef, execute_linear_algebra_with_bindings,
-        },
+        linear_algebra::{LinearAlgebraRequest, LinearAlgebraResult, MatrixObjectStore, MatrixRef, execute_linear_algebra_with_bindings},
         payload::DomainPayloadStore,
         polynomial::{
             PolynomialObjectStore, PolynomialRequest, PolynomialResult, RingTable, execute_polynomial_mgraph, execute_polynomial_with_rings,
@@ -121,10 +119,7 @@ impl SharedExecutionControl {
 
     /// 默认根控制（新取消令牌 · 有限解释步数，防止 `LoopWhile` 等 CFG 死循环挂死宿主）。
     pub fn new_root() -> Self {
-        Self {
-            cancellation: science_vm::CancellationToken::new(),
-            step_budget: science_vm::StepBudget::limited(DEFAULT_VM_STEP_BUDGET),
-        }
+        Self { cancellation: science_vm::CancellationToken::new(), step_budget: science_vm::StepBudget::limited(DEFAULT_VM_STEP_BUDGET) }
     }
 }
 
@@ -600,7 +595,13 @@ impl Session {
         &mut self,
         claim: crate::reasoning::mgraph::Claim,
     ) -> Result<(crate::reasoning::mgraph::FactId, crate::reasoning::mgraph::WakeReport), AdmissionRejectReason> {
-        crate::reasoning::mgraph::AdmissionGate::admit_claim_into_state(&mut self.arena, &mut self.mgraph, claim, &VerificationPolicy::default(), None)
+        crate::reasoning::mgraph::AdmissionGate::admit_claim_into_state(
+            &mut self.arena,
+            &mut self.mgraph,
+            claim,
+            &VerificationPolicy::default(),
+            None,
+        )
     }
 
     /// 将一批唤醒的 Reflector 结果写入运行态队列。

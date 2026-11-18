@@ -545,16 +545,10 @@ fn term_to_matrix_entry(session: &Session, term: TermId, kind: ElementParentKind
         }
         ElementParentKind::ComplexExact => {
             if let Some(i) = n.as_exact_integer() {
-                Ok(MatrixEntry::ComplexExact {
-                    re: Rational::from_integer(Integer::from(i)),
-                    im: Rational::zero(),
-                })
+                Ok(MatrixEntry::ComplexExact { re: Rational::from_integer(Integer::from(i)), im: Rational::zero() })
             }
             else if let Some(r) = n.as_rational() {
-                Ok(MatrixEntry::ComplexExact {
-                    re: clone_rational(r),
-                    im: Rational::zero(),
-                })
+                Ok(MatrixEntry::ComplexExact { re: clone_rational(r), im: Rational::zero() })
             }
             else {
                 Err(Diagnostic::new(science_types::DiagnosticCode::UnsupportedOperation).detail("reason", "store_value_complex_exact_pending"))

@@ -5,35 +5,33 @@ pub use science_relation_compile::{LoweringResult, compile_declarations, lower_m
 pub use science_relation_graph::{
     EdgePayload, Graph, NodePayload, Step,
     admission::{
-        AdmittedRelation, AdmittedWorld, CandidateRelation, ConflictReport, JudgmentLane, ObservationBoundary, QueryStatus,
-        WorldId, query_status_of_admitted, unknown_if_missing,
+        AdmittedRelation, AdmittedWorld, CandidateRelation, ConflictReport, JudgmentLane, ObservationBoundary, QueryStatus, WorldId,
+        query_status_of_admitted, unknown_if_missing,
     },
     closure::{
-        phi_equal_step, phi_rule_table_step, saturate_equal_inner, saturate_rule_table_inner, seed_declared_generators,
-        seed_equal_generators,
+        phi_equal_step, phi_rule_table_step, saturate_equal_inner, saturate_rule_table_inner, seed_declared_generators, seed_equal_generators,
     },
     conflict::{Incompatibility, detect_judgment_conflict, query_under_incompatibility},
     connection::{
-        AdmittedConnection, CandidateConnection, ConnectionClass, RegisteredMLink, TransportWitness, admit_connection,
-        bidirectional_skeleton, bootstrap_transport_relation, bootstrap_transport_relation_asserting, compose_connections,
-        identity_morphism, refuse_galois_without_proof, transport_query_status, transport_relation,
-        transport_relation_asserting, transport_relation_trusted, validate_candidate,
+        AdmittedConnection, CandidateConnection, ConnectionClass, RegisteredMLink, TransportWitness, admit_connection, bidirectional_skeleton,
+        bootstrap_transport_relation, bootstrap_transport_relation_asserting, compose_connections, identity_morphism,
+        refuse_galois_without_proof, transport_query_status, transport_relation, transport_relation_asserting, transport_relation_trusted,
+        validate_candidate,
     },
     derivation::{
-        DerivationDiagram, replay_equal_derivation, replay_equal_derivation_checked, search_and_admit_equal,
-        search_and_admit_equal_checked,
+        DerivationDiagram, replay_equal_derivation, replay_equal_derivation_checked, search_and_admit_equal, search_and_admit_equal_checked,
     },
     derivation_rules::{
-        ChainRule, DerivationRegistry, EQUAL_REFL, EQUAL_SYMMETRY, EQUAL_TRANSITIVITY, apply_builtin_rule, builtin_rule_names,
-        is_builtin_rule, registry_from_rule_table,
+        ChainRule, DerivationRegistry, EQUAL_REFL, EQUAL_SYMMETRY, EQUAL_TRANSITIVITY, apply_builtin_rule, builtin_rule_names, is_builtin_rule,
+        registry_from_rule_table,
     },
     eval::{
         EvalAttachment, EvalCertificateKind, eval_is_not_equal, eval_query_status, form_eval_attachment, form_eval_candidate,
         may_request_admission, refuse_eval_as_equal,
     },
     evidence::{
-        CheckedDerivation, Evidence, JudgmentAtom, concluded_judgment, evidence_from_equal_steps, height,
-        replay_checked_derivation, replay_evidence, replay_evidence_with, validate_finite,
+        CheckedDerivation, Evidence, JudgmentAtom, concluded_judgment, evidence_from_equal_steps, height, replay_checked_derivation,
+        replay_evidence, replay_evidence_with, validate_finite,
     },
     evidence_dag::{EvidenceDag, EvidenceId},
     inner::InnerTable,
@@ -45,16 +43,15 @@ pub use science_relation_graph::{
     },
 };
 pub use science_relation_ir::{
-    Effect, Function as IrFunction, Module as IrModule, Op, REL_EQUAL, RULE_EQUAL_TRANSITIVITY, Reg, RegKind,
-    equal_transitivity_join_plan,
+    Effect, Function as IrFunction, Module as IrModule, Op, REL_EQUAL, RULE_EQUAL_TRANSITIVITY, Reg, RegKind, equal_transitivity_join_plan,
 };
 pub use science_relation_vm::{Budget, EmittedCandidate, GraphKernel, KernelView, Slot, Vm, VmError, VmStatus};
 
+pub use oak_metis::{MetisLanguage, MetisTokenType, lex_stub, parse_module};
 pub use science_relation_island::{Island, IslandStore};
 pub use science_relation_jit::{Artifact, ArtifactKind, CompileUnitId, compile_reach};
-pub use science_relation_types::{EdgeId, EdgeKind, IslandId, RelationError, NodeId};
+pub use science_relation_types::{EdgeId, EdgeKind, IslandId, NodeId, RelationError};
 pub use science_relation_verify::{Goal, Justification, Proof, prove, query_equal, query_member, verify, zfc};
-pub use oak_metis::{MetisLanguage, MetisTokenType, lex_stub, parse_module};
 
 /// Facade version string for smoke probes.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

@@ -18,7 +18,10 @@ use crate::{
 #[cfg(test)]
 mod collection_equal_tests {
     use super::collection_structural_equal;
-    use crate::runtime::{Session, values::arena::{push_int, push_list}};
+    use crate::runtime::{
+        Session,
+        values::arena::{push_int, push_list},
+    };
 
     #[test]
     fn detects_unequal_lists() {
@@ -57,9 +60,7 @@ mod collection_equal_tests {
 /// 两棵集合 term 是否逐元素结构相等（`===` 列表语义，非逐元素广播）。
 pub(crate) fn collection_structural_equal(session: &Session, left: TermId, right: TermId) -> Option<bool> {
     let (xs, ys) = match (session.arena.get(left), session.arena.get(right)) {
-        (Some(science_ir::TermNode::Collection { elements: xs, .. }), Some(science_ir::TermNode::Collection { elements: ys, .. })) => {
-            (xs, ys)
-        }
+        (Some(science_ir::TermNode::Collection { elements: xs, .. }), Some(science_ir::TermNode::Collection { elements: ys, .. })) => (xs, ys),
         _ => return None,
     };
     if xs.len() != ys.len() {
@@ -208,7 +209,8 @@ pub(crate) fn evaluate_min_max_terms(session: &mut Session, op: SemanticOperator
         return Err(diag("semantic_operator_arity"));
     }
     let numbers: Option<Vec<_>> = flat.iter().map(|t| number_of(session, *t).map(clone_number)).collect();
-    let Some(nums) = numbers else {
+    let Some(nums) = numbers
+    else {
         return Ok(push_semantic(session, op, flat));
     };
     let mut acc = clone_number(&nums[0]);

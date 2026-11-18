@@ -3,7 +3,7 @@
 //! Numeric routines may form these candidates. They do **not** mint inner-world
 //! [`EdgeKind::Equal`] judgments and must not call graph `assert` themselves.
 
-use science_relation_types::{EdgeKind, RelationError, NodeId};
+use science_relation_types::{EdgeKind, NodeId, RelationError};
 
 use super::{
     admission::{CandidateRelation, QueryStatus, WorldId},
@@ -39,12 +39,7 @@ pub fn form_eval_candidate(world: WorldId, position: NodeId, shadow: NodeId) -> 
 }
 
 /// Record an Outer Eval attachment sidecar.
-pub fn form_eval_attachment(
-    world: WorldId,
-    position: NodeId,
-    certificate_tag: u64,
-    kind: EvalCertificateKind,
-) -> EvalAttachment {
+pub fn form_eval_attachment(world: WorldId, position: NodeId, certificate_tag: u64, kind: EvalCertificateKind) -> EvalAttachment {
     EvalAttachment { world, position, certificate_tag, kind }
 }
 

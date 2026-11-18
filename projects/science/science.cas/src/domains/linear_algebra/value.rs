@@ -250,10 +250,7 @@ impl MatrixValue {
             MatrixBuffer::MachineF64(v) => MatrixEntry::MachineF64(v[i]),
             MatrixBuffer::ComplexExact(v) => {
                 let (re, im) = &v[i];
-                MatrixEntry::ComplexExact {
-                    re: clone_rational(re),
-                    im: clone_rational(im),
-                }
+                MatrixEntry::ComplexExact { re: clone_rational(re), im: clone_rational(im) }
             }
         })
     }
@@ -275,10 +272,7 @@ impl MatrixValue {
             }
             MatrixBuffer::ComplexExact(v) => {
                 if Arc::strong_count(v) > 1 {
-                    let copied: Vec<_> = v
-                        .iter()
-                        .map(|(re, im)| (clone_rational(re), clone_rational(im)))
-                        .collect();
+                    let copied: Vec<_> = v.iter().map(|(re, im)| (clone_rational(re), clone_rational(im))).collect();
                     *v = Arc::new(copied);
                 }
             }
@@ -474,10 +468,7 @@ impl MatrixEntry {
             ElementParentKind::Integers => Self::Integer(Integer::one()),
             ElementParentKind::Rationals => Self::Rational(Rational::one()),
             ElementParentKind::MachineReal => Self::MachineF64(1.0),
-            ElementParentKind::ComplexExact => Self::ComplexExact {
-                re: Rational::one(),
-                im: Rational::zero(),
-            },
+            ElementParentKind::ComplexExact => Self::ComplexExact { re: Rational::one(), im: Rational::zero() },
         })
     }
 
@@ -487,10 +478,7 @@ impl MatrixEntry {
             ElementParentKind::Integers => Self::Integer(Integer::zero()),
             ElementParentKind::Rationals => Self::Rational(Rational::zero()),
             ElementParentKind::MachineReal => Self::MachineF64(0.0),
-            ElementParentKind::ComplexExact => Self::ComplexExact {
-                re: Rational::zero(),
-                im: Rational::zero(),
-            },
+            ElementParentKind::ComplexExact => Self::ComplexExact { re: Rational::zero(), im: Rational::zero() },
         })
     }
 
@@ -500,10 +488,7 @@ impl MatrixEntry {
             Self::Integer(x) => Self::Integer(clone_integer(x)),
             Self::Rational(x) => Self::Rational(clone_rational(x)),
             Self::MachineF64(x) => Self::MachineF64(*x),
-            Self::ComplexExact { re, im } => Self::ComplexExact {
-                re: clone_rational(re),
-                im: clone_rational(im),
-            },
+            Self::ComplexExact { re, im } => Self::ComplexExact { re: clone_rational(re), im: clone_rational(im) },
         }
     }
 }

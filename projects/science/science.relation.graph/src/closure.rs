@@ -85,8 +85,7 @@ pub fn phi_equal_step(graph: &Graph, world: WorldId, inner: &mut InnerTable) -> 
             if inner.contains_atom(world, concl) {
                 continue;
             }
-            let app =
-                Evidence::App { rule: EQUAL_TRANSITIVITY.into(), premises: vec![ea.clone(), eb.clone()], conclusion: concl };
+            let app = Evidence::App { rule: EQUAL_TRANSITIVITY.into(), premises: vec![ea.clone(), eb.clone()], conclusion: concl };
             let admitted = replay_evidence(graph, world, &app, &[])?;
             inner.insert_checked(admitted, app)?;
             added += 1;
@@ -97,12 +96,7 @@ pub fn phi_equal_step(graph: &Graph, world: WorldId, inner: &mut InnerTable) -> 
 }
 
 /// Seed generators then iterate `phi_equal_step` until a fixed point or `max_steps`.
-pub fn saturate_equal_inner(
-    graph: &Graph,
-    world: WorldId,
-    inner: &mut InnerTable,
-    max_steps: u32,
-) -> Result<usize, RelationError> {
+pub fn saturate_equal_inner(graph: &Graph, world: WorldId, inner: &mut InnerTable, max_steps: u32) -> Result<usize, RelationError> {
     let mut total = seed_equal_generators(graph, world, inner)?;
     for _ in 0..max_steps {
         let n = phi_equal_step(graph, world, inner)?;
@@ -118,12 +112,7 @@ pub fn saturate_equal_inner(
 ///
 /// Premises are taken from Inner memberships (not fresh graph search). Unknown rule names
 /// are skipped — search may propose them later once replay support exists.
-pub fn phi_rule_table_step(
-    graph: &Graph,
-    world: WorldId,
-    rules: &RuleTable,
-    inner: &mut InnerTable,
-) -> Result<usize, RelationError> {
+pub fn phi_rule_table_step(graph: &Graph, world: WorldId, rules: &RuleTable, inner: &mut InnerTable) -> Result<usize, RelationError> {
     let registry = registry_from_rule_table(rules);
     let mut added = 0;
     for schema in &rules.transforms {

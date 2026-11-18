@@ -12,7 +12,7 @@ use science_relation_graph::{
     evidence::{Evidence, JudgmentAtom, concluded_judgment},
 };
 use science_relation_ir::{Effect, Function, IrError, Module, Op, Reg, RegKind, RelationId, RuleId};
-use science_relation_types::{EdgeId, EdgeKind, RelationError, NodeId};
+use science_relation_types::{EdgeId, EdgeKind, NodeId, RelationError};
 
 pub use science_relation_ir::{REL_EQUAL, RULE_EQUAL_TRANSITIVITY, equal_transitivity_join_plan};
 

@@ -9,8 +9,8 @@ use science_cas::{
         calculus::{CalculusRequest, CalculusResult, CalculusValue, DerivativeOrder},
     },
 };
-use science_ir::UnaryFunction;
 use science_harness::SessionFixture;
+use science_ir::UnaryFunction;
 use science_types::AssumptionSet;
 
 #[test]

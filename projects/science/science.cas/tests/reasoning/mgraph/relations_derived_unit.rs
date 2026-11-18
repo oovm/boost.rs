@@ -25,7 +25,9 @@ fn admit_term_eq_harness(store: &mut TermStore, semantic: &mut SemanticCore, lef
                 summary: String::new(),
             },
         },
-        &VerificationPolicy::for_test_harness(), None)
+        &VerificationPolicy::for_test_harness(),
+        None,
+    )
     .expect("admit term eq harness");
 }
 

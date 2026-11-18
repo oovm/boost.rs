@@ -136,10 +136,7 @@ fn compile_and_execute_complex_part_exact() {
     let mut session = Session::new();
     let unit = Complex::try_new(Real::machine(0.0), Real::machine(1.0), BranchPolicy::Principal).expect("imaginary unit");
     let i = session.builder().number(Number::complex(unit), Default::default());
-    for (op, expected) in [
-        (SemanticOperator::RealPart, 0i64),
-        (SemanticOperator::ImaginaryPart, 1i64),
-    ] {
+    for (op, expected) in [(SemanticOperator::RealPart, 0i64), (SemanticOperator::ImaginaryPart, 1i64)] {
         let head = ApplicationHead::Semantic(op);
         let term = session.builder().application(head, vec![i], Default::default());
         let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(term)).expect("complex part");
@@ -193,9 +190,7 @@ fn compile_and_execute_complex_arg_principal_axis() {
     let neg_i = session.builder().number(Number::complex(unit), Default::default());
     let cases: Vec<(TermId, fn(&mut Session) -> TermId)> = vec![
         (session.builder().int(1, Default::default()), |s| s.builder().int(0, Default::default())),
-        (session.builder().int(-1, Default::default()), |s| {
-            s.builder().constant(MathematicalConstant::Pi, Default::default())
-        }),
+        (session.builder().int(-1, Default::default()), |s| s.builder().constant(MathematicalConstant::Pi, Default::default())),
         (neg_i, |s| {
             let pi = s.builder().constant(MathematicalConstant::Pi, Default::default());
             let two = s.builder().int(2, Default::default());
@@ -250,10 +245,7 @@ fn compile_and_execute_floor_exact() {
     let cases: Vec<(TermId, i64)> = vec![
         (session.builder().int(5, Default::default()), 5),
         (session.builder().number(Number::machine(2.7), Default::default()), 2),
-        (
-            session.builder().number(Number::rational_i64(-5, 2).expect("rational"), Default::default()),
-            -3,
-        ),
+        (session.builder().number(Number::rational_i64(-5, 2).expect("rational"), Default::default()), -3),
     ];
     for (arg, expected) in cases {
         let floor = ApplicationHead::Semantic(SemanticOperator::Floor);
@@ -273,14 +265,8 @@ fn compile_and_execute_ceiling_exact() {
     let cases: Vec<(TermId, i64)> = vec![
         (session.builder().int(5, Default::default()), 5),
         (session.builder().number(Number::machine(2.1), Default::default()), 3),
-        (
-            session.builder().number(Number::rational_i64(5, 2).expect("rational"), Default::default()),
-            3,
-        ),
-        (
-            session.builder().number(Number::rational_i64(-5, 2).expect("rational"), Default::default()),
-            -2,
-        ),
+        (session.builder().number(Number::rational_i64(5, 2).expect("rational"), Default::default()), 3),
+        (session.builder().number(Number::rational_i64(-5, 2).expect("rational"), Default::default()), -2),
     ];
     for (arg, expected) in cases {
         let ceiling = ApplicationHead::Semantic(SemanticOperator::Ceiling);
@@ -300,14 +286,8 @@ fn compile_and_execute_round_half_to_even() {
     let cases: Vec<(TermId, i64)> = vec![
         (session.builder().number(Number::machine(2.5), Default::default()), 2),
         (session.builder().number(Number::machine(3.5), Default::default()), 4),
-        (
-            session.builder().number(Number::rational_i64(5, 2).expect("rational"), Default::default()),
-            2,
-        ),
-        (
-            session.builder().number(Number::rational_i64(-5, 2).expect("rational"), Default::default()),
-            -2,
-        ),
+        (session.builder().number(Number::rational_i64(5, 2).expect("rational"), Default::default()), 2),
+        (session.builder().number(Number::rational_i64(-5, 2).expect("rational"), Default::default()), -2),
     ];
     for (arg, expected) in cases {
         let round = ApplicationHead::Semantic(SemanticOperator::Round);
@@ -326,11 +306,8 @@ fn compile_and_execute_elementary_zero_specials() {
     use science_ir::UnaryFunction;
     let mut session = Session::new();
     let zero = session.builder().int(0, Default::default());
-    let cases: &[(UnaryFunction, TermId, i64)] = &[
-        (UnaryFunction::ArcSin, zero, 0),
-        (UnaryFunction::Sinh, zero, 0),
-        (UnaryFunction::Cosh, zero, 1),
-    ];
+    let cases: &[(UnaryFunction, TermId, i64)] =
+        &[(UnaryFunction::ArcSin, zero, 0), (UnaryFunction::Sinh, zero, 0), (UnaryFunction::Cosh, zero, 1)];
     for (uf, arg, expected) in cases {
         let head = ApplicationHead::Semantic(SemanticOperator::Unary(*uf));
         let term = session.builder().application(head, vec![*arg], Default::default());
@@ -362,15 +339,8 @@ fn compile_and_execute_arctan_one_is_pi_over_four() {
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(term)).expect("arctan");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     match session.arena.get(session.results.get(result_id).expect("result").symbolic_term.expect("term")) {
-        Some(TermNode::Application {
-            head: ApplicationHead::Semantic(SemanticOperator::Divide),
-            arguments,
-            ..
-        }) if arguments.len() == 2 => {
-            assert!(matches!(
-                session.arena.get(arguments[0]),
-                Some(TermNode::Atom(Atom::Constant(MathematicalConstant::Pi)))
-            ));
+        Some(TermNode::Application { head: ApplicationHead::Semantic(SemanticOperator::Divide), arguments, .. }) if arguments.len() == 2 => {
+            assert!(matches!(session.arena.get(arguments[0]), Some(TermNode::Atom(Atom::Constant(MathematicalConstant::Pi)))));
             assert!(matches!(
                 session.arena.get(arguments[1]),
                 Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(4)
@@ -390,15 +360,8 @@ fn compile_and_execute_arccos_zero_is_pi_over_two() {
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(term)).expect("arccos");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     match session.arena.get(session.results.get(result_id).expect("result").symbolic_term.expect("term")) {
-        Some(TermNode::Application {
-            head: ApplicationHead::Semantic(SemanticOperator::Divide),
-            arguments,
-            ..
-        }) if arguments.len() == 2 => {
-            assert!(matches!(
-                session.arena.get(arguments[0]),
-                Some(TermNode::Atom(Atom::Constant(MathematicalConstant::Pi)))
-            ));
+        Some(TermNode::Application { head: ApplicationHead::Semantic(SemanticOperator::Divide), arguments, .. }) if arguments.len() == 2 => {
+            assert!(matches!(session.arena.get(arguments[0]), Some(TermNode::Atom(Atom::Constant(MathematicalConstant::Pi)))));
             assert!(matches!(
                 session.arena.get(arguments[1]),
                 Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2)
@@ -448,11 +411,7 @@ fn compile_and_execute_inverse_trig_boundary_specials() {
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(term)).expect("arcsin1");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     match session.arena.get(session.results.get(result_id).expect("result").symbolic_term.expect("term")) {
-        Some(TermNode::Application {
-            head: ApplicationHead::Semantic(SemanticOperator::Divide),
-            arguments,
-            ..
-        }) if arguments.len() == 2 => {
+        Some(TermNode::Application { head: ApplicationHead::Semantic(SemanticOperator::Divide), arguments, .. }) if arguments.len() == 2 => {
             assert!(matches!(
                 session.arena.get(arguments[1]),
                 Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2)
@@ -467,10 +426,7 @@ fn compile_and_execute_numerator_denominator_exact() {
     let mut session = Session::new();
     let half = session.builder().number(Number::rational_i64(1, 2).expect("half"), Default::default());
     let three_quarters = session.builder().number(Number::rational_i64(3, 4).expect("three quarters"), Default::default());
-    for (op, arg, expected) in [
-        (SemanticOperator::Numerator, half, 1i64),
-        (SemanticOperator::Denominator, three_quarters, 4i64),
-    ] {
+    for (op, arg, expected) in [(SemanticOperator::Numerator, half, 1i64), (SemanticOperator::Denominator, three_quarters, 4i64)] {
         let head = ApplicationHead::Semantic(op);
         let term = session.builder().application(head, vec![arg], Default::default());
         let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(term)).expect("compile");
@@ -512,15 +468,8 @@ fn compile_and_execute_gamma_erf_unitstep_specials() {
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(term)).expect("gamma half");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     match session.arena.get(session.results.get(result_id).expect("result").symbolic_term.expect("term")) {
-        Some(TermNode::Application {
-            head: ApplicationHead::Semantic(SemanticOperator::Sqrt),
-            arguments,
-            ..
-        }) if arguments.len() == 1 => {
-            assert!(matches!(
-                session.arena.get(arguments[0]),
-                Some(TermNode::Atom(Atom::Constant(MathematicalConstant::Pi)))
-            ));
+        Some(TermNode::Application { head: ApplicationHead::Semantic(SemanticOperator::Sqrt), arguments, .. }) if arguments.len() == 1 => {
+            assert!(matches!(session.arena.get(arguments[0]), Some(TermNode::Atom(Atom::Constant(MathematicalConstant::Pi)))));
         }
         other => panic!("expected Gamma[1/2] == Sqrt[Pi], got {other:?}"),
     }
@@ -577,16 +526,8 @@ fn compile_and_execute_variables_symbol_list() {
     let x = session.builder().symbol("x", Default::default());
     let y = session.builder().symbol("y", Default::default());
     let z = session.builder().symbol("z", Default::default());
-    let xy = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Multiply),
-        vec![x, y],
-        Default::default(),
-    );
-    let expr = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Add),
-        vec![xy, z],
-        Default::default(),
-    );
+    let xy = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Multiply), vec![x, y], Default::default());
+    let expr = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Add), vec![xy, z], Default::default());
     let variables = ApplicationHead::Semantic(SemanticOperator::Variables);
     let term = session.builder().application(variables, vec![expr], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(term)).expect("variables");
@@ -613,30 +554,13 @@ fn compile_and_execute_coefficient_and_exponent_univariate() {
     let x = session.builder().symbol("x", Default::default());
     let three = session.builder().int(3, Default::default());
     let two = session.builder().int(2, Default::default());
-    let x2 = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Power),
-        vec![x, two],
-        Default::default(),
-    );
-    let three_x = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Multiply),
-        vec![three, x],
-        Default::default(),
-    );
-    let poly = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Add),
-        vec![x2, three_x],
-        Default::default(),
-    );
+    let x2 = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Power), vec![x, two], Default::default());
+    let three_x = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Multiply), vec![three, x], Default::default());
+    let poly = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Add), vec![x2, three_x], Default::default());
 
-    let coefficient = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Coefficient),
-        vec![poly, x],
-        Default::default(),
-    );
-    let module = ExecutionCompiler::new()
-        .compile(&mut session, &CasRequest::Term(coefficient))
-        .expect("coefficient");
+    let coefficient =
+        session.builder().application(ApplicationHead::Semantic(SemanticOperator::Coefficient), vec![poly, x], Default::default());
+    let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(coefficient)).expect("coefficient");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     match session.arena.get(session.results.get(result_id).expect("result").symbolic_term.expect("term")) {
         Some(TermNode::Atom(Atom::Number(v))) if v.as_exact_integer() == Some(3) => {}
@@ -644,21 +568,9 @@ fn compile_and_execute_coefficient_and_exponent_univariate() {
     }
 
     let exp3 = session.builder().int(3, Default::default());
-    let x3 = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Power),
-        vec![x, exp3],
-        Default::default(),
-    );
-    let poly2 = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Add),
-        vec![x3, x],
-        Default::default(),
-    );
-    let exponent = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Exponent),
-        vec![poly2, x],
-        Default::default(),
-    );
+    let x3 = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Power), vec![x, exp3], Default::default());
+    let poly2 = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Add), vec![x3, x], Default::default());
+    let exponent = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Exponent), vec![poly2, x], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(exponent)).expect("exponent");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     match session.arena.get(session.results.get(result_id).expect("result").symbolic_term.expect("term")) {
@@ -675,42 +587,18 @@ fn compile_and_execute_cancel_difference_of_squares() {
     let one = session.builder().int(1, Default::default());
     let two = session.builder().int(2, Default::default());
     let neg_one = session.builder().int(-1, Default::default());
-    let x2 = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Power),
-        vec![x, two],
-        Default::default(),
-    );
-    let num = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Add),
-        vec![x2, neg_one],
-        Default::default(),
-    );
-    let den = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Add),
-        vec![x, neg_one],
-        Default::default(),
-    );
-    let quot = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Divide),
-        vec![num, den],
-        Default::default(),
-    );
+    let x2 = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Power), vec![x, two], Default::default());
+    let num = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Add), vec![x2, neg_one], Default::default());
+    let den = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Add), vec![x, neg_one], Default::default());
+    let quot = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Divide), vec![num, den], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(quot)).expect("quot");
     let quot_result = ReferenceExecutor::new().execute(&mut session, &module).expect("execute quot");
     let quot_id = session.results.get(quot_result).expect("result").symbolic_term.expect("term");
-    let cancel = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Cancel),
-        vec![quot_id],
-        Default::default(),
-    );
+    let cancel = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Cancel), vec![quot_id], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(cancel)).expect("cancel");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     match session.arena.get(session.results.get(result_id).expect("result").symbolic_term.expect("term")) {
-        Some(TermNode::Application {
-            head: ApplicationHead::Semantic(SemanticOperator::Add),
-            arguments,
-            ..
-        }) if arguments.len() == 2 => {
+        Some(TermNode::Application { head: ApplicationHead::Semantic(SemanticOperator::Add), arguments, .. }) if arguments.len() == 2 => {
             assert!(matches!(
                 session.arena.get(arguments[0]),
                 Some(TermNode::Atom(Atom::Number(v))) if v.as_exact_integer() == Some(1)
@@ -721,19 +609,11 @@ fn compile_and_execute_cancel_difference_of_squares() {
     }
 
     let two_lit = session.builder().int(2, Default::default());
-    let echo = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Cancel),
-        vec![two_lit],
-        Default::default(),
-    );
+    let echo = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Cancel), vec![two_lit], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(echo)).expect("cancel echo");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     match session.arena.get(session.results.get(result_id).expect("result").symbolic_term.expect("term")) {
-        Some(TermNode::Application {
-            head: ApplicationHead::Semantic(SemanticOperator::Cancel),
-            arguments,
-            ..
-        }) if arguments.len() == 1 => {
+        Some(TermNode::Application { head: ApplicationHead::Semantic(SemanticOperator::Cancel), arguments, .. }) if arguments.len() == 1 => {
             assert!(matches!(
                 session.arena.get(arguments[0]),
                 Some(TermNode::Atom(Atom::Number(v))) if v.as_exact_integer() == Some(2)
@@ -750,29 +630,13 @@ fn compile_and_execute_expand_and_factor_binomial() {
     let x = session.builder().symbol("x", Default::default());
     let one = session.builder().int(1, Default::default());
     let two = session.builder().int(2, Default::default());
-    let bin = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Add),
-        vec![x, one],
-        Default::default(),
-    );
-    let square = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Power),
-        vec![bin, two],
-        Default::default(),
-    );
-    let expand = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Expand),
-        vec![square],
-        Default::default(),
-    );
+    let bin = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Add), vec![x, one], Default::default());
+    let square = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Power), vec![bin, two], Default::default());
+    let expand = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Expand), vec![square], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(expand)).expect("expand");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     match session.arena.get(session.results.get(result_id).expect("result").symbolic_term.expect("term")) {
-        Some(TermNode::Application {
-            head: ApplicationHead::Semantic(SemanticOperator::Add),
-            arguments,
-            ..
-        }) if arguments.len() == 3 => {
+        Some(TermNode::Application { head: ApplicationHead::Semantic(SemanticOperator::Add), arguments, .. }) if arguments.len() == 3 => {
             assert!(arguments.iter().any(|term| {
                 matches!(
                     session.arena.get(*term),
@@ -793,30 +657,14 @@ fn compile_and_execute_expand_and_factor_binomial() {
         other => panic!("expected Expand[(x + 1)^2] expanded sum, got {other:?}"),
     }
 
-    let x2 = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Power),
-        vec![x, two],
-        Default::default(),
-    );
+    let x2 = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Power), vec![x, two], Default::default());
     let neg_one = session.builder().int(-1, Default::default());
-    let diff = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Add),
-        vec![x2, neg_one],
-        Default::default(),
-    );
-    let factor = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Factor),
-        vec![diff],
-        Default::default(),
-    );
+    let diff = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Add), vec![x2, neg_one], Default::default());
+    let factor = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Factor), vec![diff], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(factor)).expect("factor");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     match session.arena.get(session.results.get(result_id).expect("result").symbolic_term.expect("term")) {
-        Some(TermNode::Application {
-            head: ApplicationHead::Semantic(SemanticOperator::Multiply),
-            arguments,
-            ..
-        }) if arguments.len() == 2 => {}
+        Some(TermNode::Application { head: ApplicationHead::Semantic(SemanticOperator::Multiply), arguments, .. }) if arguments.len() == 2 => {}
         other => panic!("expected Factor[x^2 - 1] as product, got {other:?}"),
     }
 }
@@ -829,62 +677,23 @@ fn compile_and_execute_collect_and_polynomial_gcd() {
     let y = session.builder().symbol("y", Default::default());
     let two = session.builder().int(2, Default::default());
     let neg_one = session.builder().int(-1, Default::default());
-    let x2 = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Power),
-        vec![x, two],
-        Default::default(),
-    );
-    let two_x_y = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Multiply),
-        vec![two, x, y],
-        Default::default(),
-    );
-    let y2 = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Power),
-        vec![y, two],
-        Default::default(),
-    );
-    let poly = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Add),
-        vec![x2, two_x_y, y2],
-        Default::default(),
-    );
-    let collect = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Collect),
-        vec![poly, x],
-        Default::default(),
-    );
+    let x2 = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Power), vec![x, two], Default::default());
+    let two_x_y = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Multiply), vec![two, x, y], Default::default());
+    let y2 = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Power), vec![y, two], Default::default());
+    let poly = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Add), vec![x2, two_x_y, y2], Default::default());
+    let collect = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Collect), vec![poly, x], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(collect)).expect("collect");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
-    assert!(session.arena.structural_eq(
-        session.results.get(result_id).expect("result").symbolic_term.expect("term"),
-        poly,
-    ));
+    assert!(session.arena.structural_eq(session.results.get(result_id).expect("result").symbolic_term.expect("term"), poly,));
 
-    let diff = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Add),
-        vec![x2, neg_one],
-        Default::default(),
-    );
-    let linear = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Add),
-        vec![x, neg_one],
-        Default::default(),
-    );
-    let gcd = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::PolynomialGCD),
-        vec![diff, linear],
-        Default::default(),
-    );
+    let diff = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Add), vec![x2, neg_one], Default::default());
+    let linear = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Add), vec![x, neg_one], Default::default());
+    let gcd = session.builder().application(ApplicationHead::Semantic(SemanticOperator::PolynomialGCD), vec![diff, linear], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(gcd)).expect("gcd");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
     match session.arena.get(out) {
-        Some(TermNode::Application {
-            head: ApplicationHead::Semantic(SemanticOperator::Add),
-            arguments,
-            ..
-        }) if arguments.len() == 2 => {
+        Some(TermNode::Application { head: ApplicationHead::Semantic(SemanticOperator::Add), arguments, .. }) if arguments.len() == 2 => {
             assert!(
                 (session.arena.structural_eq(arguments[0], x) && session.arena.structural_eq(arguments[1], neg_one))
                     || (session.arena.structural_eq(arguments[0], neg_one) && session.arena.structural_eq(arguments[1], x))
@@ -904,102 +713,45 @@ fn compile_and_execute_discriminant_resultant_and_polynomial_remainder() {
     let neg_one = session.builder().int(-1, Default::default());
     let neg_three = session.builder().int(-3, Default::default());
     let zero = session.builder().int(0, Default::default());
-    let x2 = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Power),
-        vec![x, two],
-        Default::default(),
-    );
-    let quad = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Add),
-        vec![x2, x, one],
-        Default::default(),
-    );
-    let discriminant = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Discriminant),
-        vec![quad, x],
-        Default::default(),
-    );
-    let module = ExecutionCompiler::new()
-        .compile(&mut session, &CasRequest::Term(discriminant))
-        .expect("discriminant");
+    let x2 = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Power), vec![x, two], Default::default());
+    let quad = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Add), vec![x2, x, one], Default::default());
+    let discriminant =
+        session.builder().application(ApplicationHead::Semantic(SemanticOperator::Discriminant), vec![quad, x], Default::default());
+    let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(discriminant)).expect("discriminant");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
-    assert!(session.arena.structural_eq(
-        session.results.get(result_id).expect("result").symbolic_term.expect("term"),
-        neg_three,
-    ));
+    assert!(session.arena.structural_eq(session.results.get(result_id).expect("result").symbolic_term.expect("term"), neg_three,));
 
-    let diff = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Add),
-        vec![x2, neg_one],
-        Default::default(),
-    );
-    let linear = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Add),
-        vec![x, neg_one],
-        Default::default(),
-    );
-    let resultant = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Resultant),
-        vec![diff, linear, x],
-        Default::default(),
-    );
-    let module = ExecutionCompiler::new()
-        .compile(&mut session, &CasRequest::Term(resultant))
-        .expect("resultant");
+    let diff = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Add), vec![x2, neg_one], Default::default());
+    let linear = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Add), vec![x, neg_one], Default::default());
+    let resultant =
+        session.builder().application(ApplicationHead::Semantic(SemanticOperator::Resultant), vec![diff, linear, x], Default::default());
+    let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(resultant)).expect("resultant");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
-    assert!(session.arena.structural_eq(
-        session.results.get(result_id).expect("result").symbolic_term.expect("term"),
-        zero,
-    ));
+    assert!(session.arena.structural_eq(session.results.get(result_id).expect("result").symbolic_term.expect("term"), zero,));
 
     let three = session.builder().int(3, Default::default());
-    let x3 = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Power),
-        vec![x, three],
-        Default::default(),
-    );
-    let cubic = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Add),
-        vec![x3, one],
-        Default::default(),
-    );
-    let divisor = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Add),
-        vec![x, one],
-        Default::default(),
-    );
+    let x3 = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Power), vec![x, three], Default::default());
+    let cubic = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Add), vec![x3, one], Default::default());
+    let divisor = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Add), vec![x, one], Default::default());
     let remainder = session.builder().application(
         ApplicationHead::Semantic(SemanticOperator::PolynomialRemainder),
         vec![cubic, divisor, x],
         Default::default(),
     );
-    let module = ExecutionCompiler::new()
-        .compile(&mut session, &CasRequest::Term(remainder))
-        .expect("remainder");
+    let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(remainder)).expect("remainder");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
-    assert!(session.arena.structural_eq(
-        session.results.get(result_id).expect("result").symbolic_term.expect("term"),
-        zero,
-    ));
+    assert!(session.arena.structural_eq(session.results.get(result_id).expect("result").symbolic_term.expect("term"), zero,));
 }
 
 #[test]
 fn compile_and_execute_length_scalar_not_matrix() {
     let mut session = Session::new();
     let five = session.builder().int(5, Default::default());
-    let length_atom = session
-        .builder()
-        .application(ApplicationHead::Semantic(SemanticOperator::Length), vec![five], Default::default());
-    let module = ExecutionCompiler::new()
-        .compile(&mut session, &CasRequest::Term(length_atom))
-        .expect("length_atom");
+    let length_atom = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Length), vec![five], Default::default());
+    let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(length_atom)).expect("length_atom");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute length_atom");
     match session.arena.get(session.results.get(result_id).expect("result").symbolic_term.expect("term")) {
-        Some(TermNode::Application {
-            head: ApplicationHead::Semantic(SemanticOperator::Length),
-            arguments,
-            ..
-        }) if arguments.len() == 1 => {}
+        Some(TermNode::Application { head: ApplicationHead::Semantic(SemanticOperator::Length), arguments, .. }) if arguments.len() == 1 => {}
         other => panic!("expected Length residual on atom, got {other:?}"),
     }
 }
@@ -1040,9 +792,7 @@ fn compile_and_execute_most_and_reverse() {
     let c = session.builder().int(3, Default::default());
     let list = session.builder().list(vec![a, b, c], Default::default());
 
-    let most_term = session
-        .builder()
-        .application_semantic(SemanticOperator::Most, vec![list], Default::default());
+    let most_term = session.builder().application_semantic(SemanticOperator::Most, vec![list], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(most_term)).expect("most");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1051,9 +801,7 @@ fn compile_and_execute_most_and_reverse() {
         other => panic!("expected Most == OrderedCollection[1,2], got {other:?}"),
     }
 
-    let rev_term = session
-        .builder()
-        .application_semantic(SemanticOperator::Reverse, vec![list], Default::default());
+    let rev_term = session.builder().application_semantic(SemanticOperator::Reverse, vec![list], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(rev_term)).expect("reverse");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1073,9 +821,7 @@ fn compile_and_execute_take_and_drop() {
     let list = session.builder().list(vec![a, b, c, d], Default::default());
     let two = session.builder().int(2, Default::default());
 
-    let take_term = session
-        .builder()
-        .application_semantic(SemanticOperator::Take, vec![list, two], Default::default());
+    let take_term = session.builder().application_semantic(SemanticOperator::Take, vec![list, two], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(take_term)).expect("take");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1084,9 +830,7 @@ fn compile_and_execute_take_and_drop() {
         other => panic!("expected Take == OrderedCollection[1,2], got {other:?}"),
     }
 
-    let drop_term = session
-        .builder()
-        .application_semantic(SemanticOperator::Drop, vec![list, two], Default::default());
+    let drop_term = session.builder().application_semantic(SemanticOperator::Drop, vec![list, two], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(drop_term)).expect("drop");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1104,9 +848,7 @@ fn compile_and_execute_flatten_nested() {
     let three = session.builder().int(3, Default::default());
     let inner = session.builder().list(vec![one, two], Default::default());
     let outer = session.builder().list(vec![inner, three], Default::default());
-    let term = session
-        .builder()
-        .application_semantic(SemanticOperator::Flatten, vec![outer], Default::default());
+    let term = session.builder().application_semantic(SemanticOperator::Flatten, vec![outer], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(term)).expect("flatten");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1124,9 +866,7 @@ fn compile_and_execute_append_and_prepend() {
     let three = session.builder().int(3, Default::default());
     let list = session.builder().list(vec![one, two], Default::default());
 
-    let append_term = session
-        .builder()
-        .application_semantic(SemanticOperator::Append, vec![list, three], Default::default());
+    let append_term = session.builder().application_semantic(SemanticOperator::Append, vec![list, three], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(append_term)).expect("append");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1136,9 +876,7 @@ fn compile_and_execute_append_and_prepend() {
     }
 
     let base = session.builder().list(vec![two, three], Default::default());
-    let prepend_term = session
-        .builder()
-        .application_semantic(SemanticOperator::Prepend, vec![base, one], Default::default());
+    let prepend_term = session.builder().application_semantic(SemanticOperator::Prepend, vec![base, one], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(prepend_term)).expect("prepend");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1158,18 +896,14 @@ fn compile_and_execute_member_q_sort_and_dedupe() {
     let three = session.builder().int(3, Default::default());
     let list = session.builder().list(vec![one, two, three], Default::default());
 
-    let member = session
-        .builder()
-        .application_semantic(SemanticOperator::MemberQ, vec![list, two], Default::default());
+    let member = session.builder().application_semantic(SemanticOperator::MemberQ, vec![list, two], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(member)).expect("memberq");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
     assert_eq!(as_boolean_id(&session, out), Some(true));
 
     let unsorted = session.builder().list(vec![three, one, two], Default::default());
-    let sort_term = session
-        .builder()
-        .application_semantic(SemanticOperator::Sort, vec![unsorted], Default::default());
+    let sort_term = session.builder().application_semantic(SemanticOperator::Sort, vec![unsorted], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(sort_term)).expect("sort");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1179,9 +913,7 @@ fn compile_and_execute_member_q_sort_and_dedupe() {
     }
 
     let dup = session.builder().list(vec![one, one, two], Default::default());
-    let dedupe = session
-        .builder()
-        .application_semantic(SemanticOperator::DeleteDuplicates, vec![dup], Default::default());
+    let dedupe = session.builder().application_semantic(SemanticOperator::DeleteDuplicates, vec![dup], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(dedupe)).expect("dedupe");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1200,9 +932,7 @@ fn compile_and_execute_count_partition_constant_array() {
     let four = session.builder().int(4, Default::default());
 
     let list = session.builder().list(vec![one, one, two], Default::default());
-    let count_term = session
-        .builder()
-        .application_semantic(SemanticOperator::Count, vec![list, one], Default::default());
+    let count_term = session.builder().application_semantic(SemanticOperator::Count, vec![list, one], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(count_term)).expect("count");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     match session.arena.get(session.results.get(result_id).expect("result").symbolic_term.expect("term")) {
@@ -1211,9 +941,7 @@ fn compile_and_execute_count_partition_constant_array() {
     }
 
     let seq = session.builder().list(vec![one, two, three, four], Default::default());
-    let part_term = session
-        .builder()
-        .application_semantic(SemanticOperator::Partition, vec![seq, two], Default::default());
+    let part_term = session.builder().application_semantic(SemanticOperator::Partition, vec![seq, two], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(part_term)).expect("partition");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1233,9 +961,7 @@ fn compile_and_execute_count_partition_constant_array() {
 
     let zero = session.builder().int(0, Default::default());
     let three_n = session.builder().int(3, Default::default());
-    let const_term = session
-        .builder()
-        .application_semantic(SemanticOperator::ConstantArray, vec![zero, three_n], Default::default());
+    let const_term = session.builder().application_semantic(SemanticOperator::ConstantArray, vec![zero, three_n], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(const_term)).expect("const");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1265,9 +991,7 @@ fn compile_and_execute_union_accumulate_free_q_extract() {
 
     let left = session.builder().list(vec![one, two], Default::default());
     let right = session.builder().list(vec![two, three], Default::default());
-    let union_term = session
-        .builder()
-        .application_semantic(SemanticOperator::Union, vec![left, right], Default::default());
+    let union_term = session.builder().application_semantic(SemanticOperator::Union, vec![left, right], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(union_term)).expect("union");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1276,9 +1000,7 @@ fn compile_and_execute_union_accumulate_free_q_extract() {
         other => panic!("expected Union, got {other:?}"),
     }
 
-    let inter_term = session
-        .builder()
-        .application_semantic(SemanticOperator::Intersection, vec![left, right], Default::default());
+    let inter_term = session.builder().application_semantic(SemanticOperator::Intersection, vec![left, right], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(inter_term)).expect("inter");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1288,9 +1010,7 @@ fn compile_and_execute_union_accumulate_free_q_extract() {
     }
 
     let acc_list = session.builder().list(vec![one, two, three], Default::default());
-    let acc = session
-        .builder()
-        .application_semantic(SemanticOperator::Accumulate, vec![acc_list], Default::default());
+    let acc = session.builder().application_semantic(SemanticOperator::Accumulate, vec![acc_list], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(acc)).expect("accum");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1307,9 +1027,7 @@ fn compile_and_execute_union_accumulate_free_q_extract() {
     }
 
     let diff_list = session.builder().list(vec![one, four, nine], Default::default());
-    let diff = session
-        .builder()
-        .application_semantic(SemanticOperator::Differences, vec![diff_list], Default::default());
+    let diff = session.builder().application_semantic(SemanticOperator::Differences, vec![diff_list], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(diff)).expect("diff");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1326,18 +1044,14 @@ fn compile_and_execute_union_accumulate_free_q_extract() {
     }
 
     let free_list = session.builder().list(vec![one, two], Default::default());
-    let free = session
-        .builder()
-        .application_semantic(SemanticOperator::FreeQ, vec![free_list, three], Default::default());
+    let free = session.builder().application_semantic(SemanticOperator::FreeQ, vec![free_list, three], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(free)).expect("freeq");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
     assert_eq!(as_boolean_id(&session, out), Some(true));
 
     let extract_list = session.builder().list(vec![one, two, three], Default::default());
-    let extract = session
-        .builder()
-        .application_semantic(SemanticOperator::Extract, vec![extract_list, two], Default::default());
+    let extract = session.builder().application_semantic(SemanticOperator::Extract, vec![extract_list, two], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(extract)).expect("extract");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     assert_eq!(session.results.get(result_id).expect("result").symbolic_term, Some(two));
@@ -1357,9 +1071,7 @@ fn compile_and_execute_pad_riffle_position_array() {
     let four = session.builder().int(4, Default::default());
 
     let list = session.builder().list(vec![one, two], Default::default());
-    let pad = session
-        .builder()
-        .application_semantic(SemanticOperator::PadLeft, vec![list, four], Default::default());
+    let pad = session.builder().application_semantic(SemanticOperator::PadLeft, vec![list, four], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(pad)).expect("pad");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1379,9 +1091,7 @@ fn compile_and_execute_pad_riffle_position_array() {
     let b = session.builder().symbol("b", Default::default());
     let left = session.builder().list(vec![one, two], Default::default());
     let right = session.builder().list(vec![a, b], Default::default());
-    let riffle = session
-        .builder()
-        .application_semantic(SemanticOperator::Riffle, vec![left, right], Default::default());
+    let riffle = session.builder().application_semantic(SemanticOperator::Riffle, vec![left, right], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(riffle)).expect("riffle");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1391,9 +1101,7 @@ fn compile_and_execute_pad_riffle_position_array() {
     }
 
     let pos_list = session.builder().list(vec![one, two, one], Default::default());
-    let pos = session
-        .builder()
-        .application_semantic(SemanticOperator::Position, vec![pos_list, one], Default::default());
+    let pos = session.builder().application_semantic(SemanticOperator::Position, vec![pos_list, one], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(pos)).expect("position");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1401,12 +1109,10 @@ fn compile_and_execute_pad_riffle_position_array() {
         Some(TermNode::Collection { elements: items, .. }) if items.len() == 2 => {
             for (item, expect) in items.iter().zip([1i64, 3]) {
                 match session.arena.get(*item) {
-                    Some(TermNode::Collection { elements: idx, .. }) if idx.len() == 1 => {
-                        match session.arena.get(idx[0]) {
-                            Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(expect) => {}
-                            other => panic!("expected Position index {expect}, got {other:?}"),
-                        }
-                    }
+                    Some(TermNode::Collection { elements: idx, .. }) if idx.len() == 1 => match session.arena.get(idx[0]) {
+                        Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(expect) => {}
+                        other => panic!("expected Position index {expect}, got {other:?}"),
+                    },
                     other => panic!("expected singleton position, got {other:?}"),
                 }
             }
@@ -1416,9 +1122,7 @@ fn compile_and_execute_pad_riffle_position_array() {
 
     let f = session.extensions.intern("f");
     let f_head = session.builder().application_extension_id(f, vec![], Default::default());
-    let arr = session
-        .builder()
-        .application_semantic(SemanticOperator::Array, vec![f_head, three], Default::default());
+    let arr = session.builder().application_semantic(SemanticOperator::Array, vec![f_head, three], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(arr)).expect("array");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1426,10 +1130,9 @@ fn compile_and_execute_pad_riffle_position_array() {
         Some(TermNode::Collection { elements: items, .. }) if items.len() == 3 => {
             for (i, item) in items.iter().enumerate() {
                 match session.arena.get(*item) {
-                    Some(TermNode::Application {
-                        head: ApplicationHead::Extension(id),
-                        arguments,
-                    }) if session.extensions.display_name(*id) == Some("f") && arguments.len() == 1 => {
+                    Some(TermNode::Application { head: ApplicationHead::Extension(id), arguments })
+                        if session.extensions.display_name(*id) == Some("f") && arguments.len() == 1 =>
+                    {
                         match session.arena.get(arguments[0]) {
                             Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some((i as i64) + 1) => {}
                             other => panic!("expected f[{}], got {other:?}", i + 1),
@@ -1452,18 +1155,14 @@ fn compile_and_execute_head_of_add_and_list() {
     let two = session.builder().int(2, Default::default());
     // Head evaluates args: Head[1+2] → Head[3] → Integer (not HoldFirst → Add).
     let sum = session.builder().application_semantic(SemanticOperator::Add, vec![one, two], Default::default());
-    let head_sum = session
-        .builder()
-        .application_semantic(SemanticOperator::Head, vec![sum], Default::default());
+    let head_sum = session.builder().application_semantic(SemanticOperator::Head, vec![sum], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(head_sum)).expect("head add");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
     assert_eq!(symbol_name(&session, out).as_deref(), Some("Integer"));
 
     let list = session.builder().list(vec![one, two], Default::default());
-    let head_list = session
-        .builder()
-        .application_semantic(SemanticOperator::Head, vec![list], Default::default());
+    let head_list = session.builder().application_semantic(SemanticOperator::Head, vec![list], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(head_list)).expect("head list");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1472,35 +1171,23 @@ fn compile_and_execute_head_of_add_and_list() {
     let a = session.builder().symbol("a", Default::default());
     let b = session.builder().symbol("b", Default::default());
     let free_sum = session.builder().application_semantic(SemanticOperator::Add, vec![a, b], Default::default());
-    let head_free = session
-        .builder()
-        .application_semantic(SemanticOperator::Head, vec![free_sum], Default::default());
+    let head_free = session.builder().application_semantic(SemanticOperator::Head, vec![free_sum], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(head_free)).expect("head free");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
     match session.arena.get(out) {
-        Some(TermNode::Application {
-            head: ApplicationHead::Semantic(SemanticOperator::Add),
-            arguments,
-        }) if arguments.is_empty() => {}
+        Some(TermNode::Application { head: ApplicationHead::Semantic(SemanticOperator::Add), arguments }) if arguments.is_empty() => {}
         other => panic!("expected 0-ary Add from Head[a+b], got {other:?}"),
     }
 
     let foo = session.extensions.intern("Foo");
-    let foo_app = session
-        .builder()
-        .application(ApplicationHead::Extension(foo), vec![one], Default::default());
-    let head_foo = session
-        .builder()
-        .application_semantic(SemanticOperator::Head, vec![foo_app], Default::default());
+    let foo_app = session.builder().application(ApplicationHead::Extension(foo), vec![one], Default::default());
+    let head_foo = session.builder().application_semantic(SemanticOperator::Head, vec![foo_app], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(head_foo)).expect("head ext");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
     match session.arena.get(out) {
-        Some(TermNode::Application {
-            head: ApplicationHead::Extension(id),
-            arguments,
-        }) if *id == foo && arguments.is_empty() => {}
+        Some(TermNode::Application { head: ApplicationHead::Extension(id), arguments }) if *id == foo && arguments.is_empty() => {}
         other => panic!("expected 0-ary Extension Head result, got {other:?}"),
     }
 }
@@ -1525,14 +1212,8 @@ fn compile_and_execute_mean_integer_list() {
     let one = session.builder().int(1, Default::default());
     let two = session.builder().int(2, Default::default());
     let three = session.builder().int(3, Default::default());
-    let list = session
-        .builder()
-        .collection(science_types::CollectionKind::OrderedCollection, vec![one, two, three], Default::default());
-    let mean = session.builder().application(
-        ApplicationHead::Semantic(SemanticOperator::Mean),
-        vec![list],
-        Default::default(),
-    );
+    let list = session.builder().collection(science_types::CollectionKind::OrderedCollection, vec![one, two, three], Default::default());
+    let mean = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Mean), vec![list], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(mean)).expect("mean");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     match session.arena.get(session.results.get(result_id).expect("result").symbolic_term.expect("term")) {
@@ -1639,12 +1320,8 @@ fn compile_and_execute_map_indexed_second_slot() {
     let s1 = session.builder().symbol("$slot1", Default::default());
     let s2 = session.builder().symbol("$slot2", Default::default());
     let binders = session.builder().list(vec![s1, s2], Default::default());
-    let func = session
-        .builder()
-        .application_semantic(SemanticOperator::Function, vec![binders, s2], Default::default());
-    let term = session
-        .builder()
-        .application_semantic(SemanticOperator::MapIndexed, vec![func, list], Default::default());
+    let func = session.builder().application_semantic(SemanticOperator::Function, vec![binders, s2], Default::default());
+    let term = session.builder().application_semantic(SemanticOperator::MapIndexed, vec![func, list], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(term)).expect("mapindexed");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1652,12 +1329,10 @@ fn compile_and_execute_map_indexed_second_slot() {
         Some(TermNode::Collection { elements: items, .. }) if items.len() == 2 => {
             for (i, item) in items.iter().enumerate() {
                 match session.arena.get(*item) {
-                    Some(TermNode::Collection { elements: idx, .. }) if idx.len() == 1 => {
-                        match session.arena.get(idx[0]) {
-                            Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some((i as i64) + 1) => {}
-                            other => panic!("expected index {}, got {other:?}", i + 1),
-                        }
-                    }
+                    Some(TermNode::Collection { elements: idx, .. }) if idx.len() == 1 => match session.arena.get(idx[0]) {
+                        Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some((i as i64) + 1) => {}
+                        other => panic!("expected index {}, got {other:?}", i + 1),
+                    },
                     other => panic!("expected singleton index list, got {other:?}"),
                 }
             }
@@ -1676,9 +1351,7 @@ fn compile_and_execute_map_at_zeroary_head() {
     let f = session.extensions.intern("f");
     let func = session.builder().application_extension_id(f, vec![], Default::default());
     let index = session.builder().int(2, Default::default());
-    let term = session
-        .builder()
-        .application_semantic(SemanticOperator::MapAt, vec![func, list, index], Default::default());
+    let term = session.builder().application_semantic(SemanticOperator::MapAt, vec![func, list, index], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(term)).expect("mapat");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1689,9 +1362,7 @@ fn compile_and_execute_map_at_zeroary_head() {
                 other => panic!("expected 1 at index 0, got {other:?}"),
             }
             match session.arena.get(items[1]) {
-                Some(TermNode::Application { head: ApplicationHead::Extension(id), arguments })
-                    if arguments.len() == 1 =>
-                {
+                Some(TermNode::Application { head: ApplicationHead::Extension(id), arguments }) if arguments.len() == 1 => {
                     assert_eq!(*id, f);
                     match session.arena.get(arguments[0]) {
                         Some(TermNode::Atom(Atom::Number(n))) if n.as_exact_integer() == Some(2) => {}
@@ -1720,9 +1391,7 @@ fn compile_and_execute_map_thread_plus() {
     let right = session.builder().list(vec![three, four], Default::default());
     let lists = session.builder().list(vec![left, right], Default::default());
     let plus = session.builder().application_semantic(SemanticOperator::Add, vec![], Default::default());
-    let term = session
-        .builder()
-        .application_semantic(SemanticOperator::MapThread, vec![plus, lists], Default::default());
+    let term = session.builder().application_semantic(SemanticOperator::MapThread, vec![plus, lists], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(term)).expect("mapthread");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
@@ -1793,11 +1462,7 @@ fn compile_and_execute_zeros_eye() {
         }
         other => panic!("expected Eye[2], got {other:?}"),
     }
-    assert!(
-        session.matrix_objects.len() >= 2,
-        "Zeros/Eye must intern typed MatrixRef (got {})",
-        session.matrix_objects.len()
-    );
+    assert!(session.matrix_objects.len() >= 2, "Zeros/Eye must intern typed MatrixRef (got {})", session.matrix_objects.len());
 }
 
 #[test]
@@ -1863,10 +1528,7 @@ fn compile_and_execute_diagonal_matrix() {
         }
         other => panic!("expected DiagonalMatrix[{{1,2}}], got {other:?}"),
     }
-    assert!(
-        session.matrix_objects.len() >= 1,
-        "numeric DiagonalMatrix must intern typed MatrixRef"
-    );
+    assert!(session.matrix_objects.len() >= 1, "numeric DiagonalMatrix must intern typed MatrixRef");
 }
 
 #[test]
@@ -1880,10 +1542,8 @@ fn compile_and_execute_symbolic_diagonal_matrix_residuals() {
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
     match session.arena.get(out) {
-        Some(TermNode::Application {
-            head: ApplicationHead::Semantic(SemanticOperator::DiagonalMatrix),
-            arguments,
-        }) if arguments.len() == 1 => {}
+        Some(TermNode::Application { head: ApplicationHead::Semantic(SemanticOperator::DiagonalMatrix), arguments })
+            if arguments.len() == 1 => {}
         other => panic!("symbolic DiagonalMatrix must residual, got {other:?}"),
     }
 }
@@ -1898,9 +1558,7 @@ fn compile_and_execute_sum_nested_numeric_via_matrix_ref() {
     let row0 = session.builder().list(vec![one, two], Default::default());
     let row1 = session.builder().list(vec![three, four], Default::default());
     let nested = session.builder().list(vec![row0, row1], Default::default());
-    let term = session
-        .builder()
-        .application(ApplicationHead::Semantic(SemanticOperator::Sum), vec![nested], Default::default());
+    let term = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Sum), vec![nested], Default::default());
     let before = session.matrix_objects.len();
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(term)).expect("sum");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
@@ -1922,17 +1580,12 @@ fn compile_and_execute_sum_nested_symbolic_residuals() {
     let b = session.builder().symbol("b", Default::default());
     let row = session.builder().list(vec![a, b], Default::default());
     let nested = session.builder().list(vec![row], Default::default());
-    let term = session
-        .builder()
-        .application(ApplicationHead::Semantic(SemanticOperator::Sum), vec![nested], Default::default());
+    let term = session.builder().application(ApplicationHead::Semantic(SemanticOperator::Sum), vec![nested], Default::default());
     let module = ExecutionCompiler::new().compile(&mut session, &CasRequest::Term(term)).expect("sum");
     let result_id = ReferenceExecutor::new().execute(&mut session, &module).expect("execute");
     let out = session.results.get(result_id).expect("result").symbolic_term.expect("term");
     match session.arena.get(out) {
-        Some(TermNode::Application {
-            head: ApplicationHead::Semantic(SemanticOperator::Sum),
-            arguments,
-        }) if arguments.len() == 1 => {}
+        Some(TermNode::Application { head: ApplicationHead::Semantic(SemanticOperator::Sum), arguments }) if arguments.len() == 1 => {}
         other => panic!("symbolic nested Sum must residual, got {other:?}"),
     }
 }

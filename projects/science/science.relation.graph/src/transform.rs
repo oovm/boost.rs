@@ -4,7 +4,7 @@
 //! premise relation patterns → boundary-preserving rewrite → conclusion pattern.
 //! Two-premise replay encodes into [`crate::evidence::Evidence::App`] before minting.
 
-use science_relation_types::{EdgeId, EdgeKind, RelationError, NodeId};
+use science_relation_types::{EdgeId, EdgeKind, NodeId, RelationError};
 
 use super::{
     Graph,

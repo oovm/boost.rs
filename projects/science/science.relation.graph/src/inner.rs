@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 
-use science_relation_types::{EdgeKind, RelationError, NodeId};
+use science_relation_types::{EdgeKind, NodeId, RelationError};
 
 use super::{
     admission::{AdmittedRelation, QueryStatus, WorldId, query_status_of_admitted},
@@ -207,8 +207,7 @@ mod tests {
     #[test]
     fn reject_transport_lane() {
         let mut inner = InnerTable::new();
-        let rel =
-            AdmittedRelation::mint(world(), EdgeKind::Equal, (NodeId(0), NodeId(1)), 9, JudgmentLane::BootstrapOuterTransport);
+        let rel = AdmittedRelation::mint(world(), EdgeKind::Equal, (NodeId(0), NodeId(1)), 9, JudgmentLane::BootstrapOuterTransport);
         assert_eq!(inner.insert(rel).unwrap_err(), RelationError::ProofInvalid);
         assert!(inner.is_empty());
     }

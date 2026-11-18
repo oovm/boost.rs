@@ -70,13 +70,7 @@ pub struct AdmittedRelation {
 
 impl AdmittedRelation {
     /// Core-internal mint. External crates must go through replay, not this constructor.
-    pub(crate) fn mint(
-        world: WorldId,
-        kind: EdgeKind,
-        endpoints: (NodeId, NodeId),
-        evidence_tag: u64,
-        lane: JudgmentLane,
-    ) -> Self {
+    pub(crate) fn mint(world: WorldId, kind: EdgeKind, endpoints: (NodeId, NodeId), evidence_tag: u64, lane: JudgmentLane) -> Self {
         Self { world, kind, endpoints, evidence_tag, lane }
     }
 

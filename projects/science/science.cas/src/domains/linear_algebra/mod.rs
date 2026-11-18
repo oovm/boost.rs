@@ -24,9 +24,9 @@ pub mod value;
 pub use equality::{MatrixEqualityKind, matrices_equal};
 pub use exact::{
     ExactDetResult, ExactInverseResult, ExactNormResult, ExactNullSpaceResult, ExactRankResult, ExactRrefResult, ExactSolveResult,
-    ExactTraceResult, det_bareiss, eigenvalues_diagonal_exact, eigenvalues_exact, eigenvalues_symmetric_2x2_exact,
-    eigenvectors_diagonal_exact, eigenvectors_exact, eigenvectors_symmetric_2x2_exact, invert_exact, matrix_exp_exact, norm2_exact,
-    nullspace_exact, rank_exact, right_solve_exact, rref_rational, solve_exact, trace_exact,
+    ExactTraceResult, det_bareiss, eigenvalues_diagonal_exact, eigenvalues_exact, eigenvalues_symmetric_2x2_exact, eigenvectors_diagonal_exact,
+    eigenvectors_exact, eigenvectors_symmetric_2x2_exact, invert_exact, matrix_exp_exact, norm2_exact, nullspace_exact, rank_exact,
+    right_solve_exact, rref_rational, solve_exact, trace_exact,
 };
 pub use index::{AxisRange, IndexSpec, scalar_index_from_one_based, slice_index_from_one_based_inclusive};
 pub use machine::{
@@ -39,16 +39,16 @@ pub use operand::MatrixOperand;
 pub use ops::{
     conjugate_transpose, cross, dot, elementwise_divide, elementwise_power, extend_row_vector_scalar, flag_matrix, flatten_row_major, hadamard,
     index_scalar, intersection_integer_row_vectors, is_diagonal, is_lower_triangular, is_symmetric, is_upper_triangular, join_matrices,
-    kronecker, matmul, num_elements_scalar, pad_left_row_vector, reshape_column_major, reshape_row_major, reverse_matrix,
-    riffle_row_vectors, slice_matrix, transpose, tril, triu, union_integer_row_vectors,
+    kronecker, matmul, num_elements_scalar, pad_left_row_vector, reshape_column_major, reshape_row_major, reverse_matrix, riffle_row_vectors,
+    slice_matrix, transpose, tril, triu, union_integer_row_vectors,
 };
 pub use parent::{ElementParentKind, MatrixParent, RoundingPolicy, ShapePolicy, SparseStrategy};
 pub use request::LinearAlgebraRequest;
+pub(crate) use result::resolve_own_numeric_bindings;
 pub use result::{
     DEFAULT_PIVOT_THRESHOLD, LinearAlgebraResult, LinearAlgebraValue, execute_linear_algebra, execute_linear_algebra_with_bindings,
     operation_name,
 };
-pub(crate) use result::resolve_own_numeric_bindings;
 pub use shape::{Layout, MatrixShape, StorageOrder};
 pub use status::{AlgorithmGuarantee, MachineSolveWitness, SolveDisposition};
 pub use value::{MatrixBuffer, MatrixEntry, MatrixValue};

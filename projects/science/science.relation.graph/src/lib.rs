@@ -16,7 +16,7 @@ use science_gc::{GcHeap, HeapBudget};
 use science_graph::{
     GraphBuilder, GraphDirection, GraphSemantics, ImmutableGraph, MultiplicityPolicy, PublishedImmutableGraph, SelfLoopDegree,
 };
-use science_relation_types::{EdgeId, EdgeKind, RelationError, NodeId};
+use science_relation_types::{EdgeId, EdgeKind, NodeId, RelationError};
 
 pub mod admission;
 pub mod closure;

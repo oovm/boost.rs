@@ -17,9 +17,7 @@ use crate::{
         galois::{GaloisRequest, GaloisResult, execute_galois_with_tables},
         graph_theory::{GraphTheoryRequest, GraphTheoryResult, execute_graph_theory},
         group::{GroupRequest, GroupResult, execute_group_with_table_mut},
-        linear_algebra::{
-            LinearAlgebraRequest, LinearAlgebraResult, execute_linear_algebra_with_bindings, resolve_own_numeric_bindings,
-        },
+        linear_algebra::{LinearAlgebraRequest, LinearAlgebraResult, execute_linear_algebra_with_bindings, resolve_own_numeric_bindings},
         number_theory::{NumberTheoryRequest, NumberTheoryResult, execute_number_theory},
         optimization::{OptimizationRequest, OptimizationResult, execute_optimization},
         polynomial::{PolynomialRequest, PolynomialResult, execute_polynomial_with_rings},
@@ -99,9 +97,7 @@ pub fn verify_recompute_domain_result(session: &mut Session, snapshot: &VerifySn
             };
             // 相对 Session 矩阵存储与矩阵绑定重算（独立于 M-Graph 缓存接纳）。
             let req = resolve_own_numeric_bindings(session, req.owning_copy());
-            let replay = execute_linear_algebra_with_bindings(req, &session.matrix_objects, &|symbol| {
-                session.defs.matrix_binding(symbol)
-            });
+            let replay = execute_linear_algebra_with_bindings(req, &session.matrix_objects, &|symbol| session.defs.matrix_binding(symbol));
             assert_linear_algebra_match(&replay, claimed_la)
         }
         VerifySnapshot::NumberTheory(req) => {

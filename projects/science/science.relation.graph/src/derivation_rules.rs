@@ -43,12 +43,7 @@ impl ChainRule {
         if schema.name.is_empty() {
             return Err(RelationError::ProofInvalid);
         }
-        Ok(Self {
-            name: schema.name.clone(),
-            premise_a: schema.premise_a,
-            premise_b: schema.premise_b,
-            conclusion: schema.conclusion_kind,
-        })
+        Ok(Self { name: schema.name.clone(), premise_a: schema.premise_a, premise_b: schema.premise_b, conclusion: schema.conclusion_kind })
     }
 
     /// Unconstrained chain over a single kind (compat helper for tests / simple declares).

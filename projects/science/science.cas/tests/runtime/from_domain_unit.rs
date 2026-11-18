@@ -3,9 +3,7 @@
 use science_cas::{
     domains::{
         DomainResult,
-        linear_algebra::{
-            AlgorithmGuarantee, LinearAlgebraResult, LinearAlgebraValue, MachineSolveResult, SolveDisposition,
-        },
+        linear_algebra::{AlgorithmGuarantee, LinearAlgebraResult, LinearAlgebraValue, MachineSolveResult, SolveDisposition},
     },
     runtime::{results::computation_from_domain, session::Session},
 };
@@ -15,10 +13,7 @@ use science_types::ComputationStatus;
 fn machine_rank_projects_approximate_full_coverage() {
     let mut session = Session::new();
     let domain = DomainResult::LinearAlgebra(LinearAlgebraResult::Ok {
-        value: LinearAlgebraValue::MachineRank {
-            rank: 2,
-            guarantee: AlgorithmGuarantee::Approximate,
-        },
+        value: LinearAlgebraValue::MachineRank { rank: 2, guarantee: AlgorithmGuarantee::Approximate },
     });
     let result = computation_from_domain(&mut session, domain);
     assert_eq!(result.status, ComputationStatus::Approximate);
@@ -33,19 +28,17 @@ fn machine_rank_projects_approximate_full_coverage() {
 
 #[test]
 fn singular_machine_solve_projects_disposition_and_witness_evidence() {
-    use science_cas::domains::linear_algebra::MachineSolveWitness;
-    use science_cas::runtime::results::{ResultEvidence, ResultProviderId};
+    use science_cas::{
+        domains::linear_algebra::MachineSolveWitness,
+        runtime::results::{ResultEvidence, ResultProviderId},
+    };
 
     let mut session = Session::new();
     let domain = DomainResult::LinearAlgebra(LinearAlgebraResult::Ok {
         value: LinearAlgebraValue::MachineSolve(MachineSolveResult {
             disposition: SolveDisposition::Singular,
             solution: None,
-            witness: Some(MachineSolveWitness {
-                residual_inf: None,
-                numerical_rank: 1,
-                pivot_threshold: 1e-12,
-            }),
+            witness: Some(MachineSolveWitness { residual_inf: None, numerical_rank: 1, pivot_threshold: 1e-12 }),
             guarantee: AlgorithmGuarantee::Approximate,
         }),
     });
@@ -75,10 +68,7 @@ fn singular_machine_solve_projects_disposition_and_witness_evidence() {
         result.evidence
     );
     let term = result.symbolic_term.expect("singular projects residual Extension");
-    assert!(matches!(
-        session.arena.get(term),
-        Some(science_ir::TermNode::Application { .. })
-    ));
+    assert!(matches!(session.arena.get(term), Some(science_ir::TermNode::Application { .. })));
 }
 
 #[test]
@@ -104,10 +94,7 @@ fn exact_rank_still_projects_exact_full() {
 
     let mut session = Session::new();
     let domain = DomainResult::LinearAlgebra(LinearAlgebraResult::Ok {
-        value: LinearAlgebraValue::ExactRank(ExactRankResult {
-            rank: 1,
-            guarantee: AlgorithmGuarantee::Exact,
-        }),
+        value: LinearAlgebraValue::ExactRank(ExactRankResult { rank: 1, guarantee: AlgorithmGuarantee::Exact }),
     });
     let result = computation_from_domain(&mut session, domain);
     assert_eq!(result.status, ComputationStatus::Exact);
@@ -124,11 +111,9 @@ fn machine_solve_with_solution_projects_list_term() {
     use science_cas::domains::linear_algebra::{MatrixResult, MatrixValue};
 
     let mut session = Session::new();
-    let solution = MatrixResult::from_owned(
-        MatrixValue::from_f64_row_major(2, 1, vec![1.0, 2.0]).expect("column"),
-        AlgorithmGuarantee::Approximate,
-    )
-    .with_machine_witness(1e-14, Some(1.5));
+    let solution =
+        MatrixResult::from_owned(MatrixValue::from_f64_row_major(2, 1, vec![1.0, 2.0]).expect("column"), AlgorithmGuarantee::Approximate)
+            .with_machine_witness(1e-14, Some(1.5));
     let domain = DomainResult::LinearAlgebra(LinearAlgebraResult::Ok {
         value: LinearAlgebraValue::MachineSolve(MachineSolveResult {
             disposition: SolveDisposition::Unique,
@@ -168,22 +153,21 @@ fn machine_solve_with_solution_projects_list_term() {
 
 #[test]
 fn matrix_result_envelope_projects_shape_evidence_and_status() {
-    use science_cas::domains::linear_algebra::{MatrixResult, MatrixValue};
-    use science_cas::runtime::results::{ResultEvidence, ResultProviderId};
+    use science_cas::{
+        domains::linear_algebra::{MatrixResult, MatrixValue},
+        runtime::results::{ResultEvidence, ResultProviderId},
+    };
     use science_numeric::Integer;
 
     let mut session = Session::new();
-    let value = MatrixValue::from_integers_row_major(2, 2, vec![
-        Integer::from_i64(1),
-        Integer::from_i64(2),
-        Integer::from_i64(3),
-        Integer::from_i64(4),
-    ])
+    let value = MatrixValue::from_integers_row_major(
+        2,
+        2,
+        vec![Integer::from_i64(1), Integer::from_i64(2), Integer::from_i64(3), Integer::from_i64(4)],
+    )
     .expect("matrix");
     let envelope = MatrixResult::from_owned(value, AlgorithmGuarantee::Exact);
-    let domain = DomainResult::LinearAlgebra(LinearAlgebraResult::Ok {
-        value: LinearAlgebraValue::Matrix(envelope),
-    });
+    let domain = DomainResult::LinearAlgebra(LinearAlgebraResult::Ok { value: LinearAlgebraValue::Matrix(envelope) });
     let result = computation_from_domain(&mut session, domain);
     assert_eq!(result.status, ComputationStatus::Exact);
     assert_eq!(result.coverage, science_cas::runtime::results::CoverageStatus::Full);
@@ -215,15 +199,15 @@ fn matrix_result_envelope_projects_shape_evidence_and_status() {
 
 #[test]
 fn dot_matrix_result_envelope_projects_shape_evidence_and_status() {
-    use science_cas::domains::linear_algebra::MatrixValue;
-    use science_cas::runtime::results::{ResultEvidence, ResultProviderId};
+    use science_cas::{
+        domains::linear_algebra::MatrixValue,
+        runtime::results::{ResultEvidence, ResultProviderId},
+    };
     use science_numeric::Integer;
 
     let mut session = Session::new();
     let value = MatrixValue::from_integers_row_major(1, 1, vec![Integer::from_i64(14)]).expect("scalar-like");
-    let domain = DomainResult::LinearAlgebra(LinearAlgebraResult::Ok {
-        value: LinearAlgebraValue::dot_outcome(value),
-    });
+    let domain = DomainResult::LinearAlgebra(LinearAlgebraResult::Ok { value: LinearAlgebraValue::dot_outcome(value) });
     let result = computation_from_domain(&mut session, domain);
     assert_eq!(result.status, ComputationStatus::Exact);
     assert_eq!(result.coverage, science_cas::runtime::results::CoverageStatus::Full);
@@ -255,8 +239,10 @@ fn dot_matrix_result_envelope_projects_shape_evidence_and_status() {
 
 #[test]
 fn exact_solve_particular_projects_matrix_ref_evidence() {
-    use science_cas::domains::linear_algebra::{ExactSolveResult, MatrixResult, MatrixValue};
-    use science_cas::runtime::results::{ResultEvidence, ResultProviderId};
+    use science_cas::{
+        domains::linear_algebra::{ExactSolveResult, MatrixResult, MatrixValue},
+        runtime::results::{ResultEvidence, ResultProviderId},
+    };
     use science_numeric::Integer;
 
     let mut session = Session::new();
@@ -312,8 +298,10 @@ fn exact_solve_particular_projects_matrix_ref_evidence() {
 
 #[test]
 fn exact_inverse_singular_projects_disposition_evidence() {
-    use science_cas::domains::linear_algebra::ExactInverseResult;
-    use science_cas::runtime::results::{ResultEvidence, ResultProviderId};
+    use science_cas::{
+        domains::linear_algebra::ExactInverseResult,
+        runtime::results::{ResultEvidence, ResultProviderId},
+    };
 
     let mut session = Session::new();
     let domain = DomainResult::LinearAlgebra(LinearAlgebraResult::Ok {
@@ -340,8 +328,10 @@ fn exact_inverse_singular_projects_disposition_evidence() {
 
 #[test]
 fn exact_nullspace_projects_nullity_and_matrix_ref_evidence() {
-    use science_cas::domains::linear_algebra::{ExactNullSpaceResult, MatrixResult, MatrixValue};
-    use science_cas::runtime::results::{ResultEvidence, ResultProviderId};
+    use science_cas::{
+        domains::linear_algebra::{ExactNullSpaceResult, MatrixResult, MatrixValue},
+        runtime::results::{ResultEvidence, ResultProviderId},
+    };
     use science_numeric::Integer;
 
     let mut session = Session::new();
@@ -384,17 +374,18 @@ fn exact_nullspace_projects_nullity_and_matrix_ref_evidence() {
 
 #[test]
 fn exact_rref_envelope_projects_matrix_ref_evidence() {
-    use science_cas::domains::linear_algebra::{ExactRrefResult, MatrixResult, MatrixValue};
-    use science_cas::runtime::results::{ResultEvidence, ResultProviderId};
+    use science_cas::{
+        domains::linear_algebra::{ExactRrefResult, MatrixResult, MatrixValue},
+        runtime::results::{ResultEvidence, ResultProviderId},
+    };
     use science_numeric::Integer;
 
     let mut session = Session::new();
-    let value = MatrixValue::from_integers_row_major(2, 2, vec![
-        Integer::from_i64(1),
-        Integer::from_i64(0),
-        Integer::from_i64(0),
-        Integer::from_i64(1),
-    ])
+    let value = MatrixValue::from_integers_row_major(
+        2,
+        2,
+        vec![Integer::from_i64(1), Integer::from_i64(0), Integer::from_i64(0), Integer::from_i64(1)],
+    )
     .expect("identity");
     let domain = DomainResult::LinearAlgebra(LinearAlgebraResult::Ok {
         value: LinearAlgebraValue::ExactRref(ExactRrefResult {
@@ -445,9 +436,13 @@ fn exact_rref_envelope_projects_matrix_ref_evidence() {
 
 #[test]
 fn infinite_exact_solve_projects_disposition_residual_and_free_vars_evidence() {
-    use science_cas::domains::linear_algebra::{ExactSolveResult, MatrixResult, MatrixValue};
-    use science_cas::runtime::results::{ResultEvidence, ResultProviderId};
-    use science_cas::runtime::values::arena::application_display_name;
+    use science_cas::{
+        domains::linear_algebra::{ExactSolveResult, MatrixResult, MatrixValue},
+        runtime::{
+            results::{ResultEvidence, ResultProviderId},
+            values::arena::application_display_name,
+        },
+    };
     use science_ir::{Atom, TermNode};
     use science_numeric::Integer;
 
@@ -505,15 +500,15 @@ fn infinite_exact_solve_projects_disposition_residual_and_free_vars_evidence() {
 
 #[test]
 fn machine_matrix_envelope_projects_approximate_with_residual_evidence() {
-    use science_cas::domains::linear_algebra::{MatrixResult, MatrixValue};
-    use science_cas::runtime::results::{ResultEvidence, ResultProviderId};
+    use science_cas::{
+        domains::linear_algebra::{MatrixResult, MatrixValue},
+        runtime::results::{ResultEvidence, ResultProviderId},
+    };
 
     let mut session = Session::new();
     let value = MatrixValue::from_f64_row_major(1, 1, vec![1.5]).expect("machine");
     let envelope = MatrixResult::from_owned(value, AlgorithmGuarantee::Approximate).with_machine_witness(1e-12, Some(2.0));
-    let domain = DomainResult::LinearAlgebra(LinearAlgebraResult::Ok {
-        value: LinearAlgebraValue::Matrix(envelope),
-    });
+    let domain = DomainResult::LinearAlgebra(LinearAlgebraResult::Ok { value: LinearAlgebraValue::Matrix(envelope) });
     let result = computation_from_domain(&mut session, domain);
     assert_eq!(result.status, ComputationStatus::Approximate);
     assert!(
@@ -542,9 +537,13 @@ fn machine_matrix_envelope_projects_approximate_with_residual_evidence() {
 
 #[test]
 fn inconsistent_exact_solve_projects_disposition_residual() {
-    use science_cas::domains::linear_algebra::ExactSolveResult;
-    use science_cas::runtime::results::{ResultEvidence, ResultProviderId};
-    use science_cas::runtime::values::arena::application_display_name;
+    use science_cas::{
+        domains::linear_algebra::ExactSolveResult,
+        runtime::{
+            results::{ResultEvidence, ResultProviderId},
+            values::arena::application_display_name,
+        },
+    };
     use science_ir::Atom;
 
     let mut session = Session::new();
@@ -623,10 +622,7 @@ fn calculus_exact_projects_candidate_until_admitted() {
 
     let mut session = Session::new();
     let term = session.builder().int(0, Default::default());
-    let domain = DomainResult::Calculus(CalculusResult::Exact {
-        value: CalculusValue::Expression(term),
-        conditions: Vec::new(),
-    });
+    let domain = DomainResult::Calculus(CalculusResult::Exact { value: CalculusValue::Expression(term), conditions: Vec::new() });
     let result = computation_from_domain(&mut session, domain);
     assert_eq!(result.status, ComputationStatus::Candidate);
     assert_eq!(result.coverage, science_cas::runtime::results::CoverageStatus::Partial);
@@ -649,12 +645,7 @@ fn calculus_exact_projects_exact_after_admission_journal() {
         let expression = dc.apply_semantic(SemanticOperator::Power, vec![xs, dc.in_(2)]);
         (expression, variable)
     };
-    let request = CalculusRequest::Derivative {
-        expression,
-        variable,
-        order: DerivativeOrder::First,
-        assumptions: AssumptionSet::empty(),
-    };
+    let request = CalculusRequest::Derivative { expression, variable, order: DerivativeOrder::First, assumptions: AssumptionSet::empty() };
     let honest = science_cas::domains::calculus::execute_calculus(&mut session, request.owning_copy());
     let CalculusResult::Exact { value: CalculusValue::Expression(result_term), .. } = honest
     else {
@@ -668,10 +659,7 @@ fn calculus_exact_projects_exact_after_admission_journal() {
         &VerificationPolicy::default(),
     )
     .expect("admit");
-    let domain = DomainResult::Calculus(CalculusResult::Exact {
-        value: CalculusValue::Expression(result_term),
-        conditions: Vec::new(),
-    });
+    let domain = DomainResult::Calculus(CalculusResult::Exact { value: CalculusValue::Expression(result_term), conditions: Vec::new() });
     let result = computation_from_domain(&mut session, domain);
     assert_eq!(result.status, ComputationStatus::Exact);
     assert_eq!(result.coverage, science_cas::runtime::results::CoverageStatus::Full);
@@ -705,9 +693,7 @@ fn polynomial_exact_projects_candidate_not_exact() {
     use science_cas::domains::polynomial::{PolynomialDomainValue, PolynomialResult};
 
     let mut session = Session::new();
-    let domain = DomainResult::Polynomial(PolynomialResult::Exact {
-        value: PolynomialDomainValue::Placeholder,
-    });
+    let domain = DomainResult::Polynomial(PolynomialResult::Exact { value: PolynomialDomainValue::Placeholder });
     let result = computation_from_domain(&mut session, domain);
     assert_eq!(result.status, ComputationStatus::Candidate);
     assert_eq!(result.coverage, science_cas::runtime::results::CoverageStatus::Partial);

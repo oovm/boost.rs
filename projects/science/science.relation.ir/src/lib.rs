@@ -217,8 +217,7 @@ fn validate_function(f: &Function) -> Result<(), IrError> {
         }
         Ok(())
     };
-    let need_effect =
-        |e: Effect| -> Result<(), IrError> { if f.effects.contains(&e) { Ok(()) } else { Err(IrError::UndeclaredEffect) } };
+    let need_effect = |e: Effect| -> Result<(), IrError> { if f.effects.contains(&e) { Ok(()) } else { Err(IrError::UndeclaredEffect) } };
 
     let mut saw_return = false;
     for op in &f.ops {

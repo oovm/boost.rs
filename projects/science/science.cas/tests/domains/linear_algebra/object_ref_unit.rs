@@ -1,8 +1,6 @@
 //! 自 `src/domains/linear_algebra/object_ref.rs` 迁出的原内联测试。
 
-use science_cas::domains::linear_algebra::{
-    AlgorithmGuarantee, ElementParentKind, MatrixObjectStore, MatrixResult, MatrixValue,
-};
+use science_cas::domains::linear_algebra::{AlgorithmGuarantee, ElementParentKind, MatrixObjectStore, MatrixResult, MatrixValue};
 use science_numeric::Integer;
 
 #[test]

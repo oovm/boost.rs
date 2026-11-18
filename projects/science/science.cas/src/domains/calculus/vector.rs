@@ -73,7 +73,10 @@ pub fn gradient_checked(
     assumptions: &AssumptionSet,
 ) -> Result<CalculusResult<Gradient>> {
     if variables.is_empty() {
-        return Ok(CalculusResult::Exact { value: Gradient { expression, variables: Vec::new(), components: Vec::new() }, conditions: Vec::new() });
+        return Ok(CalculusResult::Exact {
+            value: Gradient { expression, variables: Vec::new(), components: Vec::new() },
+            conditions: Vec::new(),
+        });
     }
     let mut components = Vec::with_capacity(variables.len());
     let mut conditions = Vec::new();
@@ -166,12 +169,7 @@ pub struct Curl {
 impl Curl {
     /// 桥接形态：ℝ² 标量，ℝ³ 有序列表。
     pub fn materialize_list_expression(&self, cc: &mut DomainExecutionContext<'_>) -> TermId {
-        if self.curl_components.len() == 1 {
-            self.curl_components[0]
-        }
-        else {
-            cc.ordered(self.curl_components.clone())
-        }
+        if self.curl_components.len() == 1 { self.curl_components[0] } else { cc.ordered(self.curl_components.clone()) }
     }
 }
 

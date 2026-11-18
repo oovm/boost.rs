@@ -7,9 +7,9 @@ use science_numeric::{Integer, Number, Rational, add as num_add, div as num_div,
 use science_types::{Diagnostic, DiagnosticCode, Result, SourceSpan, SymbolId, TermId};
 
 use super::{
-    BoundSymbol, Constraint, LinearSolveMode, SolveDomain, SolveGoal, SolvePolicy, SolveRequest, SolveResult,
+    BoundSymbol, Constraint, ExecutionLimits, LinearSolveMode, SolveDomain, SolveGoal, SolvePolicy, SolveRequest, SolveResult,
     assemble_solve_problem, execute_linear_system_goal, execute_polynomial_root_goal, normalize_relational_application,
-    value_table::BindingValue, ExecutionLimits,
+    value_table::BindingValue,
 };
 use crate::{
     domains::{
@@ -32,17 +32,11 @@ pub fn execute_solve(session: &mut Session, request: SolveRequest) -> SolveResul
     match request {
         SolveRequest::UnivariateEquation { equation, unknown } => match solve_univariate_equation(session, equation, unknown) {
             Ok((term, coverage)) => SolveResult::Exact { term, coverage },
-            Err(reason) => SolveResult::Unevaluated {
-                expression: echo_solve(session, equation, unknown),
-                reason,
-            },
+            Err(reason) => SolveResult::Unevaluated { expression: echo_solve(session, equation, unknown), reason },
         },
         SolveRequest::LinearEquations { equations, unknowns } => match solve_linear_equations(session, &equations, &unknowns) {
             Ok((term, coverage)) => SolveResult::Exact { term, coverage },
-            Err(reason) => SolveResult::Unevaluated {
-                expression: echo_solve_system(session, &equations, &unknowns),
-                reason,
-            },
+            Err(reason) => SolveResult::Unevaluated { expression: echo_solve_system(session, &equations, &unknowns), reason },
         },
     }
 }
@@ -64,11 +58,7 @@ fn echo_solve_system(session: &mut Session, equations: &[TermId], unknowns: &[Sy
     push_extension(session, ext, vec![eqs, vars])
 }
 
-fn solve_linear_equations(
-    session: &mut Session,
-    equations: &[TermId],
-    unknowns: &[SymbolId],
-) -> Result<(TermId, super::CoverageStatus)> {
+fn solve_linear_equations(session: &mut Session, equations: &[TermId], unknowns: &[SymbolId]) -> Result<(TermId, super::CoverageStatus)> {
     if equations.is_empty() || unknowns.is_empty() {
         return Err(diag_linear("empty_system"));
     }
@@ -90,8 +80,10 @@ fn solve_linear_equations(
     }
     let rows = equations.len() as u64;
     let cols = unknowns.len() as u64;
-    let a = MatrixValue::from_rationals_row_major(rows, cols, a_data).map_err(|e| e.detail("domain", "solve").detail("operation", "linear_matrix"))?;
-    let b = MatrixValue::from_rationals_row_major(rows, 1, b_data).map_err(|e| e.detail("domain", "solve").detail("operation", "linear_rhs"))?;
+    let a = MatrixValue::from_rationals_row_major(rows, cols, a_data)
+        .map_err(|e| e.detail("domain", "solve").detail("operation", "linear_matrix"))?;
+    let b =
+        MatrixValue::from_rationals_row_major(rows, 1, b_data).map_err(|e| e.detail("domain", "solve").detail("operation", "linear_rhs"))?;
     let bound: Vec<_> = unknowns.iter().copied().map(BoundSymbol::free).collect();
     let problem = assemble_solve_problem(
         &session.arena,
@@ -120,13 +112,7 @@ fn collect_affine_row(dc: &DomainExecutionContext<'_>, expr: TermId, unknowns: &
     Ok(row)
 }
 
-fn accumulate_affine(
-    dc: &DomainExecutionContext<'_>,
-    expr: TermId,
-    unknowns: &[SymbolId],
-    row: &mut [Number],
-    scale: Number,
-) -> Result<()> {
+fn accumulate_affine(dc: &DomainExecutionContext<'_>, expr: TermId, unknowns: &[SymbolId], row: &mut [Number], scale: Number) -> Result<()> {
     use crate::execution::shape::Shape;
     let n = unknowns.len();
     match dc.shape(expr) {
@@ -140,7 +126,8 @@ fn accumulate_affine(
             if let Some(i) = unknowns.iter().position(|&u| dc.symbol_id_is(s, u)) {
                 row[i] = num_add(clone_number(&row[i]), clone_number(&scale)).map_err(|_| diag_linear("add_overflow"))?;
                 Ok(())
-            } else {
+            }
+            else {
                 Err(diag_linear("foreign_symbol"))
             }
         }
@@ -223,20 +210,24 @@ fn accumulate_affine(
                     let scaled = num_mul(p, scale).map_err(|_| diag_linear("mul_overflow"))?;
                     row[n] = num_add(clone_number(&row[n]), scaled).map_err(|_| diag_linear("add_overflow"))?;
                     Ok(())
-                } else if unknowns.iter().any(|&u| is_var_symbol(dc, args[0], u)) {
+                }
+                else if unknowns.iter().any(|&u| is_var_symbol(dc, args[0], u)) {
                     let Some(e) = dc.int_exp(args[1])
                     else {
                         return Err(diag_linear("non_integer_power"));
                     };
                     if e == 1 {
                         accumulate_affine(dc, args[0], unknowns, row, scale)
-                    } else if e == 0 {
+                    }
+                    else if e == 0 {
                         row[n] = num_add(clone_number(&row[n]), scale).map_err(|_| diag_linear("add_overflow"))?;
                         Ok(())
-                    } else {
+                    }
+                    else {
                         Err(diag_linear("nonlinear_power"))
                     }
-                } else {
+                }
+                else {
                     Err(diag_linear("unsupported_power"))
                 }
             }

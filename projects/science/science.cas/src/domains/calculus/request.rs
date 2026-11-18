@@ -360,8 +360,7 @@ pub fn calculus_request_identity(request: &CalculusRequest) -> u64 {
             upper.0.hash(&mut hasher);
             hash_assumptions(&mut hasher, assumptions);
         }
-        CalculusRequest::Series { center, order, assumptions, .. }
-        | CalculusRequest::Laurent { center, order, assumptions, .. } => {
+        CalculusRequest::Series { center, order, assumptions, .. } | CalculusRequest::Laurent { center, order, assumptions, .. } => {
             center.0.hash(&mut hasher);
             order.hash(&mut hasher);
             hash_assumptions(&mut hasher, assumptions);
@@ -382,8 +381,7 @@ pub fn calculus_request_identity(request: &CalculusRequest) -> u64 {
             point.0.hash(&mut hasher);
             hash_assumptions(&mut hasher, assumptions);
         }
-        CalculusRequest::Gradient { variables, assumptions, .. }
-        | CalculusRequest::Hessian { variables, assumptions, .. } => {
+        CalculusRequest::Gradient { variables, assumptions, .. } | CalculusRequest::Hessian { variables, assumptions, .. } => {
             for v in variables {
                 v.0.hash(&mut hasher);
             }

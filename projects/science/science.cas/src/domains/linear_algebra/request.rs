@@ -229,12 +229,7 @@ impl LinearAlgebraRequest {
             Self::IsDiagonal { matrix } => Self::IsDiagonal { matrix: *matrix },
             Self::IsTriangular { matrix, lower } => Self::IsTriangular { matrix: *matrix, lower: *lower },
             Self::IsSymmetric { matrix } => Self::IsSymmetric { matrix: *matrix },
-            Self::Reshape { matrix, rows, cols, order } => Self::Reshape {
-                matrix: *matrix,
-                rows: *rows,
-                cols: *cols,
-                order: *order,
-            },
+            Self::Reshape { matrix, rows, cols, order } => Self::Reshape { matrix: *matrix, rows: *rows, cols: *cols, order: *order },
             Self::NumElements { matrix } => Self::NumElements { matrix: *matrix },
             Self::MatrixExp { matrix } => Self::MatrixExp { matrix: *matrix },
         }

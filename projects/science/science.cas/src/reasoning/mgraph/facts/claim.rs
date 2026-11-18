@@ -123,13 +123,7 @@ impl EvidenceCertificate {
             },
             Self::Rejected { guarantee } => Self::Rejected { guarantee: *guarantee },
             Self::TestHarness => Self::TestHarness,
-            Self::CalculusExact {
-                kind,
-                expression_fingerprint,
-                variable_fingerprint,
-                request_identity,
-                result_term,
-            } => Self::CalculusExact {
+            Self::CalculusExact { kind, expression_fingerprint, variable_fingerprint, request_identity, result_term } => Self::CalculusExact {
                 kind: *kind,
                 expression_fingerprint: *expression_fingerprint,
                 variable_fingerprint: *variable_fingerprint,

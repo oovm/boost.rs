@@ -143,11 +143,7 @@ pub fn solve_lu(lu: &MachineLuFactorization, b: &MatrixValue) -> Result<MachineS
         return Ok(MachineSolveResult {
             disposition: SolveDisposition::Singular,
             solution: None,
-            witness: Some(MachineSolveWitness {
-                residual_inf: None,
-                numerical_rank: lu.numerical_rank,
-                pivot_threshold: lu.pivot_threshold,
-            }),
+            witness: Some(MachineSolveWitness { residual_inf: None, numerical_rank: lu.numerical_rank, pivot_threshold: lu.pivot_threshold }),
             guarantee: AlgorithmGuarantee::Approximate,
         });
     }
@@ -207,11 +203,7 @@ pub(crate) fn conditioning_from_u_diag(lu: &MachineLuFactorization) -> Option<f6
         max_abs = max_abs.max(d);
         min_abs = min_abs.min(d);
     }
-    if min_abs.is_finite() && min_abs > 0.0 {
-        Some(max_abs / min_abs)
-    } else {
-        None
-    }
+    if min_abs.is_finite() && min_abs > 0.0 { Some(max_abs / min_abs) } else { None }
 }
 
 /// 机器路径求解并附残差。
@@ -233,11 +225,7 @@ pub fn solve_machine(a: &MatrixValue, b: &MatrixValue, pivot_threshold: f64) -> 
             residual = residual.max((avi - bvi).abs());
         }
         let conditioning = conditioning_from_u_diag(&lu);
-        result.witness = Some(MachineSolveWitness {
-            residual_inf: Some(residual),
-            numerical_rank: lu.numerical_rank,
-            pivot_threshold,
-        });
+        result.witness = Some(MachineSolveWitness { residual_inf: Some(residual), numerical_rank: lu.numerical_rank, pivot_threshold });
         result.solution = Some(sol.with_machine_witness(residual, conditioning));
     }
     Ok(result)
@@ -276,9 +264,9 @@ pub fn right_solve_machine(a: &MatrixValue, b: &MatrixValue, pivot_threshold: f6
         let solved = solve_machine(&bt, &rhs, pivot_threshold)?;
         match solved.disposition {
             SolveDisposition::Unique => {
-                let particular = solved.solution.ok_or_else(|| {
-                    Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "right_solve_missing_solution")
-                })?;
+                let particular = solved
+                    .solution
+                    .ok_or_else(|| Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "right_solve_missing_solution"))?;
                 y_cols.push(particular.value.to_f64_row_major()?);
                 last_witness = solved.witness;
             }
@@ -345,11 +333,7 @@ pub fn right_solve_machine(a: &MatrixValue, b: &MatrixValue, pivot_threshold: f6
     Ok(MachineSolveResult {
         disposition: SolveDisposition::Unique,
         solution: Some(solution),
-        witness: Some(MachineSolveWitness {
-            residual_inf: Some(residual),
-            numerical_rank,
-            pivot_threshold,
-        }),
+        witness: Some(MachineSolveWitness { residual_inf: Some(residual), numerical_rank, pivot_threshold }),
         guarantee: AlgorithmGuarantee::Approximate,
     })
 }
@@ -375,12 +359,12 @@ fn matrix_as_machine_f64(matrix: &MatrixValue) -> Result<MatrixValue, Diagnostic
     for i in 0..rows {
         for j in 0..cols {
             let v = match matrix.get(i, j)? {
-                super::value::MatrixEntry::Integer(z) => z.to_f64_approximate().ok_or_else(|| {
-                    Diagnostic::new(DiagnosticCode::TypeMismatch).detail("reason", "cond_integer_to_f64")
-                })?,
-                super::value::MatrixEntry::Rational(r) => r.to_f64_approximate().ok_or_else(|| {
-                    Diagnostic::new(DiagnosticCode::TypeMismatch).detail("reason", "cond_rational_to_f64")
-                })?,
+                super::value::MatrixEntry::Integer(z) => z
+                    .to_f64_approximate()
+                    .ok_or_else(|| Diagnostic::new(DiagnosticCode::TypeMismatch).detail("reason", "cond_integer_to_f64"))?,
+                super::value::MatrixEntry::Rational(r) => r
+                    .to_f64_approximate()
+                    .ok_or_else(|| Diagnostic::new(DiagnosticCode::TypeMismatch).detail("reason", "cond_rational_to_f64"))?,
                 super::value::MatrixEntry::MachineF64(x) => x,
                 super::value::MatrixEntry::ComplexExact { .. } => {
                     return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "cond_complex_pending"));
@@ -400,11 +384,7 @@ pub fn condition_number_machine(matrix: &MatrixValue, pivot_threshold: f64) -> R
     let machine = matrix_as_machine_f64(matrix)?;
     let lu = lu_partial_pivot(&machine, pivot_threshold)?;
     let value = conditioning_from_u_diag(&lu).unwrap_or(f64::INFINITY);
-    Ok(MachineCondEstimate {
-        value,
-        numerical_rank: lu.numerical_rank,
-        guarantee: AlgorithmGuarantee::Approximate,
-    })
+    Ok(MachineCondEstimate { value, numerical_rank: lu.numerical_rank, guarantee: AlgorithmGuarantee::Approximate })
 }
 
 /// 机器数值秩（经 LU）。

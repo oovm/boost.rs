@@ -5,8 +5,8 @@ use science_types::{Diagnostic, DiagnosticCode, SymbolId};
 use super::{
     exact::{
         ExactDetResult, ExactInverseResult, ExactNormResult, ExactNullSpaceResult, ExactRankResult, ExactRrefResult, ExactSolveResult,
-        ExactTraceResult, det_bareiss, eigenvalues_exact, eigenvectors_exact, invert_exact, matrix_exp_exact, norm2_exact,
-        nullspace_exact, rank_exact, right_solve_exact, rref_rational, solve_exact, trace_exact,
+        ExactTraceResult, det_bareiss, eigenvalues_exact, eigenvectors_exact, invert_exact, matrix_exp_exact, norm2_exact, nullspace_exact,
+        rank_exact, right_solve_exact, rref_rational, solve_exact, trace_exact,
     },
     machine::{MachineCondEstimate, MachineSolveResult, condition_number_machine, rank_machine, right_solve_machine, solve_machine},
     matrix_result::MatrixResult,
@@ -177,7 +177,8 @@ fn resolve_matrix_operand(session: &mut crate::runtime::Session, op: MatrixOpera
             if let Some(matrix_ref) = session.defs.matrix_binding(symbol) {
                 return MatrixOperand::Object(matrix_ref);
             }
-            let Some(term) = session.defs.binding(symbol) else {
+            let Some(term) = session.defs.binding(symbol)
+            else {
                 return MatrixOperand::Binding(symbol);
             };
             use crate::execution::reference::{term_to_exact_matrix_session, term_to_rational_matrix_session};
@@ -198,77 +199,61 @@ pub(crate) fn resolve_own_numeric_bindings(session: &mut crate::runtime::Session
             LinearAlgebraRequest::ConjugateTranspose { matrix: resolve_matrix_operand(session, matrix) }
         }
         LinearAlgebraRequest::Index { matrix, row, col } => LinearAlgebraRequest::Index { matrix, row, col },
-        LinearAlgebraRequest::MatMul { lhs, rhs } => LinearAlgebraRequest::MatMul {
-            lhs: resolve_matrix_operand(session, lhs),
-            rhs: resolve_matrix_operand(session, rhs),
-        },
-        LinearAlgebraRequest::Hadamard { lhs, rhs } => LinearAlgebraRequest::Hadamard {
-            lhs: resolve_matrix_operand(session, lhs),
-            rhs: resolve_matrix_operand(session, rhs),
-        },
-        LinearAlgebraRequest::ElementwiseDivide { lhs, rhs } => LinearAlgebraRequest::ElementwiseDivide {
-            lhs: resolve_matrix_operand(session, lhs),
-            rhs: resolve_matrix_operand(session, rhs),
-        },
-        LinearAlgebraRequest::ElementwisePower { lhs, rhs } => LinearAlgebraRequest::ElementwisePower {
-            lhs: resolve_matrix_operand(session, lhs),
-            rhs: resolve_matrix_operand(session, rhs),
-        },
+        LinearAlgebraRequest::MatMul { lhs, rhs } => {
+            LinearAlgebraRequest::MatMul { lhs: resolve_matrix_operand(session, lhs), rhs: resolve_matrix_operand(session, rhs) }
+        }
+        LinearAlgebraRequest::Hadamard { lhs, rhs } => {
+            LinearAlgebraRequest::Hadamard { lhs: resolve_matrix_operand(session, lhs), rhs: resolve_matrix_operand(session, rhs) }
+        }
+        LinearAlgebraRequest::ElementwiseDivide { lhs, rhs } => {
+            LinearAlgebraRequest::ElementwiseDivide { lhs: resolve_matrix_operand(session, lhs), rhs: resolve_matrix_operand(session, rhs) }
+        }
+        LinearAlgebraRequest::ElementwisePower { lhs, rhs } => {
+            LinearAlgebraRequest::ElementwisePower { lhs: resolve_matrix_operand(session, lhs), rhs: resolve_matrix_operand(session, rhs) }
+        }
         LinearAlgebraRequest::Rank { matrix } => LinearAlgebraRequest::Rank { matrix: resolve_matrix_operand(session, matrix) },
         LinearAlgebraRequest::Det { matrix } => LinearAlgebraRequest::Det { matrix: resolve_matrix_operand(session, matrix) },
         LinearAlgebraRequest::Rref { matrix } => LinearAlgebraRequest::Rref { matrix: resolve_matrix_operand(session, matrix) },
-        LinearAlgebraRequest::Solve { a, b } => LinearAlgebraRequest::Solve {
-            a: resolve_matrix_operand(session, a),
-            b: resolve_matrix_operand(session, b),
-        },
-        LinearAlgebraRequest::RightSolve { a, b } => LinearAlgebraRequest::RightSolve {
-            a: resolve_matrix_operand(session, a),
-            b: resolve_matrix_operand(session, b),
-        },
+        LinearAlgebraRequest::Solve { a, b } => {
+            LinearAlgebraRequest::Solve { a: resolve_matrix_operand(session, a), b: resolve_matrix_operand(session, b) }
+        }
+        LinearAlgebraRequest::RightSolve { a, b } => {
+            LinearAlgebraRequest::RightSolve { a: resolve_matrix_operand(session, a), b: resolve_matrix_operand(session, b) }
+        }
         LinearAlgebraRequest::Inverse { matrix } => LinearAlgebraRequest::Inverse { matrix: resolve_matrix_operand(session, matrix) },
         LinearAlgebraRequest::Trace { matrix } => LinearAlgebraRequest::Trace { matrix: resolve_matrix_operand(session, matrix) },
-        LinearAlgebraRequest::Eigenvalues { matrix, column_vector } => LinearAlgebraRequest::Eigenvalues {
-            matrix: resolve_matrix_operand(session, matrix),
-            column_vector,
-        },
-        LinearAlgebraRequest::Eigenvectors { matrix, column_basis } => LinearAlgebraRequest::Eigenvectors {
-            matrix: resolve_matrix_operand(session, matrix),
-            column_basis,
-        },
-        LinearAlgebraRequest::Dot { lhs, rhs } => LinearAlgebraRequest::Dot {
-            lhs: resolve_matrix_operand(session, lhs),
-            rhs: resolve_matrix_operand(session, rhs),
-        },
-        LinearAlgebraRequest::Cross { lhs, rhs } => LinearAlgebraRequest::Cross {
-            lhs: resolve_matrix_operand(session, lhs),
-            rhs: resolve_matrix_operand(session, rhs),
-        },
-        LinearAlgebraRequest::NullSpace { matrix, column_basis } => LinearAlgebraRequest::NullSpace {
-            matrix: resolve_matrix_operand(session, matrix),
-            column_basis,
-        },
+        LinearAlgebraRequest::Eigenvalues { matrix, column_vector } => {
+            LinearAlgebraRequest::Eigenvalues { matrix: resolve_matrix_operand(session, matrix), column_vector }
+        }
+        LinearAlgebraRequest::Eigenvectors { matrix, column_basis } => {
+            LinearAlgebraRequest::Eigenvectors { matrix: resolve_matrix_operand(session, matrix), column_basis }
+        }
+        LinearAlgebraRequest::Dot { lhs, rhs } => {
+            LinearAlgebraRequest::Dot { lhs: resolve_matrix_operand(session, lhs), rhs: resolve_matrix_operand(session, rhs) }
+        }
+        LinearAlgebraRequest::Cross { lhs, rhs } => {
+            LinearAlgebraRequest::Cross { lhs: resolve_matrix_operand(session, lhs), rhs: resolve_matrix_operand(session, rhs) }
+        }
+        LinearAlgebraRequest::NullSpace { matrix, column_basis } => {
+            LinearAlgebraRequest::NullSpace { matrix: resolve_matrix_operand(session, matrix), column_basis }
+        }
         LinearAlgebraRequest::Norm { matrix } => LinearAlgebraRequest::Norm { matrix: resolve_matrix_operand(session, matrix) },
         LinearAlgebraRequest::ConditionNumber { matrix } => {
             LinearAlgebraRequest::ConditionNumber { matrix: resolve_matrix_operand(session, matrix) }
         }
         LinearAlgebraRequest::Tril { matrix } => LinearAlgebraRequest::Tril { matrix: resolve_matrix_operand(session, matrix) },
         LinearAlgebraRequest::Triu { matrix } => LinearAlgebraRequest::Triu { matrix: resolve_matrix_operand(session, matrix) },
-        LinearAlgebraRequest::Kronecker { lhs, rhs } => LinearAlgebraRequest::Kronecker {
-            lhs: resolve_matrix_operand(session, lhs),
-            rhs: resolve_matrix_operand(session, rhs),
-        },
+        LinearAlgebraRequest::Kronecker { lhs, rhs } => {
+            LinearAlgebraRequest::Kronecker { lhs: resolve_matrix_operand(session, lhs), rhs: resolve_matrix_operand(session, rhs) }
+        }
         LinearAlgebraRequest::IsDiagonal { matrix } => LinearAlgebraRequest::IsDiagonal { matrix: resolve_matrix_operand(session, matrix) },
-        LinearAlgebraRequest::IsTriangular { matrix, lower } => LinearAlgebraRequest::IsTriangular {
-            matrix: resolve_matrix_operand(session, matrix),
-            lower,
-        },
+        LinearAlgebraRequest::IsTriangular { matrix, lower } => {
+            LinearAlgebraRequest::IsTriangular { matrix: resolve_matrix_operand(session, matrix), lower }
+        }
         LinearAlgebraRequest::IsSymmetric { matrix } => LinearAlgebraRequest::IsSymmetric { matrix: resolve_matrix_operand(session, matrix) },
-        LinearAlgebraRequest::Reshape { matrix, rows, cols, order } => LinearAlgebraRequest::Reshape {
-            matrix: resolve_matrix_operand(session, matrix),
-            rows,
-            cols,
-            order,
-        },
+        LinearAlgebraRequest::Reshape { matrix, rows, cols, order } => {
+            LinearAlgebraRequest::Reshape { matrix: resolve_matrix_operand(session, matrix), rows, cols, order }
+        }
         LinearAlgebraRequest::NumElements { matrix } => LinearAlgebraRequest::NumElements { matrix: resolve_matrix_operand(session, matrix) },
         LinearAlgebraRequest::MatrixExp { matrix } => LinearAlgebraRequest::MatrixExp { matrix: resolve_matrix_operand(session, matrix) },
     }
@@ -407,12 +392,7 @@ fn run(
         LinearAlgebraRequest::Eigenvalues { matrix, column_vector } => {
             let matrix = matrix.resolve_value(store, matrix_binding)?;
             let values = eigenvalues_exact(&matrix)?;
-            if column_vector {
-                Ok(LinearAlgebraValue::matrix_outcome(transpose(&values)))
-            }
-            else {
-                Ok(LinearAlgebraValue::dot_outcome(values))
-            }
+            if column_vector { Ok(LinearAlgebraValue::matrix_outcome(transpose(&values))) } else { Ok(LinearAlgebraValue::dot_outcome(values)) }
         }
         LinearAlgebraRequest::Eigenvectors { matrix, column_basis } => {
             let matrix = matrix.resolve_value(store, matrix_binding)?;

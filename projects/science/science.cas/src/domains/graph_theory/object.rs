@@ -1,6 +1,8 @@
 //! 图论对象模型。
 
-use science_graph::{GraphBuilder, GraphDirection, GraphId, GraphRevision, GraphSnapshot, MultiplicityPolicy, RepresentationId, SelfLoopDegree};
+use science_graph::{
+    GraphBuilder, GraphDirection, GraphId, GraphRevision, GraphSnapshot, MultiplicityPolicy, RepresentationId, SelfLoopDegree,
+};
 
 /// 图节点身份（`science-graph` wire 类型）。
 pub type GraphNodeId = science_graph::NodeId;

@@ -127,12 +127,7 @@ impl ExactRrefResult {
 impl ExactNullSpaceResult {
     /// Owning 复制（禁止默认 `Clone`）。
     pub fn owning_copy(&self) -> Self {
-        Self {
-            basis: self.basis.owning_copy(),
-            free_cols: self.free_cols.clone(),
-            nullity: self.nullity,
-            guarantee: self.guarantee,
-        }
+        Self { basis: self.basis.owning_copy(), free_cols: self.free_cols.clone(), nullity: self.nullity, guarantee: self.guarantee }
     }
 }
 
@@ -471,21 +466,15 @@ pub fn invert_exact(matrix: &MatrixValue) -> Result<ExactInverseResult, Diagnost
         let solved = solve_exact(matrix, &b)?;
         match solved.disposition {
             SolveDisposition::Unique => {
-                let particular = solved.particular.ok_or_else(|| {
-                    Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "invert_missing_particular")
-                })?;
+                let particular = solved
+                    .particular
+                    .ok_or_else(|| Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "invert_missing_particular"))?;
                 columns.push(particular.value.to_rationals_row_major()?);
             }
-            SolveDisposition::Singular
-            | SolveDisposition::Inconsistent
-            | SolveDisposition::Infinite { .. } => {
+            SolveDisposition::Singular | SolveDisposition::Inconsistent | SolveDisposition::Infinite { .. } => {
                 // Square but not invertible → Inverse Singular (Living 16), regardless of
                 // which left-solve disposition a particular identity column hit.
-                return Ok(ExactInverseResult {
-                    disposition: SolveDisposition::Singular,
-                    inverse: None,
-                    guarantee: AlgorithmGuarantee::Exact,
-                });
+                return Ok(ExactInverseResult { disposition: SolveDisposition::Singular, inverse: None, guarantee: AlgorithmGuarantee::Exact });
             }
             SolveDisposition::ResourceLimited => {
                 return Ok(ExactInverseResult {
@@ -503,11 +492,7 @@ pub fn invert_exact(matrix: &MatrixValue) -> Result<ExactInverseResult, Diagnost
         }
     }
     let inverse = MatrixResult::from_owned(MatrixValue::from_rationals_row_major(n, n, data)?, AlgorithmGuarantee::Exact);
-    Ok(ExactInverseResult {
-        disposition: SolveDisposition::Unique,
-        inverse: Some(inverse),
-        guarantee: AlgorithmGuarantee::Exact,
-    })
+    Ok(ExactInverseResult { disposition: SolveDisposition::Unique, inverse: Some(inverse), guarantee: AlgorithmGuarantee::Exact })
 }
 
 /// 右除求解 `X B = A`：等价于 `Bᵀ Y = Aᵀ` 再转置（Living 16 / MATLAB mrdivide）。
@@ -547,15 +532,15 @@ pub fn right_solve_exact(a: &MatrixValue, b: &MatrixValue) -> Result<ExactSolveR
         let solved = solve_exact(&bt, &rhs)?;
         match solved.disposition {
             SolveDisposition::Unique => {
-                let particular = solved.particular.ok_or_else(|| {
-                    Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "right_solve_missing_particular")
-                })?;
+                let particular = solved
+                    .particular
+                    .ok_or_else(|| Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "right_solve_missing_particular"))?;
                 y_cols.push(particular.value.to_rationals_row_major()?);
             }
             SolveDisposition::Infinite { free_vars } => {
-                let particular = solved.particular.ok_or_else(|| {
-                    Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "right_solve_missing_particular")
-                })?;
+                let particular = solved
+                    .particular
+                    .ok_or_else(|| Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "right_solve_missing_particular"))?;
                 y_cols.push(particular.value.to_rationals_row_major()?);
                 if infinite_free.is_none() {
                     infinite_free = Some(free_vars);
@@ -597,11 +582,7 @@ pub fn right_solve_exact(a: &MatrixValue, b: &MatrixValue) -> Result<ExactSolveR
         Some(free_vars) => SolveDisposition::Infinite { free_vars },
         None => SolveDisposition::Unique,
     };
-    Ok(ExactSolveResult {
-        disposition,
-        particular: Some(particular),
-        guarantee: AlgorithmGuarantee::Exact,
-    })
+    Ok(ExactSolveResult { disposition, particular: Some(particular), guarantee: AlgorithmGuarantee::Exact })
 }
 
 /// 精确矩阵迹：主对角元之和（取 `min(rows, cols)`）。
@@ -699,12 +680,7 @@ pub fn nullspace_exact(matrix: &MatrixValue) -> Result<ExactNullSpaceResult, Dia
     let nullity = free_cols.len() as u64;
     if free_cols.is_empty() {
         let basis = MatrixResult::from_owned(MatrixValue::from_rationals_row_major(0, cols, Vec::new())?, AlgorithmGuarantee::Exact);
-        return Ok(ExactNullSpaceResult {
-            basis,
-            free_cols,
-            nullity,
-            guarantee: AlgorithmGuarantee::Exact,
-        });
+        return Ok(ExactNullSpaceResult { basis, free_cols, nullity, guarantee: AlgorithmGuarantee::Exact });
     }
     let rref_rats = rref.matrix.value.to_rationals_row_major()?;
     let rref_cols = rref.matrix.value.shape().cols;
@@ -720,16 +696,8 @@ pub fn nullspace_exact(matrix: &MatrixValue) -> Result<ExactNullSpaceResult, Dia
         }
         data.append(&mut row);
     }
-    let basis = MatrixResult::from_owned(
-        MatrixValue::from_rationals_row_major(free_cols.len() as u64, cols, data)?,
-        AlgorithmGuarantee::Exact,
-    );
-    Ok(ExactNullSpaceResult {
-        basis,
-        free_cols,
-        nullity,
-        guarantee: AlgorithmGuarantee::Exact,
-    })
+    let basis = MatrixResult::from_owned(MatrixValue::from_rationals_row_major(free_cols.len() as u64, cols, data)?, AlgorithmGuarantee::Exact);
+    Ok(ExactNullSpaceResult { basis, free_cols, nullity, guarantee: AlgorithmGuarantee::Exact })
 }
 
 fn matrix_entry_rational(entry: MatrixEntry) -> Result<Rational, Diagnostic> {
@@ -845,12 +813,7 @@ fn primitive_rational_pair(x: Rational, y: Rational) -> (Rational, Rational) {
             xi.gcd(&yi)
         };
         let div = |n: Integer| {
-            if g.is_one() {
-                n
-            }
-            else {
-                n.div(&g).unwrap_or(n)
-            }
+            if g.is_one() { n } else { n.div(&g).unwrap_or(n) }
         };
         (Rational::from_integer(div(x.numerator())), Rational::from_integer(div(y.numerator())))
     }
@@ -945,9 +908,8 @@ fn matrix_exp_skew_symmetric_2x2_exact(matrix: &MatrixValue) -> Result<MatrixVal
     if !a01.add(&a10).is_zero() {
         return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "matrix_exp_skew_2x2_only"));
     }
-    let theta = science_numeric::to_f64_lossy(&Number::from_rational_normalized(clone_rational(&a01))).ok_or_else(|| {
-        Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "matrix_exp_theta_not_machine_representable")
-    })?;
+    let theta = science_numeric::to_f64_lossy(&Number::from_rational_normalized(clone_rational(&a01)))
+        .ok_or_else(|| Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("reason", "matrix_exp_theta_not_machine_representable"))?;
     let c = theta.cos();
     let s = theta.sin();
     MatrixValue::from_f64_row_major(2, 2, vec![c, s, -s, c])

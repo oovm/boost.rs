@@ -1,7 +1,7 @@
 //! ZFC island finite fragment: empty set, pairing / finite enumeration, extensionality.
 
 use science_relation_graph::Graph;
-use science_relation_types::{EdgeKind, RelationError, NodeId};
+use science_relation_types::{EdgeKind, NodeId, RelationError};
 
 /// Structural edge kind: set → member (hash-cons identity of finite sets).
 pub const HAS_MEMBER: EdgeKind = EdgeKind::Custom(1);

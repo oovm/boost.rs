@@ -1,8 +1,6 @@
 //! Session 语义表合同测试。
 
-use science_cas::runtime::{
-    ComputationResult, CoverageStatus, ResultStore, RuntimeValue, Session, ValueStore, semantic::AssumptionScopeTable,
-};
+use science_cas::runtime::{ComputationResult, CoverageStatus, ResultStore, RuntimeValue, Session, ValueStore, semantic::AssumptionScopeTable};
 use science_gc::{EmptyObjectGraph, GcMode, RootKind};
 use science_types::{AssumptionScope, ComputationStatus, Predicate, SymbolId, TermId};
 
@@ -113,9 +111,7 @@ fn result_store_require_symbolic_term_ok() {
     let mut results = ResultStore::new();
     let term = TermId(7);
     let value = values.insert(RuntimeValue::SymbolicTerm(term));
-    let result = ComputationResult::with_status(ComputationStatus::Exact, CoverageStatus::Full)
-        .with_value(value)
-        .with_symbolic_term(term);
+    let result = ComputationResult::with_status(ComputationStatus::Exact, CoverageStatus::Full).with_value(value).with_symbolic_term(term);
     let r0 = results.insert(result);
     assert_eq!(results.require_symbolic_term(r0).expect("term"), term);
 }

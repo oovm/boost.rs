@@ -10,7 +10,6 @@ use science_vm::{ExtensionOpId, HostOutcome, IndexAxesId, ProviderOpId, Semantic
 
 use crate::{
     api::request::CasRequest,
-    reasoning::mgraph::execute_domain_via_semantic_entry,
     execution::{
         LocalBinding, ScopeFrame, execute_ir_request,
         ir::ProviderCallDescriptor,
@@ -18,33 +17,35 @@ use crate::{
         provider::ProviderCallHandoff,
         push_semantic,
         reference::{
-            CompareOutcome, IndexOutcome, MatrixStoreOutcome, compare_list_broadcast, domain_result_symbolic_term, evaluate_apply_head_terms,
-            evaluate_apply_terms, evaluate_arithmetic_terms, evaluate_collect_matches_terms, evaluate_compare_terms, evaluate_min_max_terms,
-            evaluate_mod_quotient_terms,
-            evaluate_elementwise_terms, evaluate_extension_apply_terms, evaluate_index_axes,
-            evaluate_index_axes_matrix, evaluate_join_terms, evaluate_map_at_terms, evaluate_map_all_terms, evaluate_map_indexed_terms, evaluate_map_terms, evaluate_map_thread_terms, evaluate_matches_terms,
-            evaluate_take_terms, evaluate_drop_terms, evaluate_append_terms, evaluate_prepend_terms,
-            evaluate_member_q_terms, evaluate_sort_terms, evaluate_delete_duplicates_terms,
-            evaluate_count_terms, evaluate_nearest_terms, evaluate_partition_terms, evaluate_constant_array_terms, evaluate_union_terms,
-            evaluate_intersection_terms, evaluate_accumulate_terms, evaluate_differences_terms, evaluate_free_q_terms,
-            evaluate_even_q_terms, evaluate_integer_q_terms, evaluate_atom_q_terms, evaluate_list_q_terms, evaluate_numeric_q_terms, evaluate_number_q_terms, evaluate_possible_zero_q_terms, evaluate_string_q_terms, evaluate_positive_terms, evaluate_vector_q_terms, evaluate_matrix_q_terms, evaluate_boolean_q_terms, evaluate_member_of_terms, evaluate_select_terms, evaluate_list_convolve_terms,
-            evaluate_coefficient_terms, evaluate_exponent_terms, evaluate_cancel_terms, evaluate_expand_terms, evaluate_factor_terms,
-            evaluate_collect_terms, evaluate_polynomial_gcd_terms, evaluate_discriminant_terms, evaluate_resultant_terms,
-            evaluate_polynomial_remainder_terms,
-            evaluate_extract_terms, evaluate_pad_left_terms, evaluate_riffle_terms, evaluate_position_terms, evaluate_array_terms,
-            evaluate_matrix_constructor_terms,
-            evaluate_diagonal_matrix_terms, evaluate_product_iterator_terms, evaluate_product_terms, evaluate_range_terms, evaluate_replace_all_terms,
-            evaluate_rule_terms, evaluate_simplify_terms, evaluate_size_terms, evaluate_special_unary_terms,
-            evaluate_sum_iterator_terms, evaluate_sum_terms, evaluate_mean_terms, evaluate_unary_term, slot_as_boolean_like,
-            collection_structural_equal,
-            store_index_axes,
-            store_index_axes_matrix, symbolic_term_from_value_id, parse_matrix_dims,
-            rational_to_term_session, complex_exact_to_term_session, expand_span_3, term_to_rational_matrix_session, term_to_exact_matrix_session,
-            term_scalar_complex_session,
-            domain_request_residual_term, linear_algebra_missing_binding, matrix_to_mathematica_structure_term,
+            CompareOutcome, IndexOutcome, MatrixStoreOutcome, collection_structural_equal, compare_list_broadcast,
+            complex_exact_to_term_session, domain_request_residual_term, domain_result_symbolic_term, evaluate_accumulate_terms,
+            evaluate_append_terms, evaluate_apply_head_terms, evaluate_apply_terms, evaluate_arithmetic_terms, evaluate_array_terms,
+            evaluate_atom_q_terms, evaluate_boolean_q_terms, evaluate_cancel_terms, evaluate_coefficient_terms, evaluate_collect_matches_terms,
+            evaluate_collect_terms, evaluate_compare_terms, evaluate_constant_array_terms, evaluate_count_terms,
+            evaluate_delete_duplicates_terms, evaluate_diagonal_matrix_terms, evaluate_differences_terms, evaluate_discriminant_terms,
+            evaluate_drop_terms, evaluate_elementwise_terms, evaluate_even_q_terms, evaluate_expand_terms, evaluate_exponent_terms,
+            evaluate_extension_apply_terms, evaluate_extract_terms, evaluate_factor_terms, evaluate_free_q_terms, evaluate_index_axes,
+            evaluate_index_axes_matrix, evaluate_integer_q_terms, evaluate_intersection_terms, evaluate_join_terms,
+            evaluate_list_convolve_terms, evaluate_list_q_terms, evaluate_map_all_terms, evaluate_map_at_terms, evaluate_map_indexed_terms,
+            evaluate_map_terms, evaluate_map_thread_terms, evaluate_matches_terms, evaluate_matrix_constructor_terms, evaluate_matrix_q_terms,
+            evaluate_mean_terms, evaluate_member_of_terms, evaluate_member_q_terms, evaluate_min_max_terms, evaluate_mod_quotient_terms,
+            evaluate_nearest_terms, evaluate_number_q_terms, evaluate_numeric_q_terms, evaluate_pad_left_terms, evaluate_partition_terms,
+            evaluate_polynomial_gcd_terms, evaluate_polynomial_remainder_terms, evaluate_position_terms, evaluate_positive_terms,
+            evaluate_possible_zero_q_terms, evaluate_prepend_terms, evaluate_product_iterator_terms, evaluate_product_terms,
+            evaluate_range_terms, evaluate_replace_all_terms, evaluate_resultant_terms, evaluate_riffle_terms, evaluate_rule_terms,
+            evaluate_select_terms, evaluate_simplify_terms, evaluate_size_terms, evaluate_sort_terms, evaluate_special_unary_terms,
+            evaluate_string_q_terms, evaluate_sum_iterator_terms, evaluate_sum_terms, evaluate_take_terms, evaluate_unary_term,
+            evaluate_union_terms, evaluate_vector_q_terms, expand_span_3, linear_algebra_missing_binding, matrix_to_mathematica_structure_term,
+            parse_matrix_dims, rational_to_term_session, slot_as_boolean_like, store_index_axes, store_index_axes_matrix,
+            symbolic_term_from_value_id, term_scalar_complex_session, term_to_exact_matrix_session, term_to_rational_matrix_session,
         },
     },
-    runtime::{results::computation_from_domain, session::{MatrixListSurface, Session}, values::numeric_clone::clone_number},
+    reasoning::mgraph::execute_domain_via_semantic_entry,
+    runtime::{
+        results::computation_from_domain,
+        session::{MatrixListSurface, Session},
+        values::numeric_clone::clone_number,
+    },
 };
 
 /// 执行宿主（engine 在 VM 之上 · 不拥有解释循环）。
@@ -177,9 +178,7 @@ impl<'a> ExecutionHost<'a> {
         }
         if self.session.matrix_list_surface == MatrixListSurface::NestedRows {
             if let Some(TermNode::Collection { elements, .. }) = self.session.arena.get(term) {
-                if !elements.is_empty()
-                    && !matches!(self.session.arena.get(elements[0]), Some(TermNode::Collection { .. }))
-                {
+                if !elements.is_empty() && !matches!(self.session.arena.get(elements[0]), Some(TermNode::Collection { .. })) {
                     return Ok(None);
                 }
             }
@@ -195,8 +194,7 @@ impl<'a> ExecutionHost<'a> {
             return Ok(Some(matrix_ref));
         }
         let term = self.slot_as_term(slot)?;
-        let Some(matrix) = term_to_exact_matrix_session(self.session, term)
-            .or_else(|| term_to_rational_matrix_session(self.session, term))
+        let Some(matrix) = term_to_exact_matrix_session(self.session, term).or_else(|| term_to_rational_matrix_session(self.session, term))
         else {
             return Ok(None);
         };
@@ -213,14 +211,9 @@ impl<'a> ExecutionHost<'a> {
         rhs: crate::domains::linear_algebra::MatrixRef,
     ) -> Result<Option<HostOutcome>> {
         use crate::domains::linear_algebra::{LinearAlgebraRequest, LinearAlgebraResult, LinearAlgebraValue, MatrixOperand};
-        let request = LinearAlgebraRequest::Hadamard {
-            lhs: MatrixOperand::object(lhs),
-            rhs: MatrixOperand::object(rhs),
-        };
+        let request = LinearAlgebraRequest::Hadamard { lhs: MatrixOperand::object(lhs), rhs: MatrixOperand::object(rhs) };
         Ok(match self.session.execute_linear_algebra(request) {
-            LinearAlgebraResult::Ok {
-                value: LinearAlgebraValue::Matrix(envelope) | LinearAlgebraValue::Dot(envelope),
-            } => {
+            LinearAlgebraResult::Ok { value: LinearAlgebraValue::Matrix(envelope) | LinearAlgebraValue::Dot(envelope) } => {
                 let matrix_ref = self.session.matrix_objects.intern(envelope.value);
                 let value_id = self.session.insert_matrix_value(matrix_ref);
                 Some(HostOutcome::Value(SlotValue::Value(value_id)))
@@ -236,14 +229,9 @@ impl<'a> ExecutionHost<'a> {
         rhs: crate::domains::linear_algebra::MatrixRef,
     ) -> Result<Option<HostOutcome>> {
         use crate::domains::linear_algebra::{LinearAlgebraRequest, LinearAlgebraResult, LinearAlgebraValue, MatrixOperand};
-        let request = LinearAlgebraRequest::ElementwiseDivide {
-            lhs: MatrixOperand::object(lhs),
-            rhs: MatrixOperand::object(rhs),
-        };
+        let request = LinearAlgebraRequest::ElementwiseDivide { lhs: MatrixOperand::object(lhs), rhs: MatrixOperand::object(rhs) };
         Ok(match self.session.execute_linear_algebra(request) {
-            LinearAlgebraResult::Ok {
-                value: LinearAlgebraValue::Matrix(envelope) | LinearAlgebraValue::Dot(envelope),
-            } => {
+            LinearAlgebraResult::Ok { value: LinearAlgebraValue::Matrix(envelope) | LinearAlgebraValue::Dot(envelope) } => {
                 let matrix_ref = self.session.matrix_objects.intern(envelope.value);
                 let value_id = self.session.insert_matrix_value(matrix_ref);
                 Some(HostOutcome::Value(SlotValue::Value(value_id)))
@@ -259,14 +247,9 @@ impl<'a> ExecutionHost<'a> {
         rhs: crate::domains::linear_algebra::MatrixRef,
     ) -> Result<Option<HostOutcome>> {
         use crate::domains::linear_algebra::{LinearAlgebraRequest, LinearAlgebraResult, LinearAlgebraValue, MatrixOperand};
-        let request = LinearAlgebraRequest::ElementwisePower {
-            lhs: MatrixOperand::object(lhs),
-            rhs: MatrixOperand::object(rhs),
-        };
+        let request = LinearAlgebraRequest::ElementwisePower { lhs: MatrixOperand::object(lhs), rhs: MatrixOperand::object(rhs) };
         Ok(match self.session.execute_linear_algebra(request) {
-            LinearAlgebraResult::Ok {
-                value: LinearAlgebraValue::Matrix(envelope) | LinearAlgebraValue::Dot(envelope),
-            } => {
+            LinearAlgebraResult::Ok { value: LinearAlgebraValue::Matrix(envelope) | LinearAlgebraValue::Dot(envelope) } => {
                 let matrix_ref = self.session.matrix_objects.intern(envelope.value);
                 let value_id = self.session.insert_matrix_value(matrix_ref);
                 Some(HostOutcome::Value(SlotValue::Value(value_id)))
@@ -317,15 +300,11 @@ impl<'a> ExecutionHost<'a> {
         Ok(term)
     }
 
-
     fn apply_arithmetic(&mut self, op: SemanticOperator, args: &[SlotValue]) -> Result<HostOutcome> {
         // Living 16: `Multiply` on typed matrices is Hadamard (element-wise), never MatMul.
         // Dialects must lower MATLAB `A*B` / Mathematica `Dot` to explicit MatMul / Dot goals.
         if op == SemanticOperator::Multiply && args.len() == 2 {
-            if let (Some(lhs), Some(rhs)) = (
-                self.matrix_ref_or_intern_numeric(args[0])?,
-                self.matrix_ref_or_intern_numeric(args[1])?,
-            ) {
+            if let (Some(lhs), Some(rhs)) = (self.matrix_ref_or_intern_numeric(args[0])?, self.matrix_ref_or_intern_numeric(args[1])?) {
                 if let Some(outcome) = self.host_hadamard(lhs, rhs)? {
                     return Ok(outcome);
                 }
@@ -395,11 +374,7 @@ impl<'a> ExecutionHost<'a> {
         // Living 16: First / Rest / Most / Reverse / Flatten stay on MatrixRef (numeric literals intern once).
         if matches!(
             op,
-            SemanticOperator::First
-                | SemanticOperator::Rest
-                | SemanticOperator::Most
-                | SemanticOperator::Reverse
-                | SemanticOperator::Flatten
+            SemanticOperator::First | SemanticOperator::Rest | SemanticOperator::Most | SemanticOperator::Reverse | SemanticOperator::Flatten
         ) {
             if let Some(outcome) = self.host_matrix_unary_structure(op, args[0])? {
                 return Ok(outcome);
@@ -426,9 +401,7 @@ impl<'a> ExecutionHost<'a> {
     }
 
     fn host_matrix_unary_structure(&mut self, op: SemanticOperator, slot: SlotValue) -> Result<Option<HostOutcome>> {
-        use crate::domains::linear_algebra::{
-            AxisRange, IndexSpec, MatrixEntry, flatten_row_major, reverse_matrix, slice_matrix,
-        };
+        use crate::domains::linear_algebra::{AxisRange, IndexSpec, MatrixEntry, flatten_row_major, reverse_matrix, slice_matrix};
         let Some(matrix_ref) = self.matrix_ref_or_intern_numeric(slot)?
         else {
             return Ok(None);
@@ -458,19 +431,11 @@ impl<'a> ExecutionHost<'a> {
                         }
                         MatrixEntry::Rational(x) => rational_to_term_session(self.session, &x),
                         MatrixEntry::MachineF64(x) => self.session.builder().real(x, Default::default()),
-                        MatrixEntry::ComplexExact { re, im } => {
-                            complex_exact_to_term_session(self.session, &re, &im)
-                        }
+                        MatrixEntry::ComplexExact { re, im } => complex_exact_to_term_session(self.session, &re, &im),
                     };
                     return Ok(Some(HostOutcome::Value(SlotValue::Term(term))));
                 }
-                let row = slice_matrix(
-                    &matrix,
-                    &IndexSpec::Slice {
-                        rows: AxisRange::Range { start: 0, end: 1 },
-                        cols: AxisRange::All,
-                    },
-                )?;
+                let row = slice_matrix(&matrix, &IndexSpec::Slice { rows: AxisRange::Range { start: 0, end: 1 }, cols: AxisRange::All })?;
                 Ok(Some(self.host_outcome_from_structure_matrix(row)?))
             }
             SemanticOperator::Rest => {
@@ -487,38 +452,14 @@ impl<'a> ExecutionHost<'a> {
                     }
                     if shape.cols == 1 {
                         // Rest of a singleton vector → empty 1×0 row.
-                        slice_matrix(
-                            &matrix,
-                            &IndexSpec::Slice {
-                                rows: AxisRange::All,
-                                cols: AxisRange::Range { start: 1, end: 1 },
-                            },
-                        )
+                        slice_matrix(&matrix, &IndexSpec::Slice { rows: AxisRange::All, cols: AxisRange::Range { start: 1, end: 1 } })
                     }
                     else {
-                        slice_matrix(
-                            &matrix,
-                            &IndexSpec::Slice {
-                                rows: AxisRange::All,
-                                cols: AxisRange::Range {
-                                    start: 1,
-                                    end: shape.cols,
-                                },
-                            },
-                        )
+                        slice_matrix(&matrix, &IndexSpec::Slice { rows: AxisRange::All, cols: AxisRange::Range { start: 1, end: shape.cols } })
                     }
                 }
                 else {
-                    slice_matrix(
-                        &matrix,
-                        &IndexSpec::Slice {
-                            rows: AxisRange::Range {
-                                start: 1,
-                                end: shape.rows,
-                            },
-                            cols: AxisRange::All,
-                        },
-                    )
+                    slice_matrix(&matrix, &IndexSpec::Slice { rows: AxisRange::Range { start: 1, end: shape.rows }, cols: AxisRange::All })
                 }?;
                 Ok(Some(self.host_outcome_from_structure_matrix(rest)?))
             }
@@ -534,38 +475,17 @@ impl<'a> ExecutionHost<'a> {
                 }
                 let most = if shape.rows == 1 {
                     if shape.cols == 1 {
-                        slice_matrix(
-                            &matrix,
-                            &IndexSpec::Slice {
-                                rows: AxisRange::All,
-                                cols: AxisRange::Range { start: 0, end: 0 },
-                            },
-                        )
+                        slice_matrix(&matrix, &IndexSpec::Slice { rows: AxisRange::All, cols: AxisRange::Range { start: 0, end: 0 } })
                     }
                     else {
                         slice_matrix(
                             &matrix,
-                            &IndexSpec::Slice {
-                                rows: AxisRange::All,
-                                cols: AxisRange::Range {
-                                    start: 0,
-                                    end: shape.cols - 1,
-                                },
-                            },
+                            &IndexSpec::Slice { rows: AxisRange::All, cols: AxisRange::Range { start: 0, end: shape.cols - 1 } },
                         )
                     }
                 }
                 else {
-                    slice_matrix(
-                        &matrix,
-                        &IndexSpec::Slice {
-                            rows: AxisRange::Range {
-                                start: 0,
-                                end: shape.rows - 1,
-                            },
-                            cols: AxisRange::All,
-                        },
-                    )
+                    slice_matrix(&matrix, &IndexSpec::Slice { rows: AxisRange::Range { start: 0, end: shape.rows - 1 }, cols: AxisRange::All })
                 }?;
                 Ok(Some(self.host_outcome_from_structure_matrix(most)?))
             }
@@ -698,13 +618,7 @@ impl<'a> ExecutionHost<'a> {
                 SemanticOperator::Drop => (n.min(cols), cols),
                 _ => return Ok(None),
             };
-            slice_matrix(
-                &matrix,
-                &IndexSpec::Slice {
-                    rows: AxisRange::All,
-                    cols: AxisRange::Range { start, end },
-                },
-            )?
+            slice_matrix(&matrix, &IndexSpec::Slice { rows: AxisRange::All, cols: AxisRange::Range { start, end } })?
         }
         else {
             let rows = shape.rows;
@@ -713,13 +627,7 @@ impl<'a> ExecutionHost<'a> {
                 SemanticOperator::Drop => (n.min(rows), rows),
                 _ => return Ok(None),
             };
-            slice_matrix(
-                &matrix,
-                &IndexSpec::Slice {
-                    rows: AxisRange::Range { start, end },
-                    cols: AxisRange::All,
-                },
-            )?
+            slice_matrix(&matrix, &IndexSpec::Slice { rows: AxisRange::Range { start, end }, cols: AxisRange::All })?
         };
         Ok(Some(self.host_outcome_from_structure_matrix(sliced)?))
     }
@@ -752,11 +660,11 @@ impl<'a> ExecutionHost<'a> {
 
     /// Living 16: Append/Prepend on MatrixRef (row join or row-vector scalar extend).
     fn host_matrix_append_prepend(&mut self, prepend: bool, list_slot: SlotValue, elem_slot: SlotValue) -> Result<Option<HostOutcome>> {
-        use crate::domains::linear_algebra::{
-            ElementParentKind, MatrixEntry, MatrixValue, extend_row_vector_scalar, join_matrices,
+        use crate::{
+            domains::linear_algebra::{ElementParentKind, MatrixEntry, MatrixValue, extend_row_vector_scalar, join_matrices},
+            runtime::values::numeric_clone::{clone_integer, clone_rational},
         };
         use science_numeric::{Integer, Rational};
-        use crate::runtime::values::numeric_clone::{clone_integer, clone_rational};
 
         let Some(base_ref) = self.matrix_ref_or_intern_numeric(list_slot)?
         else {
@@ -785,13 +693,9 @@ impl<'a> ExecutionHost<'a> {
         }
         let elem_term = self.slot_as_term(elem_slot)?;
         if let Some((re, im)) = term_scalar_complex_session(self.session, elem_term) {
-            let needs_complex = !im.is_zero()
-                || matches!(base.parent().element, ElementParentKind::ComplexExact);
+            let needs_complex = !im.is_zero() || matches!(base.parent().element, ElementParentKind::ComplexExact);
             if needs_complex {
-                let entry = MatrixEntry::ComplexExact {
-                    re: clone_rational(&re),
-                    im: clone_rational(&im),
-                };
+                let entry = MatrixEntry::ComplexExact { re: clone_rational(&re), im: clone_rational(&im) };
                 let base = match base.parent().element {
                     ElementParentKind::ComplexExact => base,
                     ElementParentKind::Integers | ElementParentKind::Rationals => {
@@ -858,16 +762,10 @@ impl<'a> ExecutionHost<'a> {
             }
             ElementParentKind::ComplexExact => {
                 if let Some(i) = n.as_exact_integer() {
-                    MatrixEntry::ComplexExact {
-                        re: Rational::from_integer(Integer::from(i)),
-                        im: Rational::zero(),
-                    }
+                    MatrixEntry::ComplexExact { re: Rational::from_integer(Integer::from(i)), im: Rational::zero() }
                 }
                 else if let Some(r) = n.as_rational() {
-                    MatrixEntry::ComplexExact {
-                        re: clone_rational(r),
-                        im: Rational::zero(),
-                    }
+                    MatrixEntry::ComplexExact { re: clone_rational(r), im: Rational::zero() }
                 }
                 else {
                     return Ok(None);
@@ -894,11 +792,7 @@ impl<'a> ExecutionHost<'a> {
         Ok(HostOutcome::Value(SlotValue::Term(term)))
     }
 
-    fn host_matrix_member_q(
-        &mut self,
-        list_slot: SlotValue,
-        elem_slot: SlotValue,
-    ) -> Result<Option<HostOutcome>> {
+    fn host_matrix_member_q(&mut self, list_slot: SlotValue, elem_slot: SlotValue) -> Result<Option<HostOutcome>> {
         let Some((matrix, needle)) = self.matrix_1xn_integer_needle(list_slot, elem_slot)?
         else {
             return Ok(None);
@@ -1002,30 +896,29 @@ impl<'a> ExecutionHost<'a> {
         let values: Vec<i64> = if shape.rows == 1 && shape.cols > 0 {
             let mut values = Vec::with_capacity(shape.cols as usize);
             for j in 0..shape.cols {
-                let Some(v) = matrix_entry_exact_i64(matrix.get(0, j)?) else {
+                let Some(v) = matrix_entry_exact_i64(matrix.get(0, j)?)
+                else {
                     return Ok(None);
                 };
                 values.push(v);
             }
             values
-        } else if shape.cols == 1 && shape.rows > 0 {
+        }
+        else if shape.cols == 1 && shape.rows > 0 {
             let mut values = Vec::with_capacity(shape.rows as usize);
             for i in 0..shape.rows {
-                let Some(v) = matrix_entry_exact_i64(matrix.get(i, 0)?) else {
+                let Some(v) = matrix_entry_exact_i64(matrix.get(i, 0)?)
+                else {
                     return Ok(None);
                 };
                 values.push(v);
             }
             values
-        } else {
-            return Ok(None);
-        };
-        let selected = if pick_max {
-            *values.iter().max().expect("non-empty")
         }
         else {
-            *values.iter().min().expect("non-empty")
+            return Ok(None);
         };
+        let selected = if pick_max { *values.iter().max().expect("non-empty") } else { *values.iter().min().expect("non-empty") };
         let term = self.session.builder().int(selected, Default::default());
         Ok(Some(HostOutcome::Value(SlotValue::Term(term))))
     }
@@ -1109,11 +1002,7 @@ impl<'a> ExecutionHost<'a> {
         Ok(HostOutcome::Value(SlotValue::Term(term)))
     }
 
-    fn host_matrix_count(
-        &mut self,
-        list_slot: SlotValue,
-        elem_slot: SlotValue,
-    ) -> Result<Option<HostOutcome>> {
+    fn host_matrix_count(&mut self, list_slot: SlotValue, elem_slot: SlotValue) -> Result<Option<HostOutcome>> {
         let Some((matrix, needle)) = self.matrix_1xn_integer_needle(list_slot, elem_slot)?
         else {
             return Ok(None);
@@ -1241,10 +1130,12 @@ impl<'a> ExecutionHost<'a> {
     }
 
     fn host_matrix_constant_array(&mut self, elem_slot: SlotValue, count_slot: SlotValue) -> Result<Option<HostOutcome>> {
-        use crate::domains::linear_algebra::MatrixValue;
+        use crate::{
+            domains::linear_algebra::MatrixValue,
+            runtime::values::numeric_clone::{clone_integer, clone_rational},
+        };
         use science_ir::TermNode;
         use science_numeric::Integer;
-        use crate::runtime::values::numeric_clone::{clone_integer, clone_rational};
 
         let count_term = self.slot_as_term(count_slot)?;
         let as_dim = |session: &Session, t: TermId| -> Option<u64> {
@@ -1256,9 +1147,7 @@ impl<'a> ExecutionHost<'a> {
         }
         else {
             match self.session.arena.get(count_term) {
-                Some(TermNode::Collection { elements, .. }) if elements.len() == 1 => {
-                    as_dim(self.session, elements[0]).map(|n| (1u64, n))
-                }
+                Some(TermNode::Collection { elements, .. }) if elements.len() == 1 => as_dim(self.session, elements[0]).map(|n| (1u64, n)),
                 Some(TermNode::Collection { elements, .. }) if elements.len() == 2 => {
                     match (as_dim(self.session, elements[0]), as_dim(self.session, elements[1])) {
                         (Some(r), Some(c)) => Some((r, c)),
@@ -1382,12 +1271,7 @@ impl<'a> ExecutionHost<'a> {
             owned.push(matrix);
         }
         let parts: Vec<&_> = owned.iter().collect();
-        let built = if is_union {
-            union_integer_row_vectors(&parts)
-        }
-        else {
-            intersection_integer_row_vectors(&parts)
-        };
+        let built = if is_union { union_integer_row_vectors(&parts) } else { intersection_integer_row_vectors(&parts) };
         match built {
             Ok(matrix) => {
                 let matrix_ref = self.session.matrix_objects.intern(matrix);
@@ -1428,10 +1312,7 @@ impl<'a> ExecutionHost<'a> {
         Ok(HostOutcome::Value(SlotValue::Term(term)))
     }
 
-    fn vector_entries_rational(
-        &self,
-        matrix: &crate::domains::linear_algebra::MatrixValue,
-    ) -> Option<(bool, Vec<science_numeric::Rational>)> {
+    fn vector_entries_rational(&self, matrix: &crate::domains::linear_algebra::MatrixValue) -> Option<(bool, Vec<science_numeric::Rational>)> {
         use crate::domains::linear_algebra::MatrixEntry;
         use science_numeric::Rational;
 
@@ -1449,12 +1330,7 @@ impl<'a> ExecutionHost<'a> {
         let n = if as_row { cols } else { rows };
         let mut out = Vec::with_capacity(n as usize);
         for i in 0..n {
-            let entry = if as_row {
-                matrix.get(0, i).ok()?
-            }
-            else {
-                matrix.get(i, 0).ok()?
-            };
+            let entry = if as_row { matrix.get(0, i).ok()? } else { matrix.get(i, 0).ok()? };
             out.push(match entry {
                 MatrixEntry::Integer(z) => Rational::from_integer(z),
                 MatrixEntry::Rational(r) => r,
@@ -1486,12 +1362,7 @@ impl<'a> ExecutionHost<'a> {
         let n = if as_row { cols } else { rows };
         let mut out = Vec::with_capacity(n as usize);
         for i in 0..n {
-            let entry = if as_row {
-                matrix.get(0, i).ok()?
-            }
-            else {
-                matrix.get(i, 0).ok()?
-            };
+            let entry = if as_row { matrix.get(0, i).ok()? } else { matrix.get(i, 0).ok()? };
             out.push(match entry {
                 MatrixEntry::Integer(z) => (Rational::from_integer(z), Rational::zero()),
                 MatrixEntry::Rational(r) => (r, Rational::zero()),
@@ -1502,24 +1373,17 @@ impl<'a> ExecutionHost<'a> {
         Some((as_row, out))
     }
 
-    fn matrix_from_vector_rationals(
-        &mut self,
-        as_row: bool,
-        values: Vec<science_numeric::Rational>,
-    ) -> Result<Option<HostOutcome>> {
+    fn matrix_from_vector_rationals(&mut self, as_row: bool, values: Vec<science_numeric::Rational>) -> Result<Option<HostOutcome>> {
         use crate::domains::linear_algebra::MatrixValue;
 
         let n = values.len() as u64;
         if n == 0 {
             return Ok(None);
         }
-        let matrix = if as_row {
-            MatrixValue::from_rationals_row_major(1, n, values)
-        }
+        let matrix =
+            if as_row { MatrixValue::from_rationals_row_major(1, n, values) } else { MatrixValue::from_rationals_row_major(n, 1, values) };
+        let Ok(matrix) = matrix
         else {
-            MatrixValue::from_rationals_row_major(n, 1, values)
-        };
-        let Ok(matrix) = matrix else {
             return Ok(None);
         };
         Ok(Some(self.host_outcome_from_structure_matrix(matrix)?))
@@ -1542,7 +1406,8 @@ impl<'a> ExecutionHost<'a> {
         else {
             MatrixValue::from_complex_exact_row_major(n, 1, values)
         };
-        let Ok(matrix) = matrix else {
+        let Ok(matrix) = matrix
+        else {
             return Ok(None);
         };
         Ok(Some(self.host_outcome_from_structure_matrix(matrix)?))
@@ -1610,10 +1475,7 @@ impl<'a> ExecutionHost<'a> {
             let (br, bi) = &window[1];
             diffs.push((br.sub(ar), bi.sub(ai)));
         }
-        let diffs = diffs
-            .into_iter()
-            .map(|(re, im)| (clone_rational(&re), clone_rational(&im)))
-            .collect();
+        let diffs = diffs.into_iter().map(|(re, im)| (clone_rational(&re), clone_rational(&im))).collect();
         self.matrix_from_vector_complex(as_row, diffs)
     }
 
@@ -1660,10 +1522,7 @@ impl<'a> ExecutionHost<'a> {
         let term = evaluate_collect_terms(self.session, expr, var)?;
         if matches!(
             self.session.arena.get(term),
-            Some(science_ir::TermNode::Application {
-                head: science_ir::ApplicationHead::Semantic(SemanticOperator::Collect),
-                ..
-            })
+            Some(science_ir::TermNode::Application { head: science_ir::ApplicationHead::Semantic(SemanticOperator::Collect), .. })
         ) {
             Ok(HostOutcome::Residual(SlotValue::Term(term)))
         }
@@ -1681,10 +1540,7 @@ impl<'a> ExecutionHost<'a> {
         let term = evaluate_polynomial_gcd_terms(self.session, left, right)?;
         if matches!(
             self.session.arena.get(term),
-            Some(science_ir::TermNode::Application {
-                head: science_ir::ApplicationHead::Semantic(SemanticOperator::PolynomialGCD),
-                ..
-            })
+            Some(science_ir::TermNode::Application { head: science_ir::ApplicationHead::Semantic(SemanticOperator::PolynomialGCD), .. })
         ) {
             Ok(HostOutcome::Residual(SlotValue::Term(term)))
         }
@@ -1702,10 +1558,7 @@ impl<'a> ExecutionHost<'a> {
         let term = evaluate_discriminant_terms(self.session, expr, var)?;
         if matches!(
             self.session.arena.get(term),
-            Some(science_ir::TermNode::Application {
-                head: science_ir::ApplicationHead::Semantic(SemanticOperator::Discriminant),
-                ..
-            })
+            Some(science_ir::TermNode::Application { head: science_ir::ApplicationHead::Semantic(SemanticOperator::Discriminant), .. })
         ) {
             Ok(HostOutcome::Residual(SlotValue::Term(term)))
         }
@@ -1724,10 +1577,7 @@ impl<'a> ExecutionHost<'a> {
         let term = evaluate_resultant_terms(self.session, left, right, var)?;
         if matches!(
             self.session.arena.get(term),
-            Some(science_ir::TermNode::Application {
-                head: science_ir::ApplicationHead::Semantic(SemanticOperator::Resultant),
-                ..
-            })
+            Some(science_ir::TermNode::Application { head: science_ir::ApplicationHead::Semantic(SemanticOperator::Resultant), .. })
         ) {
             Ok(HostOutcome::Residual(SlotValue::Term(term)))
         }
@@ -1746,10 +1596,7 @@ impl<'a> ExecutionHost<'a> {
         let term = evaluate_polynomial_remainder_terms(self.session, dividend, divisor, var)?;
         if matches!(
             self.session.arena.get(term),
-            Some(science_ir::TermNode::Application {
-                head: science_ir::ApplicationHead::Semantic(SemanticOperator::PolynomialRemainder),
-                ..
-            })
+            Some(science_ir::TermNode::Application { head: science_ir::ApplicationHead::Semantic(SemanticOperator::PolynomialRemainder), .. })
         ) {
             Ok(HostOutcome::Residual(SlotValue::Term(term)))
         }
@@ -1896,11 +1743,7 @@ impl<'a> ExecutionHost<'a> {
         Ok(HostOutcome::Value(SlotValue::Term(term)))
     }
 
-    fn host_matrix_free_q(
-        &mut self,
-        list_slot: SlotValue,
-        elem_slot: SlotValue,
-    ) -> Result<Option<HostOutcome>> {
+    fn host_matrix_free_q(&mut self, list_slot: SlotValue, elem_slot: SlotValue) -> Result<Option<HostOutcome>> {
         let Some((matrix, needle)) = self.matrix_1xn_integer_needle(list_slot, elem_slot)?
         else {
             return Ok(None);
@@ -2015,16 +1858,7 @@ impl<'a> ExecutionHost<'a> {
         if idx >= shape.rows {
             return Ok(None);
         }
-        let row = slice_matrix(
-            &matrix,
-            &IndexSpec::Slice {
-                rows: AxisRange::Range {
-                    start: idx,
-                    end: idx + 1,
-                },
-                cols: AxisRange::All,
-            },
-        )?;
+        let row = slice_matrix(&matrix, &IndexSpec::Slice { rows: AxisRange::Range { start: idx, end: idx + 1 }, cols: AxisRange::All })?;
         Ok(Some(self.host_outcome_from_structure_matrix(row)?))
     }
 
@@ -2130,11 +1964,7 @@ impl<'a> ExecutionHost<'a> {
         Ok(HostOutcome::Value(SlotValue::Term(term)))
     }
 
-    fn host_matrix_position(
-        &mut self,
-        list_slot: SlotValue,
-        elem_slot: SlotValue,
-    ) -> Result<Option<HostOutcome>> {
+    fn host_matrix_position(&mut self, list_slot: SlotValue, elem_slot: SlotValue) -> Result<Option<HostOutcome>> {
         use crate::runtime::values::arena::push_list;
 
         let Some((matrix, needle)) = self.matrix_1xn_integer_needle(list_slot, elem_slot)?
@@ -2262,7 +2092,8 @@ impl<'a> ExecutionHost<'a> {
                         return Ok(outcome);
                     }
                 }
-            } else {
+            }
+            else {
                 let body = self.slot_as_term(args[0])?;
                 let iter = self.slot_as_term(args[1])?;
                 let term = evaluate_sum_iterator_terms(self.session, body, iter)?;
@@ -2293,10 +2124,7 @@ impl<'a> ExecutionHost<'a> {
         let term = evaluate_mean_terms(self.session, vec![term])?;
         if matches!(
             self.session.arena.get(term),
-            Some(science_ir::TermNode::Application {
-                head: science_ir::ApplicationHead::Semantic(SemanticOperator::Mean),
-                ..
-            })
+            Some(science_ir::TermNode::Application { head: science_ir::ApplicationHead::Semantic(SemanticOperator::Mean), .. })
         ) {
             Ok(HostOutcome::Residual(SlotValue::Term(term)))
         }
@@ -2306,13 +2134,11 @@ impl<'a> ExecutionHost<'a> {
     }
 
     /// `dim=1` → column sums (MATLAB default). `dim=2` → row sums as a column vector.
-    fn sum_matrix_ref(
-        &mut self,
-        matrix_ref: crate::domains::linear_algebra::MatrixRef,
-        dim: u32,
-    ) -> Result<Option<HostOutcome>> {
-        use crate::domains::linear_algebra::{ElementParentKind, MatrixEntry};
-        use crate::runtime::values::arena::push_list;
+    fn sum_matrix_ref(&mut self, matrix_ref: crate::domains::linear_algebra::MatrixRef, dim: u32) -> Result<Option<HostOutcome>> {
+        use crate::{
+            domains::linear_algebra::{ElementParentKind, MatrixEntry},
+            runtime::values::arena::push_list,
+        };
         use science_numeric::Rational;
 
         let Some(matrix) = self.session.matrix_objects.resolve_owning(matrix_ref)
@@ -2334,8 +2160,14 @@ impl<'a> ExecutionHost<'a> {
                     for i in 0..rows {
                         let mut acc = (Rational::zero(), Rational::zero());
                         for j in 0..cols {
-                            let Ok(entry) = matrix.get(i, j) else { return Ok(None) };
-                            let Some((re, im)) = entry_c(entry) else { return Ok(None) };
+                            let Ok(entry) = matrix.get(i, j)
+                            else {
+                                return Ok(None);
+                            };
+                            let Some((re, im)) = entry_c(entry)
+                            else {
+                                return Ok(None);
+                            };
                             acc = (acc.0.add(&re), acc.1.add(&im));
                         }
                         let cell = complex_exact_to_term_session(self.session, &acc.0, &acc.1);
@@ -2346,8 +2178,14 @@ impl<'a> ExecutionHost<'a> {
                 if rows == 1 {
                     let mut acc = (Rational::zero(), Rational::zero());
                     for j in 0..cols {
-                        let Ok(entry) = matrix.get(0, j) else { return Ok(None) };
-                        let Some((re, im)) = entry_c(entry) else { return Ok(None) };
+                        let Ok(entry) = matrix.get(0, j)
+                        else {
+                            return Ok(None);
+                        };
+                        let Some((re, im)) = entry_c(entry)
+                        else {
+                            return Ok(None);
+                        };
                         acc = (acc.0.add(&re), acc.1.add(&im));
                     }
                     let term = complex_exact_to_term_session(self.session, &acc.0, &acc.1);
@@ -2356,8 +2194,14 @@ impl<'a> ExecutionHost<'a> {
                 if cols == 1 {
                     let mut acc = (Rational::zero(), Rational::zero());
                     for i in 0..rows {
-                        let Ok(entry) = matrix.get(i, 0) else { return Ok(None) };
-                        let Some((re, im)) = entry_c(entry) else { return Ok(None) };
+                        let Ok(entry) = matrix.get(i, 0)
+                        else {
+                            return Ok(None);
+                        };
+                        let Some((re, im)) = entry_c(entry)
+                        else {
+                            return Ok(None);
+                        };
                         acc = (acc.0.add(&re), acc.1.add(&im));
                     }
                     let term = complex_exact_to_term_session(self.session, &acc.0, &acc.1);
@@ -2367,8 +2211,14 @@ impl<'a> ExecutionHost<'a> {
                 for j in 0..cols {
                     let mut acc = (Rational::zero(), Rational::zero());
                     for i in 0..rows {
-                        let Ok(entry) = matrix.get(i, j) else { return Ok(None) };
-                        let Some((re, im)) = entry_c(entry) else { return Ok(None) };
+                        let Ok(entry) = matrix.get(i, j)
+                        else {
+                            return Ok(None);
+                        };
+                        let Some((re, im)) = entry_c(entry)
+                        else {
+                            return Ok(None);
+                        };
                         acc = (acc.0.add(&re), acc.1.add(&im));
                     }
                     out.push(complex_exact_to_term_session(self.session, &acc.0, &acc.1));
@@ -2388,8 +2238,14 @@ impl<'a> ExecutionHost<'a> {
                     for i in 0..rows {
                         let mut acc = Rational::zero();
                         for j in 0..cols {
-                            let Ok(entry) = matrix.get(i, j) else { return Ok(None) };
-                            let Some(q) = entry_q(entry) else { return Ok(None) };
+                            let Ok(entry) = matrix.get(i, j)
+                            else {
+                                return Ok(None);
+                            };
+                            let Some(q) = entry_q(entry)
+                            else {
+                                return Ok(None);
+                            };
                             acc = acc.add(&q);
                         }
                         let cell = rational_to_term_session(self.session, &acc);
@@ -2400,8 +2256,14 @@ impl<'a> ExecutionHost<'a> {
                 if rows == 1 {
                     let mut acc = Rational::zero();
                     for j in 0..cols {
-                        let Ok(entry) = matrix.get(0, j) else { return Ok(None) };
-                        let Some(q) = entry_q(entry) else { return Ok(None) };
+                        let Ok(entry) = matrix.get(0, j)
+                        else {
+                            return Ok(None);
+                        };
+                        let Some(q) = entry_q(entry)
+                        else {
+                            return Ok(None);
+                        };
                         acc = acc.add(&q);
                     }
                     let term = rational_to_term_session(self.session, &acc);
@@ -2410,8 +2272,14 @@ impl<'a> ExecutionHost<'a> {
                 if cols == 1 {
                     let mut acc = Rational::zero();
                     for i in 0..rows {
-                        let Ok(entry) = matrix.get(i, 0) else { return Ok(None) };
-                        let Some(q) = entry_q(entry) else { return Ok(None) };
+                        let Ok(entry) = matrix.get(i, 0)
+                        else {
+                            return Ok(None);
+                        };
+                        let Some(q) = entry_q(entry)
+                        else {
+                            return Ok(None);
+                        };
                         acc = acc.add(&q);
                     }
                     let term = rational_to_term_session(self.session, &acc);
@@ -2421,8 +2289,14 @@ impl<'a> ExecutionHost<'a> {
                 for j in 0..cols {
                     let mut acc = Rational::zero();
                     for i in 0..rows {
-                        let Ok(entry) = matrix.get(i, j) else { return Ok(None) };
-                        let Some(q) = entry_q(entry) else { return Ok(None) };
+                        let Ok(entry) = matrix.get(i, j)
+                        else {
+                            return Ok(None);
+                        };
+                        let Some(q) = entry_q(entry)
+                        else {
+                            return Ok(None);
+                        };
                         acc = acc.add(&q);
                     }
                     out.push(rational_to_term_session(self.session, &acc));
@@ -2444,14 +2318,11 @@ impl<'a> ExecutionHost<'a> {
             Some(TermNode::Collection { .. }) => return Ok(None),
             _ => term,
         };
-        let Some(n) = number_from_id(self.session, n_term).and_then(|v| v.as_exact_integer()) else {
+        let Some(n) = number_from_id(self.session, n_term).and_then(|v| v.as_exact_integer())
+        else {
             return Ok(None);
         };
-        if n == 1 || n == 2 {
-            Ok(Some(n as u32))
-        } else {
-            Ok(None)
-        }
+        if n == 1 || n == 2 { Ok(Some(n as u32)) } else { Ok(None) }
     }
 
     fn apply_product(&mut self, args: &[SlotValue]) -> Result<HostOutcome> {
@@ -2462,7 +2333,8 @@ impl<'a> ExecutionHost<'a> {
                         return Ok(outcome);
                     }
                 }
-            } else {
+            }
+            else {
                 let body = self.slot_as_term(args[0])?;
                 let iter = self.slot_as_term(args[1])?;
                 let term = evaluate_product_iterator_terms(self.session, body, iter)?;
@@ -2485,13 +2357,11 @@ impl<'a> ExecutionHost<'a> {
         Ok(HostOutcome::Value(SlotValue::Term(term)))
     }
 
-    fn product_matrix_ref(
-        &mut self,
-        matrix_ref: crate::domains::linear_algebra::MatrixRef,
-        dim: u32,
-    ) -> Result<Option<HostOutcome>> {
-        use crate::domains::linear_algebra::{ElementParentKind, MatrixEntry};
-        use crate::runtime::values::arena::push_list;
+    fn product_matrix_ref(&mut self, matrix_ref: crate::domains::linear_algebra::MatrixRef, dim: u32) -> Result<Option<HostOutcome>> {
+        use crate::{
+            domains::linear_algebra::{ElementParentKind, MatrixEntry},
+            runtime::values::arena::push_list,
+        };
         use science_numeric::Rational;
 
         let Some(matrix) = self.session.matrix_objects.resolve_owning(matrix_ref)
@@ -2509,18 +2379,21 @@ impl<'a> ExecutionHost<'a> {
                     }
                 };
                 let mul = |a: &(Rational, Rational), b: &(Rational, Rational)| -> (Rational, Rational) {
-                    (
-                        a.0.mul(&b.0).add(&a.1.mul(&b.1).neg()),
-                        a.0.mul(&b.1).add(&a.1.mul(&b.0)),
-                    )
+                    (a.0.mul(&b.0).add(&a.1.mul(&b.1).neg()), a.0.mul(&b.1).add(&a.1.mul(&b.0)))
                 };
                 if dim == 2 {
                     let mut out = Vec::with_capacity(rows as usize);
                     for i in 0..rows {
                         let mut acc = (Rational::one(), Rational::zero());
                         for j in 0..cols {
-                            let Ok(entry) = matrix.get(i, j) else { return Ok(None) };
-                            let Some(c) = entry_c(entry) else { return Ok(None) };
+                            let Ok(entry) = matrix.get(i, j)
+                            else {
+                                return Ok(None);
+                            };
+                            let Some(c) = entry_c(entry)
+                            else {
+                                return Ok(None);
+                            };
                             acc = mul(&acc, &c);
                         }
                         let cell = complex_exact_to_term_session(self.session, &acc.0, &acc.1);
@@ -2531,8 +2404,14 @@ impl<'a> ExecutionHost<'a> {
                 if rows == 1 {
                     let mut acc = (Rational::one(), Rational::zero());
                     for j in 0..cols {
-                        let Ok(entry) = matrix.get(0, j) else { return Ok(None) };
-                        let Some(c) = entry_c(entry) else { return Ok(None) };
+                        let Ok(entry) = matrix.get(0, j)
+                        else {
+                            return Ok(None);
+                        };
+                        let Some(c) = entry_c(entry)
+                        else {
+                            return Ok(None);
+                        };
                         acc = mul(&acc, &c);
                     }
                     let term = complex_exact_to_term_session(self.session, &acc.0, &acc.1);
@@ -2541,8 +2420,14 @@ impl<'a> ExecutionHost<'a> {
                 if cols == 1 {
                     let mut acc = (Rational::one(), Rational::zero());
                     for i in 0..rows {
-                        let Ok(entry) = matrix.get(i, 0) else { return Ok(None) };
-                        let Some(c) = entry_c(entry) else { return Ok(None) };
+                        let Ok(entry) = matrix.get(i, 0)
+                        else {
+                            return Ok(None);
+                        };
+                        let Some(c) = entry_c(entry)
+                        else {
+                            return Ok(None);
+                        };
                         acc = mul(&acc, &c);
                     }
                     let term = complex_exact_to_term_session(self.session, &acc.0, &acc.1);
@@ -2552,8 +2437,14 @@ impl<'a> ExecutionHost<'a> {
                 for j in 0..cols {
                     let mut acc = (Rational::one(), Rational::zero());
                     for i in 0..rows {
-                        let Ok(entry) = matrix.get(i, j) else { return Ok(None) };
-                        let Some(c) = entry_c(entry) else { return Ok(None) };
+                        let Ok(entry) = matrix.get(i, j)
+                        else {
+                            return Ok(None);
+                        };
+                        let Some(c) = entry_c(entry)
+                        else {
+                            return Ok(None);
+                        };
                         acc = mul(&acc, &c);
                     }
                     out.push(complex_exact_to_term_session(self.session, &acc.0, &acc.1));
@@ -2573,8 +2464,14 @@ impl<'a> ExecutionHost<'a> {
                     for i in 0..rows {
                         let mut acc = Rational::one();
                         for j in 0..cols {
-                            let Ok(entry) = matrix.get(i, j) else { return Ok(None) };
-                            let Some(q) = entry_q(entry) else { return Ok(None) };
+                            let Ok(entry) = matrix.get(i, j)
+                            else {
+                                return Ok(None);
+                            };
+                            let Some(q) = entry_q(entry)
+                            else {
+                                return Ok(None);
+                            };
                             acc = acc.mul(&q);
                         }
                         let cell = rational_to_term_session(self.session, &acc);
@@ -2585,8 +2482,14 @@ impl<'a> ExecutionHost<'a> {
                 if rows == 1 {
                     let mut acc = Rational::one();
                     for j in 0..cols {
-                        let Ok(entry) = matrix.get(0, j) else { return Ok(None) };
-                        let Some(q) = entry_q(entry) else { return Ok(None) };
+                        let Ok(entry) = matrix.get(0, j)
+                        else {
+                            return Ok(None);
+                        };
+                        let Some(q) = entry_q(entry)
+                        else {
+                            return Ok(None);
+                        };
                         acc = acc.mul(&q);
                     }
                     let term = rational_to_term_session(self.session, &acc);
@@ -2595,8 +2498,14 @@ impl<'a> ExecutionHost<'a> {
                 if cols == 1 {
                     let mut acc = Rational::one();
                     for i in 0..rows {
-                        let Ok(entry) = matrix.get(i, 0) else { return Ok(None) };
-                        let Some(q) = entry_q(entry) else { return Ok(None) };
+                        let Ok(entry) = matrix.get(i, 0)
+                        else {
+                            return Ok(None);
+                        };
+                        let Some(q) = entry_q(entry)
+                        else {
+                            return Ok(None);
+                        };
                         acc = acc.mul(&q);
                     }
                     let term = rational_to_term_session(self.session, &acc);
@@ -2606,8 +2515,14 @@ impl<'a> ExecutionHost<'a> {
                 for j in 0..cols {
                     let mut acc = Rational::one();
                     for i in 0..rows {
-                        let Ok(entry) = matrix.get(i, j) else { return Ok(None) };
-                        let Some(q) = entry_q(entry) else { return Ok(None) };
+                        let Ok(entry) = matrix.get(i, j)
+                        else {
+                            return Ok(None);
+                        };
+                        let Some(q) = entry_q(entry)
+                        else {
+                            return Ok(None);
+                        };
                         acc = acc.mul(&q);
                     }
                     out.push(rational_to_term_session(self.session, &acc));
@@ -2617,7 +2532,6 @@ impl<'a> ExecutionHost<'a> {
             ElementParentKind::MachineReal => Ok(None),
         }
     }
-
 
     fn apply_determinant(&mut self, args: &[SlotValue]) -> Result<HostOutcome> {
         if args.len() != 1 {
@@ -2629,13 +2543,11 @@ impl<'a> ExecutionHost<'a> {
         // Nested Collection literals are interned once (no parallel Bareiss helper path).
         let from_literal = self.matrix_ref_from_slot(args[0]).is_none();
         if let Some(matrix_ref) = self.matrix_ref_or_intern_numeric(args[0])? {
-            let request = LinearAlgebraRequest::Det {
-                matrix: MatrixOperand::object(matrix_ref),
-            };
+            let request = LinearAlgebraRequest::Det { matrix: MatrixOperand::object(matrix_ref) };
             match self.session.execute_linear_algebra(request) {
                 LinearAlgebraResult::Ok { value: LinearAlgebraValue::ExactDet(det) } => {
-                    use science_numeric::Number;
                     use crate::execution::push_number;
+                    use science_numeric::Number;
                     let term = push_number(self.session, Number::rational(det.det));
                     return Ok(HostOutcome::Value(SlotValue::Term(term)));
                 }
@@ -2643,10 +2555,7 @@ impl<'a> ExecutionHost<'a> {
                     if from_literal {
                         let term = self.slot_as_term(args[0])?;
                         let residual = push_semantic(self.session, SemanticOperator::Determinant, vec![term]);
-                        return Ok(HostOutcome::SoftInvalid {
-                            value: SlotValue::Term(residual),
-                            diagnostic,
-                        });
+                        return Ok(HostOutcome::SoftInvalid { value: SlotValue::Term(residual), diagnostic });
                     }
                     return Ok(HostOutcome::Diagnostic(diagnostic));
                 }
@@ -2734,8 +2643,7 @@ impl<'a> ExecutionHost<'a> {
         }
         else {
             let term = self.slot_as_term(slot)?;
-            term_to_exact_matrix_session(self.session, term)
-                .or_else(|| term_to_rational_matrix_session(self.session, term))
+            term_to_exact_matrix_session(self.session, term).or_else(|| term_to_rational_matrix_session(self.session, term))
         };
         let Some(src) = src
         else {
@@ -2778,16 +2686,12 @@ impl<'a> ExecutionHost<'a> {
         }
 
         if any_imag {
-            let Ok(mut matrix) =
-                MatrixValue::zeros(MatrixParent::complex_exact(), MatrixShape::new(n, n), StorageOrder::RowMajor)
+            let Ok(mut matrix) = MatrixValue::zeros(MatrixParent::complex_exact(), MatrixShape::new(n, n), StorageOrder::RowMajor)
             else {
                 return Ok(None);
             };
             for (i, (re, im)) in complex_diag.into_iter().enumerate() {
-                if matrix
-                    .set_owned(i as u64, i as u64, MatrixEntry::ComplexExact { re, im })
-                    .is_err()
-                {
+                if matrix.set_owned(i as u64, i as u64, MatrixEntry::ComplexExact { re, im }).is_err() {
                     return Ok(None);
                 }
             }
@@ -2812,30 +2716,21 @@ impl<'a> ExecutionHost<'a> {
         }
         // Living 16: typed matrix elementwise ops stay on MatrixRef (numeric Collections intern once).
         if op == SemanticOperator::ElementwiseMultiply {
-            if let (Some(lhs), Some(rhs)) = (
-                self.matrix_ref_or_intern_numeric(args[0])?,
-                self.matrix_ref_or_intern_numeric(args[1])?,
-            ) {
+            if let (Some(lhs), Some(rhs)) = (self.matrix_ref_or_intern_numeric(args[0])?, self.matrix_ref_or_intern_numeric(args[1])?) {
                 if let Some(outcome) = self.host_hadamard(lhs, rhs)? {
                     return Ok(outcome);
                 }
             }
         }
         if op == SemanticOperator::ElementwiseDivide {
-            if let (Some(lhs), Some(rhs)) = (
-                self.matrix_ref_or_intern_numeric(args[0])?,
-                self.matrix_ref_or_intern_numeric(args[1])?,
-            ) {
+            if let (Some(lhs), Some(rhs)) = (self.matrix_ref_or_intern_numeric(args[0])?, self.matrix_ref_or_intern_numeric(args[1])?) {
                 if let Some(outcome) = self.host_elementwise_divide(lhs, rhs)? {
                     return Ok(outcome);
                 }
             }
         }
         if op == SemanticOperator::ElementwisePower {
-            if let (Some(lhs), Some(rhs)) = (
-                self.matrix_ref_or_intern_numeric(args[0])?,
-                self.matrix_ref_or_intern_numeric(args[1])?,
-            ) {
+            if let (Some(lhs), Some(rhs)) = (self.matrix_ref_or_intern_numeric(args[0])?, self.matrix_ref_or_intern_numeric(args[1])?) {
                 if let Some(outcome) = self.host_elementwise_power(lhs, rhs)? {
                     return Ok(outcome);
                 }
@@ -3044,17 +2939,21 @@ impl<'a> ExecutionHost<'a> {
 
     fn outcome_algebra_unary(&mut self, op: SemanticOperator, term: TermId) -> Result<HostOutcome> {
         let is_residual = match (op, self.session.arena.get(term)) {
-            (SemanticOperator::Cancel, Some(science_ir::TermNode::Application { head: science_ir::ApplicationHead::Semantic(SemanticOperator::Cancel), .. })) => true,
-            (SemanticOperator::Expand, Some(science_ir::TermNode::Application { head: science_ir::ApplicationHead::Semantic(SemanticOperator::Expand), .. })) => true,
-            (SemanticOperator::Factor, Some(science_ir::TermNode::Application { head: science_ir::ApplicationHead::Semantic(SemanticOperator::Factor), .. })) => true,
+            (
+                SemanticOperator::Cancel,
+                Some(science_ir::TermNode::Application { head: science_ir::ApplicationHead::Semantic(SemanticOperator::Cancel), .. }),
+            ) => true,
+            (
+                SemanticOperator::Expand,
+                Some(science_ir::TermNode::Application { head: science_ir::ApplicationHead::Semantic(SemanticOperator::Expand), .. }),
+            ) => true,
+            (
+                SemanticOperator::Factor,
+                Some(science_ir::TermNode::Application { head: science_ir::ApplicationHead::Semantic(SemanticOperator::Factor), .. }),
+            ) => true,
             _ => false,
         };
-        if is_residual {
-            Ok(HostOutcome::Residual(SlotValue::Term(term)))
-        }
-        else {
-            Ok(HostOutcome::Value(SlotValue::Term(term)))
-        }
+        if is_residual { Ok(HostOutcome::Residual(SlotValue::Term(term))) } else { Ok(HostOutcome::Value(SlotValue::Term(term))) }
     }
 
     fn apply_special_unary(&mut self, op: SemanticOperator, args: &[SlotValue]) -> Result<HostOutcome> {
@@ -3072,11 +2971,7 @@ impl<'a> ExecutionHost<'a> {
             self.session.arena.get(term),
             Some(TermNode::Application { head: ApplicationHead::Semantic(sem), .. }) if sem.as_unary().is_some()
         );
-        if residual {
-            Ok(HostOutcome::Residual(SlotValue::Term(term)))
-        } else {
-            Ok(HostOutcome::Value(SlotValue::Term(term)))
-        }
+        if residual { Ok(HostOutcome::Residual(SlotValue::Term(term))) } else { Ok(HostOutcome::Value(SlotValue::Term(term))) }
     }
 
     /// `Identical` 结构比较。`Equal` / `Unequal`：可判定原子 → Boolean，否则残差项（不静默 `False`）。
@@ -3096,12 +2991,7 @@ impl<'a> ExecutionHost<'a> {
                     let b = self.slot_as_term(right)?;
                     let a = evaluate_compare_operand(self.session, a)?;
                     let b = evaluate_compare_operand(self.session, b)?;
-                    if let Some(same) = collection_structural_equal(self.session, a, b) {
-                        same
-                    }
-                    else {
-                        self.session.arena.structural_eq(a, b)
-                    }
+                    if let Some(same) = collection_structural_equal(self.session, a, b) { same } else { self.session.arena.structural_eq(a, b) }
                 }
             };
             let value = if op == SemanticOperator::Unidentical { !same } else { same };
@@ -3200,7 +3090,11 @@ impl<'a> ExecutionHost<'a> {
     }
 
     /// `RegisterCompiledRule`：把 Session 已编译规则挂到分派表。
-    pub fn register_compiled_rule(&mut self, table: science_types::DispatchTableId, rule: science_types::CompiledRuleId) -> Result<HostOutcome> {
+    pub fn register_compiled_rule(
+        &mut self,
+        table: science_types::DispatchTableId,
+        rule: science_types::CompiledRuleId,
+    ) -> Result<HostOutcome> {
         let Some((pattern, replacement)) =
             self.session.compiled_rules.get(rule).map(|(pattern, replacement)| (pattern.owning_copy(), *replacement))
         else {
@@ -3653,7 +3547,8 @@ impl VmHost for ExecutionHost<'_> {
         if computation.symbolic_term.is_none() {
             if let Some(term) = projected {
                 computation = computation.with_symbolic_term(term);
-            } else if missing_binding {
+            }
+            else if missing_binding {
                 if let Some(term) = residual {
                     // 未绑定矩阵：Own 回声 Extension，状态从 Invalid 降为 Unknown。
                     computation = computation.with_symbolic_term(term);
@@ -3916,23 +3811,19 @@ fn evaluate_compare_operand(session: &mut Session, term: TermId) -> Result<TermI
         }
         let step = match session.arena.get(current) {
             Some(TermNode::Atom(_) | TermNode::Collection { .. }) => return Ok(current),
-            Some(TermNode::Application { head: ApplicationHead::Semantic(op), arguments }) => {
-                Some((*op, arguments.clone()))
-            }
+            Some(TermNode::Application { head: ApplicationHead::Semantic(op), arguments }) => Some((*op, arguments.clone())),
             _ => None,
         };
-        let Some((op, args)) = step else { break };
-        let materialized: Vec<TermId> = args
-            .into_iter()
-            .map(|arg| evaluate_compare_operand(session, arg).unwrap_or(arg))
-            .collect();
+        let Some((op, args)) = step
+        else {
+            break;
+        };
+        let materialized: Vec<TermId> = args.into_iter().map(|arg| evaluate_compare_operand(session, arg).unwrap_or(arg)).collect();
         let next = match materialized.len() {
             0 => break,
             1 => evaluate_unary_term(session, op, materialized[0])?,
             2 => match op {
-                SemanticOperator::Mod | SemanticOperator::Quotient => {
-                    evaluate_mod_quotient_terms(session, op, materialized)?
-                }
+                SemanticOperator::Mod | SemanticOperator::Quotient => evaluate_mod_quotient_terms(session, op, materialized)?,
                 _ => break,
             },
             _ => break,

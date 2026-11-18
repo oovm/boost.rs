@@ -120,21 +120,21 @@ fn execute_calculus_dispatch(session: &mut Session, request: CalculusRequest) ->
             limit_checked(&mut dc, expression, variable, &approach, direction, &assumptions),
             map_term_result,
         ),
-        CalculusRequest::Series { expression, variable, center, order, assumptions: _ } => map_exec(
-            CalculusValue::Expression(expression),
-            taylor(&mut dc, expression, variable, center, order),
-            |r| map_series_result(&mut dc.session_mut().series_objects, r),
-        ),
-        CalculusRequest::Laurent { expression, variable, center, order, assumptions: _ } => map_exec(
-            CalculusValue::Expression(expression),
-            laurent(&mut dc, expression, variable, center, order),
-            |r| map_series_result(&mut dc.session_mut().series_objects, r),
-        ),
-        CalculusRequest::Asymptotic { expression, variable, order, assumptions: _ } => map_exec(
-            CalculusValue::Expression(expression),
-            asymptotic(&mut dc, expression, variable, order),
-            |r| map_series_result(&mut dc.session_mut().series_objects, r),
-        ),
+        CalculusRequest::Series { expression, variable, center, order, assumptions: _ } => {
+            map_exec(CalculusValue::Expression(expression), taylor(&mut dc, expression, variable, center, order), |r| {
+                map_series_result(&mut dc.session_mut().series_objects, r)
+            })
+        }
+        CalculusRequest::Laurent { expression, variable, center, order, assumptions: _ } => {
+            map_exec(CalculusValue::Expression(expression), laurent(&mut dc, expression, variable, center, order), |r| {
+                map_series_result(&mut dc.session_mut().series_objects, r)
+            })
+        }
+        CalculusRequest::Asymptotic { expression, variable, order, assumptions: _ } => {
+            map_exec(CalculusValue::Expression(expression), asymptotic(&mut dc, expression, variable, order), |r| {
+                map_series_result(&mut dc.session_mut().series_objects, r)
+            })
+        }
         CalculusRequest::Residue { expression, variable, point, assumptions: _ } => {
             map_exec(CalculusValue::Expression(expression), residue_checked(&mut dc, expression, variable, point), map_residue_result)
         }
@@ -145,22 +145,14 @@ fn execute_calculus_dispatch(session: &mut Session, request: CalculusRequest) ->
         ),
         CalculusRequest::Jacobian { expressions, variables, assumptions } => {
             let echo = expressions.first().copied().unwrap_or_else(|| dc.in_(0));
-            map_exec(
-                CalculusValue::Expression(echo),
-                jacobian_checked(&mut dc, &expressions, &variables, &assumptions),
-                map_jacobian_result,
-            )
+            map_exec(CalculusValue::Expression(echo), jacobian_checked(&mut dc, &expressions, &variables, &assumptions), map_jacobian_result)
         }
         CalculusRequest::Hessian { expression, variables, assumptions } => {
             map_exec(CalculusValue::Expression(expression), hessian_checked(&mut dc, expression, &variables, &assumptions), map_hessian_result)
         }
         CalculusRequest::Divergence { components, variables, assumptions } => {
             let echo = components.first().copied().unwrap_or_else(|| dc.in_(0));
-            map_exec(
-                CalculusValue::Expression(echo),
-                divergence_checked(&mut dc, &components, &variables, &assumptions),
-                map_divergence_result,
-            )
+            map_exec(CalculusValue::Expression(echo), divergence_checked(&mut dc, &components, &variables, &assumptions), map_divergence_result)
         }
         CalculusRequest::Curl { components, variables, assumptions } => {
             let echo = components.first().copied().unwrap_or_else(|| dc.in_(0));
@@ -174,16 +166,12 @@ fn execute_calculus_dispatch(session: &mut Session, request: CalculusRequest) ->
         CalculusRequest::Transform { kind, expression, time_variable, transform_variable, assumptions } => {
             let echo = CalculusValue::Expression(expression);
             match kind {
-                TransformKind::Laplace => map_exec(
-                    echo,
-                    laplace_checked(&mut dc, expression, time_variable, transform_variable, &assumptions),
-                    map_transform_result,
-                ),
-                TransformKind::Fourier => map_exec(
-                    echo,
-                    fourier_checked(&mut dc, expression, time_variable, transform_variable, &assumptions),
-                    map_transform_result,
-                ),
+                TransformKind::Laplace => {
+                    map_exec(echo, laplace_checked(&mut dc, expression, time_variable, transform_variable, &assumptions), map_transform_result)
+                }
+                TransformKind::Fourier => {
+                    map_exec(echo, fourier_checked(&mut dc, expression, time_variable, transform_variable, &assumptions), map_transform_result)
+                }
                 TransformKind::Z => {
                     map_exec(echo, z_checked(&mut dc, expression, time_variable, transform_variable, &assumptions), map_transform_result)
                 }

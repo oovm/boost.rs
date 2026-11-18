@@ -7,13 +7,7 @@
 
 use science_types::Diagnostic;
 
-use super::{
-    object_ref::MatrixRef,
-    parent::ElementParentKind,
-    shape::MatrixShape,
-    status::AlgorithmGuarantee,
-    value::MatrixValue,
-};
+use super::{object_ref::MatrixRef, parent::ElementParentKind, shape::MatrixShape, status::AlgorithmGuarantee, value::MatrixValue};
 
 /// Domain-local matrix outcome (subset of Living 16 `MatrixResult`).
 ///

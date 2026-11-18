@@ -55,7 +55,8 @@ fn sample_claim(guarantee: Guarantee, fingerprint: u64) -> Claim {
             input_hashes: vec![],
             groebner_steps: None,
         }
-    } else {
+    }
+    else {
         science_cas::reasoning::mgraph::EvidenceCertificate::TestHarness
     };
     Claim {
