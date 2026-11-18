@@ -3,7 +3,7 @@ use crate::compiler::emitter::pipeline::{CompilerGatedOutHostProvider, CompilerH
 use super::types::{PlannedHostProvider, PlannedHostProviderExclusion, PlannerError, PlannerResult};
 
 /// 将 Resolver 选定的 host provider 计划项转为 Compiler 构建上下文绑定。
-pub(crate) fn compiler_host_provider_bindings(providers: &[PlannedHostProvider]) -> PlannerResult<Vec<CompilerHostProviderBinding>> {
+pub fn compiler_host_provider_bindings(providers: &[PlannedHostProvider]) -> PlannerResult<Vec<CompilerHostProviderBinding>> {
     providers
         .iter()
         .map(|provider| {
@@ -24,7 +24,7 @@ pub(crate) fn compiler_host_provider_bindings(providers: &[PlannedHostProvider])
 }
 
 /// 将被 feature gate 排除的 provider 转为编译期诊断事实（合同名 / provider 名 / feature）。
-pub(crate) fn compiler_gated_out_host_providers(exclusions: &[PlannedHostProviderExclusion]) -> Vec<CompilerGatedOutHostProvider> {
+pub fn compiler_gated_out_host_providers(exclusions: &[PlannedHostProviderExclusion]) -> Vec<CompilerGatedOutHostProvider> {
     exclusions
         .iter()
         .map(|exclusion| CompilerGatedOutHostProvider {

@@ -12,6 +12,7 @@ default = []
 serde = ["compiler-types/serde"]
 
 [dependencies]
+document-formats = { workspace = true }
 acorn-dex = { workspace = true }
 acorn-host = { workspace = true }
 acorn-jvm = { workspace = true }

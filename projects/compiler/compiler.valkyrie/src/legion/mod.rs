@@ -18,6 +18,7 @@ pub use api::{
     LegionStageStatus, PlanRequest, compile, compile_project, plan,
 };
 pub use artifact_formats::{artifact_format_from_extension, artifact_format_slug, artifact_formats_for_publish_format};
+pub use cmds::doc::generate_for_project;
 pub use cmds::spy::{SpyMode, SpyOptions, SpyTargetOptions, SpyTargetPlatform, run as run_spy};
 pub use error::{LegionError, LegionResult};
 pub use workspace::{

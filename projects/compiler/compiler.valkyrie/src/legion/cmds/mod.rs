@@ -13,6 +13,7 @@ pub mod check;
 /// 清理构建产物目录。
 pub mod clean;
 pub mod cov;
+pub mod doc;
 pub mod fmt;
 /// 依赖安装/添加/移除/更新。
 pub mod install;
