@@ -343,8 +343,11 @@ mod tests {
         let projection = input.project_schema_only().expect("schema-only projection skips non-schema declarations");
         assert_eq!(projection.types.len(), 1);
         assert_eq!(projection.types[0].canonical_path, ["User"]);
-        let diagnostics = input.project_schema().expect_err("plain projection rejects the using declaration");
-        assert_eq!(diagnostics[0].code, "VOS004");
+        // `using` imports and durable operation declarations are skipped by the
+        // single-source schema projection, not reported as unsupported.
+        let plain = input.project_schema().expect("plain projection skips imports and operations");
+        assert_eq!(plain.types.len(), 1);
+        assert_eq!(plain.types[0].canonical_path, ["User"]);
     }
 
 }

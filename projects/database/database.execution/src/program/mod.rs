@@ -33,6 +33,8 @@ pub enum Type {
     Time,
     /// Absolute UTC instant with microsecond resolution.
     Timestamp,
+    /// Lowercase UUID value.
+    Uuid,
     /// Exact fixed-point decimal with declared precision and scale.
     Decimal {
         /// Maximum number of stored digits (`1..=38`).

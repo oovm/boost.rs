@@ -348,6 +348,9 @@ pub fn execution_catalog_from_resolved_contract(contract: &schema_input_vos::Res
             .ok_or_else(|| Error::Schema { message: "resolved VOS type has an empty canonical path".into() })?;
         let mut fields = Vec::with_capacity(item.fields.len());
         let mut unique_constraints = Vec::new();
+        // `[unique(group)]` on several fields is one multi-column rule; a bare
+        // `[unique]` / `@name` stays a single-column rule derived from the field name.
+        let mut unique_groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for field in &item.fields {
             let virtual_field_index = field.virtual_field_index.ok_or_else(|| Error::Schema {
                 message: format!("resolved VOS field `{}` has no durable virtual slot", field.canonical_name),
@@ -355,11 +358,21 @@ pub fn execution_catalog_from_resolved_contract(contract: &schema_input_vos::Res
             let ty = resolved_execution_type(&field.canonical_type, contract)?;
             let handle = FieldHandle::new(item.type_id, field.field_id, virtual_field_index, ty)
                 .map_err(|_| Error::Schema { message: "resolved VOS contract emitted an invalid field identity".into() })?;
-            if kind == ExecutionTypeKind::Table && field.attributes.iter().any(|attribute| attribute.name == "unique") {
-                unique_constraints.push(
-                    UniqueConstraint::new(format!("{name}_{}_key", field.canonical_name), vec![field.canonical_name.clone()], true)
-                        .map_err(|error| Error::Schema { message: format!("invalid unique constraint from VOS attribute: {error}") })?,
-                );
+            if kind == ExecutionTypeKind::Table {
+                for attribute in field.attributes.iter().filter(|attribute| attribute.name == "unique") {
+                    match unique_attribute_group(&attribute.syntax)? {
+                        Some(group) => {
+                            let columns = unique_groups.entry(group).or_default();
+                            if !columns.contains(&field.canonical_name) {
+                                columns.push(field.canonical_name.clone());
+                            }
+                        }
+                        None => unique_constraints.push(
+                            UniqueConstraint::new(format!("{name}_{}_key", field.canonical_name), vec![field.canonical_name.clone()], true)
+                                .map_err(|error| Error::Schema { message: format!("invalid unique constraint from VOS attribute: {error}") })?,
+                        ),
+                    }
+                }
             }
             fields.push(ExecutionField {
                 field_id: field.field_id,
@@ -368,9 +381,42 @@ pub fn execution_catalog_from_resolved_contract(contract: &schema_input_vos::Res
                 handle,
             });
         }
+        for (group, columns) in unique_groups {
+            unique_constraints.push(
+                UniqueConstraint::new(group, columns, true)
+                    .map_err(|error| Error::Schema { message: format!("invalid grouped unique constraint from VOS attribute: {error}") })?,
+            );
+        }
         types.push(ExecutionType { schema_id: item.type_id, name, kind, fields, unique_constraints });
     }
     Ok(ExecutionCatalog { types })
+}
+
+/// Reads the group name of a `[unique(...)]` attribute.
+///
+/// `[unique]` and `@name` carry no argument and stay single-column rules.
+/// `[unique(group)]` (the name may be quoted) declares one multi-column rule
+/// shared by every field that spells the same group.
+///
+/// A present-but-malformed argument is an error: silently falling back to a
+/// single-column rule would change the declared uniqueness without saying so.
+fn unique_attribute_group(syntax: &str) -> Result<Option<String>> {
+    let Some(open) = syntax.find('(')
+    else {
+        return Ok(None);
+    };
+    let close = syntax
+        .rfind(')')
+        .ok_or_else(|| Error::Schema { message: format!("malformed unique attribute `{syntax}`: missing `)`") })?;
+    if close <= open + 1 {
+        return Err(Error::Schema { message: format!("malformed unique attribute `{syntax}`: empty group name") });
+    }
+    let raw = syntax[open + 1..close].trim();
+    let name = raw.strip_prefix('"').and_then(|rest| rest.strip_suffix('"')).unwrap_or(raw).trim();
+    if name.is_empty() || !name.chars().all(|character| character.is_ascii_alphanumeric() || character == '_') {
+        return Err(Error::Schema { message: format!("invalid unique group name `{raw}`: use ASCII letters, digits and `_`") });
+    }
+    Ok(Some(name.to_owned()))
 }
 
 impl ExecutionCatalog {
@@ -524,6 +570,7 @@ pub fn execution_type_for_scalar(scalar: schema_types::CanonicalScalar) -> Resul
         CanonicalScalar::Date => Ok(Type::Date),
         CanonicalScalar::Time => Ok(Type::Time),
         CanonicalScalar::DateTime => Ok(Type::Timestamp),
+        CanonicalScalar::Uuid => Ok(Type::Uuid),
         CanonicalScalar::Decimal => Ok(Type::Decimal { precision: database_types::scalar::DECIMAL_MAX_PRECISION, scale: 0 }),
         other => Err(Error::Schema { message: format!("VOS scalar `{other}` is not in the local execution scalar set") }),
     }
@@ -546,6 +593,7 @@ pub fn canonical_scalar_for_execution_type(ty: &Type) -> Result<schema_types::Ca
         Type::Date => Ok(CanonicalScalar::Date),
         Type::Time => Ok(CanonicalScalar::Time),
         Type::Timestamp => Ok(CanonicalScalar::DateTime),
+        Type::Uuid => Ok(CanonicalScalar::Uuid),
         Type::Decimal { precision, scale } => {
             database_types::Decimal::new(0, *precision, *scale)
                 .map_err(|error| Error::Schema { message: format!("execution decimal shape ({precision}, {scale}) is invalid: {error}") })?;

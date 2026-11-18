@@ -227,11 +227,17 @@ pub fn project_schema(root: &VosRoot) -> Result<SchemaProjection, Vec<ContractDi
             }
             // Service and operation-like declarations have their own projection
             // functions and are intentionally skipped here.
+            //
+            // `using` is an import statement: it names another source unit, which a
+            // single-source projection cannot resolve, so it is skipped instead of
+            // failing the schema contract. Cross-unit resolution stays in
+            // [`super::resolve::resolve_using_tree`].
             VosDeclarationKind::Service
             | VosDeclarationKind::Query
             | VosDeclarationKind::Udf
             | VosDeclarationKind::Micro
-            | VosDeclarationKind::Macro => continue,
+            | VosDeclarationKind::Macro
+            | VosDeclarationKind::Using => continue,
             _ => diagnostics.push(diagnostic("VOS004", "declaration is not supported by this contract projection", Some(declaration.span))),
         }
     }
