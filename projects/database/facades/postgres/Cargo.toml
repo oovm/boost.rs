@@ -1,0 +1,21 @@
+[package]
+name = "postgres"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "PostgreSQL product facade: local engine, loopback wire listener and client assembly over the database family"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+database-client = { workspace = true }
+database-cluster = { workspace = true }
+database-execution = { workspace = true }
+database-query = { workspace = true }
+database-server = { workspace = true }
+database-storage = { workspace = true }
+database-types = { workspace = true }

@@ -48,6 +48,7 @@ members = [
     "projects/database/database.types",
     "projects/database/database.udf",
     "projects/database/facades/mongo",
+    "projects/database/facades/postgres",
     "projects/database/facades/sqlite",
     "projects/document/document",
     "projects/document/document.compose",
@@ -350,6 +351,7 @@ template-input-hbs = { path = "projects/template/template.input.hbs" }
 template-types = { path = "projects/template/template.types" }
 # 品牌化库
 mongo = { path = "projects/database/facades/mongo" }
+postgres = { path = "projects/database/facades/postgres" }
 sqlite = { path = "projects/database/facades/sqlite" }
 
 # schema 能力树

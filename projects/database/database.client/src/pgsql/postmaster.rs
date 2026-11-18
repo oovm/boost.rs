@@ -162,6 +162,7 @@ impl ServerChange {
 pub struct ServerStore {
     dir: PathBuf,
     catalog: PathBuf,
+    shard_id: String,
     shard_path: PathBuf,
     lock: Option<PathBuf>,
     shard: FileShard,
@@ -199,12 +200,17 @@ impl ServerStore {
                 return Err(storage_error(error));
             }
         };
-        Ok(Self { dir, catalog, shard_path, lock: Some(lock), shard })
+        Ok(Self { dir, catalog, shard_id, shard_path, lock: Some(lock), shard })
     }
 
     /// Absolute data directory.
     pub fn data_dir(&self) -> String {
         self.dir.display().to_string()
+    }
+
+    /// File stem of the single shard this store's catalog registers.
+    pub fn shard_id(&self) -> &str {
+        &self.shard_id
     }
 
     /// Absolute `.yykv` shard path.

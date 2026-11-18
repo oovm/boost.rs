@@ -50,6 +50,24 @@ static NEXT_SECRET: AtomicU32 = AtomicU32::new(1);
 /// does, quotes included, because `$user` must be quoted to stay an identifier.
 const DEFAULT_SEARCH_PATH: &str = "\"$user\", public";
 
+/// SQLSTATE `25P02` message for statements issued inside an aborted block.
+const ABORTED_BLOCK: &str = "current transaction is aborted, commands ignored until end of transaction block";
+
+/// Outcome of the shared transaction-block control used by the wire session
+/// commands and by the `postgres` facade's direct path.
+#[derive(Debug)]
+pub enum TransactionControl {
+    /// The block transition completed; carries the PostgreSQL command tag.
+    Done(&'static str),
+    /// The command was rejected; carries SQLSTATE and message.
+    Rejected {
+        /// SQLSTATE class returned to the client.
+        code: &'static str,
+        /// Human-readable failure detail.
+        message: String,
+    },
+}
+
 /// Injects YYDS SQL execution into PostgreSQL SimpleQuery.
 #[derive(Debug)]
 pub struct PgsqlSqlRuntime {
@@ -215,7 +233,11 @@ enum TransactionStatus {
 /// Session-scoped transaction state: the PostgreSQL wire protocol ReadyForQuery byte
 /// plus a real storage transaction handle that writes and row reads are bound to.
 /// Also holds session-scoped GUC overrides that `SET` mutates and `SHOW` queries.
-struct TransactionSession {
+///
+/// Exported for the `postgres` facade: the direct (no-wire) statement path runs
+/// through [`run_statement`] with a session of its own, so local and wire calls
+/// share one bind → plan → execute semantic source.
+pub struct TransactionSession {
     /// The executor Arc stays alive for as long as a transaction is open so the handle's
     /// internal references remain valid.
     executor: Option<Arc<dyn KeyValueExecutor>>,
@@ -235,7 +257,8 @@ struct TransactionSession {
 }
 
 impl TransactionSession {
-    fn new() -> Self {
+    /// Opens a session with no active transaction and default GUCs.
+    pub fn new() -> Self {
         Self {
             executor: None,
             handle: None,
@@ -250,6 +273,89 @@ impl TransactionSession {
     /// Captures the registry state when a transaction block opens.
     fn capture_schema(&mut self, runtime: Option<&Arc<PgsqlSqlRuntime>>) {
         self.schema_checkpoint = runtime.map(|rt| rt.schema.checkpoint());
+    }
+
+    /// Opens a transaction block. Shared by the wire `BEGIN` path and the
+    /// `postgres` facade, so block entry, schema checkpointing and the aborted
+    /// block rejection live in one place.
+    pub fn begin(&mut self, runtime: Option<&Arc<PgsqlSqlRuntime>>) -> TransactionControl {
+        if self.failed {
+            return TransactionControl::Rejected { code: "25P02", message: ABORTED_BLOCK.to_string() };
+        }
+        let Some(rt) = runtime
+        else {
+            // No runtime — stay in protocol-only mode. execute_plan will receive
+            // `None` for the handle and go through the executor directly.
+            self.executor = None;
+            self.handle = None;
+            self.protocol_only_transaction = true;
+            self.failed = false;
+            self.schema_checkpoint = None;
+            return TransactionControl::Done("BEGIN");
+        };
+        // The executor owns the transaction contract: `begin_transaction` captures
+        // the ownership context (single-node gateways pass `None` explicitly) and
+        // the returned handle replays it at the commit boundary.
+        match Arc::clone(&rt.executor).begin_transaction(None) {
+            Ok(handle) => {
+                self.executor = Some(rt.executor.clone());
+                self.handle = Some(handle);
+                self.protocol_only_transaction = false;
+                self.failed = false;
+                self.capture_schema(Some(rt));
+                TransactionControl::Done("BEGIN")
+            }
+            Err(err) => TransactionControl::Rejected { code: "0A000", message: format!("BEGIN failed: {err}") },
+        }
+    }
+
+    /// Ends a transaction block. A failed commit discards the collected DDL;
+    /// committing an aborted block rolls it back, matching the wire semantics.
+    pub fn commit(&mut self, runtime: Option<&Arc<PgsqlSqlRuntime>>) -> io::Result<TransactionControl> {
+        if self.failed {
+            if let Some(handle) = self.handle.take() {
+                handle.rollback();
+            }
+            self.executor = None;
+            self.handle = None;
+            self.protocol_only_transaction = false;
+            self.failed = false;
+            // `COMMIT` of an aborted block is a rollback: the catalog goes with the rows.
+            self.restore_schema(runtime)?;
+            return Ok(TransactionControl::Done("ROLLBACK"));
+        }
+        if let Some(handle) = self.handle.take() {
+            if let Err(err) = handle.commit() {
+                let code = match &err {
+                    database_types::cluster::Error::CasConflict { .. } => "40001",
+                    _ => "58P01",
+                };
+                // A failed commit did not publish the transaction, so the
+                // DDL it collected is discarded too.
+                self.restore_schema(runtime)?;
+                return Ok(TransactionControl::Rejected { code, message: format!("COMMIT failed: {err}") });
+            }
+        }
+        self.executor = None;
+        self.handle = None;
+        self.protocol_only_transaction = false;
+        self.failed = false;
+        // The commit point publishes the schema revision as well.
+        self.schema_checkpoint = None;
+        Ok(TransactionControl::Done("COMMIT"))
+    }
+
+    /// Aborts a transaction block, restoring the schema captured at `BEGIN`.
+    pub fn rollback(&mut self, runtime: Option<&Arc<PgsqlSqlRuntime>>) -> io::Result<TransactionControl> {
+        if let Some(handle) = self.handle.take() {
+            handle.rollback();
+        }
+        self.executor = None;
+        self.handle = None;
+        self.protocol_only_transaction = false;
+        self.failed = false;
+        self.restore_schema(runtime)?;
+        Ok(TransactionControl::Done("ROLLBACK"))
     }
 
     /// Restores the snapshot captured at `BEGIN`. Only rollback paths call
@@ -302,10 +408,18 @@ impl TransactionSession {
         }
     }
 
-    fn fail(&mut self) {
+    /// Marks the open block aborted so later statements report `25P02`.
+    ///
+    /// Exported for the `postgres` facade's direct statement path.
+    pub fn fail(&mut self) {
         if self.handle.is_some() || self.protocol_only_transaction {
             self.failed = true;
         }
+    }
+
+    /// Whether the open block is aborted and only `ROLLBACK` may end it.
+    pub fn is_aborted(&self) -> bool {
+        self.failed
     }
 
     fn in_transaction(&self) -> bool {
@@ -517,83 +631,17 @@ fn handle_single_statement(
             write_error_response(stream, "42601", "Oak could not parse the SQL statement")
         }
         Ok(Some(SqlSessionCommand::Transaction(action))) => match action {
-            SqlTransactionAction::Begin if session.failed => {
-                write_error_response(stream, "25P02", "current transaction is aborted, commands ignored until end of transaction block")
-            }
-            SqlTransactionAction::Begin => {
-                match runtime {
-                    Some(rt) => {
-                        // The executor owns the transaction contract: `begin_transaction` captures
-                        // the ownership context (single-node gateways pass `None` explicitly) and
-                        // the returned handle replays it at the commit boundary.
-                        match Arc::clone(&rt.executor).begin_transaction(None) {
-                            Ok(handle) => {
-                                session.executor = Some(rt.executor.clone());
-                                session.handle = Some(handle);
-                                session.protocol_only_transaction = false;
-                                session.failed = false;
-                                session.capture_schema(runtime);
-                                write_command_complete(stream, "BEGIN")
-                            }
-                            Err(err) => write_error_response(stream, "0A000", &format!("BEGIN failed: {err}")),
-                        }
-                    }
-                    None => {
-                        // No runtime — stay in protocol-only mode. execute_plan will receive
-                        // `None` for the handle and go through the executor directly.
-                        session.executor = None;
-                        session.handle = None;
-                        session.protocol_only_transaction = true;
-                        session.failed = false;
-                        session.schema_checkpoint = None;
-                        write_command_complete(stream, "BEGIN")
-                    }
+            SqlTransactionAction::Begin | SqlTransactionAction::Commit | SqlTransactionAction::Rollback => {
+                let control = match action {
+                    SqlTransactionAction::Begin => session.begin(runtime),
+                    SqlTransactionAction::Commit => session.commit(runtime)?,
+                    SqlTransactionAction::Rollback => session.rollback(runtime)?,
+                    _ => unreachable!("savepoint actions are matched below"),
+                };
+                match control {
+                    TransactionControl::Done(tag) => write_command_complete(stream, tag),
+                    TransactionControl::Rejected { code, message } => write_error_response(stream, code, &message),
                 }
-            }
-            SqlTransactionAction::Commit if session.failed => {
-                if let Some(handle) = session.handle.take() {
-                    handle.rollback();
-                }
-                session.executor = None;
-                session.handle = None;
-                session.protocol_only_transaction = false;
-                session.failed = false;
-                // `COMMIT` of an aborted block is a rollback: the catalog goes with the rows.
-                session.restore_schema(runtime)?;
-                write_command_complete(stream, "ROLLBACK")
-            }
-            SqlTransactionAction::Commit => {
-                if let Some(handle) = session.handle.take() {
-                    if let Err(err) = handle.commit() {
-                        let state = match &err {
-                            database_types::cluster::Error::CasConflict { .. } => "40001",
-                            _ => "58P01",
-                        };
-                        // A failed commit did not publish the transaction, so the
-                        // DDL it collected is discarded too.
-                        session.restore_schema(runtime)?;
-                        write_error_response(stream, state, &format!("COMMIT failed: {err}"))?;
-                        return Ok(());
-                    }
-                }
-                session.executor = None;
-                session.handle = None;
-                session.protocol_only_transaction = false;
-                session.failed = false;
-                // The commit point publishes the schema revision as well.
-                session.schema_checkpoint = None;
-                write_command_complete(stream, "COMMIT")
-            }
-            SqlTransactionAction::Rollback => {
-                if let Some(handle) = session.handle.take() {
-                    handle.rollback();
-                }
-                session.executor = None;
-                session.handle = None;
-                session.protocol_only_transaction = false;
-                session.failed = false;
-                session.restore_schema(runtime)?;
-                write_command_complete(stream, "ROLLBACK")
             }
             SqlTransactionAction::Savepoint(_) | SqlTransactionAction::RollbackToSavepoint(_) | SqlTransactionAction::ReleaseSavepoint(_) => {
                 write_error_response(
@@ -766,23 +814,33 @@ fn execute_simple_query(
 }
 
 /// 执行结果的统一形状，供 SimpleQuery 与扩展查询共用。
-struct ExecutionOutcome {
-    is_read: bool,
-    description: Vec<SqlColumn>,
-    rows: Vec<Vec<SqlValue>>,
-    command_tag: String,
+///
+/// Exported for the `postgres` facade: the direct path returns this shape and
+/// the facade projects it into its own result type.
+pub struct ExecutionOutcome {
+    /// Whether the statement is a read.
+    pub is_read: bool,
+    /// Result column descriptions, empty when the statement returns no rows.
+    pub description: Vec<SqlColumn>,
+    /// Result rows in column order.
+    pub rows: Vec<Vec<SqlValue>>,
+    /// PostgreSQL command tag, e.g. `INSERT 0 3`.
+    pub command_tag: String,
 }
 
 impl ExecutionOutcome {
     /// Whether the statement reports a result set. Reads always do, and writes do
     /// only when the statement carried a `RETURNING` projection.
-    fn returns_rows(&self) -> bool {
+    pub fn returns_rows(&self) -> bool {
         self.is_read || !self.description.is_empty()
     }
 }
 
 /// bind → plan → execute，错误已映射为 SQLSTATE，并已标记事务失败。
-fn run_statement(sql: &str, runtime: &Arc<PgsqlSqlRuntime>, session: &mut TransactionSession) -> Result<ExecutionOutcome, (String, String)> {
+///
+/// Shared by the wire SimpleQuery path and the `postgres` facade's direct
+/// statement path; one semantic source for both.
+pub fn run_statement(sql: &str, runtime: &Arc<PgsqlSqlRuntime>, session: &mut TransactionSession) -> Result<ExecutionOutcome, (String, String)> {
     // Metadata views are synthesized from the local schema registry. They never
     // bind into the catalog or touch the executor, so they branch off before the
     // regular session-command/bind path.
@@ -863,7 +921,7 @@ fn run_statement(sql: &str, runtime: &Arc<PgsqlSqlRuntime>, session: &mut Transa
 
 /// Maps a structured gateway failure to its PostgreSQL SQLSTATE. Protocol code
 /// never inspects diagnostic text to recover the category.
-fn pg_sqlstate(kind: SqlErrorKind) -> &'static str {
+pub fn pg_sqlstate(kind: SqlErrorKind) -> &'static str {
     use SqlErrorKind::*;
     match kind {
         Syntax => "42601",

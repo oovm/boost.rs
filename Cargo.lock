@@ -3589,6 +3589,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "postgres"
+version = "0.1.0"
+dependencies = [
+ "database-client",
+ "database-cluster",
+ "database-execution",
+ "database-query",
+ "database-server",
+ "database-storage",
+ "database-types",
+]
+
+[[package]]
 name = "potential_utf"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
