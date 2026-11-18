@@ -9,9 +9,9 @@
 use std::sync::Arc;
 
 use database_query::{
-    SqlColumn, SqlDialect, SqlErrorKind, SqlExecutionPlan, SqlFrontendError, SqlSessionCommand, SqlTransactionAction, SqlValue,
-    analyze_meta_query, apply_auto_increment, bind_sql_catalog, describe_plan, parse_ddl, parse_pg_utility, parse_session_command,
-    plan_statement_for_dialect, rewrite_double_colon_casts,
+    OnCommit, SqlColumn, SqlDdlStatement, SqlDialect, SqlErrorKind, SqlExecutionPlan, SqlFrontendError, SqlSessionCommand,
+    SqlTransactionAction, SqlValue, analyze_meta_query, apply_auto_increment, bind_sql_catalog, describe_plan, is_ddl_statement, parse_ddl,
+    parse_pg_utility, parse_session_command, plan_statement_for_dialect, rewrite_double_colon_casts, rewrite_pg_temp_references,
 };
 
 use crate::cluster::TransactionHandle;
@@ -87,6 +87,18 @@ pub fn dispatch_statement(
         StatementError::new(pg_sqlstate(error.kind), format!("SQL cast error: {}", error.message))
     })?;
     let trimmed = normalized.as_ref();
+    // `pg_temp.<table>` names the session's temporary schema; the shared binder
+    // only resolves bare names, so the qualifier is lowered onto the bare name
+    // for every table this session owns. DDL keeps its qualifier because the DDL
+    // parser owns the `CREATE TEMP TABLE pg_temp.x` spelling.
+    let temp_rewritten;
+    let trimmed = if is_ddl_statement(trimmed) {
+        trimmed
+    }
+    else {
+        temp_rewritten = rewrite_pg_temp_references(trimmed, |name| session.temp_table_exists(name));
+        temp_rewritten.as_str()
+    };
     // `PREPARE` / `EXECUTE` / `DEALLOCATE` wrap another statement, so they run
     // before DDL detection would misclassify the wrapped text.
     if let Some(utility) = parse_pg_utility(trimmed).map_err(|error| {
@@ -112,11 +124,34 @@ pub fn dispatch_statement(
             if session.is_aborted() {
                 return Err(StatementError::new("25P02", ABORTED_BLOCK));
             }
-            let Some(runtime) = runtime
-            else {
-                return Err(StatementError::new("0A000", "YYDS PostgreSQL SQL execution is not implemented"));
+            // `ON COMMIT DELETE ROWS` would have to run a write statement from
+            // inside the commit epilogue, so it stays an explicit rejection
+            // instead of silently preserving the rows.
+            if let SqlDdlStatement::CreateTable { on_commit: OnCommit::DeleteRows, .. } = &statement {
+                session.fail();
+                return Err(StatementError::new(
+                    "0A000",
+                    "`ON COMMIT DELETE ROWS` is not supported: the gateway cannot delete rows at the commit boundary, use `ON COMMIT DROP` or delete explicitly",
+                ));
+            }
+            let temporary = match &statement {
+                SqlDdlStatement::CreateTable { temporary, name, .. } => *temporary || session.temp_table_exists(name),
+                SqlDdlStatement::AlterTableAddColumn { table, .. } => session.temp_table_exists(table),
+                SqlDdlStatement::AlterTableAddConstraint { table, .. } => session.temp_table_exists(table),
+                SqlDdlStatement::DropTable { names, .. } => names.iter().any(|name| session.temp_table_exists(name)),
+                SqlDdlStatement::CreateIndex { .. } | SqlDdlStatement::DropIndex { .. } => false,
             };
-            return match runtime.schema.apply_ddl(&statement) {
+            let applied = if temporary {
+                session.apply_temp_ddl(&statement)
+            }
+            else {
+                let Some(runtime) = runtime
+                else {
+                    return Err(StatementError::new("0A000", "YYDS PostgreSQL SQL execution is not implemented"));
+                };
+                runtime.schema.apply_ddl(&statement)
+            };
+            return match applied {
                 Ok(outcome) => Ok(StatementOutcome::Command(outcome.command_tag())),
                 Err(error) => {
                     session.fail();
@@ -180,6 +215,10 @@ pub fn run_statement(
         statement_error("cast", error)
     })?;
     let sql = normalized.as_ref();
+    // The extended protocol reaches this function without `dispatch_statement`,
+    // so the temporary-schema rewrite happens here as well.
+    let temp_rewritten = rewrite_pg_temp_references(sql, |name| session.temp_table_exists(name));
+    let sql = temp_rewritten.as_str();
     // Metadata views are synthesized from the local schema registry. They never
     // bind into the catalog or touch the executor, so they branch off before the
     // regular session-command/bind path.
@@ -202,15 +241,20 @@ pub fn run_statement(
         session.fail();
         return Err(("42601".to_string(), "Oak could not parse the SQL statement".to_string()));
     }
-    let catalog = runtime.schema.catalog();
+    let catalog = session.catalog(&runtime.schema);
     let bound = bind_sql_catalog(sql, &catalog, catalog.schema_version(), SqlDialect::Postgres).map_err(|error| {
         session.fail();
         statement_error("bind", error)
     })?;
     // Sequence-owning columns default at write time. Allocation advances and
     // persists the counter before execution, so a failed or rolled-back
-    // statement never reuses the value, matching PostgreSQL `nextval`.
-    let bound = apply_auto_increment(&runtime.schema, bound).map_err(|error| {
+    // statement never reuses the value, matching PostgreSQL `nextval`. A
+    // temporary table draws its sequence from the session's registry.
+    let sequences = match &bound {
+        database_query::SqlCatalogBoundStatement::Insert(insert) => session.sequence_registry(&runtime.schema, insert.table.type_id),
+        _ => &runtime.schema,
+    };
+    let bound = apply_auto_increment(sequences, bound).map_err(|error| {
         session.fail();
         statement_error("bind", error)
     })?;

@@ -7,13 +7,35 @@
 //! checkpointing and aborted-block rejection exist once.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     io,
     sync::Arc,
 };
 
 use crate::cluster::{KeyValueExecutor, TransactionHandle};
-use database_query::{SqlColumn, SqlSchemaCheckpoint, SqlSchemaRegistry, SqlValue};
+use database_query::{OnCommit, SqlCatalog, SqlColumn, SqlDdlStatement, SqlSchemaCheckpoint, SqlSchemaRegistry, SqlValue};
+
+/// Type-identity lane temporary tables own, so a session-local table never
+/// shares a row namespace with the persistent PostgreSQL lane.
+const TEMP_TYPE_ID_LANE: u8 = 3;
+
+/// Session-local temporary tables.
+///
+/// They live in their own in-memory registry, so `CREATE TEMP TABLE` never
+/// touches the persisted schema document and another connection cannot see the
+/// table. Dropping the registry when the connection closes is the whole
+/// cleanup step: the rows already written stay in the key/value store exactly
+/// like the rows of a dropped persistent table.
+struct TempTables {
+    registry: SqlSchemaRegistry,
+    on_commit: BTreeMap<String, OnCommit>,
+}
+
+impl TempTables {
+    fn new() -> Self {
+        Self { registry: SqlSchemaRegistry::new_in_memory_in_lane(TEMP_TYPE_ID_LANE), on_commit: BTreeMap::new() }
+    }
+}
 
 /// One SQL-level prepared statement registered through `PREPARE`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -114,6 +136,11 @@ pub struct TransactionSession {
     notifications: Option<Arc<super::notify::NotificationHub>>,
     /// Sink id inside [`Self::notifications`].
     listener: Option<u64>,
+    /// Session-local temporary tables, created on demand.
+    temp: Option<TempTables>,
+    /// Temporary-registry snapshot captured at `BEGIN`, so a rollback drops the
+    /// temp tables the block created.
+    temp_checkpoint: Option<SqlSchemaCheckpoint>,
 }
 
 impl TransactionSession {
@@ -131,12 +158,15 @@ impl TransactionSession {
             cursors: BTreeMap::new(),
             notifications: None,
             listener: None,
+            temp: None,
+            temp_checkpoint: None,
         }
     }
 
     /// Captures the registry state when a transaction block opens.
     fn capture_schema(&mut self, runtime: Option<&Arc<PgsqlSqlRuntime>>) {
         self.schema_checkpoint = runtime.map(|rt| rt.schema.checkpoint());
+        self.temp_checkpoint = self.temp.as_ref().map(|temp| temp.registry.checkpoint());
     }
 
     /// Opens a transaction block. Shared by the wire `BEGIN` path and the local
@@ -187,6 +217,7 @@ impl TransactionSession {
             self.drop_cursors(false);
             // `COMMIT` of an aborted block is a rollback: the catalog goes with the rows.
             self.restore_schema(runtime)?;
+            self.restore_temp();
             return Ok(TransactionControl::Done("ROLLBACK"));
         }
         if let Some(handle) = self.handle.take() {
@@ -207,8 +238,11 @@ impl TransactionSession {
         self.failed = false;
         // Holdable cursors survive the commit, everything else closes.
         self.drop_cursors(true);
-        // The commit point publishes the schema revision as well.
+        // The commit point publishes the schema revision as well, and applies
+        // the temporary tables' `ON COMMIT` actions.
         self.schema_checkpoint = None;
+        self.apply_on_commit();
+        self.temp_checkpoint = None;
         Ok(TransactionControl::Done("COMMIT"))
     }
 
@@ -223,6 +257,7 @@ impl TransactionSession {
         self.failed = false;
         self.drop_cursors(false);
         self.restore_schema(runtime)?;
+        self.restore_temp();
         Ok(TransactionControl::Done("ROLLBACK"))
     }
 
@@ -264,6 +299,9 @@ impl TransactionSession {
         // pending checkpoint here; dropping the slot keeps the invariant that
         // only an open block owns schema rollback.
         self.schema_checkpoint = None;
+        // PostgreSQL drops the session's temporary tables with `DISCARD ALL`.
+        self.temp = None;
+        self.temp_checkpoint = None;
         self.reset_parameters();
     }
 
@@ -295,6 +333,95 @@ impl TransactionSession {
         else {
             b'I'
         }
+    }
+
+    /// Restores the temporary registry captured at `BEGIN`, dropping every
+    /// temp table the aborted block created.
+    pub fn restore_temp(&mut self) {
+        let Some(checkpoint) = self.temp_checkpoint.take()
+        else {
+            return;
+        };
+        let Some(temp) = &mut self.temp
+        else {
+            return;
+        };
+        if temp.registry.restore(checkpoint).is_ok() {
+            let known: BTreeSet<String> = temp.registry.catalog().tables().iter().map(|table| table.name.clone()).collect();
+            temp.on_commit.retain(|name, _| known.contains(name));
+        }
+    }
+
+    /// Applies the `ON COMMIT DROP` actions of every temporary table at the
+    /// commit point.
+    fn apply_on_commit(&mut self) {
+        let Some(temp) = &mut self.temp
+        else {
+            return;
+        };
+        let dropped: Vec<String> =
+            temp.on_commit.iter().filter(|(_, action)| **action == OnCommit::Drop).map(|(name, _)| name.clone()).collect();
+        temp.on_commit.clear();
+        if dropped.is_empty() {
+            return;
+        }
+        let statement = SqlDdlStatement::DropTable { names: dropped, if_exists: true };
+        let _ = temp.registry.apply_ddl(&statement);
+    }
+
+    /// Applies one DDL statement to the session's temporary registry.
+    pub fn apply_temp_ddl(&mut self, statement: &SqlDdlStatement) -> Result<database_query::SqlDdlOutcome, database_query::SqlFrontendError> {
+        let in_block = self.in_transaction();
+        let temp = self.temp.get_or_insert_with(TempTables::new);
+        // A block that only creates its first temporary table still needs the
+        // snapshot, so the rollback can drop it again.
+        if in_block && self.temp_checkpoint.is_none() {
+            self.temp_checkpoint = Some(temp.registry.checkpoint());
+        }
+        let outcome = temp.registry.apply_ddl(statement)?;
+        if let SqlDdlStatement::CreateTable { name, on_commit, .. } = statement
+            && matches!(outcome, database_query::SqlDdlOutcome::CreateTable { created: true })
+        {
+            temp.on_commit.insert(name.clone(), *on_commit);
+        }
+        Ok(outcome)
+    }
+
+    /// Whether the session owns a temporary table with this name.
+    pub fn temp_table_exists(&self, name: &str) -> bool {
+        self.temp.as_ref().is_some_and(|temp| temp.registry.catalog().tables().iter().any(|table| table.name == name))
+    }
+
+    /// Registry that owns the value sequences of `type_id`: the temporary one
+    /// for a session-local table, the persistent one otherwise.
+    pub fn sequence_registry<'a>(&'a self, schema: &'a SqlSchemaRegistry, type_id: u64) -> &'a SqlSchemaRegistry {
+        match &self.temp {
+            Some(temp) if temp.registry.catalog().tables().iter().any(|table| table.type_id == type_id) => &temp.registry,
+            _ => schema,
+        }
+    }
+
+    /// Catalog this session binds against: its temporary tables first, then the
+    /// persistent schema minus any table a temporary one shadows, which is the
+    /// `pg_temp` → `public` search-path order PostgreSQL applies.
+    pub fn catalog(&self, schema: &SqlSchemaRegistry) -> SqlCatalog {
+        let base = schema.catalog();
+        let Some(temp) = &self.temp
+        else {
+            return base;
+        };
+        let temp_catalog = temp.registry.catalog();
+        if temp_catalog.tables().is_empty() {
+            return base;
+        }
+        let shadowed: BTreeSet<&str> = temp_catalog.tables().iter().map(|table| table.name.as_str()).collect();
+        let tables = temp_catalog
+            .tables()
+            .iter()
+            .chain(base.tables().iter().filter(|table| !shadowed.contains(table.name.as_str())))
+            .cloned()
+            .collect();
+        SqlCatalog::from_tables(base.schema_version(), tables).unwrap_or(base)
     }
 
     /// `search_path` as last set through `SET`. `SHOW search_path` and

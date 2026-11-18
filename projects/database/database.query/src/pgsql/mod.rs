@@ -7,7 +7,9 @@
 //! unchanged.
 
 pub mod casts;
+pub mod qualifiers;
 pub mod utility;
 
 pub use casts::rewrite_double_colon_casts;
+pub use qualifiers::rewrite_pg_temp_references;
 pub use utility::{CopyFormat, FetchDirection, PgUtilityStatement, parse_pg_utility};

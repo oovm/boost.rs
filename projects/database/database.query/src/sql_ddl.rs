@@ -10,10 +10,17 @@ use crate::sql::{SqlDialect, SqlFrontendError};
 /// One DDL statement the gateway can apply to a local schema registry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SqlDdlStatement {
-    /// `CREATE TABLE ...`
+    /// `CREATE [TEMP|TEMPORARY] TABLE ...`
     CreateTable {
-        /// Table name after the accepted `public.` schema prefix.
+        /// Table name after the accepted `public.` / `pg_temp.` schema prefix.
         name: String,
+        /// Whether `TEMP` / `TEMPORARY` was written, or the name was
+        /// qualified with `pg_temp`. Temporary tables live in a session
+        /// registry and never reach the persisted schema.
+        temporary: bool,
+        /// `ON COMMIT` behaviour; PostgreSQL only accepts it for temporary
+        /// tables.
+        on_commit: OnCommit,
         /// Whether `IF NOT EXISTS` was written.
         if_not_exists: bool,
         /// Column definitions in declaration order.
@@ -79,6 +86,19 @@ pub enum SqlDdlStatement {
         /// Whether `IF EXISTS` was written.
         if_exists: bool,
     },
+}
+
+/// `ON COMMIT` behaviour of a temporary table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OnCommit {
+    /// `ON COMMIT PRESERVE ROWS`, the default: rows survive a commit.
+    PreserveRows,
+    /// `ON COMMIT DELETE ROWS`: the gateway rejects this explicitly, because
+    /// deleting every row at the commit boundary would run a write statement
+    /// from inside the transaction epilogue.
+    DeleteRows,
+    /// `ON COMMIT DROP`: the temporary table disappears at the commit point.
+    Drop,
 }
 
 /// One column definition in a `CREATE TABLE` / `ALTER TABLE ADD COLUMN`.
@@ -179,6 +199,19 @@ pub const ACCEPTED_COLLATIONS: &[&str] = &[
 /// command so a connection and a table cannot disagree about accepted names.
 pub fn is_accepted_collation(name: &str) -> bool {
     ACCEPTED_COLLATIONS.iter().any(|candidate| candidate.eq_ignore_ascii_case(name))
+}
+
+/// Whether `name` is the session's temporary schema: `pg_temp` or
+/// `pg_temp_<digits>`, the two spellings PostgreSQL resolves to it.
+pub fn is_pg_temp_schema(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    if lower == "pg_temp" {
+        return true;
+    }
+    match lower.strip_prefix("pg_temp_") {
+        Some(suffix) => !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit()),
+        None => false,
+    }
 }
 
 /// Constraint keywords that terminate a column type.
@@ -567,7 +600,11 @@ impl Parser {
 
     fn create(&mut self) -> Result<SqlDdlStatement, SqlFrontendError> {
         if self.eat_keyword("TABLE") {
-            return self.create_table();
+            return self.create_table(false);
+        }
+        if self.eat_keyword("TEMP") || self.eat_keyword("TEMPORARY") {
+            self.expect_keyword("TABLE")?;
+            return self.create_table(true);
         }
         if self.peek_keyword().as_deref() == Some("UNIQUE") || self.peek_keyword().as_deref() == Some("INDEX") {
             return self.create_index();
@@ -575,9 +612,10 @@ impl Parser {
         Err(self.unsupported_prefix("CREATE"))
     }
 
-    fn create_table(&mut self) -> Result<SqlDdlStatement, SqlFrontendError> {
+    fn create_table(&mut self, temporary: bool) -> Result<SqlDdlStatement, SqlFrontendError> {
         let if_not_exists = self.if_not_exists()?;
-        let name = self.table_name()?;
+        let (name, temp_schema) = self.qualified_table_name()?;
+        let temporary = temporary || temp_schema;
         self.expect_punct('(')?;
         let mut columns = Vec::new();
         let mut primary_key = Vec::new();
@@ -591,9 +629,12 @@ impl Parser {
             }
         }
         self.expect_punct(')')?;
+        let on_commit = self.on_commit_clause(temporary)?;
         let (charset, collation) = self.table_options()?;
         Ok(SqlDdlStatement::CreateTable {
             name,
+            temporary,
+            on_commit,
             if_not_exists,
             columns,
             primary_key,
@@ -1254,15 +1295,55 @@ impl Parser {
 
     /// Parses one table name, accepting PostgreSQL's `public.` prefix.
     fn table_name(&mut self) -> Result<String, SqlFrontendError> {
+        Ok(self.qualified_table_name()?.0)
+    }
+
+    /// Parses one table name plus whether it named the session's temporary
+    /// schema (`pg_temp` or `pg_temp_<n>`).
+    fn qualified_table_name(&mut self) -> Result<(String, bool), SqlFrontendError> {
         let first = self.identifier()?;
         if !self.eat_punct('.') {
-            return Ok(first);
+            return Ok((first, false));
         }
         let second = self.identifier()?;
-        if self.dialect == SqlDialect::Postgres && first.eq_ignore_ascii_case("public") {
-            return Ok(second);
+        if self.dialect == SqlDialect::Postgres {
+            if first.eq_ignore_ascii_case("public") {
+                return Ok((second, false));
+            }
+            if is_pg_temp_schema(&first) {
+                return Ok((second, true));
+            }
         }
         Err(SqlFrontendError::unsupported(format!("qualified table name `{first}.{second}` is not supported by the cluster SQL gateway")))
+    }
+
+    /// Parses `[ON COMMIT { PRESERVE ROWS | DELETE ROWS | DROP }]`.
+    fn on_commit_clause(&mut self, temporary: bool) -> Result<OnCommit, SqlFrontendError> {
+        if self.dialect != SqlDialect::Postgres || self.peek_keyword().as_deref() != Some("ON") {
+            return Ok(OnCommit::PreserveRows);
+        }
+        if !temporary {
+            return Err(SqlFrontendError::syntax("`ON COMMIT` can only be used on temporary tables"));
+        }
+        self.cursor += 1;
+        self.expect_keyword("COMMIT")?;
+        match self.peek_keyword().as_deref() {
+            Some("DROP") => {
+                self.cursor += 1;
+                Ok(OnCommit::Drop)
+            }
+            Some("DELETE") => {
+                self.cursor += 1;
+                self.expect_keyword("ROWS")?;
+                Ok(OnCommit::DeleteRows)
+            }
+            Some("PRESERVE") => {
+                self.cursor += 1;
+                self.expect_keyword("ROWS")?;
+                Ok(OnCommit::PreserveRows)
+            }
+            _ => Err(self.expected("`DROP`, `DELETE ROWS` or `PRESERVE ROWS`")),
+        }
     }
 
     /// Builds a message for an unsupported statement prefix, naming the next keyword.

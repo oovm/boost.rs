@@ -255,6 +255,22 @@ impl SqlSchemaRegistry {
         Self { state: Mutex::new(RegistryState::empty()), path: None }
     }
 
+    /// Creates an empty in-memory registry whose table and field identities live
+    /// in `lane`.
+    ///
+    /// Gateways that merge several registries into one binding view need the
+    /// identities to stay unique across them, because a catalog rejects a
+    /// duplicate type or field identity. The session's temporary tables use a
+    /// lane of their own for exactly that reason.
+    pub fn new_in_memory_in_lane(lane: u8) -> Self {
+        let mut state = RegistryState::empty();
+        if lane > 0 {
+            state.next_type_id = state.next_type_id.max(catalog_type_id_lane(lane));
+            state.next_field_id = state.next_field_id.max(catalog_type_id_lane(lane));
+        }
+        Self { state: Mutex::new(state), path: None }
+    }
+
     /// Seeds an in-memory registry from a published or locally built catalog.
     ///
     /// DDL remains allowed, but nothing is written to disk.

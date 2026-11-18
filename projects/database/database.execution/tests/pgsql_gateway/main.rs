@@ -127,6 +127,73 @@ fn a_stored_generated_column_is_rejected_with_a_capability_error() {
 }
 
 #[test]
+fn temporary_tables_are_session_local_and_stay_out_of_the_persistent_schema() {
+    let mut gateway = Gateway::new("temp");
+    gateway.command("CREATE TABLE public_rows (id BIGINT PRIMARY KEY, v TEXT)");
+    gateway.command("INSERT INTO public_rows (id, v) VALUES (1, 'public')");
+    assert_eq!(gateway.command("CREATE TEMP TABLE staged (id BIGINT PRIMARY KEY, v TEXT)"), "CREATE TABLE");
+    gateway.command("INSERT INTO staged (id, v) VALUES (1, 'staged')");
+    assert_eq!(gateway.scalar("SELECT COUNT(*)::int8 FROM staged"), SqlValue::Integer(1));
+    assert_eq!(gateway.scalar("SELECT v FROM pg_temp.staged WHERE id = 1"), SqlValue::String("staged".to_owned()));
+    // The persisted registry never learns about the temporary table.
+    assert!(gateway.runtime.schema.catalog().tables().iter().all(|table| table.name != "staged"));
+
+    // A second connection over the same runtime cannot see it.
+    let mut other = TransactionSession::new();
+    let (code, _) = match dispatch_statement("SELECT id FROM staged", Some(&gateway.runtime), &mut other) {
+        Ok(_) => panic!("a temporary table must not leak into another session"),
+        Err(error) => (error.sqlstate, error.message),
+    };
+    assert_eq!(code, "42P01");
+
+    // A temporary table shadows a persistent table of the same name: the
+    // unqualified lookup resolves `pg_temp` before `public`.
+    gateway.command("CREATE TEMP TABLE public_rows (id BIGINT PRIMARY KEY, v TEXT)");
+    assert_eq!(gateway.scalar("SELECT COUNT(*)::int8 FROM public_rows"), SqlValue::Integer(0));
+    gateway.command("DROP TABLE public_rows");
+    assert_eq!(gateway.scalar("SELECT COUNT(*)::int8 FROM public_rows"), SqlValue::Integer(1));
+}
+
+#[test]
+fn on_commit_drop_removes_the_temporary_table_and_delete_rows_is_rejected() {
+    let mut gateway = Gateway::new("temp-on-commit");
+    gateway.command("BEGIN");
+    gateway.command("CREATE TEMP TABLE scratch (id BIGINT PRIMARY KEY) ON COMMIT DROP");
+    gateway.command("INSERT INTO scratch (id) VALUES (1)");
+    assert_eq!(gateway.command("COMMIT"), "COMMIT");
+    let (code, _) = match gateway.sql("SELECT id FROM scratch") {
+        Ok(_) => panic!("`ON COMMIT DROP` must remove the table at the commit point"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42P01");
+
+    let (code, message) = match gateway.sql("CREATE TEMP TABLE kept (id BIGINT PRIMARY KEY) ON COMMIT DELETE ROWS") {
+        Ok(_) => panic!("`ON COMMIT DELETE ROWS` must be rejected explicitly"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "0A000", "unexpected message: {message}");
+
+    let (code, _) = match gateway.sql("CREATE TABLE persistent (id BIGINT PRIMARY KEY) ON COMMIT DROP") {
+        Ok(_) => panic!("`ON COMMIT` on a persistent table must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42601");
+}
+
+#[test]
+fn a_temporary_table_created_in_a_rolled_back_block_disappears() {
+    let mut gateway = Gateway::new("temp-rollback");
+    gateway.command("BEGIN");
+    gateway.command("CREATE TEMP TABLE aborted (id BIGINT PRIMARY KEY)");
+    assert_eq!(gateway.command("ROLLBACK"), "ROLLBACK");
+    let (code, _) = match gateway.sql("SELECT id FROM aborted") {
+        Ok(_) => panic!("a temporary table created in a rolled-back block must vanish"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42P01");
+}
+
+#[test]
 fn copy_state_inserts_text_and_csv_rows() {
     use database_execution::pgsql::{CopyInPlan, CopyInState};
     use database_query::CopyFormat;

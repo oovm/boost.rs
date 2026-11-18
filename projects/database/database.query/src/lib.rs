@@ -25,7 +25,7 @@ pub use catalog_bind::{
     SqlCatalogForeignKey, SqlCatalogOuterColumn, SqlCatalogTable, SqlFieldType, bind_sql_catalog, bind_sql_catalog_with_variables,
     project_resolved_type,
 };
-pub use pgsql::{CopyFormat, FetchDirection, PgUtilityStatement, parse_pg_utility, rewrite_double_colon_casts};
+pub use pgsql::{CopyFormat, FetchDirection, PgUtilityStatement, parse_pg_utility, rewrite_double_colon_casts, rewrite_pg_temp_references};
 pub use sql::{
     DiscardTarget, MYSQL_BLOB_CAPACITY, SavepointIntent, SqlBoundBinaryOperator, SqlBoundConflict, SqlBoundConflictAction, SqlBoundCte,
     SqlBoundExpression, SqlBoundJoin, SqlBoundJoinKind, SqlBoundLiteral, SqlBoundProjection, SqlBoundSelect, SqlBoundSetOperand,
@@ -35,8 +35,8 @@ pub use sql::{
 };
 pub use sql_batch::{SqlBatchStatement, split_sql_batch};
 pub use sql_ddl::{
-    ACCEPTED_COLLATIONS, DdlColumn, DdlForeignKey, DdlReference, DdlTableConstraint, SqlDdlStatement, is_accepted_collation, is_ddl_statement,
-    parse_ddl,
+    ACCEPTED_COLLATIONS, DdlColumn, DdlForeignKey, DdlReference, DdlTableConstraint, OnCommit, SqlDdlStatement, is_accepted_collation,
+    is_ddl_statement, is_pg_temp_schema, parse_ddl,
 };
 pub use sql_describe::{SqlColumn, describe_bound_insert, describe_plan, describe_plan_for_dialect};
 pub use sql_execute::{RowFieldValues, SqlResult, SqlValue, decode_row, encode_row};
