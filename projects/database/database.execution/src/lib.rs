@@ -10,6 +10,8 @@ pub mod cluster;
 pub mod engine;
 /// 本地记录图上的算子与写约束执行（模型与计划在 `database.query`）。
 pub mod local;
+/// MongoDB 命令语义、游标表与存储合同入口。
+pub mod mongo;
 /// 执行程序表示与求值。
 pub mod program;
 /// PostgreSQL 会话、语句分派与 bind → plan → execute。
