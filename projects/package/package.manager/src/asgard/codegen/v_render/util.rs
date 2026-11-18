@@ -24,7 +24,7 @@ pub(crate) fn map_awsl_component_to_host(tag: &str) -> Option<&'static str> {
 /// 字面量锚定左操作数，让单引号定界的片段按文本上下文解码。绝不用反斜杠转义定界符，
 /// 也不 panic。
 pub(crate) fn encode_v_text_literal(text: &str) -> String {
-    use crate::compiler::hir::lowering::quote_literal::encode_text_capture;
+    use compiler_valkyrie::compiler::hir::lowering::quote_literal::encode_text_capture;
     if let Ok(literal) = encode_text_capture(text) {
         return literal;
     }
@@ -35,7 +35,7 @@ pub(crate) fn encode_v_text_literal(text: &str) -> String {
 
 /// 逐前缀切分：单字符总能选到相反引号作定界符，剩余文本一旦可单捕获即收尾。
 fn encode_capture_fragments(text: &str) -> Vec<String> {
-    use crate::compiler::hir::lowering::quote_literal::encode_text_capture;
+    use compiler_valkyrie::compiler::hir::lowering::quote_literal::encode_text_capture;
     let mut fragments = Vec::new();
     let mut rest = text;
     while !rest.is_empty() {

@@ -5,7 +5,7 @@ use crate::{
         error::{AsgardError, AsgardResult},
         host_backend::HostBackend,
     },
-    compiler::emitter::pipeline::{CompilerGatedOutHostProvider, CompilerHostProviderBinding},
+    compiler_valkyrie::compiler::emitter::pipeline::{CompilerGatedOutHostProvider, CompilerHostProviderBinding},
     legion::CanonicalTarget,
 };
 use compiler_types::compiler_input::CompilerSourceGroup;

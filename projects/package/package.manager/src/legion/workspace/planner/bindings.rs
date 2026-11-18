@@ -1,4 +1,4 @@
-use crate::compiler::emitter::pipeline::{CompilerGatedOutHostProvider, CompilerHostProviderBinding};
+use compiler_valkyrie::compiler::emitter::pipeline::{CompilerGatedOutHostProvider, CompilerHostProviderBinding};
 
 use super::types::{PlannedHostProvider, PlannedHostProviderExclusion, PlannerError, PlannerResult};
 

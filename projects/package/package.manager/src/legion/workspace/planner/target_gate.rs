@@ -2,7 +2,7 @@
 //!
 //! 第一版仅解析并保存单条 `feature = "…"` 比较；不在此模块组合多个 `gate` item，也不与 `when` 求交。
 
-use crate::compiler::syntax::oak::ast::Attribute;
+use compiler_valkyrie::compiler::syntax::oak::ast::Attribute;
 
 use super::{ast_attributes::term_string_literal, types::GatePredicate};
 

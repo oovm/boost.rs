@@ -15,7 +15,7 @@ use crate::{
         compile::{GeneratedEntrySurface, GeneratedSource, compiler_input_for_with_dependencies, primary_artifact_name},
         error::{AsgardError, AsgardResult},
     },
-    compiler::{
+    compiler_valkyrie::compiler::{
         emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts},
         hir::lowering::ValkyrieCompiler,
     },

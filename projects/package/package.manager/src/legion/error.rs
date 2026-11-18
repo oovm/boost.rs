@@ -106,8 +106,8 @@ impl From<compiler_emitter::EmitterError> for LegionError {
     }
 }
 
-impl From<crate::compiler::emitter::pipeline::PipelineError> for LegionError {
-    fn from(value: crate::compiler::emitter::pipeline::PipelineError) -> Self {
+impl From<compiler_valkyrie::compiler::emitter::pipeline::PipelineError> for LegionError {
+    fn from(value: compiler_valkyrie::compiler::emitter::pipeline::PipelineError) -> Self {
         Self::msg(value.to_string())
     }
 }
@@ -118,8 +118,8 @@ impl From<crate::asgard::error::AsgardError> for LegionError {
     }
 }
 
-impl From<package_manager::ManagerError> for LegionError {
-    fn from(value: package_manager::ManagerError) -> Self {
+impl From<crate::ManagerError> for LegionError {
+    fn from(value: crate::ManagerError) -> Self {
         Self::msg(value.to_string())
     }
 }

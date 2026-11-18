@@ -1,6 +1,6 @@
 //! 从 Oak `Attribute` 读取 planner 事实（不渲染 attribute 文本、不做二次 parse）。
 
-use crate::compiler::syntax::oak::ast::{Attribute, QuoteLiteral, TermExpression};
+use compiler_valkyrie::compiler::syntax::oak::ast::{Attribute, QuoteLiteral, TermExpression};
 
 use super::{
     capability::ForeignBinding,
@@ -76,7 +76,7 @@ pub(crate) fn term_string_literal(expr: &TermExpression) -> Option<String> {
 
 /// 常量位使用与表达式位同一套捕获解码；含插值即非常量，返回 `None`。
 fn quote_capture_value(literal: &QuoteLiteral) -> Option<String> {
-    use crate::compiler::hir::lowering::quote_literal::{DecodedQuoteCapture, decode_quote_capture};
+    use compiler_valkyrie::compiler::hir::lowering::quote_literal::{DecodedQuoteCapture, decode_quote_capture};
     match decode_quote_capture(literal, false).ok()? {
         DecodedQuoteCapture::PlainText(text) => Some(text),
         DecodedQuoteCapture::Character(value) => Some(char::try_from(u32::from(value)).expect("char value is a valid scalar").to_string()),

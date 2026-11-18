@@ -1,7 +1,7 @@
 //! 平台契约检查实现。
 use crate::{
     asgard::error::{AsgardError, AsgardResult},
-    utilities::report_msg,
+    compiler_valkyrie::utilities::report_msg,
 };
 use acorn_dex::dex::{dex_class_defs_count, dex_contains_strings};
 use std::path::Path;

@@ -8,9 +8,15 @@
 
 #![deny(missing_docs)]
 
+#[macro_use]
+extern crate compiler_valkyrie;
+
+
+pub mod asgard;
 mod auth;
 mod credentials;
 mod error;
+pub mod legion;
 mod manager;
 mod registry_sources;
 /// 依赖漏洞与许可证审计。

@@ -9,7 +9,32 @@ repository = "https://github.com/oovm/rust-boost/tree/dev/projects/package/packa
 publish = false
 
 [dependencies]
+acorn-dex = { workspace = true }
+acorn-host = { workspace = true }
+acorn-jvm = { workspace = true }
+acorn-mach-o = { workspace = true }
+acorn-odin = { workspace = true }
+acorn-pe = { workspace = true }
+acorn-wasm = { workspace = true }
+acorn-x64 = { workspace = true }
+acorn-zip = { workspace = true }
+base64 = { workspace = true }
+boost-harness = { workspace = true }
+compiler-analysis = { workspace = true }
+compiler-emitter = { workspace = true }
+compiler-target = { workspace = true }
+compiler-types = { workspace = true }
+compiler-valkyrie = { workspace = true }
+document-formats = { workspace = true }
+document-ir = { workspace = true }
+interpreter-vm-ovm = { workspace = true }
+language-format = { workspace = true, features = ["serde"] }
+language-highlight = { workspace = true }
+oak-awsl = { workspace = true }
+oak-core = { workspace = true }
+oak-valkyrie = { workspace = true }
 oak-von = { workspace = true }
+sha2 = { workspace = true }
 package-cache = { workspace = true }
 package-publish = { workspace = true }
 package-registry = { workspace = true }

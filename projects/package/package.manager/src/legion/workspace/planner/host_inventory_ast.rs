@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeSet, path::Path};
 
-use crate::compiler::{
+use compiler_valkyrie::compiler::{
     semantic::{
         closure::{
             DeclarationKey, DeclarationKind, ReferencePath, References, collect_method, collect_micro, imply_owner_name, name_path_segments,
@@ -296,7 +296,7 @@ fn register_providers_for_declaration(
     name: &str,
     qualified_symbol: &str,
     key: &DeclarationKey,
-    annotations: &[crate::compiler::syntax::oak::ast::Attribute],
+    annotations: &[compiler_valkyrie::compiler::syntax::oak::ast::Attribute],
     line: usize,
     inventory: &mut HostInventory,
 ) {
@@ -328,7 +328,7 @@ fn register_providers_for_declaration(
 /// 由同一份 `DeclarationIndexes` 完成，与语义闭包共享，不在本层做名字白名单。
 fn record_declaration_capabilities(
     key: &DeclarationKey,
-    annotations: &[crate::compiler::syntax::oak::ast::Attribute],
+    annotations: &[compiler_valkyrie::compiler::syntax::oak::ast::Attribute],
     calls: BTreeSet<ReferencePath>,
     inventory: &mut HostInventory,
 ) {

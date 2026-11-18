@@ -9,7 +9,7 @@ use oak_core::Range;
 use oak_valkyrie::ast::{MicroDeclaration, Pattern, StatementNode, TermExpression};
 
 use crate::asgard::error::{AsgardError, AsgardResult};
-use crate::compiler::syntax::parser::{ValkyrieRoot, parse_source};
+use compiler_valkyrie::compiler::syntax::parser::{ValkyrieRoot, parse_source};
 
 /// 一个组件 `<script>` 的正式解析事实（AST + 原文，供引号捕获等 span 切片）。
 pub struct ScriptFacts {

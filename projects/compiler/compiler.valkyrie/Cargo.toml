@@ -36,7 +36,6 @@ language-highlight = { workspace = true }
 oak-valkyrie = { workspace = true }
 oak-von = { workspace = true }
 ordered-float = "5.5.0"
-package-manager = { workspace = true }
 package-registry = { workspace = true }
 package-resolve = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

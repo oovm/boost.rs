@@ -3,7 +3,7 @@ use std::{
     fs,
 };
 
-use crate::compiler::{
+use compiler_valkyrie::compiler::{
     semantic::closure::{DeclarationIndexEntry, DeclarationIndexes, DeclarationKey, ReferencePath, index_parsed_root},
     syntax::oak::parse_source_with_identity,
 };

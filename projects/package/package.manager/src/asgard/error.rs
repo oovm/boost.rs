@@ -63,8 +63,8 @@ impl From<compiler_emitter::EmitterError> for AsgardError {
     }
 }
 
-impl From<crate::compiler::emitter::pipeline::PipelineError> for AsgardError {
-    fn from(value: crate::compiler::emitter::pipeline::PipelineError) -> Self {
+impl From<compiler_valkyrie::compiler::emitter::pipeline::PipelineError> for AsgardError {
+    fn from(value: compiler_valkyrie::compiler::emitter::pipeline::PipelineError) -> Self {
         Self::Message(value.to_string())
     }
 }

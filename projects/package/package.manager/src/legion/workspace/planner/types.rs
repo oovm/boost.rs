@@ -1,4 +1,4 @@
-use crate::compiler::semantic::closure::DeclarationKey;
+use compiler_valkyrie::compiler::semantic::closure::DeclarationKey;
 use compiler_target::CanonicalTarget;
 
 use serde::{Deserialize, Serialize};

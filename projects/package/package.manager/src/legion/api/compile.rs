@@ -1,7 +1,7 @@
 //! `compile()` API 载荷。
 
 use crate::{
-    compiler::emitter::pipeline::CompilerCompileEvidence,
+    compiler_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence,
     legion::{
         api::{
             diagnostic::{LegionDiagnostic, LegionSeverity, LegionStage},

@@ -1,5 +1,5 @@
 use crate::legion::cmds::error::{LegionError, LegionResult};
-use package_manager::PackageManager;
+use crate::PackageManager;
 use std::{path::PathBuf, process::ExitCode};
 
 /// `legion install` arguments.

@@ -11,16 +11,14 @@
 //! - 消费 `compiler.*`、Acorn 格式合同，以及解析本语言源码所需的 Oak 语法 crate。
 //! - 不反向要求 `compiler.*` 认识本语言的语法、效果或运行时语义。
 //!
-//! # 进行中
+//! # 已迁出
 //!
-//! 交付侧（`asgard`）与编排（`legion`）文件已随迁入，但它们依赖仍在产品仓的
-//! `nyar-runner` / `nyar-workspace` / `nyar-package-manager`；这些迁入 `package.*` / 工程服务前，
-//! 两个模块不参与编译。横切工具（`utilities`）不依赖产品仓，已随本 crate 编译。
+//! 产品工具链（`legion` 编排与 `asgard` 交付）已移入 `package.manager` 的 `legion` / `asgard`
+//! 模块：它们是 Valkyrie 生态的产品策略与 CLI，不属于语言编译事实，并且与包管理机制共用
+//! 工作区约束。本 crate 只保留编译本身。
 
 #![allow(missing_docs)]
 
 #[macro_use]
 pub mod utilities;
-pub mod asgard;
 pub mod compiler;
-pub mod legion;

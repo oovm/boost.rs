@@ -10,7 +10,7 @@ pub mod planner;
 pub mod script;
 pub mod source_snapshot;
 
-pub use crate::compiler::semantic::closure::{SemanticClosure, plan_semantic_closure};
+pub use compiler_valkyrie::compiler::semantic::closure::{SemanticClosure, plan_semantic_closure};
 pub use manifest::{
     BuildPluginSpec, BuildTargetSpec, DependencySpec, LocalLegionConfig, ProjectArtifactKind, ProjectManifest, PublishTargetSpec,
     RunnerBinding, WorkspaceDefaults, WorkspaceManifest,
