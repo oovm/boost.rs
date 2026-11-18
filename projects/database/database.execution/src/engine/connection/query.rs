@@ -406,10 +406,10 @@ impl Connection {
             |metadata, holds_every_row| {
                 let contract = resolved_contract(metadata)?;
                 let schema_document = metadata.schema.as_ref().map(|schema| schema.document.as_str());
-                let program = database_query::local::parse_write_program(source)?;
+                let program = crate::local::parse_write_program(source)?;
                 let keys = self
                     .with_write_hooks(|| {
-                        database_query::local::point_write_keys_parsed(
+                        crate::local::point_write_keys_parsed(
                             &program,
                             contract,
                             &metadata.unique_constraints,
@@ -429,7 +429,7 @@ impl Connection {
                 let records = &mut state.records;
                 let constraints = &state.unique_constraints;
                 self.with_write_hooks(|| {
-                    database_query::local::execute_write_parsed(&program, &contract, constraints, schema_document, records, &[])
+                    crate::local::execute_write_parsed(&program, &contract, constraints, schema_document, records, &[])
                 })
             },
         )
@@ -452,7 +452,7 @@ impl Connection {
                 let plan = database_query::local::bind_vos_write(source, named, schema_document)?;
                 let keys = self
                     .with_write_hooks(|| {
-                        database_query::local::point_write_keys_parsed(
+                        crate::local::point_write_keys_parsed(
                             &plan.program,
                             contract,
                             &metadata.unique_constraints,
@@ -473,7 +473,7 @@ impl Connection {
                 let constraints = &state.unique_constraints;
                 let values = &plan.values;
                 self.with_write_hooks(|| {
-                    database_query::local::execute_write_parsed(&plan.program, &contract, constraints, schema_document, records, values)
+                    crate::local::execute_write_parsed(&plan.program, &contract, constraints, schema_document, records, values)
                 })
             },
         )

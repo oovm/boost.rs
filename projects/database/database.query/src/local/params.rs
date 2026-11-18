@@ -73,7 +73,7 @@ pub enum QueryKind {
 /// boundaries); the public surface exposes only parameter descriptors,
 /// fingerprints and kind for introspection and wire transmission.
 ///
-/// When prepared through a live [`database_execution::engine::Connection`] the statement
+/// When prepared through a live engine connection the statement
 /// additionally records the active schema's FNV-1a fingerprint and revision
 /// so later executions can detect schema migration without re-parsing.
 /// Pure [`prepare`] calls (for tests or offline use) leave these fields at
@@ -137,7 +137,7 @@ pub struct BoundStatement<'a> {
 /// rewrite each `$name` → `__yydb_param_<index>` (a valid Identifier), then
 /// lower.rs walks the AST and converts `Name("__yydb_param_*")` directly
 /// into `BoundValue::Slot` references.
-pub(crate) const PARAM_PREFIX: &str = "__yydb_param_";
+pub const PARAM_PREFIX: &str = "__yydb_param_";
 
 /// Compile a VOS source into a prepared statement. If the source contains no
 /// `$name` parameters, the returned plan still goes through the same path —
@@ -167,7 +167,7 @@ pub fn prepare(source: &str) -> Result<PreparedStatement> {
     // lower to QueryOp pipelines — execute_prepared must route them through
     // the dml executor instead. We detect them here so `query_kind` is
     // populated correctly before engine / dispatch code sees the stmt.
-    let is_write_program = super::dml::is_write_program(&program);
+    let is_write_program = super::write_plan::is_write_program(&program);
     let (ops, query_kind, read_set, write_set) = if is_write_program {
         (Vec::new(), QueryKind::Write, Vec::new(), extract_write_set(&program))
     }
@@ -303,8 +303,8 @@ pub struct BoundWrite {
 pub fn bind_vos_write(source: &str, named: &BTreeMap<String, Value>, schema_document: Option<&str>) -> Result<BoundWrite> {
     let (parameters, rewritten) = scan_and_rewrite(source, Dialect::Vos)?;
     let program = schema_input_vos::parse_program(&rewritten).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
-    let expanded = super::dml::expand_program(&program, schema_document)?;
-    if !super::dml::has_write_call(&expanded) {
+    let expanded = super::write_plan::expand_program(&program, schema_document)?;
+    if !super::write_plan::has_write_call(&expanded) {
         return Err(Error::Unsupported("VOS parameter binding for writes requires an insert, update, or delete program"));
     }
     let values = bind_values(&parameters, named)?;

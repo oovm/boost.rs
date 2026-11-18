@@ -3,7 +3,8 @@
 use std::collections::BTreeMap;
 
 use database_execution::local::execute;
-use database_query::local::{execute_write, resolved_contract_from_document};
+use database_execution::local::execute_write;
+use database_query::local::resolved_contract_from_document;
 use database_types::{Date, Decimal, Error, Time, Timestamp, Value};
 use schema_types::ResolvedContract;
 

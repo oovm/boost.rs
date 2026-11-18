@@ -17,42 +17,22 @@
 use std::collections::BTreeMap;
 
 use schema_input_vos::{
-    syntax::{VosDeclarationKind, VosExpr, VosFieldInit, VosLiteral, VosProgram, VosRoot, VosStmt},
+    syntax::{VosExpr, VosFieldInit, VosLiteral, VosProgram, VosStmt},
     types::{ResolvedCanonicalType, ResolvedContract, ResolvedTypeContract},
 };
 
 use database_types::{Error, Result, TableUniqueConstraint, Value};
 
-use super::{
+use database_query::local::{
     catalog::{field_on_table, primary_field_name, table_storage_name, table_type_by_name},
     coerce, constraints,
     ops::QueryRow,
     store,
+    write_plan::{expand_program, has_write_call, is_macro_call},
 };
 
 fn dml_error(message: impl Into<String>) -> Error {
     Error::Schema { message: message.into() }
-}
-
-/// Quick AST-level check: does this VOS program look like a write /
-/// mutation (insert, update, delete, macro call)? Used by
-/// [`crate::database_query::local::params::prepare`] to short-circuit DML programs past the
-/// read-pipeline lowerer.
-pub(crate) fn is_write_program(program: &VosProgram) -> bool {
-    let is_write = |expr: &VosExpr| is_macro_call(expr) || is_write_call(expr);
-    for stmt in &program.statements {
-        if let VosStmt::Expr(expr) = stmt {
-            if is_write(expr) {
-                return true;
-            }
-        }
-    }
-    if let Some(result) = &program.result {
-        if is_write(result) {
-            return true;
-        }
-    }
-    false
 }
 
 /// Execute unit-valued VOS write programs against stored table rows.
@@ -182,126 +162,6 @@ fn execute_program_with_constraints(
         return Err(dml_error("execute program has no write statements"));
     }
     Ok(())
-}
-
-/// Replace every schema-macro call with the body the schema document declares.
-///
-/// Write binding runs this before it decides whether a program is a write: a
-/// macro call is not a `.insert(…)` until it has been expanded, and an
-/// unexpandable macro must stay an error rather than become an accepted write.
-pub(crate) fn expand_program(program: &VosProgram, schema_document: Option<&str>) -> Result<VosProgram> {
-    let mut statements = Vec::new();
-    for stmt in &program.statements {
-        match stmt {
-            VosStmt::Let(_) => statements.push(stmt.clone()),
-            VosStmt::Expr(expr) => expand_expr_into_program(expr, schema_document, &mut statements)?,
-        }
-    }
-
-    let result = match &program.result {
-        None => None,
-        Some(expr) if is_macro_call(expr) => {
-            let body = expand_macro_call(expr, schema_document)?;
-            for stmt in body.statements {
-                match stmt {
-                    VosStmt::Expr(inner) => {
-                        expand_expr_into_program(&inner, schema_document, &mut statements)?;
-                    }
-                    VosStmt::Let(let_) => statements.push(VosStmt::Let(let_)),
-                }
-            }
-            body.result
-        }
-        Some(expr) => Some(expr.clone()),
-    };
-
-    Ok(VosProgram { micros: program.micros.clone(), statements, result, span: program.span.clone() })
-}
-
-fn expand_expr_into_program(expr: &VosExpr, schema_document: Option<&str>, statements: &mut Vec<VosStmt>) -> Result<()> {
-    if is_macro_call(expr) {
-        let body = expand_macro_call(expr, schema_document)?;
-        for stmt in body.statements {
-            match stmt {
-                VosStmt::Expr(inner) => {
-                    expand_expr_into_program(&inner, schema_document, statements)?;
-                }
-                VosStmt::Let(let_) => statements.push(VosStmt::Let(let_)),
-            }
-        }
-        if let Some(result) = body.result {
-            if is_macro_call(&result) {
-                expand_expr_into_program(&result, schema_document, statements)?;
-            }
-            else {
-                statements.push(VosStmt::Expr(result));
-            }
-        }
-        return Ok(());
-    }
-    statements.push(VosStmt::Expr(expr.clone()));
-    Ok(())
-}
-
-fn expand_macro_call(expr: &VosExpr, schema_document: Option<&str>) -> Result<VosProgram> {
-    let VosExpr::Call { callee, args, .. } = expr
-    else {
-        return Err(dml_error("expected macro call"));
-    };
-    let VosExpr::Name { name, .. } = callee.as_ref()
-    else {
-        return Err(dml_error("expected bare macro name call"));
-    };
-    if !args.is_empty() {
-        return Err(dml_error(format!("Phase 1 macro expansion does not bind parameters for `{name}()`")));
-    }
-    let document = schema_document.ok_or_else(|| dml_error("macro expansion requires an installed schema document"))?;
-    let document = oak_vos::parse(document).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
-    find_macro_body(&document, name).ok_or_else(|| dml_error(format!("unknown schema macro `{name}`")))
-}
-
-fn find_macro_body(document: &VosRoot, name: &str) -> Option<VosProgram> {
-    document
-        .declarations
-        .iter()
-        .find(|declaration| declaration.kind == VosDeclarationKind::Macro && declaration.name.as_deref() == Some(name))
-        .and_then(|declaration| declaration.body_program.clone())
-}
-
-/// Whether a program contains at least one `.insert(…)`, `.update(…)` or
-/// `.delete(…)` expression.
-///
-/// Used by parameter binding to refuse a read pipeline before it can enter the
-/// DML executor. Broader than [`is_write_program`], which only recognizes the
-/// zero-argument `Type { … }.insert()` shape consumed by `prepare`.
-pub(crate) fn has_write_call(program: &VosProgram) -> bool {
-    program.statements.iter().any(|stmt| matches!(stmt, VosStmt::Expr(expr) if is_write_call(expr)))
-        || program.result.as_ref().is_some_and(is_write_call)
-}
-
-fn is_macro_call(expr: &VosExpr) -> bool {
-    matches!(
-        expr,
-        VosExpr::Call {
-            callee,
-            args,
-            ..
-        } if args.is_empty() && matches!(callee.as_ref(), VosExpr::Name { .. })
-    )
-}
-
-/// Whether `expr` is `.insert(…)`, `.update(…)` or `.delete(…)`.
-fn is_write_call(expr: &VosExpr) -> bool {
-    matches!(
-        expr,
-        VosExpr::Call {
-            callee,
-            ..
-        } if matches!(
-            callee.as_ref(),
-            VosExpr::Member { name, .. } if matches!(name.as_str(), "insert" | "update" | "delete")
-        )
-    )
 }
 
 /// Record keys a point write needs to read before it runs, when every write in
@@ -647,7 +507,7 @@ fn eval_literal(expr: &VosExpr, ty: &ResolvedCanonicalType, contract: &ResolvedC
             coerce::value_to_scalar(raw, ty, contract)
         }
         VosExpr::Name { name, .. } => {
-            let Some(slot) = name.strip_prefix(super::params::PARAM_PREFIX)
+            let Some(slot) = name.strip_prefix(database_query::local::params::PARAM_PREFIX)
             else {
                 return Err(dml_error("Phase 1 execute only supports literal field initializers and bound parameters"));
             };

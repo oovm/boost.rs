@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
 
-use database_query::local::{
-    ReadWindow, bind_vos_write, execute_write, execute_write_with_params, point_write_keys, prepare_sql, resolved_contract_from_document,
-    write_windows,
-};
+use database_execution::local::{execute_write, execute_write_with_params, point_write_keys};
+use database_query::local::{ReadWindow, bind_vos_write, prepare_sql, resolved_contract_from_document, write_windows};
 use database_types::{TableUniqueConstraint, UniqueConstraint, Value};
 
 const BLOG_SCHEMA: &str = r#"

@@ -1095,7 +1095,7 @@ pub enum WriteOp {
 /// Closed physical op set for session / transaction boundary statements.
 ///
 /// These are lowered from SQL `TransactionAction` variants. The engine
-/// dispatches them directly onto the [`database_execution::engine::Connection`] boundary
+/// dispatches them directly onto the engine connection boundary
 /// instead of running them through the read or write executors.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SessionOp {
