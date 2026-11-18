@@ -21,6 +21,7 @@ members = [
     "projects/boost/boost.random",
     "projects/boost/boost-source",
     "projects/boost/boost-terminal",
+    "projects/compiler/compiler.optimize",
     "projects/crawler/crawler",
     "projects/crawler/crawler.browser",
     "projects/crawler/crawler.extract",
@@ -214,6 +215,8 @@ boost-net = { path = "projects/boost/boost.net" }
 boost-random = { path = "projects/boost/boost.random" }
 boost-source = { path = "projects/boost/boost-source" }
 boost-terminal = { path = "projects/boost/boost-terminal" }
+# 编译基础设施
+compiler-optimize = { path = "projects/compiler/compiler.optimize" }
 # 内部库
 crawler-browser = { path = "projects/crawler/crawler.browser" }
 crawler-extract = { path = "projects/crawler/crawler.extract" }
