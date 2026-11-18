@@ -2,6 +2,7 @@
 
 use std::{cell::RefCell, rc::Rc};
 
+use boost_math::numeric::{budget::ExecutionBudget as KernelExecutionBudget, kernel::error::KernelError};
 use science_gc::{GcHeap, GcMode, HeapBudget, ScratchArena, ScratchMark, TemporaryNumericBlock};
 use science_types::{Diagnostic, DiagnosticCode, Result};
 
@@ -12,105 +13,106 @@ use crate::{
 };
 
 /// 由 backend 上限或 Session 策略接入的执行预算。
+///
+/// 准入判断本体归 `boost-math` 的 [`KernelExecutionBudget`]；本层只是薄适配，
+/// 把 kernel 的 [`KernelError`] 映射为数值塔的 [`Diagnostic`]，让 value 层 /
+/// executor 不必感知 kernel 错误模型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ExecutionBudget {
-    max_limbs: Option<u32>,
-    max_significand_bits: Option<u32>,
-    max_wire_payload_bytes: Option<u32>,
-}
+pub struct ExecutionBudget(KernelExecutionBudget);
 
 impl ExecutionBudget {
     /// 无 limb / 载荷上限（开发 / 测试）。
+    #[inline]
     pub fn unlimited() -> Self {
-        Self { max_limbs: None, max_significand_bits: None, max_wire_payload_bytes: None }
+        Self(KernelExecutionBudget::unlimited())
     }
 
     /// 由静态 backend 合同构造。
+    #[inline]
     pub fn from_limits(limits: &NumericBackendLimits) -> Self {
-        Self {
-            max_limbs: limits.max_limbs,
-            max_significand_bits: limits.max_significand_bits,
-            max_wire_payload_bytes: limits.max_wire_payload_bytes,
-        }
+        Self(KernelExecutionBudget::from_limits(limits))
     }
 
     /// 规范 limb 数上限（若有界）。
+    #[inline]
     pub fn max_limbs(&self) -> Option<u32> {
-        self.max_limbs
+        self.0.max_limbs()
     }
 
     /// 任意精度浮点最大尾数位宽。
+    #[inline]
     pub fn max_significand_bits(&self) -> Option<u32> {
-        self.max_significand_bits
+        self.0.max_significand_bits()
     }
 
     /// 解码用 wire 载荷最大字节数。
+    #[inline]
     pub fn max_wire_payload_bytes(&self) -> Option<u32> {
-        self.max_wire_payload_bytes
+        self.0.max_wire_payload_bytes()
     }
 
     /// 拒绝将容纳 `limbs` 个规范 limb 的缓冲。
+    #[inline]
     pub fn check_limbs(&self, limbs: usize) -> Result<()> {
-        if let Some(max) = self.max_limbs {
-            if limbs > max as usize {
-                return Err(resource_limit("limbs", limbs, max));
-            }
-        }
-        Ok(())
+        self.0.check_limbs(limbs).map_err(kernel_to_diagnostic)
     }
 
     /// 拒绝宽于策略的尾数。
+    #[inline]
     pub fn check_significand_bits(&self, bits: u64) -> Result<()> {
-        if let Some(max) = self.max_significand_bits {
-            if bits > u64::from(max) {
-                return Err(resource_limit("significand_bits", bits as usize, max));
-            }
-        }
-        Ok(())
+        self.0.check_significand_bits(bits).map_err(kernel_to_diagnostic)
     }
 
     /// 拒绝大于策略的 wire 载荷。
+    #[inline]
     pub fn check_wire_bytes(&self, bytes: usize) -> Result<()> {
-        if let Some(max) = self.max_wire_payload_bytes {
-            if bytes > max as usize {
-                return Err(resource_limit("wire_bytes", bytes, max));
-            }
-        }
-        Ok(())
+        self.0.check_wire_bytes(bytes).map_err(kernel_to_diagnostic)
     }
 
     /// 估算并检查加法输出 limb 数。
+    #[inline]
     pub fn check_add(&self, a_limbs: usize, b_limbs: usize) -> Result<()> {
-        let out = a_limbs.max(b_limbs) + 1;
-        self.check_limbs(out)
+        self.0.check_add(a_limbs, b_limbs).map_err(kernel_to_diagnostic)
     }
 
     /// 估算并检查乘法输出 limb 数。
+    #[inline]
     pub fn check_mul(&self, a_limbs: usize, b_limbs: usize) -> Result<()> {
-        let out = a_limbs + b_limbs;
-        self.check_limbs(out)
+        self.0.check_mul(a_limbs, b_limbs).map_err(kernel_to_diagnostic)
     }
 
     /// 估算并检查 Karatsuba 乘法 scratch（与 `karatsuba_scratch_limbs` 同构）。
+    #[inline]
     pub fn check_mul_scratch(&self, a_limbs: usize, b_limbs: usize) -> Result<()> {
-        let n = a_limbs.max(b_limbs);
-        if n < 32 {
-            return self.check_limbs(a_limbs + b_limbs);
-        }
-        let mut width = n;
-        let mut total = 0usize;
-        while width >= 32 {
-            let half = (width + 1) / 2;
-            total = total.saturating_add(2 * half + 2 * half + (half + 1) + (half + 1) + (2 * half + 2));
-            width = half + 1;
-        }
-        self.check_limbs(total.max(a_limbs + b_limbs))
+        self.0.check_mul_scratch(a_limbs, b_limbs).map_err(kernel_to_diagnostic)
     }
 
     /// 估算并检查除法商缓冲。
+    #[inline]
     pub fn check_div(&self, u_limbs: usize, v_limbs: usize) -> Result<()> {
-        let q = if v_limbs == 0 { u_limbs + 1 } else { u_limbs.saturating_sub(v_limbs) + 1 };
-        self.check_limbs(q.max(u_limbs) + v_limbs + 2)
+        self.0.check_div(u_limbs, v_limbs).map_err(kernel_to_diagnostic)
+    }
+}
+
+/// 解引用到 `boost-math` 预算本体：kernel / 缓冲 API 直接接受 `&ExecutionBudget`。
+impl core::ops::Deref for ExecutionBudget {
+    type Target = KernelExecutionBudget;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// 把 `boost-math` kernel / 预算失败映射为数值塔诊断。
+pub(crate) fn kernel_to_diagnostic(error: KernelError) -> Diagnostic {
+    match error {
+        KernelError::Domain(operation) => Diagnostic::new(DiagnosticCode::DomainError).detail("domain", "numeric").detail("operation", operation),
+        KernelError::ResourceLimit { kind, got, max } => Diagnostic::new(DiagnosticCode::NumericResourceLimit)
+            .detail("domain", "numeric")
+            .detail("kind", kind)
+            .detail("got", got.to_string())
+            .detail("max", max.to_string()),
     }
 }
 
@@ -375,12 +377,4 @@ impl NumericContext {
                 .detail("reason", e.to_string())
         })
     }
-}
-
-fn resource_limit(kind: &str, got: usize, max: u32) -> Diagnostic {
-    Diagnostic::new(DiagnosticCode::NumericResourceLimit)
-        .detail("domain", "numeric")
-        .detail("kind", kind)
-        .detail("got", got.to_string())
-        .detail("max", max.to_string())
 }

@@ -4,7 +4,7 @@ use science_types::{Diagnostic, DiagnosticCode, Result};
 
 use crate::{
     kernel::limb as limb_kernel,
-    policy::NumericContext,
+    policy::{NumericContext, execution_budget::kernel_to_diagnostic},
     storage::{LimbWidth, Mode},
     value::natural::Natural,
 };
@@ -216,7 +216,8 @@ impl NumericExecutor {
                         ctx.with_out_buf2(|r| {
                             ctx.with_scratch_frame(|scratch, budget| {
                                 ctx.kernels().div_rem_into(ctx.kernel_token(), &lhs[..a_len], &rhs[..b_len], plan, q, r, scratch, budget)
-                            })?;
+                            })
+                            .map_err(kernel_to_diagnostic)?;
                             let quot = Natural::from_limb_slice_in(ctx, q.as_canonical())?;
                             let rem = Natural::from_limb_slice_in(ctx, r.as_canonical())?;
                             let _ = q.set_zero(ctx.budget());
@@ -230,7 +231,8 @@ impl NumericExecutor {
                     let mut r = crate::kernel::LimbBuffer::zero();
                     ctx.with_scratch_frame(|scratch, budget| {
                         ctx.kernels().div_rem_into(ctx.kernel_token(), &lhs[..a_len], &rhs[..b_len], plan, &mut q, &mut r, scratch, budget)
-                    })?;
+                    })
+                    .map_err(kernel_to_diagnostic)?;
                     Ok((Natural::from_limb_slice_in(ctx, q.as_canonical())?, Natural::from_limb_slice_in(ctx, r.as_canonical())?))
                 }
             }

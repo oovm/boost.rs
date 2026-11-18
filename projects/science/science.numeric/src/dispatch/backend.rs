@@ -1,6 +1,6 @@
 //! 默认 portable 宿主合同（WASM 安全、确定性、语义基线）。
 //!
-//! 与 [`crate::kernel::portable`] 算法实现正交：本模块只广告 capability / wire 上限。
+//! 与 `boost-math` portable 算法实现正交：本模块只广告 capability / wire 上限。
 
 use super::{NumericBackend, NumericBackendContract, NumericBackendLimits, NumericCapability, NumericOperation, NumericResultMode};
 use crate::{domain::NumericDomain, precision::PrecisionKind};

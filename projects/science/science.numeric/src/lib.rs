@@ -5,24 +5,25 @@
 //! 四层正交：
 //! ```text
 //! storage    — Magnitude / meta / views
-//! algorithm  — 数学策略（`AlgorithmPlanner`）
-//! kernel     — portable / x86_64 `KernelTable`（context 级绑定）
+//! algorithm  — 数学策略（`AlgorithmPlanner`，归 `boost-math`）
+//! kernel     — portable / x86_64 `KernelTable`（归 `boost-math`，context 级绑定）
 //! dispatch   — 能力三分 · `NumericExecutor` · `PortableBackend`
 //! foreign    — oracle 差分参考（不进默认路径）
 //! ```
 #![deny(missing_docs)]
 
-pub mod algorithm;
 pub mod arithmetic;
 pub mod certificate;
 pub mod dispatch;
 pub mod foreign;
 pub mod format;
-pub mod kernel;
 pub mod policy;
 pub mod representation;
 pub(crate) mod storage;
 pub mod value;
+
+// 数学策略与 machine kernel 归 `boost-math`；此处保持 `algorithm` / `kernel` 稳定路径。
+pub use boost_math::numeric::{algorithm, kernel};
 
 // —— 稳定模块路径（真实模块，不是别名文件）——
 pub use crate::{

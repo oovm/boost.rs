@@ -1,4 +1,4 @@
-//! 自有标量数值内核。
+//! 自有标量数值内核与大整数机器核。
 //!
 //! 本模块只实现下游真实需要的 `sqrt`、`ln`、`exp`，不链接平台 `libm`，也不
 //! 引入外部数学库，因此 `no_std` 目标不会因宿主数学库不同而改变最后几位。
@@ -9,6 +9,18 @@
 //! 特殊值逐函数冻结：负输入、零、无穷与 `NaN` 按各自文档返回，调用方不应
 //! 把 `NaN` 统一改成零，也不需要把这些函数包装成 `Result`。误差界由
 //! `tests/numeric.rs` 用独立已知值校验，注释本身不构成证明。
+//!
+//! 大整数子层（自科学数值塔下沉，依赖方向 science→math 单向）：
+//! - [`bigint`]：有符号任意精度整数语义。
+//! - [`kernel`]：limb 机器核（portable / x86_64 `KernelTable`）与缓冲。
+//! - [`algorithm`]：宽度分段的数学策略规划器。
+//! - [`budget`]：分配与增长准入预算。
+//! - [`capability`]：Machine / Algorithm / Resource 能力三分。
+
+pub mod algorithm;
+pub mod budget;
+pub mod capability;
+pub mod kernel;
 
 pub mod bigint;
 

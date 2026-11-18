@@ -1,15 +1,15 @@
 //! 执行策略：宽度分派 executor · 能力三分 · 宿主上报门面。
 //!
 //! **不是** machine kernel。Machine kernel 在 [`crate::kernel`]。
-//! 能力三分见 [`capability`]；宽度分派见 [`executor`]。
+//! 能力三分归 `boost-math`（[`boost_math::numeric::capability`]），本模块只重导出；
+//! 宽度分派见 [`executor`]。
 
 mod backend;
-mod capability;
 mod executor;
 
 pub(crate) use backend::PORTABLE_WIRE_PAYLOAD_LIMIT_BYTES;
 pub use backend::PortableBackend;
-pub use capability::{AlgorithmCapability, CapabilityBundle, MachineCapability, ResourceCapability};
+pub use boost_math::numeric::capability::{AlgorithmCapability, CapabilityBundle, MachineCapability, NumericBackendLimits, ResourceCapability};
 pub use executor::NumericExecutor;
 
 use crate::representation::{domain::NumericDomain, precision::PrecisionKind};
@@ -83,25 +83,6 @@ pub enum NumericResultMode {
     IntervalEnclosure,
     /// 附带证明元数据的认证结果。
     Certified,
-}
-
-/// 资源与 wire 上限（ResourceCapability 过渡面）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct NumericBackendLimits {
-    /// 大整数最大 limb 数（`None` = 合同无上界）。
-    pub max_limbs: Option<u32>,
-    /// 任意精度实数最大尾数位数。
-    pub max_significand_bits: Option<u32>,
-    /// 规范 wire 幅度 / 域载荷解码的最大二进制字节数。
-    pub max_wire_payload_bytes: Option<u32>,
-    /// `pow` 指数幅度上限（`None` = 默认策略）。
-    pub max_pow_exp: Option<i64>,
-}
-
-impl Default for NumericBackendLimits {
-    fn default() -> Self {
-        Self { max_limbs: None, max_significand_bits: Some(53), max_wire_payload_bytes: Some(1 << 20), max_pow_exp: Some(10_000) }
-    }
 }
 
 /// 静态资源/宿主合同（过渡；非 [`crate::kernel`] 的 `KernelTable`）。

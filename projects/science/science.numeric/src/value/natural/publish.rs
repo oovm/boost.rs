@@ -5,7 +5,7 @@ use science_types::{Diagnostic, DiagnosticCode, Result};
 use super::Natural;
 use crate::{
     kernel::{LimbBuffer, limb as limb_kernel},
-    policy::execution_budget::NumericContext,
+    policy::execution_budget::{NumericContext, kernel_to_diagnostic},
     storage::{MagnitudePair, Mode, gc_alloc_error},
 };
 
@@ -93,7 +93,11 @@ impl Natural {
     /// Kernel `*_into` 后 canonicalize 并发布（值层 executor，非 machine kernel）。
     pub(crate) fn publish_with_kernel(
         ctx: &NumericContext,
-        write: impl FnOnce(&mut LimbBuffer, &mut crate::kernel::ScratchWorkspace, &crate::policy::execution_budget::ExecutionBudget) -> Result<()>,
+        write: impl FnOnce(
+            &mut LimbBuffer,
+            &mut crate::kernel::ScratchWorkspace,
+            &crate::policy::execution_budget::ExecutionBudget,
+        ) -> boost_math::numeric::kernel::error::Result<()>,
     ) -> Result<Self> {
         Self::publish_into(ctx, write)
     }
@@ -102,20 +106,25 @@ impl Natural {
     ///
     /// 步骤 6：当 [`NumericContext::can_reuse_destination`] 为真时复用 context
     /// 输出 `LimbBuffer` 容量；否则使用临时缓冲。Heap 结果经 rooted 句柄发布。
+    /// Kernel 失败（[`boost_math::numeric::kernel::error::KernelError`]）在本层映射为诊断。
     pub(super) fn publish_into(
         ctx: &NumericContext,
-        write: impl FnOnce(&mut LimbBuffer, &mut crate::kernel::ScratchWorkspace, &crate::policy::execution_budget::ExecutionBudget) -> Result<()>,
+        write: impl FnOnce(
+            &mut LimbBuffer,
+            &mut crate::kernel::ScratchWorkspace,
+            &crate::policy::execution_budget::ExecutionBudget,
+        ) -> boost_math::numeric::kernel::error::Result<()>,
     ) -> Result<Self> {
         ctx.check_entry()?;
         if ctx.can_reuse_destination() {
             ctx.with_out_buf(|out| {
-                ctx.with_scratch_frame(|scratch, budget| write(out, scratch, budget))?;
+                ctx.with_scratch_frame(|scratch, budget| write(out, scratch, budget)).map_err(kernel_to_diagnostic)?;
                 Self::publish_from_out_buf(ctx, out)
             })
         }
         else {
             let mut out = LimbBuffer::zero();
-            ctx.with_scratch_frame(|scratch, budget| write(&mut out, scratch, budget))?;
+            ctx.with_scratch_frame(|scratch, budget| write(&mut out, scratch, budget)).map_err(kernel_to_diagnostic)?;
             Self::from_limb_slice_in(ctx, out.as_canonical())
         }
     }

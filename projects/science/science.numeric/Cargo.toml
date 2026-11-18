@@ -19,6 +19,7 @@ path = "tests/ephemeral_batch.rs"
 required-features = ["ephemeral"]
 
 [dependencies]
+boost-math = { workspace = true }
 science-types = { workspace = true }
 science-gc = { workspace = true }
 

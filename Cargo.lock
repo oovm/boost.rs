@@ -1050,6 +1050,7 @@ name = "database-query"
 version = "0.1.0"
 dependencies = [
  "database-cluster",
+ "database-storage",
  "database-types",
  "js-sys",
  "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
@@ -4039,6 +4040,7 @@ dependencies = [
 name = "science-numeric"
 version = "0.1.0"
 dependencies = [
+ "boost-math",
  "science-gc",
  "science-types",
 ]
@@ -4475,6 +4477,7 @@ name = "sqlite"
 version = "0.1.0"
 dependencies = [
  "database-formats",
+ "database-query",
  "database-storage",
  "database-types",
  "database-udf",
