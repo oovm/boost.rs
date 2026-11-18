@@ -236,6 +236,7 @@ pub fn write_windows(
     contract: &ResolvedContract,
     declared: &[database_types::TableUniqueConstraint],
     bound_values: &[Value],
+    holds_every_row: bool,
 ) -> Result<Option<Vec<ReadWindow>>> {
     // Uniqueness checks read the whole table, so both the rules the schema
     // document declares and the ones a host adds must widen the window.
@@ -272,10 +273,11 @@ pub fn write_windows(
                     };
                     windows.push(single_key_window(&storage, &text));
                 }
-                if constraints::has_rules(&rules, &storage) {
+                if constraints::has_rules(&rules, &storage) && !holds_every_row {
                     // The check compares against every stored row of this table,
                     // so the table must be present even though the write itself
-                    // names one key per row.
+                    // names one key per row. A caller that already holds every
+                    // row (an open transaction) needs no window for it.
                     windows.push(table_window(&storage));
                 }
             }
@@ -287,7 +289,7 @@ pub fn write_windows(
                     return Ok(None);
                 };
                 windows.push(window);
-                if constraints::has_rules(&rules, &storage) {
+                if constraints::has_rules(&rules, &storage) && !holds_every_row {
                     windows.push(table_window(&storage));
                 }
             }

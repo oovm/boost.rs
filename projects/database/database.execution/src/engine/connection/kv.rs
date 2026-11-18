@@ -73,14 +73,14 @@ impl Connection {
     /// Operations are serialized on this connection, not across separate handles or processes.
     pub fn write_batch(&self, changes: &[(String, Option<Vec<u8>>)]) -> Result<()> {
         let _guard = self.operation_lock.lock().unwrap_or_else(|p| p.into_inner());
-        let plan = |_: &State| {
+        let plan = |_: &State, _: bool| {
             let windows = changes
                 .iter()
                 .map(|(key, _)| database_query::local::ReadWindow { start: key.clone(), end: Some(format!("{key}\0")) })
                 .collect();
-            Ok(Some(windows))
+            Ok((Some(windows), ()))
         };
-        self.mutate_narrowed_write_unlocked(plan, |state| {
+        self.mutate_narrowed_write_unlocked(plan, |state, ()| {
             for (key, value) in changes {
                 match value {
                     Some(bytes) => {

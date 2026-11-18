@@ -419,39 +419,47 @@ impl Connection {
     /// Apply one write and publish only its records when the statement names
     /// the rows it can touch.
     ///
-    /// `plan` receives the active state and returns the record windows the
-    /// statement can reach, or `None` when that cannot be proven. An open
-    /// transaction applies the statement in place inside those windows instead
-    /// of cloning the whole transaction state per write. Everything unprovable,
-    /// the in-memory backend and `.yydx` images keep the full publish path.
-    pub(crate) fn mutate_narrowed_write_unlocked<P, F>(&self, plan: P, f: F) -> Result<()>
+    /// `plan` receives the active state plus whether that state already holds
+    /// every row, and returns the record windows the statement can reach, or
+    /// `None` when that cannot be proven. Holding every row matters for a table
+    /// with uniqueness rules: the rule compares against the whole table, and only
+    /// the narrowed read needs that table dragged into the window. An open
+    /// transaction applies the statement in place inside the window instead of
+    /// cloning the whole transaction state per write. Everything unprovable, the
+    /// in-memory backend and `.yydx` images keep the full publish path.
+    pub(crate) fn mutate_narrowed_write_unlocked<P, F, T>(&self, plan: P, f: F) -> Result<()>
     where
-        P: FnOnce(&State) -> Result<Option<Vec<database_query::local::ReadWindow>>>,
-        F: FnOnce(&mut State) -> Result<()>,
+        P: FnOnce(&State, bool) -> Result<(Option<Vec<database_query::local::ReadWindow>>, T)>,
+        F: FnOnce(&mut State, T) -> Result<()>,
     {
         if self.publishes_everything() || !self.is_single_file_yydb() {
-            return self.mutate_active_state_unlocked(f);
+            let mut state = self.active_state_unlocked()?;
+            let (_, prepared) = plan(&state, true)?;
+            f(&mut state, prepared)?;
+            return self.replace_active_state_unlocked(state);
         }
         if self.has_open_transaction() {
-            let windows = {
-                let slot = self.txn.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-                match slot.as_ref() {
-                    Some(state) => plan(state)?,
-                    None => None,
-                }
-            };
-            return match windows {
-                Some(windows) => self.mutate_transaction_windows(&windows, f),
-                None => self.mutate_active_state_unlocked(f),
-            };
+            let slot = self.txn.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            if let Some(state) = slot.as_ref() {
+                let (windows, prepared) = plan(state, true)?;
+                drop(slot);
+                return match windows {
+                    Some(windows) => self.mutate_transaction_windows(&windows, |state| f(state, prepared)),
+                    None => self.mutate_active_state_unlocked(|state| f(state, prepared)),
+                };
+            }
+            drop(slot);
         }
         let metadata = self.read_state_metadata()?;
-        let Some(windows) = plan(&metadata)?
+        let (windows, prepared) = plan(&metadata, false)?;
+        let Some(windows) = windows
         else {
-            return self.mutate_active_state_unlocked(f);
+            let mut state = self.active_state_unlocked()?;
+            f(&mut state, prepared)?;
+            return self.replace_active_state_unlocked(state);
         };
         let (mut state, prior) = self.read_state_windows_with_metadata(&windows, metadata)?;
-        f(&mut state)?;
+        f(&mut state, prepared)?;
         self.write_state_delta(state, &prior)?;
         Ok(())
     }

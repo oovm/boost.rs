@@ -106,7 +106,7 @@ fn keyed_contract() -> schema_input_vos::ResolvedContract {
 #[test]
 fn a_keyed_update_names_exactly_its_primary_key_record() {
     let contract = keyed_contract();
-    let keys = point_write_keys(r#"Doc::update({ doc_id: 7, title: "patched" })"#, &contract, &[], Some(KEYED_SCHEMA), &[])
+    let keys = point_write_keys(r#"Doc::update({ doc_id: 7, title: "patched" })"#, &contract, &[], Some(KEYED_SCHEMA), &[], false)
         .expect("plan")
         .expect("a keyed update on a rule-free table must be narrowable");
     assert_eq!(keys, vec!["__yydb/v0/row/Doc/7".to_string()]);
@@ -115,7 +115,7 @@ fn a_keyed_update_names_exactly_its_primary_key_record() {
 #[test]
 fn a_keyed_delete_names_exactly_its_primary_key_record() {
     let contract = keyed_contract();
-    let keys = point_write_keys(r#"Doc::delete({ doc_id: 7 })"#, &contract, &[], Some(KEYED_SCHEMA), &[])
+    let keys = point_write_keys(r#"Doc::delete({ doc_id: 7 })"#, &contract, &[], Some(KEYED_SCHEMA), &[], false)
         .expect("plan")
         .expect("a keyed delete on a rule-free table must be narrowable");
     assert_eq!(keys, vec!["__yydb/v0/row/Doc/7".to_string()], "a delete must read the key so its removal reaches the delta");
@@ -124,7 +124,7 @@ fn a_keyed_delete_names_exactly_its_primary_key_record() {
 #[test]
 fn an_insert_reads_only_its_target_key() {
     let contract = keyed_contract();
-    let keys = point_write_keys(r#"Doc::insert({ doc_id: 7, title: "seven" })"#, &contract, &[], Some(KEYED_SCHEMA), &[])
+    let keys = point_write_keys(r#"Doc::insert({ doc_id: 7, title: "seven" })"#, &contract, &[], Some(KEYED_SCHEMA), &[], false)
         .expect("plan")
         .expect("a keyed insert on a rule-free table must be narrowable");
     assert_eq!(keys, vec!["__yydb/v0/row/Doc/7".to_string()]);
@@ -133,21 +133,21 @@ fn an_insert_reads_only_its_target_key() {
 #[test]
 fn a_uniqueness_rule_forces_the_full_path() {
     let contract = keyed_contract();
-    let planned = point_write_keys(r#"Keyed::insert({ key: "a", code: "A" })"#, &contract, &[], Some(KEYED_SCHEMA), &[]).expect("plan");
+    let planned = point_write_keys(r#"Keyed::insert({ key: "a", code: "A" })"#, &contract, &[], Some(KEYED_SCHEMA), &[], false).expect("plan");
     assert!(planned.is_none(), "a unique field needs the whole table, so narrowing must be refused");
 }
 
 #[test]
 fn a_collection_write_forces_the_full_path() {
     let contract = keyed_contract();
-    let planned = point_write_keys(r#"Doc.all().delete()"#, &contract, &[], Some(KEYED_SCHEMA), &[]).expect("plan");
+    let planned = point_write_keys(r#"Doc.all().delete()"#, &contract, &[], Some(KEYED_SCHEMA), &[], false).expect("plan");
     assert!(planned.is_none(), "a collection write has no single key, so narrowing must be refused");
 }
 
 #[test]
 fn a_macro_that_expands_to_keyed_writes_stays_narrowable() {
     let contract = resolved_contract_from_document(BLOG_WITH_MACRO).expect("contract");
-    let keys = point_write_keys("seed_blog()", &contract, &[], Some(BLOG_WITH_MACRO), &[])
+    let keys = point_write_keys("seed_blog()", &contract, &[], Some(BLOG_WITH_MACRO), &[], false)
         .expect("plan")
         .expect("a macro of keyed inserts must be narrowable");
     assert_eq!(keys.len(), 2, "both expanded statements must name one key each, got {keys:?}");
@@ -224,7 +224,7 @@ fn sql_windows(source: &str, values: &[Value]) -> Option<Vec<ReadWindow>> {
     let contract = keyed_contract();
     let stmt = prepare_sql(source).expect("prepare");
     let bound = database_query::local::bind_ordered(&stmt, values).expect("bind");
-    write_windows(&stmt.write_ops, &contract, &[], &bound).expect("plan")
+    write_windows(&stmt.write_ops, &contract, &[], &bound, false).expect("plan")
 }
 
 fn doc_key(id: i64) -> String {
@@ -317,7 +317,7 @@ fn an_sql_insert_into_a_host_rule_table_narrows_to_its_table() {
     let bound = database_query::local::bind_ordered(&stmt, &[Value::I64(7), Value::Text("seven".into())]).expect("bind");
     let rule =
         TableUniqueConstraint::new("Doc", UniqueConstraint::new("doc_title", vec!["title".into()], false).expect("rule")).expect("binding");
-    let windows = write_windows(&stmt.write_ops, &contract, &[rule], &bound).expect("plan").expect("narrowable");
+    let windows = write_windows(&stmt.write_ops, &contract, &[rule], &bound, false).expect("plan").expect("narrowable");
     assert_eq!(
         windows.last(),
         Some(&table_row_window("Doc")),

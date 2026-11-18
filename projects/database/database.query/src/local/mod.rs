@@ -109,8 +109,9 @@ pub fn point_write_keys(
     declared: &[TableUniqueConstraint],
     schema_document: Option<&str>,
     params: &[Value],
+    holds_every_row: bool,
 ) -> database_types::Result<Option<Vec<String>>> {
-    dml::point_write_keys(source, contract, declared, schema_document, params)
+    dml::point_write_keys(source, contract, declared, schema_document, params, holds_every_row)
 }
 
 /// Run a single `Type::insert({ … })` program and return the stored row when recognized.

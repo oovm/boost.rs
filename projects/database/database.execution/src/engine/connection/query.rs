@@ -403,15 +403,24 @@ impl Connection {
         self.guard_session_alive()?;
         let _guard = self.operation_lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         self.mutate_narrowed_write_unlocked(
-            |metadata| {
+            |metadata, holds_every_row| {
                 let contract = resolved_contract(metadata)?;
                 let schema_document = metadata.schema.as_ref().map(|schema| schema.document.as_str());
-                self.with_write_hooks(|| {
-                    database_query::local::point_write_keys(source, contract, &metadata.unique_constraints, schema_document, &[])
-                })
-                .map(|keys| keys.map(Self::key_windows))
+                let keys = self
+                    .with_write_hooks(|| {
+                        database_query::local::point_write_keys(
+                            source,
+                            contract,
+                            &metadata.unique_constraints,
+                            schema_document,
+                            &[],
+                            holds_every_row,
+                        )
+                    })
+                    .map(|keys| keys.map(Self::key_windows))?;
+                Ok((keys, ()))
             },
-            |state| {
+            |state, ()| {
                 // The write executor mutates `state.records`, so it cannot hold a
                 // borrow of the contract inside the same state.
                 let contract = resolved_contract(state)?.clone();
@@ -436,16 +445,25 @@ impl Connection {
         self.guard_session_alive()?;
         let _guard = self.operation_lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         self.mutate_narrowed_write_unlocked(
-            |metadata| {
+            |metadata, holds_every_row| {
                 let contract = resolved_contract(metadata)?;
                 let schema_document = metadata.schema.as_ref().map(|schema| schema.document.as_str());
                 let plan = database_query::local::bind_vos_write(source, named, schema_document)?;
-                self.with_write_hooks(|| {
-                    database_query::local::point_write_keys(&plan.source, contract, &metadata.unique_constraints, schema_document, &plan.values)
-                })
-                .map(|keys| keys.map(Self::key_windows))
+                let keys = self
+                    .with_write_hooks(|| {
+                        database_query::local::point_write_keys(
+                            &plan.source,
+                            contract,
+                            &metadata.unique_constraints,
+                            schema_document,
+                            &plan.values,
+                            holds_every_row,
+                        )
+                    })
+                    .map(|keys| keys.map(Self::key_windows))?;
+                Ok((keys, ()))
             },
-            |state| {
+            |state, ()| {
                 // The write executor mutates `state.records`, so it cannot hold a
                 // borrow of the contract inside the same state.
                 let contract = resolved_contract(state)?.clone();
@@ -476,13 +494,20 @@ impl Connection {
         let _guard = self.operation_lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut affected = 0;
         self.mutate_narrowed_write_unlocked(
-            |metadata| {
+            |metadata, holds_every_row| {
                 let contract = resolved_contract(metadata)?;
-                self.with_write_hooks(|| {
-                    database_query::local::write_windows(&stmt.write_ops, &contract, &metadata.unique_constraints, &values)
-                })
+                let windows = self.with_write_hooks(|| {
+                    database_query::local::write_windows(
+                        &stmt.write_ops,
+                        &contract,
+                        &metadata.unique_constraints,
+                        &values,
+                        holds_every_row,
+                    )
+                })?;
+                Ok((windows, ()))
             },
-            |state| {
+            |state, ()| {
                 self.check_schema_drift(&stmt, state)?;
                 // The write executor mutates `state.records`, so it cannot hold a
                 // borrow of the contract inside the same state.

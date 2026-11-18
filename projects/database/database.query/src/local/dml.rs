@@ -304,6 +304,7 @@ pub fn point_write_keys(
     declared: &[TableUniqueConstraint],
     schema_document: Option<&str>,
     params: &[Value],
+    holds_every_row: bool,
 ) -> Result<Option<Vec<String>>> {
     let program = schema_input_vos::parse_program(source).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
     let constraints = constraints::merge(constraints::from_contract(contract)?, declared);
@@ -318,7 +319,7 @@ pub fn point_write_keys(
         match stmt {
             VosStmt::Let(let_) => bindings.push((let_.name.clone(), let_.value.clone())),
             VosStmt::Expr(expr) => {
-                let Ok(Some(key)) = plan_point_key(expr, contract, &constraints, &bindings, params)
+                let Ok(Some(key)) = plan_point_key(expr, contract, &constraints, &bindings, params, holds_every_row)
                 else {
                     return Ok(None);
                 };
@@ -328,7 +329,7 @@ pub fn point_write_keys(
         }
     }
     if let Some(result) = &expanded.result {
-        let Ok(Some(key)) = plan_point_key(result, contract, &constraints, &bindings, params)
+        let Ok(Some(key)) = plan_point_key(result, contract, &constraints, &bindings, params, holds_every_row)
         else {
             return Ok(None);
         };
@@ -351,6 +352,7 @@ fn plan_point_key(
     constraints: &[TableUniqueConstraint],
     bindings: &[(String, VosExpr)],
     params: &[Value],
+    holds_every_row: bool,
 ) -> Result<Option<String>> {
     let VosExpr::Call { callee, .. } = expr
     else {
@@ -398,7 +400,7 @@ fn plan_point_key(
         return Ok(None);
     };
     let storage_name = table_storage_name(entry)?;
-    if constraints::has_rules(constraints, storage_name) {
+    if constraints::has_rules(constraints, storage_name) && !holds_every_row {
         return Ok(None);
     }
     Ok(Some(store::row_key(storage_name, &pk_text)))
