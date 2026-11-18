@@ -15,6 +15,11 @@
 
 pub use database_formats::mongo::*;
 
+/// `.yyds` catalog + `.yykv` shard 文档后端。
+pub mod store;
+
+pub use store::Store;
+
 /// Default `ttlMonitorSleepSecs`, matching `mongod 8.0.9`.
 pub const DEFAULT_TTL_MONITOR_SLEEP_SECONDS: u32 = 60;
 
