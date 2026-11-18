@@ -4,7 +4,7 @@
 //! the versioned artifact produced by `vos-language`, rejects anything that is
 //! not an Iris `/v0` envelope, and exposes the validated contracts.
 
-use vos::types::{
+use schema_types::{
     ArtifactError, ContractArtifact, ContractFormat, ContractPayload, ContractProducer, OperationContract, OperationId, ServiceContract,
     ServiceId,
 };

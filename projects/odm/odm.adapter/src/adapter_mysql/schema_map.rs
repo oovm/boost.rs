@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use vos::{CanonicalType, SchemaProjection, TypeContractKind};
+use schema_input_vos::{CanonicalType, SchemaProjection, TypeContractKind};
 
 /// `(table, field)` pairs declared as VOS `uuid` in the schema projection.
 pub fn collect_uuid_fields(document: &SchemaProjection) -> HashSet<(String, String)> {

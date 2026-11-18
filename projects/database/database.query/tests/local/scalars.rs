@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use database_query::local::{execute, execute_write, resolved_contract_from_document};
 use database_types::{Date, Decimal, Error, Time, Timestamp, Value};
-use vos::types::ResolvedContract;
+use schema_types::ResolvedContract;
 
 const SCALAR_SCHEMA: &str = r#"
 table Event {

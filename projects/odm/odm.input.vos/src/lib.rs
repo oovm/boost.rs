@@ -5,7 +5,7 @@
 #![deny(missing_docs)]
 
 use odm_types::{EntityDecl, EntityKindHint, FieldDecl, MappingModel, RelationDecl};
-use vos::types::{CanonicalType, CanonicalTypeArgument, SchemaProjection, TypeContractKind};
+use schema_types::{CanonicalType, CanonicalTypeArgument, SchemaProjection, TypeContractKind};
 
 /// 把一段 VOS schema 源文本降到统一映射模型。
 pub fn lower_source(source: &str) -> Result<MappingModel, String> {

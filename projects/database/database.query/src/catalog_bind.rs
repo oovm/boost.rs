@@ -6,7 +6,7 @@ use crate::sql::{
     SqlBoundSetOperand, SqlBoundSetOperation, SqlBoundSetOperator, SqlBoundSource, SqlBoundStatement, SqlBoundUnaryOperator, SqlBoundUpdate,
     SqlBoundWindowFrame, SqlBoundWindowSpec, SqlDialect, SqlErrorKind, SqlFrontendError, SqlNullsOrder, SqlScalarFunction, bind_sql,
 };
-use vos::types::{CanonicalScalar, ResolvedCanonicalType};
+use schema_types::{CanonicalScalar, ResolvedCanonicalType};
 
 /// Scalar types the gateway can project from a VOS field contract.
 ///
@@ -176,19 +176,19 @@ impl SqlCatalog {
     }
 
     /// Projects gateway table identities from a validated resolved contract.
-    pub fn from_resolved_contract(schema_version: u32, contract: &vos::types::ResolvedContract) -> Result<Self, SqlFrontendError> {
+    pub fn from_resolved_contract(schema_version: u32, contract: &schema_types::ResolvedContract) -> Result<Self, SqlFrontendError> {
         if schema_version == 0 {
             return Err(internal_error("catalog schema version must be nonzero"));
         }
         let artifact = contract.to_json().map_err(|_| internal_error("resolved contract encode failed"))?;
-        vos::types::ResolvedContract::from_json(&artifact)
+        schema_types::ResolvedContract::from_json(&artifact)
             .map_err(|error| internal_error(&format!("invalid resolved VOS contract {}: {}", error.code, error.message)))?;
         let mut type_ids = std::collections::BTreeSet::new();
         let mut field_ids = std::collections::BTreeSet::new();
         let tables = contract
             .types
             .iter()
-            .filter(|entry| entry.kind == vos::types::TypeContractKind::Table)
+            .filter(|entry| entry.kind == schema_types::TypeContractKind::Table)
             .map(|entry| {
                 if entry.type_id == 0 || !type_ids.insert(entry.type_id) {
                     return Err(internal_error("invalid or duplicate catalog type identity"));

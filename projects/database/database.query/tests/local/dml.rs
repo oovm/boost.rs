@@ -99,7 +99,7 @@ fn static_insert_call_shape() {
     assert_eq!(records.len(), 1);
 }
 
-fn keyed_contract() -> vos::ResolvedContract {
+fn keyed_contract() -> schema_input_vos::ResolvedContract {
     resolved_contract_from_document(KEYED_SCHEMA).expect("contract")
 }
 
@@ -153,7 +153,7 @@ fn a_macro_that_expands_to_keyed_writes_stays_narrowable() {
     assert_eq!(keys.len(), 2, "both expanded statements must name one key each, got {keys:?}");
 }
 
-fn stored_title(contract: &vos::ResolvedContract, records: &BTreeMap<String, Vec<u8>>, id: i64) -> String {
+fn stored_title(contract: &schema_input_vos::ResolvedContract, records: &BTreeMap<String, Vec<u8>>, id: i64) -> String {
     let rows = database_query::local::execute("Doc.all().collect()", Some(contract), records).expect("read back");
     let row = rows.iter().find(|row| row.get("doc_id") == Some(&Value::I64(id))).expect("row exists");
     match row.get("title") {

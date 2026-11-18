@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use vos::syntax::{VosBinaryOp, VosExpr, VosFnDecl, VosFnKind, VosLiteral, VosTypeSyntax};
+use oak_vos::{VosBinaryOp, VosExpr, VosFnDecl, VosFnKind, VosLiteral, VosTypeSyntax};
 
 use database_types::cluster::Error;
 
@@ -10,7 +10,7 @@ use crate::topology::distributed_execution::{Node, Program, Type, Udf, UdfEffect
 
 /// Lowers the Oak-validated VOS scalar subset into 集群's shard execution model.
 pub fn lower_vos_udf(source: &str, version: u32) -> Result<ValidatedUdf, Error> {
-    let parsed = vos::parse_program(source).map_err(|diagnostics| Error::Udf { name: "<vos>".into(), message: diagnostics })?;
+    let parsed = schema_input_vos::parse_program(source).map_err(|diagnostics| Error::Udf { name: "<vos>".into(), message: diagnostics })?;
     if !parsed.statements.is_empty() || parsed.result.is_some() || parsed.micros.len() != 1 {
         return udf_error("<vos>", "VOS UDF source must contain exactly one micro declaration");
     }

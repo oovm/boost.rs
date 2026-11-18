@@ -7,4 +7,4 @@ pub mod sqlite;
 pub mod yy;
 
 /// Resolved VOS contract carried by `.yyds` catalogs.
-pub use vos::types::ResolvedContract;
+pub use schema_types::ResolvedContract;

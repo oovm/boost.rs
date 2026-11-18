@@ -1,12 +1,9 @@
-//! 与 [`vos`](https://github.com/voml/vos-language)（`git` / `dev`）共享的 schema 文档合同。
+//! 经 Boost `schema.input.vos` 输入链校验的 schema 文档合同。
 //!
 //! 分布式与嵌入式共用 **VOS 作为 DDL / 查询作者面**，不另发明私有方言。
 //! 目录真值存版本化 VOS 源文；分片记录在对应存储后缀下按目录键持有不透明字节。
 
 use crate::cluster::{Error, Result};
-
-/// Canonical remote used by this workspace for shared VOS semantics.
-pub const VOS_GIT_DEV: &str = "https://github.com/voml/vos-language.git#branch=dev";
 
 /// Catalog-owned VOS schema document and version (cluster truth).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,7 +21,7 @@ pub fn validate_document(document: &str) -> Result<()> {
     if document.contains('\0') {
         return Err(Error::Schema { message: "VOS schema document must not contain NUL bytes".into() });
     }
-    vos::validate_schema(document).map(|_| ()).map_err(|message| Error::Schema { message })
+    schema_input_vos::validate_schema(document).map(|_| ()).map_err(|message| Error::Schema { message })
 }
 
 /// Validate and adopt a catalog schema revision.

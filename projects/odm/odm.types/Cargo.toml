@@ -16,4 +16,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 schema-input-von = { workspace = true }
-vos = { workspace = true }
+oak-vos = { workspace = true }
+schema-input-vos = { workspace = true }
+schema-types = { workspace = true }

@@ -11,4 +11,4 @@ publish = false
 [dependencies]
 blake3 = { workspace = true }
 database-types = { workspace = true }
-vos = { workspace = true }
+schema-types = { workspace = true }

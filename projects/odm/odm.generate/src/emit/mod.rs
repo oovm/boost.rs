@@ -12,10 +12,10 @@ use std::{
 };
 
 use once_cell::sync::OnceCell;
+use schema_input_vos::{CanonicalType, CanonicalTypeArgument, ContractDiagnostic, SchemaProjection, TypeContract, TypeContractKind};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use vos::{CanonicalType, CanonicalTypeArgument, ContractDiagnostic, SchemaProjection, TypeContract, TypeContractKind};
 
 /// Generator errors.
 #[derive(Debug, thiserror::Error)]
@@ -265,7 +265,8 @@ pub struct GenerationModel {
 impl GenerationModel {
     /// Builds from a strict VOS resolved artifact without parsing source or allocating identities.
     pub fn from_resolved_artifact(artifact: &str) -> Result<Self> {
-        let contract = vos::ResolvedContract::from_json(artifact).map_err(|error| Error::Vos(format!("{}: {}", error.code, error.message)))?;
+        let contract = schema_input_vos::ResolvedContract::from_json(artifact)
+            .map_err(|error| Error::Vos(format!("{}: {}", error.code, error.message)))?;
         let mut tables = Vec::new();
         for item in &contract.types {
             if item.kind != TypeContractKind::Table || item.canonical_path.len() != 1 {
@@ -338,7 +339,7 @@ impl GenerationModel {
                 params: params.clone(),
                 return_type: ret.clone(),
             });
-            if op.kind == vos::types::OperationKind::Macro && seen_macro.insert(op.name.clone()) {
+            if op.kind == schema_types::OperationKind::Macro && seen_macro.insert(op.name.clone()) {
                 macros.push(MacroModel {
                     name: op.name.clone(),
                     return_type: ret.unwrap_or_else(|| "unit".into()),
@@ -367,7 +368,7 @@ impl GenerationModel {
 
     /// Build from a VOS schema document string.
     pub fn from_vos_schema(source: &str) -> Result<Self> {
-        let input = vos::parse_oak(source).map_err(Error::Vos)?;
+        let input = schema_input_vos::parse_oak(source).map_err(Error::Vos)?;
         if !source.trim().is_empty() && input.declarations().is_empty() {
             return Err(Error::Vos("schema document contains no VOS declarations".into()));
         }
@@ -377,7 +378,7 @@ impl GenerationModel {
     }
 
     /// Build from a parsed VOS contract input.
-    pub fn from_document(input: &vos::ContractInput) -> Result<Self> {
+    pub fn from_document(input: &schema_input_vos::ContractInput) -> Result<Self> {
         let projection = project_schema(input)?;
         let operations = input.project_operations().map_err(|diagnostics| Error::Vos(format_diagnostics(&diagnostics)))?;
         let mut tables = Vec::new();
@@ -427,7 +428,7 @@ impl GenerationModel {
                 params: params.clone(),
                 return_type: ret.clone(),
             });
-            if operation.kind == vos::OperationKind::Macro {
+            if operation.kind == schema_input_vos::OperationKind::Macro {
                 macros.push(MacroModel {
                     name: operation.name.clone(),
                     return_type: ret.unwrap_or_else(|| "unit".into()),

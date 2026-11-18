@@ -36,8 +36,8 @@ pub use query::ReadProfile;
 #[derive(Debug, Default, Clone)]
 pub(crate) struct State {
     pub(crate) schema: Option<SchemaVersion>,
-    pub(crate) identity_history: Option<vos::types::IdentityHistory>,
-    pub(crate) resolved_contract: Option<vos::ResolvedContract>,
+    pub(crate) identity_history: Option<schema_types::IdentityHistory>,
+    pub(crate) resolved_contract: Option<schema_input_vos::ResolvedContract>,
     pub(crate) records: BTreeMap<String, Vec<u8>>,
     pub(crate) unique_constraints: Vec<database_types::TableUniqueConstraint>,
 }

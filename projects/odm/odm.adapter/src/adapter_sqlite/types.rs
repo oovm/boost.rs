@@ -2,7 +2,7 @@
 
 use database_query::ir::LiteralKind;
 use odm_types::{Value, is_date, is_decimal, is_time, is_utc_datetime};
-use vos::types::{CanonicalScalar, ResolvedCanonicalType};
+use schema_types::{CanonicalScalar, ResolvedCanonicalType};
 
 use crate::{Error, Result};
 

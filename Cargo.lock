@@ -910,9 +910,11 @@ dependencies = [
  "boost-fs",
  "database-formats",
  "database-types",
+ "oak-vos",
+ "schema-input-vos",
+ "schema-types",
  "serde",
  "serde_json",
- "vos",
 ]
 
 [[package]]
@@ -939,11 +941,12 @@ dependencies = [
  "js-sys",
  "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "oak-sql",
+ "schema-input-vos",
+ "schema-types",
  "serde",
  "serde_json",
  "sha2 0.11.1",
  "uuid",
- "vos",
  "wasm-bindgen",
 ]
 
@@ -953,7 +956,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "database-types",
- "vos",
+ "schema-types",
 ]
 
 [[package]]
@@ -1050,11 +1053,13 @@ dependencies = [
  "js-sys",
  "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
  "oak-sql",
+ "oak-vos",
+ "schema-input-vos",
+ "schema-types",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
  "uuid",
- "vos",
  "wasm-bindgen",
 ]
 
@@ -1100,10 +1105,10 @@ dependencies = [
 name = "database-types"
 version = "0.1.0"
 dependencies = [
+ "schema-input-vos",
  "serde",
  "serde_json",
  "uuid",
- "vos",
 ]
 
 [[package]]
@@ -1121,81 +1126,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef552e6f588e446098f6ba40d89ac146c8c7b64aade83c051ee00bb5d2bc18d"
 dependencies = [
  "uuid",
-]
-
-[[package]]
-name = "dejavu"
-version = "0.0.2"
-source = "git+https://github.com/doki-land/dejavu-engine.git?rev=8aba1a0a61ac9d7f2112123a57faec649cf67427#8aba1a0a61ac9d7f2112123a57faec649cf67427"
-dependencies = [
- "dejavu-engine",
- "dejavu-ir",
- "dejavu-language",
- "dejavu-runtime",
- "dejavu-types",
- "serde_json",
-]
-
-[[package]]
-name = "dejavu-diagnostic"
-version = "0.0.2"
-source = "git+https://github.com/doki-land/dejavu-engine.git?rev=8aba1a0a61ac9d7f2112123a57faec649cf67427#8aba1a0a61ac9d7f2112123a57faec649cf67427"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "dejavu-engine"
-version = "0.0.2"
-source = "git+https://github.com/doki-land/dejavu-engine.git?rev=8aba1a0a61ac9d7f2112123a57faec649cf67427#8aba1a0a61ac9d7f2112123a57faec649cf67427"
-dependencies = [
- "dejavu-ir",
- "dejavu-language",
- "dejavu-types",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "dejavu-ir"
-version = "0.0.2"
-source = "git+https://github.com/doki-land/dejavu-engine.git?rev=8aba1a0a61ac9d7f2112123a57faec649cf67427#8aba1a0a61ac9d7f2112123a57faec649cf67427"
-dependencies = [
- "dejavu-diagnostic",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "unicode-normalization",
-]
-
-[[package]]
-name = "dejavu-language"
-version = "0.0.2"
-source = "git+https://github.com/doki-land/dejavu-engine.git?rev=8aba1a0a61ac9d7f2112123a57faec649cf67427#8aba1a0a61ac9d7f2112123a57faec649cf67427"
-dependencies = [
- "dejavu-diagnostic",
- "dejavu-ir",
- "serde_json",
-]
-
-[[package]]
-name = "dejavu-runtime"
-version = "0.0.2"
-source = "git+https://github.com/doki-land/dejavu-engine.git?rev=8aba1a0a61ac9d7f2112123a57faec649cf67427#8aba1a0a61ac9d7f2112123a57faec649cf67427"
-
-[[package]]
-name = "dejavu-types"
-version = "0.0.2"
-source = "git+https://github.com/doki-land/dejavu-engine.git?rev=8aba1a0a61ac9d7f2112123a57faec649cf67427#8aba1a0a61ac9d7f2112123a57faec649cf67427"
-dependencies = [
- "fluent",
- "fluent-bundle",
- "fluent-syntax",
- "lru",
- "serde",
- "serde_json",
- "unic-langid",
 ]
 
 [[package]]
@@ -2939,16 +2869,6 @@ dependencies = [
 [[package]]
 name = "oak-core"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=820bb47292f08d4304607d730f7c32969e17639a#820bb47292f08d4304607d730f7c32969e17639a"
-dependencies = [
- "smallvec",
- "triomphe",
- "twox-hash",
-]
-
-[[package]]
-name = "oak-core"
-version = "0.0.12"
 source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
  "serde",
@@ -3127,14 +3047,6 @@ dependencies = [
 [[package]]
 name = "oak-vos"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oaks.git?rev=820bb47292f08d4304607d730f7c32969e17639a#820bb47292f08d4304607d730f7c32969e17639a"
-dependencies = [
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=820bb47292f08d4304607d730f7c32969e17639a)",
-]
-
-[[package]]
-name = "oak-vos"
-version = "0.0.12"
 source = "git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a#d1337eb4d289505c85d988cd8f80b96023f1e63a"
 dependencies = [
  "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
@@ -3233,25 +3145,29 @@ dependencies = [
  "database-server",
  "database-storage",
  "database-types",
+ "oak-vos",
  "odm-generate",
  "odm-types",
+ "schema-input-vos",
+ "schema-types",
  "serde",
  "serde_json",
  "sqlite",
- "vos",
 ]
 
 [[package]]
 name = "odm-generate"
 version = "0.1.0"
 dependencies = [
+ "oak-vos",
  "once_cell",
+ "schema-input-vos",
+ "schema-types",
  "serde",
  "serde_json",
  "sha2 0.11.1",
  "template-input-dejavu",
  "thiserror 2.0.21",
- "vos",
 ]
 
 [[package]]
@@ -3273,7 +3189,7 @@ name = "odm-input-vos"
 version = "0.1.0"
 dependencies = [
  "odm-types",
- "vos",
+ "schema-types",
 ]
 
 [[package]]
@@ -3283,11 +3199,13 @@ dependencies = [
  "blake3",
  "database-query",
  "glob",
+ "oak-vos",
  "schema-input-von",
+ "schema-input-vos",
+ "schema-types",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
- "vos",
 ]
 
 [[package]]
@@ -4019,7 +3937,7 @@ dependencies = [
 name = "schema-input-vos"
 version = "0.1.0"
 dependencies = [
- "oak-vos 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=d1337eb4d289505c85d988cd8f80b96023f1e63a)",
+ "oak-vos",
  "schema-types",
  "serde",
  "serde_json",
@@ -4850,50 +4768,6 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
-
-[[package]]
-name = "vos"
-version = "0.0.3"
-source = "git+https://github.com/voml/vos-language.git?rev=387d9fc3c9a556ddb8a433c627a866a2918d0186#387d9fc3c9a556ddb8a433c627a866a2918d0186"
-dependencies = [
- "oak-vos 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=820bb47292f08d4304607d730f7c32969e17639a)",
- "serde",
- "serde_json",
- "uuid",
- "vos-format",
- "vos-generator",
- "vos-types",
-]
-
-[[package]]
-name = "vos-format"
-version = "0.0.3"
-source = "git+https://github.com/voml/vos-language.git?rev=387d9fc3c9a556ddb8a433c627a866a2918d0186#387d9fc3c9a556ddb8a433c627a866a2918d0186"
-dependencies = [
- "oak-vos 0.0.12 (git+https://github.com/yggdrasil-language/oaks.git?rev=820bb47292f08d4304607d730f7c32969e17639a)",
-]
-
-[[package]]
-name = "vos-generator"
-version = "0.0.3"
-source = "git+https://github.com/voml/vos-language.git?rev=387d9fc3c9a556ddb8a433c627a866a2918d0186#387d9fc3c9a556ddb8a433c627a866a2918d0186"
-dependencies = [
- "dejavu",
- "once_cell",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "vos-types"
-version = "0.0.3"
-source = "git+https://github.com/voml/vos-language.git?rev=387d9fc3c9a556ddb8a433c627a866a2918d0186#387d9fc3c9a556ddb8a433c627a866a2918d0186"
-dependencies = [
- "serde",
- "serde_json",
- "sha2 0.10.9",
-]
 
 [[package]]
 name = "wasi"

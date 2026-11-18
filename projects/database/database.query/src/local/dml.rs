@@ -16,7 +16,7 @@
 
 use std::collections::BTreeMap;
 
-use vos::{
+use schema_input_vos::{
     syntax::{VosDeclarationKind, VosExpr, VosFieldInit, VosLiteral, VosProgram, VosRoot, VosStmt},
     types::{ResolvedCanonicalType, ResolvedContract, ResolvedTypeContract},
 };
@@ -91,7 +91,7 @@ pub fn execute_with_params(
     records: &mut BTreeMap<String, Vec<u8>>,
     params: &[Value],
 ) -> Result<()> {
-    let program = vos::parse_program(source).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
+    let program = schema_input_vos::parse_program(source).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
     let constraints = constraints::merge(constraints::from_contract(contract)?, declared);
     execute_program_with_constraints(&program, contract, &constraints, schema_document, records, params)
 }
@@ -102,7 +102,7 @@ pub fn try_insert_returning(
     contract: &ResolvedContract,
     records: &mut BTreeMap<String, Vec<u8>>,
 ) -> Result<Option<Vec<QueryRow>>> {
-    let program = vos::parse_program(source).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
+    let program = schema_input_vos::parse_program(source).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
     if !program.statements.is_empty() || program.result.is_none() {
         return Ok(None);
     }
@@ -235,7 +235,7 @@ fn expand_macro_call(expr: &VosExpr, schema_document: Option<&str>) -> Result<Vo
         return Err(dml_error(format!("Phase 1 macro expansion does not bind parameters for `{name}()`")));
     }
     let document = schema_document.ok_or_else(|| dml_error("macro expansion requires an installed schema document"))?;
-    let document = vos::syntax::parse(document).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
+    let document = oak_vos::parse(document).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
     find_macro_body(&document, name).ok_or_else(|| dml_error(format!("unknown schema macro `{name}`")))
 }
 
@@ -305,7 +305,7 @@ pub fn point_write_keys(
     schema_document: Option<&str>,
     params: &[Value],
 ) -> Result<Option<Vec<String>>> {
-    let program = vos::parse_program(source).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
+    let program = schema_input_vos::parse_program(source).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
     let constraints = constraints::merge(constraints::from_contract(contract)?, declared);
     let Ok(expanded) = expand_program(&program, schema_document)
     else {

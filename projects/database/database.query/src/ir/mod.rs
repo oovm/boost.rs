@@ -37,7 +37,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 /// Smoke touch of the public `vos` facade (proves the language dependency).
 pub fn vos_facade_name() -> &'static str {
-    let _ = std::any::type_name::<vos::SchemaProjection>();
+    let _ = std::any::type_name::<schema_input_vos::SchemaProjection>();
     "vos"
 }
 

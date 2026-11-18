@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use database_query::local::{execute, execute_write_with_constraints, resolved_contract_from_document};
 use database_types::{Error, TableUniqueConstraint, UniqueConstraint, Value};
-use vos::types::ResolvedContract;
+use schema_types::ResolvedContract;
 
 const ACCOUNT_SCHEMA: &str = r#"
 table Account {

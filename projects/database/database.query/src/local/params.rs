@@ -23,7 +23,7 @@ use super::{
     sql,
     write::{self, WriteOutcome},
 };
-use vos::syntax::{VosExpr, VosProgram, VosStmt};
+use oak_vos::{VosExpr, VosProgram, VosStmt};
 
 /// Authoring language a statement was prepared from.
 ///
@@ -149,7 +149,7 @@ pub(crate) const PARAM_PREFIX: &str = "__yydb_param_";
 ///      strings / line comments / block comments) and rewrite each to an
 ///      identifier `__yydb_param_<index>`.
 ///   2. Fingerprint the *original* source.
-///   3. `vos::parse_program(&rewritten)` — Oak-vos sees only valid VOS.
+///   3. `schema_input_vos::parse_program(&rewritten)` — Oak-vos sees only valid VOS.
 ///   4. `lower::lower_program` — Name("__yydb_param_*") nodes are lowered
 ///      directly to `BoundValue::Slot { index, expected_ty }`.
 ///   5. Build the full PreparedStatement envelope (read_set / write_set /
@@ -161,7 +161,7 @@ pub fn prepare(source: &str) -> Result<PreparedStatement> {
     let (parameters, rewritten) = scan_and_rewrite(source, Dialect::Vos)?;
     let source_fingerprint = fingerprint(source);
 
-    let program = vos::parse_program(&rewritten).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
+    let program = schema_input_vos::parse_program(&rewritten).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
 
     // ── Write-program short-circuit ────────────────────────────────────
     // DML programs (`Type::insert(...)`, `TypedObject.insert()`) do not
@@ -300,7 +300,7 @@ pub struct BoundWrite {
 /// returns its own error instead of passing as an accepted write.
 pub fn bind_vos_write(source: &str, named: &BTreeMap<String, Value>, schema_document: Option<&str>) -> Result<BoundWrite> {
     let (parameters, rewritten) = scan_and_rewrite(source, Dialect::Vos)?;
-    let program = vos::parse_program(&rewritten).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
+    let program = schema_input_vos::parse_program(&rewritten).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
     let expanded = super::dml::expand_program(&program, schema_document)?;
     if !super::dml::has_write_call(&expanded) {
         return Err(Error::Unsupported("VOS parameter binding for writes requires an insert, update, or delete program"));
@@ -339,7 +339,7 @@ pub fn bind_ordered(stmt: &PreparedStatement, values: &[Value]) -> Result<Vec<Va
 pub fn execute_prepared(
     stmt: &PreparedStatement,
     values: &[Value],
-    contract: Option<&vos::types::ResolvedContract>,
+    contract: Option<&schema_types::ResolvedContract>,
     records: &BTreeMap<String, Vec<u8>>,
 ) -> Result<Vec<QueryRow>> {
     exec::execute_ops(&stmt.ops, contract, records, values)
@@ -351,7 +351,7 @@ pub fn execute_prepared(
 pub fn execute_prepared_profiled(
     stmt: &PreparedStatement,
     values: &[Value],
-    contract: Option<&vos::types::ResolvedContract>,
+    contract: Option<&schema_types::ResolvedContract>,
     records: &BTreeMap<String, Vec<u8>>,
 ) -> Result<(Vec<QueryRow>, exec::ExecProfile)> {
     exec::execute_ops_profiled(&stmt.ops, contract, records, values)
@@ -366,7 +366,7 @@ pub fn execute_prepared_profiled(
 pub fn execute_prepared_borrowed(
     stmt: &PreparedStatement,
     values: &[Value],
-    contract: Option<&vos::types::ResolvedContract>,
+    contract: Option<&schema_types::ResolvedContract>,
     records: &BTreeMap<String, Vec<u8>>,
     source: &dyn super::store::RowSource,
     profiled: bool,
@@ -386,7 +386,7 @@ pub fn execute_prepared_borrowed(
 pub fn execute_write_prepared(
     stmt: &PreparedStatement,
     values: &[Value],
-    contract: &vos::types::ResolvedContract,
+    contract: &schema_types::ResolvedContract,
     declared: &[database_types::TableUniqueConstraint],
     records: &mut BTreeMap<String, Vec<u8>>,
 ) -> Result<WriteOutcome> {

@@ -30,8 +30,8 @@ pub(crate) fn type_label(ty: &CanonicalType) -> String {
     }
 }
 
-pub(crate) fn map_resolved_field_type(ty: &vos::ResolvedCanonicalType) -> Result<MappedFieldType> {
-    use vos::ResolvedCanonicalType;
+pub(crate) fn map_resolved_field_type(ty: &schema_input_vos::ResolvedCanonicalType) -> Result<MappedFieldType> {
+    use schema_input_vos::ResolvedCanonicalType;
     match ty {
         ResolvedCanonicalType::Optional(inner) => {
             let mut mapped = map_resolved_field_type(inner)?;
@@ -88,8 +88,8 @@ pub(crate) fn map_resolved_field_type(ty: &vos::ResolvedCanonicalType) -> Result
     }
 }
 
-pub(crate) fn reference_target_from_resolved(ty: &vos::ResolvedCanonicalType) -> Result<String> {
-    use vos::ResolvedCanonicalType;
+pub(crate) fn reference_target_from_resolved(ty: &schema_input_vos::ResolvedCanonicalType) -> Result<String> {
+    use schema_input_vos::ResolvedCanonicalType;
     match ty {
         ResolvedCanonicalType::User { path, .. } => Ok(path.join("::")),
         ResolvedCanonicalType::Scalar(scalar) => Ok(scalar.as_str().to_owned()),
@@ -185,8 +185,8 @@ pub(crate) fn ensure_single_primary(table: &TypeContract) -> Result<()> {
 ///
 /// Operation declarations (for example durable macros) stay in the Oak input
 /// and are projected separately, so they never block table/class projection.
-pub(crate) fn project_schema(input: &vos::ContractInput) -> Result<SchemaProjection> {
-    use vos::syntax::VosDeclarationKind;
+pub(crate) fn project_schema(input: &schema_input_vos::ContractInput) -> Result<SchemaProjection> {
+    use oak_vos::VosDeclarationKind;
     let root = input.clone().into_oak();
     let declarations = root
         .declarations
@@ -194,7 +194,7 @@ pub(crate) fn project_schema(input: &vos::ContractInput) -> Result<SchemaProject
         .filter(|declaration| matches!(declaration.kind, VosDeclarationKind::Namespace | VosDeclarationKind::Table | VosDeclarationKind::Class))
         .cloned()
         .collect();
-    vos::ContractInput::from_oak(vos::syntax::VosRoot { source: root.source, syntax: root.syntax, declarations })
+    schema_input_vos::ContractInput::from_oak(oak_vos::VosRoot { source: root.source, syntax: root.syntax, declarations })
         .project_schema()
         .map_err(|diagnostics| Error::Vos(format_diagnostics(&diagnostics)))
 }
@@ -264,7 +264,7 @@ pub(crate) fn type_kind_label(kind: TypeContractKind) -> String {
 /// the value. Types are hashed structurally rather than as display labels, so
 /// formatting changes cannot move it either. Declaration and field order are
 /// normalized because order is not identity.
-pub(crate) fn projection_fingerprint(projection: &SchemaProjection, operations: &[vos::OperationProjection]) -> String {
+pub(crate) fn projection_fingerprint(projection: &SchemaProjection, operations: &[schema_input_vos::OperationProjection]) -> String {
     let mut types = projection
         .types
         .iter()

@@ -10,7 +10,7 @@ use database_query::ir::{
     CmpOp, EffectKind, IrEnvelope, IrVersion, LiteralKind, PhysicalOp, PhysicalPlan, PlannedNode, Pred, ProjectField, RealizationClass,
     SchemaFingerprint, SemanticHash,
 };
-use vos::types::{CanonicalScalar, ContractFormat, OperationContract, OperationEffect, ResolvedCanonicalType, SemanticCapability};
+use schema_types::{CanonicalScalar, ContractFormat, OperationContract, OperationEffect, ResolvedCanonicalType, SemanticCapability};
 
 use crate::value::Value;
 

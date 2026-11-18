@@ -1,7 +1,7 @@
 //! Index and resolve tables from a durable [`ResolvedContract`].
 
 use database_types::{Error, MAX_VECTOR_DIM, Result};
-use vos::{
+use schema_input_vos::{
     bind_identity, resolve_contract_from_bound,
     types::{
         FieldIdentity, IDENTITY_MANIFEST_VERSION, IdentityManifest, ResolvedCanonicalType, ResolvedContract, ResolvedFieldContract,
@@ -70,7 +70,7 @@ fn allocate_initial_manifest(projection: &SchemaProjection) -> IdentityManifest 
 
 /// Bind and resolve a schema document into the strict contract consumed by query.
 pub fn resolved_contract_from_document(document: &str) -> Result<ResolvedContract> {
-    let projection = vos::validate_schema(document).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
+    let projection = schema_input_vos::validate_schema(document).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
     let manifest = allocate_initial_manifest(&projection);
     let bound = bind_identity(&projection, &manifest)
         .map_err(|diagnostics| Error::Schema { message: format!("VOS identity binding failed: {diagnostics:?}") })?;

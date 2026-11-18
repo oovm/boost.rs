@@ -3,7 +3,7 @@
 use database_query::ir::{
     EffectKind, IrEnvelope, IrVersion, PhysicalOp, PhysicalPlan, PlannedNode, RealizationClass, SchemaFingerprint, hash_ops,
 };
-use vos::syntax::VosProgram;
+use oak_vos::VosProgram;
 
 use crate::{
     capability::CapabilitySet,
@@ -27,7 +27,7 @@ impl Planner {
 
     /// Plan a VOS source string.
     pub fn plan_source(&self, source: &str) -> Result<PhysicalPlan> {
-        let program = vos::parse_program(source).map_err(|message| Error::diagnostic(Diagnostic::from_vos_parse(message)))?;
+        let program = schema_input_vos::parse_program(source).map_err(|message| Error::diagnostic(Diagnostic::from_vos_parse(message)))?;
         self.plan_program(&program)
     }
 

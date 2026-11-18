@@ -22,7 +22,9 @@ odm-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sqlite = { workspace = true }
-vos = { workspace = true }
+oak-vos = { workspace = true }
+schema-input-vos = { workspace = true }
+schema-types = { workspace = true }
 
 [dev-dependencies]
 database = { workspace = true }

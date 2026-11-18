@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 use database_query::local::{ColumnMeta, ResultCell, ResultFormat, encode_result, execute_sql, resolved_contract_from_document};
 use database_types::{INLINE_BYTES_MAX, Value};
-use vos::types::ResolvedContract;
+use schema_types::ResolvedContract;
 
 const BINARY_SCHEMA: &str = r#"
 table Asset {

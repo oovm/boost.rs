@@ -70,17 +70,17 @@ fn routing_epoch_round_trips_and_requires_monotonic_publish() {
 #[test]
 fn resolved_contract_round_trips_and_rejects_conflicting_publish() {
     let source = "class T { id: uuid }";
-    let projection = vos::parse_oak(source).expect("Oak parses").project_schema().expect("projection");
-    let manifest = vos::types::IdentityManifest {
-        format_version: vos::types::IDENTITY_MANIFEST_VERSION.into(),
-        types: vec![vos::types::TypeIdentity {
+    let projection = schema_input_vos::parse_oak(source).expect("Oak parses").project_schema().expect("projection");
+    let manifest = schema_types::IdentityManifest {
+        format_version: schema_types::IDENTITY_MANIFEST_VERSION.into(),
+        types: vec![schema_types::TypeIdentity {
             canonical_path: vec!["T".into()],
             type_id: 1,
-            kind: vos::types::TypeContractKind::Class,
-            fields: vec![vos::types::FieldIdentity { canonical_name: "id".into(), field_id: 1, virtual_field_index: Some(0) }],
+            kind: schema_types::TypeContractKind::Class,
+            fields: vec![schema_types::FieldIdentity { canonical_name: "id".into(), field_id: 1, virtual_field_index: Some(0) }],
         }],
     };
-    let contract = vos::resolve_contract(&projection, &manifest).expect("resolved contract");
+    let contract = schema_input_vos::resolve_contract(&projection, &manifest).expect("resolved contract");
     let dir = create_folder().expect("tempdir");
     let path = catalog_path(dir.path().join("contract"));
     let mut catalog = Catalog::open(&path).expect("open");

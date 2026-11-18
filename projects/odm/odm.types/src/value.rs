@@ -442,7 +442,7 @@ pub fn float_to_text(value: f64) -> String {
 /// The encoding comes from VOS itself, so a literal produced here always
 /// decodes through [`hex_to_bytes`] without an intermediate text guess.
 pub fn bytes_to_hex(octets: &[u8]) -> String {
-    vos::types::BytesValue::new(octets.to_vec()).to_wire().data
+    schema_types::BytesValue::new(octets.to_vec()).to_wire().data
 }
 
 /// Decodes lowercase VOS hex text back to octets.
@@ -450,12 +450,12 @@ pub fn bytes_to_hex(octets: &[u8]) -> String {
 /// Text outside the canonical wire form yields `None` instead of a guess;
 /// every literal produced by [`Value::as_pred_literal`] is canonical.
 pub fn hex_to_bytes(text: &str) -> Option<Vec<u8>> {
-    let wire = vos::types::BytesValueWire {
-        format_version: vos::types::BYTES_VALUE_FORMAT_VERSION.to_owned(),
+    let wire = schema_types::BytesValueWire {
+        format_version: schema_types::BYTES_VALUE_FORMAT_VERSION.to_owned(),
         encoding: "hex".to_owned(),
         data: text.to_owned(),
     };
-    vos::types::BytesValue::from_wire(wire).ok().map(vos::types::BytesValue::into_octets)
+    schema_types::BytesValue::from_wire(wire).ok().map(schema_types::BytesValue::into_octets)
 }
 
 /// JSON value of a tagged `bytes` carrier: `{"$database":"bytes","hex":"<lowercase hex>"}`.

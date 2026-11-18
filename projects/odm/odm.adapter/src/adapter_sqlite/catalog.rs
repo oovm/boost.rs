@@ -1,7 +1,7 @@
 //! Catalog inspect, adopt planning, and drift (no SQL in public values).
 
 use odm_types::{DriftReport, FieldMapping, MappingManifest, MappingQuality, ObservedCatalog, ObservedColumn, ObservedTable, TableMapping};
-use vos::{CanonicalType, CanonicalTypeArgument, SchemaProjection, TypeContract, TypeContractKind};
+use schema_input_vos::{CanonicalType, CanonicalTypeArgument, SchemaProjection, TypeContract, TypeContractKind};
 
 use crate::Result;
 

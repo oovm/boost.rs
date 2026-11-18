@@ -1,6 +1,6 @@
 //! Resolve dotted field paths against stored rows and the resolved VOS contract.
 
-use vos::types::ResolvedContract;
+use schema_types::ResolvedContract;
 
 use database_types::{Error, Result, Value};
 

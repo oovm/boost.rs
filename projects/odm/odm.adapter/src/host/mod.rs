@@ -336,8 +336,8 @@ fn reject_unsupported_schema(profile: &str, schema: Option<&str>) -> Result<(), 
 }
 
 fn schema_declares_vector(schema: &str) -> Result<bool, ErrorEnvelope> {
-    use vos::syntax::VosDeclarationKind;
-    let input = vos::parse_oak(schema)
+    use oak_vos::VosDeclarationKind;
+    let input = schema_input_vos::parse_oak(schema)
         .map_err(|message| ErrorEnvelope::new(CODE_SCHEMA_MISMATCH, message).with_diagnostic(DIAG_SCHEMA_VECTOR_UNSUPPORTED))?;
     let root = input.into_oak();
     let declarations = root
@@ -346,7 +346,7 @@ fn schema_declares_vector(schema: &str) -> Result<bool, ErrorEnvelope> {
         .filter(|declaration| matches!(declaration.kind, VosDeclarationKind::Namespace | VosDeclarationKind::Table | VosDeclarationKind::Class))
         .cloned()
         .collect();
-    let projection = vos::ContractInput::from_oak(vos::syntax::VosRoot { source: root.source, syntax: root.syntax, declarations })
+    let projection = schema_input_vos::ContractInput::from_oak(oak_vos::VosRoot { source: root.source, syntax: root.syntax, declarations })
         .project_schema()
         .map_err(|diagnostics| {
             let reason =
@@ -356,17 +356,17 @@ fn schema_declares_vector(schema: &str) -> Result<bool, ErrorEnvelope> {
     Ok(projection.types.iter().flat_map(|item| item.fields.iter()).any(|field| type_declares_vector(&field.canonical_type)))
 }
 
-fn type_declares_vector(ty: &vos::CanonicalType) -> bool {
+fn type_declares_vector(ty: &schema_input_vos::CanonicalType) -> bool {
     match ty {
-        vos::CanonicalType::Named(path) => path.last().is_some_and(|name| name == "vector"),
-        vos::CanonicalType::Reference(inner) | vos::CanonicalType::Optional(inner) | vos::CanonicalType::List(inner) => {
-            type_declares_vector(inner)
-        }
-        vos::CanonicalType::Generic { path, arguments } => {
+        schema_input_vos::CanonicalType::Named(path) => path.last().is_some_and(|name| name == "vector"),
+        schema_input_vos::CanonicalType::Reference(inner)
+        | schema_input_vos::CanonicalType::Optional(inner)
+        | schema_input_vos::CanonicalType::List(inner) => type_declares_vector(inner),
+        schema_input_vos::CanonicalType::Generic { path, arguments } => {
             path.last().is_some_and(|name| name == "vector")
                 || arguments.iter().any(|argument| match argument {
-                    vos::CanonicalTypeArgument::Type(inner) => type_declares_vector(inner),
-                    vos::CanonicalTypeArgument::Literal(_) => false,
+                    schema_input_vos::CanonicalTypeArgument::Type(inner) => type_declares_vector(inner),
+                    schema_input_vos::CanonicalTypeArgument::Literal(_) => false,
                 })
         }
     }

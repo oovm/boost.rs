@@ -11,7 +11,7 @@ use std::{
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use database_types::{Error, Result, Timestamp, Value};
-use vos::types::ResolvedContract;
+use schema_types::ResolvedContract;
 
 use super::{
     catalog::table_row_key_name,
@@ -117,7 +117,7 @@ impl Drop for QueryStartClockGuard {
 
 /// Execute a VOS source directly (convenience wrapper). Parses + lowers + runs.
 pub fn execute(source: &str, contract: Option<&ResolvedContract>, records: &BTreeMap<String, Vec<u8>>) -> Result<Vec<QueryRow>> {
-    let program = vos::parse_program(source).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
+    let program = schema_input_vos::parse_program(source).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
     let ops = lower::lower_program(&program, &[])?;
     execute_ops(&ops, contract, records, &[])
 }

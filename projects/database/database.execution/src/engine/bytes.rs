@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use database_query::local::{BytesPlacementHook, ObjectResolver, VectorPlacementHook};
 use database_types::{INLINE_BYTES_MAX, ObjectKind, ObjectRef, Result, Value, Vector};
-use vos::types::{BytesPlacement, BytesPlacementPolicy};
+use schema_types::{BytesPlacement, BytesPlacementPolicy};
 
 use crate::engine::ObjectStore;
 

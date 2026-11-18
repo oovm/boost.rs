@@ -6,7 +6,7 @@
 //! updates type their values through one implementation.
 
 use database_types::{Error, Result, Value};
-use vos::types::ResolvedCanonicalType;
+use schema_types::ResolvedCanonicalType;
 
 fn coerce_error(message: impl Into<String>) -> Error {
     Error::Schema { message: message.into() }
@@ -37,7 +37,7 @@ impl std::fmt::Display for ScalarTarget {
 }
 
 pub(crate) fn scalar_target(ty: &ResolvedCanonicalType) -> Option<ScalarTarget> {
-    use vos::types::{CanonicalScalar, ResolvedCanonicalTypeArgument};
+    use schema_types::{CanonicalScalar, ResolvedCanonicalTypeArgument};
     match ty {
         ResolvedCanonicalType::Scalar(CanonicalScalar::F64) => Some(ScalarTarget::Real),
         ResolvedCanonicalType::Scalar(CanonicalScalar::Bytes) => Some(ScalarTarget::Bytes),
@@ -71,7 +71,7 @@ pub(crate) fn scalar_target(ty: &ResolvedCanonicalType) -> Option<ScalarTarget> 
 /// value. A `vector<N>` column keeps exactly `N` finite components. Columns
 /// without a scalar target (records and user types) accept the value unchanged.
 pub(crate) fn value_to_scalar(value: Value, ty: &ResolvedCanonicalType) -> Result<Value> {
-    use vos::types::CanonicalScalar;
+    use schema_types::CanonicalScalar;
     // A REAL value belongs in an `f64` column. Every other declared column
     // keeps an exact value, so a REAL is rejected before the write is staged
     // rather than being rounded into an integer or degraded into text.

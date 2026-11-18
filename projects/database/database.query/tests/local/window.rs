@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use database_query::local::{execute_sql, prepare_sql, resolved_contract_from_document};
 use database_types::Value;
-use vos::types::ResolvedContract;
+use schema_types::ResolvedContract;
 
 const SCHEMA: &str = r#"
 table Sale {

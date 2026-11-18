@@ -29,7 +29,7 @@ mod write;
 use std::collections::BTreeMap;
 
 use database_types::{TableUniqueConstraint, Value};
-use vos::types::ResolvedContract;
+use schema_types::ResolvedContract;
 
 pub use catalog::{resolved_contract_from_document, validate_contract_types};
 pub use exec::{ExecProfile, cmp_values, compare_values, execute_ops_borrowed, execute_ops_borrowed_profiled, execute_ops_profiled};

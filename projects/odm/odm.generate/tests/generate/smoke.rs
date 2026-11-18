@@ -54,7 +54,7 @@ fn operation_artifact_parses_minimal_envelope() {
     let artifact = IrisOperationArtifact::from_json(MINIMAL_OP_ARTIFACT).expect("minimal artifact");
     assert_eq!(artifact.len(), 1);
     assert_eq!(artifact.operations[0].name, "get_user");
-    assert_eq!(artifact.operations[0].kind, vos::OperationKind::Query);
+    assert_eq!(artifact.operations[0].kind, schema_input_vos::OperationKind::Query);
 }
 
 #[test]

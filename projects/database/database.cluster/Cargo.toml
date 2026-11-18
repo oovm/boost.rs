@@ -11,9 +11,11 @@ publish = false
 [dependencies]
 database-formats = { workspace = true }
 database-types = { workspace = true }
+oak-vos = { workspace = true }
+schema-input-vos = { workspace = true }
+schema-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-vos = { workspace = true }
 
 [dev-dependencies]
 boost-fs = { workspace = true }

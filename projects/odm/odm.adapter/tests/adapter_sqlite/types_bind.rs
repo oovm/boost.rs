@@ -3,7 +3,7 @@
 use database_query::ir::LiteralKind;
 use odm_adapter::adapter_sqlite::{SqliteValue, from_sql_value, from_sql_value_typed, literal_to_sql_value, to_sql_value};
 use odm_types::Value;
-use vos::types::{CanonicalScalar, ResolvedCanonicalType};
+use schema_types::{CanonicalScalar, ResolvedCanonicalType};
 
 #[test]
 fn float_binds_as_native_real_and_decodes_back() {

@@ -12,7 +12,7 @@ publish = false
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
-vos = { workspace = true }
+schema-input-vos = { workspace = true }
 
 [features]
 default = ["serde"]

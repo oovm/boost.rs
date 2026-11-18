@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use vos::{
+use schema_input_vos::{
     ContractDiagnostic, SchemaProjection, TypeContractKind,
     syntax::{VosDeclarationKind, VosRoot},
 };
@@ -61,14 +61,14 @@ pub fn read_schema(project_dir: &Path, schema_pattern: &str) -> Result<String, S
 /// macros) are valid schema-file content but are not schema types, so only
 /// namespaces, tables, and classes are offered to the schema projection.
 pub fn parse_schema(source: &str) -> Result<SchemaProjection, String> {
-    let root = vos::parse_oak(source)?.into_oak();
+    let root = schema_input_vos::parse_oak(source)?.into_oak();
     let declarations = root
         .declarations
         .iter()
         .filter(|declaration| matches!(declaration.kind, VosDeclarationKind::Namespace | VosDeclarationKind::Table | VosDeclarationKind::Class))
         .cloned()
         .collect();
-    vos::ContractInput::from_oak(VosRoot { source: root.source, syntax: root.syntax, declarations })
+    schema_input_vos::ContractInput::from_oak(VosRoot { source: root.source, syntax: root.syntax, declarations })
         .project_schema()
         .map_err(|diagnostics| format_projection_diagnostics(&diagnostics))
 }

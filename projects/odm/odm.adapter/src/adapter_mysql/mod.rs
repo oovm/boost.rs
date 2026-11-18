@@ -19,7 +19,7 @@ use crate::{Error, Result};
 pub use database_client::mysql::Session;
 use database_query::ir::{IrVersion, PhysicalPlan};
 use odm_types::{CapabilitySet, DriftReport, LogicalMigrationPlan, MappingManifest, ObservedCatalog, QueryCaps, Row, RowWrite, WriteCaps};
-use vos::SchemaProjection;
+use schema_input_vos::SchemaProjection;
 
 pub use catalog::{adopt_plan, classify_type};
 pub use migrate::{PushReport, apply_push, plan_push};

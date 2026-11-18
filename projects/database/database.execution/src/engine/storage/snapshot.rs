@@ -301,7 +301,7 @@ fn decode_schema(bytes: Option<Vec<u8>>) -> Result<Option<database_types::Schema
     }
 }
 
-fn encode_identity(history: &Option<vos::types::IdentityHistory>) -> Result<Vec<u8>> {
+fn encode_identity(history: &Option<schema_types::IdentityHistory>) -> Result<Vec<u8>> {
     match history {
         None => Ok(vec![0]),
         Some(history) => {
@@ -315,7 +315,7 @@ fn encode_identity(history: &Option<vos::types::IdentityHistory>) -> Result<Vec<
     }
 }
 
-fn decode_identity(bytes: Option<Vec<u8>>) -> Result<Option<vos::types::IdentityHistory>> {
+fn decode_identity(bytes: Option<Vec<u8>>) -> Result<Option<schema_types::IdentityHistory>> {
     let bytes = bytes.unwrap_or(vec![0]);
     match bytes.first() {
         None | Some(0) => Ok(None),
@@ -329,7 +329,7 @@ fn decode_identity(bytes: Option<Vec<u8>>) -> Result<Option<vos::types::Identity
                 return Err(Error::Corrupt("catalog meta length mismatch"));
             }
             Ok(Some(
-                vos::types::IdentityHistory::from_json(
+                schema_types::IdentityHistory::from_json(
                     std::str::from_utf8(&bytes[5..end]).map_err(|_| Error::Corrupt("catalog meta is not UTF-8"))?,
                 )
                 .map_err(|_| Error::Corrupt("catalog meta is invalid"))?,
@@ -339,7 +339,7 @@ fn decode_identity(bytes: Option<Vec<u8>>) -> Result<Option<vos::types::Identity
     }
 }
 
-fn encode_contract(contract: &Option<vos::ResolvedContract>) -> Result<Vec<u8>> {
+fn encode_contract(contract: &Option<schema_input_vos::ResolvedContract>) -> Result<Vec<u8>> {
     match contract {
         None => Ok(vec![0]),
         Some(contract) => {
@@ -353,7 +353,7 @@ fn encode_contract(contract: &Option<vos::ResolvedContract>) -> Result<Vec<u8>> 
     }
 }
 
-fn decode_contract(bytes: Option<Vec<u8>>) -> Result<Option<vos::ResolvedContract>> {
+fn decode_contract(bytes: Option<Vec<u8>>) -> Result<Option<schema_input_vos::ResolvedContract>> {
     let bytes = bytes.unwrap_or(vec![0]);
     match bytes.first() {
         None | Some(0) => Ok(None),
@@ -367,7 +367,7 @@ fn decode_contract(bytes: Option<Vec<u8>>) -> Result<Option<vos::ResolvedContrac
                 return Err(Error::Corrupt("resolved contract meta length mismatch"));
             }
             Ok(Some(
-                vos::ResolvedContract::from_json(
+                schema_input_vos::ResolvedContract::from_json(
                     &String::from_utf8(bytes[5..end].to_vec()).map_err(|_| Error::Corrupt("resolved contract is not UTF-8"))?,
                 )
                 .map_err(|_| Error::Corrupt("resolved contract meta is invalid"))?,

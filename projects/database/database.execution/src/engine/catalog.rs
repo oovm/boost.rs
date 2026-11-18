@@ -1,26 +1,22 @@
-//! VOS schema documents shared with [`vos`](https://github.com/voml/vos-language)
-//! (a pinned Oak-backed revision).
+//! VOS schema documents validated through the Boost `schema.input.vos` chain.
 //!
 //! 本地 uses **VOS for DDL and query**. It does **not** invent a private schema
 //! dialect. Database-truth documents stored by
 //! [`crate::engine::Connection::ensure_schema`] are VOS source text; semantic checking
-//! goes through the `vos` facade so 本地与分布式 / tooling stay aligned with
-//! Oak's parser and VOS semantic contract.
+//! goes through `schema-input-vos` so 本地与分布式 / tooling stay aligned with
+//! Oak's parser and the VOS semantic contract.
 
 use std::collections::BTreeMap;
 
 use crate::program::{FieldHandle, LayoutField, RecordLayout, RecordLayoutError, Type};
 use database_types::{Error, Result, UniqueConstraint};
-use vos::{
+use schema_input_vos::{
     bind_identity, evolve_identity, resolve_contract_from_bound as vos_resolve_contract,
     types::{
         FieldIdentity, IDENTITY_HISTORY_FORMAT_VERSION, IDENTITY_MANIFEST_VERSION, IdentityBoundProjection, IdentityHistory, IdentityManifest,
         ResolvedContract, SchemaProjection, TypeIdentity,
     },
 };
-
-/// Canonical remote used by this workspace for shared VOS semantics.
-pub const VOS_GIT_DEV: &str = "https://github.com/voml/vos-language.git#branch=dev";
 
 /// Parses a VOS document through Oak and returns its schema projection.
 ///
@@ -30,7 +26,7 @@ pub(crate) fn project_schema(document: &str) -> Result<SchemaProjection> {
     if document.contains('\0') {
         return Err(Error::Schema { message: "VOS schema document must not contain NUL bytes".into() });
     }
-    vos::validate_schema(document).map_err(|message| Error::Schema { message })
+    schema_input_vos::validate_schema(document).map_err(|message| Error::Schema { message })
 }
 
 /// Assigns durable identities to an unreleased projection in document order.
@@ -334,7 +330,7 @@ pub fn execution_catalog(document: &str) -> Result<ExecutionCatalog> {
 ///
 /// This is the downstream path for new integrations. It does not parse source,
 /// inspect a VOS syntax AST, or infer identities from declaration order.
-pub fn execution_catalog_from_resolved_contract(contract: &vos::ResolvedContract) -> Result<ExecutionCatalog> {
+pub fn execution_catalog_from_resolved_contract(contract: &schema_input_vos::ResolvedContract) -> Result<ExecutionCatalog> {
     contract
         .validate()
         .map_err(|error| Error::Schema { message: format!("invalid resolved VOS contract {}: {}", error.code, error.message) })?;
@@ -342,8 +338,8 @@ pub fn execution_catalog_from_resolved_contract(contract: &vos::ResolvedContract
     let mut types = Vec::with_capacity(contract.types.len());
     for item in &contract.types {
         let kind = match item.kind {
-            vos::types::TypeContractKind::Table => ExecutionTypeKind::Table,
-            vos::types::TypeContractKind::Class => ExecutionTypeKind::Class,
+            schema_types::TypeContractKind::Table => ExecutionTypeKind::Table,
+            schema_types::TypeContractKind::Class => ExecutionTypeKind::Class,
         };
         let name = item
             .canonical_path
@@ -455,8 +451,8 @@ pub fn remap_unique_constraints(
 /// becomes the execution vector of the declared dimension. VOS fixes the
 /// element precision and the dimension and leaves distance metrics to query
 /// capabilities, so no metric is bound here.
-fn resolved_execution_type(ty: &vos::types::ResolvedCanonicalType) -> Result<Type> {
-    use vos::types::ResolvedCanonicalType;
+fn resolved_execution_type(ty: &schema_types::ResolvedCanonicalType) -> Result<Type> {
+    use schema_types::ResolvedCanonicalType;
     match ty {
         ResolvedCanonicalType::Scalar(scalar) => execution_type_for_scalar(*scalar),
         ResolvedCanonicalType::Generic { path, arguments } if path == &["Decimal"] => decimal_type_from_arguments(arguments),
@@ -476,8 +472,8 @@ fn resolved_execution_type(ty: &vos::types::ResolvedCanonicalType) -> Result<Typ
 /// integers, floats, `utf16` and `uuid` have no execution type here, so they
 /// return [`Error::Schema`] instead of widening, merging or silently dropping
 /// the declared scalar.
-pub fn execution_type_for_scalar(scalar: vos::types::CanonicalScalar) -> Result<Type> {
-    use vos::types::CanonicalScalar;
+pub fn execution_type_for_scalar(scalar: schema_types::CanonicalScalar) -> Result<Type> {
+    use schema_types::CanonicalScalar;
     match scalar {
         CanonicalScalar::I64 => Ok(Type::I64),
         CanonicalScalar::Bool => Ok(Type::Bool),
@@ -494,12 +490,12 @@ pub fn execution_type_for_scalar(scalar: vos::types::CanonicalScalar) -> Result<
 /// Maps a 本地 execution scalar back to its canonical VOS scalar.
 ///
 /// Precision and scale are catalog metadata of [`Type::Decimal`], so the
-/// canonical form is always [`vos::types::CanonicalScalar::Decimal`] and the
+/// canonical form is always [`schema_types::CanonicalScalar::Decimal`] and the
 /// declared shape is validated rather than encoded. Composite execution types
 /// (files, vectors, records, null) have no scalar spelling and return
 /// [`Error::Schema`].
-pub fn canonical_scalar_for_execution_type(ty: &Type) -> Result<vos::types::CanonicalScalar> {
-    use vos::types::CanonicalScalar;
+pub fn canonical_scalar_for_execution_type(ty: &Type) -> Result<schema_types::CanonicalScalar> {
+    use schema_types::CanonicalScalar;
     match ty {
         Type::I64 => Ok(CanonicalScalar::I64),
         Type::Bool => Ok(CanonicalScalar::Bool),
@@ -518,8 +514,8 @@ pub fn canonical_scalar_for_execution_type(ty: &Type) -> Result<vos::types::Cano
 }
 
 /// Reads `Decimal<precision, scale>` literal arguments into the execution type.
-fn decimal_type_from_arguments(arguments: &[vos::types::ResolvedCanonicalTypeArgument]) -> Result<Type> {
-    use vos::types::ResolvedCanonicalTypeArgument;
+fn decimal_type_from_arguments(arguments: &[schema_types::ResolvedCanonicalTypeArgument]) -> Result<Type> {
+    use schema_types::ResolvedCanonicalTypeArgument;
     let [ResolvedCanonicalTypeArgument::Literal(precision), ResolvedCanonicalTypeArgument::Literal(scale)] = arguments
     else {
         return Err(Error::Schema { message: "`Decimal` requires two literal arguments: precision and scale".into() });
@@ -573,5 +569,5 @@ pub fn validate_document(document: &str) -> Result<()> {
     if document.contains('\0') {
         return Err(Error::Schema { message: "VOS schema document must not contain NUL bytes".into() });
     }
-    vos::validate_schema(document).map(|_| ()).map_err(|message| Error::Schema { message })
+    schema_input_vos::validate_schema(document).map(|_| ()).map_err(|message| Error::Schema { message })
 }

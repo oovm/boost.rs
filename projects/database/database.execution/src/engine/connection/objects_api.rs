@@ -80,14 +80,14 @@ impl Connection {
         self.objects.read_file_range(manifest, offset, len)
     }
 
-    /// Read one VOS [`FileReadWindow`](vos::types::FileReadWindow) of a `file` value.
+    /// Read one VOS [`FileReadWindow`](schema_types::FileReadWindow) of a `file` value.
     ///
     /// The window follows VOS semantics: an offset at or past end of file yields
     /// an empty window, a request starting before end of file is truncated to the
     /// remaining octets, and a read past the end is a short read instead of an
     /// error. Every touched chunk is verified against the manifest, and a missing
     /// or tampered object is a structured error rather than empty content.
-    pub fn read_file_window(&self, descriptor: &FileDescriptor, window: vos::types::FileReadWindow) -> Result<Vec<u8>> {
+    pub fn read_file_window(&self, descriptor: &FileDescriptor, window: schema_types::FileReadWindow) -> Result<Vec<u8>> {
         self.objects.read_file_window(descriptor, window.offset, window.length)
     }
 

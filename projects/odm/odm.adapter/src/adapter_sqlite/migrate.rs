@@ -6,7 +6,7 @@ use std::{
 };
 
 use odm_types::{LogicalChange, LogicalMigrationPlan, ObservedCatalog};
-use vos::{CanonicalType, FieldContract, SchemaProjection, TypeContract, TypeContractKind};
+use schema_input_vos::{CanonicalType, FieldContract, SchemaProjection, TypeContract, TypeContractKind};
 
 use crate::{Error, Result};
 

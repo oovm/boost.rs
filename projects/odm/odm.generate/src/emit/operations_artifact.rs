@@ -3,15 +3,15 @@
 //! Route B: Iris defines its own top-level envelope/projection structs so that
 //! the generator consumes a stable JSON shape independent of VOS's internal
 //! type evolution. Nested leaf types (`CanonicalType`) are reused from the
-//! public `vos::types` API since those are stable VOS primitives.
+//! public `schema_types` API since those are stable VOS primitives.
 //!
 //! Every struct here carries `#[serde(rename_all = "camelCase")]` and
 //! `#[serde(deny_unknown_fields)]` to match VOS's strict artifact contract.
 
 use core::range::Range;
 
+use schema_types::{CanonicalType, ContractEnvelope, OperationKind};
 use serde::{Deserialize, Serialize};
-use vos::types::{CanonicalType, ContractEnvelope, OperationKind};
 
 /// Error type for operation artifact decoding / validation.
 #[derive(Debug, Clone, thiserror::Error)]

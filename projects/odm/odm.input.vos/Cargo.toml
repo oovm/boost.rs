@@ -10,4 +10,4 @@ publish = false
 
 [dependencies]
 odm-types = { workspace = true }
-vos = { workspace = true }
+schema-types = { workspace = true }

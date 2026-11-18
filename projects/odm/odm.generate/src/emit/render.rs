@@ -35,12 +35,12 @@ pub fn is_stub() -> bool {
 
 /// Convert a VOS `OperationKind` enum into the stable lowercase string tag
 /// we store inside `OperationModel.kind`.
-pub(crate) fn operation_kind_label(kind: vos::types::OperationKind) -> String {
+pub(crate) fn operation_kind_label(kind: schema_types::OperationKind) -> String {
     match kind {
-        vos::types::OperationKind::Query => "query",
-        vos::types::OperationKind::Udf => "udf",
-        vos::types::OperationKind::Micro => "micro",
-        vos::types::OperationKind::Macro => "macro",
+        schema_types::OperationKind::Query => "query",
+        schema_types::OperationKind::Udf => "udf",
+        schema_types::OperationKind::Micro => "micro",
+        schema_types::OperationKind::Macro => "macro",
     }
     .to_owned()
 }

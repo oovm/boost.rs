@@ -11,7 +11,7 @@ use crate::{catalog::format, topology::ShardMap};
 pub struct Catalog {
     path: Option<PathBuf>,
     schema: Option<CatalogSchema>,
-    resolved_contract: Option<vos::types::ResolvedContract>,
+    resolved_contract: Option<schema_types::ResolvedContract>,
     shards: Vec<ShardId>,
     routing_epoch: Option<ShardEpoch>,
     owners: Vec<OwnerEntry>,
@@ -52,12 +52,12 @@ impl Catalog {
     }
 
     /// Returns the strict resolved VOS contract published for this catalog.
-    pub fn resolved_contract(&self) -> Option<&vos::types::ResolvedContract> {
+    pub fn resolved_contract(&self) -> Option<&schema_types::ResolvedContract> {
         self.resolved_contract.as_ref()
     }
 
     /// Publishes a validated resolved VOS contract for downstream consumers.
-    pub fn publish_resolved_contract(&mut self, contract: vos::types::ResolvedContract) -> Result<()> {
+    pub fn publish_resolved_contract(&mut self, contract: schema_types::ResolvedContract) -> Result<()> {
         validate_contract(self.schema.as_ref(), &contract)?;
         if let Some(current) = &self.resolved_contract {
             if current != &contract {
@@ -168,8 +168,8 @@ impl Catalog {
     }
 }
 
-fn resolved_contract_for_schema(schema: &CatalogSchema) -> Result<vos::types::ResolvedContract> {
-    let projection = vos::parse_oak(&schema.document)
+fn resolved_contract_for_schema(schema: &CatalogSchema) -> Result<schema_types::ResolvedContract> {
+    let projection = schema_input_vos::parse_oak(&schema.document)
         .map_err(|message| Error::Schema { message })?
         .project_schema()
         .map_err(|diagnostics| Error::Schema { message: format!("VOS semantic projection failed: {diagnostics:?}") })?;
@@ -191,42 +191,42 @@ fn resolved_contract_for_schema(schema: &CatalogSchema) -> Result<vos::types::Re
                 .map(|(field_index, field)| {
                     let field_id = next_field_id;
                     next_field_id += 1;
-                    Ok(vos::types::FieldIdentity {
+                    Ok(schema_types::FieldIdentity {
                         canonical_name: field.canonical_name.clone(),
                         field_id,
                         virtual_field_index: Some(field_index as u32),
                     })
                 })
                 .collect::<Result<Vec<_>>>()?;
-            Ok(vos::types::TypeIdentity { canonical_path: projected.canonical_path.clone(), type_id, kind: projected.kind, fields })
+            Ok(schema_types::TypeIdentity { canonical_path: projected.canonical_path.clone(), type_id, kind: projected.kind, fields })
         })
         .collect::<Result<Vec<_>>>()?;
-    let manifest = vos::types::IdentityManifest { format_version: vos::types::IDENTITY_MANIFEST_VERSION.to_owned(), types };
-    let contract = vos::resolve_contract(&projection, &manifest)
+    let manifest = schema_types::IdentityManifest { format_version: schema_types::IDENTITY_MANIFEST_VERSION.to_owned(), types };
+    let contract = schema_input_vos::resolve_contract(&projection, &manifest)
         .map_err(|diagnostics| Error::Schema { message: format!("VOS resolved contract failed: {diagnostics:?}") })?;
     validate_contract(Some(schema), &contract)?;
     Ok(contract)
 }
 
-pub(crate) fn validate_contract(schema: Option<&CatalogSchema>, contract: &vos::types::ResolvedContract) -> Result<()> {
+pub(crate) fn validate_contract(schema: Option<&CatalogSchema>, contract: &schema_types::ResolvedContract) -> Result<()> {
     let artifact = contract.to_json().map_err(|_| Error::Corrupt("resolved contract encode"))?;
-    vos::types::ResolvedContract::from_json(&artifact)
+    schema_types::ResolvedContract::from_json(&artifact)
         .map_err(|error| Error::Schema { message: format!("invalid resolved VOS contract {}: {}", error.code, error.message) })?;
     let schema = schema.ok_or(Error::Unsupported("publish schema before resolved contract"))?;
-    let projection = vos::validate_schema(&schema.document).map_err(|message| Error::Schema { message })?;
-    let manifest = vos::types::IdentityManifest {
+    let projection = schema_input_vos::validate_schema(&schema.document).map_err(|message| Error::Schema { message })?;
+    let manifest = schema_types::IdentityManifest {
         format_version: contract.identity_manifest_version.clone(),
         types: contract
             .types
             .iter()
-            .map(|entry| vos::types::TypeIdentity {
+            .map(|entry| schema_types::TypeIdentity {
                 canonical_path: entry.canonical_path.clone(),
                 type_id: entry.type_id,
                 kind: entry.kind,
                 fields: entry
                     .fields
                     .iter()
-                    .map(|field| vos::types::FieldIdentity {
+                    .map(|field| schema_types::FieldIdentity {
                         canonical_name: field.canonical_name.clone(),
                         field_id: field.field_id,
                         virtual_field_index: field.virtual_field_index,
@@ -235,7 +235,7 @@ pub(crate) fn validate_contract(schema: Option<&CatalogSchema>, contract: &vos::
             })
             .collect(),
     };
-    let expected = vos::resolve_contract(&projection, &manifest)
+    let expected = schema_input_vos::resolve_contract(&projection, &manifest)
         .map_err(|diagnostics| Error::Schema { message: format!("resolved contract does not match schema: {diagnostics:?}") })?;
     if &expected != contract {
         return Err(Error::Corrupt("resolved contract does not match schema"));

@@ -6,7 +6,7 @@
 
 use database_query::local::{prepare_sql, read_window, resolved_contract_from_document};
 use database_types::Value;
-use vos::types::ResolvedContract;
+use schema_types::ResolvedContract;
 
 const SCHEMA: &str = r#"
 table Doc {

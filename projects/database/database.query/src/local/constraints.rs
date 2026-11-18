@@ -9,7 +9,7 @@
 use std::collections::BTreeMap;
 
 use database_types::{Error, Result, TableUniqueConstraint, UniqueConstraint, Value};
-use vos::types::{ResolvedContract, TypeContractKind};
+use schema_types::{ResolvedContract, TypeContractKind};
 
 use super::{catalog, ops::QueryRow, store};
 

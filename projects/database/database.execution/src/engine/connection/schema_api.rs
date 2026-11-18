@@ -9,12 +9,12 @@ impl Connection {
     }
 
     /// Current persisted VOS identity history, if the database has one.
-    pub fn identity_history(&self) -> Result<Option<vos::types::IdentityHistory>> {
+    pub fn identity_history(&self) -> Result<Option<schema_types::IdentityHistory>> {
         Ok(self.read_state()?.identity_history)
     }
 
     /// Current validated VOS resolved contract, if the database has one.
-    pub fn resolved_contract(&self) -> Result<Option<vos::ResolvedContract>> {
+    pub fn resolved_contract(&self) -> Result<Option<schema_input_vos::ResolvedContract>> {
         Ok(self.read_state()?.resolved_contract)
     }
 
@@ -177,7 +177,7 @@ fn schema_document(state: &super::State) -> Option<String> {
 /// Returns the resolved contract for the persisted snapshot. When the document
 /// no longer matches the durable ledger this fails structurally without
 /// rewriting any state.
-fn rebind_identities(state: &super::State, projection: &vos::types::SchemaProjection) -> Result<vos::ResolvedContract> {
+fn rebind_identities(state: &super::State, projection: &schema_types::SchemaProjection) -> Result<schema_input_vos::ResolvedContract> {
     let history = state.identity_history.as_ref().ok_or(Error::Corrupt("catalog identity ledger does not match schema"))?;
     let manifest = schema::manifest_from_snapshot(&history.snapshot);
     let bound = schema::bind(projection, &manifest).map_err(|_| Error::Corrupt("catalog identity ledger does not match schema"))?;

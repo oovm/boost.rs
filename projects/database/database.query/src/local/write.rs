@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use database_types::{Error, Result, TableUniqueConstraint, UniqueConstraint, Value};
-use vos::types::{ResolvedContract, ResolvedTypeContract};
+use schema_types::{ResolvedContract, ResolvedTypeContract};
 
 use super::{
     catalog, coerce, constraints, exec,

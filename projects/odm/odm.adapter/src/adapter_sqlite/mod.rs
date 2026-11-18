@@ -263,6 +263,6 @@ impl From<std::io::Error> for Error {
     }
 }
 
-fn parse_vos(vos_schema: &str) -> Result<vos::SchemaProjection> {
+fn parse_vos(vos_schema: &str) -> Result<schema_input_vos::SchemaProjection> {
     odm_types::parse_schema(vos_schema).map_err(|message| Error::Vos(format!("parse schema: {message}")))
 }

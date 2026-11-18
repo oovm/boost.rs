@@ -12,7 +12,7 @@
 //! caller falls back to a full read.
 
 use database_types::{Error, Result, Value};
-use vos::types::{CanonicalScalar, ResolvedCanonicalType, ResolvedContract, ResolvedTypeContract};
+use schema_types::{CanonicalScalar, ResolvedCanonicalType, ResolvedContract, ResolvedTypeContract};
 
 use super::{
     catalog::{self, primary_field_name, table_row_key_name, table_type_by_name},

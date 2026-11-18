@@ -480,7 +480,7 @@ impl PreparedVos {
 /// sources — stays a read so the canonical Phase 1 diagnostics of the read
 /// path surface for it.
 fn is_write_program(source: &str) -> bool {
-    let Ok(program) = vos::parse_program(&probe_source(source))
+    let Ok(program) = schema_input_vos::parse_program(&probe_source(source))
     else {
         return false;
     };
@@ -496,8 +496,8 @@ fn is_write_program(source: &str) -> bool {
     is_write_expr(result)
 }
 
-fn is_write_expr(expr: &vos::syntax::VosExpr) -> bool {
-    use vos::syntax::VosExpr;
+fn is_write_expr(expr: &oak_vos::VosExpr) -> bool {
+    use oak_vos::VosExpr;
     let VosExpr::Call { callee, args, .. } = expr
     else {
         return false;

@@ -17,11 +17,12 @@ database-types = { workspace = true }
 database-udf = { workspace = true }
 oak-core = { workspace = true }
 oak-sql = { workspace = true }
+schema-input-vos = { workspace = true }
+schema-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 uuid = { workspace = true }
-vos = { workspace = true }
 
 [dev-dependencies]
 boost-fs = { workspace = true }

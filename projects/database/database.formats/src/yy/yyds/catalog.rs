@@ -15,7 +15,7 @@ pub fn encode(
     schema: Option<&CatalogSchema>,
     routing_epoch: Option<ShardEpoch>,
     shards: &[ShardId],
-    resolved_contract: Option<&vos::types::ResolvedContract>,
+    resolved_contract: Option<&schema_types::ResolvedContract>,
     owners: &[OwnerEntry],
 ) -> Result<Vec<u8>> {
     let mut out = Vec::new();
@@ -100,7 +100,7 @@ pub fn encode(
 /// Returns `(schema, routing_epoch, shards, resolved_contract, owners)`.
 pub fn decode(
     bytes: &[u8],
-) -> Result<(Option<CatalogSchema>, Option<ShardEpoch>, Vec<ShardId>, Option<vos::types::ResolvedContract>, Vec<OwnerEntry>)> {
+) -> Result<(Option<CatalogSchema>, Option<ShardEpoch>, Vec<ShardId>, Option<schema_types::ResolvedContract>, Vec<OwnerEntry>)> {
     let mut cursor = Cursor::new(bytes);
     let mut magic = [0u8; MAGIC.len()];
     read_exact(&mut cursor, &mut magic)?;
@@ -155,7 +155,7 @@ pub fn decode(
             let mut json = vec![0u8; len];
             read_exact(&mut cursor, &mut json)?;
             let json = String::from_utf8(json).map_err(|_| Error::Corrupt("resolved contract utf8"))?;
-            Some(vos::types::ResolvedContract::from_json(&json).map_err(|_| Error::Corrupt("resolved contract decode"))?)
+            Some(schema_types::ResolvedContract::from_json(&json).map_err(|_| Error::Corrupt("resolved contract decode"))?)
         }
         _ => return Err(Error::Corrupt("invalid resolved contract presence flag")),
     };

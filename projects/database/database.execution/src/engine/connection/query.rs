@@ -253,7 +253,7 @@ impl Connection {
         &self,
         stmt: &PreparedStatement,
         values: &[Value],
-        contract: &vos::ResolvedContract,
+        contract: &schema_input_vos::ResolvedContract,
         records: &BTreeMap<String, Vec<u8>>,
     ) -> Result<Vec<QueryRow>> {
         database_query::local::with_object_resolver(Some(self.object_resolver()), || {
@@ -265,7 +265,7 @@ impl Connection {
         &self,
         stmt: &PreparedStatement,
         values: &[Value],
-        contract: &vos::ResolvedContract,
+        contract: &schema_input_vos::ResolvedContract,
         records: &BTreeMap<String, Vec<u8>>,
         profile: Option<&mut ReadProfile>,
     ) -> Result<Vec<QueryRow>> {
@@ -290,7 +290,7 @@ impl Connection {
         &self,
         stmt: &PreparedStatement,
         values: &[Value],
-        contract: &vos::ResolvedContract,
+        contract: &schema_input_vos::ResolvedContract,
         records: &BTreeMap<String, Vec<u8>>,
         rows: Option<&database_storage::local::RowWindow>,
         profile: Option<&mut ReadProfile>,
@@ -548,7 +548,7 @@ impl ReadProfile {
     }
 }
 
-fn resolved_contract(state: &super::State) -> Result<&vos::ResolvedContract> {
+fn resolved_contract(state: &super::State) -> Result<&schema_input_vos::ResolvedContract> {
     state.resolved_contract.as_ref().ok_or_else(|| Error::Schema { message: "query requires ensure_schema before execution".into() })
 }
 

@@ -83,7 +83,7 @@ impl RedisSource {
     pub fn draft_keyspace_mapping(vos_schema: &str) -> Result<MappingManifest> {
         let document = odm_types::parse_schema(vos_schema).map_err(Error::Policy)?;
         let mut tables = Vec::new();
-        for table in document.types.iter().filter(|item| item.kind == vos::TypeContractKind::Table) {
+        for table in document.types.iter().filter(|item| item.kind == schema_input_vos::TypeContractKind::Table) {
             let Some(name) = table.canonical_path.last()
             else {
                 continue;

@@ -6,7 +6,7 @@ use database_query::local::{Dialect, prepare, scan_and_rewrite};
 fn prepare_extracts_dollar_named_parameters_in_order() {
     let source = r#"User.all().take($limit).collect()"#;
     let (_, rewritten) = scan_and_rewrite(source, Dialect::Vos).expect("scan");
-    assert!(vos::parse_program(&rewritten).is_ok(), "rewritten must parse: {}", rewritten);
+    assert!(schema_input_vos::parse_program(&rewritten).is_ok(), "rewritten must parse: {}", rewritten);
     let stmt = prepare(source).expect("prepare");
     assert_eq!(stmt.parameters.len(), 1);
     assert_eq!(stmt.parameters[0].name, "limit");
