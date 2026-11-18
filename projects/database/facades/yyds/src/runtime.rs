@@ -6,7 +6,7 @@
 
 use std::{
     fmt,
-    path::{Path, PathBuf},
+    path::Path,
     sync::Arc,
 };
 
@@ -16,7 +16,7 @@ use database::{
         control::{LeaseError, LocalOwnership, NodeIdentity, NodeLease},
     },
     execution::cluster::{KeyValueExecutor, LocalExecutor},
-    server::node::{NodeControlError, RuntimeStatus, RuntimeStatusError},
+    server::node::{NodeControlError, RuntimeStatusError},
     storage::cluster_kv::open_shards,
     types::cluster::Error as ClusterError,
 };
@@ -25,6 +25,8 @@ use database::{
 pub use database::server::node::STATUS_FILE;
 /// 运行状态文件版本。
 pub use database::server::node::CONTROL_VERSION;
+/// 运行中节点发布的运行状态元数据。
+pub use database::server::node::RuntimeStatus;
 /// 无 catalog 时使用的本地分片 id。
 pub use database::cluster::catalog::node::LOCAL_SHARD_ID;
 /// 运行状态文件读写。
