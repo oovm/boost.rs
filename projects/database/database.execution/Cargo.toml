@@ -14,6 +14,7 @@ boost-random = { workspace = true }
 database-cluster = { workspace = true }
 database-formats = { workspace = true }
 database-protocol-mongo = { workspace = true }
+database-protocol-redis = { workspace = true }
 database-query = { workspace = true }
 database-storage = { workspace = true }
 database-types = { workspace = true }

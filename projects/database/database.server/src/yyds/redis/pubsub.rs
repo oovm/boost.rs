@@ -17,7 +17,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use super::connection::glob_match;
+use database_execution::cluster::redis::reply::glob_match;
 
 const MESSAGE: &[u8] = b"message";
 const PMESSAGE: &[u8] = b"pmessage";

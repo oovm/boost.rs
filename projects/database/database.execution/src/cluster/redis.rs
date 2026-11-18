@@ -1,7 +1,8 @@
-//! Redis 键空间的键值执行面：把 [`KeyValueCommand`] 落到 [`RedisShard`]。
+//! Redis 键空间的命令执行面：把 [`KeyValueCommand`] 落到 [`RedisShard`]，并承载
+//! hash / list / set / zset / HyperLogLog 的命令语义。
 //!
-//! 命令语义、回复分帧与类型检查在 `database-server` 的 Redis 处理器；这里只表达
-//! 命名空间解析、值种类写入与删除，因此本身不含任何命令知识。
+//! 值种类命名空间解析、扁平值种类写入与删除由 [`RedisExecutor`] 表达；集合命令家族与
+//! 阻塞等待表在 [`collections`] / [`blocking`] 内，回复分帧 primitives 在 [`reply`]。
 
 use std::sync::Mutex;
 
@@ -12,6 +13,10 @@ use database_types::cluster::{Error, FenceToken, Namespace};
 use super::KeyValueExecutor;
 
 pub use database_storage::cluster_kv::redis::check_kind;
+
+pub mod blocking;
+pub mod collections;
+pub mod reply;
 
 /// 一个分片上的键值执行器。
 ///

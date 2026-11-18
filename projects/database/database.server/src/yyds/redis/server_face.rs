@@ -24,10 +24,13 @@ use database_storage::cluster_kv::now_unix_ms;
 use database_types::cluster::Namespace;
 
 use super::{
-    collections::KeyKind,
-    connection::{ConnectionState, glob_match, write_bulk, write_error, write_null},
+    connection::ConnectionState,
     pubsub::{ClientSink, PubSubState},
     resp::Request,
+};
+use database_execution::cluster::redis::{
+    collections::KeyKind,
+    reply::{glob_match, write_bulk, write_error, write_null, write_unknown_command},
 };
 
 /// 一条连接的会话投影。
@@ -1445,7 +1448,7 @@ impl EmbeddedServerFace {
             handle_acl(stream, &request, self.state.protocol)?;
         }
         else {
-            super::connection::write_unknown_command(stream, arguments)?;
+            write_unknown_command(stream, arguments)?;
         }
         Ok(true)
     }

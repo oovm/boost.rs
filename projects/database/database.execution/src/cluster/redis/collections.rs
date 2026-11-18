@@ -12,23 +12,23 @@
 
 use std::{io, time::Duration};
 
-use database_execution::cluster::KeyValueExecutor;
-use database_query::cluster_kv::{KeyValueAction, KeyValueCommand, KeyValueResult};
 use database_storage::cluster_kv::redis::format::{
-    decode_hash, decode_list, decode_set, decode_zset, encode_hash, encode_list, encode_set, encode_zset, push_u32, read_field, read_u32,
-    set_blob_count, zset_blob_view,
+    decode_hash, decode_list, decode_set, decode_zset, encode_hash, encode_list, encode_set, encode_zset, read_u32, set_blob_count,
+    zset_blob_view,
 };
 use database_types::cluster::Namespace;
 
 use super::{
     blocking::{BlockingRegistry, WaitOutcome, Waiter, timeout_deadline},
-    connection::{glob_match, write_bulk, write_error, write_null, write_null_array},
-    resp::Request,
+    reply::{glob_match, write_bulk, write_error, write_null, write_null_array},
+    KeyValueExecutor,
 };
+use database_protocol_redis::resp::Request;
+use database_query::cluster_kv::{KeyValueAction, KeyValueCommand, KeyValueResult};
 
 /// 一个逻辑键当前承载的值类型。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum KeyKind {
+pub enum KeyKind {
     /// 字符串，沿用原命名空间，行为与升级前完全一致。
     String,
     /// 哈希，字段按插入顺序保存在一个值 blob 内。
@@ -45,10 +45,10 @@ pub(crate) enum KeyKind {
 
 impl KeyKind {
     /// 所有已知类型，按探测顺序排列（字符串优先，保持既有语义）。
-    pub(crate) const ALL: [KeyKind; 6] = [KeyKind::String, KeyKind::Hash, KeyKind::List, KeyKind::Set, KeyKind::ZSet, KeyKind::Stream];
+    pub const ALL: [KeyKind; 6] = [KeyKind::String, KeyKind::Hash, KeyKind::List, KeyKind::Set, KeyKind::ZSet, KeyKind::Stream];
 
     /// `TYPE` 回复里使用的类型名。
-    pub(crate) fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             KeyKind::String => "string",
             KeyKind::Hash => "hash",
@@ -62,14 +62,14 @@ impl KeyKind {
     /// `SCAN TYPE` 选项里的类型名，未知名称返回 `None`。
     ///
     /// 真机对未知类型名不回错误，只是没有任何键能命中，调用方据此过滤掉全部键。
-    pub(crate) fn from_name(name: &[u8]) -> Option<KeyKind> {
+    pub fn from_name(name: &[u8]) -> Option<KeyKind> {
         KeyKind::ALL.into_iter().find(|kind| kind.name().as_bytes().eq_ignore_ascii_case(name))
     }
 
     /// 该类型使用的存储命名空间。
     ///
     /// 字符串沿用调用方传入的逻辑库命名空间，其它类型加类型后缀，因此既有数据无需迁移。
-    pub(crate) fn namespace(self, base: &Namespace) -> Namespace {
+    pub fn namespace(self, base: &Namespace) -> Namespace {
         match self {
             KeyKind::String => base.clone(),
             KeyKind::Hash => Namespace(format!("{}:hash", base.0)),
@@ -85,7 +85,7 @@ impl KeyKind {
 ///
 /// 一次探测最多命中一种表示；`Ok(None)` 表示键不存在。执行错误转成可回复的消息，
 /// 由调用方决定如何写成 RESP 错误。
-pub(crate) fn find_kind(executor: &dyn KeyValueExecutor, base: &Namespace, key: &[u8]) -> Result<Option<KeyKind>, String> {
+pub fn find_kind(executor: &dyn KeyValueExecutor, base: &Namespace, key: &[u8]) -> Result<Option<KeyKind>, String> {
     for kind in KeyKind::ALL {
         let command = KeyValueCommand { namespace: kind.namespace(base), key: key.to_vec(), action: KeyValueAction::Exists };
         match executor.execute(None, command) {
@@ -141,7 +141,7 @@ fn remove_value(executor: &dyn KeyValueExecutor, namespace: &Namespace, key: &[u
 }
 
 /// `WRONGTYPE ...` 错误，与真机使用同一个错误前缀与文案。
-pub(crate) fn write_wrong_type(stream: &mut dyn io::Write) -> io::Result<()> {
+pub fn write_wrong_type(stream: &mut dyn io::Write) -> io::Result<()> {
     stream.write_all(b"-WRONGTYPE Operation against a key holding the wrong kind of value\r\n")
 }
 
@@ -212,7 +212,7 @@ fn write_set_members(stream: &mut dyn io::Write, bytes: &[u8], protocol: u8) -> 
 }
 
 /// hash 命令名集合。
-pub(crate) fn is_hash_command(command: &[u8]) -> bool {
+pub fn is_hash_command(command: &[u8]) -> bool {
     for name in [
         b"HSET".as_slice(),
         b"HSETNX",
@@ -236,7 +236,7 @@ pub(crate) fn is_hash_command(command: &[u8]) -> bool {
 }
 
 /// list 命令名集合。
-pub(crate) fn is_list_command(command: &[u8]) -> bool {
+pub fn is_list_command(command: &[u8]) -> bool {
     for name in [
         b"LPUSH".as_slice(),
         b"RPUSH",
@@ -267,7 +267,7 @@ pub(crate) fn is_list_command(command: &[u8]) -> bool {
 }
 
 /// set 命令名集合。
-pub(crate) fn is_set_command(command: &[u8]) -> bool {
+pub fn is_set_command(command: &[u8]) -> bool {
     for name in [
         b"SADD".as_slice(),
         b"SREM",
@@ -295,7 +295,7 @@ pub(crate) fn is_set_command(command: &[u8]) -> bool {
 }
 
 /// zset 命令名集合。
-pub(crate) fn is_zset_command(command: &[u8]) -> bool {
+pub fn is_zset_command(command: &[u8]) -> bool {
     for name in [
         b"ZADD".as_slice(),
         b"ZSCORE",
@@ -343,7 +343,7 @@ pub(crate) fn is_zset_command(command: &[u8]) -> bool {
 }
 
 /// HyperLogLog 命令名集合。
-pub(crate) fn is_hyperloglog_command(command: &[u8]) -> bool {
+pub fn is_hyperloglog_command(command: &[u8]) -> bool {
     for name in [b"PFADD".as_slice(), b"PFCOUNT", b"PFMERGE"] {
         if command.eq_ignore_ascii_case(name) {
             return true;
@@ -483,7 +483,7 @@ fn load_zset(
 }
 
 /// 整数参数校验，与真机 `ERR value is not an integer or out of range` 对齐。
-pub(crate) fn parse_index(raw: &[u8]) -> Option<i64> {
+pub fn parse_index(raw: &[u8]) -> Option<i64> {
     let text = std::str::from_utf8(raw).ok()?;
     let value = text.parse::<i64>().ok()?;
     if value.to_string() != text { None } else { Some(value) }
@@ -607,7 +607,7 @@ fn integer_bytes(value: i64, buffer: &mut [u8; 21]) -> &[u8] {
 }
 
 /// `HSET` / `HGET` / `HGETALL` / `HDEL` / `HLEN` 的分派入口。
-pub(crate) fn handle_hash(
+pub fn handle_hash(
     stream: &mut dyn io::Write,
     request: &Request<'_>,
     executor: Option<&dyn KeyValueExecutor>,
@@ -1621,7 +1621,7 @@ fn handle_mpop(
 }
 
 /// 列表命令的分派入口。
-pub(crate) fn handle_list(
+pub fn handle_list(
     stream: &mut dyn io::Write,
     request: &Request<'_>,
     executor: Option<&dyn KeyValueExecutor>,
@@ -2235,7 +2235,7 @@ fn write_scan_page(stream: &mut dyn io::Write, items: &[Vec<u8>], cursor: usize,
 }
 
 /// `SADD` / `SREM` / `SMEMBERS` / `SCARD` / `SISMEMBER` 及集合代数、移动、随机读取与扫描的分派入口。
-pub(crate) fn handle_set(
+pub fn handle_set(
     stream: &mut dyn io::Write,
     request: &Request<'_>,
     executor: Option<&dyn KeyValueExecutor>,
@@ -4144,7 +4144,7 @@ fn normalize_set_bitfield(value: i64, encoding: BitEncoding, overflow: BitOverfl
 }
 
 /// 执行 `BITFIELD` / `BITFIELD_RO`。
-pub(crate) fn handle_bitfield(
+pub fn handle_bitfield(
     stream: &mut dyn io::Write,
     executor: &dyn KeyValueExecutor,
     base: &Namespace,
@@ -4222,7 +4222,7 @@ pub(crate) fn handle_bitfield(
 }
 
 /// `ZADD` / `ZSCORE` / `ZREM` / `ZCARD` / `ZRANGE` 及排序族、排名、计数与扫描的分派入口。
-pub(crate) fn handle_zset(
+pub fn handle_zset(
     stream: &mut dyn io::Write,
     request: &Request<'_>,
     executor: Option<&dyn KeyValueExecutor>,
@@ -5292,7 +5292,7 @@ fn hll_merge_max(registers: &mut [u8], source: &[u8]) {
 /// `PFADD` / `PFCOUNT` / `PFMERGE` 的实现。
 ///
 /// 值本身是 dense HyperLogLog 字符串，创建时写入完整 12304 字节，读写只碰寄存器区。
-pub(crate) fn handle_hyperloglog(
+pub fn handle_hyperloglog(
     stream: &mut dyn io::Write,
     request: &Request<'_>,
     executor: Option<&dyn KeyValueExecutor>,

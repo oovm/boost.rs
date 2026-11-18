@@ -11,12 +11,12 @@ use database_protocol::{GatewayConfig, GatewayKind, startup_banner as protocol_s
 use database_query::version_label;
 use database_types::{Error, Result};
 
-pub mod blocking;
-mod collections;
 pub mod connection;
 pub mod pubsub;
 pub mod server_face;
 pub mod service;
+
+use database_execution::cluster::redis::{blocking, collections, reply};
 
 /// 命令绑定（来自 `database-protocol-redis`）。
 pub use database_protocol_redis::bind;
@@ -147,7 +147,7 @@ pub fn execute_string_command(
     if connection::handle_string(stream, &request, Some(executor), Some(executor), None, namespace, protocol)? {
         return Ok(());
     }
-    connection::write_unknown_command(stream, arguments)
+    reply::write_unknown_command(stream, arguments)
 }
 
 /// Executes one keyspace-family request and writes the RESP reply.
@@ -166,7 +166,7 @@ pub fn execute_keyspace_command(
     if connection::handle_keyspace(stream, &request, Some(executor), Some(executor), None, namespace, protocol)? {
         return Ok(());
     }
-    connection::write_unknown_command(stream, arguments)
+    reply::write_unknown_command(stream, arguments)
 }
 
 /// Banner shown when a disguise server starts.

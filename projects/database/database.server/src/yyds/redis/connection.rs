@@ -21,6 +21,11 @@ use std::{
 };
 
 use database_execution::cluster::KeyValueExecutor;
+use database_execution::cluster::redis::{
+    blocking::BlockingRegistry,
+    collections::{self, KeyKind},
+    reply::{glob_match, write_bulk, write_error, write_null, write_null_array, write_unknown_command},
+};
 use database_query::cluster_kv::{KeyValueAction, KeyValueCommand, KeyValueResult};
 use database_storage::cluster_kv::now_unix_ms;
 use database_storage::cluster_kv::redis::format::{decode_hash, decode_list, decode_set, decode_zset};
@@ -28,8 +33,6 @@ use database_types::cluster::{FenceToken, Namespace};
 
 use super::{
     bind::{BindError, BoundAction, BoundCommand, SetCondition, SetExpiry, bind, bind_mget, bind_set},
-    blocking::BlockingRegistry,
-    collections::{self, KeyKind},
     pubsub::{ClientSink, PubSubRegistry, SinkRef, encode_ack},
     resp::{FrameError, Request, RequestLimits, decode_request},
     server_face::{self, ClientRecord, ClientRegistry, command_context},
@@ -986,108 +989,6 @@ fn expire_condition_allows(
         current.map_or(true, |current| expires_at < current)
     };
     Ok(Some(allowed))
-}
-
-/// 简易 Redis glob：支持 `*`、`?`、`[...]` 字符类与反斜杠转义，其余字符按字面量比较。
-///
-/// 字符类支持 `[^...]` 取反、`a-z` 区间与类内 `\` 转义，大小写敏感，与真机
-/// `stringmatchlen` 的匹配口径一致。`MATCH` 只影响本次返回的键，不改变游标推进。
-pub(crate) fn glob_match(pattern: &[u8], text: &[u8]) -> bool {
-    let (mut pattern_index, mut text_index) = (0usize, 0usize);
-    let mut star: Option<(usize, usize)> = None;
-    while text_index < text.len() {
-        if pattern_index < pattern.len() {
-            match pattern[pattern_index] {
-                b'*' => {
-                    star = Some((pattern_index, text_index));
-                    pattern_index += 1;
-                    continue;
-                }
-                b'?' => {
-                    pattern_index += 1;
-                    text_index += 1;
-                    continue;
-                }
-                b'[' => {
-                    if let Some((length, matched)) = class_match(&pattern[pattern_index..], text[text_index]) {
-                        if matched {
-                            pattern_index += length;
-                            text_index += 1;
-                            continue;
-                        }
-                    }
-                }
-                b'\\' if pattern_index + 1 < pattern.len() && pattern[pattern_index + 1] == text[text_index] => {
-                    pattern_index += 2;
-                    text_index += 1;
-                    continue;
-                }
-                byte if byte == text[text_index] => {
-                    pattern_index += 1;
-                    text_index += 1;
-                    continue;
-                }
-                _ => {}
-            }
-        }
-        match star {
-            Some((star_index, resume)) => {
-                pattern_index = star_index + 1;
-                text_index = resume + 1;
-                star = Some((star_index, text_index));
-            }
-            None => return false,
-        }
-    }
-    while pattern_index < pattern.len() && pattern[pattern_index] == b'*' {
-        pattern_index += 1;
-    }
-    pattern_index == pattern.len()
-}
-
-/// 匹配一个以 `[` 开头的字符类，返回消费的图案字节数与是否命中。
-///
-/// 口径对齐真机 `stringmatchlen`：`^` 只在紧跟 `[` 时取反，`\` 转义类内下一个字节，
-/// `a-z` 区间起点大于终点时自动交换，未闭合的字符类在模式末尾自动闭合。
-fn class_match(pattern: &[u8], byte: u8) -> Option<(usize, bool)> {
-    let mut index = 1usize;
-    let negated = pattern.get(index) == Some(&b'^');
-    if negated {
-        index += 1;
-    }
-    let mut matched = false;
-    while index < pattern.len() {
-        match pattern[index] {
-            b']' => {
-                index += 1;
-                break;
-            }
-            b'\\' if index + 1 < pattern.len() => {
-                if pattern[index + 1] == byte {
-                    matched = true;
-                }
-                index += 2;
-            }
-            start if index + 2 < pattern.len() && pattern[index + 1] == b'-' => {
-                let (mut low, mut high) = (start, pattern[index + 2]);
-                if low > high {
-                    std::mem::swap(&mut low, &mut high);
-                }
-                if byte >= low && byte <= high {
-                    matched = true;
-                }
-                index += 3;
-            }
-            literal => {
-                if literal == byte {
-                    matched = true;
-                }
-                index += 1;
-            }
-        }
-    }
-    // 与 `Redis` 一致：未闭合的字符类在模式末尾自动闭合，`[1` 仍可匹配 `1`。
-    Some((index, if negated { !matched } else { matched }))
 }
 
 /// `SCAN cursor [MATCH pattern] [COUNT count] [TYPE type]`。
@@ -3453,18 +3354,6 @@ fn respond(
     Ok(true)
 }
 
-/// 未知命令的真机文案：命令名之外还要回显参数前缀，末尾带一个空格。
-pub(crate) fn write_unknown_command(stream: &mut dyn Write, arguments: &[&[u8]]) -> io::Result<()> {
-    let name = String::from_utf8_lossy(&arguments[0]);
-    let shown: Vec<String> = arguments[1..].iter().map(|argument| format!("'{}'", String::from_utf8_lossy(argument))).collect();
-    if shown.is_empty() {
-        write_error(stream, &format!("unknown command '{name}'"))
-    }
-    else {
-        write_error(stream, &format!("unknown command '{name}', with args beginning with: {} ", shown.join(" ")))
-    }
-}
-
 /// Runs every queued command under a fresh per-command `ConnectionState` so that MULTI
 /// control frames cannot nest into the transaction. Each command's RESP output is captured
 /// into a buffer and then emitted wrapped in a Redis multi-bulk array header.
@@ -3909,50 +3798,6 @@ fn parse_integer(bytes: &[u8]) -> Option<i64> {
         return None;
     }
     Some(value)
-}
-
-pub(crate) fn write_error(stream: &mut dyn Write, message: &str) -> io::Result<()> {
-    let sanitized =
-        message.chars().map(|character| if matches!(character, '\r' | '\n') { ' ' } else { character }).take(512).collect::<String>();
-    write!(stream, "-ERR {sanitized}\r\n")
-}
-
-pub(crate) fn write_bulk(stream: &mut dyn Write, bytes: &[u8]) -> io::Result<()> {
-    // A collection reply calls this once per element, so the decimal length is
-    // rendered from a stack buffer instead of the generic formatting machinery.
-    let mut digits = [0_u8; 20];
-    let mut index = digits.len();
-    let mut length = bytes.len();
-    loop {
-        index -= 1;
-        digits[index] = b'0' + (length % 10) as u8;
-        length /= 10;
-        if length == 0 {
-            break;
-        }
-    }
-    stream.write_all(b"$")?;
-    stream.write_all(&digits[index..])?;
-    stream.write_all(b"\r\n")?;
-    stream.write_all(bytes)?;
-    stream.write_all(b"\r\n")
-}
-
-/// Writes the null reply in the version the connection negotiated.
-///
-/// RESP2 spells a missing bulk value `$-1\r\n`. RESP3 replaced that form with the
-/// dedicated null type `_\r\n`, and a RESP3 parser treats `$-1` as a protocol error,
-/// so the choice has to follow the connection state instead of a fixed literal.
-pub(crate) fn write_null(stream: &mut dyn Write, protocol: u8) -> io::Result<()> {
-    stream.write_all(if protocol == 3 { b"_\r\n" as &[u8] } else { b"$-1\r\n" })
-}
-
-/// Writes the nil array `EXEC` replies with when a watched key changed.
-///
-/// RESP2 spells it `*-1\r\n` (the null array, not the null bulk that `write_null`
-/// emits). RESP3 replaced it with the dedicated null type `_\r\n`.
-pub(crate) fn write_null_array(stream: &mut dyn Write, protocol: u8) -> io::Result<()> {
-    stream.write_all(if protocol == 3 { b"_\r\n" as &[u8] } else { b"*-1\r\n" })
 }
 
 /// Commands Redis still honours while a RESP2 connection is in subscriber mode.
