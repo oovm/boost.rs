@@ -1,0 +1,19 @@
+[package]
+name = "package-resolve"
+description = "包清单、工作区、版本约束、lock 文件与依赖求解的通用机制"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository = "https://github.com/oovm/rust-boost/tree/dev/projects/package/package.resolve"
+publish = false
+
+[dependencies]
+oak-von = { workspace = true }
+package-registry = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+oak-von = { workspace = true }
+package-registry = { workspace = true }

@@ -136,6 +136,7 @@ members = [
     "projects/media/media.voice",
     "projects/media/media.voxel",
     "projects/package/package.registry",
+    "projects/package/package.resolve",
     "projects/odm/odm",
     "projects/odm/odm.adapter",
     "projects/odm/odm.generate",
@@ -352,6 +353,7 @@ media-voice = { path = "projects/media/media.voice" }
 media-voxel = { path = "projects/media/media.voxel" }
 
 package-registry = { path = "projects/package/package.registry" }
+package-resolve = { path = "projects/package/package.resolve" }
 
 odm-adapter = { path = "projects/odm/odm.adapter" }
 odm-generate = { path = "projects/odm/odm.generate" }
