@@ -668,7 +668,7 @@ fn check_node(project: &Project, where_: &str, node: &Node, problems: &mut Vec<S
     // cannot express is a located error instead of a silently ignored track.
     let (supports_position, supports_progress) = match &node.item {
         Item::Bands { .. } | Item::Grain { .. } | Item::Layer { .. } => (false, false),
-        Item::Path { .. } => (true, true),
+        Item::Path { .. } | Item::Chart { .. } => (true, true),
         Item::Shape { shape, .. } => (true, *shape == ShapeKind::Line),
         _ => (true, false),
     };
@@ -839,6 +839,17 @@ fn check_item_colors(where_: &str, item: &Item, problems: &mut Vec<String>) {
             check_dur(where_, *dur, problems);
             check_color(where_, track.as_deref(), problems);
             check_color(where_, fill.as_deref(), problems);
+        }
+        Item::Chart { dur, bars, lines, axis, grid, .. } => {
+            check_dur(where_, *dur, problems);
+            for series in bars {
+                check_color(where_, Some(&series.color), problems);
+            }
+            for series in lines {
+                check_color(where_, Some(&series.color), problems);
+            }
+            check_color(where_, axis.as_deref(), problems);
+            check_color(where_, grid.as_deref(), problems);
         }
     }
 }
@@ -1101,6 +1112,10 @@ fn item_texts(item: &Item) -> Vec<(bool, String)> {
             }
         }
         Item::Footnote { text, .. } => out.push((false, text.clone())),
+        Item::Chart { y_ticks, x_labels, .. } => {
+            out.extend(y_ticks.iter().map(|tick| (false, tick.label.clone())));
+            out.extend(x_labels.iter().map(|label| (false, label.clone())));
+        }
         Item::Layer { items, .. } => {
             for child in items {
                 out.extend(item_texts(&child.item));
@@ -1812,6 +1827,111 @@ fn paint_item(
             frame.round_rect(margin, bar_y, full, 4.0 * s, 2.0 * s, track);
             let t = frame_index as f32 / project.duration_frames as f32;
             frame.round_rect(margin, bar_y, full * t, 4.0 * s, 2.0 * s, fill);
+        }
+        Item::Chart { at, dur, x, y, w, h, fade_in, fade_out, domain, bars, lines, axis, grid, y_ticks, x_labels, label_size, progress } => {
+            if local < *at || local >= *at + *dur {
+                return Ok(());
+            }
+            let life = local - *at;
+            let alpha = fade(life, *dur, *fade_in, *fade_out) * alpha_mul;
+            if alpha <= 0.001 {
+                return Ok(());
+            }
+            let reveal = progress_of(*progress).clamp(0.0, 1.0);
+            let box_w = px(*w, fw as u32);
+            let box_h = px(*h, fh as u32);
+            let box_left = px(x_of(*x), fw as u32) - box_w / 2.0;
+            let box_top = px(y_of(*y), fh as u32) - box_h / 2.0;
+            let (low, high) = (domain[0].min(domain[1]), domain[0].max(domain[1]));
+            // Value to pixel: `low` sits at the box bottom, `high` at the top.
+            let value_y = |value: f32| {
+                let t = if high > low { (value - low) / (high - low) } else { 0.0 };
+                box_top + box_h * (1.0 - t.clamp(0.0, 1.0))
+            };
+            // The domain zero line, clamped inside the box: bars grow from it
+            // in both directions.
+            let baseline = value_y(0.0);
+            let slots = x_labels
+                .len()
+                .max(bars.iter().map(|series| series.values.len()).max().unwrap_or(0))
+                .max(lines.iter().map(|series| series.points.len()).max().unwrap_or(0))
+                .max(1);
+            let slot_w = box_w / slots as f32;
+            let slot_x = |slot: usize| box_left + slot_w * (slot as f32 + 0.5);
+            // Categories reveal left to right: slot i owns the progress window
+            // [i/slots, (i+1)/slots], so one sweep drives the whole chart.
+            let slot_reveal = |slot: usize| (reveal * slots as f32 - slot as f32).clamp(0.0, 1.0);
+            let label_px = label_size * s;
+            let label_color = parse_or(axis.as_deref(), Rgba([150, 170, 200, 255])).with_alpha(alpha * 0.9);
+            if let Some(color) = grid {
+                let c = parse_or(Some(color), Rgba([70, 85, 115, 255])).with_alpha(alpha * 0.5);
+                for tick in y_ticks {
+                    let ty = value_y(tick.value);
+                    frame.line(box_left, ty, box_left + box_w, ty, 1.0 * s, c);
+                }
+            }
+            if let Some(color) = axis {
+                let c = parse_or(Some(color), Rgba([150, 170, 200, 255])).with_alpha(alpha * 0.8);
+                frame.line(box_left, box_top, box_left, box_top + box_h, 1.5 * s, c);
+                frame.line(box_left, baseline, box_left + box_w, baseline, 1.5 * s, c);
+            }
+            // One slot groups all bar series side by side.
+            let group_w = slot_w * 0.72;
+            let bar_w = group_w / bars.len().max(1) as f32;
+            for (series_index, series) in bars.iter().enumerate() {
+                let c = parse_or(Some(&series.color), Rgba([110, 160, 255, 255])).with_alpha(alpha);
+                for (slot, value) in series.values.iter().enumerate() {
+                    let top = baseline + (value_y(*value) - baseline) * slot_reveal(slot);
+                    let left = slot_x(slot) - group_w / 2.0 + series_index as f32 * bar_w;
+                    let height = (baseline - top).abs();
+                    if height > 0.5 {
+                        frame.round_rect(left, top.min(baseline), bar_w * 0.9, height, (bar_w * 0.12).min(6.0 * s), c);
+                    }
+                }
+            }
+            for series in lines {
+                let pixels: Vec<[f32; 2]> = series.points.iter().enumerate().map(|(slot, value)| [slot_x(slot), value_y(*value)]).collect();
+                if pixels.len() < 2 {
+                    continue;
+                }
+                let c = parse_or(Some(&series.color), Rgba([232, 184, 109, 255])).with_alpha(alpha);
+                let width = series.stroke * s;
+                frame.stroke_polyline(&pixels, width, c, reveal, false);
+                // The moving tip reads as a pen, same cue as `Item::Path`.
+                if reveal > 0.01 && reveal < 0.999 {
+                    if let Some(tip) = pixels.get((pixels.len() as f32 * reveal) as usize) {
+                        frame.glow(tip[0], tip[1], width * 4.0, c);
+                    }
+                }
+            }
+            for tick in y_ticks {
+                fonts.draw_block(
+                    frame,
+                    &tick.label,
+                    box_left - 10.0 * s,
+                    value_y(tick.value) - label_px * 0.5,
+                    label_px,
+                    false,
+                    label_color,
+                    Align::Right,
+                    None,
+                    1.0,
+                );
+            }
+            for (slot, label) in x_labels.iter().enumerate() {
+                fonts.draw_block(
+                    frame,
+                    label,
+                    slot_x(slot),
+                    baseline + label_px * 0.35,
+                    label_px,
+                    false,
+                    label_color,
+                    Align::Center,
+                    None,
+                    1.0,
+                );
+            }
         }
     }
     Ok(())
@@ -2668,5 +2788,37 @@ mod tests {
             let b = i32::from(exported.rgba[middle + channel]);
             assert!((a - b).abs() <= 24, "channel {channel}: preview {a} vs export {b}");
         }
+    }
+
+    /// A chart reveals its series left to right: progress 0 paints no bars,
+    /// progress 1 paints them in the declared series color.
+    #[test]
+    fn chart_progress_reveals_the_series() {
+        let film = |progress: f32| {
+            serde_json::json!({
+                "width": 320, "height": 180, "fps": 30, "duration_frames": 30,
+                "scenes": [{ "start": 0, "duration": 30,
+                    "background": { "kind": "solid", "color": "#05070f" },
+                    "items": [{
+                        "kind": "chart", "at": 0, "dur": 30,
+                        "x": 0.5, "y": 0.5, "w": 0.7, "h": 0.6,
+                        "fade_in": 5, "fade_out": 5,
+                        "domain": [0.0, 1.0],
+                        "bars": [{ "values": [0.2, 0.5, 0.9], "color": "#7aa2ff" }],
+                        "lines": [{ "points": [0.3, 0.4, 0.7], "color": "#e8b86d" }],
+                        "axis": "#5d6f8c", "grid": "#22304c",
+                        "y_ticks": [{ "value": 0.5, "label": "50" }],
+                        "x_labels": ["a", "b", "c"],
+                        "progress": progress
+                    }]
+                }],
+                "audio": null
+            })
+        };
+        let count_blue = |pixels: &[u8]| pixels.chunks(4).filter(|p| p[0] == 0x7a && p[1] == 0xa2 && p[2] == 0xff).count();
+        let (_, _, hidden) = preview_pixels(&film(0.0).to_string(), 15, "chart-progress-0.png");
+        let (_, _, shown) = preview_pixels(&film(1.0).to_string(), 15, "chart-progress-1.png");
+        assert_eq!(count_blue(&hidden), 0, "progress 0 must not paint the bars");
+        assert!(count_blue(&shown) > 100, "progress 1 must paint the bars");
     }
 }

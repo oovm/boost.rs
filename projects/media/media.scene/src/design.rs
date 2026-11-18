@@ -353,6 +353,18 @@ fn resolve_item(
             resolve_optional(track, scene, node, &format!("{base}.track"), map, report)?;
             resolve_optional(fill, scene, node, &format!("{base}.fill"), map, report)?;
         }
+        Item::Chart { bars, lines, axis, grid, .. } => {
+            for (index, series) in bars.iter_mut().enumerate() {
+                let path = format!("{base}.bars[{index}].color");
+                resolve_color(&mut series.color, scene, node, &path, map, report)?;
+            }
+            for (index, series) in lines.iter_mut().enumerate() {
+                let path = format!("{base}.lines[{index}].color");
+                resolve_color(&mut series.color, scene, node, &path, map, report)?;
+            }
+            resolve_optional(axis, scene, node, &format!("{base}.axis"), map, report)?;
+            resolve_optional(grid, scene, node, &format!("{base}.grid"), map, report)?;
+        }
         Item::Grain { .. } | Item::Instance { .. } | Item::Image { .. } | Item::Video { .. } => {}
     }
     Ok(())

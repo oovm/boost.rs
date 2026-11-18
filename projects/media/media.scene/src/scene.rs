@@ -686,6 +686,85 @@ pub enum Item {
         #[serde(default)]
         y: Option<f32>,
     },
+    /// A data chart: bar and polyline series inside one plot box, revealed
+    /// along the category axis by `progress`. `(x, y)` is the box center,
+    /// `(w, h)` its size, all normalized. Colors accept `$role` tokens.
+    Chart {
+        at: u32,
+        dur: u32,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        #[serde(default = "default_fade")]
+        fade_in: u32,
+        #[serde(default = "default_fade")]
+        fade_out: u32,
+        /// Value range mapped onto the box height.
+        #[serde(default = "default_domain")]
+        domain: [f32; 2],
+        #[serde(default)]
+        bars: Vec<BarSeries>,
+        #[serde(default)]
+        lines: Vec<LineSeries>,
+        /// Axis line color; `None` paints no axes.
+        #[serde(default)]
+        axis: Option<String>,
+        /// Horizontal grid line color; `None` paints no grid.
+        #[serde(default)]
+        grid: Option<String>,
+        #[serde(default)]
+        y_ticks: Vec<YTick>,
+        #[serde(default)]
+        x_labels: Vec<String>,
+        #[serde(default = "default_label_size")]
+        label_size: f32,
+        /// Reveal fraction along the category axis, `0.0..=1.0`.
+        #[serde(default = "default_one_f32")]
+        progress: f32,
+    },
+}
+
+/// One bar series of an [`Item::Chart`].
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct BarSeries {
+    /// Values in category order; negative values grow below the baseline.
+    pub values: Vec<f32>,
+    /// Series color, or a `$role` design token.
+    pub color: String,
+}
+
+/// One polyline series of an [`Item::Chart`].
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct LineSeries {
+    /// Values in category order.
+    pub points: Vec<f32>,
+    /// Series color, or a `$role` design token.
+    pub color: String,
+    /// Stroke width in output pixels at scale 1.
+    #[serde(default = "default_stroke")]
+    pub stroke: f32,
+}
+
+/// One labeled tick on the value axis of an [`Item::Chart`].
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct YTick {
+    /// The data value the tick marks.
+    pub value: f32,
+    /// Text painted beside the tick.
+    pub label: String,
+}
+
+fn default_domain() -> [f32; 2] {
+    [0.0, 1.0]
+}
+
+fn default_label_size() -> f32 {
+    22.0
+}
+
+fn default_stroke() -> f32 {
+    3.0
 }
 
 fn default_note_size() -> f32 {
@@ -911,4 +990,60 @@ pub struct PatternTrackSpec {
 
 fn default_sfx_volume() -> f32 {
     0.5
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A fully declared chart survives the wire round trip unchanged.
+    #[test]
+    fn chart_wire_round_trip() {
+        let json = serde_json::json!({
+            "kind": "chart", "at": 0, "dur": 30,
+            "x": 0.5, "y": 0.5, "w": 0.75, "h": 0.625,
+            "fade_in": 8, "fade_out": 8,
+            "domain": [0.0, 2.0],
+            "bars": [{ "values": [1.0, 2.0], "color": "#7aa2ff" }],
+            "lines": [{ "points": [0.5, 1.5], "color": "#e8b86d", "stroke": 4.0 }],
+            "axis": "#5d6f8c", "grid": "#22304c",
+            "y_ticks": [{ "value": 1.0, "label": "1" }],
+            "x_labels": ["a", "b"],
+            "label_size": 18.0,
+            "progress": 0.5
+        });
+        let item: Item = serde_json::from_value(json.clone()).expect("chart parses");
+        let back = serde_json::to_value(&item).expect("chart serializes");
+        assert_eq!(json, back);
+    }
+
+    /// A chart with only the box and timing takes every documented default.
+    #[test]
+    fn chart_defaults() {
+        let minimal = serde_json::json!({
+            "kind": "chart", "at": 0, "dur": 30,
+            "x": 0.5, "y": 0.5, "w": 0.8, "h": 0.6
+        });
+        let item: Item = serde_json::from_value(minimal).expect("minimal chart parses");
+        let back = serde_json::to_value(&item).expect("chart serializes");
+        assert_eq!(back["domain"], serde_json::json!([0.0, 1.0]));
+        assert_eq!(back["fade_in"], serde_json::json!(10));
+        assert_eq!(back["fade_out"], serde_json::json!(10));
+        assert_eq!(back["label_size"], serde_json::json!(22.0));
+        assert_eq!(back["progress"], serde_json::json!(1.0));
+        assert_eq!(back["bars"], serde_json::json!([]));
+        assert_eq!(back["lines"], serde_json::json!([]));
+        assert_eq!(back["y_ticks"], serde_json::json!([]));
+        assert_eq!(back["x_labels"], serde_json::json!([]));
+        assert!(back["axis"].is_null());
+        assert!(back["grid"].is_null());
+    }
+
+    /// A line series omits its stroke width independently of the color.
+    #[test]
+    fn line_series_defaults_stroke() {
+        let series: LineSeries =
+            serde_json::from_value(serde_json::json!({ "points": [0.1], "color": "#ffffff" })).expect("line series parses");
+        assert_eq!(series.stroke, 3.0);
+    }
 }
