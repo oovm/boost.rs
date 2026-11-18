@@ -1,0 +1,226 @@
+//! 顶层语义入口：Goal → Obligation → Reflector → Plan / Result。
+//!
+//! `execute_domain` 只应出现在本模块的 `NeedComputation` 分支内，不得冒充顶层语义路径。
+//! 查询面绑定 [`Session::mgraph`] 的 semantic core，禁止每次宿主调用新建空 `MGraphCore`。
+
+use athena_types::{Diagnostic, DiagnosticCode};
+
+use crate::{
+    api::request::DomainGoal,
+    domains::{
+        calculus::{CalculusRequest, CalculusResult, CalculusValue},
+        dispatch::{DomainRequest, DomainResult},
+        planner::{PlanStep, plan_domain},
+    },
+    reasoning::mgraph::{
+        AdmissionGate, CalculusReflector, CalculusRelationKind, MGraphView, ObjectRef, PolynomialReflector, ProofObligation, Reflection,
+        RelationRef, ScopeRef, SemanticReflector, TheoryContextId, VerificationPolicy, predicates,
+    },
+    runtime::session::Session,
+};
+
+/// 语义入口对一次 [`DomainGoal`] 的结果。
+#[derive(Debug, PartialEq)]
+pub enum DomainSemanticOutcome {
+    /// M-Graph 已有足够强的 admitted relation。
+    AlreadyKnown {
+        /// 已接纳关系。
+        relation: RelationRef,
+    },
+    /// Reflector 选出 DomainPlan 后经 provider 算出的结果。
+    Computed(DomainResult),
+    /// 缺少领域对象（须构造 DomainObject / lowering）。
+    NeedObject {
+        /// 机器标识（非前端名）。
+        object_kind: &'static str,
+    },
+    /// 缺少显式域映射。
+    NeedConversion {
+        /// 源域标签。
+        source: &'static str,
+        /// 目标域标签。
+        target: &'static str,
+    },
+    /// 资源 / 搜索未完成。
+    Inconclusive,
+}
+
+/// 从 [`DomainRequest`] 构造缺口义务（无则返回 `None`，走通用 NeedComputation）。
+///
+/// 多项式请求会先 intern 进 [`Session::polynomial_objects`]，义务携带 `PolynomialRef` 对应的 [`ObjectRef`]。
+pub fn obligation_from_domain_request(session: &mut Session, request: &DomainRequest) -> Option<ProofObligation> {
+    match request {
+        DomainRequest::Calculus(calc) => {
+            let (predicate, expression, variable) = match calc {
+                CalculusRequest::Derivative { expression, variable, .. } => (predicates::DERIVATIVE_OF, *expression, *variable),
+                CalculusRequest::Integral { expression, variable, .. }
+                | CalculusRequest::DefiniteIntegral { expression, variable, .. } => (predicates::INTEGRAL_OF, *expression, *variable),
+                CalculusRequest::Series { expression, variable, .. }
+                | CalculusRequest::Laurent { expression, variable, .. }
+                | CalculusRequest::Asymptotic { expression, variable, .. } => (predicates::SERIES_EXPANSION, *expression, *variable),
+                _ => return None,
+            };
+            let identity = crate::domains::calculus::calculus_request_identity(calc);
+            Some(ProofObligation {
+                predicate,
+                scope: ScopeRef::UNCONDITIONAL,
+                known_objects: vec![
+                    ObjectRef::new(TheoryContextId::CALCULUS, u64::from(expression.0)),
+                    ObjectRef::new(TheoryContextId::CALCULUS, u64::from(variable.0)),
+                    ObjectRef::new(TheoryContextId::CALCULUS, identity),
+                ],
+            })
+        }
+        DomainRequest::Polynomial(poly_req) => {
+            let interned = crate::domains::polynomial::intern_request_object_refs(poly_req, &session.rings, &mut session.polynomial_objects)
+                .unwrap_or_default();
+            let known_objects = match crate::domains::polynomial::cache_key_for_request(poly_req, &session.rings, &session.polynomial_objects) {
+                Ok(key) => vec![ObjectRef::new(TheoryContextId::POLYNOMIAL, key.fingerprint())],
+                Err(_) => interned,
+            };
+            Some(ProofObligation { predicate: predicates::POLYNOMIAL_RESULT, scope: ScopeRef::UNCONDITIONAL, known_objects })
+        }
+        _ => None,
+    }
+}
+
+fn reflect_domain(request: &DomainRequest, obligation: &ProofObligation, view: &MGraphView<'_>) -> Reflection {
+    match request {
+        DomainRequest::Calculus(_) => CalculusReflector.reflect(obligation, view),
+        DomainRequest::Polynomial(_) => PolynomialReflector.reflect(obligation, view),
+        _ => Reflection::NeedComputation { plan: plan_domain(request) },
+    }
+}
+
+fn calculus_kind_from_predicate(predicate: crate::reasoning::mgraph::PredicateId) -> Option<CalculusRelationKind> {
+    if predicate == predicates::DERIVATIVE_OF {
+        Some(CalculusRelationKind::DerivativeOf)
+    }
+    else if predicate == predicates::INTEGRAL_OF {
+        Some(CalculusRelationKind::IntegralOf)
+    }
+    else if predicate == predicates::SERIES_EXPANSION {
+        Some(CalculusRelationKind::SeriesExpansion)
+    }
+    else {
+        None
+    }
+}
+
+pub(crate) fn try_admit_calculus_exact(session: &mut Session, request: &DomainRequest, obligation: &ProofObligation, result: &DomainResult) {
+    let DomainRequest::Calculus(calc) = request
+    else {
+        return;
+    };
+    let DomainResult::Calculus(CalculusResult::Exact { value: CalculusValue::Expression(result_term), conditions }) = result
+    else {
+        return;
+    };
+    if !conditions.is_empty() {
+        return;
+    }
+    let Some(kind) = calculus_kind_from_predicate(obligation.predicate)
+    else {
+        return;
+    };
+    let _ = AdmissionGate::admit_calculus_relation(session, calc, kind, *result_term, &VerificationPolicy::default());
+}
+
+fn materialize_already_known(session: &Session, relation: RelationRef) -> Result<DomainResult, Diagnostic> {
+    let Some(record) = session.mgraph.semantic.relation(relation)
+    else {
+        return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
+            .detail("domain", "semantic_entry")
+            .detail("reason", "relation_missing")
+            .arg("relation", relation.0));
+    };
+    match &record.verified.claim().proposition {
+        crate::reasoning::mgraph::Proposition::CalculusRelation { result_term, .. } => {
+            Ok(DomainResult::Calculus(CalculusResult::Exact { value: CalculusValue::Expression(*result_term), conditions: Vec::new() }))
+        }
+        crate::reasoning::mgraph::Proposition::PolynomialResult { request_fingerprint, .. } => {
+            let Some(entry) = session.mgraph.operational.result_cache.polynomial.get_by_request_fingerprint(*request_fingerprint)
+            else {
+                return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
+                    .detail("domain", "semantic_entry")
+                    .detail("reason", "polynomial_cache_miss")
+                    .arg("relation", relation.0));
+            };
+            Ok(DomainResult::Polynomial(entry.result.owning_copy()))
+        }
+        _ => Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
+            .detail("domain", "semantic_entry")
+            .detail("reason", "already_known_not_materialized")
+            .arg("relation", relation.0)),
+    }
+}
+
+/// 语义入口：先查 [`Session::mgraph`]，再允许 `NeedComputation` → Plan → provider。
+pub fn execute_domain_goal(session: &mut Session, goal: DomainGoal) -> Result<DomainSemanticOutcome, Diagnostic> {
+    let DomainGoal::Dispatch(request) = goal;
+    let obligation = obligation_from_domain_request(session, &request);
+    let reflection = {
+        let view = session.mgraph.semantic.view();
+        match &obligation {
+            Some(obligation) => reflect_domain(&request, obligation, &view),
+            None => Reflection::NeedComputation { plan: plan_domain(&request) },
+        }
+    };
+    match reflection {
+        Reflection::AlreadyKnown { relation } => Ok(DomainSemanticOutcome::AlreadyKnown { relation }),
+        Reflection::NeedObject { object_kind } => Ok(DomainSemanticOutcome::NeedObject { object_kind }),
+        Reflection::NeedConversion { source, target } => Ok(DomainSemanticOutcome::NeedConversion { source, target }),
+        Reflection::NeedRelation { .. } => Ok(DomainSemanticOutcome::Inconclusive),
+        Reflection::Inconclusive => Ok(DomainSemanticOutcome::Inconclusive),
+        Reflection::NeedComputation { plan } => {
+            if !plan.steps.iter().any(|s| matches!(s, PlanStep::CallDomainProvider)) {
+                return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
+                    .detail("domain", "semantic_entry")
+                    .detail("reason", "plan missing CallDomainProvider"));
+            }
+            // 带指纹绑定入队，再走与 Reflector 唤醒相同的执行路径排空。
+            let obligation = obligation.unwrap_or(ProofObligation {
+                predicate: crate::reasoning::mgraph::PredicateId(0),
+                scope: ScopeRef::UNCONDITIONAL,
+                known_objects: Vec::new(),
+            });
+            let queued = crate::reasoning::mgraph::QueuedPlan::bound(session, plan, obligation, &request);
+            session.mgraph.operational.pending_plans.push(queued);
+            let Some(result) = crate::reasoning::mgraph::run_next_queued_plan(session, request)?
+            else {
+                return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
+                    .detail("domain", "semantic_entry")
+                    .detail("reason", "queued_plan_vanished"));
+            };
+            Ok(DomainSemanticOutcome::Computed(result))
+        }
+    }
+}
+
+/// 将语义结果投影为 [`DomainResult`]，供仍期望 provider 载荷的宿主 API。
+pub fn domain_result_from_semantic_outcome(session: &Session, outcome: DomainSemanticOutcome) -> Result<DomainResult, Diagnostic> {
+    match outcome {
+        DomainSemanticOutcome::Computed(result) => Ok(result),
+        DomainSemanticOutcome::AlreadyKnown { relation } => materialize_already_known(session, relation),
+        DomainSemanticOutcome::NeedObject { object_kind } => Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
+            .detail("domain", "semantic_entry")
+            .detail("reason", "need_object")
+            .detail("object_kind", object_kind)),
+        DomainSemanticOutcome::NeedConversion { source, target } => Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
+            .detail("domain", "semantic_entry")
+            .detail("reason", "need_conversion")
+            .detail("source", source)
+            .detail("target", target)),
+        DomainSemanticOutcome::Inconclusive => {
+            Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation).detail("domain", "semantic_entry").detail("reason", "inconclusive"))
+        }
+    }
+}
+
+/// 宿主便利入口：[`Session::mgraph`] + [`execute_domain_goal`] + 投影为 [`DomainResult`]。
+///
+/// 公共宿主应走此路径，而不是直接调用 [`execute_domain`]。
+pub fn execute_domain_via_semantic_entry(session: &mut Session, request: DomainRequest) -> Result<DomainResult, Diagnostic> {
+    let outcome = execute_domain_goal(session, DomainGoal::Dispatch(request))?;
+    domain_result_from_semantic_outcome(session, outcome)
+}

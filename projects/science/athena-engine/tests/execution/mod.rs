@@ -1,0 +1,24 @@
+//! 执行层集成测试。
+
+mod backend_capability_unit;
+mod backend_contract;
+mod backend_unit;
+mod compiler;
+mod coverage;
+mod fingerprint_unit;
+mod functions;
+mod ir_contract;
+mod ir_mod_unit;
+mod ir_parity;
+mod ir_verify_unit;
+mod mod_unit;
+mod neutral_request;
+mod parameterized_unit;
+mod provider_unit;
+mod reference_host_bridge_unit;
+mod reference_unit;
+mod semantic;
+mod vm_codegen_unit;
+mod vm_parity_unit;
+mod vm_path_unit;
+mod vm_unit;

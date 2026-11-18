@@ -1,0 +1,54 @@
+#![doc = include_str!("readme.md")]
+
+//! 线性代数领域模块（`athena-engine` 内）。
+//!
+//! 矩阵父对象 / shape / layout / `IndexSpec` / 构造与基础算子。
+//! 精确（`ℚ` 消元 · Bareiss）与机器（部分主元 LU）双路径。
+//! 不包含方言表面算子；方言 lowering 属于 SXO。
+
+mod equality;
+mod exact;
+mod index;
+mod machine;
+mod matrix_result;
+mod object_ref;
+mod operand;
+mod ops;
+mod parent;
+mod request;
+mod result;
+mod shape;
+mod status;
+pub mod value;
+
+pub use equality::{MatrixEqualityKind, matrices_equal};
+pub use exact::{
+    ExactDetResult, ExactInverseResult, ExactNormResult, ExactNullSpaceResult, ExactRankResult, ExactRrefResult, ExactSolveResult,
+    ExactTraceResult, det_bareiss, eigenvalues_diagonal_exact, eigenvalues_exact, eigenvalues_symmetric_2x2_exact,
+    eigenvectors_diagonal_exact, eigenvectors_exact, eigenvectors_symmetric_2x2_exact, invert_exact, matrix_exp_exact, norm2_exact,
+    nullspace_exact, rank_exact, right_solve_exact, rref_rational, solve_exact, trace_exact,
+};
+pub use index::{AxisRange, IndexSpec, scalar_index_from_one_based, slice_index_from_one_based_inclusive};
+pub use machine::{
+    MachineCondEstimate, MachineLuFactorization, MachineSolveResult, condition_number_machine, lu_partial_pivot, rank_machine,
+    right_solve_machine, solve_lu, solve_machine,
+};
+pub use matrix_result::MatrixResult;
+pub use object_ref::{MatrixObjectStore, MatrixRef};
+pub use operand::MatrixOperand;
+pub use ops::{
+    conjugate_transpose, cross, dot, elementwise_divide, elementwise_power, extend_row_vector_scalar, flag_matrix, flatten_row_major, hadamard,
+    index_scalar, intersection_integer_row_vectors, is_diagonal, is_lower_triangular, is_symmetric, is_upper_triangular, join_matrices,
+    kronecker, matmul, num_elements_scalar, pad_left_row_vector, reshape_column_major, reshape_row_major, reverse_matrix,
+    riffle_row_vectors, slice_matrix, transpose, tril, triu, union_integer_row_vectors,
+};
+pub use parent::{ElementParentKind, MatrixParent, RoundingPolicy, ShapePolicy, SparseStrategy};
+pub use request::LinearAlgebraRequest;
+pub use result::{
+    DEFAULT_PIVOT_THRESHOLD, LinearAlgebraResult, LinearAlgebraValue, execute_linear_algebra, execute_linear_algebra_with_bindings,
+    operation_name,
+};
+pub(crate) use result::resolve_own_numeric_bindings;
+pub use shape::{Layout, MatrixShape, StorageOrder};
+pub use status::{AlgorithmGuarantee, MachineSolveWitness, SolveDisposition};
+pub use value::{MatrixBuffer, MatrixEntry, MatrixValue};

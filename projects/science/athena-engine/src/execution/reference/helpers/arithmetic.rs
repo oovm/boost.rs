@@ -1,0 +1,498 @@
+//! 符号算术折叠辅助。
+
+use athena_numeric::{Number, add as num_add, div as num_div, mul as num_mul, pow as num_pow};
+use athena_types::{Result, TermId};
+
+use athena_ir::{ApplicationHead, Atom, MathematicalConstant, SemanticOperator};
+
+use super::diag;
+use crate::{
+    execution::{number_of, push_number, push_semantic},
+    runtime::{session::Session, values::numeric_clone::clone_number},
+};
+
+fn is_sem(head: ApplicationHead, op: SemanticOperator) -> bool {
+    matches!(head, ApplicationHead::Semantic(o) if o == op)
+}
+
+fn push_indeterminate(session: &mut Session) -> TermId {
+    push_semantic(session, SemanticOperator::Indeterminate, Vec::new())
+}
+
+fn is_indeterminate_term(session: &Session, term: TermId) -> bool {
+    matches!(
+        session.arena.get(term),
+        Some(athena_ir::TermNode::Application { head, .. }) if is_sem(*head, SemanticOperator::Indeterminate)
+    )
+}
+
+/// 裸正无穷，或非零数除以零留下的 `Divide` 残差。
+///
+/// 单个非零除以零仍保持 `Divide`。同类相消必须发布 `Indeterminate`，不得折成 `0`。
+fn is_infinity_kernel(session: &Session, term: TermId) -> bool {
+    if matches!(session.arena.get(term), Some(athena_ir::TermNode::Atom(Atom::Constant(MathematicalConstant::Infinity)))) {
+        return true;
+    }
+    match session.arena.get(term) {
+        Some(athena_ir::TermNode::Application { head, arguments }) if is_sem(*head, SemanticOperator::Divide) && arguments.len() == 2 => {
+            let den_zero = number_of(session, arguments[1]).is_some_and(Number::is_zero);
+            let num_nonzero = number_of(session, arguments[0]).is_some_and(|n| !n.is_zero());
+            den_zero && num_nonzero
+        }
+        _ => false,
+    }
+}
+fn factor_contains_infinity(session: &Session, term: TermId) -> bool {
+    if is_infinity_kernel(session, term) {
+        return true;
+    }
+    match session.arena.get(term) {
+        Some(athena_ir::TermNode::Application { head, arguments }) if is_sem(*head, SemanticOperator::Multiply) => {
+            arguments.iter().any(|a| is_infinity_kernel(session, *a))
+        }
+        _ => false,
+    }
+}
+
+/// `Power[0, e]` 且 `e` 为负整数：与零相乘时不得吸收成 `0`。
+fn is_zero_to_negative_power(session: &Session, term: TermId) -> bool {
+    match session.arena.get(term) {
+        Some(athena_ir::TermNode::Application { head, arguments }) if is_sem(*head, SemanticOperator::Power) && arguments.len() == 2 => {
+            let base_zero = number_of(session, arguments[0]).is_some_and(Number::is_zero);
+            let exp_neg = number_of(session, arguments[1]).is_some_and(|e| e.as_integer_exp().is_some_and(|n| n < 0));
+            base_zero && exp_neg
+        }
+        _ => false,
+    }
+}
+
+pub(crate) fn fold_plus_symbolic(session: &mut Session, terms: Vec<TermId>) -> TermId {
+    // 展平一层嵌套 `Plus` 并合并数值加项。
+    let mut flat = Vec::with_capacity(terms.len());
+    let mut sum: Option<Number> = None;
+    for term in terms {
+        match session.arena.get(term) {
+            Some(athena_ir::TermNode::Application { head, arguments }) if is_sem(*head, SemanticOperator::Add) => {
+                for arg in arguments.clone() {
+                    push_plus_summand_session(session, arg, &mut flat, &mut sum);
+                }
+            }
+            _ => push_plus_summand_session(session, term, &mut flat, &mut sum),
+        }
+    }
+    if let Some(s) = sum {
+        if !s.is_zero() {
+            flat.insert(0, push_number(session, s));
+        }
+    }
+    let flat = combine_like_plus_session(session, flat);
+    match flat.as_slice() {
+        [] => session.builder().int(0, Default::default()),
+        [only] => *only,
+        _ => push_semantic(session, SemanticOperator::Add, flat),
+    }
+}
+
+pub(crate) fn push_plus_summand_session(session: &mut Session, term: TermId, flat: &mut Vec<TermId>, sum: &mut Option<Number>) {
+    if let Some(n) = number_of(session, term) {
+        let n = clone_number(n);
+        *sum = Some(match sum.take() {
+            Some(s) => num_add(clone_number(&s), n).unwrap_or(s),
+            None => n,
+        });
+    }
+    else {
+        flat.push(term);
+    }
+}
+
+/// 合并 `c1·k + c2·k`（裸 `k` 视作系数 1）。
+pub(crate) fn combine_like_plus_session(session: &mut Session, terms: Vec<TermId>) -> Vec<TermId> {
+    let mut groups: Vec<(TermId, Number)> = Vec::new();
+    for t in terms {
+        let (coef, kernel) = split_numeric_coeff_session(session, t);
+        let mut matched = false;
+        for (k, acc) in groups.iter_mut() {
+            if session.arena.structural_eq(*k, kernel) {
+                match num_add(clone_number(acc), clone_number(&coef)) {
+                    Ok(v) => *acc = v,
+                    Err(_) => return groups_to_plus_terms_session(session, groups),
+                }
+                matched = true;
+                break;
+            }
+        }
+        if !matched {
+            groups.push((kernel, coef));
+        }
+    }
+    groups_to_plus_terms_session(session, groups)
+}
+
+pub(crate) fn split_numeric_coeff_session(session: &mut Session, term: TermId) -> (Number, TermId) {
+    if let Some(athena_ir::TermNode::Application { head, arguments }) = session.arena.get(term) {
+        if is_sem(*head, SemanticOperator::Multiply) && !arguments.is_empty() {
+            let args = arguments.clone();
+            let mut coef = Number::small_int(1);
+            let mut rest = Vec::new();
+            for a in args {
+                if let Some(n) = number_of(session, a) {
+                    coef = num_mul(clone_number(&coef), clone_number(n)).unwrap_or(coef);
+                }
+                else {
+                    rest.push(a);
+                }
+            }
+            let kernel = match rest.as_slice() {
+                [] => session.builder().int(1, Default::default()),
+                [only] => *only,
+                _ => push_semantic(session, SemanticOperator::Multiply, rest),
+            };
+            return (coef, kernel);
+        }
+    }
+    if let Some(n) = number_of(session, term) {
+        return (clone_number(n), session.builder().int(1, Default::default()));
+    }
+    (Number::small_int(1), term)
+}
+
+pub(crate) fn groups_to_plus_terms_session(session: &mut Session, groups: Vec<(TermId, Number)>) -> Vec<TermId> {
+    let mut out = Vec::new();
+    let mut canceled_infinity = false;
+    for (kernel, coef) in groups {
+        if coef.is_zero() {
+            if is_infinity_kernel(session, kernel) {
+                canceled_infinity = true;
+            }
+            continue;
+        }
+        else if number_of(session, kernel).is_some_and(Number::is_one) {
+            out.push(push_number(session, coef));
+        }
+        else if coef.is_one() {
+            out.push(kernel);
+        }
+        else {
+            let coef_id = push_number(session, coef);
+            out.push(fold_times_symbolic(session, vec![coef_id, kernel]));
+        }
+    }
+    // `∞ − ∞`（及同核抵消）在精确符号域标为不定式，禁止静默成 `0`。
+    if canceled_infinity {
+        return vec![push_indeterminate(session)];
+    }
+    out
+}
+
+pub(crate) fn fold_times_symbolic(session: &mut Session, terms: Vec<TermId>) -> TermId {
+    // 展平一层嵌套 `Times`。
+    let mut flat = Vec::with_capacity(terms.len());
+    for term in terms {
+        match session.arena.get(term) {
+            Some(athena_ir::TermNode::Application { head, arguments }) if is_sem(*head, SemanticOperator::Multiply) => {
+                flat.extend_from_slice(arguments);
+            }
+            _ => flat.push(term),
+        }
+    }
+    if flat.iter().any(|t| is_indeterminate_term(session, *t)) {
+        return push_indeterminate(session);
+    }
+    let has_numeric_zero = flat.iter().any(|t| number_of(session, *t).is_some_and(Number::is_zero));
+    if has_numeric_zero {
+        // `0·∞`、`0·0^(-1)` 等奇异积不得被零吸收成 `0`。
+        if flat.iter().any(|t| factor_contains_infinity(session, *t) || is_zero_to_negative_power(session, *t)) {
+            return push_indeterminate(session);
+        }
+        return session.builder().int(0, Default::default());
+    }
+    let mut out = Vec::with_capacity(flat.len());
+    for term in flat {
+        if number_of(session, term).is_some_and(Number::is_one) {
+            continue;
+        }
+        out.push(term);
+    }
+    let out = combine_like_powers_session(session, out);
+    let out = canonicalize_times_factors_session(session, out);
+    // 一层分配律：`c * (a + b) → c*a + c*b`。
+    if let Some(idx) = out.iter().position(|t| {
+        matches!(
+            session.arena.get(*t),
+            Some(athena_ir::TermNode::Application { head, .. })
+                if is_sem(*head, SemanticOperator::Add)
+        )
+    }) {
+        let plus_id = out[idx];
+        let mut factors = out.clone();
+        factors.remove(idx);
+        if let Some(athena_ir::TermNode::Application { arguments, .. }) = session.arena.get(plus_id) {
+            let summands = arguments.clone();
+            let parts: Vec<TermId> = summands
+                .into_iter()
+                .map(|s| {
+                    let mut f = factors.clone();
+                    f.push(s);
+                    fold_times_symbolic(session, f)
+                })
+                .collect();
+            return fold_plus_symbolic(session, parts);
+        }
+    }
+    match out.as_slice() {
+        [] => session.builder().int(1, Default::default()),
+        [only] => *only,
+        _ => push_semantic(session, SemanticOperator::Multiply, out),
+    }
+}
+
+pub(crate) fn canonicalize_times_factors_session(session: &mut Session, factors: Vec<TermId>) -> Vec<TermId> {
+    let mut product: Option<Number> = None;
+    let mut rest = Vec::new();
+    for f in factors {
+        if let Some(n) = number_of(session, f) {
+            let n = clone_number(n);
+            product = Some(match product.take() {
+                Some(p) => num_mul(clone_number(&p), n).unwrap_or(p),
+                None => n,
+            });
+        }
+        else {
+            rest.push(f);
+        }
+    }
+    let mut out = Vec::new();
+    if let Some(p) = product {
+        if !p.is_one() {
+            out.push(push_number(session, p));
+        }
+    }
+    out.extend(rest);
+    out
+}
+
+/// 合并 `Power[b,e1] * Power[b,e2]`（裸符号视作 `Power[b,1]`）。
+pub(crate) fn combine_like_powers_session(session: &mut Session, factors: Vec<TermId>) -> Vec<TermId> {
+    let mut groups: Vec<(TermId, TermId)> = Vec::new();
+    let mut rest = Vec::new();
+    for f in factors {
+        let base_exp = match session.arena.get(f) {
+            Some(athena_ir::TermNode::Application { head, arguments }) if is_sem(*head, SemanticOperator::Power) && arguments.len() == 2 => {
+                Some((arguments[0], arguments[1]))
+            }
+            Some(athena_ir::TermNode::Atom(athena_ir::Atom::Symbol(_))) => Some((f, session.builder().int(1, Default::default()))),
+            _ => None,
+        };
+        match base_exp {
+            Some((base, exp)) => {
+                let mut merged = false;
+                for (b, e) in groups.iter_mut() {
+                    if session.arena.structural_eq(*b, base) {
+                        let combined = match (number_of(session, *e), number_of(session, exp)) {
+                            (Some(a), Some(b)) => match num_add(clone_number(a), clone_number(b)) {
+                                Ok(v) => push_number(session, v),
+                                Err(_) => push_semantic(session, SemanticOperator::Add, vec![*e, exp]),
+                            },
+                            _ => push_semantic(session, SemanticOperator::Add, vec![*e, exp]),
+                        };
+                        *e = combined;
+                        merged = true;
+                        break;
+                    }
+                }
+                if !merged {
+                    groups.push((base, exp));
+                }
+            }
+            None => rest.push(f),
+        }
+    }
+    let mut merged = Vec::new();
+    for (base, exp) in groups {
+        let p = fold_power_symbolic(session, vec![base, exp]);
+        if number_of(session, p).is_some_and(Number::is_one) {
+            continue;
+        }
+        merged.push(p);
+    }
+    merged.extend(rest);
+    merged
+}
+
+pub(crate) fn fold_divide_symbolic(session: &mut Session, terms: Vec<TermId>) -> TermId {
+    if terms.len() != 2 {
+        return push_semantic(session, SemanticOperator::Divide, terms);
+    }
+    let (num, den) = (terms[0], terms[1]);
+    if number_of(session, den).is_some_and(Number::is_zero) {
+        if number_of(session, num).is_some_and(Number::is_zero) {
+            return push_indeterminate(session);
+        }
+        // 非零 / 0：保留 `Divide` 残差，禁止经 `·0^(-1)` 再被零吸收误折叠。
+        return push_semantic(session, SemanticOperator::Divide, terms);
+    }
+    let neg1 = session.builder().int(-1, Default::default());
+    let inv = fold_power_symbolic(session, vec![den, neg1]);
+    fold_times_symbolic(session, vec![num, inv])
+}
+
+pub(crate) fn fold_subtract_symbolic(session: &mut Session, terms: Vec<TermId>) -> TermId {
+    match terms.as_slice() {
+        [a] => {
+            let neg1 = session.builder().int(-1, Default::default());
+            fold_times_symbolic(session, vec![neg1, *a])
+        }
+        [a, b] => {
+            let neg1 = session.builder().int(-1, Default::default());
+            let neg = fold_times_symbolic(session, vec![neg1, *b]);
+            fold_plus_symbolic(session, vec![*a, neg])
+        }
+        _ => push_semantic(session, SemanticOperator::Subtract, terms),
+    }
+}
+
+pub(crate) fn fold_power_symbolic(session: &mut Session, terms: Vec<TermId>) -> TermId {
+    if terms.len() != 2 {
+        return push_semantic(session, SemanticOperator::Power, terms);
+    }
+    let (base, exp) = (terms[0], terms[1]);
+    if let Some(e) = number_of(session, exp) {
+        if e.is_zero() {
+            // 标量 `x^0 → 1`；`0^0` 按 `session.zero_pow_zero`；列表底数保持残差（逐元用 `DotPower`）。
+            if matches!(session.arena.get(base), Some(athena_ir::TermNode::Collection { elements: _, .. })) {
+                return push_semantic(session, SemanticOperator::Power, terms);
+            }
+            if number_of(session, base).is_some_and(Number::is_zero) {
+                return match session.zero_pow_zero {
+                    crate::runtime::session::ZeroPowerZeroConvention::Indeterminate => push_indeterminate(session),
+                    crate::runtime::session::ZeroPowerZeroConvention::One => session.builder().int(1, Default::default()),
+                };
+            }
+            return session.builder().int(1, Default::default());
+        }
+        if e.is_one() {
+            return base;
+        }
+        // 指数为整数时：`(u^a)^b → u^(a*b)`，以及 `(c*u)^n → c^n * u^n`。
+        if e.as_integer_exp().is_some() {
+            if let Some(athena_ir::TermNode::Application { head, arguments }) = session.arena.get(base) {
+                let head = *head;
+                if is_sem(head, SemanticOperator::Power) && arguments.len() == 2 {
+                    let inner_base = arguments[0];
+                    if let Some(inner_exp) = number_of(session, arguments[1]) {
+                        if let Ok(combined) = num_mul(clone_number(inner_exp), clone_number(e)) {
+                            let combined_id = push_number(session, combined);
+                            return fold_power_symbolic(session, vec![inner_base, combined_id]);
+                        }
+                    }
+                }
+                if is_sem(head, SemanticOperator::Multiply) && arguments.len() >= 2 {
+                    let args = arguments.clone();
+                    if let Some(c) = number_of(session, args[0]) {
+                        if let Ok(cp) = num_pow(c, e) {
+                            let rest =
+                                if args.len() == 2 { args[1] } else { push_semantic(session, SemanticOperator::Multiply, args[1..].to_vec()) };
+                            let rest_pow = fold_power_symbolic(session, vec![rest, exp]);
+                            let cp_id = push_number(session, cp);
+                            return fold_times_symbolic(session, vec![cp_id, rest_pow]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    push_semantic(session, SemanticOperator::Power, terms)
+}
+
+/// `Mod` / `Quotient`：精确整数 · Mathematica 向零截断商与余数。
+pub(crate) fn evaluate_mod_quotient_terms(session: &mut Session, op: SemanticOperator, terms: Vec<TermId>) -> Result<TermId> {
+    if terms.len() != 2 {
+        return Err(diag("semantic_operator_arity"));
+    }
+    let pick_quotient = match op {
+        SemanticOperator::Quotient => true,
+        SemanticOperator::Mod => false,
+        _ => return Err(diag("semantic_operator_not_implemented")),
+    };
+    let a = number_of(session, terms[0]).map(clone_number);
+    let b = number_of(session, terms[1]).map(clone_number);
+    let (Some(a), Some(b)) = (a, b) else {
+        return Ok(push_semantic(session, op, terms));
+    };
+    let (ai, bi) = (a.as_exact_integer(), b.as_exact_integer());
+    let (Some(ai), Some(bi)) = (ai, bi) else {
+        return Ok(push_semantic(session, op, terms));
+    };
+    if bi == 0 {
+        return Ok(push_indeterminate(session));
+    }
+    let quotient = ai / bi;
+    let value = if pick_quotient { quotient } else { ai - bi * quotient };
+    Ok(push_number(session, Number::small_int(value)))
+}
+
+/// Reference 与 `ExecutionHost` 共用的算术求值（数值折叠 · 矩阵乘 · 符号残差）。
+pub(crate) fn evaluate_arithmetic_terms(session: &mut Session, op: SemanticOperator, terms: Vec<TermId>) -> Result<TermId> {
+    let numbers = terms.iter().map(|t| number_of(session, *t).map(clone_number)).collect::<Option<Vec<_>>>();
+    if let Some(nums) = numbers {
+        let folded = match (op, nums.as_slice()) {
+            (SemanticOperator::Add, []) => Some(Number::small_int(0)),
+            (SemanticOperator::Add, values) => {
+                let mut acc = clone_number(&values[0]);
+                let mut ok = true;
+                for n in &values[1..] {
+                    match num_add(clone_number(&acc), clone_number(n)) {
+                        Ok(v) => acc = v,
+                        Err(_) => {
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+                ok.then_some(acc)
+            }
+            (SemanticOperator::Multiply, []) => Some(Number::small_int(1)),
+            (SemanticOperator::Multiply, values) => {
+                let mut acc = clone_number(&values[0]);
+                let mut ok = true;
+                for n in &values[1..] {
+                    match num_mul(clone_number(&acc), clone_number(n)) {
+                        Ok(v) => acc = v,
+                        Err(_) => {
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+                ok.then_some(acc)
+            }
+            (SemanticOperator::Subtract, [a]) | (SemanticOperator::Negate, [a]) => num_mul(Number::small_int(-1), clone_number(a)).ok(),
+            (SemanticOperator::Subtract, [a, b]) => {
+                num_mul(Number::small_int(-1), clone_number(b)).and_then(|neg| num_add(clone_number(a), neg)).ok()
+            }
+            (SemanticOperator::Divide, [a, b]) => num_div(clone_number(a), clone_number(b)).ok(),
+            (SemanticOperator::Power, [a, b]) => num_pow(a, b).ok(),
+            _ => return Err(diag("semantic_operator_arity")),
+        };
+        if let Some(folded) = folded {
+            // Living 16 / I-6: machine Inf-Inf (and similar) collapses to NaN; publish Indeterminate
+            // instead of a silent non-finite Number that dialects may treat as success.
+            if folded.as_machine_f64().is_some_and(|x| x.is_nan()) {
+                return Ok(push_indeterminate(session));
+            }
+            return Ok(push_number(session, folded));
+        }
+    }
+    // Living 16: never reverse-recognize nested Collections as MatMul/Hadamard here.
+    // Typed matrix products enter via `MatrixRef` slots or explicit Domain goals.
+    Ok(match op {
+        SemanticOperator::Add => fold_plus_symbolic(session, terms),
+        SemanticOperator::Multiply => fold_times_symbolic(session, terms),
+        SemanticOperator::Power => fold_power_symbolic(session, terms),
+        SemanticOperator::Divide => fold_divide_symbolic(session, terms),
+        SemanticOperator::Subtract => fold_subtract_symbolic(session, terms),
+        SemanticOperator::Negate if terms.len() == 1 => fold_subtract_symbolic(session, terms),
+        _ => push_semantic(session, op, terms),
+    })
+}

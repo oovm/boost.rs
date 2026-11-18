@@ -149,6 +149,20 @@ members = [
     "projects/schema/schema.input.von.ast",
     "projects/schema/schema.input.von.parser",
     "projects/schema/schema.types",
+    "projects/science/athena",
+    "projects/science/athena-benchmark",
+    "projects/science/athena-engine",
+    "projects/science/athena-gc",
+    "projects/science/athena-graph",
+    "projects/science/athena-ir",
+    "projects/science/athena-jit",
+    "projects/science/athena-ndarray",
+    "projects/science/athena-numeric",
+    "projects/science/athena-rewriter",
+    "projects/science/athena-table",
+    "projects/science/athena-testing",
+    "projects/science/athena-types",
+    "projects/science/athena-vm",
     "projects/searcher/searcher",
     "projects/searcher/searcher.document",
     "projects/searcher/searcher.index",
@@ -336,7 +350,24 @@ schema-input-von-ast = { path = "projects/schema/schema.input.von.ast" }
 schema-input-von-parser = { path = "projects/schema/schema.input.von.parser" }
 schema-types = { path = "projects/schema/schema.types" }
 
+# science 能力树（athena 迁入基线）
+athena = { path = "projects/science/athena" }
+athena-benchmark = { path = "projects/science/athena-benchmark" }
+athena-engine = { path = "projects/science/athena-engine" }
+athena-gc = { path = "projects/science/athena-gc" }
+athena-graph = { path = "projects/science/athena-graph" }
+athena-ir = { path = "projects/science/athena-ir" }
+athena-jit = { path = "projects/science/athena-jit" }
+athena-ndarray = { path = "projects/science/athena-ndarray" }
+athena-numeric = { path = "projects/science/athena-numeric" }
+athena-rewriter = { path = "projects/science/athena-rewriter" }
+athena-table = { path = "projects/science/athena-table" }
+athena-testing = { path = "projects/science/athena-testing" }
+athena-types = { path = "projects/science/athena-types" }
+athena-vm = { path = "projects/science/athena-vm" }
+
 # 外部库
+clap = { version = "4.5.48", features = ["derive"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 thiserror = "2"

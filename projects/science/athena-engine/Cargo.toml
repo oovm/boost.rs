@@ -1,0 +1,32 @@
+[package]
+name = "athena-engine"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+authors.workspace = true
+description = "Athena CAS execution engine — Session, eval, rewrite orchestration"
+publish = false
+
+[features]
+default = ["portable"]
+portable = []
+jit = ["dep:athena-jit"]
+
+[dependencies]
+athena-types = { workspace = true }
+athena-gc = { workspace = true }
+athena-numeric = { workspace = true }
+athena-ir = { workspace = true }
+athena-rewriter = { workspace = true }
+athena-vm = { workspace = true }
+athena-jit = { workspace = true, optional = true }
+athena-graph = { workspace = true }
+athena-ndarray = { workspace = true }
+
+[dev-dependencies]
+athena-testing = { workspace = true }
+
+[lints.rust]
+missing_docs = "warn"
+# `deny`（非 `forbid`）：`DomainExecutionContext` 经独占生命周期裸指针消除嵌套 builder E0499。
+unsafe_code = "deny"

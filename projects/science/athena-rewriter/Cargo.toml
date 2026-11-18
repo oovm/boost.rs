@@ -1,0 +1,17 @@
+[package]
+name = "athena-rewriter"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+authors.workspace = true
+description = "athena rewriter — canonicalization, rules, simplification"
+publish = false
+
+[dependencies]
+athena-types = { workspace = true }
+athena-ir = { workspace = true }
+athena-numeric = { workspace = true }
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"

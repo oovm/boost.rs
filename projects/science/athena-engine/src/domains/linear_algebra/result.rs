@@ -1,0 +1,510 @@
+//! 线性代数域结果与分派。
+
+use athena_types::{Diagnostic, DiagnosticCode, SymbolId};
+
+use super::{
+    exact::{
+        ExactDetResult, ExactInverseResult, ExactNormResult, ExactNullSpaceResult, ExactRankResult, ExactRrefResult, ExactSolveResult,
+        ExactTraceResult, det_bareiss, eigenvalues_exact, eigenvectors_exact, invert_exact, matrix_exp_exact, norm2_exact,
+        nullspace_exact, rank_exact, right_solve_exact, rref_rational, solve_exact, trace_exact,
+    },
+    machine::{MachineCondEstimate, MachineSolveResult, condition_number_machine, rank_machine, right_solve_machine, solve_machine},
+    matrix_result::MatrixResult,
+    object_ref::{MatrixObjectStore, MatrixRef},
+    ops::{
+        conjugate_transpose, cross, dot, elementwise_divide, elementwise_power, flag_matrix, hadamard, index_scalar, is_diagonal,
+        is_lower_triangular, is_symmetric, is_upper_triangular, kronecker, matmul, num_elements_scalar, reshape_column_major,
+        reshape_row_major, transpose, tril, triu,
+    },
+    request::LinearAlgebraRequest,
+    shape::StorageOrder,
+    status::AlgorithmGuarantee,
+    value::MatrixValue,
+};
+
+/// 默认机器主元阈值。
+pub const DEFAULT_PIVOT_THRESHOLD: f64 = 1e-12;
+
+/// 线性代数域值。
+///
+/// **不**实现 [`Clone`]。深复制用 [`Self::owning_copy`]。
+///
+/// 矩阵值载荷走 [`MatrixResult`]（Living 16），使 shape / element domain / guarantee /
+/// residual / diagnostics 与矩阵值同一次计算一起旅行。
+#[derive(Debug, PartialEq)]
+pub enum LinearAlgebraValue {
+    /// 矩阵（带 Living 16 域结果信封）。
+    Matrix(MatrixResult),
+    /// 精确秩。
+    ExactRank(ExactRankResult),
+    /// 机器秩。
+    MachineRank {
+        /// 数值秩。
+        rank: u64,
+        /// 保证。
+        guarantee: AlgorithmGuarantee,
+    },
+    /// 机器条件数估计（`‖U‖` 主元比；奇异时为 `+∞`）。
+    MachineCond {
+        /// 条件数估计。
+        value: f64,
+        /// 数值秩。
+        numerical_rank: u64,
+        /// 保证。
+        guarantee: AlgorithmGuarantee,
+    },
+    /// 精确行列式。
+    ExactDet(ExactDetResult),
+    /// 精确矩阵迹。
+    ExactTrace(ExactTraceResult),
+    /// 精确欧几里得范数。
+    ExactNorm(ExactNormResult),
+    /// `Dot` / Hadamard / Cross 收缩结果（Living 16 信封；投影仍可压成平坦 List / 标量）。
+    Dot(MatrixResult),
+    /// 精确 RREF。
+    ExactRref(ExactRrefResult),
+    /// 精确零空间基。
+    ExactNullSpace(ExactNullSpaceResult),
+    /// 精确求逆。
+    ExactInverse(ExactInverseResult),
+    /// 精确求解。
+    ExactSolve(ExactSolveResult),
+    /// 机器求解。
+    MachineSolve(MachineSolveResult),
+}
+
+impl LinearAlgebraValue {
+    /// Wrap an owned matrix with default guarantee from its element parent.
+    pub fn matrix_outcome(value: MatrixValue) -> Self {
+        Self::Matrix(Self::owned_envelope(value))
+    }
+
+    /// Same envelope as [`Self::matrix_outcome`], but keep the `Dot` projection surface
+    /// (scalar / flat vector / nested matrix) instead of always nested lists.
+    pub fn dot_outcome(value: MatrixValue) -> Self {
+        Self::Dot(Self::owned_envelope(value))
+    }
+
+    fn owned_envelope(value: MatrixValue) -> MatrixResult {
+        let guarantee = if value.parent().element.is_machine() { AlgorithmGuarantee::Approximate } else { AlgorithmGuarantee::Exact };
+        MatrixResult::from_owned(value, guarantee)
+    }
+
+    /// Owning 复制。
+    pub fn owning_copy(&self) -> Self {
+        match self {
+            Self::Matrix(m) => Self::Matrix(m.owning_copy()),
+            Self::ExactRank(r) => Self::ExactRank(*r),
+            Self::MachineRank { rank, guarantee } => Self::MachineRank { rank: *rank, guarantee: *guarantee },
+            Self::MachineCond { value, numerical_rank, guarantee } => {
+                Self::MachineCond { value: *value, numerical_rank: *numerical_rank, guarantee: *guarantee }
+            }
+            Self::ExactDet(r) => Self::ExactDet(r.owning_copy()),
+            Self::ExactTrace(r) => Self::ExactTrace(r.owning_copy()),
+            Self::ExactNorm(r) => Self::ExactNorm(r.owning_copy()),
+            Self::Dot(m) => Self::Dot(m.owning_copy()),
+            Self::ExactRref(r) => Self::ExactRref(r.owning_copy()),
+            Self::ExactNullSpace(r) => Self::ExactNullSpace(r.owning_copy()),
+            Self::ExactInverse(r) => Self::ExactInverse(r.owning_copy()),
+            Self::ExactSolve(r) => Self::ExactSolve(r.owning_copy()),
+            Self::MachineSolve(r) => Self::MachineSolve(r.owning_copy()),
+        }
+    }
+}
+
+/// 线性代数结果。
+#[derive(Debug, PartialEq)]
+pub enum LinearAlgebraResult {
+    /// 成功。
+    Ok {
+        /// 值。
+        value: LinearAlgebraValue,
+    },
+    /// 诊断失败（shape/type 等）。
+    Err {
+        /// 诊断。
+        diagnostic: Diagnostic,
+    },
+}
+
+/// 操作名（审计）。
+pub fn operation_name(request: &LinearAlgebraRequest) -> &'static str {
+    match request {
+        LinearAlgebraRequest::Transpose { .. } => "transpose",
+        LinearAlgebraRequest::ConjugateTranspose { .. } => "conjugate_transpose",
+        LinearAlgebraRequest::Index { .. } => "index",
+        LinearAlgebraRequest::MatMul { .. } => "matmul",
+        LinearAlgebraRequest::Hadamard { .. } => "hadamard",
+        LinearAlgebraRequest::ElementwiseDivide { .. } => "elementwise_divide",
+        LinearAlgebraRequest::ElementwisePower { .. } => "elementwise_power",
+        LinearAlgebraRequest::Rank { .. } => "rank",
+        LinearAlgebraRequest::Det { .. } => "det",
+        LinearAlgebraRequest::Rref { .. } => "rref",
+        LinearAlgebraRequest::Solve { .. } => "solve",
+        LinearAlgebraRequest::RightSolve { .. } => "right_solve",
+        LinearAlgebraRequest::Inverse { .. } => "inverse",
+        LinearAlgebraRequest::Trace { .. } => "trace",
+        LinearAlgebraRequest::Eigenvalues { .. } => "eigenvalues",
+        LinearAlgebraRequest::Eigenvectors { .. } => "eigenvectors",
+        LinearAlgebraRequest::Dot { .. } => "dot",
+        LinearAlgebraRequest::Cross { .. } => "cross",
+        LinearAlgebraRequest::NullSpace { .. } => "nullspace",
+        LinearAlgebraRequest::Norm { .. } => "norm",
+        LinearAlgebraRequest::ConditionNumber { .. } => "condition_number",
+        LinearAlgebraRequest::Tril { .. } => "tril",
+        LinearAlgebraRequest::Triu { .. } => "triu",
+        LinearAlgebraRequest::Kronecker { .. } => "kronecker",
+        LinearAlgebraRequest::IsDiagonal { .. } => "is_diagonal",
+        LinearAlgebraRequest::IsTriangular { .. } => "is_triangular",
+        LinearAlgebraRequest::IsSymmetric { .. } => "is_symmetric",
+        LinearAlgebraRequest::Reshape { .. } => "reshape",
+        LinearAlgebraRequest::NumElements { .. } => "num_elements",
+        LinearAlgebraRequest::MatrixExp { .. } => "matrix_exp",
+    }
+}
+
+/// 执行线性代数请求（经 [`MatrixObjectStore`] 解析 [`MatrixRef`]）。
+pub fn execute_linear_algebra(request: LinearAlgebraRequest, store: &MatrixObjectStore) -> LinearAlgebraResult {
+    execute_linear_algebra_with_bindings(request, store, &|_| None)
+}
+
+use super::operand::MatrixOperand;
+
+fn resolve_matrix_operand(session: &mut crate::runtime::Session, op: MatrixOperand) -> MatrixOperand {
+    match op {
+        MatrixOperand::Object(_) => op,
+        MatrixOperand::Binding(symbol) => {
+            if let Some(matrix_ref) = session.defs.matrix_binding(symbol) {
+                return MatrixOperand::Object(matrix_ref);
+            }
+            let Some(term) = session.defs.binding(symbol) else {
+                return MatrixOperand::Binding(symbol);
+            };
+            use crate::execution::reference::{term_to_exact_matrix_session, term_to_rational_matrix_session};
+            let Some(matrix) = term_to_exact_matrix_session(session, term).or_else(|| term_to_rational_matrix_session(session, term))
+            else {
+                return MatrixOperand::Binding(symbol);
+            };
+            MatrixOperand::Object(session.matrix_objects.intern(matrix))
+        }
+    }
+}
+
+/// Living 16: resolve `Define` numeric `Collection` Own values to ephemeral [`MatrixRef`] for LA goals.
+pub(crate) fn resolve_own_numeric_bindings(session: &mut crate::runtime::Session, request: LinearAlgebraRequest) -> LinearAlgebraRequest {
+    match request {
+        LinearAlgebraRequest::Transpose { matrix } => LinearAlgebraRequest::Transpose { matrix: resolve_matrix_operand(session, matrix) },
+        LinearAlgebraRequest::ConjugateTranspose { matrix } => {
+            LinearAlgebraRequest::ConjugateTranspose { matrix: resolve_matrix_operand(session, matrix) }
+        }
+        LinearAlgebraRequest::Index { matrix, row, col } => LinearAlgebraRequest::Index { matrix, row, col },
+        LinearAlgebraRequest::MatMul { lhs, rhs } => LinearAlgebraRequest::MatMul {
+            lhs: resolve_matrix_operand(session, lhs),
+            rhs: resolve_matrix_operand(session, rhs),
+        },
+        LinearAlgebraRequest::Hadamard { lhs, rhs } => LinearAlgebraRequest::Hadamard {
+            lhs: resolve_matrix_operand(session, lhs),
+            rhs: resolve_matrix_operand(session, rhs),
+        },
+        LinearAlgebraRequest::ElementwiseDivide { lhs, rhs } => LinearAlgebraRequest::ElementwiseDivide {
+            lhs: resolve_matrix_operand(session, lhs),
+            rhs: resolve_matrix_operand(session, rhs),
+        },
+        LinearAlgebraRequest::ElementwisePower { lhs, rhs } => LinearAlgebraRequest::ElementwisePower {
+            lhs: resolve_matrix_operand(session, lhs),
+            rhs: resolve_matrix_operand(session, rhs),
+        },
+        LinearAlgebraRequest::Rank { matrix } => LinearAlgebraRequest::Rank { matrix: resolve_matrix_operand(session, matrix) },
+        LinearAlgebraRequest::Det { matrix } => LinearAlgebraRequest::Det { matrix: resolve_matrix_operand(session, matrix) },
+        LinearAlgebraRequest::Rref { matrix } => LinearAlgebraRequest::Rref { matrix: resolve_matrix_operand(session, matrix) },
+        LinearAlgebraRequest::Solve { a, b } => LinearAlgebraRequest::Solve {
+            a: resolve_matrix_operand(session, a),
+            b: resolve_matrix_operand(session, b),
+        },
+        LinearAlgebraRequest::RightSolve { a, b } => LinearAlgebraRequest::RightSolve {
+            a: resolve_matrix_operand(session, a),
+            b: resolve_matrix_operand(session, b),
+        },
+        LinearAlgebraRequest::Inverse { matrix } => LinearAlgebraRequest::Inverse { matrix: resolve_matrix_operand(session, matrix) },
+        LinearAlgebraRequest::Trace { matrix } => LinearAlgebraRequest::Trace { matrix: resolve_matrix_operand(session, matrix) },
+        LinearAlgebraRequest::Eigenvalues { matrix, column_vector } => LinearAlgebraRequest::Eigenvalues {
+            matrix: resolve_matrix_operand(session, matrix),
+            column_vector,
+        },
+        LinearAlgebraRequest::Eigenvectors { matrix, column_basis } => LinearAlgebraRequest::Eigenvectors {
+            matrix: resolve_matrix_operand(session, matrix),
+            column_basis,
+        },
+        LinearAlgebraRequest::Dot { lhs, rhs } => LinearAlgebraRequest::Dot {
+            lhs: resolve_matrix_operand(session, lhs),
+            rhs: resolve_matrix_operand(session, rhs),
+        },
+        LinearAlgebraRequest::Cross { lhs, rhs } => LinearAlgebraRequest::Cross {
+            lhs: resolve_matrix_operand(session, lhs),
+            rhs: resolve_matrix_operand(session, rhs),
+        },
+        LinearAlgebraRequest::NullSpace { matrix, column_basis } => LinearAlgebraRequest::NullSpace {
+            matrix: resolve_matrix_operand(session, matrix),
+            column_basis,
+        },
+        LinearAlgebraRequest::Norm { matrix } => LinearAlgebraRequest::Norm { matrix: resolve_matrix_operand(session, matrix) },
+        LinearAlgebraRequest::ConditionNumber { matrix } => {
+            LinearAlgebraRequest::ConditionNumber { matrix: resolve_matrix_operand(session, matrix) }
+        }
+        LinearAlgebraRequest::Tril { matrix } => LinearAlgebraRequest::Tril { matrix: resolve_matrix_operand(session, matrix) },
+        LinearAlgebraRequest::Triu { matrix } => LinearAlgebraRequest::Triu { matrix: resolve_matrix_operand(session, matrix) },
+        LinearAlgebraRequest::Kronecker { lhs, rhs } => LinearAlgebraRequest::Kronecker {
+            lhs: resolve_matrix_operand(session, lhs),
+            rhs: resolve_matrix_operand(session, rhs),
+        },
+        LinearAlgebraRequest::IsDiagonal { matrix } => LinearAlgebraRequest::IsDiagonal { matrix: resolve_matrix_operand(session, matrix) },
+        LinearAlgebraRequest::IsTriangular { matrix, lower } => LinearAlgebraRequest::IsTriangular {
+            matrix: resolve_matrix_operand(session, matrix),
+            lower,
+        },
+        LinearAlgebraRequest::IsSymmetric { matrix } => LinearAlgebraRequest::IsSymmetric { matrix: resolve_matrix_operand(session, matrix) },
+        LinearAlgebraRequest::Reshape { matrix, rows, cols, order } => LinearAlgebraRequest::Reshape {
+            matrix: resolve_matrix_operand(session, matrix),
+            rows,
+            cols,
+            order,
+        },
+        LinearAlgebraRequest::NumElements { matrix } => LinearAlgebraRequest::NumElements { matrix: resolve_matrix_operand(session, matrix) },
+        LinearAlgebraRequest::MatrixExp { matrix } => LinearAlgebraRequest::MatrixExp { matrix: resolve_matrix_operand(session, matrix) },
+    }
+}
+
+/// 执行线性代数请求，并允许 [`MatrixOperand::Binding`] 经定义层解析。
+pub fn execute_linear_algebra_with_bindings(
+    request: LinearAlgebraRequest,
+    store: &MatrixObjectStore,
+    matrix_binding: &dyn Fn(SymbolId) -> Option<MatrixRef>,
+) -> LinearAlgebraResult {
+    match run(request, store, matrix_binding) {
+        Ok(value) => LinearAlgebraResult::Ok { value },
+        Err(diagnostic) => LinearAlgebraResult::Err { diagnostic },
+    }
+}
+
+fn resolve(store: &MatrixObjectStore, r: MatrixRef) -> Result<MatrixValue, Diagnostic> {
+    store.resolve_owning(r).ok_or_else(|| {
+        Diagnostic::new(DiagnosticCode::UnsupportedOperation)
+            .detail("domain", "linear_algebra")
+            .detail("reason", "missing_matrix_ref")
+            .arg("ref", r.0)
+    })
+}
+
+fn run(
+    request: LinearAlgebraRequest,
+    store: &MatrixObjectStore,
+    matrix_binding: &dyn Fn(SymbolId) -> Option<MatrixRef>,
+) -> Result<LinearAlgebraValue, Diagnostic> {
+    match request {
+        LinearAlgebraRequest::Transpose { matrix } => {
+            let matrix = matrix.resolve_value(store, matrix_binding)?;
+            Ok(LinearAlgebraValue::matrix_outcome(transpose(&matrix)))
+        }
+        LinearAlgebraRequest::ConjugateTranspose { matrix } => {
+            let matrix = matrix.resolve_value(store, matrix_binding)?;
+            Ok(LinearAlgebraValue::matrix_outcome(conjugate_transpose(&matrix)))
+        }
+        LinearAlgebraRequest::Index { matrix, row, col } => {
+            let matrix = resolve(store, matrix)?;
+            Ok(LinearAlgebraValue::matrix_outcome(index_scalar(&matrix, row, col)?))
+        }
+        LinearAlgebraRequest::MatMul { lhs, rhs } => {
+            let lhs = lhs.resolve_value(store, matrix_binding)?;
+            let rhs = rhs.resolve_value(store, matrix_binding)?;
+            Ok(LinearAlgebraValue::matrix_outcome(matmul(&lhs, &rhs)?))
+        }
+        LinearAlgebraRequest::Hadamard { lhs, rhs } => {
+            let lhs = lhs.resolve_value(store, matrix_binding)?;
+            let rhs = rhs.resolve_value(store, matrix_binding)?;
+            // 与 `Dot` 同表面：行/列向量结果投影为平坦 List（MATLAB `.*`）。
+            Ok(LinearAlgebraValue::dot_outcome(hadamard(&lhs, &rhs)?))
+        }
+        LinearAlgebraRequest::ElementwiseDivide { lhs, rhs } => {
+            let lhs = lhs.resolve_value(store, matrix_binding)?;
+            let rhs = rhs.resolve_value(store, matrix_binding)?;
+            Ok(LinearAlgebraValue::dot_outcome(elementwise_divide(&lhs, &rhs)?))
+        }
+        LinearAlgebraRequest::ElementwisePower { lhs, rhs } => {
+            let lhs = lhs.resolve_value(store, matrix_binding)?;
+            let rhs = rhs.resolve_value(store, matrix_binding)?;
+            Ok(LinearAlgebraValue::dot_outcome(elementwise_power(&lhs, &rhs)?))
+        }
+        LinearAlgebraRequest::Rank { matrix } => {
+            let matrix = matrix.resolve_value(store, matrix_binding)?;
+            if matrix.parent().element.is_machine() {
+                let (rank, guarantee) = rank_machine(&matrix, DEFAULT_PIVOT_THRESHOLD)?;
+                Ok(LinearAlgebraValue::MachineRank { rank, guarantee })
+            }
+            else {
+                Ok(LinearAlgebraValue::ExactRank(rank_exact(&matrix)?))
+            }
+        }
+        LinearAlgebraRequest::Det { matrix } => {
+            let matrix = matrix.resolve_value(store, matrix_binding)?;
+            if matrix.parent().element.is_machine() {
+                return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
+                    .detail("reason", "machine_det_deferred_l2")
+                    .detail("hint", "use exact parent or LU in later slice"));
+            }
+            Ok(LinearAlgebraValue::ExactDet(det_bareiss(&matrix)?))
+        }
+        LinearAlgebraRequest::Rref { matrix } => {
+            let matrix = matrix.resolve_value(store, matrix_binding)?;
+            if matrix.parent().element.is_machine() {
+                return Err(Diagnostic::new(DiagnosticCode::TypeMismatch).detail("reason", "rref_exact_only"));
+            }
+            Ok(LinearAlgebraValue::ExactRref(rref_rational(&matrix)?))
+        }
+        LinearAlgebraRequest::Solve { a, b } => {
+            let a = a.resolve_value(store, matrix_binding)?;
+            let b = b.resolve_value(store, matrix_binding)?;
+            if a.parent().element.is_machine() || b.parent().element.is_machine() {
+                if !(a.parent().element.is_machine() && b.parent().element.is_machine()) {
+                    return Err(Diagnostic::new(DiagnosticCode::TypeMismatch).detail("reason", "solve_parent_mixed"));
+                }
+                Ok(LinearAlgebraValue::MachineSolve(solve_machine(&a, &b, DEFAULT_PIVOT_THRESHOLD)?))
+            }
+            else {
+                Ok(LinearAlgebraValue::ExactSolve(solve_exact(&a, &b)?))
+            }
+        }
+        LinearAlgebraRequest::RightSolve { a, b } => {
+            let a = a.resolve_value(store, matrix_binding)?;
+            let b = b.resolve_value(store, matrix_binding)?;
+            if a.parent().element.is_machine() || b.parent().element.is_machine() {
+                if !(a.parent().element.is_machine() && b.parent().element.is_machine()) {
+                    return Err(Diagnostic::new(DiagnosticCode::TypeMismatch).detail("reason", "right_solve_parent_mixed"));
+                }
+                Ok(LinearAlgebraValue::MachineSolve(right_solve_machine(&a, &b, DEFAULT_PIVOT_THRESHOLD)?))
+            }
+            else {
+                Ok(LinearAlgebraValue::ExactSolve(right_solve_exact(&a, &b)?))
+            }
+        }
+        LinearAlgebraRequest::Inverse { matrix } => {
+            let matrix = matrix.resolve_value(store, matrix_binding)?;
+            if matrix.parent().element.is_machine() {
+                return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
+                    .detail("reason", "machine_inverse_deferred")
+                    .detail("hint", "use exact parent"));
+            }
+            Ok(LinearAlgebraValue::ExactInverse(invert_exact(&matrix)?))
+        }
+        LinearAlgebraRequest::Trace { matrix } => {
+            let matrix = matrix.resolve_value(store, matrix_binding)?;
+            if matrix.parent().element.is_machine() {
+                return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
+                    .detail("reason", "machine_trace_deferred")
+                    .detail("hint", "use exact parent"));
+            }
+            Ok(LinearAlgebraValue::ExactTrace(trace_exact(&matrix)?))
+        }
+        LinearAlgebraRequest::Eigenvalues { matrix, column_vector } => {
+            let matrix = matrix.resolve_value(store, matrix_binding)?;
+            let values = eigenvalues_exact(&matrix)?;
+            if column_vector {
+                Ok(LinearAlgebraValue::matrix_outcome(transpose(&values)))
+            }
+            else {
+                Ok(LinearAlgebraValue::dot_outcome(values))
+            }
+        }
+        LinearAlgebraRequest::Eigenvectors { matrix, column_basis } => {
+            let matrix = matrix.resolve_value(store, matrix_binding)?;
+            let vectors = eigenvectors_exact(&matrix)?;
+            if column_basis {
+                Ok(LinearAlgebraValue::matrix_outcome(transpose(&vectors)))
+            }
+            else {
+                Ok(LinearAlgebraValue::matrix_outcome(vectors))
+            }
+        }
+        LinearAlgebraRequest::Dot { lhs, rhs } => {
+            let lhs = lhs.resolve_value(store, matrix_binding)?;
+            let rhs = rhs.resolve_value(store, matrix_binding)?;
+            Ok(LinearAlgebraValue::dot_outcome(dot(&lhs, &rhs)?))
+        }
+        LinearAlgebraRequest::Cross { lhs, rhs } => {
+            let lhs = lhs.resolve_value(store, matrix_binding)?;
+            let rhs = rhs.resolve_value(store, matrix_binding)?;
+            Ok(LinearAlgebraValue::dot_outcome(cross(&lhs, &rhs)?))
+        }
+        LinearAlgebraRequest::NullSpace { matrix, column_basis } => {
+            let matrix = matrix.resolve_value(store, matrix_binding)?;
+            if matrix.parent().element.is_machine() {
+                return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
+                    .detail("reason", "machine_nullspace_deferred")
+                    .detail("hint", "use exact parent"));
+            }
+            let mut ns = nullspace_exact(&matrix)?;
+            if column_basis {
+                // Row basis (Mathematica) → column basis (MATLAB `null`); includes `0×n` → `n×0`.
+                let transposed = super::ops::transpose(&ns.basis.value);
+                ns.basis = MatrixResult::from_owned(transposed, ns.guarantee);
+            }
+            Ok(LinearAlgebraValue::ExactNullSpace(ns))
+        }
+        LinearAlgebraRequest::Norm { matrix } => {
+            let matrix = matrix.resolve_value(store, matrix_binding)?;
+            if matrix.parent().element.is_machine() {
+                return Err(Diagnostic::new(DiagnosticCode::UnsupportedOperation)
+                    .detail("reason", "machine_norm_deferred")
+                    .detail("hint", "use exact parent"));
+            }
+            Ok(LinearAlgebraValue::ExactNorm(norm2_exact(&matrix)?))
+        }
+        LinearAlgebraRequest::ConditionNumber { matrix } => {
+            let matrix = matrix.resolve_value(store, matrix_binding)?;
+            let MachineCondEstimate { value, numerical_rank, guarantee } = condition_number_machine(&matrix, DEFAULT_PIVOT_THRESHOLD)?;
+            Ok(LinearAlgebraValue::MachineCond { value, numerical_rank, guarantee })
+        }
+        LinearAlgebraRequest::Tril { matrix } => {
+            let matrix = matrix.resolve_value(store, matrix_binding)?;
+            Ok(LinearAlgebraValue::matrix_outcome(tril(&matrix)?))
+        }
+        LinearAlgebraRequest::Triu { matrix } => {
+            let matrix = matrix.resolve_value(store, matrix_binding)?;
+            Ok(LinearAlgebraValue::matrix_outcome(triu(&matrix)?))
+        }
+        LinearAlgebraRequest::Kronecker { lhs, rhs } => {
+            let lhs = lhs.resolve_value(store, matrix_binding)?;
+            let rhs = rhs.resolve_value(store, matrix_binding)?;
+            // Living 16: 行/列向量 Kronecker 与 Dot 同表面（平坦 List），方块积仍为嵌套矩阵。
+            Ok(LinearAlgebraValue::dot_outcome(kronecker(&lhs, &rhs)?))
+        }
+        LinearAlgebraRequest::IsDiagonal { matrix } => {
+            let matrix = matrix.resolve_value(store, matrix_binding)?;
+            Ok(LinearAlgebraValue::dot_outcome(flag_matrix(is_diagonal(&matrix)?)?))
+        }
+        LinearAlgebraRequest::IsTriangular { matrix, lower } => {
+            let matrix = matrix.resolve_value(store, matrix_binding)?;
+            let ok = if lower { is_lower_triangular(&matrix)? } else { is_upper_triangular(&matrix)? };
+            Ok(LinearAlgebraValue::dot_outcome(flag_matrix(ok)?))
+        }
+        LinearAlgebraRequest::IsSymmetric { matrix } => {
+            let matrix = matrix.resolve_value(store, matrix_binding)?;
+            Ok(LinearAlgebraValue::dot_outcome(flag_matrix(is_symmetric(&matrix)?)?))
+        }
+        LinearAlgebraRequest::Reshape { matrix, rows, cols, order } => {
+            let matrix = matrix.resolve_value(store, matrix_binding)?;
+            let reshaped = match order {
+                StorageOrder::ColumnMajor => reshape_column_major(&matrix, rows, cols)?,
+                StorageOrder::RowMajor => reshape_row_major(&matrix, rows, cols)?,
+            };
+            Ok(LinearAlgebraValue::matrix_outcome(reshaped))
+        }
+        LinearAlgebraRequest::NumElements { matrix } => {
+            let matrix = matrix.resolve_value(store, matrix_binding)?;
+            Ok(LinearAlgebraValue::dot_outcome(num_elements_scalar(&matrix)?))
+        }
+        LinearAlgebraRequest::MatrixExp { matrix } => {
+            let matrix = matrix.resolve_value(store, matrix_binding)?;
+            Ok(LinearAlgebraValue::matrix_outcome(matrix_exp_exact(&matrix)?))
+        }
+    }
+}
