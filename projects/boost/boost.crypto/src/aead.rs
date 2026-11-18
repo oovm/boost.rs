@@ -186,12 +186,7 @@ fn expand_key(key: &[u8], rounds: usize) -> Vec<u8> {
     let sbox = sbox();
     let mut rcon = 1u8;
     for word in nk..words {
-        let mut temp = [
-            expanded[(word - 1) * 4],
-            expanded[(word - 1) * 4 + 1],
-            expanded[(word - 1) * 4 + 2],
-            expanded[(word - 1) * 4 + 3],
-        ];
+        let mut temp = [expanded[(word - 1) * 4], expanded[(word - 1) * 4 + 1], expanded[(word - 1) * 4 + 2], expanded[(word - 1) * 4 + 3]];
         if word % nk == 0 {
             temp.rotate_left(1);
             for byte in temp.iter_mut() {
@@ -219,12 +214,7 @@ fn sbox() -> &'static [u8; 256] {
         let mut table = [0u8; 256];
         for (value, slot) in table.iter_mut().enumerate() {
             let inverse = gf8_inverse(value as u8);
-            *slot = inverse
-                ^ inverse.rotate_left(1)
-                ^ inverse.rotate_left(2)
-                ^ inverse.rotate_left(3)
-                ^ inverse.rotate_left(4)
-                ^ 0x63;
+            *slot = inverse ^ inverse.rotate_left(1) ^ inverse.rotate_left(2) ^ inverse.rotate_left(3) ^ inverse.rotate_left(4) ^ 0x63;
         }
         table
     })

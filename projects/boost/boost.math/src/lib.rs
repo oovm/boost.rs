@@ -25,7 +25,8 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-pub mod bigint;
+use numeric::bigint;
+
 #[cfg(feature = "std")]
 pub mod graph_theory;
 pub mod numeric;

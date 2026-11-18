@@ -4,8 +4,7 @@
 //! 生成，不需要运行期随机数；私钥生成走宿主熵。素域与标量域算术以 `[u64]` 肢体自实现，
 //! 不依赖外部椭圆曲线或大整数 crate。本模块只做原语执行，不承载协议层的密钥编码语义。
 
-use crate::entropy::fill_host;
-use crate::{CryptoError, Result};
+use crate::{CryptoError, Result, entropy::fill_host};
 
 fn hmac_sha256_bytes(key: &[u8], data: &[u8]) -> [u8; 32] {
     crate::mac::hmac_sha256(key, data).expect("hmac-sha256 never fails")
@@ -58,12 +57,7 @@ impl<const N: usize> UInt<N> {
 
     fn bit(self, position: usize) -> u64 {
         let limb = position / 64;
-        if limb >= N {
-            0
-        }
-        else {
-            (self.0[limb] >> (position % 64)) & 1
-        }
+        if limb >= N { 0 } else { (self.0[limb] >> (position % 64)) & 1 }
     }
 }
 
@@ -299,11 +293,7 @@ impl<const N: usize> Point<N> {
         let delta = mod_mul(self.z, self.z, field);
         let gamma = mod_mul(self.y, self.y, field);
         let beta = mod_mul(self.x, gamma, field);
-        let alpha = mod_mul(
-            mod_sub(self.x, delta, p),
-            mod_add(self.x, delta, p),
-            field,
-        );
+        let alpha = mod_mul(mod_sub(self.x, delta, p), mod_add(self.x, delta, p), field);
         let alpha = mod_add(mod_add(alpha, alpha, p), alpha, p);
         let two_beta = mod_add(beta, beta, p);
         let four_beta = mod_add(two_beta, two_beta, p);
@@ -343,11 +333,7 @@ impl<const N: usize> Point<N> {
         let h3 = mod_mul(h2, h, field);
         let u1h2 = mod_mul(u1, h2, field);
         let x3 = mod_sub(mod_sub(mod_mul(r, r, field), h3, p), mod_add(u1h2, u1h2, p), p);
-        let y3 = mod_sub(
-            mod_mul(r, mod_sub(u1h2, x3, p), field),
-            mod_mul(s1, h3, field),
-            p,
-        );
+        let y3 = mod_sub(mod_mul(r, mod_sub(u1h2, x3, p), field), mod_mul(s1, h3, field), p);
         let z3 = mod_mul(mod_mul(h, self.z, field), other.z, field);
         Self { x: x3, y: y3, z: z3 }
     }
@@ -389,7 +375,8 @@ impl<const N: usize> Curve<N> {
     }
 }
 
-const P256_B: &[u8] = b"\x5a\xc6\x35\xd8\xaa\x3a\x93\xe7\xb3\xeb\xbd\x55\x76\x98\x86\xbc\x65\x1d\x06\xb0\xcc\x53\xb0\xf6\x3b\xce\x3c\x3e\x27\xd2\x60\x4b";
+const P256_B: &[u8] =
+    b"\x5a\xc6\x35\xd8\xaa\x3a\x93\xe7\xb3\xeb\xbd\x55\x76\x98\x86\xbc\x65\x1d\x06\xb0\xcc\x53\xb0\xf6\x3b\xce\x3c\x3e\x27\xd2\x60\x4b";
 const P384_B: &[u8] = b"\xb3\x31\x2f\xa7\xe2\x3e\xe7\xe4\x98\x8e\x05\x6b\xe3\xf8\x2d\x19\x18\x1d\x9c\x6e\xfe\x81\x41\x12\x03\x14\x08\x8f\x50\x13\x87\x5a\xc6\x56\x39\x8d\x8a\x2e\xd1\x9d\x2a\x85\xc8\xed\xd3\xec\x2a\xef";
 
 const P256: Curve<4> = Curve {
@@ -402,38 +389,10 @@ const P256: Curve<4> = Curve {
 };
 
 const P384: Curve<6> = Curve {
-    p: [
-        0x00000000FFFFFFFF,
-        0xFFFFFFFF00000000,
-        0xFFFFFFFFFFFFFFFE,
-        0xFFFFFFFFFFFFFFFF,
-        0xFFFFFFFFFFFFFFFF,
-        0xFFFFFFFFFFFFFFFF,
-    ],
-    n: [
-        0xECEC196ACCC52973,
-        0x581A0DB248B0A77A,
-        0xC7634D81F4372DDF,
-        0xFFFFFFFFFFFFFFFF,
-        0xFFFFFFFFFFFFFFFF,
-        0xFFFFFFFFFFFFFFFF,
-    ],
-    gx: [
-        0x3A545E3872760AB7,
-        0x5502F25DBF55296C,
-        0x59F741E082542A38,
-        0x6E1D3B628BA79B98,
-        0x8EB1C71EF320AD74,
-        0xAA87CA22BE8B0537,
-    ],
-    gy: [
-        0x7A431D7C90EA0E5F,
-        0x0A60B1CE1D7E819D,
-        0xE9DA3113B5F0B8C0,
-        0xF8F41DBD289A147C,
-        0x5D9E98BF9292DC29,
-        0x3617DE4A96262C6F,
-    ],
+    p: [0x00000000FFFFFFFF, 0xFFFFFFFF00000000, 0xFFFFFFFFFFFFFFFE, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF],
+    n: [0xECEC196ACCC52973, 0x581A0DB248B0A77A, 0xC7634D81F4372DDF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF],
+    gx: [0x3A545E3872760AB7, 0x5502F25DBF55296C, 0x59F741E082542A38, 0x6E1D3B628BA79B98, 0x8EB1C71EF320AD74, 0xAA87CA22BE8B0537],
+    gy: [0x7A431D7C90EA0E5F, 0x0A60B1CE1D7E819D, 0xE9DA3113B5F0B8C0, 0xF8F41DBD289A147C, 0x5D9E98BF9292DC29, 0x3617DE4A96262C6F],
     b: P384_B,
     byte_len: 48,
 };
@@ -552,12 +511,7 @@ fn normalize_s<const N: usize>(s: UInt<N>, n: &[u64; N]) -> UInt<N> {
         half.0[limb] = (half.0[limb] >> 1) | (carry << 63);
         carry = new_carry;
     }
-    if ge(&s.0, &half.0) {
-        mod_sub(UInt(*n), s, n)
-    }
-    else {
-        s
-    }
+    if ge(&s.0, &half.0) { mod_sub(UInt(*n), s, n) } else { s }
 }
 
 fn ecdsa_verify<const N: usize, const HLEN: usize>(
@@ -881,12 +835,7 @@ macro_rules! ecdsa_curve {
                 }
 
                 fn verify(&self, message: &[u8], sig: &Sig) -> Result<()> {
-                    if ecdsa_verify(&(self.0, self.1), message, sig, &CURVE, $hash) {
-                        Ok(())
-                    }
-                    else {
-                        Err(CryptoError::Authentication)
-                    }
+                    if ecdsa_verify(&(self.0, self.1), message, sig, &CURVE, $hash) { Ok(()) } else { Err(CryptoError::Authentication) }
                 }
             }
 
@@ -990,8 +939,8 @@ mod debug_tests {
         let g = P384.generator();
         let g2_double = g.double(&field).affine(&field).expect("double G");
         let g2_scalar = g.scalar_mul(two, &field).affine(&field).expect("scalar 2");
-        assert_eq!(g2_double.0 .0, g2_scalar.0 .0);
-        assert_eq!(g2_double.1 .0, g2_scalar.1 .0);
+        assert_eq!(g2_double.0.0, g2_scalar.0.0);
+        assert_eq!(g2_double.1.0, g2_scalar.1.0);
         assert!(g.scalar_mul(UInt(P384.n), &field).is_identity());
     }
 

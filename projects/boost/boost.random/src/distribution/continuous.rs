@@ -10,8 +10,8 @@
 //! express them. A capability that cannot be expressed is absent rather than faked: the normal CDF
 //! needs an error function, which this crate does not implement, so `Normal` has no `cdf`.
 
-use boost_math::numeric as math;
 use crate::{error::RandomError, sampling, source::RandomSource};
+use boost_math::numeric as math;
 
 /// Square root of two pi, used by the normal density.
 const SQRT_TWO_PI: f64 = 2.506_628_274_631_000_7;

@@ -48,9 +48,7 @@ fn hmac_rfc4231_cases() {
     assert_eq!(tag.as_slice(), expected.as_slice());
 
     // RFC 4231 Test Case 1，SHA-384 变体。
-    let expected = hex(
-        "afd03944d84895626b0825f4ab46907f15f9dadbe4101ec682aa034c7cebc59cfaea9ea9076ede7f4af152e8b2fa9cb6",
-    );
+    let expected = hex("afd03944d84895626b0825f4ab46907f15f9dadbe4101ec682aa034c7cebc59cfaea9ea9076ede7f4af152e8b2fa9cb6");
     let tag = mac::hmac_sha384(&key, b"Hi There").expect("hmac");
     assert_eq!(tag.as_slice(), expected.as_slice());
 }

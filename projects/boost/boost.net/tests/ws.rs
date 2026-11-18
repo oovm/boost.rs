@@ -7,11 +7,11 @@ use std::{
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use boost_crypto::hash::sha1;
 use boost_net::{
     NetError, Url,
     ws::{WebSocket, WsConfig, WsMessage},
 };
-use boost_crypto::hash::sha1;
 
 const GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 

@@ -80,14 +80,8 @@ fn norm_does_not_underflow_on_tiny_components() {
 
 #[test]
 fn norm_agrees_with_naive_reference_on_well_scaled_inputs() {
-    let cases: &[&[f64]] = &[
-        &[1.0],
-        &[1.0, 2.0, 3.0],
-        &[-2.5, 0.5, 7.25, -9.0],
-        &[1e-100, 1e-101, 1e-102],
-        &[1e100, 2e100, 3e100],
-        &[3.0, 4.0, 12.0],
-    ];
+    let cases: &[&[f64]] =
+        &[&[1.0], &[1.0, 2.0, 3.0], &[-2.5, 0.5, 7.25, -9.0], &[1e-100, 1e-101, 1e-102], &[1e100, 2e100, 3e100], &[3.0, 4.0, 12.0]];
     for values in cases {
         let stable = norm(values);
         let reference = naive_norm(values);

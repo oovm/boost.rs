@@ -3,8 +3,10 @@
 //! 只用本 crate 的 [`crate::hash`] 摘要，遵循 RFC 2104 与 RFC 5869。`info` 为原始字节：
 //! TLS 1.3 的 Expand-Label 由调用方在外层按 RFC 8446 §7.1 组合后传入，本模块不焊协议语义。
 
-use crate::hash::{sha256, sha384};
-use crate::{CryptoError, Result};
+use crate::{
+    CryptoError, Result,
+    hash::{sha256, sha384},
+};
 
 /// SHA-256 的分组长度（HMAC 的 ipad/opad 长度）。
 const SHA256_BLOCK: usize = 64;
@@ -27,11 +29,7 @@ pub fn hmac_sha384(key: &[u8], data: &[u8]) -> Result<[u8; 48]> {
 }
 
 /// HMAC 本身对任意长度 key 都有定义，内部实现不产生失败。
-fn hmac<const BLOCK: usize, const LEN: usize>(
-    key: &[u8],
-    data: &[u8],
-    hash: fn(&[u8]) -> [u8; LEN],
-) -> [u8; LEN] {
+fn hmac<const BLOCK: usize, const LEN: usize>(key: &[u8], data: &[u8], hash: fn(&[u8]) -> [u8; LEN]) -> [u8; LEN] {
     let mut normalized = [0u8; BLOCK];
     if key.len() > BLOCK {
         normalized[..LEN].copy_from_slice(&hash(key));
@@ -175,10 +173,7 @@ mod tests {
         assert_eq!(hex(&prk), "077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5");
         let mut out = [0u8; 42];
         hkdf_expand_sha256(&prk, &info, &mut out).expect("expand");
-        assert_eq!(
-            hex(&out),
-            "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865"
-        );
+        assert_eq!(hex(&out), "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865");
     }
 
     #[test]

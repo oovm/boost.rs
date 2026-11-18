@@ -110,13 +110,7 @@ impl Fe {
             chunk.copy_from_slice(&bytes[offset..offset + 8]);
             u64::from_le_bytes(chunk)
         };
-        Self([
-            load(0) & MASK,
-            (load(6) >> 3) & MASK,
-            (load(12) >> 6) & MASK,
-            (load(19) >> 1) & MASK,
-            (load(24) >> 12) & MASK,
-        ])
+        Self([load(0) & MASK, (load(6) >> 3) & MASK, (load(12) >> 6) & MASK, (load(19) >> 1) & MASK, (load(24) >> 12) & MASK])
     }
 
     fn to_bytes(self) -> [u8; KEY_LEN] {
@@ -188,13 +182,7 @@ impl Fe {
 
     fn sub(self, other: &Self) -> Self {
         // 加 4p 保证不借位；超出 51 位的部分由后续乘法进位处理。
-        const P: [u64; 5] = [
-            0x7ffffffffffed,
-            0x7ffffffffffff,
-            0x7ffffffffffff,
-            0x7ffffffffffff,
-            0x7ffffffffffff,
-        ];
+        const P: [u64; 5] = [0x7ffffffffffed, 0x7ffffffffffff, 0x7ffffffffffff, 0x7ffffffffffff, 0x7ffffffffffff];
         let mut out = [0u64; 5];
         for index in 0..5 {
             out[index] = self.0[index].wrapping_add(4 * P[index]).wrapping_sub(other.0[index]);
