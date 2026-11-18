@@ -115,6 +115,22 @@ pub fn write_storyboard(
     out_dir: &Path,
     options: &StoryboardOptions,
 ) -> Result<Vec<StoryboardPage>, Error> {
+    write_storyboard_selected(json, production, out_dir, options, &[])
+}
+
+/// Writes only the pages that contain one of `only_panels`.
+///
+/// Page numbering stays stable: a filtered run keeps the index the full book
+/// would have given that page, so a review note pointing at page 3 keeps
+/// pointing at page 3 after an edit re-renders it. An empty filter writes the
+/// whole book.
+pub fn write_storyboard_selected(
+    json: &str,
+    production: &Production,
+    out_dir: &Path,
+    options: &StoryboardOptions,
+    only_panels: &[String],
+) -> Result<Vec<StoryboardPage>, Error> {
     production.validate()?;
     let project = parse_project(json)?;
     let mut fonts = fonts_for(&project)?;
@@ -125,12 +141,16 @@ pub fn write_storyboard(
     std::fs::create_dir_all(out_dir).map_err(|e| Error::io(format!("cannot create {}: {e}", out_dir.display())))?;
 
     let per_page = options.rows.max(1) as usize;
+    let page_count = blocks.len().div_ceil(per_page);
     let mut pages = Vec::new();
     for (page_index, chunk) in blocks.chunks(per_page).enumerate() {
+        if !only_panels.is_empty() && !chunk.iter().any(|block| only_panels.iter().any(|panel| panel == &block.panel)) {
+            continue;
+        }
         let path = out_dir.join(format!("storyboard-{:03}.png", page_index + 1));
         let mut page = Frame::new(options.width, options.height);
         page.fill(rgba(options.background, 255));
-        draw_title(&mut fonts, &mut page, options, &format!("Storyboard {} / {}", page_index + 1, blocks.len().div_ceil(per_page)));
+        draw_title(&mut fonts, &mut page, options, &format!("Storyboard {} / {page_count}", page_index + 1));
 
         let rows = chunk.len() as u32;
         let content_top = options.margin + options.title_size + options.gap;
@@ -708,6 +728,19 @@ mod tests {
         assert_eq!((stats.width, stats.height), (160, 90), "half raster keeps the aspect");
         assert_eq!(stats.frames, 120, "every frame of the film is previewed");
         assert!(out.exists());
+    }
+
+    #[test]
+    fn a_filtered_run_keeps_the_page_number_it_would_have_had() {
+        let (json, production) = fixture();
+        let dir = out_dir().join("only");
+        let options = StoryboardOptions { rows: 1, ..StoryboardOptions::default() };
+        let pages = write_storyboard_selected(&json, &production, &dir, &options, &["panel-room".to_owned()]).expect("one page");
+        assert_eq!(pages.len(), 1, "only the requested panel's page is written");
+        assert_eq!(pages[0].index, 1, "the page keeps the index of the full book");
+        assert!(pages[0].path.ends_with("storyboard-002.png"), "{}", pages[0].path);
+        assert_eq!(pages[0].cells.len(), 1);
+        assert_eq!(pages[0].cells[0].panel, "panel-room");
     }
 
     #[test]
