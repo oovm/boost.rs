@@ -213,11 +213,6 @@ fn reject_packed(attributes: &[Attribute]) -> Result<()> {
 }
 
 fn parse_field(field: &Field) -> Result<Option<WireField>> {
-    for attribute in &field.attrs {
-        if attribute.path().is_ident("cfg") || attribute.path().is_ident("cfg_attr") {
-            return Err(syn::Error::new(attribute.span(), "`Component` 首版不支持字段级 `cfg`/`cfg_attr`"));
-        }
-    }
     let Some(ident) = field.ident.clone()
     else {
         return Err(syn::Error::new(field.span(), "`Component` 只支持具名字段"));
@@ -386,15 +381,18 @@ mod tests {
     }
 
     #[test]
-    fn rejects_field_level_cfg() {
-        let message = rejection(parse_quote! {
+    fn field_level_cfg_is_resolved_before_derive() {
+        // `cfg` 在 derive 之前就被编译器处理：带条件的字段要么整体消失，要么整体存在，
+        // 输入类型与依赖描述因此天然一致，不需要也不应该报错。
+        let input: DeriveInput = parse_quote! {
             #[atlas(input = ServiceInput, runtime = atlas::wire)]
             struct Service {
-                #[cfg(feature = "extra")]
                 region: String,
+                #[cfg(feature = "extra")]
+                extra: u8,
             }
-        });
-        assert!(message.contains("字段级 `cfg`"), "{message}");
+        };
+        expand(input).expect("字段级 cfg 由编译器处理");
     }
 
     #[test]

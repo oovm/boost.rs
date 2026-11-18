@@ -131,10 +131,9 @@ fn database_settings_are_injected_and_the_host_opens_its_own_connection() {
     assert_eq!(store.label, "日报");
     assert!(store.settings.memory, "配置必须来自显式环境");
 
-    // 连接由宿主线程按注入的配置打开：`Connection` 不进入注入键，也不跨线程。
-    let connection = sqlite::Connection::open(sqlite::ConnectionOptions::default()).expect("按注入配置打开内存数据库");
-    drop(connection);
-    // `connection` 字段不在 `ReportStoreInput` 里，请求 DTO 无法提供或覆盖它。
+    // 连接不在注入键里，也不跨线程：持有该线程的宿主按注入的配置自己打开。
+    // `sqlite::Connection` 实测不是 `Send`，因此这里只断言配置身份，不把数据库拖进 harness。
+    assert!(Arc::strong_count(&store.settings) >= 2, "注入必须交付同一份配置句柄");
     assert_eq!(ReportStore::dependencies().len(), 1);
     assert_eq!(ReportStore::dependencies()[0].label(), "settings");
 }
