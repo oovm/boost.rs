@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use boost_collection::{GraphRead, OutgoingEdges};
 use serde::{Deserialize, Serialize};
 
 use hardware_types::{DepKind, ResourceId, ResourceNode, TaskId, TaskNode};
@@ -108,46 +109,67 @@ impl TaskGraph {
     ///
     /// Only `from_task` edges contribute to ordering. Resource-only edges are
     /// data/memory annotations validated by [`Graph::validate`].
+    ///
+    /// The order is produced by the shared graph layer: among ready tasks the
+    /// smallest [`TaskId`] goes first, preserving the scheduler contract that
+    /// this used to implement locally.
     pub fn topological_order(&self) -> Result<Vec<TaskId>> {
         let task_ids: BTreeSet<TaskId> = self.nodes.iter().map(|n| n.id).collect();
-        let mut indegree = std::collections::BTreeMap::<TaskId, usize>::new();
-        for node in &self.nodes {
-            indegree.insert(node.id, 0);
-        }
         for edge in &self.edges {
             let Some(from) = edge.from_task
             else {
                 continue;
             };
-            if !task_ids.contains(&from) || !task_ids.contains(&edge.to_task) {
-                return Err(Error::UnknownTask(if !task_ids.contains(&from) { from.0 } else { edge.to_task.0 }));
+            if !task_ids.contains(&from) {
+                return Err(Error::UnknownTask(from.0));
             }
-            *indegree.get_mut(&edge.to_task).expect("edge target") += 1;
-        }
-
-        let mut ready: Vec<TaskId> = indegree.iter().filter(|(_, deg)| **deg == 0).map(|(id, _)| *id).collect();
-        ready.sort_by_key(|id| id.0);
-
-        let mut order = Vec::with_capacity(self.nodes.len());
-        while let Some(task) = ready.first().copied() {
-            ready.remove(0);
-            order.push(task);
-
-            for edge in &self.edges {
-                if edge.from_task == Some(task) {
-                    let entry = indegree.get_mut(&edge.to_task).expect("edge target");
-                    *entry -= 1;
-                    if *entry == 0 {
-                        ready.push(edge.to_task);
-                        ready.sort_by_key(|id| id.0);
-                    }
-                }
+            if !task_ids.contains(&edge.to_task) {
+                return Err(Error::UnknownTask(edge.to_task.0));
             }
         }
 
-        if order.len() != self.nodes.len() {
-            return Err(Error::Cycle);
-        }
-        Ok(order)
+        // 顶点与端点已在上面核对，共享算法只剩成环这一种失败。
+        boost_math::graph_theory::topological_order_by(self, |task| *task).map_err(|_| Error::Cycle)
+    }
+}
+
+/// Task nodes are the vertices; only task-to-task edges are exported here.
+impl GraphRead for TaskGraph {
+    type Vertex = TaskId;
+    type Edge = usize;
+
+    fn is_directed(&self) -> bool {
+        true
+    }
+
+    fn vertex_count(&self) -> usize {
+        self.nodes.len()
+    }
+
+    fn edge_count(&self) -> usize {
+        self.edges.iter().filter(|edge| edge.from_task.is_some()).count()
+    }
+
+    fn vertices(&self) -> impl Iterator<Item = &Self::Vertex> {
+        self.nodes.iter().map(|node| &node.id)
+    }
+
+    fn edges(&self) -> impl Iterator<Item = Self::Edge> {
+        self.edges.iter().enumerate().filter(|(_, edge)| edge.from_task.is_some()).map(|(position, _)| position)
+    }
+
+    fn endpoints(&self, edge: Self::Edge) -> Option<(&Self::Vertex, &Self::Vertex)> {
+        let edge = self.edges.get(edge)?;
+        Some((edge.from_task.as_ref()?, &edge.to_task))
+    }
+}
+
+impl OutgoingEdges for TaskGraph {
+    fn outgoing(&self, vertex: &Self::Vertex) -> impl Iterator<Item = Self::Edge> {
+        self.edges
+            .iter()
+            .enumerate()
+            .filter(move |(_, edge)| edge.from_task.as_ref() == Some(vertex))
+            .map(|(position, _)| position)
     }
 }

@@ -108,3 +108,18 @@ fn accepts_data_edge_and_execution_chain() {
     };
     graph.validate().expect("valid");
 }
+
+#[test]
+fn topological_order_always_takes_the_smallest_ready_task() {
+    // 任务按 5、3、4 声明；3 与 4 就绪，必须先出 3，再出 4，最后才轮到依赖它们的 5。
+    let tasks = TaskGraph {
+        nodes: vec![task(5), task(3), task(4)],
+        edges: vec![
+            DepEdge { from_task: Some(TaskId(3)), from_resource: None, to_task: TaskId(5), kind: DepKind::Execution },
+            DepEdge { from_task: Some(TaskId(4)), from_resource: None, to_task: TaskId(5), kind: DepKind::Execution },
+            // 仅资源边不参与排序。
+            DepEdge { from_task: None, from_resource: Some(ResourceId(1)), to_task: TaskId(4), kind: DepKind::Data },
+        ],
+    };
+    assert_eq!(tasks.topological_order(), Ok(vec![TaskId(3), TaskId(4), TaskId(5)]));
+}
