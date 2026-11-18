@@ -346,6 +346,44 @@ fn table_without_primary_key_is_refused_explicitly() {
 }
 
 #[test]
+fn wide_rows_are_split_so_one_statement_stays_small() {
+    let shape = TableShape { name: "t".into(), columns: vec![column("id", "int8", true), column("body", "text", false)] };
+    let body = "x".repeat(600);
+    let rows: Vec<Row> = (0..3).map(|index| vec![Some(index.to_string()), Some(body.clone())]).collect();
+    let mut source = StubSource {
+        shapes: HashMap::from([("t".to_owned(), shape)]),
+        rows: HashMap::from([("t".to_owned(), rows.clone())]),
+        clock: "2026-11-18T00:00:00Z".into(),
+    };
+    let mut target = StubTarget::default();
+    target.rows.insert("t".into(), Vec::new());
+
+    let options = Options { batch_bytes: 1000, ..Options::default() };
+    let report = migrate(&mut source, &mut target, &options).unwrap();
+
+    let inserts: Vec<&String> = target.statements.iter().filter(|sql| sql.starts_with("INSERT")).collect();
+    assert_eq!(inserts.len(), 3, "each oversize row gets its own statement: {inserts:#?}");
+    assert_eq!(report.tables[0].written, 3);
+}
+
+#[test]
+fn check_reports_synced_and_drifted_tables() {
+    let rows = vec![row("1", "a@x.com", "2026-11-01T00:00:00Z"), row("2", "b@x.com", "2026-11-02T00:00:00Z")];
+    let mut source = source(rows.clone());
+    let mut in_sync = target_with(rows.clone());
+    let report = database_migration::check(&mut source, &mut in_sync, &Options::default()).unwrap();
+    assert!(report.fully_synced(), "{report:?}");
+    assert_eq!(report.tables[0].compared_rows, 2);
+
+    let mut drifted = target_with(rows);
+    drifted.rows.insert("users".into(), vec![row("1", "a@x.com", "2026-11-01T00:00:00Z")]);
+    let report = database_migration::check(&mut source, &mut drifted, &Options::default()).unwrap();
+    assert!(!report.tables[0].synced);
+    assert!(report.tables[0].note.as_deref().unwrap().contains("row count differs"));
+    assert!(drifted.statements.is_empty(), "check must not write");
+}
+
+#[test]
 fn literals_follow_the_target_type() {
     assert_eq!(sql_literal("bigint", Some("42")), "42");
     assert_eq!(sql_literal("numeric(20,6)", Some("10.500000")), "10.500000");

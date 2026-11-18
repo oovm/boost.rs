@@ -82,6 +82,10 @@ pub struct Options {
     pub tables: Option<Vec<String>>,
     /// Rows copied per round trip.
     pub batch_rows: usize,
+    /// Approximate payload bytes per `INSERT`. A batch of few but very large
+    /// rows is split further so one statement never blows up the target's
+    /// parser and working set.
+    pub batch_bytes: usize,
     /// Plans and reports without touching the target.
     pub dry_run: bool,
     /// Breakpoint file. `None` keeps progress in memory only.
@@ -90,6 +94,9 @@ pub struct Options {
     pub restart: bool,
     /// Reconciles rows the source deleted since the last run.
     pub prune: bool,
+    /// Rows compared when [`check`] verifies content. `0` compares the whole
+    /// table, which is exact but as slow as a full scan.
+    pub check_sample_rows: usize,
 }
 
 impl Default for Options {
@@ -98,10 +105,12 @@ impl Default for Options {
             schema: "public".into(),
             tables: None,
             batch_rows: 500,
+            batch_bytes: 1_048_576,
             dry_run: false,
             state_path: None,
             restart: false,
             prune: false,
+            check_sample_rows: 1_000,
         }
     }
 }
@@ -141,6 +150,105 @@ impl Report {
     pub fn written_rows(&self) -> u64 {
         self.tables.iter().map(|table| table.written).sum()
     }
+}
+
+/// One table's sync state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableCheck {
+    /// Table name.
+    pub name: String,
+    /// Rows the source reports.
+    pub source_rows: u64,
+    /// Rows the target holds.
+    pub target_rows: u64,
+    /// How many rows were compared for content.
+    pub compared_rows: u64,
+    /// `true` when counts match and the compared rows are identical.
+    pub synced: bool,
+    /// Why the table is not considered synced.
+    pub note: Option<String>,
+}
+
+/// Outcome of one read-only comparison.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CheckReport {
+    /// Per-table results.
+    pub tables: Vec<TableCheck>,
+}
+
+impl CheckReport {
+    /// `true` when every table is in sync.
+    pub fn fully_synced(&self) -> bool {
+        self.tables.iter().all(|table| table.synced)
+    }
+}
+
+/// Compares source and target without writing anything.
+///
+/// A table is synced when the row counts match and, for the first
+/// `check_sample_rows` rows, the content is identical. Sampling keeps a
+/// dashboard button fast, and the report states how many rows were compared so
+/// "synced" is never claimed beyond the evidence.
+pub fn check(
+    source: &mut dyn MigrationSource,
+    target: &mut dyn MigrationTarget,
+    options: &Options,
+) -> Result<CheckReport, Error> {
+    let tables = match &options.tables {
+        Some(tables) => tables.clone(),
+        None => source.tables(&options.schema)?,
+    };
+    let mut report = CheckReport::default();
+    for name in tables {
+        let table = name.as_str();
+        let shape = source.shape(&options.schema, table)?;
+        let source_rows = source.count(&options.schema, table)?;
+        let target_rows = count_target(target, table)?;
+        let order = shape.order_columns();
+        let mut compared = 0_u64;
+        let mut note = None;
+        let mut synced = source_rows == target_rows;
+        if !synced {
+            note = Some(format!("row count differs: source {source_rows}, target {target_rows}"));
+        } else if let Some(order) = &order {
+            let budget = if options.check_sample_rows == 0 { u64::MAX } else { options.check_sample_rows as u64 };
+            let mut cursor: Option<Row> = None;
+            loop {
+                let wanted = options.batch_rows.min((budget - compared) as usize);
+                if wanted == 0 {
+                    break;
+                }
+                let expected = source.rows(&PageRequest {
+                    schema: &options.schema,
+                    table,
+                    order,
+                    after: cursor.as_deref(),
+                    since: None,
+                    limit: wanted,
+                })?;
+                if expected.is_empty() {
+                    break;
+                }
+                let actual = target
+                    .query(&select_ordered(&shape, order, compared, expected.len()))?
+                    .rows;
+                if expected != actual {
+                    synced = false;
+                    note = Some(format!("content differs at or after row {compared}"));
+                    break;
+                }
+                compared += expected.len() as u64;
+                if expected.len() < wanted || compared >= budget {
+                    break;
+                }
+                cursor = Some(cursor_from_row(&shape, order, expected.last().expect("non-empty window"))?);
+            }
+        } else {
+            note = Some("no primary key: row count only".to_owned());
+        }
+        report.tables.push(TableCheck { name, source_rows, target_rows, compared_rows: compared, synced, note });
+    }
+    Ok(report)
 }
 
 /// Finishes the full scan, replays increments, then reconciles deletions.
@@ -299,7 +407,9 @@ fn scan(
             return Ok(written);
         }
         let short = rows.len() < options.batch_rows;
-        target.execute(&upsert_statement(shape, &rows)?)?;
+        for chunk in chunk_by_bytes(&rows, options.batch_bytes) {
+            target.execute(&upsert_statement(shape, chunk)?)?;
+        }
         written += rows.len() as u64;
         let last = rows.last().expect("non-empty window");
         let next = cursor_from_row(shape, order, last)?;
@@ -427,6 +537,36 @@ fn prune(
         pruned += chunk.len() as u64;
     }
     Ok(pruned)
+}
+
+/// Splits one source window so no single `INSERT` exceeds `max_bytes`.
+///
+/// Rows are counted by their text payload plus a small per-column overhead.
+/// A single row larger than the limit still becomes its own chunk, because the
+/// alternative is dropping data.
+fn chunk_by_bytes<'a>(rows: &'a [Row], max_bytes: usize) -> Vec<&'a [Row]> {
+    if max_bytes == 0 || rows.is_empty() {
+        return vec![rows];
+    }
+    let mut chunks = Vec::new();
+    let mut start = 0;
+    let mut size = 0;
+    for (index, row) in rows.iter().enumerate() {
+        let row_bytes: usize = row
+            .iter()
+            .map(|cell| cell.as_ref().map_or(4, |text| text.len() + 4))
+            .sum();
+        if index > start && size + row_bytes > max_bytes {
+            chunks.push(&rows[start..index]);
+            start = index;
+            size = 0;
+        }
+        size += row_bytes;
+    }
+    if start < rows.len() {
+        chunks.push(&rows[start..]);
+    }
+    chunks
 }
 
 fn key_of(row: &[Option<String>]) -> String {
