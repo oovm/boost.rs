@@ -8,6 +8,9 @@
 #![deny(missing_docs)]
 use std::{collections::BTreeMap, error, fmt, io, result, sync::Arc};
 
+/// 规范十进制整数文本（存储格式与协议前端共用）。
+pub mod canonical;
+
 /// Catalog uniqueness metadata.
 pub mod constraint;
 
@@ -150,6 +153,16 @@ pub enum Error {
     },
     /// Feature exists as a product surface but is not implemented yet.
     Unsupported(&'static str),
+    /// The host environment cannot supply a capability the contract requires.
+    ///
+    /// Distinct from [`Self::Unsupported`]: the feature exists, but this host
+    /// (browser, sandbox, embedded runtime) cannot provide the primitive that
+    /// makes it correct. Callers must surface the missing capability instead of
+    /// falling back to an emulation that reports success.
+    NativeCapabilityMissing {
+        /// Stable capability label, for example `opfs.sync_access_handle`.
+        capability: &'static str,
+    },
     /// Wire protocol / serve client failure.
     Protocol {
         /// Protocol error message.
@@ -345,6 +358,9 @@ impl fmt::Display for Error {
             }
             Self::ObjectCorrupt { message } => write!(f, "object corrupt: {message}"),
             Self::Unsupported(feature) => write!(f, "unsupported: {feature}"),
+            Self::NativeCapabilityMissing { capability } => {
+                write!(f, "host capability missing: {capability}")
+            }
             Self::Protocol { message } => write!(f, "protocol: {message}"),
             Self::QueryBind { parameter, message } => {
                 write!(f, "query bind `${parameter}: {message}")
@@ -419,6 +435,7 @@ impl Error {
             Self::ObjectNotFound { .. } => "database.object.not_found",
             Self::ObjectCorrupt { .. } => "database.object.corrupt",
             Self::Unsupported(_) => "database.unsupported",
+            Self::NativeCapabilityMissing { .. } => "database.native_capability_missing",
             Self::Protocol { .. } => "database.protocol",
             Self::QueryBind { .. } => "database.query.bind",
             Self::CasConflict { .. } => "database.cas.conflict",
@@ -504,6 +521,7 @@ impl Error {
             Self::UdfNotFound { .. } | Self::UdfArity { .. } | Self::Udf { .. } | Self::UdfVersionMismatch { .. } => "udf",
             Self::ObjectNotFound { .. } | Self::ObjectCorrupt { .. } => "object",
             Self::Unsupported(_) => "unsupported",
+            Self::NativeCapabilityMissing { .. } => "unsupported",
             Self::Protocol { .. } => "protocol",
             Self::QueryBind { .. } => "query",
             Self::CasConflict { .. } => "cas",
@@ -538,6 +556,7 @@ impl Error {
             Self::Io(_) | Self::Corrupt(_) | Self::Unsupported(_) | Self::SessionClosed => {
                 return None;
             }
+            Self::NativeCapabilityMissing { capability } => vec![("capability", (*capability).to_owned())],
             Self::CorruptReason { reason, message } => {
                 vec![("reason", reason.as_str().to_owned()), ("detail", (*message).to_owned())]
             }

@@ -12,3 +12,4 @@ mod memory_pager;
 mod wal_durability;
 mod wal_record;
 mod wal_recovery;
+mod volume;

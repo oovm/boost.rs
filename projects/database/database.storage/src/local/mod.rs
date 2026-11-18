@@ -21,7 +21,10 @@ pub use snapshot::{
 };
 
 // 上层只需一跳拿到的物理布局词表：CAS 块哈希与 WAL blob-manifest 增量属持久化面。
-pub use crate::local_io::{FilePager, MemoryPager, PublishStats, WalWriteStats, diagnose_file, pager::DecodedPage};
+pub use crate::local_io::{
+    FilePager, FsVolumeStore, HostVolumeStore, MemoryPager, PublishStats, VolumeFile, VolumePublisher, WalWriteStats, diagnose_file,
+    pager::DecodedPage,
+};
 pub use database_formats::yy::{
     yydx::blob_chunk_hash,
     yywl::{BLOB_REF_OP_DELETE, BLOB_REF_OP_PUT, BlobChunkRef, BlobManifestDelta},
