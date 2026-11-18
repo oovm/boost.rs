@@ -78,6 +78,25 @@ impl DeliveryReport {
     pub fn is_clean(&self) -> bool {
         self.suspects.is_empty()
     }
+
+    /// Compares the measured duration with the length the source project
+    /// declared.
+    ///
+    /// Only a file with an audio track has a measured duration; a video-only
+    /// delivery returns `None` because there is nothing to compare, not because
+    /// the length is right. The returned line names both values and the
+    /// tolerance so the reader can judge it.
+    #[must_use]
+    pub fn duration_suspect(&self, expected_seconds: f64, tolerance: f64) -> Option<String> {
+        let measured = self.span_seconds?;
+        let drift = (measured - expected_seconds).abs();
+        if drift <= tolerance {
+            return None;
+        }
+        Some(format!(
+            "delivered {measured:.2}s but the project declares {expected_seconds:.2}s, {drift:.2}s beyond the {tolerance:.2}s tolerance"
+        ))
+    }
 }
 
 /// Explicit thresholds used when flagging a delivery.
@@ -261,5 +280,12 @@ mod tests {
             "{:?}",
             report.suspects
         );
+
+        // The declared length is a separate check from decoding: a short or
+        // truncated delivery is named with both numbers, not guessed at.
+        let measured = report.span_seconds.expect("measured span");
+        let short = report.duration_suspect(measured + 1.0, 0.25).expect("a one-second mismatch is flagged");
+        assert!(short.contains("delivered") && short.contains("tolerance"), "{short}");
+        assert!(report.duration_suspect(measured, 0.25).is_none(), "a matching length is not flagged");
     }
 }
