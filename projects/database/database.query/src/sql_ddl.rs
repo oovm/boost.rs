@@ -41,6 +41,13 @@ pub enum SqlDdlStatement {
         /// Whether `IF NOT EXISTS` was written.
         if_not_exists: bool,
     },
+    /// `ALTER TABLE ... ADD CONSTRAINT ...`
+    AlterTableAddConstraint {
+        /// Target table name.
+        table: String,
+        /// Constraint to register.
+        constraint: DdlTableConstraint,
+    },
     /// `DROP TABLE ...`
     DropTable {
         /// Tables to drop.
@@ -124,6 +131,26 @@ pub struct DdlForeignKey {
     pub columns: Vec<String>,
     /// Referenced parent table and column.
     pub reference: DdlReference,
+}
+
+/// One constraint added by `ALTER TABLE ... ADD CONSTRAINT [...]`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DdlTableConstraint {
+    /// `UNIQUE (columns)`.
+    Unique {
+        /// Columns carrying the unique key.
+        columns: Vec<String>,
+    },
+    /// `CHECK (expression)`.
+    Check {
+        /// Expression text inside the parentheses.
+        expression: String,
+    },
+    /// `FOREIGN KEY (columns) REFERENCES ...`.
+    ForeignKey {
+        /// Foreign key definition.
+        key: DdlForeignKey,
+    },
 }
 
 /// Collations the gateway accepts as metadata.
@@ -741,7 +768,28 @@ impl Parser {
                     reference = Some(self.reference_clause()?);
                 }
                 Some("GENERATED") => {
-                    return Err(SqlFrontendError::unsupported("`GENERATED` columns are not supported by the cluster SQL gateway"));
+                    self.cursor += 1;
+                    if !self.eat_keyword("ALWAYS") {
+                        self.expect_keyword("BY")?;
+                        self.expect_keyword("DEFAULT")?;
+                    }
+                    self.expect_keyword("AS")?;
+                    if self.eat_keyword("IDENTITY") {
+                        auto_increment = true;
+                        // `( START WITH n INCREMENT BY m … )` is accepted as
+                        // metadata; the gateway always allocates from 1.
+                        if self.peek_punct('(') {
+                            let _ = self.capture_paren_group()?;
+                        }
+                    }
+                    else if self.peek_punct('(') {
+                        return Err(SqlFrontendError::unsupported(
+                            "`GENERATED ... AS (expression) STORED` columns are not supported by the cluster SQL gateway",
+                        ));
+                    }
+                    else {
+                        return Err(SqlFrontendError::syntax("`GENERATED` requires `AS IDENTITY` or `AS (expression) STORED`"));
+                    }
                 }
                 _ => break,
             }
@@ -1017,6 +1065,15 @@ impl Parser {
         if !self.eat_keyword("ADD") {
             return Err(self.unsupported_action("ALTER TABLE"));
         }
+        if self.eat_keyword("CONSTRAINT") {
+            let _name = self.identifier()?;
+            let constraint = self.table_constraint()?;
+            return Ok(SqlDdlStatement::AlterTableAddConstraint { table, constraint });
+        }
+        if matches!(self.peek_keyword().as_deref(), Some("UNIQUE") | Some("CHECK") | Some("FOREIGN")) {
+            let constraint = self.table_constraint()?;
+            return Ok(SqlDdlStatement::AlterTableAddConstraint { table, constraint });
+        }
         if !self.eat_keyword("COLUMN") {
             return Err(SqlFrontendError::unsupported(
                 "`ALTER TABLE ... ADD` without `COLUMN` is not supported by the cluster SQL gateway, write `ADD COLUMN`",
@@ -1025,9 +1082,27 @@ impl Parser {
         let if_not_exists = self.if_not_exists()?;
         let column = self.column_definition()?;
         if self.peek_punct(',') {
-            return Err(SqlFrontendError::unsupported("`ALTER TABLE` supports exactly one `ADD COLUMN` action per gateway message"));
+            return Err(SqlFrontendError::unsupported("`ALTER TABLE` supports exactly one action per gateway message"));
         }
         Ok(SqlDdlStatement::AlterTableAddColumn { table, column, if_not_exists })
+    }
+
+    /// Parses one `UNIQUE` / `CHECK` / `FOREIGN KEY` constraint body.
+    fn table_constraint(&mut self) -> Result<DdlTableConstraint, SqlFrontendError> {
+        if self.eat_keyword("UNIQUE") {
+            self.eat_keyword("KEY");
+            if !self.peek_punct('(') {
+                let _index_name = self.identifier()?;
+            }
+            return Ok(DdlTableConstraint::Unique { columns: self.column_list()? });
+        }
+        if self.eat_keyword("CHECK") {
+            return Ok(DdlTableConstraint::Check { expression: self.capture_paren_group()? });
+        }
+        if self.eat_keyword("FOREIGN") {
+            return Ok(DdlTableConstraint::ForeignKey { key: self.foreign_key_item()? });
+        }
+        Err(self.unsupported_action("ALTER TABLE ADD"))
     }
 
     fn drop_statement(&mut self) -> Result<SqlDdlStatement, SqlFrontendError> {

@@ -77,6 +77,56 @@ impl Drop for Gateway {
 }
 
 #[test]
+fn generated_identity_and_added_constraints_are_enforced() {
+    let mut gateway = Gateway::new("ddl");
+    gateway.command("CREATE TABLE identity_rows (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, name TEXT UNIQUE)");
+    assert_eq!(gateway.command("INSERT INTO identity_rows (name) VALUES ('a')"), "INSERT 0 1");
+    assert_eq!(gateway.command("INSERT INTO identity_rows (name) VALUES ('b')"), "INSERT 0 1");
+    assert_eq!(gateway.scalar("SELECT COUNT(*)::int8 FROM identity_rows"), SqlValue::Integer(2));
+    assert_eq!(gateway.scalar("SELECT id FROM identity_rows WHERE name = 'b'"), SqlValue::Integer(2));
+
+    // A duplicate on the inline UNIQUE column reports the PostgreSQL class.
+    let (code, message) = match gateway.sql("INSERT INTO identity_rows (name) VALUES ('a')") {
+        Ok(_) => panic!("a duplicate unique value must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "23505", "unexpected message: {message}");
+
+    gateway.command("CREATE TABLE added (id BIGINT PRIMARY KEY, email TEXT, score BIGINT)");
+    gateway.command("ALTER TABLE added ADD CONSTRAINT added_email_key UNIQUE (email)");
+    gateway.command("INSERT INTO added (id, email, score) VALUES (1, 'a@example.com', 10)");
+    let (code, _) = match gateway.sql("INSERT INTO added (id, email, score) VALUES (2, 'a@example.com', 20)") {
+        Ok(_) => panic!("the added UNIQUE constraint must reject a duplicate"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "23505");
+
+    gateway.command("ALTER TABLE added ADD CONSTRAINT added_score_check CHECK (score > 0)");
+    let (code, _) = match gateway.sql("INSERT INTO added (id, email, score) VALUES (3, 'b@example.com', -1)") {
+        Ok(_) => panic!("the added CHECK constraint must reject a negative score"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "23514");
+
+    gateway.command("ALTER TABLE added ADD CONSTRAINT added_parent_fk FOREIGN KEY (id) REFERENCES added (id)");
+    let (code, _) = match gateway.sql("INSERT INTO added (id, email, score) VALUES (9, 'z@example.com', 1)") {
+        Ok(_) => panic!("the added foreign key must reject a missing parent"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "23503");
+}
+
+#[test]
+fn a_stored_generated_column_is_rejected_with_a_capability_error() {
+    let mut gateway = Gateway::new("ddl-generated");
+    let (code, message) = match gateway.sql("CREATE TABLE stored (id BIGINT PRIMARY KEY, total BIGINT GENERATED ALWAYS AS (id * 2) STORED)") {
+        Ok(_) => panic!("stored generated columns are not implemented yet"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "0A000", "unexpected message: {message}");
+}
+
+#[test]
 fn copy_state_inserts_text_and_csv_rows() {
     use database_execution::pgsql::{CopyInPlan, CopyInState};
     use database_query::CopyFormat;

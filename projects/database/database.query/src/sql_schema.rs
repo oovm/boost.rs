@@ -22,7 +22,7 @@ use crate::{
         SqlCatalogForeignKey, SqlCatalogTable, SqlFieldType,
     },
     sql::{SqlBoundLiteral, SqlErrorKind, SqlFrontendError},
-    sql_ddl::{DdlReference, SqlDdlStatement},
+    sql_ddl::{DdlReference, DdlTableConstraint, SqlDdlStatement},
 };
 
 /// Contract tag written into every persisted schema document.
@@ -56,6 +56,8 @@ pub enum SqlDdlOutcome {
         /// Whether the column was actually added.
         added: bool,
     },
+    /// `ALTER TABLE ADD CONSTRAINT`.
+    AlterTableAddConstraint,
     /// `DROP TABLE`, with the number of tables that existed and were removed.
     DropTable {
         /// Number of tables removed.
@@ -79,6 +81,7 @@ impl SqlDdlOutcome {
         match self {
             Self::CreateTable { .. } => "CREATE TABLE",
             Self::AlterTableAddColumn { .. } => "ALTER TABLE",
+            Self::AlterTableAddConstraint => "ALTER TABLE",
             Self::DropTable { .. } => "DROP TABLE",
             Self::CreateIndex { .. } => "CREATE INDEX",
             Self::DropIndex { .. } => "DROP INDEX",
@@ -766,6 +769,49 @@ fn apply_ddl(state: &mut RegistryState, statement: &SqlDdlStatement) -> Result<(
                 }
             }
             Ok((SqlDdlOutcome::AlterTableAddColumn { added: true }, true))
+        }
+        SqlDdlStatement::AlterTableAddConstraint { table, constraint } => {
+            let index = state
+                .table_index(table)
+                .ok_or_else(|| SqlFrontendError::new(SqlErrorKind::UnknownTable, format!("table `{table}` does not exist")))?;
+            match constraint {
+                DdlTableConstraint::Unique { columns } => {
+                    if columns.is_empty() {
+                        return Err(SqlFrontendError::syntax(format!("table `{table}` declares a UNIQUE constraint without columns")));
+                    }
+                    for column in columns {
+                        if !state.tables[index].fields.iter().any(|field| &field.name == column) {
+                            return Err(SqlFrontendError::new(
+                                SqlErrorKind::UnknownColumn,
+                                format!("unique constraint column `{column}` does not exist in table `{table}`"),
+                            ));
+                        }
+                    }
+                    if state.tables[index].unique_constraints.contains(columns) {
+                        return Ok((SqlDdlOutcome::AlterTableAddConstraint, false));
+                    }
+                    state.tables[index].unique_constraints.push(columns.clone());
+                }
+                DdlTableConstraint::Check { expression } => {
+                    if expression.trim().is_empty() {
+                        return Err(SqlFrontendError::syntax(format!("table `{table}` declares an empty CHECK constraint")));
+                    }
+                    state.tables[index].check_constraints.push(expression.clone());
+                }
+                DdlTableConstraint::ForeignKey { key } => {
+                    for column in &key.columns {
+                        if !state.tables[index].fields.iter().any(|field| &field.name == column) {
+                            return Err(SqlFrontendError::new(
+                                SqlErrorKind::UnknownColumn,
+                                format!("foreign key column `{column}` does not exist in table `{table}`"),
+                            ));
+                        }
+                    }
+                    let resolved = resolve_foreign_key(state, table, &key.columns, &key.reference)?;
+                    state.tables[index].foreign_keys.push(resolved);
+                }
+            }
+            Ok((SqlDdlOutcome::AlterTableAddConstraint, true))
         }
         SqlDdlStatement::DropTable { names, if_exists } => {
             let mut dropped = 0;

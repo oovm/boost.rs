@@ -35,7 +35,8 @@ pub use sql::{
 };
 pub use sql_batch::{SqlBatchStatement, split_sql_batch};
 pub use sql_ddl::{
-    ACCEPTED_COLLATIONS, DdlColumn, DdlForeignKey, DdlReference, SqlDdlStatement, is_accepted_collation, is_ddl_statement, parse_ddl,
+    ACCEPTED_COLLATIONS, DdlColumn, DdlForeignKey, DdlReference, DdlTableConstraint, SqlDdlStatement, is_accepted_collation, is_ddl_statement,
+    parse_ddl,
 };
 pub use sql_describe::{SqlColumn, describe_bound_insert, describe_plan, describe_plan_for_dialect};
 pub use sql_execute::{RowFieldValues, SqlResult, SqlValue, decode_row, encode_row};
