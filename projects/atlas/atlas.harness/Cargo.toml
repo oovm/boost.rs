@@ -14,6 +14,6 @@ boost-net = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
-atlas = { workspace = true }
-atlas-macro = { workspace = true }
-atlas-wire = { workspace = true }
+# 故意用与包名不同的键导入 Atlas 门面：验证 `runtime = atlas_runtime::wire` 的依赖重命名路径。
+atlas-runtime = { path = "../atlas", package = "atlas" }
+sqlite = { workspace = true }

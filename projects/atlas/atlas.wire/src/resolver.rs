@@ -18,19 +18,14 @@ use crate::{
 
 /// 传给组件构造与 provider 工厂的受限解析器。
 ///
-/// 在 provider 工厂内部，它只允许读取该 provider 声明过的键；根组件构造不设过滤，但仍受
-/// 冻结图与作用域约束。读取未声明的键立即返回
-/// [`WireErrorKind::UndeclaredDependency`]。
+/// 在 provider 工厂与组件构造内部，它只允许读取该 provider 或组件声明过的键；读取未声明的
+/// 键立即返回 [`WireErrorKind::UndeclaredDependency`]，缺失键的错误会带上字段标签。
 pub struct Resolver<'a> {
     resolution: &'a mut Resolution,
     declared: Option<&'a [Dependency]>,
 }
 
 impl<'a> Resolver<'a> {
-    pub(crate) fn root(resolution: &'a mut Resolution) -> Self {
-        Self { resolution, declared: None }
-    }
-
     /// 解析精确类型 `T`，可带角色限定符。
     ///
     /// 键是 `T` 本身：`resolve::<Arc<Model>>` 不会降级查找 `Model`。
@@ -57,13 +52,16 @@ impl<'a> Resolver<'a> {
     }
 
     fn resolve_boxed(&mut self, key: TypeKey, optional: bool) -> Result<Option<Box<dyn Any + Send + Sync>>, WireError> {
-        if let Some(declared) = self.declared
-            && !declared.iter().any(|dependency| dependency.key() == key)
-        {
-            let label = self.resolution.entry_label(key);
-            return Err(self.resolution.error(WireErrorKind::UndeclaredDependency, format!("provider 读取了未声明的依赖 `{label}`")));
+        let mut label = None;
+        if let Some(declared) = self.declared {
+            let Some(dependency) = declared.iter().find(|dependency| dependency.key() == key)
+            else {
+                let provider = self.resolution.entry_label(key);
+                return Err(self.resolution.error(WireErrorKind::UndeclaredDependency, format!("provider 读取了未声明的依赖 `{provider}`")));
+            };
+            label = Some(dependency.label());
         }
-        self.resolution.resolve_key(key, optional)
+        self.resolution.resolve_key(key, optional, label)
     }
 }
 
@@ -81,7 +79,8 @@ impl Resolution {
     }
 
     pub(crate) fn construct<C: Component>(mut self, input: C::Input) -> Result<C, WireError> {
-        let mut resolver = Resolver::root(&mut self);
+        let declared = C::dependencies();
+        let mut resolver = Resolver { resolution: &mut self, declared: Some(declared.as_slice()) };
         C::construct(input, &mut resolver)
     }
 
@@ -89,24 +88,27 @@ impl Resolution {
         self.env.entries.get(&key).map(Entry::label).unwrap_or("<未注册>")
     }
 
-    fn describe(&self, key: TypeKey) -> String {
-        match self.env.entries.get(&key) {
-            Some(entry) => entry.label().to_owned(),
-            None => format!("{key:?}"),
-        }
-    }
-
     pub(crate) fn error(&self, kind: WireErrorKind, message: impl Into<String>) -> WireError {
         WireError::new(kind, message).with_path(&self.path)
     }
 
-    fn resolve_key(&mut self, key: TypeKey, optional: bool) -> Result<Option<Box<dyn Any + Send + Sync>>, WireError> {
+    fn resolve_key(
+        &mut self,
+        key: TypeKey,
+        optional: bool,
+        label: Option<&'static str>,
+    ) -> Result<Option<Box<dyn Any + Send + Sync>>, WireError> {
         let Some(entry) = self.env.entries.get(&key).cloned()
         else {
             if optional {
                 return Ok(None);
             }
-            return Err(self.error(WireErrorKind::NotRegistered, format!("依赖 `{}` 没有对应 provider 或上下文槽位", self.describe(key))));
+            let mut error =
+                self.error(WireErrorKind::NotRegistered, format!("依赖 `{}` 没有对应 provider 或上下文槽位", label.unwrap_or("<未声明>")));
+            if let Some(label) = label {
+                error = error.with_step(label);
+            }
+            return Err(error);
         };
         match entry {
             Entry::Slot(_) => self.resolve_context(key).map(Some),

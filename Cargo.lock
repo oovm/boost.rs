@@ -294,6 +294,7 @@ dependencies = [
  "atlas-cloud",
  "boost-net",
  "serde_json",
+ "sqlite",
 ]
 
 [[package]]
@@ -649,7 +650,6 @@ dependencies = [
  "oak-valkyrie",
  "oak-von",
  "ordered-float",
- "package-manager",
  "package-registry",
  "package-resolve",
  "serde",
@@ -2469,6 +2469,8 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 name = "mongo"
 version = "0.1.0"
 dependencies = [
+ "boost-crypto",
+ "boost-random",
  "database-cluster",
  "database-protocol-mongo",
  "database-storage",
@@ -3011,6 +3013,30 @@ dependencies = [
 name = "package-manager"
 version = "0.1.0"
 dependencies = [
+ "acorn-dex",
+ "acorn-host",
+ "acorn-jvm",
+ "acorn-mach-o",
+ "acorn-odin",
+ "acorn-pe",
+ "acorn-wasm",
+ "acorn-x64",
+ "acorn-zip 0.0.1 (git+https://github.com/yggdrasil-language/acorn.rs?rev=beccbdf77374dbb2ca67395be19af3e2048c57ca)",
+ "base64",
+ "boost-harness",
+ "compiler-analysis",
+ "compiler-emitter",
+ "compiler-target",
+ "compiler-types",
+ "compiler-valkyrie",
+ "document-formats",
+ "document-ir",
+ "interpreter-vm-ovm",
+ "language-format",
+ "language-highlight",
+ "oak-awsl",
+ "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs?rev=a0416cb1cba9a348df175d3ca230f794ec562484)",
+ "oak-valkyrie",
  "oak-von",
  "package-cache",
  "package-publish",
@@ -3018,6 +3044,7 @@ dependencies = [
  "package-resolve",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
 ]
 

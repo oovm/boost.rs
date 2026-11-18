@@ -107,9 +107,11 @@ fn expand(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
         let ty = &field.ty;
         let label = LitStr::new(&ident.to_string(), ident.span());
         let optional = LitBool::new(field.optional.is_some(), ident.span());
+        // `#[wire(optional)] Option<T>` 的查找键是 `T`，依赖描述必须与 `resolve_optional` 一致。
+        let key_type = field.optional.as_ref().unwrap_or(ty);
         let key = match &field.key {
-            Some(key) => quote! { #runtime::TypeKey::qualified::<#ty, #key>() },
-            None => quote! { #runtime::TypeKey::of::<#ty>() },
+            Some(key) => quote! { #runtime::TypeKey::qualified::<#key_type, #key>() },
+            None => quote! { #runtime::TypeKey::of::<#key_type>() },
         };
         dependencies.push(quote! {
             #runtime::Dependency::new(#key, #optional, #label)
@@ -306,5 +308,167 @@ fn option_inner(ty: &Type) -> Option<&Type> {
     match arguments.args.first()? {
         GenericArgument::Type(inner) => Some(inner),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use syn::{DeriveInput, parse_quote};
+
+    use super::*;
+
+    fn rejection(input: DeriveInput) -> String {
+        expand(input).expect_err("必须拒绝该输入").to_string()
+    }
+
+    #[test]
+    fn rejects_missing_input() {
+        let message = rejection(parse_quote! {
+            #[atlas(runtime = atlas::wire)]
+            struct Service {
+                region: String,
+            }
+        });
+        assert!(message.contains("`input` 必填"), "{message}");
+    }
+
+    #[test]
+    fn rejects_missing_runtime() {
+        let message = rejection(parse_quote! {
+            #[atlas(input = ServiceInput)]
+            struct Service {
+                region: String,
+            }
+        });
+        assert!(message.contains("`runtime` 必填"), "{message}");
+    }
+
+    #[test]
+    fn rejects_unknown_struct_parameter() {
+        let message = rejection(parse_quote! {
+            #[atlas(input = ServiceInput, runtime = atlas::wire, scope = request)]
+            struct Service {
+                region: String,
+            }
+        });
+        assert!(message.contains("未知的 `atlas` 参数"), "{message}");
+    }
+
+    #[test]
+    fn rejects_generic_struct() {
+        let message = rejection(parse_quote! {
+            #[atlas(input = ServiceInput, runtime = atlas::wire)]
+            struct Service<T> {
+                region: T,
+            }
+        });
+        assert!(message.contains("无泛型"), "{message}");
+    }
+
+    #[test]
+    fn rejects_tuple_struct() {
+        let message = rejection(parse_quote! {
+            #[atlas(input = ServiceInput, runtime = atlas::wire)]
+            struct Service(String);
+        });
+        assert!(message.contains("具名结构体"), "{message}");
+    }
+
+    #[test]
+    fn rejects_enum() {
+        let message = rejection(parse_quote! {
+            #[atlas(input = ServiceInput, runtime = atlas::wire)]
+            enum Service {
+                A,
+            }
+        });
+        assert!(message.contains("只能派生在具名结构体上"), "{message}");
+    }
+
+    #[test]
+    fn rejects_field_level_cfg() {
+        let message = rejection(parse_quote! {
+            #[atlas(input = ServiceInput, runtime = atlas::wire)]
+            struct Service {
+                #[cfg(feature = "extra")]
+                region: String,
+            }
+        });
+        assert!(message.contains("字段级 `cfg`"), "{message}");
+    }
+
+    #[test]
+    fn rejects_optional_on_non_option_type() {
+        let message = rejection(parse_quote! {
+            #[atlas(input = ServiceInput, runtime = atlas::wire)]
+            struct Service {
+                #[wire(optional)]
+                region: String,
+            }
+        });
+        assert!(message.contains("必须是 `Option<T>`"), "{message}");
+    }
+
+    #[test]
+    fn rejects_duplicate_wire_on_field() {
+        let message = rejection(parse_quote! {
+            #[atlas(input = ServiceInput, runtime = atlas::wire)]
+            struct Service {
+                #[wire]
+                #[wire]
+                region: String,
+            }
+        });
+        assert!(message.contains("只能出现一次 `#[wire]`"), "{message}");
+    }
+
+    #[test]
+    fn rejects_unknown_wire_parameter() {
+        let message = rejection(parse_quote! {
+            #[atlas(input = ServiceInput, runtime = atlas::wire)]
+            struct Service {
+                #[wire(name = region)]
+                region: String,
+            }
+        });
+        assert!(message.contains("只支持 `key = Path` 与 `optional`"), "{message}");
+    }
+
+    #[test]
+    fn rejects_packed_struct() {
+        let message = rejection(parse_quote! {
+            #[atlas(input = ServiceInput, runtime = atlas::wire)]
+            #[repr(packed)]
+            struct Service {
+                region: String,
+            }
+        });
+        assert!(message.contains("`repr(packed)`"), "{message}");
+    }
+
+    #[test]
+    fn accepts_option_paths_for_optional_fields() {
+        for ty in [quote!(Option<u8>), quote!(std::option::Option<u8>), quote!(core::option::Option<u8>)] {
+            let input: DeriveInput = parse_quote! {
+                #[atlas(input = ServiceInput, runtime = atlas::wire)]
+                struct Service {
+                    #[wire(optional)]
+                    region: #ty,
+                }
+            };
+            expand(input).expect("三种 Option 写法都必须接受");
+        }
+    }
+
+    #[test]
+    fn rejects_option_alias_for_optional_fields() {
+        let message = rejection(parse_quote! {
+            #[atlas(input = ServiceInput, runtime = atlas::wire)]
+            struct Service {
+                #[wire(optional)]
+                region: MaybeRegion,
+            }
+        });
+        assert!(message.contains("必须是 `Option<T>`"), "{message}");
     }
 }

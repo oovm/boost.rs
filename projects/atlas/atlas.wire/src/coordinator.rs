@@ -96,3 +96,59 @@ impl Coordinator {
         self.lock().waiting.remove(&thread::current().id());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        sync::{Arc, mpsc},
+        thread,
+    };
+
+    use super::*;
+
+    #[test]
+    fn cross_thread_wait_cycle_is_detected_without_timeout() {
+        let coordinator = Arc::new(Coordinator::new());
+        let left = TypeKey::of::<LeftKey>();
+        let right = TypeKey::of::<RightKey>();
+
+        let (a_to_b_tx, a_to_b_rx) = mpsc::channel::<()>();
+        let (b_to_a_tx, b_to_a_rx) = mpsc::channel::<bool>();
+        let (a_to_main_tx, a_to_main_rx) = mpsc::channel::<Result<(), WireError>>();
+        let (main_to_b_tx, main_to_b_rx) = mpsc::channel::<()>();
+
+        let owner = Arc::clone(&coordinator);
+        let a = thread::spawn(move || {
+            owner.enter(left);
+            a_to_b_tx.send(()).expect("通知 B");
+            let b_registered = b_to_a_rx.recv().expect("等待 B 登记");
+            assert!(b_registered, "B 的登记不应被判成环");
+            let outcome = owner.begin_wait(right);
+            a_to_main_tx.send(outcome).expect("回报结果");
+            owner.end_wait();
+            owner.leave(left);
+        });
+
+        let owner = Arc::clone(&coordinator);
+        let b = thread::spawn(move || {
+            owner.enter(right);
+            a_to_b_rx.recv().expect("等待 A 持有左键");
+            let ok = owner.begin_wait(left);
+            b_to_a_tx.send(ok.is_ok()).expect("回报登记");
+            main_to_b_rx.recv().expect("等待主线程收尾");
+            owner.end_wait();
+            owner.leave(right);
+        });
+
+        let outcome = a_to_main_rx.recv().expect("等待 A 的检测结果");
+        let error = outcome.expect_err("A 必须报告环，而不是永久阻塞");
+        assert_eq!(error.kind(), WireErrorKind::Cycle);
+        main_to_b_tx.send(()).expect("放行 B");
+        a.join().expect("A 未 panic");
+        b.join().expect("B 未 panic");
+    }
+
+    struct LeftKey;
+
+    struct RightKey;
+}

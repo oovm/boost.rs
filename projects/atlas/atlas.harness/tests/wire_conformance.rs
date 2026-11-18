@@ -11,7 +11,7 @@ use std::{
     time::Duration,
 };
 
-use atlas::wire::{Component, Dependency, Environment, Resolver, Scope, WireError, WireErrorKind};
+use atlas_runtime::wire::{Component, Dependency, Environment, Resolver, Scope, WireError, WireErrorKind};
 
 trait Store: Send + Sync {
     fn id(&self) -> u32;
