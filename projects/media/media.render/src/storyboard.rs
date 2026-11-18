@@ -692,6 +692,62 @@ pub fn write_timeline(
     Ok(StoryboardPage { index: 0, path: out.to_string_lossy().into_owned(), cells })
 }
 
+/// Writes a scene overview: one wide establishing frame per scene with its
+/// span and the shots that use it.
+///
+/// This is the space view, not the film view: the whole scene is shown once,
+/// with its own start, length and shot references, so an author can tell two
+/// scenes apart without opening a storyboard page per panel.
+pub fn write_scene_overview(json: &str, production: &Production, out: &Path, options: &StoryboardOptions) -> Result<StoryboardPage, Error> {
+    production.validate()?;
+    let project = parse_project(json)?;
+    if project.scenes.is_empty() {
+        return Err(Error::invalid("the project declares no scene"));
+    }
+    let mut fonts = fonts_for(&project)?;
+    let mut page = Frame::new(options.width, options.height);
+    page.fill(rgba(options.background, 255));
+    draw_title(&mut fonts, &mut page, options, "Scenes");
+
+    let rows = project.scenes.len();
+    let content_top = options.margin + options.title_size + options.gap;
+    let row_height = (options.height as f32 - content_top - options.margin) / rows as f32;
+    let thumb_width = (options.width as f32 - options.margin * 2.0) * 0.42;
+    let mut cells = Vec::new();
+    for (index, scene) in project.scenes.iter().enumerate() {
+        let y = content_top + row_height * index as f32;
+        let image_height = row_height - options.label_size * 1.4;
+        let middle = scene.start + scene.duration / 2;
+        let frame = render_frame_at(json, middle)?;
+        page.draw_bitmap(&bitmap(frame), options.margin, y, thumb_width, image_height, Fit::Contain, 1.0, 4.0);
+        let id = scene.id.clone().unwrap_or_else(|| format!("#{index}"));
+        let shots: Vec<&str> = production.shots.iter().filter(|shot| shot.scene == id).map(|shot| shot.id.as_str()).collect();
+        let label = format!(
+            "{id}  ·  frames {}..{}  ·  {:.1}s  ·  shots: {}",
+            scene.start,
+            scene.start + scene.duration,
+            scene.duration as f32 / project.fps.max(1) as f32,
+            if shots.is_empty() { "-".to_owned() } else { shots.join(", ") }
+        );
+        draw_text(
+            &mut fonts,
+            &mut page,
+            options,
+            &label,
+            options.margin + thumb_width + options.gap,
+            y + options.label_size * 1.2,
+            options.label_size,
+            options.width as f32 - (options.margin * 2.0 + thumb_width + options.gap),
+        );
+        cells.push(StoryboardCell { shot: id, panel: String::new(), frames: vec![middle], dialogue: None });
+    }
+    if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent).map_err(|e| Error::io(format!("cannot create {}: {e}", parent.display())))?;
+    }
+    write_page(out, &page)?;
+    Ok(StoryboardPage { index: 0, path: out.to_string_lossy().into_owned(), cells })
+}
+
 /// Writes a seam page: the last frame of each shot beside the first frame of
 /// the next one.
 ///
@@ -909,6 +965,18 @@ mod tests {
             .image(&pages[0].path, media_codec::DecodeLimits::unbounded())
             .expect("decode page");
         assert_eq!((bitmap.width, bitmap.height), (1600, 1200));
+    }
+
+    #[test]
+    fn a_scene_overview_lists_each_space_with_its_span_and_shots() {
+        let (json, production) = fixture();
+        let out = out_dir().join("scenes.png");
+        let page = write_scene_overview(&json, &production, &out, &StoryboardOptions::default()).expect("scenes");
+        assert_eq!(page.cells.len(), 2);
+        assert_eq!(page.cells[0].shot, "mechanism");
+        assert_eq!(page.cells[0].frames, vec![30], "the middle frame stands for the scene");
+        assert_eq!(page.cells[1].shot, "spatial");
+        assert!(std::fs::metadata(&out).expect("scene page written").len() > 1_000);
     }
 
     #[test]
