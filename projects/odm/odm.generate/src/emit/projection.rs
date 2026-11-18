@@ -173,6 +173,12 @@ pub(crate) fn reference_target_name(ty: &CanonicalType) -> Result<String> {
     }
 }
 
+/// Reject a table without exactly one `primary` attribute.
+///
+/// [`schema_input_vos::validate_schema`] applies the same rule for database
+/// hosts, but the generation path (`from_document` / `from_vos_schema`) never
+/// runs `validate_schema`, so this check stays as the primary guard before
+/// emission.
 pub(crate) fn ensure_single_primary(table: &TypeContract) -> Result<()> {
     let primary_count = table.fields.iter().flat_map(|field| field.attributes.iter()).filter(|attribute| attribute.name == "primary").count();
     if primary_count != 1 {
@@ -186,17 +192,7 @@ pub(crate) fn ensure_single_primary(table: &TypeContract) -> Result<()> {
 /// Operation declarations (for example durable macros) stay in the Oak input
 /// and are projected separately, so they never block table/class projection.
 pub(crate) fn project_schema(input: &schema_input_vos::ContractInput) -> Result<SchemaProjection> {
-    use oak_vos::VosDeclarationKind;
-    let root = input.clone().into_oak();
-    let declarations = root
-        .declarations
-        .iter()
-        .filter(|declaration| matches!(declaration.kind, VosDeclarationKind::Namespace | VosDeclarationKind::Table | VosDeclarationKind::Class))
-        .cloned()
-        .collect();
-    schema_input_vos::ContractInput::from_oak(oak_vos::VosRoot { source: root.source, syntax: root.syntax, declarations })
-        .project_schema()
-        .map_err(|diagnostics| Error::Vos(format_diagnostics(&diagnostics)))
+    input.project_schema_only().map_err(|diagnostics| Error::Vos(format_diagnostics(&diagnostics)))
 }
 
 pub(crate) fn format_diagnostics(diagnostics: &[ContractDiagnostic]) -> String {

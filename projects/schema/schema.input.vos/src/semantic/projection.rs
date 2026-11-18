@@ -253,6 +253,19 @@ pub fn project_schema(root: &VosRoot) -> Result<SchemaProjection, Vec<ContractDi
     }
 }
 
+/// Projects only schema declarations, tolerating everything else.
+///
+/// Single filtering entry for hosts that consume a schema-only projection:
+/// operation-like and other non-schema declarations are skipped before
+/// projection instead of failing the schema contract with `VOS004`.
+pub fn project_schema_only(root: &VosRoot) -> Result<SchemaProjection, Vec<ContractDiagnostic>> {
+    let mut schema_root = root.clone();
+    schema_root.declarations.retain(|declaration| {
+        matches!(declaration.kind, VosDeclarationKind::Namespace | VosDeclarationKind::Table | VosDeclarationKind::Class)
+    });
+    project_schema(&schema_root)
+}
+
 fn resolve_field(field: &VosField) -> Result<FieldContract, ContractDiagnostic> {
     Ok(FieldContract {
         canonical_name: field.name.clone(),

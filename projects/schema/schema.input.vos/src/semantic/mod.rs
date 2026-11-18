@@ -72,6 +72,15 @@ impl ContractInput {
         projection::project_schema(&self.root)
     }
 
+    /// Projects only namespace, table and class declarations through the schema contract.
+    ///
+    /// Single entry for hosts consuming a schema-only projection: operation-like
+    /// and other non-schema declarations are tolerated and skipped before
+    /// projection instead of failing the schema contract.
+    pub fn project_schema_only(&self) -> Result<SchemaProjection, Vec<ContractDiagnostic>> {
+        projection::project_schema_only(&self.root)
+    }
+
     /// Projects Oak operation declarations without reparsing their bodies.
     pub fn project_operations(&self) -> Result<Vec<OperationProjection>, Vec<ContractDiagnostic>> {
         projection::project_operations(&self.root)
@@ -325,6 +334,17 @@ mod tests {
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].code, "VOS002");
         assert_eq!(diagnostics[0].span.as_ref().unwrap().start, source.rfind("table User").unwrap());
+    }
+
+    #[test]
+    fn schema_only_projection_tolerates_non_schema_declarations() {
+        let source = "table User { @@id: uuid, }\nusing shared::UserId;\nmacro label(value: utf8) -> utf8 { value.trim() }";
+        let input = parse_oak(source).expect("Oak parses schema and non-schema declarations");
+        let projection = input.project_schema_only().expect("schema-only projection skips non-schema declarations");
+        assert_eq!(projection.types.len(), 1);
+        assert_eq!(projection.types[0].canonical_path, ["User"]);
+        let diagnostics = input.project_schema().expect_err("plain projection rejects the using declaration");
+        assert_eq!(diagnostics[0].code, "VOS004");
     }
 
 }

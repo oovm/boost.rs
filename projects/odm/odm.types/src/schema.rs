@@ -2,10 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use schema_input_vos::{
-    ContractDiagnostic, SchemaProjection, TypeContractKind,
-    syntax::{VosDeclarationKind, VosRoot},
-};
+use schema_input_vos::{ContractDiagnostic, SchemaProjection, TypeContractKind};
 
 use crate::project::resolve_path;
 
@@ -58,18 +55,11 @@ pub fn read_schema(project_dir: &Path, schema_pattern: &str) -> Result<String, S
 ///
 /// Oak parses the source and the VOS projection owns canonical paths, fields,
 /// attributes, and types. Operation-like declarations (for example durable
-/// macros) are valid schema-file content but are not schema types, so only
-/// namespaces, tables, and classes are offered to the schema projection.
+/// macros) are valid schema-file content but are not schema types, so the
+/// schema-only projection entry of `schema.input.vos` skips them.
 pub fn parse_schema(source: &str) -> Result<SchemaProjection, String> {
-    let root = schema_input_vos::parse_oak(source)?.into_oak();
-    let declarations = root
-        .declarations
-        .iter()
-        .filter(|declaration| matches!(declaration.kind, VosDeclarationKind::Namespace | VosDeclarationKind::Table | VosDeclarationKind::Class))
-        .cloned()
-        .collect();
-    schema_input_vos::ContractInput::from_oak(VosRoot { source: root.source, syntax: root.syntax, declarations })
-        .project_schema()
+    schema_input_vos::parse_oak(source)?
+        .project_schema_only()
         .map_err(|diagnostics| format_projection_diagnostics(&diagnostics))
 }
 

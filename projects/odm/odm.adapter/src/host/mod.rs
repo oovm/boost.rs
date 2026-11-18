@@ -336,18 +336,9 @@ fn reject_unsupported_schema(profile: &str, schema: Option<&str>) -> Result<(), 
 }
 
 fn schema_declares_vector(schema: &str) -> Result<bool, ErrorEnvelope> {
-    use oak_vos::VosDeclarationKind;
-    let input = schema_input_vos::parse_oak(schema)
-        .map_err(|message| ErrorEnvelope::new(CODE_SCHEMA_MISMATCH, message).with_diagnostic(DIAG_SCHEMA_VECTOR_UNSUPPORTED))?;
-    let root = input.into_oak();
-    let declarations = root
-        .declarations
-        .iter()
-        .filter(|declaration| matches!(declaration.kind, VosDeclarationKind::Namespace | VosDeclarationKind::Table | VosDeclarationKind::Class))
-        .cloned()
-        .collect();
-    let projection = schema_input_vos::ContractInput::from_oak(oak_vos::VosRoot { source: root.source, syntax: root.syntax, declarations })
-        .project_schema()
+    let projection = schema_input_vos::parse_oak(schema)
+        .map_err(|message| ErrorEnvelope::new(CODE_SCHEMA_MISMATCH, message).with_diagnostic(DIAG_SCHEMA_VECTOR_UNSUPPORTED))?
+        .project_schema_only()
         .map_err(|diagnostics| {
             let reason =
                 diagnostics.iter().map(|diagnostic| format!("{}: {}", diagnostic.code, diagnostic.message)).collect::<Vec<_>>().join("\n");
