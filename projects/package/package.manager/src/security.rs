@@ -137,6 +137,16 @@ impl SecurityAudit {
         Ok(result)
     }
 
+    /// 许可证是否在允许列表内。
+    pub fn is_license_compatible(license: &str) -> bool {
+        crate::security::is_license_compatible(license)
+    }
+
+    /// 许可证是否属于受限类别。
+    pub fn is_license_restricted(license: &str) -> bool {
+        crate::security::is_license_restricted(license)
+    }
+
     fn scan_vulnerabilities(&mut self, package: &Package, registry: &str) -> Result<Vec<VulnerabilityReport>> {
         let key = format!("{}@{}", package.name, package.version);
         if let Some(cached) = self.cache.get(&key) {
@@ -193,14 +203,16 @@ pub fn check_license(package: &Package) -> LicenseInfo {
     LicenseInfo { package_name: package.name.clone(), version: package.version.clone(), license, is_compatible: compatible, is_restricted: restricted }
 }
 
-fn is_license_compatible(license: &str) -> bool {
+/// 许可证是否在允许列表内。
+pub fn is_license_compatible(license: &str) -> bool {
     if license.eq_ignore_ascii_case("unknown") {
         return false;
     }
     COMPATIBLE.iter().any(|item| license.eq_ignore_ascii_case(item))
 }
 
-fn is_license_restricted(license: &str) -> bool {
+/// 许可证是否属于受限类别。
+pub fn is_license_restricted(license: &str) -> bool {
     RESTRICTED.iter().any(|item| license.eq_ignore_ascii_case(item))
 }
 

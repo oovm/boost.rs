@@ -13,7 +13,7 @@ mod credentials;
 mod error;
 mod manager;
 mod registry_sources;
-mod security;
+pub mod security;
 
 use std::sync::Arc;
 
@@ -31,7 +31,9 @@ pub use package_publish::{
     ScriptResult, ScriptRunner, bin_name_from_logical, glob_match, pack, pack_registry_artifact, resolve_publish_artifact, unpack,
 };
 pub use registry_sources::{RegistryFactory, RegistrySourceManager, default_registry_factory};
-pub use security::{LicenseInfo, SecurityAudit, SecurityAuditResult, VulnerabilityReport, check_license};
+pub use security::{
+    LicenseInfo, SecurityAudit, SecurityAuditResult, VulnerabilityReport, check_license, is_license_compatible, is_license_restricted,
+};
 
 /// 包管理器需要的宿主服务。
 #[derive(Clone)]
