@@ -14,6 +14,7 @@
 //! - `storage`：命令层唯一的存储入口 trait（`storage` feature）
 //! - `authorization`：内置角色表、权限展开与命令授权判定（`storage` feature）
 //! - `replica`：单成员副本集状态、集群时间与 `replSet*` 命令（`storage` feature）
+//! - `retry`：重试写的登记表、键推导与应答重放（`storage` feature）
 //! - `write_concern`：`writeConcern` / `$readPreference` 校验与写应答装饰（`storage` feature）
 //! - `import`：`mongodump` 形态 `.bson` 流导入（`storage` feature）
 
@@ -35,6 +36,9 @@ pub mod import;
 pub mod oplog;
 #[cfg(feature = "storage")]
 pub mod replica;
+/// 重试写的登记表、键推导与应答重放（`storage` feature）
+#[cfg(feature = "storage")]
+pub mod retry;
 #[cfg(feature = "storage")]
 pub mod storage;
 #[cfg(feature = "storage")]
