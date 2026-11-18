@@ -433,3 +433,30 @@ fn bind_with_retry(endpoint: SocketAddr) -> io::Result<TcpListener> {
     }
     TcpListener::bind(endpoint)
 }
+
+impl database_migration::MigrationTarget for PostgreSQL {
+    fn execute(&mut self, sql: &str) -> Result<(), database_migration::Error> {
+        PostgreSQL::execute(self, sql).map(|_| ()).map_err(|error| database_migration::Error::Target(error.to_string()))
+    }
+
+    fn query(&mut self, sql: &str) -> Result<database_migration::ResultSet, database_migration::Error> {
+        let result = PostgreSQL::query(self, sql).map_err(|error| database_migration::Error::Target(error.to_string()))?;
+        Ok(database_migration::ResultSet {
+            columns: result.columns.into_iter().map(|column| column.name).collect(),
+            rows: result.rows.into_iter().map(|row| row.into_iter().map(cell_text).collect()).collect(),
+        })
+    }
+}
+
+/// Renders one stored value the way PostgreSQL's text format spells it, so a
+/// migrated row compares equal to the same row read back from the source.
+fn cell_text(value: SqlValue) -> Option<String> {
+    match value {
+        SqlValue::Null => None,
+        SqlValue::Integer(number) => Some(number.to_string()),
+        SqlValue::Number(number) => Some(number.to_string()),
+        SqlValue::String(text) => Some(text),
+        SqlValue::Boolean(flag) => Some(if flag { "t".to_owned() } else { "f".to_owned() }),
+        SqlValue::Bytes(bytes) => Some(format!("\\x{}", bytes.iter().map(|byte| format!("{byte:02x}")).collect::<String>())),
+    }
+}

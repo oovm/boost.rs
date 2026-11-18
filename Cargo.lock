@@ -3758,6 +3758,7 @@ dependencies = [
  "database-client",
  "database-cluster",
  "database-execution",
+ "database-migration",
  "database-query",
  "database-server",
  "database-storage",
