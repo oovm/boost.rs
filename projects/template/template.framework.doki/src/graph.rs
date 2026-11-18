@@ -137,7 +137,7 @@ pub fn discover_markdown_content(project_root: &Path, content_dir: &str) -> Core
 pub fn load_markdown_node(content_root: &Path, abs_path: &Path) -> CoreResult<ContentNode> {
     let rel = abs_path.strip_prefix(content_root).unwrap_or(abs_path).to_string_lossy().replace('\\', "/");
     let raw = std::fs::read(abs_path).map_err(|source| CoreError::Io { source })?;
-    let content_hash = hex::encode(Sha256::digest(&raw));
+    let content_hash = Sha256::digest(&raw).iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     let source = String::from_utf8_lossy(&raw);
     let doc = parse_document(&source)?;
     Ok(ContentNode {

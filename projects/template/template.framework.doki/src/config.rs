@@ -3,11 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use figment::{
-    Figment,
-    providers::{Format, Serialized, Toml},
-};
 use serde::{Deserialize, Serialize};
+use toml::Value as TomlValue;
 
 use crate::{
     error::{ConfigError, ConfigResult},
@@ -87,7 +84,7 @@ pub struct I18nConfig {
     pub fallback: BTreeMap<String, String>,
 }
 
-/// Logical `doki.toml` model after Figment merge (this type + `validate()` are authoritative).
+/// Logical `doki.toml` model after the layered TOML merge (this type + `validate()` are authoritative).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectConfig {
@@ -242,11 +239,38 @@ pub fn peek_theme_ref(root: impl AsRef<Path>) -> ConfigResult<Option<ExtensionRe
     if !config_file.is_file() {
         return Err(ConfigError::invalid(format!("missing doki.toml under {}", root.display())));
     }
-    let peek: ThemePeek = Figment::new().merge(Toml::file(&config_file)).extract().map_err(|source| ConfigError::Extract { source })?;
+    let peek: ThemePeek = read_toml(&config_file)?
+        .try_into()
+        .map_err(|error| ConfigError::Extract { message: format!("invalid project configuration: {error}") })?;
     if let Some(theme) = &peek.theme {
         theme.validate("theme")?;
     }
     Ok(peek.theme)
+}
+
+/// Read a TOML document into a value tree.
+fn read_toml(path: &Path) -> ConfigResult<TomlValue> {
+    let text = std::fs::read_to_string(path).map_err(|source| ConfigError::Io { source })?;
+    text.parse::<TomlValue>()
+        .map_err(|error| ConfigError::Extract { message: format!("failed to parse {}: {error}", path.display()) })
+}
+
+/// Deep-merge `overlay` into `base`: tables merge key by key, every other value replaces.
+fn merge_toml(base: &mut TomlValue, overlay: TomlValue) {
+    match (base, overlay) {
+        (TomlValue::Table(base_table), TomlValue::Table(overlay_table)) => {
+            for (key, value) in overlay_table {
+                match base_table.get_mut(&key) {
+                    Some(slot) if slot.is_table() && value.is_table() => merge_toml(slot, value),
+                    Some(slot) => *slot = value,
+                    None => {
+                        base_table.insert(key, value);
+                    }
+                }
+            }
+        }
+        (base, overlay) => *base = overlay,
+    }
 }
 
 /// Resolve the theme defaults file for a theme root directory, if present.
@@ -261,7 +285,7 @@ pub fn theme_defaults_file(theme_root: impl AsRef<Path>) -> Option<PathBuf> {
     None
 }
 
-/// Load and validate project configuration with Figment.
+/// Load and validate project configuration.
 ///
 /// Layer order: core defaults → theme defaults → `doki.toml` → optional `doki.local.toml`.
 /// Process env is not merged — stray `DOKI_*` vars are not part of the locked config surface.
@@ -274,20 +298,23 @@ pub fn load_project_config(root: impl AsRef<Path>, options: LoadOptions) -> Conf
 
     let theme_defaults_path = resolve_theme_defaults_path(&root, &options)?;
 
-    let mut figment = Figment::new().merge(Serialized::defaults(ProjectConfig::default()));
+    let mut merged = TomlValue::try_from(ProjectConfig::default())
+        .map_err(|error| ConfigError::Extract { message: format!("failed to encode default configuration: {error}") })?;
 
     if let Some(path) = &theme_defaults_path {
-        figment = figment.merge(Toml::file(path));
+        merge_toml(&mut merged, read_toml(path)?);
     }
 
-    figment = figment.merge(Toml::file(&config_file));
+    merge_toml(&mut merged, read_toml(&config_file)?);
 
     let local = root.join("doki.local.toml");
     if options.allow_local && local.is_file() {
-        figment = figment.merge(Toml::file(&local));
+        merge_toml(&mut merged, read_toml(&local)?);
     }
 
-    let config: ProjectConfig = figment.extract().map_err(|source| ConfigError::Extract { source })?;
+    let config: ProjectConfig = merged
+        .try_into()
+        .map_err(|error| ConfigError::Extract { message: format!("invalid project configuration: {error}") })?;
     config.validate()?;
 
     Ok((ProjectPaths { root, config_file }, config))

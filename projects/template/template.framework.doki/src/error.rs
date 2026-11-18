@@ -14,11 +14,8 @@ pub enum ConfigError {
         source: std::io::Error,
     },
 
-    #[error("invalid project configuration")]
-    Extract {
-        #[source]
-        source: figment::Error,
-    },
+    #[error("{message}")]
+    Extract { message: String },
 
     #[error("{message}")]
     Invalid { message: String },

@@ -119,7 +119,7 @@ impl I18n {
                     continue;
                 }
             };
-            let hash = hex::encode(Sha256::digest(&bytes));
+            let hash = Sha256::digest(&bytes).iter().map(|byte| format!("{byte:02x}")).collect::<String>();
             let text = match std::str::from_utf8(&bytes) {
                 Ok(text) => text,
                 Err(e) => {

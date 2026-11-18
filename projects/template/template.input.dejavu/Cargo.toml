@@ -16,7 +16,6 @@ serde_json = { workspace = true }
 unicode-normalization = { workspace = true }
 unicode-types = { workspace = true }
 once_cell = { workspace = true }
-figment = { workspace = true, optional = true }
 toml = { workspace = true, optional = true }
 toml_edit = { workspace = true, optional = true }
 
@@ -25,7 +24,7 @@ boost-fs = { workspace = true }
 
 [features]
 default = []
-config = ["dep:figment", "dep:toml", "dep:toml_edit"]
+config = ["dep:toml", "dep:toml_edit"]
 
 [[test]]
 name = "config"
