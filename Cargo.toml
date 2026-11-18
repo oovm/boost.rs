@@ -1,5 +1,8 @@
 [workspace]
 resolver = "2"
+# `tools/wasm-contract` 自带空 `[workspace]` 表，用于把 `wasmtime` 验收依赖隔离在
+# 本依赖图之外；显式排除是让它保持独立 workspace 的唯一声明点。
+exclude = ["tools/wasm-contract"]
 # Every ecosystem in this repository is one member of one workspace. Members are
 # listed explicitly: globs would pick up directories that are not crates
 # (\projects/hardware/hardware.backends\, \projects/database/facades\) and fail

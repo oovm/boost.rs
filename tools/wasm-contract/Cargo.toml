@@ -1,0 +1,19 @@
+[workspace]
+
+[package]
+name = "wasm-contract"
+version = "0.0.0"
+edition = "2021"
+description = "隔离的 Wasm 互操作验证工具：不参与 Boost workspace 依赖图"
+readme = "readme.md"
+publish = false
+
+[dev-dependencies]
+hardware-wasm = { path = "../../projects/hardware/bindings/hardware.wasm" }
+wasmtime = "28"
+
+# 关掉 libtest 的默认 harness：产物缺失时的跳过原因必须直接打到终端，
+# 不能被「通过」掩盖成一次真实验收。
+[[test]]
+name = "wasm_application_contract"
+harness = false

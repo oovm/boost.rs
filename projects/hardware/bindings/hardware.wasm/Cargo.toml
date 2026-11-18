@@ -16,6 +16,3 @@ path = "src/lib.rs"
 
 [dependencies]
 hardware = { workspace = true, default-features = false, features = ["cpu"] }
-
-[dev-dependencies]
-wasmtime = "28"

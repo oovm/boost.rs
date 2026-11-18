@@ -33,7 +33,12 @@ cargo build -p hardware-wasm --target wasm32-unknown-unknown --release
 cargo test -p hardware-wasm
 ```
 
-原生测试会通过 `wasmtime` 加载已构建的 `.wasm` 并调用上述符号（与 `tests/application_contract.rs` 同语义）。
+宿主侧 ABI 契约（`wasmtime` 实例化已构建的 `.wasm` 后调用上述符号）在隔离的
+`tools/wasm-contract` crate 中验收，它不参与本仓 workspace 依赖图，按需手动运行：
+
+```bash
+cargo test --manifest-path tools/wasm-contract/Cargo.toml
+```
 
 TypeScript 加载器不在本仓发布 npm 包；下游产品自行封装（Spark：`@game-gpt/spark-host-web`）。
 
