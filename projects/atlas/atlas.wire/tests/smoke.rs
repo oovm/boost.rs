@@ -70,3 +70,26 @@ fn duplicate_registration_is_rejected() {
         .expect_err("重复注册必须失败");
     assert_eq!(error.kind(), WireErrorKind::DuplicateKey);
 }
+
+struct First;
+struct Second;
+
+#[test]
+fn frozen_cycle_reports_its_witness_path() {
+    let mut builder = Environment::builder();
+    builder
+        .register::<Arc<First>, _>(Scope::Application, "first", vec![Dependency::of::<Arc<Second>>("second", false)], |_| Ok(Arc::new(First)))
+        .expect("注册 first");
+    builder
+        .register::<Arc<Second>, _>(Scope::Application, "second", vec![Dependency::of::<Arc<First>>("first", false)], |_| Ok(Arc::new(Second)))
+        .expect("注册 second");
+
+    let error = match builder.freeze() {
+        Ok(_) => panic!("成环的冻结图必须失败"),
+        Err(error) => error,
+    };
+    assert_eq!(error.kind(), WireErrorKind::Cycle);
+    // 环路径不是退化错误：必须给出参与环的具体 provider 标签。
+    let path = error.path();
+    assert!(path.contains(&"first") && path.contains(&"second"), "{path:?}");
+}

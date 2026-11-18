@@ -1,6 +1,9 @@
 //! 冻结图的静态验证：缺失、环与作用域。
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
+
+use boost_collection::GraphView;
+use boost_math::graph_theory::cycle_path;
 
 use crate::{
     dependency::Dependency,
@@ -61,46 +64,37 @@ pub(crate) fn validate_root_dependencies(entries: &BTreeMap<TypeKey, Entry>, dep
     reach_request(entries, dependencies, &mut visited, &mut path)
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Color {
-    Gray,
-    Black,
-}
-
 fn detect_cycles(entries: &BTreeMap<TypeKey, Entry>) -> Result<(), WireError> {
-    let mut colors: HashMap<TypeKey, Color> = HashMap::new();
-    let mut path = Vec::new();
-    for key in entries.keys().copied() {
-        visit(key, entries, &mut colors, &mut path)?;
-    }
-    Ok(())
-}
-
-fn visit(
-    key: TypeKey,
-    entries: &BTreeMap<TypeKey, Entry>,
-    colors: &mut HashMap<TypeKey, Color>,
-    path: &mut Vec<&'static str>,
-) -> Result<(), WireError> {
-    match colors.get(&key).copied() {
-        Some(Color::Black) => return Ok(()),
-        Some(Color::Gray) => {
-            return Err(WireError::new(WireErrorKind::Cycle, "依赖图存在环").with_path(path));
-        }
-        None => {}
-    }
-    colors.insert(key, Color::Gray);
-    if let Some(Entry::Provider(provider)) = entries.get(&key) {
-        path.push(provider.label);
+    // 普通有向静态图：顶点是注册键，边是 provider 到已注册依赖的引用。
+    // 环检测本身复用共享图论核，本模块只负责把环映射回标签诊断。
+    let mut view = GraphView::new(true);
+    for (key, entry) in entries {
+        view.add_vertex(key);
+        let Entry::Provider(provider) = entry
+        else {
+            continue;
+        };
         for dependency in &provider.dependencies {
-            if entries.contains_key(&dependency.key()) {
-                visit(dependency.key(), entries, colors, path)?;
+            if let Some((target, _)) = entries.get_key_value(&dependency.key()) {
+                view.add_edge(key, target);
             }
         }
-        path.pop();
     }
-    colors.insert(key, Color::Black);
-    Ok(())
+
+    let Some(cycle) = cycle_path(&view).ok().flatten()
+    else {
+        return Ok(());
+    };
+    let labels: Vec<&'static str> = cycle.iter().map(|key| label_of(entries, *key)).collect();
+    Err(WireError::new(WireErrorKind::Cycle, "依赖图存在环").with_path(&labels))
+}
+
+fn label_of(entries: &BTreeMap<TypeKey, Entry>, key: &TypeKey) -> &'static str {
+    match entries.get(key) {
+        Some(Entry::Provider(provider)) => provider.label,
+        Some(Entry::Slot(slot)) => slot.label,
+        None => "<unregistered>",
+    }
 }
 
 /// 从应用级作用域出发，确认依赖闭包（含经 transient 的间接路径）不会触达请求级键。
