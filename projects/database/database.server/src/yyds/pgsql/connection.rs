@@ -12,16 +12,15 @@ use std::{
 };
 
 use super::wire::{FrameError, StartupParameterError, StartupParameters, decode_message, decode_startup, encode_message};
-use database_execution::{
-    cluster::{KeyValueExecutor, TransactionHandle},
-    sql_exec::execute_plan,
+use database_execution::pgsql::{
+    ABORTED_BLOCK, DEFAULT_SEARCH_PATH, ExecutionOutcome, PgsqlSqlRuntime, StatementOutcome, TransactionSession,
+    dispatch_statement, pg_sqlstate, run_statement, statement_error,
 };
 use database_query::{
-    DiscardTarget, SqlBoundExpression, SqlBoundLiteral, SqlCatalog, SqlCatalogBoundStatement, SqlColumn, SqlDialect, SqlErrorKind,
-    SqlExecutionPlan, SqlFieldType, SqlFrontendError, SqlParameterStyle, SqlSchemaRegistry, SqlSessionCommand, SqlTransactionAction, SqlValue,
-    analyze_meta_query, apply_auto_increment, bind_sql_catalog, describe_bound_insert, describe_plan, detect_session_reset_statement,
-    encode_hex, neutralized_sql_parameters, parse_ddl, parse_session_command, pg_server_version, plan_statement_for_dialect, split_sql_batch,
-    substitute_sql_parameters,
+    DiscardTarget, SqlBoundExpression, SqlBoundLiteral, SqlColumn, SqlDialect, SqlParameterStyle, SqlSessionCommand, SqlFieldType,
+    SqlValue, SqlCatalog, SqlCatalogBoundStatement, analyze_meta_query, bind_sql_catalog, describe_bound_insert,
+    describe_plan, detect_session_reset_statement, encode_hex, neutralized_sql_parameters, pg_server_version,
+    plan_statement_for_dialect, split_sql_batch, substitute_sql_parameters,
 };
 
 /// PostgreSQL type OIDs supported by the gateway.
@@ -44,38 +43,6 @@ const CANCEL_REQUEST: u32 = 80_877_102;
 const MAX_STARTUP_FRAME: usize = 64 * 1024;
 const MAX_MESSAGE_FRAME: usize = 16 * 1024 * 1024;
 static NEXT_SECRET: AtomicU32 = AtomicU32::new(1);
-
-/// PostgreSQL's default `search_path`, also the value `RESET search_path` and
-/// `DISCARD ALL` restore. `SHOW search_path` prints it exactly as the engine
-/// does, quotes included, because `$user` must be quoted to stay an identifier.
-const DEFAULT_SEARCH_PATH: &str = "\"$user\", public";
-
-/// SQLSTATE `25P02` message for statements issued inside an aborted block.
-const ABORTED_BLOCK: &str = "current transaction is aborted, commands ignored until end of transaction block";
-
-/// Outcome of the shared transaction-block control used by the wire session
-/// commands and by the `postgres` facade's direct path.
-#[derive(Debug)]
-pub enum TransactionControl {
-    /// The block transition completed; carries the PostgreSQL command tag.
-    Done(&'static str),
-    /// The command was rejected; carries SQLSTATE and message.
-    Rejected {
-        /// SQLSTATE class returned to the client.
-        code: &'static str,
-        /// Human-readable failure detail.
-        message: String,
-    },
-}
-
-/// Injects YYDS SQL execution into PostgreSQL SimpleQuery.
-#[derive(Debug)]
-pub struct PgsqlSqlRuntime {
-    /// Local schema registry holding catalog snapshots and applying DDL.
-    pub schema: Arc<SqlSchemaRegistry>,
-    /// KV execution plane.
-    pub executor: Arc<dyn KeyValueExecutor>,
-}
 
 /// Establishes an unauthenticated protocol-v3 session, then rejects unsupported SQL explicitly.
 ///
@@ -126,7 +93,7 @@ fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<PgsqlSqlRunt
         }
     };
 
-    session.database = parameters.database().to_string();
+    session.set_database(parameters.database().to_string());
 
     send_authentication_ok(&mut stream)?;
     send_parameter(&mut stream, "server_version", pg_server_version())?;
@@ -223,230 +190,6 @@ fn serve_session(mut stream: impl Read + Write, runtime: Option<Arc<PgsqlSqlRunt
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum TransactionStatus {
-    Idle,
-    InTransaction,
-    Failed,
-}
-
-/// Session-scoped transaction state: the PostgreSQL wire protocol ReadyForQuery byte
-/// plus a real storage transaction handle that writes and row reads are bound to.
-/// Also holds session-scoped GUC overrides that `SET` mutates and `SHOW` queries.
-///
-/// Exported for the `postgres` facade: the direct (no-wire) statement path runs
-/// through [`run_statement`] with a session of its own, so local and wire calls
-/// share one bind → plan → execute semantic source.
-pub struct TransactionSession {
-    /// The executor Arc stays alive for as long as a transaction is open so the handle's
-    /// internal references remain valid.
-    executor: Option<Arc<dyn KeyValueExecutor>>,
-    handle: Option<Box<dyn TransactionHandle + 'static>>,
-    /// Tracks whether we are inside a transaction block even without a runtime handle
-    /// (e.g. the PostgreSQL protocol test).
-    protocol_only_transaction: bool,
-    failed: bool,
-    /// `search_path` as last set via `SET search_path = ...`. Defaults to the
-    /// PostgreSQL convention `"$user, public"`.
-    search_path: String,
-    /// Startup `database` parameter, reported by synthesized `current_database()`.
-    database: String,
-    /// Registry snapshot captured at `BEGIN`. The catalog rides the same
-    /// transaction as rows: `COMMIT` keeps it, every rollback path restores it.
-    schema_checkpoint: Option<database_query::SqlSchemaCheckpoint>,
-}
-
-impl TransactionSession {
-    /// Opens a session with no active transaction and default GUCs.
-    pub fn new() -> Self {
-        Self {
-            executor: None,
-            handle: None,
-            protocol_only_transaction: false,
-            failed: false,
-            search_path: DEFAULT_SEARCH_PATH.to_string(),
-            database: "postgres".to_string(),
-            schema_checkpoint: None,
-        }
-    }
-
-    /// Captures the registry state when a transaction block opens.
-    fn capture_schema(&mut self, runtime: Option<&Arc<PgsqlSqlRuntime>>) {
-        self.schema_checkpoint = runtime.map(|rt| rt.schema.checkpoint());
-    }
-
-    /// Opens a transaction block. Shared by the wire `BEGIN` path and the
-    /// `postgres` facade, so block entry, schema checkpointing and the aborted
-    /// block rejection live in one place.
-    pub fn begin(&mut self, runtime: Option<&Arc<PgsqlSqlRuntime>>) -> TransactionControl {
-        if self.failed {
-            return TransactionControl::Rejected { code: "25P02", message: ABORTED_BLOCK.to_string() };
-        }
-        let Some(rt) = runtime
-        else {
-            // No runtime — stay in protocol-only mode. execute_plan will receive
-            // `None` for the handle and go through the executor directly.
-            self.executor = None;
-            self.handle = None;
-            self.protocol_only_transaction = true;
-            self.failed = false;
-            self.schema_checkpoint = None;
-            return TransactionControl::Done("BEGIN");
-        };
-        // The executor owns the transaction contract: `begin_transaction` captures
-        // the ownership context (single-node gateways pass `None` explicitly) and
-        // the returned handle replays it at the commit boundary.
-        match Arc::clone(&rt.executor).begin_transaction(None) {
-            Ok(handle) => {
-                self.executor = Some(rt.executor.clone());
-                self.handle = Some(handle);
-                self.protocol_only_transaction = false;
-                self.failed = false;
-                self.capture_schema(Some(rt));
-                TransactionControl::Done("BEGIN")
-            }
-            Err(err) => TransactionControl::Rejected { code: "0A000", message: format!("BEGIN failed: {err}") },
-        }
-    }
-
-    /// Ends a transaction block. A failed commit discards the collected DDL;
-    /// committing an aborted block rolls it back, matching the wire semantics.
-    pub fn commit(&mut self, runtime: Option<&Arc<PgsqlSqlRuntime>>) -> io::Result<TransactionControl> {
-        if self.failed {
-            if let Some(handle) = self.handle.take() {
-                handle.rollback();
-            }
-            self.executor = None;
-            self.handle = None;
-            self.protocol_only_transaction = false;
-            self.failed = false;
-            // `COMMIT` of an aborted block is a rollback: the catalog goes with the rows.
-            self.restore_schema(runtime)?;
-            return Ok(TransactionControl::Done("ROLLBACK"));
-        }
-        if let Some(handle) = self.handle.take() {
-            if let Err(err) = handle.commit() {
-                let code = match &err {
-                    database_types::cluster::Error::CasConflict { .. } => "40001",
-                    _ => "58P01",
-                };
-                // A failed commit did not publish the transaction, so the
-                // DDL it collected is discarded too.
-                self.restore_schema(runtime)?;
-                return Ok(TransactionControl::Rejected { code, message: format!("COMMIT failed: {err}") });
-            }
-        }
-        self.executor = None;
-        self.handle = None;
-        self.protocol_only_transaction = false;
-        self.failed = false;
-        // The commit point publishes the schema revision as well.
-        self.schema_checkpoint = None;
-        Ok(TransactionControl::Done("COMMIT"))
-    }
-
-    /// Aborts a transaction block, restoring the schema captured at `BEGIN`.
-    pub fn rollback(&mut self, runtime: Option<&Arc<PgsqlSqlRuntime>>) -> io::Result<TransactionControl> {
-        if let Some(handle) = self.handle.take() {
-            handle.rollback();
-        }
-        self.executor = None;
-        self.handle = None;
-        self.protocol_only_transaction = false;
-        self.failed = false;
-        self.restore_schema(runtime)?;
-        Ok(TransactionControl::Done("ROLLBACK"))
-    }
-
-    /// Restores the snapshot captured at `BEGIN`. Only rollback paths call
-    /// this — a successful `COMMIT` drops the checkpoint instead.
-    fn restore_schema(&mut self, runtime: Option<&Arc<PgsqlSqlRuntime>>) -> io::Result<()> {
-        if let (Some(checkpoint), Some(rt)) = (self.schema_checkpoint.take(), runtime) {
-            rt.schema.restore(checkpoint).map_err(|error| io::Error::other(error.message))?;
-        }
-        Ok(())
-    }
-
-    /// `RESET` / `RESET ALL`: every emulated GUC returns to its default.
-    ///
-    /// The gateway keeps no override for GUCs other than `search_path` (their
-    /// `SET` is accepted as a no-op and `SHOW` answers the default table), so
-    /// restoring them is already satisfied by the static default table.
-    fn reset_parameters(&mut self) {
-        self.search_path = DEFAULT_SEARCH_PATH.to_string();
-    }
-
-    /// `DISCARD ALL`: full session cleanup. PostgreSQL only lets the statement run
-    /// outside a transaction block; the caller rejects the in-block case with
-    /// `25001` before this runs, so any transaction state here is a leftover. It
-    /// is rolled back — never committed — emulated GUCs return to their defaults
-    /// and the aborted flag clears. Prepared statements and portals live in
-    /// [`ExtendedSession`] and are dropped by the caller.
-    fn discard_all(&mut self) {
-        if let Some(handle) = self.handle.take() {
-            handle.rollback();
-        }
-        self.executor = None;
-        self.protocol_only_transaction = false;
-        self.failed = false;
-        // `DISCARD ALL` is rejected inside a transaction block, so there is no
-        // pending checkpoint here; dropping the slot keeps the invariant that
-        // only an open block owns schema rollback.
-        self.schema_checkpoint = None;
-        self.reset_parameters();
-    }
-
-    fn as_status(&self) -> TransactionStatus {
-        if self.failed {
-            TransactionStatus::Failed
-        }
-        else if self.handle.is_some() || self.protocol_only_transaction {
-            TransactionStatus::InTransaction
-        }
-        else {
-            TransactionStatus::Idle
-        }
-    }
-
-    /// Marks the open block aborted so later statements report `25P02`.
-    ///
-    /// Exported for the `postgres` facade's direct statement path.
-    pub fn fail(&mut self) {
-        if self.handle.is_some() || self.protocol_only_transaction {
-            self.failed = true;
-        }
-    }
-
-    /// Whether the open block is aborted and only `ROLLBACK` may end it.
-    pub fn is_aborted(&self) -> bool {
-        self.failed
-    }
-
-    fn in_transaction(&self) -> bool {
-        self.handle.is_some() || self.protocol_only_transaction
-    }
-
-    fn ready_byte(&self) -> u8 {
-        self.as_status().ready_byte()
-    }
-}
-
-impl Default for TransactionSession {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl TransactionStatus {
-    fn ready_byte(self) -> u8 {
-        match self {
-            Self::Idle => b'I',
-            Self::InTransaction => b'T',
-            Self::Failed => b'E',
-        }
-    }
-}
-
 /// How a rejected `RESET` / `DISCARD` session command affects the session. Both
 /// wire paths (SimpleQuery and the extended protocol) report the same SQLSTATE
 /// and abort an open transaction block the same way, so the decision lives here
@@ -477,7 +220,7 @@ fn run_session_command(
 ) -> Result<&'static str, SessionCommandError> {
     // `RESET` and `DISCARD` are ordinary utility statements, so an aborted
     // transaction rejects them exactly like any other command (`25P02`).
-    if session.failed {
+    if session.is_aborted() {
         return Err(SessionCommandError::Failed {
             code: "25P02".to_string(),
             message: "current transaction is aborted, commands ignored until end of transaction block".to_string(),
@@ -585,9 +328,12 @@ fn handle_simple_query(
     Ok(())
 }
 
-/// Executes one already-split statement. This is the former single-statement
-/// body: DDL is resolved before the session parser, then session commands and
-/// finally SQL execution.
+/// Executes one already-split statement through the shared execution dispatch.
+///
+/// `database.execution::pgsql` owns the DDL, transaction and bind → plan →
+/// execute order, so the local engine and this wire path cannot drift. This
+/// function only maps the outcome onto protocol messages; the session-command
+/// surfaces that own prepared-statement caches stay here.
 fn handle_single_statement(
     stream: &mut impl Write,
     sql: &str,
@@ -595,77 +341,35 @@ fn handle_single_statement(
     extended: &mut ExtendedSession,
     runtime: Option<&Arc<PgsqlSqlRuntime>>,
 ) -> io::Result<()> {
-    // DDL resolves against the local schema registry before the Oak session
-    // parser, so a `CREATE` / `ALTER` / `DROP` outside the supported subset is
-    // reported as such instead of being misclassified as an unknown table.
-    match parse_ddl(sql, SqlDialect::Postgres) {
-        Err(error) => {
-            session.fail();
-            return write_error_response(stream, pg_sqlstate(error.kind), &format!("SQL ddl error: {}", error.message));
-        }
-        Ok(Some(statement)) => {
-            if session.failed {
-                return write_error_response(
-                    stream,
-                    "25P02",
-                    "current transaction is aborted, commands ignored until end of transaction block",
-                );
-            }
-            let Some(runtime) = runtime
-            else {
-                return write_error_response(stream, "0A000", "YYDS PostgreSQL SQL execution is not implemented");
-            };
-            return match runtime.schema.apply_ddl(&statement) {
-                Ok(outcome) => write_command_complete(stream, outcome.command_tag()),
-                Err(error) => {
-                    session.fail();
-                    write_error_response(stream, pg_sqlstate(error.kind), &format!("SQL ddl error: {}", error.message))
-                }
-            };
-        }
-        Ok(None) => {}
+    match dispatch_statement(sql, runtime, session) {
+        Ok(StatementOutcome::Command(tag)) => write_command_complete(stream, tag),
+        Ok(StatementOutcome::Result(outcome)) => write_execution_outcome(stream, &outcome),
+        Ok(StatementOutcome::Session(command)) => handle_session_command(stream, command, sql, session, extended, runtime),
+        Err(error) => write_error_response(stream, &error.sqlstate, &error.message),
     }
-    match parse_session_command(sql) {
-        Err(_) => {
-            session.fail();
-            write_error_response(stream, "42601", "Oak could not parse the SQL statement")
-        }
-        Ok(Some(SqlSessionCommand::Transaction(action))) => match action {
-            SqlTransactionAction::Begin | SqlTransactionAction::Commit | SqlTransactionAction::Rollback => {
-                let control = match action {
-                    SqlTransactionAction::Begin => session.begin(runtime),
-                    SqlTransactionAction::Commit => session.commit(runtime)?,
-                    SqlTransactionAction::Rollback => session.rollback(runtime)?,
-                    _ => unreachable!("savepoint actions are matched below"),
-                };
-                match control {
-                    TransactionControl::Done(tag) => write_command_complete(stream, tag),
-                    TransactionControl::Rejected { code, message } => write_error_response(stream, code, &message),
-                }
-            }
-            SqlTransactionAction::Savepoint(_) | SqlTransactionAction::RollbackToSavepoint(_) | SqlTransactionAction::ReleaseSavepoint(_) => {
-                write_error_response(
-                    stream,
-                    "0A000",
-                    "SAVEPOINT / ROLLBACK TO SAVEPOINT / RELEASE SAVEPOINT are not yet supported by the gateway",
-                )
-            }
-        },
-        Ok(Some(SqlSessionCommand::Savepoint(intent))) => {
+}
+
+/// Wire-side session commands: `SET` / `SHOW`, `RESET`, `DISCARD` and
+/// savepoints. They mutate session GUCs and prepared-statement caches, which
+/// belong to the protocol surface, so dispatch hands them back unapplied.
+fn handle_session_command(
+    stream: &mut impl Write,
+    command: SqlSessionCommand,
+    sql: &str,
+    session: &mut TransactionSession,
+    extended: &mut ExtendedSession,
+    runtime: Option<&Arc<PgsqlSqlRuntime>>,
+) -> io::Result<()> {
+    match command {
+        SqlSessionCommand::Savepoint(intent) => {
             use database_query::SavepointIntent;
-            if session.failed {
-                return write_error_response(
-                    stream,
-                    "25P02",
-                    "current transaction is aborted, commands ignored until end of transaction block",
-                );
+            if session.is_aborted() {
+                return write_error_response(stream, "25P02", ABORTED_BLOCK);
             }
-            let handle = match session.handle.as_ref() {
-                Some(handle) => handle.as_ref(),
-                None => {
-                    session.fail();
-                    return write_error_response(stream, "25P01", "SAVEPOINT can only be used in transaction blocks");
-                }
+            let Some(handle) = session.transaction_handle()
+            else {
+                session.fail();
+                return write_error_response(stream, "25P01", "SAVEPOINT can only be used in transaction blocks");
             };
             let result = match &intent {
                 SavepointIntent::Create { name } => handle.savepoint_create(name),
@@ -691,19 +395,15 @@ fn handle_single_statement(
                 }
             }
         }
-        Ok(Some(SqlSessionCommand::SetVariable { name, value, .. })) => {
-            if session.failed {
-                return write_error_response(
-                    stream,
-                    "25P02",
-                    "current transaction is aborted, commands ignored until end of transaction block",
-                );
+        SqlSessionCommand::SetVariable { name, value, .. } => {
+            if session.is_aborted() {
+                return write_error_response(stream, "25P02", ABORTED_BLOCK);
             }
             let needle = name.trim().to_ascii_lowercase();
             match needle.as_str() {
                 "search_path" => match value {
                     SqlBoundExpression::Literal(SqlBoundLiteral::String(path)) => {
-                        session.search_path = path;
+                        session.set_search_path(path);
                     }
                     other => {
                         session.fail();
@@ -732,17 +432,13 @@ fn handle_single_statement(
             }
             write_command_complete(stream, "SET")
         }
-        Ok(Some(SqlSessionCommand::ShowParameter { name, .. })) => {
-            if session.failed {
-                return write_error_response(
-                    stream,
-                    "25P02",
-                    "current transaction is aborted, commands ignored until end of transaction block",
-                );
+        SqlSessionCommand::ShowParameter { name, .. } => {
+            if session.is_aborted() {
+                return write_error_response(stream, "25P02", ABORTED_BLOCK);
             }
             let needle = name.trim().to_ascii_lowercase();
             let value: Option<String> =
-                if needle == "search_path" { Some(session.search_path.clone()) } else { pg_parameter(&name).map(|s| s.to_string()) };
+                if needle == "search_path" { Some(session.search_path().to_string()) } else { pg_parameter(&name).map(|s| s.to_string()) };
             match value {
                 Some(value) => {
                     write_row_description(stream, &[SqlColumn { name: name.clone(), field_type: SqlFieldType::String, field_id: None }], &[0])?;
@@ -760,15 +456,15 @@ fn handle_single_statement(
                 }
             }
         }
-        Ok(Some(SqlSessionCommand::ShowVariables { .. })) => {
+        SqlSessionCommand::ShowVariables { .. } => {
             session.fail();
             write_error_response(stream, "42601", "SHOW VARIABLES is MySQL syntax, PostgreSQL uses SHOW <parameter>")
         }
-        Ok(Some(SqlSessionCommand::Pragma { .. })) => {
+        SqlSessionCommand::Pragma { .. } => {
             session.fail();
             write_error_response(stream, "42601", "PRAGMA is not PostgreSQL syntax")
         }
-        Ok(Some(command @ (SqlSessionCommand::ResetVariables { .. } | SqlSessionCommand::Discard(_)))) => {
+        command @ (SqlSessionCommand::ResetVariables { .. } | SqlSessionCommand::Discard(_)) => {
             match run_session_command(&command, session, extended) {
                 Ok(tag) => write_command_complete(stream, tag),
                 Err(SessionCommandError::Rejected { code, message }) => {
@@ -781,13 +477,9 @@ fn handle_single_statement(
                 }
             }
         }
-        Ok(Some(SqlSessionCommand::SetNames { .. })) | Ok(None) => {
-            if session.failed {
-                return write_error_response(
-                    stream,
-                    "25P02",
-                    "current transaction is aborted, commands ignored until end of transaction block",
-                );
+        SqlSessionCommand::SetNames { .. } => {
+            if session.is_aborted() {
+                return write_error_response(stream, "25P02", ABORTED_BLOCK);
             }
             match runtime {
                 Some(rt) => execute_simple_query(stream, sql, rt, session),
@@ -796,6 +488,9 @@ fn handle_single_statement(
                     write_error_response(stream, "0A000", "PostgreSQL query execution is not implemented (no SQL runtime)")
                 }
             }
+        }
+        SqlSessionCommand::Transaction(_) => {
+            unreachable!("transaction control is dispatched by `database.execution::pgsql`")
         }
     }
 }
@@ -813,156 +508,6 @@ fn execute_simple_query(
     }
 }
 
-/// 执行结果的统一形状，供 SimpleQuery 与扩展查询共用。
-///
-/// Exported for the `postgres` facade: the direct path returns this shape and
-/// the facade projects it into its own result type.
-pub struct ExecutionOutcome {
-    /// Whether the statement is a read.
-    pub is_read: bool,
-    /// Result column descriptions, empty when the statement returns no rows.
-    pub description: Vec<SqlColumn>,
-    /// Result rows in column order.
-    pub rows: Vec<Vec<SqlValue>>,
-    /// PostgreSQL command tag, e.g. `INSERT 0 3`.
-    pub command_tag: String,
-}
-
-impl ExecutionOutcome {
-    /// Whether the statement reports a result set. Reads always do, and writes do
-    /// only when the statement carried a `RETURNING` projection.
-    pub fn returns_rows(&self) -> bool {
-        self.is_read || !self.description.is_empty()
-    }
-}
-
-/// bind → plan → execute，错误已映射为 SQLSTATE，并已标记事务失败。
-///
-/// Shared by the wire SimpleQuery path and the `postgres` facade's direct
-/// statement path; one semantic source for both.
-pub fn run_statement(
-    sql: &str,
-    runtime: &Arc<PgsqlSqlRuntime>,
-    session: &mut TransactionSession,
-) -> Result<ExecutionOutcome, (String, String)> {
-    // Metadata views are synthesized from the local schema registry. They never
-    // bind into the catalog or touch the executor, so they branch off before the
-    // regular session-command/bind path.
-    let meta = match analyze_meta_query(sql, SqlDialect::Postgres) {
-        Ok(meta) => meta,
-        Err(error) => {
-            session.fail();
-            return Err(statement_error("metadata", error));
-        }
-    };
-    if let Some(meta) = meta {
-        let description = meta.describe();
-        let result = meta.execute(&runtime.schema, "public");
-        let command_tag = format!("SELECT {}", result.rows.len());
-        return Ok(ExecutionOutcome { is_read: true, description, rows: result.rows, command_tag });
-    }
-    // 扩展查询不经过 `handle_simple_query`，语法错误必须在这里映射为 `42601`
-    // 而不是被后面的 catalog 绑定错误统一归为 `42P01`。
-    if parse_session_command(sql).is_err() {
-        session.fail();
-        return Err(("42601".to_string(), "Oak could not parse the SQL statement".to_string()));
-    }
-    let catalog = runtime.schema.catalog();
-    let bound = bind_sql_catalog(sql, &catalog, catalog.schema_version(), SqlDialect::Postgres).map_err(|error| {
-        session.fail();
-        statement_error("bind", error)
-    })?;
-    // Sequence-owning columns default at write time. Allocation advances and
-    // persists the counter before execution, so a failed or rolled-back
-    // statement never reuses the value, matching PostgreSQL `nextval`.
-    let bound = apply_auto_increment(&runtime.schema, bound).map_err(|error| {
-        session.fail();
-        statement_error("bind", error)
-    })?;
-    let plan = plan_statement_for_dialect(bound, &catalog, SqlDialect::Postgres).map_err(|error| {
-        session.fail();
-        statement_error("plan", error)
-    })?;
-    let is_read = matches!(
-        &plan,
-        SqlExecutionPlan::Read(_)
-            | SqlExecutionPlan::Scan(_)
-            | SqlExecutionPlan::Join(_)
-            | SqlExecutionPlan::Scalar(_)
-            | SqlExecutionPlan::SetOperation(_)
-    );
-    // Derive the result shape from the catalog plan so an empty result set
-    // reports the declared type instead of falling back to `text`.
-    let description = describe_plan(&plan);
-    let handle_ref: Option<&dyn TransactionHandle> = session.handle.as_deref();
-    let result = execute_plan(runtime.executor.as_ref(), handle_ref, &plan, SqlDialect::Postgres).map_err(|error| {
-        session.fail();
-        statement_error("execution", error)
-    })?;
-    let command_tag = if is_read {
-        format!("SELECT {}", result.rows.len())
-    }
-    else {
-        let affected = result.affected_rows;
-        match &plan {
-            SqlExecutionPlan::Insert(_) | SqlExecutionPlan::MultiInsert(_) | SqlExecutionPlan::InsertSelect(_) => {
-                format!("INSERT 0 {affected}")
-            }
-            SqlExecutionPlan::Update(_) | SqlExecutionPlan::UpdateScan(_) => format!("UPDATE {affected}"),
-            SqlExecutionPlan::Delete(_) | SqlExecutionPlan::DeleteScan(_) => format!("DELETE {affected}"),
-            SqlExecutionPlan::Read(_)
-            | SqlExecutionPlan::Scan(_)
-            | SqlExecutionPlan::Join(_)
-            | SqlExecutionPlan::Scalar(_)
-            | SqlExecutionPlan::SetOperation(_) => {
-                format!("SELECT {}", result.rows.len())
-            }
-        }
-    };
-    debug_assert_eq!(description.len(), result.columns.len(), "described columns must match executed columns");
-    Ok(ExecutionOutcome { is_read, description, rows: result.rows, command_tag })
-}
-
-/// Maps a structured gateway failure to its PostgreSQL SQLSTATE. Protocol code
-/// never inspects diagnostic text to recover the category.
-pub fn pg_sqlstate(kind: SqlErrorKind) -> &'static str {
-    use SqlErrorKind::*;
-    match kind {
-        Syntax => "42601",
-        UnknownTable | UnknownTableQualifier => "42P01",
-        AmbiguousTable | AmbiguousColumn => "42702",
-        UnknownColumn => "42703",
-        TypeMismatch => "42804",
-        ValueTooLong => "22001",
-        NotNullViolation => "23502",
-        // PostgreSQL 把「缺 NOT NULL 且无 DEFAULT 的列」并入 not-null 违例。
-        MissingDefault => "23502",
-        Unsupported => "0A000",
-        UnknownFunction => "42883",
-        UnknownVariable => "42704",
-        // Only failures the gateway cannot classify reach the generic SQLSTATE.
-        Internal => "XX000",
-        CardinalityViolation => "21000",
-        InvalidGrouping => "42803",
-        OperandColumns => "42601",
-        Parameter => "08P01",
-        DuplicateKey => "23505",
-        Conflict => "40001",
-        DivisionByZero => "22012",
-        NumericOverflow => "22003",
-        InvalidSubstringLength => "22011",
-        TableAlreadyExists => "42P07",
-        ColumnAlreadyExists => "42701",
-        IndexAlreadyExists => "42P07",
-        UnknownIndex => "42704",
-        CheckViolation => "23514",
-        ForeignKeyViolation => "23503",
-    }
-}
-
-fn statement_error(stage: &str, error: SqlFrontendError) -> (String, String) {
-    (pg_sqlstate(error.kind).to_string(), format!("SQL {stage} error: {}", error.message))
-}
 
 fn write_execution_outcome(stream: &mut impl Write, outcome: &ExecutionOutcome) -> io::Result<()> {
     if outcome.returns_rows() {
@@ -1227,7 +772,7 @@ fn handle_describe(
             else {
                 return extended_protocol_error(stream, "34000", &format!("portal \"{name}\" does not exist"));
             };
-            if session.failed {
+            if session.is_aborted() {
                 write_error_response(stream, "25P02", "current transaction is aborted, commands ignored until end of transaction block")?;
                 return Ok(ExtendedStep::Failed);
             }
@@ -1691,7 +1236,7 @@ fn prepare_portal(portal: &mut Portal, session: &mut TransactionSession, runtime
     if portal.outcome.is_some() {
         return;
     }
-    if session.failed {
+    if session.is_aborted() {
         portal.outcome =
             Some(Err(("25P02".to_string(), "current transaction is aborted, commands ignored until end of transaction block".to_string())));
         return;

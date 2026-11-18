@@ -35,18 +35,18 @@ use std::{
 use database_client::pgsql::{Connection, error::PostgresError};
 use database_cluster::topology::ShardMap;
 use database_execution::cluster::LocalExecutor;
-use database_query::{SqlDialect, SqlSchemaRegistry, SqlSessionCommand, SqlTransactionAction, parse_ddl, parse_session_command};
-use database_server::yyds::pgsql::connection::{
-    PgsqlSqlRuntime, TransactionControl, TransactionSession, pg_sqlstate, run_statement, serve_cancellable,
+use database_execution::pgsql::{
+    PgsqlSqlRuntime, StatementOutcome, TransactionControl, TransactionSession, dispatch_statement,
 };
+use database_query::SqlSchemaRegistry;
+use database_server::yyds::pgsql::connection::serve_cancellable;
 use database_storage::cluster_kv::FileShard;
-use database_storage::pgsql::ServerStore;
 use database_types::cluster::{ShardEpoch, ShardId};
 
-pub mod instance;
+pub use database_storage::pgsql::instance;
 
-pub use instance::{
-    ServerInstance, clear_stale_lock, process_exists, shard_directory, validate_shard_id, SHARD_DIRECTORY_FILES, SHARD_ROOT,
+pub use database_storage::pgsql::instance::{
+    ServerInstance, SHARD_DIRECTORY_FILES, SHARD_ROOT, clear_stale_lock, process_exists, shard_directory, validate_shard_id,
 };
 
 pub use database_query::{SqlColumn, SqlValue};
@@ -182,10 +182,10 @@ impl QueryResult {
 /// Local PostgreSQL engine: owns one data directory and the shared SQL runtime.
 pub struct PostgreSQL {
     runtime: Arc<PgsqlSqlRuntime>,
-    /// Directory lock and catalog lifecycle. Its internal shard copy stays
-    /// unused: the executor mounts the shard file as the single writer, and the
-    /// store only holds `postmaster.pid` and the `.yyds` catalog.
-    store: Mutex<Option<ServerStore>>,
+    /// The single data-directory lease: `postmaster.pid`, the `.yyds` catalog
+    /// and the table-group layout. The executor mounts the shard file as the
+    /// single writer, so the lease only guards the directory.
+    instance: Mutex<Option<ServerInstance>>,
     session: Mutex<TransactionSession>,
     listeners: Arc<ListenerRegistry>,
     database: String,
@@ -195,17 +195,16 @@ impl PostgreSQL {
     /// Opens (creating when absent) the data directory described by `options`.
     /// A `postmaster.pid` whose holder process is gone is reclaimed first.
     pub fn open(options: PostgreSQLOptions) -> Result<Self, Error> {
-        clear_stale_lock(&options.storage.directory);
-        let store = ServerStore::open(options.storage.directory)?;
-        let shard_path = store.shard_path().to_owned();
-        let shard_id = ShardId(store.shard_id().to_owned());
+        let instance = ServerInstance::open(&options.storage.directory)?;
+        let shard_path = instance.shard_path();
+        let shard_id = ShardId(instance.shard_id().to_owned());
         let routing = ShardMap::new(ShardEpoch(1), vec![shard_id.clone()])?;
         let shard = FileShard::open(shard_path)?;
         let executor = LocalExecutor::new(routing, HashMap::from([(shard_id, shard)]), Vec::new())?;
         let runtime = Arc::new(PgsqlSqlRuntime { schema: Arc::new(SqlSchemaRegistry::new_in_memory()), executor: Arc::new(executor) });
         Ok(Self {
             runtime,
-            store: Mutex::new(Some(store)),
+            instance: Mutex::new(Some(instance)),
             session: Mutex::new(TransactionSession::new()),
             listeners: Arc::new(ListenerRegistry::default()),
             database: options.database,
@@ -219,7 +218,7 @@ impl PostgreSQL {
 
     /// Absolute data directory.
     pub fn data_dir(&self) -> Result<String, Error> {
-        Ok(self.lock(&self.store)?.as_ref().ok_or_else(|| Error::Engine("store already closed".to_owned()))?.data_dir())
+        Ok(self.lock(&self.instance)?.as_ref().ok_or_else(|| Error::Engine("store already closed".to_owned()))?.data_dir())
     }
 
     /// Runs one statement on the direct path: DDL applies to the shared
@@ -299,65 +298,27 @@ impl PostgreSQL {
     /// Stops every listener, releases the directory lock and consumes the engine.
     pub fn close(self) -> Result<(), Error> {
         self.listeners.stop_all();
-        let store = self.store.lock().map_err(|_| poisoned())?.take().ok_or_else(|| Error::Engine("store already closed".to_owned()))?;
-        store.close().map_err(Error::from)
+        let instance = self.instance.lock().map_err(|_| poisoned())?.take().ok_or_else(|| Error::Engine("store already closed".to_owned()))?;
+        instance.close().map_err(Error::from)
     }
 
     /// Shared statement core used by [`PostgreSQL::query`] and by transaction
-    /// bodies. Mirrors the wire dispatch order: DDL, session command, then
-    /// bind → plan → execute.
+    /// bodies. `database.execution::pgsql` owns the DDL, transaction and
+    /// bind → plan → execute order, so the local path and the wire gateway run
+    /// the same session semantics.
     fn statement(&self, session: &mut TransactionSession, sql: &str) -> Result<QueryResult, Error> {
-        let trimmed = sql.trim().trim_end_matches(';').trim();
-        if trimmed.is_empty() {
-            return Ok(QueryResult::tag(""));
-        }
-        if session.is_aborted() {
-            return Err(Error::sql("25P02", "current transaction is aborted, commands ignored until end of transaction block"));
-        }
-        match parse_ddl(trimmed, SqlDialect::Postgres) {
-            Err(error) => {
-                session.fail();
-                return Err(Error::sql(pg_sqlstate(error.kind), error.message));
-            }
-            Ok(Some(statement)) => match self.runtime.schema.apply_ddl(&statement) {
-                Ok(outcome) => return Ok(QueryResult::tag(outcome.command_tag())),
-                Err(error) => {
-                    session.fail();
-                    return Err(Error::sql(pg_sqlstate(error.kind), error.message));
-                }
-            },
-            Ok(None) => {}
-        }
-        match parse_session_command(trimmed) {
-            Err(_) => {
-                session.fail();
-                return Err(Error::sql("42601", "cannot parse SQL session command"));
-            }
-            Ok(Some(SqlSessionCommand::Transaction(action))) => {
-                let control = match action {
-                    SqlTransactionAction::Begin => session.begin(Some(&self.runtime)),
-                    SqlTransactionAction::Commit => session.commit(Some(&self.runtime)).map_err(|error| Error::Engine(error.to_string()))?,
-                    SqlTransactionAction::Rollback => session.rollback(Some(&self.runtime)).map_err(|error| Error::Engine(error.to_string()))?,
-                    _ => {
-                        session.fail();
-                        return Err(Error::sql("0A000", "savepoints are not supported on the direct statement path"));
-                    }
-                };
-                return match control {
-                    TransactionControl::Done(tag) => Ok(QueryResult::tag(tag)),
-                    TransactionControl::Rejected { code, message } => Err(Error::sql(code, message)),
-                };
-            }
-            Ok(Some(_)) => {
-                return Err(Error::Unsupported(
-                    "SET / SHOW / DISCARD / RESET are wire-session surfaces; the direct path exposes transaction control and data statements".to_owned(),
-                ));
-            }
-            Ok(None) => {}
-        }
-        match run_statement(trimmed, &self.runtime, session) {
-            Ok(outcome) => Ok(QueryResult { columns: outcome.description, rows: outcome.rows, command_tag: outcome.command_tag }),
-            Err((sqlstate, message)) => Err(Error::sql(sqlstate, message)),
+        match dispatch_statement(sql, Some(&self.runtime), session) {
+            Ok(StatementOutcome::Command(tag)) => Ok(QueryResult::tag(tag)),
+            Ok(StatementOutcome::Result(outcome)) => Ok(QueryResult {
+                columns: outcome.description,
+                rows: outcome.rows,
+                command_tag: outcome.command_tag,
+            }),
+            Ok(StatementOutcome::Session(_)) => Err(Error::Unsupported(
+                "SET / SHOW / DISCARD / RESET are wire-session surfaces, the direct path exposes transaction control and data statements"
+                    .to_owned(),
+            )),
+            Err(error) => Err(Error::sql(error.sqlstate, error.message)),
         }
     }
 

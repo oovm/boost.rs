@@ -12,6 +12,8 @@ pub mod engine;
 pub mod local;
 /// 执行程序表示与求值。
 pub mod program;
+/// PostgreSQL 会话、语句分派与 bind → plan → execute。
+pub mod pgsql;
 pub mod sql_exec;
 /// SQLite 方言的求值机制（表达式 / 单元格 / 标量函数 / 宿主函数桥）。
 pub mod sqlite;

@@ -13,9 +13,10 @@ use std::{
 
 use database_cluster::control::NodeLease;
 use database_execution::cluster::KeyValueExecutor;
+use database_execution::pgsql::PgsqlSqlRuntime;
 use database_query::{SqlCatalog, SqlSchemaRegistry};
 
-use super::connection::{PgsqlSqlRuntime, serve_cancellable};
+use super::connection::serve_cancellable;
 
 const MAX_CLIENTS: usize = 64;
 

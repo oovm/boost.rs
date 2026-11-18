@@ -1,12 +1,12 @@
-//! Server data-directory policy for the PostgreSQL product.
+//! PostgreSQL data-directory instance lease and table-group shard layout.
 //!
 //! One instance owns the directory layout the wire server and the bindings
 //! share: the primary store (`local-0.yyds`, `local-0.yykv`, `postmaster.pid`)
 //! plus one self-contained single-shard directory per table group under
 //! `shards/<shard-id>/`.
 //!
-//! The policy lives here instead of in a binding because it is observable
-//! PostgreSQL behaviour, not a transport detail:
+//! The policy lives here instead of in a facade or a binding because it is
+//! observable PostgreSQL behaviour, not a transport detail:
 //!
 //! * a `postmaster.pid` whose recorded process is gone is reclaimed before the
 //!   directory is opened, while a live holder keeps the lock owned,
@@ -22,8 +22,9 @@ use std::{
 };
 
 use database_protocol_pgsql::PostgresError;
-use database_storage::pgsql::{
-    LOCK_FILE,
+
+use super::{
+    catalog::LOCK_FILE,
     store::{ServerChange, ServerRow, ServerStore},
 };
 
@@ -182,6 +183,11 @@ impl ServerInstance {
     /// Absolute `.yykv` shard path of the primary store.
     pub fn shard_path(&self) -> String {
         self.primary.shard_path()
+    }
+
+    /// File stem of the single shard the primary catalog registers.
+    pub fn shard_id(&self) -> &str {
+        self.primary.shard_id()
     }
 
     /// Absolute `.yyds` catalog path of the primary store.

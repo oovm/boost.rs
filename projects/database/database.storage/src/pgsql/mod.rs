@@ -11,7 +11,12 @@ pub mod catalog;
 pub mod store;
 /// Durable namespace/key store over one catalog and one shard.
 pub mod shard;
+/// One directory lease plus the `shards/<shard-id>/` table-group layout.
+pub mod instance;
 
 pub use catalog::{CATALOG_FILE, DEFAULT_SHARD_ID, LEGACY_CATALOG_FILE, LOCK_FILE};
+pub use instance::{
+    ServerInstance, SHARD_DIRECTORY_FILES, SHARD_ROOT, clear_stale_lock, process_exists, shard_directory, validate_shard_id,
+};
 pub use shard::Store;
 pub use store::{ServerChange, ServerRow, ServerStore};
