@@ -21,31 +21,18 @@ use crate::{
 };
 
 use super::{
-    AggregateFunction, AlterAction, Assignment, BinaryOp, CastType, CheckConstraint, ColumnRef, CommonTable, CompareOp, CompoundOp, CompoundTerm,
-    ConflictAction, ConflictClause, DropColumnConflict, Expr, ForeignKey, ForeignKeyAction, Frame, FrameBound, FrameEdge, FrameExclude, FrameUnits,
-    IndexColumn, InsertValue, JoinKind, Limit, Literal, NamedWindow, OrderKey, ScalarFunction, SelectCore, SelectItems, SqlError, Statement,
-    TableConstraint, TableRef, TransactionAction, TriggerEvent, TriggerTiming, UnaryOp, WindowFunction, WindowSpec, core_references, json_string,
-    parse, parse_with_host_functions, rewrite_create_index_column, rewrite_create_index_table, rewrite_create_table_column,
-    rewrite_create_table_drop_column, rewrite_create_table_name, rewrite_view_column, rewrite_view_table, statement_references, storage_failure,
-    strip_schema_qualifiers,
+    AggregateFunction, AlterAction, Assignment, BinaryOp, CastType, ColumnRef, CommonTable, CompareOp, CompoundOp, CompoundTerm,
+    ConflictAction, ConflictClause, DropColumnConflict, Expr, ForeignKeyAction, FrameBound, FrameEdge, FrameExclude, FrameUnits, IndexColumn,
+    InsertValue, JoinKind, Limit, Literal, OrderKey, ScalarFunction, SelectCore, SelectItems, SqlError, Statement, TableRef, TransactionAction,
+    TriggerEvent, TriggerTiming, UnaryOp, WindowSpec, core_references,
     datetime::{self, DateTimeFunction},
     host::{HostFunctionTable, cell_to_udf_value, udf_error_to_sql_error, udf_value_to_cell},
+    json_string, parse, parse_with_host_functions, rewrite_create_index_column, rewrite_create_index_table, rewrite_create_table_column,
+    rewrite_create_table_drop_column, rewrite_create_table_name, rewrite_view_column, rewrite_view_table, statement_references,
+    storage_failure, strip_schema_qualifiers,
 };
 
-/// One cell surfaced to the host.
-#[derive(Clone, Debug, PartialEq)]
-pub enum Cell {
-    /// SQL `NULL`.
-    Null,
-    /// Signed integer.
-    Integer(i64),
-    /// Binary64 value.
-    Real(f64),
-    /// UTF-8 text.
-    Text(String),
-    /// Blob bytes.
-    Blob(Vec<u8>),
-}
+use super::{bind::*, catalog::*, value::*};
 
 /// Result of one executed statement.
 #[derive(Clone, Debug, PartialEq)]
@@ -93,168 +80,6 @@ impl ExecResult {
     }
 }
 
-/// One table-level `PRIMARY KEY` or `UNIQUE` constraint resolved against the
-/// declared columns, in written order.
-#[derive(Clone)]
-struct TableConstraintDef {
-    /// `true` for `PRIMARY KEY`, `false` for `UNIQUE`.
-    primary: bool,
-    /// Key columns in key order.
-    columns: Vec<usize>,
-}
-
-#[derive(Clone)]
-struct TableDef {
-    /// Name exactly as written in `CREATE TABLE`.
-    name: String,
-    columns: Vec<ColumnSpec>,
-    rowid_alias: Option<usize>,
-    /// A table-level `PRIMARY KEY (a, b)` clause created an automatic unique
-    /// index that has to be materialized after inserts.
-    primary_key_index: bool,
-    /// Column positions of a table-level `PRIMARY KEY (a, b)`, in key order.
-    /// Empty for a rowid alias or a table without a table-level key.
-    primary_key: Vec<usize>,
-    /// Table-level `PRIMARY KEY` / `UNIQUE` clauses in written order, so
-    /// automatic index numbers match `sqlite_autoindex_<table>_<n>`.
-    table_constraints: Vec<TableConstraintDef>,
-    /// `CHECK` constraints, table- and column-level, in declaration order.
-    checks: Vec<CheckDef>,
-    /// `REFERENCES` clauses, table- and column-level, in declaration order.
-    foreign_keys: Vec<ForeignKeyDef>,
-    /// `STRICT` table option was present, so every non-NULL value has to
-    /// conform to its column's declared type after affinity.
-    strict: bool,
-    /// The table is stored as a primary-key index b-tree and has no implicit
-    /// `rowid`.
-    without_rowid: bool,
-    /// The table belongs to the temp schema and is not stored in the image.
-    temp: bool,
-}
-
-/// One `CREATE TEMP TABLE` and its in-memory rows.
-struct TempTable {
-    def: TableDef,
-    /// `sqlite_temp_master.sql` text: the statement without `TEMP`, exactly
-    /// like SQLite stores it.
-    sql: String,
-    /// Root page of the temp b-tree, allocated the same way SQLite's temp
-    /// database allocates pages.
-    rootpage: u32,
-    /// `sqlite_temp_master.rowid`, a monotonic insertion counter.
-    master_rowid: i64,
-    /// Declared column values keyed by rowid, in ascending rowid order.
-    rows: BTreeMap<i64, Vec<Cell>>,
-}
-
-/// One resolved `REFERENCES` clause of a table.
-#[derive(Clone)]
-struct ForeignKeyDef {
-    /// Child column positions in key order.
-    columns: Vec<usize>,
-    /// Lowercase parent table name.
-    parent: String,
-    /// Parent table name as written for diagnostics.
-    parent_display: String,
-    /// Parent column names as written; empty means the parent primary key.
-    parent_columns: Vec<String>,
-    /// `ON DELETE` action, spelled for `PRAGMA foreign_key_list`.
-    on_delete: String,
-    /// `ON UPDATE` action, spelled for `PRAGMA foreign_key_list`.
-    on_update: String,
-    /// `ON DELETE` action as parsed, applied when parent rows are removed.
-    on_delete_action: ForeignKeyAction,
-    /// `ON UPDATE` action as parsed, applied when parent keys are rewritten.
-    on_update_action: ForeignKeyAction,
-    /// `DEFERRABLE INITIALLY DEFERRED`: verification waits for `COMMIT` while
-    /// an explicit transaction is open.
-    deferred: bool,
-}
-
-impl TableDef {
-    /// Column positions of this table's primary key, or `None` when it has no
-    /// primary key at all.
-    fn primary_key_positions(&self) -> Option<Vec<usize>> {
-        if let Some(alias) = self.rowid_alias {
-            return Some(vec![alias]);
-        }
-        if !self.primary_key.is_empty() {
-            return Some(self.primary_key.clone());
-        }
-        let declared: Vec<usize> =
-            self.columns.iter().enumerate().filter(|(_, column)| column.primary_key).map(|(position, _)| position).collect();
-        if declared.is_empty() { None } else { Some(declared) }
-    }
-
-    /// Record layout of a WITHOUT ROWID table: stored record position to
-    /// declared column position. SQLite stores the primary-key columns first,
-    /// then the remaining columns in declaration order.
-    fn without_rowid_layout(&self) -> Vec<usize> {
-        let mut layout = self.primary_key_positions().unwrap_or_default();
-        for position in 0..self.columns.len() {
-            if !layout.contains(&position) {
-                layout.push(position);
-            }
-        }
-        layout
-    }
-
-    /// Decodes one WITHOUT ROWID record and maps it back to declaration order.
-    fn decode_without_rowid(&self, payload: &[u8]) -> Result<Vec<Cell>, SqlError> {
-        let layout = self.without_rowid_layout();
-        let mut values = decode_cells(payload)?;
-        // A record written before `ALTER TABLE ADD COLUMN` is short; the
-        // missing trailing record slots read as their declared defaults.
-        while values.len() < layout.len() {
-            let position = layout[values.len()];
-            let column = &self.columns[position];
-            let value = column.default_value.clone().unwrap_or(crate::WriteValue::Null);
-            values.push(write_value_cell(&crate::apply_write_affinity(&column.declared_type, value)));
-        }
-        values.truncate(layout.len());
-        let mut cells = vec![Cell::Null; self.columns.len()];
-        for (record_position, declared_position) in layout.iter().enumerate() {
-            cells[*declared_position] = values[record_position].clone();
-        }
-        Ok(cells)
-    }
-}
-
-#[derive(Clone)]
-struct CheckDef {
-    /// `CONSTRAINT name CHECK (...)` name, echoed instead of the expression.
-    name: Option<String>,
-    /// Expression over the table's declared columns.
-    expr: ResolvedExpr,
-    /// Source text of the expression for the failure message.
-    text: String,
-}
-
-/// One index in the engine catalog, keyed by its lowercase name.
-#[derive(Clone)]
-struct IndexDef {
-    /// Index name as written, used by `PRAGMA index_list`.
-    name: String,
-    /// Lowercase name of the indexed table.
-    table: String,
-    /// Indexed column positions, in key order. Empty for a managed index
-    /// whose keys are expression results or filtered by a predicate.
-    columns: Vec<usize>,
-    /// The index enforces uniqueness.
-    unique: bool,
-    /// Creation counter, so `PRAGMA index_list` reports newest first.
-    order: u64,
-    /// The keys are computed by the engine (expression, `COLLATE` or partial
-    /// index), not derived from column positions.
-    managed: bool,
-    /// Key terms resolved against the table, evaluated per row.
-    terms: Vec<ResolvedExpr>,
-    /// Partial-index predicate resolved against the table.
-    predicate: Option<ResolvedExpr>,
-    /// 每个键项生效的排序规则，来自索引项显式 `COLLATE` 或列声明。
-    collations: Vec<Collation>,
-}
-
 /// How one base-table scan is bounded before any row is decoded.
 ///
 /// Every variant keeps the emitted row set and row order identical to the
@@ -276,110 +101,6 @@ enum ScanHint {
     /// all. Column names still come from the schema, exactly as the materialized
     /// path would produce them.
     Empty,
-}
-
-/// Canonical equality signature of one index or group key value.
-///
-/// Two cells share a signature exactly when `compare_cells_with` reports them
-/// equal, so a hash bucket built from signatures never splits rows the linear
-/// scan would have grouped, and never merges rows it would have kept apart.
-/// Values whose equality the canonical form cannot reproduce (a binary64 NaN,
-/// which the engine compares equal to every numeric, or an integer outside the
-/// exact binary64 range) yield `None` and push the caller back to the linear
-/// path.
-#[derive(Clone, PartialEq, Eq, Hash)]
-enum ProbeKey {
-    /// SQL `NULL`.
-    Null,
-    /// A numeric value canonicalized to its binary64 bits, with every signed
-    /// zero folded onto positive zero (the engine compares them equal).
-    Number(u64),
-    /// An integer binary64 cannot represent exactly.
-    Wide(i64),
-    /// Text folded for its collation, so collation equality is byte equality.
-    Text(Box<[u8]>),
-    /// Blob bytes.
-    Blob(Box<[u8]>),
-}
-
-/// One key position's canonical signature, or `None` when the value is a NaN.
-fn probe_key(cell: &Cell, collation: Collation) -> Option<ProbeKey> {
-    match cell {
-        Cell::Null => Some(ProbeKey::Null),
-        Cell::Integer(value) => Some(integer_probe_key(*value)),
-        Cell::Real(value) => real_probe_key(*value),
-        Cell::Text(text) => Some(ProbeKey::Text(fold_text(text, collation).into_boxed_slice())),
-        Cell::Blob(bytes) => Some(ProbeKey::Blob(bytes.clone().into_boxed_slice())),
-    }
-}
-
-/// 全字面量 `IN` 列表的预计算形态：解析期建一次，求值期只做一次哈希查找。
-///
-/// 逐行重算 `IN` 列表会让 `where id in (<100 个字面量>)` 退化成每行 100 次
-/// 表达式求值与比较（`in_list` 基准的热点）。列表项全是无 `COLLATE` 的字面量
-/// 时语义与按 `BINARY` 归一化的键集完全一致，因此可以安全地折叠成键集。
-#[derive(Clone, PartialEq)]
-struct InListConstant {
-    /// 非 NULL 列表项按 `BINARY` 归一化后的键集。
-    keys: std::collections::HashSet<ProbeKey>,
-    /// 列表里出现过 `NULL`：未命中时结果为 `NULL` 而不是布尔假。
-    saw_null: bool,
-}
-
-/// 把全字面量 `IN` 列表折叠成键集；含表达式、参数或逐项 `COLLATE` 时返回
-/// `None`，调用方回退到逐项求值。
-fn constant_in_list(list: &[ResolvedExpr]) -> Option<InListConstant> {
-    let mut keys = std::collections::HashSet::with_capacity(list.len());
-    let mut saw_null = false;
-    for item in list {
-        let ResolvedExpr::Cell(cell) = item
-        else {
-            return None;
-        };
-        if matches!(cell, Cell::Null) {
-            saw_null = true;
-            continue;
-        }
-        let key = probe_key(cell, Collation::Binary)?;
-        // 超出 binary64 精确范围的整数与实数比较会走数值语义；键集区分
-        // `Wide` / `Number`，此时折叠后的相等判定不再等价，回退逐项比较。
-        if matches!(key, ProbeKey::Wide(_)) {
-            return None;
-        }
-        keys.insert(key);
-    }
-    Some(InListConstant { keys, saw_null })
-}
-
-/// Signature of an integer: exact binary64 values fold onto the numeric bits,
-/// everything else keeps the full `i64`.
-fn integer_probe_key(value: i64) -> ProbeKey {
-    let real = value as f64;
-    if real.abs() < 9_223_372_036_854_775_808.0 && (real as i64) == value { ProbeKey::Number(real.to_bits()) } else { ProbeKey::Wide(value) }
-}
-
-/// Signature of a real; `None` for a NaN, which the engine compares equal to
-/// every numeric value and therefore has no hashable class.
-fn real_probe_key(value: f64) -> Option<ProbeKey> {
-    if value.is_nan() {
-        None
-    }
-    else if value == 0.0 {
-        Some(ProbeKey::Number(0.0f64.to_bits()))
-    }
-    else {
-        Some(ProbeKey::Number(value.to_bits()))
-    }
-}
-
-/// Text folded for its collation: `NOCASE` lowercases ASCII bytes and `RTRIM`
-/// drops trailing spaces, which is exactly what their comparisons ignore.
-fn fold_text(text: &str, collation: Collation) -> Vec<u8> {
-    match collation {
-        Collation::Binary => text.as_bytes().to_vec(),
-        Collation::Nocase => text.as_bytes().iter().map(u8::to_ascii_lowercase).collect(),
-        Collation::Rtrim => text.trim_end_matches(' ').as_bytes().to_vec(),
-    }
 }
 
 /// One inclusive/exclusive range bound on an indexed column.
@@ -447,64 +168,6 @@ struct ExistsProbePlan {
     shape: ScopeShape,
 }
 
-/// One view in the engine catalog, keyed by its lowercase name.
-#[derive(Clone)]
-struct ViewDef {
-    /// View name as written, used for diagnostics.
-    name: String,
-    /// Optional `CREATE VIEW v(a, b)` list that renames the query output.
-    columns: Option<Vec<String>>,
-    /// Parsed query the view re-evaluates on every read.
-    query: Statement,
-}
-
-/// One `CREATE TEMP VIEW` in the temp schema, kept beside the temp tables so
-/// the connection owns it and `sqlite_temp_master` reports it.
-struct TempView {
-    def: ViewDef,
-    /// `sqlite_temp_master.sql` text, the statement without `TEMP`.
-    sql: String,
-    /// `sqlite_temp_master.rowid`, a monotonic insertion counter.
-    master_rowid: i64,
-}
-
-/// One trigger in the engine catalog.
-#[derive(Clone)]
-struct TriggerDef {
-    /// Trigger name as written, used for diagnostics.
-    name: String,
-    /// Lowercase table or view the trigger is attached to.
-    table: String,
-    /// `BEFORE`, `AFTER` or `INSTEAD OF`.
-    timing: TriggerTiming,
-    /// Statement event that fires the trigger.
-    event: TriggerEvent,
-    /// Optional `WHEN` predicate, evaluated against `NEW` / `OLD`.
-    when: Option<Expr>,
-    /// Body statements run in order.
-    body: Vec<Statement>,
-    /// Monotonic creation counter. SQLite fires the triggers of one event in
-    /// reverse creation order, so the newest trigger runs first.
-    order: u64,
-    /// The trigger belongs to the temp schema and only appears in
-    /// `sqlite_temp_master`.
-    temp: bool,
-    /// `sqlite_master.sql` / `sqlite_temp_master.sql` text.
-    sql: String,
-    /// `sqlite_temp_master.rowid`; zero for a main trigger.
-    master_rowid: i64,
-}
-
-/// The `NEW` / `OLD` row one trigger body evaluates against.
-struct TriggerFrame {
-    /// Column names of the trigger's table, followed by `rowid`.
-    columns: Vec<String>,
-    /// Values of the row after the change; `None` for `DELETE`.
-    new: Option<Vec<Cell>>,
-    /// Values of the row before the change; `None` for `INSERT`.
-    old: Option<Vec<Cell>>,
-}
-
 /// One row-level trigger event queued by a DML statement. Queueing instead of
 /// firing inline keeps the statement's own writes and its trigger programs in
 /// SQLite's row order while leaving the write path unchanged.
@@ -534,13 +197,6 @@ const CANDIDATE_GAP: i64 = 8;
 /// 这个上限内才展开成候选 rowid;更宽的区间仍然是整表扫描,避免为一条语句
 /// 造出与表同量级的候选向量。
 const ROWID_RANGE_CANDIDATES: i64 = 4_096;
-
-/// Sentinel source indexes that mark a `NEW` / `OLD` reference in a resolved
-/// expression. They never collide with a `FROM` source position.
-const TRIGGER_SOURCE_NEW: usize = usize::MAX;
-const TRIGGER_SOURCE_OLD: usize = usize::MAX - 1;
-/// Pseudo source of `excluded.<column>` inside `ON CONFLICT DO UPDATE`.
-const EXCLUDED_SOURCE: usize = usize::MAX - 2;
 
 /// One database attached with `ATTACH DATABASE`.
 struct AttachedDb {
@@ -1045,55 +701,16 @@ enum UpsertOutcome {
     },
 }
 
-/// A resolved `RETURNING` projection.
-struct ReturningPlan {
-    columns: Vec<String>,
-    items: Vec<ResolvedExpr>,
+/// Transitional home for `RETURNING` projection evaluation until the
+/// evaluation closure moves the mechanism itself.
+trait EvalReturningPlan {
+    /// Evaluates the projection against one written row.
+    fn eval(&self, cells: &[Cell], ctx: &EvalContext) -> Result<Vec<Cell>, SqlError>;
 }
 
-impl ReturningPlan {
+impl EvalReturningPlan for ReturningPlan {
     fn eval(&self, cells: &[Cell], ctx: &EvalContext) -> Result<Vec<Cell>, SqlError> {
         self.items.iter().map(|item| item.eval(cells, ctx)).collect()
-    }
-}
-
-/// The single-source relation one `UPDATE` / `DELETE` resolves against.
-struct TargetShape<'a> {
-    relation: Relation<'a>,
-    scope: ScopeShape,
-}
-
-impl<'a> TargetShape<'a> {
-    fn new(def: &'a TableDef, label: &str, trigger: Option<&'a TriggerFrame>) -> Self {
-        let relation = Engine::target_relation(def, label, trigger);
-        let scope = relation.shape();
-        Self { relation, scope }
-    }
-
-    fn resolve(&self, expr: &Expr, statement: &'static str) -> Result<ResolvedExpr, SqlError> {
-        let mut windows = Vec::new();
-        let mut aggregates = Vec::new();
-        resolve_expr(expr, &self.relation, &[], &[], &mut windows, &mut aggregates, false, false).map_err(|error| error.in_statement(statement))
-    }
-
-    fn resolve_optional(&self, expr: Option<&Expr>, statement: &'static str) -> Result<Option<ResolvedExpr>, SqlError> {
-        expr.map(|expr| self.resolve(expr, statement)).transpose()
-    }
-
-    fn plan(&self, def: &TableDef, items: &SelectItems, statement: &'static str) -> Result<ReturningPlan, SqlError> {
-        match items {
-            SelectItems::Star => Ok(ReturningPlan {
-                columns: def.columns.iter().map(|column| column.name.clone()).collect(),
-                items: (0..def.columns.len()).map(|index| ResolvedExpr::Column { source: 0, index }).collect(),
-            }),
-            SelectItems::Named(items) => Ok(ReturningPlan {
-                columns: items.iter().map(|item| item.label()).collect(),
-                items: items.iter().map(|item| self.resolve(item, statement)).collect::<Result<Vec<_>, _>>()?,
-            }),
-            SelectItems::CountAll => {
-                Err(SqlError::new("unsupported-clause", "`RETURNING count(*)` is not supported").in_clause("RETURNING").in_statement(statement))
-            }
-        }
     }
 }
 
@@ -1155,51 +772,14 @@ fn check_readonly_table(name: &str, statement: &'static str) -> Result<(), SqlEr
 /// In-memory SQLite format-3 database with a minimal SQL surface.
 pub struct Engine {
     writer: SqliteWriter,
-    /// Catalog in creation order, so traversal never depends on name sorting.
-    /// The `sql` text and `rootpage` of every object are read back from the
-    /// writer's `sqlite_master` b-tree instead of being duplicated here, which
-    /// keeps one source of truth for the on-disk schema.
-    tables: Vec<TableDef>,
-    /// Lowercase table name to its position in [`Engine::tables`].
-    table_lookup: BTreeMap<String, usize>,
-    indexes: BTreeMap<String, IndexDef>,
-    /// Creation counter handed to each new explicit index, so `PRAGMA
-    /// index_list` lists the newest first like SQLite.
-    index_sequence: u64,
-    /// Views keyed by lowercase name. A view shares the object namespace with
-    /// tables and indexes and re-evaluates its query on every read.
-    views: BTreeMap<String, ViewDef>,
-    /// `CREATE TEMP VIEW` definitions keyed by lowercase name. They shadow an
-    /// equally named main view and disappear with the connection.
-    temp_views: BTreeMap<String, TempView>,
-    /// Triggers keyed by lowercase name, shared with the other object names.
-    triggers: BTreeMap<String, TriggerDef>,
-    /// Creation counter handed to each new trigger, so firing order follows
-    /// SQLite's newest-first rule.
-    trigger_sequence: u64,
+    /// The catalog: schema objects statements resolve names against, plus
+    /// the temp-schema allocator state.
+    catalog: SqliteCatalog,
     /// `NEW` / `OLD` frames of the trigger bodies currently executing,
     /// outermost first.
     trigger_frames: Vec<TriggerFrame>,
     /// Row-level trigger events queued by the statement being executed.
     pending_events: Vec<PendingTriggerEvent>,
-    /// `CREATE TEMP TABLE` definitions and their rows. Temp tables live in a
-    /// separate schema that disappears with the connection, so they never
-    /// touch the persistent image or `sqlite_master`.
-    temp_tables: Vec<TempTable>,
-    /// Lowercase temp table name to its position in [`Engine::temp_tables`].
-    /// Lookups search this map before [`Engine::table_lookup`], matching
-    /// SQLite's schema search order.
-    temp_lookup: BTreeMap<String, usize>,
-    /// First unallocated page of the temp database, starting at 2 like every
-    /// fresh SQLite database.
-    temp_next_page: u32,
-    /// Pages freed by `DROP TABLE` and reusable by the next temp object.
-    temp_free_pages: BTreeSet<u32>,
-    /// Next `sqlite_temp_master.rowid`, monotonic like SQLite's.
-    temp_next_rowid: i64,
-    /// The temp database was materialized once, so `PRAGMA database_list`
-    /// keeps listing it even after its last object was dropped.
-    temp_created: bool,
     /// Databases attached with `ATTACH DATABASE`, in attach order.
     attached: Vec<AttachedDb>,
     /// Lowercase attached schema name to its position in [`Engine::attached`].
@@ -1291,22 +871,9 @@ impl Engine {
     pub fn from_writer(writer: SqliteWriter) -> Result<Self, SqlError> {
         let mut engine = Self {
             writer,
-            tables: Vec::new(),
-            table_lookup: BTreeMap::new(),
-            indexes: BTreeMap::new(),
-            index_sequence: 0,
-            views: BTreeMap::new(),
-            temp_views: BTreeMap::new(),
-            triggers: BTreeMap::new(),
-            trigger_sequence: 0,
+            catalog: SqliteCatalog::default(),
             trigger_frames: Vec::new(),
             pending_events: Vec::new(),
-            temp_tables: Vec::new(),
-            temp_lookup: BTreeMap::new(),
-            temp_next_page: 2,
-            temp_free_pages: BTreeSet::new(),
-            temp_next_rowid: 1,
-            temp_created: false,
             attached: Vec::new(),
             attached_lookup: BTreeMap::new(),
             alias: None,
@@ -1459,11 +1026,11 @@ impl Engine {
     /// Rebuilds the in-memory catalog after storage rolled back, so schema
     /// changes undone by the rollback also disappear from later statements.
     fn reload_catalog(&mut self) -> Result<(), SqlError> {
-        self.tables.clear();
-        self.table_lookup.clear();
-        self.indexes.clear();
-        self.views.clear();
-        self.triggers.clear();
+        self.catalog.tables.clear();
+        self.catalog.table_lookup.clear();
+        self.catalog.indexes.clear();
+        self.catalog.views.clear();
+        self.catalog.triggers.clear();
         self.load_catalog()
     }
 
@@ -1506,12 +1073,16 @@ impl Engine {
                     };
                     let outcome = match object.kind {
                         SchemaObjectKind::Index => {
-                            let collations =
-                                self.indexes.get(&object.name.to_ascii_lowercase()).map(|index| index.collations.clone()).unwrap_or_default();
+                            let collations = self
+                                .catalog
+                                .indexes
+                                .get(&object.name.to_ascii_lowercase())
+                                .map(|index| index.collations.clone())
+                                .unwrap_or_default();
                             read_index_table_with(pages, root, limits, &collations).map(|_| ())
                         }
                         SchemaObjectKind::Table if self.table_is_without_rowid(&object.name) => {
-                            let collations = match self.tables.iter().find(|def| def.name.eq_ignore_ascii_case(&object.name)) {
+                            let collations = match self.catalog.tables.iter().find(|def| def.name.eq_ignore_ascii_case(&object.name)) {
                                 Some(def) => {
                                     let layout = def.without_rowid_layout();
                                     layout[..def.primary_key_positions().map(|keys| keys.len()).unwrap_or(0)]
@@ -1553,7 +1124,7 @@ impl Engine {
     /// Matches a schema table name against the catalog to know whether its
     /// root is a table b-tree or a primary-key index b-tree.
     fn table_is_without_rowid(&self, name: &str) -> bool {
-        self.tables.iter().any(|def| def.name.eq_ignore_ascii_case(name) && def.without_rowid)
+        self.catalog.tables.iter().any(|def| def.name.eq_ignore_ascii_case(name) && def.without_rowid)
     }
 
     /// Replays the freelist chain and checks that the trunk pages and leaves
@@ -1707,10 +1278,10 @@ impl Engine {
     /// Whether a name resolves to a table, view or system catalog table.
     fn explain_table_known(&self, name: &str) -> bool {
         let key = name.to_ascii_lowercase();
-        self.table_lookup.contains_key(&key)
-            || self.temp_lookup.contains_key(&key)
-            || self.views.contains_key(&key)
-            || self.temp_views.contains_key(&key)
+        self.catalog.table_lookup.contains_key(&key)
+            || self.catalog.temp_lookup.contains_key(&key)
+            || self.catalog.views.contains_key(&key)
+            || self.catalog.temp_views.contains_key(&key)
             || is_schema_table(name)
             || SystemTable::from_name(name).is_some()
             || key == "sqlite_sequence"
@@ -1836,266 +1407,7 @@ impl Engine {
     /// schema row into the in-memory catalog without touching storage.
     fn load_catalog(&mut self) -> Result<(), SqlError> {
         let objects = self.writer.schema_objects(TableLimits::default()).map_err(storage_error)?;
-        for object in objects {
-            let Some(sql) = object.sql.as_deref()
-            else {
-                continue;
-            };
-            let mut statements = parse(sql)?.into_iter();
-            match statements.next() {
-                Some(Statement::CreateTable {
-                    name,
-                    columns,
-                    primary_key,
-                    table_constraints,
-                    checks,
-                    foreign_keys,
-                    strict,
-                    without_rowid,
-                    ..
-                }) => {
-                    let def = Self::catalog_table(
-                        name.clone(),
-                        columns,
-                        primary_key,
-                        table_constraints,
-                        checks,
-                        foreign_keys,
-                        strict,
-                        without_rowid,
-                    )?;
-                    let key = name.to_ascii_lowercase();
-                    if !self.table_lookup.contains_key(&key) {
-                        let position = self.tables.len();
-                        self.table_lookup.insert(key, position);
-                        self.tables.push(def);
-                    }
-                }
-                Some(Statement::CreateIndex { name, table, unique, columns, predicate, .. }) => {
-                    let Some(def) = self.tables.iter().find(|def| def.name.eq_ignore_ascii_case(&table))
-                    else {
-                        continue;
-                    };
-                    let managed = predicate.is_some() || columns.iter().any(|column| column.expr.is_some() || column.collate.is_some());
-                    // 键项显式 `COLLATE` 优先，裸列继承列声明，表达式按 `BINARY`。
-                    let collations: Vec<Collation> = columns
-                        .iter()
-                        .map(|column| match &column.collate {
-                            Some(name) => Collation::parse(name).unwrap_or_default(),
-                            None => {
-                                match (&column.expr, def.columns.iter().find(|existing| existing.name.eq_ignore_ascii_case(&column.name))) {
-                                    (None, Some(existing)) => existing.collate.unwrap_or_default(),
-                                    _ => Collation::Binary,
-                                }
-                            }
-                        })
-                        .collect();
-                    let (positions, terms, predicate) = if managed {
-                        let shape = TargetShape::new(def, &table, None);
-                        let mut terms = Vec::with_capacity(columns.len());
-                        let mut failed = false;
-                        for column in &columns {
-                            let resolved = match &column.expr {
-                                Some(expr) => match shape.resolve(expr, "create-index") {
-                                    Ok(resolved) => resolved,
-                                    Err(_) => {
-                                        failed = true;
-                                        break;
-                                    }
-                                },
-                                None => match def.columns.iter().position(|existing| existing.name.eq_ignore_ascii_case(&column.name)) {
-                                    Some(position) => ResolvedExpr::Column { source: 0, index: position },
-                                    None => {
-                                        failed = true;
-                                        break;
-                                    }
-                                },
-                            };
-                            terms.push(resolved);
-                        }
-                        if failed {
-                            continue;
-                        }
-                        let predicate = match &predicate {
-                            Some(predicate) => match shape.resolve(predicate, "create-index") {
-                                Ok(resolved) => Some(resolved),
-                                Err(_) => continue,
-                            },
-                            None => None,
-                        };
-                        (Vec::new(), terms, predicate)
-                    }
-                    else {
-                        let mut positions = Vec::with_capacity(columns.len());
-                        for column in &columns {
-                            match def.columns.iter().position(|existing| existing.name.eq_ignore_ascii_case(&column.name)) {
-                                Some(position) => positions.push(position),
-                                None => break,
-                            }
-                        }
-                        if positions.len() != columns.len() {
-                            continue;
-                        }
-                        (positions, Vec::new(), None)
-                    };
-                    let order = self.index_sequence;
-                    self.index_sequence += 1;
-                    self.indexes.insert(
-                        name.to_ascii_lowercase(),
-                        IndexDef {
-                            name: name.clone(),
-                            table: table.to_ascii_lowercase(),
-                            columns: positions,
-                            unique,
-                            order,
-                            managed,
-                            terms,
-                            predicate,
-                            collations,
-                        },
-                    );
-                }
-                Some(Statement::CreateView { name, columns, query, .. }) => {
-                    let key = name.to_ascii_lowercase();
-                    if !self.table_lookup.contains_key(&key) && !self.views.contains_key(&key) {
-                        self.views.insert(key, ViewDef { name, columns, query: *query });
-                    }
-                }
-                Some(Statement::CreateTrigger { name, timing, event, table, when, body, .. }) => {
-                    let key = name.to_ascii_lowercase();
-                    if !self.triggers.contains_key(&key) {
-                        let order = self.trigger_sequence;
-                        self.trigger_sequence += 1;
-                        self.triggers.insert(
-                            key,
-                            TriggerDef {
-                                name,
-                                table: table.to_ascii_lowercase(),
-                                timing,
-                                event,
-                                when,
-                                body,
-                                order,
-                                temp: false,
-                                sql: sql.to_string(),
-                                master_rowid: 0,
-                            },
-                        );
-                    }
-                }
-                _ => {}
-            }
-        }
-        Ok(())
-    }
-
-    /// Resolves one parsed `CREATE TABLE` into a catalog entry without
-    /// writing storage, shared by the DDL path and the reopen path.
-    fn catalog_table(
-        name: String,
-        mut columns: Vec<ColumnSpec>,
-        primary_key: Vec<String>,
-        table_constraints: Vec<TableConstraint>,
-        checks: Vec<CheckConstraint>,
-        foreign_keys: Vec<ForeignKey>,
-        strict: bool,
-        without_rowid: bool,
-    ) -> Result<TableDef, SqlError> {
-        if strict {
-            // SQLite limits STRICT columns to its five storage classes plus
-            // `ANY`; the message quotes the declared text exactly as written.
-            for column in &columns {
-                let declared = column.declared_type.to_ascii_uppercase();
-                if !matches!(declared.as_str(), "INT" | "INTEGER" | "REAL" | "TEXT" | "BLOB" | "ANY") {
-                    return Err(SqlError::new(
-                        "unknown-datatype",
-                        format!("unknown datatype for {}.{}: \"{}\"", name, column.name, column.declared_type),
-                    )
-                    .in_statement("create-table"));
-                }
-            }
-        }
-        let mut key_positions = Vec::with_capacity(primary_key.len());
-        for column in &primary_key {
-            let position = columns.iter().position(|existing| existing.name.eq_ignore_ascii_case(column)).ok_or_else(|| {
-                SqlError::new("unknown-column", format!("unknown column `{column}` in table `{name}`")).in_statement("create-table")
-            })?;
-            key_positions.push(position);
-        }
-        let mut resolved_constraints = Vec::with_capacity(table_constraints.len());
-        for constraint in table_constraints {
-            let mut positions = Vec::with_capacity(constraint.columns().len());
-            for column in constraint.columns() {
-                let position = columns
-                    .iter()
-                    .position(|existing| existing.name.eq_ignore_ascii_case(column))
-                    .ok_or_else(|| SqlError::new("unknown-column", format!("no such column: {column}")).in_statement("create-table"))?;
-                positions.push(position);
-            }
-            resolved_constraints
-                .push(TableConstraintDef { primary: matches!(constraint, TableConstraint::PrimaryKey { .. }), columns: positions });
-        }
-        if without_rowid && resolved_constraints.iter().any(|constraint| !constraint.primary) {
-            return Err(SqlError::new("unsupported-clause", "UNIQUE constraints on WITHOUT ROWID tables are not supported")
-                .in_statement("create-table"));
-        }
-        if without_rowid {
-            // A WITHOUT ROWID table needs a primary key: either the table-level
-            // clause or exactly one inline `PRIMARY KEY`. The key columns are
-            // implicitly NOT NULL and are stored first in every record.
-            let inline: Vec<usize> =
-                columns.iter().enumerate().filter(|(_, column)| column.primary_key).map(|(position, _)| position).collect();
-            if !primary_key.is_empty() && !inline.is_empty() {
-                return Err(SqlError::new("SQLITE_ERROR", format!("table {name} has more than one primary key")).in_statement("create-table"));
-            }
-            if key_positions.is_empty() {
-                if inline.len() > 1 {
-                    return Err(
-                        SqlError::new("SQLITE_ERROR", format!("table {name} has more than one primary key")).in_statement("create-table")
-                    );
-                }
-                key_positions = inline;
-            }
-            if key_positions.is_empty() {
-                return Err(SqlError::new("SQLITE_ERROR", format!("PRIMARY KEY missing on table {name}")).in_statement("create-table"));
-            }
-            for position in &key_positions {
-                columns[*position].not_null = true;
-            }
-        }
-        // A lone INTEGER key column is the rowid alias whether the key is
-        // declared inline or as a table constraint.
-        let rowid_alias = if without_rowid {
-            None
-        }
-        else {
-            match key_positions.as_slice() {
-                [position] if columns[*position].declared_type.eq_ignore_ascii_case("INTEGER") => Some(*position),
-                _ => columns.iter().position(|column| column.primary_key && column.declared_type.eq_ignore_ascii_case("INTEGER")),
-            }
-        };
-        let primary_key_index = !without_rowid && !primary_key.is_empty() && rowid_alias.is_none();
-        // Checks are resolved before the table exists, so an unknown column
-        // fails the statement instead of leaving a half-built table behind,
-        // exactly like upstream.
-        let resolved_checks = resolve_checks(&name, &columns, &checks, "create-table", without_rowid)?;
-        // A `FOREIGN KEY (...)` list naming a missing child column is rejected
-        // at DDL time, exactly like SQLite; the parent tables may still be
-        // created later.
-        let resolved_foreign_keys = resolve_foreign_keys(&columns, &foreign_keys)?;
-        Ok(TableDef {
-            name,
-            columns,
-            rowid_alias,
-            primary_key_index,
-            primary_key: key_positions,
-            table_constraints: resolved_constraints,
-            checks: resolved_checks,
-            foreign_keys: resolved_foreign_keys,
-            strict,
-            without_rowid,
-            temp: false,
-        })
+        self.catalog.load_schema(&objects)
     }
 
     /// Executes exactly one statement.
@@ -2322,8 +1634,8 @@ impl Engine {
                 Ok((master_labels(), rows, true))
             }
             SystemTable::TempMaster => {
-                let mut rows = Vec::with_capacity(self.temp_tables.len() + self.temp_views.len() + self.triggers.len());
-                for table in &self.temp_tables {
+                let mut rows = Vec::with_capacity(self.catalog.temp_tables.len() + self.catalog.temp_views.len() + self.catalog.triggers.len());
+                for table in &self.catalog.temp_tables {
                     rows.push(vec![
                         Cell::Text("table".to_string()),
                         Cell::Text(table.def.name.clone()),
@@ -2333,7 +1645,7 @@ impl Engine {
                         Cell::Integer(table.master_rowid),
                     ]);
                 }
-                for view in self.temp_views.values() {
+                for view in self.catalog.temp_views.values() {
                     rows.push(vec![
                         Cell::Text("view".to_string()),
                         Cell::Text(view.def.name.clone()),
@@ -2343,7 +1655,7 @@ impl Engine {
                         Cell::Integer(view.master_rowid),
                     ]);
                 }
-                for trigger in self.triggers.values().filter(|trigger| trigger.temp) {
+                for trigger in self.catalog.triggers.values().filter(|trigger| trigger.temp) {
                     rows.push(vec![
                         Cell::Text("trigger".to_string()),
                         Cell::Text(trigger.name.clone()),
@@ -2392,7 +1704,7 @@ impl Engine {
     fn run_triggered(&mut self, statement: Statement) -> Result<ExecResult, SqlError> {
         // 全库没有任何触发器时不可能排入事件,语句不需要为「触发器失败回滚」
         // 额外开一层写事务;直接走常规语句路径。
-        if self.triggers.is_empty() {
+        if self.catalog.triggers.is_empty() {
             return self.run_statement(statement);
         }
         let fired = match &statement {
@@ -2454,9 +1766,9 @@ impl Engine {
                 lower == "main" || lower == "temp" || self.alias.as_deref().is_some_and(|alias| alias.eq_ignore_ascii_case(qualifier))
             }
             None => {
-                self.temp_lookup.contains_key(&key)
-                    || self.table_lookup.contains_key(&key)
-                    || self.views.contains_key(&key)
+                self.catalog.temp_lookup.contains_key(&key)
+                    || self.catalog.table_lookup.contains_key(&key)
+                    || self.catalog.views.contains_key(&key)
                     || self.attached.is_empty()
             }
         }
@@ -2479,6 +1791,7 @@ impl Engine {
     /// first, which is the order SQLite uses for triggers of the same event.
     fn fire_matching(&mut self, table: &str, event: &TriggerEvent, timing: TriggerTiming) -> Result<(), SqlError> {
         let mut matched: Vec<(String, TriggerDef)> = self
+            .catalog
             .triggers
             .iter()
             .filter(|(_, trigger)| trigger.table == table && trigger.timing == timing && trigger_event_matches(&trigger.event, event))
@@ -2562,7 +1875,7 @@ impl Engine {
 
     /// Whether one table or view carries at least one trigger of any kind.
     fn table_has_triggers(&self, table: &str) -> bool {
-        self.triggers.values().any(|trigger| trigger.table == table)
+        self.catalog.triggers.values().any(|trigger| trigger.table == table)
     }
 
     /// Queues one `BEFORE` update event of a row.
@@ -2688,6 +2001,7 @@ impl Engine {
     /// without one keeps SQLite's non-modifiable diagnostic.
     fn view_trigger_gate(&self, table: &str, key: &str, timing: TriggerTiming, event: &TriggerEvent) -> Result<(), SqlError> {
         if self
+            .catalog
             .triggers
             .values()
             .any(|trigger| trigger.table == key && trigger.timing == timing && trigger_event_matches(&trigger.event, event))
@@ -2708,7 +2022,7 @@ impl Engine {
     ) -> Result<ExecResult, SqlError> {
         let event = TriggerEvent::Insert;
         self.view_trigger_gate(table, key, TriggerTiming::InsteadOf, &event)?;
-        let view = self.views.get(key).expect("view resolved").clone();
+        let view = self.catalog.views.get(key).expect("view resolved").clone();
         let (names, _) = self.view_output(&view)?;
         let mut frames: Vec<Vec<Cell>> = Vec::with_capacity(rows.len().max(1));
         if default_values {
@@ -2776,7 +2090,7 @@ impl Engine {
                 SqlError::new("unsupported-clause", "RETURNING on an INSTEAD OF view update is not supported yet").in_statement("update")
             );
         }
-        let view = self.views.get(key).expect("view resolved").clone();
+        let view = self.catalog.views.get(key).expect("view resolved").clone();
         let (names, rows) = self.view_output(&view)?;
         // A placeholder frame lets `old.` / `new.` references resolve; the
         // values are replaced row by row below.
@@ -2875,7 +2189,7 @@ impl Engine {
                 SqlError::new("unsupported-clause", "RETURNING on an INSTEAD OF view delete is not supported yet").in_statement("delete")
             );
         }
-        let view = self.views.get(key).expect("view resolved").clone();
+        let view = self.catalog.views.get(key).expect("view resolved").clone();
         let (names, rows) = self.view_output(&view)?;
         let placeholder = vec![Cell::Null; names.len()];
         self.trigger_frames.push(TriggerFrame { columns: names.clone(), new: None, old: Some(placeholder) });
@@ -3009,14 +2323,14 @@ impl Engine {
             _ => return None,
         };
         let key = name.to_ascii_lowercase();
-        if kind == TargetKind::Table && (self.temp_lookup.contains_key(&key) || self.table_lookup.contains_key(&key)) {
+        if kind == TargetKind::Table && (self.catalog.temp_lookup.contains_key(&key) || self.catalog.table_lookup.contains_key(&key)) {
             return None;
         }
         self.attached.iter().position(|attached| match kind {
-            TargetKind::Table => attached.engine.table_lookup.contains_key(&key),
-            TargetKind::Index => attached.engine.indexes.contains_key(&key),
-            TargetKind::View => attached.engine.views.contains_key(&key),
-            TargetKind::Trigger => attached.engine.triggers.contains_key(&key),
+            TargetKind::Table => attached.engine.catalog.table_lookup.contains_key(&key),
+            TargetKind::Index => attached.engine.catalog.indexes.contains_key(&key),
+            TargetKind::View => attached.engine.catalog.views.contains_key(&key),
+            TargetKind::Trigger => attached.engine.catalog.triggers.contains_key(&key),
         })
     }
 
@@ -3308,7 +2622,7 @@ impl Engine {
                 fresh.writer.insert("sqlite_sequence", &slots).map_err(|error| storage_failure(error).in_statement("vacuum"))?;
             }
         }
-        for def in self.tables.clone() {
+        for def in self.catalog.tables.clone() {
             if def.temp || def.name.to_ascii_lowercase().starts_with("sqlite_") {
                 continue;
             }
@@ -3346,7 +2660,7 @@ impl Engine {
         check_reserved_object_name(&name, "create-table")?;
         let temp_target = temp || self.scope == TableScope::Temp;
         if temp_target {
-            if self.temp_lookup.contains_key(&key) || self.temp_views.contains_key(&key) {
+            if self.catalog.temp_lookup.contains_key(&key) || self.catalog.temp_views.contains_key(&key) {
                 if if_not_exists {
                     return Ok(ExecResult { statement: "create-table", columns: Vec::new(), rows: Vec::new(), affected: 0 });
                 }
@@ -3354,13 +2668,13 @@ impl Engine {
             }
         }
         else {
-            if self.indexes.contains_key(&key) {
+            if self.catalog.indexes.contains_key(&key) {
                 return Err(SqlError::new("index-exists", format!("there is already an index named {name}")).in_statement("create-table"));
             }
-            if self.views.contains_key(&key) {
+            if self.catalog.views.contains_key(&key) {
                 return Err(SqlError::new("view-exists", format!("there is already a view named {name}")).in_statement("create-table"));
             }
-            if self.table_lookup.contains_key(&key) {
+            if self.catalog.table_lookup.contains_key(&key) {
                 if if_not_exists {
                     return Ok(ExecResult { statement: "create-table", columns: Vec::new(), rows: Vec::new(), affected: 0 });
                 }
@@ -3389,28 +2703,28 @@ impl Engine {
             })
             .collect();
         let sql = ctas_schema_sql(&name, &columns);
-        let mut def = Self::catalog_table(name.clone(), columns.clone(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), false, false)?;
+        let mut def = SqliteCatalog::table_entry(name.clone(), columns.clone(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), false, false)?;
         if temp_target {
             def.temp = true;
-            let rootpage = match self.temp_free_pages.pop_first() {
+            let rootpage = match self.catalog.temp_free_pages.pop_first() {
                 Some(page) => page,
                 None => {
-                    let page = self.temp_next_page;
-                    self.temp_next_page += 1;
+                    let page = self.catalog.temp_next_page;
+                    self.catalog.temp_next_page += 1;
                     page
                 }
             };
-            let master_rowid = self.temp_next_rowid;
-            self.temp_next_rowid += 1;
+            let master_rowid = self.catalog.temp_next_rowid;
+            self.catalog.temp_next_rowid += 1;
             let mut rows = BTreeMap::new();
             for row in &selected.rows {
                 let slots: Vec<Option<crate::WriteValue>> = row.iter().map(|cell| Some(cell_write_value(cell))).collect();
                 temp_insert_row(&def, &mut rows, &slots, &[])?;
             }
-            let position = self.temp_tables.len();
-            self.temp_lookup.insert(key, position);
-            self.temp_tables.push(TempTable { def, sql, rootpage, master_rowid, rows });
-            self.temp_created = true;
+            let position = self.catalog.temp_tables.len();
+            self.catalog.temp_lookup.insert(key, position);
+            self.catalog.temp_tables.push(TempTable { def, sql, rootpage, master_rowid, rows });
+            self.catalog.temp_created = true;
             return Ok(ExecResult { statement: "create-table", columns: Vec::new(), rows: Vec::new(), affected: 0 });
         }
         self.writer
@@ -3427,9 +2741,9 @@ impl Engine {
             }
             self.writer.commit().map_err(|error| storage_failure(error).in_statement("create-table"))?;
         }
-        let position = self.tables.len();
-        self.table_lookup.insert(key, position);
-        self.tables.push(def);
+        let position = self.catalog.tables.len();
+        self.catalog.table_lookup.insert(key, position);
+        self.catalog.tables.push(def);
         Ok(ExecResult { statement: "create-table", columns: Vec::new(), rows: Vec::new(), affected: 0 })
     }
 
@@ -3489,13 +2803,13 @@ impl Engine {
         if let Some(columns) = ctes.get(&name) {
             return Ok(columns.clone());
         }
-        if let Some(def) = self.tables.iter().find(|def| def.name.eq_ignore_ascii_case(&table.name)) {
+        if let Some(def) = self.catalog.tables.iter().find(|def| def.name.eq_ignore_ascii_case(&table.name)) {
             return Ok(def.columns.iter().map(|column| (column.name.clone(), standard_affinity_name(&column.declared_type))).collect());
         }
-        if let Some(temp) = self.temp_tables.iter().find(|temp| temp.def.name.eq_ignore_ascii_case(&table.name)) {
+        if let Some(temp) = self.catalog.temp_tables.iter().find(|temp| temp.def.name.eq_ignore_ascii_case(&table.name)) {
             return Ok(temp.def.columns.iter().map(|column| (column.name.clone(), standard_affinity_name(&column.declared_type))).collect());
         }
-        if let Some(view) = self.views.get(&name) {
+        if let Some(view) = self.catalog.views.get(&name) {
             let mut columns = self.ctas_statement_columns(&view.query, ctes)?;
             if let Some(names) = &view.columns {
                 if names.len() == columns.len() {
@@ -3548,46 +2862,46 @@ impl Engine {
                     // The temp schema owns a separate namespace: a main object
                     // with the same name can coexist and temp wins in name
                     // resolution.
-                    if self.temp_lookup.contains_key(&key) {
+                    if self.catalog.temp_lookup.contains_key(&key) {
                         if if_not_exists {
                             return Ok(ExecResult { statement: "create-table", columns: Vec::new(), rows: Vec::new(), affected: 0 });
                         }
                         return Err(SqlError::new("table-exists", format!("table {name} already exists")).in_statement("create-table"));
                     }
                     let mut def =
-                        Self::catalog_table(name, columns, primary_key, table_constraints, checks, foreign_keys, strict, without_rowid)?;
+                        SqliteCatalog::table_entry(name, columns, primary_key, table_constraints, checks, foreign_keys, strict, without_rowid)?;
                     def.temp = true;
                     // SQLite reuses a freed temp page when one is available
                     // and otherwise extends the temp database by one page.
-                    let rootpage = match self.temp_free_pages.pop_first() {
+                    let rootpage = match self.catalog.temp_free_pages.pop_first() {
                         Some(page) => page,
                         None => {
-                            let page = self.temp_next_page;
-                            self.temp_next_page += 1;
+                            let page = self.catalog.temp_next_page;
+                            self.catalog.temp_next_page += 1;
                             page
                         }
                     };
-                    let master_rowid = self.temp_next_rowid;
-                    self.temp_next_rowid += 1;
-                    let position = self.temp_tables.len();
-                    self.temp_lookup.insert(key, position);
-                    self.temp_tables.push(TempTable { def, sql, rootpage, master_rowid, rows: BTreeMap::new() });
-                    self.temp_created = true;
+                    let master_rowid = self.catalog.temp_next_rowid;
+                    self.catalog.temp_next_rowid += 1;
+                    let position = self.catalog.temp_tables.len();
+                    self.catalog.temp_lookup.insert(key, position);
+                    self.catalog.temp_tables.push(TempTable { def, sql, rootpage, master_rowid, rows: BTreeMap::new() });
+                    self.catalog.temp_created = true;
                     return Ok(ExecResult { statement: "create-table", columns: Vec::new(), rows: Vec::new(), affected: 1 });
                 }
-                if self.indexes.contains_key(&key) {
+                if self.catalog.indexes.contains_key(&key) {
                     return Err(SqlError::new("index-exists", format!("there is already an index named {name}")).in_statement("create-table"));
                 }
-                if self.views.contains_key(&key) {
+                if self.catalog.views.contains_key(&key) {
                     return Err(SqlError::new("view-exists", format!("there is already a view named {name}")).in_statement("create-table"));
                 }
-                if self.table_lookup.contains_key(&key) {
+                if self.catalog.table_lookup.contains_key(&key) {
                     if if_not_exists {
                         return Ok(ExecResult { statement: "create-table", columns: Vec::new(), rows: Vec::new(), affected: 0 });
                     }
                     return Err(SqlError::new("table-exists", format!("table {name} already exists")).in_statement("create-table"));
                 }
-                let def = Self::catalog_table(
+                let def = SqliteCatalog::table_entry(
                     name.clone(),
                     columns.clone(),
                     primary_key.clone(),
@@ -3609,9 +2923,9 @@ impl Engine {
                 }
                 // Appending keeps the catalog in creation order, which is the
                 // order `sqlite_master` reports.
-                let position = self.tables.len();
-                self.table_lookup.insert(key, position);
-                self.tables.push(def);
+                let position = self.catalog.tables.len();
+                self.catalog.table_lookup.insert(key, position);
+                self.catalog.tables.push(def);
                 Ok(ExecResult { statement: "create-table", columns: Vec::new(), rows: Vec::new(), affected: 1 })
             }
             Statement::CreateView { schema, name, if_not_exists, columns, query, temp, sql } => {
@@ -3622,7 +2936,7 @@ impl Engine {
                 let temp_target =
                     temp || self.scope == TableScope::Temp || schema.as_deref().is_some_and(|qualifier| qualifier.eq_ignore_ascii_case("temp"));
                 if temp_target {
-                    if self.temp_lookup.contains_key(&key) || self.temp_views.contains_key(&key) {
+                    if self.catalog.temp_lookup.contains_key(&key) || self.catalog.temp_views.contains_key(&key) {
                         if if_not_exists {
                             return Ok(ExecResult { statement: "create-view", columns: Vec::new(), rows: Vec::new(), affected: 0 });
                         }
@@ -3631,29 +2945,29 @@ impl Engine {
                     // `sqlite_temp_master` stores the statement without `TEMP`
                     // and without a `temp.` qualifier.
                     let stored = schema.as_deref().map(|qualifier| strip_schema_qualifiers(&sql, qualifier)).unwrap_or(sql);
-                    let master_rowid = self.temp_next_rowid;
-                    self.temp_next_rowid += 1;
-                    self.temp_views.insert(key, TempView { def: ViewDef { name, columns, query: *query }, sql: stored, master_rowid });
-                    self.temp_created = true;
+                    let master_rowid = self.catalog.temp_next_rowid;
+                    self.catalog.temp_next_rowid += 1;
+                    self.catalog.temp_views.insert(key, TempView { def: ViewDef { name, columns, query: *query }, sql: stored, master_rowid });
+                    self.catalog.temp_created = true;
                     return Ok(ExecResult { statement: "create-view", columns: Vec::new(), rows: Vec::new(), affected: 1 });
                 }
-                if self.indexes.contains_key(&key) {
+                if self.catalog.indexes.contains_key(&key) {
                     return Err(SqlError::new("index-exists", format!("there is already an index named {name}")).in_statement("create-view"));
                 }
-                if self.views.contains_key(&key) {
+                if self.catalog.views.contains_key(&key) {
                     if if_not_exists {
                         return Ok(ExecResult { statement: "create-view", columns: Vec::new(), rows: Vec::new(), affected: 0 });
                     }
                     return Err(SqlError::new("view-exists", format!("view {name} already exists")).in_statement("create-view"));
                 }
-                if self.tables.iter().any(|def| def.name.eq_ignore_ascii_case(&name)) {
+                if self.catalog.tables.iter().any(|def| def.name.eq_ignore_ascii_case(&name)) {
                     if if_not_exists {
                         return Ok(ExecResult { statement: "create-view", columns: Vec::new(), rows: Vec::new(), affected: 0 });
                     }
                     return Err(SqlError::new("table-exists", format!("table {name} already exists")).in_statement("create-view"));
                 }
                 self.writer.create_view(&name, &sql).map_err(|error| storage_failure(error).in_statement("create-view"))?;
-                self.views.insert(key, ViewDef { name, columns, query: *query });
+                self.catalog.views.insert(key, ViewDef { name, columns, query: *query });
                 Ok(ExecResult { statement: "create-view", columns: Vec::new(), rows: Vec::new(), affected: 1 })
             }
             Statement::DropView { schema, name, if_exists } => {
@@ -3663,8 +2977,8 @@ impl Engine {
                 // Unqualified `DROP VIEW` searches temp before main, so a temp
                 // view disappears while its main namesake survives.
                 if schema.is_none() || temp_target {
-                    if self.temp_views.remove(&key).is_some() {
-                        self.triggers.retain(|_, trigger| !(trigger.temp && trigger.table == key));
+                    if self.catalog.temp_views.remove(&key).is_some() {
+                        self.catalog.triggers.retain(|_, trigger| !(trigger.temp && trigger.table == key));
                         return Ok(ExecResult { statement: "drop-view", columns: Vec::new(), rows: Vec::new(), affected: 1 });
                     }
                     if temp_target {
@@ -3674,40 +2988,41 @@ impl Engine {
                         return Err(SqlError::new("unknown-view", format!("no such view: {name}")).in_statement("drop-view"));
                     }
                 }
-                if self.tables.iter().any(|def| def.name.eq_ignore_ascii_case(&name)) {
+                if self.catalog.tables.iter().any(|def| def.name.eq_ignore_ascii_case(&name)) {
                     return Err(SqlError::new("wrong-object", format!("use DROP TABLE to delete table {name}")).in_statement("drop-view"));
                 }
                 // An index is not a view, so SQLite reports it as missing
                 // rather than as the wrong object kind.
-                if self.indexes.contains_key(&key) {
+                if self.catalog.indexes.contains_key(&key) {
                     if if_exists {
                         return Ok(ExecResult { statement: "drop-view", columns: Vec::new(), rows: Vec::new(), affected: 0 });
                     }
                     return Err(SqlError::new("unknown-view", format!("no such view: {name}")).in_statement("drop-view"));
                 }
-                if self.views.remove(&key).is_none() {
+                if self.catalog.views.remove(&key).is_none() {
                     if if_exists {
                         return Ok(ExecResult { statement: "drop-view", columns: Vec::new(), rows: Vec::new(), affected: 0 });
                     }
                     return Err(SqlError::new("unknown-view", format!("no such view: {name}")).in_statement("drop-view"));
                 }
                 self.writer.drop_view(&name).map_err(|error| storage_failure(error).in_statement("drop-view"))?;
-                self.triggers.retain(|_, trigger| trigger.table != key);
+                self.catalog.triggers.retain(|_, trigger| trigger.table != key);
                 Ok(ExecResult { statement: "drop-view", columns: Vec::new(), rows: Vec::new(), affected: 1 })
             }
             Statement::CreateTrigger { schema: _, name, if_not_exists, timing, event, table_schema: _, table, when, body, sql } => {
                 let key = name.to_ascii_lowercase();
                 check_reserved_object_name(&name, "create-trigger")?;
-                if self.triggers.contains_key(&key) {
+                if self.catalog.triggers.contains_key(&key) {
                     if if_not_exists {
                         return Ok(ExecResult { statement: "create-trigger", columns: Vec::new(), rows: Vec::new(), affected: 0 });
                     }
                     return Err(SqlError::new("trigger-exists", format!("trigger {name} already exists")).in_statement("create-trigger"));
                 }
                 let table_key = table.to_ascii_lowercase();
-                let temp_target = if self.scope == TableScope::Main { None } else { self.temp_lookup.get(&table_key).copied() };
-                let main_target = if temp_target.is_some() { None } else { self.table_lookup.get(&table_key).copied() };
-                let view_target = if temp_target.is_some() || main_target.is_some() { false } else { self.views.contains_key(&table_key) };
+                let temp_target = if self.scope == TableScope::Main { None } else { self.catalog.temp_lookup.get(&table_key).copied() };
+                let main_target = if temp_target.is_some() { None } else { self.catalog.table_lookup.get(&table_key).copied() };
+                let view_target =
+                    if temp_target.is_some() || main_target.is_some() { false } else { self.catalog.views.contains_key(&table_key) };
                 if temp_target.is_none() && main_target.is_none() && !view_target {
                     let qualifier = match self.scope {
                         TableScope::Temp => "temp",
@@ -3729,24 +3044,26 @@ impl Engine {
                         .in_statement("create-trigger"));
                 }
                 let temp = self.scope == TableScope::Temp || temp_target.is_some();
-                let order = self.trigger_sequence;
-                self.trigger_sequence += 1;
+                let order = self.catalog.trigger_sequence;
+                self.catalog.trigger_sequence += 1;
                 let master_rowid = if temp {
-                    let rowid = self.temp_next_rowid;
-                    self.temp_next_rowid += 1;
-                    self.temp_created = true;
+                    let rowid = self.catalog.temp_next_rowid;
+                    self.catalog.temp_next_rowid += 1;
+                    self.catalog.temp_created = true;
                     rowid
                 }
                 else {
                     self.writer.create_trigger(&name, &table, &sql).map_err(|error| storage_failure(error).in_statement("create-trigger"))?;
                     0
                 };
-                self.triggers.insert(key, TriggerDef { name, table: table_key, timing, event, when, body, order, temp, sql, master_rowid });
+                self.catalog
+                    .triggers
+                    .insert(key, TriggerDef { name, table: table_key, timing, event, when, body, order, temp, sql, master_rowid });
                 Ok(ExecResult { statement: "create-trigger", columns: Vec::new(), rows: Vec::new(), affected: 1 })
             }
             Statement::DropTrigger { schema: _, name, if_exists } => {
                 let key = name.to_ascii_lowercase();
-                let Some(trigger) = self.triggers.remove(&key)
+                let Some(trigger) = self.catalog.triggers.remove(&key)
                 else {
                     if if_exists {
                         return Ok(ExecResult { statement: "drop-trigger", columns: Vec::new(), rows: Vec::new(), affected: 0 });
@@ -3771,29 +3088,29 @@ impl Engine {
                     }
                     None => None,
                 };
-                if self.views.contains_key(&key) {
+                if self.catalog.views.contains_key(&key) {
                     let literal_rows: Vec<Vec<InsertValue>> = match &selected_rows {
                         Some(rows) => rows.iter().map(|row| row.iter().map(cell_insert_value).collect()).collect(),
                         None => rows.clone(),
                     };
                     return self.run_view_insert(&table, &key, columns.as_deref(), &literal_rows, default_values);
                 }
-                let temp_position = if self.scope == TableScope::Main { None } else { self.temp_lookup.get(&key).copied() };
+                let temp_position = if self.scope == TableScope::Main { None } else { self.catalog.temp_lookup.get(&key).copied() };
                 let main_position = if self.scope == TableScope::Temp {
                     None
                 }
                 else {
                     match temp_position {
                         Some(_) => None,
-                        None => Some(*self.table_lookup.get(&key).ok_or_else(|| self.table_missing(&table, "insert"))?),
+                        None => Some(*self.catalog.table_lookup.get(&key).ok_or_else(|| self.table_missing(&table, "insert"))?),
                     }
                 };
                 // Temp tables are mutated in memory, so their definition is
                 // cloned: the loop below needs the catalog while it borrows
                 // the temp row map mutably.
                 let def_storage = match temp_position {
-                    Some(position) => self.temp_tables[position].def.clone(),
-                    None => self.tables[main_position.expect("main table resolved")].clone(),
+                    Some(position) => self.catalog.temp_tables[position].def.clone(),
+                    None => self.catalog.tables[main_position.expect("main table resolved")].clone(),
                 };
                 let def = &def_storage;
                 let returning_shape = TargetShape::new(def, &table, None);
@@ -3882,7 +3199,7 @@ impl Engine {
                 // One row at a time inside a transaction: a failing `CHECK`
                 // must undo every row of a multi-row statement, as SQLite does.
                 // Temp tables snapshot their row map instead of opening one.
-                let temp_snapshot = temp_position.map(|position| self.temp_tables[position].rows.clone());
+                let temp_snapshot = temp_position.map(|position| self.catalog.temp_tables[position].rows.clone());
                 if temp_position.is_none() {
                     self.writer.begin().map_err(|error| storage_failure(error).in_statement("insert"))?;
                 }
@@ -3998,7 +3315,7 @@ impl Engine {
                             }
                             None => {
                                 let inserted = if let Some(position) = temp_position {
-                                    let table = &mut self.temp_tables[position];
+                                    let table = &mut self.catalog.temp_tables[position];
                                     temp_insert_row(def, &mut table.rows, slots, &temp_keys)
                                 }
                                 else {
@@ -4137,7 +3454,7 @@ impl Engine {
                 }
                 if let Some(error) = failure {
                     match (temp_position, temp_snapshot) {
-                        (Some(position), Some(snapshot)) => self.temp_tables[position].rows = snapshot,
+                        (Some(position), Some(snapshot)) => self.catalog.temp_tables[position].rows = snapshot,
                         _ => {
                             let _ = self.writer.rollback();
                         }
@@ -4186,27 +3503,28 @@ impl Engine {
                         SqlError::new("readonly-system-table", format!("table {table} may not be indexed")).in_statement("create-index")
                     );
                 }
-                if self.views.contains_key(&table_key) {
+                if self.catalog.views.contains_key(&table_key) {
                     return Err(SqlError::new("readonly-view", "views may not be indexed").in_statement("create-index"));
                 }
                 check_reserved_object_name(&name, "create-index")?;
                 let position = *self
+                    .catalog
                     .table_lookup
                     .get(&table_key)
                     .ok_or_else(|| SqlError::new("unknown-table", format!("unknown table `{table}`")).in_statement("create-index"))?;
-                let def_storage = self.tables[position].clone();
+                let def_storage = self.catalog.tables[position].clone();
                 let def = &def_storage;
                 let key = name.to_ascii_lowercase();
-                if self.table_lookup.contains_key(&key) {
+                if self.catalog.table_lookup.contains_key(&key) {
                     return Err(SqlError::new("table-exists", format!("there is already a table named `{name}`")).in_statement("create-index"));
                 }
-                if self.indexes.contains_key(&key) {
+                if self.catalog.indexes.contains_key(&key) {
                     if if_not_exists {
                         return Ok(ExecResult { statement: "create-index", columns: Vec::new(), rows: Vec::new(), affected: 0 });
                     }
                     return Err(SqlError::new("index-exists", format!("index `{name}` already exists")).in_statement("create-index"));
                 }
-                if self.views.contains_key(&key) {
+                if self.catalog.views.contains_key(&key) {
                     return Err(
                         SqlError::new("index-exists", format!("there is already an object named `{name}`")).in_statement("create-index")
                     );
@@ -4262,9 +3580,9 @@ impl Engine {
                     self.writer
                         .create_managed_index(&name, &table, unique, &sql, &entries)
                         .map_err(|error| storage_failure(error).in_statement("create-index"))?;
-                    let order = self.index_sequence;
-                    self.index_sequence += 1;
-                    self.indexes.insert(
+                    let order = self.catalog.index_sequence;
+                    self.catalog.index_sequence += 1;
+                    self.catalog.indexes.insert(
                         key,
                         IndexDef {
                             name: name.clone(),
@@ -4304,9 +3622,9 @@ impl Engine {
                 // 空表上新键的索引:探针从空集开始,后续 `INSERT` / `DELETE`
                 // 逐行增量维护,首次区间删除或等值查询不必再整份解码索引。
                 let empty_index = self.writer.index_is_empty(&name).unwrap_or(false);
-                let order = self.index_sequence;
-                self.index_sequence += 1;
-                self.indexes.insert(
+                let order = self.catalog.index_sequence;
+                self.catalog.index_sequence += 1;
+                self.catalog.indexes.insert(
                     key,
                     IndexDef {
                         name: name.clone(),
@@ -4328,7 +3646,7 @@ impl Engine {
             Statement::Update { schema: _, table, alias, assignments, from, filter, returning } => {
                 check_readonly_table(&table, "update")?;
                 let key = table.to_ascii_lowercase();
-                if self.views.contains_key(&key) {
+                if self.catalog.views.contains_key(&key) {
                     if !from.is_empty() {
                         let mut error =
                             SqlError::new("unsupported-clause", "`UPDATE ... FROM` is not supported on a view; name a base table instead");
@@ -4337,19 +3655,19 @@ impl Engine {
                     }
                     return self.run_view_update(&table, &key, alias.as_deref(), &assignments, filter.as_ref(), returning.as_ref());
                 }
-                let temp_position = if self.scope == TableScope::Main { None } else { self.temp_lookup.get(&key).copied() };
+                let temp_position = if self.scope == TableScope::Main { None } else { self.catalog.temp_lookup.get(&key).copied() };
                 let main_position = if self.scope == TableScope::Temp {
                     None
                 }
                 else {
                     match temp_position {
                         Some(_) => None,
-                        None => Some(*self.table_lookup.get(&key).ok_or_else(|| self.table_missing(&table, "update"))?),
+                        None => Some(*self.catalog.table_lookup.get(&key).ok_or_else(|| self.table_missing(&table, "update"))?),
                     }
                 };
                 let def_storage = match temp_position {
-                    Some(position) => self.temp_tables[position].def.clone(),
-                    None => self.tables[main_position.expect("main table resolved")].clone(),
+                    Some(position) => self.catalog.temp_tables[position].def.clone(),
+                    None => self.catalog.tables[main_position.expect("main table resolved")].clone(),
                 };
                 let def = &def_storage;
                 let budget = Budget::new();
@@ -4499,7 +3817,7 @@ impl Engine {
                 if let Some(position) = temp_position {
                     let mut events: Vec<(i64, Vec<Cell>, Vec<Cell>)> = Vec::new();
                     {
-                        let table = &mut self.temp_tables[position];
+                        let table = &mut self.catalog.temp_tables[position];
                         for (rowid, values) in &plan.writes {
                             let cells = table
                                 .rows
@@ -4644,25 +3962,25 @@ impl Engine {
             Statement::Delete { schema: _, table, alias, filter, returning } => {
                 check_readonly_table(&table, "delete")?;
                 let key = table.to_ascii_lowercase();
-                if self.views.contains_key(&key) {
+                if self.catalog.views.contains_key(&key) {
                     return self.run_view_delete(&table, &key, alias.as_deref(), filter.as_ref(), returning.as_ref());
                 }
-                let temp_position = if self.scope == TableScope::Main { None } else { self.temp_lookup.get(&key).copied() };
+                let temp_position = if self.scope == TableScope::Main { None } else { self.catalog.temp_lookup.get(&key).copied() };
                 let main_position = if self.scope == TableScope::Temp {
                     None
                 }
                 else {
                     match temp_position {
                         Some(_) => None,
-                        None => Some(*self.table_lookup.get(&key).ok_or_else(|| self.table_missing(&table, "delete"))?),
+                        None => Some(*self.catalog.table_lookup.get(&key).ok_or_else(|| self.table_missing(&table, "delete"))?),
                     }
                 };
                 // Temp rows are removed from the in-memory map, so their
                 // definition is cloned to keep the catalog readable while the
                 // map is borrowed mutably.
                 let def_storage = match temp_position {
-                    Some(position) => self.temp_tables[position].def.clone(),
-                    None => self.tables[main_position.expect("main table resolved")].clone(),
+                    Some(position) => self.catalog.temp_tables[position].def.clone(),
+                    None => self.catalog.tables[main_position.expect("main table resolved")].clone(),
                 };
                 let def = &def_storage;
                 let shape = TargetShape::new(def, alias.as_deref().unwrap_or(&table), self.trigger_frames.last());
@@ -4680,7 +3998,7 @@ impl Engine {
                 // A temp table snapshots its row map instead of opening a
                 // writer transaction, so a failing referential check undoes the
                 // removal exactly like a rollback would.
-                let temp_snapshot = temp_position.map(|position| self.temp_tables[position].rows.clone());
+                let temp_snapshot = temp_position.map(|position| self.catalog.temp_tables[position].rows.clone());
                 let queue_triggers = self.table_has_triggers(&key);
                 let trigger_columns = trigger_frame_columns(def);
                 // The deleted rows' referenced keys are only visible before the
@@ -4691,7 +4009,7 @@ impl Engine {
                 let mut after_events: Vec<(i64, Vec<Cell>)> = Vec::new();
                 if let Some(position) = temp_position {
                     {
-                        let table = &mut self.temp_tables[position];
+                        let table = &mut self.catalog.temp_tables[position];
                         for rowid in &plan.removed {
                             table.rows.remove(rowid);
                         }
@@ -4759,7 +4077,7 @@ impl Engine {
                 if self.foreign_keys {
                     if let Err(error) = self.check_delete_foreign_keys(def, &plan.live, &plan.removed, "delete") {
                         match (temp_position, temp_snapshot) {
-                            (Some(position), Some(snapshot)) => self.temp_tables[position].rows = snapshot,
+                            (Some(position), Some(snapshot)) => self.catalog.temp_tables[position].rows = snapshot,
                             _ => {
                                 let _ = self.writer.rollback();
                             }
@@ -4805,7 +4123,7 @@ impl Engine {
             Statement::Pragma { schema, name, value } => {
                 if name.eq_ignore_ascii_case("database_list") {
                     let mut rows = vec![vec![Cell::Integer(0), Cell::Text("main".to_string()), Cell::Text(String::new())]];
-                    if self.temp_created {
+                    if self.catalog.temp_created {
                         rows.push(vec![Cell::Integer(1), Cell::Text("temp".to_string()), Cell::Text(String::new())]);
                     }
                     for (index, attached) in self.attached.iter().enumerate() {
@@ -4903,18 +4221,18 @@ impl Engine {
                 let key = name.to_ascii_lowercase();
                 // The temp schema is searched before main, so `DROP TABLE`
                 // removes the temp object when both schemas share the name.
-                let temp_position = if self.scope == TableScope::Main { None } else { self.temp_lookup.get(&key).copied() };
-                if temp_position.is_none() && self.temp_views.contains_key(&key) {
+                let temp_position = if self.scope == TableScope::Main { None } else { self.catalog.temp_lookup.get(&key).copied() };
+                if temp_position.is_none() && self.catalog.temp_views.contains_key(&key) {
                     return Err(SqlError::new("wrong-object", format!("use DROP VIEW to delete view {name}")).in_statement("drop-table"));
                 }
                 if let Some(position) = temp_position {
-                    let dropped = self.temp_tables.remove(position);
+                    let dropped = self.catalog.temp_tables.remove(position);
                     // The freed page goes back to the temp allocator, so the
                     // next temp table reuses it like SQLite does.
-                    self.temp_free_pages.insert(dropped.rootpage);
-                    self.temp_lookup.remove(&key);
+                    self.catalog.temp_free_pages.insert(dropped.rootpage);
+                    self.catalog.temp_lookup.remove(&key);
                     self.reindex_temp_tables();
-                    self.triggers.retain(|_, trigger| !(trigger.temp && trigger.table == key));
+                    self.catalog.triggers.retain(|_, trigger| !(trigger.temp && trigger.table == key));
                     return Ok(ExecResult { statement: "drop-table", columns: Vec::new(), rows: Vec::new(), affected: 1 });
                 }
                 let objects = self.schema_objects("drop-table")?;
@@ -4935,6 +4253,7 @@ impl Engine {
                 }
                 let key = name.to_ascii_lowercase();
                 let position = *self
+                    .catalog
                     .table_lookup
                     .get(&key)
                     .ok_or_else(|| SqlError::new("unknown-table", format!("no such table: {name}")).in_statement("drop-table"))?;
@@ -4951,10 +4270,10 @@ impl Engine {
                     }
                 }
                 self.writer.commit().map_err(|error| storage_failure(error).in_statement("drop-table"))?;
-                self.tables.remove(position);
+                self.catalog.tables.remove(position);
                 self.reindex_tables();
-                self.indexes.retain(|_, index| index.table != key);
-                self.triggers.retain(|_, trigger| trigger.table != key);
+                self.catalog.indexes.retain(|_, index| index.table != key);
+                self.catalog.triggers.retain(|_, trigger| trigger.table != key);
                 Ok(ExecResult { statement: "drop-table", columns: Vec::new(), rows: Vec::new(), affected: 1 })
             }
             Statement::DropIndex { schema: _, name, if_exists } => {
@@ -4985,7 +4304,7 @@ impl Engine {
                     }
                 }
                 self.writer.commit().map_err(|error| storage_failure(error).in_statement("drop-index"))?;
-                self.indexes.remove(&name.to_ascii_lowercase());
+                self.catalog.indexes.remove(&name.to_ascii_lowercase());
                 Ok(ExecResult { statement: "drop-index", columns: Vec::new(), rows: Vec::new(), affected: 1 })
             }
             Statement::AlterTable { schema: _, table, action } => self.run_alter_table(table, action),
@@ -5006,17 +4325,17 @@ impl Engine {
 
     /// Rebuilds the lowercase name to position map after a table is removed.
     fn reindex_tables(&mut self) {
-        self.table_lookup.clear();
-        for (position, table) in self.tables.iter().enumerate() {
-            self.table_lookup.insert(table.name.to_ascii_lowercase(), position);
+        self.catalog.table_lookup.clear();
+        for (position, table) in self.catalog.tables.iter().enumerate() {
+            self.catalog.table_lookup.insert(table.name.to_ascii_lowercase(), position);
         }
     }
 
     /// Rebuilds the temp schema name map after a temp table is removed.
     fn reindex_temp_tables(&mut self) {
-        self.temp_lookup.clear();
-        for (position, table) in self.temp_tables.iter().enumerate() {
-            self.temp_lookup.insert(table.def.name.to_ascii_lowercase(), position);
+        self.catalog.temp_lookup.clear();
+        for (position, table) in self.catalog.temp_tables.iter().enumerate() {
+            self.catalog.temp_lookup.insert(table.def.name.to_ascii_lowercase(), position);
         }
     }
 
@@ -5038,23 +4357,27 @@ impl Engine {
         }
         let key = table.to_ascii_lowercase();
         let position = *self
+            .catalog
             .table_lookup
             .get(&key)
             .ok_or_else(|| SqlError::new("unknown-table", format!("no such table: {table}")).in_statement("alter-table"))?;
         let stored = objects
             .iter()
-            .find(|object| object.kind == SchemaObjectKind::Table && object.name.eq_ignore_ascii_case(&self.tables[position].name))
+            .find(|object| object.kind == SchemaObjectKind::Table && object.name.eq_ignore_ascii_case(&self.catalog.tables[position].name))
             .and_then(|object| object.sql.clone())
             .ok_or_else(|| SqlError::new("storage", "sqlite table has no stored text").in_statement("alter-table"))?;
         match action {
             AlterAction::RenameTable { new_name } => {
                 check_reserved_object_name(&new_name, "alter-table")?;
                 let new_key = new_name.to_ascii_lowercase();
-                if self.table_lookup.contains_key(&new_key) || self.indexes.contains_key(&new_key) || self.views.contains_key(&new_key) {
+                if self.catalog.table_lookup.contains_key(&new_key)
+                    || self.catalog.indexes.contains_key(&new_key)
+                    || self.catalog.views.contains_key(&new_key)
+                {
                     return Err(SqlError::new("table-exists", format!("there is already another table or index with this name: {new_name}"))
                         .in_statement("alter-table"));
                 }
-                let old_name = self.tables[position].name.clone();
+                let old_name = self.catalog.tables[position].name.clone();
                 let new_sql = rewrite_create_table_name(&stored, &new_name)
                     .ok_or_else(|| SqlError::new("storage", "sqlite stored table text unrecognized").in_statement("alter-table"))?;
                 let mut pending = Vec::new();
@@ -5075,7 +4398,7 @@ impl Engine {
                     if object.kind != SchemaObjectKind::View {
                         continue;
                     }
-                    let Some(view) = self.views.get(&object.name.to_ascii_lowercase())
+                    let Some(view) = self.catalog.views.get(&object.name.to_ascii_lowercase())
                     else {
                         continue;
                     };
@@ -5106,21 +4429,21 @@ impl Engine {
                     }
                     self.writer.commit().map_err(|error| storage_failure(error).in_statement("alter-table"))?;
                 }
-                self.tables[position].name = new_name;
+                self.catalog.tables[position].name = new_name;
                 self.reindex_tables();
-                for index in self.indexes.values_mut() {
+                for index in self.catalog.indexes.values_mut() {
                     if index.table == key {
                         index.table = new_key.clone();
                     }
                 }
-                for trigger in self.triggers.values_mut() {
+                for trigger in self.catalog.triggers.values_mut() {
                     if trigger.table == key {
                         trigger.table = new_key.clone();
                     }
                 }
                 for (name, text) in pending_views {
                     if let Some(Statement::CreateView { query, .. }) = parse(&text).ok().and_then(|statements| statements.into_iter().next()) {
-                        if let Some(view) = self.views.get_mut(&name.to_ascii_lowercase()) {
+                        if let Some(view) = self.catalog.views.get_mut(&name.to_ascii_lowercase()) {
                             view.query = *query;
                         }
                     }
@@ -5128,7 +4451,7 @@ impl Engine {
                 Ok(ExecResult { statement: "alter-table", columns: Vec::new(), rows: Vec::new(), affected: 1 })
             }
             AlterAction::RenameColumn { old, new } => {
-                let def = &self.tables[position];
+                let def = &self.catalog.tables[position];
                 let column = def
                     .columns
                     .iter()
@@ -5162,7 +4485,7 @@ impl Engine {
                     if object.kind != SchemaObjectKind::View {
                         continue;
                     }
-                    let Some(view) = self.views.get(&object.name.to_ascii_lowercase())
+                    let Some(view) = self.catalog.views.get(&object.name.to_ascii_lowercase())
                     else {
                         continue;
                     };
@@ -5195,16 +4518,16 @@ impl Engine {
                 }
                 for (view, text) in pending_views {
                     if let Some(Statement::CreateView { query, .. }) = parse(&text).ok().and_then(|statements| statements.into_iter().next()) {
-                        if let Some(view) = self.views.get_mut(&view.to_ascii_lowercase()) {
+                        if let Some(view) = self.catalog.views.get_mut(&view.to_ascii_lowercase()) {
                             view.query = *query;
                         }
                     }
                 }
-                self.tables[position].columns[column].name = new;
+                self.catalog.tables[position].columns[column].name = new;
                 Ok(ExecResult { statement: "alter-table", columns: Vec::new(), rows: Vec::new(), affected: 1 })
             }
             AlterAction::AddColumn { column, checks, foreign_keys, sql } => {
-                let def = &self.tables[position];
+                let def = &self.catalog.tables[position];
                 if def.columns.iter().any(|existing| existing.name.eq_ignore_ascii_case(&column.name)) {
                     return Err(
                         SqlError::new("duplicate-column", format!("duplicate column name: {}", column.name)).in_statement("alter-table")
@@ -5246,13 +4569,13 @@ impl Engine {
                     return Err(storage_failure(error).in_statement("alter-table"));
                 }
                 self.writer.commit().map_err(|error| storage_failure(error).in_statement("alter-table"))?;
-                self.tables[position].columns.push(column);
-                self.tables[position].checks.extend(resolved);
-                self.tables[position].foreign_keys.extend(resolved_foreign_keys);
+                self.catalog.tables[position].columns.push(column);
+                self.catalog.tables[position].checks.extend(resolved);
+                self.catalog.tables[position].foreign_keys.extend(resolved_foreign_keys);
                 Ok(ExecResult { statement: "alter-table", columns: Vec::new(), rows: Vec::new(), affected: 1 })
             }
             AlterAction::DropColumn { column } => {
-                let def = &self.tables[position];
+                let def = &self.catalog.tables[position];
                 let column_position = def
                     .columns
                     .iter()
@@ -5273,7 +4596,9 @@ impl Engine {
                     return Err(SqlError::new("invalid-alter", format!("cannot drop column \"{column}\": no other columns exist"))
                         .in_statement("alter-table"));
                 }
-                if let Some((name, _)) = self.indexes.iter().find(|(_, index)| index.table == key && index.columns.contains(&column_position)) {
+                if let Some((name, _)) =
+                    self.catalog.indexes.iter().find(|(_, index)| index.table == key && index.columns.contains(&column_position))
+                {
                     return Err(SqlError::new("invalid-alter", format!("error in index {name} after drop column: no such column: {column}"))
                         .in_statement("alter-table"));
                 }
@@ -5297,11 +4622,11 @@ impl Engine {
                         .in_statement("alter-table"));
                     }
                 };
-                if let Some((name, _)) = self.views.iter().find(|(_, view)| statement_mentions_column(&view.query, &column, None)) {
+                if let Some((name, _)) = self.catalog.views.iter().find(|(_, view)| statement_mentions_column(&view.query, &column, None)) {
                     return Err(SqlError::new("invalid-alter", format!("error in view {name} after drop column: no such column: {column}"))
                         .in_statement("alter-table"));
                 }
-                if let Some((name, _)) = self.triggers.iter().find(|(_, trigger)| {
+                if let Some((name, _)) = self.catalog.triggers.iter().find(|(_, trigger)| {
                     trigger.table == key
                         && trigger.body.iter().any(|statement| statement_mentions_column(statement, &column, Some(&["new", "old"])))
                 }) {
@@ -5327,7 +4652,8 @@ impl Engine {
                 else {
                     return Err(SqlError::new("storage", "sqlite stored table text unrecognized").in_statement("alter-table"));
                 };
-                let derived = Self::catalog_table(name, columns, primary_key, table_constraints, checks, foreign_keys, strict, without_rowid)?;
+                let derived =
+                    SqliteCatalog::table_entry(name, columns, primary_key, table_constraints, checks, foreign_keys, strict, without_rowid)?;
                 self.writer.begin().map_err(|error| storage_failure(error).in_statement("alter-table"))?;
                 if let Err(error) = self.writer.drop_column(&def.name, column_position) {
                     let _ = self.writer.rollback();
@@ -5338,7 +4664,7 @@ impl Engine {
                     return Err(storage_failure(error).in_statement("alter-table"));
                 }
                 self.writer.commit().map_err(|error| storage_failure(error).in_statement("alter-table"))?;
-                for index in self.indexes.values_mut() {
+                for index in self.catalog.indexes.values_mut() {
                     if index.table != key {
                         continue;
                     }
@@ -5348,7 +4674,7 @@ impl Engine {
                         }
                     }
                 }
-                self.tables[position] = derived;
+                self.catalog.tables[position] = derived;
                 Ok(ExecResult { statement: "alter-table", columns: Vec::new(), rows: Vec::new(), affected: 1 })
             }
         }
@@ -5395,43 +4721,15 @@ impl Engine {
         Ok(())
     }
 
-    /// Builds the single-source relation an `UPDATE` / `DELETE` evaluates
-    /// against, labelled with the name column references may use.
-    fn target_relation<'a>(def: &'a TableDef, label: &str, trigger: Option<&'a TriggerFrame>) -> Relation<'a> {
-        let width = def.columns.len();
-        Relation {
-            sources: vec![Source {
-                label: label.to_string(),
-                columns: SourceColumns::Table(def),
-                offset: 0,
-                join: None,
-                star_hidden: vec![false; width],
-                unqualified_hidden: vec![false; width],
-                star_override: vec![None; width],
-            }],
-            using: vec![Vec::new()],
-            using_slots: Vec::new(),
-            trigger,
-            excluded: false,
-        }
-    }
-
-    /// Relation used by `ON CONFLICT DO UPDATE`: `excluded.<column>` binds
-    /// against the supplied row while bare columns keep the stored row.
-    fn upsert_relation<'a>(def: &'a TableDef, label: &str) -> Relation<'a> {
-        let mut relation = Self::target_relation(def, label, None);
-        relation.excluded = true;
-        relation
-    }
-
     /// Reads every row of `def`, decoded and sorted by rowid.
     fn live_rows(&self, def: &TableDef, statement: &'static str) -> Result<Vec<(i64, Vec<Cell>)>, SqlError> {
         if def.temp {
             let position = *self
+                .catalog
                 .temp_lookup
                 .get(&def.name.to_ascii_lowercase())
                 .ok_or_else(|| SqlError::new("storage", format!("temp table `{}` disappeared", def.name)).in_statement(statement))?;
-            return Ok(self.temp_tables[position].rows.iter().map(|(rowid, cells)| (*rowid, cells.clone())).collect());
+            return Ok(self.catalog.temp_tables[position].rows.iter().map(|(rowid, cells)| (*rowid, cells.clone())).collect());
         }
         if def.without_rowid {
             // WITHOUT ROWID rows carry no rowid; a scan position is used as
@@ -5554,7 +4852,7 @@ impl Engine {
         if let Some(rowids) = Self::rowid_range_candidates(filter, alias_name.as_deref(), label, &self.parameters) {
             return Some(rowids);
         }
-        for index in self.indexes.values() {
+        for index in self.catalog.indexes.values() {
             if index.managed || index.table != table_key || index.columns.is_empty() {
                 continue;
             }
@@ -5579,7 +4877,7 @@ impl Engine {
         // `excluded` is not in scope there, exactly like SQLite.
         let target_predicate = match (&clause.target, &clause.predicate) {
             (Some(_), Some(expression)) => {
-                let relation = Self::target_relation(def, label, None);
+                let relation = target_relation(def, label, None);
                 Some(Self::resolve_upsert_expr(&relation, expression)?)
             }
             (Some(_), None) => None,
@@ -5650,7 +4948,7 @@ impl Engine {
         let (action, assignments, filter) = match &clause.action {
             ConflictAction::Nothing => (UpsertAction::Nothing, Vec::new(), None),
             ConflictAction::Update { assignments, predicate } => {
-                let relation = Self::upsert_relation(def, label);
+                let relation = upsert_relation(def, label);
                 let mut targets = Vec::with_capacity(assignments.len());
                 for assignment in assignments {
                     let index =
@@ -5683,7 +4981,8 @@ impl Engine {
         if def.temp {
             return Vec::new();
         }
-        self.indexes
+        self.catalog
+            .indexes
             .values()
             .filter(|index| index.managed && index.unique && index.table == table_key)
             .map(|index| {
@@ -5972,7 +5271,7 @@ impl Engine {
             }
             let inserted = if let Some(position) = temp_position {
                 let keys = self.unique_keys(def, table_key);
-                let table_state = &mut self.temp_tables[position];
+                let table_state = &mut self.catalog.temp_tables[position];
                 temp_insert_row(def, &mut table_state.rows, slots, &keys)?
             }
             else {
@@ -6029,7 +5328,7 @@ impl Engine {
         let assigned: Vec<bool> = (0..width).map(|position| plan.assignments.iter().any(|(target, _)| *target == position)).collect();
         let mut events: Vec<(i64, Vec<Cell>, Vec<Cell>)> = Vec::new();
         if let Some(position) = temp_position {
-            let table_state = &mut self.temp_tables[position];
+            let table_state = &mut self.catalog.temp_tables[position];
             for (write_rowid, values) in &planned.writes {
                 let cells = table_state
                     .rows
@@ -6165,7 +5464,7 @@ impl Engine {
         let managed_targets = self.upsert_managed_indexes(def, table_key);
         if let Some(rowid) = explicit_rowid.filter(|_| !def.without_rowid && !extra_unique && managed_targets.is_empty()) {
             let old = match temp_position {
-                Some(position) => self.temp_tables[position].rows.get(&rowid).cloned(),
+                Some(position) => self.catalog.temp_tables[position].rows.get(&rowid).cloned(),
                 None => self.live_rows_at(def, "insert", &[rowid])?.into_iter().next().map(|(_, cells)| cells),
             };
             if let Some(old) = old {
@@ -6173,7 +5472,7 @@ impl Engine {
                     self.queue_delete_before(table_key, trigger_columns, rowid, &old);
                 }
                 if let Some(position) = temp_position {
-                    self.temp_tables[position].rows.remove(&rowid);
+                    self.catalog.temp_tables[position].rows.remove(&rowid);
                 }
                 else {
                     self.writer.delete(table, rowid).map_err(|error| write_failure(error, "insert", def))?;
@@ -6196,7 +5495,7 @@ impl Engine {
             return match temp_position {
                 Some(position) => {
                     let keys = self.unique_keys(def, table_key);
-                    let table_state = &mut self.temp_tables[position];
+                    let table_state = &mut self.catalog.temp_tables[position];
                     temp_insert_row(def, &mut table_state.rows, slots, &keys)
                 }
                 None => self.writer.insert(table, slots).map_err(|error| storage_failure(error).in_statement("insert")),
@@ -6235,7 +5534,7 @@ impl Engine {
                 self.queue_delete_before(table_key, trigger_columns, rowid, &old);
             }
             if let Some(position) = temp_position {
-                self.temp_tables[position].rows.remove(&rowid);
+                self.catalog.temp_tables[position].rows.remove(&rowid);
             }
             else {
                 let removed = if def.without_rowid {
@@ -6278,7 +5577,7 @@ impl Engine {
         }
         if let Some(position) = temp_position {
             let keys = self.unique_keys(def, table_key);
-            let table_state = &mut self.temp_tables[position];
+            let table_state = &mut self.catalog.temp_tables[position];
             temp_insert_row(def, &mut table_state.rows, slots, &keys)
         }
         else {
@@ -6329,7 +5628,7 @@ impl Engine {
     /// rows. Called inside the statement's transaction, before it commits.
     fn refresh_managed_indexes(&mut self, table: &str, def: &TableDef, statement: &'static str) -> Result<(), SqlError> {
         let managed: Vec<IndexDef> =
-            self.indexes.values().filter(|index| index.table.eq_ignore_ascii_case(table) && index.managed).cloned().collect();
+            self.catalog.indexes.values().filter(|index| index.table.eq_ignore_ascii_case(table) && index.managed).cloned().collect();
         if managed.is_empty() {
             return Ok(());
         }
@@ -6349,10 +5648,11 @@ impl Engine {
     /// fail identically in the reference engine.
     fn foreign_key_parent(&self, child: &TableDef, key: &ForeignKeyDef, statement: &'static str) -> Result<(usize, Vec<usize>), SqlError> {
         let parent_position = *self
+            .catalog
             .table_lookup
             .get(&key.parent)
             .ok_or_else(|| SqlError::new("SQLITE_ERROR", format!("no such table: main.{}", key.parent_display)).in_statement(statement))?;
-        let parent = &self.tables[parent_position];
+        let parent = &self.catalog.tables[parent_position];
         let positions = if key.parent_columns.is_empty() {
             parent.primary_key_positions().ok_or_else(|| foreign_key_mismatch(child, key, statement))?
         }
@@ -6397,14 +5697,14 @@ impl Engine {
             return true;
         }
         let parent_key = parent.name.to_ascii_lowercase();
-        self.indexes.values().any(|index| index.table == parent_key && index.unique && same_positions(&index.columns, positions))
+        self.catalog.indexes.values().any(|index| index.table == parent_key && index.unique && same_positions(&index.columns, positions))
     }
 
     /// Every foreign key in the catalog that references `parent`, as
     /// `(child table position, key)` pairs; the child may be `parent` itself.
     fn referencing_foreign_keys(&self, parent: &str) -> Vec<(usize, ForeignKeyDef)> {
         let mut found = Vec::new();
-        for (position, table) in self.tables.iter().enumerate() {
+        for (position, table) in self.catalog.tables.iter().enumerate() {
             for key in &table.foreign_keys {
                 if key.parent.eq_ignore_ascii_case(parent) {
                     found.push((position, key.clone()));
@@ -6427,7 +5727,7 @@ impl Engine {
                 continue;
             }
             let (parent_position, parent_columns) = self.foreign_key_parent(def, key, statement)?;
-            let parent = &self.tables[parent_position];
+            let parent = &self.catalog.tables[parent_position];
             let parent_rows = self.live_rows(parent, statement)?;
             for (rowid, cells) in &live {
                 if !rowids.contains(rowid) {
@@ -6468,7 +5768,7 @@ impl Engine {
                 continue;
             }
             let (parent_position, parent_columns) = self.foreign_key_parent(def, key, statement)?;
-            let parent_rows = self.live_rows(&self.tables[parent_position], statement)?;
+            let parent_rows = self.live_rows(&self.catalog.tables[parent_position], statement)?;
             for (rowid, values) in &plan.writes {
                 let old = row_of(old_rows, *rowid);
                 let next = apply_assignment(old, values);
@@ -6485,7 +5785,7 @@ impl Engine {
             if key.deferred && self.in_transaction() && key.on_update_action != ForeignKeyAction::Restrict {
                 continue;
             }
-            let child = &self.tables[child_position];
+            let child = &self.catalog.tables[child_position];
             let (parent_position, parent_columns) = self.foreign_key_parent(child, &key, statement)?;
             if !parent_columns.iter().any(|position| assigned.get(*position).copied().unwrap_or(false)) {
                 continue;
@@ -6506,7 +5806,7 @@ impl Engine {
             if changed.is_empty() {
                 continue;
             }
-            let parent_rows = self.live_rows(&self.tables[parent_position], statement)?;
+            let parent_rows = self.live_rows(&self.catalog.tables[parent_position], statement)?;
             let child_rows = self.live_rows(child, statement)?;
             for (_, child_cells) in &child_rows {
                 let child_values = pick(child_cells, &key.columns);
@@ -6540,7 +5840,7 @@ impl Engine {
             if key.deferred && self.in_transaction() && key.on_delete_action != ForeignKeyAction::Restrict {
                 continue;
             }
-            let child = &self.tables[child_position];
+            let child = &self.catalog.tables[child_position];
             let (_, parent_columns) = self.foreign_key_parent(child, &key, statement)?;
             let mut gone: Vec<Vec<Cell>> = Vec::new();
             for (rowid, cells) in old_rows {
@@ -6578,10 +5878,10 @@ impl Engine {
         if !self.foreign_keys {
             return Ok(());
         }
-        for child in &self.tables {
+        for child in &self.catalog.tables {
             for key in child.foreign_keys.iter().filter(|key| key.deferred) {
                 let (parent_position, parent_columns) = self.foreign_key_parent(child, key, "commit")?;
-                let parent = &self.tables[parent_position];
+                let parent = &self.catalog.tables[parent_position];
                 let parent_rows = self.live_rows(parent, "commit")?;
                 let child_rows = self.live_rows(child, "commit")?;
                 for (_, cells) in &child_rows {
@@ -6624,7 +5924,7 @@ impl Engine {
             if matches!(action, ForeignKeyAction::NoAction | ForeignKeyAction::Restrict) {
                 continue;
             }
-            let child = self.tables[child_position].clone();
+            let child = self.catalog.tables[child_position].clone();
             if child.temp {
                 continue;
             }
@@ -6813,7 +6113,7 @@ impl Engine {
                 ));
             }
         }
-        for index in self.indexes.values() {
+        for index in self.catalog.indexes.values() {
             // Managed indexes are expression or partial, so their uniqueness is
             // enforced while their keys are rebuilt from the live rows.
             if !def.temp && !index.managed && index.table == table_key && index.unique {
@@ -6844,7 +6144,7 @@ impl Engine {
                 .enumerate()
                 .any(|(position, column)| (column.primary_key || column.unique) && Some(position) != def.rowid_alias)
             || def.table_constraints.iter().any(|constraint| !constraint.primary)
-            || (!def.temp && self.indexes.values().any(|index| index.table == table_key))
+            || (!def.temp && self.catalog.indexes.values().any(|index| index.table == table_key))
     }
 
     /// Plans one `UPDATE` without touching storage: every right-hand side is
@@ -8631,17 +7931,17 @@ impl Engine {
         // and is not bounded here.
         let key = table.name.to_ascii_lowercase();
         let reaches_main = match table.schema.as_deref() {
-            None => !self.temp_lookup.contains_key(&key) && !self.temp_views.contains_key(&key),
+            None => !self.catalog.temp_lookup.contains_key(&key) && !self.catalog.temp_views.contains_key(&key),
             Some(qualifier) => {
                 let lower = qualifier.to_ascii_lowercase();
                 lower == "main" || self.alias.as_deref().is_some_and(|alias| alias.eq_ignore_ascii_case(&lower))
             }
         };
-        if !reaches_main || self.views.contains_key(&key) {
+        if !reaches_main || self.catalog.views.contains_key(&key) {
             return None;
         }
-        let position = *self.table_lookup.get(&key)?;
-        let def = &self.tables[position];
+        let position = *self.catalog.table_lookup.get(&key)?;
+        let def = &self.catalog.tables[position];
         if def.without_rowid {
             return None;
         }
@@ -8832,17 +8132,17 @@ impl Engine {
         }
         let key = table.name.to_ascii_lowercase();
         let reaches_main = match table.schema.as_deref() {
-            None => !self.temp_lookup.contains_key(&key) && !self.temp_views.contains_key(&key),
+            None => !self.catalog.temp_lookup.contains_key(&key) && !self.catalog.temp_views.contains_key(&key),
             Some(qualifier) => {
                 let lower = qualifier.to_ascii_lowercase();
                 lower == "main" || self.alias.as_deref().is_some_and(|alias| alias.eq_ignore_ascii_case(&lower))
             }
         };
-        if !reaches_main || self.views.contains_key(&key) {
+        if !reaches_main || self.catalog.views.contains_key(&key) {
             return None;
         }
-        let position = *self.table_lookup.get(&key)?;
-        let def = &self.tables[position];
+        let position = *self.catalog.table_lookup.get(&key)?;
+        let def = &self.catalog.tables[position];
         if def.without_rowid {
             return None;
         }
@@ -8944,7 +8244,7 @@ impl Engine {
         else {
             return Ok(None);
         };
-        let def = &self.tables[plan.table_position];
+        let def = &self.catalog.tables[plan.table_position];
         let affinity = affinity_of(&def.columns[plan.slot].declared_type);
         let cell = match (affinity, outer) {
             (Affinity::Integer, Cell::Real(real)) => match integral_rowid(*real) {
@@ -8964,7 +8264,7 @@ impl Engine {
         if matches!(probe, ProbeKey::Wide(_)) {
             return Ok(None);
         }
-        let Some(index) = self.indexes.get(&plan.index)
+        let Some(index) = self.catalog.indexes.get(&plan.index)
         else {
             return Ok(None);
         };
@@ -9046,7 +8346,7 @@ impl Engine {
             return None;
         }
         let def = self.prunable_def(entry)?;
-        let position = *self.table_lookup.get(&entry.name.to_ascii_lowercase())?;
+        let position = *self.catalog.table_lookup.get(&entry.name.to_ascii_lowercase())?;
         let filter = first.filter.as_ref()?;
         let width = def.columns.len();
         let source = Source {
@@ -9099,7 +8399,8 @@ impl Engine {
             return None;
         };
         let table_key = def.name.to_ascii_lowercase();
-        let Some(index) = self.indexes.values().find(|index| !index.managed && index.table == table_key && index.columns.as_slice() == [slot])
+        let Some(index) =
+            self.catalog.indexes.values().find(|index| !index.managed && index.table == table_key && index.columns.as_slice() == [slot])
         else {
             return None;
         };
@@ -9188,7 +8489,7 @@ impl Engine {
             return None;
         }
         let table_key = def.name.to_ascii_lowercase();
-        let usable = self.indexes.values().any(|candidate| {
+        let usable = self.catalog.indexes.values().any(|candidate| {
             !candidate.managed
                 && candidate.table == table_key
                 && candidate.columns.as_slice() == [position]
@@ -9216,7 +8517,7 @@ impl Engine {
     /// 按一列的运行期取值查普通索引,返回候选 rowid。
     fn index_probe_by_column(&self, def: &TableDef, position: usize, cell: &Cell) -> Option<Vec<i64>> {
         let table_key = def.name.to_ascii_lowercase();
-        for index in self.indexes.values() {
+        for index in self.catalog.indexes.values() {
             if index.managed || index.table != table_key || index.columns.as_slice() != [position] {
                 continue;
             }
@@ -9349,7 +8650,7 @@ impl Engine {
         let (def, table) = self.bounded_scan_target(from)?;
         let filter = filter.as_ref()?;
         let table_key = def.name.to_ascii_lowercase();
-        for index in self.indexes.values() {
+        for index in self.catalog.indexes.values() {
             if index.managed || index.table != table_key || index.columns.is_empty() {
                 continue;
             }
@@ -9644,7 +8945,7 @@ impl Engine {
     fn invalidate_table_indexes(&self, table_key: &str) {
         let epoch = self.next_epoch();
         let mut versions = self.index_versions.borrow_mut();
-        for index in self.indexes.values() {
+        for index in self.catalog.indexes.values() {
             if index.table == table_key {
                 versions.insert(index.name.to_ascii_lowercase(), epoch);
             }
@@ -9655,7 +8956,7 @@ impl Engine {
     fn invalidate_all_indexes(&self) {
         let epoch = self.next_epoch();
         let mut versions = self.index_versions.borrow_mut();
-        for index in self.indexes.values() {
+        for index in self.catalog.indexes.values() {
             versions.insert(index.name.to_ascii_lowercase(), epoch);
         }
     }
@@ -9676,7 +8977,7 @@ impl Engine {
         let mut patched: Vec<String> = Vec::new();
         {
             let mut probes = self.index_probes.borrow_mut();
-            for index in self.indexes.values() {
+            for index in self.catalog.indexes.values() {
                 if index.table != table_key || index.managed || index.columns.is_empty() {
                     continue;
                 }
@@ -9760,7 +9061,7 @@ impl Engine {
     /// 表上是否存在可增量维护的索引探针缓存。
     fn table_has_probes(&self, table_key: &str) -> bool {
         let probes = self.index_probes.borrow();
-        self.indexes.values().any(|index| {
+        self.catalog.indexes.values().any(|index| {
             index.table == table_key && !index.managed && !index.columns.is_empty() && probes.contains_key(&index.name.to_ascii_lowercase())
         })
     }
@@ -9772,14 +9073,14 @@ impl Engine {
     /// 成立时语句执行前不必让索引缓存整体失效,提交后的增量补丁即可对齐。
     fn insert_keeps_index_content(&self, table: &str) -> bool {
         let key = table.to_ascii_lowercase();
-        if self.temp_lookup.contains_key(&key) || self.table_has_triggers(&key) {
+        if self.catalog.temp_lookup.contains_key(&key) || self.table_has_triggers(&key) {
             return false;
         }
-        let Some(position) = self.table_lookup.get(&key).copied()
+        let Some(position) = self.catalog.table_lookup.get(&key).copied()
         else {
             return false;
         };
-        if self.tables[position].without_rowid {
+        if self.catalog.tables[position].without_rowid {
             return false;
         }
         self.table_has_probes(&key)
@@ -9793,7 +9094,7 @@ impl Engine {
     fn invalidate_indexes_after_update(&self, def: &TableDef, table_key: &str, assigned: &[bool]) {
         let rowid_moved = def.rowid_alias.is_some_and(|position| assigned.get(position).copied().unwrap_or(false));
         let mut dirty: Vec<String> = Vec::new();
-        for index in self.indexes.values() {
+        for index in self.catalog.indexes.values() {
             if index.table != table_key {
                 continue;
             }
@@ -9826,7 +9127,7 @@ impl Engine {
         let mut patched: Vec<String> = Vec::new();
         {
             let mut probes = self.index_probes.borrow_mut();
-            for index in self.indexes.values() {
+            for index in self.catalog.indexes.values() {
                 if index.table != table_key {
                     continue;
                 }
@@ -10226,11 +9527,11 @@ impl Engine {
         let key = entry.name.to_ascii_lowercase();
         // Views and temp tables shadow the main table in the resolver, so any
         // lookup they could win keeps the full decode.
-        if self.views.contains_key(&key) || self.temp_views.contains_key(&key) || self.temp_lookup.contains_key(&key) {
+        if self.catalog.views.contains_key(&key) || self.catalog.temp_views.contains_key(&key) || self.catalog.temp_lookup.contains_key(&key) {
             return None;
         }
-        let position = self.table_lookup.get(&key).copied()?;
-        let def = &self.tables[position];
+        let position = self.catalog.table_lookup.get(&key).copied()?;
+        let def = &self.catalog.tables[position];
         if def.without_rowid { None } else { Some(def) }
     }
 
@@ -10326,14 +9627,14 @@ impl Engine {
         }
         let key = table.name.to_ascii_lowercase();
         if scope != TableScope::Main {
-            if let Some(view) = self.temp_views.get(&key) {
+            if let Some(view) = self.catalog.temp_views.get(&key) {
                 let _depth = ViewDepthGuard::enter()?;
                 let (names, rows) = self.expand_view(&view.def, budget)?;
                 return Ok((SourceColumns::Materialized { names, rowid: false }, Rc::new(rows)));
             }
         }
         if scope != TableScope::Temp {
-            if let Some(view) = self.views.get(&key) {
+            if let Some(view) = self.catalog.views.get(&key) {
                 // A view re-runs its stored query against the current contents
                 // of every base table, exactly like SQLite. Views are not
                 // correlated, so they see no outer row or CTE from this query.
@@ -10343,9 +9644,9 @@ impl Engine {
             }
         }
         if scope != TableScope::Main {
-            if let Some(position) = self.temp_lookup.get(&key).copied() {
-                let def = &self.temp_tables[position].def;
-                let decoded = self.temp_tables[position]
+            if let Some(position) = self.catalog.temp_lookup.get(&key).copied() {
+                let def = &self.catalog.temp_tables[position].def;
+                let decoded = self.catalog.temp_tables[position]
                     .rows
                     .iter()
                     .map(|(rowid, cells)| {
@@ -10357,9 +9658,9 @@ impl Engine {
                 return Ok((SourceColumns::Table(def), Rc::new(decoded)));
             }
         }
-        let position = if scope == TableScope::Temp { None } else { self.table_lookup.get(&key).copied() };
+        let position = if scope == TableScope::Temp { None } else { self.catalog.table_lookup.get(&key).copied() };
         if let Some(position) = position {
-            let def = &self.tables[position];
+            let def = &self.catalog.tables[position];
             // `LIMIT 0` over this table: no row can reach the output, so the
             // b-tree is never walked. The column names still come from `def`.
             if matches!(scan, Some(ScanHint::Empty)) {
@@ -10475,18 +9776,18 @@ impl Engine {
             return Ok((SourceColumns::Materialized { names: columns, rowid }, Rc::new(rows)));
         }
         let key = table.name.to_ascii_lowercase();
-        if let Some(view) = engine.temp_views.get(&key) {
+        if let Some(view) = engine.catalog.temp_views.get(&key) {
             let _depth = ViewDepthGuard::enter()?;
             let (names, rows) = engine.expand_view(&view.def, budget)?;
             return Ok((SourceColumns::Materialized { names, rowid: false }, Rc::new(rows)));
         }
-        if let Some(view) = engine.views.get(&key) {
+        if let Some(view) = engine.catalog.views.get(&key) {
             let _depth = ViewDepthGuard::enter()?;
             let (names, rows) = engine.expand_view(view, budget)?;
             return Ok((SourceColumns::Materialized { names, rowid: false }, Rc::new(rows)));
         }
-        if let Some(position) = engine.table_lookup.get(&key).copied() {
-            let def = &engine.tables[position];
+        if let Some(position) = engine.catalog.table_lookup.get(&key).copied() {
+            let def = &engine.catalog.tables[position];
             let stored =
                 engine.writer.table_rows(&def.name, TableLimits::default()).map_err(|error| storage_failure(error).in_statement("select"))?;
             return Ok((SourceColumns::Table(def), Rc::new(decode_stored_rows(&stored, def, None)?)));
@@ -10580,7 +9881,7 @@ impl Engine {
                 if let Some(query) = query {
                     self.describe_select_statement(query, None)?;
                 }
-                if self.views.contains_key(&key) {
+                if self.catalog.views.contains_key(&key) {
                     return Ok(None);
                 }
                 let def = self.describe_target_def(table, &key, scope, "insert")?;
@@ -10592,7 +9893,7 @@ impl Engine {
             Statement::Update { schema: _, table, alias, assignments, from, filter, returning } => {
                 check_readonly_table(table, "update")?;
                 let key = table.to_ascii_lowercase();
-                if self.views.contains_key(&key) {
+                if self.catalog.views.contains_key(&key) {
                     if !from.is_empty() {
                         let mut error =
                             SqlError::new("unsupported-clause", "`UPDATE ... FROM` is not supported on a view; name a base table instead");
@@ -10623,7 +9924,7 @@ impl Engine {
             Statement::Delete { schema: _, table, alias, filter, returning } => {
                 check_readonly_table(table, "delete")?;
                 let key = table.to_ascii_lowercase();
-                if self.views.contains_key(&key) {
+                if self.catalog.views.contains_key(&key) {
                     if returning.is_some() {
                         return Err(SqlError::new("unsupported-clause", "RETURNING on an INSTEAD OF view delete is not supported yet")
                             .in_statement("delete"));
@@ -10646,7 +9947,7 @@ impl Engine {
     /// `main.`/`temp.` 作用域只查各自一侧。返回克隆的定义,让调用方在只读
     /// 借用目录的同时安全持有它。
     fn describe_target_def(&self, table: &str, key: &str, scope: TableScope, statement: &'static str) -> Result<TableDef, SqlError> {
-        let temp_position = if scope == TableScope::Main { None } else { self.temp_lookup.get(key).copied() };
+        let temp_position = if scope == TableScope::Main { None } else { self.catalog.temp_lookup.get(key).copied() };
         let main_position = if scope == TableScope::Temp {
             None
         }
@@ -10655,6 +9956,7 @@ impl Engine {
                 Some(_) => None,
                 None => Some(
                     *self
+                        .catalog
                         .table_lookup
                         .get(key)
                         .ok_or_else(|| SqlError::new("unknown-table", format!("unknown table `{table}`")).in_statement(statement))?,
@@ -10662,8 +9964,8 @@ impl Engine {
             }
         };
         Ok(match temp_position {
-            Some(position) => self.temp_tables[position].def.clone(),
-            None => self.tables[main_position.expect("main table resolved")].clone(),
+            Some(position) => self.catalog.temp_tables[position].def.clone(),
+            None => self.catalog.tables[main_position.expect("main table resolved")].clone(),
         })
     }
 
@@ -11031,28 +10333,28 @@ impl Engine {
         }
         let key = table.name.to_ascii_lowercase();
         if scope != TableScope::Main {
-            if let Some(view) = self.temp_views.get(&key) {
+            if let Some(view) = self.catalog.temp_views.get(&key) {
                 let _depth = ViewDepthGuard::enter()?;
                 let actual = self.describe_select_statement(&view.def.query, None)?;
                 return Ok((view_output_names(&view.def, &actual)?, false));
             }
         }
         if scope != TableScope::Temp {
-            if let Some(view) = self.views.get(&key) {
+            if let Some(view) = self.catalog.views.get(&key) {
                 let _depth = ViewDepthGuard::enter()?;
                 let actual = self.describe_select_statement(&view.query, None)?;
                 return Ok((view_output_names(view, &actual)?, false));
             }
         }
         if scope != TableScope::Main {
-            if let Some(position) = self.temp_lookup.get(&key).copied() {
-                let def = &self.temp_tables[position].def;
+            if let Some(position) = self.catalog.temp_lookup.get(&key).copied() {
+                let def = &self.catalog.temp_tables[position].def;
                 return Ok((def.columns.iter().map(|column| column.name.clone()).collect(), !def.without_rowid));
             }
         }
         if scope != TableScope::Temp {
-            if let Some(position) = self.table_lookup.get(&key).copied() {
-                let def = &self.tables[position];
+            if let Some(position) = self.catalog.table_lookup.get(&key).copied() {
+                let def = &self.catalog.tables[position];
                 return Ok((def.columns.iter().map(|column| column.name.clone()).collect(), !def.without_rowid));
             }
         }
@@ -11077,18 +10379,18 @@ impl Engine {
             return engine.describe_system_rows(system, &table.name);
         }
         let key = table.name.to_ascii_lowercase();
-        if let Some(view) = engine.temp_views.get(&key) {
+        if let Some(view) = engine.catalog.temp_views.get(&key) {
             let _depth = ViewDepthGuard::enter()?;
             let actual = engine.describe_select_statement(&view.def.query, None)?;
             return Ok((view_output_names(&view.def, &actual)?, false));
         }
-        if let Some(view) = engine.views.get(&key) {
+        if let Some(view) = engine.catalog.views.get(&key) {
             let _depth = ViewDepthGuard::enter()?;
             let actual = engine.describe_select_statement(&view.query, None)?;
             return Ok((view_output_names(view, &actual)?, false));
         }
-        if let Some(position) = engine.table_lookup.get(&key).copied() {
-            let def = &engine.tables[position];
+        if let Some(position) = engine.catalog.table_lookup.get(&key).copied() {
+            let def = &engine.catalog.tables[position];
             return Ok((def.columns.iter().map(|column| column.name.clone()).collect(), !def.without_rowid));
         }
         let qualifier = table.schema.as_deref().unwrap_or_default();
@@ -11249,54 +10551,6 @@ impl<'a> CteEnv<'a> {
     }
 }
 
-/// One column of an enclosing `SELECT`, paired with the value of the row
-/// currently being evaluated.
-#[derive(Clone)]
-struct ScopeColumn {
-    label: String,
-    name: String,
-    value: Cell,
-}
-
-/// One enclosing `SELECT` row: every column it exposes and its current value.
-#[derive(Clone)]
-struct Scope {
-    columns: Vec<ScopeColumn>,
-}
-
-impl Scope {
-    fn shape(&self) -> ScopeShape {
-        ScopeShape { columns: self.columns.iter().map(|column| (column.label.clone(), column.name.clone())).collect() }
-    }
-}
-
-/// Static column catalog of one `SELECT` core.
-///
-/// An inner expression resolves an outer reference to `(depth, index)` once;
-/// evaluation then reads the value from the matching `Scope` of the current
-/// outer row.
-#[derive(Clone)]
-struct ScopeShape {
-    columns: Vec<(String, String)>,
-}
-
-impl ScopeShape {
-    fn instantiate(&self, values: &[Cell]) -> Scope {
-        Scope {
-            columns: self
-                .columns
-                .iter()
-                .enumerate()
-                .map(|(index, (label, name))| ScopeColumn {
-                    label: label.clone(),
-                    name: name.clone(),
-                    value: values.get(index).cloned().unwrap_or(Cell::Null),
-                })
-                .collect(),
-        }
-    }
-}
-
 /// Evaluation context shared by every expression of one `SELECT` core.
 struct EvalContext<'a> {
     engine: &'a Engine,
@@ -11313,22 +10567,6 @@ struct EvalContext<'a> {
     budget: &'a Budget,
     /// CTEs visible to the current core, including enclosing `WITH` clauses.
     ctes: Option<&'a CteEnv<'a>>,
-}
-
-/// One whole-result aggregate to compute over the filtered rows.
-struct AggregateSpec {
-    function: AggregateFunction,
-    argument: Option<ResolvedExpr>,
-    /// `group_concat` separator, evaluated per row like SQLite does.
-    separator: Option<ResolvedExpr>,
-    /// `DISTINCT` was written before the argument.
-    distinct: bool,
-    /// `FILTER (WHERE ...)` applied before the aggregate sees a row.
-    filter: Option<ResolvedExpr>,
-    /// `ORDER BY` inside the argument list, used by `group_concat`.
-    order: Vec<(ResolvedExpr, SortDirection)>,
-    /// `DISTINCT` 去重时使用的排序规则，取自参数表达式的生效排序规则。
-    collation: Collation,
 }
 
 /// Two result rows are equal when every cell compares equal under the engine's
@@ -11407,553 +10645,6 @@ fn row_preserving_expr(expr: &Expr) -> bool {
     }
 }
 
-/// One table bound in a `FROM` clause.
-struct Source<'a> {
-    /// Label used by column references: the alias when written, else the table
-    /// name. An unaliased derived table has the empty label.
-    label: String,
-    /// Column catalog: a base table's definition, or the materialized output
-    /// names of a CTE / derived table.
-    columns: SourceColumns<'a>,
-    /// Index of this source's first column inside the merged row.
-    offset: usize,
-    /// How this source is joined to the ones before it; `None` means a plain
-    /// product (comma or `CROSS JOIN`).
-    join: Option<JoinKind>,
-    /// Columns `SELECT *` must not expose: the right side of a `USING` /
-    /// `NATURAL` join, whose value lives in the coalesced slot instead.
-    star_hidden: Vec<bool>,
-    /// Columns that cannot be named without a qualifier because a coalesced
-    /// `USING` column owns the name.
-    unqualified_hidden: Vec<bool>,
-    /// For a column that owns a `USING` name, the coalesced slot `SELECT *`
-    /// and unqualified references read instead.
-    star_override: Vec<Option<usize>>,
-}
-
-/// Column catalog of one `FROM` source.
-enum SourceColumns<'a> {
-    /// Base table still read through the storage layer.
-    Table(&'a TableDef),
-    /// CTE, derived table or reserved system table whose rows were evaluated
-    /// up front. `rowid` marks sources that carry a trailing hidden rowid slot.
-    Materialized { names: Vec<String>, rowid: bool },
-}
-
-impl<'a> SourceColumns<'a> {
-    fn width(&self) -> usize {
-        match self {
-            Self::Table(def) => def.columns.len(),
-            Self::Materialized { names, .. } => names.len(),
-        }
-    }
-
-    fn name_at(&self, local: usize) -> &str {
-        match self {
-            Self::Table(def) => &def.columns[local].name,
-            Self::Materialized { names, .. } => &names[local],
-        }
-    }
-
-    /// A base table is a rowid table, so each of its rows carries one extra,
-    /// unnamed slot holding the rowid. A WITHOUT ROWID table has none, and
-    /// derived tables and CTEs never do, while `sqlite_master` and
-    /// `sqlite_sequence` do.
-    fn hidden_rowid(&self) -> bool {
-        match self {
-            Self::Table(def) => !def.without_rowid,
-            Self::Materialized { rowid, .. } => *rowid,
-        }
-    }
-}
-
-/// SQLite exposes the implicit integer primary key under three interchangeable
-/// names, unless a declared column shadows that name.
-fn is_rowid_alias(name: &str) -> bool {
-    ["rowid", "_rowid_", "oid"].iter().any(|alias| alias.eq_ignore_ascii_case(name))
-}
-
-impl<'a> Source<'a> {
-    /// Width of this source inside the merged row, hidden rowid included.
-    fn width(&self) -> usize {
-        self.columns.width() + usize::from(self.columns.hidden_rowid())
-    }
-
-    /// Width of the columns `SELECT *` exposes.
-    fn visible_width(&self) -> usize {
-        self.columns.width()
-    }
-
-    fn index(&self, name: &str) -> Option<usize> {
-        if let Some(local) = (0..self.visible_width()).find(|local| self.columns.name_at(*local).eq_ignore_ascii_case(name)) {
-            return Some(self.offset + local);
-        }
-        // A declared column with the same name shadows the implicit rowid.
-        if self.columns.hidden_rowid() && is_rowid_alias(name) {
-            return Some(self.offset + self.visible_width());
-        }
-        None
-    }
-
-    /// Resolves an unqualified reference, skipping columns a coalesced `USING`
-    /// slot owns.
-    fn unqualified_index(&self, name: &str) -> Option<usize> {
-        if let Some(local) =
-            (0..self.visible_width()).find(|local| !self.unqualified_hidden[*local] && self.columns.name_at(*local).eq_ignore_ascii_case(name))
-        {
-            return Some(self.offset + local);
-        }
-        if self.columns.hidden_rowid() && is_rowid_alias(name) {
-            return Some(self.offset + self.visible_width());
-        }
-        None
-    }
-}
-
-/// One `USING` / `NATURAL` column pair of a join.
-#[derive(Clone)]
-struct UsingJoin {
-    /// Merged index of the left operand: the previous coalesced slot for this
-    /// name, or a source column.
-    left: usize,
-    /// Merged index of the right source's column.
-    right: usize,
-    /// Merged index of the coalesced slot appended after all sources.
-    slot: usize,
-}
-
-/// One coalesced slot, in slot order. Its merged index is the source width
-/// plus the position in this vector.
-struct UsingSlot {
-    name: String,
-    /// Label reported by ambiguity errors and outer references.
-    label: String,
-    source: usize,
-    /// False once a later join extends the same name; the newest slot owns it.
-    nameable: bool,
-    /// Source column `SELECT *` prints at the owner's position.
-    owner: Option<(usize, usize)>,
-}
-
-enum UsingOperand {
-    Slot(usize),
-    Column { source: usize, local: usize },
-}
-
-/// The sources of one `FROM` clause, flattened into a single row shape.
-struct Relation<'a> {
-    sources: Vec<Source<'a>>,
-    /// Per source: the coalesced pairs its join introduced.
-    using: Vec<Vec<UsingJoin>>,
-    /// Coalesced slots, appended after every source column.
-    using_slots: Vec<UsingSlot>,
-    /// `NEW` / `OLD` frame of the trigger body being resolved, if any. A
-    /// `new.` or `old.` reference binds here instead of to a `FROM` source.
-    trigger: Option<&'a TriggerFrame>,
-    /// `excluded.` references bind to the supplied row of an upsert.
-    excluded: bool,
-}
-
-impl<'a> Relation<'a> {
-    /// Width of the merged row: every source column, in `FROM` order, then the
-    /// coalesced `USING` slots.
-    fn columns(&self) -> usize {
-        self.base_width() + self.using_slots.len()
-    }
-
-    /// Width of the merged row before the coalesced slots.
-    fn base_width(&self) -> usize {
-        self.sources.last().map_or(0, |source| source.offset + source.width())
-    }
-
-    /// Resolves one reference to `(source index, merged row index)`.
-    fn resolve(&self, reference: &ColumnRef) -> Result<(usize, usize), SqlError> {
-        if let Some(qualifier) = &reference.qualifier {
-            if qualifier.eq_ignore_ascii_case("new") || qualifier.eq_ignore_ascii_case("old") {
-                return self.resolve_trigger(reference, qualifier);
-            }
-            if qualifier.eq_ignore_ascii_case("excluded") && self.excluded {
-                let source = self
-                    .sources
-                    .first()
-                    .ok_or_else(|| SqlError::new("unknown-table", "no table to bind `excluded` against").in_statement("insert"))?;
-                let index = source.index(&reference.name).ok_or_else(|| {
-                    SqlError::new("unknown-column", format!("no such column: excluded.{}", reference.name)).in_statement("insert")
-                })?;
-                return Ok((EXCLUDED_SOURCE, index));
-            }
-            let at = match self.sources.iter().position(|source| source.label.eq_ignore_ascii_case(qualifier)) {
-                Some(at) => at,
-                // Outside an upsert, `excluded` is not a pseudo table: SQLite
-                // reports the qualified name as a missing column.
-                None if qualifier.eq_ignore_ascii_case("excluded") => {
-                    return Err(SqlError::new("unknown-column", format!("no such column: excluded.{}", reference.name)).in_statement("select"));
-                }
-                None => {
-                    return Err(
-                        SqlError::new("unknown-table", format!("unknown table `{qualifier}` in the `FROM` clause")).in_statement("select")
-                    );
-                }
-            };
-            let source = &self.sources[at];
-            let index = source.index(&reference.name).ok_or_else(|| {
-                SqlError::new("unknown-column", format!("unknown column `{}` in table `{}`", reference.display(), source.label))
-                    .in_statement("select")
-            })?;
-            return Ok((at, index));
-        }
-        // A coalesced `USING` column owns its name; the newest slot wins.
-        let mut matches: Vec<(usize, usize, String)> = Vec::new();
-        for (position, slot) in self.using_slots.iter().enumerate().rev() {
-            if slot.nameable && slot.name.eq_ignore_ascii_case(&reference.name) {
-                matches.push((slot.source, self.base_width() + position, slot.label.clone()));
-                break;
-            }
-        }
-        for (at, source) in self.sources.iter().enumerate() {
-            if let Some(index) = source.unqualified_index(&reference.name) {
-                matches.push((at, index, source.label.clone()));
-            }
-        }
-        match matches.len() {
-            0 => Err(self.unknown_column(reference)),
-            1 => Ok((matches[0].0, matches[0].1)),
-            _ => {
-                let left = &matches[0].2;
-                let right = &matches[1].2;
-                Err(SqlError::new(
-                    "ambiguous-column",
-                    format!("ambiguous column `{}`: it appears in tables `{left}` and `{right}`", reference.name),
-                )
-                .in_statement("select"))
-            }
-        }
-    }
-
-    /// Name of one resolved reference as the schema spells it, used for
-    /// result-column labels. `None` for rowid aliases, `USING` slots and
-    /// trigger frames, where the written name is reported instead.
-    fn resolved_column_name(&self, reference: &ColumnRef) -> Option<String> {
-        let (source, index) = self.resolve(reference).ok()?;
-        if source >= self.sources.len() {
-            return None;
-        }
-        let offset = self.sources[source].offset;
-        let local = index.checked_sub(offset)?;
-        if local < self.sources[source].visible_width() { Some(self.sources[source].columns.name_at(local).to_string()) } else { None }
-    }
-
-    /// Resolves an `new.col` / `old.col` reference against the active trigger
-    /// frame. A side the event does not provide reports the same
-    /// `no such column` error SQLite raises.
-    fn resolve_trigger(&self, reference: &ColumnRef, qualifier: &str) -> Result<(usize, usize), SqlError> {
-        let old = qualifier.eq_ignore_ascii_case("old");
-        if let Some(frame) = self.trigger {
-            let available = if old { frame.old.is_some() } else { frame.new.is_some() };
-            if available {
-                if let Some(index) = frame.columns.iter().position(|column| column.eq_ignore_ascii_case(&reference.name)) {
-                    return Ok((if old { TRIGGER_SOURCE_OLD } else { TRIGGER_SOURCE_NEW }, index));
-                }
-            }
-        }
-        Err(SqlError::new("unknown-column", format!("no such column: {}.{}", qualifier, reference.name)).in_statement("select"))
-    }
-
-    fn unknown_column(&self, reference: &ColumnRef) -> SqlError {
-        let scope = match self.sources.len() {
-            // SQLite reports `no such column`; a projection without `FROM` has
-            // no scope at all, so the message must not name a `FROM` clause.
-            0 => "the `SELECT` clause".to_string(),
-            1 => {
-                let label = &self.sources[0].label;
-                if label.is_empty() { "the derived table".to_string() } else { format!("table `{label}`") }
-            }
-            _ => "the `FROM` clause".to_string(),
-        };
-        SqlError::new("unknown-column", format!("unknown column `{}` in {scope}", reference.display())).in_statement("select")
-    }
-
-    /// Builds the coalesced slots for `USING` / `NATURAL` joins. Runs before
-    /// any expression is resolved, so unqualified references bind to them.
-    fn plan_joins(&mut self, from: &[TableRef]) -> Result<(), SqlError> {
-        for index in 0..self.sources.len() {
-            let reference = &from[index];
-            let mut names: Vec<String> = Vec::new();
-            let raw = if reference.natural { self.natural_columns(index) } else { reference.using.clone().unwrap_or_default() };
-            for name in raw {
-                if !names.iter().any(|existing| existing.eq_ignore_ascii_case(&name)) {
-                    names.push(name);
-                }
-            }
-            for name in names {
-                let right_local = (0..self.sources[index].visible_width())
-                    .find(|local| self.sources[index].columns.name_at(*local).eq_ignore_ascii_case(&name))
-                    .ok_or_else(|| {
-                        SqlError::new("unknown-column", format!("cannot join using column {name} - column not present in both tables"))
-                            .in_statement("select")
-                    })?;
-                let left = match self.using_operand(&name, index) {
-                    Some(operand) => operand,
-                    None => {
-                        return Err(SqlError::new(
-                            "unknown-column",
-                            format!("cannot join using column {name} - column not present in both tables"),
-                        )
-                        .in_statement("select"));
-                    }
-                };
-                let (left_index, label, owner, source, matched) = match left {
-                    UsingOperand::Slot(position) => {
-                        let slot = &self.using_slots[position];
-                        let (label, owner, source, matched) = (slot.label.clone(), slot.owner, slot.source, slot.name.clone());
-                        self.using_slots[position].nameable = false;
-                        if let Some((owner_source, owner_local)) = owner {
-                            self.sources[owner_source].star_override[owner_local] = Some(self.base_width() + self.using_slots.len());
-                        }
-                        (self.base_width() + position, label, owner, source, matched)
-                    }
-                    UsingOperand::Column { source, local } => {
-                        self.sources[source].unqualified_hidden[local] = true;
-                        self.sources[source].star_override[local] = Some(self.base_width() + self.using_slots.len());
-                        let matched = self.sources[source].columns.name_at(local).to_string();
-                        (self.sources[source].offset + local, self.sources[source].label.clone(), Some((source, local)), source, matched)
-                    }
-                };
-                let slot = self.base_width() + self.using_slots.len();
-                self.sources[index].star_hidden[right_local] = true;
-                self.sources[index].unqualified_hidden[right_local] = true;
-                self.using[index].push(UsingJoin { left: left_index, right: self.sources[index].offset + right_local, slot });
-                self.using_slots.push(UsingSlot { name: matched, label, source, nameable: true, owner });
-            }
-        }
-        Ok(())
-    }
-
-    /// Finds the current left operand for one `USING` column name among the
-    /// sources joined so far.
-    fn using_operand(&self, name: &str, before: usize) -> Option<UsingOperand> {
-        if let Some(position) = self.using_slots.iter().rposition(|slot| slot.nameable && slot.name.eq_ignore_ascii_case(name)) {
-            return Some(UsingOperand::Slot(position));
-        }
-        for (source, item) in self.sources[..before].iter().enumerate() {
-            for local in 0..item.visible_width() {
-                if !item.unqualified_hidden[local] && item.columns.name_at(local).eq_ignore_ascii_case(name) {
-                    return Some(UsingOperand::Column { source, local });
-                }
-            }
-        }
-        None
-    }
-
-    /// Shared column names for `NATURAL JOIN`, in right-source order.
-    fn natural_columns(&self, index: usize) -> Vec<String> {
-        let right = &self.sources[index];
-        let mut names = Vec::new();
-        for local in 0..right.visible_width() {
-            let name = right.columns.name_at(local);
-            if self.using_operand(name, index).is_some() && !names.iter().any(|existing: &String| existing.eq_ignore_ascii_case(name)) {
-                names.push(name.to_string());
-            }
-        }
-        names
-    }
-
-    /// Column catalog of the merged row: `(label, declared name)` per column.
-    fn shape(&self) -> ScopeShape {
-        let mut columns = Vec::with_capacity(self.columns());
-        for source in &self.sources {
-            for local in 0..source.visible_width() {
-                if source.star_hidden[local] || source.unqualified_hidden[local] {
-                    columns.push((source.label.clone(), String::new()));
-                }
-                else {
-                    columns.push((source.label.clone(), source.columns.name_at(local).to_string()));
-                }
-            }
-            if source.columns.hidden_rowid() {
-                // The hidden rowid slot has no name, so no identifier can bind
-                // to it; it only has to keep merged-row indexes aligned.
-                columns.push((source.label.clone(), String::new()));
-            }
-        }
-        for slot in &self.using_slots {
-            if slot.nameable {
-                columns.push((slot.label.clone(), slot.name.clone()));
-            }
-            else {
-                columns.push((String::new(), String::new()));
-            }
-        }
-        ScopeShape { columns }
-    }
-
-    /// Column labels `SELECT *` exposes.
-    fn star_columns(&self) -> Vec<String> {
-        let mut names = Vec::new();
-        for source in &self.sources {
-            for local in 0..source.visible_width() {
-                if !source.star_hidden[local] {
-                    names.push(source.columns.name_at(local).to_string());
-                }
-            }
-        }
-        names
-    }
-
-    /// Drops the hidden rowid slots and right-side `USING` columns from one
-    /// merged row for `SELECT *`, printing the coalesced value where a join
-    /// folded a column into its left neighbour.
-    fn visible_row(&self, row: &[Cell]) -> Vec<Cell> {
-        let mut visible = Vec::with_capacity(self.star_columns().len());
-        for source in &self.sources {
-            for local in 0..source.visible_width() {
-                if source.star_hidden[local] {
-                    continue;
-                }
-                match source.star_override[local] {
-                    Some(slot) => visible.push(row[slot].clone()),
-                    None => visible.push(row[source.offset + local].clone()),
-                }
-            }
-        }
-        visible
-    }
-
-    /// 合并行某一列声明的排序规则。`USING` 合并槽取左侧列的规则，rowid 空槽
-    /// 与派生表、CTE 一律按 `BINARY`。
-    fn column_collation(&self, merged: usize) -> Collation {
-        for source in &self.sources {
-            let end = source.offset + source.width();
-            if merged >= source.offset && merged < end {
-                if merged >= source.offset + source.visible_width() {
-                    return Collation::Binary;
-                }
-                return match &source.columns {
-                    SourceColumns::Table(def) => def.columns[merged - source.offset].collate.unwrap_or_default(),
-                    SourceColumns::Materialized { .. } => Collation::Binary,
-                };
-            }
-        }
-        for join in self.using.iter().flatten() {
-            if join.slot == merged {
-                return self.column_collation(join.left);
-            }
-        }
-        Collation::Binary
-    }
-
-    /// `SELECT *` 输出列各自的排序规则。
-    fn visible_collations(&self) -> Vec<Collation> {
-        let mut collations = Vec::new();
-        for source in &self.sources {
-            for local in 0..source.visible_width() {
-                if source.star_hidden[local] {
-                    continue;
-                }
-                collations.push(match source.star_override[local] {
-                    Some(slot) => self.column_collation(slot),
-                    None => self.column_collation(source.offset + local),
-                });
-            }
-        }
-        collations
-    }
-}
-
-/// A projection / `WHERE` / `ORDER BY` expression with every column resolved
-/// to a merged row index.
-#[derive(Clone, PartialEq)]
-enum ResolvedExpr {
-    /// Value of a bound parameter placeholder, or `NULL` when the host did not
-    /// supply one for that slot.
-    Parameter(usize),
-    /// Literal value.
-    Cell(Cell),
-    /// Bound column: owning source plus merged row index.
-    Column { source: usize, index: usize },
-    /// `new.col` / `old.col` of the trigger body currently executing.
-    TriggerColumn {
-        /// Read the `OLD` row instead of `NEW`.
-        old: bool,
-        /// Column position inside the trigger frame.
-        index: usize,
-    },
-    /// `excluded.col` of an `ON CONFLICT DO UPDATE` clause: the supplied row.
-    ExcludedColumn {
-        /// Column position inside the supplied row.
-        index: usize,
-    },
-    /// Column borrowed from an enclosing scope: `depth` counts outward from the
-    /// current core, `index` addresses that scope's flattened row.
-    OuterColumn { depth: usize, index: usize },
-    /// Whole-result aggregate value already computed for this row.
-    AggregateRef(usize),
-    /// Prefix `-` or `+`.
-    Unary { op: UnaryOp, value: Box<ResolvedExpr> },
-    /// Arithmetic `+`, `-`, `*` or `/`.
-    Binary { left: Box<ResolvedExpr>, op: BinaryOp, right: Box<ResolvedExpr> },
-    /// Value comparison; yields `1`, `0` or `NULL`.
-    ///
-    /// `collation` 是两个操作数合并后生效的排序规则，解析期确定，求值期只按
-    /// 它比较文本。
-    Compare { left: Box<ResolvedExpr>, op: CompareOp, right: Box<ResolvedExpr>, collation: Collation },
-    /// `IS NULL` or `IS NOT NULL`.
-    IsNull { value: Box<ResolvedExpr>, negated: bool },
-    /// `IS TRUE`, `IS NOT TRUE`, `IS FALSE` or `IS NOT FALSE`.
-    IsTruth { value: Box<ResolvedExpr>, truth: bool, negated: bool },
-    /// `NOT`, with three-valued logic.
-    Not(Box<ResolvedExpr>),
-    /// `AND`, with three-valued logic.
-    And(Box<ResolvedExpr>, Box<ResolvedExpr>),
-    /// `OR`, with three-valued logic.
-    Or(Box<ResolvedExpr>, Box<ResolvedExpr>),
-    /// `CASE` in both the searched and the simple form.
-    Case {
-        /// Simple-form operand; absent in the searched form.
-        operand: Option<Box<ResolvedExpr>>,
-        /// 简单形式里操作数生效的排序规则；分支自带显式 `COLLATE` 时优先。
-        collation: Option<Collation>,
-        /// `WHEN condition THEN result` pairs.
-        branches: Vec<(ResolvedExpr, ResolvedExpr)>,
-        /// `ELSE result`; absent means `NULL`.
-        otherwise: Option<Box<ResolvedExpr>>,
-    },
-    /// `x IN (...)` or `x NOT IN (...)`.
-    In { value: Box<ResolvedExpr>, list: Vec<ResolvedExpr>, negated: bool, collation: Option<Collation>, constant: Option<InListConstant> },
-    /// Scalar function call.
-    Function { name: ScalarFunction, args: Vec<ResolvedExpr> },
-    /// 宿主注册的自定义标量函数调用;名字已折叠为小写。
-    HostFunction {
-        /// 折叠小写后的注册名。
-        name: String,
-        /// 实参,按书写顺序。
-        args: Vec<ResolvedExpr>,
-    },
-    /// `CAST(expr AS type)`.
-    Cast { value: Box<ResolvedExpr>, target: CastType },
-    /// `expr COLLATE name`；只改变文本比较规则，求值结果与内层表达式相同。
-    Collate {
-        /// 被施加排序规则的表达式。
-        value: Box<ResolvedExpr>,
-        /// 解析后的内置排序规则。
-        collation: Collation,
-    },
-    /// `x [NOT] LIKE y [ESCAPE z]`.
-    Like { value: Box<ResolvedExpr>, pattern: Box<ResolvedExpr>, negated: bool, escape: Option<Box<ResolvedExpr>> },
-    /// `x IS DISTINCT FROM y` or `x IS NOT DISTINCT FROM y`.
-    IsDistinct { left: Box<ResolvedExpr>, right: Box<ResolvedExpr>, negated: bool, collation: Collation },
-    /// `x GLOB y` or `x NOT GLOB y`.
-    Glob { value: Box<ResolvedExpr>, pattern: Box<ResolvedExpr>, negated: bool },
-    /// Scalar subquery `(SELECT ...)`.
-    Subquery(Box<Statement>),
-    /// `EXISTS (SELECT ...)`.
-    Exists(Box<Statement>),
-    /// `x [NOT] IN (SELECT ...)`.
-    InSubquery { value: Box<ResolvedExpr>, query: Box<Statement>, negated: bool },
-    /// Value of a window already computed for the current row.
-    Window(usize),
-}
-
 /// One row of the input a window partition is computed over: either a source
 /// row or the representative row of a group, plus that row's aggregate values.
 #[derive(Clone)]
@@ -11964,79 +10655,42 @@ struct WindowRow {
     aggregates: Vec<Cell>,
 }
 
-/// One resolved window call: function, partitioning, ordering and frame.
-struct ResolvedWindow {
-    /// Function and its resolved arguments.
-    function: ResolvedWindowFunction,
-    /// `PARTITION BY` expressions.
-    partition: Vec<ResolvedExpr>,
-    /// `ORDER BY` keys with their direction.
-    order: Vec<(ResolvedExpr, SortDirection)>,
-    /// Explicit frame, already merged with a base window's frame.
-    frame: Option<ResolvedFrame>,
+/// Transitional home for key comparison: the direction shape lives in
+/// `database_query`, the cell comparison mechanism stays with the facade.
+trait SortCompare {
+    /// Compares two cells, honouring the direction and the `NULL` placement.
+    fn compare(self, left: &Cell, right: &Cell) -> Ordering;
 }
 
-/// A window function with resolved arguments.
-enum ResolvedWindowFunction {
-    /// `row_number()`.
-    RowNumber,
-    /// `rank()`.
-    Rank,
-    /// `dense_rank()`.
-    DenseRank,
-    /// `percent_rank()`.
-    PercentRank,
-    /// `cume_dist()`.
-    CumeDist,
-    /// `ntile(n)`.
-    Ntile(ResolvedExpr),
-    /// `lag(expr[, offset[, default]])`.
-    Lag { value: ResolvedExpr, offset: Option<ResolvedExpr>, default: Option<ResolvedExpr> },
-    /// `lead(expr[, offset[, default]])`.
-    Lead { value: ResolvedExpr, offset: Option<ResolvedExpr>, default: Option<ResolvedExpr> },
-    /// `first_value(expr)`.
-    FirstValue(ResolvedExpr),
-    /// `last_value(expr)`.
-    LastValue(ResolvedExpr),
-    /// `nth_value(expr, n)`.
-    NthValue { value: ResolvedExpr, position: ResolvedExpr },
-    /// Aggregate over the frame.
-    Aggregate {
-        function: AggregateFunction,
-        argument: Option<ResolvedExpr>,
-        separator: Option<ResolvedExpr>,
-        /// `DISTINCT` was written before the argument.
-        distinct: bool,
-        /// `FILTER (WHERE ...)` applied before the aggregate sees a row.
-        filter: Option<ResolvedExpr>,
-        /// `ORDER BY` inside the argument list, used by `group_concat`.
-        order: Vec<(ResolvedExpr, SortDirection)>,
-        /// `DISTINCT` 去重时使用的排序规则，取自参数表达式的生效排序规则。
-        collation: Collation,
-    },
+impl SortCompare for SortDirection {
+    fn compare(self, left: &Cell, right: &Cell) -> Ordering {
+        match (left, right) {
+            (Cell::Null, Cell::Null) => Ordering::Equal,
+            (Cell::Null, _) | (_, Cell::Null) => {
+                let first = self.nulls_first.unwrap_or(!self.descending);
+                if matches!(left, Cell::Null) == first { Ordering::Less } else { Ordering::Greater }
+            }
+            _ => {
+                let ordering = compare_cells_with(left, right, self.collation);
+                if self.descending { ordering.reverse() } else { ordering }
+            }
+        }
+    }
 }
 
-/// One resolved frame edge.
-struct ResolvedFrameBound {
-    /// Which edge this is.
-    edge: FrameEdge,
-    /// Constant offset; `None` for `UNBOUNDED` and `CURRENT ROW`.
-    offset: Option<ResolvedExpr>,
+/// Transitional home for expression evaluation: the resolved tree lives in
+/// `database_query`, the evaluation mechanism stays with the facade until
+/// the evaluation closure lands.
+trait EvalExpr {
+    /// Read-only evaluation: literals and bound columns borrow their cell
+    /// directly without copying.
+    fn eval_borrowed<'a>(&'a self, values: &'a [Cell]) -> Option<&'a Cell>;
+
+    /// Evaluates this expression against one merged row.
+    fn eval(&self, values: &[Cell], ctx: &EvalContext) -> Result<Cell, SqlError>;
 }
 
-/// A resolved explicit frame.
-struct ResolvedFrame {
-    /// `ROWS`, `RANGE` or `GROUPS`.
-    units: FrameUnits,
-    /// Starting edge.
-    start: ResolvedFrameBound,
-    /// Ending edge.
-    end: ResolvedFrameBound,
-    /// Rows dropped from the computed frame.
-    exclude: FrameExclude,
-}
-
-impl ResolvedExpr {
+impl EvalExpr for ResolvedExpr {
     /// 只读求值:字面量与已绑定列直接借出,不复制单元格。
     ///
     /// 只读算子(比较、`IS NULL`、`LIKE`)把操作数按引用交给下游比较函数,
@@ -12393,146 +11047,6 @@ impl ResolvedExpr {
             }
         })
     }
-
-    /// Appends the source indices this expression reads.
-    fn collect_sources(&self, out: &mut Vec<usize>) {
-        match self {
-            Self::Cell(_) | Self::OuterColumn { .. } | Self::AggregateRef(_) | Self::TriggerColumn { .. } | Self::ExcludedColumn { .. } => {}
-            // A subquery's own scope is resolved when it runs, so it cannot be
-            // attributed to a single source here; `contains_subquery` makes
-            // such a conjunct wait for the complete row instead.
-            Self::Subquery(_) | Self::Exists(_) => {}
-            Self::Column { source, .. } => out.push(*source),
-            Self::Unary { value, .. }
-            | Self::Not(value)
-            | Self::IsNull { value, .. }
-            | Self::IsTruth { value, .. }
-            | Self::Cast { value, .. }
-            | Self::Collate { value, .. } => value.collect_sources(out),
-            Self::Binary { left, right, .. } | Self::Compare { left, right, .. } | Self::And(left, right) | Self::Or(left, right) => {
-                left.collect_sources(out);
-                right.collect_sources(out);
-            }
-            Self::IsDistinct { left, right, .. } => {
-                left.collect_sources(out);
-                right.collect_sources(out);
-            }
-            Self::Glob { value, pattern, .. } => {
-                value.collect_sources(out);
-                pattern.collect_sources(out);
-            }
-            Self::Case { operand, branches, otherwise, .. } => {
-                if let Some(operand) = operand {
-                    operand.collect_sources(out);
-                }
-                for (condition, result) in branches {
-                    condition.collect_sources(out);
-                    result.collect_sources(out);
-                }
-                if let Some(otherwise) = otherwise {
-                    otherwise.collect_sources(out);
-                }
-            }
-            Self::In { value, list, .. } => {
-                value.collect_sources(out);
-                for item in list {
-                    item.collect_sources(out);
-                }
-            }
-            Self::InSubquery { value, .. } => value.collect_sources(out),
-            Self::Function { args, .. } | Self::HostFunction { args, .. } => {
-                for arg in args {
-                    arg.collect_sources(out);
-                }
-            }
-            // Window values are already materialized for the current row.
-            Self::Window(_) => {}
-            Self::Parameter(_) => {}
-            Self::Like { value, pattern, escape, .. } => {
-                value.collect_sources(out);
-                pattern.collect_sources(out);
-                if let Some(escape) = escape {
-                    escape.collect_sources(out);
-                }
-            }
-        }
-    }
-
-    /// Whether this expression runs a subquery and therefore cannot be
-    /// evaluated before the complete current row is bound.
-    fn contains_subquery(&self) -> bool {
-        match self {
-            Self::Subquery(_) | Self::Exists(_) | Self::InSubquery { .. } => true,
-            Self::Unary { value, .. }
-            | Self::Not(value)
-            | Self::IsNull { value, .. }
-            | Self::IsTruth { value, .. }
-            | Self::Cast { value, .. }
-            | Self::Collate { value, .. } => value.contains_subquery(),
-            Self::Binary { left, right, .. } | Self::Compare { left, right, .. } | Self::And(left, right) | Self::Or(left, right) => {
-                left.contains_subquery() || right.contains_subquery()
-            }
-            Self::IsDistinct { left, right, .. } => left.contains_subquery() || right.contains_subquery(),
-            Self::Glob { value, pattern, .. } => value.contains_subquery() || pattern.contains_subquery(),
-            Self::Case { operand, branches, otherwise, .. } => {
-                operand.as_ref().is_some_and(|operand| operand.contains_subquery())
-                    || branches.iter().any(|(condition, result)| condition.contains_subquery() || result.contains_subquery())
-                    || otherwise.as_ref().is_some_and(|otherwise| otherwise.contains_subquery())
-            }
-            Self::In { value, list, .. } => value.contains_subquery() || list.iter().any(ResolvedExpr::contains_subquery),
-            Self::Function { args, .. } | Self::HostFunction { args, .. } => args.iter().any(ResolvedExpr::contains_subquery),
-            Self::Like { value, pattern, escape, .. } => {
-                value.contains_subquery() || pattern.contains_subquery() || escape.as_ref().is_some_and(|escape| escape.contains_subquery())
-            }
-            Self::Cell(_)
-            | Self::Parameter(_)
-            | Self::Column { .. }
-            | Self::OuterColumn { .. }
-            | Self::AggregateRef(_)
-            | Self::Window(_)
-            | Self::TriggerColumn { .. }
-            | Self::ExcludedColumn { .. } => false,
-        }
-    }
-
-    /// Whether this expression only reads the current row, literals and
-    /// parameters — no outer column, subquery, aggregate or window. Used by the
-    /// correlated-`EXISTS` probe, whose residual predicates must stay local so
-    /// one cached plan answers every outer row.
-    fn is_inner_only(&self) -> bool {
-        match self {
-            Self::Cell(_) | Self::Parameter(_) | Self::Column { .. } => true,
-            Self::Unary { value, .. }
-            | Self::Not(value)
-            | Self::IsNull { value, .. }
-            | Self::IsTruth { value, .. }
-            | Self::Cast { value, .. }
-            | Self::Collate { value, .. } => value.is_inner_only(),
-            Self::Binary { left, right, .. } | Self::Compare { left, right, .. } | Self::And(left, right) | Self::Or(left, right) => {
-                left.is_inner_only() && right.is_inner_only()
-            }
-            Self::IsDistinct { left, right, .. } => left.is_inner_only() && right.is_inner_only(),
-            Self::Glob { value, pattern, .. } => value.is_inner_only() && pattern.is_inner_only(),
-            Self::Case { operand, branches, otherwise, .. } => {
-                operand.as_ref().is_none_or(|operand| operand.is_inner_only())
-                    && branches.iter().all(|(condition, result)| condition.is_inner_only() && result.is_inner_only())
-                    && otherwise.as_ref().is_none_or(|otherwise| otherwise.is_inner_only())
-            }
-            Self::In { value, list, .. } => value.is_inner_only() && list.iter().all(ResolvedExpr::is_inner_only),
-            Self::Function { args, .. } | Self::HostFunction { args, .. } => args.iter().all(ResolvedExpr::is_inner_only),
-            Self::Like { value, pattern, escape, .. } => {
-                value.is_inner_only() && pattern.is_inner_only() && escape.as_ref().is_none_or(|escape| escape.is_inner_only())
-            }
-            Self::OuterColumn { .. }
-            | Self::Subquery(_)
-            | Self::Exists(_)
-            | Self::InSubquery { .. }
-            | Self::AggregateRef(_)
-            | Self::Window(_)
-            | Self::TriggerColumn { .. }
-            | Self::ExcludedColumn { .. } => false,
-        }
-    }
 }
 
 /// One resolved `ORDER BY` key.
@@ -12543,561 +11057,12 @@ enum SortKey {
     Expression(ResolvedExpr),
 }
 
-/// Direction of one resolved sort key plus its explicit `NULL` placement.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-struct SortDirection {
-    /// `DESC` was written.
-    descending: bool,
-    /// `NULLS FIRST` / `NULLS LAST`; `None` keeps the SQLite default, which is
-    /// first for `ASC` and last for `DESC`.
-    nulls_first: Option<bool>,
-    /// 键表达式的文本排序规则，默认为 `BINARY`。
-    collation: Collation,
-}
-
-impl SortDirection {
-    /// Direction of a parsed key.
-    fn of(key: &OrderKey) -> Self {
-        Self { descending: key.descending, nulls_first: key.nulls_first, collation: Collation::Binary }
-    }
-
-    /// 附加键表达式的排序规则。
-    fn with_collation(mut self, collation: Collation) -> Self {
-        self.collation = collation;
-        self
-    }
-
-    /// Compares two cells, honouring the direction and the `NULL` placement.
-    fn compare(self, left: &Cell, right: &Cell) -> Ordering {
-        match (left, right) {
-            (Cell::Null, Cell::Null) => Ordering::Equal,
-            (Cell::Null, _) | (_, Cell::Null) => {
-                let first = self.nulls_first.unwrap_or(!self.descending);
-                if matches!(left, Cell::Null) == first { Ordering::Less } else { Ordering::Greater }
-            }
-            _ => {
-                let ordering = compare_cells_with(left, right, self.collation);
-                if self.descending { ordering.reverse() } else { ordering }
-            }
-        }
-    }
-}
-
 /// One `GROUP BY` term.
 enum GroupKey {
     /// A one-based projection ordinal.
     Projected(usize, Collation),
     /// Expression over the merged source row.
     Expression(ResolvedExpr, Collation),
-}
-
-/// 排序规则未知时的统一诊断文案，与上游 SQLite 一致。
-fn unknown_collation(name: &str) -> SqlError {
-    SqlError::new("unknown-collation", format!("no such collation sequence: {name}"))
-}
-
-/// 解析期求一个表达式生效的排序规则：`COLLATE` 用显式声明，裸列用列声明，
-/// 其余表达式按 `BINARY`。
-fn parsed_collation(expr: &Expr, relation: &Relation) -> Result<Collation, SqlError> {
-    match expr {
-        Expr::Collate { collation, .. } => Collation::parse(collation).ok_or_else(|| unknown_collation(collation)),
-        Expr::Column(reference) => Ok(match relation.resolve(reference) {
-            Ok((_, merged)) => relation.column_collation(merged),
-            Err(_) => Collation::Binary,
-        }),
-        Expr::Alias { value, .. } => parsed_collation(value, relation),
-        _ => Ok(Collation::Binary),
-    }
-}
-
-/// 返回带显式 `COLLATE` 的那一层表达式，供二元比较按左侧优先取规则。
-fn explicit_collate(expr: &Expr) -> Option<&Expr> {
-    match expr {
-        Expr::Collate { .. } => Some(expr),
-        Expr::Alias { value, .. } => match value.as_ref() {
-            Expr::Collate { .. } => Some(value),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
-/// 二元比较合并后的排序规则：左显式、右显式、左列、右列，最后 `BINARY`。
-fn comparison_collation(left: &Expr, right: &Expr, relation: &Relation) -> Result<Collation, SqlError> {
-    if let Some(expr) = explicit_collate(left) {
-        return parsed_collation(expr, relation);
-    }
-    if let Some(expr) = explicit_collate(right) {
-        return parsed_collation(expr, relation);
-    }
-    match parsed_collation(left, relation)? {
-        Collation::Binary => parsed_collation(right, relation),
-        collation => Ok(collation),
-    }
-}
-
-/// 已解析表达式生效的排序规则，供 `ORDER BY` / `GROUP BY` 使用。
-fn resolved_collation(expr: &ResolvedExpr, relation: &Relation) -> Collation {
-    match expr {
-        ResolvedExpr::Collate { collation, .. } => *collation,
-        ResolvedExpr::Column { index, .. } => relation.column_collation(*index),
-        _ => Collation::Binary,
-    }
-}
-
-/// Resolves one parsed expression against the current core.
-///
-/// An unresolved column is retried in each enclosing scope, innermost first.
-/// Because the current core is always tried first, a same-named inner column
-/// shadows an outer one, exactly as in SQLite.
-#[allow(clippy::too_many_arguments)]
-fn resolve_expr(
-    expr: &Expr,
-    relation: &Relation,
-    outer: &[ScopeShape],
-    named: &[NamedWindow],
-    windows: &mut Vec<ResolvedWindow>,
-    aggregates: &mut Vec<AggregateSpec>,
-    allow_aggregate: bool,
-    allow_window: bool,
-) -> Result<ResolvedExpr, SqlError> {
-    Ok(match expr {
-        Expr::Column(reference) => match relation.resolve(reference) {
-            Ok((TRIGGER_SOURCE_NEW, index)) => ResolvedExpr::TriggerColumn { old: false, index },
-            Ok((TRIGGER_SOURCE_OLD, index)) => ResolvedExpr::TriggerColumn { old: true, index },
-            Ok((EXCLUDED_SOURCE, index)) => ResolvedExpr::ExcludedColumn { index },
-            Ok((source, index)) => ResolvedExpr::Column { source, index },
-            Err(error) if error.code == "unknown-column" || error.code == "unknown-table" => match resolve_outer(reference, outer)? {
-                Some(found) => found,
-                None => return Err(error),
-            },
-            Err(error) => return Err(error),
-        },
-        Expr::Literal(literal) => ResolvedExpr::Cell(literal_cell(literal)),
-        Expr::Parameter { index, .. } => ResolvedExpr::Parameter(*index),
-        // A projection alias only affects the header, which is taken from the
-        // unresolved expression, so evaluation delegates straight through.
-        Expr::Alias { value, .. } => resolve_expr(value, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?,
-        Expr::Unary { op, value } => ResolvedExpr::Unary {
-            op: *op,
-            value: Box::new(resolve_expr(value, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
-        },
-        Expr::Binary { left, op, right } => ResolvedExpr::Binary {
-            left: Box::new(resolve_expr(left, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
-            op: *op,
-            right: Box::new(resolve_expr(right, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
-        },
-        Expr::Compare { left, op, right } => ResolvedExpr::Compare {
-            left: Box::new(resolve_expr(left, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
-            op: *op,
-            collation: comparison_collation(left, right, relation)?,
-            right: Box::new(resolve_expr(right, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
-        },
-        Expr::IsNull { value, negated } => ResolvedExpr::IsNull {
-            value: Box::new(resolve_expr(value, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
-            negated: *negated,
-        },
-        Expr::IsTruth { value, truth, negated } => ResolvedExpr::IsTruth {
-            value: Box::new(resolve_expr(value, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
-            truth: *truth,
-            negated: *negated,
-        },
-        Expr::Not(inner) => {
-            ResolvedExpr::Not(Box::new(resolve_expr(inner, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?))
-        }
-        Expr::And(left, right) => ResolvedExpr::And(
-            Box::new(resolve_expr(left, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
-            Box::new(resolve_expr(right, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
-        ),
-        Expr::Or(left, right) => ResolvedExpr::Or(
-            Box::new(resolve_expr(left, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
-            Box::new(resolve_expr(right, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
-        ),
-        Expr::Case { operand, branches, otherwise } => ResolvedExpr::Case {
-            collation: match operand {
-                Some(operand) => match parsed_collation(operand, relation)? {
-                    Collation::Binary => None,
-                    collation => Some(collation),
-                },
-                None => None,
-            },
-            operand: operand
-                .as_ref()
-                .map(|inner| {
-                    Ok::<_, SqlError>(Box::new(resolve_expr(
-                        inner,
-                        relation,
-                        outer,
-                        named,
-                        windows,
-                        aggregates,
-                        allow_aggregate,
-                        allow_window,
-                    )?))
-                })
-                .transpose()?,
-            branches: branches
-                .iter()
-                .map(|(condition, result)| {
-                    Ok((
-                        resolve_expr(condition, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?,
-                        resolve_expr(result, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?,
-                    ))
-                })
-                .collect::<Result<Vec<_>, SqlError>>()?,
-            otherwise: otherwise
-                .as_ref()
-                .map(|inner| {
-                    Ok::<_, SqlError>(Box::new(resolve_expr(
-                        inner,
-                        relation,
-                        outer,
-                        named,
-                        windows,
-                        aggregates,
-                        allow_aggregate,
-                        allow_window,
-                    )?))
-                })
-                .transpose()?,
-        },
-        Expr::In { value, list, negated } => {
-            let collation = match parsed_collation(value, relation)? {
-                Collation::Binary => None,
-                collation => Some(collation),
-            };
-            let list = list
-                .iter()
-                .map(|item| resolve_expr(item, relation, outer, named, windows, aggregates, allow_aggregate, allow_window))
-                .collect::<Result<Vec<_>, _>>()?;
-            // 左操作数没有显式 `COLLATE` 且列表项全是字面量时，逐项比较等价于
-            // 对 `BINARY` 键集做一次哈希查找，可在解析期折叠。
-            let constant = if collation.is_none() { constant_in_list(&list) } else { None };
-            ResolvedExpr::In {
-                collation,
-                value: Box::new(resolve_expr(value, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
-                list,
-                negated: *negated,
-                constant,
-            }
-        }
-        Expr::Function { name, args } => ResolvedExpr::Function {
-            name: *name,
-            args: args
-                .iter()
-                .map(|arg| resolve_expr(arg, relation, outer, named, windows, aggregates, allow_aggregate, allow_window))
-                .collect::<Result<Vec<_>, _>>()?,
-        },
-        Expr::HostFunction { name, args } => ResolvedExpr::HostFunction {
-            name: name.clone(),
-            args: args
-                .iter()
-                .map(|arg| resolve_expr(arg, relation, outer, named, windows, aggregates, allow_aggregate, allow_window))
-                .collect::<Result<Vec<_>, _>>()?,
-        },
-        Expr::Cast { value, target } => ResolvedExpr::Cast {
-            value: Box::new(resolve_expr(value, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
-            target: *target,
-        },
-        Expr::Collate { value, collation } => ResolvedExpr::Collate {
-            value: Box::new(resolve_expr(value, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
-            collation: Collation::parse(collation).ok_or_else(|| unknown_collation(collation))?,
-        },
-        Expr::Like { value, pattern, negated, escape } => ResolvedExpr::Like {
-            value: Box::new(resolve_expr(value, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
-            pattern: Box::new(resolve_expr(pattern, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
-            negated: *negated,
-            escape: match escape {
-                Some(escape) => {
-                    Some(Box::new(resolve_expr(escape, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?))
-                }
-                None => None,
-            },
-        },
-        Expr::Glob { value, pattern, negated } => ResolvedExpr::Glob {
-            value: Box::new(resolve_expr(value, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
-            pattern: Box::new(resolve_expr(pattern, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
-            negated: *negated,
-        },
-        Expr::IsDistinct { left, right, negated } => ResolvedExpr::IsDistinct {
-            left: Box::new(resolve_expr(left, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
-            right: Box::new(resolve_expr(right, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
-            negated: *negated,
-            collation: comparison_collation(left, right, relation)?,
-        },
-        Expr::Subquery(query) => ResolvedExpr::Subquery(query.clone()),
-        Expr::Exists(query) => ResolvedExpr::Exists(query.clone()),
-        Expr::InSubquery { value, query, negated } => ResolvedExpr::InSubquery {
-            value: Box::new(resolve_expr(value, relation, outer, named, windows, aggregates, allow_aggregate, allow_window)?),
-            query: query.clone(),
-            negated: *negated,
-        },
-        Expr::Aggregate { function, argument, separator, distinct, filter, order } => {
-            if !allow_aggregate {
-                let mut error =
-                    SqlError::new("misuse-of-aggregate", format!("misuse of aggregate function {}()", function.name())).in_statement("select");
-                error.clause = Some(function.name().to_ascii_uppercase());
-                return Err(error);
-            }
-            // An aggregate argument is evaluated per row, so it may not contain
-            // another aggregate; subqueries inside it are still allowed.
-            let argument =
-                argument.as_ref().map(|arg| resolve_expr(arg, relation, outer, named, windows, aggregates, false, false)).transpose()?;
-            let separator =
-                separator.as_ref().map(|sep| resolve_expr(sep, relation, outer, named, windows, aggregates, false, false)).transpose()?;
-            let filter =
-                filter.as_ref().map(|expr| resolve_expr(expr, relation, outer, named, windows, aggregates, false, false)).transpose()?;
-            let order = order
-                .iter()
-                .map(|key| {
-                    let resolved = resolve_expr(&key.expr, relation, outer, named, windows, aggregates, false, false)?;
-                    let collation = resolved_collation(&resolved, relation);
-                    Ok((resolved, SortDirection::of(key).with_collation(collation)))
-                })
-                .collect::<Result<Vec<_>, SqlError>>()?;
-            let index = aggregates.len();
-            let collation = argument.as_ref().map(|arg| resolved_collation(arg, relation)).unwrap_or_default();
-            aggregates.push(AggregateSpec { function: *function, argument, separator, distinct: *distinct, filter, order, collation });
-            ResolvedExpr::AggregateRef(index)
-        }
-        Expr::Window { function, spec } => {
-            if !allow_window {
-                let mut error = SqlError::new("misuse-of-window", "misuse of window function").in_statement("select");
-                error.clause = Some(window_call_name(function).to_ascii_uppercase());
-                return Err(error);
-            }
-            let resolved = resolve_window(function, spec, relation, outer, named, windows, aggregates)?;
-            let index = windows.len();
-            windows.push(resolved);
-            ResolvedExpr::Window(index)
-        }
-    })
-}
-
-/// Lowercase name of a window function, used in `misuse` diagnostics.
-fn window_call_name(function: &WindowFunction) -> &'static str {
-    match function {
-        WindowFunction::RowNumber => "row_number",
-        WindowFunction::Rank => "rank",
-        WindowFunction::DenseRank => "dense_rank",
-        WindowFunction::PercentRank => "percent_rank",
-        WindowFunction::CumeDist => "cume_dist",
-        WindowFunction::Ntile(_) => "ntile",
-        WindowFunction::Lag { .. } => "lag",
-        WindowFunction::Lead { .. } => "lead",
-        WindowFunction::FirstValue(_) => "first_value",
-        WindowFunction::LastValue(_) => "last_value",
-        WindowFunction::NthValue { .. } => "nth_value",
-        WindowFunction::Aggregate { function, .. } => function.name(),
-    }
-}
-
-/// Resolves a window call, merging the `OVER` clause with any base window.
-fn resolve_window(
-    function: &WindowFunction,
-    spec: &WindowSpec,
-    relation: &Relation,
-    outer: &[ScopeShape],
-    named: &[NamedWindow],
-    windows: &mut Vec<ResolvedWindow>,
-    aggregates: &mut Vec<AggregateSpec>,
-) -> Result<ResolvedWindow, SqlError> {
-    let merged = merge_window_spec(spec, named, &mut Vec::new(), None)?;
-    let partition = merged
-        .partition
-        .iter()
-        .map(|expr| resolve_expr(expr, relation, outer, named, windows, aggregates, true, false))
-        .collect::<Result<Vec<_>, _>>()?;
-    let order = merged
-        .order
-        .iter()
-        .map(|key| {
-            let resolved = resolve_expr(&key.expr, relation, outer, named, windows, aggregates, true, false)?;
-            let collation = resolved_collation(&resolved, relation);
-            Ok((resolved, SortDirection::of(key).with_collation(collation)))
-        })
-        .collect::<Result<Vec<_>, SqlError>>()?;
-    let frame = match merged.frame {
-        Some(frame) => Some(resolve_frame(frame, relation, outer, named, windows, aggregates)?),
-        None => None,
-    };
-    let function = resolve_window_function(function, relation, outer, named, windows, aggregates)?;
-    Ok(ResolvedWindow { function, partition, order, frame })
-}
-
-/// Flattened window definition after following base-window references.
-struct MergedWindow<'a> {
-    partition: Vec<&'a Expr>,
-    order: Vec<&'a OrderKey>,
-    frame: Option<&'a Frame>,
-}
-
-/// Follows `w1 -> w2 -> ...` references and rejects clauses that would
-/// override a base window's own clause, as SQLite does.
-fn merge_window_spec<'a>(
-    spec: &'a WindowSpec,
-    named: &'a [NamedWindow],
-    seen: &mut Vec<String>,
-    window_name: Option<&str>,
-) -> Result<MergedWindow<'a>, SqlError> {
-    let mut partition = Vec::new();
-    let mut order = Vec::new();
-    let mut frame = None;
-    if let Some(base) = &spec.base {
-        let self_reference = window_name.is_some_and(|name| name.eq_ignore_ascii_case(base));
-        if !self_reference && !seen.iter().any(|name| name.eq_ignore_ascii_case(base)) {
-            let definition = named.iter().rev().find(|window| window.name.eq_ignore_ascii_case(base)).ok_or_else(|| {
-                let mut error = SqlError::new("unknown-window", format!("no such window: {base}")).in_statement("select");
-                error.clause = Some(base.to_ascii_uppercase());
-                error
-            })?;
-            seen.push(base.clone());
-            let inherited = merge_window_spec(&definition.spec, named, seen, Some(base))?;
-            partition = inherited.partition;
-            order = inherited.order;
-            frame = inherited.frame;
-        }
-    }
-    if !spec.partition.is_empty() {
-        if !partition.is_empty() {
-            return Err(SqlError::new(
-                "window-override",
-                format!("cannot override PARTITION clause of window: {}", spec.base.clone().unwrap_or_default()),
-            )
-            .in_statement("select"));
-        }
-        partition = spec.partition.iter().collect();
-    }
-    if !spec.order.is_empty() {
-        if !order.is_empty() {
-            return Err(SqlError::new(
-                "window-override",
-                format!("cannot override ORDER BY clause of window: {}", spec.base.clone().unwrap_or_default()),
-            )
-            .in_statement("select"));
-        }
-        order = spec.order.iter().collect();
-    }
-    if let Some(explicit) = &spec.frame {
-        if frame.is_some() {
-            return Err(SqlError::new(
-                "window-override",
-                format!("cannot override frame clause of window: {}", spec.base.clone().unwrap_or_default()),
-            )
-            .in_statement("select"));
-        }
-        frame = Some(explicit);
-    }
-    Ok(MergedWindow { partition, order, frame })
-}
-
-/// Resolves an explicit frame; offsets must be constant non-negative integers.
-fn resolve_frame(
-    frame: &Frame,
-    _relation: &Relation,
-    _outer: &[ScopeShape],
-    _named: &[NamedWindow],
-    _windows: &mut Vec<ResolvedWindow>,
-    _aggregates: &mut Vec<AggregateSpec>,
-) -> Result<ResolvedFrame, SqlError> {
-    // SQLite only accepts a literal non-negative integer here; `abs(-1)` and
-    // `1.5` are both rejected at prepare time. Validating now keeps evaluation
-    // free of column lookups, which a frame offset can never have.
-    let resolve_bound = |bound: &FrameBound, which: &str| -> Result<ResolvedFrameBound, SqlError> {
-        let offset = match &bound.offset {
-            Some(offset) => match offset.as_ref() {
-                Expr::Literal(Literal::Integer(value)) if *value >= 0 => Some(ResolvedExpr::Cell(Cell::Integer(*value))),
-                _ => {
-                    return Err(
-                        SqlError::new("invalid-frame", format!("frame {which} offset must be a non-negative integer")).in_statement("select")
-                    );
-                }
-            },
-            None => None,
-        };
-        Ok(ResolvedFrameBound { edge: bound.edge, offset })
-    };
-    let start = resolve_bound(&frame.start, "starting")?;
-    let end = resolve_bound(&frame.end, "ending")?;
-    Ok(ResolvedFrame { units: frame.units, start, end, exclude: frame.exclude })
-}
-
-/// Resolves the arguments of a window function.
-fn resolve_window_function(
-    function: &WindowFunction,
-    relation: &Relation,
-    outer: &[ScopeShape],
-    named: &[NamedWindow],
-    windows: &mut Vec<ResolvedWindow>,
-    aggregates: &mut Vec<AggregateSpec>,
-) -> Result<ResolvedWindowFunction, SqlError> {
-    // Arguments are evaluated per row of the frame, so they may contain
-    // aggregates but never another window function.
-    let mut argument = |expr: &Expr| resolve_expr(expr, relation, outer, named, windows, aggregates, true, false);
-    Ok(match function {
-        WindowFunction::RowNumber => ResolvedWindowFunction::RowNumber,
-        WindowFunction::Rank => ResolvedWindowFunction::Rank,
-        WindowFunction::DenseRank => ResolvedWindowFunction::DenseRank,
-        WindowFunction::PercentRank => ResolvedWindowFunction::PercentRank,
-        WindowFunction::CumeDist => ResolvedWindowFunction::CumeDist,
-        WindowFunction::Ntile(buckets) => ResolvedWindowFunction::Ntile(argument(buckets)?),
-        WindowFunction::Lag { value, offset, default } => ResolvedWindowFunction::Lag {
-            value: argument(value)?,
-            offset: offset.as_ref().map(|expr| argument(expr)).transpose()?,
-            default: default.as_ref().map(|expr| argument(expr)).transpose()?,
-        },
-        WindowFunction::Lead { value, offset, default } => ResolvedWindowFunction::Lead {
-            value: argument(value)?,
-            offset: offset.as_ref().map(|expr| argument(expr)).transpose()?,
-            default: default.as_ref().map(|expr| argument(expr)).transpose()?,
-        },
-        WindowFunction::FirstValue(value) => ResolvedWindowFunction::FirstValue(argument(value)?),
-        WindowFunction::LastValue(value) => ResolvedWindowFunction::LastValue(argument(value)?),
-        WindowFunction::NthValue { value, position } => {
-            ResolvedWindowFunction::NthValue { value: argument(value)?, position: argument(position)? }
-        }
-        WindowFunction::Aggregate { function, argument: value, separator, distinct, filter, order } => {
-            let mut resolved_order = Vec::with_capacity(order.len());
-            for key in order {
-                let resolved = argument(&key.expr)?;
-                let collation = resolved_collation(&resolved, relation);
-                resolved_order.push((resolved, SortDirection::of(key).with_collation(collation)));
-            }
-            let resolved_argument = value.as_ref().map(|expr| argument(expr)).transpose()?;
-            let collation = resolved_argument.as_ref().map(|arg| resolved_collation(arg, relation)).unwrap_or_default();
-            ResolvedWindowFunction::Aggregate {
-                function: *function,
-                argument: resolved_argument,
-                separator: separator.as_ref().map(|expr| argument(expr)).transpose()?,
-                distinct: *distinct,
-                filter: filter.as_ref().map(|expr| argument(expr)).transpose()?,
-                order: resolved_order,
-                collation,
-            }
-        }
-    })
-}
-
-/// Retries a column reference in the enclosing scopes, innermost first.
-fn resolve_outer(reference: &ColumnRef, outer: &[ScopeShape]) -> Result<Option<ResolvedExpr>, SqlError> {
-    for (depth, scope) in outer.iter().enumerate() {
-        let mut matches = Vec::new();
-        for (index, (label, name)) in scope.columns.iter().enumerate() {
-            let qualifier_matches = reference.qualifier.as_ref().is_none_or(|qualifier| qualifier.eq_ignore_ascii_case(label));
-            if qualifier_matches && name.eq_ignore_ascii_case(&reference.name) {
-                matches.push(index);
-            }
-        }
-        match matches.len() {
-            0 => continue,
-            1 => return Ok(Some(ResolvedExpr::OuterColumn { depth, index: matches[0] })),
-            _ => {
-                return Err(SqlError::new("ambiguous-column", format!("ambiguous column `{}` in an enclosing `SELECT`", reference.display()))
-                    .in_statement("select"));
-            }
-        }
-    }
-    Ok(None)
 }
 
 /// Runs one nested `SELECT` with the current row as the innermost enclosing
@@ -14963,16 +12928,6 @@ fn integral_rowid(value: f64) -> Option<i64> {
     Some(value as i64)
 }
 
-fn literal_cell(literal: &Literal) -> Cell {
-    match literal {
-        Literal::Null => Cell::Null,
-        Literal::Integer(value) => Cell::Integer(*value),
-        Literal::Real(value) => Cell::Real(*value),
-        Literal::Text(value) => Cell::Text(value.clone()),
-        Literal::Blob(value) => Cell::Blob(value.clone()),
-    }
-}
-
 /// SQLite storage-class order: `NULL` < numbers < text < blob.
 fn storage_rank(cell: &Cell) -> u8 {
     match cell {
@@ -16778,107 +14733,6 @@ fn self_contained_arity(
     Ok(slots)
 }
 
-/// Resolves every `CHECK` of one `CREATE TABLE` against the declared columns.
-///
-/// The table does not exist yet, so a synthetic source exposing its column
-/// names stands in for it. A reference to an undeclared column therefore fails
-/// the statement with `unknown-column`, and a subquery is rejected by name
-/// because SQLite forbids one inside a check.
-fn resolve_checks(
-    table: &str,
-    columns: &[ColumnSpec],
-    checks: &[CheckConstraint],
-    statement: &'static str,
-    without_rowid: bool,
-) -> Result<Vec<CheckDef>, SqlError> {
-    if checks.is_empty() {
-        return Ok(Vec::new());
-    }
-    let names: Vec<String> = columns.iter().map(|column| column.name.clone()).collect();
-    let width = names.len();
-    // A base-table source also exposes the hidden rowid slot, so `CHECK
-    // (rowid > 0)` resolves exactly like SQLite accepts it.
-    let def = TableDef {
-        name: table.to_string(),
-        columns: columns.to_vec(),
-        rowid_alias: None,
-        primary_key_index: false,
-        primary_key: Vec::new(),
-        table_constraints: Vec::new(),
-        checks: Vec::new(),
-        foreign_keys: Vec::new(),
-        strict: false,
-        without_rowid,
-        temp: false,
-    };
-    let source = Source {
-        label: table.to_string(),
-        columns: SourceColumns::Table(&def),
-        offset: 0,
-        join: None,
-        star_hidden: vec![false; width],
-        unqualified_hidden: vec![false; width],
-        star_override: vec![None; width],
-    };
-    let relation = Relation { sources: vec![source], using: vec![Vec::new()], using_slots: Vec::new(), trigger: None, excluded: false };
-    let mut resolved = Vec::with_capacity(checks.len());
-    for check in checks {
-        let mut aggregates = Vec::new();
-        let mut windows = Vec::new();
-        let expr = resolve_expr(&check.expr, &relation, &[], &[], &mut windows, &mut aggregates, false, false)?;
-        if expr.contains_subquery() {
-            let mut error = SqlError::new("unsupported-clause", "subqueries prohibited in CHECK constraints").in_statement(statement);
-            error.clause = Some("CHECK".to_string());
-            return Err(error);
-        }
-        resolved.push(CheckDef { name: check.name.clone(), expr, text: check.text.clone() });
-    }
-    Ok(resolved)
-}
-
-/// Resolves every `REFERENCES` clause of one `CREATE TABLE` against the
-/// declared child columns.
-///
-/// Only the child side is validated here: SQLite allows a foreign key to name a
-/// parent table that does not exist yet, and reports an undeclared child column
-/// as `SQLITE_ERROR` with the same message the reference engine uses.
-fn resolve_foreign_keys(columns: &[ColumnSpec], keys: &[ForeignKey]) -> Result<Vec<ForeignKeyDef>, SqlError> {
-    let mut resolved = Vec::with_capacity(keys.len());
-    for key in keys {
-        let mut positions = Vec::with_capacity(key.columns.len());
-        for name in &key.columns {
-            let position = columns.iter().position(|column| column.name.eq_ignore_ascii_case(name)).ok_or_else(|| {
-                SqlError::new("SQLITE_ERROR", format!("unknown column \"{name}\" in foreign key definition")).in_statement("create-table")
-            })?;
-            positions.push(position);
-        }
-        resolved.push(ForeignKeyDef {
-            columns: positions,
-            parent: key.parent.to_ascii_lowercase(),
-            parent_display: key.parent.clone(),
-            parent_columns: key.parent_columns.clone(),
-            on_delete: foreign_key_action_text(key.on_delete),
-            on_update: foreign_key_action_text(key.on_update),
-            on_delete_action: key.on_delete,
-            on_update_action: key.on_update,
-            deferred: key.deferred,
-        });
-    }
-    Ok(resolved)
-}
-
-/// Spells one referential action the way `PRAGMA foreign_key_list` reports it.
-fn foreign_key_action_text(action: ForeignKeyAction) -> String {
-    match action {
-        ForeignKeyAction::NoAction => "NO ACTION",
-        ForeignKeyAction::Restrict => "RESTRICT",
-        ForeignKeyAction::SetNull => "SET NULL",
-        ForeignKeyAction::SetDefault => "SET DEFAULT",
-        ForeignKeyAction::Cascade => "CASCADE",
-    }
-    .to_string()
-}
-
 /// Finds the table one `PRAGMA` refers to. An unqualified name searches the
 /// temp schema first, then `main`, matching SQLite's connection search order.
 fn pragma_table_def<'a>(engine: &'a Engine, schema: Option<&str>, name: &str) -> Option<&'a TableDef> {
@@ -16886,13 +14740,13 @@ fn pragma_table_def<'a>(engine: &'a Engine, schema: Option<&str>, name: &str) ->
     let wants_temp = schema.map_or(true, |slot| slot.eq_ignore_ascii_case("temp"));
     let wants_main = schema.map_or(true, |slot| slot.eq_ignore_ascii_case("main"));
     if wants_temp {
-        if let Some(position) = engine.temp_lookup.get(&key) {
-            return Some(&engine.temp_tables[*position].def);
+        if let Some(position) = engine.catalog.temp_lookup.get(&key) {
+            return Some(&engine.catalog.temp_tables[*position].def);
         }
     }
     if wants_main {
-        if let Some(position) = engine.table_lookup.get(&key) {
-            return Some(&engine.tables[*position]);
+        if let Some(position) = engine.catalog.table_lookup.get(&key) {
+            return Some(&engine.catalog.tables[*position]);
         }
     }
     None
@@ -16904,12 +14758,12 @@ fn pragma_view_def<'a>(engine: &'a Engine, schema: Option<&str>, name: &str) -> 
     let wants_temp = schema.map_or(true, |slot| slot.eq_ignore_ascii_case("temp"));
     let wants_main = schema.map_or(true, |slot| slot.eq_ignore_ascii_case("main"));
     if wants_temp {
-        if let Some(view) = engine.temp_views.get(&key) {
+        if let Some(view) = engine.catalog.temp_views.get(&key) {
             return Some(&view.def);
         }
     }
     if wants_main {
-        if let Some(view) = engine.views.get(&key) {
+        if let Some(view) = engine.catalog.views.get(&key) {
             return Some(view);
         }
     }
@@ -17000,7 +14854,7 @@ fn pragma_table_info(engine: &Engine, schema: Option<&str>, table: &str, extende
 /// constraint indexes in reverse numbering order.
 fn pragma_index_list(engine: &Engine, table: &str) -> ExecResult {
     let key = table.to_ascii_lowercase();
-    let mut explicit: Vec<&IndexDef> = engine.indexes.values().filter(|index| index.table == key).collect();
+    let mut explicit: Vec<&IndexDef> = engine.catalog.indexes.values().filter(|index| index.table == key).collect();
     explicit.sort_by(|left, right| right.order.cmp(&left.order));
     let mut rows = Vec::new();
     for index in explicit {
@@ -17035,7 +14889,7 @@ fn pragma_index_list(engine: &Engine, table: &str) -> ExecResult {
 /// column, in key order.
 fn pragma_index_info(engine: &Engine, index: &str) -> ExecResult {
     let mut rows = Vec::new();
-    if let Some(definition) = engine.indexes.get(&index.to_ascii_lowercase()) {
+    if let Some(definition) = engine.catalog.indexes.get(&index.to_ascii_lowercase()) {
         if let Some(def) = pragma_table_def(engine, None, &definition.table) {
             for (seqno, position) in definition.columns.iter().enumerate() {
                 rows.push(vec![Cell::Integer(seqno as i64), Cell::Integer(*position as i64), Cell::Text(def.columns[*position].name.clone())]);
@@ -17043,7 +14897,7 @@ fn pragma_index_info(engine: &Engine, index: &str) -> ExecResult {
         }
     }
     else {
-        for def in engine.tables.iter().chain(engine.temp_tables.iter().map(|temp| &temp.def)) {
+        for def in engine.catalog.tables.iter().chain(engine.catalog.temp_tables.iter().map(|temp| &temp.def)) {
             for (number, positions, _) in autoindex_definitions(def) {
                 if !format!("sqlite_autoindex_{}_{}", def.name, number).eq_ignore_ascii_case(index) {
                     continue;
@@ -17502,16 +15356,6 @@ fn managed_unique_violation(entries: &[(Vec<crate::WriteValue>, i64)], collation
         }
     }
     false
-}
-
-fn write_value_cell(value: &crate::WriteValue) -> Cell {
-    match value {
-        crate::WriteValue::Null => Cell::Null,
-        crate::WriteValue::Integer(value) => Cell::Integer(*value),
-        crate::WriteValue::Real(value) => Cell::Real(*value),
-        crate::WriteValue::Text(value) => Cell::Text(value.clone()),
-        crate::WriteValue::Blob(value) => Cell::Blob(value.clone()),
-    }
 }
 
 fn decode_row(payload: &[u8], def: &TableDef, rowid: i64) -> Result<Vec<Cell>, SqlError> {
@@ -18047,23 +15891,6 @@ fn signed_record_integer(bytes: &[u8]) -> i64 {
         value = (value << 8) | u64::from(*byte);
     }
     value as i64
-}
-
-/// Decodes a raw record into cells without expanding an implicit rowid alias.
-fn decode_cells(payload: &[u8]) -> Result<Vec<Cell>, SqlError> {
-    let limits = RecordLimits { max_columns: 1024, max_payload_bytes: 16 * 1024 * 1024 };
-    let values = decode_record(payload, TextEncoding::Utf8, limits).map_err(|error| storage_failure(error).in_statement("select"))?;
-    // 文本字段直接移交解码结果里的 `String`,不再多复制一次。
-    Ok(values
-        .into_iter()
-        .map(|value| match value {
-            crate::RecordValue::Null => Cell::Null,
-            crate::RecordValue::Integer(value) => Cell::Integer(value),
-            crate::RecordValue::Real(value) => Cell::Real(value),
-            crate::RecordValue::Text(text) => Cell::Text(text),
-            crate::RecordValue::Blob(bytes) => Cell::Blob(bytes.to_vec()),
-        })
-        .collect())
 }
 
 /// Serializes results as a JSON array for the wasm host.

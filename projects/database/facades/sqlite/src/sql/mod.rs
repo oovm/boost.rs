@@ -28,29 +28,9 @@ pub use database_query::sqlite::{
         rewrite_create_table_column, rewrite_create_table_drop_column, rewrite_create_table_name, rewrite_view_column, rewrite_view_table,
         statement_references, strip_schema_qualifiers,
     },
+    value::Cell,
 };
-pub use engine::{Cell, Engine, ExecResult, results_json};
+pub use engine::{Engine, ExecResult, results_json};
 pub use host::HostFunctionTable;
 
-pub(crate) use database_query::sqlite::json_string;
-
-/// Maps a storage rejection onto the facade's stable error code.
-///
-/// Corruption keeps its own code instead of collapsing into `storage`, and
-/// constraint families stay distinguishable so hosts can branch on them.
-pub(crate) fn storage_failure(error: database_types::Error) -> SqlError {
-    let code = match &error {
-        database_types::Error::Corrupt(_) | database_types::Error::CorruptReason { .. } => "corrupt",
-        database_types::Error::UniqueViolation { .. } => "unique-constraint",
-        database_types::Error::Constraint { kind, .. } => match *kind {
-            "unique" => "unique-constraint",
-            "not-null" => "not-null-constraint",
-            "check" => "check-constraint",
-            "foreign-key" => "foreign-key-constraint",
-            _ => "constraint-failed",
-        },
-        database_types::Error::Unsupported(_) => "unsupported",
-        _ => "storage",
-    };
-    SqlError::new(code, error.to_string())
-}
+pub(crate) use database_query::sqlite::{bind, catalog, json_string, storage_failure, value};

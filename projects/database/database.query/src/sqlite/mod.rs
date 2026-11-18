@@ -7,12 +7,18 @@
 //!
 //! - [`frontend`] 是 tokenizer + AST + `parse` 的完整前端;
 //! - [`error`] 是解析与执行共享的结构化拒绝 [`error::SqlError`];
+//! - [`value`] 是宿主可见的单元格、字面量与记录解码;
+//! - [`catalog`] 是 schema 对象形状与 catalog 容器;
+//! - [`bind`] 是名称/列解析后的表达式与关系形状;
 //! - [`json_string`] 是门面 JSON 信封共用的字符串转义。
 
+pub mod bind;
+pub mod catalog;
 pub mod error;
 pub mod frontend;
+pub mod value;
 
-pub use error::SqlError;
+pub use error::{SqlError, storage_failure};
 
 /// 把一段文本转义为 JSON 字符串字面量(含两侧引号)。
 ///

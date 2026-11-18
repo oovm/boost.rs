@@ -1050,6 +1050,7 @@ name = "database-query"
 version = "0.1.0"
 dependencies = [
  "database-cluster",
+ "database-formats",
  "database-storage",
  "database-types",
  "js-sys",

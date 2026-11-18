@@ -82,3 +82,24 @@ impl fmt::Display for SqlError {
 }
 
 impl std::error::Error for SqlError {}
+
+/// Maps one storage failure onto the structured rejection a host sees.
+///
+/// Corruption keeps its own code instead of collapsing into `storage`, and
+/// constraint families stay distinguishable so hosts can branch on them.
+pub fn storage_failure(error: database_types::Error) -> SqlError {
+    let code = match &error {
+        database_types::Error::Corrupt(_) | database_types::Error::CorruptReason { .. } => "corrupt",
+        database_types::Error::UniqueViolation { .. } => "unique-constraint",
+        database_types::Error::Constraint { kind, .. } => match *kind {
+            "unique" => "unique-constraint",
+            "not-null" => "not-null-constraint",
+            "check" => "check-constraint",
+            "foreign-key" => "foreign-key-constraint",
+            _ => "constraint-failed",
+        },
+        database_types::Error::Unsupported(_) => "unsupported",
+        _ => "storage",
+    };
+    SqlError::new(code, error.to_string())
+}
