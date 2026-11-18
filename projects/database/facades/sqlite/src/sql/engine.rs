@@ -20,6 +20,8 @@ use database_execution::sqlite::{
     host::HostFunctionTable,
     probe::*,
     select::*,
+    trigger::{self, MAX_TRIGGER_DEPTH, TriggerState, event_statement, trigger_event_matches},
+    view::{self, view_relation},
     window::*,
 };
 use database_udf::{HostMicroDefinition, HostRuntimeAdapter};
@@ -81,10 +83,6 @@ impl ExecResult {
         out
     }
 }
-
-/// Depth limit SQLite applies before raising `too many levels of trigger
-/// recursion` when `PRAGMA recursive_triggers` is on.
-const MAX_TRIGGER_DEPTH: usize = 100;
 
 /// One database attached with `ATTACH DATABASE`.
 struct AttachedDb {
@@ -193,47 +191,6 @@ fn unknown_schema_error(statement: &Statement, schema: &str) -> SqlError {
     }
 }
 
-/// Statement label a trigger event reports in diagnostics.
-fn event_statement(event: &TriggerEvent) -> &'static str {
-    match event {
-        TriggerEvent::Insert => "insert",
-        TriggerEvent::Update(_) => "update",
-        TriggerEvent::Delete => "delete",
-    }
-}
-
-/// A `FROM`-shape over one view's output, so view DML can resolve its filter
-/// and assignments with the regular expression path.
-fn view_relation<'a>(label: &str, names: &[String], trigger: Option<&'a TriggerFrame>) -> Relation<'a> {
-    let width = names.len();
-    Relation {
-        sources: vec![Source {
-            label: label.to_string(),
-            columns: SourceColumns::Materialized { names: names.to_vec(), rowid: false },
-            offset: 0,
-            join: None,
-            star_hidden: vec![false; width],
-            unqualified_hidden: vec![false; width],
-            star_override: vec![None; width],
-        }],
-        using: vec![Vec::new()],
-        using_slots: Vec::new(),
-        trigger,
-        excluded: false,
-    }
-}
-
-/// Whether a definition's event covers an incoming statement event.
-fn trigger_event_matches(defined: &TriggerEvent, incoming: &TriggerEvent) -> bool {
-    match (defined, incoming) {
-        (TriggerEvent::Insert, TriggerEvent::Insert) | (TriggerEvent::Delete, TriggerEvent::Delete) => true,
-        (TriggerEvent::Update(defined), TriggerEvent::Update(assigned)) => {
-            defined.is_empty() || defined.iter().any(|column| assigned.iter().any(|assigned| assigned.eq_ignore_ascii_case(column)))
-        }
-        _ => false,
-    }
-}
-
 /// The schema tables are read-only for user writes.
 fn check_readonly_table(name: &str, statement: &'static str) -> Result<(), SqlError> {
     if ddl::is_schema_table(name) || name.eq_ignore_ascii_case("sqlite_sequence") {
@@ -248,11 +205,9 @@ pub struct Engine {
     /// The catalog: schema objects statements resolve names against, plus
     /// the temp-schema allocator state.
     catalog: SqliteCatalog,
-    /// `NEW` / `OLD` frames of the trigger bodies currently executing,
-    /// outermost first.
-    trigger_frames: Vec<TriggerFrame>,
-    /// Row-level trigger events queued by the statement being executed.
-    pending_events: Vec<dml::DmlRowEvent>,
+    /// 触发器事件队列与 `NEW` / `OLD` 帧栈,机器与状态 owner 在
+    /// `database.execution::sqlite::trigger`(C8);门面持有实例,语句上下文借用。
+    trigger: TriggerState,
     /// Databases attached with `ATTACH DATABASE`, in attach order.
     attached: Vec<AttachedDb>,
     /// Lowercase attached schema name to its position in [`Engine::attached`].
@@ -262,11 +217,6 @@ pub struct Engine {
     alias: Option<String>,
     /// `main.` / `temp.` qualifier of the statement being executed.
     scope: TableScope,
-    /// Lowercase names of the triggers whose body is executing right now.
-    /// With SQLite's default `recursive_triggers = OFF` a trigger program is
-    /// not re-invoked by changes it caused itself, directly or indirectly,
-    /// while the other triggers still fire.
-    active_triggers: Vec<String>,
     /// Values bound to `?` / `:name` placeholders for the statement currently
     /// executing, in declaration order.
     parameters: Vec<Cell>,
@@ -320,13 +270,11 @@ impl Engine {
         let mut engine = Self {
             writer,
             catalog: SqliteCatalog::default(),
-            trigger_frames: Vec::new(),
-            pending_events: Vec::new(),
+            trigger: TriggerState::default(),
             attached: Vec::new(),
             attached_lookup: BTreeMap::new(),
             alias: None,
             scope: TableScope::Default,
-            active_triggers: Vec::new(),
             parameters: Vec::new(),
             upsert_excluded: Vec::new(),
             foreign_keys: true,
@@ -991,7 +939,7 @@ impl Engine {
             host_functions: &self.host_functions,
             parameters: &self.parameters,
             upsert_excluded: &self.upsert_excluded,
-            trigger_frames: &self.trigger_frames,
+            trigger_frames: &self.trigger.frames,
             alias: self.alias.as_deref(),
             attached: self.attached.iter().map(|db| db.engine.exec()).collect::<Vec<_>>().into(),
             attached_lookup: &self.attached_lookup,
@@ -1007,11 +955,11 @@ impl Engine {
             host_functions: &self.host_functions,
             parameters: &self.parameters,
             upsert_excluded: &mut self.upsert_excluded,
-            trigger_frames: &self.trigger_frames,
+            trigger_frames: &self.trigger.frames,
             alias: self.alias.as_deref(),
             attached: self.attached.iter().map(|db| db.engine.exec()).collect::<Vec<_>>().into(),
             attached_lookup: &self.attached_lookup,
-            pending_events: &mut self.pending_events,
+            pending_events: &mut self.trigger.pending_events,
             pending_indexes: &mut self.pending_indexes,
             pending_without_rowid: &mut self.pending_without_rowid,
             last_insert_rowid: &mut self.last_insert_rowid,
@@ -1032,7 +980,7 @@ impl Engine {
             host_functions: &self.host_functions,
             parameters: &self.parameters,
             upsert_excluded: &self.upsert_excluded,
-            trigger_frames: &self.trigger_frames,
+            trigger_frames: &self.trigger.frames,
             alias: self.alias.as_deref(),
             attached: self.attached.iter().map(|db| db.engine.exec()).collect::<Vec<_>>().into(),
             attached_lookup: &self.attached_lookup,
@@ -1151,14 +1099,14 @@ impl Engine {
         if !self.target_is_local(schema, &table) {
             return self.run_statement(statement);
         }
-        let saved_events = std::mem::take(&mut self.pending_events);
+        let saved_events = std::mem::take(&mut self.trigger.pending_events);
         // A trigger that fails has to undo the statement that fired it, like
         // SQLite's per-statement rollback, so the whole statement runs inside
         // one writer level owned here.
         self.writer.begin().map_err(|error| storage_failure(error).in_statement("trigger"))?;
         let outcome = match self.run_statement(statement) {
             Ok(result) => {
-                let events = std::mem::take(&mut self.pending_events);
+                let events = std::mem::take(&mut self.trigger.pending_events);
                 let mut failure = None;
                 for event in events {
                     if let Err(error) = self.fire_event(event) {
@@ -1182,7 +1130,7 @@ impl Engine {
                 Err(error)
             }
         };
-        self.pending_events = saved_events;
+        self.trigger.pending_events = saved_events;
         outcome
     }
 
@@ -1190,31 +1138,19 @@ impl Engine {
     /// the schemas this engine owns; an attached target runs in its own engine
     /// and must not fire the triggers of `main`.
     fn target_is_local(&self, schema: Option<&str>, table: &str) -> bool {
-        let key = table.to_ascii_lowercase();
-        match schema {
-            Some(qualifier) => {
-                let lower = qualifier.to_ascii_lowercase();
-                lower == "main" || lower == "temp" || self.alias.as_deref().is_some_and(|alias| alias.eq_ignore_ascii_case(qualifier))
-            }
-            None => {
-                self.catalog.temp_lookup.contains_key(&key)
-                    || self.catalog.table_lookup.contains_key(&key)
-                    || self.catalog.views.contains_key(&key)
-                    || self.attached.is_empty()
-            }
-        }
+        trigger::target_is_local(&self.catalog, self.alias.as_deref(), self.attached.is_empty(), schema, table)
     }
 
     /// Fires the triggers one queued row event matches.
     fn fire_event(&mut self, event: dml::DmlRowEvent) -> Result<(), SqlError> {
         let statement = event_statement(&event.event);
-        if self.recursive_triggers && self.active_triggers.len() >= MAX_TRIGGER_DEPTH {
+        if self.recursive_triggers && self.trigger.active_triggers.len() >= MAX_TRIGGER_DEPTH {
             return Err(SqlError::new("trigger-depth", "too many levels of trigger recursion").in_statement(statement));
         }
         let frame = TriggerFrame { columns: event.columns, new: event.new, old: event.old };
-        self.trigger_frames.push(frame);
+        self.trigger.frames.push(frame);
         let outcome = self.fire_matching(&event.table, &event.event, event.timing);
-        self.trigger_frames.pop();
+        self.trigger.frames.pop();
         outcome
     }
 
@@ -1231,20 +1167,20 @@ impl Engine {
         matched.sort_by(|left, right| right.1.order.cmp(&left.1.order));
         let statement = event_statement(event);
         for (key, trigger) in matched {
-            if !self.recursive_triggers && self.active_triggers.contains(&key) {
+            if !self.recursive_triggers && self.trigger.active_triggers.contains(&key) {
                 continue;
             }
-            if self.recursive_triggers && self.active_triggers.len() >= MAX_TRIGGER_DEPTH {
+            if self.recursive_triggers && self.trigger.active_triggers.len() >= MAX_TRIGGER_DEPTH {
                 return Err(SqlError::new("trigger-depth", "too many levels of trigger recursion").in_statement(statement));
             }
             if let Some(when) = &trigger.when {
-                match self.trigger_when_holds(when) {
+                match self.exec().trigger_when_holds(when) {
                     Ok(true) => {}
                     Ok(false) => continue,
                     Err(error) => return Err(error),
                 }
             }
-            self.active_triggers.push(key);
+            self.trigger.active_triggers.push(key);
             let mut outcome = Ok(());
             for statement in trigger.body.clone() {
                 outcome = self.run_triggered(statement).map(|_| ());
@@ -1252,82 +1188,16 @@ impl Engine {
                     break;
                 }
             }
-            self.active_triggers.pop();
+            self.trigger.active_triggers.pop();
             outcome?;
         }
         Ok(())
     }
 
-    /// Evaluates one trigger `WHEN` predicate against the current frame.
-    fn trigger_when_holds(&self, when: &Expr) -> Result<bool, SqlError> {
-        let relation =
-            Relation { sources: Vec::new(), using: Vec::new(), using_slots: Vec::new(), trigger: self.trigger_frames.last(), excluded: false };
-        let shape = relation.shape();
-        let mut aggregates = Vec::new();
-        let mut windows = Vec::new();
-        let resolved = resolve_expr(when, &relation, &[], &[], &mut windows, &mut aggregates, false, false)?;
-        let budget = Budget::new();
-        let ctx = EvalContext {
-            exec: self.exec(),
-            parameters: &self.parameters,
-            upsert_excluded: &self.upsert_excluded,
-            trigger_frames: &self.trigger_frames,
-            outer_read: &self.exec_state.outer_read,
-            subquery_cache: &self.exec_state.subquery_cache,
-            host_functions: &self.host_functions,
-            outer: &[],
-            current: &shape,
-            aggregates: &[],
-            windows: &[],
-            window_row: 0,
-            budget: &budget,
-            ctes: None,
-        };
-        Ok(truthiness(&resolved.eval(&[], &ctx)?) == Some(true))
-    }
-
-    /// Evaluates one `VALUES` expression of a trigger body against the active
-    /// `NEW` / `OLD` frame.
-    fn eval_trigger_expression(&self, expression: &Expr, statement: &'static str) -> Result<Cell, SqlError> {
-        let relation =
-            Relation { sources: Vec::new(), using: Vec::new(), using_slots: Vec::new(), trigger: self.trigger_frames.last(), excluded: false };
-        let shape = relation.shape();
-        let mut aggregates = Vec::new();
-        let mut windows = Vec::new();
-        let resolved = resolve_expr(expression, &relation, &[], &[], &mut windows, &mut aggregates, false, false)
-            .map_err(|error| error.in_statement(statement))?;
-        let budget = Budget::new();
-        let ctx = EvalContext {
-            exec: self.exec(),
-            parameters: &self.parameters,
-            upsert_excluded: &self.upsert_excluded,
-            trigger_frames: &self.trigger_frames,
-            outer_read: &self.exec_state.outer_read,
-            subquery_cache: &self.exec_state.subquery_cache,
-            host_functions: &self.host_functions,
-            outer: &[],
-            current: &shape,
-            aggregates: &[],
-            windows: &[],
-            window_row: 0,
-            budget: &budget,
-            ctes: None,
-        };
-        resolved.eval(&[], &ctx)
-    }
-
     /// Runs the `INSTEAD OF` triggers of one view when it has any; a view
     /// without one keeps SQLite's non-modifiable diagnostic.
     fn view_trigger_gate(&self, table: &str, key: &str, timing: TriggerTiming, event: &TriggerEvent) -> Result<(), SqlError> {
-        if self
-            .catalog
-            .triggers
-            .values()
-            .any(|trigger| trigger.table == key && trigger.timing == timing && trigger_event_matches(&trigger.event, event))
-        {
-            return Ok(());
-        }
-        Err(SqlError::new("readonly-view", format!("cannot modify {table} because it is a view")).in_statement(event_statement(event)))
+        view::view_trigger_gate(&self.catalog.triggers, table, key, timing, event)
     }
 
     /// `INSERT INTO <view>` dispatched to its `INSTEAD OF INSERT` triggers.
@@ -1373,9 +1243,9 @@ impl Engine {
         let saved = self.last_insert_rowid;
         for cells in frames {
             let frame = TriggerFrame { columns: names.clone(), new: Some(cells), old: None };
-            self.trigger_frames.push(frame);
+            self.trigger.frames.push(frame);
             let outcome = self.fire_matching(key, &event, TriggerTiming::InsteadOf);
-            self.trigger_frames.pop();
+            self.trigger.frames.pop();
             outcome?;
         }
         self.last_insert_rowid = saved;
@@ -1387,7 +1257,7 @@ impl Engine {
         match value {
             InsertValue::Literal(literal) => Ok(literal_cell(literal)),
             InsertValue::Parameter { index, .. } => Ok(self.parameters.get(*index).cloned().unwrap_or(Cell::Null)),
-            InsertValue::Expression(expression) => self.eval_trigger_expression(expression, statement),
+            InsertValue::Expression(expression) => self.exec().eval_trigger_expression(expression, statement),
         }
     }
 
@@ -1414,9 +1284,9 @@ impl Engine {
         // A placeholder frame lets `old.` / `new.` references resolve; the
         // values are replaced row by row below.
         let placeholder = vec![Cell::Null; names.len()];
-        self.trigger_frames.push(TriggerFrame { columns: names.clone(), new: Some(placeholder.clone()), old: Some(placeholder) });
+        self.trigger.frames.push(TriggerFrame { columns: names.clone(), new: Some(placeholder.clone()), old: Some(placeholder) });
         let resolved = (|| -> Result<(Option<ResolvedExpr>, Vec<(usize, ResolvedExpr)>, ScopeShape), SqlError> {
-            let relation = view_relation(alias.unwrap_or(table), &names, self.trigger_frames.last());
+            let relation = view_relation(alias.unwrap_or(table), &names, self.trigger.frames.last());
             let shape = relation.shape();
             let mut aggregates = Vec::new();
             let mut windows = Vec::new();
@@ -1437,7 +1307,7 @@ impl Engine {
         let (predicate, targets, shape) = match resolved {
             Ok(resolved) => resolved,
             Err(error) => {
-                self.trigger_frames.pop();
+                self.trigger.frames.pop();
                 return Err(error);
             }
         };
@@ -1458,7 +1328,7 @@ impl Engine {
                 exec: self.exec(),
                 parameters: &self.parameters,
                 upsert_excluded: &self.upsert_excluded,
-                trigger_frames: &self.trigger_frames,
+                trigger_frames: &self.trigger.frames,
                 outer_read: &self.exec_state.outer_read,
                 subquery_cache: &self.exec_state.subquery_cache,
                 host_functions: &self.host_functions,
@@ -1483,7 +1353,7 @@ impl Engine {
             if outcome.is_err() {
                 break;
             }
-            if let Some(frame) = self.trigger_frames.last_mut() {
+            if let Some(frame) = self.trigger.frames.last_mut() {
                 frame.old = Some(row);
                 frame.new = Some(next);
             }
@@ -1492,7 +1362,7 @@ impl Engine {
                 break;
             }
         }
-        self.trigger_frames.pop();
+        self.trigger.frames.pop();
         self.last_insert_rowid = saved;
         outcome?;
         Ok(ExecResult { statement: "update", columns: Vec::new(), rows: Vec::new(), affected: 0 })
@@ -1517,9 +1387,9 @@ impl Engine {
         let view = self.catalog.views.get(key).expect("view resolved").clone();
         let (names, rows) = self.exec().view_output(&view)?;
         let placeholder = vec![Cell::Null; names.len()];
-        self.trigger_frames.push(TriggerFrame { columns: names.clone(), new: None, old: Some(placeholder) });
+        self.trigger.frames.push(TriggerFrame { columns: names.clone(), new: None, old: Some(placeholder) });
         let resolved = (|| -> Result<(Option<ResolvedExpr>, ScopeShape), SqlError> {
-            let relation = view_relation(alias.unwrap_or(table), &names, self.trigger_frames.last());
+            let relation = view_relation(alias.unwrap_or(table), &names, self.trigger.frames.last());
             let shape = relation.shape();
             let mut aggregates = Vec::new();
             let mut windows = Vec::new();
@@ -1532,7 +1402,7 @@ impl Engine {
         let (predicate, shape) = match resolved {
             Ok(resolved) => resolved,
             Err(error) => {
-                self.trigger_frames.pop();
+                self.trigger.frames.pop();
                 return Err(error);
             }
         };
@@ -1549,7 +1419,7 @@ impl Engine {
                     break;
                 }
             }
-            if let Some(frame) = self.trigger_frames.last_mut() {
+            if let Some(frame) = self.trigger.frames.last_mut() {
                 frame.old = Some(row);
             }
             outcome = self.fire_matching(key, &event, TriggerTiming::InsteadOf);
@@ -1557,7 +1427,7 @@ impl Engine {
                 break;
             }
         }
-        self.trigger_frames.pop();
+        self.trigger.frames.pop();
         self.last_insert_rowid = saved;
         outcome?;
         Ok(ExecResult { statement: "delete", columns: Vec::new(), rows: Vec::new(), affected: 0 })
@@ -1634,7 +1504,7 @@ impl Engine {
     fn attached_target(&self, statement: &Statement) -> Option<usize> {
         // A trigger body resolves unqualified names in the schema of the
         // trigger, never in an attached database.
-        if !self.active_triggers.is_empty() {
+        if !self.trigger.active_triggers.is_empty() {
             return None;
         }
         let (name, kind) = match statement {
@@ -1802,7 +1672,7 @@ impl Engine {
 
     /// 求出 `VACUUM INTO` 的文件名;SQLite 要求表达式的结果是文本。
     fn vacuum_target(&self, expression: &Expr) -> Result<String, SqlError> {
-        match self.eval_trigger_expression(expression, "vacuum")? {
+        match self.exec().eval_trigger_expression(expression, "vacuum")? {
             Cell::Text(target) => Ok(target),
             _ => Err(SqlError::new("SQLITE_ERROR", "non-text filename").in_statement("vacuum")),
         }
@@ -2249,7 +2119,7 @@ impl Engine {
                         let cell = match value {
                             InsertValue::Literal(literal) => literal_cell(literal),
                             InsertValue::Parameter { index, .. } => self.parameters.get(*index).cloned().unwrap_or(Cell::Null),
-                            InsertValue::Expression(expression) => self.eval_trigger_expression(expression, "insert")?,
+                            InsertValue::Expression(expression) => self.exec().eval_trigger_expression(expression, "insert")?,
                         };
                         resolved.push(dml::cell_write_value(&cell));
                     }
@@ -2332,14 +2202,7 @@ impl Engine {
                             })
                             .unwrap_or(-1);
                         let cells = dml::check_row(def, slots, before_rowid);
-                        self.pending_events.push(dml::DmlRowEvent {
-                            table: key.clone(),
-                            timing: TriggerTiming::Before,
-                            event: TriggerEvent::Insert,
-                            columns: trigger_columns.clone(),
-                            new: Some(cells),
-                            old: None,
-                        });
+                        self.dml().queue_insert_before(&key, &trigger_columns, cells);
                     }
                     let outcome = if replace {
                         match self.dml().apply_replace(
@@ -2456,7 +2319,7 @@ impl Engine {
                         exec: self.exec(),
                         parameters: &self.parameters,
                         upsert_excluded: &self.upsert_excluded,
-                        trigger_frames: &self.trigger_frames,
+                        trigger_frames: &self.trigger.frames,
                         outer_read: &self.exec_state.outer_read,
                         subquery_cache: &self.exec_state.subquery_cache,
                         host_functions: &self.host_functions,
@@ -2493,14 +2356,7 @@ impl Engine {
                         probe_rows.push((rowid, cells.clone()));
                     }
                     if queue_triggers {
-                        self.pending_events.push(dml::DmlRowEvent {
-                            table: key.clone(),
-                            timing: TriggerTiming::After,
-                            event: TriggerEvent::Insert,
-                            columns: trigger_columns.clone(),
-                            new: Some(cells.clone()),
-                            old: None,
-                        });
+                        self.dml().queue_insert_after(&key, &trigger_columns, &cells);
                     }
                 }
                 // Referential checks run after every row is written and before
@@ -2766,7 +2622,7 @@ impl Engine {
                 // against the target row plus every `FROM` source, so a bare
                 // column may come from either side.
                 let (shape, from_tables) = if from.is_empty() {
-                    (TargetShape::new(def, alias.as_deref().unwrap_or(&table), self.trigger_frames.last()), Vec::new())
+                    (TargetShape::new(def, alias.as_deref().unwrap_or(&table), self.trigger.frames.last()), Vec::new())
                 }
                 else {
                     let width = def.columns.len();
@@ -2803,7 +2659,7 @@ impl Engine {
                         sources,
                         using: vec![Vec::new(); source_count],
                         using_slots: Vec::new(),
-                        trigger: self.trigger_frames.last(),
+                        trigger: self.trigger.frames.last(),
                         excluded: false,
                     };
                     let scope = relation.shape();
@@ -2840,7 +2696,7 @@ impl Engine {
                             exec: self.exec(),
                             parameters: &self.parameters,
                             upsert_excluded: &self.upsert_excluded,
-                            trigger_frames: &self.trigger_frames,
+                            trigger_frames: &self.trigger.frames,
                             outer_read: &self.exec_state.outer_read,
                             subquery_cache: &self.exec_state.subquery_cache,
                             host_functions: &self.host_functions,
@@ -3086,7 +2942,7 @@ impl Engine {
                     None => self.catalog.tables[main_position.expect("main table resolved")].clone(),
                 };
                 let def = &def_storage;
-                let shape = TargetShape::new(def, alias.as_deref().unwrap_or(&table), self.trigger_frames.last());
+                let shape = TargetShape::new(def, alias.as_deref().unwrap_or(&table), self.trigger.frames.last());
                 let predicate = shape.resolve_optional(filter.as_ref(), "delete")?;
                 let returning_shape = TargetShape::new(def, &table, None);
                 let returning = match &returning {

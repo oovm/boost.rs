@@ -23,4 +23,6 @@ pub mod json;
 pub mod probe;
 pub mod scalar;
 pub mod select;
+pub mod trigger;
+pub mod view;
 pub mod window;
