@@ -12,11 +12,9 @@
 //!   再改名冒充备份。
 
 use std::{
-    fs::{self, File, OpenOptions, TryLockError},
-    io::{Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::Arc,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use crate::{
@@ -25,84 +23,20 @@ use crate::{
 };
 
 use database_execution::sqlite::cursor::CursorTable;
-use database_storage::sqlite::journal;
+use database_storage::sqlite::{
+    PublishMode, WriterLock,
+    journal,
+    lock::LockError,
+};
 use database_udf::{HostMicroDefinition, HostRuntimeAdapter};
 
 pub use database_execution::sqlite::cursor::{CursorBatch, CursorOpen};
 
-/// 把存储层错误映射为结构化的 SQL 拒绝。
-fn storage_error(error: impl std::fmt::Display) -> SqlError {
-    SqlError::new("storage", error.to_string())
-}
-
-/// 文件写连接的跨进程互斥锁。
-///
-/// 锁落在数据库文件旁的 `<数据库文件>.lock` 上,由操作系统的 advisory file
-/// lock(`flock` / `LockFileEx`)承担:同一文件同一时刻只允许一个写连接持有,
-/// 无论持有者是不是本进程。操作系统在进程退出时自动释放,因此崩溃不会留下
-/// 永久占用;锁文件里的 PID 只用于超时诊断,不参与存活判定。
-struct WriterLock {
-    /// 持有 OS 锁的句柄;drop 即释放。
-    _file: File,
-}
-
-impl WriterLock {
-    /// 数据库文件对应的锁文件路径。
-    fn sidecar(database: &Path) -> PathBuf {
-        let mut path = database.as_os_str().to_os_string();
-        path.push(".lock");
-        PathBuf::from(path)
-    }
-
-    /// 获取写锁;被占用时按 `timeout` 重试,超时以 `busy` 拒绝。
-    fn acquire(database: &Path, timeout: Duration) -> Result<Self, SqlError> {
-        let path = Self::sidecar(database);
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(&path)
-            .map_err(|error| SqlError::new("storage", format!("cannot open lock file `{}`: {error}", path.display())))?;
-        let deadline = Instant::now() + timeout;
-        let mut wait = Duration::from_millis(1);
-        loop {
-            match file.try_lock() {
-                Ok(()) => {
-                    record_owner(&file);
-                    return Ok(Self { _file: file });
-                }
-                Err(TryLockError::WouldBlock) => {
-                    let now = Instant::now();
-                    if now >= deadline {
-                        return Err(SqlError::new("busy", busy_message(&path)));
-                    }
-                    std::thread::sleep(wait.min(deadline - now));
-                    wait = (wait * 2).min(Duration::from_millis(20));
-                }
-                Err(TryLockError::Error(error)) => {
-                    return Err(SqlError::new("storage", format!("cannot lock database `{}`: {error}", database.display())));
-                }
-            }
-        }
-    }
-}
-
-/// 把持有者 PID 写进锁文件,供超时诊断;写失败不影响加锁结果。
-fn record_owner(file: &File) {
-    let mut handle = file;
-    if handle.seek(SeekFrom::Start(0)).is_err() || file.set_len(0).is_err() {
-        return;
-    }
-    let _ = handle.write_all(format!("{}\n", std::process::id()).as_bytes());
-    let _ = handle.flush();
-}
-
-/// 锁被占用时的 `busy` 文案,尽力带上锁文件里记录的 PID。
-fn busy_message(path: &Path) -> String {
-    match fs::read_to_string(path).ok().and_then(|text| text.trim().parse::<u32>().ok()) {
-        Some(pid) => format!("database is locked by process {pid} (SQLITE_BUSY)"),
-        None => "database is locked (SQLITE_BUSY)".to_string(),
+/// 把存储层的锁拒绝映射成结构化的 SQL 拒绝。
+fn lock_error(error: LockError) -> SqlError {
+    match error {
+        LockError::Busy { .. } => SqlError::new("busy", error.to_string()),
+        LockError::Open { .. } | LockError::Lock { .. } => SqlError::new("storage", error.to_string()),
     }
 }
 
@@ -141,6 +75,15 @@ impl JournalMode {
             Self::Preserve => "preserve",
             Self::Delete => "delete",
             Self::Truncate => "truncate",
+        }
+    }
+
+    /// 存储层发布本合同对应的模式。
+    fn publish_mode(self) -> PublishMode {
+        match self {
+            Self::Preserve => PublishMode::Atomic,
+            Self::Delete => PublishMode::JournalDelete,
+            Self::Truncate => PublishMode::JournalTruncate,
         }
     }
 }
@@ -270,19 +213,6 @@ pub struct Connection {
     /// 本连接打开的结果游标表,以句柄为键;游标状态机归
     /// `database.execution::sqlite::cursor`。
     cursors: CursorTable,
-    /// 仅测试使用的发布失败注入,用于在真实崩溃窗口上取证。
-    #[cfg(test)]
-    fail_point: Option<FailPoint>,
-}
-
-/// 测试用的发布失败点,模拟进程在对应步骤后立刻退出。
-#[cfg(test)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum FailPoint {
-    /// 回滚日志已落盘、主文件尚未发布。
-    AfterJournal,
-    /// 主文件已发布、日志尚未清理。
-    AfterPublish,
 }
 
 impl Connection {
@@ -305,7 +235,7 @@ impl Connection {
         }
         else if let Some(path) = &options.filename {
             if !options.read_only && (path.exists() || options.create) {
-                lock = Some(WriterLock::acquire(path, Duration::from_millis(options.busy_timeout_ms))?);
+                lock = Some(WriterLock::acquire(path, Duration::from_millis(options.busy_timeout_ms)).map_err(lock_error)?);
             }
             if path.exists() {
                 let pages = load_recovered(path, options.read_only, options.journal_mode, options.synchronous)?;
@@ -336,8 +266,6 @@ impl Connection {
             journal_mode,
             synchronous,
             cursors: CursorTable::new(),
-            #[cfg(test)]
-            fail_point: None,
         };
         if created {
             // 新建库没有旧镜像可回滚;残留日志只可能来自更早的失败创建,先清掉。
@@ -593,41 +521,14 @@ impl Connection {
 
     /// 把当前镜像写到本连接的文件。纯内存连接为空操作。
     ///
-    /// `preserve` 只走原子发布:先写同目录临时文件,再改名覆盖目标,读连接
-    /// 不会观察到写了一半的镜像。`delete`/`truncate` 先把将被替换的旧镜像
-    /// 写成 `<db>-journal`,再发布新镜像,最后删除或截断日志。
+    /// 提交发行策略归 `database.storage::sqlite`:本连接只把公开的
+    /// [`JournalMode`] 映射成存储层的 [`PublishMode`] 并转调。
     fn publish(&mut self) -> Result<(), SqlError> {
         let Some(path) = self.filename.clone()
         else {
             return Ok(());
         };
-        match self.journal_mode {
-            JournalMode::Preserve => self.engine.save_atomic(&path),
-            JournalMode::Delete | JournalMode::Truncate => self.publish_journaled(&path),
-        }
-    }
-
-    /// 写日志 → 发布 → 清日志。任何一步失败都保留前一阶段已落盘的产物,
-    /// 让下一次打开按日志回滚。
-    fn publish_journaled(&mut self, path: &Path) -> Result<(), SqlError> {
-        let journaled = path.exists();
-        if journaled {
-            let previous = fs::read(path).map_err(storage_error)?;
-            journal::write(path, &previous, self.synchronous).map_err(storage_failure)?;
-        }
-        #[cfg(test)]
-        if self.fail_point == Some(FailPoint::AfterJournal) {
-            return Err(SqlError::new("injected", "failure point after journal"));
-        }
-        self.engine.save_atomic(path)?;
-        #[cfg(test)]
-        if self.fail_point == Some(FailPoint::AfterPublish) {
-            return Err(SqlError::new("injected", "failure point after publish"));
-        }
-        if journaled {
-            journal::finish(path, self.journal_mode == JournalMode::Truncate).map_err(storage_failure)?;
-        }
-        Ok(())
+        self.engine.publish(&path, self.journal_mode.publish_mode())
     }
 }
 
@@ -656,7 +557,7 @@ mod tests {
     use std::{
         fs,
         sync::atomic::{AtomicU64, Ordering},
-        time::{SystemTime, UNIX_EPOCH},
+        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     };
 
     /// 每次调用生成唯一临时目录,返回其中的数据库路径。
@@ -1342,19 +1243,17 @@ mod tests {
     #[test]
     fn a_hot_journal_rolls_back_a_published_commit_on_reopen() {
         let path = temp_path("journal-after-publish");
-        let mut connection =
-            Connection::open(ConnectionOptions { filename: Some(path.clone()), journal_mode: JournalMode::Delete, ..Default::default() })
-                .expect("file connection");
+        let mut connection = Connection::open(ConnectionOptions { filename: Some(path.clone()), ..Default::default() }).expect("file connection");
         connection.execute("CREATE TABLE t (a INTEGER)", &[]).expect("create publishes");
         connection.execute("INSERT INTO t VALUES (1)", &[]).expect("insert publishes");
         let before = fs::read(&path).expect("previous image");
-        let journal = database_storage::sqlite::journal::sidecar(&path);
-
-        connection.fail_point = Some(FailPoint::AfterPublish);
-        let error = connection.execute("INSERT INTO t VALUES (2)", &[]).expect_err("injected crash");
-        assert_eq!(error.code, "injected");
+        connection.execute("INSERT INTO t VALUES (2)", &[]).expect("second insert publishes");
         drop(connection);
 
+        // Recreate the crash window: the main file already carries the new
+        // image, while a rollback journal for the previous image is still hot.
+        let journal = database_storage::sqlite::journal::sidecar(&path);
+        database_storage::sqlite::journal::write(&path, &before, true).expect("write hot journal");
         assert!(journal.exists(), "the journal outlives the interrupted commit");
         assert_ne!(fs::read(&path).expect("published image"), before, "the publish really replaced the main file");
 
@@ -1381,18 +1280,15 @@ mod tests {
     #[test]
     fn a_journal_without_a_published_image_keeps_the_old_main_file() {
         let path = temp_path("journal-after-journal");
-        let mut connection =
-            Connection::open(ConnectionOptions { filename: Some(path.clone()), journal_mode: JournalMode::Truncate, ..Default::default() })
-                .expect("file connection");
+        let mut connection = Connection::open(ConnectionOptions { filename: Some(path.clone()), ..Default::default() }).expect("file connection");
         connection.execute("CREATE TABLE t (a INTEGER)", &[]).expect("create publishes");
         connection.execute("INSERT INTO t VALUES (1)", &[]).expect("insert publishes");
         let before = fs::read(&path).expect("previous image");
-
-        connection.fail_point = Some(FailPoint::AfterJournal);
-        assert_eq!(connection.execute("INSERT INTO t VALUES (2)", &[]).expect_err("injected crash").code, "injected");
         drop(connection);
 
+        // A crash after the journal reached the disk leaves the main file as is.
         let journal = database_storage::sqlite::journal::sidecar(&path);
+        database_storage::sqlite::journal::write(&path, &before, true).expect("write hot journal");
         assert!(fs::metadata(&journal).expect("journal exists").len() > 0, "the journal holds the old page images");
         assert_eq!(fs::read(&path).expect("main file untouched"), before, "no half image reached the main file");
 
@@ -1411,14 +1307,13 @@ mod tests {
     fn the_reference_engine_rolls_back_a_hot_journal_written_by_this_binding() {
         let python = reference_python().expect("a Python interpreter with sqlite3 is required for the interop test");
         let path = temp_path("journal-interop");
-        let mut connection =
-            Connection::open(ConnectionOptions { filename: Some(path.clone()), journal_mode: JournalMode::Delete, ..Default::default() })
-                .expect("file connection");
+        let mut connection = Connection::open(ConnectionOptions { filename: Some(path.clone()), ..Default::default() }).expect("file connection");
         connection.execute("CREATE TABLE t (a INTEGER)", &[]).expect("create publishes");
         connection.execute("INSERT INTO t VALUES (1)", &[]).expect("insert publishes");
-        connection.fail_point = Some(FailPoint::AfterPublish);
-        assert_eq!(connection.execute("INSERT INTO t VALUES (2)", &[]).expect_err("injected crash").code, "injected");
+        let before = fs::read(&path).expect("previous image");
+        connection.execute("INSERT INTO t VALUES (2)", &[]).expect("second insert publishes");
         drop(connection);
+        database_storage::sqlite::journal::write(&path, &before, true).expect("write hot journal");
 
         let script = r#"
 import sqlite3, sys

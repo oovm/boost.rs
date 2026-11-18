@@ -7,6 +7,7 @@
 
 mod database;
 pub mod journal;
+pub mod lock;
 mod schema;
 mod table;
 mod wal;
@@ -14,6 +15,8 @@ mod writer;
 
 pub use crate::sqlite::{
     database::{SqliteDatabase, read_existing},
+    journal::{PublishMode, publish},
+    lock::{LockError, WriterLock},
     schema::{
         SchemaObject, SchemaObjectKind, ViewProjection, parse_view, read_named_index, read_named_table, read_named_without_rowid, read_schema,
         read_schema_with_rowids, validate_strict_rows,

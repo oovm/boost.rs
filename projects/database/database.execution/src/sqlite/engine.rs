@@ -338,6 +338,15 @@ impl Engine {
         self.writer.save_atomic(path).map_err(|error| storage_failure(error))
     }
 
+    /// Flushes the current image through the storage publication contract.
+    ///
+    /// The journaled modes live in `database.storage::sqlite`: the engine only
+    /// materials deferred index trees and hands its writer to that owner.
+    pub fn publish(&mut self, path: &Path, mode: database_storage::sqlite::PublishMode) -> Result<(), SqlError> {
+        self.flush_pending_materialization("save")?;
+        database_storage::sqlite::journal::publish(path, &mut self.writer, mode).map_err(storage_failure)
+    }
+
     /// Configured page size.
     pub fn page_size(&self) -> u32 {
         self.writer.page_size() as u32

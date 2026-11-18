@@ -15,6 +15,44 @@ use std::{
 
 use database_types::{Error, Result};
 
+use crate::sqlite::writer::SqliteWriter;
+
+/// How a commit publishes the new image relative to a rollback journal.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PublishMode {
+    /// Atomically rename the new image over the main file without a journal.
+    #[default]
+    Atomic,
+    /// Write a rollback journal before publishing, then delete it.
+    JournalDelete,
+    /// Write a rollback journal before publishing, then truncate it to zero.
+    JournalTruncate,
+}
+
+/// Publishes `writer`'s current image to `database`.
+///
+/// `Atomic` renames a complete sibling temporary file over the target, so a
+/// concurrent reader sees either the previous or the new image. The journaled
+/// modes first persist the image currently on disk as a rollback journal, then
+/// publish, then delete or truncate the journal. A failure at any step keeps
+/// the previous stage on disk, so the next open replays the journal and rolls
+/// back to the old image.
+pub fn publish(database: &Path, writer: &mut SqliteWriter, mode: PublishMode) -> Result<()> {
+    if mode == PublishMode::Atomic {
+        return writer.save_atomic(database);
+    }
+    let journaled = database.exists();
+    if journaled {
+        let previous = fs::read(database).map_err(Error::Io)?;
+        write(database, &previous, writer.synchronous())?;
+    }
+    writer.save_atomic(database)?;
+    if journaled {
+        finish(database, mode == PublishMode::JournalTruncate)?;
+    }
+    Ok(())
+}
+
 /// Rollback-journal magic, written big-endian at the start of the header.
 const JOURNAL_MAGIC: [u8; 8] = [0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7];
 /// Header bytes before the zero padding that fills the first sector.
