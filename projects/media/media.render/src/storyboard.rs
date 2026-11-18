@@ -692,6 +692,71 @@ pub fn write_timeline(
     Ok(StoryboardPage { index: 0, path: out.to_string_lossy().into_owned(), cells })
 }
 
+/// Writes a seam page: the last frame of each shot beside the first frame of
+/// the next one.
+///
+/// A seam is where continuity breaks: a cut that looks fine inside each shot can
+/// still jump in colour, framing or motion. The page shows the two real frames
+/// side by side, labelled with both shot handles, so the pair is reviewed as a
+/// pair instead of as two unrelated storyboard rows.
+pub fn write_seams(json: &str, production: &Production, out: &Path, options: &StoryboardOptions) -> Result<StoryboardPage, Error> {
+    production.validate()?;
+    let project = parse_project(json)?;
+    let mut fonts = fonts_for(&project)?;
+    if production.shots.len() < 2 {
+        return Err(Error::invalid("a seam page needs at least two shots"));
+    }
+    let mut page = Frame::new(options.width, options.height);
+    page.fill(rgba(options.background, 255));
+    draw_title(&mut fonts, &mut page, options, "Seams");
+
+    let seams = production.shots.len() - 1;
+    let content_top = options.margin + options.title_size + options.gap;
+    let row_height = (options.height as f32 - content_top - options.margin) / seams as f32;
+    let cell_width = (options.width as f32 - options.margin * 2.0 - options.gap) / 2.0;
+    let mut cells = Vec::new();
+    for (index, pair) in production.shots.windows(2).enumerate() {
+        let [before, after] = [&pair[0], &pair[1]];
+        let last = seam_frame(&project, before, true)?;
+        let first = seam_frame(&project, after, false)?;
+        let y = content_top + row_height * index as f32;
+        let image_height = row_height - options.label_size * 2.6;
+        for (slot, (frame, label)) in [(last, format!("{} end", before.id)), (first, format!("{} start", after.id))].into_iter().enumerate() {
+            let x = options.margin + (cell_width + options.gap) * slot as f32;
+            let frame = render_frame_at(json, frame)?;
+            page.draw_bitmap(&bitmap(frame), x, y, cell_width, image_height, Fit::Contain, 1.0, 4.0);
+            draw_text(&mut fonts, &mut page, options, &label, x, y + image_height + options.label_size * 1.2, options.label_size, cell_width);
+        }
+        cells.push(StoryboardCell {
+            shot: format!("{}→{}", before.id, after.id),
+            panel: String::new(),
+            frames: vec![last, first],
+            dialogue: None,
+        });
+    }
+    if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent).map_err(|e| Error::io(format!("cannot create {}: {e}", parent.display())))?;
+    }
+    write_page(out, &page)?;
+    Ok(StoryboardPage { index: 0, path: out.to_string_lossy().into_owned(), cells })
+}
+
+/// Last drawn frame of a shot (`end`) or its first drawn frame.
+///
+/// The shot's own panel range decides the boundary when it has panels; without
+/// panels the scene span is used, so a shot without a storyboard still gets a
+/// real frame instead of an invented one.
+fn seam_frame(project: &Project, shot: &media_scene::Shot, end: bool) -> Result<u32, Error> {
+    let scene = scene_of(project, &shot.scene)
+        .ok_or_else(|| Error::invalid(format!("shot `{}` references unknown scene `{}`", shot.id, shot.scene)))?;
+    let (start, stop) = match (shot.panels.first(), shot.panels.last()) {
+        (Some(first), Some(last)) => (first.range[0], last.range[1]),
+        _ => (0, scene.duration.max(1)),
+    };
+    let local = if end { stop.saturating_sub(1).max(start) } else { start };
+    Ok(scene.start + local)
+}
+
 /// Renders a low-detail motion preview of the whole film.
 ///
 /// Dynamic storyboarding is the same project at a smaller raster, not a second
@@ -844,6 +909,25 @@ mod tests {
             .image(&pages[0].path, media_codec::DecodeLimits::unbounded())
             .expect("decode page");
         assert_eq!((bitmap.width, bitmap.height), (1600, 1200));
+    }
+
+    #[test]
+    fn a_seam_page_pairs_the_last_and_first_drawn_frames() {
+        let (json, production) = fixture();
+        let out = out_dir().join("seams.png");
+        let page = write_seams(&json, &production, &out, &StoryboardOptions::default()).expect("seams");
+        assert_eq!(page.cells.len(), 1, "two shots make one seam");
+        assert_eq!(page.cells[0].shot, "shot-mechanism→shot-spatial");
+        assert_eq!(page.cells[0].frames, vec![59, 60], "the cut is shown as the pair of real boundary frames");
+        assert!(std::fs::metadata(&out).expect("seam page written").len() > 1_000);
+    }
+
+    #[test]
+    fn a_seam_page_refuses_a_single_shot_film() {
+        let (json, mut production) = fixture();
+        production.shots.truncate(1);
+        let error = write_seams(&json, &production, &out_dir().join("no-seam.png"), &StoryboardOptions::default()).expect_err("one shot has no seam");
+        assert!(error.to_string().contains("at least two shots"), "{error}");
     }
 
     #[test]
