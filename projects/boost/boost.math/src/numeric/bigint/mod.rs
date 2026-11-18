@@ -6,8 +6,14 @@
 //!   非零幅值的最高 limb 恒非零、采用最短表示，limb 内部按小端字节序排列。
 //!   单 limb、内联双 limb 与堆上多 limb 只是带标签的内部实现细节，不作为
 //!   公共 API 暴露，`size_of` 与升档/降档成本不做承诺。
-//! - 首批运算：符号与大小比较、加、减、乘、受检除法与余数。位运算、移位、
-//!   字节编码、`gcd` 与幂运算按真实消费者另行冻结，本模块不提供。
+//! - 运算范围：符号与大小比较、加、减、乘、受检除法与余数；大端无符号幅值
+//!   字节编解码、`bit_length` 与按位存取、移位与变时模幂（消费者为 RSA 公钥
+//!   验签纵切）。`gcd`、一般幂运算与按位逻辑运算按真实消费者另行冻结。
+//! - 移位语义：左移等价乘 `2^bits` 且符号不变；右移为算术移位，等价
+//!   `floor(self / 2^bits)`，负数向负无穷取整，与截断除余（向零）不同。
+//! - 模幂语义：指数必须非负、模数必须大于零，否则返回 `None`；结果落在
+//!   `[0, modulus)`。这是变时通用内核，禁止承接私钥等秘密指数，常时与
+//!   蒙哥马利路径按密码边界合同另行提供。
 //! - 除法语义为截断（truncating）：商向零取整，余数与被除数同号，与 Rust
 //!   固定宽度整数的 `/` 与 `%` 一致。除数为零返回明确的 [`DivideByZero`]
 //!   错误，不 panic，也不返回零值掩盖失败。
@@ -137,8 +143,8 @@ fn add_limbs(left: &[u64], right: &[u64]) -> Vec<u64> {
 fn sub_limbs(left: &[u64], right: &[u64]) -> Vec<u64> {
     let mut out = Vec::with_capacity(left.len());
     let mut borrow = 0u64;
-    for index in 0..left.len() {
-        let a = left[index] as u128;
+    for (index, &a_limb) in left.iter().enumerate() {
+        let a = a_limb as u128;
         let b = right.get(index).copied().unwrap_or(0) as u128 + borrow as u128;
         if a >= b {
             out.push((a - b) as u64);
@@ -287,6 +293,75 @@ fn div_rem_knuth(dividend: &[u64], divisor: &[u64]) -> (Vec<u64>, Vec<u64>) {
     }
     let remainder = shift_right(&u[..n], shift);
     (quotient, remainder)
+}
+
+/// 幅值整体左移任意 bit 数（任意精度移位），输出可能需由调用方规范化。
+fn mag_shl_limbs(src: &[u64], bits: usize) -> Vec<u64> {
+    if src.is_empty() {
+        return Vec::new();
+    }
+    let limb_shift = bits / 64;
+    let bit_shift = (bits % 64) as u32;
+    let mut out = vec![0u64; limb_shift];
+    out.reserve(src.len() + 1);
+    if bit_shift == 0 {
+        out.extend_from_slice(src);
+        return out;
+    }
+    let mut carry = 0u64;
+    for &limb in src {
+        out.push((limb << bit_shift) | carry);
+        carry = limb >> (64 - bit_shift);
+    }
+    if carry != 0 {
+        out.push(carry);
+    }
+    out
+}
+
+/// 幅值整体右移任意 bit 数，返回截断商（可能带前导零 limb）与被丢弃位
+/// 中是否存在 1（sticky）。
+fn mag_shr_limbs(src: &[u64], bits: usize) -> (Vec<u64>, bool) {
+    if src.is_empty() {
+        return (Vec::new(), false);
+    }
+    let limb_shift = bits / 64;
+    let bit_shift = (bits % 64) as u32;
+    if limb_shift >= src.len() {
+        // 规范非空幅值的全部位都被丢弃。
+        return (Vec::new(), true);
+    }
+    let mut sticky = src[..limb_shift].iter().any(|&limb| limb != 0);
+    let rest = &src[limb_shift..];
+    if bit_shift == 0 {
+        return (rest.to_vec(), sticky);
+    }
+    if rest[0] & ((1u64 << bit_shift) - 1) != 0 {
+        sticky = true;
+    }
+    let mut out = Vec::with_capacity(rest.len());
+    for index in 0..rest.len() {
+        let low = rest[index] >> bit_shift;
+        let high = if index + 1 < rest.len() { rest[index + 1] << (64 - bit_shift) } else { 0 };
+        out.push(low | high);
+    }
+    (out, sticky)
+}
+
+/// 小端向量原地加一，按需进位扩展。
+fn add_one_limbs(limbs: &mut Vec<u64>) {
+    let mut carry = 1u64;
+    for limb in limbs.iter_mut() {
+        let sum = *limb as u128 + carry as u128;
+        *limb = sum as u64;
+        carry = (sum >> 64) as u64;
+        if carry == 0 {
+            return;
+        }
+    }
+    if carry != 0 {
+        limbs.push(carry);
+    }
 }
 
 /// 要求 `divisor` 非零。返回未规范化的商与余数幅值。
@@ -491,6 +566,104 @@ impl BigInteger {
                 }
             }
         }
+    }
+
+    /// 由大端无符号幅值字节构造。前导零字节与空输入归一到规范零；
+    /// 不编码符号，结果恒非负。
+    pub fn from_bytes_be(bytes: &[u8]) -> Self {
+        let start = bytes.iter().position(|&byte| byte != 0).unwrap_or(bytes.len());
+        let body = &bytes[start..];
+        if body.is_empty() {
+            return Self::ZERO;
+        }
+        let mut limbs = vec![0u64; body.len().div_ceil(8)];
+        for (offset, &byte) in body.iter().rev().enumerate() {
+            limbs[offset / 8] |= (byte as u64) << ((offset % 8) * 8);
+        }
+        // 已剥离前导零字节，最高 limb 必非零，可直接走 `from_trimmed`。
+        Self::from_sign_magnitude(Sign::Positive, Magnitude::from_trimmed(limbs))
+    }
+
+    /// 幅值序列化为大端字节（无前导零字节），零返回空 `Vec`；不编码符号。
+    pub fn to_bytes_be(&self) -> Vec<u8> {
+        let limbs = self.magnitude.limbs();
+        let mut little = Vec::with_capacity(limbs.len() * 8);
+        for &limb in limbs {
+            little.extend_from_slice(&limb.to_le_bytes());
+        }
+        match little.iter().rposition(|&byte| byte != 0) {
+            None => Vec::new(),
+            Some(last) => little[..=last].iter().rev().copied().collect(),
+        }
+    }
+
+    /// 幅值的位长（`|self|` 所需最少 bit 数），零返回 0。
+    pub fn bit_length(&self) -> usize {
+        let limbs = self.magnitude.limbs();
+        match limbs.last() {
+            None => 0,
+            Some(&top) => (limbs.len() - 1) * 64 + 64 - top.leading_zeros() as usize,
+        }
+    }
+
+    /// 幅值第 `index` 位（自最低位起）是否为 1，越界返回 `false`。
+    pub fn bit(&self, index: usize) -> bool {
+        let limb_index = index / 64;
+        let bit_index = (index % 64) as u32;
+        match self.magnitude.limbs().get(limb_index) {
+            Some(&limb) => (limb >> bit_index) & 1 == 1,
+            None => false,
+        }
+    }
+
+    /// 左移：`self * 2^bits`，符号不变。
+    pub fn shl_bits(&self, bits: usize) -> Self {
+        if self.is_zero() {
+            return Self::ZERO;
+        }
+        let magnitude = Magnitude::canonicalize(mag_shl_limbs(self.magnitude.limbs(), bits));
+        Self { sign: self.sign, magnitude }
+    }
+
+    /// 算术右移：`floor(self / 2^bits)`，负数向负无穷取整。
+    pub fn shr_bits(&self, bits: usize) -> Self {
+        if self.is_zero() {
+            return Self::ZERO;
+        }
+        let (mut quotient, sticky) = mag_shr_limbs(self.magnitude.limbs(), bits);
+        if self.sign == Sign::Negative && sticky {
+            // floor(-x / 2^b) = -(ceil(x / 2^b))，有丢弃位时截断商加一。
+            add_one_limbs(&mut quotient);
+        }
+        Self::from_sign_magnitude(self.sign, Magnitude::canonicalize(quotient))
+    }
+
+    /// 变时模幂：`self^exponent mod modulus`，结果落在 `[0, modulus)`。
+    /// 要求指数非负、模数大于零，否则返回 `None`。禁止承接秘密指数。
+    pub fn mod_pow(&self, exponent: &Self, modulus: &Self) -> Option<Self> {
+        if exponent.is_negative() || modulus.is_zero() || modulus.is_negative() {
+            return None;
+        }
+        let one = Self::from(1u64);
+        if *modulus == one {
+            return Some(Self::ZERO);
+        }
+        let (_, mut base) = self.div_rem(modulus).ok()?;
+        if base.is_negative() {
+            base = &base + modulus;
+        }
+        let mut result = one;
+        let mut index = exponent.bit_length();
+        while index > 0 {
+            index -= 1;
+            result = &result * &result;
+            result = result.div_rem(modulus).ok()?.1;
+            if exponent.bit(index) {
+                result = &result * &base;
+                result = result.div_rem(modulus).ok()?.1;
+            }
+        }
+        Some(result)
     }
 }
 

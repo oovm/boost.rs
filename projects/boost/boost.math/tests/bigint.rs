@@ -253,3 +253,149 @@ fn ordering_and_equality_follow_numeric_value() {
         .collect::<Vec<_>>();
     assert_eq!(values, expected);
 }
+
+#[test]
+fn bytes_roundtrip_is_lossless_and_canonical() {
+    assert_eq!(BigInteger::from_bytes_be(&[]), BigInteger::ZERO);
+    assert_eq!(BigInteger::from_bytes_be(&[0, 0, 0]), BigInteger::ZERO);
+    assert_eq!(BigInteger::ZERO.to_bytes_be(), Vec::<u8>::new());
+    assert_eq!(BigInteger::from_bytes_be(&[0xFF]), BigInteger::from(255u64));
+    assert_eq!(BigInteger::from_bytes_be(&[1, 0]), BigInteger::from(256u64));
+    assert_eq!(BigInteger::from(255u64).to_bytes_be(), vec![0xFF]);
+    assert_eq!(BigInteger::from(256u64).to_bytes_be(), vec![1, 0]);
+    // 编码只序列化幅值，符号由 `is_negative` 单独承载。
+    assert_eq!((-BigInteger::from(255i64)).to_bytes_be(), vec![0xFF]);
+
+    // 2^128 走堆上多 limb：1 后跟 16 个零字节。
+    let two64 = BigInteger::from(1u128 << 64);
+    let two128 = &two64 * &two64;
+    let mut expected = vec![0u8; 17];
+    expected[0] = 1;
+    assert_eq!(two128.to_bytes_be(), expected);
+    assert_eq!(BigInteger::from_bytes_be(&expected), two128);
+
+    let mut rng = seed();
+    for _ in 0..256 {
+        let value = rng.unsigned128();
+        let big = BigInteger::from(value);
+        let trimmed: Vec<u8> = value.to_be_bytes().into_iter().skip_while(|&byte| byte == 0).collect();
+        assert_eq!(big.to_bytes_be(), trimmed, "value={value}");
+        assert_eq!(BigInteger::from_bytes_be(&trimmed), big);
+        // 前导零字节不改变数值。
+        let mut padded = vec![0u8; 5];
+        padded.extend_from_slice(&trimmed);
+        assert_eq!(BigInteger::from_bytes_be(&padded), big);
+    }
+}
+
+#[test]
+fn bit_length_and_bit_access_match_u128_oracle() {
+    assert_eq!(BigInteger::ZERO.bit_length(), 0);
+    assert_eq!(BigInteger::from(1u64).bit_length(), 1);
+    assert_eq!(BigInteger::from(255u64).bit_length(), 8);
+    assert_eq!(BigInteger::from(256u64).bit_length(), 9);
+    assert_eq!((-BigInteger::from(255i64)).bit_length(), 8);
+    assert_eq!(BigInteger::from(u128::MAX).bit_length(), 128);
+    let two64 = BigInteger::from(1u128 << 64);
+    assert_eq!((&two64 * &two64).bit_length(), 129);
+
+    let mut rng = seed();
+    for _ in 0..256 {
+        let value = rng.unsigned128();
+        let big = BigInteger::from(value);
+        assert_eq!(big.bit_length(), 128 - value.leading_zeros() as usize, "value={value}");
+        for index in [0usize, 1, 63, 64, 65, 127] {
+            let expected = value & (1u128 << index) != 0;
+            assert_eq!(big.bit(index), expected, "value={value} index={index}");
+        }
+        assert!(!big.bit(128));
+        assert!(!big.bit(usize::MAX));
+    }
+}
+
+#[test]
+fn shifts_match_i128_oracle_and_floor_semantics() {
+    let mut rng = seed();
+    for _ in 0..512 {
+        let value = rng.signed(60);
+        let big = BigInteger::from(value);
+        for bits in [0usize, 1, 7, 63, 64] {
+            assert_eq!(big.shl_bits(bits), BigInteger::from(value << bits), "value={value} shl={bits}");
+        }
+        for bits in [0usize, 1, 7, 63, 64, 65, 127] {
+            assert_eq!(big.shr_bits(bits), BigInteger::from(value >> bits), "value={value} shr={bits}");
+        }
+    }
+
+    // 跨 limb 边界与算术右移的负数向下取整语义。
+    let two64 = BigInteger::from(1u128 << 64);
+    let two128 = &two64 * &two64;
+    assert_eq!(two128.shr_bits(64), two64);
+    assert_eq!(two128.shr_bits(129), BigInteger::ZERO);
+    assert_eq!((-BigInteger::from(1i64)).shr_bits(1), BigInteger::from(-1i64));
+    assert_eq!((-BigInteger::from(3i64)).shr_bits(1), BigInteger::from(-2i64));
+    assert_eq!((-BigInteger::from(4i64)).shr_bits(1), BigInteger::from(-2i64));
+    // -2^128 是偶数，floor(-2^128 / 2) = -2^127，与正数路径同幅值。
+    assert_eq!((-&two128).shr_bits(1), -two128.shr_bits(1));
+    assert_eq!((-&two128 - BigInteger::from(1u64)).shr_bits(1), -(&two128.shr_bits(1) + &BigInteger::from(1u64)));
+    assert_eq!(BigInteger::from(3i64).shl_bits(200).shr_bits(200), BigInteger::from(3i64));
+}
+
+/// 以 `u128` 原生模乘做独立 oracle（模数 < 2^32 保证平方不溢出）。
+fn native_mod_pow(base: u64, exponent: u64, modulus: u64) -> u64 {
+    let m = modulus as u128;
+    let mut result = 1u128;
+    let mut factor = base as u128 % m;
+    let mut exp = exponent;
+    while exp > 0 {
+        if exp & 1 == 1 {
+            result = result * factor % m;
+        }
+        factor = factor * factor % m;
+        exp >>= 1;
+    }
+    result as u64
+}
+
+#[test]
+fn mod_pow_matches_known_answers_and_oracle() {
+    // 教科书 RSA 已知答案：65^17 mod 3233 = 2790，且回代 2790^2753 mod 3233 = 65。
+    let six_five = BigInteger::from(65u64);
+    let n = BigInteger::from(3233u64);
+    let cipher = six_five.mod_pow(&BigInteger::from(17u64), &n).unwrap();
+    assert_eq!(cipher, BigInteger::from(2790u64));
+    let plain = cipher.mod_pow(&BigInteger::from(2753u64), &n).unwrap();
+    assert_eq!(plain, six_five);
+
+    let mut rng = seed();
+    for _ in 0..256 {
+        let modulus = rng.next_u64() % ((1u64 << 32) - 2) + 2;
+        let base = rng.next_u64();
+        let exponent = rng.next_u64() % (1u64 << 40);
+        let expected = native_mod_pow(base, exponent, modulus);
+        let got = BigInteger::from(base).mod_pow(&BigInteger::from(exponent), &BigInteger::from(modulus)).unwrap();
+        assert_eq!(got, BigInteger::from(expected), "base={base} exponent={exponent} modulus={modulus}");
+    }
+
+    // 边界：指数 0 得 1、模数 1 得 0、负底数归一到 [0, m)、非法参数返回 None。
+    let nine = BigInteger::from(9u64);
+    assert_eq!(BigInteger::from(123i64).mod_pow(&BigInteger::ZERO, &nine), Some(BigInteger::from(1u64)));
+    assert_eq!(BigInteger::from(123i64).mod_pow(&nine, &BigInteger::from(1u64)), Some(BigInteger::ZERO));
+    assert_eq!(BigInteger::ZERO.mod_pow(&nine, &nine), Some(BigInteger::ZERO));
+    let neg_base = BigInteger::from(-1i64);
+    assert_eq!(neg_base.mod_pow(&BigInteger::from(1u64), &nine), Some(BigInteger::from(8u64)));
+    // (-2)^3 mod 9 = -8 mod 9 = 1：负底数先归一再按位扫描。
+    assert_eq!(BigInteger::from(-2i64).mod_pow(&BigInteger::from(3u64), &nine), Some(BigInteger::from(1u64)));
+    assert_eq!(nine.mod_pow(&BigInteger::from(-1i64), &nine), None);
+    assert_eq!(nine.mod_pow(&nine, &BigInteger::ZERO), None);
+    assert_eq!(nine.mod_pow(&nine, &BigInteger::from(-9i64)), None);
+
+    // 大模数双路径复核：e=2 时与「先乘后除余」的独立路径一致。
+    let two64 = BigInteger::from(1u128 << 64);
+    let modulus = &two64 * &two64 - BigInteger::from(159i64);
+    let base = BigInteger::from(rng.unsigned128() | (1u128 << 100));
+    let got = base.mod_pow(&BigInteger::from(2u64), &modulus).unwrap();
+    let square = &base * &base;
+    assert_eq!(got, square.div_rem(&modulus).unwrap().1);
+    assert!(got < modulus);
+}
