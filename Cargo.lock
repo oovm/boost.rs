@@ -308,6 +308,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-harness"
+version = "0.1.0"
+dependencies = [
+ "atlas-cloud",
+ "boost-net",
+ "serde_json",
+]
+
+[[package]]
 name = "atomic"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

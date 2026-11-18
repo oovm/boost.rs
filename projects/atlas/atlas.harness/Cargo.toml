@@ -1,0 +1,14 @@
+[package]
+name = "atlas-harness"
+version.workspace = true
+authors.workspace = true
+description = "Atlas 云调用：脚本化回放、分层诊断与稳定报告"
+repository = "https://github.com/oovm/rust-boost"
+license.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+atlas-cloud = { workspace = true }
+boost-net = { workspace = true }
+serde_json = { workspace = true }

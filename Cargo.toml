@@ -9,6 +9,7 @@ members = [
     "projects/animator/animator.chart",
     "projects/animator/animator.core",
     "projects/atlas/atlas.cloud",
+    "projects/atlas/atlas.harness",
     "projects/boost/boost",
     "projects/boost/boost-console",
     "projects/boost/boost.crypto",
@@ -212,6 +213,7 @@ publish = false
 [workspace.dependencies]
 # 云服务
 atlas-cloud = { path = "projects/atlas/atlas.cloud" }
+atlas-harness = { path = "projects/atlas/atlas.harness" }
 # 动画扩展
 animator-bridge = { path = "projects/animator/animator.bridge" }
 animator-chart = { path = "projects/animator/animator.chart" }
