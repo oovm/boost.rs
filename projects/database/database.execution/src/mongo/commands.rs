@@ -16,9 +16,9 @@ use database_protocol_mongo::bson::{
 use database_protocol_mongo::{decimal128::Decimal128, json};
 
 use database_query::mongo::{
-    ExpressionContext, ExpressionVariables, collect_field, compare_values, count_value, equality_candidates, expression_truthy, has_operator,
-    int_value, integer_of, integral_i64, lookup_field, matches, matches_with_variables, normalize_query, number_of, operator_matches,
-    parse_count, validate_filter, values_equal,
+    ExpressionContext, ExpressionVariables, ProjectionPlan, ProjectionRule, collect_field, compare_values, count_value, equality_candidates,
+    expression_truthy, has_operator, int_value, integer_of, integral_i64, lookup_field, matches, matches_with_variables, normalize_query,
+    number_of, operator_matches, parse_count, parse_projection, validate_filter, values_equal,
 };
 
 use crate::mongo::{
@@ -10013,61 +10013,33 @@ fn add_fields_stage(documents: &[BsonDocument], specification: &BsonDocument) ->
 }
 
 fn project_stage(documents: &[BsonDocument], specification: &BsonDocument) -> Result<Vec<BsonDocument>, CommandError> {
-    // The projection mode is fixed by the first non-`_id` field, and a later
-    // field of the other mode is rejected with the same code and message as
-    // `mongod 8.0.9`. Boolean/numeric `_id` rules never count as a conflict.
-    let mut exclusion_projection: Option<bool> = None;
-    for (field, rule) in specification.fields.iter() {
-        if field == "_id" && (rule_is_exclusion(rule) || rule_is_inclusion(rule)) {
-            continue;
-        }
-        let is_exclusion = rule_is_exclusion(rule);
-        match exclusion_projection {
-            None => exclusion_projection = Some(is_exclusion),
-            Some(true) if !is_exclusion => {
-                if rule_is_inclusion(rule) {
-                    return Err(CommandError::new(
-                        31253,
-                        format!("Invalid $project :: caused by :: Cannot do inclusion on field {field} in exclusion projection"),
-                    ));
-                }
-                return Err(CommandError::new(
-                    31252,
-                    "Invalid $project :: caused by :: Cannot use expression other than $meta in exclusion projection".to_string(),
-                ));
-            }
-            Some(false) if is_exclusion => {
-                return Err(CommandError::new(
-                    31254,
-                    format!("Invalid $project :: caused by :: Cannot do exclusion on field {field} in inclusion projection"),
-                ));
-            }
-            _ => {}
-        }
-    }
-    let has_exclusion = exclusion_projection.unwrap_or(false);
-    if has_exclusion {
+    apply_projection(documents, &parse_projection(specification)?)
+}
+
+/// 按已校验的投影计划逐篇应用；表达式规则走聚合表达式求值。
+fn apply_projection(documents: &[BsonDocument], plan: &ProjectionPlan) -> Result<Vec<BsonDocument>, CommandError> {
+    if plan.is_exclusion() {
         let mut projected = Vec::new();
         for document in documents {
             let mut kept = document.clone();
-            for (field, rule) in specification.fields.iter() {
-                if rule_is_exclusion(rule) {
+            for (field, rule) in &plan.fields {
+                if matches!(rule, ProjectionRule::Exclude) {
                     remove_field_path(&mut kept, field);
                 }
+            }
+            if plan.excludes_id() {
+                remove_field_path(&mut kept, "_id");
             }
             projected.push(kept);
         }
         return Ok(projected);
     }
 
-    let id_rule = specification.get("_id");
-    let id_excluded = id_rule.map(rule_is_exclusion).unwrap_or(false);
-    let id_expression = id_rule.filter(|rule| !rule_is_exclusion(rule) && !rule_is_inclusion(rule));
     let mut projected = Vec::new();
     for document in documents {
         let mut result = BsonDocument::new();
-        if !id_excluded {
-            if let Some(expression) = id_expression {
+        if !plan.excludes_id() {
+            if let Some(expression) = plan.id_expression() {
                 if let Some(value) = evaluate_expression_optional(document, expression)? {
                     result.push("_id".to_string(), value);
                 }
@@ -10076,21 +10048,19 @@ fn project_stage(documents: &[BsonDocument], specification: &BsonDocument) -> Re
                 result.push("_id".to_string(), identifier.clone());
             }
         }
-        for (field, rule) in specification.fields.iter() {
-            if field == "_id" {
-                continue;
-            }
-            if rule_is_inclusion(rule) {
-                if let Some(value) = lookup_field(document, field) {
-                    set_field_path(&mut result, field, value.clone());
+        for (field, rule) in &plan.fields {
+            match rule {
+                ProjectionRule::Include => {
+                    if let Some(value) = lookup_field(document, field) {
+                        set_field_path(&mut result, field, value.clone());
+                    }
                 }
-                continue;
+                ProjectionRule::Exclude => {}
+                ProjectionRule::Expression(expression) => {
+                    let value = evaluate_expression(document, expression)?;
+                    set_field_path(&mut result, field, value);
+                }
             }
-            if rule_is_exclusion(rule) {
-                continue;
-            }
-            let value = evaluate_expression(document, rule)?;
-            set_field_path(&mut result, field, value);
         }
         projected.push(result);
     }
@@ -12404,16 +12374,6 @@ fn truncate_local(local: i64, unit: DateUnit, bin_size: i64, start_of_week: i64)
                 .ok_or_else(|| CommandError::new(2, "$dateTrunc result overflows a 64-bit millisecond count"))?
         }
     })
-}
-
-fn rule_is_inclusion(value: &BsonValue) -> bool {
-    matches!(value, BsonValue::Int32(1) | BsonValue::Int64(1) | BsonValue::Bool(true))
-        || matches!(value, BsonValue::Double(number) if *number == 1.0)
-}
-
-fn rule_is_exclusion(value: &BsonValue) -> bool {
-    matches!(value, BsonValue::Int32(0) | BsonValue::Int64(0) | BsonValue::Bool(false))
-        || matches!(value, BsonValue::Double(number) if *number == 0.0)
 }
 
 fn reply_count(reply: &BsonDocument, field: &str) -> i64 {

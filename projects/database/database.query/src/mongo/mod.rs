@@ -4,12 +4,14 @@
 //! 扫描、求值驱动与命令执行归 `database.execution::mongo`。
 
 pub mod filter;
+pub mod projection;
 pub mod value;
 
 pub use filter::{
     ExpressionContext, ExpressionVariables, FILTER_OPERATORS, LOGICAL_OPERATORS, collect_field, equality_candidates, has_operator, matches,
     matches_with_variables, normalize_query, operator_matches, validate_filter,
 };
+pub use projection::{ProjectionMode, ProjectionPlan, ProjectionRule, parse_projection, rule_is_exclusion, rule_is_inclusion};
 pub use value::{
     compare_values, count_value, expression_truthy, int_value, integer_of, integral_i64, lookup_field, number_of, parse_count, value_rank,
     values_equal,
