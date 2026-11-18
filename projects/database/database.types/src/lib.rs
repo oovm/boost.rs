@@ -620,10 +620,7 @@ impl Error {
     /// `LeaseUnavailable`, `LeaseExpired`). All other variants are non-retryable
     /// and require the caller to fix the underlying cause.
     pub fn retryable(&self) -> bool {
-        matches!(
-            self,
-            Self::Io(_) | Self::Busy { .. } | Self::Protocol { .. } | Self::LeaseUnavailable { .. } | Self::LeaseExpired { .. }
-        )
+        matches!(self, Self::Io(_) | Self::Busy { .. } | Self::Protocol { .. } | Self::LeaseUnavailable { .. } | Self::LeaseExpired { .. })
     }
 
     /// Encode the full diagnostic contract as a JSON object.

@@ -2,4 +2,5 @@
 #![deny(missing_docs)]
 
 pub mod bind;
+pub mod codec;
 pub mod resp;

@@ -192,12 +192,7 @@ pub fn bind_set(arguments: &[&[u8]]) -> Result<SetRequest, BindError> {
 
 /// Redis 拒绝非规范整数拼写（`+1`、` 1`、`01`）。
 fn parse_canonical_integer(bytes: &[u8]) -> Option<i64> {
-    let text = std::str::from_utf8(bytes).ok()?;
-    let value = text.parse::<i64>().ok()?;
-    if value.to_string() != text {
-        return None;
-    }
-    Some(value)
+    database_types::canonical::parse_i64(bytes)
 }
 
 /// 把一条二进制 Redis 请求绑成中立键值命令。

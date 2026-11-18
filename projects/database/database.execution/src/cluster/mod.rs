@@ -15,6 +15,8 @@ use database_types::cluster::{Error, FenceToken, Namespace, OwnerEntry, ShardId,
 
 mod sweep;
 
+pub mod redis;
+
 pub use sweep::{DEFAULT_SWEEP_BUDGET_PER_SHARD, ExpirySweeper};
 
 /// Execution surface consumed by protocol adapters.
