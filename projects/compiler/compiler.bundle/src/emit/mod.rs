@@ -36,7 +36,7 @@
 //!   压缩（不重命名标识符、不做死代码消除与语句折叠），压缩段的 token
 //!   位置再经装配行映射复合回原模块；`code` 末尾追加
 //!   `//# sourceMappingURL=<file_name>.map` 注释行，map JSON 内容不上 wire、
-//!   只有 [`write_emit`] 物化；内容指纹仍只覆盖第一遍装配文本，压缩、map
+//!   只有 [`write_emit_with`] 物化；内容指纹仍只覆盖第一遍装配文本，压缩、map
 //!   注释与 map 本身不参与指纹与占位符替换。
 //! - 未实现的语义（同 chunk 重命名绑定、事实不完整、无法重写的说明符、
 //!   样式/JSON 绑定、重导出与动态导入等）一律显式诊断拒绝，禁止猜测、
@@ -52,7 +52,7 @@
 //!   （Living §同 chunk 作用域隔离：隔离即独立发射）。
 //!
 //! [`plan_emit`] 是纯计算（只按 [`crate::graph::ModuleNode::resolved`] 路径
-//! 重读模块源码与资源字节，IO 姿态与 `graph` 层一致）；[`write_emit`]
+//! 重读模块源码与资源字节，IO 姿态与 `graph` 层一致）；[`write_emit_with`]
 //! 是唯一写盘的函数。输入必须是同一目标图上的 [`crate::graph::ModuleGraph`]、
 //! [`crate::link::LinkPlan`] 与 [`crate::chunk::ChunkPlan`]，形状不一致
 //! （越界、重复归属、未被链接保留）按 `vmz::pack::emit::input_inconsistent`
@@ -74,7 +74,7 @@ use crate::graph::ModuleGraph;
 use crate::link::{LinkPlan, LinkedModule, effectful_modules};
 
 pub use cache::EmitCache;
-pub use write::{write_emit, write_emit_incremental};
+pub use write::{OutputSink, write_emit_incremental_with, write_emit_with};
 
 /// 模块事实不完整诊断在 `module` 层的稳定码，emit 前置拒绝据此判定。
 const STATEMENT_FACT_INCOMPLETE: &str = "vmz::pack::module::statement_fact_incomplete";
@@ -128,7 +128,7 @@ pub struct ChunkArtifact {
     pub dynamic: Vec<String>,
     /// source map v3 JSON 文本（行级映射，`sources` 与 `modules` 同口径）。
     /// 不上 N-API wire（与 [`StyleArtifact::content`] 同姿态），只有
-    /// [`write_emit`] 把它物化为 `<file_name>.map`；`code` 末尾已追加
+    /// [`write_emit_with`] 把它物化为 `<file_name>.map`；`code` 末尾已追加
     /// `//# sourceMappingURL=` 注释行。
     pub source_map: String,
 }
@@ -140,7 +140,7 @@ pub struct StyleArtifact {
     pub file_name: String,
     /// CSS 资源 URL（`public_base` + 文件名）。
     pub url: String,
-    /// 最终 CSS 文本（`url()` 已重写；wire 不携带，仅 [`write_emit`] 消费）。
+    /// 最终 CSS 文本（`url()` 已重写；wire 不携带，仅 [`write_emit_with`] 消费）。
     pub content: String,
     /// 贡献样式的来源模块规范化路径，按 chunk 执行序去重。
     pub modules: Vec<String>,
@@ -159,11 +159,11 @@ pub struct AssetArtifact {
     pub file_name: String,
     /// 资源 URL（`public_base` + 文件名）。
     pub url: String,
-    /// 磁盘绝对路径，[`write_emit`] 阶段从此拷贝。
+    /// 磁盘绝对路径，[`write_emit_with`] 阶段从此拷贝。
     pub source_path: String,
 }
 
-/// 产物计划：全部文本与元数据，[`write_emit`] 之前不落盘。
+/// 产物计划：全部文本与元数据，[`write_emit_with`] 之前不落盘。
 #[derive(Debug, Clone, PartialEq)]
 pub struct EmitPlan {
     /// chunk 产物，按 chunk id 升序（与 [`ChunkPlan::chunks`] 同序）。
