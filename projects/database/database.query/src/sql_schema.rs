@@ -820,6 +820,7 @@ fn canonical_sql_type(field_type: &SqlFieldType) -> &'static str {
         SqlFieldType::Decimal => "DECIMAL",
         SqlFieldType::Date => "DATE",
         SqlFieldType::Datetime => "DATETIME",
+        SqlFieldType::Uuid => "UUID",
         SqlFieldType::Unknown | SqlFieldType::Optional(_) => "TEXT",
     }
 }
@@ -843,7 +844,8 @@ fn map_sql_type(sql_type: &str) -> Result<(SqlFieldType, Option<u32>), SqlFronte
         "TEXT" | "TINYTEXT" | "MEDIUMTEXT" | "LONGTEXT" => SqlFieldType::String,
         "DATE" => SqlFieldType::Date,
         "DATETIME" | "TIMESTAMP" | "TIMESTAMPTZ" | "TIMESTAMP WITH TIME ZONE" | "TIMESTAMP WITHOUT TIME ZONE" => SqlFieldType::Datetime,
-        "TIME" | "UUID" => SqlFieldType::String,
+        "TIME" => SqlFieldType::String,
+        "UUID" => SqlFieldType::Uuid,
         // `DECIMAL(p,s)` keeps its value as decimal text; the declared precision
         // and scale are dialect display facts and do not narrow the gateway type.
         "DECIMAL" | "NUMERIC" | "DEC" | "FIXED" => SqlFieldType::Decimal,
@@ -1078,6 +1080,7 @@ enum FieldTypeDocument {
     Decimal,
     Date,
     Datetime,
+    Uuid,
     Unknown,
 }
 
@@ -1093,6 +1096,7 @@ impl FieldTypeDocument {
             Self::Decimal => SqlFieldType::Decimal,
             Self::Date => SqlFieldType::Date,
             Self::Datetime => SqlFieldType::Datetime,
+            Self::Uuid => SqlFieldType::Uuid,
             Self::Unknown => SqlFieldType::Unknown,
         }
     }
@@ -1108,6 +1112,7 @@ impl FieldTypeDocument {
             SqlFieldType::Decimal => Self::Decimal,
             SqlFieldType::Date => Self::Date,
             SqlFieldType::Datetime => Self::Datetime,
+            SqlFieldType::Uuid => Self::Uuid,
             SqlFieldType::Optional(_) | SqlFieldType::Unknown => Self::Unknown,
         }
     }

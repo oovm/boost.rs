@@ -102,6 +102,14 @@ impl SqlValue {
             crate::catalog_bind::SqlFieldType::Date | crate::catalog_bind::SqlFieldType::Datetime => {
                 SqlValue::String(String::from_utf8_lossy(bytes).into_owned())
             }
+            // `uuid` is stored as its canonical 16 octets and reported as the
+            // hyphenated lowercase spelling drivers expect. Any other payload
+            // was not written by this version, so it is surfaced as raw text
+            // instead of being reformatted into a fake uuid.
+            crate::catalog_bind::SqlFieldType::Uuid => match crate::catalog_bind::uuid_text(bytes) {
+                Some(text) => SqlValue::String(text),
+                None => SqlValue::String(String::from_utf8_lossy(bytes).into_owned()),
+            },
             crate::catalog_bind::SqlFieldType::Int64 | crate::catalog_bind::SqlFieldType::Int32 => {
                 if bytes.is_empty() {
                     return SqlValue::Null;

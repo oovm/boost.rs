@@ -44,6 +44,15 @@ pub enum SqlFieldType {
     /// Date and time of day (`DATETIME` / `TIMESTAMP`). Values stay text: the
     /// gateway stores and reports the `YYYY-MM-DD HH:MM:SS` spelling verbatim.
     Datetime,
+    /// UUID (`uuid`).
+    ///
+    /// Stored and compared as its canonical 16 octets, never as 36-character
+    /// text: the row payload, the primary-key row id and the secondary-index
+    /// payload all carry the 16 raw bytes, and their byte order equals the
+    /// canonical text order. The wire face still reports the hyphenated
+    /// lowercase spelling, which is what drivers expect for a text-encoded
+    /// uuid column.
+    Uuid,
     /// Optional wrapper — inner type + NULL. Box breaks the recursion
     Optional(Box<SqlFieldType>),
     /// Anything the gateway does not recognise stays opaque.
@@ -63,6 +72,49 @@ impl SqlFieldType {
     pub fn is_nullable(&self) -> bool {
         matches!(self, SqlFieldType::Optional(_))
     }
+
+    /// Canonical storage bytes for one SQL literal written into this column type.
+    ///
+    /// `NULL` yields `Ok(None)` — the row encoding omits the field entirely.
+    /// Every other value keeps its plain bytes except [`SqlFieldType::Uuid`],
+    /// where the 36-character text form is parsed into its 16 canonical octets
+    /// so storage, comparison and index payloads share one representation.
+    pub fn storage_bytes_of(&self, literal: &SqlBoundLiteral) -> Result<Option<Vec<u8>>, SqlFrontendError> {
+        if matches!(literal, SqlBoundLiteral::Null) {
+            return Ok(None);
+        }
+        if matches!(self.inner(), SqlFieldType::Uuid) {
+            return match literal {
+                SqlBoundLiteral::Bytes(bytes) if bytes.len() == 16 => Ok(Some(bytes.clone())),
+                SqlBoundLiteral::String(text) => match parse_uuid(text) {
+                    Some(bytes) => Ok(Some(bytes.to_vec())),
+                    None => Err(SqlFrontendError::new(SqlErrorKind::TypeMismatch, format!("`{text}` is not a valid UUID"))),
+                },
+                _ => Err(SqlFrontendError::new(SqlErrorKind::TypeMismatch, "a uuid column accepts only 16-octet binary or UUID text")),
+            };
+        }
+        Ok(Some(match literal {
+            SqlBoundLiteral::Integer(value) => value.to_string().into_bytes(),
+            SqlBoundLiteral::Number(text) => text.as_bytes().to_vec(),
+            SqlBoundLiteral::String(text) => text.as_bytes().to_vec(),
+            SqlBoundLiteral::Bytes(bytes) => bytes.clone(),
+            SqlBoundLiteral::Boolean(value) => (if *value { "1" } else { "0" }).as_bytes().to_vec(),
+            SqlBoundLiteral::Null => unreachable!("handled above"),
+        }))
+    }
+}
+
+/// Parses UUID text into its canonical big-endian 16 octets.
+///
+/// Accepts the hyphenated, simple, braced and `urn:uuid:` spellings the
+/// `uuid` crate understands, and rejects everything else.
+pub fn parse_uuid(text: &str) -> Option<[u8; 16]> {
+    uuid::Uuid::parse_str(text).ok().map(|uuid| *uuid.as_bytes())
+}
+
+/// Renders canonical UUID octets as the hyphenated lowercase spelling.
+pub fn uuid_text(bytes: &[u8]) -> Option<String> {
+    uuid::Uuid::from_slice(bytes).ok().map(|uuid| uuid.hyphenated().to_string())
 }
 
 /// Map a resolved VOS type to a gateway-facing [`SqlFieldType`].
@@ -79,12 +131,18 @@ pub fn project_resolved_type(ty: &ResolvedCanonicalType) -> SqlFieldType {
             CanonicalScalar::I8 | CanonicalScalar::I16 | CanonicalScalar::I32 => SqlFieldType::Int32,
             CanonicalScalar::I64 | CanonicalScalar::U8 | CanonicalScalar::U16 | CanonicalScalar::U32 => SqlFieldType::Int64,
             CanonicalScalar::F32 | CanonicalScalar::F64 => SqlFieldType::Float64,
-            CanonicalScalar::Utf8 | CanonicalScalar::Utf16 => SqlFieldType::String,
+            CanonicalScalar::Utf8 => SqlFieldType::String,
+            // `utf16` has no execution scalar in the VOS runtime either: its
+            // write path rejects it instead of silently storing UTF-8 bytes
+            // under a UTF-16 name. The SQL projection does the same, with the
+            // VOS type name attached to the bind-time diagnostic.
+            CanonicalScalar::Utf16 => SqlFieldType::Unknown,
             CanonicalScalar::Bool => SqlFieldType::Bool,
             CanonicalScalar::Bytes => SqlFieldType::Bytes,
             CanonicalScalar::Date => SqlFieldType::Date,
             CanonicalScalar::DateTime => SqlFieldType::Datetime,
-            CanonicalScalar::Uuid | CanonicalScalar::Time => SqlFieldType::String,
+            CanonicalScalar::Uuid => SqlFieldType::Uuid,
+            CanonicalScalar::Time => SqlFieldType::String,
             // `u64` cannot narrow into `i64` without lying about the range and
             // `decimal` has no lossless gateway numeric type. Both stay
             // `Unknown` and are rejected at bind time with the VOS type name.
@@ -1460,6 +1518,53 @@ fn collect_or_equalities(expression: &SqlBoundExpression, out: &mut Vec<(SqlBoun
     }
 }
 
+/// Declared type of a bound column, resolved back through the catalog.
+fn bound_column_type(column: &SqlCatalogBoundColumn, catalog: &SqlCatalog) -> Option<SqlFieldType> {
+    let table = catalog.tables().iter().find(|table| table.type_id == column.type_id)?;
+    let field = table.fields.iter().find(|field| field.field_id == column.field_id)?;
+    Some(field.field_type.clone())
+}
+
+/// Rewrites a UUID literal into its canonical hyphenated lowercase spelling.
+///
+/// Stored uuid columns decode to that spelling, so comparisons, `LIKE` and `IN`
+/// must see the same text; otherwise `WHERE id = 'UPPER-CASE-UUID'` would
+/// compare two spellings of one value and miss the row. Text that is not a
+/// UUID is rejected, matching typed `uuid` columns elsewhere.
+fn normalize_uuid_literal(literal: &mut SqlBoundLiteral) -> Result<(), SqlFrontendError> {
+    let SqlBoundLiteral::String(text) = literal
+    else {
+        return Ok(());
+    };
+    let bytes = parse_uuid(text).ok_or_else(|| SqlFrontendError::new(SqlErrorKind::TypeMismatch, format!("`{text}` is not a valid UUID")))?;
+    *text = uuid_text(&bytes).expect("16 canonical octets always render as a UUID");
+    Ok(())
+}
+
+/// Canonicalizes the literal side of any comparison that involves a uuid column.
+fn normalize_uuid_comparison(
+    left: &mut SqlCatalogBoundExpression,
+    right: &mut SqlCatalogBoundExpression,
+    catalog: &SqlCatalog,
+) -> Result<(), SqlFrontendError> {
+    if let SqlCatalogBoundExpression::Column(column) = &*left {
+        if matches!(bound_column_type(column, catalog).map(|ty| ty.inner()), Some(SqlFieldType::Uuid)) {
+            if let SqlCatalogBoundExpression::Literal(literal) = &mut *right {
+                normalize_uuid_literal(literal)?;
+            }
+            return Ok(());
+        }
+    }
+    if let SqlCatalogBoundExpression::Column(column) = &*right {
+        if matches!(bound_column_type(column, catalog).map(|ty| ty.inner()), Some(SqlFieldType::Uuid)) {
+            if let SqlCatalogBoundExpression::Literal(literal) = &mut *left {
+                normalize_uuid_literal(literal)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 fn bind_expression(
     expression: SqlBoundExpression,
     sources: &[SqlCatalogBoundTable],
@@ -1517,18 +1622,31 @@ fn bind_expression(
                     let target = equalities[0].0.clone();
                     let mut values: Vec<SqlBoundLiteral> = equalities.into_iter().map(|(_, value)| value).collect();
                     let sorted_integers = crate::sql_execute::normalize_integer_values(&mut values);
+                    let expression = bind_expression(target, sources, ctes, scope, catalog, variables)?;
+                    // uuid 列与文本值比较时必须先规范化，否则 `IN` 会因为大小写/写法
+                    // 不同而漏掉实际相等的行。
+                    if let SqlCatalogBoundExpression::Column(column) = &expression {
+                        if matches!(bound_column_type(column, catalog).map(|ty| ty.inner()), Some(SqlFieldType::Uuid)) {
+                            for value in &mut values {
+                                normalize_uuid_literal(value)?;
+                            }
+                        }
+                    }
                     return Ok(SqlCatalogBoundExpression::InValues {
-                        expression: Box::new(bind_expression(target, sources, ctes, scope, catalog, variables)?),
+                        expression: Box::new(expression),
                         values,
                         negated: false,
                         sorted_integers,
                     });
                 }
             }
+            let mut bound_left = bind_expression(*left, sources, ctes, scope, catalog, variables)?;
+            let mut bound_right = bind_expression(*right, sources, ctes, scope, catalog, variables)?;
+            normalize_uuid_comparison(&mut bound_left, &mut bound_right, catalog)?;
             Ok(SqlCatalogBoundExpression::Binary {
-                left: Box::new(bind_expression(*left, sources, ctes, scope, catalog, variables)?),
+                left: Box::new(bound_left),
                 operator,
-                right: Box::new(bind_expression(*right, sources, ctes, scope, catalog, variables)?),
+                right: Box::new(bound_right),
             })
         }
         SqlBoundExpression::Unary { operator, expression } => Ok(SqlCatalogBoundExpression::Unary {
@@ -2030,7 +2148,7 @@ pub(crate) fn reject_unknown_field(field: &SqlCatalogField) -> Result<(), SqlFro
     let vos = field.vos_type_name.as_deref().unwrap_or("unknown");
     Err(SqlFrontendError::new(
         SqlErrorKind::Unsupported,
-        format!("SQL cannot project field `{}`: VOS composite type `{vos}` has no SQL equivalent — use VOS operations instead", field.name),
+        format!("SQL cannot project field `{}`: VOS type `{vos}` has no SQL equivalent — use VOS operations instead", field.name),
     ))
 }
 
@@ -2090,4 +2208,38 @@ pub fn collect_column_ids(expr: &SqlCatalogBoundExpression, out: &mut Vec<u64>) 
 
 fn internal_error(message: &str) -> SqlFrontendError {
     SqlFrontendError::internal(message)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// uuid 投影成二进制类型，utf16 与 VOS 执行面口径一致地拒绝。
+    #[test]
+    fn uuid_projects_to_binary_and_utf16_stays_unsupported() {
+        assert_eq!(project_resolved_type(&ResolvedCanonicalType::Scalar(CanonicalScalar::Uuid)), SqlFieldType::Uuid);
+        assert_eq!(project_resolved_type(&ResolvedCanonicalType::Scalar(CanonicalScalar::Utf8)), SqlFieldType::String);
+        assert_eq!(project_resolved_type(&ResolvedCanonicalType::Scalar(CanonicalScalar::Utf16)), SqlFieldType::Unknown);
+    }
+
+    /// uuid 文本无论大小写与连字符，都归一到同一组 16 字节与同一段规范文本。
+    #[test]
+    fn uuid_text_round_trips_through_canonical_octets() {
+        let upper = parse_uuid("3F2504E0-4F89-11D3-9A0C-0305E82C3301").expect("hyphenated upper case");
+        let plain = parse_uuid("3f2504e04f8911d39a0c0305e82c3301").expect("32 hex digits");
+        assert_eq!(upper, plain);
+        assert_eq!(upper.len(), 16);
+        assert_eq!(uuid_text(&upper).as_deref(), Some("3f2504e0-4f89-11d3-9a0c-0305e82c3301"));
+        assert!(parse_uuid("not-a-uuid").is_none());
+    }
+
+    /// uuid 列的存储字节是 16 字节原文，其余类型保留原有文本字节。
+    #[test]
+    fn storage_bytes_of_uuid_is_sixteen_octets() {
+        let literal = SqlBoundLiteral::String("3F2504E0-4F89-11D3-9A0C-0305E82C3301".to_string());
+        assert_eq!(SqlFieldType::Uuid.storage_bytes_of(&literal).unwrap().map(|bytes| bytes.len()), Some(16));
+        assert_eq!(SqlFieldType::String.storage_bytes_of(&literal).unwrap().map(|bytes| bytes.len()), Some(36));
+        assert!(SqlFieldType::Uuid.storage_bytes_of(&SqlBoundLiteral::Null).unwrap().is_none());
+        assert!(SqlFieldType::Uuid.storage_bytes_of(&SqlBoundLiteral::String("nope".to_string())).is_err());
+    }
 }

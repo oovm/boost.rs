@@ -1808,6 +1808,8 @@ fn mysql_field_type(field_type: &SqlFieldType) -> u8 {
         // 与真库 8.4 的 `types` 场景一致。
         SqlFieldType::Date => MYSQL_TYPE_DATE,
         SqlFieldType::Datetime => MYSQL_TYPE_DATETIME,
+        // uuid 的 wire 载荷是连字符文本，按变长字符串上报。
+        SqlFieldType::Uuid => MYSQL_TYPE_VAR_STRING,
         SqlFieldType::String | SqlFieldType::Unknown | SqlFieldType::Optional(_) => MYSQL_TYPE_VAR_STRING,
     }
 }

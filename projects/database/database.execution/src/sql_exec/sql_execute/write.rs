@@ -30,7 +30,7 @@ pub(crate) fn insert_row_if_absent(
     do_nothing: bool,
     dialect: SqlDialect,
 ) -> Result<SqlResult, SqlFrontendError> {
-    let row = write_plan_to_row(plan);
+    let row = write_plan_to_row(plan)?;
     let namespace = Namespace(plan.namespace.clone());
     let mut indexes = IndexMaintenance::open(executor, transaction, &plan.namespace, &plan.unique_constraints, &plan.field_types)?;
     // 唯一性复核与索引回填共用同一次全表快照；没有唯一约束时两者都不需要。
@@ -97,7 +97,7 @@ pub(crate) fn upsert_row(
         let (target_rowid, existing_bytes) = match existing_bytes {
             Some(bytes) => (plan.rowid.clone(), bytes),
             None => {
-                let proposed = write_plan_to_row(plan);
+                let proposed = write_plan_to_row(plan)?;
                 match find_unique_conflict(executor, transaction, &plan.namespace, &plan.unique_constraints, &proposed)? {
                     Some((rowid, bytes)) => (rowid, bytes),
                     None => {
@@ -477,7 +477,7 @@ fn fold_insert_plans(
                 order.push(plan.rowid.clone());
                 folded.insert(
                     plan.rowid.clone(),
-                    BatchedRow { current: Some(write_plan_to_row(plan)), applied: true, condition: CommitCondition::PutIfAbsent },
+                    BatchedRow { current: Some(write_plan_to_row(plan)?), applied: true, condition: CommitCondition::PutIfAbsent },
                 );
             }
             Some(ConflictPolicy::DoNothing) => {
@@ -487,7 +487,7 @@ fn fold_insert_plans(
                 let existing = preimages.get(&plan.rowid).cloned().flatten();
                 let (current, applied) = match &existing {
                     Some(bytes) => (Some(decode_row(bytes)?), false),
-                    None => (Some(write_plan_to_row(plan)), true),
+                    None => (Some(write_plan_to_row(plan)?), true),
                 };
                 order.push(plan.rowid.clone());
                 folded.insert(plan.rowid.clone(), BatchedRow { current, applied, condition: CommitCondition::PutIfAbsent });
@@ -509,7 +509,7 @@ fn fold_insert_plans(
                 let entry = folded.get_mut(&plan.rowid).expect("entry inserted above");
                 match &entry.current {
                     None => {
-                        entry.current = Some(write_plan_to_row(plan));
+                        entry.current = Some(write_plan_to_row(plan)?);
                         entry.applied = true;
                     }
                     Some(existing_row) => {
@@ -572,7 +572,7 @@ pub(crate) fn conflict_updated_row(
     let mut scope_types = plan.field_types.clone();
     for field in &plan.fields {
         let excluded_row_id = field.field_id + ROW_ID_STRIDE;
-        if let Some(bytes) = sql_value_to_bytes(&field.value) {
+        if let Some(bytes) = sql_value_to_bytes(&field.value, &field.field_type)? {
             scope.insert(excluded_row_id, bytes);
         }
         scope_types.insert(excluded_row_id, field.field_type.clone());
@@ -582,7 +582,7 @@ pub(crate) fn conflict_updated_row(
         let value = eval_expression(&assignment.value, &scope, &scope_types, dialect)?;
         let literal = value_to_literal(value);
         check_write_literal(&literal, &assignment.field_type, &assignment.field_name, dialect, assignment.capacity)?;
-        updates.push((assignment.field_id, sql_value_to_bytes(&literal)));
+        updates.push((assignment.field_id, sql_value_to_bytes(&literal, &assignment.field_type)?));
     }
     let mut row = existing.clone();
     for (field_id, bytes) in updates {
@@ -613,7 +613,13 @@ pub(crate) fn execute_insert_select(
             )));
         }
         let literals: Vec<SqlBoundLiteral> = row.into_iter().map(value_to_literal).collect();
-        let rowid = pk_literal_to_rowid(&literals[0])?;
+        // 主键可以不在第一列：按 field_id 定位目标列，再按该列声明类型编码 rowid。
+        let pk_index = plan
+            .fields
+            .iter()
+            .position(|field| field.field_id == plan.pk_field_id)
+            .ok_or_else(|| SqlFrontendError::syntax("INSERT ... SELECT must provide the table primary key column"))?;
+        let rowid = pk_literal_to_rowid(&literals[pk_index], &plan.fields[pk_index].field_type)?;
         let mut fields = Vec::with_capacity(plan.fields.len());
         for (column, value) in plan.fields.iter().zip(literals) {
             check_write_literal(&value, &column.field_type, &column.field_name, dialect, column.capacity)?;
@@ -698,7 +704,7 @@ pub(crate) fn ensure_unique_targets_absent(
     let stored = scan_rows(executor, transaction, &namespace, &[], None, None, 0, "unique_check")?;
     let mut snapshot = UniqueSnapshot::build(&first.unique_constraints, &stored)?;
     for plan in plans {
-        let row = write_plan_to_row(plan);
+        let row = write_plan_to_row(plan)?;
         if let Some(constraint) = snapshot.conflict(&row, Some(&plan.rowid)) {
             return Err(duplicate_key_error(&constraint));
         }
@@ -746,7 +752,7 @@ pub(crate) fn execute_update(
         let value = eval_row_expression(&assignment.value, &row, &plan.field_types, dialect, executor, transaction)?;
         let literal = value_to_literal(value);
         check_write_literal(&literal, &assignment.field_type, &assignment.field_name, dialect, assignment.capacity)?;
-        updates.push((assignment.field_id, sql_value_to_bytes(&literal)));
+        updates.push((assignment.field_id, sql_value_to_bytes(&literal, &assignment.field_type)?));
     }
     for (field_id, bytes) in updates {
         match bytes {
@@ -935,7 +941,7 @@ pub(crate) fn execute_update_scan(
             let value = eval_row_expression(&assignment.value, &row, &plan.field_types, dialect, executor, transaction)?;
             let literal = value_to_literal(value);
             check_write_literal(&literal, &assignment.field_type, &assignment.field_name, dialect, assignment.capacity)?;
-            updates.push((assignment.field_id, sql_value_to_bytes(&literal)));
+            updates.push((assignment.field_id, sql_value_to_bytes(&literal, &assignment.field_type)?));
         }
         let old_row = row.clone();
         for (field_id, bytes) in updates {
@@ -1016,15 +1022,15 @@ pub(crate) fn execute_delete_scan(
     Ok(SqlResult { columns: Vec::new(), rows: Vec::new(), affected_rows: affected })
 }
 
-pub(crate) fn write_plan_to_row(plan: &WritePlan) -> RowFieldValues {
+pub(crate) fn write_plan_to_row(plan: &WritePlan) -> Result<RowFieldValues, SqlFrontendError> {
     let mut row = RowFieldValues::new();
     for field in &plan.fields {
         // NULL 不写入 TLV：字段缺失就是 NULL，空 bytes 留给真正的空串。
-        if let Some(bytes) = sql_value_to_bytes(&field.value) {
+        if let Some(bytes) = sql_value_to_bytes(&field.value, &field.field_type)? {
             row.insert(field.field_id, bytes);
         }
     }
-    row
+    Ok(row)
 }
 
 /// 把一行的约束列折叠成可比较的元组；任一列为 NULL 时返回 `None`（SQL 的
@@ -1236,7 +1242,7 @@ pub(crate) fn enforce_row_guards(
         if matches!(value, SqlValue::Null) {
             continue;
         }
-        let rowid = pk_literal_to_rowid(&value_to_literal(value))?;
+        let rowid = pk_literal_to_rowid(&value_to_literal(value), &key.parent_field_type)?;
         if read_row_bytes(executor, transaction, &Namespace(key.namespace.clone()), &rowid)?.is_none() {
             return Err(SqlFrontendError::new(
                 SqlErrorKind::ForeignKeyViolation,
@@ -1252,15 +1258,9 @@ pub(crate) fn duplicate_key_error(constraint: &str) -> SqlFrontendError {
     SqlFrontendError::new(SqlErrorKind::DuplicateKey, format!("duplicate key value violates unique constraint {constraint}"))
 }
 
-pub(crate) fn sql_value_to_bytes(lit: &SqlBoundLiteral) -> Option<Vec<u8>> {
-    match lit {
-        SqlBoundLiteral::Integer(value) => Some(value.to_string().into_bytes()),
-        SqlBoundLiteral::Number(text) => Some(text.as_bytes().to_vec()),
-        SqlBoundLiteral::String(text) => Some(text.as_bytes().to_vec()),
-        SqlBoundLiteral::Bytes(bytes) => Some(bytes.clone()),
-        SqlBoundLiteral::Boolean(v) => Some((if *v { "1" } else { "0" }).as_bytes().to_vec()),
-        SqlBoundLiteral::Null => None,
-    }
+pub(crate) fn sql_value_to_bytes(lit: &SqlBoundLiteral, field_type: &database_query::catalog_bind::SqlFieldType) -> Result<Option<Vec<u8>>, SqlFrontendError> {
+    // 存储形态由列类型决定：uuid 文本转成 16 字节原文，其余类型保留原有字节。
+    field_type.storage_bytes_of(lit)
 }
 
 #[cfg(test)]

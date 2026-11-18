@@ -175,7 +175,7 @@ pub fn plan_select_for_dialect(
     let point_read_allowed = !has_window && !has_aggregate && select.group_by.is_none();
     let extracted = match select.predicate {
         None => PkPredicate::default(),
-        Some(expr) => extract_pk_range(expr, source.row_id(pk_field.field_id), point_read_allowed)?,
+        Some(expr) => extract_pk_range(expr, source.row_id(pk_field.field_id), point_read_allowed, like_prefix_supported(pk_field))?,
     };
     let pk_equality = extracted.equality;
     let pk_prefix = extracted.prefix;
@@ -197,7 +197,7 @@ pub fn plan_select_for_dialect(
 
     if let Some(lit) = pk_equality {
         // 走到这里说明 point_read_allowed 成立（等值只在允许点读时才被抽取）。
-        let rowid = pk_literal_to_rowid(&lit)?;
+        let rowid = pk_literal_to_rowid(&lit, &pk_field.field_type)?;
         return Ok(SqlExecutionPlan::Read(ReadPlan {
             namespace,
             rowid,
@@ -685,7 +685,12 @@ fn plan_foreign_keys(table: &SqlCatalogTable, catalog: &SqlCatalog) -> Result<Ve
                 table.name, parent.name
             )));
         }
-        plans.push(ForeignKeyPlan { namespace: format!("table:{}", parent.type_id), parent_name: parent.name.clone(), column: key.columns[0] });
+        plans.push(ForeignKeyPlan {
+            namespace: format!("table:{}", parent.type_id),
+            parent_name: parent.name.clone(),
+            column: key.columns[0],
+            parent_field_type: pk.field_type.clone(),
+        });
     }
     Ok(plans)
 }
@@ -723,6 +728,7 @@ pub fn plan_insert(insert: SqlCatalogBoundInsert, catalog: &SqlCatalog, dialect:
         return plan_insert_select(
             *select,
             target_fields,
+            primary_key_of(table)?.field_id,
             namespace,
             field_types,
             unique_constraints,
@@ -747,7 +753,7 @@ pub fn plan_insert(insert: SqlCatalogBoundInsert, catalog: &SqlCatalog, dialect:
         // 不能依赖位置。
         let pk_value = row_values.get(pk_index).ok_or_else(|| planner_error("INSERT row has no primary key value"))?;
         let rowid = literal_from_expression(pk_value)?;
-        let rowid_bytes = pk_literal_to_rowid(&rowid)?;
+        let rowid_bytes = pk_literal_to_rowid(&rowid, &pk_field.field_type)?;
 
         let mut write_fields = Vec::with_capacity(target_fields.len());
         for (field, value) in target_fields.iter().zip(row_values.iter()) {
@@ -920,6 +926,7 @@ pub(crate) fn plan_returning(
 fn plan_insert_select(
     select: SqlCatalogBoundSelect,
     target_fields: Vec<crate::catalog_bind::SqlCatalogBoundColumn>,
+    pk_field_id: u64,
     namespace: String,
     field_types: std::collections::BTreeMap<u64, crate::catalog_bind::SqlFieldType>,
     unique_constraints: Vec<UniqueConstraintPlan>,
@@ -965,6 +972,7 @@ fn plan_insert_select(
     Ok(SqlExecutionPlan::InsertSelect(InsertSelectPlan {
         namespace,
         fields,
+        pk_field_id,
         source: Box::new(source),
         field_types,
         conflict,
@@ -985,7 +993,10 @@ fn write_types_compatible(target: &crate::catalog_bind::SqlFieldType, source: &c
         || target == source
         || matches!(
             (&target, &source),
-            (SqlFieldType::Int64, SqlFieldType::Int32) | (SqlFieldType::Float64, SqlFieldType::Int32 | SqlFieldType::Int64)
+            (SqlFieldType::Int64, SqlFieldType::Int32)
+                | (SqlFieldType::Float64, SqlFieldType::Int32 | SqlFieldType::Int64)
+                // 文本源写进 uuid 列：值在逐行编码时按规范写法解析，非法文本会当场报错。
+                | (SqlFieldType::Uuid, SqlFieldType::String)
         )
 }
 
@@ -1034,12 +1045,12 @@ pub fn plan_update(update: SqlCatalogBoundUpdate, catalog: &SqlCatalog, dialect:
     };
 
     // UPDATE 没有聚合与分组，等值始终可以交给点读。
-    let extracted = extract_pk_range(predicate.clone(), pk_field.field_id, true)?;
+    let extracted = extract_pk_range(predicate.clone(), pk_field.field_id, true, like_prefix_supported(pk_field))?;
     let PkPredicate { equality: pk_literal, prefix: pk_prefix, lower, upper, remaining } = extracted;
     if let Some(rowid_literal) = pk_literal {
         return Ok(SqlExecutionPlan::Update(UpdatePlan {
             namespace,
-            rowid: pk_literal_to_rowid(&rowid_literal)?,
+            rowid: pk_literal_to_rowid(&rowid_literal, &pk_field.field_type)?,
             fields: write_fields,
             remaining_predicate: remaining,
             field_types,
@@ -1086,12 +1097,12 @@ pub fn plan_delete(delete: SqlCatalogBoundDelete, catalog: &SqlCatalog) -> Resul
     };
 
     // DELETE 没有聚合与分组，等值始终可以交给点读。
-    let extracted = extract_pk_range(predicate.clone(), pk_field.field_id, true)?;
+    let extracted = extract_pk_range(predicate.clone(), pk_field.field_id, true, like_prefix_supported(pk_field))?;
     let PkPredicate { equality: pk_literal, prefix: pk_prefix, lower, upper, remaining } = extracted;
     if let Some(rowid_literal) = pk_literal {
         return Ok(SqlExecutionPlan::Delete(DeletePlan {
             namespace,
-            rowid: pk_literal_to_rowid(&rowid_literal)?,
+            rowid: pk_literal_to_rowid(&rowid_literal, &pk_field.field_type)?,
             remaining_predicate: remaining,
             field_types,
             unique_constraints,
@@ -1184,6 +1195,14 @@ pub fn check_write_literal(
             SqlBoundLiteral::Number(_) | SqlBoundLiteral::Bytes(_) => false,
         },
         SqlFieldType::String => matches!(literal, SqlBoundLiteral::Null | SqlBoundLiteral::String(_)),
+        // uuid 只接受能解析成 16 字节的值：文本按标准写法解析，二进制必须正好 16 字节。
+        // 解析失败在规划期就报类型不匹配，不会把 36 字符原文写进二进制列。
+        SqlFieldType::Uuid => match literal {
+            SqlBoundLiteral::Null => true,
+            SqlBoundLiteral::String(text) => crate::catalog_bind::parse_uuid(text).is_some(),
+            SqlBoundLiteral::Bytes(bytes) => bytes.len() == 16,
+            _ => false,
+        },
         SqlFieldType::Bytes | SqlFieldType::Optional(_) => unreachable!("handled above"),
     };
     if fits {
@@ -1537,6 +1556,8 @@ pub struct ForeignKeyPlan {
     pub parent_name: String,
     /// 子列 field_id。
     pub column: u64,
+    /// 父表主键的声明类型：子列值要按它编码成 rowid 才能命中父行（uuid 是 16 字节）。
+    pub parent_field_type: crate::catalog_bind::SqlFieldType,
 }
 
 /// `RETURNING` 投影：对最终落库行求值的表达式 + 展示列名。
@@ -1591,6 +1612,8 @@ pub struct InsertSelectPlan {
     pub namespace: String,
     /// 目标列，与源查询输出列按下标一一对应。
     pub fields: Vec<InsertSelectColumn>,
+    /// 目标表主键的 field_id：rowid 由该列编码，主键不必排在第一列。
+    pub pk_field_id: u64,
     /// 源查询执行计划。
     pub source: Box<SqlExecutionPlan>,
     /// field_id → SqlFieldType 映射，execute 层编码用。
@@ -1767,12 +1790,17 @@ pub struct DeleteScanPlan {
 /// `point_read_allowed` 为 `false` 时等值也不抽取（聚合 / GROUP BY / 窗口只在扫描
 /// 路径求值，点读承载不了；等值被抽走又没人按 key 读，行级过滤就丢了这一条）。
 /// 此时等值原样留在 remaining，由扫描逐行求值。
-fn extract_pk_range(predicate: SqlCatalogBoundExpression, pk_row_id: u64, point_read_allowed: bool) -> Result<PkPredicate, SqlFrontendError> {
+fn extract_pk_range(
+    predicate: SqlCatalogBoundExpression,
+    pk_row_id: u64,
+    point_read_allowed: bool,
+    like_pushdown: bool,
+) -> Result<PkPredicate, SqlFrontendError> {
     match predicate {
         // AND 拆分 — 两侧分别提取，再合并。
         SqlCatalogBoundExpression::Binary { left, operator: SqlBoundBinaryOperator::And, right } => {
-            let mut left = extract_pk_range(*left, pk_row_id, point_read_allowed)?;
-            let right = extract_pk_range(*right, pk_row_id, point_read_allowed)?;
+            let mut left = extract_pk_range(*left, pk_row_id, point_read_allowed, like_pushdown)?;
+            let right = extract_pk_range(*right, pk_row_id, point_read_allowed, like_pushdown)?;
             let eq = merge_opt(left.equality.take(), right.equality, "conflicting primary-key equality inside AND")?;
             let prefix = merge_opt(left.prefix.take(), right.prefix, "conflicting primary-key LIKE prefix inside AND")?;
             let lower = merge_lower(left.lower, right.lower);
@@ -1794,13 +1822,16 @@ fn extract_pk_range(predicate: SqlCatalogBoundExpression, pk_row_id: u64, point_
                 | (SqlBoundBinaryOperator::Equal, SqlCatalogBoundExpression::Literal(lit), SqlCatalogBoundExpression::Column(col))
                     if col.row_id == pk_row_id && point_read_allowed =>
                 {
-                    let _rowid = pk_literal_to_rowid(&lit)?;
+                    if matches!(&lit, SqlBoundLiteral::Null) {
+                        return Err(SqlFrontendError::new(SqlErrorKind::NotNullViolation, "primary key must not be NULL"));
+                    }
                     Ok(PkPredicate { equality: Some(lit), ..PkPredicate::default() })
                 }
 
-                // pk LIKE 'prefix%'
+                // pk LIKE 'prefix%' —— 只有文本主键的 rowid 就是文本字节，前缀下推才成立；
+                // uuid / 整数主键的 rowid 是二进制或十进制编码，文本前缀匹配不到，留在 remaining。
                 (SqlBoundBinaryOperator::Like, SqlCatalogBoundExpression::Column(col), SqlCatalogBoundExpression::Literal(lit))
-                    if col.row_id == pk_row_id =>
+                    if col.row_id == pk_row_id && like_pushdown =>
                 {
                     let prefix = match &lit {
                         SqlBoundLiteral::String(s) if s.ends_with('%') && !s.ends_with("%%") => s[..s.len() - 1].as_bytes().to_vec(),
@@ -1955,6 +1986,15 @@ fn is_integer_primary_key(field: &crate::SqlCatalogField) -> bool {
     matches!(field.field_type.inner(), SqlFieldType::Int32 | SqlFieldType::Int64)
 }
 
+/// 主键 `LIKE 'prefix%'` 能否直接当 rowid 字节前缀下推。
+///
+/// 文本主键的 rowid 就是文本本身，整数主键的 rowid 是不补零的十进制 ASCII，与 LIKE
+/// 看到的文本一致，两者都能安全下推。uuid 主键的 rowid 是 16 字节二进制，文本前缀
+/// 匹配不到，必须留在 remaining 逐行求值，否则会漏行。
+fn like_prefix_supported(field: &crate::SqlCatalogField) -> bool {
+    matches!(field.field_type.inner(), SqlFieldType::String | SqlFieldType::Int32 | SqlFieldType::Int64)
+}
+
 fn pk_scan_bounds(integer_primary_key: bool, lower: Option<PkBound>, upper: Option<PkBound>) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
     if !integer_primary_key {
         return (None, None);
@@ -2024,15 +2064,18 @@ fn combine_remaining(left: Option<SqlCatalogBoundExpression>, right: Option<SqlC
 }
 
 /// Encodes a primary-key literal into the canonical row id bytes.
-pub fn pk_literal_to_rowid(literal: &SqlBoundLiteral) -> Result<Vec<u8>, SqlFrontendError> {
-    match literal {
-        SqlBoundLiteral::Integer(value) => Ok(value.to_string().into_bytes()),
-        SqlBoundLiteral::Number(text) => Ok(text.as_bytes().to_vec()),
-        SqlBoundLiteral::String(text) => Ok(text.as_bytes().to_vec()),
-        SqlBoundLiteral::Bytes(bytes) => Ok(bytes.clone()),
-        SqlBoundLiteral::Boolean(value) => Ok((if *value { "1" } else { "0" }).as_bytes().to_vec()),
-        SqlBoundLiteral::Null => Err(SqlFrontendError::new(SqlErrorKind::NotNullViolation, "primary key must not be NULL")),
+///
+/// The row id must use the same representation as the stored column, so a
+/// `uuid` primary key becomes its 16 canonical octets instead of 36-character
+/// text: point reads, `UNIQUE` checks and secondary-index entries then all
+/// compare on the compact binary form.
+pub fn pk_literal_to_rowid(literal: &SqlBoundLiteral, field_type: &crate::catalog_bind::SqlFieldType) -> Result<Vec<u8>, SqlFrontendError> {
+    if matches!(literal, SqlBoundLiteral::Null) {
+        return Err(SqlFrontendError::new(SqlErrorKind::NotNullViolation, "primary key must not be NULL"));
     }
+    field_type
+        .storage_bytes_of(literal)?
+        .ok_or_else(|| SqlFrontendError::new(SqlErrorKind::NotNullViolation, "primary key must not be NULL"))
 }
 
 fn primary_key_of(table: &crate::SqlCatalogTable) -> Result<&crate::SqlCatalogField, SqlFrontendError> {
@@ -2208,6 +2251,10 @@ fn index_payload(literal: &SqlBoundLiteral, field_type: &crate::catalog_bind::Sq
     match (literal, field_type.inner()) {
         (SqlBoundLiteral::Integer(value), SqlFieldType::Int32 | SqlFieldType::Int64) => Some(crate::sql_index::encode_integer(*value)),
         (SqlBoundLiteral::String(value), SqlFieldType::String) => Some(value.as_bytes().to_vec()),
+        // uuid 的索引载荷与行存储共用 16 字节大端原文；文本字面量先解析成规范字节，
+        // 解析失败时退回全表扫描（索引只是少读行，不能因此漏行）。
+        (SqlBoundLiteral::String(value), SqlFieldType::Uuid) => crate::catalog_bind::parse_uuid(value).map(|bytes| bytes.to_vec()),
+        (SqlBoundLiteral::Bytes(value), SqlFieldType::Uuid) if value.len() == 16 => Some(value.clone()),
         _ => None,
     }
 }

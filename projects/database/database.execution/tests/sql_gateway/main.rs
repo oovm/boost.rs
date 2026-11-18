@@ -428,3 +428,74 @@ fn non_unique_secondary_index_keeps_duplicates_and_tracks_writes() {
     assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM events WHERE user_id = 7"), 0);
     assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM events WHERE user_id = 10"), 1);
 }
+
+/// UUID 主键按 16 字节二进制 rowid 存储，写读都不再经过 36 字符文本。
+///
+/// 断言三件事：点读 rowid 恰好 16 字节；任意大小写/连字符写法都能命中同一行；
+/// 读回的文本是规范小写连字符形式。
+#[test]
+fn uuid_primary_key_stores_sixteen_octets_and_matches_any_spelling() {
+    let gateway = Gateway::new("uuid-primary-key");
+    gateway.expect_sql("CREATE TABLE users (id UUID NOT NULL PRIMARY KEY, nickname VARCHAR(32) NOT NULL)");
+    gateway.expect_sql(
+        "INSERT INTO users (id, nickname) VALUES ('3F2504E0-4F89-11D3-9A0C-0305E82C3301', 'alice'), ('00000000-0000-0000-0000-000000000002', 'bob')",
+    );
+
+    // 点读计划里的 rowid 必须是 16 字节，不是 36 字符文本。
+    let catalog = gateway.registry.catalog();
+    let bound = bind_sql_catalog(
+        "SELECT nickname FROM users WHERE id = '3F2504E0-4F89-11D3-9A0C-0305E82C3301'",
+        &catalog,
+        catalog.schema_version(),
+        SqlDialect::Mysql,
+    )
+    .expect("bind uuid point read");
+    let plan = plan_statement_for_dialect(bound, &catalog, SqlDialect::Mysql).expect("plan uuid point read");
+    let rowid = match &plan {
+        database_query::SqlExecutionPlan::Read(read) => read.rowid.clone(),
+        other => panic!("expected a point read, got {other:?}"),
+    };
+    assert_eq!(rowid.len(), 16, "uuid primary key rowid must be the 16 canonical octets");
+
+    // 大写连字符、小写无连字符、纯十六进制三种写法命中同一行。
+    assert_eq!(gateway.scalar_text("SELECT nickname FROM users WHERE id = '3F2504E0-4F89-11D3-9A0C-0305E82C3301'"), "alice");
+    assert_eq!(gateway.scalar_text("SELECT nickname FROM users WHERE id = '3f2504e0-4f89-11d3-9a0c-0305e82c3301'"), "alice");
+    assert_eq!(gateway.scalar_text("SELECT nickname FROM users WHERE id = '3f2504e04f8911d39a0c0305e82c3301'"), "alice");
+    assert_eq!(gateway.scalar_text("SELECT id FROM users WHERE nickname = 'bob'"), "00000000-0000-0000-0000-000000000002");
+
+    // 主键冲突按值而不是写法判定。
+    assert!(gateway.sql("INSERT INTO users (id, nickname) VALUES ('3f2504e04f8911d39a0c0305e82c3301', 'dup')").is_err());
+
+    // 非法 uuid 文本被拒绝，而不是写成文本落库。
+    assert!(gateway.sql("INSERT INTO users (id, nickname) VALUES ('not-a-uuid', 'x')").is_err());
+}
+
+/// uuid 列上的二级索引：条目载荷与行存储同为 16 字节，等值探测能命中。
+#[test]
+fn uuid_secondary_index_probes_sixteen_octet_payloads() {
+    let gateway = Gateway::new("uuid-secondary-index");
+    gateway.expect_sql("CREATE TABLE sessions (id INT NOT NULL PRIMARY KEY, user_id UUID NOT NULL)");
+    gateway.expect_sql("CREATE INDEX idx_sessions_user ON sessions (user_id)");
+    gateway.expect_sql(
+        "INSERT INTO sessions (id, user_id) VALUES (1, '3F2504E0-4F89-11D3-9A0C-0305E82C3301'), (2, '3F2504E0-4F89-11D3-9A0C-0305E82C3301'), (3, '00000000-0000-0000-0000-000000000002')",
+    );
+
+    let catalog = gateway.registry.catalog();
+    let bound = bind_sql_catalog(
+        "SELECT id FROM sessions WHERE user_id = '3f2504e0-4f89-11d3-9a0c-0305e82c3301'",
+        &catalog,
+        catalog.schema_version(),
+        SqlDialect::Mysql,
+    )
+    .expect("bind indexed uuid equality");
+    let plan = plan_statement_for_dialect(bound, &catalog, SqlDialect::Mysql).expect("plan indexed uuid equality");
+    let probe = match plan {
+        database_query::SqlExecutionPlan::Scan(scan) => scan.index,
+        other => panic!("expected a scan plan, got {other:?}"),
+    };
+    assert!(probe.is_some(), "equality on an indexed uuid column must probe the index");
+
+    assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM sessions WHERE user_id = '3F2504E0-4F89-11D3-9A0C-0305E82C3301'"), 2);
+    assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM sessions WHERE user_id = '00000000-0000-0000-0000-000000000002'"), 1);
+    assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM sessions WHERE user_id = '00000000-0000-0000-0000-000000000003'"), 0);
+}

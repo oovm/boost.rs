@@ -45,10 +45,11 @@ pub fn index_namespace(table_namespace: &str, field_id: u64) -> String {
 
 /// 该列类型是否支持二级索引。
 ///
-/// 只支持整数与文本：整数是保序大端编码，文本是 UTF-8 字节序。其余类型
-/// （浮点、布尔、日期、未知）保持全表扫描，避免浮点格式化与布尔字面量的口径差异。
+/// 支持整数、文本与 uuid：整数是保序大端编码，文本是 UTF-8 字节序，uuid 是
+/// 16 字节大端原文（字节序与规范文本序一致）。其余类型（浮点、布尔、日期、
+/// 未知）保持全表扫描，避免浮点格式化与布尔字面量的口径差异。
 pub fn index_supported(field_type: &SqlFieldType) -> bool {
-    matches!(field_type.inner(), SqlFieldType::Int32 | SqlFieldType::Int64 | SqlFieldType::String)
+    matches!(field_type.inner(), SqlFieldType::Int32 | SqlFieldType::Int64 | SqlFieldType::String | SqlFieldType::Uuid)
 }
 
 /// 该列是否支持带上下界的索引范围扫描（只有定长保序编码可以）。
@@ -70,6 +71,8 @@ pub fn encode_value(bytes: &[u8], field_type: &SqlFieldType) -> Result<Option<Ve
             Ok(Some(encode_integer(value)))
         }
         SqlFieldType::String => Ok(Some(bytes.to_vec())),
+        // uuid 在行里已经是 16 字节大端原文，索引载荷直接复用，不经过文本。
+        SqlFieldType::Uuid if bytes.len() == 16 => Ok(Some(bytes.to_vec())),
         _ => Err(()),
     }
 }

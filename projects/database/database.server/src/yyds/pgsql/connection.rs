@@ -840,7 +840,11 @@ impl ExecutionOutcome {
 ///
 /// Shared by the wire SimpleQuery path and the `postgres` facade's direct
 /// statement path; one semantic source for both.
-pub fn run_statement(sql: &str, runtime: &Arc<PgsqlSqlRuntime>, session: &mut TransactionSession) -> Result<ExecutionOutcome, (String, String)> {
+pub fn run_statement(
+    sql: &str,
+    runtime: &Arc<PgsqlSqlRuntime>,
+    session: &mut TransactionSession,
+) -> Result<ExecutionOutcome, (String, String)> {
     // Metadata views are synthesized from the local schema registry. They never
     // bind into the catalog or touch the executor, so they branch off before the
     // regular session-command/bind path.
@@ -1875,6 +1879,9 @@ fn pg_oid(field_type: &SqlFieldType) -> u32 {
         // PostgreSQL 侧仍按文本传输日期/时间：网关不建模时区与日期二进制编码，
         // 与类型上报改造前的 `String` 行为逐字节一致。
         SqlFieldType::Date | SqlFieldType::Datetime => OID_TEXT,
+        // uuid 存储与比较是 16 字节二进制，但网关对外仍按文本输出连字符小写形式，
+        // 因此上报 TEXT 与实际上线的文本载荷一致。
+        SqlFieldType::Uuid => OID_TEXT,
         SqlFieldType::String | SqlFieldType::Unknown | SqlFieldType::Optional(_) => OID_TEXT,
     }
 }
