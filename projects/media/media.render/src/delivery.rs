@@ -30,6 +30,8 @@ pub struct SampleReport {
     pub seconds: f64,
     /// Mean luminance in `0..=1`.
     pub mean_luma: f32,
+    /// Absolute luminance change from the previous sample; `0.0` for the first.
+    pub jump: f32,
     /// Whether two neighbouring samples are byte-identical.
     pub frozen: bool,
 }
@@ -110,6 +112,9 @@ pub mod threshold {
     pub const SILENCE_RMS_DB: f32 = -60.0;
     /// Peak above this leaves no headroom for lossy re-encoding downstream.
     pub const HEADROOM_PEAK_DB: f32 = -0.1;
+    /// A luminance step this large between neighbouring samples is reported as
+    /// a visible jump; a deliberate cut can trip it, so it stays advisory.
+    pub const JUMP_LUMA: f32 = 0.35;
 }
 
 /// Reopens `path` and reports what the decoder sees.
@@ -147,6 +152,7 @@ pub fn inspect_delivery(path: &Path, probes: usize, sample_rate: u32) -> Result<
     let span = audio.as_ref().map(|audio| audio.seconds.max(0.001));
     let mut samples = Vec::with_capacity(probes);
     let mut previous: Option<Vec<u8>> = None;
+    let mut previous_luma = 0.0f32;
     let (mut width, mut height) = (0u32, 0u32);
     for index in 0..probes {
         let seconds = match span {
@@ -157,9 +163,11 @@ pub fn inspect_delivery(path: &Path, probes: usize, sample_rate: u32) -> Result<
         width = frame.width;
         height = frame.height;
         let mean_luma = mean_luma(&frame.rgba);
+        let jump = if index == 0 { 0.0 } else { (mean_luma - previous_luma).abs() };
         let frozen = previous.as_ref().is_some_and(|prev| prev == &frame.rgba);
         previous = Some(frame.rgba.clone());
-        samples.push(SampleReport { index, seconds, mean_luma, frozen });
+        previous_luma = mean_luma;
+        samples.push(SampleReport { index, seconds, mean_luma, jump, frozen });
     }
     if width == 0 || height == 0 {
         return Err(Error::media(format!("{display} decoded no frame")));
@@ -174,6 +182,15 @@ pub fn inspect_delivery(path: &Path, probes: usize, sample_rate: u32) -> Result<
             suspects.push(format!(
                 "sample {} at {:.2}s is byte-identical to the previous one; check for a frozen shot",
                 sample.index, sample.seconds
+            ));
+        }
+        if sample.jump > threshold::JUMP_LUMA {
+            suspects.push(format!(
+                "sample {} at {:.2}s jumps {:.2} in luminance, above the {:.2} threshold",
+                sample.index,
+                sample.seconds,
+                sample.jump,
+                threshold::JUMP_LUMA
             ));
         }
     }
@@ -254,6 +271,30 @@ mod tests {
         let white = vec![255u8; 4 * 4];
         assert_eq!(mean_luma(&black), 0.0);
         assert!((mean_luma(&white) - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn a_large_luminance_step_between_samples_is_named_with_its_threshold() {
+        let dir = std::env::temp_dir().join("opencut-delivery-tests");
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("inspect-jump.mp4");
+        let film = serde_json::json!({
+            "width": 160, "height": 90, "fps": 15, "duration_frames": 30,
+            "scenes": [
+                { "start": 0, "duration": 15, "background": { "kind": "solid", "color": "#ffffff" }, "items": [] },
+                { "start": 15, "duration": 15, "background": { "kind": "solid", "color": "#000000" }, "items": [] }
+            ],
+            "audio": null
+        });
+        render_project_with(&film.to_string(), &out, &RenderOptions::default(), &mut |_, _| {}).expect("render");
+
+        let report = inspect_delivery(&out, 6, 44_100).expect("inspect");
+        assert!(report.samples.iter().any(|sample| sample.jump > threshold::JUMP_LUMA), "{:?}", report.samples);
+        assert!(
+            report.suspects.iter().any(|suspect| suspect.contains("jumps") && suspect.contains("threshold")),
+            "{:?}",
+            report.suspects
+        );
     }
 
     #[test]
