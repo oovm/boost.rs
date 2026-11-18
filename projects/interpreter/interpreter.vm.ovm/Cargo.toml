@@ -14,3 +14,4 @@ missing_docs = "warn"
 acorn-odin = { workspace = true }
 interpreter-gc = { workspace = true }
 interpreter-jit = { workspace = true }
+serde_json = { workspace = true }

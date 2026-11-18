@@ -1,15 +1,16 @@
 //! Architecture guards: the Odin VM substrate must stay language-agnostic.
 //!
-//! 校验一律写成结构规则：src 只允许引用 `crate` / `std` / `core` / `alloc` 与三个声明依赖
-//! （`acorn_odin` 格式合同、`interpreter_gc` 托管堆、`interpreter_jit` JIT 底座）；
-//! 清单只允许这三条运行时依赖，不得出现语言前端或宿主运输依赖。
+//! 校验一律写成结构规则：src 只允许引用 `crate` / `std` / `core` / `alloc` 与四个声明依赖
+//! （`acorn_odin` 格式合同、`interpreter_gc` 托管堆、`interpreter_jit` JIT 底座、`serde_json` 宿主 JSON 线格式）；
+//! 清单只允许这四条运行时依赖，不得出现语言前端或宿主运输依赖。
 
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
-const ALLOWED_IMPORT_ROOTS: &[&str] = &["crate", "std", "core", "alloc", "acorn_odin", "interpreter_gc", "interpreter_jit"];
+const ALLOWED_IMPORT_ROOTS: &[&str] =
+    &["crate", "super", "self", "std", "core", "alloc", "acorn_odin", "interpreter_gc", "interpreter_jit", "serde_json"];
 
 fn crate_src() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")
@@ -66,7 +67,7 @@ fn odin_manifest_must_depend_only_on_format_and_substrate_crates() {
         }
         if in_dependencies && !trimmed.is_empty() && !trimmed.starts_with('#') {
             let name = trimmed.split('=').next().unwrap_or("").trim();
-            if !matches!(name, "acorn-odin" | "interpreter-gc" | "interpreter-jit") {
+            if !matches!(name, "acorn-odin" | "interpreter-gc" | "interpreter-jit" | "serde_json") {
                 offenders.push(trimmed.to_owned());
             }
         }

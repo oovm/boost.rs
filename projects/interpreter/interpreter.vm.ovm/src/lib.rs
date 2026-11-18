@@ -31,6 +31,7 @@ pub mod executor;
 pub mod frame;
 pub mod host;
 pub mod jit;
+pub mod json_bridge;
 pub mod module;
 pub mod odin_scalar_matcher;
 pub mod ops;
@@ -43,6 +44,7 @@ pub mod time_runtime;
 pub mod value;
 pub mod verify;
 pub mod vm;
+pub mod workload_json;
 
 pub use crate::{
     deopt_value::{decode_value_from_deopt, decode_value_from_deopt_with_roots, encode_value_for_deopt, encode_value_for_deopt_pinned},
