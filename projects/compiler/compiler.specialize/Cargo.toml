@@ -1,0 +1,14 @@
+[package]
+name = "compiler-specialize"
+description = "Language-neutral residual sink contract for Futamura first-projection specialization"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"
+
+[dependencies]

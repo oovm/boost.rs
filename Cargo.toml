@@ -24,6 +24,7 @@ members = [
     "projects/compiler/compiler.analysis",
     "projects/compiler/compiler.optimize",
     "projects/compiler/compiler.emitter",
+    "projects/compiler/compiler.specialize",
     "projects/compiler/compiler.target",
     "projects/compiler/compiler.types",
     "projects/crawler/crawler",
@@ -229,6 +230,7 @@ boost-terminal = { path = "projects/boost/boost-terminal" }
 compiler-analysis = { path = "projects/compiler/compiler.analysis" }
 compiler-optimize = { path = "projects/compiler/compiler.optimize" }
 compiler-emitter = { path = "projects/compiler/compiler.emitter" }
+compiler-specialize = { path = "projects/compiler/compiler.specialize" }
 compiler-target = { path = "projects/compiler/compiler.target" }
 compiler-types = { path = "projects/compiler/compiler.types" }
 # 内部库

@@ -11,3 +11,4 @@ publish = false
 missing_docs = "warn"
 
 [dependencies]
+acorn-jvm = { workspace = true }

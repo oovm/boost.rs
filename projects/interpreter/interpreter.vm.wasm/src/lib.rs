@@ -16,6 +16,7 @@
 //!   以及任何 WASI syscall 的实际实现。宿主边界只做名称与方向判定，不执行 I/O。
 //! - 骨架不签收 WASI 或 component-model 符合性；后续实现必须逐项补证据。
 
+pub mod decode_adapter;
 pub mod error;
 pub mod host;
 pub mod op;
@@ -23,6 +24,7 @@ pub mod value;
 pub mod vm;
 pub mod wasi;
 
+pub use decode_adapter::{from_decoded_instruction, from_decoded_program};
 pub use error::WasmError;
 pub use host::{HostBoundary, ImportKind, classify};
 pub use op::Instruction;

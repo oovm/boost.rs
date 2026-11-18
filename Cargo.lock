@@ -625,6 +625,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "compiler-specialize"
+version = "0.1.0"
+
+[[package]]
 name = "compiler-target"
 version = "0.1.0"
 dependencies = [
@@ -2411,6 +2415,9 @@ version = "0.1.0"
 [[package]]
 name = "interpreter-vm-jvm"
 version = "0.1.0"
+dependencies = [
+ "acorn-jvm",
+]
 
 [[package]]
 name = "interpreter-vm-ovm"
@@ -2424,6 +2431,9 @@ dependencies = [
 [[package]]
 name = "interpreter-vm-wasm"
 version = "0.1.0"
+dependencies = [
+ "acorn-wasm",
+]
 
 [[package]]
 name = "intl-memoizer"

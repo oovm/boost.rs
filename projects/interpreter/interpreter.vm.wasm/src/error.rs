@@ -43,6 +43,11 @@ pub enum WasmError {
         /// 导入名。
         name: String,
     },
+    /// 指令超出当前执行子集。
+    UnsupportedInstruction {
+        /// 指令的调试形式。
+        instruction: String,
+    },
     /// 程序在返回前结束。
     MissingReturn,
 }
@@ -57,6 +62,7 @@ impl fmt::Display for WasmError {
             Self::DivideByZero => f.write_str("integer divide by zero"),
             Self::StepBudgetExceeded { budget } => write!(f, "step budget {budget} exceeded"),
             Self::UnsupportedImport { name } => write!(f, "unsupported import `{name}`"),
+            Self::UnsupportedInstruction { instruction } => write!(f, "instruction outside the execution subset: {instruction}"),
             Self::MissingReturn => f.write_str("function ended without returning"),
         }
     }
