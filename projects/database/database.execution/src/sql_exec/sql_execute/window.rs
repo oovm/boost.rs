@@ -379,6 +379,13 @@ pub(crate) fn eval_aggregate(
     field_types: &std::collections::BTreeMap<u64, database_query::catalog_bind::SqlFieldType>,
     dialect: SqlDialect,
 ) -> Result<SqlValue, SqlFrontendError> {
+    // `COUNT(*)::int` wraps the aggregate in a cast; the aggregate is evaluated
+    // over the frame exactly as if it stood alone, and the cast applies to the
+    // single result value.
+    if let SqlCatalogBoundExpression::Cast { expr: inner, target } = expr {
+        let value = eval_aggregate(inner, rows, field_types, dialect)?;
+        return eval_cast_for_dialect(value, target, false, dialect);
+    }
     let (name, args, distinct) = match expr {
         SqlCatalogBoundExpression::Function { name, args, distinct, .. } => (name.clone(), args.clone(), *distinct),
         _ => return Err(internal_error(&format!("eval_aggregate: non-Function expression encountered: {expr:?}"))),

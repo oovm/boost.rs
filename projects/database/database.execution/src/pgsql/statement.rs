@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use database_query::{
     SqlColumn, SqlDialect, SqlErrorKind, SqlExecutionPlan, SqlFrontendError, SqlSessionCommand, SqlTransactionAction, SqlValue,
-    analyze_meta_query, apply_auto_increment, bind_sql_catalog, describe_plan, parse_ddl, parse_session_command,
+    analyze_meta_query, apply_auto_increment, bind_sql_catalog, describe_plan, parse_ddl, parse_pg_utility, parse_session_command,
     plan_statement_for_dialect, rewrite_double_colon_casts,
 };
 
@@ -59,7 +59,7 @@ pub struct StatementError {
 }
 
 impl StatementError {
-    fn new(sqlstate: impl Into<String>, message: impl Into<String>) -> Self {
+    pub(crate) fn new(sqlstate: impl Into<String>, message: impl Into<String>) -> Self {
         Self { sqlstate: sqlstate.into(), message: message.into() }
     }
 }
@@ -86,6 +86,14 @@ pub fn dispatch_statement(
         StatementError::new(pg_sqlstate(error.kind), format!("SQL cast error: {}", error.message))
     })?;
     let trimmed = normalized.as_ref();
+    // `PREPARE` / `EXECUTE` / `DEALLOCATE` wrap another statement, so they run
+    // before DDL detection would misclassify the wrapped text.
+    if let Some(utility) = parse_pg_utility(trimmed).map_err(|error| {
+        session.fail();
+        StatementError::new(pg_sqlstate(error.kind), format!("SQL utility error: {}", error.message))
+    })? {
+        return super::prepared::execute_utility(&utility, runtime, session);
+    }
     // DDL resolves against the local schema registry before the Oak session
     // parser, so a `CREATE` / `ALTER` / `DROP` outside the supported subset is
     // reported as such instead of being misclassified as an unknown table.

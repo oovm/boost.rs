@@ -141,6 +141,12 @@ pub fn plan_select_for_dialect(
                         projection_expressions
                             .push((expression.clone(), alias.clone().unwrap_or_else(|| expression_default_label(expression))));
                     }
+                    // 聚合可以包在 CAST 一层里（`COUNT(*)::int`）：只要表达式里含
+                    // 聚合调用就走聚合路径，由执行器在整组行上求值后再套转换。
+                    other @ SqlCatalogBoundExpression::Cast { .. } if expression_has_aggregate(other) => {
+                        has_aggregate = true;
+                        projection_expressions.push((other.clone(), alias.clone().unwrap_or_else(|| expression_default_label(other))));
+                    }
                     other => {
                         has_non_aggregate = true;
                         projection_expressions.push((other.clone(), alias.clone().unwrap_or_else(|| expression_default_label(other))));

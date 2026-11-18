@@ -7,12 +7,22 @@
 //! checkpointing and aborted-block rejection exist once.
 
 use std::{
+    collections::BTreeMap,
     io,
     sync::Arc,
 };
 
 use crate::cluster::{KeyValueExecutor, TransactionHandle};
 use database_query::{SqlSchemaCheckpoint, SqlSchemaRegistry};
+
+/// One SQL-level prepared statement registered through `PREPARE`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreparedSqlStatement {
+    /// Statement text that follows `AS`.
+    pub sql: String,
+    /// Declared parameter types, as written.
+    pub parameter_types: Vec<String>,
+}
 
 /// PostgreSQL's default `search_path`, also the value `RESET search_path` and
 /// `DISCARD ALL` restore. `SHOW search_path` prints it exactly as the engine
@@ -68,6 +78,8 @@ pub struct TransactionSession {
     /// Registry snapshot captured at `BEGIN`. The catalog rides the same
     /// transaction as rows: `COMMIT` keeps it, every rollback path restores it.
     schema_checkpoint: Option<SqlSchemaCheckpoint>,
+    /// SQL-level prepared statements owned by this session.
+    prepared: BTreeMap<String, PreparedSqlStatement>,
 }
 
 impl TransactionSession {
@@ -81,6 +93,7 @@ impl TransactionSession {
             search_path: DEFAULT_SEARCH_PATH.to_string(),
             database: "postgres".to_string(),
             schema_checkpoint: None,
+            prepared: BTreeMap::new(),
         }
     }
 
@@ -204,6 +217,7 @@ impl TransactionSession {
         self.executor = None;
         self.protocol_only_transaction = false;
         self.failed = false;
+        self.prepared.clear();
         // `DISCARD ALL` is rejected inside a transaction block, so there is no
         // pending checkpoint here; dropping the slot keeps the invariant that
         // only an open block owns schema rollback.
@@ -260,6 +274,34 @@ impl TransactionSession {
     /// Open transaction handle, when this session owns a runtime transaction.
     pub fn transaction_handle(&self) -> Option<&dyn TransactionHandle> {
         self.handle.as_deref()
+    }
+
+    /// Registers a SQL-level prepared statement. Returns `false` when the name
+    /// already exists, which PostgreSQL reports as `42P05`.
+    pub fn prepare_statement(&mut self, name: &str, statement: PreparedSqlStatement) -> bool {
+        if self.prepared.contains_key(name) {
+            return false;
+        }
+        self.prepared.insert(name.to_owned(), statement);
+        true
+    }
+
+    /// Looks up a SQL-level prepared statement by name.
+    pub fn prepared_statement(&self, name: &str) -> Option<&PreparedSqlStatement> {
+        self.prepared.get(name)
+    }
+
+    /// Drops one prepared statement, or every one when `name` is `None`.
+    /// Returns whether anything was removed.
+    pub fn deallocate_statement(&mut self, name: Option<&str>) -> bool {
+        match name {
+            None => {
+                let had_any = !self.prepared.is_empty();
+                self.prepared.clear();
+                had_any
+            }
+            Some(name) => self.prepared.remove(name).is_some(),
+        }
     }
 }
 

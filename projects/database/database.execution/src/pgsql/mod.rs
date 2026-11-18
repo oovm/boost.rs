@@ -5,11 +5,13 @@
 //! This module owns what runs a plan: the transaction block, the schema
 //! checkpoint, the aborted-block rule and the SQLSTATE mapping.
 
+pub mod prepared;
 pub mod session;
 pub mod statement;
 
+pub use prepared::execute_utility;
 pub use session::{
-    ABORTED_BLOCK, DEFAULT_SEARCH_PATH, PgsqlSqlRuntime, TransactionControl, TransactionSession,
+    ABORTED_BLOCK, DEFAULT_SEARCH_PATH, PgsqlSqlRuntime, PreparedSqlStatement, TransactionControl, TransactionSession,
 };
 pub use statement::{
     ExecutionOutcome, StatementError, StatementOutcome, dispatch_statement, pg_sqlstate, run_statement, statement_error,

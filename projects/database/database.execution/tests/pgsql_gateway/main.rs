@@ -75,6 +75,51 @@ impl Drop for Gateway {
 }
 
 #[test]
+fn prepared_statements_execute_with_arguments_and_returning() {
+    let mut gateway = Gateway::new("prepare");
+    gateway.command("CREATE TABLE prepared (id BIGINT PRIMARY KEY, name TEXT)");
+    assert_eq!(gateway.command("PREPARE add (bigint, text) AS INSERT INTO prepared (id, name) VALUES ($1, $2)"), "PREPARE");
+    assert_eq!(gateway.command("EXECUTE add (1, 'one')"), "INSERT 0 1");
+    assert_eq!(gateway.command("EXECUTE add (2, 'two')"), "INSERT 0 1");
+    assert_eq!(gateway.scalar("SELECT COUNT(*)::int8 FROM prepared"), SqlValue::Integer(2));
+    assert_eq!(gateway.command("PREPARE pick (bigint) AS SELECT name FROM prepared WHERE id = $1"), "PREPARE");
+    let picked = gateway.expect("EXECUTE pick (2)");
+    assert_eq!(picked.rows, vec![vec![SqlValue::String("two".to_owned())]]);
+    assert_eq!(gateway.command("DEALLOCATE pick"), "DEALLOCATE");
+    assert_eq!(gateway.command("DEALLOCATE ALL"), "DEALLOCATE ALL");
+}
+
+#[test]
+fn prepared_statement_failures_report_their_sqlstates() {
+    let mut gateway = Gateway::new("prepare-errors");
+    gateway.command("PREPARE p AS SELECT 1");
+    let (code, message) = match gateway.sql("PREPARE p AS SELECT 2") {
+        Ok(_) => panic!("duplicate PREPARE must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42P05", "unexpected message: {message}");
+
+    let (code, _) = match gateway.sql("EXECUTE missing") {
+        Ok(_) => panic!("EXECUTE of an unknown statement must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "26000");
+
+    gateway.command("PREPARE two (int, int) AS SELECT $1");
+    let (code, _) = match gateway.sql("EXECUTE two (1)") {
+        Ok(_) => panic!("a wrong argument count must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42601");
+
+    let (code, _) = match gateway.sql("DEALLOCATE missing") {
+        Ok(_) => panic!("DEALLOCATE of an unknown statement must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "26000");
+}
+
+#[test]
 fn double_colon_casts_lower_onto_the_shared_cast_node() {
     let mut gateway = Gateway::new("casts");
     assert_eq!(gateway.scalar("SELECT '1'::int8 + 1"), SqlValue::Integer(2));
