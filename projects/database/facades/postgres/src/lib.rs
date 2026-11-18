@@ -324,9 +324,7 @@ impl PostgreSQL {
 
     fn listen_inner(&self, endpoint: SocketAddr, auth: PgAuthentication, tls: Option<Arc<PgTls>>) -> Result<Listener, Error> {
         if !endpoint.ip().is_loopback() {
-            return Err(Error::Unsupported(
-                "the gateway accepts loopback connections only until TLS lands upstream".to_owned(),
-            ));
+            return Err(Error::Unsupported("the gateway accepts loopback connections only".to_owned()));
         }
         let runtime = Arc::clone(&self.runtime);
         let tcp = bind_with_retry(endpoint)?;

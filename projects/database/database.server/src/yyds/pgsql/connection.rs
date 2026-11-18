@@ -73,10 +73,7 @@ pub fn serve_connection_with_auth_and_tls(
     tls: Option<Arc<super::tls::PgTls>>,
 ) -> io::Result<()> {
     if !stream.peer_addr()?.ip().is_loopback() {
-        return Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "PostgreSQL requires loopback until TLS is implemented",
-        ));
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "PostgreSQL accepts loopback connections only"));
     }
     stream.set_read_timeout(Some(Duration::from_secs(30)))?;
     stream.set_write_timeout(Some(Duration::from_secs(30)))?;
@@ -113,10 +110,7 @@ pub fn serve_cancellable_with_auth_and_tls(
     tls: Option<Arc<super::tls::PgTls>>,
 ) -> io::Result<()> {
     if !stream.peer_addr()?.ip().is_loopback() {
-        return Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "PostgreSQL requires loopback until TLS is implemented",
-        ));
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "PostgreSQL accepts loopback connections only"));
     }
     stream.set_nonblocking(true)?;
     serve_session_with_tls(Box::new(CancellableSocket { stream, stopping }), runtime, Some(Arc::new(auth)), tls)
@@ -284,11 +278,17 @@ fn read_startup_outcome(
             },
             GSSENC_REQUEST => stream.write_all(b"N")?,
             CANCEL_REQUEST => return Ok(StartupOutcome::Cancelled),
-            PROTOCOL_V3 => match StartupParameters::parse(&packet.payload) {
-                Ok(parameters) => return Ok(StartupOutcome::Parameters(parameters)),
-                Err(error) => {
-                    write_fatal(stream, "08P01", &format_startup_error(error))?;
+            PROTOCOL_V3 => {
+                if tls.is_some_and(|tls| tls.requires_client_tls()) {
+                    write_fatal(stream, "28000", "TLS is required: send an `SSLRequest` before the startup packet")?;
                     return Ok(StartupOutcome::Fatal);
+                }
+                match StartupParameters::parse(&packet.payload) {
+                    Ok(parameters) => return Ok(StartupOutcome::Parameters(parameters)),
+                    Err(error) => {
+                        write_fatal(stream, "08P01", &format_startup_error(error))?;
+                        return Ok(StartupOutcome::Fatal);
+                    }
                 }
             },
             _ => {

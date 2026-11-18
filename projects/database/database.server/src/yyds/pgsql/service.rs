@@ -108,7 +108,7 @@ impl PgsqlService {
         if !address.ip().is_loopback() {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
-                "PostgreSQL requires loopback until TLS is implemented",
+                "PostgreSQL accepts loopback connections only",
             ));
         }
         let listener = TcpListener::bind(address)?;

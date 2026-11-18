@@ -32,6 +32,7 @@ impl TlsError {
 #[derive(Debug)]
 pub struct PgTls {
     config: Arc<rustls::ServerConfig>,
+    require_client_tls: bool,
 }
 
 impl PgTls {
@@ -56,7 +57,22 @@ impl PgTls {
             return Err(TlsError::Malformed("the certificate chain is empty".to_string()));
         }
         let config = rustls::ServerConfig::builder().with_no_client_auth().with_single_cert(chain, key).map_err(|error| TlsError::Rejected(error.to_string()))?;
-        Ok(Self { config: Arc::new(config) })
+        Ok(Self { config: Arc::new(config), require_client_tls: false })
+    }
+
+    /// Refuses a plaintext `StartupMessage` with `28000` instead of serving it.
+    ///
+    /// The default is offer-only: a client that skips `SSLRequest` keeps running
+    /// the protocol in plaintext, which is what a stock `psql` expects from a
+    /// server that does not advertise `ssl = on`.
+    pub fn require_client_tls(mut self) -> Self {
+        self.require_client_tls = true;
+        self
+    }
+
+    /// Whether a plaintext `StartupMessage` is refused.
+    pub fn requires_client_tls(&self) -> bool {
+        self.require_client_tls
     }
 
     /// One server-side connection for an accepted socket.
