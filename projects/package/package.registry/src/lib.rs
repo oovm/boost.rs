@@ -48,7 +48,7 @@ pub use nuget::NugetRegistry;
 pub use registry::Registry;
 pub use types::{Package, PublishOptions, PublishResult, RetryConfig, TokenVerifyResult, VersionBump};
 
-pub use boost_net::http::{Headers, Request, Transport};
+pub use boost_net::http::{Headers, ProxyConfig, Request, Transport};
 
 /// 构建内置的第三方渠道适配器集合。
 pub fn default_registries() -> Result<HashMap<String, Arc<dyn Registry>>, RegistryError> {
@@ -57,12 +57,55 @@ pub fn default_registries() -> Result<HashMap<String, Arc<dyn Registry>>, Regist
 
 /// 按 endpoint 覆盖构建内置适配器集合；缺失的渠道使用各适配器的默认地址。
 pub fn registries_with_endpoints(endpoints: &BTreeMap<String, String>) -> Result<HashMap<String, Arc<dyn Registry>>, RegistryError> {
+    registries_with_proxy_option(endpoints, None)
+}
+
+/// 按 endpoint 覆盖构建内置适配器集合，并让所有渠道走同一个显式代理。
+///
+/// 是否从环境变量取值由调用方决定，可用 [`ProxyConfig::from_env`]。
+pub fn registries_with_proxy(
+    endpoints: &BTreeMap<String, String>,
+    proxy: ProxyConfig,
+) -> Result<HashMap<String, Arc<dyn Registry>>, RegistryError> {
+    registries_with_proxy_option(endpoints, Some(proxy))
+}
+
+fn registries_with_proxy_option(
+    endpoints: &BTreeMap<String, String>,
+    proxy: Option<ProxyConfig>,
+) -> Result<HashMap<String, Arc<dyn Registry>>, RegistryError> {
+    let npm = endpoint_or(endpoints, "npm", NpmRegistry::DEFAULT_ENDPOINT);
+    let jsr = endpoint_or(endpoints, "jsr", JsrRegistry::DEFAULT_ENDPOINT);
+    let nuget = endpoint_or(endpoints, "nuget", NugetRegistry::DEFAULT_ENDPOINT);
+    let maven = endpoint_or(endpoints, "maven", MavenRegistry::DEFAULT_ENDPOINT);
+    let conda = endpoint_or(endpoints, "conda", CondaRegistry::DEFAULT_ENDPOINT);
+
     let mut registries: HashMap<String, Arc<dyn Registry>> = HashMap::new();
-    registries.insert("npm".to_string(), Arc::new(NpmRegistry::new(endpoint_or(endpoints, "npm", NpmRegistry::DEFAULT_ENDPOINT))?));
-    registries.insert("jsr".to_string(), Arc::new(JsrRegistry::new(endpoint_or(endpoints, "jsr", JsrRegistry::DEFAULT_ENDPOINT))?));
-    registries.insert("nuget".to_string(), Arc::new(NugetRegistry::new(endpoint_or(endpoints, "nuget", NugetRegistry::DEFAULT_ENDPOINT))?));
-    registries.insert("maven".to_string(), Arc::new(MavenRegistry::new(endpoint_or(endpoints, "maven", MavenRegistry::DEFAULT_ENDPOINT))?));
-    registries.insert("conda".to_string(), Arc::new(CondaRegistry::new(endpoint_or(endpoints, "conda", CondaRegistry::DEFAULT_ENDPOINT))?));
+    let npm_adapter = match &proxy {
+        Some(proxy) => NpmRegistry::with_http(npm, HttpClient::with_proxy(RetryConfig::npm(), proxy.clone())),
+        None => NpmRegistry::new(npm)?,
+    };
+    registries.insert("npm".to_string(), Arc::new(npm_adapter));
+    let jsr_adapter = match &proxy {
+        Some(proxy) => JsrRegistry::with_http(jsr, HttpClient::with_proxy(RetryConfig::npm(), proxy.clone())),
+        None => JsrRegistry::new(jsr)?,
+    };
+    registries.insert("jsr".to_string(), Arc::new(jsr_adapter));
+    let nuget_adapter = match &proxy {
+        Some(proxy) => NugetRegistry::with_http(nuget, HttpClient::with_proxy(RetryConfig::default(), proxy.clone())),
+        None => NugetRegistry::new(nuget)?,
+    };
+    registries.insert("nuget".to_string(), Arc::new(nuget_adapter));
+    let maven_adapter = match &proxy {
+        Some(proxy) => MavenRegistry::with_http(maven, HttpClient::with_proxy(RetryConfig::default(), proxy.clone())),
+        None => MavenRegistry::new(maven)?,
+    };
+    registries.insert("maven".to_string(), Arc::new(maven_adapter));
+    let conda_adapter = match &proxy {
+        Some(proxy) => CondaRegistry::with_http(conda, HttpClient::with_proxy(RetryConfig::default(), proxy.clone())),
+        None => CondaRegistry::new(conda)?,
+    };
+    registries.insert("conda".to_string(), Arc::new(conda_adapter));
     Ok(registries)
 }
 

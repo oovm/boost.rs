@@ -27,6 +27,11 @@ impl CondaRegistry {
     pub fn default_registry() -> Result<Self, RegistryError> {
         Self::new(Self::DEFAULT_ENDPOINT)
     }
+
+    /// 用调用方配置好的 HTTP 客户端连接（代理、超时、注入传输由调用方决定）。
+    pub fn with_http(endpoint: impl Into<String>, http: HttpClient) -> Self {
+        Self { endpoint: endpoint.into().trim_end_matches('/').to_string(), http }
+    }
 }
 
 impl Registry for CondaRegistry {

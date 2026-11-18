@@ -1,6 +1,6 @@
 use std::{fmt, sync::Arc, thread, time::Duration};
 
-use boost_net::http::{HttpTransport, HttpTransportConfig, Method, Request, Response, Transport};
+use boost_net::http::{HttpTransport, HttpTransportConfig, Method, ProxyConfig, Request, Response, Transport};
 use serde::de::DeserializeOwned;
 use url::Url;
 
@@ -48,12 +48,18 @@ impl From<Response> for HttpResponse {
 #[derive(Clone)]
 pub struct HttpClient {
     transport: Option<Arc<dyn Transport + Send + Sync>>,
+    proxy: Option<ProxyConfig>,
     retry: RetryConfig,
 }
 
 impl fmt::Debug for HttpClient {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.debug_struct("HttpClient").field("injected_transport", &self.transport.is_some()).field("retry", &self.retry).finish()
+        formatter
+            .debug_struct("HttpClient")
+            .field("injected_transport", &self.transport.is_some())
+            .field("proxy", &self.proxy)
+            .field("retry", &self.retry)
+            .finish()
     }
 }
 
@@ -66,12 +72,22 @@ enum AuthHeader<'a> {
 impl HttpClient {
     /// 以给定重试策略创建客户端。
     pub fn new(retry: RetryConfig) -> Result<Self, RegistryError> {
-        Ok(Self { transport: None, retry })
+        Ok(Self { transport: None, proxy: None, retry })
     }
 
-    /// 注入宿主传输实现，忽略内置 [`HttpTransport`]。
+    /// 以显式代理策略创建客户端。
+    pub fn with_proxy(retry: RetryConfig, proxy: ProxyConfig) -> Self {
+        Self { transport: None, proxy: Some(proxy), retry }
+    }
+
+    /// 注入宿主传输实现，忽略内置 [`HttpTransport`] 与代理配置。
     pub fn with_transport(transport: Arc<dyn Transport + Send + Sync>, retry: RetryConfig) -> Self {
-        Self { transport: Some(transport), retry }
+        Self { transport: Some(transport), proxy: None, retry }
+    }
+
+    /// 返回显式代理策略。
+    pub fn proxy(&self) -> Option<&ProxyConfig> {
+        self.proxy.as_ref()
     }
 
     /// 返回重试策略。
@@ -229,6 +245,7 @@ impl HttpClient {
         TransportHandle::Owned(HttpTransport::with_config(HttpTransportConfig {
             max_body_bytes: MAX_BODY_BYTES,
             timeout: Duration::from_secs(seconds.max(1)),
+            proxy: self.proxy.clone(),
             ..HttpTransportConfig::default()
         }))
     }
