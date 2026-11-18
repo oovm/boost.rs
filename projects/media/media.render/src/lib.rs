@@ -41,7 +41,7 @@ pub mod archive;
 pub use archive::{ArchiveReport, AssetCheck, check_archive};
 
 #[cfg(feature = "scene")]
-pub use render::{FrameRange, PreviewStats, RenderOptions, RenderStats, lower_audio, preview_frame, render_frame_at, render_project, render_project_with};
+pub use render::{BurnInCue, FrameRange, PreviewStats, RenderOptions, RenderStats, lower_audio, preview_frame, render_frame_at, render_project, render_project_with};
 
 #[cfg(all(feature = "scene", feature = "layout-export"))]
 pub mod storyboard;

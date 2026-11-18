@@ -98,6 +98,19 @@ pub struct FrameRange {
     pub end: u32,
 }
 
+/// One subtitle cue burned into the picture.
+///
+/// Lines are already wrapped by the subtitle owner; this type only carries the
+/// absolute frame range and the final lines, so burning uses the same text
+/// layout as the exported subtitle file.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BurnInCue {
+    /// Half-open absolute frame range.
+    pub range: [u32; 2],
+    /// Lines shown while the cue is on screen.
+    pub lines: Vec<String>,
+}
+
 /// Execution options for one render.
 ///
 /// `range` selects an interval and `cancel` is polled between frames; both are
@@ -109,6 +122,9 @@ pub struct RenderOptions<'a> {
     pub cancel: Option<&'a dyn Fn() -> bool>,
     /// Decode budget; `None` uses [`DecodeLimits::project_default`].
     pub limits: Option<DecodeLimits>,
+    /// Cues painted into the picture by the same painter that renders the film.
+    /// Absent means the delivered file carries no burned subtitles.
+    pub subtitles: Option<&'a [BurnInCue]>,
 }
 
 impl RenderOptions<'_> {
@@ -215,6 +231,32 @@ fn fnv1a(bytes: &[u8]) -> String {
     media_types::digest(bytes)
 }
 
+/// Draws the cue covering `frame` near the bottom of the picture.
+///
+/// The backing box keeps white text legible over bright footage and is part of
+/// the same frame the encoder receives, so the burned file and the exported
+/// subtitle file show the same words at the same time.
+fn paint_burned_subtitles(fonts: &mut Fonts, frame: &mut Frame, frame_index: u32, cues: &[BurnInCue]) {
+    let Some(cue) = cues.iter().find(|cue| frame_index >= cue.range[0] && frame_index < cue.range[1]) else {
+        return;
+    };
+    if cue.lines.is_empty() {
+        return;
+    }
+    let size = (frame.height as f32 * 0.045).max(12.0);
+    let line_height = size * 1.25;
+    let margin = frame.height as f32 * 0.06;
+    let pad = size * 0.3;
+    let count = cue.lines.len() as f32;
+    for (index, line) in cue.lines.iter().enumerate() {
+        let width = fonts.measure(line, size, false, false);
+        let x = (frame.width as f32 - width) / 2.0;
+        let baseline = frame.height as f32 - margin - (count - 1.0 - index as f32) * line_height;
+        frame.rect(x - pad, baseline - size * 1.05, width + pad * 2.0, size * 1.3, Rgba([0, 0, 0, 150]));
+        fonts.draw_line(frame, line, x, baseline, size, media_text::FontId::Regular, Rgba([255, 255, 255, 255]));
+    }
+}
+
 /// Parses, validates and renders a project JSON string into `out`.
 pub fn render_project(json: &str, out: &Path, progress: &mut dyn FnMut(u32, u32)) -> Result<RenderStats, Error> {
     render_project_with(json, out, &RenderOptions::default(), progress)
@@ -284,6 +326,9 @@ pub fn render_project_with(
             return Err(Error::cancelled(format!("render cancelled at frame {f} of {first}..{last}")));
         }
         paint_frame(&project, &mut fonts, &mut media, vignette.as_ref(), &mut pool, f, &mut frame, limits)?;
+        if let Some(cues) = options.subtitles {
+            paint_burned_subtitles(&mut fonts, &mut frame, f, cues);
+        }
         encoder.write_video(&frame.to_nv12(), f - first, fps)?;
         // Interleave audio with video in one-second blocks.
         if (f + 1 - first) % fps == 0 || f + 1 == last {
@@ -2136,6 +2181,36 @@ fn jitter(seed: u32) -> f32 {
 
 #[cfg(test)]
 mod tests {
+    /// A cue burned into the picture changes the delivered frames, and the
+    /// words come from the same resolved lines the subtitle exporter writes.
+    #[test]
+    fn a_burned_cue_is_part_of_the_delivered_frames() {
+        let project = serde_json::json!({
+            "width": 320, "height": 180, "fps": 15, "duration_frames": 15,
+            "scenes": [{ "start": 0, "duration": 15,
+                "background": { "kind": "solid", "color": "#101820" }, "items": [] }],
+            "audio": null
+        });
+        let dir = std::env::temp_dir().join("opencut-burnin-tests");
+        std::fs::create_dir_all(&dir).unwrap();
+        let plain = dir.join("plain.mp4");
+        let burned = dir.join("burned.mp4");
+        super::render_project(&project.to_string(), &plain, &mut |_, _| {}).expect("plain render");
+        let cues = [super::BurnInCue { range: [0, 15], lines: vec!["先看请求".into(), "再看结果".into()] }];
+        let options = super::RenderOptions { subtitles: Some(&cues), ..Default::default() };
+        super::render_project_with(&project.to_string(), &burned, &options, &mut |_, _| {}).expect("burned render");
+
+        let mut library = media_codec::MediaLibrary::new();
+        let limits = media_codec::DecodeLimits::unbounded();
+        let plain_frame = library.video_frame(plain.to_str().unwrap(), 0.1, limits).expect("plain frame");
+        let burned_frame = library.video_frame(burned.to_str().unwrap(), 0.1, limits).expect("burned frame");
+        let band = |frame: &media_image::Bitmap| -> u64 {
+            let start = frame.rgba.len() / 5 * 4;
+            frame.rgba[start..].chunks_exact(4).map(|px| px[0] as u64 + px[1] as u64 + px[2] as u64).sum()
+        };
+        assert!(band(&burned_frame) > band(&plain_frame), "the burned cue raises the bottom band");
+    }
+
     /// Renders a tiny film end to end: rasterize, synthesize audio, encode MP4.
     #[test]
     fn renders_minimal_film() {
