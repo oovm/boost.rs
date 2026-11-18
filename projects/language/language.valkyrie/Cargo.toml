@@ -1,0 +1,25 @@
+[package]
+name = "language-valkyrie"
+description = "Valkyrie language implementation: type model, HIR, MIR, semantic analysis and target adaptation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[features]
+default = []
+serde = ["compiler-types/serde"]
+
+[dependencies]
+compiler-analysis = { workspace = true }
+compiler-emitter = { workspace = true }
+compiler-target = { workspace = true }
+compiler-types = { workspace = true }
+oak-awsl = { workspace = true }
+oak-core = { workspace = true }
+oak-formats = { workspace = true }
+oak-valkyrie = { workspace = true }
+oak-von = { workspace = true }
+ordered-float = "5.5.0"
+serde = { workspace = true, features = ["derive"] }
