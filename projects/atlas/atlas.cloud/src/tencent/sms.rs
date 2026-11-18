@@ -7,14 +7,14 @@
 //! 响应处理见 [`interpret_response`]：能结构化表达的明确拒绝进 [`SmsOutcome::Rejected`]，
 //! 只有连厂商格式都不成立的错误响应才走 [`CloudError::Rejected`]。
 
-use boost_crypto::{hash::sha256, mac::hmac_sha256};
+use boost_crypto::{encoding::hex_encode, hash::sha256, mac::hmac_sha256};
 use boost_net::{
     Url,
     http::{HttpTransport, Method, Request, Transport},
 };
 use serde_json::{Value, json};
 
-use super::{CloudError, Credentials, Region, RequestId, body_snippet, map_transport_error, now_seconds, to_hex};
+use super::{CloudError, Credentials, Region, RequestId, body_snippet, map_transport_error, now_seconds};
 
 /// 短信服务端点。
 const HOST: &str = "sms.tencentcloudapi.com";
@@ -102,13 +102,21 @@ pub struct Client {
     credentials: Credentials,
     sdk_app_id: String,
     region: Region,
-    transport: HttpTransport,
+    transport: Box<dyn Transport + Send + Sync>,
 }
 
 impl Client {
     /// 用凭证、短信应用 `SdkAppId` 与地域构造客户端。
     pub fn new(credentials: Credentials, sdk_app_id: impl Into<String>, region: Region) -> Self {
-        Self { credentials, sdk_app_id: sdk_app_id.into(), region, transport: HttpTransport::new() }
+        Self { credentials, sdk_app_id: sdk_app_id.into(), region, transport: Box::new(HttpTransport::new()) }
+    }
+
+    /// 替换底层传输。
+    ///
+    /// 供测试替身、受控回放或自建代理使用；默认是 [`HttpTransport`]。
+    pub fn with_transport(mut self, transport: Box<dyn Transport + Send + Sync>) -> Self {
+        self.transport = transport;
+        self
     }
 
     /// 计算完整的 `Authorization` 头。
@@ -117,15 +125,15 @@ impl Client {
     pub fn authorization(&self, payload: &str, timestamp: u64) -> String {
         let date = utc_date(timestamp);
         let canonical =
-            format!("POST\n/\n\ncontent-type:{CONTENT_TYPE}\nhost:{HOST}\n\ncontent-type;host\n{}", to_hex(&sha256(payload.as_bytes())));
+            format!("POST\n/\n\ncontent-type:{CONTENT_TYPE}\nhost:{HOST}\n\ncontent-type;host\n{}", hex_encode(&sha256(payload.as_bytes())));
         let scope = format!("{date}/{SERVICE}/tc3_request");
-        let string_to_sign = format!("TC3-HMAC-SHA256\n{timestamp}\n{scope}\n{}", to_hex(&sha256(canonical.as_bytes())));
+        let string_to_sign = format!("TC3-HMAC-SHA256\n{timestamp}\n{scope}\n{}", hex_encode(&sha256(canonical.as_bytes())));
 
         let secret_key = self.credentials.secret_key();
         let secret_date = hmac(format!("TC3{secret_key}").as_bytes(), date.as_bytes());
         let secret_service = hmac(&secret_date, SERVICE.as_bytes());
         let secret_signing = hmac(&secret_service, b"tc3_request");
-        let signature = to_hex(&hmac(&secret_signing, string_to_sign.as_bytes()));
+        let signature = hex_encode(&hmac(&secret_signing, string_to_sign.as_bytes()));
 
         format!("TC3-HMAC-SHA256 Credential={}/{scope}, SignedHeaders=content-type;host, Signature={signature}", self.credentials.secret_id())
     }

@@ -233,19 +233,6 @@ pub(crate) fn now_seconds() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|elapsed| elapsed.as_secs()).unwrap_or_default()
 }
 
-/// 小写十六进制展开。
-///
-/// `boost-crypto` 的编码面只提供 base64，签名需要的十六进制在这里按需展开，不额外引依赖。
-pub(crate) fn to_hex(bytes: &[u8]) -> String {
-    const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        out.push(DIGITS[(byte >> 4) as usize] as char);
-        out.push(DIGITS[(byte & 0x0f) as usize] as char);
-    }
-    out
-}
-
 /// 把响应体压成可放进错误信息的片段。
 pub(crate) fn body_snippet(body: &[u8]) -> String {
     const LIMIT: usize = 256;

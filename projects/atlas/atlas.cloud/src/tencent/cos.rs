@@ -14,13 +14,13 @@
 
 use std::fmt::{Display, Formatter};
 
-use boost_crypto::{hash::sha1, mac::hmac_sha1};
+use boost_crypto::{encoding::hex_encode, hash::sha1, mac::hmac_sha1};
 use boost_net::{
     Url,
     http::{Headers, HttpTransport, Method, Request, Transport},
 };
 
-use super::{CloudError, CloudOutcome, Credentials, Region, RequestId, body_snippet, map_transport_error, now_seconds, to_hex};
+use super::{CloudError, CloudOutcome, Credentials, Region, RequestId, body_snippet, map_transport_error, now_seconds};
 
 /// 默认的签名有效期窗口（秒）。
 pub const DEFAULT_KEY_TIME_SECONDS: u64 = 300;
@@ -81,13 +81,21 @@ pub struct Client {
     credentials: Credentials,
     region: Region,
     app_id: String,
-    transport: HttpTransport,
+    transport: Box<dyn Transport + Send + Sync>,
 }
 
 impl Client {
     /// 用凭证、地域与 APPID 构造客户端。
     pub fn new(credentials: Credentials, region: Region, app_id: impl Into<String>) -> Self {
-        Self { credentials, region, app_id: app_id.into(), transport: HttpTransport::new() }
+        Self { credentials, region, app_id: app_id.into(), transport: Box::new(HttpTransport::new()) }
+    }
+
+    /// 替换底层传输。
+    ///
+    /// 供测试替身、受控回放或自建代理使用；默认是 [`HttpTransport`]。
+    pub fn with_transport(mut self, transport: Box<dyn Transport + Send + Sync>) -> Self {
+        self.transport = transport;
+        self
     }
 
     /// 计算 `q-signature` 的十六进制值。
@@ -96,10 +104,10 @@ impl Client {
     /// 路径）与 `key_time`，不读时钟、不联网。
     pub fn signature(&self, bucket: &str, method: &str, uri_path: &str, key_time: &KeyTime) -> String {
         let key_time = key_time.to_string();
-        let sign_key = to_hex(&hmac(self.credentials.secret_key().as_bytes(), key_time.as_bytes()));
+        let sign_key = hex_encode(&hmac(self.credentials.secret_key().as_bytes(), key_time.as_bytes()));
         let http_string = format!("{}\n{uri_path}\n\nhost={}\n", method.to_ascii_lowercase(), self.host(bucket));
-        let string_to_sign = format!("sha1\n{key_time}\n{}\n", to_hex(&sha1(http_string.as_bytes())));
-        to_hex(&hmac(sign_key.as_bytes(), string_to_sign.as_bytes()))
+        let string_to_sign = format!("sha1\n{key_time}\n{}\n", hex_encode(&sha1(http_string.as_bytes())));
+        hex_encode(&hmac(sign_key.as_bytes(), string_to_sign.as_bytes()))
     }
 
     /// 组装完整的 `Authorization` 头。
