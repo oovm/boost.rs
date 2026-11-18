@@ -1,0 +1,20 @@
+[package]
+name = "package-publish"
+description = "包发布：产物打包、发布流水线与发布目标解析"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository = "https://github.com/oovm/rust-boost/tree/dev/projects/package/package.publish"
+publish = false
+
+[dependencies]
+acorn-odin = { workspace = true }
+acorn-tar = { workspace = true }
+compiler-target = { workspace = true }
+oak-von = { workspace = true }
+package-registry = { workspace = true }
+package-resolve = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

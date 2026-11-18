@@ -1,0 +1,23 @@
+[package]
+name = "package-manager"
+description = "包管理器编排：安装 / 更新 / 发布 / 登录与注册表来源配置"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository = "https://github.com/oovm/rust-boost/tree/dev/projects/package/package.manager"
+publish = false
+
+[dependencies]
+oak-von = { workspace = true }
+package-cache = { workspace = true }
+package-publish = { workspace = true }
+package-registry = { workspace = true }
+package-resolve = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+package-registry = { workspace = true }
+package-resolve = { workspace = true }
