@@ -1,5 +1,5 @@
+use document_formats::FormatError;
 use miette::Diagnostic;
-use notedown_formats::FormatError;
 use thiserror::Error;
 
 pub type ConfigResult<T> = Result<T, ConfigError>;

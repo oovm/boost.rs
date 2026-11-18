@@ -17,8 +17,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use notedown_formats::{export::html::export_html, import::markdown::import_markdown_bytes};
-use notedown_ir::{Block, DocumentGraph, Inline, RelationEndpoint};
+use document_formats::{export::html::export_html, import::markdown::import_markdown_bytes};
+use document_ir::{Block, DocumentGraph, Inline, RelationEndpoint};
 use serde_json::{Map, Value, json};
 use template_framework::{FrameworkRequest, TemplateFramework};
 use template_input_dejavu::{Capability, CustomEntry, CustomError, CustomRegistry, Language, Namespace, TemplateConfig};
@@ -352,7 +352,7 @@ fn site_json(config: &ProjectConfig, site: &SiteModel, include_drafts: bool, i18
     })
 }
 
-/// Convert Markdown source to HTML via Notedown import + export pipeline.
+/// Convert Markdown source to HTML via the document import + export pipeline.
 ///
 /// Import or export failures are surfaced as structured [`CoreError`] variants
 /// (`MarkdownImport` / `MarkdownExport`).  Errors are not silently swallowed; the
@@ -363,10 +363,10 @@ fn site_json(config: &ProjectConfig, site: &SiteModel, include_drafts: bool, i18
 /// `/gallery/`, `/`) are rewritten to the built page URL before export;
 /// external and unknown destinations stay verbatim.
 ///
-/// Known upstream gaps tracked against Notedown revision `3c01bea`:
-/// `Inline::Citation` and other semantic-only inline nodes still yield
-/// `FormatError::Unsupported` from the conservative HTML exporter.  Task lists
-/// and raw HTML (both block and inline) are wired since `6e899dd`.
+/// The HTML exporter is conservative: inline nodes it cannot express as HTML
+/// (`Inline::Citation` and other semantic-only inline nodes) yield
+/// `FormatError::Unsupported` instead of being dropped.  Task lists and raw
+/// HTML (both block and inline) are exported.
 pub fn markdown_to_html(markdown: &str, site: Option<(&SiteModel, &str)>) -> CoreResult<String> {
     let mut graph = import_markdown_bytes("inline", markdown).map_err(|source| CoreError::MarkdownImport { source })?;
     if let Some((model, from_rel)) = site {
@@ -376,24 +376,19 @@ pub fn markdown_to_html(markdown: &str, site: Option<(&SiteModel, &str)>) -> Cor
 }
 
 /// Rewrite every `Inline::Link` destination in the imported graph through the
-/// site model. Nested blocks live in the same `blocks` vec, so one flat
-/// pass over all block nodes covers headings, paragraphs, lists, tables and
-/// quotes at any nesting depth.
+/// site model. Nested blocks live in the same flat `blocks` vec and are reached
+/// by node id, so one pass over the inline-bearing block variants covers
+/// headings, paragraphs and list items at any nesting depth. Quotation and
+/// table cells hold child block ids only, so their content is covered by the
+/// same flat pass.
 fn rewrite_document_links(graph: &mut DocumentGraph, model: &SiteModel, from_rel: &str) {
     for node in &mut graph.blocks {
         match &mut node.block {
             Block::Section { title, .. } => rewrite_inlines(title, model, from_rel),
-            Block::Paragraph { content } | Block::Quote { content } => rewrite_inlines(content, model, from_rel),
+            Block::Paragraph { content } => rewrite_inlines(content, model, from_rel),
             Block::List { items, .. } => {
                 for item in items {
                     rewrite_inlines(&mut item.content, model, from_rel);
-                }
-            }
-            Block::Table { rows, .. } => {
-                for row in rows {
-                    for cell in &mut row.cells {
-                        rewrite_inlines(&mut cell.content, model, from_rel);
-                    }
                 }
             }
             _ => {}
