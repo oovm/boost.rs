@@ -5,6 +5,7 @@
 //! This module owns what runs a plan: the transaction block, the schema
 //! checkpoint, the aborted-block rule and the SQLSTATE mapping.
 
+pub mod copy;
 pub mod cursors;
 pub mod explain;
 pub mod notify;
@@ -12,6 +13,7 @@ pub mod prepared;
 pub mod session;
 pub mod statement;
 
+pub use copy::{CopyInPlan, CopyInState};
 pub use cursors::execute_cursor_utility;
 pub use explain::execute_explain;
 pub use notify::{Notification, NotificationHub};

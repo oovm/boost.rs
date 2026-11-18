@@ -44,6 +44,7 @@ const GSSENC_REQUEST: u32 = 80_877_104;
 const CANCEL_REQUEST: u32 = 80_877_102;
 const MAX_STARTUP_FRAME: usize = 64 * 1024;
 const MAX_MESSAGE_FRAME: usize = 16 * 1024 * 1024;
+const MAX_COPY_BYTES: usize = 64 * 1024 * 1024;
 static NEXT_SECRET: AtomicU32 = AtomicU32::new(1);
 
 /// Establishes an unauthenticated protocol-v3 session, then rejects unsupported SQL explicitly.
@@ -180,6 +181,13 @@ fn serve_session(
                     session.fail();
                 }
                 else if let Ok(sql) = std::str::from_utf8(sql_bytes) {
+                    if let Ok(Some(utility)) = database_query::parse_pg_utility(sql) {
+                        if database_execution::pgsql::CopyInPlan::from_utility(&utility).is_some() {
+                            handle_copy_from_stdin(&mut stream, &mut pending, &utility, &mut session, runtime.as_ref())?;
+                            send_ready(&mut stream, &mut session)?;
+                            continue;
+                        }
+                    }
                     handle_simple_query(&mut stream, sql, &mut session, &mut extended, runtime.as_ref())?;
                 }
                 else {
@@ -313,6 +321,89 @@ fn run_session_command(
         },
         _ => unreachable!("only `RESET` and `DISCARD` reach the session command executor"),
     }
+}
+
+/// Runs one `COPY ... FROM STDIN` exchange.
+///
+/// The protocol session owns the frames — `CopyInResponse`, `CopyData`,
+/// `CopyDone`, `CopyFail` — while `database.execution::pgsql::copy` owns the
+/// data semantics. A failure still answers `ReadyForQuery`, so the connection
+/// stays usable exactly like PostgreSQL.
+fn handle_copy_from_stdin(
+    stream: &mut (impl Read + Write),
+    pending: &mut Vec<u8>,
+    utility: &database_query::PgUtilityStatement,
+    session: &mut TransactionSession,
+    runtime: Option<&Arc<PgsqlSqlRuntime>>,
+) -> io::Result<()> {
+    let Some(plan) = database_execution::pgsql::CopyInPlan::from_utility(utility)
+    else {
+        return write_error_response(stream, "08P01", "malformed COPY statement");
+    };
+    let Some(runtime) = runtime
+    else {
+        return write_error_response(stream, "0A000", "PostgreSQL query execution is not implemented (no SQL runtime)");
+    };
+    let column_count = match copy_column_count(&plan, runtime) {
+        Ok(count) => count,
+        Err((code, message)) => return write_error_response(stream, &code, &message),
+    };
+    // CopyInResponse: overall format 0 (text), then one format code per column.
+    let mut payload = Vec::with_capacity(3 + column_count * 2);
+    payload.push(0);
+    payload.extend_from_slice(&(column_count as i16).to_be_bytes());
+    for _ in 0..column_count {
+        payload.extend_from_slice(&0_i16.to_be_bytes());
+    }
+    write_message(stream, b'G', &payload)?;
+    let mut state = database_execution::pgsql::CopyInState::new(plan);
+    loop {
+        let Some(message) = read_message(stream, pending)?
+        else {
+            return Ok(());
+        };
+        match message.tag {
+            b'd' => {
+                state.push(&message.payload);
+                if state.len() > MAX_COPY_BYTES {
+                    return write_error_response(stream, "54000", "COPY FROM STDIN exceeded the gateway buffer limit");
+                }
+            }
+            b'c' => {
+                return match state.finish(runtime, session) {
+                    Ok(inserted) => write_command_complete(stream, &format!("COPY {inserted}")),
+                    Err(error) => write_error_response(stream, &error.sqlstate, &error.message),
+                };
+            }
+            b'f' => {
+                let detail = cstring(&message.payload).unwrap_or_default();
+                session.fail();
+                return write_error_response(stream, "57014", &format!("COPY from stdin failed: {detail}"));
+            }
+            _ => {
+                session.fail();
+                return write_error_response(stream, "08P01", "unexpected frontend message during COPY FROM STDIN");
+            }
+        }
+    }
+}
+
+/// Column count reported in `CopyInResponse`, resolved through the catalog when
+/// `COPY` did not name the columns.
+fn copy_column_count(
+    plan: &database_execution::pgsql::CopyInPlan,
+    runtime: &Arc<PgsqlSqlRuntime>,
+) -> Result<usize, (String, String)> {
+    if !plan.columns.is_empty() {
+        return Ok(plan.columns.len());
+    }
+    let catalog = runtime.schema.catalog();
+    catalog
+        .tables()
+        .iter()
+        .find(|table| table.name == plan.table)
+        .map(|table| table.fields.len())
+        .ok_or_else(|| ("42P01".to_string(), format!("relation \"{}\" does not exist", plan.table)))
 }
 
 fn handle_simple_query(

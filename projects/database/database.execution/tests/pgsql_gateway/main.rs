@@ -77,6 +77,66 @@ impl Drop for Gateway {
 }
 
 #[test]
+fn copy_state_inserts_text_and_csv_rows() {
+    use database_execution::pgsql::{CopyInPlan, CopyInState};
+    use database_query::CopyFormat;
+
+    let mut gateway = Gateway::new("copy");
+    gateway.command("CREATE TABLE copied (id BIGINT PRIMARY KEY, name TEXT)");
+    let plan = CopyInPlan {
+        table: "copied".to_owned(),
+        columns: vec!["id".to_owned(), "name".to_owned()],
+        format: CopyFormat::Text,
+        delimiter: '\t',
+        header: false,
+    };
+    let mut state = CopyInState::new(plan);
+    state.push(b"1\tone\n2\t\\N\n3\ttab\\there\n");
+    let inserted = state.finish(&gateway.runtime, &mut gateway.session).expect("text copy");
+    assert_eq!(inserted, 3);
+    assert_eq!(gateway.scalar("SELECT COUNT(*)::int8 FROM copied"), SqlValue::Integer(3));
+    assert_eq!(gateway.scalar("SELECT name FROM copied WHERE id = 3"), SqlValue::String("tab\there".to_owned()));
+    assert_eq!(gateway.scalar("SELECT name FROM copied WHERE id = 2"), SqlValue::Null);
+
+    let csv = CopyInPlan {
+        table: "copied".to_owned(),
+        columns: Vec::new(),
+        format: CopyFormat::Csv,
+        delimiter: ',',
+        header: true,
+    };
+    let mut state = CopyInState::new(csv);
+    state.push(b"id,name\n4,\"a,b\"\n");
+    assert_eq!(state.finish(&gateway.runtime, &mut gateway.session).expect("csv copy"), 1);
+    assert_eq!(gateway.scalar("SELECT name FROM copied WHERE id = 4"), SqlValue::String("a,b".to_owned()));
+}
+
+#[test]
+fn copy_errors_report_their_sqlstates() {
+    use database_execution::pgsql::{CopyInPlan, CopyInState};
+    use database_query::CopyFormat;
+
+    let mut gateway = Gateway::new("copy-errors");
+    gateway.command("CREATE TABLE copied (id BIGINT PRIMARY KEY, name TEXT)");
+    let plan = CopyInPlan {
+        table: "copied".to_owned(),
+        columns: vec!["id".to_owned(), "name".to_owned()],
+        format: CopyFormat::Text,
+        delimiter: '\t',
+        header: false,
+    };
+    let mut state = CopyInState::new(plan.clone());
+    state.push(b"1\n");
+    let error = state.finish(&gateway.runtime, &mut gateway.session).expect_err("short row must fail");
+    assert_eq!(error.sqlstate, "22P04");
+
+    let mut missing = CopyInState::new(CopyInPlan { table: "absent".to_owned(), ..plan });
+    missing.push(b"1\tx\n");
+    let error = missing.finish(&gateway.runtime, &mut gateway.session).expect_err("unknown table must fail");
+    assert_eq!(error.sqlstate, "42P01");
+}
+
+#[test]
 fn listen_and_notify_queue_messages_for_the_same_session() {
     let mut gateway = Gateway::new("notify");
     assert_eq!(gateway.command("LISTEN events"), "LISTEN");

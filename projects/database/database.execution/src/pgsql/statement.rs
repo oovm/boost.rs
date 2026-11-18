@@ -51,6 +51,7 @@ pub enum StatementOutcome {
 }
 
 /// One statement failure with its PostgreSQL SQLSTATE class.
+#[derive(Debug)]
 pub struct StatementError {
     /// Five-character PostgreSQL SQLSTATE.
     pub sqlstate: String,

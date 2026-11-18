@@ -77,6 +77,28 @@ pub enum PgUtilityStatement {
         /// Payload, empty when omitted.
         payload: String,
     },
+    /// `COPY table [(columns)] FROM STDIN [WITH] [(FORMAT csv|text, …)]`.
+    CopyFromStdin {
+        /// Target table.
+        table: String,
+        /// Target columns, empty to use the table order.
+        columns: Vec<String>,
+        /// Input format.
+        format: CopyFormat,
+        /// Field delimiter.
+        delimiter: char,
+        /// Whether the first line is a header to skip.
+        header: bool,
+    },
+}
+
+/// `COPY` input format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CopyFormat {
+    /// Tab-separated fields with backslash escapes (`TEXT`).
+    Text,
+    /// RFC 4180 quoting.
+    Csv,
 }
 
 /// How much of a cursor one `FETCH` returns.
@@ -112,8 +134,120 @@ pub fn parse_pg_utility(source: &str) -> Result<Option<PgUtilityStatement>, SqlF
         "LISTEN" => parse_listen(&trimmed[keyword.len()..]).map(Some),
         "UNLISTEN" => parse_unlisten(&trimmed[keyword.len()..]).map(Some),
         "NOTIFY" => parse_notify(&trimmed[keyword.len()..]).map(Some),
+        "COPY" => parse_copy(&trimmed[keyword.len()..]).map(Some),
         _ => Ok(None),
     }
+}
+
+fn parse_copy(tail: &str) -> Result<PgUtilityStatement, SqlFrontendError> {
+    let (table, rest) = take_name(tail.trim_start())?;
+    let mut rest = rest.trim_start();
+    let mut columns = Vec::new();
+    if let Some(inner) = rest.strip_prefix('(') {
+        let close = matching_paren(inner)?;
+        columns = split_top_level(&inner[..close]);
+        rest = inner[close + 1..].trim_start();
+    }
+    let Some(rest) = strip_keyword(rest, "FROM")
+    else {
+        return Err(syntax("COPY only supports `FROM STDIN`"));
+    };
+    let Some(rest) = strip_keyword(rest.trim_start(), "STDIN")
+    else {
+        return Err(syntax("COPY only supports `FROM STDIN`"));
+    };
+    let mut rest = rest.trim_start();
+    // Legacy `WITH CSV` / `WITH HEADER` precede an optional option list.
+    let mut format = CopyFormat::Text;
+    let mut delimiter: Option<char> = None;
+    let mut header = false;
+    let mut saw_with = false;
+    if let Some(after) = strip_keyword(rest, "WITH") {
+        rest = after.trim_start();
+        saw_with = true;
+    }
+    if let Some(after) = strip_keyword(rest, "CSV") {
+        format = CopyFormat::Csv;
+        rest = after.trim_start();
+    }
+    else if let Some(after) = strip_keyword(rest, "TEXT") {
+        rest = after.trim_start();
+    }
+    if let Some(after) = strip_keyword(rest, "HEADER") {
+        header = true;
+        rest = after.trim_start();
+    }
+    if let Some(inner) = rest.strip_prefix('(') {
+        let close = matching_paren(inner)?;
+        for option in split_top_level(&inner[..close]) {
+            let (name, value) = split_option(&option);
+            match name.as_str() {
+                "FORMAT" => match value.to_ascii_lowercase().as_str() {
+                    "csv" => format = CopyFormat::Csv,
+                    "text" => format = CopyFormat::Text,
+                    other => return Err(syntax(format!("unsupported COPY format `{other}`"))),
+                },
+                "DELIMITER" => {
+                    let decoded = decode_copy_literal(value)?;
+                    let mut characters = decoded.chars();
+                    let Some(character) = characters.next() else {
+                        return Err(syntax("COPY DELIMITER must be one character"));
+                    };
+                    if characters.next().is_some() {
+                        return Err(syntax("COPY DELIMITER must be one character"));
+                    }
+                    delimiter = Some(character);
+                }
+                "HEADER" => header = true,
+                other => return Err(syntax(format!("unsupported COPY option `{other}`"))),
+            }
+        }
+        rest = inner[close + 1..].trim_start();
+    }
+    if !rest.is_empty() {
+        return Err(syntax("COPY only supports `FROM STDIN`"));
+    }
+    let _ = saw_with;
+    let delimiter = delimiter.unwrap_or(if format == CopyFormat::Csv { ',' } else { '\t' });
+    Ok(PgUtilityStatement::CopyFromStdin { table, columns, format, delimiter, header })
+}
+
+/// Splits `NAME value` into the upper-case option name and its raw value.
+fn split_option(option: &str) -> (String, &str) {
+    let trimmed = option.trim();
+    let end = trimmed.find(|character: char| character.is_whitespace() || character == '(').unwrap_or(trimmed.len());
+    (trimmed[..end].to_ascii_uppercase(), trimmed[end..].trim())
+}
+
+/// Decodes `E'…'` / `'…'` COPY option literals, including backslash escapes.
+fn decode_copy_literal(value: &str) -> Result<String, SqlFrontendError> {
+    let trimmed = value.trim();
+    let body = match trimmed.strip_prefix('E').or_else(|| trimmed.strip_prefix('e')) {
+        Some(rest) => rest,
+        None => trimmed,
+    };
+    let Some(body) = body.strip_prefix('\'') else {
+        return Err(syntax("COPY option values must be string literals"));
+    };
+    let Some(body) = body.strip_suffix('\'') else {
+        return Err(syntax("unterminated COPY option literal"));
+    };
+    let mut decoded = String::with_capacity(body.len());
+    let mut characters = body.chars();
+    while let Some(character) = characters.next() {
+        if character != '\\' {
+            decoded.push(character);
+            continue;
+        }
+        match characters.next() {
+            Some('t') => decoded.push('\t'),
+            Some('n') => decoded.push('\n'),
+            Some('r') => decoded.push('\r'),
+            Some(other) => decoded.push(other),
+            None => return Err(syntax("trailing backslash in COPY option literal")),
+        }
+    }
+    Ok(decoded)
 }
 
 fn parse_listen(tail: &str) -> Result<PgUtilityStatement, SqlFrontendError> {

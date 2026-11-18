@@ -55,6 +55,9 @@ pub fn execute_utility(
             session.notify(runtime, channel, payload, std::process::id());
             Ok(StatementOutcome::Command("NOTIFY"))
         }
+        PgUtilityStatement::CopyFromStdin { .. } => {
+            Err(StatementError::new("0A000", "COPY FROM STDIN requires the wire CopyIn protocol"))
+        }
         PgUtilityStatement::Deallocate { name } => {
             let removed = session.deallocate_statement(name.as_deref());
             if let Some(name) = name {

@@ -142,6 +142,38 @@ fn ddl_survives_a_restart_and_rollback_restores_the_persisted_state() {
 }
 
 #[test]
+fn copy_from_stdin_accepts_text_and_csv_streams() {
+    let dir = TempDir::new("copy");
+    let engine = PostgreSQL::open(dir.options("smoke")).unwrap();
+    engine.execute("CREATE TABLE copied (id BIGINT PRIMARY KEY, name TEXT)").unwrap();
+    let listener = engine.listen("127.0.0.1:0".parse::<SocketAddr>().unwrap()).unwrap();
+    let mut client = PostgreSQLClient::open(&ClientConfig::new("127.0.0.1", listener.endpoint().port(), "postgres", "smoke")).unwrap();
+
+    let text = client.copy_in("COPY copied (id, name) FROM STDIN", &[b"1\tone\n2\t\\N\n"]).unwrap();
+    assert_eq!(text.tag, "COPY 2");
+    let csv = client.copy_in("COPY copied FROM STDIN WITH (FORMAT csv, HEADER)", &[b"id,name\n3,\"a,b\"\n"]).unwrap();
+    assert_eq!(csv.tag, "COPY 1");
+
+    let direct = engine.query("SELECT id, name FROM copied ORDER BY id").unwrap();
+    assert_eq!(direct.row_count(), 3);
+    let rows = client.execute("SELECT id, name FROM copied ORDER BY id").unwrap();
+    let result = rows.first().expect("one result set");
+    assert_eq!(result.rows.len(), 3, "rows: {:?}", result.rows);
+    assert_eq!(result.rows[2].get(1).cloned().flatten().as_deref(), Some("a,b"));
+    client.close();
+
+    let mut missing = PostgreSQLClient::open(&ClientConfig::new("127.0.0.1", listener.endpoint().port(), "postgres", "smoke")).unwrap();
+    let failure = missing.copy_in("COPY absent FROM STDIN", &[b"1\n"]).unwrap();
+    let error = failure.error.expect("unknown table must fail the copy");
+    assert!(format!("{error}").contains("42P01"), "unexpected error: {error}");
+    // The connection stays usable after a rejected COPY.
+    assert_eq!(missing.execute("SELECT 1").unwrap().len(), 1);
+    missing.close();
+    listener.close();
+    engine.close().unwrap();
+}
+
+#[test]
 fn listen_and_notify_reach_another_connection_before_its_next_ready() {
     let dir = TempDir::new("notify");
     let engine = PostgreSQL::open(dir.options("smoke")).unwrap();
