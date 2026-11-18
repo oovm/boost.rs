@@ -35,7 +35,7 @@ fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
 fn odin_src_must_only_import_declared_dependencies() {
     let mut files = Vec::new();
     collect_rs_files(&crate_src(), &mut files);
-    assert!(!files.is_empty(), "interpreter-odin src must exist");
+    assert!(!files.is_empty(), "interpreter-vm-odin-vm src must exist");
     for file in files {
         let source = fs::read_to_string(&file).unwrap_or_else(|error| panic!("failed to read {}: {error}", file.display()));
         for line in source.lines() {
@@ -55,7 +55,7 @@ fn odin_src_must_only_import_declared_dependencies() {
 
 #[test]
 fn odin_manifest_must_depend_only_on_format_and_substrate_crates() {
-    let manifest = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml")).expect("read interpreter-odin Cargo.toml");
+    let manifest = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml")).expect("read interpreter-vm-odin-vm Cargo.toml");
     let mut in_dependencies = false;
     let mut offenders: Vec<String> = Vec::new();
     for line in manifest.lines() {
@@ -71,5 +71,5 @@ fn odin_manifest_must_depend_only_on_format_and_substrate_crates() {
             }
         }
     }
-    assert!(offenders.is_empty(), "interpreter-odin Cargo.toml declares dependencies outside the allowed substrate set: {offenders:?}");
+    assert!(offenders.is_empty(), "interpreter-vm-odin-vm Cargo.toml declares dependencies outside the allowed substrate set: {offenders:?}");
 }

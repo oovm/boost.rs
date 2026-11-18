@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 
 use interpreter_gc::{ObjectHeap, ObjectPayload, Value};
-use interpreter_odin::{
+use interpreter_vm_odin_vm::{
     array_runtime::{array_get, array_length, array_push, array_set, build_fixed_array},
     error::OdinRuntimeError,
 };

@@ -7,7 +7,7 @@
 use acorn_odin::{
     Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, emit_imm1, emit_plain, encode_module,
 };
-use interpreter_odin::{OdinVm, Value};
+use interpreter_vm_odin_vm::{OdinVm, Value};
 
 /// Builds a module with two functions: a generator `gen` that yields once then returns the
 /// resumed value, and `main` that calls `gen`, stores the resulting coroutine, then resumes
@@ -86,10 +86,10 @@ fn normal_coroutine_return_is_completed_but_entry_yield_is_suspended() {
     module.exports.push(OdinExport { kind: OdinExportKind::Function, symbol_name: "gen".to_string(), function_index: 0 });
     let mut vm = OdinVm::new();
     let loaded = vm.load(&encode_module(&module)).expect("load module");
-    assert!(matches!(vm.run_outcome(&loaded, "main", Vec::new()), Ok(interpreter_odin::ExecutionOutcome::Completed(Value::Coroutine(_)))));
+    assert!(matches!(vm.run_outcome(&loaded, "main", Vec::new()), Ok(interpreter_vm_odin_vm::ExecutionOutcome::Completed(Value::Coroutine(_)))));
     assert!(matches!(vm.run(&loaded, "main", Vec::new()), Ok(Value::Coroutine(_))));
-    assert!(matches!(vm.run_outcome(&loaded, "gen", Vec::new()), Ok(interpreter_odin::ExecutionOutcome::Suspended { .. })));
-    assert!(matches!(vm.run(&loaded, "gen", Vec::new()), Err(interpreter_odin::OdinRuntimeError::ExecutionSuspended { .. })));
+    assert!(matches!(vm.run_outcome(&loaded, "gen", Vec::new()), Ok(interpreter_vm_odin_vm::ExecutionOutcome::Suspended { .. })));
+    assert!(matches!(vm.run(&loaded, "gen", Vec::new()), Err(interpreter_vm_odin_vm::OdinRuntimeError::ExecutionSuspended { .. })));
 }
 
 #[test]
@@ -98,11 +98,11 @@ fn suspended_initializer_never_marks_initialization_done_or_runs_entry() {
     module.init_function_indices = vec![0];
     let mut vm = OdinVm::new();
     let loaded = vm.load(&encode_module(&module)).expect("load module");
-    let mut globals = interpreter_odin::ModuleGlobals::new(&loaded);
+    let mut globals = interpreter_vm_odin_vm::ModuleGlobals::new(&loaded);
     for _ in 0..2 {
         assert!(matches!(
             vm.run_outcome_with_globals(&loaded, &mut globals, "main", Vec::new()),
-            Err(interpreter_odin::OdinRuntimeError::ExecutionSuspended { function }) if function == "gen"
+            Err(interpreter_vm_odin_vm::OdinRuntimeError::ExecutionSuspended { function }) if function == "gen"
         ));
     }
 }
@@ -136,7 +136,7 @@ fn yield_without_call_returns_coroutine_at_top_level() {
     let result = vm.run_outcome(&loaded, "gen", Vec::new()).expect("execute gen");
 
     let coroutine_id = match result {
-        interpreter_odin::ExecutionOutcome::Suspended { coroutine } => coroutine,
+        interpreter_vm_odin_vm::ExecutionOutcome::Suspended { coroutine } => coroutine,
         other => panic!("expected coroutine, got {other:?}"),
     };
     let state = vm.heap().get_coroutine(coroutine_id).expect("coroutine in heap");
@@ -216,7 +216,7 @@ fn resuming_a_completed_coroutine_is_rejected() {
     let result = vm.run(&loaded, "main", Vec::new());
 
     match result {
-        Err(interpreter_odin::OdinRuntimeError::TypeMismatch { expected, actual })
+        Err(interpreter_vm_odin_vm::OdinRuntimeError::TypeMismatch { expected, actual })
             if expected == "active coroutine" && actual == "completed coroutine" =>
         {
             // expected: Resume handler rejected the second resume because `done == true`
@@ -315,7 +315,7 @@ fn top_level_yield_captures_operand_stack_fragment() {
     let loaded = vm.load(&bytes).expect("load module");
     let result = vm.run_outcome(&loaded, "gen", Vec::new()).expect("execute gen");
     let coroutine_id = match result {
-        interpreter_odin::ExecutionOutcome::Suspended { coroutine } => coroutine,
+        interpreter_vm_odin_vm::ExecutionOutcome::Suspended { coroutine } => coroutine,
         other => panic!("expected coroutine, got {other:?}"),
     };
     let state = vm.heap().get_coroutine(coroutine_id).expect("coroutine in heap");

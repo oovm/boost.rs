@@ -1,10 +1,10 @@
 #![allow(missing_docs)]
 
-use interpreter_odin::{OdinVm, jit::JitError};
+use interpreter_vm_odin_vm::{OdinVm, jit::JitError};
 
 use acorn_odin::{Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, encode_module};
 
-fn empty_module() -> interpreter_odin::module::LoadedModule {
+fn empty_module() -> interpreter_vm_odin_vm::module::LoadedModule {
     let mut code = Vec::new();
     code.push(OdinHeadCode::Constant as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
@@ -66,7 +66,7 @@ fn stack_maps_available_without_jit_backend() {
 
 #[test]
 fn stack_map_jit_backend_returns_artifact_maps() {
-    use interpreter_odin::jit::StackMapJit;
+    use interpreter_vm_odin_vm::jit::StackMapJit;
 
     let module = empty_module();
     let mut vm = OdinVm::new();
@@ -80,7 +80,7 @@ fn stack_map_jit_backend_returns_artifact_maps() {
 
 #[test]
 fn baseline_scalar_jit_fast_path_adds_i32_args() {
-    use interpreter_odin::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
+    use interpreter_vm_odin_vm::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
 
     let mut code = Vec::new();
     code.push(OdinHeadCode::LoadArg as u8);
@@ -116,7 +116,7 @@ fn baseline_scalar_jit_fast_path_adds_i32_args() {
     assert_eq!(vm.scalar_cache_len(), 1);
 }
 
-fn load_i32_binop_module(name: &str, export: &str, op: OdinHeadCode) -> interpreter_odin::module::LoadedModule {
+fn load_i32_binop_module(name: &str, export: &str, op: OdinHeadCode) -> interpreter_vm_odin_vm::module::LoadedModule {
     let mut code = Vec::new();
     code.push(OdinHeadCode::LoadArg as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
@@ -142,7 +142,7 @@ fn load_i32_binop_module(name: &str, export: &str, op: OdinHeadCode) -> interpre
 
 #[test]
 fn baseline_scalar_jit_fast_path_cmp_and_select() {
-    use interpreter_odin::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
+    use interpreter_vm_odin_vm::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
 
     let mut vm = OdinVm::new();
     vm.set_jit(Box::new(BaselineScalarJit::new(OdinScalarMatcher)));
@@ -183,7 +183,7 @@ fn baseline_scalar_jit_fast_path_cmp_and_select() {
     assert_eq!(vm.run(&select, "sel", vec![Value::I32(1), Value::I32(0), Value::I32(7), Value::I32(9)]).expect("sel false"), Value::I32(9));
 }
 
-fn load_named_module(name: &str, export: &str, arity: i32, code: Vec<u8>) -> interpreter_odin::module::LoadedModule {
+fn load_named_module(name: &str, export: &str, arity: i32, code: Vec<u8>) -> interpreter_vm_odin_vm::module::LoadedModule {
     let data = OdinModuleData {
         version: Odin_VERSION,
         name: name.to_string(),
@@ -202,7 +202,7 @@ fn load_named_module(name: &str, export: &str, arity: i32, code: Vec<u8>) -> int
 
 #[test]
 fn baseline_scalar_jit_fast_path_load_dup_mul() {
-    use interpreter_odin::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
+    use interpreter_vm_odin_vm::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
 
     let mut code = Vec::new();
     code.push(OdinHeadCode::LoadArg as u8);
@@ -218,7 +218,7 @@ fn baseline_scalar_jit_fast_path_load_dup_mul() {
 
 #[test]
 fn baseline_scalar_jit_folds_const_const_binop() {
-    use interpreter_odin::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
+    use interpreter_vm_odin_vm::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
 
     let mut code = Vec::new();
     code.push(OdinHeadCode::Constant as u8);
@@ -266,7 +266,7 @@ fn workload_hints_tighten_gray_budget_on_vm() {
 
 #[test]
 fn install_inline_deopt_chain_orders_outer_then_inner() {
-    use interpreter_odin::jit::{InlineFrameSpec, build_inline_deopt_map, materialize_interpreter_frames};
+    use interpreter_vm_odin_vm::jit::{InlineFrameSpec, build_inline_deopt_map, materialize_interpreter_frames};
 
     let map = build_inline_deopt_map(
         1,
@@ -285,7 +285,7 @@ fn install_inline_deopt_chain_orders_outer_then_inner() {
 
 #[test]
 fn install_deopt_frames_invalidates_scalar_and_restores_locals() {
-    use interpreter_odin::{
+    use interpreter_vm_odin_vm::{
         Value,
         jit::{BaselineScalarJit, OdinScalarMatcher, build_baseline_deopt_map, materialize_interpreter_frames},
     };
@@ -310,7 +310,7 @@ fn install_deopt_frames_invalidates_scalar_and_restores_locals() {
 
 #[test]
 fn invalidate_assumption_drops_scalar_leaf_cache() {
-    use interpreter_odin::{
+    use interpreter_vm_odin_vm::{
         Value,
         jit::{BaselineScalarJit, OdinScalarMatcher, JitAssumption},
     };
@@ -330,7 +330,7 @@ fn invalidate_assumption_drops_scalar_leaf_cache() {
 
 #[test]
 fn invalidate_scalar_cache_clears_compiled_blobs() {
-    use interpreter_odin::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
+    use interpreter_vm_odin_vm::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
 
     let mut code = Vec::new();
     code.push(OdinHeadCode::LoadArg as u8);
@@ -351,7 +351,7 @@ fn invalidate_scalar_cache_clears_compiled_blobs() {
 
 #[test]
 fn baseline_scalar_jit_fast_path_const_local_binop() {
-    use interpreter_odin::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
+    use interpreter_vm_odin_vm::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
 
     let mut code = Vec::new();
     code.push(OdinHeadCode::Constant as u8);
@@ -382,7 +382,7 @@ fn baseline_scalar_jit_fast_path_const_local_binop() {
 
 #[test]
 fn baseline_scalar_jit_fast_path_sub_and_mul() {
-    use interpreter_odin::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
+    use interpreter_vm_odin_vm::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
 
     let mut vm = OdinVm::new();
     vm.set_jit(Box::new(BaselineScalarJit::new(OdinScalarMatcher)));

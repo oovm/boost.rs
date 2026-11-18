@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 
 use interpreter_jit::{build_baseline_deopt_map, materialize_interpreter_frames};
-use interpreter_odin::{frame::Frame, *};
+use interpreter_vm_odin_vm::{frame::Frame, *};
 
 #[test]
 fn from_deopt_restore_maps_absent_to_null() {
@@ -18,7 +18,7 @@ fn from_deopt_restore_maps_absent_to_null() {
 fn from_deopt_restore_decodes_provided_i32() {
     let map = build_baseline_deopt_map(0, 1, &[0]);
     let entry = map.entry_at(0).expect("entry");
-    let payload = interpreter_odin::deopt_value::encode_value_for_deopt(&Value::I32(42)).expect("encode");
+    let payload = interpreter_vm_odin_vm::deopt_value::encode_value_for_deopt(&Value::I32(42)).expect("encode");
     let frames = materialize_interpreter_frames(entry, &[vec![Some(payload)]]).expect("materialize");
     let frame = Frame::from_deopt_restore(&frames[0], 0, None).expect("restore");
     assert_eq!(frame.locals, vec![Value::I32(42)]);

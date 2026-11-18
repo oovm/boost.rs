@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 
 use acorn_odin::{Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, encode_module};
-use interpreter_odin::{
+use interpreter_vm_odin_vm::{
     executor::{Executor, select_local_roots},
     jit::StackMapEntry,
     module::LoadedModule,
@@ -48,7 +48,7 @@ fn runs_const_add_return_bytecode() {
     let mut argument_module = module.clone();
     argument_module.functions[0].arity = 1;
     assert!(executor.run(&argument_module, 0, Vec::new()).is_err());
-    let mut vm = interpreter_odin::OdinVm::new();
+    let mut vm = interpreter_vm_odin_vm::OdinVm::new();
     assert!(vm.run(&module, "main", vec![Value::I32(2)]).is_err());
     assert!(vm.run(&argument_module, "main", Vec::new()).is_err());
 }

@@ -10,7 +10,7 @@ use acorn_odin::{
     Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, OdinWitnessDispatchEntry, emit_imm1,
     emit_plain, encode_module,
 };
-use interpreter_odin::{OdinRuntimeError, OdinVm, Value};
+use interpreter_vm_odin_vm::{OdinRuntimeError, OdinVm, Value};
 
 /// Builds a module with:
 ///   function 0 "raiser": Const effect_payload, PerformEffect(method_name="raise"), Const 999, Return

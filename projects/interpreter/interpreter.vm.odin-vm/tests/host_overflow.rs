@@ -10,7 +10,7 @@
 use acorn_odin::{
     Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, emit_imm1, emit_plain, encode_module,
 };
-use interpreter_odin::{
+use interpreter_vm_odin_vm::{
     ObjectHeap, Value,
     error::OdinRuntimeError,
     host::{HostOp, execute_host_op},

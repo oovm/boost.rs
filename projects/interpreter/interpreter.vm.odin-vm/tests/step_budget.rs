@@ -6,7 +6,7 @@
 use acorn_odin::{
     Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, emit_imm1, emit_plain, encode_module,
 };
-use interpreter_odin::{Value, error::OdinRuntimeError, module::LoadedModule};
+use interpreter_vm_odin_vm::{Value, error::OdinRuntimeError, module::LoadedModule};
 
 fn module_with(code: Vec<u8>, constants: Vec<OdinConstant>, local_count: i32) -> LoadedModule {
     let data = OdinModuleData {
@@ -51,7 +51,7 @@ fn countdown_module(total: i32) -> LoadedModule {
 #[test]
 fn loop_with_explicit_exit_completes_within_budget() {
     let module = countdown_module(10);
-    let mut vm = interpreter_odin::OdinVm::new();
+    let mut vm = interpreter_vm_odin_vm::OdinVm::new();
     vm.set_step_budget(Some(1_000));
     let value = vm.run(&module, "main", Vec::new()).expect("10 轮循环必须在预算内完成");
     assert_eq!(value, Value::I32(0));
@@ -65,7 +65,7 @@ fn legit_empty_loop_is_budgeted_not_trapped() {
     let mut code = Vec::new();
     emit_imm1(&mut code, OdinHeadCode::Jump, 0); // 自旋：目标就是块首自身
     let module = module_with(code, Vec::new(), 0);
-    let mut vm = interpreter_odin::OdinVm::new();
+    let mut vm = interpreter_vm_odin_vm::OdinVm::new();
     vm.set_step_budget(Some(64));
     let error = vm.run(&module, "main", Vec::new()).expect_err("自旋必须被预算截断");
     match error {
@@ -86,7 +86,7 @@ fn legit_empty_loop_is_budgeted_not_trapped() {
 /// 同时打印 10^3 轮与 10^6 轮两端的指令数 / 耗时，作为默认预算的取值依据。
 #[test]
 fn long_loop_is_not_false_killed_by_default_budget() {
-    let mut vm = interpreter_odin::OdinVm::new();
+    let mut vm = interpreter_vm_odin_vm::OdinVm::new();
     let small = countdown_module(1_000);
     vm.run(&small, "main", Vec::new()).expect("10^3 轮循环");
     let small_steps = vm.last_step_count();
@@ -100,7 +100,7 @@ fn long_loop_is_not_false_killed_by_default_budget() {
     eprintln!("step_budget: 10^3 轮 = {small_steps} 条指令; 10^6 轮 = {steps} 条指令, 耗时 {elapsed:?}, 默认预算 {:?}", vm.step_budget());
     assert!(small_steps > 8_000, "每轮 8 条指令，10^3 轮实测 {small_steps}");
     assert!(steps > 8_000_000, "每轮 8 条指令，10^6 轮实测 {steps}");
-    assert!(steps.saturating_mul(10) <= interpreter_odin::executor::DEFAULT_STEP_BUDGET, "默认预算对 10^6 轮长循环至少要有 10 倍余量：steps={steps}");
+    assert!(steps.saturating_mul(10) <= interpreter_vm_odin_vm::executor::DEFAULT_STEP_BUDGET, "默认预算对 10^6 轮长循环至少要有 10 倍余量：steps={steps}");
 }
 
 /// `Trap` 指令：前端把可达块误标成 `Unreachable` 时，运行期立即得到带 function/pc 的结构化失败
@@ -111,7 +111,7 @@ fn trap_instruction_reports_function_and_ip() {
     emit_imm1(&mut code, OdinHeadCode::Constant, 0);
     emit_plain(&mut code, OdinHeadCode::Trap);
     let module = module_with(code, vec![OdinConstant::Integer32(7)], 0);
-    let mut vm = interpreter_odin::OdinVm::new();
+    let mut vm = interpreter_vm_odin_vm::OdinVm::new();
     let error = vm.run(&module, "main", Vec::new()).expect_err("Trap 必须失败关闭");
     match error {
         OdinRuntimeError::TrapExecuted { function, ip } => {
@@ -126,7 +126,7 @@ fn trap_instruction_reports_function_and_ip() {
 #[test]
 fn budget_can_be_disabled_via_config() {
     let module = countdown_module(1);
-    let mut vm = interpreter_odin::OdinVm::new();
+    let mut vm = interpreter_vm_odin_vm::OdinVm::new();
     vm.set_step_budget(None);
     assert_eq!(vm.step_budget(), None, "关闭预算后 step_budget() 必须返回 None");
     assert!(vm.run(&module, "main", Vec::new()).is_ok(), "关闭预算不影响正常执行");

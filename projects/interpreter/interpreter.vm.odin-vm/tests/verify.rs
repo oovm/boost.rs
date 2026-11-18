@@ -4,7 +4,7 @@ use acorn_odin::{
     OBSOLETE_CALL_NATIVE, Odin_VERSION, OdinConstant, OdinFunction, OdinHeadCode, OdinImportKind, OdinLayout, OdinModuleData, emit_imm1,
     emit_plain,
 };
-use interpreter_odin::{
+use interpreter_vm_odin_vm::{
     error::OdinRuntimeError,
     host::HOST_IMPORT_MODULE,
     verify::{MAX_FUNCTION_CODE_BYTES, MAX_OPERAND_STACK_HEIGHT, verify_module},

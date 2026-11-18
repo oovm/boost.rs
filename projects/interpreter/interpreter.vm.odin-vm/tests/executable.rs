@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 
 use acorn_odin::{OdinFunction, OdinHeadCode, emit_imm1};
-use interpreter_odin::executable::build_executable_function;
+use interpreter_vm_odin_vm::executable::build_executable_function;
 
 #[test]
 fn resolves_jump_to_instruction_index() {

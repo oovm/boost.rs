@@ -1,7 +1,13 @@
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
-//! Odin bytecode VM — language-agnostic `.odin` / Odin IR runtime.
+//! Odin bytecode VM — the `.odin` target under the `interpreter.vm` tree.
+//!
+//! # Tree position
+//!
+//! `interpreter.vm` holds per-target VM execution substrates. This crate is its Odin target;
+//! sibling targets (for example a wasm or JVM bytecode VM) get their own `interpreter.vm.*`
+//! crate and must not be folded into this one.
 //!
 //! # Layering
 //!
@@ -14,7 +20,7 @@
 //!
 //! # Naming
 //!
-//! Crate package: `interpreter-odin`. Rust import path: `interpreter_odin`.
+//! Crate package: `interpreter-vm-odin-vm`. Rust import path: `interpreter_vm_odin_vm`.
 
 pub mod array_runtime;
 pub mod deopt_value;

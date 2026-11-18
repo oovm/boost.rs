@@ -7,7 +7,7 @@ use acorn_odin::{
     Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinGlobal, OdinHeadCode, OdinLayout, OdinModuleData, emit_imm1,
     encode_module,
 };
-use interpreter_odin::{ModuleGlobals, OdinVm, Value};
+use interpreter_vm_odin_vm::{ModuleGlobals, OdinVm, Value};
 
 #[test]
 fn eager_singleton_init_and_accessor_roundtrip() {

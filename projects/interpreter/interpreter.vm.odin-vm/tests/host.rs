@@ -2,7 +2,7 @@
 
 use interpreter_gc::ObjectHeap;
 use acorn_odin::OdinImport;
-use interpreter_odin::{
+use interpreter_vm_odin_vm::{
     host::{HostOp, ResolvedImport, execute_host_op, parse_host_op, resolve_import},
     value::Value,
 };

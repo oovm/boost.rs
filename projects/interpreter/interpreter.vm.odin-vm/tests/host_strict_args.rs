@@ -5,7 +5,7 @@
 //!
 //! 本文件同时充当改动前后的行为对照：正例证明补全参数后执行结果不受影响。
 
-use interpreter_odin::{
+use interpreter_vm_odin_vm::{
     ObjectHeap, Value,
     error::OdinRuntimeError,
     host::{HostOp, execute_host_op},

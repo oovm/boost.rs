@@ -2,7 +2,7 @@
 
 use interpreter_jit::*;
 use acorn_odin::{Odin_VERSION, OdinHeadCode};
-use interpreter_odin::odin_scalar_matcher::OdinScalarMatcher;
+use interpreter_vm_odin_vm::odin_scalar_matcher::OdinScalarMatcher;
 
 fn request(code: Vec<u8>) -> JitCompileRequest {
     request_with_constants(code, Vec::new())

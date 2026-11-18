@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 
-use interpreter_odin::*;
+use interpreter_vm_odin_vm::*;
 
 #[test]
 fn roundtrips_scalars_and_string() {

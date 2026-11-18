@@ -3,7 +3,7 @@
 use acorn_odin::{
     Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinLayout, OdinModuleData, encode_module,
 };
-use interpreter_odin::{OdinVm, Value};
+use interpreter_vm_odin_vm::{OdinVm, Value};
 
 #[test]
 fn golden_const_add_return_roundtrip() {

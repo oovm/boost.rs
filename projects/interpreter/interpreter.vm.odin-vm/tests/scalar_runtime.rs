@@ -5,7 +5,7 @@ use interpreter_jit::{
     encode_ret_i32_cmp_imm_local, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_consts, encode_ret_i32_select_cmp_locals,
     encode_ret_i32_select_cmp_mixed, encode_ret_local, encode_ret_void,
 };
-use interpreter_odin::{OdinRuntimeError, scalar_runtime::execute_scalar_blob, value::Value};
+use interpreter_vm_odin_vm::{OdinRuntimeError, scalar_runtime::execute_scalar_blob, value::Value};
 
 #[test]
 fn executes_ret_local() {

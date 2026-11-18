@@ -2294,7 +2294,7 @@ name = "interpreter-jit"
 version = "0.1.0"
 
 [[package]]
-name = "interpreter-odin"
+name = "interpreter-vm-odin-vm"
 version = "0.1.0"
 dependencies = [
  "acorn-odin",

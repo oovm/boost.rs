@@ -1,5 +1,5 @@
 [package]
-name = "interpreter-odin"
+name = "interpreter-vm-odin-vm"
 description = "Odin bytecode VM substrate: module verification, interpreter loop, host boundary, and target runtime builtins over interpreter-gc and interpreter-jit"
 version.workspace = true
 edition.workspace = true
