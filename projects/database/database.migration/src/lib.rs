@@ -22,7 +22,10 @@ mod state;
 
 use std::{collections::HashSet, fmt, path::{Path, PathBuf}};
 
-pub use ddl::{create_table, delete_by_keys, quote_ident, quote_literal, select_keys, select_ordered, upsert_statement, ColumnDef, TableShape};
+pub use ddl::{
+    create_table, delete_by_keys, quote_ident, quote_literal, select_after, select_key_window, select_keys, upsert_statement,
+    ColumnDef, TableShape,
+};
 pub use literal::{raw_literal, sql_literal};
 pub use source::{MigrationSource, PageRequest, PgSource, Row};
 pub use state::{MigrationState, Phase, TableState};
@@ -114,6 +117,10 @@ impl Default for Options {
         }
     }
 }
+
+/// How many replay passes one run may take before it reports that writes kept
+/// arriving and leaves the rest to the next run.
+const MAX_CATCH_UP_PASSES: usize = 5;
 
 /// What one table did during this run.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -234,11 +241,11 @@ pub fn check(
                     break;
                 }
                 let actual = target
-                    .query(&select_ordered(&shape, order, compared, expected.len()))?
+                    .query(&select_after(&shape, order, cursor.as_deref(), compared, expected.len()))?
                     .rows;
                 if expected != actual {
                     synced = false;
-                    note = Some(format!("content differs at or after row {compared}"));
+                    note = Some(describe_difference(&shape, &expected, &actual, compared));
                     break;
                 }
                 compared += expected.len() as u64;
@@ -253,6 +260,28 @@ pub fn check(
         report.tables.push(TableCheck { name, source_rows, target_rows, compared_rows: compared, synced, note });
     }
     Ok(report)
+}
+
+/// Names the first differing column without echoing the value, so a log line
+/// stays safe while still pointing at the type or format that drifted.
+fn describe_difference(shape: &TableShape, expected: &[Row], actual: &[Row], offset: u64) -> String {
+    let row = expected.iter().zip(actual.iter()).position(|(left, right)| left != right).unwrap_or(expected.len().min(actual.len()));
+    let (Some(left), Some(right)) = (expected.get(row), actual.get(row)) else {
+        return format!("row {row} at offset {} is missing on one side", offset + row as u64);
+    };
+    let column = left
+        .iter()
+        .zip(right.iter())
+        .position(|(left, right)| left != right)
+        .unwrap_or(0);
+    let name = shape.columns.get(column).map(|column| column.name.as_str()).unwrap_or("?");
+    let size = |cell: &Option<String>| cell.as_ref().map_or(0, String::len);
+    format!(
+        "column `{name}` differs at row {} (source {} bytes, target {} bytes)",
+        offset + row as u64,
+        size(&left[column]),
+        size(&right[column])
+    )
 }
 
 /// Finishes the full scan, replays increments, then reconciles deletions.
@@ -271,8 +300,23 @@ pub fn migrate(
     };
     let mut report = Report::default();
     for name in tables {
-        let table = migrate_table(source, target, options, &mut state, &name)?;
-        report.tables.push(table);
+        match migrate_table(source, target, options, &mut state, &name) {
+            Ok(table) => report.tables.push(table),
+            // One table the target cannot express must not hide every table
+            // after it, and the reason has to stay visible in the report.
+            Err(Error::Unsupported(message)) => report.tables.push(TableReport {
+                name: name.clone(),
+                ddl: String::new(),
+                phase: state.entry(&name).map(|entry| entry.phase).unwrap_or(Phase::Full),
+                source_rows: 0,
+                target_rows: 0,
+                written: 0,
+                pruned: 0,
+                verified: false,
+                note: Some(message),
+            }),
+            Err(error) => return Err(error),
+        }
         save(&options.state_path, &state)?;
     }
     Ok(report)
@@ -341,25 +385,51 @@ fn migrate_table(
         )?;
         let entry = state.tables.get_mut(name).expect("entry inserted above");
         entry.phase = Phase::Incremental;
-        entry.cursor = None;
+        // The key-ordered full scan leaves a usable cursor for an append-only
+        // table; an `updated_at` replay orders differently and must start over.
+        if incremental_order.is_some() {
+            entry.cursor = None;
+        }
         save(&options.state_path, state)?;
     }
 
     let note = if let Some(incremental_order) = &incremental_order {
-        let watermark = state.tables[name].watermark.clone();
-        written += scan(
-            source,
-            target,
-            options,
-            state,
-            name,
-            &shape,
-            incremental_order,
-            Some(&watermark),
-        )?;
-        None
+        let mut since = state.tables[name].watermark.clone();
+        let mut passes = 0_usize;
+        let mut stopped_early = None;
+        loop {
+            let pass_start = source.now()?;
+            // Every replay pass restarts its window from the first row. Carrying
+            // the previous pass's cursor over would skip any row that was
+            // committed with a sort position behind it while that pass read.
+            state.tables.get_mut(name).expect("entry inserted above").cursor = None;
+            let pass_written = scan(source, target, options, state, name, &shape, incremental_order, Some(&since))?;
+            written += pass_written;
+            // Advancing only to this pass's start means anything committed while
+            // the pass ran is inside the next pass's window, and anything left
+            // over is inside the next run's window.
+            state.tables.get_mut(name).expect("entry inserted above").watermark = pass_start.clone();
+            save(&options.state_path, state)?;
+            passes += 1;
+            if pass_written == 0 {
+                break;
+            }
+            if passes >= MAX_CATCH_UP_PASSES {
+                stopped_early =
+                    Some(format!("stopped after {passes} replay passes while rows were still changing"));
+                break;
+            }
+            since = pass_start;
+        }
+        stopped_early
+    } else if starting_full {
+        Some("table has no `updated_at`: later runs replay only rows sorted after the saved cursor".to_string())
     } else {
-        Some("table has no `updated_at`, so later runs will not replay changes".to_string())
+        // No `updated_at` to bound changes, so treat the table as append-only:
+        // replay everything whose primary key sorts after the saved cursor. A
+        // row whose key was rewritten behind that cursor is not replayed.
+        written += scan(source, target, options, state, name, &shape, &order, None)?;
+        Some("table has no `updated_at`: only rows sorted after the saved cursor are replayed".to_string())
     };
 
     let (verified, verify_note) = if starting_full {
@@ -463,7 +533,7 @@ fn verify_rows(
         if expected.is_empty() {
             return Ok((true, None));
         }
-        let actual = target.query(&select_ordered(shape, order, offset, options.batch_rows))?.rows;
+        let actual = target.query(&select_after(shape, order, cursor.as_deref(), offset, options.batch_rows))?.rows;
         if expected != actual {
             let first = expected
                 .iter()
@@ -495,22 +565,33 @@ fn prune(
     shape: &TableShape,
     order: &[String],
 ) -> Result<u64, Error> {
+    // Keys only and key-paged: reconciliation must neither pay for a wide
+    // table's payload nor rely on one unbounded result set.
     let mut remaining: HashSet<String> = HashSet::new();
-    let mut offset = 0_u64;
+    let mut target_cursor: Option<Row> = None;
+    let mut target_offset = 0_u64;
     loop {
-        let rows = target.query(&select_keys(shape, order, offset, options.batch_rows))?.rows;
+        let rows = target
+            .query(&select_key_window(shape, order, target_cursor.as_deref(), target_offset, options.batch_rows))?
+            .rows;
         if rows.is_empty() {
             break;
         }
-        offset += rows.len() as u64;
-        for row in rows {
-            remaining.insert(key_of(&row));
+        target_offset += rows.len() as u64;
+        for row in &rows {
+            remaining.insert(key_of(row));
         }
+        if rows.len() < options.batch_rows {
+            break;
+        }
+        target_cursor = rows.last().cloned();
     }
 
     let mut cursor: Option<Row> = None;
     loop {
-        let rows = source.rows(&PageRequest {
+        // Keys only: reconciling deletions must never pay for the payload of a
+        // wide table.
+        let rows = source.keys(&PageRequest {
             schema: &options.schema,
             table: name,
             order,

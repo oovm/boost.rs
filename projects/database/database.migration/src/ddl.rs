@@ -188,14 +188,67 @@ pub fn select_keys(shape: &TableShape, order: &[String], offset: u64, limit: usi
     )
 }
 
-/// Ordered read of the same window the source produced, for verification.
-pub fn select_ordered(shape: &TableShape, order: &[String], offset: u64, limit: usize) -> String {
+/// Key-only window following `after`, used to rebuild the target key set.
+pub fn select_key_window(
+    shape: &TableShape,
+    order: &[String],
+    after: Option<&[Option<String>]>,
+    offset: u64,
+    limit: usize,
+) -> String {
+    let columns: Vec<String> = order.iter().map(|column| quote_ident(column)).collect();
+    window_sql(&columns.join(", "), shape, order, after, offset, limit)
+}
+
+/// Ordered read of the window following `after`.
+///
+/// A single-column key becomes `WHERE key > value`, so a verification pass costs
+/// one index step per window instead of rescanning everything already compared.
+/// Composite keys keep `OFFSET`, because row-constructor comparison is not
+/// guaranteed to be supported by every target.
+pub fn select_after(
+    shape: &TableShape,
+    order: &[String],
+    after: Option<&[Option<String>]>,
+    offset: u64,
+    limit: usize,
+) -> String {
+    window_sql("*", shape, order, after, offset, limit)
+}
+
+/// Builds one ordered window over `select_list`.
+///
+/// Single-column keys use a keyset bound; composite keys fall back to `OFFSET`.
+fn window_sql(
+    select_list: &str,
+    shape: &TableShape,
+    order: &[String],
+    after: Option<&[Option<String>]>,
+    offset: u64,
+    limit: usize,
+) -> String {
     let keys: Vec<String> = order.iter().map(|key| quote_ident(key)).collect();
-    format!(
-        "SELECT * FROM {} ORDER BY {} LIMIT {limit} OFFSET {offset}",
-        quote_ident(&shape.name),
-        keys.join(", ")
-    )
+    let keyset = match (after, keys.as_slice()) {
+        (Some(values), [key]) => {
+            let value = values
+                .first()
+                .cloned()
+                .flatten()
+                .map(|text| crate::literal::raw_literal(&text))
+                .unwrap_or_else(|| "NULL".to_owned());
+            Some(format!(" WHERE {key} > {value}"))
+        }
+        _ => None,
+    };
+    let mut sql = format!("SELECT {select_list} FROM {}", quote_ident(&shape.name));
+    if let Some(keyset) = &keyset {
+        sql.push_str(keyset);
+    }
+    sql.push_str(&format!(" ORDER BY {} LIMIT {limit}", keys.join(", ")));
+    if keyset.is_none() && offset > 0 {
+        sql.push_str(&format!(" OFFSET {offset}"));
+    }
+    sql
 }
 
 /// Keeps a source default only when the target can replay it.

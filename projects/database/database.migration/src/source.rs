@@ -46,22 +46,50 @@ pub trait MigrationSource {
     fn now(&mut self) -> Result<String, Error>;
     /// One window of rows.
     fn rows(&mut self, request: &PageRequest<'_>) -> Result<Vec<Row>, Error>;
+
+    /// One window of primary keys only.
+    ///
+    /// Deletion reconciliation needs nothing but keys, and a wide table's payload
+    /// dwarfs its keys, so sources that can project the key columns must override
+    /// this instead of re-reading every column.
+    fn keys(&mut self, request: &PageRequest<'_>) -> Result<Vec<Row>, Error> {
+        self.rows(request)
+    }
 }
 
 /// PostgreSQL source read over the family wire client.
 pub struct PgSource {
+    config: ClientConfig,
     connection: Connection,
 }
 
 impl PgSource {
     /// Opens the source connection and completes the startup handshake.
     pub fn open(config: &ClientConfig) -> Result<Self, Error> {
-        Connection::open(config).map(|connection| Self { connection }).map_err(source_error)
+        let connection = Connection::open(config).map_err(source_error)?;
+        Ok(Self { config: config.clone(), connection })
     }
 
+    /// Reads one statement's rows.
+    ///
+    /// A migration over a remote link outlives an idle timeout sooner or later,
+    /// so one failed round trip reconnects and retries instead of losing the
+    /// whole run. Statements are reads and single idempotent writes, so a retry
+    /// cannot duplicate work.
     fn rows_of(&mut self, sql: &str) -> Result<Vec<Row>, Error> {
-        let mut results = self.connection.execute(sql).map_err(source_error)?;
-        Ok(results.pop().map(|result| result.rows).unwrap_or_default())
+        match self.connection.execute(sql) {
+            Ok(mut results) => Ok(results.pop().map(|result| result.rows).unwrap_or_default()),
+            Err(_) => {
+                self.reconnect()?;
+                let mut results = self.connection.execute(sql).map_err(source_error)?;
+                Ok(results.pop().map(|result| result.rows).unwrap_or_default())
+            }
+        }
+    }
+
+    fn reconnect(&mut self) -> Result<(), Error> {
+        self.connection = Connection::open(&self.config).map_err(source_error)?;
+        Ok(())
     }
 }
 
@@ -153,6 +181,28 @@ impl MigrationSource for PgSource {
         let order: Vec<String> = request.order.iter().map(|column| quote_ident(column)).collect();
         sql.push_str(&format!(" ORDER BY {}", order.join(", ")));
         sql.push_str(&format!(" LIMIT {}", request.limit));
+        self.rows_of(&sql)
+    }
+
+    fn keys(&mut self, request: &PageRequest<'_>) -> Result<Vec<Row>, Error> {
+        let columns: Vec<String> = request.order.iter().map(|column| quote_ident(column)).collect();
+        let mut sql = format!(
+            "SELECT {} FROM {}.{}",
+            columns.join(", "),
+            quote_ident(request.schema),
+            quote_ident(request.table)
+        );
+        if let Some(after) = request.after {
+            let values: Vec<String> = after
+                .iter()
+                .map(|value| match value {
+                    Some(text) => raw_literal(text),
+                    None => "NULL".to_owned(),
+                })
+                .collect();
+            sql.push_str(&format!(" WHERE ({}) > ({})", columns.join(", "), values.join(", ")));
+        }
+        sql.push_str(&format!(" ORDER BY {} LIMIT {}", columns.join(", "), request.limit));
         self.rows_of(&sql)
     }
 }
