@@ -17,7 +17,7 @@ mod session;
 mod term;
 mod theory;
 
-pub use compiler_types::{CapabilityTag, Identifier, QualifiedName};
+pub use compiler_types::{CapabilityTag, Identifier, QualifiedName, ReferenceManagement};
 pub use core_theory::{CoreConstantInterpreter, builtin_core_rewrite_theory, builtin_core_term_rewrites, core_lit_name};
 pub use egraph::{ConstantInterpreter, EClassId, EGraphHost, EGraphStats, StructuredRewrite};
 pub use extract::{ExtractCost, extract_class};
