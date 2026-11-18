@@ -461,8 +461,14 @@ pub fn write_motion_preview(
     production.validate()?;
     let mut project = parse_project(json)?;
     let scale = scale.clamp(0.1, 1.0);
-    project.width = ((project.width as f32 * scale).round() as u32).max(2);
-    project.height = ((project.height as f32 * scale).round() as u32).max(2);
+    // H.264 wants even dimensions, so a scaled raster rounds up to the next
+    // even value instead of failing the whole preview.
+    let even = |value: f32| {
+        let rounded = value.round().max(2.0) as u32;
+        if rounded % 2 == 0 { rounded } else { rounded + 1 }
+    };
+    project.width = even(project.width as f32 * scale);
+    project.height = even(project.height as f32 * scale);
     project.supersample = None;
     let json = serde_json::to_string(&project).map_err(|e| Error::invalid(format!("project json: {e}")))?;
     crate::render::render_project_with(&json, out, &crate::render::RenderOptions::default(), progress)
@@ -632,5 +638,16 @@ mod tests {
         assert_eq!((stats.width, stats.height), (160, 90), "half raster keeps the aspect");
         assert_eq!(stats.frames, 120, "every frame of the film is previewed");
         assert!(out.exists());
+    }
+
+    #[test]
+    fn a_scaled_raster_stays_even_for_the_encoder() {
+        let (json, production) = fixture();
+        let odd = json.replace("\"width\":320", "\"width\":321").replace("\"height\":180", "\"height\":181");
+        let out = out_dir().join("motion-preview-odd.mp4");
+        let stats = write_motion_preview(&odd, &production, &out, 0.5, &mut |_, _| {}).expect("odd sizes round up");
+        assert_eq!(stats.width % 2, 0);
+        assert_eq!(stats.height % 2, 0);
+        assert_eq!((stats.width, stats.height), (162, 92), "161x91.5 rounds to the next even size");
     }
 }
