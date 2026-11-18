@@ -8,8 +8,30 @@ use database_client::pgsql::{ClientConfig, Connection};
 
 use crate::{
     ddl::{quote_ident, quote_literal},
+    literal::raw_literal,
     ColumnDef, Error, TableShape,
 };
+
+/// One row as text cells; `None` is SQL `NULL`.
+pub type Row = Vec<Option<String>>;
+
+/// One window request shared by the full scan and the incremental scan.
+#[derive(Debug, Clone)]
+pub struct PageRequest<'a> {
+    /// Source schema.
+    pub schema: &'a str,
+    /// Source table.
+    pub table: &'a str,
+    /// Ordering columns: the primary key for a full scan, `updated_at` followed
+    /// by the primary key for an incremental scan.
+    pub order: &'a [String],
+    /// Keyset cursor: the `order` values of the last row of the previous window.
+    pub after: Option<&'a [Option<String>]>,
+    /// Incremental lower bound: only rows whose `updated_at` is at or after it.
+    pub since: Option<&'a str>,
+    /// Rows requested.
+    pub limit: usize,
+}
 
 /// One side of a migration that can be read.
 pub trait MigrationSource {
@@ -19,15 +41,11 @@ pub trait MigrationSource {
     fn shape(&mut self, schema: &str, table: &str) -> Result<TableShape, Error>;
     /// Row count of one table.
     fn count(&mut self, schema: &str, table: &str) -> Result<u64, Error>;
-    /// One window of rows; `order` is the primary key when the table has one.
-    fn rows(
-        &mut self,
-        schema: &str,
-        table: &str,
-        order: &Option<Vec<String>>,
-        offset: u64,
-        limit: usize,
-    ) -> Result<Vec<Vec<Option<String>>>, Error>;
+    /// The source clock, read once before a full scan to seed the incremental
+    /// lower bound so writes made during the scan are replayed afterwards.
+    fn now(&mut self) -> Result<String, Error>;
+    /// One window of rows.
+    fn rows(&mut self, request: &PageRequest<'_>) -> Result<Vec<Row>, Error>;
 }
 
 /// PostgreSQL source read over the family wire client.
@@ -41,7 +59,7 @@ impl PgSource {
         Connection::open(config).map(|connection| Self { connection }).map_err(source_error)
     }
 
-    fn rows_of(&mut self, sql: &str) -> Result<Vec<Vec<Option<String>>>, Error> {
+    fn rows_of(&mut self, sql: &str) -> Result<Vec<Row>, Error> {
         let mut results = self.connection.execute(sql).map_err(source_error)?;
         Ok(results.pop().map(|result| result.rows).unwrap_or_default())
     }
@@ -101,20 +119,40 @@ impl MigrationSource for PgSource {
             .ok_or_else(|| Error::Source(format!("source count for `{table}` is not a number")))
     }
 
-    fn rows(
-        &mut self,
-        schema: &str,
-        table: &str,
-        order: &Option<Vec<String>>,
-        offset: u64,
-        limit: usize,
-    ) -> Result<Vec<Vec<Option<String>>>, Error> {
-        let mut sql = format!("SELECT * FROM {}.{}", quote_ident(schema), quote_ident(table));
-        if let Some(order) = order {
-            let keys: Vec<String> = order.iter().map(|column| quote_ident(column)).collect();
-            sql.push_str(&format!(" ORDER BY {}", keys.join(", ")));
+    fn now(&mut self) -> Result<String, Error> {
+        self.rows_of("SELECT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"')")?
+            .first()
+            .and_then(|row| row.first().cloned().flatten())
+            .ok_or_else(|| Error::Source("source clock is unavailable".into()))
+    }
+
+    fn rows(&mut self, request: &PageRequest<'_>) -> Result<Vec<Row>, Error> {
+        let mut sql = format!(
+            "SELECT * FROM {}.{}",
+            quote_ident(request.schema),
+            quote_ident(request.table)
+        );
+        let mut conditions = Vec::new();
+        if let Some(since) = request.since {
+            conditions.push(format!("{} >= {}", quote_ident("updated_at"), quote_literal(since)));
         }
-        sql.push_str(&format!(" LIMIT {limit} OFFSET {offset}"));
+        if let Some(after) = request.after {
+            let columns: Vec<String> = request.order.iter().map(|column| quote_ident(column)).collect();
+            let values: Vec<String> = after
+                .iter()
+                .map(|value| match value {
+                    Some(text) => raw_literal(text),
+                    None => "NULL".to_owned(),
+                })
+                .collect();
+            conditions.push(format!("({}) > ({})", columns.join(", "), values.join(", ")));
+        }
+        if !conditions.is_empty() {
+            sql.push_str(&format!(" WHERE {}", conditions.join(" AND ")));
+        }
+        let order: Vec<String> = request.order.iter().map(|column| quote_ident(column)).collect();
+        sql.push_str(&format!(" ORDER BY {}", order.join(", ")));
+        sql.push_str(&format!(" LIMIT {}", request.limit));
         self.rows_of(&sql)
     }
 }

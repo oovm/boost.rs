@@ -35,6 +35,11 @@ pub struct TableShape {
 }
 
 impl TableShape {
+    /// Looks a column up by name.
+    pub fn column(&self, name: &str) -> Option<&ColumnDef> {
+        self.columns.iter().find(|column| column.name == name)
+    }
+
     /// Primary-key column names, or `None` when the table has no primary key.
     pub fn order_columns(&self) -> Option<Vec<String>> {
         let keys: Vec<String> =
@@ -94,11 +99,14 @@ pub fn create_table(shape: &TableShape) -> Result<String, Error> {
         let keys: Vec<String> = keys.iter().map(|key| quote_ident(key)).collect();
         definitions.push(format!("PRIMARY KEY ({})", keys.join(", ")));
     }
-    Ok(format!("CREATE TABLE {} ({})", quote_ident(&shape.name), definitions.join(", ")))
+    Ok(format!("CREATE TABLE IF NOT EXISTS {} ({})", quote_ident(&shape.name), definitions.join(", ")))
 }
 
-/// One multi-row `INSERT` for a window of source rows.
-pub fn insert_statement(shape: &TableShape, rows: &[Vec<Option<String>>]) -> Result<String, Error> {
+/// One multi-row upsert for a window of source rows.
+///
+/// Every write is an upsert keyed by the primary key so a re-run after an
+/// interruption is idempotent and an incremental pass overwrites changed rows.
+pub fn upsert_statement(shape: &TableShape, rows: &[Vec<Option<String>>]) -> Result<String, Error> {
     let columns: Vec<String> = shape.columns.iter().map(|column| quote_ident(&column.name)).collect();
     let types = shape.columns.iter().map(target_type).collect::<Result<Vec<_>, _>>()?;
     let mut values = Vec::with_capacity(rows.len());
@@ -118,12 +126,66 @@ pub fn insert_statement(shape: &TableShape, rows: &[Vec<Option<String>>]) -> Res
             .collect();
         values.push(format!("({})", cells.join(", ")));
     }
-    Ok(format!(
+    let mut statement = format!(
         "INSERT INTO {} ({}) VALUES {}",
         quote_ident(&shape.name),
         columns.join(", "),
         values.join(", ")
-    ))
+    );
+    if let Some(keys) = shape.order_columns() {
+        let keys: Vec<String> = keys.iter().map(|key| quote_ident(key)).collect();
+        let updates: Vec<String> = shape
+            .columns
+            .iter()
+            .filter(|column| !column.primary)
+            .map(|column| {
+                let name = quote_ident(&column.name);
+                format!("{name} = EXCLUDED.{name}")
+            })
+            .collect();
+        statement.push_str(&format!(" ON CONFLICT ({}) ", keys.join(", ")));
+        if updates.is_empty() {
+            statement.push_str("DO NOTHING");
+        } else {
+            statement.push_str(&format!("DO UPDATE SET {}", updates.join(", ")));
+        }
+    }
+    Ok(statement)
+}
+
+/// `DELETE` removing keys the source no longer holds.
+pub fn delete_by_keys(shape: &TableShape, order: &[String], keys: &[Vec<Option<String>>]) -> String {
+    let values: Vec<String> = keys
+        .iter()
+        .map(|key| {
+            let cells: Vec<String> = key
+                .iter()
+                .map(|value| match value {
+                    Some(text) => crate::literal::raw_literal(text),
+                    None => "NULL".to_owned(),
+                })
+                .collect();
+            format!("({})", cells.join(", "))
+        })
+        .collect();
+    let columns: Vec<String> = order.iter().map(|column| quote_ident(column)).collect();
+    format!(
+        "DELETE FROM {} WHERE ({}) IN ({})",
+        quote_ident(&shape.name),
+        columns.join(", "),
+        values.join(", ")
+    )
+}
+
+/// Primary-key-only window used to reconcile rows removed at the source.
+pub fn select_keys(shape: &TableShape, order: &[String], offset: u64, limit: usize) -> String {
+    let columns: Vec<String> = order.iter().map(|column| quote_ident(column)).collect();
+    format!(
+        "SELECT {} FROM {} ORDER BY {} LIMIT {limit} OFFSET {offset}",
+        columns.join(", "),
+        quote_ident(&shape.name),
+        columns.join(", ")
+    )
 }
 
 /// Ordered read of the same window the source produced, for verification.

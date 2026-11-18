@@ -1025,6 +1025,8 @@ name = "database-migration"
 version = "0.1.0"
 dependencies = [
  "database-client",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

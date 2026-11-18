@@ -1,5 +1,8 @@
 # `database-migration` 把一个外部 PostgreSQL 源的表结构与数据搬进本地引擎。
 #
+# 支持首轮全量、断点续跑与按 `updated_at` 水位的增量重跑：状态落在一个 JSON
+# 文件里，目标写入用 upsert，因此中断后重跑不会重复插入。
+#
 # 源与目标都经 trait 注入：源默认走 `database-client` 的 PostgreSQL wire 客户端，
 # 目标由调用方提供（facades 或产品门面），因此本 crate 不绑定任何具体存储。
 [package]
@@ -17,5 +20,7 @@ path = "src/lib.rs"
 
 [dependencies]
 database-client = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]

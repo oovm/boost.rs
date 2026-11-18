@@ -30,6 +30,17 @@ pub fn sql_literal(target_type: &str, value: Option<&str>) -> String {
     quote_literal(text)
 }
 
+/// Renders a text cell with no declared type: a numeric spelling stays bare and
+/// everything else is quoted. Keyset cursors use this because they carry source
+/// text for columns whose target type is irrelevant to the comparison.
+pub fn raw_literal(text: &str) -> String {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return "''".to_owned();
+    }
+    if trimmed.parse::<f64>().is_ok() { trimmed.to_owned() } else { quote_literal(text) }
+}
+
 fn is_integer(target_type: &str) -> bool {
     matches!(target_type, "smallint" | "integer" | "bigint" | "int2" | "int4" | "int8" | "oid")
 }
