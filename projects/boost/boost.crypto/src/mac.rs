@@ -5,8 +5,13 @@
 
 use crate::{
     CryptoError, Result,
-    hash::{sha256, sha384},
+    hash::{sha1, sha256, sha384},
 };
+
+/// SHA-1 的分组长度（HMAC 的 ipad/opad 长度）。
+const SHA1_BLOCK: usize = 64;
+/// SHA-1 的摘要长度。
+const SHA1_LEN: usize = 20;
 
 /// SHA-256 的分组长度（HMAC 的 ipad/opad 长度）。
 const SHA256_BLOCK: usize = 64;
@@ -17,6 +22,13 @@ const SHA256_LEN: usize = 32;
 const SHA384_BLOCK: usize = 128;
 /// SHA-384 的摘要长度。
 const SHA384_LEN: usize = 48;
+
+/// 计算 HMAC-SHA1（20 字节）。
+///
+/// 只为需要它的既有协议而提供（如部分云厂商的对象存储签名），新设计优先用 SHA-256。
+pub fn hmac_sha1(key: &[u8], data: &[u8]) -> Result<[u8; 20]> {
+    Ok(hmac::<{ SHA1_BLOCK }, { SHA1_LEN }>(key, data, sha1))
+}
 
 /// 计算 HMAC-SHA256（32 字节）。
 pub fn hmac_sha256(key: &[u8], data: &[u8]) -> Result<[u8; 32]> {

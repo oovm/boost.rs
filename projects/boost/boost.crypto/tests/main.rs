@@ -34,6 +34,26 @@ fn sha2_nist_kat() {
 }
 
 #[test]
+fn hmac_sha1_rfc2202_cases() {
+    // RFC 2202 Test Case 1。
+    let key = vec![0x0bu8; 20];
+    let expected = hex("b617318655057264e28bc0b6fb378c8ef146be00");
+    let tag = mac::hmac_sha1(&key, b"Hi There").expect("hmac");
+    assert_eq!(tag.as_slice(), expected.as_slice());
+
+    // RFC 2202 Test Case 2。
+    let expected = hex("effcdf6ae5eb2fa2d27416d5f184df9c259a7c79");
+    let tag = mac::hmac_sha1(b"Jefe", b"what do ya want for nothing?").expect("hmac");
+    assert_eq!(tag.as_slice(), expected.as_slice());
+
+    // RFC 2202 Test Case 3：key 短于分组长度，data 用 0xdd 填充 50 字节。
+    let key = vec![0xaau8; 20];
+    let expected = hex("125d7342b9ac11cd91a39af48aa17b4f63f175d3");
+    let tag = mac::hmac_sha1(&key, &vec![0xddu8; 50]).expect("hmac");
+    assert_eq!(tag.as_slice(), expected.as_slice());
+}
+
+#[test]
 fn hmac_rfc4231_cases() {
     // RFC 4231 Test Case 1。
     let key = vec![0x0bu8; 20];
