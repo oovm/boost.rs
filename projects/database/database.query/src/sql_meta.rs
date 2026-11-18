@@ -357,6 +357,13 @@ fn field_type(id: ColumnId) -> SqlFieldType {
 /// Returns `Ok(None)` for statements that touch no metadata surface; those keep
 /// the ordinary catalog/executor path.
 pub fn analyze_meta_query(sql: &str, dialect: SqlDialect) -> Result<Option<MetaQuery>, SqlFrontendError> {
+    // Only reads can describe a metadata surface. A write is checked first
+    // because its payload may legitimately contain the words `pg_catalog` or
+    // `information_schema` as data, which the substring scan below would
+    // otherwise treat as a metadata request.
+    if !reads_metadata(sql) {
+        return Ok(None);
+    }
     if !mentions_metadata(sql) {
         return Ok(None);
     }
@@ -473,6 +480,13 @@ fn normalize_database_calls(sql: &str) -> String {
     }
     result.push_str(&sql[index..]);
     result
+}
+
+/// `true` when the statement's first keyword is `SELECT` or `SHOW`, the two
+/// shapes that can read a metadata surface.
+fn reads_metadata(sql: &str) -> bool {
+    let head = sql.trim_start().trim_start_matches('(').trim_start();
+    matches!(head.split_whitespace().next().map(str::to_ascii_lowercase).as_deref(), Some("select") | Some("show"))
 }
 
 fn mentions_metadata(sql: &str) -> bool {
