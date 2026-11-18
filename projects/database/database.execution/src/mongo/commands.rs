@@ -16,11 +16,12 @@ use database_protocol_mongo::bson::{
 use database_protocol_mongo::{decimal128::Decimal128, json};
 
 use database_query::mongo::{
-    ExpressionContext, ExpressionVariables, Hint, HintedPlan, IndexCatalog, ProjectionPlan, ProjectionRule, automatic_candidates,
-    build_hinted_plan, collect_field, compare_values, count_value, equality_candidates, expression_truthy, has_operator, hex_text,
-    hinted_count_plan, hinted_find_plan, index_executable, index_tuple, int_value, integer_of, integral_i64, lookup_field, matches,
-    matches_with_variables, multi_key_fields, normalize_query, number_of, operator_matches, parse_count, parse_projection, plan::IndexSpan,
-    plan_spans, render_shell_value, scan_stage_document, validate_filter, values_equal, winning_plan,
+    ExpressionContext, ExpressionVariables, Hint, HintedPlan, IndexCatalog, PipelineStage, ProjectionPlan, ProjectionRule,
+    aggregate_stop_after, automatic_candidates, build_hinted_plan, collect_field, compare_values, count_value, equality_candidates,
+    expression_truthy, has_operator, hex_text, hinted_count_plan, hinted_find_plan, index_executable, index_tuple, int_value, integer_of,
+    integral_i64, lookup_field, matches, matches_with_variables, multi_key_fields, normalize_query, number_of, operator_matches, parse_count,
+    parse_projection, parse_sort_stage, plan::IndexSpan, plan_pipeline, plan_spans, positive_stage_integer, references_variables,
+    render_shell_value, scan_stage_document, unsupported_stage, validate_count_name, validate_filter, values_equal, winning_plan,
 };
 
 use crate::mongo::{
@@ -1017,46 +1018,6 @@ fn scan_stop_after(sort: &[(String, i32)], skip: usize, limit: usize) -> Option<
     if sort.is_empty() && limit > 0 { Some(skip.saturating_add(limit)) } else { None }
 }
 
-/// 首段 `$match` 之后紧跟 `$limit`（或 `$skip` + `$limit`）时的扫描边界。
-///
-/// 只看紧邻的这两段：中间还有别的阶段时，`$limit` 前面的文档数无法从访问路径
-/// 直接推出，不能提前停。
-fn aggregate_stop_after(stages: &[BsonValue]) -> Option<usize> {
-    fn pair(stage: Option<&BsonValue>) -> Option<(&str, &BsonValue)> {
-        let BsonValue::Document(document) = stage?
-        else {
-            return None;
-        };
-        if document.fields.len() != 1 {
-            return None;
-        }
-        let (name, body) = document.fields.first()?;
-        Some((name.as_str(), body))
-    }
-    let (name, body) = pair(stages.first())?;
-    match name {
-        "$limit" => positive_stage_integer("$limit", body).ok(),
-        "$skip" => {
-            let skip = usize::try_from(int_value(body)?).ok()?;
-            let (next, next_body) = pair(stages.get(1))?;
-            if next == "$limit" { Some(skip.saturating_add(positive_stage_integer("$limit", next_body).ok()?)) } else { None }
-        }
-        _ => None,
-    }
-}
-
-/// 值里是否读取了聚合变量（`$$名称`）。
-///
-/// 只做保守判断：任何以 `$$` 开头的字符串都算引用，宁可不下推也不改语义。
-fn references_variables(value: &BsonValue) -> bool {
-    match value {
-        BsonValue::String(text) => text.starts_with("$$"),
-        BsonValue::Array(items) => items.iter().any(references_variables),
-        BsonValue::Document(document) => document.fields.iter().any(|(_, value)| references_variables(value)),
-        _ => false,
-    }
-}
-
 /// `find` with filter, sort, skip, limit and cursor batching.
 pub fn find(command: &BsonDocument, store: &dyn MongoStorage, cursors: &mut CursorStore) -> Result<BsonDocument, CommandError> {
     let namespace = namespace_from_command(command, "find").ok_or_else(|| CommandError::new(73, "find command missing collection name"))?;
@@ -1511,28 +1472,29 @@ pub fn aggregate(command: &BsonDocument, store: &dyn MongoStorage) -> Result<Bso
         Some(BsonValue::Array(stages)) => stages,
         _ => return Err(CommandError::new(2, "aggregate requires a pipeline array")),
     };
+    // 先成计划再执行：stage 形态、顺序与支持面在一次校验里定下来。
+    let planned = plan_pipeline(stages)?;
 
     // 首个 `$match` 直接下推到访问路径：能走索引就走索引，后接 `$limit` 时还能
     // 提前停。`let` 绑定的变量只通过 `$$名称` 读取：`$match` 里没有 `$$` 引用时
     // 语义与无 `let` 完全一致，仍然下推；有引用就留在管道里按绑定求值。
     let documents;
-    let mut remaining: &[BsonValue] = stages;
-    if let Some(BsonValue::Document(stage)) = stages.first()
-        && let Some((name, body)) = stage.fields.first()
-        && name == "$match"
-        && let BsonValue::Document(filter) = body
-        && (command.get("let").is_none() || !references_variables(body))
+    let mut remaining: &[PipelineStage] = &planned;
+    if let Some(stage) = planned.first()
+        && stage.name == "$match"
+        && let BsonValue::Document(filter) = &stage.body
+        && (command.get("let").is_none() || !references_variables(&stage.body))
     {
         validate_filter(filter, "aggregate $match")?;
-        let stop_after = aggregate_stop_after(&stages[1..]);
+        let stop_after = aggregate_stop_after(&planned[1..]);
         let access = choose_access(store, &namespace, filter, &Hint::None, &[], &[], session.key())?;
         documents = scan_with_access(store, &namespace, filter, &access, session.key(), false, stop_after, 0)?.documents;
-        remaining = &stages[1..];
+        remaining = &planned[1..];
     }
     else {
         documents = collect_matching(store, &namespace, &BsonDocument::new(), session.key())?;
     }
-    let documents = run_pipeline(documents, remaining, store, &namespace, session.key(), &empty_variables())?;
+    let documents = run_planned_pipeline(documents, remaining, store, &namespace, session.key(), &empty_variables())?;
 
     Ok(cursor_reply(&namespace, "firstBatch", documents.into_iter().map(BsonValue::Document).collect(), 0))
 }
@@ -1542,31 +1504,33 @@ pub fn aggregate(command: &BsonDocument, store: &dyn MongoStorage) -> Result<Bso
 /// `$lookup` sub-pipelines and `$facet` branches call this recursively, so the
 /// stage implementations never carry their own execution loop.
 fn run_pipeline(
-    mut documents: Vec<BsonDocument>,
+    documents: Vec<BsonDocument>,
     stages: &[BsonValue],
     store: &dyn MongoStorage,
     namespace: &str,
     session: Option<&str>,
     variables: &ExpressionVariables,
 ) -> Result<Vec<BsonDocument>, CommandError> {
-    for (position, stage) in stages.iter().enumerate() {
-        let BsonValue::Document(stage_document) = stage
-        else {
-            return Err(CommandError::new(2, "aggregate stage must be a document"));
-        };
-        if stage_document.fields.len() != 1 {
-            return Err(CommandError::new(2, "aggregate stage must contain exactly one field"));
-        }
-        let Some((name, body)) = stage_document.fields.first()
-        else {
-            return Err(CommandError::new(2, "aggregate stage is empty"));
-        };
-        if matches!(name.as_str(), "$out" | "$merge") && position + 1 != stages.len() {
-            return Err(CommandError::new(40601, format!("{name} can only be the final stage in the pipeline")));
-        }
+    let planned = plan_pipeline(stages)?;
+    run_planned_pipeline(documents, &planned, store, namespace, session, variables)
+}
+
+/// Runs an already validated pipeline plan.
+fn run_planned_pipeline(
+    mut documents: Vec<BsonDocument>,
+    stages: &[PipelineStage],
+    store: &dyn MongoStorage,
+    namespace: &str,
+    session: Option<&str>,
+    variables: &ExpressionVariables,
+) -> Result<Vec<BsonDocument>, CommandError> {
+    for stage in stages {
+        let PipelineStage { name, body } = stage;
+        let name = name.as_str();
+        let body = body;
         // Each stage consumes the previous stage's output: the pipeline is applied
         // in order, never collected and matched in one pass.
-        match name.as_str() {
+        match name {
             "$match" => {
                 let BsonValue::Document(filter) = body
                 else {
@@ -6289,57 +6253,6 @@ fn single_id_lookup(filter: &BsonDocument) -> Option<&BsonValue> {
         BsonValue::Document(operators) if operators.fields.iter().any(|(operator, _)| operator.starts_with('$')) => None,
         _ => Some(value),
     }
-}
-
-/// Thrown for a pipeline stage this gateway does not implement, naming both the
-/// stage and the supported surface.
-fn unsupported_stage(stage: &str) -> CommandError {
-    CommandError::new(
-        59,
-        format!(
-            "unknown aggregation stage: {stage} (supported: $match, $sort, $limit, $skip, $count, $unwind, $lookup, $graphLookup, $facet, $bucket, $bucketAuto, $setWindowFields, $sortByCount, $group, $addFields, $set, $project, $replaceWith, $merge, $out, $unionWith, $sample, $densify, $fill, $redact)"
-        ),
-    )
-}
-
-/// `$limit` / `$skip` take a positive integer.
-fn positive_stage_integer(stage: &str, value: &BsonValue) -> Result<usize, CommandError> {
-    match int_value(value) {
-        Some(number) if number > 0 => Ok(number as usize),
-        _ => Err(CommandError::new(2, format!("{stage} requires a positive integer"))),
-    }
-}
-
-/// `$count` output field name: non-empty, no leading `$`, no `.`.
-fn validate_count_name(name: &str) -> Result<(), CommandError> {
-    if name.is_empty() || name.starts_with('$') || name.contains('.') {
-        return Err(CommandError::new(
-            2,
-            format!("$count output field name `{name}` must be non-empty, must not start with `$` and must not contain `.`"),
-        ));
-    }
-    Ok(())
-}
-
-/// `$sort` accepts 1/-1 directions, rejects duplicates and caps the key count at 32.
-fn parse_sort_stage(specification: &BsonDocument) -> Result<Vec<(String, i32)>, CommandError> {
-    if specification.fields.is_empty() {
-        return Err(CommandError::new(2, "$sort requires at least one field"));
-    }
-    if specification.fields.len() > 32 {
-        return Err(CommandError::new(2, "$sort accepts at most 32 keys"));
-    }
-    let mut sort: Vec<(String, i32)> = Vec::new();
-    for (field, direction) in specification.fields.iter() {
-        if sort.iter().any(|(existing, _)| existing == field) {
-            return Err(CommandError::new(2, format!("$sort field `{field}` appears more than once")));
-        }
-        match int_value(direction) {
-            Some(value) if value == 1 || value == -1 => sort.push((field.clone(), value as i32)),
-            _ => return Err(CommandError::new(2, format!("$sort direction for `{field}` must be 1 or -1"))),
-        }
-    }
-    Ok(sort)
 }
 
 /// Sorts one stage input. Array fields use the lowest element ascending and the
