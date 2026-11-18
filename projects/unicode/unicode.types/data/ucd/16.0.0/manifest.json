@@ -1,0 +1,33 @@
+{
+  "unicodeVersion": "16.0.0",
+  "files": {
+    "UnicodeData.txt": {
+      "url": "https://www.unicode.org/Public/16.0.0/ucd/UnicodeData.txt",
+      "bytes": 2175362,
+      "sha256": "ff58e5823bd095166564a006e47d111130813dcf8bf234ef79fa51a870edb48f",
+      "retrieved": "2026-11-18",
+      "generatorVersion": 1
+    },
+    "CompositionExclusions.txt": {
+      "url": "https://www.unicode.org/Public/16.0.0/ucd/CompositionExclusions.txt",
+      "bytes": 9007,
+      "sha256": "89e83cf9cc8bef6c1f8bf77e42cf6f0341dfa42e66261f4dbe9b492e7a23c8ee",
+      "retrieved": "2026-11-18",
+      "generatorVersion": 1
+    },
+    "EastAsianWidth.txt": {
+      "url": "https://www.unicode.org/Public/16.0.0/ucd/EastAsianWidth.txt",
+      "bytes": 199042,
+      "sha256": "43adc76c0686a42cb370764eb8cfe2b2a45b10b855e5572a2db4a0eecce15d5b",
+      "retrieved": "2026-11-18",
+      "generatorVersion": 1
+    },
+    "LICENSE.txt": {
+      "url": "https://www.unicode.org/license.txt",
+      "bytes": 1995,
+      "sha256": "e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96",
+      "retrieved": "2026-11-18",
+      "generatorVersion": 1
+    }
+  }
+}

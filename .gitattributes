@@ -1,0 +1,2 @@
+# 入库的 UCD 原始数据按字节保存：哈希与生成结果必须与下载时完全一致，不做行尾转换。
+projects/unicode/unicode.types/data/ucd/** -text

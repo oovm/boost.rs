@@ -4970,6 +4970,7 @@ dependencies = [
  "toml",
  "toml_edit 0.25.19+spec-1.1.0",
  "unicode-normalization",
+ "unicode-types",
 ]
 
 [[package]]
@@ -5251,6 +5252,10 @@ checksum = "75cd3fb03d5288b3ba9a1ee103ac7e9cbb59f0b03d64f8ddfcc04dd42758a85d"
 dependencies = [
  "tinyvec",
 ]
+
+[[package]]
+name = "unicode-types"
+version = "0.1.0"
 
 [[package]]
 name = "unicode-width"

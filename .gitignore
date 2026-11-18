@@ -13,3 +13,6 @@ time-travel.*
 
 # Rust
 target/
+
+# 入库的 UCD 原始数据：生成表需要可离线重现的输入，见同目录 manifest.json
+!projects/unicode/unicode.types/data/ucd/**/*.txt

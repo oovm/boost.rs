@@ -203,6 +203,7 @@ members = [
     "projects/template/template.types",
     "projects/template/template.input.hbs",
     "projects/template/template.input.jinja",
+    "projects/unicode/unicode.types",
 ]
 
 [workspace.package]
@@ -387,6 +388,10 @@ template-framework = { path = "projects/template/template.framework" }
 template-input-dejavu = { path = "projects/template/template.input.dejavu" }
 template-input-hbs = { path = "projects/template/template.input.hbs" }
 template-types = { path = "projects/template/template.types" }
+
+# unicode 能力树
+unicode-types = { path = "projects/unicode/unicode.types" }
+
 # 品牌化库
 mongo = { path = "projects/database/facades/mongo" }
 postgres = { path = "projects/database/facades/postgres" }

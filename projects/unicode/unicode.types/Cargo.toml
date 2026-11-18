@@ -1,0 +1,8 @@
+[package]
+name = "unicode-types"
+description = "Unicode 字符属性：完整标量范围的 General_Category 查询与 Mark 判定，登记为 unicode.types"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
