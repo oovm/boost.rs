@@ -49,7 +49,6 @@ impl WriterLock {
         let (file, fence) = open_and_lock(db_path, LockMode::Reader)?;
         Ok(Self { file, mode: LockMode::Reader, fence, pending_fence: None })
     }
-
     /// Acquisition mode.
     pub fn mode(&self) -> LockMode {
         self.mode
@@ -87,8 +86,8 @@ fn open_and_lock(db_path: &Path, mode: LockMode) -> Result<(File, u64)> {
     let lock_path = lock_sidecar_path(db_path);
     let mut file = OpenOptions::new().create(true).read(true).write(true).truncate(false).open(&lock_path)?;
     match mode {
-        LockMode::Writer => lock_exclusive(&file)?,
-        LockMode::Reader => lock_shared(&file)?,
+        LockMode::Writer => lock_exclusive(&file).map_err(|error| contention(error, db_path, mode))?,
+        LockMode::Reader => lock_shared(&file).map_err(|error| contention(error, db_path, mode))?,
     }
     let observed = read_fence(&mut file)?;
     if mode == LockMode::Reader {
@@ -160,11 +159,7 @@ fn lock_exclusive(file: &File) -> Result<()> {
         if rc == 0 {
             return Ok(());
         }
-        let err = std::io::Error::last_os_error();
-        if err.kind() == std::io::ErrorKind::WouldBlock {
-            return Err(writer_locked());
-        }
-        return Err(Error::Io(err));
+        return Err(Error::Io(std::io::Error::last_os_error()));
     }
     #[cfg(windows)]
     {
@@ -185,11 +180,7 @@ fn lock_shared(file: &File) -> Result<()> {
         if rc == 0 {
             return Ok(());
         }
-        let err = std::io::Error::last_os_error();
-        if err.kind() == std::io::ErrorKind::WouldBlock {
-            return Err(writer_locked());
-        }
-        return Err(Error::Io(err));
+        return Err(Error::Io(std::io::Error::last_os_error()));
     }
     #[cfg(windows)]
     {
@@ -220,9 +211,36 @@ fn lock_file_ex(file: &File, exclusive: bool) -> Result<()> {
     }
     let code = unsafe { GetLastError() };
     if code == ERROR_LOCK_VIOLATION || code == ERROR_IO_PENDING {
-        return Err(writer_locked());
+        // Normalize on `WouldBlock` so the caller can report one contention
+        // error shape on every platform.
+        return Err(Error::Io(std::io::Error::new(
+            std::io::ErrorKind::WouldBlock,
+            "database writer lock held by another holder",
+        )));
     }
     Err(Error::Io(std::io::Error::from_raw_os_error(code as i32)))
+}
+
+/// Turn an OS "would block" into the structured contention error.
+///
+/// Hosts need to tell "someone else holds the database" apart from a real I/O
+/// failure — retrying is correct for the first and wrong for the second — so the
+/// condition carries its own code (`database.busy`) instead of `database.io`.
+fn contention(error: Error, db_path: &Path, mode: LockMode) -> Error {
+    let Error::Io(io_error) = &error
+    else {
+        return error;
+    };
+    if io_error.kind() != std::io::ErrorKind::WouldBlock {
+        return error;
+    }
+    Error::Busy {
+        path: db_path.display().to_string(),
+        mode: match mode {
+            LockMode::Writer => "writer",
+            LockMode::Reader => "reader",
+        },
+    }
 }
 
 fn unlock_file(file: &File) {
@@ -243,6 +261,3 @@ fn unlock_file(file: &File) {
     }
 }
 
-fn writer_locked() -> Error {
-    Error::Io(std::io::Error::new(std::io::ErrorKind::WouldBlock, "database writer lock held by another holder"))
-}

@@ -25,7 +25,7 @@ fn cleanup(path: &Path) {
 }
 
 fn is_locked(error: Error) -> bool {
-    matches!(error, Error::Io(ref io_error) if io_error.kind() == std::io::ErrorKind::WouldBlock)
+    error.is_busy() && error.code() == "database.busy"
 }
 
 #[test]

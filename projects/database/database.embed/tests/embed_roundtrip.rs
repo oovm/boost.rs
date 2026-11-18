@@ -110,6 +110,36 @@ fn a_record_larger_than_one_leaf_page_round_trips() {
     assert_eq!(select(&reopened, "c-3")[0]["text"], json!("z".repeat(9_000)));
 }
 
+/// 同一路径第二次打开必须给出可判定的「忙」错误，而不是裸露的锁失败。
+#[test]
+fn a_second_open_reports_busy() {
+    let path = temp_yydx("busy");
+    let first = EmbedDb::open(&path).unwrap();
+    let second = EmbedDb::open(&path).expect_err("a second handle must be refused");
+    assert!(second.to_string().contains("database busy"), "unexpected error: {second}");
+    drop(first);
+    EmbedDb::open(&path).expect("the path reopens once every handle is released");
+}
+
+/// 多组件宿主用共享入口复用同一份连接，而不是各自开库互相撞锁。
+#[test]
+fn open_shared_reuses_one_handle() {
+    let path = temp_yydx("shared");
+    let first = EmbedDb::open_shared(&path).unwrap();
+    let second = EmbedDb::open_shared(&path).unwrap();
+    assert!(std::sync::Arc::ptr_eq(&first, &second), "the same path must share one handle");
+    assert!(EmbedDb::open(&path).is_err(), "an exclusive open must not coexist with a shared one");
+    drop(first);
+    drop(second);
+    EmbedDb::open(&path).expect("the path reopens after every shared handle is released");
+}
+
+#[test]
+fn the_handle_is_send_and_sync() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<EmbedDb>();
+}
+
 #[test]
 fn rejects_non_yydx_path() {
     let dir = std::env::temp_dir().join(format!("database-embed-bad-{}", std::process::id()));
@@ -117,7 +147,6 @@ fn rejects_non_yydx_path() {
     let error = EmbedDb::open(dir.join("app.db")).expect_err("must reject non-yydx path");
     assert!(error.to_string().contains("yydx"), "unexpected error: {error}");
 }
-
 /// 多表 schema 的 identity 与 contract 远超一页，落盘必须分块并在重开后重组。
 #[test]
 fn large_schema_survives_reopen() {

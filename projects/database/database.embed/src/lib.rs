@@ -8,14 +8,70 @@
 //! 宿主只通过 [`EmbedDb`] 拿 JSON 进出：参数是 `serde_json::Map`，查询结果是
 //! 行对象数组。带宽度/时标语义的值沿用 `database-types` 的 tagged JSON 形态
 //! （`$database` 成员），避免 64 位整数与时间在 JSON 边界被降精度。
+//!
+//! # 一个路径只允许一个持有者
+//!
+//! 文件库是单写者：一个 `.yydx` 句柄持有排他锁，直到最后一个句柄释放。所以
+//! **同一进程里第二次打开同一路径会失败**，错误码是 `database.busy`
+//! （[`EmbedError::Database`] 包装的 [`database_types::Error::Busy`]），可以用
+//! `Error::is_busy` 判定并按退避重试。
+//!
+//! 一个宿主里有多个组件都要读写同一个库时，用 [`EmbedDb::open_shared`]：它按
+//! 规范化路径复用同一个 [`Arc<EmbedDb>`]，所有组件共享一个连接，不会再撞锁。
+//! 直接重复调用 [`EmbedDb::open`] 只会拿到 `database.busy`。
+//!
+//! 还需要注意：句柄存活期间锁一直被持有。**不要在持有 `AccountStore` 之类的
+//! 句柄时跨网络调用**，也不要让两个 helper 各自在内部开库而外层还握着句柄——
+//! 这正是共享入口要解决的问题。
 
 #![deny(missing_docs)]
 
-use std::{collections::BTreeMap, path::Path};
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::{Path, PathBuf},
+    sync::{Arc, LazyLock, Mutex, Weak},
+};
 
 use database_execution::engine::{Connection, QueryRow, catalog::RenameMap};
 use database_types::{Error as DbError, Value, scalar};
 use serde_json::{Map as JsonMap, Value as JsonValue, json};
+
+/// One live handle registered for a canonical database path.
+///
+/// `live` keeps the entry observable for exactly as long as its owner holds the
+/// handle: the owner owns a strong `Arc`, the registry only a `Weak`. Entries
+/// whose strong count dropped are pruned on the next open, so a closed database
+/// can be reopened without any explicit deregistration.
+struct OpenEntry {
+    live: Weak<()>,
+    /// Present when the handle was created through [`EmbedDb::open_shared`].
+    shared: Option<Weak<EmbedDb>>,
+}
+
+/// Process-wide ownership table keyed by canonical path.
+static OPEN: LazyLock<Mutex<HashMap<PathBuf, OpenEntry>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Canonical key for an open path, tolerating a file that does not exist yet.
+fn open_key(path: &Path) -> PathBuf {
+    if let Ok(canonical) = path.canonicalize() {
+        return canonical;
+    }
+    let parent = path.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+    match parent.canonicalize() {
+        Ok(parent) => path.file_name().map(|name| parent.join(name)).unwrap_or(parent),
+        Err(_) => path.to_path_buf(),
+    }
+}
+
+/// Drop registry entries whose owner released the handle.
+fn prune_open(map: &mut HashMap<PathBuf, OpenEntry>) {
+    map.retain(|_, entry| entry.live.strong_count() > 0);
+}
+
+/// Build the contention error a second open reports.
+fn already_open(key: &Path) -> EmbedError {
+    EmbedError::Database(DbError::Busy { path: key.display().to_string(), mode: "writer" })
+}
 
 /// 嵌入库失败分类。
 #[derive(Debug, thiserror::Error)]
@@ -37,6 +93,8 @@ pub type Result<T = ()> = std::result::Result<T, EmbedError>;
 /// 不要把多个应用的记录写进同一个库。
 pub struct EmbedDb {
     conn: Connection,
+    /// Keeps this handle's registry entry observable for its whole lifetime.
+    _live: Arc<()>,
 }
 
 impl std::fmt::Debug for EmbedDb {
@@ -49,15 +107,60 @@ impl EmbedDb {
     /// 打开（或创建）`path` 指向的 `.yydx` 主文件。
     ///
     /// 扩展名必须是 `yydx`：大对象随同落在同级 `<stem>-objects/` 目录。
+    ///
+    /// 一个进程里同一路径只能有一个持有者。路径已经被打开时返回
+    /// `database.busy`，而不是让第二次 `open` 撞上底层的排他锁；需要用同一个库
+    /// 的多个组件请改用 [`Self::open_shared`]。
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        let key = open_key(path);
+        let mut map = OPEN.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        prune_open(&mut map);
+        if map.contains_key(&key) {
+            return Err(already_open(&key));
+        }
+        // Reserve the key before creating the connection so a racing open in
+        // another thread sees a live entry instead of competing for the lock.
+        let live = Arc::new(());
+        map.insert(key.clone(), OpenEntry { live: Arc::downgrade(&live), shared: None });
+        match Connection::open_yydx(path) {
+            Ok(conn) => Ok(Self { conn, _live: live }),
+            Err(error) => {
+                map.remove(&key);
+                Err(EmbedError::Database(error))
+            }
+        }
+    }
+
+    /// 打开（或复用）`path` 的进程内共享句柄。
+    ///
+    /// 同一个规范化路径第一次调用会创建连接，之后返回同一个 [`Arc`]；宿主各组件
+    /// 因此共用一份连接与一把锁，不会再出现「A 持句柄、B 再开一次」的
+    /// `database.busy`。最后一个 [`Arc`] 释放时连接关闭，下一次调用重新打开。
+    ///
+    /// 路径已经被 [`Self::open`] 独占时返回 `database.busy`。
+    pub fn open_shared(path: impl AsRef<Path>) -> Result<Arc<Self>> {
+        let path = path.as_ref();
+        let key = open_key(path);
+        let mut map = OPEN.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        prune_open(&mut map);
+        if let Some(entry) = map.get(&key) {
+            if let Some(shared) = entry.shared.as_ref().and_then(Weak::upgrade) {
+                return Ok(shared);
+            }
+            return Err(already_open(&key));
+        }
         let conn = Connection::open_yydx(path)?;
-        Ok(Self { conn })
+        let live = Arc::new(());
+        let db = Arc::new(Self { conn, _live: live.clone() });
+        map.insert(key, OpenEntry { live: Arc::downgrade(&live), shared: Some(Arc::downgrade(&db)) });
+        Ok(db)
     }
 
     /// 打开一个私有内存库（测试与一次性计算用，进程退出即丢）。
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
-        Ok(Self { conn })
+        Ok(Self { conn, _live: Arc::new(()) })
     }
 
     /// 确保 schema 与 `document`（VOS 文档）一致；重复调用必须幂等。

@@ -310,6 +310,19 @@ pub enum Error {
         /// 宿主接受的最大维度。
         max: u32,
     },
+    /// Another holder owns the database's cross-process lock.
+    ///
+    /// A file-backed database allows one writer at a time, so opening the same
+    /// path twice — from another process or from another component of the same
+    /// process — lands here. The condition is retryable once the holder
+    /// releases its handle, which is why it carries its own code instead of
+    /// masquerading as [`Self::Io`].
+    Busy {
+        /// Database path whose lock is held.
+        path: String,
+        /// Lock mode the caller asked for (`writer` or `reader`).
+        mode: &'static str,
+    },
 }
 
 impl fmt::Display for Error {
@@ -380,6 +393,9 @@ impl fmt::Display for Error {
             Self::VectorDimensionExceeded { dimension, max } => {
                 write!(f, "vector dimension {dimension} exceeds host maximum {max} — split into multiple vectors or use object storage")
             }
+            Self::Busy { path, mode } => {
+                write!(f, "database busy: the {mode} lock on {path} is held by another holder")
+            }
         }
     }
 }
@@ -426,7 +442,17 @@ impl Error {
             Self::Constraint { .. } => "database.constraint",
             Self::ResultFormat { .. } => "database.result.format",
             Self::VectorDimensionExceeded { .. } => "database.schema.vector_dimension_exceeded",
+            Self::Busy { .. } => "database.busy",
         }
+    }
+
+    /// Whether the failure is contention for the database lock.
+    ///
+    /// Hosts retry [`Self::Busy`] after backoff and surface it as "busy" in the
+    /// UI; every other code is a real failure. Branch on this instead of
+    /// matching the display text.
+    pub fn is_busy(&self) -> bool {
+        matches!(self, Self::Busy { .. })
     }
 
     /// Stable diagnostic code rewritten under a product namespace.
@@ -497,6 +523,7 @@ impl Error {
             Self::Scalar { .. } | Self::UniqueViolation { .. } | Self::Constraint { .. } => "query",
             Self::ResultFormat { .. } => "query",
             Self::VectorDimensionExceeded { .. } => "schema",
+            Self::Busy { .. } => "io",
             Self::Remote { .. } => "remote",
         }
     }
@@ -563,17 +590,21 @@ impl Error {
             Self::VectorDimensionExceeded { dimension, max } => {
                 vec![("dimension", dimension.to_string()), ("max", max.to_string())]
             }
+            Self::Busy { path, mode } => vec![("path", path.clone()), ("mode", (*mode).to_owned())],
         };
         Some(p)
     }
 
     /// Whether the caller may retry the same operation after backing off.
     ///
-    /// `true` for transient failures (`Io`, `Protocol`, `LeaseUnavailable`,
-    /// `LeaseExpired`). All other variants are non-retryable and require the
-    /// caller to fix the underlying cause.
+    /// `true` for transient failures (`Io`, `Busy`, `Protocol`,
+    /// `LeaseUnavailable`, `LeaseExpired`). All other variants are non-retryable
+    /// and require the caller to fix the underlying cause.
     pub fn retryable(&self) -> bool {
-        matches!(self, Self::Io(_) | Self::Protocol { .. } | Self::LeaseUnavailable { .. } | Self::LeaseExpired { .. })
+        matches!(
+            self,
+            Self::Io(_) | Self::Busy { .. } | Self::Protocol { .. } | Self::LeaseUnavailable { .. } | Self::LeaseExpired { .. }
+        )
     }
 
     /// Encode the full diagnostic contract as a JSON object.
