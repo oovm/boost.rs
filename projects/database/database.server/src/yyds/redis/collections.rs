@@ -14,6 +14,10 @@ use std::{io, time::Duration};
 
 use database_execution::cluster::KeyValueExecutor;
 use database_query::cluster_kv::{KeyValueAction, KeyValueCommand, KeyValueResult};
+use database_storage::cluster_kv::redis::format::{
+    decode_hash, decode_list, decode_set, decode_zset, encode_hash, encode_list, encode_set, encode_zset, push_u32, read_field, read_u32,
+    set_blob_count, zset_blob_view,
+};
 use database_types::cluster::Namespace;
 
 use super::{
@@ -162,147 +166,6 @@ fn write_storage_error(stream: &mut dyn io::Write, message: &str) -> io::Result<
     write_error(stream, message)
 }
 
-/// u32 长度前缀的读写，用于两类 blob 的自描述编码。
-fn read_u32(bytes: &[u8]) -> Option<(u32, &[u8])> {
-    if bytes.len() < 4 {
-        return None;
-    }
-    let head = [bytes[0], bytes[1], bytes[2], bytes[3]];
-    Some((u32::from_le_bytes(head), &bytes[4..]))
-}
-
-fn read_field(bytes: &[u8]) -> Option<(Vec<u8>, &[u8])> {
-    let (length, tail) = read_u32(bytes)?;
-    let length = length as usize;
-    if tail.len() < length {
-        return None;
-    }
-    Some((tail[..length].to_vec(), &tail[length..]))
-}
-
-fn push_u32(out: &mut Vec<u8>, value: usize) -> Option<()> {
-    out.extend_from_slice(&u32::try_from(value).ok()?.to_le_bytes());
-    Some(())
-}
-
-/// hash 值编码：`u32 字段数`，随后每字段 `u32 名长 + 名 + u32 值长 + 值`。
-///
-/// 保持插入顺序，更新已有字段时原位替换，对应真机小哈希（listpack）的字段顺序。
-pub(crate) fn encode_hash(fields: &[(Vec<u8>, Vec<u8>)]) -> Option<Vec<u8>> {
-    let mut out = Vec::new();
-    push_u32(&mut out, fields.len())?;
-    for (field, value) in fields {
-        push_u32(&mut out, field.len())?;
-        out.extend_from_slice(field);
-        push_u32(&mut out, value.len())?;
-        out.extend_from_slice(value);
-    }
-    Some(out)
-}
-
-/// 解码 hash 值；长度不合法或数据截断时返回 `None`。
-pub(crate) fn decode_hash(bytes: &[u8]) -> Option<Vec<(Vec<u8>, Vec<u8>)>> {
-    let (count, mut rest) = read_u32(bytes)?;
-    let mut fields = Vec::with_capacity(count as usize);
-    for _ in 0..count {
-        let (field, tail) = read_field(rest)?;
-        let (value, tail) = read_field(tail)?;
-        fields.push((field, value));
-        rest = tail;
-    }
-    if rest.is_empty() { Some(fields) } else { None }
-}
-
-/// list 值编码：`u32 元素数`，随后每个元素 `u32 长度 + 字节`，顺序从表头到表尾。
-pub(crate) fn encode_list(elements: &[Vec<u8>]) -> Option<Vec<u8>> {
-    let mut out = Vec::new();
-    push_u32(&mut out, elements.len())?;
-    for element in elements {
-        push_u32(&mut out, element.len())?;
-        out.extend_from_slice(element);
-    }
-    Some(out)
-}
-
-/// 解码 list 值；长度不合法或数据截断时返回 `None`。
-pub(crate) fn decode_list(bytes: &[u8]) -> Option<Vec<Vec<u8>>> {
-    let (count, mut rest) = read_u32(bytes)?;
-    let mut elements = Vec::with_capacity(count as usize);
-    for _ in 0..count {
-        let (element, tail) = read_field(rest)?;
-        elements.push(element);
-        rest = tail;
-    }
-    if rest.is_empty() { Some(elements) } else { None }
-}
-
-/// set 值编码：成员列表格式与 list 相同（`u32 成员数` + 每个 `u32 长度 + 字节`），
-/// 顺序保留插入顺序，便于小集合的输出稳定。
-pub(crate) fn encode_set(members: &[Vec<u8>]) -> Option<Vec<u8>> {
-    encode_list(members)
-}
-
-/// 解码 set 值；成员重复检查在写入侧完成，读取侧只做结构校验。
-pub(crate) fn decode_set(bytes: &[u8]) -> Option<Vec<Vec<u8>>> {
-    decode_list(bytes)
-}
-
-/// zset 值编码：`u32 成员数`，随后每个成员 `u32 长度 + 成员 + 8 字节 f64 分数`。
-pub(crate) fn encode_zset(entries: &[(Vec<u8>, f64)]) -> Option<Vec<u8>> {
-    let mut out = Vec::new();
-    push_u32(&mut out, entries.len())?;
-    for (member, score) in entries {
-        push_u32(&mut out, member.len())?;
-        out.extend_from_slice(member);
-        out.extend_from_slice(&score.to_bits().to_le_bytes());
-    }
-    Some(out)
-}
-
-/// 解码 zset 值；尾随字节非空或数据截断时返回 `None`。
-pub(crate) fn decode_zset(bytes: &[u8]) -> Option<Vec<(Vec<u8>, f64)>> {
-    let (count, mut rest) = read_u32(bytes)?;
-    let mut entries = Vec::with_capacity(count as usize);
-    for _ in 0..count {
-        let (member, tail) = read_field(rest)?;
-        if tail.len() < 8 {
-            return None;
-        }
-        let bits = u64::from_le_bytes([tail[0], tail[1], tail[2], tail[3], tail[4], tail[5], tail[6], tail[7]]);
-        entries.push((member, f64::from_bits(bits)));
-        rest = &tail[8..];
-    }
-    if rest.is_empty() { Some(entries) } else { None }
-}
-
-/// zset 值的借用视图。
-///
-/// 全量读取只需要遍历成员一次，这里返回借用成员切片的条目，避免
-/// `decode_zset` 为每个成员分配一个 `Vec<u8>`。结构校验与 `decode_zset`
-/// 相同：长度必须自洽，且最后一个条目之后不能有剩余字节。
-fn zset_blob_view(bytes: &[u8]) -> Option<Vec<(&[u8], f64)>> {
-    let (count, mut rest) = read_u32(bytes)?;
-    let count = count as usize;
-    // 每个条目至少占 4 字节成员长度加 8 字节分数；超过这个上界说明计数损坏，
-    // 不能让损坏数据驱动一次超大分配。
-    if count > rest.len() / 12 {
-        return None;
-    }
-    let mut entries = Vec::with_capacity(count);
-    for _ in 0..count {
-        let (length, tail) = read_u32(rest)?;
-        let length = length as usize;
-        if tail.len() < length + 8 {
-            return None;
-        }
-        let (member, tail) = tail.split_at(length);
-        let score = f64::from_bits(u64::from_le_bytes(tail[..8].try_into().ok()?));
-        entries.push((member, score));
-        rest = &tail[8..];
-    }
-    if rest.is_empty() { Some(entries) } else { None }
-}
-
 /// 全量 zset 读取的排序规则，与 `sort_zset` 一致。
 fn sort_zset_view(entries: &mut [(&[u8], f64)]) {
     entries.sort_by(|left, right| left.1.total_cmp(&right.1).then_with(|| left.0.cmp(right.0)));
@@ -323,24 +186,6 @@ fn write_zset_view(stream: &mut dyn io::Write, entries: &[(&[u8], f64)], with_sc
         }
     }
     Ok(())
-}
-
-/// 统计并校验 set blob 的成员数，不复制成员。
-fn set_blob_count(bytes: &[u8]) -> Option<usize> {
-    let (count, mut rest) = read_u32(bytes)?;
-    let count = count as usize;
-    if count > rest.len() / 4 {
-        return None;
-    }
-    for _ in 0..count {
-        let (length, tail) = read_u32(rest)?;
-        let length = length as usize;
-        if tail.len() < length {
-            return None;
-        }
-        rest = &tail[length..];
-    }
-    if rest.is_empty() { Some(count) } else { None }
 }
 
 /// 直接从 set blob 写出成员回复，避免逐成员临时 `Vec<u8>`。

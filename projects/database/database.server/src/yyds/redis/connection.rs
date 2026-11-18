@@ -23,6 +23,7 @@ use std::{
 use database_execution::cluster::KeyValueExecutor;
 use database_query::cluster_kv::{KeyValueAction, KeyValueCommand, KeyValueResult};
 use database_storage::cluster_kv::now_unix_ms;
+use database_storage::cluster_kv::redis::format::{decode_hash, decode_list, decode_set, decode_zset};
 use database_types::cluster::{FenceToken, Namespace};
 
 use super::{
@@ -1465,21 +1466,21 @@ fn object_encoding(kind: KeyKind, key: &[u8], value: &[u8]) -> &'static str {
                 "raw"
             }
         }
-        KeyKind::Hash => match collections::decode_hash(value) {
+        KeyKind::Hash => match decode_hash(value) {
             Some(fields) if fields.len() <= 128 && fields.iter().all(|(field, value)| field.len() <= 64 && value.len() <= 64) => "listpack",
             _ => "hashtable",
         },
-        KeyKind::List => match collections::decode_list(value) {
+        KeyKind::List => match decode_list(value) {
             // 真机的小列表按 `list-max-listpack-size -2`（8 KB）判定，而不是条目数。
             Some(elements) if elements.iter().map(|element| element.len() + 2).sum::<usize>() <= 8192 => "listpack",
             _ => "quicklist",
         },
-        KeyKind::Set => match collections::decode_set(value) {
+        KeyKind::Set => match decode_set(value) {
             Some(members) if members.iter().all(|member| parse_integer(member).is_some()) && members.len() <= 512 => "intset",
             Some(members) if members.len() <= 128 && members.iter().all(|member| member.len() <= 64) => "listpack",
             _ => "hashtable",
         },
-        KeyKind::ZSet => match collections::decode_zset(value) {
+        KeyKind::ZSet => match decode_zset(value) {
             Some(entries) if entries.len() <= 128 && entries.iter().all(|(member, _)| member.len() <= 64) => "listpack",
             _ => "skiplist",
         },
