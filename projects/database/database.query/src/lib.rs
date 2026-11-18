@@ -5,6 +5,7 @@ pub mod catalog_bind;
 pub mod cluster_kv;
 pub mod ir;
 pub mod local;
+pub mod mongo;
 pub mod sql;
 pub mod sql_batch;
 pub mod sql_ddl;
