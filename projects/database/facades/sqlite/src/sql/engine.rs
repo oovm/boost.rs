@@ -6,15 +6,15 @@
 //! image back to a file.
 
 use std::{
-    cmp::Ordering,
-    collections::{BTreeMap, BTreeSet, HashSet},
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     rc::Rc,
     sync::Arc,
 };
 
 use database_execution::sqlite::{
-    cells::{compare_cells, compare_cells_with, truthiness},
+    cells::truthiness,
+    dml::{self, DmlContext},
     eval::{Budget, EvalContext, EvalExpr, EvalReturningPlan},
     host::HostFunctionTable,
     probe::*,
@@ -24,16 +24,15 @@ use database_execution::sqlite::{
 use database_udf::{HostMicroDefinition, HostRuntimeAdapter};
 
 use crate::{
-    Collation, ColumnSpec, DropIndexOutcome, RecordLimits, SchemaObjectKind, SqliteWriter, TableLimits, TableRow, TextEncoding, UpdateValue,
-    decode_library_version, decode_record, read_index_table_with, read_table, validate_database,
+    Collation, ColumnSpec, DropIndexOutcome, RecordLimits, SchemaObjectKind, SqliteWriter, TableLimits, TextEncoding, decode_library_version,
+    decode_record, read_index_table_with, read_table, validate_database,
 };
 
 use super::{
-    AlterAction, Assignment, ColumnRef, CompareOp, CompoundTerm, ConflictAction, ConflictClause, DropColumnConflict, Expr, ForeignKeyAction,
-    IndexColumn, InsertValue, Limit, Literal, OrderKey, SelectCore, SelectItems, SqlError, Statement, TableRef, TransactionAction,
-    TriggerEvent, TriggerTiming, json_string, parse, parse_with_host_functions, rewrite_create_index_column, rewrite_create_index_table,
-    rewrite_create_table_column, rewrite_create_table_drop_column, rewrite_create_table_name, rewrite_view_column, rewrite_view_table,
-    statement_references, storage_failure, strip_schema_qualifiers,
+    AlterAction, Assignment, ColumnRef, CompoundTerm, DropColumnConflict, Expr, InsertValue, Limit, Literal, OrderKey, SelectCore, SelectItems,
+    SqlError, Statement, TableRef, TransactionAction, TriggerEvent, TriggerTiming, json_string, parse, parse_with_host_functions,
+    rewrite_create_index_column, rewrite_create_index_table, rewrite_create_table_column, rewrite_create_table_drop_column,
+    rewrite_create_table_name, rewrite_view_column, rewrite_view_table, statement_references, storage_failure, strip_schema_qualifiers,
 };
 
 use super::{bind::*, catalog::*, value::*};
@@ -84,28 +83,9 @@ impl ExecResult {
     }
 }
 
-/// One row-level trigger event queued by a DML statement. Queueing instead of
-/// firing inline keeps the statement's own writes and its trigger programs in
-/// SQLite's row order while leaving the write path unchanged.
-struct PendingTriggerEvent {
-    /// Lowercase table the event belongs to.
-    table: String,
-    timing: TriggerTiming,
-    event: TriggerEvent,
-    columns: Vec<String>,
-    new: Option<Vec<Cell>>,
-    old: Option<Vec<Cell>>,
-}
-
 /// Depth limit SQLite applies before raising `too many levels of trigger
 /// recursion` when `PRAGMA recursive_triggers` is on.
 const MAX_TRIGGER_DEPTH: usize = 100;
-
-/// 写语句候选 rowid 合并成区间读的最大缝隙。
-///
-/// 候选按 rowid 升序,缝隙不超过这个值的相邻候选交给同一次 `table_range`,用少量
-/// 多余行换掉一次 b-tree 下降。
-const CANDIDATE_GAP: i64 = 8;
 
 /// One database attached with `ATTACH DATABASE`.
 struct AttachedDb {
@@ -223,21 +203,6 @@ fn event_statement(event: &TriggerEvent) -> &'static str {
     }
 }
 
-/// Column names a trigger frame exposes: the declared columns plus `rowid`.
-fn trigger_frame_columns(def: &TableDef) -> Vec<String> {
-    let mut columns: Vec<String> = def.columns.iter().map(|column| column.name.clone()).collect();
-    columns.push("rowid".to_string());
-    columns
-}
-
-/// Appends the rowid slot a trigger frame expects to one declared row.
-fn frame_cells(cells: &[Cell], width: usize, rowid: i64) -> Vec<Cell> {
-    let mut out = cells.to_vec();
-    out.resize(width, Cell::Null);
-    out.push(Cell::Integer(rowid));
-    out
-}
-
 /// SQLite's standard type name for one declared type: the affinity class the
 /// type text resolves to, or an empty string for the BLOB affinity.
 fn standard_affinity_name(declared: &str) -> String {
@@ -332,48 +297,6 @@ fn ctas_schema_sql(name: &str, columns: &[ColumnSpec]) -> String {
     sql
 }
 
-/// `INSERT ... SELECT` slot mapping: SQLite reports a different arity message
-/// depending on whether an explicit column list was written.
-fn select_arity(
-    def: &TableDef,
-    table: &str,
-    columns: Option<&[String]>,
-    values: &[crate::WriteValue],
-) -> Result<Vec<Option<crate::WriteValue>>, SqlError> {
-    match columns {
-        Some(names) => {
-            if values.len() != names.len() {
-                return Err(
-                    SqlError::new("arity-mismatch", format!("{} values for {} columns", values.len(), names.len())).in_statement("insert")
-                );
-            }
-            self_contained_arity(def, table, Some(names), values)
-        }
-        None => {
-            if values.len() != def.columns.len() {
-                return Err(SqlError::new(
-                    "arity-mismatch",
-                    format!("table {table} has {} columns but {} values were supplied", def.columns.len(), values.len()),
-                )
-                .in_statement("insert"));
-            }
-            self_contained_arity(def, table, None, values)
-        }
-    }
-}
-
-/// Converts one select result cell into an `INSERT` value when the target is a
-/// view handled by `INSTEAD OF` triggers.
-fn cell_insert_value(cell: &Cell) -> InsertValue {
-    InsertValue::Literal(match cell {
-        Cell::Null => super::Literal::Null,
-        Cell::Integer(value) => super::Literal::Integer(*value),
-        Cell::Real(value) => super::Literal::Real(*value),
-        Cell::Text(value) => super::Literal::Text(value.clone()),
-        Cell::Blob(value) => super::Literal::Blob(value.clone()),
-    })
-}
-
 /// A `FROM`-shape over one view's output, so view DML can resolve its filter
 /// and assignments with the regular expression path.
 fn view_relation<'a>(label: &str, names: &[String], trigger: Option<&'a TriggerFrame>) -> Relation<'a> {
@@ -404,106 +327,6 @@ fn trigger_event_matches(defined: &TriggerEvent, incoming: &TriggerEvent) -> boo
         }
         _ => false,
     }
-}
-
-/// One uniqueness rule an `UPDATE` or an `ON CONFLICT` target re-checks
-/// against the live table.
-#[derive(Clone)]
-enum UniqueKey {
-    /// The hidden rowid, reported under `t.rowid` or `t.<alias>`.
-    Rowid(String),
-    /// One or more column positions, plus the `t.a, t.b` message fragment and
-    /// the collation each key position compares with.
-    Columns(Vec<usize>, String, Vec<Collation>),
-}
-
-impl UniqueKey {
-    /// The key values of one row; `cells` holds the declared columns only.
-    fn values(&self, cells: &[Cell], rowid: i64) -> Vec<Cell> {
-        match self {
-            Self::Rowid(_) => vec![Cell::Integer(rowid)],
-            Self::Columns(positions, _, _) => positions.iter().map(|position| cells[*position].clone()).collect(),
-        }
-    }
-
-    fn label(&self) -> &str {
-        match self {
-            Self::Rowid(label) | Self::Columns(_, label, _) => label,
-        }
-    }
-}
-
-/// Everything an `UPDATE` will write, computed before storage is touched so a
-/// constraint failure can never leave a half-updated table.
-struct UpdatePlan {
-    /// Current rowid plus one slot per column, in ascending rowid order.
-    writes: Vec<(i64, Vec<UpdateValue>)>,
-    /// `RETURNING` rows, evaluated against the new row values.
-    returning: Vec<Vec<Cell>>,
-    affected: usize,
-    /// 规划期读到的行集快照。处理阶段直接复用它，不再重复整表解码。
-    live: Vec<(i64, Vec<Cell>)>,
-}
-
-/// Everything a `DELETE` will remove.
-struct DeletePlan {
-    removed: Vec<i64>,
-    /// `RETURNING` rows, evaluated against the row as it was.
-    returning: Vec<Vec<Cell>>,
-    /// 规划期读到的行集快照（以 `removed` 为子集），供触发器与外键动作复用。
-    live: Vec<(i64, Vec<Cell>)>,
-}
-
-/// One engine-managed unique index an `ON CONFLICT` target matched.
-#[derive(Clone)]
-struct ManagedTarget {
-    /// The partial or expression index the target selected.
-    index: IndexDef,
-    /// `t.a, t.b` fragment for uniqueness failures on the index.
-    label: String,
-}
-
-/// The conflict target and rewrite of one `INSERT ... ON CONFLICT` clause.
-struct UpsertPlan {
-    /// Uniqueness rules the clause reacts to.
-    keys: Vec<UniqueKey>,
-    /// Managed indexes the clause reacts to.
-    managed: Vec<ManagedTarget>,
-    /// Other uniqueness rules that still abort the statement when the supplied
-    /// row violates them.
-    others: Vec<UniqueKey>,
-    /// Managed indexes outside the target that still abort the statement.
-    other_managed: Vec<ManagedTarget>,
-    /// `DO NOTHING` or `DO UPDATE`.
-    action: UpsertAction,
-    /// `DO UPDATE SET` targets with their resolved right-hand sides.
-    assignments: Vec<(usize, ResolvedExpr)>,
-    /// Optional `DO UPDATE ... WHERE` predicate over the stored and supplied
-    /// rows.
-    filter: Option<ResolvedExpr>,
-}
-
-/// What an `ON CONFLICT` clause does with a conflicting row.
-enum UpsertAction {
-    /// `DO NOTHING`: the supplied row is discarded.
-    Nothing,
-    /// `DO UPDATE`: the conflicting stored row is rewritten.
-    Update,
-}
-
-/// Result of applying one supplied row of an upsert.
-enum UpsertOutcome {
-    /// `DO NOTHING` skipped the row.
-    Skipped,
-    /// The row was written with this rowid.
-    Inserted(i64),
-    /// The conflicting row was rewritten.
-    Updated {
-        /// Rowid of the rewritten row.
-        rowid: i64,
-        /// `RETURNING` rows evaluated against the new values.
-        rows: Vec<Vec<Cell>>,
-    },
 }
 
 /// `sqlite_master` and its aliases.
@@ -537,7 +360,7 @@ pub struct Engine {
     /// outermost first.
     trigger_frames: Vec<TriggerFrame>,
     /// Row-level trigger events queued by the statement being executed.
-    pending_events: Vec<PendingTriggerEvent>,
+    pending_events: Vec<dml::DmlRowEvent>,
     /// Databases attached with `ATTACH DATABASE`, in attach order.
     attached: Vec<AttachedDb>,
     /// Lowercase attached schema name to its position in [`Engine::attached`].
@@ -648,9 +471,9 @@ impl Engine {
                 if self.transaction.is_none() {
                     return Err(SqlError::new("transaction-missing", "cannot commit - no transaction is active").in_statement("commit"));
                 }
-                self.check_deferred_foreign_keys()?;
+                self.exec().check_deferred_foreign_keys(self.foreign_keys)?;
                 for attached in &self.attached {
-                    attached.engine.check_deferred_foreign_keys()?;
+                    attached.engine.exec().check_deferred_foreign_keys(attached.engine.foreign_keys)?;
                 }
                 // 推迟的索引重建留到读取镜像的入口再落下:提交本身不读镜像,
                 // 在这里重建会让每个写事务都付一次整树重建成本。
@@ -702,9 +525,9 @@ impl Engine {
                     // first: deferred foreign keys must pass before any
                     // savepoint state is destroyed, and a failed check leaves
                     // the transaction open for a repair or a rollback.
-                    self.check_deferred_foreign_keys()?;
+                    self.exec().check_deferred_foreign_keys(self.foreign_keys)?;
                     for attached in &self.attached {
-                        attached.engine.check_deferred_foreign_keys()?;
+                        attached.engine.exec().check_deferred_foreign_keys(attached.engine.foreign_keys)?;
                     }
                 }
                 self.writer.release(&name).map_err(|error| storage_failure(error).in_statement("release"))?;
@@ -1290,6 +1113,30 @@ impl Engine {
         }
     }
 
+    /// 组装本引擎的写语句执行上下文:写入侧按可变引用共享,读路径仍经 [`Engine::exec`]。
+    fn dml(&mut self) -> DmlContext<'_> {
+        DmlContext {
+            writer: &mut self.writer,
+            catalog: &mut self.catalog,
+            exec_state: &self.exec_state,
+            host_functions: &self.host_functions,
+            parameters: &self.parameters,
+            upsert_excluded: &mut self.upsert_excluded,
+            trigger_frames: &self.trigger_frames,
+            alias: self.alias.as_deref(),
+            attached: self.attached.iter().map(|db| db.engine.exec()).collect::<Vec<_>>().into(),
+            attached_lookup: &self.attached_lookup,
+            pending_events: &mut self.pending_events,
+            pending_indexes: &mut self.pending_indexes,
+            pending_without_rowid: &mut self.pending_without_rowid,
+            last_insert_rowid: &mut self.last_insert_rowid,
+            foreign_keys: self.foreign_keys,
+            recursive_triggers: self.recursive_triggers,
+            in_transaction: self.transaction.is_some(),
+            scope: self.scope,
+        }
+    }
+
     /// 打开一条只读惰性游标:先定型计划并冲刷待物化写入,再交给执行树只读打开。
     ///
     /// 计划在此刻一次成型,整页快照也在这一刻克隆;之后的逐页解码不再回到
@@ -1456,7 +1303,7 @@ impl Engine {
     }
 
     /// Fires the triggers one queued row event matches.
-    fn fire_event(&mut self, event: PendingTriggerEvent) -> Result<(), SqlError> {
+    fn fire_event(&mut self, event: dml::DmlRowEvent) -> Result<(), SqlError> {
         let statement = event_statement(&event.event);
         if self.recursive_triggers && self.active_triggers.len() >= MAX_TRIGGER_DEPTH {
             return Err(SqlError::new("trigger-depth", "too many levels of trigger recursion").in_statement(statement));
@@ -1564,108 +1411,6 @@ impl Engine {
             ctes: None,
         };
         resolved.eval(&[], &ctx)
-    }
-
-    /// Queues one `BEFORE` update event of a row.
-    fn queue_update_before(
-        &mut self,
-        table: &str,
-        def: &TableDef,
-        columns: &[String],
-        assigned: &[String],
-        rowid: i64,
-        old: &[Cell],
-        new: &[Cell],
-    ) {
-        self.queue_update_event(table, def, columns, assigned, rowid, old, new, TriggerTiming::Before);
-    }
-
-    /// Queues one `AFTER` update event of a row.
-    fn queue_update_after(
-        &mut self,
-        table: &str,
-        def: &TableDef,
-        columns: &[String],
-        assigned: &[String],
-        rowid: i64,
-        old: &[Cell],
-        new: &[Cell],
-    ) {
-        self.queue_update_event(table, def, columns, assigned, rowid, old, new, TriggerTiming::After);
-    }
-
-    /// Queues the `BEFORE` and `AFTER` events of one updated row.
-    fn queue_update_events(
-        &mut self,
-        table: &str,
-        def: &TableDef,
-        columns: &[String],
-        assigned: &[String],
-        rowid: i64,
-        old: &[Cell],
-        new: &[Cell],
-    ) {
-        self.queue_update_before(table, def, columns, assigned, rowid, old, new);
-        self.queue_update_after(table, def, columns, assigned, rowid, old, new);
-    }
-
-    fn queue_update_event(
-        &mut self,
-        table: &str,
-        def: &TableDef,
-        columns: &[String],
-        assigned: &[String],
-        rowid: i64,
-        old: &[Cell],
-        new: &[Cell],
-        timing: TriggerTiming,
-    ) {
-        let new_rowid = def
-            .rowid_alias
-            .and_then(|alias| new.get(alias))
-            .and_then(|cell| match cell {
-                Cell::Integer(value) => Some(*value),
-                _ => None,
-            })
-            .unwrap_or(rowid);
-        let old = frame_cells(old, def.columns.len(), rowid);
-        let new = frame_cells(new, def.columns.len(), new_rowid);
-        self.pending_events.push(PendingTriggerEvent {
-            table: table.to_string(),
-            timing,
-            event: TriggerEvent::Update(assigned.to_vec()),
-            columns: columns.to_vec(),
-            new: Some(new),
-            old: Some(old),
-        });
-    }
-
-    /// Queues one `BEFORE` delete event of a row.
-    fn queue_delete_before(&mut self, table: &str, columns: &[String], rowid: i64, old: &[Cell]) {
-        self.queue_delete_event(table, columns, rowid, old, TriggerTiming::Before);
-    }
-
-    /// Queues one `AFTER` delete event of a row.
-    fn queue_delete_after(&mut self, table: &str, columns: &[String], rowid: i64, old: &[Cell]) {
-        self.queue_delete_event(table, columns, rowid, old, TriggerTiming::After);
-    }
-
-    /// Queues the `BEFORE` and `AFTER` events of one deleted row.
-    fn queue_delete_events(&mut self, table: &str, columns: &[String], rowid: i64, old: &[Cell]) {
-        self.queue_delete_before(table, columns, rowid, old);
-        self.queue_delete_after(table, columns, rowid, old);
-    }
-
-    fn queue_delete_event(&mut self, table: &str, columns: &[String], rowid: i64, old: &[Cell], timing: TriggerTiming) {
-        let old = frame_cells(old, columns.len() - 1, rowid);
-        self.pending_events.push(PendingTriggerEvent {
-            table: table.to_string(),
-            timing,
-            event: TriggerEvent::Delete,
-            columns: columns.to_vec(),
-            new: None,
-            old: Some(old),
-        });
     }
 
     /// Runs the `INSTEAD OF` triggers of one view when it has any; a view
@@ -2296,7 +2041,7 @@ impl Engine {
                         crate::RecordValue::Blob(value) => Cell::Blob(value.to_vec()),
                     })
                     .collect();
-                let slots: Vec<Option<crate::WriteValue>> = cells.iter().map(|cell| Some(cell_write_value(cell))).collect();
+                let slots: Vec<Option<crate::WriteValue>> = cells.iter().map(|cell| Some(dml::cell_write_value(cell))).collect();
                 fresh.writer.insert("sqlite_sequence", &slots).map_err(|error| storage_failure(error).in_statement("vacuum"))?;
             }
         }
@@ -2304,8 +2049,8 @@ impl Engine {
             if def.temp || def.name.to_ascii_lowercase().starts_with("sqlite_") {
                 continue;
             }
-            for (_, cells) in self.live_rows(&def, "vacuum")? {
-                let slots: Vec<Option<crate::WriteValue>> = cells.iter().map(|cell| Some(cell_write_value(cell))).collect();
+            for (_, cells) in self.exec().live_rows(&def, "vacuum")? {
+                let slots: Vec<Option<crate::WriteValue>> = cells.iter().map(|cell| Some(dml::cell_write_value(cell))).collect();
                 fresh.writer.insert(&def.name, &slots).map_err(|error| storage_failure(error).in_statement("vacuum"))?;
             }
         }
@@ -2396,8 +2141,8 @@ impl Engine {
             self.catalog.temp_next_rowid += 1;
             let mut rows = BTreeMap::new();
             for row in &selected.rows {
-                let slots: Vec<Option<crate::WriteValue>> = row.iter().map(|cell| Some(cell_write_value(cell))).collect();
-                temp_insert_row(&def, &mut rows, &slots, &[])?;
+                let slots: Vec<Option<crate::WriteValue>> = row.iter().map(|cell| Some(dml::cell_write_value(cell))).collect();
+                dml::temp_insert_row(&def, &mut rows, &slots, &[])?;
             }
             let position = self.catalog.temp_tables.len();
             self.catalog.temp_lookup.insert(key, position);
@@ -2411,7 +2156,7 @@ impl Engine {
         if !selected.rows.is_empty() {
             self.writer.begin().map_err(|error| storage_failure(error).in_statement("create-table"))?;
             for row in &selected.rows {
-                let slots: Vec<Option<crate::WriteValue>> = row.iter().map(|cell| Some(cell_write_value(cell))).collect();
+                let slots: Vec<Option<crate::WriteValue>> = row.iter().map(|cell| Some(dml::cell_write_value(cell))).collect();
                 if let Err(error) = self.writer.insert(&name, &slots) {
                     let _ = self.writer.rollback();
                     return Err(storage_failure(error).in_statement("create-table"));
@@ -2768,7 +2513,7 @@ impl Engine {
                 };
                 if self.catalog.views.contains_key(&key) {
                     let literal_rows: Vec<Vec<InsertValue>> = match &selected_rows {
-                        Some(rows) => rows.iter().map(|row| row.iter().map(cell_insert_value).collect()).collect(),
+                        Some(rows) => rows.iter().map(|row| row.iter().map(dml::cell_insert_value).collect()).collect(),
                         None => rows.clone(),
                     };
                     return self.run_view_insert(&table, &key, columns.as_deref(), &literal_rows, default_values);
@@ -2801,7 +2546,7 @@ impl Engine {
                         if replace {
                             return Err(SqlError::new("syntax", "ON CONFLICT clause is not allowed with REPLACE").in_statement("insert"));
                         }
-                        Some(self.prepare_upsert(def, &key, &table, clause)?)
+                        Some(self.exec().prepare_upsert(def, &key, &table, clause)?)
                     }
                     None => None,
                 };
@@ -2814,8 +2559,8 @@ impl Engine {
                     && !self.exec().table_has_triggers(&key)
                     && self.exec().table_has_probes(&key);
                 let mut probe_rows: Vec<(i64, Vec<Cell>)> = Vec::new();
-                let fast_upsert = upsert.as_ref().is_some_and(|plan| self.upsert_rowid_fast_path(def, &key, plan, temp_position));
-                let mut upsert_live = if upsert.is_some() && !fast_upsert { self.live_rows(def, "insert")? } else { Vec::new() };
+                let fast_upsert = upsert.as_ref().is_some_and(|plan| self.dml().upsert_rowid_fast_path(def, &key, plan, temp_position));
+                let mut upsert_live = if upsert.is_some() && !fast_upsert { self.exec().live_rows(def, "insert")? } else { Vec::new() };
                 let mut upsert_live_loaded = upsert.is_some() && !fast_upsert;
                 let mut slots_by_row = Vec::with_capacity(rows.len().max(1));
                 if default_values {
@@ -2831,14 +2576,14 @@ impl Engine {
                             InsertValue::Parameter { index, .. } => self.parameters.get(*index).cloned().unwrap_or(Cell::Null),
                             InsertValue::Expression(expression) => self.eval_trigger_expression(expression, "insert")?,
                         };
-                        resolved.push(cell_write_value(&cell));
+                        resolved.push(dml::cell_write_value(&cell));
                     }
-                    slots_by_row.push(self_contained_arity(def, &table, columns.as_deref(), &resolved)?);
+                    slots_by_row.push(dml::self_contained_arity(def, &table, columns.as_deref(), &resolved)?);
                 }
                 if let Some(rows) = &selected_rows {
                     for row in rows {
-                        let resolved: Vec<crate::WriteValue> = row.iter().map(cell_write_value).collect();
-                        slots_by_row.push(select_arity(def, &table, columns.as_deref(), &resolved)?);
+                        let resolved: Vec<crate::WriteValue> = row.iter().map(dml::cell_write_value).collect();
+                        slots_by_row.push(dml::select_arity(def, &table, columns.as_deref(), &resolved)?);
                     }
                 }
                 // SQLite applies column affinity to every supplied value before
@@ -2861,7 +2606,7 @@ impl Engine {
                 if ignore {
                     slots_by_row.retain(|slots| {
                         slots.iter().enumerate().all(|(position, slot)| match slot {
-                            Some(value) => strict_value_violation(def, position, value, "insert").is_none(),
+                            Some(value) => dml::strict_value_violation(def, position, value, "insert").is_none(),
                             None => true,
                         })
                     });
@@ -2870,7 +2615,7 @@ impl Engine {
                     for slots in &slots_by_row {
                         for (position, slot) in slots.iter().enumerate() {
                             if let Some(value) = slot {
-                                if let Some(error) = strict_value_violation(def, position, value, "insert") {
+                                if let Some(error) = dml::strict_value_violation(def, position, value, "insert") {
                                     return Err(error);
                                 }
                             }
@@ -2884,11 +2629,11 @@ impl Engine {
                 if temp_position.is_none() {
                     self.writer.begin().map_err(|error| storage_failure(error).in_statement("insert"))?;
                 }
-                let temp_keys = if temp_position.is_some() { self.unique_keys(def, &key) } else { Vec::new() };
+                let temp_keys = if temp_position.is_some() { self.exec().unique_keys(def, &key) } else { Vec::new() };
                 let check_shape = ScopeShape { columns: Vec::new() };
                 let check_budget = Budget::new();
                 let queue_triggers = self.exec().table_has_triggers(&key);
-                let trigger_columns = trigger_frame_columns(def);
+                let trigger_columns = dml::trigger_frame_columns(def);
                 let recursive_triggers = self.recursive_triggers;
                 let mut replace_deleted: Vec<(i64, Vec<Cell>)> = Vec::new();
                 let mut replace_index_needed = false;
@@ -2911,8 +2656,8 @@ impl Engine {
                                 _ => None,
                             })
                             .unwrap_or(-1);
-                        let cells = check_row(def, slots, before_rowid);
-                        self.pending_events.push(PendingTriggerEvent {
+                        let cells = dml::check_row(def, slots, before_rowid);
+                        self.pending_events.push(dml::DmlRowEvent {
                             table: key.clone(),
                             timing: TriggerTiming::Before,
                             event: TriggerEvent::Insert,
@@ -2922,7 +2667,7 @@ impl Engine {
                         });
                     }
                     let outcome = if replace {
-                        match self.apply_replace(
+                        match self.dml().apply_replace(
                             def,
                             &key,
                             &table,
@@ -2933,7 +2678,7 @@ impl Engine {
                             &trigger_columns,
                             &mut replace_deleted,
                         ) {
-                            Ok(rowid) => UpsertOutcome::Inserted(rowid),
+                            Ok(rowid) => dml::UpsertOutcome::Inserted(rowid),
                             Err(error) => {
                                 failure = Some(error);
                                 break;
@@ -2944,7 +2689,7 @@ impl Engine {
                         match &upsert {
                             Some(plan) => {
                                 let fast = if fast_upsert {
-                                    Some(self.apply_upsert_rowid(
+                                    Some(self.dml().apply_upsert_rowid(
                                         def,
                                         &key,
                                         &table,
@@ -2963,7 +2708,7 @@ impl Engine {
                                     Some(Err(error)) => Err(error),
                                     Some(Ok(None)) | None => {
                                         if !upsert_live_loaded {
-                                            upsert_live = match self.live_rows(def, "insert") {
+                                            upsert_live = match self.exec().live_rows(def, "insert") {
                                                 Ok(rows) => rows,
                                                 Err(error) => {
                                                     failure = Some(error);
@@ -2972,7 +2717,7 @@ impl Engine {
                                             };
                                             upsert_live_loaded = true;
                                         }
-                                        self.apply_upsert(
+                                        self.dml().apply_upsert(
                                             def,
                                             &key,
                                             &table,
@@ -2997,14 +2742,14 @@ impl Engine {
                             None => {
                                 let inserted = if let Some(position) = temp_position {
                                     let table = &mut self.catalog.temp_tables[position];
-                                    temp_insert_row(def, &mut table.rows, slots, &temp_keys)
+                                    dml::temp_insert_row(def, &mut table.rows, slots, &temp_keys)
                                 }
                                 else {
                                     self.writer.insert(&table, slots).map_err(|error| storage_failure(error).in_statement("insert"))
                                 };
                                 match inserted {
-                                    Ok(rowid) => UpsertOutcome::Inserted(rowid),
-                                    Err(error) if ignore && ignoreable_insert_error(&error) => continue,
+                                    Ok(rowid) => dml::UpsertOutcome::Inserted(rowid),
+                                    Err(error) if ignore && dml::ignoreable_insert_error(&error) => continue,
                                     Err(error) => {
                                         failure = Some(error);
                                         break;
@@ -3014,12 +2759,12 @@ impl Engine {
                         }
                     };
                     let rowid = match outcome {
-                        UpsertOutcome::Skipped => continue,
-                        UpsertOutcome::Inserted(rowid) => {
+                        dml::UpsertOutcome::Skipped => continue,
+                        dml::UpsertOutcome::Inserted(rowid) => {
                             affected += 1;
                             rowid
                         }
-                        UpsertOutcome::Updated { rowid, rows } => {
+                        dml::UpsertOutcome::Updated { rowid, rows } => {
                             // `plan_update` already validated the rewritten row
                             // and evaluated `RETURNING` against it.
                             affected += 1;
@@ -3031,7 +2776,7 @@ impl Engine {
                     // 行像只在 CHECK / RETURNING / 触发器 / 索引探针缓存需要时
                     // 才拼出来:普通插入路径不再为每行复制一份单元格向量。
                     let needs_cells = !def.checks.is_empty() || returning.is_some() || queue_triggers || watch_probes;
-                    let cells = if needs_cells { check_row(def, slots, rowid) } else { Vec::new() };
+                    let cells = if needs_cells { dml::check_row(def, slots, rowid) } else { Vec::new() };
                     let ctx = EvalContext {
                         exec: self.exec(),
                         parameters: &self.parameters,
@@ -3048,26 +2793,8 @@ impl Engine {
                         budget: &check_budget,
                         ctes: None,
                     };
-                    for check in &def.checks {
-                        let value = match check.expr.eval(&cells, &ctx) {
-                            Ok(value) => value,
-                            Err(error) => {
-                                failure = Some(error);
-                                break;
-                            }
-                        };
-                        // SQLite only fails a check whose result is false; a
-                        // NULL result passes.
-                        if truthiness(&value) == Some(false) {
-                            let mut error = SqlError::new(
-                                "check-constraint",
-                                format!("CHECK constraint failed: {}", check.name.clone().unwrap_or_else(|| check.text.clone())),
-                            )
-                            .in_statement("insert");
-                            error.clause = Some("CHECK".to_string());
-                            failure = Some(error);
-                            break;
-                        }
+                    if let Err(error) = self.exec().check_row_constraints(def, &cells, &check_shape, &check_budget) {
+                        failure = Some(error);
                     }
                     if failure.is_some() {
                         break;
@@ -3091,7 +2818,7 @@ impl Engine {
                         probe_rows.push((rowid, cells.clone()));
                     }
                     if queue_triggers {
-                        self.pending_events.push(PendingTriggerEvent {
+                        self.pending_events.push(dml::DmlRowEvent {
                             table: key.clone(),
                             timing: TriggerTiming::After,
                             event: TriggerEvent::Insert,
@@ -3109,10 +2836,10 @@ impl Engine {
                 // `REPLACE` 不再为每条语句做一次全表快照。
                 let replace_needs_foreign_keys = self.foreign_keys
                     && temp_position.is_none()
-                    && (!def.foreign_keys.is_empty() || !self.referencing_foreign_keys(&def.name).is_empty());
+                    && (!def.foreign_keys.is_empty() || !self.exec().referencing_foreign_keys(&def.name).is_empty());
                 if failure.is_none() && replace_needs_foreign_keys && !replace_deleted.is_empty() {
                     let changes: Vec<(Vec<Cell>, Option<Vec<Cell>>)> = replace_deleted.iter().map(|(_, cells)| (cells.clone(), None)).collect();
-                    match self.apply_foreign_key_actions(def, &changes, "insert", 0) {
+                    match self.dml().apply_foreign_key_actions(def, &changes, "insert", 0) {
                         Ok((index_needed, without_needed)) => {
                             replace_index_needed |= index_needed;
                             replace_without_needed |= without_needed;
@@ -3123,14 +2850,16 @@ impl Engine {
                         let removed: Vec<i64> = replace_deleted.iter().map(|(rowid, _)| *rowid).collect();
                         // 只有开启外键时才需要整表快照：普通 `REPLACE` 不再为每条
                         // 语句扫一遍全表。
-                        let replace_old_rows = self.live_rows(def, "insert")?;
-                        if let Err(error) = self.check_delete_foreign_keys(def, &replace_old_rows, &removed, "insert") {
+                        let replace_old_rows = self.exec().live_rows(def, "insert")?;
+                        if let Err(error) =
+                            self.exec().check_delete_foreign_keys(def, &replace_old_rows, &removed, "insert", self.in_transaction())
+                        {
                             failure = Some(error);
                         }
                     }
                 }
                 if failure.is_none() && self.foreign_keys {
-                    if let Err(error) = self.check_insert_foreign_keys(def, &rowids, "insert") {
+                    if let Err(error) = self.exec().check_insert_foreign_keys(def, &rowids, "insert", self.in_transaction()) {
                         failure = Some(error);
                     }
                 }
@@ -3149,7 +2878,7 @@ impl Engine {
                     return Err(error);
                 }
                 if temp_position.is_none() {
-                    if let Err(error) = self.refresh_managed_indexes(&key, def, "insert") {
+                    if let Err(error) = self.dml().refresh_managed_indexes(&key, def, "insert") {
                         let _ = self.writer.rollback();
                         return Err(error);
                     }
@@ -3162,7 +2891,7 @@ impl Engine {
                 // `PRIMARY KEY` / `UNIQUE` constraint live only as key sets
                 // until they are materialized into b-tree pages, so a write to
                 // an indexed table has to rebuild them before the image is read.
-                if temp_position.is_none() && (self.has_indexes(def, &key) || replace_index_needed) {
+                if temp_position.is_none() && (self.exec().has_indexes(def, &key) || replace_index_needed) {
                     self.materialize_indexes_after_write("insert")?;
                 }
                 if temp_position.is_none() && (def.without_rowid || replace_without_needed) {
@@ -3254,11 +2983,11 @@ impl Engine {
                         terms.push(resolved);
                     }
                     let predicate = shape.resolve_optional(predicate.as_ref(), "create-index")?;
-                    let rows = self.live_rows(def, "create-index")?;
-                    let entries = self.managed_index_entries(def, &terms, predicate.as_ref(), &rows)?;
+                    let rows = self.exec().live_rows(def, "create-index")?;
+                    let entries = self.exec().managed_index_entries(def, &terms, predicate.as_ref(), &rows)?;
                     if unique {
                         let names = columns.iter().map(|column| format!("{table}.{}", column.name)).collect::<Vec<_>>().join(", ");
-                        if managed_unique_violation(&entries, &collations) {
+                        if dml::managed_unique_violation(&entries, &collations) {
                             return Err(
                                 SqlError::new("unique-constraint", format!("UNIQUE constraint failed: {names}")).in_statement("create-index")
                             );
@@ -3300,7 +3029,7 @@ impl Engine {
                     });
                 }
                 if unique {
-                    self.ensure_unique_keys(&table, def, &columns)?;
+                    self.exec().ensure_unique_keys(&table, def, &columns)?;
                 }
                 let names = columns.iter().map(|column| column.name.clone()).collect::<Vec<_>>();
                 self.writer
@@ -3431,7 +3160,7 @@ impl Engine {
                     let product = join_product(&from_tables);
                     let mut joined: BTreeMap<i64, Vec<Cell>> = BTreeMap::new();
                     if !product.is_empty() {
-                        let live = self.live_rows(def, "update")?;
+                        let live = self.exec().live_rows(def, "update")?;
                         let ctx = EvalContext {
                             exec: self.exec(),
                             parameters: &self.parameters,
@@ -3469,11 +3198,15 @@ impl Engine {
                     }
                     Some(joined)
                 };
-                let mut needs_index = self.has_indexes(def, &key);
+                let mut needs_index = self.exec().has_indexes(def, &key);
                 // `WHERE <rowid> = <key>` 或普通列索引谓词命中时，扫描不必整表解码。
-                let candidates =
-                    if from.is_empty() { self.update_candidates(def, &key, &table, alias.as_deref(), filter.as_ref(), &targets) } else { None };
-                let plan = self.plan_update(
+                let candidates = if from.is_empty() {
+                    self.exec().update_candidates(def, &key, &table, alias.as_deref(), filter.as_ref(), &targets)
+                }
+                else {
+                    None
+                };
+                let plan = self.exec().plan_update(
                     def,
                     &key,
                     &targets,
@@ -3494,14 +3227,14 @@ impl Engine {
                 for (_, values) in &plan.writes {
                     for (position, value) in values.iter().enumerate() {
                         if let crate::UpdateValue::Set(value) = value {
-                            if let Some(error) = strict_value_violation(def, position, value, "update") {
+                            if let Some(error) = dml::strict_value_violation(def, position, value, "update") {
                                 return Err(error);
                             }
                         }
                     }
                 }
                 let queue_triggers = self.exec().table_has_triggers(&key);
-                let trigger_columns = trigger_frame_columns(def);
+                let trigger_columns = dml::trigger_frame_columns(def);
                 let assigned_names: Vec<String> = assignments.iter().map(|assignment| assignment.column.clone()).collect();
                 let old_lookup: BTreeMap<i64, Vec<Cell>> =
                     if queue_triggers || def.without_rowid || self.foreign_keys { old_rows.iter().cloned().collect() } else { BTreeMap::new() };
@@ -3529,7 +3262,7 @@ impl Engine {
                         }
                     }
                     for (rowid, old_cells, new_cells) in events {
-                        self.queue_update_events(&key, def, &trigger_columns, &assigned_names, rowid, &old_cells, &new_cells);
+                        self.dml().queue_update_events(&key, def, &trigger_columns, &assigned_names, rowid, &old_cells, &new_cells);
                     }
                 }
                 else {
@@ -3558,17 +3291,17 @@ impl Engine {
                         }
                         if queue_triggers {
                             let old_cells = old_lookup.get(rowid).cloned().unwrap_or_default();
-                            self.queue_update_before(&key, def, &trigger_columns, &assigned_names, *rowid, &old_cells, &new_cells);
+                            self.dml().queue_update_before(&key, def, &trigger_columns, &assigned_names, *rowid, &old_cells, &new_cells);
                             after_events.push((*rowid, old_cells, new_cells.clone()));
                         }
                         let written = if def.without_rowid {
                             let old_values: Vec<crate::WriteValue> =
-                                old_lookup.get(rowid).cloned().unwrap_or_default().iter().map(cell_write_value).collect();
-                            let new_values: Vec<crate::WriteValue> = new_cells.iter().map(cell_write_value).collect();
+                                old_lookup.get(rowid).cloned().unwrap_or_default().iter().map(dml::cell_write_value).collect();
+                            let new_values: Vec<crate::WriteValue> = new_cells.iter().map(dml::cell_write_value).collect();
                             self.writer.update_without_rowid(&table, &old_values, &new_values)
                         }
                         else if let Some(previous) = previous {
-                            let before = cells_write_values(previous);
+                            let before = dml::cells_write_values(previous);
                             self.writer.update_with_values(&table, *rowid, values, before)
                         }
                         else {
@@ -3576,7 +3309,7 @@ impl Engine {
                         };
                         if let Err(error) = written {
                             let _ = self.writer.rollback();
-                            return Err(write_failure(error, "update", def));
+                            return Err(dml::write_failure(error, "update", def));
                         }
                     }
                 }
@@ -3599,7 +3332,7 @@ impl Engine {
                             (old, Some(next))
                         })
                         .collect();
-                    match self.apply_foreign_key_actions(def, &changes, "update", 0) {
+                    match self.dml().apply_foreign_key_actions(def, &changes, "update", 0) {
                         Ok((index_needed, without_needed)) => {
                             needs_index |= index_needed;
                             needs_without_rowid |= without_needed;
@@ -3611,7 +3344,8 @@ impl Engine {
                     }
                 }
                 if self.foreign_keys {
-                    if let Err(error) = self.check_update_foreign_keys(def, &plan, &old_rows, &assigned, "update") {
+                    if let Err(error) = self.exec().check_update_foreign_keys(def, &plan, &old_rows, &assigned, "update", self.in_transaction())
+                    {
                         if temp_position.is_none() {
                             let _ = self.writer.rollback();
                         }
@@ -3620,11 +3354,11 @@ impl Engine {
                 }
                 if temp_position.is_none() {
                     for (rowid, old_cells, new_cells) in &after_events {
-                        self.queue_update_after(&key, def, &trigger_columns, &assigned_names, *rowid, old_cells, new_cells);
+                        self.dml().queue_update_after(&key, def, &trigger_columns, &assigned_names, *rowid, old_cells, new_cells);
                     }
                 }
                 if temp_position.is_none() {
-                    if let Err(error) = self.refresh_managed_indexes(&key, def, "update") {
+                    if let Err(error) = self.dml().refresh_managed_indexes(&key, def, "update") {
                         let _ = self.writer.rollback();
                         return Err(error);
                     }
@@ -3639,7 +3373,7 @@ impl Engine {
                 // 外键动作会直接改写子表行,索引内容不再只由本表语句决定;
                 // 其余情况按被赋值的列精确失效,只改非索引列时缓存原样保留。
                 let foreign_actions =
-                    self.foreign_keys && (!def.foreign_keys.is_empty() || !self.referencing_foreign_keys(&def.name).is_empty());
+                    self.foreign_keys && (!def.foreign_keys.is_empty() || !self.exec().referencing_foreign_keys(&def.name).is_empty());
                 if foreign_actions {
                     self.exec().invalidate_all_indexes();
                 }
@@ -3685,16 +3419,17 @@ impl Engine {
                     None => None,
                 };
                 let budget = Budget::new();
-                let mut needs_index = self.has_indexes(def, &key);
+                let mut needs_index = self.exec().has_indexes(def, &key);
                 // `WHERE <rowid> = <key>` 或普通列索引谓词命中时，删除不必整表解码。
-                let candidates = self.delete_candidates(def, &key, &table, alias.as_deref(), filter.as_ref());
-                let plan = self.plan_delete(def, predicate.as_ref(), returning.as_ref(), &shape.scope, &budget, candidates.as_deref())?;
+                let candidates = self.exec().delete_candidates(def, &key, &table, alias.as_deref(), filter.as_ref());
+                let plan =
+                    self.exec().plan_delete(def, predicate.as_ref(), returning.as_ref(), &shape.scope, &budget, candidates.as_deref())?;
                 // A temp table snapshots its row map instead of opening a
                 // writer transaction, so a failing referential check undoes the
                 // removal exactly like a rollback would.
                 let temp_snapshot = temp_position.map(|position| self.catalog.temp_tables[position].rows.clone());
                 let queue_triggers = self.exec().table_has_triggers(&key);
-                let trigger_columns = trigger_frame_columns(def);
+                let trigger_columns = dml::trigger_frame_columns(def);
                 // The deleted rows' referenced keys are only visible before the
                 // removal, so the snapshot comes from the plan; 只有触发器和外键
                 // 动作需要按 rowid 查旧行，其余路径不建这张表。
@@ -3711,7 +3446,7 @@ impl Engine {
                     if queue_triggers {
                         for rowid in &plan.removed {
                             let old_cells = old_lookup.get(rowid).cloned().unwrap_or_default();
-                            self.queue_delete_events(&key, &trigger_columns, *rowid, &old_cells);
+                            self.dml().queue_delete_events(&key, &trigger_columns, *rowid, &old_cells);
                         }
                     }
                 }
@@ -3724,12 +3459,12 @@ impl Engine {
                     for rowid in &plan.removed {
                         if queue_triggers {
                             let old_cells = old_lookup.get(rowid).cloned().unwrap_or_default();
-                            self.queue_delete_before(&key, &trigger_columns, *rowid, &old_cells);
+                            self.dml().queue_delete_before(&key, &trigger_columns, *rowid, &old_cells);
                             after_events.push((*rowid, old_cells));
                         }
                         let removed = if def.without_rowid {
                             let old_values: Vec<crate::WriteValue> =
-                                old_lookup.get(rowid).cloned().unwrap_or_default().iter().map(cell_write_value).collect();
+                                old_lookup.get(rowid).cloned().unwrap_or_default().iter().map(dml::cell_write_value).collect();
                             self.writer.delete_without_rowid(&table, &old_values)
                         }
                         else if maintain_indexes {
@@ -3738,7 +3473,7 @@ impl Engine {
                             }
                             match plan.live.get(live_cursor).filter(|(id, _)| id == rowid) {
                                 Some((_, cells)) => {
-                                    let values = cells_write_values(cells);
+                                    let values = dml::cells_write_values(cells);
                                     self.writer.delete_with_values(&table, *rowid, &values)
                                 }
                                 None => self.writer.delete(&table, *rowid),
@@ -3749,7 +3484,7 @@ impl Engine {
                         };
                         if let Err(error) = removed {
                             let _ = self.writer.rollback();
-                            return Err(write_failure(error, "delete", def));
+                            return Err(dml::write_failure(error, "delete", def));
                         }
                     }
                 }
@@ -3757,7 +3492,7 @@ impl Engine {
                 if temp_position.is_none() && self.foreign_keys {
                     let changes: Vec<(Vec<Cell>, Option<Vec<Cell>>)> =
                         plan.removed.iter().map(|rowid| (old_lookup.get(rowid).cloned().unwrap_or_default(), None)).collect();
-                    match self.apply_foreign_key_actions(def, &changes, "delete", 0) {
+                    match self.dml().apply_foreign_key_actions(def, &changes, "delete", 0) {
                         Ok((index_needed, without_needed)) => {
                             needs_index |= index_needed;
                             needs_without_rowid |= without_needed;
@@ -3769,7 +3504,7 @@ impl Engine {
                     }
                 }
                 if self.foreign_keys {
-                    if let Err(error) = self.check_delete_foreign_keys(def, &plan.live, &plan.removed, "delete") {
+                    if let Err(error) = self.exec().check_delete_foreign_keys(def, &plan.live, &plan.removed, "delete", self.in_transaction()) {
                         match (temp_position, temp_snapshot) {
                             (Some(position), Some(snapshot)) => self.catalog.temp_tables[position].rows = snapshot,
                             _ => {
@@ -3781,11 +3516,11 @@ impl Engine {
                 }
                 if temp_position.is_none() {
                     for (rowid, old_cells) in &after_events {
-                        self.queue_delete_after(&key, &trigger_columns, *rowid, old_cells);
+                        self.dml().queue_delete_after(&key, &trigger_columns, *rowid, old_cells);
                     }
                 }
                 if temp_position.is_none() {
-                    if let Err(error) = self.refresh_managed_indexes(&key, def, "delete") {
+                    if let Err(error) = self.dml().refresh_managed_indexes(&key, def, "delete") {
                         let _ = self.writer.rollback();
                         return Err(error);
                     }
@@ -3800,7 +3535,7 @@ impl Engine {
                 // 同 `UPDATE`:外键级联删除会改动子表,只能全量失效;否则
                 // 把被删行从整份索引快照里精确剔除。
                 let foreign_actions =
-                    self.foreign_keys && (!def.foreign_keys.is_empty() || !self.referencing_foreign_keys(&def.name).is_empty());
+                    self.foreign_keys && (!def.foreign_keys.is_empty() || !self.exec().referencing_foreign_keys(&def.name).is_empty());
                 if foreign_actions {
                     self.exec().invalidate_all_indexes();
                 }
@@ -4373,1733 +4108,6 @@ impl Engine {
                 Ok(ExecResult { statement: "alter-table", columns: Vec::new(), rows: Vec::new(), affected: 1 })
             }
         }
-    }
-
-    /// Rejects a `UNIQUE` index when two existing rows carry the same key.
-    ///
-    /// SQLite treats a `NULL` key column as distinct, so rows holding `NULL`
-    /// never collide. Key comparison follows the engine's storage-class rules,
-    /// which makes `1` and `1.0` collide just like upstream.
-    fn ensure_unique_keys(&self, table: &str, def: &TableDef, columns: &[IndexColumn]) -> Result<(), SqlError> {
-        let mut positions = Vec::with_capacity(columns.len());
-        let mut collations = Vec::with_capacity(columns.len());
-        for column in columns {
-            let position = def.columns.iter().position(|existing| existing.name.eq_ignore_ascii_case(&column.name)).ok_or_else(|| {
-                SqlError::new("unknown-column", format!("unknown column `{}` in table `{table}`", column.name)).in_statement("create-index")
-            })?;
-            positions.push(position);
-            // 键项显式 `COLLATE` 优先，否则继承列的声明排序规则。
-            collations.push(match &column.collate {
-                Some(name) => Collation::parse(name).ok_or_else(|| unknown_collation(name).in_statement("create-index"))?,
-                None => def.columns[position].collate.unwrap_or_default(),
-            });
-        }
-        let mut rows = Vec::new();
-        for row in self.writer.table_rows(table, TableLimits::default()).map_err(|error| storage_failure(error).in_statement("create-index"))? {
-            rows.push(decode_row(&row.payload, def, row.rowid)?);
-        }
-        for right in 1..rows.len() {
-            for left in 0..right {
-                let collides = positions.iter().enumerate().all(|(position, column)| {
-                    let (first, second) = (&rows[left][*column], &rows[right][*column]);
-                    !matches!(first, Cell::Null)
-                        && !matches!(second, Cell::Null)
-                        && compare_cells_with(first, second, collations[position]) == Ordering::Equal
-                });
-                if collides {
-                    let names =
-                        positions.iter().map(|position| format!("{table}.{}", def.columns[*position].name)).collect::<Vec<_>>().join(", ");
-                    return Err(SqlError::new("unique-constraint", format!("UNIQUE constraint failed: {names}")).in_statement("create-index"));
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Reads every row of `def`, decoded and sorted by rowid.
-    fn live_rows(&self, def: &TableDef, statement: &'static str) -> Result<Vec<(i64, Vec<Cell>)>, SqlError> {
-        if def.temp {
-            let position = *self
-                .catalog
-                .temp_lookup
-                .get(&def.name.to_ascii_lowercase())
-                .ok_or_else(|| SqlError::new("storage", format!("temp table `{}` disappeared", def.name)).in_statement(statement))?;
-            return Ok(self.catalog.temp_tables[position].rows.iter().map(|(rowid, cells)| (*rowid, cells.clone())).collect());
-        }
-        if def.without_rowid {
-            // WITHOUT ROWID rows carry no rowid; a scan position is used as
-            // the identity the update / delete planners sort by.
-            let stored = self
-                .writer
-                .without_rowid_rows(&def.name, TableLimits::default())
-                .map_err(|error| storage_failure(error).in_statement(statement))?;
-            let mut rows = Vec::with_capacity(stored.len());
-            for (position, payload) in stored.iter().enumerate() {
-                rows.push((position as i64, def.decode_without_rowid(payload)?));
-            }
-            return Ok(rows);
-        }
-        let stored =
-            self.writer.table_rows(&def.name, TableLimits::default()).map_err(|error| storage_failure(error).in_statement(statement))?;
-        let mut rows = Vec::with_capacity(stored.len());
-        for row in &stored {
-            rows.push((row.rowid, decode_row(&row.payload, def, row.rowid)?));
-        }
-        rows.sort_by_key(|(rowid, _)| *rowid);
-        Ok(rows)
-    }
-
-    /// 按候选 rowid 读行,候选升序取回。
-    ///
-    /// 相邻间隔不超过 [`CANDIDATE_GAP`] 的候选合并成一次区间读,避免逐行下降。
-    /// 区间读会带回缝隙里的少量非候选行,谓词与唯一性判定照旧处理,因此只是多读
-    /// 几行,不会改变语句结果。
-    fn live_rows_at(&self, def: &TableDef, statement: &'static str, rowids: &[i64]) -> Result<Vec<(i64, Vec<Cell>)>, SqlError> {
-        if def.temp {
-            return Ok(self.live_rows(def, statement)?.into_iter().filter(|(rowid, _)| rowids.contains(rowid)).collect());
-        }
-        let mut sorted = rowids.to_vec();
-        sorted.sort_unstable();
-        sorted.dedup();
-        let mut rows = Vec::with_capacity(sorted.len());
-        let mut position = 0;
-        while position < sorted.len() {
-            let start = sorted[position];
-            let mut end = start;
-            let mut next = position + 1;
-            while next < sorted.len() && sorted[next] - end <= CANDIDATE_GAP {
-                end = sorted[next];
-                next += 1;
-            }
-            let stored = if start == end {
-                // 单行候选直接走 writer 的 rowid 下钻：点查/按唯一键改写是
-                // DML 的常见形态，不必为一行重建区间读取上下文。
-                match self.writer.row_payload(&def.name, start).map_err(|error| storage_failure(error).in_statement(statement))? {
-                    Some(payload) => vec![TableRow { rowid: start, payload }],
-                    None => Vec::new(),
-                }
-            }
-            else {
-                self.writer
-                    .table_range(&def.name, start, end, TableLimits::default())
-                    .map_err(|error| storage_failure(error).in_statement(statement))?
-            };
-            for row in &stored {
-                rows.push((row.rowid, decode_row(&row.payload, def, row.rowid)?));
-            }
-            position = next;
-        }
-        rows.sort_by_key(|(rowid, _)| *rowid);
-        Ok(rows)
-    }
-
-    /// `DELETE` 的候选 rowid:裸 `<rowid> = <键>` 等值,或普通列索引的探针结果。
-    ///
-    /// 与 SELECT 的 `rowid_pin` / `index_pin` 同一判定:只认裸 `AND` 链上的等值与
-    /// 首列范围比较,键可以是字面量或执行期已绑定的参数,索引必须是未被托管改造的
-    /// 普通列索引。谓词仍会在候选行上重跑一遍,所以候选只是超集,不会改变删除集合。
-    fn delete_candidates(&self, def: &TableDef, table_key: &str, table: &str, alias: Option<&str>, filter: Option<&Expr>) -> Option<Vec<i64>> {
-        if def.without_rowid || def.temp {
-            return None;
-        }
-        self.write_candidates(def, table_key, alias.unwrap_or(table), filter)
-    }
-
-    /// `UPDATE` 的候选 rowid,约束与 [`Engine::delete_candidates`] 相同。
-    ///
-    /// `UPDATE` 还要用整表做唯一性冲突判定,因此只在「唯一键只有 rowid,且没有任何
-    /// 赋值改动 rowid」时才收窄。这两条成立时,收窄后的行集与整表在冲突判定上等价;
-    /// 外键检查只看被写入的行,因此不需要整表。`WITHOUT ROWID` 表一律走整表读取。
-    fn update_candidates(
-        &self,
-        def: &TableDef,
-        table_key: &str,
-        table: &str,
-        alias: Option<&str>,
-        filter: Option<&Expr>,
-        targets: &[(usize, ResolvedExpr)],
-    ) -> Option<Vec<i64>> {
-        if def.without_rowid || def.temp {
-            return None;
-        }
-        if targets.iter().any(|(index, _)| Some(*index) == def.rowid_alias) {
-            return None;
-        }
-        if self.unique_keys(def, table_key).iter().any(|key| !matches!(key, UniqueKey::Rowid(_))) {
-            return None;
-        }
-        self.write_candidates(def, table_key, alias.unwrap_or(table), filter)
-    }
-
-    /// 按谓词取写语句的候选 rowid:先认裸 `<rowid> = <键>`,再逐个普通列索引试
-    /// 全键等值与首列范围。返回的 rowid 升序,可能含谓词不成立的行。
-    fn write_candidates(&self, def: &TableDef, table_key: &str, label: &str, filter: Option<&Expr>) -> Option<Vec<i64>> {
-        let filter = filter?;
-        let alias_name = def.rowid_alias.map(|index| def.columns[index].name.clone());
-        if let Some(rowid) = ExecContext::rowid_eq_conjunct(filter, alias_name.as_deref(), label, &self.parameters) {
-            return Some(vec![rowid]);
-        }
-        // `IN (<rowids>)` 与 `>= a AND <= b` 同样是 rowid 上的精确候选集,
-        // 不必为一条写语句解码整表再逐行判断。
-        if let Some(rowids) = ExecContext::rowid_in_conjunct(filter, alias_name.as_deref(), label, &self.parameters) {
-            return Some(rowids);
-        }
-        if let Some(rowids) = ExecContext::rowid_range_candidates(filter, alias_name.as_deref(), label, &self.parameters) {
-            return Some(rowids);
-        }
-        for index in self.catalog.indexes.values() {
-            if index.managed || index.table != table_key || index.columns.is_empty() {
-                continue;
-            }
-            if let Some(rowids) = self.exec().index_probe_rows(index, def, filter, label) {
-                return Some(rowids);
-            }
-            if let Some(rowids) = self.exec().index_range_rows(index, def, filter, label) {
-                return Some(rowids);
-            }
-        }
-        None
-    }
-
-    /// Resolves one `ON CONFLICT` clause against the insert target: the
-    /// uniqueness rules its target names, plus the `DO UPDATE` assignments
-    /// evaluated against the stored row and the supplied (`excluded`) row.
-    fn prepare_upsert(&self, def: &TableDef, table_key: &str, label: &str, clause: &ConflictClause) -> Result<UpsertPlan, SqlError> {
-        let mismatch = || {
-            SqlError::new("conflict-target", "ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint").in_statement("insert")
-        };
-        // The target predicate is resolved against the insert target alone:
-        // `excluded` is not in scope there, exactly like SQLite.
-        let target_predicate = match (&clause.target, &clause.predicate) {
-            (Some(_), Some(expression)) => {
-                let relation = target_relation(def, label, None);
-                Some(Self::resolve_upsert_expr(&relation, expression)?)
-            }
-            (Some(_), None) => None,
-            (None, Some(_)) => return Err(mismatch()),
-            (None, None) => None,
-        };
-        let positions = match &clause.target {
-            None => None,
-            Some(columns) => {
-                let mut positions = Vec::with_capacity(columns.len());
-                for column in columns {
-                    let position = def
-                        .columns
-                        .iter()
-                        .position(|existing| existing.name.eq_ignore_ascii_case(column))
-                        .ok_or_else(|| SqlError::new("unknown-column", format!("no such column: {column}")).in_statement("insert"))?;
-                    positions.push(position);
-                }
-                Some(positions)
-            }
-        };
-        let all_keys = self.unique_keys(def, table_key);
-        let (keys, others) = match &positions {
-            None => {
-                let mut keys = all_keys;
-                if def.without_rowid {
-                    keys.retain(|key| !matches!(key, UniqueKey::Rowid(_)));
-                }
-                (keys, Vec::new())
-            }
-            Some(positions) if target_predicate.is_some() => {
-                // A target `WHERE` can only name a partial index, so no plain
-                // unique constraint or full index is the conflict resolver.
-                (Vec::new(), all_keys)
-            }
-            Some(positions) => {
-                let keys = self.upsert_target_keys(def, table_key, positions);
-                let others = all_keys
-                    .into_iter()
-                    .filter(|key| match key {
-                        UniqueKey::Rowid(_) => !(positions.len() == 1 && def.rowid_alias == Some(positions[0])),
-                        UniqueKey::Columns(existing, _, _) => !same_positions(existing, positions),
-                    })
-                    .collect();
-                (keys, others)
-            }
-        };
-        let all_managed = self.upsert_managed_indexes(def, table_key);
-        let (managed, other_managed) = match &positions {
-            None => (all_managed, Vec::new()),
-            Some(positions) => {
-                let mut managed = Vec::new();
-                let mut other_managed = Vec::new();
-                for target in all_managed {
-                    if managed_target_matches(&target, positions, target_predicate.as_ref()) {
-                        managed.push(target);
-                    }
-                    else {
-                        other_managed.push(target);
-                    }
-                }
-                (managed, other_managed)
-            }
-        };
-        if positions.is_some() && keys.is_empty() && managed.is_empty() {
-            return Err(mismatch());
-        }
-        let (action, assignments, filter) = match &clause.action {
-            ConflictAction::Nothing => (UpsertAction::Nothing, Vec::new(), None),
-            ConflictAction::Update { assignments, predicate } => {
-                let relation = upsert_relation(def, label);
-                let mut targets = Vec::with_capacity(assignments.len());
-                for assignment in assignments {
-                    let index =
-                        def.columns.iter().position(|column| column.name.eq_ignore_ascii_case(&assignment.column)).ok_or_else(|| {
-                            SqlError::new("unknown-column", format!("no such column: {}", assignment.column)).in_statement("insert")
-                        })?;
-                    targets.push((index, Self::resolve_upsert_expr(&relation, &assignment.value)?));
-                }
-                let filter = match predicate {
-                    Some(expression) => Some(Self::resolve_upsert_expr(&relation, expression)?),
-                    None => None,
-                };
-                (UpsertAction::Update, targets, filter)
-            }
-        };
-        Ok(UpsertPlan { keys, managed, others, other_managed, action, assignments, filter })
-    }
-
-    /// Resolves one expression of a `DO UPDATE` clause against the upsert
-    /// relation, which exposes both the stored row and `excluded.<column>`.
-    fn resolve_upsert_expr(relation: &Relation, expression: &Expr) -> Result<ResolvedExpr, SqlError> {
-        let mut windows = Vec::new();
-        let mut aggregates = Vec::new();
-        resolve_expr(expression, relation, &[], &[], &mut windows, &mut aggregates, false, false).map_err(|error| error.in_statement("insert"))
-    }
-
-    /// Every unique engine-managed index of `table`, which includes partial and
-    /// expression indexes.
-    fn upsert_managed_indexes(&self, def: &TableDef, table_key: &str) -> Vec<ManagedTarget> {
-        if def.temp {
-            return Vec::new();
-        }
-        self.catalog
-            .indexes
-            .values()
-            .filter(|index| index.managed && index.unique && index.table == table_key)
-            .map(|index| {
-                let label = managed_index_label(def, index);
-                ManagedTarget { index: index.clone(), label }
-            })
-            .collect()
-    }
-
-    /// The uniqueness rules one `ON CONFLICT (columns)` target matches.
-    fn upsert_target_keys(&self, def: &TableDef, table_key: &str, positions: &[usize]) -> Vec<UniqueKey> {
-        self.unique_keys(def, table_key)
-            .into_iter()
-            .filter(|key| match key {
-                UniqueKey::Rowid(_) => !def.without_rowid && positions.len() == 1 && def.rowid_alias == Some(positions[0]),
-                UniqueKey::Columns(existing, _, _) => same_positions(existing, positions),
-            })
-            .collect()
-    }
-
-    /// The key values one managed index produces for a row, or `None` when the
-    /// row is outside the index's partial predicate.
-    fn managed_target_key(&self, def: &TableDef, target: &ManagedTarget, cells: &[Cell]) -> Result<Option<Vec<Cell>>, SqlError> {
-        let shape = TargetShape::new(def, &def.name, None);
-        let budget = Budget::new();
-        let aggregates: Vec<Cell> = Vec::new();
-        let windows: Vec<Vec<Cell>> = Vec::new();
-        let context = EvalContext {
-            exec: self.exec(),
-            parameters: &self.parameters,
-            upsert_excluded: &self.upsert_excluded,
-            trigger_frames: &self.trigger_frames,
-            outer_read: &self.exec_state.outer_read,
-            subquery_cache: &self.exec_state.subquery_cache,
-            host_functions: &self.host_functions,
-            outer: &[],
-            current: &shape.scope,
-            aggregates: &aggregates,
-            windows: &windows,
-            window_row: 0,
-            budget: &budget,
-            ctes: None,
-        };
-        if let Some(predicate) = &target.index.predicate {
-            if truthiness(&predicate.eval(cells, &context)?) != Some(true) {
-                return Ok(None);
-            }
-        }
-        let mut key = Vec::with_capacity(target.index.terms.len());
-        for term in &target.index.terms {
-            key.push(term.eval(cells, &context)?);
-        }
-        Ok(Some(key))
-    }
-
-    /// The first uniqueness rule outside the conflict target the supplied row
-    /// still violates; SQLite aborts the statement instead of resolving it.
-    fn upsert_other_conflict(
-        &self,
-        def: &TableDef,
-        plan: &UpsertPlan,
-        candidate: &[Cell],
-        candidate_rowid: i64,
-        live: &[(i64, Vec<Cell>)],
-        skip: i64,
-    ) -> Result<Option<String>, SqlError> {
-        for key in &plan.others {
-            let wanted = key.values(candidate, candidate_rowid);
-            for (rowid, cells) in live {
-                if *rowid == skip {
-                    continue;
-                }
-                let other = key.values(cells, *rowid);
-                let collides = wanted.iter().zip(&other).all(|(first, second)| {
-                    !matches!(first, Cell::Null) && !matches!(second, Cell::Null) && compare_cells(first, second) == Ordering::Equal
-                });
-                if collides {
-                    return Ok(Some(key.label().to_string()));
-                }
-            }
-        }
-        for target in &plan.other_managed {
-            let Some(wanted) = self.managed_target_key(def, target, candidate)?
-            else {
-                continue;
-            };
-            for (rowid, cells) in live {
-                if *rowid == skip {
-                    continue;
-                }
-                if let Some(other) = self.managed_target_key(def, target, cells)? {
-                    if managed_keys_conflict(&wanted, &other, &target.index.collations) {
-                        return Ok(Some(target.label.clone()));
-                    }
-                }
-            }
-        }
-        Ok(None)
-    }
-
-    /// Whether an `ON CONFLICT (rowid-alias)` target can be resolved by
-    /// probing the primary key instead of materializing the whole table.
-    ///
-    /// The fast path only applies when nothing else can observe the table:
-    /// no temporary shadow table, no other uniqueness rule, no managed unique
-    /// index, no trigger, no foreign key, and no assignment that moves the
-    /// rowid. Everything else keeps the full-scan [`Self::apply_upsert`].
-    fn upsert_rowid_fast_path(&self, def: &TableDef, table_key: &str, plan: &UpsertPlan, temp_position: Option<usize>) -> bool {
-        temp_position.is_none()
-            && def.rowid_alias.is_some()
-            && matches!(plan.keys.as_slice(), [UniqueKey::Rowid(_)])
-            && plan.managed.is_empty()
-            && plan.others.is_empty()
-            && plan.other_managed.is_empty()
-            && plan.assignments.iter().all(|(position, _)| Some(*position) != def.rowid_alias)
-            && (!self.foreign_keys || (def.foreign_keys.is_empty() && self.referencing_foreign_keys(&def.name).is_empty()))
-            && !self.exec().table_has_triggers(table_key)
-    }
-
-    /// Applies one supplied row of a rowid-keyed upsert by probing only the
-    /// conflicting primary-key row.
-    ///
-    /// `None` means the row has no explicit rowid value, so the caller must
-    /// fall back to the scanning path. Rows written earlier in the same
-    /// statement are already in storage, so a later supplied row still sees
-    /// them exactly as a full scan would.
-    #[allow(clippy::too_many_arguments)]
-    fn apply_upsert_rowid(
-        &mut self,
-        def: &TableDef,
-        table_key: &str,
-        table: &str,
-        plan: &UpsertPlan,
-        slots: &[Option<crate::WriteValue>],
-        returning: Option<&ReturningPlan>,
-        shape: &ScopeShape,
-        budget: &Budget,
-    ) -> Result<Option<UpsertOutcome>, SqlError> {
-        let width = def.columns.len();
-        let Some(alias) = def.rowid_alias
-        else {
-            return Ok(None);
-        };
-        let rowid = match slots.get(alias).and_then(|slot| slot.as_ref()) {
-            Some(crate::WriteValue::Integer(rowid)) => *rowid,
-            _ => return Ok(None),
-        };
-        let payload = self.writer.row_payload(table, rowid).map_err(|error| storage_failure(error).in_statement("insert"))?;
-        let Some(payload) = payload
-        else {
-            let inserted = self.writer.insert(table, slots).map_err(|error| storage_failure(error).in_statement("insert"))?;
-            return Ok(Some(UpsertOutcome::Inserted(inserted)));
-        };
-        if matches!(plan.action, UpsertAction::Nothing) {
-            return Ok(Some(UpsertOutcome::Skipped));
-        }
-        // Lean rewrite: every assignment is a direct `excluded.<column>` with no
-        // `DO UPDATE WHERE`, no `RETURNING` and no `CHECK` constraints. The stored
-        // row keeps its unassigned columns and the assigned ones take the
-        // supplied (already affinity-normalized) values, so the expression-eval
-        // machinery, the joined-row map and `plan_update` are skipped entirely.
-        let lean = returning.is_none()
-            && plan.filter.is_none()
-            && def.checks.is_empty()
-            && plan.assignments.iter().all(|(_, expr)| matches!(expr, ResolvedExpr::ExcludedColumn { .. }));
-        if lean {
-            let candidate = check_row(def, slots, rowid);
-            let mut values: Vec<UpdateValue> = vec![UpdateValue::Keep; width];
-            for (index, expr) in &plan.assignments {
-                let ResolvedExpr::ExcludedColumn { index: supplied } = expr
-                else {
-                    unreachable!("lean upsert assignments are all excluded-column references")
-                };
-                let value = cell_write_value(&candidate[*supplied]);
-                if let Some(error) = strict_value_violation(def, *index, &value, "insert") {
-                    return Err(error);
-                }
-                values[*index] = UpdateValue::Set(value);
-            }
-            if let Err(error) = self.writer.update(table, rowid, &values) {
-                return Err(write_failure(error, "insert", def));
-            }
-            return Ok(Some(UpsertOutcome::Updated { rowid, rows: Vec::new() }));
-        }
-        let stored = decode_row(&payload, def, rowid)?;
-        let candidate = check_row(def, slots, rowid);
-        let mut eval_cells = stored.clone();
-        eval_cells.push(Cell::Integer(rowid));
-        self.upsert_excluded = candidate[..width].to_vec();
-        if let Some(filter) = &plan.filter {
-            let ctx = EvalContext {
-                exec: self.exec(),
-                parameters: &self.parameters,
-                upsert_excluded: &self.upsert_excluded,
-                trigger_frames: &self.trigger_frames,
-                outer_read: &self.exec_state.outer_read,
-                subquery_cache: &self.exec_state.subquery_cache,
-                host_functions: &self.host_functions,
-                outer: &[],
-                current: shape,
-                aggregates: &[],
-                windows: &[],
-                window_row: 0,
-                budget,
-                ctes: None,
-            };
-            let keep = truthiness(&filter.eval(&eval_cells, &ctx)?) == Some(true);
-            if !keep {
-                self.upsert_excluded.clear();
-                return Ok(Some(UpsertOutcome::Skipped));
-            }
-        }
-        let mut joined = BTreeMap::new();
-        joined.insert(rowid, eval_cells);
-        let state = vec![(rowid, stored)];
-        let planned = self.plan_update(def, table_key, &plan.assignments, None, Some(&joined), returning, shape, budget, Some(&state), None);
-        self.upsert_excluded.clear();
-        let planned = planned?;
-        if planned.writes.is_empty() {
-            return Ok(Some(UpsertOutcome::Skipped));
-        }
-        for (_, values) in &planned.writes {
-            for (position, value) in values.iter().enumerate() {
-                if let crate::UpdateValue::Set(value) = value {
-                    if let Some(error) = strict_value_violation(def, position, value, "insert") {
-                        return Err(error);
-                    }
-                }
-            }
-        }
-        for (write_rowid, values) in &planned.writes {
-            if let Err(error) = self.writer.update(table, *write_rowid, values) {
-                return Err(write_failure(error, "insert", def));
-            }
-        }
-        Ok(Some(UpsertOutcome::Updated { rowid, rows: planned.returning }))
-    }
-
-    /// Applies one supplied row of an upsert: insert it, skip it, or rewrite the
-    /// stored row it conflicts with. `live` is the statement's own view of the
-    /// table so a later supplied row sees rows written earlier in the same
-    /// statement, exactly like SQLite.
-    #[allow(clippy::too_many_arguments)]
-    fn apply_upsert(
-        &mut self,
-        def: &TableDef,
-        table_key: &str,
-        table: &str,
-        plan: &UpsertPlan,
-        slots: &[Option<crate::WriteValue>],
-        temp_position: Option<usize>,
-        live: &mut Vec<(i64, Vec<Cell>)>,
-        returning: Option<&ReturningPlan>,
-        shape: &ScopeShape,
-        budget: &Budget,
-    ) -> Result<UpsertOutcome, SqlError> {
-        let width = def.columns.len();
-        // The rowid the supplied row will occupy. An explicit `INTEGER PRIMARY
-        // KEY` value is used as written, otherwise SQLite's `max(rowid) + 1`.
-        let explicit_rowid = def.rowid_alias.and_then(|alias| slots.get(alias).and_then(|slot| slot.as_ref())).and_then(|value| match value {
-            crate::WriteValue::Integer(value) => Some(*value),
-            _ => None,
-        });
-        let candidate_rowid = match explicit_rowid {
-            Some(rowid) => rowid,
-            None => live.iter().map(|(rowid, _)| *rowid).max().unwrap_or(0) + 1,
-        };
-        let candidate = check_row(def, slots, candidate_rowid);
-        let mut conflict_rowid = None;
-        for key in &plan.keys {
-            for (rowid, cells) in live.iter() {
-                if upsert_key_conflicts(key, &candidate, candidate_rowid, *rowid, cells) {
-                    conflict_rowid = Some(*rowid);
-                    break;
-                }
-            }
-            if conflict_rowid.is_some() {
-                break;
-            }
-        }
-        if conflict_rowid.is_none() {
-            for target in &plan.managed {
-                let Some(wanted) = self.managed_target_key(def, target, &candidate)?
-                else {
-                    continue;
-                };
-                for (rowid, cells) in live.iter() {
-                    if let Some(other) = self.managed_target_key(def, target, cells)? {
-                        if managed_keys_conflict(&wanted, &other, &target.index.collations) {
-                            conflict_rowid = Some(*rowid);
-                            break;
-                        }
-                    }
-                }
-                if conflict_rowid.is_some() {
-                    break;
-                }
-            }
-        }
-        let unique_failed =
-            |label: String| SqlError::new("unique-constraint", format!("UNIQUE constraint failed: {label}")).in_statement("insert");
-        let Some(rowid) = conflict_rowid
-        else {
-            if let Some(label) = self.upsert_other_conflict(def, plan, &candidate, candidate_rowid, live, -1)? {
-                return Err(unique_failed(label));
-            }
-            let inserted = if let Some(position) = temp_position {
-                let keys = self.unique_keys(def, table_key);
-                let table_state = &mut self.catalog.temp_tables[position];
-                temp_insert_row(def, &mut table_state.rows, slots, &keys)?
-            }
-            else {
-                self.writer.insert(table, slots).map_err(|error| storage_failure(error).in_statement("insert"))?
-            };
-            live.push((inserted, candidate[..width].to_vec()));
-            return Ok(UpsertOutcome::Inserted(inserted));
-        };
-        if matches!(plan.action, UpsertAction::Nothing) {
-            if let Some(label) = self.upsert_other_conflict(def, plan, &candidate, candidate_rowid, live, -1)? {
-                return Err(unique_failed(label));
-            }
-            return Ok(UpsertOutcome::Skipped);
-        }
-        if let Some(label) = self.upsert_other_conflict(def, plan, &candidate, candidate_rowid, live, rowid)? {
-            return Err(unique_failed(label));
-        }
-        // `DO UPDATE` rewrites the conflicting row the query planner would have
-        // matched: the stored row plus this rowid, narrowed by the clause's own
-        // `WHERE`.
-        let mut predicate = ResolvedExpr::Compare {
-            left: Box::new(ResolvedExpr::Column { source: 0, index: width }),
-            op: CompareOp::Eq,
-            right: Box::new(ResolvedExpr::Cell(Cell::Integer(rowid))),
-            collation: Collation::Binary,
-        };
-        if let Some(filter) = &plan.filter {
-            predicate = ResolvedExpr::And(Box::new(predicate), Box::new(filter.clone()));
-        }
-        self.upsert_excluded = candidate[..width].to_vec();
-        let planned = self.plan_update(def, table_key, &plan.assignments, Some(&predicate), None, returning, shape, budget, None, None);
-        self.upsert_excluded.clear();
-        let planned = planned?;
-        if planned.writes.is_empty() {
-            // `DO UPDATE ... WHERE` was false: SQLite leaves the row alone.
-            return Ok(UpsertOutcome::Skipped);
-        }
-        for (_, values) in &planned.writes {
-            for (position, value) in values.iter().enumerate() {
-                if let crate::UpdateValue::Set(value) = value {
-                    if let Some(error) = strict_value_violation(def, position, value, "insert") {
-                        return Err(error);
-                    }
-                }
-            }
-        }
-        let find_old = |rowid: i64| live.iter().find(|(candidate, _)| *candidate == rowid).map(|(_, cells)| cells.clone()).unwrap_or_default();
-        // A `DO UPDATE` is an ordinary UPDATE for trigger and foreign-key
-        // purposes: SQLite fires the update triggers with the rewritten row and
-        // re-checks references the statement moves.
-        let queue_triggers = self.exec().table_has_triggers(table_key);
-        let trigger_columns = trigger_frame_columns(def);
-        let assigned_names: Vec<String> = plan.assignments.iter().map(|(position, _)| def.columns[*position].name.clone()).collect();
-        let assigned: Vec<bool> = (0..width).map(|position| plan.assignments.iter().any(|(target, _)| *target == position)).collect();
-        let mut events: Vec<(i64, Vec<Cell>, Vec<Cell>)> = Vec::new();
-        if let Some(position) = temp_position {
-            let table_state = &mut self.catalog.temp_tables[position];
-            for (write_rowid, values) in &planned.writes {
-                let cells = table_state
-                    .rows
-                    .get_mut(write_rowid)
-                    .ok_or_else(|| SqlError::new("storage", "temp row disappeared").in_statement("insert"))?;
-                let old_cells = cells.clone();
-                for (slot, value) in values.iter().enumerate() {
-                    if let crate::UpdateValue::Set(value) = value {
-                        cells[slot] = write_value_cell(value);
-                    }
-                }
-                if queue_triggers {
-                    events.push((*write_rowid, old_cells, cells.clone()));
-                }
-            }
-        }
-        else {
-            for (write_rowid, values) in &planned.writes {
-                let old_cells = find_old(*write_rowid);
-                let mut new_cells = old_cells.clone();
-                if new_cells.len() < width {
-                    new_cells.resize(width, Cell::Null);
-                }
-                for (slot, value) in values.iter().enumerate() {
-                    if let crate::UpdateValue::Set(value) = value {
-                        new_cells[slot] = write_value_cell(value);
-                    }
-                }
-                if queue_triggers {
-                    self.queue_update_before(table_key, def, &trigger_columns, &assigned_names, *write_rowid, &old_cells, &new_cells);
-                    events.push((*write_rowid, old_cells.clone(), new_cells.clone()));
-                }
-                let written = if def.without_rowid {
-                    let old_values: Vec<crate::WriteValue> = old_cells.iter().map(cell_write_value).collect();
-                    let new_values: Vec<crate::WriteValue> = new_cells.iter().map(cell_write_value).collect();
-                    self.writer.update_without_rowid(table, &old_values, &new_values)
-                }
-                else {
-                    self.writer.update(table, *write_rowid, values)
-                };
-                if let Err(error) = written {
-                    return Err(write_failure(error, "insert", def));
-                }
-            }
-        }
-        if temp_position.is_some() {
-            for (updated_rowid, old_cells, new_cells) in &events {
-                self.queue_update_events(table_key, def, &trigger_columns, &assigned_names, *updated_rowid, old_cells, new_cells);
-            }
-        }
-        if temp_position.is_none() && self.foreign_keys {
-            let changes: Vec<(Vec<Cell>, Option<Vec<Cell>>)> = planned
-                .writes
-                .iter()
-                .map(|(write_rowid, values)| {
-                    let old = find_old(*write_rowid);
-                    let mut next = old.clone();
-                    if next.len() < width {
-                        next.resize(width, Cell::Null);
-                    }
-                    for (slot, value) in values.iter().enumerate() {
-                        if let crate::UpdateValue::Set(value) = value {
-                            next[slot] = write_value_cell(value);
-                        }
-                    }
-                    (old, Some(next))
-                })
-                .collect();
-            let (index_needed, without_needed) = self.apply_foreign_key_actions(def, &changes, "insert", 0)?;
-            if index_needed {
-                self.materialize_indexes_after_write("insert")?;
-            }
-            if without_needed {
-                self.materialize_without_rowid_after_write("insert")?;
-            }
-        }
-        if self.foreign_keys {
-            self.check_update_foreign_keys(def, &planned, live, &assigned, "insert")?;
-        }
-        if temp_position.is_none() {
-            for (updated_rowid, old_cells, new_cells) in &events {
-                self.queue_update_after(table_key, def, &trigger_columns, &assigned_names, *updated_rowid, old_cells, new_cells);
-            }
-        }
-        if temp_position.is_none() && !self.exec().table_has_triggers(table_key) {
-            // Without triggers nothing else can rewrite the table, so the
-            // statement's own writes are enough to keep the in-memory rows
-            // current; reloading every row per upsert would make a batch of
-            // single-row upserts quadratic.
-            for (write_rowid, values) in &planned.writes {
-                if let Some((_, cells)) = live.iter_mut().find(|(candidate, _)| *candidate == *write_rowid) {
-                    for (slot, value) in values.iter().enumerate() {
-                        if let (crate::UpdateValue::Set(value), Some(cell)) = (value, cells.get_mut(slot)) {
-                            *cell = write_value_cell(value);
-                        }
-                    }
-                }
-            }
-        }
-        else {
-            *live = self.live_rows(def, "insert")?;
-        }
-        let rowid = planned.writes.first().map(|(rowid, _)| *rowid).unwrap_or(rowid);
-        Ok(UpsertOutcome::Updated { rowid, rows: planned.returning })
-    }
-
-    /// Applies one `REPLACE` row: delete every stored row that conflicts on a
-    /// uniqueness rule, then insert the supplied row.
-    ///
-    /// The delete is an ordinary row removal for foreign-key purposes, but a
-    /// `DELETE` trigger only fires when `recursive_triggers` is on, matching
-    /// SQLite's documented `REPLACE` behavior.
-    #[allow(clippy::too_many_arguments)]
-    fn apply_replace(
-        &mut self,
-        def: &TableDef,
-        table_key: &str,
-        table: &str,
-        slots: &[Option<crate::WriteValue>],
-        temp_position: Option<usize>,
-        recursive_triggers: bool,
-        queue_triggers: bool,
-        trigger_columns: &[String],
-        deleted: &mut Vec<(i64, Vec<Cell>)>,
-    ) -> Result<i64, SqlError> {
-        let explicit_rowid = def.rowid_alias.and_then(|alias| slots.get(alias).and_then(|slot| slot.as_ref())).and_then(|value| match value {
-            crate::WriteValue::Integer(value) => Some(*value),
-            _ => None,
-        });
-        // 已给出 rowid、且表上没有其它唯一键/表达式索引时，`REPLACE` 只可能
-        // 与同一 rowid 的旧行冲突：按 rowid 点读即可，不必为每条语句扫全表。
-        let extra_unique = self.unique_keys(def, table_key).into_iter().any(|key| !matches!(key, UniqueKey::Rowid(_)));
-        let managed_targets = self.upsert_managed_indexes(def, table_key);
-        if let Some(rowid) = explicit_rowid.filter(|_| !def.without_rowid && !extra_unique && managed_targets.is_empty()) {
-            let old = match temp_position {
-                Some(position) => self.catalog.temp_tables[position].rows.get(&rowid).cloned(),
-                None => self.live_rows_at(def, "insert", &[rowid])?.into_iter().next().map(|(_, cells)| cells),
-            };
-            if let Some(old) = old {
-                if queue_triggers && recursive_triggers {
-                    self.queue_delete_before(table_key, trigger_columns, rowid, &old);
-                }
-                if let Some(position) = temp_position {
-                    self.catalog.temp_tables[position].rows.remove(&rowid);
-                }
-                else {
-                    self.writer.delete(table, rowid).map_err(|error| write_failure(error, "insert", def))?;
-                }
-                deleted.push((rowid, old.clone()));
-                if queue_triggers && recursive_triggers {
-                    self.queue_delete_after(table_key, trigger_columns, rowid, &old);
-                }
-            }
-            if queue_triggers {
-                self.pending_events.push(PendingTriggerEvent {
-                    table: table_key.to_string(),
-                    timing: TriggerTiming::Before,
-                    event: TriggerEvent::Insert,
-                    columns: trigger_columns.to_vec(),
-                    new: Some(check_row(def, slots, rowid)),
-                    old: None,
-                });
-            }
-            return match temp_position {
-                Some(position) => {
-                    let keys = self.unique_keys(def, table_key);
-                    let table_state = &mut self.catalog.temp_tables[position];
-                    temp_insert_row(def, &mut table_state.rows, slots, &keys)
-                }
-                None => self.writer.insert(table, slots).map_err(|error| storage_failure(error).in_statement("insert")),
-            };
-        }
-        let live = self.live_rows(def, "insert")?;
-        let candidate_rowid = match explicit_rowid {
-            Some(rowid) => rowid,
-            None => live.iter().map(|(rowid, _)| *rowid).max().unwrap_or(0) + 1,
-        };
-        let candidate = check_row(def, slots, candidate_rowid);
-        let mut conflicts: BTreeSet<i64> = BTreeSet::new();
-        for unique in self.unique_keys(def, table_key) {
-            for (rowid, cells) in &live {
-                if upsert_key_conflicts(&unique, &candidate, candidate_rowid, *rowid, cells) {
-                    conflicts.insert(*rowid);
-                }
-            }
-        }
-        for target in self.upsert_managed_indexes(def, table_key) {
-            let Some(wanted) = self.managed_target_key(def, &target, &candidate)?
-            else {
-                continue;
-            };
-            for (rowid, cells) in &live {
-                if let Some(other) = self.managed_target_key(def, &target, cells)? {
-                    if managed_keys_conflict(&wanted, &other, &target.index.collations) {
-                        conflicts.insert(*rowid);
-                    }
-                }
-            }
-        }
-        for rowid in conflicts {
-            let old = live.iter().find(|(candidate, _)| *candidate == rowid).map(|(_, cells)| cells.clone()).unwrap_or_default();
-            if queue_triggers && recursive_triggers {
-                self.queue_delete_before(table_key, trigger_columns, rowid, &old);
-            }
-            if let Some(position) = temp_position {
-                self.catalog.temp_tables[position].rows.remove(&rowid);
-            }
-            else {
-                let removed = if def.without_rowid {
-                    let old_values: Vec<crate::WriteValue> = old.iter().map(cell_write_value).collect();
-                    self.writer.delete_without_rowid(table, &old_values)
-                }
-                else {
-                    self.writer.delete(table, rowid)
-                };
-                if let Err(error) = removed {
-                    return Err(write_failure(error, "insert", def));
-                }
-            }
-            deleted.push((rowid, old.clone()));
-            if queue_triggers && recursive_triggers {
-                // `AFTER DELETE` is queued as soon as the row is gone, so the
-                // replacement's delete trigger runs before its insert trigger.
-                self.queue_delete_after(table_key, trigger_columns, rowid, &old);
-            }
-        }
-        if queue_triggers {
-            // The conflict-resolution deletes have already run, so a
-            // `BEFORE INSERT` trigger observes the state after them.
-            let before_rowid = def
-                .rowid_alias
-                .and_then(|alias| slots.get(alias).and_then(|slot| slot.as_ref()))
-                .and_then(|value| match value {
-                    crate::WriteValue::Integer(value) => Some(*value),
-                    _ => None,
-                })
-                .unwrap_or(-1);
-            self.pending_events.push(PendingTriggerEvent {
-                table: table_key.to_string(),
-                timing: TriggerTiming::Before,
-                event: TriggerEvent::Insert,
-                columns: trigger_columns.to_vec(),
-                new: Some(check_row(def, slots, before_rowid)),
-                old: None,
-            });
-        }
-        if let Some(position) = temp_position {
-            let keys = self.unique_keys(def, table_key);
-            let table_state = &mut self.catalog.temp_tables[position];
-            temp_insert_row(def, &mut table_state.rows, slots, &keys)
-        }
-        else {
-            self.writer.insert(table, slots).map_err(|error| storage_failure(error).in_statement("insert"))
-        }
-    }
-
-    /// Computes the `(key values, rowid)` entries of one managed index by
-    /// evaluating its terms and predicate against every live row.
-    fn managed_index_entries(
-        &self,
-        def: &TableDef,
-        terms: &[ResolvedExpr],
-        predicate: Option<&ResolvedExpr>,
-        rows: &[(i64, Vec<Cell>)],
-    ) -> Result<Vec<(Vec<crate::WriteValue>, i64)>, SqlError> {
-        let shape = TargetShape::new(def, &def.name, None);
-        let budget = Budget::new();
-        let aggregates: Vec<Cell> = Vec::new();
-        let windows: Vec<Vec<Cell>> = Vec::new();
-        let mut entries = Vec::with_capacity(rows.len());
-        for (rowid, cells) in rows {
-            let context = EvalContext {
-                exec: self.exec(),
-                parameters: &self.parameters,
-                upsert_excluded: &self.upsert_excluded,
-                trigger_frames: &self.trigger_frames,
-                outer_read: &self.exec_state.outer_read,
-                subquery_cache: &self.exec_state.subquery_cache,
-                host_functions: &self.host_functions,
-                outer: &[],
-                current: &shape.scope,
-                aggregates: &aggregates,
-                windows: &windows,
-                window_row: 0,
-                budget: &budget,
-                ctes: None,
-            };
-            if let Some(predicate) = predicate {
-                if truthiness(&predicate.eval(cells, &context)?) != Some(true) {
-                    continue;
-                }
-            }
-            let mut key = Vec::with_capacity(terms.len());
-            for term in terms {
-                key.push(cell_write_value(&term.eval(cells, &context)?));
-            }
-            entries.push((key, *rowid));
-        }
-        Ok(entries)
-    }
-
-    /// Rebuilds the key sets of every managed index on `table` from the live
-    /// rows. Called inside the statement's transaction, before it commits.
-    fn refresh_managed_indexes(&mut self, table: &str, def: &TableDef, statement: &'static str) -> Result<(), SqlError> {
-        let managed: Vec<IndexDef> =
-            self.catalog.indexes.values().filter(|index| index.table.eq_ignore_ascii_case(table) && index.managed).cloned().collect();
-        if managed.is_empty() {
-            return Ok(());
-        }
-        let rows = self.live_rows(def, statement)?;
-        for index in managed {
-            let entries = self.managed_index_entries(def, &index.terms, index.predicate.as_ref(), &rows)?;
-            self.writer.replace_managed_index_entries(&index.name, &entries).map_err(|error| storage_failure(error).in_statement(statement))?;
-        }
-        Ok(())
-    }
-
-    /// Resolves one foreign key against the live catalog: the parent table
-    /// position and the parent key column positions.
-    ///
-    /// A missing parent table and a parent key that is not unique both report
-    /// the codes SQLite uses (`SQLITE_ERROR`), because the same statements
-    /// fail identically in the reference engine.
-    fn foreign_key_parent(&self, child: &TableDef, key: &ForeignKeyDef, statement: &'static str) -> Result<(usize, Vec<usize>), SqlError> {
-        let parent_position = *self
-            .catalog
-            .table_lookup
-            .get(&key.parent)
-            .ok_or_else(|| SqlError::new("SQLITE_ERROR", format!("no such table: main.{}", key.parent_display)).in_statement(statement))?;
-        let parent = &self.catalog.tables[parent_position];
-        let positions = if key.parent_columns.is_empty() {
-            parent.primary_key_positions().ok_or_else(|| foreign_key_mismatch(child, key, statement))?
-        }
-        else {
-            let mut positions = Vec::with_capacity(key.parent_columns.len());
-            for name in &key.parent_columns {
-                let position = parent
-                    .columns
-                    .iter()
-                    .position(|column| column.name.eq_ignore_ascii_case(name))
-                    .ok_or_else(|| foreign_key_mismatch(child, key, statement))?;
-                positions.push(position);
-            }
-            positions
-        };
-        if positions.len() != key.columns.len() || !self.parent_key_is_unique(parent, &positions) {
-            return Err(foreign_key_mismatch(child, key, statement));
-        }
-        Ok((parent_position, positions))
-    }
-
-    /// Whether `positions` identifies at most one parent row: the primary key,
-    /// a column-level `UNIQUE` / `PRIMARY KEY`, or an explicit unique index.
-    fn parent_key_is_unique(&self, parent: &TableDef, positions: &[usize]) -> bool {
-        if let Some(alias) = parent.rowid_alias {
-            if positions == [alias] {
-                return true;
-            }
-        }
-        if !parent.primary_key.is_empty() && same_positions(&parent.primary_key, positions) {
-            return true;
-        }
-        let declared: Vec<usize> =
-            parent.columns.iter().enumerate().filter(|(_, column)| column.primary_key).map(|(position, _)| position).collect();
-        if !declared.is_empty() && same_positions(&declared, positions) {
-            return true;
-        }
-        if positions.len() == 1 && parent.columns[positions[0]].unique {
-            return true;
-        }
-        if positions.iter().all(|position| parent.columns[*position].unique) {
-            return true;
-        }
-        let parent_key = parent.name.to_ascii_lowercase();
-        self.catalog.indexes.values().any(|index| index.table == parent_key && index.unique && same_positions(&index.columns, positions))
-    }
-
-    /// Every foreign key in the catalog that references `parent`, as
-    /// `(child table position, key)` pairs; the child may be `parent` itself.
-    fn referencing_foreign_keys(&self, parent: &str) -> Vec<(usize, ForeignKeyDef)> {
-        let mut found = Vec::new();
-        for (position, table) in self.catalog.tables.iter().enumerate() {
-            for key in &table.foreign_keys {
-                if key.parent.eq_ignore_ascii_case(parent) {
-                    found.push((position, key.clone()));
-                }
-            }
-        }
-        found
-    }
-
-    /// Verifies the rows an `INSERT` just wrote against every foreign key of
-    /// their table. The check runs after the writes so a self-reference may
-    /// point at a later row of the same statement.
-    fn check_insert_foreign_keys(&self, def: &TableDef, rowids: &[i64], statement: &'static str) -> Result<(), SqlError> {
-        if def.foreign_keys.is_empty() {
-            return Ok(());
-        }
-        let live = self.live_rows(def, statement)?;
-        for key in &def.foreign_keys {
-            if key.deferred && self.in_transaction() {
-                continue;
-            }
-            let (parent_position, parent_columns) = self.foreign_key_parent(def, key, statement)?;
-            let parent = &self.catalog.tables[parent_position];
-            let parent_rows = self.live_rows(parent, statement)?;
-            for (rowid, cells) in &live {
-                if !rowids.contains(rowid) {
-                    continue;
-                }
-                let values = pick(cells, &key.columns);
-                // A NULL in any child key column satisfies the constraint.
-                if values.iter().any(|cell| matches!(cell, Cell::Null)) {
-                    continue;
-                }
-                if !parent_rows.iter().any(|(_, parent_cells)| keys_equal(&values, parent_cells, &parent_columns)) {
-                    return Err(foreign_key_violation(statement));
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Verifies an `UPDATE` against both sides of every foreign key it touches.
-    ///
-    /// Child keys are re-checked only when the statement assigns one of their
-    /// columns. Referenced parent keys are re-checked only when the statement
-    /// assigns one of their columns, and then only child rows still holding a
-    /// value the update removed are examined.
-    fn check_update_foreign_keys(
-        &self,
-        def: &TableDef,
-        plan: &UpdatePlan,
-        old_rows: &[(i64, Vec<Cell>)],
-        assigned: &[bool],
-        statement: &'static str,
-    ) -> Result<(), SqlError> {
-        for key in &def.foreign_keys {
-            if key.deferred && self.in_transaction() {
-                continue;
-            }
-            if !key.columns.iter().any(|position| assigned[*position]) {
-                continue;
-            }
-            let (parent_position, parent_columns) = self.foreign_key_parent(def, key, statement)?;
-            let parent_rows = self.live_rows(&self.catalog.tables[parent_position], statement)?;
-            for (rowid, values) in &plan.writes {
-                let old = row_of(old_rows, *rowid);
-                let next = apply_assignment(old, values);
-                let child_values = pick(&next, &key.columns);
-                if child_values.iter().any(|cell| matches!(cell, Cell::Null)) {
-                    continue;
-                }
-                if !parent_rows.iter().any(|(_, parent_cells)| keys_equal(&child_values, parent_cells, &parent_columns)) {
-                    return Err(foreign_key_violation(statement));
-                }
-            }
-        }
-        for (child_position, key) in self.referencing_foreign_keys(&def.name) {
-            if key.deferred && self.in_transaction() && key.on_update_action != ForeignKeyAction::Restrict {
-                continue;
-            }
-            let child = &self.catalog.tables[child_position];
-            let (parent_position, parent_columns) = self.foreign_key_parent(child, &key, statement)?;
-            if !parent_columns.iter().any(|position| assigned.get(*position).copied().unwrap_or(false)) {
-                continue;
-            }
-            let mut changed: Vec<Vec<Cell>> = Vec::new();
-            for (rowid, values) in &plan.writes {
-                let old = row_of(old_rows, *rowid);
-                let old_values = pick(old, &parent_columns);
-                if old_values.iter().any(|cell| matches!(cell, Cell::Null)) {
-                    continue;
-                }
-                let next = apply_assignment(old, values);
-                let new_values = pick(&next, &parent_columns);
-                if !cells_equal(&old_values, &new_values) {
-                    changed.push(old_values);
-                }
-            }
-            if changed.is_empty() {
-                continue;
-            }
-            let parent_rows = self.live_rows(&self.catalog.tables[parent_position], statement)?;
-            let child_rows = self.live_rows(child, statement)?;
-            for (_, child_cells) in &child_rows {
-                let child_values = pick(child_cells, &key.columns);
-                if child_values.iter().any(|cell| matches!(cell, Cell::Null)) {
-                    continue;
-                }
-                if changed.iter().any(|value| cells_equal(value, &child_values))
-                    && !parent_rows.iter().any(|(_, parent_cells)| keys_equal(&child_values, parent_cells, &parent_columns))
-                {
-                    return Err(foreign_key_violation(statement));
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Verifies a `DELETE`: its own foreign keys are still resolved (a malformed
-    /// or missing parent fails the statement like SQLite), and every child row
-    /// that referenced a removed parent key is looked for after the removal.
-    fn check_delete_foreign_keys(
-        &self,
-        def: &TableDef,
-        old_rows: &[(i64, Vec<Cell>)],
-        removed: &[i64],
-        statement: &'static str,
-    ) -> Result<(), SqlError> {
-        for key in &def.foreign_keys {
-            self.foreign_key_parent(def, key, statement)?;
-        }
-        for (child_position, key) in self.referencing_foreign_keys(&def.name) {
-            if key.deferred && self.in_transaction() && key.on_delete_action != ForeignKeyAction::Restrict {
-                continue;
-            }
-            let child = &self.catalog.tables[child_position];
-            let (_, parent_columns) = self.foreign_key_parent(child, &key, statement)?;
-            let mut gone: Vec<Vec<Cell>> = Vec::new();
-            for (rowid, cells) in old_rows {
-                if !removed.contains(rowid) {
-                    continue;
-                }
-                let values = pick(cells, &parent_columns);
-                if values.iter().any(|cell| matches!(cell, Cell::Null)) {
-                    continue;
-                }
-                gone.push(values);
-            }
-            if gone.is_empty() {
-                continue;
-            }
-            let child_rows = self.live_rows(child, statement)?;
-            for (_, child_cells) in &child_rows {
-                let child_values = pick(child_cells, &key.columns);
-                if child_values.iter().any(|cell| matches!(cell, Cell::Null)) {
-                    continue;
-                }
-                if gone.iter().any(|value| cells_equal(value, &child_values)) {
-                    return Err(foreign_key_violation(statement));
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Re-checks every deferred foreign key against the state `COMMIT` would
-    /// publish. Immediate keys were already enforced per statement, so only
-    /// deferred keys are walked. A violation leaves the transaction open, as
-    /// SQLite does, so the caller can repair the rows and commit again.
-    fn check_deferred_foreign_keys(&self) -> Result<(), SqlError> {
-        if !self.foreign_keys {
-            return Ok(());
-        }
-        for child in &self.catalog.tables {
-            for key in child.foreign_keys.iter().filter(|key| key.deferred) {
-                let (parent_position, parent_columns) = self.foreign_key_parent(child, key, "commit")?;
-                let parent = &self.catalog.tables[parent_position];
-                let parent_rows = self.live_rows(parent, "commit")?;
-                let child_rows = self.live_rows(child, "commit")?;
-                for (_, cells) in &child_rows {
-                    let values = pick(cells, &key.columns);
-                    if values.iter().any(|cell| matches!(cell, Cell::Null)) {
-                        continue;
-                    }
-                    if !parent_rows.iter().any(|(_, parent_cells)| keys_equal(&values, parent_cells, &parent_columns)) {
-                        return Err(foreign_key_violation("commit"));
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Applies the `ON DELETE` / `ON UPDATE` actions of every foreign key that
-    /// references `parent`, recursing into the tables those actions touch.
-    ///
-    /// `changes` carries the cells every changed parent row had before the
-    /// statement and, for a rewrite, the cells it has now; `None` means the row
-    /// was removed. `NO ACTION` and `RESTRICT` rows are left for the
-    /// end-of-statement checks. Returns whether a touched child owns
-    /// materialized indexes or a stored WITHOUT ROWID b-tree.
-    fn apply_foreign_key_actions(
-        &mut self,
-        parent: &TableDef,
-        changes: &[(Vec<Cell>, Option<Vec<Cell>>)],
-        statement: &'static str,
-        depth: usize,
-    ) -> Result<(bool, bool), SqlError> {
-        if depth > 100 {
-            return Err(SqlError::new("constraint-failed", "foreign key cascade exceeded the depth limit").in_statement(statement));
-        }
-        let deleting = changes.iter().all(|(_, next)| next.is_none());
-        let mut needs_index = false;
-        let mut needs_without_rowid = false;
-        for (child_position, key) in self.referencing_foreign_keys(&parent.name) {
-            let action = if deleting { key.on_delete_action } else { key.on_update_action };
-            if matches!(action, ForeignKeyAction::NoAction | ForeignKeyAction::Restrict) {
-                continue;
-            }
-            let child = self.catalog.tables[child_position].clone();
-            if child.temp {
-                continue;
-            }
-            let (_, parent_columns) = self.foreign_key_parent(&child, &key, statement)?;
-            let mut pairs: Vec<(Vec<Cell>, Option<Vec<Cell>>)> = Vec::new();
-            for (old, next) in changes {
-                let old_values = pick(old, &parent_columns);
-                if old_values.iter().any(|cell| matches!(cell, Cell::Null)) {
-                    continue;
-                }
-                let new_values = next.as_ref().map(|cells| pick(cells, &parent_columns));
-                if let Some(values) = &new_values {
-                    if cells_equal(&old_values, values) {
-                        continue;
-                    }
-                }
-                pairs.push((old_values, new_values));
-            }
-            if pairs.is_empty() {
-                continue;
-            }
-            let child_rows = self.live_rows(&child, statement)?;
-            let child_key = child.name.to_ascii_lowercase();
-            let frame_columns = trigger_frame_columns(&child);
-            let fires = self.exec().table_has_triggers(&child_key);
-            let assigned: Vec<String> = key.columns.iter().map(|position| child.columns[*position].name.clone()).collect();
-            let mut deleted: Vec<(i64, Vec<Cell>)> = Vec::new();
-            let mut updated: Vec<(i64, Vec<Cell>, Vec<Cell>)> = Vec::new();
-            for (rowid, cells) in &child_rows {
-                let values = pick(cells, &key.columns);
-                if values.iter().any(|cell| matches!(cell, Cell::Null)) {
-                    continue;
-                }
-                let Some((_, next)) = pairs.iter().find(|(old, _)| cells_equal(old, &values))
-                else {
-                    continue;
-                };
-                match action {
-                    ForeignKeyAction::Cascade => match next {
-                        None => deleted.push((*rowid, cells.clone())),
-                        Some(next) => {
-                            let mut rewritten = cells.clone();
-                            for (position, value) in key.columns.iter().zip(next.iter()) {
-                                rewritten[*position] = value.clone();
-                            }
-                            updated.push((*rowid, cells.clone(), rewritten));
-                        }
-                    },
-                    ForeignKeyAction::SetNull | ForeignKeyAction::SetDefault => {
-                        let mut rewritten = cells.clone();
-                        for position in &key.columns {
-                            let column = &child.columns[*position];
-                            let value = match action {
-                                ForeignKeyAction::SetNull => Cell::Null,
-                                _ => {
-                                    let default = column.default_value.clone().unwrap_or(crate::WriteValue::Null);
-                                    write_value_cell(&crate::apply_write_affinity(&column.declared_type, default))
-                                }
-                            };
-                            if matches!(value, Cell::Null) && column.not_null {
-                                return Err(SqlError::new(
-                                    "not-null-constraint",
-                                    format!("NOT NULL constraint failed: {}.{}", child.name, column.name),
-                                )
-                                .in_statement(statement));
-                            }
-                            rewritten[*position] = value;
-                        }
-                        updated.push((*rowid, cells.clone(), rewritten));
-                    }
-                    _ => {}
-                }
-            }
-            if deleted.is_empty() && updated.is_empty() {
-                continue;
-            }
-            let table_key = child.name.clone();
-            for (rowid, old) in &deleted {
-                if fires {
-                    self.queue_delete_before(&table_key, &frame_columns, *rowid, old);
-                }
-                let written = if child.without_rowid {
-                    let values: Vec<crate::WriteValue> = old.iter().map(cell_write_value).collect();
-                    self.writer.delete_without_rowid(&table_key, &values)
-                }
-                else {
-                    self.writer.delete(&table_key, *rowid)
-                };
-                written.map_err(|error| write_failure(error, statement, &child))?;
-                if fires {
-                    self.queue_delete_after(&table_key, &frame_columns, *rowid, old);
-                }
-            }
-            for (rowid, old, next) in &updated {
-                if fires {
-                    self.queue_update_before(&table_key, &child, &frame_columns, &assigned, *rowid, old, next);
-                }
-                let written = if child.without_rowid {
-                    let old_values: Vec<crate::WriteValue> = old.iter().map(cell_write_value).collect();
-                    let new_values: Vec<crate::WriteValue> = next.iter().map(cell_write_value).collect();
-                    self.writer.update_without_rowid(&table_key, &old_values, &new_values)
-                }
-                else {
-                    let values: Vec<UpdateValue> = next.iter().map(|cell| UpdateValue::Set(cell_write_value(cell))).collect();
-                    self.writer.update(&table_key, *rowid, &values)
-                };
-                written.map_err(|error| write_failure(error, statement, &child))?;
-                if fires {
-                    self.queue_update_after(&table_key, &child, &frame_columns, &assigned, *rowid, old, next);
-                }
-            }
-            // Rewritten child rows still have to resolve every foreign key,
-            // which catches `SET DEFAULT` values that name no parent.
-            let validated: Vec<i64> = updated
-                .iter()
-                .map(|(rowid, _, next)| {
-                    child
-                        .rowid_alias
-                        .and_then(|alias| match next.get(alias) {
-                            Some(Cell::Integer(value)) => Some(*value),
-                            _ => None,
-                        })
-                        .unwrap_or(*rowid)
-                })
-                .collect();
-            if !validated.is_empty() {
-                self.check_insert_foreign_keys(&child, &validated, statement)?;
-            }
-            self.refresh_managed_indexes(&child_key, &child, statement)?;
-            if self.has_indexes(&child, &child_key) {
-                needs_index = true;
-            }
-            if child.without_rowid {
-                needs_without_rowid = true;
-            }
-            let child_changes: Vec<(Vec<Cell>, Option<Vec<Cell>>)> = if deleting {
-                deleted.iter().map(|(_, old)| (old.clone(), None)).collect()
-            }
-            else {
-                updated.iter().map(|(_, old, next)| (old.clone(), Some(next.clone()))).collect()
-            };
-            let (index_needed, without_needed) = self.apply_foreign_key_actions(&child, &child_changes, statement, depth + 1)?;
-            needs_index |= index_needed;
-            needs_without_rowid |= without_needed;
-        }
-        Ok((needs_index, needs_without_rowid))
-    }
-
-    /// Every uniqueness rule an `UPDATE` has to re-check, in the order SQLite
-    /// reports them: the rowid first, then the primary key, then column-level
-    /// `UNIQUE`, then explicit unique indexes.
-    fn unique_keys(&self, def: &TableDef, table_key: &str) -> Vec<UniqueKey> {
-        let label = |positions: &[usize]| {
-            positions.iter().map(|position| format!("{}.{}", def.name, def.columns[*position].name)).collect::<Vec<_>>().join(", ")
-        };
-        let rowid_label = match def.rowid_alias {
-            Some(alias) => format!("{}.{}", def.name, def.columns[alias].name),
-            None => format!("{}.rowid", def.name),
-        };
-        let mut keys = Vec::new();
-        if !def.without_rowid {
-            keys.push(UniqueKey::Rowid(rowid_label));
-        }
-        // A WITHOUT ROWID table has no rowid and its primary key is the
-        // clustered key, so that key is the first uniqueness rule.
-        if def.without_rowid && !def.primary_key.is_empty() {
-            keys.push(UniqueKey::Columns(def.primary_key.clone(), label(&def.primary_key), self.key_collations(def, &def.primary_key)));
-        }
-        else if def.primary_key_index && !def.primary_key.is_empty() {
-            keys.push(UniqueKey::Columns(def.primary_key.clone(), label(&def.primary_key), self.key_collations(def, &def.primary_key)));
-        }
-        for (position, column) in def.columns.iter().enumerate() {
-            if Some(position) == def.rowid_alias {
-                continue;
-            }
-            if column.primary_key || column.unique {
-                keys.push(UniqueKey::Columns(vec![position], label(&[position]), self.key_collations(def, &[position])));
-            }
-        }
-        for constraint in &def.table_constraints {
-            if !constraint.primary {
-                keys.push(UniqueKey::Columns(
-                    constraint.columns.clone(),
-                    label(&constraint.columns),
-                    self.key_collations(def, &constraint.columns),
-                ));
-            }
-        }
-        for index in self.catalog.indexes.values() {
-            // Managed indexes are expression or partial, so their uniqueness is
-            // enforced while their keys are rebuilt from the live rows.
-            if !def.temp && !index.managed && index.table == table_key && index.unique {
-                let collations = if index.collations.len() == index.columns.len() {
-                    index.collations.clone()
-                }
-                else {
-                    self.key_collations(def, &index.columns)
-                };
-                keys.push(UniqueKey::Columns(index.columns.clone(), label(&index.columns), collations));
-            }
-        }
-        keys
-    }
-
-    /// 各键位按列声明取得的排序规则，供唯一性与冲突检测使用。
-    fn key_collations(&self, def: &TableDef, positions: &[usize]) -> Vec<Collation> {
-        positions.iter().map(|position| def.columns[*position].collate.unwrap_or_default()).collect()
-    }
-
-    /// True when the table owns any index whose b-tree has to be rewritten
-    /// after a write.
-    fn has_indexes(&self, def: &TableDef, table_key: &str) -> bool {
-        def.primary_key_index
-            || def
-                .columns
-                .iter()
-                .enumerate()
-                .any(|(position, column)| (column.primary_key || column.unique) && Some(position) != def.rowid_alias)
-            || def.table_constraints.iter().any(|constraint| !constraint.primary)
-            || (!def.temp && self.catalog.indexes.values().any(|index| index.table == table_key))
-    }
-
-    /// Plans one `UPDATE` without touching storage: every right-hand side is
-    /// evaluated against the pre-statement row, assignments apply left to right
-    /// (last one wins), and each row is checked against the *current* table, so
-    /// a rowid shift behaves exactly like SQLite's ascending-order pass.
-    ///
-    /// `joined` carries the row shape of an `UPDATE ... FROM` statement: the
-    /// target columns, its rowid, and every `FROM` source appended, for the
-    /// target rows whose join produced a match. A row outside the map is not
-    /// updated, and the predicate has already been applied to its merged row.
-    fn plan_update(
-        &self,
-        def: &TableDef,
-        table_key: &str,
-        targets: &[(usize, ResolvedExpr)],
-        predicate: Option<&ResolvedExpr>,
-        joined: Option<&BTreeMap<i64, Vec<Cell>>>,
-        returning: Option<&ReturningPlan>,
-        shape: &ScopeShape,
-        budget: &Budget,
-        state_override: Option<&[(i64, Vec<Cell>)]>,
-        candidates: Option<&[i64]>,
-    ) -> Result<UpdatePlan, SqlError> {
-        let width = def.columns.len();
-        let keys = self.unique_keys(def, table_key);
-        let owned_live = match state_override {
-            Some(_) => None,
-            None => Some(match candidates {
-                Some(rowids) => self.live_rows_at(def, "update", rowids)?,
-                None => self.live_rows(def, "update")?,
-            }),
-        };
-        let live: &[(i64, Vec<Cell>)] = match state_override {
-            Some(rows) => rows,
-            None => owned_live.as_deref().unwrap_or_default(),
-        };
-        // 冲突判定的状态只在存在非 rowid 唯一键时才需要整份拷贝。rowid 唯一性
-        // 用活动 rowid 集合判定,于是整表 `UPDATE` 每行不再扫一遍整张表。
-        let column_keys: Vec<&UniqueKey> = keys.iter().filter(|key| matches!(key, UniqueKey::Columns(..))).collect();
-        let rowid_label: Option<&str> = keys.iter().find_map(|key| match key {
-            UniqueKey::Rowid(label) => Some(label.as_str()),
-            UniqueKey::Columns(..) => None,
-        });
-        let mut state = if column_keys.is_empty() { Vec::new() } else { live.to_vec() };
-        // 只有赋值可能改动 rowid 时才需要活动 rowid 集合:整表更新通常一个
-        // `INTEGER PRIMARY KEY` 都没碰,构建与逐行维护这份集合纯属浪费。
-        let rowid_move_possible = targets.iter().any(|(index, _)| Some(*index) == def.rowid_alias);
-        let mut live_rowids: HashSet<i64> = if rowid_move_possible { live.iter().map(|(rowid, _)| *rowid).collect() } else { HashSet::new() };
-        let mut writes = Vec::new();
-        let mut returned = Vec::new();
-        let mut affected = 0usize;
-        // 逐行复用的求值与赋值缓冲:整表 `UPDATE` 因此不再为每一行重新分配行向量。
-        let mut eval_cells: Vec<Cell> = Vec::with_capacity(width + 1);
-        let mut next: Vec<Cell> = Vec::with_capacity(width);
-        let mut assigned = vec![false; width];
-        for (position, (rowid, cells)) in live.iter().enumerate() {
-            eval_cells.clear();
-            match joined {
-                Some(joined) => match joined.get(rowid) {
-                    Some(row) => eval_cells.extend_from_slice(row),
-                    None => continue,
-                },
-                None => {
-                    eval_cells.extend_from_slice(cells);
-                    eval_cells.push(Cell::Integer(*rowid));
-                }
-            }
-            let ctx = EvalContext {
-                exec: self.exec(),
-                parameters: &self.parameters,
-                upsert_excluded: &self.upsert_excluded,
-                trigger_frames: &self.trigger_frames,
-                outer_read: &self.exec_state.outer_read,
-                subquery_cache: &self.exec_state.subquery_cache,
-                host_functions: &self.host_functions,
-                outer: &[],
-                current: shape,
-                aggregates: &[],
-                windows: &[],
-                window_row: 0,
-                budget,
-                ctes: None,
-            };
-            if joined.is_none() {
-                if let Some(predicate) = predicate {
-                    if truthiness(&predicate.eval(&eval_cells, &ctx)?) != Some(true) {
-                        continue;
-                    }
-                }
-            }
-            next.clear();
-            next.extend_from_slice(cells);
-            assigned.fill(false);
-            let mut next_rowid = *rowid;
-            for (index, target) in targets {
-                let value = target.eval(&eval_cells, &ctx)?;
-                let column = &def.columns[*index];
-                let cell = write_value_cell(&crate::apply_write_affinity(&column.declared_type, cell_write_value(&value)));
-                if Some(*index) == def.rowid_alias {
-                    match cell {
-                        Cell::Null => {
-                            return Err(if column.not_null {
-                                SqlError::new("not-null-constraint", format!("NOT NULL constraint failed: {}.{}", def.name, column.name))
-                            }
-                            else {
-                                SqlError::new("datatype-mismatch", "datatype mismatch")
-                            }
-                            .in_statement("update"));
-                        }
-                        Cell::Integer(value) => {
-                            next_rowid = value;
-                            next[*index] = Cell::Integer(value);
-                        }
-                        _ => return Err(SqlError::new("datatype-mismatch", "datatype mismatch").in_statement("update")),
-                    }
-                }
-                else {
-                    if matches!(cell, Cell::Null) && column.not_null {
-                        return Err(SqlError::new("not-null-constraint", format!("NOT NULL constraint failed: {}.{}", def.name, column.name))
-                            .in_statement("update"));
-                    }
-                    next[*index] = cell;
-                }
-                assigned[*index] = true;
-            }
-            if !def.checks.is_empty() {
-                let mut check_cells = next.clone();
-                check_cells.push(Cell::Integer(next_rowid));
-                for check in &def.checks {
-                    if truthiness(&check.expr.eval(&check_cells, &ctx)?) == Some(false) {
-                        let name = check.name.clone().unwrap_or_else(|| check.text.clone());
-                        return Err(SqlError::new("check-constraint", format!("CHECK constraint failed: {name}"))
-                            .in_clause("CHECK")
-                            .in_statement("update"));
-                    }
-                }
-            }
-            if let Some(label) = rowid_label {
-                // `UNIQUE(rowid)` 只在换成另一个仍被占用的 rowid 时冲突。
-                if next_rowid != *rowid && live_rowids.contains(&next_rowid) {
-                    return Err(SqlError::new("unique-constraint", format!("UNIQUE constraint failed: {label}")).in_statement("update"));
-                }
-            }
-            for key in &column_keys {
-                if let Some(label) = unique_conflict(std::slice::from_ref(*key), &next, next_rowid, &state, *rowid) {
-                    return Err(SqlError::new("unique-constraint", format!("UNIQUE constraint failed: {label}")).in_statement("update"));
-                }
-            }
-            if !state.is_empty() && position < state.len() {
-                state[position].0 = next_rowid;
-                state[position].1 = next.clone();
-            }
-            if rowid_move_possible {
-                live_rowids.remove(rowid);
-                live_rowids.insert(next_rowid);
-            }
-            if let Some(returning) = returning {
-                let mut new_cells = next.clone();
-                new_cells.push(Cell::Integer(next_rowid));
-                returned.push(returning.eval(&new_cells, &ctx)?);
-            }
-            let values = def
-                .columns
-                .iter()
-                .enumerate()
-                .map(|(index, _)| if assigned[index] { UpdateValue::Set(cell_write_value(&next[index])) } else { UpdateValue::Keep })
-                .collect();
-            writes.push((*rowid, values));
-            affected += 1;
-        }
-        // 复用的快照优先直接交出所有权，避免再复制一份整表。
-        let live_snapshot = match owned_live {
-            Some(rows) => rows,
-            None => live.to_vec(),
-        };
-        Ok(UpdatePlan { writes, returning: returned, affected, live: live_snapshot })
-    }
-
-    /// Plans one `DELETE`: the matching rowids in ascending order, plus any
-    /// `RETURNING` rows, which see the row as it was before removal.
-    ///
-    /// `candidates` narrows the scan to the rowids a `WHERE <rowid> = <key>`
-    /// equality or an index probe can reach. The predicate still runs over every
-    /// candidate, so a stale or mismatched probe only costs the pushdown and
-    /// never changes the removed set.
-    fn plan_delete(
-        &self,
-        def: &TableDef,
-        predicate: Option<&ResolvedExpr>,
-        returning: Option<&ReturningPlan>,
-        shape: &ScopeShape,
-        budget: &Budget,
-        candidates: Option<&[i64]>,
-    ) -> Result<DeletePlan, SqlError> {
-        let live = match candidates {
-            Some(rowids) => self.live_rows_at(def, "delete", rowids)?,
-            None => self.live_rows(def, "delete")?,
-        };
-        let mut removed = Vec::new();
-        let mut returned = Vec::new();
-        // 逐行复用的求值缓冲:批量删除不再为每一行复制一份行向量。
-        let mut eval_cells: Vec<Cell> = Vec::with_capacity(def.columns.len() + 1);
-        for (rowid, cells) in &live {
-            eval_cells.clear();
-            eval_cells.extend_from_slice(cells);
-            eval_cells.push(Cell::Integer(*rowid));
-            let ctx = EvalContext {
-                exec: self.exec(),
-                parameters: &self.parameters,
-                upsert_excluded: &self.upsert_excluded,
-                trigger_frames: &self.trigger_frames,
-                outer_read: &self.exec_state.outer_read,
-                subquery_cache: &self.exec_state.subquery_cache,
-                host_functions: &self.host_functions,
-                outer: &[],
-                current: shape,
-                aggregates: &[],
-                windows: &[],
-                window_row: 0,
-                budget,
-                ctes: None,
-            };
-            if let Some(predicate) = predicate {
-                if truthiness(&predicate.eval(&eval_cells, &ctx)?) != Some(true) {
-                    continue;
-                }
-            }
-            if let Some(returning) = returning {
-                returned.push(returning.eval(&eval_cells, &ctx)?);
-            }
-            removed.push(*rowid);
-        }
-        Ok(DeletePlan { removed, returning: returned, live })
     }
 
     /// 预编译期语句元数据:从目录推导结果列标签,绝不执行语句。
@@ -6743,52 +4751,6 @@ fn action_name(action: &TransactionAction) -> &'static str {
     }
 }
 
-fn self_contained_arity(
-    def: &TableDef,
-    table: &str,
-    columns: Option<&[String]>,
-    values: &[crate::WriteValue],
-) -> Result<Vec<Option<crate::WriteValue>>, SqlError> {
-    let mut slots = vec![None; def.columns.len()];
-    match columns {
-        Some(names) => {
-            if names.len() != values.len() {
-                return Err(SqlError::new(
-                    "arity-mismatch",
-                    format!("insert into `{table}` has {} columns but {} values", names.len(), values.len()),
-                )
-                .in_statement("insert"));
-            }
-            let mut seen = Vec::new();
-            for (name, value) in names.iter().zip(values) {
-                let index = def.columns.iter().position(|column| column.name.eq_ignore_ascii_case(name)).ok_or_else(|| {
-                    SqlError::new("unknown-column", format!("unknown column `{name}` in table `{table}`")).in_statement("insert")
-                })?;
-                if seen.contains(&index) {
-                    return Err(
-                        SqlError::new("duplicate-column", format!("column `{name}` is listed twice in the insert")).in_statement("insert")
-                    );
-                }
-                seen.push(index);
-                slots[index] = Some(value.clone());
-            }
-        }
-        None => {
-            if values.len() != def.columns.len() {
-                return Err(SqlError::new(
-                    "arity-mismatch",
-                    format!("insert into `{table}` expects {} values but received {}", def.columns.len(), values.len()),
-                )
-                .in_statement("insert"));
-            }
-            for (index, value) in values.iter().enumerate() {
-                slots[index] = Some(value.clone());
-            }
-        }
-    }
-    Ok(slots)
-}
-
 /// Finds the table one `PRAGMA` refers to. An unqualified name searches the
 /// temp schema first, then `main`, matching SQLite's connection search order.
 fn pragma_table_def<'a>(engine: &'a Engine, schema: Option<&str>, name: &str) -> Option<&'a TableDef> {
@@ -6985,298 +4947,6 @@ fn pragma_foreign_key_list(engine: &Engine, table: &str) -> ExecResult {
         rows,
         affected: 0,
     }
-}
-
-/// The error SQLite raises when a parent key is not a unique key of its table.
-fn foreign_key_mismatch(child: &TableDef, key: &ForeignKeyDef, statement: &'static str) -> SqlError {
-    SqlError::new("SQLITE_ERROR", format!("foreign key mismatch - \"{}\" referencing \"{}\"", child.name, key.parent_display))
-        .in_statement(statement)
-}
-
-/// The error SQLite raises when a non-NULL child key has no parent row.
-fn foreign_key_violation(statement: &'static str) -> SqlError {
-    SqlError::new("SQLITE_CONSTRAINT_FOREIGNKEY", "FOREIGN KEY constraint failed").in_statement(statement)
-}
-
-/// Selects the cells at `positions` from one decoded row.
-fn pick(cells: &[Cell], positions: &[usize]) -> Vec<Cell> {
-    positions.iter().map(|position| cells[*position].clone()).collect()
-}
-
-/// Whether one child key equals the parent key held by `parent_cells`.
-fn keys_equal(child_values: &[Cell], parent_cells: &[Cell], parent_columns: &[usize]) -> bool {
-    child_values.iter().zip(parent_columns.iter()).all(|(child, position)| compare_cells(child, &parent_cells[*position]) == Ordering::Equal)
-}
-
-/// Copies one pre-statement row and applies an `UPDATE` assignment to it.
-fn apply_assignment(old: &[Cell], values: &[UpdateValue]) -> Vec<Cell> {
-    let mut next = old.to_vec();
-    for (index, value) in values.iter().enumerate() {
-        if let UpdateValue::Set(value) = value {
-            next[index] = write_value_cell(value);
-        }
-    }
-    next
-}
-
-/// The pre-statement cells of one rowid; the plan only contains live rowids.
-fn row_of<'a>(rows: &'a [(i64, Vec<Cell>)], rowid: i64) -> &'a [Cell] {
-    rows.iter().find(|(id, _)| *id == rowid).map(|(_, cells)| cells.as_slice()).unwrap_or(&[])
-}
-
-/// Whether two column-position lists name the same key, ignoring order.
-fn same_positions(left: &[usize], right: &[usize]) -> bool {
-    let mut left = left.to_vec();
-    let mut right = right.to_vec();
-    left.sort_unstable();
-    right.sort_unstable();
-    left == right
-}
-
-/// Builds the row a `CHECK` is evaluated against right after an insert.
-///
-/// Missing slots take the column default, the rowid alias is filled from the
-/// rowid the writer assigned, and one extra cell carries the hidden rowid so a
-/// check that names `rowid` reads it.
-fn check_row(def: &TableDef, slots: &[Option<crate::WriteValue>], rowid: i64) -> Vec<Cell> {
-    let mut cells = Vec::with_capacity(def.columns.len() + 1);
-    for (index, slot) in slots.iter().enumerate() {
-        let column = &def.columns[index];
-        let value = match slot {
-            Some(value) => value.clone(),
-            None => column.default_value.clone().unwrap_or(crate::WriteValue::Null),
-        };
-        cells.push(write_value_cell(&crate::apply_write_affinity(&column.declared_type, value)));
-    }
-    if let Some(alias) = def.rowid_alias {
-        if matches!(cells.get(alias), Some(Cell::Null)) {
-            cells[alias] = Cell::Integer(rowid);
-        }
-    }
-    cells.push(Cell::Integer(rowid));
-    cells
-}
-
-/// `INSERT OR IGNORE` 吞掉 UNIQUE / NOT NULL / CHECK 冲突，其余错误照常上报。
-fn ignoreable_insert_error(error: &SqlError) -> bool {
-    let message = error.message.as_str();
-    message.contains("UNIQUE constraint failed")
-        || message.contains("NOT NULL constraint failed")
-        || message.contains("CHECK constraint failed")
-}
-
-/// Reports one `STRICT` storage-class violation: the value is first converted
-/// by the column affinity, then has to land in the declared storage class.
-fn strict_value_violation(def: &TableDef, position: usize, value: &crate::WriteValue, statement: &'static str) -> Option<SqlError> {
-    if !def.strict || matches!(value, crate::WriteValue::Null) {
-        return None;
-    }
-    let column = &def.columns[position];
-    let converted = crate::apply_write_affinity(&column.declared_type, value.clone());
-    let declared = column.declared_type.to_ascii_uppercase();
-    let conforms = match declared.as_str() {
-        "INT" | "INTEGER" => matches!(converted, crate::WriteValue::Integer(_)),
-        "REAL" => matches!(converted, crate::WriteValue::Real(_)),
-        "TEXT" => matches!(converted, crate::WriteValue::Text(_)),
-        "BLOB" => matches!(converted, crate::WriteValue::Blob(_)),
-        _ => true,
-    };
-    if conforms {
-        return None;
-    }
-    let stored = match converted {
-        crate::WriteValue::Real(_) => "REAL",
-        crate::WriteValue::Text(_) => "TEXT",
-        crate::WriteValue::Blob(_) => "BLOB",
-        _ => "INTEGER",
-    };
-    Some(
-        SqlError::new("constraint-datatype", format!("cannot store {stored} value in {declared} column {}.{}", def.name, column.name))
-            .in_statement(statement),
-    )
-}
-
-fn cell_write_value(cell: &Cell) -> crate::WriteValue {
-    match cell {
-        Cell::Null => crate::WriteValue::Null,
-        Cell::Integer(value) => crate::WriteValue::Integer(*value),
-        Cell::Real(value) => crate::WriteValue::Real(*value),
-        Cell::Text(value) => crate::WriteValue::Text(value.clone()),
-        Cell::Blob(value) => crate::WriteValue::Blob(value.clone()),
-    }
-}
-
-/// 把一行已解码的单元格整体转成写侧的存储值,供写语句复用自己已读出的行像。
-fn cells_write_values(cells: &[Cell]) -> Vec<crate::WriteValue> {
-    cells.iter().map(cell_write_value).collect()
-}
-
-/// Inserts one row into an in-memory temp table and returns its rowid.
-///
-/// The rowid is explicit when the table has an `INTEGER PRIMARY KEY` alias and
-/// the statement supplied one, and `max(rowid) + 1` otherwise. NOT NULL and the
-/// primary key / UNIQUE keys are enforced here because temp tables never reach
-/// the format-3 writer.
-fn temp_insert_row(
-    def: &TableDef,
-    rows: &mut BTreeMap<i64, Vec<Cell>>,
-    slots: &[Option<crate::WriteValue>],
-    keys: &[UniqueKey],
-) -> Result<i64, SqlError> {
-    let mut rowid = rows.keys().next_back().copied().unwrap_or(0) + 1;
-    if let Some(alias) = def.rowid_alias {
-        match slots.get(alias).and_then(|slot| slot.as_ref()) {
-            Some(crate::WriteValue::Integer(value)) => rowid = *value,
-            Some(crate::WriteValue::Null) | None => {}
-            Some(_) => return Err(SqlError::new("datatype-mismatch", "datatype mismatch").in_statement("insert")),
-        }
-    }
-    let cells = check_row(def, slots, rowid);
-    // `check_row` appends the rowid as a hidden slot for CHECK/RETURNING
-    // evaluation; the stored temp row keeps only the declared columns and the
-    // row map key carries the rowid.
-    let cells: Vec<Cell> = cells.into_iter().take(def.columns.len()).collect();
-    for (position, column) in def.columns.iter().enumerate() {
-        if column.not_null && matches!(cells[position], Cell::Null) {
-            return Err(SqlError::new("not-null-constraint", format!("NOT NULL constraint failed: {}.{}", def.name, column.name))
-                .in_statement("insert"));
-        }
-    }
-    let live: Vec<(i64, Vec<Cell>)> = rows.iter().map(|(rowid, cells)| (*rowid, cells.clone())).collect();
-    if let Some(label) = unique_conflict(keys, &cells, rowid, &live, i64::MIN) {
-        return Err(SqlError::new("unique-constraint", format!("UNIQUE constraint failed: {label}")).in_statement("insert"));
-    }
-    rows.insert(rowid, cells);
-    Ok(rowid)
-}
-
-/// Declared column positions of a managed index whose terms are all plain
-/// columns, or `None` for a real expression key.
-fn managed_term_positions(index: &IndexDef) -> Option<Vec<usize>> {
-    index
-        .terms
-        .iter()
-        .map(|term| match term {
-            ResolvedExpr::Column { source: 0, index: column } => Some(*column),
-            _ => None,
-        })
-        .collect()
-}
-
-/// Whether one managed index is the one an `ON CONFLICT (columns)` target names.
-fn managed_target_matches(target: &ManagedTarget, positions: &[usize], predicate: Option<&ResolvedExpr>) -> bool {
-    if target.index.predicate.as_ref() != predicate {
-        return false;
-    }
-    match managed_term_positions(&target.index) {
-        Some(terms) => !terms.is_empty() && same_positions(&terms, positions),
-        None => false,
-    }
-}
-
-/// `t.a, t.b` fragment of a managed index, matching SQLite's uniqueness text.
-fn managed_index_label(def: &TableDef, index: &IndexDef) -> String {
-    match managed_term_positions(index) {
-        Some(positions) if !positions.is_empty() => {
-            positions.iter().map(|position| format!("{}.{}", def.name, def.columns[*position].name)).collect::<Vec<_>>().join(", ")
-        }
-        _ => format!("index '{}'", index.name),
-    }
-}
-
-/// Whether two computed managed-index keys collide, with SQLite's rule that a
-/// `NULL` component never conflicts.
-fn managed_keys_conflict(first: &[Cell], second: &[Cell], collations: &[Collation]) -> bool {
-    first.len() == second.len()
-        && first.iter().zip(second).enumerate().all(|(position, (left, right))| {
-            !matches!(left, Cell::Null)
-                && !matches!(right, Cell::Null)
-                && compare_cells_with(left, right, collations.get(position).copied().unwrap_or_default()) == Ordering::Equal
-        })
-}
-
-/// Whether one supplied upsert row collides with one stored row on `key`.
-///
-/// A `NULL` in any key column never conflicts, exactly like a unique index.
-fn upsert_key_conflicts(key: &UniqueKey, candidate: &[Cell], candidate_rowid: i64, existing_rowid: i64, existing: &[Cell]) -> bool {
-    match key {
-        UniqueKey::Rowid(_) => candidate_rowid == existing_rowid,
-        UniqueKey::Columns(positions, _, collations) => positions.iter().enumerate().all(|(index, position)| {
-            let first = &candidate[*position];
-            let second = &existing[*position];
-            !matches!(first, Cell::Null)
-                && !matches!(second, Cell::Null)
-                && compare_cells_with(first, second, collations.get(index).copied().unwrap_or_default()) == Ordering::Equal
-        }),
-    }
-}
-
-/// Reports the first uniqueness rule the candidate row violates against the
-/// live table, skipping the row being replaced.
-fn unique_conflict(keys: &[UniqueKey], candidate: &[Cell], rowid: i64, live: &[(i64, Vec<Cell>)], skip: i64) -> Option<String> {
-    for key in keys {
-        let wanted = key.values(candidate, rowid);
-        for (other_rowid, other_cells) in live {
-            if *other_rowid == skip {
-                continue;
-            }
-            let other = key.values(other_cells, *other_rowid);
-            let collations = match key {
-                UniqueKey::Rowid(_) => &[][..],
-                UniqueKey::Columns(_, _, collations) => collations.as_slice(),
-            };
-            let collides = wanted.iter().zip(&other).enumerate().all(|(index, (first, second))| {
-                !matches!(first, Cell::Null)
-                    && !matches!(second, Cell::Null)
-                    && compare_cells_with(first, second, collations.get(index).copied().unwrap_or_default()) == Ordering::Equal
-            });
-            if collides {
-                return Some(key.label().to_string());
-            }
-        }
-    }
-    None
-}
-
-/// Converts a storage rejection of an `UPDATE` / `DELETE` into a structured
-/// error, naming the table when the writer does not say which key failed.
-fn write_failure(error: database_types::Error, statement: &'static str, def: &TableDef) -> SqlError {
-    let mapped = storage_failure(error);
-    let message = if mapped.code == "unique-constraint" {
-        format!("UNIQUE constraint failed in table `{}`", def.name)
-    }
-    else if mapped.code == "not-null-constraint" || mapped.message.contains("NOT NULL") {
-        format!("NOT NULL constraint failed in table `{}`", def.name)
-    }
-    else if mapped.message.contains("integer") || mapped.message.contains("datatype") {
-        return SqlError::new("datatype-mismatch", "datatype mismatch").in_statement(statement);
-    }
-    else {
-        mapped.message
-    };
-    SqlError::new(mapped.code, message).in_statement(statement)
-}
-
-/// 管理型索引键里是否存在按排序规则等价的重复项，`NULL` 键不算冲突。
-fn managed_unique_violation(entries: &[(Vec<crate::WriteValue>, i64)], collations: &[Collation]) -> bool {
-    for right in 1..entries.len() {
-        for left in 0..right {
-            let collides = entries[left].0.iter().zip(&entries[right].0).enumerate().all(|(position, (first, second))| {
-                if matches!(first, crate::WriteValue::Null) || matches!(second, crate::WriteValue::Null) {
-                    return false;
-                }
-                let collation = collations.get(position).copied().unwrap_or_default();
-                match (first, second) {
-                    (crate::WriteValue::Text(first), crate::WriteValue::Text(second)) => collation.compare_text(first, second).is_eq(),
-                    _ => first == second,
-                }
-            });
-            if collides {
-                return true;
-            }
-        }
-    }
-    false
 }
 
 /// Serializes results as a JSON array for the wasm host.

@@ -5,10 +5,16 @@
 //! function library, the JSON and datetime function families, the host UDF
 //! bridge, and the statement-level SELECT machinery in [`select`] with its
 //! index probes ([`probe`]) and window pass ([`window`]).
+//!
+//! The statement-level DML machinery ([`dml`]) writes rows for the product
+//! facades and the constraint guards ([`guards`]) validate uniqueness,
+//! foreign keys and `CHECK` constraints against the same read view.
 
 pub mod cells;
 pub mod datetime;
+pub mod dml;
 pub mod eval;
+pub mod guards;
 pub mod host;
 pub mod json;
 pub mod probe;
