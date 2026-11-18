@@ -1,0 +1,23 @@
+[package]
+name = "compiler-emitter"
+description = "Language-agnostic AOT lowering: fragment submission contracts, executable model, ABI structure and per-target emitters for JVM, Wasm, CLR, OVM and machine targets"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[lints.rust]
+missing_docs = "warn"
+
+[dependencies]
+acorn-jvm = { workspace = true }
+acorn-odin = { workspace = true }
+acorn-pe = { workspace = true }
+acorn-wasm = { workspace = true }
+compiler-optimize = { workspace = true }
+compiler-target = { workspace = true }
+compiler-types = { workspace = true, features = ["serde"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
