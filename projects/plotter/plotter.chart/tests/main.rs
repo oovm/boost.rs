@@ -8,4 +8,5 @@ mod compile;
 mod data;
 mod render;
 mod scale;
+#[cfg(feature = "vega-lite")]
 mod vega_lite;
