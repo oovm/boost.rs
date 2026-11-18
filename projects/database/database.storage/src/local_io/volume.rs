@@ -182,6 +182,37 @@ impl HostVolumeStore for FsVolumeStore {
     }
 }
 
+/// Boxed stores forward every call, so hosts can erase the concrete store type.
+impl<T: HostVolumeStore + ?Sized> HostVolumeStore for Box<T> {
+    fn len(&mut self, file: &VolumeFile) -> Result<Option<u64>> {
+        (**self).len(file)
+    }
+
+    fn read_at(&mut self, file: &VolumeFile, offset: u64, buf: &mut [u8]) -> Result<usize> {
+        (**self).read_at(file, offset, buf)
+    }
+
+    fn write_at(&mut self, file: &VolumeFile, offset: u64, body: &[u8]) -> Result<()> {
+        (**self).write_at(file, offset, body)
+    }
+
+    fn truncate(&mut self, file: &VolumeFile, len: u64) -> Result<()> {
+        (**self).truncate(file, len)
+    }
+
+    fn sync(&mut self, file: &VolumeFile) -> Result<()> {
+        (**self).sync(file)
+    }
+
+    fn remove(&mut self, file: &VolumeFile) -> Result<()> {
+        (**self).remove(file)
+    }
+
+    fn quota(&mut self) -> Result<Option<(u64, u64)>> {
+        (**self).quota()
+    }
+}
+
 /// 单个写入调用交给宿主的字节上限。
 const WRITE_CHUNK_BYTES: usize = 1 << 20;
 
@@ -307,7 +338,8 @@ fn main_header(body: &[u8]) -> Result<DatabaseHeader> {
 }
 
 fn enforce_quota<S: HostVolumeStore>(store: &mut S, path: &str, previous: u64, incoming: u64) -> Result<()> {
-    let Some((used, limit)) = store.quota()? else {
+    let Some((used, limit)) = store.quota()?
+    else {
         return Ok(());
     };
     let projected = used.saturating_sub(previous).saturating_add(incoming);
@@ -318,7 +350,8 @@ fn enforce_quota<S: HostVolumeStore>(store: &mut S, path: &str, previous: u64, i
 }
 
 fn read_whole<S: HostVolumeStore>(store: &mut S, file: &VolumeFile) -> Result<Option<Vec<u8>>> {
-    let Some(len) = store.len(file)? else {
+    let Some(len) = store.len(file)?
+    else {
         return Ok(None);
     };
     if len == 0 {
