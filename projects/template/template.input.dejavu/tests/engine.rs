@@ -72,3 +72,21 @@ fn capability_declares_the_input_namespace() {
     assert_eq!(capability.contract, "dejavu/v0");
     assert_eq!(capability.extensions, &["", ".doki", ".dejavu", ".html"]);
 }
+
+#[test]
+fn slug_filter_folds_marks_from_the_whole_mark_class() {
+    // `U+064B` 与 `U+0483` 不在旧手写 combining 区间内：旧实现把它们当普通非 ASCII 字符压成 `-`，
+    // 改用完整 Mark 类后应当直接丢弃，不产生分隔符。
+    let entry = TemplateId::new("theme", "page.doki");
+    let data = json!({ "title": "a\u{064B}b\u{0483}c" });
+    let text = render(Some(&entry), "{% title |> slug %}", &data, false).expect("render");
+    assert_eq!(text, "abc");
+}
+
+#[test]
+fn slug_filter_still_folds_decomposed_accented_latin() {
+    let entry = TemplateId::new("theme", "page.doki");
+    let data = json!({ "title": "Café Ⅻ 東京" });
+    let text = render(Some(&entry), "{% title |> slug %}", &data, false).expect("render");
+    assert_eq!(text, "cafe-xii");
+}

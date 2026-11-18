@@ -1400,7 +1400,7 @@ fn days_in_month(year: i32, month: u32) -> u32 {
 
 /// ASCII-fold slugify（匹配 TS `slugify`）。
 ///
-/// 1. NFKD（compatibility + canonical decomposition）规范化后去除组合字符；
+/// 1. NFKD（compatibility + canonical decomposition）规范化后去除全部 Mark（`Mn` / `Mc` / `Me`）；
 /// 2. 小写化；
 /// 3. 非 `[a-z0-9]` 序列压缩为单个 `-`；
 /// 4. 裁掉首尾 `-`。
@@ -1409,29 +1409,10 @@ fn days_in_month(year: i32, month: u32) -> u32 {
 /// TS `normalize("NFKD")` 也是这个语义。
 fn slugify(s: &str) -> String {
     use unicode_normalization::UnicodeNormalization;
-    // 手写 combining mark 过滤（unicode-normalization 0.1 暴露 nfkd()，
-    // 但 is_combining_mark 在不同 rustc 上 API 位置不同）。
-    const COMBINING_START: u32 = 0x0300;
-    const COMBINING_END: u32 = 0x036F;
-    const COMBINING_EXTENDED_START: u32 = 0x1AB0;
-    const COMBINING_EXTENDED_END: u32 = 0x1AFF;
-    const COMBINING_SUPP_START: u32 = 0x1DC0;
-    const COMBINING_SUPP_END: u32 = 0x1DFF;
-    const COMBINING_MARK_START: u32 = 0x20D0;
-    const COMBINING_MARK_END: u32 = 0x20FF;
-    const COMBINING_SYMBOLS_START: u32 = 0xFE20;
-    const COMBINING_SYMBOLS_END: u32 = 0xFE2F;
-
-    let is_combining = |c: char| -> bool {
-        let cp = c as u32;
-        matches!(cp, COMBINING_START..=COMBINING_END)
-            || matches!(cp, COMBINING_EXTENDED_START..=COMBINING_EXTENDED_END)
-            || matches!(cp, COMBINING_SUPP_START..=COMBINING_SUPP_END)
-            || matches!(cp, COMBINING_MARK_START..=COMBINING_MARK_END)
-            || matches!(cp, COMBINING_SYMBOLS_START..=COMBINING_SYMBOLS_END)
-    };
-
-    let folded: String = s.nfkd().filter(|c| !is_combining(*c)).collect::<String>().to_lowercase();
+    // U2 的第一步：Mark 判定改用 `unicode_types::is_mark`，覆盖完整 `M*` 类别，
+    // 不再手写 combining 区间。NFKD 仍来自外部 `unicode-normalization`，
+    // 待 `unicode.normalization` 落地后再替换。
+    let folded: String = s.nfkd().filter(|c| !unicode_types::is_mark(*c)).collect::<String>().to_lowercase();
     let mut out = String::new();
     let mut prev_dash = false;
     for c in folded.chars() {
