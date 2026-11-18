@@ -1,0 +1,13 @@
+[package]
+name = "interpreter-vm-wasm"
+description = "WebAssembly target VM substrate skeleton: stack interpreter, bounded execution and WASI preview1 / component-model host boundary contracts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[lints.rust]
+missing_docs = "warn"
+
+[dependencies]

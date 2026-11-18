@@ -2323,13 +2323,21 @@ name = "interpreter-jit"
 version = "0.1.0"
 
 [[package]]
-name = "interpreter-vm-odin-vm"
+name = "interpreter-vm-jvm"
+version = "0.1.0"
+
+[[package]]
+name = "interpreter-vm-ovm"
 version = "0.1.0"
 dependencies = [
  "acorn-odin",
  "interpreter-gc",
  "interpreter-jit",
 ]
+
+[[package]]
+name = "interpreter-vm-wasm"
+version = "0.1.0"
 
 [[package]]
 name = "intl-memoizer"

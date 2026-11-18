@@ -33,7 +33,9 @@ members = [
     "projects/crawler/crawler.types",
     "projects/interpreter/interpreter.gc",
     "projects/interpreter/interpreter.jit",
-    "projects/interpreter/interpreter.vm.odin-vm",
+    "projects/interpreter/interpreter.vm.jvm",
+    "projects/interpreter/interpreter.vm.ovm",
+    "projects/interpreter/interpreter.vm.wasm",
     "projects/database/database",
     "projects/database/database.client",
     "projects/database/database.cluster",
@@ -235,7 +237,9 @@ crawler-types = { path = "projects/crawler/crawler.types" }
 # 解释执行基础设施
 interpreter-gc = { path = "projects/interpreter/interpreter.gc" }
 interpreter-jit = { path = "projects/interpreter/interpreter.jit" }
-interpreter-vm-odin-vm = { path = "projects/interpreter/interpreter.vm.odin-vm" }
+interpreter-vm-jvm = { path = "projects/interpreter/interpreter.vm.jvm" }
+interpreter-vm-ovm = { path = "projects/interpreter/interpreter.vm.ovm" }
+interpreter-vm-wasm = { path = "projects/interpreter/interpreter.vm.wasm" }
 
 database = { path = "projects/database/database" }
 database-client = { path = "projects/database/database.client" }
