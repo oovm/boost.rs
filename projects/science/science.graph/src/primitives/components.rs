@@ -1,6 +1,13 @@
 //! 分量扫描原语（供 `graph_theory` 包装证书；不是已证领域 API）。
+//!
+//! 算法本身来自 `boost-math` 的共享图论核：本模块只把 `MutableGraph` 投影为
+//! 借用视图，并把结果还原成科学侧按 `NodeId` 稠密编号的分量标签。
 
-use std::collections::VecDeque;
+use boost_collection::GraphView;
+use boost_math::graph_theory::{
+    connected_components as shared_connected_components, strongly_connected_components as shared_strongly_connected_components,
+    topological_order_by,
+};
 
 use crate::{GraphDirection, GraphError, MutableGraph, NodeId};
 
@@ -11,65 +18,20 @@ pub fn topological_sort<N, E>(graph: &MutableGraph<N, E>) -> Result<Vec<NodeId>,
     if graph.direction() != GraphDirection::Directed {
         return Err(GraphError::UndirectedTopo);
     }
-    let n = graph.node_count() as usize;
-    let mut indegree = vec![0usize; n];
-    for node in 0..n {
-        for target in graph.neighbors(NodeId(node as u64)) {
-            indegree[target.0 as usize] += 1;
-        }
-    }
-    let mut ready: VecDeque<NodeId> = (0..n).filter(|&i| indegree[i] == 0).map(|i| NodeId(i as u64)).collect();
-    let mut order = Vec::with_capacity(n);
-    while let Some(node) = ready.pop_front() {
-        order.push(node);
-        for target in graph.neighbors(node) {
-            let i = target.0 as usize;
-            indegree[i] -= 1;
-            if indegree[i] == 0 {
-                ready.push_back(target);
-            }
-        }
-    }
-    if order.len() != n { Err(GraphError::CycleDetected) } else { Ok(order) }
+    let ids = node_ids(graph);
+    let view = view_of(graph, &ids);
+    topological_order_by(&view, |node| **node)
+        .map(|order| order.into_iter().map(|node| *node).collect())
+        .map_err(|_| GraphError::CycleDetected)
 }
 
 /// 弱连通分量标签扫描（有向图按底层无向邻接解释）。
 ///
 /// 返回每个节点的分量标签，标签为该分量中最小 `NodeId`。领域结论须经 engine 包装。
 pub fn connected_components<N, E>(graph: &MutableGraph<N, E>) -> Vec<NodeId> {
-    let n = graph.node_count() as usize;
-    let mut labels = (0..n).map(|i| NodeId(i as u64)).collect::<Vec<_>>();
-    let mut adj = vec![Vec::new(); n];
-    for u in 0..n {
-        let uid = NodeId(u as u64);
-        for v in graph.neighbors(uid) {
-            adj[u].push(v);
-            if graph.direction() == GraphDirection::Directed {
-                adj[v.0 as usize].push(uid);
-            }
-        }
-    }
-    let mut seen = vec![false; n];
-    for start in 0..n {
-        if seen[start] {
-            continue;
-        }
-        let root = NodeId(start as u64);
-        let mut stack = vec![root];
-        seen[start] = true;
-        labels[start] = root;
-        while let Some(node) = stack.pop() {
-            for next in &adj[node.0 as usize] {
-                let i = next.0 as usize;
-                if !seen[i] {
-                    seen[i] = true;
-                    labels[i] = root;
-                    stack.push(*next);
-                }
-            }
-        }
-    }
-    labels
+    let ids = node_ids(graph);
+    let view = view_of(graph, &ids);
+    labels_from_components(graph.node_count(), shared_connected_components(&view).unwrap_or_default())
 }
 
 /// 强连通分量标签扫描（Kosaraju；仅有向图）。
@@ -79,54 +41,37 @@ pub fn strongly_connected_components<N, E>(graph: &MutableGraph<N, E>) -> Result
     if graph.direction() != GraphDirection::Directed {
         return Err(GraphError::UndirectedTopo);
     }
-    let n = graph.node_count() as usize;
-    if n == 0 {
-        return Ok(Vec::new());
+    let ids = node_ids(graph);
+    let view = view_of(graph, &ids);
+    let components = shared_strongly_connected_components(&view).map_err(|_| GraphError::UndirectedTopo)?;
+    Ok(labels_from_components(graph.node_count(), components))
+}
+
+fn node_ids<N, E>(graph: &MutableGraph<N, E>) -> Vec<NodeId> {
+    (0..graph.node_count()).map(NodeId).collect()
+}
+
+fn view_of<'a, N, E>(graph: &MutableGraph<N, E>, ids: &'a [NodeId]) -> GraphView<'a, NodeId> {
+    let mut view = GraphView::new(graph.direction() == GraphDirection::Directed);
+    for id in ids {
+        view.add_vertex(id);
     }
-    let mut order = Vec::with_capacity(n);
-    let mut seen = vec![false; n];
-    for start in 0..n {
-        if seen[start] {
+    for (from, to, _) in graph.edges() {
+        view.add_edge(&ids[from.0 as usize], &ids[to.0 as usize]);
+    }
+    view
+}
+
+/// 共享核按分量给出顶点列表；标签取分量内最小 `NodeId`，与既有语义一致。
+fn labels_from_components(node_count: u64, components: Vec<Vec<&NodeId>>) -> Vec<NodeId> {
+    let mut labels = (0..node_count).map(NodeId).collect::<Vec<_>>();
+    for component in components {
+        let Some(root) = component.iter().map(|node| **node).min() else {
             continue;
-        }
-        let mut stack = vec![(NodeId(start as u64), 0usize)];
-        seen[start] = true;
-        while let Some((node, idx)) = stack.pop() {
-            let outs: Vec<NodeId> = graph.out_neighbors(node).collect();
-            if idx < outs.len() {
-                stack.push((node, idx + 1));
-                let next = outs[idx];
-                let i = next.0 as usize;
-                if !seen[i] {
-                    seen[i] = true;
-                    stack.push((next, 0));
-                }
-            }
-            else {
-                order.push(node);
-            }
+        };
+        for node in component {
+            labels[node.0 as usize] = root;
         }
     }
-    let mut labels = vec![NodeId(0); n];
-    let mut seen = vec![false; n];
-    for finish in order.into_iter().rev() {
-        if seen[finish.0 as usize] {
-            continue;
-        }
-        let root = finish;
-        let mut stack = vec![finish];
-        seen[finish.0 as usize] = true;
-        labels[finish.0 as usize] = root;
-        while let Some(node) = stack.pop() {
-            for prev in graph.in_neighbors(node) {
-                let i = prev.0 as usize;
-                if !seen[i] {
-                    seen[i] = true;
-                    labels[i] = root;
-                    stack.push(prev);
-                }
-            }
-        }
-    }
-    Ok(labels)
+    labels
 }
