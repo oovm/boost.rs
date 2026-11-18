@@ -343,11 +343,11 @@ mod tests {
         VoiceSpec::new(syllables)
     }
 
-    fn s(vowel: Vowel, coda: None, pitch: f32, beats: f32) -> Syllable {
+    fn s(vowel: Vowel, pitch: f32, beats: f32) -> Syllable {
         Syllable { onset: None, vowel, coda: None, pitch, beats }
     }
 
-    fn coda(vowel: Vowel, ending: Coda, coda: None, pitch: f32, beats: f32) -> Syllable {
+    fn coda(vowel: Vowel, ending: Coda, pitch: f32, beats: f32) -> Syllable {
         Syllable { onset: None, vowel, coda: Some(ending), pitch, beats }
     }
 

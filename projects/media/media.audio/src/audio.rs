@@ -669,7 +669,7 @@ mod tests {
     #[test]
     fn placed_voice_is_audible_and_positioned() {
         let song =
-            media_voice::VoiceSpec::new(vec![media_voice::Syllable { onset: None, vowel: media_voice::Vowel::A, pitch: 330.0, beats: 1.0 }]);
+            media_voice::VoiceSpec::new(vec![media_voice::Syllable { onset: None, vowel: media_voice::Vowel::A, coda: None, pitch: 330.0, beats: 1.0 }]);
         let mut p = plan(Vec::new());
         p.voice = vec![VoicePlacement { song, at_frames: 15, volume: 0.9 }];
         let bed = build_audio(&p, &mut MediaLibrary::new(), DecodeLimits::unbounded()).expect("bed");
