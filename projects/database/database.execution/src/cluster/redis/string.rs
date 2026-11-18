@@ -2623,6 +2623,40 @@ pub fn handle_string(
     Ok(true)
 }
 
+/// 用一帧参数执行字符串与键族命令，未知命令按真机文案回复。
+///
+/// 这是给持有整帧的嵌入宿主用的族入口：监听器按帧分派时用 [`handle_string`] 的
+/// `false` 返回值继续找下一个族，宿主只有一条命令要执行时用这里。命令语义、
+/// 参数校验、过期判定与回复分帧都在本模块，调用方只提供逻辑库命名空间与协议版本。
+pub fn execute(
+    stream: &mut dyn Write,
+    arguments: &[&[u8]],
+    executor: &dyn KeyValueExecutor,
+    namespace: &Namespace,
+    protocol: u8,
+) -> io::Result<()> {
+    let request = Request { arguments: arguments.to_vec(), consumed: 0 };
+    if handle_string(stream, &request, Some(executor), Some(executor), None, namespace, protocol)? {
+        return Ok(());
+    }
+    write_unknown_command(stream, arguments)
+}
+
+/// 用一帧参数执行键空间族（`KEYS` / `SCAN` / `TYPE` / `OBJECT`），未知命令按真机文案回复。
+pub fn execute_keyspace(
+    stream: &mut dyn Write,
+    arguments: &[&[u8]],
+    executor: &dyn KeyValueExecutor,
+    namespace: &Namespace,
+    protocol: u8,
+) -> io::Result<()> {
+    let request = Request { arguments: arguments.to_vec(), consumed: 0 };
+    if handle_keyspace(stream, &request, Some(executor), Some(executor), None, namespace, protocol)? {
+        return Ok(());
+    }
+    write_unknown_command(stream, arguments)
+}
+
 /// 一个逻辑库里可见的键数与其中带过期时间的键数。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KeyspaceCount {
