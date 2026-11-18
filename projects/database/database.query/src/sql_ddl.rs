@@ -22,6 +22,11 @@ pub enum SqlDdlStatement {
         primary_key: Vec<String>,
         /// Unique constraints collected from table-level declarations.
         unique_constraints: Vec<Vec<String>>,
+        /// Table-level `CHECK` expressions, stored as the text written inside
+        /// the parentheses and re-parsed by the SQL frontend at write time.
+        check_constraints: Vec<String>,
+        /// Table-level `FOREIGN KEY` constraints.
+        foreign_keys: Vec<DdlForeignKey>,
         /// `CHARSET` table option, as written.
         charset: Option<String>,
         /// `COLLATE` table option, as written.
@@ -55,6 +60,8 @@ pub enum SqlDdlStatement {
         unique: bool,
         /// Indexed columns in declaration order.
         columns: Vec<String>,
+        /// Partial-index `WHERE` predicate text, as written after `WHERE`.
+        predicate: Option<String>,
     },
     /// `DROP INDEX ...`
     DropIndex {
@@ -88,6 +95,35 @@ pub struct DdlColumn {
     pub auto_increment: bool,
     /// Raw `DEFAULT` literal text, when written.
     pub default: Option<String>,
+    /// Inline `CHECK` expression, stored as the text written inside the
+    /// parentheses and re-parsed by the SQL frontend at write time.
+    pub check: Option<String>,
+    /// Inline `REFERENCES` clause, when written.
+    pub reference: Option<DdlReference>,
+}
+
+/// One `REFERENCES table [(column)] [ON DELETE action] [ON UPDATE action]`
+/// clause, from a column-level inline reference or a table-level foreign key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DdlReference {
+    /// Referenced table name after the accepted `public.` prefix.
+    pub table: String,
+    /// Referenced column, when written. A table-level foreign key without a
+    /// column list references the parent table's primary key.
+    pub column: Option<String>,
+    /// `ON DELETE` action text, as written.
+    pub on_delete: Option<String>,
+    /// `ON UPDATE` action text, as written.
+    pub on_update: Option<String>,
+}
+
+/// One table-level `FOREIGN KEY (columns) REFERENCES ...` constraint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DdlForeignKey {
+    /// Child columns in declaration order.
+    pub columns: Vec<String>,
+    /// Referenced parent table and column.
+    pub reference: DdlReference,
 }
 
 /// Collations the gateway accepts as metadata.
@@ -201,6 +237,10 @@ enum Token {
     Number(String),
     /// `(`, `)`, `,`, `;`, `=`, or `.`.
     Punct(char),
+    /// Operator token used inside `CHECK` expressions, function-call defaults
+    /// and partial-index predicates: `>=`, `<=`, `<>`, `!=`, `<`, `>`, `+`,
+    /// `-`, `*` or `||`.
+    Op(&'static str),
 }
 
 fn is_word_byte(byte: u8) -> bool {
@@ -212,8 +252,9 @@ fn token_text(token: &Token) -> String {
         Token::Word(text) | Token::Number(text) => text.clone(),
         Token::Backtick(text) => format!("`{text}`"),
         Token::Quoted(text) => format!("\"{text}\""),
-        Token::String(text) => format!("'{text}'"),
+        Token::String(text) => format!("'{}'", text.replace('\'', "''")),
         Token::Punct(ch) => ch.to_string(),
+        Token::Op(text) => text.to_string(),
     }
 }
 
@@ -315,11 +356,47 @@ fn tokenize(source: &str, dialect: SqlDialect) -> Result<Vec<Token>, SqlFrontend
                 tokens.push(Token::Punct(char::from(byte)));
                 index += 1;
             }
+            b'|' if bytes.get(index + 1) == Some(&b'|') => {
+                tokens.push(Token::Op("||"));
+                index += 2;
+            }
+            b'>' if bytes.get(index + 1) == Some(&b'=') => {
+                tokens.push(Token::Op(">="));
+                index += 2;
+            }
+            b'>' => {
+                tokens.push(Token::Op(">"));
+                index += 1;
+            }
+            b'<' if bytes.get(index + 1) == Some(&b'=') => {
+                tokens.push(Token::Op("<="));
+                index += 2;
+            }
+            b'<' if bytes.get(index + 1) == Some(&b'>') => {
+                tokens.push(Token::Op("<>"));
+                index += 2;
+            }
+            b'<' => {
+                tokens.push(Token::Op("<"));
+                index += 1;
+            }
+            b'!' if bytes.get(index + 1) == Some(&b'=') => {
+                tokens.push(Token::Op("!="));
+                index += 2;
+            }
+            b'+' | b'*' => {
+                tokens.push(Token::Op(if byte == b'+' { "+" } else { "*" }));
+                index += 1;
+            }
             b'-' if bytes.get(index + 1).is_some_and(u8::is_ascii_digit) => {
                 let start = index;
                 index += 1;
                 index = take_number(bytes, index);
                 tokens.push(Token::Number(source[start..index].to_string()));
+            }
+            b'-' => {
+                tokens.push(Token::Op("-"));
+                index += 1;
             }
             byte if byte.is_ascii_digit() => {
                 let start = index;
@@ -478,15 +555,27 @@ impl Parser {
         let mut columns = Vec::new();
         let mut primary_key = Vec::new();
         let mut unique_constraints = Vec::new();
+        let mut check_constraints = Vec::new();
+        let mut foreign_keys = Vec::new();
         while !self.peek_punct(')') {
-            self.table_item(&mut columns, &mut primary_key, &mut unique_constraints)?;
+            self.table_item(&mut columns, &mut primary_key, &mut unique_constraints, &mut check_constraints, &mut foreign_keys)?;
             if !self.eat_punct(',') {
                 break;
             }
         }
         self.expect_punct(')')?;
         let (charset, collation) = self.table_options()?;
-        Ok(SqlDdlStatement::CreateTable { name, if_not_exists, columns, primary_key, unique_constraints, charset, collation })
+        Ok(SqlDdlStatement::CreateTable {
+            name,
+            if_not_exists,
+            columns,
+            primary_key,
+            unique_constraints,
+            check_constraints,
+            foreign_keys,
+            charset,
+            collation,
+        })
     }
 
     fn table_item(
@@ -494,6 +583,8 @@ impl Parser {
         columns: &mut Vec<DdlColumn>,
         primary_key: &mut Vec<String>,
         unique_constraints: &mut Vec<Vec<String>>,
+        check_constraints: &mut Vec<String>,
+        foreign_keys: &mut Vec<DdlForeignKey>,
     ) -> Result<(), SqlFrontendError> {
         match self.peek_keyword().as_deref() {
             Some("CONSTRAINT") => {
@@ -516,11 +607,13 @@ impl Parser {
                     unique_constraints.push(self.column_list()?);
                     Ok(())
                 }
-                else if self.peek_keyword().as_deref() == Some("FOREIGN") {
-                    Err(SqlFrontendError::unsupported("`FOREIGN KEY` table constraints are not supported by the cluster SQL gateway"))
+                else if self.eat_keyword("FOREIGN") {
+                    foreign_keys.push(self.foreign_key_item()?);
+                    Ok(())
                 }
-                else if self.peek_keyword().as_deref() == Some("CHECK") {
-                    Err(SqlFrontendError::unsupported("`CHECK` constraints are not supported by the cluster SQL gateway"))
+                else if self.eat_keyword("CHECK") {
+                    check_constraints.push(self.capture_paren_group()?);
+                    Ok(())
                 }
                 else {
                     Err(self.unsupported_prefix("CONSTRAINT"))
@@ -546,9 +639,15 @@ impl Parser {
                 Ok(())
             }
             Some("FOREIGN") => {
-                Err(SqlFrontendError::unsupported("`FOREIGN KEY` table constraints are not supported by the cluster SQL gateway"))
+                self.cursor += 1;
+                foreign_keys.push(self.foreign_key_item()?);
+                Ok(())
             }
-            Some("CHECK") => Err(SqlFrontendError::unsupported("`CHECK` constraints are not supported by the cluster SQL gateway")),
+            Some("CHECK") => {
+                self.cursor += 1;
+                check_constraints.push(self.capture_paren_group()?);
+                Ok(())
+            }
             Some("KEY") | Some("INDEX") => Err(SqlFrontendError::unsupported(
                 "`KEY` / `INDEX` table constraints are not supported by the cluster SQL gateway, use `CREATE INDEX`",
             )),
@@ -596,6 +695,8 @@ impl Parser {
         // PostgreSQL serial pseudo-types imply an owned sequence.
         let mut auto_increment = matches!(sql_type.as_str(), "SERIAL" | "BIGSERIAL" | "SMALLSERIAL");
         let mut default = None;
+        let mut check = None;
+        let mut reference = None;
         loop {
             match self.peek_keyword().as_deref() {
                 Some("NOT") => {
@@ -633,12 +734,11 @@ impl Parser {
                     self.string_literal("COMMENT")?;
                 }
                 Some("CHECK") => {
-                    return Err(SqlFrontendError::unsupported("inline `CHECK` constraints are not supported by the cluster SQL gateway"));
+                    self.cursor += 1;
+                    check = Some(self.capture_paren_group()?);
                 }
                 Some("REFERENCES") => {
-                    return Err(SqlFrontendError::unsupported(
-                        "`REFERENCES` / `FOREIGN KEY` constraints are not supported by the cluster SQL gateway",
-                    ));
+                    reference = Some(self.reference_clause()?);
                 }
                 Some("GENERATED") => {
                     return Err(SqlFrontendError::unsupported("`GENERATED` columns are not supported by the cluster SQL gateway"));
@@ -646,7 +746,103 @@ impl Parser {
                 _ => break,
             }
         }
-        Ok(DdlColumn { name, sql_type, not_null, inline_primary_key, inline_unique, auto_increment, default })
+        Ok(DdlColumn { name, sql_type, not_null, inline_primary_key, inline_unique, auto_increment, default, check, reference })
+    }
+
+    /// Captures one balanced parenthesised group as re-parseable SQL text.
+    ///
+    /// The opening `(` must be the next token. The returned text is the group
+    /// content with tokens rejoined by single spaces, enough for the SQL
+    /// frontend to re-parse the expression when a write validates it; the DDL
+    /// parser itself never evaluates this text.
+    fn capture_paren_group(&mut self) -> Result<String, SqlFrontendError> {
+        self.expect_punct('(')?;
+        let mut depth = 1usize;
+        let mut parts: Vec<String> = Vec::new();
+        while let Some(token) = self.next() {
+            match token {
+                Token::Punct('(') => depth += 1,
+                Token::Punct(')') => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Ok(parts.join(" "));
+                    }
+                }
+                other => parts.push(token_text(&other)),
+            }
+        }
+        Err(SqlFrontendError::syntax("unclosed parenthesised expression in DDL statement"))
+    }
+
+    /// Parses the body of a `FOREIGN KEY (columns) REFERENCES ...` item after
+    /// the `FOREIGN` keyword was consumed.
+    fn foreign_key_item(&mut self) -> Result<DdlForeignKey, SqlFrontendError> {
+        self.expect_keyword("KEY")?;
+        let columns = self.column_list()?;
+        let reference = self.reference_clause()?;
+        Ok(DdlForeignKey { columns, reference })
+    }
+
+    /// Parses `REFERENCES table [(column)] [ON DELETE action] [ON UPDATE action]`.
+    fn reference_clause(&mut self) -> Result<DdlReference, SqlFrontendError> {
+        self.expect_keyword("REFERENCES")?;
+        let table = self.table_name()?;
+        let column = if self.peek_punct('(') {
+            let columns = self.column_list()?;
+            let column = columns
+                .into_iter()
+                .next()
+                .ok_or_else(|| SqlFrontendError::syntax("`REFERENCES` requires at least one column"))?;
+            Some(column)
+        }
+        else {
+            None
+        };
+        let mut on_delete = None;
+        let mut on_update = None;
+        while self.eat_keyword("ON") {
+            if self.eat_keyword("DELETE") {
+                on_delete = Some(self.reference_action()?);
+            }
+            else if self.eat_keyword("UPDATE") {
+                on_update = Some(self.reference_action()?);
+            }
+            else {
+                return Err(SqlFrontendError::syntax("`REFERENCES ... ON` requires `DELETE` or `UPDATE`"));
+            }
+        }
+        Ok(DdlReference { table, column, on_delete, on_update })
+    }
+
+    /// Parses one referential action: `NO ACTION`, `RESTRICT`, `CASCADE`,
+    /// `SET NULL` or `SET DEFAULT`.
+    fn reference_action(&mut self) -> Result<String, SqlFrontendError> {
+        match self.peek_keyword().as_deref() {
+            Some("NO") => {
+                self.cursor += 1;
+                self.expect_keyword("ACTION")?;
+                Ok("NO ACTION".to_string())
+            }
+            Some("RESTRICT") => {
+                self.cursor += 1;
+                Ok("RESTRICT".to_string())
+            }
+            Some("CASCADE") => {
+                self.cursor += 1;
+                Ok("CASCADE".to_string())
+            }
+            Some("SET") => {
+                self.cursor += 1;
+                if self.eat_keyword("NULL") {
+                    Ok("SET NULL".to_string())
+                }
+                else {
+                    self.expect_keyword("DEFAULT")?;
+                    Ok("SET DEFAULT".to_string())
+                }
+            }
+            _ => Err(self.expected("a referential action")),
+        }
     }
 
     fn type_parameters(&mut self) -> Result<String, SqlFrontendError> {
@@ -678,15 +874,14 @@ impl Parser {
                 let keyword = word.to_ascii_uppercase();
                 match keyword.as_str() {
                     "NULL" | "TRUE" | "FALSE" => Ok(word),
-                    "CURRENT_TIMESTAMP" => {
-                        if self.eat_punct('(') {
-                            self.expect_punct(')')?;
-                            Ok(format!("{word}()"))
-                        }
-                        else {
-                            Ok(word)
-                        }
+                    _ if self.peek_punct('(') => {
+                        // Function-call default such as `now()` or
+                        // `CURRENT_TIMESTAMP(3)`: capture the balanced group
+                        // and store the call text for the write path.
+                        let inner = self.capture_paren_group()?;
+                        Ok(format!("{word}({inner})"))
                     }
+                    "CURRENT_TIMESTAMP" => Ok(word),
                     _ => Err(SqlFrontendError::unsupported(format!("`DEFAULT {word}` is not supported by the cluster SQL gateway"))),
                 }
             }
@@ -924,13 +1119,24 @@ impl Parser {
         if self.eat_keyword("USING") {
             self.index_method()?;
         }
-        if self.peek_keyword().as_deref() == Some("WHERE") {
-            return Err(SqlFrontendError::unsupported("partial indexes with `WHERE ...` are not supported by the cluster SQL gateway"));
+        let predicate = if self.eat_keyword("WHERE") {
+            let mut parts: Vec<String> = Vec::new();
+            while self.peek().is_some_and(|token| !matches!(token, Token::Punct(';'))) {
+                let token = self.next().expect("token was just peeked");
+                parts.push(token_text(&token));
+            }
+            if parts.is_empty() {
+                return Err(SqlFrontendError::syntax("`CREATE INDEX ... WHERE` requires a predicate expression"));
+            }
+            Some(parts.join(" "))
         }
+        else {
+            None
+        };
         if let Some(keyword) = self.peek_keyword() {
             return Err(SqlFrontendError::unsupported(format!("`CREATE INDEX ... {keyword}` is not supported by the cluster SQL gateway")));
         }
-        Ok(SqlDdlStatement::CreateIndex { name, table, if_not_exists, unique, columns })
+        Ok(SqlDdlStatement::CreateIndex { name, table, if_not_exists, unique, columns, predicate })
     }
 
     fn index_method(&mut self) -> Result<(), SqlFrontendError> {

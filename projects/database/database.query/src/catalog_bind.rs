@@ -139,6 +139,31 @@ pub struct SqlCatalogTable {
     /// Each inner vector is one constraint. Writes are rejected when they would
     /// produce a duplicate tuple, matching PostgreSQL `23505` and MySQL `1062`.
     pub unique_constraints: Vec<Vec<u64>>,
+    /// Table-level `CHECK` expression texts from local DDL, re-parsed by the
+    /// SQL frontend when a write validates them. Absent for catalog-seeded
+    /// tables published from the VOS contract.
+    pub check_constraints: Vec<String>,
+    /// `FOREIGN KEY` constraints projected onto field identities.
+    pub foreign_keys: Vec<SqlCatalogForeignKey>,
+}
+
+/// One `FOREIGN KEY` constraint projected onto catalog field identities.
+///
+/// The write path enforces referential integrity with a point lookup of the
+/// parent columns: an INSERT or UPDATE that supplies a non-`NULL` child value
+/// with no matching parent row fails with PostgreSQL `23503`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SqlCatalogForeignKey {
+    /// Child column field identities, in declaration order.
+    pub columns: Vec<u64>,
+    /// Referenced table identity.
+    pub parent_type_id: u64,
+    /// Referenced column field identities, aligned with [`Self::columns`].
+    pub parent_columns: Vec<u64>,
+    /// `ON DELETE` action text, as written.
+    pub on_delete: Option<String>,
+    /// `ON UPDATE` action text, as written.
+    pub on_update: Option<String>,
 }
 
 /// A column identity exposed by the cluster catalog to a gateway binder.
@@ -158,6 +183,8 @@ pub struct SqlCatalogField {
     pub capacity: Option<u32>,
     /// Raw `DEFAULT` literal text from local DDL, when declared.
     pub default: Option<String>,
+    /// Inline `CHECK` expression text from local DDL, when declared.
+    pub check: Option<String>,
 }
 
 /// The gateway's immutable view of one published VOS catalog revision.
@@ -213,10 +240,18 @@ impl SqlCatalog {
                             vos_type_name,
                             capacity: None,
                             default: None,
+                            check: None,
                         })
                     })
                     .collect::<Result<Vec<_>, _>>()?;
-                Ok(SqlCatalogTable { type_id: entry.type_id, name, fields, unique_constraints: Vec::new() })
+                Ok(SqlCatalogTable {
+                    type_id: entry.type_id,
+                    name,
+                    fields,
+                    unique_constraints: Vec::new(),
+                    check_constraints: Vec::new(),
+                    foreign_keys: Vec::new(),
+                })
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self { schema_version, tables })

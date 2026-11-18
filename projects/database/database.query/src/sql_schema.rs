@@ -19,10 +19,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     catalog_bind::{
         SqlCatalog, SqlCatalogBoundColumn, SqlCatalogBoundExpression, SqlCatalogBoundInsert, SqlCatalogBoundStatement, SqlCatalogField,
-        SqlCatalogTable, SqlFieldType,
+        SqlCatalogForeignKey, SqlCatalogTable, SqlFieldType,
     },
     sql::{SqlBoundLiteral, SqlErrorKind, SqlFrontendError},
-    sql_ddl::SqlDdlStatement,
+    sql_ddl::{DdlReference, SqlDdlStatement},
 };
 
 /// Contract tag written into every persisted schema document.
@@ -100,6 +100,9 @@ pub(crate) struct SchemaField {
     /// Next value the owned sequence hands out. Persisted with the schema so a
     /// restart never repeats a value the client already observed.
     pub(crate) next_value: u64,
+    /// Inline `CHECK` expression text, stored as written inside the
+    /// parentheses and re-parsed by the SQL frontend when a write validates it.
+    pub(crate) check: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,7 +111,25 @@ pub(crate) struct SchemaTable {
     pub(crate) type_id: u64,
     pub(crate) primary_key: Vec<String>,
     pub(crate) unique_constraints: Vec<Vec<String>>,
+    /// Table-level `CHECK` expression texts, stored as written inside the
+    /// parentheses.
+    pub(crate) check_constraints: Vec<String>,
+    /// `FOREIGN KEY` constraints with the referenced columns already resolved
+    /// to column names of the parent table.
+    pub(crate) foreign_keys: Vec<SchemaForeignKey>,
     pub(crate) fields: Vec<SchemaField>,
+}
+
+/// One stored foreign key: child column names, the referenced table, and the
+/// referenced column names resolved at DDL time (the parent primary key when
+/// the statement omitted a column list).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SchemaForeignKey {
+    pub(crate) columns: Vec<String>,
+    pub(crate) references_table: String,
+    pub(crate) references_columns: Vec<String>,
+    pub(crate) on_delete: Option<String>,
+    pub(crate) on_update: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -117,6 +138,8 @@ pub(crate) struct SchemaIndex {
     pub(crate) table: String,
     pub(crate) unique: bool,
     pub(crate) columns: Vec<String>,
+    /// Partial-index `WHERE` predicate text, stored as written.
+    pub(crate) predicate: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -250,6 +273,8 @@ impl SqlSchemaRegistry {
                 type_id: table.type_id,
                 primary_key: Vec::new(),
                 unique_constraints: Vec::new(),
+                check_constraints: Vec::new(),
+                foreign_keys: Vec::new(),
                 fields: table
                     .fields
                     .iter()
@@ -262,6 +287,7 @@ impl SqlSchemaRegistry {
                         default: None,
                         auto_increment: false,
                         next_value: 1,
+                        check: None,
                     })
                     .collect(),
             })
@@ -443,6 +469,24 @@ fn catalog_from_state(state: &RegistryState) -> SqlCatalog {
                     unique_constraints.push(columns);
                 }
             }
+            // Foreign keys are projected onto field identities. A constraint
+            // whose parent table was dropped afterwards disappears from the
+            // projection, exactly as the write path can no longer enforce it.
+            let mut foreign_keys = Vec::new();
+            for key in &table.foreign_keys {
+                let Some(parent) = state.table(&key.references_table) else { continue };
+                let columns: Option<Vec<u64>> = key.columns.iter().map(|name| field_id(table, name)).collect();
+                let parent_columns: Option<Vec<u64>> = key.references_columns.iter().map(|name| field_id(parent, name)).collect();
+                if let (Some(columns), Some(parent_columns)) = (columns, parent_columns) {
+                    foreign_keys.push(SqlCatalogForeignKey {
+                        columns,
+                        parent_type_id: parent.type_id,
+                        parent_columns,
+                        on_delete: key.on_delete.clone(),
+                        on_update: key.on_update.clone(),
+                    });
+                }
+            }
             SqlCatalogTable {
                 type_id: table.type_id,
                 name: table.name.clone(),
@@ -456,9 +500,12 @@ fn catalog_from_state(state: &RegistryState) -> SqlCatalog {
                         vos_type_name: None,
                         capacity: field.capacity,
                         default: field.default.clone(),
+                        check: field.check.clone(),
                     })
                     .collect(),
                 unique_constraints,
+                check_constraints: table.check_constraints.clone(),
+                foreign_keys,
             }
         })
         .collect();
@@ -469,9 +516,64 @@ fn field_id(table: &SchemaTable, name: &str) -> Option<u64> {
     table.fields.iter().find(|field| field.name == name).map(|field| field.field_id)
 }
 
+/// Validates one foreign key against the registry and resolves the referenced
+/// column names when the statement omitted the column list, mirroring
+/// PostgreSQL: the parent table must exist at declaration time and the
+/// referenced columns must exist with matching arity.
+fn resolve_foreign_key(
+    state: &RegistryState,
+    table: &str,
+    columns: &[String],
+    reference: &DdlReference,
+) -> Result<SchemaForeignKey, SqlFrontendError> {
+    if columns.is_empty() {
+        return Err(SqlFrontendError::syntax(format!("table `{table}` declares a FOREIGN KEY without columns")));
+    }
+    let parent = state.table(&reference.table).ok_or_else(|| {
+        SqlFrontendError::new(
+            SqlErrorKind::UnknownTable,
+            format!("foreign key of table `{table}` references table `{}` that does not exist", reference.table),
+        )
+    })?;
+    let referenced: Vec<String> = match &reference.column {
+        Some(column) => {
+            if !parent.fields.iter().any(|field| &field.name == column) {
+                return Err(SqlFrontendError::new(
+                    SqlErrorKind::UnknownColumn,
+                    format!("foreign key of table `{table}` references column `{}.{column}` that does not exist", parent.name),
+                ));
+            }
+            vec![column.clone()]
+        }
+        None => {
+            if parent.primary_key.is_empty() {
+                return Err(SqlFrontendError::syntax(format!(
+                    "foreign key of table `{table}` references table `{}` without a column list, but the parent table has no primary key",
+                    parent.name
+                )));
+            }
+            parent.primary_key.clone()
+        }
+    };
+    if referenced.len() != columns.len() {
+        return Err(SqlFrontendError::syntax(format!(
+            "foreign key of table `{table}` declares {} columns but references {} columns",
+            columns.len(),
+            referenced.len()
+        )));
+    }
+    Ok(SchemaForeignKey {
+        columns: columns.to_vec(),
+        references_table: reference.table.clone(),
+        references_columns: referenced,
+        on_delete: reference.on_delete.clone(),
+        on_update: reference.on_update.clone(),
+    })
+}
+
 fn apply_ddl(state: &mut RegistryState, statement: &SqlDdlStatement) -> Result<(SqlDdlOutcome, bool), SqlFrontendError> {
     match statement {
-        SqlDdlStatement::CreateTable { name, if_not_exists, columns, primary_key, unique_constraints, .. } => {
+        SqlDdlStatement::CreateTable { name, if_not_exists, columns, primary_key, unique_constraints, check_constraints, foreign_keys, .. } => {
             if state.table(name).is_some() {
                 if *if_not_exists {
                     return Ok((SqlDdlOutcome::CreateTable { created: false }, false));
@@ -527,6 +629,28 @@ fn apply_ddl(state: &mut RegistryState, statement: &SqlDdlStatement) -> Result<(
                     }
                 }
             }
+            for check in check_constraints.iter().chain(columns.iter().filter_map(|column| column.check.as_ref())) {
+                if check.trim().is_empty() {
+                    return Err(SqlFrontendError::syntax(format!("table `{name}` declares an empty CHECK constraint")));
+                }
+            }
+            let mut resolved_keys = Vec::with_capacity(foreign_keys.len() + columns.iter().filter(|column| column.reference.is_some()).count());
+            for key in foreign_keys {
+                for column in &key.columns {
+                    if !columns.iter().any(|candidate| &candidate.name == column) {
+                        return Err(SqlFrontendError::new(
+                            SqlErrorKind::UnknownColumn,
+                            format!("foreign key column `{column}` does not exist in table `{name}`"),
+                        ));
+                    }
+                }
+                resolved_keys.push(resolve_foreign_key(state, name, &key.columns, &key.reference)?);
+            }
+            for column in columns {
+                if let Some(reference) = &column.reference {
+                    resolved_keys.push(resolve_foreign_key(state, name, std::slice::from_ref(&column.name), reference)?);
+                }
+            }
             let mut fields = Vec::with_capacity(columns.len());
             for column in columns {
                 let (base, capacity) = column_type(column, name)?;
@@ -543,6 +667,7 @@ fn apply_ddl(state: &mut RegistryState, statement: &SqlDdlStatement) -> Result<(
                     default: column.default.clone(),
                     auto_increment: column.auto_increment,
                     next_value: 1,
+                    check: column.check.clone(),
                 });
             }
             let type_id = state.next_type_id;
@@ -552,6 +677,8 @@ fn apply_ddl(state: &mut RegistryState, statement: &SqlDdlStatement) -> Result<(
                 type_id,
                 primary_key: primary,
                 unique_constraints: unique_constraints.clone(),
+                check_constraints: check_constraints.clone(),
+                foreign_keys: resolved_keys,
                 fields,
             });
             Ok((SqlDdlOutcome::CreateTable { created: true }, true))
@@ -574,6 +701,13 @@ fn apply_ddl(state: &mut RegistryState, statement: &SqlDdlStatement) -> Result<(
                     "table `{table}` already has a PRIMARY KEY, cannot add another inline PRIMARY KEY column"
                 )));
             }
+            if column.check.as_deref().is_some_and(|check| check.trim().is_empty()) {
+                return Err(SqlFrontendError::syntax(format!("table `{table}` declares an empty CHECK constraint")));
+            }
+            if let Some(reference) = &column.reference {
+                let key = resolve_foreign_key(state, table, std::slice::from_ref(&column.name), reference)?;
+                state.tables[index].foreign_keys.push(key);
+            }
             let (base, capacity) = column_type(column, table)?;
             let not_null = column.not_null || column.inline_primary_key;
             let field_type = if not_null { base } else { SqlFieldType::Optional(Box::new(base)) };
@@ -588,6 +722,7 @@ fn apply_ddl(state: &mut RegistryState, statement: &SqlDdlStatement) -> Result<(
                 default: column.default.clone(),
                 auto_increment: column.auto_increment,
                 next_value: 1,
+                check: column.check.clone(),
             });
             if column.inline_primary_key {
                 state.tables[index].primary_key.push(column.name.clone());
@@ -616,7 +751,7 @@ fn apply_ddl(state: &mut RegistryState, statement: &SqlDdlStatement) -> Result<(
             }
             Ok((SqlDdlOutcome::DropTable { dropped }, dropped > 0))
         }
-        SqlDdlStatement::CreateIndex { name, table, if_not_exists, unique, columns } => {
+        SqlDdlStatement::CreateIndex { name, table, if_not_exists, unique, columns, predicate } => {
             let target = state
                 .table(table)
                 .ok_or_else(|| SqlFrontendError::new(SqlErrorKind::UnknownTable, format!("table `{table}` does not exist")))?;
@@ -634,7 +769,13 @@ fn apply_ddl(state: &mut RegistryState, statement: &SqlDdlStatement) -> Result<(
                     ));
                 }
             }
-            state.indexes.push(SchemaIndex { name: name.clone(), table: table.clone(), unique: *unique, columns: columns.clone() });
+            state.indexes.push(SchemaIndex {
+                name: name.clone(),
+                table: table.clone(),
+                unique: *unique,
+                columns: columns.clone(),
+                predicate: predicate.clone(),
+            });
             Ok((SqlDdlOutcome::CreateIndex { created: true }, true))
         }
         SqlDdlStatement::DropIndex { name, table, if_exists } => {
@@ -772,6 +913,38 @@ fn validate_state(state: &RegistryState) -> Result<(), SqlFrontendError> {
                 }
             }
         }
+        for check in &table.check_constraints {
+            if check.trim().is_empty() {
+                return Err(SqlFrontendError::internal(format!("SQL schema table `{}` has an empty CHECK constraint", table.name)));
+            }
+        }
+        for key in &table.foreign_keys {
+            if key.columns.is_empty() || key.columns.len() != key.references_columns.len() {
+                return Err(SqlFrontendError::internal(format!("SQL schema table `{}` has a malformed foreign key", table.name)));
+            }
+            for column in &key.columns {
+                if !table.fields.iter().any(|field| &field.name == column) {
+                    return Err(SqlFrontendError::internal(format!(
+                        "foreign key column `{column}` does not exist in table `{}`",
+                        table.name
+                    )));
+                }
+            }
+            let parent = state.table(&key.references_table).ok_or_else(|| {
+                SqlFrontendError::internal(format!(
+                    "foreign key of table `{}` references missing table `{}`",
+                    table.name, key.references_table
+                ))
+            })?;
+            for column in &key.references_columns {
+                if !parent.fields.iter().any(|field| &field.name == column) {
+                    return Err(SqlFrontendError::internal(format!(
+                        "foreign key column `{column}` does not exist in table `{}`",
+                        key.references_table
+                    )));
+                }
+            }
+        }
     }
     let next_type_id = type_ids.iter().max().copied().unwrap_or(0) + 1;
     if state.next_type_id < next_type_id {
@@ -832,7 +1005,19 @@ struct TableDocument {
     type_id: u64,
     primary_key: Vec<String>,
     unique_constraints: Vec<Vec<String>>,
+    check_constraints: Vec<String>,
+    foreign_keys: Vec<ForeignKeyDocument>,
     fields: Vec<FieldDocument>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ForeignKeyDocument {
+    columns: Vec<String>,
+    references_table: String,
+    references_columns: Vec<String>,
+    on_delete: Option<String>,
+    on_update: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -851,6 +1036,7 @@ struct FieldDocument {
     auto_increment: bool,
     #[serde(default = "initial_next_value")]
     next_value: u64,
+    check: Option<String>,
 }
 
 /// First value handed out by a freshly created owned sequence.
@@ -865,6 +1051,7 @@ struct IndexDocument {
     table: String,
     unique: bool,
     columns: Vec<String>,
+    predicate: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
@@ -929,6 +1116,18 @@ impl SchemaDocument {
                     type_id: table.type_id,
                     primary_key: table.primary_key.clone(),
                     unique_constraints: table.unique_constraints.clone(),
+                    check_constraints: table.check_constraints.clone(),
+                    foreign_keys: table
+                        .foreign_keys
+                        .iter()
+                        .map(|key| ForeignKeyDocument {
+                            columns: key.columns.clone(),
+                            references_table: key.references_table.clone(),
+                            references_columns: key.references_columns.clone(),
+                            on_delete: key.on_delete.clone(),
+                            on_update: key.on_update.clone(),
+                        })
+                        .collect(),
                     fields: table
                         .fields
                         .iter()
@@ -942,6 +1141,7 @@ impl SchemaDocument {
                             default: field.default.clone(),
                             auto_increment: field.auto_increment,
                             next_value: field.next_value,
+                            check: field.check.clone(),
                         })
                         .collect(),
                 })
@@ -954,6 +1154,7 @@ impl SchemaDocument {
                     table: index.table.clone(),
                     unique: index.unique,
                     columns: index.columns.clone(),
+                    predicate: index.predicate.clone(),
                 })
                 .collect(),
         }
@@ -975,6 +1176,18 @@ impl SchemaDocument {
                     type_id: table.type_id,
                     primary_key: table.primary_key,
                     unique_constraints: table.unique_constraints,
+                    check_constraints: table.check_constraints,
+                    foreign_keys: table
+                        .foreign_keys
+                        .into_iter()
+                        .map(|key| SchemaForeignKey {
+                            columns: key.columns,
+                            references_table: key.references_table,
+                            references_columns: key.references_columns,
+                            on_delete: key.on_delete,
+                            on_update: key.on_update,
+                        })
+                        .collect(),
                     fields: table
                         .fields
                         .into_iter()
@@ -990,6 +1203,7 @@ impl SchemaDocument {
                                 default: field.default,
                                 auto_increment: field.auto_increment,
                                 next_value: field.next_value,
+                                check: field.check,
                             }
                         })
                         .collect(),
@@ -998,7 +1212,13 @@ impl SchemaDocument {
             indexes: self
                 .indexes
                 .into_iter()
-                .map(|index| SchemaIndex { name: index.name, table: index.table, unique: index.unique, columns: index.columns })
+                .map(|index| SchemaIndex {
+                    name: index.name,
+                    table: index.table,
+                    unique: index.unique,
+                    columns: index.columns,
+                    predicate: index.predicate,
+                })
                 .collect(),
         };
         validate_state(&state)?;
@@ -1025,5 +1245,105 @@ mod tests {
         let table = catalog.tables().iter().find(|table| table.name == "users").expect("users table");
         let field = table.fields.iter().find(|field| field.name == "status").expect("status column");
         assert_eq!(field.default.as_deref(), Some("'active'"));
+    }
+
+    fn catalog_table<'a>(catalog: &'a SqlCatalog, name: &str) -> &'a SqlCatalogTable {
+        catalog.tables().iter().find(|table| table.name == name).unwrap_or_else(|| panic!("table `{name}` missing"))
+    }
+
+    #[test]
+    fn inline_and_table_constraints_are_stored_and_projected() {
+        let registry = SqlSchemaRegistry::new_in_memory();
+        apply(&registry, "CREATE TABLE tenants (id BIGINT PRIMARY KEY, name TEXT)");
+        apply(
+            &registry,
+            "CREATE TABLE users (\
+             id BIGSERIAL PRIMARY KEY, \
+             tenant_id BIGINT NOT NULL REFERENCES tenants, \
+             email TEXT CHECK (email <> ''), \
+             quota INT DEFAULT 5, \
+             CONSTRAINT quota_positive CHECK (quota >= 0), \
+             FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE)",
+        );
+        let catalog = registry.catalog();
+        let users = catalog_table(&catalog, "users");
+        let tenants = catalog_table(&catalog, "tenants");
+        let tenant_id = tenants.fields.iter().find(|field| field.name == "id").expect("tenant id").field_id;
+        assert_eq!(users.check_constraints, vec!["quota >= 0".to_string()]);
+        let email = users.fields.iter().find(|field| field.name == "email").expect("email column");
+        assert_eq!(email.check.as_deref(), Some("email <> ''"));
+        assert_eq!(users.foreign_keys.len(), 2, "inline and table-level references both survive");
+        for key in &users.foreign_keys {
+            assert_eq!(key.parent_type_id, tenants.type_id);
+            assert_eq!(key.parent_columns, vec![tenant_id], "omitted column list resolves to the parent primary key");
+        }
+        assert!(users.foreign_keys.iter().any(|key| key.on_delete.as_deref() == Some("CASCADE")));
+        let quota = users.fields.iter().find(|field| field.name == "quota").expect("quota column");
+        assert_eq!(quota.default.as_deref(), Some("5"));
+    }
+
+    #[test]
+    fn foreign_keys_reject_unknown_parents_and_columns() {
+        let registry = SqlSchemaRegistry::new_in_memory();
+        apply(&registry, "CREATE TABLE tenants (id BIGINT PRIMARY KEY)");
+        let parse = |sql: &str| crate::sql_ddl::parse_ddl(sql, SqlDialect::Postgres).expect("parse").expect("DDL statement");
+        let error = registry.apply_ddl(&parse("CREATE TABLE users (tenant_id BIGINT REFERENCES ghosts)")).expect_err("missing parent");
+        assert_eq!(error.kind, SqlErrorKind::UnknownTable);
+        let error = registry
+            .apply_ddl(&parse("CREATE TABLE users (tenant_id BIGINT REFERENCES tenants (ghost_col))"))
+            .expect_err("missing parent column");
+        assert_eq!(error.kind, SqlErrorKind::UnknownColumn);
+        let error = registry
+            .apply_ddl(&parse("CREATE TABLE users (id BIGINT PRIMARY KEY, a BIGINT, b BIGINT, FOREIGN KEY (a, b) REFERENCES tenants)"))
+            .expect_err("arity mismatch");
+        assert_eq!(error.kind, SqlErrorKind::Syntax);
+    }
+
+    #[test]
+    fn function_default_and_partial_index_predicate_are_stored() {
+        let registry = SqlSchemaRegistry::new_in_memory();
+        apply(&registry, "CREATE TABLE events (id BIGINT PRIMARY KEY, created_at TIMESTAMPTZ DEFAULT now(), kind TEXT)");
+        apply(&registry, "CREATE INDEX idx_events_kind ON events (kind) WHERE kind <> 'internal'");
+        let catalog = registry.catalog();
+        let events = catalog_table(&catalog, "events");
+        let created = events.fields.iter().find(|field| field.name == "created_at").expect("created_at column");
+        assert_eq!(created.default.as_deref(), Some("now()"));
+        let state = registry.snapshot();
+        let index = state.indexes.iter().find(|index| index.name == "idx_events_kind").expect("partial index");
+        assert_eq!(index.predicate.as_deref(), Some("kind <> 'internal'"));
+    }
+
+    #[test]
+    fn constraints_round_trip_through_the_persisted_document() {
+        let path = std::env::temp_dir().join(format!("yyds-sql-schema-constraints-{}-{}.json", std::process::id(), uuid_like_suffix()));
+        {
+            let registry = SqlSchemaRegistry::open(&path).expect("open");
+            apply(&registry, "CREATE TABLE tenants (id BIGINT PRIMARY KEY)");
+            apply(
+                &registry,
+                "CREATE TABLE users (\
+                 id BIGINT PRIMARY KEY, \
+                 tenant_id BIGINT REFERENCES tenants ON DELETE CASCADE, \
+                 email TEXT CHECK (email <> ''))",
+            );
+            apply(&registry, "CREATE UNIQUE INDEX idx_email ON users (email) WHERE email IS NOT NULL");
+        }
+        let reopened = SqlSchemaRegistry::open(&path).expect("reopen");
+        let catalog = reopened.catalog();
+        let users = catalog_table(&catalog, "users");
+        let email = users.fields.iter().find(|field| field.name == "email").expect("email column");
+        assert_eq!(email.check.as_deref(), Some("email <> ''"));
+        assert_eq!(users.foreign_keys.len(), 1);
+        assert_eq!(users.foreign_keys[0].on_delete.as_deref(), Some("CASCADE"));
+        let state = reopened.snapshot();
+        let index = state.indexes.iter().find(|index| index.name == "idx_email").expect("index");
+        assert_eq!(index.predicate.as_deref(), Some("email IS NOT NULL"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Collision-free suffix for the temporary persisted-schema file.
+    fn uuid_like_suffix() -> u128 {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now().duration_since(UNIX_EPOCH).expect("clock").as_nanos()
     }
 }
