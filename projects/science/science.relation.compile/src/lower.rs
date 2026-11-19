@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use oak_metis::{Item, Module};
+use data_text_metis::{Item, Module};
 use science_relation_island::IslandStore;
 use science_relation_types::{EdgeKind, IslandId, NodeId, RelationError};
 
@@ -39,7 +39,7 @@ fn path_short_name(path: &str) -> &str {
     path.rsplit("::").next().unwrap_or(path)
 }
 
-fn island_register_name(island: &oak_metis::Island) -> String {
+fn island_register_name(island: &data_text_metis::Island) -> String {
     match &island.namespace {
         Some(ns) if !ns.is_empty() => format!("{ns}::{}", island.name),
         _ => island.name.clone(),
@@ -216,7 +216,7 @@ pub fn lower_module(module: &Module) -> Result<LoweringResult, RelationError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oak_metis::parse_module;
+    use data_text_metis::parse_module;
     use science_relation_graph::connection::ConnectionClass;
 
     #[test]

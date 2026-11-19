@@ -16,4 +16,4 @@ science-relation-compile = { workspace = true }
 science-relation-vm = { workspace = true }
 science-relation-jit = { workspace = true }
 science-gc = { workspace = true }
-oak-metis = { workspace = true }
+data-text-metis = { workspace = true }

@@ -47,7 +47,7 @@ pub use science_relation_ir::{
 };
 pub use science_relation_vm::{Budget, EmittedCandidate, GraphKernel, KernelView, Slot, Vm, VmError, VmStatus};
 
-pub use oak_metis::{MetisLanguage, MetisTokenType, lex_stub, parse_module};
+pub use data_text_metis::{MetisLanguage, MetisTokenType, lex_stub, parse_module};
 pub use science_relation_island::{Island, IslandStore};
 pub use science_relation_jit::{Artifact, ArtifactKind, CompileUnitId, compile_reach};
 pub use science_relation_types::{EdgeId, EdgeKind, IslandId, NodeId, RelationError};

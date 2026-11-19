@@ -938,8 +938,6 @@ oak-tex = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb
 
 oak-typst = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484", default-features = false, features = ["serde"] }
 
-# `.metis` 前端 `oak-metis` 与其余 oak 家族统一到同一 `yggdrasil-language` oaks pin。
-oak-metis = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484", default-features = false }
 # Valkyrie 语言实现所需的 Oak 语法 crate（`compiler.valkyrie` 专用例外）。
 oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484", features = ["serde"] }
 oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484" }
