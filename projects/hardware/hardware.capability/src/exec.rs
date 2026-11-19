@@ -307,6 +307,11 @@ pub struct ExecPlan {
     pub compile_cost: u64,
     /// 端到端代价权重，供调度器比较（微秒）。
     pub estimated_cost: u64,
+    /// 分段装载时单段的最大字节数；`None` 表示不支持分段。
+    ///
+    /// 支持分段的设备（如带磁盘后备的虚拟显存）可以在总足迹超过实时预算时，
+    /// 只要求单段装得下；每次提交仍必须能容纳当前段的输入、输出与临时区。
+    pub max_segment_bytes: Option<u64>,
 }
 
 impl ExecPlan {
@@ -321,6 +326,7 @@ impl ExecPlan {
             output_domain: OutputDomain::Device,
             compile_cost: 0,
             estimated_cost: 0,
+            max_segment_bytes: None,
         }
     }
 
@@ -363,6 +369,25 @@ impl ExecPlan {
     /// 方案需要的内存足迹（临时区 + 搬运缓冲）。
     pub fn footprint_bytes(&self) -> u64 {
         self.temp_bytes.saturating_add(self.transfer_bytes)
+    }
+
+    /// 声明分段装载能力；`max_segment_bytes` 为单段上限。
+    pub fn with_max_segment_bytes(mut self, max_segment_bytes: u64) -> Self {
+        self.max_segment_bytes = Some(max_segment_bytes);
+        self
+    }
+
+    /// 实时预算是否接受该方案。
+    ///
+    /// 优先要求整个足迹装得下；否则只有声明了分段装载且单段装得下才接受。
+    pub fn fits_budget(&self, budget: &MemoryBudget) -> bool {
+        if budget.fits(self.footprint_bytes()) {
+            return true;
+        }
+        match self.max_segment_bytes {
+            Some(segment) if segment > 0 => budget.fits(segment),
+            _ => false,
+        }
     }
 }
 
@@ -526,6 +551,19 @@ mod tests {
         let refused = ExecDecision::Refuse(ExecRefusal::BudgetExceeded { required_bytes: 2048, available_bytes: 1024 });
         assert!(!refused.is_accept());
         assert_eq!(refused.refusal().map(ToString::to_string).as_deref(), Some("budget exceeded: need 2048 bytes, have 1024"));
+    }
+
+    #[test]
+    fn segmentation_only_relaxes_the_whole_footprint_check() {
+        let budget = MemoryBudget::new(512, 0, 0);
+        let flat = ExecPlan::new("cpu", "cpu0").with_temp_bytes(1024);
+        assert!(!flat.fits_budget(&budget));
+
+        let segmented = ExecPlan::new("npu", "npu0").with_temp_bytes(1024).with_max_segment_bytes(256);
+        assert!(segmented.fits_budget(&budget));
+
+        let too_wide = ExecPlan::new("npu", "npu0").with_temp_bytes(1024).with_max_segment_bytes(1024);
+        assert!(!too_wide.fits_budget(&budget));
     }
 
     #[test]

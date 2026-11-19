@@ -19,6 +19,10 @@ pub enum Feature {
     DynamicParallelism,
     CooperativeGroups,
     ClusterLaunch,
+    /// NPU 能整体编译并执行固定形状的量化子图，而不是逐算子解释。
+    NpuCompiledSubgraph,
+    /// 后端支持分段装载，可把大于实时预算的模型按段换入换出。
+    SegmentedLoading,
     // Graphics
     Bindless,
     DescriptorHeap,

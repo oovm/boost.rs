@@ -1,0 +1,16 @@
+[package]
+name = "hardware-backend-npu"
+description = "AMD XDNA NPU backend contract for UCF (fixed-shape compiled subgraphs)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+hardware-capability = { workspace = true }
+hardware-ir = { workspace = true }
+hardware-scheduler = { workspace = true }
+
+[lints.rust]
+missing_docs = "warn"

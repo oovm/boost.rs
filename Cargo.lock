@@ -4453,6 +4453,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hardware-backend-npu"
+version = "0.1.0"
+dependencies = [
+ "hardware-capability",
+ "hardware-ir",
+ "hardware-scheduler",
+]
+
+[[package]]
 name = "hardware-backend-rocm"
 version = "0.1.0"
 dependencies = [

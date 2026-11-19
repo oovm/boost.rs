@@ -307,6 +307,7 @@ members = [
     "projects/hardware/hardware.backends/hardware.backend.cpu",
     "projects/hardware/hardware.backends/hardware.backend.cuda",
     "projects/hardware/hardware.backends/hardware.backend.dx12",
+    "projects/hardware/hardware.backends/hardware.backend.npu",
     "projects/hardware/hardware.backends/hardware.backend.rocm",
     "projects/hardware/hardware.backends/hardware.backend.vulkan",
     "projects/hardware/hardware.capability",
@@ -559,6 +560,7 @@ hardware = { path = "projects/hardware/hardware" }
 hardware-backend-cpu = { path = "projects/hardware/hardware.backends/hardware.backend.cpu" }
 hardware-backend-cuda = { path = "projects/hardware/hardware.backends/hardware.backend.cuda" }
 hardware-backend-dx12 = { path = "projects/hardware/hardware.backends/hardware.backend.dx12" }
+hardware-backend-npu = { path = "projects/hardware/hardware.backends/hardware.backend.npu" }
 hardware-backend-rocm = { path = "projects/hardware/hardware.backends/hardware.backend.rocm" }
 hardware-backend-vulkan = { path = "projects/hardware/hardware.backends/hardware.backend.vulkan" }
 hardware-capability = { path = "projects/hardware/hardware.capability" }

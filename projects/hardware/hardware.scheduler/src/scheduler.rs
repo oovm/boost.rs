@@ -299,9 +299,12 @@ impl Scheduler {
         match backend.supports(signature) {
             ExecDecision::Accept(plan) => {
                 let budget: MemoryBudget = backend.budget();
-                let required = plan.footprint_bytes();
-                if !budget.fits(required) {
-                    return Err(ExecRefusal::BudgetExceeded { required_bytes: required, available_bytes: budget.available_bytes() }.to_string());
+                if !plan.fits_budget(&budget) {
+                    return Err(ExecRefusal::BudgetExceeded {
+                        required_bytes: plan.footprint_bytes(),
+                        available_bytes: budget.available_bytes(),
+                    }
+                    .to_string());
                 }
                 Ok(plan)
             }
@@ -640,6 +643,8 @@ mod tests {
     struct PlacementBackend {
         name: String,
         cost: u64,
+        temp_bytes: u64,
+        segment_bytes: Option<u64>,
         refusal: Option<hardware_capability::ExecRefusal>,
         budget: hardware_capability::MemoryBudget,
         prepared: Arc<Mutex<Vec<String>>>,
@@ -648,7 +653,16 @@ mod tests {
 
     impl PlacementBackend {
         fn new(name: &str, cost: u64, prepared: Arc<Mutex<Vec<String>>>, submitted: Arc<Mutex<Vec<String>>>) -> Self {
-            Self { name: name.into(), cost, refusal: None, budget: hardware_capability::MemoryBudget::unlimited(), prepared, submitted }
+            Self {
+                name: name.into(),
+                cost,
+                temp_bytes: 64,
+                segment_bytes: None,
+                refusal: None,
+                budget: hardware_capability::MemoryBudget::unlimited(),
+                prepared,
+                submitted,
+            }
         }
 
         fn refusing(mut self, refusal: hardware_capability::ExecRefusal) -> Self {
@@ -658,6 +672,16 @@ mod tests {
 
         fn with_budget(mut self, budget: hardware_capability::MemoryBudget) -> Self {
             self.budget = budget;
+            self
+        }
+
+        fn with_temp_bytes(mut self, temp_bytes: u64) -> Self {
+            self.temp_bytes = temp_bytes;
+            self
+        }
+
+        fn with_segment_bytes(mut self, segment_bytes: u64) -> Self {
+            self.segment_bytes = Some(segment_bytes);
             self
         }
     }
@@ -678,9 +702,15 @@ mod tests {
         fn supports(&self, _signature: &hardware_capability::ExecSignature) -> hardware_capability::ExecDecision {
             match &self.refusal {
                 Some(reason) => hardware_capability::ExecDecision::Refuse(reason.clone()),
-                None => hardware_capability::ExecDecision::Accept(
-                    hardware_capability::ExecPlan::new(self.name.clone(), self.name.clone()).with_temp_bytes(64).with_estimated_cost(self.cost),
-                ),
+                None => {
+                    let mut plan = hardware_capability::ExecPlan::new(self.name.clone(), self.name.clone())
+                        .with_temp_bytes(self.temp_bytes)
+                        .with_estimated_cost(self.cost);
+                    if let Some(segment) = self.segment_bytes {
+                        plan = plan.with_max_segment_bytes(segment);
+                    }
+                    hardware_capability::ExecDecision::Accept(plan)
+                }
             }
         }
 
@@ -749,6 +779,32 @@ mod tests {
         let error = sched.execute(&single_task_graph()).expect_err("over budget");
         assert_eq!(error.code(), crate::ErrorCode::Infeasible);
         assert!(error.to_string().contains("budget exceeded"), "{error}");
+    }
+
+    #[test]
+    fn segmented_plan_is_accepted_when_one_segment_fits() {
+        let prepared = Arc::new(Mutex::new(Vec::new()));
+        let submitted = Arc::new(Mutex::new(Vec::new()));
+        let mut sched = Scheduler::new();
+        sched.register(Box::new(
+            PlacementBackend::new("cpu", 0, prepared.clone(), submitted.clone())
+                .with_temp_bytes(1024)
+                .with_budget(hardware_capability::MemoryBudget::new(512, 0, 0)),
+        ));
+        let error = sched.execute(&single_task_graph()).expect_err("flat plan over budget");
+        assert_eq!(error.code(), crate::ErrorCode::Infeasible);
+
+        let mut sched = Scheduler::new();
+        sched.register(Box::new(
+            PlacementBackend::new("gpu", 0, prepared.clone(), submitted.clone())
+                .with_temp_bytes(1024)
+                .with_budget(hardware_capability::MemoryBudget::new(512, 0, 0)),
+        ));
+        sched.register(Box::new(
+            PlacementBackend::new("npu", 10, prepared.clone(), submitted.clone()).with_temp_bytes(1024).with_segment_bytes(256),
+        ));
+        sched.execute(&single_task_graph()).expect("segmented backend accepted");
+        assert_eq!(*submitted.lock().unwrap(), vec!["npu:1".to_string()]);
     }
 
     #[test]
