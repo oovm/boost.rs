@@ -4,7 +4,7 @@ version.workspace = true
 authors.workspace = true
 description = "SFNT font parser: table directory, standard tables, MATH table, TrueType glyf and OTF CFF outlines"
 edition.workspace = true
-license = "MPL-2.0"
+license.workspace = true
 repository.workspace = true
 publish.workspace = true
 categories = ["parsing", "graphics"]
@@ -21,13 +21,11 @@ diff-ttf-parser = ["dep:ttf-parser"]
 outline-cff = ["dep:ttf-parser"]
 
 [dependencies.ttf-parser]
-version = "0.21"
+workspace = true
 optional = true
-default-features = false
-features = ["opentype-layout", "apple-layout", "variable-fonts", "glyph-names"]
 
 [dev-dependencies]
-ttf-parser = "0.21"
+ttf-parser = { workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true

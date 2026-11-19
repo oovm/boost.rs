@@ -902,6 +902,7 @@ futures-lite = "2.6.0"
 pin-project-lite = "0.2.16"
 serial_test = "4.0.1"
 fontdue = "0.9"
+ttf-parser = { version = "0.21", default-features = false, features = ["opentype-layout", "apple-layout", "variable-fonts", "glyph-names"] }
 libloading = "0.9.1"
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",

@@ -3692,6 +3692,7 @@ name = "dl-graph"
 version = "0.1.0"
 dependencies = [
  "boost-random",
+ "dl-autograd",
  "dl-model",
  "dl-nn",
  "dl-ops",
