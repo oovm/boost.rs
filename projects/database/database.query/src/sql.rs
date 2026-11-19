@@ -1944,11 +1944,19 @@ fn bind_expression(expression: &Expression) -> Result<SqlBoundExpression, SqlFro
         Expression::Identifier(identifier) => Ok(SqlBoundExpression::Identifier(normalize_identifier(identifier.name.as_ref()))),
         Expression::Literal(literal) => Ok(SqlBoundExpression::Literal(bind_literal(literal)?)),
         Expression::Wildcard { .. } => Ok(SqlBoundExpression::Wildcard),
-        Expression::Binary { left, op, right, .. } => Ok(SqlBoundExpression::Binary {
-            left: Box::new(bind_expression(left)?),
-            operator: bind_binary_operator(*op)?,
-            right: Box::new(bind_expression(right)?),
-        }),
+        Expression::Binary { left, op, right, .. } => {
+            // PostgreSQL 的量词比较 `expr = ANY(array)` / `expr <> ALL(array)`：
+            // 数组在插值后是 PostgreSQL 数组文本（`{a,b}`），绑定期展开成
+            // `= v1 OR = v2 ...`（ANY）或 `<> v1 AND <> v2 ...`（ALL）。
+            if let Some((quantifier, elements)) = quantified_array_elements(right) {
+                return quantified_comparison(left, *op, quantifier, elements);
+            }
+            Ok(SqlBoundExpression::Binary {
+                left: Box::new(bind_expression(left)?),
+                operator: bind_binary_operator(*op)?,
+                right: Box::new(bind_expression(right)?),
+            })
+        }
         Expression::Unary { op, expr, .. } => {
             // `-<integer>` 折叠成一个精确的负整数字面量：这样 `-9223372036854775808`
             // 仍落在 `i64` 内，而不是先解析成正数再溢出回浮点。
@@ -2179,6 +2187,148 @@ fn bind_expression(expression: &Expression) -> Result<SqlBoundExpression, SqlFro
         Expression::Vector { .. } => Err(SqlFrontendError::unsupported("SQL vector literals are outside the gateway binding subset")),
         Expression::Error { message, .. } => Err(bind_error(message)),
     }
+}
+
+/// `ANY` / `SOME` 与 `ALL` 量词。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SqlQuantifier {
+    Any,
+    All,
+}
+
+/// 识别比较右侧的量词数组：`ANY(<array>)`、`SOME(<array>)`、`ALL(<array>)`。
+///
+/// 数组来源只有两种：参数插值后的 PostgreSQL 数组文本（`{a,b}`），或语法树里的
+/// 向量字面量。识别不出就返回 `None`，交回通用绑定路径。
+fn quantified_array_elements(expression: &Expression) -> Option<(SqlQuantifier, Vec<SqlBoundLiteral>)> {
+    let Expression::FunctionCall { name, args, window: None, .. } = expression
+    else {
+        return None;
+    };
+    let quantifier = match name.name.as_ref().to_ascii_lowercase().as_str() {
+        "any" | "some" => SqlQuantifier::Any,
+        "all" => SqlQuantifier::All,
+        _ => return None,
+    };
+    let [argument] = args.as_slice()
+    else {
+        return None;
+    };
+    let elements = match argument {
+        Expression::Literal(Literal::String(text, _)) => parse_pg_array_text(text)?,
+        Expression::Vector { elements, .. } => elements
+            .iter()
+            .map(|element| match element {
+                Expression::Literal(literal) => bind_literal(literal),
+                _ => Err(bind_error("array literal elements must be literals")),
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .ok()?,
+        _ => return None,
+    };
+    Some((quantifier, elements))
+}
+
+/// 把量词比较展开为等值比较的 OR/AND 链。
+///
+/// `x = ANY(list)` → `x = v1 OR x = v2 ...`；`x <> ALL(list)` →
+/// `x <> v1 AND x <> v2 ...`；`x = ALL` 用 AND，`x <> ANY` 用 OR。空数组按
+/// PostgreSQL 语义折叠成常量：ANY 为假，ALL 为真。
+fn quantified_comparison(
+    left: &Expression,
+    operator: data_text_sql::ast::BinaryOperator,
+    quantifier: SqlQuantifier,
+    elements: Vec<SqlBoundLiteral>,
+) -> Result<SqlBoundExpression, SqlFrontendError> {
+    use data_text_sql::ast::BinaryOperator;
+
+    let comparison = match operator {
+        BinaryOperator::Equal => SqlBoundBinaryOperator::Equal,
+        BinaryOperator::NotEqual => SqlBoundBinaryOperator::NotEqual,
+        other => {
+            return Err(SqlFrontendError::unsupported(format!("{other:?} with a quantified array is not supported")));
+        }
+    };
+    if elements.is_empty() {
+        return Ok(SqlBoundExpression::Literal(SqlBoundLiteral::Boolean(quantifier == SqlQuantifier::All)));
+    }
+    if elements.iter().any(|element| matches!(element, SqlBoundLiteral::Null)) {
+        return Ok(SqlBoundExpression::Literal(SqlBoundLiteral::Null));
+    }
+    let combine = if quantifier == SqlQuantifier::All { SqlBoundBinaryOperator::And } else { SqlBoundBinaryOperator::Or };
+    let bound_left = bind_expression(left)?;
+    let mut folded: Option<SqlBoundExpression> = None;
+    for element in elements {
+        let comparison = SqlBoundExpression::Binary {
+            left: Box::new(bound_left.clone()),
+            operator: comparison,
+            right: Box::new(SqlBoundExpression::Literal(element)),
+        };
+        folded = Some(match folded {
+            None => comparison,
+            Some(accumulated) => SqlBoundExpression::Binary {
+                left: Box::new(accumulated),
+                operator: combine,
+                right: Box::new(comparison),
+            },
+        });
+    }
+    Ok(folded.expect("non-empty array folds into at least one comparison"))
+}
+
+/// 解析 PostgreSQL 数组文本 `{a,b,"c,d"}`。
+///
+/// 引号内按字面量取值（`""` 与 `\"` 转义），未加引号的 `NULL` 是 SQL NULL，
+/// 其余未加引号的数字按整数/小数落成对应的字面量。
+fn parse_pg_array_text(text: &str) -> Option<Vec<SqlBoundLiteral>> {
+    let inner = text.trim().strip_prefix('{')?.strip_suffix('}')?;
+    if inner.trim().is_empty() {
+        return Some(Vec::new());
+    }
+    let mut elements = Vec::new();
+    let mut current = String::new();
+    let mut quoted = false;
+    let mut was_quoted = false;
+    let mut characters = inner.chars().peekable();
+    while let Some(character) = characters.next() {
+        match character {
+            '"' => {
+                quoted = !quoted;
+                was_quoted = true;
+            }
+            '\\' if quoted => {
+                if let Some(escaped) = characters.next() {
+                    current.push(escaped);
+                }
+            }
+            ',' if !quoted => {
+                elements.push(array_element_literal(current.trim(), was_quoted));
+                current.clear();
+                was_quoted = false;
+            }
+            other => current.push(other),
+        }
+    }
+    if quoted {
+        return None;
+    }
+    elements.push(array_element_literal(current.trim(), was_quoted));
+    Some(elements)
+}
+
+fn array_element_literal(text: &str, quoted: bool) -> SqlBoundLiteral {
+    if !quoted {
+        if text.eq_ignore_ascii_case("NULL") {
+            return SqlBoundLiteral::Null;
+        }
+        if let Ok(value) = text.parse::<i64>() {
+            return SqlBoundLiteral::Integer(value);
+        }
+        if text.chars().next().is_some_and(|character| character.is_ascii_digit() || character == '-') && text.parse::<f64>().is_ok() {
+            return SqlBoundLiteral::Number(text.to_owned());
+        }
+    }
+    SqlBoundLiteral::String(text.to_owned())
 }
 
 /// 实参里是否还有聚合调用。SQL 没有第二次分组，聚合套聚合在单行上没有可求值的

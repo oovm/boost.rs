@@ -156,6 +156,8 @@ pub enum SqlSchemaFieldTypeDocument {
     Datetime,
     /// UUID。
     Uuid,
+    /// JSON / JSONB 文本载荷。
+    Json,
     /// 未知类型。
     Unknown,
 }

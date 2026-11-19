@@ -97,6 +97,7 @@ impl SqlValue {
             // Exact decimals arrive on the wire as text; keep them textual so
             // drivers observe the same value they would from MySQL.
             crate::catalog_bind::SqlFieldType::Decimal => SqlValue::String(String::from_utf8_lossy(bytes).into_owned()),
+            crate::catalog_bind::SqlFieldType::Json => SqlValue::String(String::from_utf8_lossy(bytes).into_owned()),
             // `DATE`/`DATETIME` columns store the canonical text spelling; the gateway
             // re-emits it verbatim and the driver-side column type turns it into a date.
             crate::catalog_bind::SqlFieldType::Date | crate::catalog_bind::SqlFieldType::Datetime => {

@@ -446,7 +446,8 @@ fn map_sql_type(sql_type: &str) -> Result<(SqlFieldType, Option<u32>), SqlFronte
         // and scale are dialect display facts and do not narrow the gateway type.
         "DECIMAL" | "NUMERIC" | "DEC" | "FIXED" => SqlFieldType::Decimal,
         // JSON/JSONB 以文本存储（与 SQLite 同口径）；键路径访问运算符另行建设。
-        "JSON" | "JSONB" => SqlFieldType::String,
+        // 独立类型只服务 wire 上报（PostgreSQL 上报 `jsonb`），不改变存储形态。
+        "JSON" | "JSONB" => SqlFieldType::Json,
         "BINARY" | "VARBINARY" | "BLOB" | "TINYBLOB" | "MEDIUMBLOB" | "LONGBLOB" | "BYTEA" => SqlFieldType::Bytes,
         _ => {
             return Err(SqlFrontendError::unsupported(format!("column type `{sql_type}` has no 集群 SQL gateway equivalent")));

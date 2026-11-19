@@ -172,6 +172,8 @@ fn mysql_field_type(field_type: &SqlFieldType) -> u8 {
         SqlFieldType::Datetime => MYSQL_TYPE_DATETIME,
         // uuid 的 wire 载荷是连字符文本，按变长字符串上报。
         SqlFieldType::Uuid => MYSQL_TYPE_VAR_STRING,
+        // JSON 在 MySQL 面与文本同载荷上报。
+        SqlFieldType::Json => MYSQL_TYPE_VAR_STRING,
         SqlFieldType::String | SqlFieldType::Unknown | SqlFieldType::Optional(_) => MYSQL_TYPE_VAR_STRING,
     }
 }

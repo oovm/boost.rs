@@ -23,7 +23,7 @@ use database_protocol_pgsql::auth::ScramServer;
 use database_query::{
     DiscardTarget, SqlBoundExpression, SqlBoundLiteral, SqlCatalogBoundStatement, SqlColumn, SqlDialect, SqlFieldType, SqlParameterStyle,
     SqlSessionCommand, SqlValue, analyze_meta_query, bind_sql_catalog, describe_bound_insert, describe_plan, detect_session_reset_statement,
-    encode_hex, infer_sql_parameter_types, neutralized_sql_parameters, pg_server_version, plan_statement_for_dialect,
+    encode_hex, infer_sql_parameter_types, neutralized_sql_parameters, nulled_sql_parameters, pg_server_version, plan_statement_for_dialect,
     rewrite_double_colon_casts, split_sql_batch, substitute_sql_parameters,
 };
 
@@ -38,7 +38,17 @@ const OID_TEXT: u32 = 25;
 const OID_FLOAT4: u32 = 700;
 const OID_FLOAT8: u32 = 701;
 const OID_VARCHAR: u32 = 1043;
+const OID_DATE: u32 = 1082;
+const OID_TIMESTAMP: u32 = 1114;
+const OID_TIMESTAMPTZ: u32 = 1184;
 const OID_NUMERIC: u32 = 1700;
+const OID_UUID: u32 = 2950;
+const OID_JSON: u32 = 114;
+const OID_JSONB: u32 = 3802;
+const OID_TEXT_ARRAY: u32 = 1009;
+const OID_VARCHAR_ARRAY: u32 = 1015;
+const OID_UUID_ARRAY: u32 = 2951;
+const OID_JSONB_ARRAY: u32 = 3807;
 
 const PROTOCOL_V3: u32 = 196_608;
 const SSL_REQUEST: u32 = 80_877_103;
@@ -1063,7 +1073,52 @@ fn statement_description(
     if let Some(meta) = analyze_meta_query(&neutral_sql, SqlDialect::Postgres).map_err(|error| statement_error("metadata", error))? {
         return Ok(meta.describe());
     }
-    describe_without_values(&neutral_sql, runtime)
+    match describe_without_values(&neutral_sql, runtime) {
+        Ok(columns) => Ok(columns),
+        Err(first) => {
+            // `0` 站不住脚的列（uuid / 文本 / 时间）和主键谓词上的 `NULL` 都会让
+            // describe 失败；元数据阶段只求结果形状，按目录推断的参数类型给出
+            // 类型正确的站位值再试一次。
+            describe_with_typed_stand_ins(sql, runtime).map_err(|_| first)
+        }
+    }
+}
+
+/// Describes a parameterized statement by substituting one type-correct
+/// stand-in per inferred parameter type.
+///
+/// Metadata describes have no client values, and a stand-in that ignores the
+/// column type (`0` or `NULL`) is rejected by uuid/text/time columns and by
+/// primary-key predicates. The catalog already knows each slot's type, so the
+/// stand-in respects it and the plan only serves to expose the result shape.
+fn describe_with_typed_stand_ins(sql: &str, runtime: &Arc<PgsqlSqlRuntime>) -> Result<Vec<SqlColumn>, (String, String)> {
+    let (_, count) =
+        neutralized_sql_parameters(sql, SqlParameterStyle::DollarNumber).map_err(|error| statement_error("parameter", error))?;
+    let inferred = infer_sql_parameter_types(sql, SqlParameterStyle::DollarNumber, &runtime.schema.catalog());
+    let mut values = Vec::with_capacity(count);
+    for slot in 0..count {
+        let field_type = inferred.get(slot).cloned().flatten().map(|field_type| field_type.inner());
+        values.push(test_stand_in(field_type));
+    }
+    let rendered =
+        substitute_sql_parameters(sql, &values, SqlParameterStyle::DollarNumber).map_err(|error| statement_error("parameter", error))?;
+    describe_without_values(&rendered, runtime)
+}
+
+/// One value every column type accepts, chosen from the inferred slot type.
+fn test_stand_in(field_type: Option<SqlFieldType>) -> SqlValue {
+    match field_type {
+        Some(SqlFieldType::Uuid) => SqlValue::String("00000000-0000-0000-0000-000000000000".to_owned()),
+        Some(SqlFieldType::Bool) => SqlValue::Boolean(false),
+        Some(SqlFieldType::Int32 | SqlFieldType::Int64) => SqlValue::Integer(0),
+        Some(SqlFieldType::Float64 | SqlFieldType::Decimal) => SqlValue::Integer(0),
+        Some(SqlFieldType::Date) => SqlValue::String("2000-01-01".to_owned()),
+        Some(SqlFieldType::Datetime) => SqlValue::String("2000-01-01 00:00:00".to_owned()),
+        Some(SqlFieldType::Json) => SqlValue::String("{}".to_owned()),
+        Some(SqlFieldType::Bytes) => SqlValue::Bytes(vec![0]),
+        Some(SqlFieldType::String) | Some(SqlFieldType::Unknown) | None => SqlValue::String(String::new()),
+        Some(SqlFieldType::Optional(_)) => SqlValue::String(String::new()),
+    }
 }
 
 /// Describes a statement that still carries placeholder stand-ins.
@@ -1292,6 +1347,31 @@ fn binary_parameter_value(oid: u32, bytes: &[u8]) -> Result<SqlValue, (String, S
         },
         // `bytea` 的二进制格式就是原始 octets，原样收下，不做任何文本解码。
         OID_BYTEA => Ok(SqlValue::Bytes(bytes.to_vec())),
+        // uuid 的二进制格式是 16 octets，转成连字符文本后与文本格式同一条路径。
+        OID_UUID => match <[u8; 16]>::try_from(bytes) {
+            Ok(octets) => Ok(SqlValue::String(uuid::Uuid::from_bytes(octets).hyphenated().to_string())),
+            Err(_) => Err(width_error(16)),
+        },
+        OID_TIMESTAMP | OID_TIMESTAMPTZ => match bytes {
+            [a, b, c, d, e, f, g, h] => {
+                let micros = i64::from_be_bytes([*a, *b, *c, *d, *e, *f, *g, *h]);
+                Ok(SqlValue::String(timestamp_text(micros, oid == OID_TIMESTAMPTZ)))
+            }
+            _ => Err(width_error(8)),
+        },
+        OID_DATE => match bytes {
+            [a, b, c, d] => Ok(SqlValue::String(date_text(i32::from_be_bytes([*a, *b, *c, *d])))),
+            _ => Err(width_error(4)),
+        },
+        OID_JSON => utf8_parameter(bytes),
+        // jsonb 的二进制格式是版本字节 1 加 JSON 文本。
+        OID_JSONB => match bytes.split_first() {
+            Some((1, rest)) => utf8_parameter(rest),
+            _ => Err(("08P01".to_string(), "binary jsonb parameter must start with version byte 1".to_string())),
+        },
+        OID_NUMERIC => numeric_text_from_binary(bytes).map(SqlValue::String),
+        // 一维数组参数解码成 PostgreSQL 数组文本，绑定期按量词比较展开成 IN 链。
+        OID_TEXT_ARRAY | OID_VARCHAR_ARRAY | OID_UUID_ARRAY | OID_JSONB_ARRAY => pg_array_parameter(bytes),
         OID_TEXT | OID_VARCHAR | OID_NAME => std::str::from_utf8(bytes)
             .map(|text| SqlValue::String(text.to_string()))
             .map_err(|_| ("22021".to_string(), "binary parameter is not valid UTF-8".to_string())),
@@ -1392,12 +1472,15 @@ fn pg_oid(field_type: &SqlFieldType) -> u32 {
         SqlFieldType::Bool => OID_BOOL,
         SqlFieldType::Bytes => OID_BYTEA,
         SqlFieldType::Decimal => OID_NUMERIC,
-        // PostgreSQL 侧仍按文本传输日期/时间：网关不建模时区与日期二进制编码，
-        // 与类型上报改造前的 `String` 行为逐字节一致。
-        SqlFieldType::Date | SqlFieldType::Datetime => OID_TEXT,
-        // uuid 存储与比较是 16 字节二进制，但网关对外仍按文本输出连字符小写形式，
-        // 因此上报 TEXT 与实际上线的文本载荷一致。
-        SqlFieldType::Uuid => OID_TEXT,
+        // 日期/时间按 PostgreSQL 自身的 OID 上报，值仍以 canonical 文本存储，
+        // 二进制格式在 `pg_binary_value` 里换算，文本格式原样下发。
+        SqlFieldType::Date => OID_DATE,
+        SqlFieldType::Datetime => OID_TIMESTAMPTZ,
+        // uuid 存储与比较是 16 字节二进制，wire 面按 `uuid` 上报，文本格式仍是
+        // 连字符小写形式，二进制格式是 16 octets。
+        SqlFieldType::Uuid => OID_UUID,
+        // JSON/JSONB 以文本存储；上报 `jsonb` 让驱动把载荷解析成 JSON 值。
+        SqlFieldType::Json => OID_JSONB,
         SqlFieldType::String | SqlFieldType::Unknown | SqlFieldType::Optional(_) => OID_TEXT,
     }
 }
@@ -1429,8 +1512,9 @@ fn type_size(oid: u32) -> i16 {
     match oid {
         OID_BOOL => 1,
         OID_INT2 => 2,
-        OID_INT4 | OID_FLOAT4 => 4,
-        OID_INT8 | OID_FLOAT8 => 8,
+        OID_INT4 | OID_FLOAT4 | OID_DATE => 4,
+        OID_INT8 | OID_FLOAT8 | OID_TIMESTAMP | OID_TIMESTAMPTZ => 8,
+        OID_UUID => 16,
         _ => -1,
     }
 }
@@ -1488,6 +1572,36 @@ fn pg_binary_value(oid: u32, value: &SqlValue) -> Result<Vec<u8>, (String, Strin
             SqlValue::Bytes(bytes) => Ok(bytes.clone()),
             other => Err(("22P02".to_string(), format!("value {other:?} is not a bytea payload"))),
         },
+        OID_UUID => {
+            let text = text_value(value)?;
+            match uuid::Uuid::parse_str(&text) {
+                Ok(parsed) => Ok(parsed.as_bytes().to_vec()),
+                Err(_) => Err(("22P02".to_string(), format!("invalid input syntax for type uuid: \"{text}\""))),
+            }
+        }
+        OID_TIMESTAMP | OID_TIMESTAMPTZ => {
+            let text = text_value(value)?;
+            match timestamp_micros(&text) {
+                Some(micros) => Ok(micros.to_be_bytes().to_vec()),
+                None => Err(("22007".to_string(), format!("invalid input syntax for timestamp: \"{text}\""))),
+            }
+        }
+        OID_DATE => {
+            let text = text_value(value)?;
+            match date_days(&text) {
+                Some(days) => Ok(days.to_be_bytes().to_vec()),
+                None => Err(("22007".to_string(), format!("invalid input syntax for date: \"{text}\""))),
+            }
+        }
+        OID_JSON => Ok(text_value(value)?.into_bytes()),
+        OID_JSONB => {
+            let text = text_value(value)?;
+            let mut bytes = Vec::with_capacity(text.len() + 1);
+            bytes.push(1);
+            bytes.extend_from_slice(text.as_bytes());
+            Ok(bytes)
+        }
+        OID_NUMERIC => numeric_binary_from_text(&text_value(value)?),
         _ => Err(("0A000".to_string(), format!("binary output for type OID {oid} is not supported"))),
     }
 }
@@ -1546,6 +1660,375 @@ fn sql_value_to_pg_text(value: &SqlValue) -> String {
         }
         SqlValue::Null => unreachable!(),
     }
+}
+
+/// Days between 1970-01-01 and PostgreSQL's 2000-01-01 epoch.
+const PG_EPOCH_DAYS: i64 = 10_957;
+const MICROS_PER_DAY: i64 = 86_400_000_000;
+
+fn utf8_parameter(bytes: &[u8]) -> Result<SqlValue, (String, String)> {
+    std::str::from_utf8(bytes)
+        .map(|text| SqlValue::String(text.to_string()))
+        .map_err(|_| ("22021".to_string(), "binary parameter is not valid UTF-8".to_string()))
+}
+
+/// Text payload of a scalar value the wire formats accept as text.
+fn text_value(value: &SqlValue) -> Result<String, (String, String)> {
+    match value {
+        SqlValue::String(text) => Ok(text.clone()),
+        SqlValue::Integer(number) => Ok(number.to_string()),
+        SqlValue::Number(number) => Ok(format!("{number}")),
+        other => Err(("22P02".to_string(), format!("value {other:?} has no text form"))),
+    }
+}
+
+/// Days from 1970-01-01 for a proleptic Gregorian date (Howard Hinnant's algorithm).
+fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = if year >= 0 { year } else { year - 399 } / 400;
+    let yoe = year - era * 400;
+    let mp = (month as i64 + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + day as i64 - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+/// Inverse of [`days_from_civil`].
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let year = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    (if month <= 2 { year + 1 } else { year }, month, day)
+}
+
+/// Parses `YYYY-MM-DD` into days since PostgreSQL's 2000-01-01 epoch.
+fn date_days(text: &str) -> Option<i32> {
+    let text = text.trim();
+    let mut parts = text.split('-');
+    let year: i64 = parts.next()?.parse().ok()?;
+    let month: u32 = parts.next()?.parse().ok()?;
+    let day: u32 = parts.next()?.parse().ok()?;
+    if parts.next().is_some() || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    let days = days_from_civil(year, month, day) - PG_EPOCH_DAYS;
+    i32::try_from(days).ok()
+}
+
+/// Renders days since 2000-01-01 as `YYYY-MM-DD`.
+fn date_text(days: i32) -> String {
+    let (year, month, day) = civil_from_days(i64::from(days) + PG_EPOCH_DAYS);
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+/// Parses `YYYY-MM-DD[ T]HH:MM:SS[.ffffff][+HH[:MM]|Z]` into microseconds since
+/// 2000-01-01 UTC plus the source offset in minutes.
+fn parse_timestamp(text: &str) -> Option<(i64, i32)> {
+    let text = text.trim();
+    let split = text.find(['T', ' '])?;
+    let (date, rest) = text.split_at(split);
+    let rest = rest[1..].trim();
+
+    let mut body = rest;
+    let mut offset = 0_i32;
+    if let Some(stripped) = body.strip_suffix('Z').or_else(|| body.strip_suffix('z')) {
+        body = stripped;
+    }
+    else if let Some(position) = body.rfind(['+', '-']) {
+        // 时区偏移从第 3 个字符之后才可能出现，负号不会与日期相连。
+        if position >= 3 {
+            let (clock, zone) = body.split_at(position);
+            let sign = if zone.starts_with('-') { -1 } else { 1 };
+            let zone = &zone[1..];
+            let (hours, minutes) = match zone.split_once(':') {
+                Some((hours, minutes)) => (hours, minutes),
+                None if zone.len() >= 3 => (&zone[..2], &zone[2..]),
+                None => (zone, "0"),
+            };
+            let hours: i32 = hours.parse().ok()?;
+            let minutes: i32 = minutes.parse().ok()?;
+            offset = sign * (hours * 60 + minutes);
+            body = clock;
+        }
+    }
+
+    let mut clock = body.split(':');
+    let hour: i64 = clock.next()?.parse().ok()?;
+    let minute: i64 = clock.next()?.parse().ok()?;
+    let seconds = clock.next().unwrap_or("0");
+    let (second, fraction) = match seconds.split_once('.') {
+        Some((second, fraction)) => (second, fraction),
+        None => (seconds, ""),
+    };
+    let second: i64 = second.parse().ok()?;
+    let mut micros = 0_i64;
+    if !fraction.is_empty() {
+        let digits = fraction.trim_end_matches(|c: char| !c.is_ascii_digit());
+        if digits.len() > 6 || !digits.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        micros = digits.parse::<i64>().ok()? * 10_i64.pow(6 - digits.len() as u32);
+    }
+
+    let days = days_from_civil(
+        date.split('-').next()?.parse().ok()?,
+        date.split('-').nth(1)?.parse().ok()?,
+        date.split('-').nth(2)?.parse().ok()?,
+    ) - PG_EPOCH_DAYS;
+    let total = days * MICROS_PER_DAY + (hour * 3_600 + minute * 60 + second) * 1_000_000 + micros - i64::from(offset) * 60_000_000;
+    Some((total, offset))
+}
+
+/// Microseconds since PostgreSQL's epoch for a timestamp spelling.
+fn timestamp_micros(text: &str) -> Option<i64> {
+    parse_timestamp(text).map(|(micros, _)| micros)
+}
+
+/// Renders microseconds since 2000-01-01 UTC as PostgreSQL's text timestamp.
+fn timestamp_text(micros: i64, with_zone: bool) -> String {
+    let days = micros.div_euclid(MICROS_PER_DAY) + PG_EPOCH_DAYS;
+    let rest = micros.rem_euclid(MICROS_PER_DAY);
+    let (year, month, day) = civil_from_days(days);
+    let seconds = rest / 1_000_000;
+    let fraction = rest % 1_000_000;
+    let mut text = format!(
+        "{year:04}-{month:02}-{day:02} {:02}:{:02}:{:02}",
+        seconds / 3_600,
+        (seconds % 3_600) / 60,
+        seconds % 60
+    );
+    if fraction != 0 {
+        let digits = format!("{fraction:06}");
+        text.push('.');
+        text.push_str(digits.trim_end_matches('0'));
+    }
+    if with_zone {
+        text.push_str("+00");
+    }
+    text
+}
+
+/// Encodes decimal text into PostgreSQL's binary `numeric` payload.
+fn numeric_binary_from_text(text: &str) -> Result<Vec<u8>, (String, String)> {
+    let invalid = || ("22P02".to_string(), format!("invalid input syntax for type numeric: \"{text}\""));
+    let text = text.trim();
+    if text.eq_ignore_ascii_case("nan") {
+        let mut bytes = Vec::with_capacity(8);
+        bytes.extend_from_slice(&0_i16.to_be_bytes());
+        bytes.extend_from_slice(&0_i16.to_be_bytes());
+        bytes.extend_from_slice(&0xC000_u16.to_be_bytes());
+        bytes.extend_from_slice(&0_u16.to_be_bytes());
+        return Ok(bytes);
+    }
+    let (negative, body) = match text.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, text.strip_prefix('+').unwrap_or(text)),
+    };
+    let body = body.split(['e', 'E']).next().unwrap_or(body);
+    if body.is_empty() || !body.chars().all(|c| c.is_ascii_digit() || c == '.') {
+        return Err(invalid());
+    }
+    let (integer, fraction) = match body.split_once('.') {
+        Some((integer, fraction)) => (integer, fraction),
+        None => (body, ""),
+    };
+    if integer.is_empty() && fraction.is_empty() {
+        return Err(invalid());
+    }
+    let scale = fraction.len().min(u16::MAX as usize);
+
+    let mut integer_groups: Vec<u16> = Vec::new();
+    let padded_integer = {
+        let pad = (4 - integer.len() % 4) % 4;
+        format!("{}{integer}", "0".repeat(pad))
+    };
+    for chunk in padded_integer.as_bytes().chunks(4) {
+        if chunk.is_empty() {
+            continue;
+        }
+        integer_groups.push(std::str::from_utf8(chunk).map_err(|_| invalid())?.parse::<u16>().map_err(|_| invalid())?);
+    }
+    let mut fraction_groups: Vec<u16> = Vec::new();
+    let padded_fraction = {
+        let pad = (4 - fraction.len() % 4) % 4;
+        format!("{fraction}{}", "0".repeat(pad))
+    };
+    for chunk in padded_fraction.as_bytes().chunks(4) {
+        if chunk.is_empty() {
+            continue;
+        }
+        fraction_groups.push(std::str::from_utf8(chunk).map_err(|_| invalid())?.parse::<u16>().map_err(|_| invalid())?);
+    }
+
+    let mut weight = integer_groups.len() as i32 - 1;
+    let mut digits = integer_groups;
+    digits.extend(fraction_groups);
+    while digits.first() == Some(&0) {
+        digits.remove(0);
+        weight -= 1;
+    }
+    while digits.last() == Some(&0) {
+        digits.pop();
+    }
+    if digits.is_empty() {
+        weight = 0;
+    }
+    let sign = if negative && !digits.is_empty() { 0x4000_u16 } else { 0 };
+
+    let mut bytes = Vec::with_capacity(8 + digits.len() * 2);
+    bytes.extend_from_slice(&(digits.len() as i16).to_be_bytes());
+    bytes.extend_from_slice(&(weight as i16).to_be_bytes());
+    bytes.extend_from_slice(&sign.to_be_bytes());
+    bytes.extend_from_slice(&(scale as u16).to_be_bytes());
+    for digit in digits {
+        bytes.extend_from_slice(&digit.to_be_bytes());
+    }
+    Ok(bytes)
+}
+
+/// Decodes PostgreSQL's binary `numeric` payload back into decimal text.
+fn numeric_text_from_binary(bytes: &[u8]) -> Result<String, (String, String)> {
+    let malformed = || ("08P01".to_string(), format!("malformed binary numeric payload ({} bytes)", bytes.len()));
+    if bytes.len() < 8 {
+        return Err(malformed());
+    }
+    let read_u16 = |offset: usize| u16::from_be_bytes([bytes[offset], bytes[offset + 1]]);
+    let ndigits = i16::from_be_bytes([bytes[0], bytes[1]]);
+    let weight = i16::from_be_bytes([bytes[2], bytes[3]]);
+    let sign = read_u16(4);
+    let scale = read_u16(6) as usize;
+    if ndigits < 0 || bytes.len() != 8 + ndigits as usize * 2 {
+        return Err(malformed());
+    }
+    if sign == 0xC000 {
+        return Ok("NaN".to_owned());
+    }
+    let digits: Vec<u16> = (0..ndigits as usize).map(|index| read_u16(8 + index * 2)).collect();
+
+    let integer_groups = (weight + 1).max(0) as usize;
+    let fraction_groups = ((scale + 3) / 4).max(0);
+    let mut integer = String::new();
+    for position in 0..integer_groups {
+        let digit = digits.get(position).copied().unwrap_or(0);
+        if position == 0 {
+            integer.push_str(&digit.to_string());
+        }
+        else {
+            integer.push_str(&format!("{digit:04}"));
+        }
+    }
+    if integer.is_empty() {
+        integer.push('0');
+    }
+    let mut fraction = String::new();
+    for index in 0..fraction_groups {
+        let digit = digits.get(integer_groups + index).copied().unwrap_or(0);
+        fraction.push_str(&format!("{digit:04}"));
+    }
+    fraction.truncate(scale);
+    let sign_text = if sign == 0x4000 { "-" } else { "" };
+    if scale == 0 {
+        Ok(format!("{sign_text}{integer}"))
+    }
+    else {
+        Ok(format!("{sign_text}{integer}.{fraction}"))
+    }
+}
+
+/// Decodes a one-dimensional binary array parameter into PostgreSQL array text.
+///
+/// The binder parses `{a,b}` back into element literals for `ANY`/`ALL`, so the
+/// wire can carry `uuid[]`, `text[]` and `jsonb[]` without teaching the storage
+/// layer a first-class array type.
+fn pg_array_parameter(bytes: &[u8]) -> Result<SqlValue, (String, String)> {
+    let malformed = || ("08P01".to_string(), "malformed binary array parameter".to_string());
+    if bytes.len() < 20 {
+        return Err(malformed());
+    }
+    let read_i32 = |offset: usize| i32::from_be_bytes([bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]]);
+    let dimensions = read_i32(0);
+    // 头是 ndim(4) | has-nulls 标志(4) | 元素 OID(4) | 维度长度(4) | 下界(4)。
+    let element_oid = read_i32(8) as u32;
+    if dimensions != 1 {
+        return Err(("0A000".to_string(), format!("only one-dimensional array parameters are supported, got {dimensions}")));
+    }
+    let length = read_i32(12);
+    if length < 0 {
+        return Err(malformed());
+    }
+    let mut position = 20;
+    let mut elements = Vec::with_capacity(length as usize);
+    for _ in 0..length {
+        if bytes.len() < position + 4 {
+            return Err(malformed());
+        }
+        let size = read_i32(position);
+        position += 4;
+        if size < 0 {
+            elements.push(None);
+            continue;
+        }
+        let size = size as usize;
+        if bytes.len() < position + size {
+            return Err(malformed());
+        }
+        let element = &bytes[position..position + size];
+        position += size;
+        elements.push(Some(array_element_text(element_oid, element)?));
+    }
+    Ok(SqlValue::String(render_pg_array(&elements)))
+}
+
+fn array_element_text(oid: u32, bytes: &[u8]) -> Result<String, (String, String)> {
+    match oid {
+        OID_UUID => match <[u8; 16]>::try_from(bytes) {
+            Ok(octets) => Ok(uuid::Uuid::from_bytes(octets).hyphenated().to_string()),
+            Err(_) => Err(("08P01".to_string(), "uuid array element must be 16 octets".to_string())),
+        },
+        OID_TEXT | OID_VARCHAR | OID_NAME | OID_JSON => std::str::from_utf8(bytes)
+            .map(str::to_owned)
+            .map_err(|_| ("22021".to_string(), "array element is not valid UTF-8".to_string())),
+        OID_JSONB => match bytes.split_first() {
+            Some((1, rest)) => std::str::from_utf8(rest)
+                .map(str::to_owned)
+                .map_err(|_| ("22021".to_string(), "jsonb array element is not valid UTF-8".to_string())),
+            _ => Err(("08P01".to_string(), "binary jsonb array element must start with version byte 1".to_string())),
+        },
+        other => Err(("0A000".to_string(), format!("array element type OID {other} is not supported"))),
+    }
+}
+
+fn render_pg_array(elements: &[Option<String>]) -> String {
+    let mut rendered = String::from("{");
+    for (index, element) in elements.iter().enumerate() {
+        if index != 0 {
+            rendered.push(',');
+        }
+        match element {
+            None => rendered.push_str("NULL"),
+            Some(text) => {
+                let needs_quotes = text.is_empty()
+                    || text.eq_ignore_ascii_case("null")
+                    || text.chars().any(|character| matches!(character, ',' | '{' | '}' | '"' | '\\') || character.is_whitespace());
+                if needs_quotes {
+                    rendered.push('"');
+                    rendered.push_str(&text.replace('\\', "\\\\").replace('"', "\\\""));
+                    rendered.push('"');
+                }
+                else {
+                    rendered.push_str(text);
+                }
+            }
+        }
+    }
+    rendered.push('}');
+    rendered
 }
 
 struct OwnedStartup {

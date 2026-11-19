@@ -424,6 +424,7 @@ fn field_type_document(field_type: &SqlFieldType) -> SqlSchemaFieldTypeDocument 
         SqlFieldType::Date => SqlSchemaFieldTypeDocument::Date,
         SqlFieldType::Datetime => SqlSchemaFieldTypeDocument::Datetime,
         SqlFieldType::Uuid => SqlSchemaFieldTypeDocument::Uuid,
+        SqlFieldType::Json => SqlSchemaFieldTypeDocument::Json,
         SqlFieldType::Optional(_) | SqlFieldType::Unknown => SqlSchemaFieldTypeDocument::Unknown,
     }
 }
@@ -440,6 +441,7 @@ fn field_type_base(document: SqlSchemaFieldTypeDocument) -> SqlFieldType {
         SqlSchemaFieldTypeDocument::Date => SqlFieldType::Date,
         SqlSchemaFieldTypeDocument::Datetime => SqlFieldType::Datetime,
         SqlSchemaFieldTypeDocument::Uuid => SqlFieldType::Uuid,
+        SqlSchemaFieldTypeDocument::Json => SqlFieldType::Json,
         SqlSchemaFieldTypeDocument::Unknown => SqlFieldType::Unknown,
     }
 }

@@ -1267,6 +1267,8 @@ pub fn check_write_literal(
         // the client; the gateway re-emits it and the driver-side column type
         // turns it back into a date, so no format validation happens here.
         SqlFieldType::Date | SqlFieldType::Datetime => matches!(literal, SqlBoundLiteral::Null | SqlBoundLiteral::String(_)),
+        // JSON/JSONB 以 JSON 文本入库，二进制载荷不接受。
+        SqlFieldType::Json => matches!(literal, SqlBoundLiteral::Null | SqlBoundLiteral::String(_)),
         SqlFieldType::Bool => match literal {
             SqlBoundLiteral::Null | SqlBoundLiteral::Boolean(_) => true,
             SqlBoundLiteral::Integer(value) => *value == 0 || *value == 1,

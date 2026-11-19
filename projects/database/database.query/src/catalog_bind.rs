@@ -53,6 +53,12 @@ pub enum SqlFieldType {
     /// lowercase spelling, which is what drivers expect for a text-encoded
     /// uuid column.
     Uuid,
+    /// JSON / JSONB column (`json` / `jsonb`).
+    ///
+    /// Stored as the JSON text the client wrote and compared as text; the
+    /// PostgreSQL wire face reports `jsonb` so drivers materialize a parsed
+    /// JSON value instead of a string.
+    Json,
     /// Optional wrapper — inner type + NULL. Box breaks the recursion
     Optional(Box<SqlFieldType>),
     /// Anything the gateway does not recognise stays opaque.
