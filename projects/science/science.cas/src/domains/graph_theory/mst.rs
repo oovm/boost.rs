@@ -1,6 +1,6 @@
 //! 最小生成森林（Kruskal）。
 
-use science_graph::primitives::UnionFind;
+use boost_collection::UnionFind;
 use science_types::{Diagnostic, DiagnosticCode};
 
 use super::{
