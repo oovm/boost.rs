@@ -4,10 +4,12 @@ use super::*;
 
 /// `explain` for `find` and `count`, covering all three verbosity levels.
 ///
-/// Hash fields (`queryHash`, `planCacheShapeHash`, `planCacheKey`,
-/// `queryShapeHash`) are derived deterministically from the command because the
-/// real planner hashes are internal to `mongod`. Every structural field mirrors
-/// the `mongod 8.0.9` reply.
+/// The plan comes from the same access decision `find`/`count` use, and the
+/// execution figures come from the real scan: `totalDocsExamined` counts the
+/// documents this run read, and the timings are measured on the monotonic clock.
+/// Hash fields are derived from the normalized query shape and the actual
+/// winning plan; server identity reports this implementation rather than a
+/// `mongod` version string.
 pub fn explain(command: &BsonDocument, store: &dyn MongoStorage) -> Result<BsonDocument, CommandError> {
     let verbosity = match command.get("verbosity") {
         Some(BsonValue::String(verbosity)) => {
@@ -54,41 +56,52 @@ pub fn explain(command: &BsonDocument, store: &dyn MongoStorage) -> Result<BsonD
     let normalized = normalize_query(&filter);
     let sort = if name == "find" { parse_sort(inner.get("sort")) } else { Vec::new() };
 
-    let all_documents = collect_matching(store, &namespace, &BsonDocument::new(), None)?;
-    let total = all_documents.len();
-    // 与 find / count 走同一个访问路径决策函数：explain 不再单独推一份计划。
-    let access = choose_access(store, &namespace, &filter, &hint, &sort, &all_documents, None)?;
+    // 与 find / count 走同一个访问路径决策函数，并且和它们一样不为了选路物化
+    // 整个集合：`choose_access` 需要的是多键字段线索，find/count 传空切片，
+    // explain 也必须给同一输入，否则两条路径会选出不同计划。
+    let planning_started = std::time::Instant::now();
+    let access = choose_access(store, &namespace, &filter, &hint, &sort, &[], None)?;
     // 与 find / count 用同一个早停边界，explain 报的扫描量就是执行器真实读到的量。
     let stop_after = scan_stop_after(&sort, skip, limit);
     let pushed = pushed_skip(&access, &sort, skip);
-    let outcome = scan_with_access(store, &namespace, &filter, &access, None, true, stop_after, pushed)?;
-    let matched = outcome.documents.len() + outcome.skipped_at_index;
-    let counted = if limit > 0 { matched.saturating_sub(skip).min(limit) } else { matched.saturating_sub(skip) };
     let direction = match &access {
         QueryAccess::Collection { direction: -1 } => "backward",
         QueryAccess::Index(plan) => plan.direction,
         _ => "forward",
     };
-
-    let mut query_planner = BsonDocument::new();
-    query_planner.push("namespace".to_string(), BsonValue::String(namespace.clone()));
-    query_planner.push("parsedQuery".to_string(), BsonValue::Document(normalized.clone()));
-    query_planner.push("indexFilterSet".to_string(), BsonValue::Bool(false));
-    let hash_seed = format!("{namespace}|{name}|{}", json::document_to_json(inner));
-    let query_hash = stable_hash(&hash_seed, 0);
-    query_planner.push("queryHash".to_string(), BsonValue::String(query_hash.clone()));
-    query_planner.push("planCacheShapeHash".to_string(), BsonValue::String(query_hash.clone()));
-    query_planner.push("planCacheKey".to_string(), BsonValue::String(stable_hash(&format!("{hash_seed}|plan"), 1)));
-    query_planner.push("optimizationTimeMillis".to_string(), BsonValue::Int32(0));
-    query_planner.push("maxIndexedOrSolutionsReached".to_string(), BsonValue::Bool(false));
-    query_planner.push("maxIndexedAndSolutionsReached".to_string(), BsonValue::Bool(false));
-    query_planner.push("maxScansToExplodeReached".to_string(), BsonValue::Bool(false));
-    query_planner.push("prunedSimilarIndexes".to_string(), BsonValue::Bool(false));
     let plan = match (&access, name) {
         (QueryAccess::Index(plan), "find") => hinted_find_plan(plan, skip, limit, &sort),
         (QueryAccess::Index(plan), _) => hinted_count_plan(plan),
         (QueryAccess::Collection { .. }, _) => winning_plan(name, &normalized, skip, limit, direction),
     };
+    let optimization_millis = planning_started.elapsed().as_millis() as i32;
+
+    // 执行耗时来自真实扫描的单调时钟，不再写 0。
+    let execution_started = std::time::Instant::now();
+    let outcome = scan_with_access(store, &namespace, &filter, &access, None, true, stop_after, pushed)?;
+    let execution_millis = execution_started.elapsed().as_millis() as i32;
+    let matched = outcome.documents.len() + outcome.skipped_at_index;
+    let counted = if limit > 0 { matched.saturating_sub(skip).min(limit) } else { matched.saturating_sub(skip) };
+    // `total` 取自本次执行真实读到的文档数：没有提前停止时它就是集合大小，
+    // 提前停止时它反映实际工作量，不再来自一次前置全量收集。
+    let total = outcome.documents_examined.max(0) as usize;
+
+    let mut query_planner = BsonDocument::new();
+    query_planner.push("namespace".to_string(), BsonValue::String(namespace.clone()));
+    query_planner.push("parsedQuery".to_string(), BsonValue::Document(normalized.clone()));
+    query_planner.push("indexFilterSet".to_string(), BsonValue::Bool(false));
+    // 形状哈希来自规范化查询，计划键来自真实 winning plan，不再从命令原文伪造。
+    let shape_seed = format!("{namespace}|{name}|{}", json::document_to_json(&normalized));
+    let plan_key = stable_hash(&format!("{shape_seed}|{}", json::document_to_json(&plan)), 1);
+    let query_hash = stable_hash(&shape_seed, 0);
+    query_planner.push("queryHash".to_string(), BsonValue::String(query_hash.clone()));
+    query_planner.push("planCacheShapeHash".to_string(), BsonValue::String(query_hash.clone()));
+    query_planner.push("planCacheKey".to_string(), BsonValue::String(plan_key));
+    query_planner.push("optimizationTimeMillis".to_string(), BsonValue::Int32(optimization_millis));
+    query_planner.push("maxIndexedOrSolutionsReached".to_string(), BsonValue::Bool(false));
+    query_planner.push("maxIndexedAndSolutionsReached".to_string(), BsonValue::Bool(false));
+    query_planner.push("maxScansToExplodeReached".to_string(), BsonValue::Bool(false));
+    query_planner.push("prunedSimilarIndexes".to_string(), BsonValue::Bool(false));
     query_planner.push("winningPlan".to_string(), BsonValue::Document(plan));
     query_planner.push("rejectedPlans".to_string(), BsonValue::Array(Vec::new()));
 
@@ -97,7 +110,7 @@ pub fn explain(command: &BsonDocument, store: &dyn MongoStorage) -> Result<BsonD
     reply.push("queryPlanner".to_string(), BsonValue::Document(query_planner));
     // `count` explain omits `queryShapeHash`; `find` carries it.
     if name == "find" {
-        reply.push("queryShapeHash".to_string(), BsonValue::String(stable_shape_hash(&hash_seed)));
+        reply.push("queryShapeHash".to_string(), BsonValue::String(stable_shape_hash(&shape_seed)));
     }
     if verbosity != "queryPlanner" {
         let stats = match (&access, name) {
@@ -114,6 +127,7 @@ pub fn explain(command: &BsonDocument, store: &dyn MongoStorage) -> Result<BsonD
                 counted,
                 all_plans: verbosity == "allPlansExecution",
                 direction,
+                execution_millis,
             }),
         };
         reply.push("executionStats".to_string(), BsonValue::Document(stats));
@@ -160,10 +174,12 @@ pub(crate) struct ExecutionStats<'a> {
     pub(crate) counted: usize,
     pub(crate) all_plans: bool,
     pub(crate) direction: &'a str,
+    /// 本次执行真实消耗的毫秒数（单调时钟），由调用方测量后传入。
+    pub(crate) execution_millis: i32,
 }
 
 pub(crate) fn explain_execution_stats(request: ExecutionStats<'_>) -> BsonDocument {
-    let ExecutionStats { command, filter, total, examined, matched, skip, limit, counted, all_plans, direction } = request;
+    let ExecutionStats { command, filter, total, examined, matched, skip, limit, counted, all_plans, direction, execution_millis } = request;
     let works = (total + 1) as i64;
     let returned = if command == "count" { 0 } else { counted };
     let scan = execution_stage("COLLSCAN", matched as i64, works, examined, filter, direction);
@@ -202,11 +218,13 @@ pub(crate) fn explain_execution_stats(request: ExecutionStats<'_>) -> BsonDocume
     for (field, value) in stage.fields {
         cached.push(field, value);
     }
-    let stage = cached;
+    let mut stage = cached;
+    // 只有最外层能给出真实执行耗时；内层算子没有独立埋点，不再写 0 冒充估计值。
+    stage.push("executionTimeMillisEstimate".to_string(), BsonValue::Int32(execution_millis));
     let mut stats = BsonDocument::new();
     stats.push("executionSuccess".to_string(), BsonValue::Bool(true));
     stats.push("nReturned".to_string(), count_value(returned as i64));
-    stats.push("executionTimeMillis".to_string(), BsonValue::Int32(0));
+    stats.push("executionTimeMillis".to_string(), BsonValue::Int32(execution_millis));
     stats.push("totalKeysExamined".to_string(), BsonValue::Int32(0));
     stats.push("totalDocsExamined".to_string(), count_value(examined));
     stats.push("executionStages".to_string(), BsonValue::Document(stage));
@@ -223,7 +241,6 @@ pub(crate) fn execution_stage(stage: &str, advanced: i64, works: i64, examined: 
         document.push("filter".to_string(), BsonValue::Document(filter.clone()));
     }
     document.push("nReturned".to_string(), count_value(advanced));
-    document.push("executionTimeMillisEstimate".to_string(), BsonValue::Int32(0));
     document.push("works".to_string(), count_value(works));
     document.push("advanced".to_string(), count_value(advanced));
     document.push("needTime".to_string(), count_value(works - advanced - 1));
@@ -238,12 +255,13 @@ pub(crate) fn execution_stage(stage: &str, advanced: i64, works: i64, examined: 
     document
 }
 
+/// 服务器身份取自本实现，而不是模仿 `mongod` 的版本号。
 pub(crate) fn server_info() -> BsonDocument {
     let mut info = BsonDocument::new();
     info.push("host".to_string(), BsonValue::String("127.0.0.1".to_string()));
     info.push("port".to_string(), BsonValue::Int32(0));
-    info.push("version".to_string(), BsonValue::String("8.0.9".to_string()));
-    info.push("gitVersion".to_string(), BsonValue::String("f882ef816d531ecfbb593843e4c554fda90ca416".to_string()));
+    info.push("version".to_string(), BsonValue::String(env!("CARGO_PKG_VERSION").to_string()));
+    info.push("gitVersion".to_string(), BsonValue::String(option_env!("BOOST_BUILD_COMMIT").unwrap_or("unavailable").to_string()));
     info
 }
 
