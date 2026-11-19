@@ -42,7 +42,7 @@ use database_execution::cluster::LocalExecutor;
 use database_execution::pgsql::{
     PgsqlSqlRuntime, StatementOutcome, TransactionControl, TransactionSession, dispatch_statement,
 };
-use database_query::SqlSchemaRegistry;
+use database_execution::sql_schema::SqlSchemaRegistry;
 use database_server::yyds::pgsql::connection::serve_cancellable_with_auth_and_tls;
 use database_server::yyds::pgsql::{PgAuthentication, PgTls};
 use database_storage::cluster_kv::FileShard;

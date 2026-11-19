@@ -10,12 +10,13 @@ use std::sync::Arc;
 
 use database_query::{
     OnCommit, PgObjectStatement, SqlCatalogBoundProjection, SqlCatalogBoundStatement, SqlColumn, SqlDdlStatement, SqlDialect, SqlErrorKind,
-    SqlExecutionPlan, SqlFrontendError, SqlSessionCommand, SqlTransactionAction, SqlValue, analyze_meta_query, apply_auto_increment,
+    SqlExecutionPlan, SqlFrontendError, SqlSessionCommand, SqlTransactionAction, SqlValue, analyze_meta_query,
     bind_sql_catalog, describe_plan, is_ddl_statement, parse_ddl, parse_pg_object_statement, parse_pg_utility, parse_session_command,
     plan_statement_for_dialect, rewrite_double_colon_casts, rewrite_escape_strings, rewrite_pg_temp_references,
 };
 
 use crate::cluster::TransactionHandle;
+use crate::sql_schema::{SqlDdlOutcome, apply_auto_increment};
 
 use super::session::{ABORTED_BLOCK, PgsqlSqlRuntime, TransactionControl, TransactionSession};
 
@@ -507,7 +508,7 @@ fn session_io_error(error: std::io::Error) -> StatementError {
 /// write, so it publishes once and restores with a rolled-back block.
 fn backfill_added_generated_column(
     statement: &SqlDdlStatement,
-    outcome: &database_query::SqlDdlOutcome,
+    outcome: &SqlDdlOutcome,
     session: &TransactionSession,
     runtime: &Arc<PgsqlSqlRuntime>,
 ) -> Result<(), StatementError> {
@@ -519,7 +520,7 @@ fn backfill_added_generated_column(
     else {
         return Ok(());
     };
-    if !matches!(outcome, database_query::SqlDdlOutcome::AlterTableAddColumn { added: true }) {
+    if !matches!(outcome, SqlDdlOutcome::AlterTableAddColumn { added: true }) {
         return Ok(());
     }
     let dialect = SqlDialect::Postgres;
@@ -632,7 +633,7 @@ fn run_statement_inner(
     };
     if let Some(meta) = meta {
         let description = meta.describe();
-        let result = meta.execute(&runtime.schema, "public");
+        let result = meta.execute(&runtime.schema.snapshot(), "public");
         let command_tag = format!("SELECT {}", result.rows.len());
         return Ok(ExecutionOutcome { is_read: true, description, rows: result.rows, command_tag });
     }

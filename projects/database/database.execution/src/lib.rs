@@ -16,6 +16,8 @@ pub mod mongo;
 pub mod program;
 /// PostgreSQL 会话、语句分派与 bind → plan → execute。
 pub mod pgsql;
+/// 执行侧正式 schema/sequence 入口：DDL 变更、序列分配、checkpoint 与原子发布。
+pub mod sql_schema;
 pub mod sql_exec;
 /// SQLite 方言的求值机制（表达式 / 单元格 / 标量函数 / 宿主函数桥）。
 pub mod sqlite;

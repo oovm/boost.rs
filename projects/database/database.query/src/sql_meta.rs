@@ -11,7 +11,7 @@ use oak_sql::ast::{
 };
 
 use crate::{
-    SqlColumn, SqlFieldType, SqlFrontendError, SqlResult, SqlSchemaRegistry, SqlValue,
+    SqlColumn, SqlFieldType, SqlFrontendError, SqlResult, SqlValue,
     sql::{SqlDialect, parse_sql},
     sql_schema::{RegistryState, SchemaField, SchemaTable},
 };
@@ -94,8 +94,8 @@ impl MetaQuery {
             .collect()
     }
 
-    /// Executes the synthesized query against the registry snapshot.
-    pub fn execute(&self, registry: &SqlSchemaRegistry, schema: &str) -> SqlResult {
+    /// Executes the synthesized query against a read-only registry snapshot.
+    pub fn execute(&self, state: &RegistryState, schema: &str) -> SqlResult {
         if let Some(scalar) = self.scalar {
             let value = match scalar {
                 ScalarKind::Database => schema.to_string(),
@@ -106,8 +106,7 @@ impl MetaQuery {
             return SqlResult { columns, rows: vec![vec![SqlValue::String(value)]], affected_rows: 0 };
         }
 
-        let state = registry.snapshot();
-        let mut rows = build_rows(self, &state, schema);
+        let mut rows = build_rows(self, state, schema);
         rows.retain(|row| self.matches(row, schema));
         if self.count {
             let columns = self.columns.iter().map(|column| self.label(column, schema)).collect();
@@ -1564,13 +1563,13 @@ mod tests {
 
     #[test]
     fn count_star_metadata_query_returns_one_row() {
-        let registry = SqlSchemaRegistry::new_in_memory();
+        let state = RegistryState::empty();
         let cases = [
             ("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()", SqlDialect::Mysql),
             ("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'", SqlDialect::Postgres),
         ];
         for (sql, dialect) in cases {
-            let result = analyzed(sql, dialect).execute(&registry, "app");
+            let result = analyzed(sql, dialect).execute(&state, "app");
             assert_eq!(result.columns.len(), 1);
             assert_eq!(result.columns, vec!["COUNT(*)".to_string()]);
             assert_eq!(result.rows, vec![vec![SqlValue::Integer(0)]]);
@@ -1579,7 +1578,7 @@ mod tests {
 
     #[test]
     fn like_order_and_paging_are_supported() {
-        let registry = SqlSchemaRegistry::new_in_memory();
+        let state = RegistryState::empty();
         let cases = [
             (
                 "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME LIKE 'user%' ORDER BY TABLE_NAME LIMIT 10 OFFSET 2",
@@ -1591,7 +1590,7 @@ mod tests {
             ),
         ];
         for (sql, dialect) in cases {
-            let result = analyzed(sql, dialect).execute(&registry, "app");
+            let result = analyzed(sql, dialect).execute(&state, "app");
             assert_eq!(result.columns.len(), 1);
             assert!(result.rows.is_empty());
         }

@@ -52,7 +52,7 @@ pub use sql_planner::{
     ScanPlan, SetOperationPlan, SqlExecutionPlan, SqlSetOrderByItem, UniqueConstraintPlan, UpdateAssignment, UpdatePlan, WritePlan,
     plan_select, plan_select_for_dialect, plan_statement, plan_statement_for_dialect,
 };
-pub use sql_schema::{SqlAutoIncrementField, SqlDdlOutcome, SqlSchemaCheckpoint, SqlSchemaRegistry, apply_auto_increment};
+pub use sql_schema::{RegistryState, SchemaField, SchemaForeignKey, SchemaIndex, SchemaTable, SqlAutoIncrementField};
 
 /// 方言伪装响应使用的版本标签（`database-0.1.0`）。
 pub fn version_label() -> String {

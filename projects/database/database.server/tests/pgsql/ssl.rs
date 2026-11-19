@@ -18,7 +18,7 @@ use std::{
 use base64::Engine as _;
 use database_cluster::topology::ShardMap;
 use database_execution::{cluster::LocalExecutor, pgsql::PgsqlSqlRuntime};
-use database_query::SqlSchemaRegistry;
+use database_execution::sql_schema::SqlSchemaRegistry;
 use database_server::yyds::pgsql::{PgAuthentication, PgTls, TlsError, connection::serve_connection_with_auth_and_tls};
 use database_storage::cluster_kv::MemoryShard;
 use database_types::cluster::{ShardEpoch, ShardId};

@@ -19,12 +19,13 @@ fn is_select(sql: &str) -> bool {
 use database_execution::{
     cluster::{KeyValueExecutor, TransactionHandle},
     sql_exec::execute_plan,
+    sql_schema::{SqlSchemaCheckpoint, SqlSchemaRegistry, apply_auto_increment},
 };
 use database_protocol_mysql::{MAX_PACKET_PAYLOAD, PROTOCOL_VERSION};
 use database_query::{
     MYSQL_BLOB_CAPACITY, SqlBoundExpression, SqlBoundLiteral, SqlCatalog, SqlCatalogBoundExpression, SqlCatalogBoundStatement, SqlColumn,
-    SqlDialect, SqlErrorKind, SqlExecutionPlan, SqlFieldType, SqlFrontendError, SqlParameterStyle, SqlResult, SqlSchemaCheckpoint,
-    SqlSchemaRegistry, SqlSessionCommand, SqlTransactionAction, SqlValue, analyze_meta_query, apply_auto_increment,
+    SqlDialect, SqlErrorKind, SqlExecutionPlan, SqlFieldType, SqlFrontendError, SqlParameterStyle, SqlResult,
+    SqlSessionCommand, SqlTransactionAction, SqlValue, analyze_meta_query,
     bind_sql_catalog_with_variables, describe_plan_for_dialect, is_accepted_collation, neutralized_sql_parameters, parse_ddl,
     parse_session_command, plan_statement_for_dialect, substitute_sql_parameters,
 };
@@ -638,7 +639,7 @@ fn serve_session(stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRuntime>
                             continue;
                         };
                         let described = meta.describe();
-                        let result = meta.execute(&rt.schema, &session.schema);
+                        let result = meta.execute(&rt.schema.snapshot(), &session.schema);
                         let column_types: Vec<u8> = described.iter().map(|column| mysql_field_type(&column.field_type)).collect();
                         let column_nullables: Vec<bool> = described.iter().map(|column| column.field_type.is_nullable()).collect();
                         let status_flags = session.status_flags();
@@ -1183,7 +1184,7 @@ fn execute_sql(
             }
             Ok(Some(meta)) => {
                 let described = meta.describe();
-                let result = meta.execute(&runtime.schema, &session.schema);
+                let result = meta.execute(&runtime.schema.snapshot(), &session.schema);
                 let declared_types: Vec<u8> = described.iter().map(|column| mysql_field_type(&column.field_type)).collect();
                 let declared_nullables: Vec<bool> = described.iter().map(|column| column.field_type.is_nullable()).collect();
                 let column_types = if column_types.is_empty() { &declared_types } else { column_types };

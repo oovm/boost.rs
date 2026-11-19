@@ -11,9 +11,9 @@
 use std::{collections::HashMap, fs, path::PathBuf};
 
 use database_cluster::topology::ShardMap;
-use database_execution::{cluster::LocalExecutor, sql_exec::execute_plan};
+use database_execution::{cluster::LocalExecutor, sql_exec::execute_plan, sql_schema::SqlSchemaRegistry};
 use database_query::{
-    SqlCatalogBoundStatement, SqlResult, SqlSchemaRegistry, SqlValue, bind_sql_catalog, parse_ddl, plan_statement_for_dialect,
+    SqlCatalogBoundStatement, SqlResult, SqlValue, bind_sql_catalog, parse_ddl, plan_statement_for_dialect,
     sql::{SqlDialect, SqlFrontendError},
 };
 use database_storage::cluster_kv::FileShard;

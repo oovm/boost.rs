@@ -18,8 +18,10 @@ use database_cluster::{
     catalog::Catalog,
     control::{NodeIdentity, NodeLease},
 };
-use database_execution::cluster::{KeyValueExecutor, LocalExecutor};
-use database_query::SqlSchemaRegistry;
+use database_execution::{
+    cluster::{KeyValueExecutor, LocalExecutor},
+    sql_schema::SqlSchemaRegistry,
+};
 use database_storage::cluster_kv::FileShard;
 use database_types::cluster::{ShardEpoch, ShardId};
 

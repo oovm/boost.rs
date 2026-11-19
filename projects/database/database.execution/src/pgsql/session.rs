@@ -14,7 +14,8 @@ use std::{
 };
 
 use crate::cluster::{KeyValueExecutor, TransactionHandle};
-use database_query::{OnCommit, SqlCatalog, SqlColumn, SqlDdlStatement, SqlSchemaCheckpoint, SqlSchemaRegistry, SqlValue};
+use crate::sql_schema::{SqlSchemaCheckpoint, SqlSchemaRegistry};
+use database_query::{OnCommit, SqlCatalog, SqlColumn, SqlDdlStatement, SqlValue};
 
 /// Type-identity lane temporary tables own, so a session-local table never
 /// shares a row namespace with the persistent PostgreSQL lane.
@@ -440,7 +441,7 @@ impl TransactionSession {
     }
 
     /// Applies one DDL statement to the session's temporary registry.
-    pub fn apply_temp_ddl(&mut self, statement: &SqlDdlStatement) -> Result<database_query::SqlDdlOutcome, database_query::SqlFrontendError> {
+    pub fn apply_temp_ddl(&mut self, statement: &SqlDdlStatement) -> Result<crate::sql_schema::SqlDdlOutcome, database_query::SqlFrontendError> {
         let in_block = self.in_transaction();
         let temp = self.temp.get_or_insert_with(TempTables::new);
         // A block that only creates its first temporary table still needs the
@@ -450,7 +451,7 @@ impl TransactionSession {
         }
         let outcome = temp.registry.apply_ddl(statement)?;
         if let SqlDdlStatement::CreateTable { name, on_commit, .. } = statement
-            && matches!(outcome, database_query::SqlDdlOutcome::CreateTable { created: true })
+            && matches!(outcome, crate::sql_schema::SqlDdlOutcome::CreateTable { created: true })
         {
             temp.on_commit.insert(name.clone(), *on_commit);
         }

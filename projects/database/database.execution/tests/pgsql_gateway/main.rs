@@ -11,7 +11,8 @@ use database_execution::{
     cluster::LocalExecutor,
     pgsql::{ExecutionOutcome, PgsqlSqlRuntime, StatementOutcome, TransactionSession, dispatch_statement},
 };
-use database_query::{SqlSchemaRegistry, SqlValue};
+use database_execution::sql_schema::SqlSchemaRegistry;
+use database_query::SqlValue;
 use database_storage::cluster_kv::FileShard;
 use database_types::cluster::{ShardEpoch, ShardId};
 

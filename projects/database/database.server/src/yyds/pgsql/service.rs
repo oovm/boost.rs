@@ -13,8 +13,8 @@ use std::{
 
 use database_cluster::control::NodeLease;
 use database_execution::cluster::KeyValueExecutor;
-use database_execution::pgsql::PgsqlSqlRuntime;
-use database_query::{SqlCatalog, SqlSchemaRegistry};
+use database_execution::{pgsql::PgsqlSqlRuntime, sql_schema::SqlSchemaRegistry};
+use database_query::SqlCatalog;
 
 use super::auth::PgAuthentication;
 use super::connection::serve_cancellable_with_auth;
@@ -80,7 +80,7 @@ impl PgsqlService {
         catalog: SqlCatalog,
         lane: u8,
     ) -> io::Result<Self> {
-        let schema = SqlSchemaRegistry::from_catalog_with_lane(&catalog, lane).map_err(|error| io::Error::other(error.message))?;
+        let schema = SqlSchemaRegistry::from_catalog_with_lane(&catalog, lane);
         Self::start_with_registry(owner, address, executor, Arc::new(schema))
     }
 
