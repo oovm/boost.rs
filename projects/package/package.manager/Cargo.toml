@@ -18,7 +18,7 @@ data-binary-pe = { workspace = true }
 data-binary-wasm = { workspace = true }
 data-binary-x64 = { workspace = true }
 data-binary-zip = { workspace = true }
-base64 = { workspace = true }
+data-encoding = { workspace = true }
 boost-harness = { workspace = true }
 compiler-analysis = { workspace = true }
 compiler-emitter = { workspace = true }

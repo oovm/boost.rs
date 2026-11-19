@@ -2,7 +2,7 @@
 use crate::legion::cmds::error::{LegionError, LegionResult};
 use std::{collections::BTreeMap, fs, path::Path};
 
-use base64::{Engine, engine::general_purpose::STANDARD};
+use data_encoding::representation::Base64;
 use serde_json::Value;
 
 use super::write::atomic_write_all_text;
@@ -41,7 +41,7 @@ pub fn build_standalone_html(report_dir: &Path, output_name: &str) -> LegionResu
     let manifest_literal = serde_json::to_string(&manifest)?;
     let glue_literal = serde_json::to_string(STANDALONE_GLUE)?;
     let components_literal = serde_json::to_string(&component_sources)?;
-    let wasm_b64 = STANDARD.encode(&wasm_bytes);
+    let wasm_b64 = Base64::standard_strict().encode_text(&wasm_bytes);
 
     let standalone_bootstrap = format!(
         r#"(function() {{

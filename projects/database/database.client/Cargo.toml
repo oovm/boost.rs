@@ -9,7 +9,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-base64 = { workspace = true }
+data-encoding = { workspace = true }
 database-protocol-mongo = { workspace = true }
 database-protocol-mysql = { workspace = true }
 database-protocol-pgsql = { workspace = true }

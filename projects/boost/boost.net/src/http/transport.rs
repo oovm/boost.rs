@@ -135,7 +135,7 @@ impl ProxyConfig {
             return None;
         }
         let credentials = format!("{}:{}", username, self.endpoint.password().unwrap_or_default());
-        Some(format!("Basic {}", base64::Engine::encode(&base64::engine::general_purpose::STANDARD, credentials)))
+        Some(format!("Basic {}", data_encoding::representation::Base64::standard_strict().encode_text(credentials)))
     }
 }
 

@@ -11,6 +11,9 @@
 
 #![deny(missing_docs)]
 
+mod xxh64;
+pub use xxh64::XxHash64;
+
 /// Computes Adler-32 over `data`.
 pub fn adler32(data: &[u8]) -> u32 {
     let mut a = 1u32;

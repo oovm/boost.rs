@@ -6,12 +6,12 @@ use std::{
     thread,
 };
 
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use boost_crypto::hash::sha1;
 use boost_net::{
     NetError, Url,
     ws::{WebSocket, WsConfig, WsMessage},
 };
+use data_encoding::representation::Base64;
 
 const GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
@@ -35,7 +35,7 @@ fn header<'a>(head: &'a str, name: &str) -> Option<&'a str> {
 
 fn handshake_response(head: &str) -> String {
     let key = header(head, "sec-websocket-key").expect("client key");
-    let accept = STANDARD.encode(sha1(format!("{key}{GUID}").as_bytes()));
+    let accept = Base64::standard_strict().encode_text(sha1(format!("{key}{GUID}").as_bytes()));
     format!(
         "HTTP/1.1 101 Switching Protocols\r\n\
          Upgrade: websocket\r\n\
@@ -216,11 +216,8 @@ fn extra_headers_reach_the_server_and_reserved_names_are_dropped() {
     });
 
     let mut config = WsConfig::default();
-    config.headers = vec![
-        ("User-Agent".into(), "readaloud-test".into()),
-        ("Cookie".into(), "muid=0;".into()),
-        ("Host".into(), "evil.invalid".into()),
-    ];
+    config.headers =
+        vec![("User-Agent".into(), "readaloud-test".into()), ("Cookie".into(), "muid=0;".into()), ("Host".into(), "evil.invalid".into())];
     let mut client = WebSocket::connect(&Url::parse(&url).unwrap(), config).unwrap();
     let _ = client.close(1000, "done");
     server.join().unwrap();
@@ -232,9 +229,7 @@ fn a_status_rejection_surfaces_the_status_and_date() {
     let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
         let _head = read_head(&mut stream);
-        stream
-            .write_all(b"HTTP/1.1 403 Forbidden\r\nDate: Fri, 20 Nov 2026 09:15:30 GMT\r\nContent-Length: 0\r\n\r\n")
-            .unwrap();
+        stream.write_all(b"HTTP/1.1 403 Forbidden\r\nDate: Fri, 20 Nov 2026 09:15:30 GMT\r\nContent-Length: 0\r\n\r\n").unwrap();
         stream.flush().unwrap();
     });
 

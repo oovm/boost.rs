@@ -1,4 +1,4 @@
-//! Self-contained XXH64 content fingerprint used by the parse caches.
+//! Seed-zero XXH64 for content fingerprints and Zstandard trailers.
 //!
 //! This replaces the former external `xxhash` dependency. Only the streaming
 //! 64-bit variant with seed `0` is implemented, matching the reference

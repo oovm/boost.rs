@@ -5,7 +5,7 @@
 //! not applied; the gateway stores the verifier from the configured password
 //! and the common ASCII path is byte-identical without normalization.
 
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+use data_encoding::representation::Base64;
 use sha2::{Digest, Sha256};
 
 /// Failure raised by one SCRAM-SHA-256 exchange.
@@ -164,12 +164,7 @@ impl ScramServer {
 
     /// Builds an exchange that verifies against a stored verifier instead of a
     /// plaintext password.
-    pub fn from_verifier(
-        verifier: ScramVerifier,
-        salt: Vec<u8>,
-        iterations: u32,
-        nonce_suffix: impl Into<String>,
-    ) -> Self {
+    pub fn from_verifier(verifier: ScramVerifier, salt: Vec<u8>, iterations: u32, nonce_suffix: impl Into<String>) -> Self {
         Self {
             secret: ScramSecret::Verifier(verifier),
             salt,
@@ -203,7 +198,7 @@ impl ScramServer {
         }
         let client_nonce = nonce.ok_or_else(|| ScramError::Protocol("SCRAM client-first is missing the nonce".into()))?;
         let nonce = format!("{client_nonce}{}", self.nonce_suffix);
-        let server_first = format!("r={nonce},s={},i={}", STANDARD.encode(&self.salt), self.iterations);
+        let server_first = format!("r={nonce},s={},i={}", Base64::standard_strict().encode_text(&self.salt), self.iterations);
         self.client_first_bare = Some(bare.to_owned());
         self.server_first = Some(server_first.clone());
         Ok(server_first)
@@ -226,7 +221,9 @@ impl ScramServer {
         }
         let without_proof = fields.join(",");
         let proof = proof.ok_or_else(|| ScramError::Protocol("SCRAM client-final is missing the proof".into()))?;
-        let decoded = STANDARD.decode(&proof).map_err(|error| ScramError::Protocol(format!("SCRAM proof is not base64: {error}")))?;
+        let decoded = Base64::standard_strict()
+            .decode_canonical(&proof)
+            .map_err(|error| ScramError::Protocol(format!("SCRAM proof is not base64: {error}")))?;
         if decoded.len() != 32 {
             return Err(ScramError::AuthenticationFailed);
         }
@@ -238,7 +235,7 @@ impl ScramServer {
             return Err(ScramError::AuthenticationFailed);
         }
         let signature = hmac_sha256(&server_key, auth_message.as_bytes());
-        Ok(format!("v={}", STANDARD.encode(signature)))
+        Ok(format!("v={}", Base64::standard_strict().encode_text(signature)))
     }
 }
 
@@ -294,13 +291,10 @@ mod tests {
 
     #[test]
     fn scram_server_verifies_the_rfc_7677_exchange() {
-        let salt = STANDARD.decode("W22ZaJ0SNY7soEsUEjb6gQ==").unwrap();
+        let salt = Base64::standard_strict().decode_canonical("W22ZaJ0SNY7soEsUEjb6gQ==").unwrap();
         let mut server = ScramServer::new("pencil", salt, 4096, "%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0");
         let server_first = server.begin("n,,n=user,r=rOprNGfwEbeRWgbNEkqO").expect("begin");
-        assert_eq!(
-            server_first,
-            "r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096"
-        );
+        assert_eq!(server_first, "r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096");
         let server_final = server
             .finish("c=biws,r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,p=dHzbZapWIk4jUhN+Ute9ytag9zjfMHgsqmmiz7AndVQ=")
             .expect("finish");
@@ -309,7 +303,7 @@ mod tests {
 
     #[test]
     fn a_wrong_password_fails_authentication() {
-        let salt = STANDARD.decode("W22ZaJ0SNY7soEsUEjb6gQ==").unwrap();
+        let salt = Base64::standard_strict().decode_canonical("W22ZaJ0SNY7soEsUEjb6gQ==").unwrap();
         let mut server = ScramServer::new("wrong", salt, 4096, "%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0");
         server.begin("n,,n=user,r=rOprNGfwEbeRWgbNEkqO").expect("begin");
         assert_eq!(
@@ -320,7 +314,7 @@ mod tests {
 
     #[test]
     fn a_stored_verifier_accepts_the_same_exchange_as_the_password() {
-        let salt = STANDARD.decode("W22ZaJ0SNY7soEsUEjb6gQ==").unwrap();
+        let salt = Base64::standard_strict().decode_canonical("W22ZaJ0SNY7soEsUEjb6gQ==").unwrap();
         let verifier = verifier_for(b"pencil", &salt, 4096);
         let mut server = ScramServer::from_verifier(verifier, salt.clone(), 4096, "%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0");
         assert_eq!(

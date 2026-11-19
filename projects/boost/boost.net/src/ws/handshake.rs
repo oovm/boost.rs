@@ -2,8 +2,8 @@
 
 use std::io::{Read, Write};
 
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use boost_crypto::hash::sha1;
+use data_encoding::representation::Base64;
 use url::Url;
 
 use crate::NetError;
@@ -25,7 +25,7 @@ pub(crate) fn perform<R: Read + Write>(stream: &mut R, url: &Url, extra: &[(Stri
     boost_random::Secure::system()
         .fill(&mut nonce)
         .map_err(|error| NetError::Transport(format!("cannot generate a WebSocket key: {error}")))?;
-    let key = STANDARD.encode(nonce);
+    let key = Base64::standard_strict().encode_text(nonce);
     let host = url.host_str().ok_or_else(|| NetError::Unsupported("URL has no host".into()))?;
     let host_header = match url.port() {
         Some(port) => format!("{host}:{port}"),
@@ -67,7 +67,7 @@ pub(crate) fn perform<R: Read + Write>(stream: &mut R, url: &Url, extra: &[(Stri
     if !head.contains_token("connection", "upgrade") {
         return Err(NetError::Protocol("handshake response is missing `Connection: Upgrade`".into()));
     }
-    let expected = STANDARD.encode(sha1(format!("{key}{GUID}").as_bytes()));
+    let expected = Base64::standard_strict().encode_text(sha1(format!("{key}{GUID}").as_bytes()));
     let actual =
         head.header("sec-websocket-accept").ok_or_else(|| NetError::Protocol("handshake response is missing Sec-WebSocket-Accept".into()))?;
     if !actual.eq(&expected) {
@@ -82,10 +82,7 @@ struct Head {
 }
 
 fn is_reserved(name: &str) -> bool {
-    matches!(
-        name.to_ascii_lowercase().as_str(),
-        "host" | "upgrade" | "connection" | "sec-websocket-key" | "sec-websocket-version"
-    )
+    matches!(name.to_ascii_lowercase().as_str(), "host" | "upgrade" | "connection" | "sec-websocket-key" | "sec-websocket-version")
 }
 
 impl Head {

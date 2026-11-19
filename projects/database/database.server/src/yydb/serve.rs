@@ -389,7 +389,7 @@ fn handle_websocket(mut stream: TcpStream, backend: &dyn ServeBackend, state: &A
         let mut hasher = Sha1::new();
         hasher.update(key.as_bytes());
         hasher.update(WS_GUID.as_bytes());
-        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, hasher.finalize())
+        data_encoding::representation::Base64::standard_strict().encode_text(hasher.finalize())
     };
 
     let response = format!(

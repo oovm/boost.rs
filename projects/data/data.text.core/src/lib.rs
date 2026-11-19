@@ -23,8 +23,6 @@ pub mod builder;
 pub mod diagnostic;
 /// Error handling and diagnostic reporting for the parsing system.
 pub mod errors;
-/// Internal content fingerprinting (XXH64) for parse caches.
-mod hashing;
 /// Language definition trait for coordinating language-specific components.
 pub mod language;
 /// Lexical analysis and tokenization functionality.

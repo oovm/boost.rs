@@ -110,7 +110,8 @@ impl SourceMap {
         let input = json.into();
         let json_str = match input {
             SourceMapInput::Json(s) => s,
-            SourceMapInput::Bytes(b) => String::from_utf8(b).map_err(|e| SourceMapError::JsonError(serde_json::from_str::<serde_json::Value>(&e.to_string()).unwrap_err()))?,
+            SourceMapInput::Bytes(b) => String::from_utf8(b)
+                .map_err(|e| SourceMapError::JsonError(serde_json::from_str::<serde_json::Value>(&e.to_string()).unwrap_err()))?,
             SourceMapInput::File(path) => {
                 let content = std::fs::read_to_string(&path)?;
                 content
@@ -253,9 +254,9 @@ impl SourceMap {
 
     /// Generates the inline source map comment.
     pub fn to_inline_comment(&self) -> Result<String> {
-        use base64::prelude::*;
+        use data_encoding::representation::Base64;
         let json = self.to_json()?;
-        let encoded = BASE64_STANDARD.encode(json.as_bytes());
+        let encoded = Base64::standard_strict().encode_text(json.as_bytes());
         Ok(format!("//# sourceMappingURL=data:application/json;base64,{}", encoded))
     }
 

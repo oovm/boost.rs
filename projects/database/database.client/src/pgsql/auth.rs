@@ -4,7 +4,7 @@
 //! this client run the same code. SASLprep is not applied; the common ASCII
 //! password path is byte-identical without normalization.
 
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+use data_encoding::representation::Base64;
 use database_protocol_pgsql::auth::{hmac_sha256, md5_hex, pbkdf2_sha256, scram_escape};
 
 pub(crate) use database_protocol_pgsql::auth::md5_password;
@@ -27,7 +27,7 @@ impl ScramClient {
         boost_random::Secure::system()
             .fill(&mut random)
             .map_err(|error| PostgresError::Protocol(format!("cannot generate a SCRAM nonce: {error}")))?;
-        Ok(Self::with_nonce(user, password, &STANDARD.encode(random)))
+        Ok(Self::with_nonce(user, password, &Base64::standard_strict().encode_text(random)))
     }
 
     fn with_nonce(user: &str, password: &str, nonce: &str) -> (Self, String) {
@@ -64,8 +64,9 @@ impl ScramClient {
         if !nonce.starts_with(&self.nonce) {
             return Err(PostgresError::Protocol("SCRAM server nonce does not extend the client nonce".into()));
         }
-        let decoded_salt =
-            STANDARD.decode(&salt).map_err(|error| PostgresError::Protocol(format!("SCRAM salt is not valid base64: {error}")))?;
+        let decoded_salt = Base64::standard_strict()
+            .decode_canonical(&salt)
+            .map_err(|error| PostgresError::Protocol(format!("SCRAM salt is not valid base64: {error}")))?;
         let salted_password = pbkdf2_sha256(self.password.as_bytes(), &decoded_salt, iterations);
         self.server_first = server_first.to_owned();
 
@@ -83,7 +84,7 @@ impl ScramClient {
         }
         let server_key = hmac_sha256(&salted_password, b"Server Key");
         self.expected_server_signature = Some(hmac_sha256(&server_key, auth_message.as_bytes()));
-        Ok(format!("{client_final_without_proof},p={}", STANDARD.encode(proof)))
+        Ok(format!("{client_final_without_proof},p={}", Base64::standard_strict().encode_text(proof)))
     }
 
     /// Verifies the `SASLFinal` server signature.
@@ -92,8 +93,9 @@ impl ScramClient {
             return Err(PostgresError::Protocol(format!("SCRAM authentication failed: {error}")));
         }
         let signature = server_final.strip_prefix("v=").ok_or(PostgresError::Protocol("SCRAM server-final is missing the signature".into()))?;
-        let decoded =
-            STANDARD.decode(signature).map_err(|error| PostgresError::Protocol(format!("SCRAM signature is not valid base64: {error}")))?;
+        let decoded = Base64::standard_strict()
+            .decode_canonical(signature)
+            .map_err(|error| PostgresError::Protocol(format!("SCRAM signature is not valid base64: {error}")))?;
         let expected = self.expected_server_signature.ok_or(PostgresError::Protocol("SCRAM final arrived before continue".into()))?;
         if decoded != expected {
             return Err(PostgresError::Protocol("SCRAM server signature mismatch".into()));
@@ -101,7 +103,6 @@ impl ScramClient {
         Ok(())
     }
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -1,4 +1,4 @@
-﻿# `database-server` owns service sessions, auth ingress, prepared-statement lifecycle and request dispatch.
+# `database-server` owns service sessions, auth ingress, prepared-statement lifecycle and request dispatch.
 [package]
 name = "database-server"
 version.workspace = true
@@ -9,7 +9,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-base64 = { workspace = true }
+data-encoding = { workspace = true }
 boost-random = { workspace = true }
 database-cluster = { workspace = true }
 database-execution = { workspace = true }

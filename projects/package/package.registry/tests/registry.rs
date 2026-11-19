@@ -1,10 +1,8 @@
 //! `package-registry` 冒烟测试：内存渠道、完整性校验与 tarball 解包边界。
 
 use data_binary_tar::{TarEntryDraft, TarGz, write_tar};
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
-use package_registry::{
-    MockRegistry, Package, PublishOptions, Registry, RegistryError, extract_tarball, sha256_hex, verify_sri,
-};
+use data_encoding::representation::Base64;
+use package_registry::{MockRegistry, Package, PublishOptions, Registry, RegistryError, extract_tarball, sha256_hex, verify_sri};
 use sha2::{Digest, Sha256};
 
 #[test]
@@ -18,11 +16,7 @@ fn mock_registry_round_trips_metadata_and_publish() {
     assert!(matches!(registry.get_package("demo", "9.9.9"), Err(RegistryError::NotFound(_))));
     assert!(registry.verify_token("secret").expect("token check").valid);
 
-    let options = PublishOptions {
-        package_name: "demo".to_string(),
-        version: "1.1.0".to_string(),
-        ..PublishOptions::default()
-    };
+    let options = PublishOptions { package_name: "demo".to_string(), version: "1.1.0".to_string(), ..PublishOptions::default() };
     let result = registry.publish_package(&options, b"payload").expect("publish recorded");
     assert!(result.success);
     assert_eq!(result.sha256.as_deref(), Some(sha256_hex(b"payload").as_str()));
@@ -33,7 +27,7 @@ fn mock_registry_round_trips_metadata_and_publish() {
 #[test]
 fn sri_verification_accepts_matching_digest_and_rejects_mismatch() {
     let data = b"artifact-bytes";
-    let integrity = format!("sha256-{}", BASE64.encode(Sha256::digest(data)));
+    let integrity = format!("sha256-{}", Base64::standard_strict().encode_text(Sha256::digest(data)));
     assert!(verify_sri(data, Some(&integrity)).is_ok());
     assert!(verify_sri(b"other", Some(&integrity)).is_err());
     assert!(verify_sri(data, Some("sha1-whatever")).is_err());
@@ -69,8 +63,8 @@ fn osv_client_posts_without_auth_and_maps_advisories() {
         let _ = stream.write_all(response.as_bytes());
     });
 
-    let client = OsvClient::with_http(HttpClient::new(RetryConfig::default()).expect("client"))
-        .with_endpoint(format!("http://{address}/v1/query"));
+    let client =
+        OsvClient::with_http(HttpClient::new(RetryConfig::default()).expect("client")).with_endpoint(format!("http://{address}/v1/query"));
     let advisories = client.query("demo", "1.0.0", osv_ecosystem("npm").expect("npm ecosystem")).expect("query");
 
     assert_eq!(advisories.len(), 1);
