@@ -1,22 +1,12 @@
-# highlight
+# `language-highlight`
 
-Frontend-neutral syntax highlighting contracts (aligned with JetBrains IDE platform + C# `Nyar.Analyzer.Highlight`).
+Cross-language highlight service: provider dispatch and host result adaptation
 
-## Layers
+跨语言语法高亮服务。
 
-| Layer           | Location                           | Role                                                                                              |
-|:----------------|:-----------------------------------|:--------------------------------------------------------------------------------------------------|
-| Platform        | `nyar-analyzer::highlight`         | `HighlightKind`, `HighlightSpan`, `Highlighter` trait, `HighlighterKind`, `Registry`, `hl-*` HTML |
-| Language plugin | any frontend crate | Multiple passes per language: `Lexical` + `Semantic`                                          |
+# 归属
 
-## Multi-pass highlighting
+本 crate 拥有宿主 dispatch 与结果适配；词法/语法分类消费 `data.text` 与具体语言事实，语义高亮消费
+具体语言的编译分析。颜色主题、ANSI、HTML 与编辑器 token scope 属于展示适配。
 
-One `language_id` may register several highlighters:
-
-- **Lexical** — source text only, synchronous and cheap (SSG docs, typing)
-- **Semantic** — uses `AnalysisContext` to upgrade identifiers to types, functions, etc. (IDE / LSP)
-
-`HighlighterRegistry::highlight_merged` applies lexical first, then semantic overlay.
-
-Concrete languages **must not** be implemented inside `nyar-analyzer`; the analyzer also does not depend on `std-data`
-lexers directly.
+与 `language.format` 一样，高亮一个文档不需要启动 language server。
