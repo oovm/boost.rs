@@ -83,6 +83,7 @@ members = [
     "projects/database/facades/yyds-client",
     "projects/data/data.checksum",
     "projects/data/data.compression",
+    "projects/data/data.encoding",
     "projects/data/data.text.core",
     "projects/document/document",
     "projects/document/document.compose",
@@ -437,6 +438,7 @@ unicode-width = { path = "projects/unicode/unicode.width" }
 # data 能力树
 data-checksum = { path = "projects/data/data.checksum" }
 data-compression = { path = "projects/data/data.compression" }
+data-encoding = { path = "projects/data/data.encoding" }
 data-text-core = { path = "projects/data/data.text.core" }
 
 # 品牌化库
