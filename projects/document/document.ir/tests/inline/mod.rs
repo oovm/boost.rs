@@ -245,7 +245,7 @@ fn inline_semantics_round_trip_through_the_wire_without_losing_identity() {
 #[test]
 fn document_without_new_inline_variants_still_loads_on_the_current_wire() {
     let legacy = r#"{
-        "schema_version": "notedown-ir/v1",
+        "schema_version": "document.ir/v0",
         "document": {
             "id": 1,
             "revision": 0,
@@ -398,7 +398,7 @@ fn styled_inline_requires_a_style_name() {
 #[test]
 fn legacy_style_aliases_load_as_canonical_styles() {
     let legacy = r#"{
-        "schema_version": "notedown-ir/v1",
+        "schema_version": "document.ir/v0",
         "document": {
             "id": 9,
             "revision": 0,

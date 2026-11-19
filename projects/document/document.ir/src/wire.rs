@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::graph::DocumentGraph;
 
 /// Current on-disk / wire schema identifier.
-pub const SCHEMA_VERSION: &str = "notedown-ir/v1";
+pub const SCHEMA_VERSION: &str = "document.ir/v0";
 
 /// Versioned document payload for stable round-trip and tooling probes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

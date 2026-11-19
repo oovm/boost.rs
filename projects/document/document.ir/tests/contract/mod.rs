@@ -384,7 +384,7 @@ fn quote_payload_is_children_only() {
 #[test]
 fn legacy_quote_content_loads_as_a_paragraph_child() {
     let legacy = r#"{
-        "schema_version": "notedown-ir/v1",
+        "schema_version": "document.ir/v0",
         "document": {
             "id": 1,
             "revision": 0,
