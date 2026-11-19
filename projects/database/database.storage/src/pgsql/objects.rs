@@ -255,6 +255,35 @@ pub struct PgSequenceAlteration {
     pub cycle: Option<bool>,
 }
 
+/// One database the cluster catalog knows and the options it was created with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PgDatabase {
+    /// Database name.
+    pub name: String,
+    /// `OWNER` role; `postgres` unless the statement named one.
+    pub owner: String,
+    /// `ENCODING`. The gateway stores UTF-8 and rejects every other spelling.
+    pub encoding: String,
+    /// `TEMPLATE` the database was cloned from.
+    pub template: String,
+    /// `CONNECTION LIMIT`; `-1` means unlimited, exactly like PostgreSQL.
+    pub connection_limit: i32,
+}
+
+impl PgDatabase {
+    /// A database with PostgreSQL's defaults for an omitted option list.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            owner: "postgres".to_string(),
+            encoding: "UTF8".to_string(),
+            template: "template1".to_string(),
+            connection_limit: -1,
+        }
+    }
+}
+
 /// One table privilege granted to a role.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -287,6 +316,10 @@ pub enum ObjectError {
     UnknownTable(String),
     /// The schema a bulk grant names is not published by the gateway (`3F000`).
     UnknownSchema(String),
+    /// The `TEMPLATE` database does not exist (`3D000`).
+    UnknownTemplate(String),
+    /// A database option the gateway cannot honour (`22023`).
+    InvalidOption(String),
     /// The sequence already exists (`42P07`).
     DuplicateSequence(String),
     /// `nextval` left the sequence's range (`2200H`).
@@ -307,6 +340,8 @@ impl ObjectError {
             Self::CircularMembership { .. } => "0LP01",
             Self::UnknownTable(_) => "42P01",
             Self::UnknownSchema(_) => "3F000",
+            Self::UnknownTemplate(_) => "3D000",
+            Self::InvalidOption(_) => "22023",
             Self::DuplicateSequence(_) => "42P07",
             Self::SequenceExhausted(_) => "2200H",
             Self::SequenceNotCalled(_) => "55000",
@@ -323,6 +358,8 @@ impl ObjectError {
             Self::CircularMembership { role, member } => format!("role \"{role}\" is a member of role \"{member}\""),
             Self::UnknownTable(name) => format!("relation \"{name}\" does not exist"),
             Self::UnknownSchema(name) => format!("schema \"{name}\" does not exist"),
+            Self::UnknownTemplate(name) => format!("template database \"{name}\" does not exist"),
+            Self::InvalidOption(detail) => detail.clone(),
             Self::DuplicateSequence(name) => format!("relation \"{name}\" already exists"),
             Self::SequenceExhausted(name) => format!("nextval: reached the maximum or minimum value of sequence \"{name}\""),
             Self::SequenceNotCalled(name) => format!("currval of sequence \"{name}\" is not yet defined in this session"),
@@ -336,7 +373,7 @@ impl ObjectError {
 struct ObjectDocument {
     contract: String,
     revision: u32,
-    databases: Vec<String>,
+    databases: Vec<PgDatabase>,
     roles: Vec<PgRole>,
     #[serde(default)]
     memberships: Vec<PgMembership>,
@@ -351,7 +388,7 @@ impl ObjectDocument {
             contract: OBJECTS_CONTRACT.to_string(),
             revision: 1,
             // The bootstrap database and role every gateway starts from.
-            databases: vec!["postgres".to_string()],
+            databases: vec![PgDatabase::new("postgres")],
             roles: vec![PgRole {
                 name: "postgres".to_string(),
                 superuser: true,
@@ -407,7 +444,12 @@ impl PgObjectCatalog {
 
     /// Registered database names.
     pub fn databases(&self) -> Vec<String> {
-        self.lock().databases.clone()
+        self.lock().databases.iter().map(|database| database.name.clone()).collect()
+    }
+
+    /// One database record by name.
+    pub fn database(&self, name: &str) -> Option<PgDatabase> {
+        self.lock().databases.iter().find(|database| database.name == name).cloned()
     }
 
     /// Registered roles.
@@ -420,17 +462,18 @@ impl PgObjectCatalog {
         self.lock().roles.iter().find(|role| role.name == name).cloned()
     }
 
-    /// Registers a database. Returns `false` when `IF NOT EXISTS` matched.
-    pub fn create_database(&self, name: &str, if_not_exists: bool) -> Result<bool, ObjectError> {
+    /// Registers a database with its options. Returns `false` when
+    /// `IF NOT EXISTS` matched.
+    pub fn create_database(&self, database: PgDatabase, if_not_exists: bool) -> Result<bool, ObjectError> {
         let mut state = self.lock();
-        if state.databases.iter().any(|database| database == name) {
+        if state.databases.iter().any(|existing| existing.name == database.name) {
             if if_not_exists {
                 return Ok(false);
             }
-            return Err(ObjectError::DuplicateDatabase(name.to_string()));
+            return Err(ObjectError::DuplicateDatabase(database.name));
         }
         let mut next = state.clone();
-        next.databases.push(name.to_string());
+        next.databases.push(database);
         next.revision = next.revision.saturating_add(1);
         self.save(&next)?;
         *state = next;
@@ -859,9 +902,9 @@ mod tests {
         let _ = fs::remove_file(&path);
         {
             let catalog = PgObjectCatalog::open(&path).unwrap();
-            assert!(catalog.create_database("app", false).unwrap());
-            assert!(!catalog.create_database("app", true).unwrap());
-            assert_eq!(catalog.create_database("app", false).unwrap_err().sqlstate(), "42P04");
+            assert!(catalog.create_database(PgDatabase::new("app"), false).unwrap());
+            assert!(!catalog.create_database(PgDatabase::new("app"), true).unwrap());
+            assert_eq!(catalog.create_database(PgDatabase::new("app"), false).unwrap_err().sqlstate(), "42P04");
             catalog
                 .create_role(PgRole { name: "reader".into(), superuser: false, createdb: false, login: true, inherit: true, password: None }, false)
                 .unwrap();

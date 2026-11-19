@@ -5,17 +5,17 @@
 //! implemented subset is rejected with `0A000` and a reason: the gateway never
 //! accepts a clause it would then ignore.
 
-use database_storage::pgsql::{PgPrivilege, PgRole, PgSequence, PgSequenceAlteration};
+use database_storage::pgsql::{PgDatabase, PgPrivilege, PgRole, PgSequence, PgSequenceAlteration};
 
 use crate::sql::{SqlErrorKind, SqlFrontendError};
 
 /// One cluster-object statement.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PgObjectStatement {
-    /// `CREATE DATABASE [IF NOT EXISTS] name`.
+    /// `CREATE DATABASE [IF NOT EXISTS] name [WITH option ...]`.
     CreateDatabase {
-        /// Database name.
-        name: String,
+        /// Database record the statement asks for.
+        database: PgDatabase,
         /// Whether `IF NOT EXISTS` was written.
         if_not_exists: bool,
     },
@@ -155,13 +155,8 @@ fn parse_create(tail: &str) -> Result<Option<PgObjectStatement>, SqlFrontendErro
     let rest = tail[keyword.len()..].trim_start();
     match keyword.to_ascii_uppercase().as_str() {
         "DATABASE" => {
-            let (name, rest) = take_identifier(rest)?;
-            if !identification_tail_is_blank(rest) {
-                return Err(unsupported(
-                    "`CREATE DATABASE` options are not supported by the cluster SQL gateway, only the database name is recorded",
-                ));
-            }
-            Ok(Some(PgObjectStatement::CreateDatabase { name, if_not_exists: false }))
+            let (database, if_not_exists) = parse_create_database(rest)?;
+            Ok(Some(PgObjectStatement::CreateDatabase { database, if_not_exists }))
         }
         "ROLE" | "USER" => {
             let login_default = keyword.eq_ignore_ascii_case("USER");
@@ -176,8 +171,76 @@ fn parse_create(tail: &str) -> Result<Option<PgObjectStatement>, SqlFrontendErro
     }
 }
 
-fn identification_tail_is_blank(rest: &str) -> bool {
-    rest.trim().is_empty()
+/// Parses `CREATE DATABASE [IF NOT EXISTS] name [WITH] [option ...]`.
+///
+/// Every supported option is recorded on the database record; an option the
+/// gateway would have to ignore stays an explicit rejection.
+fn parse_create_database(tail: &str) -> Result<(PgDatabase, bool), SqlFrontendError> {
+    let (mut rest, if_not_exists) = if_not_exists(tail);
+    let (name, remaining) = take_identifier(rest)?;
+    let mut database = PgDatabase::new(name);
+    rest = remaining.trim_start();
+    if let Some(after) = strip_keyword(rest, "WITH") {
+        rest = after.trim_start();
+    }
+    while !rest.trim().is_empty() {
+        rest = rest.trim_start();
+        let Some(word) = first_word(rest)
+        else {
+            return Err(syntax("unexpected token in `CREATE DATABASE`"));
+        };
+        let after = rest[word.len()..].trim_start();
+        let after = after.strip_prefix('=').map_or(after, |after| after.trim_start());
+        match word.to_ascii_uppercase().as_str() {
+            "OWNER" => {
+                let (owner, remaining) = take_identifier(after)?;
+                database.owner = owner;
+                rest = remaining;
+                continue;
+            }
+            "ENCODING" => {
+                let (encoding, remaining) = take_identifier_or_literal(after)?;
+                database.encoding = encoding;
+                rest = remaining;
+                continue;
+            }
+            "TEMPLATE" => {
+                let (template, remaining) = take_identifier(after)?;
+                database.template = template;
+                rest = remaining;
+                continue;
+            }
+            "CONNECTION" => {
+                let Some(after) = strip_keyword(after, "LIMIT")
+                else {
+                    return Err(syntax("`CONNECTION` requires `LIMIT` in `CREATE DATABASE`"));
+                };
+                let (value, remaining) = take_sequence_number(after, "")?;
+                database.connection_limit = i32::try_from(value)
+                    .map_err(|_| syntax("`CONNECTION LIMIT` is out of range"))?;
+                rest = remaining;
+                continue;
+            }
+            other => {
+                return Err(unsupported(format!(
+                    "`CREATE DATABASE ... {other}` is not supported by the cluster SQL gateway, only `OWNER`, `ENCODING`, `TEMPLATE` and `CONNECTION LIMIT` are"
+                )));
+            }
+        }
+    }
+    Ok((database, if_not_exists))
+}
+
+/// Reads an identifier or a single-quoted literal, e.g. `UTF8` or `'UTF8'`.
+fn take_identifier_or_literal(source: &str) -> Result<(String, &str), SqlFrontendError> {
+    let trimmed = source.trim_start();
+    if let Some(inner) = trimmed.strip_prefix('\'') {
+        let Some(end) = inner.find('\'') else {
+            return Err(syntax("unterminated string literal"));
+        };
+        return Ok((inner[..end].to_owned(), &inner[end + 1..]));
+    }
+    take_identifier(trimmed)
 }
 
 fn parse_create_role(tail: &str, login_default: bool) -> Result<PgObjectStatement, SqlFrontendError> {
@@ -737,7 +800,20 @@ mod tests {
     fn create_database_and_roles_are_parsed() {
         assert_eq!(
             parse_pg_object_statement("CREATE DATABASE app").unwrap(),
-            Some(PgObjectStatement::CreateDatabase { name: "app".to_owned(), if_not_exists: false })
+            Some(PgObjectStatement::CreateDatabase { database: PgDatabase::new("app"), if_not_exists: false })
+        );
+        assert_eq!(
+            parse_pg_object_statement("CREATE DATABASE app OWNER reader ENCODING 'UTF8' TEMPLATE template0 CONNECTION LIMIT 5").unwrap(),
+            Some(PgObjectStatement::CreateDatabase {
+                database: PgDatabase {
+                    name: "app".to_owned(),
+                    owner: "reader".to_owned(),
+                    encoding: "UTF8".to_owned(),
+                    template: "template0".to_owned(),
+                    connection_limit: 5,
+                },
+                if_not_exists: false,
+            })
         );
         assert_eq!(
             parse_pg_object_statement("CREATE ROLE reader WITH LOGIN").unwrap(),
@@ -886,7 +962,7 @@ mod tests {
     #[test]
     fn unsupported_clauses_are_rejected_with_a_reason() {
         for statement in [
-            "CREATE DATABASE app TEMPLATE template0",
+            "CREATE DATABASE app TABLESPACE fast",
             "GRANT ALL TABLES IN SCHEMA public TO app",
             "GRANT reader TO app WITH ADMIN OPTION",
             "GRANT TRUNCATE ON orders TO app",

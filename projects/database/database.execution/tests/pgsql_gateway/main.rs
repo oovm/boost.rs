@@ -177,7 +177,7 @@ fn object_statement_errors_report_their_sqlstates() {
 
     // Unsupported clauses name their reason instead of being silently accepted.
     for statement in [
-        "CREATE DATABASE other TEMPLATE template0",
+        "CREATE DATABASE other TABLESPACE fast",
         "GRANT ALL TABLES IN SCHEMA public TO reader",
     ] {
         let (code, message) = match gateway.sql(statement) {
@@ -365,6 +365,39 @@ fn serial_columns_expand_to_integer_identity_columns() {
     let types: Vec<database_query::SqlFieldType> = table.fields.iter().map(|field| field.field_type.inner()).collect();
     assert!(types.contains(&database_query::SqlFieldType::Int32), "unexpected field types: {types:?}");
     assert!(types.contains(&database_query::SqlFieldType::Int64), "unexpected field types: {types:?}");
+}
+
+#[test]
+fn create_database_records_its_options_and_validates_them() {
+    let mut gateway = Gateway::new("database-options");
+    gateway.command("CREATE ROLE owner_role");
+    assert_eq!(
+        gateway.command("CREATE DATABASE owned OWNER owner_role ENCODING 'UTF8' TEMPLATE template0 CONNECTION LIMIT 5"),
+        "CREATE DATABASE"
+    );
+    let record = gateway.runtime.objects.database("owned").expect("database is cataloged");
+    assert_eq!(record.owner, "owner_role");
+    assert_eq!(record.encoding, "UTF8");
+    assert_eq!(record.template, "template0");
+    assert_eq!(record.connection_limit, 5);
+
+    // `template1` and an existing database are both valid templates.
+    assert_eq!(gateway.command("CREATE DATABASE clone TEMPLATE postgres"), "CREATE DATABASE");
+    assert_eq!(gateway.command("CREATE DATABASE plain"), "CREATE DATABASE");
+    assert_eq!(gateway.runtime.objects.database("plain").expect("defaults").connection_limit, -1);
+
+    for (statement, expected) in [
+        ("CREATE DATABASE bad_owner OWNER ghost", "42704"),
+        ("CREATE DATABASE bad_template TEMPLATE nope", "3D000"),
+        ("CREATE DATABASE bad_encoding ENCODING 'LATIN1'", "22023"),
+        ("CREATE DATABASE bad_limit CONNECTION LIMIT -2", "22023"),
+    ] {
+        let (code, message) = match gateway.sql(statement) {
+            Ok(_) => panic!("`{statement}` must be rejected"),
+            Err(error) => error,
+        };
+        assert_eq!(code, expected, "unexpected message for `{statement}`: {message}");
+    }
 }
 
 #[test]

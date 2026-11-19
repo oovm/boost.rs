@@ -328,8 +328,9 @@ fn apply_object_statement(
         StatementError::new(error.sqlstate(), error.message())
     };
     match statement {
-        PgObjectStatement::CreateDatabase { name, if_not_exists } => {
-            objects.create_database(&name, if_not_exists).map_err(|error| failure(session, error))?;
+        PgObjectStatement::CreateDatabase { database, if_not_exists } => {
+            validate_database(&database, &objects).map_err(|error| failure(session, error))?;
+            objects.create_database(database, if_not_exists).map_err(|error| failure(session, error))?;
             Ok(StatementOutcome::Command("CREATE DATABASE"))
         }
         PgObjectStatement::CreateRole { role, password, if_not_exists } => {
@@ -401,6 +402,37 @@ fn apply_object_statement(
             Ok(StatementOutcome::Command("DROP SEQUENCE"))
         }
     }
+}
+
+/// Checks the options one `CREATE DATABASE` records.
+///
+/// `ENCODING` is the gateway's one storage encoding, `TEMPLATE` must be a
+/// database the cluster knows, `OWNER` must be an existing role and
+/// `CONNECTION LIMIT` must be `-1` (unlimited) or a non-negative count.
+fn validate_database(
+    database: &database_storage::pgsql::PgDatabase,
+    objects: &database_storage::pgsql::PgObjectCatalog,
+) -> Result<(), database_storage::pgsql::ObjectError> {
+    use database_storage::pgsql::ObjectError;
+    if !matches!(database.encoding.to_ascii_uppercase().as_str(), "UTF8" | "UNICODE") {
+        return Err(ObjectError::InvalidOption(format!(
+            "encoding \"{}\" is not supported, the gateway stores UTF8",
+            database.encoding
+        )));
+    }
+    if database.connection_limit < -1 {
+        return Err(ObjectError::InvalidOption("`CONNECTION LIMIT` must be -1 or a non-negative number".to_string()));
+    }
+    if objects.role(&database.owner).is_none() {
+        return Err(ObjectError::UnknownRole(database.owner.clone()));
+    }
+    if !database.template.eq_ignore_ascii_case("template0")
+        && !database.template.eq_ignore_ascii_case("template1")
+        && objects.database(&database.template).is_none()
+    {
+        return Err(ObjectError::UnknownTemplate(database.template.clone()));
+    }
+    Ok(())
 }
 
 /// Tables `GRANT ... ON ALL TABLES IN SCHEMA name` expands over.
