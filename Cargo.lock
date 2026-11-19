@@ -904,6 +904,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-binary-zip"
+version = "0.1.0"
+dependencies = [
+ "boost-source 0.1.0",
+ "data-binary-core",
+ "data-checksum",
+ "data-compression",
+]
+
+[[package]]
 name = "data-checksum"
 version = "0.1.0"
 
