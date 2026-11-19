@@ -9,4 +9,4 @@ readme = "readme.md"
 
 [dependencies]
 document-compose = { workspace = true, features = ["serde"] }
-data-binary-ttf = { workspace = true, features = ["outline-cff"] }
+data-binary-ttf = { workspace = true }

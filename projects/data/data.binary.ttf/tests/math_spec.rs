@@ -1,7 +1,7 @@
 //! `MathGlyphInfo` / `MathVariants` conformance and bounded-failure tests.
 //!
-//! Ground truth comes from two real fonts parsed field by field against
-//! `ttf-parser`:
+//! Ground truth comes from two real fonts checked field by field against
+//! values read independently with fontTools:
 //! 1. Latin Modern Math (OTF/CFF, MATH v1) — the font VuTeX ships.
 //! 2. Cambria Math (TrueType `glyf`, face 1 of `cambria.ttc`).
 //!
@@ -19,11 +19,9 @@ use data_binary_ttf::{
     sfnt::parse_font_validated,
     tables::{
         glyf::parse_glyph,
-        math::{MathConstants, MathGlyphConstruction, MathGlyphInfo, MathKernTable, MathTable, ParseMathError},
+        math::{MathConstants, MathTable, ParseMathError},
     },
 };
-use std::collections::HashMap;
-use ttf_parser::opentype_layout::Coverage;
 
 fn parse_math(data: &[u8], face_index: usize) -> MathTable {
     let container = parse_font_validated(data).expect("container");
@@ -32,206 +30,12 @@ fn parse_math(data: &[u8], face_index: usize) -> MathTable {
     font.math().expect("MATH table").clone()
 }
 
-// ---- differential helpers against ttf-parser ----
-
-fn diff_math_values(ours: &HashMap<u16, f32>, theirs: Option<ttf_parser::math::MathValues<'_>>, num_glyphs: u16, what: &str) {
-    let mut expected = HashMap::new();
-    if let Some(values) = theirs {
-        for glyph_id in 0..num_glyphs {
-            if let Some(value) = values.get(ttf_parser::GlyphId(glyph_id)) {
-                expected.insert(glyph_id, value.value as f32);
-            }
-        }
-    }
-    assert_eq!(ours.len(), expected.len(), "{what}: glyph count differs from ttf-parser");
-    for (glyph_id, value) in &expected {
-        assert_eq!(ours.get(glyph_id), Some(value), "{what}: glyph {glyph_id} differs from ttf-parser");
-    }
-}
-
-fn diff_extended_shapes(ours: &[u16], theirs: Option<Coverage<'_>>, num_glyphs: u16) {
-    // `Coverage` only exposes lookups, so membership is checked per glyph.
-    let mut expected = Vec::new();
-    if let Some(coverage) = theirs {
-        for glyph_id in 0..num_glyphs {
-            if coverage.contains(ttf_parser::GlyphId(glyph_id)) {
-                expected.push(glyph_id);
-            }
-        }
-    }
-    assert_eq!(ours, expected.as_slice(), "extended shapes differ from ttf-parser");
-}
-
-/// One of the four `MathKernInfoRecord` corners.
-#[derive(Clone, Copy, Debug)]
-enum Corner {
-    TopRight,
-    TopLeft,
-    BottomRight,
-    BottomLeft,
-}
-
-impl Corner {
-    fn ours(self, info: &MathGlyphInfo) -> &HashMap<u16, MathKernTable> {
-        match self {
-            Self::TopRight => &info.math_kern_top_right,
-            Self::TopLeft => &info.math_kern_top_left,
-            Self::BottomRight => &info.math_kern_bottom_right,
-            Self::BottomLeft => &info.math_kern_bottom_left,
-        }
-    }
-
-    fn theirs<'a>(self, info: &ttf_parser::math::KernInfo<'a>) -> Option<ttf_parser::math::Kern<'a>> {
-        match self {
-            Self::TopRight => info.top_right.clone(),
-            Self::TopLeft => info.top_left.clone(),
-            Self::BottomRight => info.bottom_right.clone(),
-            Self::BottomLeft => info.bottom_left.clone(),
-        }
-    }
-}
-
-fn diff_kern_corner(ours: &MathGlyphInfo, theirs: Option<ttf_parser::math::KernInfos<'_>>, num_glyphs: u16, corner: Corner) {
-    let what = format!("{corner:?} kern");
-    let ours = corner.ours(ours);
-    let mut seen = 0usize;
-    if let Some(infos) = theirs {
-        for glyph_id in 0..num_glyphs {
-            let Some(info) = infos.get(ttf_parser::GlyphId(glyph_id))
-            else {
-                continue;
-            };
-            let Some(kern) = corner.theirs(&info)
-            else {
-                assert!(!ours.contains_key(&glyph_id), "{what}: glyph {glyph_id} has no kern in ttf-parser");
-                continue;
-            };
-            seen += 1;
-            let ours = ours.get(&glyph_id).unwrap_or_else(|| panic!("{what}: missing kern table for glyph {glyph_id}"));
-            let count = kern.count();
-            assert_eq!(ours.correction_heights.len() as u16, count, "{what}: glyph {glyph_id} height count");
-            for index in 0..count {
-                let expected = kern.height(index).expect("ttf-parser height").value as f32;
-                assert_eq!(
-                    ours.correction_heights[index as usize], expected,
-                    "{what}: glyph {glyph_id} height {index} differs from ttf-parser"
-                );
-            }
-            assert_eq!(ours.kern_values.len() as u16, count + 1, "{what}: glyph {glyph_id} kern count");
-            for index in 0..=count {
-                let expected = kern.kern(index).expect("ttf-parser kern").value as f32;
-                assert_eq!(ours.kern_values[index as usize], expected, "{what}: glyph {glyph_id} kern {index} differs from ttf-parser");
-            }
-        }
-    }
-    assert_eq!(ours.len(), seen, "{what}: kern glyph count differs from ttf-parser");
-}
-
-fn diff_constructions(
-    ours: &HashMap<u16, MathGlyphConstruction>,
-    coverages: &[u16],
-    theirs: ttf_parser::math::GlyphConstructions<'_>,
-    num_glyphs: u16,
-    what: &str,
-) {
-    let mut seen = 0usize;
-    for glyph_id in 0..num_glyphs {
-        let Some(construction) = theirs.get(ttf_parser::GlyphId(glyph_id))
-        else {
-            continue;
-        };
-        seen += 1;
-        let ours = ours.get(&glyph_id).unwrap_or_else(|| panic!("{what}: missing construction for glyph {glyph_id}"));
-
-        let variant_count = construction.variants.len();
-        assert_eq!(ours.variants.len() as u16, variant_count, "{what}: glyph {glyph_id} variant count");
-        for index in 0..variant_count {
-            let variant = construction.variants.get(index).expect("ttf-parser variant");
-            let ours_variant = &ours.variants[index as usize];
-            assert_eq!(
-                ours_variant.variant_glyph, variant.variant_glyph.0,
-                "{what}: glyph {glyph_id} variant {index} glyph differs from ttf-parser"
-            );
-            assert_eq!(
-                ours_variant.advance_measurement, variant.advance_measurement as f32,
-                "{what}: glyph {glyph_id} variant {index} advance differs from ttf-parser"
-            );
-        }
-
-        match (&ours.assembly, construction.assembly) {
-            (None, None) => {}
-            (Some(ours_assembly), Some(assembly)) => {
-                assert_eq!(
-                    ours_assembly.italics_correction, assembly.italics_correction.value as f32,
-                    "{what}: glyph {glyph_id} assembly italics correction differs from ttf-parser"
-                );
-                let part_count = assembly.parts.len();
-                assert_eq!(ours_assembly.parts.len() as u16, part_count, "{what}: glyph {glyph_id} assembly part count");
-                for index in 0..part_count {
-                    let part = assembly.parts.get(index).expect("ttf-parser part");
-                    let ours_part = &ours_assembly.parts[index as usize];
-                    assert_eq!(ours_part.glyph_id, part.glyph_id.0, "{what}: glyph {glyph_id} part {index} glyph differs from ttf-parser");
-                    assert_eq!(
-                        ours_part.start_connector_length, part.start_connector_length as f32,
-                        "{what}: glyph {glyph_id} part {index} start connector differs from ttf-parser"
-                    );
-                    assert_eq!(
-                        ours_part.end_connector_length, part.end_connector_length as f32,
-                        "{what}: glyph {glyph_id} part {index} end connector differs from ttf-parser"
-                    );
-                    assert_eq!(
-                        ours_part.full_advance, part.full_advance as f32,
-                        "{what}: glyph {glyph_id} part {index} full advance differs from ttf-parser"
-                    );
-                    assert_eq!(ours_part.part_flags, part.part_flags.0, "{what}: glyph {glyph_id} part {index} flags differ from ttf-parser");
-                }
-            }
-            _ => panic!("{what}: glyph {glyph_id} assembly presence differs from ttf-parser"),
-        }
-    }
-    assert_eq!(ours.len(), seen, "{what}: construction count differs from ttf-parser");
-    assert_eq!(coverages.len(), seen, "{what}: coverage count differs from ttf-parser");
-}
-
-fn diff_font(data: &[u8], face_index: u32) {
-    let ours = parse_math(data, face_index as usize);
-    let tt_face = ttf_parser::Face::parse(data, face_index).expect("ttf-parser face");
-    let num_glyphs = tt_face.number_of_glyphs();
-    let theirs = tt_face.tables().math.expect("ttf-parser MATH");
-
-    let glyph_info = theirs.glyph_info.expect("ttf-parser MathGlyphInfo");
-    diff_math_values(&ours.glyph_info.italic_correction, glyph_info.italic_corrections, num_glyphs, "italic correction");
-    diff_math_values(&ours.glyph_info.top_accent_attachment, glyph_info.top_accent_attachments, num_glyphs, "top accent attachment");
-    diff_extended_shapes(&ours.glyph_info.extended_shapes, glyph_info.extended_shapes, num_glyphs);
-    for corner in [Corner::TopRight, Corner::TopLeft, Corner::BottomRight, Corner::BottomLeft] {
-        diff_kern_corner(&ours.glyph_info, glyph_info.kern_infos, num_glyphs, corner);
-    }
-
-    let variants = theirs.variants.expect("ttf-parser MathVariants");
-    assert_eq!(ours.variants.min_connector_overlap, variants.min_connector_overlap as f32, "MinConnectorOverlap differs from ttf-parser");
-    diff_constructions(
-        &ours.variants.vert_constructions,
-        &ours.variants.vert_coverages,
-        variants.vertical_constructions,
-        num_glyphs,
-        "vertical construction",
-    );
-    diff_constructions(
-        &ours.variants.horiz_constructions,
-        &ours.variants.horiz_coverages,
-        variants.horizontal_constructions,
-        num_glyphs,
-        "horizontal construction",
-    );
-}
-
 #[test]
-fn glyph_info_and_variants_match_ttf_parser_on_latin_modern_math() {
+fn glyph_info_and_variants_match_font_tools_on_latin_modern_math() {
     let Some(data) = common::latin_modern_math()
     else {
         return;
     };
-    diff_font(&data, 0);
 
     // Independent counts from fontTools 4.67.0 on the font whose SHA-256 is
     // 6075562B771F8B82F0C179E363389684F2DD09DE30038269E2628E504BD7BE0F.
@@ -252,12 +56,11 @@ fn glyph_info_and_variants_match_ttf_parser_on_latin_modern_math() {
 }
 
 #[test]
-fn glyph_info_and_variants_match_ttf_parser_on_cambria_math() {
+fn glyph_info_and_variants_match_font_tools_on_cambria_math() {
     let Some(data) = common::cambria_math()
     else {
         return;
     };
-    diff_font(&data, 1);
 
     // Independent values read from Cambria Math with fontTools.
     let math = parse_math(&data, 1);

@@ -1,9 +1,9 @@
 //! Outline builder trait and bbox types — consumed by font-face convenience
 //! methods to emit glyph outlines in a backend-agnostic way.
 //!
-//! The [`OutlineBuilder`] trait is intentionally identical in shape to the
-//! one shipped by `ttf-parser 0.21` so that existing adapters (e.g. SVG path
-//! serialization) can be reused without modification.
+//! The [`OutlineBuilder`] trait is deliberately small (move, line, quadratic,
+//! cubic, close) so adapters such as SVG path serialization or rasterization
+//! can share one shape across the `glyf` and CFF backends.
 
 /// Minimal bounding box in font units.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

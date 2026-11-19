@@ -16,7 +16,7 @@
 
 use std::collections::HashMap;
 
-use fontdue::{Font, FontSettings};
+use data_binary_ttf::raster::Font;
 
 #[cfg(feature = "paint")]
 use geometry::Rgba;
@@ -65,18 +65,17 @@ impl Fonts {
     /// fonts reads the files itself and passes the bytes here. Undecodable
     /// bytes are an `io`-coded error naming the role that failed.
     pub fn from_bytes(regular: &[u8], bold: &[u8], mono: &[u8]) -> Result<Self, media_types::Error> {
-        let settings = FontSettings { collection_index: 0, ..Default::default() };
-        let regular = Font::from_bytes(regular.to_vec(), settings).map_err(|e| media_types::Error::io(format!("regular font: {e}")))?;
-        let bold = Font::from_bytes(bold.to_vec(), settings).map_err(|e| media_types::Error::io(format!("bold font: {e}")))?;
-        let mono = Font::from_bytes(mono.to_vec(), settings).map_err(|e| media_types::Error::io(format!("mono font: {e}")))?;
+        let regular = Font::from_bytes(regular.to_vec(), 0).map_err(|e| media_types::Error::io(format!("regular font: {e}")))?;
+        let bold = Font::from_bytes(bold.to_vec(), 0).map_err(|e| media_types::Error::io(format!("bold font: {e}")))?;
+        let mono = Font::from_bytes(mono.to_vec(), 0).map_err(|e| media_types::Error::io(format!("mono font: {e}")))?;
         Ok(Self { regular, bold, mono, cache: HashMap::new() })
     }
 
-    fn font(&self, id: FontId) -> &Font {
+    fn font_mut(&mut self, id: FontId) -> &mut Font {
         match id {
-            FontId::Regular => &self.regular,
-            FontId::Bold => &self.bold,
-            FontId::Mono => &self.mono,
+            FontId::Regular => &mut self.regular,
+            FontId::Bold => &mut self.bold,
+            FontId::Mono => &mut self.mono,
         }
     }
 
@@ -102,10 +101,10 @@ impl Fonts {
         if let Some(hit) = self.cache.get(&key) {
             return Glyph { advance: hit.0, xmin: hit.1, top_from_baseline: hit.2, width: hit.3, height: hit.4, bitmap: hit.5.clone() };
         }
-        let font = self.font(id);
-        let (metrics, bitmap) = font.rasterize(ch, size);
+        let (metrics, bitmap) = self.font_mut(id).rasterize(ch, size);
         // `metrics.width`/`height` are the bitmap size in whole pixels and are
-        // exactly the row stride fontdue packs; `bounds` is only the ink box.
+        // exactly the row stride the rasterizer packs; the metrics box is the
+        // ink box in the same pixel grid.
         let top_from_baseline = (metrics.ymin + metrics.height as i32) as f32;
         let entry = (metrics.advance_width, metrics.xmin as f32, top_from_baseline, metrics.width as f32, metrics.height as f32, bitmap);
         self.cache.insert(key, entry.clone());

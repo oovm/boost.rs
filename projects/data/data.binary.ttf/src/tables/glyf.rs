@@ -47,17 +47,58 @@ pub struct GlyphOutline {
 }
 
 /// A single component inside a composite glyph.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// The 2x2 transform is kept as the raw F2Dot14 words from the glyph file so
+/// that comparison and storage stay exact; use [`Component::matrix`] to get
+/// the floating-point matrix. `x_offset`/`y_offset` carry the translation when
+/// `args_are_xy_values` is set, otherwise `arg1`/`arg2` are anchor point
+/// indices into the compound (already assembled) and component outlines.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Component {
     /// Referenced glyph ID.
     pub glyph_id: u16,
-    /// Translation X in font units (or anchor point index — we always resolve to absolute X).
+    /// Translation X in font units (only meaningful when `args_are_xy_values`).
     pub x_offset: i32,
-    /// Translation Y in font units.
+    /// Translation Y in font units (only meaningful when `args_are_xy_values`).
     pub y_offset: i32,
     /// Flag word from the component record.
     pub flags: CompositeGlyphFlags,
+    /// Raw F2Dot14 matrix words `[a, b, c, d]`; identity is `[0x4000, 0, 0, 0x4000]`.
+    pub transform: [i16; 4],
+    /// True when the two arguments are translation values instead of point indices.
+    pub args_are_xy_values: bool,
+    /// First argument (translation X or parent anchor point index).
+    pub arg1: i16,
+    /// Second argument (translation Y or component anchor point index).
+    pub arg2: i16,
+    /// True when this component supplies the metrics of the compound glyph.
+    pub use_my_metrics: bool,
 }
+
+impl Component {
+    /// Floating-point form of the component matrix `[a, b, c, d]`.
+    ///
+    /// The transform maps a point as `x' = a*x + c*y`, `y' = b*x + d*y`.
+    #[inline]
+    pub fn matrix(&self) -> [f32; 4] {
+        [
+            self.transform[0] as f32 / 16384.0,
+            self.transform[1] as f32 / 16384.0,
+            self.transform[2] as f32 / 16384.0,
+            self.transform[3] as f32 / 16384.0,
+        ]
+    }
+
+    /// True when the component offset is expressed in the component's own
+    /// (transformed) coordinate system.
+    #[inline]
+    pub fn scaled_offset(&self) -> bool {
+        self.flags.scaled_component_offset() && !self.flags.unscaled_component_offset()
+    }
+}
+
+/// Identity F2Dot14 matrix (`1, 0, 0, 1`).
+pub const IDENTITY_TRANSFORM: [i16; 4] = [0x4000, 0, 0, 0x4000];
 
 /// Glyph header flag bits (simple and composite share the first 6 bits).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,6 +184,21 @@ impl CompositeGlyphFlags {
     pub fn args_are_xy_values(self) -> bool {
         self.0 & Self::ARGS_ARE_XY_VALUES != 0
     }
+    /// True when the component supplies the compound glyph's metrics.
+    #[inline]
+    pub fn use_my_metrics(self) -> bool {
+        self.0 & Self::USE_MY_METRICS != 0
+    }
+    /// True when the component offset is in the transformed coordinate system.
+    #[inline]
+    pub fn scaled_component_offset(self) -> bool {
+        self.0 & Self::SCALED_COMPONENT_OFFSET != 0
+    }
+    /// True when the component offset is explicitly left untransformed.
+    #[inline]
+    pub fn unscaled_component_offset(self) -> bool {
+        self.0 & Self::UNSCALED_COMPONENT_OFFSET != 0
+    }
 }
 
 /// Errors that can happen while decoding a glyph.
@@ -205,24 +261,32 @@ pub fn parse_glyph(glyph_id: u16, data: &[u8]) -> Result<GlyphOutline, GlyphErro
             let flags = CompositeGlyphFlags(r.read_u16()?);
             let glyph_id_comp = r.read_u16()?;
             let (arg1, arg2) = if flags.args_are_words() { (r.read_i16()?, r.read_i16()?) } else { (r.read_i8()? as i16, r.read_i8()? as i16) };
-            let (x_offset, y_offset) = if flags.args_are_xy_values() {
-                (arg1 as i32, arg2 as i32)
-            }
-            else {
-                // Anchor point encoding — still treated as a (0,0) anchor at the component origin.
-                (0, 0)
-            };
-            // Skip scale / 2x2 transforms for now (we still capture them in flags).
+            let args_are_xy_values = flags.args_are_xy_values();
+            let (x_offset, y_offset) = if args_are_xy_values { (arg1 as i32, arg2 as i32) } else { (0, 0) };
+            let mut transform = IDENTITY_TRANSFORM;
             if flags.has_scale() {
-                let _ = r.read_fword()?;
+                let scale = r.read_i16()?;
+                transform = [scale, 0, 0, scale];
             }
-            if flags.has_xy_scale() {
-                let _ = (r.read_fword()?, r.read_fword()?);
+            else if flags.has_xy_scale() {
+                let x_scale = r.read_i16()?;
+                let y_scale = r.read_i16()?;
+                transform = [x_scale, 0, 0, y_scale];
             }
-            if flags.has_2x2() {
-                let _ = (r.read_fword()?, r.read_fword()?, r.read_fword()?, r.read_fword()?);
+            else if flags.has_2x2() {
+                transform = [r.read_i16()?, r.read_i16()?, r.read_i16()?, r.read_i16()?];
             }
-            components.push(Component { glyph_id: glyph_id_comp, x_offset, y_offset, flags });
+            components.push(Component {
+                glyph_id: glyph_id_comp,
+                x_offset,
+                y_offset,
+                flags,
+                transform,
+                args_are_xy_values,
+                arg1,
+                arg2,
+                use_my_metrics: flags.use_my_metrics(),
+            });
             more = flags.more_components();
         }
         // Optionally instructions follow; skip.

@@ -12,7 +12,7 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
-use fontdue::{Font, FontSettings};
+use data_binary_ttf::raster::Font;
 use plotter_types::plot::Rgba;
 
 use crate::{error::RenderError, geometry::TextRun};
@@ -53,7 +53,7 @@ impl Raster {
                     continue;
                 }
             };
-            match Font::from_bytes(bytes, FontSettings::default()) {
+            match Font::from_bytes(bytes, 0) {
                 Ok(face) => faces.push(face),
                 Err(_) => tried.push(path),
             }
@@ -74,8 +74,8 @@ impl Raster {
         if let Some(hit) = self.cache.get(&key) {
             return Ok(hit.clone());
         }
-        let face = self.faces.iter().find(|face| face.has_glyph(ch)).ok_or(RenderError::MissingGlyph { character: ch })?;
-        let (metrics, coverage) = face.rasterize(ch, quarter_pixels as f32 / 4.0);
+        let index = self.faces.iter().position(|face| face.has_glyph(ch)).ok_or(RenderError::MissingGlyph { character: ch })?;
+        let (metrics, coverage) = self.faces[index].rasterize(ch, quarter_pixels as f32 / 4.0);
         let glyph = Glyph {
             advance: metrics.advance_width,
             xmin: metrics.xmin as f32,

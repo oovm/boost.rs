@@ -3,10 +3,12 @@
 //! This crate parses TrueType and OpenType font files (single `.ttf` / `.otf`
 //! or TTC collections) and exposes raw **facts**: table directories, standard
 //! metrics, the `MATH` table, TrueType `glyf` outlines and OTF CFF outlines.
+//! [`raster::Font`] adds a small, self-contained glyph rasterizer on top of
+//! those outlines.
 //!
-//! It does **not** render glyphs, build SVG paths, select fonts, apply
-//! spacing rules or compress/decompress WOFF. Those jobs belong to consumers
-//! (notably VuTeX and other formula-layout projects).
+//! It does **not** build SVG paths, select fonts, apply spacing rules or
+//! compress/decompress WOFF. Those jobs belong to consumers (notably VuTeX and
+//! other formula-layout projects).
 //!
 //! All parsing is bounded: truncated input, unknown offsets, and bad
 //! checksums surface as structured results rather than panics. Unknown tables
@@ -19,6 +21,7 @@
 #![allow(dead_code)]
 
 pub mod outline;
+pub mod raster;
 pub mod reader;
 pub mod sfnt;
 pub mod tables;
@@ -100,3 +103,4 @@ pub mod font;
 
 // Re-export face-level convenience.
 pub use font::FontFace;
+pub use raster::{Font as RasterFont, FontError, Metrics};

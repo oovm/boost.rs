@@ -9,8 +9,9 @@ use crate::{
     reader::Reader,
     sfnt::Face,
     tables::{
+        cff::CffTable,
         cmap::CmapTable,
-        glyf::GlyphOutline,
+        glyf::{Component, GlyphOutline, Point},
         head::HeadTable,
         hhea::HheaTable,
         hmtx::HmtxTable,
@@ -43,6 +44,8 @@ pub struct FontFace {
     pub(crate) cmap: Option<CmapTable>,
     pub(crate) math: Option<MathTable>,
     pub(crate) loca: Option<Loca>,
+    pub(crate) cff: Option<CffTable>,
+    pub(crate) cff_attempted: bool,
     pub(crate) is_opentype_cff: bool,
     pub(crate) is_truetype_glyf: bool,
 }
@@ -82,6 +85,8 @@ impl FontFace {
             cmap: None,
             math: None,
             loca: None,
+            cff: None,
+            cff_attempted: false,
             is_opentype_cff,
             is_truetype_glyf,
         }
@@ -259,7 +264,7 @@ impl FontFace {
         out
     }
 
-    // ---- high-level glyph convenience API (ttf-parser-compatible surface) ----
+    // ---- high-level glyph convenience API ----
 
     /// Shortcut for `self.head()?.units_per_em`.
     pub fn units_per_em(&mut self) -> u16 {
@@ -276,42 +281,80 @@ impl FontFace {
         self.hmtx()?.get(glyph_id).map(|m| m.advance_width)
     }
 
+    /// Horizontal advance width honouring `USE_MY_METRICS` on composite glyphs.
+    ///
+    /// TrueType composites may borrow the metrics of one of their components;
+    /// the flag is inherited recursively, so the lookup follows the chain up to
+    /// a depth of eight components before falling back to the glyph's own
+    /// `hmtx` entry.
+    pub fn glyph_advance(&mut self, glyph_id: u16) -> Option<u16> {
+        let direct = self.glyph_hor_advance(glyph_id);
+        if self.is_truetype_glyf
+            && let Some(source) = self.metrics_component(glyph_id, 0)
+        {
+            return self.glyph_hor_advance(source).or(direct);
+        }
+        direct
+    }
+
+    /// Find the component that supplies the metrics of `glyph_id`.
+    fn metrics_component(&mut self, glyph_id: u16, depth: u8) -> Option<u16> {
+        if depth > MAX_COMPOSITE_DEPTH {
+            return None;
+        }
+        let outline = self.parsed_glyf(glyph_id)?;
+        if outline.num_contours >= 0 {
+            return None;
+        }
+        if let Some(component) = outline.components.iter().find(|component| component.use_my_metrics) {
+            let nested = self.metrics_component(component.glyph_id, depth + 1);
+            return nested.or(Some(component.glyph_id));
+        }
+        // Some fonts only set the flag on a nested component.
+        outline.components.iter().find_map(|component| self.metrics_component(component.glyph_id, depth + 1))
+    }
+
+    /// Parse one glyph from `glyf`/`loca` without expanding components.
+    fn parsed_glyf(&mut self, glyph_id: u16) -> Option<GlyphOutline> {
+        let num_glyphs = self.maxp()?.num_glyphs;
+        if glyph_id >= num_glyphs {
+            return None;
+        }
+        let loca = self.loca().cloned()?;
+        let record = self.face.directory.get(b"glyf")?;
+        let data = self.face.table_data(record).ok()?;
+        let offset = loca.glyph_offset(glyph_id) as usize;
+        let size = loca.glyph_size(glyph_id) as usize;
+        let end = offset.checked_add(size)?;
+        if size == 0 || end > data.len() {
+            return None;
+        }
+        crate::tables::glyf::parse_glyph(glyph_id, &data[offset..end]).ok()
+    }
+
     /// Per-glyph bounding box in font units.
     ///
-    /// Returns `None` when the outline kind cannot supply a per-glyph box
-    /// (e.g. OTF CFF without the CFF bbox feature). In that case callers can
-    /// fall back to a synthetic estimate.
+    /// Composite TrueType glyphs use the embedded header box when it is
+    /// populated; a degenerate box is recomputed from the expanded outline.
+    /// OTF CFF fonts derive the box from the Type 2 charstring.
     pub fn glyph_bounding_box(&mut self, glyph_id: u16) -> Option<BBox> {
         if self.is_truetype_glyf {
-            let maxp = self.maxp()?.num_glyphs;
-            if glyph_id >= maxp {
+            let outline = self.parsed_glyf(glyph_id)?;
+            if outline.num_contours == 0 {
                 return None;
             }
+            if outline.num_contours > 0 {
+                return Some(BBox { x_min: outline.x_min, y_min: outline.y_min, x_max: outline.x_max, y_max: outline.y_max });
+            }
+            if outline.x_min != 0 || outline.y_min != 0 || outline.x_max != 0 || outline.y_max != 0 {
+                return Some(BBox { x_min: outline.x_min, y_min: outline.y_min, x_max: outline.x_max, y_max: outline.y_max });
+            }
+            let num_glyphs = self.maxp()?.num_glyphs;
             let loca = self.loca().cloned()?;
-            let Some(glyf_rec) = self.face.directory.get(b"glyf")
-            else {
-                return None;
-            };
-            let Ok(glyf_data) = self.face.table_data(glyf_rec)
-            else {
-                return None;
-            };
-            let off = loca.glyph_offset(glyph_id);
-            let size = loca.glyph_size(glyph_id);
-            if size == 0 {
-                return None;
-            }
-            let start = off as usize;
-            let end = (off + size) as usize;
-            if end > glyf_data.len() {
-                return None;
-            }
-            let slice = &glyf_data[start..end];
-            let outline = crate::tables::glyf::parse_glyph(glyph_id, slice).ok()?;
-            if outline.num_contours <= 0 {
-                return None;
-            }
-            Some(BBox { x_min: outline.x_min, y_min: outline.y_min, x_max: outline.x_max, y_max: outline.y_max })
+            let record = self.face.directory.get(b"glyf")?;
+            let data = self.face.table_data(record).ok()?;
+            let contours = expand_glyf(data, &loca, num_glyphs, glyph_id, 0)?;
+            bbox_of_contours(&contours)
         }
         else {
             self.cff_glyph_bounding_box(glyph_id)
@@ -322,7 +365,7 @@ impl FontFace {
     ///
     /// Returns `Some(())` when an outline was successfully decoded. `None`
     /// when the glyph has no outline (e.g. empty space glyph) or the
-    /// outline kind is not available in this build.
+    /// outline kind is not available.
     pub fn outline_glyph(&mut self, glyph_id: u16, builder: &mut dyn OutlineBuilder) -> Option<()> {
         if self.is_truetype_glyf { self.outline_glyf(glyph_id, builder) } else { self.outline_cff(glyph_id, builder) }
     }
@@ -330,102 +373,42 @@ impl FontFace {
     // ---- TrueType glyf → OutlineBuilder ----
 
     fn outline_glyf(&mut self, glyph_id: u16, builder: &mut dyn OutlineBuilder) -> Option<()> {
-        let maxp = self.maxp()?.num_glyphs;
-        if glyph_id >= maxp {
+        let num_glyphs = self.maxp()?.num_glyphs;
+        if glyph_id >= num_glyphs {
             return None;
         }
         let loca = self.loca().cloned()?;
-        let Some(glyf_rec) = self.face.directory.get(b"glyf")
-        else {
-            return None;
-        };
-        let Ok(glyf_data) = self.face.table_data(glyf_rec)
-        else {
-            return None;
-        };
-        let off = loca.glyph_offset(glyph_id);
-        let size = loca.glyph_size(glyph_id);
-        if size == 0 {
+        let record = self.face.directory.get(b"glyf")?;
+        let data = self.face.table_data(record).ok()?;
+        let contours = expand_glyf(data, &loca, num_glyphs, glyph_id, 0)?;
+        if contours.is_empty() {
             return None;
         }
-        let start = off as usize;
-        let end = (off + size) as usize;
-        if end > glyf_data.len() {
-            return None;
+        for contour in &contours {
+            emit_contour(contour, builder);
         }
-        let slice = &glyf_data[start..end];
-        let outline = crate::tables::glyf::parse_glyph(glyph_id, slice).ok()?;
-        if outline.num_contours <= 0 || outline.points.is_empty() {
-            return None;
-        }
-        emit_glyf_outline(&outline, builder);
         Some(())
     }
 
-    /// OTF CFF path — currently returns `None` unless the `outline-cff`
-    /// feature is enabled, in which case it delegates to `ttf-parser`.
-    fn outline_cff(&mut self, _glyph_id: u16, _builder: &mut dyn OutlineBuilder) -> Option<()> {
-        #[cfg(feature = "outline-cff")]
-        {
-            self.outline_cff_via_ttf_parser(_glyph_id, _builder)
+    // ---- OTF CFF → OutlineBuilder ----
+
+    /// Lazily parse and cache the `CFF ` table.
+    fn cff_table(&mut self) -> Option<&CffTable> {
+        if !self.cff_attempted {
+            self.cff_attempted = true;
+            let record = self.face.directory.get(b"CFF ")?;
+            let data = self.face.table_data(record).ok()?;
+            self.cff = CffTable::parse(data).ok();
         }
-        #[cfg(not(feature = "outline-cff"))]
-        {
-            None
-        }
+        self.cff.as_ref()
     }
 
-    /// OTF CFF bbox — currently returns `None` unless the `outline-cff`
-    /// feature is enabled.
-    fn cff_glyph_bounding_box(&mut self, _glyph_id: u16) -> Option<BBox> {
-        #[cfg(feature = "outline-cff")]
-        {
-            self.cff_bbox_via_ttf_parser(_glyph_id)
-        }
-        #[cfg(not(feature = "outline-cff"))]
-        {
-            None
-        }
+    fn outline_cff(&mut self, glyph_id: u16, builder: &mut dyn OutlineBuilder) -> Option<()> {
+        self.cff_table()?.outline_glyph(glyph_id, builder)
     }
 
-    #[cfg(feature = "outline-cff")]
-    fn outline_cff_via_ttf_parser(&self, glyph_id: u16, builder: &mut dyn OutlineBuilder) -> Option<()> {
-        use ttf_parser::{Face as TtFace, OutlineBuilder as TtOutlineBuilder};
-
-        // We re-wrap our builder in an adapter that satisfies ttf-parser's
-        // OutlineBuilder trait — the two traits have identical shape.
-        struct Adapter<'a>(&'a mut dyn OutlineBuilder);
-        impl TtOutlineBuilder for Adapter<'_> {
-            fn move_to(&mut self, x: f32, y: f32) {
-                self.0.move_to(x, y);
-            }
-            fn line_to(&mut self, x: f32, y: f32) {
-                self.0.line_to(x, y);
-            }
-            fn quad_to(&mut self, x1: f32, y1: f32, x: f32, y: f32) {
-                self.0.quad_to(x1, y1, x, y);
-            }
-            fn curve_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x: f32, y: f32) {
-                self.0.curve_to(x1, y1, x2, y2, x, y);
-            }
-            fn close(&mut self) {
-                self.0.close();
-            }
-        }
-
-        let tt_face = TtFace::parse(&self.face.bytes, 0).ok()?;
-        let gid = ttf_parser::GlyphId(glyph_id);
-        tt_face.outline_glyph(gid, &mut Adapter(builder))?;
-        Some(())
-    }
-
-    #[cfg(feature = "outline-cff")]
-    fn cff_bbox_via_ttf_parser(&self, glyph_id: u16) -> Option<BBox> {
-        use ttf_parser::Face as TtFace;
-        let tt_face = TtFace::parse(&self.face.bytes, 0).ok()?;
-        let gid = ttf_parser::GlyphId(glyph_id);
-        let rect = tt_face.glyph_bounding_box(gid)?;
-        Some(BBox { x_min: rect.x_min, y_min: rect.y_min, x_max: rect.x_max, y_max: rect.y_max })
+    fn cff_glyph_bounding_box(&mut self, glyph_id: u16) -> Option<BBox> {
+        self.cff_table()?.glyph_bbox(glyph_id)
     }
 
     // --- convenience strings ---
@@ -470,109 +453,167 @@ impl FontFace {
     }
 }
 
-// ---- TrueType glyph → OutlineBuilder ----
+// ---- TrueType glyph expansion ----
 
-/// Emit one TrueType glyph outline as quadratic Bezier segments.
+/// Maximum composite nesting depth. Deeper (or self-referencing) glyphs are
+/// treated as empty instead of recursing without bound.
+const MAX_COMPOSITE_DEPTH: u8 = 8;
+
+/// Expand a TrueType glyph into absolute contours, resolving composites.
 ///
-/// TrueType stores contours as a ring of `Point { on_curve, x, y }`. Any two
-/// consecutive off-curve points imply an on-curve midpoint between them. The
-/// ring wraps around, so we also connect the last point back to the first.
-///
-/// Composite glyphs (num_contours < 0) are not supported by this routine —
-/// callers should fall back to a different backend when `is_composite` is true.
-fn emit_glyf_outline(outline: &GlyphOutline, builder: &mut dyn OutlineBuilder) {
-    if outline.is_composite || outline.points.is_empty() {
-        return;
+/// Each component's 2x2 transform and either its XY translation or its anchor
+/// point pair is applied recursively. A missing or malformed component
+/// contributes no contours, and nesting stops at [`MAX_COMPOSITE_DEPTH`].
+fn expand_glyf(glyf_data: &[u8], loca: &Loca, num_glyphs: u16, glyph_id: u16, depth: u8) -> Option<Vec<Vec<Point>>> {
+    if depth > MAX_COMPOSITE_DEPTH || glyph_id >= num_glyphs {
+        return Some(Vec::new());
     }
-    let contours = &outline.contours;
-    let points = &outline.points;
-    let num_contours = outline.num_contours as usize;
+    let offset = loca.glyph_offset(glyph_id) as usize;
+    let size = loca.glyph_size(glyph_id) as usize;
+    let end = offset.checked_add(size)?;
+    if size == 0 || end > glyf_data.len() {
+        return Some(Vec::new());
+    }
+    let outline = match crate::tables::glyf::parse_glyph(glyph_id, &glyf_data[offset..end]) {
+        Ok(outline) => outline,
+        Err(_) => return Some(Vec::new()),
+    };
+    if !outline.is_composite {
+        return Some(split_contours(&outline));
+    }
 
-    for c in 0..num_contours {
-        let start_idx = contours[c];
-        let end_idx = contours[c + 1]; // exclusive
-        let n = end_idx - start_idx;
-        if n == 0 {
-            continue;
-        }
-        let mut i = 0usize;
-        // Step 1: emit contour start — find the first on-curve point, or
-        // synthesize an implicit midpoint if the contour begins off-curve.
-        let first_on = find_next_on(points, start_idx, end_idx);
-        let start_pt = if first_on >= n {
-            // All points are off-curve — degenerate; skip.
-            continue;
-        }
+    let mut contours: Vec<Vec<Point>> = Vec::new();
+    let mut assembled: Vec<Point> = Vec::new();
+    for component in &outline.components {
+        let Some(mut child) = expand_glyf(glyf_data, loca, num_glyphs, component.glyph_id, depth + 1)
         else {
-            let gidx = start_idx + first_on;
-            let p = points[gidx];
-            builder.move_to(p.x as f32, p.y as f32);
-            first_on + 1
+            continue;
         };
-        i = start_pt;
-        let mut prev = start_pt;
-
-        // Step 2: walk the ring, emitting segments.
-        let mut emitted_start = false;
-        while emitted_start || i != start_pt {
-            if !emitted_start {
-                emitted_start = true;
-                // We already move_to'd the first on-curve — continue.
+        apply_matrix(&mut child, component);
+        let child_points: Vec<Point> = child.iter().flatten().copied().collect();
+        let (dx, dy) = component_translation(component, &assembled, &child_points);
+        for contour in &mut child {
+            for point in contour.iter_mut() {
+                point.x += dx;
+                point.y += dy;
             }
-            let cur_idx = start_idx + (i % n);
-            let cur = points[cur_idx];
-            let prev_pt = points[start_idx + (prev % n)];
-
-            if cur.on_curve {
-                // Previous point was off-curve (or this is start); emit quad.
-                if prev_pt.on_curve {
-                    builder.line_to(cur.x as f32, cur.y as f32);
-                }
-                else {
-                    builder.quad_to(prev_pt.x as f32, prev_pt.y as f32, cur.x as f32, cur.y as f32);
-                }
-            }
-            else {
-                // Current is off-curve; look ahead to next point.
-                let next_idx = start_idx + ((i + 1) % n);
-                let next = points[next_idx];
-                if next.on_curve {
-                    // off-curve → on-curve: emit quad from prev cur → next
-                    if prev_pt.on_curve {
-                        builder.quad_to(cur.x as f32, cur.y as f32, next.x as f32, next.y as f32);
-                    }
-                    else {
-                        // prev off-curve → cur off-curve → next on-curve:
-                        // synthetic midpoint between prev and cur, then cur→next quad.
-                        let mid_x = (prev_pt.x + cur.x) as f32 * 0.5;
-                        let mid_y = (prev_pt.y + cur.y) as f32 * 0.5;
-                        builder.quad_to(cur.x as f32, cur.y as f32, next.x as f32, next.y as f32);
-                        // Note: the previous quad would have been emitted at the prev step.
-                    }
-                }
-                else {
-                    // prev off-curve, cur off-curve, next off-curve (or the on-curve comes later).
-                    // We just skip cur; the midpoint between prev and next is the implicit on-curve.
-                }
-            }
-            prev = i;
-            i = (i + 1) % n;
-            if i == start_pt {
-                break;
-            }
+            assembled.extend(contour.iter().copied());
+            contours.push(std::mem::take(contour));
         }
+    }
+    Some(contours)
+}
 
-        builder.close();
+/// Split a simple glyph's point ring into per-contour slices.
+fn split_contours(outline: &GlyphOutline) -> Vec<Vec<Point>> {
+    if outline.num_contours <= 0 || outline.points.is_empty() {
+        return Vec::new();
+    }
+    let mut contours = Vec::with_capacity(outline.num_contours as usize);
+    for index in 0..outline.num_contours as usize {
+        let start = outline.contours[index];
+        let end = outline.contours[index + 1].min(outline.points.len());
+        if end > start {
+            contours.push(outline.points[start..end].to_vec());
+        }
+    }
+    contours
+}
+
+/// Apply a component's 2x2 matrix to every point of its child contours.
+fn apply_matrix(contours: &mut [Vec<Point>], component: &Component) {
+    let [a, b, c, d] = component.matrix();
+    for contour in contours {
+        for point in contour.iter_mut() {
+            let x = point.x as f32;
+            let y = point.y as f32;
+            point.x = (a * x + c * y).round() as i32;
+            point.y = (b * x + d * y).round() as i32;
+        }
     }
 }
 
-fn find_next_on(points: &[crate::tables::glyf::Point], start: usize, end: usize) -> usize {
-    let n = end - start;
-    for off in 0..n {
-        let idx = start + off;
-        if idx < points.len() && points[idx].on_curve {
-            return off;
+/// Resolve the translation of one component from its XY arguments or anchors.
+fn component_translation(component: &Component, parent: &[Point], child: &[Point]) -> (i32, i32) {
+    if component.args_are_xy_values {
+        let (mut dx, mut dy) = (component.x_offset, component.y_offset);
+        if component.scaled_offset() {
+            let [a, b, c, d] = component.matrix();
+            let (x, y) = (dx as f32, dy as f32);
+            dx = (a * x + c * y).round() as i32;
+            dy = (b * x + d * y).round() as i32;
+        }
+        return (dx, dy);
+    }
+    let parent_point = parent.get(component.arg1.max(0) as usize).copied();
+    let child_point = child.get(component.arg2.max(0) as usize).copied();
+    match (parent_point, child_point) {
+        (Some(parent_point), Some(child_point)) => (parent_point.x - child_point.x, parent_point.y - child_point.y),
+        _ => (0, 0),
+    }
+}
+
+/// Bounding box of expanded contours, clamped to the SFNT `i16` range.
+fn bbox_of_contours(contours: &[Vec<Point>]) -> Option<BBox> {
+    let mut min_x = i32::MAX;
+    let mut min_y = i32::MAX;
+    let mut max_x = i32::MIN;
+    let mut max_y = i32::MIN;
+    for point in contours.iter().flatten() {
+        min_x = min_x.min(point.x);
+        min_y = min_y.min(point.y);
+        max_x = max_x.max(point.x);
+        max_y = max_y.max(point.y);
+    }
+    if min_x > max_x {
+        return None;
+    }
+    let clamp = |value: i32| value.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+    Some(BBox { x_min: clamp(min_x), y_min: clamp(min_y), x_max: clamp(max_x), y_max: clamp(max_y) })
+}
+
+/// Emit one closed TrueType contour as line and quadratic segments.
+///
+/// TrueType stores contours as a ring of points. Two consecutive off-curve
+/// points imply an on-curve midpoint between them; a ring with no on-curve
+/// point at all starts at the midpoint of its last and first points.
+fn emit_contour(points: &[Point], builder: &mut dyn OutlineBuilder) {
+    if points.len() < 2 {
+        return;
+    }
+    let count = points.len();
+    let (start, start_index) = match points.iter().position(|point| point.on_curve) {
+        Some(index) => (points[index], index),
+        None => {
+            let last = points[count - 1];
+            let first = points[0];
+            (Point { x: (last.x + first.x) / 2, y: (last.y + first.y) / 2, on_curve: true }, 0)
+        }
+    };
+    builder.move_to(start.x as f32, start.y as f32);
+    let mut control: Option<Point> = None;
+    for step in 0..count {
+        let index = (start_index + step) % count;
+        let point = points[index];
+        if point.on_curve {
+            if let Some(control) = control.take() {
+                builder.quad_to(control.x as f32, control.y as f32, point.x as f32, point.y as f32);
+            }
+            else if index != start_index {
+                builder.line_to(point.x as f32, point.y as f32);
+            }
+        }
+        else if let Some(current) = control {
+            let mid = Point { x: (current.x + point.x) / 2, y: (current.y + point.y) / 2, on_curve: true };
+            builder.quad_to(current.x as f32, current.y as f32, mid.x as f32, mid.y as f32);
+            control = Some(point);
+        }
+        else {
+            control = Some(point);
         }
     }
-    n
+    if let Some(control) = control {
+        builder.quad_to(control.x as f32, control.y as f32, start.x as f32, start.y as f32);
+    }
+    builder.close();
 }

@@ -17,15 +17,6 @@ serde = { workspace = true, optional = true }
 [features]
 default = []
 serde = ["dep:serde", "data-binary-core/serde"]
-diff-ttf-parser = ["dep:ttf-parser"]
-outline-cff = ["dep:ttf-parser"]
-
-[dependencies.ttf-parser]
-workspace = true
-optional = true
-
-[dev-dependencies]
-ttf-parser = { workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true

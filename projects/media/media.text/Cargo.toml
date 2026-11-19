@@ -9,7 +9,7 @@ authors.workspace = true
 publish.workspace = true
 
 [dependencies]
-fontdue = { workspace = true }
+data-binary-ttf = { workspace = true }
 media-types = { workspace = true }
 geometry = { workspace = true, optional = true }
 media-image = { workspace = true, optional = true }

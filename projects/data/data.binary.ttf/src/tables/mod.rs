@@ -20,7 +20,7 @@ pub mod name;
 pub mod os2;
 pub mod post;
 
-pub use cff::{CffIndex, CffInfo, parse_cff_header};
+pub use cff::{CffError, CffIndex, CffInfo, CffTable, parse_cff_header};
 pub use cff2::{Cff2Info, parse_cff2_header};
 pub use cmap::{CmapSubtable, CmapSubtableData, CmapTable, EncodingRecord};
 pub use glyf::{CompositeGlyphFlags, GlyphOutline, SimpleGlyphFlags};

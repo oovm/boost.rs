@@ -11,4 +11,4 @@ include = ["src/lib.rs", "src/metrics.rs", "src/readme.md", "readme.md", "fonts/
 [dependencies]
 document-text = { workspace = true }
 document-compose = { workspace = true }
-data-binary-ttf = { workspace = true, features = ["outline-cff"] }
+data-binary-ttf = { workspace = true }
