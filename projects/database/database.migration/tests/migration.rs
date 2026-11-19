@@ -103,9 +103,31 @@ impl MigrationSource for StubSource {
 struct StubTarget {
     statements: Vec<String>,
     rows: HashMap<String, Vec<Row>>,
+    /// Fail the `n`th checkpoint (1-based); `None` never fails.
+    fail_checkpoint_at: Option<usize>,
+    /// Fail the `n`th `end_load`.
+    fail_end_at: Option<usize>,
+    checkpoints: usize,
+    ends: usize,
 }
 
 impl MigrationTarget for StubTarget {
+    fn checkpoint(&mut self) -> Result<(), Error> {
+        self.checkpoints += 1;
+        if self.fail_checkpoint_at == Some(self.checkpoints) {
+            return Err(Error::Target("injected checkpoint failure".into()));
+        }
+        Ok(())
+    }
+
+    fn end_load(&mut self) -> Result<(), Error> {
+        self.ends += 1;
+        if self.fail_end_at == Some(self.ends) {
+            return Err(Error::Target("injected end_load failure".into()));
+        }
+        Ok(())
+    }
+
     fn execute(&mut self, sql: &str) -> Result<(), Error> {
         self.statements.push(sql.to_owned());
         let Some(table) = table_of(sql) else { return Ok(()) };
@@ -360,7 +382,9 @@ fn a_table_without_updated_at_still_replays_appended_rows() {
     source.rows.get_mut("events").expect("events").push(vec![Some("2".into()), Some("b".into())]);
     let second = migrate(&mut source, &mut target, &options).unwrap();
 
-    assert_eq!(second.tables[0].written, 1, "{:?}", second.tables[0]);
+    // No `updated_at` means no sound incremental window, so the second run
+    // rescans both rows; the upsert keeps the first one from duplicating.
+    assert_eq!(second.tables[0].written, 2, "{:?}", second.tables[0]);
     assert_eq!(target.rows["events"].len(), 2, "the appended row was replayed without duplicating the first");
     let _ = std::fs::remove_file(state);
 }
@@ -402,8 +426,7 @@ fn a_late_row_that_sorts_behind_earlier_writes_is_still_replayed() {
 }
 
 #[test]
-fn a_table_without_a_primary_key_is_reported_and_skipped() {
-    let shape = TableShape { name: "logs".into(), columns: vec![column("message", "text", false)] };
+fn a_table_without_a_primary_key_is_reported_and_skipped() {    let shape = TableShape { name: "logs".into(), columns: vec![column("message", "text", false)] };
     let mut source = StubSource {
         shapes: HashMap::from([("logs".to_owned(), shape)]),
         rows: HashMap::from([("logs".to_owned(), vec![vec![Some("hi".into())]])]),
@@ -517,6 +540,81 @@ fn state_file_records_the_phase_and_rejects_unknown_formats() {
     let error = database_migration::MigrationState::load(&path).unwrap_err();
     assert!(error.to_string().contains("state format"));
     let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn a_failed_checkpoint_keeps_the_previous_cursor() {
+    let state = std::env::temp_dir().join(format!("migration-checkpoint-{}.json", std::process::id()));
+    let _ = std::fs::remove_file(&state);
+    let rows = vec![row("1", "a@x.com", "2026-11-01T00:00:00Z"), row("2", "b@x.com", "2026-11-02T00:00:00Z")];
+    let mut source = source(rows.clone());
+    let mut target = StubTarget { fail_checkpoint_at: Some(1), ..StubTarget::default() };
+    let options = Options { state_path: Some(state.clone()), batch_rows: 1, ..Options::default() };
+
+    let error = migrate(&mut source, &mut target, &options).expect_err("checkpoint failure surfaces");
+    assert!(error.to_string().contains("checkpoint"), "{error}");
+    let saved = database_migration::MigrationState::load(&state).ok();
+    assert!(
+        saved.and_then(|state| state.tables.get("users").and_then(|entry| entry.cursor.clone())).is_none(),
+        "a failed checkpoint must not persist a cursor for rows the target did not keep"
+    );
+
+    // The blocker clears: the same state replays the batch instead of skipping it.
+    let mut recovered = target_with(Vec::new());
+    let report = migrate(&mut source, &mut recovered, &options).unwrap();
+    assert_eq!(report.tables[0].written, 2, "{:?}", report.tables[0]);
+    assert_eq!(recovered.rows["users"].len(), 2, "no row is lost and none is duplicated");
+    let _ = std::fs::remove_file(state);
+}
+
+#[test]
+fn a_failed_end_load_does_not_advance_the_phase() {
+    let state = std::env::temp_dir().join(format!("migration-endload-{}.json", std::process::id()));
+    let _ = std::fs::remove_file(&state);
+    let mut source = source(vec![row("1", "a@x.com", "2026-11-01T00:00:00Z")]);
+    let mut target = StubTarget { fail_end_at: Some(1), ..StubTarget::default() };
+    let options = Options { state_path: Some(state.clone()), ..Options::default() };
+
+    migrate(&mut source, &mut target, &options).expect_err("end_load failure surfaces");
+    let saved = database_migration::MigrationState::load(&state).unwrap();
+    assert_eq!(saved.tables["users"].phase, Phase::Full, "the phase may only advance after `end_load` commits");
+
+    // The durable rows checkpointed before the failure are still the ones the
+    // saved cursor describes, so the same target completes without redoing them.
+    target.fail_end_at = None;
+    let report = migrate(&mut source, &mut target, &options).unwrap();
+    assert_eq!(report.tables[0].phase, Phase::Incremental);
+    assert_eq!(target.rows["users"].len(), 1);
+    let _ = std::fs::remove_file(state);
+}
+
+#[test]
+fn a_table_without_updated_at_rescans_late_rows_behind_the_cursor() {
+    let shape = TableShape { name: "events".into(), columns: vec![column("id", "int8", true), column("body", "text", false)] };
+    let mut source = StubSource {
+        shapes: HashMap::from([("events".to_owned(), shape)]),
+        rows: HashMap::from([("events".to_owned(), vec![vec![Some("5".into()), Some("first".into())]])]),
+        tick: 0,
+    };
+    let mut target = StubTarget::default();
+    target.rows.insert("events".into(), Vec::new());
+    let state = std::env::temp_dir().join(format!("migration-uuid-{}.json", std::process::id()));
+    let _ = std::fs::remove_file(&state);
+    let options = Options { state_path: Some(state.clone()), ..Options::default() };
+
+    migrate(&mut source, &mut target, &options).unwrap();
+    // A random UUID can sort behind the previous key; the primary-key cursor
+    // must not be used to skip it.
+    source.rows.get_mut("events").expect("events").push(vec![Some("2".into()), Some("late".into())]);
+    let second = migrate(&mut source, &mut target, &options).unwrap();
+
+    let ids: Vec<&str> = target.rows["events"].iter().map(|row| row[0].as_deref().unwrap_or("")).collect();
+    assert!(ids.contains(&"2"), "late row behind the cursor was skipped: {ids:?}");
+    assert_eq!(target.rows["events"].len(), 2, "the rescan is idempotent");
+    assert!(second.tables[0].note.as_deref().unwrap_or_default().contains("rescanned"), "{:?}", second.tables[0].note);
+    let saved = database_migration::MigrationState::load(&state).unwrap();
+    assert!(saved.tables["events"].cursor.is_none(), "no primary-key cursor is kept for a table without `updated_at`");
+    let _ = std::fs::remove_file(state);
 }
 
 #[allow(dead_code)]

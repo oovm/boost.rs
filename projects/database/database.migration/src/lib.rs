@@ -4,14 +4,18 @@
 //! completed, replay everything the source changed since the scan started, and
 //! optionally reconcile rows the source deleted.
 //!
-//! Every write is an upsert keyed by the primary key, and the scan position is
-//! persisted after each batch, so a run killed at any point resumes from the
-//! last saved cursor instead of restarting or duplicating rows.
+//! Every write is an upsert keyed by the primary key. A batch is checkpointed
+//! into the target before its position is persisted, so a run killed at any
+//! point resumes from the last durable batch instead of restarting or
+//! duplicating rows; the phase and watermark advance only after `end_load`
+//! commits the rows they describe.
 //!
 //! Deliberate boundaries, reported instead of faked:
 //! * A table without a primary key cannot be scanned incrementally and aborts
 //!   with [`Error::Unsupported`].
-//! * A table without `updated_at` is copied once but not replayed afterwards.
+//! * A table without `updated_at` is rescanned in full on every run: a
+//!   primary-key cursor cannot see a row committed behind it, so no cursor is
+//!   kept for such a table.
 //! * Deletions are reconciled by comparing primary keys, not by reading the
 //!   write-ahead log, so a delete that lands mid-scan is only seen next run.
 
@@ -91,6 +95,16 @@ pub trait MigrationTarget {
     /// an interruption stays idempotent.
     fn write_rows(&mut self, shape: &TableShape, rows: &[Row]) -> Result<(), Error> {
         self.execute(&upsert_statement(shape, rows)?)
+    }
+
+    /// Makes every row written since the previous checkpoint durable.
+    ///
+    /// The core persists its cursor only after this returns `Ok`, so a run that
+    /// is killed at any point never resumes past rows the target did not keep.
+    /// A target that buffers writes must commit (and reopen its burst) here; a
+    /// target that writes through keeps the default no-op.
+    fn checkpoint(&mut self) -> Result<(), Error> {
+        Ok(())
     }
 
     /// Reads rows back for verification: ordered by `order`, strictly after the
@@ -436,6 +450,14 @@ fn migrate_table(
     if starting_full && entry.watermark.is_empty() {
         entry.watermark = source.now()?;
     }
+    // A table without `updated_at` has no source clock that can bound a replay
+    // window. A primary-key cursor cannot see a row committed behind it (late
+    // commit or a random UUID), so any cursor an older run left behind is
+    // invalidated here and the table is rescanned in full on every run. The
+    // upsert key makes that rescan idempotent.
+    if incremental_order.is_none() {
+        entry.cursor = None;
+    }
     state.tables.insert(name.to_owned(), entry);
 
     target.ensure_table(&shape)?;
@@ -453,16 +475,18 @@ fn migrate_table(
             &order,
             None,
         )?;
-        let entry = state.tables.get_mut(name).expect("entry inserted above");
-        entry.phase = Phase::Incremental;
-        // The key-ordered full scan leaves a usable cursor for an append-only
-        // table; an `updated_at` replay orders differently and must start over.
         if incremental_order.is_some() {
-            entry.cursor = None;
+            // The key-ordered full scan leaves a usable cursor for an
+            // append-only table; an `updated_at` replay orders differently and
+            // must start over.
+            state.tables.get_mut(name).expect("entry inserted above").cursor = None;
         }
-        save(&options.state_path, state)?;
     }
 
+    // Phase and watermark describe rows that only become durable at
+    // `end_load`, so they stay pending until that returns.
+    let mut pending_phase = None;
+    let mut pending_watermark = None;
     let note = if let Some(incremental_order) = &incremental_order {
         let mut since = state.tables[name].watermark.clone();
         let mut passes = 0_usize;
@@ -478,8 +502,7 @@ fn migrate_table(
             // Advancing only to this pass's start means anything committed while
             // the pass ran is inside the next pass's window, and anything left
             // over is inside the next run's window.
-            state.tables.get_mut(name).expect("entry inserted above").watermark = pass_start.clone();
-            save(&options.state_path, state)?;
+            pending_watermark = Some(pass_start.clone());
             passes += 1;
             if pass_written == 0 {
                 break;
@@ -491,15 +514,27 @@ fn migrate_table(
             }
             since = pass_start;
         }
+        pending_phase = Some(Phase::Incremental);
         stopped_early
     } else if starting_full {
-        Some("table has no `updated_at`: later runs replay only rows sorted after the saved cursor".to_string())
+        pending_phase = Some(Phase::Incremental);
+        Some(
+            "table has no `updated_at`: every later run rescans the whole table because a primary-key cursor cannot see late-committed rows"
+                .to_string(),
+        )
     } else {
-        // No `updated_at` to bound changes, so treat the table as append-only:
-        // replay everything whose primary key sorts after the saved cursor. A
-        // row whose key was rewritten behind that cursor is not replayed.
+        // No `updated_at` to bound changes, so a primary-key watermark is never
+        // used: a freshly inserted random UUID can sort behind the previous
+        // cursor. Rescan every row instead; the upsert key keeps it idempotent.
+        state.tables.get_mut(name).expect("entry inserted above").cursor = None;
         written += scan(source, target, options, state, name, &shape, &order, None)?;
-        Some("table has no `updated_at`: only rows sorted after the saved cursor are replayed".to_string())
+        // The scan leaves a cursor at its last row; drop it so the next run
+        // starts from the table head again.
+        state.tables.get_mut(name).expect("entry inserted above").cursor = None;
+        Some(
+            "table has no `updated_at`: this run rescanned the whole table (upsert-idempotent) because a primary-key cursor cannot see late-committed rows"
+                .to_string(),
+        )
     };
 
     let (verified, verify_note) = if starting_full {
@@ -510,6 +545,20 @@ fn migrate_table(
 
     let pruned = if options.prune { prune(source, target, options, name, &shape, &order)? } else { 0 };
     target.end_load()?;
+
+    // Only now, when `end_load` has made every scanned row durable, may the
+    // breakpoint advance. A crash before this point replays a bounded window
+    // instead of resuming after rows the target never kept.
+    {
+        let entry = state.tables.get_mut(name).expect("entry inserted above");
+        if let Some(phase) = pending_phase {
+            entry.phase = phase;
+        }
+        if let Some(watermark) = pending_watermark {
+            entry.watermark = watermark;
+        }
+    }
+    save(&options.state_path, state)?;
 
     let target_rows = target.count_rows(&shape)?;
     Ok(TableReport {
@@ -526,6 +575,9 @@ fn migrate_table(
 }
 
 /// Copies every window of one scan and persists the cursor after each batch.
+///
+/// A batch is checkpointed into the target before its cursor is written, so the
+/// breakpoint can never describe rows the target did not keep.
 #[allow(clippy::too_many_arguments)]
 fn scan(
     source: &mut dyn MigrationSource,
@@ -556,6 +608,10 @@ fn scan(
             target.write_rows(shape, chunk)?;
         }
         written += rows.len() as u64;
+        // The batch is durable before its position is: a checkpoint failure
+        // keeps the previous cursor, so the next run replays this window
+        // instead of skipping it.
+        target.checkpoint()?;
         let last = rows.last().expect("non-empty window");
         let next = cursor_from_row(shape, order, last)?;
         let entry = state.tables.get_mut(name).expect("entry inserted before scanning");
