@@ -2,7 +2,7 @@
 name = "language-semantic-search"
 version.workspace = true
 authors.workspace = true
-description = "Fuzzy semantic search and code indexing for the Oak framework."
+description = "Fuzzy semantic search and code indexing for Boost."
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true

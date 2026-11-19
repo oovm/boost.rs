@@ -2,12 +2,11 @@
 name = "data-text-metis"
 version.workspace = true
 authors.workspace = true
-description = "Metis island language parser (CST) for the oak ecosystem"
+description = "Metis island language parser (CST) for the `data.text` family"
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true
 publish.workspace = true
-documentation = "https://docs.rs/oak-metis"
 categories = ["parsing"]
 keywords = ["parser", "metis", "island", "cas"]
 

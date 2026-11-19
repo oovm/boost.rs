@@ -2,12 +2,11 @@
 name = "data-text-swift"
 version.workspace = true
 authors.workspace = true
-description = "High-performance incremental Swift parser for the oak ecosystem with flexible configuration, supporting iOS/macOS development and modern language features."
+description = "High-performance incremental Swift parser for the `data.text` family with flexible configuration, supporting iOS/macOS development and modern language features."
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true
 publish.workspace = true
-documentation = "https://docs.rs/oak-swift"
 categories = ["parsing"]
 keywords = ["parser", "swift", "ios", "language"]
 

@@ -2,7 +2,7 @@
 name = "data-text-csharp"
 version.workspace = true
 authors.workspace = true
-description = "C# frontend for Oak"
+description = "C# frontend for `data.text`"
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true

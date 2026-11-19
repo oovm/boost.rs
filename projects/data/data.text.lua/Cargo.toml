@@ -2,12 +2,11 @@
 name = "data-text-lua"
 version.workspace = true
 authors.workspace = true
-description = "High-performance incremental Lua parser for the oak ecosystem with flexible configuration, supporting lightweight scripting and embedded development."
+description = "High-performance incremental Lua parser for the `data.text` family with flexible configuration, supporting lightweight scripting and embedded development."
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true
 publish.workspace = true
-documentation = "https://docs.rs/oak-lua"
 categories = ["parsing"]
 keywords = ["parser", "lua", "scripting", "language"]
 

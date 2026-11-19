@@ -2,7 +2,7 @@
 name = "data-text-awsl"
 version.workspace = true
 authors.workspace = true
-description = "Asgard AWSL template parser and formatter for the oak ecosystem."
+description = "Asgard AWSL template parser and formatter for the `data.text` family."
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true

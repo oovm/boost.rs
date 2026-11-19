@@ -2,12 +2,11 @@
 name = "data-text-notedown"
 version.workspace = true
 authors.workspace = true
-description = "High-performance incremental Markdown parser for the oak ecosystem with flexible configuration, optimized for documentation and content creation."
+description = "High-performance incremental Markdown parser for the `data.text` family with flexible configuration, optimized for documentation and content creation."
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true
 publish.workspace = true
-documentation = "https://docs.rs/oak-notedown"
 categories = ["parsing"]
 keywords = ["parser", "markdown", "commonmark", "extension"]
 

@@ -6,7 +6,7 @@ authors.workspace = true
 license = "MPL-2.0"
 repository.workspace = true
 publish.workspace = true
-description = "Kotlin language support for Oak"
+description = "Kotlin language support for `data.text`"
 
 [dependencies]
 data-text-core = { workspace = true }

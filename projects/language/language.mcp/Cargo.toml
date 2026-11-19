@@ -2,7 +2,7 @@
 name = "language-mcp"
 version.workspace = true
 authors.workspace = true
-description = "Oak MCP server with support for compact code structures and fuzzy semantic search."
+description = "MCP server with support for compact code structures and fuzzy semantic search."
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true

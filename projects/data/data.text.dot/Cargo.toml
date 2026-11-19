@@ -2,12 +2,11 @@
 name = "data-text-dot"
 version.workspace = true
 authors.workspace = true
-description = "High-performance incremental DOT language parser for the oak ecosystem with flexible configuration, optimized for graph description and visualization."
+description = "High-performance incremental DOT language parser for the `data.text` family with flexible configuration, optimized for graph description and visualization."
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true
 publish.workspace = true
-documentation = "https://docs.rs/oak-dot"
 categories = ["parsing"]
 keywords = ["parser", "dot", "graph", "visualization"]
 

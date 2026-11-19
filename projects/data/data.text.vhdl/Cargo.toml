@@ -7,7 +7,6 @@ edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true
 publish.workspace = true
-documentation = "https://docs.rs/oak-vhdl"
 categories = ["parsing", "hardware-support"]
 keywords = ["parser", "vhdl", "hardware", "hdl", "digital-circuit"]
 

@@ -2,7 +2,7 @@
 name = "data-binary-cfb"
 version.workspace = true
 authors.workspace = true
-description = "Compound File Binary Format reader for Acorn."
+description = "Compound File Binary Format reader for Boost."
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true

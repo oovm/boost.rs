@@ -2,12 +2,11 @@
 name = "data-text-json"
 version.workspace = true
 authors.workspace = true
-description = "High-performance incremental JSON parser for the oak ecosystem with flexible configuration, optimized for data interchange and configuration files."
+description = "High-performance incremental JSON parser for the `data.text` family with flexible configuration, optimized for data interchange and configuration files."
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true
 publish.workspace = true
-documentation = "https://docs.rs/oak-json"
 categories = ["parsing"]
 keywords = ["parser", "json", "streaming", "validation"]
 

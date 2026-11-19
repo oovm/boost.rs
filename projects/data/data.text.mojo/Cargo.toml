@@ -2,7 +2,7 @@
 name = "data-text-mojo"
 version.workspace = true
 authors.workspace = true
-description = "Mojo frontend for Oak"
+description = "Mojo frontend for `data.text`"
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true

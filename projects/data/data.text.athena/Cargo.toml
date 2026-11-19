@@ -2,14 +2,13 @@
 name = "data-text-athena"
 version.workspace = true
 authors.workspace = true
-description = "Athena expression-language parser for Oak (renamed from oak-simple-math). Lowercase calls, lists, dicts."
+description = "Athena expression-language parser. Lowercase calls, lists, dicts."
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true
 publish.workspace = true
-documentation = "https://docs.rs/oak-athena"
 categories = ["parsing"]
-keywords = ["parser", "athena", "simple-math", "dsl", "symbolic", "oak"]
+keywords = ["parser", "athena", "simple-math", "dsl", "symbolic", "text"]
 
 [dependencies]
 data-text-core = { workspace = true }

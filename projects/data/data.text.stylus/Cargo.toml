@@ -1,6 +1,6 @@
 [package]
 name = "data-text-stylus"
-description = "Stylus language support for Oak framework"
+description = "Stylus language support for `data.text` framework"
 version.workspace = true
 authors.workspace = true
 license = "MPL-2.0"

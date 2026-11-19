@@ -2,7 +2,7 @@
 name = "language-testing"
 version.workspace = true
 authors.workspace = true
-description = "Testing utilities for the Oak language toolchain."
+description = "Testing utilities for the `data.text` language toolchain."
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true

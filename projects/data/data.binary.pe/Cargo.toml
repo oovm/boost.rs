@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license = "MPL-2.0"
-description = "PE, COFF, and ELF binary format encoding (Acorn domain)"
+description = "PE, COFF, and ELF binary format encoding (`data.binary` domain)"
 repository.workspace = true
 publish.workspace = true
 [dependencies]

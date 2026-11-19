@@ -2,7 +2,7 @@
 name = "data-binary-dxbc"
 version.workspace = true
 authors.workspace = true
-description = "DXBC container and SHEX instruction-stream layout and structural validation (Acorn domain)"
+description = "DXBC container and SHEX instruction-stream layout and structural validation (`data.binary` domain)"
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true

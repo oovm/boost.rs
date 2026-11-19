@@ -2,7 +2,7 @@
 name = "data-text-vbnet"
 version.workspace = true
 authors.workspace = true
-description = "VB.NET parser for the Oaks framework"
+description = "VB.NET parser for Boost"
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true

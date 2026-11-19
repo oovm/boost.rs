@@ -2,7 +2,7 @@
 name = "data-text-koka"
 version.workspace = true
 authors.workspace = true
-description = "Koka frontend for Oak"
+description = "Koka frontend for `data.text`"
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true

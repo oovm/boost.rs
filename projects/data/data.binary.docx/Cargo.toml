@@ -2,7 +2,7 @@
 name = "data-binary-docx"
 version.workspace = true
 authors.workspace = true
-description = "DOCX OPC package indexer built on Acorn ZIP."
+description = "DOCX OPC package indexer built on `data.binary` ZIP."
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true

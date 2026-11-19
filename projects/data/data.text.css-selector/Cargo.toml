@@ -2,12 +2,11 @@
 name = "data-text-css-selector"
 version.workspace = true
 authors.workspace = true
-description = "CSS selector subset DSL parser and AST for the Oak ecosystem."
+description = "CSS selector subset DSL parser and AST for the `data.text` family."
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true
 publish.workspace = true
-documentation = "https://docs.rs/oak-css-selector"
 categories = ["parsing"]
 keywords = ["css", "selector", "html", "query"]
 

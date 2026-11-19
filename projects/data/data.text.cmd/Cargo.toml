@@ -2,12 +2,11 @@
 name = "data-text-cmd"
 version.workspace = true
 authors.workspace = true
-description = "High-performance incremental Windows Command (CMD) parser for the oak ecosystem with flexible configuration, supporting shell scripting and automation workflows."
+description = "High-performance incremental Windows Command (CMD) parser for the `data.text` family with flexible configuration, supporting shell scripting and automation workflows."
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true
 publish.workspace = true
-documentation = "https://docs.rs/oak-cmd"
 categories = ["parsing"]
 keywords = ["parser", "cmd", "command", "windows"]
 

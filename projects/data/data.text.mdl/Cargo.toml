@@ -2,7 +2,7 @@
 name = "data-text-mdl"
 version.workspace = true
 authors.workspace = true
-description = "MDL molfile and SDF connection-table parser for the oak ecosystem."
+description = "MDL molfile and SDF connection-table parser for the `data.text` family."
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true

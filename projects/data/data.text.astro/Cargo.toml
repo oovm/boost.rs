@@ -2,7 +2,7 @@
 name = "data-text-astro"
 version.workspace = true
 authors.workspace = true
-description = "High-performance incremental Astro parser for the oak ecosystem."
+description = "High-performance incremental Astro parser for the `data.text` family."
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true

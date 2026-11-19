@@ -2,7 +2,7 @@
 name = "data-binary-hsaco"
 version.workspace = true
 authors.workspace = true
-description = "AMD HSACO ELF code object layout and structural validation (Acorn domain)"
+description = "AMD HSACO ELF code object layout and structural validation (`data.binary` domain)"
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true

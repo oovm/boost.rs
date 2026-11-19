@@ -2,7 +2,7 @@
 name = "language-structural-view"
 version.workspace = true
 authors.workspace = true
-description = "AST-based document structure and structure generation for the Oak framework."
+description = "AST-based document structure and structure generation for Boost."
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true

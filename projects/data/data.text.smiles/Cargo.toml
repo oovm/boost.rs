@@ -2,7 +2,7 @@
 name = "data-text-smiles"
 version.workspace = true
 authors.workspace = true
-description = "SMILES and reaction-SMILES parser for the oak ecosystem."
+description = "SMILES and reaction-SMILES parser for the `data.text` family."
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true

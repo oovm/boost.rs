@@ -2,7 +2,7 @@
 name = "data-text-mermaid"
 version.workspace = true
 authors.workspace = true
-description = "Mermaid diagramming language parser for Oak"
+description = "Mermaid diagramming language parser for `data.text`"
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true

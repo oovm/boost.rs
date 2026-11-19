@@ -2,12 +2,11 @@
 name = "data-text-rust"
 version.workspace = true
 authors.workspace = true
-description = "High-performance incremental Rust parser for the oak ecosystem with flexible configuration, emphasizing memory safety and zero-cost abstractions."
+description = "High-performance incremental Rust parser for the `data.text` family with flexible configuration, emphasizing memory safety and zero-cost abstractions."
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true
 publish.workspace = true
-documentation = "https://docs.rs/oak-rust"
 categories = ["parsing"]
 keywords = ["parser", "rust", "ast", "lexer"]
 

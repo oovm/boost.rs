@@ -3,7 +3,7 @@ name = "data-text-fluent"
 version = { workspace = true }
 edition = { workspace = true }
 authors = { workspace = true }
-description = "Fluent internationalization support for oak framework"
+description = "Fluent internationalization support for `data.text` framework"
 repository = { workspace = true }
 license = { workspace = true }
 

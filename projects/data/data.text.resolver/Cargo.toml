@@ -2,7 +2,7 @@
 name = "data-text-resolver"
 version.workspace = true
 authors.workspace = true
-description = "Module resolution and global symbol management for the Oaks framework."
+description = "Module resolution and global symbol management for Boost."
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true

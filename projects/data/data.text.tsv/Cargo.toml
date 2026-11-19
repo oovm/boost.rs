@@ -2,12 +2,11 @@
 name = "data-text-tsv"
 version.workspace = true
 authors.workspace = true
-description = "High-performance incremental TSV (Tab-Separated Values) parser for the oak ecosystem with flexible configuration, optimized for data parsing and tabular data processing."
+description = "High-performance incremental TSV (Tab-Separated Values) parser for the `data.text` family with flexible configuration, optimized for data parsing and tabular data processing."
 edition.workspace = true
 license = "MPL-2.0"
 repository.workspace = true
 publish.workspace = true
-documentation = "https://docs.rs/oak-tsv"
 categories = ["parsing"]
 keywords = ["parser", "tsv", "data", "tabular"]
 
