@@ -10,6 +10,24 @@ use crate::compiler::types::{
 
 use super::last_name;
 
+/// 一个类的完整祖先链：把 `inheritance_map` 投影成 [`boost_collection::GraphView`]，
+/// 用共享核从类自身取逆后序（RPO）并去掉起点。
+///
+/// 共享核每个顶点至多访问一次，多重继承与环状继承都自然终止；祖先集合与
+/// 此前两处逐字相同的手写 DFS 完全一致，顺序是确定的「先父后祖」RPO 序。
+fn ancestor_chain(inheritance_map: &BTreeMap<Identifier, Vec<Identifier>>, class_name: &Identifier) -> Vec<Identifier> {
+    let mut view = boost_collection::GraphView::new(true);
+    for (child, parents) in inheritance_map {
+        view.add_vertex(child);
+        for parent in parents {
+            view.add_edge(child, parent);
+        }
+    }
+    boost_math::graph_theory::reverse_postorder(&view, &class_name)
+        .map(|order| order.into_iter().skip(1).cloned().collect())
+        .unwrap_or_default()
+}
+
 /// final 类与 final 成员重写违规的类别。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FinalClassErrorKind {
@@ -100,7 +118,7 @@ impl FinalClassChecker {
         }
 
         for class in &module.structs {
-            let parents = self.ancestor_chain(&class.name);
+            let parents = ancestor_chain(&self.inheritance_map, &class.name);
             for parent in &parents {
                 if self.final_class_names.contains(parent) {
                     self.errors.push(FinalClassError::final_class_inheritance(class.name.clone(), parent.clone(), None));
@@ -121,24 +139,6 @@ impl FinalClassChecker {
         }
 
         self.errors.clone()
-    }
-
-    fn ancestor_chain(&self, class_name: &Identifier) -> Vec<Identifier> {
-        let mut result = Vec::new();
-        let mut seen = BTreeSet::new();
-        self.collect_ancestors(class_name, &mut seen, &mut result);
-        result
-    }
-
-    fn collect_ancestors(&self, class_name: &Identifier, seen: &mut BTreeSet<Identifier>, out: &mut Vec<Identifier>) {
-        if let Some(parents) = self.inheritance_map.get(class_name) {
-            for parent in parents {
-                if seen.insert(parent.clone()) {
-                    out.push(parent.clone());
-                    self.collect_ancestors(parent, seen, out);
-                }
-            }
-        }
     }
 
     /// 判断给定类名是否为 final 类。
@@ -299,7 +299,7 @@ impl AbstractClassChecker {
             if class.is_abstract {
                 continue;
             }
-            for parent in self.ancestor_chain(&class.name) {
+            for parent in ancestor_chain(&self.inheritance_map, &class.name) {
                 if let Some(parent_struct) = class_map.get(&parent) {
                     let required = if !parent_struct.abstract_methods.is_empty() {
                         parent_struct.abstract_methods.clone()
@@ -322,24 +322,6 @@ impl AbstractClassChecker {
         }
 
         self.errors.clone()
-    }
-
-    fn ancestor_chain(&self, class_name: &Identifier) -> Vec<Identifier> {
-        let mut result = Vec::new();
-        let mut seen = BTreeSet::new();
-        self.collect_ancestors(class_name, &mut seen, &mut result);
-        result
-    }
-
-    fn collect_ancestors(&self, class_name: &Identifier, seen: &mut BTreeSet<Identifier>, out: &mut Vec<Identifier>) {
-        if let Some(parents) = self.inheritance_map.get(class_name) {
-            for parent in parents {
-                if seen.insert(parent.clone()) {
-                    out.push(parent.clone());
-                    self.collect_ancestors(parent, seen, out);
-                }
-            }
-        }
     }
 
     /// 判断给定类名是否为抽象类。
