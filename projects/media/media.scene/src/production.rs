@@ -24,7 +24,7 @@ use std::collections::{HashMap, HashSet};
 use media_types::Error;
 use serde::{Deserialize, Serialize};
 
-use crate::scene::Project;
+use crate::scene::{NodeId, Project};
 
 /// The stable handle of one production entity.
 ///
@@ -179,6 +179,13 @@ pub struct Panel {
     /// Overlays, subtitles and logos are expected to stay inside it.
     #[serde(default)]
     pub safe_area: Option<[f32; 4]>,
+    /// Node ids this panel must show.
+    ///
+    /// Evidence is bound to the scene objects themselves rather than described
+    /// in prose, so validation can catch a renamed node or a node that is off
+    /// screen for the whole panel instead of letting the claim drift.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub witness: Vec<NodeId>,
     /// Review notes attached to this panel.
     #[serde(default)]
     pub notes: Vec<String>,
@@ -697,6 +704,26 @@ impl Production {
                         panel.id, panel.range[1], shot.scene
                     ));
                 }
+                for id in &panel.witness {
+                    let node = self.project.scenes[position]
+                        .items
+                        .iter()
+                        .find(|node| node.id.as_ref().is_some_and(|node_id| node_id.as_str() == id.as_str()));
+                    let Some(node) = node else {
+                        problems.push(format!(
+                            "panel `{}` requires node `{id}` but scene `{}` has no such node",
+                            panel.id, shot.scene
+                        ));
+                        continue;
+                    };
+                    let (start, end) = node.item.window();
+                    if end <= panel.range[0] || start >= panel.range[1] {
+                        problems.push(format!(
+                            "panel `{}` requires node `{id}` but it is off screen in frames {}–{}",
+                            panel.id, panel.range[0], panel.range[1]
+                        ));
+                    }
+                }
             }
         }
     }
@@ -891,6 +918,7 @@ mod tests {
                         camera: Some("push in from 1.0 to 1.2".to_owned()),
                         sound: Some("typing starts".to_owned()),
                         safe_area: Some([0.08, 0.08, 0.92, 0.86]),
+                        witness: Vec::new(),
                         notes: Vec::new(),
                     }],
                 },
@@ -907,6 +935,7 @@ mod tests {
                         camera: None,
                         sound: None,
                         safe_area: None,
+                        witness: Vec::new(),
                         notes: vec!["keep the window light".to_owned()],
                     }],
                 },
@@ -1117,6 +1146,7 @@ mod tests {
             camera: None,
             sound: None,
             safe_area: None,
+            witness: Vec::new(),
             notes: Vec::new(),
         };
         let production = Production {

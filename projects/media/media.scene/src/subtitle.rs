@@ -355,6 +355,7 @@ mod tests {
                 camera: None,
                 sound: None,
                 safe_area: None,
+                witness: Vec::new(),
                 notes: Vec::new(),
             }],
         });

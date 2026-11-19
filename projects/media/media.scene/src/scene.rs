@@ -804,6 +804,31 @@ pub enum Item {
     },
 }
 
+impl Item {
+    /// Half-open window `[at, at + dur)` this item occupies in its scene.
+    pub fn window(&self) -> (u32, u32) {
+        match self {
+            Item::Text { at, dur, .. }
+            | Item::Code { at, dur, .. }
+            | Item::Counter { at, dur, .. }
+            | Item::Card { at, dur, .. }
+            | Item::Shape { at, dur, .. }
+            | Item::Bands { at, dur, .. }
+            | Item::Grain { at, dur, .. }
+            | Item::Path { at, dur, .. }
+            | Item::Layer { at, dur, .. }
+            | Item::Instance { at, dur, .. }
+            | Item::Glow { at, dur, .. }
+            | Item::Footnote { at, dur, .. }
+            | Item::Image { at, dur, .. }
+            | Item::Video { at, dur, .. }
+            | Item::Progress { at, dur, .. }
+            | Item::Chart { at, dur, .. }
+            | Item::Callout { at, dur, .. } => (*at, *at + *dur),
+        }
+    }
+}
+
 /// One bar series of an [`Item::Chart`].
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BarSeries {
