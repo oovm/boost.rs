@@ -9,11 +9,11 @@ authors.workspace = true
 publish.workspace = true
 
 [dependencies]
+atlas-cloud = { workspace = true }
 boost-collection = { workspace = true }
-boost-crypto = { workspace = true }
-boost-net = { workspace = true }
-boost-random = { workspace = true }
 media-dsp = { workspace = true }
 media-types = { workspace = true }
 serde = { workspace = true }
+
+[dev-dependencies]
 serde_json = { workspace = true }

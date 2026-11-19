@@ -2,7 +2,7 @@
 name = "atlas-cloud"
 version.workspace = true
 authors.workspace = true
-description = "Atlas 云服务：AI 协议族与腾讯云 SMS / COS 的原生调用面"
+description = "Atlas 云服务：AI 协议族、腾讯云 SMS / COS 与 Edge readaloud 语音合成的原生调用面"
 repository = "https://github.com/oovm/rust-boost"
 license.workspace = true
 edition.workspace = true
@@ -11,6 +11,7 @@ publish = false
 [dependencies]
 boost-crypto = { workspace = true }
 boost-net = { workspace = true }
+boost-random = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
