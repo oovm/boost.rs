@@ -11,6 +11,10 @@ publish = false
 dl-graph = { workspace = true }
 hardware-capability = { workspace = true }
 hardware-runtime = { workspace = true }
+hardware-scheduler = { workspace = true }
+
+[dev-dependencies]
+hardware-backend-npu = { workspace = true }
 
 [lints.rust]
 missing_docs = "warn"

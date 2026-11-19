@@ -10,7 +10,7 @@ use crate::{
     exec::ExecutionBindings,
     probe::BackendProbeEvent,
 };
-use hardware_capability::{CapabilityReport, DeviceState, ExecDecision, ExecRefusal, ExecSignature, MemoryBudget};
+use hardware_capability::{BackendId, CapabilityReport, DeviceId, DeviceState, ExecDecision, ExecRefusal, ExecSignature, MemoryBudget};
 
 /// One cross-backend placement transition observed during dispatch.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,6 +21,17 @@ pub struct BackendSwitch {
     pub to_backend: String,
     /// Task that triggered the switch.
     pub at_task: TaskId,
+}
+
+/// One backend probe result for a signature, including refusal reasons.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackendCandidate {
+    /// Probed backend.
+    pub backend: BackendId,
+    /// Physical device behind the backend.
+    pub device: DeviceId,
+    /// Accepted plan or typed refusal.
+    pub decision: ExecDecision,
 }
 
 /// Places and submits tasks onto registered backends.
@@ -256,7 +267,7 @@ impl Scheduler {
         let mut best: Option<(u64, usize)> = None;
         for index in 0..self.backends.len() {
             match self.feasibility(index, &signature) {
-                Ok(plan) => {
+                ExecDecision::Accept(plan) => {
                     // 后端自己的端到端代价加上旧的种类偏好权重：默认后端代价为 0，
                     // 因此默认放置与旧的按种类/注册顺序完全一致。
                     let cost = plan.estimated_cost.saturating_add(legacy_weight(task, self.backends[index].name()));
@@ -265,7 +276,7 @@ impl Scheduler {
                         best = Some(candidate);
                     }
                 }
-                Err(reason) => refusals.push(format!("{}: {reason}", self.backends[index].name())),
+                ExecDecision::Refuse(reason) => refusals.push(format!("{}: {reason}", self.backends[index].name())),
             }
         }
 
@@ -278,38 +289,50 @@ impl Scheduler {
 
     fn confirm_candidate(&self, index: usize, task: &hardware_ir::TaskNode, signature: &ExecSignature) -> Result<usize> {
         match self.feasibility(index, signature) {
-            Ok(_) => Ok(index),
-            Err(reason) => Err(Error::Infeasible { task: task_label(task), detail: format!("{}: {reason}", self.backends[index].name()) }),
+            ExecDecision::Accept(_) => Ok(index),
+            ExecDecision::Refuse(reason) => {
+                Err(Error::Infeasible { task: task_label(task), detail: format!("{}: {reason}", self.backends[index].name()) })
+            }
         }
     }
 
     /// 可行性硬条件：健康、可提交、签名被接受、实时预算装得下。
-    fn feasibility(&self, index: usize, signature: &ExecSignature) -> std::result::Result<hardware_capability::ExecPlan, String> {
+    fn feasibility(&self, index: usize, signature: &ExecSignature) -> ExecDecision {
         let backend = &self.backends[index];
         let health = backend.health();
-        if let Some(reason) = health.reason() {
-            if !health.is_usable() {
-                return Err(ExecRefusal::Unhealthy(reason.to_string()).to_string());
-            }
+        if !health.is_usable() {
+            return ExecDecision::Refuse(ExecRefusal::Unhealthy(health.reason().unwrap_or("unhealthy").to_owned()));
         }
         let state = backend.state();
         if state != DeviceState::Submittable {
-            return Err(ExecRefusal::Unhealthy(format!("device state is {state:?}")).to_string());
+            return ExecDecision::Refuse(ExecRefusal::Unhealthy(format!("device state is {state:?}")));
         }
         match backend.supports(signature) {
             ExecDecision::Accept(plan) => {
                 let budget: MemoryBudget = backend.budget();
                 if !plan.fits_budget(&budget) {
-                    return Err(ExecRefusal::BudgetExceeded {
+                    return ExecDecision::Refuse(ExecRefusal::BudgetExceeded {
                         required_bytes: plan.footprint_bytes(),
                         available_bytes: budget.available_bytes(),
-                    }
-                    .to_string());
+                    });
                 }
-                Ok(plan)
+                ExecDecision::Accept(plan)
             }
-            ExecDecision::Refuse(reason) => Err(reason.to_string()),
+            ExecDecision::Refuse(reason) => ExecDecision::Refuse(reason),
         }
+    }
+
+    /// 按放置规则探测每个后端，返回包含拒绝原因的可判别结果。
+    ///
+    /// 供上层规划器（如 `dl-plan`）把 DL 签名接到真实后端状态，不需要重复实现健康、
+    /// 提交状态和预算判断。
+    pub fn candidates(&self, signature: &ExecSignature) -> Vec<BackendCandidate> {
+        (0..self.backends.len())
+            .map(|index| {
+                let backend = &self.backends[index];
+                BackendCandidate { backend: backend.id(), device: backend.device(), decision: self.feasibility(index, signature) }
+            })
+            .collect()
     }
 }
 
@@ -821,5 +844,29 @@ mod tests {
         let error = sched.execute(&graph).expect_err("pin cannot bypass feasibility");
         assert_eq!(error.code(), crate::ErrorCode::Infeasible);
         assert!(error.to_string().contains("unsupported precision: f16"), "{error}");
+    }
+
+    #[test]
+    fn candidates_report_plans_and_refusals_with_device_identity() {
+        let prepared = Arc::new(Mutex::new(Vec::new()));
+        let submitted = Arc::new(Mutex::new(Vec::new()));
+        let mut sched = Scheduler::new();
+        sched.register(Box::new(
+            PlacementBackend::new("gpu", 0, prepared.clone(), submitted.clone())
+                .with_temp_bytes(1024)
+                .with_budget(hardware_capability::MemoryBudget::new(512, 0, 0)),
+        ));
+        sched.register(Box::new(PlacementBackend::new("cpu", 0, prepared, submitted)));
+
+        let signature = hardware_capability::ExecSignature::operator("matmul", vec!["f32".into()], Vec::new());
+        let candidates = sched.candidates(&signature);
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].backend.as_str(), "gpu");
+        assert_eq!(candidates[0].device.as_str(), "gpu");
+        assert!(matches!(
+            candidates[0].decision,
+            hardware_capability::ExecDecision::Refuse(hardware_capability::ExecRefusal::BudgetExceeded { .. })
+        ));
+        assert!(candidates[1].decision.is_accept());
     }
 }

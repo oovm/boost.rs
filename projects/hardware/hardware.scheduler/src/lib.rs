@@ -17,4 +17,4 @@ pub use error::{Error, ErrorCode, Result};
 pub use exec::{ExecEvent, ExecStream, ExecutionBindings, ExternalBuffer, ImmediateBridge, ImmediateEvent, ImmediateStream, StreamEventBridge};
 pub use noop::NoopBackend;
 pub use probe::{BackendProbeEvent, kinds as probe_kinds};
-pub use scheduler::{BackendSwitch, Scheduler};
+pub use scheduler::{BackendCandidate, BackendSwitch, Scheduler};

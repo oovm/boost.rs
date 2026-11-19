@@ -16,7 +16,10 @@ use hardware_capability::{BackendId, Conversion, DeviceId, ExecDecision, ExecPla
 
 mod stream;
 
+pub use scheduler_oracle::SchedulerOracle;
 pub use stream::{StreamReport, StreamStep, stream_plan};
+
+mod scheduler_oracle;
 
 /// 一个后端对一个签名的应答。
 #[derive(Debug, Clone)]
