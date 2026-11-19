@@ -283,6 +283,7 @@ dependencies = [
  "atlas-harness",
  "boost-crypto",
  "boost-net",
+ "boost-random",
  "serde_json",
 ]
 
@@ -466,8 +467,10 @@ dependencies = [
 name = "boost-harness"
 version = "0.1.0"
 dependencies = [
+ "boost-collection",
  "boost-console",
  "boost-harness-macro",
+ "boost-math",
  "boost-source 0.1.0",
  "boost-terminal",
  "serde",
@@ -565,7 +568,9 @@ dependencies = [
 name = "compiler-bundle"
 version = "0.1.0"
 dependencies = [
+ "boost-collection",
  "boost-fs",
+ "boost-math",
  "compiler-emitter",
  "serde",
  "serde_json",
@@ -580,6 +585,8 @@ dependencies = [
  "acorn-odin",
  "acorn-pe",
  "acorn-wasm",
+ "boost-collection",
+ "boost-math",
  "compiler-optimize",
  "compiler-target",
  "compiler-types",
@@ -953,6 +960,7 @@ dependencies = [
  "database-protocol-mongo",
  "database-types",
  "schema-types",
+ "serde",
  "serde_json",
  "uuid",
 ]
@@ -1110,6 +1118,8 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "blake3",
+ "boost-collection",
+ "boost-math",
  "boost-random",
  "database-cluster",
  "database-formats",
@@ -1246,7 +1256,6 @@ dependencies = [
  "plotter-types",
  "serde",
  "serde_json",
- "serial_test 3.5.0",
 ]
 
 [[package]]
@@ -1278,7 +1287,9 @@ dependencies = [
  "acorn-docx",
  "acorn-epub",
  "blake3",
+ "boost-collection",
  "boost-harness",
+ "boost-math",
  "document-ir",
  "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs?rev=a0416cb1cba9a348df175d3ca230f794ec562484)",
  "oak-html",
@@ -1287,9 +1298,15 @@ dependencies = [
  "oak-tex",
  "oak-typst",
  "oak-xml 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs?rev=a0416cb1cba9a348df175d3ca230f794ec562484)",
- "plotter-input-dot",
- "plotter-input-mermaid",
- "plotter-input-plantuml",
+ "serde_json",
+]
+
+[[package]]
+name = "document-harness"
+version = "0.1.0"
+dependencies = [
+ "document-convert",
+ "document-fonts",
  "serde_json",
 ]
 
@@ -1914,6 +1931,7 @@ dependencies = [
 name = "hardware-scheduler"
 version = "0.1.0"
 dependencies = [
+ "boost-math",
  "hardware-capability",
  "hardware-harness",
  "hardware-ir",
@@ -2462,6 +2480,7 @@ dependencies = [
 name = "media-voice"
 version = "0.1.0"
 dependencies = [
+ "atlas-cloud",
  "boost-collection",
  "media-dsp",
  "media-types",
@@ -3227,6 +3246,8 @@ dependencies = [
 name = "plotter-diagram"
 version = "0.1.0"
 dependencies = [
+ "boost-collection",
+ "boost-math",
  "plotter-input-dot",
  "plotter-input-mermaid",
  "plotter-input-plantuml",

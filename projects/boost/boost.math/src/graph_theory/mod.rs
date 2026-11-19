@@ -9,15 +9,15 @@
 //! 的“不可达”结果。平行边按独立边逐条遍历，自环构成环。算法各自持有临时
 //! 工作区（入度表、已访问集合），不写回图容器。
 
-use alloc::{
-    vec,
-    vec::Vec,
-};
+use alloc::{vec, vec::Vec};
 use boost_collection::{GraphError, GraphRead, GraphResult, OutgoingEdges};
 use std::{
     cmp::Reverse,
     collections::{BinaryHeap, HashMap, HashSet, VecDeque},
 };
+
+/// 拓扑前缀与残差集：`(可出队部分, 环上及其下游)`。
+pub type Partition<V> = (Vec<V>, Vec<V>);
 
 /// 有向图的拓扑序。
 ///
@@ -29,6 +29,21 @@ use std::{
 /// 该函数不读取边载荷，因此不涉及权重、负权或权重溢出；拓扑序成立的前提是
 /// 图确实有向且无环，调用方不应把 `Cycle` 当作可忽略的告警。
 pub fn topological_order<G>(graph: &G) -> GraphResult<Vec<G::Vertex>>
+where
+    G: OutgoingEdges,
+{
+    let (ordered, remaining) = topological_partition(graph)?;
+    if remaining.is_empty() { Ok(ordered) } else { Err(GraphError::Cycle) }
+}
+
+/// 拓扑前缀与残差集（Kahn 分解）。
+///
+/// 与 [`topological_order`] 相同的 FIFO 规则，但成环时不丢弃已解决的部分：
+/// 返回 `(ordered, remaining)`，`ordered` 是能按拓扑规则出队的顶点前缀，
+/// `remaining` 是残留在环上或环下游的顶点，按来源的顶点顺序排列。无环时
+/// `remaining` 为空，因此调用方可以用它做“破环后继续”的分层或补齐，而不
+/// 需要自己再写一份入度计数。无向图返回 [`GraphError::UndirectedTraversal`]。
+pub fn topological_partition<G>(graph: &G) -> GraphResult<Partition<G::Vertex>>
 where
     G: OutgoingEdges,
 {
@@ -45,9 +60,11 @@ where
     }
 
     let mut ready: VecDeque<&G::Vertex> = graph.vertices().filter(|vertex| indegree.get(*vertex) == Some(&0)).collect();
-    let mut order = Vec::with_capacity(graph.vertex_count());
+    let mut ordered = Vec::with_capacity(graph.vertex_count());
+    let mut resolved: HashSet<&G::Vertex> = HashSet::with_capacity(graph.vertex_count());
     while let Some(vertex) = ready.pop_front() {
-        order.push(vertex.clone());
+        ordered.push(vertex.clone());
+        resolved.insert(vertex);
         for edge in graph.outgoing(vertex) {
             let (_, target) = graph.endpoints(edge).ok_or(GraphError::UnknownVertex)?;
             let remaining = indegree.get_mut(target).ok_or(GraphError::UnknownVertex)?;
@@ -58,7 +75,8 @@ where
         }
     }
 
-    if order.len() == graph.vertex_count() { Ok(order) } else { Err(GraphError::Cycle) }
+    let remaining: Vec<G::Vertex> = graph.vertices().filter(|vertex| !resolved.contains(vertex)).cloned().collect();
+    Ok((ordered, remaining))
 }
 
 /// 从 `start` 出发沿出边可达的顶点。
@@ -90,15 +108,57 @@ where
 
     while let Some(vertex) = queue.pop_front() {
         for edge in graph.outgoing(vertex) {
-            let (_, target) = graph.endpoints(edge).ok_or(GraphError::UnknownVertex)?;
-            if visited.insert(target) {
-                queue.push_back(target);
-                reached.push(target.clone());
+            let (source, target) = graph.endpoints(edge).ok_or(GraphError::UnknownVertex)?;
+            // 无向图的边只存一条：从 `vertex` 枚举时，邻居是除它之外的另一端；
+            // 只取箭头尾部会把 `start` 一侧的边当成自环，漏掉整个连通分量。
+            let next = if target == vertex { source } else { target };
+            if visited.insert(next) {
+                queue.push_back(next);
+                reached.push(next.clone());
             }
         }
     }
 
     Ok(reached)
+}
+
+/// 从 `start` 出发的逆后序（RPO）。
+///
+/// 迭代 DFS 按各顶点的出边顺序访问，后序记录完成顺序后整体反转：`start`
+/// 在首位，任何顶点都排在它经出边可达的后继之前（回边除外）。这是数据流
+/// 分析的标准迭代顺序，用显式栈实现，不依赖调用线程的递归栈深度。只访问
+/// 从 `start` 可达的顶点；`start` 不在图中返回 [`GraphError::UnknownVertex`]。
+/// 有向与无向图都按出边能力展开，平行边与自环不影响结果（每个顶点只记录
+/// 一次）。
+pub fn reverse_postorder<G>(graph: &G, start: &G::Vertex) -> GraphResult<Vec<G::Vertex>>
+where
+    G: OutgoingEdges,
+{
+    if !graph.vertices().any(|vertex| vertex == start) {
+        return Err(GraphError::UnknownVertex);
+    }
+    let graph = IndexedGraph::new(graph)?;
+    let start = *graph.position(start).ok_or(GraphError::UnknownVertex)?;
+
+    let mut seen = vec![false; graph.vertices.len()];
+    let mut post: Vec<usize> = Vec::with_capacity(graph.vertices.len());
+    seen[start] = true;
+    let mut stack: Vec<(usize, usize)> = vec![(start, 0)];
+    while let Some(&(node, position)) = stack.last() {
+        if position < graph.forward[node].len() {
+            let next = graph.forward[node][position];
+            stack.last_mut().expect("a frame is being visited").1 += 1;
+            if !seen[next] {
+                seen[next] = true;
+                stack.push((next, 0));
+            }
+        } else {
+            post.push(node);
+            stack.pop();
+        }
+    }
+    post.reverse();
+    Ok(graph.collect(&post))
 }
 
 /// 按优先级选择就绪顶点的拓扑序。
@@ -111,6 +171,22 @@ where
 /// 无向图返回 [`GraphError::UndirectedTraversal`]，存在环（含自环）返回
 /// [`GraphError::Cycle`]。`key` 只在选择时调用，不读边载荷。
 pub fn topological_order_by<G, K, F>(graph: &G, key: F) -> GraphResult<Vec<G::Vertex>>
+where
+    G: OutgoingEdges,
+    F: Fn(&G::Vertex) -> K,
+    K: Ord,
+{
+    let (ordered, remaining) = topological_partition_by(graph, key)?;
+    if remaining.is_empty() { Ok(ordered) } else { Err(GraphError::Cycle) }
+}
+
+/// 按优先级选择的拓扑前缀与残差集。
+///
+/// [`topological_partition`] 的堆式选择版本：就绪顶点按 `key`（同键按来源
+/// 顶点顺序）出队，环上及其下游的顶点进入 `remaining`，按来源顶点顺序排列。
+/// 供需要在成环时保留已排序前缀、再对残差按领域规则补齐的消费者使用，避免
+/// 各领域重写带优先级的 Kahn。无向图返回 [`GraphError::UndirectedTraversal`]。
+pub fn topological_partition_by<G, K, F>(graph: &G, key: F) -> GraphResult<Partition<G::Vertex>>
 where
     G: OutgoingEdges,
     F: Fn(&G::Vertex) -> K,
@@ -136,14 +212,14 @@ where
         indegree[to] += 1;
     }
 
-    let mut ready: BinaryHeap<Reverse<(K, usize)>> = (0..vertices.len())
-        .filter(|position| indegree[*position] == 0)
-        .map(|position| Reverse((key(vertices[position]), position)))
-        .collect();
+    let mut ready: BinaryHeap<Reverse<(K, usize)>> =
+        (0..vertices.len()).filter(|position| indegree[*position] == 0).map(|position| Reverse((key(vertices[position]), position))).collect();
 
+    let mut resolved = vec![false; vertices.len()];
     let mut order = Vec::with_capacity(vertices.len());
     while let Some(Reverse((_, position))) = ready.pop() {
         order.push(vertices[position].clone());
+        resolved[position] = true;
         for &next in &adjacency[position] {
             indegree[next] -= 1;
             if indegree[next] == 0 {
@@ -152,7 +228,8 @@ where
         }
     }
 
-    if order.len() == vertices.len() { Ok(order) } else { Err(GraphError::Cycle) }
+    let remaining = vertices.iter().enumerate().filter(|(position, _)| !resolved[*position]).map(|(_, vertex)| (*vertex).clone()).collect();
+    Ok((order, remaining))
 }
 
 /// 返回一条有向环的具体路径；无环返回 `None`。
@@ -201,8 +278,7 @@ where
                     }
                     _ => {}
                 }
-            }
-            else {
+            } else {
                 color[node] = 2;
                 path.pop();
                 stack.pop();
@@ -281,8 +357,7 @@ where
                     seen[next] = true;
                     stack.push((next, 0));
                 }
-            }
-            else {
+            } else {
                 order.push(node);
                 stack.pop();
             }
@@ -326,12 +401,7 @@ where
 /// 返回 `distance` 为 `None` 表示不可达（`distances` 仍保留其余顶点的真实距离）；
 /// 起止点不在图中返回 [`GraphError::UnknownVertex`]。
 /// 同权路径的选择由顶点顺序与边顺序决定，结果是确定的。
-pub fn shortest_path_non_negative<G, F>(
-    graph: &G,
-    start: &G::Vertex,
-    goal: &G::Vertex,
-    weight: F,
-) -> GraphResult<ShortestPath<G::Vertex>>
+pub fn shortest_path_non_negative<G, F>(graph: &G, start: &G::Vertex, goal: &G::Vertex, weight: F) -> GraphResult<ShortestPath<G::Vertex>>
 where
     G: GraphRead,
     F: Fn(G::Edge) -> u64,
@@ -377,8 +447,7 @@ where
         }
     }
 
-    let Some(total) = distance[goal]
-    else {
+    let Some(total) = distance[goal] else {
         return Ok(ShortestPath {
             distance: None,
             path: Vec::new(),

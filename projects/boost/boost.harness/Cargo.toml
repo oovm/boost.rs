@@ -18,7 +18,9 @@ serde = { workspace = true, optional = true, default-features = false, features 
 unicode-width = { workspace = true, optional = true }
 
 [dev-dependencies]
+boost-collection = { workspace = true }
 boost-console = { workspace = true }
+boost-math = { workspace = true }
 serial_test = { workspace = true }
 serde_json = { workspace = true }
 

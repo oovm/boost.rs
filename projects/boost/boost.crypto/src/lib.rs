@@ -1,6 +1,6 @@
 //! Boost 家族的共享密码基础能力门面。
 //!
-//! 本 crate 对审计过的纯 Rust 原语做能力门面：hash、HMAC/HKDF、AEAD、ECDSA 与 RSA 验签、
+//! 本 crate 对审计过的纯 Rust 原语做能力门面：hash、HMAC/HKDF、PBKDF2、AEAD、ECDSA 与 RSA 验签、
 //! RSA OAEP 加密、X25519 密钥交换、base64 编码，以及秘密材料生命周期类型 [`secret::SecretBytes`]。
 //! 模块面保持最小与正交，不承载任何协议逻辑；TLS 1.3 等协议状态机归上层消费者，
 //! 只在这里取原语。原语内化尚未完成：算法与数学能力仍由外部实现闭包提供，不能记为已签收。
@@ -15,6 +15,7 @@ pub mod aead;
 pub mod ecdsa;
 pub mod encoding;
 pub mod hash;
+pub mod kdf;
 pub mod mac;
 pub mod rsa;
 pub mod secret;

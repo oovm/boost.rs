@@ -11,6 +11,8 @@ publish = false
 missing_docs = "warn"
 
 [dependencies]
+boost-collection = { workspace = true }
+boost-math = { workspace = true }
 compiler-emitter = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

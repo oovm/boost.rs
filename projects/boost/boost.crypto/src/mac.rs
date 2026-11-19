@@ -41,7 +41,7 @@ pub fn hmac_sha384(key: &[u8], data: &[u8]) -> Result<[u8; 48]> {
 }
 
 /// HMAC 本身对任意长度 key 都有定义，内部实现不产生失败。
-fn hmac<const BLOCK: usize, const LEN: usize>(key: &[u8], data: &[u8], hash: fn(&[u8]) -> [u8; LEN]) -> [u8; LEN] {
+pub(crate) fn hmac<const BLOCK: usize, const LEN: usize>(key: &[u8], data: &[u8], hash: fn(&[u8]) -> [u8; LEN]) -> [u8; LEN] {
     let mut normalized = [0u8; BLOCK];
     if key.len() > BLOCK {
         normalized[..LEN].copy_from_slice(&hash(key));
@@ -108,7 +108,7 @@ pub fn hkdf_sha256(salt: Option<&[u8]>, ikm: &[u8], info: &[u8], out: &mut [u8])
     hkdf_expand_sha256(&prk, info, out)
 }
 
-fn xor_pad<const BLOCK: usize>(block: &[u8; BLOCK], byte: u8) -> [u8; BLOCK] {
+pub(crate) fn xor_pad<const BLOCK: usize>(block: &[u8; BLOCK], byte: u8) -> [u8; BLOCK] {
     let mut out = [0u8; BLOCK];
     for index in 0..BLOCK {
         out[index] = block[index] ^ byte;

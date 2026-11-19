@@ -15,7 +15,7 @@ use compiler_types::{AggregateLayoutPlan, FieldId, LayoutId, NominalInstanceId, 
 use crate::{
     FragmentSubmission,
     backend_plan_views::{ExecutableBlockRef, ExecutableFunction, ExecutableStorageKind, ExecutableTerminator},
-    contracts::InstructionKind,
+    contracts::{BlockRef, InstructionKind},
     lowering::shared::physical_layout::{
         LayoutPolicy, ResolvedAggregateLayout, ResolvedFieldLayout, ResolvedLayoutPlan, resolve_physical_layouts,
     },
@@ -141,8 +141,7 @@ pub fn validate_storage_identities(submission: &FragmentSubmission) -> Result<()
     let plan = &submission.backend_plan;
     let registered_layouts: std::collections::BTreeSet<LayoutId> = plan.aggregate_layouts().layouts.iter().map(|layout| layout.id).collect();
     for instance in plan.instances() {
-        let Some(view) = plan.get_function(&instance)
-        else {
+        let Some(view) = plan.get_function(&instance) else {
             continue;
         };
         let function = &view.function;
@@ -200,8 +199,7 @@ fn named_residual(ty: &SemanticType, registered_layouts: &std::collections::BTre
         SemanticType::Nominal { layout, .. } => {
             if registered_layouts.contains(layout) {
                 None
-            }
-            else {
+            } else {
                 Some(ty.clone())
             }
         }
@@ -224,38 +222,35 @@ pub fn block_label(id: ExecutableBlockRef) -> String {
 }
 
 pub fn collect_reachable_blocks(function: &ExecutableFunction) -> Vec<ExecutableBlockRef> {
-    let mut order = Vec::new();
-    let mut seen = std::collections::BTreeSet::new();
-    let mut done = std::collections::BTreeSet::new();
-    let mut stack = vec![function.entry];
-    while let Some(block_id) = stack.pop() {
-        if done.contains(&block_id) {
-            continue;
-        }
-        if seen.contains(&block_id) {
-            order.push(block_id);
-            done.insert(block_id);
-            continue;
-        }
-        seen.insert(block_id);
-        stack.push(block_id);
-        let Some(block) = function.blocks.get(block_id.0 as usize)
-        else {
-            continue;
+    // 迭代顺序是数据流的标准逆后序，直接取共享图论核：顶点按旧约定用块下标
+    // （`blocks.get(id.0)`），悬空跳转目标保留为无子顶点。旧实现对回边会提前
+    // 记账、产生非标准 RPO；标准 RPO 保证前向边“先定值后使用”，数据流结果
+    // 在单调格上不变，只是收敛路径更规范。
+    let mut adjacency: Vec<(ExecutableBlockRef, ExecutableBlockRef)> = Vec::new();
+    for (index, block) in function.blocks.iter().enumerate() {
+        let from = BlockRef(index as u32);
+        let targets: Vec<ExecutableBlockRef> = match &block.terminator {
+            ExecutableTerminator::Return { .. } | ExecutableTerminator::Unreachable => Vec::new(),
+            ExecutableTerminator::Jump { target, .. } => vec![*target],
+            ExecutableTerminator::Branch { then_target, else_target, .. } => vec![*then_target, *else_target],
+            ExecutableTerminator::Raise { resume_target, .. } => vec![*resume_target],
         };
-        match &block.terminator {
-            ExecutableTerminator::Return { .. } => {}
-            ExecutableTerminator::Jump { target, .. } => stack.push(*target),
-            ExecutableTerminator::Branch { then_target, else_target, .. } => {
-                stack.push(*else_target);
-                stack.push(*then_target);
-            }
-            ExecutableTerminator::Raise { resume_target, .. } => stack.push(*resume_target),
-            ExecutableTerminator::Unreachable => {}
-        }
+        adjacency.extend(targets.into_iter().map(|target| (from, target)));
     }
-    order.reverse();
-    order
+
+    let mut graph = boost_collection::MemoryGraph::new(true);
+    graph.add_vertex(function.entry).expect("fresh graph");
+    for index in 0..function.blocks.len() {
+        graph.add_vertex(BlockRef(index as u32)).ok();
+    }
+    for (_, target) in &adjacency {
+        graph.add_vertex(*target).ok();
+    }
+    for (from, target) in adjacency {
+        graph.add_edge(from, target, ()).expect("both endpoints were added as vertices");
+    }
+
+    boost_math::graph_theory::reverse_postorder(&graph, &function.entry).expect("the entry is a vertex of the graph").into_iter().collect()
 }
 
 #[cfg(test)]

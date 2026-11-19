@@ -3,6 +3,8 @@
 //! 覆盖定义唯一性、同块 SSA 顺序、控制边、effect-token
 //! 配对 / 链成员关系、guard 出口表、入口可达性、支配关系，以及指纹重算。
 
+use boost_collection::GraphView;
+use boost_math::graph_theory::{cycle_path, reachable_from, reverse_postorder};
 use science_types::{Diagnostic, DiagnosticCode, Result};
 
 use super::{
@@ -13,7 +15,7 @@ use super::{
     terminator::Terminator,
 };
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 
 /// 校验 module 在结构上可被后端接受。
 pub fn verify_module(module: &ExecutionModule) -> Result<()> {
@@ -71,8 +73,7 @@ pub fn verify_module(module: &ExecutionModule) -> Result<()> {
                 for used in operands_of(&op.kind) {
                     if block_reachable {
                         verify_ssa_use(used, region.id, block.id, &local_defs, &def_block, &cfg)?;
-                    }
-                    else {
+                    } else {
                         verify_ssa_use_local_only(used, region.id, block.id, &local_defs, &def_block)?;
                     }
                 }
@@ -96,8 +97,7 @@ pub fn verify_module(module: &ExecutionModule) -> Result<()> {
             }
             if block_reachable {
                 verify_terminator(module, region.id, block.id, &block.terminator, &block_index, &local_defs, &def_block, &cfg)?;
-            }
-            else {
+            } else {
                 // 不可达块仍校验边目标存在与 arity，但不做支配证明。
                 verify_terminator_shape(module, region.id, &block.terminator, &block_index)?;
             }
@@ -140,8 +140,7 @@ fn verify_ssa_use(
     if local_defs.contains(&used) {
         return Ok(());
     }
-    let Some(&(def_region, def_bid)) = def_block.get(&used)
-    else {
+    let Some(&(def_region, def_bid)) = def_block.get(&used) else {
         return Err(diag("use_before_def"));
     };
     if def_region != region {
@@ -181,25 +180,29 @@ impl RegionCfg {
         for block in &region.blocks {
             let from = index_of[&block.id];
             for target in terminator_targets(&block.terminator) {
-                let Some(&to) = index_of.get(&target)
-                else {
+                let Some(&to) = index_of.get(&target) else {
                     return Err(diag("terminator_unknown_target"));
                 };
                 succs[from].push(to);
             }
         }
 
-        let mut reachable_idx = HashSet::new();
-        let mut queue = VecDeque::new();
-        queue.push_back(entry_idx);
-        reachable_idx.insert(entry_idx);
-        while let Some(u) = queue.pop_front() {
+        // 入口可达集与逆后序都走共享图论核：块下标投影为借用视图，
+        // 出边保持 `terminator_targets` 的声明顺序，迭代序与旧实现一致，
+        // 且显式栈不受区域块数影响递归深度。
+        let ids: Vec<usize> = (0..n).collect();
+        let mut view = GraphView::new(true);
+        for id in &ids {
+            view.add_vertex(id);
+        }
+        for u in 0..n {
             for &v in &succs[u] {
-                if reachable_idx.insert(v) {
-                    queue.push_back(v);
-                }
+                view.add_edge(&ids[u], &ids[v]);
             }
         }
+        let start = &ids[entry_idx];
+        let reachable_idx: HashSet<usize> =
+            reachable_from(&view, &start).expect("entry_idx is a vertex of the view").into_iter().copied().collect();
 
         let mut reachable = HashSet::new();
         for &idx in &reachable_idx {
@@ -218,7 +221,7 @@ impl RegionCfg {
             }
         }
 
-        let rpo = reverse_postorder(entry_idx, &succs, &reachable_idx);
+        let rpo: Vec<usize> = reverse_postorder(&view, &start).expect("entry_idx is a vertex of the view").into_iter().copied().collect();
         let mut rpo_number = vec![0usize; n];
         for (num, &b) in rpo.iter().enumerate() {
             rpo_number[b] = num;
@@ -265,12 +268,10 @@ impl RegionCfg {
         if def == use_block {
             return true;
         }
-        let Some(&def_i) = self.index_of.get(&def)
-        else {
+        let Some(&def_i) = self.index_of.get(&def) else {
             return false;
         };
-        let Some(&use_i) = self.index_of.get(&use_block)
-        else {
+        let Some(&use_i) = self.index_of.get(&use_block) else {
             return false;
         };
         if !self.reachable.contains(&def) || !self.reachable.contains(&use_block) {
@@ -290,26 +291,6 @@ impl RegionCfg {
         }
         true
     }
-}
-
-fn reverse_postorder(entry: usize, succs: &[Vec<usize>], reachable: &HashSet<usize>) -> Vec<usize> {
-    let n = succs.len();
-    let mut visited = vec![false; n];
-    let mut post = Vec::new();
-    fn dfs(u: usize, succs: &[Vec<usize>], reachable: &HashSet<usize>, visited: &mut [bool], post: &mut Vec<usize>) {
-        visited[u] = true;
-        for &v in &succs[u] {
-            if reachable.contains(&v) && !visited[v] {
-                dfs(v, succs, reachable, visited, post);
-            }
-        }
-        post.push(u);
-    }
-    if reachable.contains(&entry) {
-        dfs(entry, succs, reachable, &mut visited, &mut post);
-    }
-    post.reverse();
-    post
 }
 
 fn intersect(mut finger1: usize, mut finger2: usize, idom: &[usize], rpo_number: &[usize]) -> usize {
@@ -367,24 +348,14 @@ fn verify_effect_edges(module: &ExecutionModule) -> Result<()> {
 }
 
 /// `precedes_from` 形成的函数图若含环（含相互指向），则 effect 序不可线性化。
+/// 环判定复用共享图论核：token 为顶点、`token -> predecessor` 为有向边，
+/// 闭合环的存在性与旧的逐链扫描等价。
 fn effect_predecessor_has_cycle(predecessor: &HashMap<EffectToken, EffectToken>) -> bool {
-    for &start in predecessor.keys() {
-        let mut cur = start;
-        let mut on_path = HashSet::new();
-        while let Some(&prev) = predecessor.get(&cur) {
-            if !on_path.insert(cur) {
-                return true;
-            }
-            if on_path.contains(&prev) {
-                return true;
-            }
-            cur = prev;
-            if on_path.len() > predecessor.len() {
-                return true;
-            }
-        }
+    let mut view = GraphView::new(true);
+    for (token, previous) in predecessor {
+        view.add_edge(token, previous);
     }
-    false
+    matches!(cycle_path(&view), Ok(Some(_)))
 }
 
 fn verify_terminator_shape(
@@ -394,8 +365,7 @@ fn verify_terminator_shape(
     block_index: &HashMap<(RegionId, BlockId), usize>,
 ) -> Result<()> {
     let check_edge = |target: BlockId, arguments: &[SsaValueId]| -> Result<()> {
-        let Some(idx) = block_index.get(&(region, target)).copied()
-        else {
+        let Some(idx) = block_index.get(&(region, target)).copied() else {
             return Err(diag("terminator_unknown_target"));
         };
         let block = &module.regions.iter().find(|r| r.id == region).expect("region").blocks[idx];
@@ -434,8 +404,7 @@ fn verify_terminator(
     cfg: &RegionCfg,
 ) -> Result<()> {
     let check_edge = |target: BlockId, arguments: &[SsaValueId]| -> Result<()> {
-        let Some(idx) = block_index.get(&(region, target)).copied()
-        else {
+        let Some(idx) = block_index.get(&(region, target)).copied() else {
             return Err(diag("terminator_unknown_target"));
         };
         let block = &module.regions.iter().find(|r| r.id == region).expect("region").blocks[idx];

@@ -1,9 +1,11 @@
 //! 分包计划实现：链接保留集合 → 确定性 chunk 集合。
 //! 语义模型（根集合、可达签名、收缩单元、执行序与诊断口径）见 [`super`] 模块注释。
 
-use std::cmp::Reverse;
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+
+use boost_collection::GraphView;
+use boost_math::graph_theory::{strongly_connected_components, topological_partition_by};
 
 use crate::diag::PackDiagnostic;
 use crate::graph::{ModuleGraph, NodeKind};
@@ -79,9 +81,7 @@ pub fn plan_chunks(graph: &ModuleGraph, plan: &LinkPlan) -> ChunkPlan {
     // 文本由 emit 层在导入者所属 chunk 内合成，二者都不是 chunk 成员。
     let mut retained = vec![false; node_count];
     for module in &plan.modules {
-        if module.node < node_count
-            && !matches!(graph.nodes[module.node].kind, NodeKind::Style | NodeKind::Json)
-        {
+        if module.node < node_count && !matches!(graph.nodes[module.node].kind, NodeKind::Style | NodeKind::Json) {
             retained[module.node] = true;
         }
     }
@@ -93,8 +93,7 @@ pub fn plan_chunks(graph: &ModuleGraph, plan: &LinkPlan) -> ChunkPlan {
     // 互操作壳与 `module`/`exports`/`require` 材料只在独立文件里成立。
     let mut isolated = vec![false; node_count];
     for (index, node) in graph.nodes.iter().enumerate() {
-        isolated[index] = retained[index]
-            && (node.record.is_scope_incomplete() || node.kind == crate::graph::NodeKind::Cjs);
+        isolated[index] = retained[index] && (node.record.is_scope_incomplete() || node.kind == crate::graph::NodeKind::Cjs);
     }
 
     // 依赖边 = 可观察求值目标 ∪ 本模块传播了符号需求的目标。前者是 ESM 求值
@@ -109,13 +108,12 @@ pub fn plan_chunks(graph: &ModuleGraph, plan: &LinkPlan) -> ChunkPlan {
         }
         used_targets[module.node].extend(module.used_targets.iter().copied());
         used_targets[module.node].extend(module.used_reexports.iter().map(|used| match used {
-            UsedReexport::Named { target_node, .. }
-            | UsedReexport::All { target_node, .. }
-            | UsedReexport::Namespace { target_node, .. } => *target_node,
+            UsedReexport::Named { target_node, .. } | UsedReexport::All { target_node, .. } | UsedReexport::Namespace { target_node, .. } => {
+                *target_node
+            }
         }));
     }
     let mut forward: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); node_count];
-    let mut reverse: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); node_count];
     for (index, node) in graph.nodes.iter().enumerate() {
         if !retained[index] {
             continue;
@@ -130,7 +128,6 @@ pub fn plan_chunks(graph: &ModuleGraph, plan: &LinkPlan) -> ChunkPlan {
                 continue;
             }
             forward[index].insert(target);
-            reverse[target].insert(index);
         }
     }
 
@@ -140,7 +137,7 @@ pub fn plan_chunks(graph: &ModuleGraph, plan: &LinkPlan) -> ChunkPlan {
     // 规则提升为独立上游 chunk，避免 chunk 级环让 opaque 文件在求值期读取
     // 未初始化绑定。独立发射的真 ESM 文件天然保持 live binding 与求值顺序，
     // 不需要同 chunk 平铺来维持。
-    let raw_units = strong_components(node_count, &retained, &forward, &reverse);
+    let raw_units = strong_components(node_count, &retained, &forward);
     let mut units: Vec<Vec<usize>> = Vec::with_capacity(raw_units.len());
     let mut unit_isolated: Vec<bool> = Vec::with_capacity(raw_units.len());
     for members in raw_units {
@@ -168,24 +165,22 @@ pub fn plan_chunks(graph: &ModuleGraph, plan: &LinkPlan) -> ChunkPlan {
     }
     let min_node: Vec<usize> = units.iter().map(|members| members[0]).collect();
 
-    // 单元级邻接（去自环）。
+    // 单元级前向邻接（去自环）；反向边不再单独维护，chunk 内 Kahn 与收缩都
+    // 经 `GraphView` 的自带入边索引。
     let mut unit_forward: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); units.len()];
-    let mut unit_reverse: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); units.len()];
     for unit in 0..units.len() {
         for &member in &units[unit] {
             for &target in &forward[member] {
                 let other = unit_of[target];
                 if other != unit {
                     unit_forward[unit].insert(other);
-                    unit_reverse[other].insert(unit);
                 }
             }
         }
     }
 
     // 根集合：保留的静态入口 ∪ 存活动态边目标（已是入口节点的目标不另立根）。
-    let entry_node: Vec<Option<usize>> =
-        graph.entries.iter().map(|entry| graph.index_of(&entry.id)).collect();
+    let entry_node: Vec<Option<usize>> = graph.entries.iter().map(|entry| graph.index_of(&entry.id)).collect();
     let mut entry_nodes: BTreeSet<usize> = BTreeSet::new();
     let mut roots: BTreeSet<RootId> = BTreeSet::new();
     for (index, node) in entry_node.iter().enumerate() {
@@ -361,37 +356,32 @@ pub fn plan_chunks(graph: &ModuleGraph, plan: &LinkPlan) -> ChunkPlan {
 
     let mut chunks: Vec<Chunk> = Vec::with_capacity(drafts.len());
     for (chunk_index, draft) in drafts.iter().enumerate() {
-        // chunk 内执行序：Kahn（被依赖单元先于导入者；同层按 min 节点先出）。
+        // chunk 内执行序：共享图论核的优先级 Kahn（被依赖单元先于导入者；
+        // 同层按 min 节点先出，min 节点互异故结果确定）。收缩后 chunk 内应为
+        // DAG，残差补齐仅作防御，不丢模块。
         let in_chunk: BTreeSet<usize> = draft.units.iter().copied().collect();
-        let mut pending: BTreeMap<usize, usize> = BTreeMap::new();
-        for &unit in &draft.units {
-            let count = unit_forward[unit].iter().filter(|next| in_chunk.contains(next)).count();
-            pending.insert(unit, count);
-        }
-        let mut ready: BinaryHeap<Reverse<(usize, usize)>> = BinaryHeap::new();
-        for &unit in &draft.units {
-            if pending[&unit] == 0 {
-                ready.push(Reverse((min_node[unit], unit)));
+        let mut chunk_units: Vec<usize> = draft.units.clone();
+        chunk_units.sort_unstable();
+        let (ordered, remaining) = {
+            let mut chunk_view = GraphView::new(true);
+            for unit in &chunk_units {
+                chunk_view.add_vertex(unit);
             }
-        }
-        let mut modules = Vec::new();
-        let mut emitted = 0usize;
-        while let Some(Reverse((_, unit))) = ready.pop() {
-            modules.extend(units[unit].iter().copied());
-            emitted += 1;
-            for &importer in &unit_reverse[unit] {
-                if let Some(count) = pending.get_mut(&importer) {
-                    *count = count.saturating_sub(1);
-                    if *count == 0 {
-                        ready.push(Reverse((min_node[importer], importer)));
+            for unit in &chunk_units {
+                for next in &unit_forward[*unit] {
+                    if in_chunk.contains(next) {
+                        chunk_view.add_edge(unit, next);
                     }
                 }
             }
+            topological_partition_by(&chunk_view, |unit| min_node[**unit]).expect("the view is built directed")
+        };
+        let mut modules = Vec::with_capacity(draft.units.len());
+        for unit in ordered {
+            modules.extend(units[*unit].iter().copied());
         }
-        if emitted < draft.units.len() {
-            // 防御：收缩后 chunk 内无环，Kahn 必完成；未出队单元按 min 节点补齐，不丢模块。
-            let mut rest: Vec<usize> =
-                draft.units.iter().filter(|&&unit| pending[&unit] > 0).copied().collect();
+        if !remaining.is_empty() {
+            let mut rest: Vec<usize> = remaining.into_iter().copied().collect();
             rest.sort_by_key(|&unit| min_node[unit]);
             for unit in rest {
                 modules.extend(units[unit].iter().copied());
@@ -408,12 +398,7 @@ pub fn plan_chunks(graph: &ModuleGraph, plan: &LinkPlan) -> ChunkPlan {
                 }
             }
         }
-        chunks.push(Chunk {
-            id: draft.id.clone(),
-            origin: draft.origin.clone(),
-            modules,
-            depends_on: depends_on.into_iter().collect(),
-        });
+        chunks.push(Chunk { id: draft.id.clone(), origin: draft.origin.clone(), modules, depends_on: depends_on.into_iter().collect() });
     }
 
     // 入口映射：按 graph.entries 顺序，仅保留的入口。
@@ -453,21 +438,10 @@ pub fn plan_chunks(graph: &ModuleGraph, plan: &LinkPlan) -> ChunkPlan {
         }
         let chunk_id = &chunks[chunk_of_unit[unit_of[index]]].id;
         let path = node.record.path.clone().unwrap_or_else(|| normalize_path(&node.resolved.path));
-        diagnostics.push(
-            PackDiagnostic::new(
-                INCOMPLETE_FACTS,
-                format!("模块事实不完整，保守保留在 chunk `{chunk_id}`"),
-            )
-            .with_path(path),
-        );
+        diagnostics.push(PackDiagnostic::new(INCOMPLETE_FACTS, format!("模块事实不完整，保守保留在 chunk `{chunk_id}`")).with_path(path));
     }
 
-    ChunkPlan {
-        chunks,
-        entry_chunks,
-        dynamic_boundaries: boundaries.into_iter().collect(),
-        diagnostics,
-    }
+    ChunkPlan { chunks, entry_chunks, dynamic_boundaries: boundaries.into_iter().collect(), diagnostics }
 }
 
 /// 根的所在单元；入口未解析到节点时返回 `None`（根集合已保证保留）。
@@ -489,15 +463,9 @@ fn root_label(graph: &ModuleGraph, root: RootId) -> String {
 /// 分区来源根：单入口根、单异步根；其余（多根共同可达与防御性零根）为共享。
 fn chunk_origin(graph: &ModuleGraph, signature: &BTreeSet<RootId>) -> ChunkOrigin {
     match signature.iter().next() {
-        Some(&RootId::Entry(index)) if signature.len() == 1 => {
-            ChunkOrigin::Entry { logical: graph.entries[index].logical.clone() }
-        }
-        Some(&RootId::Async(node)) if signature.len() == 1 => {
-            ChunkOrigin::Async { root_node: node }
-        }
-        _ => ChunkOrigin::Shared {
-            roots: signature.iter().map(|&root| root_label(graph, root)).collect(),
-        },
+        Some(&RootId::Entry(index)) if signature.len() == 1 => ChunkOrigin::Entry { logical: graph.entries[index].logical.clone() },
+        Some(&RootId::Async(node)) if signature.len() == 1 => ChunkOrigin::Async { root_node: node },
+        _ => ChunkOrigin::Shared { roots: signature.iter().map(|&root| root_label(graph, root)).collect() },
     }
 }
 
@@ -607,64 +575,26 @@ fn normalize_path(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
-/// Kosaraju 迭代求强连通分量；单元按 min 成员升序，成员内部升序。
-fn strong_components(
-    node_count: usize,
-    retained: &[bool],
-    forward: &[BTreeSet<usize>],
-    reverse: &[BTreeSet<usize>],
-) -> Vec<Vec<usize>> {
-    // 第一遍：前向 DFS 完成序。
-    let mut visited = vec![false; node_count];
-    let mut order: Vec<usize> = Vec::with_capacity(node_count);
-    for start in 0..node_count {
-        if !retained[start] || visited[start] {
-            continue;
-        }
-        let mut stack: Vec<(usize, std::vec::IntoIter<usize>)> = Vec::new();
-        visited[start] = true;
-        stack.push((start, forward[start].iter().copied().collect::<Vec<_>>().into_iter()));
-        while let Some((node, children)) = stack.last_mut() {
-            match children.next() {
-                Some(next) => {
-                    if !visited[next] {
-                        visited[next] = true;
-                        stack.push((
-                            next,
-                            forward[next].iter().copied().collect::<Vec<_>>().into_iter(),
-                        ));
-                    }
-                }
-                None => {
-                    order.push(*node);
-                    stack.pop();
-                }
+/// 强连通收缩走共享图论核（Kosaraju）；单元按 min 成员升序，成员内部升序。
+fn strong_components(node_count: usize, retained: &[bool], forward: &[BTreeSet<usize>]) -> Vec<Vec<usize>> {
+    // 收缩是普通有向图的强连通分量：把保留节点按编号升序投影为借用视图，
+    // 交给共享 Kosaraju。成员按来源顺序（即节点号升序）、分量按首成员排序，
+    // 与旧的本地实现逐位一致；反向邻接由视图自身维护，不再单独构造。
+    let kept: Vec<usize> = (0..node_count).filter(|&node| retained[node]).collect();
+    let mut view = GraphView::new(true);
+    for node in &kept {
+        view.add_vertex(node);
+    }
+    for node in &kept {
+        for target in &forward[*node] {
+            if retained[*target] {
+                view.add_edge(node, target);
             }
         }
     }
-
-    // 第二遍：逆完成序沿反向邻接收集分量。
-    let mut assigned = vec![false; node_count];
-    let mut components: Vec<Vec<usize>> = Vec::new();
-    for &start in order.iter().rev() {
-        if assigned[start] {
-            continue;
-        }
-        let mut component = Vec::new();
-        let mut stack = vec![start];
-        assigned[start] = true;
-        while let Some(node) = stack.pop() {
-            component.push(node);
-            for &next in &reverse[node] {
-                if !assigned[next] {
-                    assigned[next] = true;
-                    stack.push(next);
-                }
-            }
-        }
-        component.sort_unstable();
-        components.push(component);
-    }
-    components.sort_by_key(|component| component[0]);
-    components
+    strongly_connected_components(&view)
+        .expect("the view is built directed")
+        .into_iter()
+        .map(|members| members.into_iter().copied().collect())
+        .collect()
 }

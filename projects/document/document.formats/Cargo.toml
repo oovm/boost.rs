@@ -9,7 +9,9 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
+boost-collection = { workspace = true }
 boost-harness = { workspace = true }
+boost-math = { workspace = true }
 document-ir = { workspace = true }
 acorn-codec = { workspace = true, optional = true }
 blake3 = { workspace = true, optional = true }

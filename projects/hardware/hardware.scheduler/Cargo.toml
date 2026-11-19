@@ -11,6 +11,7 @@ publish.workspace = true
 [dependencies]
 serde = { workspace = true }
 thiserror = { workspace = true }
+boost-math = { workspace = true }
 hardware-capability = { workspace = true }
 hardware-harness = { workspace = true }
 hardware-ir = { workspace = true }

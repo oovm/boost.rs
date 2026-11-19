@@ -133,7 +133,9 @@ impl PgPassword {
         use database_protocol_pgsql::auth::{ScramVerifier, md5_hex, verifier_for};
 
         let mut salt = [0u8; 16];
-        boost_random::Secure::system().fill(&mut salt).map_err(|error| ObjectError::Persistence(format!("cannot salt a role password: {error}")))?;
+        boost_random::Secure::system()
+            .fill(&mut salt)
+            .map_err(|error| ObjectError::Persistence(format!("cannot salt a role password: {error}")))?;
         // PostgreSQL's default iteration count for `password_encryption = scram-sha-256`.
         const ITERATIONS: u32 = 4096;
         let ScramVerifier { stored_key, server_key } = verifier_for(password.as_bytes(), &salt, ITERATIONS);
@@ -199,16 +201,7 @@ pub struct PgSequence {
 impl PgSequence {
     /// A sequence with the given `START`, `INCREMENT` and bounds.
     pub fn new(name: impl Into<String>, start: i64, increment: i64, min_value: i64, max_value: i64, cycle: bool) -> Self {
-        Self {
-            name: name.into(),
-            start,
-            increment,
-            min_value,
-            max_value,
-            cycle,
-            last_value: start,
-            is_called: false,
-        }
+        Self { name: name.into(), start, increment, min_value, max_value, cycle, last_value: start, is_called: false }
     }
 
     /// PostgreSQL's default sequence over 64-bit values.
@@ -220,8 +213,7 @@ impl PgSequence {
     fn advance(&mut self) -> Result<i64, ObjectError> {
         let next = if self.is_called {
             self.last_value.checked_add(self.increment).ok_or(ObjectError::SequenceExhausted(self.name.clone()))?
-        }
-        else {
+        } else {
             self.last_value
         };
         let out_of_range = if self.increment > 0 { next > self.max_value } else { next < self.min_value };
@@ -231,8 +223,7 @@ impl PgSequence {
             }
             // `CYCLE` wraps to the opposite bound.
             self.last_value = if self.increment > 0 { self.min_value } else { self.max_value };
-        }
-        else {
+        } else {
             self.last_value = next;
         }
         self.is_called = true;
@@ -389,14 +380,7 @@ impl ObjectDocument {
             revision: 1,
             // The bootstrap database and role every gateway starts from.
             databases: vec![PgDatabase::new("postgres")],
-            roles: vec![PgRole {
-                name: "postgres".to_string(),
-                superuser: true,
-                createdb: true,
-                login: true,
-                inherit: true,
-                password: None,
-            }],
+            roles: vec![PgRole { name: "postgres".to_string(), superuser: true, createdb: true, login: true, inherit: true, password: None }],
             memberships: Vec::new(),
             sequences: Vec::new(),
             grants: Vec::new(),
@@ -433,8 +417,7 @@ impl PgObjectCatalog {
                 )));
             }
             document
-        }
-        else {
+        } else {
             ObjectDocument::empty()
         };
         let catalog = Self { state: Mutex::new(state), path: Some(path) };
@@ -499,13 +482,7 @@ impl PgObjectCatalog {
 
     /// Adds privileges to a role. `table_exists` validates the relation name
     /// against the live schema so a grant to a missing table is `42P01`.
-    pub fn grant(
-        &self,
-        role: &str,
-        table: &str,
-        privileges: &[PgPrivilege],
-        table_exists: impl Fn(&str) -> bool,
-    ) -> Result<(), ObjectError> {
+    pub fn grant(&self, role: &str, table: &str, privileges: &[PgPrivilege], table_exists: impl Fn(&str) -> bool) -> Result<(), ObjectError> {
         let mut state = self.lock();
         if !state.roles.iter().any(|existing| existing.name == role) {
             return Err(ObjectError::UnknownRole(role.to_string()));
@@ -533,12 +510,7 @@ impl PgObjectCatalog {
     /// supplies the tables the statement must cover, so a later `CREATE TABLE`
     /// is not covered — PostgreSQL's bulk grant only touches existing
     /// relations, and `ALTER DEFAULT PRIVILEGES` is what changes the future.
-    pub fn grant_tables(
-        &self,
-        role: &str,
-        tables: &[String],
-        privileges: &[PgPrivilege],
-    ) -> Result<(), ObjectError> {
+    pub fn grant_tables(&self, role: &str, tables: &[String], privileges: &[PgPrivilege]) -> Result<(), ObjectError> {
         let mut state = self.lock();
         if !state.roles.iter().any(|existing| existing.name == role) {
             return Err(ObjectError::UnknownRole(role.to_string()));
@@ -560,20 +532,13 @@ impl PgObjectCatalog {
     }
 
     /// Removes one privilege set from `role` on every named table in one save.
-    pub fn revoke_tables(
-        &self,
-        role: &str,
-        tables: &[String],
-        privileges: &[PgPrivilege],
-    ) -> Result<(), ObjectError> {
+    pub fn revoke_tables(&self, role: &str, tables: &[String], privileges: &[PgPrivilege]) -> Result<(), ObjectError> {
         let mut state = self.lock();
         if !state.roles.iter().any(|existing| existing.name == role) {
             return Err(ObjectError::UnknownRole(role.to_string()));
         }
         let mut next = state.clone();
-        next.grants.retain(|grant| {
-            grant.role != role || !tables.contains(&grant.table) || !privileges.contains(&grant.privilege)
-        });
+        next.grants.retain(|grant| grant.role != role || !tables.contains(&grant.table) || !privileges.contains(&grant.privilege));
         next.revision = next.revision.saturating_add(1);
         self.save(&next)?;
         *state = next;
@@ -581,13 +546,7 @@ impl PgObjectCatalog {
     }
 
     /// Removes privileges from a role.
-    pub fn revoke(
-        &self,
-        role: &str,
-        table: &str,
-        privileges: &[PgPrivilege],
-        table_exists: impl Fn(&str) -> bool,
-    ) -> Result<(), ObjectError> {
+    pub fn revoke(&self, role: &str, table: &str, privileges: &[PgPrivilege], table_exists: impl Fn(&str) -> bool) -> Result<(), ObjectError> {
         let mut state = self.lock();
         if !state.roles.iter().any(|existing| existing.name == role) {
             return Err(ObjectError::UnknownRole(role.to_string()));
@@ -596,8 +555,7 @@ impl PgObjectCatalog {
             return Err(ObjectError::UnknownTable(table.to_string()));
         }
         let mut next = state.clone();
-        next.grants
-            .retain(|grant| !(grant.role == role && grant.table == table && privileges.contains(&grant.privilege)));
+        next.grants.retain(|grant| !(grant.role == role && grant.table == table && privileges.contains(&grant.privilege)));
         next.revision = next.revision.saturating_add(1);
         self.save(&next)?;
         *state = next;
@@ -720,11 +678,8 @@ impl PgObjectCatalog {
     pub fn alter_sequence(&self, name: &str, alteration: &PgSequenceAlteration) -> Result<(), ObjectError> {
         let mut state = self.lock();
         let mut next = state.clone();
-        let sequence = next
-            .sequences
-            .iter_mut()
-            .find(|sequence| sequence.name == name)
-            .ok_or_else(|| ObjectError::UnknownTable(name.to_string()))?;
+        let sequence =
+            next.sequences.iter_mut().find(|sequence| sequence.name == name).ok_or_else(|| ObjectError::UnknownTable(name.to_string()))?;
         if let Some(increment) = alteration.increment {
             sequence.increment = increment;
         }
@@ -769,11 +724,8 @@ impl PgObjectCatalog {
     pub fn nextval(&self, name: &str) -> Result<i64, ObjectError> {
         let mut state = self.lock();
         let mut next = state.clone();
-        let sequence = next
-            .sequences
-            .iter_mut()
-            .find(|sequence| sequence.name == name)
-            .ok_or_else(|| ObjectError::UnknownTable(name.to_string()))?;
+        let sequence =
+            next.sequences.iter_mut().find(|sequence| sequence.name == name).ok_or_else(|| ObjectError::UnknownTable(name.to_string()))?;
         let value = sequence.advance()?;
         next.revision = next.revision.saturating_add(1);
         self.save(&next)?;
@@ -784,11 +736,8 @@ impl PgObjectCatalog {
     /// Last value `nextval` handed out for `name`.
     pub fn currval(&self, name: &str) -> Result<i64, ObjectError> {
         let state = self.lock();
-        let sequence = state
-            .sequences
-            .iter()
-            .find(|sequence| sequence.name == name)
-            .ok_or_else(|| ObjectError::UnknownTable(name.to_string()))?;
+        let sequence =
+            state.sequences.iter().find(|sequence| sequence.name == name).ok_or_else(|| ObjectError::UnknownTable(name.to_string()))?;
         if !sequence.is_called {
             return Err(ObjectError::SequenceNotCalled(name.to_string()));
         }
@@ -799,11 +748,8 @@ impl PgObjectCatalog {
     pub fn setval(&self, name: &str, value: i64, is_called: bool) -> Result<i64, ObjectError> {
         let mut state = self.lock();
         let mut next = state.clone();
-        let sequence = next
-            .sequences
-            .iter_mut()
-            .find(|sequence| sequence.name == name)
-            .ok_or_else(|| ObjectError::UnknownTable(name.to_string()))?;
+        let sequence =
+            next.sequences.iter_mut().find(|sequence| sequence.name == name).ok_or_else(|| ObjectError::UnknownTable(name.to_string()))?;
         sequence.last_value = value;
         sequence.is_called = is_called;
         next.revision = next.revision.saturating_add(1);
@@ -822,8 +768,7 @@ impl PgObjectCatalog {
     }
 
     fn save(&self, state: &ObjectDocument) -> Result<(), ObjectError> {
-        let Some(path) = &self.path
-        else {
+        let Some(path) = &self.path else {
             return Ok(());
         };
         write_document(path, state)
@@ -831,8 +776,7 @@ impl PgObjectCatalog {
 }
 
 fn write_document(path: &Path, state: &ObjectDocument) -> Result<(), ObjectError> {
-    let json = serde_json::to_string_pretty(state)
-        .map_err(|error| ObjectError::Persistence(format!("cannot encode SQL objects: {error}")))?;
+    let json = serde_json::to_string_pretty(state).map_err(|error| ObjectError::Persistence(format!("cannot encode SQL objects: {error}")))?;
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             fs::create_dir_all(parent)
@@ -866,18 +810,22 @@ pub fn role_names(catalog: &PgObjectCatalog) -> BTreeSet<String> {
 ///
 /// This is PostgreSQL's `pg_has_role` answer: membership exists whether or not
 /// the role inherits, so cycle detection and `is_member_of` use it directly.
+/// The closure itself is the shared reachability core over the membership
+/// edges; a role with no outgoing edge simply reaches itself.
 fn reachable_roles(state: &ObjectDocument, role: &str) -> BTreeSet<String> {
-    let mut names = BTreeSet::new();
-    names.insert(role.to_string());
-    let mut frontier = vec![role.to_string()];
-    while let Some(current) = frontier.pop() {
-        for edge in state.memberships.iter().filter(|edge| edge.member == current) {
-            if names.insert(edge.role.clone()) {
-                frontier.push(edge.role.clone());
-            }
-        }
+    let mut graph = boost_collection::MemoryGraph::<String>::new(true);
+    for edge in &state.memberships {
+        graph.add_vertex(edge.member.clone()).ok();
+        graph.add_vertex(edge.role.clone()).ok();
     }
-    names
+    for edge in &state.memberships {
+        graph.add_edge(edge.member.clone(), edge.role.clone(), ()).expect("endpoints were added");
+    }
+    match boost_math::graph_theory::reachable_from(&graph, &role.to_string()) {
+        Ok(reached) => reached.into_iter().collect(),
+        // `role` never appears as a member: the closure is just itself.
+        Err(_) => std::iter::once(role.to_string()).collect(),
+    }
 }
 
 /// The roles whose privileges `role` automatically uses: itself, and every
@@ -906,7 +854,10 @@ mod tests {
             assert!(!catalog.create_database(PgDatabase::new("app"), true).unwrap());
             assert_eq!(catalog.create_database(PgDatabase::new("app"), false).unwrap_err().sqlstate(), "42P04");
             catalog
-                .create_role(PgRole { name: "reader".into(), superuser: false, createdb: false, login: true, inherit: true, password: None }, false)
+                .create_role(
+                    PgRole { name: "reader".into(), superuser: false, createdb: false, login: true, inherit: true, password: None },
+                    false,
+                )
                 .unwrap();
             catalog.grant("reader", "orders", &[PgPrivilege::Select], |table| table == "orders").unwrap();
             assert!(catalog.has_privilege("reader", "orders", PgPrivilege::Select));
@@ -932,7 +883,10 @@ mod tests {
             assert_eq!(salt.len(), 16);
             assert_eq!(verifier.stored_key.len(), 32);
             catalog
-                .create_role(PgRole { name: "app".into(), superuser: false, createdb: false, login: true, inherit: true, password: Some(password) }, false)
+                .create_role(
+                    PgRole { name: "app".into(), superuser: false, createdb: false, login: true, inherit: true, password: Some(password) },
+                    false,
+                )
                 .unwrap();
         }
         let reopened = PgObjectCatalog::open(&path).unwrap();
@@ -946,14 +900,8 @@ mod tests {
     #[test]
     fn membership_edges_grant_privileges_transitively_and_reject_cycles() {
         let catalog = PgObjectCatalog::new_in_memory();
-        let role = |name: &str, inherit: bool| PgRole {
-            name: name.into(),
-            superuser: false,
-            createdb: false,
-            login: true,
-            inherit,
-            password: None,
-        };
+        let role =
+            |name: &str, inherit: bool| PgRole { name: name.into(), superuser: false, createdb: false, login: true, inherit, password: None };
         catalog.create_role(role("reader", true), false).unwrap();
         catalog.create_role(role("app", true), false).unwrap();
         catalog.create_role(role("worker", false), false).unwrap();
@@ -986,7 +934,9 @@ mod tests {
     fn grant_errors_carry_their_sqlstates() {
         let catalog = PgObjectCatalog::new_in_memory();
         assert_eq!(catalog.grant("ghost", "orders", &[PgPrivilege::Select], |_| true).unwrap_err().sqlstate(), "42704");
-        catalog.create_role(PgRole { name: "reader".into(), superuser: false, createdb: false, login: true, inherit: true, password: None }, false).unwrap();
+        catalog
+            .create_role(PgRole { name: "reader".into(), superuser: false, createdb: false, login: true, inherit: true, password: None }, false)
+            .unwrap();
         assert_eq!(catalog.grant("reader", "missing", &[PgPrivilege::Select], |_| false).unwrap_err().sqlstate(), "42P01");
         assert!(catalog.has_privilege("unknown-role", "missing", PgPrivilege::Delete));
         assert!(catalog.is_superuser("postgres"));

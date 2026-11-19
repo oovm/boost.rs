@@ -6,8 +6,8 @@
 
 use boost_collection::{CsrGraph, GraphError, GraphView, MemoryGraph};
 use boost_math::graph_theory::{
-    ShortestPath, connected_components, cycle_path, reachable_from, shortest_path_non_negative,
-    strongly_connected_components, topological_order, topological_order_by,
+    ShortestPath, connected_components, cycle_path, reachable_from, reverse_postorder, shortest_path_non_negative,
+    strongly_connected_components, topological_order, topological_order_by, topological_partition, topological_partition_by,
 };
 
 fn chain() -> MemoryGraph<&'static str> {
@@ -275,4 +275,114 @@ fn shortest_path_returns_a_typed_result() {
             .expect("weights are representable");
     assert_eq!(found.distance, Some(2));
     assert_eq!(found.path, vec!["b", "c"]);
+}
+
+#[test]
+fn topological_partition_keeps_the_prefix_when_a_cycle_remains() {
+    // a -> b -> c 与 d -> e -> d：前缀只含 a、b、c，残差按来源顺序给出环上的 d、e。
+    let mut graph = MemoryGraph::<&'static str>::new(true);
+    for vertex in ["a", "b", "c", "d", "e"] {
+        graph.add_vertex(vertex).expect("unique vertex");
+    }
+    graph.add_edge("a", "b", ()).expect("known endpoints");
+    graph.add_edge("b", "c", ()).expect("known endpoints");
+    graph.add_edge("d", "e", ()).expect("known endpoints");
+    graph.add_edge("e", "d", ()).expect("known endpoints");
+    assert_eq!(topological_partition(&graph), Ok((vec!["a", "b", "c"], vec!["d", "e"])));
+
+    // 环的下游也留在残差：f 依赖 e，永远等不到入度归零。
+    graph.add_vertex("f").expect("unique vertex");
+    graph.add_edge("e", "f", ()).expect("known endpoints");
+    let (ordered, remaining) = topological_partition(&graph).expect("directed");
+    assert_eq!(ordered, vec!["a", "b", "c"]);
+    assert_eq!(remaining, vec!["d", "e", "f"]);
+
+    // 无环时残差为空，前缀与 topological_order 完全一致。
+    let graph = chain();
+    assert_eq!(topological_partition(&graph), Ok((topological_order(&graph).expect("acyclic"), Vec::new())));
+
+    let empty = MemoryGraph::<&'static str>::new(true);
+    assert_eq!(topological_partition(&empty), Ok((Vec::new(), Vec::new())));
+
+    let mut undirected = MemoryGraph::<&'static str>::new(false);
+    undirected.add_vertex("a").expect("unique vertex");
+    assert_eq!(topological_partition(&undirected), Err(GraphError::UndirectedTraversal));
+}
+
+#[test]
+fn reverse_postorder_orders_a_diamond_for_dataflow() {
+    // a -> b, a -> c, b -> d, c -> d：RPO 中 a 在首位，d 在两个分支之后。
+    let mut graph = MemoryGraph::<&'static str>::new(true);
+    for vertex in ["a", "b", "c", "d"] {
+        graph.add_vertex(vertex).expect("unique vertex");
+    }
+    graph.add_edge("a", "b", ()).expect("known endpoints");
+    graph.add_edge("a", "c", ()).expect("known endpoints");
+    graph.add_edge("b", "d", ()).expect("known endpoints");
+    graph.add_edge("c", "d", ()).expect("known endpoints");
+    let order = reverse_postorder(&graph, &"a").expect("start exists");
+    assert_eq!(order.first(), Some(&"a"));
+    let position = |name: &str| order.iter().position(|vertex| *vertex == name).expect("reachable");
+    assert!(position("a") < position("b"));
+    assert!(position("a") < position("c"));
+    assert!(position("b") < position("d"));
+    assert!(position("c") < position("d"));
+
+    // 回边不构成顺序约束，且迭代实现不受递归深度影响：长链 + 尾指回入口。
+    let mut deep = MemoryGraph::<usize>::new(true);
+    for id in 0..100_000 {
+        deep.add_vertex(id).expect("unique vertex");
+    }
+    for id in 1..100_000 {
+        deep.add_edge(id - 1, id, ()).expect("known endpoints");
+    }
+    deep.add_edge(99_999, 0, ()).expect("known endpoints");
+    let order = reverse_postorder(&deep, &0).expect("start exists");
+    assert_eq!(order.len(), 100_000);
+    assert_eq!(order.first(), Some(&0));
+
+    assert_eq!(reverse_postorder(&graph, &"missing"), Err(GraphError::UnknownVertex));
+    // 只覆盖可达子图：孤点不出现。
+    graph.add_vertex("island").expect("unique vertex");
+    let order = reverse_postorder(&graph, &"a").expect("start exists");
+    assert!(!order.contains(&"island"));
+}
+
+#[test]
+fn priority_partition_orders_the_prefix_then_reports_the_residual() {
+    // d -> e -> d 成环；a、b、c 仍按最小键先出，残差按来源顺序给出。
+    let mut graph = MemoryGraph::<&'static str>::new(true);
+    for vertex in ["b", "a", "c", "d", "e"] {
+        graph.add_vertex(vertex).expect("unique vertex");
+    }
+    graph.add_edge("a", "c", ()).expect("known endpoints");
+    graph.add_edge("b", "c", ()).expect("known endpoints");
+    graph.add_edge("d", "e", ()).expect("known endpoints");
+    graph.add_edge("e", "d", ()).expect("known endpoints");
+    assert_eq!(topological_partition_by(&graph, |vertex| *vertex), Ok((vec!["a", "b", "c"], vec!["d", "e"])));
+
+    // 无环时与 topological_order_by 完全一致。
+    let graph = chain();
+    assert_eq!(
+        topological_partition_by(&graph, |vertex| *vertex),
+        Ok((topological_order_by(&graph, |vertex| *vertex).expect("acyclic"), Vec::new()))
+    );
+}
+
+#[test]
+fn the_new_algorithms_consume_view_and_csr_representations() {
+    let names = ["a", "b", "c"];
+    let mut view = GraphView::new(true);
+    for name in &names {
+        view.add_vertex(name);
+    }
+    view.add_edge(&"a", &"b");
+    view.add_edge(&"b", &"c");
+    assert_eq!(topological_partition(&view), Ok((vec![&"a", &"b", &"c"], Vec::new())));
+    assert_eq!(reverse_postorder(&view, &&"a"), Ok(vec![&"a", &"b", &"c"]));
+
+    let csr = CsrGraph::from_graph(&chain());
+    // CSR 顶点顺序沿用来源：c=0, a=1, b=2。
+    assert_eq!(topological_partition(&csr), Ok((vec![1, 2, 0], Vec::new())));
+    assert_eq!(reverse_postorder(&csr, &1), Ok(vec![1, 2, 0]));
 }

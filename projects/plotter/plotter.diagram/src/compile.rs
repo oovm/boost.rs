@@ -1,10 +1,12 @@
 //! Deterministic layered compilation from a diagram spec to a layout plan.
 
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet},
     ops::Range,
 };
 
+use boost_collection::GraphView;
+use boost_math::graph_theory::{reachable_from, topological_partition};
 use plotter_scene::{Point, Rect, Size};
 use plotter_types::{
     ByteRange, Diagnostic, DiagnosticLabel, DiagnosticLocation, DiagnosticSeverity, LabelRole, Message, NAMESPACE, SourceRef, codes,
@@ -256,8 +258,7 @@ pub fn compile_layered_with_source(spec: &DiagramSpec, options: &LayoutOptions, 
                 .map(|label| estimate_label_box(label, polyline_midpoint(&points), edge_label_font_size(options.font_size)));
             routed[index].points = points;
             routed[index].label_box = label_box;
-        }
-        else {
+        } else {
             diagnostics.push(located(
                 codes::APPROXIMATED,
                 format!(
@@ -417,8 +418,7 @@ fn compile_time_ordered(spec: &DiagramSpec, sequence: &SequenceLayout, options: 
     let mut row_centers: Vec<f64> = Vec::with_capacity(spec.edges.len());
     for edge_index in message_indices {
         let edge = &spec.edges[edge_index];
-        let (Some(&from_index), Some(&to_index)) = (indices.get(&edge.from.node), indices.get(&edge.to.node))
-        else {
+        let (Some(&from_index), Some(&to_index)) = (indices.get(&edge.from.node), indices.get(&edge.to.node)) else {
             let missing = if indices.contains_key(&edge.from.node) { edge.to.node.as_str() } else { edge.from.node.as_str() };
             diagnostics.push(located(
                 codes::APPROXIMATED,
@@ -452,8 +452,7 @@ fn compile_time_ordered(spec: &DiagramSpec, sequence: &SequenceLayout, options: 
 
     let mut activations = Vec::new();
     for activation in &sequence.activations {
-        let Some(&participant_index) = indices.get(&activation.participant)
-        else {
+        let Some(&participant_index) = indices.get(&activation.participant) else {
             diagnostics
                 .push(warning(codes::APPROXIMATED, format!("activation on unknown participant `{}` is ignored", activation.participant)));
             continue;
@@ -548,8 +547,7 @@ fn declared_messages(spec: &DiagramSpec, sequence: &SequenceLayout, diagnostics:
                 codes::APPROXIMATED,
                 format!("sequence message index {index} is outside the {} declared edges and is ignored", spec.edges.len()),
             ));
-        }
-        else if seen.insert(index) {
+        } else if seen.insert(index) {
             ordered.push(index);
         }
     }
@@ -729,34 +727,36 @@ fn assign_layers(
 ) -> Vec<usize> {
     let count = nodes.len();
     let mut successors = vec![Vec::new(); count];
-    let mut indegree = vec![0usize; count];
     for edge in edges {
         successors[edge.from_index].push(edge.to_index);
-        indegree[edge.to_index] += 1;
     }
 
+    // 分层骨架复用共享图论核：Kahn 前缀给无环节点定层，残差集就是需要修复的
+    // 环节点。顶点对齐节点下标，出边按声明顺序加入，因此前缀顺序与逐边松弛
+    // 和旧的本地实现完全一致。
+    let indices: Vec<usize> = (0..count).collect();
+    let mut view = GraphView::new(true);
+    for index in &indices {
+        view.add_vertex(index);
+    }
+    for edge in edges {
+        view.add_edge(&indices[edge.from_index], &indices[edge.to_index]);
+    }
+    let (order, remaining) = {
+        let (ordered, residual) = topological_partition(&view).expect("the view is built directed");
+        (ordered.into_iter().copied().collect::<Vec<usize>>(), residual.into_iter().copied().collect::<Vec<usize>>())
+    };
+
     let mut layer = vec![0usize; count];
-    let mut resolved = vec![false; count];
-    let mut order = Vec::with_capacity(count);
-    let mut queue: VecDeque<usize> = (0..count).filter(|index| indegree[*index] == 0).collect();
-    while let Some(node) = queue.pop_front() {
-        resolved[node] = true;
-        order.push(node);
+    for &node in &order {
         for &successor in &successors[node] {
             layer[successor] = layer[successor].max(layer[node] + 1);
-            indegree[successor] -= 1;
-            if indegree[successor] == 0 {
-                queue.push_back(successor);
-            }
         }
     }
 
     let mut cycle = vec![false; count];
     let mut cycle_nodes = Vec::new();
-    for node in 0..count {
-        if resolved[node] {
-            continue;
-        }
+    for &node in &remaining {
         cycle[node] = true;
         cycle_nodes.push(node);
         let mut best = layer[node];
@@ -766,7 +766,6 @@ fn assign_layers(
             }
         }
         layer[node] = best;
-        resolved[node] = true;
     }
 
     if !cycle_nodes.is_empty() {
@@ -778,8 +777,7 @@ fn assign_layers(
         let message = if reversed.is_empty() {
             let ids: Vec<&str> = cycle_nodes.iter().map(|&index| nodes[index].id.as_str()).collect();
             format!("diagram contains a cycle involving nodes {ids:?}. Layered placement breaks it in declaration order")
-        }
-        else {
+        } else {
             let pairs: Vec<String> = reversed.iter().map(|edge| format!("{}->{}", edge.from.node, edge.to.node)).collect();
             format!(
                 "diagram contains a cycle closed by edge {pairs:?}, which no longer advances to a later layer and is drawn in declaration order"
@@ -810,8 +808,7 @@ fn assign_layers(
                 }
                 if group.is_empty() {
                     diagnostics.push(warning(codes::APPROXIMATED, "same-rank constraint references no known nodes and is ignored"));
-                }
-                else {
+                } else {
                     groups.push(group);
                 }
             }
@@ -822,8 +819,7 @@ fn assign_layers(
                             codes::APPROXIMATED,
                             format!("place-before constraint relates node `{before}` to itself and is ignored"),
                         ));
-                    }
-                    else {
+                    } else {
                         precedences.push((before_index, after_index));
                     }
                 }
@@ -850,7 +846,7 @@ fn assign_layers(
                 if blocked[index] || layer[after] > layer[before] {
                     continue;
                 }
-                if reachable(&successors, after, before) {
+                if reachable(&view, after, before) {
                     blocked[index] = true;
                     diagnostics.push(warning(
                         codes::APPROXIMATED,
@@ -899,22 +895,10 @@ fn apply_same_rank(layer: &mut [usize], groups: &[Vec<usize>]) {
     }
 }
 
-fn reachable(successors: &[Vec<usize>], from: usize, to: usize) -> bool {
-    let mut visited = vec![false; successors.len()];
-    let mut stack = vec![from];
-    visited[from] = true;
-    while let Some(node) = stack.pop() {
-        for &next in &successors[node] {
-            if next == to {
-                return true;
-            }
-            if !visited[next] {
-                visited[next] = true;
-                stack.push(next);
-            }
-        }
-    }
-    false
+/// `to` 是否经至少一条出边从 `from` 可达。调用方保证 `from != to`，因此
+/// 共享可达核「起点在结果中」的约定不影响判定；可达性本身不在领域重复实现。
+fn reachable(view: &GraphView<'_, usize>, from: usize, to: usize) -> bool {
+    reachable_from(view, &&from).is_ok_and(|reached| reached.iter().any(|vertex| **vertex == to))
 }
 
 fn node_size(node: &ResolvedNode, options: &LayoutOptions) -> Size {
@@ -929,14 +913,11 @@ fn label_size(label: &str, shape: NodeShape, options: &LayoutOptions) -> Size {
     if matches!(shape, NodeShape::Circle | NodeShape::DoubleCircle) {
         let side = width.max(height);
         Size::new(side, side)
-    }
-    else if matches!(shape, NodeShape::Point) {
+    } else if matches!(shape, NodeShape::Point) {
         Size::new(8.0, 8.0)
-    }
-    else if matches!(shape, NodeShape::Plaintext) {
+    } else if matches!(shape, NodeShape::Plaintext) {
         Size::new(widest, lines.len() as f64 * options.font_size * 1.4)
-    }
-    else {
+    } else {
         Size::new(width, height)
     }
 }
@@ -983,8 +964,7 @@ fn place_rects(sizes: &[Size], layers: &[usize], direction: Direction, options: 
             cross_cursor += cross(index) + options.node_gap;
             let (x, y) = if horizontal {
                 (primary_center - sizes[index].width * 0.5, cross_center - sizes[index].height * 0.5)
-            }
-            else {
+            } else {
                 (cross_center - sizes[index].width * 0.5, primary_center - sizes[index].height * 0.5)
             };
             rects[index] = Rect::new(x, y, sizes[index].width, sizes[index].height);
@@ -1051,8 +1031,7 @@ fn build_ports(node: &ResolvedNode, rect: Rect, diagnostics: &mut Vec<Diagnostic
                 source,
             ));
             0.0
-        }
-        else if !(0.0..=1.0).contains(&port.offset) {
+        } else if !(0.0..=1.0).contains(&port.offset) {
             diagnostics.push(located(
                 codes::APPROXIMATED,
                 format!("port `{}` on node `{}` has an offset outside `0.0..=1.0` and is clamped", port.id, node.id),
@@ -1060,8 +1039,7 @@ fn build_ports(node: &ResolvedNode, rect: Rect, diagnostics: &mut Vec<Diagnostic
                 source,
             ));
             port.offset.clamp(0.0, 1.0)
-        }
-        else {
+        } else {
             port.offset
         };
         ports.insert(port.id.clone(), port_anchor(rect, port.side, offset));
@@ -1241,8 +1219,7 @@ fn route_avoiding(from: Point, to: Point, direction: Direction, obstacles: &[Rec
                 if vertical { (rect.y, rect.bottom(), rect.x, rect.right()) } else { (rect.x, rect.right(), rect.y, rect.bottom()) };
             if rect_high > span_low && rect_low < span_high {
                 vec![rect_cross_low - ROUTE_LANE_CLEARANCE, rect_high_cross + ROUTE_LANE_CLEARANCE]
-            }
-            else {
+            } else {
                 Vec::new()
             }
         })
@@ -1270,14 +1247,12 @@ fn route_avoiding(from: Point, to: Point, direction: Direction, obstacles: &[Rec
         let (stub, rejoin) = if sign * (rejoin - stub) <= 0.0 {
             let middle = (start + end) * 0.5;
             (middle, middle)
-        }
-        else {
+        } else {
             (stub, rejoin)
         };
         let points = if vertical {
             vec![from, Point::new(start_cross, stub), Point::new(lane, stub), Point::new(lane, rejoin), Point::new(end_cross, rejoin), to]
-        }
-        else {
+        } else {
             vec![from, Point::new(stub, start_cross), Point::new(stub, lane), Point::new(rejoin, lane), Point::new(rejoin, end_cross), to]
         };
         let points = dedupe_points(points);
@@ -1407,12 +1382,10 @@ fn warning(code: &'static str, message: impl Into<String>) -> Diagnostic {
 fn located(code: &'static str, message: impl Into<String>, span: Option<Range<usize>>, source: &SourceMap) -> Diagnostic {
     let message = message.into();
     let record = diagnostic("diagram", code, DiagnosticSeverity::Warning, message.clone());
-    let Some(span) = span
-    else {
+    let Some(span) = span else {
         return record;
     };
-    let (Ok(source_ref), Ok(range)) = (SourceRef::new(NAMESPACE, source.family()), ByteRange::new(span.start as u64, span.end as u64))
-    else {
+    let (Ok(source_ref), Ok(range)) = (SourceRef::new(NAMESPACE, source.family()), ByteRange::new(span.start as u64, span.end as u64)) else {
         return record;
     };
     record.with_primary(DiagnosticLabel::new(

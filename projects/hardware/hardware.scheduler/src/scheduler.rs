@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use hardware_harness::{EventKind, Trace, Tracer};
 use hardware_ir::{Dispatch, Graph, Objective, Priority, TaskId, TaskKind};
@@ -159,8 +159,7 @@ impl Scheduler {
             }
             let submitted = if let Some(tracer) = tracer.as_mut() {
                 tracer.span(format!("dispatch {label} on {backend_name}"), |_| self.backends[backend_idx].submit_task(graph, task))
-            }
-            else {
+            } else {
                 self.backends[backend_idx].submit_task(graph, task)
             };
             match submitted {
@@ -211,22 +210,18 @@ impl Scheduler {
             .position(|b| {
                 if prefer_cuda {
                     b.name().contains("cuda") || b.name() == "cpu"
-                }
-                else if prefer_cpu {
+                } else if prefer_cpu {
                     b.name() == "cpu"
-                }
-                else if prefer_graphics {
+                } else if prefer_graphics {
                     b.name().contains("dx") || b.name().contains("vulkan")
-                }
-                else {
+                } else {
                     true
                 }
             })
             .or_else(|| {
                 if task.priority == Priority::Interactive || matches!(task.objective, Objective::MinLatency { .. }) {
                     self.backends.iter().position(|b| b.name().contains("dx"))
-                }
-                else {
+                } else {
                     None
                 }
             })
@@ -243,47 +238,10 @@ impl Default for Scheduler {
 }
 
 fn schedule_order(graph: &Graph, deadlines: &BTreeMap<TaskId, Option<u64>>) -> Result<Vec<TaskId>> {
-    let mut indegree: BTreeMap<TaskId, usize> = BTreeMap::new();
-    let mut successors: BTreeMap<TaskId, Vec<TaskId>> = BTreeMap::new();
-    let mut nodes: BTreeMap<TaskId, &hardware_ir::TaskNode> = BTreeMap::new();
-
-    for task in &graph.tasks.nodes {
-        indegree.insert(task.id, 0);
-        successors.insert(task.id, Vec::new());
-        nodes.insert(task.id, task);
-    }
-    for edge in &graph.tasks.edges {
-        if let Some(from) = edge.from_task {
-            *indegree.entry(edge.to_task).or_insert(0) += 1;
-            successors.entry(from).or_default().push(edge.to_task);
-        }
-    }
-
-    let mut ready: BTreeSet<(i32, u64, TaskId)> = BTreeSet::new();
-    for (&id, &deg) in &indegree {
-        if deg == 0 {
-            ready.insert(ready_key(nodes[&id], deadlines));
-        }
-    }
-
-    let mut order = Vec::with_capacity(graph.tasks.nodes.len());
-    while let Some(key) = ready.iter().next().copied() {
-        ready.remove(&key);
-        let id = key.2;
-        order.push(id);
-        for &succ in successors.get(&id).into_iter().flatten() {
-            let deg = indegree.get_mut(&succ).expect("succ in indegree");
-            *deg -= 1;
-            if *deg == 0 {
-                ready.insert(ready_key(nodes[&succ], deadlines));
-            }
-        }
-    }
-
-    if order.len() != graph.tasks.nodes.len() {
-        return Err(Error::Ir(hardware_ir::Error::Cycle));
-    }
-    Ok(order)
+    // 就绪顺序是领域语义（优先级档、deadline、TaskId 三级键），排序核是共享的：
+    // `topological_order_by` 每步取键最小的就绪任务，与旧的本地 Kahn 逐位一致。
+    let keys: BTreeMap<TaskId, (i32, u64, TaskId)> = graph.tasks.nodes.iter().map(|task| (task.id, ready_key(task, deadlines))).collect();
+    boost_math::graph_theory::topological_order_by(&graph.tasks, |id| keys[id]).map_err(|_| Error::Ir(hardware_ir::Error::Cycle))
 }
 
 fn task_label(task: &hardware_ir::TaskNode) -> String {

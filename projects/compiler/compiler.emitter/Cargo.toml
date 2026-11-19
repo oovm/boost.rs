@@ -20,6 +20,8 @@ acorn-jvm = { workspace = true }
 acorn-odin = { workspace = true }
 acorn-pe = { workspace = true }
 acorn-wasm = { workspace = true }
+boost-collection = { workspace = true }
+boost-math = { workspace = true }
 compiler-optimize = { workspace = true }
 compiler-target = { workspace = true }
 compiler-types = { workspace = true, features = ["serde"] }
