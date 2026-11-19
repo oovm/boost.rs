@@ -1097,6 +1097,53 @@ mod tests {
         assert!(problems.iter().any(|p| p.contains("failed without a stable code")), "{problems:?}");
     }
 
+    /// A panel names the scene nodes its evidence lives in, so a renamed node
+    /// or a node that is off screen for the whole panel is caught before review.
+    #[test]
+    fn a_panel_names_the_nodes_its_evidence_lives_in() {
+        let project: Project = serde_json::from_value(json!({
+            "width": 640, "height": 360, "fps": 30, "duration_frames": 60,
+            "scenes": [{
+                "id": "a", "start": 0, "duration": 60,
+                "background": { "kind": "solid", "color": "#101820" },
+                "items": [{
+                    "kind": "text", "id": "late", "at": 30, "dur": 30,
+                    "content": "x", "x": 0.5, "y": 0.5, "size": 20, "color": "#ffffff"
+                }]
+            }],
+            "audio": null
+        }))
+        .expect("project");
+        let panel = |id: &str, range: [u32; 2], witness: &[&str]| Panel {
+            id: PanelId::new(id).unwrap(),
+            range,
+            purpose: "see it".to_owned(),
+            composition: "wide".to_owned(),
+            dialogue: None,
+            camera: None,
+            sound: None,
+            safe_area: None,
+            witness: witness.iter().map(|id| NodeId::new(*id).unwrap()).collect(),
+            notes: Vec::new(),
+        };
+        let mut production = Production::new(project);
+        production.shots.push(Shot {
+            id: ShotId::new("s1").unwrap(),
+            scene: "a".to_owned(),
+            locked: false,
+            panels: vec![
+                panel("on-screen", [30, 60], &["late"]),
+                panel("renamed", [0, 30], &["ghost"]),
+                panel("off-screen", [0, 30], &["late"]),
+            ],
+        });
+
+        let problems = production.problems();
+        assert!(problems.iter().any(|p| p.contains("has no such node")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("off screen in frames 0–30")), "{problems:?}");
+        assert!(!problems.iter().any(|p| p.contains("`on-screen`")), "a live node inside the panel is accepted: {problems:?}");
+    }
+
     #[test]
     fn cache_freshness_compares_fingerprints_not_files() {
         let task = Task {

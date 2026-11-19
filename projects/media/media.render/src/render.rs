@@ -2363,6 +2363,57 @@ mod tests {
         assert!(band(&burned_frame) > band(&plain_frame), "the burned cue raises the bottom band");
     }
 
+    /// A push-in must not scale or crop an annotation authored in screen space:
+    /// the same words in world space are scaled by the lens. This is the
+    /// regression for text that was clipped by a scene camera.
+    #[test]
+    fn a_push_in_leaves_a_screen_annotation_alone() {
+        let film = |space: Option<&str>| {
+            let mut item = serde_json::json!({
+                "kind": "text", "at": 0, "dur": 15, "fade_in": 0, "fade_out": 0,
+                "content": "EDGE", "x": 0.82, "y": 0.5, "size": 20, "color": "#ffffff", "align": "center"
+            });
+            if let Some(space) = space {
+                item["space"] = serde_json::json!(space);
+            }
+            serde_json::json!({
+                "width": 320, "height": 180, "fps": 15, "duration_frames": 15,
+                "scenes": [{
+                    "start": 0, "duration": 15,
+                    "background": { "kind": "solid", "color": "#101820" },
+                    "camera": { "zoom_from": 1.0, "zoom_to": 2.0, "focus_from": [0.5, 0.5], "focus_to": [0.5, 0.5] },
+                    "items": [item]
+                }],
+                "audio": null
+            })
+        };
+        // Lit columns `[start, end)` of one painted frame.
+        let span = |json: &serde_json::Value, frame_index: u32| -> (u32, u32) {
+            let project: media_scene::Project = serde_json::from_value(json.clone()).expect("project");
+            let (mut fonts, _, _) = super::resolve_fonts(&project).expect("fonts");
+            let mut media = media_codec::MediaLibrary::new();
+            let mut pool = super::FramePool::new(320, 180);
+            let mut frame = media_image::Frame::new(320, 180);
+            super::paint_frame(&project, &mut fonts, &mut media, None, &mut pool, frame_index, &mut frame, media_codec::DecodeLimits::unbounded()).expect("frame");
+            let mut span = (320, 0);
+            for y in 0..180 {
+                for x in 0..320 {
+                    let at = ((y * 320 + x) * 4) as usize;
+                    if frame.pixels[at] > 180 && frame.pixels[at + 1] > 180 && frame.pixels[at + 2] > 180 {
+                        span.0 = span.0.min(x);
+                        span.1 = span.1.max(x + 1);
+                    }
+                }
+            }
+            span
+        };
+        let screen = film(Some("screen"));
+        assert_eq!(span(&screen, 0), span(&screen, 14), "a push-in must not touch a screen annotation");
+        let world = film(None);
+        let (first, last) = (span(&world, 0), span(&world, 14));
+        assert!(last.0 < first.0 || last.1 > first.1, "the lens does scale world text: {first:?} -> {last:?}");
+    }
+
     /// A delivery profile that promises one audio codec must fail rather than
     /// deliver another one.
     #[test]
