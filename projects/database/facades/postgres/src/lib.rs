@@ -142,6 +142,19 @@ impl From<PostgresError> for Error {
     }
 }
 
+/// Data-directory storage failures become the protocol class only at this
+/// boundary: the wire error text is preserved, but `database.storage` itself no
+/// longer describes a local disk or lease failure with a protocol type.
+impl From<database_storage::pgsql::Error> for Error {
+    fn from(error: database_storage::pgsql::Error) -> Self {
+        let mapped = match error {
+            database_storage::pgsql::Error::Io(message) => PostgresError::Io(message),
+            other => PostgresError::Protocol(other.to_string()),
+        };
+        Self::Storage(mapped)
+    }
+}
+
 impl From<database_types::cluster::Error> for Error {
     fn from(error: database_types::cluster::Error) -> Self {
         Self::Cluster(error)

@@ -21,9 +21,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use database_protocol_pgsql::PostgresError;
-
 use super::{
+    Error,
     catalog::LOCK_FILE,
     store::{ServerChange, ServerRow, ServerStore},
 };
@@ -147,14 +146,14 @@ pub fn clear_stale_lock(data_dir: impl AsRef<Path>) {
 /// A shard id becomes a directory name under [`SHARD_ROOT`], so it stays inside
 /// the lowercase alphanumeric range a single path segment can hold: no
 /// separators, no `..`, no NUL, nothing that could escape the shard root.
-pub fn validate_shard_id(shard_id: &str) -> Result<(), PostgresError> {
+pub fn validate_shard_id(shard_id: &str) -> Result<(), Error> {
     let usable = shard_id.starts_with("local-")
         && shard_id.len() <= 128
         && shard_id.bytes().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-');
     if usable {
         return Ok(());
     }
-    Err(PostgresError::Protocol(format!("shard id {shard_id:?} is unusable as a directory name")))
+    Err(Error::Corrupt(format!("shard id {shard_id:?} is unusable as a directory name")))
 }
 
 /// Absolute table-group directory for `shard_id`.
@@ -175,7 +174,7 @@ pub struct ServerInstance {
 impl ServerInstance {
     /// Opens or creates the data directory and takes its lock, reclaiming a
     /// `postmaster.pid` whose holder process is gone.
-    pub fn open(data_dir: impl AsRef<Path>) -> Result<Self, PostgresError> {
+    pub fn open(data_dir: impl AsRef<Path>) -> Result<Self, Error> {
         let data_dir = data_dir.as_ref();
         clear_stale_lock(data_dir);
         Ok(Self { primary: ServerStore::open(data_dir)?, shards: BTreeMap::new() })
@@ -225,24 +224,24 @@ impl ServerInstance {
         after: Option<&[u8]>,
         before: Option<&[u8]>,
         limit: usize,
-    ) -> Result<Vec<ServerRow>, PostgresError> {
+    ) -> Result<Vec<ServerRow>, Error> {
         self.primary.scan(namespace, prefix, after, before, limit)
     }
 
     /// Applies one statement's changes to the primary store as a single durable
     /// atomic commit.
-    pub fn commit_changes(&mut self, changes: Vec<ServerChange>) -> Result<(), PostgresError> {
+    pub fn commit_changes(&mut self, changes: Vec<ServerChange>) -> Result<(), Error> {
         self.primary.commit_changes(changes)
     }
 
     /// Opens `shards/<shard-id>/` as a table-group store and keeps it warm. The
     /// directory is created when it does not exist yet.
-    pub fn open_shard(&mut self, shard_id: &str) -> Result<(), PostgresError> {
+    pub fn open_shard(&mut self, shard_id: &str) -> Result<(), Error> {
         self.shard(shard_id).map(|_| ())
     }
 
     /// Releases one shard's directory lock, keeping its files.
-    pub fn close_shard(&mut self, shard_id: &str) -> Result<(), PostgresError> {
+    pub fn close_shard(&mut self, shard_id: &str) -> Result<(), Error> {
         validate_shard_id(shard_id)?;
         match self.shards.remove(shard_id) {
             Some(store) => store.close(),
@@ -255,7 +254,7 @@ impl ServerInstance {
     /// Only [`SHARD_DIRECTORY_FILES`] are deleted and the directory is dropped
     /// when it is left empty; a directory holding anything else keeps its
     /// contents in place.
-    pub fn drop_shard(&mut self, shard_id: &str) -> Result<(), PostgresError> {
+    pub fn drop_shard(&mut self, shard_id: &str) -> Result<(), Error> {
         validate_shard_id(shard_id)?;
         let directory = shard_directory(self.primary.data_dir(), shard_id);
         if let Some(store) = self.shards.remove(shard_id) {
@@ -267,17 +266,17 @@ impl ServerInstance {
         match fs::remove_dir(&directory) {
             Ok(()) => Ok(()),
             Err(error) if matches!(error.kind(), std::io::ErrorKind::NotFound | std::io::ErrorKind::DirectoryNotEmpty) => Ok(()),
-            Err(error) => Err(PostgresError::Io(format!("cannot remove {}: {error}", directory.display()))),
+            Err(error) => Err(Error::Io(format!("cannot remove {}: {error}", directory.display()))),
         }
     }
 
     /// Shard ids whose directory exists under [`SHARD_ROOT`], sorted.
-    pub fn list_shards(&self) -> Result<Vec<String>, PostgresError> {
+    pub fn list_shards(&self) -> Result<Vec<String>, Error> {
         let root = Path::new(&self.primary.data_dir()).join(SHARD_ROOT);
         let entries = match fs::read_dir(&root) {
             Ok(entries) => entries,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(error) => return Err(PostgresError::Io(format!("{}: {error}", root.display()))),
+            Err(error) => return Err(Error::Io(format!("{}: {error}", root.display()))),
         };
         let mut ids = Vec::new();
         for entry in entries.flatten() {
@@ -298,13 +297,13 @@ impl ServerInstance {
 
     /// Whether `shards/<shard-id>/` exists. A missing shard directory reads as
     /// an empty group, so scans never create files on disk.
-    pub fn shard_exists(&self, shard_id: &str) -> Result<bool, PostgresError> {
+    pub fn shard_exists(&self, shard_id: &str) -> Result<bool, Error> {
         validate_shard_id(shard_id)?;
         Ok(shard_directory(self.primary.data_dir(), shard_id).exists())
     }
 
     /// Absolute shard directory, the single source of truth for the layout.
-    pub fn shard_dir(&self, shard_id: &str) -> Result<String, PostgresError> {
+    pub fn shard_dir(&self, shard_id: &str) -> Result<String, Error> {
         validate_shard_id(shard_id)?;
         Ok(shard_directory(self.primary.data_dir(), shard_id).display().to_string())
     }
@@ -320,7 +319,7 @@ impl ServerInstance {
         after: Option<&[u8]>,
         before: Option<&[u8]>,
         limit: usize,
-    ) -> Result<Vec<ServerRow>, PostgresError> {
+    ) -> Result<Vec<ServerRow>, Error> {
         validate_shard_id(shard_id)?;
         if !self.shards.contains_key(shard_id) && !shard_directory(self.primary.data_dir(), shard_id).exists() {
             return Ok(Vec::new());
@@ -330,13 +329,13 @@ impl ServerInstance {
 
     /// Applies one batch as a single durable atomic commit inside one
     /// table-group shard, opening the shard on demand.
-    pub fn commit_shard(&mut self, shard_id: &str, changes: Vec<ServerChange>) -> Result<(), PostgresError> {
+    pub fn commit_shard(&mut self, shard_id: &str, changes: Vec<ServerChange>) -> Result<(), Error> {
         validate_shard_id(shard_id)?;
         self.shard(shard_id)?.commit_changes(changes)
     }
 
     /// Releases every directory lock, the table-group shards included.
-    pub fn close(mut self) -> Result<(), PostgresError> {
+    pub fn close(mut self) -> Result<(), Error> {
         let mut failure = None;
         for (_, store) in std::mem::take(&mut self.shards) {
             if let Err(error) = store.close() {
@@ -352,7 +351,7 @@ impl ServerInstance {
         }
     }
 
-    fn shard(&mut self, shard_id: &str) -> Result<&mut ServerStore, PostgresError> {
+    fn shard(&mut self, shard_id: &str) -> Result<&mut ServerStore, Error> {
         validate_shard_id(shard_id)?;
         if !self.shards.contains_key(shard_id) {
             let directory = shard_directory(self.primary.data_dir(), shard_id);

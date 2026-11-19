@@ -29,7 +29,6 @@ use std::{
 };
 
 use database_formats::yy::yykv::{KV_LEGACY_MAGIC, KV_MAGIC, KV_PREVIOUS_MAGIC, Snapshot, decode_snapshot_strict};
-use database_protocol_pgsql::PostgresError;
 use database_types::{
     ReasonCode,
     cluster::{Error as ClusterError, Namespace},
@@ -37,17 +36,18 @@ use database_types::{
 
 use crate::cluster_kv::{FileShard, InlineValue, Key, KvStore, StoredValue};
 
+use super::Error;
 use super::catalog::{CATALOG_FILE, LEGACY_CATALOG_FILE, catalog_shard_id, encode_catalog_bytes, write_atomic};
 
-fn io_error(error: impl std::fmt::Display) -> PostgresError {
-    PostgresError::Io(error.to_string())
+fn io_error(error: impl std::fmt::Display) -> Error {
+    Error::Io(error.to_string())
 }
 
-fn protocol(message: &str) -> PostgresError {
-    PostgresError::Protocol(message.to_owned())
+fn protocol(message: &str) -> Error {
+    Error::Corrupt(message.to_owned())
 }
 
-fn storage_error(error: ClusterError) -> PostgresError {
+fn storage_error(error: ClusterError) -> Error {
     match error {
         ClusterError::Io(error) => io_error(error),
         other => protocol(&other.to_string()),
@@ -59,7 +59,7 @@ fn storage_error(error: ClusterError) -> PostgresError {
 /// The shared codec names the format without a product prefix; PostgreSQL
 /// messages have always called it `.yykv`, so the mapping keeps the external
 /// wording byte-for-byte while the decoder itself stays in `database-formats`.
-fn shard_error(error: ClusterError) -> PostgresError {
+fn shard_error(error: ClusterError) -> Error {
     match error {
         ClusterError::Io(error) => io_error(error.to_string()),
         ClusterError::Corrupt(reason) => protocol(shard_message(reason)),
@@ -91,7 +91,7 @@ fn shard_message(message: &'static str) -> &'static str {
 ///
 /// The bytes are decoded by the shared codec; only the PostgreSQL-facing
 /// classification and the inline-only record model stay here.
-fn decode_shard(bytes: &[u8]) -> Result<(usize, u64), PostgresError> {
+fn decode_shard(bytes: &[u8]) -> Result<(usize, u64), Error> {
     // Header checks stay here so the shared decoder's generic EOF/legacy
     // classification keeps mapping onto the messages PostgreSQL has always
     // returned for these shard shapes.
@@ -140,7 +140,7 @@ pub struct Store {
 
 impl Store {
     /// Opens or creates the store directory.
-    pub fn open(dir: impl AsRef<Path>) -> Result<Self, PostgresError> {
+    pub fn open(dir: impl AsRef<Path>) -> Result<Self, Error> {
         let dir = dir.as_ref().to_path_buf();
         fs::create_dir_all(&dir).map_err(io_error)?;
         let catalog = dir.join(CATALOG_FILE);
@@ -180,7 +180,7 @@ impl Store {
     }
 
     /// Writes one row, assigning the next revision.
-    pub fn put(&self, namespace: &str, key: &[u8], value: &[u8]) -> Result<(), PostgresError> {
+    pub fn put(&self, namespace: &str, key: &[u8], value: &[u8]) -> Result<(), Error> {
         validate_namespace(namespace)?;
         let mut shard = self.shard.lock().expect("store lock");
         shard.put(Key::new(namespace, key.to_vec()), StoredValue::Inline(InlineValue(value.to_vec()))).map(|_| ()).map_err(storage_error)
@@ -197,7 +197,7 @@ impl Store {
     }
 
     /// Removes one row and reports whether it existed.
-    pub fn delete(&self, namespace: &str, key: &[u8]) -> Result<bool, PostgresError> {
+    pub fn delete(&self, namespace: &str, key: &[u8]) -> Result<bool, Error> {
         let mut shard = self.shard.lock().expect("store lock");
         shard.delete(&Key::new(namespace, key.to_vec())).map_err(storage_error)
     }
@@ -242,7 +242,7 @@ impl Store {
     }
 
     /// Removes every row of one namespace and returns how many were removed.
-    pub fn flush(&self, namespace: &str) -> Result<usize, PostgresError> {
+    pub fn flush(&self, namespace: &str) -> Result<usize, Error> {
         let mut shard = self.shard.lock().expect("store lock");
         // `FileShard::flush()` is the inherent "persist now" helper, so the
         // namespace flush must be called through the trait explicitly.
@@ -250,7 +250,7 @@ impl Store {
     }
 }
 
-fn validate_namespace(namespace: &str) -> Result<(), PostgresError> {
+fn validate_namespace(namespace: &str) -> Result<(), Error> {
     if namespace.is_empty() {
         return Err(protocol("namespace must not be empty"));
     }
@@ -289,8 +289,8 @@ mod tests {
     fn namespace_validation_stays_on_the_binding_side() {
         let dir = temporary("namespace");
         let store = Store::open(&dir).unwrap();
-        assert_eq!(store.put("", b"k", b"v").unwrap_err().message(), "namespace must not be empty");
-        assert_eq!(store.put("public.\0bad", b"k", b"v").unwrap_err().message(), "namespace must not contain a NUL byte");
+        assert_eq!(store.put("", b"k", b"v").unwrap_err().to_string(), "namespace must not be empty");
+        assert_eq!(store.put("public.\0bad", b"k", b"v").unwrap_err().to_string(), "namespace must not contain a NUL byte");
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -336,7 +336,7 @@ mod tests {
     #[test]
     fn checksum_rejects_tampering() {
         let bytes = b"YYKV\x03\0\0\0\0\0\0\0\0";
-        assert_eq!(decode_shard(bytes).unwrap_err().message(), ".yykv checksum mismatch");
+        assert_eq!(decode_shard(bytes).unwrap_err().to_string(), ".yykv checksum mismatch");
     }
 
     #[test]
@@ -359,7 +359,7 @@ mod tests {
     fn legacy_big_endian_catalog_is_rejected() {
         let legacy = b"YYDS\x01\0\0\0\0\0\0\0\0\0\0\0\x01\0\0\0\x0apostgres-0\0\0\0\0\0\0\0\0".to_vec();
         assert_eq!(
-            decode_catalog_shard_id(&legacy).unwrap_err().message(),
+            decode_catalog_shard_id(&legacy).unwrap_err().to_string(),
             "legacy PostgreSQL catalog layout: delete the store directory and reinitialize"
         );
     }
@@ -400,7 +400,7 @@ mod tests {
         let bytes = encode_catalog(None, None, &[ShardId("a\0b".to_owned())], None, &[]).unwrap();
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join(CATALOG_FILE), &bytes).unwrap();
-        assert_eq!(Store::open(&dir).err().unwrap().message(), "catalog shard id is unusable");
+        assert_eq!(Store::open(&dir).err().unwrap().to_string(), "catalog shard id is unusable");
         let _ = fs::remove_dir_all(&dir);
     }
 

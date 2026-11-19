@@ -15,7 +15,7 @@ use std::{
 use database_formats::yy::yyds::{CATALOG_MAGIC, decode_catalog_shard_id as shared_catalog_shard_id, encode_catalog};
 use database_types::cluster::{Error as ClusterError, ShardId};
 
-use database_protocol_pgsql::PostgresError;
+use super::Error;
 
 /// Shard id a fresh data directory registers.
 pub const DEFAULT_SHARD_ID: &str = "local-0";
@@ -29,16 +29,16 @@ pub const LEGACY_CATALOG_FILE: &str = "postgres-0.yyds";
 /// Lock file the server creates while it owns the data directory.
 pub const LOCK_FILE: &str = "postmaster.pid";
 
-fn io_error(error: impl std::fmt::Display) -> PostgresError {
-    PostgresError::Io(error.to_string())
+fn io_error(error: impl std::fmt::Display) -> Error {
+    Error::Io(error.to_string())
 }
 
-fn protocol(message: &str) -> PostgresError {
-    PostgresError::Protocol(message.to_owned())
+fn protocol(message: &str) -> Error {
+    Error::Corrupt(message.to_owned())
 }
 
 /// Resolves the shard id a catalog registers, or the default when none exists.
-pub fn catalog_shard_id(catalog: &Path) -> Result<String, PostgresError> {
+pub fn catalog_shard_id(catalog: &Path) -> Result<String, Error> {
     if !catalog.exists() {
         return Ok(DEFAULT_SHARD_ID.to_owned());
     }
@@ -47,7 +47,7 @@ pub fn catalog_shard_id(catalog: &Path) -> Result<String, PostgresError> {
 }
 
 /// Encodes a catalog registering exactly `shard_id`.
-pub fn encode_catalog_bytes(shard_id: &str) -> Result<Vec<u8>, PostgresError> {
+pub fn encode_catalog_bytes(shard_id: &str) -> Result<Vec<u8>, Error> {
     let message = match encode_catalog(None, None, &[ShardId(shard_id.to_owned())], None, &[]) {
         Ok(bytes) => return Ok(bytes),
         Err(error) => format!("cannot encode .yyds catalog: {error}"),
@@ -60,7 +60,7 @@ pub fn encode_catalog_bytes(shard_id: &str) -> Result<Vec<u8>, PostgresError> {
 /// Decoding and single-registration validation come from `database-formats`;
 /// this wrapper only keeps the PostgreSQL-facing wording and the legacy
 /// big-endian pre-check.
-pub fn decode_catalog_shard_id(bytes: &[u8]) -> Result<String, PostgresError> {
+pub fn decode_catalog_shard_id(bytes: &[u8]) -> Result<String, Error> {
     if legacy_catalog_bytes(bytes) {
         return Err(protocol("legacy PostgreSQL catalog layout: delete the store directory and reinitialize"));
     }
@@ -74,7 +74,7 @@ pub fn decode_catalog_shard_id(bytes: &[u8]) -> Result<String, PostgresError> {
     Ok(shard_id.0)
 }
 
-fn catalog_error(error: ClusterError) -> PostgresError {
+fn catalog_error(error: ClusterError) -> Error {
     match error {
         ClusterError::InvalidShardId { .. } => protocol("catalog shard id is unusable"),
         ClusterError::Unsupported(reason) if reason == "catalog registers no shard" || reason == "catalog registers more than one shard" => {
@@ -102,16 +102,15 @@ fn legacy_catalog_bytes(bytes: &[u8]) -> bool {
         && bytes[13..17] == [0, 0, 0, 1]
 }
 
-/// Writes the catalog through a temp file and a rename.
-pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), PostgresError> {
-    let mut temp = path.as_os_str().to_owned();
-    temp.push(".tmp");
-    let temp = PathBuf::from(temp);
-    let mut file = fs::File::create(&temp).map_err(|error| io_error(format!("{}: {error}", temp.display())))?;
-    file.write_all(bytes).map_err(|error| io_error(format!("{}: {error}", temp.display())))?;
-    file.sync_all().map_err(|error| io_error(format!("{}: {error}", temp.display())))?;
-    drop(file);
-    fs::rename(&temp, path).map_err(|error| io_error(format!("{} -> {}: {error}", temp.display(), path.display())))
+/// Publishes the catalog through the storage publisher.
+///
+/// The commit point, replacement strategy and failure semantics are the ones
+/// [`crate::local::publish::publish_atomic`] already proves for database files:
+/// temp write, one directory-entry replace, backup restore when the destination
+/// is busy, parent sync. The PostgreSQL catalog does not keep a private
+/// `.tmp → rename` sequence of its own.
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), Error> {
+    crate::local::publish::publish_atomic(path, bytes).map_err(|error| io_error(format!("{}: {error}", path.display())))
 }
 
 /// Takes the `postmaster.pid` lease of `dir` for the current process.
@@ -129,12 +128,12 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), PostgresError> {
 /// 3. Crash recovery: a hard kill leaves `postmaster.pid` behind on purpose, so
 ///    the operator removes it once the old process is gone. `WriterLock`
 ///    releases its OS lock automatically when the process dies.
-pub(crate) fn take_lock(dir: &Path) -> Result<PathBuf, PostgresError> {
+pub(crate) fn take_lock(dir: &Path) -> Result<PathBuf, Error> {
     let lock = dir.join(LOCK_FILE);
     let mut file = match OpenOptions::new().write(true).create_new(true).open(&lock) {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            return Err(protocol(&format!("lock file \"{}\" already exists: another server owns this data directory", lock.display())));
+            return Err(Error::Locked { path: lock });
         }
         Err(error) => return Err(io_error(error)),
     };

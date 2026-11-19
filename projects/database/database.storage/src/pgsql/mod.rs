@@ -7,6 +7,8 @@
 
 /// `.yyds` catalog document and the `postmaster.pid` directory lock.
 pub mod catalog;
+/// Storage-owned failures of the data directory, catalog and lease.
+mod error;
 /// One server data directory: catalog, shard and directory lease.
 pub mod store;
 /// Durable namespace/key store over one catalog and one shard.
@@ -15,6 +17,8 @@ pub mod shard;
 pub mod instance;
 /// Databases, roles and table grants, persisted beside the schema.
 pub mod objects;
+
+pub use error::Error;
 
 pub use catalog::{CATALOG_FILE, DEFAULT_SHARD_ID, LEGACY_CATALOG_FILE, LOCK_FILE};
 pub use instance::{

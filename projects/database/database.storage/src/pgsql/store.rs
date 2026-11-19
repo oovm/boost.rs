@@ -18,19 +18,19 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use database_protocol_pgsql::PostgresError;
 use database_types::cluster::{Error as ClusterError, Namespace};
 
 use crate::cluster_kv::{FileShard, InlineValue, Key, KvStore, ShardChange, StoredValue};
 
+use super::Error;
 use super::catalog::{CATALOG_FILE, LEGACY_CATALOG_FILE, LOCK_FILE, catalog_shard_id, drop_lock, encode_catalog_bytes, take_lock, write_atomic};
 
-fn io_error(error: impl std::fmt::Display) -> PostgresError {
-    PostgresError::Io(error.to_string())
+fn io_error(error: impl std::fmt::Display) -> Error {
+    Error::Io(error.to_string())
 }
 
-fn protocol(message: &str) -> PostgresError {
-    PostgresError::Protocol(message.to_owned())
+fn protocol(message: &str) -> Error {
+    Error::Corrupt(message.to_owned())
 }
 
 /// One stored row returned by [`ServerStore::scan`].
@@ -86,7 +86,7 @@ pub struct ServerStore {
 
 impl ServerStore {
     /// Opens or creates the store under `dir` and takes the directory lock.
-    pub fn open(dir: impl AsRef<Path>) -> Result<Self, PostgresError> {
+    pub fn open(dir: impl AsRef<Path>) -> Result<Self, Error> {
         let dir = dir.as_ref().to_path_buf();
         fs::create_dir_all(&dir).map_err(io_error)?;
         let lock = take_lock(&dir)?;
@@ -157,7 +157,7 @@ impl ServerStore {
         after: Option<&[u8]>,
         before: Option<&[u8]>,
         limit: usize,
-    ) -> Result<Vec<ServerRow>, PostgresError> {
+    ) -> Result<Vec<ServerRow>, Error> {
         let records = self.shard.scan(&Namespace(namespace.to_owned()), prefix, after, before, limit).map_err(storage_error)?;
         records
             .into_iter()
@@ -168,17 +168,17 @@ impl ServerStore {
                 };
                 Ok(ServerRow { key: record.key.bytes, value: value.0 })
             })
-            .collect::<Result<Vec<_>, PostgresError>>()
+            .collect::<Result<Vec<_>, Error>>()
     }
 
     /// Applies one statement's changes as a single durable atomic commit.
-    pub fn commit_changes(&mut self, changes: Vec<ServerChange>) -> Result<(), PostgresError> {
+    pub fn commit_changes(&mut self, changes: Vec<ServerChange>) -> Result<(), Error> {
         let changes = changes.into_iter().map(ServerChange::into_shard_change).collect();
         self.shard.commit_changes(changes).map_err(storage_error)
     }
 
     /// Releases the directory lock.
-    pub fn close(mut self) -> Result<(), PostgresError> {
+    pub fn close(mut self) -> Result<(), Error> {
         if let Some(lock) = self.lock.take() {
             drop_lock(&lock);
         }
@@ -194,7 +194,7 @@ impl Drop for ServerStore {
     }
 }
 
-fn storage_error(error: ClusterError) -> PostgresError {
+fn storage_error(error: ClusterError) -> Error {
     match error {
         ClusterError::Io(error) => io_error(error),
         other => protocol(&other.to_string()),
