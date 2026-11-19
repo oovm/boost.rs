@@ -1,9 +1,10 @@
 //! 图存储转换、CSC、SCC、视图与 capability 合同测试。
 
+use boost_collection::UnionFind;
 use science_graph::{
     EdgeFilteredView, GraphAlgorithmRequirements, GraphBuilder, GraphDirection, GraphRevision, ImmutableGraph, InducedSubgraphView,
     MutableGraph, NodeId, ReversedGraphView, csr_to_csc, edge_list_to_csr, graph_to_csr,
-    primitives::{UnionFind, connected_components, strongly_connected_components},
+    primitives::{connected_components, strongly_connected_components},
 };
 use science_ndarray::MemoryBudget;
 

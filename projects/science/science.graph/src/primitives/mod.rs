@@ -5,7 +5,6 @@
 mod components;
 mod frontier;
 mod traversal;
-mod union_find;
 
 pub use components::{connected_components, strongly_connected_components, topological_sort};
 pub use frontier::{
@@ -13,4 +12,3 @@ pub use frontier::{
     sort_neighbors_deterministic,
 };
 pub use traversal::bfs_order;
-pub use union_find::UnionFind;

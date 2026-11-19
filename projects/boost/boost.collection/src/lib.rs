@@ -34,6 +34,7 @@ mod array_nd;
 mod cache;
 mod error;
 mod graph;
+mod union_find;
 
 pub use array_nd::{
     Array1D, Array2D, Array3D, ArrayND, DenseArrayND, FixedArray2D, FixedArray3D,
@@ -43,3 +44,4 @@ pub use boost_collection_macro::array;
 pub use cache::{LruCache, LruIter, PutOutcome};
 pub use error::{CollectionError, Result};
 pub use graph::{CsrGraph, GraphError, GraphRead, GraphResult, GraphView, IncomingEdges, MemoryEdge, MemoryGraph, OutgoingEdges};
+pub use union_find::UnionFind;

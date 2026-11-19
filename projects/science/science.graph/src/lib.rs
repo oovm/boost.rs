@@ -32,7 +32,7 @@ pub use lifecycle::{
     publication_attach_chunks, publish_immutable_graph,
 };
 pub use primitives::{
-    CancelFlag, DeterministicBfsOutcome, DeterministicFrontier, FrontierCheckpoint, UnionFind, bfs_order, deterministic_bfs,
+    CancelFlag, DeterministicBfsOutcome, DeterministicFrontier, FrontierCheckpoint, bfs_order, deterministic_bfs,
     resume_deterministic_bfs, sort_neighbors_deterministic,
 };
 pub use storage::{

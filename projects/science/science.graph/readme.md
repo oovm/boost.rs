@@ -8,7 +8,7 @@
 identity/     GraphId · GraphRevision · GraphSnapshot · GraphSemantics · MutableGraph / GraphBuilder / ImmutableGraph
 storage/      CSR/CSC · property · capability · conversion
 views/        reversed · induced · edge-filtered + ViewMapping · ViewNodeRef
-primitives/   frontier · bfs_order · UnionFind · 分量扫描原语
+primitives/   frontier · bfs_order · 分量扫描原语
 ```
 
 公开稳定构造路径：`GraphBuilder` → `ImmutableGraph`。`MutableGraph` 仅构造期（经 `graph_mut`）。
@@ -22,7 +22,7 @@ primitives/   frontier · bfs_order · UnionFind · 分量扫描原语
 - **表示**：内存邻接表 · `CsrGraph` · `CscGraph`
 - **视图**：`ReversedGraphView` · `InducedSubgraphView` · `EdgeFilteredView`（过期 `StaleView`）
 - **转换**：`graph_to_csr` · `edge_list_to_csr` · `csr_to_csc`
-- **L0 原语**：确定性 BFS / frontier · `UnionFind` ·
+- **L0 原语**：确定性 BFS / frontier ·
   `primitives::{connected_components, strongly_connected_components, topological_sort}`
 - **Capability**：`GraphAlgorithmRequirements` · `GraphCapabilities`
 
