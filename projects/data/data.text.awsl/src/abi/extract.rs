@@ -1,4 +1,4 @@
-//! Extract AWSL component ABI from vx / widget AST (`oak-valkyrie`).
+//! Extract AWSL component ABI from vx / widget AST (`data-text-valkyrie`).
 
 use std::ops::Range;
 

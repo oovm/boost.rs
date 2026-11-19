@@ -1,6 +1,6 @@
 //! AWSL 前端降级：AST → synthetic V + RenderIR。
 
-use oak_awsl::{
+use data_text_awsl::{
     AbiSeverity, AwslAttributeValue, AwslDirectiveKind, AwslElement, AwslRoot, AwslTemplateNode, AwslTextPart, ComponentAbi,
     widget_name_from_stem,
 };
@@ -52,7 +52,7 @@ pub struct LoweredComponent {
     /// Extracted component ABI.
     pub component_abi: ComponentAbi,
     /// ABI semantic issues from script extraction.
-    pub abi_issues: Vec<oak_awsl::AbiIssue>,
+    pub abi_issues: Vec<data_text_awsl::AbiIssue>,
     /// island 类型。
     pub island_type: String,
     /// hydrate 策略。
@@ -172,7 +172,7 @@ pub fn lower_component(root: &AwslRoot, component_name: &str, source_path: &str,
 }
 
 /// ABI 提取的 Error 级诊断在降级阶段直接失败，并带上组件与源文件。
-fn fail_on_abi_errors(component: &str, source_path: &str, issues: &[oak_awsl::AbiIssue]) -> AsgardResult<()> {
+fn fail_on_abi_errors(component: &str, source_path: &str, issues: &[data_text_awsl::AbiIssue]) -> AsgardResult<()> {
     let Some(first) = issues.iter().find(|issue| matches!(issue.severity, AbiSeverity::Error))
     else {
         return Ok(());
@@ -870,8 +870,8 @@ fn decode_text_segment(text: &str, span: &std::ops::Range<usize>) -> AsgardResul
         quote: QuoteKind::Double,
         quote_count: 1,
         content: text.to_string(),
-        content_span: oak_core::Range { start: span.start, end: span.end },
-        span: oak_core::Range { start: span.start, end: span.end },
+        content_span: data_text_core::Range { start: span.start, end: span.end },
+        span: data_text_core::Range { start: span.start, end: span.end },
     };
     match decode_quote_capture(&literal, false) {
         Ok(DecodedQuoteCapture::PlainText(decoded)) => Ok(decoded),
@@ -904,7 +904,7 @@ fn attr_value_expr(value: &AwslAttributeValue) -> String {
     }
 }
 
-fn parse_loop_element_attrs(attrs: &[oak_awsl::AwslAttribute]) -> Option<(String, String, Option<String>)> {
+fn parse_loop_element_attrs(attrs: &[data_text_awsl::AwslAttribute]) -> Option<(String, String, Option<String>)> {
     let mut items_expr = None::<String>;
     let mut item_var = None::<String>;
     let mut key_expr = None::<String>;

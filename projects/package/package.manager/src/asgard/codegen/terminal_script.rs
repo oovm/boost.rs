@@ -5,8 +5,8 @@
 //! 结构化失败，不进入生成。模板插值/循环源等表达式片段也不是完整程序，
 //! 包装成正式 `let` 声明经同一 parser 解析，不做文本级回退。
 
-use oak_core::Range;
-use oak_valkyrie::ast::{MicroDeclaration, Pattern, StatementNode, TermExpression};
+use data_text_core::Range;
+use data_text_valkyrie::ast::{MicroDeclaration, Pattern, StatementNode, TermExpression};
 
 use crate::asgard::error::{AsgardError, AsgardResult};
 use compiler_valkyrie::compiler::syntax::parser::{ValkyrieRoot, parse_source};

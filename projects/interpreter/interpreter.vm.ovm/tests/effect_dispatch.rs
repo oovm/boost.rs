@@ -6,7 +6,7 @@
 //! continuation, and invokes the handler function with `[continuation, effect_value]`
 //! on its operand stack.
 
-use acorn_odin::{
+use data_binary_odin::{
     Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, OdinWitnessDispatchEntry, emit_imm1,
     emit_plain, encode_module,
 };

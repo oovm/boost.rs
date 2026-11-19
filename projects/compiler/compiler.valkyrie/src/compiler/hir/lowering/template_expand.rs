@@ -13,9 +13,9 @@ use crate::compiler::{
 
 use compiler_types::DiagnosticSpan;
 
-use oak_core::TokenType;
+use data_text_core::TokenType;
 
-use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
+use data_text_valkyrie::lexer::token_type::ValkyrieTokenType;
 
 use super::{
     errors::{TemplateConstruct, TemplateFailure},
@@ -323,7 +323,7 @@ fn expand_loop_body(loop_node: &TemplateLoop, source: &str, arch: &str) -> Resul
 }
 
 fn expand_fragment(
-    tokens: &[oak_core::Token<ValkyrieTokenType>],
+    tokens: &[data_text_core::Token<ValkyrieTokenType>],
     source: &str,
     arch: &str,
     span: DiagnosticSpan,
@@ -381,12 +381,12 @@ fn select_arch_match_body(match_node: &TemplateMatch, source: &str, arch: &str, 
     Err(HirError::template_expansion_failed(TemplateConstruct::Match, TemplateFailure::NoMatchingArchArm { arch: arch.to_string() }, span))
 }
 
-fn is_arch_scrutinee(source: &str, header: &[oak_core::Token<ValkyrieTokenType>]) -> bool {
+fn is_arch_scrutinee(source: &str, header: &[data_text_core::Token<ValkyrieTokenType>]) -> bool {
     pattern_token_text(source, header).is_ok_and(|text| text == "arch")
 }
 
 /// 架构匹配的 pattern 文本：字符串 pattern 必须走统一捕获解码，不再只剥首尾引号。
-fn pattern_token_text(source: &str, tokens: &[oak_core::Token<ValkyrieTokenType>]) -> Result<String, HirError> {
+fn pattern_token_text(source: &str, tokens: &[data_text_core::Token<ValkyrieTokenType>]) -> Result<String, HirError> {
     let meaningful: Vec<_> = tokens.iter().filter(|token| !token.kind.is_ignored()).collect();
 
     Ok(match meaningful.as_slice() {

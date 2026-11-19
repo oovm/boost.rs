@@ -41,7 +41,7 @@ use crate::{
     contracts::instruction_primary_result,
     emitter_backend_wasi::{WasmBinaryModule, WasmPackageKind, WasmSection},
 };
-use acorn_wasm::{
+use data_binary_wasm::{
     BLOCKTYPE_EMPTY, VALTYPE_ANYREF, VALTYPE_EXTERNREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, VALTYPE_REF_NULL, WasmExternalKind, WasmOpcode,
     encode_array_get, encode_array_len, encode_array_new_default, encode_array_set, encode_block_empty, encode_br, encode_br_if, encode_call,
     encode_drop, encode_f64_const, encode_global_get, encode_global_set, encode_i32_add, encode_i32_const, encode_i32_load, encode_i32_store,
@@ -2072,7 +2072,7 @@ fn emit_library_field_accessors<'name>(
         let mut lir: Vec<WasmBodyInstruction> = (0..layout.fields.len())
             .map(|field_index| WasmBodyInstruction::U32 { opcode: WasmOpcode::LocalGet, operand: field_index as u32 })
             .collect();
-        lir.push(WasmBodyInstruction::GcTypeIndex { opcode: acorn_wasm::WasmGcOpcode::StructNew, operand: plan.struct_type_index });
+        lir.push(WasmBodyInstruction::GcTypeIndex { opcode: data_binary_wasm::WasmGcOpcode::StructNew, operand: plan.struct_type_index });
         lir.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
         let body = synthetic_body(lir);
         let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
@@ -2141,7 +2141,7 @@ fn emit_library_field_accessors<'name>(
     for (position, (_, _, box_type_index, carrier)) in option_plans.iter().enumerate() {
         let new_body = synthetic_body(vec![
             WasmBodyInstruction::U32 { opcode: WasmOpcode::LocalGet, operand: 0 },
-            WasmBodyInstruction::GcTypeIndex { opcode: acorn_wasm::WasmGcOpcode::StructNew, operand: *box_type_index },
+            WasmBodyInstruction::GcTypeIndex { opcode: data_binary_wasm::WasmGcOpcode::StructNew, operand: *box_type_index },
             WasmBodyInstruction::Opcode(WasmOpcode::End),
         ]);
         let new_type_index = u32::try_from(type_indices.len()).expect("type index overflow");

@@ -10,21 +10,21 @@ mod staging;
 
 pub use namespace::{namespace_is_declaration_only, namespace_items, namespace_items_mut};
 
-use oak_core::{Builder, ParseSession, SourceText};
-use oak_valkyrie::{ValkyrieBuilder, ValkyrieLanguage};
+use data_text_core::{Builder, ParseSession, SourceText};
+use data_text_valkyrie::{ValkyrieBuilder, ValkyrieLanguage};
 
 pub use error::ParseError;
 pub use naming::{DIAG_ABI_BINDING_NOT_SNAKE_CASE, DIAG_IDENTIFIER_NOT_SNAKE_CASE, NamingViolation, validate_snake_case};
 pub use staging::reject_unsupported_template_source;
 
 /// Oak 前端 AST 类型别名，供 lowering 直接引用。
-pub use oak_valkyrie::ast;
+pub use data_text_valkyrie::ast;
 
 /// 解析后的 Valkyrie 模块根。
 pub type ValkyrieRoot = ast::ValkyrieRoot;
 
 /// 将 Oak span 转为标准区间。
-pub fn std_range(span: &oak_core::Range<usize>) -> std::ops::Range<usize> {
+pub fn std_range(span: &data_text_core::Range<usize>) -> std::ops::Range<usize> {
     span.start..span.end
 }
 
@@ -44,7 +44,7 @@ pub const ANONYMOUS_SOURCE_ID: &str = "<frontend>";
 /// 这是 Oak 的语法能力：文本段保留原始字节（转义候选不解码），插值段用普通
 /// 表达式解析器生成真实表达式树与绝对区间。前缀解释（`r` 不进入模板）由
 /// 调用方决定，本函数不识别 prefix。
-pub fn parse_quote_template(content: &str, content_start: usize) -> Result<Vec<ast::StringSegment>, oak_core::OakError> {
+pub fn parse_quote_template(content: &str, content_start: usize) -> Result<Vec<ast::StringSegment>, data_text_core::TextError> {
     ValkyrieBuilder::new(&production_language()).parse_quote_template(content, content_start)
 }
 
@@ -114,9 +114,9 @@ pub fn parse_source_with_language_and_identity(source: &str, language: &Valkyrie
 /// 把 oak 生产的单条诊断投影为编译诊断汇条目。
 ///
 /// `code` 由 oak 的稳定 i18n key 派生（`error.syntax` → `valkyrie.frontend.parse.syntax`），
-/// 不自行枚举错误清单；`phase`/`owner` 按诊断合同诚实记录为语法阶段、oak-valkyrie 生产。
+/// 不自行枚举错误清单；`phase`/`owner` 按诊断合同诚实记录为语法阶段、data-text-valkyrie 生产。
 /// 文件身份由调用方在解析入口给出：真实文件落逻辑路径，匿名/合成源落 [`ANONYMOUS_SOURCE_ID`]。
-fn compile_diagnostic_from_oak_error(error: &oak_core::OakError, source_id: &str) -> crate::compiler::diagnostics::pending::CompileDiagnostic {
+fn compile_diagnostic_from_oak_error(error: &data_text_core::TextError, source_id: &str) -> crate::compiler::diagnostics::pending::CompileDiagnostic {
     use compiler_types::{DiagnosticOwner, DiagnosticPhase, DiagnosticRow, DiagnosticSeverity, DiagnosticSource, DiagnosticSpan};
     let kind = error.kind();
     let span = match error.source_offset() {
@@ -125,19 +125,19 @@ fn compile_diagnostic_from_oak_error(error: &oak_core::OakError, source_id: &str
     };
     let code = format!("valkyrie.frontend.parse.{}", kind.key().trim_start_matches("error."));
     let message = match kind {
-        oak_core::OakErrorKind::SyntaxError { message, .. }
-        | oak_core::OakErrorKind::CustomError { message }
-        | oak_core::OakErrorKind::SemanticError { message }
-        | oak_core::OakErrorKind::FormatError { message }
-        | oak_core::OakErrorKind::ProtocolError { message }
-        | oak_core::OakErrorKind::InternalError { message } => message.clone(),
+        data_text_core::TextErrorKind::SyntaxError { message, .. }
+        | data_text_core::TextErrorKind::CustomError { message }
+        | data_text_core::TextErrorKind::SemanticError { message }
+        | data_text_core::TextErrorKind::FormatError { message }
+        | data_text_core::TextErrorKind::ProtocolError { message }
+        | data_text_core::TextErrorKind::InternalError { message } => message.clone(),
         _ => error.to_string(),
     };
     let row = DiagnosticRow::new(
         code,
         DiagnosticSeverity::Error,
         DiagnosticPhase::Parsing,
-        DiagnosticOwner::syntax("oak-valkyrie"),
+        DiagnosticOwner::syntax("data-text-valkyrie"),
         DiagnosticSource { id: source_id.into(), revision: None },
         span,
     );

@@ -7,7 +7,7 @@
 
 use std::fmt::Write as _;
 
-use oak_awsl::is_html_void_element;
+use data_text_awsl::is_html_void_element;
 use serde_json::Value;
 
 use crate::asgard::{

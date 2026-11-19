@@ -2,11 +2,11 @@
 //!
 //! 将 `PeImage` 渲染为人类可读的诊断文本。
 //!
-//! `PE/CLR` 二进制模型与结构化解码器统一由 `acorn-pe` 提供，
+//! `PE/CLR` 二进制模型与结构化解码器统一由 `data-binary-pe` 提供，
 //! 本模块仅保留纯文本渲染函数（`dump_image` / `dump_user_strings` / `dump_blobs`），
 //! 以及少量将结构化解码结果转为可读字符串的格式化辅助。
 
-use acorn_pe::pe::{
+use data_binary_pe::pe::{
     CliHeader, CodedIndex, DosHeader, ElementType, MemberRefParent, MetadataRoot, MethodSignature, OptionalHeader, PeCoffHeader as CoffHeader,
     PeImage, SectionHeader, TableKind, coded_index_size, decode_member_ref_parent, decode_method_signature, read_blob, read_compressed_uint,
     read_idx, read_strings_string, read_u32_table, read_user_string, table_data_offset,

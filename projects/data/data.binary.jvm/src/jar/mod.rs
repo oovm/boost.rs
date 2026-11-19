@@ -140,7 +140,7 @@ impl JvmJarPackage {
         write_stored_zip(&members)
     }
 
-    /// 从二进制归档解码出 `JAR` 模型。容器索引用 `acorn-zip`。
+    /// 从二进制归档解码出 `JAR` 模型。容器索引用 `data-binary-zip`。
     pub fn from_bytes(file_name: impl Into<String>, bytes: &[u8]) -> Result<Self, JvmJarError> {
         let source = MemorySource::from_bytes("jar", bytes.to_vec());
         let index = index_zip(&source)?;

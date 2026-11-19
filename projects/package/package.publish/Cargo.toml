@@ -9,10 +9,10 @@ repository = "https://github.com/oovm/rust-boost/tree/dev/projects/package/packa
 publish = false
 
 [dependencies]
-acorn-odin = { workspace = true }
+data-binary-odin = { workspace = true }
 acorn-tar = { workspace = true }
 compiler-target = { workspace = true }
-oak-von = { workspace = true }
+data-text-von = { workspace = true }
 package-registry = { workspace = true }
 package-resolve = { workspace = true }
 serde = { workspace = true }

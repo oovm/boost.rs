@@ -25,7 +25,7 @@ use crate::{
         ExecutableStorageKind as MirStorageKind, ExecutableValueRef as MirValueRef, SemanticType,
     },
 };
-use acorn_wasm::{VALTYPE_EXTERNREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, WasmOpcode};
+use data_binary_wasm::{VALTYPE_EXTERNREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, WasmOpcode};
 use compiler_types::{ItemInstanceId, LayoutId};
 
 pub(in crate::lowering::backends::wasm) fn array_element_type(array_type: &SemanticType) -> Option<&SemanticType> {

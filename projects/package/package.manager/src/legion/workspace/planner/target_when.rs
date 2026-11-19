@@ -10,7 +10,7 @@
 //! canonical triple 拼写：wechat → `wasm32-wechat-unknown-wasm`（vendor=Wechat，specification=Unknown）。
 
 use compiler_valkyrie::compiler::syntax::oak::ast::{Attribute, TermExpression};
-use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
+use data_text_valkyrie::lexer::token_type::ValkyrieTokenType;
 
 use compiler_target::{CanonicalAbi, CanonicalSpecification, CanonicalTarget, CanonicalVendor};
 

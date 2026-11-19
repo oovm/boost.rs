@@ -1,4 +1,4 @@
-use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
+use data_text_valkyrie::lexer::token_type::ValkyrieTokenType;
 
 use compiler_types::compiler_input::{DeclarationKind, DeclarationLink, EntryPointKind, ReferencePath};
 

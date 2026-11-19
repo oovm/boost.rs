@@ -81,7 +81,7 @@ impl LockFile {
             return Ok(Self::new(directory, layout));
         }
         let source = std::fs::read_to_string(&path)?;
-        let mut lock: LockFile = oak_von::from_str(&source).map_err(PackageError::von)?;
+        let mut lock: LockFile = data_text_von::from_str(&source).map_err(PackageError::von)?;
         lock.path = path;
         Ok(lock)
     }

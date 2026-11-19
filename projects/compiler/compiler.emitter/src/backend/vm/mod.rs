@@ -3,7 +3,7 @@
 use std::{fs, path::Path};
 
 use crate::{EmitterError, Result};
-use acorn_odin::{OdinModuleData, encode_module};
+use data_binary_odin::{OdinModuleData, encode_module};
 
 /// Encode [`OdinModuleData`] and write it to `output_path`.
 pub fn emit_ovm_module(module: &OdinModuleData, output_path: &Path) -> Result<()> {

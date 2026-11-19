@@ -9,7 +9,7 @@
 
 use super::{ExecutableLoweringContext, LayoutId, MirFunction, MirStorageKind, SemanticType, StorageKind, WASM_GC_ANYREF};
 use crate::lowering::backends::wasm::gc::{VALTYPE_F32, wasm_gc_field_type_byte, wasm_js_glue_value_carrier_valtype};
-use acorn_wasm::{VALTYPE_ANYREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64};
+use data_binary_wasm::{VALTYPE_ANYREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64};
 use std::collections::BTreeMap;
 
 /// 闭包对象（合同 §5.3）的物理槽位：0 = funcref table 槽位（i32），1 = 捕获环境（anyref / null）。

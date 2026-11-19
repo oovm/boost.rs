@@ -9,11 +9,11 @@ repository = "https://github.com/oovm/rust-boost/tree/dev/projects/package/packa
 publish = false
 
 [dependencies]
-oak-von = { workspace = true }
+data-text-von = { workspace = true }
 package-registry = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-oak-von = { workspace = true }
+data-text-von = { workspace = true }
 package-registry = { workspace = true }

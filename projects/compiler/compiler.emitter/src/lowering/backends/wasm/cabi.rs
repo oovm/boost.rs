@@ -1,6 +1,6 @@
 //! Canonical ABI linear heap: shared bump cursor for `cabi_realloc` and MIR allocations.
 use crate::emitter_backend_wasi::WasmSection;
-use acorn_wasm::{
+use data_binary_wasm::{
     VALTYPE_I32, WasmOpcode, encode_i32_and, encode_i32_const, encode_if_empty, encode_local_get, encode_local_set, encode_local_tee,
     encode_memory_copy, encode_memory_fill, encode_memory_grow, encode_memory_size, encode_return, encode_unreachable,
 };

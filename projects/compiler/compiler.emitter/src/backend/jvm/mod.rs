@@ -1,7 +1,7 @@
 //! `JVM` 后端容器入口。
 //!
 //! 这里按 `class / jar` 两个输出边界收口：`class` 与 `jar` 格式模型统一由
-//! `acorn-jvm` 提供，本模块只负责后端编排。
+//! `data-binary-jvm` 提供，本模块只负责后端编排。
 
 #![deny(missing_docs)]
 

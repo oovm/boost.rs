@@ -3,7 +3,7 @@
 use std::fmt::{Display, Formatter};
 
 use crate::legion::workspace::{manifest::ManifestError, planner::PlannerError};
-use oak_core::OakError;
+use data_text_core::TextError;
 
 /// `legion::*` 装配 API 的 `Result` 别名。
 pub type LegionResult<T> = std::result::Result<T, LegionError>;
@@ -24,7 +24,7 @@ pub enum LegionError {
         /// VON/Oak 片段标签。
         label: String,
         /// 底层 Oak 解析错误。
-        error: OakError,
+        error: TextError,
     },
     /// 发射器驱动失败（待 emitter 结构化 `E` 后收窄）。
     Emitter {
@@ -41,7 +41,7 @@ impl LegionError {
         Self::Message(message.into())
     }
 
-    pub(crate) fn oak(context: impl Into<String>, label: impl Into<String>, error: OakError) -> Self {
+    pub(crate) fn oak(context: impl Into<String>, label: impl Into<String>, error: TextError) -> Self {
         Self::Oak { context: context.into(), label: label.into(), error }
     }
 

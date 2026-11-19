@@ -722,7 +722,7 @@ fn jvm_array_element_type(array_type: &SemanticType) -> Result<&SemanticType> {
 
 /// 数组元素位置的 JVM 载体。
 ///
-/// acorn-jvm 没有 `laload`/`lastore`/`faload`/`daload`，因此 i64/f32/f64 元素
+/// data-binary-jvm 没有 `laload`/`lastore`/`faload`/`daload`，因此 i64/f32/f64 元素
 /// 必须用装箱引用数组（`java/lang/Long` / `Double` / `Float`），这是块 3 存取
 /// 指令的前提；标量元素选 `NewArray` atype 可直接承载的基本类型。
 fn jvm_array_element_descriptor(layouts: &AggregateLayoutPlan, element: &SemanticType) -> Result<JvmTypeDescriptor> {

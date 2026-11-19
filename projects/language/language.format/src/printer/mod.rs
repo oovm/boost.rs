@@ -93,7 +93,7 @@ where
     data_text_von::to_string(value)
 }
 
-/// 经 `oak-von::printer` 将 `value` 写出为缩进 VON 文本。
+/// 经 `data-text-von::printer` 将 `value` 写出为缩进 VON 文本。
 #[cfg(feature = "serde")]
 pub fn to_string_indented<T>(value: &T) -> Result<String, data_text_core::TextError>
 where

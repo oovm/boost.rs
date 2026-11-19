@@ -4,7 +4,7 @@
 //! for `Yield`, `Resume`, and `PerformEffect` form a coherent suspend/resume pipeline,
 //! independent of any emitter-side lowering path.
 
-use acorn_odin::{
+use data_binary_odin::{
     Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, emit_imm1, emit_plain, encode_module,
 };
 use interpreter_vm_ovm::{OdinVm, Value};

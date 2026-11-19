@@ -52,9 +52,9 @@ pub fn is_awsl_extension(ext: &str) -> bool {
 /// 携带这些事实。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceKind {
-    /// VON 数据：`.von`（`oak-von::formatter`）。
+    /// VON 数据：`.von`（`data-text-von::formatter`）。
     Von,
-    /// AWSL 模板：`.awsl`（规范拼写）或同义缩写 `.w`（`oak-awsl::formatter`）。
+    /// AWSL 模板：`.awsl`（规范拼写）或同义缩写 `.w`（`data-text-awsl::formatter`）。
     Awsl,
 }
 

@@ -84,7 +84,7 @@ fn reject_constructor_annotation(
     annotations: &[Attribute],
     target_kind: &str,
     name: &str,
-    span: &oak_core::Range<usize>,
+    span: &data_text_core::Range<usize>,
 ) -> Result<(), HirError> {
     if auto_constructor_attribute_count(annotations) == 0 {
         return Ok(());
@@ -101,7 +101,7 @@ fn ast_source() -> DiagnosticSource {
     DiagnosticSource { id: "<ast>".into(), revision: None }
 }
 
-fn ast_span(span: &oak_core::Range<usize>) -> DiagnosticSpan {
+fn ast_span(span: &data_text_core::Range<usize>) -> DiagnosticSpan {
     DiagnosticSpan { start: span.start, end: span.end }
 }
 
@@ -155,7 +155,7 @@ fn namespace_display(path: &[String]) -> String {
     path.join(".")
 }
 
-fn type_declaration_identity(item: &StatementNode) -> Option<(String, &'static str, oak_core::Range<usize>)> {
+fn type_declaration_identity(item: &StatementNode) -> Option<(String, &'static str, data_text_core::Range<usize>)> {
     match item {
         StatementNode::Class(item) => Some((item.name.name.clone(), "class", item.span)),
         StatementNode::Structure(item) => Some((item.name.name.clone(), "structure", item.span)),

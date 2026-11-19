@@ -69,8 +69,8 @@ impl From<compiler_valkyrie::compiler::emitter::pipeline::PipelineError> for Asg
     }
 }
 
-impl From<acorn_zip::ZipWriteError> for AsgardError {
-    fn from(value: acorn_zip::ZipWriteError) -> Self {
+impl From<data_binary_zip::ZipWriteError> for AsgardError {
+    fn from(value: data_binary_zip::ZipWriteError) -> Self {
         Self::msg(value.to_string())
     }
 }

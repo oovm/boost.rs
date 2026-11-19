@@ -8,7 +8,7 @@ use std::{
 };
 
 use crate::legion::{CanonicalTarget, PublishFormat, RunnerSelector, von::from_str, workspace::oak::source_point_span};
-use oak_core::OakError as VonError;
+use data_text_core::TextError as VonError;
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{self, MapAccess, Visitor},

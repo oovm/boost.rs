@@ -6,7 +6,7 @@
 //! 运行时经项目依赖闭包解析）与原生可执行文件骨架一起打包（V→native 编译器补全后接入）。
 
 use crate::asgard::package::artifact::PackageArtifact;
-use acorn_host::host_exe::build_host_executable;
+use data_binary_host::host_exe::build_host_executable;
 
 /// 终端打包产物。
 #[derive(Debug, Clone)]

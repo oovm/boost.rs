@@ -6,7 +6,7 @@
 //!
 //! 对于 `.msil` / `.il` 文本，直接使用 `MsilParser` 解析方法体。
 //!
-//! `PE/CLR` 二进制解析与 `MSIL` 文本解析模型统一由 `acorn-pe` 提供，
+//! `PE/CLR` 二进制解析与 `MSIL` 文本解析模型统一由 `data-binary-pe` 提供，
 //! 本模块仅负责命令行入口与纯文本渲染。
 use crate::legion::cmds::error::{LegionError, LegionResult};
 use std::{
@@ -15,7 +15,7 @@ use std::{
     process::{Command, ExitCode},
 };
 
-use acorn_pe::{
+use data_binary_pe::{
     msil::{IlOperand, MsilParser, MsilTextMethod},
     pe::{
         CliHeader, IlInstruction, MetadataRoot, SectionHeader, parse_method_body_il, parse_pe, read_idx, read_strings_string, read_u32_table,

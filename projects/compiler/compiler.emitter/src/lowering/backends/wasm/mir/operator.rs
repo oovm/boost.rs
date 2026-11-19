@@ -4,7 +4,7 @@
 //! 逻辑导入链接，不再携带任何平台的冻结结果。计划构造阶段由本模块一次性冻结，
 //! 发射期只消费 [`WasmOperatorBinding`]，不得再从助记符字符串推断 arity 或配方。
 
-use acorn_wasm::WasmOpcode;
+use data_binary_wasm::WasmOpcode;
 use compiler_types::{ItemInstanceId, SemanticType};
 
 use crate::target_operator::{

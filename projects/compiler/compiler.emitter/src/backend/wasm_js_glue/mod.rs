@@ -7,7 +7,7 @@
 use std::{fs, path::Path};
 
 use crate::Result;
-use acorn_wasm::{WasmBinaryModule, WasmExternalKind, parse_export_section};
+use data_binary_wasm::{WasmBinaryModule, WasmExternalKind, parse_export_section};
 use compiler_target::{
     abstractions::ArtifactFormat,
     packaging::{ArtifactDescriptor, TargetLane},

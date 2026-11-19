@@ -37,7 +37,7 @@ use crate::{
 use compiler_target::abstractions::BinaryArch;
 use compiler_types::ItemInstanceId;
 
-use acorn_pe::elf::{NativeElfImage, NativeElfWriter};
+use data_binary_pe::elf::{NativeElfImage, NativeElfWriter};
 
 use super::{X64CallConv, X64LoweredProgram, X64TextInstruction, X64ProgramFunction, encode_x64_program, x64_lir};
 

@@ -1,4 +1,4 @@
-use acorn_odin::{Odin_VERSION, OdinModuleData};
+use data_binary_odin::{Odin_VERSION, OdinModuleData};
 
 use super::sanitize_symbol;
 use crate::FragmentSubmission;

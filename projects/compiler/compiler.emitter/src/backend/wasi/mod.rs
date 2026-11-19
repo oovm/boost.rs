@@ -1,7 +1,7 @@
 //! `WebAssembly` 二进制后端容器入口，覆盖 `WasmJsGlue` 与 `WasiComponent` 两种宿主边界。
 //!
 //! 这里按 `wasm / wat / wit` 三个输出格式收口。
-//! `WASM` 二进制模型与编解码由 `acorn-wasm` 提供；组件 `WIT` 文本由本模块直接生成。
+//! `WASM` 二进制模型与编解码由 `data-binary-wasm` 提供；组件 `WIT` 文本由本模块直接生成。
 
 #![deny(missing_docs)]
 
@@ -23,9 +23,9 @@ use compiler_target::{
 };
 
 use crate::backend::binding_builders::{BindingGenerationContext, generate_host_binding_artifacts};
-use acorn_wasm::{parse_export_section, parse_import_section};
+use data_binary_wasm::{parse_export_section, parse_import_section};
 
-pub use acorn_wasm::{WasmBinaryError, WasmBinaryModule, WasmCustomSection, WasmSection};
+pub use data_binary_wasm::{WasmBinaryError, WasmBinaryModule, WasmCustomSection, WasmSection};
 pub use component::WasiPreview;
 pub(crate) use component::{
     WASI_PREVIEW2_VERSION, WASI_PREVIEW3_VERSION, WitBindingBuilder, package_core_wasm_as_component, wasi_adapt_import_for_preview,

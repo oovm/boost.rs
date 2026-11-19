@@ -16,8 +16,8 @@
 
 // ── Local re-exports (子模块之间共用) ──────────────────────────────────────
 
-// 从 acorn_wasm re-export（calls.rs / control.rs / lowerer.rs 通过 super::* 消费）
-pub(super) use acorn_wasm::{BLOCKTYPE_EMPTY, VALTYPE_ANYREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, WasmOpcode};
+// 从 data_binary_wasm re-export（calls.rs / control.rs / lowerer.rs 通过 super::* 消费）
+pub(super) use data_binary_wasm::{BLOCKTYPE_EMPTY, VALTYPE_ANYREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, WasmOpcode};
 
 // 从 crate::backend_plan_views re-export
 pub(super) use crate::backend_plan_views::{
@@ -31,8 +31,8 @@ pub(super) use crate::backend_plan_views::{
 /// `f32` 在 wasm 侧的唯一 valtype 常量（`0x7D`）；权威定义见 `wasm::gc::VALTYPE_F32`。
 pub(super) use crate::lowering::backends::wasm::gc::VALTYPE_F32;
 
-/// `f32` 的常量与 memarg 编码由 `acorn-wasm` 拥有；emitter 不再保留本地发射点。
-pub(super) use acorn_wasm::{encode_f32_const, encode_f32_load};
+/// `f32` 的常量与 memarg 编码由 `data-binary-wasm` 拥有；emitter 不再保留本地发射点。
+pub(super) use data_binary_wasm::{encode_f32_const, encode_f32_load};
 
 pub(super) use super::super::executable::ExecutableLoweringContext;
 pub(super) use compiler_types::{LayoutId, NominalInstanceId, VariantId};

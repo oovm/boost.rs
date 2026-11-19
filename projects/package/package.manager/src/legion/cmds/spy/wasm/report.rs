@@ -1,5 +1,5 @@
 use crate::legion::cmds::error::{LegionError, LegionResult};
-use acorn_wasm::{
+use data_binary_wasm::{
     DecodedInstruction, SECTION_CUSTOM, WasmBinaryModule, WasmFunctionEntry, decode_code_body, parse_code_section, parse_export_section,
     parse_import_section, parse_type_section, section_name, uleb128_size, wasm_value_type_name,
 };

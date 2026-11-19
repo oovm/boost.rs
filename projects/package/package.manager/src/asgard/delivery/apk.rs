@@ -4,7 +4,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use acorn_zip::{ZipEntry, ZipWriter};
+use data_binary_zip::{ZipEntry, ZipWriter};
 
 use super::util::{copy_dir_recursive, read_optional_file};
 use crate::asgard::{delivery::PackReport, platform_contract::validate_android_dist_bytes};

@@ -4,7 +4,7 @@ use crate::{
     legion::CanonicalTarget,
 };
 use crate::asgard::report::{HydratedChartSpec, series_to_init_literal};
-use oak_awsl::widget_name_from_stem;
+use data_text_awsl::widget_name_from_stem;
 use std::{
     fs,
     path::{Path, PathBuf},

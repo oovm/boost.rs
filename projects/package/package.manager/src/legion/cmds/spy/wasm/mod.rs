@@ -6,7 +6,7 @@ mod report;
 use crate::legion::cmds::error::{LegionError, LegionResult};
 use std::{fs, path::Path, process::ExitCode};
 
-use acorn_wasm::WasmBinaryModule;
+use data_binary_wasm::WasmBinaryModule;
 
 use super::{SpyOptions, SpyTargetOptions};
 

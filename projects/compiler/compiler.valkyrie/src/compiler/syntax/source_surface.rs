@@ -14,13 +14,13 @@ use std::path::Path;
 /// 可格式化的源码种类（语言侧便利枚举）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceKind {
-    /// 核心 Valkyrie：`.v` / `.valkyrie`（`oak-valkyrie::formatter`）。
+    /// 核心 Valkyrie：`.v` / `.valkyrie`（`data-text-valkyrie::formatter`）。
     V,
-    /// Valkyrie + X-Grammar：`.vx`（`oak-valkyrie::formatter`）。
+    /// Valkyrie + X-Grammar：`.vx`（`data-text-valkyrie::formatter`）。
     Vx,
-    /// VON 数据：`.von`（`oak-von::formatter`）。
+    /// VON 数据：`.von`（`data-text-von::formatter`）。
     Von,
-    /// Asgard AWSL 模板：`.awsl`（规范拼写）或同义缩写 `.w`（`oak-awsl::formatter`）。
+    /// Asgard AWSL 模板：`.awsl`（规范拼写）或同义缩写 `.w`（`data-text-awsl::formatter`）。
     Awsl,
 }
 

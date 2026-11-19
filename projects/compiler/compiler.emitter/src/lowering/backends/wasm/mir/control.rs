@@ -4,7 +4,7 @@ use super::{
     MirBlock, MirBlockRef, MirConstant, MirOperand, MirTerminator, MirValueRef, WasmBodyInstruction, WasmMirLowerer,
     is_js_glue_host_string_type,
 };
-use acorn_wasm::{VALTYPE_I32, WasmOpcode};
+use data_binary_wasm::{VALTYPE_I32, WasmOpcode};
 
 impl<'a> WasmMirLowerer<'a> {
     pub(super) fn emit_function_body(&mut self) -> crate::Result<()> {

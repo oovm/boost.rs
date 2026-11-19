@@ -4,7 +4,7 @@
 //! 由本模块统一声明，wasm 降层只消费这里的签名，不再自行按字段名拼指令类型。
 //! 协议未声明的字段一律失败闭合，不得现场猜载体。
 
-use acorn_wasm::{VALTYPE_I32, VALTYPE_I64};
+use data_binary_wasm::{VALTYPE_I32, VALTYPE_I64};
 
 /// 一条 JS glue 宿主导入的物理签名。
 #[derive(Debug, Clone, Copy)]

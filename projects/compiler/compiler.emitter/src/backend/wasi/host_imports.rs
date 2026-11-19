@@ -3,7 +3,7 @@
 //! WASI 导入的签名由预览协议（preview2 适配后的 core 导入）定义，wasm 降层只消费
 //! 本模块的协议事实，不再按字段名自行拼指令类型。协议未声明的字段一律失败闭合。
 
-use acorn_wasm::{VALTYPE_I32, VALTYPE_I64};
+use data_binary_wasm::{VALTYPE_I32, VALTYPE_I64};
 
 /// 查询 WASI core 导入的物理签名。
 ///

@@ -343,7 +343,7 @@ const ENVELOPE_SCHEMA: u32 = 1;
 fn artifact_envelope_entry(relative: &str) -> Result<serde_json::Value> {
     let extension = Path::new(relative).extension().and_then(|value| value.to_str()).unwrap_or_default().to_ascii_lowercase();
     let (kind, format, format_version) = match extension.as_str() {
-        "odin" => ("execution", "odin", Some(acorn_odin::Odin_VERSION)),
+        "odin" => ("execution", "odin", Some(data_binary_odin::Odin_VERSION)),
         "wasm" => ("execution", "wasm", None),
         "mjs" | "js" => ("host-module", "ecmascript", None),
         "nyar" => {
@@ -517,7 +517,7 @@ fn load_run_contracts(artifact_dir: &Path) -> Result<Vec<RunContract>> {
         return Ok(Vec::new());
     }
     let source = std::fs::read_to_string(&contracts_path)?;
-    let manifest: ExecutionManifest = oak_von::from_str(&source).map_err(|error| PublishError::Resolve(PackageError::von(error)))?;
+    let manifest: ExecutionManifest = data_text_von::from_str(&source).map_err(|error| PublishError::Resolve(PackageError::von(error)))?;
     Ok(manifest.run_contracts)
 }
 

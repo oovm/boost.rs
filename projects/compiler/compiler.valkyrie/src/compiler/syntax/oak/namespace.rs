@@ -1,6 +1,6 @@
 //! Oak `namespace` AST helpers (declaration-only vs braced body).
 
-use oak_valkyrie::ast::{NamespaceDeclaration, StatementNode};
+use data_text_valkyrie::ast::{NamespaceDeclaration, StatementNode};
 
 /// `namespace foo;` — switches the active namespace without introducing items.
 pub fn namespace_is_declaration_only(namespace: &NamespaceDeclaration) -> bool {

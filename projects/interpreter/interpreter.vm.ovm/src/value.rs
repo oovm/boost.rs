@@ -8,14 +8,14 @@
 pub use interpreter_gc::{CoroutineState, ObjectId, Value};
 
 /// Converts a constant-pool entry into a runtime value.
-pub fn value_from_constant(constant: &acorn_odin::OdinConstant) -> Value {
+pub fn value_from_constant(constant: &data_binary_odin::OdinConstant) -> Value {
     match constant {
-        acorn_odin::OdinConstant::Null => Value::Null,
-        acorn_odin::OdinConstant::Boolean(value) => Value::Bool(*value),
-        acorn_odin::OdinConstant::Integer32(value) => Value::I32(*value),
-        acorn_odin::OdinConstant::Integer64(value) => Value::I64(*value),
-        acorn_odin::OdinConstant::Float64(value) => Value::F64(*value),
-        acorn_odin::OdinConstant::String(value) => Value::String(value.clone()),
-        acorn_odin::OdinConstant::BigInt(_) => Value::Null,
+        data_binary_odin::OdinConstant::Null => Value::Null,
+        data_binary_odin::OdinConstant::Boolean(value) => Value::Bool(*value),
+        data_binary_odin::OdinConstant::Integer32(value) => Value::I32(*value),
+        data_binary_odin::OdinConstant::Integer64(value) => Value::I64(*value),
+        data_binary_odin::OdinConstant::Float64(value) => Value::F64(*value),
+        data_binary_odin::OdinConstant::String(value) => Value::String(value.clone()),
+        data_binary_odin::OdinConstant::BigInt(_) => Value::Null,
     }
 }

@@ -278,7 +278,7 @@ impl PackageManifest {
 
     /// 从 VON 源码解析包清单。
     pub fn parse(source: &str) -> Result<Self> {
-        oak_von::from_str(source).map_err(PackageError::von)
+        data_text_von::from_str(source).map_err(PackageError::von)
     }
 
     /// 包清单是否存在于 `directory`。

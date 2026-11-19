@@ -318,7 +318,7 @@ pub fn operator_member_name(declared: &frontend::ast::Identifier, annotations: &
 }
 
 pub fn lower_where_constraints(
-    constraints: &[oak_valkyrie::ast::type_nodes::WhereConstraint],
+    constraints: &[data_text_valkyrie::ast::type_nodes::WhereConstraint],
     source_id: SourceID,
 ) -> Result<Vec<HirWhereConstraint>, HirError> {
     constraints

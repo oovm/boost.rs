@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 
-use acorn_odin::{Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, encode_module};
+use data_binary_odin::{Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, encode_module};
 use interpreter_vm_ovm::{
     executor::{Executor, select_local_roots},
     jit::StackMapEntry,

@@ -1,4 +1,4 @@
-//! VON 值文本序列化（委托 `oak-von::printer` / serde）。
+//! VON 值文本序列化（委托 `data-text-von::printer` / serde）。
 
 /// 将值序列化为紧凑 VON 文本。
 #[cfg(feature = "serde")]

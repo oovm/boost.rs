@@ -46,7 +46,7 @@ pub(super) fn build_wasi_string_data_section(literals: &[String]) -> Vec<u8> {
 }
 
 pub(super) fn wasm_function_type_param_bytes(type_bytes: &[u8]) -> Vec<u8> {
-    if type_bytes.first() != Some(&acorn_wasm::TYPE_FORM_FUNC) {
+    if type_bytes.first() != Some(&data_binary_wasm::TYPE_FORM_FUNC) {
         return Vec::new();
     }
     let mut offset = 1usize;
@@ -56,7 +56,7 @@ pub(super) fn wasm_function_type_param_bytes(type_bytes: &[u8]) -> Vec<u8> {
 }
 
 pub(super) fn wasm_function_type_result_byte(type_bytes: &[u8]) -> Option<u8> {
-    if type_bytes.first() != Some(&acorn_wasm::TYPE_FORM_FUNC) {
+    if type_bytes.first() != Some(&data_binary_wasm::TYPE_FORM_FUNC) {
         return None;
     }
     let mut offset = 1usize;

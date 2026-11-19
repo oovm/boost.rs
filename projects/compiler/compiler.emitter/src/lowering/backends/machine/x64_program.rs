@@ -116,11 +116,11 @@ pub fn encode_x64_program_with_dependencies(
         return Err(format!("native 文本 ABI `{}` 的宿主导入按全局符号解析，模块名必须为空（实际 `{module}`）", abi.name()));
     }
     let table = if abi == X64CallConv::Win64 {
-        acorn_pe::pe::build_native_import_table(imports).map_err(|error| format!("native 导入表构造失败：{error}"))?
+        data_binary_pe::pe::build_native_import_table(imports).map_err(|error| format!("native 导入表构造失败：{error}"))?
     }
     else {
         // `PE` 专属导入表在 ELF 目标上不生成；GOT/未定义符号由 ELF 容器写出。
-        acorn_pe::pe::build_native_import_table(&[]).map_err(|error| format!("native 空导入表构造失败：{error}"))?
+        data_binary_pe::pe::build_native_import_table(&[]).map_err(|error| format!("native 空导入表构造失败：{error}"))?
     };
     let mut text = Vec::new();
     let mut symbols = Vec::with_capacity(functions.len());

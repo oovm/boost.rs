@@ -1,7 +1,7 @@
 //! CLI 的 JSON 与运行时值边界；缺少导出类型和布局合同的结构值必须拒绝。
 
 use interpreter_gc::{ObjectHeap, ObjectPayload};
-use acorn_odin::{OvmAbiExport, OvmAbiType, OvmOptionBoxing, OvmTextRepresentation};
+use data_binary_odin::{OvmAbiExport, OvmAbiType, OvmOptionBoxing, OvmTextRepresentation};
 use serde_json::Value as JsonValue;
 
 use crate::{array_runtime, error::OdinRuntimeError, text_runtime, value::Value};
@@ -512,7 +512,7 @@ fn byte_array(heap: &ObjectHeap, value: &Value) -> Result<Vec<u8>, OdinRuntimeEr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use acorn_odin::OvmAbiParam;
+    use data_binary_odin::OvmAbiParam;
 
     fn export(param: OvmAbiType, returns: OvmAbiType) -> OvmAbiExport {
         OvmAbiExport {
@@ -557,8 +557,8 @@ mod tests {
             tag_slot: 0,
             payload_slot: 1,
             variants: vec![
-                acorn_odin::OvmAbiVariant { name: "None".to_string(), tag: 0, payload: None },
-                acorn_odin::OvmAbiVariant { name: "Some".to_string(), tag: 1, payload: Some(Box::new(OvmAbiType::I32)) },
+                data_binary_odin::OvmAbiVariant { name: "None".to_string(), tag: 0, payload: None },
+                data_binary_odin::OvmAbiVariant { name: "Some".to_string(), tag: 1, payload: Some(Box::new(OvmAbiType::I32)) },
             ],
         };
         assert_eq!(roundtrip(&unite, "\"None\""), JsonValue::String("None".to_string()));

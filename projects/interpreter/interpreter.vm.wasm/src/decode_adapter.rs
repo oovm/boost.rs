@@ -1,9 +1,9 @@
-//! `acorn-wasm` 解码指令到执行子集的适配器。
+//! `data-binary-wasm` 解码指令到执行子集的适配器。
 //!
 //! 模块二进制与段解析由格式层拥有；本模块只把已解码的 [`DecodedInstruction`]
 //! 映射为可执行子集，超出子集（内存、表、引用类型、块控制流等）时显式拒绝。
 
-use acorn_wasm::instruction::{DecodedInstruction, DecodedOperand};
+use data_binary_wasm::instruction::{DecodedInstruction, DecodedOperand};
 
 use crate::{error::WasmError, op::Instruction};
 

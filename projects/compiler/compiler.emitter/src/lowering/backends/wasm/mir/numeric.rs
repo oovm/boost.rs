@@ -8,7 +8,7 @@
 //! 本模块只接受下表列出的助记符，未知助记符返回 `None`，计划据此冻结为
 //! `对应 lane 的 `Unfrozen` 绑定`，由 emit 结构化失败，禁止猜默认指令。
 //!
-//! 冻结编码使用 `acorn-wasm` 的 [`WasmOpcode`] 变体，不再在 emitter 内保存裸字节
+//! 冻结编码使用 `data-binary-wasm` 的 [`WasmOpcode`] 变体，不再在 emitter 内保存裸字节
 //! 数值表：opcode 身份归格式 crate 所有。
 //!
 //! f32 合同（冻结，不可协商）：
@@ -22,7 +22,7 @@
 //!    再降回；`i32.reinterpret_f32` / `f32.reinterpret_i32` 是 32 位、`i32`
 //!    载体、NaN payload 23 位、`-0.0`/次正规保位。
 
-use acorn_wasm::WasmOpcode;
+use data_binary_wasm::WasmOpcode;
 
 use crate::target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe};
 

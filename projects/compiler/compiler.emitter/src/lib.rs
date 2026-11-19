@@ -103,7 +103,7 @@ pub mod testing {
     };
     use compiler_types::SingletonInstancePlan;
     #[cfg(feature = "ovm-lane")]
-    use acorn_odin::OdinModuleData;
+    use data_binary_odin::OdinModuleData;
 
     /// Target profile used by normalized physical-contract observations.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -262,7 +262,7 @@ pub mod testing {
 
     /// Re-export OVM entry resolution for driver-family contract tests.
     #[cfg(feature = "ovm-lane")]
-    pub fn resolve_entry_symbols(module: &acorn_odin::OdinModuleData, library_public_exports: &[String]) -> crate::Result<Vec<String>> {
+    pub fn resolve_entry_symbols(module: &data_binary_odin::OdinModuleData, library_public_exports: &[String]) -> crate::Result<Vec<String>> {
         super::driver::families::ovm::resolve_entry_symbols(module, library_public_exports, false)
     }
 
@@ -645,7 +645,7 @@ impl FragmentSubmission {
 #[derive(Debug, Clone)]
 pub struct OvmBackendInput {
     /// Optional OVM module payload to emit as `.odin`.
-    pub ovm_module: Option<acorn_odin::OdinModuleData>,
+    pub ovm_module: Option<data_binary_odin::OdinModuleData>,
     /// 库导出 ABI 合同（含稳定 digest）；无导出面时为 `None`。
     pub abi_contract: Option<OvmAbiContract>,
     /// 库模式公开导出名（与 wasm `export_names` 对齐），用于 run-contract 入口。

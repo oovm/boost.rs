@@ -319,7 +319,7 @@ pub struct X64ProgramImage {
     /// `.idata` 字节（由宿主导入表构造，段内偏移尚未加 RVA）。
     pub idata: Vec<u8>,
     /// 按 DLL 归组的导入描述。
-    pub imports: Vec<acorn_pe::pe::NativeDllImport>,
+    pub imports: Vec<data_binary_pe::pe::NativeDllImport>,
     /// `.text` 内的 `rel32` 修复项：`(字段偏移, `.idata` 内目标偏移)`（Win64）。
     pub text_rel32_fixups: Vec<(u32, u32)>,
     /// `.text` 内的 GOT 间接调用修复项：`(字段偏移, 导入序号)`（SysV64）。

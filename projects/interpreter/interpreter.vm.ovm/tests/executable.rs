@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 
-use acorn_odin::{OdinFunction, OdinHeadCode, emit_imm1};
+use data_binary_odin::{OdinFunction, OdinHeadCode, emit_imm1};
 use interpreter_vm_ovm::executable::build_executable_function;
 
 #[test]

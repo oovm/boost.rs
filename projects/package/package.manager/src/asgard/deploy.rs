@@ -1,6 +1,6 @@
 //! Deploy profile：校验契约并打印制品矩阵（编排构建为 stub / planned）。
 use crate::asgard::error::{AsgardError, AsgardResult};
-use oak_von::{
+use data_text_von::{
     language::value::{VonArray, VonEnum, VonObject, VonTuple, VonValue, from_ast},
     parse as parse_von,
 };

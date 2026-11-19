@@ -6,7 +6,7 @@
 //! 事实，编码器不做任何 CFG 或语义推导。
 
 use crate::lowering::backends::wasm::sections::encode_uleb128;
-use acorn_wasm::{
+use data_binary_wasm::{
     WasmOpcode, encode_array_get, encode_array_len, encode_array_new_default, encode_array_new_fixed, encode_array_set, encode_f32_const,
     encode_f64_const, encode_i32_const, encode_i64_const, encode_memarg, encode_memory_copy, encode_memory_fill, encode_memory_grow,
     encode_memory_size, encode_ref_cast_array, encode_ref_cast_type_index, encode_ref_null_anyref, encode_ref_null_externref,
@@ -72,7 +72,7 @@ pub(crate) enum WasmBodyInstruction {
     /// `array.len`。
     ArrayLen,
     /// GC 前缀操作码 + 单个类型/字段立即数（`struct.new <type_index>` 等）。
-    GcTypeIndex { opcode: acorn_wasm::WasmGcOpcode, operand: u32 },
+    GcTypeIndex { opcode: data_binary_wasm::WasmGcOpcode, operand: u32 },
 }
 
 /// 把函数体 LIR 编码为 Wasm 字节码。

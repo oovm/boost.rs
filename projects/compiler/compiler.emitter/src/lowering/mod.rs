@@ -6,7 +6,7 @@ use crate::{
 };
 use compiler_target::{ArtifactPurpose, HostProjectionBoundary, TargetBackendFamily};
 #[cfg(feature = "ovm-lane")]
-use acorn_odin::OdinModuleData;
+use data_binary_odin::OdinModuleData;
 
 #[cfg(feature = "ovm-lane")]
 use crate::OvmBackendInput;

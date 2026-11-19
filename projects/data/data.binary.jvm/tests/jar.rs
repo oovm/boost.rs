@@ -1,7 +1,7 @@
 use data_binary_jvm::jar::JvmJarPackage;
 
 #[test]
-fn stored_jar_roundtrips_through_acorn_zip() {
+fn stored_jar_roundtrips_through_data_binary_zip() {
     let mut package = JvmJarPackage::new("app.jar");
     package.main_class = Some("demo.Main".into());
     package.push_entry("demo/Main.class", b"\xca\xfe\xba\xbe".to_vec());

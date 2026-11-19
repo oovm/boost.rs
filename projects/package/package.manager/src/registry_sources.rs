@@ -118,8 +118,8 @@ impl RegistrySourceManager {
             self.sources = defaults(&self.factory)?;
             return Ok(());
         }
-        let file: SourcesFile = oak_von::from_str(&source).unwrap_or_else(|_| {
-            oak_von::from_str::<BTreeMap<String, String>>(&source).map(|sources| SourcesFile { sources }).unwrap_or_default()
+        let file: SourcesFile = data_text_von::from_str(&source).unwrap_or_else(|_| {
+            data_text_von::from_str::<BTreeMap<String, String>>(&source).map(|sources| SourcesFile { sources }).unwrap_or_default()
         });
         self.sources = defaults(&self.factory)?;
         for (name, endpoint) in file.sources {

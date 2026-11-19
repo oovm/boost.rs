@@ -15,7 +15,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use acorn_odin::OdinLayout;
+use data_binary_odin::OdinLayout;
 use compiler_types::{AggregateLayoutPlan, ItemInstanceId, LayoutId, NominalInstanceId, SemanticType, combined_content_hash};
 use serde::Serialize;
 
@@ -27,15 +27,15 @@ use crate::{
 };
 
 // 合同类型定义在格式 crate，编译器与运行时共用同一份 schema；本模块只保留派生。
-pub use acorn_odin::abi::{
+pub use data_binary_odin::abi::{
     OVM_ABI_SCHEMA_VERSION, OVM_ABI_SIDECAR_SUFFIX, OvmAbiContract, OvmAbiExport, OvmAbiField, OvmAbiParam, OvmAbiSidecar, OvmAbiType,
     OvmAbiVariant, OvmOptionBoxing, OvmTextRepresentation, ovm_abi_sidecar_file,
 };
 
-// 合同类型（含 `OvmAbiType`）由 `acorn_odin::abi` 定义并在上方重导出。
+// 合同类型（含 `OvmAbiType`）由 `data_binary_odin::abi` 定义并在上方重导出。
 
 // `OvmAbiField` / `OvmTextRepresentation` / `OvmAbiVariant` / `OvmOptionBoxing`
-// 以及 `OvmAbiSidecar` 同样由 `acorn_odin::abi` 定义。
+// 以及 `OvmAbiSidecar` 同样由 `data_binary_odin::abi` 定义。
 
 /// 从冻结计划派生合同。
 ///

@@ -1074,7 +1074,7 @@ fn source_is_signed(source: &SemanticType) -> bool {
 }
 
 fn unsupported_cast(source: &SemanticType, target: &SemanticType) -> String {
-    format!("wasm 后端缺少 {source} → {target} 的精确表示转换编码（acorn_wasm 未提供对应 opcode），不得退化为近似转换")
+    format!("wasm 后端缺少 {source} → {target} 的精确表示转换编码（data_binary_wasm 未提供对应 opcode），不得退化为近似转换")
 }
 
 #[cfg(test)]

@@ -7,7 +7,7 @@ use crate::asgard::{
     },
     package::artifact::PackageArtifact,
 };
-use acorn_mach_o::mach_o::MachOImageBuilder;
+use data_binary_mach_o::mach_o::MachOImageBuilder;
 
 /// iOS 打包产物。
 #[derive(Debug, Clone)]

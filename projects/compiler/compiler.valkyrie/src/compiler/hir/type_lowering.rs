@@ -19,7 +19,7 @@ use crate::compiler::{
     },
 };
 use compiler_types::DiagnosticSpan;
-use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
+use data_text_valkyrie::lexer::token_type::ValkyrieTokenType;
 
 use super::lowering::errors::{ArrayExtentFailure, TupleLabelingFailure};
 

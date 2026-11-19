@@ -363,7 +363,7 @@ fn qualified_declaration_name(namespace: &[String], owner: Option<&str>, symbol_
     namespace.iter().map(String::as_str).chain(owner).chain(std::iter::once(symbol_name)).collect::<Vec<_>>().join("::")
 }
 
-fn line_number(source: &str, span: &oak_core::Range<usize>) -> usize {
+fn line_number(source: &str, span: &data_text_core::Range<usize>) -> usize {
     source.get(..span.start).map(|prefix| prefix.bytes().filter(|byte| *byte == b'\n').count() + 1).unwrap_or(1)
 }
 

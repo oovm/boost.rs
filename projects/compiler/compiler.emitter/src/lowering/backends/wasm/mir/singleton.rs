@@ -4,7 +4,7 @@ use crate::{
     lowering::backends::wasm::mir::{WasmBodyInstruction, encode_wasm_body},
     emitter_backend_wasi::WasmBinaryModule,
 };
-use acorn_wasm::WasmOpcode;
+use data_binary_wasm::WasmOpcode;
 use compiler_types::SingletonInstancePlan;
 
 use crate::lowering::features::semantic_mir_contract::SemanticMirContractError;

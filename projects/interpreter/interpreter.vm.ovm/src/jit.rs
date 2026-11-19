@@ -20,7 +20,7 @@ pub fn compile_request(module: &LoadedModule, function_index: usize) -> Result<J
         .constants
         .iter()
         .map(|constant| match constant {
-            acorn_odin::OdinConstant::Integer32(value) => Some(*value),
+            data_binary_odin::OdinConstant::Integer32(value) => Some(*value),
             _ => None,
         })
         .collect();

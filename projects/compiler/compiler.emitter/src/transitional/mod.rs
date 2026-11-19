@@ -4,8 +4,8 @@
 //!
 //! | 模块 | 状态 |
 //! |------|------|
-//! | `binary` | `acorn-jvm` + `acorn-pe` 已覆盖；emitter 不再直接依赖 `vcc-data` |
-//! | `msil` | 经 `acorn-pe::msil` 过渡，待 `oak-msil` |
+//! | `binary` | `data-binary-jvm` + `data-binary-pe` 已覆盖；emitter 不再直接依赖 `vcc-data` |
+//! | `msil` | 经 `data-binary-pe::msil` 过渡，待 `oak-msil` |
 
 pub mod binary;
 pub mod msil;

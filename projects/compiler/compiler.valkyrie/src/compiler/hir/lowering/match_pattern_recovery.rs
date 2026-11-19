@@ -64,7 +64,7 @@ pub fn recovered_range_pattern_texts(source: &str, match_span: Range<usize>) -> 
 
 /// Oak `parse_match_pattern` 对个别原子仍可能落成 Wildcard，`case 7` 等需按源码恢复。
 fn oak_lost_case_pattern(source: &str, arm: &MatchArm) -> bool {
-    if !matches!(arm.pattern, oak_valkyrie::ast::Pattern::Wildcard(_)) {
+    if !matches!(arm.pattern, data_text_valkyrie::ast::Pattern::Wildcard(_)) {
         return false;
     }
     source.get(arm.span.start..arm.span.end).and_then(extract_case_pattern_text).is_some_and(|pattern| !pattern.is_empty() && pattern != "_")
@@ -89,7 +89,7 @@ fn extract_case_pattern_text(arm_text: &str) -> Option<String> {
 /// 字段整体丢失（`Pattern::Class` 退化成 `Pattern::Type`）。这里只替换模式，不重解析臂体；
 /// 字段名按源码写法保留，供 HIR 按声明字段名绑定。
 pub fn recover_arm_object_pattern(source: &str, arm: &MatchArm, span: SourceSpan) -> Option<HirPattern> {
-    if !matches!(arm.pattern, oak_valkyrie::ast::Pattern::Type(_)) {
+    if !matches!(arm.pattern, data_text_valkyrie::ast::Pattern::Type(_)) {
         return None;
     }
     let pattern_text = source.get(arm.span.start..arm.span.end).and_then(extract_case_pattern_text)?;
@@ -240,7 +240,7 @@ fn find_top_level(text: &str, separator: char) -> Option<usize> {
 }
 
 fn broken_wildcard_arm(source: &str, arm: &MatchArm) -> bool {
-    matches!(arm.pattern, oak_valkyrie::ast::Pattern::Wildcard(_))
+    matches!(arm.pattern, data_text_valkyrie::ast::Pattern::Wildcard(_))
         && source.get(arm.span.start..arm.span.end).is_some_and(|text| text.trim_start().starts_with(':'))
 }
 
@@ -543,7 +543,7 @@ fn parse_arm_body_expression(body: &str, span: DiagnosticSpan) -> Result<TermExp
         .statements
         .last()
         .and_then(|statement| match statement {
-            oak_valkyrie::ast::Statement::Expression(expr_stmt) if !expr_stmt.semi => Some(expr_stmt.expr.clone()),
+            data_text_valkyrie::ast::Statement::Expression(expr_stmt) if !expr_stmt.semi => Some(expr_stmt.expr.clone()),
             _ => None,
         })
         .ok_or_else(|| HirError::match_recovery_failed(MatchRecoveryStage::ArmBodyExpression, None, span))

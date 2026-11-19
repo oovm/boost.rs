@@ -1,7 +1,7 @@
 //! Android Compose 打包：vendored androidx dex + Asgard 运行时合并。
 use crate::asgard::error::{AsgardError, AsgardResult};
-use acorn_dex::dex::{DexImageBuilder, merge_class_sets};
-use acorn_jvm::class::{JvmClassFile, JvmCodeBody, JvmInstruction, JvmMethodDescriptor, JvmMethodRef, JvmMethodSignature, JvmTypeDescriptor};
+use data_binary_dex::dex::{DexImageBuilder, merge_class_sets};
+use data_binary_jvm::class::{JvmClassFile, JvmCodeBody, JvmInstruction, JvmMethodDescriptor, JvmMethodRef, JvmMethodSignature, JvmTypeDescriptor};
 use std::path::{Path, PathBuf};
 
 const ACC_PUBLIC: u16 = 0x0001;
@@ -292,7 +292,7 @@ pub fn write_vendor_dex_bootstrap(out_dir: &Path) -> AsgardResult<()> {
     std::fs::write(out_dir.join("dex").join(COMPOSE_SHELL_DEX), &shell).map_err(|e| report!("{e}"))?;
     std::fs::write(out_dir.join("dex/androidx-compose-baseline.dex"), build_androidx_compose_baseline()).map_err(|e| report!("{e}"))?;
     std::fs::write(out_dir.join("dex/asgard-runtime.dex"), build_asgard_runtime_dex()).map_err(|e| report!("{e}"))?;
-    let class_defs = acorn_dex::dex::dex_class_defs_count(&shell).unwrap_or(0);
+    let class_defs = data_binary_dex::dex::dex_class_defs_count(&shell).unwrap_or(0);
     let manifest = format!(
         r#"{{
   "compose": "1.6.0",

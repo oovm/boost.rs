@@ -1,6 +1,6 @@
 //! AWSL single-file component unified compile entry.
 
-use oak_awsl::{AwslParser, validate_component_contract};
+use data_text_awsl::{AwslParser, validate_component_contract};
 
 use super::{LoweredComponent, LoweringOptions, lower_component};
 use crate::asgard::error::{AsgardError, AsgardResult};

@@ -19,7 +19,7 @@ use crate::compiler::{
     types::hir::{CaptureMode, CaptureStorage, HirCapture},
 };
 
-use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
+use data_text_valkyrie::lexer::token_type::ValkyrieTokenType;
 
 /// 表达式 lowering 的最大嵌套深度。
 ///

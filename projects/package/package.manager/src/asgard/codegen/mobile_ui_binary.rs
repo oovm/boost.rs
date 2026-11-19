@@ -55,7 +55,7 @@ pub struct DecodedComponent {
     /// Widget name.
     pub name: String,
     /// Component ABI (empty for wire v1).
-    pub abi: oak_awsl::ComponentAbi,
+    pub abi: data_text_awsl::ComponentAbi,
     /// Script bindings.
     pub bindings: Vec<ScriptBinding>,
     /// Render IR module.
@@ -115,8 +115,8 @@ fn read_string(bytes: &[u8], offset: &mut usize) -> Result<String, DecodeError> 
     Ok(value)
 }
 
-fn read_abi(bytes: &[u8], offset: &mut usize) -> Result<oak_awsl::ComponentAbi, DecodeError> {
-    let mut abi = oak_awsl::ComponentAbi::default();
+fn read_abi(bytes: &[u8], offset: &mut usize) -> Result<data_text_awsl::ComponentAbi, DecodeError> {
+    let mut abi = data_text_awsl::ComponentAbi::default();
     let prop_count = read_u32(bytes, offset)? as usize;
     for _ in 0..prop_count {
         let name = read_string(bytes, offset)?;
@@ -127,7 +127,7 @@ fn read_abi(bytes: &[u8], offset: &mut usize) -> Result<oak_awsl::ComponentAbi, 
         let required = flags & 1 != 0;
         let has_default = flags & 2 != 0;
         let default_expr = if has_default { Some(read_string(bytes, offset)?) } else { None };
-        abi.properties.push(oak_awsl::AbiProperty { name, type_hint: None, required, default_expr, span: 0..0 });
+        abi.properties.push(data_text_awsl::AbiProperty { name, type_hint: None, required, default_expr, span: 0..0 });
     }
     let event_count = read_u32(bytes, offset)? as usize;
     for _ in 0..event_count {
@@ -138,9 +138,9 @@ fn read_abi(bytes: &[u8], offset: &mut usize) -> Result<oak_awsl::ComponentAbi, 
             let param_name = read_string(bytes, offset)?;
             let _type_tag = bytes.get(*offset).copied().ok_or_else(|| DecodeError::InvalidFormat("EOF param tag".into()))?;
             *offset += 1;
-            params.push(oak_awsl::AbiParam { name: param_name, type_hint: None });
+            params.push(data_text_awsl::AbiParam { name: param_name, type_hint: None });
         }
-        abi.events.push(oak_awsl::AbiEvent { name, params, span: 0..0 });
+        abi.events.push(data_text_awsl::AbiEvent { name, params, span: 0..0 });
     }
     Ok(abi)
 }
@@ -362,7 +362,7 @@ pub fn encode_mobile_ui_package(components: &[LoweredComponent]) -> Vec<u8> {
     out
 }
 
-fn write_abi(out: &mut Vec<u8>, abi: &oak_awsl::ComponentAbi) {
+fn write_abi(out: &mut Vec<u8>, abi: &data_text_awsl::ComponentAbi) {
     out.extend_from_slice(&(abi.properties.len() as u32).to_le_bytes());
     for property in &abi.properties {
         write_string(out, &property.name);
@@ -417,7 +417,7 @@ pub fn find_asgard_native_section(container: &[u8]) -> Option<&[u8]> {
 /// 构造内嵌 UI 段的测试用 DEX 容器。
 #[cfg(test)]
 pub fn dex_with_embedded_ui(components: &[LoweredComponent]) -> Vec<u8> {
-    let mut dex_builder = acorn_dex::dex::DexImageBuilder::new();
+    let mut dex_builder = data_binary_dex::dex::DexImageBuilder::new();
     dex_builder.add_class("asgard/Placeholder", &[0xCA, 0xFE, 0xBA, 0xBE]);
     let mut dex = dex_builder.build().expect("DEX 构建失败");
     embed_asgard_ui_section(&mut dex, &encode_mobile_ui_package(components));
@@ -427,7 +427,7 @@ pub fn dex_with_embedded_ui(components: &[LoweredComponent]) -> Vec<u8> {
 /// 构造内嵌 UI 段的测试用宿主可执行容器。
 #[cfg(test)]
 pub fn host_executable_with_embedded_ui(platform: &str, components: &[LoweredComponent]) -> Vec<u8> {
-    let builder = acorn_mach_o::mach_o::MachOImageBuilder::new();
+    let builder = data_binary_mach_o::mach_o::MachOImageBuilder::new();
     let _ = platform;
     let mut out = builder.build_executable().expect("Mach-O 构建失败");
     embed_asgard_ui_section(&mut out, &encode_mobile_ui_package(components));

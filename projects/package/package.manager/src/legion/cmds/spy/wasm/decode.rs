@@ -1,5 +1,5 @@
 use crate::legion::cmds::error::{LegionError, LegionResult};
-use acorn_wasm::{
+use data_binary_wasm::{
     DecodedInstruction, DecodedOperand, SECTION_CUSTOM, WasmBinaryModule, WasmExternalKind, WasmFunctionEntry, WasmImport, WasmTypeEntry,
     WasmTypeKind, decode_code_body, parse_code_section, parse_export_section, parse_import_section, parse_type_section, section_name,
     uleb128_size, wasm_value_type_name,
@@ -221,7 +221,7 @@ fn read_function_body(data: &[u8], func: &WasmFunctionEntry) -> Vec<u8> {
 
 /// 反汇编函数体指令。
 ///
-/// 委托 `acorn-wasm` 的 `decode_code_body` 完成局部变量跳过与逐条解码，
+/// 委托 `data-binary-wasm` 的 `decode_code_body` 完成局部变量跳过与逐条解码，
 /// 再将相对偏移修正为文件绝对偏移，以保持 `spy` 的偏移语义。
 fn disassemble_function_body(data: &[u8], func: &WasmFunctionEntry) -> Vec<DecodedInstruction> {
     let body_start = func.code_offset;

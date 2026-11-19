@@ -3,7 +3,7 @@
 use data_text_core::{Builder, ParseSession, SourceText};
 use data_text_valkyrie::{ValkyrieBuilder, ValkyrieLanguage, ast::ValkyrieRoot};
 
-/// Parse vx / Valkyrie source via `oak-valkyrie` builder (single authority).
+/// Parse vx / Valkyrie source via `data-text-valkyrie` builder (single authority).
 pub fn parse_vx_source(source: &str) -> Result<ValkyrieRoot, String> {
     let language = ValkyrieLanguage::default();
     let builder = ValkyrieBuilder::new(&language);

@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 
-use acorn_odin::{
+use data_binary_odin::{
     OBSOLETE_CALL_NATIVE, Odin_VERSION, OdinConstant, OdinFunction, OdinHeadCode, OdinImportKind, OdinLayout, OdinModuleData, emit_imm1,
     emit_plain,
 };
@@ -34,15 +34,15 @@ fn accepts_empty_v2_module() {
 #[test]
 fn rejects_invalid_export_contracts() {
     let mut module = empty_module();
-    module.exports.push(acorn_odin::OdinExport {
-        kind: acorn_odin::OdinExportKind::Global,
+    module.exports.push(data_binary_odin::OdinExport {
+        kind: data_binary_odin::OdinExportKind::Global,
         symbol_name: "value".to_owned(),
         function_index: -1,
     });
     assert!(verify_module(&module).is_err());
     module.exports[0].function_index = 0;
     assert!(verify_module(&module).is_err());
-    module.globals.push(acorn_odin::OdinGlobal { name: "value".to_owned(), type_name: "test".to_owned() });
+    module.globals.push(data_binary_odin::OdinGlobal { name: "value".to_owned(), type_name: "test".to_owned() });
     verify_module(&module).expect("valid global export");
     module.exports.push(module.exports[0].clone());
     assert!(verify_module(&module).is_err());
@@ -85,7 +85,7 @@ fn rejects_wrong_version() {
 #[test]
 fn rejects_unknown_host_import() {
     let mut module = empty_module();
-    module.imports.push(acorn_odin::OdinImport {
+    module.imports.push(data_binary_odin::OdinImport {
         kind: OdinImportKind::Function,
         module_name: HOST_IMPORT_MODULE.into(),
         symbol_name: "not_a_real_host_op".into(),
@@ -116,7 +116,7 @@ fn rejects_obsolete_call_native_byte() {
 #[test]
 fn accepts_in_range_call_import() {
     let mut module = empty_module();
-    module.imports.push(acorn_odin::OdinImport {
+    module.imports.push(data_binary_odin::OdinImport {
         kind: OdinImportKind::Function,
         module_name: HOST_IMPORT_MODULE.into(),
         symbol_name: "print".into(),
@@ -137,7 +137,7 @@ fn accepts_in_range_call_import() {
 #[test]
 fn accepts_const_call_import_return() {
     let mut module = empty_module();
-    module.imports.push(acorn_odin::OdinImport {
+    module.imports.push(data_binary_odin::OdinImport {
         kind: OdinImportKind::Function,
         module_name: HOST_IMPORT_MODULE.into(),
         symbol_name: "print".into(),

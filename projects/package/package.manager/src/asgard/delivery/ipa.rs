@@ -4,7 +4,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use acorn_zip::{ZipEntry, ZipWriter};
+use data_binary_zip::{ZipEntry, ZipWriter};
 
 use super::util::{copy_dir_recursive, parse_plist_bundle_name, read_optional_file};
 use crate::asgard::{

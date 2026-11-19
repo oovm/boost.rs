@@ -14,7 +14,7 @@
 use crate::legion::cmds::error::{LegionError, LegionResult};
 use std::{fs, path::Path, process::ExitCode};
 
-use acorn_x64::x86_64::{ConditionCode, Reg64, X64Instruction};
+use data_binary_x64::x86_64::{ConditionCode, Reg64, X64Instruction};
 
 use super::SpyOptions;
 

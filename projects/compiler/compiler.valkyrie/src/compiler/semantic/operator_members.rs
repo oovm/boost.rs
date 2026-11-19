@@ -11,7 +11,7 @@
 //! 注意：本模块只给出**名字**，不给出语义。运算符没有独立身份，成员解析、重载匹配与
 //! 歧义判定都在普通名字解析路径上完成。
 
-use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
+use data_text_valkyrie::lexer::token_type::ValkyrieTokenType;
 
 use crate::compiler::syntax::oak::ast::Attribute;
 

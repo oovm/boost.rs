@@ -7,7 +7,7 @@
 //! 反例不捕获 panic：直接断言返回 `Err(ArithmeticOverflow)`——若实现仍 panic，测试会以
 //! panic 失败而不是被吞掉。
 
-use acorn_odin::{
+use data_binary_odin::{
     Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, emit_imm1, emit_plain, encode_module,
 };
 use interpreter_vm_ovm::{

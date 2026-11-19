@@ -175,7 +175,7 @@ pub fn split_pattern_capture(raw: &str, literal_start: usize) -> Option<QuoteLit
         None
     }
     else {
-        Some(OakIdentifier { name: prefix_text.to_string(), span: oak_core::Range { start: literal_start, end: literal_start + quote_index } })
+        Some(OakIdentifier { name: prefix_text.to_string(), span: data_text_core::Range { start: literal_start, end: literal_start + quote_index } })
     };
     let content_start = literal_start + quote_index + quote_count;
     Some(QuoteLiteral {
@@ -183,8 +183,8 @@ pub fn split_pattern_capture(raw: &str, literal_start: usize) -> Option<QuoteLit
         quote: QuoteKind::Single,
         quote_count: quote_count as u8,
         content: content.to_string(),
-        content_span: oak_core::Range { start: content_start, end: content_start + content.len() },
-        span: oak_core::Range { start: literal_start, end: literal_start + raw.len() },
+        content_span: data_text_core::Range { start: content_start, end: content_start + content.len() },
+        span: data_text_core::Range { start: literal_start, end: literal_start + raw.len() },
     })
 }
 
@@ -224,7 +224,7 @@ fn split_quote_capture(raw: &str, literal_start: usize) -> Option<QuoteLiteral> 
     else {
         Some(OakIdentifier {
             name: prefix_text.to_string(),
-            span: oak_core::Range { start: literal_start + trim_offset, end: literal_start + trim_offset + quote_index },
+            span: data_text_core::Range { start: literal_start + trim_offset, end: literal_start + trim_offset + quote_index },
         })
     };
     let content_start = literal_start + trim_offset + quote_index + quote_count;
@@ -233,8 +233,8 @@ fn split_quote_capture(raw: &str, literal_start: usize) -> Option<QuoteLiteral> 
         quote,
         quote_count: quote_count as u8,
         content: content.to_string(),
-        content_span: oak_core::Range { start: content_start, end: content_start + content.len() },
-        span: oak_core::Range { start: literal_start + trim_offset, end: literal_start + trim_offset + text.len() },
+        content_span: data_text_core::Range { start: content_start, end: content_start + content.len() },
+        span: data_text_core::Range { start: literal_start + trim_offset, end: literal_start + trim_offset + text.len() },
     })
 }
 

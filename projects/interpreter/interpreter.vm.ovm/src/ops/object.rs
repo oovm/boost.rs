@@ -1,6 +1,6 @@
 //! 结构指令：`ObjectNew` / `FieldGet` / `FieldSet`（按 layout_id + field_slot）。
 
-use acorn_odin::{OdinHeadCode, OdinInstruction};
+use data_binary_odin::{OdinHeadCode, OdinInstruction};
 
 use interpreter_gc::ObjectPayload;
 

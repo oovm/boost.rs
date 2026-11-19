@@ -3,11 +3,11 @@
 //! 支持 `.class` 和 `.jar` 文件，可列出方法签名、反汇编指定方法体。
 //! 用于定位 JVM 字节码验证错误。
 //!
-//! 二进制解析与反汇编能力由 `acorn-jvm` 提供，本模块仅负责命令行入口与纯文本渲染。
+//! 二进制解析与反汇编能力由 `data-binary-jvm` 提供，本模块仅负责命令行入口与纯文本渲染。
 use crate::legion::cmds::error::{LegionError, LegionResult};
 use std::{fs, path::Path, process::ExitCode};
 
-use acorn_jvm::{
+use data_binary_jvm::{
     class::{ConstantPool, DecodedJvmOperand, JvmClassFile, JvmFieldRef, JvmMethodRef, decode_instructions},
     jar::JvmJarPackage,
 };

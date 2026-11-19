@@ -29,7 +29,7 @@ fn wasm_mir_lowering_must_not_emit_raw_leaf_opcodes() {
         for pattern in forbidden {
             assert!(
                 !source.contains(pattern),
-                "{} must emit Wasm leaf opcodes through `acorn_wasm::WasmOpcode`, not `{pattern}`",
+                "{} must emit Wasm leaf opcodes through `data_binary_wasm::WasmOpcode`, not `{pattern}`",
                 path.display()
             );
         }

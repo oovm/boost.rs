@@ -2,7 +2,7 @@
 
 use std::ops::Range;
 
-use oak_valkyrie::ast::{
+use data_text_valkyrie::ast::{
     Block, ClassDeclaration, ImplyDeclaration, Let, MethodDeclaration, MicroDeclaration, NamespaceDeclaration, Param, Pattern,
     SingletonDeclaration, Statement, StatementNode, Trait, TypeFunction, ValkyrieRoot, WidgetDeclaration,
 };
@@ -169,6 +169,6 @@ fn pattern_binding_name(pattern: &Pattern) -> Option<(&str, Range<usize>)> {
     }
 }
 
-fn std_range(span: &oak_core::Range<usize>) -> Range<usize> {
+fn std_range(span: &data_text_core::Range<usize>) -> Range<usize> {
     span.start..span.end
 }

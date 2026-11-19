@@ -9,8 +9,8 @@ repository = "https://github.com/oovm/rust-boost/tree/dev/projects/package/packa
 publish = false
 
 [dependencies]
-acorn-odin = { workspace = true }
-oak-von = { workspace = true }
+data-binary-odin = { workspace = true }
+data-text-von = { workspace = true }
 serde = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }

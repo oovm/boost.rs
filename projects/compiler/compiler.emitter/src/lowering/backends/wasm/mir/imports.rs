@@ -9,7 +9,7 @@ use crate::{
     },
     emitter_backend_wasi::WasiPreview,
 };
-use acorn_wasm::{VALTYPE_I32, VALTYPE_I64};
+use data_binary_wasm::{VALTYPE_I32, VALTYPE_I64};
 use compiler_types::{ItemInstanceId, SemanticType};
 
 use super::{

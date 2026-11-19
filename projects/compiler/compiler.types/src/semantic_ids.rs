@@ -213,7 +213,7 @@ impl IdKind for ProvenanceIdKind {
 pub type ProvenanceId = SemanticId<ProvenanceIdKind>;
 
 // 语言内建结构操作身份已收回 frontend（`rusty_valkyrie` 的 `BuiltinStructureOp`），
-// OVM `CallIntrinsic` 的指令编号已收回 VM 格式合同（`acorn_odin::IntrinsicOpcode`）。
+// OVM `CallIntrinsic` 的指令编号已收回 VM 格式合同（`data_binary_odin::IntrinsicOpcode`）。
 // 本 crate 不再提供跨语言与 VM 双所有者的 `IntrinsicId`，也不提供按符号路径段
 // 猜测语义的解析入口。
 

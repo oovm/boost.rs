@@ -8,7 +8,7 @@ use crate::asgard::{
     },
     package::artifact::PackageArtifact,
 };
-use acorn_host::host_exe::build_host_executable;
+use data_binary_host::host_exe::build_host_executable;
 
 /// 桌面打包产物。
 #[derive(Debug, Clone)]

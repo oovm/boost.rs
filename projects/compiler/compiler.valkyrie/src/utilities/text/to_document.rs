@@ -4,7 +4,7 @@
 //! 源码正规格式化使用 [`FormatSyntax`]。
 
 use language_format::contract::FormatError;
-use oak_valkyrie::printer::{Document as PrettyDocument, PrintError, to_document as oak_to_document};
+use data_text_valkyrie::printer::{Document as PrettyDocument, PrintError, to_document as oak_to_document};
 
 use crate::compiler::syntax::oak::ValkyrieRoot;
 

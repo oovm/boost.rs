@@ -1,6 +1,6 @@
 //! 接线门：格式层解码指令经适配器映射后必须可直接执行，超集指令必须拒绝。
 
-use acorn_wasm::instruction::{DecodedInstruction, DecodedOperand};
+use data_binary_wasm::instruction::{DecodedInstruction, DecodedOperand};
 use interpreter_vm_wasm::{Instruction, WasmError, WasmValue, WasmVm, from_decoded_instruction, from_decoded_program};
 
 fn ins(opcode: u8, mnemonic: &'static str, operands: Vec<DecodedOperand>) -> DecodedInstruction {

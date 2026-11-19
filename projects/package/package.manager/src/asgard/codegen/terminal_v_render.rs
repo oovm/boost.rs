@@ -20,9 +20,9 @@
 
 use std::fmt::Write as _;
 
-use oak_core::Range;
-use oak_valkyrie::ast::{MicroDeclaration, Statement, TermExpression, TermBinaryNode, TypeExpression};
-use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
+use data_text_core::Range;
+use data_text_valkyrie::ast::{MicroDeclaration, Statement, TermExpression, TermBinaryNode, TypeExpression};
+use data_text_valkyrie::lexer::token_type::ValkyrieTokenType;
 
 use crate::asgard::awsl::{
     LoweredComponent, RenderAttr, RenderAttrValue, RenderIfNode, RenderLoopNode, RenderModule, RenderNode, RenderNodeId, RenderRegionId,

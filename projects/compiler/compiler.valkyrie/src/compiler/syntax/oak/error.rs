@@ -22,7 +22,7 @@ pub enum ParseError {
 
 impl ParseError {
     /// 将 Oak 解析错误映射为前端 `ParseError`（保留 `source_offset`）。
-    pub fn from_oak(error: oak_core::OakError) -> Self {
+    pub fn from_oak(error: data_text_core::TextError) -> Self {
         let message = error.to_string();
         if let Some(start) = error.source_offset() {
             Self::Invalid { message, span: Some(start..start.saturating_add(1)) }
@@ -50,8 +50,8 @@ impl From<std::io::Error> for ParseError {
     }
 }
 
-impl From<oak_core::OakError> for ParseError {
-    fn from(value: oak_core::OakError) -> Self {
+impl From<data_text_core::TextError> for ParseError {
+    fn from(value: data_text_core::TextError) -> Self {
         Self::from_oak(value)
     }
 }

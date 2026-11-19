@@ -3,7 +3,7 @@
 //! 匹配规则属于 Odin 执行格式，留在目标 VM 侧；通用调度、stack map / deopt 组装与
 //! blob 编解码合同在底座 `interpreter-jit`。
 
-use acorn_odin::{OdinHeadCode, decode_at};
+use data_binary_odin::{OdinHeadCode, decode_at};
 use interpreter_jit::{
     I32Binop, I32Cmp, JitCompileRequest, ScalarProgramMatcher, SelectArm, encode_ret_const_i32, encode_ret_i32_binop_imm_local,
     encode_ret_i32_binop_locals, encode_ret_i32_cmp_imm_local, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_consts,
@@ -588,14 +588,14 @@ fn match_select_cmp_return(code: &[u8], constant_i32: &[Option<i32>]) -> Option<
     }
 }
 
-fn const_i32(ins: &acorn_odin::OdinInstruction, constant_i32: &[Option<i32>]) -> Option<i32> {
+fn const_i32(ins: &data_binary_odin::OdinInstruction, constant_i32: &[Option<i32>]) -> Option<i32> {
     if ins.code != OdinHeadCode::Constant || ins.operand1 < 0 {
         return None;
     }
     constant_i32.get(ins.operand1 as usize).copied().flatten()
 }
 
-fn load_slot(ins: &acorn_odin::OdinInstruction) -> Option<u16> {
+fn load_slot(ins: &data_binary_odin::OdinInstruction) -> Option<u16> {
     match ins.code {
         OdinHeadCode::LoadLocal | OdinHeadCode::LoadArg if ins.operand1 >= 0 => Some(ins.operand1 as u16),
         _ => None,

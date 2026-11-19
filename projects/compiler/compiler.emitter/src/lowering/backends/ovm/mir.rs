@@ -10,7 +10,7 @@ use crate::{
     },
     lowering::backends::ovm::lir::{OdinLirInstruction, encode_odin_function},
 };
-use acorn_odin::{
+use data_binary_odin::{
     IntrinsicOpcode, Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinImport, OdinImportKind,
     OdinLayout, OdinModuleData,
 };

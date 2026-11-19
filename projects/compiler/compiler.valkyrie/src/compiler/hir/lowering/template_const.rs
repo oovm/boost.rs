@@ -6,8 +6,8 @@ use super::{
 };
 use crate::compiler::hir::HirError;
 use compiler_types::DiagnosticSpan;
-use oak_core::{Token, TokenType};
-use oak_valkyrie::lexer::{ValkyrieKeywords, token_type::ValkyrieTokenType};
+use data_text_core::{Token, TokenType};
+use data_text_valkyrie::lexer::{ValkyrieKeywords, token_type::ValkyrieTokenType};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum ConstantValue {

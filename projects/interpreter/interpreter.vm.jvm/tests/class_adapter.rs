@@ -1,6 +1,6 @@
 //! 接线门：格式层已解码指令经适配器映射后必须可直接执行，超集指令必须拒绝。
 
-use acorn_jvm::class::JvmInstruction;
+use data_binary_jvm::class::JvmInstruction;
 use interpreter_vm_jvm::{Frame, Instruction, Jvm, JvmError, from_class_instruction, from_class_program};
 
 #[test]

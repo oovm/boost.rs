@@ -249,7 +249,7 @@ impl ExecutionManifest {
     pub fn write_to_output_dir(&self, output_dir: &Path) -> LegionResult<()> {
         let manifest_path = output_dir.join(EXECUTION_MANIFEST_FILE_NAME);
         let content = crate::legion::write_von_indented(self).map_err(|error| {
-            labeled_report_with_context(oak_core::OakError::format_error(error.to_string()), format!("序列化 execution manifest 失败 {}", manifest_path.display()), "VON 序列化失败位置")
+            labeled_report_with_context(data_text_core::TextError::format_error(error.to_string()), format!("序列化 execution manifest 失败 {}", manifest_path.display()), "VON 序列化失败位置")
         })?;
         fs::write(&manifest_path, content)
             .map_err(|e| LegionError::msg(format!("写入 execution manifest 失败 {}: {e}", manifest_path.display())))?;
@@ -270,7 +270,7 @@ impl ExecutionManifest {
         let source =
             fs::read_to_string(path).map_err(|e| LegionError::msg(format!("failed to read execution manifest '{}': {e}", path.display())))?;
         crate::legion::parse_von::<Self>(&source).map(Some).map_err(|error| {
-            labeled_report_with_context(oak_core::OakError::format_error(error.to_string()), format!("failed to parse execution manifest '{}'", path.display()), "VON 解析失败位置")
+            labeled_report_with_context(data_text_core::TextError::format_error(error.to_string()), format!("failed to parse execution manifest '{}'", path.display()), "VON 解析失败位置")
         })
     }
 
@@ -302,7 +302,7 @@ impl ExecutionManifest {
             identity_schema_version: compiler_types::IDENTITY_SCHEMA_VERSION,
             mir_contract_version: compiler_types::MIR_CONTRACT_VERSION,
             layout_plan_version: compiler_types::LAYOUT_PLAN_VERSION,
-            bytecode_format_version: acorn_odin::BYTECODE_FORMAT_VERSION,
+            bytecode_format_version: data_binary_odin::BYTECODE_FORMAT_VERSION,
             project_name: plan.project.name.clone(),
             target: plan.project.build_target.target.to_string(),
             artifact_kind: plan.project.artifact_kind,
@@ -335,7 +335,7 @@ impl ExecutionManifest {
         if self.identity_schema_version != compiler_types::IDENTITY_SCHEMA_VERSION
             || self.mir_contract_version != compiler_types::MIR_CONTRACT_VERSION
             || self.layout_plan_version != compiler_types::LAYOUT_PLAN_VERSION
-            || self.bytecode_format_version != acorn_odin::BYTECODE_FORMAT_VERSION
+            || self.bytecode_format_version != data_binary_odin::BYTECODE_FORMAT_VERSION
         {
             return Ok(ManifestVerdict::Stale("manifest contract versions differ from current compiler contract versions".into()));
         }
@@ -457,7 +457,7 @@ fn read_compile_evidence_digest(output_dir: &Path) -> LegionResult<Option<Compil
     }
     let source = fs::read_to_string(&path).map_err(|e| LegionError::msg(format!("读取 compile evidence 失败 {}: {e}", path.display())))?;
     let evidence = crate::legion::parse_von::<compiler_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence>(&source)
-        .map_err(|error| labeled_report_with_context(oak_core::OakError::format_error(error.to_string()), format!("解析 compile evidence 失败 {}", path.display()), "VON 解析失败位置"))?;
+        .map_err(|error| labeled_report_with_context(data_text_core::TextError::format_error(error.to_string()), format!("解析 compile evidence 失败 {}", path.display()), "VON 解析失败位置"))?;
     Ok(Some(CompileEvidenceDigest::from(&evidence)))
 }
 

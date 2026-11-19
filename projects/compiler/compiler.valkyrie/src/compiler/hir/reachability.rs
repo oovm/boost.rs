@@ -242,7 +242,7 @@ fn modules_use_range_pattern(modules: &[HirModule]) -> bool {
 fn collect_integer_comparison_instances(module: &HirModule, out: &mut BTreeSet<ItemInstanceId>) {
     // 成员名只认 `operator_members` 的唯一事实源：HIR 里是 `infix <`，不是词素 `<`。
     let member = crate::compiler::semantic::operator_members::infix_member_name(
-        &oak_valkyrie::lexer::token_type::ValkyrieTokenType::LessThan,
+        &data_text_valkyrie::lexer::token_type::ValkyrieTokenType::LessThan,
     );
     for implementation in &module.impls {
         if implementation.trait_declaration.is_some() || !is_integer_primitive_type(&implementation.target) {

@@ -13,16 +13,16 @@
 //!    `i32.reinterpret_f32` / `f32.reinterpret_i32` 是 32 位、`i32` 载体、
 //!    23 位 NaN payload 与 `-0.0`/次正规保位。
 //!
-//! `f32` valtype 的身份（`0x7D`）由 `acorn-wasm` 拥有；本模块只重导出，
+//! `f32` valtype 的身份（`0x7D`）由 `data-binary-wasm` 拥有；本模块只重导出，
 //! 其余模块必须引用它，不得各自写字面量。
-use acorn_wasm::{VALTYPE_ANYREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, encode_arraytype_raw, encode_structtype_raw};
+use data_binary_wasm::{VALTYPE_ANYREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, encode_arraytype_raw, encode_structtype_raw};
 use compiler_target::SemanticType;
 
-/// Abbreviated `anyref` valtype byte (`acorn-wasm` `VALTYPE_ANYREF`).
+/// Abbreviated `anyref` valtype byte (`data-binary-wasm` `VALTYPE_ANYREF`).
 pub(crate) const WASM_GC_ANYREF: u8 = VALTYPE_ANYREF;
 
-/// `f32` 的 valtype 字节（Wasm 标准 `0x7D`，由 `acorn-wasm` 定义）。
-pub(crate) use acorn_wasm::VALTYPE_F32;
+/// `f32` 的 valtype 字节（Wasm 标准 `0x7D`，由 `data-binary-wasm` 定义）。
+pub(crate) use data_binary_wasm::VALTYPE_F32;
 
 /// WASM-GC structtype 类型段条目。
 pub(crate) fn wasm_gc_struct_type(field_types: &[u8]) -> Vec<u8> {

@@ -8,12 +8,12 @@
 //! 数据段重定位里的 `X64DataTarget::Function` 是适配器意图，不是容器输入：
 //! 文本程序装配器必须在产出镜像前把它解析成 `.text` 偏移，容器不解析名字。
 
-use acorn_pe::elf::{
+use data_binary_pe::elf::{
     SharedElfDataReference, SharedElfDataRelocation, SharedElfDataTarget, SharedElfImage, SharedElfImportCall, SharedElfSpec, SharedElfWriter,
     SharedObjectExport,
 };
-use acorn_pe::pe::{NativeDataRelocation, NativeDataSection, NativeExport, NativePeImage, NativePeWriter};
-use acorn_pe::pe::NativeDataTarget as PeDataTarget;
+use data_binary_pe::pe::{NativeDataRelocation, NativeDataSection, NativeExport, NativePeImage, NativePeWriter};
+use data_binary_pe::pe::NativeDataTarget as PeDataTarget;
 
 use super::{X64DataTarget, X64Platform, X64ProgramImage};
 use crate::Result;

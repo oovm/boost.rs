@@ -35,7 +35,7 @@ impl WorkspaceManifest {
     /// 从磁盘加载工作区清单。
     pub fn load(directory: impl AsRef<Path>, layout: ProjectLayout) -> Result<Self> {
         let source = std::fs::read_to_string(Self::path_in(directory, layout))?;
-        oak_von::from_str(&source).map_err(PackageError::von)
+        data_text_von::from_str(&source).map_err(PackageError::von)
     }
 
     /// 解析成员路径（相对工作区根，非递归）。

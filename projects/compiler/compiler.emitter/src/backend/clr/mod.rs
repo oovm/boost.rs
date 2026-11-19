@@ -96,7 +96,7 @@ impl ClrBinaryBackend {
         let library_with_entry_point = image_kind == ClrImageKind::DynamicLibrary && has_entry_point;
         let pe_image_kind = match image_kind {
             ClrImageKind::Executable => crate::transitional::binary::pe::ClrImageKind::Executable,
-            // `acorn-pe` 只为 `Executable` flavor 写 CLI `EntryPointToken`；带合成入口的
+            // `data-binary-pe` 只为 `Executable` flavor 写 CLI `EntryPointToken`；带合成入口的
             // 库镜像必须借该 flavor 才能被 `dotnet exec` 启动，产物文件名仍保持 `.dll`。
             ClrImageKind::DynamicLibrary if library_with_entry_point => crate::transitional::binary::pe::ClrImageKind::Executable,
             ClrImageKind::DynamicLibrary => crate::transitional::binary::pe::ClrImageKind::DynamicLibrary,

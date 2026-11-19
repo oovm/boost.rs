@@ -600,7 +600,7 @@ fn clr_array_store_opcode(element: &MsilType) -> MsilOpcode {
 
 /// 数组元素位置的 CLR 载体。
 ///
-/// acorn-pe 没有 `ldelem.i8`/`stelem.i8`，i64 元素由块 4 用
+/// data-binary-pe 没有 `ldelem.i8`/`stelem.i8`，i64 元素由块 4 用
 /// `ldelem.any`/`stelem.any` + `Type("int64")` 存取；载体本身仍是 `Int64`。
 fn msil_array_element_type(layouts: &AggregateLayoutPlan, element: &SemanticType) -> Result<MsilType> {
     Ok(match element {

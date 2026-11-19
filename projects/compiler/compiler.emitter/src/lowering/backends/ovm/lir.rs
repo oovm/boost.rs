@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 
 use crate::{Result, backend_plan_views::ExecutableBlockRef as MirBlockRef};
-use acorn_odin::{OdinHeadCode, emit_imm1, emit_imm2, emit_plain};
+use data_binary_odin::{OdinHeadCode, emit_imm1, emit_imm2, emit_plain};
 
 /// 单条 OVM LIR 指令。
 #[derive(Debug, Clone, PartialEq, Eq)]
