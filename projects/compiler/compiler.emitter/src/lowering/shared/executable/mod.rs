@@ -58,7 +58,7 @@ impl<'a> ExecutableLoweringContext<'a> {
     ///
     /// `Nominal` 自带 `LayoutId`；`Apply`（泛型实例）从计划冻结的
     /// `SemanticType → LayoutId` 索引解析。两者之外不做名字回查。
-    pub fn layout_for_nyar_type(&self, ty: &SemanticType) -> Option<&ResolvedAggregateLayout> {
+    pub fn layout_for_semantic_type(&self, ty: &SemanticType) -> Option<&ResolvedAggregateLayout> {
         let layout_id = match ty {
             SemanticType::Nominal { layout, .. } => *layout,
             _ => *self.submission.backend_plan.aggregate_layout_by_semantic_type().get(ty)?,

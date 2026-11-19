@@ -795,7 +795,7 @@ impl<'a> WasmMirLowerer<'a> {
         if wasm_gc_field_type_byte_for_glue(ty, self.js_glue_utf8_as_anyref).ok() != Some(WASM_GC_ANYREF) {
             return None;
         }
-        let layout = self.ctx.layout_for_nyar_type(ty)?;
+        let layout = self.ctx.layout_for_semantic_type(ty)?;
         if layout.storage != StorageKind::Value || layout.fields.is_empty() {
             return None;
         }

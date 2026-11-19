@@ -1794,7 +1794,7 @@ fn emit_library_field_accessors<'name>(
                 }
             }
             SemanticType::Apply(..) => {
-                if let Some(item) = ctx.layout_for_nyar_type(ty) {
+                if let Some(item) = ctx.layout_for_semantic_type(ty) {
                     if reachable.insert(item.id) {
                         worklist.extend(item.fields.iter().map(|field| field.ty.clone()));
                     }

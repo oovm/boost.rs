@@ -328,7 +328,7 @@ fn build_function_plan(
                         ExecutableOperand::Value(v) => function.value_types.get(v).cloned().ok_or_else(|| {
                             PhysicalPlanError::new("BPHYS004", function, location.clone(), "call argument missing semantic type")
                         })?,
-                        ExecutableOperand::Constant(constant) => constant_nyar_type(constant),
+                        ExecutableOperand::Constant(constant) => constant_semantic_type(constant),
                         // 调用点残留的裸 Symbol（如未类型化的 `None`）不得再当成 Unit；
                         // 物理类别以 callee 精确形参合同为准，不向上猜语义。
                         ExecutableOperand::Symbol(_) => callee_param_types.get(arg_index).cloned().ok_or_else(|| {
@@ -385,7 +385,7 @@ fn resolve_callee_parameter_types(
 }
 
 /// Map an executable immediate to its Semantic MIR type for physical planning.
-fn constant_nyar_type(constant: &crate::contracts::Constant) -> SemanticType {
+fn constant_semantic_type(constant: &crate::contracts::Constant) -> SemanticType {
     match constant {
         crate::contracts::Constant::Int(_) => SemanticType::Integer64 { signed: true },
         crate::contracts::Constant::Float64(_) => SemanticType::Float64,

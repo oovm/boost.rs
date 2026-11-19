@@ -4,7 +4,7 @@
 
 ## 内容
 
-- 再导出 `nyar_types::compiler_input` 中的 `CompilerSourceFile`、`CompilerSourceGroup`、`CompilerSourceInput`、`GeneratedSourceGroup` 等。
+- 再导出 `compiler_types::compiler_input` 中的 `CompilerSourceFile`、`CompilerSourceGroup`、`CompilerSourceInput`、`GeneratedSourceGroup` 等。
 - 输入类型记录修订身份、依赖可见性和配置摘要；`legion.von` 的解析由 `legion::workspace` 完成。
 
 ## 数据流

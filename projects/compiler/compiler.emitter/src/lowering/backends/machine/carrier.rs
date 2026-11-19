@@ -85,7 +85,7 @@ const PY_METH_VARARGS: u32 = 0x0001;
 const PY_MOD_EXEC: i32 = 2;
 
 /// 多阶段执行钩子的符号名（`PyInit_` 之外的第二入口）。
-pub const PYTHON_EXEC_NAME: &str = "__nyar_py_exec";
+pub const PYTHON_EXEC_NAME: &str = "__vm_py_exec";
 
 /// Node-API 回调最多 6 个整数形参：与 SysV64 的整数实参寄存器数一致，
 /// `napi_get_cb_info` 的 `argv` 数组按该容量预置。
@@ -217,7 +217,7 @@ pub fn python_module_data(
     }
 
     // `PyModuleDef_Slot { int slot; void *value; }`（16 字节，含 4 字节对齐填充）：
-    // `Py_mod_exec`（2）→ `__nyar_py_exec`，然后 `{0, NULL}` 终止。
+    // `Py_mod_exec`（2）→ `__vm_py_exec`，然后 `{0, NULL}` 终止。
     let slots_offset = data.len() as u32;
     push_module_slot(&mut data, PY_MOD_EXEC);
     push_module_slot(&mut data, 0);
@@ -336,7 +336,7 @@ pub fn python_module_registration(module_name: &str, dll: &str) -> X64ProgramFun
     }
 }
 
-/// `int __nyar_py_exec(PyObject* module)`：`Py_mod_exec` 槽位的执行体。
+/// `int __vm_py_exec(PyObject* module)`：`Py_mod_exec` 槽位的执行体。
 ///
 /// 模块实例由宿主创建；这里逐个安装属性（方法表由 `_PyModule_ExecDef` 依据
 /// `m_methods` 先行安装）。成功返回 0，失败返回 -1，不吞掉宿主错误。

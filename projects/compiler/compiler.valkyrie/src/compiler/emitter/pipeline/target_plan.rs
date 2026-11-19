@@ -971,7 +971,7 @@ fn lower_type(program: &ValkyrieMirProgram, id: compiler_types::TypeId) -> Resul
             Ok(SemanticType::Union(items.iter().map(|item| lower_type(program, *item)).collect::<Result<Vec<_>>>()?))
         }
         // `Intersection` 必须在进入平台表示计划前由 frontend 擦除（见
-        // `frontend_contract::nyar_type` 的 `ConcretizeError`）。把它静默降成 `Union`
+        // `frontend_contract::type_concretize` 的 `ConcretizeError`）。把它静默降成 `Union`
         // 会改变语义（`A & B` 不等于 `A | B`），属于错误成功路径，因此失败闭合。
         CanonicalTypeKind::Intersection(items) => {
             Err(format!("canonical 类型 Intersection 尚未在 frontend 擦除，不能进入平台表示计划: {items:?}"))
