@@ -20,8 +20,8 @@ use database_execution::pgsql::{
 };
 use database_query::{
     DiscardTarget, SqlBoundExpression, SqlBoundLiteral, SqlColumn, SqlDialect, SqlParameterStyle, SqlSessionCommand, SqlFieldType,
-    SqlValue, SqlCatalog, SqlCatalogBoundStatement, analyze_meta_query, bind_sql_catalog, describe_bound_insert,
-    describe_plan, detect_session_reset_statement, encode_hex, neutralized_sql_parameters, pg_server_version,
+    SqlValue, SqlCatalogBoundStatement, analyze_meta_query, bind_sql_catalog, describe_bound_insert,
+    describe_plan, detect_session_reset_statement, encode_hex, infer_sql_parameter_types, neutralized_sql_parameters, pg_server_version,
     plan_statement_for_dialect, rewrite_double_colon_casts, split_sql_batch, substitute_sql_parameters,
 };
 
@@ -1003,14 +1003,14 @@ fn statement_parameter_description(sql: &str, declared: &[u32], runtime: Option<
     parameters.resize(parameters.len().max(referenced), 0);
     if let Some(runtime) = runtime {
         let catalog = runtime.schema.catalog();
-        let inferred = infer_parameter_oids(sql, &catalog, referenced);
+        let inferred = infer_sql_parameter_types(sql, SqlParameterStyle::DollarNumber, &catalog);
         for (position, oid) in parameters.iter_mut().enumerate() {
-            if *oid == 0 {
-                // Placeholders are 1-based (`$1` is the first parameter), so the
-                // parameter at `position` reads inference slot `position + 1`.
-                if let Some(inferred) = inferred.get(position + 1).copied().filter(|oid| *oid != 0) {
-                    *oid = inferred;
-                }
+            if *oid == 0
+                && let Some(Some(field_type)) = inferred.get(position)
+            {
+                // Parameter slots are zero-based: the parameter at `position`
+                // reads inference slot `position`.
+                *oid = pg_oid(&field_type.inner());
             }
         }
     }
@@ -1025,234 +1025,6 @@ fn statement_parameter_description(sql: &str, declared: &[u32], runtime: Option<
         }
     }
     parameters
-}
-
-/// Catalog-derived parameter OIDs for a statement that declares none.
-///
-/// The text scan covers the shapes a client can bind against a catalog:
-/// `INSERT ... (columns) VALUES (placeholders)` maps placeholders positionally
-/// and `column = placeholder` maps a placeholder to the column on either side.
-/// Placeholders outside those shapes stay `unspecified`.
-fn infer_parameter_oids(sql: &str, catalog: &SqlCatalog, count: usize) -> Vec<u32> {
-    let tokens = tokenize_sql_context(sql);
-    // Slot 0 is unused: `$1` writes to index 1 so placeholder numbers index the
-    // vector directly.
-    let mut oids = vec![0u32; count + 1];
-
-    if let Some((table, columns, values_at)) = insert_shape(&tokens) {
-        let mut value_index = 0usize;
-        // `values_at` points past the tuple's opening parenthesis.
-        let mut depth = 1usize;
-        for token in &tokens[values_at..] {
-            match token {
-                SqlToken::Open => depth += 1,
-                SqlToken::Close => {
-                    if depth <= 1 {
-                        break;
-                    }
-                    depth -= 1;
-                }
-                SqlToken::Comma if depth == 1 => value_index += 1,
-                SqlToken::Placeholder(index) if depth == 1 => {
-                    if let Some(column) = columns.get(value_index) {
-                        set_inferred_oid(&mut oids, *index, catalog_column_oid(catalog, Some(&table), column));
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    for (position, token) in tokens.iter().enumerate() {
-        let Some(column) = identifier(token)
-        else {
-            continue;
-        };
-        let pair = match tokens.get(position + 1) {
-            Some(SqlToken::Equals) => tokens.get(position + 2).and_then(|next| match next {
-                SqlToken::Placeholder(index) => Some(*index),
-                _ => None,
-            }),
-            Some(SqlToken::Placeholder(index)) => Some(*index),
-            _ => None,
-        };
-        if let Some(index) = pair {
-            set_inferred_oid(&mut oids, index, catalog_column_oid(catalog, None, column));
-        }
-    }
-
-    for (position, token) in tokens.iter().enumerate() {
-        let SqlToken::Placeholder(index) = token
-        else {
-            continue;
-        };
-        if !matches!(tokens.get(position + 1), Some(SqlToken::Equals)) {
-            continue;
-        }
-        let Some(column) = tokens.get(position + 2).and_then(identifier)
-        else {
-            continue;
-        };
-        set_inferred_oid(&mut oids, *index, catalog_column_oid(catalog, None, column));
-    }
-
-    oids
-}
-
-/// A column or table name, quoted or bare. Bare identifiers reach the tokenizer
-/// as [`SqlToken::Word`] because the same token class carries SQL keywords.
-fn identifier(token: &SqlToken) -> Option<&str> {
-    match token {
-        SqlToken::Ident(name) | SqlToken::Word(name) => Some(name),
-        _ => None,
-    }
-}
-
-fn set_inferred_oid(oids: &mut [u32], index: usize, oid: u32) {
-    if let Some(slot) = oids.get_mut(index) {
-        if *slot == 0 {
-            *slot = oid;
-        }
-    }
-}
-
-/// Column type OID for a named catalog column. `table` restricts the lookup to
-/// one catalog table when the statement already named it.
-fn catalog_column_oid(catalog: &SqlCatalog, table: Option<&str>, column: &str) -> u32 {
-    for candidate in catalog.tables() {
-        if table.is_some_and(|name| name != candidate.name) {
-            continue;
-        }
-        if let Some(field) = candidate.fields.iter().find(|field| field.name == column) {
-            return pg_oid(&field.field_type.inner());
-        }
-    }
-    0
-}
-
-/// Token context for parameter type inference: quoted identifiers,
-/// placeholders, and the punctuation that separates them.
-#[derive(Debug, PartialEq, Eq)]
-enum SqlToken {
-    Ident(String),
-    Word(String),
-    Placeholder(usize),
-    Equals,
-    Comma,
-    Open,
-    Close,
-    Other,
-}
-
-fn tokenize_sql_context(sql: &str) -> Vec<SqlToken> {
-    let chars: Vec<char> = sql.chars().collect();
-    let mut tokens = Vec::new();
-    let mut index = 0usize;
-    while index < chars.len() {
-        let current = chars[index];
-        if current == '"' {
-            let mut name = String::new();
-            index += 1;
-            while index < chars.len() {
-                if chars[index] == '"' {
-                    if chars.get(index + 1) == Some(&'"') {
-                        name.push('"');
-                        index += 2;
-                        continue;
-                    }
-                    index += 1;
-                    break;
-                }
-                name.push(chars[index]);
-                index += 1;
-            }
-            tokens.push(SqlToken::Ident(name));
-            continue;
-        }
-        if current == '\'' {
-            index += 1;
-            while index < chars.len() {
-                if chars[index] == '\'' {
-                    index += 1;
-                    break;
-                }
-                index += 1;
-            }
-            tokens.push(SqlToken::Other);
-            continue;
-        }
-        if current == '$' {
-            let start = index + 1;
-            let mut end = start;
-            while end < chars.len() && chars[end].is_ascii_digit() {
-                end += 1;
-            }
-            if let Ok(value) = chars[start..end].iter().collect::<String>().parse::<usize>() {
-                tokens.push(SqlToken::Placeholder(value));
-                index = end;
-                continue;
-            }
-        }
-        if current.is_alphanumeric() || current == '_' {
-            let mut word = String::new();
-            while index < chars.len() && (chars[index].is_alphanumeric() || chars[index] == '_') {
-                word.push(chars[index]);
-                index += 1;
-            }
-            tokens.push(SqlToken::Word(word));
-            continue;
-        }
-        if current.is_whitespace() {
-            // Whitespace carries no shape; skipping it keeps keyword and
-            // identifier adjacency meaningful for the position checks below.
-            index += 1;
-            continue;
-        }
-        match current {
-            '=' => tokens.push(SqlToken::Equals),
-            ',' => tokens.push(SqlToken::Comma),
-            '(' => tokens.push(SqlToken::Open),
-            ')' => tokens.push(SqlToken::Close),
-            _ => tokens.push(SqlToken::Other),
-        }
-        index += 1;
-    }
-    tokens
-}
-
-/// `INSERT INTO "table" ("c1", "c2", ...) VALUES (...)` positions, returning
-/// the target table, its column names in VALUES order, and the token index of
-/// the first VALUES tuple's contents.
-fn insert_shape(tokens: &[SqlToken]) -> Option<(String, Vec<String>, usize)> {
-    let insert_at = tokens.iter().position(|token| matches!(token, SqlToken::Word(word) if word.eq_ignore_ascii_case("INSERT")))?;
-    if !matches!(tokens.get(insert_at + 1), Some(SqlToken::Word(word)) if word.eq_ignore_ascii_case("INTO")) {
-        return None;
-    }
-    let Some(table) = tokens.get(insert_at + 2).and_then(identifier)
-    else {
-        return None;
-    };
-    let mut columns = Vec::new();
-    if matches!(tokens.get(insert_at + 3), Some(SqlToken::Open)) {
-        for token in &tokens[insert_at + 4..] {
-            match token {
-                SqlToken::Close => break,
-                other => {
-                    if let Some(name) = identifier(other) {
-                        columns.push(name.to_string());
-                    }
-                }
-            }
-        }
-    }
-    let values_at = tokens.iter().enumerate().skip(insert_at).find_map(|(position, token)| match token {
-        SqlToken::Word(word) if word.eq_ignore_ascii_case("VALUES") => Some(position),
-        _ => None,
-    })?;
-    if !matches!(tokens.get(values_at + 1), Some(SqlToken::Open)) {
-        return None;
-    }
-    Some((table.to_string(), columns, values_at + 2))
 }
 
 /// Resolves Bind result formats into one entry per described column.

@@ -46,7 +46,9 @@ pub use sql_execute::{RowFieldValues, SqlResult, SqlSequenceCatalog, SqlValue, d
 pub use sql_meta::{
     MetaQuery, PG_SERVER_VERSION, analyze_meta_query, mysql_data_type, pg_server_version, postgres_type, set_pg_server_version,
 };
-pub use sql_parameters::{SqlParameterStyle, neutralized_sql_parameters, nulled_sql_parameters, substitute_sql_parameters};
+pub use sql_parameters::{
+    SqlParameterStyle, infer_sql_parameter_types, neutralized_sql_parameters, nulled_sql_parameters, substitute_sql_parameters,
+};
 pub use sql_planner::{
     DefaultValue, DeletePlan, GeneratedColumnPlan, IndexProbe, InsertSelectColumn, InsertSelectPlan, JoinPlan, JoinSourcePlan, ReadPlan,
     ScanPlan, SetOperationPlan, SqlExecutionPlan, SqlSetOrderByItem, UniqueConstraintPlan, UpdateAssignment, UpdatePlan, WritePlan,
