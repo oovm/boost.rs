@@ -160,6 +160,13 @@ pub fn select_encoded(row: &BTreeMap<String, Value>, names: &[&str]) -> Result<V
     Ok(selected)
 }
 
+/// Tagged bytes of one value, the same form [`select_encoded`] answers per column.
+pub fn encode_tagged(value: &Value) -> Result<Vec<u8>> {
+    let mut encoded = Vec::new();
+    encode_value(&mut encoded, value, 0)?;
+    Ok(encoded)
+}
+
 /// Fill `selected` with the tagged bytes of `names` from one stored record.
 ///
 /// The slices borrow `bytes`, so a caller can compare columns of a stored row

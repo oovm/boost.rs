@@ -257,14 +257,14 @@ pub(crate) fn migration_manifest(history: &IdentityHistory, projection: &SchemaP
 }
 
 /// Initial execution-facing catalog built from one validated VOS document.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ExecutionCatalog {
     /// Cataloged table and class types in VOS document order.
     pub types: Vec<ExecutionType>,
 }
 
 /// One VOS table or class projected into the execution model.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ExecutionType {
     /// Stable VOS TypeId used as the execution schema identity.
     pub schema_id: u64,
@@ -349,8 +349,10 @@ pub fn execution_catalog_from_resolved_contract(contract: &schema_input_vos::Res
         let mut fields = Vec::with_capacity(item.fields.len());
         let mut unique_constraints = Vec::new();
         // `[unique(group)]` on several fields is one multi-column rule; a bare
-        // `[unique]` / `@name` stays a single-column rule derived from the field name.
-        let mut unique_groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        // `[unique]` / `@name` stays a single-column rule derived from the field
+        // name. `[unique(group where ...)]` restricts the rule to the rows whose
+        // values satisfy the predicate, the partial unique index of PostgreSQL.
+        let mut unique_groups: BTreeMap<String, (Vec<String>, Option<database_types::PartialPredicate>)> = BTreeMap::new();
         for field in &item.fields {
             let virtual_field_index = field.virtual_field_index.ok_or_else(|| Error::Schema {
                 message: format!("resolved VOS field `{}` has no durable virtual slot", field.canonical_name),
@@ -360,14 +362,21 @@ pub fn execution_catalog_from_resolved_contract(contract: &schema_input_vos::Res
                 .map_err(|_| Error::Schema { message: "resolved VOS contract emitted an invalid field identity".into() })?;
             if kind == ExecutionTypeKind::Table {
                 for attribute in field.attributes.iter().filter(|attribute| attribute.name == "unique") {
-                    match database_query::local::constraints::unique_attribute_group(&attribute.syntax)? {
-                        Some(group) => {
-                            let columns = unique_groups.entry(group).or_default();
+                    match database_query::local::constraints::unique_attribute_rule(&attribute.syntax)? {
+                        (Some(group), predicate) => {
+                            let (columns, declared) = unique_groups.entry(group.clone()).or_default();
+                            if columns.is_empty() {
+                                *declared = predicate.clone();
+                            } else if *declared != predicate {
+                                return Err(Error::Schema {
+                                    message: format!("unique group `{group}` spells conflicting predicates on table `{name}`"),
+                                });
+                            }
                             if !columns.contains(&field.canonical_name) {
                                 columns.push(field.canonical_name.clone());
                             }
                         }
-                        None => unique_constraints.push(
+                        (None, _) => unique_constraints.push(
                             UniqueConstraint::new(format!("{name}_{}_key", field.canonical_name), vec![field.canonical_name.clone()], true)
                                 .map_err(|error| Error::Schema { message: format!("invalid unique constraint from VOS attribute: {error}") })?,
                         ),
@@ -381,11 +390,16 @@ pub fn execution_catalog_from_resolved_contract(contract: &schema_input_vos::Res
                 handle,
             });
         }
-        for (group, columns) in unique_groups {
-            unique_constraints.push(
-                UniqueConstraint::new(group, columns, true)
-                    .map_err(|error| Error::Schema { message: format!("invalid grouped unique constraint from VOS attribute: {error}") })?,
-            );
+        for (group, (columns, predicate)) in unique_groups {
+            if let Some(predicate) = &predicate {
+                database_query::local::constraints::validate_unique_predicate(&item.fields, predicate)?;
+            }
+            let mut constraint = UniqueConstraint::new(group, columns, true)
+                .map_err(|error| Error::Schema { message: format!("invalid grouped unique constraint from VOS attribute: {error}") })?;
+            if let Some(predicate) = predicate {
+                constraint = constraint.with_predicate(predicate);
+            }
+            unique_constraints.push(constraint);
         }
         types.push(ExecutionType { schema_id: item.type_id, name, kind, fields, unique_constraints });
     }
@@ -445,20 +459,37 @@ pub fn remap_unique_constraints(
         .iter()
         .map(|declared| {
             let table = renames.types.get(declared.table()).map(String::as_str).unwrap_or(declared.table());
-            let columns = declared
-                .constraint()
-                .columns()
-                .iter()
-                .map(|column| {
-                    renames
-                        .fields
-                        .get(&FieldPath { type_name: declared.table().to_owned(), field_name: column.clone() })
-                        .cloned()
-                        .unwrap_or_else(|| column.clone())
-                })
-                .collect::<Vec<_>>();
-            let constraint =
+            let rename_field = |field: &str| {
+                renames
+                    .fields
+                    .get(&FieldPath { type_name: declared.table().to_owned(), field_name: field.to_owned() })
+                    .cloned()
+                    .unwrap_or_else(|| field.to_owned())
+            };
+            let columns = declared.constraint().columns().iter().map(|column| rename_field(column)).collect::<Vec<_>>();
+            let mut constraint =
                 UniqueConstraint::new(declared.constraint().name(), columns, declared.constraint().nulls_distinct()).map_err(Error::from)?;
+            if let Some(predicate) = declared.constraint().predicate() {
+                let conditions = predicate
+                    .conditions
+                    .iter()
+                    .map(|condition| match condition {
+                        database_types::PredicateCondition::Equal { column, value } => {
+                            database_types::PredicateCondition::Equal { column: rename_field(column), value: value.clone() }
+                        }
+                        database_types::PredicateCondition::NotEqual { column, value } => {
+                            database_types::PredicateCondition::NotEqual { column: rename_field(column), value: value.clone() }
+                        }
+                        database_types::PredicateCondition::In { column, values } => {
+                            database_types::PredicateCondition::In { column: rename_field(column), values: values.clone() }
+                        }
+                        database_types::PredicateCondition::IsNotNull { column } => {
+                            database_types::PredicateCondition::IsNotNull { column: rename_field(column) }
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                constraint = constraint.with_predicate(database_types::PartialPredicate { conditions });
+            }
             database_types::TableUniqueConstraint::new(table, constraint).map_err(Error::from)
         })
         .collect()
