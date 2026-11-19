@@ -7,6 +7,7 @@
 pub mod blob;
 pub mod files;
 pub mod journal;
+pub mod publish;
 pub mod rows;
 pub mod snapshot;
 
