@@ -1,0 +1,14 @@
+[package]
+name = "commander-prompt"
+version.workspace = true
+authors.workspace = true
+description = "Interactive prompt engine for the commander family: eligibility-gated confirm, input, select, password, and awaitAction over injected IO with stderr-only questions and action-required deferral"
+repository = "https://github.com/oovm/rust-boost/tree/dev/projects/commander/commander.prompt"
+readme = "readme.md"
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+boost-terminal = { workspace = true }
+commander-core = { workspace = true }
+commander-types = { workspace = true }

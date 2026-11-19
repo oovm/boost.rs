@@ -30,6 +30,7 @@ members = [
     "projects/boost/boost-source",
     "projects/boost/boost-terminal",
     "projects/commander/commander.core",
+    "projects/commander/commander.prompt",
     "projects/commander/commander.types",
     "projects/compiler/compiler.analysis",
     "projects/compiler/compiler.optimize",
@@ -262,6 +263,7 @@ boost-source = { path = "projects/boost/boost-source" }
 boost-terminal = { path = "projects/boost/boost-terminal" }
 # commander 能力树
 commander-core = { path = "projects/commander/commander.core" }
+commander-prompt = { path = "projects/commander/commander.prompt" }
 commander-types = { path = "projects/commander/commander.types" }
 # 编译基础设施
 compiler-analysis = { path = "projects/compiler/compiler.analysis" }
