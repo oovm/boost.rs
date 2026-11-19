@@ -1,4 +1,4 @@
-use boost_harness::{
+use boost_harness::diagnostic::{
     ByteRange, Diagnostic, DiagnosticCode, DiagnosticLabel, DiagnosticLocation, DiagnosticOrigin, DiagnosticSeverity, LabelRole, Message, SourceRef,
     terminal::{SourceCache, SourceRegistry},
 };
