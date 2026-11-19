@@ -1,6 +1,6 @@
 use data_binary_core::{Budget, BudgetTracker};
 use boost_source::binary::{ByteSource, MemorySource};
-use acorn_zip::{ZipArchiveIndex, ZipIndexError, ZipMember, ZipNameEncoding, ZipViewError, index_zip, read_member_payload};
+use data_binary_zip::{ZipArchiveIndex, ZipIndexError, ZipMember, ZipNameEncoding, ZipViewError, index_zip, read_member_payload};
 
 use crate::{
     container::{ContainerRootFile, parse_container_xml},

@@ -10,7 +10,7 @@ publish.workspace = true
 [dependencies]
 data-binary-core = { workspace = true }
 boost-source = { workspace = true }
-acorn-zip = { workspace = true }
+data-binary-zip = { workspace = true }
 data-text-xml = { workspace = true, default-features = false, features = ["serde"] }
 
 [dev-dependencies]
