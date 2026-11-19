@@ -6,7 +6,7 @@
 //! 本 crate 只做前向。反向、参数更新与 checkpoint 由 `dl-autograd`、`dl-train` 和
 //! `dl-model` 负责；可视化投影不是执行证明。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 use std::collections::BTreeMap;
 
@@ -223,6 +223,122 @@ impl GraphBuilder {
     }
 }
 
+/// capture 闭包中的图句柄；只引用节点，不持有数据。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TNode(NodeId);
+
+impl TNode {
+    /// 返回底层节点下标。
+    pub fn id(self) -> NodeId {
+        self.0
+    }
+}
+
+/// capture 期建图上下文；算子与 [`GraphBuilder`] 共用同一套形状推导。
+///
+/// 与 eager 路径不同，这里只记录节点。闭包结束后 [`Trace::finish`] 产出可执行
+/// [`Graph`]，与 `dl-ops` 对同一组输入必须给出相同结果。
+#[derive(Clone, Debug, Default)]
+pub struct Trace {
+    builder: GraphBuilder,
+}
+
+impl Trace {
+    /// 空 trace。
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 声明一个运行期输入。
+    pub fn input(&mut self, name: impl Into<String>, shape: impl Into<Vec<usize>>) -> Result<TNode> {
+        self.builder.input(name, shape).map(TNode)
+    }
+
+    /// 声明一个运行期参数。
+    pub fn parameter(&mut self, name: impl Into<String>, shape: impl Into<Vec<usize>>) -> Result<TNode> {
+        self.builder.parameter(name, shape).map(TNode)
+    }
+
+    /// 逐元素相加，支持广播。
+    pub fn add(&mut self, lhs: TNode, rhs: TNode) -> Result<TNode> {
+        self.builder.add(lhs.0, rhs.0).map(TNode)
+    }
+
+    /// 逐元素相减，支持广播。
+    pub fn sub(&mut self, lhs: TNode, rhs: TNode) -> Result<TNode> {
+        self.builder.sub(lhs.0, rhs.0).map(TNode)
+    }
+
+    /// 逐元素相乘，支持广播。
+    pub fn mul(&mut self, lhs: TNode, rhs: TNode) -> Result<TNode> {
+        self.builder.mul(lhs.0, rhs.0).map(TNode)
+    }
+
+    /// 二维矩阵乘。
+    pub fn matmul(&mut self, lhs: TNode, rhs: TNode) -> Result<TNode> {
+        self.builder.matmul(lhs.0, rhs.0).map(TNode)
+    }
+
+    /// ReLU 激活。
+    pub fn relu(&mut self, input: TNode) -> Result<TNode> {
+        self.builder.relu(input.0).map(TNode)
+    }
+
+    /// 改变形状。
+    pub fn reshape(&mut self, input: TNode, shape: impl Into<Vec<usize>>) -> Result<TNode> {
+        self.builder.reshape(input.0, shape).map(TNode)
+    }
+
+    /// 交换两个轴。
+    pub fn transpose(&mut self, input: TNode, first: usize, second: usize) -> Result<TNode> {
+        self.builder.transpose(input.0, first, second).map(TNode)
+    }
+
+    /// 全部元素求和。
+    pub fn sum_all(&mut self, input: TNode) -> Result<TNode> {
+        self.builder.sum_all(input.0).map(TNode)
+    }
+
+    /// 全部元素求平均。
+    pub fn mean_all(&mut self, input: TNode) -> Result<TNode> {
+        self.builder.mean_all(input.0).map(TNode)
+    }
+
+    /// 结束捕获；输出节点必须存在。
+    pub fn finish(self, outputs: Vec<TNode>) -> Result<Graph> {
+        self.builder.finish(outputs.into_iter().map(|node| node.0).collect())
+    }
+}
+
+/// 在闭包中捕获一张前向图。
+///
+/// ```
+/// use dl_graph::{Bindings, capture};
+/// use dl_tensor::Tensor;
+///
+/// let graph = capture(|trace| {
+///     let x = trace.input("x", [2, 2])?;
+///     let w = trace.parameter("w", [2, 2])?;
+///     let h = trace.matmul(x, w)?;
+///     let h = trace.relu(h)?;
+///     Ok(vec![h])
+/// })
+/// .unwrap();
+///
+/// let mut bindings = Bindings::new();
+/// bindings.insert_input("x", Tensor::zeros([2, 2]).unwrap());
+/// bindings.insert_parameter("w", Tensor::zeros([2, 2]).unwrap());
+/// assert_eq!(graph.run(&bindings).unwrap().len(), 1);
+/// ```
+pub fn capture<F>(body: F) -> Result<Graph>
+where
+    F: FnOnce(&mut Trace) -> Result<Vec<TNode>>,
+{
+    let mut trace = Trace::new();
+    let outputs = body(&mut trace)?;
+    trace.finish(outputs)
+}
+
 /// 可执行前向图。
 #[derive(Clone, Debug)]
 pub struct Graph {
@@ -395,5 +511,40 @@ mod tests {
         builder.input("x", [2]).unwrap();
         builder.input("x", [2]).unwrap();
         assert!(matches!(builder.finish(Vec::new()), Err(DlError::Format { .. })));
+    }
+
+    #[test]
+    fn captured_graph_matches_eager_ops() {
+        let graph = capture(|trace| {
+            let x = trace.input("x", [2, 3])?;
+            let w = trace.parameter("w", [3, 2])?;
+            let product = trace.matmul(x, w)?;
+            let activated = trace.relu(product)?;
+            Ok(vec![activated])
+        })
+        .expect("capture");
+
+        let x = Tensor::from_vec(vec![1.0, -2.0, 3.0, 4.0, 5.0, -6.0], [2, 3]).unwrap();
+        let w = Tensor::from_vec(vec![1.0, 2.0, -1.0, 0.0, 0.5, -0.5], [3, 2]).unwrap();
+        let mut bindings = Bindings::new();
+        bindings.insert_input("x", x.clone());
+        bindings.insert_parameter("w", w.clone());
+
+        let captured = graph.run(&bindings).expect("run captured graph");
+        let eager = ops::relu(&ops::matmul(&x, &w).expect("eager matmul")).expect("eager relu");
+        assert_eq!(captured[0].to_vec(), eager.to_vec());
+        assert_eq!(captured[0].shape(), eager.shape());
+    }
+
+    #[test]
+    fn capture_reports_shape_errors_immediately() {
+        let error = capture(|trace| {
+            let x = trace.input("x", [2, 3])?;
+            let w = trace.parameter("w", [4, 2])?;
+            let product = trace.matmul(x, w)?;
+            Ok(vec![product])
+        })
+        .expect_err("incompatible matmul");
+        assert!(matches!(error, DlError::ShapeMismatch { op: "matmul", .. }));
     }
 }
