@@ -2,7 +2,7 @@
 //!
 //! 第一版仅解析并保存单条 `feature = "…"` 比较；不在此模块组合多个 `gate` item，也不与 `when` 求交。
 
-use compiler_valkyrie::compiler::syntax::surface::ast::Attribute;
+use language_valkyrie::compiler::syntax::surface::ast::Attribute;
 
 use super::{ast_attributes::term_string_literal, types::GatePredicate};
 

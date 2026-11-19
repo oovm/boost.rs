@@ -4,7 +4,7 @@ use std::{
 };
 
 use compiler_target::CanonicalTarget;
-use compiler_valkyrie::compiler::{
+use language_valkyrie::compiler::{
     semantic::closure::{DeclarationIndexEntry, DeclarationIndexes, DeclarationKey, ReferencePath, index_parsed_root},
     syntax::surface::parse_source_with_identity,
 };

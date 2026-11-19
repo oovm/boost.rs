@@ -24,7 +24,6 @@ compiler-analysis = { workspace = true }
 compiler-emitter = { workspace = true }
 compiler-target = { workspace = true }
 compiler-types = { workspace = true }
-compiler-valkyrie = { workspace = true }
 document-formats = { workspace = true }
 document-ir = { workspace = true }
 interpreter-vm-ovm = { workspace = true }

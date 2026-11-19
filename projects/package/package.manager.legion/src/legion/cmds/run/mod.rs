@@ -92,8 +92,8 @@ pub struct CompileEvidenceDigest {
     pub generated_source_hash: String,
 }
 
-impl From<&compiler_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence> for CompileEvidenceDigest {
-    fn from(evidence: &compiler_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence) -> Self {
+impl From<&language_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence> for CompileEvidenceDigest {
+    fn from(evidence: &language_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence) -> Self {
         Self {
             semantic_closure_hash: evidence.semantic_closure_hash.clone(),
             canonical_surface_hash: evidence.canonical_surface_hash.clone(),
@@ -303,7 +303,7 @@ impl ExecutionManifest {
         artifact_source_dir: &Path,
         contracts: &[RunContract],
         library_exports: &[LibraryExportIndexEntry],
-        evidence: &compiler_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence,
+        evidence: &language_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence,
     ) -> LegionResult<Self> {
         Ok(Self {
             schema_version: EXECUTION_MANIFEST_SCHEMA_VERSION,
@@ -470,7 +470,7 @@ fn read_compile_evidence_digest(output_dir: &Path) -> LegionResult<Option<Compil
     }
     let source = fs::read_to_string(&path).map_err(|e| LegionError::msg(format!("读取 compile evidence 失败 {}: {e}", path.display())))?;
     let evidence =
-        crate::legion::parse_von::<compiler_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence>(&source).map_err(|error| {
+        crate::legion::parse_von::<language_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence>(&source).map_err(|error| {
             labeled_report_with_context(
                 data_text_core::TextError::format_error(error.to_string()),
                 format!("解析 compile evidence 失败 {}", path.display()),
@@ -491,13 +491,13 @@ pub fn expected_resolver_compile_evidence(plan: &BuildPlan) -> LegionResult<Comp
 #[doc(hidden)]
 pub fn expected_resolver_compile_evidence_from_groups(
     groups: &[compiler_types::compiler_input::CompilerSourceGroup],
-    host_bindings: &[compiler_valkyrie::compiler::emitter::pipeline::CompilerHostProviderBinding],
+    host_bindings: &[language_valkyrie::compiler::emitter::pipeline::CompilerHostProviderBinding],
     arch: &str,
 ) -> CompileEvidenceDigest {
     CompileEvidenceDigest {
-        semantic_closure_hash: compiler_valkyrie::compiler::emitter::pipeline::semantic_closure_hash_for_groups(groups, arch),
+        semantic_closure_hash: language_valkyrie::compiler::emitter::pipeline::semantic_closure_hash_for_groups(groups, arch),
         canonical_surface_hash: String::new(),
-        host_provider_binding_hash: compiler_valkyrie::compiler::emitter::pipeline::host_provider_binding_hash_for_bindings(host_bindings),
+        host_provider_binding_hash: language_valkyrie::compiler::emitter::pipeline::host_provider_binding_hash_for_bindings(host_bindings),
         generated_source_hash: String::new(),
     }
 }

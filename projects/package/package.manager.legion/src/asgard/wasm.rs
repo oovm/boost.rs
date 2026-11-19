@@ -5,10 +5,10 @@ use crate::{
         error::{AsgardError, AsgardResult},
         host_backend::HostBackend,
     },
-    compiler_valkyrie::compiler::emitter::pipeline::{CompilerGatedOutHostProvider, CompilerHostProviderBinding},
     legion::CanonicalTarget,
 };
 use compiler_types::compiler_input::CompilerSourceGroup;
+use language_valkyrie::compiler::emitter::pipeline::{CompilerGatedOutHostProvider, CompilerHostProviderBinding};
 use std::path::Path;
 
 /// WASM 编译报告。

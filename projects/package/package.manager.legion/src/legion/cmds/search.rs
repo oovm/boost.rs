@@ -1,7 +1,5 @@
-use crate::{
-    PackageManager,
-    legion::cmds::error::{LegionError, LegionResult},
-};
+use crate::legion::cmds::error::{LegionError, LegionResult};
+use package_manager::PackageManager;
 use std::process::ExitCode;
 
 /// `legion search` arguments.

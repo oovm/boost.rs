@@ -2,17 +2,15 @@
 use crate::asgard::error::{AsgardError, AsgardResult};
 use std::{fs, path::Path};
 
-use crate::{
-    compiler_valkyrie::compiler::emitter::pipeline::{
-        CompilerBuildContext, CompilerGatedOutHostProvider, CompilerHostProviderBinding, compile_source_groups_to_artifacts,
-    },
-    legion::workspace::{
-        compile_source_snapshot,
-        planner::{BuildRequest, WorkspaceResolver, compiler_gated_out_host_providers, compiler_host_provider_bindings},
-    },
+use crate::legion::workspace::{
+    compile_source_snapshot,
+    planner::{BuildRequest, WorkspaceResolver, compiler_gated_out_host_providers, compiler_host_provider_bindings},
 };
 use compiler_target::{ArtifactKind, CanonicalTarget};
 use compiler_types::compiler_input::{CompilerSourceFile, CompilerSourceGroup, CompilerSourceInput, GeneratedSourceGroup};
+use language_valkyrie::compiler::emitter::pipeline::{
+    CompilerBuildContext, CompilerGatedOutHostProvider, CompilerHostProviderBinding, compile_source_groups_to_artifacts,
+};
 
 use crate::asgard::{
     codegen::ScalarBootstrap,
@@ -187,10 +185,10 @@ pub fn compile_v_bundle(
     // 静态站/报告图表岛以 `GeneratedOnly` 入口编译：生成单元的类型位置是它自己生成的
     // 宿主 ABI 面，依赖导出的内建同身份别名（如 `std.text` 的 `utf8`）不参与短名遮蔽。
     let compiler = if surface == GeneratedEntrySurface::GeneratedOnly {
-        compiler_valkyrie::compiler::hir::lowering::ValkyrieCompiler::default().with_suppressed_imported_builtin_short_names()
+        language_valkyrie::compiler::hir::lowering::ValkyrieCompiler::default().with_suppressed_imported_builtin_short_names()
     }
     else {
-        compiler_valkyrie::compiler::hir::lowering::ValkyrieCompiler::default()
+        language_valkyrie::compiler::hir::lowering::ValkyrieCompiler::default()
     };
     let target_profile = target.to_profile(None);
     fs::create_dir_all(output_dir).map_err(|e| AsgardError::msg(format!("{e}: {}", "failed to create output directory")))?;

@@ -1,4 +1,4 @@
-use compiler_valkyrie::compiler::emitter::pipeline::{CompilerGatedOutHostProvider, CompilerHostProviderBinding};
+use language_valkyrie::compiler::emitter::pipeline::{CompilerGatedOutHostProvider, CompilerHostProviderBinding};
 
 use super::types::{PlannedHostProvider, PlannedHostProviderExclusion, PlannerError, PlannerResult};
 

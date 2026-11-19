@@ -1,6 +1,6 @@
 //! `utilities` 公开面 smoke：诊断 re-export 与命令出口文案。
 
-use compiler_valkyrie::{
+use language_valkyrie::{
     report,
     utilities::{
         diagnostic::{DiagnosticCode, DiagnosticSeverity},

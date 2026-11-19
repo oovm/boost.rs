@@ -1,9 +1,7 @@
-use crate::{
-    compiler_valkyrie::compiler::{
-        hir::lowering::ValkyrieCompiler,
-        services::lint::{lint_valkyrie_source, lint_valkyrie_vx_source},
-    },
-    legion::cmds::error::{LegionError, LegionResult},
+use crate::legion::cmds::error::{LegionError, LegionResult};
+use language_valkyrie::compiler::{
+    hir::lowering::ValkyrieCompiler,
+    services::lint::{lint_valkyrie_source, lint_valkyrie_vx_source},
 };
 use std::{
     fs,

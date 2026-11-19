@@ -63,8 +63,8 @@ impl From<compiler_emitter::EmitterError> for AsgardError {
     }
 }
 
-impl From<compiler_valkyrie::compiler::emitter::pipeline::PipelineError> for AsgardError {
-    fn from(value: compiler_valkyrie::compiler::emitter::pipeline::PipelineError) -> Self {
+impl From<language_valkyrie::compiler::emitter::pipeline::PipelineError> for AsgardError {
+    fn from(value: language_valkyrie::compiler::emitter::pipeline::PipelineError) -> Self {
         Self::Message(value.to_string())
     }
 }

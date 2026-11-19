@@ -1,7 +1,5 @@
-use crate::{
-    PackageManager,
-    legion::cmds::error::{LegionError, LegionResult},
-};
+use crate::legion::cmds::error::{LegionError, LegionResult};
+use package_manager::PackageManager;
 use package_registry::{PublishOptions, VersionBump};
 use std::{path::PathBuf, process::ExitCode};
 

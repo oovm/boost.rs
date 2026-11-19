@@ -18,7 +18,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use compiler_valkyrie::compiler::types::{SourceID, SourceSpan};
+use language_valkyrie::compiler::types::{SourceID, SourceSpan};
 
 use crate::legion::workspace::manifest::{ManifestError, ProjectManifest};
 

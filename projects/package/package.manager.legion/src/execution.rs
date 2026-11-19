@@ -1,7 +1,7 @@
 //! execution manifest 摘要与可信复用判定。
 //!
-//! 唯一的权威校验核心是 `package.manager::legion::cmds::run::ExecutionManifest`；
-//! 本模块只做宿主友好的字段投影，不另造一套新鲜度规则。
+//! 唯一的权威校验核心是 `crate::legion::cmds::run::ExecutionManifest`；本模块只做
+//! 宿主友好的字段投影，不另造一套新鲜度规则。
 
 use std::path::{Path, PathBuf};
 

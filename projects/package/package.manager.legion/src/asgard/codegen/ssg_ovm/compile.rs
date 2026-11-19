@@ -15,14 +15,14 @@ use crate::{
         compile::{GeneratedEntrySurface, GeneratedSource, compiler_input_for_with_dependencies, primary_artifact_name},
         error::{AsgardError, AsgardResult},
     },
-    compiler_valkyrie::compiler::{
-        emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts},
-        hir::lowering::ValkyrieCompiler,
-    },
     legion::workspace::{
         compile_source_snapshot,
         planner::{BuildRequest, WorkspaceResolver, compiler_host_provider_bindings},
     },
+};
+use language_valkyrie::compiler::{
+    emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts},
+    hir::lowering::ValkyrieCompiler,
 };
 
 /// SSG 构建宿主声明的 capability：`asgard.render` 合同族 OVM provider 的门禁 feature。

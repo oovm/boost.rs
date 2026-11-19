@@ -260,7 +260,7 @@ mod tests {
 
     #[test]
     fn wasm_opcode_provider_matches_browser_wasm_without_js_binding() {
-        use compiler_valkyrie::compiler::semantic::closure::{DeclarationKey, DeclarationKind};
+        use language_valkyrie::compiler::semantic::closure::{DeclarationKey, DeclarationKind};
         let target = CanonicalTarget::browser();
         let space = target_host_capability_space(target);
         let provider = PlannedHostProvider {

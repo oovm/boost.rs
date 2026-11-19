@@ -1,0 +1,50 @@
+[package]
+name = "package-manager-legion"
+description = "Valkyrie 产品工具链：Legion 工程编排、Asgard 交付、执行清单与 OVM 调用"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository = "https://github.com/oovm/rust-boost/tree/dev/projects/package/package.manager.legion"
+publish = false
+
+[dependencies]
+data-binary-dex = { workspace = true }
+data-binary-host = { workspace = true }
+data-binary-jvm = { workspace = true }
+data-binary-mach-o = { workspace = true }
+data-binary-odin = { workspace = true }
+data-binary-pe = { workspace = true }
+data-binary-wasm = { workspace = true }
+data-binary-x64 = { workspace = true }
+data-binary-zip = { workspace = true }
+data-encoding = { workspace = true }
+boost-harness = { workspace = true }
+compiler-analysis = { workspace = true }
+compiler-emitter = { workspace = true }
+compiler-target = { workspace = true }
+compiler-types = { workspace = true }
+language-valkyrie = { workspace = true }
+document-formats = { workspace = true }
+document-ir = { workspace = true }
+interpreter-vm-ovm = { workspace = true }
+language-format = { workspace = true, features = ["serde"] }
+language-highlight = { workspace = true }
+data-text-awsl = { workspace = true }
+data-text-core = { workspace = true }
+data-text-valkyrie = { workspace = true }
+data-text-von = { workspace = true }
+sha2 = { workspace = true }
+package-cache = { workspace = true }
+package-manager = { workspace = true }
+package-publish = { workspace = true }
+package-registry = { workspace = true }
+package-resolve = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+boost-fs = { workspace = true }
+package-registry = { workspace = true }
+package-resolve = { workspace = true }

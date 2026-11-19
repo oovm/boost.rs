@@ -1,21 +1,19 @@
 // `legion build` 命令。
 //
 // 这里只负责装配与落盘；目标解释、后端注册和 lowering 均交给 `emitter`。
-use crate::{
-    compiler_valkyrie::compiler::emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts},
-    legion::{
-        cmds::error::{LegionError, LegionResult},
-        workspace::{
-            labeled_report_with_context,
-            manifest::{ProjectArtifactKind, ProjectManifest},
-            planner::{BuildPlan, BuildRequest, WorkspaceResolver, compiler_host_provider_bindings},
-            source_snapshot::compile_source_snapshot,
-        },
+use crate::legion::{
+    cmds::error::{LegionError, LegionResult},
+    workspace::{
+        labeled_report_with_context,
+        manifest::{ProjectArtifactKind, ProjectManifest},
+        planner::{BuildPlan, BuildRequest, WorkspaceResolver, compiler_host_provider_bindings},
+        source_snapshot::compile_source_snapshot,
     },
 };
 use compiler_emitter::DriverRunContract;
 use compiler_target::{ArtifactContract, ArtifactSet, CanonicalTarget, ClrSuspendStrategy};
 use compiler_types::compiler_input::CompilerSourceInput;
+use language_valkyrie::compiler::emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts};
 use serde::Serialize;
 use std::{
     fs,
@@ -289,7 +287,7 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<compiler_em
     fs::create_dir_all(&staging_dir).map_err(|e| LegionError::msg(format!("创建产物暂存目录失败: {}: {e}", staging_dir.display())))?;
     let outcome = (|| -> LegionResult<compiler_emitter::DriverCompileReport> {
         let artifact = match compile_source_groups_to_artifacts(
-            &compiler_valkyrie::compiler::hir::lowering::ValkyrieCompiler::default(),
+            &language_valkyrie::compiler::hir::lowering::ValkyrieCompiler::default(),
             &compiler_types::compiler_input::CompilerSourceInput::application(source_groups),
             &build_context,
             &staging_dir,
@@ -637,15 +635,15 @@ mod artifact_transaction_tests {
 /// 按 `(文件, span)` 稳定排序、同一根因归并、超出上限给汇总。
 /// 源码原文按诊断的 `source.id`（相对组 manifest 目录的逻辑路径）懒读磁盘，
 /// 与 `compile_source_snapshot` 同样做 BOM 归一化，保证 span → 行列映射一致。
-fn compile_error_with_diagnostics(error: compiler_valkyrie::compiler::emitter::pipeline::PipelineError, plan: &BuildPlan) -> LegionError {
-    let pending = compiler_valkyrie::compiler::diagnostics::pending::take_pending_diagnostics();
+fn compile_error_with_diagnostics(error: language_valkyrie::compiler::emitter::pipeline::PipelineError, plan: &BuildPlan) -> LegionError {
+    let pending = language_valkyrie::compiler::diagnostics::pending::take_pending_diagnostics();
     if pending.is_empty() {
         return LegionError::from(error);
     }
     // 最终失败事实不得被多诊断报告吞掉：暂存汇已含同 code 条目说明它已被记录，
     // 否则在报告末尾补一行最终失败（rustc 在 aborting 行后同型给出最终失败）。
     let fatal_code = match &error {
-        compiler_valkyrie::compiler::emitter::pipeline::PipelineError::Hir(hir) => Some(hir.code()),
+        language_valkyrie::compiler::emitter::pipeline::PipelineError::Hir(hir) => Some(hir.code()),
         _ => None,
     };
     let fatal_text = error.to_string();
@@ -653,8 +651,8 @@ fn compile_error_with_diagnostics(error: compiler_valkyrie::compiler::emitter::p
         Some(code) => pending.diagnostics.iter().any(|diagnostic| diagnostic.row.code == code),
         None => pending.diagnostics.iter().any(|diagnostic| diagnostic.message == fatal_text),
     };
-    let options = compiler_valkyrie::compiler::diagnostics::report::DiagnosticRenderOptions::from_environment();
-    let mut report = compiler_valkyrie::compiler::diagnostics::report::render_compile_diagnostics(
+    let options = language_valkyrie::compiler::diagnostics::report::DiagnosticRenderOptions::from_environment();
+    let mut report = language_valkyrie::compiler::diagnostics::report::render_compile_diagnostics(
         &pending,
         &|id| {
             plan.project.semantic_source_groups.iter().find_map(|group| {
@@ -706,7 +704,7 @@ fn write_ovm_abi(output_dir: &Path, sidecar: &compiler_emitter::OvmAbiSidecar) -
 
 fn write_compile_evidence(
     output_dir: &Path,
-    evidence: &compiler_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence,
+    evidence: &language_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence,
 ) -> LegionResult<()> {
     let output_path = output_dir.join("compile-evidence.txt");
     let content = crate::legion::write_von_indented(evidence).map_err(|error| {
@@ -737,7 +735,7 @@ fn write_execution_manifest(
     plan: &crate::legion::workspace::planner::BuildPlan,
     specs: &[DriverRunContract],
     library_exports: &[compiler_emitter::DriverLibraryExport],
-    evidence: &compiler_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence,
+    evidence: &language_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence,
 ) -> LegionResult<()> {
     let contracts = specs
         .iter()

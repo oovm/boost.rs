@@ -1,22 +1,20 @@
 //! `compile()` API 载荷。
 
-use crate::{
-    compiler_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence,
-    legion::{
-        api::{
-            diagnostic::{LegionDiagnostic, LegionSeverity, LegionStage},
-            plan::LegionBuildPlan,
-            request::CompileOptions,
-        },
-        cmds::{
-            build::compile_plan,
-            error::{LegionError, LegionResult},
-        },
-        parse_von,
-        workspace::planner::PlannerError,
+use crate::legion::{
+    api::{
+        diagnostic::{LegionDiagnostic, LegionSeverity, LegionStage},
+        plan::LegionBuildPlan,
+        request::CompileOptions,
     },
+    cmds::{
+        build::compile_plan,
+        error::{LegionError, LegionResult},
+    },
+    parse_von,
+    workspace::planner::PlannerError,
 };
 use compiler_target::CanonicalTarget;
+use language_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence;
 use serde::Serialize;
 use std::{fs, path::PathBuf};
 

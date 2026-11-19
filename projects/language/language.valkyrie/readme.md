@@ -1,8 +1,8 @@
-# `compiler-valkyrie`
+# `language-valkyrie`
 
 Valkyrie language implementation: type model, HIR, MIR, semantic analysis and target adaptation
 
-Valkyrie 语言的编译实现（`compiler.valkyrie`）。
+Valkyrie 语言的编译实现（`language.valkyrie`）。
 
 # 归属
 
@@ -17,6 +17,5 @@ Valkyrie 语言的编译实现（`compiler.valkyrie`）。
 
 # 已迁出
 
-产品工具链（`legion` 编排与 `asgard` 交付）已移入 `package.manager` 的 `legion` / `asgard`
-模块：它们是 Valkyrie 生态的产品策略与 CLI，不属于语言编译事实，并且与包管理机制共用
-工作区约束。本 crate 只保留编译本身。
+产品工具链（`legion` 编排与 `asgard` 交付）已移入 `package.manager.legion`：它们是
+Valkyrie 生态的产品策略与 CLI，不属于语言编译事实。本 crate 只保留编译本身。

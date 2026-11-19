@@ -1,5 +1,5 @@
 use compiler_target::CanonicalTarget;
-use compiler_valkyrie::compiler::semantic::closure::DeclarationKey;
+use language_valkyrie::compiler::semantic::closure::DeclarationKey;
 
 use serde::{Deserialize, Serialize};
 use std::{

@@ -53,7 +53,6 @@ members = [
     "projects/interpreter/interpreter.vm.jvm",
     "projects/interpreter/interpreter.vm.ovm",
     "projects/interpreter/interpreter.vm.wasm",
-    "projects/compiler/compiler.valkyrie",
     "projects/language/language.folding",
     "projects/language/language.format",
     "projects/language/language.highlight",
@@ -350,6 +349,7 @@ members = [
     "projects/ml/ml.metrics",
     "projects/package/package.cache",
     "projects/package/package.manager",
+    "projects/package/package.manager.legion",
     "projects/package/package.publish",
     "projects/package/package.registry",
     "projects/package/package.resolve",
@@ -473,7 +473,6 @@ compiler-bundle = { path = "projects/compiler/compiler.bundle" }
 compiler-specialize = { path = "projects/compiler/compiler.specialize" }
 compiler-target = { path = "projects/compiler/compiler.target" }
 compiler-types = { path = "projects/compiler/compiler.types" }
-compiler-valkyrie = { path = "projects/compiler/compiler.valkyrie" }
 language-folding = { path = "projects/language/language.folding" }
 language-format = { path = "projects/language/language.format" }
 language-highlight = { path = "projects/language/language.highlight" }
@@ -606,6 +605,7 @@ ml-metrics = { path = "projects/ml/ml.metrics" }
 
 package-cache = { path = "projects/package/package.cache" }
 package-manager = { path = "projects/package/package.manager" }
+package-manager-legion = { path = "projects/package/package.manager.legion" }
 package-publish = { path = "projects/package/package.publish" }
 package-registry = { path = "projects/package/package.registry" }
 package-resolve = { path = "projects/package/package.resolve" }
