@@ -712,7 +712,7 @@ fn write_ovm_abi(output_dir: &Path, sidecar: &compiler_emitter::OvmAbiSidecar) -
 fn write_compile_evidence(output_dir: &Path, evidence: &compiler_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence) -> LegionResult<()> {
     let output_path = output_dir.join("compile-evidence.txt");
     let content = crate::legion::write_von_indented(evidence).map_err(|error| {
-        labeled_report_with_context(error, format!("序列化 compile evidence 失败 {}", output_path.display()), "VON 序列化失败位置")
+        labeled_report_with_context(oak_core::OakError::format_error(error.to_string()), format!("序列化 compile evidence 失败 {}", output_path.display()), "VON 序列化失败位置")
     })?;
     fs::create_dir_all(output_dir).map_err(|e| LegionError::msg(format!("创建输出目录失败: {}: {e}", output_dir.display())))?;
     fs::write(&output_path, content).map_err(|e| LegionError::msg(format!("写入 compile evidence 失败: {}: {e}", output_path.display())))?;
@@ -782,7 +782,7 @@ fn write_host_selection_spec(output_dir: &Path, providers: &[crate::legion::work
         })
         .collect();
     let content = write_von_indented(&entries).map_err(|error| {
-        labeled_report_with_context(error, format!("序列化 host 选择结果失败 {}", output_path.display()), "VON 序列化失败位置")
+        labeled_report_with_context(oak_core::OakError::format_error(error.to_string()), format!("序列化 host 选择结果失败 {}", output_path.display()), "VON 序列化失败位置")
     })?;
     fs::create_dir_all(output_dir).map_err(|e| LegionError::msg(format!("创建输出目录失败 {}: {e}", output_dir.display())))?;
     fs::write(&output_path, content).map_err(|e| LegionError::msg(format!("写入 host 选择结果失败 {}: {e}", output_path.display())))?;

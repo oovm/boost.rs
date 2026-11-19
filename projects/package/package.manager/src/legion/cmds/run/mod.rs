@@ -249,7 +249,7 @@ impl ExecutionManifest {
     pub fn write_to_output_dir(&self, output_dir: &Path) -> LegionResult<()> {
         let manifest_path = output_dir.join(EXECUTION_MANIFEST_FILE_NAME);
         let content = crate::legion::write_von_indented(self).map_err(|error| {
-            labeled_report_with_context(error, format!("序列化 execution manifest 失败 {}", manifest_path.display()), "VON 序列化失败位置")
+            labeled_report_with_context(oak_core::OakError::format_error(error.to_string()), format!("序列化 execution manifest 失败 {}", manifest_path.display()), "VON 序列化失败位置")
         })?;
         fs::write(&manifest_path, content)
             .map_err(|e| LegionError::msg(format!("写入 execution manifest 失败 {}: {e}", manifest_path.display())))?;
@@ -270,7 +270,7 @@ impl ExecutionManifest {
         let source =
             fs::read_to_string(path).map_err(|e| LegionError::msg(format!("failed to read execution manifest '{}': {e}", path.display())))?;
         crate::legion::parse_von::<Self>(&source).map(Some).map_err(|error| {
-            labeled_report_with_context(error, format!("failed to parse execution manifest '{}'", path.display()), "VON 解析失败位置")
+            labeled_report_with_context(oak_core::OakError::format_error(error.to_string()), format!("failed to parse execution manifest '{}'", path.display()), "VON 解析失败位置")
         })
     }
 
@@ -457,7 +457,7 @@ fn read_compile_evidence_digest(output_dir: &Path) -> LegionResult<Option<Compil
     }
     let source = fs::read_to_string(&path).map_err(|e| LegionError::msg(format!("读取 compile evidence 失败 {}: {e}", path.display())))?;
     let evidence = crate::legion::parse_von::<compiler_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence>(&source)
-        .map_err(|error| labeled_report_with_context(error, format!("解析 compile evidence 失败 {}", path.display()), "VON 解析失败位置"))?;
+        .map_err(|error| labeled_report_with_context(oak_core::OakError::format_error(error.to_string()), format!("解析 compile evidence 失败 {}", path.display()), "VON 解析失败位置"))?;
     Ok(Some(CompileEvidenceDigest::from(&evidence)))
 }
 
