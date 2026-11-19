@@ -29,7 +29,13 @@ mod auth;
 #[allow(missing_docs)]
 pub mod client;
 
+/// Connection lease state machine: `max` cap, admission queue, acquire
+/// deadline, idle hand-back and close drain.
+pub mod pool;
+
 pub use psql::PsqlOptions;
+
+pub use pool::{Pool, PoolError, PoolLimits, PoolStats};
 
 pub use client::{
     BackendKeyData, ClientConfig, Column, Connection, CopyInReport, CopyOutReport, Notification, Param, Portal, PortalReport, Prepared, Report,

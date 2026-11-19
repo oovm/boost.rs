@@ -251,6 +251,13 @@ pub struct Connection {
     /// Set once the stream is desynchronised, so later calls cannot read the
     /// reply of an abandoned round trip as if it belonged to a new statement.
     failure: Option<String>,
+    /// Transaction status byte of the last `ReadyForQuery`: `I`, `T` or `E`.
+    /// The single copy of session transaction state on the client side.
+    transaction_status: u8,
+    /// Cursor scopes opened and not yet closed on this session.
+    cursor_scopes: usize,
+    /// Whether the open cursor scopes started the transaction themselves.
+    cursor_transaction_owned: bool,
 }
 
 /// One simple-query round trip that keeps the statements that already finished.
@@ -329,6 +336,9 @@ impl Connection {
             portal_columns: HashMap::new(),
             prepared_columns: HashMap::new(),
             failure: None,
+            transaction_status: b'I',
+            cursor_scopes: 0,
+            cursor_transaction_owned: false,
         };
         connection.startup(config)?;
         Ok(connection)
@@ -338,6 +348,46 @@ impl Connection {
     /// skipped it.
     pub fn backend_key_data(&self) -> Option<BackendKeyData> {
         self.backend_key
+    }
+
+    /// Transaction status of the last `ReadyForQuery`: the single client-side
+    /// copy of whether this session sits inside a transaction (`T`) or inside
+    /// an aborted one (`E`).
+    pub fn in_transaction(&self) -> bool {
+        matches!(self.transaction_status, b'T' | b'E')
+    }
+
+    /// Opens one cursor scope. The first scope on the session starts the
+    /// transaction the named portals live in; later scopes only count.
+    pub fn begin_cursor_scope(&mut self) -> Result<(), PostgresError> {
+        self.ensure_usable()?;
+        if self.cursor_scopes == 0 {
+            self.execute("BEGIN")?;
+            self.cursor_transaction_owned = true;
+        }
+        self.cursor_scopes += 1;
+        Ok(())
+    }
+
+    /// Closes one cursor scope. When the last scope closes and the scopes
+    /// opened the transaction themselves, it is rolled back. A rollback error
+    /// is swallowed: the portal's own failure takes precedence over the
+    /// goodbye, and the stream stays synchronised either way.
+    pub fn end_cursor_scope(&mut self) {
+        if self.cursor_scopes == 0 {
+            return;
+        }
+        self.cursor_scopes -= 1;
+        if self.cursor_scopes == 0 && std::mem::take(&mut self.cursor_transaction_owned) {
+            let _ = self.execute("ROLLBACK");
+        }
+    }
+
+    /// Drops stale cursor-scope bookkeeping when a lease ends without every
+    /// scope having been closed.
+    pub fn clear_cursor_scopes(&mut self) {
+        self.cursor_scopes = 0;
+        self.cursor_transaction_owned = false;
     }
 
     /// Sends one `CancelRequest` on a fresh socket, then closes it.
@@ -403,6 +453,7 @@ impl Connection {
                     if payload.len() != 1 {
                         return Err(PostgresError::Protocol("invalid ReadyForQuery".into()));
                     }
+                    self.transaction_status = payload[0];
                     return Ok(());
                 }
                 b'K' => {
@@ -480,6 +531,7 @@ impl Connection {
                     if payload.len() != 1 {
                         return Err(PostgresError::Protocol("invalid ReadyForQuery".into()));
                     }
+                    self.transaction_status = payload[0];
                     return Ok(SimpleOutcome { results, error: failure });
                 }
                 continue;
@@ -518,6 +570,7 @@ impl Connection {
                     if payload.len() != 1 {
                         return Err(PostgresError::Protocol("invalid ReadyForQuery".into()));
                     }
+                    self.transaction_status = payload[0];
                     return Ok(SimpleOutcome { results, error: None });
                 }
                 b'S' | b'K' => {}
@@ -778,6 +831,7 @@ impl Connection {
                     if payload.len() != 1 {
                         return Err(PostgresError::Protocol("invalid ReadyForQuery".into()));
                     }
+                    self.transaction_status = payload[0];
                     return Ok(CopyOutcome { tag, error: failure });
                 }
                 continue;
@@ -800,6 +854,7 @@ impl Connection {
                     if payload.len() != 1 {
                         return Err(PostgresError::Protocol("invalid ReadyForQuery".into()));
                     }
+                    self.transaction_status = payload[0];
                     return Ok(CopyOutcome { tag, error: None });
                 }
                 other => return Err(PostgresError::Protocol(format!("unsupported PostgreSQL copy-in response tag {other}"))),
@@ -820,6 +875,7 @@ impl Connection {
                     if payload.len() != 1 {
                         return Err(PostgresError::Protocol("invalid ReadyForQuery".into()));
                     }
+                    self.transaction_status = payload[0];
                     return Ok((data, CopyOutcome { tag, error: failure }));
                 }
                 continue;
@@ -839,6 +895,7 @@ impl Connection {
                     if payload.len() != 1 {
                         return Err(PostgresError::Protocol("invalid ReadyForQuery".into()));
                     }
+                    self.transaction_status = payload[0];
                     return Ok((data, CopyOutcome { tag, error: None }));
                 }
                 other => return Err(PostgresError::Protocol(format!("unsupported PostgreSQL copy-out response tag {other}"))),
@@ -868,6 +925,9 @@ impl Connection {
             let payload = &self.reader.buffer[range];
             if failure.is_some() || deferred.is_some() {
                 if tag == b'Z' {
+                    if payload.len() == 1 {
+                        self.transaction_status = payload[0];
+                    }
                     return Err(failure.or(deferred).expect("failure or deferred is set"));
                 }
                 continue;
@@ -940,6 +1000,7 @@ impl Connection {
                     if payload.len() != 1 {
                         return Err(PostgresError::Protocol("invalid ReadyForQuery".into()));
                     }
+                    self.transaction_status = payload[0];
                     // A describe-only round trip (prepare) leaves the RowDescription
                     // pending without a CommandComplete; that is not a result set.
                     if let Some((_, rows)) = current.take() {
