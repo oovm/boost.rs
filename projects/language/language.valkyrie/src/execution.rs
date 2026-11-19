@@ -6,10 +6,12 @@
 use std::path::{Path, PathBuf};
 
 use crate::legion::{
-    cmds::error::LegionResult,
-    cmds::run::{
-        ExecutionManifest, ManifestVerificationContext, ManifestVerificationLevel, ManifestVerdict, collect_execution_input_digests,
-        expected_resolver_compile_evidence,
+    cmds::{
+        error::LegionResult,
+        run::{
+            ExecutionManifest, ManifestVerdict, ManifestVerificationContext, ManifestVerificationLevel, collect_execution_input_digests,
+            expected_resolver_compile_evidence,
+        },
     },
     resolve_platform_only_target,
     workspace::planner::{BuildRequest, WorkspaceResolver},
@@ -61,8 +63,7 @@ pub fn read_manifest(output_dir: &Path) -> Option<ManifestView> {
         host_provider_binding_hash: evidence.map(|evidence| evidence.host_provider_binding_hash.clone()),
         primary_physical_entry: contract.map(|contract| contract.physical_entry.clone()),
         primary_logical_entry: contract.map(|contract| contract.logical_entry.clone()),
-        compiler_build_identity: crate::legion::cache::compiler_build_id_from_fingerprint(&manifest.toolchain_fingerprint)
-            .map(str::to_string),
+        compiler_build_identity: crate::legion::cache::compiler_build_id_from_fingerprint(&manifest.toolchain_fingerprint).map(str::to_string),
     })
 }
 
@@ -94,7 +95,9 @@ fn verdict_to_freshness(verdict: LegionResult<ManifestVerdict>) -> Freshness {
         }
         Ok(ManifestVerdict::Verified(ManifestVerificationLevel::ArtifactSelfConsistent)) => Freshness {
             fresh: false,
-            reason: Some("artifact self-consistent only: inputs not verified against current workspace; pass projectDir for formal reuse".into()),
+            reason: Some(
+                "artifact self-consistent only: inputs not verified against current workspace; pass projectDir for formal reuse".into(),
+            ),
             level: FRESHNESS_LEVEL_SELF_CONSISTENT.into(),
         },
         Ok(ManifestVerdict::Stale(reason)) => stale(reason),

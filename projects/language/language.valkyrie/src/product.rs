@@ -207,7 +207,8 @@ pub fn build_project(options: &BuildOptions) -> BuildOutcome {
     match worker.join().expect("legion build thread panicked") {
         Ok(report) => {
             if !report.success {
-                let message = report.diagnostics.first().map(|diagnostic| diagnostic.message.clone()).unwrap_or_else(|| "compile failed".into());
+                let message =
+                    report.diagnostics.first().map(|diagnostic| diagnostic.message.clone()).unwrap_or_else(|| "compile failed".into());
                 return BuildOutcome {
                     ok: false,
                     error: Some(message),
@@ -348,15 +349,7 @@ impl PlanOutcome {
 
 impl BuildOutcome {
     fn failed(error: String) -> Self {
-        Self {
-            ok: false,
-            error: Some(error),
-            project: None,
-            target: None,
-            output_dir: None,
-            artifacts: Vec::new(),
-            entry_symbol: None,
-        }
+        Self { ok: false, error: Some(error), project: None, target: None, output_dir: None, artifacts: Vec::new(), entry_symbol: None }
     }
 }
 

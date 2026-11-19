@@ -380,3 +380,57 @@ fn dispatches_uniform_only_program() {
     let actual = dx12.read_f32(Rid(2)).expect("read");
     assert_eq!(actual, vec![2.0; 4]);
 }
+
+/// A raw UAV write past the end of a buffer is the class of input that used to
+/// crash `amdxc64.dll`; it must be rejected before dispatch.
+#[test]
+fn rejects_write_binding_smaller_than_the_dispatch() {
+    let program =
+        program(vec![Stmt::StoreBuffer { resource: 0, index: Expr::GlobalId, value: Expr::ConstF32(1.5) }, Stmt::Return(Expr::ConstF32(0.0))]);
+    let graph = Graph {
+        resources: ResourceGraph { nodes: vec![buffer(1, 2), buffer(2, 4)] },
+        tasks: TaskGraph {
+            nodes: vec![dispatch_task(
+                21,
+                &program,
+                BTreeMap::from([("output".to_string(), ParamValue::I64(2)), ("buffer_0".to_string(), ParamValue::I64(1))]),
+            )],
+            edges: Vec::new(),
+        },
+    };
+
+    let Some(mut dx12) = open()
+    else {
+        return;
+    };
+    dx12.prepare(&graph).expect("prepare");
+    let error = dx12.run_prepared(&graph).expect_err("short write binding");
+    assert!(error.to_string().contains("elements"), "{error}");
+}
+
+/// Raw SRVs carry no bounds, so an empty input must be rejected as well.
+#[test]
+fn rejects_empty_read_binding() {
+    let program = program(vec![Stmt::Return(Expr::LoadBuffer { resource: 0, index: Box::new(Expr::GlobalId) })]);
+    let graph = Graph {
+        resources: ResourceGraph { nodes: vec![buffer(1, 0), buffer(2, 4)] },
+        tasks: TaskGraph {
+            nodes: vec![dispatch_task(
+                22,
+                &program,
+                BTreeMap::from([("output".to_string(), ParamValue::I64(2)), ("buffer_0".to_string(), ParamValue::I64(1))]),
+            )],
+            edges: Vec::new(),
+        },
+    };
+
+    let Some(mut dx12) = open()
+    else {
+        return;
+    };
+    if dx12.prepare(&graph).is_err() {
+        return;
+    }
+    let error = dx12.run_prepared(&graph).expect_err("empty read binding");
+    assert!(error.to_string().contains("empty") || error.to_string().contains("not allocated"), "{error}");
+}

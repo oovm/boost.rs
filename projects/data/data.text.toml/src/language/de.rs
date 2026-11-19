@@ -1,7 +1,6 @@
 use crate::{
     ast::{TomlRoot, TomlValueNode},
     language::{TomlArray, TomlTable, TomlValue},
-    parse,
 };
 use data_text_core::TextError;
 use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
@@ -202,75 +201,174 @@ where
     T: serde::Deserialize<'de>,
 {
     // 首先使用 data-text-toml 解析器解析 TOML 字符串
-    let root = crate::parse(toml)?;
-    // 将解析结果转换为 Value
-    let toml_value = root_into_value(root);
+    let mut toml_value = match crate::parse(toml) {
+        Ok(root) => root_into_value(root),
+        Err(_) => empty_table(),
+    };
+
+    // 顶层不是一个 TOML 文档（例如标量、数组或内联表）时，按单个值解析。
+    if toml_value.as_table().map_or(true, |table| table.is_empty()) && !toml.trim().is_empty() {
+        let wrapped = format!("__value__ = {toml}");
+        let wrapped_value = root_into_value(crate::parse(&wrapped)?);
+        if let Some(inner) = wrapped_value.get("__value__") {
+            toml_value = inner.clone();
+        }
+    }
+
     // 使用自定义反序列化器将 Value 转换为目标类型
     let deserializer = ValueDeserializerWrapper::new(toml_value);
     T::deserialize(deserializer)
 }
 
+/// A segment of a path into the document value tree.
+#[derive(Clone)]
+enum PathSeg {
+    Key(String),
+    Index(usize),
+}
+
+/// Splits a parsed key into its component names.
+fn key_segments(key: &crate::ast::TomlKey) -> Vec<String> {
+    key.segments
+        .iter()
+        .map(|segment| match segment {
+            crate::ast::TomlKeySegment::Bare(bare) => bare.name.clone(),
+            crate::ast::TomlKeySegment::Quoted(quoted) => quoted.value.clone(),
+        })
+        .collect()
+}
+
+fn empty_table() -> TomlValue {
+    TomlValue::Table(TomlTable { dict: HashMap::new() })
+}
+
+/// Walks `path`, creating tables as needed and descending into the last element of arrays of tables.
+///
+/// A `Key` followed by an `Index` resolves to the array itself, so the index can pick one
+/// element; otherwise an existing array of tables is traversed through its last element.
+fn ensure_table<'a>(mut node: &'a mut TomlValue, path: &[PathSeg]) -> &'a mut TomlValue {
+    for (position, segment) in path.iter().enumerate() {
+        let next_is_index = matches!(path.get(position + 1), Some(PathSeg::Index(_)));
+        node = match segment {
+            PathSeg::Key(key) => {
+                if !matches!(node, TomlValue::Table(_)) {
+                    *node = empty_table();
+                }
+                let table = match node {
+                    TomlValue::Table(table) => table,
+                    _ => unreachable!("node was just normalized to a table"),
+                };
+                let entry: &'a mut TomlValue = table.dict.entry(key.clone()).or_insert_with(empty_table);
+                if next_is_index {
+                    entry
+                }
+                else if matches!(entry, TomlValue::Array(_)) {
+                    if let TomlValue::Array(array) = entry {
+                        if array.list.is_empty() {
+                            array.list.push(empty_table());
+                        }
+                        array.list.last_mut().expect("array is non-empty")
+                    }
+                    else {
+                        unreachable!("entry was just checked to be an array")
+                    }
+                }
+                else {
+                    entry
+                }
+            }
+            PathSeg::Index(index) => {
+                if !matches!(node, TomlValue::Array(_)) {
+                    *node = TomlValue::Array(TomlArray { list: Vec::new() });
+                }
+                let array = match node {
+                    TomlValue::Array(array) => array,
+                    _ => unreachable!("node was just normalized to an array"),
+                };
+                while array.list.len() <= *index {
+                    array.list.push(empty_table());
+                }
+                &mut array.list[*index]
+            }
+        };
+    }
+    node
+}
+
+/// Appends a new table to the array of tables at `path`, returning its index.
+fn push_table_into_array(base: &mut TomlValue, path: &[String]) -> usize {
+    let (last, parents) = path.split_last().expect("array of tables path must not be empty");
+    let parent_path: Vec<PathSeg> = parents.iter().cloned().map(PathSeg::Key).collect();
+    let parent = ensure_table(base, &parent_path);
+    let table = match parent {
+        TomlValue::Table(table) => table,
+        _ => unreachable!("ensure_table always returns a table"),
+    };
+
+    let entry = table.dict.entry(last.clone()).or_insert_with(|| TomlValue::Array(TomlArray { list: Vec::new() }));
+    if !matches!(entry, TomlValue::Array(_)) {
+        *entry = TomlValue::Array(TomlArray { list: Vec::new() });
+    }
+    let array = match entry {
+        TomlValue::Array(array) => array,
+        _ => unreachable!("entry was just normalized to an array"),
+    };
+    array.list.push(empty_table());
+    array.list.len() - 1
+}
+
+/// Inserts `value` under `key_segments`, relative to `current`.
+fn insert_key_value(base: &mut TomlValue, current: &[PathSeg], key_segments: Vec<String>, value: TomlValue) {
+    let mut path = current.to_vec();
+    let (last, parents) = key_segments.split_last().expect("key must not be empty");
+    path.extend(parents.iter().cloned().map(PathSeg::Key));
+    let parent = ensure_table(base, &path);
+    if let TomlValue::Table(table) = parent {
+        table.dict.insert(last.clone(), value);
+    }
+}
+
 /// 将 TomlRoot 转换为 Value
 fn root_into_value(root: TomlRoot) -> TomlValue {
-    let mut table = HashMap::new();
-    let mut array_tables = HashMap::new();
+    let mut value = empty_table();
+    let mut current: Vec<PathSeg> = Vec::new();
 
-    // 处理顶层项目
     for item in root.items {
         match item {
             crate::ast::TomlItem::KeyValue(kv) => {
-                let key = kv.key.to_string();
-                let value = toml_value_node_into_value(kv.value);
-                table.insert(key, value);
+                let segments = key_segments(&kv.key);
+                let node = toml_value_node_into_value(kv.value);
+                insert_key_value(&mut value, &current, segments, node);
             }
-            crate::ast::TomlItem::Table(t) => {
-                let key = t.header.key.to_string();
-                let mut table_items = HashMap::new();
+            crate::ast::TomlItem::Table(table) => {
+                let segments = key_segments(&table.header.key);
+                let path: Vec<PathSeg> = segments.iter().cloned().map(PathSeg::Key).collect();
+                ensure_table(&mut value, &path);
 
-                // 处理表中的每个键值对
-                for kv in t.items {
-                    let kv_key = kv.key.to_string();
-                    let kv_value = toml_value_node_into_value(kv.value);
-                    table_items.insert(kv_key, kv_value);
+                for kv in table.items {
+                    let key = key_segments(&kv.key);
+                    let node = toml_value_node_into_value(kv.value);
+                    insert_key_value(&mut value, &path, key, node);
                 }
-
-                // 将表添加到顶层表中
-                table.insert(key, TomlValue::Table(TomlTable { dict: table_items }));
+                current = path;
             }
             crate::ast::TomlItem::ArrayOfTables(aot) => {
-                let key = aot.header.key.to_string();
-                let mut table_items = HashMap::new();
+                let segments = key_segments(&aot.header.key);
+                let index = push_table_into_array(&mut value, &segments);
 
-                // 处理数组中的每个表
+                let mut path: Vec<PathSeg> = segments.iter().cloned().map(PathSeg::Key).collect();
+                path.push(PathSeg::Index(index));
                 for kv in aot.items {
-                    let kv_key = kv.key.to_string();
-                    let kv_value = toml_value_node_into_value(kv.value);
-                    table_items.insert(kv_key, kv_value);
+                    let key = key_segments(&kv.key);
+                    let node = toml_value_node_into_value(kv.value);
+                    insert_key_value(&mut value, &path, key, node);
                 }
-
-                // 将表添加到数组中
-                let table_value = TomlValue::Table(TomlTable { dict: table_items });
-
-                // 如果数组不存在，创建一个新数组
-                if !array_tables.contains_key(&key) {
-                    array_tables.insert(key.clone(), Vec::new());
-                }
-
-                // 将表添加到数组中
-                array_tables.get_mut(&key).unwrap().push(table_value);
-            }
-            _ => {
-                // 忽略其他类型的项目
+                current = path;
             }
         }
     }
 
-    // 将数组添加到表中
-    for (key, items) in array_tables {
-        table.insert(key, TomlValue::Array(TomlArray { list: items }));
-    }
-
-    TomlValue::Table(TomlTable { dict: table })
+    value
 }
 
 /// 将 TomlValueNode 转换为 Value
@@ -286,13 +384,13 @@ fn toml_value_node_into_value(value: TomlValueNode) -> TomlValue {
             TomlValue::Array(TomlArray { list: items })
         }
         TomlValueNode::InlineTable(t) => {
-            let mut table = HashMap::new();
+            let mut table = empty_table();
             for kv in t.items {
-                let key = kv.key.to_string();
-                let value = toml_value_node_into_value(kv.value);
-                table.insert(key, value);
+                let segments = key_segments(&kv.key);
+                let node = toml_value_node_into_value(kv.value);
+                insert_key_value(&mut table, &[], segments, node);
             }
-            TomlValue::Table(TomlTable { dict: table })
+            table
         }
     }
 }
@@ -441,7 +539,10 @@ impl<'de> serde::de::Deserializer<'de> for ValueDeserializerWrapper {
     where
         V: Visitor<'de>,
     {
-        self.deserialize_any(visitor)
+        match self.value {
+            TomlValue::String(ref s) if s == "null" => visitor.visit_none(),
+            value => visitor.visit_some(ValueDeserializerWrapper::new(value)),
+        }
     }
 
     fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value, Self::Error>

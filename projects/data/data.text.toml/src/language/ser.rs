@@ -13,6 +13,10 @@ where
 }
 
 /// Serializes a Rust type into a TOML string.
+///
+/// Tables are written as a TOML document (`key = value` lines plus `[table]`
+/// and `[[array.of.tables]]` sections); any other root value is written as a
+/// bare TOML value.
 pub fn to_string<T>(value: &T) -> Result<String, TextError>
 where
     T: Serialize,
@@ -21,8 +25,135 @@ where
     let serializer = TomlSerializer {};
     let toml_value = value.serialize(serializer)?;
 
-    // 将 Value 转换为字符串
-    Ok(format!("{}", toml_value))
+    let mut output = String::new();
+    match &toml_value {
+        TomlValue::Table(table) => write_table(&mut output, table, &mut Vec::new()),
+        other => {
+            output.push_str(&format_value(other));
+            output.push('\n');
+        }
+    }
+
+    Ok(output)
+}
+
+/// Writes a table's entries as a TOML document body at `path`.
+fn write_table(output: &mut String, table: &TomlTable, path: &mut Vec<String>) {
+    let mut keys: Vec<&String> = table.dict.keys().collect();
+    keys.sort();
+
+    for key in &keys {
+        let value = &table.dict[*key];
+        if is_table(value) || is_array_of_tables(value) {
+            continue;
+        }
+        output.push_str(&format!("{} = {}\n", format_key(key), format_value(value)));
+    }
+
+    for key in &keys {
+        let value = &table.dict[*key];
+        if let TomlValue::Table(child) = value {
+            if !output.is_empty() && !output.ends_with("\n\n") {
+                output.push('\n');
+            }
+            path.push((*key).clone());
+            output.push_str(&format!("[{}]\n", format_path(path)));
+            write_table(output, child, path);
+            path.pop();
+        }
+    }
+
+    for key in &keys {
+        let value = &table.dict[*key];
+        if let TomlValue::Array(array) = value {
+            if !is_array_of_tables(value) {
+                continue;
+            }
+            path.push((*key).clone());
+            for item in &array.list {
+                if let TomlValue::Table(child) = item {
+                    output.push('\n');
+                    output.push_str(&format!("[[{}]]\n", format_path(path)));
+                    write_table(output, child, path);
+                }
+            }
+            path.pop();
+        }
+    }
+}
+
+fn is_table(value: &TomlValue) -> bool {
+    matches!(value, TomlValue::Table(_))
+}
+
+fn is_array_of_tables(value: &TomlValue) -> bool {
+    matches!(value, TomlValue::Array(TomlArray { list }) if !list.is_empty() && list.iter().all(|item| matches!(item, TomlValue::Table(_))))
+}
+
+fn format_path(path: &[String]) -> String {
+    path.iter().map(|segment| format_key(segment)).collect::<Vec<_>>().join(".")
+}
+
+fn format_key(key: &str) -> String {
+    if !key.is_empty() && key.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-') {
+        key.to_string()
+    }
+    else {
+        format!("\"{}\"", escape_string(key))
+    }
+}
+
+fn format_value(value: &TomlValue) -> String {
+    match value {
+        TomlValue::String(text) => format!("\"{}\"", escape_string(text)),
+        TomlValue::Integer(value) => value.to_string(),
+        TomlValue::Float(value) => format_float(*value),
+        TomlValue::Boolean(value) => value.to_string(),
+        TomlValue::DateTime(value) => value.clone(),
+        TomlValue::Array(TomlArray { list }) => {
+            let items = list.iter().map(format_value).collect::<Vec<_>>();
+            format!("[{}]", items.join(", "))
+        }
+        TomlValue::Table(TomlTable { dict }) => {
+            let mut keys: Vec<&String> = dict.keys().collect();
+            keys.sort();
+            let items = keys.iter().map(|key| format!("{} = {}", format_key(key), format_value(&dict[*key]))).collect::<Vec<_>>();
+            format!("{{{}}}", items.join(", "))
+        }
+    }
+}
+
+fn format_float(value: f64) -> String {
+    if value.is_nan() {
+        "nan".to_string()
+    }
+    else if value.is_infinite() {
+        if value.is_sign_negative() { "-inf".to_string() } else { "inf".to_string() }
+    }
+    else if value.fract() == 0.0 {
+        format!("{value:.1}")
+    }
+    else {
+        value.to_string()
+    }
+}
+
+fn escape_string(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\u{8}' => out.push_str("\\b"),
+            '\u{c}' => out.push_str("\\f"),
+            ch if ch.is_control() => out.push_str(&format!("\\u{:04X}", ch as u32)),
+            ch => out.push(ch),
+        }
+    }
+    out
 }
 
 struct TomlSerializer {}
@@ -280,10 +411,13 @@ impl serde::ser::SerializeMap for TomlMapSerializer {
     where
         T: ?Sized + Serialize,
     {
-        // 使用自定义序列化器将键转换为 TomlValue，然后转换为字符串
+        // 使用自定义序列化器将键转换为 TomlValue，再取原始字符串
         let serializer = TomlSerializer {};
         let key_value = key.serialize(serializer)?;
-        let key_str = key_value.to_string();
+        let key_str = match key_value {
+            TomlValue::String(text) => text,
+            other => other.to_string(),
+        };
         self.current_key = Some(key_str);
         Ok(())
     }

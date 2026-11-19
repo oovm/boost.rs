@@ -111,9 +111,9 @@ impl TomlValue {
 impl std::fmt::Display for TomlValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TomlValue::String(s) => write!(f, "\"{}\"", s),
+            TomlValue::String(s) => write!(f, "\"{}\"", escape_display_string(s)),
             TomlValue::Integer(i) => write!(f, "{}", i),
-            TomlValue::Float(fl) => write!(f, "{}", fl),
+            TomlValue::Float(fl) => write!(f, "{}", format_display_float(*fl)),
             TomlValue::Boolean(b) => write!(f, "{}", b),
             TomlValue::DateTime(dt) => write!(f, "{}", dt),
             TomlValue::Array(TomlArray { list: a }) => {
@@ -128,14 +128,32 @@ impl std::fmt::Display for TomlValue {
             }
             TomlValue::Table(TomlTable { dict: t }) => {
                 write!(f, "{{")?;
-                for (i, (key, value)) in t.iter().enumerate() {
+                let mut keys: Vec<&String> = t.keys().collect();
+                keys.sort();
+                for (i, key) in keys.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{} = {}", key, value)?;
+                    write!(f, "{} = {}", key, t[*key])?;
                 }
                 write!(f, "}}")
             }
         }
+    }
+}
+
+fn escape_display_string(text: &str) -> String {
+    text.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r").replace('\t', "\\t")
+}
+
+fn format_display_float(value: f64) -> String {
+    if value.is_nan() {
+        "nan".to_string()
+    }
+    else if value.is_infinite() {
+        if value.is_sign_negative() { "-inf".to_string() } else { "inf".to_string() }
+    }
+    else {
+        value.to_string()
     }
 }

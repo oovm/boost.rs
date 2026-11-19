@@ -15,7 +15,6 @@ struct Address {
     zip: String,
 }
 
-#[ignore = "TOML serde round-trip deserialization is incomplete"]
 #[test]
 fn test_serialize_struct() {
     let test_data = TestStruct {
@@ -32,7 +31,6 @@ fn test_serialize_struct() {
     assert_eq!(test_data, deserialized);
 }
 
-#[ignore = "TOML serde round-trip deserialization is incomplete"]
 #[test]
 fn test_serialize_primitive_types() {
     // Test string
@@ -57,7 +55,6 @@ fn test_serialize_primitive_types() {
     assert_eq!(b, deserialized);
 }
 
-#[ignore = "TOML serde round-trip deserialization is incomplete"]
 #[test]
 fn test_serialize_collections() {
     // Test vector
@@ -76,4 +73,124 @@ fn test_serialize_collections() {
     println!("Serialized map:\n{}", toml);
     let deserialized: std::collections::HashMap<String, i32> = from_str(&toml).unwrap();
     assert_eq!(map, deserialized);
+}
+
+#[derive(Debug, serde::Deserialize, PartialEq)]
+struct NestedDoc {
+    title: String,
+    physical: Physical,
+    owner: Owner,
+    products: Vec<Product>,
+}
+
+#[derive(Debug, serde::Deserialize, PartialEq)]
+struct Physical {
+    color: String,
+}
+
+#[derive(Debug, serde::Deserialize, PartialEq)]
+struct Owner {
+    name: String,
+    dob: String,
+    rating: f64,
+}
+
+#[derive(Debug, serde::Deserialize, PartialEq)]
+struct Product {
+    name: String,
+    sku: i64,
+    color: Option<String>,
+}
+
+const NESTED_DOC: &str = r#"
+title = "Example"
+physical.color = "orange"
+
+[owner]
+name = "Tom"
+dob = 1979-05-27T07:32:00Z
+rating = 4.5
+
+[[products]]
+name = "Hammer"
+sku = 738594937
+
+[[products]]
+name = "Nail"
+sku = 284758393
+color = "gray"
+"#;
+
+#[test]
+fn test_deserialize_nested_documents() {
+    let parsed: NestedDoc = from_str(NESTED_DOC).unwrap();
+
+    assert_eq!(parsed.title, "Example");
+    assert_eq!(parsed.physical.color, "orange");
+    assert_eq!(parsed.owner.name, "Tom");
+    assert_eq!(parsed.owner.dob, "1979-05-27T07:32:00Z");
+    assert_eq!(parsed.owner.rating, 4.5);
+    assert_eq!(parsed.products.len(), 2);
+    assert_eq!(parsed.products[0], Product { name: "Hammer".into(), sku: 738594937, color: None });
+    assert_eq!(parsed.products[1], Product { name: "Nail".into(), sku: 284758393, color: Some("gray".into()) });
+}
+
+#[test]
+fn test_deserialize_scalar_types() {
+    #[derive(Debug, serde::Deserialize, PartialEq)]
+    struct Scalars {
+        integer: i64,
+        hex: i64,
+        float: f64,
+        boolean: bool,
+        literal: String,
+        escaped: String,
+        multiline: String,
+    }
+
+    let document = r#"
+integer = 1_000
+hex = 0xDEAD_BEEF
+float = 6.626e-34
+boolean = true
+literal = 'C:\Users\nodejs'
+escaped = "tab:\t quote:\""
+multiline = """
+first
+second"""
+"#;
+
+    let parsed: Scalars = from_str(document).unwrap();
+    assert_eq!(parsed.integer, 1000);
+    assert_eq!(parsed.hex, 0xDEAD_BEEF);
+    assert_eq!(parsed.float, 6.626e-34);
+    assert!(parsed.boolean);
+    assert_eq!(parsed.literal, r"C:\Users\nodejs");
+    assert_eq!(parsed.escaped, "tab:\t quote:\"");
+    assert_eq!(parsed.multiline, "first\nsecond");
+}
+
+#[test]
+fn test_round_trip_nested_tables() {
+    #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+    struct Site {
+        title: String,
+        owner: Owner,
+        tags: Vec<String>,
+    }
+
+    #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+    struct Owner {
+        name: String,
+        age: u8,
+    }
+
+    let site = Site { title: "Docs".into(), owner: Owner { name: "Ada".into(), age: 36 }, tags: vec!["rust".into(), "toml".into()] };
+
+    let document = to_string(&site).unwrap();
+    println!("Serialized nested TOML:\n{}", document);
+    assert!(document.contains("[owner]"), "nested tables use section headers:\n{document}");
+
+    let parsed: Site = from_str(&document).unwrap();
+    assert_eq!(site, parsed);
 }

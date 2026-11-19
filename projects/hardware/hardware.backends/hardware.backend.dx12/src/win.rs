@@ -22,11 +22,12 @@ use windows::{
                 D3D12_FENCE_FLAG_NONE, D3D12_FILL_MODE_SOLID, D3D12_GRAPHICS_PIPELINE_STATE_DESC, D3D12_HEAP_FLAG_NONE, D3D12_HEAP_FLAG_SHARED,
                 D3D12_HEAP_FLAGS, D3D12_HEAP_PROPERTIES, D3D12_HEAP_TYPE_DEFAULT, D3D12_HEAP_TYPE_READBACK, D3D12_HEAP_TYPE_UPLOAD,
                 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, D3D12_INPUT_ELEMENT_DESC, D3D12_INPUT_LAYOUT_DESC, D3D12_MEMORY_POOL_UNKNOWN,
-                D3D12_MULTISAMPLE_QUALITY_LEVELS_FLAG_NONE, D3D12_PLACED_SUBRESOURCE_FOOTPRINT, D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
-                D3D12_RASTERIZER_DESC, D3D12_RESOURCE_BARRIER, D3D12_RESOURCE_BARRIER_0, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
-                D3D12_RESOURCE_BARRIER_FLAG_NONE, D3D12_RESOURCE_BARRIER_TYPE_TRANSITION, D3D12_RESOURCE_DESC, D3D12_RESOURCE_DIMENSION_BUFFER,
-                D3D12_RESOURCE_DIMENSION_TEXTURE2D, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
-                D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COPY_SOURCE,
+                D3D12_MESSAGE, D3D12_MESSAGE_SEVERITY_ERROR, D3D12_MULTISAMPLE_QUALITY_LEVELS_FLAG_NONE, D3D12_PLACED_SUBRESOURCE_FOOTPRINT,
+                D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE, D3D12_RASTERIZER_DESC, D3D12_RESOURCE_BARRIER, D3D12_RESOURCE_BARRIER_0,
+                D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, D3D12_RESOURCE_BARRIER_FLAG_NONE, D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+                D3D12_RESOURCE_DESC, D3D12_RESOURCE_DIMENSION_BUFFER, D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+                D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_FLAG_NONE,
+                D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COPY_SOURCE,
                 D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_RESOLVE_DEST,
                 D3D12_RESOURCE_STATE_RESOLVE_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATES,
                 D3D12_RESOURCE_TRANSITION_BARRIER, D3D12_ROOT_CONSTANTS, D3D12_ROOT_DESCRIPTOR, D3D12_ROOT_PARAMETER, D3D12_ROOT_PARAMETER_0,
@@ -34,9 +35,9 @@ use windows::{
                 D3D12_ROOT_SIGNATURE_DESC, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT, D3D12_ROOT_SIGNATURE_FLAG_NONE,
                 D3D12_SHADER_BYTECODE, D3D12_SHADER_VISIBILITY_ALL, D3D12_TEXTURE_COPY_LOCATION, D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
                 D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX, D3D12_TEXTURE_LAYOUT_ROW_MAJOR, D3D12_TEXTURE_LAYOUT_UNKNOWN,
-                D3D12_VERTEX_BUFFER_VIEW, D3D12_VIEWPORT, D3D12CreateDevice, D3D12SerializeRootSignature, ID3D12CommandAllocator,
-                ID3D12CommandQueue, ID3D12DescriptorHeap, ID3D12Device, ID3D12Fence, ID3D12GraphicsCommandList, ID3D12PipelineState,
-                ID3D12Resource, ID3D12RootSignature,
+                D3D12_VERTEX_BUFFER_VIEW, D3D12_VIEWPORT, D3D12CreateDevice, D3D12GetDebugInterface, D3D12SerializeRootSignature,
+                ID3D12CommandAllocator, ID3D12CommandQueue, ID3D12Debug, ID3D12Debug1, ID3D12DescriptorHeap, ID3D12Device, ID3D12Fence,
+                ID3D12GraphicsCommandList, ID3D12InfoQueue, ID3D12PipelineState, ID3D12Resource, ID3D12RootSignature,
             },
             Dxgi::{
                 Common::{
@@ -130,9 +131,55 @@ pub struct Dx12Backend {
     last_sync_path: &'static str,
     /// Last pipeline path label taken by a submit (for thin-gate assertions).
     last_pipeline_path: &'static str,
+    info_queue: Option<ID3D12InfoQueue>,
 }
 
 /// Picks the highest multisample count the adapter supports for the vertex raster target.
+/// 打开 D3D12 调试层与 GPU 校验，由 `BOOST_DX12_DEBUG` 控制。
+///
+/// 非法绑定、越界拷贝这类错误会在提交时以 HRESULT 返回，而不是让驱动在
+/// `amdxc64.dll` 内部访问违规。
+unsafe fn enable_debug_layer_if_requested() {
+    if std::env::var_os("BOOST_DX12_DEBUG").is_none() {
+        return;
+    }
+    let mut debug: Option<ID3D12Debug> = None;
+    if unsafe { D3D12GetDebugInterface(&mut debug) }.is_ok() {
+        if let Some(debug) = debug {
+            unsafe {
+                debug.EnableDebugLayer();
+                if let Ok(gpu_validation) = debug.cast::<ID3D12Debug1>() {
+                    gpu_validation.SetEnableGPUBasedValidation(true);
+                }
+            }
+        }
+    }
+}
+
+/// 取出信息队列里的错误；调试层关闭时返回 `None`。
+unsafe fn take_validation_error(queue: &ID3D12InfoQueue) -> Option<String> {
+    let count = unsafe { queue.GetNumStoredMessages() };
+    let mut first = None;
+    for index in 0..count {
+        let mut length = 0usize;
+        if unsafe { queue.GetMessage(index, None, &mut length) }.is_err() {
+            continue;
+        }
+        let mut storage = vec![0u8; length];
+        let message = storage.as_mut_ptr().cast::<D3D12_MESSAGE>();
+        if unsafe { queue.GetMessage(index, Some(message), &mut length) }.is_err() {
+            continue;
+        }
+        let message = unsafe { &*message };
+        if first.is_none() && message.Severity.0 <= D3D12_MESSAGE_SEVERITY_ERROR.0 {
+            let description = unsafe { std::slice::from_raw_parts(message.pDescription.cast::<u8>(), message.DescriptionByteLength) };
+            first = Some(String::from_utf8_lossy(description).into_owned());
+        }
+    }
+    unsafe { queue.ClearStoredMessages() };
+    first
+}
+
 fn probe_raster_samples(device: &ID3D12Device) -> u32 {
     for samples in [4u32, 2] {
         let mut levels = D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS {
@@ -183,6 +230,7 @@ impl Dx12Backend {
     /// Opens the default DXGI adapter and creates a Direct3D 12 device and queue.
     pub fn new() -> Result<Self> {
         unsafe {
+            enable_debug_layer_if_requested();
             let factory: IDXGIFactory4 = CreateDXGIFactory1().map_err(dx_err)?;
             let adapter: IDXGIAdapter1 = factory.EnumAdapters(0).map_err(dx_err)?.cast().map_err(dx_err)?;
             let mut device: Option<ID3D12Device> = None;
@@ -190,6 +238,7 @@ impl Dx12Backend {
                 .or_else(|_| D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_12_0, &mut device))
                 .map_err(dx_err)?;
             let device = device.ok_or_else(|| dx_err_msg("D3D12CreateDevice returned null"))?;
+            let info_queue = if std::env::var_os("BOOST_DX12_DEBUG").is_some() { device.cast::<ID3D12InfoQueue>().ok() } else { None };
 
             let queue_desc = D3D12_COMMAND_QUEUE_DESC {
                 Type: D3D12_COMMAND_LIST_TYPE_DIRECT,
@@ -229,6 +278,7 @@ impl Dx12Backend {
                 last_descriptor_path: "",
                 last_sync_path: "",
                 last_pipeline_path: "",
+                info_queue,
             })
         }
     }
@@ -409,6 +459,10 @@ impl Dx12Backend {
     }
 
     fn upload(&mut self, id: ResourceId, bytes: &[u8]) -> Result<()> {
+        if bytes.is_empty() {
+            self.buf_bytes(id)?;
+            return Ok(());
+        }
         unsafe {
             let upload = self.create_buffer(
                 bytes.len(),
@@ -537,6 +591,9 @@ impl Dx12Backend {
         if src_bytes != dst_bytes {
             return Err(map_backend_err(BackendError(format!("copy size mismatch: src {src_bytes} dst {dst_bytes}"))));
         }
+        if src_bytes == 0 {
+            return Ok(());
+        }
 
         unsafe {
             self.allocator.Reset().map_err(dx_err)?;
@@ -584,6 +641,9 @@ impl Dx12Backend {
             .ok_or_else(|| map_backend_err(BackendError(format!("resource {} not allocated", dst.0))))?;
         if bytes % 4 != 0 {
             return Err(map_backend_err(BackendError(format!("fill destination {} length {bytes} is not a multiple of 4", dst.0))));
+        }
+        if bytes == 0 {
+            return Ok(());
         }
         let count = (bytes / 4) as u32;
         let program = program_from_task(task).map_err(|err| map_emit_err(err.to_string()))?;
@@ -741,6 +801,12 @@ impl Dx12Backend {
             let key = format!("buffer_{resource}");
             let id = resource_param(task, &key).map_err(map_backend_err)?;
             let input_bytes = self.buf_bytes(id)?;
+            if input_bytes == 0 {
+                return Err(map_backend_err(BackendError(format!(
+                    "generic UCF read binding {} is empty; a raw SRV would let the shader read out of bounds",
+                    id.0
+                ))));
+            }
             if input_bytes % 4 != 0 {
                 return Err(map_backend_err(BackendError(format!("generic UCF resource {} must contain 4-byte scalar elements", id.0))));
             }
@@ -752,6 +818,14 @@ impl Dx12Backend {
             let output_bytes = self.buf_bytes(id)?;
             if output_bytes % 4 != 0 {
                 return Err(map_backend_err(BackendError(format!("generic UCF resource {} must contain 4-byte scalar elements", id.0))));
+            }
+            let capacity = output_bytes / 4;
+            if capacity < dispatch_count as usize {
+                return Err(map_backend_err(BackendError(format!(
+                    "generic UCF write binding {} holds {capacity} elements but the dispatch writes {dispatch_count}; \
+                     a raw UAV write past the end corrupts driver memory",
+                    id.0
+                ))));
             }
             writes.push(id);
         }
@@ -1373,6 +1447,14 @@ impl Dx12Backend {
                 let wait = WaitForSingleObject(self.fence_event, INFINITE);
                 if wait != WAIT_OBJECT_0 {
                     return Err(dx_err_msg("fence wait failed"));
+                }
+            }
+            if let Err(error) = self.device.GetDeviceRemovedReason() {
+                return Err(dx_err_msg(format!("Direct3D 12 device removed (TDR or page fault): {error}")));
+            }
+            if let Some(queue) = &self.info_queue {
+                if let Some(message) = take_validation_error(queue) {
+                    return Err(dx_err_msg(format!("Direct3D 12 validation error: {message}")));
                 }
             }
             Ok(())
