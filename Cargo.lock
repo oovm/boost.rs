@@ -363,6 +363,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "boost-language"
+version = "0.1.0"
+dependencies = [
+ "language-folding",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-navigation",
+ "language-repl",
+ "language-semantic-search",
+ "language-semantic-tokens",
+ "language-server",
+ "language-structural-view",
+ "language-testing",
+ "language-visualize",
+]
+
+[[package]]
 name = "boost-math"
 version = "0.1.0"
 dependencies = [
@@ -400,6 +419,16 @@ dependencies = [
 [[package]]
 name = "boost-terminal"
 version = "0.1.0"
+
+[[package]]
+name = "boost-text"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-source-map",
+ "data-text-symbols",
+ "data-text-vos",
+]
 
 [[package]]
 name = "bumpalo"

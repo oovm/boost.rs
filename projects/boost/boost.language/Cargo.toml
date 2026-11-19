@@ -1,0 +1,43 @@
+[package]
+name = "boost-language"
+version.workspace = true
+authors.workspace = true
+description = "Feature-gated entry crate for the language.* services: server, mcp, repl, format, highlight and analysis passes."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools", "text-editors"]
+keywords = ["language-server", "mcp", "repl", "formatting"]
+
+[dependencies]
+language-folding = { workspace = true, optional = true }
+language-format = { workspace = true, optional = true }
+language-highlight = { workspace = true, optional = true }
+language-hover = { workspace = true, optional = true }
+language-mcp = { workspace = true, optional = true }
+language-navigation = { workspace = true, optional = true }
+language-repl = { workspace = true, optional = true }
+language-semantic-search = { workspace = true, optional = true }
+language-semantic-tokens = { workspace = true, optional = true }
+language-server = { workspace = true, optional = true }
+language-structural-view = { workspace = true, optional = true }
+language-testing = { workspace = true, optional = true }
+language-visualize = { workspace = true, optional = true }
+
+[features]
+default = []
+folding = ["dep:language-folding"]
+format = ["dep:language-format"]
+highlight = ["dep:language-highlight"]
+hover = ["dep:language-hover"]
+mcp = ["dep:language-mcp"]
+navigation = ["dep:language-navigation"]
+repl = ["dep:language-repl"]
+semantic-search = ["dep:language-semantic-search"]
+semantic-tokens = ["dep:language-semantic-tokens"]
+server = ["dep:language-server"]
+structural-view = ["dep:language-structural-view"]
+testing = ["dep:language-testing"]
+visualize = ["dep:language-visualize"]
+all = ["folding", "format", "highlight", "hover", "mcp", "navigation", "repl", "semantic-search", "semantic-tokens", "server", "structural-view", "testing", "visualize"]

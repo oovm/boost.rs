@@ -24,6 +24,8 @@ members = [
     "projects/boost/boost.math",
     "projects/boost/boost-fs",
     "projects/boost/boost.harness",
+    "projects/boost/boost.text",
+    "projects/boost/boost.language",
     "projects/boost/boost.harness.macro",
     "projects/boost/boost.net",
     "projects/boost/boost.random",
