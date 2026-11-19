@@ -223,6 +223,9 @@ mod windows_encoder {
             codec_name: &str,
         ) -> Result<Self, Error> {
             let wide_path = wide(out);
+            // The container follows the file extension. Asserting one here
+            // would pin FLAC to an MP4 header it cannot carry, so the sink
+            // writer keeps choosing it.
             let writer: mf::IMFSinkWriter = unsafe {
                 mf::MFCreateSinkWriterFromURL(PCWSTR(wide_path.as_ptr()), None::<&mf::IMFByteStream>, None::<&mf::IMFAttributes>)
                     .map_err(|e| encode_error("MFCreateSinkWriterFromURL", e))?
@@ -266,13 +269,15 @@ mod windows_encoder {
                     set_guid(&audio_out, &mf::MF_MT_SUBTYPE, audio_subtype).map_err(|e| encode_error("audio subtype", e))?;
                     set_u32(&audio_out, &mf::MF_MT_AUDIO_NUM_CHANNELS, 2).map_err(|e| encode_error("audio channels", e))?;
                     set_u32(&audio_out, &mf::MF_MT_AUDIO_SAMPLES_PER_SECOND, sample_rate).map_err(|e| encode_error("audio rate", e))?;
+                    set_u32(&audio_out, &mf::MF_MT_AUDIO_BITS_PER_SAMPLE, 16).map_err(|e| encode_error("audio bits", e))?;
                     if *audio_subtype == mf::MFAudioFormat_AAC {
-                        // The AAC output type describes the encoded stream:
-                        // bitrate and channel layout, not PCM bit depth.
-                        set_u32(&audio_out, &mf::MF_MT_AUDIO_AVG_BYTES_PER_SECOND, 25_600).map_err(|e| encode_error("audio bitrate", e))?;
-                    }
-                    else {
-                        set_u32(&audio_out, &mf::MF_MT_AUDIO_BITS_PER_SAMPLE, 16).map_err(|e| encode_error("audio bits", e))?;
+                        // The AAC output type is the encoder's configuration, and
+                        // the Microsoft AAC MFT rejects the whole media type with
+                        // MF_E_INVALIDMEDIATYPE (0xC00D36B4) unless the source
+                        // bit depth and an exact bitrate are both present. The
+                        // rate is not decorative: 128 kbit/s stereo is one of
+                        // the bitrates the MFT itself advertises.
+                        set_u32(&audio_out, &mf::MF_MT_AUDIO_AVG_BYTES_PER_SECOND, 16_000).map_err(|e| encode_error("audio bitrate", e))?;
                     }
                 }
                 let audio_in = unsafe { mf::MFCreateMediaType().map_err(|e| encode_error("MFCreateMediaType(audio in)", e))? };
@@ -296,6 +301,11 @@ mod windows_encoder {
                     set_u32(&audio_in, &mf::MF_MT_AUDIO_BLOCK_ALIGNMENT, block_align).map_err(|e| encode_error("audio block align", e))?;
                     set_u32(&audio_in, &mf::MF_MT_AUDIO_AVG_BYTES_PER_SECOND, sample_rate * block_align)
                         .map_err(|e| encode_error("audio in avg bytes", e))?;
+                    if aac {
+                        // Stereo: front left and front right. The AAC encoder
+                        // refuses an input type without a channel layout.
+                        set_u32(&audio_in, &mf::MF_MT_AUDIO_CHANNEL_MASK, 0x3).map_err(|e| encode_error("audio channel mask", e))?;
+                    }
                 }
                 audio_index = Some(unsafe { writer.AddStream(&audio_out).map_err(|e| encode_error("AddStream(audio)", e))? });
                 unsafe {
