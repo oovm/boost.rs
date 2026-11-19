@@ -298,10 +298,16 @@ impl PostgreSQL {
                 TransactionControl::Done(_) => Ok(value),
                 TransactionControl::Rejected { code, message } => Err(Error::sql(code, message)),
             },
-            Err(error) => {
-                let _ = session.rollback(Some(&self.runtime));
-                Err(error)
-            }
+            Err(error) => match session.rollback(Some(&self.runtime)) {
+                Ok(TransactionControl::Done(_)) => Err(error),
+                Ok(TransactionControl::Rejected { code, message }) => Err(Error::sql(
+                    code,
+                    format!("transaction body failed and rollback was rejected: body error: {error}; rollback: {message}"),
+                )),
+                Err(rollback_error) => Err(Error::Io(io::Error::other(format!(
+                    "transaction body failed and rollback failed: body error: {error}; rollback io: {rollback_error}"
+                )))),
+            },
         }
     }
 
