@@ -884,9 +884,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-checksum"
+version = "0.1.0"
+
+[[package]]
 name = "data-compression"
 version = "0.1.0"
 dependencies = [
+ "data-checksum",
  "ruzstd",
 ]
 

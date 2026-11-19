@@ -81,6 +81,7 @@ members = [
     "projects/database/facades/yydb-client",
     "projects/database/facades/yyds",
     "projects/database/facades/yyds-client",
+    "projects/data/data.checksum",
     "projects/data/data.compression",
     "projects/data/data.text.core",
     "projects/document/document",
@@ -434,6 +435,7 @@ unicode-types = { path = "projects/unicode/unicode.types" }
 unicode-width = { path = "projects/unicode/unicode.width" }
 
 # data 能力树
+data-checksum = { path = "projects/data/data.checksum" }
 data-compression = { path = "projects/data/data.compression" }
 data-text-core = { path = "projects/data/data.text.core" }
 

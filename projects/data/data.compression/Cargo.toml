@@ -1,11 +1,32 @@
 [package]
 name = "data-compression"
-description = "通用压缩编解码：Snappy block 格式与 Zstandard 帧的独立实现，登记为 boost.data.compression"
+description = "通用压缩编解码：Snappy block 与 Zstandard 帧的独立实现，及 deflate feature 下内化的 Deflate/zlib/gzip 全套，登记为 boost.data.compression"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
-license.workspace = true
+license = "MPL-2.0"
 publish.workspace = true
 
 [dependencies]
 ruzstd = { workspace = true }
+data-checksum = { workspace = true, optional = true }
+
+[features]
+default = []
+deflate = ["dep:data-checksum"]
+
+[[test]]
+name = "deflate"
+required-features = ["deflate"]
+
+[[test]]
+name = "gzip"
+required-features = ["deflate"]
+
+[[test]]
+name = "zlib"
+required-features = ["deflate"]
+
+[[test]]
+name = "stream"
+required-features = ["deflate"]
