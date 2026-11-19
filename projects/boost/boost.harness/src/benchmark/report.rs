@@ -3,6 +3,16 @@
 use core::fmt::Write;
 use std::time::Duration;
 
+use boost_math::stats::PercentilePolicy;
+
+/// 基准 p95 策略：最近秩百分位，至少 20 个样本才报告。
+///
+/// 门槛显式登记在这里，而不是藏在私有函数里；数据库基准使用不同的门槛，
+/// 但共享同一个位次内核（[`boost_math::stats::nearest_rank_index`]）。
+pub const P95_POLICY: PercentilePolicy = PercentilePolicy::new(95, 100, 20);
+/// 基准 p99 策略：最近秩百分位，至少 100 个样本才报告。
+pub const P99_POLICY: PercentilePolicy = PercentilePolicy::new(99, 100, 100);
+
 /// One timed sample for a benchmark function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Sample {
@@ -44,8 +54,8 @@ impl BenchmarkStats {
         let mean = if sample_count == 0 { Duration::ZERO } else { total / sample_count as u32 };
         let median = median_duration(&samples);
         let std_dev = std_dev_duration(&samples, mean);
-        let p95 = percentile_duration(&samples, 0.95);
-        let p99 = percentile_duration(&samples, 0.99);
+        let p95 = percentile_duration(&samples, P95_POLICY);
+        let p99 = percentile_duration(&samples, P99_POLICY);
 
         Self { qualified_name: qualified_name.into(), sample_count, total, min, median, mean, std_dev, p95, p99, samples }
     }
@@ -112,24 +122,9 @@ fn std_dev_duration(samples: &[Duration], mean: Duration) -> Option<Duration> {
     Some(Duration::from_nanos(variance.sqrt() as u64))
 }
 
-fn percentile_duration(samples: &[Duration], percentile: f64) -> Option<Duration> {
-    if samples.is_empty() {
-        return None;
-    }
-    let min_samples = if percentile >= 0.99 {
-        100
-    }
-    else if percentile >= 0.95 {
-        20
-    }
-    else {
-        1
-    };
-    if samples.len() < min_samples {
-        return None;
-    }
+fn percentile_duration(samples: &[Duration], policy: PercentilePolicy) -> Option<Duration> {
+    let index = policy.index(samples.len())?;
     let mut sorted = samples.to_vec();
     sorted.sort();
-    let index = ((sorted.len() - 1) as f64 * percentile).round() as usize;
     Some(sorted[index])
 }

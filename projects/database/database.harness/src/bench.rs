@@ -5,9 +5,12 @@
 //! 场景参数、轮数口径）。它不运行 workload、不选择对照组、不定义被测操作，
 //! 也不探测宿主环境——provenance 的取值由产品仓的 bench 脚本采集后填入。
 //!
-//! p95 固化为 nearest-rank：`sorted[min(len-1, ceil(len*0.95)-1)]`，与
-//! SQLite / yydb 既有 TS 实现逐字节一致；median 在偶数长度取中间两值平均。
-//! 两条公式都有 golden vector 钉死，改动口径必须单独提交并说明理由。
+//! p95 固化为 nearest-rank：`sorted[ceil(len*0.95)-1]`，位次内核由
+//! [`boost_math::stats::nearest_rank_index`] 提供，`boost-harness` 与本模块
+//! 共用同一实现，不再各自维护公式；最低样本数由显式策略
+//! [`P95_POLICY`] 登记。SQLite / yydb 既有 TS 实现与本口径逐字节一致；
+//! median 在偶数长度取中间两值平均。两条公式都有 golden vector 钉死，
+//! 改动口径必须单独提交并说明理由。
 //!
 //! provenance 的线格式是 additive 的：全部字段 `serde(default)` 且缺省不
 //! 序列化，旧 JSON 照旧可解，既有 N-API JSON 直通绑定（`harnessBenchSummary` /
@@ -15,7 +18,15 @@
 
 use std::collections::BTreeMap;
 
+use boost_math::stats::PercentilePolicy;
 use serde::{Deserialize, Serialize};
+
+/// 基准 p95 策略：最近秩百分位，至少 1 个有效样本。
+///
+/// 与 `boost-harness` 的 20/100 门槛不同：数据库基准的样本按 workload 逐轮
+/// 采集，样本资格由报告侧的 `BenchPlan`/provenance 校验，而不是让统计函数
+/// 静默返回空值。门槛显式登记，不藏在私有函数里。
+pub const P95_POLICY: PercentilePolicy = PercentilePolicy::new(95, 100, 1);
 
 /// 轮次计划。`warmup` 轮由调用方执行且不进入样本。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -172,8 +183,7 @@ pub fn summarize(samples_ms: &[f64]) -> BenchResult<Stats> {
     let rounds = sorted.len() as u32;
     let middle = sorted.len() / 2;
     let median_ms = if sorted.len() % 2 == 0 { (sorted[middle - 1] + sorted[middle]) / 2.0 } else { sorted[middle] };
-    let rank = (sorted.len() as f64 * 0.95).ceil() as usize - 1;
-    let p95_ms = sorted[rank.min(sorted.len() - 1)];
+    let p95_ms = sorted[P95_POLICY.index(sorted.len()).expect("empty samples are rejected above")];
 
     Ok(Stats { median_ms, p95_ms, min_ms: sorted[0], max_ms: sorted[sorted.len() - 1], rounds })
 }

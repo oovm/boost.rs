@@ -14,6 +14,7 @@ publish = false
 charts = ["dep:plotter-chart", "dep:plotter-scene"]
 
 [dependencies]
+boost-math = { workspace = true }
 database-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
