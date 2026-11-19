@@ -90,6 +90,77 @@ pub enum TransactionControl {
     },
 }
 
+/// Failure of one [`run_transaction`] block, with every cause kept apart.
+#[derive(Debug)]
+pub enum TransactionRunError<E> {
+    /// `BEGIN` was rejected; the body never ran.
+    Begin {
+        /// SQLSTATE class returned by `BEGIN`.
+        code: &'static str,
+        /// Human-readable rejection detail.
+        message: String,
+    },
+    /// The body failed and the block was rolled back.
+    Body(E),
+    /// The body succeeded but `COMMIT` was rejected.
+    Commit {
+        /// SQLSTATE class returned by `COMMIT`.
+        code: &'static str,
+        /// Human-readable rejection detail.
+        message: String,
+    },
+    /// The body succeeded but `COMMIT` failed at the storage layer.
+    CommitIo(io::Error),
+    /// The body failed and the compensating `ROLLBACK` was rejected.
+    RollbackRejected {
+        /// SQLSTATE class returned by `ROLLBACK`.
+        code: &'static str,
+        /// Human-readable rejection detail.
+        message: String,
+        /// Failure returned by the body.
+        body: E,
+    },
+    /// The body failed and the compensating `ROLLBACK` failed at the storage layer.
+    RollbackIo {
+        /// Failure returned by the body.
+        body: E,
+        /// Storage failure raised by `ROLLBACK`.
+        error: io::Error,
+    },
+}
+
+/// Runs `body` inside one transaction block with the execution-owned order:
+/// `BEGIN`, the body, then `COMMIT` on success or `ROLLBACK` when the body fails.
+///
+/// Callers own the statement core the body runs; this function owns the block
+/// transitions and keeps a body failure next to the compensating-control failure
+/// instead of concatenating them into one string.
+pub fn run_transaction<T, E, F>(
+    session: &mut TransactionSession,
+    runtime: Option<&Arc<PgsqlSqlRuntime>>,
+    body: F,
+) -> Result<T, TransactionRunError<E>>
+where
+    F: FnOnce(&mut TransactionSession) -> Result<T, E>,
+{
+    match session.begin(runtime) {
+        TransactionControl::Rejected { code, message } => return Err(TransactionRunError::Begin { code, message }),
+        TransactionControl::Done(_) => {}
+    }
+    match body(session) {
+        Ok(value) => match session.commit(runtime) {
+            Ok(TransactionControl::Done(_)) => Ok(value),
+            Ok(TransactionControl::Rejected { code, message }) => Err(TransactionRunError::Commit { code, message }),
+            Err(error) => Err(TransactionRunError::CommitIo(error)),
+        },
+        Err(body) => match session.rollback(runtime) {
+            Ok(TransactionControl::Done(_)) => Err(TransactionRunError::Body(body)),
+            Ok(TransactionControl::Rejected { code, message }) => Err(TransactionRunError::RollbackRejected { code, message, body }),
+            Err(error) => Err(TransactionRunError::RollbackIo { body, error }),
+        },
+    }
+}
+
 /// PostgreSQL SQL execution resources: the local schema registry and the KV
 /// execution plane.
 #[derive(Debug)]

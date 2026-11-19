@@ -35,11 +35,11 @@ use database_client::pgsql::{Connection, error::PostgresError};
 use database_cluster::topology::ShardMap;
 use database_execution::cluster::LocalExecutor;
 use database_execution::pgsql::{
-    PgsqlSqlRuntime, StatementOutcome, TransactionControl, TransactionSession, dispatch_statement,
+    PgsqlSqlRuntime, StatementOutcome, TransactionRunError, TransactionSession, dispatch_statement, run_transaction,
 };
 use database_execution::sql_schema::SqlSchemaRegistry;
 use database_server::yyds::pgsql::service::PgsqlService;
-use database_server::yyds::pgsql::{PgAuthentication, PgTls};
+use database_server::yyds::pgsql::{ListenerRegistry, ListenerSlot, PgAuthentication, PgTls};
 use database_storage::cluster_kv::FileShard;
 use database_types::cluster::{ShardEpoch, ShardId};
 
@@ -95,6 +95,27 @@ pub enum Error {
     Io(io::Error),
     /// Engine lifecycle state: a closed store or a poisoned lock.
     State(String),
+    /// A transaction block failed after the body, keeping both causes.
+    Block {
+        /// Failure returned by the body.
+        body: Box<Error>,
+        /// Failure raised by the compensating `ROLLBACK`.
+        control: BlockControl,
+    },
+}
+
+/// Compensating-control failure after a transaction body failed.
+#[derive(Debug)]
+pub enum BlockControl {
+    /// `ROLLBACK` was rejected with a SQLSTATE.
+    Rejected {
+        /// SQLSTATE class returned by `ROLLBACK`.
+        code: &'static str,
+        /// Human-readable rejection detail.
+        message: String,
+    },
+    /// `ROLLBACK` failed at the storage layer.
+    Io(io::Error),
 }
 
 impl Error {
@@ -113,6 +134,12 @@ impl fmt::Display for Error {
             Self::Cluster(error) => write!(formatter, "cluster failure: {error:?}"),
             Self::Io(error) => write!(formatter, "io failure: {error}"),
             Self::State(message) => write!(formatter, "engine state: {message}"),
+            Self::Block { body, control } => match control {
+                BlockControl::Rejected { code, message } => {
+                    write!(formatter, "transaction body failed: {body}; rollback rejected {code}: {message}")
+                }
+                BlockControl::Io(error) => write!(formatter, "transaction body failed: {body}; rollback io: {error}"),
+            },
         }
     }
 }
@@ -122,7 +149,25 @@ impl error::Error for Error {
         match self {
             Self::Storage(error) => Some(error),
             Self::Io(error) => Some(error),
+            Self::Block { body, .. } => Some(body.as_ref()),
             _ => None,
+        }
+    }
+}
+
+impl From<TransactionRunError<Error>> for Error {
+    fn from(error: TransactionRunError<Error>) -> Self {
+        match error {
+            TransactionRunError::Begin { code, message } => Self::sql(code, message),
+            TransactionRunError::Body(error) => error,
+            TransactionRunError::Commit { code, message } => Self::sql(code, message),
+            TransactionRunError::CommitIo(error) => Self::Io(error),
+            TransactionRunError::RollbackRejected { code, message, body } => {
+                Self::Block { body: Box::new(body), control: BlockControl::Rejected { code, message } }
+            }
+            TransactionRunError::RollbackIo { body, error } => {
+                Self::Block { body: Box::new(body), control: BlockControl::Io(error) }
+            }
         }
     }
 }
@@ -239,7 +284,8 @@ pub struct PostgreSQL {
     /// One shared slot per live service listener; the slot is the only handle
     /// that can stop the accept loop, shared between the [`Listener`] handle
     /// and [`PostgreSQL::close`].
-    listeners: Arc<Mutex<Vec<Arc<Mutex<Option<PgsqlService>>>>>>,
+    /// Live protocol-v3 listeners registered with the server-owned registry.
+    listeners: Arc<ListenerRegistry>,
     database: String,
 }
 
@@ -266,7 +312,7 @@ impl PostgreSQL {
             runtime,
             instance: Mutex::new(Some(instance)),
             session: Mutex::new(TransactionSession::new()),
-            listeners: Arc::new(Mutex::new(Vec::new())),
+            listeners: Arc::new(ListenerRegistry::new()),
             database: options.database,
         })
     }
@@ -298,30 +344,11 @@ impl PostgreSQL {
     /// session, then `COMMIT` on success or `ROLLBACK` when the body fails.
     pub fn transaction<T>(&self, body: impl FnOnce(&mut Transaction<'_>) -> Result<T, Error>) -> Result<T, Error> {
         let mut session = self.lock(&self.session)?;
-        match session.begin(Some(&self.runtime)) {
-            TransactionControl::Rejected { code, message } => return Err(Error::sql(code, message)),
-            TransactionControl::Done(_) => {}
-        }
-        let result = {
-            let mut transaction = Transaction { engine: self, session: &mut session };
+        run_transaction(&mut session, Some(&self.runtime), |session| {
+            let mut transaction = Transaction { engine: self, session };
             body(&mut transaction)
-        };
-        match result {
-            Ok(value) => match session.commit(Some(&self.runtime)).map_err(Error::from)? {
-                TransactionControl::Done(_) => Ok(value),
-                TransactionControl::Rejected { code, message } => Err(Error::sql(code, message)),
-            },
-            Err(error) => match session.rollback(Some(&self.runtime)) {
-                Ok(TransactionControl::Done(_)) => Err(error),
-                Ok(TransactionControl::Rejected { code, message }) => Err(Error::sql(
-                    code,
-                    format!("transaction body failed and rollback was rejected: body error: {error}; rollback: {message}"),
-                )),
-                Err(rollback_error) => Err(Error::Io(io::Error::other(format!(
-                    "transaction body failed and rollback failed: body error: {error}; rollback io: {rollback_error}"
-                )))),
-            },
-        }
+        })
+        .map_err(Error::from)
     }
 
     /// Starts the protocol-v3 server on a loopback `endpoint` (`port` 0 picks a
@@ -348,8 +375,7 @@ impl PostgreSQL {
         }
         let service = PgsqlService::start_with_runtime(Arc::clone(&self.runtime), endpoint, auth, tls)?;
         let bound = service.address();
-        let slot = Arc::new(Mutex::new(Some(service)));
-        self.lock(&self.listeners)?.push(Arc::clone(&slot));
+        let slot = self.listeners.register(service);
         Ok(Listener { endpoint: bound, database: self.database.clone(), slot, registry: Arc::clone(&self.listeners) })
     }
 
@@ -359,17 +385,7 @@ impl PostgreSQL {
     /// released: the two resources are independent, and the caller must see the
     /// stop failure instead of a silent success.
     pub fn close(self) -> Result<(), Error> {
-        let mut stop_error = None;
-        if let Ok(mut listeners) = self.listeners.lock() {
-            for slot in listeners.drain(..) {
-                let service = slot.lock().ok().and_then(|mut service| service.take());
-                if let Some(service) = service {
-                    if let Err(error) = service.stop() {
-                        stop_error.get_or_insert(Error::Io(error));
-                    }
-                }
-            }
-        }
+        let stop_error = self.listeners.stop_all().err().map(Error::Io);
         let instance = self.instance.lock().map_err(|_| poisoned())?.take().ok_or_else(|| Error::State("store already closed".to_owned()))?;
         let closed = instance.close().map_err(Error::from);
         match (stop_error, closed) {
@@ -431,8 +447,8 @@ pub struct Listener {
     /// The service slot this handle stops; shared with the engine registry so
     /// exactly one of [`Listener::close`] / [`PostgreSQL::close`] joins the
     /// accept loop.
-    slot: Arc<Mutex<Option<PgsqlService>>>,
-    registry: Arc<Mutex<Vec<Arc<Mutex<Option<PgsqlService>>>>>>,
+    slot: ListenerSlot,
+    registry: Arc<ListenerRegistry>,
 }
 
 impl Listener {
@@ -451,14 +467,7 @@ impl Listener {
     /// The stop outcome of the shared server resource is returned instead of
     /// being discarded, so a failed join is observable to the caller.
     pub fn close(self) -> Result<(), Error> {
-        if let Ok(mut listeners) = self.registry.lock() {
-            listeners.retain(|existing| !Arc::ptr_eq(existing, &self.slot));
-        }
-        let service = self.slot.lock().ok().and_then(|mut service| service.take());
-        match service {
-            Some(service) => service.stop().map_err(Error::Io),
-            None => Ok(()),
-        }
+        self.registry.close(&self.slot).map_err(Error::Io)
     }
 }
 

@@ -4,7 +4,7 @@ use std::{
     io,
     net::{SocketAddr, TcpListener},
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     thread::{self, JoinHandle},
@@ -21,6 +21,67 @@ use super::connection::serve_cancellable_with_auth_and_tls;
 use super::tls::PgTls;
 
 const MAX_CLIENTS: usize = 64;
+
+/// One registered listener slot. Taking the service out stops it exactly once.
+pub type ListenerSlot = Arc<Mutex<Option<PgsqlService>>>;
+
+/// Live listeners owned by one engine.
+///
+/// Registration, per-listener removal and the drain-before-close step are
+/// server lifecycle facts, so the product facade never iterates service slots
+/// or decides how a listener is joined.
+#[derive(Debug, Default)]
+pub struct ListenerRegistry {
+    slots: Mutex<Vec<ListenerSlot>>,
+}
+
+impl ListenerRegistry {
+    /// Creates an empty registry.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Adds `service` and returns the slot that stops it.
+    pub fn register(&self, service: PgsqlService) -> ListenerSlot {
+        let slot = Arc::new(Mutex::new(Some(service)));
+        self.slots.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push(Arc::clone(&slot));
+        slot
+    }
+
+    /// Removes and stops one listener; a missing service counts as already stopped.
+    pub fn close(&self, slot: &ListenerSlot) -> io::Result<()> {
+        self.slots
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .retain(|existing| !Arc::ptr_eq(existing, slot));
+        let service = slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take();
+        match service {
+            Some(service) => service.stop(),
+            None => Ok(()),
+        }
+    }
+
+    /// Stops every remaining listener and returns the first join failure.
+    ///
+    /// A failing listener does not keep the others running: the drain always
+    /// empties the registry before returning.
+    pub fn stop_all(&self) -> io::Result<()> {
+        let slots = std::mem::take(&mut *self.slots.lock().unwrap_or_else(|poisoned| poisoned.into_inner()));
+        let mut first = None;
+        for slot in slots {
+            let service = slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take();
+            if let Some(service) = service
+                && let Err(error) = service.stop()
+            {
+                first.get_or_insert(error);
+            }
+        }
+        match first {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
+    }
+}
 
 /// A loopback PostgreSQL listener attached to an existing node owner.
 #[derive(Debug)]
