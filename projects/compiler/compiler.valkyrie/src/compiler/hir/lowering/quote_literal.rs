@@ -20,8 +20,8 @@ use std::ops::Range;
 use compiler_types::{DiagnosticSource, DiagnosticSpan};
 
 use crate::compiler::{
-    syntax::oak::{
-        ast::{Identifier as OakIdentifier, QuoteKind, QuoteLiteral, StringSegment as OakSegment, TermExpression},
+    syntax::surface::{
+        ast::{Identifier as TextIdentifier, QuoteKind, QuoteLiteral, StringSegment as TextSegment, TermExpression},
         parse_quote_template,
     },
     types::{
@@ -175,7 +175,7 @@ pub fn split_pattern_capture(raw: &str, literal_start: usize) -> Option<QuoteLit
         None
     }
     else {
-        Some(OakIdentifier { name: prefix_text.to_string(), span: data_text_core::Range { start: literal_start, end: literal_start + quote_index } })
+        Some(TextIdentifier { name: prefix_text.to_string(), span: data_text_core::Range { start: literal_start, end: literal_start + quote_index } })
     };
     let content_start = literal_start + quote_index + quote_count;
     Some(QuoteLiteral {
@@ -222,7 +222,7 @@ fn split_quote_capture(raw: &str, literal_start: usize) -> Option<QuoteLiteral> 
         None
     }
     else {
-        Some(OakIdentifier {
+        Some(TextIdentifier {
             name: prefix_text.to_string(),
             span: data_text_core::Range { start: literal_start + trim_offset, end: literal_start + trim_offset + quote_index },
         })
@@ -361,14 +361,14 @@ fn decode_cooked_capture(literal: &QuoteLiteral, allow_interpolation: bool) -> R
     let mut has_interpolation = false;
     for segment in segments {
         match segment {
-            OakSegment::Text(text) => {
+            TextSegment::Text(text) => {
                 let decoded = decode_text_segment(&text.content, text.span.start)?;
                 if !has_interpolation {
                     plain.push_str(&decoded);
                 }
                 parts.push(QuoteTemplatePart::Text(decoded));
             }
-            OakSegment::Interpolation(interpolation) => {
+            TextSegment::Interpolation(interpolation) => {
                 if !allow_interpolation {
                     return Err(quote_literal_error(
                         QuoteLiteralFailure::TemplateSyntax { message: "interpolation is not a constant pattern".to_string() },

@@ -1,7 +1,7 @@
 use data_text_jinja::JinjaLanguage;
 
 fn main() {
-    println!("=== Oak Jinja 配置机制分析与验证 ===\n");
+    println!("=== Jinja 配置机制分析与验证 ===\n");
 
     // 1. 验证默认配置
     println!("1. 验证默认 Jinja 配置:");

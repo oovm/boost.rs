@@ -6,8 +6,8 @@ use super::{
     },
     model::{DiscriminatorFailure, HirError},
 };
-impl From<crate::compiler::syntax::oak::ParseError> for HirError {
-    fn from(error: crate::compiler::syntax::oak::ParseError) -> Self {
+impl From<crate::compiler::syntax::surface::ParseError> for HirError {
+    fn from(error: crate::compiler::syntax::surface::ParseError) -> Self {
         Self::FrontendRejected(error)
     }
 }

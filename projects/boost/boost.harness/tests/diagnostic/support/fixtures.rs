@@ -22,15 +22,15 @@ pub fn text_diagnostic() -> Diagnostic {
 
 pub fn binary_diagnostic() -> Diagnostic {
     Diagnostic::new(
-        DiagnosticCode::new("acorn.layout.offset-out-of-range"),
+        DiagnosticCode::new("data.binary.layout.offset-out-of-range"),
         DiagnosticSeverity::Error,
-        DiagnosticOrigin::new("acorn", "bin"),
-        Message::new("acorn.layout.offset-out-of-range").with_fallback("offset out of range"),
+        DiagnosticOrigin::new("data.binary", "bin"),
+        Message::new("data.binary.layout.offset-out-of-range").with_fallback("offset out of range"),
     )
     .with_primary(DiagnosticLabel::new(
         DiagnosticLocation::Binary {
-            source: SourceRef::new("acorn", "firmware.bin").unwrap(),
-            address_space: AddressSpaceRef::new("acorn", "file"),
+            source: SourceRef::new("data.binary", "firmware.bin").unwrap(),
+            address_space: AddressSpaceRef::new("data.binary", "file"),
             range: ByteRange::new(0x1000, 0x1004).unwrap(),
         },
         Message::new("label.binary").with_fallback("binary"),
@@ -40,14 +40,14 @@ pub fn binary_diagnostic() -> Diagnostic {
 
 pub fn member_diagnostic() -> Diagnostic {
     Diagnostic::new(
-        DiagnosticCode::new("acorn.container.need-range"),
+        DiagnosticCode::new("data.binary.container.need-range"),
         DiagnosticSeverity::Warning,
-        DiagnosticOrigin::new("acorn", "zip"),
-        Message::new("acorn.container.need-range").with_fallback("need range"),
+        DiagnosticOrigin::new("data.binary", "zip"),
+        Message::new("data.binary.container.need-range").with_fallback("need range"),
     )
     .with_primary(DiagnosticLabel::new(
         DiagnosticLocation::Member {
-            container: SourceRef::new("acorn", "docx.zip").unwrap(),
+            container: SourceRef::new("data.binary", "docx.zip").unwrap(),
             member: MemberPath::new(vec![MemberSegment::new("zip", "word/document.xml"), MemberSegment::new("view", "utf8")]),
             range: Some(ByteRange::new(128, 140).unwrap()),
             precision: MappingPrecision::Container,
@@ -59,13 +59,13 @@ pub fn member_diagnostic() -> Diagnostic {
 
 pub fn object_diagnostic() -> Diagnostic {
     Diagnostic::new(
-        DiagnosticCode::new("acorn.layout.offset-out-of-range"),
+        DiagnosticCode::new("data.binary.layout.offset-out-of-range"),
         DiagnosticSeverity::Error,
-        DiagnosticOrigin::new("acorn", "pdf"),
-        Message::new("acorn.layout.offset-out-of-range").with_fallback("offset out of range"),
+        DiagnosticOrigin::new("data.binary", "pdf"),
+        Message::new("data.binary.layout.offset-out-of-range").with_fallback("offset out of range"),
     )
     .with_primary(DiagnosticLabel::new(
-        DiagnosticLocation::Object { source: SourceRef::new("acorn", "sample.pdf").unwrap(), object: ObjectRef::new("xref", "42") },
+        DiagnosticLocation::Object { source: SourceRef::new("data.binary", "sample.pdf").unwrap(), object: ObjectRef::new("xref", "42") },
         Message::new("label.object").with_fallback("object"),
         LabelRole::Primary,
     ))

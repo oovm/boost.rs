@@ -835,14 +835,14 @@ fn lower_directive_template_value(expr: &str, span: &std::ops::Range<usize>) -> 
         return Ok(SurfaceAttrValue::Dynamic(expr.to_string()));
     }
     let segments =
-        compiler_valkyrie::compiler::syntax::oak::parse_quote_template(expr, 0).map_err(|error| directive_template_error(span, error.to_string()))?;
+        compiler_valkyrie::compiler::syntax::surface::parse_quote_template(expr, 0).map_err(|error| directive_template_error(span, error.to_string()))?;
     let parts: Vec<SurfaceTextPart> = segments
         .into_iter()
         .map(|segment| match segment {
-            compiler_valkyrie::compiler::syntax::oak::ast::StringSegment::Text(text) => {
+            compiler_valkyrie::compiler::syntax::surface::ast::StringSegment::Text(text) => {
                 decode_text_segment(&text.content, span).map(SurfaceTextPart::Static)
             }
-            compiler_valkyrie::compiler::syntax::oak::ast::StringSegment::Interpolation(interpolation) => {
+            compiler_valkyrie::compiler::syntax::surface::ast::StringSegment::Interpolation(interpolation) => {
                 let body = expr
                     .get(interpolation.span.start + 1..interpolation.span.end - 1)
                     .ok_or_else(|| directive_template_error(span, "插值区间不在指令值内".to_string()))?;
@@ -862,7 +862,7 @@ fn lower_directive_template_value(expr: &str, span: &std::ops::Range<usize>) -> 
 fn decode_text_segment(text: &str, span: &std::ops::Range<usize>) -> AsgardResult<String> {
     use compiler_valkyrie::compiler::{
         hir::lowering::quote_literal::{DecodedQuoteCapture, decode_quote_capture},
-        syntax::oak::ast::{QuoteKind, QuoteLiteral},
+        syntax::surface::ast::{QuoteKind, QuoteLiteral},
     };
 
     let literal = QuoteLiteral {

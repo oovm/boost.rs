@@ -13,7 +13,7 @@
 
 use data_text_valkyrie::lexer::token_type::ValkyrieTokenType;
 
-use crate::compiler::syntax::oak::ast::Attribute;
+use crate::compiler::syntax::surface::ast::Attribute;
 
 /// 序数下标 `receiver[i]` 的成员名。
 pub const SUBSCRIPT_MEMBER: &str = "suffix [ ]";

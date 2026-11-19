@@ -2,7 +2,7 @@
 
 use crate::compiler::{
     hir::lowering::HirError,
-    syntax::oak::{
+    syntax::surface::{
         ast::{
             Block, MethodDeclaration, MicroDeclaration, Statement, StatementNode, StructureBody, TemplateIf, TemplateLoop, TemplateMatch,
             TemplateNode, ValkyrieRoot,
@@ -60,8 +60,8 @@ fn expand_declaration_bodies(items: &mut [StatementNode], source: &str, arch: &s
             }
 
             StatementNode::Namespace(namespace) => {
-                if !crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) {
-                    expand_declaration_bodies(crate::compiler::syntax::oak::namespace_items_mut(namespace), source, arch)?;
+                if !crate::compiler::syntax::surface::namespace_is_declaration_only(namespace) {
+                    expand_declaration_bodies(crate::compiler::syntax::surface::namespace_items_mut(namespace), source, arch)?;
                 }
             }
 
@@ -183,8 +183,8 @@ fn expand_statement_nodes(items: &mut Vec<StatementNode>, source: &str, arch: &s
             index += expanded_len;
         }
         else if let StatementNode::Namespace(namespace) = &mut items[index] {
-            if !crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) {
-                expand_statement_nodes(crate::compiler::syntax::oak::namespace_items_mut(namespace), source, arch)?;
+            if !crate::compiler::syntax::surface::namespace_is_declaration_only(namespace) {
+                expand_statement_nodes(crate::compiler::syntax::surface::namespace_items_mut(namespace), source, arch)?;
             }
 
             index += 1;

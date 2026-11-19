@@ -6,7 +6,7 @@ use compiler_types::DiagnosticSpan;
 
 use crate::compiler::{
     hir::lowering::HirError,
-    syntax::oak::{
+    syntax::surface::{
         ParseError,
         ast::{MatchArm, StatementNode, TermExpression},
         parse_source_with_identity,
@@ -30,7 +30,7 @@ pub fn match_needs_source_recovery(source: &str, match_span: Range<usize>, arms:
     if expected > arms.len() {
         return true;
     }
-    if arms.iter().any(|arm| broken_wildcard_arm(source, arm) || oak_lost_case_pattern(source, arm)) {
+    if arms.iter().any(|arm| broken_wildcard_arm(source, arm) || lost_case_pattern(source, arm)) {
         return true;
     }
     // `data.text` 的 `Pattern` 没有区间变体，且 `case 2..=8:` 的 arm span 会从 `8` 起算
@@ -63,7 +63,7 @@ pub fn recovered_range_pattern_texts(source: &str, match_span: Range<usize>) -> 
 }
 
 /// `data.text` `parse_match_pattern` 对个别原子仍可能落成 Wildcard，`case 7` 等需按源码恢复。
-fn oak_lost_case_pattern(source: &str, arm: &MatchArm) -> bool {
+fn lost_case_pattern(source: &str, arm: &MatchArm) -> bool {
     if !matches!(arm.pattern, data_text_valkyrie::ast::Pattern::Wildcard(_)) {
         return false;
     }

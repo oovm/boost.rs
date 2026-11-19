@@ -62,7 +62,7 @@ pub fn test_parser(input: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-pub fn oak_test(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn language_test(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as syn::ItemFn);
     let attrs = &input.attrs;
     let vis = &input.vis;

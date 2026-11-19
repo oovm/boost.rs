@@ -70,7 +70,7 @@ pub fn encode_x64_program(functions: &[X64ProgramFunction], abi: X64CallConv) ->
 
 /// 把多函数文本 LIR 编码为 `.text`、导出符号与宿主导入表。
 ///
-/// `imports` 按 `(module, field)` 声明；`.idata` 与 IAT 槽由 acorn 的导入表构造器
+/// `imports` 按 `(module, field)` 声明；`.idata` 与 IAT 槽由 `data.binary.pe` 的导入表构造器
 /// 冻结，`CallImport` 的 `call [rip+disp32]` 由 PE 写入器在最终布局后回填。
 /// 宿主导入是 PE/IAT 专属合同，`ELF` 目标当前没有对应编码，必须显式拒绝而不是
 /// 生成一张无人解析的 `.idata`。

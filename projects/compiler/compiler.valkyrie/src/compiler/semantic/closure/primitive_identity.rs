@@ -22,7 +22,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use compiler_types::compiler_input::{DeclarationKey, ReferencePath};
 
-use crate::compiler::syntax::oak::ast;
+use crate::compiler::syntax::surface::ast;
 
 use super::{DeclarationIndexes, SemanticClosureError};
 

@@ -2,7 +2,7 @@
 
 use crate::compiler::{
     hir::{HirError, lowering::auto_constructor_attribute_count},
-    syntax::oak::{
+    syntax::surface::{
         ValkyrieRoot,
         ast::{Attribute, EnumsKind, NamePath, StatementNode},
     },
@@ -25,8 +25,8 @@ fn validate_auto_constructor_attributes(items: &[StatementNode]) -> Result<(), H
     for item in items {
         match item {
             StatementNode::Namespace(namespace) => {
-                if !crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) {
-                    validate_auto_constructor_attributes(crate::compiler::syntax::oak::namespace_items(namespace))?;
+                if !crate::compiler::syntax::surface::namespace_is_declaration_only(namespace) {
+                    validate_auto_constructor_attributes(crate::compiler::syntax::surface::namespace_items(namespace))?;
                 }
             }
             StatementNode::Enums(enums) => {
@@ -114,12 +114,12 @@ fn validate_duplicate_type_names(items: &[StatementNode], namespace_prefix: &[St
     let mut current_namespace = namespace_prefix.to_vec();
     for item in items {
         match item {
-            StatementNode::Namespace(namespace) if crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) => {
+            StatementNode::Namespace(namespace) if crate::compiler::syntax::surface::namespace_is_declaration_only(namespace) => {
                 current_namespace = name_path_parts(&namespace.name);
             }
             StatementNode::Namespace(namespace) => {
                 let nested = append_namespace_path(&current_namespace, &name_path_parts(&namespace.name));
-                validate_duplicate_type_names(crate::compiler::syntax::oak::namespace_items(namespace), &nested)?;
+                validate_duplicate_type_names(crate::compiler::syntax::surface::namespace_items(namespace), &nested)?;
             }
             other => {
                 if let Some((name, kind, span)) = type_declaration_identity(other) {

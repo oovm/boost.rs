@@ -5,7 +5,7 @@
 //! contract and structured diagnostics. Foundational models are exposed through
 //! [`types`].
 //!
-//! Hosts such as YYDB, YYDS and Iris must call [`parse_oak`] and consume the
+//! Hosts such as YYDB, YYDS and Iris must call [`parse_schema`] and consume the
 //! resolved contract APIs below. This crate never owns a parser, an AST, a CST
 //! or a lexical layer of its own.
 
@@ -34,7 +34,7 @@ pub fn parse_program(source: &str) -> Result<syntax::VosProgram, String> {
 
 /// Parses and validates a schema through `data.text` and the VOS schema contract.
 pub fn validate_schema(source: &str) -> Result<schema_types::SchemaProjection, String> {
-    let input = parse_oak(source)?;
+    let input = parse_schema(source)?;
     let projection = input.project_schema().map_err(|diagnostics| format!("VOS semantic projection failed: {diagnostics:?}"))?;
     for item in &projection.types {
         if item.kind == schema_types::TypeContractKind::Table {

@@ -68,8 +68,8 @@ pub fn render_depictions(graph: &DocumentGraph) -> RenderedDepictions {
                 LossMarker {
                     code: codes::DEPICTION_AST_UNAVAILABLE.to_string(),
                     message: format!(
-                        "structure language `{language}` has no frontend in this build: the text grammar lands in \
-                         Oak (`oak-smiles` / `oak-mdl`), so the authored fence stays visible"
+                        "structure language `{language}` has no frontend in this build: the text grammar lives in \
+                         `data-text-smiles` and `data-text-mdl`, so the authored fence stays visible"
                     ),
                     status: SemanticStatus::Unsupported,
                 },

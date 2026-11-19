@@ -80,7 +80,7 @@ pub fn parse_source_with_language_and_identity(source: &str, language: &Valkyrie
     // fatal 单错且 `diagnostics` 恒为空；恢复记录接入 `data.text` 后，这里自动带出全部
     // 非致命诊断。此处只转述 `data.text` 已生产的事实，不在外部包装出多错假象。
     for diagnostic in &output.diagnostics {
-        crate::compiler::diagnostics::pending::push_compile_diagnostic(compile_diagnostic_from_oak_error(diagnostic, source_id));
+        crate::compiler::diagnostics::pending::push_compile_diagnostic(compile_diagnostic_from_text_error(diagnostic, source_id));
     }
     output
         .result
@@ -92,7 +92,7 @@ pub fn parse_source_with_language_and_identity(source: &str, language: &Valkyrie
                 .iter()
                 .any(|recorded| recorded.source_offset() == error.source_offset() && recorded.to_string() == error.to_string());
             if !already_recorded {
-                crate::compiler::diagnostics::pending::push_compile_diagnostic(compile_diagnostic_from_oak_error(&error, source_id));
+                crate::compiler::diagnostics::pending::push_compile_diagnostic(compile_diagnostic_from_text_error(&error, source_id));
             }
             let mut primary = ParseError::from_oak(error);
             // 词法诊断（如"未闭合的引号捕获"）携带比兜底解析错误更精确的原因与定位；
@@ -116,7 +116,7 @@ pub fn parse_source_with_language_and_identity(source: &str, language: &Valkyrie
 /// `code` 由 `data.text` 的稳定 i18n key 派生（`error.syntax` → `valkyrie.frontend.parse.syntax`），
 /// 不自行枚举错误清单；`phase`/`owner` 按诊断合同诚实记录为语法阶段、data-text-valkyrie 生产。
 /// 文件身份由调用方在解析入口给出：真实文件落逻辑路径，匿名/合成源落 [`ANONYMOUS_SOURCE_ID`]。
-fn compile_diagnostic_from_oak_error(error: &data_text_core::TextError, source_id: &str) -> crate::compiler::diagnostics::pending::CompileDiagnostic {
+fn compile_diagnostic_from_text_error(error: &data_text_core::TextError, source_id: &str) -> crate::compiler::diagnostics::pending::CompileDiagnostic {
     use compiler_types::{DiagnosticOwner, DiagnosticPhase, DiagnosticRow, DiagnosticSeverity, DiagnosticSource, DiagnosticSpan};
     let kind = error.kind();
     let span = match error.source_offset() {

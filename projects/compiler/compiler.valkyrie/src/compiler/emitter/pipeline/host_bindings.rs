@@ -12,7 +12,7 @@ use crate::compiler::{
     hir::{control_flow_validation::compatibility::display_type, overload::has_unresolved_generic_arguments},
     mir::{MirExternalCallContract, MirFunction, MirModule, MirOperand, MirOperation},
     semantic::closure::{DeclarationKey, DeclarationKind},
-    syntax::oak::ParseError,
+    syntax::surface::ParseError,
     types::hir::{HirFunction, HirModule, ValkyrieType},
 };
 

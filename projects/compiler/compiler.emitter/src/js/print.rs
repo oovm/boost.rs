@@ -55,7 +55,7 @@ fn minify_tokens(
     let tokens = lexer
         .lex(&text, &[], &mut cache)
         .result
-        .map_err(|error| format!("Oak TypeScript lexer failed: {error:?}"))?;
+        .map_err(|error| format!("TypeScript lexer failed: {error:?}"))?;
 
     let mut out = String::with_capacity(source.len());
     let mut line = 0u32;
@@ -72,7 +72,7 @@ fn minify_tokens(
             break;
         }
         if token.kind == T::Error {
-            return Err(format!("Oak TypeScript lexer rejected byte offset {}", token.span.start));
+            return Err(format!("TypeScript lexer rejected byte offset {}", token.span.start));
         }
         for (start, end) in kept_fragments(token.span.start, token.span.end, deletions) {
             let fragment = &source[start..end];

@@ -1,5 +1,5 @@
--- Oak Lua Test Suite
--- Basic Lua syntax test file for Oak lexer
+-- Lua Test Suite
+-- Basic Lua syntax test file for the Lua lexer
 
 -- Variables and basic data types
 local name = "Oak Lua"

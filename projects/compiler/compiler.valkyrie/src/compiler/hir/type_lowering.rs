@@ -6,7 +6,7 @@ use std::{
 
 use crate::compiler::{
     hir::{HirError, type_relation::is_numeric_type_name},
-    syntax::oak::{
+    syntax::surface::{
         self,
         ast::{
             NamePath as AstNamePath, TermExpression, TypeExpression,

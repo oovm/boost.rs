@@ -26,18 +26,18 @@ pub fn test_parser(input: TokenStream) -> TokenStream {
 
 /// Attribute macro for defining language tests.
 #[proc_macro_attribute]
-pub fn oak_test(attr: TokenStream, item: TokenStream) -> TokenStream {
-    test::oak_test(attr, item)
+pub fn language_test(attr: TokenStream, item: TokenStream) -> TokenStream {
+    test::language_test(attr, item)
 }
 
 /// Derives the `AsDocument` trait.
-#[proc_macro_derive(AsDocument, attributes(oak))]
+#[proc_macro_derive(AsDocument, attributes(text))]
 pub fn derive_as_document(input: TokenStream) -> TokenStream {
     to_doc::derive_as_document(input)
 }
 
 /// Derives the `FormatRule` trait.
-#[proc_macro_derive(FormatRule, attributes(oak))]
+#[proc_macro_derive(FormatRule, attributes(text))]
 pub fn derive_format_rule(input: TokenStream) -> TokenStream {
     format_rule::derive_format_rule(input)
 }

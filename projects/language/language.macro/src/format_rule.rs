@@ -9,7 +9,7 @@ pub fn derive_format_rule(input: TokenStream) -> TokenStream {
 
     let mut priority = 0u8;
     for attr in &input.attrs {
-        if attr.path().is_ident("oak") {
+        if attr.path().is_ident("text") {
             let _ = attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("priority") {
                     let value = meta.value()?;

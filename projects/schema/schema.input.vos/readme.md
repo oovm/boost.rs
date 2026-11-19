@@ -8,7 +8,7 @@ registry layout.
 
 The shared models live in `schema-types`; syntax facts belong exclusively to
 `data.text`. Hosts such as ODM, database engines and code generators must call
-`parse_oak` / `validate_schema` and consume the resolved contract APIs instead
+`parse_schema` / `validate_schema` and consume the resolved contract APIs instead
 of re-implementing any stage.
 
 This crate keeps only smoke tests. The full conformance corpus — fixtures,

@@ -2,14 +2,14 @@
 //!
 //! 正式编译流只能调用 [`parse`] / [`parse_source`]，不得引入第二条 parser 成功路径。
 
-pub use crate::compiler::syntax::oak::{self, ValkyrieRoot, parse_source, parse_source_with_identity, std_range};
+pub use crate::compiler::syntax::surface::{self, ValkyrieRoot, parse_source, parse_source_with_identity, std_range};
 pub use data_text_core::TextDiagnostics;
 
 use data_text_core::{Builder, ParseSession, SourceText};
 use data_text_valkyrie::{ValkyrieBuilder, ValkyrieLanguage};
 
 /// `data.text` 前端返回的解析结果（含 diagnostics）。
-pub type ParseOutput = TextDiagnostics<oak::ast::ValkyrieRoot>;
+pub type ParseOutput = TextDiagnostics<surface::ast::ValkyrieRoot>;
 
 /// 使用 `data.text` 解析并构造 Valkyrie AST 根节点。
 pub fn parse(source: &str) -> ParseOutput {

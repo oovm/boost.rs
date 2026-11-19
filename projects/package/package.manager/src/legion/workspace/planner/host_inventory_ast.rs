@@ -9,7 +9,7 @@ use compiler_valkyrie::compiler::{
         },
         operator_members,
     },
-    syntax::oak::{
+    syntax::surface::{
         ValkyrieRoot,
         ast::{Block, ImplyDeclaration, MethodDeclaration, MicroDeclaration, StatementNode},
         namespace_is_declaration_only, namespace_items,
@@ -296,7 +296,7 @@ fn register_providers_for_declaration(
     name: &str,
     qualified_symbol: &str,
     key: &DeclarationKey,
-    annotations: &[compiler_valkyrie::compiler::syntax::oak::ast::Attribute],
+    annotations: &[compiler_valkyrie::compiler::syntax::surface::ast::Attribute],
     line: usize,
     inventory: &mut HostInventory,
 ) {
@@ -328,7 +328,7 @@ fn register_providers_for_declaration(
 /// 由同一份 `DeclarationIndexes` 完成，与语义闭包共享，不在本层做名字白名单。
 fn record_declaration_capabilities(
     key: &DeclarationKey,
-    annotations: &[compiler_valkyrie::compiler::syntax::oak::ast::Attribute],
+    annotations: &[compiler_valkyrie::compiler::syntax::surface::ast::Attribute],
     calls: BTreeSet<ReferencePath>,
     inventory: &mut HostInventory,
 ) {

@@ -10,7 +10,7 @@ use crate::compiler::{
         try_propagate::nullable_payload_type,
         type_relation::{ParameterMatchResult, TypeRelationContext},
     },
-    syntax::oak::ParseError,
+    syntax::surface::ParseError,
     types::{
         NamePath,
         hir::{HirExtractorPattern, HirParam, HirPattern, ValkyrieType},

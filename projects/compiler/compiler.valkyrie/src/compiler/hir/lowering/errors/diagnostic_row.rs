@@ -419,14 +419,14 @@ impl From<HirError> for DiagnosticRow {
 }
 
 /// frontend 失败事实的缺省 source 身份。
-pub(super) fn frontend_source(_error: &crate::compiler::syntax::oak::ParseError) -> DiagnosticSource {
+pub(super) fn frontend_source(_error: &crate::compiler::syntax::surface::ParseError) -> DiagnosticSource {
     DiagnosticSource { id: "<frontend>".into(), revision: None }
 }
 
 /// 从 frontend `ParseError` 提取可定位的源码 span。
-pub(super) fn frontend_span(error: &crate::compiler::syntax::oak::ParseError) -> DiagnosticSpan {
+pub(super) fn frontend_span(error: &crate::compiler::syntax::surface::ParseError) -> DiagnosticSpan {
     match error {
-        crate::compiler::syntax::oak::ParseError::Invalid { span: Some(range), .. } => DiagnosticSpan { start: range.start, end: range.end },
+        crate::compiler::syntax::surface::ParseError::Invalid { span: Some(range), .. } => DiagnosticSpan { start: range.start, end: range.end },
         _ => empty_span(),
     }
 }

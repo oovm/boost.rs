@@ -4,7 +4,7 @@ use crate::compiler::{
     hir::{lower_type_expression, render_type_expression},
     mir::{SINGLETON_CONSTRUCTOR_NAME, SINGLETON_FINALIZER_NAME},
     semantic::operator_members,
-    syntax::oak::{
+    syntax::surface::{
         self as frontend,
         ast::{
             AssociatedType, Attribute, ClassDeclaration, EnumVariant, Enums, FieldDeclaration, Flags, GenericParam, ImplyDeclaration,
@@ -62,7 +62,7 @@ pub fn lower_attribute(attribute: &Attribute, source_id: SourceID, fallback_span
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(HirAttribute::with_arguments(NamePath::new(vec![oak_identifier(&attribute.name)]), arguments))
+    Ok(HirAttribute::with_arguments(NamePath::new(vec![text_identifier(&attribute.name)]), arguments))
 }
 
 /// 原样下降整组特性标注：不筛选、不解释语义，未知属性一并保留，
@@ -275,7 +275,7 @@ pub fn lower_namespace_body_imports(
             }
             StatementNode::Namespace(namespace) if namespace.body.is_some() => {
                 lower_namespace_body_imports(
-                    crate::compiler::syntax::oak::namespace_items(namespace),
+                    crate::compiler::syntax::surface::namespace_items(namespace),
                     namespace_is_primary(namespace),
                     imports,
                     primary_imports,
@@ -308,7 +308,7 @@ pub fn with_source(span: &Range<usize>, source_id: SourceID) -> SourceSpan {
     SourceSpan::new(source_id, span.start as u32, span.end as u32)
 }
 
-pub fn oak_identifier(id: &frontend::ast::Identifier) -> Identifier {
+pub fn text_identifier(id: &frontend::ast::Identifier) -> Identifier {
     Identifier::new(&id.name)
 }
 
@@ -335,14 +335,14 @@ pub fn lower_where_constraints(
                         .iter()
                         .map(|equation| -> Result<_, HirError> {
                             Ok(crate::compiler::types::hir::HirAssociatedTypeBinding {
-                                name: oak_identifier(&equation.name),
+                                name: text_identifier(&equation.name),
                                 ty: lower_type_expression(&equation.ty)?,
                             })
                         })
                         .collect::<Result<Vec<_>, _>>()?;
                     Ok::<_, HirError>(HirTraitBound {
                         declaration: None,
-                        trait_path: NamePath::new(bound.trait_path.parts.iter().map(oak_identifier).collect()),
+                        trait_path: NamePath::new(bound.trait_path.parts.iter().map(text_identifier).collect()),
                         type_arguments,
                         associated_types,
                     })

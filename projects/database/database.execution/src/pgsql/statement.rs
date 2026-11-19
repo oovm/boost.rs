@@ -180,7 +180,7 @@ pub fn dispatch_statement(
     }
     let command = parse_session_command(trimmed).map_err(|_| {
         session.fail();
-        StatementError::new("42601", "Oak could not parse the SQL statement")
+        StatementError::new("42601", "SQL parser could not parse the statement")
     })?;
     match command {
         Some(SqlSessionCommand::Transaction(action)) => {
@@ -641,7 +641,7 @@ fn run_statement_inner(
     // 而不是被后面的 catalog 绑定错误统一归为 `42P01`。
     if parse_session_command(sql).is_err() {
         session.fail();
-        return Err(("42601".to_string(), "Oak could not parse the SQL statement".to_string()));
+        return Err(("42601".to_string(), "SQL parser could not parse the statement".to_string()));
     }
     let catalog = session.catalog(&runtime.schema);
     let bound = bind_sql_catalog(sql, &catalog, catalog.schema_version(), SqlDialect::Postgres).map_err(|error| {

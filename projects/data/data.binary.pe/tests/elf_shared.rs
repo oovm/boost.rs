@@ -74,7 +74,7 @@ fn linux_dlopen_resolves_every_export() {
 
     let (image, exports) = x86_64_exports();
     let bytes = SharedElfWriter::write_x86_64(&image, &exports).expect("write");
-    let path = std::env::temp_dir().join(format!("libacorn_shared_{}.so", std::process::id()));
+    let path = std::env::temp_dir().join(format!("libdata_binary_shared_{}.so", std::process::id()));
     std::fs::write(&path, &bytes).expect("write .so");
     let path_c = CString::new(path.to_string_lossy().as_bytes()).expect("utf8 path");
 
@@ -232,7 +232,7 @@ fn linux_dlopen_fails_for_a_missing_needed_library() {
         ..Default::default()
     })
     .expect("write with missing dependency");
-    let path = std::env::temp_dir().join(format!("libacorn_missing_needed_{}.so", std::process::id()));
+    let path = std::env::temp_dir().join(format!("libdata_binary_missing_needed_{}.so", std::process::id()));
     std::fs::write(&path, &bytes).expect("write .so");
     let path_c = CString::new(path.to_string_lossy().as_bytes()).expect("utf8 path");
 
@@ -269,7 +269,7 @@ fn linux_dlopen_resolves_a_present_needed_library() {
         ..Default::default()
     })
     .expect("write with libc dependency");
-    let path = std::env::temp_dir().join(format!("libacorn_needed_libc_{}.so", std::process::id()));
+    let path = std::env::temp_dir().join(format!("libdata_binary_needed_libc_{}.so", std::process::id()));
     std::fs::write(&path, &bytes).expect("write .so");
     let path_c = CString::new(path.to_string_lossy().as_bytes()).expect("utf8 path");
 
@@ -306,10 +306,10 @@ fn linux_dlopen_resolves_a_host_import_through_the_got() {
     let (image, exports, imports, calls) = consumer_with_imports();
     let consumer = write_imports(&image, &exports, &imports, &calls);
 
-    let dir = std::env::temp_dir().join(format!("acorn-import-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("data-binary-import-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("temp dir");
-    let provider_path = dir.join("libacorn_provider.so");
-    let consumer_path = dir.join("libacorn_consumer.so");
+    let provider_path = dir.join("libdata_binary_provider.so");
+    let consumer_path = dir.join("libdata_binary_consumer.so");
     std::fs::write(&provider_path, &provider).expect("write provider");
     std::fs::write(&consumer_path, &consumer).expect("write consumer");
     let provider_name = CString::new(provider_path.to_string_lossy().as_bytes()).expect("utf8 path");
@@ -412,7 +412,7 @@ fn linux_dlopen_applies_relative_relocations() {
         ..Default::default()
     })
     .expect("write");
-    let path = std::env::temp_dir().join(format!("libacorn_relative_{}.so", std::process::id()));
+    let path = std::env::temp_dir().join(format!("libdata_binary_relative_{}.so", std::process::id()));
     std::fs::write(&path, &bytes).expect("write .so");
     let path_name = CString::new(path.to_string_lossy().as_bytes()).expect("utf8 path");
 

@@ -13,7 +13,7 @@ pub use sum::record_payload_layout;
 use crate::compiler::{
     driver::validation::ControlFlowScheduler,
     hir::{ValkyrieCompiler, lowering::HirError},
-    syntax::oak::ValkyrieRoot,
+    syntax::surface::ValkyrieRoot,
     types::hir::HirModule,
 };
 

@@ -1,17 +1,17 @@
 {
   "actions": [],
   "cause": null,
-  "code": "acorn.container.need-range",
+  "code": "data.binary.container.need-range",
   "helps": [],
   "message": {
     "args": [],
     "fallback": "need range",
-    "key": "acorn.container.need-range"
+    "key": "data.binary.container.need-range"
   },
   "notes": [],
   "origin": {
     "component": "zip",
-    "namespace": "acorn",
+    "namespace": "data.binary",
     "stage": null
   },
   "primary": {
@@ -19,7 +19,7 @@
       "container": {
         "identity": {
           "id": "docx.zip",
-          "namespace": "acorn"
+          "namespace": "data.binary"
         },
         "revision": null
       },

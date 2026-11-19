@@ -70,7 +70,7 @@ fn walk_statement_node(node: &StatementNode, violations: &mut Vec<NamingViolatio
 }
 
 fn walk_namespace(namespace: &NamespaceDeclaration, violations: &mut Vec<NamingViolation>) {
-    for item in crate::compiler::syntax::oak::namespace_items(namespace) {
+    for item in crate::compiler::syntax::surface::namespace_items(namespace) {
         walk_statement_node(item, violations);
     }
 }

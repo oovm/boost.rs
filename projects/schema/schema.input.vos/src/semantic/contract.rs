@@ -582,7 +582,7 @@ micro addTodo(title: utf8) -> Todo { Todo.new(title) }
 [effect(pure)]
 macro is_done(todo: Todo) -> bool { todo.done }
 ";
-        let parsed = data_text_vos::parse(source).expect("Oak parses VOS with leading attributes");
+        let parsed = data_text_vos::parse(source).expect("VOS parses with leading attributes");
         let operations = crate::semantic::projection::project_operations(&parsed).expect("VOS projects operations");
         assert_eq!(operations.len(), 3, "all three operations must project");
 
@@ -608,7 +608,7 @@ macro is_done(todo: Todo) -> bool { todo.done }
     #[test]
     fn operation_without_effect_attribute_is_rejected() {
         let source = "query ping() -> bool { true }";
-        let parsed = data_text_vos::parse(source).expect("Oak parses");
+        let parsed = data_text_vos::parse(source).expect("VOS parses");
         let operations = crate::semantic::projection::project_operations(&parsed).expect("VOS projects");
         assert_eq!(operations.len(), 1);
         // Negative: no [effect(...)] attribute → OPC001 diagnostic

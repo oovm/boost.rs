@@ -1,7 +1,7 @@
 use data_text_liquid::LiquidLanguage;
 
 fn main() {
-    println!("=== Oak Liquid 配置机制分析与验证 ===\n");
+    println!("=== Liquid 配置机制分析与验证 ===\n");
 
     // 1. 验证默认配置
     println!("1. 验证默认 Liquid 配置:");

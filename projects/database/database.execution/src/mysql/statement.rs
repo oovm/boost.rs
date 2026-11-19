@@ -404,7 +404,7 @@ fn session_command(
             // 语法错误与“未接入执行器”必须是不同错误，否则没有 runtime 时
             // 客户端会把语法错误误判为不支持的能力。
             session.fail();
-            sink.write_error(1064, "42000", "Oak could not parse the SQL statement")
+            sink.write_error(1064, "42000", "SQL parser could not parse the statement")
         }
         Ok(None) => {
             if session.failed {

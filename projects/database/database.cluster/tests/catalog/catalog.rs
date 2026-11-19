@@ -70,7 +70,7 @@ fn routing_epoch_round_trips_and_requires_monotonic_publish() {
 #[test]
 fn resolved_contract_round_trips_and_rejects_conflicting_publish() {
     let source = "class T { id: uuid }";
-    let projection = schema_input_vos::parse_oak(source).expect("Oak parses").project_schema().expect("projection");
+    let projection = schema_input_vos::parse_schema(source).expect("VOS parses").project_schema().expect("projection");
     let manifest = schema_types::IdentityManifest {
         format_version: schema_types::IDENTITY_MANIFEST_VERSION.into(),
         types: vec![schema_types::TypeIdentity {

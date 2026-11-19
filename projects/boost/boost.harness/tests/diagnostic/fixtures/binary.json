@@ -1,24 +1,24 @@
 {
   "actions": [],
   "cause": null,
-  "code": "acorn.layout.offset-out-of-range",
+  "code": "data.binary.layout.offset-out-of-range",
   "helps": [],
   "message": {
     "args": [],
     "fallback": "offset out of range",
-    "key": "acorn.layout.offset-out-of-range"
+    "key": "data.binary.layout.offset-out-of-range"
   },
   "notes": [],
   "origin": {
     "component": "bin",
-    "namespace": "acorn",
+    "namespace": "data.binary",
     "stage": null
   },
   "primary": {
     "location": {
       "address_space": {
         "id": "file",
-        "namespace": "acorn"
+        "namespace": "data.binary"
       },
       "kind": "binary",
       "range": {
@@ -28,7 +28,7 @@
       "source": {
         "identity": {
           "id": "firmware.bin",
-          "namespace": "acorn"
+          "namespace": "data.binary"
         },
         "revision": null
       }

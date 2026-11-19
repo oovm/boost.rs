@@ -185,7 +185,7 @@ fn loads_exported_function_from_dll_image() {
         entry_point: 0,
     };
     let bytes = NativePeWriter::write_executable(&image).expect("write dll");
-    let path = std::env::temp_dir().join(format!("acorn-native-export-{}.dll", std::process::id()));
+    let path = std::env::temp_dir().join(format!("data-binary-native-export-{}.dll", std::process::id()));
     std::fs::write(&path, &bytes).expect("write dll file");
 
     let mut path_bytes = path.to_string_lossy().into_owned().into_bytes();

@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::compiler::{
     hir::lowering::errors::HirError,
-    syntax::oak::ParseError,
+    syntax::surface::ParseError,
     types::{
         NamePath,
         hir::{HirFunction, HirModule, HirTrait, HirWhereConstraint},

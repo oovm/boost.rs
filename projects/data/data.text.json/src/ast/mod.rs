@@ -231,7 +231,7 @@ impl ToSource for JsonValueNode {
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(AsDocument)]
-#[oak(doc = 
+#[text(doc = 
     if _self.fields.is_empty() {
         pp_doc!("{}")
     } else {
@@ -275,7 +275,7 @@ impl ToSource for JsonObject {
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(AsDocument)]
-#[oak(doc = [self.name.as_document(config), ": ", self.value.as_document(config)])]
+#[text(doc = [self.name.as_document(config), ": ", self.value.as_document(config)])]
 pub struct JsonField {
     /// The name (key) of the field.
     pub name: JsonString,
@@ -298,7 +298,7 @@ impl ToSource for JsonField {
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(AsDocument)]
-#[oak(doc = 
+#[text(doc = 
     if _self.elements.is_empty() {
         pp_doc!("[]")
     } else {
@@ -335,7 +335,7 @@ impl ToSource for JsonArray {
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(AsDocument)]
-#[oak(doc = format!("\"{}\"", self.value))]
+#[text(doc = format!("\"{}\"", self.value))]
 pub struct JsonString {
     /// The string content (without quotes).
     pub value: String,
@@ -356,7 +356,7 @@ impl ToSource for JsonString {
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(AsDocument)]
-#[oak(doc = self.value.to_string())]
+#[text(doc = self.value.to_string())]
 pub struct JsonNumber {
     /// The numeric value.
     pub value: f64,
@@ -375,7 +375,7 @@ impl ToSource for JsonNumber {
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(AsDocument)]
-#[oak(doc = if self.value { "true" } else { "false" })]
+#[text(doc = if self.value { "true" } else { "false" })]
 pub struct JsonBoolean {
     /// The boolean value.
     pub value: bool,
@@ -394,7 +394,7 @@ impl ToSource for JsonBoolean {
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(AsDocument)]
-#[oak(doc = "null")]
+#[text(doc = "null")]
 pub struct JsonNull {
     /// The source range of the null literal.
     #[cfg_attr(feature = "serde", serde(with = "data_text_core::serde_range"))]

@@ -4,9 +4,9 @@
 //! 源码正规格式化使用 [`FormatSyntax`]。
 
 use language_format::contract::FormatError;
-use data_text_valkyrie::printer::{Document as PrettyDocument, PrintError, to_document as oak_to_document};
+use data_text_valkyrie::printer::{Document as PrettyDocument, PrintError, to_document as pretty_to_document};
 
-use crate::compiler::syntax::oak::ValkyrieRoot;
+use crate::compiler::syntax::surface::ValkyrieRoot;
 
 /// 将已解析 **Valkyrie syntax tree** 转为 `language-format` 布局文档（尚未 `render`）。
 pub trait ToDocument {
@@ -16,7 +16,7 @@ pub trait ToDocument {
 
 impl ToDocument for ValkyrieRoot {
     fn to_document(&self) -> Result<PrettyDocument<'static>, FormatError> {
-        oak_to_document(self).map_err(map_print_error)
+        pretty_to_document(self).map_err(map_print_error)
     }
 }
 

@@ -26,7 +26,7 @@ pub use resolve::{DeclKind, SourceDecls, SourceId, SymbolTable, collect_decls, e
 pub use schema_types::*;
 
 /// Parses VOS source through `data.text` and wraps the resulting root for semantic use.
-pub fn parse_oak(source: &str) -> Result<ContractInput, String> {
+pub fn parse_schema(source: &str) -> Result<ContractInput, String> {
     data_text_vos::parse(source).map(ContractInput::from_oak)
 }
 
@@ -107,13 +107,13 @@ mod tests {
     use super::{
         CANONICALIZATION_VERSION, CONTRACT_FORMAT_VERSION, CanonicalType, LANGUAGE_VERSION, OPERATION_CONTRACT_FORMAT_VERSION,
         OPERATION_PROJECTION_STAGE, OperationKind, OperationProjectionArtifact, PROJECTION_STAGE, SERVICE_CONTRACT_FORMAT_VERSION,
-        SERVICE_PROJECTION_STAGE, ServiceProjectionArtifact, parse_oak,
+        SERVICE_PROJECTION_STAGE, ServiceProjectionArtifact, parse_schema,
     };
     use data_text_vos::VosDeclarationKind;
 
     #[test]
-    fn consumes_oak_root_without_reparsing() {
-        let input = parse_oak("table User { @@id: uuid, email: utf8? = null, }").expect("Oak parses VOS");
+    fn consumes_text_root_without_reparsing() {
+        let input = parse_schema("table User { @@id: uuid, email: utf8? = null, }").expect("VOS parses");
 
         assert_eq!(input.declarations().len(), 1);
         assert_eq!(input.declarations()[0].kind, VosDeclarationKind::Table);
@@ -129,7 +129,7 @@ mod tests {
     #[test]
     fn consumes_oak_field_spans_without_reparsing_source() {
         let source = "class User { [primary] id: uuid, manager: &User?, }";
-        let input = parse_oak(source).expect("Oak parses VOS");
+        let input = parse_schema(source).expect("VOS parses");
         let fields = input.fields(&input.declarations()[0]);
         assert_eq!(&source[fields[0].name_span], "id");
         assert_eq!(&source[fields[0].type_syntax.span], "uuid");
@@ -140,7 +140,7 @@ mod tests {
     #[test]
     fn projects_operation_parameters_and_return_type_without_reparsing() {
         let source = "query active(status: utf8, limit: i64) -> [User] { User.filter(x => x.active) }";
-        let operations = parse_oak(source).unwrap().project_operations().unwrap();
+        let operations = parse_schema(source).unwrap().project_operations().unwrap();
         assert_eq!(operations.len(), 1);
         assert_eq!(operations[0].name, "active");
         assert_eq!(operations[0].parameters[0].name, "status");
@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn operation_artifact_is_strict_and_source_backed() {
-        let input = parse_oak("query active(status: utf8) -> [User] { User.filter(x => x.active) }").unwrap();
+        let input = parse_schema("query active(status: utf8) -> [User] { User.filter(x => x.active) }").unwrap();
         let artifact = input.project_operations_artifact().unwrap();
         assert_eq!(artifact.envelope.stage, OPERATION_PROJECTION_STAGE);
         assert_eq!(artifact.envelope.contract_format_version, OPERATION_CONTRACT_FORMAT_VERSION);
@@ -166,7 +166,7 @@ mod tests {
 
     #[test]
     fn projects_durable_macro_without_reparsing() {
-        let input = parse_oak("macro public_name(value: utf8) -> utf8 { value.trim() }").unwrap();
+        let input = parse_schema("macro public_name(value: utf8) -> utf8 { value.trim() }").unwrap();
         let operations = input.project_operations().unwrap();
         assert_eq!(operations.len(), 1);
         assert_eq!(operations[0].kind, OperationKind::Macro);
@@ -182,8 +182,8 @@ mod tests {
 
     #[test]
     fn operation_identity_key_ignores_formatting_and_source_order() {
-        let first = parse_oak("query active(status: utf8, limit: i64) -> [User] { User }").unwrap().project_operations().unwrap();
-        let second = parse_oak("\nquery active( status : utf8 , limit:i64 )->[User]{User}\n").unwrap().project_operations().unwrap();
+        let first = parse_schema("query active(status: utf8, limit: i64) -> [User] { User }").unwrap().project_operations().unwrap();
+        let second = parse_schema("\nquery active( status : utf8 , limit:i64 )->[User]{User}\n").unwrap().project_operations().unwrap();
         assert_eq!(first[0].identity, second[0].identity);
         assert_eq!(first[0].operation_id, second[0].operation_id);
         assert!(first[0].operation_id.as_str().starts_with("op_"));
@@ -194,7 +194,7 @@ mod tests {
         let source = "macro public_name(value: utf8) -> utf8 { value.trim() }\n\
                       macro private_name(value: utf8) -> utf8 { value.trim() }\n\
                       query active(status: utf8) -> [User] { User }";
-        let operations = parse_oak(source).unwrap().project_operations().unwrap();
+        let operations = parse_schema(source).unwrap().project_operations().unwrap();
         assert_eq!(operations.len(), 3);
         let ids: Vec<&str> = operations.iter().map(|op| op.operation_id.as_str()).collect();
         assert_eq!(ids.len(), 3);
@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn operation_projection_artifact_is_roundtrip_under_strict_validation() {
         let artifact =
-            parse_oak("query active(status: utf8) -> [User] { User.filter(x => x.active) }").unwrap().project_operations_artifact().unwrap();
+            parse_schema("query active(status: utf8) -> [User] { User.filter(x => x.active) }").unwrap().project_operations_artifact().unwrap();
         let json = artifact.to_json().unwrap();
         let roundtrip = OperationProjectionArtifact::from_json(&json).unwrap();
         assert_eq!(roundtrip, artifact);
@@ -215,7 +215,7 @@ mod tests {
     #[test]
     fn strict_reader_rejects_empty_or_mismatched_operation_id() {
         let artifact =
-            parse_oak("query active(status: utf8) -> [User] { User.filter(x => x.active) }").unwrap().project_operations_artifact().unwrap();
+            parse_schema("query active(status: utf8) -> [User] { User.filter(x => x.active) }").unwrap().project_operations_artifact().unwrap();
         let mut json: serde_json::Value = serde_json::from_str(&artifact.to_json().unwrap()).unwrap();
 
         json["operations"][0]["operationId"] = serde_json::Value::String("".to_owned());
@@ -235,7 +235,7 @@ mod tests {
     #[test]
     fn strict_reader_rejects_unknown_fields_on_operation_projection() {
         let artifact =
-            parse_oak("query active(status: utf8) -> [User] { User.filter(x => x.active) }").unwrap().project_operations_artifact().unwrap();
+            parse_schema("query active(status: utf8) -> [User] { User.filter(x => x.active) }").unwrap().project_operations_artifact().unwrap();
         let mut json: serde_json::Value = serde_json::from_str(&artifact.to_json().unwrap()).unwrap();
         json["operations"][0]["unexpectedField"] = serde_json::Value::Bool(true);
         let error = OperationProjectionArtifact::from_json(&json.to_string()).unwrap_err();
@@ -244,7 +244,7 @@ mod tests {
 
     #[test]
     fn service_projection_artifact_is_roundtrip_under_strict_validation() {
-        let artifact = parse_oak("namespace demo::auth\nservice IdentityService { create(request: CreateRequest) -> Identity }")
+        let artifact = parse_schema("namespace demo::auth\nservice IdentityService { create(request: CreateRequest) -> Identity }")
             .unwrap()
             .project_services_artifact()
             .unwrap();
@@ -258,7 +258,7 @@ mod tests {
     #[test]
     fn strict_reader_rejects_empty_service_name() {
         let artifact =
-            parse_oak("service IdentityService { create(request: CreateRequest) -> Identity }").unwrap().project_services_artifact().unwrap();
+            parse_schema("service IdentityService { create(request: CreateRequest) -> Identity }").unwrap().project_services_artifact().unwrap();
         let mut json: serde_json::Value = serde_json::from_str(&artifact.to_json().unwrap()).unwrap();
         json["services"][0]["name"] = serde_json::Value::String("".to_owned());
         let error = ServiceProjectionArtifact::from_json(&json.to_string()).unwrap_err();
@@ -267,7 +267,7 @@ mod tests {
 
     #[test]
     fn strict_reader_rejects_empty_or_mismatched_service_id() {
-        let artifact = parse_oak("namespace demo::auth\nservice IdentityService { create(request: CreateRequest) -> Identity }")
+        let artifact = parse_schema("namespace demo::auth\nservice IdentityService { create(request: CreateRequest) -> Identity }")
             .unwrap()
             .project_services_artifact()
             .unwrap();
@@ -286,7 +286,7 @@ mod tests {
     #[test]
     fn strict_reader_rejects_unknown_fields_on_service_projection() {
         let artifact =
-            parse_oak("service IdentityService { create(request: CreateRequest) -> Identity }").unwrap().project_services_artifact().unwrap();
+            parse_schema("service IdentityService { create(request: CreateRequest) -> Identity }").unwrap().project_services_artifact().unwrap();
         let mut json: serde_json::Value = serde_json::from_str(&artifact.to_json().unwrap()).unwrap();
         json["services"][0]["unexpectedField"] = serde_json::Value::Bool(true);
         let error = ServiceProjectionArtifact::from_json(&json.to_string()).unwrap_err();
@@ -296,7 +296,7 @@ mod tests {
     #[test]
     fn strict_reader_rejects_service_span_mismatch() {
         let artifact =
-            parse_oak("service IdentityService { create(request: CreateRequest) -> Identity }").unwrap().project_services_artifact().unwrap();
+            parse_schema("service IdentityService { create(request: CreateRequest) -> Identity }").unwrap().project_services_artifact().unwrap();
         let mut json: serde_json::Value = serde_json::from_str(&artifact.to_json().unwrap()).unwrap();
         json["services"][0]["span"]["end"] = serde_json::Value::Number(9999.into());
         let error = ServiceProjectionArtifact::from_json(&json.to_string()).unwrap_err();
@@ -306,7 +306,7 @@ mod tests {
     #[test]
     fn projects_oak_output_into_versioned_artifact_without_reparsing() {
         let input =
-            parse_oak("namespace demo::identity\ntable User { @@id: uuid, manager: &User?, tags: [utf8]? = null, }").expect("Oak parses VOS");
+            parse_schema("namespace demo::identity\ntable User { @@id: uuid, manager: &User?, tags: [utf8]? = null, }").expect("VOS parses");
         let contract = input.project_schema().expect("VOS projects Oak output");
 
         assert_eq!(contract.envelope.contract_format_version, CONTRACT_FORMAT_VERSION);
@@ -329,7 +329,7 @@ mod tests {
     #[test]
     fn projection_reports_duplicate_canonical_types() {
         let source = "namespace demo\ntable User { id: uuid, }\ntable User { id: uuid, }";
-        let input = parse_oak(source).expect("Oak parses duplicate declarations");
+        let input = parse_schema(source).expect("Oak parses duplicate declarations");
         let diagnostics = input.project_schema().expect_err("duplicate type must be diagnosed");
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].code, "VOS002");
@@ -339,7 +339,7 @@ mod tests {
     #[test]
     fn schema_only_projection_tolerates_non_schema_declarations() {
         let source = "table User { @@id: uuid, }\nusing shared::UserId;\nmacro label(value: utf8) -> utf8 { value.trim() }";
-        let input = parse_oak(source).expect("Oak parses schema and non-schema declarations");
+        let input = parse_schema(source).expect("Oak parses schema and non-schema declarations");
         let projection = input.project_schema_only().expect("schema-only projection skips non-schema declarations");
         assert_eq!(projection.types.len(), 1);
         assert_eq!(projection.types[0].canonical_path, ["User"]);

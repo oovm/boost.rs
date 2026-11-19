@@ -18,7 +18,7 @@ use crate::compiler::{
         closure::{GroupSemanticClosure, retain_demanded_declarations, source_group_closure_with_host_bindings},
         operator_members,
     },
-    syntax::oak::{self as frontend, ValkyrieRoot},
+    syntax::surface::{self as frontend, ValkyrieRoot},
     types::{Identifier, NamePath, SourceID, SourceSpan, hir::*},
 };
 
@@ -93,7 +93,7 @@ pub use attribute_lowering::{
     default_module_name, generic_parameter_names, has_modifier, imply_generic_parameter_names, lower_attribute,
     lower_attribute_argument_expression, lower_bound_identifier, lower_derives, lower_documentation, lower_field, lower_generic_parameter,
     lower_generic_parameters, lower_method_params, lower_name_path, lower_param, lower_parent, lower_trait_associated_type,
-    lower_trait_path_from_type, lower_using, lower_visibility, lower_where_constraints, oak_identifier, operator_member_name,
+    lower_trait_path_from_type, lower_using, lower_visibility, lower_where_constraints, text_identifier, operator_member_name,
     tag_attribute_discriminator, with_source,
 };
 
@@ -671,7 +671,7 @@ impl ValkyrieCompiler {
 /// 组内文件目前仍合并为一个 `HirModule`，因此唯一性只能在合并前按文件根的显式
 /// `namespace!` 身份统计，不能依赖模块名或文件顺序。
 fn validate_primary_namespace_uniqueness(
-    prepared: &[(&CompilerSourceFile, crate::compiler::syntax::oak::ValkyrieRoot)],
+    prepared: &[(&CompilerSourceFile, crate::compiler::syntax::surface::ValkyrieRoot)],
 ) -> Result<(), HirError> {
     let mut names = Vec::new();
     let mut last: Option<(String, usize, usize)> = None;
@@ -690,13 +690,13 @@ fn validate_primary_namespace_uniqueness(
 }
 
 fn collect_primary_namespaces(
-    items: &[crate::compiler::syntax::oak::ast::StatementNode],
+    items: &[crate::compiler::syntax::surface::ast::StatementNode],
     file_path: &str,
     names: &mut Vec<String>,
     last: &mut Option<(String, usize, usize)>,
 ) {
     for item in items {
-        let crate::compiler::syntax::oak::ast::StatementNode::Namespace(namespace) = item
+        let crate::compiler::syntax::surface::ast::StatementNode::Namespace(namespace) = item
         else {
             continue;
         };
@@ -705,7 +705,7 @@ fn collect_primary_namespaces(
             *last = Some((file_path.to_string(), namespace.span.start, namespace.span.end));
         }
         if namespace.body.is_some() {
-            collect_primary_namespaces(crate::compiler::syntax::oak::namespace_items(namespace), file_path, names, last);
+            collect_primary_namespaces(crate::compiler::syntax::surface::namespace_items(namespace), file_path, names, last);
         }
     }
 }

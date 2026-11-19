@@ -103,7 +103,7 @@ fn format_path_large_stack(path: &Path, options: &FormatOptions) -> Result<super
     let path_for_thread = path.clone();
     let path_for_error = path;
     std::thread::Builder::new()
-        .name("oak-format".into())
+        .name("language-format".into())
         .stack_size(64 * 1024 * 1024)
         .spawn(move || format_path(&path_for_thread, &options))
         .map_err(|error| FormatError::Io {

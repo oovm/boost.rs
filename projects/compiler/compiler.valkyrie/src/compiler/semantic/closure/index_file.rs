@@ -5,7 +5,7 @@ use compiler_types::{
     compiler_input::{DeclarationIndexEntry, DeclarationKey, DeclarationKind, DeclarationLink, EntryPointKind, ReferencePath},
 };
 
-use crate::compiler::syntax::oak::{ast, parse_source_with_identity};
+use crate::compiler::syntax::surface::{ast, parse_source_with_identity};
 
 use super::{ScopedReference, collect::collect_items};
 
@@ -40,7 +40,7 @@ pub fn index_parsed_root(
     dependency_key: &str,
     path: &str,
     source: &str,
-    root: &crate::compiler::syntax::oak::ValkyrieRoot,
+    root: &crate::compiler::syntax::surface::ValkyrieRoot,
 ) -> IndexedFile {
     let mut builder = FileBuilder::new(dependency_key, path);
     collect_items(&mut builder, &[], &root.items);

@@ -1,7 +1,7 @@
 use crate::compiler::{
     emitter::backend_contract::interop::{annotations_declare_external_import, function_host_provider_target},
     hir::{ModuleTypeAliasScope, NominalTypeScope, VisibleTypeAlias, lower_type_expression, type_lowering::VisibleNominalType},
-    syntax::oak::ast::{StatementNode, TypeAliasDeclaration},
+    syntax::surface::ast::{StatementNode, TypeAliasDeclaration},
     types::{
         Identifier, NamePath, SourceID,
         hir::{HirDependencySemanticExport, HirModule},
@@ -146,7 +146,7 @@ pub fn compiled_program_from_hir_module(hir_module: HirModule) -> Result<crate::
 /// 同名时本组声明遮蔽依赖别名。不可见组的别名不在返回值里，因此既不会被展开，
 /// 也不能遮蔽同名内建类型；本组声明此时只有名字可见（`target: None`）。
 pub fn visible_type_aliases(
-    roots: &[&crate::compiler::syntax::oak::ValkyrieRoot],
+    roots: &[&crate::compiler::syntax::surface::ValkyrieRoot],
     imported_semantic_exports: &[HirDependencySemanticExport],
 ) -> Vec<VisibleTypeAlias> {
     let mut visible = Vec::new();
@@ -172,7 +172,7 @@ pub fn visible_type_aliases(
 ///
 /// 全部可见名字在填目标之前已经注册，因此别名之间可以互相引用（含前向引用）；
 /// 展开在引用点进行，环由 `expand_module_type_alias` 的 visiting 集合拒绝。
-pub fn register_root_type_alias_targets(roots: &[&crate::compiler::syntax::oak::ValkyrieRoot]) -> Result<(), HirError> {
+pub fn register_root_type_alias_targets(roots: &[&crate::compiler::syntax::surface::ValkyrieRoot]) -> Result<(), HirError> {
     for root in roots {
         for (namespace, alias) in root_type_alias_declarations(root) {
             let target = lower_type_expression(&alias.target)?;
@@ -187,7 +187,7 @@ pub fn register_root_type_alias_targets(roots: &[&crate::compiler::syntax::oak::
 /// 只登记会进入 `HirStruct`/`HirEnum` 的声明；每条记录保留声明 namespace，
 /// 供限定路径按完整身份匹配。
 pub fn visible_nominal_type_names(
-    roots: &[&crate::compiler::syntax::oak::ValkyrieRoot],
+    roots: &[&crate::compiler::syntax::surface::ValkyrieRoot],
     imported_semantic_exports: &[HirDependencySemanticExport],
 ) -> Vec<VisibleNominalType> {
     fn walk(items: &[StatementNode], namespace: &[String], out: &mut Vec<VisibleNominalType>) {
@@ -209,10 +209,10 @@ pub fn visible_nominal_type_names(
                     out.push(VisibleNominalType { namespace: namespace.to_vec(), name: variant.name.name.clone() })
                 }
                 StatementNode::Namespace(inner) => {
-                    if !crate::compiler::syntax::oak::namespace_is_declaration_only(inner) {
+                    if !crate::compiler::syntax::surface::namespace_is_declaration_only(inner) {
                         let mut nested = namespace.to_vec();
                         nested.extend(lower_name_path(&inner.name).parts().iter().map(ToString::to_string));
-                        walk(crate::compiler::syntax::oak::namespace_items(inner), &nested, out);
+                        walk(crate::compiler::syntax::surface::namespace_items(inner), &nested, out);
                     }
                 }
                 StatementNode::Statement(inner) => walk(std::slice::from_ref(inner.as_ref()), namespace, out),
@@ -237,7 +237,7 @@ pub fn visible_nominal_type_names(
         let mut prefix = Vec::new();
         for item in &root.items {
             if let StatementNode::Namespace(namespace) = item {
-                if crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) {
+                if crate::compiler::syntax::surface::namespace_is_declaration_only(namespace) {
                     prefix = lower_name_path(&namespace.name).parts().iter().map(ToString::to_string).collect();
                 }
             }
@@ -248,16 +248,16 @@ pub fn visible_nominal_type_names(
 }
 
 /// 收集一个源码根内全部 `type` 别名声明（含 namespace body 与包装语句）。
-pub fn root_type_alias_declarations(root: &crate::compiler::syntax::oak::ValkyrieRoot) -> Vec<(Vec<String>, &TypeAliasDeclaration)> {
+pub fn root_type_alias_declarations(root: &crate::compiler::syntax::surface::ValkyrieRoot) -> Vec<(Vec<String>, &TypeAliasDeclaration)> {
     fn walk<'a>(items: &'a [StatementNode], namespace: &[String], out: &mut Vec<(Vec<String>, &'a TypeAliasDeclaration)>) {
         for item in items {
             match item {
                 StatementNode::TypeAlias(alias) => out.push((namespace.to_vec(), alias)),
                 StatementNode::Namespace(inner) => {
-                    if !crate::compiler::syntax::oak::namespace_is_declaration_only(inner) {
+                    if !crate::compiler::syntax::surface::namespace_is_declaration_only(inner) {
                         let mut nested = namespace.to_vec();
                         nested.extend(lower_name_path(&inner.name).parts().iter().map(ToString::to_string));
-                        walk(crate::compiler::syntax::oak::namespace_items(inner), &nested, out);
+                        walk(crate::compiler::syntax::surface::namespace_items(inner), &nested, out);
                     }
                 }
                 StatementNode::Statement(inner) => walk(std::slice::from_ref(inner.as_ref()), namespace, out),
@@ -268,7 +268,7 @@ pub fn root_type_alias_declarations(root: &crate::compiler::syntax::oak::Valkyri
     let mut prefix = Vec::new();
     for item in &root.items {
         if let StatementNode::Namespace(namespace) = item {
-            if crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) {
+            if crate::compiler::syntax::surface::namespace_is_declaration_only(namespace) {
                 prefix = lower_name_path(&namespace.name).parts().iter().map(ToString::to_string).collect();
             }
         }

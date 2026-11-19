@@ -8,7 +8,7 @@ use crate::compiler::{
         CARDINAL_SUBSCRIPT_ASSIGN_MEMBER, CARDINAL_SUBSCRIPT_MEMBER, DEREF_READ_MEMBER, FOR_IN_HAS_NEXT_MEMBER, FOR_IN_INTO_ITERATOR_MEMBER,
         FOR_IN_NEXT_MEMBER, FOR_IN_UNWRAP_MEMBER, SUBSCRIPT_ASSIGN_MEMBER, SUBSCRIPT_MEMBER, infix_member_name, prefix_member_name,
     },
-    syntax::oak::{
+    syntax::surface::{
         self as frontend,
         ast::{
             AnonymousClass, AnonymousMicro, AnonymousStructure, ArrayPattern, Block, Break, ClassPattern, Continue, LiteralPattern, MatchArm,
@@ -143,7 +143,7 @@ fn lower_statement_expression(
         TermExpression::Match { scrutinee, arms, span: match_span, .. } => Ok(HirExpr {
             kind: HirExprKind::Case {
                 scrutinee: Box::new(lower_term_expression_with_context(scrutinee, source_id, fallback_span.clone(), false)?),
-                arms: lower_match_arms(arms, source_id, fallback_span, span.clone(), crate::compiler::syntax::oak::std_range(match_span))?,
+                arms: lower_match_arms(arms, source_id, fallback_span, span.clone(), crate::compiler::syntax::surface::std_range(match_span))?,
             },
             span,
         }),
@@ -393,7 +393,7 @@ fn lower_term_expression_body(
         TermExpression::Match { scrutinee, arms, span: match_span, .. } => lower_deferred(|| {
             Ok(HirExprKind::Match {
                 scrutinee: Box::new(lower_term_expression_with_context(scrutinee, source_id, span_range.clone(), false)?),
-                arms: lower_match_arms(arms, source_id, span_range.clone(), span.clone(), crate::compiler::syntax::oak::std_range(match_span))?,
+                arms: lower_match_arms(arms, source_id, span_range.clone(), span.clone(), crate::compiler::syntax::surface::std_range(match_span))?,
             })
         })?,
         TermExpression::Loop { label, pattern, condition, body, .. } => lower_deferred(|| {
@@ -457,7 +457,7 @@ fn lower_term_expression_body(
         TermExpression::Catch { expr, arms, span: catch_span, .. } => lower_deferred(|| {
             Ok(HirExprKind::Catch {
                 expr: Box::new(lower_term_expression_with_context(expr, source_id, span_range.clone(), false)?),
-                arms: lower_match_arms(arms, source_id, span_range.clone(), span.clone(), crate::compiler::syntax::oak::std_range(catch_span))?,
+                arms: lower_match_arms(arms, source_id, span_range.clone(), span.clone(), crate::compiler::syntax::surface::std_range(catch_span))?,
             })
         })?,
         TermExpression::With { base, updates, .. } => lower_deferred(|| {

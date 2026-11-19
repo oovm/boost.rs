@@ -283,7 +283,7 @@ fn parse_ast(source: &str) -> Result<data_text_sql::ast::SqlRoot, SqlFrontendErr
         }
     }
     if root.statements.is_empty() {
-        return Err(bind_error("Oak produced no SQL statements"));
+        return Err(bind_error("SQL parser produced no statements"));
     }
     Ok(root)
 }

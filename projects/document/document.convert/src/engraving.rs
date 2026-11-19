@@ -61,8 +61,8 @@ pub fn render_engravings(graph: &DocumentGraph) -> RenderedEngravings {
                 LossMarker {
                     code: codes::ENGRAVING_AST_UNAVAILABLE.to_string(),
                     message: format!(
-                        "score language `{language}` has no frontend in this build: the text grammar lands in Oak \
-                         (`oak-abc`), so the authored fence stays visible"
+                        "score language `{language}` has no frontend in this build: the text grammar lives in \
+                         `data-text-abc`, so the authored fence stays visible"
                     ),
                     status: SemanticStatus::Unsupported,
                 },

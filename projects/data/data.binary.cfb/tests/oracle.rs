@@ -27,14 +27,14 @@ fn build_oracle_fixture() -> Vec<u8> {
 fn oracle_matches_third_party_cfb_streams() {
     let bytes = build_oracle_fixture();
     let mut oracle = OracleCompoundFile::open(Cursor::new(bytes.clone())).expect("open oracle");
-    let reader = CompoundFile::open(bytes).expect("open acorn-cfb");
+    let reader = CompoundFile::open(bytes).expect("open cfb");
 
     for path in ["/WordDocument", "/0Table", "/MiniOnly"] {
         let mut oracle_stream = oracle.open_stream(path).unwrap_or_else(|error| panic!("oracle open {path}: {error}"));
         let mut expected = Vec::new();
         oracle_stream.read_to_end(&mut expected).unwrap_or_else(|error| panic!("oracle read {path}: {error}"));
 
-        let actual = reader.read_stream(path).unwrap_or_else(|error| panic!("acorn read {path}: {error}"));
+        let actual = reader.read_stream(path).unwrap_or_else(|error| panic!("cfb read {path}: {error}"));
         assert_eq!(actual, expected, "stream bytes differ for {path}");
     }
 }

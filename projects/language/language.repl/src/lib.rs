@@ -233,12 +233,12 @@ impl LineBuffer {
 /// let mut repl = Repl::new(MyHandler);
 /// repl.run().expect("REPL failed");
 /// ```
-pub struct OakRepl<H: ReplHandler> {
+pub struct Repl<H: ReplHandler> {
     /// The handler that implements language-specific logic.
     handler: H,
 }
 
-impl<H: ReplHandler> OakRepl<H> {
+impl<H: ReplHandler> Repl<H> {
     /// Creates a new `Repl` with the given handler.
     pub fn new(handler: H) -> Self {
         Self { handler }

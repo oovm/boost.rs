@@ -54,7 +54,7 @@ use super::{
 /// 可达性说明：数组 extractor（`HirExtractorPattern::Array`）属计划内语法
 /// （`case [head, ...tail]`），等待 `data.text` AST/parser 节点与 lowering 构造接入；
 /// 上游接入后本收集路径即激活，与调用合同收集同构。
-pub fn validate_extractor_patterns(module: &HirModule) -> Result<(), crate::compiler::syntax::oak::ParseError> {
+pub fn validate_extractor_patterns(module: &HirModule) -> Result<(), crate::compiler::syntax::surface::ParseError> {
     let candidates = collect_module_candidates(module);
     let type_relations = TypeRelationContext::from_module(module);
     // 与 resolve_hir_calls 共用唯一生产者；禁止再拼一份短名 BTreeMap。
@@ -95,15 +95,15 @@ fn extractor_diagnostic_source(module: &HirModule) -> compiler_types::Diagnostic
 /// `code` 复用 `HirError::FrontendRejected` 的唯一事实源（不重拼字符串）；
 /// span 取自 `ParseError::Invalid` 携带的源码区间，没有区间时为空 span。
 fn compile_diagnostic_from_parse_error(
-    error: &crate::compiler::syntax::oak::ParseError,
+    error: &crate::compiler::syntax::surface::ParseError,
     source: &compiler_types::DiagnosticSource,
 ) -> crate::compiler::diagnostics::pending::CompileDiagnostic {
     use compiler_types::{DiagnosticOwner, DiagnosticPhase, DiagnosticRow, DiagnosticSeverity, DiagnosticSpan};
     let span = match error {
-        crate::compiler::syntax::oak::ParseError::Invalid { span: Some(range), .. } => DiagnosticSpan { start: range.start, end: range.end },
+        crate::compiler::syntax::surface::ParseError::Invalid { span: Some(range), .. } => DiagnosticSpan { start: range.start, end: range.end },
         _ => DiagnosticSpan { start: 0, end: 0 },
     };
-    let code = crate::compiler::hir::lowering::errors::HirError::from(crate::compiler::syntax::oak::ParseError::Invalid {
+    let code = crate::compiler::hir::lowering::errors::HirError::from(crate::compiler::syntax::surface::ParseError::Invalid {
         message: String::new(),
         span: None,
     })
@@ -125,7 +125,7 @@ fn collect_function_extractor_patterns(
     candidates: &[OverloadCandidate],
     type_relations: &TypeRelationContext,
     struct_fields: &AggregateFieldIndex,
-    errors: &mut Vec<crate::compiler::syntax::oak::ParseError>,
+    errors: &mut Vec<crate::compiler::syntax::surface::ParseError>,
 ) {
     let mut locals = BTreeMap::new();
     for param in &function.params {
@@ -140,7 +140,7 @@ fn collect_block_extractor_patterns(
     type_relations: &TypeRelationContext,
     locals: &BTreeMap<String, ValkyrieType>,
     struct_fields: &AggregateFieldIndex,
-    errors: &mut Vec<crate::compiler::syntax::oak::ParseError>,
+    errors: &mut Vec<crate::compiler::syntax::surface::ParseError>,
 ) {
     let mut locals = locals.clone();
     for statement in &block.statements {
@@ -181,7 +181,7 @@ fn collect_expr_extractor_patterns(
     type_relations: &TypeRelationContext,
     locals: &BTreeMap<String, ValkyrieType>,
     struct_fields: &AggregateFieldIndex,
-    errors: &mut Vec<crate::compiler::syntax::oak::ParseError>,
+    errors: &mut Vec<crate::compiler::syntax::surface::ParseError>,
 ) {
     match &expr.kind {
         HirExprKind::Call { callee, args, .. } => {
@@ -318,7 +318,7 @@ fn collect_pattern_extractor_contract(
     candidates: &[OverloadCandidate],
     type_relations: &TypeRelationContext,
     struct_fields: &AggregateFieldIndex,
-    errors: &mut Vec<crate::compiler::syntax::oak::ParseError>,
+    errors: &mut Vec<crate::compiler::syntax::surface::ParseError>,
 ) {
     match pattern {
         HirPattern::Extractor(extractor) => match extractor {

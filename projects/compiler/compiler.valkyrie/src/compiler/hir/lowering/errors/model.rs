@@ -119,7 +119,7 @@ pub enum HirError {
     ///
     /// 原样转发 frontend 生产的 `ParseError`（parser、staging 边界的事实所有者），
     /// HIR 不重新拼装解析消息。
-    FrontendRejected(crate::compiler::syntax::oak::ParseError),
+    FrontendRejected(crate::compiler::syntax::surface::ParseError),
     /// TGrammar 模板展开失败。
     TemplateExpansionFailed {
         /// 触发失败的模板构造。
@@ -581,7 +581,7 @@ pub enum HirError {
         /// 被拒绝的文件路径。
         path: String,
         /// frontend 生产的结构化解析失败。
-        error: crate::compiler::syntax::oak::ParseError,
+        error: crate::compiler::syntax::surface::ParseError,
     },
     /// 阶段边界收口：诊断暂存汇中仍有 Error 级可恢复诊断，拒绝带着被丢弃的项继续物化。
     /// 全部诊断留在暂存汇中由失败路径统一渲染；本变体只携带首条的归属事实。

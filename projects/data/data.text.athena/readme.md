@@ -1,6 +1,6 @@
 # data-text-athena
 
-`data.text` language frontend for the **Athena** expression language (renamed from `oak-simple-math`).
+`data.text` language frontend for the **Athena** expression language.
 
 SXO product tags stay `simple-math` / `sm` / optional `sxo` — same pattern as `data-text-metis` ↔ CVO `.cvo`.
 

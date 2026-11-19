@@ -233,7 +233,7 @@ where
                         }
                     },
                     "serverInfo": {
-                        "name": "oak-mcp",
+                        "name": "language-mcp",
                         "version": "0.0.1"
                     }
                 })),

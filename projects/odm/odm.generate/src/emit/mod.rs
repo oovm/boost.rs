@@ -363,7 +363,7 @@ impl GenerationModel {
 
     /// Build from a VOS schema document string.
     pub fn from_vos_schema(source: &str) -> Result<Self> {
-        let input = schema_input_vos::parse_oak(source).map_err(Error::Vos)?;
+        let input = schema_input_vos::parse_schema(source).map_err(Error::Vos)?;
         if !source.trim().is_empty() && input.declarations().is_empty() {
             return Err(Error::Vos("schema document contains no VOS declarations".into()));
         }

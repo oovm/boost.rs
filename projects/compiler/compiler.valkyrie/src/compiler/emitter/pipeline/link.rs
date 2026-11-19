@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::compiler::{
     mir::{MirFunction, MirModule, MirOperand, MirOperation, MirStruct, MirSumDeclaration},
-    syntax::oak::ParseError,
+    syntax::surface::ParseError,
     types::hir::HirModule,
 };
 use compiler_types::{
@@ -23,7 +23,7 @@ use super::host_bindings::remap_call_targets;
 pub fn link_reachable_dependency_mir(
     consumer: &mut MirModule,
     dependency_mirs: &[MirModule],
-) -> Result<(), crate::compiler::syntax::oak::ParseError> {
+) -> Result<(), crate::compiler::syntax::surface::ParseError> {
     link_reachable_dependency_mir_with_hir(consumer, dependency_mirs, &[], &BTreeMap::new())
 }
 
@@ -39,7 +39,7 @@ pub fn link_reachable_dependency_mir_with_hir(
     dependency_mirs: &[MirModule],
     _hirs: &[&HirModule],
     host_binding_remaps: &BTreeMap<ItemInstanceId, ItemInstanceId>,
-) -> Result<(), crate::compiler::syntax::oak::ParseError> {
+) -> Result<(), crate::compiler::syntax::surface::ParseError> {
     if dependency_mirs.is_empty() {
         return Ok(());
     }
@@ -232,7 +232,7 @@ pub fn link_reachable_dependency_mir_with_hir(
 /// 同一实例的导出/入口必须完全一致；同一片段身份只允许 union；片段
 /// 入口 operation 或导出名冲突必须失败，不能择一覆盖。
 #[doc(hidden)]
-pub fn merge_entry_group_surface(consumer: &mut MirModule, entry: &MirModule) -> Result<(), crate::compiler::syntax::oak::ParseError> {
+pub fn merge_entry_group_surface(consumer: &mut MirModule, entry: &MirModule) -> Result<(), crate::compiler::syntax::surface::ParseError> {
     for contract in &entry.exports {
         match consumer.exports.iter().find(|existing| existing.instance == contract.instance) {
             Some(existing) if existing != contract => {

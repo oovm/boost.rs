@@ -1,6 +1,6 @@
 //! 从 `data.text` `Attribute` 读取 planner 事实（不渲染 attribute 文本、不做二次 parse）。
 
-use compiler_valkyrie::compiler::syntax::oak::ast::{Attribute, QuoteLiteral, TermExpression};
+use compiler_valkyrie::compiler::syntax::surface::ast::{Attribute, QuoteLiteral, TermExpression};
 
 use super::{
     capability::ForeignBinding,

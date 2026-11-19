@@ -68,9 +68,9 @@ impl Printer for ValkyriePrinter {
 
 /// Valkyrie / VX 源码正规格式化（CST token-gap 路径，直接委托 `data_text_valkyrie::formatter`）。
 pub fn format_valkyrie_source(source: &str, options: &FormatOptions) -> Result<FormattedOutput, FormatError> {
-    let oak_options =
+    let format_options =
         data_text_valkyrie::formatter::FormatOptions { indent_width: options.indent_width.min(255) as u8, line_width: options.max_width };
-    let text = data_text_valkyrie::formatter::format_source(source, &oak_options)
+    let text = data_text_valkyrie::formatter::format_source(source, &format_options)
         .map_err(|error| FormatError::Parse { path: None, message: error.to_string() })?;
     let mut out = text;
     if options.ensure_trailing_newline && !out.is_empty() && !out.ends_with('\n') {

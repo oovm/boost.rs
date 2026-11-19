@@ -10,7 +10,7 @@ pub fn derive_as_document(input: TokenStream) -> TokenStream {
 
     let mut custom_doc = None;
     for attr in &input.attrs {
-        if attr.path().is_ident("oak") {
+        if attr.path().is_ident("text") {
             let _ = attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("doc") {
                     let value = meta.value()?;
@@ -57,7 +57,7 @@ pub fn derive_as_document(input: TokenStream) -> TokenStream {
                 // Check for variant-level attributes
                 let mut variant_doc = None;
                 for attr in &variant.attrs {
-                    if attr.path().is_ident("oak") {
+                    if attr.path().is_ident("text") {
                         let _ = attr.parse_nested_meta(|meta| {
                             if meta.path.is_ident("doc") {
                                 let value = meta.value()?;

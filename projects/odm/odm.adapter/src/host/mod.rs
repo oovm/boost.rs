@@ -336,7 +336,7 @@ fn reject_unsupported_schema(profile: &str, schema: Option<&str>) -> Result<(), 
 }
 
 fn schema_declares_vector(schema: &str) -> Result<bool, ErrorEnvelope> {
-    let projection = schema_input_vos::parse_oak(schema)
+    let projection = schema_input_vos::parse_schema(schema)
         .map_err(|message| ErrorEnvelope::new(CODE_SCHEMA_MISMATCH, message).with_diagnostic(DIAG_SCHEMA_VECTOR_UNSUPPORTED))?
         .project_schema_only()
         .map_err(|diagnostics| {

@@ -2,7 +2,7 @@ use data_text_valkyrie::lexer::token_type::ValkyrieTokenType;
 
 use compiler_types::compiler_input::{DeclarationKind, DeclarationLink, EntryPointKind, ReferencePath};
 
-use crate::compiler::{semantic::operator_members, syntax::oak::ast};
+use crate::compiler::{semantic::operator_members, syntax::surface::ast};
 
 use super::{
     index_file::{FileBuilder, References},
@@ -15,11 +15,11 @@ pub fn collect_items(builder: &mut FileBuilder, current_namespace: &[String], it
         match item {
             ast::StatementNode::Namespace(namespace_decl) => {
                 let declared = name_path_segments(&namespace_decl.name);
-                if crate::compiler::syntax::oak::namespace_is_declaration_only(namespace_decl) {
+                if crate::compiler::syntax::surface::namespace_is_declaration_only(namespace_decl) {
                     namespace = declared;
                 }
                 else {
-                    collect_items(builder, &declared, crate::compiler::syntax::oak::namespace_items(namespace_decl));
+                    collect_items(builder, &declared, crate::compiler::syntax::surface::namespace_items(namespace_decl));
                 }
             }
             other => collect_item(builder, &namespace, other),
@@ -491,7 +491,7 @@ fn collect_quote_literal(literal: &ast::QuoteLiteral, references: &mut Reference
     if literal.prefix.is_some() || !literal.content.contains('{') {
         return;
     }
-    let Ok(segments) = crate::compiler::syntax::oak::parse_quote_template(&literal.content, literal.content_span.start)
+    let Ok(segments) = crate::compiler::syntax::surface::parse_quote_template(&literal.content, literal.content_span.start)
     else {
         return;
     };

@@ -1,17 +1,17 @@
 {
   "actions": [],
   "cause": null,
-  "code": "acorn.layout.offset-out-of-range",
+  "code": "data.binary.layout.offset-out-of-range",
   "helps": [],
   "message": {
     "args": [],
     "fallback": "offset out of range",
-    "key": "acorn.layout.offset-out-of-range"
+    "key": "data.binary.layout.offset-out-of-range"
   },
   "notes": [],
   "origin": {
     "component": "pdf",
-    "namespace": "acorn",
+    "namespace": "data.binary",
     "stage": null
   },
   "primary": {
@@ -24,7 +24,7 @@
       "source": {
         "identity": {
           "id": "sample.pdf",
-          "namespace": "acorn"
+          "namespace": "data.binary"
         },
         "revision": null
       }

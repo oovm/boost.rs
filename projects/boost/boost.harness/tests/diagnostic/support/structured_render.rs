@@ -35,14 +35,14 @@ fn structured_member_diagnostic_falls_back_to_note() {
 
     let registry = SourceRegistry::new();
     let diagnostic = Diagnostic::new(
-        DiagnosticCode::new("acorn.container.need-range"),
+        DiagnosticCode::new("data.binary.container.need-range"),
         DiagnosticSeverity::Warning,
-        DiagnosticOrigin::new("acorn", "zip"),
-        Message::new("acorn.container.need-range").with_fallback("need range"),
+        DiagnosticOrigin::new("data.binary", "zip"),
+        Message::new("data.binary.container.need-range").with_fallback("need range"),
     )
     .with_primary(DiagnosticLabel::new(
         DiagnosticLocation::Member {
-            container: SourceRef::new("acorn", "docx.zip").unwrap(),
+            container: SourceRef::new("data.binary", "docx.zip").unwrap(),
             member: MemberPath::new(vec![MemberSegment::new("zip", "word/document.xml")]),
             range: None,
             precision: MappingPrecision::Container,

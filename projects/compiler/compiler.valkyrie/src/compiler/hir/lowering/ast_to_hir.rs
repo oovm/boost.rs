@@ -5,7 +5,7 @@ use crate::compiler::{
     },
     mir::{SINGLETON_CONSTRUCTOR_NAME, SINGLETON_FINALIZER_NAME},
     semantic::operator_members,
-    syntax::oak::{
+    syntax::surface::{
         self as frontend,
         ast::{
             AssociatedType, Attribute, ClassDeclaration, EnumVariant, Enums, EnumsKind, FieldDeclaration, Flags, GenericParam,
@@ -57,14 +57,14 @@ impl AstToHir {
     }
 
     /// Lowers a parser root into a module-shaped HIR view.
-    pub fn lower_root(&self, root: &crate::compiler::syntax::oak::ValkyrieRoot) -> Result<HirModule, HirError> {
+    pub fn lower_root(&self, root: &crate::compiler::syntax::surface::ValkyrieRoot) -> Result<HirModule, HirError> {
         self.lower_root_with_semantic_exports(root, &[])
     }
 
     /// Lowers a parser root with resolved nominal dependency exports in scope.
     pub fn lower_root_with_semantic_exports(
         &self,
-        root: &crate::compiler::syntax::oak::ValkyrieRoot,
+        root: &crate::compiler::syntax::surface::ValkyrieRoot,
         imported_semantic_exports: &[HirDependencySemanticExport],
     ) -> Result<HirModule, HirError> {
         self.lower_root_with_semantic_exports_and_name(root, imported_semantic_exports, None)
@@ -73,7 +73,7 @@ impl AstToHir {
     /// 在 HIR 调用解析前覆盖模块身份；仅供完整 source closure 编译使用。
     pub fn lower_root_with_semantic_exports_and_name(
         &self,
-        root: &crate::compiler::syntax::oak::ValkyrieRoot,
+        root: &crate::compiler::syntax::surface::ValkyrieRoot,
         imported_semantic_exports: &[HirDependencySemanticExport],
         module_name_override: Option<NamePath>,
     ) -> Result<HirModule, HirError> {
@@ -123,7 +123,7 @@ impl AstToHir {
     /// 仅物化 HIR；调用身份必须由完整源码组阶段统一解析。
     pub fn lower_root_without_call_resolution(
         &self,
-        root: &crate::compiler::syntax::oak::ValkyrieRoot,
+        root: &crate::compiler::syntax::surface::ValkyrieRoot,
         imported_semantic_exports: &[HirDependencySemanticExport],
         module_name_override: Option<NamePath>,
     ) -> Result<HirModule, HirError> {
@@ -137,7 +137,7 @@ impl AstToHir {
     /// 降低一个已完成宏/模板展开、且别名作用域已经建立的源码根。
     pub fn lower_prepared_root(
         &self,
-        root: &crate::compiler::syntax::oak::ValkyrieRoot,
+        root: &crate::compiler::syntax::surface::ValkyrieRoot,
         imported_semantic_exports: &[HirDependencySemanticExport],
         module_name_override: Option<NamePath>,
     ) -> Result<HirModule, HirError> {
@@ -147,7 +147,7 @@ impl AstToHir {
             root.items
                 .iter()
                 .find_map(|item| match item {
-                    StatementNode::Namespace(namespace) if crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) => {
+                    StatementNode::Namespace(namespace) if crate::compiler::syntax::surface::namespace_is_declaration_only(namespace) => {
                         Some(lower_name_path(&namespace.name))
                     }
                     _ => None,
@@ -164,7 +164,7 @@ impl AstToHir {
         let mut primary_scope = false;
         for item in &root.items {
             match item {
-                StatementNode::Namespace(namespace) if crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) => {
+                StatementNode::Namespace(namespace) if crate::compiler::syntax::surface::namespace_is_declaration_only(namespace) => {
                     primary_scope = namespace_is_primary(namespace);
                     if namespace_is_primary(namespace) {
                         if primary_namespace {
@@ -204,7 +204,7 @@ impl AstToHir {
                         primary_namespace = true;
                     }
                     lower_namespace_body_imports(
-                        crate::compiler::syntax::oak::namespace_items(namespace),
+                        crate::compiler::syntax::surface::namespace_items(namespace),
                         namespace_is_primary(namespace),
                         &mut imports,
                         &mut primary_imports,
@@ -218,7 +218,7 @@ impl AstToHir {
             .items
             .iter()
             .find_map(|item| match item {
-                StatementNode::Namespace(namespace) if crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) => {
+                StatementNode::Namespace(namespace) if crate::compiler::syntax::surface::namespace_is_declaration_only(namespace) => {
                     Some(lower_name_path(&namespace.name).parts().to_vec())
                 }
                 _ => None,
@@ -241,13 +241,13 @@ impl AstToHir {
         for item in &root.items {
             match item {
                 StatementNode::Namespace(namespace) => {
-                    if crate::compiler::syntax::oak::namespace_is_declaration_only(namespace) {
+                    if crate::compiler::syntax::surface::namespace_is_declaration_only(namespace) {
                         current_namespace = lower_name_path(&namespace.name);
                     }
                     else {
                         let namespace_path = lower_name_path(&namespace.name);
                         self.lower_items(
-                            crate::compiler::syntax::oak::namespace_items(namespace),
+                            crate::compiler::syntax::surface::namespace_items(namespace),
                             &namespace_path,
                             &mut functions,
                             &mut type_functions,
@@ -646,7 +646,7 @@ impl AstToHir {
             has_after_update: methods.iter().any(|m| m.name.as_str() == "after_update"),
         };
         Ok(HirWidget {
-            name: oak_identifier(&widget.name),
+            name: text_identifier(&widget.name),
             doc: lower_documentation(&widget.annotations),
             generics: lower_generic_parameters(&widget.generics),
             fields,
@@ -698,7 +698,7 @@ impl AstToHir {
 
     fn lower_flags(&self, flags_decl: &Flags) -> Result<HirFlags, HirError> {
         Ok(HirFlags {
-            name: oak_identifier(&flags_decl.name),
+            name: text_identifier(&flags_decl.name),
             doc: lower_documentation(&flags_decl.annotations),
             members: flags_decl.variants.iter().map(|member| self.lower_flag_member(member)).collect::<Result<Vec<_>, _>>()?,
             visibility: lower_visibility(&flags_decl.annotations),
@@ -708,7 +708,7 @@ impl AstToHir {
     fn lower_flag_member(&self, member: &EnumVariant) -> Result<HirFlagMember, HirError> {
         let span = frontend::std_range(&member.span);
         Ok(HirFlagMember {
-            name: oak_identifier(&member.name),
+            name: text_identifier(&member.name),
             doc: lower_documentation(&member.annotations),
             value: member
                 .value
@@ -722,7 +722,7 @@ impl AstToHir {
 
     fn lower_trait(&self, trait_decl: &Trait) -> Result<HirTrait, HirError> {
         let associated_names =
-            trait_decl.body.associated_types.iter().map(|item| oak_identifier(&item.name)).collect::<std::collections::BTreeSet<_>>();
+            trait_decl.body.associated_types.iter().map(|item| text_identifier(&item.name)).collect::<std::collections::BTreeSet<_>>();
         let generic_names = generic_parameter_names(&trait_decl.generics);
         let associated = associated_names.iter().map(ToString::to_string).collect::<Vec<_>>();
         let _generic_scope = GenericBinderScope::enter(&generic_names, &associated);
@@ -741,7 +741,7 @@ impl AstToHir {
         Ok(HirTrait {
             declaration: None,
             declaring_namespace: Default::default(),
-            name: oak_identifier(&trait_decl.name),
+            name: text_identifier(&trait_decl.name),
             doc: lower_documentation(&trait_decl.annotations),
             generics: lower_generic_parameters(&trait_decl.generics),
             methods,
@@ -761,8 +761,8 @@ impl AstToHir {
     fn lower_enums(&self, enum_decl: &Enums, namespace: &NamePath) -> Result<HirEnum, HirError> {
         let _generic_scope = GenericBinderScope::enter(&generic_parameter_names(&enum_decl.generics), &[]);
         let mut enum_def = match enum_decl.kind {
-            EnumsKind::Unity => HirEnum::new_unity(oak_identifier(&enum_decl.name)),
-            EnumsKind::Enums | EnumsKind::Enum => HirEnum::new(oak_identifier(&enum_decl.name)),
+            EnumsKind::Unity => HirEnum::new_unity(text_identifier(&enum_decl.name)),
+            EnumsKind::Enums | EnumsKind::Enum => HirEnum::new(text_identifier(&enum_decl.name)),
         };
         enum_def.namespace = namespace.parts().to_vec();
         enum_def.doc = lower_documentation(&enum_decl.annotations);
@@ -776,7 +776,7 @@ impl AstToHir {
 
     fn lower_variant_decl(&self, variant_decl: &Variant, namespace: &NamePath) -> Result<HirEnum, HirError> {
         let _generic_scope = GenericBinderScope::enter(&generic_parameter_names(&variant_decl.generics), &[]);
-        let mut enum_def = HirEnum::new_unity(oak_identifier(&variant_decl.name));
+        let mut enum_def = HirEnum::new_unity(text_identifier(&variant_decl.name));
         enum_def.namespace = namespace.parts().to_vec();
         enum_def.doc = lower_documentation(&variant_decl.annotations);
         enum_def.visibility = lower_visibility(&variant_decl.annotations);
@@ -810,7 +810,7 @@ impl AstToHir {
         let mut associated_type_impls = Vec::new();
         let mut seen_associated = std::collections::BTreeSet::new();
         for item in &imply.associated_types {
-            let name = oak_identifier(&item.name);
+            let name = text_identifier(&item.name);
             let span = frontend::std_range(&item.span);
             // 同一 impl 重复声明同一关联类型无法确定唯一等式：拒绝失败闭合，禁止后者覆盖前者。
             if !seen_associated.insert(name.clone()) {
@@ -913,7 +913,7 @@ impl AstToHir {
         Ok(HirVariant {
             declaration: None,
             instance: None,
-            name: oak_identifier(&variant.name),
+            name: text_identifier(&variant.name),
             doc: lower_documentation(&variant.annotations),
             fields: variant.fields.iter().map(lower_field).collect::<Result<Vec<_>, _>>()?,
             result_type: None,

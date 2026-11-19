@@ -174,7 +174,7 @@ impl Catalog {
 }
 
 fn resolved_contract_for_schema(schema: &CatalogSchema) -> Result<schema_types::ResolvedContract> {
-    let projection = schema_input_vos::parse_oak(&schema.document)
+    let projection = schema_input_vos::parse_schema(&schema.document)
         .map_err(|message| Error::Schema { message })?
         .project_schema()
         .map_err(|diagnostics| Error::Schema { message: format!("VOS semantic projection failed: {diagnostics:?}") })?;

@@ -17,7 +17,7 @@ use compiler_types::{ItemId, ItemInstanceId, builtin_attribute};
 
 use crate::compiler::{
     emitter::pipeline::{CompilerHostProviderBinding, host_provider_root_declarations},
-    syntax::oak::ParseError,
+    syntax::surface::ParseError,
     types::hir::{
         HirBlock, HirExpr, HirExprKind, HirFunction, HirInstantiatedCallable, HirLiteral, HirMatchArm, HirModule, HirPattern,
         HirResolvedCall, HirStatement, HirStatementKind, HirStringLiteral, HirWhereConstraint, ValkyrieType,

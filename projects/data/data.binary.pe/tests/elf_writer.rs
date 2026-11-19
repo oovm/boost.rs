@@ -62,7 +62,7 @@ fn linux_loads_and_runs_the_executable() {
 
     let image = NativeElfImage { text: EXIT_42.to_vec(), rodata: Vec::new(), entry_point: 0 };
     let bytes = NativeElfWriter::write_executable(&image).expect("write elf");
-    let path = std::env::temp_dir().join(format!("acorn-elf-exit-{}", std::process::id()));
+    let path = std::env::temp_dir().join(format!("data-binary-elf-exit-{}", std::process::id()));
     std::fs::write(&path, &bytes).expect("write elf file");
     let mut permissions = std::fs::metadata(&path).expect("metadata").permissions();
     permissions.set_mode(0o755);

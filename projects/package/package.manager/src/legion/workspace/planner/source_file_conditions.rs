@@ -7,7 +7,7 @@ use std::{collections::BTreeSet, fs, path::PathBuf};
 
 use compiler_target::CanonicalTarget;
 
-use compiler_valkyrie::compiler::syntax::oak::{ValkyrieRoot, ast::StatementNode, namespace_is_declaration_only, parse_source, parse_source_with_identity};
+use compiler_valkyrie::compiler::syntax::surface::{ValkyrieRoot, ast::StatementNode, namespace_is_declaration_only, parse_source, parse_source_with_identity};
 
 use super::{
     ast_attributes::{gate_attributes_from_items, when_attributes_from_items},
@@ -30,7 +30,7 @@ pub(crate) fn source_file_active_for_target_and_features(
     target: CanonicalTarget,
     enabled_features: Option<&BTreeSet<String>>,
 ) -> bool {
-    source_file_conditions_pass(source, target, enabled_features, compiler_valkyrie::compiler::syntax::oak::ANONYMOUS_SOURCE_ID).unwrap_or(false)
+    source_file_conditions_pass(source, target, enabled_features, compiler_valkyrie::compiler::syntax::surface::ANONYMOUS_SOURCE_ID).unwrap_or(false)
 }
 
 /// 解析源码并判定其文件级条件；无法解析时返回解析器原因，绝不静默排除。
@@ -168,7 +168,7 @@ micro js_random_next_i32(seed: i32): i32
         let source = r#"[when(target.specification == "wasip3")]
 namespace std.adaptor.wasi;
 "#;
-        let root = compiler_valkyrie::compiler::syntax::oak::parse_source(source).expect("when file gate must parse");
+        let root = compiler_valkyrie::compiler::syntax::surface::parse_source(source).expect("when file gate must parse");
         let items = file_level_condition_items_from_root(&root).expect("file-level when");
         assert_eq!(items.whens.len(), 1);
         assert!(!when_item_matches_target(&items.whens[0], CanonicalTarget::browser()));
