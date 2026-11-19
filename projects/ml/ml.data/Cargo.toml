@@ -11,5 +11,11 @@ publish = false
 dl-types = { workspace = true }
 dl-tensor = { workspace = true }
 
+[dev-dependencies]
+boost-random = { workspace = true }
+dl-nn = { workspace = true }
+dl-train = { workspace = true }
+ml-metrics = { workspace = true }
+
 [lints.rust]
 missing_docs = "warn"

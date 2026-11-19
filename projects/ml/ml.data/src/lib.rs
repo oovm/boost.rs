@@ -146,6 +146,13 @@ impl Dataset {
         }
         Ok(Batches { dataset: self, batch_size, cursor: 0 })
     }
+
+    /// 把全部样本物化为 `(inputs [n, features], targets [n, classes])`。
+    ///
+    /// 与 [`Dataset::batches`] 使用同一 one-hot 规则，可直接交给 `dl-train`。
+    pub fn tensors(&self) -> Result<(Tensor, Tensor), DataError> {
+        build_batch(&self.samples, self.feature_count, self.class_count).map(|batch| (batch.inputs, batch.targets))
+    }
 }
 
 /// 一批已物化为张量的数据：输入 `[n, features]`，目标 `[n, classes]` one-hot。

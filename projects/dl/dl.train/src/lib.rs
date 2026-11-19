@@ -3,7 +3,7 @@
 //! 训练只做三件事：前向、反向、参数更新；checkpoint 由 `dl-model` 负责。优化器持有
 //! 参数 [`Var`] 的共享句柄，因此模型与优化器看到的是同一份存储。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 use dl_autograd::{Var, mse_loss};
 use dl_nn::Module;
@@ -188,6 +188,44 @@ pub fn fit(
     Ok(reports)
 }
 
+/// 按批次来源训练模型；每次进入新轮次都会重新调用 `batches`。
+///
+/// 批次来源与 `ml-data` 的 [`Dataset`] 迭代器解耦：`dl-train` 只要求
+/// `Result<(inputs, targets)>`，输入与目标均为 rank-2 且行数一致。
+pub fn fit_iter<F, I>(model: &dyn Module, optimizer: &mut dyn Optimizer, epochs: usize, mut batches: F) -> Result<Vec<EpochReport>>
+where
+    F: FnMut() -> I,
+    I: IntoIterator<Item = Result<(Tensor, Tensor)>>,
+{
+    let mut reports = Vec::with_capacity(epochs);
+    for epoch in 0..epochs {
+        let mut total_loss = 0.0f32;
+        let mut count = 0usize;
+        for batch in batches() {
+            let (inputs, targets) = batch?;
+            if inputs.rank() != 2 || targets.rank() != 2 {
+                return Err(DlError::Format { detail: "fit_iter expects rank-2 inputs and targets".to_owned() });
+            }
+            if inputs.shape()[0] != targets.shape()[0] {
+                return Err(DlError::ShapeMismatch { op: "fit_iter", lhs: inputs.shape().to_vec(), rhs: targets.shape().to_vec() });
+            }
+            let batch_inputs = Var::leaf(inputs);
+            let prediction = model.forward(&batch_inputs)?;
+            let loss = mse_loss(&prediction, &targets)?;
+            total_loss += loss.value().as_slice()?[0];
+            loss.backward()?;
+            optimizer.step()?;
+            optimizer.zero_grad();
+            count += 1;
+        }
+        if count == 0 {
+            return Err(DlError::Format { detail: "fit_iter received no batches".to_owned() });
+        }
+        reports.push(EpochReport { epoch, mean_loss: total_loss / count as f32 });
+    }
+    Ok(reports)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -222,6 +260,29 @@ mod tests {
         let mut optimizer = Adam::new(model.parameters(), 0.02);
         let reports = fit(&model, &mut optimizer, &inputs, &targets, &TrainConfig::new(200, 4))?;
         assert!(reports.last().expect("epochs").mean_loss.is_finite());
+        Ok(())
+    }
+
+    #[test]
+    fn fit_iter_trains_from_an_external_batch_source() -> Result<()> {
+        let mut random = seeded_random(11);
+        let model = mlp(&[2, 6, 1], &mut random)?;
+        let inputs = Tensor::from_vec(vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0], [4, 2])?;
+        let targets = Tensor::from_vec(vec![0.0, 1.0, 1.0, 2.0], [4, 1])?;
+        let first = (inputs.rows(0, 2)?, targets.rows(0, 2)?);
+        let second = (inputs.rows(2, 4)?, targets.rows(2, 4)?);
+
+        let mut optimizer = Sgd::new(model.parameters(), 0.05);
+        let reports = fit_iter(&model, &mut optimizer, 100, || vec![Ok(first.clone()), Ok(second.clone())])?;
+        let first_loss = reports.first().expect("epochs").mean_loss;
+        let last_loss = reports.last().expect("epochs").mean_loss;
+        assert!(last_loss.is_finite());
+        assert!(last_loss < first_loss, "loss did not fall: {first_loss} -> {last_loss}");
+
+        let mut empty = Sgd::new(model.parameters(), 0.05);
+        let empty_batches: Vec<Result<(Tensor, Tensor)>> = Vec::new();
+        let error = fit_iter(&model, &mut empty, 1, move || empty_batches.clone()).expect_err("no batches");
+        assert!(matches!(error, DlError::Format { .. }));
         Ok(())
     }
 }

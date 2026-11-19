@@ -5347,8 +5347,12 @@ dependencies = [
 name = "ml-data"
 version = "0.1.0"
 dependencies = [
+ "boost-random",
+ "dl-nn",
  "dl-tensor",
+ "dl-train",
  "dl-types",
+ "ml-metrics",
 ]
 
 [[package]]
