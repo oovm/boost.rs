@@ -68,14 +68,14 @@ impl<'a> Document<'a> {
     /// # Examples
     ///
     /// ```rust
-    /// # use data_text_pretty::Document;
+    /// # use data_text_pretty::{Document, document::printer::{LineEnding, PrinterConfig}};
     /// let doc = Document::concat(vec![
     ///     Document::text("hello"),
     ///     Document::HardLine,
     ///     Document::text("world"),
     /// ]);
-    /// let output = doc.render();
-    /// assert_eq!(output, "hello\nworld");
+    /// let output = doc.render_with_config(PrinterConfig::default().with_line_ending(LineEnding::Unix));
+    /// assert_eq!(output, "hello\nworld\n");
     /// ```
     pub fn render(&self) -> String {
         let config = self::printer::PrinterConfig::default();
@@ -87,15 +87,15 @@ impl<'a> Document<'a> {
     /// # Examples
     ///
     /// ```rust
-    /// # use data_text_pretty::{Document, document::printer::PrinterConfig};
+    /// # use data_text_pretty::{Document, document::printer::{LineEnding, PrinterConfig}};
     /// let doc = Document::concat(vec![
     ///     Document::text("hello"),
     ///     Document::HardLine,
     ///     Document::text("world"),
     /// ]);
-    /// let config = PrinterConfig::default();
+    /// let config = PrinterConfig::default().with_line_ending(LineEnding::Unix);
     /// let output = doc.render_with_config(config);
-    /// assert_eq!(output, "hello\nworld");
+    /// assert_eq!(output, "hello\nworld\n");
     /// ```
     pub fn render_with_config(&self, config: self::printer::PrinterConfig) -> String {
         self::printer::Printer::new(config).print(self)
