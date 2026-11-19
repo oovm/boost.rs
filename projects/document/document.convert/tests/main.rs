@@ -1,19 +1,8 @@
-//! 冒烟入口：只保留路由能力的最小 happy path 断言。
+//! 冒烟入口：路由能力表、结构守卫与拒绝目录。
+//!
+//! 功能级验收套件（docx/epub/pdf/发布/转换报告等）已迁出 Boost，由下游
+//! panduck 消费 `document-harness` 执行。
 
-mod route_capabilities;
-
-mod common;
-mod convert_report;
-mod docx;
-mod embed;
-mod epub;
-mod html;
-#[cfg(feature = "logger")]
-mod logger;
-mod markdown;
-mod notedown;
-mod pdf;
-mod publish;
 mod rejection_catalog;
+mod route_capabilities;
 mod structure_guard;
-mod transform;

@@ -1,0 +1,14 @@
+[package]
+name = "document-harness"
+description = "document.* 下游验收共享夹具：报告断言、容器 fixture 构造与宿主字体包解析"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository = "https://github.com/oovm/rust-boost/tree/dev/projects/document/document.harness"
+publish = false
+
+[dependencies]
+document-convert = { workspace = true }
+document-fonts = { workspace = true }
+serde_json = { workspace = true }

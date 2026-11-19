@@ -1,7 +1,10 @@
-use document_convert::{inspect_docx_decode_bytes, inspect_docx_index_bytes, write_document_markdown};
-use document_formats::import::docx::import_docx_bytes;
+//! 内存容器 fixture 构造。
+//!
+//! 下游需要 OOXML/docx 输入时用这里的最小 stored-zip 构造器，不要在仓库里提交
+//! 二进制 fixture；Boost 的 `no_binary_assets` 守卫同样禁止提交二进制。
 
-fn stored_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+/// 构造仅使用 stored（不压缩）条目的最小 ZIP 归档。
+pub fn stored_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
     let mut archive = Vec::new();
     let mut central = Vec::new();
 
@@ -21,7 +24,7 @@ fn stored_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
         archive.extend_from_slice(payload);
 
         central.extend_from_slice(b"PK\x01\x02");
-        // 42 bytes after the signature (APPNOTE central directory total = 46).
+        // 签名之后 42 字节固定区（APPNOTE central directory 合计 46）。
         let mut cd_fixed = [0u8; 42];
         cd_fixed[0..2].copy_from_slice(&[0x14, 0x00]);
         cd_fixed[2..4].copy_from_slice(&[0x14, 0x00]);
@@ -47,6 +50,16 @@ fn stored_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
     archive
 }
 
+/// 构造只含 `word/document.xml` 的最小 docx。
+pub fn docx_zip(document_xml: &[u8]) -> Vec<u8> {
+    stored_zip(&[("word/document.xml", document_xml)])
+}
+
+/// 构造带脚注部件的最小 docx。
+pub fn docx_zip_with_footnotes(document_xml: &[u8], footnotes_xml: &[u8]) -> Vec<u8> {
+    stored_zip(&[("word/document.xml", document_xml), ("word/footnotes.xml", footnotes_xml)])
+}
+
 fn crc32(data: &[u8]) -> u32 {
     let mut crc = 0xFFFF_FFFFu32;
     for byte in data {
@@ -60,49 +73,4 @@ fn crc32(data: &[u8]) -> u32 {
         }
     }
     crc ^ 0xFFFF_FFFF
-}
-
-fn minimal_docx_zip() -> Vec<u8> {
-    let document_xml = br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:body>
-    <w:p><w:r><w:t>Hello DOCX</w:t></w:r></w:p>
-  </w:body>
-</w:document>"#;
-    stored_zip(&[("word/document.xml", document_xml)])
-}
-
-#[test]
-fn docx_import_via_document_formats() {
-    let mut graph = import_docx_bytes("sample.docx", &minimal_docx_zip()).expect("read docx");
-    let markdown = write_document_markdown(&mut graph).expect("write markdown");
-    assert!(markdown.contains("Hello DOCX"));
-}
-
-#[test]
-fn docx_inspect_decodes_package_parts() {
-    let zip = minimal_docx_zip();
-    let decode = inspect_docx_decode_bytes("sample.docx", zip, None).expect("decode docx");
-    assert_eq!(decode.format, "docx");
-    assert_eq!(decode.parts.len(), 1);
-    assert_eq!(decode.parts[0].path, "word/document.xml");
-    assert!(decode.parts[0].decoded_size > 0);
-}
-
-#[test]
-fn docx_inspect_decodes_single_part_filter() {
-    let zip = minimal_docx_zip();
-    let decode = inspect_docx_decode_bytes("sample.docx", zip, Some("word/document.xml")).expect("decode");
-    assert_eq!(decode.parts.len(), 1);
-    assert_eq!(decode.parts[0].path, "word/document.xml");
-}
-
-#[test]
-fn docx_inspect_lists_package_parts() {
-    let zip = minimal_docx_zip();
-    let index = inspect_docx_index_bytes("sample.docx", zip).expect("inspect docx");
-    assert_eq!(index.format, "docx");
-    assert_eq!(index.outer, "zip");
-    assert_eq!(index.inner, "opc");
-    assert!(index.parts.iter().any(|part| part == "word/document.xml"));
 }

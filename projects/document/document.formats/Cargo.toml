@@ -41,10 +41,3 @@ tex = ["dep:oak-core", "dep:oak-tex"]
 typst = ["dep:oak-core", "dep:oak-typst"]
 pandoc-json = ["dep:serde_json"]
 
-[dev-dependencies]
-serde_json = { workspace = true }
-plotter-input-dot = { workspace = true }
-plotter-input-mermaid = { workspace = true }
-plotter-input-plantuml = { workspace = true }
-acorn-core = { workspace = true }
-acorn-epub = { workspace = true }

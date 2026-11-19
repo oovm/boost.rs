@@ -84,6 +84,7 @@ members = [
     "projects/document/document.diagnostic",
     "projects/document/document.fonts",
     "projects/document/document.formats",
+    "projects/document/document.harness",
     "projects/document/document.input.formats",
     "projects/document/document.input.markdown",
     "projects/document/document.input.tex",
@@ -306,6 +307,7 @@ document-convert = { path = "projects/document/document.convert" }
 document-diagnostic = { path = "projects/document/document.diagnostic" }
 document-fonts = { path = "projects/document/document.fonts" }
 document-formats = { path = "projects/document/document.formats" }
+document-harness = { path = "projects/document/document.harness" }
 document-input-formats = { path = "projects/document/document.input.formats" }
 document-input-markdown = { path = "projects/document/document.input.markdown" }
 document-input-tex = { path = "projects/document/document.input.tex" }
