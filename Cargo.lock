@@ -3746,6 +3746,7 @@ version = "0.1.0"
 dependencies = [
  "dl-graph",
  "hardware-capability",
+ "hardware-runtime",
 ]
 
 [[package]]

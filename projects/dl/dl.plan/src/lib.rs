@@ -14,6 +14,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use dl_graph::{Graph, NodeId, Op};
 use hardware_capability::{BackendId, Conversion, DeviceId, ExecDecision, ExecPlan, ExecRefusal, ExecSignature, MemoryBudget};
 
+mod stream;
+
+pub use stream::{StreamReport, StreamStep, stream_plan};
+
 /// 一个后端对一个签名的应答。
 #[derive(Debug, Clone)]
 pub struct Attempt {
