@@ -201,7 +201,11 @@ impl PubSubState {
         let mut clients = self.lock();
         let Some(entry) = clients.get_mut(&client)
         else {
-            return vec![(None, 0)];
+            // 没有订阅记录的连接仍须为每个显式名字回一帧；只有“取消全部”才回 null 名。
+            if names.is_empty() {
+                return vec![(None, 0)];
+            }
+            return names.iter().map(|name| (Some(name.to_vec()), 0)).collect();
         };
         let mut replies = Vec::new();
         if names.is_empty() {

@@ -300,6 +300,16 @@ impl ClientRegistry {
         self.requirepass.lock().unwrap_or_else(|poison| poison.into_inner()).clone()
     }
 
+    /// 写入监听器级配置值，供嵌入式宿主在启动时对齐自己的运行时设置。
+    ///
+    /// 只更新已注册的选项：`CONFIG GET` 的选项表归这里所有，宿主不得自建第二张表。
+    pub fn set_config(&self, name: &str, value: &str) {
+        let mut config = self.config.lock().unwrap_or_else(|poison| poison.into_inner());
+        if let Some(entry) = config.iter_mut().find(|(known, _)| *known == name) {
+            entry.1 = value.to_owned();
+        }
+    }
+
     /// 同步保存完成：记录保存时刻。
     pub fn note_saved(&self, now_unix: i64) {
         self.persistence.lock().unwrap_or_else(|poison| poison.into_inner()).mark_saved(now_unix);
@@ -1141,6 +1151,8 @@ const CONFIG_DEFAULTS: &[(&str, &str)] = &[
     ("save", ""),
     ("appendonly", "no"),
     ("appendfsync", "everysec"),
+    ("requirepass", ""),
+    ("notify-keyspace-events", ""),
     ("timeout", "0"),
     ("tcp-keepalive", "300"),
     ("databases", "16"),
@@ -1167,18 +1179,30 @@ const MAXMEMORY_POLICIES: &[&str] = &[
     "noeviction",
 ];
 
+/// 由网关生效、但宿主运行时仍需同步的选项。
+///
+/// `requirepass` 的认证判定、`CONFIG GET` 的取值与校验全部留在网关；宿主只在自己
+/// 的数据路径上镜像 `appendfsync`、通知标志与 slow log 阈值。
+const HOST_EFFECT_OPTIONS: &[&str] = &["appendfsync", "requirepass", "notify-keyspace-events", "slowlog-log-slower-than", "slowlog-max-len"];
+
 /// `CONFIG GET pattern [pattern ...]` 与 `CONFIG SET name value [name value ...]`。
-pub(crate) fn handle_config(stream: &mut dyn Write, request: &Request<'_>, registry: &ClientRegistry) -> io::Result<()> {
+///
+/// 返回本次生效且宿主需要镜像的选项；`CONFIG GET` 与失败分支返回空表。
+pub(crate) fn handle_config(
+    stream: &mut dyn Write,
+    request: &Request<'_>,
+    registry: &ClientRegistry,
+) -> io::Result<Vec<(String, String)>> {
     let count = request.arguments.len();
     if count < 2 {
-        return write_arity(stream, "config");
+        return write_arity(stream, "config").map(|()| Vec::new());
     }
     let raw = &request.arguments[1];
     let subcommand = String::from_utf8_lossy(raw).to_ascii_lowercase();
     match subcommand.as_str() {
         "get" => {
             if count < 3 {
-                return write_arity(stream, "config|get");
+                return write_arity(stream, "config|get").map(|()| Vec::new());
             }
             let values = registry.config.lock().unwrap_or_else(|poison| poison.into_inner()).clone();
             let mut matched: Vec<(&'static str, String)> = Vec::new();
@@ -1194,12 +1218,12 @@ pub(crate) fn handle_config(stream: &mut dyn Write, request: &Request<'_>, regis
                 write_bulk(stream, name.as_bytes())?;
                 write_bulk(stream, value.as_bytes())?;
             }
-            Ok(())
+            Ok(Vec::new())
         }
         "set" => {
             if count < 4 || count % 2 != 0 {
                 write_error(stream, "Unknown option or number of arguments for CONFIG SET")?;
-                return Ok(());
+                return Ok(Vec::new());
             }
             let values = registry.config.lock().unwrap_or_else(|poison| poison.into_inner()).clone();
             let mut pairs: Vec<(&'static str, String)> = Vec::new();
@@ -1212,26 +1236,36 @@ pub(crate) fn handle_config(stream: &mut dyn Write, request: &Request<'_>, regis
                         stream,
                         &format!("Unknown option or number of arguments for CONFIG SET - '{}'", String::from_utf8_lossy(raw_name)),
                     )?;
-                    return Ok(());
+                    return Ok(Vec::new());
                 };
                 let value = String::from_utf8_lossy(chunk[1]).into_owned();
                 if let Some(message) = validate_config_set(*name, &value) {
                     write_error(stream, &message)?;
-                    return Ok(());
+                    return Ok(Vec::new());
                 }
                 pairs.push((*name, value));
             }
+            let mut applied = Vec::new();
             let mut values = registry.config.lock().unwrap_or_else(|poison| poison.into_inner());
             for (name, value) in pairs {
                 let stored =
                     if name == "maxmemory" { parse_memory_value(&value).map(|bytes| bytes.to_string()).unwrap_or(value) } else { value };
                 if let Some(entry) = values.iter_mut().find(|(known, _)| *known == name) {
-                    entry.1 = stored;
+                    entry.1 = stored.clone();
+                }
+                if name == "requirepass" {
+                    // 认证判定读取的就是这里写回的口令，宿主不再需要第二份。
+                    registry.set_requirepass(if stored.is_empty() { None } else { Some(stored.clone()) });
+                }
+                if HOST_EFFECT_OPTIONS.contains(&name) {
+                    applied.push((name.to_owned(), stored));
                 }
             }
-            stream.write_all(b"+OK\r\n")
+            drop(values);
+            stream.write_all(b"+OK\r\n")?;
+            Ok(applied)
         }
-        _ => write_error(stream, &format!("unknown subcommand '{}'. Try CONFIG HELP.", String::from_utf8_lossy(raw))),
+        _ => write_error(stream, &format!("unknown subcommand '{}'. Try CONFIG HELP.", String::from_utf8_lossy(raw))).map(|()| Vec::new()),
     }
 }
 
@@ -1256,6 +1290,21 @@ fn validate_config_set(name: &str, value: &str) -> Option<String> {
             let lowered = value.to_ascii_lowercase();
             if lowered != "yes" && lowered != "no" {
                 return failed("argument must be 'yes' or 'no'");
+            }
+        }
+        "appendfsync" => {
+            if value != "always" && value != "everysec" {
+                return failed("argument(s) must be one of the following: always, everysec");
+            }
+        }
+        "notify-keyspace-events" => {
+            if value.chars().any(|character| !"AKEg$lshzxetmdn".contains(character)) {
+                return failed("Invalid event class character. Some possible classes are: 'g$lshzxeKE'");
+            }
+        }
+        "slowlog-log-slower-than" => {
+            if parse_integer_text(value).is_none_or(|parsed| parsed < -1) {
+                return failed("argument couldn't be parsed into an integer");
             }
         }
         "timeout" | "maxmemory-samples" | "slowlog-max-len" => {
@@ -1494,6 +1543,16 @@ impl EmbeddedServerFace {
             self.answer(stream, &mut outcome, reply)?;
             return Ok(outcome);
         }
+        // RESP2 订阅模式：只有 pub/sub 动词、`PING`、`QUIT` 与 `RESET` 可以执行。
+        // 订阅表由网关持有，宿主不再自判准入。
+        if self.state.protocol == 2
+            && self.pubsub.is_subscribed(self.state.record.id)
+            && !crate::yyds::redis::connection::subscriber_command_allowed(command)
+        {
+            let message = subscriber_gate_error(command, arguments);
+            self.answer_error(stream, &mut outcome, CommandError::Coded(message))?;
+            return Ok(outcome);
+        }
         if command.eq_ignore_ascii_case(b"QUIT") {
             self.answer(stream, &mut outcome, Reply::ok())?;
             outcome.close = true;
@@ -1622,7 +1681,8 @@ impl EmbeddedServerFace {
             return Ok(outcome);
         }
         if command.eq_ignore_ascii_case(b"CONFIG") {
-            handle_config(stream, &request, &self.registry)?;
+            let applied = handle_config(stream, &request, &self.registry)?;
+            outcome.config = applied.into_iter().map(|(name, value)| ConfigChange { name, value }).collect();
             outcome.handled = true;
             return Ok(outcome);
         }
@@ -1883,6 +1943,54 @@ pub struct SessionOutcome {
     pub reset: bool,
     /// 本条命令处理完后连接是否仍处于 `MULTI` 块内。
     pub in_multi: bool,
+    /// 本次 `CONFIG SET` 生效、宿主运行时仍需镜像的选项。
+    pub config: Vec<ConfigChange>,
+}
+
+/// 一条由网关校验并存储、宿主只需镜像到运行时设置的配置项。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigChange {
+    /// 选项名，已小写化。
+    pub name: String,
+    /// 网关已接受并存储的值。
+    pub value: String,
+}
+
+/// RESP2 订阅模式下的拒绝文案。
+///
+/// `PUBSUB` 的子命令解析先于订阅限制：未知子命令、缺参和多余参数都按真机文案
+/// 优先报出，已知子命令才以 `pubsub|<sub>` 出现在限制文案里。
+fn subscriber_gate_error(command: &[u8], arguments: &[&[u8]]) -> String {
+    let mut context = String::from_utf8_lossy(command).to_ascii_lowercase();
+    if context == "pubsub" {
+        if arguments.len() < 2 {
+            return "ERR wrong number of arguments for 'pubsub' command".to_owned();
+        }
+        let subcommand = String::from_utf8_lossy(arguments[1]).to_ascii_lowercase();
+        match subcommand.as_str() {
+            "channels" => {
+                if arguments.len() > 3 {
+                    return format!(
+                        "ERR unknown subcommand or wrong number of arguments for '{}'. Try PUBSUB HELP.",
+                        String::from_utf8_lossy(arguments[1])
+                    );
+                }
+            }
+            "numsub" => {}
+            "numpat" => {
+                if arguments.len() > 2 {
+                    return "ERR wrong number of arguments for 'pubsub|numpat' command".to_owned();
+                }
+            }
+            _ => {
+                return format!("ERR unknown subcommand '{}'. Try PUBSUB HELP.", String::from_utf8_lossy(arguments[1]));
+            }
+        }
+        context = format!("pubsub|{subcommand}");
+    }
+    format!(
+        "ERR Can't execute '{context}': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context"
+    )
 }
 
 /// 上游校验表覆盖不到的命令族：让宿主自行校验与排队。

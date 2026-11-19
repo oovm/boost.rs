@@ -783,7 +783,7 @@ fn execute_transaction(
 }
 
 /// Commands Redis still honours while a RESP2 connection is in subscriber mode.
-fn subscriber_command_allowed(command: &[u8]) -> bool {
+pub(crate) fn subscriber_command_allowed(command: &[u8]) -> bool {
     command.eq_ignore_ascii_case(b"SUBSCRIBE")
         || command.eq_ignore_ascii_case(b"UNSUBSCRIBE")
         || command.eq_ignore_ascii_case(b"PSUBSCRIBE")
