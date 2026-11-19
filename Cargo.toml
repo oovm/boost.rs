@@ -67,6 +67,7 @@ members = [
     "projects/language/language.server",
     "projects/language/language.structural-view",
     "projects/language/language.testing",
+    "projects/language/language.valkyrie",
     "projects/language/language.visualize",
     "projects/database/database",
     "projects/database/database.client",
@@ -486,6 +487,7 @@ language-semantic-tokens = { path = "projects/language/language.semantic-tokens"
 language-server = { path = "projects/language/language.server" }
 language-structural-view = { path = "projects/language/language.structural-view" }
 language-testing = { path = "projects/language/language.testing" }
+language-valkyrie = { path = "projects/language/language.valkyrie" }
 language-visualize = { path = "projects/language/language.visualize" }
 # 内部库
 crawler-browser = { path = "projects/crawler/crawler.browser" }

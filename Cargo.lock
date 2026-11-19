@@ -3705,6 +3705,8 @@ dependencies = [
  "dl-tensor",
  "dl-train",
  "dl-types",
+ "ml-data",
+ "ml-metrics",
 ]
 
 [[package]]
@@ -5019,6 +5021,17 @@ dependencies = [
  "serde",
  "serde_json",
  "triomphe",
+]
+
+[[package]]
+name = "language-valkyrie"
+version = "0.1.0"
+dependencies = [
+ "compiler-valkyrie",
+ "data-binary-odin",
+ "interpreter-vm-ovm",
+ "package-manager",
+ "serde_json",
 ]
 
 [[package]]

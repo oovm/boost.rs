@@ -1,0 +1,16 @@
+[package]
+name = "language-valkyrie"
+description = "Valkyrie 语言消费门面：编译器表面、Legion/Asgard 程序化产品 API、执行清单与 OVM 调用"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository = "https://github.com/oovm/rust-boost/tree/dev/projects/language/language.valkyrie"
+publish = false
+
+[dependencies]
+compiler-valkyrie = { workspace = true }
+data-binary-odin = { workspace = true }
+interpreter-vm-ovm = { workspace = true }
+package-manager = { workspace = true }
+serde_json = { workspace = true }
