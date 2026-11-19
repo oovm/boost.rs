@@ -16,6 +16,43 @@ pub struct LocalExecutor<S = FileShard> {
     owners: Vec<OwnerEntry>,
 }
 
+/// Failure while opening the local executor from a node directory.
+#[derive(Debug)]
+pub enum OpenLocalError {
+    /// Catalog load or validation failed.
+    Catalog(database_cluster::catalog::node::CatalogLoadError),
+    /// A mounted shard failed to open.
+    Storage(Error),
+    /// The mounted shards do not match the published routing map.
+    Routing(Error),
+}
+
+impl std::fmt::Display for OpenLocalError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Catalog(error) => std::fmt::Display::fmt(error, formatter),
+            Self::Storage(error) | Self::Routing(error) => std::fmt::Display::fmt(error, formatter),
+        }
+    }
+}
+
+impl std::error::Error for OpenLocalError {}
+
+impl LocalExecutor<FileShard> {
+    /// Opens the local executor for `directory` under catalog routing.
+    ///
+    /// `catalog_path` of `None` selects the explicit single-node mode, which mounts only
+    /// the local shard. `Some` must load a catalog that publishes a routing map; a missing
+    /// or invalid catalog is returned as a structured failure instead of falling back to
+    /// single-node routing.
+    pub fn open_local(directory: &std::path::Path, catalog_path: Option<&std::path::Path>) -> Result<Self, OpenLocalError> {
+        let facts = database_cluster::catalog::node::load_node_catalog(catalog_path).map_err(OpenLocalError::Catalog)?;
+        let routing = facts.routing.into_map();
+        let shards = database_storage::cluster_kv::open_shards(directory, routing.shards()).map_err(OpenLocalError::Storage)?;
+        Self::new(routing, shards, Vec::new()).map_err(OpenLocalError::Routing)
+    }
+}
+
 impl<S> LocalExecutor<S>
 where
     S: KvStore + Send + Debug,

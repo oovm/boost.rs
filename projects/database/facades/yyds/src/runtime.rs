@@ -15,9 +15,8 @@ use database::{
         catalog::node::{CatalogLoadError, NodeCatalogFacts, load_node_catalog},
         control::{LeaseError, LocalOwnership, NodeIdentity, NodeLease},
     },
-    execution::cluster::{KeyValueExecutor, LocalExecutor},
+    execution::cluster::{KeyValueExecutor, LocalExecutor, OpenLocalError},
     server::node::{NodeControlError, RuntimeStatusError},
-    storage::cluster_kv::open_shards,
     types::cluster::Error as ClusterError,
 };
 
@@ -82,6 +81,15 @@ impl From<CatalogLoadError> for NodeError {
 impl From<ClusterError> for NodeError {
     fn from(error: ClusterError) -> Self {
         Self::Storage(error)
+    }
+}
+
+impl From<OpenLocalError> for NodeError {
+    fn from(error: OpenLocalError) -> Self {
+        match error {
+            OpenLocalError::Catalog(error) => Self::Catalog(error),
+            OpenLocalError::Storage(error) | OpenLocalError::Routing(error) => Self::Storage(error),
+        }
     }
 }
 
@@ -155,10 +163,7 @@ pub fn init_node(data_dir: &Path, identity: NodeIdentity) -> Result<(), NodeErro
 /// `catalog_path` 为 `None` 表示调用方显式选择单节点模式,只使用本地分片;为 `Some`
 /// 时必须读到带已发布路由的 catalog,读取或校验失败都返回结构化错误,不回退。
 pub fn open_executor(directory: &Path, catalog_path: Option<&Path>) -> Result<Arc<dyn KeyValueExecutor>, NodeError> {
-    let facts = load_node_catalog(catalog_path)?;
-    let routing = facts.routing.into_map();
-    let shards = open_shards(directory, routing.shards())?;
-    let executor = LocalExecutor::new(routing, shards, Vec::new())?;
+    let executor = LocalExecutor::open_local(directory, catalog_path)?;
     Ok(Arc::new(executor))
 }
 
