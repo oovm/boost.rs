@@ -316,9 +316,17 @@ fn paint_autoshape(
     for paragraph in &text.paragraphs {
         let size_pt = paragraph_size(paragraph);
         let font_px = size_pt * 96.0 / 72.0;
+        let (font, east_asian_font) = paragraph_fonts(paragraph);
         let wrapped = wrap_paragraph(paragraph, text.body.wrap, font_px, available_width, measurer);
         for line in wrapped {
-            lines.push(PaintedLine { text: line, size_pt: size_pt, align: paragraph.align.clone(), level: paragraph.level });
+            lines.push(PaintedLine {
+                text: line,
+                size_pt,
+                align: paragraph.align.clone(),
+                level: paragraph.level,
+                font: font.clone(),
+                east_asian_font: east_asian_font.clone(),
+            });
         }
     }
     let total_height: f64 = lines.iter().map(|line| line.size_pt * 1.2 * 96.0 / 72.0).sum();
@@ -332,6 +340,7 @@ fn paint_autoshape(
     let bottom = y + height - inset_top;
     let mut painted_lines = 0i32;
     let mut clipped = false;
+    let mut substituted = false;
     for line in &lines {
         let line_height = line.size_pt * 1.2 * 96.0 / 72.0;
         if cursor + line_height > bottom + 0.5 {
@@ -345,13 +354,26 @@ fn paint_autoshape(
             Some("r") => (x + width - inset_left, "end"),
             _ => (x + inset_left + indent, "start"),
         };
+        if line.font.is_none() && line.east_asian_font.is_none() {
+            substituted = true;
+        }
+        let family = font_family(line.font.as_deref(), line.east_asian_font.as_deref());
         svg.push_str(&format!(
-            "<text x=\"{anchor_x:.1}\" y=\"{:.1}\" font-family=\"sans-serif\" font-size=\"{font_px:.1}\" text-anchor=\"{text_anchor}\" fill=\"#1a1a1a\">{}</text>",
+            "<text x=\"{anchor_x:.1}\" y=\"{:.1}\" font-family=\"{family}\" font-size=\"{font_px:.1}\" text-anchor=\"{text_anchor}\" fill=\"#1a1a1a\">{}</text>",
             cursor + line_height * 0.8,
             escape(&line.text)
         ));
         cursor += line_height;
         painted_lines += 1;
+    }
+    if substituted {
+        issues.push(PptxIssue {
+            code: codes::VIEW_FONT_SUBSTITUTION.to_owned(),
+            message: format!("slide {slide} shape `{}` has no resolvable typeface and is painted with the fallback family", shape.id),
+            status: IssueStatus::Partial,
+            slide: Some(slide),
+            shape: Some(shape.id),
+        });
     }
     if clipped {
         issues.push(PptxIssue {
@@ -424,6 +446,7 @@ fn paint_table(
     ));
     let column_total: i64 = table.column_widths.iter().sum::<i64>().max(1);
     let mut cursor_y = y;
+    let mut substituted = false;
     for row in &table.rows {
         let row_height = emu_to_px(row.height).max(1.0);
         let mut cursor_x = x;
@@ -439,13 +462,18 @@ fn paint_table(
             ));
             let size_pt = cell.text.paragraphs.first().map(paragraph_size).unwrap_or(18.0);
             let font_px = size_pt * 96.0 / 72.0;
+            let (font, east_asian_font) = cell.text.paragraphs.first().map(paragraph_fonts).unwrap_or((None, None));
+            if font.is_none() && east_asian_font.is_none() {
+                substituted = true;
+            }
+            let family = font_family(font.as_deref(), east_asian_font.as_deref());
             let line = cell.text.paragraphs.iter().map(Paragraph::text).collect::<Vec<_>>().join(" ");
             if !line.is_empty() {
                 let lines = wrap_plain(&line, font_px, cell_width - 10.0, measurer);
                 let mut line_y = cursor_y + 4.0 + font_px;
                 for text_line in lines.iter().take(((row_height - 4.0) / (font_px * 1.15)).max(1.0) as usize) {
                     svg.push_str(&format!(
-                        "<text x=\"{:.1}\" y=\"{line_y:.1}\" font-family=\"sans-serif\" font-size=\"{font_px:.1}\" fill=\"#1a1a1a\">{}</text>",
+                        "<text x=\"{:.1}\" y=\"{line_y:.1}\" font-family=\"{family}\" font-size=\"{font_px:.1}\" fill=\"#1a1a1a\">{}</text>",
                         cursor_x + 5.0,
                         escape(text_line)
                     ));
@@ -465,6 +493,15 @@ fn paint_table(
         }
         cursor_y += row_height;
     }
+    if substituted {
+        issues.push(PptxIssue {
+            code: codes::VIEW_FONT_SUBSTITUTION.to_owned(),
+            message: format!("slide {slide} table `{}` has no resolvable typeface and is painted with the fallback family", shape.id),
+            status: IssueStatus::Partial,
+            slide: Some(slide),
+            shape: Some(shape.id),
+        });
+    }
 }
 
 struct PaintedLine {
@@ -472,6 +509,47 @@ struct PaintedLine {
     size_pt: f64,
     align: Option<String>,
     level: u8,
+    font: Option<String>,
+    east_asian_font: Option<String>,
+}
+
+/// First resolved Latin and east Asian typefaces of one paragraph.
+///
+/// Runs inside a paragraph may override the face, but the canvas paints one
+/// `<text>` per wrapped line, so the first declared pair wins instead of
+/// splitting the line into spans.
+fn paragraph_fonts(paragraph: &Paragraph) -> (Option<String>, Option<String>) {
+    let mut latin = None;
+    let mut east_asian = None;
+    for run in &paragraph.runs {
+        if latin.is_none() {
+            latin = run.style.font.clone();
+        }
+        if east_asian.is_none() {
+            east_asian = run.style.east_asian_font.clone();
+        }
+        if latin.is_some() && east_asian.is_some() {
+            break;
+        }
+    }
+    (latin, east_asian)
+}
+
+/// Builds a CSS `font-family` list from the authored faces plus a generic tail.
+fn font_family(latin: Option<&str>, east_asian: Option<&str>) -> String {
+    let mut families: Vec<String> = Vec::new();
+    for name in [latin, east_asian].into_iter().flatten() {
+        let name = name.trim().replace(['\'', '"'], "");
+        if name.is_empty() {
+            continue;
+        }
+        let quoted = format!("'{name}'");
+        if !families.contains(&quoted) {
+            families.push(quoted);
+        }
+    }
+    families.push("sans-serif".to_owned());
+    families.join(",")
 }
 
 fn paragraph_size(paragraph: &Paragraph) -> f64 {

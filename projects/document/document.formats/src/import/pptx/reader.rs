@@ -69,7 +69,7 @@ pub fn import_pptx_bytes(label: &str, bytes: &[u8]) -> Result<PptxPresentation, 
         theme_colors = master.theme.clone();
         clr_map = master.clr_map.clone();
     }
-    let presentation_levels = parse_levels_from(child_named(presentation_root, "defaultTextStyle"));
+    let presentation_levels = parse_levels_from(child_named(presentation_root, "defaultTextStyle"), &theme_colors);
 
     let mut slides = Vec::new();
     let slide_entries: Vec<&XmlElement> =
@@ -336,6 +336,7 @@ struct LevelStyle {
     italic: bool,
     color: Option<String>,
     font: Option<String>,
+    east_asian_font: Option<String>,
 }
 
 struct LayoutRecord {
@@ -389,9 +390,9 @@ fn parse_masters(
             .unwrap_or_default();
         let clr_map = parse_clr_map(root);
         let placeholders = parse_placeholders(root, &theme, &clr_map);
-        let title_style = parse_tx_style(child_named(root, "txStyles").and_then(|styles| child_named(styles, "titleStyle")));
-        let body_style = parse_tx_style(child_named(root, "txStyles").and_then(|styles| child_named(styles, "bodyStyle")));
-        let other_style = parse_tx_style(child_named(root, "txStyles").and_then(|styles| child_named(styles, "otherStyle")));
+        let title_style = parse_tx_style(child_named(root, "txStyles").and_then(|styles| child_named(styles, "titleStyle")), &theme);
+        let body_style = parse_tx_style(child_named(root, "txStyles").and_then(|styles| child_named(styles, "bodyStyle")), &theme);
+        let other_style = parse_tx_style(child_named(root, "txStyles").and_then(|styles| child_named(styles, "otherStyle")), &theme);
 
         let mut layouts = Vec::new();
         for relationship in rels.values() {
@@ -431,26 +432,76 @@ fn parse_masters(
 }
 
 fn parse_theme(root: &XmlElement) -> BTreeMap<String, String> {
-    let mut colors = BTreeMap::new();
-    let Some(scheme) = descendants_named(root, "clrScheme").first().copied()
-    else {
-        return colors;
-    };
-    for slot in &scheme.children {
-        let Some(element) = slot.as_element()
-        else {
-            continue;
-        };
-        let name = local_name(&element.name).to_owned();
-        let value = children_named(element, "srgbClr")
-            .first()
-            .and_then(|color| attribute_value(color, "val"))
-            .or_else(|| children_named(element, "sysClr").first().and_then(|color| attribute_value(color, "lastClr")));
-        if let Some(value) = value {
-            colors.insert(name, normalize_color(&value));
+    let mut values = BTreeMap::new();
+    if let Some(scheme) = descendants_named(root, "clrScheme").first().copied() {
+        for slot in &scheme.children {
+            let Some(element) = slot.as_element()
+            else {
+                continue;
+            };
+            let name = local_name(&element.name).to_owned();
+            let value = children_named(element, "srgbClr")
+                .first()
+                .and_then(|color| attribute_value(color, "val"))
+                .or_else(|| children_named(element, "sysClr").first().and_then(|color| attribute_value(color, "lastClr")));
+            if let Some(value) = value {
+                values.insert(name, normalize_color(&value));
+            }
         }
     }
-    colors
+    if let Some(scheme) = descendants_named(root, "fontScheme").first().copied() {
+        for (prefix, family) in [("majorFont", child_named(scheme, "majorFont")), ("minorFont", child_named(scheme, "minorFont"))] {
+            let Some(family) = family
+            else {
+                continue;
+            };
+            for (suffix, role) in [("", "latin"), (".ea", "ea"), (".cs", "cs")] {
+                let name = child_named(family, role).and_then(|node| attribute_value(node, "typeface"));
+                if let Some(name) = name.filter(|name| !name.trim().is_empty()) {
+                    values.insert(format!("{prefix}{suffix}"), name.trim().to_owned());
+                }
+            }
+            for script in children_named(family, "font") {
+                let (Some(script), Some(name)) = (attribute_value(script, "script"), attribute_value(script, "typeface"))
+                else {
+                    continue;
+                };
+                if !name.trim().is_empty() {
+                    values.insert(format!("{prefix}.{script}"), name.trim().to_owned());
+                }
+            }
+        }
+    }
+    values
+}
+
+/// Resolves a typeface reference such as `+mn-lt` against the theme font scheme.
+///
+/// Concrete names pass through. Theme references resolve to the major/minor
+/// Latin face, the east Asian face (falling back to the simplified Chinese
+/// script entry PowerPoint writes when `<a:ea>` is empty) or the complex-script
+/// face.
+fn resolve_typeface(value: &str, theme: &BTreeMap<String, String>) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let Some(reference) = trimmed.strip_prefix('+')
+    else {
+        return Some(trimmed.to_owned());
+    };
+    let (family, role) = reference.split_once('-')?;
+    let prefix = match family {
+        "mj" => "majorFont",
+        "mn" => "minorFont",
+        _ => return None,
+    };
+    match role {
+        "lt" => theme.get(prefix).cloned(),
+        "ea" => theme.get(&format!("{prefix}.ea")).cloned().or_else(|| theme.get(&format!("{prefix}.Hans")).cloned()),
+        "cs" => theme.get(&format!("{prefix}.cs")).cloned(),
+        _ => None,
+    }
 }
 
 fn parse_clr_map(root: &XmlElement) -> HashMap<String, String> {
@@ -495,7 +546,7 @@ fn parse_placeholders(root: &XmlElement, theme: &BTreeMap<String, String>, clr_m
             fill: properties.and_then(|properties| parse_fill(properties, theme, clr_map)),
             line: properties.and_then(|properties| parse_line(properties, theme, clr_map)),
             body: body.and_then(|body| child_named(body, "bodyPr")).map(parse_body).unwrap_or_default(),
-            levels: body.and_then(|body| child_named(body, "lstStyle")).map(|style| parse_levels_from(Some(style))).unwrap_or_default(),
+            levels: body.and_then(|body| child_named(body, "lstStyle")).map(|style| parse_levels_from(Some(style), theme)).unwrap_or_default(),
         });
     }
     placeholders
@@ -521,7 +572,7 @@ fn parse_body(element: &XmlElement) -> BodyProperties {
     }
 }
 
-fn parse_levels_from(style: Option<&XmlElement>) -> Vec<LevelStyle> {
+fn parse_levels_from(style: Option<&XmlElement>, theme: &BTreeMap<String, String>) -> Vec<LevelStyle> {
     let Some(style) = style
     else {
         return Vec::new();
@@ -543,14 +594,21 @@ fn parse_levels_from(style: Option<&XmlElement>) -> Vec<LevelStyle> {
             bold: defaults.and_then(|defaults| attribute_value(defaults, "b")).map(|value| value == "1").unwrap_or(false),
             italic: defaults.and_then(|defaults| attribute_value(defaults, "i")).map(|value| value == "1").unwrap_or(false),
             color: None,
-            font: defaults.and_then(|defaults| child_named(defaults, "latin")).and_then(|latin| attribute_value(latin, "typeface")),
+            font: defaults
+                .and_then(|defaults| child_named(defaults, "latin"))
+                .and_then(|latin| attribute_value(latin, "typeface"))
+                .and_then(|value| resolve_typeface(&value, theme)),
+            east_asian_font: defaults
+                .and_then(|defaults| child_named(defaults, "ea"))
+                .and_then(|ea| attribute_value(ea, "typeface"))
+                .and_then(|value| resolve_typeface(&value, theme)),
         });
     }
     levels
 }
 
-fn parse_tx_style(style: Option<&XmlElement>) -> Vec<LevelStyle> {
-    parse_levels_from(style)
+fn parse_tx_style(style: Option<&XmlElement>, theme: &BTreeMap<String, String>) -> Vec<LevelStyle> {
+    parse_levels_from(style, theme)
 }
 
 fn parse_transform(xfrm: Option<&XmlElement>) -> Option<Transform> {
@@ -1022,6 +1080,14 @@ fn run_style(
         .and_then(|properties| attribute_value(properties, "sz"))
         .and_then(|value| value.parse::<f64>().ok())
         .map(|value| value / 100.0);
+    let declared_font = properties
+        .and_then(|properties| child_named(properties, "latin"))
+        .and_then(|latin| attribute_value(latin, "typeface"))
+        .and_then(|value| resolve_typeface(&value, theme));
+    let declared_east_asian = properties
+        .and_then(|properties| child_named(properties, "ea"))
+        .and_then(|ea| attribute_value(ea, "typeface"))
+        .and_then(|value| resolve_typeface(&value, theme));
     TextStyle {
         bold: properties.and_then(|properties| attribute_value(properties, "b")).map(|value| value == "1").unwrap_or(inherited.bold),
         italic: properties.and_then(|properties| attribute_value(properties, "i")).map(|value| value == "1").unwrap_or(inherited.italic),
@@ -1032,10 +1098,10 @@ fn run_style(
             .and_then(|properties| child_named(properties, "solidFill"))
             .and_then(|fill| color_from(fill, theme, clr_map))
             .or(inherited.color),
-        font: properties
-            .and_then(|properties| child_named(properties, "latin"))
-            .and_then(|latin| attribute_value(latin, "typeface"))
-            .or(inherited.font),
+        font: declared_font.or(inherited.font).or_else(|| theme.get("minorFont").cloned()),
+        east_asian_font: declared_east_asian
+            .or(inherited.east_asian_font)
+            .or_else(|| theme.get("minorFont.ea").cloned().or_else(|| theme.get("minorFont.Hans").cloned())),
         language: properties.and_then(|properties| attribute_value(properties, "lang")),
     }
 }

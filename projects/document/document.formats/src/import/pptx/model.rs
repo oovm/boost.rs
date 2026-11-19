@@ -206,6 +206,8 @@ pub struct TextStyle {
     pub color: Option<String>,
     /// Latin typeface.
     pub font: Option<String>,
+    /// East Asian typeface used for CJK glyphs.
+    pub east_asian_font: Option<String>,
     /// Declared language tag.
     pub language: Option<String>,
 }
