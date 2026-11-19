@@ -13,6 +13,8 @@ pub mod bytes;
 pub mod catalog;
 /// Durable connection handle and statement surface.
 pub mod connection;
+/// Main-image publication session over a host-owned [`durable::MainImagePublisher`].
+pub mod durable;
 /// Journal modes and `-wal` / `-shm` sidecar helpers.
 pub mod journal;
 /// Unified `<hash-prefix>/<chunk_hash>.blob` CAS + hot/cold tiering.
