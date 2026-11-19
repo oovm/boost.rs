@@ -3,20 +3,21 @@
 //! 这里实现的是设备报告、可执行性查询与提交边界，不是一套私有运行时：
 //! - XDNA 只接受固定形状、已编译的量化子图，以及白名单内的单算子；
 //! - 动态 shape、未知 dtype/layout、未编译子图都在 [`Backend::supports`] 阶段被拒绝；
-//! - 没有附着 XDNA 运行时之前，[`Backend::submit_task`] 返回明确错误，绝不静默回退 CPU。
+//! - 编译与提交由调用方附着的 [`KernelLauncher`] 完成，后端按任务身份缓存编译产物；
+//! - 没有附着 XDNA 运行时或 launcher 之前，[`Backend::submit_task`] 返回明确错误，绝不静默回退 CPU。
 //!
-//! 真实执行由后续接入的 XDNA 运行时（编译 + 提交）完成；本 crate 负责让调度器
-//! 在计划阶段就能区分“已发现”“后端可用”“当前可提交”。
+//! 真实 kernel 由后续接入的 XDNA 运行时生成；本 crate 负责让调度器在计划阶段区分
+//! “已发现”“后端可用”“当前可提交”，并在提交时只编译一次。
 
 #![warn(missing_docs)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use hardware_capability::{
     Conversion, DeviceId, DeviceState, ExecDecision, ExecKind, ExecPlan, ExecRefusal, ExecSignature, Feature, FeatureSet, Health, MemoryBudget,
     OutputDomain,
 };
-use hardware_ir::{Graph, TaskNode};
+use hardware_ir::{Graph, TaskKind, TaskNode};
 use hardware_scheduler::{Backend, Error, Result};
 
 /// 单段装载上限的保守默认值（64 MiB）。
@@ -101,20 +102,68 @@ impl NpuConfig {
     }
 }
 
+/// 一次编译的产物；后端只保存并复用，不解释二进制。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KernelArtifact {
+    /// kernel 名（子图名或算子名）。
+    pub name: String,
+    /// 编译产物的字节数。
+    pub bytes: u64,
+    /// 生成它的运行时标识。
+    pub runtime: String,
+}
+
+/// XDNA 运行时的编译与提交边界。
+///
+/// 实现方负责真实编译和下发；后端负责按任务身份复用产物，并在未附着时拒绝提交。
+pub trait KernelLauncher {
+    /// 编译一个任务对应的 kernel。
+    fn compile(&mut self, task: &TaskNode) -> Result<KernelArtifact>;
+
+    /// 提交已编译的 kernel。
+    fn submit(&mut self, artifact: &KernelArtifact, task: &TaskNode) -> Result<()>;
+}
+
+/// 任务身份；同一子图/算子只编译一次。
+fn kernel_key(task: &TaskNode) -> String {
+    match &task.kind {
+        TaskKind::Raster => "raster".into(),
+        TaskKind::Dispatch => "dispatch".into(),
+        TaskKind::Fill => "fill".into(),
+        TaskKind::MatMul => "matmul".into(),
+        TaskKind::RtTrace => "rttrace".into(),
+        TaskKind::Copy => "copy".into(),
+        TaskKind::Custom(name) => name.clone(),
+    }
+}
+
 /// AMD XDNA NPU 后端。
 pub struct NpuBackend {
     config: NpuConfig,
+    launcher: Option<Box<dyn KernelLauncher + Send + Sync>>,
+    kernels: BTreeMap<String, KernelArtifact>,
 }
 
 impl NpuBackend {
     /// 用给定配置构造后端。
     pub fn new(config: NpuConfig) -> Self {
-        Self { config }
+        Self { config, launcher: None, kernels: BTreeMap::new() }
     }
 
     /// 只完成设备发现的默认实例。
     pub fn discovered() -> Self {
         Self::new(NpuConfig::discovered())
+    }
+
+    /// 附着编译/提交实现；只有附着了 runtime 且提供 launcher 才能提交。
+    pub fn with_launcher(mut self, launcher: impl KernelLauncher + Send + Sync + 'static) -> Self {
+        self.launcher = Some(Box::new(launcher));
+        self
+    }
+
+    /// 已缓存的编译产物。
+    pub fn cached_kernels(&self) -> impl Iterator<Item = (&str, &KernelArtifact)> {
+        self.kernels.iter().map(|(key, artifact)| (key.as_str(), artifact))
     }
 
     /// 只读配置。
@@ -208,10 +257,26 @@ impl Backend for NpuBackend {
     }
 
     fn submit_task(&mut self, _graph: &Graph, task: &TaskNode) -> Result<()> {
-        match &self.config.runtime {
-            None => Err(Error::Backend("npu".into(), "no XDNA runtime attached; refusing to submit".into())),
-            Some(runtime) => Err(Error::Backend("npu".into(), format!("runtime `{runtime}` has no compiled kernel for task {}", task.id.0))),
-        }
+        let runtime = match &self.config.runtime {
+            None => return Err(Error::Backend("npu".into(), "no XDNA runtime attached; refusing to submit".into())),
+            Some(runtime) => runtime.clone(),
+        };
+        let launcher = match self.launcher.as_mut() {
+            Some(launcher) => launcher,
+            None => {
+                return Err(Error::Backend("npu".into(), format!("runtime `{runtime}` has no kernel launcher attached; refusing to submit")));
+            }
+        };
+        let key = kernel_key(task);
+        let artifact = match self.kernels.get(&key) {
+            Some(artifact) => artifact.clone(),
+            None => {
+                let artifact = launcher.compile(task)?;
+                self.kernels.insert(key, artifact.clone());
+                artifact
+            }
+        };
+        launcher.submit(&artifact, task)
     }
 }
 
@@ -281,26 +346,70 @@ mod tests {
         }
     }
 
-    #[test]
-    fn submit_fails_loudly_instead_of_falling_back() {
-        let graph =
-            Graph { resources: hardware_ir::ResourceGraph { nodes: vec![] }, tasks: hardware_ir::TaskGraph { nodes: vec![], edges: vec![] } };
-        let task = TaskNode {
-            id: hardware_ir::TaskId(1),
-            kind: hardware_ir::TaskKind::Custom("mlp".into()),
+    fn empty_graph() -> Graph {
+        Graph { resources: hardware_ir::ResourceGraph { nodes: vec![] }, tasks: hardware_ir::TaskGraph { nodes: vec![], edges: vec![] } }
+    }
+
+    fn task(id: u64, kind: hardware_ir::TaskKind) -> TaskNode {
+        TaskNode {
+            id: hardware_ir::TaskId(id),
+            kind,
             shader: hardware_ir::ShaderId(1),
             params: Default::default(),
             dispatch: Default::default(),
             objective: hardware_ir::Objective::MaxThroughput,
             priority: hardware_ir::Priority::Batch,
-        };
+        }
+    }
+
+    /// 记录编译与提交次数；编译产物是确定性的，不含任何真实计算。
+    #[derive(Default)]
+    struct RecordingLauncher {
+        compiled: Vec<String>,
+        submitted: Vec<String>,
+    }
+
+    impl KernelLauncher for RecordingLauncher {
+        fn compile(&mut self, task: &TaskNode) -> Result<KernelArtifact> {
+            let name = kernel_key(task);
+            self.compiled.push(name.clone());
+            Ok(KernelArtifact { name, bytes: 4096, runtime: "onnxruntime-xdna".into() })
+        }
+
+        fn submit(&mut self, artifact: &KernelArtifact, _task: &TaskNode) -> Result<()> {
+            self.submitted.push(artifact.name.clone());
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn submit_fails_loudly_instead_of_falling_back() {
+        let graph = empty_graph();
+        let task = task(1, hardware_ir::TaskKind::Custom("mlp".into()));
         let mut backend = NpuBackend::discovered();
         let error = backend.submit_task(&graph, &task).expect_err("no runtime");
         assert!(error.to_string().contains("no XDNA runtime attached"), "{error}");
 
         let mut backend = NpuBackend::new(NpuConfig::attached("onnxruntime-xdna"));
-        let error = backend.submit_task(&graph, &task).expect_err("no compiled kernel");
-        assert!(error.to_string().contains("no compiled kernel"), "{error}");
+        let error = backend.submit_task(&graph, &task).expect_err("no launcher");
+        assert!(error.to_string().contains("no kernel launcher attached"), "{error}");
+    }
+
+    #[test]
+    fn attached_runtime_compiles_once_and_reuses_the_cached_kernel() {
+        let mut backend = NpuBackend::new(NpuConfig::attached("onnxruntime-xdna")).with_launcher(RecordingLauncher::default());
+        let graph = empty_graph();
+        let first = task(1, hardware_ir::TaskKind::Custom("mlp".into()));
+        let second = task(2, hardware_ir::TaskKind::Custom("mlp".into()));
+        let matmul = task(3, hardware_ir::TaskKind::MatMul);
+
+        backend.submit_task(&graph, &first).expect("compile and submit");
+        backend.submit_task(&graph, &second).expect("cache hit and submit");
+        backend.submit_task(&graph, &matmul).expect("different kernel");
+
+        let cached: Vec<&str> = backend.cached_kernels().map(|(key, _)| key).collect();
+        assert_eq!(cached, vec!["matmul", "mlp"], "one artifact per task identity");
+        assert_eq!(backend.cached_kernels().next().map(|(_, artifact)| artifact.bytes), Some(4096));
     }
 
     #[test]

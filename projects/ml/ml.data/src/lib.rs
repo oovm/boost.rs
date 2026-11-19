@@ -34,6 +34,13 @@ pub enum DataError {
     },
     /// 无法从空样本集推导数据集宽度。
     EmptyDataset,
+    /// CSV 内容无法解析。
+    Csv {
+        /// 出错的行号（从 1 开始，含表头）。
+        line: usize,
+        /// 具体原因。
+        detail: String,
+    },
     /// 张量构造失败。
     Tensor(DlError),
 }
@@ -49,6 +56,7 @@ impl std::fmt::Display for DataError {
             }
             DataError::LabelOutOfRange { label, classes } => write!(f, "label {label} outside class range {classes}"),
             DataError::EmptyDataset => write!(f, "cannot infer dataset width from an empty sample list"),
+            DataError::Csv { line, detail } => write!(f, "csv line {line}: {detail}"),
             DataError::Tensor(error) => write!(f, "tensor error: {error}"),
         }
     }
@@ -112,6 +120,69 @@ impl Dataset {
         let feature_count = first.features.len();
         let class_count = samples.iter().map(|sample| sample.label as usize + 1).max().unwrap_or(0);
         Self::new(feature_count, class_count, samples)
+    }
+
+    /// 从 CSV 文本构建数据集。
+    ///
+    /// `label_column` 指向标签列（非负整数），其余列按顺序作为 f32 特征；`has_header`
+    /// 为 true 时跳过首行。空行被忽略，列数不一致、非数值或空输入都返回
+    /// [`DataError::Csv`]。
+    pub fn from_csv(text: &str, has_header: bool, label_column: usize) -> Result<Self, DataError> {
+        let mut samples = Vec::new();
+        let mut width = None;
+        for (index, raw) in text.lines().enumerate() {
+            let line = index + 1;
+            if has_header && index == 0 {
+                continue;
+            }
+            let row = raw.trim();
+            if row.is_empty() {
+                continue;
+            }
+            let columns: Vec<&str> = row.split(',').map(str::trim).collect();
+            if label_column >= columns.len() {
+                return Err(DataError::Csv {
+                    line,
+                    detail: format!("label column {label_column} is out of range for {} columns", columns.len()),
+                });
+            }
+            match width {
+                None => width = Some(columns.len()),
+                Some(expected) if expected != columns.len() => {
+                    return Err(DataError::Csv { line, detail: format!("expected {expected} columns, found {}", columns.len()) });
+                }
+                Some(_) => {}
+            }
+            let mut features = Vec::with_capacity(columns.len() - 1);
+            for (column, value) in columns.iter().enumerate() {
+                if column == label_column {
+                    continue;
+                }
+                let feature = value.parse::<f32>().map_err(|_| DataError::Csv { line, detail: format!("`{value}` is not a number") })?;
+                features.push(feature);
+            }
+            let label = columns[label_column]
+                .parse::<u32>()
+                .map_err(|_| DataError::Csv { line, detail: format!("`{}` is not a non-negative integer label", columns[label_column]) })?;
+            samples.push(Sample::new(features, label));
+        }
+        if samples.is_empty() {
+            return Err(DataError::EmptyDataset);
+        }
+        Self::from_samples(samples)
+    }
+
+    /// 用给定种子确定性打乱样本顺序。
+    pub fn shuffled(&self, seed: u64) -> Self {
+        let mut samples = self.samples.clone();
+        let mut state = seed | 1;
+        for index in (1..samples.len()).rev() {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            samples.swap(index, (state % (index as u64 + 1)) as usize);
+        }
+        Self { feature_count: self.feature_count, class_count: self.class_count, samples }
     }
 
     /// 特征宽度。
@@ -342,5 +413,37 @@ mod tests {
         let transformed = standardizer.transform_dataset(&data).unwrap();
         assert_eq!(transformed.samples()[0], Sample::new(vec![-1.0, 0.0], 0));
         assert_eq!(transformed.class_count(), 2);
+    }
+
+    #[test]
+    fn csv_builds_a_dataset_and_skips_the_header() {
+        let dataset = Dataset::from_csv("x,y,label\n1,2,0\n3,4,1\n", true, 2).unwrap();
+        assert_eq!(dataset.feature_count(), 2);
+        assert_eq!(dataset.class_count(), 2);
+        assert_eq!(dataset.len(), 2);
+        assert_eq!(dataset.samples()[1], Sample::new(vec![3.0, 4.0], 1));
+
+        let no_header = Dataset::from_csv("1,2,0\n", false, 0).unwrap();
+        assert_eq!(no_header.samples()[0], Sample::new(vec![2.0, 0.0], 1));
+    }
+
+    #[test]
+    fn csv_reports_line_accurate_errors() {
+        assert!(matches!(Dataset::from_csv("1,2,0\n3,4\n", false, 2), Err(DataError::Csv { line: 2, .. })));
+        assert!(matches!(Dataset::from_csv("a,1,0\n", false, 2), Err(DataError::Csv { line: 1, .. })));
+        assert!(matches!(Dataset::from_csv("1,2,x\n", false, 2), Err(DataError::Csv { line: 1, .. })));
+        assert_eq!(Dataset::from_csv("", false, 0), Err(DataError::EmptyDataset));
+    }
+
+    #[test]
+    fn shuffled_is_seeded_and_preserves_every_sample() {
+        let dataset = Dataset::from_samples((0..8u32).map(|index| Sample::new(vec![index as f32], index % 3)).collect()).unwrap();
+        let first = dataset.shuffled(7);
+        assert_eq!(first, dataset.shuffled(7));
+        let mut labels: Vec<u32> = first.samples().iter().map(|sample| sample.label).collect();
+        labels.sort_unstable();
+        assert_eq!(labels, vec![0, 0, 0, 1, 1, 1, 2, 2]);
+        assert_eq!(first.feature_count(), dataset.feature_count());
+        assert_eq!(first.class_count(), dataset.class_count());
     }
 }

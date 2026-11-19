@@ -130,9 +130,7 @@ impl Optimizer for Adam {
 /// 参数存放在调用方的 [`Bindings`] 里；每一步执行整张训练图（前向 + 反向节点），再按梯度
 /// 原地更新参数。同一张训练图既能直接 [`Graph::run`]，也能交给 `dl-plan` 的流式执行。
 pub struct GraphSgd {
-    graph: Graph,
-    loss_index: usize,
-    parameter_grads: Vec<(String, Vec<usize>, usize)>,
+    pass: GraphPass,
     learning_rate: f32,
     momentum: f32,
     velocity: BTreeMap<String, Vec<f32>>,
@@ -141,6 +139,103 @@ pub struct GraphSgd {
 impl GraphSgd {
     /// 从训练图创建无动量 SGD。
     pub fn new(training: &TrainingGraph, learning_rate: f32) -> Self {
+        Self { pass: GraphPass::new(training), learning_rate, momentum: 0.0, velocity: BTreeMap::new() }
+    }
+
+    /// 启用动量。
+    pub fn with_momentum(mut self, momentum: f32) -> Self {
+        self.momentum = momentum;
+        self
+    }
+
+    /// 训练图本身。
+    pub fn graph(&self) -> &Graph {
+        self.pass.graph()
+    }
+
+    /// 执行一次前向 + 反向，按梯度更新绑定中的参数，返回损失。
+    pub fn step(&mut self, bindings: &mut Bindings) -> Result<f32> {
+        let (loss, gradients) = self.pass.run(bindings)?;
+        for (name, shape, gradient) in gradients {
+            let current = bindings.parameter(&name).ok_or_else(|| DlError::MissingBinding { kind: "parameter", name: name.clone() })?.to_vec();
+            let velocity = self.velocity.entry(name.clone()).or_insert_with(|| vec![0.0; gradient.len()]);
+            let mut updated = current;
+            for (position, value) in updated.iter_mut().enumerate() {
+                velocity[position] = self.momentum * velocity[position] + gradient[position];
+                *value -= self.learning_rate * velocity[position];
+            }
+            bindings.insert_parameter(name, Tensor::from_vec(updated, shape)?);
+        }
+        Ok(loss)
+    }
+}
+
+/// 基于 `dl-graph` 训练图的 Adam。
+pub struct GraphAdam {
+    pass: GraphPass,
+    learning_rate: f32,
+    beta1: f32,
+    beta2: f32,
+    epsilon: f32,
+    step_count: u64,
+    first_moment: BTreeMap<String, Vec<f32>>,
+    second_moment: BTreeMap<String, Vec<f32>>,
+}
+
+impl GraphAdam {
+    /// 以默认超参数创建 Adam。
+    pub fn new(training: &TrainingGraph, learning_rate: f32) -> Self {
+        Self {
+            pass: GraphPass::new(training),
+            learning_rate,
+            beta1: 0.9,
+            beta2: 0.999,
+            epsilon: 1e-8,
+            step_count: 0,
+            first_moment: BTreeMap::new(),
+            second_moment: BTreeMap::new(),
+        }
+    }
+
+    /// 训练图本身。
+    pub fn graph(&self) -> &Graph {
+        self.pass.graph()
+    }
+
+    /// 执行一次前向 + 反向，按 Adam 规则更新绑定中的参数，返回损失。
+    pub fn step(&mut self, bindings: &mut Bindings) -> Result<f32> {
+        self.step_count += 1;
+        let bias_first = 1.0 - self.beta1.powi(self.step_count as i32);
+        let bias_second = 1.0 - self.beta2.powi(self.step_count as i32);
+        let (loss, gradients) = self.pass.run(bindings)?;
+        for (name, shape, gradient) in gradients {
+            let current = bindings.parameter(&name).ok_or_else(|| DlError::MissingBinding { kind: "parameter", name: name.clone() })?.to_vec();
+            let first = self.first_moment.entry(name.clone()).or_insert_with(|| vec![0.0; gradient.len()]);
+            let second = self.second_moment.entry(name.clone()).or_insert_with(|| vec![0.0; gradient.len()]);
+            let mut updated = current;
+            for (position, value) in updated.iter_mut().enumerate() {
+                let gradient = gradient[position];
+                first[position] = self.beta1 * first[position] + (1.0 - self.beta1) * gradient;
+                second[position] = self.beta2 * second[position] + (1.0 - self.beta2) * gradient * gradient;
+                let corrected_first = first[position] / bias_first;
+                let corrected_second = second[position] / bias_second;
+                *value -= self.learning_rate * corrected_first / (corrected_second.sqrt() + self.epsilon);
+            }
+            bindings.insert_parameter(name, Tensor::from_vec(updated, shape)?);
+        }
+        Ok(loss)
+    }
+}
+
+/// 训练图的执行骨架：定位损失输出与各参数梯度输出，一次执行取出两者。
+struct GraphPass {
+    graph: Graph,
+    loss_index: usize,
+    parameter_grads: Vec<(String, Vec<usize>, usize)>,
+}
+
+impl GraphPass {
+    fn new(training: &TrainingGraph) -> Self {
         let graph = training.graph.clone();
         let loss_index = graph.outputs().iter().position(|output| *output == training.loss).unwrap_or(0);
         let parameter_grads = training
@@ -153,36 +248,37 @@ impl GraphSgd {
                 (name.clone(), shape, index)
             })
             .collect();
-        Self { graph, loss_index, parameter_grads, learning_rate, momentum: 0.0, velocity: BTreeMap::new() }
+        Self { graph, loss_index, parameter_grads }
     }
 
-    /// 启用动量。
-    pub fn with_momentum(mut self, momentum: f32) -> Self {
-        self.momentum = momentum;
-        self
-    }
-
-    /// 训练图本身。
-    pub fn graph(&self) -> &Graph {
+    fn graph(&self) -> &Graph {
         &self.graph
     }
 
-    /// 执行一次前向 + 反向，按梯度更新绑定中的参数，返回损失。
-    pub fn step(&mut self, bindings: &mut Bindings) -> Result<f32> {
+    fn run(&self, bindings: &Bindings) -> Result<(f32, Vec<(String, Vec<usize>, Vec<f32>)>)> {
         let values = self.graph.run(bindings)?;
         let loss = values[self.loss_index].as_slice()?[0];
-        for (name, shape, index) in &self.parameter_grads {
-            let gradient = values[*index].to_vec();
-            let current = bindings.parameter(name).ok_or_else(|| DlError::MissingBinding { kind: "parameter", name: name.clone() })?.to_vec();
-            let velocity = self.velocity.entry(name.clone()).or_insert_with(|| vec![0.0; gradient.len()]);
-            let mut updated = current;
-            for (position, value) in updated.iter_mut().enumerate() {
-                velocity[position] = self.momentum * velocity[position] + gradient[position];
-                *value -= self.learning_rate * velocity[position];
-            }
-            bindings.insert_parameter(name.clone(), Tensor::from_vec(updated, shape.clone())?);
-        }
-        Ok(loss)
+        let gradients =
+            self.parameter_grads.iter().map(|(name, shape, index)| (name.clone(), shape.clone(), values[*index].to_vec())).collect();
+        Ok((loss, gradients))
+    }
+}
+
+/// 图训练优化器：每步执行训练图并就地更新绑定中的参数。
+pub trait GraphOptimizer {
+    /// 执行一步，返回这一步的损失。
+    fn step(&mut self, bindings: &mut Bindings) -> Result<f32>;
+}
+
+impl GraphOptimizer for GraphSgd {
+    fn step(&mut self, bindings: &mut Bindings) -> Result<f32> {
+        GraphSgd::step(self, bindings)
+    }
+}
+
+impl GraphOptimizer for GraphAdam {
+    fn step(&mut self, bindings: &mut Bindings) -> Result<f32> {
+        GraphAdam::step(self, bindings)
     }
 }
 
@@ -295,7 +391,7 @@ where
 /// 每个批次写入 `input` 与 `target` 两个输入绑定，然后执行一次 [`GraphSgd::step`]；
 /// 其余输入/参数绑定由调用方在 [`Bindings`] 中预先放好。
 pub fn fit_graph<F, I>(
-    optimizer: &mut GraphSgd,
+    optimizer: &mut dyn GraphOptimizer,
     bindings: &mut Bindings,
     input: &str,
     target: &str,
@@ -434,6 +530,26 @@ mod tests {
         let last = reports.last().expect("epochs").mean_loss;
         assert!(last.is_finite() && last < first * 0.5, "graph training did not converge: {first} -> {last}");
         assert_ne!(bindings.parameter("0.weight").expect("updated weight").to_vec(), initial_weight);
+        Ok(())
+    }
+
+    #[test]
+    fn graph_adam_trains_through_the_same_training_graph() -> Result<()> {
+        let mut random = seeded_random(41);
+        let model = mlp(&[2, 6, 1], &mut random)?;
+        let training = mlp_training_graph()?;
+        let mut bindings = Bindings::new();
+        for (name, parameter) in model.named_parameters() {
+            bindings.insert_parameter(name, parameter.value());
+        }
+        let inputs = Tensor::from_vec(vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0], [4, 2])?;
+        let targets = Tensor::from_vec(vec![0.0, 1.0, 1.0, 2.0], [4, 1])?;
+
+        let mut optimizer = GraphAdam::new(&training, 0.02);
+        let reports = fit_graph(&mut optimizer, &mut bindings, "x", "target", 300, || vec![Ok((inputs.clone(), targets.clone()))])?;
+        let first = reports.first().expect("epochs").mean_loss;
+        let last = reports.last().expect("epochs").mean_loss;
+        assert!(last.is_finite() && last < first * 0.5, "graph Adam did not converge: {first} -> {last}");
         Ok(())
     }
 }
