@@ -16,6 +16,12 @@ impl ByteRange {
         Ok(Self { start, end })
     }
 
+    /// Create a byte range from a start offset and a byte length, rejecting overflow.
+    pub fn with_len(start: u64, len: u64) -> Option<Self> {
+        let end = start.checked_add(len)?;
+        Some(Self { start, end })
+    }
+
     /// Inclusive start offset.
     pub fn start(&self) -> u64 {
         self.start
