@@ -22,7 +22,6 @@ unicode-width = { workspace = true, optional = true }
 boost-collection = { workspace = true }
 boost-console = { workspace = true }
 boost-math = { workspace = true }
-serial_test = { workspace = true }
 serde_json = { workspace = true }
 
 [features]

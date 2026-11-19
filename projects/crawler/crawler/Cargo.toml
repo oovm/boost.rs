@@ -32,7 +32,6 @@ url = { workspace = true, features = ["serde"] }
 data-text-xml = { workspace = true }
 
 [dev-dependencies]
-serial_test = "3"
 
 [features]
 default = []

@@ -19,7 +19,6 @@ boost-fs = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
-serial_test = { workspace = true }
 boost-harness = { workspace = true }
 
 [features]
