@@ -69,11 +69,82 @@ pub struct ResultSet {
 ///
 /// Implemented by the product facade that owns the storage, so this crate never
 /// depends on a concrete engine.
+///
+/// [`Self::execute`] and [`Self::query`] are the SQL-text surface every default
+/// hook uses. An engine that cannot express these operations as SQL — a
+/// VOS-native image, for example — overrides the row-level hooks instead of
+/// parsing generated statements, and reports rows back in the source's text
+/// format so verification stays a plain comparison.
 pub trait MigrationTarget {
     /// Runs one statement that returns no row set.
     fn execute(&mut self, sql: &str) -> Result<(), Error>;
     /// Runs one statement and returns its rows as text.
     fn query(&mut self, sql: &str) -> Result<ResultSet, Error>;
+
+    /// Makes the target hold the table described by `shape`.
+    fn ensure_table(&mut self, shape: &TableShape) -> Result<(), Error> {
+        self.execute(&create_table(shape)?)
+    }
+
+    /// Upserts one chunk of rows. Cells follow `shape.columns` order and the
+    /// source's text format; writes are keyed by primary key so a re-run after
+    /// an interruption stays idempotent.
+    fn write_rows(&mut self, shape: &TableShape, rows: &[Row]) -> Result<(), Error> {
+        self.execute(&upsert_statement(shape, rows)?)
+    }
+
+    /// Reads rows back for verification: ordered by `order`, strictly after the
+    /// `after` key window, skipping `offset` rows and returning at most `limit`,
+    /// rendered in the same text format the source reports.
+    fn read_rows(
+        &mut self,
+        shape: &TableShape,
+        order: &[String],
+        after: Option<&Row>,
+        offset: u64,
+        limit: usize,
+    ) -> Result<Vec<Row>, Error> {
+        Ok(self.query(&select_after(shape, order, after.map(Vec::as_slice), offset, limit))?.rows)
+    }
+
+    /// Reads back only the `order` columns, for deletion reconciliation.
+    fn read_keys(
+        &mut self,
+        shape: &TableShape,
+        order: &[String],
+        after: Option<&Row>,
+        offset: u64,
+        limit: usize,
+    ) -> Result<Vec<Row>, Error> {
+        Ok(self.query(&select_key_window(shape, order, after.map(Vec::as_slice), offset, limit))?.rows)
+    }
+
+    /// Deletes rows named by primary-key tuples.
+    fn delete_rows(&mut self, shape: &TableShape, order: &[String], keys: &[Row]) -> Result<(), Error> {
+        self.execute(&delete_by_keys(shape, order, keys))
+    }
+
+    /// How many rows the target holds for the table.
+    fn count_rows(&mut self, shape: &TableShape) -> Result<u64, Error> {
+        Ok(self
+            .query(&format!("SELECT COUNT(*) FROM {}", quote_ident(&shape.name)))?
+            .rows
+            .first()
+            .and_then(|row| row.first().cloned().flatten())
+            .and_then(|text| text.trim().parse().ok())
+            .unwrap_or_default())
+    }
+
+    /// Opens one table's write burst so a transactional target can batch its
+    /// durability across chunks instead of per statement.
+    fn begin_load(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+
+    /// Closes the burst [`Self::begin_load`] opened.
+    fn end_load(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 /// Knobs for one migration run.
@@ -212,9 +283,9 @@ pub fn check(
         // The local engine keeps DDL in an in-memory registry, so a fresh
         // process must replay the table definition before it can read rows back.
         // `CREATE TABLE IF NOT EXISTS` makes this a no-op for existing tables.
-        target.execute(&create_table(&shape)?)?;
+        target.ensure_table(&shape)?;
         let source_rows = source.count(&options.schema, table)?;
-        let target_rows = count_target(target, table)?;
+        let target_rows = target.count_rows(&shape)?;
         let order = shape.order_columns();
         let mut compared = 0_u64;
         let mut note = None;
@@ -240,9 +311,7 @@ pub fn check(
                 if expected.is_empty() {
                     break;
                 }
-                let actual = target
-                    .query(&select_after(&shape, order, cursor.as_deref(), compared, expected.len()))?
-                    .rows;
+                let actual = target.read_rows(&shape, order, cursor.as_ref(), compared, expected.len())?;
                 if expected != actual {
                     synced = false;
                     note = Some(describe_difference(&shape, &expected, &actual, compared));
@@ -369,7 +438,8 @@ fn migrate_table(
     }
     state.tables.insert(name.to_owned(), entry);
 
-    target.execute(&ddl)?;
+    target.ensure_table(&shape)?;
+    target.begin_load()?;
 
     let mut written = 0;
     if starting_full {
@@ -439,8 +509,9 @@ fn migrate_table(
     };
 
     let pruned = if options.prune { prune(source, target, options, name, &shape, &order)? } else { 0 };
+    target.end_load()?;
 
-    let target_rows = count_target(target, name)?;
+    let target_rows = target.count_rows(&shape)?;
     Ok(TableReport {
         name: shape.name.clone(),
         ddl,
@@ -482,7 +553,7 @@ fn scan(
         }
         let short = rows.len() < options.batch_rows;
         for chunk in chunk_by_bytes(&rows, options.batch_bytes) {
-            target.execute(&upsert_statement(shape, chunk)?)?;
+            target.write_rows(shape, chunk)?;
         }
         written += rows.len() as u64;
         let last = rows.last().expect("non-empty window");
@@ -533,7 +604,7 @@ fn verify_rows(
         if expected.is_empty() {
             return Ok((true, None));
         }
-        let actual = target.query(&select_after(shape, order, cursor.as_deref(), offset, options.batch_rows))?.rows;
+        let actual = target.read_rows(shape, order, cursor.as_ref(), offset, options.batch_rows)?;
         if expected != actual {
             let first = expected
                 .iter()
@@ -571,9 +642,7 @@ fn prune(
     let mut target_cursor: Option<Row> = None;
     let mut target_offset = 0_u64;
     loop {
-        let rows = target
-            .query(&select_key_window(shape, order, target_cursor.as_deref(), target_offset, options.batch_rows))?
-            .rows;
+        let rows = target.read_keys(shape, order, target_cursor.as_ref(), target_offset, options.batch_rows)?;
         if rows.is_empty() {
             break;
         }
@@ -618,7 +687,7 @@ fn prune(
         if chunk.is_empty() {
             continue;
         }
-        target.execute(&delete_by_keys(shape, order, chunk))?;
+        target.delete_rows(shape, order, chunk)?;
         pruned += chunk.len() as u64;
     }
     Ok(pruned)
@@ -662,16 +731,6 @@ fn split_key(key: &str) -> Vec<Option<String>> {
     key.split('\u{1}')
         .map(|part| if part == "\u{0}" { None } else { Some(part.to_owned()) })
         .collect()
-}
-
-fn count_target(target: &mut dyn MigrationTarget, name: &str) -> Result<u64, Error> {
-    Ok(target
-        .query(&format!("SELECT COUNT(*) FROM {}", quote_ident(name)))?
-        .rows
-        .first()
-        .and_then(|row| row.first().cloned().flatten())
-        .and_then(|text| text.trim().parse().ok())
-        .unwrap_or_default())
 }
 
 fn save(path: &Option<PathBuf>, state: &MigrationState) -> Result<(), Error> {
