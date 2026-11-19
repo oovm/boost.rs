@@ -9,11 +9,13 @@
 
 #![allow(missing_docs)]
 
+pub mod ansi;
 pub mod highlighter;
 pub mod html;
 pub mod kind;
 pub mod span;
 
+pub use ansi::{AnsiExporter, Exporter, HighlightResult};
 pub use highlighter::{
     AnalysisContext, HighlightRequest, Highlighter, HighlighterKind, HighlighterProvider, HighlighterRegistry, KindClassifier, SemanticKindMap,
     SyntaxHighlighter,

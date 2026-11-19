@@ -1,7 +1,5 @@
 #![doc = include_str!("readme.md")]
 
-/// Formatter module.
-pub mod formatter;
 #[cfg(feature = "language-highlight")]
 pub mod highlighter;
 

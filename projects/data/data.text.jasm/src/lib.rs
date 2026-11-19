@@ -32,8 +32,8 @@ pub use crate::lsp::highlighter::JasmHighlighter;
 #[cfg(feature = "lsp")]
 pub use crate::lsp::JasmLanguageService;
 /// Formatter implementation.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub use crate::lsp::formatter::JasmFormatter;
+pub mod formatter;
+pub use crate::formatter::JasmFormatter;
 
 /// MCP service implementation.
 #[cfg(feature = "mcp")]

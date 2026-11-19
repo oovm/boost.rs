@@ -7,7 +7,7 @@ use crossterm::{
     execute,
     terminal::{self, Clear, ClearType},
 };
-use oak_highlight::{AnsiExporter, Exporter, HighlightResult, OakHighlighter};
+use language_highlight::{AnsiExporter, Exporter, HighlightResult};
 use std::io::{self, Write};
 
 use std::{
@@ -252,7 +252,6 @@ impl<H: ReplHandler> OakRepl<H> {
         let mut stdout = io::stdout();
         let mut line_buf = LineBuffer::new();
         let mut is_continuation = false;
-        let _highlighter = OakHighlighter::new();
         let exporter = AnsiExporter;
 
         terminal::enable_raw_mode()?;
