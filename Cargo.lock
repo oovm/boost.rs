@@ -942,6 +942,7 @@ dependencies = [
  "database-cluster",
  "database-formats",
  "database-protocol-mongo",
+ "database-protocol-mysql",
  "database-protocol-redis",
  "database-query",
  "database-storage",

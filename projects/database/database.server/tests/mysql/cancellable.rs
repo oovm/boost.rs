@@ -20,9 +20,8 @@ use std::{
 };
 
 use database_cluster::topology::ShardMap;
-use database_execution::cluster::LocalExecutor;
-use database_execution::sql_schema::SqlSchemaRegistry;
-use database_server::yyds::mysql::connection::{MysqlSqlRuntime, serve_cancellable};
+use database_execution::{cluster::LocalExecutor, mysql::MysqlSqlRuntime, sql_schema::SqlSchemaRegistry};
+use database_server::yyds::mysql::connection::serve_cancellable;
 use database_storage::cluster_kv::MemoryShard;
 use database_types::cluster::{ShardEpoch, ShardId};
 

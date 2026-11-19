@@ -12,11 +12,10 @@ use std::{
 };
 
 use database_cluster::control::NodeLease;
-use database_execution::cluster::KeyValueExecutor;
-use database_execution::sql_schema::SqlSchemaRegistry;
+use database_execution::{cluster::KeyValueExecutor, mysql::MysqlSqlRuntime, sql_schema::SqlSchemaRegistry};
 use database_query::SqlCatalog;
 
-use super::connection::{MysqlSqlRuntime, serve_cancellable};
+use super::connection::serve_cancellable;
 
 const MAX_CLIENTS: usize = 64;
 

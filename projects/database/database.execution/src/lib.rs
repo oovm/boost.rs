@@ -12,6 +12,8 @@ pub mod engine;
 pub mod local;
 /// MongoDB 命令语义、游标表与存储合同入口。
 pub mod mongo;
+/// MySQL 会话、事务机制、语句分派与 bind → plan → execute。
+pub mod mysql;
 /// 执行程序表示与求值。
 pub mod program;
 /// PostgreSQL 会话、语句分派与 bind → plan → execute。
