@@ -16,7 +16,9 @@ edition.workspace = true
 
 [dependencies]
 
+boost-collection = { workspace = true }
 boost-harness = { workspace = true }
+boost-math = { workspace = true }
 document-types = { workspace = true }
 document-diagnostic = { workspace = true }
 

@@ -253,11 +253,12 @@ fn run_remove_blocks(graph: &mut DocumentGraph, spec: &TransformPassSpec) -> (Tr
     // Capture the subtree of every matching block before mutation: removing a
     // section removes its reachable descendants too, rather than promoting
     // them back to document roots.
+    let child_graph = child_graph(graph);
     let subtrees: HashMap<NodeId, Vec<NodeId>> = graph
         .blocks
         .iter()
         .filter(|node| kinds.iter().any(|kind| block_kind(&node.block).eq_ignore_ascii_case(kind)))
-        .map(|node| (node.id, descendants(graph, node.id)))
+        .map(|node| (node.id, descendants(&child_graph, node.id)))
         .collect();
 
     let mut removed_nodes = 0usize;
@@ -726,22 +727,27 @@ fn block_kind(block: &Block) -> &'static str {
     }
 }
 
-fn descendants(graph: &DocumentGraph, id: NodeId) -> Vec<NodeId> {
-    let mut out = Vec::new();
-    let mut stack = match graph.block(id) {
-        Some(node) => child_ids(&node.block),
-        None => Vec::new(),
-    };
-    while let Some(current) = stack.pop() {
-        if out.contains(&current) {
-            continue;
-        }
-        out.push(current);
-        if let Some(node) = graph.block(current) {
-            stack.extend(child_ids(&node.block));
+/// Directed child-edge graph over every block, built once per pass.
+///
+/// Dangling child ids still become vertices so the reachable set matches the
+/// previous hand-rolled walk; the deletion sweep guards each id anyway.
+fn child_graph(graph: &DocumentGraph) -> boost_collection::MemoryGraph<NodeId> {
+    let mut children = boost_collection::MemoryGraph::new(true);
+    for node in &graph.blocks {
+        let _ = children.add_vertex(node.id);
+    }
+    for node in &graph.blocks {
+        for child in child_ids(&node.block) {
+            let _ = children.add_vertex(child);
+            let _ = children.add_edge(node.id, child, ());
         }
     }
-    out
+    children
+}
+
+/// All blocks reachable from `id` through child edges, excluding `id` itself.
+fn descendants(graph: &boost_collection::MemoryGraph<NodeId>, id: NodeId) -> Vec<NodeId> {
+    boost_math::graph_theory::reachable_from(graph, &id).map(|reached| reached.into_iter().skip(1).collect()).unwrap_or_default()
 }
 
 fn child_ids(block: &Block) -> Vec<NodeId> {
