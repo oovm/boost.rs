@@ -218,10 +218,45 @@ impl Drop for PartialOutput {
 
 /// The system font candidates, per role. A project that declares `fonts` never
 /// reaches this list.
+///
+/// The portable encoder runs on every host, so the candidates cover the
+/// Windows install root, the Noto CJK packages shipped by Linux distributions
+/// and the faces that ship with macOS. A missing role is still an explicit
+/// error listing every path that was tried.
 const SYSTEM_FONTS: [(&str, &[&str]); 3] = [
-    ("regular", &["C:\\Windows\\Fonts\\msyh.ttc", "C:\\Windows\\Fonts\\NotoSansCJK-Regular.ttc"]),
-    ("bold", &["C:\\Windows\\Fonts\\msyhbd.ttc", "C:\\Windows\\Fonts\\NotoSansCJK-Bold.ttc"]),
-    ("mono", &["C:\\Windows\\Fonts\\consola.ttf", "C:\\Windows\\Fonts\\DejaVuSansMono.ttf"]),
+    (
+        "regular",
+        &[
+            "C:\\Windows\\Fonts\\msyh.ttc",
+            "C:\\Windows\\Fonts\\NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf",
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        ],
+    ),
+    (
+        "bold",
+        &[
+            "C:\\Windows\\Fonts\\msyhbd.ttc",
+            "C:\\Windows\\Fonts\\NotoSansCJK-Bold.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        ],
+    ),
+    (
+        "mono",
+        &[
+            "C:\\Windows\\Fonts\\consola.ttf",
+            "C:\\Windows\\Fonts\\DejaVuSansMono.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+            "/System/Library/Fonts/Menlo.ttc",
+            "/System/Library/Fonts/Supplemental/Menlo.ttc",
+        ],
+    ),
 ];
 
 /// Loads the three faces and returns the paths that were used.
@@ -269,6 +304,24 @@ pub(crate) fn resolve_fonts(project: &Project) -> Result<(Fonts, Vec<String>, Ve
 
 fn fnv1a(bytes: &[u8]) -> String {
     media_types::digest(bytes)
+}
+
+/// Names the encoder that actually wrote the file.
+///
+/// The portable MJPEG/PCM backend runs wherever no system H.264 encoder is
+/// available, so a fixed `media-foundation` label would make a portable
+/// delivery look like a Media Foundation one.
+fn backend_label(has_audio: bool, audio_codec: &str) -> String {
+    let container = if media_codec::Capabilities::of_current_platform().h264_encode {
+        "media-foundation+h264"
+    } else {
+        "portable+mjpeg"
+    };
+    if has_audio && !audio_codec.is_empty() {
+        format!("{container}+{audio_codec}")
+    } else {
+        container.to_string()
+    }
 }
 
 /// Draws the cue covering `frame` near the bottom of the picture.
@@ -430,7 +483,7 @@ pub fn render_project_with(
         seconds,
         out: out.display().to_string(),
         bytes,
-        backend: if has_audio { format!("media-foundation+h264+{audio_codec}") } else { "media-foundation+h264".to_string() },
+        backend: backend_label(has_audio, &audio_codec),
         audio: has_audio,
         range: [first, last],
         fonts: font_paths,
@@ -2259,6 +2312,20 @@ fn jitter(seed: u32) -> f32 {
 
 #[cfg(test)]
 mod tests {
+    /// The reported backend names the encoder of this host, not a fixed
+    /// Windows path.
+    #[test]
+    fn the_backend_label_follows_the_host_encoder() {
+        let label = super::backend_label(true, "pcm");
+        if media_codec::Capabilities::of_current_platform().h264_encode {
+            assert_eq!(label, "media-foundation+h264+pcm");
+            assert_eq!(super::backend_label(false, ""), "media-foundation+h264");
+        } else {
+            assert_eq!(label, "portable+mjpeg+pcm");
+            assert_eq!(super::backend_label(false, ""), "portable+mjpeg");
+        }
+    }
+
     /// A cue burned into the picture changes the delivered frames, and the
     /// words come from the same resolved lines the subtitle exporter writes.
     #[test]
