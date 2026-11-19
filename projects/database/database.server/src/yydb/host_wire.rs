@@ -26,7 +26,7 @@ impl TcpWireHostAdapter {
 
     fn roundtrip_invoke(&self, handle: &HostFunctionHandle, args: &[UdfValue]) -> UdfResult<UdfValue> {
         let request_id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let request = Frame::new(MessageType::MicroHostInvoke, request_id, encode_micro_host_invoke(handle, args));
+        let request = Frame::new(MessageType::MicroHostInvoke, request_id, encode_micro_host_invoke(handle, args).map_err(map_wire_error)?);
         let mut stream = self.stream.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         write_frame(&mut *stream, &request).map_err(map_wire_error)?;
         let response = read_frame(&mut *stream).map_err(map_wire_error)?;

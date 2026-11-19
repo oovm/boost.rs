@@ -489,14 +489,16 @@ fn decode_udf_value(body: &[u8], offset: &mut usize) -> Result<UdfValue> {
     }
 }
 
-fn encode_udf_values(values: &[UdfValue]) -> Vec<u8> {
+fn encode_udf_values(values: &[UdfValue]) -> Result<Vec<u8>> {
     let mut body = Vec::new();
-    assert!(values.len() <= 255, "wire scalar arg count exceeds u8");
+    if values.len() > 255 {
+        return Err(Error::Unsupported("wire scalar arg count exceeds u8"));
+    }
     body.push(values.len() as u8);
     for value in values {
         encode_udf_value(&mut body, value);
     }
-    body
+    Ok(body)
 }
 
 fn decode_udf_values(body: &[u8], offset: &mut usize) -> Result<Vec<UdfValue>> {
@@ -532,13 +534,13 @@ fn runtime_value_to_udf(value: &Value) -> Result<UdfValue> {
 }
 
 /// 编码 `MicroHostInvoke` body。
-pub fn encode_micro_host_invoke(handle: &HostFunctionHandle, args: &[UdfValue]) -> Vec<u8> {
+pub fn encode_micro_host_invoke(handle: &HostFunctionHandle, args: &[UdfValue]) -> Result<Vec<u8>> {
     let mut body = Vec::new();
     push_u64(&mut body, handle.host_id);
     push_u32(&mut body, handle.version);
     push_bytes(&mut body, handle.function_id.as_bytes());
-    body.extend_from_slice(&encode_udf_values(args));
-    body
+    body.extend_from_slice(&encode_udf_values(args)?);
+    Ok(body)
 }
 
 /// 解码 `MicroHostInvoke` body。
@@ -575,7 +577,7 @@ pub fn encode_scalar_call(name: &str, version: u32, args: &[Value]) -> Result<Ve
     for value in args {
         udf_args.push(runtime_value_to_udf(value)?);
     }
-    body.extend_from_slice(&encode_udf_values(&udf_args));
+    body.extend_from_slice(&encode_udf_values(&udf_args)?);
     Ok(body)
 }
 
@@ -606,7 +608,7 @@ pub fn decode_scalar_call_ok(body: &[u8]) -> Result<Value> {
 }
 
 /// 编码 `MicroRegister` body。
-pub fn encode_micro_register(definition: &HostMicroDefinition) -> Vec<u8> {
+pub fn encode_micro_register(definition: &HostMicroDefinition) -> Result<Vec<u8>> {
     let mut body = Vec::new();
     push_u64(&mut body, definition.handle.host_id);
     push_u32(&mut body, definition.handle.version);
@@ -614,13 +616,16 @@ pub fn encode_micro_register(definition: &HostMicroDefinition) -> Vec<u8> {
     push_bytes(&mut body, definition.identity.name().as_bytes());
     push_bytes(&mut body, definition.handle.function_id.as_bytes());
     let arg_count = definition.signature.args.len();
+    if arg_count > 255 {
+        return Err(Error::Unsupported("wire micro register arg count exceeds u8"));
+    }
     body.push(arg_count as u8);
     for ty in &definition.signature.args {
         body.push(encode_udf_type_tag(*ty));
     }
     body.push(encode_udf_type_tag(definition.signature.returns));
     body.extend_from_slice(&definition.fingerprint);
-    body
+    Ok(body)
 }
 
 /// 解码 `MicroRegister` body。

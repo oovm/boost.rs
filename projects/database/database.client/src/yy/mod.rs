@@ -92,7 +92,7 @@ impl Client {
 
     /// Register a session-local host micro contract on the remote engine.
     pub fn register_host_micro(&self, definition: &HostMicroDefinition) -> Result<()> {
-        let response = self.round_trip(MessageType::MicroRegister, encode_micro_register(definition))?;
+        let response = self.round_trip(MessageType::MicroRegister, encode_micro_register(definition)?)?;
         expect_type(&response, MessageType::MicroRegisterOk)?;
         Ok(())
     }
