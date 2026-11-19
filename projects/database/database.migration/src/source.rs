@@ -66,8 +66,20 @@ pub struct PgSource {
 impl PgSource {
     /// Opens the source connection and completes the startup handshake.
     pub fn open(config: &ClientConfig) -> Result<Self, Error> {
-        let connection = Connection::open(config).map_err(source_error)?;
-        Ok(Self { config: config.clone(), connection })
+        Ok(Self { config: config.clone(), connection: Self::open_pinned(config)? })
+    }
+
+    /// Open a connection and pin the session settings that decide how values
+    /// render as text. `Row` compares text cells and the engine renders
+    /// timestamps with a `+00` offset, ISO dates and the `postgres` interval
+    /// style, so a server default such as `Asia/Hong_Kong` would otherwise
+    /// make every `timestamptz` column differ from its own stored value.
+    fn open_pinned(config: &ClientConfig) -> Result<Connection, Error> {
+        let mut connection = Connection::open(config).map_err(source_error)?;
+        for sql in ["SET TIME ZONE 'UTC'", "SET DateStyle = 'ISO, MDY'", "SET IntervalStyle = 'postgres'"] {
+            connection.execute(sql).map_err(source_error)?;
+        }
+        Ok(connection)
     }
 
     /// Reads one statement's rows.
@@ -88,7 +100,7 @@ impl PgSource {
     }
 
     fn reconnect(&mut self) -> Result<(), Error> {
-        self.connection = Connection::open(&self.config).map_err(source_error)?;
+        self.connection = Self::open_pinned(&self.config)?;
         Ok(())
     }
 }
