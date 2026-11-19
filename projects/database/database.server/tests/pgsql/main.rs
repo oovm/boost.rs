@@ -1,5 +1,6 @@
-//! Migrated integration tests for `pgsql`.
+//! PostgreSQL gateway smoke.
+//!
+//! TLS, wire and SQL-runtime matrices live downstream in
+//! `postgres-conformance`.
 
 mod gateway;
-mod ssl;
-mod wire;
