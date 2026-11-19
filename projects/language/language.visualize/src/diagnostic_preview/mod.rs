@@ -1,6 +1,6 @@
 //! SVG diagnostic preview rendering for structured diagnostics.
 
-use boost_harness::{
+use boost_harness::diagnostic::{
     Diagnostic, DiagnosticSet,
     terminal::{Config, SourceCache, SourceRegistry, StructuredRenderError, structured_to_terminal},
 };
