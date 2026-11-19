@@ -5937,7 +5937,7 @@ fn blob_column_round_trips_raw_bytes_verbatim() {
     // Storage keeps the raw octets behind the binary `bytes` tag, so no text
     // round trip can corrupt them.
     let stored = records.values().next().expect("stored row");
-    let needle = [0x0A, 0x04, 0x00, 0x00, 0xFF, 0x10, 0x80];
+    let needle = [0x0A, 0x04, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x10, 0x80];
     assert!(stored.windows(needle.len()).any(|window| window == needle), "unexpected stored row: {stored:?}");
 }
 

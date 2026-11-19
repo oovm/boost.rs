@@ -2,7 +2,8 @@
 //!
 //! 一行表记录以 `__yydb/v0/row/<table>/<pk>` 为记录名，值采用带版本前缀的二进
 //! 制行格式：版本字节、列数、NULL 位图、按列名升序的名字表和逐个带标签的值。
-//! 旧 JSON 行格式已退役，解码遇到非当前版本一律失败并提示重建，不猜测形状。
+//! 旧 JSON 行格式与 v1 二进制行格式（字段长度 16 位）均已退役，解码遇到非当前
+//! 版本一律失败并提示重建，不猜测形状。
 //!
 //! 行内的 `bytes` 与 `vector<N>` 可能被宿主改写为对象引用；解码需要
 //! [`ObjectResolver`]，由宿主在一条语句执行期间用 [`with_object_resolver`] 安装。
@@ -26,9 +27,10 @@ pub const ROW_PREFIX: &str = "__yydb/v0/row/";
 /// Version byte prefixed to every stored row record.
 ///
 /// Row records are self-describing and versioned. A record whose first byte is
-/// not [`ROW_CODEC_VERSION`] was written by the retired JSON row codec, and
-/// decoding it fails closed with a migration hint instead of guessing a shape.
-pub const ROW_CODEC_VERSION: u8 = 1;
+/// not [`ROW_CODEC_VERSION`] was written by a retired codec (the JSON encoding
+/// or the v1 binary encoding, which capped every field at 65535 bytes), and
+/// decoding it fails closed with a rebuild hint instead of guessing a shape.
+pub const ROW_CODEC_VERSION: u8 = 2;
 
 /// Reads the octets behind an out-of-line `bytes` object reference.
 ///
@@ -101,7 +103,7 @@ pub fn row_references(bytes: &[u8]) -> Result<RowReferences> {
 /// Encode one row as the binary row record format.
 ///
 /// Layout: `version u8`, `column count u16`, `null bitmap ceil(n/8)`, then one
-/// `name length u16 + UTF-8 name` per column in ascending name order, then one
+/// `name length u32 + UTF-8 name` per column in ascending name order, then one
 /// tagged value for every column the bitmap does not mark null. Integers keep
 /// their declared width, text and octets carry a length prefix, floats are raw
 /// IEEE-754 bits, and keys never repeat the enclosing table name.
@@ -167,7 +169,7 @@ pub fn select_stored<'a>(bytes: &'a [u8], names: &[&str], selected: &mut [Option
         Some(version) if *version == ROW_CODEC_VERSION => {}
         Some(_) => {
             return Err(Error::Unsupported(
-                "row record uses the retired JSON row encoding: rebuild the database from source data to use the \
+                "row record uses a retired row encoding: rebuild the database from source data to use the current \
                  binary row format",
             ));
         }
@@ -229,7 +231,7 @@ const MAX_LIST_DEPTH: u8 = 32;
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 
 fn put_len(out: &mut Vec<u8>, len: usize, _what: &str) -> Result<()> {
-    let len = u16::try_from(len).map_err(|_| Error::Unsupported("row record field exceeds 65535 bytes"))?;
+    let len = u32::try_from(len).map_err(|_| Error::Unsupported("row record field exceeds 4294967295 bytes"))?;
     out.extend_from_slice(&len.to_le_bytes());
     Ok(())
 }
@@ -420,7 +422,7 @@ fn parse_row(bytes: &[u8], references: &mut Option<RowReferences>, resolve: bool
         Some(version) if *version == ROW_CODEC_VERSION => {}
         Some(_) => {
             return Err(Error::Unsupported(
-                "row record uses the retired JSON row encoding: rebuild the database from source data to use the \
+                "row record uses a retired row encoding: rebuild the database from source data to use the current \
                  binary row format",
             ));
         }
@@ -514,14 +516,14 @@ impl<'a> RowCursor<'a> {
     }
 
     fn text(&mut self) -> Result<String> {
-        let len = self.u16()? as usize;
+        let len = self.u32()? as usize;
         let bytes = self.take(len)?;
         String::from_utf8(bytes.to_vec()).map_err(|_| Error::Corrupt("row record text is not UTF-8"))
     }
 
     /// Borrow one length-prefixed UTF-8 string without allocating it.
     fn text_slice(&mut self) -> Result<&'a str> {
-        let len = self.u16()? as usize;
+        let len = self.u32()? as usize;
         std::str::from_utf8(self.take(len)?).map_err(|_| Error::Corrupt("row record text is not UTF-8"))
     }
 
@@ -540,7 +542,7 @@ impl<'a> RowCursor<'a> {
                 self.take(8)?;
             }
             TAG_TEXT => {
-                let len = self.u16()? as usize;
+                let len = self.u32()? as usize;
                 self.take(len)?;
             }
             TAG_UUID => {
@@ -553,7 +555,7 @@ impl<'a> RowCursor<'a> {
                 self.take(18)?;
             }
             TAG_BYTES => {
-                let len = self.u16()? as usize;
+                let len = self.u32()? as usize;
                 self.take(len)?;
             }
             TAG_VECTOR => {
@@ -572,11 +574,11 @@ impl<'a> RowCursor<'a> {
                     return Err(Error::Corrupt("row record file flags are invalid"));
                 }
                 if flags & 0b01 != 0 {
-                    let len = self.u16()? as usize;
+                    let len = self.u32()? as usize;
                     self.take(len)?;
                 }
                 if flags & 0b10 != 0 {
-                    let len = self.u16()? as usize;
+                    let len = self.u32()? as usize;
                     self.take(len)?;
                 }
                 self.take(32 + 8)?;
@@ -601,7 +603,7 @@ impl<'a> RowCursor<'a> {
 
     /// Advance past one length-prefixed UTF-8 string without materializing it.
     fn skip_text(&mut self) -> Result<()> {
-        let len = self.u16()? as usize;
+        let len = self.u32()? as usize;
         self.take(len)?;
         Ok(())
     }
@@ -639,7 +641,7 @@ fn decode_value(cursor: &mut RowCursor<'_>, references: &mut Option<RowReference
             Value::Decimal(Decimal::new(unscaled, precision, scale)?)
         }
         TAG_BYTES => {
-            let len = cursor.u16()? as usize;
+            let len = cursor.u32()? as usize;
             Value::Bytes(cursor.take(len)?.to_vec())
         }
         TAG_VECTOR => {
