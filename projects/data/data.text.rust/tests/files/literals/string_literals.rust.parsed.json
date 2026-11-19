@@ -1,6 +1,6 @@
 {
     "success": true,
-    "node_count": 16,
+    "node_count": 20,
     "ast_structure": {
         "kind": "SourceFile",
         "children": [
@@ -11,21 +11,39 @@
                         "kind": "Function",
                         "children": [
                             {
+                                "kind": "Leaves(3)",
+                                "children": [],
+                                "text_length": 7,
+                                "is_leaf": true
+                            },
+                            {
                                 "kind": "ParameterList",
                                 "children": [
                                     {
-                                        "kind": "Leaves(3)",
+                                        "kind": "Leaves(2)",
                                         "children": [],
-                                        "text_length": 3,
+                                        "text_length": 2,
                                         "is_leaf": true
                                     }
                                 ],
-                                "text_length": 3,
+                                "text_length": 2,
                                 "is_leaf": false
+                            },
+                            {
+                                "kind": "Leaves(1)",
+                                "children": [],
+                                "text_length": 1,
+                                "is_leaf": true
                             },
                             {
                                 "kind": "BlockExpression",
                                 "children": [
+                                    {
+                                        "kind": "Leaves(2)",
+                                        "children": [],
+                                        "text_length": 6,
+                                        "is_leaf": true
+                                    },
                                     {
                                         "kind": "LiteralExpression",
                                         "children": [
@@ -40,6 +58,12 @@
                                         "is_leaf": false
                                     },
                                     {
+                                        "kind": "Leaves(2)",
+                                        "children": [],
+                                        "text_length": 6,
+                                        "is_leaf": true
+                                    },
+                                    {
                                         "kind": "LiteralExpression",
                                         "children": [
                                             {
@@ -51,6 +75,12 @@
                                         ],
                                         "text_length": 7,
                                         "is_leaf": false
+                                    },
+                                    {
+                                        "kind": "Leaves(2)",
+                                        "children": [],
+                                        "text_length": 6,
+                                        "is_leaf": true
                                     },
                                     {
                                         "kind": "LiteralExpression",
@@ -66,20 +96,14 @@
                                         "is_leaf": false
                                     },
                                     {
-                                        "kind": "Leaves(9)",
+                                        "kind": "Leaves(3)",
                                         "children": [],
-                                        "text_length": 21,
+                                        "text_length": 3,
                                         "is_leaf": true
                                     }
                                 ],
                                 "text_length": 37,
                                 "is_leaf": false
-                            },
-                            {
-                                "kind": "Leaves(3)",
-                                "children": [],
-                                "text_length": 7,
-                                "is_leaf": true
                             }
                         ],
                         "text_length": 47,

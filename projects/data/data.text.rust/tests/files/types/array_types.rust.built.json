@@ -1,7 +1,7 @@
 {
     "success": true,
     "typed_root": {
-        "type_name": "oak_rust::ast::RustRoot",
+        "type_name": "data_text_rust::ast::RustRoot",
         "content": {
             "items": [
                 {
@@ -30,7 +30,7 @@
                         "params": [],
                         "return_type": null,
                         "span": {
-                            "end": 54,
+                            "end": 53,
                             "start": 0
                         }
                     }
@@ -39,6 +39,6 @@
         }
     },
     "errors": [
-        "ExpectedToken { expected: \"RightBracket\", offset: 27, source_id: None }"
+        "ExpectedToken { expected: \"RightBracket\", offset: 27, source_ref: None }"
     ]
 }

@@ -36,7 +36,7 @@ impl<'config> SvelteParser<'config> {
             }
             _ => {
                 let cp = state.checkpoint();
-                state.advance();
+                state.bump();
                 state.finish_at(cp, SvelteElementType::TextNode);
                 Ok(())
             }
@@ -56,7 +56,7 @@ impl<'config> SvelteParser<'config> {
                 self.parse_attribute(state)?;
             }
             else {
-                state.advance();
+                state.bump();
             }
         }
 
@@ -117,7 +117,7 @@ impl<'config> SvelteParser<'config> {
         let cp = state.checkpoint();
         state.expect(SvelteTokenType::LeftBrace)?;
         while state.not_at_end() && !state.at(SvelteTokenType::RightBrace) {
-            state.advance();
+            state.bump();
         }
         state.expect(SvelteTokenType::RightBrace).ok();
         state.finish_at(cp, SvelteElementType::Expression);
@@ -133,7 +133,7 @@ impl<'config> SvelteParser<'config> {
         state.expect(SvelteTokenType::Identifier).ok();
 
         while state.not_at_end() && !state.at(SvelteTokenType::RightBrace) {
-            state.advance();
+            state.bump();
         }
         state.expect(SvelteTokenType::RightBrace).ok();
         state.finish_at(header_cp, SvelteElementType::BlockHeader);
@@ -171,7 +171,7 @@ impl<'config> SvelteParser<'config> {
         state.expect(SvelteTokenType::ColonBrace)?;
         state.expect(SvelteTokenType::Identifier).ok();
         while state.not_at_end() && !state.at(SvelteTokenType::RightBrace) {
-            state.advance();
+            state.bump();
         }
         state.expect(SvelteTokenType::RightBrace).ok();
         state.finish_at(header_cp, SvelteElementType::BlockHeader);

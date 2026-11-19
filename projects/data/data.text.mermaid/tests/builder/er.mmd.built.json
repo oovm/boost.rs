@@ -1,7 +1,7 @@
 {
     "success": true,
     "typed_root": {
-        "type_name": "oak_mermaid::ast::MermaidRoot",
+        "type_name": "data_text_mermaid::ast::MermaidRoot",
         "content": {
             "diagrams": [
                 {

@@ -1,7 +1,7 @@
 {
     "success": true,
     "typed_root": {
-        "type_name": "oak_typst::ast::TypstRoot",
+        "type_name": "data_text_typst::ast::TypstRoot",
         "content": {
             "items": [
                 {

@@ -31,8 +31,8 @@ impl<'config> AplParser<'config> {
 
         // Try parsing assignment: ID ← Expression
         if state.at(AplTokenType::Identifier) && state.peek_kind_at(1) == Some(AplTokenType::LeftArrow) {
-            state.advance(); // ID
-            state.advance(); // ←
+            state.bump(); // ID
+            state.bump(); // ←
             self.parse_expression(state)?;
             state.finish_at(cp, AplElementType::Assignment);
         }
@@ -50,30 +50,30 @@ impl<'config> AplParser<'config> {
 
         while state.not_at_end() && !state.at(AplTokenType::Newline) && !state.at(AplTokenType::Diamond) {
             if state.at(AplTokenType::Identifier) {
-                state.advance();
+                state.bump();
             }
             else if state.at(AplTokenType::NumberLiteral) {
-                state.advance();
+                state.bump();
             }
             else if state.at(AplTokenType::StringLiteral) {
-                state.advance();
+                state.bump();
             }
             else if state.at(AplTokenType::LeftParen) {
-                state.advance();
+                state.bump();
                 self.parse_expression(state)?;
                 state.expect(AplTokenType::RightParen).ok();
             }
             else if state.at(AplTokenType::LeftBrace) {
                 // Dfn { ... }
-                state.advance();
+                state.bump();
                 while state.not_at_end() && !state.at(AplTokenType::RightBrace) {
-                    state.advance();
+                    state.bump();
                 }
                 state.expect(AplTokenType::RightBrace).ok();
             }
             else {
                 // Possibly a primitive function or operator
-                state.advance();
+                state.bump();
             }
         }
 
@@ -102,7 +102,7 @@ impl<'config> Parser<AplLanguage> for AplParser<'config> {
                 self.parse_statement(state)?;
 
                 if state.at(AplTokenType::Diamond) {
-                    state.advance();
+                    state.bump();
                 }
             }
 

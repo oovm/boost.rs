@@ -275,7 +275,14 @@ impl ParserTester {
 
         for c in root.children {
             match c {
-                data_text_core::GreenTree::Node(n) => children.push(Self::to_ast(n)),
+                data_text_core::GreenTree::Node(n) => {
+                    if leaf_count > 0 {
+                        children.push(AstNodeData { kind: format!("Leaves({})", leaf_count), children: vec![], text_length: leaf_text_length, is_leaf: true });
+                        leaf_count = 0;
+                        leaf_text_length = 0;
+                    }
+                    children.push(Self::to_ast(n));
+                }
                 data_text_core::GreenTree::Leaf(l) => {
                     leaf_count += 1;
                     leaf_text_length += l.length as usize;

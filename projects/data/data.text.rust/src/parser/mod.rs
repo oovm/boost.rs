@@ -262,7 +262,7 @@ impl<'config> RustParser<'config> {
         self.parse_param_list(state)?;
         if state.eat(RustTokenType::Arrow) {
             while state.not_at_end() && !state.at(RustTokenType::LeftBrace) {
-                state.advance()
+                state.bump()
             }
         }
         self.parse_block(state)?;
@@ -284,7 +284,7 @@ impl<'config> RustParser<'config> {
         let cp = state.checkpoint();
         state.expect(LeftParen).ok();
         while state.not_at_end() && !state.at(RightParen) {
-            state.advance()
+            state.bump()
         }
         state.expect(RightParen).ok();
         state.finish_at(cp, crate::parser::element_type::RustElementType::ParameterList);
@@ -347,7 +347,7 @@ impl<'config> RustParser<'config> {
         state.bump(); // struct
         state.expect(crate::lexer::RustTokenType::Identifier).ok();
         while state.not_at_end() && !state.at(crate::lexer::RustTokenType::LeftBrace) && !state.at(crate::lexer::RustTokenType::Semicolon) {
-            state.advance()
+            state.bump()
         }
         if state.at(crate::lexer::RustTokenType::LeftBrace) {
             self.parse_block(state)?
