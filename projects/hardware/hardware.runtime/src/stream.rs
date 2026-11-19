@@ -195,6 +195,8 @@ pub struct SegmentStreamer {
     last_used: BTreeMap<SegmentId, u64>,
     stats: StreamStats,
     backing: Option<DiskBacking>,
+    host_backing: bool,
+    host_buffers: BTreeMap<SegmentId, Vec<u8>>,
 }
 
 impl SegmentStreamer {
@@ -213,7 +215,23 @@ impl SegmentStreamer {
             last_used: BTreeMap::new(),
             stats: StreamStats::default(),
             backing: None,
+            host_backing: false,
+            host_buffers: BTreeMap::new(),
         }
+    }
+
+    /// 让主机层持有真实内存缓冲：段进入主机时按登记字节分配，离开时释放。
+    ///
+    /// 主机未开启时只是一个字节账；开启后用 `try_reserve_exact` 实际申请内存，申请失败
+    /// 按 [`StreamError::HostExhausted`] 报告，`host_allocated` 可以与 `host_used` 对账。
+    pub fn with_host_backing(mut self) -> Self {
+        self.host_backing = true;
+        self
+    }
+
+    /// 主机层实际分配的后备字节。
+    pub fn host_allocated(&self) -> u64 {
+        self.host_buffers.values().map(|buffer| buffer.len() as u64).sum()
     }
 
     /// 构造一个以真实目录为磁盘后备的流式器。
@@ -264,6 +282,7 @@ impl SegmentStreamer {
         if let Some(backing) = &self.backing {
             backing.remove(id);
         }
+        self.host_buffers.remove(&id);
         self.bytes.remove(&id);
         self.tiers.remove(&id);
         self.last_used.remove(&id);
@@ -298,6 +317,7 @@ impl SegmentStreamer {
         let from = self.tier_of(id);
         match from {
             Tier::Host => {
+                self.take_host_buffer(id, bytes)?;
                 self.host_used = self.host_used.saturating_sub(bytes);
                 self.stats.host_loads += 1;
             }
@@ -335,6 +355,7 @@ impl SegmentStreamer {
             let from = self.tier_of(*id);
             match from {
                 Tier::Host => {
+                    self.take_host_buffer(*id, bytes)?;
                     self.host_used = self.host_used.saturating_sub(bytes);
                     self.stats.host_loads += 1;
                 }
@@ -407,6 +428,19 @@ impl SegmentStreamer {
         self.stats
     }
 
+    fn take_host_buffer(&mut self, id: SegmentId, bytes: u64) -> Result<(), StreamError> {
+        if !self.host_backing {
+            return Ok(());
+        }
+        match self.host_buffers.remove(&id) {
+            Some(buffer) if buffer.len() as u64 == bytes => Ok(()),
+            Some(buffer) => {
+                Err(StreamError::CorruptBacking { segment: id, detail: format!("host buffer is {} bytes, expected {bytes}", buffer.len()) })
+            }
+            None => Err(StreamError::Io { detail: format!("host buffer for segment {} is missing", id.0) }),
+        }
+    }
+
     fn bytes_of(&self, id: SegmentId) -> Result<u64, StreamError> {
         self.bytes.get(&id).copied().ok_or(StreamError::UnknownSegment(id))
     }
@@ -439,6 +473,14 @@ impl SegmentStreamer {
             }
         }
         self.tiers.insert(id, Tier::Host);
+        if self.host_backing {
+            let mut buffer = Vec::new();
+            buffer
+                .try_reserve_exact(bytes as usize)
+                .map_err(|_| StreamError::HostExhausted { required: bytes, available: self.host_capacity.saturating_sub(self.host_used) })?;
+            buffer.extend_from_slice(&fill(id, bytes));
+            self.host_buffers.insert(id, buffer);
+        }
         self.device_used = self.device_used.saturating_sub(bytes);
         self.host_used = self.host_used.saturating_add(bytes);
         self.stats.evictions += 1;
@@ -458,6 +500,7 @@ impl SegmentStreamer {
             backing.write(id, bytes)?;
             self.stats.disk_write_bytes = self.stats.disk_write_bytes.saturating_add(bytes);
         }
+        self.host_buffers.remove(&id);
         self.tiers.insert(id, Tier::Disk);
         self.host_used = self.host_used.saturating_sub(bytes);
         self.disk_used = self.disk_used.saturating_add(bytes);
@@ -673,5 +716,34 @@ mod tests {
         }
 
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn host_backing_allocates_and_releases_real_buffers() {
+        let mut streamer = SegmentStreamer::new(64, 128, 4096).with_host_backing();
+        for id in 1..=4 {
+            streamer.register(SegmentId(id), 64).unwrap();
+        }
+        streamer.submit(SegmentId(1)).unwrap();
+        streamer.submit(SegmentId(2)).unwrap();
+        streamer.submit(SegmentId(3)).unwrap();
+        assert_eq!(streamer.host_used(), 128);
+        assert_eq!(streamer.host_allocated(), 128, "host tier must hold real memory");
+
+        // 回装主机段必须释放它的缓冲。
+        streamer.submit(SegmentId(1)).unwrap();
+        assert_eq!(streamer.host_allocated(), streamer.host_used());
+
+        // 下沉到磁盘时缓冲被释放。
+        streamer.submit(SegmentId(4)).unwrap();
+        assert_eq!(streamer.tier(SegmentId(1)), Some(Tier::Host));
+        assert_eq!(streamer.host_allocated(), streamer.host_used());
+
+        streamer.release_to_host(SegmentId(4)).unwrap();
+        let resident = (1..=4).filter(|id| streamer.tier(SegmentId(*id)) == Some(Tier::Host)).count() as u64;
+        assert_eq!(streamer.host_allocated(), resident * 64);
+
+        streamer.unregister(SegmentId(2)).unwrap();
+        assert_eq!(streamer.host_allocated(), streamer.host_used());
     }
 }

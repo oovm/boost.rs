@@ -220,11 +220,12 @@ mod tests {
         let oracle = StageOracle { footprint: 48 };
         let plan = plan_graph(graph, &[], &oracle, &MemoryBudget::new(1 << 20, 0, 0)).expect("plan");
 
-        let mut streamer = SegmentStreamer::with_disk_backing(&root, 64, 64, 1 << 20).expect("disk backing");
+        let mut streamer = SegmentStreamer::with_disk_backing(&root, 64, 64, 1 << 20).expect("disk backing").with_host_backing();
         let executed = execute_plan(graph, &plan, &bindings, &mut streamer).expect("execute");
         let eager = graph.run(&bindings).expect("eager");
 
         assert!(executed.stats.disk_read_bytes > 0, "segments must come back through real files");
+        assert_eq!(streamer.host_allocated(), streamer.host_used(), "host tier must hold real buffers");
         assert_eq!(executed.outputs.len(), eager.len());
         for (streamed, reference) in executed.outputs.iter().zip(&eager) {
             assert_eq!(streamed.to_vec(), reference.to_vec());
