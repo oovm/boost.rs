@@ -3,8 +3,16 @@
 //! 逻辑模型大小不受设备容量限制：段通常常驻磁盘/主机，提交前才换入设备。提交时只要求
 //! 当前段装得下；设备预算不足时按 LRU 驱逐到主机，主机也不足时再下沉到磁盘。所有搬运、
 //! 驱逐和命中都进入 [`LoadPlan`] 与 [`StreamStats`]，预算靠的是真实字节账，不靠布尔值。
+//!
+//! 用 [`SegmentStreamer::with_disk_backing`] 构造时，磁盘层是真实目录里的后备文件：
+//! 注册、下沉和重新装入都会实际读写并校验文件长度与内容。文件内容是按段身份派生的确定性
+//! 填充，只用于验证搬运完整性，不代表张量数值。
 
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
+};
 
 /// 内存层级。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -60,6 +68,10 @@ pub struct StreamStats {
     pub prefetched_loads: u64,
     /// 全部搬运字节（含驱逐）。
     pub transferred_bytes: u64,
+    /// 从后备文件实际读出的字节。
+    pub disk_read_bytes: u64,
+    /// 写入后备文件的字节。
+    pub disk_write_bytes: u64,
 }
 
 /// 流式加载错误。
@@ -92,6 +104,18 @@ pub enum StreamError {
         /// 可用字节。
         available: u64,
     },
+    /// 后备文件的读写失败。
+    Io {
+        /// 具体原因。
+        detail: String,
+    },
+    /// 后备文件长度或内容与登记不符。
+    CorruptBacking {
+        /// 出问题的段。
+        segment: SegmentId,
+        /// 具体原因。
+        detail: String,
+    },
 }
 
 impl std::fmt::Display for StreamError {
@@ -108,11 +132,54 @@ impl std::fmt::Display for StreamError {
             StreamError::DiskExhausted { required, available } => {
                 write!(f, "disk backing exhausted: need {required} bytes, have {available}")
             }
+            StreamError::Io { detail } => write!(f, "disk backing io failed: {detail}"),
+            StreamError::CorruptBacking { segment, detail } => {
+                write!(f, "disk backing for segment {} is corrupt: {detail}", segment.0)
+            }
         }
     }
 }
 
 impl std::error::Error for StreamError {}
+
+/// 真实磁盘后备：每个段一个文件，内容由段身份确定性派生。
+#[derive(Debug, Clone)]
+struct DiskBacking {
+    root: PathBuf,
+}
+
+impl DiskBacking {
+    fn path(&self, id: SegmentId) -> PathBuf {
+        self.root.join(format!("{}.seg", id.0))
+    }
+
+    fn write(&self, id: SegmentId, bytes: u64) -> Result<(), StreamError> {
+        let path = self.path(id);
+        fs::write(&path, fill(id, bytes)).map_err(|error| StreamError::Io { detail: format!("write {}: {error}", path.display()) })
+    }
+
+    fn verify(&self, id: SegmentId, bytes: u64) -> Result<(), StreamError> {
+        let path = self.path(id);
+        let content = fs::read(&path).map_err(|error| StreamError::Io { detail: format!("read {}: {error}", path.display()) })?;
+        if content.len() as u64 != bytes {
+            return Err(StreamError::CorruptBacking { segment: id, detail: format!("expected {bytes} bytes, found {}", content.len()) });
+        }
+        if content != fill(id, bytes) {
+            return Err(StreamError::CorruptBacking { segment: id, detail: "content does not match the registered fill".into() });
+        }
+        Ok(())
+    }
+
+    fn remove(&self, id: SegmentId) {
+        let _ = fs::remove_file(self.path(id));
+    }
+}
+
+/// 后备文件的确定性填充；用于验证读写完整性，不代表张量数值。
+fn fill(id: SegmentId, bytes: u64) -> Vec<u8> {
+    let seed = id.0.wrapping_mul(31);
+    (0..bytes).map(|offset| (seed.wrapping_add(offset) % 251) as u8).collect()
+}
 
 /// 虚拟显存分段调度器：设备 / 主机 / 磁盘三层，LRU 驱逐。
 pub struct SegmentStreamer {
@@ -127,6 +194,7 @@ pub struct SegmentStreamer {
     clock: u64,
     last_used: BTreeMap<SegmentId, u64>,
     stats: StreamStats,
+    backing: Option<DiskBacking>,
 }
 
 impl SegmentStreamer {
@@ -144,7 +212,30 @@ impl SegmentStreamer {
             clock: 0,
             last_used: BTreeMap::new(),
             stats: StreamStats::default(),
+            backing: None,
         }
+    }
+
+    /// 构造一个以真实目录为磁盘后备的流式器。
+    ///
+    /// 注册段时按登记字节创建后备文件，回装前校验长度与内容；写入失败或内容不符都会报错，
+    /// 不会把损坏的段当成有效数据。
+    pub fn with_disk_backing(
+        directory: impl Into<PathBuf>,
+        device_capacity: u64,
+        host_capacity: u64,
+        disk_capacity: u64,
+    ) -> Result<Self, StreamError> {
+        let root = directory.into();
+        fs::create_dir_all(&root).map_err(|error| StreamError::Io { detail: format!("create {}: {error}", root.display()) })?;
+        let mut streamer = Self::new(device_capacity, host_capacity, disk_capacity);
+        streamer.backing = Some(DiskBacking { root });
+        Ok(streamer)
+    }
+
+    /// 后备目录；进程内模型返回 `None`。
+    pub fn backing_directory(&self) -> Option<&Path> {
+        self.backing.as_ref().map(|backing| backing.root.as_path())
     }
 
     /// 注册一个后备段，初始位于磁盘。
@@ -156,9 +247,31 @@ impl SegmentStreamer {
         if bytes > available {
             return Err(StreamError::DiskExhausted { required: bytes, available });
         }
+        if let Some(backing) = &self.backing {
+            backing.write(id, bytes)?;
+            self.stats.disk_write_bytes = self.stats.disk_write_bytes.saturating_add(bytes);
+        }
         self.bytes.insert(id, bytes);
         self.tiers.insert(id, Tier::Disk);
         self.disk_used = self.disk_used.saturating_add(bytes);
+        Ok(())
+    }
+
+    /// 注销一个段并释放它占用的层级预算与后备文件。
+    pub fn unregister(&mut self, id: SegmentId) -> Result<(), StreamError> {
+        let bytes = self.bytes_of(id)?;
+        let tier = self.tier_of(id);
+        if let Some(backing) = &self.backing {
+            backing.remove(id);
+        }
+        self.bytes.remove(&id);
+        self.tiers.remove(&id);
+        self.last_used.remove(&id);
+        match tier {
+            Tier::Device => self.device_used = self.device_used.saturating_sub(bytes),
+            Tier::Host => self.host_used = self.host_used.saturating_sub(bytes),
+            Tier::Disk => self.disk_used = self.disk_used.saturating_sub(bytes),
+        }
         Ok(())
     }
 
@@ -189,6 +302,10 @@ impl SegmentStreamer {
                 self.stats.host_loads += 1;
             }
             Tier::Disk => {
+                if let Some(backing) = &self.backing {
+                    backing.verify(id, bytes)?;
+                    self.stats.disk_read_bytes = self.stats.disk_read_bytes.saturating_add(bytes);
+                }
                 self.disk_used = self.disk_used.saturating_sub(bytes);
                 self.stats.disk_loads += 1;
             }
@@ -222,6 +339,10 @@ impl SegmentStreamer {
                     self.stats.host_loads += 1;
                 }
                 Tier::Disk => {
+                    if let Some(backing) = &self.backing {
+                        backing.verify(*id, bytes)?;
+                        self.stats.disk_read_bytes = self.stats.disk_read_bytes.saturating_add(bytes);
+                    }
                     self.disk_used = self.disk_used.saturating_sub(bytes);
                     self.stats.disk_loads += 1;
                 }
@@ -333,6 +454,10 @@ impl SegmentStreamer {
         if bytes > available {
             return Err(StreamError::DiskExhausted { required: bytes, available });
         }
+        if let Some(backing) = &self.backing {
+            backing.write(id, bytes)?;
+            self.stats.disk_write_bytes = self.stats.disk_write_bytes.saturating_add(bytes);
+        }
         self.tiers.insert(id, Tier::Disk);
         self.host_used = self.host_used.saturating_sub(bytes);
         self.disk_used = self.disk_used.saturating_add(bytes);
@@ -442,5 +567,111 @@ mod tests {
         assert_eq!(streamer.tier(SegmentId(1)), Some(Tier::Host));
         assert_eq!(streamer.device_used(), 0);
         assert_eq!(streamer.host_used(), 64);
+    }
+
+    fn backing_dir(label: &str) -> PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let serial = COUNTER.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("boost-stream-{}-{label}-{serial}", std::process::id()))
+    }
+
+    #[test]
+    fn disk_backing_round_trips_through_real_files() {
+        let root = backing_dir("round-trip");
+        let mut streamer = SegmentStreamer::with_disk_backing(&root, 64, 64, 4096).unwrap();
+        streamer.register(SegmentId(1), 64).unwrap();
+        streamer.register(SegmentId(2), 64).unwrap();
+        assert_eq!(fs::read(root.join("1.seg")).unwrap(), fill(SegmentId(1), 64));
+        assert_eq!(streamer.stats().disk_write_bytes, 128);
+
+        streamer.submit(SegmentId(1)).unwrap();
+        assert_eq!(streamer.stats().disk_read_bytes, 64, "loading from disk must read the file");
+
+        // 设备与主机都只有一个段宽：第三个提交会把 1 挤到主机，把 2 压到磁盘。
+        streamer.submit(SegmentId(2)).unwrap();
+        assert_eq!(streamer.tier(SegmentId(1)), Some(Tier::Host));
+        for segment in [SegmentId(3), SegmentId(4)] {
+            streamer.register(segment, 64).unwrap();
+        }
+        streamer.submit(SegmentId(3)).unwrap();
+        let plan = streamer.submit(SegmentId(4)).unwrap();
+        assert_eq!(streamer.tier(SegmentId(1)), Some(Tier::Disk));
+        assert!(plan.transfers.iter().any(|transfer| transfer.from == Tier::Host && transfer.to == Tier::Disk));
+        assert_eq!(fs::read(root.join("1.seg")).unwrap(), fill(SegmentId(1), 64), "spill rewrites a valid backing file");
+
+        let reads = streamer.stats().disk_read_bytes;
+        assert_eq!(streamer.tier(SegmentId(1)), Some(Tier::Disk));
+        streamer.submit(SegmentId(1)).unwrap();
+        assert_eq!(streamer.stats().disk_read_bytes, reads + 64);
+
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn corrupt_or_truncated_backing_is_rejected() {
+        let root = backing_dir("corrupt");
+        let mut streamer = SegmentStreamer::with_disk_backing(&root, 64, 64, 1024).unwrap();
+        streamer.register(SegmentId(7), 32).unwrap();
+
+        fs::write(root.join("7.seg"), vec![0u8; 32]).unwrap();
+        let error = streamer.submit(SegmentId(7)).expect_err("content must be verified");
+        assert!(matches!(error, StreamError::CorruptBacking { segment: SegmentId(7), .. }));
+
+        fs::write(root.join("7.seg"), vec![0u8; 16]).unwrap();
+        let error = streamer.submit(SegmentId(7)).expect_err("length must be verified");
+        assert!(matches!(error, StreamError::CorruptBacking { segment: SegmentId(7), .. }));
+
+        fs::remove_file(root.join("7.seg")).unwrap();
+        let error = streamer.submit(SegmentId(7)).expect_err("missing file is reported");
+        assert!(matches!(error, StreamError::Io { .. }));
+
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn disk_exhaustion_recovers_after_unregister() {
+        let root = backing_dir("recovery");
+        let mut streamer = SegmentStreamer::with_disk_backing(&root, 64, 64, 128).unwrap();
+        streamer.register(SegmentId(1), 64).unwrap();
+        streamer.register(SegmentId(2), 64).unwrap();
+
+        assert!(matches!(streamer.register(SegmentId(3), 64), Err(StreamError::DiskExhausted { .. })));
+        assert!(!root.join("3.seg").exists(), "a rejected registration must not leave a file");
+
+        streamer.unregister(SegmentId(1)).unwrap();
+        assert!(!root.join("1.seg").exists(), "unregister removes the backing file");
+        assert_eq!(streamer.disk_used(), 64);
+
+        streamer.register(SegmentId(3), 64).unwrap();
+        assert_eq!(fs::read(root.join("3.seg")).unwrap(), fill(SegmentId(3), 64));
+
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn long_run_keeps_every_backing_file_valid() {
+        let root = backing_dir("long-run");
+        let mut streamer = SegmentStreamer::with_disk_backing(&root, 128, 128, 4096).unwrap();
+        for id in 1..=16 {
+            streamer.register(SegmentId(id), 64).unwrap();
+        }
+        for round in 0..64u64 {
+            for step in 0..16u64 {
+                let target = (step * 7 + round) % 16 + 1;
+                streamer.submit(SegmentId(target)).unwrap();
+            }
+        }
+
+        let stats = streamer.stats();
+        assert!(stats.disk_loads > 16, "long run must cycle segments through disk");
+        assert!(stats.evictions > 16);
+        assert!(stats.disk_read_bytes >= 64 * 16);
+        for id in 1..=16 {
+            let content = fs::read(root.join(format!("{id}.seg"))).unwrap();
+            assert_eq!(content, fill(SegmentId(id), 64), "segment {id} backing was damaged");
+        }
+
+        fs::remove_dir_all(&root).unwrap();
     }
 }
