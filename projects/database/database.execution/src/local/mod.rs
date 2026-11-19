@@ -12,9 +12,9 @@ mod result;
 mod write;
 
 pub use dml::{
-    execute as execute_write, execute_parsed as execute_write_parsed, execute_with_constraints as execute_write_with_constraints,
-    execute_with_params as execute_write_with_params, parse_write_program, point_write_keys, point_write_keys_program as point_write_keys_parsed,
-    try_insert_returning,
+    execute as execute_write, execute_parsed as execute_write_parsed, execute_parsed_indexed as execute_write_parsed_indexed,
+    execute_with_constraints as execute_write_with_constraints, execute_with_params as execute_write_with_params, parse_write_program,
+    point_write_keys, point_write_keys_program as point_write_keys_parsed, try_insert_returning,
 };
 pub use exec::{ExecProfile, cmp_values, compare_values, execute_ops_borrowed, execute_ops_borrowed_profiled, execute_ops_profiled};
 pub use prepared::{

@@ -164,3 +164,16 @@ pub fn load_row(records: &BTreeMap<String, Vec<u8>>, table: &str, pk: &str) -> R
     let bytes = records.get(&key).ok_or_else(|| missing_row(table, pk))?;
     decode_row(bytes)
 }
+
+/// Load one row by primary key, `None` when absent.
+///
+/// A write that maintains derived state needs the replaced row's old values
+/// without failing on a key that was never written, which is different from the
+/// missing-row error [`load_row`] raises for a keyed read.
+pub fn load_row_optional(records: &BTreeMap<String, Vec<u8>>, table: &str, pk: &str) -> Result<Option<Row>> {
+    let key = row_key(table, pk);
+    match records.get(&key) {
+        Some(bytes) => Ok(Some(decode_row(bytes)?)),
+        None => Ok(None),
+    }
+}

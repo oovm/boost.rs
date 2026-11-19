@@ -51,6 +51,9 @@ impl Connection {
         let durable = self.read_state_metadata()?;
         let found = lease::read_u64_meta(&durable.records, lease::META_COMMIT_SEQ);
         if found != base {
+            // The transaction is discarded and nothing published, but the
+            // unique-key index was maintained against the discarded snapshot.
+            self.unique_index.invalidate_all();
             return Err(Error::TransactionConflict { expected: base, found });
         }
         if journal.wholesale || self.publishes_everything() || !self.is_single_file_yydb() {
@@ -75,6 +78,9 @@ impl Connection {
         drop(savepoints);
         drop(slot);
         self.reset_transaction_journal();
+        // The discarded snapshot may have maintained the unique-key index for
+        // writes that never publish; rebuild happens on the next full write.
+        self.unique_index.invalidate_all();
         Ok(())
     }
 
@@ -131,6 +137,9 @@ impl Connection {
         *slot = Some(snapshot);
         drop(slot);
         self.mark_transaction_wholesale_publish();
+        // Rows written after the savepoint are gone again; the unique-key
+        // index kept them until here.
+        self.unique_index.invalidate_all();
         Ok(())
     }
 

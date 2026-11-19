@@ -90,6 +90,8 @@ impl Connection {
             .unique_constraints
             .retain(|existing| !(existing.table() == declared.table() && existing.constraint().name() == declared.constraint().name()));
         state.unique_constraints.push(declared);
+        // A new rule has no cached entries yet; the next full write rebuilds.
+        self.unique_index.invalidate_all();
         self.write_state(&state)?;
         Ok(())
     }

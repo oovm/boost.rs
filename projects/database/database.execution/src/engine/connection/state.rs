@@ -196,7 +196,14 @@ impl Connection {
         F: FnOnce(&mut State) -> Result<()>,
     {
         let mut state = self.active_state_unlocked()?;
-        f(&mut state)?;
+        let result = f(&mut state);
+        if result.is_err() {
+            // A failed statement may have updated the unique-key index before
+            // its error, and the state it mutated is discarded, so the cache
+            // can no longer be trusted.
+            self.unique_index.invalidate_all();
+            return result;
+        }
         self.replace_active_state_unlocked(state)
     }
 
@@ -435,7 +442,11 @@ impl Connection {
         if self.publishes_everything() || !self.is_single_file_yydb() {
             let mut state = self.active_state_unlocked()?;
             let (_, prepared) = plan(&state, true)?;
-            f(&mut state, prepared)?;
+            let result = f(&mut state, prepared);
+            if result.is_err() {
+                self.unique_index.invalidate_all();
+                return result;
+            }
             return self.replace_active_state_unlocked(state);
         }
         if self.has_open_transaction() {
@@ -455,11 +466,19 @@ impl Connection {
         let Some(windows) = windows
         else {
             let mut state = self.active_state_unlocked()?;
-            f(&mut state, prepared)?;
+            let result = f(&mut state, prepared);
+            if result.is_err() {
+                self.unique_index.invalidate_all();
+                return result;
+            }
             return self.replace_active_state_unlocked(state);
         };
         let (mut state, prior) = self.read_state_windows_with_metadata(&windows, metadata)?;
-        f(&mut state, prepared)?;
+        let result = f(&mut state, prepared);
+        if result.is_err() {
+            self.unique_index.invalidate_all();
+            return result;
+        }
         self.write_state_delta(state, &prior)?;
         Ok(())
     }
@@ -502,6 +521,9 @@ impl Connection {
             }
             Err(error) => {
                 restore_window_rows(&mut state.records, windows, prior);
+                // The statement may have updated the unique-key index before
+                // failing; the restored rows no longer match it.
+                self.unique_index.invalidate_all();
                 Err(error)
             }
         }

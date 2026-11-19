@@ -22,7 +22,7 @@ use schema_input_vos::{
 };
 
 use database_formats::yy::row::row_key;
-use database_storage::local::{load_row, remove_row, upsert_row};
+use database_storage::local::{load_row, load_row_optional, remove_row, upsert_row};
 use database_types::{Error, Result, TableUniqueConstraint, Value};
 
 use database_query::local::{
@@ -94,8 +94,26 @@ pub fn execute_parsed(
     records: &mut BTreeMap<String, Vec<u8>>,
     params: &[Value],
 ) -> Result<()> {
+    execute_parsed_indexed(program, contract, declared, schema_document, records, params, None)
+}
+
+/// Execute an already parsed write program while maintaining a connection's
+/// unique-key index.
+///
+/// With an index context, uniqueness is checked against the cache instead of a
+/// full table scan, and the write's keys are recorded so the next statement
+/// stays O(1). Without one, [`constraints::check`] keeps its scan semantics.
+pub fn execute_parsed_indexed(
+    program: &VosProgram,
+    contract: &ResolvedContract,
+    declared: &[TableUniqueConstraint],
+    schema_document: Option<&str>,
+    records: &mut BTreeMap<String, Vec<u8>>,
+    params: &[Value],
+    index: Option<&constraints::WriteIndex<'_>>,
+) -> Result<()> {
     let constraints = constraints::merge(constraints::from_contract(contract)?, declared);
-    execute_program_with_constraints(program, contract, &constraints, schema_document, records, params)
+    execute_program_with_constraints(program, contract, &constraints, schema_document, records, params, index)
 }
 
 /// If `source` is a single `Type::insert({ … })` program, run it and return the stored row.
@@ -125,7 +143,7 @@ pub fn try_insert_returning(
         Err(_) => return Ok(None),
     };
     let constraints = constraints::from_contract(contract)?;
-    let stored = upsert_row_for_table(contract, &constraints, records, &table, &row)?;
+    let stored = upsert_row_for_table(contract, &constraints, records, &table, &row, None)?;
     Ok(Some(vec![stored]))
 }
 
@@ -136,6 +154,7 @@ fn execute_program_with_constraints(
     schema_document: Option<&str>,
     records: &mut BTreeMap<String, Vec<u8>>,
     params: &[Value],
+    index: Option<&constraints::WriteIndex<'_>>,
 ) -> Result<()> {
     let expanded = expand_program(program, schema_document)?;
     let mut bindings: Vec<(String, VosExpr)> = Vec::new();
@@ -145,7 +164,7 @@ fn execute_program_with_constraints(
         match stmt {
             VosStmt::Let(let_) => bindings.push((let_.name.clone(), let_.value.clone())),
             VosStmt::Expr(expr) => {
-                apply_write(expr, contract, constraints, records, &bindings, params)?;
+                apply_write(expr, contract, constraints, records, &bindings, params, index)?;
                 wrote = true;
             }
         }
@@ -155,7 +174,7 @@ fn execute_program_with_constraints(
         if is_macro_call(result) {
             return Err(dml_error("macro call could not be expanded (schema document required)"));
         }
-        apply_write(result, contract, constraints, records, &bindings, params)?;
+        apply_write(result, contract, constraints, records, &bindings, params, index)?;
         wrote = true;
     }
 
@@ -307,6 +326,7 @@ fn apply_write(
     records: &mut BTreeMap<String, Vec<u8>>,
     bindings: &[(String, VosExpr)],
     params: &[Value],
+    index: Option<&constraints::WriteIndex<'_>>,
 ) -> Result<()> {
     let VosExpr::Call { callee, .. } = expr
     else {
@@ -317,14 +337,14 @@ fn apply_write(
         return Err(dml_error("Phase 1 execute expects a write expression"));
     };
     match name.as_str() {
-        "insert" => apply_insert(expr, contract, constraints, records, bindings, params),
+        "insert" => apply_insert(expr, contract, constraints, records, bindings, params, index),
         "update" => {
             let (table, pk_text, patch) = lower_keyed_write(expr, contract, "update", bindings, params)?;
-            apply_update(contract, constraints, records, &table, &pk_text, &patch)
+            apply_update(contract, constraints, records, &table, &pk_text, &patch, index)
         }
         "delete" => {
             let (table, pk_text, _) = lower_keyed_write(expr, contract, "delete", bindings, params)?;
-            apply_delete(contract, records, &table, &pk_text)
+            apply_delete(contract, constraints, records, &table, &pk_text, index)
         }
         _ => Err(Error::Unsupported("Phase 1 execute supports `.insert()`, `.update()` and `.delete()` only")),
     }
@@ -378,6 +398,7 @@ fn apply_update(
     table: &str,
     pk_text: &str,
     patch: &QueryRow,
+    index: Option<&constraints::WriteIndex<'_>>,
 ) -> Result<()> {
     let entry = table_type_by_name(contract, table)?;
     let pk_field = primary_field_name(entry)?;
@@ -388,19 +409,35 @@ fn apply_update(
         }
         load_row(records, &storage_name, pk_text)?
     };
+    let old = merged.clone();
     for (field, value) in patch {
         merged.insert(field.clone(), value.clone());
     }
-    constraints::check(records, constraints, &storage_name, pk_field, pk_text, &merged)?;
+    match index {
+        Some(ctx) => ctx.index.enforce(ctx, records, constraints, &storage_name, pk_field, pk_text, Some(&old), &merged)?,
+        None => constraints::check(records, constraints, &storage_name, pk_field, pk_text, &merged)?,
+    }
     upsert_row(records, &storage_name, pk_text, &merged)
 }
 
-fn apply_delete(contract: &ResolvedContract, records: &mut BTreeMap<String, Vec<u8>>, table: &str, pk_text: &str) -> Result<()> {
+fn apply_delete(
+    contract: &ResolvedContract,
+    constraints: &[TableUniqueConstraint],
+    records: &mut BTreeMap<String, Vec<u8>>,
+    table: &str,
+    pk_text: &str,
+    index: Option<&constraints::WriteIndex<'_>>,
+) -> Result<()> {
     let entry = table_type_by_name(contract, table)?;
     let storage_name = table_storage_name(entry)?.to_string();
     // The object argument may carry more than the key, but only the key is
     // matched, so a stale caller still deletes exactly one row and a key that
     // is already gone is a no-op.
+    if let Some(ctx) = index
+        && let Some(old) = load_row_optional(records, &storage_name, pk_text)?
+    {
+        ctx.index.retract(ctx, constraints, &storage_name, pk_text, &old);
+    }
     remove_row(records, &row_key(&storage_name, pk_text));
     Ok(())
 }
@@ -412,9 +449,10 @@ fn apply_insert(
     records: &mut BTreeMap<String, Vec<u8>>,
     bindings: &[(String, VosExpr)],
     params: &[Value],
+    index: Option<&constraints::WriteIndex<'_>>,
 ) -> Result<()> {
     let (table, row) = lower_insert(expr, contract, bindings, params)?;
-    upsert_row_for_table(contract, constraints, records, &table, &row)?;
+    upsert_row_for_table(contract, constraints, records, &table, &row, index)?;
     Ok(())
 }
 
@@ -424,13 +462,23 @@ fn upsert_row_for_table(
     records: &mut BTreeMap<String, Vec<u8>>,
     table: &str,
     row: &QueryRow,
+    index: Option<&constraints::WriteIndex<'_>>,
 ) -> Result<QueryRow> {
     let entry = table_type_by_name(contract, table)?;
     let pk_field = primary_field_name(entry)?;
     let pk = row.get(pk_field).ok_or_else(|| dml_error(format!("insert row is missing primary key field `{pk_field}`")))?;
     let pk_text = constraints::value_text(pk)?;
     let storage_name = table_storage_name(entry)?.to_string();
-    constraints::check(records, constraints, &storage_name, pk_field, &pk_text, row)?;
+    match index {
+        Some(ctx) => {
+            // An insert that replaces a key retracts the stored row's keys
+            // first, so rewriting one row's unique value to itself is not a
+            // conflict with itself.
+            let old = load_row_optional(records, &storage_name, &pk_text)?;
+            ctx.index.enforce(ctx, records, constraints, &storage_name, pk_field, &pk_text, old.as_ref(), row)?;
+        }
+        None => constraints::check(records, constraints, &storage_name, pk_field, &pk_text, row)?,
+    }
     upsert_row(records, &storage_name, &pk_text, row)?;
     Ok(row.clone())
 }

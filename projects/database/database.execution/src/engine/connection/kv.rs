@@ -10,12 +10,16 @@ impl Connection {
     /// the unified `objects/` CAS (see `INLINE_BYTES_MAX`).
     pub fn put(&self, key: impl Into<String>, value: impl AsRef<[u8]>) -> Result<()> {
         let _guard = self.operation_lock.lock().unwrap_or_else(|p| p.into_inner());
+        // Raw record writes can touch table rows without the constraint logic,
+        // so the unique-key index stops being authoritative the moment one runs.
+        self.unique_index.invalidate_all();
         self.mutate_active_state_unlocked(|state| ttl::put_record(&mut state.records, &key.into(), value.as_ref()))
     }
 
     /// Store a record that expires after `ttl`.
     pub fn put_with_ttl(&self, key: impl Into<String>, value: impl AsRef<[u8]>, ttl: std::time::Duration) -> Result<RecordVersion> {
         let _guard = self.operation_lock.lock().unwrap_or_else(|p| p.into_inner());
+        self.unique_index.invalidate_all();
         let mut state = self.active_state_unlocked()?;
         let version = ttl::put_with_ttl(&mut state.records, &key.into(), value.as_ref(), ttl.as_millis() as u64)?;
         self.replace_active_state_unlocked(state)?;
@@ -40,6 +44,7 @@ impl Connection {
     /// Remove expired TTL records under `namespace_prefix` up to `budget`.
     pub fn evict_expired(&self, namespace_prefix: &str, budget: EvictBudget) -> Result<EvictReport> {
         let _guard = self.operation_lock.lock().unwrap_or_else(|p| p.into_inner());
+        self.unique_index.invalidate_all();
         let mut state = self.active_state_unlocked()?;
         let report = ttl::evict_expired(&mut state.records, namespace_prefix, budget)?;
         self.replace_active_state_unlocked(state)?;
@@ -73,6 +78,7 @@ impl Connection {
     /// Operations are serialized on this connection, not across separate handles or processes.
     pub fn write_batch(&self, changes: &[(String, Option<Vec<u8>>)]) -> Result<()> {
         let _guard = self.operation_lock.lock().unwrap_or_else(|p| p.into_inner());
+        self.unique_index.invalidate_all();
         let plan = |_: &State, _: bool| {
             let windows = changes
                 .iter()
@@ -99,6 +105,7 @@ impl Connection {
     /// `None` as expected requires an absent key. Atomic on a shared connection.
     pub fn compare_exchange(&self, key: &str, expected: Option<&[u8]>, replacement: Option<&[u8]>) -> Result<bool> {
         let _guard = self.operation_lock.lock().unwrap_or_else(|p| p.into_inner());
+        self.unique_index.invalidate_all();
         let mut state = self.active_state_unlocked()?;
         if state.records.get(key).map(Vec::as_slice) != expected {
             return Ok(false);

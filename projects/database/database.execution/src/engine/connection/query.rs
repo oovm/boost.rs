@@ -398,6 +398,31 @@ impl Connection {
         keys.into_iter().map(|key| database_query::local::ReadWindow { end: Some(format!("{key}\u{0}")), start: key }).collect()
     }
 
+    /// Whether every rule-bearing table already has a warm unique-key index.
+    ///
+    /// This is what lets a VOS write on a rule table narrow to its exact keys
+    /// outside a transaction: the duplicate check reads the cache instead of
+    /// the table, so the statement no longer needs every row loaded.
+    fn rules_warm(&self, contract: &schema_input_vos::ResolvedContract, declared: &[database_types::TableUniqueConstraint], basis: &(String, u64)) -> bool {
+        let Ok(document) = database_query::local::constraints::from_contract(contract)
+        else {
+            return false;
+        };
+        let merged = database_query::local::constraints::merge(document, declared);
+        let mut seen: Vec<&str> = Vec::new();
+        for rule in &merged {
+            let table = rule.table();
+            if seen.contains(&table) {
+                continue;
+            }
+            seen.push(table);
+            if !self.unique_index.is_warm(table, (basis.0.as_str(), basis.1)) {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Execute a VOS write program (inserts and schema macros).
     ///
     /// Mutates the active connection state. When a transaction is open, changes
@@ -410,29 +435,24 @@ impl Connection {
                 let contract = resolved_contract(metadata)?;
                 let schema_document = metadata.schema.as_ref().map(|schema| schema.document.as_str());
                 let program = crate::local::parse_write_program(source)?;
+                let basis = schema_basis(metadata);
+                let exempt = holds_every_row || self.rules_warm(contract, &metadata.unique_constraints, &basis);
                 let keys = self
-                    .with_write_hooks(|| {
-                        crate::local::point_write_keys_parsed(
-                            &program,
-                            contract,
-                            &metadata.unique_constraints,
-                            schema_document,
-                            &[],
-                            holds_every_row,
-                        )
-                    })
+                    .with_write_hooks(|| crate::local::point_write_keys_parsed(&program, contract, &metadata.unique_constraints, schema_document, &[], exempt))
                     .map(|keys| keys.map(Self::key_windows))?;
-                Ok((keys, program))
+                let complete = keys.is_none() || holds_every_row;
+                Ok((keys, (program, basis, complete)))
             },
-            |state, program| {
+            |state, (program, basis, complete)| {
                 // The write executor mutates `state.records`, so it cannot hold a
                 // borrow of the contract inside the same state.
                 let contract = resolved_contract(state)?.clone();
                 let schema_document = state.schema.as_ref().map(|schema| schema.document.as_str());
                 let records = &mut state.records;
                 let constraints = &state.unique_constraints;
+                let index = database_query::local::constraints::WriteIndex { index: &self.unique_index, basis, complete };
                 self.with_write_hooks(|| {
-                    crate::local::execute_write_parsed(&program, &contract, constraints, schema_document, records, &[])
+                    crate::local::execute_write_parsed_indexed(&program, &contract, constraints, schema_document, records, &[], Some(&index))
                 })
             },
         )
@@ -453,21 +473,17 @@ impl Connection {
                 let contract = resolved_contract(metadata)?;
                 let schema_document = metadata.schema.as_ref().map(|schema| schema.document.as_str());
                 let plan = database_query::local::bind_vos_write(source, named, schema_document)?;
+                let basis = schema_basis(metadata);
+                let exempt = holds_every_row || self.rules_warm(contract, &metadata.unique_constraints, &basis);
                 let keys = self
                     .with_write_hooks(|| {
-                        crate::local::point_write_keys_parsed(
-                            &plan.program,
-                            contract,
-                            &metadata.unique_constraints,
-                            schema_document,
-                            &plan.values,
-                            holds_every_row,
-                        )
+                        crate::local::point_write_keys_parsed(&plan.program, contract, &metadata.unique_constraints, schema_document, &plan.values, exempt)
                     })
                     .map(|keys| keys.map(Self::key_windows))?;
-                Ok((keys, plan))
+                let complete = keys.is_none() || holds_every_row;
+                Ok((keys, (plan, basis, complete)))
             },
-            |state, plan| {
+            |state, (plan, basis, complete)| {
                 // The write executor mutates `state.records`, so it cannot hold a
                 // borrow of the contract inside the same state.
                 let contract = resolved_contract(state)?.clone();
@@ -475,8 +491,9 @@ impl Connection {
                 let records = &mut state.records;
                 let constraints = &state.unique_constraints;
                 let values = &plan.values;
+                let index = database_query::local::constraints::WriteIndex { index: &self.unique_index, basis, complete };
                 self.with_write_hooks(|| {
-                    crate::local::execute_write_parsed(&plan.program, &contract, constraints, schema_document, records, values)
+                    crate::local::execute_write_parsed_indexed(&plan.program, &contract, constraints, schema_document, records, values, Some(&index))
                 })
             },
         )
@@ -512,6 +529,11 @@ impl Connection {
             },
             |state, ()| {
                 self.check_schema_drift(&stmt, state)?;
+                // The SQL write executor checks uniqueness by scanning rows and
+                // does not maintain the unique-key index, so any cached entries
+                // stop being authoritative from here. The next VOS write on a
+                // rule table takes the full path and rebuilds.
+                self.unique_index.invalidate_all();
                 // The write executor mutates `state.records`, so it cannot hold a
                 // borrow of the contract inside the same state.
                 let contract = resolved_contract(state)?.clone();

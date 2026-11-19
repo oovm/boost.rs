@@ -9,11 +9,175 @@
 use std::collections::BTreeMap;
 
 use database_formats::yy::row::{row_key, select_encoded};
-use database_storage::local::scan_selected;
+use database_storage::local::{load_table, scan_selected};
 use database_types::{Error, Result, TableUniqueConstraint, UniqueConstraint, Value};
 use schema_types::{ResolvedContract, TypeContractKind};
 
 use super::{catalog, ops::QueryRow};
+
+/// Connection-scoped unique-key index maintained by the VOS write path.
+///
+/// A uniqueness rule is otherwise checked by scanning every stored row of the
+/// table, which makes a bulk import quadratic: the Nth insert re-reads N rows.
+/// This index maps `(constraint, key) -> pk text` in memory so a write pays one
+/// hash lookup instead of a table scan, and it is the reason a rule-bearing
+/// table can still narrow to its exact record keys.
+///
+/// The index is never persisted, so it never touches the record windows a
+/// statement publishes. It is authoritative only while its schema basis matches
+/// the active contract, and every path that changes rows without maintaining it
+/// — SQL statements, raw record writes, rollbacks — must invalidate it. A cold
+/// index rebuilds from the full table the next time a complete write runs.
+#[derive(Debug, Default)]
+pub struct UniqueIndex {
+    tables: std::sync::Mutex<std::collections::HashMap<String, TableIndex>>,
+}
+
+#[derive(Debug)]
+struct TableIndex {
+    basis: (String, u64),
+    entries: std::collections::HashMap<(String, String), String>,
+}
+
+/// One write's index context: which connection cache to maintain, against
+/// which schema basis, and whether the record map can rebuild it.
+pub struct WriteIndex<'a> {
+    /// The cache to check and maintain.
+    pub index: &'a UniqueIndex,
+    /// Schema basis the entries describe: document fingerprint and revision.
+    pub basis: (String, u64),
+    /// Whether the record map the write runs against holds every row of the
+    /// table. Rebuilding a cold index from a partial map would silently miss
+    /// duplicates, so it is only sound when this is `true`.
+    pub complete: bool,
+}
+
+impl UniqueIndex {
+    /// An empty cache; the first rule-bearing write rebuilds what it needs.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Drop every cached table index.
+    pub fn invalidate_all(&self) {
+        self.tables.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clear();
+    }
+
+    /// Whether the cached index for `table` still describes `basis`.
+    pub fn is_warm(&self, table: &str, basis: (&str, u64)) -> bool {
+        let tables = self.tables.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        tables.get(table).is_some_and(|index| index.basis.0 == basis.0 && index.basis.1 == basis.1)
+    }
+
+    /// Check `row` against every rule on `table` and record its keys.
+    ///
+    /// `old` is the row being replaced: its keys are removed first, so a
+    /// rewrite that keeps one value never collides with itself. A cold index
+    /// rebuilds from `records` only when `ctx.complete` proves the map holds
+    /// every row; otherwise the caller must have taken the full path and this
+    /// fails loudly instead of trusting a partial scan.
+    pub fn enforce(
+        &self,
+        ctx: &WriteIndex<'_>,
+        records: &BTreeMap<String, Vec<u8>>,
+        constraints: &[TableUniqueConstraint],
+        table: &str,
+        pk_field: &str,
+        pk_text: &str,
+        old: Option<&QueryRow>,
+        row: &QueryRow,
+    ) -> Result<()> {
+        let applicable: Vec<&UniqueConstraint> =
+            constraints.iter().filter(|candidate| candidate.table() == table).map(TableUniqueConstraint::constraint).collect();
+        if applicable.is_empty() {
+            return Ok(());
+        }
+        let mut tables = self.tables.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let stale = tables.get(table).is_none_or(|index| index.basis != ctx.basis);
+        if stale {
+            if !ctx.complete {
+                return Err(Error::Unsupported(
+                    "the unique-key index is cold and the record map is partial; the caller must take the full path",
+                ));
+            }
+            let mut entries = std::collections::HashMap::new();
+            for existing in load_table(records, table)? {
+                let Some(pk) = existing.get(pk_field) else {
+                    continue;
+                };
+                let Ok(existing_pk) = value_text(pk) else {
+                    continue;
+                };
+                for constraint in &applicable {
+                    if let Some(key) = entry_key(&existing, constraint) {
+                        entries.insert(key, existing_pk.clone());
+                    }
+                }
+            }
+            tables.insert(table.to_owned(), TableIndex { basis: ctx.basis.clone(), entries });
+        }
+        let index = tables.get_mut(table).expect("index inserted or found above");
+        if let Some(old_row) = old {
+            retract_keys(index, &applicable, old_row, pk_text);
+        }
+        for constraint in &applicable {
+            let Some(key) = entry_key(row, constraint) else {
+                continue;
+            };
+            if let Some(owner) = index.entries.get(&key)
+                && owner != pk_text
+            {
+                return Err(Error::UniqueViolation {
+                    table: table.to_owned(),
+                    constraint: constraint.name().to_owned(),
+                    columns: constraint.columns().to_vec(),
+                });
+            }
+        }
+        for constraint in &applicable {
+            if let Some(key) = entry_key(row, constraint) {
+                index.entries.insert(key, pk_text.to_owned());
+            }
+        }
+        Ok(())
+    }
+
+    /// Remove a deleted row's keys, keeping the index free of entries that
+    /// would block a later reinsertion of the same value.
+    pub fn retract(&self, ctx: &WriteIndex<'_>, constraints: &[TableUniqueConstraint], table: &str, pk_text: &str, old: &QueryRow) {
+        let applicable: Vec<&UniqueConstraint> =
+            constraints.iter().filter(|candidate| candidate.table() == table).map(TableUniqueConstraint::constraint).collect();
+        if applicable.is_empty() {
+            return;
+        }
+        let mut tables = self.tables.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(index) = tables.get_mut(table)
+            && index.basis == ctx.basis
+        {
+            retract_keys(index, &applicable, old, pk_text);
+        }
+    }
+}
+
+fn retract_keys(index: &mut TableIndex, applicable: &[&UniqueConstraint], row: &QueryRow, pk_text: &str) {
+    for constraint in applicable {
+        if let Some(key) = entry_key(row, constraint)
+            && index.entries.get(&key).map(String::as_str) == Some(pk_text)
+        {
+            index.entries.remove(&key);
+        }
+    }
+}
+
+/// The index slot one row occupies under `constraint`, `None` when its NULL
+/// components make it distinct from every other row.
+fn entry_key(row: &QueryRow, constraint: &UniqueConstraint) -> Option<(String, String)> {
+    let (key, has_null) = constraint_key(row, constraint.columns());
+    if has_null && constraint.nulls_distinct() {
+        return None;
+    }
+    Some((constraint.name().to_owned(), key))
+}
 
 /// Derives single-column unique constraints declared with the VOS `@` attribute.
 pub fn from_contract(contract: &ResolvedContract) -> Result<Vec<TableUniqueConstraint>> {

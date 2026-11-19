@@ -99,6 +99,13 @@ pub struct Connection {
     /// same schema basis that drift detection uses, so a schema change misses it
     /// and a stale contract can never be served.
     pub(crate) contract_cache: crate::engine::storage::snapshot::ContractCache,
+    /// Connection-wide unique-key index maintained by VOS writes.
+    ///
+    /// Shared with derived sessions so one server's sessions do not each pay a
+    /// rebuild. Every path that changes rows without maintaining it (SQL
+    /// statements, raw record writes, rollbacks, schema changes) invalidates it,
+    /// so a stale entry can never hide a duplicate.
+    pub(crate) unique_index: std::sync::Arc<database_query::local::constraints::UniqueIndex>,
     pub(crate) udfs: Mutex<UdfSubsystem>,
     pub(crate) objects: std::sync::Arc<ObjectStore>,
     pub(crate) closed: std::sync::Arc<AtomicBool>,
@@ -136,6 +143,7 @@ impl Connection {
             txn_journal: Mutex::new(TxnJournal::default()),
             savepoints: Mutex::new(Vec::new()),
             contract_cache: Default::default(),
+            unique_index: std::sync::Arc::new(database_query::local::constraints::UniqueIndex::new()),
             backend: std::sync::Arc::new(Backend::File { path: path.clone(), database: Mutex::new(database) }),
             udfs: Mutex::new(UdfSubsystem::default()),
             objects: std::sync::Arc::new(if is_yydx_main_path(&path) {
@@ -161,6 +169,7 @@ impl Connection {
             txn_journal: Mutex::new(TxnJournal::default()),
             savepoints: Mutex::new(Vec::new()),
             contract_cache: Default::default(),
+            unique_index: std::sync::Arc::new(database_query::local::constraints::UniqueIndex::new()),
             backend: std::sync::Arc::new(Backend::Memory { state: Mutex::new(State::default()) }),
             udfs: Mutex::new(UdfSubsystem::default()),
             objects: std::sync::Arc::new(ObjectStore::open_ephemeral()),
@@ -183,6 +192,7 @@ impl Connection {
             txn_journal: Mutex::new(TxnJournal::default()),
             savepoints: Mutex::new(Vec::new()),
             contract_cache: Default::default(),
+            unique_index: std::sync::Arc::clone(&self.unique_index),
             udfs: Mutex::new(UdfSubsystem::default()),
             objects: std::sync::Arc::clone(&self.objects),
             closed: std::sync::Arc::clone(&self.closed),
@@ -242,6 +252,9 @@ impl Connection {
             Backend::Memory { .. } => {
                 let snapshot = snapshot_from_main_bytes(bytes)?;
                 let state = snapshot::state_from_snapshot(&snapshot, &self.contract_cache)?;
+                // The whole record set was replaced; cached unique keys describe
+                // the previous image.
+                self.unique_index.invalidate_all();
                 self.write_state(&state)?;
                 Ok(())
             }
