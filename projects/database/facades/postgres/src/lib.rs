@@ -20,12 +20,11 @@
 //!
 //! SQL schema persistence is closed: DDL applies to a registry persisted as
 //! `<data-dir>/schema.json`, so a restart reads the same tables back.
+#![warn(missing_docs)]
 
 use std::{
     collections::HashMap,
-    error,
-    fmt,
-    io,
+    error, fmt, io,
     net::SocketAddr,
     path::PathBuf,
     sync::{Arc, Mutex, MutexGuard},
@@ -33,20 +32,19 @@ use std::{
 
 use database_client::pgsql::{Connection, error::PostgresError};
 use database_cluster::topology::ShardMap;
-use database_execution::cluster::LocalExecutor;
-use database_execution::pgsql::{
-    PgsqlSqlRuntime, StatementOutcome, TransactionRunError, TransactionSession, dispatch_statement, run_transaction,
+use database_execution::{
+    cluster::LocalExecutor,
+    pgsql::{PgsqlSqlRuntime, StatementOutcome, TransactionRunError, TransactionSession, dispatch_statement, run_transaction},
+    sql_schema::SqlSchemaRegistry,
 };
-use database_execution::sql_schema::SqlSchemaRegistry;
-use database_server::yyds::pgsql::service::PgsqlService;
-use database_server::yyds::pgsql::{ListenerRegistry, ListenerSlot, PgAuthentication, PgTls};
+use database_server::yyds::pgsql::{ListenerRegistry, ListenerSlot, PgAuthentication, PgTls, service::PgsqlService};
 use database_storage::cluster_kv::FileShard;
 use database_types::cluster::{ShardEpoch, ShardId};
 
 pub use database_storage::pgsql::instance;
 
 pub use database_storage::pgsql::instance::{
-    ServerInstance, SHARD_DIRECTORY_FILES, SHARD_ROOT, clear_stale_lock, process_exists, shard_directory, validate_shard_id,
+    SHARD_DIRECTORY_FILES, SHARD_ROOT, ServerInstance, clear_stale_lock, process_exists, shard_directory, validate_shard_id,
 };
 
 pub use database_query::{SqlColumn, SqlValue};
@@ -165,9 +163,7 @@ impl From<TransactionRunError<Error>> for Error {
             TransactionRunError::RollbackRejected { code, message, body } => {
                 Self::Block { body: Box::new(body), control: BlockControl::Rejected { code, message } }
             }
-            TransactionRunError::RollbackIo { body, error } => {
-                Self::Block { body: Box::new(body), control: BlockControl::Io(error) }
-            }
+            TransactionRunError::RollbackIo { body, error } => Self::Block { body: Box::new(body), control: BlockControl::Io(error) },
         }
     }
 }
@@ -402,11 +398,9 @@ impl PostgreSQL {
     fn statement(&self, session: &mut TransactionSession, sql: &str) -> Result<QueryResult, Error> {
         match dispatch_statement(sql, Some(&self.runtime), session) {
             Ok(StatementOutcome::Command(tag)) => Ok(QueryResult::tag(tag)),
-            Ok(StatementOutcome::Result(outcome)) => Ok(QueryResult {
-                columns: outcome.description,
-                rows: outcome.rows,
-                command_tag: outcome.command_tag,
-            }),
+            Ok(StatementOutcome::Result(outcome)) => {
+                Ok(QueryResult { columns: outcome.description, rows: outcome.rows, command_tag: outcome.command_tag })
+            }
             Ok(StatementOutcome::Session(_)) => Err(Error::Unsupported(
                 "SET / SHOW / DISCARD / RESET are wire-session surfaces, the direct path exposes transaction control and data statements"
                     .to_owned(),

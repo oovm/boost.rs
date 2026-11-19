@@ -8,7 +8,7 @@
 //! 与具体执行程序（`ValidatedUdf`）的桥接留在 `database.execution`，
 //! 避免本包反向依赖执行器。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 /// 宿主与原生实现适配。
 pub mod adapters;

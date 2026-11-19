@@ -3,7 +3,7 @@
 //! 借鉴 Polars 查询架构与 Arrow 交换边界，**不是** pandas/Polars 复刻，也不承载 ML estimator。
 //! 固定宽度列与分块计算复用 [`science_ndarray`] 的 storage / memory budget。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
 mod column;

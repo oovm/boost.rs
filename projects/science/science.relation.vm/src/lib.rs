@@ -3,6 +3,7 @@
 //! Owns execution lifecycle: frames, fuel, cancel, safepoint hooks, and GC root
 //! orchestration contracts. Does **not** mint admitted tokens, mutate sealed
 //! worlds, or depend on JIT. Kernel interaction goes through [`KernelView`].
+#![warn(missing_docs)]
 
 use science_gc::GcMode;
 use science_relation_graph::{

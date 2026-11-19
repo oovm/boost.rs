@@ -2,6 +2,7 @@
 //!
 //! Node / edge wire ids are [`science_graph`]'s ordinary-graph handles.
 //! Island ids and relation kinds stay Relation-specific.
+#![warn(missing_docs)]
 
 use core::{fmt, num::NonZeroU32};
 

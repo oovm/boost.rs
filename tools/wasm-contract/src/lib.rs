@@ -12,3 +12,4 @@
 //! cargo build -p hardware-wasm --target wasm32-unknown-unknown --release
 //! cargo test --manifest-path tools/wasm-contract/Cargo.toml
 //! ```
+#![warn(missing_docs)]

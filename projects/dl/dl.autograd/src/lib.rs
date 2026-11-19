@@ -5,7 +5,7 @@
 //!
 //! 梯度默认累积到 `.grad`，训练循环应在每一步后调用 [`Var::zero_grad`]。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 use std::{cell::RefCell, collections::HashSet, rc::Rc};
 

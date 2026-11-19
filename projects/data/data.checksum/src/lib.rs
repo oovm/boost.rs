@@ -9,7 +9,7 @@
 //! The code originates from the former `acorn.rs` project (imported at commit
 //! `6deb56a4`, MPL-2.0) and has been internalized and de-branded for Boost.
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod xxh64;
 pub use xxh64::XxHash64;

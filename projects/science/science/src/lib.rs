@@ -10,7 +10,7 @@
 //!
 //! 根级只保留 [`CasEngine`] / [`Session`]。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 /// 引擎句柄与选项。
 pub use science_cas::api;

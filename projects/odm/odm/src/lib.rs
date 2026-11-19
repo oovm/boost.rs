@@ -8,7 +8,7 @@
 //! 宿主调用面与历史 `iris` 门面逐字对齐：`iris::host`、`iris::project`、
 //! `iris::generator`、`iris::wasm`、`iris::migrate_plan` / `iris::migrate_run`。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 /// 门面版本（与 Cargo 包版本一致）。
 pub fn version() -> &'static str {

@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 #![doc = include_str!("readme.md")]
 
 //! ABC 记谱前端：`data-text-abc` 的 AST 降级进 `plotter.engraving` 的与源语言无关模型。

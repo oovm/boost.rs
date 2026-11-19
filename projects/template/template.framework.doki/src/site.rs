@@ -35,8 +35,11 @@ pub const TAGS_INDEX_ID: &str = "taxonomy:tags";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PageType {
+    /// Site index page (`index.md` at the content root).
     Home,
+    /// Dated entry under `posts/`; participates in tag aggregates.
     Post,
+    /// Any other standalone page.
     Page,
 }
 
@@ -44,7 +47,9 @@ pub enum PageType {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SitePage {
+    /// Content id (or synthetic taxonomy id) this page renders.
     pub id: ContentId,
+    /// Content-relative source path.
     pub rel_path: String,
     /// Serialized as `type` because templates and plugins consume `page.type`.
     #[serde(rename = "type")]
@@ -55,9 +60,13 @@ pub struct SitePage {
     pub output: String,
     /// Public URL (`/<output>`).
     pub url: String,
+    /// Page title from the front matter, when present.
     pub title: Option<String>,
+    /// Meta description from the front matter, when present.
     pub description: Option<String>,
+    /// Publication date as written in the front matter.
     pub date: Option<String>,
+    /// Whether the page is a draft (excluded from production builds).
     pub draft: bool,
     /// Raw front matter `tags` sequence (empty when the content declares none).
     pub tags: Vec<String>,
@@ -86,7 +95,16 @@ pub enum TaxonomyView {
     /// `/tags/` index listing every tag with its count.
     TagIndex(Vec<TagEntry>),
     /// `/tags/<slug>/` page listing member posts in `site.posts` order.
-    Tag { slug: String, display: String, url: String, posts: Vec<ContentId> },
+    Tag {
+        /// Normalized slug of the tag.
+        slug: String,
+        /// Display name of the tag (first raw spelling seen).
+        display: String,
+        /// Public URL owning `/tags/<slug>/`.
+        url: String,
+        /// Member content ids in `site.posts` order.
+        posts: Vec<ContentId>,
+    },
 }
 
 /// Immutable site index built once per build from the full content graph.

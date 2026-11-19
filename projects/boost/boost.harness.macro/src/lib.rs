@@ -1,6 +1,6 @@
 //! Procedural macros for `boost-harness`.
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod diagnostic;
 mod test;

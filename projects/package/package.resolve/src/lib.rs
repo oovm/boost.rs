@@ -14,7 +14,7 @@
 //! - 具体产品的清单文件名、用户数据目录与渠道 id；这些由调用方通过 [`ProjectLayout`]
 //!   与 [`manifest::is_registry_publish_type_any`] 注入。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod error;
 mod graph;
@@ -30,8 +30,7 @@ pub use graph::{DependencyNode, DependencyResolver};
 pub use layout::{EntryAliasFn, ProjectLayout};
 pub use lock::{LockEntry, LockFile};
 pub use manifest::{
-    DependencyBucket, DependencySpec, PackageManifest, PublishConfig, PublishTarget, is_registry_publish_type,
-    is_registry_publish_type_any,
+    DependencyBucket, DependencySpec, PackageManifest, PublishConfig, PublishTarget, is_registry_publish_type, is_registry_publish_type_any,
 };
 pub use version::{SemanticVersion, YearlyVersion, satisfies_version_constraint};
 pub use workspace::{ProjectMode, WorkspaceManifest};

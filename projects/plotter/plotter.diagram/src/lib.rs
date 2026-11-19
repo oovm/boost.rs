@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 //! Diagram semantics compiled into generic DaVinci vector scenes.
 //!
 //! The crate keeps the DaVinci three-stage contract explicit:

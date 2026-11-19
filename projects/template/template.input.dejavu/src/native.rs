@@ -3,8 +3,10 @@
 use crate::types::{IrNode, PartialParam, Span};
 use serde_json::Value;
 
+/// Host-native AST for one template file.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NativeTemplate {
+    /// Top-level nodes, in source order.
     pub children: Vec<NativeNode>,
 }
 
@@ -14,89 +16,148 @@ pub struct NativeTemplate {
 /// spans decodes to `None`, so hosts that only feed IR still work unchanged.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NativeNode {
+    /// Node payload (text, statement or expression form).
     pub kind: NativeKind,
+    /// Byte range this node was parsed from; `None` for IR without spans.
     pub span: Option<Span>,
 }
 
 impl NativeNode {
+    /// Pair a payload with its optional source span.
     pub fn new(kind: NativeKind, span: Option<Span>) -> Self {
         Self { kind, span }
     }
 }
 
+/// Payload of one native template node, mirroring [`crate::types::IrNode`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum NativeKind {
+    /// Literal text emitted verbatim.
     Text(String),
+    /// Comment body; never rendered into the output.
     Comment(String),
+    /// `{{ expression }}` interpolation.
     Interpolation {
+        /// Expression whose value is stringified into the output.
         expression: NativeExpr,
+        /// Trim level from the tag marker: `none`, `ws`, `nl`, `ws_nl` or `all`.
         trim: String,
+        /// When true the value is written without HTML escaping.
         raw: bool,
     },
+    /// `if` / `else if` / `else` statement.
     If {
+        /// Condition evaluated before `consequent`.
         test: NativeExpr,
+        /// Nodes rendered when `test` is truthy.
         consequent: Vec<NativeNode>,
+        /// `else if` branches as `(condition, body)` pairs, tried in order.
         else_ifs: Vec<(NativeExpr, Vec<NativeNode>)>,
+        /// `else` body; `None` when the statement has no `else` branch.
         alternate: Option<Vec<NativeNode>>,
+        /// Trim level of the opening tag.
         trim: String,
     },
+    /// `loop item in iterable` statement.
     For {
+        /// Loop variable bound to the current element.
         item: String,
+        /// Expression producing the sequence to iterate.
         iterable: NativeExpr,
+        /// Body rendered once per element.
         body: Vec<NativeNode>,
+        /// Trim level of the opening tag.
         trim: String,
     },
+    /// Named `block` overridden by a child template via `extends`.
     Block {
+        /// Block name matched against the parent template's block.
         name: String,
+        /// Default body used when no child overrides this block.
         body: Vec<NativeNode>,
+        /// Trim level of the opening tag.
         trim: String,
     },
+    /// Inline `partial` declaration with its own parameter scope.
     Partial {
+        /// Declared parameters; missing arguments fall back to their defaults.
         params: Vec<NativeParam>,
+        /// Body rendered in the parameter scope.
         body: Vec<NativeNode>,
+        /// Trim level of the opening tag.
         trim: String,
     },
+    /// `macro name(params)` declaration invoked through a bare identifier call.
     Macro {
+        /// Macro name bound in the declaring template's scope.
         name: String,
+        /// Declared parameters; missing arguments fall back to their defaults.
         params: Vec<NativeParam>,
+        /// Body rendered with only the macro parameters in scope.
         body: Vec<NativeNode>,
+        /// Trim level of the opening tag.
         trim: String,
     },
+    /// `from "<path>" import …` — static macro import.
     Import {
+        /// Literal template path the macros are imported from.
         path: String,
+        /// Imported macro names with their optional local aliases.
         names: Vec<NativeImportName>,
+        /// Trim level of the import tag.
         trim: String,
     },
+    /// `call name(args)` … `end call` — macro invocation with a caller block.
     Call {
+        /// Name of the macro being invoked.
         name: String,
+        /// Positional arguments passed to the macro.
         arguments: Vec<NativeExpr>,
+        /// Formal parameters of the caller block, exposed via `caller()`.
         params: Vec<NativeParam>,
+        /// Caller block rendered in the calling template's scope.
         body: Vec<NativeNode>,
+        /// Trim level of the opening tag.
         trim: String,
     },
+    /// `extends "<path>"` — single parent template.
     Extends {
+        /// Literal path of the parent template.
         parent: NativeExpr,
+        /// Trim level of the `extends` tag.
         trim: String,
     },
+    /// `include "<path>"` — render another template in place.
     Include {
+        /// Template path to include; must resolve through the loader.
         path: NativeExpr,
+        /// Explicit child context merged over the inherited one.
         with: Option<NativeExpr>,
+        /// `only` / `without context`: the child sees no inherited context.
         only: bool,
+        /// Trim level of the include tag.
         trim: String,
     },
+    /// `super()` — inlines the parent template's version of the current block.
     Super {
+        /// Trim level of the `super` tag.
         trim: String,
     },
     /// `break` — terminates the nearest enclosing loop in the same lexical unit.
     Break {
+        /// Trim level of the `break` tag.
         trim: String,
     },
     /// `continue` — skips the rest of the bound loop's current iteration.
     Continue {
+        /// Trim level of the `continue` tag.
         trim: String,
     },
+    /// Raw section; the body is emitted without evaluation.
     Raw {
+        /// Verbatim text emitted without parsing or escaping.
         value: String,
+        /// Trim level of the `raw` tag.
         trim: String,
     },
 }
@@ -104,35 +165,98 @@ pub enum NativeKind {
 /// One declared `partial` parameter.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NativeParam {
+    /// Parameter name bound in the callee scope.
     pub name: String,
+    /// Default expression used when the caller omits the argument.
     pub default: Option<NativeExpr>,
 }
 
 /// One `from ... import name as alias` binding.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NativeImportName {
+    /// Macro name as declared by the target template.
     pub name: String,
+    /// Local alias bound in the importing template, when `as` was used.
     pub alias: Option<String>,
 }
 
+/// Native expression tree; mirrors the `Expr.*` IR variants.
 #[derive(Debug, Clone, PartialEq)]
 pub enum NativeExpr {
+    /// JSON literal value.
     Literal(Value),
+    /// Bare identifier resolved against the render context and locals.
     Identifier(String),
-    Member { object: Box<NativeExpr>, property: String },
-    Index { object: Box<NativeExpr>, index: Box<NativeExpr> },
-    Call { callee: Box<NativeExpr>, arguments: Vec<NativeExpr> },
-    Test { expression: Box<NativeExpr>, test: String, arguments: Vec<NativeExpr>, negated: bool },
-    Binary { operator: String, left: Box<NativeExpr>, right: Box<NativeExpr> },
-    Unary { operator: String, argument: Box<NativeExpr> },
-    Pipe { expression: Box<NativeExpr>, filter: String, arguments: Vec<NativeExpr> },
-    Object { entries: Vec<(String, NativeExpr)> },
+    /// `object.property` member access.
+    Member {
+        /// Expression producing the object being read.
+        object: Box<NativeExpr>,
+        /// Property name to read from the object.
+        property: String,
+    },
+    /// `object[index]` indexed access.
+    Index {
+        /// Expression producing the object or sequence being indexed.
+        object: Box<NativeExpr>,
+        /// Expression producing the key or position.
+        index: Box<NativeExpr>,
+    },
+    /// `callee(args…)` — function, macro or `caller()` invocation.
+    Call {
+        /// Expression identifying what is called.
+        callee: Box<NativeExpr>,
+        /// Positional arguments passed to the callee.
+        arguments: Vec<NativeExpr>,
+    },
+    /// `expression is [not] test(args)` predicate.
+    Test {
+        /// Expression the predicate is applied to.
+        expression: Box<NativeExpr>,
+        /// Name of the test in the built-in `test` namespace.
+        test: String,
+        /// Optional arguments passed to the test.
+        arguments: Vec<NativeExpr>,
+        /// Whether the result is inverted (`is not`).
+        negated: bool,
+    },
+    /// Binary operator application.
+    Binary {
+        /// Operator token, e.g. `==`, `and` or `~`.
+        operator: String,
+        /// Left-hand operand.
+        left: Box<NativeExpr>,
+        /// Right-hand operand.
+        right: Box<NativeExpr>,
+    },
+    /// Unary operator application (`not`, `-`).
+    Unary {
+        /// Operator token, e.g. `not` or `-`.
+        operator: String,
+        /// Operand the operator is applied to.
+        argument: Box<NativeExpr>,
+    },
+    /// `expression | filter(args…)` — filter pipeline stage.
+    Pipe {
+        /// Input expression passed to the filter.
+        expression: Box<NativeExpr>,
+        /// Name of the built-in filter to apply.
+        filter: String,
+        /// Extra arguments passed after the piped value.
+        arguments: Vec<NativeExpr>,
+    },
+    /// Object literal as ordered `(key, value)` pairs.
+    Object {
+        /// Entries in source order.
+        entries: Vec<(String, NativeExpr)>,
+    },
 }
 
+/// Encode a native template as an IR root node; spans are dropped.
 pub fn encode_template(t: &NativeTemplate) -> IrNode {
     IrNode::Template { children: t.children.iter().map(encode_node).collect(), span: None }
 }
 
+/// Decode IR into a native template, wrapping non-template roots in one child.
 pub fn decode_template(node: &IrNode) -> NativeTemplate {
     match node {
         IrNode::Template { children, .. } => NativeTemplate { children: children.iter().map(decode_node).collect() },

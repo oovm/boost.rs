@@ -4,6 +4,8 @@
 //! own. Enable only the families an application needs, or depend on the
 //! matching `data-*` crate directly when one capability is enough.
 
+#![warn(missing_docs)]
+
 #[cfg(feature = "text")]
 pub use data_text_core as text;
 

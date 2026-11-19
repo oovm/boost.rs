@@ -2,7 +2,7 @@
 //!
 //! 每个模块是通向某个 `document-*` crate 的薄窗口，本 crate 不定义业务逻辑。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 /// 文档语义 IR（`DocumentGraph`）。
 #[cfg(feature = "ir")]

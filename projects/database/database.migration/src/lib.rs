@@ -18,17 +18,22 @@
 //!   kept for such a table.
 //! * Deletions are reconciled by comparing primary keys, not by reading the
 //!   write-ahead log, so a delete that lands mid-scan is only seen next run.
+#![warn(missing_docs)]
 
 mod ddl;
 mod literal;
 mod source;
 mod state;
 
-use std::{collections::HashSet, fmt, path::{Path, PathBuf}};
+use std::{
+    collections::HashSet,
+    fmt,
+    path::{Path, PathBuf},
+};
 
 pub use ddl::{
-    create_table, delete_by_keys, quote_ident, quote_literal, select_after, select_key_window, select_keys, upsert_statement,
-    ColumnDef, TableShape,
+    ColumnDef, TableShape, create_table, delete_by_keys, quote_ident, quote_literal, select_after, select_key_window, select_keys,
+    upsert_statement,
 };
 pub use literal::{raw_literal, sql_literal};
 pub use source::{MigrationSource, PageRequest, PgSource, Row};
@@ -110,26 +115,12 @@ pub trait MigrationTarget {
     /// Reads rows back for verification: ordered by `order`, strictly after the
     /// `after` key window, skipping `offset` rows and returning at most `limit`,
     /// rendered in the same text format the source reports.
-    fn read_rows(
-        &mut self,
-        shape: &TableShape,
-        order: &[String],
-        after: Option<&Row>,
-        offset: u64,
-        limit: usize,
-    ) -> Result<Vec<Row>, Error> {
+    fn read_rows(&mut self, shape: &TableShape, order: &[String], after: Option<&Row>, offset: u64, limit: usize) -> Result<Vec<Row>, Error> {
         Ok(self.query(&select_after(shape, order, after.map(Vec::as_slice), offset, limit))?.rows)
     }
 
     /// Reads back only the `order` columns, for deletion reconciliation.
-    fn read_keys(
-        &mut self,
-        shape: &TableShape,
-        order: &[String],
-        after: Option<&Row>,
-        offset: u64,
-        limit: usize,
-    ) -> Result<Vec<Row>, Error> {
+    fn read_keys(&mut self, shape: &TableShape, order: &[String], after: Option<&Row>, offset: u64, limit: usize) -> Result<Vec<Row>, Error> {
         Ok(self.query(&select_key_window(shape, order, after.map(Vec::as_slice), offset, limit))?.rows)
     }
 
@@ -281,11 +272,7 @@ impl CheckReport {
 /// `check_sample_rows` rows, the content is identical. Sampling keeps a
 /// dashboard button fast, and the report states how many rows were compared so
 /// "synced" is never claimed beyond the evidence.
-pub fn check(
-    source: &mut dyn MigrationSource,
-    target: &mut dyn MigrationTarget,
-    options: &Options,
-) -> Result<CheckReport, Error> {
+pub fn check(source: &mut dyn MigrationSource, target: &mut dyn MigrationTarget, options: &Options) -> Result<CheckReport, Error> {
     let tables = match &options.tables {
         Some(tables) => tables.clone(),
         None => source.tables(&options.schema)?,
@@ -306,7 +293,8 @@ pub fn check(
         let mut synced = source_rows == target_rows;
         if !synced {
             note = Some(format!("row count differs: source {source_rows}, target {target_rows}"));
-        } else if let Some(order) = &order {
+        }
+        else if let Some(order) = &order {
             let budget = if options.check_sample_rows == 0 { u64::MAX } else { options.check_sample_rows as u64 };
             let mut cursor: Option<Row> = None;
             loop {
@@ -337,7 +325,8 @@ pub fn check(
                 }
                 cursor = Some(cursor_from_row(&shape, order, expected.last().expect("non-empty window"))?);
             }
-        } else {
+        }
+        else {
             note = Some("no primary key: row count only".to_owned());
         }
         report.tables.push(TableCheck { name, source_rows, target_rows, compared_rows: compared, synced, note });
@@ -349,14 +338,11 @@ pub fn check(
 /// stays safe while still pointing at the type or format that drifted.
 fn describe_difference(shape: &TableShape, expected: &[Row], actual: &[Row], offset: u64) -> String {
     let row = expected.iter().zip(actual.iter()).position(|(left, right)| left != right).unwrap_or(expected.len().min(actual.len()));
-    let (Some(left), Some(right)) = (expected.get(row), actual.get(row)) else {
+    let (Some(left), Some(right)) = (expected.get(row), actual.get(row))
+    else {
         return format!("row {row} at offset {} is missing on one side", offset + row as u64);
     };
-    let column = left
-        .iter()
-        .zip(right.iter())
-        .position(|(left, right)| left != right)
-        .unwrap_or(0);
+    let column = left.iter().zip(right.iter()).position(|(left, right)| left != right).unwrap_or(0);
     let name = shape.columns.get(column).map(|column| column.name.as_str()).unwrap_or("?");
     let size = |cell: &Option<String>| cell.as_ref().map_or(0, String::len);
     format!(
@@ -368,11 +354,7 @@ fn describe_difference(shape: &TableShape, expected: &[Row], actual: &[Row], off
 }
 
 /// Finishes the full scan, replays increments, then reconciles deletions.
-pub fn migrate(
-    source: &mut dyn MigrationSource,
-    target: &mut dyn MigrationTarget,
-    options: &Options,
-) -> Result<Report, Error> {
+pub fn migrate(source: &mut dyn MigrationSource, target: &mut dyn MigrationTarget, options: &Options) -> Result<Report, Error> {
     let mut state = match (&options.state_path, options.restart) {
         (Some(path), false) => MigrationState::load(path)?,
         _ => MigrationState::default(),
@@ -414,14 +396,15 @@ fn migrate_table(
 ) -> Result<TableReport, Error> {
     let shape = source.shape(&options.schema, name)?;
     let ddl = create_table(&shape)?;
-    let order = shape.order_columns().ok_or_else(|| {
-        Error::Unsupported(format!("table `{name}` has no primary key, so incremental replay is impossible"))
-    })?;
+    let order = shape
+        .order_columns()
+        .ok_or_else(|| Error::Unsupported(format!("table `{name}` has no primary key, so incremental replay is impossible")))?;
     let incremental_order = if shape.column("updated_at").is_some() {
         let mut columns = vec!["updated_at".to_owned()];
         columns.extend(order.iter().cloned());
         Some(columns)
-    } else {
+    }
+    else {
         None
     };
     let source_rows = source.count(&options.schema, name)?;
@@ -440,12 +423,7 @@ fn migrate_table(
         });
     }
 
-    let mut entry = state.entry(name).cloned().unwrap_or(TableState {
-        phase: Phase::Full,
-        watermark: String::new(),
-        cursor: None,
-        written: 0,
-    });
+    let mut entry = state.entry(name).cloned().unwrap_or(TableState { phase: Phase::Full, watermark: String::new(), cursor: None, written: 0 });
     let starting_full = entry.phase == Phase::Full;
     if starting_full && entry.watermark.is_empty() {
         entry.watermark = source.now()?;
@@ -465,16 +443,7 @@ fn migrate_table(
 
     let mut written = 0;
     if starting_full {
-        written += scan(
-            source,
-            target,
-            options,
-            state,
-            name,
-            &shape,
-            &order,
-            None,
-        )?;
+        written += scan(source, target, options, state, name, &shape, &order, None)?;
         if incremental_order.is_some() {
             // The key-ordered full scan leaves a usable cursor for an
             // append-only table; an `updated_at` replay orders differently and
@@ -508,21 +477,22 @@ fn migrate_table(
                 break;
             }
             if passes >= MAX_CATCH_UP_PASSES {
-                stopped_early =
-                    Some(format!("stopped after {passes} replay passes while rows were still changing"));
+                stopped_early = Some(format!("stopped after {passes} replay passes while rows were still changing"));
                 break;
             }
             since = pass_start;
         }
         pending_phase = Some(Phase::Incremental);
         stopped_early
-    } else if starting_full {
+    }
+    else if starting_full {
         pending_phase = Some(Phase::Incremental);
         Some(
             "table has no `updated_at`: every later run rescans the whole table because a primary-key cursor cannot see late-committed rows"
                 .to_string(),
         )
-    } else {
+    }
+    else {
         // No `updated_at` to bound changes, so a primary-key watermark is never
         // used: a freshly inserted random UUID can sort behind the previous
         // cursor. Rescan every row instead; the upsert key keeps it idempotent.
@@ -539,7 +509,8 @@ fn migrate_table(
 
     let (verified, verify_note) = if starting_full {
         verify_rows(source, target, options, name, &shape, &order)?
-    } else {
+    }
+    else {
         (false, Some("incremental run: full verification happens on the first full scan".into()))
     };
 
@@ -662,18 +633,10 @@ fn verify_rows(
         }
         let actual = target.read_rows(shape, order, cursor.as_ref(), offset, options.batch_rows)?;
         if expected != actual {
-            let first = expected
-                .iter()
-                .zip(actual.iter())
-                .position(|(left, right)| left != right)
-                .unwrap_or(expected.len().min(actual.len()));
+            let first = expected.iter().zip(actual.iter()).position(|(left, right)| left != right).unwrap_or(expected.len().min(actual.len()));
             return Ok((
                 false,
-                Some(format!(
-                    "row {first} at offset {offset} differs ({} source rows, {} target rows)",
-                    expected.len(),
-                    actual.len()
-                )),
+                Some(format!("row {first} at offset {offset} differs ({} source rows, {} target rows)", expected.len(), actual.len())),
             ));
         }
         offset += expected.len() as u64;
@@ -762,10 +725,7 @@ fn chunk_by_bytes<'a>(rows: &'a [Row], max_bytes: usize) -> Vec<&'a [Row]> {
     let mut start = 0;
     let mut size = 0;
     for (index, row) in rows.iter().enumerate() {
-        let row_bytes: usize = row
-            .iter()
-            .map(|cell| cell.as_ref().map_or(4, |text| text.len() + 4))
-            .sum();
+        let row_bytes: usize = row.iter().map(|cell| cell.as_ref().map_or(4, |text| text.len() + 4)).sum();
         if index > start && size + row_bytes > max_bytes {
             chunks.push(&rows[start..index]);
             start = index;
@@ -784,9 +744,7 @@ fn key_of(row: &[Option<String>]) -> String {
 }
 
 fn split_key(key: &str) -> Vec<Option<String>> {
-    key.split('\u{1}')
-        .map(|part| if part == "\u{0}" { None } else { Some(part.to_owned()) })
-        .collect()
+    key.split('\u{1}').map(|part| if part == "\u{0}" { None } else { Some(part.to_owned()) }).collect()
 }
 
 fn save(path: &Option<PathBuf>, state: &MigrationState) -> Result<(), Error> {

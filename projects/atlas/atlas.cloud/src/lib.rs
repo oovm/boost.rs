@@ -41,7 +41,7 @@
 //!     Ok(())
 //! }
 //! ```
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod error;
 

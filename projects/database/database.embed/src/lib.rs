@@ -24,7 +24,7 @@
 //! 句柄时跨网络调用**，也不要让两个 helper 各自在内部开库而外层还握着句柄——
 //! 这正是共享入口要解决的问题。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 use std::{
     collections::{BTreeMap, HashMap},

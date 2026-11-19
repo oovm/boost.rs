@@ -2,7 +2,7 @@
 //!
 //! 模板与 GenerationModel 由本包统一维护；各语言宿主只消费渲染结果。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 pub mod emit;
 

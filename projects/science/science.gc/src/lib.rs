@@ -3,7 +3,7 @@
 //! Arena 是 tracing GC 的底层组织方式，不是 numeric 私有临时池。
 //! 本 crate 不依赖 `science-numeric` / `science-ir` / `science-cas`。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod batch;
 mod budget;

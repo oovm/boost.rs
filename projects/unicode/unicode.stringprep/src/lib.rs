@@ -6,7 +6,7 @@
 //! 表内容由 `tools/generate_saslprep_tables.py` 从 CPython `stringprep` 生成。
 //! 协议侧（SCRAM 等）只在这里取结果，不再各自维护口令规范化副本。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod tables;
 

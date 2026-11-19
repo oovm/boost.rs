@@ -93,14 +93,17 @@ pub struct Span {
 }
 
 impl Span {
+    /// 以 `start..end`（exclusive）构造 span。
     pub fn new(start: usize, end: usize) -> Self {
         Self { start, end }
     }
 
+    /// 字节长度；`end` 早于 `start` 时返回 0。
     pub fn len(&self) -> usize {
         self.end.saturating_sub(self.start)
     }
 
+    /// 长度为 0（空 span）。
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -112,6 +115,7 @@ impl Span {
 /// 这样 IR 层在没有路径信息时也能产出诊断。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Diagnostic {
+    /// 严重级别。
     pub severity: Severity,
     /// 稳定机器身份，例如 `dejavu.template.circular-extends`。
     pub code: String,
@@ -132,6 +136,7 @@ pub struct Diagnostic {
     /// canonical template id（path-v1），例如 `theme:layout.dejavu`。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub template_id: Option<String>,
+    /// 产生阶段，用于跨阶段聚合。
     pub stage: Stage,
     /// 相关 span（例如 hint 的位置）。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -145,11 +150,17 @@ pub struct Diagnostic {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ArgValue {
+    /// 字符串参数。
     String(String),
+    /// 浮点数参数（整数也经 `From<i64>` / `From<usize>` 转成浮点）。
     Number(f64),
+    /// 布尔参数。
     Boolean(bool),
+    /// 数组参数；元素仍是结构化参数值。
     Array(Vec<ArgValue>),
+    /// 对象参数；键顺序按字典序稳定。
     Object(BTreeMap<String, ArgValue>),
+    /// 显式空值。
     Null,
 }
 
@@ -204,8 +215,11 @@ impl From<Vec<ArgValue>> for ArgValue {
 /// 相关 span（hint / note / secondary location）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RelatedSpan {
+    /// 相关位置（例如 hint 指向的片段）。
     pub span: Span,
+    /// 该位置的说明文案。
     pub label: String,
+    /// 该位置所属路径；缺省时表示与主诊断同文件。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
 }
@@ -306,34 +320,54 @@ impl std::error::Error for Diagnostic {}
 // 常用错误 code 常量
 // ---------------------------------------------------------------------------
 
+/// 常用诊断 `code` 常量；这些字符串是跨宿主稳定的机器身份，不得随意改名。
 pub mod codes {
     // Parse
+    /// 解析器遇到不符合语法的 token。
     pub const PARSE_UNEXPECTED_TOKEN: &str = "dejavu.parse.unexpected-token";
+    /// 表达式标签在输入结束前没有闭合。
     pub const PARSE_UNCLOSED_EXPRESSION: &str = "dejavu.parse.unclosed-expression";
+    /// 块语句缺少对应的结束标签。
     pub const PARSE_UNCLOSED_BLOCK: &str = "dejavu.parse.unclosed-block";
+    /// 文档解析完成后仍有未被消费的输入。
     pub const PARSE_TRAILING_INPUT: &str = "dejavu.parse.trailing-input";
     /// `break` / `continue` without an enclosing `loop` in the same lexical unit.
     pub const PARSE_CONTROL_OUTSIDE_LOOP: &str = "dejavu.parse.control-outside-loop";
 
     // Template load / resolve
+    /// loader 无法解析到目标模板。
     pub const TEMPLATE_NOT_FOUND: &str = "dejavu.template.template-not-found";
+    /// 需要加载子模板但宿主没有提供 loader。
     pub const MISSING_LOADER: &str = "dejavu.template.missing-loader";
+    /// `extends` 继承链成环。
     pub const CIRCULAR_EXTENDS: &str = "dejavu.template.circular-extends";
+    /// `include` 包含链成环。
     pub const CIRCULAR_INCLUDE: &str = "dejavu.template.circular-include";
+    /// 模板引用语法无效。
     pub const TEMPLATE_INVALID_REF: &str = "dejavu.template.invalid-ref";
+    /// 模板引用了未注册的 scheme。
     pub const TEMPLATE_UNKNOWN_SCHEME: &str = "dejavu.template.unknown-scheme";
+    /// 在没有来源模板时使用了相对路径引用。
     pub const TEMPLATE_RELATIVE_WITHOUT_FROM: &str = "dejavu.template.relative-without-from";
+    /// 相对路径越出了 catalog 允许的根。
     pub const TEMPLATE_RELATIVE_ESCAPE_ROOT: &str = "dejavu.template.relative-escape-root";
+    /// 同一个引用能匹配到多个候选模板。
     pub const TEMPLATE_AMBIGUOUS_REF: &str = "dejavu.template.ambiguous-ref";
 
     // Render
+    /// 使用了不在内置 `filter` 表中的过滤名。
     pub const UNKNOWN_FILTER: &str = "dejavu.template.unknown-filter";
+    /// 过滤器的参数个数不在其合同范围内。
     pub const FILTER_ARITY: &str = "dejavu.template.filter-arity";
     /// `escape_url` rejected a disallowed URL scheme; the value renders as null.
     pub const URL_SCHEME_REJECTED: &str = "dejavu.template.url-scheme-rejected";
+    /// 使用了不在内置 `function` 表中的函数名。
     pub const UNKNOWN_FUNCTION: &str = "dejavu.template.unknown-function";
+    /// 函数的参数个数不在其合同范围内。
     pub const FUNCTION_ARITY: &str = "dejavu.template.function-arity";
+    /// 使用了不在内置 `test` 表中的测试名。
     pub const UNKNOWN_TEST: &str = "dejavu.template.unknown-test";
+    /// 测试（test）的参数个数不在其合同范围内。
     pub const TEST_ARITY: &str = "dejavu.template.test-arity";
     /// A registry entry needs a capability the host did not grant.
     pub const CAPABILITY_NOT_ALLOWED: &str = "dejavu.template.capability-not-allowed";
@@ -343,22 +377,33 @@ pub mod codes {
     pub const REGISTRY_CONFLICT: &str = "dejavu.template.registry-conflict";
     /// A host-supplied registry implementation failed while being invoked.
     pub const CUSTOM_INVOCATION: &str = "dejavu.template.custom-invocation";
+    /// `loop` 的目标值不是可迭代序列。
     pub const INVALID_ITERABLE: &str = "dejavu.template.invalid-iterable";
+    /// 严格模式下引用了未定义的变量。
     pub const UNDEFINED_VARIABLE: &str = "dejavu.template.undefined-variable";
     /// Strict mode: a member access names a property the object does not carry.
     pub const UNDEFINED_MEMBER: &str = "dejavu.template.undefined-member";
     /// Strict mode: an index access is out of bounds or names a missing key.
     pub const UNDEFINED_INDEX: &str = "dejavu.template.undefined-index";
+    /// `super()` 出现在任何 `block` 之外。
     pub const SUPER_OUTSIDE_BLOCK: &str = "dejavu.template.super-outside-block";
     /// A `break` / `continue` signal escaped every enclosing loop in the document.
     pub const CONTROL_OUTSIDE_LOOP: &str = "dejavu.template.control-outside-loop";
+    /// 节点类型不允许出现在当前渲染位置。
     pub const NOT_RENDERABLE_NODE: &str = "dejavu.template.not-renderable-node";
+    /// `extends` 不在模板顶层。
     pub const EXTENDS_NOT_TOP_LEVEL: &str = "dejavu.template.extends-not-top-level";
+    /// 该渲染路径不支持函数调用。
     pub const CALLS_NOT_SUPPORTED: &str = "dejavu.template.calls-not-supported";
+    /// 一元运算符不在合同内。
     pub const UNKNOWN_UNARY: &str = "dejavu.template.unknown-unary";
+    /// 表达式位置出现了非法节点。
     pub const INVALID_EXPRESSION_NODE: &str = "dejavu.template.invalid-expression-node";
+    /// 渲染上下文不是 JSON 对象。
     pub const CONTEXT_NOT_OBJECT: &str = "dejavu.template.context-not-object";
+    /// 调用缺少必需的参数。
     pub const MISSING_PARAMETER: &str = "dejavu.template.missing-parameter";
+    /// 调用传入了未声明的参数。
     pub const UNKNOWN_PARAMETER: &str = "dejavu.template.unknown-parameter";
     /// A macro was called with fewer arguments than required parameters.
     pub const MISSING_MACRO_ARGUMENT: &str = "dejavu.template.missing-macro-argument";
@@ -382,6 +427,7 @@ pub mod codes {
     pub const CALLER_UNAVAILABLE: &str = "dejavu.template.caller-unavailable";
     /// `caller()` arguments did not match the caller block's parameters.
     pub const CALLER_ARITY: &str = "dejavu.template.caller-arity";
+    /// 二元运算符不在合同内。
     pub const UNKNOWN_BINARY: &str = "dejavu.template.unknown-binary";
     /// 单模板源码超过共享预算 `max_source_bytes`。
     pub const SOURCE_BUDGET: &str = "dejavu.template.source-budget";
@@ -393,10 +439,13 @@ pub mod codes {
     pub const INCLUDE_DEPTH: &str = "dejavu.template.include-depth";
 
     // Config
+    /// 读取配置文件失败（IO 错误）。
     pub const CONFIG_READ_FAILED: &str = "dejavu.config.read-failed";
+    /// 配置文件存在但内容不符合合同。
     pub const CONFIG_INVALID_DOCUMENT: &str = "dejavu.config.invalid-document";
 
     // IR wire
+    /// IR JSON 无法反序列化为合同结构。
     pub const IR_INVALID_JSON: &str = "dejavu.ir.invalid-json";
 }
 

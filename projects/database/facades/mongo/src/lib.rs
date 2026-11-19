@@ -19,7 +19,7 @@
 //! - `write_concern`：`writeConcern` / `$readPreference` 校验与写应答装饰（`storage` feature）
 //! - `import`：`mongodump` 形态 `.bson` 流导入（`storage` feature）
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 pub use database_protocol_mongo::{bson, json, wire};
 

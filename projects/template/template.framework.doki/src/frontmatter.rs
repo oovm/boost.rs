@@ -7,19 +7,28 @@ use crate::error::{CoreError, CoreResult};
 /// Parsed page metadata + remaining Markdown body.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParsedDocument {
+    /// Metadata extracted from the front matter block.
     pub front_matter: FrontMatter,
+    /// Markdown body left after the front matter block.
     pub body: String,
 }
 
+/// Page metadata decoded from YAML or TOML front matter.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct FrontMatter {
+    /// Page title used by templates and the head.
     pub title: Option<String>,
+    /// Optional meta description.
     pub description: Option<String>,
     /// Front matter `type` (`home` / `post` / `page`), validated by the site model.
     pub page_type: Option<String>,
+    /// Explicit layout name overriding the type default.
     pub layout: Option<String>,
+    /// Publication date as written in the front matter.
     pub date: Option<String>,
+    /// Draft pages are excluded from a production build.
     pub draft: bool,
+    /// Sort weight within a page type; lower sorts first.
     pub weight: Option<i64>,
     /// Front matter `tags` sequence — the only input for tag taxonomy aggregation.
     pub tags: Vec<String>,
@@ -30,6 +39,7 @@ pub struct FrontMatter {
 }
 
 impl FrontMatter {
+    /// Decode the known metadata keys from a raw front matter table.
     pub fn from_map(fields: Map<String, Value>) -> Self {
         let title = string_field(&fields, "title");
         let description = string_field(&fields, "description");

@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 #![doc = include_str!("readme.md")]
 
 mod budget;

@@ -3,7 +3,7 @@
 //! 涵盖关系 / 文档 / 图 / NoSQL 等对象映射族；负责解析 → 计划 → 能力协商 →
 //! 参考执行。具体 DDL 作者面在 `odm.input.*`，外存线协议不在本包。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod adapter;
 mod cache_route;

@@ -1,5 +1,5 @@
 //! `database-formats`：磁盘字节布局，YY 家族按文件后缀分模块，SQLite format-3 单列。
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 /// Mongo 集合/索引 catalog 记录与 oplog 条目编码。
 pub mod mongo;

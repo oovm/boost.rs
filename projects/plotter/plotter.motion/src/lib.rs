@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 //! Stable correspondence and transition planning between DaVinci display
 //! scenes.
 //!

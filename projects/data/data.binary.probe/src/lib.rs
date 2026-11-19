@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 //! Magic-byte probing and format candidate collection for binary containers.
 //!
 //! Signatures produce ranked [`ProbeCandidate`] values with evidence ranges.

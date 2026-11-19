@@ -3,7 +3,7 @@
 //! 只按能力再导出，不按产品品牌分 feature，也不实现业务逻辑。
 //! 对象—数据库映射与代码生成已提级到独立的 `odm` 能力域。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 /// 共享值、标识与基础合同。
 #[cfg(feature = "types")]

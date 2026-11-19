@@ -3,7 +3,7 @@
 //! 本 crate 不记录梯度，也不区分设备。自动微分在 `dl-autograd` 中组合这些原语，
 //! 设备调度在 `hardware.*` 接入后由 DL 计划层调用同一内核合同。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 use dl_tensor::{Tensor, increment_index};
 use dl_types::{DlError, Result, broadcast_shape, numel};

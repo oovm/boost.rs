@@ -131,6 +131,7 @@ pub struct LineOrigin {
 
 /// Shared mutable state for the emitters.
 pub struct CodegenCtx<'a> {
+    /// Compile-time options (entry id, capabilities, custom registry).
     pub options: &'a CodegenOptions,
     /// Collected diagnostics (errors + warnings about unsupported nodes etc.).
     pub diagnostics: Vec<Diagnostic>,
@@ -161,6 +162,7 @@ pub struct CodegenCtx<'a> {
 }
 
 impl<'a> CodegenCtx<'a> {
+    /// Build a context, validating the custom registry and capability names once.
     pub fn new(options: &'a CodegenOptions) -> Self {
         let mut diagnostics = Vec::new();
         // A rejected registry is a configuration error about the whole compile,

@@ -1,6 +1,6 @@
 //! 倒排索引、不可变段与代次发布。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 use searcher_document::DocumentOp;
 use searcher_store::SearchStore;

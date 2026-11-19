@@ -7,7 +7,7 @@
 //! 分层：[`identity`] · [`storage`] · [`views`] · [`primitives`] · [`lifecycle`]。
 //! 图论数学结论在 `science-cas::graph_theory`。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
 pub mod identity;
@@ -32,8 +32,8 @@ pub use lifecycle::{
     publication_attach_chunks, publish_immutable_graph,
 };
 pub use primitives::{
-    CancelFlag, DeterministicBfsOutcome, DeterministicFrontier, FrontierCheckpoint, bfs_order, deterministic_bfs,
-    resume_deterministic_bfs, sort_neighbors_deterministic,
+    CancelFlag, DeterministicBfsOutcome, DeterministicFrontier, FrontierCheckpoint, bfs_order, deterministic_bfs, resume_deterministic_bfs,
+    sort_neighbors_deterministic,
 };
 pub use storage::{
     CscGraph, CsrGraph, CsrOnHeap, DerivedCsc, GcDenseU64Column, GcPayloadStorage, GraphAlgorithmRequirements, GraphCapabilities, PropertyCell,

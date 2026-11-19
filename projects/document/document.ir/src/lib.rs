@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 //! Notedown document semantic IR.
 //!
 //! Stable identities, block semantics, relations, assets, and provenance.

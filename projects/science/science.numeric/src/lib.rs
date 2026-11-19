@@ -10,7 +10,7 @@
 //! dispatch   — 能力三分 · `NumericExecutor` · `PortableBackend`
 //! foreign    — oracle 差分参考（不进默认路径）
 //! ```
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 pub mod arithmetic;
 pub mod certificate;

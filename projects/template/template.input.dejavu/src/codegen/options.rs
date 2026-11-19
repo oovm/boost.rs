@@ -40,6 +40,7 @@ impl CodegenOptions {
         serde_json::from_str::<CodegenOptions>(json)
     }
 
+    /// Entry id used for dependency tracking; falls back to `"__entry__"`.
     pub fn entry_id(&self) -> &str {
         self.entry_id.as_deref().unwrap_or("__entry__")
     }

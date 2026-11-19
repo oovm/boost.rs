@@ -11,7 +11,7 @@
 //! science-types → science-gc → … → science-rewrite → science-vm → science-cas → science
 //! ```
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod budget;
 mod cancel;

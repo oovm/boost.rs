@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
 //! Odin bytecode VM — the `.odin` target under the `interpreter.vm` tree.

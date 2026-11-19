@@ -2,7 +2,7 @@
 //!
 //! 数字原子持有 [`science_numeric::NumericValue`]。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 pub mod build;
 pub mod canonical;

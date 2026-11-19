@@ -170,22 +170,27 @@ impl I18n {
         (i18n, diagnostics)
     }
 
+    /// Default locale (`lang` from `doki.toml`); the tail of every fallback chain.
     pub fn default_locale(&self) -> &str {
         &self.default_locale
     }
 
+    /// All enabled locales, in declaration order.
     pub fn locales(&self) -> &[String] {
         &self.locales
     }
 
+    /// Whether more than one locale is enabled.
     pub fn is_multi(&self) -> bool {
         self.locales.len() > 1
     }
 
+    /// Catalog content hashes keyed by locale, for incremental invalidation.
     pub fn hashes(&self) -> &BTreeMap<String, String> {
         &self.catalog_hashes
     }
 
+    /// Flattened `key → value` catalog of one locale, when it loaded.
     pub fn catalog(&self, locale: &str) -> Option<&BTreeMap<String, Value>> {
         self.catalogs.get(locale)
     }

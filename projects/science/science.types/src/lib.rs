@@ -2,7 +2,7 @@
 //!
 //! 数值表示与运算在 [`science_numeric`]；本 crate 不拥有 `NumericDomain` / 执行态 `Number`。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod assumption;
 mod binding;

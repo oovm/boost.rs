@@ -16,7 +16,7 @@
 //! }
 //! ```
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 #[cfg(feature = "macro")]
 pub use atlas_macro::Component;

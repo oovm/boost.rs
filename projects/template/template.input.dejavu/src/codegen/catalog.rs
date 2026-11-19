@@ -504,6 +504,9 @@ fn extends_path_not_literal(id: &str) -> Diagnostic {
         .message("`extends` requires a literal template path")
 }
 
+/// Split a canonical id of the form `root:path` into its root and path parts.
+///
+/// Returns `None` when the id has no `:` separator or either side is empty.
 pub fn split_canonical(id: &str) -> Option<(&str, &str)> {
     let idx = id.find(':')?;
     let (root, rest) = id.split_at(idx);

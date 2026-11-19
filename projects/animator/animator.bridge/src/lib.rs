@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 //! 动画桥接：把 `animator.core` 的时间轴逐帧取样并序列化为 SVG 帧序列。
 //!
 //! `animator.core` 只负责“在某一秒是什么场景”，不产出可交付文件。本 crate 补上

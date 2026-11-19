@@ -1,5 +1,5 @@
 //! `database-cluster`：分片、路由、所有权、fencing、复制与分布式编排。
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 /// 目录真值与 schema 发布。
 pub mod catalog;

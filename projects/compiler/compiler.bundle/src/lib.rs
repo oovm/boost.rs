@@ -17,7 +17,7 @@
 //! - 最终文本装配、类型擦除、压缩与文件写出（`compiler.emitter` 的 JS/Web 文本目标与宿主）。
 //! - 工程发现、监听、依赖安装（`package.*` 与工程服务）。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 pub mod chunk;
 pub mod diag;

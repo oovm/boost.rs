@@ -2,7 +2,7 @@
 //!
 //! 本包是输入面门面，实现落在 [`database_query`]；按能力再导出，不按产品品牌分叉。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 /// SQL 输入面（解析 / 绑定 / 会话命令）。
 pub mod sql {

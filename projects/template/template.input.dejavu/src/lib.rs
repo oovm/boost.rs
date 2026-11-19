@@ -14,13 +14,18 @@ pub mod codegen;
 pub mod config;
 pub mod diagnostic;
 pub mod language;
+/// 宿主原生 AST，与 IR 节点双向转换。
 pub mod native;
+/// IR 值的语义归一化（用于比较 / 快照）。
 pub mod normalize;
+/// 内置 filter / function / test 表与宿主扩展合同。
 pub mod registry;
+/// IR 渲染入口、宿主扩展点与加载器适配。
 pub mod render;
 pub mod runtime;
 mod template_bridge;
 pub mod trim;
+/// IR wire 类型、默认语言配置与 span 定义。
 pub mod types;
 
 extern crate alloc;
@@ -58,6 +63,7 @@ pub const EXTENSIONS: &[&str] = &["", ".doki", ".dejavu", ".html"];
 /// - `Diagnostic`：模板域错误的唯一形态（code + args + span + stage）
 #[derive(Debug)]
 pub enum IrError {
+    /// serde_json 错误（宿主输入 / IR wire 问题）。
     Json(serde_json::Error),
     /// 结构化诊断（code + args + span + stage）。
     Diagnostic(Diagnostic),

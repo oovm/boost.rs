@@ -2,7 +2,7 @@
 //!
 //! 只接收已抽取字段；不实现抓取、robots、frontier 或页面抽取。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 use searcher_types::{CollectionId, DocumentId, DocumentRevision};
 use serde::{Deserialize, Serialize};

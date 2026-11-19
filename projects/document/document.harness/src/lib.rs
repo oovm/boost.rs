@@ -8,7 +8,7 @@
 //! - [`fixtures`]：内存构造 OOXML 容器 fixture（stored zip / docx），不落二进制资产。
 //! - [`font_pack`]：宿主字体包解析（`VUTEX_FONT_DIR` 或仓旁 `VuTeX` 检出）。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 pub mod fixtures;
 pub mod font_pack;

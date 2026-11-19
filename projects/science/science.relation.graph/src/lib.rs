@@ -5,6 +5,7 @@
 //! - Relation layer: hash-cons, label atoms, structural vs judgment edges, EQ paths.
 //! - Staging keeps an unfinished builder. Seal with [`Graph::seal`] / [`Graph::seal_on_heap`].
 //! - Core contract stubs: [`admission`], [`connection`], [`derivation`], [`evidence`], [`transform`], [`conflict`], [`rules`], [`eval`].
+#![warn(missing_docs)]
 
 use std::{
     cell::RefCell,

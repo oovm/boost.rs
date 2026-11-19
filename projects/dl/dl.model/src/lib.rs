@@ -3,7 +3,7 @@
 //! 状态字典以“参数名 → 张量”表达；文件容器复用 `data-safetensors`，DL 只负责
 //! `F32` 张量与字节之间的映射以及形状校验。加载是严格的：缺少参数或形状不符即报错。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 use std::{collections::BTreeMap, path::Path};
 

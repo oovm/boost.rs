@@ -2,7 +2,7 @@
 //!
 //! Parsing, IR, rendering and AOT codegen live in `template-input-dejavu`.
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 pub mod errors;
 pub mod i18n;

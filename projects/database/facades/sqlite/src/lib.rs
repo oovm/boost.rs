@@ -10,7 +10,7 @@
 //! map it onto their own conventions. YYDB owns no SQL dialect. No official
 //! SQLite C library. No YYDB engine.
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 pub mod connection;
 pub mod sql;

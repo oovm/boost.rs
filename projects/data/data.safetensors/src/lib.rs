@@ -5,10 +5,9 @@
 //!
 //! 支持读取标准 `F32` 等常见 dtype 的负载；解码不依赖第三方 JSON 库。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
-use std::collections::BTreeMap;
-use std::fmt;
+use std::{collections::BTreeMap, fmt};
 
 /// 编码输入：借用形态的张量条目。
 #[derive(Clone, Copy, Debug)]
@@ -102,14 +101,11 @@ pub fn decode(data: &[u8]) -> Result<BTreeMap<String, OwnedTensor>, FormatError>
         return Err(FormatError::new("file shorter than 8-byte header length"));
     }
     let header_len = u64::from_le_bytes(data[..8].try_into().expect("8 bytes")) as usize;
-    let payload_start = 8usize
-        .checked_add(header_len)
-        .ok_or_else(|| FormatError::new("header length overflow"))?;
+    let payload_start = 8usize.checked_add(header_len).ok_or_else(|| FormatError::new("header length overflow"))?;
     if payload_start > data.len() {
         return Err(FormatError::new("header length exceeds file size"));
     }
-    let header = std::str::from_utf8(&data[8..payload_start])
-        .map_err(|error| FormatError::new(format!("header is not UTF-8: {error}")))?;
+    let header = std::str::from_utf8(&data[8..payload_start]).map_err(|error| FormatError::new(format!("header is not UTF-8: {error}")))?;
     let payload = &data[payload_start..];
     let parsed = Parser::new(header).parse()?;
     let entries = parsed.as_object().ok_or_else(|| FormatError::new("header is not a JSON object"))?;
@@ -119,13 +115,9 @@ pub fn decode(data: &[u8]) -> Result<BTreeMap<String, OwnedTensor>, FormatError>
         if name == "__metadata__" {
             continue;
         }
-        let fields = value
-            .as_object()
-            .ok_or_else(|| FormatError::new(format!("tensor {name:?} entry is not an object")))?;
-        let dtype = field(fields, "dtype")?
-            .as_string()
-            .ok_or_else(|| FormatError::new(format!("tensor {name:?} dtype is not a string")))?
-            .to_owned();
+        let fields = value.as_object().ok_or_else(|| FormatError::new(format!("tensor {name:?} entry is not an object")))?;
+        let dtype =
+            field(fields, "dtype")?.as_string().ok_or_else(|| FormatError::new(format!("tensor {name:?} dtype is not a string")))?.to_owned();
         let shape = field(fields, "shape")?
             .as_array()
             .ok_or_else(|| FormatError::new(format!("tensor {name:?} shape is not an array")))?
@@ -143,31 +135,17 @@ pub fn decode(data: &[u8]) -> Result<BTreeMap<String, OwnedTensor>, FormatError>
         if offsets.len() != 2 {
             return Err(FormatError::new(format!("tensor {name:?} needs two data offsets")));
         }
-        let start = offsets[0]
-            .as_number()
-            .ok_or_else(|| FormatError::new(format!("tensor {name:?} start offset is not unsigned")))? as usize;
-        let end = offsets[1]
-            .as_number()
-            .ok_or_else(|| FormatError::new(format!("tensor {name:?} end offset is not unsigned")))? as usize;
+        let start = offsets[0].as_number().ok_or_else(|| FormatError::new(format!("tensor {name:?} start offset is not unsigned")))? as usize;
+        let end = offsets[1].as_number().ok_or_else(|| FormatError::new(format!("tensor {name:?} end offset is not unsigned")))? as usize;
         if start > end || end > payload.len() {
             return Err(FormatError::new(format!("tensor {name:?} offsets out of payload")));
         }
         let expected = element_size(&dtype)?;
         let count = shape.iter().product::<usize>();
         if (end - start) != count * expected {
-            return Err(FormatError::new(format!(
-                "tensor {name:?} payload {} bytes does not match {count} x {expected}",
-                end - start
-            )));
+            return Err(FormatError::new(format!("tensor {name:?} payload {} bytes does not match {count} x {expected}", end - start)));
         }
-        output.insert(
-            name.to_string(),
-            OwnedTensor {
-                dtype,
-                shape,
-                bytes: payload[start..end].to_vec(),
-            },
-        );
+        output.insert(name.to_string(), OwnedTensor { dtype, shape, bytes: payload[start..end].to_vec() });
     }
     Ok(output)
 }
@@ -183,11 +161,7 @@ fn element_size(dtype: &str) -> Result<usize, FormatError> {
 }
 
 fn field<'a>(fields: &'a [(String, Json)], name: &str) -> Result<&'a Json, FormatError> {
-    fields
-        .iter()
-        .find(|(key, _)| key == name)
-        .map(|(_, value)| value)
-        .ok_or_else(|| FormatError::new(format!("missing field {name:?}")))
+    fields.iter().find(|(key, _)| key == name).map(|(_, value)| value).ok_or_else(|| FormatError::new(format!("missing field {name:?}")))
 }
 
 fn escape_into(output: &mut String, value: &str) {
@@ -254,11 +228,7 @@ struct Parser<'a> {
 
 impl<'a> Parser<'a> {
     fn new(text: &'a str) -> Self {
-        Self {
-            text,
-            bytes: text.as_bytes(),
-            position: 0,
-        }
+        Self { text, bytes: text.as_bytes(), position: 0 }
     }
 
     fn parse(mut self) -> Result<Json, FormatError> {
@@ -361,10 +331,7 @@ impl<'a> Parser<'a> {
                 Some(b'\\') => {
                     output.push_str(&self.text[start..self.position]);
                     self.position += 1;
-                    let escape = *self
-                        .bytes
-                        .get(self.position)
-                        .ok_or_else(|| FormatError::new("unterminated escape"))?;
+                    let escape = *self.bytes.get(self.position).ok_or_else(|| FormatError::new("unterminated escape"))?;
                     self.position += 1;
                     match escape {
                         b'"' => output.push('"'),
@@ -377,16 +344,9 @@ impl<'a> Parser<'a> {
                         b't' => output.push('\t'),
                         b'u' => {
                             let end = self.position + 4;
-                            let digits = self
-                                .text
-                                .get(self.position..end)
-                                .ok_or_else(|| FormatError::new("truncated unicode escape"))?;
-                            let code = u32::from_str_radix(digits, 16)
-                                .map_err(|_| FormatError::new("invalid unicode escape"))?;
-                            output.push(
-                                char::from_u32(code)
-                                    .ok_or_else(|| FormatError::new("invalid unicode scalar"))?,
-                            );
+                            let digits = self.text.get(self.position..end).ok_or_else(|| FormatError::new("truncated unicode escape"))?;
+                            let code = u32::from_str_radix(digits, 16).map_err(|_| FormatError::new("invalid unicode escape"))?;
+                            output.push(char::from_u32(code).ok_or_else(|| FormatError::new("invalid unicode scalar"))?);
                             self.position = end;
                         }
                         other => {
@@ -405,16 +365,15 @@ impl<'a> Parser<'a> {
         while matches!(self.peek(), Some(b'0'..=b'9')) {
             self.position += 1;
         }
-        self.text[start..self.position]
-            .parse::<u64>()
-            .map_err(|_| FormatError::new("invalid unsigned number"))
+        self.text[start..self.position].parse::<u64>().map_err(|_| FormatError::new("invalid unsigned number"))
     }
 
     fn literal(&mut self, literal: &str) -> Result<(), FormatError> {
         if self.text[self.position..].starts_with(literal) {
             self.position += literal.len();
             Ok(())
-        } else {
+        }
+        else {
             Err(FormatError::new(format!("expected {literal}")))
         }
     }
@@ -423,7 +382,8 @@ impl<'a> Parser<'a> {
         if self.peek() == Some(byte) {
             self.position += 1;
             Ok(())
-        } else {
+        }
+        else {
             Err(FormatError::new(format!("expected '{}'", byte as char)))
         }
     }
@@ -448,22 +408,8 @@ mod tests {
         let left_bytes = [1.0f32, 2.0, 3.0, 4.0].map(f32::to_le_bytes).concat();
         let right_bytes = [5.0f32, 6.0].map(f32::to_le_bytes).concat();
         let mut input = BTreeMap::new();
-        input.insert(
-            "weight".to_owned(),
-            TensorView {
-                dtype: "F32",
-                shape: &[2, 2],
-                bytes: &left_bytes,
-            },
-        );
-        input.insert(
-            "bias".to_owned(),
-            TensorView {
-                dtype: "F32",
-                shape: &[2],
-                bytes: &right_bytes,
-            },
-        );
+        input.insert("weight".to_owned(), TensorView { dtype: "F32", shape: &[2, 2], bytes: &left_bytes });
+        input.insert("bias".to_owned(), TensorView { dtype: "F32", shape: &[2], bytes: &right_bytes });
         let encoded = encode(&input).unwrap();
         let decoded = decode(&encoded).unwrap();
         assert_eq!(decoded["weight"].shape, vec![2, 2]);
@@ -475,14 +421,7 @@ mod tests {
     fn rejects_truncated_payload() {
         let mut input = BTreeMap::new();
         let bytes = [1.0f32].map(f32::to_le_bytes).concat();
-        input.insert(
-            "x".to_owned(),
-            TensorView {
-                dtype: "F32",
-                shape: &[1],
-                bytes: &bytes,
-            },
-        );
+        input.insert("x".to_owned(), TensorView { dtype: "F32", shape: &[1], bytes: &bytes });
         let mut encoded = encode(&input).unwrap();
         encoded.pop();
         assert!(decode(&encoded).is_err());

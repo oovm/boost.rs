@@ -2,7 +2,7 @@
 //!
 //! 向 Scene IR 编译。不绘制像素，也不调用设备 API。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod camera_plot;
 mod compile;

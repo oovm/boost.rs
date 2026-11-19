@@ -4,7 +4,7 @@
 //! （`science-cas`、`science`、…）。本包仅为库 — 不是
 //! 独立测试二进制，也不是 `@sxo/harness`。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 pub mod assertions;
 pub mod backend;

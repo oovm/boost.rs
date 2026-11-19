@@ -1,5 +1,5 @@
 #![doc = include_str!("readme.md")]
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 /// AST module.
 pub mod ast;

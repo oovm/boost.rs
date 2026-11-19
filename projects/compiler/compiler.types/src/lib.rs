@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 //! 语言无关的编译期合同类型：语义身份、链接后程序事实、布局计划、可审计中立合同与诊断线格式。
 //!
@@ -13,17 +13,12 @@
 //!   不实现收集器或渲染器。
 
 pub use self::{
+    compiler_input::{DeclarationIndexEntry, DeclarationKey, DeclarationKind, DeclarationLink, EntryPointKind, ReferencePath},
+    contract_versions::{IDENTITY_SCHEMA_VERSION, LAYOUT_PLAN_VERSION, MIR_CONTRACT_VERSION, contract_version_fingerprint},
     diagnostics::{
         DiagnosticArg, DiagnosticOwner, DiagnosticOwnerClass, DiagnosticPhase, DiagnosticRow, DiagnosticSeverity, DiagnosticSource,
         DiagnosticSpan,
     },
-    linked::{
-        CanonicalCallEdge, CanonicalExternalCallEdge, CanonicalFragment, CanonicalPrimitiveType, CanonicalTypeKind, EntryRecord,
-        EvidenceRecord, ExportRecord, FieldRecord, ImportRecord, ItemInstanceRecord, LinkedSemanticProgram, NominalInstanceRecord,
-        NominalValueSemantics, TypeRecord, VariantRecord,
-    },
-    compiler_input::{DeclarationIndexEntry, DeclarationKey, DeclarationKind, DeclarationLink, EntryPointKind, ReferencePath},
-    contract_versions::{IDENTITY_SCHEMA_VERSION, LAYOUT_PLAN_VERSION, MIR_CONTRACT_VERSION, contract_version_fingerprint},
     digest::combined_content_hash,
     errors::{TypesError, TypesErrorKind},
     external_import::{ExternalCallArgument, ExternalCallEdge, ExternalImportLink, InternalCallEdge},
@@ -31,6 +26,11 @@ pub use self::{
         AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, LayoutKey, SINGLETON_CONSTRUCTOR_NAME,
         SINGLETON_EAGER_ACCESSOR, SINGLETON_FINALIZER_NAME, SINGLETON_INSTANCE_FIELD, SINGLETON_LAZY_ACCESSOR, SINGLETON_UNLOAD_ACCESSOR,
         SingletonInstancePlan, StorageKind, SumTypeLayout, SumVariantLayout,
+    },
+    linked::{
+        CanonicalCallEdge, CanonicalExternalCallEdge, CanonicalFragment, CanonicalPrimitiveType, CanonicalTypeKind, EntryRecord,
+        EvidenceRecord, ExportRecord, FieldRecord, ImportRecord, ItemInstanceRecord, LinkedSemanticProgram, NominalInstanceRecord,
+        NominalValueSemantics, TypeRecord, VariantRecord,
     },
     neutral_contract::{
         ArtifactContract, BootstrapStage, EvidencePackage, EvidenceStatus, PrimitiveDefinition, PrimitiveRegistry, Provenance,
@@ -49,20 +49,20 @@ pub use self::{
 };
 pub use core_surface::{CoreFeature, CoreSurfaceManifest};
 
-/// 跨阶段结构化诊断合同（语言无关）。
-pub mod diagnostics;
-/// 链接完成的语义程序与稳定身份记录（中立事实，不含语言 IR）。
-pub mod linked;
 /// Compiler 输入与声明索引的中立数据结构（装配层与编译阶段之间的数据传输合同）。
 pub mod compiler_input;
 /// 产物 / cache 合同版本（identity / MIR / layout）。
 pub mod contract_versions;
 pub mod core_surface;
+/// 跨阶段结构化诊断合同（语言无关）。
+pub mod diagnostics;
 pub mod digest;
 mod errors;
 mod external_import;
 /// 聚合 / singleton 布局合同，供可执行 lowering 使用。
 pub mod layout;
+/// 链接完成的语义程序与稳定身份记录（中立事实，不含语言 IR）。
+pub mod linked;
 /// 前端、规划器、emitter 与运行时共享的中立可审计合同。
 pub mod neutral_contract;
 /// 可扩展属性 / 运算符注册表。

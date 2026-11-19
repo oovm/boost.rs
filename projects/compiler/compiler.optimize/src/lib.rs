@@ -8,6 +8,7 @@
 //! 默认的 `core.*` 代数恒等式作为可替换的内建理论提供。
 //!
 //! 分层：[`egraph`] · [`term`] · [`pattern`] · [`extract`] · [`theory`] · [`session`] · [`core_theory`]。
+#![warn(missing_docs)]
 
 mod core_theory;
 mod egraph;

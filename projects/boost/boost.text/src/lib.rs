@@ -3,6 +3,8 @@
 //! Each module re-exports the owning crate; this facade defines no types of its
 //! own. Enable only the capabilities an application needs.
 
+#![warn(missing_docs)]
+
 #[cfg(feature = "core")]
 pub use data_text_core as core;
 

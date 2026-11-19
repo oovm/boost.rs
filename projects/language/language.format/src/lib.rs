@@ -8,7 +8,7 @@
 //!
 //! 格式化一个文件不需要启动 language server：CLI、LSP、MCP 都消费本服务。
 
-#![allow(missing_docs)]
+#![warn(missing_docs)]
 
 pub mod awsl;
 pub mod contract;

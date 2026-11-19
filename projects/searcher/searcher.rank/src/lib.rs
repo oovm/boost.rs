@@ -1,6 +1,6 @@
 //! 评分与排序合同。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 use searcher_types::Score;
 

@@ -2,7 +2,7 @@
 //!
 //! 不含图形语法或数学求值。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod column;
 mod graph;

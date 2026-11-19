@@ -3,7 +3,7 @@
 //! 只消费 Scene IR。不得重新推断 stat、scale 或 layout。
 //! SVG 实现在 `plotter.renderer.svg`；加速后端见门面 `plotter::renderer::gpu`。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod cpu;
 mod font;

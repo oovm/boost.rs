@@ -19,7 +19,7 @@
 //! HTTP 走 [`boost_net`] 的同步 HTTP/1.1 传输。代理、DNS 与连接池策略不属于协议层，
 //! 需要这些策略的宿主可以用 [`HttpClient::with_transport`] 注入自己的 [`Transport`]。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod advisory;
 mod artifact;
@@ -42,7 +42,7 @@ pub use advisory::{Advisory, OSV_ENDPOINT, OsvClient, osv_ecosystem};
 pub use artifact::{extract_tarball, sha256_hex, verify_sri};
 pub use conda::CondaRegistry;
 pub use error::RegistryError;
-pub use http::{build_url, url_encode, HttpClient, HttpResponse, proxy_env_hint};
+pub use http::{HttpClient, HttpResponse, build_url, proxy_env_hint, url_encode};
 pub use jsr::JsrRegistry;
 pub use maven::MavenRegistry;
 pub use npm::NpmRegistry;

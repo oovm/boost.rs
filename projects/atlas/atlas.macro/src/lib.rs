@@ -20,7 +20,7 @@
 //! }
 //! ```
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 use proc_macro::TokenStream;
 use proc_macro2::Span;

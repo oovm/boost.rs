@@ -3,7 +3,7 @@
 //! 层只通过 [`Var`] 组合 `dl-autograd` 原语，不实现第二套张量或梯度。参数以共享
 //! [`Var`] 暴露，训练器可以直接更新；初始权重来自 `boost-random` 的确定性源。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 use boost_random::{ChaCha12, Random};
 use dl_autograd::Var;

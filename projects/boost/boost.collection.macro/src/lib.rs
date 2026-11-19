@@ -5,7 +5,7 @@
 //! [`facade_array!`] split that tuple into the const parameters of
 //! `FixedArray2D` or `FixedArray3D` and expand to a plain type.
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;

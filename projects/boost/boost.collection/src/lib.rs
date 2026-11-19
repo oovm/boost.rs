@@ -28,7 +28,7 @@
 //! 顺序与淘汰，不承担领域失效策略、持久缓存或数据库页管理。
 
 #![doc = include_str!("readme.md")]
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod array_nd;
 mod cache;

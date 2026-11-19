@@ -155,7 +155,9 @@ pub trait TemplateLoader {
 /// resolve 返回的模板：canonical id + 已加载文档。
 #[derive(Debug, Clone)]
 pub struct ResolvedTemplate {
+    /// Canonical id the reference resolved to (path-v1 form).
     pub id: String,
+    /// Parsed document loaded for that id.
     pub document: IrDocument,
 }
 

@@ -3,25 +3,39 @@ use thiserror::Error;
 
 use crate::diagnostic::Diagnostic;
 
+/// Result alias for configuration loading and validation.
 pub type ConfigResult<T> = Result<T, ConfigError>;
+/// Result alias for session and build operations.
 pub type CoreResult<T> = Result<T, CoreError>;
 
+/// Configuration loading or validation failure.
 #[derive(Debug, Error)]
 pub enum ConfigError {
+    /// Reading the config file failed at the filesystem level.
     #[error("failed to read project config")]
     Io {
+        /// Underlying I/O error.
         #[source]
         source: std::io::Error,
     },
 
+    /// The TOML document could not be decoded into the config model.
     #[error("{message}")]
-    Extract { message: String },
+    Extract {
+        /// Decode error detail.
+        message: String,
+    },
 
+    /// The decoded config violates a contract rule.
     #[error("{message}")]
-    Invalid { message: String },
+    Invalid {
+        /// Validation error detail.
+        message: String,
+    },
 }
 
 impl ConfigError {
+    /// Build an [`ConfigError::Invalid`] from a message.
     pub fn invalid(message: impl Into<String>) -> Self {
         Self::Invalid { message: message.into() }
     }
@@ -52,41 +66,59 @@ impl ConfigError {
     }
 }
 
+/// Failure from a session operation, build step or markdown conversion.
 #[derive(Debug, Error)]
 pub enum CoreError {
+    /// Configuration loading or validation failed.
     #[error(transparent)]
     Config(#[from] ConfigError),
 
+    /// Accessing project files failed at the filesystem level.
     #[error("failed to access project files")]
     Io {
+        /// Underlying I/O error.
         #[source]
         source: std::io::Error,
     },
 
+    /// The session state rejected the operation.
     #[error("{message}")]
-    Session { message: String },
+    Session {
+        /// Reason the session operation failed.
+        message: String,
+    },
 
+    /// A build step failed.
     #[error("{message}")]
-    Build { message: String },
+    Build {
+        /// Reason the build failed.
+        message: String,
+    },
 
+    /// Importing markdown through the shared formats layer failed.
     #[error("markdown import failed")]
     MarkdownImport {
+        /// Underlying format error.
         #[source]
         source: FormatError,
     },
 
+    /// Exporting markdown through the shared formats layer failed.
     #[error("markdown export failed")]
     MarkdownExport {
+        /// Underlying format error.
         #[source]
         source: FormatError,
     },
 }
 
 impl CoreError {
+    /// Build a [`CoreError::Session`] from a message.
     pub fn session(message: impl Into<String>) -> Self {
         Self::Session { message: message.into() }
     }
 
+    /// Build a [`CoreError::Build`] from a message.
     pub fn build(message: impl Into<String>) -> Self {
         Self::Build { message: message.into() }
     }

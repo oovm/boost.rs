@@ -15,15 +15,19 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct ContentId(pub String);
 
+/// One discovery result: file identity, metadata and markdown body.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContentNode {
+    /// Stable content identity within the project.
     pub id: ContentId,
     /// Absolute path on disk.
     pub path: PathBuf,
     /// Relative path from `content_dir`.
     pub rel_path: String,
+    /// File kind the node was discovered as.
     pub kind: ContentKind,
+    /// Page metadata decoded from the front matter.
     pub front_matter: FrontMatterDto,
     /// Markdown body without front matter.
     pub body: String,
@@ -35,24 +39,34 @@ pub struct ContentNode {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FrontMatterDto {
+    /// Page title used by templates and the head.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// Optional meta description.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Page type (`home` / `post` / `page`) as written in the front matter.
     #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
     pub page_type: Option<String>,
+    /// Explicit layout name overriding the type default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layout: Option<String>,
+    /// Publication date as written in the front matter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub date: Option<String>,
+    /// Draft pages are excluded from a production build.
     #[serde(default)]
     pub draft: bool,
+    /// Sort weight within a page type; lower sorts first.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub weight: Option<i64>,
+    /// Taxonomy tags carried for aggregation and templates.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+    /// Page locale overriding the site `lang`, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lang: Option<String>,
+    /// Full front matter table for plugins and templates.
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
     pub fields: serde_json::Map<String, serde_json::Value>,
 }
@@ -74,26 +88,33 @@ impl From<FrontMatter> for FrontMatterDto {
     }
 }
 
+/// How a discovered file participates in the content graph.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ContentKind {
+    /// Markdown source with optional front matter.
     Markdown,
+    /// Any other discovered file (assets, data).
     Other,
 }
 
+/// Set of content nodes plus their dependency edges.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContentGraph {
+    /// Nodes keyed by content id.
     pub nodes: BTreeMap<ContentId, ContentNode>,
     /// id → dependency ids (templates/assets filled later).
     pub edges: BTreeMap<ContentId, BTreeSet<ContentId>>,
 }
 
 impl ContentGraph {
+    /// Insert or replace the node keyed by its own id.
     pub fn insert(&mut self, node: ContentNode) {
         self.nodes.insert(node.id.clone(), node);
     }
 
+    /// Remove a node and every edge that references it.
     pub fn remove(&mut self, id: &ContentId) -> Option<ContentNode> {
         self.edges.remove(id);
         for deps in self.edges.values_mut() {
@@ -102,10 +123,12 @@ impl ContentGraph {
         self.nodes.remove(id)
     }
 
+    /// Number of nodes in the graph.
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
 
+    /// Whether the graph holds no nodes.
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
@@ -134,6 +157,7 @@ pub fn discover_markdown_content(project_root: &Path, content_dir: &str) -> Core
     Ok(graph)
 }
 
+/// Load one markdown file into a content node, hashing the raw bytes.
 pub fn load_markdown_node(content_root: &Path, abs_path: &Path) -> CoreResult<ContentNode> {
     let rel = abs_path.strip_prefix(content_root).unwrap_or(abs_path).to_string_lossy().replace('\\', "/");
     let raw = std::fs::read(abs_path).map_err(|source| CoreError::Io { source })?;

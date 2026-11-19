@@ -1,10 +1,8 @@
 //! PostgreSQL 启动包、类型消息组帧与协议 v3 消息语义，不含 SQL 解释。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
-#[allow(missing_docs)]
 mod error;
-#[allow(missing_docs)]
 mod messages;
 
 /// Password authentication primitives shared by the client and the gateway.

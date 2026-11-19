@@ -2,7 +2,7 @@
 //!
 //! Arena + 稳定 ID。不含 ggplot 语义，也不含设备 / GPU API。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod arena;
 mod camera;

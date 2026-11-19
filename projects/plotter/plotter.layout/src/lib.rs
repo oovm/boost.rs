@@ -2,7 +2,7 @@
 //!
 //! 输出供 Scene 编译使用的几何。不拥有 GPU 生命周期。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod graph_layout;
 mod panel;

@@ -3,6 +3,7 @@
 //! This crate owns plan structure, register kinds, effects, and structural
 //! validation. It does **not** hold an active heap, parse source, execute
 //! instructions, or define admission. Interpreter and JIT share this IR.
+#![warn(missing_docs)]
 
 mod plans;
 

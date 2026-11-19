@@ -2,7 +2,7 @@
 //!
 //! 不直接操作分布式存储内部路径。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 use searcher_rank::Ranker;
 use searcher_types::{CollectionId, Result, Score, SearchHit, SearchResult};

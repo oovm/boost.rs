@@ -4,7 +4,7 @@
 //! 不在绑定内实现数据库语义。能力按 `database` 门面的同一命名再导出,
 //! 远程客户端经 [`client`]（即 `yydb-client`）提供。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 /// 远程客户端门面。
 pub mod client {

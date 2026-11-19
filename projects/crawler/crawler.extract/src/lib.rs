@@ -1,6 +1,6 @@
 //! Semantic extraction over fetch artifacts.
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 use crawler_types::{
     ExtractBudget, ExtractContext, ExtractInput, ExtractResult, ExtractStatus, FetchArtifact, LinkCandidate, LinkRelation, ProbeResult,

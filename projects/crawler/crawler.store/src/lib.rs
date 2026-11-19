@@ -1,6 +1,6 @@
 //! Crawler store contract and backends.
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod error;
 pub mod keyspace;

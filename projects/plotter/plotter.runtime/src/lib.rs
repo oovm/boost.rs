@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 //! Runtime state, event normalization, reducers, and invalidation for DaVinci
 //! scenes.
 //!

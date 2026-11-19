@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 //! 图表与示意图的动画程序。
 //!
 //! [`plotter_motion`] 回答的是“两个静态场景之间的一段过渡怎么插值”，本身不拥有

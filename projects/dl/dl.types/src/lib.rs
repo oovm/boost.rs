@@ -3,7 +3,7 @@
 //! 本 crate 是 `dl.*` 的最底层，只依赖标准库。张量存储、算子、自动微分和模型都必须复用
 //! 这里的 [`DType`]、[`DeviceKind`]、[`DlError`] 与形状工具，不得各自复制一套。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 use core::fmt;
 

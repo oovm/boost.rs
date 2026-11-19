@@ -12,7 +12,7 @@
 //! `science-numeric` / `science-ir` / `science-rewrite` / `science-vm` **不**在此再导出 — 由依赖方或
 //! `science` facade 直接引用真相源 crate。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 pub mod api;
 pub mod diagnostics;

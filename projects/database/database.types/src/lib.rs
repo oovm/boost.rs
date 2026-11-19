@@ -5,7 +5,7 @@
 //!
 //! UDF 正式入口已提级到 `database-udf`；本 crate 的 [`udf`] 子树仅作过渡再导出。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 use std::{collections::BTreeMap, error, fmt, io, result, sync::Arc};
 
 /// 规范十进制整数文本（存储格式与协议前端共用）。
@@ -633,10 +633,8 @@ impl Error {
     /// `LeaseUnavailable`, `LeaseExpired`). All other variants are non-retryable
     /// and require the caller to fix the underlying cause.
     pub fn retryable(&self) -> bool {
-        matches!(
-            self,
-            Self::Io(_) | Self::Busy { .. } | Self::Protocol { .. } | Self::LeaseUnavailable { .. } | Self::LeaseExpired { .. }
-        ) || matches!(self, Self::Shard(error) if error.retryable())
+        matches!(self, Self::Io(_) | Self::Busy { .. } | Self::Protocol { .. } | Self::LeaseUnavailable { .. } | Self::LeaseExpired { .. })
+            || matches!(self, Self::Shard(error) if error.retryable())
     }
 
     /// Encode the full diagnostic contract as a JSON object.

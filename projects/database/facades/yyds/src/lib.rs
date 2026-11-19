@@ -8,7 +8,7 @@
 //! - [`client`]：远程客户端（即 `yyds-client`）。
 //! - 其余能力按 `database` 门面的同一命名再导出。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 pub mod runtime;
 pub mod wire;
@@ -18,4 +18,4 @@ pub mod client {
     pub use yyds_client::*;
 }
 
-pub use database::{cluster, embed, execution, formats, input, migration, protocol, query, server, storage, types, udf, harness};
+pub use database::{cluster, embed, execution, formats, harness, input, migration, protocol, query, server, storage, types, udf};

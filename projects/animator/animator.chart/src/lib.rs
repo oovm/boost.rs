@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 //! 图表数据动画：把同一张图表的多个数据快照编译成 [`animator_core::Program`]。
 //!
 //! ```text

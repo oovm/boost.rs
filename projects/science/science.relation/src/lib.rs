@@ -1,4 +1,5 @@
 //! Stable relation facade.
+#![warn(missing_docs)]
 
 pub use science_gc::{GcHeap, HeapBudget};
 pub use science_relation_compile::{LoweringResult, compile_declarations, lower_module, parse_source};

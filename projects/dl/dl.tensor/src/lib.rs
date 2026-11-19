@@ -6,7 +6,7 @@
 //! 与 `science-ndarray` 的边界：ndarray 是 CAS 数组与外存分块，不是神经网络张量；
 //! `dl.*` 的张量布局以本 crate 为唯一权威。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 use std::{fmt, sync::Arc};
 

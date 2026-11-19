@@ -175,9 +175,15 @@ pub enum FilterLookupError {
     /// No built-in filter matches this name or any alias.
     Unknown,
     /// The filter exists but the argument count is outside its contract.
-    Arity { spec: &'static FilterSpec },
+    Arity {
+        /// Spec whose argument range was violated.
+        spec: &'static FilterSpec,
+    },
     /// The host did not grant the filter's [`Capability`].
-    NotAllowed { spec: &'static FilterSpec },
+    NotAllowed {
+        /// Spec whose capability was not granted.
+        spec: &'static FilterSpec,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -243,9 +249,15 @@ pub enum FunctionLookupError {
     /// No built-in function matches this name or any alias.
     Unknown,
     /// The function exists but the argument count is outside its contract.
-    Arity { spec: &'static FunctionSpec },
+    Arity {
+        /// Spec whose argument range was violated.
+        spec: &'static FunctionSpec,
+    },
     /// The host did not grant the function's [`Capability`].
-    NotAllowed { spec: &'static FunctionSpec },
+    NotAllowed {
+        /// Spec whose capability was not granted.
+        spec: &'static FunctionSpec,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -311,9 +323,15 @@ pub enum TestLookupError {
     /// No built-in test matches this name or any alias.
     Unknown,
     /// The test exists but the argument count is outside its contract.
-    Arity { spec: &'static TestSpec },
+    Arity {
+        /// Spec whose argument range was violated.
+        spec: &'static TestSpec,
+    },
     /// The host did not grant the test's [`Capability`].
-    NotAllowed { spec: &'static TestSpec },
+    NotAllowed {
+        /// Spec whose capability was not granted.
+        spec: &'static TestSpec,
+    },
 }
 
 // ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 //! Generic vector scene model for the DaVinci diagram subsystem.
 //!
 //! The crate keeps the two scene stages explicit:

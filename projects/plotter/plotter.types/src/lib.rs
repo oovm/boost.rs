@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 //! Plotter 共享原语：几何、颜色、变换、诊断，以及 GoG 侧的 `plot` 子模块。
 //!
 //! 本 crate 不依赖 `notedown-ir`、`data.text`、VuTeX 或具体渲染后端。

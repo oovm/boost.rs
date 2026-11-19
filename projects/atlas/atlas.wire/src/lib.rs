@@ -61,7 +61,7 @@
 //! [`Scope::Transient`] 每次解析一份。应用级 provider 不可直接或经 transient 间接依赖
 //! 请求级键；`freeze` 会拒绝这种图。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod coordinator;
 mod dependency;

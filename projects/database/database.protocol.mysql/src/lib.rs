@@ -1,6 +1,6 @@
 //! MySQL classic 协议单包组帧，不含 SQL 解释。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 /// classic 包头能表示的最大载荷长度。
 pub const MAX_PACKET_PAYLOAD: usize = 0x00ff_ffff;

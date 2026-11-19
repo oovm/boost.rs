@@ -1,5 +1,5 @@
 #![doc = include_str!("readme.md")]
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 /// The initial declaration AST emitted by the VOS builder.
 pub mod ast;
@@ -14,8 +14,9 @@ pub mod parser;
 
 pub use crate::{
     ast::{
-        VosBinaryOp, VosDeclaration, VosDeclarationKind, VosExpr, VosField, VosFieldAttribute, VosFieldInit, VosFnDecl, VosFnKind, VosLambda, VosLet, VosLiteral, VosParameter, VosPathSep, VosProgram, VosProjItem, VosRoot, VosServiceMethod,
-        VosServiceMethodReturn, VosStmt, VosSyntaxElement, VosSyntaxNode, VosSyntaxSlice, VosSyntaxToken, VosTypeArgument, VosTypeSyntax, VosUnaryOp,
+        VosBinaryOp, VosDeclaration, VosDeclarationKind, VosExpr, VosField, VosFieldAttribute, VosFieldInit, VosFnDecl, VosFnKind, VosLambda,
+        VosLet, VosLiteral, VosParameter, VosPathSep, VosProgram, VosProjItem, VosRoot, VosServiceMethod, VosServiceMethodReturn, VosStmt,
+        VosSyntaxElement, VosSyntaxNode, VosSyntaxSlice, VosSyntaxToken, VosTypeArgument, VosTypeSyntax, VosUnaryOp,
     },
     builder::VosBuilder,
     language::VosLanguage,

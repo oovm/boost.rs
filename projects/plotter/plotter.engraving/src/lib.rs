@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 //! 乐谱 engraving 链：`ScoreSpec` → `EngravingPlan` → 语义场景 → 显示场景。
 //!
 //! 与 `plotter.diagram` / `plotter.chart` 平行的第三条矢量链，只共享

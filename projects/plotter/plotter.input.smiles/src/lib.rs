@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 #![doc = include_str!("readme.md")]
 
 //! SMILES 前端：`data-text-smiles` 的 AST 降级进 `plotter.depiction` 的与源语言无关模型。

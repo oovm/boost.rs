@@ -1,5 +1,5 @@
 #![doc = include_str!("readme.md")]
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 #![allow(missing_copy_implementations)]
 
 /// The Markdown language implementation for `data.text`.

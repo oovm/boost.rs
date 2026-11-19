@@ -1,6 +1,7 @@
 //! Path and query JIT stubs for Relation.
 //!
 //! This is not `science-jit` (KernelIR). It compiles Relation path/query routines.
+#![warn(missing_docs)]
 
 use science_relation_types::{NodeId, RelationError};
 

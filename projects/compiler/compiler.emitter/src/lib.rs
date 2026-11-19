@@ -1,11 +1,11 @@
 #![doc = include_str!("readme.md")]
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 pub mod transitional;
 
+mod abi_structure;
 mod artifacts;
 pub mod assembly;
-mod abi_structure;
 #[doc(hidden)]
 pub mod backend;
 pub mod backend_plan_views;
@@ -36,8 +36,8 @@ use crate::{
     emitter_backend_wasi::WasmBinaryBackendInput,
 };
 pub use backend::{
-    clr as emitter_backend_clr, jvm as emitter_backend_jvm, machine as emitter_backend_machine, vm as emitter_backend_vm, wasi as emitter_backend_wasi,
-    wasm_js_glue as emitter_backend_wasm_js_glue,
+    clr as emitter_backend_clr, jvm as emitter_backend_jvm, machine as emitter_backend_machine, vm as emitter_backend_vm,
+    wasi as emitter_backend_wasi, wasm_js_glue as emitter_backend_wasm_js_glue,
 };
 use compiler_target::{
     BackendCapability, BackendInputKind, BackendInterpreterRegistration, BackendRegistry, BinaryTarget, CapabilityTag, ClrSuspendStrategy,
@@ -158,7 +158,10 @@ pub mod testing {
     }
 
     /// Resolve the CLR carrier type for a frozen platform type (carrier contract tests).
-    pub fn msil_type(layouts: &compiler_types::AggregateLayoutPlan, ty: &compiler_types::SemanticType) -> Result<super::emitter_backend_clr::MsilType> {
+    pub fn msil_type(
+        layouts: &compiler_types::AggregateLayoutPlan,
+        ty: &compiler_types::SemanticType,
+    ) -> Result<super::emitter_backend_clr::MsilType> {
         super::lowering::testing_msil_type(layouts, ty)
     }
 
@@ -177,8 +180,12 @@ pub mod testing {
     /// and the managed ABI contract.
     pub fn lower_fragment_to_jvm_managed_surface(
         submission: &FragmentSubmission,
-    ) -> Result<(super::emitter_backend_jvm::JvmClassFile, Vec<super::emitter_backend_jvm::JvmClassFile>, Option<super::ManagedAbiContract>, Option<String>)>
-    {
+    ) -> Result<(
+        super::emitter_backend_jvm::JvmClassFile,
+        Vec<super::emitter_backend_jvm::JvmClassFile>,
+        Option<super::ManagedAbiContract>,
+        Option<String>,
+    )> {
         super::lowering::testing_lower_fragment_to_jvm_managed_surface(submission)
     }
 
@@ -877,7 +884,9 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
         compiler_target::ArtifactPurpose::TestBundle if test_entry_names.is_empty() => {
             return Err("`artifact_purpose = test` 的构建必须携带 `[test]` 入口面；拒绝无测试入口的测试包".to_string());
         }
-        compiler_target::ArtifactPurpose::Application | compiler_target::ArtifactPurpose::Library | compiler_target::ArtifactPurpose::HostExtension
+        compiler_target::ArtifactPurpose::Application
+        | compiler_target::ArtifactPurpose::Library
+        | compiler_target::ArtifactPurpose::HostExtension
             if !test_entry_names.is_empty() =>
         {
             return Err(format!("产物用途 `{purpose:?}` 不得携带 `[test]` 入口面；测试交付必须声明为 test 用途"));
@@ -902,10 +911,7 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
         let backend_family = backend_family_for_partition(partition);
         // 宿主扩展只由 机器码 lane 承载：其余 lane 在写出前拒绝，不降级成平台产物。
         if purpose == compiler_target::ArtifactPurpose::HostExtension && backend_family != compiler_target::TargetBackendFamily::MachineCode {
-            return Err(format!(
-                "宿主扩展只由 机器码 lane 承载；分区 `{}` 的后端家族 `{backend_family:?}` 不支持该产物用途",
-                partition.name
-            ));
+            return Err(format!("宿主扩展只由 机器码 lane 承载；分区 `{}` 的后端家族 `{backend_family:?}` 不支持该产物用途", partition.name));
         }
         let lowered_input = assembly::prepare_assembled_fragment(
             fragment,

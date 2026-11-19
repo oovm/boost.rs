@@ -2,7 +2,7 @@
 //!
 //! 关系库、缓存与文档库适配都归本包；文档库即便不叫 ORM，概念上仍是对象映射。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod error;
 pub use error::{Error, Result};

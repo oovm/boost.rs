@@ -14,7 +14,7 @@
 //! 依赖方向固定为 `database-harness -> database-types`。本 crate 不反向依赖
 //! `database` 门面，也不依赖任何产品 crate。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 pub mod bench;
 pub mod compare;

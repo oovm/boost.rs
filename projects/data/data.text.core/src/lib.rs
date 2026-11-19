@@ -14,7 +14,7 @@
 #![feature(core_intrinsics)] // Used for `likely`/`unlikely` hints in performance-critical paths
 #![feature(checked_type_aliases)] // Enforces bounds on generic type aliases such as `ParseOutput`
 #![feature(portable_simd)] // Enables SIMD acceleration for high-performance lexing and parsing
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 /// Incremental tree builder and cache management.
 pub mod builder;

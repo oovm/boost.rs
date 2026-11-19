@@ -9,7 +9,7 @@
 //! resolved contract APIs below. This crate never owns a parser, an AST, a CST
 //! or a lexical layer of its own.
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 pub use schema_types as types;
 

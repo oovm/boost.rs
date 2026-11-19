@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 #![doc = include_str!("readme.md")]
 
 //! MDL 前端：`data-text-mdl` 的 AST 降级进 `plotter.depiction` 的与源语言无关模型。

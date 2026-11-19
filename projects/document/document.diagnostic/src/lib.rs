@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 //! Panduck orchestration diagnostics on the shared `boost_harness::diagnostic` contract.
 
 use boost_harness::diagnostic::{

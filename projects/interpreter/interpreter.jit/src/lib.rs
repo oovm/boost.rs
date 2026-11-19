@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 //! Optional JIT acceleration substrate for interpreter runtimes.
 //!

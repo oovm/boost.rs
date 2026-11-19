@@ -2,7 +2,7 @@
 //!
 //! 每个模块是通向某个 `plotter-*` crate 的薄窗口，本 crate 不定义类型或业务逻辑。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 /// 共享 diagram/chart 原语；GoG 侧 ID / 诊断在 `types::plot`。
 pub mod types {

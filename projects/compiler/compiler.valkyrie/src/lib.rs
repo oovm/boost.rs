@@ -17,7 +17,7 @@
 //! 模块：它们是 Valkyrie 生态的产品策略与 CLI，不属于语言编译事实，并且与包管理机制共用
 //! 工作区约束。本 crate 只保留编译本身。
 
-#![allow(missing_docs)]
+#![warn(missing_docs)]
 
 #[macro_use]
 pub mod utilities;

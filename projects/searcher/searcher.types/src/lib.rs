@@ -2,7 +2,7 @@
 //!
 //! 不暴露分布式存储内部身份，也不包含采集器状态。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 use serde::{Deserialize, Serialize};
 

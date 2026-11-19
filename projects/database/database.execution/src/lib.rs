@@ -2,7 +2,7 @@
 //!
 //! UDF 合同与注册表已提级到 [`database_udf`]；本包只保留执行程序桥接。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 /// 分布式执行面。
 pub mod cluster;
@@ -14,13 +14,13 @@ pub mod local;
 pub mod mongo;
 /// MySQL 会话、事务机制、语句分派与 bind → plan → execute。
 pub mod mysql;
-/// 执行程序表示与求值。
-pub mod program;
 /// PostgreSQL 会话、语句分派与 bind → plan → execute。
 pub mod pgsql;
+/// 执行程序表示与求值。
+pub mod program;
+pub mod sql_exec;
 /// 执行侧正式 schema/sequence 入口：DDL 变更、序列分配、checkpoint 与原子发布。
 pub mod sql_schema;
-pub mod sql_exec;
 /// SQLite 方言的求值机制（表达式 / 单元格 / 标量函数 / 宿主函数桥）。
 pub mod sqlite;
 /// 执行程序 ↔ UDF 边界桥接。

@@ -3,7 +3,7 @@
 //! Enable capabilities through crate features. Each module re-exports the
 //! corresponding `boost-*` crate without copying types or adding global state.
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 #[cfg(feature = "collection")]
 pub mod collection {

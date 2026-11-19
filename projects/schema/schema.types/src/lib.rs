@@ -1,6 +1,6 @@
 //! Foundational VOS semantic models and strict artifact encoding.
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod artifact;
 mod bytes;

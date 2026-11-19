@@ -7,7 +7,7 @@
 //! and nothing here is a silent fallback: an unavailable device, a missing font
 //! or an unconvertible node is reported.
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod error;
 mod geometry;

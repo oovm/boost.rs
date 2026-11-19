@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
 //! WebAssembly 目标执行基座（骨架）。

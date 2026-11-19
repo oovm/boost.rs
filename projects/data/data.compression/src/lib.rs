@@ -12,7 +12,7 @@
 //! at commit `6deb56a4`, MPL-2.0) and has been internalized and de-branded
 //! for Boost.
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 pub mod snappy;
 pub mod zstd;

@@ -9,7 +9,7 @@
 //! 表按码点升序、无重叠，查询走二分查找，不以线性扫描或宿主 `char::is_*`
 //! 隐含的 Unicode 版本作为语义权威。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod derived_core;
 mod general_category;

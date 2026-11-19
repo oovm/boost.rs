@@ -3,6 +3,7 @@
 //! Accepted islands are frozen for mutation. Staging can be discarded or
 //! promoted into the accepted table. Each island carries a monotonic
 //! [`WorldId::version`] for Core-relative world context.
+#![warn(missing_docs)]
 
 use std::{
     collections::{HashMap, HashSet},

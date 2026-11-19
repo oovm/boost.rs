@@ -8,6 +8,7 @@
 //!
 //! [`Goal::NotEqual`] / [`Goal::NotMember`] remain as **finite-fragment** helpers that treat
 //! missing witnesses as negation. They must not be used as Relation's general negation semantics.
+#![warn(missing_docs)]
 
 use science_relation_graph::{Graph, Step, admission::QueryStatus};
 use science_relation_types::{EdgeId, EdgeKind, NodeId, RelationError};

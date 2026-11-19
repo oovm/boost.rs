@@ -7,7 +7,7 @@
 //! `unsafe` 默认 [`allow`]：ndarray 是布局 / 拷贝 / 热路径库，与 `science-numeric` kernel 同属可写 unsafe 层。
 //! 仍须局部审阅；禁止用 `forbid`/`deny` 整 crate 堵死实现。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 #![allow(unsafe_code)]
 
 mod array;

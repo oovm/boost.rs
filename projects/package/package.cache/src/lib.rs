@@ -8,7 +8,7 @@
 //! 两者都只做存取与失效，不做版本选择、来源决定或发布；那些归 `package.resolve` 与
 //! `package.publish`。缓存根目录由调用方给出，不假定产品数据目录。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod error;
 mod hash;

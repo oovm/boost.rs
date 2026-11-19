@@ -14,7 +14,9 @@ use crate::{
 /// Absolute project root that contains `doki.toml`.
 #[derive(Debug, Clone)]
 pub struct ProjectPaths {
+    /// Canonicalized project root directory.
     pub root: PathBuf,
+    /// Absolute path to the `doki.toml` that was loaded.
     pub config_file: PathBuf,
 }
 
@@ -22,13 +24,16 @@ pub struct ProjectPaths {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExtensionRef {
+    /// Path relative to the project root; mutually exclusive with `package`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    /// Package specifier resolved by the host; mutually exclusive with `path`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package: Option<String>,
 }
 
 impl ExtensionRef {
+    /// Require exactly one non-empty `path` or `package`; `field` names the TOML key.
     pub fn validate(&self, field: &str) -> ConfigResult<()> {
         match (&self.path, &self.package) {
             (Some(p), None) if !p.trim().is_empty() => Ok(()),
@@ -39,15 +44,20 @@ impl ExtensionRef {
     }
 }
 
+/// One `[[plugins]]` entry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PluginEntry {
+    /// Path relative to the project root; mutually exclusive with `package`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    /// Package specifier resolved by the host; mutually exclusive with `path`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package: Option<String>,
+    /// Whether the plugin is invoked during a build (defaults to `true`).
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// Free-form JSON options passed to the plugin.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub options: Option<serde_json::Value>,
 }
@@ -57,18 +67,22 @@ fn default_true() -> bool {
 }
 
 impl PluginEntry {
+    /// View this entry as a plain theme-style reference for shared validation.
     pub fn as_extension_ref(&self) -> ExtensionRef {
         ExtensionRef { path: self.path.clone(), package: self.package.clone() }
     }
 
+    /// Validate the entry, reporting errors as `plugins[<index>]`.
     pub fn validate(&self, index: usize) -> ConfigResult<()> {
         self.as_extension_ref().validate(&format!("plugins[{index}]"))
     }
 }
 
+/// `[overrides]` value: the local path replacing a package.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OverrideTarget {
+    /// Path the overridden package resolves to.
     pub path: String,
 }
 
@@ -79,7 +93,9 @@ pub struct OverrideTarget {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct I18nConfig {
+    /// Enabled locales; must include the site `lang`.
     pub locales: Vec<String>,
+    /// Explicit parent for a locale; chains always end at the site `lang`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub fallback: BTreeMap<String, String>,
 }
@@ -88,31 +104,45 @@ pub struct I18nConfig {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectConfig {
+    /// Site title shown in the head and index pages.
     pub title: String,
+    /// Optional meta description.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Absolute site URL used to build canonical links and feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
+    /// Site locale id; also the tail of every i18n fallback chain.
     #[serde(default = "default_lang")]
     pub lang: String,
+    /// Optional `[i18n]` block enabling additional locales.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub i18n: Option<I18nConfig>,
+    /// Optional author byline.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
+    /// Directory holding source pages, relative to the project root.
     #[serde(default = "default_content_dir")]
     pub content_dir: String,
+    /// Directory receiving build output, relative to the project root.
     #[serde(default = "default_output_dir")]
     pub output_dir: String,
+    /// Directory of static assets copied verbatim to the output.
     #[serde(default = "default_public_dir")]
     pub public_dir: String,
+    /// Directory holding structured data files, relative to the project root.
     #[serde(default = "default_data_dir")]
     pub data_dir: String,
+    /// Theme reference, resolved as a path or a package.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme: Option<ExtensionRef>,
+    /// Plugins invoked in declaration order during a build.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub plugins: Vec<PluginEntry>,
+    /// Package name → local path overrides.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub overrides: BTreeMap<String, OverrideTarget>,
+    /// Whether builds reuse cached pages (defaults to `true`).
     #[serde(default = "default_true")]
     pub incremental: bool,
 }
@@ -155,6 +185,7 @@ impl Default for ProjectConfig {
 }
 
 impl ProjectConfig {
+    /// Check required fields, locale ids, extension references and i18n chains.
     pub fn validate(&self) -> ConfigResult<()> {
         if self.title.trim().is_empty() {
             return Err(ConfigError::invalid("`title` must not be empty"));
@@ -212,6 +243,7 @@ impl ProjectConfig {
     }
 }
 
+/// Options controlling how `doki.toml` layers are loaded.
 #[derive(Debug, Clone)]
 pub struct LoadOptions {
     /// When true, merge `doki.local.toml` if present (development).
@@ -251,8 +283,7 @@ pub fn peek_theme_ref(root: impl AsRef<Path>) -> ConfigResult<Option<ExtensionRe
 /// Read a TOML document into a value tree.
 fn read_toml(path: &Path) -> ConfigResult<TomlValue> {
     let text = std::fs::read_to_string(path).map_err(|source| ConfigError::Io { source })?;
-    text.parse::<TomlValue>()
-        .map_err(|error| ConfigError::Extract { message: format!("failed to parse {}: {error}", path.display()) })
+    text.parse::<TomlValue>().map_err(|error| ConfigError::Extract { message: format!("failed to parse {}: {error}", path.display()) })
 }
 
 /// Deep-merge `overlay` into `base`: tables merge key by key, every other value replaces.
@@ -312,9 +343,8 @@ pub fn load_project_config(root: impl AsRef<Path>, options: LoadOptions) -> Conf
         merge_toml(&mut merged, read_toml(&local)?);
     }
 
-    let config: ProjectConfig = merged
-        .try_into()
-        .map_err(|error| ConfigError::Extract { message: format!("invalid project configuration: {error}") })?;
+    let config: ProjectConfig =
+        merged.try_into().map_err(|error| ConfigError::Extract { message: format!("invalid project configuration: {error}") })?;
     config.validate()?;
 
     Ok((ProjectPaths { root, config_file }, config))

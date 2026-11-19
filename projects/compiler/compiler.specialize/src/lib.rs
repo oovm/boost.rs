@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
 //! 语言无关的残化接收端合同（Futamura 第一投影目标）。

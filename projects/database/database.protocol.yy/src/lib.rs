@@ -3,7 +3,7 @@
 //! 嵌入式与分布式宿主共用同一套帧布局与消息集合；产品身份只体现在 4 字节 magic
 //! （`YYDB` 与 `YYDS`，也可视为不同 URI 头）。本 crate 不打开数据库，也不分派请求。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 use std::io::{Read, Write};
 

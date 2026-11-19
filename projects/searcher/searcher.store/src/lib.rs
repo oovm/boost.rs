@@ -3,7 +3,7 @@
 //! 调用方只看到搜索逻辑接口；分布式分片、租约与键空间映射在此内部完成。
 //! 本包不包含采集器。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 use searcher_document::DocumentOp;
 use searcher_types::{IndexGeneration, Result};

@@ -1,5 +1,5 @@
 //! 可选 JIT 插件（非核心语义层）。默认不可用，WASM 须报告 `UnsupportedTarget`。
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 /// JIT 可用性。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

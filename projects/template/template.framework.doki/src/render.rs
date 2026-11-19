@@ -88,8 +88,10 @@ pub fn language_for_ext(ext: Option<&str>) -> Language {
     }
 }
 
+/// One rendered page: final HTML plus the layout and render diagnostics.
 #[derive(Debug, Clone)]
 pub struct RenderedPage {
+    /// Fully rendered HTML document.
     pub html: String,
     /// Layout identity for dependency edges (`builtin:layout` or relative theme path).
     pub layout_id: String,

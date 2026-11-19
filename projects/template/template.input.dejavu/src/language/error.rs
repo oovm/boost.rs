@@ -31,6 +31,7 @@ pub struct ParseError {
 }
 
 impl ParseError {
+    /// Build an error from already-resolved source, name, span and wording.
     pub fn new(
         source: impl Into<String>,
         name: impl Into<String>,

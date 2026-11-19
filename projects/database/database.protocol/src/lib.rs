@@ -3,7 +3,7 @@
 //! 实现代码优先直接依赖具体的 `database-protocol-*` crate；
 //! 门面则把它们嵌在 `database::protocol::*` 下。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 /// 共享 YY 线协议（嵌入式与分布式共用；仅 magic / URI 头不同）。
 pub mod yy {

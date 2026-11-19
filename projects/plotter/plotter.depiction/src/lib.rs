@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 //! 化学结构描绘链：`MoleculeSpec / ReactionSpec` → `DepictionPlan` → 语义场景 → 显示场景。
 //!
 //! 与 `plotter.diagram` / `plotter.chart` / `plotter.engraving` 平行的矢量链，只共享

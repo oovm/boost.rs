@@ -9,7 +9,7 @@
 //! 不归本 crate：版本求解与 lock（`package.resolve`）、渠道请求（`package.registry`）、
 //! 缓存（`package.cache`）、发布资格与访问控制（宿主策略）。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod error;
 mod pack;

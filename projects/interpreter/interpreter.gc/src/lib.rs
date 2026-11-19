@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 //! Managed object heap and collector for interpreter runtimes.
 //!

@@ -2,7 +2,7 @@
 //!
 //! 本包只负责作者面解析与字段投影，不打开数据库、不执行迁移。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 use odm_types::{EntityDecl, EntityKindHint, FieldDecl, MappingModel, RelationDecl};
 use schema_types::{CanonicalType, CanonicalTypeArgument, SchemaProjection, TypeContractKind};

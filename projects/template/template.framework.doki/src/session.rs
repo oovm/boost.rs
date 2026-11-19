@@ -59,6 +59,7 @@ struct ActiveBuild {
 /// Opaque project session (future N-API: only the string `id` crosses the boundary).
 #[derive(Debug)]
 pub struct BuildSession {
+    /// Opaque session id; the only handle that crosses the N-API boundary.
     pub id: String,
     paths: ProjectPaths,
     config: ProjectConfig,
@@ -102,22 +103,27 @@ impl BuildSession {
         })
     }
 
+    /// Absolute project root.
     pub fn project_root(&self) -> &std::path::Path {
         &self.paths.root
     }
 
+    /// Effective project config (local overlay already applied).
     pub fn config(&self) -> &ProjectConfig {
         &self.config
     }
 
+    /// Current content graph.
     pub fn graph(&self) -> &ContentGraph {
         &self.graph
     }
 
+    /// Declared theme / plugin references.
     pub fn extensions(&self) -> &[ResolvedExtension] {
         &self.extensions
     }
 
+    /// Whether the session was disposed and can no longer build.
     pub fn is_disposed(&self) -> bool {
         self.disposed
     }
@@ -490,6 +496,7 @@ impl BuildSession {
         Ok(InvalidationResult { invalidated_content: invalidated.into_iter().collect(), rebuild_required })
     }
 
+    /// Drop the active build and discard its staging area.
     pub fn cancel(&mut self) -> CoreResult<()> {
         self.ensure_alive()?;
         if let Some(mut active) = self.active.take() {
@@ -499,6 +506,7 @@ impl BuildSession {
         Ok(())
     }
 
+    /// Cancel any active build and mark the session unusable.
     pub fn dispose(&mut self) {
         if self.disposed {
             return;

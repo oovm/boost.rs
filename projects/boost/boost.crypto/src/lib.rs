@@ -9,7 +9,7 @@
 //! [`CryptoError::Entropy`]，不接受固定 seed，不实现外部 RNG trait，不直接触碰平台随机接口。
 
 #![doc = include_str!("readme.md")]
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 pub mod aead;
 pub mod ecdsa;

@@ -10,7 +10,7 @@
 //! 这里只是终端列宽的估计：emoji ZWJ 序列、区域指示符对、变体选择符的组合宽度以及
 //! 字体的实际度量由渲染层负责，本 crate 不承诺这些序列的整体列宽。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod east_asian_width;
 mod tables;

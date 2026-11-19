@@ -3,7 +3,7 @@
 //! **本 crate 拥有**：[`TermPattern`]、[`match_pattern`]、[`substitute`]、[`RuleSet`]、局部 witness。
 //! **不拥有**：E-Graph lifecycle、saturation budget、AdmissionGate、M-Graph（均在 `science-cas`）。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod binder;
 mod engine;

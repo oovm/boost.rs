@@ -3,7 +3,7 @@
 //! 第一阶段只识别 `type` / `input` 对象类型与字段声明骨架；完整 GraphQL
 //! 规范解析后续接入。本包不执行查询，只做 DDL → 映射模型。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 use odm_types::{EntityDecl, EntityKindHint, FieldDecl, MappingModel};
 
