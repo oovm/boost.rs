@@ -4,6 +4,11 @@
 
 #[cfg(feature = "std")]
 mod platform;
+#[cfg(feature = "std")]
+mod tty;
+
+#[cfg(feature = "std")]
+pub use tty::{EchoGuard, ReadEvent, TerminalError, disable_echo, is_tty_input, is_tty_output, read_char_timeout};
 
 /// Enables virtual terminal escape sequences on Windows consoles when possible.
 ///
