@@ -351,15 +351,24 @@ impl Connection {
         self.session.backup(path)
     }
 
-    /// 关闭连接:已提交但未落盘的改动先落盘;事务未结束时不落盘,
-    /// 与 SQLite 在关闭时回滚未提交事务的行为一致。
+    /// 关闭连接:先完成发布,再改关闭状态并释放跨进程写锁。
     ///
-    /// 关闭同时释放跨进程写锁,另一个写连接随后即可打开同一文件;再次调用
-    /// `close` 为空操作,关闭后的连接以 `db-closed` 拒绝语句。
+    /// 有已提交未落盘的改动时,发布在关闭状态改变之前执行;发布失败则
+    /// 原样传播错误,连接保持未关闭、锁保持持有、未发布状态可查询,
+    /// 修复环境后可重试,发布错误不会被丢弃。事务未结束时不落盘,与
+    /// SQLite 在关闭时回滚未提交事务的行为一致。再次调用 `close` 为空
+    /// 操作,关闭后的连接以 `db-closed` 拒绝语句。
     pub fn close(&mut self) -> Result<(), SqlError> {
-        let published = self.session.close();
+        self.session.close()?;
         self.lock = None;
-        published
+        Ok(())
+    }
+
+    /// 镜像是否存在已提交但尚未落盘(或落盘失败待重试)的改动
+    /// (测试与诊断用,不是作者面 API)。
+    #[doc(hidden)]
+    pub fn has_unpublished_changes(&self) -> bool {
+        self.session.is_dirty()
     }
 
     /// 是否有显式事务或保存点作用域打开。
@@ -885,6 +894,51 @@ mod tests {
         connection.close().expect("close without publish");
         assert!(rows_on_disk(&path, "SELECT a FROM t").is_empty(), "an open transaction must not reach the file");
         fs::remove_dir_all(&path.parent().expect("parent directory")).expect("cleanup");
+    }
+
+    /// 发布故障不得先宣告成功:autocommit 边界与 `close` 都原样传播存储
+    /// 错误,连接保持未关闭、未发布状态可查询,修复环境后 `close` 重发
+    /// 成功才改关闭状态并释放写锁。
+    #[test]
+    fn a_failed_publish_keeps_the_connection_open_and_dirty_for_retry() {
+        let path = temp_path("publish-failure");
+        let mut connection = Connection::open(ConnectionOptions {
+            filename: Some(path.clone()),
+            journal_mode: JournalMode::Delete,
+            ..Default::default()
+        })
+        .expect("file connection");
+        connection.execute("CREATE TABLE t (a INTEGER)", &[]).expect("create publishes");
+        connection.execute("INSERT INTO t VALUES (1)", &[]).expect("first insert publishes");
+        let published = fs::read(&path).expect("published image");
+
+        // 挡住日志写出:目录占住 sidecar 路径,发布在主文件替换之前失败。
+        let journal = database_storage::sqlite::journal::sidecar(&path);
+        fs::create_dir(&journal).expect("block the sidecar path");
+        let error = connection.execute("INSERT INTO t VALUES (2)", &[]).expect_err("the publish fails");
+        assert_eq!(error.code, "storage");
+        assert_eq!(fs::read(&path).expect("image"), published, "a failed publish must not replace the main file");
+        assert!(connection.has_unpublished_changes(), "the dirty image survives the failure");
+
+        // `close` 报告发布失败而不是先宣告成功,连接保持未关闭。
+        let error = connection.close().expect_err("close propagates the publish failure");
+        assert_eq!(error.code, "storage");
+        assert!(connection.has_unpublished_changes(), "close must not discard the unpublished image");
+
+        // 下一个语句边界仍然重试落盘并如实报错:连接没有被关闭,
+        // 故障也没有被吞掉。
+        let error = connection.execute("SELECT 1", &[]).expect_err("the retry still fails");
+        assert_eq!(error.code, "storage", "a closed connection would report `db-closed` instead");
+
+        // 修复环境后 `close` 先发布、再改关闭状态并释放写锁。
+        fs::remove_dir(&journal).expect("free the sidecar path");
+        connection.close().expect("the retry publishes");
+        assert!(!connection.has_unpublished_changes(), "a successful close clears the dirty image");
+        assert_eq!(connection.execute("SELECT 1", &[]).expect_err("closed").code, "db-closed");
+        assert_eq!(rows_on_disk(&path, "SELECT a FROM t ORDER BY a"), vec![vec![Cell::Integer(1)], vec![Cell::Integer(2)]]);
+        let reopened = Connection::open(ConnectionOptions { filename: Some(path.clone()), ..Default::default() }).expect("lock released");
+        drop(reopened);
+        fs::remove_dir_all(path.parent().expect("parent directory")).expect("cleanup");
     }
 
     #[test]

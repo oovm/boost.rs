@@ -172,25 +172,24 @@ impl SqliteSession {
         self.engine.save(path)
     }
 
-    /// 关闭会话:已提交但未落盘的改动先落盘;事务未结束时不落盘,
-    /// 与 SQLite 在关闭时回滚未提交事务的行为一致。
+    /// 关闭会话:先完成发布,再改关闭状态并丢弃游标。
     ///
-    /// 本阶段保持迁移前的失败顺序(先改关闭标记再发布);失败语义重排
-    /// 在下一逻辑块单独落地。再次调用为空操作。
+    /// 有已提交未落盘的改动时,发布在关闭状态改变之前执行;发布失败则
+    /// 原样传播错误,会话保持未关闭、`dirty` 保留,资源状态可解释
+    /// (未发布、脏镜像仍在),调用方修复环境后可以重试。事务未结束时
+    /// 不落盘,与 SQLite 在关闭时回滚未提交事务的行为一致。再次调用
+    /// [`SqliteSession::close`] 为空操作。
     pub fn close(&mut self) -> Result<(), SqlError> {
         if self.closed {
             return Ok(());
         }
-        self.closed = true;
-        let published = if self.dirty && !self.engine.in_transaction() {
+        if self.dirty && !self.engine.in_transaction() {
+            self.publish()?;
             self.dirty = false;
-            self.publish()
         }
-        else {
-            Ok(())
-        };
+        self.closed = true;
         self.cursors.clear();
-        published
+        Ok(())
     }
 
     /// 是否有显式事务或保存点作用域打开。
@@ -255,8 +254,9 @@ impl SqliteSession {
     /// 成功执行一条语句后应用提交边界。
     ///
     /// 写语句弄脏镜像;只要显式事务没有打开(autocommit、`COMMIT` 之后、
-    /// 最外层 `RELEASE` 之后),脏镜像立即由存储层落盘。`ROLLBACK` 把镜像
-    /// 恢复到上次落盘的状态,脏标志随之清除。
+    /// 最外层 `RELEASE` 之后),脏镜像立即由存储层落盘。发布失败时错误
+    /// 原样传播、脏标志保留,下一条语句边界会重试落盘,提交故障不会先
+    /// 宣告成功。`ROLLBACK` 把镜像恢复到上次落盘的状态,脏标志随之清除。
     fn after_statement(&mut self, is_write: bool, statement: &Statement) -> Result<(), SqlError> {
         if is_write {
             self.dirty = true;
@@ -265,8 +265,8 @@ impl SqliteSession {
             self.dirty = false;
         }
         if self.dirty && !self.engine.in_transaction() {
-            self.dirty = false;
             self.publish()?;
+            self.dirty = false;
         }
         Ok(())
     }
