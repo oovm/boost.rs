@@ -913,6 +913,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-binary-ttf"
+version = "0.1.0"
+dependencies = [
+ "data-binary-core",
+ "serde",
+ "ttf-parser 0.21.1",
+]
+
+[[package]]
 name = "data-binary-zip"
 version = "0.1.0"
 dependencies = [

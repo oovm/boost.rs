@@ -85,6 +85,7 @@ members = [
     "projects/data/data.binary.core",
     "projects/data/data.binary.probe",
     "projects/data/data.binary.tar",
+    "projects/data/data.binary.ttf",
     "projects/data/data.binary.zip",
     "projects/data/data.checksum",
     "projects/data/data.compression",
@@ -445,6 +446,7 @@ data-binary-asn1 = { path = "projects/data/data.binary.asn1" }
 data-binary-core = { path = "projects/data/data.binary.core" }
 data-binary-probe = { path = "projects/data/data.binary.probe" }
 data-binary-tar = { path = "projects/data/data.binary.tar" }
+data-binary-ttf = { path = "projects/data/data.binary.ttf" }
 data-binary-zip = { path = "projects/data/data.binary.zip" }
 data-checksum = { path = "projects/data/data.checksum" }
 data-compression = { path = "projects/data/data.compression" }
