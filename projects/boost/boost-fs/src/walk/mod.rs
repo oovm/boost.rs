@@ -6,6 +6,7 @@ mod filter;
 mod iter;
 mod walker;
 
+pub(crate) use entry::Source;
 pub use entry::Entry;
 pub use error::Error;
 pub use filter::Filter;

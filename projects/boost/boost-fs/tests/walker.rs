@@ -45,6 +45,24 @@ fn sync_walker_visits_nested_files() {
     assert!(paths.contains(&Path::new("nested").join("child.txt")));
 }
 
+/// An entry's metadata comes from the listing that produced it, so a consumer that aggregates
+/// sizes never pays for a second stat below the root, and the root itself is still readable.
+#[test]
+fn entry_metadata_reports_the_listed_bytes() {
+    let root = temp_root();
+    write(root.path().join("payload.bin"), b"1234567").unwrap();
+
+    let root_entry = Walker::new(root.path()).into_iter().next().expect("the root is visited").expect("the root is readable");
+    assert!(root_entry.is_folder());
+
+    let file = Walker::new(root.path())
+        .min_depth(1)
+        .into_iter()
+        .find_map(|item| item.ok().filter(|entry| entry.is_file()))
+        .expect("the file is visited");
+    assert_eq!(file.metadata().unwrap().len(), 7);
+}
+
 #[test]
 fn walker_prunes_folders_that_the_filter_rejects() {
     let root = temp_root();
