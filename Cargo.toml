@@ -29,6 +29,7 @@ members = [
     "projects/boost/boost.random",
     "projects/boost/boost-source",
     "projects/boost/boost-terminal",
+    "projects/commander/commander.types",
     "projects/compiler/compiler.analysis",
     "projects/compiler/compiler.optimize",
     "projects/compiler/compiler.emitter",
@@ -258,6 +259,8 @@ boost-net = { path = "projects/boost/boost.net" }
 boost-random = { path = "projects/boost/boost.random" }
 boost-source = { path = "projects/boost/boost-source" }
 boost-terminal = { path = "projects/boost/boost-terminal" }
+# commander 能力树
+commander-types = { path = "projects/commander/commander.types" }
 # 编译基础设施
 compiler-analysis = { path = "projects/compiler/compiler.analysis" }
 compiler-optimize = { path = "projects/compiler/compiler.optimize" }

@@ -1,0 +1,14 @@
+[package]
+name = "commander-types"
+version.workspace = true
+authors.workspace = true
+description = "Pure CLI interaction contracts: exit codes, stable error ids, interactive specs, action-required descriptors, secret handles, and result envelopes"
+repository = "https://github.com/oovm/rust-boost/tree/dev/projects/commander/commander.types"
+readme = "readme.md"
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+zeroize = { workspace = true }
