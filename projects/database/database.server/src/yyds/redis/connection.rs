@@ -688,19 +688,25 @@ fn respond(
         // 字符串与键族的回复已由 handle_string 写出。
     }
     else if collections::is_hyperloglog_command(command) {
-        collections::handle_hyperloglog(stream, request, executor, namespace)?;
+        let reply = collections::handle_hyperloglog(request, executor, namespace).unwrap_or_else(|error| error.to_reply());
+        stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, state.protocol))?
     }
     else if collections::is_hash_command(command) {
-        collections::handle_hash(stream, request, executor, namespace, state.protocol)?;
+        let reply = collections::handle_hash(request, executor, namespace, state.protocol).unwrap_or_else(|error| error.to_reply());
+        stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, state.protocol))?
     }
     else if collections::is_list_command(command) {
-        collections::handle_list(stream, request, executor, namespace, state.protocol, registry, !state.session.defer_blocking())?;
+        let reply = collections::handle_list(request, executor, namespace, state.protocol, registry, !state.session.defer_blocking())
+            .unwrap_or_else(|error| error.to_reply());
+        stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, state.protocol))?
     }
     else if collections::is_set_command(command) {
-        collections::handle_set(stream, request, executor, namespace, state.protocol)?;
+        let reply = collections::handle_set(request, executor, namespace, state.protocol).unwrap_or_else(|error| error.to_reply());
+        stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, state.protocol))?
     }
     else if collections::is_zset_command(command) {
-        collections::handle_zset(stream, request, executor, namespace, state.protocol)?;
+        let reply = collections::handle_zset(request, executor, namespace, state.protocol).unwrap_or_else(|error| error.to_reply());
+        stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, state.protocol))?
     }
     else {
         write_unknown_command(stream, &request.arguments)?;

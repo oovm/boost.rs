@@ -47,87 +47,78 @@ pub fn handle_command(input: &str) -> Result<String> {
     }
 }
 
-/// Executes one hash-family request against an external executor and writes the RESP reply.
+/// Executes one hash-family request against an external executor and returns the typed reply.
 ///
-/// Command semantics, reply framing and type checks stay in the redis collection
-/// handler. The caller only supplies the logical database namespace, the connection
-/// protocol version and the key-value backend, so an embedder such as a language
-/// binding can reuse this family without reimplementing it.
+/// Command semantics and type checks stay in the redis collection handler, which answers
+/// with a `database-protocol-redis` `Reply`. The caller only supplies the logical database
+/// namespace, the connection protocol version and the key-value backend, so an embedder
+/// such as a language binding can reuse this family without reimplementing it and encodes
+/// the result through the protocol crate.
 pub fn execute_hash_command(
-    stream: &mut dyn io::Write,
     arguments: &[&[u8]],
     executor: &dyn KeyValueExecutor,
     namespace: &database_types::cluster::Namespace,
     protocol: u8,
-) -> io::Result<()> {
+) -> database_protocol_redis::codec::Reply {
     let request = resp::Request { arguments: arguments.to_vec(), consumed: 0 };
-    collections::handle_hash(stream, &request, Some(executor), namespace, protocol)
+    collections::handle_hash(&request, Some(executor), namespace, protocol).unwrap_or_else(|error| error.to_reply())
 }
 
-/// Executes one set-family request against an external executor and writes the RESP reply.
+/// Executes one set-family request against an external executor and returns the typed reply.
 ///
-/// Command semantics, reply framing and type checks stay in the redis collection
-/// handler. The caller only supplies the logical database namespace, the connection
-/// protocol version and the key-value backend, so an embedder such as a language
-/// binding can reuse this family without reimplementing it.
+/// See [`execute_hash_command`] for the ownership contract.
 pub fn execute_set_command(
-    stream: &mut dyn io::Write,
     arguments: &[&[u8]],
     executor: &dyn KeyValueExecutor,
     namespace: &database_types::cluster::Namespace,
     protocol: u8,
-) -> io::Result<()> {
+) -> database_protocol_redis::codec::Reply {
     let request = resp::Request { arguments: arguments.to_vec(), consumed: 0 };
-    collections::handle_set(stream, &request, Some(executor), namespace, protocol)
+    collections::handle_set(&request, Some(executor), namespace, protocol).unwrap_or_else(|error| error.to_reply())
 }
 
-/// Executes one list-family request against an external executor and writes the RESP reply.
+/// Executes one list-family request against an external executor and returns the typed reply.
 ///
-/// Command semantics, reply framing and type checks stay in the redis collection
-/// handler. Blocking commands run in their non-blocking form: an empty key replies
-/// at once and the caller owns the wait loop.
+/// Blocking commands run in their non-blocking form: an empty key replies at once and the
+/// caller owns the wait loop. See [`execute_hash_command`] for the ownership contract.
 pub fn execute_list_command(
-    stream: &mut dyn io::Write,
     arguments: &[&[u8]],
     executor: &dyn KeyValueExecutor,
     namespace: &database_types::cluster::Namespace,
     protocol: u8,
-) -> io::Result<()> {
+) -> database_protocol_redis::codec::Reply {
     let request = resp::Request { arguments: arguments.to_vec(), consumed: 0 };
     let registry = blocking::BlockingRegistry::new();
-    collections::handle_list(stream, &request, Some(executor), namespace, protocol, &registry, false)
+    collections::handle_list(&request, Some(executor), namespace, protocol, &registry, false)
+        .unwrap_or_else(|error| error.to_reply())
 }
 
-/// Executes one zset-family request against an external executor and writes the RESP reply.
+/// Executes one zset-family request against an external executor and returns the typed reply.
 ///
-/// Command semantics, reply framing and type checks stay in the redis collection
-/// handler. Blocking commands run in their non-blocking form: an empty key replies
-/// at once and the caller owns the wait loop.
+/// Blocking commands run in their non-blocking form: an empty key replies at once and the
+/// caller owns the wait loop. See [`execute_hash_command`] for the ownership contract.
 pub fn execute_zset_command(
-    stream: &mut dyn io::Write,
     arguments: &[&[u8]],
     executor: &dyn KeyValueExecutor,
     namespace: &database_types::cluster::Namespace,
     protocol: u8,
-) -> io::Result<()> {
+) -> database_protocol_redis::codec::Reply {
     let request = resp::Request { arguments: arguments.to_vec(), consumed: 0 };
-    collections::handle_zset(stream, &request, Some(executor), namespace, protocol)
+    collections::handle_zset(&request, Some(executor), namespace, protocol).unwrap_or_else(|error| error.to_reply())
 }
 
-/// Executes one HyperLogLog family request and writes the RESP reply.
+/// Executes one HyperLogLog family request and returns the typed reply.
 ///
-/// Command semantics, reply framing and type checks stay in the redis collection
-/// handler. The caller only supplies the logical database namespace and the
-/// key-value backend, so an embedder such as a language binding can reuse this
-/// family without reimplementing the hash, register and estimation logic.
+/// The caller only supplies the logical database namespace and the key-value backend.
+/// See [`execute_hash_command`] for the ownership contract.
 pub fn execute_hyperloglog_command(
-    stream: &mut dyn io::Write,
     arguments: &[&[u8]],
     executor: &dyn KeyValueExecutor,
     namespace: &database_types::cluster::Namespace,
-) -> io::Result<()> {
+) -> database_protocol_redis::codec::Reply {
     let request = resp::Request { arguments: arguments.to_vec(), consumed: 0 };
-    collections::handle_hyperloglog(stream, &request, Some(executor), namespace)
+    collections::handle_hyperloglog(&request, Some(executor), namespace)
+        .unwrap_or_else(|error| error.to_reply())
 }
 
 /// Banner shown when a disguise server starts.

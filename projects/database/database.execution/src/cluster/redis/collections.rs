@@ -20,10 +20,13 @@ use database_types::cluster::Namespace;
 
 use super::{
     blocking::{BlockingRegistry, WaitOutcome, Waiter, timeout_deadline},
-    reply::{glob_match, write_bulk, write_error, write_null, write_null_array},
+    reply::glob_match,
     KeyValueExecutor,
 };
-use database_protocol_redis::resp::Request;
+use database_protocol_redis::{
+    codec::{CommandError, Reply},
+    resp::Request,
+};
 use database_query::cluster_kv::{KeyValueAction, KeyValueCommand, KeyValueResult};
 
 /// 一个逻辑键当前承载的值类型。
@@ -100,14 +103,11 @@ pub fn find_kind(executor: &dyn KeyValueExecutor, base: &Namespace, key: &[u8]) 
 
 /// 集合键的一次读取结果。
 ///
-/// `Rejected` 表示错误回复已经写进连接，调用方不应再追加任何字节。
 enum Loaded<T> {
     /// 键不存在或已过期。
     Missing,
     /// 解码成功的值。
     Found(T),
-    /// 已回复错误（`WRONGTYPE`、存储错误或损坏）。
-    Rejected,
 }
 
 /// 读取一个集合键的原始值 blob。
@@ -140,30 +140,14 @@ fn remove_value(executor: &dyn KeyValueExecutor, namespace: &Namespace, key: &[u
     }
 }
 
-/// `WRONGTYPE ...` 错误，与真机使用同一个错误前缀与文案。
+/// 过渡垫片：字符串族在下一逻辑块收敛到 `CommandError::WrongType` 后删除。
 pub fn write_wrong_type(stream: &mut dyn io::Write) -> io::Result<()> {
     stream.write_all(b"-WRONGTYPE Operation against a key holding the wrong kind of value\r\n")
 }
 
-fn write_arity_error(stream: &mut dyn io::Write, command: &str) -> io::Result<()> {
-    write_error(stream, &format!("wrong number of arguments for '{command}' command"))
-}
-
-fn write_integer(stream: &mut dyn io::Write, value: i64) -> io::Result<()> {
-    write!(stream, ":{value}\r\n")
-}
-
-fn write_array_header(stream: &mut dyn io::Write, length: usize) -> io::Result<()> {
-    write!(stream, "*{length}\r\n")
-}
-
-/// 集合聚合回复头：RESP3 用 `~` 表示 set 类型，RESP2 降级为 `*` 数组。
-fn write_set_header(stream: &mut dyn io::Write, length: usize, protocol: u8) -> io::Result<()> {
-    write!(stream, "{}{length}\r\n", if protocol == 3 { '~' } else { '*' })
-}
-
-fn write_storage_error(stream: &mut dyn io::Write, message: &str) -> io::Result<()> {
-    write_error(stream, message)
+/// arity 错误的语义消息，由 protocol 编码为 `-ERR ...`。
+fn arity_error(command: &str) -> CommandError {
+    CommandError::Failed(format!("wrong number of arguments for '{command}' command"))
 }
 
 /// 全量 zset 读取的排序规则，与 `sort_zset` 一致。
@@ -171,44 +155,49 @@ fn sort_zset_view(entries: &mut [(&[u8], f64)]) {
     entries.sort_by(|left, right| left.1.total_cmp(&right.1).then_with(|| left.0.cmp(right.0)));
 }
 
-/// 输出借用切片形式的 zset 结果，帧格式与 `write_zset_entries` 完全一致。
-fn write_zset_view(stream: &mut dyn io::Write, entries: &[(&[u8], f64)], with_scores: bool, protocol: u8) -> io::Result<()> {
+/// 借用切片形式的 zset 结果，形状与 `zset_entries_reply` 完全一致。
+fn zset_view_reply(entries: &[(&[u8], f64)], with_scores: bool, protocol: u8) -> Reply {
     let nested = with_scores && protocol == 3;
-    let header = if with_scores && !nested { entries.len() * 2 } else { entries.len() };
-    write_array_header(stream, header)?;
-    for (member, score) in entries {
-        if nested {
-            stream.write_all(b"*2\r\n")?;
-        }
-        write_bulk(stream, member)?;
-        if with_scores {
-            write_score(stream, *score, protocol)?;
-        }
-    }
-    Ok(())
+    let items: Vec<Reply> = entries
+        .iter()
+        .flat_map(|(member, score)| {
+            let member = Reply::bulk(member.to_vec());
+            if !with_scores {
+                vec![member]
+            }
+            else if nested {
+                vec![Reply::array(vec![member, score_reply(*score)])]
+            }
+            else {
+                vec![member, score_reply(*score)]
+            }
+        })
+        .collect();
+    Reply::array(items)
 }
 
-/// 直接从 set blob 写出成员回复，避免逐成员临时 `Vec<u8>`。
+/// 字段与值交错成扁平数组回复（`HGETALL` 形状）。
+fn field_value_reply(fields: &[(Vec<u8>, Vec<u8>)]) -> Reply {
+    Reply::Array(fields.iter().flat_map(|(field, value)| [Reply::bulk(field.clone()), Reply::bulk(value.clone())]).collect())
+}
+
+/// 直接从 set blob 构造成员回复。
 ///
-/// 先走一遍校验再写，结构损坏时不会留下半截帧。
-fn write_set_members(stream: &mut dyn io::Write, bytes: &[u8], protocol: u8) -> Option<io::Result<()>> {
+/// 先走一遍校验再构造，结构损坏时返回 `None`，由调用方报告损坏。
+fn set_members_reply(bytes: &[u8]) -> Option<Reply> {
     let count = set_blob_count(bytes)?;
-    let corrupt = || io::Error::new(io::ErrorKind::InvalidData, "corrupt set blob");
-    let written = (|| -> io::Result<()> {
-        write_set_header(stream, count, protocol)?;
-        let (_, mut rest) = read_u32(bytes).ok_or_else(corrupt)?;
-        for _ in 0..count {
-            let (length, tail) = read_u32(rest).ok_or_else(corrupt)?;
-            let length = length as usize;
-            if tail.len() < length {
-                return Err(corrupt());
-            }
-            write_bulk(stream, &tail[..length])?;
-            rest = &tail[length..];
+    let mut members = Vec::with_capacity(count);
+    let (_, mut rest) = read_u32(bytes)?;
+    for _ in 0..count {
+        let (length, tail) = read_u32(rest)?;
+        let length = length as usize;
+        if tail.len() < length {
+            return None;
         }
-        Ok(())
-    })();
-    Some(written)
+        members.push(Reply::bulk(tail[..length].to_vec()));
+        rest = &tail[length..];
+    }
+    Some(Reply::set(members))
 }
 
 /// hash 命令名集合。
@@ -354,130 +343,112 @@ pub fn is_hyperloglog_command(command: &[u8]) -> bool {
 
 /// 载入 hash 字段并校验类型。
 fn load_hash(
-    stream: &mut dyn io::Write,
     executor: &dyn KeyValueExecutor,
     base: &Namespace,
     key: &[u8],
-) -> io::Result<Loaded<Vec<(Vec<u8>, Vec<u8>)>>> {
+) -> Result<Loaded<Vec<(Vec<u8>, Vec<u8>)>>, CommandError> {
     match find_kind(executor, base, key) {
         Ok(None) => return Ok(Loaded::Missing),
         Ok(Some(KeyKind::Hash)) => {}
         Ok(Some(_)) => {
-            write_wrong_type(stream)?;
-            return Ok(Loaded::Rejected);
+            return Err(CommandError::WrongType);
         }
         Err(message) => {
-            write_storage_error(stream, &message)?;
-            return Ok(Loaded::Rejected);
+            return Err(CommandError::Failed(message.to_owned()));
         }
     }
     match load_value(executor, &KeyKind::Hash.namespace(base), key) {
         Ok(Some(bytes)) => match decode_hash(&bytes) {
             Some(fields) => Ok(Loaded::Found(fields)),
             None => {
-                write_error(stream, "stored hash value is corrupt")?;
-                Ok(Loaded::Rejected)
+                Err(CommandError::Failed("stored hash value is corrupt".to_owned()))
             }
         },
         Ok(None) => Ok(Loaded::Missing),
         Err(message) => {
-            write_storage_error(stream, &message)?;
-            Ok(Loaded::Rejected)
+            Err(CommandError::Failed(message.to_owned()))
         }
     }
 }
 
 /// 载入 list 元素并校验类型。
-fn load_list(stream: &mut dyn io::Write, executor: &dyn KeyValueExecutor, base: &Namespace, key: &[u8]) -> io::Result<Loaded<Vec<Vec<u8>>>> {
+fn load_list(executor: &dyn KeyValueExecutor, base: &Namespace, key: &[u8]) -> Result<Loaded<Vec<Vec<u8>>>, CommandError> {
     match find_kind(executor, base, key) {
         Ok(None) => return Ok(Loaded::Missing),
         Ok(Some(KeyKind::List)) => {}
         Ok(Some(_)) => {
-            write_wrong_type(stream)?;
-            return Ok(Loaded::Rejected);
+            return Err(CommandError::WrongType);
         }
         Err(message) => {
-            write_storage_error(stream, &message)?;
-            return Ok(Loaded::Rejected);
+            return Err(CommandError::Failed(message.to_owned()));
         }
     }
     match load_value(executor, &KeyKind::List.namespace(base), key) {
         Ok(Some(bytes)) => match decode_list(&bytes) {
             Some(elements) => Ok(Loaded::Found(elements)),
             None => {
-                write_error(stream, "stored list value is corrupt")?;
-                Ok(Loaded::Rejected)
+                Err(CommandError::Failed("stored list value is corrupt".to_owned()))
             }
         },
         Ok(None) => Ok(Loaded::Missing),
         Err(message) => {
-            write_storage_error(stream, &message)?;
-            Ok(Loaded::Rejected)
+            Err(CommandError::Failed(message.to_owned()))
         }
     }
 }
 
 /// 载入 set 成员并校验类型。
-fn load_set(stream: &mut dyn io::Write, executor: &dyn KeyValueExecutor, base: &Namespace, key: &[u8]) -> io::Result<Loaded<Vec<Vec<u8>>>> {
+fn load_set(executor: &dyn KeyValueExecutor, base: &Namespace, key: &[u8]) -> Result<Loaded<Vec<Vec<u8>>>, CommandError> {
     match find_kind(executor, base, key) {
         Ok(None) => return Ok(Loaded::Missing),
         Ok(Some(KeyKind::Set)) => {}
         Ok(Some(_)) => {
-            write_wrong_type(stream)?;
-            return Ok(Loaded::Rejected);
+            return Err(CommandError::WrongType);
         }
         Err(message) => {
-            write_storage_error(stream, &message)?;
-            return Ok(Loaded::Rejected);
+            return Err(CommandError::Failed(message.to_owned()));
         }
     }
     match load_value(executor, &KeyKind::Set.namespace(base), key) {
         Ok(Some(bytes)) => match decode_set(&bytes) {
             Some(members) => Ok(Loaded::Found(members)),
             None => {
-                write_error(stream, "stored set value is corrupt")?;
-                Ok(Loaded::Rejected)
+                Err(CommandError::Failed("stored set value is corrupt".to_owned()))
             }
         },
         Ok(None) => Ok(Loaded::Missing),
         Err(message) => {
-            write_storage_error(stream, &message)?;
-            Ok(Loaded::Rejected)
+            Err(CommandError::Failed(message.to_owned()))
         }
     }
 }
 
 /// 载入 zset 成员并校验类型。
 fn load_zset(
-    stream: &mut dyn io::Write,
     executor: &dyn KeyValueExecutor,
     base: &Namespace,
     key: &[u8],
-) -> io::Result<Loaded<Vec<(Vec<u8>, f64)>>> {
+) -> Result<Loaded<Vec<(Vec<u8>, f64)>>, CommandError> {
     match find_kind(executor, base, key) {
         Ok(None) => return Ok(Loaded::Missing),
         Ok(Some(KeyKind::ZSet)) => {}
         Ok(Some(_)) => {
-            write_wrong_type(stream)?;
-            return Ok(Loaded::Rejected);
+            return Err(CommandError::WrongType);
         }
         Err(message) => {
-            write_storage_error(stream, &message)?;
-            return Ok(Loaded::Rejected);
+            return Err(CommandError::Failed(message.to_owned()));
         }
     }
     match load_value(executor, &KeyKind::ZSet.namespace(base), key) {
         Ok(Some(bytes)) => match decode_zset(&bytes) {
             Some(entries) => Ok(Loaded::Found(entries)),
             None => {
-                write_error(stream, "stored zset value is corrupt")?;
-                Ok(Loaded::Rejected)
+                Err(CommandError::Failed("stored zset value is corrupt".to_owned()))
             }
         },
         Ok(None) => Ok(Loaded::Missing),
         Err(message) => {
-            write_storage_error(stream, &message)?;
-            Ok(Loaded::Rejected)
+            Err(CommandError::Failed(message.to_owned()))
         }
     }
 }
@@ -569,25 +540,14 @@ fn score_text(score: f64) -> String {
     out
 }
 
-/// 分数回复：RESP2 用 bulk 文本，RESP3 用原生 double 类型。
-fn write_score(stream: &mut dyn io::Write, score: f64, protocol: u8) -> io::Result<()> {
-    // 整数分数是常见形态；直接从栈缓冲写出，避免为每个成员生成一个 `String`。
-    // 判定边界与 `score_text` 的整数分支一致，输出字节不变。
-    if score.fract() == 0.0 && score.abs() <= 4_611_686_018_427_387_904.0 {
-        let mut buffer = [0_u8; 21];
-        let digits = integer_bytes(score as i64, &mut buffer);
-        if protocol == 3 {
-            stream.write_all(b",")?;
-            stream.write_all(digits)?;
-            return stream.write_all(b"\r\n");
-        }
-        return write_bulk(stream, digits);
-    }
-    if protocol == 3 { write!(stream, ",{}\r\n", score_text(score)) } else { write_bulk(stream, score_text(score).as_bytes()) }
+/// 分数回复：`Reply::Double` 在 RESP3 编码为 `,` double，在 RESP2 退化为同文本 bulk。
+fn score_reply(score: f64) -> Reply {
+    Reply::Double(score_text(score))
 }
 
-/// 把有符号整数写成十进制字节，返回落在 `buffer` 里的切片。
-fn integer_bytes(value: i64, buffer: &mut [u8; 21]) -> &[u8] {
+/// 整数的十进制字节文本，用于嵌进 bulk 的元素（如 `SCAN` 游标）。
+fn integer_digits(value: i64) -> Vec<u8> {
+    let mut buffer = [0_u8; 21];
     let mut index = buffer.len();
     let negative = value < 0;
     let mut magnitude = value.unsigned_abs();
@@ -603,40 +563,39 @@ fn integer_bytes(value: i64, buffer: &mut [u8; 21]) -> &[u8] {
         index -= 1;
         buffer[index] = b'-';
     }
-    &buffer[index..]
+    buffer[index..].to_vec()
 }
 
 /// `HSET` / `HGET` / `HGETALL` / `HDEL` / `HLEN` 的分派入口。
 pub fn handle_hash(
-    stream: &mut dyn io::Write,
     request: &Request<'_>,
     executor: Option<&dyn KeyValueExecutor>,
     base: &Namespace,
     protocol: u8,
-) -> io::Result<()> {
+) -> Result<Reply, CommandError> {
     let command = request.arguments[0];
     let Some(executor) = executor
     else {
-        return write_error(stream, "unsupported command");
+        return Err(CommandError::Failed("unsupported command".to_owned()));
     };
     if command.eq_ignore_ascii_case(b"HSET") {
         if request.arguments.len() < 4 || (request.arguments.len() - 2) % 2 != 0 {
-            return write_arity_error(stream, "hset");
+            return Err(arity_error("hset"));
         }
         let key = request.arguments[1];
         // 字符串或 list 键一律 WRONGTYPE，集合类型之间也不隐式转换。
         match find_kind(executor, base, key) {
             Ok(None) | Ok(Some(KeyKind::Hash)) => {}
-            Ok(Some(_)) => return write_wrong_type(stream),
-            Err(message) => return write_storage_error(stream, &message),
+            Ok(Some(_)) => return Err(CommandError::WrongType),
+            Err(message) => return Err(CommandError::Failed(message.to_owned())),
         }
         let mut fields = match load_value(executor, &KeyKind::Hash.namespace(base), key) {
             Ok(Some(bytes)) => match decode_hash(&bytes) {
                 Some(fields) => fields,
-                None => return write_error(stream, "stored hash value is corrupt"),
+                None => return Err(CommandError::Failed("stored hash value is corrupt".to_owned())),
             },
             Ok(None) => Vec::new(),
-            Err(message) => return write_storage_error(stream, &message),
+            Err(message) => return Err(CommandError::Failed(message.to_owned())),
         };
         let mut added = 0_i64;
         for pair in request.arguments[2..].chunks(2) {
@@ -652,55 +611,45 @@ pub fn handle_hash(
         }
         let Some(bytes) = encode_hash(&fields)
         else {
-            return write_error(stream, "hash exceeds the storage limit");
+            return Err(CommandError::Failed("hash exceeds the storage limit".to_owned()));
         };
         if let Err(message) = store_value(executor, &KeyKind::Hash.namespace(base), key, bytes) {
-            return write_storage_error(stream, &message);
+            return Err(CommandError::Failed(message.to_owned()));
         }
-        return write_integer(stream, added);
+        return Ok(Reply::integer(added));
     }
     if command.eq_ignore_ascii_case(b"HGET") {
         if request.arguments.len() != 3 {
-            return write_arity_error(stream, "hget");
+            return Err(arity_error("hget"));
         }
         let key = request.arguments[1];
-        return match load_hash(stream, executor, base, key)? {
-            Loaded::Missing => write_null(stream, protocol),
+        return match load_hash(executor, base, key)? {
+            Loaded::Missing => Ok(Reply::nil()),
             Loaded::Found(fields) => match fields.iter().find(|(name, _)| name.as_slice() == request.arguments[2]) {
-                Some((_, value)) => write_bulk(stream, value),
-                None => write_null(stream, protocol),
+                Some((_, value)) => Ok(Reply::bulk(value.to_vec())),
+                None => Ok(Reply::nil()),
             },
-            Loaded::Rejected => Ok(()),
         };
     }
     if command.eq_ignore_ascii_case(b"HGETALL") {
         if request.arguments.len() != 2 {
-            return write_arity_error(stream, "hgetall");
+            return Err(arity_error("hgetall"));
         }
         let key = request.arguments[1];
-        return match load_hash(stream, executor, base, key)? {
+        return match load_hash(executor, base, key)? {
             // 键不存在时真机回空数组，而不是 nil。
-            Loaded::Missing => write_array_header(stream, 0),
-            Loaded::Found(fields) => {
-                write_array_header(stream, fields.len() * 2)?;
-                for (field, value) in fields {
-                    write_bulk(stream, &field)?;
-                    write_bulk(stream, &value)?;
-                }
-                Ok(())
-            }
-            Loaded::Rejected => Ok(()),
+            Loaded::Missing => Ok(Reply::array(vec![])),
+            Loaded::Found(fields) => Ok(field_value_reply(&fields)),
         };
     }
     if command.eq_ignore_ascii_case(b"HDEL") {
         if request.arguments.len() < 3 {
-            return write_arity_error(stream, "hdel");
+            return Err(arity_error("hdel"));
         }
         let key = request.arguments[1];
-        let fields = match load_hash(stream, executor, base, key)? {
-            Loaded::Missing => return write_integer(stream, 0),
+        let fields = match load_hash(executor, base, key)? {
+            Loaded::Missing => return Ok(Reply::integer(0)),
             Loaded::Found(fields) => fields,
-            Loaded::Rejected => return Ok(()),
         };
         let mut fields = fields;
         let mut removed = 0_i64;
@@ -714,53 +663,53 @@ pub fn handle_hash(
         });
         if fields.is_empty() {
             if let Err(message) = remove_value(executor, &KeyKind::Hash.namespace(base), key) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
         else {
             let Some(bytes) = encode_hash(&fields)
             else {
-                return write_error(stream, "hash exceeds the storage limit");
+                return Err(CommandError::Failed("hash exceeds the storage limit".to_owned()));
             };
             if let Err(message) = store_value(executor, &KeyKind::Hash.namespace(base), key, bytes) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
-        return write_integer(stream, removed);
+        return Ok(Reply::integer(removed));
     }
     if command.eq_ignore_ascii_case(b"HINCRBY") {
         if request.arguments.len() != 4 {
-            return write_arity_error(stream, "hincrby");
+            return Err(arity_error("hincrby"));
         }
         let delta = match parse_index(request.arguments[3]) {
             Some(delta) => delta,
-            None => return write_error(stream, "value is not an integer or out of range"),
+            None => return Err(CommandError::Failed("value is not an integer or out of range".to_owned())),
         };
         let key = request.arguments[1];
         match find_kind(executor, base, key) {
             Ok(None) | Ok(Some(KeyKind::Hash)) => {}
-            Ok(Some(_)) => return write_wrong_type(stream),
-            Err(message) => return write_storage_error(stream, &message),
+            Ok(Some(_)) => return Err(CommandError::WrongType),
+            Err(message) => return Err(CommandError::Failed(message.to_owned())),
         }
         let mut fields = match load_value(executor, &KeyKind::Hash.namespace(base), key) {
             Ok(Some(bytes)) => match decode_hash(&bytes) {
                 Some(fields) => fields,
-                None => return write_error(stream, "stored hash value is corrupt"),
+                None => return Err(CommandError::Failed("stored hash value is corrupt".to_owned())),
             },
             Ok(None) => Vec::new(),
-            Err(message) => return write_storage_error(stream, &message),
+            Err(message) => return Err(CommandError::Failed(message.to_owned())),
         };
         let field = request.arguments[2].to_vec();
         let current = match fields.iter().find(|(name, _)| *name == field) {
             Some((_, value)) => match parse_index(value) {
                 Some(current) => current,
-                None => return write_error(stream, "hash value is not an integer"),
+                None => return Err(CommandError::Failed("hash value is not an integer".to_owned())),
             },
             None => 0,
         };
         let Some(updated) = current.checked_add(delta)
         else {
-            return write_error(stream, "increment or decrement would overflow");
+            return Err(CommandError::Failed("increment or decrement would overflow".to_owned()));
         };
         let encoded = updated.to_string().into_bytes();
         match fields.iter_mut().find(|(name, _)| *name == field) {
@@ -769,100 +718,97 @@ pub fn handle_hash(
         }
         let Some(bytes) = encode_hash(&fields)
         else {
-            return write_error(stream, "hash exceeds the storage limit");
+            return Err(CommandError::Failed("hash exceeds the storage limit".to_owned()));
         };
         if let Err(message) = store_value(executor, &KeyKind::Hash.namespace(base), key, bytes) {
-            return write_storage_error(stream, &message);
+            return Err(CommandError::Failed(message.to_owned()));
         }
-        return write_integer(stream, updated);
+        return Ok(Reply::integer(updated));
     }
     if command.eq_ignore_ascii_case(b"HKEYS") || command.eq_ignore_ascii_case(b"HVALS") {
         let by_name = command.eq_ignore_ascii_case(b"HKEYS");
         if request.arguments.len() != 2 {
             let name = if by_name { "hkeys" } else { "hvals" };
-            return write_arity_error(stream, name);
+            return Err(arity_error(name));
         }
         let key = request.arguments[1];
-        let fields = match load_hash(stream, executor, base, key)? {
+        let fields = match load_hash(executor, base, key)? {
             Loaded::Missing => Vec::new(),
             Loaded::Found(fields) => fields,
-            Loaded::Rejected => return Ok(()),
         };
-        write_array_header(stream, fields.len())?;
-        for (field, value) in &fields {
-            write_bulk(stream, if by_name { field } else { value })?;
-        }
-        return Ok(());
+        let items: Vec<Reply> = fields
+            .iter()
+            .map(|(field, value)| Reply::bulk(if by_name { field.clone() } else { value.clone() }))
+            .collect();
+        return Ok(Reply::array(items));
     }
     if command.eq_ignore_ascii_case(b"HEXISTS") {
         if request.arguments.len() != 3 {
-            return write_arity_error(stream, "hexists");
+            return Err(arity_error("hexists"));
         }
         let key = request.arguments[1];
-        return match load_hash(stream, executor, base, key)? {
-            Loaded::Missing => write_integer(stream, 0),
-            Loaded::Found(fields) => write_integer(stream, i64::from(fields.iter().any(|(name, _)| name.as_slice() == request.arguments[2]))),
-            Loaded::Rejected => Ok(()),
+        return match load_hash(executor, base, key)? {
+            Loaded::Missing => Ok(Reply::integer(0)),
+            Loaded::Found(fields) => Ok(Reply::integer(i64::from(fields.iter().any(|(name, _)| name.as_slice() == request.arguments[2])))),
         };
     }
     if command.eq_ignore_ascii_case(b"HSETNX") {
         if request.arguments.len() != 4 {
-            return write_arity_error(stream, "hsetnx");
+            return Err(arity_error("hsetnx"));
         }
         let key = request.arguments[1];
         let field = request.arguments[2].to_vec();
         let value = request.arguments[3].to_vec();
-        let mut fields = match load_hash(stream, executor, base, key)? {
+        let mut fields = match load_hash(executor, base, key)? {
             Loaded::Missing => Vec::new(),
             Loaded::Found(fields) => fields,
-            Loaded::Rejected => return Ok(()),
         };
         if fields.iter().any(|(name, _)| *name == field) {
-            return write_integer(stream, 0);
+            return Ok(Reply::integer(0));
         }
         fields.push((field, value));
         let Some(bytes) = encode_hash(&fields)
         else {
-            return write_error(stream, "hash exceeds the storage limit");
+            return Err(CommandError::Failed("hash exceeds the storage limit".to_owned()));
         };
         if let Err(message) = store_value(executor, &KeyKind::Hash.namespace(base), key, bytes) {
-            return write_storage_error(stream, &message);
+            return Err(CommandError::Failed(message.to_owned()));
         }
-        return write_integer(stream, 1);
+        return Ok(Reply::integer(1));
     }
     if command.eq_ignore_ascii_case(b"HINCRBYFLOAT") {
         if request.arguments.len() != 4 {
-            return write_arity_error(stream, "hincrbyfloat");
+            return Err(arity_error("hincrbyfloat"));
         }
         let Some(increment) = parse_float_literal(std::str::from_utf8(request.arguments[3]).unwrap_or(""))
         else {
-            return write_error(stream, "value is not a valid float");
+            return Err(CommandError::Failed("value is not a valid float".to_owned()));
         };
         let key = request.arguments[1];
         match find_kind(executor, base, key) {
             Ok(None) | Ok(Some(KeyKind::Hash)) => {}
-            Ok(Some(_)) => return write_wrong_type(stream),
-            Err(message) => return write_storage_error(stream, &message),
+            Ok(Some(_)) => return Err(CommandError::WrongType),
+            Err(message) => return Err(CommandError::Failed(message.to_owned())),
         }
         let mut fields = match load_value(executor, &KeyKind::Hash.namespace(base), key) {
             Ok(Some(bytes)) => match decode_hash(&bytes) {
                 Some(fields) => fields,
-                None => return write_error(stream, "stored hash value is corrupt"),
+                None => return Err(CommandError::Failed("stored hash value is corrupt".to_owned())),
             },
             Ok(None) => Vec::new(),
-            Err(message) => return write_storage_error(stream, &message),
+            Err(message) => return Err(CommandError::Failed(message.to_owned())),
         };
         let field = request.arguments[2].to_vec();
         let current = match fields.iter().find(|(name, _)| *name == field) {
             Some((_, value)) => match parse_float_literal(std::str::from_utf8(value).unwrap_or("")) {
                 Some(current) => current,
-                None => return write_error(stream, "hash value is not a float"),
+                None => return Err(CommandError::Failed("hash value is not a float".to_owned())),
             },
             None => 0.0,
         };
         let updated = current + increment;
         if !updated.is_finite() {
-            return write_error(stream, "increment would produce NaN or Infinity");
+            return Err(CommandError::Failed("increment would produce NaN or Infinity".to_owned()));
         }
         let encoded = updated.to_string().into_bytes();
         match fields.iter_mut().find(|(name, _)| *name == field) {
@@ -871,40 +817,39 @@ pub fn handle_hash(
         }
         let Some(bytes) = encode_hash(&fields)
         else {
-            return write_error(stream, "hash exceeds the storage limit");
+            return Err(CommandError::Failed("hash exceeds the storage limit".to_owned()));
         };
         if let Err(message) = store_value(executor, &KeyKind::Hash.namespace(base), key, bytes) {
-            return write_storage_error(stream, &message);
+            return Err(CommandError::Failed(message.to_owned()));
         }
-        return write_bulk(stream, &encoded);
+        return Ok(Reply::bulk(encoded.to_vec()));
     }
     if command.eq_ignore_ascii_case(b"HRANDFIELD") {
         if request.arguments.len() < 2 || request.arguments.len() > 4 {
-            return write_arity_error(stream, "hrandfield");
+            return Err(arity_error("hrandfield"));
         }
         let key = request.arguments[1];
-        let fields = match load_hash(stream, executor, base, key)? {
+        let fields = match load_hash(executor, base, key)? {
             Loaded::Missing => Vec::new(),
             Loaded::Found(fields) => fields,
-            Loaded::Rejected => return Ok(()),
         };
         let Some(raw_count) = request.arguments.get(2)
         else {
             if fields.is_empty() {
-                return write_null(stream, protocol);
+                return Ok(Reply::nil());
             }
             let mut state = random_state();
             let index = (next_random(&mut state) as usize) % fields.len();
-            return write_bulk(stream, &fields[index].0);
+            return Ok(Reply::bulk(fields[index].0.to_vec()));
         };
         let Some(count) = parse_index(raw_count)
         else {
-            return write_error(stream, "value is not an integer or out of range");
+            return Err(CommandError::Failed("value is not an integer or out of range".to_owned()));
         };
         let with_values = match request.arguments.get(3) {
             None => false,
             Some(raw) if raw.eq_ignore_ascii_case(b"WITHVALUES") => true,
-            _ => return write_error(stream, "syntax error"),
+            _ => return Err(CommandError::Failed("syntax error".to_owned())),
         };
         if count > 0 {
             let take = (count as usize).min(fields.len());
@@ -915,64 +860,52 @@ pub fn handle_hash(
                 let swap = (next_random(&mut state) as usize) % (index + 1);
                 order.swap(index, swap);
             }
-            write_array_header(stream, if with_values { take * 2 } else { take })?;
+            let mut items = Vec::with_capacity(if with_values { take * 2 } else { take });
             for index in order.into_iter().take(take) {
-                write_bulk(stream, &fields[index].0)?;
+                items.push(Reply::bulk(fields[index].0.clone()));
                 if with_values {
-                    write_bulk(stream, &fields[index].1)?;
+                    items.push(Reply::bulk(fields[index].1.clone()));
                 }
             }
-            return Ok(());
+            return Ok(Reply::array(items));
         }
         if count == 0 || fields.is_empty() {
-            return write_array_header(stream, 0);
+            return Ok(Reply::array(vec![]));
         }
         let picks = count.unsigned_abs() as usize;
-        write_array_header(stream, if with_values { picks * 2 } else { picks })?;
+        let mut items = Vec::with_capacity(if with_values { picks * 2 } else { picks });
         let mut state = random_state();
         for _ in 0..picks {
             let index = (next_random(&mut state) as usize) % fields.len();
-            write_bulk(stream, &fields[index].0)?;
+            items.push(Reply::bulk(fields[index].0.clone()));
             if with_values {
-                write_bulk(stream, &fields[index].1)?;
+                items.push(Reply::bulk(fields[index].1.clone()));
             }
         }
-        return Ok(());
+        return Ok(Reply::array(items));
     }
     if command.eq_ignore_ascii_case(b"HSCAN") {
         if request.arguments.len() < 3 {
-            return write_arity_error(stream, "hscan");
+            return Err(arity_error("hscan"));
         }
-        let Some(cursor) = parse_scan_cursor(stream, request.arguments[2])?
-        else {
-            return Ok(());
-        };
-        let Some((pattern, count)) = parse_scan_tail(stream, &request.arguments, 3)?
-        else {
-            return Ok(());
-        };
+        let cursor = parse_scan_cursor(request.arguments[2])?;
+        let (pattern, count) = parse_scan_tail(&request.arguments, 3)?;
         let key = request.arguments[1];
-        let fields = match load_hash(stream, executor, base, key)? {
+        let fields = match load_hash(executor, base, key)? {
             Loaded::Missing => Vec::new(),
             Loaded::Found(fields) => fields,
-            Loaded::Rejected => return Ok(()),
         };
-        return write_hscan_page(stream, &fields, cursor, count, pattern.as_deref());
+        return Ok(hscan_page_reply(&fields, cursor, count, pattern.as_deref()));
     }
     // HLEN
     if request.arguments.len() != 2 {
-        return write_arity_error(stream, "hlen");
+        return Err(arity_error("hlen"));
     }
     let key = request.arguments[1];
-    match load_hash(stream, executor, base, key)? {
-        Loaded::Missing => write_integer(stream, 0),
-        Loaded::Found(fields) => write_integer(stream, fields.len() as i64),
-        Loaded::Rejected => Ok(()),
+    match load_hash(executor, base, key)? {
+        Loaded::Missing => Ok(Reply::integer(0)),
+        Loaded::Found(fields) => Ok(Reply::integer(fields.len() as i64)),
     }
-}
-
-fn write_status(stream: &mut dyn io::Write, value: &str) -> io::Result<()> {
-    write!(stream, "+{value}\r\n")
 }
 
 /// list 的插入/弹出端，供 `LMOVE` 与 `LINSERT` 解析方向参数。
@@ -1006,14 +939,13 @@ struct LposOptions {
 
 /// 执行 `LPOS`。
 fn handle_lpos(
-    stream: &mut dyn io::Write,
     executor: &dyn KeyValueExecutor,
     base: &Namespace,
     arguments: &[&[u8]],
     protocol: u8,
-) -> io::Result<()> {
+) -> Result<Reply, CommandError> {
     if arguments.len() < 3 {
-        return write_arity_error(stream, "lpos");
+        return Err(arity_error("lpos"));
     }
     let key = arguments[1];
     let element = arguments[2];
@@ -1024,21 +956,20 @@ fn handle_lpos(
         if option.eq_ignore_ascii_case(b"RANK") {
             let Some(raw) = arguments.get(index + 1)
             else {
-                return write_error(stream, "syntax error");
+                return Err(CommandError::Failed("syntax error".to_owned()));
             };
             let Some(rank) = parse_index(raw)
             else {
-                return write_error(stream, "value is not an integer or out of range");
+                return Err(CommandError::Failed("value is not an integer or out of range".to_owned()));
             };
             // 真机把 `RANK` 限制在 `[-i64::MAX, i64::MAX]`，`i64::MIN` 单独报范围错误。
             if rank == i64::MIN {
-                return write_error(stream, "value is out of range, value must between -9223372036854775807 and 9223372036854775807");
+                return Err(CommandError::Failed("value is out of range, value must between -9223372036854775807 and 9223372036854775807".to_owned()));
             }
             if rank == 0 {
-                return write_error(
-                    stream,
-                    "RANK can't be zero: use 1 to start from the first match, 2 from the second ... or use negative to start from the end of the list",
-                );
+                return Err(CommandError::Failed(
+                    "RANK can't be zero: use 1 to start from the first match, 2 from the second ... or use negative to start from the end of the list".to_owned(),
+                ));
             }
             options.rank = rank;
             index += 2;
@@ -1047,15 +978,15 @@ fn handle_lpos(
         if option.eq_ignore_ascii_case(b"COUNT") {
             let Some(raw) = arguments.get(index + 1)
             else {
-                return write_error(stream, "syntax error");
+                return Err(CommandError::Failed("syntax error".to_owned()));
             };
             // 真机把解析失败与负数都归为同一条错误，不区分具体原因。
             let Some(count) = parse_index(raw)
             else {
-                return write_error(stream, "COUNT can't be negative");
+                return Err(CommandError::Failed("COUNT can't be negative".to_owned()));
             };
             if count < 0 {
-                return write_error(stream, "COUNT can't be negative");
+                return Err(CommandError::Failed("COUNT can't be negative".to_owned()));
             }
             options.count = Some(if count == 0 { usize::MAX } else { count as usize });
             index += 2;
@@ -1064,24 +995,23 @@ fn handle_lpos(
         if option.eq_ignore_ascii_case(b"MAXLEN") {
             let Some(raw) = arguments.get(index + 1)
             else {
-                return write_error(stream, "syntax error");
+                return Err(CommandError::Failed("syntax error".to_owned()));
             };
             // `MAXLEN` 与 `COUNT` 一致：解析失败与负数共用一条错误。
             let Some(length) = parse_index(raw)
             else {
-                return write_error(stream, "MAXLEN can't be negative");
+                return Err(CommandError::Failed("MAXLEN can't be negative".to_owned()));
             };
             if length < 0 {
-                return write_error(stream, "MAXLEN can't be negative");
+                return Err(CommandError::Failed("MAXLEN can't be negative".to_owned()));
             }
             options.maxlen = if length == 0 { usize::MAX } else { length as usize };
             index += 2;
             continue;
         }
-        return write_error(stream, "syntax error");
+        return Err(CommandError::Failed("syntax error".to_owned()));
     }
-    let elements = match load_list(stream, executor, base, key)? {
-        Loaded::Rejected => return Ok(()),
+    let elements = match load_list(executor, base, key)? {
         Loaded::Missing => Vec::new(),
         Loaded::Found(elements) => elements,
     };
@@ -1105,15 +1035,12 @@ fn handle_lpos(
         }
     }
     if options.count.is_some() {
-        write_array_header(stream, matches.len())?;
-        for position in matches {
-            write_integer(stream, position as i64)?;
-        }
-        return Ok(());
+        let items: Vec<Reply> = matches.into_iter().map(|position| Reply::integer(position as i64)).collect();
+        return Ok(Reply::array(items));
     }
     match matches.first() {
-        Some(position) => write_integer(stream, *position as i64),
-        None => write_null(stream, protocol),
+        Some(position) => Ok(Reply::integer(*position as i64)),
+        None => Ok(Reply::nil()),
     }
 }
 
@@ -1123,8 +1050,6 @@ enum Blocked<T> {
     Ready(T),
     /// 键不存在或列表为空，继续等。
     Empty,
-    /// 已回复错误（`WRONGTYPE`、存储错误或损坏）。
-    Rejected,
 }
 
 /// 阻塞取值的最终结果。
@@ -1133,8 +1058,6 @@ enum BlockOutcome<T> {
     Claimed(usize, T),
     /// 截止时间先到，回复 null。
     TimedOut,
-    /// 已回复错误。
-    Rejected,
 }
 
 /// 阻塞取值的公共骨架。
@@ -1148,14 +1071,12 @@ fn block_until<T>(
     keys: &[&[u8]],
     timeout: Option<Duration>,
     allow_blocking: bool,
-    mut claim: impl FnMut(usize) -> io::Result<Blocked<T>>,
-) -> io::Result<BlockOutcome<T>> {
+    mut claim: impl FnMut(usize) -> Result<Blocked<T>, CommandError>,
+) -> Result<BlockOutcome<T>, CommandError> {
     if !allow_blocking {
         for index in 0..keys.len() {
-            match claim(index)? {
-                Blocked::Ready(value) => return Ok(BlockOutcome::Claimed(index, value)),
-                Blocked::Empty => {}
-                Blocked::Rejected => return Ok(BlockOutcome::Rejected),
+            if let Blocked::Ready(value) = claim(index)? {
+                return Ok(BlockOutcome::Claimed(index, value));
             }
         }
         return Ok(BlockOutcome::TimedOut);
@@ -1163,21 +1084,26 @@ fn block_until<T>(
     let deadline = timeout_deadline(timeout);
     let mut waiters: Vec<Waiter> = keys.iter().map(|key| registry.register(base, key)).collect();
     loop {
+        let mut settled: Option<Result<BlockOutcome<T>, CommandError>> = None;
         for (index, waiter) in waiters.iter().enumerate() {
             if !registry.is_head(waiter) {
                 continue;
             }
-            match claim(index)? {
-                Blocked::Ready(value) => {
-                    registry.unregister_all(&waiters);
-                    return Ok(BlockOutcome::Claimed(index, value));
+            match claim(index) {
+                Ok(Blocked::Ready(value)) => {
+                    settled = Some(Ok(BlockOutcome::Claimed(index, value)));
+                    break;
                 }
-                Blocked::Empty => {}
-                Blocked::Rejected => {
-                    registry.unregister_all(&waiters);
-                    return Ok(BlockOutcome::Rejected);
+                Ok(Blocked::Empty) => {}
+                Err(error) => {
+                    settled = Some(Err(error));
+                    break;
                 }
             }
+        }
+        if let Some(result) = settled {
+            registry.unregister_all(&waiters);
+            return result;
         }
         match registry.wait_any(&mut waiters, deadline) {
             WaitOutcome::TimedOut => {
@@ -1219,52 +1145,41 @@ fn classify_timeout(raw: &[u8]) -> Result<Option<Duration>, &'static str> {
 
 /// 解析阻塞命令的超时参数。`0` 表示无限等待。
 ///
-/// 真机把超时按浮点秒解析，负数、非数字与越界分别回不同的错误文案；返回 `None`
-/// 表示错误已经写进连接。
-fn parse_timeout(stream: &mut dyn io::Write, raw: &[u8]) -> io::Result<Option<Option<Duration>>> {
-    match classify_timeout(raw) {
-        Ok(timeout) => Ok(Some(timeout)),
-        Err(message) => {
-            write_error(stream, message)?;
-            Ok(None)
-        }
-    }
+/// 真机把超时按浮点秒解析，负数、非数字与越界分别回不同的错误文案。
+fn parse_timeout(raw: &[u8]) -> Result<Option<Duration>, CommandError> {
+    classify_timeout(raw).map_err(|message| CommandError::Failed(message.to_owned()))
 }
 
 /// 阻塞命令开始前的类型扫描。
 ///
 /// 与真机一致：按参数顺序逐键检查，遇到第一个非空列表就停止，因此它前面的键必须先
-/// 通过类型检查；返回 `false` 表示错误已经写出。
-fn precheck_lists(stream: &mut dyn io::Write, executor: &dyn KeyValueExecutor, base: &Namespace, keys: &[&[u8]]) -> io::Result<bool> {
+/// 通过类型检查；`Err` 表示要回复的错误。
+fn precheck_lists(executor: &dyn KeyValueExecutor, base: &Namespace, keys: &[&[u8]]) -> Result<(), CommandError> {
     for key in keys {
         match find_kind(executor, base, key) {
             Ok(None) => {}
             Ok(Some(KeyKind::List)) => match load_value(executor, &KeyKind::List.namespace(base), key) {
                 Ok(Some(bytes)) => match decode_list(&bytes) {
                     Some(elements) if elements.is_empty() => {}
-                    Some(_) => return Ok(true),
+                    Some(_) => return Ok(()),
                     None => {
-                        write_error(stream, "stored list value is corrupt")?;
-                        return Ok(false);
+                        return Err(CommandError::Failed("stored list value is corrupt".to_owned()));
                     }
                 },
                 Ok(None) => {}
                 Err(message) => {
-                    write_storage_error(stream, &message)?;
-                    return Ok(false);
+                    return Err(CommandError::Failed(message.to_owned()));
                 }
             },
             Ok(Some(_)) => {
-                write_wrong_type(stream)?;
-                return Ok(false);
+                return Err(CommandError::WrongType);
             }
             Err(message) => {
-                write_storage_error(stream, &message)?;
-                return Ok(false);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
     }
-    Ok(true)
+    Ok(())
 }
 
 /// 把内存里的列表写回存储；列表空时删除键，对应真机不允许空列表存在。
@@ -1279,59 +1194,47 @@ fn persist_list(executor: &dyn KeyValueExecutor, base: &Namespace, key: &[u8], e
 
 /// `BLPOP` / `BRPOP`。
 fn handle_blocking_pop(
-    stream: &mut dyn io::Write,
     executor: &dyn KeyValueExecutor,
     base: &Namespace,
     arguments: &[&[u8]],
     protocol: u8,
     registry: &BlockingRegistry,
     allow_blocking: bool,
-) -> io::Result<()> {
+) -> Result<Reply, CommandError> {
     let pop_head = arguments[0].eq_ignore_ascii_case(b"BLPOP");
     let name = if pop_head { "blpop" } else { "brpop" };
     if arguments.len() < 3 {
-        return write_arity_error(stream, name);
+        return Err(arity_error(name));
     }
-    let Some(timeout) = parse_timeout(stream, arguments[arguments.len() - 1])?
-    else {
-        return Ok(());
-    };
+    let timeout = parse_timeout(arguments[arguments.len() - 1])?;
     let keys: Vec<&[u8]> = arguments[1..arguments.len() - 1].iter().copied().collect();
-    if !precheck_lists(stream, executor, base, &keys)? {
-        return Ok(());
-    }
+    precheck_lists(executor, base, &keys)?;
     let outcome = block_until(registry, base, &keys, timeout, allow_blocking, |index| {
         let key = keys[index];
-        let mut elements = match load_list(stream, executor, base, key)? {
+        let mut elements = match load_list(executor, base, key)? {
             Loaded::Missing => return Ok(Blocked::Empty),
             Loaded::Found(elements) => elements,
-            Loaded::Rejected => return Ok(Blocked::Rejected),
         };
         if elements.is_empty() {
             return Ok(Blocked::Empty);
         }
         let element = if pop_head { elements.remove(0) } else { elements.pop().unwrap_or_default() };
         if let Err(message) = persist_list(executor, base, key, &elements) {
-            write_storage_error(stream, &message)?;
-            return Ok(Blocked::Rejected);
+            return Err(CommandError::Failed(message.to_owned()));
         }
         Ok(Blocked::Ready(element))
     })?;
     match outcome {
         BlockOutcome::Claimed(index, element) => {
-            write_array_header(stream, 2)?;
-            write_bulk(stream, keys[index])?;
-            write_bulk(stream, &element)
+            Ok(Reply::array(vec![Reply::bulk(keys[index].to_vec()), Reply::bulk(element)]))
         }
-        BlockOutcome::TimedOut => write_null_array(stream, protocol),
-        BlockOutcome::Rejected => Ok(()),
+        BlockOutcome::TimedOut => Ok(Reply::nil_array()),
     }
 }
 
 /// 把源列表的一个元素搬到目标端；失败时错误已经写出。
 #[allow(clippy::too_many_arguments)]
 fn claim_move(
-    stream: &mut dyn io::Write,
     executor: &dyn KeyValueExecutor,
     base: &Namespace,
     registry: &BlockingRegistry,
@@ -1339,11 +1242,10 @@ fn claim_move(
     destination: &[u8],
     from: ListSide,
     to: ListSide,
-) -> io::Result<Blocked<Vec<u8>>> {
-    let mut source_elements = match load_list(stream, executor, base, source)? {
+) -> Result<Blocked<Vec<u8>>, CommandError> {
+    let mut source_elements = match load_list(executor, base, source)? {
         Loaded::Missing => return Ok(Blocked::Empty),
         Loaded::Found(elements) => elements,
-        Loaded::Rejected => return Ok(Blocked::Rejected),
     };
     if source_elements.is_empty() {
         return Ok(Blocked::Empty);
@@ -1356,26 +1258,22 @@ fn claim_move(
         match find_kind(executor, base, destination) {
             Ok(None) | Ok(Some(KeyKind::List)) => {}
             Ok(Some(_)) => {
-                write_wrong_type(stream)?;
-                return Ok(Blocked::Rejected);
+                return Err(CommandError::WrongType);
             }
             Err(message) => {
-                write_storage_error(stream, &message)?;
-                return Ok(Blocked::Rejected);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
         match load_value(executor, &KeyKind::List.namespace(base), destination) {
             Ok(Some(bytes)) => match decode_list(&bytes) {
                 Some(elements) => elements,
                 None => {
-                    write_error(stream, "stored list value is corrupt")?;
-                    return Ok(Blocked::Rejected);
+                    return Err(CommandError::Failed("stored list value is corrupt".to_owned()));
                 }
             },
             Ok(None) => Vec::new(),
             Err(message) => {
-                write_storage_error(stream, &message)?;
-                return Ok(Blocked::Rejected);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
     };
@@ -1389,8 +1287,7 @@ fn claim_move(
             ListSide::Right => source_elements.push(element.clone()),
         }
         if let Err(message) = persist_list(executor, base, source, &source_elements) {
-            write_storage_error(stream, &message)?;
-            return Ok(Blocked::Rejected);
+            return Err(CommandError::Failed(message.to_owned()));
         }
         return Ok(Blocked::Ready(element));
     }
@@ -1399,12 +1296,10 @@ fn claim_move(
         ListSide::Right => destination_elements.push(element.clone()),
     }
     if let Err(message) = persist_list(executor, base, source, &source_elements) {
-        write_storage_error(stream, &message)?;
-        return Ok(Blocked::Rejected);
+        return Err(CommandError::Failed(message.to_owned()));
     }
     if let Err(message) = persist_list(executor, base, destination, &destination_elements) {
-        write_storage_error(stream, &message)?;
-        return Ok(Blocked::Rejected);
+        return Err(CommandError::Failed(message.to_owned()));
     }
     // 目标列表多了一个元素，唤醒排在它上面的阻塞消费者。
     registry.notify(base, destination);
@@ -1413,110 +1308,98 @@ fn claim_move(
 
 /// `BLMOVE` / `BRPOPLPUSH`。
 fn handle_blocking_move(
-    stream: &mut dyn io::Write,
     executor: &dyn KeyValueExecutor,
     base: &Namespace,
     arguments: &[&[u8]],
     protocol: u8,
     registry: &BlockingRegistry,
     allow_blocking: bool,
-) -> io::Result<()> {
+) -> Result<Reply, CommandError> {
     let lmove = arguments[0].eq_ignore_ascii_case(b"BLMOVE");
     let (from, to, timeout_raw) = if lmove {
         if arguments.len() != 6 {
-            return write_arity_error(stream, "blmove");
+            return Err(arity_error("blmove"));
         }
         let (Some(from), Some(to)) = (parse_side(arguments[3]), parse_side(arguments[4]))
         else {
-            return write_error(stream, "syntax error");
+            return Err(CommandError::Failed("syntax error".to_owned()));
         };
         (from, to, arguments[5])
     }
     else {
         if arguments.len() != 4 {
-            return write_arity_error(stream, "brpoplpush");
+            return Err(arity_error("brpoplpush"));
         }
         (ListSide::Right, ListSide::Left, arguments[3])
     };
-    let Some(timeout) = parse_timeout(stream, timeout_raw)?
-    else {
-        return Ok(());
-    };
+    let timeout = parse_timeout(timeout_raw)?;
     let source = arguments[1];
     let destination = arguments[2];
     match find_kind(executor, base, source) {
         Ok(None) | Ok(Some(KeyKind::List)) => {}
-        Ok(Some(_)) => return write_wrong_type(stream),
-        Err(message) => return write_storage_error(stream, &message),
+        Ok(Some(_)) => return Err(CommandError::WrongType),
+        Err(message) => return Err(CommandError::Failed(message.to_owned())),
     }
     let keys = [source];
     let outcome = block_until(registry, base, &keys, timeout, allow_blocking, |_| {
-        claim_move(stream, executor, base, registry, source, destination, from, to)
+        claim_move(executor, base, registry, source, destination, from, to)
     })?;
     match outcome {
-        BlockOutcome::Claimed(_, element) => write_bulk(stream, &element),
-        BlockOutcome::TimedOut => write_null_array(stream, protocol),
-        BlockOutcome::Rejected => Ok(()),
+        BlockOutcome::Claimed(_, element) => Ok(Reply::bulk(element)),
+        BlockOutcome::TimedOut => Ok(Reply::nil_array()),
     }
 }
 
 /// `BLMPOP timeout numkeys key [key ...] LEFT|RIGHT [COUNT count]`。
 fn handle_blocking_mpop(
-    stream: &mut dyn io::Write,
     executor: &dyn KeyValueExecutor,
     base: &Namespace,
     arguments: &[&[u8]],
     protocol: u8,
     registry: &BlockingRegistry,
     allow_blocking: bool,
-) -> io::Result<()> {
+) -> Result<Reply, CommandError> {
     if arguments.len() < 5 {
-        return write_arity_error(stream, "blmpop");
+        return Err(arity_error("blmpop"));
     }
-    let Some(timeout) = parse_timeout(stream, arguments[1])?
-    else {
-        return Ok(());
-    };
+    let timeout = parse_timeout(arguments[1])?;
     let Some(numkeys) = parse_index(arguments[2])
     else {
-        return write_error(stream, "value is not an integer or out of range");
+        return Err(CommandError::Failed("value is not an integer or out of range".to_owned()));
     };
     if numkeys <= 0 {
-        return write_error(stream, "numkeys should be greater than 0");
+        return Err(CommandError::Failed("numkeys should be greater than 0".to_owned()));
     }
     let numkeys = numkeys as usize;
     let keys_end = 3 + numkeys;
     if arguments.len() < keys_end + 1 {
-        return write_error(stream, "syntax error");
+        return Err(CommandError::Failed("syntax error".to_owned()));
     }
     let keys: Vec<&[u8]> = arguments[3..keys_end].to_vec();
     let Some(side) = parse_side(arguments[keys_end])
     else {
-        return write_error(stream, "syntax error");
+        return Err(CommandError::Failed("syntax error".to_owned()));
     };
     let mut count = 1_usize;
     if arguments.len() > keys_end + 1 {
         if arguments.len() != keys_end + 3 || !arguments[keys_end + 1].eq_ignore_ascii_case(b"COUNT") {
-            return write_error(stream, "syntax error");
+            return Err(CommandError::Failed("syntax error".to_owned()));
         }
         let Some(value) = parse_index(arguments[keys_end + 2])
         else {
-            return write_error(stream, "value is not an integer or out of range");
+            return Err(CommandError::Failed("value is not an integer or out of range".to_owned()));
         };
         if value <= 0 {
-            return write_error(stream, "count should be greater than 0");
+            return Err(CommandError::Failed("count should be greater than 0".to_owned()));
         }
         count = value as usize;
     }
-    if !precheck_lists(stream, executor, base, &keys)? {
-        return Ok(());
-    }
+    precheck_lists(executor, base, &keys)?;
     let outcome = block_until(registry, base, &keys, timeout, allow_blocking, |index| {
         let key = keys[index];
-        let mut elements = match load_list(stream, executor, base, key)? {
+        let mut elements = match load_list(executor, base, key)? {
             Loaded::Missing => return Ok(Blocked::Empty),
             Loaded::Found(elements) => elements,
-            Loaded::Rejected => return Ok(Blocked::Rejected),
         };
         if elements.is_empty() {
             return Ok(Blocked::Empty);
@@ -1528,23 +1411,16 @@ fn handle_blocking_mpop(
             ListSide::Right => elements.drain(elements.len() - take..).rev().collect(),
         };
         if let Err(message) = persist_list(executor, base, key, &elements) {
-            write_storage_error(stream, &message)?;
-            return Ok(Blocked::Rejected);
+            return Err(CommandError::Failed(message.to_owned()));
         }
         Ok(Blocked::Ready(popped))
     })?;
     match outcome {
         BlockOutcome::Claimed(index, popped) => {
-            write_array_header(stream, 2)?;
-            write_bulk(stream, keys[index])?;
-            write_array_header(stream, popped.len())?;
-            for element in &popped {
-                write_bulk(stream, element)?;
-            }
-            Ok(())
+            let elements: Vec<Reply> = popped.into_iter().map(Reply::bulk).collect();
+            Ok(Reply::array(vec![Reply::bulk(keys[index].to_vec()), Reply::array(elements)]))
         }
-        BlockOutcome::TimedOut => write_null_array(stream, protocol),
-        BlockOutcome::Rejected => Ok(()),
+        BlockOutcome::TimedOut => Ok(Reply::nil_array()),
     }
 }
 
@@ -1552,50 +1428,48 @@ fn handle_blocking_mpop(
 ///
 /// 按参数顺序扫描，第一个非空列表胜出；前面的键先过类型检查，与真机一致。
 fn handle_mpop(
-    stream: &mut dyn io::Write,
     executor: &dyn KeyValueExecutor,
     base: &Namespace,
     arguments: &[&[u8]],
     protocol: u8,
-) -> io::Result<()> {
+) -> Result<Reply, CommandError> {
     if arguments.len() < 4 {
-        return write_arity_error(stream, "lmpop");
+        return Err(arity_error("lmpop"));
     }
     let Some(numkeys) = parse_index(arguments[1])
     else {
-        return write_error(stream, "numkeys should be greater than 0");
+        return Err(CommandError::Failed("numkeys should be greater than 0".to_owned()));
     };
     if numkeys <= 0 {
-        return write_error(stream, "numkeys should be greater than 0");
+        return Err(CommandError::Failed("numkeys should be greater than 0".to_owned()));
     }
     let numkeys = numkeys as usize;
     let keys_end = 2 + numkeys;
     if arguments.len() < keys_end + 1 {
-        return write_error(stream, "syntax error");
+        return Err(CommandError::Failed("syntax error".to_owned()));
     }
     let Some(side) = parse_side(arguments[keys_end])
     else {
-        return write_error(stream, "syntax error");
+        return Err(CommandError::Failed("syntax error".to_owned()));
     };
     let mut count = 1_usize;
     if arguments.len() > keys_end + 1 {
         if arguments.len() != keys_end + 3 || !arguments[keys_end + 1].eq_ignore_ascii_case(b"COUNT") {
-            return write_error(stream, "syntax error");
+            return Err(CommandError::Failed("syntax error".to_owned()));
         }
         let Some(value) = parse_index(arguments[keys_end + 2])
         else {
-            return write_error(stream, "count should be greater than 0");
+            return Err(CommandError::Failed("count should be greater than 0".to_owned()));
         };
         if value <= 0 {
-            return write_error(stream, "count should be greater than 0");
+            return Err(CommandError::Failed("count should be greater than 0".to_owned()));
         }
         count = value as usize;
     }
     for key in &arguments[2..keys_end] {
-        let elements = match load_list(stream, executor, base, key)? {
+        let elements = match load_list(executor, base, key)? {
             Loaded::Missing => continue,
             Loaded::Found(elements) => elements,
-            Loaded::Rejected => return Ok(()),
         };
         if elements.is_empty() {
             continue;
@@ -1607,68 +1481,62 @@ fn handle_mpop(
             ListSide::Right => (elements[elements.len() - take..].iter().rev().cloned().collect(), elements[..elements.len() - take].to_vec()),
         };
         if let Err(message) = persist_list(executor, base, key, &kept) {
-            return write_storage_error(stream, &message);
+            return Err(CommandError::Failed(message.to_owned()));
         }
-        write_array_header(stream, 2)?;
-        write_bulk(stream, key)?;
-        write_array_header(stream, popped.len())?;
-        for element in &popped {
-            write_bulk(stream, element)?;
-        }
-        return Ok(());
+        let elements: Vec<Reply> = popped.into_iter().map(Reply::bulk).collect();
+        return Ok(Reply::array(vec![Reply::bulk(key.to_vec()), Reply::array(elements)]));
     }
-    write_null_array(stream, protocol)
+    Ok(Reply::nil_array())
 }
 
 /// 列表命令的分派入口。
 pub fn handle_list(
-    stream: &mut dyn io::Write,
     request: &Request<'_>,
     executor: Option<&dyn KeyValueExecutor>,
     base: &Namespace,
     protocol: u8,
     registry: &BlockingRegistry,
     allow_blocking: bool,
-) -> io::Result<()> {
+) -> Result<Reply, CommandError> {
     let command = request.arguments[0];
     let Some(executor) = executor
     else {
-        return write_error(stream, "unsupported command");
+        return Err(CommandError::Failed("unsupported command".to_owned()));
     };
     if command.eq_ignore_ascii_case(b"BLPOP") || command.eq_ignore_ascii_case(b"BRPOP") {
-        return handle_blocking_pop(stream, executor, base, &request.arguments, protocol, registry, allow_blocking);
+        return handle_blocking_pop(executor, base, &request.arguments, protocol, registry, allow_blocking);
     }
     if command.eq_ignore_ascii_case(b"BLMOVE") || command.eq_ignore_ascii_case(b"BRPOPLPUSH") {
-        return handle_blocking_move(stream, executor, base, &request.arguments, protocol, registry, allow_blocking);
+        return handle_blocking_move(executor, base, &request.arguments, protocol, registry, allow_blocking);
     }
     if command.eq_ignore_ascii_case(b"BLMPOP") {
-        return handle_blocking_mpop(stream, executor, base, &request.arguments, protocol, registry, allow_blocking);
+        return handle_blocking_mpop(executor, base, &request.arguments, protocol, registry, allow_blocking);
     }
     if command.eq_ignore_ascii_case(b"LPOS") {
-        return handle_lpos(stream, executor, base, &request.arguments, protocol);
+        return handle_lpos(executor, base, &request.arguments, protocol);
     }
     if command.eq_ignore_ascii_case(b"LMPOP") {
-        return handle_mpop(stream, executor, base, &request.arguments, protocol);
+        return handle_mpop(executor, base, &request.arguments, protocol);
     }
     if command.eq_ignore_ascii_case(b"LPUSH") || command.eq_ignore_ascii_case(b"RPUSH") {
         let insert_at_head = command.eq_ignore_ascii_case(b"LPUSH");
         let name = if insert_at_head { "lpush" } else { "rpush" };
         if request.arguments.len() < 3 {
-            return write_arity_error(stream, name);
+            return Err(arity_error(name));
         }
         let key = request.arguments[1];
         match find_kind(executor, base, key) {
             Ok(None) | Ok(Some(KeyKind::List)) => {}
-            Ok(Some(_)) => return write_wrong_type(stream),
-            Err(message) => return write_storage_error(stream, &message),
+            Ok(Some(_)) => return Err(CommandError::WrongType),
+            Err(message) => return Err(CommandError::Failed(message.to_owned())),
         }
         let mut elements = match load_value(executor, &KeyKind::List.namespace(base), key) {
             Ok(Some(bytes)) => match decode_list(&bytes) {
                 Some(elements) => elements,
-                None => return write_error(stream, "stored list value is corrupt"),
+                None => return Err(CommandError::Failed("stored list value is corrupt".to_owned())),
             },
             Ok(None) => Vec::new(),
-            Err(message) => return write_storage_error(stream, &message),
+            Err(message) => return Err(CommandError::Failed(message.to_owned())),
         };
         for value in &request.arguments[2..] {
             if insert_at_head {
@@ -1680,47 +1548,45 @@ pub fn handle_list(
         }
         let Some(bytes) = encode_list(&elements)
         else {
-            return write_error(stream, "list exceeds the storage limit");
+            return Err(CommandError::Failed("list exceeds the storage limit".to_owned()));
         };
         if let Err(message) = store_value(executor, &KeyKind::List.namespace(base), key, bytes) {
-            return write_storage_error(stream, &message);
+            return Err(CommandError::Failed(message.to_owned()));
         }
         // 新元素到达，唤醒排在该键上的阻塞消费者。
         registry.notify(base, key);
-        return write_integer(stream, elements.len() as i64);
+        return Ok(Reply::integer(elements.len() as i64));
     }
     if command.eq_ignore_ascii_case(b"LINDEX") {
         if request.arguments.len() != 3 {
-            return write_arity_error(stream, "lindex");
+            return Err(arity_error("lindex"));
         }
         let index = match parse_index(request.arguments[2]) {
             Some(index) => index,
-            None => return write_error(stream, "value is not an integer or out of range"),
+            None => return Err(CommandError::Failed("value is not an integer or out of range".to_owned())),
         };
         let key = request.arguments[1];
-        return match load_list(stream, executor, base, key)? {
-            Loaded::Missing => write_null(stream, protocol),
+        return match load_list(executor, base, key)? {
+            Loaded::Missing => Ok(Reply::nil()),
             Loaded::Found(elements) => {
                 let length = elements.len() as i64;
                 let position = if index < 0 { length.saturating_add(index) } else { index };
-                if position < 0 || position >= length { write_null(stream, protocol) } else { write_bulk(stream, &elements[position as usize]) }
+                if position < 0 || position >= length { Ok(Reply::nil()) } else { Ok(Reply::bulk(elements[position as usize].clone())) }
             }
-            Loaded::Rejected => Ok(()),
         };
     }
     if command.eq_ignore_ascii_case(b"LRANGE") {
         if request.arguments.len() != 4 {
-            return write_arity_error(stream, "lrange");
+            return Err(arity_error("lrange"));
         }
         let (Some(start), Some(stop)) = (parse_index(request.arguments[2]), parse_index(request.arguments[3]))
         else {
-            return write_error(stream, "value is not an integer or out of range");
+            return Err(CommandError::Failed("value is not an integer or out of range".to_owned()));
         };
         let key = request.arguments[1];
-        let elements = match load_list(stream, executor, base, key)? {
-            Loaded::Missing => return write_array_header(stream, 0),
+        let elements = match load_list(executor, base, key)? {
+            Loaded::Missing => return Ok(Reply::array(vec![])),
             Loaded::Found(elements) => elements,
-            Loaded::Rejected => return Ok(()),
         };
         let length = elements.len() as i64;
         let mut begin = if start < 0 { length.saturating_add(start) } else { start };
@@ -1728,39 +1594,35 @@ pub fn handle_list(
         begin = begin.max(0);
         end = end.min(length - 1);
         if begin > end || begin >= length || end < 0 {
-            return write_array_header(stream, 0);
+            return Ok(Reply::array(vec![]));
         }
         let slice = &elements[begin as usize..=end as usize];
-        write_array_header(stream, slice.len())?;
-        for element in slice {
-            write_bulk(stream, element)?;
-        }
-        return Ok(());
+        let items: Vec<Reply> = slice.iter().map(|element| Reply::bulk(element.clone())).collect();
+        return Ok(Reply::array(items));
     }
     if command.eq_ignore_ascii_case(b"LPOP") || command.eq_ignore_ascii_case(b"RPOP") {
         let pop_head = command.eq_ignore_ascii_case(b"LPOP");
         let name = if pop_head { "lpop" } else { "rpop" };
         if request.arguments.len() < 2 || request.arguments.len() > 3 {
-            return write_arity_error(stream, name);
+            return Err(arity_error(name));
         }
         let with_count = request.arguments.len() == 3;
         let count = if with_count {
             match parse_index(request.arguments[2]) {
                 Some(count) if count > 0 => count as usize,
-                Some(_) => return write_error(stream, "value is out of range, must be positive"),
-                None => return write_error(stream, "value is not an integer or out of range"),
+                Some(_) => return Err(CommandError::Failed("value is out of range, must be positive".to_owned())),
+                None => return Err(CommandError::Failed("value is not an integer or out of range".to_owned())),
             }
         }
         else {
             1
         };
         let key = request.arguments[1];
-        let elements = match load_list(stream, executor, base, key)? {
+        let elements = match load_list(executor, base, key)? {
             Loaded::Missing => {
-                return if with_count { write_null_array(stream, protocol) } else { write_null(stream, protocol) };
+                return if with_count { Ok(Reply::nil_array()) } else { Ok(Reply::nil()) };
             }
             Loaded::Found(elements) => elements,
-            Loaded::Rejected => return Ok(()),
         };
         let take = count.min(elements.len());
         let popped: Vec<Vec<u8>> = if pop_head {
@@ -1780,45 +1642,41 @@ pub fn handle_list(
         }
         if remaining.is_empty() {
             if let Err(message) = remove_value(executor, &KeyKind::List.namespace(base), key) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
         else {
             let Some(bytes) = encode_list(&remaining)
             else {
-                return write_error(stream, "list exceeds the storage limit");
+                return Err(CommandError::Failed("list exceeds the storage limit".to_owned()));
             };
             if let Err(message) = store_value(executor, &KeyKind::List.namespace(base), key, bytes) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
         if with_count {
-            write_array_header(stream, popped.len())?;
-            for element in &popped {
-                write_bulk(stream, element)?;
-            }
-            return Ok(());
+            let items: Vec<Reply> = popped.iter().map(|element| Reply::bulk(element.clone())).collect();
+            return Ok(Reply::array(items));
         }
         // 单值弹出：真机保持 bulk 回复，`count` 缺省时不会回数组。
         return match popped.first() {
-            Some(element) => write_bulk(stream, element),
-            None => write_null(stream, protocol),
+            Some(element) => Ok(Reply::bulk(element.to_vec())),
+            None => Ok(Reply::nil()),
         };
     }
     if command.eq_ignore_ascii_case(b"LREM") {
         if request.arguments.len() != 4 {
-            return write_arity_error(stream, "lrem");
+            return Err(arity_error("lrem"));
         }
         let Some(count) = parse_index(request.arguments[2])
         else {
-            return write_error(stream, "value is not an integer or out of range");
+            return Err(CommandError::Failed("value is not an integer or out of range".to_owned()));
         };
         let key = request.arguments[1];
         let element = request.arguments[3];
-        let mut elements = match load_list(stream, executor, base, key)? {
-            Loaded::Missing => return write_integer(stream, 0),
+        let mut elements = match load_list(executor, base, key)? {
+            Loaded::Missing => return Ok(Reply::integer(0)),
             Loaded::Found(elements) => elements,
-            Loaded::Rejected => return Ok(()),
         };
         let mut removed = 0_i64;
         if count >= 0 {
@@ -1849,90 +1707,88 @@ pub fn handle_list(
             elements = kept;
         }
         if removed == 0 {
-            return write_integer(stream, 0);
+            return Ok(Reply::integer(0));
         }
         if elements.is_empty() {
             if let Err(message) = remove_value(executor, &KeyKind::List.namespace(base), key) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
         else {
             let Some(bytes) = encode_list(&elements)
             else {
-                return write_error(stream, "list exceeds the storage limit");
+                return Err(CommandError::Failed("list exceeds the storage limit".to_owned()));
             };
             if let Err(message) = store_value(executor, &KeyKind::List.namespace(base), key, bytes) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
-        return write_integer(stream, removed);
+        return Ok(Reply::integer(removed));
     }
     if command.eq_ignore_ascii_case(b"LSET") {
         if request.arguments.len() != 4 {
-            return write_arity_error(stream, "lset");
+            return Err(arity_error("lset"));
         }
         let Some(index) = parse_index(request.arguments[2])
         else {
-            return write_error(stream, "value is not an integer or out of range");
+            return Err(CommandError::Failed("value is not an integer or out of range".to_owned()));
         };
         let key = request.arguments[1];
-        let mut elements = match load_list(stream, executor, base, key)? {
-            Loaded::Missing => return write_error(stream, "no such key"),
+        let mut elements = match load_list(executor, base, key)? {
+            Loaded::Missing => return Err(CommandError::Failed("no such key".to_owned())),
             Loaded::Found(elements) => elements,
-            Loaded::Rejected => return Ok(()),
         };
         let length = elements.len() as i64;
         let position = if index < 0 { length.saturating_add(index) } else { index };
         if position < 0 || position >= length {
-            return write_error(stream, "index out of range");
+            return Err(CommandError::Failed("index out of range".to_owned()));
         }
         elements[position as usize] = request.arguments[3].to_vec();
         let Some(bytes) = encode_list(&elements)
         else {
-            return write_error(stream, "list exceeds the storage limit");
+            return Err(CommandError::Failed("list exceeds the storage limit".to_owned()));
         };
         if let Err(message) = store_value(executor, &KeyKind::List.namespace(base), key, bytes) {
-            return write_storage_error(stream, &message);
+            return Err(CommandError::Failed(message.to_owned()));
         }
-        return write_status(stream, "OK");
+        return Ok(Reply::status("OK"));
     }
     if command.eq_ignore_ascii_case(b"LTRIM") {
         if request.arguments.len() != 4 {
-            return write_arity_error(stream, "ltrim");
+            return Err(arity_error("ltrim"));
         }
         let (Some(start), Some(stop)) = (parse_index(request.arguments[2]), parse_index(request.arguments[3]))
         else {
-            return write_error(stream, "value is not an integer or out of range");
+            return Err(CommandError::Failed("value is not an integer or out of range".to_owned()));
         };
         let key = request.arguments[1];
-        let mut elements = match load_list(stream, executor, base, key)? {
-            Loaded::Missing => return write_status(stream, "OK"),
+        let mut elements = match load_list(executor, base, key)? {
+            Loaded::Missing => return Ok(Reply::status("OK")),
             Loaded::Found(elements) => elements,
-            Loaded::Rejected => return Ok(()),
         };
         let length = elements.len() as i64;
         let begin = if start < 0 { length.saturating_add(start) } else { start }.max(0);
         let end = if stop < 0 { length.saturating_add(stop) } else { stop }.min(length - 1);
         if begin > end || begin >= length || end < 0 {
             if let Err(message) = remove_value(executor, &KeyKind::List.namespace(base), key) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
-            return write_status(stream, "OK");
+            return Ok(Reply::status("OK"));
         }
         elements.drain(..begin as usize);
         elements.truncate((end - begin + 1) as usize);
         let Some(bytes) = encode_list(&elements)
         else {
-            return write_error(stream, "list exceeds the storage limit");
+            return Err(CommandError::Failed("list exceeds the storage limit".to_owned()));
         };
         if let Err(message) = store_value(executor, &KeyKind::List.namespace(base), key, bytes) {
-            return write_storage_error(stream, &message);
+            return Err(CommandError::Failed(message.to_owned()));
         }
-        return write_status(stream, "OK");
+        return Ok(Reply::status("OK"));
     }
     if command.eq_ignore_ascii_case(b"LINSERT") {
         if request.arguments.len() != 5 {
-            return write_arity_error(stream, "linsert");
+            return Err(arity_error("linsert"));
         }
         let before = if request.arguments[2].eq_ignore_ascii_case(b"BEFORE") {
             true
@@ -1941,62 +1797,60 @@ pub fn handle_list(
             false
         }
         else {
-            return write_error(stream, "syntax error");
+            return Err(CommandError::Failed("syntax error".to_owned()));
         };
         let key = request.arguments[1];
-        let mut elements = match load_list(stream, executor, base, key)? {
-            Loaded::Missing => return write_integer(stream, 0),
+        let mut elements = match load_list(executor, base, key)? {
+            Loaded::Missing => return Ok(Reply::integer(0)),
             Loaded::Found(elements) => elements,
-            Loaded::Rejected => return Ok(()),
         };
         let Some(position) = elements.iter().position(|existing| existing.as_slice() == request.arguments[3])
         else {
-            return write_integer(stream, -1);
+            return Ok(Reply::integer(-1));
         };
         let insert_at = if before { position } else { position + 1 };
         elements.insert(insert_at, request.arguments[4].to_vec());
         let Some(bytes) = encode_list(&elements)
         else {
-            return write_error(stream, "list exceeds the storage limit");
+            return Err(CommandError::Failed("list exceeds the storage limit".to_owned()));
         };
         if let Err(message) = store_value(executor, &KeyKind::List.namespace(base), key, bytes) {
-            return write_storage_error(stream, &message);
+            return Err(CommandError::Failed(message.to_owned()));
         }
         // 新元素到达，唤醒排在该键上的阻塞消费者。
         registry.notify(base, key);
-        return write_integer(stream, elements.len() as i64);
+        return Ok(Reply::integer(elements.len() as i64));
     }
     if command.eq_ignore_ascii_case(b"RPOPLPUSH") || command.eq_ignore_ascii_case(b"LMOVE") {
         let lmove = command.eq_ignore_ascii_case(b"LMOVE");
         let (from, to) = if lmove {
             if request.arguments.len() != 5 {
-                return write_arity_error(stream, "lmove");
+                return Err(arity_error("lmove"));
             }
             let (Some(from), Some(to)) = (parse_side(request.arguments[3]), parse_side(request.arguments[4]))
             else {
-                return write_error(stream, "syntax error");
+                return Err(CommandError::Failed("syntax error".to_owned()));
             };
             (from, to)
         }
         else {
             if request.arguments.len() != 3 {
-                return write_arity_error(stream, "rpoplpush");
+                return Err(arity_error("rpoplpush"));
             }
             (ListSide::Right, ListSide::Left)
         };
         let source = request.arguments[1];
         let destination = request.arguments[2];
-        let mut elements = match load_list(stream, executor, base, source)? {
+        let mut elements = match load_list(executor, base, source)? {
             Loaded::Missing => Vec::new(),
             Loaded::Found(elements) => elements,
-            Loaded::Rejected => return Ok(()),
         };
         // 真机先校验源类型，再校验目标类型，最后才判断源键是否为空。
         if source != destination {
             match find_kind(executor, base, destination) {
                 Ok(None) | Ok(Some(KeyKind::List)) => {}
-                Ok(Some(_)) => return write_wrong_type(stream),
-                Err(message) => return write_storage_error(stream, &message),
+                Ok(Some(_)) => return Err(CommandError::WrongType),
+                Err(message) => return Err(CommandError::Failed(message.to_owned())),
             }
         }
         let element = if elements.is_empty() {
@@ -2010,7 +1864,7 @@ pub fn handle_list(
         };
         let Some(element) = element
         else {
-            return write_null(stream, protocol);
+            return Ok(Reply::nil());
         };
         if source == destination {
             match to {
@@ -2019,34 +1873,34 @@ pub fn handle_list(
             }
             let Some(bytes) = encode_list(&elements)
             else {
-                return write_error(stream, "list exceeds the storage limit");
+                return Err(CommandError::Failed("list exceeds the storage limit".to_owned()));
             };
             if let Err(message) = store_value(executor, &KeyKind::List.namespace(base), source, bytes) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
-            return write_bulk(stream, &element);
+            return Ok(Reply::bulk(element.to_vec()));
         }
         if elements.is_empty() {
             if let Err(message) = remove_value(executor, &KeyKind::List.namespace(base), source) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
         else {
             let Some(bytes) = encode_list(&elements)
             else {
-                return write_error(stream, "list exceeds the storage limit");
+                return Err(CommandError::Failed("list exceeds the storage limit".to_owned()));
             };
             if let Err(message) = store_value(executor, &KeyKind::List.namespace(base), source, bytes) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
         let mut destination_elements = match load_value(executor, &KeyKind::List.namespace(base), destination) {
             Ok(Some(bytes)) => match decode_list(&bytes) {
                 Some(elements) => elements,
-                None => return write_error(stream, "stored list value is corrupt"),
+                None => return Err(CommandError::Failed("stored list value is corrupt".to_owned())),
             },
             Ok(None) => Vec::new(),
-            Err(message) => return write_storage_error(stream, &message),
+            Err(message) => return Err(CommandError::Failed(message.to_owned())),
         };
         match to {
             ListSide::Left => destination_elements.insert(0, element.clone()),
@@ -2054,24 +1908,23 @@ pub fn handle_list(
         }
         let Some(bytes) = encode_list(&destination_elements)
         else {
-            return write_error(stream, "list exceeds the storage limit");
+            return Err(CommandError::Failed("list exceeds the storage limit".to_owned()));
         };
         if let Err(message) = store_value(executor, &KeyKind::List.namespace(base), destination, bytes) {
-            return write_storage_error(stream, &message);
+            return Err(CommandError::Failed(message.to_owned()));
         }
         // 目标端多了一个元素，唤醒排在该键上的阻塞消费者。
         registry.notify(base, destination);
-        return write_bulk(stream, &element);
+        return Ok(Reply::bulk(element.to_vec()));
     }
     // LLEN
     if request.arguments.len() != 2 {
-        return write_arity_error(stream, "llen");
+        return Err(arity_error("llen"));
     }
     let key = request.arguments[1];
-    match load_list(stream, executor, base, key)? {
-        Loaded::Missing => write_integer(stream, 0),
-        Loaded::Found(elements) => write_integer(stream, elements.len() as i64),
-        Loaded::Rejected => Ok(()),
+    match load_list(executor, base, key)? {
+        Loaded::Missing => Ok(Reply::integer(0)),
+        Loaded::Found(elements) => Ok(Reply::integer(elements.len() as i64)),
     }
 }
 
@@ -2102,21 +1955,15 @@ fn store_fresh_value(executor: &dyn KeyValueExecutor, namespace: &Namespace, key
 }
 
 /// 读取多个集合并校验类型；任一键类型不合法时整条命令按真机回 `WRONGTYPE`。
-fn load_sets(
-    stream: &mut dyn io::Write,
-    executor: &dyn KeyValueExecutor,
-    base: &Namespace,
-    keys: &[&[u8]],
-) -> io::Result<Option<Vec<Vec<Vec<u8>>>>> {
+fn load_sets(executor: &dyn KeyValueExecutor, base: &Namespace, keys: &[&[u8]]) -> Result<Vec<Vec<Vec<u8>>>, CommandError> {
     let mut sets = Vec::with_capacity(keys.len());
     for key in keys {
-        match load_set(stream, executor, base, key)? {
+        match load_set(executor, base, key)? {
             Loaded::Missing => sets.push(Vec::new()),
             Loaded::Found(members) => sets.push(members),
-            Loaded::Rejected => return Ok(None),
         }
     }
-    Ok(Some(sets))
+    Ok(sets)
 }
 
 /// 按真机语义计算交集、并集或差集，保留第一个操作数的成员顺序。
@@ -2164,32 +2011,27 @@ fn next_random(state: &mut u64) -> u64 {
 }
 
 /// 解析集合扫描的游标：只接受规范十进制写法。
-fn parse_scan_cursor(stream: &mut dyn io::Write, raw: &[u8]) -> io::Result<Option<usize>> {
+fn parse_scan_cursor(raw: &[u8]) -> Result<usize, CommandError> {
     let text = match std::str::from_utf8(raw) {
         Ok(text) if !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()) => text,
         _ => {
-            write_error(stream, "invalid cursor")?;
-            return Ok(None);
+            return Err(CommandError::Failed("invalid cursor".to_owned()));
         }
     };
     match text.parse::<usize>() {
-        Ok(cursor) => Ok(Some(cursor)),
-        Err(_) => {
-            write_error(stream, "invalid cursor")?;
-            Ok(None)
-        }
+        Ok(cursor) => Ok(cursor),
+        Err(_) => Err(CommandError::Failed("invalid cursor".to_owned())),
     }
 }
 
 /// 解析 `MATCH pattern` 与 `COUNT count` 选项。
-fn parse_scan_tail(stream: &mut dyn io::Write, arguments: &[&[u8]], start: usize) -> io::Result<Option<(Option<Vec<u8>>, usize)>> {
+fn parse_scan_tail(arguments: &[&[u8]], start: usize) -> Result<(Option<Vec<u8>>, usize), CommandError> {
     let mut pattern: Option<Vec<u8>> = None;
     let mut count = 10usize;
     let mut index = start;
     while index < arguments.len() {
         if index + 1 >= arguments.len() {
-            write_error(stream, "syntax error")?;
-            return Ok(None);
+            return Err(CommandError::Failed("syntax error".to_owned()));
         }
         if arguments[index].eq_ignore_ascii_case(b"MATCH") {
             pattern = Some(arguments[index + 1].to_vec());
@@ -2197,73 +2039,65 @@ fn parse_scan_tail(stream: &mut dyn io::Write, arguments: &[&[u8]], start: usize
         else if arguments[index].eq_ignore_ascii_case(b"COUNT") {
             let Ok(value) = std::str::from_utf8(arguments[index + 1]).unwrap_or("").parse::<u64>()
             else {
-                write_error(stream, "syntax error")?;
-                return Ok(None);
+                return Err(CommandError::Failed("syntax error".to_owned()));
             };
             if value == 0 {
-                write_error(stream, "syntax error")?;
-                return Ok(None);
+                return Err(CommandError::Failed("syntax error".to_owned()));
             }
             count = value.min(usize::MAX as u64) as usize;
         }
         else {
-            write_error(stream, "syntax error")?;
-            return Ok(None);
+            return Err(CommandError::Failed("syntax error".to_owned()));
         }
         index += 2;
     }
-    Ok(Some((pattern, count)))
+    Ok((pattern, count))
 }
 
-/// 写出一段集合扫描结果：`[next-cursor, [members...]]`。
-fn write_scan_page(stream: &mut dyn io::Write, items: &[Vec<u8>], cursor: usize, count: usize, pattern: Option<&[u8]>) -> io::Result<()> {
+/// 一段集合扫描结果：`[next-cursor, [members...]]`。
+fn scan_page_reply(items: &[Vec<u8>], cursor: usize, count: usize, pattern: Option<&[u8]>) -> Reply {
     if cursor >= items.len() {
-        stream.write_all(b"*2\r\n")?;
-        write_bulk(stream, b"0")?;
-        return write_array_header(stream, 0);
+        return Reply::array(vec![Reply::bulk(b"0".to_vec()), Reply::array(vec![])]);
     }
     let end = cursor.saturating_add(count).min(items.len());
     let next = if end >= items.len() { "0".to_string() } else { end.to_string() };
-    let matched: Vec<&Vec<u8>> = items[cursor..end].iter().filter(|item| pattern.map_or(true, |pattern| glob_match(pattern, item))).collect();
-    stream.write_all(b"*2\r\n")?;
-    write_bulk(stream, next.as_bytes())?;
-    write_array_header(stream, matched.len())?;
-    for item in matched {
-        write_bulk(stream, item)?;
-    }
-    Ok(())
+    let matched: Vec<Reply> = items[cursor..end]
+        .iter()
+        .filter(|item| pattern.map_or(true, |pattern| glob_match(pattern, item)))
+        .map(|item| Reply::bulk(item.clone()))
+        .collect();
+    Reply::array(vec![Reply::bulk(next.into_bytes()), Reply::array(matched)])
 }
 
 /// `SADD` / `SREM` / `SMEMBERS` / `SCARD` / `SISMEMBER` 及集合代数、移动、随机读取与扫描的分派入口。
 pub fn handle_set(
-    stream: &mut dyn io::Write,
     request: &Request<'_>,
     executor: Option<&dyn KeyValueExecutor>,
     base: &Namespace,
     protocol: u8,
-) -> io::Result<()> {
+) -> Result<Reply, CommandError> {
     let command = request.arguments[0];
     let Some(executor) = executor
     else {
-        return write_error(stream, "unsupported command");
+        return Err(CommandError::Failed("unsupported command".to_owned()));
     };
     if command.eq_ignore_ascii_case(b"SADD") {
         if request.arguments.len() < 3 {
-            return write_arity_error(stream, "sadd");
+            return Err(arity_error("sadd"));
         }
         let key = request.arguments[1];
         match find_kind(executor, base, key) {
             Ok(None) | Ok(Some(KeyKind::Set)) => {}
-            Ok(Some(_)) => return write_wrong_type(stream),
-            Err(message) => return write_storage_error(stream, &message),
+            Ok(Some(_)) => return Err(CommandError::WrongType),
+            Err(message) => return Err(CommandError::Failed(message.to_owned())),
         }
         let mut members = match load_value(executor, &KeyKind::Set.namespace(base), key) {
             Ok(Some(bytes)) => match decode_set(&bytes) {
                 Some(members) => members,
-                None => return write_error(stream, "stored set value is corrupt"),
+                None => return Err(CommandError::Failed("stored set value is corrupt".to_owned())),
             },
             Ok(None) => Vec::new(),
-            Err(message) => return write_storage_error(stream, &message),
+            Err(message) => return Err(CommandError::Failed(message.to_owned())),
         };
         let mut added = 0_i64;
         for member in &request.arguments[2..] {
@@ -2276,23 +2110,22 @@ pub fn handle_set(
         if added > 0 {
             let Some(bytes) = encode_set(&members)
             else {
-                return write_error(stream, "set exceeds the storage limit");
+                return Err(CommandError::Failed("set exceeds the storage limit".to_owned()));
             };
             if let Err(message) = store_value(executor, &KeyKind::Set.namespace(base), key, bytes) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
-        return write_integer(stream, added);
+        return Ok(Reply::integer(added));
     }
     if command.eq_ignore_ascii_case(b"SREM") {
         if request.arguments.len() < 3 {
-            return write_arity_error(stream, "srem");
+            return Err(arity_error("srem"));
         }
         let key = request.arguments[1];
-        let mut members = match load_set(stream, executor, base, key)? {
-            Loaded::Missing => return write_integer(stream, 0),
+        let mut members = match load_set(executor, base, key)? {
+            Loaded::Missing => return Ok(Reply::integer(0)),
             Loaded::Found(members) => members,
-            Loaded::Rejected => return Ok(()),
         };
         let mut removed = 0_i64;
         members.retain(|existing| {
@@ -2304,57 +2137,56 @@ pub fn handle_set(
         });
         if members.is_empty() {
             if let Err(message) = remove_value(executor, &KeyKind::Set.namespace(base), key) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
         else {
             let Some(bytes) = encode_set(&members)
             else {
-                return write_error(stream, "set exceeds the storage limit");
+                return Err(CommandError::Failed("set exceeds the storage limit".to_owned()));
             };
             if let Err(message) = store_value(executor, &KeyKind::Set.namespace(base), key, bytes) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
-        return write_integer(stream, removed);
+        return Ok(Reply::integer(removed));
     }
     if command.eq_ignore_ascii_case(b"SMEMBERS") {
         if request.arguments.len() != 2 {
-            return write_arity_error(stream, "smembers");
+            return Err(arity_error("smembers"));
         }
         let key = request.arguments[1];
         // 全量读取不需要逐成员解码：类型探测之后直接从成员 blob 写回复，
         // 这样一个大集合只分配一次值拷贝，而不是每个成员一个 `Vec<u8>`。
         match find_kind(executor, base, key) {
-            Ok(None) => return write_set_header(stream, 0, protocol),
+            Ok(None) => return Ok(Reply::set(vec![])),
             Ok(Some(KeyKind::Set)) => {}
-            Ok(Some(_)) => return write_wrong_type(stream),
-            Err(message) => return write_storage_error(stream, &message),
+            Ok(Some(_)) => return Err(CommandError::WrongType),
+            Err(message) => return Err(CommandError::Failed(message.to_owned())),
         }
         return match load_value(executor, &KeyKind::Set.namespace(base), key) {
-            Ok(Some(bytes)) => match write_set_members(stream, &bytes, protocol) {
-                Some(result) => result,
-                None => write_error(stream, "stored set value is corrupt"),
+            Ok(Some(bytes)) => match set_members_reply(&bytes) {
+                Some(reply) => Ok(reply),
+                None => Err(CommandError::Failed("stored set value is corrupt".to_owned())),
             },
-            Ok(None) => write_set_header(stream, 0, protocol),
-            Err(message) => write_storage_error(stream, &message),
+            Ok(None) => Ok(Reply::set(vec![])),
+            Err(message) => Err(CommandError::Failed(message.to_owned())),
         };
     }
     if command.eq_ignore_ascii_case(b"SCARD") {
         if request.arguments.len() != 2 {
-            return write_arity_error(stream, "scard");
+            return Err(arity_error("scard"));
         }
         let key = request.arguments[1];
-        return match load_set(stream, executor, base, key)? {
-            Loaded::Missing => write_integer(stream, 0),
-            Loaded::Found(members) => write_integer(stream, members.len() as i64),
-            Loaded::Rejected => Ok(()),
+        return match load_set(executor, base, key)? {
+            Loaded::Missing => Ok(Reply::integer(0)),
+            Loaded::Found(members) => Ok(Reply::integer(members.len() as i64)),
         };
     }
     if command.eq_ignore_ascii_case(b"SINTER") || command.eq_ignore_ascii_case(b"SUNION") || command.eq_ignore_ascii_case(b"SDIFF") {
         if request.arguments.len() < 2 {
             let name = String::from_utf8_lossy(command).to_ascii_lowercase();
-            return write_arity_error(stream, &name);
+            return Err(arity_error(&name));
         }
         let op = if command.eq_ignore_ascii_case(b"SINTER") {
             SetOp::Inter
@@ -2366,16 +2198,10 @@ pub fn handle_set(
             SetOp::Diff
         };
         let keys: Vec<&[u8]> = request.arguments[1..].to_vec();
-        let Some(sets) = load_sets(stream, executor, base, &keys)?
-        else {
-            return Ok(());
-        };
+        let sets = load_sets(executor, base, &keys)?;
         let result = apply_set_op(op, &sets);
-        write_set_header(stream, result.len(), protocol)?;
-        for member in &result {
-            write_bulk(stream, member)?;
-        }
-        return Ok(());
+        let items: Vec<Reply> = result.iter().map(|member| Reply::bulk(member.clone())).collect();
+        return Ok(Reply::set(items));
     }
     if command.eq_ignore_ascii_case(b"SINTERSTORE")
         || command.eq_ignore_ascii_case(b"SUNIONSTORE")
@@ -2383,7 +2209,7 @@ pub fn handle_set(
     {
         if request.arguments.len() < 3 {
             let name = String::from_utf8_lossy(command).to_ascii_lowercase();
-            return write_arity_error(stream, &name);
+            return Err(arity_error(&name));
         }
         let op = if command.eq_ignore_ascii_case(b"SINTERSTORE") {
             SetOp::Inter
@@ -2396,114 +2222,108 @@ pub fn handle_set(
         };
         let destination = request.arguments[1];
         let keys: Vec<&[u8]> = request.arguments[2..].to_vec();
-        let Some(sets) = load_sets(stream, executor, base, &keys)?
-        else {
-            return Ok(());
-        };
+        let sets = load_sets(executor, base, &keys)?;
         let result = apply_set_op(op, &sets);
         // `*STORE` 覆盖目标且不继承旧过期时间；结果为空时目标键整体删除。
         if let Err(message) = remove_all_kinds(executor, base, destination) {
-            return write_storage_error(stream, &message);
+            return Err(CommandError::Failed(message.to_owned()));
         }
         if !result.is_empty() {
             let Some(bytes) = encode_set(&result)
             else {
-                return write_error(stream, "set exceeds the storage limit");
+                return Err(CommandError::Failed("set exceeds the storage limit".to_owned()));
             };
             if let Err(message) = store_fresh_value(executor, &KeyKind::Set.namespace(base), destination, bytes) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
-        return write_integer(stream, result.len() as i64);
+        return Ok(Reply::integer(result.len() as i64));
     }
     if command.eq_ignore_ascii_case(b"SMOVE") {
         if request.arguments.len() != 4 {
-            return write_arity_error(stream, "smove");
+            return Err(arity_error("smove"));
         }
         let source = request.arguments[1];
         let destination = request.arguments[2];
         let member = request.arguments[3];
         if source == destination {
-            return match load_set(stream, executor, base, source)? {
-                Loaded::Missing => write_integer(stream, 0),
-                Loaded::Found(members) => write_integer(stream, i64::from(members.iter().any(|existing| existing.as_slice() == member))),
-                Loaded::Rejected => Ok(()),
+            return match load_set(executor, base, source)? {
+                Loaded::Missing => Ok(Reply::integer(0)),
+                Loaded::Found(members) => Ok(Reply::integer(i64::from(members.iter().any(|existing| existing.as_slice() == member)))),
             };
         }
         // 源键不存在时真机直接回 0，不再探测目标类型。
-        let mut members = match load_set(stream, executor, base, source)? {
-            Loaded::Missing => return write_integer(stream, 0),
+        let mut members = match load_set(executor, base, source)? {
+            Loaded::Missing => return Ok(Reply::integer(0)),
             Loaded::Found(members) => members,
-            Loaded::Rejected => return Ok(()),
         };
         match find_kind(executor, base, destination) {
             Ok(None) | Ok(Some(KeyKind::Set)) => {}
-            Ok(Some(_)) => return write_wrong_type(stream),
-            Err(message) => return write_storage_error(stream, &message),
+            Ok(Some(_)) => return Err(CommandError::WrongType),
+            Err(message) => return Err(CommandError::Failed(message.to_owned())),
         }
         let Some(position) = members.iter().position(|existing| existing.as_slice() == member)
         else {
-            return write_integer(stream, 0);
+            return Ok(Reply::integer(0));
         };
         members.remove(position);
         if members.is_empty() {
             if let Err(message) = remove_value(executor, &KeyKind::Set.namespace(base), source) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
         else {
             let Some(bytes) = encode_set(&members)
             else {
-                return write_error(stream, "set exceeds the storage limit");
+                return Err(CommandError::Failed("set exceeds the storage limit".to_owned()));
             };
             if let Err(message) = store_value(executor, &KeyKind::Set.namespace(base), source, bytes) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
         let mut destination_members = match load_value(executor, &KeyKind::Set.namespace(base), destination) {
             Ok(Some(bytes)) => match decode_set(&bytes) {
                 Some(members) => members,
-                None => return write_error(stream, "stored set value is corrupt"),
+                None => return Err(CommandError::Failed("stored set value is corrupt".to_owned())),
             },
             Ok(None) => Vec::new(),
-            Err(message) => return write_storage_error(stream, &message),
+            Err(message) => return Err(CommandError::Failed(message.to_owned())),
         };
         if !destination_members.iter().any(|existing| existing.as_slice() == member) {
             destination_members.push(member.to_vec());
         }
         let Some(bytes) = encode_set(&destination_members)
         else {
-            return write_error(stream, "set exceeds the storage limit");
+            return Err(CommandError::Failed("set exceeds the storage limit".to_owned()));
         };
         if let Err(message) = store_value(executor, &KeyKind::Set.namespace(base), destination, bytes) {
-            return write_storage_error(stream, &message);
+            return Err(CommandError::Failed(message.to_owned()));
         }
-        return write_integer(stream, 1);
+        return Ok(Reply::integer(1));
     }
     if command.eq_ignore_ascii_case(b"SRANDMEMBER") {
         if request.arguments.len() < 2 || request.arguments.len() > 3 {
-            return write_arity_error(stream, "srandmember");
+            return Err(arity_error("srandmember"));
         }
         let key = request.arguments[1];
-        let members = match load_set(stream, executor, base, key)? {
+        let members = match load_set(executor, base, key)? {
             Loaded::Missing => {
-                return if request.arguments.len() == 3 { write_array_header(stream, 0) } else { write_null(stream, protocol) };
+                return if request.arguments.len() == 3 { Ok(Reply::array(vec![])) } else { Ok(Reply::nil()) };
             }
             Loaded::Found(members) => members,
-            Loaded::Rejected => return Ok(()),
         };
         let count = match request.arguments.get(2) {
             None => {
                 if members.is_empty() {
-                    return write_null(stream, protocol);
+                    return Ok(Reply::nil());
                 }
                 let mut state = random_state();
                 let index = (next_random(&mut state) as usize) % members.len();
-                return write_bulk(stream, &members[index]);
+                return Ok(Reply::bulk(members[index].to_vec()));
             }
             Some(raw) => match parse_index(raw) {
                 Some(count) => count,
-                None => return write_error(stream, "value is not an integer or out of range"),
+                None => return Err(CommandError::Failed("value is not an integer or out of range".to_owned())),
             },
         };
         if count >= 0 {
@@ -2515,94 +2335,82 @@ pub fn handle_set(
                 let swap = (next_random(&mut state) as usize) % (index + 1);
                 order.swap(index, swap);
             }
-            write_array_header(stream, take)?;
-            for index in order.into_iter().take(take) {
-                write_bulk(stream, &members[index])?;
-            }
-            return Ok(());
+            let items: Vec<Reply> = order.into_iter().take(take).map(|index| Reply::bulk(members[index].clone())).collect();
+            return Ok(Reply::array(items));
         }
         if members.is_empty() {
-            return write_array_header(stream, 0);
+            return Ok(Reply::array(vec![]));
         }
-        write_array_header(stream, count.unsigned_abs() as usize)?;
+        let mut items = Vec::with_capacity(count.unsigned_abs() as usize);
         let mut state = random_state();
         for _ in 0..count.unsigned_abs() {
             let index = (next_random(&mut state) as usize) % members.len();
-            write_bulk(stream, &members[index])?;
+            items.push(Reply::bulk(members[index].clone()));
         }
-        return Ok(());
+        return Ok(Reply::array(items));
     }
     if command.eq_ignore_ascii_case(b"SSCAN") {
         if request.arguments.len() < 3 {
-            return write_arity_error(stream, "sscan");
+            return Err(arity_error("sscan"));
         }
-        let Some(cursor) = parse_scan_cursor(stream, request.arguments[2])?
-        else {
-            return Ok(());
-        };
-        let Some((pattern, count)) = parse_scan_tail(stream, &request.arguments, 3)?
-        else {
-            return Ok(());
-        };
+        let cursor = parse_scan_cursor(request.arguments[2])?;
+        let (pattern, count) = parse_scan_tail(&request.arguments, 3)?;
         let key = request.arguments[1];
-        let members = match load_set(stream, executor, base, key)? {
+        let members = match load_set(executor, base, key)? {
             Loaded::Missing => Vec::new(),
             Loaded::Found(members) => members,
-            Loaded::Rejected => return Ok(()),
         };
-        return write_scan_page(stream, &members, cursor, count, pattern.as_deref());
+        return Ok(scan_page_reply(&members, cursor, count, pattern.as_deref()));
     }
     if command.eq_ignore_ascii_case(b"SPOP") {
         if request.arguments.len() < 2 || request.arguments.len() > 3 {
-            return write_arity_error(stream, "spop");
+            return Err(arity_error("spop"));
         }
         let count = match request.arguments.get(2) {
             None => None,
             Some(raw) => match parse_index(raw) {
                 Some(count) if count >= 0 => Some(count as usize),
-                Some(_) => return write_error(stream, "value is out of range, must be positive"),
-                None => return write_error(stream, "value is not an integer or out of range"),
+                Some(_) => return Err(CommandError::Failed("value is out of range, must be positive".to_owned())),
+                None => return Err(CommandError::Failed("value is not an integer or out of range".to_owned())),
             },
         };
         let Some(count) = count
         else {
-            let mut members = match load_set(stream, executor, base, request.arguments[1])? {
-                Loaded::Missing => return write_null(stream, protocol),
+            let mut members = match load_set(executor, base, request.arguments[1])? {
+                Loaded::Missing => return Ok(Reply::nil()),
                 Loaded::Found(members) => members,
-                Loaded::Rejected => return Ok(()),
             };
             if members.is_empty() {
-                return write_null(stream, protocol);
+                return Ok(Reply::nil());
             }
             let mut state = random_state();
             let index = (next_random(&mut state) as usize) % members.len();
             let member = members.remove(index);
             if members.is_empty() {
                 if let Err(message) = remove_value(executor, &KeyKind::Set.namespace(base), request.arguments[1]) {
-                    return write_storage_error(stream, &message);
+                    return Err(CommandError::Failed(message.to_owned()));
                 }
             }
             else {
                 let Some(bytes) = encode_set(&members)
                 else {
-                    return write_error(stream, "set exceeds the storage limit");
+                    return Err(CommandError::Failed("set exceeds the storage limit".to_owned()));
                 };
                 if let Err(message) = store_value(executor, &KeyKind::Set.namespace(base), request.arguments[1], bytes) {
-                    return write_storage_error(stream, &message);
+                    return Err(CommandError::Failed(message.to_owned()));
                 }
             }
-            return write_bulk(stream, &member);
+            return Ok(Reply::bulk(member.to_vec()));
         };
         if count == 0 {
-            return write_set_header(stream, 0, protocol);
+            return Ok(Reply::set(vec![]));
         }
-        let members = match load_set(stream, executor, base, request.arguments[1])? {
-            Loaded::Missing => return write_set_header(stream, 0, protocol),
+        let members = match load_set(executor, base, request.arguments[1])? {
+            Loaded::Missing => return Ok(Reply::set(vec![])),
             Loaded::Found(members) => members,
-            Loaded::Rejected => return Ok(()),
         };
         if members.is_empty() {
-            return write_set_header(stream, 0, protocol);
+            return Ok(Reply::set(vec![]));
         }
         let take = count.min(members.len());
         let mut order: Vec<usize> = (0..members.len()).collect();
@@ -2612,15 +2420,13 @@ pub fn handle_set(
             let swap = index + (next_random(&mut state) as usize) % (members.len() - index);
             order.swap(index, swap);
         }
-        write_set_header(stream, take, protocol)?;
-        for index in order.iter().take(take) {
-            write_bulk(stream, &members[*index])?;
-        }
+        let popped: Vec<Reply> = order.iter().take(take).map(|index| Reply::bulk(members[*index].clone())).collect();
+        let reply = Reply::set(popped);
         if take == members.len() {
             if let Err(message) = remove_value(executor, &KeyKind::Set.namespace(base), request.arguments[1]) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
-            return Ok(());
+            return Ok(reply);
         }
         let mut kept = vec![true; members.len()];
         for index in order.iter().take(take) {
@@ -2630,71 +2436,65 @@ pub fn handle_set(
             members.iter().enumerate().filter(|(index, _)| kept[*index]).map(|(_, member)| member.clone()).collect::<Vec<Vec<u8>>>();
         let Some(bytes) = encode_set(&remaining)
         else {
-            return write_error(stream, "set exceeds the storage limit");
+            return Err(CommandError::Failed("set exceeds the storage limit".to_owned()));
         };
         if let Err(message) = store_value(executor, &KeyKind::Set.namespace(base), request.arguments[1], bytes) {
-            return write_storage_error(stream, &message);
+            return Err(CommandError::Failed(message.to_owned()));
         }
-        return Ok(());
+        return Ok(reply);
     }
     if command.eq_ignore_ascii_case(b"SMISMEMBER") {
         if request.arguments.len() < 3 {
-            return write_arity_error(stream, "smismember");
+            return Err(arity_error("smismember"));
         }
-        let members = match load_set(stream, executor, base, request.arguments[1])? {
+        let members = match load_set(executor, base, request.arguments[1])? {
             Loaded::Missing => Vec::new(),
             Loaded::Found(members) => members,
-            Loaded::Rejected => return Ok(()),
         };
-        write_array_header(stream, request.arguments.len() - 2)?;
-        for member in &request.arguments[2..] {
-            let present = members.iter().any(|existing| existing.as_slice() == *member);
-            write_integer(stream, i64::from(present))?;
-        }
-        return Ok(());
+        let items: Vec<Reply> = request.arguments[2..]
+            .iter()
+            .map(|member| Reply::integer(i64::from(members.iter().any(|existing| existing.as_slice() == *member))))
+            .collect();
+        return Ok(Reply::array(items));
     }
     if command.eq_ignore_ascii_case(b"SINTERCARD") {
         if request.arguments.len() < 3 {
-            return write_arity_error(stream, "sintercard");
+            return Err(arity_error("sintercard"));
         }
         let numkeys = match parse_index(request.arguments[1]) {
             Some(numkeys) if numkeys > 0 => numkeys as usize,
-            _ => return write_error(stream, "numkeys should be greater than 0"),
+            _ => return Err(CommandError::Failed("numkeys should be greater than 0".to_owned())),
         };
         if request.arguments.len() < 2 + numkeys {
-            return write_error(stream, "Number of keys can't be greater than number of args");
+            return Err(CommandError::Failed("Number of keys can't be greater than number of args".to_owned()));
         }
         let mut limit = 0usize;
         if request.arguments.len() > 2 + numkeys {
             if !request.arguments[2 + numkeys].eq_ignore_ascii_case(b"LIMIT") || request.arguments.len() != 4 + numkeys {
-                return write_error(stream, "syntax error");
+                return Err(CommandError::Failed("syntax error".to_owned()));
             }
             match parse_index(request.arguments[3 + numkeys]) {
                 Some(value) if value >= 0 => limit = value as usize,
-                _ => return write_error(stream, "LIMIT can't be negative"),
+                _ => return Err(CommandError::Failed("LIMIT can't be negative".to_owned())),
             }
         }
         let keys = request.arguments[2..2 + numkeys].to_vec();
-        let Some(sets) = load_sets(stream, executor, base, &keys)?
-        else {
-            return Ok(());
-        };
+        let sets = load_sets(executor, base, &keys)?;
         let found = apply_set_op(SetOp::Inter, &sets).len();
         let result = if limit == 0 { found } else { found.min(limit) };
-        return write_integer(stream, result as i64);
+        return Ok(Reply::integer(result as i64));
     }
     // SISMEMBER
     if request.arguments.len() != 3 {
-        return write_arity_error(stream, "sismember");
+        return Err(arity_error("sismember"));
     }
     let key = request.arguments[1];
-    match load_set(stream, executor, base, key)? {
-        Loaded::Missing => write_integer(stream, 0),
+    match load_set(executor, base, key)? {
+        Loaded::Missing => Ok(Reply::integer(0)),
         Loaded::Found(members) => {
             let present = members.iter().any(|member| member.as_slice() == request.arguments[2]);
-            write_integer(stream, i64::from(present))
+            Ok(Reply::integer(i64::from(present)))
         }
-        Loaded::Rejected => Ok(()),
     }
 }
 
@@ -2853,35 +2653,18 @@ fn apply_limit<T: Clone>(items: &[T], offset: i64, count: i64) -> Vec<T> {
     remaining[..(count as usize).min(remaining.len())].to_vec()
 }
 
-/// 输出一段 zset 结果，`WITHSCORES` 时成员与分数交替排列。
+/// 一段 zset 结果，`WITHSCORES` 时成员与分数交替排列。
 ///
 /// RESP2 把分数作为相邻的 bulk 平铺，RESP3 改用 `[member, score]` 子数组，
 /// 与真机的 `addReplyArrayLen` / `addReplyDouble` 组合一致。
-fn write_zset_entries(stream: &mut dyn io::Write, entries: &[(Vec<u8>, f64)], with_scores: bool, protocol: u8) -> io::Result<()> {
-    let nested = with_scores && protocol == 3;
-    let header = if with_scores && !nested { entries.len() * 2 } else { entries.len() };
-    write_array_header(stream, header)?;
-    for (member, score) in entries {
-        if nested {
-            stream.write_all(b"*2\r\n")?;
-        }
-        write_bulk(stream, member)?;
-        if with_scores {
-            write_score(stream, *score, protocol)?;
-        }
-    }
-    Ok(())
+fn zset_entries_reply(entries: &[(Vec<u8>, f64)], with_scores: bool, protocol: u8) -> Reply {
+    let borrowed: Vec<(&[u8], f64)> = entries.iter().map(|(member, score)| (member.as_slice(), *score)).collect();
+    zset_view_reply(&borrowed, with_scores, protocol)
 }
 
-/// 输出 `[member, score]` 子数组序列，`ZPOPMIN` / `ZMPOP` 等使用。
-fn write_zset_pairs(stream: &mut dyn io::Write, entries: &[(Vec<u8>, f64)], protocol: u8) -> io::Result<()> {
-    write_array_header(stream, entries.len())?;
-    for (member, score) in entries {
-        stream.write_all(b"*2\r\n")?;
-        write_bulk(stream, member)?;
-        write_score(stream, *score, protocol)?;
-    }
-    Ok(())
+/// `[member, score]` 子数组序列，`ZPOPMIN` / `ZMPOP` 等使用。
+fn zset_pairs_reply(entries: &[(Vec<u8>, f64)], protocol: u8) -> Reply {
+    Reply::Array(entries.iter().map(|(member, score)| Reply::array(vec![Reply::bulk(member.clone()), score_reply(*score)])).collect())
 }
 
 /// `ZRANGE` / `ZRANGESTORE` 的范围模式。
@@ -2907,12 +2690,11 @@ struct RangeRequest {
 /// `bounds` 是两个端点在参数里的下标，`options_start` 是选项起点。互斥与配套
 /// 规则按真机：`LIMIT` 只服务范围模式，`BYLEX` 拒绝 `WITHSCORES`。
 fn parse_range_request(
-    stream: &mut dyn io::Write,
     arguments: &[&[u8]],
     bounds: (usize, usize),
     options_start: usize,
     allow_scores: bool,
-) -> io::Result<Option<RangeRequest>> {
+) -> Result<RangeRequest, CommandError> {
     let mut request = RangeRequest {
         mode: RangeMode::Rank,
         reverse: false,
@@ -2938,13 +2720,11 @@ fn parse_range_request(
         }
         else if option.eq_ignore_ascii_case(b"LIMIT") {
             if index + 2 >= arguments.len() {
-                write_error(stream, "syntax error")?;
-                return Ok(None);
+                return Err(CommandError::Failed("syntax error".to_owned()));
             }
             let (Some(offset), Some(count)) = (parse_index(arguments[index + 1]), parse_index(arguments[index + 2]))
             else {
-                write_error(stream, "value is not an integer or out of range")?;
-                return Ok(None);
+                return Err(CommandError::Failed("value is not an integer or out of range".to_owned()));
             };
             request.limit = Some((offset, count));
             index += 3;
@@ -2954,19 +2734,16 @@ fn parse_range_request(
             index += 1;
         }
         else {
-            write_error(stream, "syntax error")?;
-            return Ok(None);
+            return Err(CommandError::Failed("syntax error".to_owned()));
         }
     }
     if request.mode == RangeMode::Lex && request.with_scores {
-        write_error(stream, "syntax error, WITHSCORES not supported in combination with BYLEX")?;
-        return Ok(None);
+        return Err(CommandError::Failed("syntax error, WITHSCORES not supported in combination with BYLEX".to_owned()));
     }
     if request.limit.is_some() && request.mode == RangeMode::Rank {
-        write_error(stream, "syntax error, LIMIT is only supported in combination with either BYSCORE or BYLEX")?;
-        return Ok(None);
+        return Err(CommandError::Failed("syntax error, LIMIT is only supported in combination with either BYSCORE or BYLEX".to_owned()));
     }
-    Ok(Some(request))
+    Ok(request)
 }
 
 /// `ZRANGE key 0 -1 [WITHSCORES]` 的整段读形态。
@@ -2988,51 +2765,47 @@ fn is_full_zset_range(arguments: &[&[u8]]) -> bool {
 /// 通用路径会先 `decode_zset` 逐成员分配，再对选中区间做一次 `to_vec`
 /// 二次克隆；整段读只需要一份借用视图即可，分配量与成员数无关。
 fn read_full_zset(
-    stream: &mut dyn io::Write,
     executor: &dyn KeyValueExecutor,
     base: &Namespace,
     key: &[u8],
     with_scores: bool,
     protocol: u8,
-) -> io::Result<()> {
+) -> Result<Reply, CommandError> {
     match find_kind(executor, base, key) {
-        Ok(None) => return write_array_header(stream, 0),
+        Ok(None) => return Ok(Reply::array(vec![])),
         Ok(Some(KeyKind::ZSet)) => {}
-        Ok(Some(_)) => return write_wrong_type(stream),
-        Err(message) => return write_storage_error(stream, &message),
+        Ok(Some(_)) => return Err(CommandError::WrongType),
+        Err(message) => return Err(CommandError::Failed(message.to_owned())),
     }
     match load_value(executor, &KeyKind::ZSet.namespace(base), key) {
         Ok(Some(bytes)) => match zset_blob_view(&bytes) {
             Some(mut entries) => {
                 sort_zset_view(&mut entries);
-                write_zset_view(stream, &entries, with_scores, protocol)
+                Ok(zset_view_reply(&entries, with_scores, protocol))
             }
-            None => write_error(stream, "stored zset value is corrupt"),
+            None => Err(CommandError::Failed("stored zset value is corrupt".to_owned())),
         },
-        Ok(None) => write_array_header(stream, 0),
-        Err(message) => write_storage_error(stream, &message),
+        Ok(None) => Ok(Reply::array(vec![])),
+        Err(message) => Err(CommandError::Failed(message.to_owned())),
     }
 }
 
-/// 按键取出范围结果；错误回复已经写入时回 `None`。
+/// 按键取出范围结果。
 fn select_range(
-    stream: &mut dyn io::Write,
     executor: &dyn KeyValueExecutor,
     base: &Namespace,
     key: &[u8],
     request: &RangeRequest,
-) -> io::Result<Option<Vec<(Vec<u8>, f64)>>> {
-    let mut entries = match load_zset(stream, executor, base, key)? {
+) -> Result<Vec<(Vec<u8>, f64)>, CommandError> {
+    let mut entries = match load_zset(executor, base, key)? {
         Loaded::Missing => Vec::new(),
         Loaded::Found(entries) => entries,
-        Loaded::Rejected => return Ok(None),
     };
     let selected = match request.mode {
         RangeMode::Rank => {
             let (Some(start), Some(stop)) = (parse_index(&request.first), parse_index(&request.second))
             else {
-                write_error(stream, "value is not an integer or out of range")?;
-                return Ok(None);
+                return Err(CommandError::Failed("value is not an integer or out of range".to_owned()));
             };
             sort_zset(&mut entries);
             if request.reverse {
@@ -3047,8 +2820,7 @@ fn select_range(
             let (low, high) = if request.reverse { (&request.second, &request.first) } else { (&request.first, &request.second) };
             let (Some(min), Some(max)) = (parse_score_bound(low), parse_score_bound(high))
             else {
-                write_error(stream, "min or max is not a float")?;
-                return Ok(None);
+                return Err(CommandError::Failed("min or max is not a float".to_owned()));
             };
             sort_zset(&mut entries);
             let mut selected: Vec<(Vec<u8>, f64)> = entries.into_iter().filter(|(_, score)| in_score_range(*score, min, max)).collect();
@@ -3061,8 +2833,7 @@ fn select_range(
             let (low, high) = if request.reverse { (&request.second, &request.first) } else { (&request.first, &request.second) };
             let (Some(min), Some(max)) = (parse_lex_bound(low), parse_lex_bound(high))
             else {
-                write_error(stream, "min or max not valid string range item")?;
-                return Ok(None);
+                return Err(CommandError::Failed("min or max not valid string range item".to_owned()));
             };
             // 真机按 (score, member) 顺序定位首尾再整段输出，分数不一致时
             // 保留这条遍历语义。
@@ -3078,8 +2849,8 @@ fn select_range(
         }
     };
     match request.limit {
-        Some((offset, count)) => Ok(Some(apply_limit(&selected, offset, count))),
-        None => Ok(Some(selected)),
+        Some((offset, count)) => Ok(apply_limit(&selected, offset, count)),
+        None => Ok(selected),
     }
 }
 
@@ -3098,7 +2869,7 @@ struct ZAddOptions {
 ///
 /// 互斥规则与真机一致：`NX` 与 `XX` 不能同时出现，`GT` / `LT` 不能与 `NX`
 /// 同时出现，`GT` 与 `LT` 也互斥。选项之后必须剩下一对或以上的分数与成员。
-fn parse_zadd_options(stream: &mut dyn io::Write, arguments: &[&[u8]]) -> io::Result<Option<(ZAddOptions, usize)>> {
+fn parse_zadd_options(arguments: &[&[u8]]) -> Result<(ZAddOptions, usize), CommandError> {
     let mut options = ZAddOptions::default();
     let mut index = 2;
     while index < arguments.len() {
@@ -3127,27 +2898,23 @@ fn parse_zadd_options(stream: &mut dyn io::Write, arguments: &[&[u8]]) -> io::Re
         index += 1;
     }
     if options.nx && options.xx {
-        write_error(stream, "XX and NX options at the same time are not compatible")?;
-        return Ok(None);
+        return Err(CommandError::Failed("XX and NX options at the same time are not compatible".to_owned()));
     }
     if (options.gt || options.lt) && (options.nx || (options.gt && options.lt)) {
-        write_error(stream, "GT, LT, and/or NX options at the same time are not compatible")?;
-        return Ok(None);
+        return Err(CommandError::Failed("GT, LT, and/or NX options at the same time are not compatible".to_owned()));
     }
     let remaining = arguments.len() - index;
     if remaining == 0 || remaining % 2 != 0 {
-        write_error(stream, "syntax error")?;
-        return Ok(None);
+        return Err(CommandError::Failed("syntax error".to_owned()));
     }
     if options.incr && remaining != 2 {
-        write_error(stream, "INCR option supports a single increment-element pair")?;
-        return Ok(None);
+        return Err(CommandError::Failed("INCR option supports a single increment-element pair".to_owned()));
     }
-    Ok(Some((options, index)))
+    Ok((options, index))
 }
 
 /// 解析 `ZRANGEBYSCORE` 的 `WITHSCORES` 与 `LIMIT offset count` 选项。
-fn parse_score_range_options(stream: &mut dyn io::Write, arguments: &[&[u8]], start: usize) -> io::Result<Option<(bool, Option<(i64, i64)>)>> {
+fn parse_score_range_options(arguments: &[&[u8]], start: usize) -> Result<(bool, Option<(i64, i64)>), CommandError> {
     let mut with_scores = false;
     let mut limit: Option<(i64, i64)> = None;
     let mut index = start;
@@ -3158,105 +2925,77 @@ fn parse_score_range_options(stream: &mut dyn io::Write, arguments: &[&[u8]], st
         }
         else if arguments[index].eq_ignore_ascii_case(b"LIMIT") {
             if index + 2 >= arguments.len() {
-                write_error(stream, "syntax error")?;
-                return Ok(None);
+                return Err(CommandError::Failed("syntax error".to_owned()));
             }
             let (Some(offset), Some(count)) = (parse_index(arguments[index + 1]), parse_index(arguments[index + 2]))
             else {
-                write_error(stream, "value is not an integer or out of range")?;
-                return Ok(None);
+                return Err(CommandError::Failed("value is not an integer or out of range".to_owned()));
             };
             limit = Some((offset, count));
             index += 3;
         }
         else {
-            write_error(stream, "syntax error")?;
-            return Ok(None);
+            return Err(CommandError::Failed("syntax error".to_owned()));
         }
     }
-    Ok(Some((with_scores, limit)))
+    Ok((with_scores, limit))
 }
 
 /// 解析 `ZRANGEBYLEX` 的 `LIMIT offset count` 选项，字典族不接受 `WITHSCORES`。
-fn parse_lex_options(stream: &mut dyn io::Write, arguments: &[&[u8]], start: usize) -> io::Result<Option<Option<(i64, i64)>>> {
+fn parse_lex_options(arguments: &[&[u8]], start: usize) -> Result<Option<(i64, i64)>, CommandError> {
     let mut limit: Option<(i64, i64)> = None;
     let mut index = start;
     while index < arguments.len() {
         if arguments[index].eq_ignore_ascii_case(b"LIMIT") && index + 2 < arguments.len() {
             let (Some(offset), Some(count)) = (parse_index(arguments[index + 1]), parse_index(arguments[index + 2]))
             else {
-                write_error(stream, "value is not an integer or out of range")?;
-                return Ok(None);
+                return Err(CommandError::Failed("value is not an integer or out of range".to_owned()));
             };
             limit = Some((offset, count));
             index += 3;
         }
         else if arguments[index].eq_ignore_ascii_case(b"WITHSCORES") {
             // 真机在字典族上拒绝分数输出，并给出专门的提示。
-            write_error(stream, "syntax error, WITHSCORES not supported in combination with BYLEX")?;
-            return Ok(None);
+            return Err(CommandError::Failed("syntax error, WITHSCORES not supported in combination with BYLEX".to_owned()));
         }
         else {
-            write_error(stream, "syntax error")?;
-            return Ok(None);
+            return Err(CommandError::Failed("syntax error".to_owned()));
         }
     }
-    Ok(Some(limit))
+    Ok(limit)
 }
 
-/// 写出一段 hash 扫描结果：`[next-cursor, [field, value, ...]]`。
-fn write_hscan_page(
-    stream: &mut dyn io::Write,
-    fields: &[(Vec<u8>, Vec<u8>)],
-    cursor: usize,
-    count: usize,
-    pattern: Option<&[u8]>,
-) -> io::Result<()> {
+/// 一段 hash 扫描结果：`[next-cursor, [field, value, ...]]`。
+fn hscan_page_reply(fields: &[(Vec<u8>, Vec<u8>)], cursor: usize, count: usize, pattern: Option<&[u8]>) -> Reply {
     if cursor >= fields.len() {
-        stream.write_all(b"*2\r\n")?;
-        write_bulk(stream, b"0")?;
-        return write_array_header(stream, 0);
+        return Reply::array(vec![Reply::bulk(b"0".to_vec()), Reply::array(vec![])]);
     }
     let end = cursor.saturating_add(count).min(fields.len());
     let next = if end >= fields.len() { "0".to_string() } else { end.to_string() };
-    let matched: Vec<&(Vec<u8>, Vec<u8>)> =
-        fields[cursor..end].iter().filter(|(field, _)| pattern.map_or(true, |pattern| glob_match(pattern, field))).collect();
-    stream.write_all(b"*2\r\n")?;
-    write_bulk(stream, next.as_bytes())?;
-    write_array_header(stream, matched.len() * 2)?;
-    for (field, value) in matched {
-        write_bulk(stream, field)?;
-        write_bulk(stream, value)?;
-    }
-    Ok(())
+    let matched: Vec<Reply> = fields[cursor..end]
+        .iter()
+        .filter(|(field, _)| pattern.map_or(true, |pattern| glob_match(pattern, field)))
+        .flat_map(|(field, value)| [Reply::bulk(field.clone()), Reply::bulk(value.clone())])
+        .collect();
+    Reply::array(vec![Reply::bulk(next.into_bytes()), Reply::array(matched)])
 }
 
-/// 写出一段 zset 扫描结果：`[next-cursor, [member, score, ...]]`。
-fn write_zscan_page(
-    stream: &mut dyn io::Write,
-    entries: &[(Vec<u8>, f64)],
-    cursor: usize,
-    count: usize,
-    pattern: Option<&[u8]>,
-) -> io::Result<()> {
+/// 一段 zset 扫描结果：`[next-cursor, [member, score, ...]]`。
+fn zscan_page_reply(entries: &[(Vec<u8>, f64)], cursor: usize, count: usize, pattern: Option<&[u8]>) -> Reply {
     if cursor >= entries.len() {
-        stream.write_all(b"*2\r\n")?;
-        write_bulk(stream, b"0")?;
-        return write_array_header(stream, 0);
+        return Reply::array(vec![Reply::bulk(b"0".to_vec()), Reply::array(vec![])]);
     }
     let end = cursor.saturating_add(count).min(entries.len());
     let next = if end >= entries.len() { "0".to_string() } else { end.to_string() };
-    let matched: Vec<&(Vec<u8>, f64)> =
-        entries[cursor..end].iter().filter(|(member, _)| pattern.map_or(true, |pattern| glob_match(pattern, member))).collect();
-    stream.write_all(b"*2\r\n")?;
-    write_bulk(stream, next.as_bytes())?;
-    write_array_header(stream, matched.len() * 2)?;
-    for (member, score) in matched {
-        write_bulk(stream, member)?;
-        // 真机的 `ZSCAN` 在 RESP3 下仍把分数作为 bulk 文本。
-        write_bulk(stream, score_text(*score).as_bytes())?;
-    }
-    Ok(())
+    let matched: Vec<Reply> = entries[cursor..end]
+        .iter()
+        .filter(|(member, _)| pattern.map_or(true, |pattern| glob_match(pattern, member)))
+        .flat_map(|(member, score)| {
+            // 真机的 `ZSCAN` 在 RESP3 下仍把分数作为 bulk 文本。
+            [Reply::bulk(member.clone()), Reply::bulk(score_text(*score).into_bytes())]
+        })
+        .collect();
+    Reply::array(vec![Reply::bulk(next.into_bytes()), Reply::array(matched)])
 }
 
 /// zset 集合运算的方式。
@@ -3301,15 +3040,13 @@ fn parse_positive_usize(raw: &[u8]) -> Option<usize> {
 }
 
 /// 解析 `ZUNIONSTORE` / `ZINTERSTORE` 的 `numkeys`、键列表与可选选项。
-fn parse_zset_store_plan(stream: &mut dyn io::Write, name: &str, arguments: &[&[u8]]) -> io::Result<Option<ZSetStorePlan>> {
+fn parse_zset_store_plan(name: &str, arguments: &[&[u8]]) -> Result<ZSetStorePlan, CommandError> {
     let Some(numkeys) = parse_positive_usize(arguments[2])
     else {
-        write_error(stream, &format!("at least 1 input key is needed for '{name}' command"))?;
-        return Ok(None);
+        return Err(CommandError::Failed(format!("at least 1 input key is needed for '{name}' command").to_owned()));
     };
     if arguments.len() < 3 + numkeys {
-        write_error(stream, "syntax error")?;
-        return Ok(None);
+        return Err(CommandError::Failed("syntax error".to_owned()));
     }
     let keys = arguments[3..3 + numkeys].iter().map(|key| key.to_vec()).collect();
     let mut weights = vec![1.0_f64; numkeys];
@@ -3318,14 +3055,12 @@ fn parse_zset_store_plan(stream: &mut dyn io::Write, name: &str, arguments: &[&[
     while index < arguments.len() {
         if arguments[index].eq_ignore_ascii_case(b"WEIGHTS") {
             if index + numkeys >= arguments.len() {
-                write_error(stream, "syntax error")?;
-                return Ok(None);
+                return Err(CommandError::Failed("syntax error".to_owned()));
             }
             for slot in 0..numkeys {
                 let Some(weight) = parse_score(arguments[index + 1 + slot])
                 else {
-                    write_error(stream, "weight value is not a float")?;
-                    return Ok(None);
+                    return Err(CommandError::Failed("weight value is not a float".to_owned()));
                 };
                 weights[slot] = weight;
             }
@@ -3334,8 +3069,7 @@ fn parse_zset_store_plan(stream: &mut dyn io::Write, name: &str, arguments: &[&[
         else if arguments[index].eq_ignore_ascii_case(b"AGGREGATE") {
             let Some(raw) = arguments.get(index + 1)
             else {
-                write_error(stream, "syntax error")?;
-                return Ok(None);
+                return Err(CommandError::Failed("syntax error".to_owned()));
             };
             if raw.eq_ignore_ascii_case(b"SUM") {
                 aggregate = ZSetAggregate::Sum;
@@ -3347,35 +3081,27 @@ fn parse_zset_store_plan(stream: &mut dyn io::Write, name: &str, arguments: &[&[
                 aggregate = ZSetAggregate::Max;
             }
             else {
-                write_error(stream, "syntax error")?;
-                return Ok(None);
+                return Err(CommandError::Failed("syntax error".to_owned()));
             }
             index += 2;
         }
         else {
-            write_error(stream, "syntax error")?;
-            return Ok(None);
+            return Err(CommandError::Failed("syntax error".to_owned()));
         }
     }
-    Ok(Some(ZSetStorePlan { keys, weights, aggregate }))
+    Ok(ZSetStorePlan { keys, weights, aggregate })
 }
 
 /// 读取多个 zset 并校验类型；任一键类型不合法时整条命令按真机回 `WRONGTYPE`。
-fn load_zsets(
-    stream: &mut dyn io::Write,
-    executor: &dyn KeyValueExecutor,
-    base: &Namespace,
-    keys: &[Vec<u8>],
-) -> io::Result<Option<Vec<Vec<(Vec<u8>, f64)>>>> {
+fn load_zsets(executor: &dyn KeyValueExecutor, base: &Namespace, keys: &[Vec<u8>]) -> Result<Vec<Vec<(Vec<u8>, f64)>>, CommandError> {
     let mut sets = Vec::with_capacity(keys.len());
     for key in keys {
-        match load_zset(stream, executor, base, key)? {
+        match load_zset(executor, base, key)? {
             Loaded::Missing => sets.push(Vec::new()),
             Loaded::Found(entries) => sets.push(entries),
-            Loaded::Rejected => return Ok(None),
         }
     }
-    Ok(Some(sets))
+    Ok(sets)
 }
 
 /// 按真机语义计算并集、交集或差集，结果按分数升序、同分按成员字节排序。
@@ -3440,44 +3166,40 @@ fn combine_zsets(sets: &[Vec<(Vec<u8>, f64)>], weights: &[f64], aggregate: ZSetA
 
 /// 覆盖写入 `*STORE` 目标：先清掉全部类型表示，空结果直接删除目标。
 fn store_zset_result(
-    stream: &mut dyn io::Write,
     executor: &dyn KeyValueExecutor,
     base: &Namespace,
     destination: &[u8],
     entries: &[(Vec<u8>, f64)],
-) -> io::Result<()> {
+) -> Result<Reply, CommandError> {
     if let Err(message) = remove_all_kinds(executor, base, destination) {
-        return write_storage_error(stream, &message);
+        return Err(CommandError::Failed(message.to_owned()));
     }
     if entries.is_empty() {
-        return write_integer(stream, 0);
+        return Ok(Reply::integer(0));
     }
     let Some(bytes) = encode_zset(entries)
     else {
-        return write_error(stream, "zset exceeds the storage limit");
+        return Err(CommandError::Failed("zset exceeds the storage limit".to_owned()));
     };
     if let Err(message) = store_fresh_value(executor, &KeyKind::ZSet.namespace(base), destination, bytes) {
-        return write_storage_error(stream, &message);
+        return Err(CommandError::Failed(message.to_owned()));
     }
-    write_integer(stream, entries.len() as i64)
+    Ok(Reply::integer(entries.len() as i64))
 }
 
 /// 解析 `ZUNION` / `ZINTER` 的键、权重、聚合方式与 `WITHSCORES`。
 fn parse_zset_combine_plan(
-    stream: &mut dyn io::Write,
     name: &str,
     arguments: &[&[u8]],
     numkeys_index: usize,
-) -> io::Result<Option<(ZSetStorePlan, bool)>> {
+) -> Result<(ZSetStorePlan, bool), CommandError> {
     let Some(numkeys) = parse_positive_usize(arguments[numkeys_index])
     else {
-        write_error(stream, &format!("at least 1 input key is needed for '{name}' command"))?;
-        return Ok(None);
+        return Err(CommandError::Failed(format!("at least 1 input key is needed for '{name}' command").to_owned()));
     };
     let keys_start = numkeys_index + 1;
     if arguments.len() < keys_start + numkeys {
-        write_error(stream, "syntax error")?;
-        return Ok(None);
+        return Err(CommandError::Failed("syntax error".to_owned()));
     }
     let keys = arguments[keys_start..keys_start + numkeys].iter().map(|key| key.to_vec()).collect();
     let mut weights = vec![1.0_f64; numkeys];
@@ -3487,14 +3209,12 @@ fn parse_zset_combine_plan(
     while index < arguments.len() {
         if arguments[index].eq_ignore_ascii_case(b"WEIGHTS") {
             if index + numkeys >= arguments.len() {
-                write_error(stream, "syntax error")?;
-                return Ok(None);
+                return Err(CommandError::Failed("syntax error".to_owned()));
             }
             for slot in 0..numkeys {
                 let Some(weight) = parse_score(arguments[index + 1 + slot])
                 else {
-                    write_error(stream, "weight value is not a float")?;
-                    return Ok(None);
+                    return Err(CommandError::Failed("weight value is not a float".to_owned()));
                 };
                 weights[slot] = weight;
             }
@@ -3503,8 +3223,7 @@ fn parse_zset_combine_plan(
         else if arguments[index].eq_ignore_ascii_case(b"AGGREGATE") {
             let Some(raw) = arguments.get(index + 1)
             else {
-                write_error(stream, "syntax error")?;
-                return Ok(None);
+                return Err(CommandError::Failed("syntax error".to_owned()));
             };
             if raw.eq_ignore_ascii_case(b"SUM") {
                 aggregate = ZSetAggregate::Sum;
@@ -3516,8 +3235,7 @@ fn parse_zset_combine_plan(
                 aggregate = ZSetAggregate::Max;
             }
             else {
-                write_error(stream, "syntax error")?;
-                return Ok(None);
+                return Err(CommandError::Failed("syntax error".to_owned()));
             }
             index += 2;
         }
@@ -3526,11 +3244,10 @@ fn parse_zset_combine_plan(
             index += 1;
         }
         else {
-            write_error(stream, "syntax error")?;
-            return Ok(None);
+            return Err(CommandError::Failed("syntax error".to_owned()));
         }
     }
-    Ok(Some((ZSetStorePlan { keys, weights, aggregate }, with_scores)))
+    Ok((ZSetStorePlan { keys, weights, aggregate }, with_scores))
 }
 
 /// 校验阻塞命令的 `timeout` 参数，返回真机的错误文案。
@@ -3565,20 +3282,19 @@ fn sample_distinct(entries: &[(Vec<u8>, f64)], count: usize) -> Vec<(Vec<u8>, f6
 
 /// `ZMPOP` / `BZMPOP` 的非阻塞实现，`numkeys` 位于 `numkeys_index`。
 fn handle_zset_mpop(
-    stream: &mut dyn io::Write,
     executor: &dyn KeyValueExecutor,
     base: &Namespace,
     arguments: &[&[u8]],
     numkeys_index: usize,
     protocol: u8,
-) -> io::Result<()> {
+) -> Result<Reply, CommandError> {
     let Some(numkeys) = parse_positive_usize(arguments[numkeys_index])
     else {
-        return write_error(stream, "numkeys should be greater than 0");
+        return Err(CommandError::Failed("numkeys should be greater than 0".to_owned()));
     };
     let keys_start = numkeys_index + 1;
     if arguments.len() < keys_start + numkeys + 1 {
-        return write_error(stream, "syntax error");
+        return Err(CommandError::Failed("syntax error".to_owned()));
     }
     let keys = &arguments[keys_start..keys_start + numkeys];
     let mut index = keys_start + numkeys;
@@ -3589,32 +3305,31 @@ fn handle_zset_mpop(
         false
     }
     else {
-        return write_error(stream, "syntax error");
+        return Err(CommandError::Failed("syntax error".to_owned()));
     };
     index += 1;
     let mut count = 1_usize;
     if index < arguments.len() {
         if !arguments[index].eq_ignore_ascii_case(b"COUNT") || index + 1 >= arguments.len() {
-            return write_error(stream, "syntax error");
+            return Err(CommandError::Failed("syntax error".to_owned()));
         }
         let Some(value) = parse_index(arguments[index + 1])
         else {
-            return write_error(stream, "value is not an integer or out of range");
+            return Err(CommandError::Failed("value is not an integer or out of range".to_owned()));
         };
         if value <= 0 {
-            return write_error(stream, "count should be greater than 0");
+            return Err(CommandError::Failed("count should be greater than 0".to_owned()));
         }
         count = value as usize;
         index += 2;
     }
     if index != arguments.len() {
-        return write_error(stream, "syntax error");
+        return Err(CommandError::Failed("syntax error".to_owned()));
     }
     for key in keys {
-        let mut entries = match load_zset(stream, executor, base, key)? {
+        let mut entries = match load_zset(executor, base, key)? {
             Loaded::Missing => continue,
             Loaded::Found(entries) => entries,
-            Loaded::Rejected => return Ok(()),
         };
         if entries.is_empty() {
             continue;
@@ -3628,44 +3343,38 @@ fn handle_zset_mpop(
         let remaining = entries[take..].to_vec();
         if remaining.is_empty() {
             if let Err(message) = remove_value(executor, &KeyKind::ZSet.namespace(base), key) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
         else {
             let Some(bytes) = encode_zset(&remaining)
             else {
-                return write_error(stream, "zset exceeds the storage limit");
+                return Err(CommandError::Failed("zset exceeds the storage limit".to_owned()));
             };
             if let Err(message) = store_value(executor, &KeyKind::ZSet.namespace(base), key, bytes) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
-        stream.write_all(b"*2\r\n")?;
-        write_bulk(stream, key)?;
-        write_zset_pairs(stream, &popped, protocol)?;
-        return Ok(());
+        return Ok(Reply::array(vec![Reply::bulk(key.to_vec()), zset_pairs_reply(&popped, protocol)]));
     }
-    write_null_array(stream, protocol)
+    Ok(Reply::nil_array())
 }
 
 /// 解析 `ZDIFF` / `ZDIFFSTORE` 的 `numkeys` 与键列表，`numkeys` 位于 `numkeys_index`。
 fn parse_diff_keys(
-    stream: &mut dyn io::Write,
     arguments: &[&[u8]],
     name: &str,
     numkeys_index: usize,
-) -> io::Result<Option<(Vec<Vec<u8>>, usize)>> {
+) -> Result<(Vec<Vec<u8>>, usize), CommandError> {
     let Some(numkeys) = parse_positive_usize(arguments[numkeys_index])
     else {
-        write_error(stream, &format!("at least 1 input key is needed for '{name}' command"))?;
-        return Ok(None);
+        return Err(CommandError::Failed(format!("at least 1 input key is needed for '{name}' command").to_owned()));
     };
     if arguments.len() < numkeys_index + 1 + numkeys {
-        write_error(stream, "syntax error")?;
-        return Ok(None);
+        return Err(CommandError::Failed("syntax error".to_owned()));
     }
     let keys = arguments[numkeys_index + 1..numkeys_index + 1 + numkeys].iter().map(|key| key.to_vec()).collect();
-    Ok(Some((keys, numkeys_index + 1 + numkeys)))
+    Ok((keys, numkeys_index + 1 + numkeys))
 }
 
 /// `SORT` / `SORT_RO` 解析后的选项。
@@ -3679,7 +3388,7 @@ struct SortOptions {
 }
 
 /// 解析 `SORT` 的 `BY` / `LIMIT` / `GET` / `ASC|DESC` / `ALPHA` / `STORE`。
-fn parse_sort_options(stream: &mut dyn io::Write, arguments: &[&[u8]]) -> io::Result<Option<SortOptions>> {
+fn parse_sort_options(arguments: &[&[u8]]) -> Result<SortOptions, CommandError> {
     let mut options = SortOptions { by: None, limit: None, get: Vec::new(), descending: false, alpha: false, store: None };
     let mut index = 2;
     while index < arguments.len() {
@@ -3687,21 +3396,18 @@ fn parse_sort_options(stream: &mut dyn io::Write, arguments: &[&[u8]]) -> io::Re
         if option.eq_ignore_ascii_case(b"BY") {
             let Some(pattern) = arguments.get(index + 1)
             else {
-                write_error(stream, "syntax error")?;
-                return Ok(None);
+                return Err(CommandError::Failed("syntax error".to_owned()));
             };
             options.by = Some(pattern.to_vec());
             index += 2;
         }
         else if option.eq_ignore_ascii_case(b"LIMIT") {
             if index + 2 >= arguments.len() {
-                write_error(stream, "syntax error")?;
-                return Ok(None);
+                return Err(CommandError::Failed("syntax error".to_owned()));
             }
             let (Some(offset), Some(count)) = (parse_index(arguments[index + 1]), parse_index(arguments[index + 2]))
             else {
-                write_error(stream, "value is not an integer or out of range")?;
-                return Ok(None);
+                return Err(CommandError::Failed("value is not an integer or out of range".to_owned()));
             };
             options.limit = Some((offset.max(0) as usize, (count >= 0).then_some(count as usize)));
             index += 3;
@@ -3709,8 +3415,7 @@ fn parse_sort_options(stream: &mut dyn io::Write, arguments: &[&[u8]]) -> io::Re
         else if option.eq_ignore_ascii_case(b"GET") {
             let Some(pattern) = arguments.get(index + 1)
             else {
-                write_error(stream, "syntax error")?;
-                return Ok(None);
+                return Err(CommandError::Failed("syntax error".to_owned()));
             };
             options.get.push(pattern.to_vec());
             index += 2;
@@ -3730,52 +3435,39 @@ fn parse_sort_options(stream: &mut dyn io::Write, arguments: &[&[u8]]) -> io::Re
         else if option.eq_ignore_ascii_case(b"STORE") {
             let Some(destination) = arguments.get(index + 1)
             else {
-                write_error(stream, "syntax error")?;
-                return Ok(None);
+                return Err(CommandError::Failed("syntax error".to_owned()));
             };
             options.store = Some(destination.to_vec());
             index += 2;
         }
         else {
-            write_error(stream, "syntax error")?;
-            return Ok(None);
+            return Err(CommandError::Failed("syntax error".to_owned()));
         }
     }
-    Ok(Some(options))
+    Ok(options)
 }
 
 /// 读取 `SORT` 的源元素；list 保持顺序，set 与 zset 按真机的遍历顺序（zset 按分数）。
-fn load_sort_elements(
-    stream: &mut dyn io::Write,
-    executor: &dyn KeyValueExecutor,
-    base: &Namespace,
-    key: &[u8],
-) -> io::Result<Option<Vec<Vec<u8>>>> {
+fn load_sort_elements(executor: &dyn KeyValueExecutor, base: &Namespace, key: &[u8]) -> Result<Vec<Vec<u8>>, CommandError> {
     match find_kind(executor, base, key) {
-        Ok(None) => Ok(Some(Vec::new())),
-        Ok(Some(KeyKind::List)) => match load_list(stream, executor, base, key)? {
-            Loaded::Found(elements) => Ok(Some(elements)),
-            _ => Ok(None),
+        Ok(None) => Ok(Vec::new()),
+        Ok(Some(KeyKind::List)) => match load_list(executor, base, key)? {
+            Loaded::Found(elements) => Ok(elements),
+            Loaded::Missing => Ok(Vec::new()),
         },
-        Ok(Some(KeyKind::Set)) => match load_set(stream, executor, base, key)? {
-            Loaded::Found(members) => Ok(Some(members)),
-            _ => Ok(None),
+        Ok(Some(KeyKind::Set)) => match load_set(executor, base, key)? {
+            Loaded::Found(members) => Ok(members),
+            Loaded::Missing => Ok(Vec::new()),
         },
-        Ok(Some(KeyKind::ZSet)) => match load_zset(stream, executor, base, key)? {
+        Ok(Some(KeyKind::ZSet)) => match load_zset(executor, base, key)? {
             Loaded::Found(mut entries) => {
                 sort_zset(&mut entries);
-                Ok(Some(entries.into_iter().map(|(member, _)| member).collect()))
+                Ok(entries.into_iter().map(|(member, _)| member).collect())
             }
-            _ => Ok(None),
+            Loaded::Missing => Ok(Vec::new()),
         },
-        Ok(Some(_)) => {
-            write_wrong_type(stream)?;
-            Ok(None)
-        }
-        Err(message) => {
-            write_storage_error(stream, &message)?;
-            Ok(None)
-        }
+        Ok(Some(_)) => Err(CommandError::WrongType),
+        Err(message) => Err(CommandError::Failed(message.to_owned())),
     }
 }
 
@@ -3813,29 +3505,22 @@ enum SortKey {
 
 /// 执行 `SORT` / `SORT_RO`。
 fn handle_sort(
-    stream: &mut dyn io::Write,
     executor: &dyn KeyValueExecutor,
     base: &Namespace,
     arguments: &[&[u8]],
     readonly: bool,
-) -> io::Result<()> {
+) -> Result<Reply, CommandError> {
     let name = if readonly { "sort_ro" } else { "sort" };
     if arguments.len() < 2 {
-        return write_arity_error(stream, name);
+        return Err(arity_error(name));
     }
-    let Some(options) = parse_sort_options(stream, arguments)?
-    else {
-        return Ok(());
-    };
+    let options = parse_sort_options(arguments)?;
     if readonly && options.store.is_some() {
         // 真机对 `SORT_RO ... STORE` 直接回答通用语法错误。
-        return write_error(stream, "syntax error");
+        return Err(CommandError::Failed("syntax error".to_owned()));
     }
     let key = arguments[1];
-    let Some(elements) = load_sort_elements(stream, executor, base, key)?
-    else {
-        return Ok(());
-    };
+    let elements = load_sort_elements(executor, base, key)?;
     let no_sort = options.by.as_ref().is_some_and(|pattern| !pattern.contains(&b'*'));
     let mut entries: Vec<(Vec<u8>, Option<SortKey>)> = Vec::with_capacity(elements.len());
     for element in elements {
@@ -3854,8 +3539,7 @@ fn handle_sort(
                 Some(raw) => match parse_score(&raw) {
                     Some(value) => Some(SortKey::Number(value)),
                     None => {
-                        write_error(stream, "One or more scores can't be converted into double")?;
-                        return Ok(());
+                        return Err(CommandError::Failed("One or more scores can't be converted into double".to_owned()));
                     }
                 },
                 None => Some(SortKey::Number(0.0)),
@@ -3894,29 +3578,23 @@ fn handle_sort(
     let values: Vec<Option<Vec<u8>>> = selected.iter().flat_map(|element| gather(element)).collect();
     if let Some(destination) = &options.store {
         if let Err(message) = remove_all_kinds(executor, base, destination) {
-            return write_storage_error(stream, &message);
+            return Err(CommandError::Failed(message.to_owned()));
         }
         if values.is_empty() {
-            return write_integer(stream, 0);
+            return Ok(Reply::integer(0));
         }
         let stored: Vec<Vec<u8>> = values.into_iter().map(|value| value.unwrap_or_default()).collect();
         let Some(bytes) = encode_list(&stored)
         else {
-            return write_error(stream, "list exceeds the storage limit");
+            return Err(CommandError::Failed("list exceeds the storage limit".to_owned()));
         };
         if let Err(message) = store_fresh_value(executor, &KeyKind::List.namespace(base), destination, bytes) {
-            return write_storage_error(stream, &message);
+            return Err(CommandError::Failed(message.to_owned()));
         }
-        return write_integer(stream, stored.len() as i64);
+        return Ok(Reply::integer(stored.len() as i64));
     }
-    write_array_header(stream, values.len())?;
-    for value in values {
-        match value {
-            Some(bytes) => write_bulk(stream, &bytes)?,
-            None => stream.write_all(b"$-1\r\n")?,
-        }
-    }
-    Ok(())
+    let items: Vec<Reply> = values.into_iter().map(|value| value.map_or_else(Reply::nil, Reply::bulk)).collect();
+    Ok(Reply::array(items))
 }
 
 /// 位域编码：有符号 `iN` 或无符号 `uN`。
@@ -3979,7 +3657,7 @@ fn parse_bitfield_offset(raw: &[u8], bits: u32) -> Option<u64> {
 }
 
 /// 解析整条 `BITFIELD`：语法与编码校验先于任何写入。
-fn parse_bitfield_ops(stream: &mut dyn io::Write, arguments: &[&[u8]], readonly: bool) -> io::Result<Option<Vec<BitFieldOp>>> {
+fn parse_bitfield_ops(arguments: &[&[u8]], readonly: bool) -> Result<Vec<BitFieldOp>, CommandError> {
     let mut operations = Vec::new();
     let mut overflow = BitOverflow::Wrap;
     let mut index = 2;
@@ -3988,8 +3666,7 @@ fn parse_bitfield_ops(stream: &mut dyn io::Write, arguments: &[&[u8]], readonly:
         if keyword.eq_ignore_ascii_case(b"OVERFLOW") {
             let Some(raw) = arguments.get(index + 1)
             else {
-                write_error(stream, "syntax error")?;
-                return Ok(None);
+                return Err(CommandError::Failed("syntax error".to_owned()));
             };
             if raw.eq_ignore_ascii_case(b"WRAP") {
                 overflow = BitOverflow::Wrap;
@@ -4001,16 +3678,14 @@ fn parse_bitfield_ops(stream: &mut dyn io::Write, arguments: &[&[u8]], readonly:
                 overflow = BitOverflow::Fail;
             }
             else {
-                write_error(stream, "Invalid OVERFLOW type specified")?;
-                return Ok(None);
+                return Err(CommandError::Failed("Invalid OVERFLOW type specified".to_owned()));
             }
             index += 2;
             continue;
         }
         let writing = keyword.eq_ignore_ascii_case(b"SET") || keyword.eq_ignore_ascii_case(b"INCRBY");
         if readonly && writing {
-            write_error(stream, "BITFIELD_RO only supports the GET subcommand")?;
-            return Ok(None);
+            return Err(CommandError::Failed("BITFIELD_RO only supports the GET subcommand".to_owned()));
         }
         let needs = if keyword.eq_ignore_ascii_case(b"GET") {
             3
@@ -4022,22 +3697,18 @@ fn parse_bitfield_ops(stream: &mut dyn io::Write, arguments: &[&[u8]], readonly:
             0
         };
         if needs == 0 {
-            write_error(stream, "syntax error")?;
-            return Ok(None);
+            return Err(CommandError::Failed("syntax error".to_owned()));
         }
         if index + needs > arguments.len() {
-            write_error(stream, "syntax error")?;
-            return Ok(None);
+            return Err(CommandError::Failed("syntax error".to_owned()));
         }
         let Some(encoding) = parse_bit_encoding(arguments[index + 1])
         else {
-            write_error(stream, "Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is.")?;
-            return Ok(None);
+            return Err(CommandError::Failed("Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is.".to_owned()));
         };
         let Some(offset) = parse_bitfield_offset(arguments[index + 2], encoding.bits)
         else {
-            write_error(stream, "bit offset is not an integer or out of range")?;
-            return Ok(None);
+            return Err(CommandError::Failed("bit offset is not an integer or out of range".to_owned()));
         };
         if keyword.eq_ignore_ascii_case(b"GET") {
             operations.push(BitFieldOp::Get { encoding, offset });
@@ -4045,8 +3716,7 @@ fn parse_bitfield_ops(stream: &mut dyn io::Write, arguments: &[&[u8]], readonly:
         else {
             let Some(value) = parse_index(arguments[index + 3])
             else {
-                write_error(stream, "value is not an integer or out of range")?;
-                return Ok(None);
+                return Err(CommandError::Failed("value is not an integer or out of range".to_owned()));
             };
             if keyword.eq_ignore_ascii_case(b"SET") {
                 operations.push(BitFieldOp::Set { encoding, offset, value, overflow });
@@ -4057,7 +3727,7 @@ fn parse_bitfield_ops(stream: &mut dyn io::Write, arguments: &[&[u8]], readonly:
         }
         index += needs;
     }
-    Ok(Some(operations))
+    Ok(operations)
 }
 
 /// 读取一个位域值，缺失的位按 0 参与。
@@ -4145,34 +3815,30 @@ fn normalize_set_bitfield(value: i64, encoding: BitEncoding, overflow: BitOverfl
 
 /// 执行 `BITFIELD` / `BITFIELD_RO`。
 pub fn handle_bitfield(
-    stream: &mut dyn io::Write,
     executor: &dyn KeyValueExecutor,
     base: &Namespace,
     arguments: &[&[u8]],
     readonly: bool,
     protocol: u8,
-) -> io::Result<()> {
+) -> Result<Reply, CommandError> {
     let name = if readonly { "bitfield_ro" } else { "bitfield" };
     if arguments.len() < 2 {
-        return write_arity_error(stream, name);
+        return Err(arity_error(name));
     }
     let key = arguments[1];
-    let Some(operations) = parse_bitfield_ops(stream, arguments, readonly)?
-    else {
-        return Ok(());
-    };
+    let operations = parse_bitfield_ops(arguments, readonly)?;
     let kind = match find_kind(executor, base, key) {
         Ok(kind) => kind,
-        Err(message) => return write_storage_error(stream, &message),
+        Err(message) => return Err(CommandError::Failed(message.to_owned())),
     };
     if let Some(found) = kind {
         if found != KeyKind::String {
-            return write_wrong_type(stream);
+            return Err(CommandError::WrongType);
         }
     }
     let mut body = match load_value(executor, &KeyKind::String.namespace(base), key) {
         Ok(value) => value.unwrap_or_default(),
-        Err(message) => return write_storage_error(stream, &message),
+        Err(message) => return Err(CommandError::Failed(message.to_owned())),
     };
     let mut results: Vec<Option<i128>> = Vec::with_capacity(operations.len());
     let mut changed = false;
@@ -4208,103 +3874,84 @@ pub fn handle_bitfield(
     }
     if changed {
         if let Err(message) = store_value(executor, &KeyKind::String.namespace(base), key, body) {
-            return write_storage_error(stream, &message);
+            return Err(CommandError::Failed(message.to_owned()));
         }
     }
-    write_array_header(stream, results.len())?;
-    for result in results {
-        match result {
-            Some(value) => write_integer(stream, value as i64)?,
-            None => write_null(stream, protocol)?,
-        }
-    }
-    Ok(())
+    let items: Vec<Reply> = results.into_iter().map(|value| value.map_or_else(Reply::nil, |value| Reply::integer(value as i64))).collect();
+    Ok(Reply::array(items))
 }
 
 /// `ZADD` / `ZSCORE` / `ZREM` / `ZCARD` / `ZRANGE` 及排序族、排名、计数与扫描的分派入口。
 pub fn handle_zset(
-    stream: &mut dyn io::Write,
     request: &Request<'_>,
     executor: Option<&dyn KeyValueExecutor>,
     base: &Namespace,
     protocol: u8,
-) -> io::Result<()> {
+) -> Result<Reply, CommandError> {
     let command = request.arguments[0];
     let Some(executor) = executor
     else {
-        return write_error(stream, "unsupported command");
+        return Err(CommandError::Failed("unsupported command".to_owned()));
     };
     if command.eq_ignore_ascii_case(b"SORT") || command.eq_ignore_ascii_case(b"SORT_RO") {
-        return handle_sort(stream, executor, base, &request.arguments, command.eq_ignore_ascii_case(b"SORT_RO"));
+        return handle_sort(executor, base, &request.arguments, command.eq_ignore_ascii_case(b"SORT_RO"));
     }
     if command.eq_ignore_ascii_case(b"ZUNIONSTORE") || command.eq_ignore_ascii_case(b"ZINTERSTORE") {
         let union = command.eq_ignore_ascii_case(b"ZUNIONSTORE");
         if request.arguments.len() < 4 {
-            return write_arity_error(stream, if union { "zunionstore" } else { "zinterstore" });
+            return Err(arity_error(if union { "zunionstore" } else { "zinterstore" }));
         }
         let destination = request.arguments[1];
         let name = if union { "zunionstore" } else { "zinterstore" };
-        let Some(plan) = parse_zset_store_plan(stream, name, &request.arguments)?
-        else {
-            return Ok(());
-        };
-        let Some(sets) = load_zsets(stream, executor, base, &plan.keys)?
-        else {
-            return Ok(());
-        };
+        let plan = parse_zset_store_plan(name, &request.arguments)?;
+        let sets = load_zsets(executor, base, &plan.keys)?;
         let result = combine_zsets(&sets, &plan.weights, plan.aggregate, if union { ZSetOp::Union } else { ZSetOp::Inter });
-        return store_zset_result(stream, executor, base, destination, &result);
+        return store_zset_result(executor, base, destination, &result);
     }
     if command.eq_ignore_ascii_case(b"ZDIFF") || command.eq_ignore_ascii_case(b"ZDIFFSTORE") {
         let store = command.eq_ignore_ascii_case(b"ZDIFFSTORE");
         if store {
             if request.arguments.len() < 4 {
-                return write_arity_error(stream, "zdiffstore");
+                return Err(arity_error("zdiffstore"));
             }
         }
         else if request.arguments.len() < 3 {
-            return write_arity_error(stream, "zdiff");
+            return Err(arity_error("zdiff"));
         }
         let name = if store { "zdiffstore" } else { "zdiff" };
         let numkeys_index = if store { 2 } else { 1 };
-        let Some((keys, next)) = parse_diff_keys(stream, &request.arguments, name, numkeys_index)?
-        else {
-            return Ok(());
-        };
+        let (keys, next) = parse_diff_keys(&request.arguments, name, numkeys_index)?;
         let mut with_scores = false;
         if store {
             if next != request.arguments.len() {
-                return write_error(stream, "syntax error");
+                return Err(CommandError::Failed("syntax error".to_owned()));
             }
         }
         else {
             match request.arguments.len() - next {
                 0 => {}
                 1 if request.arguments[next].eq_ignore_ascii_case(b"WITHSCORES") => with_scores = true,
-                _ => return write_error(stream, "syntax error"),
+                _ => return Err(CommandError::Failed("syntax error".to_owned())),
             }
         }
-        let Some(sets) = load_zsets(stream, executor, base, &keys)?
-        else {
-            return Ok(());
-        };
+        let sets = load_zsets(executor, base, &keys)?;
         let weights = vec![1.0_f64; keys.len()];
         let result = combine_zsets(&sets, &weights, ZSetAggregate::Sum, ZSetOp::Diff);
         if store {
-            return store_zset_result(stream, executor, base, request.arguments[1], &result);
+            return store_zset_result(executor, base, request.arguments[1], &result);
         }
-        return write_zset_entries(stream, &result, with_scores, protocol);
+        return Ok(zset_entries_reply(&result, with_scores, protocol));
     }
     if command.eq_ignore_ascii_case(b"ZINTERCARD") {
         if request.arguments.len() < 3 {
-            return write_arity_error(stream, "zintercard");
+            return Err(arity_error("zintercard"));
         }
         let Some(numkeys) = parse_positive_usize(request.arguments[1])
         else {
-            return write_error(stream, "at least 1 input key is needed for 'zintercard' command");
+            return Err(CommandError::Failed("at least 1 input key is needed for 'zintercard' command".to_owned()));
         };
         if request.arguments.len() < 2 + numkeys {
-            return write_error(stream, "syntax error");
+            return Err(CommandError::Failed("syntax error".to_owned()));
         }
         let keys: Vec<Vec<u8>> = request.arguments[2..2 + numkeys].iter().map(|key| key.to_vec()).collect();
         let mut limit: usize = 0;
@@ -4314,19 +3961,16 @@ pub fn handle_zset(
                 // 真机对非整数与负数统一回复「不能为负」。
                 let Some(value) = parse_index(request.arguments[3 + numkeys])
                 else {
-                    return write_error(stream, "LIMIT can't be negative");
+                    return Err(CommandError::Failed("LIMIT can't be negative".to_owned()));
                 };
                 if value < 0 {
-                    return write_error(stream, "LIMIT can't be negative");
+                    return Err(CommandError::Failed("LIMIT can't be negative".to_owned()));
                 }
                 limit = value as usize;
             }
-            _ => return write_error(stream, "syntax error"),
+            _ => return Err(CommandError::Failed("syntax error".to_owned())),
         }
-        let Some(sets) = load_zsets(stream, executor, base, &keys)?
-        else {
-            return Ok(());
-        };
+        let sets = load_zsets(executor, base, &keys)?;
         let mut cardinality = 0_usize;
         if let Some(first) = sets.first() {
             for (member, _) in first {
@@ -4338,29 +3982,26 @@ pub fn handle_zset(
                 }
             }
         }
-        return write_integer(stream, cardinality as i64);
+        return Ok(Reply::integer(cardinality as i64));
     }
     if command.eq_ignore_ascii_case(b"ZADD") {
         if request.arguments.len() < 4 {
-            return write_arity_error(stream, "zadd");
+            return Err(arity_error("zadd"));
         }
-        let Some((options, start)) = parse_zadd_options(stream, &request.arguments)?
-        else {
-            return Ok(());
-        };
+        let (options, start) = parse_zadd_options(&request.arguments)?;
         let key = request.arguments[1];
         match find_kind(executor, base, key) {
             Ok(None) | Ok(Some(KeyKind::ZSet)) => {}
-            Ok(Some(_)) => return write_wrong_type(stream),
-            Err(message) => return write_storage_error(stream, &message),
+            Ok(Some(_)) => return Err(CommandError::WrongType),
+            Err(message) => return Err(CommandError::Failed(message.to_owned())),
         }
         let mut entries = match load_value(executor, &KeyKind::ZSet.namespace(base), key) {
             Ok(Some(bytes)) => match decode_zset(&bytes) {
                 Some(entries) => entries,
-                None => return write_error(stream, "stored zset value is corrupt"),
+                None => return Err(CommandError::Failed("stored zset value is corrupt".to_owned())),
             },
             Ok(None) => Vec::new(),
-            Err(message) => return write_storage_error(stream, &message),
+            Err(message) => return Err(CommandError::Failed(message.to_owned())),
         };
         let pairs = request.arguments[start..].chunks(2).collect::<Vec<_>>();
         // 全部分数先校验：任一非法都不写入，避免半截修改。
@@ -4368,7 +4009,7 @@ pub fn handle_zset(
         for pair in &pairs {
             let Some(score) = parse_score(pair[0])
             else {
-                return write_error(stream, "value is not a valid float");
+                return Err(CommandError::Failed("value is not a valid float".to_owned()));
             };
             scores.push(score);
         }
@@ -4383,7 +4024,7 @@ pub fn handle_zset(
                     let previous = entries[index].1;
                     let next = if options.incr { previous + score } else { score };
                     if next.is_nan() {
-                        return write_error(stream, "resulting score is not a number (NaN)");
+                        return Err(CommandError::Failed("resulting score is not a number (NaN)".to_owned()));
                     }
                     let mut accepted = true;
                     if options.nx {
@@ -4424,44 +4065,42 @@ pub fn handle_zset(
         if touched {
             let Some(bytes) = encode_zset(&entries)
             else {
-                return write_error(stream, "zset exceeds the storage limit");
+                return Err(CommandError::Failed("zset exceeds the storage limit".to_owned()));
             };
             if let Err(message) = store_value(executor, &KeyKind::ZSet.namespace(base), key, bytes) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
         // 没有改动时不重写记录，避免平白增加一次写入。
         if options.incr {
             return match increment_reply {
-                Some(score) => write_score(stream, score, protocol),
-                None => write_null(stream, protocol),
+                Some(score) => Ok(score_reply(score)),
+                None => Ok(Reply::nil()),
             };
         }
-        return write_integer(stream, if options.ch { added + changed } else { added });
+        return Ok(Reply::integer(if options.ch { added + changed } else { added }));
     }
     if command.eq_ignore_ascii_case(b"ZSCORE") {
         if request.arguments.len() != 3 {
-            return write_arity_error(stream, "zscore");
+            return Err(arity_error("zscore"));
         }
         let key = request.arguments[1];
-        return match load_zset(stream, executor, base, key)? {
-            Loaded::Missing => write_null(stream, protocol),
+        return match load_zset(executor, base, key)? {
+            Loaded::Missing => Ok(Reply::nil()),
             Loaded::Found(entries) => match entries.iter().find(|(member, _)| member.as_slice() == request.arguments[2]) {
-                Some((_, score)) => write_score(stream, *score, protocol),
-                None => write_null(stream, protocol),
+                Some((_, score)) => Ok(score_reply(*score)),
+                None => Ok(Reply::nil()),
             },
-            Loaded::Rejected => Ok(()),
         };
     }
     if command.eq_ignore_ascii_case(b"ZREM") {
         if request.arguments.len() < 3 {
-            return write_arity_error(stream, "zrem");
+            return Err(arity_error("zrem"));
         }
         let key = request.arguments[1];
-        let mut entries = match load_zset(stream, executor, base, key)? {
-            Loaded::Missing => return write_integer(stream, 0),
+        let mut entries = match load_zset(executor, base, key)? {
+            Loaded::Missing => return Ok(Reply::integer(0)),
             Loaded::Found(entries) => entries,
-            Loaded::Rejected => return Ok(()),
         };
         let mut removed = 0_i64;
         entries.retain(|(member, _)| {
@@ -4473,51 +4112,46 @@ pub fn handle_zset(
         });
         if entries.is_empty() {
             if let Err(message) = remove_value(executor, &KeyKind::ZSet.namespace(base), key) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
         else {
             let Some(bytes) = encode_zset(&entries)
             else {
-                return write_error(stream, "zset exceeds the storage limit");
+                return Err(CommandError::Failed("zset exceeds the storage limit".to_owned()));
             };
             if let Err(message) = store_value(executor, &KeyKind::ZSet.namespace(base), key, bytes) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
-        return write_integer(stream, removed);
+        return Ok(Reply::integer(removed));
     }
     if command.eq_ignore_ascii_case(b"ZCARD") {
         if request.arguments.len() != 2 {
-            return write_arity_error(stream, "zcard");
+            return Err(arity_error("zcard"));
         }
         let key = request.arguments[1];
-        return match load_zset(stream, executor, base, key)? {
-            Loaded::Missing => write_integer(stream, 0),
-            Loaded::Found(entries) => write_integer(stream, entries.len() as i64),
-            Loaded::Rejected => Ok(()),
+        return match load_zset(executor, base, key)? {
+            Loaded::Missing => Ok(Reply::integer(0)),
+            Loaded::Found(entries) => Ok(Reply::integer(entries.len() as i64)),
         };
     }
     if command.eq_ignore_ascii_case(b"ZRANGEBYSCORE") || command.eq_ignore_ascii_case(b"ZREVRANGEBYSCORE") {
         let reverse = command.eq_ignore_ascii_case(b"ZREVRANGEBYSCORE");
         if request.arguments.len() < 4 {
             let name = if reverse { "zrevrangebyscore" } else { "zrangebyscore" };
-            return write_arity_error(stream, name);
+            return Err(arity_error(name));
         }
         let key = request.arguments[1];
         let (high, low) = if reverse { (request.arguments[2], request.arguments[3]) } else { (request.arguments[3], request.arguments[2]) };
         let (Some(min), Some(max)) = (parse_score_bound(low), parse_score_bound(high))
         else {
-            return write_error(stream, "min or max is not a float");
+            return Err(CommandError::Failed("min or max is not a float".to_owned()));
         };
-        let Some((with_scores, limit)) = parse_score_range_options(stream, &request.arguments, 4)?
-        else {
-            return Ok(());
-        };
-        let mut entries = match load_zset(stream, executor, base, key)? {
-            Loaded::Missing => return write_array_header(stream, 0),
+        let (with_scores, limit) = parse_score_range_options(&request.arguments, 4)?;
+        let mut entries = match load_zset(executor, base, key)? {
+            Loaded::Missing => return Ok(Reply::array(vec![])),
             Loaded::Found(entries) => entries,
-            Loaded::Rejected => return Ok(()),
         };
         sort_zset(&mut entries);
         let mut selected: Vec<(Vec<u8>, f64)> = entries.into_iter().filter(|(_, score)| in_score_range(*score, min, max)).collect();
@@ -4527,28 +4161,24 @@ pub fn handle_zset(
         if let Some((offset, count)) = limit {
             selected = apply_limit(&selected, offset, count);
         }
-        return write_zset_entries(stream, &selected, with_scores, protocol);
+        return Ok(zset_entries_reply(&selected, with_scores, protocol));
     }
     if command.eq_ignore_ascii_case(b"ZRANGEBYLEX") || command.eq_ignore_ascii_case(b"ZREVRANGEBYLEX") {
         let reverse = command.eq_ignore_ascii_case(b"ZREVRANGEBYLEX");
         if request.arguments.len() < 4 {
             let name = if reverse { "zrevrangebylex" } else { "zrangebylex" };
-            return write_arity_error(stream, name);
+            return Err(arity_error(name));
         }
         let key = request.arguments[1];
         let (high, low) = if reverse { (request.arguments[2], request.arguments[3]) } else { (request.arguments[3], request.arguments[2]) };
         let (Some(min), Some(max)) = (parse_lex_bound(low), parse_lex_bound(high))
         else {
-            return write_error(stream, "min or max not valid string range item");
+            return Err(CommandError::Failed("min or max not valid string range item".to_owned()));
         };
-        let Some(limit) = parse_lex_options(stream, &request.arguments, 4)?
-        else {
-            return Ok(());
-        };
-        let entries = match load_zset(stream, executor, base, key)? {
-            Loaded::Missing => return write_array_header(stream, 0),
+        let limit = parse_lex_options(&request.arguments, 4)?;
+        let entries = match load_zset(executor, base, key)? {
+            Loaded::Missing => return Ok(Reply::array(vec![])),
             Loaded::Found(entries) => entries,
-            Loaded::Rejected => return Ok(()),
         };
         // 与真机一致：按 (score, member) 顺序定位整段，分数不一致时保留
         // 分数顺序而不是重排成字典序。
@@ -4564,77 +4194,70 @@ pub fn handle_zset(
         if let Some((offset, count)) = limit {
             members = apply_limit(&members, offset, count);
         }
-        write_array_header(stream, members.len())?;
-        for member in &members {
-            write_bulk(stream, member)?;
-        }
-        return Ok(());
+        let items: Vec<Reply> = members.into_iter().map(Reply::bulk).collect();
+        return Ok(Reply::array(items));
     }
     if command.eq_ignore_ascii_case(b"ZRANK") || command.eq_ignore_ascii_case(b"ZREVRANK") {
         let reverse = command.eq_ignore_ascii_case(b"ZREVRANK");
         if request.arguments.len() != 3 && request.arguments.len() != 4 {
             let name = if reverse { "zrevrank" } else { "zrank" };
-            return write_arity_error(stream, name);
+            return Err(arity_error(name));
         }
         let with_score = request.arguments.len() == 4;
         if with_score && !request.arguments[3].eq_ignore_ascii_case(b"WITHSCORE") {
-            return write_error(stream, "syntax error");
+            return Err(CommandError::Failed("syntax error".to_owned()));
         }
         let key = request.arguments[1];
-        let mut entries = match load_zset(stream, executor, base, key)? {
+        let mut entries = match load_zset(executor, base, key)? {
             Loaded::Missing => {
-                return if with_score { write_null_array(stream, protocol) } else { write_null(stream, protocol) };
+                return if with_score { Ok(Reply::nil_array()) } else { Ok(Reply::nil()) };
             }
             Loaded::Found(entries) => entries,
-            Loaded::Rejected => return Ok(()),
         };
         sort_zset(&mut entries);
-        match entries.iter().position(|(member, _)| member.as_slice() == request.arguments[2]) {
+        return match entries.iter().position(|(member, _)| member.as_slice() == request.arguments[2]) {
             Some(index) => {
                 let rank = if reverse { entries.len() - 1 - index } else { index } as i64;
                 if with_score {
-                    stream.write_all(b"*2\r\n")?;
-                    write_integer(stream, rank)?;
-                    write_score(stream, entries[index].1, protocol)?;
+                    Ok(Reply::array(vec![Reply::integer(rank), score_reply(entries[index].1)]))
                 }
                 else {
-                    write_integer(stream, rank)?;
+                    Ok(Reply::integer(rank))
                 }
             }
             // `WITHSCORE` answers an array on success, so the server keeps the array
             // shape for a miss and replies a null array under RESP2.
             None => {
                 if with_score {
-                    write_null_array(stream, protocol)?
+                    Ok(Reply::nil_array())
                 }
                 else {
-                    write_null(stream, protocol)?
+                    Ok(Reply::nil())
                 }
             }
         }
-        return Ok(());
     }
     if command.eq_ignore_ascii_case(b"ZINCRBY") {
         if request.arguments.len() != 4 {
-            return write_arity_error(stream, "zincrby");
+            return Err(arity_error("zincrby"));
         }
         let Some(increment) = parse_score(request.arguments[2])
         else {
-            return write_error(stream, "value is not a valid float");
+            return Err(CommandError::Failed("value is not a valid float".to_owned()));
         };
         let key = request.arguments[1];
         match find_kind(executor, base, key) {
             Ok(None) | Ok(Some(KeyKind::ZSet)) => {}
-            Ok(Some(_)) => return write_wrong_type(stream),
-            Err(message) => return write_storage_error(stream, &message),
+            Ok(Some(_)) => return Err(CommandError::WrongType),
+            Err(message) => return Err(CommandError::Failed(message.to_owned())),
         }
         let mut entries = match load_value(executor, &KeyKind::ZSet.namespace(base), key) {
             Ok(Some(bytes)) => match decode_zset(&bytes) {
                 Some(entries) => entries,
-                None => return write_error(stream, "stored zset value is corrupt"),
+                None => return Err(CommandError::Failed("stored zset value is corrupt".to_owned())),
             },
             Ok(None) => Vec::new(),
-            Err(message) => return write_storage_error(stream, &message),
+            Err(message) => return Err(CommandError::Failed(message.to_owned())),
         };
         let member = request.arguments[3].to_vec();
         let new_score = match entries.iter().find(|(existing, _)| *existing == member) {
@@ -4642,7 +4265,7 @@ pub fn handle_zset(
             None => increment,
         };
         if new_score.is_nan() {
-            return write_error(stream, "resulting score is not a number (NaN)");
+            return Err(CommandError::Failed("resulting score is not a number (NaN)".to_owned()));
         }
         match entries.iter_mut().find(|(existing, _)| *existing == member) {
             Some(entry) => entry.1 = new_score,
@@ -4650,28 +4273,27 @@ pub fn handle_zset(
         }
         let Some(bytes) = encode_zset(&entries)
         else {
-            return write_error(stream, "zset exceeds the storage limit");
+            return Err(CommandError::Failed("zset exceeds the storage limit".to_owned()));
         };
         if let Err(message) = store_value(executor, &KeyKind::ZSet.namespace(base), key, bytes) {
-            return write_storage_error(stream, &message);
+            return Err(CommandError::Failed(message.to_owned()));
         }
-        return write_score(stream, new_score, protocol);
+        return Ok(score_reply(new_score));
     }
     if command.eq_ignore_ascii_case(b"ZCOUNT") {
         if request.arguments.len() != 4 {
-            return write_arity_error(stream, "zcount");
+            return Err(arity_error("zcount"));
         }
         let (Some(min), Some(max)) = (parse_score_bound(request.arguments[2]), parse_score_bound(request.arguments[3]))
         else {
-            return write_error(stream, "min or max is not a float");
+            return Err(CommandError::Failed("min or max is not a float".to_owned()));
         };
         let key = request.arguments[1];
-        return match load_zset(stream, executor, base, key)? {
-            Loaded::Missing => write_integer(stream, 0),
+        return match load_zset(executor, base, key)? {
+            Loaded::Missing => Ok(Reply::integer(0)),
             Loaded::Found(entries) => {
-                write_integer(stream, entries.iter().filter(|(_, score)| in_score_range(*score, min, max)).count() as i64)
+                Ok(Reply::integer(entries.iter().filter(|(_, score)| in_score_range(*score, min, max)).count() as i64))
             }
-            Loaded::Rejected => Ok(()),
         };
     }
     if command.eq_ignore_ascii_case(b"ZREMRANGEBYRANK")
@@ -4690,7 +4312,7 @@ pub fn handle_zset(
             "zremrangebyrank"
         };
         if request.arguments.len() != 4 {
-            return write_arity_error(stream, name);
+            return Err(arity_error(name));
         }
         let mut min = ScoreBound { value: f64::NEG_INFINITY, exclusive: false };
         let mut max = ScoreBound { value: f64::INFINITY, exclusive: false };
@@ -4702,28 +4324,27 @@ pub fn handle_zset(
                     min = low;
                     max = high;
                 }
-                _ => return write_error(stream, "min or max is not a float"),
+                _ => return Err(CommandError::Failed("min or max is not a float".to_owned())),
             }
         }
         else if by_lex {
             match (parse_lex_bound(request.arguments[2]), parse_lex_bound(request.arguments[3])) {
                 (Some(low), Some(high)) => lex_range = Some((low, high)),
-                _ => return write_error(stream, "min or max not valid string range item"),
+                _ => return Err(CommandError::Failed("min or max not valid string range item".to_owned())),
             }
         }
         else {
             let (Some(low), Some(high)) = (parse_index(request.arguments[2]), parse_index(request.arguments[3]))
             else {
-                return write_error(stream, "value is not an integer or out of range");
+                return Err(CommandError::Failed("value is not an integer or out of range".to_owned()));
             };
             rank_range = Some((low, high));
         }
         let key = request.arguments[1];
         let mut removed = 0_i64;
-        let mut entries = match load_zset(stream, executor, base, key)? {
-            Loaded::Missing => return write_integer(stream, 0),
+        let mut entries = match load_zset(executor, base, key)? {
+            Loaded::Missing => return Ok(Reply::integer(0)),
             Loaded::Found(entries) => entries,
-            Loaded::Rejected => return Ok(()),
         };
         if by_score {
             entries.retain(|(_, score)| {
@@ -4752,83 +4373,79 @@ pub fn handle_zset(
             }
         }
         if removed == 0 {
-            return write_integer(stream, 0);
+            return Ok(Reply::integer(0));
         }
         if entries.is_empty() {
             if let Err(message) = remove_value(executor, &KeyKind::ZSet.namespace(base), key) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
         else {
             let Some(bytes) = encode_zset(&entries)
             else {
-                return write_error(stream, "zset exceeds the storage limit");
+                return Err(CommandError::Failed("zset exceeds the storage limit".to_owned()));
             };
             if let Err(message) = store_value(executor, &KeyKind::ZSet.namespace(base), key, bytes) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
-        return write_integer(stream, removed);
+        return Ok(Reply::integer(removed));
     }
     if command.eq_ignore_ascii_case(b"ZMSCORE") {
         if request.arguments.len() < 3 {
-            return write_arity_error(stream, "zmscore");
+            return Err(arity_error("zmscore"));
         }
-        let entries = match load_zset(stream, executor, base, request.arguments[1])? {
+        let entries = match load_zset(executor, base, request.arguments[1])? {
             Loaded::Missing => Vec::new(),
             Loaded::Found(entries) => entries,
-            Loaded::Rejected => return Ok(()),
         };
-        write_array_header(stream, request.arguments.len() - 2)?;
-        for member in &request.arguments[2..] {
-            match entries.iter().find(|(candidate, _)| candidate.as_slice() == *member) {
-                Some((_, score)) => write_score(stream, *score, protocol)?,
-                None => write_null(stream, protocol)?,
-            }
-        }
-        return Ok(());
+        let items: Vec<Reply> = request.arguments[2..]
+            .iter()
+            .map(|member| match entries.iter().find(|(candidate, _)| candidate.as_slice() == *member) {
+                Some((_, score)) => score_reply(*score),
+                None => Reply::nil(),
+            })
+            .collect();
+        return Ok(Reply::array(items));
     }
     if command.eq_ignore_ascii_case(b"ZLEXCOUNT") {
         if request.arguments.len() != 4 {
-            return write_arity_error(stream, "zlexcount");
+            return Err(arity_error("zlexcount"));
         }
         let (Some(min), Some(max)) = (parse_lex_bound(request.arguments[2]), parse_lex_bound(request.arguments[3]))
         else {
-            return write_error(stream, "min or max not valid string range item");
+            return Err(CommandError::Failed("min or max not valid string range item".to_owned()));
         };
-        return match load_zset(stream, executor, base, request.arguments[1])? {
-            Loaded::Missing => write_integer(stream, 0),
-            Loaded::Found(entries) => write_integer(
-                stream,
-                entries.iter().filter(|(member, _)| lex_at_least(member, &min) && lex_at_most(member, &max)).count() as i64,
-            ),
-            Loaded::Rejected => Ok(()),
+        return match load_zset(executor, base, request.arguments[1])? {
+            Loaded::Missing => Ok(Reply::integer(0)),
+            Loaded::Found(entries) => {
+                Ok(Reply::integer(entries.iter().filter(|(member, _)| lex_at_least(member, &min) && lex_at_most(member, &max)).count() as i64))
+            }
         };
     }
     if command.eq_ignore_ascii_case(b"ZPOPMIN") || command.eq_ignore_ascii_case(b"ZPOPMAX") {
         let maximum = command.eq_ignore_ascii_case(b"ZPOPMAX");
         let name = if maximum { "zpopmax" } else { "zpopmin" };
         if request.arguments.len() < 2 || request.arguments.len() > 3 {
-            return write_arity_error(stream, name);
+            return Err(arity_error(name));
         }
         let with_count = request.arguments.len() == 3;
         let count = if with_count {
             match parse_index(request.arguments[2]) {
                 Some(value) if value >= 0 => value as usize,
                 // 真机对非整数与负数使用同一条「必须为正」的提示。
-                _ => return write_error(stream, "value is out of range, must be positive"),
+                _ => return Err(CommandError::Failed("value is out of range, must be positive".to_owned())),
             }
         }
         else {
             1
         };
         let key = request.arguments[1];
-        let mut entries = match load_zset(stream, executor, base, key)? {
+        let mut entries = match load_zset(executor, base, key)? {
             Loaded::Missing => {
-                return write_array_header(stream, 0);
+                return Ok(Reply::array(vec![]));
             }
             Loaded::Found(entries) => entries,
-            Loaded::Rejected => return Ok(()),
         };
         sort_zset(&mut entries);
         if maximum {
@@ -4840,56 +4457,53 @@ pub fn handle_zset(
             let remaining = entries[take..].to_vec();
             if remaining.is_empty() {
                 if let Err(message) = remove_value(executor, &KeyKind::ZSet.namespace(base), key) {
-                    return write_storage_error(stream, &message);
+                    return Err(CommandError::Failed(message.to_owned()));
                 }
             }
             else {
                 let Some(bytes) = encode_zset(&remaining)
                 else {
-                    return write_error(stream, "zset exceeds the storage limit");
+                    return Err(CommandError::Failed("zset exceeds the storage limit".to_owned()));
                 };
                 if let Err(message) = store_value(executor, &KeyKind::ZSet.namespace(base), key, bytes) {
-                    return write_storage_error(stream, &message);
+                    return Err(CommandError::Failed(message.to_owned()));
                 }
             }
         }
         if with_count {
-            return write_zset_entries(stream, &popped, true, protocol);
+            return Ok(zset_entries_reply(&popped, true, protocol));
         }
         if popped.is_empty() {
-            return write_array_header(stream, 0);
+            return Ok(Reply::array(vec![]));
         }
-        stream.write_all(b"*2\r\n")?;
-        write_bulk(stream, &popped[0].0)?;
-        return write_score(stream, popped[0].1, protocol);
+        return Ok(Reply::array(vec![Reply::bulk(popped[0].0.clone()), score_reply(popped[0].1)]));
     }
     if command.eq_ignore_ascii_case(b"ZRANDMEMBER") {
         if request.arguments.len() < 2 || request.arguments.len() > 4 {
-            return write_arity_error(stream, "zrandmember");
+            return Err(arity_error("zrandmember"));
         }
-        let entries = match load_zset(stream, executor, base, request.arguments[1])? {
+        let entries = match load_zset(executor, base, request.arguments[1])? {
             Loaded::Missing => Vec::new(),
             Loaded::Found(entries) => entries,
-            Loaded::Rejected => return Ok(()),
         };
         if entries.is_empty() {
-            return if request.arguments.len() == 2 { write_null(stream, protocol) } else { write_array_header(stream, 0) };
+            return if request.arguments.len() == 2 { Ok(Reply::nil()) } else { Ok(Reply::array(vec![])) };
         }
         if request.arguments.len() == 2 {
             let index = random_below(entries.len());
-            return write_bulk(stream, &entries[index].0);
+            return Ok(Reply::bulk(entries[index].0.to_vec()));
         }
         let with_scores = match request.arguments.len() {
             3 => false,
             4 if request.arguments[3].eq_ignore_ascii_case(b"WITHSCORES") => true,
-            _ => return write_error(stream, "syntax error"),
+            _ => return Err(CommandError::Failed("syntax error".to_owned())),
         };
         let Some(count) = parse_index(request.arguments[2])
         else {
-            return write_error(stream, "value is not an integer or out of range");
+            return Err(CommandError::Failed("value is not an integer or out of range".to_owned()));
         };
         if count == 0 {
-            return write_array_header(stream, 0);
+            return Ok(Reply::array(vec![]));
         }
         let selected = if count > 0 {
             sample_distinct(&entries, count as usize)
@@ -4898,38 +4512,37 @@ pub fn handle_zset(
             let take = count.unsigned_abs() as usize;
             (0..take).map(|_| entries[random_below(entries.len())].clone()).collect()
         };
-        return write_zset_entries(stream, &selected, with_scores, protocol);
+        return Ok(zset_entries_reply(&selected, with_scores, protocol));
     }
     if command.eq_ignore_ascii_case(b"ZMPOP") {
         if request.arguments.len() < 4 {
-            return write_arity_error(stream, "zmpop");
+            return Err(arity_error("zmpop"));
         }
-        return handle_zset_mpop(stream, executor, base, &request.arguments, 1, protocol);
+        return handle_zset_mpop(executor, base, &request.arguments, 1, protocol);
     }
     if command.eq_ignore_ascii_case(b"BZMPOP") {
         if request.arguments.len() < 5 {
-            return write_arity_error(stream, "bzmpop");
+            return Err(arity_error("bzmpop"));
         }
         if let Some(protocol_error) = validate_timeout(&request.arguments[1]) {
-            return write_error(stream, protocol_error);
+            return Err(CommandError::Failed(protocol_error.to_owned()));
         }
-        return handle_zset_mpop(stream, executor, base, &request.arguments, 2, protocol);
+        return handle_zset_mpop(executor, base, &request.arguments, 2, protocol);
     }
     if command.eq_ignore_ascii_case(b"BZPOPMIN") || command.eq_ignore_ascii_case(b"BZPOPMAX") {
         let maximum = command.eq_ignore_ascii_case(b"BZPOPMAX");
         let name = if maximum { "bzpopmax" } else { "bzpopmin" };
         if request.arguments.len() < 3 {
-            return write_arity_error(stream, name);
+            return Err(arity_error(name));
         }
         if let Some(message) = validate_timeout(request.arguments[request.arguments.len() - 1]) {
-            return write_error(stream, message);
+            return Err(CommandError::Failed(message.to_owned()));
         }
         let keys = &request.arguments[1..request.arguments.len() - 1];
         for key in keys {
-            let mut entries = match load_zset(stream, executor, base, key)? {
+            let mut entries = match load_zset(executor, base, key)? {
                 Loaded::Missing => continue,
                 Loaded::Found(entries) => entries,
-                Loaded::Rejected => return Ok(()),
             };
             if entries.is_empty() {
                 continue;
@@ -4939,89 +4552,67 @@ pub fn handle_zset(
             let (member, score) = entries.remove(take);
             if entries.is_empty() {
                 if let Err(message) = remove_value(executor, &KeyKind::ZSet.namespace(base), key) {
-                    return write_storage_error(stream, &message);
+                    return Err(CommandError::Failed(message.to_owned()));
                 }
             }
             else {
                 let Some(bytes) = encode_zset(&entries)
                 else {
-                    return write_error(stream, "zset exceeds the storage limit");
+                    return Err(CommandError::Failed("zset exceeds the storage limit".to_owned()));
                 };
                 if let Err(message) = store_value(executor, &KeyKind::ZSet.namespace(base), key, bytes) {
-                    return write_storage_error(stream, &message);
+                    return Err(CommandError::Failed(message.to_owned()));
                 }
             }
-            stream.write_all(b"*3\r\n")?;
-            write_bulk(stream, key)?;
-            write_bulk(stream, &member)?;
-            return write_score(stream, score, protocol);
+            return Ok(Reply::array(vec![Reply::bulk(key.to_vec()), Reply::bulk(member), score_reply(score)]));
         }
-        return write_null_array(stream, protocol);
+        return Ok(Reply::nil_array());
     }
     if command.eq_ignore_ascii_case(b"ZUNION") || command.eq_ignore_ascii_case(b"ZINTER") {
         let union = command.eq_ignore_ascii_case(b"ZUNION");
         let name = if union { "zunion" } else { "zinter" };
         if request.arguments.len() < 3 {
-            return write_arity_error(stream, name);
+            return Err(arity_error(name));
         }
-        let Some((plan, with_scores)) = parse_zset_combine_plan(stream, name, &request.arguments, 1)?
-        else {
-            return Ok(());
-        };
-        let Some(sets) = load_zsets(stream, executor, base, &plan.keys)?
-        else {
-            return Ok(());
-        };
+        let (plan, with_scores) = parse_zset_combine_plan(name, &request.arguments, 1)?;
+        let sets = load_zsets(executor, base, &plan.keys)?;
         let result = combine_zsets(&sets, &plan.weights, plan.aggregate, if union { ZSetOp::Union } else { ZSetOp::Inter });
-        return write_zset_entries(stream, &result, with_scores, protocol);
+        return Ok(zset_entries_reply(&result, with_scores, protocol));
     }
     if command.eq_ignore_ascii_case(b"ZSCAN") {
         if request.arguments.len() < 3 {
-            return write_arity_error(stream, "zscan");
+            return Err(arity_error("zscan"));
         }
-        let Some(cursor) = parse_scan_cursor(stream, request.arguments[2])?
-        else {
-            return Ok(());
-        };
-        let Some((pattern, count)) = parse_scan_tail(stream, &request.arguments, 3)?
-        else {
-            return Ok(());
-        };
+        let cursor = parse_scan_cursor(request.arguments[2])?;
+        let (pattern, count) = parse_scan_tail(&request.arguments, 3)?;
         let key = request.arguments[1];
-        let entries = match load_zset(stream, executor, base, key)? {
+        let entries = match load_zset(executor, base, key)? {
             Loaded::Missing => Vec::new(),
             Loaded::Found(entries) => entries,
-            Loaded::Rejected => return Ok(()),
         };
-        return write_zscan_page(stream, &entries, cursor, count, pattern.as_deref());
+        return Ok(zscan_page_reply(&entries, cursor, count, pattern.as_deref()));
     }
     if command.eq_ignore_ascii_case(b"ZRANGE") {
         if request.arguments.len() < 4 {
-            return write_arity_error(stream, "zrange");
+            return Err(arity_error("zrange"));
         }
         // 整段读是拉取大集合的常见形态：跳过逐成员解码与二次克隆。
         if is_full_zset_range(&request.arguments) {
             let with_scores = request.arguments.len() == 5;
-            return read_full_zset(stream, executor, base, request.arguments[1], with_scores, protocol);
+            return read_full_zset(executor, base, request.arguments[1], with_scores, protocol);
         }
-        let Some(range) = parse_range_request(stream, &request.arguments, (2, 3), 4, true)?
-        else {
-            return Ok(());
-        };
-        let Some(selected) = select_range(stream, executor, base, request.arguments[1], &range)?
-        else {
-            return Ok(());
-        };
-        return write_zset_entries(stream, &selected, range.with_scores, protocol);
+        let range = parse_range_request(&request.arguments, (2, 3), 4, true)?;
+        let selected = select_range(executor, base, request.arguments[1], &range)?;
+        return Ok(zset_entries_reply(&selected, range.with_scores, protocol));
     }
     if command.eq_ignore_ascii_case(b"ZREVRANGE") {
         if request.arguments.len() < 4 {
-            return write_arity_error(stream, "zrevrange");
+            return Err(arity_error("zrevrange"));
         }
         let with_scores = match request.arguments.len() {
             4 => false,
             5 if request.arguments[4].eq_ignore_ascii_case(b"WITHSCORES") => true,
-            _ => return write_error(stream, "syntax error"),
+            _ => return Err(CommandError::Failed("syntax error".to_owned())),
         };
         let range = RangeRequest {
             mode: RangeMode::Rank,
@@ -5031,27 +4622,18 @@ pub fn handle_zset(
             first: request.arguments[2].to_vec(),
             second: request.arguments[3].to_vec(),
         };
-        let Some(selected) = select_range(stream, executor, base, request.arguments[1], &range)?
-        else {
-            return Ok(());
-        };
-        return write_zset_entries(stream, &selected, with_scores, protocol);
+        let selected = select_range(executor, base, request.arguments[1], &range)?;
+        return Ok(zset_entries_reply(&selected, with_scores, protocol));
     }
     if command.eq_ignore_ascii_case(b"ZRANGESTORE") {
         if request.arguments.len() < 5 {
-            return write_arity_error(stream, "zrangestore");
+            return Err(arity_error("zrangestore"));
         }
-        let Some(range) = parse_range_request(stream, &request.arguments, (3, 4), 5, false)?
-        else {
-            return Ok(());
-        };
-        let Some(selected) = select_range(stream, executor, base, request.arguments[2], &range)?
-        else {
-            return Ok(());
-        };
-        return store_zset_result(stream, executor, base, request.arguments[1], &selected);
+        let range = parse_range_request(&request.arguments, (3, 4), 5, false)?;
+        let selected = select_range(executor, base, request.arguments[2], &range)?;
+        return store_zset_result(executor, base, request.arguments[1], &selected);
     }
-    write_error(stream, "unsupported command")
+    Err(CommandError::Failed("unsupported command".to_owned()))
 }
 
 /// HyperLogLog 的精度参数 `P`，寄存器数量为 `1 << P`。
@@ -5078,8 +4660,8 @@ const HLL_CACHE_INVALID: u8 = 0x80;
 /// 报出「不是合法 HyperLogLog」的类型错误。
 ///
 /// 真机对普通字符串与非 dense 编码统一用这条文案，而不是常规的 `WRONGTYPE` 文案。
-fn write_invalid_hll(stream: &mut dyn io::Write) -> io::Result<()> {
-    stream.write_all(b"-WRONGTYPE Key is not a valid HyperLogLog string value.\r\n")
+fn invalid_hll_error() -> CommandError {
+    CommandError::Coded("WRONGTYPE Key is not a valid HyperLogLog string value.".to_owned())
 }
 
 /// 创建一个空的 dense HyperLogLog：`"HYLL"` 头、dense 编码、全零寄存器。
@@ -5106,39 +4688,31 @@ enum HllLoaded {
     Missing,
     /// 合法的 dense HLL 原始字节。
     Found(Vec<u8>),
-    /// 已回复错误，调用方不应再追加字节。
-    Rejected,
 }
 
 /// 读取一个 HLL 键。
 ///
 /// HLL 在真机上就是一个字符串，所以它落在字符串命名空间，`TYPE` 也回复 `string`。
-fn load_hll(stream: &mut dyn io::Write, executor: &dyn KeyValueExecutor, base: &Namespace, key: &[u8]) -> io::Result<HllLoaded> {
+fn load_hll(executor: &dyn KeyValueExecutor, base: &Namespace, key: &[u8]) -> Result<HllLoaded, CommandError> {
     match find_kind(executor, base, key) {
         Ok(None) => return Ok(HllLoaded::Missing),
         Ok(Some(KeyKind::String)) => {}
         Ok(Some(_)) => {
-            write_wrong_type(stream)?;
-            return Ok(HllLoaded::Rejected);
+            return Err(CommandError::WrongType);
         }
         Err(message) => {
-            write_storage_error(stream, &message)?;
-            return Ok(HllLoaded::Rejected);
+            return Err(CommandError::Failed(message.to_owned()));
         }
     }
     match load_value(executor, base, key) {
         Ok(Some(bytes)) => {
             if hll_registers(&bytes).is_none() {
-                write_invalid_hll(stream)?;
-                return Ok(HllLoaded::Rejected);
+                return Err(invalid_hll_error());
             }
             Ok(HllLoaded::Found(bytes))
         }
         Ok(None) => Ok(HllLoaded::Missing),
-        Err(message) => {
-            write_storage_error(stream, &message)?;
-            Ok(HllLoaded::Rejected)
-        }
+        Err(message) => Err(CommandError::Failed(message.to_owned())),
     }
 }
 
@@ -5293,23 +4867,21 @@ fn hll_merge_max(registers: &mut [u8], source: &[u8]) {
 ///
 /// 值本身是 dense HyperLogLog 字符串，创建时写入完整 12304 字节，读写只碰寄存器区。
 pub fn handle_hyperloglog(
-    stream: &mut dyn io::Write,
     request: &Request<'_>,
     executor: Option<&dyn KeyValueExecutor>,
     base: &Namespace,
-) -> io::Result<()> {
+) -> Result<Reply, CommandError> {
     let Some(executor) = executor
     else {
-        return write_error(stream, "unsupported command");
+        return Err(CommandError::Failed("unsupported command".to_owned()));
     };
     let command = request.arguments[0];
     if command.eq_ignore_ascii_case(b"PFADD") {
         if request.arguments.len() < 2 {
-            return write_arity_error(stream, "pfadd");
+            return Err(arity_error("pfadd"));
         }
         let key = request.arguments[1];
-        let (mut object, created) = match load_hll(stream, executor, base, key)? {
-            HllLoaded::Rejected => return Ok(()),
+        let (mut object, created) = match load_hll(executor, base, key)? {
             HllLoaded::Missing => (new_hll(), true),
             HllLoaded::Found(bytes) => (bytes, false),
         };
@@ -5327,54 +4899,50 @@ pub fn handle_hyperloglog(
         if modified {
             object[15] |= HLL_CACHE_INVALID;
             if let Err(message) = store_value(executor, base, key, object) {
-                return write_storage_error(stream, &message);
+                return Err(CommandError::Failed(message.to_owned()));
             }
         }
-        return write_integer(stream, i64::from(modified));
+        return Ok(Reply::integer(i64::from(modified)));
     }
     if command.eq_ignore_ascii_case(b"PFCOUNT") {
         if request.arguments.len() < 2 {
-            return write_arity_error(stream, "pfcount");
+            return Err(arity_error("pfcount"));
         }
         if request.arguments.len() == 2 {
-            return match load_hll(stream, executor, base, request.arguments[1])? {
-                HllLoaded::Rejected => Ok(()),
-                HllLoaded::Missing => write_integer(stream, 0),
-                HllLoaded::Found(bytes) => write_integer(stream, hll_estimate(hll_registers(&bytes).unwrap())),
+            return match load_hll(executor, base, request.arguments[1])? {
+                HllLoaded::Missing => Ok(Reply::integer(0)),
+                HllLoaded::Found(bytes) => Ok(Reply::integer(hll_estimate(hll_registers(&bytes).unwrap()))),
             };
         }
         let mut merged = vec![0_u8; HLL_REGISTER_BYTES];
         for key in &request.arguments[1..] {
-            match load_hll(stream, executor, base, key)? {
-                HllLoaded::Rejected => return Ok(()),
+            match load_hll(executor, base, key)? {
                 HllLoaded::Missing => {}
                 HllLoaded::Found(bytes) => hll_merge_max(&mut merged, hll_registers(&bytes).unwrap()),
             }
         }
-        return write_integer(stream, hll_estimate(&merged));
+        return Ok(Reply::integer(hll_estimate(&merged)));
     }
     // `PFMERGE` 只给目标键、不带任何源键也是合法调用，会把目标折叠为空 HLL。
     if request.arguments.len() < 2 {
-        return write_arity_error(stream, "pfmerge");
+        return Err(arity_error("pfmerge"));
     }
     let mut merged = vec![0_u8; HLL_REGISTER_BYTES];
     for key in &request.arguments[1..] {
-        match load_hll(stream, executor, base, key)? {
-            HllLoaded::Rejected => return Ok(()),
+        match load_hll(executor, base, key)? {
             HllLoaded::Missing => {}
             HllLoaded::Found(bytes) => hll_merge_max(&mut merged, hll_registers(&bytes).unwrap()),
         }
     }
     let destination = request.arguments[1];
-    let mut object = match load_hll(stream, executor, base, destination)? {
-        HllLoaded::Rejected => return Ok(()),
+    let mut object = match load_hll(executor, base, destination)? {
         HllLoaded::Missing => new_hll(),
         HllLoaded::Found(bytes) => bytes,
     };
     object[HLL_HEADER_SIZE..].copy_from_slice(&merged);
     object[15] |= HLL_CACHE_INVALID;
     if let Err(message) = store_value(executor, base, destination, object) {
-        return write_storage_error(stream, &message);
+        return Err(CommandError::Failed(message.to_owned()));
     }
-    stream.write_all(b"+OK\r\n")
+    Ok(Reply::ok())
 }

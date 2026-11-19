@@ -2559,7 +2559,9 @@ pub fn handle_string(
             stream.write_all(b"-ERR unsupported command\r\n")?;
             return Ok(true);
         };
-        collections::handle_bitfield(stream, executor, namespace, &request.arguments, command.eq_ignore_ascii_case(b"BITFIELD_RO"), protocol)?;
+        let reply = collections::handle_bitfield(executor, namespace, &request.arguments, command.eq_ignore_ascii_case(b"BITFIELD_RO"), protocol)
+            .unwrap_or_else(|error| error.to_reply());
+        stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, protocol))?;
         return Ok(true);
     }
     else if let Some(executor) = executor {
