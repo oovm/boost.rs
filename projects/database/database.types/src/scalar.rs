@@ -725,14 +725,21 @@ pub const HOST_EXACT_U64_MAX: u64 = 9_007_199_254_740_991;
 ///
 /// Integers beyond the host-exact width are tagged as `i64` / `u64` with a
 /// decimal string, so a full 64-bit value survives a JSON round trip.
+/// Non-finite doubles are tagged as `f64` with a `NaN` / `Infinity` /
+/// `-Infinity` spelling, because JSON has no number literal for them.
 /// Returns `None` for every other [`crate::Value`] variant so callers keep
-/// their existing encoding for booleans, in-range integers, and text.
+/// their existing encoding for booleans, in-range integers, finite doubles,
+/// and text.
 pub fn tagged_value_json(value: &crate::Value) -> Option<serde_json::Value> {
     match value {
         crate::Value::I64(i) if *i < HOST_EXACT_I64_MIN || *i > HOST_EXACT_I64_MAX => {
             Some(serde_json::json!({ "$database": "i64", "value": i.to_string() }))
         }
         crate::Value::U64(u) if *u > HOST_EXACT_U64_MAX => Some(serde_json::json!({ "$database": "u64", "value": u.to_string() })),
+        crate::Value::F64(value) if !value.is_finite() => {
+            let spelling = if value.is_nan() { "NaN" } else if *value > 0.0 { "Infinity" } else { "-Infinity" };
+            Some(serde_json::json!({ "$database": "f64", "value": spelling }))
+        }
         crate::Value::Uuid(id) => Some(serde_json::json!({ "$database": "uuid", "value": id.to_string() })),
         crate::Value::Date(date) => Some(serde_json::json!({ "$database": "date", "days": date.days() })),
         crate::Value::Time(time) => Some(serde_json::json!({ "$database": "time", "nanos": time.nanos() })),
@@ -945,6 +952,17 @@ fn parse_tagged_value(json: &serde_json::Value, tag: &serde_json::Value) -> Resu
         "u64" => {
             let text = object.get("value").and_then(serde_json::Value::as_str).ok_or_else(|| malformed("u64"))?;
             text.parse::<u64>().map(crate::Value::U64).map_err(|_| malformed("u64"))
+        }
+        "f64" => {
+            // The tag exists only for the three spellings JSON cannot carry;
+            // any case variant parses, a finite payload is rejected so the
+            // encoding stays canonical.
+            let text = object.get("value").and_then(serde_json::Value::as_str).ok_or_else(|| malformed("f64"))?;
+            let value = text.parse::<f64>().map_err(|_| malformed("f64"))?;
+            if value.is_finite() {
+                return Err(malformed("f64"));
+            }
+            Ok(crate::Value::F64(value))
         }
         other => Err(ScalarError::Malformed { kind: "scalar", input: format!("unknown tag `{other}`") }),
     }

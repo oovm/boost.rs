@@ -203,6 +203,48 @@ fn integers_beyond_the_host_exact_width_cross_tagged_and_roundtrip_exactly() {
 }
 
 #[test]
+fn non_finite_doubles_cross_the_tagged_f64_form_exactly() {
+    // Finite doubles stay bare JSON numbers so hosts read them unwrapped.
+    assert!(scalar::tagged_value_json(&database_types::Value::F64(1.5)).is_none());
+    assert!(scalar::tagged_value_json(&database_types::Value::F64(f64::MAX)).is_none());
+
+    let nan = scalar::tagged_value_json(&database_types::Value::F64(f64::NAN)).expect("tagged");
+    assert_eq!(nan["$database"], serde_json::json!("f64"));
+    assert_eq!(nan["value"], serde_json::json!("NaN"));
+    let positive = scalar::tagged_value_json(&database_types::Value::F64(f64::INFINITY)).expect("tagged");
+    assert_eq!(positive["value"], serde_json::json!("Infinity"));
+    let negative = scalar::tagged_value_json(&database_types::Value::F64(f64::NEG_INFINITY)).expect("tagged");
+    assert_eq!(negative["value"], serde_json::json!("-Infinity"));
+
+    // Every case spelling parses back to the same double.
+    for spelling in ["NaN", "nan", "NAN", "Infinity", "infinity", "-Infinity", "-infinity"] {
+        let tagged = serde_json::json!({ "$database": "f64", "value": spelling });
+        let decoded = scalar::tagged_value_from_json(&tagged).expect("object").expect("valid");
+        let database_types::Value::F64(value) = decoded
+        else {
+            panic!("f64 tag must decode as a double")
+        };
+        if spelling.eq_ignore_ascii_case("nan") {
+            assert!(value.is_nan(), "{spelling} must decode as NaN");
+        }
+        else if spelling.starts_with('-') {
+            assert_eq!(value, f64::NEG_INFINITY);
+        }
+        else {
+            assert_eq!(value, f64::INFINITY);
+        }
+    }
+
+    // A finite payload inside the tag is not canonical and is rejected.
+    let finite = serde_json::json!({ "$database": "f64", "value": "1.5" });
+    assert!(matches!(scalar::tagged_value_from_json(&finite).unwrap(), Err(ScalarError::Malformed { kind: "f64", .. })));
+    let number_member = serde_json::json!({ "$database": "f64", "value": 5 });
+    assert!(scalar::tagged_value_from_json(&number_member).unwrap().is_err());
+    let garbage = serde_json::json!({ "$database": "f64", "value": "not-a-double" });
+    assert!(scalar::tagged_value_from_json(&garbage).unwrap().is_err());
+}
+
+#[test]
 fn tagged_vector_json_keeps_component_bits_and_rejects_bad_shapes() {
     // Component bits survive exactly, including the sign of zero and the f32
     // extremes a text spelling could not reproduce.
