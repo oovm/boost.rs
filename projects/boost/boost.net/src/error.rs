@@ -14,6 +14,13 @@ pub enum NetError {
     Transport(String),
     /// The peer violated the protocol contract.
     Protocol(String),
+    /// The opening handshake was answered with a status instead of `101`.
+    Rejected {
+        /// HTTP status of the rejection response.
+        status: u16,
+        /// Value of the `Date` response header, when the peer sent one.
+        date: Option<String>,
+    },
     /// Reading a response body failed.
     #[cfg(feature = "std")]
     Body(io::Error),
@@ -37,6 +44,7 @@ impl Display for NetError {
             Self::Unsupported(message) => write!(formatter, "unsupported request: {message}"),
             Self::Transport(message) => write!(formatter, "transport error: {message}"),
             Self::Protocol(message) => write!(formatter, "protocol error: {message}"),
+            Self::Rejected { status, .. } => write!(formatter, "handshake rejected with status {status}"),
             #[cfg(feature = "std")]
             Self::Body(error) => write!(formatter, "response body error: {error}"),
             Self::BodyTooLarge { limit } => write!(formatter, "response body exceeds {limit} bytes"),

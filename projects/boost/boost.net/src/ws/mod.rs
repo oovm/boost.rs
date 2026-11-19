@@ -45,11 +45,19 @@ pub struct WsConfig {
     pub timeout: Duration,
     /// TLS protocol versions offered for `wss` URLs.
     pub tls: TlsConfig,
+    /// Extra request headers for the opening handshake, e.g. a user agent or a
+    /// cookie a service requires. Names the handshake owns are ignored.
+    pub headers: Vec<(String, String)>,
 }
 
 impl Default for WsConfig {
     fn default() -> Self {
-        Self { max_message_bytes: 8 * 1024 * 1024, timeout: Duration::from_secs(30), tls: TlsConfig::default() }
+        Self {
+            max_message_bytes: 8 * 1024 * 1024,
+            timeout: Duration::from_secs(30),
+            tls: TlsConfig::default(),
+            headers: Vec::new(),
+        }
     }
 }
 
@@ -79,7 +87,7 @@ impl WebSocket {
         let socket = TimedSocket::new(tcp, config.timeout);
         let connection = connection::secure(url.scheme(), network_host, socket, &config.tls)?;
         let mut stream = connection;
-        handshake::perform(&mut stream, url)?;
+        handshake::perform(&mut stream, url, &config.headers)?;
         Ok(Self { stream, max_message_bytes: config.max_message_bytes, fragmented: None, closed: false })
     }
 

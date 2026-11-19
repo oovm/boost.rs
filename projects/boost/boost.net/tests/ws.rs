@@ -202,3 +202,49 @@ fn close_frame_marks_the_session_closed() {
     assert!(matches!(client.recv(), Err(NetError::Closed)));
     server.join().unwrap();
 }
+
+#[test]
+fn extra_headers_reach_the_server_and_reserved_names_are_dropped() {
+    let (listener, url) = local_url();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let head = read_head(&mut stream);
+        assert_eq!(header(&head, "user-agent"), Some("readaloud-test"));
+        assert_eq!(header(&head, "cookie"), Some("muid=0;"));
+        assert_eq!(head.to_ascii_lowercase().matches("host:").count(), 1, "the client owns the Host header");
+        stream.write_all(handshake_response(&head).as_bytes()).unwrap();
+    });
+
+    let mut config = WsConfig::default();
+    config.headers = vec![
+        ("User-Agent".into(), "readaloud-test".into()),
+        ("Cookie".into(), "muid=0;".into()),
+        ("Host".into(), "evil.invalid".into()),
+    ];
+    let mut client = WebSocket::connect(&Url::parse(&url).unwrap(), config).unwrap();
+    let _ = client.close(1000, "done");
+    server.join().unwrap();
+}
+
+#[test]
+fn a_status_rejection_surfaces_the_status_and_date() {
+    let (listener, url) = local_url();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let _head = read_head(&mut stream);
+        stream
+            .write_all(b"HTTP/1.1 403 Forbidden\r\nDate: Fri, 20 Nov 2026 09:15:30 GMT\r\nContent-Length: 0\r\n\r\n")
+            .unwrap();
+        stream.flush().unwrap();
+    });
+
+    let error = WebSocket::connect(&Url::parse(&url).unwrap(), WsConfig::default()).expect_err("403 is a rejection");
+    match error {
+        NetError::Rejected { status, date } => {
+            assert_eq!(status, 403);
+            assert_eq!(date.as_deref(), Some("Fri, 20 Nov 2026 09:15:30 GMT"));
+        }
+        other => panic!("expected a rejection, got {other:?}"),
+    }
+    server.join().unwrap();
+}

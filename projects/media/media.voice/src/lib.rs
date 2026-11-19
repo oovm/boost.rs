@@ -26,6 +26,7 @@ pub mod backend;
 pub mod bridge;
 pub mod formant;
 pub mod lf;
+pub mod readaloud;
 pub mod spec;
 pub mod tract;
 
