@@ -1,17 +1,17 @@
 #![deny(missing_docs)]
 #![doc = include_str!("readme.md")]
 
-//! SMILES 前端：`oak-smiles` 的 AST 降级进 `plotter.depiction` 的与源语言无关模型。
+//! SMILES 前端：`data-text-smiles` 的 AST 降级进 `plotter.depiction` 的与源语言无关模型。
 //!
-//! 文本语法与原子/键的遍历顺序都由 Oak 负责，本 crate 只做语义映射。立体信息与
+//! 文本语法与原子/键的遍历顺序都由 `data-text-smiles` 负责，本 crate 只做语义映射。立体信息与
 //! `~` 任意键在 v0 描绘里没有表示，映射时保留可画的部分并记录
 //! `davinci.depiction.approximated` 命名损失；结构本身无法描绘（没有原子、反应式
 //! 缺反应物或产物）时才整例拒绝。
 
 use std::ops::Range;
 
-use oak_core::{Builder, SourceText, errors::OakError, parser::session::ParseSession};
-use oak_smiles::{
+use data_text_core::{Builder, SourceText, errors::TextError, parser::session::ParseSession};
+use data_text_smiles::{
     SmilesBuilder, SmilesLanguage,
     ast::{SmilesAtom, SmilesBond, SmilesBondOrder, SmilesItem, SmilesRoot},
 };
@@ -44,7 +44,7 @@ pub struct LoweredStructure {
     pub diagnostics: Vec<Diagnostic>,
 }
 
-/// 解析 SMILES 源码，返回保留字节跨度的 Oak AST。
+/// 解析 SMILES 源码，返回保留字节跨度的语法树。
 pub fn parse_smiles_source(source: &str) -> Result<SmilesRoot, DepictionError> {
     let text = SourceText::new(source);
     let builder = SmilesBuilder;
@@ -75,13 +75,13 @@ pub fn smiles_to_scene(source: &str) -> Result<LoweredDepiction, DepictionError>
 }
 
 /// 把解析错误转成带跨度的拒绝。
-fn spanned_parse_error(source: &str, error: &OakError) -> DepictionError {
-    if let oak_core::errors::OakErrorKind::SyntaxError { message, offset, .. } = error.kind() {
+fn spanned_parse_error(source: &str, error: &TextError) -> DepictionError {
+    if let data_text_core::errors::TextErrorKind::SyntaxError { message, offset, .. } = error.kind() {
         let offset = (*offset).min(source.len());
         let end = source[offset..].find('\n').map(|delta| offset + delta).unwrap_or(source.len());
         return DepictionError::unsupported(message.clone()).with_span(offset..end);
     }
-    DepictionError::unsupported(format!("`oak-smiles` failed to build an AST: {error}"))
+    DepictionError::unsupported(format!("`data-text-smiles` failed to build an AST: {error}"))
 }
 
 /// 把源字节跨度转成诊断跨度。
@@ -139,7 +139,7 @@ fn lower_reaction(_source: &str, root: &SmilesRoot, diagnostics: &mut Vec<Diagno
         return Err(DepictionError::unsupported("a reaction needs at least one reactant and one product fragment on each side of the arrow"));
     }
     let kind = match arrow.map(|arrow| arrow.kind) {
-        Some(oak_smiles::ast::SmilesArrowKind::Double) => ArrowKind::Double,
+        Some(data_text_smiles::ast::SmilesArrowKind::Double) => ArrowKind::Double,
         _ => ArrowKind::Single,
     };
     let above = arrow.and_then(|arrow| arrow.above.clone());

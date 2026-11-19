@@ -3,8 +3,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use oak_core::{Builder, SourceText, errors::OakError, parser::session::ParseSession};
-use oak_mermaid::{
+use data_text_core::{Builder, SourceText, errors::TextError, parser::session::ParseSession};
+use data_text_mermaid::{
     MermaidBuilder, MermaidLanguage,
     ast::{
         ClassDiagram, EdgeStyle as MermaidEdgeStyle, ErCardinality, ErDiagram, ErEntity, ErKey, ErRelation, FlowElement, Flowchart,
@@ -12,7 +12,7 @@ use oak_mermaid::{
         StateEndpoint, StateKind,
     },
 };
-use oak_uml::model::{Class, RelationKind};
+use data_text_uml::model::{Class, RelationKind};
 use plotter_scene::SceneResolver;
 use plotter_types::{
     ByteRange, Diagnostic, DiagnosticLabel, DiagnosticLocation, DiagnosticSeverity, LabelRole, Message, NAMESPACE, SourceRef, codes, diagnostic,
@@ -26,14 +26,14 @@ use plotter_diagram::{
     spec::{Cluster, DiagramEdge, DiagramNode, DiagramSpec, Direction, EdgeStyle, Endpoint, LayoutModel, NodeShape, SequenceLayout},
 };
 
-/// Flowchart statements that `oak-mermaid` parses and then discards.
+/// Flowchart statements that `data-text-mermaid` parses and then discards.
 ///
 /// Styling, interaction, accessibility metadata and inner-direction overrides
 /// never reach the spec, so lowering them would drop authored meaning. The
 /// guard refuses the statement instead and keeps the source visible.
 const DROPPED_FLOWCHART_STATEMENTS: &[&str] = &["style", "classDef", "class", "linkStyle", "click", "direction", "accTitle", "accDescr"];
 
-/// Class-diagram statements that `oak-mermaid` parses and then discards.
+/// Class-diagram statements that `data-text-mermaid` parses and then discards.
 ///
 /// `class ... { ... }` declarations are lowered, so `class` is absent here. The
 /// guard ignores lines inside a class body: a member may legitimately share a
@@ -55,7 +55,7 @@ const DROPPED_CLASS_STATEMENTS: &[&str] = &[
     "link",
 ];
 
-/// Sequence statements that `oak-mermaid` parses and then discards.
+/// Sequence statements that `data-text-mermaid` parses and then discards.
 ///
 /// The guard names them before the arrow test: a skipped statement may carry
 /// `->` inside its payload (a note that mentions an arrow, a title that spells
@@ -88,7 +88,7 @@ const DROPPED_SEQUENCE_STATEMENTS: &[&str] = &[
     "linkStyle",
 ];
 
-/// State-diagram statements that `oak-mermaid` parses and then discards.
+/// State-diagram statements that `data-text-mermaid` parses and then discards.
 ///
 /// Styling, notes, and accessibility metadata never reach the AST, so lowering
 /// the rest of the diagram would drop authored meaning. The guard refuses the
@@ -96,7 +96,7 @@ const DROPPED_SEQUENCE_STATEMENTS: &[&str] = &[
 const DROPPED_STATE_STATEMENTS: &[&str] =
     &["direction", "note", "Note", "style", "classDef", "class", "click", "linkStyle", "title", "acctitle", "accTitle", "accDescr"];
 
-/// Entity-relationship statements that `oak-mermaid` parses and then discards.
+/// Entity-relationship statements that `data-text-mermaid` parses and then discards.
 ///
 /// The ER parser treats every non-relationship line as an entity, so a styling
 /// or accessibility statement would become a phantom entity. The guard names
@@ -104,7 +104,7 @@ const DROPPED_STATE_STATEMENTS: &[&str] =
 const DROPPED_ER_STATEMENTS: &[&str] =
     &["title", "acctitle", "accTitle", "accDescr", "direction", "style", "classDef", "click", "linkStyle", "note", "Note"];
 
-/// Diagram families `oak-mermaid` reports no AST for.
+/// Diagram families `data-text-mermaid` reports no AST for.
 ///
 /// Flowchart, sequence, class, state, and entity-relationship diagrams are
 /// built into `MermaidRoot::diagrams`. The other headers parse without an error
@@ -276,7 +276,7 @@ impl Collector {
     }
 }
 
-/// Parse Mermaid source through the `oak-mermaid` frontend.
+/// Parse Mermaid source through the `data-text-mermaid` frontend.
 ///
 /// The frontend recognises `graph`/`flowchart`, `sequenceDiagram`,
 /// `classDiagram`, `stateDiagram`, and `erDiagram` sections. A known family
@@ -291,7 +291,7 @@ pub fn parse_mermaid(source: &str) -> Result<MermaidRoot, DiagramError> {
     let builder = MermaidBuilder::new(&language);
     let mut session = ParseSession::<MermaidLanguage>::default();
     let output = builder.build(&text, &[], &mut session);
-    let oak_diagnostics = output.diagnostics.len();
+    let text_diagnostics = output.diagnostics.len();
 
     match output.result {
         Ok(root) if root.diagrams.is_empty() => {
@@ -302,7 +302,7 @@ pub fn parse_mermaid(source: &str) -> Result<MermaidRoot, DiagramError> {
                 .with_span(range));
             }
             Err(DiagramError::ast_unavailable(format!(
-                "`oak-mermaid` accepted {} bytes with {oak_diagnostics} Oak parser diagnostics but produced no diagrams",
+                "`data-text-mermaid` accepted {} bytes with {text_diagnostics} parser diagnostics but produced no diagrams",
                 source.len()
             )))
         }
@@ -311,18 +311,18 @@ pub fn parse_mermaid(source: &str) -> Result<MermaidRoot, DiagramError> {
     }
 }
 
-/// Turn an `oak-mermaid` parser error into a refusal that keeps its span.
+/// Turn an `data-text-mermaid` parser error into a refusal that keeps its span.
 ///
 /// A syntax error records the offset of the offending token, so the refused
 /// statement stays locatable instead of collapsing into an unpositioned
 /// "parse failed" message.
-fn spanned_parse_error(source: &str, error: &OakError) -> DiagramError {
-    if let oak_core::errors::OakErrorKind::SyntaxError { message, offset, .. } = error.kind() {
+fn spanned_parse_error(source: &str, error: &TextError) -> DiagramError {
+    if let data_text_core::errors::TextErrorKind::SyntaxError { message, offset, .. } = error.kind() {
         let offset = (*offset).min(source.len());
         let end = source[offset..].find('\n').map(|delta| offset + delta).unwrap_or(source.len());
         return DiagramError::unsupported(message.clone()).with_span(offset..end);
     }
-    DiagramError::parse_failed(format!("`oak-mermaid` failed to build an AST: {error}"))
+    DiagramError::parse_failed(format!("`data-text-mermaid` failed to build an AST: {error}"))
 }
 
 /// Lower Mermaid source into a source-independent diagram spec.
@@ -524,7 +524,7 @@ struct ClassRelationLine {
 ///
 /// Relation kinds keep their UML end marker: inheritance uses a hollow arrow,
 /// composition a filled diamond, aggregation a hollow diamond, association a
-/// filled arrow, and dependency a dotted arrow. The Oak class AST keeps only
+/// filled arrow, and dependency a dotted arrow. The text class AST keeps only
 /// the relation kind and endpoint order, so the authored arrow spelling is
 /// matched back to the relation to place the marker on the correct operand.
 /// This keeps `A <|-- B` and `A --|> B` pointing at the same superclass.
@@ -940,7 +940,7 @@ const DIAGRAM_HEADERS: &[&str] = &[
     "sequenceDiagram",
 ];
 
-/// The header line of the first diagram family that has no Oak AST.
+/// The header line of the first diagram family that has no AST.
 ///
 /// Only the first header decides the family, a later header belongs to the
 /// multi-diagram refusal. The returned header is always the authored spelling,
@@ -962,7 +962,7 @@ fn locate_unsupported_family(source: &str) -> Option<(std::ops::Range<usize>, &'
 
 /// The authored arrow that carries a `+` or `-` activation shorthand.
 ///
-/// `oak-mermaid` keeps no activation spans, so accepting `A->>+B` would lower
+/// `data-text-mermaid` keeps no activation spans, so accepting `A->>+B` would lower
 /// the message and silently drop the activation. The shorthand is refused at
 /// its authored line instead.
 fn activation_suffix(line: &str) -> Option<&'static str> {
@@ -972,7 +972,7 @@ fn activation_suffix(line: &str) -> Option<&'static str> {
 
 /// Reject sequence statements outside the documented lowering subset.
 ///
-/// `oak-mermaid` skips statements such as `Note`, `loop`, `alt`, `activate`,
+/// `data-text-mermaid` skips statements such as `Note`, `loop`, `alt`, `activate`,
 /// and `autonumber`. Skipping them in the AST would render a silently
 /// incomplete sequence, so this guard checks the authored sequence section
 /// before lowering: blank lines, comments, participant/actor declarations, and
@@ -1039,7 +1039,7 @@ fn trimmed_lines(source: &str) -> Vec<(std::ops::Range<usize>, &str)> {
 
 /// The header line of an authored orientation outside the supported set.
 ///
-/// `oak-mermaid` normalises an unknown orientation to top-down, which would
+/// `data-text-mermaid` normalises an unknown orientation to top-down, which would
 /// silently redraw the diagram in a direction the author did not write. The
 /// authored token is therefore checked here before lowering.
 fn locate_unsupported_orientation(source: &str) -> Option<(std::ops::Range<usize>, &str)> {
@@ -1063,7 +1063,7 @@ fn locate_unsupported_orientation(source: &str) -> Option<(std::ops::Range<usize
 
 /// The first authored node shape that `davinci-diagram` cannot draw.
 ///
-/// `oak-mermaid` accepts parallelogram, trapezoid, hexagon, and double-circle
+/// `data-text-mermaid` accepts parallelogram, trapezoid, hexagon, and double-circle
 /// delimiters but either keeps the delimiters in the label or drops the node
 /// entirely. [`plotter_diagram::spec::NodeShape`] has no such variant, so refusing at the
 /// authored line is the only outcome that neither rewrites labels nor loses
@@ -1110,7 +1110,7 @@ fn locate_unsupported_shape(source: &str) -> Option<(std::ops::Range<usize>, &'s
 
 /// The first authored flowchart line that uses the `&` edge conjunction.
 ///
-/// `oak-mermaid` keeps only the final operand of `A --> B & C` and drops the
+/// `data-text-mermaid` keeps only the final operand of `A --> B & C` and drops the
 /// rest without a diagnostic, so the AST alone cannot represent the authored
 /// edges. The guard refuses the line and lets the diagram fall back to its
 /// source instead of silently losing nodes and edges.

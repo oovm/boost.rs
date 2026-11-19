@@ -3,8 +3,8 @@
 
 use std::ops::Range;
 
-use oak_core::{Builder, SourceText, errors::OakError, parser::session::ParseSession};
-use oak_dot::{
+use data_text_core::{Builder, SourceText, errors::TextError, parser::session::ParseSession};
+use data_text_dot::{
     DotBuilder, DotLanguage,
     ast::{Attribute, AttributeTarget, Compass, DotRoot, EdgeOp, EdgeOperand, GraphType, NodeId, NodeStatement, Statement, SubgraphStatement},
 };
@@ -69,7 +69,7 @@ const FORBIDDEN_KEYS: &[&str] = &[
     "target",
 ];
 
-/// Parse DOT source through the `oak-dot` frontend.
+/// Parse DOT source through the `data-text-dot` frontend.
 pub fn parse_dot(source: &str) -> Result<DotRoot, DiagramError> {
     reject_html_labels(source)?;
     let text = SourceText::new(source);
@@ -77,11 +77,11 @@ pub fn parse_dot(source: &str) -> Result<DotRoot, DiagramError> {
     let builder = DotBuilder::new(&language);
     let mut session = ParseSession::<DotLanguage>::default();
     let output = builder.build(&text, &[], &mut session);
-    let oak_diagnostics = output.diagnostics.len();
+    let text_diagnostics = output.diagnostics.len();
 
     match output.result {
         Ok(root) if root.graphs.is_empty() => Err(DiagramError::ast_unavailable(format!(
-            "`oak-dot` accepted {} bytes with {oak_diagnostics} Oak parser diagnostics but produced no graph",
+            "`data-text-dot` accepted {} bytes with {text_diagnostics} parser diagnostics but produced no graph",
             source.len()
         ))),
         Ok(root) => Ok(root),
@@ -89,18 +89,18 @@ pub fn parse_dot(source: &str) -> Result<DotRoot, DiagramError> {
     }
 }
 
-/// Turn an `oak-dot` parser error into a refusal that keeps its span.
+/// Turn an `data-text-dot` parser error into a refusal that keeps its span.
 ///
 /// A syntax error records the offset of the offending token, so the refused
 /// statement stays locatable instead of collapsing into an unpositioned
 /// "parse failed" message.
-fn spanned_parse_error(source: &str, error: &OakError) -> DiagramError {
-    if let oak_core::errors::OakErrorKind::SyntaxError { message, offset, .. } = error.kind() {
+fn spanned_parse_error(source: &str, error: &TextError) -> DiagramError {
+    if let data_text_core::errors::TextErrorKind::SyntaxError { message, offset, .. } = error.kind() {
         let offset = (*offset).min(source.len());
         let end = source[offset..].find('\n').map(|delta| offset + delta).unwrap_or(source.len());
         return DiagramError::unsupported(message.clone()).with_span(offset..end);
     }
-    DiagramError::parse_failed(format!("`oak-dot` failed to build an AST: {error}"))
+    DiagramError::parse_failed(format!("`data-text-dot` failed to build an AST: {error}"))
 }
 
 /// Lower DOT source into a source-independent diagram spec.
@@ -122,7 +122,7 @@ pub fn dot_to_scene(source: &str) -> Result<LoweredDiagram, DiagramError> {
 
 /// Reject HTML-like labels before the parser sees them.
 ///
-/// `oak-dot` keeps DOT tokens generic, so `<b>x</b>` reaches the AST as
+/// `data-text-dot` keeps DOT tokens generic, so `<b>x</b>` reaches the AST as
 /// ordinary identifiers and loses the span of the whole construct. Scanning
 /// outside strings and comments preserves the diagnostic range.
 fn reject_html_labels(source: &str) -> Result<(), DiagramError> {
@@ -608,7 +608,7 @@ fn lower_node(
 }
 
 fn lower_edge(
-    edge: &oak_dot::ast::EdgeStatement,
+    edge: &data_text_dot::ast::EdgeStatement,
     graph_type: &GraphType,
     collector: &mut Collector,
     defaults: &Defaults,

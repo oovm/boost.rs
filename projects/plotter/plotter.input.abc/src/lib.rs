@@ -1,9 +1,9 @@
 #![deny(missing_docs)]
 #![doc = include_str!("readme.md")]
 
-//! ABC 记谱前端：`oak-abc` 的 AST 降级进 `plotter.engraving` 的与源语言无关模型。
+//! ABC 记谱前端：`data-text-abc` 的 AST 降级进 `plotter.engraving` 的与源语言无关模型。
 //!
-//! 分工与 DOT 前端一致：文本语法由 Oak 解析并保留字节跨度，本 crate 只做
+//! 分工与 DOT 前端一致：文本语法由 `data-text-abc` 解析并保留字节跨度，本 crate 只做
 //! 「AST → [`ScoreSpec`]」的语义映射，再由 `plotter.engraving` 排版成场景。
 //! 无法表达或会改变含义的构造分两类处理：
 //!
@@ -15,14 +15,14 @@
 
 use std::ops::Range;
 
-use oak_abc::{
+use data_text_abc::{
     AbcBuilder, AbcLanguage,
     ast::{
         AbcAccidental, AbcBarline, AbcChord, AbcClef, AbcDecoration, AbcEvent, AbcFraction, AbcKey, AbcMeter, AbcNote, AbcPitch, AbcRoot,
         AbcSlur, AbcUnsupported,
     },
 };
-use oak_core::{Builder, SourceText, errors::OakError, parser::session::ParseSession};
+use data_text_core::{Builder, SourceText, errors::TextError, parser::session::ParseSession};
 use plotter_engraving::{
     EngravingError, EngravingOptions, LoweredEngraving,
     spec::{
@@ -46,7 +46,7 @@ pub struct LoweredScore {
     pub diagnostics: Vec<Diagnostic>,
 }
 
-/// 解析 ABC 源码，返回保留字节跨度的 Oak AST。
+/// 解析 ABC 源码，返回保留字节跨度的语法树。
 pub fn parse_abc_source(source: &str) -> Result<AbcRoot, EngravingError> {
     let text = SourceText::new(source);
     let builder = AbcBuilder;
@@ -77,13 +77,13 @@ pub fn abc_to_scene(source: &str) -> Result<LoweredEngraving, EngravingError> {
 ///
 /// 语法错误携带出问题的字节偏移，拒绝因此指向具体记号，而不是一条没有位置的
 /// 「解析失败」。
-fn spanned_parse_error(source: &str, error: &OakError) -> EngravingError {
-    if let oak_core::errors::OakErrorKind::SyntaxError { message, offset, .. } = error.kind() {
+fn spanned_parse_error(source: &str, error: &TextError) -> EngravingError {
+    if let data_text_core::errors::TextErrorKind::SyntaxError { message, offset, .. } = error.kind() {
         let offset = (*offset).min(source.len());
         let end = source[offset..].find('\n').map(|delta| offset + delta).unwrap_or(source.len());
         return EngravingError::unsupported(message.clone()).with_span(offset..end);
     }
-    EngravingError::unsupported(format!("`oak-abc` failed to build an AST: {error}"))
+    EngravingError::unsupported(format!("`data-text-abc` failed to build an AST: {error}"))
 }
 
 /// 把源字节跨度转成诊断跨度。
@@ -353,7 +353,7 @@ fn lower_note(note: &AbcNote, pending_tie: &mut bool, diagnostics: &mut Vec<Diag
     {
         event.tuplet = Some(Tuplet { actual: tuplet.actual, normal: tuplet.normal });
         event.ratio = f64::from(tuplet.normal) / f64::from(tuplet.actual);
-        // `oak-abc` 已把连音组音符的时值预除成 3:2（三连音八分记作 1/12 全音符）。
+        // `data-text-abc` 已把连音组音符的时值预除成 3:2（三连音八分记作 1/12 全音符）。
         // `ScoreSpec` 的合同是 `duration` 保持书写记号值、压缩只走 `ratio`，
         // 这里把被除掉的因子乘回来，否则排版层会看到 1/3 四分这种符头基外时值。
         event.duration *= f64::from(tuplet.actual) / f64::from(tuplet.normal);

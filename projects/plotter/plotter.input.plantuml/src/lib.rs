@@ -6,8 +6,8 @@ use std::{
     ops::Range,
 };
 
-use oak_core::{Builder, SourceText, errors::OakError, parser::session::ParseSession};
-use oak_plantuml::{
+use data_text_core::{Builder, SourceText, errors::TextError, parser::session::ParseSession};
+use data_text_plantuml::{
     PlantUmlBuilder, PlantUmlLanguage,
     ast::{
         ActivityDecision, ActivityDiagram, ActivityEndpoint, ActivityFork, ActivityNode, ActivitySwimlane, ActivityTransition,
@@ -38,7 +38,7 @@ const SOURCE: &str = "plantuml";
 /// Diagram types PlantUML also understands but this frontend does not lower.
 ///
 /// Activity, state, and component diagrams are absent because they are lowered
-/// from their own `oak-plantuml` AST. Deployment, use case, object, timing and
+/// from their own `data-text-plantuml` AST. Deployment, use case, object, timing and
 /// the mind-map families still reach this frontend as flat text without an AST,
 /// so their family keyword is refused at its authored line.
 const OTHER_DIAGRAM_KEYWORDS: &[&str] = &[
@@ -93,7 +93,7 @@ const REJECTED_STATEMENTS: &[&str] = &[
     "allow_mixing",
 ];
 
-/// Activity statements that `oak-plantuml` parses and then discards.
+/// Activity statements that `data-text-plantuml` parses and then discards.
 ///
 /// The builder keeps only actions, decisions, forks, swimlanes, and the legacy
 /// arrow transitions. Loop constructs, notes, styling, and page metadata would
@@ -144,7 +144,7 @@ const DROPPED_ACTIVITY_STATEMENTS: &[&str] = &[
     "bottom",
 ];
 
-/// State statements that `oak-plantuml` parses and then discards.
+/// State statements that `data-text-plantuml` parses and then discards.
 const DROPPED_STATE_STATEMENTS: &[&str] = &[
     "note",
     "skinparam",
@@ -167,7 +167,7 @@ const DROPPED_STATE_STATEMENTS: &[&str] = &[
     "bottom",
 ];
 
-/// Component statements that `oak-plantuml` parses and then discards.
+/// Component statements that `data-text-plantuml` parses and then discards.
 ///
 /// Only `component`, `interface`, `port`, `package`, `[Name]`, and relations
 /// reach the AST. The other UML node kinds name a declaration the AST has no
@@ -201,7 +201,7 @@ const DROPPED_COMPONENT_STATEMENTS: &[&str] = &[
     "bottom",
 ];
 
-/// Parse PlantUML source into the typed `oak-plantuml` AST.
+/// Parse PlantUML source into the typed `data-text-plantuml` AST.
 ///
 /// The refusal scan runs before the parser so rejected constructs keep the
 /// byte range of the whole line instead of whatever token the generic lexer
@@ -213,11 +213,11 @@ pub fn parse_plantuml(source: &str) -> Result<PlantUmlRoot, DiagramError> {
     let builder = PlantUmlBuilder::new(&language);
     let mut session = ParseSession::<PlantUmlLanguage>::default();
     let output = builder.build(&text, &[], &mut session);
-    let oak_diagnostics = output.diagnostics.len();
+    let text_diagnostics = output.diagnostics.len();
 
     match output.result {
         Ok(root) if root.diagrams.is_empty() => Err(DiagramError::ast_unavailable(format!(
-            "`oak-plantuml` accepted {} bytes with {oak_diagnostics} Oak parser diagnostics but produced no diagram",
+            "`data-text-plantuml` accepted {} bytes with {text_diagnostics} parser diagnostics but produced no diagram",
             source.len()
         ))),
         Ok(root) => Ok(root),
@@ -225,14 +225,14 @@ pub fn parse_plantuml(source: &str) -> Result<PlantUmlRoot, DiagramError> {
     }
 }
 
-/// Turn an `oak-plantuml` parser error into a refusal that keeps its span.
+/// Turn an `data-text-plantuml` parser error into a refusal that keeps its span.
 ///
 /// The parser records a syntax error at the token that contradicted the
 /// expected grammar, which can be the second word of a discarded statement.
 /// The span is widened back to the trimmed authored line so a refusal names
 /// the statement rather than the token the lexer stopped on.
-fn spanned_parse_error(source: &str, error: &OakError) -> DiagramError {
-    if let oak_core::errors::OakErrorKind::SyntaxError { message, offset, .. } = error.kind() {
+fn spanned_parse_error(source: &str, error: &TextError) -> DiagramError {
+    if let data_text_core::errors::TextErrorKind::SyntaxError { message, offset, .. } = error.kind() {
         let offset = (*offset).min(source.len());
         let line_start = source[..offset].rfind('\n').map_or(0, |index| index + 1);
         let start = line_start + (source[line_start..offset].len() - source[line_start..offset].trim_start().len());
@@ -240,7 +240,7 @@ fn spanned_parse_error(source: &str, error: &OakError) -> DiagramError {
         let end = start + source[start..line_end].trim_end().len();
         return DiagramError::unsupported(message.clone()).with_span(start..end);
     }
-    DiagramError::parse_failed(format!("`oak-plantuml` failed to build an AST: {error}"))
+    DiagramError::parse_failed(format!("`data-text-plantuml` failed to build an AST: {error}"))
 }
 
 /// Lower PlantUML source into a source-independent diagram spec.
@@ -581,7 +581,7 @@ impl Flow {
                     let id = format!("action:{}", action.span.start);
                     let text = action.text.trim();
                     let label = (!text.is_empty()).then(|| text.to_string());
-                    self.emit(id, label, NodeShape::Box, ancestors, Some(oak_span(&action.span)));
+                    self.emit(id, label, NodeShape::Box, ancestors, Some(span_range(&action.span)));
                 }
                 ActivityNode::Decision(decision) => self.decision(decision, ancestors)?,
                 ActivityNode::Fork(fork) => self.fork(fork, ancestors)?,
@@ -599,8 +599,8 @@ impl Flow {
             .first()
             .and_then(|branch| branch.condition.clone().or_else(|| branch.label.clone()))
             .filter(|text| !text.trim().is_empty());
-        self.graph.upsert(&id, label, Some(NodeShape::Rhombus), ancestors, Some(oak_span(&decision.span)));
-        self.connect(&id, Some(oak_span(&decision.span)));
+        self.graph.upsert(&id, label, Some(NodeShape::Rhombus), ancestors, Some(span_range(&decision.span)));
+        self.connect(&id, Some(span_range(&decision.span)));
 
         let mut tails = Vec::new();
         for (index, branch) in decision.branches.iter().enumerate() {
@@ -619,8 +619,8 @@ impl Flow {
 
     fn fork(&mut self, fork: &ActivityFork, ancestors: &[String]) -> Result<(), DiagramError> {
         let id = format!("fork:{}", fork.span.start);
-        self.graph.upsert(&id, Some("fork".to_string()), Some(NodeShape::Box), ancestors, Some(oak_span(&fork.span)));
-        self.connect(&id, Some(oak_span(&fork.span)));
+        self.graph.upsert(&id, Some("fork".to_string()), Some(NodeShape::Box), ancestors, Some(span_range(&fork.span)));
+        self.connect(&id, Some(span_range(&fork.span)));
 
         let mut tails = Vec::new();
         for branch in &fork.branches {
@@ -637,7 +637,7 @@ impl Flow {
         if lane.color.is_some() {
             self.graph.diagnostics.push(approximated_at(
                 "an activity swimlane colour is not carried by the spec, the frame keeps the theme colour",
-                oak_span(&lane.span),
+                span_range(&lane.span),
             ));
         }
         let mut nested = ancestors.to_vec();
@@ -646,10 +646,10 @@ impl Flow {
     }
 
     fn transition(&mut self, transition: &ActivityTransition) -> Result<(), DiagramError> {
-        let from = self.endpoint(&transition.from, Some(oak_span(&transition.span)))?;
-        let to = self.endpoint(&transition.to, Some(oak_span(&transition.span)))?;
+        let from = self.endpoint(&transition.from, Some(span_range(&transition.span)))?;
+        let to = self.endpoint(&transition.to, Some(span_range(&transition.span)))?;
         let label = transition.label.as_deref().map(str::trim).filter(|text| !text.is_empty()).map(str::to_string);
-        self.graph.push_edge(from, to.clone(), label, EdgeStyle::Arrow, Some(oak_span(&transition.span)));
+        self.graph.push_edge(from, to.clone(), label, EdgeStyle::Arrow, Some(span_range(&transition.span)));
         self.tails = vec![to];
         Ok(())
     }
@@ -839,11 +839,11 @@ fn component_spec(diagram: &ComponentDiagram, source: &str) -> Result<(DiagramSp
         let left = require_id(&relation.left)?;
         let right = require_id(&relation.right)?;
         for name in [&left, &right] {
-            graph.upsert(name, None, None, &[], Some(oak_span(&relation.span)));
+            graph.upsert(name, None, None, &[], Some(span_range(&relation.span)));
         }
         let (from, to) = if relation.marker_at_left { (right, left) } else { (left, right) };
         let label = folded_label(relation.left_multiplicity.as_ref(), relation.right_multiplicity.as_ref(), relation.label.as_ref());
-        graph.push_edge(from, to, label, class_edge_style(&relation.kind), Some(oak_span(&relation.span)));
+        graph.push_edge(from, to, label, class_edge_style(&relation.kind), Some(span_range(&relation.span)));
     }
 
     if graph.nodes.is_empty() {
@@ -869,19 +869,19 @@ fn collect_components(
         match element {
             ComponentElement::Component(node) => {
                 let id = require_id(&node.name)?;
-                graph.upsert(&id, Some(component_label(node, false, source)), Some(NodeShape::Box), ancestors, Some(oak_span(&node.span)));
+                graph.upsert(&id, Some(component_label(node, false, source)), Some(NodeShape::Box), ancestors, Some(span_range(&node.span)));
             }
             ComponentElement::Interface(node) => {
                 let id = require_id(&node.name)?;
-                graph.upsert(&id, Some(component_label(node, true, source)), Some(NodeShape::Box), ancestors, Some(oak_span(&node.span)));
+                graph.upsert(&id, Some(component_label(node, true, source)), Some(NodeShape::Box), ancestors, Some(span_range(&node.span)));
             }
             ComponentElement::Port(port) => {
                 let id = require_id(&port.name)?;
                 let label = format!("{} ({})", port.name.trim(), port_direction(port.direction));
-                graph.upsert(&id, Some(label), Some(NodeShape::Round), ancestors, Some(oak_span(&port.span)));
+                graph.upsert(&id, Some(label), Some(NodeShape::Round), ancestors, Some(span_range(&port.span)));
                 graph.diagnostics.push(approximated_at(
                     "a component port is drawn as a standalone node because the AST records no owning component",
-                    oak_span(&port.span),
+                    span_range(&port.span),
                 ));
             }
             ComponentElement::Package(package) => {
@@ -889,7 +889,7 @@ fn collect_components(
                 if depth > 0 {
                     graph
                         .diagnostics
-                        .push(approximated_at("a nested component package is flattened into its enclosing frame", oak_span(&package.span)));
+                        .push(approximated_at("a nested component package is flattened into its enclosing frame", span_range(&package.span)));
                 }
                 let mut nested = ancestors.to_vec();
                 nested.push(cluster);
@@ -902,7 +902,7 @@ fn collect_components(
 
 /// The text PlantUML draws inside a component or interface box.
 ///
-/// `oak-plantuml` records the alias in `name` and leaves `display` empty for
+/// `data-text-plantuml` records the alias in `name` and leaves `display` empty for
 /// the bracketed and quoted forms, so `component [Web] as W` would otherwise
 /// show the alias. The declaration span is read back to recover the authored
 /// display text.
@@ -965,7 +965,7 @@ fn refuse_dropped(source: &str, keywords: &[&str], skip_braced: bool, family: &s
     Ok(())
 }
 
-/// The first authored state stereotype `oak-plantuml` does not model.
+/// The first authored state stereotype `data-text-plantuml` does not model.
 ///
 /// The builder maps only the fork, join, choice, start, end, entry, and exit
 /// stereotypes and silently downgrades the rest to a plain state, so an unknown
@@ -1061,7 +1061,7 @@ fn source_lines(source: &str) -> Vec<(Range<usize>, &str)> {
     lines
 }
 
-fn oak_span(span: &oak_core::Range<usize>) -> Range<usize> {
+fn span_range(span: &data_text_core::Range<usize>) -> Range<usize> {
     span.start..span.end
 }
 
@@ -1114,7 +1114,7 @@ fn class_label(class: &ClassDeclaration, source: &str) -> String {
 
 /// The authored bytes of one class declaration.
 ///
-/// `oak-plantuml` drops a generic parameter list, a user stereotype, and an
+/// `data-text-plantuml` drops a generic parameter list, a user stereotype, and an
 /// `enum` body from the AST node, so the label is rebuilt from the declaration
 /// span rather than losing authored text that PlantUML draws inside the box.
 fn authored_declaration(class: &ClassDeclaration, source: &str) -> String {
@@ -1230,7 +1230,7 @@ fn approximated_at(message: impl Into<String>, span: Range<usize>) -> Diagnostic
 
 /// Reject everything outside the accepted PlantUML subset with the line span.
 ///
-/// `oak-plantuml` keeps reusable tokens generic, so a rejected directive would
+/// `data-text-plantuml` keeps reusable tokens generic, so a rejected directive would
 /// otherwise reach the AST as identifiers and lose the authored range. Scanning
 /// lines before the builder runs is the same strategy the DOT frontend uses for
 /// HTML labels and is not a second grammar.

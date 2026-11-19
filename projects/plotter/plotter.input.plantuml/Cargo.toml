@@ -3,7 +3,7 @@ name = "plotter-input-plantuml"
 version.workspace = true
 authors.workspace = true
 readme = "readme.md"
-description = "PlantUML frontend: Oak AST to plotter DiagramSpec / scene"
+description = "PlantUML frontend: PlantUML AST to plotter DiagramSpec / scene"
 license.workspace = true
 edition.workspace = true
 publish = false
@@ -12,8 +12,8 @@ publish = false
 plotter-diagram = { workspace = true }
 plotter-types = { workspace = true }
 plotter-scene = { workspace = true }
-oak-core = { workspace = true }
-oak-plantuml = { workspace = true }
+data-text-core = { workspace = true }
+data-text-plantuml = { workspace = true }
 
 [dev-dependencies]
 plotter-input-mermaid = { workspace = true }

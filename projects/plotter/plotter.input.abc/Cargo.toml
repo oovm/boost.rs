@@ -3,7 +3,7 @@ name = "plotter-input-abc"
 version.workspace = true
 authors.workspace = true
 readme = "readme.md"
-description = "ABC notation frontend: Oak AST to plotter ScoreSpec / scene"
+description = "ABC notation frontend: ABC AST to plotter ScoreSpec / scene"
 license.workspace = true
 edition.workspace = true
 publish = false
@@ -11,5 +11,5 @@ publish = false
 [dependencies]
 plotter-engraving = { workspace = true }
 plotter-types = { workspace = true }
-oak-core = { workspace = true }
-oak-abc = { workspace = true }
+data-text-core = { workspace = true }
+data-text-abc = { workspace = true }

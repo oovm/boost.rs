@@ -1,17 +1,17 @@
 #![deny(missing_docs)]
 #![doc = include_str!("readme.md")]
 
-//! MDL 前端：`oak-mdl` 的 AST 降级进 `plotter.depiction` 的与源语言无关模型。
+//! MDL 前端：`data-text-mdl` 的 AST 降级进 `plotter.depiction` 的与源语言无关模型。
 //!
-//! 连接表语法与 1 基原子下标由 Oak 保证；本 crate 负责把连接表压成
+//! 连接表语法与 1 基原子下标由 `data-text-mdl` 保证；本 crate 负责把连接表压成
 //! [`MoleculeSpec`]：原子行、键行、`M  CHG` / `M  ISO` 属性合并成单一原子图。
 //! 坐标、质量差、立体奇偶、放射标记等 v0 描绘没有表示的字段保留可画部分并记录
 //! `davinci.depiction.approximated`；原子或键越界才整例拒绝。
 
 use std::ops::Range;
 
-use oak_core::{Builder, SourceText, errors::OakError, parser::session::ParseSession};
-use oak_mdl::{
+use data_text_core::{Builder, SourceText, errors::TextError, parser::session::ParseSession};
+use data_text_mdl::{
     MdlBuilder, MdlLanguage,
     ast::{MdlBond, MdlBondOrder, MdlRecord, MdlRoot},
 };
@@ -35,7 +35,7 @@ pub struct LoweredStructure {
     pub diagnostics: Vec<Diagnostic>,
 }
 
-/// 解析 MDL 源码，返回保留字节跨度的 Oak AST。
+/// 解析 MDL 源码，返回保留字节跨度的语法树。
 pub fn parse_mdl_source(source: &str) -> Result<MdlRoot, DepictionError> {
     let text = SourceText::new(source);
     let builder = MdlBuilder;
@@ -73,13 +73,13 @@ pub fn mdl_to_scene(source: &str) -> Result<LoweredDepiction, DepictionError> {
 }
 
 /// 把解析错误转成带跨度的拒绝。
-fn spanned_parse_error(source: &str, error: &OakError) -> DepictionError {
-    if let oak_core::errors::OakErrorKind::SyntaxError { message, offset, .. } = error.kind() {
+fn spanned_parse_error(source: &str, error: &TextError) -> DepictionError {
+    if let data_text_core::errors::TextErrorKind::SyntaxError { message, offset, .. } = error.kind() {
         let offset = (*offset).min(source.len());
         let end = source[offset..].find('\n').map(|delta| offset + delta).unwrap_or(source.len());
         return DepictionError::unsupported(message.clone()).with_span(offset..end);
     }
-    DepictionError::unsupported(format!("`oak-mdl` failed to build an AST: {error}"))
+    DepictionError::unsupported(format!("`data-text-mdl` failed to build an AST: {error}"))
 }
 
 /// 把源字节跨度转成诊断跨度。

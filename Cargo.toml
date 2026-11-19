@@ -942,13 +942,6 @@ oak-xml = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb
 oak-tex = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484", default-features = false, features = ["serde"] }
 
 oak-typst = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484", default-features = false, features = ["serde"] }
-oak-dot = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484", default-features = false, features = ["serde"] }
-oak-mermaid = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484", default-features = false, features = ["serde"] }
-oak-uml = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484", default-features = false, features = ["serde"] }
-oak-plantuml = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484", default-features = false, features = ["serde"] }
-oak-abc = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484", default-features = false, features = ["serde"] }
-oak-smiles = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484", default-features = false, features = ["serde"] }
-oak-mdl = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484", default-features = false, features = ["serde"] }
 oak-sql = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484", default-features = false, features = ["serde"] }
 oak-vos = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484" }
 
