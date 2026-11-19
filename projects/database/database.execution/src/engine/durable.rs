@@ -21,7 +21,7 @@ use crate::engine::{Connection, Error, Result};
 /// return [`None`] from [`Self::read_main`] only when nothing has ever been
 /// published (never for a zero-length placeholder), and must accept back
 /// exactly the bytes a previous [`Self::publish_main`] stored.
-pub trait MainImagePublisher: Send {
+pub trait MainImagePublisher {
     /// Read the current durable main image, or `None` when nothing is stored.
     fn read_main(&mut self) -> Result<Option<Vec<u8>>>;
 
