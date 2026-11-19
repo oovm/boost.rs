@@ -1,13 +1,11 @@
 #![doc = include_str!("readme.md")]
 #![deny(missing_docs)]
-#![doc(html_logo_url = "https://raw.githubusercontent.com/yggdrasil-language/oaks/refs/heads/dev/documents/logo.svg")]
-#![doc(html_favicon_url = "https://raw.githubusercontent.com/yggdrasil-language/oaks/refs/heads/dev/documents/logo.svg")]
 
-/// The initial declaration AST emitted by Oak Builder.
+/// The initial declaration AST emitted by the VOS builder.
 pub mod ast;
-/// The Oak Builder for VOS declarations.
+/// The builder for VOS declarations.
 pub mod builder;
-/// The Oak language configuration for VOS.
+/// The language configuration for VOS.
 pub mod language;
 /// The Oak lexer for VOS.
 pub mod lexer;
