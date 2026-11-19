@@ -1,0 +1,10 @@
+[package]
+name = "data-safetensors"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Safetensors container encoding and decoding for Boost data"
+publish = false
+
+[dependencies]

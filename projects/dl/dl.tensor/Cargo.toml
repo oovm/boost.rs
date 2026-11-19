@@ -1,0 +1,11 @@
+[package]
+name = "dl-tensor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Dense f32 tensor storage, views and broadcast layout for Boost DL"
+publish = false
+
+[dependencies]
+dl-types = { workspace = true }

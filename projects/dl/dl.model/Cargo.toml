@@ -1,0 +1,15 @@
+[package]
+name = "dl-model"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "State dict and safetensors checkpoints for Boost DL models"
+publish = false
+
+[dependencies]
+dl-types = { workspace = true }
+dl-tensor = { workspace = true }
+dl-autograd = { workspace = true }
+dl-nn = { workspace = true }
+data-safetensors = { workspace = true }

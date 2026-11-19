@@ -1,0 +1,14 @@
+[package]
+name = "dl-nn"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Neural network layers for Boost DL built on dl-autograd"
+publish = false
+
+[dependencies]
+dl-types = { workspace = true }
+dl-tensor = { workspace = true }
+dl-autograd = { workspace = true }
+boost-random = { workspace = true }

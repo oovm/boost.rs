@@ -268,6 +268,15 @@ members = [
     "projects/data/data.text.xpath",
     "projects/data/data.text.yaml",
     "projects/data/data.text.zig",
+    "projects/data/data.safetensors",
+    "projects/dl/dl.autograd",
+    "projects/dl/dl.graph",
+    "projects/dl/dl.model",
+    "projects/dl/dl.nn",
+    "projects/dl/dl.ops",
+    "projects/dl/dl.tensor",
+    "projects/dl/dl.train",
+    "projects/dl/dl.types",
     "projects/document/document",
     "projects/document/document.compose",
     "projects/document/document.convert",
@@ -509,6 +518,15 @@ database-storage = { path = "projects/database/database.storage" }
 database-types = { path = "projects/database/database.types" }
 database-udf = { path = "projects/database/database.udf" }
 
+data-safetensors = { path = "projects/data/data.safetensors" }
+dl-types = { path = "projects/dl/dl.types" }
+dl-tensor = { path = "projects/dl/dl.tensor" }
+dl-ops = { path = "projects/dl/dl.ops" }
+dl-autograd = { path = "projects/dl/dl.autograd" }
+dl-graph = { path = "projects/dl/dl.graph" }
+dl-nn = { path = "projects/dl/dl.nn" }
+dl-train = { path = "projects/dl/dl.train" }
+dl-model = { path = "projects/dl/dl.model" }
 document-compose = { path = "projects/document/document.compose" }
 document-convert = { path = "projects/document/document.convert" }
 document-diagnostic = { path = "projects/document/document.diagnostic" }
