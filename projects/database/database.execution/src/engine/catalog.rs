@@ -360,7 +360,7 @@ pub fn execution_catalog_from_resolved_contract(contract: &schema_input_vos::Res
                 .map_err(|_| Error::Schema { message: "resolved VOS contract emitted an invalid field identity".into() })?;
             if kind == ExecutionTypeKind::Table {
                 for attribute in field.attributes.iter().filter(|attribute| attribute.name == "unique") {
-                    match unique_attribute_group(&attribute.syntax)? {
+                    match database_query::local::constraints::unique_attribute_group(&attribute.syntax)? {
                         Some(group) => {
                             let columns = unique_groups.entry(group).or_default();
                             if !columns.contains(&field.canonical_name) {
@@ -390,33 +390,6 @@ pub fn execution_catalog_from_resolved_contract(contract: &schema_input_vos::Res
         types.push(ExecutionType { schema_id: item.type_id, name, kind, fields, unique_constraints });
     }
     Ok(ExecutionCatalog { types })
-}
-
-/// Reads the group name of a `[unique(...)]` attribute.
-///
-/// `[unique]` and `@name` carry no argument and stay single-column rules.
-/// `[unique(group)]` (the name may be quoted) declares one multi-column rule
-/// shared by every field that spells the same group.
-///
-/// A present-but-malformed argument is an error: silently falling back to a
-/// single-column rule would change the declared uniqueness without saying so.
-fn unique_attribute_group(syntax: &str) -> Result<Option<String>> {
-    let Some(open) = syntax.find('(')
-    else {
-        return Ok(None);
-    };
-    let close = syntax
-        .rfind(')')
-        .ok_or_else(|| Error::Schema { message: format!("malformed unique attribute `{syntax}`: missing `)`") })?;
-    if close <= open + 1 {
-        return Err(Error::Schema { message: format!("malformed unique attribute `{syntax}`: empty group name") });
-    }
-    let raw = syntax[open + 1..close].trim();
-    let name = raw.strip_prefix('"').and_then(|rest| rest.strip_suffix('"')).unwrap_or(raw).trim();
-    if name.is_empty() || !name.chars().all(|character| character.is_ascii_alphanumeric() || character == '_') {
-        return Err(Error::Schema { message: format!("invalid unique group name `{raw}`: use ASCII letters, digits and `_`") });
-    }
-    Ok(Some(name.to_owned()))
 }
 
 impl ExecutionCatalog {

@@ -179,22 +179,72 @@ fn entry_key(row: &QueryRow, constraint: &UniqueConstraint) -> Option<(String, S
     Some((constraint.name().to_owned(), key))
 }
 
-/// Derives single-column unique constraints declared with the VOS `@` attribute.
+/// Derives unique constraints declared with the VOS `@` / `[unique]` attributes.
+///
+/// A bare `[unique]` or `@name` yields a single-column rule named after the
+/// field. `[unique(group)]` spelled on several fields yields one multi-column
+/// rule named after the group, matching the execution-catalog projection so
+/// the write path and the catalog never disagree about the declared rules.
 pub fn from_contract(contract: &ResolvedContract) -> Result<Vec<TableUniqueConstraint>> {
     let mut constraints = Vec::new();
     for entry in contract.types.iter().filter(|entry| entry.kind == TypeContractKind::Table) {
         let table = catalog::table_storage_name(entry)?.to_string();
         let type_name = entry.canonical_path.last().cloned().unwrap_or_else(|| table.clone());
+        let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for field in &entry.fields {
-            if field.attributes.iter().any(|attribute| attribute.name == "unique") {
-                let constraint =
-                    UniqueConstraint::new(format!("{type_name}_{}_key", field.canonical_name), vec![field.canonical_name.clone()], true)
+            for attribute in field.attributes.iter().filter(|attribute| attribute.name == "unique") {
+                match unique_attribute_group(&attribute.syntax)? {
+                    Some(group) => {
+                        let columns = groups.entry(group).or_default();
+                        if !columns.contains(&field.canonical_name) {
+                            columns.push(field.canonical_name.clone());
+                        }
+                    }
+                    None => {
+                        let constraint = UniqueConstraint::new(
+                            format!("{type_name}_{}_key", field.canonical_name),
+                            vec![field.canonical_name.clone()],
+                            true,
+                        )
                         .map_err(Error::from)?;
-                constraints.push(TableUniqueConstraint::new(table.clone(), constraint).map_err(Error::from)?);
+                        constraints.push(TableUniqueConstraint::new(table.clone(), constraint).map_err(Error::from)?);
+                    }
+                }
             }
+        }
+        for (group, columns) in groups {
+            let constraint = UniqueConstraint::new(group, columns, true).map_err(Error::from)?;
+            constraints.push(TableUniqueConstraint::new(table.clone(), constraint).map_err(Error::from)?);
         }
     }
     Ok(constraints)
+}
+
+/// Reads the group name of a `[unique(...)]` attribute.
+///
+/// `[unique]` and `@name` carry no argument and stay single-column rules.
+/// `[unique(group)]` (the name may be quoted) declares one multi-column rule
+/// shared by every field that spells the same group.
+///
+/// A present-but-malformed argument is an error: silently falling back to a
+/// single-column rule would change the declared uniqueness without saying so.
+pub fn unique_attribute_group(syntax: &str) -> Result<Option<String>> {
+    let Some(open) = syntax.find('(')
+    else {
+        return Ok(None);
+    };
+    let close = syntax
+        .rfind(')')
+        .ok_or_else(|| Error::Schema { message: format!("malformed unique attribute `{syntax}`: missing `)`") })?;
+    if close <= open + 1 {
+        return Err(Error::Schema { message: format!("malformed unique attribute `{syntax}`: empty group name") });
+    }
+    let raw = syntax[open + 1..close].trim();
+    let name = raw.strip_prefix('"').and_then(|rest| rest.strip_suffix('"')).unwrap_or(raw).trim();
+    if name.is_empty() || !name.chars().all(|character| character.is_ascii_alphanumeric() || character == '_') {
+        return Err(Error::Schema { message: format!("invalid unique group name `{raw}`: use ASCII letters, digits and `_`") });
+    }
+    Ok(Some(name.to_owned()))
 }
 
 /// Combines document-derived rules with host declarations, deduplicated by

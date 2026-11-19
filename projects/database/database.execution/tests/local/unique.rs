@@ -127,6 +127,45 @@ fn conflicting_write_leaves_the_previous_row_intact() {
     assert_eq!(second.get("handle"), Some(&Value::Text("linus".into())));
 }
 
+const JOB_SCHEMA: &str = r#"
+table Job {
+    @@job_id: i64,
+    [unique(ux_job_active_scope)] scope_type: utf8,
+    [unique(ux_job_active_scope)] scope_user_id: i64,
+    status: utf8,
+}
+"#;
+
+fn insert_job(
+    contract: &ResolvedContract,
+    records: &mut BTreeMap<String, Vec<u8>>,
+    job_id: i64,
+    scope_type: &str,
+    scope_user_id: i64,
+) -> database_types::Result<()> {
+    let source = format!(
+        r#"Job::insert({{
+            job_id: {job_id},
+            scope_type: "{scope_type}",
+            scope_user_id: {scope_user_id},
+            status: "pending",
+        }})"#
+    );
+    execute_write_with_constraints(&source, contract, &[], None, records)
+}
+
+#[test]
+fn grouped_unique_attribute_enforces_one_multi_column_rule_on_write() {
+    let contract = resolved_contract_from_document(JOB_SCHEMA).expect("job schema resolves");
+    let mut records = BTreeMap::new();
+    insert_job(&contract, &mut records, 1, "salesperson", 10).expect("first pair");
+    insert_job(&contract, &mut records, 2, "salesperson", 20).expect("same type distinct user is allowed");
+    let (name, columns) = conflict(insert_job(&contract, &mut records, 3, "salesperson", 10).expect_err("duplicate pair"));
+    assert_eq!(name, "ux_job_active_scope");
+    assert_eq!(columns, vec!["scope_type".to_owned(), "scope_user_id".to_owned()]);
+    assert_eq!(records.len(), 2);
+}
+
 #[test]
 fn deleting_a_row_frees_its_unique_key_for_reinsertion() {
     let contract = contract();
