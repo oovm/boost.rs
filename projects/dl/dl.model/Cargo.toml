@@ -17,3 +17,5 @@ data-safetensors = { workspace = true }
 [dev-dependencies]
 dl-train = { workspace = true }
 boost-random = { workspace = true }
+ml-data = { workspace = true }
+ml-metrics = { workspace = true }

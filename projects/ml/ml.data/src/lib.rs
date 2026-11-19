@@ -41,6 +41,11 @@ pub enum DataError {
         /// 具体原因。
         detail: String,
     },
+    /// IDX 字节流无法解析。
+    Idx {
+        /// 具体原因。
+        detail: String,
+    },
     /// 张量构造失败。
     Tensor(DlError),
 }
@@ -57,6 +62,7 @@ impl std::fmt::Display for DataError {
             DataError::LabelOutOfRange { label, classes } => write!(f, "label {label} outside class range {classes}"),
             DataError::EmptyDataset => write!(f, "cannot infer dataset width from an empty sample list"),
             DataError::Csv { line, detail } => write!(f, "csv line {line}: {detail}"),
+            DataError::Idx { detail } => write!(f, "idx: {detail}"),
             DataError::Tensor(error) => write!(f, "tensor error: {error}"),
         }
     }
@@ -68,6 +74,32 @@ impl From<DlError> for DataError {
     fn from(error: DlError) -> Self {
         DataError::Tensor(error)
     }
+}
+
+/// 解析 IDX 头，返回 `(样本数, 行, 列, 数据偏移)`；一维流返回 `1, 1`。
+fn idx_header(bytes: &[u8], expected_magic: u32, kind: &str) -> Result<(usize, usize, usize, usize), DataError> {
+    if bytes.len() < 4 {
+        return Err(DataError::Idx { detail: format!("{kind} stream is shorter than the magic") });
+    }
+    let magic = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+    if magic != expected_magic {
+        return Err(DataError::Idx { detail: format!("{kind} magic is 0x{magic:08x}, expected 0x{expected_magic:08x}") });
+    }
+    let rank = (magic & 0xff) as usize;
+    if rank == 0 || rank > 3 {
+        return Err(DataError::Idx { detail: format!("{kind} rank {rank} is not supported") });
+    }
+    let header = 4 * (rank + 1);
+    if bytes.len() < header {
+        return Err(DataError::Idx { detail: format!("{kind} header is truncated") });
+    }
+    let dimension = |index: usize| {
+        let offset = 4 * (index + 1);
+        u32::from_be_bytes([bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]]) as usize
+    };
+    let rows = if rank >= 2 { dimension(1) } else { 1 };
+    let cols = if rank >= 3 { dimension(2) } else { 1 };
+    Ok((dimension(0), rows, cols, header))
 }
 
 /// 一条带整数标签的稠密样本。
@@ -168,6 +200,41 @@ impl Dataset {
         }
         if samples.is_empty() {
             return Err(DataError::EmptyDataset);
+        }
+        Self::from_samples(samples)
+    }
+
+    /// 从 IDX 字节构建数据集。
+    ///
+    /// 图像流必须是 `0x00000803`（u8，`[count, rows, cols]`），标签流必须是
+    /// `0x00000801`；像素线性缩放到 `[0, 1]`，标签原样作为类别。数量不一致、magic
+    /// 不符或数据长度不足都返回 [`DataError::Idx`]。
+    pub fn from_idx(images: &[u8], labels: &[u8]) -> Result<Self, DataError> {
+        Self::from_idx_limited(images, labels, usize::MAX)
+    }
+
+    /// 与 [`Dataset::from_idx`] 相同，但最多读取 `limit` 条样本；用于冒烟测试与大集抽样。
+    pub fn from_idx_limited(images: &[u8], labels: &[u8], limit: usize) -> Result<Self, DataError> {
+        let (image_count, rows, cols, image_offset) = idx_header(images, 0x0000_0803, "images")?;
+        let (label_count, _, _, label_offset) = idx_header(labels, 0x0000_0801, "labels")?;
+        if image_count != label_count {
+            return Err(DataError::Idx { detail: format!("{image_count} images but {label_count} labels") });
+        }
+        let count = image_count.min(limit);
+        let width = rows * cols;
+        let pixel_bytes = count.checked_mul(width).ok_or(DataError::Idx { detail: "image byte count overflow".into() })?;
+        if images.len() < image_offset + pixel_bytes {
+            return Err(DataError::Idx { detail: format!("image stream truncated at {pixel_bytes} bytes") });
+        }
+        if labels.len() < label_offset + count {
+            return Err(DataError::Idx { detail: format!("label stream truncated at {count} labels") });
+        }
+
+        let mut samples = Vec::with_capacity(count);
+        for index in 0..count {
+            let start = image_offset + index * width;
+            let features = images[start..start + width].iter().map(|pixel| *pixel as f32 / 255.0).collect::<Vec<f32>>();
+            samples.push(Sample::new(features, labels[label_offset + index] as u32));
         }
         Self::from_samples(samples)
     }
@@ -445,5 +512,34 @@ mod tests {
         assert_eq!(labels, vec![0, 0, 0, 1, 1, 1, 2, 2]);
         assert_eq!(first.feature_count(), dataset.feature_count());
         assert_eq!(first.class_count(), dataset.class_count());
+    }
+
+    #[test]
+    fn idx_streams_become_scaled_samples() {
+        let mut images = Vec::new();
+        images.extend_from_slice(&0x0000_0803u32.to_be_bytes());
+        for dimension in [2u32, 2, 2] {
+            images.extend_from_slice(&dimension.to_be_bytes());
+        }
+        images.extend_from_slice(&[0, 51, 102, 255, 10, 20, 30, 40]);
+
+        let mut labels = Vec::new();
+        labels.extend_from_slice(&0x0000_0801u32.to_be_bytes());
+        labels.extend_from_slice(&2u32.to_be_bytes());
+        labels.extend_from_slice(&[3, 7]);
+
+        let dataset = Dataset::from_idx(&images, &labels).unwrap();
+        assert_eq!(dataset.feature_count(), 4);
+        assert_eq!(dataset.class_count(), 8);
+        assert_eq!(dataset.samples()[0], Sample::new(vec![0.0, 0.2, 0.4, 1.0], 3));
+        assert_eq!(dataset.samples()[1].label, 7);
+
+        let limited = Dataset::from_idx_limited(&images, &labels, 1).unwrap();
+        assert_eq!(limited.len(), 1);
+
+        assert!(matches!(Dataset::from_idx(&images[..10], &labels), Err(DataError::Idx { .. })));
+        let wrong_magic = [0u8; 28];
+        assert!(matches!(Dataset::from_idx(&wrong_magic, &labels), Err(DataError::Idx { .. })));
+        assert!(matches!(Dataset::from_idx_limited(&images, &labels[..5], 2), Err(DataError::Idx { .. })));
     }
 }
