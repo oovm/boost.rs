@@ -27,6 +27,11 @@ impl OwnedRequest {
     pub fn as_request(&self) -> database_protocol_redis::resp::Request<'_> {
         database_protocol_redis::resp::Request { arguments: self.arguments.iter().map(|value| value.as_slice()).collect(), consumed: 0 }
     }
+
+    /// 交出自有参数的所有权，供宿主在 `EXEC` 时逐条复放。
+    pub fn into_arguments(self) -> Vec<Vec<u8>> {
+        self.arguments
+    }
 }
 
 /// `MULTI` 块内缓冲的一条命令。

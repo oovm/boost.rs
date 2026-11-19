@@ -15,17 +15,23 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
-    time::Instant,
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 use database_execution::cluster::{
     KeyValueExecutor,
     redis::{
-        reply::{glob_match, write_bulk, write_error, write_null, write_unknown_command},
+        auth::AuthState,
+        introspection::{self, WaitPlan},
+        persistence::{PersistenceAction, PersistenceState},
+        reply::{glob_match, write_bulk, write_error, write_null},
+        session::{self, key_revision, watched_keys_modified},
         string as strings,
     },
 };
-use database_storage::cluster_kv::now_unix_ms;
+use database_protocol_redis::codec::{CommandError, Reply};
+use database_storage::cluster_kv::{now_unix_ms, redis::namespace as redis_namespace};
+use database_types::cluster::Namespace;
 
 use super::{
     connection::ConnectionState,
@@ -247,6 +253,10 @@ pub struct ClientRegistry {
     reads: AtomicU64,
     entries: Mutex<Vec<Arc<ClientRecord>>>,
     config: Mutex<Vec<(&'static str, String)>>,
+    /// 服务器级 `requirepass`，`CONFIG SET requirepass` 由宿主写回，认证判定读取它。
+    requirepass: Mutex<Option<String>>,
+    /// 服务器级持久化状态：最后保存时刻与后台保存进行中标记。
+    persistence: Mutex<PersistenceState>,
     started: Instant,
     run_id: String,
     port: u16,
@@ -264,6 +274,10 @@ impl ClientRegistry {
             reads: AtomicU64::new(0),
             entries: Mutex::new(Vec::new()),
             config: Mutex::new(CONFIG_DEFAULTS.iter().map(|(name, value)| (*name, (*value).to_string())).collect()),
+            requirepass: Mutex::new(None),
+            persistence: Mutex::new(PersistenceState::new(
+                SystemTime::now().duration_since(UNIX_EPOCH).map(|elapsed| elapsed.as_secs() as i64).unwrap_or(0),
+            )),
             started: Instant::now(),
             run_id: generate_run_id(),
             port,
@@ -274,6 +288,31 @@ impl ClientRegistry {
     /// 没有监听器时的独立登记表，端口与地址留空。
     pub fn standalone() -> Self {
         Self::new(0, "")
+    }
+
+    /// 写回服务器级 `requirepass`；`None` 表示未配置口令。
+    pub fn set_requirepass(&self, requirepass: Option<String>) {
+        *self.requirepass.lock().unwrap_or_else(|poison| poison.into_inner()) = requirepass;
+    }
+
+    /// 当前服务器级 `requirepass`。
+    pub fn requirepass(&self) -> Option<String> {
+        self.requirepass.lock().unwrap_or_else(|poison| poison.into_inner()).clone()
+    }
+
+    /// 同步保存完成：记录保存时刻。
+    pub fn note_saved(&self, now_unix: i64) {
+        self.persistence.lock().unwrap_or_else(|poison| poison.into_inner()).mark_saved(now_unix);
+    }
+
+    /// 后台保存完成：清进行中标记并记录保存时刻。
+    pub fn note_background_finished(&self, now_unix: i64) {
+        self.persistence.lock().unwrap_or_else(|poison| poison.into_inner()).finish_background(now_unix);
+    }
+
+    /// 宿主在服务器真正开始监听时校正 `LASTSAVE` 的时间基准。
+    pub fn note_server_started(&self, started_unix: i64) {
+        self.persistence.lock().unwrap_or_else(|poison| poison.into_inner()).set_started(started_unix);
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Vec<Arc<ClientRecord>>> {
@@ -1376,6 +1415,10 @@ pub struct EmbeddedServerFace {
     registry: Arc<ClientRegistry>,
     pubsub: Arc<PubSubState>,
     state: ConnectionState,
+    /// 这条连接的认证状态机（`AUTH` / `NOAUTH`）。
+    auth: AuthState,
+    /// 当前逻辑库号，`WATCH` 取修订号时据此构造命名空间。
+    database: u8,
 }
 
 impl EmbeddedServerFace {
@@ -1395,7 +1438,8 @@ impl EmbeddedServerFace {
     /// `INFO` 因此读到宿主侧的订阅计数，而不只是本会话自己的。
     pub fn with_id_and_pubsub(registry: Arc<ClientRegistry>, id: u64, pubsub: Arc<PubSubState>) -> Self {
         let state = ConnectionState::new(registry.attach_detached_with(id));
-        Self { registry, pubsub, state }
+        let requirepass = registry.requirepass();
+        Self { registry, pubsub, state, auth: AuthState::new(requirepass.as_deref()), database: 0 }
     }
 
     /// 同步宿主会话的库号与 RESP 版本，`CLIENT LIST` 与 `COMMAND` 读取它们。
@@ -1403,34 +1447,447 @@ impl EmbeddedServerFace {
         self.state.protocol = protocol;
         self.state.record.set_database(database);
         self.state.record.set_protocol(protocol);
+        self.database = database;
     }
 
-    /// 执行一条服务器面命令；返回 `false` 表示 `CLIENT KILL` 命中了本会话。
-    pub fn execute(&mut self, stream: &mut dyn Write, arguments: &[&[u8]], executor: &dyn KeyValueExecutor) -> io::Result<bool> {
+    /// 宿主为它自己拥有的命令族排队一条命令，返回队列长度。
+    ///
+    /// 排队期校验归命令族的 owner：上游能校验的族由 [`execute`](Self::execute) 直接
+    /// 入队，宿主实现的族（streams、`EVAL` 等）在宿主自己校验之后走这里，队列本体
+    /// 始终只存在上游会话里。
+    pub fn queue_host_command(&mut self, arguments: &[&[u8]]) -> usize {
+        let queued = self.state.session.queue(arguments);
+        self.state.record.set_multi(Some(queued));
+        queued
+    }
+
+    /// 宿主在排队期拒绝一条命令后给事务中毒。
+    pub fn poison_host_command(&mut self) {
+        self.state.session.poison();
+    }
+
+    /// 当前是否处于 `MULTI` 块内。
+    pub fn in_multi(&self) -> bool {
+        self.state.session.in_multi()
+    }
+
+    /// 嵌入式会话网关：执行一条命令并返回宿主必须跟进的副作用。
+    ///
+    /// 网关拥有连接状态机的全部判定：`NOAUTH` 门禁、`AUTH` / `HELLO` / `RESET` /
+    /// `QUIT`、`MULTI` 排队与中毒、`WATCH` 修订号、`EXEC` 的放弃判定、持久化计划与
+    /// `WAIT` / `LATENCY`。命令语义属于宿主的族（数据族、`CONFIG` 的本地选项、
+    /// streams）返回 `handled = false`，由宿主自己运行或排队。`replaying` 表示这条
+    /// 命令来自 `EXEC` 复放：`WAIT` 立即回 0，与真机在事务内不复挂起的语义一致。
+    pub fn execute(&mut self, stream: &mut dyn Write, arguments: &[&[u8]], executor: &dyn KeyValueExecutor, replaying: bool) -> io::Result<SessionOutcome> {
+        let mut outcome = SessionOutcome::default();
+        outcome.in_multi = self.state.session.in_multi();
         let request = Request { arguments: arguments.to_vec(), consumed: 0 };
         let command = arguments.first().copied().unwrap_or_default();
+        let count = arguments.len();
         self.state.record.touch(command_context(command, arguments));
         self.registry.bump_command();
+        if command.is_empty() {
+            outcome.handled = true;
+            return Ok(outcome);
+        }
+        if let Some(reply) = self.auth.gate(command, self.registry.requirepass().as_deref()) {
+            self.answer(stream, &mut outcome, reply)?;
+            return Ok(outcome);
+        }
+        if command.eq_ignore_ascii_case(b"QUIT") {
+            self.answer(stream, &mut outcome, Reply::ok())?;
+            outcome.close = true;
+            return Ok(outcome);
+        }
+        if command.eq_ignore_ascii_case(b"AUTH") {
+            let reply = self.auth.authenticate(arguments, self.registry.requirepass().as_deref());
+            self.answer(stream, &mut outcome, reply)?;
+            return Ok(outcome);
+        }
+        if command.eq_ignore_ascii_case(b"HELLO") {
+            return self.handle_hello(stream, arguments, outcome);
+        }
+        if command.eq_ignore_ascii_case(b"RESET") {
+            if count != 1 {
+                self.answer_error(stream, &mut outcome, CommandError::Failed("wrong number of arguments for 'reset' command".to_owned()))?;
+                return Ok(outcome);
+            }
+            self.state.session.discard();
+            self.state.record.set_multi(None);
+            self.state.protocol = 2;
+            self.state.record.set_protocol(2);
+            self.database = 0;
+            self.state.record.set_database(0);
+            self.answer(stream, &mut outcome, Reply::status("RESET"))?;
+            outcome.reset = true;
+            outcome.protocol = Some(2);
+            outcome.in_multi = false;
+            return Ok(outcome);
+        }
+        if command.eq_ignore_ascii_case(b"WATCH") {
+            return self.handle_watch(stream, arguments, executor, outcome);
+        }
+        if command.eq_ignore_ascii_case(b"MULTI") {
+            if count != 1 {
+                self.answer_error(stream, &mut outcome, CommandError::Failed("wrong number of arguments for 'multi' command".to_owned()))?;
+                return Ok(outcome);
+            }
+            if self.state.session.in_multi() {
+                self.answer_error(stream, &mut outcome, CommandError::Failed("MULTI calls can not be nested".to_owned()))?;
+                return Ok(outcome);
+            }
+            self.state.session.begin_multi();
+            self.state.record.set_multi(Some(0));
+            self.answer(stream, &mut outcome, Reply::ok())?;
+            outcome.in_multi = true;
+            return Ok(outcome);
+        }
+        if command.eq_ignore_ascii_case(b"EXEC") {
+            return self.handle_exec(stream, arguments, executor, outcome);
+        }
+        if command.eq_ignore_ascii_case(b"DISCARD") {
+            if count != 1 {
+                self.answer_error(stream, &mut outcome, CommandError::Failed("wrong number of arguments for 'discard' command".to_owned()))?;
+                return Ok(outcome);
+            }
+            if !self.state.session.in_multi() {
+                self.answer_error(stream, &mut outcome, CommandError::Failed("DISCARD without MULTI".to_owned()))?;
+                return Ok(outcome);
+            }
+            self.state.session.discard();
+            self.state.record.set_multi(None);
+            self.answer(stream, &mut outcome, Reply::ok())?;
+            outcome.in_multi = false;
+            return Ok(outcome);
+        }
+        if command.eq_ignore_ascii_case(b"UNWATCH") {
+            if count != 1 {
+                self.answer_error(stream, &mut outcome, CommandError::Failed("wrong number of arguments for 'unwatch' command".to_owned()))?;
+                return Ok(outcome);
+            }
+            if self.state.session.in_multi() {
+                self.queue(stream, &mut outcome, arguments)?;
+                return Ok(outcome);
+            }
+            self.state.session.unwatch();
+            self.answer(stream, &mut outcome, Reply::ok())?;
+            return Ok(outcome);
+        }
+        // `SAVE` 与 `SHUTDOWN` 是 no-multi 命令：排队尝试直接毒化整个事务。
+        if self.state.session.in_multi() && (command.eq_ignore_ascii_case(b"SAVE") || command.eq_ignore_ascii_case(b"SHUTDOWN")) {
+            self.state.session.poison();
+            let upper = String::from_utf8_lossy(command).to_uppercase();
+            self.answer_error(stream, &mut outcome, CommandError::Coded(format!("ERR Command {upper} can not be used in MULTI")))?;
+            return Ok(outcome);
+        }
+        if PersistenceState::is_command(command) {
+            return self.handle_persistence(stream, arguments, outcome);
+        }
+        if command.eq_ignore_ascii_case(b"WAIT") {
+            return self.handle_wait(stream, arguments, outcome, replaying);
+        }
+        if command.eq_ignore_ascii_case(b"LATENCY") {
+            return self.handle_latency(stream, arguments, outcome);
+        }
+        if self.state.session.in_multi() {
+            // 上游能校验的族在这里入队；宿主拥有的族以 `handled = false` 落回，
+            // 由宿主自行校验后经 `queue_host_command` 入队。
+            return match session::validate_command_for_queue(command, count, arguments, true, &self.namespace()) {
+                Ok(()) => {
+                    self.queue(stream, &mut outcome, arguments)?;
+                    Ok(outcome)
+                }
+                Err(error) if is_unsupported(&error) => Ok(outcome),
+                Err(error) => {
+                    self.state.session.poison();
+                    self.answer_error(stream, &mut outcome, error)?;
+                    Ok(outcome)
+                }
+            };
+        }
         if command.eq_ignore_ascii_case(b"CLIENT") {
-            return handle_client(stream, &request, &self.state, &self.registry, &self.pubsub);
+            let alive = handle_client(stream, &request, &self.state, &self.registry, &self.pubsub)?;
+            outcome.handled = true;
+            outcome.close = !alive;
+            return Ok(outcome);
         }
         if command.eq_ignore_ascii_case(b"COMMAND") {
             handle_command(stream, &request, self.state.protocol)?;
+            outcome.handled = true;
+            return Ok(outcome);
         }
-        else if command.eq_ignore_ascii_case(b"INFO") {
+        if command.eq_ignore_ascii_case(b"INFO") {
             handle_info(stream, &request, &self.registry, &self.pubsub, Some(executor))?;
+            outcome.handled = true;
+            return Ok(outcome);
         }
-        else if command.eq_ignore_ascii_case(b"CONFIG") {
+        if command.eq_ignore_ascii_case(b"CONFIG") {
             handle_config(stream, &request, &self.registry)?;
+            outcome.handled = true;
+            return Ok(outcome);
         }
-        else if command.eq_ignore_ascii_case(b"ACL") {
+        if command.eq_ignore_ascii_case(b"ACL") {
             handle_acl(stream, &request, self.state.protocol)?;
+            outcome.handled = true;
+            return Ok(outcome);
+        }
+        // 数据族与其余宿主语义：网关不执行、不代答。
+        Ok(outcome)
+    }
+
+    fn handle_hello(&mut self, stream: &mut dyn Write, arguments: &[&[u8]], mut outcome: SessionOutcome) -> io::Result<SessionOutcome> {
+        if arguments.len() == 1 {
+            self.write_hello(stream)?;
+            outcome.handled = true;
+            return Ok(outcome);
+        }
+        let protocol = match session::parse_integer(arguments[1]) {
+            Some(value @ (2 | 3)) => value as u8,
+            _ => {
+                self.answer_error(stream, &mut outcome, CommandError::Coded("NOPROTO unsupported protocol version".to_owned()))?;
+                return Ok(outcome);
+            }
+        };
+        let mut username: Option<String> = None;
+        let mut password: Option<String> = None;
+        let mut name: Option<Vec<u8>> = None;
+        let mut index = 2;
+        while index < arguments.len() {
+            let option = String::from_utf8_lossy(arguments[index]).to_uppercase();
+            if option == "AUTH" {
+                if username.is_some() || password.is_some() || index + 2 >= arguments.len() {
+                    self.answer_error(stream, &mut outcome, CommandError::Failed("syntax error".to_owned()))?;
+                    return Ok(outcome);
+                }
+                username = Some(String::from_utf8_lossy(arguments[index + 1]).into_owned());
+                password = Some(String::from_utf8_lossy(arguments[index + 2]).into_owned());
+                index += 3;
+            }
+            else if option == "SETNAME" {
+                if name.is_some() || index + 1 >= arguments.len() {
+                    self.answer_error(stream, &mut outcome, CommandError::Failed("syntax error".to_owned()))?;
+                    return Ok(outcome);
+                }
+                name = Some(arguments[index + 1].to_vec());
+                index += 2;
+            }
+            else {
+                self.answer_error(stream, &mut outcome, CommandError::Failed("syntax error".to_owned()))?;
+                return Ok(outcome);
+            }
+        }
+        if let (Some(username), Some(password)) = (&username, &password)
+            && let Err(error) = self.auth.check_credential(username, password, false, self.registry.requirepass().as_deref())
+        {
+            self.answer_error(stream, &mut outcome, error)?;
+            return Ok(outcome);
+        }
+        self.state.protocol = protocol;
+        self.state.record.set_protocol(protocol);
+        if let Some(name) = name {
+            let empty = name.is_empty();
+            self.state.record.set_name(if empty { None } else { Some(name.clone()) });
+            outcome.name = Some(name);
+        }
+        self.write_hello(stream)?;
+        outcome.handled = true;
+        outcome.protocol = Some(protocol);
+        Ok(outcome)
+    }
+
+    fn handle_watch(&mut self, stream: &mut dyn Write, arguments: &[&[u8]], executor: &dyn KeyValueExecutor, mut outcome: SessionOutcome) -> io::Result<SessionOutcome> {
+        if arguments.len() < 2 {
+            self.answer_error(stream, &mut outcome, CommandError::Failed("wrong number of arguments for 'watch' command".to_owned()))?;
+            return Ok(outcome);
+        }
+        if self.state.session.in_multi() {
+            self.answer_error(stream, &mut outcome, CommandError::Failed("WATCH inside MULTI is not allowed".to_owned()))?;
+            return Ok(outcome);
+        }
+        let namespace = self.namespace();
+        for key in &arguments[1..] {
+            if self.state.session.is_watching(&namespace, key) {
+                continue;
+            }
+            let revision = key_revision(executor, &namespace, key).map_err(io::Error::other)?;
+            self.state.session.watch(&namespace, key, revision);
+        }
+        self.answer(stream, &mut outcome, Reply::ok())?;
+        Ok(outcome)
+    }
+
+    fn handle_exec(&mut self, stream: &mut dyn Write, arguments: &[&[u8]], executor: &dyn KeyValueExecutor, mut outcome: SessionOutcome) -> io::Result<SessionOutcome> {
+        if arguments.len() != 1 {
+            self.answer_error(stream, &mut outcome, CommandError::Failed("wrong number of arguments for 'exec' command".to_owned()))?;
+            return Ok(outcome);
+        }
+        if !self.state.session.in_multi() {
+            self.answer_error(stream, &mut outcome, CommandError::Failed("EXEC without MULTI".to_owned()))?;
+            return Ok(outcome);
+        }
+        let dirty = self.state.session.multi_error();
+        let watched = self.state.session.watched().to_vec();
+        let queue = self.state.session.finish_exec();
+        self.state.record.set_multi(None);
+        outcome.in_multi = false;
+        if dirty {
+            self.answer_error(stream, &mut outcome, CommandError::Coded("EXECABORT Transaction discarded because of previous errors.".to_owned()))?;
+            return Ok(outcome);
+        }
+        if !watched.is_empty() && watched_keys_modified(executor, &watched).map_err(io::Error::other)? {
+            self.answer(stream, &mut outcome, Reply::NullArray)?;
+            return Ok(outcome);
+        }
+        if queue.is_empty() {
+            self.answer(stream, &mut outcome, Reply::array(Vec::new()))?;
+            return Ok(outcome);
+        }
+        outcome.handled = true;
+        outcome.replay = queue.into_iter().map(|entry| entry.request.into_arguments()).collect();
+        Ok(outcome)
+    }
+
+    fn handle_persistence(&mut self, stream: &mut dyn Write, arguments: &[&[u8]], mut outcome: SessionOutcome) -> io::Result<SessionOutcome> {
+        let command = arguments.first().copied().unwrap_or_default();
+        if self.state.session.in_multi() {
+            if let Err(error) = PersistenceState::validate_for_queue(command, arguments) {
+                self.state.session.poison();
+                self.answer_error(stream, &mut outcome, error)?;
+                return Ok(outcome);
+            }
+            self.queue(stream, &mut outcome, arguments)?;
+            return Ok(outcome);
+        }
+        let now_unix = now_unix_ms() / 1000;
+        let planned = self.registry.persistence.lock().unwrap_or_else(|poison| poison.into_inner()).plan(command, arguments, now_unix);
+        if let Some(reply) = planned.reply {
+            self.answer(stream, &mut outcome, reply)?;
         }
         else {
-            write_unknown_command(stream, arguments)?;
+            outcome.handled = true;
         }
-        Ok(true)
+        outcome.action = planned.action;
+        if matches!(planned.action, PersistenceAction::Shutdown { .. }) {
+            outcome.close = true;
+        }
+        Ok(outcome)
     }
+
+    fn handle_wait(&mut self, stream: &mut dyn Write, arguments: &[&[u8]], mut outcome: SessionOutcome, replaying: bool) -> io::Result<SessionOutcome> {
+        match introspection::plan_wait(arguments) {
+            Ok(WaitPlan::Immediate(reply)) => {
+                self.answer(stream, &mut outcome, reply)?;
+                Ok(outcome)
+            }
+            Ok(WaitPlan::Delay { timeout_ms: _ }) if self.state.session.in_multi() => {
+                self.queue(stream, &mut outcome, arguments)?;
+                Ok(outcome)
+            }
+            Ok(WaitPlan::Delay { timeout_ms: _ }) if replaying => {
+                self.answer(stream, &mut outcome, Reply::Integer(0))?;
+                Ok(outcome)
+            }
+            Ok(WaitPlan::Delay { timeout_ms }) => {
+                outcome.handled = true;
+                outcome.wait = Some(timeout_ms);
+                Ok(outcome)
+            }
+            Err(error) => {
+                if self.state.session.in_multi() {
+                    self.state.session.poison();
+                }
+                self.answer_error(stream, &mut outcome, error)?;
+                Ok(outcome)
+            }
+        }
+    }
+
+    fn handle_latency(&mut self, stream: &mut dyn Write, arguments: &[&[u8]], mut outcome: SessionOutcome) -> io::Result<SessionOutcome> {
+        match introspection::plan_latency(arguments) {
+            Ok(_) if self.state.session.in_multi() => {
+                self.queue(stream, &mut outcome, arguments)?;
+                Ok(outcome)
+            }
+            Ok(reply) => {
+                self.answer(stream, &mut outcome, reply)?;
+                Ok(outcome)
+            }
+            Err(error) => {
+                if self.state.session.in_multi() {
+                    self.state.session.poison();
+                }
+                self.answer_error(stream, &mut outcome, error)?;
+                Ok(outcome)
+            }
+        }
+    }
+
+    fn write_hello(&self, stream: &mut dyn Write) -> io::Result<()> {
+        let reply = Reply::Map(vec![
+            (Reply::bulk("server".to_owned()), Reply::bulk("redis".to_owned())),
+            (Reply::bulk("version".to_owned()), Reply::bulk("7.4.0".to_owned())),
+            (Reply::bulk("proto".to_owned()), Reply::Integer(i64::from(self.state.protocol))),
+            (Reply::bulk("id".to_owned()), Reply::Integer(self.state.record.id as i64)),
+            (Reply::bulk("mode".to_owned()), Reply::bulk("standalone".to_owned())),
+            (Reply::bulk("role".to_owned()), Reply::bulk("master".to_owned())),
+            (Reply::bulk("modules".to_owned()), Reply::array(Vec::new())),
+        ]);
+        self.write_reply(stream, &reply)
+    }
+
+    fn namespace(&self) -> Namespace {
+        Namespace(redis_namespace(self.database))
+    }
+
+    fn write_reply(&self, stream: &mut dyn Write, reply: &Reply) -> io::Result<()> {
+        let mut frame = Vec::new();
+        reply.encode(self.state.protocol, &mut frame);
+        stream.write_all(&frame)
+    }
+
+    fn answer(&self, stream: &mut dyn Write, outcome: &mut SessionOutcome, reply: Reply) -> io::Result<()> {
+        self.write_reply(stream, &reply)?;
+        outcome.handled = true;
+        Ok(())
+    }
+
+    fn answer_error(&self, stream: &mut dyn Write, outcome: &mut SessionOutcome, error: CommandError) -> io::Result<()> {
+        self.answer(stream, outcome, error.to_reply())
+    }
+
+    fn queue(&mut self, stream: &mut dyn Write, outcome: &mut SessionOutcome, arguments: &[&[u8]]) -> io::Result<()> {
+        let queued = self.state.session.queue(arguments);
+        self.state.record.set_multi(Some(queued));
+        self.answer(stream, outcome, Reply::status("QUEUED"))
+    }
+}
+
+/// 嵌入式会话网关的副作用集，宿主按字段跟进。
+#[derive(Debug, Default)]
+pub struct SessionOutcome {
+    /// 网关已经答复这条命令，宿主不得再自行运行。
+    pub handled: bool,
+    /// 连接必须关闭（`QUIT`、`CLIENT KILL` 命中自身或 `SHUTDOWN`）。
+    pub close: bool,
+    /// 宿主必须对存储执行的持久化动作。
+    pub action: PersistenceAction,
+    /// `EXEC` 释放的队列，宿主按序逐条复放后回数组。
+    pub replay: Vec<Vec<Vec<u8>>>,
+    /// `WAIT` 停车指令：宿主挂起连接并在超时后回整数 0。
+    pub wait: Option<i64>,
+    /// `HELLO` / `RESET` 之后的生效 RESP 版本，供宿主镜像。
+    pub protocol: Option<u8>,
+    /// `HELLO ... SETNAME` 写入的连接名，供宿主镜像。
+    pub name: Option<Vec<u8>>,
+    /// `RESET` 已运行，宿主必须清订阅并回到 0 号库。
+    pub reset: bool,
+    /// 本条命令处理完后连接是否仍处于 `MULTI` 块内。
+    pub in_multi: bool,
+}
+
+/// 上游校验表覆盖不到的命令族：让宿主自行校验与排队。
+fn is_unsupported(error: &CommandError) -> bool {
+    matches!(error, CommandError::Failed(message) if message == "unsupported command")
 }
 
 impl Default for EmbeddedServerFace {

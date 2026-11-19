@@ -3,7 +3,9 @@
 //!
 //! 值种类命名空间解析、扁平值种类写入与删除由 [`RedisExecutor`] 表达；集合命令家族与
 //! 阻塞等待表在 [`collections`] / [`blocking`] 内，字符串与键空间命令族在 [`string`]，
-//! 事务会话在 [`session`]，回复分帧 primitives 在 [`reply`]。
+//! 事务会话在 [`session`]，认证状态机在 [`auth`]，持久化与生命周期计划在
+//! [`persistence`]，`WAIT` / `LATENCY` 计划在 [`introspection`]，回复分帧 primitives 在
+//! [`reply`]。
 
 use std::sync::Mutex;
 
@@ -15,8 +17,11 @@ use super::KeyValueExecutor;
 
 pub use database_storage::cluster_kv::redis::check_kind;
 
+pub mod auth;
 pub mod blocking;
 pub mod collections;
+pub mod introspection;
+pub mod persistence;
 pub mod reply;
 pub mod session;
 pub mod string;
