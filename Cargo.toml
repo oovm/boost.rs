@@ -102,6 +102,7 @@ members = [
     "projects/data/data.binary.docx",
     "projects/data/data.binary.dxbc",
     "projects/data/data.binary.epub",
+    "projects/data/data.binary.host",
     "projects/data/data.binary.hsaco",
     "projects/data/data.binary.jvm",
     "projects/data/data.binary.mach-o",
@@ -636,6 +637,7 @@ data-binary-doc = { path = "projects/data/data.binary.doc" }
 data-binary-docx = { path = "projects/data/data.binary.docx" }
 data-binary-dxbc = { path = "projects/data/data.binary.dxbc" }
 data-binary-epub = { path = "projects/data/data.binary.epub" }
+data-binary-host = { path = "projects/data/data.binary.host" }
 data-binary-hsaco = { path = "projects/data/data.binary.hsaco" }
 data-binary-jvm = { path = "projects/data/data.binary.jvm" }
 data-binary-mach-o = { path = "projects/data/data.binary.mach-o" }
