@@ -4,6 +4,7 @@
         "build": "cargo build --release",
         "test": "cargo test --release",
         "fmt": "cargo fmt --all",
+        "gate:legacy": "node tools/check-legacy-refs.mjs",
         "push": "wee test && git push",
         "reset": "git reset Head~ --soft",
         "u": "cargo upgrade --offline --incompatible"

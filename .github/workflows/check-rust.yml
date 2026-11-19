@@ -7,6 +7,14 @@ on:
     branches: [ master, dev ]
 
 jobs:
+  legacy-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v5
+      - name: Reject new Oak/Acorn packages, sources, and patch roots
+        run: node tools/check-legacy-refs.mjs
+
   build:
     runs-on: ${{ matrix.os }}
     strategy:
