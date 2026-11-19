@@ -1,4 +1,4 @@
-//! 二进制格式模型（过渡 `vcc-data` → `acorn-*`）。
+//! 二进制格式模型（过渡 `vcc-data` → `data.binary.*`）。
 //!
 //! JVM `class` / `JAR` 已迁入 `data-binary-jvm`。
 //! `COFF` / `ELF` / `PE`（含托管 `CLR` 写出）已迁入 `data-binary-pe`。
