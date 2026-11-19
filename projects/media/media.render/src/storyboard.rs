@@ -219,14 +219,20 @@ pub struct ComparisonPage {
     pub path: String,
     /// Panels compared on this page, in order.
     pub panels: Vec<String>,
+    /// Sample frames drawn for every panel, in order. The same three key
+    /// frames are sampled in both revisions, so a camera move reads as motion
+    /// instead of a single still.
+    pub frames: Vec<u32>,
 }
 
-/// Writes a before/after page: each panel's middle frame from two revisions.
+/// Writes a before/after page: each panel's key frames from two revisions.
 ///
 /// Both revisions are rendered with the same painter, so a colour or layout
-/// change shows as the real difference instead of a re-encode artifact. The
-/// panel set and layout come from the current book; a panel that only exists in
-/// `before` is not shown, because the review is about the current storyboard.
+/// change shows as the real difference instead of a re-encode artifact. Every
+/// panel gets its first, middle and last frame, so a push-in or a drift is
+/// visible as movement rather than one representative still. The panel set and
+/// layout come from the current book; a panel that only exists in `before` is
+/// not shown, because the review is about the current storyboard.
 pub fn write_comparison(
     before_json: &str,
     after_json: &str,
@@ -253,58 +259,64 @@ pub fn write_comparison(
     let content_width = options.width as f32 - options.margin * 2.0;
     let row_height = (((options.height as f32 - top - options.margin - options.gap * (selected.len().saturating_sub(1)) as f32)
         / selected.len() as f32)
-        .clamp(120.0, 340.0));
-    let thumb_width = (content_width - options.gap) / 2.0;
-    let label_height = options.label_size * 2.0;
+        .clamp(200.0, 440.0));
+    let samples = selected[0].frames.len().max(1);
+    let thumb_width = (content_width - options.gap * (samples.saturating_sub(1)) as f32) / samples as f32;
+    let header_size = options.label_size * 1.05;
+    let caption_size = options.label_size * 0.8;
+    let header_height = header_size * 1.6;
+    let caption_height = caption_size * 1.8;
+    let strip_gap = options.gap * 0.4;
+    let image_height = ((row_height - header_height - caption_height * 2.0 - strip_gap) / 2.0).max(30.0);
+    let mut shown = Vec::new();
 
     for (row, block) in selected.iter().enumerate() {
         let y = top + (row_height + options.gap) * row as f32;
-        let image_height = (row_height - label_height).max(40.0);
-        // A frame that only exists in the old revision still maps by the same
-        // panel range, so the comparison stays on the same moment.
-        let before_frame = block.frames[1].min(before.duration_frames.saturating_sub(1));
-        let left = render_frame_at(before_json, before_frame)?;
-        let right = render_frame_at(after_json, block.frames[1])?;
-        page.draw_bitmap(&bitmap(left), options.margin, y, thumb_width, image_height, Fit::Contain, 1.0, 4.0);
-        page.draw_bitmap(&bitmap(right), options.margin + thumb_width + options.gap, y, thumb_width, image_height, Fit::Contain, 1.0, 4.0);
-        draw_text(
-            &mut fonts,
-            &mut page,
-            options,
-            "before",
-            options.margin,
-            y + image_height + options.label_size,
-            options.label_size * 0.85,
-            thumb_width,
+        let before_top = y + header_height;
+        let after_top = before_top + image_height + caption_height + strip_gap;
+        let header = format!(
+            "{} · {} · f{}–f{} · before / after",
+            block.shot, block.panel, block.frames[0], block.frames[samples - 1]
         );
-        draw_text(
-            &mut fonts,
-            &mut page,
-            options,
-            "after",
-            options.margin + thumb_width + options.gap,
-            y + image_height + options.label_size,
-            options.label_size * 0.85,
-            thumb_width,
-        );
-        let header = format!("{} · {} · f{}", block.shot, block.panel, block.frames[1]);
-        draw_text(
-            &mut fonts,
-            &mut page,
-            options,
-            &header,
-            options.margin,
-            y + image_height + options.label_size * 1.9,
-            options.label_size,
-            content_width,
-        );
+        draw_text(&mut fonts, &mut page, options, &header, options.margin, y + header_size, header_size, content_width);
+        for (column, frame) in block.frames.iter().enumerate() {
+            let x = options.margin + (thumb_width + options.gap) * column as f32;
+            // A frame that only exists in the old revision still maps by the
+            // same panel range, so the comparison stays on the same moment.
+            let before_frame = (*frame).min(before.duration_frames.saturating_sub(1));
+            let left = render_frame_at(before_json, before_frame)?;
+            page.draw_bitmap(&bitmap(left), x, before_top, thumb_width, image_height, Fit::Contain, 1.0, 4.0);
+            draw_text(
+                &mut fonts,
+                &mut page,
+                options,
+                &format!("before f{before_frame}"),
+                x,
+                before_top + image_height + caption_size,
+                caption_size,
+                thumb_width,
+            );
+            let right = render_frame_at(after_json, *frame)?;
+            page.draw_bitmap(&bitmap(right), x, after_top, thumb_width, image_height, Fit::Contain, 1.0, 4.0);
+            draw_text(
+                &mut fonts,
+                &mut page,
+                options,
+                &format!("after f{frame}"),
+                x,
+                after_top + image_height + caption_size,
+                caption_size,
+                thumb_width,
+            );
+            shown.push(*frame);
+        }
     }
 
     if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent).map_err(|e| Error::io(format!("cannot create {}: {e}", parent.display())))?;
     }
     write_page(out, &page)?;
-    Ok(ComparisonPage { path: out.to_string_lossy().into_owned(), panels: selected.iter().map(|block| block.panel.clone()).collect() })
+    Ok(ComparisonPage { path: out.to_string_lossy().into_owned(), panels: selected.iter().map(|block| block.panel.clone()).collect(), frames: shown })
 }
 
 /// Writes a chapter overview: one row per shot with its first and last frame.
@@ -944,6 +956,7 @@ mod tests {
                 camera: Some("push in 1.0 -> 1.2".to_owned()),
                 sound: Some("typing starts".to_owned()),
                 safe_area: Some([0.1, 0.1, 0.9, 0.85]),
+                witness: Vec::new(),
                 notes: Vec::new(),
             }],
         });
@@ -960,6 +973,7 @@ mod tests {
                 camera: None,
                 sound: None,
                 safe_area: None,
+                witness: Vec::new(),
                 notes: Vec::new(),
             }],
         });
@@ -1097,6 +1111,7 @@ mod tests {
         let out = out_dir().join("comparison.png");
         let page = write_comparison(&before, &json, &production, &out, &[], &StoryboardOptions::default()).expect("comparison");
         assert_eq!(page.panels, vec!["panel-open".to_owned(), "panel-room".to_owned()]);
+        assert_eq!(page.frames, vec![0, 30, 59, 60, 75, 89], "every panel shows its first, middle and last frame");
         let mut library = media_codec::MediaLibrary::new();
         let bitmap = library.image(&page.path, media_codec::DecodeLimits::unbounded()).expect("decode comparison");
         assert_eq!((bitmap.width, bitmap.height), (1600, 1200));
