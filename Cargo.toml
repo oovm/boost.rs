@@ -274,6 +274,7 @@ members = [
     "projects/dl/dl.model",
     "projects/dl/dl.nn",
     "projects/dl/dl.ops",
+    "projects/dl/dl.plan",
     "projects/dl/dl.tensor",
     "projects/dl/dl.train",
     "projects/dl/dl.types",
@@ -530,6 +531,7 @@ dl-graph = { path = "projects/dl/dl.graph" }
 dl-nn = { path = "projects/dl/dl.nn" }
 dl-train = { path = "projects/dl/dl.train" }
 dl-model = { path = "projects/dl/dl.model" }
+dl-plan = { path = "projects/dl/dl.plan" }
 document-compose = { path = "projects/document/document.compose" }
 document-convert = { path = "projects/document/document.convert" }
 document-diagnostic = { path = "projects/document/document.diagnostic" }

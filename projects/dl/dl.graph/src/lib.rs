@@ -372,6 +372,11 @@ impl Graph {
         self.nodes.get(id.0).map(|node| &node.op)
     }
 
+    /// 返回节点的输入节点；未知节点返回 `None`。
+    pub fn node_inputs(&self, id: NodeId) -> Option<&[NodeId]> {
+        self.nodes.get(id.0).map(|node| node.inputs.as_slice())
+    }
+
     /// 按声明顺序遍历运行期输入。
     pub fn inputs(&self) -> impl Iterator<Item = (&str, &[usize])> {
         self.nodes.iter().filter_map(|node| match &node.op {
