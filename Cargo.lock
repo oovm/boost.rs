@@ -892,6 +892,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-binary-probe"
+version = "0.1.0"
+dependencies = [
+ "boost-source 0.1.0",
+ "data-binary-core",
+]
+
+[[package]]
 name = "data-checksum"
 version = "0.1.0"
 
