@@ -1,24 +1,22 @@
-# language.valkyrie
+# `compiler-valkyrie`
 
-Valkyrie 语言的消费门面。宿主（Node-API、CLI、编辑器服务与测试 harness）只依赖本 crate，
-不需要分别认识编译器、包管理与 OVM 执行三个底层能力。
+Valkyrie language implementation: type model, HIR, MIR, semantic analysis and target adaptation
 
-## 归属
+Valkyrie 语言的编译实现（`compiler.valkyrie`）。
 
-- 语言语义、类型模型、HIR/MIR、诊断与目标适配归 `compiler.valkyrie`，本 crate 只再导出。
-- Legion 工程编排与 Asgard 交付归 `package.manager`，本 crate 只再导出。
-- OVM 执行归 `interpreter.vm.ovm`，执行清单归 `package.manager::legion`。
+# 归属
 
-## 表面
+语言含义与编译事实的生产者归具体语言：类型模型、HIR/MIR、类型检查、诊断与目标适配都在这里。
+与语言无关的链接、优化、发射和目标解析在 `compiler.*` 的其它 crate；面向编辑器/CLI 的
+文档与请求服务归 `language.*`，不由本 crate 承担。
 
-| 模块 | 作用 |
-|------|------|
-| `compiler` | 编译事实与稳定编译 API |
-| `legion` | 工程规划、构建、测试与缓存 |
-| `asgard` | 静态站点构建与托管 |
-| `product` | 面向宿主的结构化产品 API（选项与结果均为纯 Rust 类型） |
-| `execution` | execution manifest 摘要与可信复用判定 |
-| `ovm` | `.odin` 导出枚举与带 ABI 合同的调用 |
+# 依赖方向
 
-`product` / `execution` / `ovm` 不包含任何宿主绑定类型；Node-API 绑定层负责把这些
-纯 Rust 结构映射为宿主对象，不得在算法层引入宿主对象。
+- 消费 `compiler.*`、Acorn 格式合同，以及解析本语言源码所需的 `data.text` 语法 crate。
+- 不反向要求 `compiler.*` 认识本语言的语法、效果或运行时语义。
+
+# 已迁出
+
+产品工具链（`legion` 编排与 `asgard` 交付）已移入 `package.manager` 的 `legion` / `asgard`
+模块：它们是 Valkyrie 生态的产品策略与 CLI，不属于语言编译事实，并且与包管理机制共用
+工作区约束。本 crate 只保留编译本身。
