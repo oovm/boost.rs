@@ -108,7 +108,7 @@ impl WasmHeapType {
             Self::NoExtern => -0x19,
             Self::Index(index) => *index,
         };
-        data_compression::integer::Leb128::<i64>::encode(value, output);
+        data_encoding::integer::Leb128::<i64>::encode(value, output);
     }
 }
 

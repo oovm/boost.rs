@@ -1,7 +1,7 @@
 //! Structural tests for the SPIR-V module layout adapter.
 
-use data_binary_core::{Budget, BudgetError, BudgetTracker, ByteRange};
-use boost_source::binary::{ByteSource, MemorySource, ReadError, ReadOutcome, ReadResult, SourceCapabilities, SourceIdentity};
+use data_binary_core::{Budget, BudgetError, BudgetTracker, ByteExtent};
+use boost_source::binary::{ByteSource, MemorySource, ReadError, ReadOutcome, ReadResult, SourceCapabilities, ContentIdentity};
 use data_binary_spirv::{
     SPIRV_ID_BOUND_CEILING, SPIRV_MAGIC, SpirvBoundSuspicion, SpirvByteError, SpirvLayoutError, SpirvModule, validate_spirv,
     validate_spirv_bytes,
@@ -83,17 +83,17 @@ fn parses_minimal_module_with_instruction_ranges() {
             opcode: OP_CAPABILITY,
             word_count: 2,
             word_offset: 5,
-            byte_range: ByteRange { start: 20, len: 8 },
+            byte_range: ByteExtent { start: 20, len: 8 },
         }
     );
     assert_eq!(instructions[1].opcode, OP_MEMORY_MODEL);
     assert_eq!(instructions[1].word_count, 3);
     assert_eq!(instructions[1].word_offset, 7);
-    assert_eq!(instructions[1].byte_range, ByteRange { start: 28, len: 12 });
+    assert_eq!(instructions[1].byte_range, ByteExtent { start: 28, len: 12 });
     assert_eq!(instructions[2].opcode, OP_ENTRY_POINT);
     assert_eq!(instructions[2].word_count, 5);
     assert_eq!(instructions[2].word_offset, 10);
-    assert_eq!(instructions[2].byte_range, ByteRange { start: 40, len: 20 });
+    assert_eq!(instructions[2].byte_range, ByteExtent { start: 40, len: 20 });
 
     let summary = module.validate(&mut ledger).expect("validate minimal module");
     assert_eq!(summary.header, module.header());
@@ -119,7 +119,7 @@ fn bad_magic_keeps_the_magic_word_range() {
         SpirvLayoutError::BadMagic { magic, evidence } => {
             assert_eq!(magic, 0xDEAD_BEEF);
             assert_eq!(evidence.word_offset, 0);
-            assert_eq!(evidence.byte_range, ByteRange { start: 0, len: 4 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 0, len: 4 });
             assert_eq!(evidence.word_count(), 1);
         }
         other => panic!("unexpected error: {other:?}"),
@@ -139,7 +139,7 @@ fn non_zero_schema_keeps_the_schema_word_range() {
         SpirvLayoutError::NonZeroSchema { schema, evidence } => {
             assert_eq!(schema, 7);
             assert_eq!(evidence.word_offset, 4);
-            assert_eq!(evidence.byte_range, ByteRange { start: 16, len: 4 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 16, len: 4 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -159,7 +159,7 @@ fn truncated_header_reports_available_bytes() {
         SpirvLayoutError::TruncatedHeader { available_bytes, evidence } => {
             assert_eq!(available_bytes, 12);
             assert_eq!(evidence.word_offset, 0);
-            assert_eq!(evidence.byte_range, ByteRange { start: 0, len: 12 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 0, len: 12 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -178,7 +178,7 @@ fn zero_word_count_keeps_the_instruction_word_range() {
     match error {
         SpirvLayoutError::ZeroWordCount { evidence } => {
             assert_eq!(evidence.word_offset, 5);
-            assert_eq!(evidence.byte_range, ByteRange { start: 20, len: 4 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 20, len: 4 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -199,7 +199,7 @@ fn instruction_past_the_stream_end_is_rejected() {
             assert_eq!(word_count, 2);
             assert_eq!(available_words, 1);
             assert_eq!(evidence.word_offset, 5);
-            assert_eq!(evidence.byte_range, ByteRange { start: 20, len: 4 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 20, len: 4 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -219,7 +219,7 @@ fn trailing_partial_word_is_rejected() {
         SpirvLayoutError::TrailingPartialWord { remainder_bytes, evidence } => {
             assert_eq!(remainder_bytes, 2);
             assert_eq!(evidence.word_offset, 7);
-            assert_eq!(evidence.byte_range, ByteRange { start: 28, len: 2 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 28, len: 2 });
             assert_eq!(evidence.word_count(), 1);
         }
         other => panic!("unexpected error: {other:?}"),
@@ -237,7 +237,7 @@ fn empty_instruction_stream_is_rejected() {
     match error {
         SpirvLayoutError::EmptyInstructionStream { evidence } => {
             assert_eq!(evidence.word_offset, 5);
-            assert_eq!(evidence.byte_range, ByteRange { start: 20, len: 0 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 20, len: 0 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -300,8 +300,8 @@ fn source_without_a_length_is_reported() {
             SourceCapabilities::PARTIAL
         }
 
-        fn identity(&self) -> SourceIdentity {
-            SourceIdentity::new("lengthless")
+        fn identity(&self) -> ContentIdentity {
+            ContentIdentity::new("lengthless")
         }
     }
 
@@ -343,8 +343,8 @@ fn short_header_read_keeps_the_requested_range() {
             SourceCapabilities::PARTIAL
         }
 
-        fn identity(&self) -> SourceIdentity {
-            SourceIdentity::new("short")
+        fn identity(&self) -> ContentIdentity {
+            ContentIdentity::new("short")
         }
     }
 
@@ -356,7 +356,7 @@ fn short_header_read_keeps_the_requested_range() {
             assert_eq!(expected, 20);
             assert_eq!(actual, 12);
             assert_eq!(evidence.word_offset, 0);
-            assert_eq!(evidence.byte_range, ByteRange { start: 0, len: 20 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 0, len: 20 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -385,7 +385,7 @@ fn byte_slice_entry_rejects_bad_magic() {
         SpirvByteError::Layout(SpirvLayoutError::BadMagic { magic, evidence }) => {
             assert_eq!(magic, 0xDEAD_BEEF);
             assert_eq!(evidence.word_offset, 0);
-            assert_eq!(evidence.byte_range, ByteRange { start: 0, len: 4 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 0, len: 4 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -402,7 +402,7 @@ fn byte_slice_entry_rejects_truncated_header() {
     match error {
         SpirvByteError::Layout(SpirvLayoutError::TruncatedHeader { available_bytes, evidence }) => {
             assert_eq!(available_bytes, 12);
-            assert_eq!(evidence.byte_range, ByteRange { start: 0, len: 12 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 0, len: 12 });
         }
         other => panic!("unexpected error: {other:?}"),
     }

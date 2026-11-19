@@ -2,7 +2,7 @@
 
 use std::fmt::{Display, Formatter};
 
-use data_binary_core::{BudgetError, ByteRange};
+use data_binary_core::{BudgetError, ByteExtent};
 
 /// Byte and word coordinates for one structural claim.
 ///
@@ -13,12 +13,12 @@ pub struct SpirvEvidence {
     /// Index of the first 32-bit word the interval touches.
     pub word_offset: u64,
     /// Byte interval inside the module.
-    pub byte_range: ByteRange,
+    pub byte_range: ByteExtent,
 }
 
 impl SpirvEvidence {
     /// Creates evidence for an interval that starts at `byte_range.start`.
-    pub const fn new(word_offset: u64, byte_range: ByteRange) -> Self {
+    pub const fn new(word_offset: u64, byte_range: ByteExtent) -> Self {
         Self { word_offset, byte_range }
     }
 

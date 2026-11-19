@@ -10,5 +10,5 @@ publish.workspace = true
 [dependencies]
 data-binary-core = { workspace = true }
 boost-source = { workspace = true }
-acorn-zip = { workspace = true }
+data-binary-zip = { workspace = true }
 serde = { workspace = true }

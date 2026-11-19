@@ -1,5 +1,12 @@
+//! `data-binary-pe` — `PE` / `COFF` / `ELF` binary format encoding.
+//!
+//! Current slice: `coff` object model, lightweight `elf` read/write, `pe` header
+//! probing, `NativePeWriter` and the managed `PeWriter` with its `msil` model.
+//!
+//! The code originates from the former `acorn.rs` project (imported at commit
+//! `6deb56a4`, MPL-2.0) and has been internalized and de-branded for Boost.
+
 #![warn(missing_docs)]
-#![doc = include_str!("../readme.md")]
 
 /// `COFF` 对象文件模型与写出器。
 pub mod coff;

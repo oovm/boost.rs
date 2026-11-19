@@ -1,9 +1,21 @@
+//! `data-binary-wasm` — `WebAssembly` binary module model.
+//!
+//! `WasmBinaryModule` validates the magic (`\0asm`) and version (only `1`), and
+//! holds the section list with custom-section views, providing `from_bytes` /
+//! `to_bytes`. Section parsers expose type/import/export/code models; the
+//! instruction layer decodes opcode streams; `encode_*` helpers produce bytes.
+//! Variable-length integers reuse `data_encoding::integer::Leb128` and are never
+//! re-implemented here. Only the binary structure and instruction bytes are
+//! owned; validation, instantiation and execution semantics live elsewhere.
+//!
+//! The code originates from the former `acorn.rs` project (imported at commit
+//! `6deb56a4`, MPL-2.0) and has been internalized and de-branded for Boost.
+
 #![warn(missing_docs)]
-#![doc = include_str!("../readme.md")]
 
 use std::fmt::{Display, Formatter};
 
-use data_compression::integer::Leb128;
+use data_encoding::integer::Leb128;
 use serde::{Deserialize, Serialize};
 
 /// `WASM` 指令解码层。
@@ -132,9 +144,9 @@ pub enum WasmBinaryError {
     InvalidUtf8Name,
 }
 
-fn map_varint_error(error: data_compression::CodecError) -> WasmBinaryError {
+fn map_varint_error(error: data_encoding::EncodingError) -> WasmBinaryError {
     match error {
-        data_compression::CodecError::InputExhausted { .. } => WasmBinaryError::UnexpectedEof,
+        data_encoding::EncodingError::InputExhausted { .. } => WasmBinaryError::UnexpectedEof,
         _ => WasmBinaryError::InvalidLeb128,
     }
 }

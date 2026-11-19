@@ -1,4 +1,4 @@
-#![doc = include_str!("readme.md")]
+//! `JVM class` 文件级模型与编码入口。
 
 use std::{
     collections::BTreeMap,

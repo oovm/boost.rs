@@ -1,7 +1,7 @@
 //! Bounded code object view and the structural validation entry.
 
-use data_binary_core::{BudgetTracker, ByteRange};
-use boost_source::binary::{ByteSource, ReadError, SourceRange};
+use data_binary_core::{BudgetTracker, ByteExtent};
+use boost_source::binary::{ByteSource, ReadError};
 
 use crate::{
     error::{HsacoEvidence, HsacoHeaderTable, HsacoLayoutError},
@@ -58,7 +58,7 @@ pub struct HsacoSection {
     ///
     /// A section that occupies no file bytes, `SHT_NOBITS` included, records an
     /// empty interval at its declared offset.
-    pub byte_range: ByteRange,
+    pub byte_range: ByteExtent,
 }
 
 /// One program header: its type, flags and the file interval it maps.
@@ -71,7 +71,7 @@ pub struct HsacoSegment {
     /// `p_flags` segment flags, recorded without interpretation.
     pub flags: u32,
     /// File interval the segment maps.
-    pub byte_range: ByteRange,
+    pub byte_range: ByteExtent,
 }
 
 /// What a structurally valid code object declares about its own layout.
@@ -84,13 +84,13 @@ pub struct HsacoSummary {
     /// Sections in section header table order.
     pub sections: Vec<HsacoSection>,
     /// File interval of the `.text` section.
-    pub text: ByteRange,
+    pub text: ByteExtent,
     /// Sections the object declares.
     pub section_count: u64,
     /// Symbol table entries when a `.symtab` section can be measured.
     pub symbol_count: Option<u64>,
     /// File interval of the `.amdgpu_metadata` section, when it is present.
-    pub amdgpu_metadata: Option<ByteRange>,
+    pub amdgpu_metadata: Option<ByteExtent>,
 }
 
 /// Bounded view over one ELF64 code object: header, header tables and sections.
@@ -117,7 +117,7 @@ impl<'a, S: ByteSource + ?Sized> HsacoObject<'a, S> {
         if length < HSACO_ELF_HEADER_BYTES {
             return Err(HsacoLayoutError::TruncatedHeader {
                 available_bytes: length,
-                evidence: HsacoEvidence::object(ByteRange { start: 0, len: length }),
+                evidence: HsacoEvidence::object(ByteExtent { start: 0, len: length }),
             });
         }
 
@@ -126,19 +126,19 @@ impl<'a, S: ByteSource + ?Sized> HsacoObject<'a, S> {
             ledger,
             0,
             HSACO_ELF_HEADER_BYTES,
-            HsacoEvidence::object(ByteRange { start: 0, len: HSACO_ELF_HEADER_BYTES }),
+            HsacoEvidence::object(ByteExtent { start: 0, len: HSACO_ELF_HEADER_BYTES }),
         )?;
 
         let magic: [u8; 4] = bytes[0..4].try_into().expect("4-byte ELF magic");
         if magic != HSACO_ELF_MAGIC {
-            return Err(HsacoLayoutError::BadMagic { magic, evidence: HsacoEvidence::object(ByteRange { start: 0, len: 4 }) });
+            return Err(HsacoLayoutError::BadMagic { magic, evidence: HsacoEvidence::object(ByteExtent { start: 0, len: 4 }) });
         }
 
         let class = bytes[4];
         if class != HSACO_ELFCLASS64 {
             return Err(HsacoLayoutError::UnsupportedClass {
                 class,
-                evidence: HsacoEvidence::object(ByteRange { start: 4, len: 1 }),
+                evidence: HsacoEvidence::object(ByteExtent { start: 4, len: 1 }),
             });
         }
 
@@ -146,7 +146,7 @@ impl<'a, S: ByteSource + ?Sized> HsacoObject<'a, S> {
         if data != HSACO_ELFDATA2LSB {
             return Err(HsacoLayoutError::UnsupportedEndianness {
                 data,
-                evidence: HsacoEvidence::object(ByteRange { start: 5, len: 1 }),
+                evidence: HsacoEvidence::object(ByteExtent { start: 5, len: 1 }),
             });
         }
 
@@ -154,7 +154,7 @@ impl<'a, S: ByteSource + ?Sized> HsacoObject<'a, S> {
         if machine != HSACO_EM_AMDGPU {
             return Err(HsacoLayoutError::MachineMismatch {
                 machine,
-                evidence: HsacoEvidence::object(ByteRange { start: 18, len: 2 }),
+                evidence: HsacoEvidence::object(ByteExtent { start: 18, len: 2 }),
             });
         }
 
@@ -182,8 +182,8 @@ impl<'a, S: ByteSource + ?Sized> HsacoObject<'a, S> {
                 count: u64::from(header.program_header_count),
                 entry_bytes: u64::from(header.program_header_entry_size),
                 minimum_entry_bytes: HSACO_PROGRAM_HEADER_BYTES,
-                offset_evidence: HsacoEvidence::object(ByteRange { start: 32, len: 8 }),
-                entry_size_evidence: HsacoEvidence::object(ByteRange { start: 54, len: 2 }),
+                offset_evidence: HsacoEvidence::object(ByteExtent { start: 32, len: 8 }),
+                entry_size_evidence: HsacoEvidence::object(ByteExtent { start: 54, len: 2 }),
             },
         )?;
         table_bytes(
@@ -194,8 +194,8 @@ impl<'a, S: ByteSource + ?Sized> HsacoObject<'a, S> {
                 count: u64::from(header.section_header_count),
                 entry_bytes: u64::from(header.section_header_entry_size),
                 minimum_entry_bytes: HSACO_SECTION_HEADER_BYTES,
-                offset_evidence: HsacoEvidence::object(ByteRange { start: 40, len: 8 }),
-                entry_size_evidence: HsacoEvidence::object(ByteRange { start: 58, len: 2 }),
+                offset_evidence: HsacoEvidence::object(ByteExtent { start: 40, len: 8 }),
+                entry_size_evidence: HsacoEvidence::object(ByteExtent { start: 58, len: 2 }),
             },
         )?;
 
@@ -244,7 +244,7 @@ impl<'a, S: ByteSource + ?Sized> HsacoObject<'a, S> {
         }
 
         let (text_index, text) = text
-            .ok_or(HsacoLayoutError::MissingTextSection { evidence: HsacoEvidence::object(ByteRange { start: 40, len: 8 }) })?;
+            .ok_or(HsacoLayoutError::MissingTextSection { evidence: HsacoEvidence::object(ByteExtent { start: 40, len: 8 }) })?;
         if text.len == 0 {
             return Err(HsacoLayoutError::EmptyTextSection {
                 section_index: text_index,
@@ -275,7 +275,7 @@ impl<'a, S: ByteSource + ?Sized> HsacoObject<'a, S> {
                 ledger,
                 start,
                 HSACO_SECTION_HEADER_BYTES,
-                HsacoEvidence::object(ByteRange { start, len: HSACO_SECTION_HEADER_BYTES }),
+                HsacoEvidence::object(ByteExtent { start, len: HSACO_SECTION_HEADER_BYTES }),
             )?;
             headers.push(SectionHeader {
                 name_offset: read_u32(&bytes, 0),
@@ -300,7 +300,7 @@ impl<'a, S: ByteSource + ?Sized> HsacoObject<'a, S> {
                 ledger,
                 start,
                 HSACO_PROGRAM_HEADER_BYTES,
-                HsacoEvidence::object(ByteRange { start, len: HSACO_PROGRAM_HEADER_BYTES }),
+                HsacoEvidence::object(ByteExtent { start, len: HSACO_PROGRAM_HEADER_BYTES }),
             )?;
             let offset = read_u64(&bytes, 8);
             let file_bytes = read_u64(&bytes, 32);
@@ -311,14 +311,14 @@ impl<'a, S: ByteSource + ?Sized> HsacoObject<'a, S> {
                     offset,
                     file_bytes,
                     object_bytes: self.length,
-                    evidence: HsacoEvidence::object(ByteRange { start: offset, len: file_bytes }),
+                    evidence: HsacoEvidence::object(ByteExtent { start: offset, len: file_bytes }),
                 });
             }
             segments.push(HsacoSegment {
                 index: index as u32,
                 segment_type: read_u32(&bytes, 0),
                 flags: read_u32(&bytes, 4),
-                byte_range: ByteRange { start: offset, len: file_bytes },
+                byte_range: ByteExtent { start: offset, len: file_bytes },
             });
         }
         Ok(segments)
@@ -331,7 +331,7 @@ impl<'a, S: ByteSource + ?Sized> HsacoObject<'a, S> {
                 continue;
             }
             let section_index = position as u32;
-            let evidence = HsacoEvidence::section(section_index, ByteRange { start: header.offset, len: header.size });
+            let evidence = HsacoEvidence::section(section_index, ByteExtent { start: header.offset, len: header.size });
             let fits = header.offset.checked_add(header.size).is_some_and(|end| end <= self.length);
             if !fits {
                 return Err(HsacoLayoutError::SectionOutOfBounds {
@@ -348,7 +348,7 @@ impl<'a, S: ByteSource + ?Sized> HsacoObject<'a, S> {
 
     /// Checks that no two sections with file bytes claim overlapping intervals.
     fn check_section_overlap(&self, headers: &[SectionHeader]) -> Result<(), HsacoLayoutError> {
-        let mut occupied: Vec<(u32, ByteRange)> = headers
+        let mut occupied: Vec<(u32, ByteExtent)> = headers
             .iter()
             .enumerate()
             .filter(|(_, header)| header.section_type != HSACO_SHT_NOBITS && header.size != 0)
@@ -382,7 +382,7 @@ impl<'a, S: ByteSource + ?Sized> HsacoObject<'a, S> {
             return Err(HsacoLayoutError::SectionNameTableOutOfBounds {
                 index,
                 section_count: headers.len() as u64,
-                evidence: HsacoEvidence::object(ByteRange { start: 62, len: 2 }),
+                evidence: HsacoEvidence::object(ByteExtent { start: 62, len: 2 }),
             });
         };
 
@@ -396,7 +396,7 @@ impl<'a, S: ByteSource + ?Sized> HsacoObject<'a, S> {
                 ledger,
                 table.offset,
                 len,
-                HsacoEvidence::section(index as u32, ByteRange { start: table.offset, len }),
+                HsacoEvidence::section(index as u32, ByteExtent { start: table.offset, len }),
             )?
         };
 
@@ -407,7 +407,7 @@ impl<'a, S: ByteSource + ?Sized> HsacoObject<'a, S> {
     fn section_field(&self, index: u32, field_offset: u64) -> HsacoEvidence {
         let entry = u64::from(self.header.section_header_entry_size);
         let start = self.header.section_header_offset + u64::from(index) * entry + field_offset;
-        HsacoEvidence::section(index, ByteRange { start, len: 8 })
+        HsacoEvidence::section(index, ByteExtent { start, len: 8 })
     }
 }
 
@@ -435,9 +435,9 @@ struct SectionHeader {
 
 impl SectionHeader {
     /// File interval the section occupies, empty for sections without file bytes.
-    fn byte_range(&self) -> ByteRange {
+    fn byte_range(&self) -> ByteExtent {
         let len = if self.section_type == HSACO_SHT_NOBITS { 0 } else { self.size };
-        ByteRange { start: self.offset, len }
+        ByteExtent { start: self.offset, len }
     }
 }
 
@@ -538,7 +538,11 @@ pub(crate) fn read_exact<S: ByteSource + ?Sized>(
     evidence: HsacoEvidence,
 ) -> Result<Vec<u8>, HsacoLayoutError> {
     ledger.reserve_read_bytes(len).map_err(HsacoLayoutError::Budget)?;
-    match source.read_range(SourceRange { start, len }) {
+    let Some(range) = boost_source::ByteRange::with_len(start, len) else {
+        ledger.release_read_bytes(len).map_err(HsacoLayoutError::Budget)?;
+        return Err(HsacoLayoutError::Unavailable { reason: "byte range overflows `u64`".into(), evidence });
+    };
+    match source.read_range(range) {
         Ok(bytes) => {
             let consumed = bytes.len() as u64;
             ledger.settle_read_bytes(consumed).map_err(HsacoLayoutError::Budget)?;

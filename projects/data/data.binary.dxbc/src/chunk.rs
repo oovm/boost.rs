@@ -1,6 +1,6 @@
 //! Chunk records and the recognized FourCC classes.
 
-use data_binary_core::ByteRange;
+use data_binary_core::ByteExtent;
 
 use crate::header::DXBC_CHUNK_HEADER_BYTES;
 
@@ -54,7 +54,7 @@ pub struct DxbcChunk {
     /// Declared payload size in bytes, excluding the 8-byte chunk header.
     pub size: u32,
     /// Interval covering the chunk header and its payload.
-    pub byte_range: ByteRange,
+    pub byte_range: ByteExtent,
 }
 
 impl DxbcChunk {

@@ -1,4 +1,5 @@
-#![doc = include_str!("readme.md")]
+//! `MSIL` 文本模型：`model.rs` 定义结构、`writer.rs` 写回文本、`parser.rs` 提取方法块与签名。
+//! 不承载命令行输出格式，也不含 `CLR` 构建计划或后端选择逻辑。
 #![allow(missing_docs)]
 
 mod lexer;

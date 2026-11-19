@@ -3,7 +3,7 @@
 //! 覆盖后端 emitter 当前需要的指令形状，提供语义 API，避免手写操作码字节。
 //! 二进制字面量仅出现在本模块与 [`super::opcode`] / [`super::section`] 的 encode 实现中。
 
-use data_compression::integer::Leb128;
+use data_encoding::integer::Leb128;
 
 use super::{
     opcode::{WasmGcOpcode, WasmMiscOpcode, WasmOpcode},

@@ -1,7 +1,7 @@
 //! Bounded container view and the structural validation entry.
 
-use data_binary_core::{BudgetTracker, ByteRange};
-use boost_source::binary::{ByteSource, ReadError, SourceRange};
+use data_binary_core::{BudgetTracker, ByteExtent};
+use boost_source::binary::{ByteSource, ReadError};
 
 use crate::{
     chunk::{DxbcChunk, DxbcChunkKind},
@@ -62,7 +62,7 @@ impl<'a, S: ByteSource + ?Sized> DxbcContainer<'a, S> {
         if length < DXBC_HEADER_BYTES {
             return Err(DxbcLayoutError::TruncatedHeader {
                 available_bytes: length,
-                evidence: DxbcEvidence::container(ByteRange { start: 0, len: length }),
+                evidence: DxbcEvidence::container(ByteExtent { start: 0, len: length }),
             });
         }
 
@@ -71,11 +71,11 @@ impl<'a, S: ByteSource + ?Sized> DxbcContainer<'a, S> {
             ledger,
             0,
             DXBC_HEADER_BYTES,
-            DxbcEvidence::container(ByteRange { start: 0, len: DXBC_HEADER_BYTES }),
+            DxbcEvidence::container(ByteExtent { start: 0, len: DXBC_HEADER_BYTES }),
         )?;
         let magic: [u8; 4] = header_bytes[0..4].try_into().expect("4-byte magic");
         if magic != DXBC_MAGIC {
-            return Err(DxbcLayoutError::BadMagic { magic, evidence: DxbcEvidence::container(ByteRange { start: 0, len: 4 }) });
+            return Err(DxbcLayoutError::BadMagic { magic, evidence: DxbcEvidence::container(ByteExtent { start: 0, len: 4 }) });
         }
 
         let mut digest = [0u8; 16];
@@ -88,7 +88,7 @@ impl<'a, S: ByteSource + ?Sized> DxbcContainer<'a, S> {
             return Err(DxbcLayoutError::LengthMismatch {
                 declared: total_length,
                 actual: length,
-                evidence: DxbcEvidence::container(ByteRange { start: 24, len: 4 }),
+                evidence: DxbcEvidence::container(ByteExtent { start: 24, len: 4 }),
             });
         }
 
@@ -99,7 +99,7 @@ impl<'a, S: ByteSource + ?Sized> DxbcContainer<'a, S> {
                 chunk_count,
                 declared_length: length,
                 table_bytes,
-                evidence: DxbcEvidence::container(ByteRange { start: 28, len: 4 }),
+                evidence: DxbcEvidence::container(ByteExtent { start: 28, len: 4 }),
             });
         }
 
@@ -112,7 +112,7 @@ impl<'a, S: ByteSource + ?Sized> DxbcContainer<'a, S> {
                 ledger,
                 DXBC_HEADER_BYTES,
                 table_bytes,
-                DxbcEvidence::container(ByteRange { start: DXBC_HEADER_BYTES, len: table_bytes }),
+                DxbcEvidence::container(ByteExtent { start: DXBC_HEADER_BYTES, len: table_bytes }),
             )?;
             let mut chunk_offsets = Vec::with_capacity(chunk_count as usize);
             for entry in table.chunks(DXBC_OFFSET_TABLE_ENTRY_BYTES as usize) {
@@ -148,7 +148,7 @@ impl<'a, S: ByteSource + ?Sized> DxbcContainer<'a, S> {
                     chunk_index: index,
                     offset,
                     declared_length: self.total_length,
-                    evidence: DxbcEvidence::chunk(index, ByteRange { start: offset_wide, len: DXBC_CHUNK_HEADER_BYTES }),
+                    evidence: DxbcEvidence::chunk(index, ByteExtent { start: offset_wide, len: DXBC_CHUNK_HEADER_BYTES }),
                 });
             }
 
@@ -157,7 +157,7 @@ impl<'a, S: ByteSource + ?Sized> DxbcContainer<'a, S> {
                 ledger,
                 offset_wide,
                 DXBC_CHUNK_HEADER_BYTES,
-                DxbcEvidence::chunk(index, ByteRange { start: offset_wide, len: DXBC_CHUNK_HEADER_BYTES }),
+                DxbcEvidence::chunk(index, ByteExtent { start: offset_wide, len: DXBC_CHUNK_HEADER_BYTES }),
             )?;
             let four_cc: [u8; 4] = header[0..4].try_into().expect("4-byte FourCC");
             let size = u32::from_le_bytes(header[4..8].try_into().expect("4-byte chunk size"));
@@ -172,7 +172,7 @@ impl<'a, S: ByteSource + ?Sized> DxbcContainer<'a, S> {
                     declared_length: self.total_length,
                     evidence: DxbcEvidence::chunk(
                         index,
-                        ByteRange { start: offset_wide + DXBC_CHUNK_HEADER_BYTES, len: payload_len },
+                        ByteExtent { start: offset_wide + DXBC_CHUNK_HEADER_BYTES, len: payload_len },
                     ),
                 });
             }
@@ -183,7 +183,7 @@ impl<'a, S: ByteSource + ?Sized> DxbcContainer<'a, S> {
                 kind: DxbcChunkKind::from_four_cc(four_cc),
                 offset,
                 size,
-                byte_range: ByteRange { start: offset_wide, len: DXBC_CHUNK_HEADER_BYTES + payload_len },
+                byte_range: ByteExtent { start: offset_wide, len: DXBC_CHUNK_HEADER_BYTES + payload_len },
             });
         }
 
@@ -256,7 +256,11 @@ pub(crate) fn read_exact<S: ByteSource + ?Sized>(
     evidence: DxbcEvidence,
 ) -> Result<Vec<u8>, DxbcLayoutError> {
     ledger.reserve_read_bytes(len).map_err(DxbcLayoutError::Budget)?;
-    match source.read_range(SourceRange { start, len }) {
+    let Some(range) = boost_source::ByteRange::with_len(start, len) else {
+        ledger.release_read_bytes(len).map_err(DxbcLayoutError::Budget)?;
+        return Err(DxbcLayoutError::Unavailable { reason: "byte range overflows `u64`".into(), evidence });
+    };
+    match source.read_range(range) {
         Ok(bytes) => {
             let consumed = bytes.len() as u64;
             ledger.settle_read_bytes(consumed).map_err(DxbcLayoutError::Budget)?;

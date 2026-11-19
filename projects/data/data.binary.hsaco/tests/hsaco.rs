@@ -1,11 +1,11 @@
 //! Structural tests for the ELF64 code object layout adapter.
 
-use data_binary_core::{Budget, BudgetError, BudgetTracker, ByteRange};
+use data_binary_core::{Budget, BudgetError, BudgetTracker, ByteExtent};
 use data_binary_hsaco::{
     HSACO_ELF_MAGIC, HSACO_EM_AMDGPU, HsacoByteError, HsacoHeaderTable, HsacoLayoutError, HsacoObject, HsacoSectionKind,
     validate_hsaco_bytes,
 };
-use boost_source::binary::{ByteSource, MemorySource, ReadError, ReadOutcome, ReadResult, SourceCapabilities, SourceIdentity};
+use boost_source::binary::{ByteSource, MemorySource, ReadError, ReadOutcome, ReadResult, SourceCapabilities, ContentIdentity};
 
 const ELF_HEADER_BYTES: u64 = 64;
 const PROGRAM_HEADER_BYTES: u64 = 56;
@@ -177,7 +177,7 @@ fn parses_a_minimal_object_with_text_and_its_name_table() {
     assert_eq!(summary.header.section_header_offset, 160);
 
     assert_eq!(summary.section_count, 3);
-    assert_eq!(summary.text, ByteRange { start: 120, len: 16 });
+    assert_eq!(summary.text, ByteExtent { start: 120, len: 16 });
     assert_eq!(summary.symbol_count, None);
     assert_eq!(summary.amdgpu_metadata, None);
 
@@ -186,14 +186,14 @@ fn parses_a_minimal_object_with_text_and_its_name_table() {
         vec![HsacoSectionKind::Other, HsacoSectionKind::Text, HsacoSectionKind::StringTable]
     );
     assert_eq!(summary.sections[1].name, ".text");
-    assert_eq!(summary.sections[1].byte_range, ByteRange { start: 120, len: 16 });
+    assert_eq!(summary.sections[1].byte_range, ByteExtent { start: 120, len: 16 });
     assert_eq!(summary.sections[2].name, ".shstrtab");
 
     assert_eq!(summary.segments.len(), 1);
     assert_eq!(summary.segments[0].index, 0);
     assert_eq!(summary.segments[0].segment_type, 1);
     assert_eq!(summary.segments[0].flags, 5);
-    assert_eq!(summary.segments[0].byte_range, ByteRange { start: 120, len: 16 });
+    assert_eq!(summary.segments[0].byte_range, ByteExtent { start: 120, len: 16 });
 }
 
 #[test]
@@ -215,9 +215,9 @@ fn records_every_key_section_of_a_full_object() {
     let summary = validate_hsaco_bytes(&build_object(&full_sections())).expect("full object is structurally valid");
 
     assert_eq!(summary.section_count, 8);
-    assert_eq!(summary.text, ByteRange { start: 120, len: 16 });
+    assert_eq!(summary.text, ByteExtent { start: 120, len: 16 });
     assert_eq!(summary.symbol_count, Some(2));
-    assert_eq!(summary.amdgpu_metadata, Some(ByteRange { start: 156, len: 24 }));
+    assert_eq!(summary.amdgpu_metadata, Some(ByteExtent { start: 156, len: 24 }));
     assert_eq!(summary.header.section_header_offset, 304);
 
     assert_eq!(
@@ -233,10 +233,10 @@ fn records_every_key_section_of_a_full_object() {
             HsacoSectionKind::StringTable,
         ]
     );
-    assert_eq!(summary.sections[2].byte_range, ByteRange { start: 136, len: 8 });
-    assert_eq!(summary.sections[3].byte_range, ByteRange { start: 144, len: 12 });
-    assert_eq!(summary.sections[5].byte_range, ByteRange { start: 180, len: 48 });
-    assert_eq!(summary.segments[0].byte_range, ByteRange { start: 120, len: 16 });
+    assert_eq!(summary.sections[2].byte_range, ByteExtent { start: 136, len: 8 });
+    assert_eq!(summary.sections[3].byte_range, ByteExtent { start: 144, len: 12 });
+    assert_eq!(summary.sections[5].byte_range, ByteExtent { start: 180, len: 48 });
+    assert_eq!(summary.segments[0].byte_range, ByteExtent { start: 120, len: 16 });
 }
 
 #[test]
@@ -249,7 +249,7 @@ fn bad_magic_keeps_the_magic_range() {
         HsacoByteError::Layout(HsacoLayoutError::BadMagic { magic, evidence }) => {
             assert_eq!(magic, [0x7F, b'B', b'D', b'X']);
             assert_eq!(evidence.section_index, None);
-            assert_eq!(evidence.byte_range, ByteRange { start: 0, len: 4 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 0, len: 4 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -264,7 +264,7 @@ fn class_must_be_64_bit() {
     match error {
         HsacoByteError::Layout(HsacoLayoutError::UnsupportedClass { class, evidence }) => {
             assert_eq!(class, 1);
-            assert_eq!(evidence.byte_range, ByteRange { start: 4, len: 1 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 4, len: 1 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -279,7 +279,7 @@ fn data_encoding_must_be_little_endian() {
     match error {
         HsacoByteError::Layout(HsacoLayoutError::UnsupportedEndianness { data, evidence }) => {
             assert_eq!(data, 2);
-            assert_eq!(evidence.byte_range, ByteRange { start: 5, len: 1 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 5, len: 1 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -294,7 +294,7 @@ fn machine_must_be_amdgpu() {
     match error {
         HsacoByteError::Layout(HsacoLayoutError::MachineMismatch { machine, evidence }) => {
             assert_eq!(machine, 62);
-            assert_eq!(evidence.byte_range, ByteRange { start: 18, len: 2 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 18, len: 2 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -308,7 +308,7 @@ fn byte_slice_entry_rejects_a_truncated_header() {
     match error {
         HsacoByteError::Layout(HsacoLayoutError::TruncatedHeader { available_bytes, evidence }) => {
             assert_eq!(available_bytes, 32);
-            assert_eq!(evidence.byte_range, ByteRange { start: 0, len: 32 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 0, len: 32 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -334,7 +334,7 @@ fn section_header_table_past_the_object_is_rejected() {
             assert_eq!(table_bytes, 192);
             assert_eq!(available_bytes, 0);
             assert_eq!(offset, 1000);
-            assert_eq!(evidence.byte_range, ByteRange { start: 40, len: 8 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 40, len: 8 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -360,7 +360,7 @@ fn program_header_table_past_the_object_is_rejected() {
             assert_eq!(table_bytes, 56);
             assert_eq!(available_bytes, 0);
             assert_eq!(offset, 1000);
-            assert_eq!(evidence.byte_range, ByteRange { start: 32, len: 8 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 32, len: 8 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -377,7 +377,7 @@ fn section_header_entry_size_below_the_minimum_is_rejected() {
             assert_eq!(table, HsacoHeaderTable::Section);
             assert_eq!(entry_bytes, 32);
             assert_eq!(minimum, 64);
-            assert_eq!(evidence.byte_range, ByteRange { start: 58, len: 2 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 58, len: 2 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -403,7 +403,7 @@ fn declared_section_count_past_the_object_is_rejected() {
             assert_eq!(table_bytes, 4096 * 64);
             assert_eq!(available_bytes, 192);
             assert_eq!(offset, 160);
-            assert_eq!(evidence.byte_range, ByteRange { start: 40, len: 8 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 40, len: 8 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -427,7 +427,7 @@ fn trailing_incomplete_section_header_entry_is_rejected() {
             assert_eq!(offset, 288);
             assert_eq!(available_bytes, 54);
             assert_eq!(entry_bytes, 64);
-            assert_eq!(evidence.byte_range, ByteRange { start: 40, len: 8 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 40, len: 8 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -451,7 +451,7 @@ fn trailing_incomplete_program_header_entry_is_rejected() {
             assert_eq!(offset, 322);
             assert_eq!(available_bytes, 30);
             assert_eq!(entry_bytes, 56);
-            assert_eq!(evidence.byte_range, ByteRange { start: 32, len: 8 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 32, len: 8 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -477,7 +477,7 @@ fn section_payload_past_the_object_is_rejected() {
             assert_eq!(size, 100_000);
             assert_eq!(object_bytes, 352);
             assert_eq!(evidence.section_index, Some(1));
-            assert_eq!(evidence.byte_range, ByteRange { start: 120, len: 100_000 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 120, len: 100_000 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -502,7 +502,7 @@ fn segment_payload_past_the_object_is_rejected() {
             assert_eq!(file_bytes, 100_000);
             assert_eq!(object_bytes, 352);
             assert_eq!(evidence.section_index, None);
-            assert_eq!(evidence.byte_range, ByteRange { start: 120, len: 100_000 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 120, len: 100_000 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -520,7 +520,7 @@ fn overlapping_sections_are_rejected() {
             assert_eq!(first_index, 1);
             assert_eq!(second_index, 2);
             assert_eq!(evidence.section_index, Some(2));
-            assert_eq!(evidence.byte_range, ByteRange { start: 120, len: 17 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 120, len: 17 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -534,7 +534,7 @@ fn object_without_a_text_section_is_rejected() {
     match error {
         HsacoByteError::Layout(HsacoLayoutError::MissingTextSection { evidence }) => {
             assert_eq!(evidence.section_index, None);
-            assert_eq!(evidence.byte_range, ByteRange { start: 40, len: 8 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 40, len: 8 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -549,7 +549,7 @@ fn empty_text_section_is_rejected() {
         HsacoByteError::Layout(HsacoLayoutError::EmptyTextSection { section_index, evidence }) => {
             assert_eq!(section_index, 1);
             assert_eq!(evidence.section_index, Some(1));
-            assert_eq!(evidence.byte_range, ByteRange { start: 240, len: 8 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 240, len: 8 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -565,7 +565,7 @@ fn section_name_table_index_must_address_a_section() {
         HsacoByteError::Layout(HsacoLayoutError::SectionNameTableOutOfBounds { index, section_count, evidence }) => {
             assert_eq!(index, 9);
             assert_eq!(section_count, 3);
-            assert_eq!(evidence.byte_range, ByteRange { start: 62, len: 2 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 62, len: 2 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -644,8 +644,8 @@ fn short_header_read_keeps_the_requested_range() {
             SourceCapabilities::PARTIAL
         }
 
-        fn identity(&self) -> SourceIdentity {
-            SourceIdentity::new("short")
+        fn identity(&self) -> ContentIdentity {
+            ContentIdentity::new("short")
         }
     }
 
@@ -656,7 +656,7 @@ fn short_header_read_keeps_the_requested_range() {
         HsacoLayoutError::ShortRead { expected, actual, evidence } => {
             assert_eq!(expected, 64);
             assert_eq!(actual, 40);
-            assert_eq!(evidence.byte_range, ByteRange { start: 0, len: 64 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 0, len: 64 });
         }
         other => panic!("unexpected error: {other:?}"),
     }

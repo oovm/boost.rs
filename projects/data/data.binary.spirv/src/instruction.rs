@@ -1,6 +1,6 @@
 //! Instruction-level layout and the lazy instruction walk.
 
-use data_binary_core::{BudgetTracker, ByteRange};
+use data_binary_core::{BudgetTracker, ByteExtent};
 use boost_source::binary::ByteSource;
 
 use crate::{
@@ -19,7 +19,7 @@ pub struct SpirvInstruction {
     /// Index of the leading word inside the module.
     pub word_offset: u64,
     /// Byte range of the whole instruction, whether or not its body was read.
-    pub byte_range: ByteRange,
+    pub byte_range: ByteExtent,
 }
 
 /// Lazily walks the instruction stream of one module.
@@ -51,7 +51,7 @@ impl<S: ByteSource + ?Sized> Iterator for SpirvInstructions<'_, '_, S> {
 
         let word_offset = self.next_word;
         let byte_start = word_offset * SPIRV_WORD_BYTES;
-        let evidence = SpirvEvidence::new(word_offset, ByteRange { start: byte_start, len: SPIRV_WORD_BYTES });
+        let evidence = SpirvEvidence::new(word_offset, ByteExtent { start: byte_start, len: SPIRV_WORD_BYTES });
         let bytes = match read_exact(self.source, self.ledger, byte_start, SPIRV_WORD_BYTES, evidence) {
             Ok(bytes) => bytes,
             Err(error) => {
@@ -76,7 +76,7 @@ impl<S: ByteSource + ?Sized> Iterator for SpirvInstructions<'_, '_, S> {
                 available_words: self.remaining_words,
                 evidence: SpirvEvidence::new(
                     word_offset,
-                    ByteRange { start: byte_start, len: self.remaining_words * SPIRV_WORD_BYTES },
+                    ByteExtent { start: byte_start, len: self.remaining_words * SPIRV_WORD_BYTES },
                 ),
             }));
         }
@@ -87,7 +87,7 @@ impl<S: ByteSource + ?Sized> Iterator for SpirvInstructions<'_, '_, S> {
             opcode,
             word_count,
             word_offset,
-            byte_range: ByteRange { start: byte_start, len: word_count_wide * SPIRV_WORD_BYTES },
+            byte_range: ByteExtent { start: byte_start, len: word_count_wide * SPIRV_WORD_BYTES },
         }))
     }
 }

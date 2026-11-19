@@ -8,5 +8,5 @@ description = "Wasm binary format encoding and decoding (Acorn domain)"
 repository.workspace = true
 publish.workspace = true
 [dependencies]
-data-compression = { workspace = true }
+data-encoding = { workspace = true }
 serde = { workspace = true }

@@ -1,6 +1,6 @@
 //! Structural tests for the DXBC container layout adapter.
 
-use data_binary_core::{Budget, BudgetError, BudgetTracker, ByteRange};
+use data_binary_core::{Budget, BudgetError, BudgetTracker, ByteExtent};
 use data_binary_dxbc::{
     DXBC_MAGIC, DxbcByteError, DxbcChunkKind, DxbcContainer, DxbcInstruction, DxbcLayoutError, ShexProgram, validate_dxbc,
     validate_dxbc_bytes,
@@ -149,9 +149,9 @@ fn parses_minimal_container_with_every_common_chunk() {
     );
     assert_eq!(summary.chunks[0].offset, 52);
     assert_eq!(summary.chunks[0].size, 4);
-    assert_eq!(summary.chunks[0].byte_range, ByteRange { start: 52, len: 12 });
-    assert_eq!(summary.chunks[3].byte_range, ByteRange { start: 96, len: 28 });
-    assert_eq!(summary.chunks[4].byte_range, ByteRange { start: 124, len: 12 });
+    assert_eq!(summary.chunks[0].byte_range, ByteExtent { start: 52, len: 12 });
+    assert_eq!(summary.chunks[3].byte_range, ByteExtent { start: 96, len: 28 });
+    assert_eq!(summary.chunks[4].byte_range, ByteExtent { start: 124, len: 12 });
 
     assert_eq!(summary.shaders.len(), 1);
     let shader = summary.shaders[0];
@@ -180,11 +180,11 @@ fn shader_stream_reports_instruction_ranges() {
     assert_eq!(instructions[0].opcode, OPCODE_DECLARE);
     assert_eq!(instructions[0].word_count, 2);
     assert_eq!(instructions[0].word_offset, 0);
-    assert_eq!(instructions[0].byte_range, ByteRange { start: 112, len: 8 });
+    assert_eq!(instructions[0].byte_range, ByteExtent { start: 112, len: 8 });
     assert_eq!(instructions[1].opcode, OPCODE_RETURN);
     assert_eq!(instructions[1].word_count, 1);
     assert_eq!(instructions[1].word_offset, 2);
-    assert_eq!(instructions[1].byte_range, ByteRange { start: 120, len: 4 });
+    assert_eq!(instructions[1].byte_range, ByteExtent { start: 120, len: 4 });
 }
 
 #[test]
@@ -198,8 +198,8 @@ fn unknown_chunks_are_skipped_by_length_and_keep_their_range() {
     assert_eq!(summary.chunks[1].kind, DxbcChunkKind::Unknown(*b"XDBC"));
     assert_eq!(summary.chunks[1].four_cc, *b"XDBC");
     assert_eq!(summary.chunks[1].size, 4);
-    assert_eq!(summary.chunks[1].byte_range, ByteRange { start: 68, len: 12 });
-    assert_eq!(summary.chunks[2].byte_range, ByteRange { start: 80, len: 16 });
+    assert_eq!(summary.chunks[1].byte_range, ByteExtent { start: 68, len: 12 });
+    assert_eq!(summary.chunks[2].byte_range, ByteExtent { start: 80, len: 16 });
     assert_eq!(summary.shaders[0].chunk_index, 4);
     assert_eq!(summary.header.chunk_count, 6);
 }
@@ -214,7 +214,7 @@ fn bad_magic_keeps_the_magic_range() {
         DxbcByteError::Layout(DxbcLayoutError::BadMagic { magic, evidence }) => {
             assert_eq!(magic, *b"XBCD");
             assert_eq!(evidence.chunk_index, None);
-            assert_eq!(evidence.byte_range, ByteRange { start: 0, len: 4 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 0, len: 4 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -230,7 +230,7 @@ fn declared_length_must_match_the_supplied_bytes() {
         DxbcByteError::Layout(DxbcLayoutError::LengthMismatch { declared, actual, evidence }) => {
             assert_eq!(declared, 135);
             assert_eq!(actual, 136);
-            assert_eq!(evidence.byte_range, ByteRange { start: 24, len: 4 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 24, len: 4 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -252,7 +252,7 @@ fn chunk_count_whose_table_does_not_fit_is_rejected() {
             assert_eq!(chunk_count, 1000);
             assert_eq!(declared_length, 136);
             assert_eq!(table_bytes, 4000);
-            assert_eq!(evidence.byte_range, ByteRange { start: 28, len: 4 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 28, len: 4 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -270,7 +270,7 @@ fn chunk_offset_past_the_container_is_rejected() {
             assert_eq!(offset, 200);
             assert_eq!(declared_length, 136);
             assert_eq!(evidence.chunk_index, Some(1));
-            assert_eq!(evidence.byte_range, ByteRange { start: 200, len: 8 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 200, len: 8 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -298,7 +298,7 @@ fn chunk_size_past_the_container_is_rejected() {
             assert_eq!(offset, 64);
             assert_eq!(declared_length, 136);
             assert_eq!(evidence.chunk_index, Some(1));
-            assert_eq!(evidence.byte_range, ByteRange { start: 72, len: 200 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 72, len: 200 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -316,7 +316,7 @@ fn overlapping_chunks_are_rejected() {
             assert_eq!(first_index, 0);
             assert_eq!(second_index, 1);
             assert_eq!(evidence.chunk_index, Some(1));
-            assert_eq!(evidence.byte_range, ByteRange { start: 52, len: 12 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 52, len: 12 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -334,7 +334,7 @@ fn shader_chunk_without_room_for_its_tokens_is_rejected() {
             assert_eq!(chunk_index, 3);
             assert_eq!(chunk_size, 4);
             assert_eq!(evidence.chunk_index, Some(3));
-            assert_eq!(evidence.byte_range, ByteRange { start: 104, len: 4 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 104, len: 4 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -372,18 +372,18 @@ fn emitted_fill_instruction_ranges_cover_the_whole_stream() {
     assert_eq!(instructions.len(), 13);
     assert_eq!(
         instructions[0],
-        DxbcInstruction { opcode: 0x006A, word_count: 1, word_offset: 0, byte_range: ByteRange { start: 112, len: 4 } }
+        DxbcInstruction { opcode: 0x006A, word_count: 1, word_offset: 0, byte_range: ByteExtent { start: 112, len: 4 } }
     );
     assert_eq!(instructions[1].opcode, 0x0059);
     assert_eq!(instructions[1].word_count, 7);
     assert_eq!(instructions[1].word_offset, 1);
-    assert_eq!(instructions[1].byte_range, ByteRange { start: 116, len: 28 });
+    assert_eq!(instructions[1].byte_range, ByteExtent { start: 116, len: 28 });
 
     let last = instructions[12];
     assert_eq!(last.opcode, 0x003E);
     assert_eq!(last.word_count, 1);
     assert_eq!(last.word_offset, 49);
-    assert_eq!(last.byte_range, ByteRange { start: 308, len: 4 });
+    assert_eq!(last.byte_range, ByteExtent { start: 308, len: 4 });
 
     let decoded_words: u64 = instructions.iter().map(|instruction| u64::from(instruction.word_count)).sum();
     assert_eq!(decoded_words, 50, "the walk must consume exactly the DWORDs after the token pair");
@@ -419,7 +419,7 @@ fn shader_length_token_must_match_the_chunk_size() {
             assert_eq!(declared, 4);
             assert_eq!(chunk_size, 20);
             assert_eq!(evidence.chunk_index, Some(3));
-            assert_eq!(evidence.byte_range, ByteRange { start: 108, len: 4 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 108, len: 4 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -447,7 +447,7 @@ fn zero_word_count_instruction_is_rejected() {
     match error {
         DxbcByteError::Layout(DxbcLayoutError::ZeroWordCount { evidence }) => {
             assert_eq!(evidence.chunk_index, Some(3));
-            assert_eq!(evidence.byte_range, ByteRange { start: 112, len: 4 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 112, len: 4 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -466,7 +466,7 @@ fn instruction_past_the_stream_end_is_rejected() {
             assert_eq!(word_count, 9);
             assert_eq!(available_words, 3);
             assert_eq!(evidence.chunk_index, Some(3));
-            assert_eq!(evidence.byte_range, ByteRange { start: 112, len: 12 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 112, len: 12 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -488,7 +488,7 @@ fn trailing_bytes_that_do_not_complete_a_word_are_rejected() {
         DxbcByteError::Layout(DxbcLayoutError::TrailingPartialWord { remainder_bytes, evidence }) => {
             assert_eq!(remainder_bytes, 1);
             assert_eq!(evidence.chunk_index, Some(3));
-            assert_eq!(evidence.byte_range, ByteRange { start: 124, len: 1 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 124, len: 1 });
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -502,7 +502,7 @@ fn byte_slice_entry_rejects_a_truncated_header() {
     match error {
         DxbcByteError::Layout(DxbcLayoutError::TruncatedHeader { available_bytes, evidence }) => {
             assert_eq!(available_bytes, 16);
-            assert_eq!(evidence.byte_range, ByteRange { start: 0, len: 16 });
+            assert_eq!(evidence.byte_range, ByteExtent { start: 0, len: 16 });
         }
         other => panic!("unexpected error: {other:?}"),
     }

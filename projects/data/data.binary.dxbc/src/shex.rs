@@ -1,6 +1,6 @@
 //! `SHEX`/`SHDR` tokens, instruction layout and the lazy instruction walk.
 
-use data_binary_core::{BudgetTracker, ByteRange};
+use data_binary_core::{BudgetTracker, ByteExtent};
 use boost_source::binary::ByteSource;
 
 use crate::{
@@ -26,7 +26,7 @@ pub struct DxbcInstruction {
     /// Index of the leading word inside the instruction stream.
     pub word_offset: u64,
     /// Byte range of the whole instruction inside the container.
-    pub byte_range: ByteRange,
+    pub byte_range: ByteExtent,
 }
 
 /// Token pair and bounded instruction stream of one `SHEX`/`SHDR` chunk.
@@ -57,12 +57,12 @@ impl<'a, S: ByteSource + ?Sized> ShexProgram<'a, S> {
             return Err(DxbcLayoutError::ShaderChunkTooSmall {
                 chunk_index,
                 chunk_size: chunk.size,
-                evidence: DxbcEvidence::chunk(chunk_index, ByteRange { start: chunk.payload_start(), len: chunk_size }),
+                evidence: DxbcEvidence::chunk(chunk_index, ByteExtent { start: chunk.payload_start(), len: chunk_size }),
             });
         }
 
         let tokens_start = chunk.payload_start();
-        let tokens_evidence = DxbcEvidence::chunk(chunk_index, ByteRange { start: tokens_start, len: SHEX_HEADER_BYTES });
+        let tokens_evidence = DxbcEvidence::chunk(chunk_index, ByteExtent { start: tokens_start, len: SHEX_HEADER_BYTES });
         let tokens = read_exact(source, ledger, tokens_start, SHEX_HEADER_BYTES, tokens_evidence)?;
         let version_token = u32::from_le_bytes(tokens[0..4].try_into().expect("4-byte version token"));
         let length_token = u32::from_le_bytes(tokens[4..8].try_into().expect("4-byte length token"));
@@ -73,7 +73,7 @@ impl<'a, S: ByteSource + ?Sized> ShexProgram<'a, S> {
             let start = tokens_start + SHEX_HEADER_BYTES + (stream_bytes - remainder_bytes);
             return Err(DxbcLayoutError::TrailingPartialWord {
                 remainder_bytes,
-                evidence: DxbcEvidence::chunk(chunk_index, ByteRange { start, len: remainder_bytes }),
+                evidence: DxbcEvidence::chunk(chunk_index, ByteExtent { start, len: remainder_bytes }),
             });
         }
 
@@ -83,7 +83,7 @@ impl<'a, S: ByteSource + ?Sized> ShexProgram<'a, S> {
                 chunk_index,
                 declared: length_token,
                 chunk_size: chunk.size,
-                evidence: DxbcEvidence::chunk(chunk_index, ByteRange { start: tokens_start + 4, len: 4 }),
+                evidence: DxbcEvidence::chunk(chunk_index, ByteExtent { start: tokens_start + 4, len: 4 }),
             });
         }
 
@@ -160,7 +160,7 @@ impl<S: ByteSource + ?Sized> Iterator for ShexInstructions<'_, '_, S> {
 
         let word_offset = self.next_word;
         let byte_start = self.stream_start + word_offset * DXBC_WORD_BYTES;
-        let evidence = DxbcEvidence::chunk(self.chunk_index, ByteRange { start: byte_start, len: DXBC_WORD_BYTES });
+        let evidence = DxbcEvidence::chunk(self.chunk_index, ByteExtent { start: byte_start, len: DXBC_WORD_BYTES });
         let bytes = match read_exact(self.source, self.ledger, byte_start, DXBC_WORD_BYTES, evidence) {
             Ok(bytes) => bytes,
             Err(error) => {
@@ -185,7 +185,7 @@ impl<S: ByteSource + ?Sized> Iterator for ShexInstructions<'_, '_, S> {
                 available_words: self.remaining_words,
                 evidence: DxbcEvidence::chunk(
                     self.chunk_index,
-                    ByteRange { start: byte_start, len: self.remaining_words * DXBC_WORD_BYTES },
+                    ByteExtent { start: byte_start, len: self.remaining_words * DXBC_WORD_BYTES },
                 ),
             }));
         }
@@ -196,7 +196,7 @@ impl<S: ByteSource + ?Sized> Iterator for ShexInstructions<'_, '_, S> {
             opcode,
             word_count,
             word_offset,
-            byte_range: ByteRange { start: byte_start, len: word_count_wide * DXBC_WORD_BYTES },
+            byte_range: ByteExtent { start: byte_start, len: word_count_wide * DXBC_WORD_BYTES },
         }))
     }
 }

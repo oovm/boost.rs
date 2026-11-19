@@ -1,5 +1,17 @@
+//! `data-binary-spirv` — `SPIR-V` binary module layout and structural validation.
+//!
+//! Decodes the five little-endian `u32` header words (magic `0x07230203`,
+//! version, generator, id `bound`, reserved schema) as recorded bytes, walks the
+//! instruction stream reporting raw opcode, declared word count, word offset and
+//! byte range, and classifies structural failures as `SpirvLayoutError` carrying
+//! the failing word offset and byte range. Layout only: opcode names, operand
+//! meaning and id semantics are never interpreted, and the write side is out of
+//! scope. No third-party SPIR-V library is used.
+//!
+//! The code originates from the former `acorn.rs` project (imported at commit
+//! `6deb56a4`, MPL-2.0) and has been internalized and de-branded for Boost.
+
 #![warn(missing_docs)]
-#![doc = include_str!("../readme.md")]
 
 mod bytes;
 mod error;

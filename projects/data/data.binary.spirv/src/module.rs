@@ -1,7 +1,7 @@
 //! Bounded module view and the structural validation entry.
 
-use data_binary_core::{BudgetTracker, ByteRange};
-use boost_source::binary::{ByteSource, ReadError, SourceRange};
+use data_binary_core::{BudgetTracker, ByteExtent};
+use boost_source::binary::{ByteSource, ReadError};
 
 use crate::{
     error::{SpirvEvidence, SpirvLayoutError},
@@ -48,7 +48,7 @@ impl<'a, S: ByteSource + ?Sized> SpirvModule<'a, S> {
         if length < SPIRV_HEADER_BYTES {
             return Err(SpirvLayoutError::TruncatedHeader {
                 available_bytes: length,
-                evidence: SpirvEvidence::new(0, ByteRange { start: 0, len: length }),
+                evidence: SpirvEvidence::new(0, ByteExtent { start: 0, len: length }),
             });
         }
 
@@ -57,7 +57,7 @@ impl<'a, S: ByteSource + ?Sized> SpirvModule<'a, S> {
             ledger,
             0,
             SPIRV_HEADER_BYTES,
-            SpirvEvidence::new(0, ByteRange { start: 0, len: SPIRV_HEADER_BYTES }),
+            SpirvEvidence::new(0, ByteExtent { start: 0, len: SPIRV_HEADER_BYTES }),
         )?;
         let word_at =
             |index: usize| u32::from_le_bytes(header_bytes[index * 4..index * 4 + 4].try_into().expect("4-byte header word"));
@@ -70,13 +70,13 @@ impl<'a, S: ByteSource + ?Sized> SpirvModule<'a, S> {
         if magic != SPIRV_MAGIC {
             return Err(SpirvLayoutError::BadMagic {
                 magic,
-                evidence: SpirvEvidence::new(0, ByteRange { start: 0, len: SPIRV_WORD_BYTES }),
+                evidence: SpirvEvidence::new(0, ByteExtent { start: 0, len: SPIRV_WORD_BYTES }),
             });
         }
         if schema != 0 {
             return Err(SpirvLayoutError::NonZeroSchema {
                 schema,
-                evidence: SpirvEvidence::new(4, ByteRange { start: 4 * SPIRV_WORD_BYTES, len: SPIRV_WORD_BYTES }),
+                evidence: SpirvEvidence::new(4, ByteExtent { start: 4 * SPIRV_WORD_BYTES, len: SPIRV_WORD_BYTES }),
             });
         }
 
@@ -85,14 +85,14 @@ impl<'a, S: ByteSource + ?Sized> SpirvModule<'a, S> {
             let start = length - remainder;
             return Err(SpirvLayoutError::TrailingPartialWord {
                 remainder_bytes: remainder,
-                evidence: SpirvEvidence::new(start / SPIRV_WORD_BYTES, ByteRange { start, len: remainder }),
+                evidence: SpirvEvidence::new(start / SPIRV_WORD_BYTES, ByteExtent { start, len: remainder }),
             });
         }
 
         let instruction_words = (length - SPIRV_HEADER_BYTES) / SPIRV_WORD_BYTES;
         if instruction_words == 0 {
             return Err(SpirvLayoutError::EmptyInstructionStream {
-                evidence: SpirvEvidence::new(SPIRV_HEADER_WORDS, ByteRange { start: SPIRV_HEADER_BYTES, len: 0 }),
+                evidence: SpirvEvidence::new(SPIRV_HEADER_WORDS, ByteExtent { start: SPIRV_HEADER_BYTES, len: 0 }),
             });
         }
 
@@ -162,7 +162,11 @@ pub(crate) fn read_exact<S: ByteSource + ?Sized>(
     evidence: SpirvEvidence,
 ) -> Result<Vec<u8>, SpirvLayoutError> {
     ledger.reserve_read_bytes(len).map_err(SpirvLayoutError::Budget)?;
-    match source.read_range(SourceRange { start, len }) {
+    let Some(range) = boost_source::ByteRange::with_len(start, len) else {
+        ledger.release_read_bytes(len).map_err(SpirvLayoutError::Budget)?;
+        return Err(SpirvLayoutError::Unavailable { reason: "byte range overflows `u64`".into(), evidence });
+    };
+    match source.read_range(range) {
         Ok(bytes) => {
             let consumed = bytes.len() as u64;
             ledger.settle_read_bytes(consumed).map_err(SpirvLayoutError::Budget)?;

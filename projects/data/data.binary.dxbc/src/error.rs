@@ -2,7 +2,7 @@
 
 use std::fmt::{Display, Formatter};
 
-use data_binary_core::{BudgetError, ByteRange};
+use data_binary_core::{BudgetError, ByteExtent};
 
 /// Byte coordinates for one structural claim.
 ///
@@ -14,17 +14,17 @@ pub struct DxbcEvidence {
     /// Index of the chunk the interval belongs to, when it is inside one.
     pub chunk_index: Option<u32>,
     /// Byte interval inside the container.
-    pub byte_range: ByteRange,
+    pub byte_range: ByteExtent,
 }
 
 impl DxbcEvidence {
     /// Creates evidence for an interval in the container header or offset table.
-    pub const fn container(byte_range: ByteRange) -> Self {
+    pub const fn container(byte_range: ByteExtent) -> Self {
         Self { chunk_index: None, byte_range }
     }
 
     /// Creates evidence for an interval inside the chunk at `index`.
-    pub const fn chunk(index: u32, byte_range: ByteRange) -> Self {
+    pub const fn chunk(index: u32, byte_range: ByteExtent) -> Self {
         Self { chunk_index: Some(index), byte_range }
     }
 

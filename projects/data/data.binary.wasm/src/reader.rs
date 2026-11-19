@@ -3,13 +3,13 @@
 //! 封装游标式字节读取，提供 `LEB128` 变长整数、定长整数、
 //! 浮点数与块类型等基础解码能力，供指令解码层复用。
 
-use data_compression::{CodecError, integer::Leb128};
+use data_encoding::{EncodingError, integer::Leb128};
 
 use super::WasmBinaryError;
 
-fn map_varint_error(error: CodecError) -> WasmBinaryError {
+fn map_varint_error(error: EncodingError) -> WasmBinaryError {
     match error {
-        CodecError::InputExhausted { .. } => WasmBinaryError::UnexpectedEof,
+        EncodingError::InputExhausted { .. } => WasmBinaryError::UnexpectedEof,
         _ => WasmBinaryError::InvalidLeb128,
     }
 }

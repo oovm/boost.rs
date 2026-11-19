@@ -2,7 +2,7 @@
 
 use std::fmt::{Display, Formatter};
 
-use data_binary_core::{BudgetError, ByteRange};
+use data_binary_core::{BudgetError, ByteExtent};
 
 /// Header table a structural claim belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,17 +33,17 @@ pub struct HsacoEvidence {
     /// Index of the section the interval belongs to, when it is inside one.
     pub section_index: Option<u32>,
     /// Byte interval inside the code object.
-    pub byte_range: ByteRange,
+    pub byte_range: ByteExtent,
 }
 
 impl HsacoEvidence {
     /// Creates evidence for an interval in the object header or a header table.
-    pub const fn object(byte_range: ByteRange) -> Self {
+    pub const fn object(byte_range: ByteExtent) -> Self {
         Self { section_index: None, byte_range }
     }
 
     /// Creates evidence for an interval inside the section at `index`.
-    pub const fn section(index: u32, byte_range: ByteRange) -> Self {
+    pub const fn section(index: u32, byte_range: ByteExtent) -> Self {
         Self { section_index: Some(index), byte_range }
     }
 

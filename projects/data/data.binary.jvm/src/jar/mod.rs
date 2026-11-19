@@ -1,4 +1,4 @@
-#![doc = include_str!("readme.md")]
+//! `JAR` 打包模型与产物边界。容器读写走 `data-binary-zip`，写出为 ZIP32 stored 成员。
 
 use std::{
     fmt::{Display, Formatter},
@@ -7,7 +7,7 @@ use std::{
 
 use data_binary_core::{Budget, BudgetTracker};
 use boost_source::binary::{ByteSource, MemorySource, ReadOutcome};
-use acorn_zip::{ZipIndexError, ZipMember, ZipNameEncoding, ZipViewError, decode_member, index_zip};
+use data_binary_zip::{ZipIndexError, ZipMember, ZipNameEncoding, ZipViewError, decode_member, index_zip};
 use serde::{Deserialize, Serialize};
 
 use crate::class::{JvmClassError, JvmClassFile};
