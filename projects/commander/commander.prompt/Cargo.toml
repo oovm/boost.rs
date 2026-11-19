@@ -12,3 +12,12 @@ edition.workspace = true
 boost-terminal = { workspace = true }
 commander-core = { workspace = true }
 commander-types = { workspace = true }
+serde_json = { workspace = true }
+
+# Acceptance fixture CLI (the `commander.conformance/v0` Rust twin). It is a
+# verification example, not part of the public library API. It lives here
+# because binary targets only link regular dependencies, and the CLI needs
+# both the routing facade and this prompt engine.
+[[bin]]
+name = "commander-conformance-cli"
+path = "src/bin/commander_conformance_cli.rs"
