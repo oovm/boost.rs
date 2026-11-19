@@ -739,7 +739,7 @@ impl<'config> Pratt<RubyLanguage> for RubyParser<'config> {
             return None;
         }
 
-        // 运算符后允许换行续行（不用 oak-core binary，因其不跳 Newline）。
+        // 运算符后允许换行续行（不用 data-text-core binary，因其不跳 Newline）。
         let cp = state.checkpoint_before(left);
         state.expect(kind).ok();
         self.skip_expr_gap(state);

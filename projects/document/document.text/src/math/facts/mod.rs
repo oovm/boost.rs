@@ -17,7 +17,7 @@
 
 use std::collections::BTreeMap;
 
-use acorn_ttf::{
+use data_binary_ttf::{
     FontFace,
     tables::math::{MathGlyphConstruction, MathGlyphInfo, MathTable, PartRecord},
 };

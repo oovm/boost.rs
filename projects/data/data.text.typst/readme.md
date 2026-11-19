@@ -1,13 +1,13 @@
-# 🚀 oak-typst
+# 🚀 data-text-typst
 
-[![Crates.io](https://img.shields.io/crates/v/oak-typst.svg)](https://crates.io/crates/oak-typst)
-[![Documentation](https://docs.rs/oak-typst/badge.svg)](https://docs.rs/oak-typst)
+[![Crates.io](https://img.shields.io/crates/v/data-text-typst.svg)](https://crates.io/crates/data-text-typst)
+[![Documentation](https://docs.rs/data-text-typst/badge.svg)](https://docs.rs/data-text-typst)
 
 **Making TYPST processing simple** — A high-performance, incremental TYPST parser built on the Oak framework.
 
 ## 🎯 Project Vision
 
-`oak-typst` is dedicated to providing industrial-grade parsing support for the TYPST language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-typst` is dedicated to providing industrial-grade parsing support for the TYPST language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

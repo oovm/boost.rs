@@ -1,6 +1,6 @@
 //! TeX/LaTeX input profile for VuTeX.
 //!
-//! VuTeX does not own TeX syntax. The `oak-tex` frontend parses the source, the
+//! VuTeX does not own TeX syntax. The `data-text-tex` frontend parses the source, the
 //! document model lowers it into `notedown-ir`, and this crate selects that
 //! profile and projects the recorded outcome into the shared conversion report.
 //! Math enters the shared formula pipeline as `notedown-ir` math, so the profile

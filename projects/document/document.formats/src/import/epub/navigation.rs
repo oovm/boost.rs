@@ -1,7 +1,7 @@
-use acorn_epub::{ManifestItem, OpfDocument};
+use data_binary_epub::{ManifestItem, OpfDocument};
 use document_ir::{Block, DocumentGraph, Inline, ListItem, NodeId};
-use oak_core::query::QueryBudget;
-use oak_html::{
+use data_text_core::query::QueryBudget;
+use data_text_html::{
     ast::Element,
     query::{HtmlDocumentView, select_css_elements},
 };
@@ -69,7 +69,7 @@ fn nav_entries_from_xhtml(xhtml: &[u8]) -> Result<Vec<NavEntry>, FormatError> {
     Ok(parse_nav_list_from_element(nav))
 }
 
-fn find_navigation_element<'a>(view: &'a HtmlDocumentView<'a>, document: &'a oak_html::HtmlDocument) -> Result<&'a Element, FormatError> {
+fn find_navigation_element<'a>(view: &'a HtmlDocumentView<'a>, document: &'a data_text_html::HtmlDocument) -> Result<&'a Element, FormatError> {
     let (_, nav_elements) =
         select_css_elements(view, "nav", QueryBudget::default()).map_err(|error| FormatError::parse("epub", error.to_string()))?;
     if let Some(nav) = nav_elements.iter().find(|element| is_toc_navigation(element)).or(nav_elements.first()) {
@@ -77,7 +77,7 @@ fn find_navigation_element<'a>(view: &'a HtmlDocumentView<'a>, document: &'a oak
     }
 
     for node in &document.nodes {
-        if let oak_html::ast::HtmlNode::Element(element) = node {
+        if let data_text_html::ast::HtmlNode::Element(element) = node {
             if element_is(element, "nav") {
                 return Ok(element);
             }

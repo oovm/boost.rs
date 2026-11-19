@@ -91,7 +91,7 @@ impl SemanticSearcher {
         Ok(Self {})
     }
 
-    /// Chunks code using oak-core's AST and indexes it
+    /// Chunks code using data-text-core's AST and indexes it
     pub async fn index_code<'a, L: Language>(&self, root: RedNode<'a, L>, source: &'a str, _table_name: &str) -> Result<(), TextError> {
         let mut collector = ChunkCollector::<L>::new(source);
         collector.visit_node(root);

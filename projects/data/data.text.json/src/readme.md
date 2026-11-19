@@ -12,7 +12,7 @@ The following is a standard workflow for parsing a JSON object:
 
 ```rust
 use oak_json::{JsonParser, JsonLanguage};
-use oak_core::{SourceText, Parser, parser::ParseSession};
+use data_text_core::{SourceText, Parser, parser::ParseSession};
 
 fn main() {
     // 1. Prepare source code
@@ -51,7 +51,7 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 No need to re-parse massive JSON data when small changes occur:
 ```rust
 use oak_json::{JsonParser, JsonLanguage};
-use oak_core::{SourceText, Parser, parser::ParseSession};
+use data_text_core::{SourceText, Parser, parser::ParseSession};
 
 # let config = JsonLanguage::standard();
 # let parser = JsonParser::new(&config);
@@ -65,7 +65,7 @@ let new_result = parser.parse(&new_source, &[], &mut session);
 `oak-json` provides precise error feedback for malformed JSON, such as missing colons, unmatched braces, or invalid escape sequences:
 ```rust
 # use oak_json::{JsonParser, JsonLanguage};
-# use oak_core::{SourceText, Parser, parser::ParseSession};
+# use data_text_core::{SourceText, Parser, parser::ParseSession};
 # let config = JsonLanguage::standard();
 # let parser = JsonParser::new(&config);
 # let source = SourceText::new("{");

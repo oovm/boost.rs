@@ -40,7 +40,7 @@ pub struct ModuleRecord {
 }
 
 /// scope 事实缺引用的精确原因，逐字镜像上游
-/// `oak_typescript::scope::ScopeIncompleteReason`。
+/// `data_text_typescript::scope::ScopeIncompleteReason`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScopeIncompleteReason {
     /// 直接 `eval(...)` 调用：运行时可按名字读写绑定。
@@ -67,7 +67,7 @@ pub enum ScopeIncompleteReason {
 
 /// 一个模块级绑定的 scope 事实。
 ///
-/// 语义与上游 `oak_typescript::scope::ModuleBindingFacts` 一致：
+/// 语义与上游 `data_text_typescript::scope::ModuleBindingFacts` 一致：
 /// `references` 是值位置引用（源序，遮蔽排除），类型位置只给标志
 /// 不给 span。[`ModuleRecord::scope_incomplete_reasons`] 非空时两者都不可信。
 #[derive(Debug, Clone, PartialEq)]

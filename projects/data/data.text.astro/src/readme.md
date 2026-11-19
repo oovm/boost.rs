@@ -17,7 +17,7 @@ The following is a standard workflow for parsing Svelte components, supporting t
 
 ```rust
 use oak_svelte::{SvelteParser, SvelteLanguage};
-use oak_core::{SourceText, parser::Parser, ParseSession};
+use data_text_core::{SourceText, parser::Parser, ParseSession};
 
 fn main() {
     // 1. Prepare source code
@@ -56,7 +56,7 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 Svelte components are often edited in IDEs. `oak-svelte` supports sub-millisecond incremental updates for a fluid editing experience:
 ```rust
 # use oak_svelte::{SvelteParser, SvelteLanguage};
-# use oak_core::{SourceText, parser::Parser, ParseSession};
+# use data_text_core::{SourceText, parser::Parser, ParseSession};
 # let config = SvelteLanguage::default();
 # let parser = SvelteParser::new(&config);
 # let mut session = ParseSession::default();

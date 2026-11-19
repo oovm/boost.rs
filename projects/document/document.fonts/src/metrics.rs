@@ -119,7 +119,7 @@ impl FaceMetrics {
     /// format. Only a container that cannot be parsed, or a face missing
     /// `head` / `hmtx` / `maxp`, is rejected.
     pub fn parse(bytes: &[u8]) -> Result<Self, MetricsError> {
-        let mut face = acorn_ttf::FontFace::load(bytes).map_err(|error| MetricsError::Unreadable(error.to_string()))?;
+        let mut face = data_binary_ttf::FontFace::load(bytes).map_err(|error| MetricsError::Unreadable(error.to_string()))?;
         let units_per_em = face.head().map(|head| head.units_per_em).ok_or_else(|| MetricsError::Unreadable("missing `head`".to_string()))?;
         let num_glyphs = face.maxp().map(|maxp| maxp.num_glyphs).ok_or_else(|| MetricsError::Unreadable("missing `maxp`".to_string()))?;
         if face.hmtx().is_none() {

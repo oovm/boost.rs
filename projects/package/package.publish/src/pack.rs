@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use acorn_tar::{TarEntryDraft, TarGz, write_tar};
+use data_binary_tar::{TarEntryDraft, TarGz, write_tar};
 use package_registry::sha256_hex;
 use package_resolve::{PackageError, ProjectLayout};
 use serde::Deserialize;

@@ -68,7 +68,7 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 ### 2. Incremental Parsing
 Shader code often undergoes frequent small edits during development. `oak-hlsl` re-parses through the Oak green tree and reuses unchanged nodes:
 ```rust
-use oak_core::{Builder, SourceText, parser::session::ParseSession};
+use data_text_core::{Builder, SourceText, parser::session::ParseSession};
 use oak_hlsl::{HlslBuilder, HlslLanguage};
 
 let language = HlslLanguage::default();

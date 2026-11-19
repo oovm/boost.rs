@@ -9,8 +9,8 @@ repository = "https://github.com/oovm/rust-boost/tree/dev/projects/package/packa
 publish = false
 
 [dependencies]
-acorn-codec = { workspace = true }
-acorn-tar = { workspace = true }
+data-compression = { workspace = true, features = ["deflate"] }
+data-binary-tar = { workspace = true }
 base64 = { workspace = true }
 boost-net = { workspace = true }
 serde = { workspace = true }
@@ -21,7 +21,7 @@ thiserror = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
-acorn-tar = { workspace = true }
+data-binary-tar = { workspace = true }
 base64 = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

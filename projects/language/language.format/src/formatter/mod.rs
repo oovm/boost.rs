@@ -3,7 +3,7 @@
 //! 本模块只提供平台侧注册表与扩展名表：具体语言的 formatter 由前端 crate 在启动时调用
 //! [`register_source_provider`] 注册（方向是前端 → 平台），平台不反向依赖任何前端。
 //! 语言前端 provider 由前端装配入口注册；VON / AWSL 由本 crate 直接注册。合法 formatter
-//! 只能来自上游 `oak-<language>/src/formatter/`（见 `oak-typescript::formatter`），
+//! 只能来自上游 `oak-<language>/src/formatter/`（见 `data-text-typescript::formatter`），
 //! 不得在此新增 CST token-gap 排版规则。
 //!
 //! 与 [`crate::printer`]（AST pretty print）严格分离，对齐 Oak 的 `formatter/` vs `printer/`；
@@ -139,7 +139,7 @@ pub fn source_registry() -> &'static RwLock<SourceFormatterRegistry> {
         let mut reg = SourceFormatterRegistry::new();
         reg.register(&["von"], VON_EXTENSIONS, Box::new(VonSourceFormatter));
         reg.register(&["awsl"], AWSL_EXTENSIONS, Box::new(AwslSourceFormatter));
-        // JS/TS/JSON 与 Python 的源码排版归各自 Oak formatter（`oak-typescript::formatter` 等）；
+        // JS/TS/JSON 与 Python 的源码排版归各自 Oak formatter（`data-text-typescript::formatter` 等）；
         // 本 crate 不得再注册「只裁剪空白行」的第二套本地 formatter 冒充格式化。
         // 在这些 Oak formatter 接入前，相应扩展名按 unsupported 失败。
         RwLock::new(reg)

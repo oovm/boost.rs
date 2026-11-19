@@ -25,7 +25,7 @@ Implements the `Parser<RustLanguage>` trait, providing:
 
 ```rust,ignore
 use oak_rust::{RustParser, RustLanguage};
-use oak_core::{IncrementalCache, source::StringSource};
+use data_text_core::{IncrementalCache, source::StringSource};
 
 let parser = RustParser::new();
 let source = StringSource::new("fn main() { println!(\"Hello, world!\"); }");

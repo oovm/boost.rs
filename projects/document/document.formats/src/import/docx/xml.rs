@@ -4,7 +4,7 @@ use document_ir::{
     Asset, AssetId, AssetKind, Block, BreakKind, DocumentGraph, DocumentId, Inline, ListItem, LossMarker, MathDisplay, NodeId, PageSetup,
     RelationEndpoint, SemanticStatus, TableCell,
 };
-use oak_xml::ast::{XmlElement, XmlValue};
+use data_text_xml::ast::{XmlElement, XmlValue};
 
 use super::{
     footnotes::FootnoteCatalog,

@@ -1,7 +1,7 @@
 //! JavaScript 文本原语：类型擦除结果的行映射、token 级压缩与 source map 片段。
 use super::erase::erase_types_with_deletions;
-use oak_core::{Lexer, NoLexerCache, SourceText};
-use oak_typescript::{TypeScriptLanguage, TypeScriptLexer, TypeScriptTokenType as T};
+use data_text_core::{Lexer, NoLexerCache, SourceText};
+use data_text_typescript::{TypeScriptLanguage, TypeScriptLexer, TypeScriptTokenType as T};
 
 /// One generated token mapped back to its original source position.
 #[derive(Debug, Clone, Copy)]

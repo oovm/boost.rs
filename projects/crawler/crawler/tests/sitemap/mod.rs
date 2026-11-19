@@ -1,6 +1,6 @@
 //! Extracted from `src/sitemap.rs`.
 
-use acorn_codec::compression::{deflate::DeflateLevel, gzip::Gzip};
+use data_compression::{deflate::DeflateLevel, gzip::Gzip};
 use crawler_fetch::build_artifact;
 use crawler_types::{BodyStorage, TransportProvenance};
 use url::Url;

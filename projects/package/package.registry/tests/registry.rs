@@ -1,6 +1,6 @@
 //! `package-registry` 冒烟测试：内存渠道、完整性校验与 tarball 解包边界。
 
-use acorn_tar::{TarEntryDraft, TarGz, write_tar};
+use data_binary_tar::{TarEntryDraft, TarGz, write_tar};
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use package_registry::{
     MockRegistry, Package, PublishOptions, Registry, RegistryError, extract_tarball, sha256_hex, verify_sri,

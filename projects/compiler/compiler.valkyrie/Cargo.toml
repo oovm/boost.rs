@@ -37,7 +37,6 @@ language-format = { workspace = true, features = ["serde"] }
 language-highlight = { workspace = true }
 data-text-valkyrie = { workspace = true }
 data-text-von = { workspace = true }
-ordered-float = "5.5.0"
 package-registry = { workspace = true }
 package-resolve = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use acorn_core::{Budget, BudgetTracker};
-use acorn_epub::OcfPackage;
+use data_binary_core::{Budget, BudgetTracker};
+use data_binary_epub::OcfPackage;
 use document_ir::{DocumentGraph, DocumentId, DocumentMetadata, LossMarker, SemanticStatus, SourceKind, SourceRef};
 
 use super::{
@@ -28,7 +28,7 @@ pub fn import_epub_bytes(label: &str, bytes: &[u8]) -> Result<DocumentGraph, For
     let package = OcfPackage::open(label.to_string(), bytes.to_vec()).map_err(map_ocf_error)?;
     let mut ledger = BudgetTracker::new(Budget::default());
     let opf_xml = package.read_member(package.root_opf_path(), &mut ledger).map_err(map_ocf_error)?;
-    let opf = acorn_epub::parse_opf_xml(package.root_opf_path(), &opf_xml).map_err(|error| FormatError::parse("epub", error))?;
+    let opf = data_binary_epub::parse_opf_xml(package.root_opf_path(), &opf_xml).map_err(|error| FormatError::parse("epub", error))?;
 
     let mut graph = DocumentGraph::new(document_id_for(label));
     graph.metadata = DocumentMetadata {
@@ -164,7 +164,7 @@ pub fn import_epub_bytes(label: &str, bytes: &[u8]) -> Result<DocumentGraph, For
 
     graph.push_loss(LossMarker {
         code: "import.epub.partial_coverage".into(),
-        message: "EPUB import maps OPF metadata, EPUB3 navigation TOC, spine XHTML via oak-html with container unwrapping, blockquote, pre/code, hr, tables, nested lists, structural footnotes (`epub:type=\"noteref\"` references and `epub:type=\"footnote\"` asides with multi-paragraph definitions and flattened inline markup), embedded image assets, manifest CSS members, external SVG image references, and MathML formulas. Inline CSS semantics remain pending".into(),
+        message: "EPUB import maps OPF metadata, EPUB3 navigation TOC, spine XHTML via data-text-html with container unwrapping, blockquote, pre/code, hr, tables, nested lists, structural footnotes (`epub:type=\"noteref\"` references and `epub:type=\"footnote\"` asides with multi-paragraph definitions and flattened inline markup), embedded image assets, manifest CSS members, external SVG image references, and MathML formulas. Inline CSS semantics remain pending".into(),
         status: SemanticStatus::Partial,
     });
     Ok(graph)
@@ -182,24 +182,24 @@ fn looks_like_zip(bytes: &[u8]) -> bool {
 /// or `name` attribute, which is how EPUB3 metadata such as
 /// `dcterms:modified` is written.
 fn unmapped_metadata_fields(opf_xml: &[u8]) -> Vec<String> {
-    let Ok(value) = acorn_epub::parse_xml_bytes(opf_xml)
+    let Ok(value) = data_binary_epub::parse_xml_bytes(opf_xml)
     else {
         return Vec::new();
     };
-    let Ok(root) = acorn_epub::document_root(&value)
+    let Ok(root) = data_binary_epub::document_root(&value)
     else {
         return Vec::new();
     };
-    let Some(metadata) = acorn_epub::elements_by_local_name(root, "metadata").into_iter().next()
+    let Some(metadata) = data_binary_epub::elements_by_local_name(root, "metadata").into_iter().next()
     else {
         return Vec::new();
     };
 
     let mut fields = Vec::new();
     for child in metadata.children.iter().filter_map(|value| value.as_element()) {
-        let name = if acorn_epub::element_is(child, "meta") {
-            acorn_epub::attribute_value(child, "property")
-                .or_else(|| acorn_epub::attribute_value(child, "name"))
+        let name = if data_binary_epub::element_is(child, "meta") {
+            data_binary_epub::attribute_value(child, "property")
+                .or_else(|| data_binary_epub::attribute_value(child, "name"))
                 .unwrap_or_else(|| "meta".to_string())
         }
         else {

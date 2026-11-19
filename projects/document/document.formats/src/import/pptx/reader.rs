@@ -11,9 +11,9 @@ use std::{
     path::Path,
 };
 
-use acorn_core::{Budget, BudgetTracker};
-use acorn_docx::{OpcPackage, OpcRelationship};
-use oak_xml::ast::XmlElement;
+use data_binary_core::{Budget, BudgetTracker};
+use data_binary_docx::{OpcPackage, OpcRelationship};
+use data_text_xml::ast::XmlElement;
 
 use super::model::{
     BodyProperties, ChartRef, ChartSeries, Fill, IssueStatus, Line, Paragraph, PlaceholderKind, PlaceholderRef, PptxIssue, PptxPresentation,
@@ -227,7 +227,7 @@ fn looks_like_zip(bytes: &[u8]) -> bool {
     bytes.starts_with(b"PK\x03\x04") || bytes.starts_with(b"PK\x05\x06") || bytes.starts_with(b"PK\x07\x08")
 }
 
-fn map_opc_error(error: acorn_docx::OpcError) -> FormatError {
+fn map_opc_error(error: data_binary_docx::OpcError) -> FormatError {
     FormatError::parse("pptx", error.to_string())
 }
 
@@ -294,7 +294,7 @@ fn relationship_attribute(element: &XmlElement, local: &str) -> Option<String> {
         .map(|attribute| attribute.value.clone())
 }
 
-fn parse_part(package: &OpcPackage, ledger: &mut BudgetTracker, part: &str) -> Option<oak_xml::ast::XmlValue> {
+fn parse_part(package: &OpcPackage, ledger: &mut BudgetTracker, part: &str) -> Option<data_text_xml::ast::XmlValue> {
     let xml = read_part_optional(package, ledger, part)?;
     parse_xml(&xml, "pptx").ok()
 }

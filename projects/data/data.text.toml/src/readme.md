@@ -30,7 +30,7 @@ fn main() {
         edition = "2024"
 
         [dependencies]
-        oak-core = { path = "../../oak-core" }
+        data-text-core = { path = "../../data-text-core" }
         serde = { version = "1.0", features = ["derive"] }
     "#;
     let source = SourceText::new(code);

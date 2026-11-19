@@ -1,6 +1,6 @@
 # 🧪 XML Parser Test Suite & Quality Assurance
 
-`oak-xml` features a comprehensive test suite to ensure stability across complex XML documents and various markup standards.
+`data-text-xml` features a comprehensive test suite to ensure stability across complex XML documents and various markup standards.
 
 ## 📊 Test Coverage
 
@@ -30,7 +30,7 @@ You can run the full test suite using:
 
 ```bash
 # Run standard Rust tests using cargo
-cargo test -p oak-xml
+cargo test -p data-text-xml
 
 # Or use the project-wide task runner
 wee test

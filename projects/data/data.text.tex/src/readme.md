@@ -5,7 +5,7 @@ TeX support for the Oak language framework.
 This crate provides lexing, parsing, and AST building for TeX/LaTeX documents,
 enabling integration with the Oak language server and other tools.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-tex`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-tex`.
 
 ## 🚦 Quick Start
 
@@ -13,7 +13,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-tex = { path = "..." }
+data-text-tex = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -21,8 +21,8 @@ oak-tex = { path = "..." }
 The following is a standard workflow for parsing TeX/LaTeX documents, supporting commands, environments, and math mode:
 
 ```rust
-use oak_core::{Builder, SourceText, parser::session::ParseSession};
-use oak_tex::{TexBuilder, TexLanguage};
+use data_text_core::{Builder, SourceText, parser::session::ParseSession};
+use data_text_tex::{TexBuilder, TexLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -59,10 +59,10 @@ fn main() {
 After a successful parse, you can use the built-in visitor pattern or manually traverse the Green/Red Tree to extract TeX specific constructs like commands, environments, math mode groups, and plain text content.
 
 ### 2. Incremental Parsing
-TeX documents can be very large (e.g., theses, books). `oak-tex` reuses the session cache across builds, so unchanged subtrees survive incremental updates:
+TeX documents can be very large (e.g., theses, books). `data-text-tex` reuses the session cache across builds, so unchanged subtrees survive incremental updates:
 ```rust
-# use oak_core::{Builder, SourceText, parser::session::ParseSession};
-# use oak_tex::{TexBuilder, TexLanguage};
+# use data_text_core::{Builder, SourceText, parser::session::ParseSession};
+# use data_text_tex::{TexBuilder, TexLanguage};
 # let language = TexLanguage::default();
 # let builder = TexBuilder::new(&language);
 # let mut session = ParseSession::<TexLanguage>::default();

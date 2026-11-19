@@ -15,7 +15,7 @@ crate-type = ["rlib"]
 
 [dependencies]
 blake3 = { workspace = true }
-acorn-codec = { workspace = true }
+data-compression = { workspace = true, features = ["deflate"] }
 boost-harness = { workspace = true }
 document-ir = { workspace = true }
 document-diagnostic = { workspace = true }
@@ -29,7 +29,7 @@ crawler-browser = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 url = { workspace = true, features = ["serde"] }
-oak-xml = { workspace = true }
+data-text-xml = { workspace = true }
 
 [dev-dependencies]
 serial_test = "3"

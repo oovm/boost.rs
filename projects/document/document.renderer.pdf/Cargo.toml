@@ -8,7 +8,7 @@ edition.workspace = true
 readme = "readme.md"
 
 [dependencies]
-acorn-codec = { workspace = true }
+data-compression = { workspace = true, features = ["deflate"] }
 plotter-scene = { workspace = true }
 plotter-types = { workspace = true }
 document-compose = { workspace = true, features = ["serde"] }

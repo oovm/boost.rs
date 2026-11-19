@@ -6,7 +6,7 @@
 //! reported as `import.docx.math_unsupported` losses by the caller.
 
 use document_ir::{MathDisplay, MathFormula};
-use oak_xml::ast::{XmlElement, XmlValue};
+use data_text_xml::ast::{XmlElement, XmlValue};
 
 use super::xml_extensions::{attribute_value, child_element, element_text, local_name};
 use crate::import::math_latex::{escape_math_text, escape_text, formula_from_latex, latex_operator};

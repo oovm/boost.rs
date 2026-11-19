@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use oak_xml::ast::{XmlElement, XmlValue};
+use data_text_xml::ast::{XmlElement, XmlValue};
 
 use super::model::{BorderEdge, BorderEdges, CellStyle, HorizontalAlign, VerticalAlign, WorkbookStyles, XlsxIssue, codes};
 use crate::{

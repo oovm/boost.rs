@@ -10,7 +10,7 @@ publish = false
 
 [dependencies]
 data-binary-odin = { workspace = true }
-acorn-tar = { workspace = true }
+data-binary-tar = { workspace = true }
 compiler-target = { workspace = true }
 data-text-von = { workspace = true }
 package-registry = { workspace = true }

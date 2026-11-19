@@ -2,7 +2,7 @@
 
 Lua language definition.
 
-Defines the core structure for the Lua language, implementing the oak-core Language trait.
+Defines the core structure for the Lua language, implementing the data-text-core Language trait.
 
 This module contains the metadata and configuration options for the Lua language within the Oak framework.
 

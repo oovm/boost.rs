@@ -4,7 +4,7 @@ This module provides a builder for constructing CSS Abstract Syntax Trees (ASTs)
 
 ## Builder Functionality
 
-The `CssBuilder` struct implements the `Builder` trait from `oak_core` and provides the following functionality:
+The `CssBuilder` struct implements the `Builder` trait from `data_text_core` and provides the following functionality:
 
 - **AST Construction**: Builds ASTs from parsed green trees
 - **Error Handling**: Propagates parsing errors and diagnostics
@@ -14,7 +14,7 @@ The `CssBuilder` struct implements the `Builder` trait from `oak_core` and provi
 
 ```rust
 use oak_css::{CssBuilder, CssLanguage};
-use oak_core::{SourceText, TextEdit};
+use data_text_core::{SourceText, TextEdit};
 
 // Create a new builder with default configuration
 let config = CssLanguage::default();
@@ -23,7 +23,7 @@ let builder = CssBuilder::new(config);
 // Build AST from source text
 let source = SourceText::new("div { color: red; }".to_string());
 let edits: Vec<TextEdit> = vec![];
-let mut cache = oak_core::builder::DefaultBuilderCache::default();
+let mut cache = data_text_core::builder::DefaultBuilderCache::default();
 
 let result = builder.build(&source, &edits, &mut cache);
 

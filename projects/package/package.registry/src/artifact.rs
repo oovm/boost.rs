@@ -1,7 +1,7 @@
 use std::path::{Component, Path, PathBuf};
 
-use acorn_codec::CodecLimits;
-use acorn_tar::{TarEntryKind, TarGz};
+use data_compression::CodecLimits;
+use data_binary_tar::{TarEntryKind, TarGz};
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use sha2::{Digest, Sha256, Sha512};
 

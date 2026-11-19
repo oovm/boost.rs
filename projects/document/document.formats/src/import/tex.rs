@@ -1,4 +1,4 @@
-//! TeX/LaTeX import via `oak-tex`.
+//! TeX/LaTeX import via `data-text-tex`.
 //!
 //! The lowering keeps document semantics the IR can express: sections,
 //! paragraphs, inline styles, lists, simple tables, math source, and verbatim
@@ -48,8 +48,8 @@ use document_ir::{
     AttributePair, Attributes, Block, DocumentGraph, DocumentId, DocumentMetadata, Inline, LinkId, ListItem, LossMarker, MathDisplay, NodeId,
     Relation, RelationEndpoint, RelationKind, SemanticStatus, SourceKind, SourceRef, SourceSpan, TableCell, TableRow,
 };
-use oak_core::{Builder, SourceText, parser::session::ParseSession};
-use oak_tex::{
+use data_text_core::{Builder, SourceText, parser::session::ParseSession};
+use data_text_tex::{
     TexBuilder, TexLanguage,
     ast::{MathDelimiter, TexArgument, TexCommand, TexEnvironment, TexItem, TexLeftRightPair, TexLimits, TexMath, TexRoot},
 };
@@ -250,7 +250,7 @@ impl<'a> TexLowerer<'a> {
     }
 
     /// Lower a run of AST items while also recovering block environments that
-    /// `oak-tex` drops from the AST (lists and tables become element kinds the
+    /// `data-text-tex` drops from the AST (lists and tables become element kinds the
     /// builder does not emit), using the raw source spans between items.
     fn lower_root(&mut self, items: &[TexItem], region_start: usize, region_end: usize, sink: &mut Sink) {
         let mut cursor = region_start;
@@ -1089,7 +1089,7 @@ impl<'a> TexLowerer<'a> {
 
     /// Emit the authored whitespace that sits between two lowered items.
     ///
-    /// `oak-tex` ends every text token at whitespace, so the space between two
+    /// `data-text-tex` ends every text token at whitespace, so the space between two
     /// words belongs to no item span. A blank line inside such a gap ends the
     /// current paragraph; any other whitespace run collapses to a single
     /// space, the collapsing TeX itself applies to its input. Whitespace the
@@ -1366,7 +1366,7 @@ impl<'a> TexLowerer<'a> {
 
 /// Source span of a `TexItem`.
 ///
-/// The match is exhaustive over the closed `oak-tex` AST enum, so a new variant
+/// The match is exhaustive over the closed `data-text-tex` AST enum, so a new variant
 /// fails to compile here instead of losing its source span silently.
 fn item_span(item: &TexItem) -> Option<(usize, usize)> {
     match item {

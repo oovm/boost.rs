@@ -917,8 +917,9 @@ pub enum HirLiteral {
     /// 目标宽度与有符号性由上下文在 `hir::lowering::integer_literal` 中一次结算，
     /// 构造与 HIR 侧不做目标范围判断。
     Integer(i128),
-    /// 64 位浮点数。
-    Float64(ordered_float::OrderedFloat<f64>),
+    /// 64 位浮点数；需要 `Eq` 的键语义见 `boost_math::numeric::OrderedF64`。
+    #[cfg_attr(feature = "serde", serde(with = "crate::compiler::types::serde_ordered_f64"))]
+    Float64(boost_math::numeric::OrderedF64),
     /// 字符字面量（`'x'`）：`char` 是 u32 码位（§4.12 字符合同），值已在 lowering 校验为合法标量。
     Character(u32),
     /// 字节字面量（`b'x'`）：值域 `u8`。

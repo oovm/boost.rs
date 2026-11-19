@@ -44,7 +44,7 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ```rust
 use oak_ejs::{EjsLanguage, EjsLexer, EjsParser, EjsElementType};
-use oak_core::SourceText;
+use data_text_core::SourceText;
 
 fn main() {
     let template = r#"<h1>Hello, <%= name %>!</h1>"#;

@@ -76,7 +76,7 @@ enum LineRule {
     Length,
 }
 
-fn line_rule(spacing: &oak_xml::ast::XmlElement) -> LineRule {
+fn line_rule(spacing: &data_text_xml::ast::XmlElement) -> LineRule {
     match attribute_value(spacing, "lineRule").as_deref() {
         Some("exact" | "atLeast") => LineRule::Length,
         _ => LineRule::Multiple,

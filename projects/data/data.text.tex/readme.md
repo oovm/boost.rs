@@ -1,13 +1,13 @@
-# 🚀 oak-tex
+# 🚀 data-text-tex
 
-[![Crates.io](https://img.shields.io/crates/v/oak-tex.svg)](https://crates.io/crates/oak-tex)
-[![Documentation](https://docs.rs/oak-tex/badge.svg)](https://docs.rs/oak-tex)
+[![Crates.io](https://img.shields.io/crates/v/data-text-tex.svg)](https://crates.io/crates/data-text-tex)
+[![Documentation](https://docs.rs/data-text-tex/badge.svg)](https://docs.rs/data-text-tex)
 
 **Typesetting Excellence with Modern Performance** — A high-performance, incremental TeX/LaTeX parser built on the Oak framework. Optimized for complex document structures, math environments, and responsive developer tools for technical writing.
 
 ## 🎯 Project Vision
 
-TeX and its derivatives like LaTeX are the gold standard for high-quality typesetting in academia and technical publishing. `oak-tex` aims to provide a robust, modern, Rust-powered infrastructure for parsing TeX that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, real-time previewers, and automated document analysis tools that can handle massive TeX projects instantly. Whether you are building custom linters for academic papers, automated bibliography managers, or sophisticated IDE extensions for TeXstudio or VS Code, `oak-tex` provides the high-fidelity AST and efficiency needed to elevate the technical writing experience.
+TeX and its derivatives like LaTeX are the gold standard for high-quality typesetting in academia and technical publishing. `data-text-tex` aims to provide a robust, modern, Rust-powered infrastructure for parsing TeX that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, real-time previewers, and automated document analysis tools that can handle massive TeX projects instantly. Whether you are building custom linters for academic papers, automated bibliography managers, or sophisticated IDE extensions for TeXstudio or VS Code, `data-text-tex` provides the high-fidelity AST and efficiency needed to elevate the technical writing experience.
 
 ## ✨ Core Features
 
@@ -24,7 +24,7 @@ TeX and its derivatives like LaTeX are the gold standard for high-quality typese
 
 ## 🏗️ Architecture
 
-`oak-tex` follows the modern Green/Red Tree architecture (inspired by Roslyn):
+`data-text-tex` follows the modern Green/Red Tree architecture (inspired by Roslyn):
 
 - **Green Tree**: Immutable, lossless, and syntax-only tree. It captures the full fidelity of the source code, including trivia (comments, whitespace).
 - **Red Tree**: A facade over the Green Tree that provides a convenient, type-safe API for tree traversal and analysis, including parent pointers and absolute offsets.

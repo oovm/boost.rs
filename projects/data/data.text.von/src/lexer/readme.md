@@ -42,7 +42,7 @@ VON is a lightweight data-interchange format designed for the V ecosystem. This 
 
 ```rust
 use oak_von::{VonLexer, VonLanguage};
-use oak_core::{Lexer, parser::session::ParseSession};
+use data_text_core::{Lexer, parser::session::ParseSession};
 
 fn main() {
     let von_data = r#"

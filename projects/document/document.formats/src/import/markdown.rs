@@ -4,8 +4,8 @@ use document_ir::{
     Block, BreakKind, DocumentGraph, DocumentId, Inline, ListItem, LossMarker, MathDisplay, NodeId, RelationEndpoint, SemanticStatus,
     SourceSpan, TableCell, TableRow,
 };
-use oak_core::{GreenNode, Parser, RedNode, RedTree, SourceText, parser::session::ParseSession};
-use oak_markdown::{MarkdownLanguage, MarkdownParser, lexer::token_type::MarkdownTokenType, parser::element_type::MarkdownElementType};
+use data_text_core::{GreenNode, Parser, RedNode, RedTree, SourceText, parser::session::ParseSession};
+use data_text_markdown::{MarkdownLanguage, MarkdownParser, lexer::token_type::MarkdownTokenType, parser::element_type::MarkdownElementType};
 
 use super::{
     common::{cell_children, decode_escaped_text, register_image_assets},
@@ -46,7 +46,7 @@ fn markdown_import_language() -> MarkdownLanguage {
     language
 }
 
-/// Import Markdown text into `notedown-ir` via `oak-markdown`.
+/// Import Markdown text into `notedown-ir` via `data-text-markdown`.
 ///
 /// Footnote definitions stay `Block::Opaque { kind: "footnote_definition" }`
 /// with their authored payload, and references stay `Inline::Note`, because
@@ -95,7 +95,7 @@ fn import_markdown_bytes_with_source(
 
 /// Hide `<` inside fenced code bodies from the lexer.
 ///
-/// `oak-markdown` re-lexes a fenced body as ordinary Markdown, and its HTML tag
+/// `data-text-markdown` re-lexes a fenced body as ordinary Markdown, and its HTML tag
 /// scanner (`lexer::MarkdownLexer::lex_any_tag`) searches for the closing `>`
 /// without stopping at a line break. A single comparison in code — `if n <= 1:`
 /// is enough — therefore swallows every token up to the next `>` anywhere later
@@ -142,7 +142,7 @@ fn mask_fenced_code_angles(text: &str) -> String {
 }
 
 /// Mirror the lexer's own fence test: at most three leading blanks followed by
-/// a run of at least three `` ` `` or `~`. `oak-markdown` closes a block at the
+/// a run of at least three `` ` `` or `~`. `data-text-markdown` closes a block at the
 /// next fence of either character, so the same predicate ends the masked
 /// region.
 fn is_fence_line(line: &str) -> bool {
@@ -185,7 +185,7 @@ fn lower_markdown_tree(
             continue;
         };
         // A list run is the only construct that can continue onto the next
-        // top-level node: `oak-markdown` ends a parent list at its first nested
+        // top-level node: `data-text-markdown` ends a parent list at its first nested
         // line, so the remaining sibling items come back as root-level `List`
         // nodes. Any other block ends the run.
         if node.element_type() != MarkdownElementType::List {
@@ -387,7 +387,7 @@ struct LinkDefinition {
 /// Promote a CommonMark setext heading before the underline is lowered as a
 /// thematic break.
 ///
-/// `oak-markdown` does not parse setext headings: `Title\n---` or `Title\n===`
+/// `data-text-markdown` does not parse setext headings: `Title\n---` or `Title\n===`
 /// becomes a paragraph followed by a horizontal-rule node, exactly like a
 /// thematic break. The two differ only by adjacency, so the underline must sit
 /// on the very next line of the paragraph; a blank line in between keeps the
@@ -442,7 +442,7 @@ fn setext_heading(
 
 /// Promote a setext h1 whose underline stayed inside the paragraph token.
 ///
-/// `oak-markdown` only produces a separate `HorizontalRule` node for `---`.
+/// `data-text-markdown` only produces a separate `HorizontalRule` node for `---`.
 /// A `===` underline is lexed as ordinary paragraph text, so `Title\n===` would
 /// otherwise reach the IR as a paragraph containing the raw underline.
 fn paragraph_setext_heading(node: RedNode<MarkdownLanguage>, source: &SourceText, context: &mut LinkContext) -> Option<Block> {
@@ -724,7 +724,7 @@ fn collect_inlines(node: RedNode<MarkdownLanguage>, source: &SourceText, context
             push_text_inline(&mut inlines, &decoded);
         }
     }
-    // `oak-markdown` splits a numeric entity into `&` and `#65;`, so decoding
+    // `data-text-markdown` splits a numeric entity into `&` and `#65;`, so decoding
     // has to happen on the merged text run instead of per token.
     merge_adjacent_text(&mut inlines);
     inlines
@@ -814,7 +814,7 @@ fn push_soft_break(inlines: &mut Vec<Inline>) {
 
 /// Push a text run, turning authored line endings into IR breaks.
 ///
-/// `oak-markdown` keeps every raw line ending inside the text token, so without
+/// `data-text-markdown` keeps every raw line ending inside the text token, so without
 /// this split a hard break (`two trailing spaces` or a trailing `\`) never
 /// becomes `BreakKind::Hard` and the renderer emits the literal spaces instead
 /// of a line break (CommonMark §6.9).
@@ -867,7 +867,7 @@ fn resolve_break_kind(inlines: &mut Vec<Inline>) -> BreakKind {
 
 /// Decode the HTML entities that CommonMark renders as characters.
 ///
-/// `oak-markdown` leaves entities untouched, so a numeric reference such as
+/// `data-text-markdown` leaves entities untouched, so a numeric reference such as
 /// `&#65;` would reach the IR as literal markup and the HTML renderer would
 /// print it a second time (CommonMark §6.2). Named entities outside the XML set
 /// are still literal; the coverage matrix tracks that as a fidelity gap.
@@ -939,7 +939,7 @@ fn split_hard_break(segment: &str) -> (&str, bool) {
 /// Lower a four-space or tab indented paragraph into a CommonMark indented
 /// code block.
 ///
-/// `oak-markdown` has no indented-code node, so the lexer hands the paragraph
+/// `data-text-markdown` has no indented-code node, so the lexer hands the paragraph
 /// over with its indentation already stripped and the lowering would emit a
 /// normal paragraph. Reading the raw span keeps the code semantics instead of
 /// silently flattening the block into prose (CommonMark §4.4).
@@ -1340,13 +1340,13 @@ fn is_depiction_language(language: &str) -> bool {
 
 /// Fenced code keeps the raw source slice between the two fences.
 ///
-/// `oak-markdown` re-lexes fence bodies with the inline lexer, which turns
+/// `data-text-markdown` re-lexes fence bodies with the inline lexer, which turns
 /// punctuation into dedicated tokens or nodes (`A[Start]` becomes `Text "A"`,
 /// `Link "["` and `Text "Start"`). Rebuilding the body token by token dropped
 /// every element the lowering did not know about, so the content is taken from
 /// the source byte range instead.
 ///
-/// `oak-markdown` closes a fence at the first fence run of the same character
+/// `data-text-markdown` closes a fence at the first fence run of the same character
 /// regardless of length. CommonMark requires the closing fence to be at least
 /// as long as the opening one, so a shorter run inside a longer fence splits
 /// the block. The returned `consumed` count is the number of following siblings
@@ -1476,7 +1476,7 @@ fn strip_trailing_line_break(text: &str) -> &str {
 }
 
 /// GFM footnote definitions continue on the immediately following lines when
-/// those lines are indented by at least four spaces. `oak-markdown` ends the
+/// those lines are indented by at least four spaces. `data-text-markdown` ends the
 /// definition at the first line, so the continuation arrives as a separate
 /// paragraph and would move into the document body. Append its raw source to
 /// the definition payload instead.
@@ -1516,10 +1516,10 @@ struct OpenList {
     id: NodeId,
 }
 
-/// One list item flattened out of the `oak-markdown` tree with its authored
+/// One list item flattened out of the `data-text-markdown` tree with its authored
 /// indentation.
 ///
-/// `oak-markdown` nests list nodes by tree shape rather than by authored
+/// `data-text-markdown` nests list nodes by tree shape rather than by authored
 /// indentation: a parent list node ends at the first indented line, deeper
 /// sibling runs come back as separate root-level `List` nodes, and a shallower
 /// item can end up inside the previous item's node. Rebuilding the levels from
@@ -1577,7 +1577,7 @@ fn attach_list_to_last_item(graph: &mut DocumentGraph, parent: NodeId, child: No
 /// Flatten a `List` node into source-ordered items with their indentation.
 ///
 /// Nested `List` children are recursed instead of becoming child blocks, so a
-/// run that `oak-markdown` split across several root nodes is rebuilt as one
+/// run that `data-text-markdown` split across several root nodes is rebuilt as one
 /// sequence before the levels are reconstructed.
 fn collect_list_items(node: RedNode<MarkdownLanguage>, source: &SourceText, context: &mut LinkContext, out: &mut Vec<FlatItem>) {
     for child in node.children() {
@@ -1723,7 +1723,7 @@ fn lower_list_item<'a>(
 
 /// Collect the complete HTML block that starts at `node`.
 ///
-/// `oak-markdown` emits only the opening tag as an `HtmlTag` node and leaves the
+/// `data-text-markdown` emits only the opening tag as an `HtmlTag` node and leaves the
 /// remaining lines as paragraph text, so the closing tag would be escaped on
 /// export. CommonMark ends an HTML block at the first blank line, which makes
 /// the block the contiguous run of siblings after the opening tag.
@@ -1749,7 +1749,7 @@ fn extract_html_block(node: RedNode<MarkdownLanguage>, trailing: &[RedTree<Markd
 ///
 /// CommonMark ends an HTML block at the first line that holds only whitespace.
 /// The blank line itself belongs to the following content, so the returned
-/// offset is the start of that line. `oak-markdown` emits the blank line as two
+/// offset is the start of that line. `data-text-markdown` emits the blank line as two
 /// separate `Newline` leaves, which a sibling gap check never sees as `\n\n`,
 /// so the scan works on the source instead of the sibling spans.
 fn html_block_terminator(text: &str, start: usize) -> usize {
@@ -1772,7 +1772,7 @@ fn html_block_terminator(text: &str, start: usize) -> usize {
 
 /// Whether a lexed HTML token is an authored tag rather than a stray `<`.
 ///
-/// `oak-markdown` lexes a bare `<` such as `1 < 2` as an HTML tag and lets the
+/// `data-text-markdown` lexes a bare `<` such as `1 < 2` as an HTML tag and lets the
 /// run swallow the rest of the document. Only tokens that start like a tag are
 /// kept verbatim, so a comparison operator stays text and is escaped on export.
 fn is_authored_html_tag(text: &str) -> bool {
@@ -1845,7 +1845,7 @@ fn footnote_reference_loss_marker() -> LossMarker {
 
 /// Lower a definition description into paragraph inlines.
 ///
-/// `oak-markdown` keeps the `:` marker in the node, so it is removed here while
+/// `data-text-markdown` keeps the `:` marker in the node, so it is removed here while
 /// the authored description text keeps its inline formatting.
 fn definition_description_inlines(node: RedNode<MarkdownLanguage>, source: &SourceText, context: &mut LinkContext) -> Vec<Inline> {
     let mut content = collect_inlines(node, source, context);
@@ -1995,7 +1995,7 @@ fn remap_block_references(
 
 /// Lower a blockquote into a quote whose children carry its whole body.
 ///
-/// `oak-markdown` keeps a blockquote's `>` markers and inner list/heading
+/// `data-text-markdown` keeps a blockquote's `>` markers and inner list/heading
 /// markers inside one flat node, so nested structure cannot be read from the
 /// tree. The dequoted body is re-read with the same import profile: a body that
 /// lowers to paragraphs becomes a real `Paragraph` child, and any deeper block

@@ -2,7 +2,7 @@
 
 Xml support for the Oak language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-xml`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-xml`.
 
 ## 🚦 Quick Start
 
@@ -10,7 +10,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-xml = { path = "..." }
+data-text-xml = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -18,7 +18,7 @@ oak-xml = { path = "..." }
 The following is a standard workflow for parsing an XML document:
 
 ```rust
-use oak_xml::{XmlParser, SourceText, XmlLanguage};
+use data_text_xml::{XmlParser, SourceText, XmlLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -62,7 +62,7 @@ let new_result = parser.reparse(&new_source, &old_result);
 ```
 
 ### 3. Diagnostics
-`oak-xml` provides precise error feedback for malformed XML, such as unclosed tags, attribute quoting issues, or namespace prefix errors:
+`data-text-xml` provides precise error feedback for malformed XML, such as unclosed tags, attribute quoting issues, or namespace prefix errors:
 ```rust
 for diag in result.diagnostics() {
     println!("[{}:{}] {}", diag.line, diag.column, diag.message);

@@ -1,3 +1,3 @@
 # language
 
-`AthenaLanguage` implements `oak_core::Language`.
+`AthenaLanguage` implements `data_text_core::Language`.

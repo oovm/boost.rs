@@ -1,13 +1,13 @@
 # 🚀 Oak HTML Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-html.svg)](https://crates.io/crates/oak-html)
-[![Documentation](https://docs.rs/oak-html/badge.svg)](https://docs.rs/oak-html)
+[![Crates.io](https://img.shields.io/crates/v/data-text-html.svg)](https://crates.io/crates/data-text-html)
+[![Documentation](https://docs.rs/data-text-html/badge.svg)](https://docs.rs/data-text-html)
 
 **Structuring the Web with Precision** — A high-performance, incremental HTML parser built on the Oak framework. Optimized for web scraping, static analysis, and modern IDE support for web development.
 
 ## 🎯 Project Vision
 
-HTML is the backbone of the web, and its complexity often arises from its flexibility and real-world "tag soup." `oak-html` aims to provide a robust, high-performance parsing solution that can handle modern HTML5 standards with industrial-grade reliability. By utilizing Oak's incremental parsing capabilities, it enables the creation of highly responsive tools for web development—from real-time preview engines to intelligent code refactoring tools.
+HTML is the backbone of the web, and its complexity often arises from its flexibility and real-world "tag soup." `data-text-html` aims to provide a robust, high-performance parsing solution that can handle modern HTML5 standards with industrial-grade reliability. By utilizing Oak's incremental parsing capabilities, it enables the creation of highly responsive tools for web development—from real-time preview engines to intelligent code refactoring tools.
 
 ## ✨ Core Features
 

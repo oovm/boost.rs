@@ -13,7 +13,7 @@ High-performance incremental reStructuredText parser for the `data.text` family.
 
 ```rust
 use oak_rst::{RstLexer, RstParser, RstLanguage};
-use oak_core::{ParseSession, SourceText, Parser};
+use data_text_core::{ParseSession, SourceText, Parser};
 
 let code = "# Heading\n\nParagraph with *emphasis* and **strong** text.";
 let language = RstLanguage::default();

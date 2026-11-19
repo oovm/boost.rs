@@ -481,6 +481,6 @@ fn lower_constant(constant: &MirConstant) -> Result<ValkyrieMirConstant, Structu
         MirConstant::Unit => Ok(ValkyrieMirConstant::Unit),
         MirConstant::Null => Ok(ValkyrieMirConstant::Null),
         // 位模式保真：`-0.0` 符号位与 NaN payload 不能在 canonical 边界被规范化。
-        MirConstant::Float64(value) => Ok(ValkyrieMirConstant::Float64(value.0.to_bits())),
+        MirConstant::Float64(value) => Ok(ValkyrieMirConstant::Float64(value.get().to_bits())),
     }
 }

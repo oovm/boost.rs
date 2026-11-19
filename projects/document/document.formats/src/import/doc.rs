@@ -1,4 +1,4 @@
-use acorn_doc::extract_text_from_bytes;
+use data_binary_doc::extract_text_from_bytes;
 
 use document_ir::{Block, DocumentGraph, DocumentId, Inline, LossMarker, SemanticStatus};
 
@@ -7,9 +7,9 @@ use crate::FormatError;
 /// Import extractable text from a legacy OLE Word document.
 pub fn import_doc_bytes(label: &str, bytes: &[u8]) -> Result<DocumentGraph, FormatError> {
     let extracted = extract_text_from_bytes(bytes).map_err(|error| match error {
-        acorn_doc::DocError::NotCompoundFile => FormatError::invalid_input("input is not an OLE Compound File"),
-        acorn_doc::DocError::Encrypted => FormatError::unsupported("doc", "encrypted or obfuscated Word documents"),
-        acorn_doc::DocError::InvalidFib => FormatError::invalid_input("invalid Word FIB or text range"),
+        data_binary_doc::DocError::NotCompoundFile => FormatError::invalid_input("input is not an OLE Compound File"),
+        data_binary_doc::DocError::Encrypted => FormatError::unsupported("doc", "encrypted or obfuscated Word documents"),
+        data_binary_doc::DocError::InvalidFib => FormatError::invalid_input("invalid Word FIB or text range"),
         other => FormatError::parse("doc", other.to_string()),
     })?;
     let mut graph = DocumentGraph::new(DocumentId(1));

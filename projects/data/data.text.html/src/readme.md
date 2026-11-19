@@ -2,7 +2,7 @@
 
 Html support for the Oak language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-html`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-html`.
 
 ## 🚦 Quick Start
 
@@ -10,7 +10,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-html = { path = "..." }
+data-text-html = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -18,7 +18,7 @@ oak-html = { path = "..." }
 The following is a standard workflow for parsing a modern HTML5 document with attributes and nested elements:
 
 ```rust
-use oak_html::{HtmlParser, SourceText, HtmlLanguage};
+use data_text_html::{HtmlParser, SourceText, HtmlLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -69,7 +69,7 @@ let new_result = parser.reparse(&new_source, &old_result);
 ```
 
 ### 3. Diagnostics
-`oak-html` provides rich error contexts specifically tailored for web developers, handling complex scenarios like unclosed tags or malformed attribute syntax:
+`data-text-html` provides rich error contexts specifically tailored for web developers, handling complex scenarios like unclosed tags or malformed attribute syntax:
 ```rust
 for diag in result.diagnostics() {
     println!("[{}:{}] {}", diag.line, diag.column, diag.message);

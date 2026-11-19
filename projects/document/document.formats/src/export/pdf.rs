@@ -3,9 +3,9 @@ use std::{
     io::Write as _,
 };
 
-use acorn_codec::{
+use data_compression::{
     CodecLimits,
-    compression::{deflate::DeflateLevel, zlib::Zlib},
+    {deflate::DeflateLevel, zlib::Zlib},
 };
 
 use document_ir::{AssetId, AssetKind, Block, BreakKind, DocumentGraph, Inline, NodeId};

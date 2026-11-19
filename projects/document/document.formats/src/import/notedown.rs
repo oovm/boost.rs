@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use document_ir::{Block, DocumentGraph, DocumentId, Inline, ListItem, LossMarker, RelationEndpoint, SemanticStatus, SourceSpan, TableRow};
-use oak_core::{Parser, RedNode, RedTree, SourceText, parser::session::ParseSession};
-use oak_notedown::{NoteLanguage, NoteParser, lexer::token_type::NoteTokenType, parser::element_type::NoteElementType};
+use data_text_core::{Parser, RedNode, RedTree, SourceText, parser::session::ParseSession};
+use data_text_notedown::{NoteLanguage, NoteParser, lexer::token_type::NoteTokenType, parser::element_type::NoteElementType};
 
 use super::common::{cell_children, decode_escaped_text, register_image_assets};
 use crate::FormatError;
@@ -10,7 +10,7 @@ use crate::FormatError;
 /// Losses collected while lowering, each carrying the authored span that produced it.
 type LossQueue = Vec<(LossMarker, Option<SourceSpan>)>;
 
-/// Import Notedown text from disk into `notedown-ir` via `oak-notedown`.
+/// Import Notedown text from disk into `notedown-ir` via `data-text-notedown`.
 pub fn import_notedown(path: impl AsRef<Path>) -> Result<DocumentGraph, FormatError> {
     let path = path.as_ref();
     let text =
@@ -18,7 +18,7 @@ pub fn import_notedown(path: impl AsRef<Path>) -> Result<DocumentGraph, FormatEr
     import_notedown_bytes(&path.display().to_string(), &text)
 }
 
-/// Import Notedown text bytes into `notedown-ir` via `oak-notedown`.
+/// Import Notedown text bytes into `notedown-ir` via `data-text-notedown`.
 pub fn import_notedown_bytes(label: &str, text: &str) -> Result<DocumentGraph, FormatError> {
     let language = NoteLanguage::default();
     let source = SourceText::new(text);
@@ -29,7 +29,7 @@ pub fn import_notedown_bytes(label: &str, text: &str) -> Result<DocumentGraph, F
     lower_notedown_tree(label, green_tree, &source)
 }
 
-fn lower_notedown_tree(label: &str, green_tree: &oak_core::GreenNode<NoteLanguage>, source: &SourceText) -> Result<DocumentGraph, FormatError> {
+fn lower_notedown_tree(label: &str, green_tree: &data_text_core::GreenNode<NoteLanguage>, source: &SourceText) -> Result<DocumentGraph, FormatError> {
     let root = RedNode::new(green_tree, 0);
     let mut graph = DocumentGraph::new(document_id_for(label));
     let mut losses: LossQueue = Vec::new();
@@ -52,7 +52,7 @@ fn lower_notedown_tree(label: &str, green_tree: &oak_core::GreenNode<NoteLanguag
     else {
         graph.push_loss(LossMarker {
             code: "import.notedown.partial_coverage".into(),
-            message: "notedown import lowers headings, paragraphs, lists, code blocks, tables, and basic links via oak-notedown".into(),
+            message: "notedown import lowers headings, paragraphs, lists, code blocks, tables, and basic links via data-text-notedown".into(),
             status: SemanticStatus::Partial,
         });
     }
@@ -538,7 +538,7 @@ fn parse_inline_link(node: RedNode<NoteLanguage>, source: &SourceText, losses: &
     if let Some((text, url)) = split_markdown_link(raw.as_ref()) {
         return Some(Inline::Link { target: RelationEndpoint::ExternalUri(url), display: vec![Inline::Text { text }], title: None });
     }
-    // `oak-notedown` emits a `Link` element for a bare `[label]` with no target.
+    // `data-text-notedown` emits a `Link` element for a bare `[label]` with no target.
     // The authored label is still a relation, so keep it as `Unresolved` and
     // record its provenance instead of flattening it to plain text.
     if let Some(label) = raw.trim().strip_prefix('[').and_then(|rest| rest.strip_suffix(']')) {

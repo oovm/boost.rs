@@ -18,7 +18,7 @@ oak-sql = { path = "..." }
 The following is a standard workflow for parsing a complex SQL query with Joins and CTEs:
 
 ```rust
-use oak_core::{SourceText, parser::{Parser, session::ParseSession}};
+use data_text_core::{SourceText, parser::{Parser, session::ParseSession}};
 use oak_sql::{SqlLanguage, SqlParser};
 
 fn main() {
@@ -62,7 +62,7 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 ### 2. Incremental Parsing
 No need to re-parse an entire multi-megabyte SQL dump when small changes occur:
 ```rust
-use oak_core::{SourceText, TextEdit, parser::{Parser, session::ParseSession}};
+use data_text_core::{SourceText, TextEdit, parser::{Parser, session::ParseSession}};
 use oak_sql::{SqlLanguage, SqlParser};
 
 let config = SqlLanguage::postgresql();
@@ -82,7 +82,7 @@ let new_result = parser.parse(&new_source, &edits, &mut session);
 ### 3. Diagnostics
 `oak-sql` provides rich error contexts specifically tailored for database developers, handling dialect-specific syntax quirks and providing clear feedback on malformed queries:
 ```rust
-use oak_core::{SourceText, parser::{Parser, session::ParseSession}};
+use data_text_core::{SourceText, parser::{Parser, session::ParseSession}};
 use oak_sql::{SqlLanguage, SqlParser};
 
 let config = SqlLanguage::postgresql();

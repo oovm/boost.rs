@@ -19,7 +19,7 @@ use crate::compiler::{
 
 use super::errors::MatchRecoveryStage;
 
-use ordered_float::OrderedFloat;
+use boost_math::numeric::OrderedF64;
 
 /// Oak 产出的 match arm 是否需从源码恢复。
 pub fn match_needs_source_recovery(source: &str, match_span: Range<usize>, arms: &[MatchArm]) -> bool {
@@ -516,7 +516,7 @@ fn parse_hir_literal(text: &str) -> Option<HirLiteral> {
         return Some(HirLiteral::Integer(value));
     }
     if let Ok(value) = super::expr_lowering::split_numeric_type_suffix(text).0.parse::<f64>() {
-        return Some(HirLiteral::Float64(OrderedFloat(value)));
+        return Some(HirLiteral::Float64(OrderedF64::new(value)));
     }
     None
 }

@@ -4,7 +4,7 @@ This module provides a builder for constructing Less Abstract Syntax Trees (ASTs
 
 ## Builder Functionality
 
-The `LessBuilder` struct implements the `Builder` trait from `oak_core` and provides the following functionality:
+The `LessBuilder` struct implements the `Builder` trait from `data_text_core` and provides the following functionality:
 
 - **AST Construction**: Builds ASTs from parsed green trees
 - **Error Handling**: Propagates parsing errors and diagnostics
@@ -14,7 +14,7 @@ The `LessBuilder` struct implements the `Builder` trait from `oak_core` and prov
 
 ```rust
 use oak_less::{LessBuilder, LessLanguage};
-use oak_core::{SourceText, TextEdit};
+use data_text_core::{SourceText, TextEdit};
 
 // Create a new builder with default configuration
 let config = LessLanguage::default();
@@ -23,7 +23,7 @@ let builder = LessBuilder::new(config);
 // Build AST from source text
 let source = SourceText::new("div { color: red; }".to_string());
 let edits: Vec<TextEdit> = vec![];
-let mut cache = oak_core::builder::DefaultBuilderCache::default();
+let mut cache = data_text_core::builder::DefaultBuilderCache::default();
 
 let result = builder.build(&source, &edits, &mut cache);
 

@@ -11,7 +11,7 @@
 //! samples and written without a filter. 16-bit samples narrow to their high
 //! byte, and Adam7-interlaced rows are de-interlaced before unfiltering. The
 //! module carries its own base64, PNG filter, and JPEG marker parsers. The
-//! zlib envelope and its DEFLATE payload decode through `acorn-codec`'s
+//! zlib envelope and its DEFLATE payload decode through `data-compression`'s
 //! `Zlib::decode`, the same path the PDF importer takes, so this crate keeps
 //! no second implementation of the algorithm.
 //!
@@ -26,7 +26,7 @@
 //! corrupt header, or zero-sized image returns `None` instead of panicking or
 //! emitting an invalid dictionary.
 
-use acorn_codec::{CodecLimits, compression::zlib::Zlib};
+use data_compression::{CodecLimits, zlib::Zlib};
 use std::{fs, path::Path};
 
 /// PNG file signature, the first eight bytes of every PNG stream.

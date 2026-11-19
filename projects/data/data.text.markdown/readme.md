@@ -1,13 +1,13 @@
 # 🚀 Oak Markdown Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-markdown.svg)](https://crates.io/crates/oak-markdown)
-[![Documentation](https://docs.rs/oak-markdown/badge.svg)](https://docs.rs/oak-markdown)
+[![Crates.io](https://img.shields.io/crates/v/data-text-markdown.svg)](https://crates.io/crates/data-text-markdown)
+[![Documentation](https://docs.rs/data-text-markdown/badge.svg)](https://docs.rs/data-text-markdown)
 
 **The Standard for Modern Documentation** — A high-performance, incremental Markdown parser built on the Oak framework. Optimized for CommonMark, GFM features, and real-time editing experiences.
 
 ## 🎯 Project Vision
 
-Markdown is the ubiquitous language for documentation, notes, and collaborative writing. `oak-markdown` aims to provide a robust, modern, Rust-powered infrastructure for parsing Markdown that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive editors, live previewers, and static site generators that can handle large documents with sub-millisecond latency. Whether you are building a custom documentation platform, a personal knowledge base tool, or a sophisticated IDE extension, `oak-markdown` provides the high-fidelity AST and efficiency needed to deliver a superior writing experience.
+Markdown is the ubiquitous language for documentation, notes, and collaborative writing. `data-text-markdown` aims to provide a robust, modern, Rust-powered infrastructure for parsing Markdown that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive editors, live previewers, and static site generators that can handle large documents with sub-millisecond latency. Whether you are building a custom documentation platform, a personal knowledge base tool, or a sophisticated IDE extension, `data-text-markdown` provides the high-fidelity AST and efficiency needed to deliver a superior writing experience.
 
 ## ✨ Core Features
 

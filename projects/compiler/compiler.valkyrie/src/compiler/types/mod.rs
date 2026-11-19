@@ -5,6 +5,9 @@ pub mod advanced;
 pub mod hir;
 pub mod witness;
 
+#[cfg(feature = "serde")]
+pub(crate) mod serde_ordered_f64;
+
 pub use compiler_types::{Identifier, NamePath, QualifiedName, SourceID, SourceSpan};
 
 /// Severity level for diagnostic reports

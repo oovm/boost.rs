@@ -51,7 +51,7 @@ The builder is typically used through the `DejavuBuilder` when parsing Dejavu so
 
 ```rust
 use oak_dejavu::{DejavuBuilder, DejavuLanguage};
-use oak_core::{Builder, parser::ParseSession, source::SourceText};
+use data_text_core::{Builder, parser::ParseSession, source::SourceText};
 
 let language = DejavuLanguage::default();
 let builder = DejavuBuilder::new(&language);

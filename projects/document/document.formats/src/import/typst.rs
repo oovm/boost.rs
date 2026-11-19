@@ -1,4 +1,4 @@
-//! Typst import via `oak-typst`.
+//! Typst import via `data-text-typst`.
 //!
 //! The lowering keeps markup semantics the IR can express: headings,
 //! paragraphs, strong/emphasis spans, lists, math (lowered through the
@@ -15,8 +15,8 @@
 use std::path::Path;
 
 use document_ir::{Block, DocumentGraph, DocumentId, Inline, ListItem, LossMarker, NodeId, RelationEndpoint, SemanticStatus, SourceSpan};
-use oak_core::{Builder, SourceText, parser::session::ParseSession};
-use oak_typst::{
+use data_text_core::{Builder, SourceText, parser::session::ParseSession};
+use data_text_typst::{
     TypstBuilder, TypstLanguage,
     ast::{TypstHeading, TypstItem, TypstLink, TypstRoot},
 };
@@ -896,7 +896,7 @@ fn parse_typst_link(raw: &str) -> Option<(String, Option<&str>, usize)> {
     Some((destination, Some(&after[..end]), consumed))
 }
 
-fn typst_span(item: &TypstItem) -> Option<oak_core::Range<usize>> {
+fn typst_span(item: &TypstItem) -> Option<data_text_core::Range<usize>> {
     match item {
         TypstItem::Heading(heading) => Some(heading.content.span),
         TypstItem::Strong(root) | TypstItem::Emphasis(root) | TypstItem::Math(root) | TypstItem::Quote(root) => Some(root.span),
@@ -1249,7 +1249,7 @@ fn trim_inlines(inlines: &mut Vec<Inline>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oak_typst::ast::TypstLink;
+    use data_text_typst::ast::TypstLink;
 
     #[test]
     fn link_items_become_link_inlines() {

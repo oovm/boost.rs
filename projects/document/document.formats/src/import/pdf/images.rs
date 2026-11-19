@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use acorn_codec::{
+use data_compression::{
     CodecLimits,
-    compression::{deflate::DeflateLevel, zlib::Zlib},
+    {deflate::DeflateLevel, zlib::Zlib},
 };
 
 use crate::FormatError;

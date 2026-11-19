@@ -13,7 +13,7 @@ Stylus language support for the Oak framework.
 
 ```rust
 use oak_stylus::{StylusLanguage, StylusLexer, StylusParser, StylusBuilder};
-use oak_core::{Lexer, Parser, Builder, Source, SourceText};
+use data_text_core::{Lexer, Parser, Builder, Source, SourceText};
 
 // Create a source text
 let source = Source::new(SourceText::from("body { color: red; }".to_string()));

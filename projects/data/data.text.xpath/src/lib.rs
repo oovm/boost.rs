@@ -3,7 +3,7 @@
 //! XPath subset DSL for Oak document queries.
 //!
 //! Parsing and AST ownership live here. Execution against XML trees is provided
-//! by `oak-xml` using namespace-aware `ElementView` adapters.
+//! by `data-text-xml` using namespace-aware `ElementView` adapters.
 
 mod ast;
 mod diag;

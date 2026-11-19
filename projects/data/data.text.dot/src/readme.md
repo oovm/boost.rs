@@ -11,7 +11,7 @@ This guide is designed to help you quickly get started with developing and integ
 The following is a standard workflow for parsing a simple DOT graph:
 
 ```rust
-use oak_core::{Builder, Parser, SourceText, parser::session::ParseSession};
+use data_text_core::{Builder, Parser, SourceText, parser::session::ParseSession};
 use oak_dot::{DotBuilder, DotLanguage, DotParser};
 
 // 1. Prepare source code
@@ -51,7 +51,7 @@ After a successful parse, you can traverse the red tree to extract DOT construct
 ### 2. Record Ports
 A node shaped `record` or `mrecord` keeps its raw `label` attribute and also exposes a structured `RecordLabel`:
 ```rust
-use oak_core::{Builder, SourceText, parser::session::ParseSession};
+use data_text_core::{Builder, SourceText, parser::session::ParseSession};
 use oak_dot::{DotBuilder, DotLanguage, ast::{RecordItem, Statement}};
 
 let config = DotLanguage::new();
@@ -73,12 +73,12 @@ Fields are split on unescaped `|`, `<name>` before the text becomes `RecordField
 ### 3. Incremental Parsing
 The parser reuses the cache it is given, so parsing an edited source again only reuses unchanged structure:
 ```rust
-use oak_core::{Parser, SourceText};
+use data_text_core::{Parser, SourceText};
 use oak_dot::{DotLanguage, DotParser};
 
 let config = DotLanguage::new();
 let parser = DotParser::new(&config);
-let mut cache = oak_core::parser::session::ParseSession::<DotLanguage>::default();
+let mut cache = data_text_core::parser::session::ParseSession::<DotLanguage>::default();
 
 let first = SourceText::new("digraph { A -> B }");
 let _ = parser.parse(&first, &[], &mut cache);
@@ -90,7 +90,7 @@ let _ = parser.parse(&edited, &[], &mut cache);
 ### 4. Diagnostics
 `oak-dot` recovers from malformed input and reports every skipped piece with its byte offset:
 ```rust
-use oak_core::{Builder, OakErrorKind, SourceText, parser::session::ParseSession};
+use data_text_core::{Builder, TextErrorKind, SourceText, parser::session::ParseSession};
 use oak_dot::{DotBuilder, DotLanguage};
 
 let config = DotLanguage::new();
@@ -100,7 +100,7 @@ let mut cache = ParseSession::<DotLanguage>::default();
 
 let result = builder.build(&source, &[], &mut cache);
 for diagnostic in &result.diagnostics {
-    if let OakErrorKind::SyntaxError { message, offset, .. } = diagnostic.kind() {
+    if let TextErrorKind::SyntaxError { message, offset, .. } = diagnostic.kind() {
         println!("{offset}: {message}");
     }
 }

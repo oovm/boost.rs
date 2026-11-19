@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use acorn_ttf::tables::math::{MathGlyphInfo, MathKernTable};
+use data_binary_ttf::tables::math::{MathGlyphInfo, MathKernTable};
 
 use document_compose::math::Fixed;
 

@@ -2,9 +2,9 @@
 
 use std::{collections::HashMap, fs, path::Path};
 
-use acorn_core::{Budget, BudgetTracker};
-use acorn_docx::{OpcPackage, OpcRelationship, resolve_opc_target};
-use oak_xml::ast::XmlElement;
+use data_binary_core::{Budget, BudgetTracker};
+use data_binary_docx::{OpcPackage, OpcRelationship, resolve_opc_target};
+use data_text_xml::ast::XmlElement;
 
 use super::{
     model::{
@@ -153,7 +153,7 @@ fn looks_like_zip(bytes: &[u8]) -> bool {
     bytes.starts_with(b"PK\x03\x04") || bytes.starts_with(b"PK\x05\x06") || bytes.starts_with(b"PK\x07\x08")
 }
 
-fn map_opc_error(error: acorn_docx::OpcError) -> FormatError {
+fn map_opc_error(error: data_binary_docx::OpcError) -> FormatError {
     FormatError::parse("xlsx", error.to_string())
 }
 
@@ -744,7 +744,7 @@ fn descendant_named<'a>(element: &'a XmlElement, name: &str) -> Option<&'a XmlEl
         return Some(element);
     }
     for child in &element.children {
-        if let oak_xml::ast::XmlValue::Element(child) = child {
+        if let data_text_xml::ast::XmlValue::Element(child) = child {
             if let Some(found) = descendant_named(child, name) {
                 return Some(found);
             }

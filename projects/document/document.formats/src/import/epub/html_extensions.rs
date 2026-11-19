@@ -1,5 +1,5 @@
-use oak_core::{Builder, SourceText, parser::session::ParseSession};
-use oak_html::{
+use data_text_core::{Builder, SourceText, parser::session::ParseSession};
+use data_text_html::{
     HtmlBuilder, HtmlLanguage,
     ast::{Element, HtmlDocument, HtmlNode, Text},
     query::{HtmlDocumentView, select_css_elements},
@@ -10,13 +10,13 @@ use crate::{
     query_gate::{QueryLimits, ensure_complete},
 };
 
-/// Parses XHTML or HTML bytes into a typed `oak-html` document.
+/// Parses XHTML or HTML bytes into a typed `data-text-html` document.
 pub fn parse_html_bytes(html: &[u8]) -> Result<HtmlDocument, FormatError> {
     let text = std::str::from_utf8(html).map_err(|error| FormatError::parse("epub", format!("html is not utf-8: {error}")))?;
     parse_html_text(text)
 }
 
-/// Parses XHTML or HTML text into a typed `oak-html` document.
+/// Parses XHTML or HTML text into a typed `data-text-html` document.
 pub fn parse_html_text(text: &str) -> Result<HtmlDocument, FormatError> {
     let normalized = crate::import::math_ml::normalize_self_closing_elements_expanded(text);
     let text = normalized.as_ref();
@@ -30,7 +30,7 @@ pub fn parse_html_text(text: &str) -> Result<HtmlDocument, FormatError> {
     Ok(document)
 }
 
-/// Restore whitespace that `oak-html` trims from text tokens.
+/// Restore whitespace that `data-text-html` trims from text tokens.
 ///
 /// Its builder collapses whitespace inside each token, which also drops the
 /// space that separates text from adjacent inline markup. The token span keeps

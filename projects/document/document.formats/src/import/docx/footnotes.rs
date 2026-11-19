@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use document_ir::{Block, DocumentGraph, SemanticStatus};
 
 use super::xml_extensions::{document_root, element_is, element_text, elements_by_local_name, parse_xml_bytes, u32_attribute};
-use oak_xml::ast::{XmlElement, XmlValue};
+use data_text_xml::ast::{XmlElement, XmlValue};
 
 /// Resolved footnote bodies keyed by `w:footnote` id.
 pub type FootnoteCatalog = HashMap<u32, String>;

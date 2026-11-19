@@ -12,7 +12,7 @@ The following is a standard workflow for parsing an APL expression:
 
 ```rust
 use oak_apl::{AplParser, AplLanguage};
-use oak_core::{SourceText, Parser, parser::ParseSession};
+use data_text_core::{SourceText, Parser, parser::ParseSession};
 
 fn main() {
     // 1. Prepare source code
@@ -43,7 +43,7 @@ Oak parsers excel at incremental updates. Here's how to re-parse code after a ch
 
 ```rust
 use oak_apl::{AplParser, AplLanguage};
-use oak_core::{SourceText, Parser, parser::ParseSession};
+use data_text_core::{SourceText, Parser, parser::ParseSession};
 
 fn main() {
     let config = AplLanguage::default();

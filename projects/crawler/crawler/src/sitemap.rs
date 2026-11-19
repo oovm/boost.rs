@@ -1,10 +1,10 @@
 use std::collections::{BTreeMap, HashSet};
 
-use acorn_codec::{CodecLimits, compression::gzip::Gzip};
+use data_compression::{CodecLimits, gzip::Gzip};
 use boost_harness::diagnostic::{DiagnosticSeverity, Message, MessageArg};
 use crawler_fetch::{FetchClient, FetchRequest, Transport};
 use crawler_types::{CrawlError, CrawlEvent, DiscoverySource, FrontierItem, Result, diagnostics as pd};
-use oak_xml::ast::XmlValue;
+use data_text_xml::ast::XmlValue;
 
 use crate::crawl::CrawlState;
 
@@ -43,7 +43,7 @@ pub fn locations(body: &[u8]) -> Result<(bool, Vec<String>)> {
         );
         CrawlError::from(diagnostic)
     })?;
-    let document = oak_xml::parse(text).map_err(|error| {
+    let document = data_text_xml::parse(text).map_err(|error| {
         let diagnostic = boost_harness::diagnostic::Diagnostic::new(
             pd::code(pd::EXTRACT_PARSE_FAILED),
             DiagnosticSeverity::Error,

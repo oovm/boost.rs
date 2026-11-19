@@ -1,5 +1,5 @@
-use acorn_core::BudgetTracker;
-use acorn_epub::{ManifestItem, OcfPackage, OpfDocument};
+use data_binary_core::BudgetTracker;
+use data_binary_epub::{ManifestItem, OcfPackage, OpfDocument};
 use document_ir::{Asset, AssetId, AssetKind, DocumentGraph, Inline, LossMarker, SemanticStatus};
 
 /// Locate the EPUB3 cover image manifest item when declared via

@@ -23,6 +23,6 @@ pub struct DejavuLanguage {
 ## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module enables:
-1. **Generic Infrastructure**: Allows `oak-core` to handle file management and incremental logic without needing to know Dejavu-specific details.
+1. **Generic Infrastructure**: Allows `data-text-core` to handle file management and incremental logic without needing to know Dejavu-specific details.
 2. **Type-Safe Analysis**: Ensures that any tool working with `oak-dejavu` has access to the correct token and element types at compile time.
 3. **Multi-Version Support**: Future-proofed to handle different Dejavu versions through configuration updates within this module.

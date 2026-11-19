@@ -1,13 +1,13 @@
 # 🚀 Oak XML Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-xml.svg)](https://crates.io/crates/oak-xml)
-[![Documentation](https://docs.rs/oak-xml/badge.svg)](https://docs.rs/oak-xml)
+[![Crates.io](https://img.shields.io/crates/v/data-text-xml.svg)](https://crates.io/crates/data-text-xml)
+[![Documentation](https://docs.rs/data-text-xml/badge.svg)](https://docs.rs/data-text-xml)
 
 **Structured Markup with Unmatched Speed** — A high-performance, incremental XML parser built on the Oak framework. Optimized for large-scale data interchange, document processing, and real-time validation.
 
 ## 🎯 Project Vision
 
-XML remains a foundational technology for data representation and document structure, but its complex rules for tags, attributes, and namespaces require a robust and efficient parser. `oak-xml` provides a high-performance, Rust-powered infrastructure for parsing XML that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, document editors, and data processing pipelines that can handle massive XML files and complex document trees in real-time.
+XML remains a foundational technology for data representation and document structure, but its complex rules for tags, attributes, and namespaces require a robust and efficient parser. `data-text-xml` provides a high-performance, Rust-powered infrastructure for parsing XML that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, document editors, and data processing pipelines that can handle massive XML files and complex document trees in real-time.
 
 ## ✨ Core Features
 

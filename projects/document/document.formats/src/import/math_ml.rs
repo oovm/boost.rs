@@ -1,6 +1,6 @@
 //! MathML lowering shared by HTML and EPUB import.
 //!
-//! The element tree comes from `oak-html`. MathML is projected to a LaTeX
+//! The element tree comes from `data-text-html`. MathML is projected to a LaTeX
 //! body and then lowered through the same [`crate::import::tex_math`] path as
 //! authored TeX, so the IR keeps one math representation. Constructs without a
 //! mapping keep their readable text and are reported by the caller.
@@ -8,13 +8,13 @@
 use std::borrow::Cow;
 
 use document_ir::{MathDisplay, MathFormula};
-use oak_html::ast::{Element, HtmlNode};
+use data_text_html::ast::{Element, HtmlNode};
 
 use super::math_latex::{delimiter_spelling, escape_text, formula_from_latex, latex_operator};
 
 /// Rewrite self-closing empty MathML elements into void HTML placeholders.
 ///
-/// `oak-html` applies HTML tree construction rules, where a trailing slash on a
+/// `data-text-html` applies HTML tree construction rules, where a trailing slash on a
 /// non-void element is ignored. `<mspace/>` therefore stays open and swallows
 /// the rest of the document as its children. The placeholders below are void
 /// HTML elements, so the following siblings keep their real nesting. Their

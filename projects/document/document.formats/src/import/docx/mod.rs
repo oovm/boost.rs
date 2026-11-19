@@ -18,6 +18,6 @@ pub mod xml_extensions;
 
 pub use reader::{import_docx, import_docx_bytes};
 
-pub(crate) fn map_opc_error(error: acorn_docx::OpcError) -> crate::FormatError {
+pub(crate) fn map_opc_error(error: data_binary_docx::OpcError) -> crate::FormatError {
     crate::FormatError::parse("docx", error.to_string())
 }

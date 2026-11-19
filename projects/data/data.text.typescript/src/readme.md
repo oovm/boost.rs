@@ -2,7 +2,7 @@
 
 Typescript support for the Oak language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-typescript`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-typescript`.
 
 ## 🚦 Quick Start
 
@@ -10,7 +10,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-typescript = { path = "..." }
+data-text-typescript = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -18,7 +18,7 @@ oak-typescript = { path = "..." }
 The following is a standard workflow for parsing modern TypeScript with interfaces, generics, and TSX:
 
 ```rust
-use oak_typescript::{Parser, SourceText};
+use data_text_typescript::{Parser, SourceText};
 
 fn main() {
     // 1. Prepare source code
@@ -67,7 +67,7 @@ let new_result = parser.reparse(&new_source, &old_result);
 ```
 
 ### 3. Diagnostics
-`oak-typescript` provides rich error contexts specifically tailored for TS developers, handling complex scenarios like missing type annotations or malformed TSX:
+`data-text-typescript` provides rich error contexts specifically tailored for TS developers, handling complex scenarios like missing type annotations or malformed TSX:
 ```rust
 for diag in result.diagnostics() {
     println!("[{}:{}] {}", diag.line, diag.column, diag.message);

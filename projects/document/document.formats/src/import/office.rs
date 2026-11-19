@@ -1,17 +1,17 @@
 //! Shared OPC and XML traversal helpers for the XLSX and PPTX importers.
 //!
-//! The helpers stay byte-slice based because `oak-xml` keeps only text and
+//! The helpers stay byte-slice based because `data-text-xml` keeps only text and
 //! identifier leaves. Leaf text is restored from the raw source so escaped
 //! characters and shared-string payloads survive import.
 
-use oak_xml::ast::{XmlElement, XmlValue};
+use data_text_xml::ast::{XmlElement, XmlValue};
 
 use crate::FormatError;
 
-/// Parses UTF-8 XML through `oak-xml` and restores leaf text.
+/// Parses UTF-8 XML through `data-text-xml` and restores leaf text.
 pub(crate) fn parse_xml(xml: &[u8], format: &str) -> Result<XmlValue, FormatError> {
     let text = std::str::from_utf8(xml).map_err(|error| FormatError::parse(format, format!("xml is not utf-8: {error}")))?;
-    let mut value = oak_xml::parse(text).map_err(|error| FormatError::parse(format, error.to_string()))?;
+    let mut value = data_text_xml::parse(text).map_err(|error| FormatError::parse(format, error.to_string()))?;
     restore_leaf_text(&mut value, text);
     Ok(value)
 }

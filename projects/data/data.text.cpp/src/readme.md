@@ -12,7 +12,7 @@ The following is a standard workflow for parsing a C++ class:
 
 ```rust
 use oak_cpp::{CppParser, language::CppLanguage};
-use oak_core::{SourceText, parser::Parser, source::TextEdit, parser::ParseSession};
+use data_text_core::{SourceText, parser::Parser, source::TextEdit, parser::ParseSession};
 
 fn main() {
     // 1. Prepare source code
@@ -58,7 +58,7 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 No need to re-parse the entire translation unit when small changes occur:
 ```rust
 use oak_cpp::{CppParser, language::CppLanguage};
-use oak_core::{SourceText, parser::Parser, source::TextEdit, parser::ParseSession};
+use data_text_core::{SourceText, parser::Parser, source::TextEdit, parser::ParseSession};
 
 fn main() {
     // Initial parsing
@@ -92,7 +92,7 @@ fn main() {
 `oak-cpp` provides rich error contexts specifically tailored for C++ developers, handling complex error scenarios like template instantiation failures:
 ```rust
 use oak_cpp::{CppParser, language::CppLanguage};
-use oak_core::{SourceText, parser::Parser, source::TextEdit, parser::ParseSession};
+use data_text_core::{SourceText, parser::Parser, source::TextEdit, parser::ParseSession};
 
 fn main() {
     let code = r#"

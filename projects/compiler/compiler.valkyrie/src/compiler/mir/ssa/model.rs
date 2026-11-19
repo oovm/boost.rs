@@ -580,7 +580,7 @@ pub enum MirConstant {
     /// 有符号 64 位整型字面量。
     Int(i64),
     /// 64 位浮点字面量。
-    Float64(ordered_float::OrderedFloat<f64>),
+    Float64(boost_math::numeric::OrderedF64),
     /// 布尔字面量。
     Bool(bool),
     /// UTF-8 text literal. The language has no encoding-neutral string type.

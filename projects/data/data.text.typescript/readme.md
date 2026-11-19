@@ -1,13 +1,13 @@
 # 🚀 Oak TypeScript Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-typescript.svg)](https://crates.io/crates/oak-typescript)
-[![Documentation](https://docs.rs/oak-typescript/badge.svg)](https://docs.rs/oak-typescript)
+[![Crates.io](https://img.shields.io/crates/v/data-text-typescript.svg)](https://crates.io/crates/data-text-typescript)
+[![Documentation](https://docs.rs/data-text-typescript/badge.svg)](https://docs.rs/data-text-typescript)
 
 **Type Safety and Speed for the Modern Web** — A high-performance, incremental TypeScript parser built on the Oak framework. Optimized for modern TypeScript (5.0+) features, TSX support, and enterprise-grade developer tools.
 
 ## 🎯 Project Vision
 
-TypeScript has become the standard for large-scale web development, but its complex type system and evolving syntax demand high-performance tooling. `oak-typescript` aims to provide a robust, modern, Rust-powered infrastructure for parsing TypeScript that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, static analyzers, and refactoring tools that can handle massive TypeScript projects in real-time. Whether you are building custom type checkers, automated code migration tools, or sophisticated IDE extensions, `oak-typescript` provides the high-fidelity AST and efficiency needed to keep pace with TypeScript's rapid evolution.
+TypeScript has become the standard for large-scale web development, but its complex type system and evolving syntax demand high-performance tooling. `data-text-typescript` aims to provide a robust, modern, Rust-powered infrastructure for parsing TypeScript that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, static analyzers, and refactoring tools that can handle massive TypeScript projects in real-time. Whether you are building custom type checkers, automated code migration tools, or sophisticated IDE extensions, `data-text-typescript` provides the high-fidelity AST and efficiency needed to keep pace with TypeScript's rapid evolution.
 
 ## ✨ Core Features
 

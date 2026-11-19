@@ -6,8 +6,8 @@
 //! lexer tokens: it deletes type-only ranges and keeps every other source byte,
 //! which preserves formatting, comments and line numbering.
 
-use oak_core::{Lexer, NoLexerCache, SourceText};
-use oak_typescript::{TypeScriptLanguage, TypeScriptLexer, TypeScriptTokenType as T};
+use data_text_core::{Lexer, NoLexerCache, SourceText};
+use data_text_typescript::{TypeScriptLanguage, TypeScriptLexer, TypeScriptTokenType as T};
 
 /// A significant (non-trivia) lexer token.
 #[derive(Clone, Copy)]

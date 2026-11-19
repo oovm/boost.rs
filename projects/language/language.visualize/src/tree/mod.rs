@@ -90,7 +90,7 @@ impl crate::Visualize for TreeNode {
     }
 }
 
-// Bridge for oak-core types
+// Bridge for data-text-core types
 impl<'a, L: data_text_core::Language> From<&data_text_core::GreenTree<'a, L>> for TreeNode {
     fn from(green: &data_text_core::GreenTree<'a, L>) -> Self {
         match green {

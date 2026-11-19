@@ -51,7 +51,7 @@ The builder is typically used through the `ValkyrieBuilder` when parsing Valkyri
 
 ```rust
 use oak_valkyrie::{ValkyrieBuilder, ValkyrieLanguage};
-use oak_core::{Builder, parser::ParseSession, source::SourceText};
+use data_text_core::{Builder, parser::ParseSession, source::SourceText};
 
 let language = ValkyrieLanguage::default();
 let builder = ValkyrieBuilder::new(&language);

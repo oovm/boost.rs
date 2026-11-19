@@ -13,7 +13,7 @@ High-performance incremental AsciiDoc parser for the `data.text` family.
 
 ```rust
 use oak_asciidoc::{AsciidocLexer, AsciidocParser, AsciidocLanguage};
-use oak_core::{Lexer, Parser, Source, ParseSession};
+use data_text_core::{Lexer, Parser, Source, ParseSession};
 
 let code = "= Heading\n\nParagraph with *emphasis* and **strong** text.";
 let language = AsciidocLanguage::default();

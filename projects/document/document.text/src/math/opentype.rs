@@ -19,7 +19,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use acorn_ttf::{FontFace, OutlineBuilder};
+use data_binary_ttf::{FontFace, OutlineBuilder};
 
 use document_compose::math::{
     DelimiterComponent, DelimiterConstruction, DelimiterVariant, Fixed, FontMetricsData, FontStyle, GlyphKey, GlyphMetrics, alphalect_sources,

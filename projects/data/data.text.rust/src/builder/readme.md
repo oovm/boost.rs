@@ -23,7 +23,7 @@ impl<'config> Builder<RustLanguage> for RustBuilder<'config> {
         text: impl Source,
         changed: usize,
         cache: IncrementalCache<RustLanguage>,
-    ) -> OakDiagnostics<RustRoot>;
+    ) -> TextDiagnostics<RustRoot>;
 }
 ```
 
@@ -55,7 +55,7 @@ The builder is typically used through `RustBuilder` during Rust source code pars
 
 ```rust,ignore
 use oak_rust::{RustBuilder, RustLanguage};
-use oak_core::Builder;
+use data_text_core::Builder;
 
 let language = RustLanguage::default();
 let builder = RustBuilder::new(&language);

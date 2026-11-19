@@ -23,22 +23,22 @@ pub mod docx;
 /// EPUB OCF and XHTML import.
 #[cfg(feature = "epub")]
 pub mod epub;
-/// HTML import via `oak-html`.
+/// HTML import via `data-text-html`.
 #[cfg(feature = "html")]
 pub mod html;
-/// Markdown import via `oak-markdown`.
+/// Markdown import via `data-text-markdown`.
 #[cfg(feature = "markdown")]
 pub mod markdown;
 /// Shared atom-class, symbol and sequence-folding helpers for the math lowerings.
 #[cfg(any(feature = "tex", feature = "typst"))]
 pub(crate) mod math_common;
-/// Notedown text import via `oak-notedown`.
+/// Notedown text import via `data-text-notedown`.
 #[cfg(feature = "notedown")]
 pub mod notedown;
 /// PDF import.
 #[cfg(feature = "pdf")]
 pub mod pdf;
-/// TeX/LaTeX import via `oak-tex`.
+/// TeX/LaTeX import via `data-text-tex`.
 #[cfg(feature = "tex")]
 pub mod tex;
 /// TeX math AST lowering into `notedown-ir::math`.
@@ -50,7 +50,7 @@ pub use tex_math::lower_tex_formula_source;
 /// PresentationML PPTX import, IR projection and slide canvas view.
 #[cfg(feature = "pptx")]
 pub mod pptx;
-/// Typst import via `oak-typst`.
+/// Typst import via `data-text-typst`.
 #[cfg(feature = "typst")]
 pub mod typst;
 /// Typst math body lowering into `notedown-ir::math`.

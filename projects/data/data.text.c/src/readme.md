@@ -12,7 +12,7 @@ The following is a standard workflow for parsing a C function:
 
 ```rust
 use oak_c::{CParser, language::CLanguage};
-use oak_core::{SourceText, parser::Parser, source::TextEdit, parser::ParseSession};
+use data_text_core::{SourceText, parser::Parser, source::TextEdit, parser::ParseSession};
 
 fn main() {
     // 1. Prepare source code
@@ -52,7 +52,7 @@ After a successful parse, use the built-in visitor pattern or manually traverse 
 Optimize performance by only re-parsing changed sections:
 ```rust
 use oak_c::{CParser, language::CLanguage};
-use oak_core::{SourceText, parser::Parser, source::TextEdit, parser::ParseSession};
+use data_text_core::{SourceText, parser::Parser, source::TextEdit, parser::ParseSession};
 
 fn main() {
     // Initial parsing
@@ -85,7 +85,7 @@ fn main() {
 `oak-c` provides detailed error contexts tailored for C developers:
 ```rust
 use oak_c::{CParser, language::CLanguage};
-use oak_core::{SourceText, parser::Parser, source::TextEdit, parser::ParseSession};
+use data_text_core::{SourceText, parser::Parser, source::TextEdit, parser::ParseSession};
 
 fn main() {
     let code = r#"

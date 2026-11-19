@@ -7,7 +7,7 @@ use super::{
 };
 use crate::FormatError;
 
-/// Lower XHTML spine content into `notedown-ir` blocks via `oak-html`.
+/// Lower XHTML spine content into `notedown-ir` blocks via `data-text-html`.
 pub fn blocks_from_xhtml(xml: &[u8]) -> Result<Vec<Block>, FormatError> {
     let mut scratch = DocumentGraph::new(document_ir::DocumentId(0));
     blocks_from_xhtml_with_context(xml, &mut scratch, None)
@@ -15,7 +15,7 @@ pub fn blocks_from_xhtml(xml: &[u8]) -> Result<Vec<Block>, FormatError> {
 
 /// Lower XHTML spine content and optionally register embedded image assets.
 pub fn blocks_from_xhtml_with_context(xml: &[u8], graph: &mut DocumentGraph, member_path: Option<&str>) -> Result<Vec<Block>, FormatError> {
-    let text = prepare_xhtml_for_oak_html(&String::from_utf8_lossy(xml));
+    let text = prepare_xhtml_for_data_text_html(&String::from_utf8_lossy(xml));
     let document = parse_html_bytes(text.as_bytes())?;
     register_spine_images_from_document(&document, graph, member_path)?;
     let (blocks, losses) = blocks_from_html_document(&document, graph, member_path);
@@ -32,7 +32,7 @@ pub fn blocks_from_xhtml_with_context(xml: &[u8], graph: &mut DocumentGraph, mem
 
 /// Loss markers discovered while lowering XHTML (CSS/SVG still pending).
 pub fn losses_from_xhtml(xml: &[u8]) -> Result<Vec<LossMarker>, FormatError> {
-    let text = prepare_xhtml_for_oak_html(&String::from_utf8_lossy(xml));
+    let text = prepare_xhtml_for_data_text_html(&String::from_utf8_lossy(xml));
     let document = parse_html_bytes(text.as_bytes())?;
     let (_, losses) = blocks_from_html_document(&document, &mut DocumentGraph::new(document_ir::DocumentId(0)), None);
     let mut losses = losses;
@@ -106,8 +106,8 @@ pub(crate) fn normalize_whitespace(text: &str) -> String {
     normalized
 }
 
-/// Normalize EPUB XHTML into HTML that `oak-html` can parse reliably today.
-fn prepare_xhtml_for_oak_html(xml: &str) -> String {
+/// Normalize EPUB XHTML into HTML that `data-text-html` can parse reliably today.
+fn prepare_xhtml_for_data_text_html(xml: &str) -> String {
     let mut text = xml.trim().to_string();
     if text.starts_with("<?") {
         if let Some(end) = text.find("?>") {

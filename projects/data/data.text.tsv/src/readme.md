@@ -12,7 +12,7 @@ The following is a standard workflow for parsing a simple TSV string:
 
 ```rust
 use oak_tsv::{TsvParser, TsvLanguage};
-use oak_core::{Parser, source::SourceText, parser::session::ParseSession};
+use data_text_core::{Parser, source::SourceText, parser::session::ParseSession};
 
 fn main() {
     let source = SourceText::new("header1\theader2\nvalue1\tvalue2");
@@ -42,7 +42,7 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 No need to re-parse massive TSV files when small changes occur:
 ```rust
 # use oak_tsv::{TsvParser, TsvLanguage};
-# use oak_core::{Parser, source::SourceText, parser::session::ParseSession};
+# use data_text_core::{Parser, source::SourceText, parser::session::ParseSession};
 # let parser = TsvParser::new();
 # let mut session = ParseSession::<TsvLanguage>::default();
 # let old_source = SourceText::new("id\tname\n1\tJohn");
@@ -56,7 +56,7 @@ let new_result = parser.parse(&new_source, &[], &mut session);
 `oak-tsv` provides rich error contexts specifically tailored for TSV data:
 ```rust
 # use oak_tsv::{TsvParser, TsvLanguage};
-# use oak_core::{Parser, source::SourceText, parser::session::ParseSession};
+# use data_text_core::{Parser, source::SourceText, parser::session::ParseSession};
 # let parser = TsvParser::new();
 # let mut session = ParseSession::<TsvLanguage>::default();
 # let source = SourceText::new("id\tname\n1");

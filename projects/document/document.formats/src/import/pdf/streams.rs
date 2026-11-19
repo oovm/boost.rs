@@ -1,4 +1,4 @@
-use acorn_codec::{CodecLimits, compression::zlib::Zlib};
+use data_compression::{CodecLimits, zlib::Zlib};
 
 use crate::FormatError;
 

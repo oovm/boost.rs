@@ -24,7 +24,7 @@ Lines outside the `@startuml` / `@enduml` wrapper and lines the grammar cannot a
 ## 🚀 Quick Start
 
 ```rust,ignore
-use oak_core::{Builder, Parser, SourceText, parser::session::ParseSession};
+use data_text_core::{Builder, Parser, SourceText, parser::session::ParseSession};
 use oak_plantuml::{PlantUmlBuilder, PlantUmlLanguage, PlantUmlParser};
 
 let source = SourceText::new(

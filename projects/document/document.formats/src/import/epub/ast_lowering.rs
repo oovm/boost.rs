@@ -1,9 +1,9 @@
-//! EPUB XHTML block lowering via typed `oak-html` AST and CSS selectors.
+//! EPUB XHTML block lowering via typed `data-text-html` AST and CSS selectors.
 
 use document_ir::{
     Attributes, Block, BreakKind, DocumentGraph, Inline, ListItem, LossMarker, MathDisplay, SemanticStatus, TableCell, TableRow,
 };
-use oak_html::ast::{Element, HtmlDocument, HtmlNode};
+use data_text_html::ast::{Element, HtmlDocument, HtmlNode};
 
 use crate::import::math_ml::{lower_math_element, math_display, single_display_math_child};
 

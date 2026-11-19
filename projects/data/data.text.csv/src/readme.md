@@ -12,7 +12,7 @@ The following is a standard workflow for parsing a simple CSV string:
 
 ```rust
 use oak_csv::{CsvParser, CsvLanguage};
-use oak_core::{Parser, source::SourceText, parser::session::ParseSession};
+use data_text_core::{Parser, source::SourceText, parser::session::ParseSession};
 
 fn main() {
     // 1. Prepare source code
@@ -44,7 +44,7 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 No need to re-parse massive CSV files when small changes occur:
 ```rust
 # use oak_csv::{CsvParser, CsvLanguage};
-# use oak_core::{Parser, source::SourceText, parser::session::ParseSession};
+# use data_text_core::{Parser, source::SourceText, parser::session::ParseSession};
 # let parser = CsvParser::new();
 # let mut session = ParseSession::<CsvLanguage>::default();
 # let old_source = SourceText::new("id,name\n1,John".to_string());
@@ -58,7 +58,7 @@ let new_result = parser.parse(&new_source, &[], &mut session);
 `oak-csv` provides rich error contexts specifically tailored for CSV data:
 ```rust
 # use oak_csv::{CsvParser, CsvLanguage};
-# use oak_core::{Parser, source::SourceText, parser::session::ParseSession};
+# use data_text_core::{Parser, source::SourceText, parser::session::ParseSession};
 # let parser = CsvParser::new();
 # let mut session = ParseSession::<CsvLanguage>::default();
 # let source = SourceText::new("id,name\n1".to_string());

@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use ordered_float::OrderedFloat;
+use boost_math::numeric::OrderedF64;
 
 use super::*;
 use crate::compiler::{
@@ -227,7 +227,7 @@ fn parse_pattern_literal(literal: &LiteralPattern) -> Result<HirLiteral, HirErro
         return Ok(HirLiteral::Integer(value));
     }
     if let Ok(value) = split_numeric_type_suffix(value).0.parse::<f64>() {
-        return Ok(HirLiteral::Float64(OrderedFloat(value)));
+        return Ok(HirLiteral::Float64(OrderedF64::new(value)));
     }
     Ok(HirLiteral::String(crate::compiler::types::hir::HirStringLiteral {
         prefix: None,
@@ -297,7 +297,7 @@ fn lower_term_expression_body(
         TermExpression::FloatLiteral { value, .. } => {
             let digits = split_numeric_type_suffix(value).0;
             let parsed = digits.parse::<f64>().unwrap_or_else(|error| panic!("illegal float literal `{value}`: {error}"));
-            HirExprKind::Literal(HirLiteral::Float64(OrderedFloat(parsed)))
+            HirExprKind::Literal(HirLiteral::Float64(OrderedF64::new(parsed)))
         }
         TermExpression::BooleanLiteral { value, .. } => HirExprKind::Literal(HirLiteral::Bool(*value)),
         TermExpression::Unary(node) => lower_unary_expression(node, source_id, span_range.clone(), span.clone())?,

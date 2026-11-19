@@ -9,7 +9,7 @@ use document_ir::{
     MathAtom, MathClass, MathColumnAlignment, MathDelimiter, MathDelimiterKind, MathDisplay, MathEnvironment, MathEnvironmentKind,
     MathExpression, MathFormula, MathFractionLine, MathRow, MathRowNumbering, MathRowPlacement, MathSpace, MathSpan, MathStyle, MathStyleKind,
 };
-use oak_tex::ast::{
+use data_text_tex::ast::{
     MathDelimiter as TexMathDelimiter, TexArgument, TexCell, TexCommand, TexEnvironment, TexItem, TexLeftRightPair, TexMath, TexRoot, TexRow,
 };
 
@@ -61,8 +61,8 @@ pub fn lower_tex_formula_source(source: &str, display: MathDisplay) -> MathFormu
 /// authored body, so the import layer composes the Oak TeX frontend here. The
 /// parse stays a syntax step, and its AST is lowered like any other TeX math.
 pub(crate) fn lower_formula_source(source: &str, display: MathDisplay, language: &str) -> MathFormula {
-    use oak_core::{Builder, SourceText, parser::session::ParseSession};
-    use oak_tex::{TexBuilder, TexLanguage};
+    use data_text_core::{Builder, SourceText, parser::session::ParseSession};
+    use data_text_tex::{TexBuilder, TexLanguage};
 
     let config = TexLanguage::default();
     let builder = TexBuilder::new(&config);
@@ -675,8 +675,8 @@ fn named_function(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oak_core::{Builder, SourceText, parser::session::ParseSession};
-    use oak_tex::{TexBuilder, TexLanguage};
+    use data_text_core::{Builder, SourceText, parser::session::ParseSession};
+    use data_text_tex::{TexBuilder, TexLanguage};
 
     fn parse(source: &str) -> TexRoot {
         let config = TexLanguage::default();

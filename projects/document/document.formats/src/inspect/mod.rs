@@ -110,8 +110,8 @@ pub fn inspect_docx_bytes(
     decode: bool,
     budget: InspectBudget,
 ) -> Result<DocumentInspect, FormatError> {
-    use acorn_core::{Budget, BudgetTracker};
-    use acorn_docx::{OpcError, OpcPackage};
+    use data_binary_core::{Budget, BudgetTracker};
+    use data_binary_docx::{OpcError, OpcPackage};
 
     if looks_like_ole(bytes) {
         return Err(FormatError::unsupported("docx", "legacy .doc OLE inspection"));
@@ -128,7 +128,7 @@ pub fn inspect_docx_bytes(
 
     let package = OpcPackage::open(label.to_string(), bytes.to_vec()).map_err(map_docx_error)?;
     let paths = match part_filter {
-        Some(path) => vec![acorn_docx::normalize_part_path(path)],
+        Some(path) => vec![data_binary_docx::normalize_part_path(path)],
         None => package.part_paths(),
     };
     if paths.len() as u64 > budget.max_container_members {
@@ -199,8 +199,8 @@ pub fn inspect_docx_bytes(
 /// that Oak cannot parse fails at the writer instead of at the next reader.
 #[cfg(feature = "docx")]
 pub fn verify_docx_bytes(label: &str, bytes: &[u8], budget: InspectBudget) -> Result<DocxVerification, FormatError> {
-    use acorn_core::{Budget, BudgetTracker};
-    use acorn_docx::OpcPackage;
+    use data_binary_core::{Budget, BudgetTracker};
+    use data_binary_docx::OpcPackage;
     use std::collections::HashSet;
 
     let inspect = inspect_docx_bytes(label, bytes, None, false, budget)?;
@@ -236,7 +236,7 @@ pub fn verify_docx_bytes(label: &str, bytes: &[u8], budget: InspectBudget) -> Re
 }
 
 #[cfg(feature = "docx")]
-fn map_docx_error(error: acorn_docx::OpcError) -> FormatError {
+fn map_docx_error(error: data_binary_docx::OpcError) -> FormatError {
     FormatError::parse("docx", error.to_string())
 }
 
@@ -247,7 +247,7 @@ fn map_docx_error(error: acorn_docx::OpcError) -> FormatError {
 /// format layer.
 #[cfg(feature = "epub")]
 pub fn inspect_epub_bytes(label: &str, bytes: &[u8], budget: InspectBudget) -> Result<DocumentInspect, FormatError> {
-    use acorn_epub::OcfPackage;
+    use data_binary_epub::OcfPackage;
 
     if !looks_like_zip(bytes) {
         return Err(FormatError::invalid_input("input is not a ZIP-based EPUB package"));
@@ -293,7 +293,7 @@ pub fn inspect_epub_bytes(label: &str, bytes: &[u8], budget: InspectBudget) -> R
 }
 
 #[cfg(feature = "epub")]
-fn map_epub_error(error: acorn_epub::OcfError) -> FormatError {
+fn map_epub_error(error: data_binary_epub::OcfError) -> FormatError {
     FormatError::parse("epub", error.to_string())
 }
 

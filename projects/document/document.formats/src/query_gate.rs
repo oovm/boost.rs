@@ -6,7 +6,7 @@
 //! module turns every non-`Matched` outcome into a hard format error, so a
 //! truncated selector result never becomes silent document loss.
 
-use oak_core::query::{QueryBudget, SelectorOutcome};
+use data_text_core::query::{QueryBudget, SelectorOutcome};
 
 use crate::FormatError;
 

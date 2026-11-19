@@ -1,7 +1,7 @@
 use std::{fs, path::Path};
 
-use acorn_core::{Budget, BudgetTracker};
-use acorn_docx::{OpcPackage, resolve_opc_target};
+use data_binary_core::{Budget, BudgetTracker};
+use data_binary_docx::{OpcPackage, resolve_opc_target};
 use document_ir::{AssetKind, DocumentGraph, DocumentMetadata, LossMarker, SemanticStatus, SourceKind, SourceRef};
 
 use super::{

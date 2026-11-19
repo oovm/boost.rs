@@ -19,7 +19,7 @@ The following is a standard workflow for parsing modern Kotlin with data classes
 
 ```rust
 use oak_kotlin::{KotlinParser, SourceText, Kotlin};
-use oak_core::parser::DefaultParseCache;
+use data_text_core::parser::DefaultParseCache;
 
 fn main() {
     // 1. Prepare source code
@@ -81,7 +81,7 @@ The parser correctly handles Kotlin Multiplatform (KMP) specific syntax like `ex
 
 ```rust
 use oak_kotlin::{KotlinParser, SourceText, Kotlin};
-use oak_core::parser::DefaultParseCache;
+use data_text_core::parser::DefaultParseCache;
 
 fn analyze_data_classes() {
     let code = r#"
@@ -112,7 +112,7 @@ fn analyze_data_classes() {
 
 ```rust
 use oak_kotlin::{KotlinParser, SourceText, Kotlin};
-use oak_core::parser::DefaultParseCache;
+use data_text_core::parser::DefaultParseCache;
 
 fn analyze_coroutines() {
     let code = r#"
@@ -148,7 +148,7 @@ fn analyze_coroutines() {
 
 ```rust
 use oak_kotlin::{KotlinParser, SourceText, Kotlin};
-use oak_core::parser::DefaultParseCache;
+use data_text_core::parser::DefaultParseCache;
 
 fn analyze_extension_functions() {
     let code = r#"
@@ -182,7 +182,7 @@ fn analyze_extension_functions() {
 
 ```rust
 use oak_kotlin::{KotlinParser, SourceText, Kotlin};
-use oak_core::parser::DefaultParseCache;
+use data_text_core::parser::DefaultParseCache;
 
 fn analyze_sealed_classes() {
     let code = r#"

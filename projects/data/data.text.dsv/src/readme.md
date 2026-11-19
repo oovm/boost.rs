@@ -12,7 +12,7 @@ The following is a standard workflow for parsing a simple DSV string (like CSV):
 
 ```rust
 use oak_dsv::{DsvParser, DsvLanguage, Dsv};
-use oak_core::{Parser, source::SourceText, parser::session::ParseSession};
+use data_text_core::{Parser, source::SourceText, parser::session::ParseSession};
 
 const MY_CSV: DsvLanguage = DsvLanguage { field_separator: ',', quote_char: '"' };
 type MyCsv = Dsv<MY_CSV>;

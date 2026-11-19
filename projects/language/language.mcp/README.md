@@ -1,4 +1,4 @@
-﻿# 馃殌 oak-mcp
+# 馃殌 oak-mcp
 
 [![Crates.io](https://img.shields.io/crates/v/oak-mcp.svg)](https://crates.io/crates/oak-mcp)
 [![Documentation](https://docs.rs/oak-mcp/badge.svg)](https://docs.rs/oak-mcp)
@@ -31,7 +31,7 @@ The Model Context Protocol (MCP) is an open standard that enables AI assistants 
 
 ## 馃敆 Ecosystem Integration
 
-Integrates with `oak-core` for parsing, `oak-vfs` for file access, `oak-navigation` for code navigation, and any MCP-compatible AI assistant.
+Integrates with `data-text-core` for parsing, `oak-vfs` for file access, `oak-navigation` for code navigation, and any MCP-compatible AI assistant.
 
 ## 馃摉 Documentation
 

@@ -10,7 +10,7 @@
 //! never hidden: [`MathConstantValue`] carries the provenance in its variant, so
 //! a measured value and a fallback cannot be confused at the call site.
 
-use acorn_ttf::tables::math::MathConstants as TableConstants;
+use data_binary_ttf::tables::math::MathConstants as TableConstants;
 
 use document_compose::math::{Fixed, MathConstant};
 

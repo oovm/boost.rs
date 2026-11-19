@@ -1,4 +1,4 @@
-use oak_xml::{
+use data_text_xml::{
     ast::{XmlElement, XmlValue},
     query::{XmlDocumentView, select_xpath_elements},
 };
@@ -8,15 +8,15 @@ use crate::{
     query_gate::{QueryLimits, ensure_complete},
 };
 
-/// Parses UTF-8 XML bytes through `oak-xml`.
+/// Parses UTF-8 XML bytes through `data-text-xml`.
 ///
-/// `oak-xml` tokenizes `>`, `?`, `=`, quotes, `;` and entity references as
+/// `data-text-xml` tokenizes `>`, `?`, `=`, quotes, `;` and entity references as
 /// dedicated tokens, and its AST builder keeps only text and identifier leaves.
 /// The raw slice is therefore used to restore the text content of leaf elements
 /// so escaped characters such as `&gt;` and `&quot;` survive import.
 pub fn parse_xml_bytes(xml: &[u8]) -> Result<XmlValue, FormatError> {
     let text = std::str::from_utf8(xml).map_err(|error| FormatError::parse("docx", format!("xml is not utf-8: {error}")))?;
-    let mut value = oak_xml::parse(text).map_err(|error| FormatError::parse("docx", error.to_string()))?;
+    let mut value = data_text_xml::parse(text).map_err(|error| FormatError::parse("docx", error.to_string()))?;
     restore_leaf_text(&mut value, text);
     Ok(value)
 }
@@ -236,7 +236,7 @@ fn collect_element_text(element: &XmlElement, out: &mut String) {
     }
 }
 
-/// Unwraps the document root element from an `oak-xml` value.
+/// Unwraps the document root element from an `data-text-xml` value.
 pub fn document_root(value: &XmlValue) -> Result<&XmlElement, FormatError> {
     match value {
         XmlValue::Element(element) => Ok(element),

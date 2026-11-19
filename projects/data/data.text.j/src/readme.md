@@ -12,7 +12,7 @@ The following is a standard workflow for parsing J source code:
 
 ```rust
 use oak_j::{JParser, JLanguage};
-use oak_core::{SourceText, Parser, parser::ParseSession};
+use data_text_core::{SourceText, Parser, parser::ParseSession};
 
 fn main() {
     // 1. Prepare source code
@@ -43,7 +43,7 @@ After successful parsing, you can use the built-in visitor pattern or manually t
 When the source code changes slightly, there's no need to re-parse the entire document:
 ```rust
 use oak_j::{JParser, JLanguage};
-use oak_core::{SourceText, Parser, parser::ParseSession};
+use data_text_core::{SourceText, Parser, parser::ParseSession};
 
 // Assume we already have a parser instance
 # let config = JLanguage::default();
@@ -60,7 +60,7 @@ let new_result = parser.parse(&new_source, &[], &mut session);
 
 ```rust
 # use oak_j::{JParser, JLanguage};
-# use oak_core::{SourceText, Parser, parser::ParseSession};
+# use data_text_core::{SourceText, Parser, parser::ParseSession};
 # let config = JLanguage::default();
 # let parser = JParser::new(&config);
 # let source = SourceText::new("a =:");

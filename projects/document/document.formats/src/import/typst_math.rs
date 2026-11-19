@@ -1,6 +1,6 @@
 //! Typst math body lowering into [`document_ir::MathFormula`].
 //!
-//! `oak-typst` carries no math mode: one `$ ... $` region arrives as a flat
+//! `data-text-typst` carries no math mode: one `$ ... $` region arrives as a flat
 //! sequence of text leaves, `^` is glued to the token that follows it and an
 //! unpaired `_` is captured as emphasis. The structure therefore cannot come
 //! from that AST, and the contract forbids spelling the body as TeX and

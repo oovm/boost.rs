@@ -1,6 +1,6 @@
 use data_text_xml::ast::{XmlElement, XmlValue};
 
-/// Parses UTF-8 XML bytes through `oak-xml`.
+/// Parses UTF-8 XML bytes through `data-text-xml`.
 pub fn parse_xml_bytes(xml: &[u8]) -> Result<XmlValue, String> {
     let text = std::str::from_utf8(xml).map_err(|error| format!("xml is not utf-8: {error}"))?;
     data_text_xml::parse(text)
@@ -70,7 +70,7 @@ fn collect_element_text(element: &XmlElement, out: &mut String) {
     }
 }
 
-/// Unwraps the document root element from an `oak-xml` value.
+/// Unwraps the document root element from an `data-text-xml` value.
 pub fn document_root(value: &XmlValue) -> Result<&XmlElement, String> {
     match value {
         XmlValue::Element(element) => Ok(element),
