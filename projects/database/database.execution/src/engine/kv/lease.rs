@@ -126,11 +126,23 @@ impl LeaseRecord {
     }
 }
 
-pub(crate) fn read_u64_meta(records: &std::collections::BTreeMap<String, Vec<u8>>, key: &str) -> u64 {
-    records
-        .get(key)
-        .and_then(|bytes| if bytes.len() == 8 { Some(u64::from_le_bytes(bytes.as_slice().try_into().unwrap())) } else { None })
+/// Decode an 8-byte little-endian counter row, treating absent or malformed
+/// bytes as zero — the same rule [`read_u64_meta`] applies to a record map.
+pub(crate) fn meta_u64(bytes: Option<&[u8]>) -> u64 {
+    bytes
+        .and_then(|bytes| {
+            if bytes.len() == 8 {
+                Some(u64::from_le_bytes(bytes.try_into().unwrap()))
+            }
+            else {
+                None
+            }
+        })
         .unwrap_or(0)
+}
+
+pub(crate) fn read_u64_meta(records: &std::collections::BTreeMap<String, Vec<u8>>, key: &str) -> u64 {
+    meta_u64(records.get(key).map(Vec::as_slice))
 }
 
 pub(crate) fn write_u64_meta(records: &mut std::collections::BTreeMap<String, Vec<u8>>, key: &str, value: u64) {

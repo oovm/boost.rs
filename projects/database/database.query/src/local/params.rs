@@ -28,7 +28,7 @@ use oak_vos::{VosExpr, VosProgram, VosStmt};
 ///
 /// Both frontends lower into the same physical operators; the dialect is kept
 /// only for diagnostics and for re-preparing against the right parser.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[doc(hidden)]
 pub enum Dialect {
@@ -301,14 +301,42 @@ pub struct BoundWrite {
 /// A macro that cannot be expanded (missing document, unknown name, arguments)
 /// returns its own error instead of passing as an accepted write.
 pub fn bind_vos_write(source: &str, named: &BTreeMap<String, Value>, schema_document: Option<&str>) -> Result<BoundWrite> {
+    parse_vos_write(source, schema_document)?.bind(named)
+}
+
+/// A parameterized VOS write parsed and macro-expanded once, bindable many
+/// times.
+///
+/// A server that runs the same parameterized insert per request pays the
+/// parameter scan, the parse and the macro expansion once; each binding only
+/// fills the value slots.
+#[derive(Debug, Clone)]
+pub struct ParsedVosWrite {
+    parameters: Vec<ParameterDescriptor>,
+    rewritten: String,
+    program: oak_vos::VosProgram,
+}
+
+impl ParsedVosWrite {
+    /// Fill the declared slots from `named` values into an executable write.
+    pub fn bind(&self, named: &BTreeMap<String, Value>) -> Result<BoundWrite> {
+        let values = bind_values(&self.parameters, named)?;
+        Ok(BoundWrite { source: self.rewritten.clone(), values, program: self.program.clone() })
+    }
+}
+
+/// Parse and expand a parameterized VOS write without binding values.
+///
+/// Same work [`bind_vos_write`] does before the binding step, split out so the
+/// engine can cache the parsed program across statements with the same source.
+pub fn parse_vos_write(source: &str, schema_document: Option<&str>) -> Result<ParsedVosWrite> {
     let (parameters, rewritten) = scan_and_rewrite(source, Dialect::Vos)?;
     let program = schema_input_vos::parse_program(&rewritten).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
     let expanded = super::write_plan::expand_program(&program, schema_document)?;
     if !super::write_plan::has_write_call(&expanded) {
         return Err(Error::Unsupported("VOS parameter binding for writes requires an insert, update, or delete program"));
     }
-    let values = bind_values(&parameters, named)?;
-    Ok(BoundWrite { source: rewritten, values, program: expanded })
+    Ok(ParsedVosWrite { parameters, rewritten, program: expanded })
 }
 
 /// Bind a prepared statement to an ordered value slice.

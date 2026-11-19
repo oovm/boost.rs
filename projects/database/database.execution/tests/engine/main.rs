@@ -6,4 +6,5 @@ mod scan;
 mod schema_files;
 mod schema_unique_groups;
 mod session;
+mod statement_caches;
 mod unique_index;

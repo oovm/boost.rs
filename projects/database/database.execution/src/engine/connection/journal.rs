@@ -1,4 +1,4 @@
-use crate::engine::{Result, journal::JournalMode, storage::doctor};
+use crate::engine::{journal::JournalMode, storage::doctor, Result};
 
 use super::{Backend, Connection};
 
@@ -36,6 +36,11 @@ impl Connection {
                 doctor::record_checkpoint(&mut state.records);
                 let next = crate::engine::storage::snapshot::snapshot_from_state(&state)?;
                 database.commit(&next, &[])?;
+                // This publish rewrites metadata without advancing the commit
+                // sequence (the checkpoint counter is not a content change the
+                // fencing base must see), so the metadata cache keyed by that
+                // sequence cannot stay.
+                *self.metadata_cache.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
                 database.checkpoint()
             }
         }

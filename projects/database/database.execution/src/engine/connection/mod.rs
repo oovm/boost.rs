@@ -1,22 +1,22 @@
 //! [`Connection`] open paths, storage backends, and state I/O.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     path::{Path, PathBuf},
     sync::{
-        Mutex,
         atomic::{AtomicBool, Ordering},
+        Mutex,
     },
 };
 
 use crate::engine::{
-    Error, Result, SchemaVersion,
-    journal::{OpenFlags, shm_path, wal_path},
+    journal::{shm_path, wal_path, OpenFlags},
     objects::ObjectStore,
     storage::snapshot,
     udf::UdfSubsystem,
+    Error, Result, SchemaVersion,
 };
-use database_storage::local::{Database, snapshot_from_main_bytes, snapshot_to_main_bytes};
+use database_storage::local::{snapshot_from_main_bytes, snapshot_to_main_bytes, Database};
 
 mod backup;
 mod compact;
@@ -99,6 +99,31 @@ pub struct Connection {
     /// same schema basis that drift detection uses, so a schema change misses it
     /// and a stale contract can never be served.
     pub(crate) contract_cache: crate::engine::storage::snapshot::ContractCache,
+    /// Decoded reserved metadata of the durable image, keyed by its commit
+    /// sequence.
+    ///
+    /// Every statement reads metadata before it can plan, and decoding the
+    /// schema, identity ledger and unique rules from the chunked rows costs
+    /// more than the point read that follows. The commit sequence is bumped by
+    /// every publish, so a row holding only that counter identifies the whole
+    /// metadata image: a matching sequence means the cached decode is exactly
+    /// what a full metadata read would produce. The one publisher that rewrites
+    /// metadata without advancing the sequence (the WAL checkpoint counter)
+    /// clears this cache instead.
+    pub(crate) metadata_cache: Mutex<Option<(u64, std::sync::Arc<State>)>>,
+    /// Prepared read plans keyed by (dialect, source) and schema basis.
+    ///
+    /// A server runs the same statement text per request; re-parsing and
+    /// re-lowering it every time costs more than the window read. An entry is
+    /// only served while its schema basis still matches, so a migration misses
+    /// the cache instead of serving a plan for the old schema.
+    pub(crate) prepared_cache:
+        Mutex<HashMap<(database_query::local::Dialect, String), (String, u64, database_query::local::PreparedStatement)>>,
+    /// Parsed VOS write programs keyed by source and schema basis.
+    pub(crate) write_program_cache: Mutex<HashMap<String, (String, u64, schema_input_vos::syntax::VosProgram)>>,
+    /// Parsed and expanded parameterized VOS writes keyed by source and schema
+    /// basis.
+    pub(crate) bound_write_cache: Mutex<HashMap<String, (String, u64, database_query::local::ParsedVosWrite)>>,
     /// Connection-wide unique-key index maintained by VOS writes.
     ///
     /// Shared with derived sessions so one server's sessions do not each pay a
@@ -143,6 +168,10 @@ impl Connection {
             txn_journal: Mutex::new(TxnJournal::default()),
             savepoints: Mutex::new(Vec::new()),
             contract_cache: Default::default(),
+            metadata_cache: Mutex::new(None),
+            prepared_cache: Mutex::new(HashMap::new()),
+            write_program_cache: Mutex::new(HashMap::new()),
+            bound_write_cache: Mutex::new(HashMap::new()),
             unique_index: std::sync::Arc::new(database_query::local::constraints::UniqueIndex::new()),
             backend: std::sync::Arc::new(Backend::File { path: path.clone(), database: Mutex::new(database) }),
             udfs: Mutex::new(UdfSubsystem::default()),
@@ -169,6 +198,10 @@ impl Connection {
             txn_journal: Mutex::new(TxnJournal::default()),
             savepoints: Mutex::new(Vec::new()),
             contract_cache: Default::default(),
+            metadata_cache: Mutex::new(None),
+            prepared_cache: Mutex::new(HashMap::new()),
+            write_program_cache: Mutex::new(HashMap::new()),
+            bound_write_cache: Mutex::new(HashMap::new()),
             unique_index: std::sync::Arc::new(database_query::local::constraints::UniqueIndex::new()),
             backend: std::sync::Arc::new(Backend::Memory { state: Mutex::new(State::default()) }),
             udfs: Mutex::new(UdfSubsystem::default()),
@@ -192,6 +225,10 @@ impl Connection {
             txn_journal: Mutex::new(TxnJournal::default()),
             savepoints: Mutex::new(Vec::new()),
             contract_cache: Default::default(),
+            metadata_cache: Mutex::new(None),
+            prepared_cache: Mutex::new(HashMap::new()),
+            write_program_cache: Mutex::new(HashMap::new()),
+            bound_write_cache: Mutex::new(HashMap::new()),
             unique_index: std::sync::Arc::clone(&self.unique_index),
             udfs: Mutex::new(UdfSubsystem::default()),
             objects: std::sync::Arc::clone(&self.objects),
@@ -333,6 +370,11 @@ impl Connection {
     /// prepared statements so a stale handle fails fast instead of
     /// silently operating on a half-closed store.
     pub(crate) fn guard_session_alive(&self) -> Result<()> {
-        if self.is_closed() { Err(Error::SessionClosed) } else { Ok(()) }
+        if self.is_closed() {
+            Err(Error::SessionClosed)
+        }
+        else {
+            Ok(())
+        }
     }
 }

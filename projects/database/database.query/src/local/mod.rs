@@ -36,8 +36,8 @@ pub use ops::{
     WindowSpec, WriteAssignment, WriteField, WriteOp,
 };
 pub use params::{
-    BoundStatement, BoundWrite, ParameterDescriptor, PreparedStatement, QueryKind, bind_named, bind_ordered, bind_vos_write, fingerprint, prepare,
-    scan_and_rewrite,
+    BoundStatement, BoundWrite, ParameterDescriptor, ParsedVosWrite, PreparedStatement, QueryKind, bind_named, bind_ordered, bind_vos_write,
+    fingerprint, parse_vos_write, prepare, scan_and_rewrite,
 };
 #[doc(hidden)]
 pub use params::{Dialect, prepare_sql};

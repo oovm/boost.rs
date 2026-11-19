@@ -12,17 +12,22 @@ use std::time::Instant;
 use super::super::kv::lease::now_millis;
 
 use crate::engine::{
-    Error, Result,
     bytes::{ObjectStoreResolver, YydbBytesPolicy, YydbVectorPolicy},
+    Error, Result,
 };
-use database_formats::yy::row::{ObjectResolver, with_object_resolver};
+use database_formats::yy::row::{with_object_resolver, ObjectResolver};
 use database_query::local::{
-    BytesPlacementHook, PreparedStatement, QueryRow, VectorPlacementHook, fingerprint as fp, prepare as prepare_source,
-    with_bytes_placement, with_vector_placement,
+    fingerprint as fp, prepare as prepare_source, with_bytes_placement, with_vector_placement, BytesPlacementHook, Dialect, PreparedStatement,
+    QueryRow, VectorPlacementHook,
 };
 use database_types::Value;
 
 use super::{Backend, Connection};
+
+/// Cap for the per-connection statement caches. A workload that mints a fresh
+/// source per statement must not grow them without bound, so an overflow drops
+/// the whole cache instead of evicting one entry at a time.
+const STATEMENT_CACHE_LIMIT: usize = 256;
 
 /// 单条语句的阶段计时起点。
 ///
@@ -82,9 +87,7 @@ impl Connection {
     /// with the row the executor builds.
     fn with_write_hooks<T>(&self, body: impl FnOnce() -> T) -> T {
         with_object_resolver(Some(self.object_resolver()), || {
-            with_bytes_placement(Some(self.bytes_policy()), || {
-                with_vector_placement(Some(self.vector_policy()), body)
-            })
+            with_bytes_placement(Some(self.bytes_policy()), || with_vector_placement(Some(self.vector_policy()), body))
         })
     }
 
@@ -96,7 +99,7 @@ impl Connection {
     /// and revision. Executions later use those two fields to detect schema
     /// migration without re-parsing.
     pub fn prepare_vos(&self, source: &str) -> Result<PreparedStatement> {
-        self.prepare_with(source, prepare_source)
+        self.prepare_with(source, prepare_source, Dialect::Vos)
     }
 
     /// Prepare a SQL statement into a reusable query plan.
@@ -111,15 +114,12 @@ impl Connection {
     /// only.
     #[doc(hidden)]
     pub fn prepare_sql(&self, source: &str) -> Result<PreparedStatement> {
-        self.prepare_with(source, database_query::local::prepare_sql)
+        self.prepare_with(source, database_query::local::prepare_sql, Dialect::Sql)
     }
 
-    fn prepare_with(&self, source: &str, frontend: fn(&str) -> Result<PreparedStatement>) -> Result<PreparedStatement> {
+    fn prepare_with(&self, source: &str, frontend: fn(&str) -> Result<PreparedStatement>, dialect: Dialect) -> Result<PreparedStatement> {
         self.guard_session_alive()?;
         let _guard = self.operation_lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        // The frontend already classifies ops and fills `query_kind` — the
-        // engine path only adds schema fingerprint / revision on top.
-        let mut stmt = frontend(source)?;
         // Only the schema basis is needed here. An open transaction can read it
         // straight from its snapshot instead of cloning the whole state per
         // statement, which is what kept a batch load quadratic.
@@ -127,12 +127,34 @@ impl Connection {
             let slot = self.txn.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             slot.as_ref().map(schema_basis)
         };
-        let (fingerprint, revision) = match basis {
+        let basis = match basis {
             Some(basis) => basis,
             None => schema_basis(&self.read_state_metadata()?),
         };
-        stmt.schema_fingerprint = fingerprint;
-        stmt.schema_revision = revision;
+        // The same source under the same schema basis lowers to the same plan,
+        // so a repeated statement pays parse and lowering only once. A schema
+        // change moves the basis and misses the cache.
+        let key = (dialect, source.to_owned());
+        let cached = self
+            .prepared_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(&key)
+            .filter(|(fingerprint, revision, _)| *fingerprint == basis.0 && *revision == basis.1)
+            .map(|(_, _, stmt)| stmt.clone());
+        if let Some(stmt) = cached {
+            return Ok(stmt);
+        }
+        // The frontend already classifies ops and fills `query_kind` — the
+        // engine path only adds schema fingerprint / revision on top.
+        let mut stmt = frontend(source)?;
+        stmt.schema_fingerprint = basis.0.clone();
+        stmt.schema_revision = basis.1;
+        let mut cache = self.prepared_cache.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if cache.len() >= STATEMENT_CACHE_LIMIT {
+            cache.clear();
+        }
+        cache.insert(key, (basis.0, basis.1, stmt.clone()));
         Ok(stmt)
     }
 
@@ -260,9 +282,7 @@ impl Connection {
         contract: &schema_input_vos::ResolvedContract,
         records: &BTreeMap<String, Vec<u8>>,
     ) -> Result<Vec<QueryRow>> {
-        with_object_resolver(Some(self.object_resolver()), || {
-            crate::local::execute_prepared(stmt, values, Some(contract), records)
-        })
+        with_object_resolver(Some(self.object_resolver()), || crate::local::execute_prepared(stmt, values, Some(contract), records))
     }
 
     fn execute_with_profiled(
@@ -403,7 +423,12 @@ impl Connection {
     /// This is what lets a VOS write on a rule table narrow to its exact keys
     /// outside a transaction: the duplicate check reads the cache instead of
     /// the table, so the statement no longer needs every row loaded.
-    fn rules_warm(&self, contract: &schema_input_vos::ResolvedContract, declared: &[database_types::TableUniqueConstraint], basis: &(String, u64)) -> bool {
+    fn rules_warm(
+        &self,
+        contract: &schema_input_vos::ResolvedContract,
+        declared: &[database_types::TableUniqueConstraint],
+        basis: &(String, u64),
+    ) -> bool {
         let Ok(document) = database_query::local::constraints::from_contract(contract)
         else {
             return false;
@@ -434,11 +459,33 @@ impl Connection {
             |metadata, holds_every_row| {
                 let contract = resolved_contract(metadata)?;
                 let schema_document = metadata.schema.as_ref().map(|schema| schema.document.as_str());
-                let program = crate::local::parse_write_program(source)?;
                 let basis = schema_basis(metadata);
+                // The same source under the same schema basis parses to the same
+                // program, so a repeated statement pays the parse only once.
+                let cached = self
+                    .write_program_cache
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .get(source)
+                    .filter(|(fingerprint, revision, _)| *fingerprint == basis.0 && *revision == basis.1)
+                    .map(|(_, _, program)| program.clone());
+                let program = match cached {
+                    Some(program) => program,
+                    None => {
+                        let parsed = crate::local::parse_write_program(source)?;
+                        let mut cache = self.write_program_cache.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                        if cache.len() >= STATEMENT_CACHE_LIMIT {
+                            cache.clear();
+                        }
+                        cache.insert(source.to_owned(), (basis.0.clone(), basis.1, parsed.clone()));
+                        parsed
+                    }
+                };
                 let exempt = holds_every_row || self.rules_warm(contract, &metadata.unique_constraints, &basis);
                 let keys = self
-                    .with_write_hooks(|| crate::local::point_write_keys_parsed(&program, contract, &metadata.unique_constraints, schema_document, &[], exempt))
+                    .with_write_hooks(|| {
+                        crate::local::point_write_keys_parsed(&program, contract, &metadata.unique_constraints, schema_document, &[], exempt)
+                    })
                     .map(|keys| keys.map(Self::key_windows))?;
                 let complete = keys.is_none() || holds_every_row;
                 Ok((keys, (program, basis, complete)))
@@ -472,12 +519,40 @@ impl Connection {
             |metadata, holds_every_row| {
                 let contract = resolved_contract(metadata)?;
                 let schema_document = metadata.schema.as_ref().map(|schema| schema.document.as_str());
-                let plan = database_query::local::bind_vos_write(source, named, schema_document)?;
                 let basis = schema_basis(metadata);
+                // Scan, parse and macro expansion depend only on the source and
+                // the schema document, so they are cached; each statement re-binds
+                // its parameter values.
+                let parsed = self
+                    .bound_write_cache
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .get(source)
+                    .filter(|(fingerprint, revision, _)| *fingerprint == basis.0 && *revision == basis.1)
+                    .map(|(_, _, parsed)| parsed.clone());
+                let plan = match parsed {
+                    Some(parsed) => parsed.bind(named)?,
+                    None => {
+                        let parsed = database_query::local::parse_vos_write(source, schema_document)?;
+                        let mut cache = self.bound_write_cache.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                        if cache.len() >= STATEMENT_CACHE_LIMIT {
+                            cache.clear();
+                        }
+                        cache.insert(source.to_owned(), (basis.0.clone(), basis.1, parsed.clone()));
+                        parsed.bind(named)?
+                    }
+                };
                 let exempt = holds_every_row || self.rules_warm(contract, &metadata.unique_constraints, &basis);
                 let keys = self
                     .with_write_hooks(|| {
-                        crate::local::point_write_keys_parsed(&plan.program, contract, &metadata.unique_constraints, schema_document, &plan.values, exempt)
+                        crate::local::point_write_keys_parsed(
+                            &plan.program,
+                            contract,
+                            &metadata.unique_constraints,
+                            schema_document,
+                            &plan.values,
+                            exempt,
+                        )
                     })
                     .map(|keys| keys.map(Self::key_windows))?;
                 let complete = keys.is_none() || holds_every_row;
@@ -493,7 +568,15 @@ impl Connection {
                 let values = &plan.values;
                 let index = database_query::local::constraints::WriteIndex { index: &self.unique_index, basis, complete };
                 self.with_write_hooks(|| {
-                    crate::local::execute_write_parsed_indexed(&plan.program, &contract, constraints, schema_document, records, values, Some(&index))
+                    crate::local::execute_write_parsed_indexed(
+                        &plan.program,
+                        &contract,
+                        constraints,
+                        schema_document,
+                        records,
+                        values,
+                        Some(&index),
+                    )
                 })
             },
         )
@@ -517,13 +600,7 @@ impl Connection {
             |metadata, holds_every_row| {
                 let contract = resolved_contract(metadata)?;
                 let windows = self.with_write_hooks(|| {
-                    database_query::local::write_windows(
-                        &stmt.write_ops,
-                        &contract,
-                        &metadata.unique_constraints,
-                        &values,
-                        holds_every_row,
-                    )
+                    database_query::local::write_windows(&stmt.write_ops, &contract, &metadata.unique_constraints, &values, holds_every_row)
                 })?;
                 Ok((windows, ()))
             },
@@ -540,13 +617,7 @@ impl Connection {
                 let outcome = with_object_resolver(Some(self.object_resolver()), || {
                     with_bytes_placement(Some(self.bytes_policy()), || {
                         with_vector_placement(Some(self.vector_policy()), || {
-                            crate::local::execute_write_prepared(
-                                &stmt,
-                                &values,
-                                &contract,
-                                &state.unique_constraints,
-                                &mut state.records,
-                            )
+                            crate::local::execute_write_prepared(&stmt, &values, &contract, &state.unique_constraints, &mut state.records)
                         })
                     })
                 })?;

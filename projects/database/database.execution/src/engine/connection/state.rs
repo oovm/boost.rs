@@ -1,15 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::engine::{
-    Result,
     journal::JournalMode,
     kv::{lease, retention as ttl},
     objects::EMBEDDED_OBJECT_PREFIX,
     storage::{snapshot, spill},
+    Result,
 };
 use database_storage::local::snapshot::RecordWindow;
 
-use super::{Backend, Connection, State, TxnJournal, is_yydx_main_path};
+use super::{is_yydx_main_path, Backend, Connection, State, TxnJournal};
 
 /// Window covering the chunk rows of oversized values.
 ///
@@ -216,7 +216,20 @@ impl Connection {
         match self.backend.as_ref() {
             Backend::File { database, .. } => {
                 let mut database = database.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-                snapshot::state_from_snapshot(&database.snapshot_windows(&[])?, &self.contract_cache)
+                // The commit-sequence row is the identity of the durable
+                // metadata image: every publish that can change typed metadata
+                // bumps it, so a matching sequence means the cached decode is
+                // byte-for-byte what a full metadata read would produce.
+                let sequence = lease::meta_u64(database.get_meta(lease::META_COMMIT_SEQ)?.as_deref());
+                let mut cache = self.metadata_cache.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                if let Some((cached, state)) = cache.as_ref() {
+                    if *cached == sequence {
+                        return Ok((**state).clone());
+                    }
+                }
+                let state = snapshot::state_from_snapshot(&database.snapshot_windows(&[])?, &self.contract_cache)?;
+                *cache = Some((sequence, std::sync::Arc::new(state.clone())));
+                Ok(state)
             }
             Backend::Memory { state } => Ok(state.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone()),
         }

@@ -8,22 +8,22 @@ use std::{
 
 use database_formats::yy::{
     yydb::PAGE_MAGIC,
-    yywl::{BlobManifestDelta, WAL_MAGIC, parse_wal_recover},
+    yywl::{parse_wal_recover, BlobManifestDelta, WAL_MAGIC},
 };
 use database_types::{Error, Result};
 
 use crate::local_io::{
-    file::{FilePager, PublishStats, main_bytes_from_memory_pager, memory_pager_from_main_bytes},
+    file::{main_bytes_from_memory_pager, memory_pager_from_main_bytes, FilePager, PublishStats},
     memory::MemoryPager,
     wal_append::RecoveryReport,
 };
 
 use crate::local::{
-    journal::{JournalMode, wal_path},
+    journal::{wal_path, JournalMode},
     lock::WriterLock,
     snapshot::{
-        META_PREFIX, META_PREFIX_TEXT, RecordDelta, RecordWindow, RowWindow, Snapshot, read_snapshot, read_snapshot_windows,
-        read_snapshot_windows_with_rows, write_delta, write_snapshot,
+        read_snapshot, read_snapshot_windows, read_snapshot_windows_with_rows, write_delta, write_snapshot, RecordDelta, RecordWindow,
+        RowWindow, Snapshot, META_PREFIX, META_PREFIX_TEXT,
     },
 };
 
@@ -126,6 +126,16 @@ impl Database {
         if name.starts_with(META_PREFIX_TEXT) {
             return Ok(None);
         }
+        self.pager.get_kv(name)
+    }
+
+    /// Read one row by its exact key, including reserved `__yydb/meta/` rows.
+    ///
+    /// [`Database::get_record`] deliberately hides metadata; this is the
+    /// engine-side accessor for the opposite need: the metadata cache is keyed
+    /// by the commit-sequence row alone, and walking the whole metadata window
+    /// just to check that one row costs more than the statements that follow.
+    pub fn get_meta(&mut self, name: &str) -> Result<Option<Vec<u8>>> {
         self.pager.get_kv(name)
     }
 
