@@ -206,6 +206,8 @@ fn infer_expression_type(
         Function { name, args, .. } => match name.as_str() {
             // `LENGTH`、字符计数与位置函数都返回整数；其余字符串函数退回 `String`。
             "count" | "length" | "char_length" | "character_length" | "len" | "instr" | "strpos" => SqlFieldType::Int64,
+            // Sequence functions return the sequence's 64-bit value.
+            "nextval" | "currval" | "setval" => SqlFieldType::Int64,
             // 排名函数与 PostgreSQL `int8` / MySQL `LONGLONG` 对应。
             "row_number" | "rank" | "dense_rank" => SqlFieldType::Int64,
             "avg" => {

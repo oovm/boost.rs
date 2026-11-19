@@ -170,6 +170,91 @@ impl PgPassword {
     }
 }
 
+/// One SQL sequence and its durable state.
+///
+/// `last_value` and `is_called` are PostgreSQL's pair: the next `nextval`
+/// returns `last_value + increment` once `is_called` is set, and returns
+/// `last_value` itself on the very first call.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PgSequence {
+    /// Sequence name.
+    pub name: String,
+    /// `START WITH` value, kept for `ALTER SEQUENCE ... RESTART` offsets.
+    pub start: i64,
+    /// `INCREMENT BY` step, negative for a descending sequence.
+    pub increment: i64,
+    /// Inclusive lower bound.
+    pub min_value: i64,
+    /// Inclusive upper bound.
+    pub max_value: i64,
+    /// Whether the sequence wraps instead of failing at its bound.
+    pub cycle: bool,
+    /// Last value handed out, or the value `RESTART` reset to.
+    pub last_value: i64,
+    /// Whether `last_value` was ever handed out.
+    pub is_called: bool,
+}
+
+impl PgSequence {
+    /// A sequence with the given `START`, `INCREMENT` and bounds.
+    pub fn new(name: impl Into<String>, start: i64, increment: i64, min_value: i64, max_value: i64, cycle: bool) -> Self {
+        Self {
+            name: name.into(),
+            start,
+            increment,
+            min_value,
+            max_value,
+            cycle,
+            last_value: start,
+            is_called: false,
+        }
+    }
+
+    /// PostgreSQL's default sequence over 64-bit values.
+    pub fn ascending(name: impl Into<String>) -> Self {
+        Self::new(name, 1, 1, 1, i64::MAX, false)
+    }
+
+    /// One `nextval` step, or `SequenceExhausted` at the bound.
+    fn advance(&mut self) -> Result<i64, ObjectError> {
+        let next = if self.is_called {
+            self.last_value.checked_add(self.increment).ok_or(ObjectError::SequenceExhausted(self.name.clone()))?
+        }
+        else {
+            self.last_value
+        };
+        let out_of_range = if self.increment > 0 { next > self.max_value } else { next < self.min_value };
+        if out_of_range {
+            if !self.cycle {
+                return Err(ObjectError::SequenceExhausted(self.name.clone()));
+            }
+            // `CYCLE` wraps to the opposite bound.
+            self.last_value = if self.increment > 0 { self.min_value } else { self.max_value };
+        }
+        else {
+            self.last_value = next;
+        }
+        self.is_called = true;
+        Ok(self.last_value)
+    }
+}
+
+/// Fields one `ALTER SEQUENCE` changes. `None` keeps the current value.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PgSequenceAlteration {
+    /// `INCREMENT BY`.
+    pub increment: Option<i64>,
+    /// `RESTART [WITH n]`; `Some(None)` restarts at `start`.
+    pub restart: Option<Option<i64>>,
+    /// `MINVALUE n` or `NO MINVALUE`.
+    pub min_value: Option<Option<i64>>,
+    /// `MAXVALUE n` or `NO MAXVALUE`.
+    pub max_value: Option<Option<i64>>,
+    /// `CYCLE` / `NO CYCLE`.
+    pub cycle: Option<bool>,
+}
+
 /// One table privilege granted to a role.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -202,6 +287,12 @@ pub enum ObjectError {
     UnknownTable(String),
     /// The schema a bulk grant names is not published by the gateway (`3F000`).
     UnknownSchema(String),
+    /// The sequence already exists (`42P07`).
+    DuplicateSequence(String),
+    /// `nextval` left the sequence's range (`2200H`).
+    SequenceExhausted(String),
+    /// `currval` was read before `nextval` ever ran (`55000`).
+    SequenceNotCalled(String),
     /// The document could not be read or written.
     Persistence(String),
 }
@@ -216,6 +307,9 @@ impl ObjectError {
             Self::CircularMembership { .. } => "0LP01",
             Self::UnknownTable(_) => "42P01",
             Self::UnknownSchema(_) => "3F000",
+            Self::DuplicateSequence(_) => "42P07",
+            Self::SequenceExhausted(_) => "2200H",
+            Self::SequenceNotCalled(_) => "55000",
             Self::Persistence(_) => "58P01",
         }
     }
@@ -229,6 +323,9 @@ impl ObjectError {
             Self::CircularMembership { role, member } => format!("role \"{role}\" is a member of role \"{member}\""),
             Self::UnknownTable(name) => format!("relation \"{name}\" does not exist"),
             Self::UnknownSchema(name) => format!("schema \"{name}\" does not exist"),
+            Self::DuplicateSequence(name) => format!("relation \"{name}\" already exists"),
+            Self::SequenceExhausted(name) => format!("nextval: reached the maximum or minimum value of sequence \"{name}\""),
+            Self::SequenceNotCalled(name) => format!("currval of sequence \"{name}\" is not yet defined in this session"),
             Self::Persistence(detail) => detail.clone(),
         }
     }
@@ -243,6 +340,8 @@ struct ObjectDocument {
     roles: Vec<PgRole>,
     #[serde(default)]
     memberships: Vec<PgMembership>,
+    #[serde(default)]
+    sequences: Vec<PgSequence>,
     grants: Vec<PgGrant>,
 }
 
@@ -262,6 +361,7 @@ impl ObjectDocument {
                 password: None,
             }],
             memberships: Vec::new(),
+            sequences: Vec::new(),
             grants: Vec::new(),
         }
     }
@@ -543,6 +643,130 @@ impl PgObjectCatalog {
     /// One membership edge, when it exists.
     pub fn memberships(&self) -> Vec<PgMembership> {
         self.lock().memberships.clone()
+    }
+
+    /// Registered sequences.
+    pub fn sequences(&self) -> Vec<PgSequence> {
+        self.lock().sequences.clone()
+    }
+
+    /// One sequence by name.
+    pub fn sequence(&self, name: &str) -> Option<PgSequence> {
+        self.lock().sequences.iter().find(|sequence| sequence.name == name).cloned()
+    }
+
+    /// Registers a sequence. Returns `false` when `IF NOT EXISTS` matched.
+    pub fn create_sequence(&self, sequence: PgSequence, if_not_exists: bool) -> Result<bool, ObjectError> {
+        let mut state = self.lock();
+        if state.sequences.iter().any(|existing| existing.name == sequence.name) {
+            if if_not_exists {
+                return Ok(false);
+            }
+            return Err(ObjectError::DuplicateSequence(sequence.name));
+        }
+        let mut next = state.clone();
+        next.sequences.push(sequence);
+        next.sequences.sort_by(|left, right| left.name.cmp(&right.name));
+        next.revision = next.revision.saturating_add(1);
+        self.save(&next)?;
+        *state = next;
+        Ok(true)
+    }
+
+    /// Applies one `ALTER SEQUENCE` to a registered sequence.
+    pub fn alter_sequence(&self, name: &str, alteration: &PgSequenceAlteration) -> Result<(), ObjectError> {
+        let mut state = self.lock();
+        let mut next = state.clone();
+        let sequence = next
+            .sequences
+            .iter_mut()
+            .find(|sequence| sequence.name == name)
+            .ok_or_else(|| ObjectError::UnknownTable(name.to_string()))?;
+        if let Some(increment) = alteration.increment {
+            sequence.increment = increment;
+        }
+        if let Some(min_value) = alteration.min_value {
+            sequence.min_value = min_value.unwrap_or(if sequence.increment > 0 { 1 } else { i64::MIN });
+        }
+        if let Some(max_value) = alteration.max_value {
+            sequence.max_value = max_value.unwrap_or(if sequence.increment > 0 { i64::MAX } else { -1 });
+        }
+        if let Some(cycle) = alteration.cycle {
+            sequence.cycle = cycle;
+        }
+        if let Some(restart) = alteration.restart {
+            sequence.last_value = restart.unwrap_or(sequence.start);
+            sequence.is_called = false;
+        }
+        next.revision = next.revision.saturating_add(1);
+        self.save(&next)?;
+        *state = next;
+        Ok(())
+    }
+
+    /// Drops a sequence. A missing name is `42P01` unless `IF EXISTS` matched.
+    pub fn drop_sequence(&self, name: &str, if_exists: bool) -> Result<bool, ObjectError> {
+        let mut state = self.lock();
+        let before = state.sequences.len();
+        let mut next = state.clone();
+        next.sequences.retain(|sequence| sequence.name != name);
+        if next.sequences.len() == before {
+            if if_exists {
+                return Ok(false);
+            }
+            return Err(ObjectError::UnknownTable(name.to_string()));
+        }
+        next.revision = next.revision.saturating_add(1);
+        self.save(&next)?;
+        *state = next;
+        Ok(true)
+    }
+
+    /// Hands out the next value of `name` and persists the advance.
+    pub fn nextval(&self, name: &str) -> Result<i64, ObjectError> {
+        let mut state = self.lock();
+        let mut next = state.clone();
+        let sequence = next
+            .sequences
+            .iter_mut()
+            .find(|sequence| sequence.name == name)
+            .ok_or_else(|| ObjectError::UnknownTable(name.to_string()))?;
+        let value = sequence.advance()?;
+        next.revision = next.revision.saturating_add(1);
+        self.save(&next)?;
+        *state = next;
+        Ok(value)
+    }
+
+    /// Last value `nextval` handed out for `name`.
+    pub fn currval(&self, name: &str) -> Result<i64, ObjectError> {
+        let state = self.lock();
+        let sequence = state
+            .sequences
+            .iter()
+            .find(|sequence| sequence.name == name)
+            .ok_or_else(|| ObjectError::UnknownTable(name.to_string()))?;
+        if !sequence.is_called {
+            return Err(ObjectError::SequenceNotCalled(name.to_string()));
+        }
+        Ok(sequence.last_value)
+    }
+
+    /// Sets the sequence's position for the next `nextval` call.
+    pub fn setval(&self, name: &str, value: i64, is_called: bool) -> Result<i64, ObjectError> {
+        let mut state = self.lock();
+        let mut next = state.clone();
+        let sequence = next
+            .sequences
+            .iter_mut()
+            .find(|sequence| sequence.name == name)
+            .ok_or_else(|| ObjectError::UnknownTable(name.to_string()))?;
+        sequence.last_value = value;
+        sequence.is_called = is_called;
+        next.revision = next.revision.saturating_add(1);
+        self.save(&next)?;
+        *state = next;
+        Ok(value)
     }
 
     /// Whether `role` exists and is a superuser.

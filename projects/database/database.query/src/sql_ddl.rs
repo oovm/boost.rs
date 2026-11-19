@@ -764,8 +764,17 @@ impl Parser {
         let mut not_null = false;
         let mut inline_primary_key = false;
         let mut inline_unique = false;
-        // PostgreSQL serial pseudo-types imply an owned sequence.
+        // PostgreSQL serial pseudo-types are not real types: they expand to the
+        // matching integer type plus an owned value sequence, and the registry
+        // allocates that value for an omitted column.
         let mut auto_increment = matches!(sql_type.as_str(), "SERIAL" | "BIGSERIAL" | "SMALLSERIAL");
+        if auto_increment {
+            sql_type = match sql_type.as_str() {
+                "SMALLSERIAL" => "SMALLINT".to_string(),
+                "BIGSERIAL" => "BIGINT".to_string(),
+                _ => "INTEGER".to_string(),
+            };
+        }
         let mut default = None;
         let mut check = None;
         let mut reference = None;

@@ -24,4 +24,5 @@ pub use shard::Store;
 pub use store::{ServerChange, ServerRow, ServerStore};
 pub use objects::{
     OBJECTS_CONTRACT, OBJECTS_FILE, ObjectError, PgGrant, PgMembership, PgObjectCatalog, PgPassword, PgPrivilege, PgRole, PgScramVerifier,
+    PgSequence, PgSequenceAlteration,
 };

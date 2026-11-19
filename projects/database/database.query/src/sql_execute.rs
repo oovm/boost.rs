@@ -1,5 +1,10 @@
 //! SQL values, row TLV encoding and expression evaluation shared by planning and execution.
 
+use std::{
+    cell::RefCell,
+    sync::Arc,
+};
+
 use crate::{
     catalog_bind::{SqlCatalogBoundExpression, collect_column_ids},
     sql::{
@@ -25,6 +30,47 @@ pub use self::{
         scan_needed_field_ids,
     },
 };
+
+/// Sequence state `nextval` / `currval` / `setval` reach during evaluation.
+///
+/// The evaluator is a pure function of the row, so the statement that runs it
+/// installs the catalog for its own duration. `database.execution::pgsql`
+/// supplies an implementation backed by the durable object catalog, which keeps
+/// sequence state owned there instead of leaking a second copy into planning.
+pub trait SqlSequenceCatalog: Send + Sync {
+    /// Advances `name` and returns the value handed out (`2200H` at the bound).
+    fn nextval(&self, name: &str) -> Result<i64, SqlFrontendError>;
+    /// Last value handed out for `name` (`55000` when it was never called).
+    fn currval(&self, name: &str) -> Result<i64, SqlFrontendError>;
+    /// Repositions `name` and returns `value`.
+    fn setval(&self, name: &str, value: i64, is_called: bool) -> Result<i64, SqlFrontendError>;
+}
+
+thread_local! {
+    /// Nested statements (`EXPLAIN ANALYZE`) push another catalog; the last one
+    /// wins and is popped when the statement finishes.
+    static SEQUENCE_CATALOGS: RefCell<Vec<Arc<dyn SqlSequenceCatalog>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Runs `body` with `catalog` visible to the sequence functions.
+pub fn with_sequence_catalog<T>(catalog: Arc<dyn SqlSequenceCatalog>, body: impl FnOnce() -> T) -> T {
+    struct Pop;
+    impl Drop for Pop {
+        fn drop(&mut self) {
+            SEQUENCE_CATALOGS.with(|stack| {
+                stack.borrow_mut().pop();
+            });
+        }
+    }
+    SEQUENCE_CATALOGS.with(|stack| stack.borrow_mut().push(catalog));
+    let _pop = Pop;
+    body()
+}
+
+/// The catalog the current statement installed, when sequence functions run.
+pub(crate) fn sequence_catalog() -> Option<Arc<dyn SqlSequenceCatalog>> {
+    SEQUENCE_CATALOGS.with(|stack| stack.borrow().last().cloned())
+}
 
 /// Payload byte cursor used by the row TLV decoder.
 struct Cursor<'a> {

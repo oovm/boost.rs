@@ -5,7 +5,7 @@
 //! implemented subset is rejected with `0A000` and a reason: the gateway never
 //! accepts a clause it would then ignore.
 
-use database_storage::pgsql::{PgRole, PgPrivilege};
+use database_storage::pgsql::{PgPrivilege, PgRole, PgSequence, PgSequenceAlteration};
 
 use crate::sql::{SqlErrorKind, SqlFrontendError};
 
@@ -80,6 +80,27 @@ pub enum PgObjectStatement {
         /// Roles the privileges are removed from.
         roles: Vec<String>,
     },
+    /// `CREATE SEQUENCE [IF NOT EXISTS] name [options]`.
+    CreateSequence {
+        /// Sequence definition and initial state.
+        sequence: PgSequence,
+        /// Whether `IF NOT EXISTS` was written.
+        if_not_exists: bool,
+    },
+    /// `ALTER SEQUENCE name [options]`.
+    AlterSequence {
+        /// Sequence to change.
+        name: String,
+        /// Fields the statement sets.
+        alteration: PgSequenceAlteration,
+    },
+    /// `DROP SEQUENCE [IF EXISTS] name[, ...]`.
+    DropSequence {
+        /// Sequences to remove.
+        names: Vec<String>,
+        /// Whether `IF EXISTS` was written.
+        if_exists: bool,
+    },
 }
 
 /// Parses one cluster-object statement, or `Ok(None)` when the text is not one.
@@ -103,7 +124,21 @@ pub fn parse_pg_object_statement(source: &str) -> Result<Option<PgObjectStatemen
                     "`ALTER DEFAULT PRIVILEGES` is not supported by the cluster SQL gateway: `GRANT ... ON ALL TABLES IN SCHEMA` covers the tables that exist when it runs, exactly like PostgreSQL, and nothing applies to tables created later",
                 ));
             }
+            if let Some(after) = strip_keyword(tail, "SEQUENCE") {
+                return parse_alter_sequence(after).map(Some);
+            }
             // Other `ALTER` statements belong to the schema registry.
+            Ok(None)
+        }
+        "DROP" => {
+            let Some(kind) = first_word(tail)
+            else {
+                return Ok(None);
+            };
+            if kind.eq_ignore_ascii_case("SEQUENCE") {
+                return parse_drop_sequence(&tail[kind.len()..]).map(Some);
+            }
+            // `DROP TABLE` / `DROP INDEX` belong to the schema registry.
             Ok(None)
         }
         "GRANT" => parse_grant(tail, true).map(Some),
@@ -134,6 +169,7 @@ fn parse_create(tail: &str) -> Result<Option<PgObjectStatement>, SqlFrontendErro
         }
         // Table, index and temporary-table DDL belong to the schema registry.
         "TABLE" | "TEMP" | "TEMPORARY" | "INDEX" | "UNIQUE" => Ok(None),
+        "SEQUENCE" => parse_create_sequence(rest).map(Some),
         _ => Err(unsupported(format!(
             "`CREATE {keyword}` is not supported by the cluster SQL gateway, only `DATABASE`, `ROLE` and `USER` are"
         ))),
@@ -318,6 +354,232 @@ fn parse_bulk_grant(
     else {
         PgObjectStatement::RevokeAllTables { schema, privileges, roles }
     })
+}
+
+/// Parses `CREATE SEQUENCE [IF NOT EXISTS] name [AS type] [INCREMENT …] …`.
+fn parse_create_sequence(tail: &str) -> Result<PgObjectStatement, SqlFrontendError> {
+    let (mut rest, if_not_exists) = if_not_exists(tail);
+    let (name, remaining) = take_identifier(rest)?;
+    rest = remaining.trim_start();
+    let mut increment = 1i64;
+    let mut type_bounds: (i64, i64) = (i64::MIN, i64::MAX);
+    let mut min_value = None;
+    let mut max_value = None;
+    let mut start = None;
+    let mut cycle = false;
+    while !rest.trim().is_empty() {
+        rest = rest.trim_start();
+        let Some(word) = first_word(rest)
+        else {
+            return Err(syntax("unexpected token in `CREATE SEQUENCE`"));
+        };
+        let after = rest[word.len()..].trim_start();
+        match word.to_ascii_uppercase().as_str() {
+            "AS" => {
+                let (type_name, remaining) = take_identifier(after)?;
+                type_bounds = sequence_type_bounds(&type_name)?;
+                rest = remaining;
+                continue;
+            }
+            "INCREMENT" => {
+                let (value, remaining) = take_sequence_number(after, "BY")?;
+                increment = value;
+                rest = remaining;
+                continue;
+            }
+            "MINVALUE" => {
+                let (value, remaining) = take_sequence_number(after, "")?;
+                min_value = Some(value);
+                rest = remaining;
+                continue;
+            }
+            "MAXVALUE" => {
+                let (value, remaining) = take_sequence_number(after, "")?;
+                max_value = Some(value);
+                rest = remaining;
+                continue;
+            }
+            "START" => {
+                let (value, remaining) = take_sequence_number(after, "WITH")?;
+                start = Some(value);
+                rest = remaining;
+                continue;
+            }
+            "CACHE" => {
+                let (value, remaining) = take_sequence_number(after, "")?;
+                if value < 1 {
+                    return Err(syntax("`CACHE` must be a positive number"));
+                }
+                // CACHE is a backend hint; it never changes nextval semantics.
+                rest = remaining;
+                continue;
+            }
+            "CYCLE" => cycle = true,
+            "NO" => {
+                let Some(flag) = first_word(after)
+                else {
+                    return Err(syntax("`NO` requires `MINVALUE`, `MAXVALUE` or `CYCLE`"));
+                };
+                let remaining = after[flag.len()..].trim_start();
+                match flag.to_ascii_uppercase().as_str() {
+                    "MINVALUE" => min_value = Some(if increment > 0 { 1 } else { type_bounds.0 }),
+                    "MAXVALUE" => max_value = Some(if increment > 0 { type_bounds.1 } else { -1 }),
+                    "CYCLE" => cycle = false,
+                    other => return Err(unsupported(format!("`CREATE SEQUENCE ... NO {other}` is not supported"))),
+                }
+                rest = remaining;
+                continue;
+            }
+            "OWNED" => {
+                return Err(unsupported(
+                    "`CREATE SEQUENCE ... OWNED BY` is not supported by the cluster SQL gateway, the sequence is independent",
+                ));
+            }
+            other => {
+                return Err(unsupported(format!(
+                    "`CREATE SEQUENCE ... {other}` is not supported by the cluster SQL gateway"
+                )));
+            }
+        }
+        rest = after;
+    }
+    let min_value = min_value.unwrap_or(if increment > 0 { 1 } else { type_bounds.0 });
+    let max_value = max_value.unwrap_or(if increment > 0 { type_bounds.1 } else { -1 });
+    let start = start.unwrap_or(if increment > 0 { min_value } else { max_value });
+    Ok(PgObjectStatement::CreateSequence {
+        sequence: PgSequence::new(name, start, increment, min_value, max_value, cycle),
+        if_not_exists,
+    })
+}
+
+/// Integer bounds one `CREATE SEQUENCE ... AS type` selects.
+fn sequence_type_bounds(name: &str) -> Result<(i64, i64), SqlFrontendError> {
+    match name.to_ascii_uppercase().as_str() {
+        "SMALLINT" | "INT2" => Ok((i16::MIN as i64, i16::MAX as i64)),
+        "INTEGER" | "INT" | "INT4" => Ok((i32::MIN as i64, i32::MAX as i64)),
+        "BIGINT" | "INT8" => Ok((i64::MIN, i64::MAX)),
+        other => Err(unsupported(format!(
+            "`CREATE SEQUENCE ... AS {other}` is not supported, use SMALLINT, INTEGER or BIGINT"
+        ))),
+    }
+}
+
+/// Reads one signed integer, optionally preceded by `keyword` (`BY` / `WITH`).
+fn take_sequence_number<'a>(source: &'a str, keyword: &str) -> Result<(i64, &'a str), SqlFrontendError> {
+    let mut rest = source.trim_start();
+    if !keyword.is_empty()
+        && let Some(after) = strip_keyword(rest, keyword)
+    {
+        rest = after.trim_start();
+    }
+    let end = rest
+        .find(|character: char| !(character.is_ascii_digit() || character == '-' || character == '+'))
+        .unwrap_or(rest.len());
+    let value = rest[..end].parse::<i64>().map_err(|_| syntax("expected an integer sequence option"))?;
+    Ok((value, &rest[end..]))
+}
+
+/// Parses `ALTER SEQUENCE name [INCREMENT …] [RESTART …] …`.
+fn parse_alter_sequence(tail: &str) -> Result<PgObjectStatement, SqlFrontendError> {
+    let (name, remaining) = take_identifier(tail.trim_start())?;
+    let mut rest = remaining.trim_start();
+    let mut alteration = PgSequenceAlteration::default();
+    while !rest.trim().is_empty() {
+        rest = rest.trim_start();
+        let Some(word) = first_word(rest)
+        else {
+            return Err(syntax("unexpected token in `ALTER SEQUENCE`"));
+        };
+        let after = rest[word.len()..].trim_start();
+        match word.to_ascii_uppercase().as_str() {
+            "INCREMENT" => {
+                let (value, remaining) = take_sequence_number(after, "BY")?;
+                alteration.increment = Some(value);
+                rest = remaining;
+                continue;
+            }
+            "RESTART" => {
+                let trimmed = after.trim_start();
+                if trimmed.is_empty() || first_word(trimmed).is_some_and(|word| !word.eq_ignore_ascii_case("WITH")) {
+                    alteration.restart = Some(None);
+                    rest = trimmed;
+                    continue;
+                }
+                let (value, remaining) = take_sequence_number(trimmed, "WITH")?;
+                alteration.restart = Some(Some(value));
+                rest = remaining;
+                continue;
+            }
+            "MINVALUE" => {
+                let (value, remaining) = take_sequence_number(after, "")?;
+                alteration.min_value = Some(Some(value));
+                rest = remaining;
+                continue;
+            }
+            "MAXVALUE" => {
+                let (value, remaining) = take_sequence_number(after, "")?;
+                alteration.max_value = Some(Some(value));
+                rest = remaining;
+                continue;
+            }
+            "CACHE" => {
+                let (value, remaining) = take_sequence_number(after, "")?;
+                if value < 1 {
+                    return Err(syntax("`CACHE` must be a positive number"));
+                }
+                rest = remaining;
+                continue;
+            }
+            "CYCLE" => alteration.cycle = Some(true),
+            "NO" => {
+                let Some(flag) = first_word(after)
+                else {
+                    return Err(syntax("`NO` requires `MINVALUE`, `MAXVALUE` or `CYCLE`"));
+                };
+                let remaining = after[flag.len()..].trim_start();
+                match flag.to_ascii_uppercase().as_str() {
+                    "MINVALUE" => alteration.min_value = Some(None),
+                    "MAXVALUE" => alteration.max_value = Some(None),
+                    "CYCLE" => alteration.cycle = Some(false),
+                    other => return Err(unsupported(format!("`ALTER SEQUENCE ... NO {other}` is not supported"))),
+                }
+                rest = remaining;
+                continue;
+            }
+            "OWNED" => {
+                return Err(unsupported(
+                    "`ALTER SEQUENCE ... OWNED BY` is not supported by the cluster SQL gateway, the sequence is independent",
+                ));
+            }
+            "AS" | "START" => {
+                return Err(unsupported(format!(
+                    "`ALTER SEQUENCE ... {word}` is not supported by the cluster SQL gateway, recreate the sequence instead"
+                )));
+            }
+            other => {
+                return Err(unsupported(format!(
+                    "`ALTER SEQUENCE ... {other}` is not supported by the cluster SQL gateway"
+                )));
+            }
+        }
+        rest = after;
+    }
+    Ok(PgObjectStatement::AlterSequence { name, alteration })
+}
+
+/// Parses `DROP SEQUENCE [IF EXISTS] name[, ...]`.
+fn parse_drop_sequence(tail: &str) -> Result<PgObjectStatement, SqlFrontendError> {
+    let mut rest = tail.trim_start();
+    let mut if_exists = false;
+    if let Some(after) = strip_keyword(rest, "IF") {
+        rest = strip_keyword(after.trim_start(), "EXISTS").ok_or_else(|| syntax("`DROP SEQUENCE IF` requires `EXISTS`"))?.trim_start();
+        if_exists = true;
+    }
+    let names = split_identifiers(rest)?;
+    if names.is_empty() {
+        return Err(syntax("`DROP SEQUENCE` needs at least one name"));
+    }
+    Ok(PgObjectStatement::DropSequence { names, if_exists })
 }
 
 /// Parses `GRANT role[, ...] TO member[, ...]` and its `REVOKE` form.
@@ -583,13 +845,51 @@ mod tests {
     }
 
     #[test]
+    fn sequences_parse_their_options_and_reject_owned_by() {
+        assert_eq!(
+            parse_pg_object_statement("CREATE SEQUENCE IF NOT EXISTS s START WITH 10 INCREMENT BY 5 MAXVALUE 100 CYCLE").unwrap(),
+            Some(PgObjectStatement::CreateSequence {
+                sequence: PgSequence::new("s", 10, 5, 1, 100, true),
+                if_not_exists: true,
+            })
+        );
+        assert_eq!(
+            parse_pg_object_statement("CREATE SEQUENCE small AS SMALLINT").unwrap(),
+            Some(PgObjectStatement::CreateSequence {
+                sequence: PgSequence::new("small", 1, 1, 1, i16::MAX as i64, false),
+                if_not_exists: false,
+            })
+        );
+        assert_eq!(
+            parse_pg_object_statement("ALTER SEQUENCE s INCREMENT 2 RESTART WITH 7 NO CYCLE").unwrap(),
+            Some(PgObjectStatement::AlterSequence {
+                name: "s".to_owned(),
+                alteration: PgSequenceAlteration {
+                    increment: Some(2),
+                    restart: Some(Some(7)),
+                    min_value: None,
+                    max_value: None,
+                    cycle: Some(false),
+                },
+            })
+        );
+        assert_eq!(
+            parse_pg_object_statement("DROP SEQUENCE IF EXISTS a, b").unwrap(),
+            Some(PgObjectStatement::DropSequence { names: vec!["a".to_owned(), "b".to_owned()], if_exists: true })
+        );
+        assert_eq!(parse_pg_object_statement("CREATE SEQUENCE s OWNED BY t.id").unwrap_err().kind, SqlErrorKind::Unsupported);
+        // `DROP TABLE` still belongs to the schema registry.
+        assert_eq!(parse_pg_object_statement("DROP TABLE t").unwrap(), None);
+        assert_eq!(parse_pg_object_statement("ALTER TABLE t ADD COLUMN c INT").unwrap(), None);
+    }
+
+    #[test]
     fn unsupported_clauses_are_rejected_with_a_reason() {
         for statement in [
             "CREATE DATABASE app TEMPLATE template0",
             "GRANT ALL TABLES IN SCHEMA public TO app",
             "GRANT reader TO app WITH ADMIN OPTION",
             "GRANT TRUNCATE ON orders TO app",
-            "CREATE SEQUENCE s",
         ] {
             assert_eq!(parse_pg_object_statement(statement).unwrap_err().kind, SqlErrorKind::Unsupported, "{statement}");
         }

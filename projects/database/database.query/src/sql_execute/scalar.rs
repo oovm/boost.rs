@@ -174,6 +174,50 @@ pub fn eval_scalar_function(function: SqlScalarFunction, args: &[SqlValue], dial
             };
             Text(edge_characters(&text, count, function == SqlScalarFunction::Right))
         }
+        SqlScalarFunction::Nextval | SqlScalarFunction::Currval | SqlScalarFunction::Setval => {
+            // Sequence functions are the only volatile scalars: they read and
+            // advance state the statement installed, and fail explicitly when no
+            // catalog is present instead of inventing a value.
+            let catalog = super::sequence_catalog().ok_or_else(|| {
+                SqlFrontendError::new(
+                    SqlErrorKind::Unsupported,
+                    format!("{}() needs a sequence catalog, which this statement did not install", function.name()),
+                )
+            })?;
+            let name = match args.first() {
+                Some(Text(text)) => text.clone(),
+                Some(Null) | None => return Ok(Null),
+                Some(_) => {
+                    return Err(SqlFrontendError::new(
+                        SqlErrorKind::TypeMismatch,
+                        format!("{}() takes the sequence name as a string", function.name()),
+                    ));
+                }
+            };
+            match function {
+                SqlScalarFunction::Nextval => Integer(catalog.nextval(&name)?),
+                SqlScalarFunction::Currval => Integer(catalog.currval(&name)?),
+                _ => {
+                    let Some(Integer(value)) = args.get(1) else {
+                        return Err(SqlFrontendError::new(
+                            SqlErrorKind::TypeMismatch,
+                            "SETVAL() takes an integer value",
+                        ));
+                    };
+                    let is_called = match args.get(2) {
+                        None => true,
+                        Some(SqlValue::Boolean(flag)) => *flag,
+                        Some(_) => {
+                            return Err(SqlFrontendError::new(
+                                SqlErrorKind::TypeMismatch,
+                                "SETVAL() takes a boolean `is_called`",
+                            ));
+                        }
+                    };
+                    Integer(catalog.setval(&name, *value, is_called)?)
+                }
+            }
+        }
         SqlScalarFunction::Abs => match args.first() {
             Some(Integer(value)) => Integer(value.checked_abs().ok_or_else(|| numeric_overflow_error("ABS"))?),
             Some(Number(value)) => Number(value.abs()),

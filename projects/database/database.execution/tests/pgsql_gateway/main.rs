@@ -178,7 +178,6 @@ fn object_statement_errors_report_their_sqlstates() {
     // Unsupported clauses name their reason instead of being silently accepted.
     for statement in [
         "CREATE DATABASE other TEMPLATE template0",
-        "CREATE SEQUENCE s",
         "GRANT ALL TABLES IN SCHEMA public TO reader",
     ] {
         let (code, message) = match gateway.sql(statement) {
@@ -299,6 +298,73 @@ fn bulk_grants_cover_existing_tables_only() {
         Err(error) => error,
     };
     assert_eq!(code, "0A000");
+}
+
+#[test]
+fn sequences_advance_survive_alter_and_report_their_sqlstates() {
+    let mut gateway = Gateway::new("sequences");
+    assert_eq!(gateway.command("CREATE SEQUENCE s"), "CREATE SEQUENCE");
+    assert_eq!(gateway.scalar("SELECT nextval('s')"), SqlValue::Integer(1));
+    assert_eq!(gateway.scalar("SELECT nextval('s')"), SqlValue::Integer(2));
+    assert_eq!(gateway.scalar("SELECT currval('s')"), SqlValue::Integer(2));
+    assert_eq!(gateway.scalar("SELECT setval('s', 100)"), SqlValue::Integer(100));
+    assert_eq!(gateway.scalar("SELECT nextval('s')"), SqlValue::Integer(101));
+    assert_eq!(gateway.command("ALTER SEQUENCE s RESTART WITH 7"), "ALTER SEQUENCE");
+    assert_eq!(gateway.scalar("SELECT nextval('s')"), SqlValue::Integer(7));
+
+    // A duplicate names the existing relation, and a missing one is `42P01`.
+    let (code, message) = match gateway.sql("CREATE SEQUENCE s") {
+        Ok(_) => panic!("a duplicate sequence must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42P07", "unexpected message: {message}");
+    let (code, _) = match gateway.sql("SELECT nextval('missing')") {
+        Ok(_) => panic!("an unknown sequence must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42P01");
+    let (code, _) = match gateway.sql("ALTER SEQUENCE missing RESTART") {
+        Ok(_) => panic!("altering an unknown sequence must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42P01");
+    let (code, _) = match gateway.sql("DROP SEQUENCE missing") {
+        Ok(_) => panic!("dropping an unknown sequence must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "42P01");
+    assert_eq!(gateway.command("DROP SEQUENCE IF EXISTS missing"), "DROP SEQUENCE");
+
+    // `currval` before any `nextval`, and an exhausted sequence.
+    gateway.command("CREATE SEQUENCE untouched");
+    let (code, message) = match gateway.sql("SELECT currval('untouched')") {
+        Ok(_) => panic!("`currval` before `nextval` must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "55000", "unexpected message: {message}");
+    gateway.command("CREATE SEQUENCE tiny MAXVALUE 2");
+    gateway.scalar("SELECT nextval('tiny')");
+    gateway.scalar("SELECT nextval('tiny')");
+    let (code, message) = match gateway.sql("SELECT nextval('tiny')") {
+        Ok(_) => panic!("an exhausted sequence must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(code, "2200H", "unexpected message: {message}");
+    assert_eq!(gateway.command("DROP SEQUENCE s"), "DROP SEQUENCE");
+}
+
+#[test]
+fn serial_columns_expand_to_integer_identity_columns() {
+    let mut gateway = Gateway::new("serial");
+    gateway.command("CREATE TABLE serials (id SERIAL PRIMARY KEY, big BIGSERIAL, name TEXT)");
+    gateway.command("INSERT INTO serials (name) VALUES ('a'), ('b')");
+    assert_eq!(gateway.scalar("SELECT id FROM serials WHERE name = 'b'"), SqlValue::Integer(2));
+    assert_eq!(gateway.scalar("SELECT big FROM serials WHERE name = 'a'"), SqlValue::Integer(1));
+    // The pseudo-type expanded to the real integer type in the catalog.
+    let table = gateway.runtime.schema.catalog().tables().iter().find(|table| table.name == "serials").expect("table").clone();
+    let types: Vec<database_query::SqlFieldType> = table.fields.iter().map(|field| field.field_type.inner()).collect();
+    assert!(types.contains(&database_query::SqlFieldType::Int32), "unexpected field types: {types:?}");
+    assert!(types.contains(&database_query::SqlFieldType::Int64), "unexpected field types: {types:?}");
 }
 
 #[test]

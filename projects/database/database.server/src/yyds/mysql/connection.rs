@@ -1426,6 +1426,8 @@ fn mysql_error_code(kind: SqlErrorKind) -> (u16, &'static str) {
         // PostgreSQL-only 分类：MySQL 的 CAST 对非法输入返回 0/NULL。
         InvalidTextRepresentation => (1105, "HY000"),
         GeneratedColumnWrite => (3105, "HY000"),
+        // PostgreSQL-only sequence classifications: MySQL has no sequences.
+        SequenceExhausted | SequenceNotCalled => (1105, "HY000"),
         TableAlreadyExists => (1050, "42S01"),
         ColumnAlreadyExists => (1060, "42S21"),
         IndexAlreadyExists => (1061, "42000"),

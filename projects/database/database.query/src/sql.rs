@@ -92,6 +92,11 @@ pub enum SqlErrorKind {
     /// A statement tried to write a value into a generated column, which only
     /// the stored expression may produce. PostgreSQL reports `428C9`.
     GeneratedColumnWrite,
+    /// `nextval` stepped past the sequence's bound. PostgreSQL reports `2200H`.
+    SequenceExhausted,
+    /// `currval` ran before `nextval` in this database. PostgreSQL reports
+    /// `55000`.
+    SequenceNotCalled,
 }
 
 /// Structured failure from the Oak SQL frontend or gateway binder.
@@ -1196,6 +1201,12 @@ pub enum SqlScalarFunction {
     Left,
     /// `RIGHT(text, n)` — last `n` characters.
     Right,
+    /// `NEXTVAL('sequence')` — advances the sequence and returns the value.
+    Nextval,
+    /// `CURRVAL('sequence')` — last value this database handed out.
+    Currval,
+    /// `SETVAL('sequence', value[, is_called])` — repositions the sequence.
+    Setval,
 }
 
 impl SqlScalarFunction {
@@ -1232,6 +1243,9 @@ impl SqlScalarFunction {
             "STRPOS" => Some(Self::Strpos),
             "LEFT" => Some(Self::Left),
             "RIGHT" => Some(Self::Right),
+            "NEXTVAL" => Some(Self::Nextval),
+            "CURRVAL" => Some(Self::Currval),
+            "SETVAL" => Some(Self::Setval),
             _ => None,
         }
     }
@@ -1282,6 +1296,9 @@ impl SqlScalarFunction {
             Self::Strpos => "STRPOS",
             Self::Left => "LEFT",
             Self::Right => "RIGHT",
+            Self::Nextval => "NEXTVAL",
+            Self::Currval => "CURRVAL",
+            Self::Setval => "SETVAL",
         }
     }
 
@@ -1303,6 +1320,8 @@ impl SqlScalarFunction {
             Self::Trim | Self::Ltrim | Self::Rtrim => (1, Some(2)),
             Self::Replace => (3, Some(3)),
             Self::Instr | Self::Strpos | Self::Left | Self::Right => (2, Some(2)),
+            Self::Nextval | Self::Currval => (1, Some(1)),
+            Self::Setval => (2, Some(3)),
             Self::Concat | Self::Coalesce | Self::Greatest | Self::Least => (1, None),
             Self::NullIf | Self::DateTrunc => (2, Some(2)),
         }

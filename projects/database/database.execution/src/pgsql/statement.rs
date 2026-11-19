@@ -386,6 +386,20 @@ fn apply_object_statement(
             }
             Ok(StatementOutcome::Command("REVOKE"))
         }
+        PgObjectStatement::CreateSequence { sequence, if_not_exists } => {
+            objects.create_sequence(sequence, if_not_exists).map_err(|error| failure(session, error))?;
+            Ok(StatementOutcome::Command("CREATE SEQUENCE"))
+        }
+        PgObjectStatement::AlterSequence { name, alteration } => {
+            objects.alter_sequence(&name, &alteration).map_err(|error| failure(session, error))?;
+            Ok(StatementOutcome::Command("ALTER SEQUENCE"))
+        }
+        PgObjectStatement::DropSequence { names, if_exists } => {
+            for name in &names {
+                objects.drop_sequence(name, if_exists).map_err(|error| failure(session, error))?;
+            }
+            Ok(StatementOutcome::Command("DROP SEQUENCE"))
+        }
     }
 }
 
@@ -399,6 +413,38 @@ fn schema_tables(schema: &str, catalog: &database_query::SqlCatalog) -> Result<V
         return Err(database_storage::pgsql::ObjectError::UnknownSchema(schema.to_string()));
     }
     Ok(catalog.tables().iter().map(|table| table.name.clone()).collect())
+}
+
+/// Sequence state one statement exposes to `nextval` / `currval` / `setval`.
+///
+/// The owner stays `database.storage::pgsql::PgObjectCatalog`; this adapter only
+/// maps its failures onto the SQLSTATE categories the frontend already carries.
+struct ObjectSequences(Arc<database_storage::pgsql::PgObjectCatalog>);
+
+impl database_query::SqlSequenceCatalog for ObjectSequences {
+    fn nextval(&self, name: &str) -> Result<i64, SqlFrontendError> {
+        self.0.nextval(name).map_err(sequence_error)
+    }
+
+    fn currval(&self, name: &str) -> Result<i64, SqlFrontendError> {
+        self.0.currval(name).map_err(sequence_error)
+    }
+
+    fn setval(&self, name: &str, value: i64, is_called: bool) -> Result<i64, SqlFrontendError> {
+        self.0.setval(name, value, is_called).map_err(sequence_error)
+    }
+}
+
+/// Maps one catalog failure onto the frontend category that names its SQLSTATE.
+fn sequence_error(error: database_storage::pgsql::ObjectError) -> SqlFrontendError {
+    use database_storage::pgsql::ObjectError;
+    let kind = match &error {
+        ObjectError::UnknownTable(_) => SqlErrorKind::UnknownTable,
+        ObjectError::SequenceExhausted(_) => SqlErrorKind::SequenceExhausted,
+        ObjectError::SequenceNotCalled(_) => SqlErrorKind::SequenceNotCalled,
+        _ => SqlErrorKind::Unsupported,
+    };
+    SqlFrontendError::new(kind, error.message())
 }
 
 /// Renders a `SET` value the way the GUC parser expects it.
@@ -598,7 +644,14 @@ fn run_statement_inner(
     // reports the declared type instead of falling back to `text`.
     let description = describe_plan(&plan);
     let handle_ref: Option<&dyn TransactionHandle> = session.transaction_handle();
-    let result = crate::sql_exec::execute_plan(runtime.executor.as_ref(), handle_ref, &plan, SqlDialect::Postgres).map_err(|error| {
+    // `nextval` / `currval` / `setval` read and advance the durable sequence
+    // state in the object catalog; the statement installs it for its own run.
+    let sequences: Arc<dyn database_query::SqlSequenceCatalog> =
+        Arc::new(ObjectSequences(Arc::clone(&runtime.objects)));
+    let result = database_query::with_sequence_catalog(sequences, || {
+        crate::sql_exec::execute_plan(runtime.executor.as_ref(), handle_ref, &plan, SqlDialect::Postgres)
+    })
+    .map_err(|error| {
         session.fail();
         statement_error("execution", error)
     })?;
@@ -662,6 +715,8 @@ pub fn pg_sqlstate(kind: SqlErrorKind) -> &'static str {
         ForeignKeyViolation => "23503",
         InvalidTextRepresentation => "22P02",
         GeneratedColumnWrite => "428C9",
+        SequenceExhausted => "2200H",
+        SequenceNotCalled => "55000",
     }
 }
 

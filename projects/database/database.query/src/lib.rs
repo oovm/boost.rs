@@ -42,7 +42,7 @@ pub use sql_ddl::{
     is_ddl_statement, is_pg_temp_schema, parse_ddl,
 };
 pub use sql_describe::{SqlColumn, describe_bound_insert, describe_plan, describe_plan_for_dialect};
-pub use sql_execute::{RowFieldValues, SqlResult, SqlValue, decode_row, encode_row};
+pub use sql_execute::{RowFieldValues, SqlResult, SqlSequenceCatalog, SqlValue, decode_row, encode_row, with_sequence_catalog};
 pub use sql_meta::{
     MetaQuery, PG_SERVER_VERSION, analyze_meta_query, mysql_data_type, pg_server_version, postgres_type, set_pg_server_version,
 };
