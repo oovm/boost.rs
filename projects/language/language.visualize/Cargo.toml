@@ -11,7 +11,9 @@ categories = ["visualization", "algorithms"]
 keywords = ["visualization", "layout", "ast", "tree", "graph"]
 
 [dependencies]
+boost-collection = { workspace = true }
 boost-harness = { workspace = true, features = ["terminal"] }
+boost-math = { workspace = true }
 data-text-core = { workspace = true }
 language-highlight = { workspace = true, optional = true }
 language-format = { workspace = true, optional = true }

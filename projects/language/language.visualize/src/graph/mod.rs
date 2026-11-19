@@ -549,55 +549,18 @@ impl GraphLayout {
     }
 
     /// Perform topological sort to determine node layers
+    ///
+    /// 分层拓扑是图论职责，直接复用 `boost.math::graph_theory` 的唯一实现，
+    /// 本模块不再自维护入度计数（否则会被 G5 防回流门禁判为重复内核）。
     fn topological_layers(&self, graph: &Graph) -> crate::Result<Vec<Vec<String>>> {
-        let mut in_degree: HashMap<String, usize> = HashMap::new();
-        let mut layers = Vec::new();
-
-        // Initialize in-degrees
+        let mut memory = boost_collection::MemoryGraph::new(true);
         for node_id in graph.nodes.keys() {
-            in_degree.insert(node_id.clone(), 0);
+            memory.add_vertex(node_id.clone()).map_err(|error| crate::Error::LayoutError(error.to_string()))?;
         }
-
-        // Calculate in-degrees
         for edge in &graph.edges {
-            *in_degree.get_mut(&edge.to).unwrap() += 1;
+            memory.add_edge(edge.from.clone(), edge.to.clone(), ()).map_err(|error| crate::Error::LayoutError(error.to_string()))?;
         }
-
-        // Process layers
-        while !in_degree.is_empty() {
-            let mut current_layer = Vec::new();
-
-            // Find nodes with in-degree 0
-            let zero_in_degree: Vec<_> = in_degree.iter().filter(|&(_, &degree)| degree == 0).map(|(id, _)| id.clone()).collect();
-
-            if zero_in_degree.is_empty() {
-                // Cycle detected - break it by selecting node with minimum in-degree
-                if let Some((min_node, _)) = in_degree.iter().min_by_key(|&(_, &degree)| degree) {
-                    current_layer.push(min_node.clone());
-                }
-            }
-            else {
-                current_layer = zero_in_degree;
-            }
-
-            // Remove processed nodes and update in-degrees
-            for node_id in &current_layer {
-                in_degree.remove(node_id);
-
-                // Decrease in-degree of neighbors
-                for edge in &graph.edges {
-                    if edge.from == *node_id {
-                        if let Some(degree) = in_degree.get_mut(&edge.to) {
-                            *degree = degree.saturating_sub(1);
-                        }
-                    }
-                }
-            }
-
-            layers.push(current_layer);
-        }
-
-        Ok(layers)
+        boost_math::graph_theory::topological_layers(&memory).map_err(|error| crate::Error::LayoutError(error.to_string()))
     }
 }
 

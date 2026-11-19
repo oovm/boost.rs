@@ -79,6 +79,54 @@ where
     Ok((ordered, remaining))
 }
 
+/// 分层拓扑序（Kahn 分层）。
+///
+/// 每层是当前入度为零的顶点集合，层内保持来源的顶点顺序；成环时把残差整体
+/// 作为最后一层返回，不丢顶点，供分层布局等调用方使用。无向图返回
+/// [`GraphError::UndirectedTraversal`]。
+pub fn topological_layers<G>(graph: &G) -> GraphResult<Vec<Vec<G::Vertex>>>
+where
+    G: OutgoingEdges,
+{
+    if !graph.is_directed() {
+        return Err(GraphError::UndirectedTraversal);
+    }
+    let mut indegree: HashMap<&G::Vertex, usize> = HashMap::with_capacity(graph.vertex_count());
+    for vertex in graph.vertices() {
+        indegree.insert(vertex, 0);
+    }
+    for edge in graph.edges() {
+        let (_, target) = graph.endpoints(edge).ok_or(GraphError::UnknownVertex)?;
+        *indegree.get_mut(target).ok_or(GraphError::UnknownVertex)? += 1;
+    }
+
+    let mut ready: Vec<&G::Vertex> = graph.vertices().filter(|vertex| indegree.get(*vertex) == Some(&0)).collect();
+    let mut resolved: HashSet<&G::Vertex> = HashSet::with_capacity(graph.vertex_count());
+    let mut layers: Vec<Vec<G::Vertex>> = Vec::new();
+    while !ready.is_empty() {
+        layers.push(ready.iter().map(|vertex| (*vertex).clone()).collect());
+        let mut next: Vec<&G::Vertex> = Vec::new();
+        for vertex in ready {
+            resolved.insert(vertex);
+            for edge in graph.outgoing(vertex) {
+                let (_, target) = graph.endpoints(edge).ok_or(GraphError::UnknownVertex)?;
+                let remaining = indegree.get_mut(target).ok_or(GraphError::UnknownVertex)?;
+                *remaining -= 1;
+                if *remaining == 0 {
+                    next.push(target);
+                }
+            }
+        }
+        ready = next;
+    }
+
+    let remaining: Vec<G::Vertex> = graph.vertices().filter(|vertex| !resolved.contains(vertex)).cloned().collect();
+    if !remaining.is_empty() {
+        layers.push(remaining);
+    }
+    Ok(layers)
+}
+
 /// 从 `start` 出发沿出边可达的顶点。
 ///
 /// 只要求出边与端点能力，因此内存图与 CSR 表示共用同一实现。返回序列是
