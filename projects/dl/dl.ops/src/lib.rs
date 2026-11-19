@@ -247,11 +247,7 @@ mod tests {
         let targets = Tensor::from_vec(vec![1.0, 0.0, 0.0, 1.0], [2, 2]).unwrap();
         let gradient = softmax_cross_entropy_backward(&logits, &targets).unwrap();
         let probabilities = softmax_last(&logits).unwrap().to_vec();
-        let expected: Vec<f32> = probabilities
-            .iter()
-            .zip(targets.to_vec())
-            .map(|(probability, target)| (probability - target) / 2.0)
-            .collect();
+        let expected: Vec<f32> = probabilities.iter().zip(targets.to_vec()).map(|(probability, target)| (probability - target) / 2.0).collect();
         for (actual, expected) in gradient.to_vec().iter().zip(expected) {
             assert!((actual - expected).abs() < 1e-6);
         }

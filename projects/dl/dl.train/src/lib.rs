@@ -481,16 +481,7 @@ impl GraphMlp {
             bindings.insert_parameter(name, parameter.value());
         }
 
-        Ok(Self {
-            forward,
-            losses,
-            training,
-            bindings,
-            input: "x".to_owned(),
-            target: "y".to_owned(),
-            batch_size,
-            sizes: sizes.to_vec(),
-        })
+        Ok(Self { forward, losses, training, bindings, input: "x".to_owned(), target: "y".to_owned(), batch_size, sizes: sizes.to_vec() })
     }
 
     /// 每批固定行数。
@@ -704,10 +695,7 @@ mod tests {
         let mut random = seeded_random(20261120);
         let mut model = GraphMlp::new(&[2, 8, 3], 4, &mut random)?;
         let inputs = Tensor::from_vec(vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0], [4, 2])?;
-        let targets = Tensor::from_vec(
-            vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0],
-            [4, 3],
-        )?;
+        let targets = Tensor::from_vec(vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0], [4, 3])?;
 
         let mut optimizer = GraphAdam::new(model.training(), 0.05);
         let mut first = f32::NAN;

@@ -828,9 +828,7 @@ fn eval(node: &Node, values: &[Option<Tensor>], bindings: &Bindings) -> Result<T
             ops::mul(gradient, &mask)
         }
         Op::SoftmaxCrossEntropy => ops::softmax_cross_entropy(parent(values, node, 0)?, parent(values, node, 1)?),
-        Op::SoftmaxCrossEntropyBackward => {
-            ops::softmax_cross_entropy_backward(parent(values, node, 0)?, parent(values, node, 1)?)
-        }
+        Op::SoftmaxCrossEntropyBackward => ops::softmax_cross_entropy_backward(parent(values, node, 0)?, parent(values, node, 1)?),
     }
 }
 
