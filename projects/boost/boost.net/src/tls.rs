@@ -1,8 +1,26 @@
 //! TLS protocol version selection shared by HTTPS and WSS.
+//!
+//! The handshake itself lives in the `client`, `kx` and `record` submodules and
+//! is compiled with the `tls` feature. Only TLS 1.3 is implemented today; a
+//! configuration that excludes it is rejected instead of silently downgrading.
 
 use alloc::{vec, vec::Vec};
 
 use crate::NetError;
+
+#[cfg(feature = "tls")]
+mod client;
+#[cfg(feature = "tls")]
+mod error;
+#[cfg(feature = "tls")]
+mod kx;
+#[cfg(feature = "tls")]
+mod record;
+
+#[cfg(feature = "tls")]
+pub use client::{ClientConfig, TlsClient};
+#[cfg(feature = "tls")]
+pub use error::{TlsError, TlsResult};
 
 /// One TLS protocol version a connection may negotiate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -75,16 +93,18 @@ impl TlsConfig {
         self.versions.contains(&version)
     }
 
-    /// Map the configuration onto the versions understood by the TLS backend.
+    /// The protocol version the built-in client will negotiate, if it supports one.
+    ///
+    /// The product stack implements TLS 1.3 only; TLS 1.2 is a known gap rather
+    /// than a silent fallback.
     #[cfg(feature = "tls")]
-    pub(crate) fn protocol_versions(&self) -> Vec<&'static rustls::SupportedProtocolVersion> {
-        self.versions
-            .iter()
-            .map(|version| match version {
-                TlsVersion::Tls12 => &rustls::version::TLS12,
-                TlsVersion::Tls13 => &rustls::version::TLS13,
-            })
-            .collect()
+    pub(crate) fn client_version(&self) -> Result<TlsVersion, NetError> {
+        if self.contains(TlsVersion::Tls13) {
+            Ok(TlsVersion::Tls13)
+        }
+        else {
+            Err(NetError::Unsupported("the built-in TLS client implements TLS 1.3 only".into()))
+        }
     }
 }
 

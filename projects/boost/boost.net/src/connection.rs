@@ -7,10 +7,13 @@ use std::{
 };
 
 #[cfg(feature = "tls")]
-use std::sync::Arc;
+use std::sync::OnceLock;
 
 #[cfg(feature = "tls")]
-use rustls::{ClientConfig, ClientConnection, RootCertStore, StreamOwned, pki_types::ServerName};
+use crate::{
+    pki::{TrustAnchor, lets_encrypt_anchors},
+    tls::{ClientConfig, TlsClient},
+};
 
 use crate::{NetError, tls::TlsConfig};
 
@@ -120,7 +123,7 @@ impl Write for TimedSocket {
 pub(crate) enum Connection<S: Read + Write> {
     Tcp(S),
     #[cfg(feature = "tls")]
-    Tls(Box<StreamOwned<ClientConnection, S>>),
+    Tls(Box<TlsClient<S>>),
 }
 
 impl<S: Read + Write> Read for Connection<S> {
@@ -157,7 +160,7 @@ impl Connection<DeadlineSocket> {
         match self {
             Self::Tcp(socket) => socket.use_idle(timeout),
             #[cfg(feature = "tls")]
-            Self::Tls(stream) => stream.sock.use_idle(timeout),
+            Self::Tls(stream) => stream.socket_mut().use_idle(timeout),
         }
     }
 
@@ -166,7 +169,7 @@ impl Connection<DeadlineSocket> {
         match self {
             Self::Tcp(socket) => socket.canceller(),
             #[cfg(feature = "tls")]
-            Self::Tls(stream) => stream.sock.canceller(),
+            Self::Tls(stream) => stream.socket().canceller(),
         }
     }
 }
@@ -212,17 +215,15 @@ pub(crate) fn secure<S: Read + Write>(scheme: &str, host: &str, stream: S, tls: 
         "https" | "wss" => {
             #[cfg(feature = "tls")]
             {
-                let mut roots = RootCertStore::empty();
-                roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-                let versions = tls.protocol_versions();
-                let config = ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-                    .with_protocol_versions(&versions)
-                    .map_err(|error| NetError::Transport(format!("unsupported TLS version selection: {error}")))?
-                    .with_root_certificates(roots)
-                    .with_no_client_auth();
-                let name = ServerName::try_from(host.to_string()).map_err(|error| NetError::Unsupported(error.to_string()))?;
-                let connection = ClientConnection::new(Arc::new(config), name).map_err(|error| NetError::Transport(error.to_string()))?;
-                Ok(Connection::Tls(Box::new(StreamOwned::new(connection, stream))))
+                // The built-in client implements TLS 1.3 only; a configuration
+                // that rules it out is an explicit unsupported result.
+                tls.client_version()?;
+                if host.parse::<std::net::IpAddr>().is_ok() {
+                    return Err(NetError::Unsupported("the built-in TLS client verifies DNS names only".into()));
+                }
+                let config = ClientConfig { hostname: host, anchors: trust_anchors(), timeout: Duration::from_secs(30) };
+                let client = TlsClient::handshake(&config, stream).map_err(|error| NetError::Transport(error.to_string()))?;
+                Ok(Connection::Tls(Box::new(client)))
             }
             #[cfg(not(feature = "tls"))]
             {
@@ -232,4 +233,11 @@ pub(crate) fn secure<S: Read + Write>(scheme: &str, host: &str, stream: S, tls: 
         }
         _ => Err(NetError::Unsupported(format!("unsupported URL scheme `{scheme}`"))),
     }
+}
+
+/// The pinned Let's Encrypt anchors, parsed once per process.
+#[cfg(feature = "tls")]
+fn trust_anchors() -> &'static [TrustAnchor] {
+    static ANCHORS: OnceLock<Vec<TrustAnchor>> = OnceLock::new();
+    ANCHORS.get_or_init(lets_encrypt_anchors)
 }

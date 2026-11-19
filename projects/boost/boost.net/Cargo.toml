@@ -15,14 +15,13 @@ edition.workspace = true
 url = { workspace = true, default-features = false }
 boost-random = { workspace = true, optional = true }
 boost-crypto = { workspace = true, optional = true }
+data-binary-asn1 = { workspace = true, optional = true }
 data-encoding = { workspace = true, optional = true }
-rustls = { workspace = true, optional = true }
-webpki-roots = { workspace = true, optional = true }
 
 [features]
 default = ["std", "tls"]
 std = ["dep:boost-random", "dep:boost-crypto", "dep:data-encoding", "url/std"]
-tls = ["std", "dep:rustls", "dep:webpki-roots"]
+tls = ["std", "dep:data-binary-asn1"]
 
 [dev-dependencies]
 boost-crypto = { workspace = true }
