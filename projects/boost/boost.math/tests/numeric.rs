@@ -7,7 +7,24 @@
 //! 1 ULP，`ln` 与 `exp` 不超过 4 ULP。特殊值逐函数按冻结语义断言，
 //! 不把 `NaN` 统一改成零。
 
-use boost_math::numeric;
+use boost_math::{numeric, numeric::OrderedF64};
+
+#[test]
+fn ordered_f64_freezes_key_semantics() {
+    // NaN 与 NaN 相等，并在顺序中最大。
+    assert_eq!(OrderedF64::new(f64::NAN), OrderedF64::new(f64::NAN));
+    assert!(OrderedF64::new(f64::NAN) > OrderedF64::new(f64::INFINITY));
+    assert_eq!(OrderedF64::new(f64::NAN).cmp(&OrderedF64::new(f64::NAN)), std::cmp::Ordering::Equal);
+
+    // ±0 按数值比较相等，不按位区分，Ord 与 Eq 一致。
+    assert_eq!(OrderedF64::new(0.0), OrderedF64::new(-0.0));
+    assert_eq!(OrderedF64::new(0.0).cmp(&OrderedF64::new(-0.0)), std::cmp::Ordering::Equal);
+
+    // 取值保留原始位，包括 NaN payload 与零的符号。
+    let payload = f64::from_bits(0x7ff8_0000_0000_0001);
+    assert_eq!(OrderedF64::new(payload).get().to_bits(), payload.to_bits());
+    assert_eq!(OrderedF64::new(-0.0).get().to_bits(), (-0.0f64).to_bits());
+}
 
 /// 两个 `f64` 之间的位距离，即相差的 ULP 个数。
 ///

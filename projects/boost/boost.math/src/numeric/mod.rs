@@ -16,13 +16,17 @@
 //! - [`algorithm`]：宽度分段的数学策略规划器。
 //! - [`budget`]：分配与增长准入预算。
 //! - [`capability`]：Machine / Algorithm / Resource 能力三分。
+//! - [`ordered`]：需要 `Eq`/顺序的 `f64` 键语义（`NaN` 相等、`NaN` 最大）。
 
 pub mod algorithm;
 pub mod budget;
 pub mod capability;
 pub mod kernel;
+pub mod ordered;
 
 pub mod bigint;
+
+pub use ordered::OrderedF64;
 
 /// `ln 2` 的高位部分。
 ///
