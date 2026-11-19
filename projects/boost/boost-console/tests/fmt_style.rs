@@ -1,5 +1,10 @@
 use boost_console::fmt::{Color::*, Paint, Style};
-use serial_test::serial;
+/// 同一测试二进制内串行化触碰进程全局状态的用例，替代已移除的 `serial_test`。
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
+    SERIAL.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 macro_rules! assert_renders {
     ($($input:expr => $expected:expr,)*) => {
@@ -25,8 +30,8 @@ macro_rules! assert_disabled_renders {
 }
 
 #[test]
-#[serial]
 fn colors_enabled() {
+    let _serial = serial_guard();
     assert_renders! {
         Paint::new("text/plain") => "text/plain",
         Paint::red("hi") => "\x1B[31mhi\x1B[0m",
@@ -63,8 +68,8 @@ fn colors_enabled() {
 }
 
 #[test]
-#[serial]
 fn colors_disabled() {
+    let _serial = serial_guard();
     assert_disabled_renders! {
         Paint::new("text/plain") => "text/plain",
         Paint::red("hi") => "hi",
@@ -103,8 +108,8 @@ fn colors_disabled() {
 }
 
 #[test]
-#[serial]
 fn masked_when_disabled() {
+    let _serial = serial_guard();
     assert_disabled_renders! {
         Paint::masked("text/plain") => "",
         Paint::masked("text/plain").mask() => "",
@@ -119,8 +124,8 @@ fn masked_when_disabled() {
 }
 
 #[test]
-#[serial]
 fn masked_when_enabled() {
+    let _serial = serial_guard();
     assert_renders! {
         Paint::masked("text/plain") => "text/plain",
         Paint::masked("text/plain").mask() => "text/plain",
@@ -137,8 +142,8 @@ fn masked_when_enabled() {
 }
 
 #[test]
-#[serial]
 fn wrapping() {
+    let _serial = serial_guard();
     let inner = || format!("{} b {}", Paint::red("a"), Paint::green("c"));
     let inner2 = || format!("0 {} 1", Paint::magenta(&inner()).wrap());
     assert_renders! {

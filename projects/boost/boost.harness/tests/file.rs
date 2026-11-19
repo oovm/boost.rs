@@ -3,7 +3,12 @@ use std::io::{Read, Seek, SeekFrom};
 use boost_harness::log::{
     FieldValue, FileSink, Level, LogEvent, LogSink, VecSink, clear_global_sink, emit, event_to_json, install_global_file_sink, set_global_sink,
 };
-use serial_test::serial;
+/// 同一测试二进制内串行化触碰进程全局状态的用例，替代已移除的 `serial_test`。
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
+    SERIAL.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 #[test]
 fn file_sink_appends_json_lines() {
@@ -22,8 +27,8 @@ fn file_sink_appends_json_lines() {
 }
 
 #[test]
-#[serial]
 fn install_global_file_sink_routes_events() {
+    let _serial = serial_guard();
     let path = std::env::temp_dir().join(format!("logger-global-file-{}.jsonl", std::process::id()));
     install_global_file_sink(&path).expect("install global file sink");
 
@@ -43,8 +48,8 @@ fn install_global_file_sink_routes_events() {
 }
 
 #[test]
-#[serial]
 fn vec_sink_still_collects_for_tests() {
+    let _serial = serial_guard();
     let sink = VecSink::new();
     set_global_sink(Box::new(sink));
     emit(LogEvent::log(Level::Error, "test").field("message", FieldValue::str("x")).build());

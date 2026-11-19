@@ -4,7 +4,12 @@ use boost_harness::log::{
     FieldValue, Level, LogEvent, LogSink, TaskContext, VecSink, clear_global_sink, enter, event, event_to_json, reset_dropped_events,
     set_global_filter, set_global_sink, span, with_scope,
 };
-use serial_test::serial;
+/// 同一测试二进制内串行化触碰进程全局状态的用例，替代已移除的 `serial_test`。
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
+    SERIAL.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 struct SharedSink(Arc<Mutex<VecSink>>);
 
@@ -50,8 +55,8 @@ fn a_child_task_starts_with_the_fields_of_its_parent() {
 /// A thread scope belongs to the thread, so it must not be recorded as the task: an async task can
 /// resume on another thread, and the thread scope would then describe the wrong task.
 #[test]
-#[serial]
 fn a_thread_scope_is_not_a_task_context() {
+    let _serial = serial_guard();
     clear_global_sink();
     reset_dropped_events();
     let sink = Arc::new(Mutex::new(VecSink::new()));
@@ -129,8 +134,8 @@ fn an_event_without_a_task_carries_no_task_keys() {
 }
 
 #[test]
-#[serial]
 fn emit_through_the_global_facade_records_the_task() {
+    let _serial = serial_guard();
     clear_global_sink();
     reset_dropped_events();
     let sink = Arc::new(Mutex::new(VecSink::new()));

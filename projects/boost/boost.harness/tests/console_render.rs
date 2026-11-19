@@ -3,7 +3,12 @@ use boost_harness::log::{
     DiagnosticPayload, FieldValue, Level, LogEvent, MessagePayload,
     console::{render, render_plain},
 };
-use serial_test::serial;
+/// 同一测试二进制内串行化触碰进程全局状态的用例，替代已移除的 `serial_test`。
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
+    SERIAL.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 #[test]
 fn render_plain_log_event() {
@@ -37,8 +42,8 @@ fn render_plain_diagnostic_event() {
 }
 
 #[test]
-#[serial]
 fn styled_render_applies_level_color() {
+    let _serial = serial_guard();
     Paint::enable();
     let event = LogEvent::log(Level::Error, "worker").field("message", FieldValue::str("failed")).build();
     let styled = render(&event);
@@ -47,8 +52,8 @@ fn styled_render_applies_level_color() {
 }
 
 #[test]
-#[serial]
 fn styled_render_matches_plain_when_disabled() {
+    let _serial = serial_guard();
     let event = LogEvent::log(Level::Warn, "worker").field("message", FieldValue::str("retry")).build();
     Paint::disable();
     assert_eq!(render(&event), render_plain(&event));

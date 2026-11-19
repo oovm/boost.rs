@@ -6,7 +6,12 @@ use std::{
 use boost_harness::log::{
     AsyncSink, AsyncSinkError, FlushOutcome, Level, LogEvent, LogSink, VecSink, clear_global_sink, flush_global_sink, set_global_sink,
 };
-use serial_test::serial;
+/// 同一测试二进制内串行化触碰进程全局状态的用例，替代已移除的 `serial_test`。
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
+    SERIAL.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 fn event(target: &str) -> LogEvent {
     LogEvent::log(Level::Info, target).build()
@@ -86,8 +91,8 @@ fn an_async_sink_needs_room_for_at_least_one_event() {
 }
 
 #[test]
-#[serial]
 fn the_global_facade_flushes_the_installed_sink() {
+    let _serial = serial_guard();
     clear_global_sink();
     assert_eq!(flush_global_sink(), None);
 
@@ -98,8 +103,8 @@ fn the_global_facade_flushes_the_installed_sink() {
 }
 
 #[test]
-#[serial]
 fn installing_again_replaces_the_previous_sink() {
+    let _serial = serial_guard();
     clear_global_sink();
     let previous = Arc::new(Mutex::new(VecSink::new()));
     let current = Arc::new(Mutex::new(VecSink::new()));

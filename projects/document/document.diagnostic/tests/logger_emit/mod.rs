@@ -1,4 +1,9 @@
-use serial_test::serial;
+/// 同一测试二进制内串行化触碰进程全局状态的用例，替代已移除的 `serial_test`。
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
+    SERIAL.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 use std::sync::{Arc, Mutex};
 
 use boost_harness::log::{EventKind, Filter, Level, LogEvent, LogSink, VecSink, clear_global_sink, dropped_events, reset_dropped_events};
@@ -24,8 +29,8 @@ fn adapter_error_to_log_event_preserves_diagnostic_kind() {
 }
 
 #[test]
-#[serial]
 fn emit_adapter_error_uses_global_logger_sink() {
+    let _serial = serial_guard();
     clear_global_sink();
     reset_dropped_events();
     let sink = Arc::new(Mutex::new(VecSink::new()));
@@ -42,8 +47,8 @@ fn emit_adapter_error_uses_global_logger_sink() {
 }
 
 #[test]
-#[serial]
 fn emit_diagnostic_set_projects_graph_losses() {
+    let _serial = serial_guard();
     clear_global_sink();
     reset_dropped_events();
     let sink = Arc::new(Mutex::new(VecSink::new()));

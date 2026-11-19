@@ -4,7 +4,12 @@ use boost_harness::log::{
     DiagnosticPayload, EventKind, Field, FieldValue, Filter, Level, LogEvent, LogSink, MessagePayload, VecSink, clear_global_sink,
     current_span_id, dropped_events, enter, event, reset_dropped_events, set_global_filter, set_global_sink, span, with_scope,
 };
-use serial_test::serial;
+/// 同一测试二进制内串行化触碰进程全局状态的用例，替代已移除的 `serial_test`。
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
+    SERIAL.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 struct SharedSink(Arc<Mutex<VecSink>>);
 
@@ -15,8 +20,8 @@ impl LogSink for SharedSink {
 }
 
 #[test]
-#[serial]
 fn event_macro_emits_structured_log() {
+    let _serial = serial_guard();
     clear_global_sink();
     reset_dropped_events();
     let sink = Arc::new(Mutex::new(VecSink::new()));
@@ -34,8 +39,8 @@ fn event_macro_emits_structured_log() {
 }
 
 #[test]
-#[serial]
 fn global_emit_applies_scope_fields() {
+    let _serial = serial_guard();
     clear_global_sink();
     reset_dropped_events();
     let sink = Arc::new(Mutex::new(VecSink::new()));
@@ -65,8 +70,8 @@ fn filter_drops_low_priority_events() {
 }
 
 #[test]
-#[serial]
 fn emit_without_sink_is_silent_and_counts_drop() {
+    let _serial = serial_guard();
     clear_global_sink();
     reset_dropped_events();
     set_global_filter(Filter::new(Level::Trace));
@@ -77,8 +82,8 @@ fn emit_without_sink_is_silent_and_counts_drop() {
 }
 
 #[test]
-#[serial]
 fn filtered_emit_increments_drop_counter() {
+    let _serial = serial_guard();
     clear_global_sink();
     reset_dropped_events();
     let sink = Arc::new(Mutex::new(VecSink::new()));
@@ -119,8 +124,8 @@ impl LogSink for ReentrantSink {
 }
 
 #[test]
-#[serial]
 fn sink_emit_does_not_hold_global_registration_lock() {
+    let _serial = serial_guard();
     clear_global_sink();
     reset_dropped_events();
     set_global_sink(Box::new(ReentrantSink));
