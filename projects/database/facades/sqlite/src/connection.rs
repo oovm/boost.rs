@@ -941,6 +941,44 @@ mod tests {
         fs::remove_dir_all(path.parent().expect("parent directory")).expect("cleanup");
     }
 
+    /// 最外层 `RELEASE`(`SAVEPOINT` 自开的事务)是发布边界:释放成功
+    /// 才落盘;`BEGIN` 事务内释放中间 savepoint 不落盘;`ROLLBACK TO`
+    /// 丢弃的行不随随后的 `RELEASE` 发布。
+    #[test]
+    fn savepoint_release_publishes_only_at_the_outermost_boundary() {
+        let path = temp_path("release");
+        let mut connection =
+            Connection::open(ConnectionOptions { filename: Some(path.clone()), ..Default::default() }).expect("file connection");
+        connection.execute("CREATE TABLE t (a INTEGER)", &[]).expect("create publishes");
+
+        // `BEGIN` 之外的 savepoint 自开事务,释放最外层即提交并发布。
+        connection.execute("SAVEPOINT sp", &[]).expect("savepoint opens a transaction");
+        connection.execute("INSERT INTO t VALUES (1)", &[]).expect("insert defers");
+        assert!(connection.in_transaction());
+        assert!(rows_on_disk(&path, "SELECT a FROM t").is_empty(), "the savepoint scope must not reach the file");
+        connection.execute("RELEASE sp", &[]).expect("outermost release commits");
+        assert!(!connection.in_transaction());
+        assert_eq!(rows_on_disk(&path, "SELECT a FROM t"), vec![vec![Cell::Integer(1)]]);
+
+        // `BEGIN` 事务内释放内层 savepoint 仍保持事务打开,发布继续推迟到 `COMMIT`。
+        connection.execute("BEGIN", &[]).expect("transaction opens");
+        connection.execute("SAVEPOINT inner", &[]).expect("inner savepoint opens");
+        connection.execute("INSERT INTO t VALUES (2)", &[]).expect("insert defers");
+        connection.execute("RELEASE inner", &[]).expect("inner release keeps the transaction");
+        assert!(connection.in_transaction());
+        assert_eq!(rows_on_disk(&path, "SELECT a FROM t"), vec![vec![Cell::Integer(1)]], "an inner release must not publish");
+        connection.execute("COMMIT", &[]).expect("commit publishes");
+        assert_eq!(rows_on_disk(&path, "SELECT a FROM t"), vec![vec![Cell::Integer(1)], vec![Cell::Integer(2)]]);
+
+        // `ROLLBACK TO` 丢弃的行不随随后释放最外层 savepoint 发布。
+        connection.execute("SAVEPOINT drop", &[]).expect("savepoint opens");
+        connection.execute("INSERT INTO t VALUES (3)", &[]).expect("row defers");
+        connection.execute("ROLLBACK TO drop", &[]).expect("rollback to savepoint");
+        connection.execute("RELEASE drop", &[]).expect("release the emptied savepoint");
+        assert_eq!(rows_on_disk(&path, "SELECT a FROM t"), vec![vec![Cell::Integer(1)], vec![Cell::Integer(2)]], "the rolled-back row must not publish");
+        fs::remove_dir_all(path.parent().expect("parent directory")).expect("cleanup");
+    }
+
     #[test]
     fn backup_writes_the_current_image_to_another_file() {
         let directory = temp_path("backup");
