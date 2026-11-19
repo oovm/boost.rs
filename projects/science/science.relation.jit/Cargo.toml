@@ -3,7 +3,7 @@ name = "science-relation-jit"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-license = "MPL-2.0"
+license.workspace = true
 description = "Relation path/query JIT compile units"
 
 [dependencies]

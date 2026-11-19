@@ -3,7 +3,7 @@ name = "science-relation-vm"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-license = "MPL-2.0"
+license.workspace = true
 description = "Relation register interpreter: frames, fuel, safepoint, and execution lifecycle"
 
 [dependencies]

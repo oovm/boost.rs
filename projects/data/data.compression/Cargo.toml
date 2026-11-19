@@ -4,7 +4,7 @@ description = "通用压缩编解码：Snappy block 与 Zstandard 帧的独立�
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
-license = "MPL-2.0"
+license.workspace = true
 publish.workspace = true
 
 [dependencies]

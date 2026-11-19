@@ -4,7 +4,7 @@ description = "校验和算法（Adler-32、CRC-32 及其增量累加器），�
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
-license = "MPL-2.0"
+license.workspace = true
 publish.workspace = true
 
 [dependencies]

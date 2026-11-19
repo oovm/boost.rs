@@ -2,7 +2,7 @@
 name = "science"
 version.workspace = true
 edition.workspace = true
-license = "Apache-2.0"
+license.workspace = true
 authors.workspace = true
 description = "Science CAS public Rust facade — stable entry over science-cas"
 publish = false

@@ -3,7 +3,7 @@ name = "science-relation-graph"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-license = "MPL-2.0"
+license.workspace = true
 description = "Relation semantics on science-graph (hash-cons, judgment edges)"
 
 [dependencies]

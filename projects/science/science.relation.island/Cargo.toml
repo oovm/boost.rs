@@ -3,7 +3,7 @@ name = "science-relation-island"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-license = "MPL-2.0"
+license.workspace = true
 description = "Relation island registry and staging handles"
 
 [dependencies]

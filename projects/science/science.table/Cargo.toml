@@ -2,7 +2,7 @@
 name = "science-table"
 version.workspace = true
 edition.workspace = true
-license = "Apache-2.0"
+license.workspace = true
 authors.workspace = true
 description = "Typed columnar tables and lazy query contracts for Science"
 publish = false

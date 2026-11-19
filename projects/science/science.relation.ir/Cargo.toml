@@ -3,7 +3,7 @@ name = "science-relation-ir"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-license = "MPL-2.0"
+license.workspace = true
 description = "Typed relation plans, bytecode format, and structural validation"
 
 [dependencies]

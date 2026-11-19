@@ -2,7 +2,7 @@
 name = "science-numeric"
 version.workspace = true
 edition.workspace = true
-license = "Apache-2.0"
+license.workspace = true
 authors.workspace = true
 description = "Science numeric tower — values, domains, precision, promotion, certificates"
 publish = false

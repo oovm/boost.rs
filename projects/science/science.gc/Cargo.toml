@@ -2,7 +2,7 @@
 name = "science-gc"
 version.workspace = true
 edition.workspace = true
-license = "Apache-2.0"
+license.workspace = true
 authors.workspace = true
 description = "Science CAS runtime GC heap — segmented arena, tracing roots, scratch, GcMode"
 publish = false

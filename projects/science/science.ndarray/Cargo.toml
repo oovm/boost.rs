@@ -2,7 +2,7 @@
 name = "science-ndarray"
 version.workspace = true
 edition.workspace = true
-license = "Apache-2.0"
+license.workspace = true
 authors.workspace = true
 description = "CAS arrays and out-of-core storage for Science"
 publish = false

@@ -2,7 +2,7 @@
 name = "science-ir"
 version.workspace = true
 edition.workspace = true
-license = "Apache-2.0"
+license.workspace = true
 authors.workspace = true
 description = "science Core CAS IR — TermStore, nodes, builder, verifier"
 publish = false

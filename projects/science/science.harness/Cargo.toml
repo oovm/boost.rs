@@ -2,7 +2,7 @@
 name = "science-harness"
 version.workspace = true
 edition.workspace = true
-license = "Apache-2.0"
+license.workspace = true
 authors.workspace = true
 description = "Science neutral test helpers — builders, asserts, and lib contract checks"
 publish = false

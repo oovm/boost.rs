@@ -3,7 +3,7 @@ name = "science-relation-compile"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-license = "MPL-2.0"
+license.workspace = true
 description = "Parse and lower .metis sources (Metis AST)"
 
 [dependencies]
