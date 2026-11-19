@@ -19,6 +19,7 @@
 pub mod bench;
 pub mod compare;
 pub mod corpus;
+pub mod flame;
 pub mod fuzz;
 pub mod gate;
 pub mod observe;
@@ -37,6 +38,7 @@ pub use corpus::{
     Baseline, BaselineIdentity, BaselineProblem, BaselineVerdict, CorpusSpec, DifferenceObservation, Digest, KnownDifference, check_baseline,
     check_identity,
 };
+pub use flame::{FlameOptions, FlameOrientation, render as render_flame};
 pub use fuzz::{
     FuzzInput, FuzzPlan, Grammar, Rule, ShrinkMove, ShrinkMoveKind, ShrinkSession, SlotPool, SplitMix64, Symbol, TraceEntry, generate, render,
     shrink, shrink_next, shrink_report, shrink_start,
@@ -76,6 +78,9 @@ pub enum HarnessError {
     /// fuzz 生成、重放或语法校验失败。
     #[error("fuzz: {0}")]
     Fuzz(String),
+    /// profile 采样或火焰图输入不合法。
+    #[error("profile: {0}")]
+    Profile(String),
     /// 图表渲染失败（feature `charts`）。
     #[cfg(feature = "charts")]
     #[error("chart: {0}")]

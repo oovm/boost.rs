@@ -41,6 +41,26 @@ pub struct ProfileRow {
     pub hits: u64,
 }
 
+impl ProfileReport {
+    /// 从统计行重建 folded stacks：只保留叶子路径，权重取含子耗时。
+    ///
+    /// 报告本身是序列化证据；重建 folded 让同一份证据在不重新采样的情况下
+    /// 也能出图，且输出与 [`Profiler::folded`] 的排序一致（路径升序）。
+    pub fn folded(&self) -> String {
+        let mut leaves: Vec<&ProfileRow> = self
+            .rows
+            .iter()
+            .filter(|row| row.total_ns > 0)
+            .filter(|row| {
+                let prefix = format!("{};", row.path);
+                !self.rows.iter().any(|other| other.path.starts_with(&prefix))
+            })
+            .collect();
+        leaves.sort_by(|left, right| left.path.cmp(&right.path));
+        leaves.into_iter().map(|row| format!("{} {}\n", row.path, row.total_ns)).collect()
+    }
+}
+
 /// 分层计时器，可跨线程共享。
 ///
 /// 所有 span 共享一棵按名字分层的树；同一路径在多线程上并发进入时合并到
@@ -135,6 +155,16 @@ impl Profiler {
         let mut output = String::new();
         collect_folded(&state.root, &mut Vec::new(), &mut output);
         output
+    }
+
+    /// 把当前样本渲染成火焰图 SVG（根在底部）。
+    pub fn flamegraph(&self, options: &crate::FlameOptions) -> crate::Result<String> {
+        crate::flame::render(&self.folded(), crate::FlameOrientation::Flame, options)
+    }
+
+    /// 把当前样本渲染成深渊图/冰柱图 SVG（根在顶部）。
+    pub fn icicle(&self, options: &crate::FlameOptions) -> crate::Result<String> {
+        crate::flame::render(&self.folded(), crate::FlameOrientation::Icicle, options)
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
@@ -282,5 +312,19 @@ mod tests {
             assert!(profiler.rows().is_empty(), "span 未结束前不产生行");
         }
         assert_eq!(profiler.rows().len(), 1);
+    }
+
+    #[test]
+    fn profiler_renders_flame_and_icicle_svg() {
+        let profiler = Profiler::new();
+        profiler.span("outer", || {
+            profiler.span("inner", || std::thread::sleep(std::time::Duration::from_millis(1)));
+        });
+        let flame = profiler.flamegraph(&crate::FlameOptions::default()).expect("flame svg");
+        let icicle = profiler.icicle(&crate::FlameOptions::default()).expect("icicle svg");
+        assert!(flame.contains("flame-frame") && flame.contains("outer") && flame.contains("inner"));
+        assert!(icicle.contains("flame-frame"));
+        assert_ne!(flame, icicle);
+        assert_eq!(profiler.report().folded(), profiler.folded(), "报告重建的 folded 与直接输出一致");
     }
 }
