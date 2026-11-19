@@ -470,6 +470,14 @@ impl ResponseBody {
         Self { reader, framing, limit, metadata_remaining: max_header_bytes, consumed: 0, done: false }
     }
 
+    /// 返回一个可从其他线程强制关闭连接的句柄。
+    ///
+    /// 读取线程可能正阻塞在 `read` 上，仅在持有者一侧丢弃正文无法立刻唤醒它；
+    /// 跨线程取消（例如客户端断开）应先调用 [`CancelHandle::cancel`]。
+    pub fn cancel_handle(&self) -> Result<CancelHandle, NetError> {
+        self.reader.get_ref().canceller().map(CancelHandle).map_err(NetError::Body)
+    }
+
     /// 读取下一段正文；`Ok(0)` 表示正文已经完整结束。
     pub fn read(&mut self, buffer: &mut [u8]) -> Result<usize, NetError> {
         self.read_framed(buffer)
@@ -592,6 +600,19 @@ impl Read for ResponseBody {
             NetError::Body(error) => error,
             other => io::Error::other(other),
         })
+    }
+}
+
+/// 从其他线程取消流式响应的句柄。
+///
+/// 调用 [`Self::cancel`] 会关闭底层连接：读取线程立即得到错误，不必等空闲超时。
+#[derive(Debug)]
+pub struct CancelHandle(connection::CancelHandle);
+
+impl CancelHandle {
+    /// 关闭连接；重复调用无副作用。
+    pub fn cancel(&self) {
+        self.0.cancel();
     }
 }
 

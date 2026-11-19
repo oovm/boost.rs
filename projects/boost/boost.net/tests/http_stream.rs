@@ -133,6 +133,23 @@ fn idle_body_reads_time_out() {
 }
 
 #[test]
+fn cancel_handle_unblocks_a_pending_read() {
+    let (url, _observed) = serve("HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\n", &[], true);
+    let mut response = HttpTransport::new().send_stream(&Request::new(Method::Get, url)).unwrap();
+    let cancel = response.body.cancel_handle().unwrap();
+
+    let reader = thread::spawn(move || {
+        let mut buffer = [0u8; 4];
+        response.body.read(&mut buffer).is_err()
+    });
+    thread::sleep(Duration::from_millis(100));
+    cancel.cancel();
+
+    // 没有 cancel 时这里要等满 300s 的空闲超时。
+    assert!(reader.join().unwrap());
+}
+
+#[test]
 fn follows_redirects_before_streaming() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();

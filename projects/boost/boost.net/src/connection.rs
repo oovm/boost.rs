@@ -40,6 +40,11 @@ impl DeadlineSocket {
         self.timeout = SocketTimeout::Idle(timeout);
     }
 
+    /// 克隆一个可跨线程关闭该连接的句柄。
+    pub(crate) fn canceller(&self) -> io::Result<CancelHandle> {
+        Ok(CancelHandle { stream: self.stream.try_clone()? })
+    }
+
     fn apply(&self) -> io::Result<Option<Duration>> {
         match self.timeout {
             SocketTimeout::Deadline(deadline) => deadline
@@ -154,6 +159,29 @@ impl Connection<DeadlineSocket> {
             #[cfg(feature = "tls")]
             Self::Tls(stream) => stream.sock.use_idle(timeout),
         }
+    }
+
+    /// 返回可跨线程取消的句柄。
+    pub(crate) fn canceller(&self) -> io::Result<CancelHandle> {
+        match self {
+            Self::Tcp(socket) => socket.canceller(),
+            #[cfg(feature = "tls")]
+            Self::Tls(stream) => stream.sock.canceller(),
+        }
+    }
+}
+
+/// 从任意线程关闭一条流式连接。
+///
+/// 阻塞在 `read` 上的线程会立刻收到错误而退出，不必等空闲超时。
+#[derive(Debug)]
+pub(crate) struct CancelHandle {
+    stream: TcpStream,
+}
+
+impl CancelHandle {
+    pub(crate) fn cancel(&self) {
+        let _ = self.stream.shutdown(std::net::Shutdown::Both);
     }
 }
 
