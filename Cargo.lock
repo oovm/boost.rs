@@ -904,6 +904,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-binary-tar"
+version = "0.1.0"
+dependencies = [
+ "boost-source 0.1.0",
+ "data-binary-core",
+ "data-compression",
+]
+
+[[package]]
 name = "data-binary-zip"
 version = "0.1.0"
 dependencies = [
