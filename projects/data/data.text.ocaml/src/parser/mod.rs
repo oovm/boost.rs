@@ -7,7 +7,7 @@ use crate::{
     parser::element_type::OCamlElementType,
 };
 use data_text_core::{
-    GreenNode, OakError,
+    GreenNode, TextError,
     parser::{Associativity, ParseCache, ParseOutput, Parser, ParserState, Pratt, PrattParser, binary, parse_with_lexer, unary},
     source::{Source, TextEdit},
 };
@@ -28,7 +28,7 @@ impl<'config> OCamlParser<'config> {
     }
 
     /// Parses a top-level item.
-    fn parse_item<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), OakError> {
+    fn parse_item<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), TextError> {
         let kind = state.peek_kind();
         match kind {
             Some(OCamlTokenType::Let) => self.parse_let_binding(state),
@@ -47,7 +47,7 @@ impl<'config> OCamlParser<'config> {
         }
     }
 
-    fn parse_expression_item<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), OakError> {
+    fn parse_expression_item<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         PrattParser::parse(state, 0, self);
         if state.at(OCamlTokenType::Semicolon) {
@@ -61,7 +61,7 @@ impl<'config> OCamlParser<'config> {
     }
 
     /// Parses a let binding.
-    fn parse_let_binding<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), OakError> {
+    fn parse_let_binding<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.bump(); // Let
         if state.at(OCamlTokenType::Rec) {
@@ -80,7 +80,7 @@ impl<'config> OCamlParser<'config> {
     }
 
     /// Parses a module definition.
-    fn parse_module_def<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), OakError> {
+    fn parse_module_def<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.bump(); // Module
         while state.not_at_end() && !state.at(OCamlTokenType::Equal) && !state.at(OCamlTokenType::Semicolon) {
@@ -97,7 +97,7 @@ impl<'config> OCamlParser<'config> {
     }
 
     /// Parses a type definition.
-    fn parse_type_definition<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), OakError> {
+    fn parse_type_definition<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.bump(); // Type
         while state.not_at_end() && !state.at(OCamlTokenType::Semicolon) {

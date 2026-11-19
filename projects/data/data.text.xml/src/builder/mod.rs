@@ -5,7 +5,7 @@ use crate::{
 };
 use core::range::Range;
 use data_text_core::{
-    Builder, BuilderCache, GreenNode, GreenTree, OakDiagnostics, OakError, Parser, Source,
+    Builder, BuilderCache, GreenNode, GreenTree, TextDiagnostics, TextError, Parser, Source,
     builder::BuildOutput,
     source::{SourceText, TextEdit},
 };
@@ -30,7 +30,7 @@ impl XmlBuilder {
         Self
     }
 
-    fn build_root<'a>(&self, green_tree: &GreenNode<'a, XmlLanguage>, source: &SourceText) -> Result<XmlRoot, OakError> {
+    fn build_root<'a>(&self, green_tree: &GreenNode<'a, XmlLanguage>, source: &SourceText) -> Result<XmlRoot, TextError> {
         let mut children = Vec::new();
         let mut current_offset = 0;
 
@@ -59,7 +59,7 @@ impl XmlBuilder {
         Ok(XmlRoot { value })
     }
 
-    fn build_element<'a>(&self, node: &GreenNode<'a, XmlLanguage>, offset: usize, source: &SourceText) -> Result<XmlElement, OakError> {
+    fn build_element<'a>(&self, node: &GreenNode<'a, XmlLanguage>, offset: usize, source: &SourceText) -> Result<XmlElement, TextError> {
         let mut name = String::new();
         let mut attributes = Vec::new();
         let mut children = Vec::new();
@@ -112,7 +112,7 @@ impl XmlBuilder {
         Ok(XmlElement { name, attributes, children, span: Range { start: offset, end: offset + node.byte_length as usize } })
     }
 
-    fn build_attribute<'a>(&self, node: &GreenNode<'a, XmlLanguage>, offset: usize, source: &SourceText) -> Result<XmlAttribute, OakError> {
+    fn build_attribute<'a>(&self, node: &GreenNode<'a, XmlLanguage>, offset: usize, source: &SourceText) -> Result<XmlAttribute, TextError> {
         let mut name = String::new();
         let mut value = String::new();
         let mut current_offset = offset;
@@ -162,6 +162,6 @@ impl Builder<XmlLanguage> for XmlBuilder {
 
         let result = parse_output.result.and_then(|green_tree| self.build_root(green_tree, &source));
 
-        OakDiagnostics { result, diagnostics }
+        TextDiagnostics { result, diagnostics }
     }
 }

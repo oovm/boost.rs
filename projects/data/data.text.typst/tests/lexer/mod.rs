@@ -1,10 +1,10 @@
-use data_text_core::OakError;
+use data_text_core::TextError;
 use language_testing::lexing::LexerTester;
 use data_text_typst::{language::TypstLanguage, lexer::TypstLexer};
 use std::{path::Path, time::Duration};
 
 #[test]
-fn test_typst_lexer() -> Result<(), OakError> {
+fn test_typst_lexer() -> Result<(), TextError> {
     let language = TypstLanguage::default();
     let lexer = TypstLexer::new(&language);
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));

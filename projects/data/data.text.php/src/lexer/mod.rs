@@ -2,7 +2,7 @@
 /// Token type definitions for the PHP lexer.
 pub mod token_type;
 use crate::language::PhpLanguage;
-use data_text_core::{Lexer, LexerCache, LexerState, OakError, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextError, lexer::LexOutput, source::Source};
 pub use token_type::{PhpToken, PhpTokenType};
 
 type State<'s, S> = LexerState<'s, S, PhpLanguage>;
@@ -32,7 +32,7 @@ impl<'config> PhpLexer<'config> {
         Self { config }
     }
 
-    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), OakError> {
+    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             if self.skip_whitespace(state) {
                 continue;

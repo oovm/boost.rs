@@ -1,4 +1,4 @@
-use boost_harness::{DiagnosticCode, DiagnosticSeverity, Message};
+use boost_harness::diagnostic::{DiagnosticCode, DiagnosticSeverity, Message};
 
 /// XPath subset parse failure.
 #[derive(Debug, Clone, PartialEq, Eq)]

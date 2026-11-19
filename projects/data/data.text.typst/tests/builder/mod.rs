@@ -1,4 +1,4 @@
-use data_text_core::{Builder, Lexer, OakError, Source, parser::ParseSession, source::SourceText};
+use data_text_core::{Builder, Lexer, TextError, Source, parser::ParseSession, source::SourceText};
 use language_testing::{building::BuilderTester, source_from_path};
 use data_text_typst::{
     TypstBuilder, TypstLanguage,
@@ -31,7 +31,7 @@ fn collect_text(items: &[TypstItem]) -> String {
 }
 
 #[test]
-fn test_typst_builder_fixture() -> Result<(), OakError> {
+fn test_typst_builder_fixture() -> Result<(), TextError> {
     let language = TypstLanguage::default();
     let builder = TypstBuilder::new(&language);
     let tester = BuilderTester::new(fixture_dir()).with_extension("typ").with_timeout(Duration::from_secs(5));
@@ -39,7 +39,7 @@ fn test_typst_builder_fixture() -> Result<(), OakError> {
 }
 
 #[test]
-fn test_typst_markup_line_boundaries() -> Result<(), OakError> {
+fn test_typst_markup_line_boundaries() -> Result<(), TextError> {
     let language = TypstLanguage::default();
     let builder = TypstBuilder::new(&language);
     let source = source_from_path(&fixture_dir().join("basic.typ"))?;

@@ -514,7 +514,7 @@ impl<'config> Lexer<CppLanguage> for CppLexer<'config> {
 
 impl<'config> CppLexer<'config> {
     /// Main lexer loop that tokenizes the source text.
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         while state.not_at_end() {
             // Try various lexing rules
             if self.skip_whitespace(state) {

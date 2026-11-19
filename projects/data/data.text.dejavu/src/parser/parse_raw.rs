@@ -1,11 +1,11 @@
 use crate::{lexer::token_type::DejavuTokenType, parser::element_type::DejavuElementType::*};
-use data_text_core::{GreenNode, OakError, source::Source};
+use data_text_core::{GreenNode, TextError, source::Source};
 
 use super::State;
 
 impl<'config> super::DejavuParser<'config> {
     /// Parse a raw block: `<% raw %>原始文本<% end raw %>`
-    pub(crate) fn parse_raw<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, OakError> {
+    pub(crate) fn parse_raw<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         // Consume the opening `<%`
@@ -17,7 +17,7 @@ impl<'config> super::DejavuParser<'config> {
             state.expect(DejavuTokenType::CodeStart)?;
         }
         else {
-            return Err(OakError::custom_error("Expected TemplateControlStart or CodeStart"));
+            return Err(TextError::custom_error("Expected TemplateControlStart or CodeStart"));
         }
         self.skip_trivia(state);
 
@@ -33,7 +33,7 @@ impl<'config> super::DejavuParser<'config> {
             state.expect(DejavuTokenType::CodeEnd)?;
         }
         else {
-            return Err(OakError::custom_error("Expected TemplateControlEnd or CodeEnd"));
+            return Err(TextError::custom_error("Expected TemplateControlEnd or CodeEnd"));
         }
 
         // Parse the raw content until we find the closing tag
@@ -127,7 +127,7 @@ impl<'config> super::DejavuParser<'config> {
     }
 
     /// Parse a block: `<% block "block_name" %>内容<% end block %>`
-    pub(crate) fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, OakError> {
+    pub(crate) fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         // Consume the opening `<%`
@@ -139,7 +139,7 @@ impl<'config> super::DejavuParser<'config> {
             state.expect(DejavuTokenType::CodeStart)?;
         }
         else {
-            return Err(OakError::custom_error("Expected TemplateControlStart or CodeStart"));
+            return Err(TextError::custom_error("Expected TemplateControlStart or CodeStart"));
         }
         self.skip_trivia(state);
 
@@ -154,12 +154,12 @@ impl<'config> super::DejavuParser<'config> {
     }
 
     /// Parse block content after the `block` keyword
-    pub(crate) fn parse_block_content<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, OakError> {
+    pub(crate) fn parse_block_content<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         // Consume the block name (string literal)
         if !state.at(DejavuTokenType::StringLiteral) {
-            return Err(OakError::custom_error(format!("Expected string literal for block name, found {:?}", state.current().map(|t| t.kind))));
+            return Err(TextError::custom_error(format!("Expected string literal for block name, found {:?}", state.current().map(|t| t.kind))));
         }
         state.bump();
         self.skip_trivia(state);
@@ -172,7 +172,7 @@ impl<'config> super::DejavuParser<'config> {
             state.expect(DejavuTokenType::CodeEnd)?;
         }
         else {
-            return Err(OakError::custom_error("Expected TemplateControlEnd or CodeEnd"));
+            return Err(TextError::custom_error("Expected TemplateControlEnd or CodeEnd"));
         }
 
         // Parse the block content until we find the closing tag
@@ -268,11 +268,11 @@ impl<'config> super::DejavuParser<'config> {
 
 /// Extension trait for DejavuParser
 pub(crate) trait DejavuParserExt {
-    fn parse_template_control<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, OakError>;
+    fn parse_template_control<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError>;
 }
 
 impl<'config> DejavuParserExt for super::DejavuParser<'config> {
-    fn parse_template_control<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, OakError> {
+    fn parse_template_control<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         // Consume the opening `<%` or CodeStart
@@ -284,7 +284,7 @@ impl<'config> DejavuParserExt for super::DejavuParser<'config> {
             state.expect(DejavuTokenType::CodeStart)?;
         }
         else {
-            return Err(OakError::custom_error("Expected TemplateControlStart or CodeStart"));
+            return Err(TextError::custom_error("Expected TemplateControlStart or CodeStart"));
         }
         self.skip_trivia(state);
 
@@ -315,7 +315,7 @@ impl<'config> DejavuParserExt for super::DejavuParser<'config> {
             }
         }
         else {
-            return Err(OakError::custom_error("Unexpected end of file in template control directive"));
+            return Err(TextError::custom_error("Unexpected end of file in template control directive"));
         };
 
         // Consume the closing `%>` or CodeEnd if not already consumed

@@ -7,7 +7,7 @@ use crate::{
     parser::element_type::SassElementType,
 };
 use data_text_core::{
-    errors::OakError,
+    errors::TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -25,7 +25,7 @@ impl<'config> SassParser<'config> {
         Self { config }
     }
 
-    fn parse_node<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_node<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         match state.peek_kind() {
             Some(SassTokenType::Variable) => self.parse_variable_declaration(state),
             Some(SassTokenType::Identifier) | Some(SassTokenType::Dot) | Some(SassTokenType::Hash) => self.parse_rule(state),
@@ -42,7 +42,7 @@ impl<'config> SassParser<'config> {
         }
     }
 
-    fn parse_variable_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_variable_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(SassTokenType::Variable)?;
         state.expect(SassTokenType::Colon)?;
@@ -54,7 +54,7 @@ impl<'config> SassParser<'config> {
         Ok(())
     }
 
-    fn parse_rule<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_rule<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         // Parse selector
         while state.not_at_end() && !state.at(SassTokenType::LeftBrace) {

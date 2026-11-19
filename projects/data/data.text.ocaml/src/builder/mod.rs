@@ -1,5 +1,5 @@
 use crate::{ast::OCamlRoot, language::OCamlLanguage, parser::OCamlParser};
-use data_text_core::{Builder, BuilderCache, Lexer, OakDiagnostics, Parser, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, Lexer, TextDiagnostics, Parser, TextEdit, source::Source};
 
 /// A builder for OCaml.
 #[derive(Clone)]
@@ -16,7 +16,7 @@ impl<'config> OCamlBuilder<'config> {
 }
 
 impl<'config> Builder<OCamlLanguage> for OCamlBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<OCamlLanguage>) -> OakDiagnostics<OCamlRoot> {
+    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<OCamlLanguage>) -> TextDiagnostics<OCamlRoot> {
         let parser = OCamlParser::new(self.config);
         let lexer = crate::lexer::OCamlLexer::new(self.config);
 
@@ -27,9 +27,9 @@ impl<'config> Builder<OCamlLanguage> for OCamlBuilder<'config> {
         match parse_result.result {
             Ok(_green_tree) => {
                 let ast_root = OCamlRoot { items: vec![] };
-                OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics }
+                TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }

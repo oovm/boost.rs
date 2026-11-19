@@ -5,7 +5,7 @@ pub use element_type::CElementType;
 
 use crate::{language::CLanguage, lexer::CTokenType};
 use data_text_core::{
-    GreenNode, OakError, Source,
+    GreenNode, TextError, Source,
     parser::{Associativity, ParseCache, ParseOutput, Parser, ParserState, Pratt, PrattParser, binary, parse_with_lexer},
     source::TextEdit,
 };
@@ -25,7 +25,7 @@ impl<'config> CParser<'config> {
     }
 
     /// Parses a C statement.
-    pub(crate) fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::CTokenType::*;
         self.skip_trivia(state);
         match state.peek_kind() {
@@ -109,7 +109,7 @@ impl<'config> CParser<'config> {
     }
 
     /// Parses a C declaration or function definition.
-    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::CTokenType::*;
         let cp = state.checkpoint();
 
@@ -164,7 +164,7 @@ impl<'config> CParser<'config> {
     }
 
     /// Parses declaration specifiers (storage class, type specifiers, type qualifiers).
-    fn parse_declaration_specifiers<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_declaration_specifiers<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::CTokenType::*;
 
         loop {
@@ -225,7 +225,7 @@ impl<'config> CParser<'config> {
     }
 
     /// Parses a declarator (variable name, pointer, array, function).
-    fn parse_declarator<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_declarator<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::CTokenType::*;
 
         // Parse pointers
@@ -244,7 +244,7 @@ impl<'config> CParser<'config> {
     }
 
     /// Parses a direct declarator (identifier, array, function).
-    fn parse_direct_declarator<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_direct_declarator<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::CTokenType::*;
 
         if state.at(Identifier) {
@@ -338,7 +338,7 @@ impl<'config> CParser<'config> {
     }
 
     /// Parses struct/union body.
-    fn parse_struct_union_body<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_struct_union_body<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::CTokenType::*;
 
         if state.at(LeftBrace) {
@@ -371,7 +371,7 @@ impl<'config> CParser<'config> {
     }
 
     /// Parses enum body.
-    fn parse_enum_body<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_enum_body<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::CTokenType::*;
 
         if state.at(LeftBrace) {
@@ -412,7 +412,7 @@ impl<'config> CParser<'config> {
         Ok(())
     }
 
-    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // if
         state.expect(CTokenType::LeftParen).ok();
@@ -427,7 +427,7 @@ impl<'config> CParser<'config> {
         Ok(())
     }
 
-    fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // while
         state.expect(CTokenType::LeftParen).ok();
@@ -439,7 +439,7 @@ impl<'config> CParser<'config> {
         Ok(())
     }
 
-    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // for
         state.expect(CTokenType::LeftParen).ok();
@@ -470,7 +470,7 @@ impl<'config> CParser<'config> {
         Ok(())
     }
 
-    fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // return
         if !state.at(CTokenType::Semicolon) {
@@ -482,7 +482,7 @@ impl<'config> CParser<'config> {
         Ok(())
     }
 
-    fn parse_compound_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_compound_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         if !state.eat(CTokenType::LeftBrace) {
             // Skip until right brace or end of file

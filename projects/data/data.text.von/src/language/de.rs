@@ -2,7 +2,7 @@ use serde::de::{self, Deserializer, SeqAccess, Visitor};
 use std::fmt;
 
 use crate::language::value::{VonValue, from_ast};
-use data_text_core::OakError;
+use data_text_core::TextError;
 
 /// VON 反序列化实现
 pub fn deserialize<'de, D>(deserializer: D) -> Result<VonValue, D::Error>
@@ -192,12 +192,12 @@ impl<'de> Visitor<'de> for VonDeserializer {
 }
 
 /// Deserializes a VON string into a Rust type.
-pub fn from_str<'de, T>(von: &'de str) -> Result<T, OakError>
+pub fn from_str<'de, T>(von: &'de str) -> Result<T, TextError>
 where
     T: serde::Deserialize<'de>,
 {
     // 首先解析 VON 字符串到 AST VonValue
-    let ast_value = crate::parse(von).map_err(|e| OakError::custom_error(e))?;
+    let ast_value = crate::parse(von).map_err(|e| TextError::custom_error(e))?;
     // 然后转换为纯值 VonValue
     let von_value = from_ast(&ast_value);
     // 最后反序列化到 Rust 类型
@@ -215,7 +215,7 @@ impl VonValueDeserializer {
 }
 
 impl<'de> serde::de::Deserializer<'de> for VonValueDeserializer {
-    type Error = OakError;
+    type Error = TextError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
@@ -442,7 +442,7 @@ impl<'de> serde::de::Deserializer<'de> for VonValueDeserializer {
     where
         V: serde::de::Visitor<'de>,
     {
-        Err(OakError::custom_error("Enums are not supported"))
+        Err(TextError::custom_error("Enums are not supported"))
     }
 
     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -472,7 +472,7 @@ impl VonArrayAccess {
 }
 
 impl<'de> serde::de::SeqAccess<'de> for VonArrayAccess {
-    type Error = OakError;
+    type Error = TextError;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
     where
@@ -505,7 +505,7 @@ impl VonMapAccess {
 }
 
 impl<'de> serde::de::MapAccess<'de> for VonMapAccess {
-    type Error = OakError;
+    type Error = TextError;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where

@@ -7,7 +7,7 @@ use crate::{
     parser::element_type::ScssElementType,
 };
 use data_text_core::{
-    errors::OakError,
+    errors::TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -25,7 +25,7 @@ impl<'config> ScssParser<'config> {
         Self { config }
     }
 
-    fn parse_node<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_node<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         match state.peek_kind() {
             Some(ScssTokenType::Dollar) => self.parse_variable_declaration(state),
             Some(ScssTokenType::At) => self.parse_at_rule(state),
@@ -43,7 +43,7 @@ impl<'config> ScssParser<'config> {
         }
     }
 
-    fn parse_at_rule<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_at_rule<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(ScssTokenType::At)?;
 
@@ -83,7 +83,7 @@ impl<'config> ScssParser<'config> {
         }
     }
 
-    fn parse_mixin<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), OakError> {
+    fn parse_mixin<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), TextError> {
         state.expect(ScssTokenType::Identifier)?;
         if state.at(ScssTokenType::LeftParen) {
             self.parse_parameters(state)?;
@@ -93,7 +93,7 @@ impl<'config> ScssParser<'config> {
         Ok(())
     }
 
-    fn parse_include<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), OakError> {
+    fn parse_include<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), TextError> {
         state.expect(ScssTokenType::Identifier)?;
         if state.at(ScssTokenType::LeftParen) {
             self.parse_arguments(state)?;
@@ -108,7 +108,7 @@ impl<'config> ScssParser<'config> {
         Ok(())
     }
 
-    fn parse_function<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), OakError> {
+    fn parse_function<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), TextError> {
         state.expect(ScssTokenType::Identifier)?;
         self.parse_parameters(state)?;
         self.parse_block(state)?;
@@ -116,7 +116,7 @@ impl<'config> ScssParser<'config> {
         Ok(())
     }
 
-    fn parse_import<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), OakError> {
+    fn parse_import<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), TextError> {
         while state.not_at_end() && !state.at(ScssTokenType::Semicolon) {
             state.advance();
         }
@@ -125,7 +125,7 @@ impl<'config> ScssParser<'config> {
         Ok(())
     }
 
-    fn parse_if<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), OakError> {
+    fn parse_if<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), TextError> {
         while state.not_at_end() && !state.at(ScssTokenType::LeftBrace) {
             state.advance();
         }
@@ -135,7 +135,7 @@ impl<'config> ScssParser<'config> {
         Ok(())
     }
 
-    fn parse_for<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), OakError> {
+    fn parse_for<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), TextError> {
         while state.not_at_end() && !state.at(ScssTokenType::LeftBrace) {
             state.advance();
         }
@@ -144,7 +144,7 @@ impl<'config> ScssParser<'config> {
         Ok(())
     }
 
-    fn parse_each<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), OakError> {
+    fn parse_each<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), TextError> {
         while state.not_at_end() && !state.at(ScssTokenType::LeftBrace) {
             state.advance();
         }
@@ -153,7 +153,7 @@ impl<'config> ScssParser<'config> {
         Ok(())
     }
 
-    fn parse_while<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), OakError> {
+    fn parse_while<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), TextError> {
         while state.not_at_end() && !state.at(ScssTokenType::LeftBrace) {
             state.advance();
         }
@@ -162,7 +162,7 @@ impl<'config> ScssParser<'config> {
         Ok(())
     }
 
-    fn parse_parameters<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_parameters<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.expect(ScssTokenType::LeftParen)?;
         while state.not_at_end() && !state.at(ScssTokenType::RightParen) {
             state.advance();
@@ -171,7 +171,7 @@ impl<'config> ScssParser<'config> {
         Ok(())
     }
 
-    fn parse_arguments<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_arguments<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.expect(ScssTokenType::LeftParen)?;
         while state.not_at_end() && !state.at(ScssTokenType::RightParen) {
             state.advance();
@@ -180,7 +180,7 @@ impl<'config> ScssParser<'config> {
         Ok(())
     }
 
-    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(ScssTokenType::LeftBrace)?;
         while state.not_at_end() && !state.at(ScssTokenType::RightBrace) {
@@ -201,7 +201,7 @@ impl<'config> ScssParser<'config> {
         state.peek_kind_at(1) == Some(ScssTokenType::Colon)
     }
 
-    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         let prop_cp = state.checkpoint();
         state.expect(ScssTokenType::Identifier)?;
@@ -220,7 +220,7 @@ impl<'config> ScssParser<'config> {
         Ok(())
     }
 
-    fn parse_variable_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_variable_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(ScssTokenType::Dollar)?;
         state.expect(ScssTokenType::Identifier)?;
@@ -233,7 +233,7 @@ impl<'config> ScssParser<'config> {
         Ok(())
     }
 
-    fn parse_return<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), OakError> {
+    fn parse_return<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), TextError> {
         let val_cp = state.checkpoint();
         while state.not_at_end() && !state.at(ScssTokenType::Semicolon) {
             state.advance();
@@ -244,7 +244,7 @@ impl<'config> ScssParser<'config> {
         Ok(())
     }
 
-    fn parse_rule<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_rule<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         // Parse selector
         let sel_cp = state.checkpoint();

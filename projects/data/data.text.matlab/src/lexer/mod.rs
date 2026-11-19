@@ -34,7 +34,7 @@ impl<'config> MatlabLexer<'config> {
         Self { config }
     }
 
-    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), data_text_core::OakError> {
+    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), data_text_core::TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

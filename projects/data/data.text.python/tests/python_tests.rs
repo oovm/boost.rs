@@ -1,8 +1,8 @@
-use data_text_core::{Builder, OakError, parser::session::ParseSession, source::SourceText};
+use data_text_core::{Builder, TextError, parser::session::ParseSession, source::SourceText};
 use data_text_python::{PythonBuilder, PythonLanguage};
 
 #[test]
-fn test_python_parsing() -> Result<(), OakError> {
+fn test_python_parsing() -> Result<(), TextError> {
     let code = SourceText::new(
         "
 def hello(x):
@@ -21,7 +21,7 @@ def hello(x):
 
 #[ignore = "Python AST structure assertion is out of date"]
 #[test]
-fn test_python_ast_structure() -> Result<(), OakError> {
+fn test_python_ast_structure() -> Result<(), TextError> {
     let code = SourceText::new(
         "
 def add(a, b):

@@ -3,7 +3,7 @@ pub mod element_type;
 
 use crate::{SqlElementType, SqlLanguage};
 use data_text_core::{
-    GreenNode, OakError, Parser, ParserState, TextEdit, TokenType,
+    GreenNode, TextError, Parser, ParserState, TextEdit, TokenType,
     parser::{
         ParseCache, ParseOutput, parse_with_lexer,
         pratt::{Associativity, Pratt, PrattParser, binary, unary},
@@ -129,7 +129,7 @@ impl<'config> Pratt<SqlLanguage> for SqlParser<'config> {
                 // `DISTINCT` is only meaningful in the SELECT quantifier position,
                 // so any other occurrence is reported instead of parsed as a bare
                 // column reference.
-                state.errors.push(OakError::custom_error("`DISTINCT` is only allowed immediately after `SELECT`"));
+                state.errors.push(TextError::custom_error("`DISTINCT` is only allowed immediately after `SELECT`"));
                 state.bump();
                 state.finish_at(cp, SqlElementType::ErrorNode)
             }
@@ -157,7 +157,7 @@ impl<'config> Pratt<SqlLanguage> for SqlParser<'config> {
                 let inner_cp = state.checkpoint();
                 state.expect(LeftParen).ok();
                 if state.peek_kind() != Some(Select) {
-                    state.errors.push(OakError::custom_error("`EXISTS` requires a subquery"));
+                    state.errors.push(TextError::custom_error("`EXISTS` requires a subquery"));
                 }
                 else if let Err(error) = self.parse_select(state) {
                     state.errors.push(error);
@@ -266,7 +266,7 @@ impl<'config> Pratt<SqlLanguage> for SqlParser<'config> {
             // report it next to the offending token instead of failing later with
             // an unrelated "unsupported token in WHERE predicate" message.
             if state.peek_kind() == Some(Distinct) {
-                state.errors.push(OakError::custom_error("`IS DISTINCT FROM` is not supported"));
+                state.errors.push(TextError::custom_error("`IS DISTINCT FROM` is not supported"));
             }
             PrattParser::parse(state, 6, self);
             return Some(state.finish_at(cp, SqlElementType::Expression));
@@ -366,7 +366,7 @@ impl<'config> SqlParser<'config> {
         state.expect(LeftParen).ok();
 
         if state.peek_kind() == Some(RightParen) {
-            state.errors.push(OakError::custom_error("`OVER` requires `PARTITION BY`, `ORDER BY`, or a window frame"));
+            state.errors.push(TextError::custom_error("`OVER` requires `PARTITION BY`, `ORDER BY`, or a window frame"));
         }
         else {
             if at_word(state, "PARTITION") {
@@ -375,7 +375,7 @@ impl<'config> SqlParser<'config> {
             // A second `PARTITION BY` is not part of the syntax. Report it and
             // consume it so the later clauses still parse as their own nodes.
             if at_word(state, "PARTITION") {
-                state.errors.push(OakError::custom_error("Duplicate `PARTITION BY` in window specification"));
+                state.errors.push(TextError::custom_error("Duplicate `PARTITION BY` in window specification"));
                 self.parse_window_partition(state);
             }
             if state.at(Order) {
@@ -385,7 +385,7 @@ impl<'config> SqlParser<'config> {
                 self.parse_window_frame(state);
             }
             if state.peek_kind() != Some(RightParen) {
-                state.errors.push(OakError::custom_error("Unexpected token in window specification"));
+                state.errors.push(TextError::custom_error("Unexpected token in window specification"));
                 // Keep the tree covering the source so later statements keep
                 // their absolute offsets.
                 state.advance_until(RightParen);
@@ -418,7 +418,7 @@ impl<'config> SqlParser<'config> {
             }
             let item = PrattParser::parse(state, 0, self);
             if item.kind() != SqlElementType::Identifier {
-                state.errors.push(OakError::custom_error("`ORDER BY` in a window accepts only column references"));
+                state.errors.push(TextError::custom_error("`ORDER BY` in a window accepts only column references"));
             }
             if matches!(state.peek_kind(), Some(Asc | Desc)) {
                 state.bump();
@@ -445,7 +445,7 @@ impl<'config> SqlParser<'config> {
             }
             let item = PrattParser::parse(state, 0, self);
             if item.kind() != SqlElementType::Identifier {
-                state.errors.push(OakError::custom_error(format!("{clause} in a window accepts only column references")));
+                state.errors.push(TextError::custom_error(format!("{clause} in a window accepts only column references")));
             }
             count += 1;
             if !state.eat(crate::lexer::SqlTokenType::Comma) {
@@ -453,7 +453,7 @@ impl<'config> SqlParser<'config> {
             }
         }
         if count == 0 {
-            state.errors.push(OakError::custom_error(format!("{clause} requires at least one column")));
+            state.errors.push(TextError::custom_error(format!("{clause} requires at least one column")));
         }
     }
 
@@ -472,22 +472,22 @@ impl<'config> SqlParser<'config> {
             let end = self.parse_window_frame_bound(state);
             if let (Some(start), Some(end)) = (&start, &end) {
                 if matches!(start, WindowFrameBound::UnboundedFollowing) {
-                    state.errors.push(OakError::custom_error("`UNBOUNDED FOLLOWING` cannot start a window frame"));
+                    state.errors.push(TextError::custom_error("`UNBOUNDED FOLLOWING` cannot start a window frame"));
                 }
                 else if start.is_after(end) {
-                    state.errors.push(OakError::custom_error("A window frame cannot start after its end bound"));
+                    state.errors.push(TextError::custom_error("A window frame cannot start after its end bound"));
                 }
             }
         }
         else {
             if let Some(start) = self.parse_window_frame_bound(state) {
                 if matches!(start, WindowFrameBound::UnboundedFollowing) {
-                    state.errors.push(OakError::custom_error("`UNBOUNDED FOLLOWING` cannot start a window frame"));
+                    state.errors.push(TextError::custom_error("`UNBOUNDED FOLLOWING` cannot start a window frame"));
                 }
             }
         }
         if at_word(state, "EXCLUDE") {
-            state.errors.push(OakError::custom_error("`EXCLUDE` is not supported in a window frame"));
+            state.errors.push(TextError::custom_error("`EXCLUDE` is not supported in a window frame"));
             state.advance_until(RightParen);
         }
         state.finish_at(cp, SqlElementType::WindowFrame);
@@ -508,7 +508,7 @@ impl<'config> SqlParser<'config> {
             if eat_word(state, "FOLLOWING") {
                 return Some(WindowFrameBound::UnboundedFollowing);
             }
-            state.errors.push(OakError::custom_error("`UNBOUNDED` must be followed by `PRECEDING` or `FOLLOWING`"));
+            state.errors.push(TextError::custom_error("`UNBOUNDED` must be followed by `PRECEDING` or `FOLLOWING`"));
             return None;
         }
         if at_word(state, "CURRENT") {
@@ -523,7 +523,7 @@ impl<'config> SqlParser<'config> {
             state.bump();
             let Some(offset) = offset
             else {
-                state.errors.push(OakError::custom_error("A window frame offset must be a non-negative integer"));
+                state.errors.push(TextError::custom_error("A window frame offset must be a non-negative integer"));
                 return None;
             };
             if eat_word(state, "PRECEDING") {
@@ -532,14 +532,14 @@ impl<'config> SqlParser<'config> {
             if eat_word(state, "FOLLOWING") {
                 return Some(WindowFrameBound::Following(offset));
             }
-            state.errors.push(OakError::custom_error("A window frame offset must be followed by `PRECEDING` or `FOLLOWING`"));
+            state.errors.push(TextError::custom_error("A window frame offset must be followed by `PRECEDING` or `FOLLOWING`"));
             return None;
         }
-        state.errors.push(OakError::custom_error("Unsupported window frame bound"));
+        state.errors.push(TextError::custom_error("Unsupported window frame bound"));
         None
     }
 
-    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SqlTokenType::*;
         match state.peek_kind() {
             Some(Select) | Some(With) => self.parse_select(state)?,
@@ -556,7 +556,7 @@ impl<'config> SqlParser<'config> {
             Some(Set) => self.parse_set(state)?,
             _ => {
                 if state.peek_kind() == Some(Distinct) {
-                    state.errors.push(OakError::custom_error("`DISTINCT` is only allowed immediately after `SELECT`"));
+                    state.errors.push(TextError::custom_error("`DISTINCT` is only allowed immediately after `SELECT`"));
                 }
                 // Every skipped token is pushed into the error node, so the tree
                 // still covers the whole source and later statements keep their
@@ -573,7 +573,7 @@ impl<'config> SqlParser<'config> {
         Ok(())
     }
 
-    fn parse_set<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_set<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SqlTokenType::*;
         let cp = state.checkpoint();
         state.expect(Set).ok();
@@ -602,7 +602,7 @@ impl<'config> SqlParser<'config> {
         Ok(())
     }
 
-    fn parse_explain<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_explain<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SqlTokenType::*;
         let cp = state.checkpoint();
         state.expect(Explain).ok();
@@ -611,7 +611,7 @@ impl<'config> SqlParser<'config> {
         Ok(())
     }
 
-    fn parse_transaction<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_transaction<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SqlTokenType::*;
         let cp = state.checkpoint();
         match state.peek_kind() {
@@ -649,14 +649,14 @@ impl<'config> SqlParser<'config> {
             Some(Transaction) => {
                 state.bump();
             }
-            _ => return Err(OakError::custom_error("Expected BEGIN, COMMIT, ROLLBACK, SAVEPOINT, or RELEASE")),
+            _ => return Err(TextError::custom_error("Expected BEGIN, COMMIT, ROLLBACK, SAVEPOINT, or RELEASE")),
         }
         state.eat(Semicolon);
         state.finish_at(cp, SqlElementType::TransactionStatement);
         Ok(())
     }
 
-    fn parse_pragma<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_pragma<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SqlTokenType::*;
         let cp = state.checkpoint();
         state.expect(Pragma).ok();
@@ -670,7 +670,7 @@ impl<'config> SqlParser<'config> {
         Ok(())
     }
 
-    fn parse_show<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_show<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SqlTokenType::*;
         let cp = state.checkpoint();
         state.expect(Show).ok();
@@ -712,11 +712,11 @@ impl<'config> SqlParser<'config> {
         state.expect(Distinct).ok();
         if state.eat(On) {
             if !state.eat(LeftParen) {
-                state.errors.push(OakError::custom_error("`DISTINCT ON` requires a parenthesized expression list"));
+                state.errors.push(TextError::custom_error("`DISTINCT ON` requires a parenthesized expression list"));
             }
             else {
                 if state.peek_kind() == Some(RightParen) {
-                    state.errors.push(OakError::custom_error("`DISTINCT ON` requires at least one expression"));
+                    state.errors.push(TextError::custom_error("`DISTINCT ON` requires at least one expression"));
                 }
                 while state.not_at_end() && state.peek_kind() != Some(RightParen) {
                     PrattParser::parse(state, 0, self);
@@ -765,7 +765,7 @@ impl<'config> SqlParser<'config> {
         if matches!(kind, Eof | Semicolon) || Self::is_statement_start(Some(kind)) {
             return;
         }
-        state.errors.push(OakError::custom_error(format!("unexpected token after {context}: {kind:?}")));
+        state.errors.push(TextError::custom_error(format!("unexpected token after {context}: {kind:?}")));
         while state.not_at_end() && !matches!(state.peek_kind(), Some(Semicolon | Eof)) && !Self::is_statement_start(state.peek_kind()) {
             state.bump();
         }
@@ -775,7 +775,7 @@ impl<'config> SqlParser<'config> {
     /// Parses a query expression: an optional `WITH` clause, the `SELECT` body, an
     /// optional set operation, and the `ORDER BY` / `LIMIT` clauses that apply to
     /// the whole result.
-    fn parse_select<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_select<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SqlTokenType::*;
         let cp = state.checkpoint();
         if state.peek_kind() == Some(With) {
@@ -814,12 +814,12 @@ impl<'config> SqlParser<'config> {
     /// CTE name follows it. That keeps an ordinary CTE named `recursive` usable
     /// while `WITH RECURSIVE` is still rejected, because a self-referencing CTE
     /// cannot be evaluated by the current AST.
-    fn parse_with_clause<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_with_clause<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SqlTokenType::*;
         let cp = state.checkpoint();
         state.expect(With).ok();
         if state.peek_kind() == Some(Identifier_) && state.peek_text().is_some_and(|text| text.eq_ignore_ascii_case("RECURSIVE")) && state.peek_non_trivia_kind_at(1) == Some(Identifier_) {
-            return Err(OakError::custom_error("recursive CTEs are not supported"));
+            return Err(TextError::custom_error("recursive CTEs are not supported"));
         }
         loop {
             let cte_cp = state.checkpoint();
@@ -859,7 +859,7 @@ impl<'config> SqlParser<'config> {
     ///
     /// `ORDER BY` and `LIMIT` are left to the caller: after a set operation they
     /// apply to the whole result instead of the last branch.
-    fn parse_select_terms<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_select_terms<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SqlTokenType::*;
         state.expect(Select).ok();
         self.parse_select_quantifier(state);
@@ -918,7 +918,7 @@ impl<'config> SqlParser<'config> {
         if state.eat(Where) {
             PrattParser::parse(state, 0, self);
             if !Self::is_where_terminator(state.peek_kind()) {
-                return Err(OakError::custom_error("unsupported token in WHERE predicate"));
+                return Err(TextError::custom_error("unsupported token in WHERE predicate"));
             }
         }
 
@@ -928,7 +928,7 @@ impl<'config> SqlParser<'config> {
             let mut first = true;
             while state.not_at_end() {
                 if Self::is_group_by_terminator(state.peek_kind()) {
-                    state.errors.push(OakError::custom_error(if first { "`GROUP BY` requires at least one item" } else { "trailing comma in `GROUP BY`" }));
+                    state.errors.push(TextError::custom_error(if first { "`GROUP BY` requires at least one item" } else { "trailing comma in `GROUP BY`" }));
                     break;
                 }
                 first = false;
@@ -1011,7 +1011,7 @@ impl<'config> SqlParser<'config> {
                 }
             }
             if !Self::is_group_by_terminator(state.peek_kind()) {
-                return Err(OakError::custom_error("unsupported token in GROUP BY clause"));
+                return Err(TextError::custom_error("unsupported token in GROUP BY clause"));
             }
             state.finish_at(group_cp, SqlElementType::GroupByClause);
         }
@@ -1019,12 +1019,12 @@ impl<'config> SqlParser<'config> {
         if state.eat(Having) {
             let having_cp = state.checkpoint();
             if Self::is_having_terminator(state.peek_kind()) {
-                state.errors.push(OakError::custom_error("`HAVING` requires a predicate"));
+                state.errors.push(TextError::custom_error("`HAVING` requires a predicate"));
             }
             else {
                 PrattParser::parse(state, 0, self);
                 if !Self::is_having_terminator(state.peek_kind()) {
-                    return Err(OakError::custom_error("unsupported token in HAVING predicate"));
+                    return Err(TextError::custom_error("unsupported token in HAVING predicate"));
                 }
             }
             state.finish_at(having_cp, SqlElementType::HavingClause);
@@ -1034,7 +1034,7 @@ impl<'config> SqlParser<'config> {
     }
 
     /// Parses the trailing `ORDER BY`, `LIMIT` and `OFFSET` clauses.
-    fn parse_order_by_limit<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_order_by_limit<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SqlTokenType::*;
         if state.eat(Order) {
             let order_cp = state.checkpoint();
@@ -1042,7 +1042,7 @@ impl<'config> SqlParser<'config> {
             let mut first = true;
             while state.not_at_end() {
                 if Self::is_order_by_terminator(state.peek_kind()) {
-                    state.errors.push(OakError::custom_error(if first { "`ORDER BY` requires at least one item" } else { "trailing comma in `ORDER BY`" }));
+                    state.errors.push(TextError::custom_error(if first { "`ORDER BY` requires at least one item" } else { "trailing comma in `ORDER BY`" }));
                     break;
                 }
                 first = false;
@@ -1052,7 +1052,7 @@ impl<'config> SqlParser<'config> {
                 }
                 if state.eat(Nulls) {
                     if !state.eat(First) && !state.eat(Last) {
-                        state.errors.push(OakError::custom_error("`NULLS` must be followed by `FIRST` or `LAST`"));
+                        state.errors.push(TextError::custom_error("`NULLS` must be followed by `FIRST` or `LAST`"));
                     }
                 }
                 if !state.eat(Comma) {
@@ -1060,7 +1060,7 @@ impl<'config> SqlParser<'config> {
                 }
             }
             if !Self::is_order_by_terminator(state.peek_kind()) {
-                return Err(OakError::custom_error("unsupported token in ORDER BY clause"));
+                return Err(TextError::custom_error("unsupported token in ORDER BY clause"));
             }
             state.finish_at(order_cp, SqlElementType::OrderByClause);
         }
@@ -1131,7 +1131,7 @@ impl<'config> SqlParser<'config> {
         state.finish_at(table_cp, SqlElementType::TableName);
     }
 
-    fn parse_insert<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_insert<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SqlTokenType::*;
         let cp = state.checkpoint();
         state.expect(Insert).ok();
@@ -1264,7 +1264,7 @@ impl<'config> SqlParser<'config> {
         }
     }
 
-    fn parse_update<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_update<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SqlTokenType::*;
         let cp = state.checkpoint();
         state.expect(Update).ok();
@@ -1294,7 +1294,7 @@ impl<'config> SqlParser<'config> {
         if state.eat(Where) {
             PrattParser::parse(state, 0, self);
             if !Self::is_where_terminator(state.peek_kind()) {
-                return Err(OakError::custom_error("unsupported token in WHERE predicate"));
+                return Err(TextError::custom_error("unsupported token in WHERE predicate"));
             }
         }
 
@@ -1305,7 +1305,7 @@ impl<'config> SqlParser<'config> {
         Ok(())
     }
 
-    fn parse_delete<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_delete<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SqlTokenType::*;
         let cp = state.checkpoint();
         state.expect(Delete).ok();
@@ -1318,7 +1318,7 @@ impl<'config> SqlParser<'config> {
         if state.eat(Where) {
             PrattParser::parse(state, 0, self);
             if !Self::is_where_terminator(state.peek_kind()) {
-                return Err(OakError::custom_error("unsupported token in WHERE predicate"));
+                return Err(TextError::custom_error("unsupported token in WHERE predicate"));
             }
         }
 
@@ -1361,7 +1361,7 @@ impl<'config> SqlParser<'config> {
                 state.expect(RightParen).ok();
             }
             else {
-                state.errors.push(OakError::custom_error("`CHECK` constraint requires a parenthesized expression"));
+                state.errors.push(TextError::custom_error("`CHECK` constraint requires a parenthesized expression"));
             }
         }
         state.finish_at(cp, SqlElementType::TableConstraint);
@@ -1419,11 +1419,11 @@ impl<'config> SqlParser<'config> {
             state.bump();
         }
         else {
-            state.errors.push(OakError::custom_error("`ON CONFLICT` requires ROLLBACK, ABORT, FAIL, IGNORE or REPLACE"));
+            state.errors.push(TextError::custom_error("`ON CONFLICT` requires ROLLBACK, ABORT, FAIL, IGNORE or REPLACE"));
         }
     }
 
-    fn parse_create<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_create<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SqlTokenType::*;
         let cp = state.checkpoint();
         state.expect(Create).ok();
@@ -1544,7 +1544,7 @@ impl<'config> SqlParser<'config> {
         Ok(())
     }
 
-    fn parse_drop<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_drop<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SqlTokenType::*;
         let cp = state.checkpoint();
         state.expect(Drop).ok();
@@ -1562,7 +1562,7 @@ impl<'config> SqlParser<'config> {
         Ok(())
     }
 
-    fn parse_alter<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_alter<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SqlTokenType::*;
         let cp = state.checkpoint();
         state.expect(Alter).ok();

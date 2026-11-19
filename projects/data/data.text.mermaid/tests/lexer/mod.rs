@@ -4,7 +4,7 @@ use language_testing::lexing::LexerTester;
 use std::{path::Path, time::Duration};
 
 #[test]
-fn test_mermaid_lexer() -> Result<(), data_text_core::OakError> {
+fn test_mermaid_lexer() -> Result<(), data_text_core::TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let language = MermaidLanguage::default();
     let lexer = MermaidLexer::new(&language);
@@ -13,7 +13,7 @@ fn test_mermaid_lexer() -> Result<(), data_text_core::OakError> {
 }
 
 #[test]
-fn test_flowchart_token_kinds() -> Result<(), data_text_core::OakError> {
+fn test_flowchart_token_kinds() -> Result<(), data_text_core::TextError> {
     use MermaidTokenType::*;
 
     let language = MermaidLanguage::default();
@@ -31,7 +31,7 @@ fn test_flowchart_token_kinds() -> Result<(), data_text_core::OakError> {
 }
 
 #[test]
-fn test_state_and_er_token_kinds() -> Result<(), data_text_core::OakError> {
+fn test_state_and_er_token_kinds() -> Result<(), data_text_core::TextError> {
     use MermaidTokenType::*;
 
     let language = MermaidLanguage::default();

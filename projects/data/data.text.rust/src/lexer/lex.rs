@@ -2,7 +2,7 @@ use crate::{
     language::RustLanguage,
     lexer::{RustLexer, RustTokenType},
 };
-use data_text_core::{LexerState, OakError, lexer::StringConfig, source::Source};
+use data_text_core::{LexerState, TextError, lexer::StringConfig, source::Source};
 use std::{simd::prelude::*, sync::LazyLock};
 use unicode_ident::{is_xid_continue, is_xid_start};
 
@@ -15,7 +15,7 @@ static RUST_CHAR: LazyLock<StringConfig> = LazyLock::new(|| StringConfig { quote
 ///
 /// This function tokenizes the input source text using the provided lexer state.
 /// It handles whitespace, comments, literals, identifiers, and operators.
-pub(crate) fn run<'s, S: Source + ?Sized>(_lexer: &RustLexer, state: &mut State<'s, S>) -> Result<(), OakError> {
+pub(crate) fn run<'s, S: Source + ?Sized>(_lexer: &RustLexer, state: &mut State<'s, S>) -> Result<(), TextError> {
     while state.not_at_end() {
         let safe_point = state.get_position();
         let Some(ch) = state.peek()

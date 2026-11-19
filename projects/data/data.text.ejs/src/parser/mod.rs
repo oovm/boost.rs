@@ -6,7 +6,7 @@ pub mod element_type;
 
 use crate::{language::EjsLanguage, lexer::token_type::EjsTokenType, parser::element_type::EjsElementType};
 use data_text_core::{
-    OakError, ParseCache, TextEdit,
+    TextError, ParseCache, TextEdit,
     parser::{Parser, ParserState},
     source::Source,
 };
@@ -41,7 +41,7 @@ impl<'config> EjsParser<'config> {
     ///
     /// This method handles the main parsing loop, processing text content
     /// and EJS tags until the end of the source is reached.
-    fn parse_template<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_template<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             match state.peek_kind() {
                 Some(EjsTokenType::Text) => {
@@ -83,7 +83,7 @@ impl<'config> EjsParser<'config> {
     /// Parses a code block `<% ... %>`
     ///
     /// Code blocks contain JavaScript code that is executed but not output.
-    fn parse_code_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_code_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump();
 
@@ -106,7 +106,7 @@ impl<'config> EjsParser<'config> {
     /// Parses an escaped output expression `<%= ... %>`
     ///
     /// The expression is evaluated and the result is HTML-escaped before output.
-    fn parse_output_escape<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_output_escape<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump();
 
@@ -129,7 +129,7 @@ impl<'config> EjsParser<'config> {
     /// Parses a raw output expression `<%- ... %>`
     ///
     /// The expression is evaluated and the result is output without escaping.
-    fn parse_output_raw<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_output_raw<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump();
 
@@ -152,7 +152,7 @@ impl<'config> EjsParser<'config> {
     /// Parses a comment `<%# ... %>`
     ///
     /// Comments are not rendered in the output.
-    fn parse_comment<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_comment<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump();
 
@@ -175,7 +175,7 @@ impl<'config> EjsParser<'config> {
     /// Parses an escaped tag `<%%`
     ///
     /// Escaped tags are rendered as literal `<%` in the output.
-    fn parse_escaped_tag<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_escaped_tag<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump();
         state.finish_at(cp, EjsElementType::EscapedTag);

@@ -5,11 +5,11 @@ use crate::{
     lexer::token_type::DejavuTokenType,
     parser::element_type::DejavuElementType,
 };
-use data_text_core::{GreenNode, OakError, RedNode, RedTree, Source};
+use data_text_core::{GreenNode, TextError, RedNode, RedTree, Source};
 
 impl<'config> DejavuBuilder<'config> {
     /// Builds a strongly-typed AST from a green tree.
-    pub fn build_root<S: Source + ?Sized>(&self, green_tree: &GreenNode<DejavuLanguage>, source: &S) -> Result<DejavuRoot, OakError> {
+    pub fn build_root<S: Source + ?Sized>(&self, green_tree: &GreenNode<DejavuLanguage>, source: &S) -> Result<DejavuRoot, TextError> {
         // println!("Building root from green tree: {:?}", green_tree.kind);
         let red_root = RedNode::<DejavuLanguage>::new(green_tree, 0);
         let mut items = Vec::new();
@@ -40,7 +40,7 @@ impl<'config> DejavuBuilder<'config> {
         Ok(DejavuRoot { items })
     }
 
-    pub(crate) fn build_item<S: Source + ?Sized>(&self, n: RedNode<DejavuLanguage>, source: &S) -> Result<ItemNode, OakError> {
+    pub(crate) fn build_item<S: Source + ?Sized>(&self, n: RedNode<DejavuLanguage>, source: &S) -> Result<ItemNode, TextError> {
         use crate::ast::{ExpressionNode, ExpressionStatement, IdentifierNode, StatementNode, TemplateControlNode, TemplateInterpolationNode};
         match n.green.kind {
             DejavuElementType::Namespace => {

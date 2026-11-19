@@ -8,10 +8,10 @@ use crate::{
     builder::ValkyrieBuilder,
     lexer::{ValkyrieKeywords, token_type::ValkyrieTokenType},
 };
-use data_text_core::{OakError, RedNode, RedTree, Source};
+use data_text_core::{TextError, RedNode, RedTree, Source};
 
 impl<'config> ValkyrieBuilder<'config> {
-    pub(crate) fn build_if<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_if<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let mut pattern = None;
         let mut condition = None;
@@ -67,7 +67,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(TermExpression::If { pattern, condition, then_branch, else_branch, span })
     }
 
-    pub(crate) fn build_match<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_match<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let mut scrutinee = None;
         let mut arms = Vec::new();
@@ -102,7 +102,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(TermExpression::Match { scrutinee, arms, span })
     }
 
-    pub(crate) fn build_match_arm<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<MatchArm, OakError> {
+    pub(crate) fn build_match_arm<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<MatchArm, TextError> {
         let span = node.span();
         let mut pattern = None;
         let mut else_span = None;
@@ -153,7 +153,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(MatchArm { pattern, guard, body, span })
     }
 
-    pub(crate) fn build_loop<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_loop<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let mut kind = LoopKind::default();
         let mut label = None;
@@ -201,7 +201,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(TermExpression::Loop { kind, label, pattern, condition, body, span })
     }
 
-    pub(crate) fn build_return<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_return<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let mut expr = None;
 
@@ -228,7 +228,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(TermExpression::Return(Box::new(Return { base: expr.map(|e| *e), span })))
     }
 
-    pub(crate) fn build_break<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_break<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let mut label = None;
         let mut expr = None;
@@ -259,7 +259,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(TermExpression::Break(Box::new(Break { label, base: expr.map(|e| *e), span })))
     }
 
-    pub(crate) fn build_continue<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_continue<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let mut label = None;
 
@@ -278,7 +278,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(TermExpression::Continue(Box::new(Continue { label, span })))
     }
 
-    pub(crate) fn build_yield<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_yield<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let mut expr = None;
         let yield_from = false;
@@ -306,7 +306,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(TermExpression::Yield { expr, yield_from, span })
     }
 
-    pub(crate) fn build_raise<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_raise<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let mut expr = None;
 
@@ -335,7 +335,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(TermExpression::Raise(Box::new(Raise { base: Some(*expr), span })))
     }
 
-    pub(crate) fn build_resume<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_resume<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let mut expr = None;
 
@@ -364,7 +364,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(TermExpression::Resume(Box::new(Resume { base: Some(*expr), span })))
     }
 
-    pub(crate) fn build_catch<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_catch<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let mut expr = None;
         let mut arms = Vec::new();
@@ -395,7 +395,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(TermExpression::Catch { expr, arms, span })
     }
 
-    pub(crate) fn build_pattern<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Pattern, OakError> {
+    pub(crate) fn build_pattern<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Pattern, TextError> {
         let span = node.span();
         // 备选模式容器：子节点是若干完整 `Pattern`，本层只收集顺序，不做分组猜测。
         if node.green.kind == crate::parser::element_type::ValkyrieElementType::AlternativePattern {
@@ -553,7 +553,7 @@ impl<'config> ValkyrieBuilder<'config> {
     ///
     /// Supports both new syntax (`:` separator) and deprecated syntax (`=` separator).
     /// When the deprecated `=` syntax is detected, a warning is logged.
-    fn build_pattern_fields<S: Source + ?Sized>(&self, node: &RedNode<ValkyrieLanguage>, source: &S) -> Result<Vec<(Identifier, Option<Pattern>)>, OakError> {
+    fn build_pattern_fields<S: Source + ?Sized>(&self, node: &RedNode<ValkyrieLanguage>, source: &S) -> Result<Vec<(Identifier, Option<Pattern>)>, TextError> {
         let mut fields = Vec::new();
 
         for child in node.children() {
@@ -588,7 +588,7 @@ impl<'config> ValkyrieBuilder<'config> {
     /// Extracts a pattern field from a binary expression or statement.
     ///
     /// Supports both new syntax (`:` separator) and deprecated syntax (`=` separator).
-    fn extract_pattern_field<S: Source + ?Sized>(&self, node: &RedNode<ValkyrieLanguage>, source: &S) -> Result<Option<(Identifier, Option<Pattern>)>, OakError> {
+    fn extract_pattern_field<S: Source + ?Sized>(&self, node: &RedNode<ValkyrieLanguage>, source: &S) -> Result<Option<(Identifier, Option<Pattern>)>, TextError> {
         let mut field_name = None;
         let mut field_pattern = None;
         let mut separator_found = false;
@@ -658,9 +658,9 @@ mod soft_identifier_pattern_tests {
         ValkyrieBuilder, ValkyrieLanguage, ValkyrieRoot,
         ast::{Pattern, StatementNode},
     };
-    use data_text_core::{Builder, OakDiagnostics, SourceText, parser::ParseSession};
+    use data_text_core::{Builder, TextDiagnostics, SourceText, parser::ParseSession};
 
-    fn build(source: &str) -> OakDiagnostics<ValkyrieRoot> {
+    fn build(source: &str) -> TextDiagnostics<ValkyrieRoot> {
         let language = ValkyrieLanguage::default();
         let builder = ValkyrieBuilder::new(&language);
         let text = SourceText::new(source);

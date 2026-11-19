@@ -5,7 +5,7 @@ pub mod token_type;
 
 use crate::{language::WolframLanguage, lexer::token_type::WolframTokenType};
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError,
+    Lexer, LexerCache, LexerState, TextError,
     lexer::{CommentConfig, LexOutput, StringConfig, WhitespaceConfig},
     source::{Source, TextEdit},
 };
@@ -41,7 +41,7 @@ impl<'config> WolframLexer<'config> {
         Self { config }
     }
 
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

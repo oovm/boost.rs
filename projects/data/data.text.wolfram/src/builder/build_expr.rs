@@ -5,10 +5,10 @@ use crate::{
     lexer::token_type::WolframTokenType,
     parser::element_type::WolframElementType,
 };
-use data_text_core::{OakError, RedNode, RedTree, Source, TokenType};
+use data_text_core::{TextError, RedNode, RedTree, Source, TokenType};
 
 impl<'config> WolframBuilder<'config> {
-    pub(crate) fn build_expr<S: Source + ?Sized>(&self, node: RedNode<'_, WolframLanguage>, source: &S) -> Result<Expression, OakError> {
+    pub(crate) fn build_expr<S: Source + ?Sized>(&self, node: RedNode<'_, WolframLanguage>, source: &S) -> Result<Expression, TextError> {
         let span = node.span();
         match node.element_type() {
             WolframElementType::Symbol => self.build_symbol(node, source),
@@ -44,7 +44,7 @@ impl<'config> WolframBuilder<'config> {
         }
     }
 
-    fn build_symbol<S: Source + ?Sized>(&self, node: RedNode<'_, WolframLanguage>, source: &S) -> Result<Expression, OakError> {
+    fn build_symbol<S: Source + ?Sized>(&self, node: RedNode<'_, WolframLanguage>, source: &S) -> Result<Expression, TextError> {
         let span = node.span();
         for child in node.children() {
             if let RedTree::Leaf(t) = child {
@@ -56,7 +56,7 @@ impl<'config> WolframBuilder<'config> {
         Ok(Expression::Symbol(Identifier { name: text(source, span.clone()).trim().to_string(), span }))
     }
 
-    fn build_call<S: Source + ?Sized>(&self, node: RedNode<'_, WolframLanguage>, source: &S) -> Result<Expression, OakError> {
+    fn build_call<S: Source + ?Sized>(&self, node: RedNode<'_, WolframLanguage>, source: &S) -> Result<Expression, TextError> {
         let span = node.span();
         let mut head: Option<Expression> = None;
         let mut arg_groups: Vec<Vec<Expression>> = Vec::new();
@@ -90,7 +90,7 @@ impl<'config> WolframBuilder<'config> {
         Ok(expr)
     }
 
-    fn build_part<S: Source + ?Sized>(&self, node: RedNode<'_, WolframLanguage>, source: &S) -> Result<Expression, OakError> {
+    fn build_part<S: Source + ?Sized>(&self, node: RedNode<'_, WolframLanguage>, source: &S) -> Result<Expression, TextError> {
         let span = node.span();
         let mut expression = None;
         let mut indices = Vec::new();
@@ -112,7 +112,7 @@ impl<'config> WolframBuilder<'config> {
         Ok(Expression::Part { expression: Box::new(expression), indices, span })
     }
 
-    fn build_arguments<S: Source + ?Sized>(&self, node: RedNode<'_, WolframLanguage>, source: &S) -> Result<Vec<Expression>, OakError> {
+    fn build_arguments<S: Source + ?Sized>(&self, node: RedNode<'_, WolframLanguage>, source: &S) -> Result<Vec<Expression>, TextError> {
         let mut args = Vec::new();
         for child in node.children() {
             if utils::should_skip(&child) {
@@ -127,7 +127,7 @@ impl<'config> WolframBuilder<'config> {
         Ok(args)
     }
 
-    fn build_binary<S: Source + ?Sized>(&self, node: RedNode<'_, WolframLanguage>, source: &S) -> Result<Expression, OakError> {
+    fn build_binary<S: Source + ?Sized>(&self, node: RedNode<'_, WolframLanguage>, source: &S) -> Result<Expression, TextError> {
         let span = node.span();
         let mut lhs = None;
         let mut rhs = None;
@@ -160,7 +160,7 @@ impl<'config> WolframBuilder<'config> {
         Ok(Expression::Binary(Box::new(BinaryExpr { operator, lhs, rhs, span })))
     }
 
-    fn build_prefix<S: Source + ?Sized>(&self, node: RedNode<'_, WolframLanguage>, source: &S) -> Result<Expression, OakError> {
+    fn build_prefix<S: Source + ?Sized>(&self, node: RedNode<'_, WolframLanguage>, source: &S) -> Result<Expression, TextError> {
         let span = node.span();
         let mut operator = None;
         let mut operand = None;
@@ -179,7 +179,7 @@ impl<'config> WolframBuilder<'config> {
         Ok(Expression::Prefix(Box::new(UnaryExpr { operator, operand, span })))
     }
 
-    fn build_postfix<S: Source + ?Sized>(&self, node: RedNode<'_, WolframLanguage>, source: &S) -> Result<Expression, OakError> {
+    fn build_postfix<S: Source + ?Sized>(&self, node: RedNode<'_, WolframLanguage>, source: &S) -> Result<Expression, TextError> {
         let span = node.span();
         let mut operator = None;
         let mut operand = None;
@@ -200,7 +200,7 @@ impl<'config> WolframBuilder<'config> {
         Ok(Expression::Postfix(Box::new(UnaryExpr { operator, operand, span })))
     }
 
-    fn build_blank<S: Source + ?Sized>(&self, node: RedNode<'_, WolframLanguage>, source: &S) -> Result<Expression, OakError> {
+    fn build_blank<S: Source + ?Sized>(&self, node: RedNode<'_, WolframLanguage>, source: &S) -> Result<Expression, TextError> {
         let span = node.span();
         let mut kind = WolframTokenType::Underscore;
         let mut head = None;
@@ -226,7 +226,7 @@ impl<'config> WolframBuilder<'config> {
         Ok(Expression::Blank { kind, head, span })
     }
 
-    fn build_pattern<S: Source + ?Sized>(&self, node: RedNode<'_, WolframLanguage>, source: &S) -> Result<Expression, OakError> {
+    fn build_pattern<S: Source + ?Sized>(&self, node: RedNode<'_, WolframLanguage>, source: &S) -> Result<Expression, TextError> {
         let span = node.span();
         let mut name = None;
         let mut blank = WolframTokenType::Underscore;

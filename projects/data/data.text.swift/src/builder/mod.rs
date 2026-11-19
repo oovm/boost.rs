@@ -4,7 +4,7 @@ use crate::{
     lexer::token_type::SwiftTokenType,
     parser::{SwiftParser, element_type::SwiftElementType},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, GreenTree, OakDiagnostics, OakError, Parser, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, GreenTree, TextDiagnostics, TextError, Parser, SourceText, TextEdit, builder::BuildOutput, source::Source};
 
 /// AST builder for Swift language that constructs typed AST nodes from green tree.
 #[derive(Clone)]
@@ -29,22 +29,22 @@ impl<'config> Builder<SwiftLanguage> for SwiftBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(e) => OakDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
+            Err(e) => TextDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> SwiftBuilder<'config> {
     /// Builds a SwiftRoot AST node from a green tree and source text.
-    pub fn build_root(&self, green_tree: &GreenNode<SwiftLanguage>, source: &SourceText) -> Result<SwiftRoot, OakError> {
+    pub fn build_root(&self, green_tree: &GreenNode<SwiftLanguage>, source: &SourceText) -> Result<SwiftRoot, TextError> {
         let mut statements = Vec::new();
         let mut current_offset = 0;
 
@@ -66,7 +66,7 @@ impl<'config> SwiftBuilder<'config> {
         Ok(SwiftRoot { program: Program { statements }, span: (0..green_tree.text_len() as usize).into() })
     }
 
-    fn build_statement(&self, node: &GreenNode<SwiftLanguage>, offset: usize, source: &SourceText) -> Result<Option<Statement>, OakError> {
+    fn build_statement(&self, node: &GreenNode<SwiftLanguage>, offset: usize, source: &SourceText) -> Result<Option<Statement>, TextError> {
         // eprintln!("Building statement: {:?} at {}", node.kind, offset);
         match node.kind {
             SwiftElementType::FunctionDeclaration => {
@@ -249,7 +249,7 @@ impl<'config> SwiftBuilder<'config> {
         }
     }
 
-    fn build_block(&self, node: &GreenNode<SwiftLanguage>, offset: usize, source: &SourceText) -> Result<Vec<Statement>, OakError> {
+    fn build_block(&self, node: &GreenNode<SwiftLanguage>, offset: usize, source: &SourceText) -> Result<Vec<Statement>, TextError> {
         let mut statements = Vec::new();
         let mut current_offset = offset;
 
@@ -267,7 +267,7 @@ impl<'config> SwiftBuilder<'config> {
         Ok(statements)
     }
 
-    fn build_parameters(&self, node: &GreenNode<SwiftLanguage>, offset: usize, source: &SourceText) -> Result<Vec<Parameter>, OakError> {
+    fn build_parameters(&self, node: &GreenNode<SwiftLanguage>, offset: usize, source: &SourceText) -> Result<Vec<Parameter>, TextError> {
         let mut parameters = Vec::new();
         let mut current_offset = offset;
 
@@ -283,7 +283,7 @@ impl<'config> SwiftBuilder<'config> {
         Ok(parameters)
     }
 
-    fn build_parameter(&self, node: &GreenNode<SwiftLanguage>, offset: usize, source: &SourceText) -> Result<Parameter, OakError> {
+    fn build_parameter(&self, node: &GreenNode<SwiftLanguage>, offset: usize, source: &SourceText) -> Result<Parameter, TextError> {
         let mut name = String::new();
         let mut type_name = String::new();
         let mut current_offset = offset;
@@ -309,7 +309,7 @@ impl<'config> SwiftBuilder<'config> {
         Ok(Parameter { name, type_annotation: Type { name: type_name } })
     }
 
-    fn build_expression(&self, node: &GreenNode<SwiftLanguage>, offset: usize, source: &SourceText) -> Result<Expression, OakError> {
+    fn build_expression(&self, node: &GreenNode<SwiftLanguage>, offset: usize, source: &SourceText) -> Result<Expression, TextError> {
         match node.kind {
             SwiftElementType::BinaryExpression => {
                 let mut left = None;
@@ -420,7 +420,7 @@ impl<'config> SwiftBuilder<'config> {
                 }
                 Ok(Expression::Member { object: object.unwrap(), member })
             }
-            _ => Err(OakError::custom_error(format!("Unsupported expression kind: {:?}", node.kind))),
+            _ => Err(TextError::custom_error(format!("Unsupported expression kind: {:?}", node.kind))),
         }
     }
 }

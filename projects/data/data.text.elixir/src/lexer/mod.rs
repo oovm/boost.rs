@@ -4,7 +4,7 @@ pub mod token_type;
 use crate::{language::ElixirLanguage, lexer::token_type::ElixirTokenType};
 use data_text_core::{
     Lexer, LexerCache, LexerState,
-    errors::OakError,
+    errors::TextError,
     lexer::{CommentConfig, LexOutput, StringConfig, WhitespaceConfig},
     source::Source,
 };
@@ -39,7 +39,7 @@ impl<'config> ElixirLexer<'config> {
         Self { config }
     }
 
-    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), OakError> {
+    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

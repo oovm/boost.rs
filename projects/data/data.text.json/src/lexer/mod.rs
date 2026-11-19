@@ -4,7 +4,7 @@ pub mod token_type;
 
 use crate::{language::JsonLanguage, lexer::token_type::JsonTokenType};
 use data_text_core::{
-    errors::OakError,
+    errors::TextError,
     lexer::{CommentConfig, LexOutput, Lexer, LexerCache, LexerState, StringConfig},
     source::{Source, TextEdit},
 };
@@ -38,7 +38,7 @@ impl<'config> JsonLexer<'config> {
         Self { config }
     }
 
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
             let Some(ch) = state.peek()

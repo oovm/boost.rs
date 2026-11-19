@@ -3,7 +3,7 @@
 pub mod token_type;
 
 use crate::{language::JavaScriptLanguage, lexer::token_type::JavaScriptTokenType};
-use data_text_core::{Lexer, LexerCache, LexerState, OakError, TextEdit, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextError, TextEdit, lexer::LexOutput, source::Source};
 use std::simd::prelude::*;
 
 pub(crate) type State<'a, S> = LexerState<'a, S, JavaScriptLanguage>;
@@ -20,12 +20,12 @@ impl<'config> JavaScriptLexer<'config> {
         Self { config }
     }
 
-    fn safe_check<'a, S: Source + ?Sized>(&self, state: &State<'a, S>) -> Result<(), OakError> {
-        if state.get_position() <= state.get_length() { Ok(()) } else { Err(OakError::custom_error(format!("Lexer out-of-bounds: pos={}, len={}", state.get_position(), state.get_length()))) }
+    fn safe_check<'a, S: Source + ?Sized>(&self, state: &State<'a, S>) -> Result<(), TextError> {
+        if state.get_position() <= state.get_length() { Ok(()) } else { Err(TextError::custom_error(format!("Lexer out-of-bounds: pos={}, len={}", state.get_position(), state.get_length()))) }
     }
 
     /// Main lexer run method.
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
             self.safe_check(state)?;
@@ -187,7 +187,7 @@ impl<'config> JavaScriptLexer<'config> {
             }
 
             if !found_end {
-                let error = OakError::syntax_error("Unterminated comment".to_string(), start, None);
+                let error = TextError::syntax_error("Unterminated comment".to_string(), start, None);
                 state.add_error(error)
             }
 
@@ -227,7 +227,7 @@ impl<'config> JavaScriptLexer<'config> {
                 }
 
                 if !found_end {
-                    let error = OakError::syntax_error("Unterminated string literal".to_string(), start_pos, None);
+                    let error = TextError::syntax_error("Unterminated string literal".to_string(), start_pos, None);
                     state.add_error(error)
                 }
 
@@ -289,7 +289,7 @@ impl<'config> JavaScriptLexer<'config> {
             }
 
             if !found_end {
-                let error = OakError::syntax_error("Unterminated template literal".to_string(), start_pos, None);
+                let error = TextError::syntax_error("Unterminated template literal".to_string(), start_pos, None);
                 state.add_error(error)
             }
 
@@ -323,7 +323,7 @@ impl<'config> JavaScriptLexer<'config> {
                         }
 
                         if !has_digits {
-                            let error = OakError::syntax_error("Invalid hexadecimal number".to_string(), start_pos, None);
+                            let error = TextError::syntax_error("Invalid hexadecimal number".to_string(), start_pos, None);
                             state.add_error(error)
                         }
 
@@ -382,7 +382,7 @@ impl<'config> JavaScriptLexer<'config> {
                         }
 
                         if !has_exp_digits {
-                            let error = OakError::syntax_error("Invalid number exponent".to_string(), start_pos, None);
+                            let error = TextError::syntax_error("Invalid number exponent".to_string(), start_pos, None);
                             state.add_error(error)
                         }
                     }

@@ -4,7 +4,7 @@ pub mod token_type;
 
 use crate::{language::PerlLanguage, lexer::token_type::PerlTokenType};
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError,
+    Lexer, LexerCache, LexerState, TextError,
     lexer::{CommentConfig, LexOutput, WhitespaceConfig},
     source::Source,
 };
@@ -479,7 +479,7 @@ impl<'config> Lexer<PerlLanguage> for PerlLexer<'config> {
 
 impl<'config> PerlLexer<'config> {
     /// Runs the lexer on the given state until the end of the source.
-    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), OakError> {
+    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

@@ -1,9 +1,9 @@
 use crate::{WolframLanguage, ast::WolframRoot, builder::WolframBuilder, lexer::token_type::WolframTokenType};
-use data_text_core::{GreenNode, OakError, RedNode, RedTree, Source, TokenType};
+use data_text_core::{GreenNode, TextError, RedNode, RedTree, Source, TokenType};
 
 impl<'config> WolframBuilder<'config> {
     /// Build owned [`WolframRoot`] from a green root.
-    pub fn build_root<S: Source + ?Sized>(&self, green_tree: &GreenNode<WolframLanguage>, source: &S) -> Result<WolframRoot, OakError> {
+    pub fn build_root<S: Source + ?Sized>(&self, green_tree: &GreenNode<WolframLanguage>, source: &S) -> Result<WolframRoot, TextError> {
         let red_root = RedNode::new(green_tree, 0);
         let mut expressions = Vec::new();
         for child in red_root.children() {

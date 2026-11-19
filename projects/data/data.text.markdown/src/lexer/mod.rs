@@ -9,7 +9,7 @@ mod list;
 mod tests;
 
 use crate::{language::MarkdownLanguage, lexer::token_type::MarkdownTokenType};
-use data_text_core::{Lexer, LexerCache, LexerState, TextEdit, errors::OakError, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextEdit, errors::TextError, lexer::LexOutput, source::Source};
 
 pub(crate) type State<'a, S> = LexerState<'a, S, MarkdownLanguage>;
 
@@ -25,7 +25,7 @@ impl<'config> MarkdownLexer<'config> {
         Self { config }
     }
 
-    fn run<S: Source + ?Sized>(&self, state: &mut State<S>) -> Result<(), OakError> {
+    fn run<S: Source + ?Sized>(&self, state: &mut State<S>) -> Result<(), TextError> {
         // While a fenced block is open, its body is opaque code. The lexer
         // consumes whole lines and emits only container markers plus `CodeBlock`
         // tokens, so no block-level rule can fire inside the fence.

@@ -22,6 +22,6 @@ impl Builder<RakuLanguage> for RakuBuilder {
         let parser = RakuParser::new(self.language);
         let output = parser.parse(text, edits, cache);
         let result = output.result.map(|green| RakuRoot { span: (0..green.byte_length as usize).into() });
-        data_text_core::errors::OakDiagnostics { result, diagnostics: output.diagnostics }
+        data_text_core::errors::TextDiagnostics { result, diagnostics: output.diagnostics }
     }
 }

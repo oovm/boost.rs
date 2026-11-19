@@ -4,7 +4,7 @@ pub mod token_type;
 
 use crate::{language::HtmlLanguage, lexer::token_type::HtmlTokenType};
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError,
+    Lexer, LexerCache, LexerState, TextError,
     lexer::{LexOutput, StringConfig},
     source::{Source, TextEdit},
 };
@@ -58,7 +58,7 @@ impl<'config> HtmlLexer<'config> {
     }
 
     /// The main lexing loop that iterates through the source text.
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let mut in_markup = false;
         // HTML allows an attribute value without quotes, and that value may
         // start with any character except whitespace (`/x`, `2`). Without this

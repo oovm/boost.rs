@@ -1,7 +1,7 @@
 use serde::ser::{Serialize, Serializer};
 
 use crate::language::{TomlArray, TomlTable, TomlValue};
-use data_text_core::OakError;
+use data_text_core::TextError;
 
 /// TOML 序列化实现
 pub fn serialize<S, T>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
@@ -13,7 +13,7 @@ where
 }
 
 /// Serializes a Rust type into a TOML string.
-pub fn to_string<T>(value: &T) -> Result<String, OakError>
+pub fn to_string<T>(value: &T) -> Result<String, TextError>
 where
     T: Serialize,
 {
@@ -35,7 +35,7 @@ impl Default for TomlSerializer {
 
 impl Serializer for TomlSerializer {
     type Ok = TomlValue;
-    type Error = OakError;
+    type Error = TextError;
 
     type SerializeSeq = TomlSeqSerializer;
     type SerializeTuple = TomlSeqSerializer;
@@ -175,7 +175,7 @@ struct TomlSeqSerializer {
 
 impl serde::ser::SerializeSeq for TomlSeqSerializer {
     type Ok = TomlValue;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_element<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
@@ -194,7 +194,7 @@ impl serde::ser::SerializeSeq for TomlSeqSerializer {
 
 impl serde::ser::SerializeTuple for TomlSeqSerializer {
     type Ok = TomlValue;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_element<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
@@ -213,7 +213,7 @@ impl serde::ser::SerializeTuple for TomlSeqSerializer {
 
 impl serde::ser::SerializeTupleStruct for TomlSeqSerializer {
     type Ok = TomlValue;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_field<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
@@ -232,7 +232,7 @@ impl serde::ser::SerializeTupleStruct for TomlSeqSerializer {
 
 impl serde::ser::SerializeTupleVariant for TomlSeqSerializer {
     type Ok = TomlValue;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_field<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
@@ -256,7 +256,7 @@ struct TomlMapSerializer {
 
 impl serde::ser::SerializeMap for TomlMapSerializer {
     type Ok = TomlValue;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_key<T>(&mut self, key: &T) -> Result<(), Self::Error>
     where
@@ -289,7 +289,7 @@ impl serde::ser::SerializeMap for TomlMapSerializer {
 
 impl serde::ser::SerializeStruct for TomlMapSerializer {
     type Ok = TomlValue;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error>
     where
@@ -308,7 +308,7 @@ impl serde::ser::SerializeStruct for TomlMapSerializer {
 
 impl serde::ser::SerializeStructVariant for TomlMapSerializer {
     type Ok = TomlValue;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error>
     where

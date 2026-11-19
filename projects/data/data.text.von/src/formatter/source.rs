@@ -11,7 +11,7 @@ use crate::{
     lexer::{VonLexer, token_type::VonTokenType},
 };
 
-pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<String, data_text_core::OakError> {
+pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<String, data_text_core::TextError> {
     if source.is_empty() {
         return Ok(String::new());
     }
@@ -37,9 +37,9 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
         let left = &pair[0];
         let right = &pair[1];
         let span = Range { start: left.span.end, end: right.span.start };
-        let gap = source.get(span.clone()).ok_or_else(|| data_text_core::OakError::format_error("lexer token span is outside source"))?;
-        let left_text = source.get(left.span.clone()).ok_or_else(|| data_text_core::OakError::format_error("left token span is outside source"))?;
-        let right_text = source.get(right.span.clone()).ok_or_else(|| data_text_core::OakError::format_error("right token span is outside source"))?;
+        let gap = source.get(span.clone()).ok_or_else(|| data_text_core::TextError::format_error("lexer token span is outside source"))?;
+        let left_text = source.get(left.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("left token span is outside source"))?;
+        let right_text = source.get(right.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("right token span is outside source"))?;
         let constraint = von_gap_constraint(left_text, gap, right_text, left.kind, right.kind, index, &significant, source);
         gaps.push((TokenGap { left: left_text, source: gap, right: right_text, span }, constraint));
     }
@@ -90,7 +90,7 @@ fn von_gap_constraint(left: &str, gap: &str, right: &str, left_kind: VonTokenTyp
     constraint
 }
 
-fn validate_delimiters(source: &str, tokens: &[&data_text_core::Token<VonTokenType>]) -> Result<(), data_text_core::OakError> {
+fn validate_delimiters(source: &str, tokens: &[&data_text_core::Token<VonTokenType>]) -> Result<(), data_text_core::TextError> {
     let mut stack = Vec::new();
     for token in tokens {
         if matches!(token.kind, VonTokenType::StringLiteral | VonTokenType::NumberLiteral | VonTokenType::Comment | VonTokenType::BoolLiteral | VonTokenType::NullLiteral) {
@@ -118,10 +118,10 @@ fn validate_delimiters(source: &str, tokens: &[&data_text_core::Token<VonTokenTy
             _ => {}
         }
     }
-    if stack.is_empty() { Ok(()) } else { Err(data_text_core::OakError::format_error(format!("formatter input has unbalanced delimiters: unclosed {stack:?}"))) }
+    if stack.is_empty() { Ok(()) } else { Err(data_text_core::TextError::format_error(format!("formatter input has unbalanced delimiters: unclosed {stack:?}"))) }
 }
 
-fn delimiter_error(source: &str, pos: usize) -> Result<(), data_text_core::OakError> {
+fn delimiter_error(source: &str, pos: usize) -> Result<(), data_text_core::TextError> {
     let snippet = source.get(pos.saturating_sub(40)..pos.saturating_add(40)).unwrap_or("");
-    Err(data_text_core::OakError::format_error(format!("formatter input has unbalanced delimiters at {pos}: {snippet:?}")))
+    Err(data_text_core::TextError::format_error(format!("formatter input has unbalanced delimiters at {pos}: {snippet:?}")))
 }

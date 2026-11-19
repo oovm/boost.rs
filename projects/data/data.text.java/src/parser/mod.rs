@@ -13,7 +13,7 @@ use crate::{
     parser::element_type::JavaElementType,
 };
 use data_text_core::{
-    GreenNode, OakError, TextEdit,
+    GreenNode, TextError, TextEdit,
     parser::{
         ParseCache, Parser, ParserState,
         pratt::{Pratt, PrattParser},
@@ -91,7 +91,7 @@ impl<'config> JavaParser<'config> {
         }
     }
 
-    fn parse_item<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_item<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         parse_statement::parse_statement(self, state)
     }
 }

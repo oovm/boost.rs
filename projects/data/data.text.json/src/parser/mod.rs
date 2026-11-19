@@ -2,7 +2,7 @@
 pub mod element_type;
 
 use crate::{language::JsonLanguage, lexer::token_type::JsonTokenType, parser::element_type::JsonElementType};
-use data_text_core::{OakError, Parser, ParserState, Source, TextEdit, TokenType};
+use data_text_core::{TextError, Parser, ParserState, Source, TextEdit, TokenType};
 
 pub(crate) type State<'a, S> = ParserState<'a, JsonLanguage, S>;
 
@@ -18,7 +18,7 @@ impl<'config> JsonParser<'config> {
         Self { config }
     }
 
-    pub(crate) fn parse_value<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_value<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.skip_trivia(state);
         let token = if let Some(t) = state.current() {
             if t.kind == JsonTokenType::Eof {
@@ -57,7 +57,7 @@ impl<'config> JsonParser<'config> {
         })
     }
 
-    fn parse_object<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_object<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         if !state.eat(JsonTokenType::LeftBrace) {
             state.record_expected("{");
             return Err(state.errors.last().cloned().expect("Error should have been recorded"));
@@ -107,7 +107,7 @@ impl<'config> JsonParser<'config> {
         Ok(())
     }
 
-    fn parse_object_entry<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_object_entry<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(JsonElementType::ObjectEntry, |state| {
             if state.at(JsonTokenType::StringLiteral) || (self.config.bare_keys && state.at(JsonTokenType::BareKey)) {
                 state.bump();
@@ -127,7 +127,7 @@ impl<'config> JsonParser<'config> {
         })
     }
 
-    fn parse_array<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_array<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         if !state.eat(JsonTokenType::LeftBracket) {
             state.record_expected("[");
             return Err(state.errors.last().cloned().expect("Error should have been recorded"));
@@ -195,7 +195,7 @@ impl<'config> Parser<JsonLanguage> for JsonParser<'config> {
             let res = self.parse_value(state);
             if res.is_err() {
                 // If parsing fails, we might still want to return a partial tree or an error tree
-                // But parse_value handles errors by returning Result<(), OakError>
+                // But parse_value handles errors by returning Result<(), TextError>
                 // And it records errors in state.errors
             }
 

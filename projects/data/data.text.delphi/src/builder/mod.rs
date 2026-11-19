@@ -1,5 +1,5 @@
 use crate::{ast::*, language::DelphiLanguage, parser::DelphiParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, OakError, Parser, RedNode, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, SourceText, TextEdit, source::Source};
 
 /// AST builder for the Delphi language
 #[derive(Clone)]
@@ -25,21 +25,21 @@ impl Builder<DelphiLanguage> for DelphiBuilder {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl DelphiBuilder {
-    fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, DelphiLanguage>, _source: &SourceText) -> Result<DelphiRoot, OakError> {
+    fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, DelphiLanguage>, _source: &SourceText) -> Result<DelphiRoot, TextError> {
         let red_root = RedNode::new(green_tree, 0);
         // Simple implementation
         Ok(DelphiRoot { items: Vec::new(), span: red_root.span() })

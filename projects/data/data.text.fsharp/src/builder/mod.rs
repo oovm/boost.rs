@@ -185,6 +185,6 @@ impl<'config> Builder<FSharpLanguage> for FSharpBuilder<'config> {
         let source_str = text.get_text_in(Range { start: 0, end: text.length() });
         let result = output.result.map(|green| self.build_root(green, &source_str));
 
-        data_text_core::errors::OakDiagnostics { result, diagnostics: output.diagnostics }
+        data_text_core::errors::TextDiagnostics { result, diagnostics: output.diagnostics }
     }
 }

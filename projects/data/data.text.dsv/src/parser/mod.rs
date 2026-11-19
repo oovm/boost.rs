@@ -46,7 +46,7 @@ impl<const LANG: DsvLanguage> DsvParser<LANG> {
     }
 
     /// Parses a DSV record.
-    fn parse_record<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, LANG, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_record<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, LANG, S>) -> Result<(), data_text_core::TextError> {
         use crate::{lexer::DsvTokenType::*, parser::DsvElementType::*};
         let cp = state.checkpoint();
 
@@ -61,7 +61,7 @@ impl<const LANG: DsvLanguage> DsvParser<LANG> {
     }
 
     /// Parses a DSV field.
-    fn parse_field<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, LANG, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_field<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, LANG, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         if state.at(crate::lexer::DsvTokenType::Field) {
             state.bump()

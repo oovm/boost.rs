@@ -6,7 +6,7 @@ pub use token_type::AsciiDocTokenType;
 
 use crate::language::AsciiDocLanguage;
 use data_text_core::{
-    Lexer, OakError,
+    Lexer, TextError,
     lexer::{LexOutput, LexerCache, LexerState},
     source::{Source, TextEdit},
 };
@@ -38,7 +38,7 @@ impl AsciiDocLexer {
     }
 
     /// Main lexing logic
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

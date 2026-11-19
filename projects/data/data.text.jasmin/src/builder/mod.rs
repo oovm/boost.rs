@@ -4,7 +4,7 @@ use crate::{
     lexer::token_type::JasminTokenType,
     parser::{JasminParser, element_type::JasminElementType},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, Lexer, OakError, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Lexer, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
 
 /// Jasmin AST builder.
 pub struct JasminBuilder<'config> {
@@ -17,7 +17,7 @@ impl<'config> JasminBuilder<'config> {
         Self { config }
     }
 
-    fn build_root(&self, green_tree: &GreenNode<JasminLanguage>, source: &SourceText) -> Result<JasminRoot, OakError> {
+    fn build_root(&self, green_tree: &GreenNode<JasminLanguage>, source: &SourceText) -> Result<JasminRoot, TextError> {
         let red_root = RedNode::new(green_tree, 0);
         let mut class = JasminClass { modifiers: vec![], name: "Unknown".to_string(), version: None, methods: vec![], fields: vec![], source_file: None };
 
@@ -53,7 +53,7 @@ impl<'config> JasminBuilder<'config> {
         Ok(JasminRoot { class })
     }
 
-    fn build_class(&self, node: RedNode<JasminLanguage>, source: &SourceText) -> Result<JasminClass, OakError> {
+    fn build_class(&self, node: RedNode<JasminLanguage>, source: &SourceText) -> Result<JasminClass, TextError> {
         let mut modifiers = vec![];
         let mut name = String::new();
 
@@ -85,7 +85,7 @@ impl<'config> JasminBuilder<'config> {
         Ok(JasminClass { modifiers, name, version: None, methods: vec![], fields: vec![], source_file: None })
     }
 
-    fn build_method(&self, node: RedNode<JasminLanguage>, source: &SourceText) -> Result<JasminMethod, OakError> {
+    fn build_method(&self, node: RedNode<JasminLanguage>, source: &SourceText) -> Result<JasminMethod, TextError> {
         let mut modifiers = vec![];
         let mut name_and_descriptor = String::new();
         let mut stack_size = None;
@@ -146,7 +146,7 @@ impl<'config> JasminBuilder<'config> {
         Ok(JasminMethod { modifiers, name_and_descriptor, stack_size, locals_count, instructions })
     }
 
-    fn build_instruction(&self, node: RedNode<JasminLanguage>, source: &SourceText) -> Result<JasminInstruction, OakError> {
+    fn build_instruction(&self, node: RedNode<JasminLanguage>, source: &SourceText) -> Result<JasminInstruction, TextError> {
         let mut tokens = vec![];
         for child in node.children() {
             if let RedTree::Leaf(t) = child {
@@ -183,7 +183,7 @@ impl<'config> JasminBuilder<'config> {
         }
     }
 
-    fn build_field(&self, node: RedNode<JasminLanguage>, source: &SourceText) -> Result<JasminField, OakError> {
+    fn build_field(&self, node: RedNode<JasminLanguage>, source: &SourceText) -> Result<JasminField, TextError> {
         let mut modifiers = vec![];
         let mut name_and_descriptor = String::new();
 
@@ -233,11 +233,11 @@ impl<'config> Builder<JasminLanguage> for JasminBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree, &source_text) {
-                    Ok(ast_root) => data_text_core::errors::OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
-                    Err(e) => data_text_core::errors::OakDiagnostics { result: Err(e.clone()), diagnostics: vec![e] },
+                    Ok(ast_root) => data_text_core::errors::TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Err(e) => data_text_core::errors::TextDiagnostics { result: Err(e.clone()), diagnostics: vec![e] },
                 }
             }
-            Err(e) => data_text_core::errors::OakDiagnostics { result: Err(e.clone()), diagnostics: vec![e] },
+            Err(e) => data_text_core::errors::TextDiagnostics { result: Err(e.clone()), diagnostics: vec![e] },
         }
     }
 }

@@ -4,7 +4,7 @@ pub mod token_type;
 
 use crate::{language::SassLanguage, lexer::token_type::SassTokenType};
 use data_text_core::{
-    Lexer, LexerState, OakError, TextEdit,
+    Lexer, LexerState, TextError, TextEdit,
     lexer::{CommentConfig, LexOutput, LexerCache, StringConfig, WhitespaceConfig},
     source::Source,
 };
@@ -42,7 +42,7 @@ impl<'config> SassLexer<'config> {
     }
 
     /// Main lexer loop that tokenizes the source text.
-    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), OakError> {
+    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

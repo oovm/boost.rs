@@ -1,5 +1,5 @@
 use crate::{ast::*, language::NixLanguage, parser::element_type::NixElementType};
-use data_text_core::{Builder, BuilderCache, GreenNode, GreenTree, OakDiagnostics, OakError, Range, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, GreenTree, TextDiagnostics, TextError, Range, SourceText, TextEdit, builder::BuildOutput, source::Source};
 
 /// Builder for Nix language structures.
 #[derive(Clone)]
@@ -26,26 +26,26 @@ impl<'config> Builder<NixLanguage> for NixBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree.clone(), &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> NixBuilder<'config> {
-    pub(crate) fn build_root(&self, green_tree: GreenNode<NixLanguage>, source: &SourceText) -> Result<NixRoot, OakError> {
+    pub(crate) fn build_root(&self, green_tree: GreenNode<NixLanguage>, source: &SourceText) -> Result<NixRoot, TextError> {
         let expr = self.build_expr(&green_tree, 0, source)?;
         Ok(NixRoot { expr })
     }
 
-    fn build_expr(&self, node: &GreenNode<NixLanguage>, offset: usize, source: &SourceText) -> Result<NixExpr, OakError> {
+    fn build_expr(&self, node: &GreenNode<NixLanguage>, offset: usize, source: &SourceText) -> Result<NixExpr, TextError> {
         let span = Range { start: offset, end: offset + node.byte_length as usize };
 
         match node.kind {

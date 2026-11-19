@@ -1,10 +1,10 @@
-use data_text_core::errors::OakError;
+use data_text_core::errors::TextError;
 use data_text_lua::{LuaLanguage, LuaParser};
 use language_testing::parsing::ParserTester;
 use std::{path::Path, time::Duration};
 
 #[test]
-fn test_lua_parser() -> Result<(), OakError> {
+fn test_lua_parser() -> Result<(), TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let tests = here.join("tests/parser");
     let language = LuaLanguage::default();

@@ -3,7 +3,7 @@ use crate::{language::RhombusLanguage, lexer::token_type::RhombusTokenType};
 /// Token type definitions for Rhombus lexer.
 pub mod token_type;
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError, Source, TextEdit,
+    Lexer, LexerCache, LexerState, TextError, Source, TextEdit,
     lexer::{CommentConfig, LexOutput, StringConfig, WhitespaceConfig},
 };
 use std::sync::LazyLock;
@@ -34,7 +34,7 @@ impl<'config> RhombusLexer<'config> {
         Self { config }
     }
 
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

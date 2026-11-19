@@ -1,11 +1,11 @@
-use data_text_core::{Builder, OakError, OakErrorKind, SourceText, parser::session::ParseSession};
+use data_text_core::{Builder, TextError, TextErrorKind, SourceText, parser::session::ParseSession};
 use data_text_dot::{
     DotBuilder, DotLanguage,
     ast::{AttributeTarget, Compass, EdgeOp, EdgeOperand, GraphType, RecordItem, Statement},
 };
 
 /// Builds the typed AST from `source`.
-fn build(source: &str) -> (data_text_dot::ast::DotRoot, Vec<OakError>) {
+fn build(source: &str) -> (data_text_dot::ast::DotRoot, Vec<TextError>) {
     let language = DotLanguage::default();
     let builder = DotBuilder::new(&language);
     let text = SourceText::new(source);
@@ -16,9 +16,9 @@ fn build(source: &str) -> (data_text_dot::ast::DotRoot, Vec<OakError>) {
 }
 
 /// Returns `true` if a syntax error message mentions `word`.
-fn has_syntax_error(diagnostics: &[OakError], word: &str) -> bool {
+fn has_syntax_error(diagnostics: &[TextError], word: &str) -> bool {
     diagnostics.iter().any(|error| match error.kind() {
-        OakErrorKind::SyntaxError { message, .. } => message.contains(word),
+        TextErrorKind::SyntaxError { message, .. } => message.contains(word),
         _ => false,
     })
 }

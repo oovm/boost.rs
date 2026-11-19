@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError, Source,
+    Lexer, LexerCache, LexerState, TextError, Source,
     lexer::{CommentConfig, LexOutput, StringConfig, WhitespaceConfig},
 };
 pub mod token_type;
@@ -39,7 +39,7 @@ impl<'config> IniLexer<'config> {
     }
 
     /// The main lexical analysis loop.
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, pending_line_value: &mut bool) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, pending_line_value: &mut bool) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

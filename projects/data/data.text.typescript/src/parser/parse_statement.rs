@@ -2,10 +2,10 @@ use crate::{
     lexer::token_type::TypeScriptTokenType,
     parser::{State, TypeScriptParser},
 };
-use data_text_core::{OakError, parser::pratt::PrattParser, source::Source};
+use data_text_core::{TextError, parser::pratt::PrattParser, source::Source};
 
 impl<'config> TypeScriptParser<'config> {
-    pub(crate) fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         self.skip_trivia(state);
         let cp = state.checkpoint();
@@ -143,7 +143,7 @@ impl<'config> TypeScriptParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_decorator<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_decorator<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         let cp = state.checkpoint();
         self.expect(state, At).ok();
@@ -152,14 +152,14 @@ impl<'config> TypeScriptParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_variable_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_variable_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         self.parse_variable_declaration_content(state)?;
         state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::VariableDeclaration);
         Ok(())
     }
 
-    pub(crate) fn parse_variable_declaration_content<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_variable_declaration_content<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use TypeScriptTokenType::*;
         state.bump(); // var, let, or const
         self.skip_trivia(state);
@@ -203,14 +203,14 @@ impl<'config> TypeScriptParser<'config> {
         state.finish_at(checkpoint, crate::parser::element_type::TypeScriptElementType::BindingPattern);
     }
 
-    pub(crate) fn parse_function_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_function_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         self.parse_function_declaration_content(state)?;
         state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::FunctionDeclaration);
         Ok(())
     }
 
-    pub(crate) fn parse_function_declaration_content<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_function_declaration_content<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         if self.eat(state, Async) {
             self.skip_trivia(state);
@@ -247,14 +247,14 @@ impl<'config> TypeScriptParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_interface_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_interface_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         self.parse_interface_declaration_content(state)?;
         state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::InterfaceDeclaration);
         Ok(())
     }
 
-    pub(crate) fn parse_interface_declaration_content<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_interface_declaration_content<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::{lexer::token_type::TypeScriptTokenType::*, parser::element_type::TypeScriptElementType};
         state.bump(); // interface
         self.expect(state, IdentifierName).ok();
@@ -280,7 +280,7 @@ impl<'config> TypeScriptParser<'config> {
     /// bodies. Index, call and construct signatures are folded into
     /// `MethodSignature` nodes so their parameter and value types stay visible
     /// to the scope analyzer.
-    fn parse_interface_body<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_interface_body<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::{lexer::token_type::TypeScriptTokenType::*, parser::element_type::TypeScriptElementType};
         let body = state.checkpoint();
         self.expect(state, LeftBrace).ok();
@@ -351,7 +351,7 @@ impl<'config> TypeScriptParser<'config> {
     /// TypeScript restricts an index key type to `string`, `number`, `symbol`
     /// or a template literal, so the key cannot reference a module binding and
     /// only the value type is recorded for the scope analyzer.
-    fn parse_index_signature_member<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_index_signature_member<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::{lexer::token_type::TypeScriptTokenType::*, parser::element_type::TypeScriptElementType};
         self.expect(state, LeftBracket).ok();
         if state.not_at_end() && !self.at(state, RightBracket) && !self.at(state, Colon) {
@@ -456,14 +456,14 @@ impl<'config> TypeScriptParser<'config> {
         starts && matches!(state.peek_non_trivia_kind_at(1), Some(Colon | Question | LeftParen | Less))
     }
 
-    pub(crate) fn parse_enum_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_enum_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         self.parse_enum_declaration_content(state)?;
         state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::EnumDeclaration);
         Ok(())
     }
 
-    pub(crate) fn parse_enum_declaration_content<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_enum_declaration_content<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         state.bump(); // enum
         self.expect(state, IdentifierName).ok();
@@ -471,14 +471,14 @@ impl<'config> TypeScriptParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_type_alias_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_type_alias_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         self.parse_type_alias_declaration_content(state)?;
         state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::TypeAliasDeclaration);
         Ok(())
     }
 
-    pub(crate) fn parse_type_alias_declaration_content<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_type_alias_declaration_content<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         state.bump(); // type
         self.expect(state, IdentifierName).ok();
@@ -493,14 +493,14 @@ impl<'config> TypeScriptParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_namespace_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_namespace_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         self.parse_namespace_declaration_content(state)?;
         state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::NamespaceDeclaration);
         Ok(())
     }
 
-    pub(crate) fn parse_namespace_declaration_content<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_namespace_declaration_content<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         state.bump(); // namespace or module
         self.expect(state, IdentifierName).ok();
@@ -508,7 +508,7 @@ impl<'config> TypeScriptParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_import_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_import_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::{lexer::token_type::TypeScriptTokenType::*, parser::element_type::TypeScriptElementType};
         let cp = state.checkpoint();
         state.bump(); // import
@@ -660,7 +660,7 @@ impl<'config> TypeScriptParser<'config> {
         state.finish_at(ns_cp, TypeScriptElementType::NamespaceImport);
     }
 
-    pub(crate) fn parse_export_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_export_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::{lexer::token_type::TypeScriptTokenType::*, parser::element_type::TypeScriptElementType};
         let cp = state.checkpoint();
         state.bump(); // export
@@ -784,7 +784,7 @@ impl<'config> TypeScriptParser<'config> {
         }
     }
 
-    pub(crate) fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // if
@@ -799,7 +799,7 @@ impl<'config> TypeScriptParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // for
@@ -902,7 +902,7 @@ impl<'config> TypeScriptParser<'config> {
         false
     }
 
-    pub(crate) fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // while
@@ -914,7 +914,7 @@ impl<'config> TypeScriptParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_do_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_do_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // do
@@ -928,7 +928,7 @@ impl<'config> TypeScriptParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_switch_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_switch_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // switch
@@ -962,7 +962,7 @@ impl<'config> TypeScriptParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_try_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_try_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // try
@@ -1008,7 +1008,7 @@ impl<'config> TypeScriptParser<'config> {
         false
     }
 
-    pub(crate) fn parse_break_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_break_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         let cp = state.checkpoint();
         let has_label = self.label_follows_same_line(state);
@@ -1021,7 +1021,7 @@ impl<'config> TypeScriptParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_continue_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_continue_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         let cp = state.checkpoint();
         let has_label = self.label_follows_same_line(state);
@@ -1034,7 +1034,7 @@ impl<'config> TypeScriptParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_throw_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_throw_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // throw
@@ -1044,7 +1044,7 @@ impl<'config> TypeScriptParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // return

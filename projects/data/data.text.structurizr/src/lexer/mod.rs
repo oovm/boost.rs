@@ -3,7 +3,7 @@ pub mod token_type;
 
 use crate::lexer::token_type::StructurizrTokenType;
 use core::range::Range;
-use data_text_core::{Lexer, LexerCache, LexerState, TextEdit, errors::OakError, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextEdit, errors::TextError, lexer::LexOutput, source::Source};
 
 /// A token in the Structurizr language.
 pub type StructurizrToken = data_text_core::Token<StructurizrTokenType>;
@@ -21,7 +21,7 @@ impl<'config> StructurizrLexer<'config> {
         Self { config }
     }
 
-    fn run<S: Source + ?Sized>(&self, state: &mut State<S>) -> Result<(), OakError> {
+    fn run<S: Source + ?Sized>(&self, state: &mut State<S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

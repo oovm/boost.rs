@@ -33,7 +33,7 @@ impl<'config> LLvmLexer<'config> {
     pub fn new(config: &'config LLvmLanguage) -> Self {
         Self { config }
     }
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         while state.not_at_end() {
             let start = state.get_position();
             let safe_point = start;

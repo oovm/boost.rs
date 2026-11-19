@@ -10,7 +10,7 @@ use crate::{
 };
 pub use element_type::RakuElementType;
 use data_text_core::{
-    GreenNode, OakError, TokenType,
+    GreenNode, TextError, TokenType,
     parser::{Associativity, ParseCache, ParseOutput, Parser, ParserState, Pratt, PrattParser, binary, parse_with_lexer, unary},
     source::{Source, TextEdit},
 };
@@ -28,7 +28,7 @@ impl RakuParser {
         Self { _language: language }
     }
 
-    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         match state.peek_kind() {
             Some(RakuTokenType::My) | Some(RakuTokenType::Our) | Some(RakuTokenType::Has) => {
@@ -70,7 +70,7 @@ impl RakuParser {
         Ok(())
     }
 
-    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(RakuTokenType::LeftBrace).ok();
         while state.not_at_end() && !state.at(RakuTokenType::RightBrace) {

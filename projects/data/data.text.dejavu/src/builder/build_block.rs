@@ -4,10 +4,10 @@ use crate::{
     builder::DejavuBuilder,
     parser::element_type::DejavuElementType,
 };
-use data_text_core::{OakError, RedNode, RedTree, Source};
+use data_text_core::{TextError, RedNode, RedTree, Source};
 
 impl<'config> DejavuBuilder<'config> {
-    pub(crate) fn build_block<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<BlockNode, OakError> {
+    pub(crate) fn build_block<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<BlockNode, TextError> {
         let span = node.span();
         let mut statements = Vec::new();
         for child in node.children() {

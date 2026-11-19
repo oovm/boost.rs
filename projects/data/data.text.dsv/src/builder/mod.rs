@@ -5,7 +5,7 @@ use crate::{
     lexer::DsvLexer,
     parser::DsvParser,
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, Lexer, OakDiagnostics, OakError, Parser, SourceText, TextEdit, parser::session::ParseSession, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Lexer, TextDiagnostics, TextError, Parser, SourceText, TextEdit, parser::session::ParseSession, source::Source};
 
 /// AST builder for DSV.
 #[derive(Clone, Default)]
@@ -20,7 +20,7 @@ impl<const LANG: DsvLanguage> DsvBuilder<LANG> {
 
 impl<const LANG: DsvLanguage> Builder<Dsv<LANG>> for DsvBuilder<LANG> {
     /// Builds the DSV AST.
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<Dsv<LANG>>) -> OakDiagnostics<DsvRoot<LANG>> {
+    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<Dsv<LANG>>) -> TextDiagnostics<DsvRoot<LANG>> {
         let parser = DsvParser::<LANG>::new();
         let lexer = DsvLexer::<LANG>::new();
 
@@ -33,22 +33,22 @@ impl<const LANG: DsvLanguage> Builder<Dsv<LANG>> for DsvBuilder<LANG> {
                 let text = source.get_text_in((0..source.length()).into());
                 let source_text = SourceText::new(text.into_owned());
                 match self.build_root(&green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<const LANG: DsvLanguage> DsvBuilder<LANG> {
     /// Builds the root of the DSV AST.
-    fn build_root<'a>(&self, green_tree: &GreenNode<'a, Dsv<LANG>>, source: &SourceText) -> Result<DsvRoot<LANG>, OakError> {
+    fn build_root<'a>(&self, green_tree: &GreenNode<'a, Dsv<LANG>>, source: &SourceText) -> Result<DsvRoot<LANG>, TextError> {
         let mut records = Vec::new();
         let mut current_offset = 0;
 
@@ -70,7 +70,7 @@ impl<const LANG: DsvLanguage> DsvBuilder<LANG> {
     }
 
     /// Builds a DSV record.
-    fn build_record<'a>(&self, node: &GreenNode<'a, Dsv<LANG>>, offset: usize, source: &SourceText) -> Result<DsvRecord<LANG>, OakError> {
+    fn build_record<'a>(&self, node: &GreenNode<'a, Dsv<LANG>>, offset: usize, source: &SourceText) -> Result<DsvRecord<LANG>, TextError> {
         let span = (offset..offset + node.byte_length as usize).into();
         let mut fields = Vec::new();
         let mut current_offset = offset;
@@ -93,7 +93,7 @@ impl<const LANG: DsvLanguage> DsvBuilder<LANG> {
     }
 
     /// Builds a DSV field.
-    fn build_field<'a>(&self, node: &GreenNode<'a, Dsv<LANG>>, offset: usize, source: &SourceText) -> Result<DsvField<LANG>, OakError> {
+    fn build_field<'a>(&self, node: &GreenNode<'a, Dsv<LANG>>, offset: usize, source: &SourceText) -> Result<DsvField<LANG>, TextError> {
         let span = (offset..offset + node.byte_length as usize).into();
         let raw_value = source.get_text_in(span).into_owned();
 

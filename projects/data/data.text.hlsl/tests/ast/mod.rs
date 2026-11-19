@@ -1,11 +1,11 @@
-use data_text_core::{Builder, OakError, SourceText, parser::session::ParseSession};
+use data_text_core::{Builder, TextError, SourceText, parser::session::ParseSession};
 use data_text_hlsl::{
     HlslBuilder, HlslLanguage,
     ast::{HlslAssignOp, HlslBinaryOp, HlslExpression, HlslFunction, HlslGlobalVar, HlslItem, HlslQualifier, HlslRoot, HlslStatement, HlslUnaryOp},
 };
 
 /// Builds the AST and the diagnostics for `source`.
-fn build(source: &str) -> (HlslRoot, Vec<OakError>) {
+fn build(source: &str) -> (HlslRoot, Vec<TextError>) {
     let language = HlslLanguage::default();
     let builder = HlslBuilder::new(&language);
     let text = SourceText::new(source);

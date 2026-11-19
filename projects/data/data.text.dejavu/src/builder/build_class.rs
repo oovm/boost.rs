@@ -5,10 +5,10 @@ use crate::{
     lexer::token_type::DejavuTokenType,
     parser::element_type::DejavuElementType,
 };
-use data_text_core::{OakError, RedNode, RedTree, Source};
+use data_text_core::{TextError, RedNode, RedTree, Source};
 
 impl<'config> DejavuBuilder<'config> {
-    pub(crate) fn build_class<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ClassDeclaration, OakError> {
+    pub(crate) fn build_class<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ClassDeclaration, TextError> {
         let span = node.span();
         let mut name = IdentifierNode { name: String::new(), span: Default::default() };
         let mut annotations = Vec::new();
@@ -101,7 +101,7 @@ impl<'config> DejavuBuilder<'config> {
         Ok(ClassDeclaration { name, annotations, parents, items, span })
     }
 
-    pub(crate) fn build_flags<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<FlagsDeclaration, OakError> {
+    pub(crate) fn build_flags<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<FlagsDeclaration, TextError> {
         let span = node.span();
         let mut name = IdentifierNode { name: String::new(), span: Default::default() };
         let mut annotations = Vec::new();
@@ -139,7 +139,7 @@ impl<'config> DejavuBuilder<'config> {
         Ok(FlagsDeclaration { name, annotations, items, span })
     }
 
-    pub(crate) fn build_enums<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<EnumDeclaration, OakError> {
+    pub(crate) fn build_enums<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<EnumDeclaration, TextError> {
         let span = node.span();
         let mut name = IdentifierNode { name: String::new(), span: Default::default() };
         let mut annotations = Vec::new();
@@ -177,7 +177,7 @@ impl<'config> DejavuBuilder<'config> {
         Ok(EnumDeclaration { name, annotations, items, span })
     }
 
-    pub(crate) fn build_variant<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<VariantDefinition, OakError> {
+    pub(crate) fn build_variant<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<VariantDefinition, TextError> {
         let span = node.span();
         let mut name = IdentifierNode { name: String::new(), span: Default::default() };
         let mut annotations = Vec::new();
@@ -202,7 +202,7 @@ impl<'config> DejavuBuilder<'config> {
         Ok(VariantDefinition { name, annotations, value, span })
     }
 
-    pub(crate) fn build_trait<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<TraitDeclaration, OakError> {
+    pub(crate) fn build_trait<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<TraitDeclaration, TextError> {
         let span = node.span();
         let mut name = IdentifierNode { name: String::new(), span: Default::default() };
         let mut annotations = Vec::new();
@@ -287,7 +287,7 @@ impl<'config> DejavuBuilder<'config> {
         Ok(TraitDeclaration { name, annotations, parents, items, span })
     }
 
-    pub(crate) fn build_widget<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<WidgetDeclaration, OakError> {
+    pub(crate) fn build_widget<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<WidgetDeclaration, TextError> {
         let span = node.span();
         let mut name = IdentifierNode { name: String::new(), span: Default::default() };
         let mut annotations = Vec::new();

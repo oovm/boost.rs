@@ -1,7 +1,7 @@
 use data_text_rust::{Highlighter, RustHighlighter};
 
 #[test]
-fn test_rust_highlighter() -> Result<(), data_text_core::OakError> {
+fn test_rust_highlighter() -> Result<(), data_text_core::TextError> {
     let highlighter = RustHighlighter::new();
     let source = r#"
 fn main() {
@@ -18,7 +18,7 @@ fn main() {
 }
 
 #[test]
-fn test_rust_highlighter_with_parser() -> Result<(), data_text_core::OakError> {
+fn test_rust_highlighter_with_parser() -> Result<(), data_text_core::TextError> {
     let highlighter = RustHighlighter::new();
     let source = r#"
 struct Point {

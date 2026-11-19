@@ -1,5 +1,5 @@
 use crate::{ast::PerlRoot, language::PerlLanguage, parser::PerlParser};
-use data_text_core::{Builder, BuilderCache, OakDiagnostics, Parser, Source, SourceText, TextEdit, parser::session::ParseSession};
+use data_text_core::{Builder, BuilderCache, TextDiagnostics, Parser, Source, SourceText, TextEdit, parser::session::ParseSession};
 
 /// Builder for Perl AST nodes.
 ///
@@ -17,7 +17,7 @@ impl<'config> PerlBuilder<'config> {
 }
 
 impl<'config> Builder<PerlLanguage> for PerlBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<PerlLanguage>) -> OakDiagnostics<PerlRoot> {
+    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<PerlLanguage>) -> TextDiagnostics<PerlRoot> {
         let parser = PerlParser::new(self.config);
 
         let mut parse_cache = ParseSession::<PerlLanguage>::default();
@@ -28,9 +28,9 @@ impl<'config> Builder<PerlLanguage> for PerlBuilder<'config> {
                 let _source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 // Placeholder implementation
                 let ast_root = PerlRoot { items: Vec::new() };
-                OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics }
+                TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics }
             }
-            Err(e) => OakDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
+            Err(e) => TextDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
         }
     }
 }

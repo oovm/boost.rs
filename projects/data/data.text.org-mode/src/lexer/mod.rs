@@ -4,7 +4,7 @@ pub mod token_type;
 use crate::{language::OrgModeLanguage, lexer::token_type::OrgModeTokenType};
 use data_text_core::{
     TextEdit,
-    errors::OakError,
+    errors::TextError,
     lexer::{CommentConfig, LexOutput, Lexer, LexerCache, LexerState, StringConfig, WhitespaceConfig},
     source::Source,
 };
@@ -165,7 +165,7 @@ impl<'config> OrgModeLexer<'config> {
         }
     }
 
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

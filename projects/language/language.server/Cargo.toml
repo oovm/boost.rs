@@ -16,7 +16,7 @@ serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 futures = { workspace = true }
 dashmap = { workspace = true }
-url = { workspace = true }
+url = { workspace = true, features = ["serde"] }
 data-text-core = { workspace = true, features = ["serde", "vfs", "vfs-disk"] }
 data-text-symbols = { workspace = true }
 language-navigation = { workspace = true }

@@ -6,7 +6,7 @@ use crate::{
     parser::element_type::TwigElementType,
 };
 use data_text_core::{
-    OakError,
+    TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -24,7 +24,7 @@ impl<'config> TwigParser<'config> {
         Self { config }
     }
 
-    fn parse_node<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_node<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         match state.peek_kind() {
             Some(TwigTokenType::DoubleLeftBrace) => self.parse_variable(state),
             Some(TwigTokenType::LeftBracePercent) => self.parse_tag_statement(state),
@@ -43,7 +43,7 @@ impl<'config> TwigParser<'config> {
         }
     }
 
-    fn parse_variable<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_variable<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(TwigTokenType::DoubleLeftBrace)?;
         self.parse_expression(state)?;
@@ -52,7 +52,7 @@ impl<'config> TwigParser<'config> {
         Ok(())
     }
 
-    fn parse_tag_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_tag_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(TwigTokenType::LeftBracePercent)?;
 
@@ -86,7 +86,7 @@ impl<'config> TwigParser<'config> {
         }
     }
 
-    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), OakError> {
+    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), TextError> {
         state.expect(TwigTokenType::Identifier)?; // if
         self.parse_expression(state)?;
         state.expect(TwigTokenType::PercentRightBrace)?;
@@ -129,7 +129,7 @@ impl<'config> TwigParser<'config> {
         Ok(())
     }
 
-    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), OakError> {
+    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), TextError> {
         state.expect(TwigTokenType::Identifier)?; // for
         self.parse_expression(state)?; // x
         // Twig for syntax: for x in y
@@ -151,7 +151,7 @@ impl<'config> TwigParser<'config> {
         Ok(())
     }
 
-    fn parse_block_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), OakError> {
+    fn parse_block_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), TextError> {
         state.expect(TwigTokenType::Identifier)?; // block
         state.expect(TwigTokenType::Identifier)?; // name
         state.expect(TwigTokenType::PercentRightBrace)?;
@@ -171,7 +171,7 @@ impl<'config> TwigParser<'config> {
         Ok(())
     }
 
-    fn parse_macro_definition<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), OakError> {
+    fn parse_macro_definition<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), TextError> {
         state.expect(TwigTokenType::Identifier)?; // macro
         state.expect(TwigTokenType::Identifier)?; // name
 
@@ -202,11 +202,11 @@ impl<'config> TwigParser<'config> {
         Ok(())
     }
 
-    fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.parse_binary_expression(state, 0)
     }
 
-    fn parse_binary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, min_precedence: i32) -> Result<(), OakError> {
+    fn parse_binary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, min_precedence: i32) -> Result<(), TextError> {
         let cp = state.checkpoint();
         self.parse_primary_expression(state)?;
 
@@ -233,7 +233,7 @@ impl<'config> TwigParser<'config> {
         }
     }
 
-    fn parse_primary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_primary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
 
         match state.peek_kind() {

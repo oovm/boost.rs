@@ -2,13 +2,13 @@ use crate::{
     language::RegexLanguage,
     lexer::{RegexLexer, token_type::RegexTokenType},
 };
-use data_text_core::{LexerState, OakError, source::Source};
+use data_text_core::{LexerState, TextError, source::Source};
 
 type State<'s, S> = LexerState<'s, S, RegexLanguage>;
 
 impl<'config> RegexLexer<'config> {
     /// Runs the lexer on the given source state and produces tokens.
-    pub(crate) fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), OakError> {
+    pub(crate) fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
             if self.skip_whitespace(state) {

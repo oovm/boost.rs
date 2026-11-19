@@ -30,8 +30,8 @@ pub use parser::VbNetParser;
 ///
 /// # Errors
 ///
-/// Returns an [data_text_core::OakError] if parsing fails.
-pub fn parse(source: &str) -> Result<VbNetRoot, data_text_core::OakError> {
+/// Returns an [data_text_core::TextError] if parsing fails.
+pub fn parse(source: &str) -> Result<VbNetRoot, data_text_core::TextError> {
     let language = VbNetLanguage::new();
     let builder = VbNetBuilder::new(&language);
     let source_text = data_text_core::source::SourceText::new(source);
@@ -47,8 +47,8 @@ pub fn parse(source: &str) -> Result<VbNetRoot, data_text_core::OakError> {
 ///
 /// # Errors
 ///
-/// Returns an [data_text_core::OakError] if parsing fails.
-pub fn parse_with_cache(source: &str, cache: &mut data_text_core::parser::CachingParseSession<VbNetLanguage, data_text_core::parser::ParseSession<VbNetLanguage>>) -> Result<VbNetRoot, data_text_core::OakError> {
+/// Returns an [data_text_core::TextError] if parsing fails.
+pub fn parse_with_cache(source: &str, cache: &mut data_text_core::parser::CachingParseSession<VbNetLanguage, data_text_core::parser::ParseSession<VbNetLanguage>>) -> Result<VbNetRoot, data_text_core::TextError> {
     use data_text_core::ParseCache;
 
     let language = VbNetLanguage::new();

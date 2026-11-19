@@ -4,7 +4,7 @@ pub mod token_type;
 
 pub use self::token_type::TypeScriptTokenType;
 use crate::language::TypeScriptLanguage;
-use data_text_core::{Lexer, LexerCache, LexerState, OakError, TextEdit, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextError, TextEdit, lexer::LexOutput, source::Source};
 
 /// Lexer for the TypeScript language.
 #[derive(Clone, Debug)]
@@ -35,7 +35,7 @@ impl<'config> Lexer<TypeScriptLanguage> for TypeScriptLexer<'config> {
 }
 
 impl<'config> TypeScriptLexer<'config> {
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

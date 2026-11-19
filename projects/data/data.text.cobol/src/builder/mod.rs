@@ -1,6 +1,6 @@
 use crate::{ast::CobolRoot, language::CobolLanguage};
 use data_text_core::{
-    GreenNode, OakDiagnostics, Range, SourceText,
+    GreenNode, TextDiagnostics, Range, SourceText,
     builder::{BuildOutput, Builder, BuilderCache},
     source::{Source, TextEdit},
 };
@@ -27,21 +27,21 @@ impl Builder<CobolLanguage> for CobolBuilder {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree.clone(), &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl CobolBuilder {
-    pub(crate) fn build_root(&self, green_tree: GreenNode<CobolLanguage>, _source: &SourceText) -> Result<CobolRoot, data_text_core::OakError> {
+    pub(crate) fn build_root(&self, green_tree: GreenNode<CobolLanguage>, _source: &SourceText) -> Result<CobolRoot, data_text_core::TextError> {
         let span = Range { start: 0, end: green_tree.byte_length as usize };
         Ok(CobolRoot { span })
     }

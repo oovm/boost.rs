@@ -1,12 +1,12 @@
 use data_text_core::{
-    OakError, OakErrorKind, Parser, SourceText,
+    TextError, TextErrorKind, Parser, SourceText,
     parser::session::ParseSession,
     tree::{RedNode, RedTree},
 };
 use data_text_dot::{DotElementType, DotLanguage, DotParser, DotTokenType};
 
 /// Parses `source` and hands the red tree plus diagnostics to `check`.
-fn parse<R>(source: &str, check: impl FnOnce(&RedNode<DotLanguage>, &[OakError]) -> R) -> R {
+fn parse<R>(source: &str, check: impl FnOnce(&RedNode<DotLanguage>, &[TextError]) -> R) -> R {
     let text = SourceText::new(source);
     let language = DotLanguage::default();
     let parser = DotParser::new(&language);
@@ -54,16 +54,16 @@ fn leaf_count(node: &RedNode<DotLanguage>, kind: DotTokenType) -> usize {
 }
 
 /// Returns `true` if a syntax error message mentions `word`.
-fn has_syntax_error(diagnostics: &[OakError], word: &str) -> bool {
+fn has_syntax_error(diagnostics: &[TextError], word: &str) -> bool {
     diagnostics.iter().any(|error| match error.kind() {
-        OakErrorKind::SyntaxError { message, .. } => message.contains(word),
+        TextErrorKind::SyntaxError { message, .. } => message.contains(word),
         _ => false,
     })
 }
 
 /// Returns `true` if a stray token was reported.
-fn has_unexpected_token(diagnostics: &[OakError], token: &str) -> bool {
-    diagnostics.iter().any(|error| matches!(error.kind(), OakErrorKind::UnexpectedToken { token: reported, .. } if reported == token))
+fn has_unexpected_token(diagnostics: &[TextError], token: &str) -> bool {
+    diagnostics.iter().any(|error| matches!(error.kind(), TextErrorKind::UnexpectedToken { token: reported, .. } if reported == token))
 }
 
 #[test]
@@ -200,7 +200,7 @@ fn test_reports_unterminated_graph() {
 
     parse(source, |root, diagnostics| {
         assert_eq!(root.green.kind, DotElementType::Root);
-        assert!(diagnostics.iter().any(|error| matches!(error.kind(), OakErrorKind::UnexpectedEof { .. })), "expected an EOF diagnostic, got {diagnostics:?}");
+        assert!(diagnostics.iter().any(|error| matches!(error.kind(), TextErrorKind::UnexpectedEof { .. })), "expected an EOF diagnostic, got {diagnostics:?}");
     });
 }
 

@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use crate::{ast::TomlRoot, language::TomlLanguage, lexer::TomlLexer, parser::TomlParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, OakError, Parser, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, SourceText, TextEdit, builder::BuildOutput, source::Source};
 use std::{collections::BTreeMap, sync::Arc};
 
 /// TOML AST builder
@@ -14,7 +14,7 @@ impl<'config> TomlBuilder<'config> {
         Self { config }
     }
 
-    fn build_root<'a>(&self, green_tree: &GreenNode<'a, TomlLanguage>, _source: &SourceText, cache: &mut impl BuilderCache<TomlLanguage>) -> Result<TomlRoot, OakError> {
+    fn build_root<'a>(&self, green_tree: &GreenNode<'a, TomlLanguage>, _source: &SourceText, cache: &mut impl BuilderCache<TomlLanguage>) -> Result<TomlRoot, TextError> {
         if let Some(cached) = cache.get_typed_node::<TomlRoot>(green_tree) {
             return Ok(cached.clone());
         }
@@ -42,15 +42,15 @@ impl<'config> Builder<TomlLanguage> for TomlBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(&green_tree, &source_text, cache) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }

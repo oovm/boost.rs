@@ -132,7 +132,7 @@ impl<'config> ActionScriptParser<'config> {
         Self { config }
     }
 
-    pub(crate) fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    pub(crate) fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         use crate::lexer::ActionScriptTokenType;
         match state.peek_kind() {
             Some(ActionScriptTokenType::Function) => self.parse_function(state)?,
@@ -154,7 +154,7 @@ impl<'config> ActionScriptParser<'config> {
         Ok(())
     }
 
-    fn parse_function<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_function<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         use crate::lexer::ActionScriptTokenType;
         let cp = state.checkpoint();
         state.expect(ActionScriptTokenType::Function).ok();
@@ -168,7 +168,7 @@ impl<'config> ActionScriptParser<'config> {
         Ok(())
     }
 
-    fn parse_param_list<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_param_list<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         use crate::lexer::ActionScriptTokenType::*;
         let cp = state.checkpoint();
         state.expect(LeftParen).ok();
@@ -180,7 +180,7 @@ impl<'config> ActionScriptParser<'config> {
         Ok(())
     }
 
-    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         use crate::lexer::ActionScriptTokenType::*;
         let cp = state.checkpoint();
         state.expect(LeftBrace).ok();
@@ -192,7 +192,7 @@ impl<'config> ActionScriptParser<'config> {
         Ok(())
     }
 
-    fn parse_import_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_import_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         state.expect(crate::lexer::ActionScriptTokenType::Import).ok();
         while !state.at(crate::lexer::ActionScriptTokenType::Semicolon) && state.not_at_end() {
@@ -203,7 +203,7 @@ impl<'config> ActionScriptParser<'config> {
         Ok(())
     }
 
-    fn parse_package_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_package_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         state.expect(crate::lexer::ActionScriptTokenType::Package).ok();
         if state.at(crate::lexer::ActionScriptTokenType::Identifier) {
@@ -214,7 +214,7 @@ impl<'config> ActionScriptParser<'config> {
         Ok(())
     }
 
-    fn parse_class_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_class_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         state.expect(crate::lexer::ActionScriptTokenType::Class).ok();
         state.expect(crate::lexer::ActionScriptTokenType::Identifier).ok();
@@ -226,7 +226,7 @@ impl<'config> ActionScriptParser<'config> {
         Ok(())
     }
 
-    fn parse_interface_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_interface_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         state.expect(crate::lexer::ActionScriptTokenType::Interface).ok();
         state.expect(crate::lexer::ActionScriptTokenType::Identifier).ok();
@@ -235,7 +235,7 @@ impl<'config> ActionScriptParser<'config> {
         Ok(())
     }
 
-    fn parse_variable_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_variable_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         if state.eat(crate::lexer::ActionScriptTokenType::Var) || state.eat(crate::lexer::ActionScriptTokenType::Const) {
             state.expect(crate::lexer::ActionScriptTokenType::Identifier).ok();
@@ -251,7 +251,7 @@ impl<'config> ActionScriptParser<'config> {
         Ok(())
     }
 
-    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         state.expect(crate::lexer::ActionScriptTokenType::If).ok();
         state.expect(crate::lexer::ActionScriptTokenType::LeftParen).ok();
@@ -265,7 +265,7 @@ impl<'config> ActionScriptParser<'config> {
         Ok(())
     }
 
-    fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         state.expect(crate::lexer::ActionScriptTokenType::While).ok();
         state.expect(crate::lexer::ActionScriptTokenType::LeftParen).ok();
@@ -276,7 +276,7 @@ impl<'config> ActionScriptParser<'config> {
         Ok(())
     }
 
-    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         state.expect(crate::lexer::ActionScriptTokenType::For).ok();
         state.expect(crate::lexer::ActionScriptTokenType::LeftParen).ok();
@@ -289,7 +289,7 @@ impl<'config> ActionScriptParser<'config> {
         Ok(())
     }
 
-    fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         state.expect(crate::lexer::ActionScriptTokenType::Return).ok();
         if !state.at(crate::lexer::ActionScriptTokenType::Semicolon) {

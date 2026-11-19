@@ -5,11 +5,11 @@ use crate::{
     lexer::token_type::ValkyrieTokenType,
     parser::element_type::ValkyrieElementType,
 };
-use data_text_core::{OakError, RedNode, RedTree, Source};
+use data_text_core::{TextError, RedNode, RedTree, Source};
 
 impl<'config> ValkyrieBuilder<'config> {
     /// 只消费 CST 的约束节点，不重新扫描源码语法。
-    pub(crate) fn build_where_clause<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Vec<WhereConstraint>, OakError> {
+    pub(crate) fn build_where_clause<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Vec<WhereConstraint>, TextError> {
         let mut constraints = Vec::new();
         for child in node.children() {
             let RedTree::Node(n) = child
@@ -42,7 +42,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(constraints)
     }
 
-    fn build_trait_bound<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TraitBound, OakError> {
+    fn build_trait_bound<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TraitBound, TextError> {
         let span = node.span();
         let mut trait_path = None;
         let mut type_arguments = Vec::new();

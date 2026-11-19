@@ -5,7 +5,7 @@ pub mod element_type;
 
 use crate::{language::KotlinLanguage, lexer::KotlinLexer};
 use data_text_core::{
-    GreenNode, OakError, TextEdit,
+    GreenNode, TextError, TextEdit,
     parser::{
         ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer,
         pratt::{Associativity, Pratt, PrattParser, binary, unary},
@@ -38,7 +38,7 @@ impl<'config> KotlinParser<'config> {
         }
     }
 
-    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::KotlinTokenType::*;
         self.skip_trivia(state);
         match state.peek_kind() {
@@ -58,7 +58,7 @@ impl<'config> KotlinParser<'config> {
         Ok(())
     }
 
-    fn parse_class_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_class_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::KotlinTokenType::*;
         let cp = state.checkpoint();
         state.expect(Class).ok();
@@ -99,7 +99,7 @@ impl<'config> KotlinParser<'config> {
         Ok(())
     }
 
-    fn parse_function_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_function_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::KotlinTokenType::*;
         let cp = state.checkpoint();
         state.expect(Fun).ok();
@@ -140,7 +140,7 @@ impl<'config> KotlinParser<'config> {
         Ok(())
     }
 
-    fn parse_variable_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_variable_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::KotlinTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // val/var
@@ -162,7 +162,7 @@ impl<'config> KotlinParser<'config> {
         Ok(())
     }
 
-    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::KotlinTokenType::*;
         let cp = state.checkpoint();
         state.expect(If).ok();
@@ -183,7 +183,7 @@ impl<'config> KotlinParser<'config> {
         Ok(())
     }
 
-    fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::KotlinTokenType::*;
         let cp = state.checkpoint();
         state.expect(While).ok();
@@ -199,7 +199,7 @@ impl<'config> KotlinParser<'config> {
         Ok(())
     }
 
-    fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::KotlinTokenType::*;
         let cp = state.checkpoint();
         state.expect(Return).ok();
@@ -213,7 +213,7 @@ impl<'config> KotlinParser<'config> {
         Ok(())
     }
 
-    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::KotlinTokenType::*;
         let cp = state.checkpoint();
         state.expect(LBrace).ok();

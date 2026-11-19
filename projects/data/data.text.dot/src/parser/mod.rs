@@ -9,7 +9,7 @@ use crate::{
     parser::element_type::DotElementType,
 };
 use data_text_core::{
-    OakError,
+    TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -62,7 +62,7 @@ impl<'config> DotParser<'config> {
 
             let offset = state.current_offset();
             let text = state.peek_text().map(|text| text.into_owned()).unwrap_or_default();
-            state.errors.push(OakError::unexpected_token(text, offset, state.source_id()));
+            state.errors.push(TextError::unexpected_token(text, offset, state.source_ref()));
             state.bump();
         }
     }
@@ -79,7 +79,7 @@ impl<'config> DotParser<'config> {
             state.bump();
         }
         else {
-            state.errors.push(OakError::expected_token("`graph` or `digraph`", state.current_offset(), state.source_id()));
+            state.errors.push(TextError::expected_token("`graph` or `digraph`", state.current_offset(), state.source_ref()));
         }
 
         if Self::at_plain_id(state) {
@@ -91,7 +91,7 @@ impl<'config> DotParser<'config> {
             true
         }
         else {
-            state.errors.push(OakError::expected_token("`{`", state.current_offset(), state.source_id()));
+            state.errors.push(TextError::expected_token("`{`", state.current_offset(), state.source_ref()));
             false
         };
 
@@ -123,7 +123,7 @@ impl<'config> DotParser<'config> {
             if !Self::at_statement_start(state) {
                 let offset = state.current_offset();
                 let text = state.peek_text().map(|text| text.into_owned()).unwrap_or_default();
-                state.errors.push(OakError::unexpected_token(text, offset, state.source_id()));
+                state.errors.push(TextError::unexpected_token(text, offset, state.source_ref()));
                 state.bump();
                 self.recover_statement(state);
                 continue;
@@ -187,7 +187,7 @@ impl<'config> DotParser<'config> {
                 state.bump();
             }
             else {
-                state.errors.push(OakError::expected_token("an assignment value", state.current_offset(), state.source_id()));
+                state.errors.push(TextError::expected_token("an assignment value", state.current_offset(), state.source_ref()));
             }
 
             state.finish_at(checkpoint, DotElementType::GraphAssignment);
@@ -220,7 +220,7 @@ impl<'config> DotParser<'config> {
 
             if !Self::at_operand_start(state) {
                 state.restore(operator_checkpoint);
-                state.errors.push(OakError::syntax_error("expected a node or a subgraph after the edge operator", operator_offset, state.source_id()));
+                state.errors.push(TextError::syntax_error("expected a node or a subgraph after the edge operator", operator_offset, state.source_ref()));
                 break;
             }
 
@@ -266,7 +266,7 @@ impl<'config> DotParser<'config> {
         state.bump(); // `:`
 
         if !Self::at_id(state) {
-            state.errors.push(OakError::expected_token("a port identifier or a compass point", state.current_offset(), state.source_id()));
+            state.errors.push(TextError::expected_token("a port identifier or a compass point", state.current_offset(), state.source_ref()));
             state.finish_at(checkpoint, DotElementType::Port);
             return;
         }
@@ -278,11 +278,11 @@ impl<'config> DotParser<'config> {
                 state.bump();
             }
             else {
-                state.errors.push(OakError::expected_token("a compass point", state.current_offset(), state.source_id()));
+                state.errors.push(TextError::expected_token("a compass point", state.current_offset(), state.source_ref()));
             }
 
             while state.at(DotTokenType::Colon) {
-                state.errors.push(OakError::syntax_error("a port accepts at most two `:` separated segments", state.current_offset(), state.source_id()));
+                state.errors.push(TextError::syntax_error("a port accepts at most two `:` separated segments", state.current_offset(), state.source_ref()));
                 state.bump();
                 if Self::at_id(state) {
                     state.bump();
@@ -302,7 +302,7 @@ impl<'config> DotParser<'config> {
             self.parse_attribute_list(state);
         }
         else {
-            state.errors.push(OakError::expected_token("`[`", state.current_offset(), state.source_id()));
+            state.errors.push(TextError::expected_token("`[`", state.current_offset(), state.source_ref()));
         }
 
         state.finish_at(checkpoint, DotElementType::GraphAttribute);
@@ -313,7 +313,7 @@ impl<'config> DotParser<'config> {
         let checkpoint = state.checkpoint();
 
         if !state.eat(DotTokenType::LeftBracket) {
-            state.errors.push(OakError::expected_token("`[`", state.current_offset(), state.source_id()));
+            state.errors.push(TextError::expected_token("`[`", state.current_offset(), state.source_ref()));
         }
 
         loop {
@@ -329,7 +329,7 @@ impl<'config> DotParser<'config> {
             if !Self::at_id(state) {
                 let offset = state.current_offset();
                 let text = state.peek_text().map(|text| text.into_owned()).unwrap_or_default();
-                state.errors.push(OakError::unexpected_token(text, offset, state.source_id()));
+                state.errors.push(TextError::unexpected_token(text, offset, state.source_ref()));
                 state.bump();
                 continue;
             }
@@ -344,7 +344,7 @@ impl<'config> DotParser<'config> {
                     self.record_lexical_error(state);
                 }
                 else {
-                    state.errors.push(OakError::expected_token("an attribute value", state.current_offset(), state.source_id()));
+                    state.errors.push(TextError::expected_token("an attribute value", state.current_offset(), state.source_ref()));
                 }
             }
 
@@ -354,7 +354,7 @@ impl<'config> DotParser<'config> {
         }
 
         if !state.eat(DotTokenType::RightBracket) {
-            state.errors.push(OakError::expected_token("`]`", state.current_offset(), state.source_id()));
+            state.errors.push(TextError::expected_token("`]`", state.current_offset(), state.source_ref()));
         }
 
         state.finish_at(checkpoint, DotElementType::AttributeList);
@@ -365,7 +365,7 @@ impl<'config> DotParser<'config> {
         let offset = state.current_offset();
         let text = state.peek_text().map(|text| text.into_owned()).unwrap_or_default();
         let message = if text.starts_with('"') { "unterminated string literal" } else { "unexpected character" };
-        state.errors.push(OakError::syntax_error(message, offset, state.source_id()));
+        state.errors.push(TextError::syntax_error(message, offset, state.source_ref()));
         state.bump();
     }
 
@@ -381,7 +381,7 @@ impl<'config> DotParser<'config> {
         }
 
         if !state.at(DotTokenType::LeftBrace) {
-            state.errors.push(OakError::expected_token("`{`", state.current_offset(), state.source_id()));
+            state.errors.push(TextError::expected_token("`{`", state.current_offset(), state.source_ref()));
             state.finish_at(checkpoint, DotElementType::GraphSubgraph);
             return;
         }

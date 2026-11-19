@@ -42,7 +42,7 @@ pub use crate::language::to_value;
 
 /// Serializes the given value to a DSV string with the given configuration.
 #[cfg(feature = "serde")]
-pub fn to_string_with_config<const LANG: DsvLanguage, T: ::serde::Serialize>(value: &T) -> Result<String, data_text_core::OakError> {
+pub fn to_string_with_config<const LANG: DsvLanguage, T: ::serde::Serialize>(value: &T) -> Result<String, data_text_core::TextError> {
     use data_text_core::source::ToSource;
     let dsv_root = to_value::<LANG, T>(value)?;
     let mut buffer = data_text_core::source::SourceBuffer::default();
@@ -52,7 +52,7 @@ pub fn to_string_with_config<const LANG: DsvLanguage, T: ::serde::Serialize>(val
 
 /// Deserializes a DSV string into a value of type `T` with the given configuration.
 #[cfg(feature = "serde")]
-pub fn from_str_with_config<const LANG: DsvLanguage, T: ::serde::de::DeserializeOwned>(s: &str) -> Result<T, data_text_core::OakError> {
+pub fn from_str_with_config<const LANG: DsvLanguage, T: ::serde::de::DeserializeOwned>(s: &str) -> Result<T, data_text_core::TextError> {
     use data_text_core::{Builder, Lexer, Parser};
     let mut session = data_text_core::parser::session::ParseSession::<Dsv<LANG>>::default();
     let lexer = crate::lexer::DsvLexer::<LANG>::new();
@@ -70,7 +70,7 @@ pub fn from_str_with_config<const LANG: DsvLanguage, T: ::serde::de::Deserialize
 }
 
 /// Parses a DSV string into a `DsvRoot` AST.
-pub fn parse<const LANG: DsvLanguage>(dsv: &str) -> Result<crate::ast::DsvRoot<LANG>, data_text_core::OakError> {
+pub fn parse<const LANG: DsvLanguage>(dsv: &str) -> Result<crate::ast::DsvRoot<LANG>, data_text_core::TextError> {
     use data_text_core::{Builder, parser::session::ParseSession, source::SourceText};
     let builder = DsvBuilder::<LANG>::new();
     let source = SourceText::new(dsv.to_string());

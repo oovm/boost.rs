@@ -1,13 +1,13 @@
 //! Object literal member construction: every member must be retained, in source
 //! order, with spans that stop exactly at the last byte of the member.
 
-use data_text_core::{Builder, OakDiagnostics, SourceText, parser::ParseSession};
+use data_text_core::{Builder, TextDiagnostics, SourceText, parser::ParseSession};
 use data_text_typescript::{
     TypeScriptBuilder, TypeScriptLanguage,
     ast::{Expression, ExpressionKind, ModifierKind, ObjectProperty, Statement, TypeScriptRoot},
 };
 
-fn parse(source: &str) -> OakDiagnostics<TypeScriptRoot> {
+fn parse(source: &str) -> TextDiagnostics<TypeScriptRoot> {
     let language = TypeScriptLanguage::standard();
     let mut cache = ParseSession::<TypeScriptLanguage>::new(32);
     TypeScriptBuilder::new(&language).build(&SourceText::new(source), &[], &mut cache)

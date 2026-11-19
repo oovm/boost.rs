@@ -2,7 +2,7 @@
 
 pub mod token_type;
 use crate::language::CrystalLanguage;
-use data_text_core::{Lexer, LexerCache, LexerState, OakError, TextEdit, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextError, TextEdit, lexer::LexOutput, source::Source};
 pub use token_type::CrystalTokenType;
 
 pub(crate) type State<'a, S> = LexerState<'a, S, CrystalLanguage>;
@@ -32,7 +32,7 @@ impl<'config> CrystalLexer<'config> {
     }
 
     /// Main lexing loop.
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

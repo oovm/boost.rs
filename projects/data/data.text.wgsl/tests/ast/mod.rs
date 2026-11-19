@@ -1,11 +1,11 @@
-use data_text_core::{Builder, OakError, SourceText, parser::session::ParseSession};
+use data_text_core::{Builder, TextError, SourceText, parser::session::ParseSession};
 use data_text_wgsl::{
     WgslBuilder, WgslLanguage,
     ast::{WgslAccessMode, WgslAddressSpace, WgslAssignOp, WgslBinaryOp, WgslExpression, WgslFunction, WgslItem, WgslRoot, WgslStatement, WgslType, WgslUnaryOp},
 };
 
 /// Builds the AST and the diagnostics for `source`.
-fn build(source: &str) -> (WgslRoot, Vec<OakError>) {
+fn build(source: &str) -> (WgslRoot, Vec<TextError>) {
     let language = WgslLanguage::default();
     let builder = WgslBuilder::new(&language);
     let text = SourceText::new(source);

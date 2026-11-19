@@ -2,7 +2,7 @@ use crate::{
     MapleElementType, MapleLanguage, MapleParser, MapleTokenType,
     ast::{MapleExpression, MapleExpressionKind, MapleOperator, MapleRoot, MapleSpan},
 };
-use data_text_core::{Builder, BuilderCache, OakDiagnostics, OakError, Parser, RedNode, RedTree, Source, TextEdit, TokenType, builder::BuildOutput};
+use data_text_core::{Builder, BuilderCache, TextDiagnostics, TextError, Parser, RedNode, RedTree, Source, TextEdit, TokenType, builder::BuildOutput};
 
 /// Builds owned Maple syntax from Oak's lossless tree.
 #[derive(Debug, Clone)]
@@ -21,7 +21,7 @@ impl Builder<MapleLanguage> for MapleBuilder<'_> {
         let output = MapleParser::new(self.config).parse(source, edits, cache);
         let diagnostics = output.diagnostics;
         if let Some(error) = diagnostics.first() {
-            return OakDiagnostics { result: Err(error.clone()), diagnostics };
+            return TextDiagnostics { result: Err(error.clone()), diagnostics };
         }
         let result = output.result.and_then(|green| {
             let root = RedNode::new(green, 0);
@@ -35,11 +35,11 @@ impl Builder<MapleLanguage> for MapleBuilder<'_> {
             let span = root.span();
             Ok(MapleRoot { expressions, span: MapleSpan { start: span.start, end: span.end } })
         });
-        OakDiagnostics { result, diagnostics }
+        TextDiagnostics { result, diagnostics }
     }
 }
 
-fn build_expression<SourceType: Source + ?Sized>(node: RedNode<'_, MapleLanguage>, source: &SourceType) -> Result<MapleExpression, OakError> {
+fn build_expression<SourceType: Source + ?Sized>(node: RedNode<'_, MapleLanguage>, source: &SourceType) -> Result<MapleExpression, TextError> {
     let range = node.span();
     let mut expression_span = None;
     let invalid = || source.syntax_error("Invalid Maple syntax tree".into(), range.start);

@@ -1,5 +1,5 @@
 use crate::{ast::PhpRoot, language::PhpLanguage, lexer::PhpLexer, parser::PhpParser};
-use data_text_core::{Builder, BuilderCache, Lexer, OakDiagnostics, Parser, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, Lexer, TextDiagnostics, Parser, TextEdit, source::Source};
 
 /// A builder for PHP AST nodes.
 ///
@@ -26,9 +26,9 @@ impl<'config> Builder<PhpLanguage> for PhpBuilder<'config> {
         match parse_result.result {
             Ok(_) => {
                 // Placeholder for AST building
-                OakDiagnostics { result: Ok(PhpRoot { items: vec![] }), diagnostics: parse_result.diagnostics }
+                TextDiagnostics { result: Ok(PhpRoot { items: vec![] }), diagnostics: parse_result.diagnostics }
             }
-            Err(e) => OakDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
+            Err(e) => TextDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
         }
     }
 }

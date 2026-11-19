@@ -3,7 +3,7 @@
 pub mod token_type;
 
 use crate::{language::GlslLanguage, lexer::token_type::GlslTokenType};
-use data_text_core::{Lexer, LexerCache, LexerState, OakError, TextEdit, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextError, TextEdit, lexer::LexOutput, source::Source};
 
 pub(crate) type State<'a, S> = LexerState<'a, S, GlslLanguage>;
 
@@ -19,7 +19,7 @@ impl<'config> GlslLexer<'config> {
         Self { _config: config }
     }
 
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             if self.skip_whitespace(state) {
                 continue;

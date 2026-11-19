@@ -5,7 +5,7 @@ use language_testing::lexing::LexerTester;
 use std::{path::Path, time::Duration};
 
 #[test]
-fn test_dart_lexer() -> Result<(), data_text_core::OakError> {
+fn test_dart_lexer() -> Result<(), data_text_core::TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let language = DartLanguage::default();
     let lexer = DartLexer::new(&language);

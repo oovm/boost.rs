@@ -63,7 +63,7 @@ impl VosLexer {
                 return;
             }
         }
-        state.add_error(data_text_core::OakError::unexpected_eof(state.get_position(), None));
+        state.add_error(data_text_core::TextError::unexpected_eof(state.get_position(), None));
         state.add_token(VosTokenType::StringLiteral, start, state.get_position());
     }
 }
@@ -136,7 +136,7 @@ impl Lexer<VosLanguage> for VosLexer {
                     _ => VosTokenType::Error,
                 };
                 if kind == VosTokenType::Error {
-                    state.add_error(data_text_core::OakError::expected_token("valid VOS character", start, None));
+                    state.add_error(data_text_core::TextError::expected_token("valid VOS character", start, None));
                 }
                 state.add_token(kind, start, state.get_position());
             }

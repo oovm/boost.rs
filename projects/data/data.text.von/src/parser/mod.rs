@@ -1,5 +1,5 @@
 use data_text_core::{
-    OakError, Source, TextEdit, TokenType,
+    TextError, Source, TextEdit, TokenType,
     parser::{ParseCache, Parser, ParserState},
 };
 
@@ -27,7 +27,7 @@ impl<'config> VonParser<'config> {
     /// Parses a value in VON.
     ///
     /// Values can be objects, arrays, enums, strings, numbers, booleans, or null.
-    pub(crate) fn parse_value<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_value<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.skip_trivia(state);
         state.incremental_node(VonElementType::Value, |state| {
             let token = if let Some(t) = state.current() {
@@ -57,7 +57,7 @@ impl<'config> VonParser<'config> {
     }
 
     /// Parses an enum variant in VON.
-    fn parse_enum<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_enum<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(VonElementType::Enum, |state| {
             if !state.eat(VonTokenType::Identifier) {
                 state.record_expected("variant");
@@ -83,7 +83,7 @@ impl<'config> VonParser<'config> {
     }
 
     /// Parses the content of an object in VON.
-    pub(crate) fn parse_object_inner<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_object_inner<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let mut first = true;
         while state.not_at_end() {
             self.skip_trivia(state);
@@ -118,7 +118,7 @@ impl<'config> VonParser<'config> {
     }
 
     /// Parses an object in VON.
-    fn parse_object<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_object<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(VonElementType::Object, |state| {
             if !state.eat(VonTokenType::LeftBrace) {
                 state.record_expected("{");
@@ -138,7 +138,7 @@ impl<'config> VonParser<'config> {
     }
 
     /// Parses an entry in an object in VON.
-    fn parse_object_entry<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_object_entry<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(VonElementType::ObjectEntry, |state| {
             if state.at(VonTokenType::Identifier) || state.at(VonTokenType::StringLiteral) {
                 state.bump();
@@ -167,7 +167,7 @@ impl<'config> VonParser<'config> {
     }
 
     /// Parses an array in VON.
-    fn parse_array<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_array<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(VonElementType::Array, |state| {
             if !state.eat(VonTokenType::LeftBracket) {
                 state.record_expected("[");

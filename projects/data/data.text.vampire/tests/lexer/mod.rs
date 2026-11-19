@@ -4,7 +4,7 @@ use std::path::Path;
 use std::time::Duration;
 
 #[test]
-fn test_vampire_lexer() -> Result<(), data_text_core::OakError> {
+fn test_vampire_lexer() -> Result<(), data_text_core::TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let tests = here.join("tests/lexer");
     let language = VampireLanguage::default();

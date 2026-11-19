@@ -3,11 +3,11 @@ use crate::{
     language::PythonLanguage,
     parser::{PythonElementType, PythonParser},
 };
-use data_text_core::{GreenTree, OakError, Parser, SourceText};
+use data_text_core::{GreenTree, TextError, Parser, SourceText};
 
 impl<'config> super::PythonBuilder<'config> {
     /// Parses an f-string's text content into a list of expressions.
-    pub(crate) fn parse_fstring_text(&self, text: &str) -> Result<Vec<Expression>, OakError> {
+    pub(crate) fn parse_fstring_text(&self, text: &str) -> Result<Vec<Expression>, TextError> {
         let mut values = Vec::new();
         let mut i = 0;
         let bytes = text.as_bytes();
@@ -93,7 +93,7 @@ impl<'config> super::PythonBuilder<'config> {
     }
 
     /// Parses a single expression from text.
-    pub(crate) fn parse_single_expression(&self, text: &str) -> Result<Expression, OakError> {
+    pub(crate) fn parse_single_expression(&self, text: &str) -> Result<Expression, TextError> {
         let parser = PythonParser::new(self.config);
         let mut cache = data_text_core::parser::session::ParseSession::<PythonLanguage>::default();
         let source = SourceText::new(text.to_string());

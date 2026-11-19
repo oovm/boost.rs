@@ -3,7 +3,7 @@
 pub mod token_type;
 
 use crate::{language::DotLanguage, lexer::token_type::DotTokenType};
-use data_text_core::{Lexer, LexerCache, LexerState, OakError, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextError, lexer::LexOutput, source::Source};
 
 pub(crate) type State<'a, S> = LexerState<'a, S, DotLanguage>;
 
@@ -347,7 +347,7 @@ impl<'config> Lexer<DotLanguage> for DotLexer<'config> {
 
 impl<'config> DotLexer<'config> {
     /// Main lexical analysis logic.
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

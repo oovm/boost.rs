@@ -79,7 +79,7 @@ impl<'config> DejavuParser<'config> {
     }
 
     /// Parse control flow start statement (for, if, while, loop).
-    fn parse_control_start<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, cp: Checkpoint) -> Result<(), data_text_core::OakError> {
+    fn parse_control_start<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, cp: Checkpoint) -> Result<(), data_text_core::TextError> {
         if let Some(token) = state.current() {
             match token.kind {
                 crate::lexer::token_type::DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::For) => {
@@ -109,7 +109,7 @@ impl<'config> DejavuParser<'config> {
     }
 
     /// Parse control flow end statement (end for, end if, end while, else).
-    fn parse_control_end<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, cp: Checkpoint) -> Result<(), data_text_core::OakError> {
+    fn parse_control_end<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, cp: Checkpoint) -> Result<(), data_text_core::TextError> {
         if let Some(token) = state.current() {
             match token.kind {
                 crate::lexer::token_type::DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::End) => {
@@ -133,7 +133,7 @@ impl<'config> DejavuParser<'config> {
     }
 
     /// Parse for loop statement.
-    fn parse_for_statement<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, cp: Checkpoint) -> Result<(), data_text_core::OakError> {
+    fn parse_for_statement<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, cp: Checkpoint) -> Result<(), data_text_core::TextError> {
         state.expect(crate::lexer::token_type::DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::For))?;
         self.skip_trivia(state);
 
@@ -202,7 +202,7 @@ impl<'config> DejavuParser<'config> {
     }
 
     /// Parse if statement.
-    fn parse_if_statement<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, cp: Checkpoint) -> Result<(), data_text_core::OakError> {
+    fn parse_if_statement<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, cp: Checkpoint) -> Result<(), data_text_core::TextError> {
         state.expect(crate::lexer::token_type::DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::If))?;
         self.skip_trivia(state);
 
@@ -229,7 +229,7 @@ impl<'config> DejavuParser<'config> {
     }
 
     /// Parse while loop statement.
-    fn parse_while_statement<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, cp: Checkpoint) -> Result<(), data_text_core::OakError> {
+    fn parse_while_statement<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, cp: Checkpoint) -> Result<(), data_text_core::TextError> {
         state.expect(crate::lexer::token_type::DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::While))?;
         self.skip_trivia(state);
 
@@ -256,7 +256,7 @@ impl<'config> DejavuParser<'config> {
     }
 
     /// Parse loop statement.
-    fn parse_loop_statement<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, cp: Checkpoint) -> Result<(), data_text_core::OakError> {
+    fn parse_loop_statement<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, cp: Checkpoint) -> Result<(), data_text_core::TextError> {
         state.expect(crate::lexer::token_type::DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::Loop))?;
         self.skip_trivia(state);
 
@@ -304,7 +304,7 @@ impl<'config> DejavuParser<'config> {
     }
 
     /// Parse end statement.
-    fn parse_end_statement<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, _cp: Checkpoint) -> Result<(), data_text_core::OakError> {
+    fn parse_end_statement<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, _cp: Checkpoint) -> Result<(), data_text_core::TextError> {
         // 当前 token 是 End 关键字，消耗它让它成为节点的一部分
         state.expect(crate::lexer::token_type::DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::End))?;
         self.skip_trivia(state);
@@ -334,12 +334,12 @@ impl<'config> DejavuParser<'config> {
                 };
 
                 if keyword != actual_keyword {
-                    return Err(data_text_core::OakError::custom_error(format!("Mismatched end marker: expected 'end {}' but found 'end {}'", actual_keyword, keyword)));
+                    return Err(data_text_core::TextError::custom_error(format!("Mismatched end marker: expected 'end {}' but found 'end {}'", actual_keyword, keyword)));
                 }
                 Some(frame)
             }
             else {
-                return Err(data_text_core::OakError::custom_error(format!("Unexpected 'end {}' without matching '{}' block", keyword, keyword)));
+                return Err(data_text_core::TextError::custom_error(format!("Unexpected 'end {}' without matching '{}' block", keyword, keyword)));
             }
         }
         else {
@@ -350,10 +350,10 @@ impl<'config> DejavuParser<'config> {
                     ControlFlowType::While { .. } => "while",
                     ControlFlowType::Loop { .. } => "loop",
                 };
-                return Err(data_text_core::OakError::custom_error(format!("Missing keyword after 'end': expected 'end {}'", actual_keyword)));
+                return Err(data_text_core::TextError::custom_error(format!("Missing keyword after 'end': expected 'end {}'", actual_keyword)));
             }
             else {
-                return Err(data_text_core::OakError::custom_error("Unexpected 'end' without matching control flow block"));
+                return Err(data_text_core::TextError::custom_error("Unexpected 'end' without matching control flow block"));
             }
         };
 
@@ -381,7 +381,7 @@ impl<'config> DejavuParser<'config> {
     }
 
     /// Parse else statement.
-    fn parse_else_statement<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, cp: Checkpoint) -> Result<(), data_text_core::OakError> {
+    fn parse_else_statement<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, cp: Checkpoint) -> Result<(), data_text_core::TextError> {
         state.expect(crate::lexer::token_type::DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::Else))?;
         self.skip_trivia(state);
 
@@ -403,15 +403,15 @@ impl<'config> DejavuParser<'config> {
                     state.finish_at(cp, DejavuElementType::ElseBranch);
                 }
                 ControlFlowType::While { .. } => {
-                    return Err(data_text_core::OakError::custom_error("'else' cannot be used with 'while' block"));
+                    return Err(data_text_core::TextError::custom_error("'else' cannot be used with 'while' block"));
                 }
                 ControlFlowType::Loop { .. } => {
-                    return Err(data_text_core::OakError::custom_error("'else' cannot be used with 'loop' block"));
+                    return Err(data_text_core::TextError::custom_error("'else' cannot be used with 'loop' block"));
                 }
             }
         }
         else {
-            return Err(data_text_core::OakError::custom_error("Unexpected 'else' without matching control flow block"));
+            return Err(data_text_core::TextError::custom_error("Unexpected 'else' without matching control flow block"));
         }
 
         if is_else_if {
@@ -534,7 +534,7 @@ impl<'config> Parser<DejavuLanguage> for DejavuParser<'config> {
                         ControlFlowType::While { .. } => "while",
                         ControlFlowType::Loop { .. } => "loop",
                     };
-                    return Err(data_text_core::OakError::custom_error(format!("Unclosed control flow: '{}' block not closed with 'end {}'", flow_type_name, flow_type_name)));
+                    return Err(data_text_core::TextError::custom_error(format!("Unclosed control flow: '{}' block not closed with 'end {}'", flow_type_name, flow_type_name)));
                 }
             }
 

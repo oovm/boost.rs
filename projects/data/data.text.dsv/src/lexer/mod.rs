@@ -2,7 +2,7 @@
 /// Token types for the DSV language.
 pub mod token_type;
 use crate::language::{Dsv, DsvLanguage};
-use data_text_core::{Lexer, LexerState, OakError, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerState, TextError, lexer::LexOutput, source::Source};
 pub use token_type::DsvTokenType;
 
 /// DSV lexer state.
@@ -162,7 +162,7 @@ impl<const LANG: DsvLanguage> DsvLexer<LANG> {
         }
     }
 
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, LANG, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, LANG, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             // Try various lexical rules
             if self.skip_whitespace(state) {

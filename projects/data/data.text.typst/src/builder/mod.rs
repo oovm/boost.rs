@@ -5,7 +5,7 @@ use crate::{
     parser::{TypstParser, element_type::TypstElementType},
 };
 use data_text_core::{
-    Builder, BuilderCache, GreenNode, OakDiagnostics, OakError, Parser, RedNode, RedTree,
+    Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree,
     source::{Source, TextEdit},
 };
 
@@ -23,27 +23,27 @@ impl<'config> TypstBuilder<'config> {
 }
 
 impl<'config> Builder<TypstLanguage> for TypstBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<TypstLanguage>) -> OakDiagnostics<TypstRoot> {
+    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<TypstLanguage>) -> TextDiagnostics<TypstRoot> {
         let parser = TypstParser::new(self.config);
 
         let parse_result = parser.parse(source, edits, cache);
 
         match parse_result.result {
             Ok(green_tree) => match self.build_root(green_tree, source) {
-                Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                 Err(build_error) => {
                     let mut diagnostics = parse_result.diagnostics;
                     diagnostics.push(build_error.clone());
-                    OakDiagnostics { result: Err(build_error), diagnostics }
+                    TextDiagnostics { result: Err(build_error), diagnostics }
                 }
             },
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> TypstBuilder<'config> {
-    pub(crate) fn build_root<S: Source + ?Sized>(&self, green_tree: &GreenNode<TypstLanguage>, source: &S) -> Result<TypstRoot, OakError> {
+    pub(crate) fn build_root<S: Source + ?Sized>(&self, green_tree: &GreenNode<TypstLanguage>, source: &S) -> Result<TypstRoot, TextError> {
         let red_root = RedNode::new(green_tree, 0);
         let mut root = TypstRoot::new(red_root.span());
 
@@ -56,7 +56,7 @@ impl<'config> TypstBuilder<'config> {
         Ok(root)
     }
 
-    fn build_tree<S: Source + ?Sized>(&self, tree: RedTree<TypstLanguage>, source: &S) -> Result<Option<TypstItem>, OakError> {
+    fn build_tree<S: Source + ?Sized>(&self, tree: RedTree<TypstLanguage>, source: &S) -> Result<Option<TypstItem>, TextError> {
         match tree {
             RedTree::Node(node) => self.build_item(node, source),
             RedTree::Leaf(leaf) => match leaf.kind {
@@ -71,7 +71,7 @@ impl<'config> TypstBuilder<'config> {
         }
     }
 
-    fn build_item<S: Source + ?Sized>(&self, node: RedNode<TypstLanguage>, source: &S) -> Result<Option<TypstItem>, OakError> {
+    fn build_item<S: Source + ?Sized>(&self, node: RedNode<TypstLanguage>, source: &S) -> Result<Option<TypstItem>, TextError> {
         match node.kind::<TypstElementType>() {
             TypstElementType::Heading => {
                 let text = source.get_text_in(node.span());

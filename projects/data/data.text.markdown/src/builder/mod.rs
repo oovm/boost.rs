@@ -3,7 +3,7 @@ use crate::{
     language::MarkdownLanguage,
     parser::{MarkdownParser, element_type::MarkdownElementType},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, OakError, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
 
 /// AST builder for the Markdown language.
 #[derive(Clone)]
@@ -19,7 +19,7 @@ impl<'config> MarkdownBuilder<'config> {
     }
 
     /// Builds the AST root node from the green tree.
-    fn build_root(&self, green_tree: &GreenNode<MarkdownLanguage>, source: &SourceText) -> Result<MarkdownRoot, OakError> {
+    fn build_root(&self, green_tree: &GreenNode<MarkdownLanguage>, source: &SourceText) -> Result<MarkdownRoot, TextError> {
         let red_root = RedNode::new(green_tree, 0);
 
         let mut blocks = Vec::new();
@@ -282,15 +282,15 @@ impl<'config> Builder<MarkdownLanguage> for MarkdownBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree, &source_text) {
-                    Ok(ast_root) => data_text_core::OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => data_text_core::TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        data_text_core::OakDiagnostics { result: Err(build_error), diagnostics }
+                        data_text_core::TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => data_text_core::OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => data_text_core::TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }

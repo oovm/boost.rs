@@ -1,4 +1,4 @@
-use data_text_core::{OakError, ParseCache, Parser, Source, TextEdit, TokenType, parser::parse_with_lexer};
+use data_text_core::{TextError, ParseCache, Parser, Source, TextEdit, TokenType, parser::parse_with_lexer};
 
 use crate::{
     language::VosLanguage,
@@ -54,7 +54,7 @@ impl VosParser {
     ///
     /// The attribute name and arguments are an open set, so only the outer
     /// delimiters are validated here.
-    fn parse_attribute<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_attribute<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         if state.at(VosTokenType::LeftBracket) {
             self.parse_group(state)?;
@@ -118,7 +118,7 @@ impl VosParser {
         result
     }
 
-    fn parse_service_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_service_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(VosElementType::Service, |state| {
             while self.starts_attribute(state) {
                 self.parse_attribute(state)?;
@@ -140,7 +140,7 @@ impl VosParser {
         })
     }
 
-    fn parse_service_body<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_service_body<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(VosTokenType::LeftBrace)?;
         loop {
@@ -198,7 +198,7 @@ impl VosParser {
         Ok(())
     }
 
-    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         // Speculatively peek past any leading attributes to identify the
         // declaration kind without consuming anything — the attributes must be
         // parsed *inside* the incremental_node closure so the builder finds them
@@ -287,7 +287,7 @@ impl VosParser {
         })
     }
 
-    fn parse_fields<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_fields<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(VosTokenType::LeftBrace)?;
         loop {
@@ -336,7 +336,7 @@ impl VosParser {
         Ok(())
     }
 
-    fn parse_parameters<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_parameters<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(VosTokenType::LeftParen)?;
         loop {
@@ -368,7 +368,7 @@ impl VosParser {
         Ok(())
     }
 
-    fn parse_type<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, depth: usize) -> Result<(), OakError> {
+    fn parse_type<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, depth: usize) -> Result<(), TextError> {
         if depth >= 128 {
             state.record_unexpected_token("VOS type nesting limit exceeded");
             return Err(state.errors.last().cloned().expect("Oak records the syntax error"));
@@ -421,7 +421,7 @@ impl VosParser {
         Ok(())
     }
 
-    fn parse_default<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_default<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         if matches!(state.peek_text().as_deref(), Some("-" | "+")) {
             state.bump();
             self.skip_trivia(state);
@@ -440,7 +440,7 @@ impl VosParser {
         }
     }
 
-    fn consume_token<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn consume_token<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         if matches!(state.current().map(|token| token.kind), Some(VosTokenType::Error | VosTokenType::RightBrace | VosTokenType::RightParen | VosTokenType::RightBracket)) {
             state.record_unexpected_token("invalid VOS token or unmatched delimiter");
             return Err(state.errors.last().cloned().expect("Oak records the syntax error"));
@@ -449,7 +449,7 @@ impl VosParser {
         Ok(())
     }
 
-    fn parse_group<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_group<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         let mut closings = Vec::new();
         let mut element = VosElementType::Block;

@@ -3,7 +3,7 @@
 pub mod token_type;
 
 use crate::{language::PlantUmlLanguage, lexer::token_type::PlantUmlTokenType};
-use data_text_core::{Lexer, LexerCache, LexerState, TextEdit, errors::OakError, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextEdit, errors::TextError, lexer::LexOutput, source::Source};
 
 /// Lexer for the PlantUML class and sequence subset.
 pub struct PlantUmlLexer<'config> {
@@ -17,7 +17,7 @@ impl<'config> PlantUmlLexer<'config> {
         Self { _config: config }
     }
 
-    fn run<S: Source + ?Sized>(&self, state: &mut LexerState<'_, S, PlantUmlLanguage>) -> Result<(), OakError> {
+    fn run<S: Source + ?Sized>(&self, state: &mut LexerState<'_, S, PlantUmlLanguage>) -> Result<(), TextError> {
         let mut at_line_start = true;
 
         while state.not_at_end() {

@@ -2,7 +2,7 @@
 use crate::{language::ZigLanguage, lexer::token_type::ZigTokenType};
 pub mod token_type;
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError, Source,
+    Lexer, LexerCache, LexerState, TextError, Source,
     lexer::{LexOutput, WhitespaceConfig},
 };
 use std::sync::LazyLock;
@@ -35,7 +35,7 @@ impl<'config> ZigLexer<'config> {
     }
 
     /// Main lexical analysis loop
-    fn run<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), OakError> {
+    fn run<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

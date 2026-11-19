@@ -1,5 +1,5 @@
 use crate::language::ObjectiveCLanguage;
-use data_text_core::{Builder, BuilderCache, OakDiagnostics, TextEdit, lexer::Lexer, parser::Parser, source::Source};
+use data_text_core::{Builder, BuilderCache, TextDiagnostics, TextEdit, lexer::Lexer, parser::Parser, source::Source};
 
 /// Objective-C syntax tree builder.
 pub struct ObjectiveCBuilder<'config> {
@@ -25,6 +25,6 @@ impl<'config> Builder<ObjectiveCLanguage> for ObjectiveCBuilder<'config> {
 
         let result = parse_result.result.map(|_| crate::ast::ObjectiveCRoot::default());
 
-        OakDiagnostics { result, diagnostics: parse_result.diagnostics }
+        TextDiagnostics { result, diagnostics: parse_result.diagnostics }
     }
 }

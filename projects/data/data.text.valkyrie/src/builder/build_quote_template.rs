@@ -16,7 +16,7 @@ use crate::{
     builder::ValkyrieBuilder,
     lexer::{ValkyrieLexer, token_type::ValkyrieTokenType},
 };
-use data_text_core::{Lexer, NoLexerCache, OakError, Parser, SourceText, parser::session::ParseSession};
+use data_text_core::{Lexer, NoLexerCache, TextError, Parser, SourceText, parser::session::ParseSession};
 
 /// Locale 参数标记字符 (Gwot, U+07DF)
 const LOCALE_MARKER: char = '\u{07DF}';
@@ -38,7 +38,7 @@ impl<'config> ValkyrieBuilder<'config> {
     /// 首字节在文件中的绝对偏移。返回的文本段内容与源码逐字节一致；插值段
     /// 携带真实表达式树与绝对区间。本函数不解释前缀：`r` 等前缀是否进入
     /// 模板模式由消费方决定。
-    pub fn parse_quote_template(&self, content: &str, content_start: usize) -> Result<Vec<StringSegment>, OakError> {
+    pub fn parse_quote_template(&self, content: &str, content_start: usize) -> Result<Vec<StringSegment>, TextError> {
         let mut segments = Vec::new();
         let mut text_start = 0usize;
         let mut index = 0usize;
@@ -66,7 +66,7 @@ impl<'config> ValkyrieBuilder<'config> {
                     text_start = index;
                 }
                 '}' => {
-                    return Err(OakError::syntax_error("bare `}` in quoted template: write `\\}` for a literal closing brace".to_string(), content_start + index, None));
+                    return Err(TextError::syntax_error("bare `}` in quoted template: write `\\}` for a literal closing brace".to_string(), content_start + index, None));
                 }
                 _ => index += character.len_utf8(),
             }
@@ -83,7 +83,7 @@ impl<'config> ValkyrieBuilder<'config> {
     ///
     /// 内层字符串、注释与嵌套括号都是单个 token 或成对深度，不数花括号。
     /// 返回匹配 `}` 在 `content` 中的相对字节偏移（不含 `}` 本身）。
-    fn scan_interpolation_end(&self, content: &str, content_start: usize, expr_start: usize) -> Result<usize, OakError> {
+    fn scan_interpolation_end(&self, content: &str, content_start: usize, expr_start: usize) -> Result<usize, TextError> {
         let absolute_start = content_start + expr_start;
         let source = padded_source(&content[expr_start..], absolute_start);
         let lexer = ValkyrieLexer::new(self.config);
@@ -107,23 +107,23 @@ impl<'config> ValkyrieBuilder<'config> {
                 ValkyrieTokenType::ParenthesisR | ValkyrieTokenType::BracketR => {
                     depth -= 1;
                     if depth == 0 {
-                        return Err(OakError::syntax_error(format!("unbalanced closing `{:?}` in interpolation expression", token.kind), token.span.start, None));
+                        return Err(TextError::syntax_error(format!("unbalanced closing `{:?}` in interpolation expression", token.kind), token.span.start, None));
                     }
                 }
                 ValkyrieTokenType::Error => {
-                    return Err(OakError::syntax_error("illegal token inside interpolation expression", token.span.start, None));
+                    return Err(TextError::syntax_error("illegal token inside interpolation expression", token.span.start, None));
                 }
                 _ => {}
             }
         }
 
-        Err(OakError::syntax_error("missing closing `}` for interpolation expression", absolute_start, None))
+        Err(TextError::syntax_error("missing closing `}` for interpolation expression", absolute_start, None))
     }
 
     /// 用普通表达式解析器解析插值区间，产出绝对区间的真实表达式树。
-    fn parse_interpolation_expression(&self, expr_text: &str, absolute_start: usize) -> Result<TermExpression, OakError> {
+    fn parse_interpolation_expression(&self, expr_text: &str, absolute_start: usize) -> Result<TermExpression, TextError> {
         if expr_text.trim().is_empty() {
-            return Err(OakError::syntax_error("empty interpolation expression", absolute_start, None));
+            return Err(TextError::syntax_error("empty interpolation expression", absolute_start, None));
         }
         let source = padded_source(expr_text, absolute_start);
         let parser = ValkyrieParser::new(self.config);
@@ -143,8 +143,8 @@ impl<'config> ValkyrieBuilder<'config> {
         }
         match root.items.as_slice() {
             [StatementNode::ExprStmt(stmt)] => Ok(stmt.expr.clone()),
-            [] => Err(OakError::syntax_error("interpolation expression did not parse to a term expression", absolute_start, None)),
-            _ => Err(OakError::syntax_error("residual tokens after interpolation expression", absolute_start, None)),
+            [] => Err(TextError::syntax_error("interpolation expression did not parse to a term expression", absolute_start, None)),
+            _ => Err(TextError::syntax_error("residual tokens after interpolation expression", absolute_start, None)),
         }
     }
 }
@@ -158,7 +158,7 @@ mod tests {
         builder::ValkyrieBuilder,
     };
 
-    fn segments(content: &str, start: usize) -> Result<Vec<StringSegment>, OakError> {
+    fn segments(content: &str, start: usize) -> Result<Vec<StringSegment>, TextError> {
         let language = ValkyrieLanguage::default();
         let builder = ValkyrieBuilder::new(&language);
         builder.parse_quote_template(content, start)

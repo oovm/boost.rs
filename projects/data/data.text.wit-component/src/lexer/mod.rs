@@ -8,7 +8,7 @@ pub mod token_type;
 
 use crate::{language::WitLanguage, lexer::token_type::WitTokenType};
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError, TextEdit,
+    Lexer, LexerCache, LexerState, TextError, TextEdit,
     lexer::{CommentConfig, LexOutput, StringConfig, WhitespaceConfig},
     source::Source,
 };
@@ -48,7 +48,7 @@ impl<'config> WitLexer<'config> {
         Self { config }
     }
 
-    fn run<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), OakError> {
+    fn run<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             if self.skip_whitespace(state) {
                 continue;

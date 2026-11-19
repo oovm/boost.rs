@@ -6,7 +6,7 @@ use crate::{
     parser::{parse_items::parse_item, parse_modifiers::is_declaration_keyword},
 };
 use data_text_core::{
-    OakError, Parser, Source, TextEdit,
+    TextError, Parser, Source, TextEdit,
     parser::{ParseCache, ParserState},
 };
 
@@ -49,7 +49,7 @@ impl<'config> Parser<ValkyrieLanguage> for ValkyrieParser<'config> {
 ///
 /// 只在根循环启用；namespace 等嵌套体内部的错误仍向上传播，由根循环按整个
 /// item 恢复，嵌套结构不产出半成品节点。返回后由调用方做零前进检查。
-fn recover_failed_item<S: Source + ?Sized>(state: &mut ParserState<ValkyrieLanguage, S>, item_start: (usize, usize), error: OakError) {
+fn recover_failed_item<S: Source + ?Sized>(state: &mut ParserState<ValkyrieLanguage, S>, item_start: (usize, usize), error: TextError) {
     // `expect`/`ParserState::syntax_error` 在出错时已记录同一错误；由
     // `Source::syntax_error` 直接构造的错误尚未记录，按 (offset, message) 去重后补记。
     let already_recorded = state.errors.last().is_some_and(|recorded| recorded.source_offset() == error.source_offset() && recorded.to_string() == error.to_string());
@@ -109,9 +109,9 @@ impl<'config> ValkyrieParser<'config> {
 mod recovery_tests {
     use super::*;
     use crate::{ValkyrieBuilder, ValkyrieRoot, ast::StatementNode};
-    use data_text_core::{Builder, OakDiagnostics, SourceText, parser::ParseSession};
+    use data_text_core::{Builder, TextDiagnostics, SourceText, parser::ParseSession};
 
-    fn build(source: &str) -> OakDiagnostics<ValkyrieRoot> {
+    fn build(source: &str) -> TextDiagnostics<ValkyrieRoot> {
         let language = ValkyrieLanguage::default();
         let builder = ValkyrieBuilder::new(&language);
         let text = SourceText::new(source);
@@ -119,7 +119,7 @@ mod recovery_tests {
         builder.build(&text, &[], &mut session)
     }
 
-    fn offsets(diagnostics: &[data_text_core::OakError]) -> Vec<Option<usize>> {
+    fn offsets(diagnostics: &[data_text_core::TextError]) -> Vec<Option<usize>> {
         diagnostics.iter().map(|error| error.source_offset()).collect()
     }
 
@@ -211,9 +211,9 @@ mod array_pattern_tests {
         ValkyrieBuilder, ValkyrieRoot,
         ast::{Pattern, Statement, StatementNode, TermExpression},
     };
-    use data_text_core::{Builder, OakDiagnostics, SourceText, parser::ParseSession};
+    use data_text_core::{Builder, TextDiagnostics, SourceText, parser::ParseSession};
 
-    fn build(source: &str) -> OakDiagnostics<ValkyrieRoot> {
+    fn build(source: &str) -> TextDiagnostics<ValkyrieRoot> {
         let language = ValkyrieLanguage::default();
         let builder = ValkyrieBuilder::new(&language);
         let text = SourceText::new(source);
@@ -346,9 +346,9 @@ mod trait_member_tests {
         ValkyrieBuilder, ValkyrieRoot,
         ast::{ImplyDeclaration, MethodDeclaration, StatementNode, Trait},
     };
-    use data_text_core::{Builder, OakDiagnostics, SourceText, parser::ParseSession};
+    use data_text_core::{Builder, TextDiagnostics, SourceText, parser::ParseSession};
 
-    fn build(source: &str) -> OakDiagnostics<ValkyrieRoot> {
+    fn build(source: &str) -> TextDiagnostics<ValkyrieRoot> {
         let language = ValkyrieLanguage::default();
         let builder = ValkyrieBuilder::new(&language);
         let text = SourceText::new(source);
@@ -485,9 +485,9 @@ mod spaceship_operator_tests {
         ValkyrieBuilder, ValkyrieRoot,
         ast::{Statement, StatementNode, TermExpression},
     };
-    use data_text_core::{Builder, GreenTree, OakDiagnostics, SourceText, parser::ParseSession};
+    use data_text_core::{Builder, GreenTree, TextDiagnostics, SourceText, parser::ParseSession};
 
-    fn build(source: &str) -> OakDiagnostics<ValkyrieRoot> {
+    fn build(source: &str) -> TextDiagnostics<ValkyrieRoot> {
         let language = ValkyrieLanguage::default();
         let builder = ValkyrieBuilder::new(&language);
         let text = SourceText::new(source);
@@ -770,13 +770,13 @@ mod trait_template_tests {
         ValkyrieBuilder, ValkyrieRoot,
         ast::{Statement, StatementNode, TemplateNode, Trait},
     };
-    use data_text_core::{Builder, GreenTree, OakDiagnostics, SourceText, Token, parser::ParseSession};
+    use data_text_core::{Builder, GreenTree, TextDiagnostics, SourceText, Token, parser::ParseSession};
 
     /// 与 std 消费端同构：trait 体内按 target 分派成员。
     const TARGET_TRAIT: &str =
         "trait Iterator {\n    <% match arch %>\n    <% case wasm %>\n    micro filter_map(self, predicate: micro(i32) -> bool): i32\n    <% case native %>\n    micro take_while(self, predicate: micro(i32) -> bool): i32\n    <% end %>\n}\n";
 
-    fn build(source: &str) -> OakDiagnostics<ValkyrieRoot> {
+    fn build(source: &str) -> TextDiagnostics<ValkyrieRoot> {
         let language = ValkyrieLanguage::default();
         let builder = ValkyrieBuilder::new(&language);
         let text = SourceText::new(source);
@@ -938,9 +938,9 @@ mod inclusive_range_and_member_attribute_tests {
         ValkyrieBuilder, ValkyrieRoot,
         ast::{ClassDeclaration, Statement, StatementNode, TermExpression},
     };
-    use data_text_core::{Builder, GreenTree, OakDiagnostics, SourceText, parser::ParseSession};
+    use data_text_core::{Builder, GreenTree, TextDiagnostics, SourceText, parser::ParseSession};
 
-    fn build(source: &str) -> OakDiagnostics<ValkyrieRoot> {
+    fn build(source: &str) -> TextDiagnostics<ValkyrieRoot> {
         let language = ValkyrieLanguage::default();
         let builder = ValkyrieBuilder::new(&language);
         let text = SourceText::new(source);
@@ -1076,12 +1076,12 @@ mod soft_keyword_name_tests {
         ValkyrieBuilder, ValkyrieRoot,
         ast::{ClassDeclaration, Statement, StatementNode, StructureDeclaration, TermExpression},
     };
-    use data_text_core::{Builder, OakDiagnostics, SourceText, parser::ParseSession};
+    use data_text_core::{Builder, TextDiagnostics, SourceText, parser::ParseSession};
 
     /// 名字位置上是标识符的软关键字；硬关键字不在此列。
     const SOFT_NAMES: [&str; 4] = ["flags", "union", "by", "when"];
 
-    fn build(source: &str) -> OakDiagnostics<ValkyrieRoot> {
+    fn build(source: &str) -> TextDiagnostics<ValkyrieRoot> {
         let language = ValkyrieLanguage::default();
         let builder = ValkyrieBuilder::new(&language);
         let text = SourceText::new(source);

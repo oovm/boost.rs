@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use crate::{ast::*, language::ErlangLanguage, parser::ErlangParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, Parser, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, SourceText, TextEdit, source::Source};
 
 /// AST builder for the Erlang language
 #[derive(Clone)]
@@ -16,7 +16,7 @@ impl<'config> ErlangBuilder<'config> {
     }
 
     /// Builds the AST root node from the syntax tree
-    pub fn build_root(&self, _green: &GreenNode<ErlangLanguage>, _source: &SourceText) -> Result<ErlangRoot, data_text_core::OakError> {
+    pub fn build_root(&self, _green: &GreenNode<ErlangLanguage>, _source: &SourceText) -> Result<ErlangRoot, data_text_core::TextError> {
         // Simplified AST construction logic
         Ok(ErlangRoot { items: vec![] })
     }
@@ -32,15 +32,15 @@ impl<'config> Builder<ErlangLanguage> for ErlangBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }

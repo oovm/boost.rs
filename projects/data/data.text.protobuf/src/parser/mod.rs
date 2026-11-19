@@ -6,7 +6,7 @@ use crate::{
     lexer::{ProtobufLexer, token_type::ProtobufTokenType},
 };
 use data_text_core::{
-    errors::OakError,
+    errors::TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
     tree::GreenNode,

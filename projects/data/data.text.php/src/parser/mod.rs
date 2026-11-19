@@ -3,7 +3,7 @@ pub mod element_type;
 
 use crate::{language::PhpLanguage, parser::element_type::PhpElementType};
 use data_text_core::{
-    GreenNode, OakError,
+    GreenNode, TextError,
     parser::{
         ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer,
         pratt::{Associativity, Pratt, PrattParser, binary},
@@ -112,7 +112,7 @@ impl<'config> Pratt<PhpLanguage> for PhpParser<'config> {
 }
 
 impl<'config> PhpParser<'config> {
-    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::PhpTokenType::*;
         match state.peek_kind() {
             Some(Namespace) => self.parse_namespace_def(state),
@@ -130,7 +130,7 @@ impl<'config> PhpParser<'config> {
         }
     }
 
-    fn parse_namespace_def<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_namespace_def<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(crate::lexer::PhpTokenType::Namespace).ok();
         state.advance_until_any(&[crate::lexer::PhpTokenType::Semicolon, crate::lexer::PhpTokenType::LeftBrace]);
@@ -147,7 +147,7 @@ impl<'config> PhpParser<'config> {
         Ok(())
     }
 
-    fn parse_use_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_use_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(crate::lexer::PhpTokenType::Use).ok();
         state.advance_until(crate::lexer::PhpTokenType::Semicolon);
@@ -156,7 +156,7 @@ impl<'config> PhpParser<'config> {
         Ok(())
     }
 
-    fn parse_function_def<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_function_def<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(crate::lexer::PhpTokenType::Function).ok();
         state.expect(crate::lexer::PhpTokenType::Identifier).ok();
@@ -170,7 +170,7 @@ impl<'config> PhpParser<'config> {
         Ok(())
     }
 
-    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::PhpTokenType::*;
         let cp = state.checkpoint();
         while state.not_at_end() && matches!(state.peek_kind(), Some(Public) | Some(Private) | Some(Protected) | Some(Static) | Some(Abstract) | Some(Final)) {
@@ -208,7 +208,7 @@ impl<'config> PhpParser<'config> {
         Ok(())
     }
 
-    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(crate::lexer::PhpTokenType::If).ok();
         state.expect(crate::lexer::PhpTokenType::LeftParen).ok();
@@ -219,7 +219,7 @@ impl<'config> PhpParser<'config> {
         Ok(())
     }
 
-    fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(crate::lexer::PhpTokenType::While).ok();
         state.expect(crate::lexer::PhpTokenType::LeftParen).ok();
@@ -230,7 +230,7 @@ impl<'config> PhpParser<'config> {
         Ok(())
     }
 
-    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(crate::lexer::PhpTokenType::For).ok();
         state.expect(crate::lexer::PhpTokenType::LeftParen).ok();
@@ -240,7 +240,7 @@ impl<'config> PhpParser<'config> {
         Ok(())
     }
 
-    fn parse_foreach_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_foreach_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(crate::lexer::PhpTokenType::Foreach).ok();
         state.expect(crate::lexer::PhpTokenType::LeftParen).ok();
@@ -250,7 +250,7 @@ impl<'config> PhpParser<'config> {
         Ok(())
     }
 
-    fn parse_compound_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_compound_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(crate::lexer::PhpTokenType::LeftBrace).ok();
         while state.not_at_end() && !state.at(crate::lexer::PhpTokenType::RightBrace) {
@@ -261,7 +261,7 @@ impl<'config> PhpParser<'config> {
         Ok(())
     }
 
-    fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(crate::lexer::PhpTokenType::Return).ok();
         PrattParser::parse(state, 0, self);
@@ -270,7 +270,7 @@ impl<'config> PhpParser<'config> {
         Ok(())
     }
 
-    fn parse_echo_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_echo_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(crate::lexer::PhpTokenType::Echo).ok();
         PrattParser::parse(state, 0, self);
@@ -279,7 +279,7 @@ impl<'config> PhpParser<'config> {
         Ok(())
     }
 
-    fn parse_expression_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_expression_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         PrattParser::parse(state, 0, self);
         state.eat(crate::lexer::PhpTokenType::Semicolon);
         Ok(())

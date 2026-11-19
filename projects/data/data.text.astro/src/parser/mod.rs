@@ -4,7 +4,7 @@ pub mod element_type;
 use crate::{language::SvelteLanguage, lexer::token_type::SvelteTokenType};
 pub use element_type::SvelteElementType;
 use data_text_core::{
-    errors::OakError,
+    errors::TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -23,7 +23,7 @@ impl<'config> SvelteParser<'config> {
         Self { language }
     }
 
-    fn parse_node<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_node<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         match state.peek_kind() {
             Some(SvelteTokenType::Lt) => self.parse_element(state),
             Some(SvelteTokenType::LeftBrace) => self.parse_expression(state),
@@ -43,7 +43,7 @@ impl<'config> SvelteParser<'config> {
         }
     }
 
-    fn parse_element<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_element<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
 
         // Tag (Opening)
@@ -86,7 +86,7 @@ impl<'config> SvelteParser<'config> {
         Ok(())
     }
 
-    fn parse_attribute<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_attribute<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
 
         if state.at(SvelteTokenType::LeftBrace) {
@@ -113,7 +113,7 @@ impl<'config> SvelteParser<'config> {
         Ok(())
     }
 
-    fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(SvelteTokenType::LeftBrace)?;
         while state.not_at_end() && !state.at(SvelteTokenType::RightBrace) {
@@ -124,7 +124,7 @@ impl<'config> SvelteParser<'config> {
         Ok(())
     }
 
-    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
 
         // Block Header
@@ -163,7 +163,7 @@ impl<'config> SvelteParser<'config> {
         Ok(())
     }
 
-    fn parse_branch<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_branch<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
 
         // Branch Header

@@ -4,7 +4,7 @@ use crate::{
     lexer::token_type::WitTokenType,
     parser::{WitParser, element_type::WitElementType},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, OakError, Parser, RedNode, RedTree, Source, SourceText, TextEdit, builder::BuildOutput};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, Source, SourceText, TextEdit, builder::BuildOutput};
 
 /// AST builder for the WIT Component format.
 #[derive(Clone, Copy)]
@@ -30,21 +30,21 @@ impl<'config> Builder<WitLanguage> for WitBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> WitBuilder<'config> {
-    fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, WitLanguage>, source: &SourceText) -> Result<WitRoot, OakError> {
+    fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, WitLanguage>, source: &SourceText) -> Result<WitRoot, TextError> {
         let red_root = RedNode::new(green_tree, 0);
         let mut items = Vec::new();
 
@@ -68,7 +68,7 @@ impl<'config> WitBuilder<'config> {
         Ok(WitRoot { items })
     }
 
-    fn build_package(&self, node: RedNode<WitLanguage>, source: &SourceText) -> Result<WitPackage, OakError> {
+    fn build_package(&self, node: RedNode<WitLanguage>, source: &SourceText) -> Result<WitPackage, TextError> {
         let mut name = String::new();
 
         for child in node.children() {
@@ -82,7 +82,7 @@ impl<'config> WitBuilder<'config> {
         Ok(WitPackage { name })
     }
 
-    fn build_world(&self, node: RedNode<WitLanguage>, source: &SourceText) -> Result<WitWorld, OakError> {
+    fn build_world(&self, node: RedNode<WitLanguage>, source: &SourceText) -> Result<WitWorld, TextError> {
         let mut name = String::new();
         let mut items = Vec::new();
 
@@ -111,7 +111,7 @@ impl<'config> WitBuilder<'config> {
         Ok(WitWorld { name, items })
     }
 
-    fn build_interface(&self, node: RedNode<WitLanguage>, source: &SourceText) -> Result<WitInterface, OakError> {
+    fn build_interface(&self, node: RedNode<WitLanguage>, source: &SourceText) -> Result<WitInterface, TextError> {
         let mut name = String::new();
         let mut items = Vec::new();
 
@@ -137,7 +137,7 @@ impl<'config> WitBuilder<'config> {
         Ok(WitInterface { name, items })
     }
 
-    fn build_import(&self, node: RedNode<WitLanguage>, source: &SourceText) -> Result<WitImport, OakError> {
+    fn build_import(&self, node: RedNode<WitLanguage>, source: &SourceText) -> Result<WitImport, TextError> {
         let mut name = String::new();
         for child in node.children() {
             if let RedTree::Leaf(t) = child {
@@ -149,7 +149,7 @@ impl<'config> WitBuilder<'config> {
         Ok(WitImport { name })
     }
 
-    fn build_export(&self, node: RedNode<WitLanguage>, source: &SourceText) -> Result<WitExport, OakError> {
+    fn build_export(&self, node: RedNode<WitLanguage>, source: &SourceText) -> Result<WitExport, TextError> {
         let mut name = String::new();
         for child in node.children() {
             if let RedTree::Leaf(t) = child {
@@ -161,7 +161,7 @@ impl<'config> WitBuilder<'config> {
         Ok(WitExport { name })
     }
 
-    fn build_include(&self, node: RedNode<WitLanguage>, source: &SourceText) -> Result<WitInclude, OakError> {
+    fn build_include(&self, node: RedNode<WitLanguage>, source: &SourceText) -> Result<WitInclude, TextError> {
         let mut name = String::new();
         for child in node.children() {
             if let RedTree::Leaf(t) = child {
@@ -173,7 +173,7 @@ impl<'config> WitBuilder<'config> {
         Ok(WitInclude { name })
     }
 
-    fn build_type(&self, node: RedNode<WitLanguage>, source: &SourceText) -> Result<WitType, OakError> {
+    fn build_type(&self, node: RedNode<WitLanguage>, source: &SourceText) -> Result<WitType, TextError> {
         let mut name = String::new();
         let mut kind = WitTypeKind::Bool; // Default
 
@@ -191,7 +191,7 @@ impl<'config> WitBuilder<'config> {
         Ok(WitType { name, kind })
     }
 
-    fn build_func(&self, node: RedNode<WitLanguage>, source: &SourceText) -> Result<WitFunc, OakError> {
+    fn build_func(&self, node: RedNode<WitLanguage>, source: &SourceText) -> Result<WitFunc, TextError> {
         let mut name = String::new();
         let mut params = Vec::new();
         let mut result = None;

@@ -6,27 +6,27 @@ use crate::{
         template_directive::{ParsedTemplateDirective, directive_first_keyword, is_else_if_directive, parse_template_directive},
     },
 };
-use data_text_core::{OakError, Token, TokenType, parser::ParserState};
+use data_text_core::{TextError, Token, TokenType, parser::ParserState};
 
 type State<'a, S> = ParserState<'a, ValkyrieLanguage, S>;
 
 /// 解析顶层 TGrammar 项。
-pub(crate) fn parse_template_item<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_template_item<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     parse_template_node(state)?;
     Ok(())
 }
 
 /// 解析块内 TGrammar 语句。
-pub(crate) fn parse_template_statement<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_template_statement<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     parse_template_node(state)?;
     Ok(())
 }
 
-fn parse_template_node<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+fn parse_template_node<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     let cp = state.checkpoint();
     let open = read_and_bump_directive(state)?;
     if is_unexpected_boundary_directive(&open.tokens) {
-        return Err(data_text_core::OakError::custom_error("unexpected template boundary directive"));
+        return Err(data_text_core::TextError::custom_error("unexpected template boundary directive"));
     }
     match directive_first_keyword(&open.tokens) {
         Some(ValkyrieKeywords::If) => parse_if_block(state, cp)?,
@@ -51,7 +51,7 @@ fn is_match_arm_boundary(tokens: &[Token<ValkyrieTokenType>]) -> bool {
     matches!(directive_first_keyword(tokens), Some(ValkyrieKeywords::Case) | Some(ValkyrieKeywords::Else) | Some(ValkyrieKeywords::End))
 }
 
-fn parse_if_block<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, if_cp: (usize, usize)) -> Result<(), data_text_core::OakError> {
+fn parse_if_block<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, if_cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
     parse_template_body(state, is_if_arm_boundary)?;
     state.finish_at(if_cp, ValkyrieElementType::TemplateIfFragment);
 
@@ -72,40 +72,40 @@ fn parse_if_block<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, 
             parse_template_body(state, is_if_arm_boundary)?;
             state.finish_at(boundary_cp, ValkyrieElementType::TemplateIfFragment);
             if !state.at(ValkyrieTokenType::TemplateL) {
-                return Err(data_text_core::OakError::custom_error("expected `<% end %>` after `<% else %>`"));
+                return Err(data_text_core::TextError::custom_error("expected `<% end %>` after `<% else %>`"));
             }
             let end_cp = state.checkpoint();
             let close = read_and_bump_directive(state)?;
             if directive_first_keyword(&close.tokens) != Some(ValkyrieKeywords::End) {
-                return Err(data_text_core::OakError::custom_error("expected `<% end %>` after `<% else %>`"));
+                return Err(data_text_core::TextError::custom_error("expected `<% end %>` after `<% else %>`"));
             }
             state.finish_at(end_cp, ValkyrieElementType::TemplateEndFragment);
             state.finish_at(if_cp, ValkyrieElementType::TemplateIfStatement);
             return Ok(());
         }
-        return Err(data_text_core::OakError::custom_error("expected `<% else %>`, `<% else if %>` or `<% end %>`"));
+        return Err(data_text_core::TextError::custom_error("expected `<% else %>`, `<% else if %>` or `<% end %>`"));
     }
 
-    Err(data_text_core::OakError::custom_error("unclosed `<% if %>` block"))
+    Err(data_text_core::TextError::custom_error("unclosed `<% if %>` block"))
 }
 
-fn parse_loop_block<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, loop_cp: (usize, usize)) -> Result<(), data_text_core::OakError> {
+fn parse_loop_block<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, loop_cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
     state.finish_at(loop_cp, ValkyrieElementType::TemplateLoopFragment);
     parse_template_body(state, |tokens| directive_first_keyword(tokens) == Some(ValkyrieKeywords::End))?;
     if !state.at(ValkyrieTokenType::TemplateL) {
-        return Err(data_text_core::OakError::custom_error("expected `<% end %>` to close `<% loop %>`"));
+        return Err(data_text_core::TextError::custom_error("expected `<% end %>` to close `<% loop %>`"));
     }
     let end_cp = state.checkpoint();
     let close = read_and_bump_directive(state)?;
     if directive_first_keyword(&close.tokens) != Some(ValkyrieKeywords::End) {
-        return Err(data_text_core::OakError::custom_error("expected `<% end %>` to close `<% loop %>`"));
+        return Err(data_text_core::TextError::custom_error("expected `<% end %>` to close `<% loop %>`"));
     }
     state.finish_at(end_cp, ValkyrieElementType::TemplateEndFragment);
     state.finish_at(loop_cp, ValkyrieElementType::TemplateLoop);
     Ok(())
 }
 
-fn parse_match_block<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, match_cp: (usize, usize)) -> Result<(), data_text_core::OakError> {
+fn parse_match_block<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, match_cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
     state.finish_at(match_cp, ValkyrieElementType::TemplateMatchFragment);
     lint_match_prelude_gap(state)?;
 
@@ -121,12 +121,12 @@ fn parse_match_block<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S
                 parse_template_body(state, is_match_arm_boundary)?;
                 state.finish_at(boundary_cp, ValkyrieElementType::TemplateElseFragment);
                 if !state.at(ValkyrieTokenType::TemplateL) {
-                    return Err(data_text_core::OakError::custom_error("expected `<% end %>` after `<% else %>`"));
+                    return Err(data_text_core::TextError::custom_error("expected `<% end %>` after `<% else %>`"));
                 }
                 let end_cp = state.checkpoint();
                 let close = read_and_bump_directive(state)?;
                 if directive_first_keyword(&close.tokens) != Some(ValkyrieKeywords::End) {
-                    return Err(data_text_core::OakError::custom_error("expected `<% end %>` after `<% else %>`"));
+                    return Err(data_text_core::TextError::custom_error("expected `<% end %>` after `<% else %>`"));
                 }
                 state.finish_at(end_cp, ValkyrieElementType::TemplateEndFragment);
                 state.finish_at(match_cp, ValkyrieElementType::TemplateMatch);
@@ -137,15 +137,15 @@ fn parse_match_block<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S
                 state.finish_at(match_cp, ValkyrieElementType::TemplateMatch);
                 return Ok(());
             }
-            _ => return Err(data_text_core::OakError::custom_error("expected `<% case %>`, `<% else %>` or `<% end %>`")),
+            _ => return Err(data_text_core::TextError::custom_error("expected `<% case %>`, `<% else %>` or `<% end %>`")),
         }
     }
 
-    Err(data_text_core::OakError::custom_error("unclosed `<% match %>` block"))
+    Err(data_text_core::TextError::custom_error("unclosed `<% match %>` block"))
 }
 
 /// `<% match %>` 与首个 `<% case %>` 之间无语义；若出现非空 `TemplateText` 仅记 lint。
-fn lint_match_prelude_gap<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), OakError> {
+fn lint_match_prelude_gap<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), TextError> {
     loop {
         state.skip_trivia();
         if state.at(ValkyrieTokenType::TemplateL) || state.at(ValkyrieTokenType::BraceR) {
@@ -158,7 +158,7 @@ fn lint_match_prelude_gap<S: data_text_core::Source + ?Sized>(state: &mut State<
             state.bump();
             state.finish_at(cp, ValkyrieElementType::TemplateText);
             if !text.trim().is_empty() {
-                state.errors.push(OakError::semantic_error("unexpected template text between `<% match %>` and `<% case %>`"));
+                state.errors.push(TextError::semantic_error("unexpected template text between `<% match %>` and `<% case %>`"));
             }
             continue;
         }
@@ -167,7 +167,7 @@ fn lint_match_prelude_gap<S: data_text_core::Source + ?Sized>(state: &mut State<
     Ok(())
 }
 
-fn parse_template_body<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, stop: impl Fn(&[Token<ValkyrieTokenType>]) -> bool) -> Result<(), data_text_core::OakError> {
+fn parse_template_body<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, stop: impl Fn(&[Token<ValkyrieTokenType>]) -> bool) -> Result<(), data_text_core::TextError> {
     while state.not_at_end() {
         state.skip_trivia();
         if state.at(ValkyrieTokenType::BraceR) {
@@ -191,25 +191,25 @@ fn parse_template_body<S: data_text_core::Source + ?Sized>(state: &mut State<'_,
     Ok(())
 }
 
-fn read_and_bump_directive<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<ParsedTemplateDirective, data_text_core::OakError> {
+fn read_and_bump_directive<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<ParsedTemplateDirective, data_text_core::TextError> {
     let parsed = peek_template_directive(state)?;
     if !state.at(ValkyrieTokenType::TemplateL) {
-        return Err(data_text_core::OakError::custom_error("expected `<%`"));
+        return Err(data_text_core::TextError::custom_error("expected `<%`"));
     }
     state.bump();
     while state.not_at_end() && !state.at(ValkyrieTokenType::TemplateR) {
         state.bump();
     }
     if !state.at(ValkyrieTokenType::TemplateR) {
-        return Err(data_text_core::OakError::custom_error("expected `%>`"));
+        return Err(data_text_core::TextError::custom_error("expected `%>`"));
     }
     state.bump();
     Ok(parsed)
 }
 
-fn peek_template_directive<S: data_text_core::Source + ?Sized>(state: &State<'_, S>) -> Result<ParsedTemplateDirective, data_text_core::OakError> {
+fn peek_template_directive<S: data_text_core::Source + ?Sized>(state: &State<'_, S>) -> Result<ParsedTemplateDirective, data_text_core::TextError> {
     if !state.at(ValkyrieTokenType::TemplateL) {
-        return Err(data_text_core::OakError::custom_error("expected `<%`"));
+        return Err(data_text_core::TextError::custom_error("expected `<%`"));
     }
     Ok(parse_template_directive(&inner_directive_tokens(state)))
 }

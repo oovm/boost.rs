@@ -21,7 +21,7 @@ impl MsilLexer {
 
 impl MsilLexer {
     /// Runs the lexer.
-    pub fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    pub fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let safe_point = state.get_position();
         while state.not_at_end() {
             if self.skip_whitespace(state) {

@@ -5,7 +5,7 @@ use crate::{
     parser::{ElixirParser, element_type::ElixirElementType},
 };
 use core::range::Range;
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, OakError, Parser, RedNode, RedTree, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, builder::BuildOutput, source::Source};
 
 /// Elixir AST builder.
 #[derive(Clone, Copy)]
@@ -32,22 +32,22 @@ impl<'config> Builder<ElixirLanguage> for ElixirBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree.clone(), &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> ElixirBuilder<'config> {
     /// Builds root node
-    pub(crate) fn build_root(&self, green_tree: GreenNode<ElixirLanguage>, source: &SourceText) -> Result<ElixirRoot, OakError> {
+    pub(crate) fn build_root(&self, green_tree: GreenNode<ElixirLanguage>, source: &SourceText) -> Result<ElixirRoot, TextError> {
         let red_root = RedNode::new(&green_tree, 0);
         let mut items = Vec::new();
 
@@ -64,7 +64,7 @@ impl<'config> ElixirBuilder<'config> {
         Ok(ElixirRoot { items })
     }
 
-    fn build_item(&self, node: RedNode<ElixirLanguage>, source: &SourceText) -> Result<Option<Item>, OakError> {
+    fn build_item(&self, node: RedNode<ElixirLanguage>, source: &SourceText) -> Result<Option<Item>, TextError> {
         match node.green.kind {
             ElixirElementType::ModuleDefinition => {
                 let module = self.build_module(node, source)?;
@@ -85,7 +85,7 @@ impl<'config> ElixirBuilder<'config> {
         }
     }
 
-    fn build_module(&self, node: RedNode<ElixirLanguage>, source: &SourceText) -> Result<Module, OakError> {
+    fn build_module(&self, node: RedNode<ElixirLanguage>, source: &SourceText) -> Result<Module, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: (0..0).into() };
         let mut items = Vec::new();
@@ -113,7 +113,7 @@ impl<'config> ElixirBuilder<'config> {
         Ok(Module { name, items, span: span.into() })
     }
 
-    fn build_function(&self, node: RedNode<ElixirLanguage>, source: &SourceText) -> Result<Function, OakError> {
+    fn build_function(&self, node: RedNode<ElixirLanguage>, source: &SourceText) -> Result<Function, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: (0..0).into() };
         let mut params = Vec::new();
@@ -174,7 +174,7 @@ impl<'config> ElixirBuilder<'config> {
         Ok(Function { name, params, body, span: span.into() })
     }
 
-    fn build_expr_opt(&self, node: RedNode<ElixirLanguage>, source: &SourceText) -> Result<Option<Expr>, OakError> {
+    fn build_expr_opt(&self, node: RedNode<ElixirLanguage>, source: &SourceText) -> Result<Option<Expr>, TextError> {
         match node.green.kind {
             ElixirElementType::IdentifierExpression => Ok(Some(Expr::Ident(self.build_identifier(node, source)?))),
             ElixirElementType::LiteralExpression => {
@@ -374,7 +374,7 @@ impl<'config> ElixirBuilder<'config> {
         }
     }
 
-    fn build_identifier(&self, node: RedNode<ElixirLanguage>, source: &SourceText) -> Result<Identifier, OakError> {
+    fn build_identifier(&self, node: RedNode<ElixirLanguage>, source: &SourceText) -> Result<Identifier, TextError> {
         let span = node.span();
         for child in node.children() {
             if let RedTree::Leaf(t) = child {

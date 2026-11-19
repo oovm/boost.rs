@@ -3,7 +3,7 @@ use language_testing::lexing::LexerTester;
 use std::{path::Path, time::Duration};
 
 #[test]
-fn test_jasm_lexer() -> Result<(), data_text_core::OakError> {
+fn test_jasm_lexer() -> Result<(), data_text_core::TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let language = JasmLanguage::default();
     let lexer = JasmLexer::new(&language);

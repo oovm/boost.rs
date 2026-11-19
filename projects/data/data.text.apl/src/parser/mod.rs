@@ -6,7 +6,7 @@ pub use element_type::AplElementType;
 
 use crate::{language::AplLanguage, lexer::token_type::AplTokenType};
 use data_text_core::{
-    OakError, TextEdit,
+    TextError, TextEdit,
     parser::{Parser, ParserState},
     source::Source,
 };
@@ -26,7 +26,7 @@ impl<'config> AplParser<'config> {
     }
 
     /// Parses an APL statement.
-    pub(crate) fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
 
         // Try parsing assignment: ID ← Expression
@@ -45,7 +45,7 @@ impl<'config> AplParser<'config> {
     }
 
     /// Parses an APL expression (simplified).
-    pub(crate) fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
 
         while state.not_at_end() && !state.at(AplTokenType::Newline) && !state.at(AplTokenType::Diamond) {

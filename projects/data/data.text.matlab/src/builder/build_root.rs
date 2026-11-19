@@ -1,9 +1,9 @@
 use crate::{MatlabLanguage, ast::MatlabRoot, builder::MatlabBuilder, lexer::token_type::MatlabTokenType};
-use data_text_core::{GreenNode, OakError, RedNode, RedTree, Source, TokenType};
+use data_text_core::{GreenNode, TextError, RedNode, RedTree, Source, TokenType};
 
 impl<'config> MatlabBuilder<'config> {
     /// Build owned [`MatlabRoot`] from a green root.
-    pub fn build_root<S: Source + ?Sized>(&self, green_tree: &GreenNode<MatlabLanguage>, source: &S) -> Result<MatlabRoot, OakError> {
+    pub fn build_root<S: Source + ?Sized>(&self, green_tree: &GreenNode<MatlabLanguage>, source: &S) -> Result<MatlabRoot, TextError> {
         let red_root = RedNode::new(green_tree, 0);
         let mut items = Vec::new();
         for child in red_root.children() {

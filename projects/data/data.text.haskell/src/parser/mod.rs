@@ -6,7 +6,7 @@ use crate::{
     parser::element_type::HaskellElementType,
 };
 use data_text_core::{
-    GreenNode, OakError, TokenType,
+    GreenNode, TextError, TokenType,
     parser::{Associativity, ParseCache, ParseOutput, Parser, ParserState, Pratt, PrattParser, binary, parse_with_lexer, unary},
     source::{Source, TextEdit},
 };
@@ -26,7 +26,7 @@ impl<'config> HaskellParser<'config> {
     }
 
     /// Parses a top-level item in a Haskell source file.
-    fn parse_item<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_item<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         match state.peek_kind() {
             Some(HaskellTokenType::Module) => {
                 self.parse_module(state);

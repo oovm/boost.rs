@@ -5,7 +5,7 @@ pub mod token_type;
 
 use crate::{language::AthenaLanguage, lexer::token_type::AthenaTokenType};
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError,
+    Lexer, LexerCache, LexerState, TextError,
     lexer::{LexOutput, WhitespaceConfig},
     source::{Source, TextEdit},
 };
@@ -39,7 +39,7 @@ impl<'config> AthenaLexer<'config> {
         Self { config }
     }
 
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let _ = self.config;
         while state.not_at_end() {
             let safe = state.get_position();

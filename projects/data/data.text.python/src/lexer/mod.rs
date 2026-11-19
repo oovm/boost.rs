@@ -4,7 +4,7 @@ pub mod token_type;
 pub use self::token_type::PythonTokenType;
 use crate::language::PythonLanguage;
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError,
+    Lexer, LexerCache, LexerState, TextError,
     lexer::LexOutput,
     source::{Source, TextEdit},
 };
@@ -496,7 +496,7 @@ impl<'config> PythonLexer<'config> {
 }
 
 impl<'config> PythonLexer<'config> {
-    pub(crate) fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let mut indent_stack = vec![0];
         let mut bracket_level: usize = 0;
         let mut at_line_start = true;

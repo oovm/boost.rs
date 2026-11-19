@@ -1,7 +1,7 @@
 use serde::ser::{self, Serialize, Serializer};
 
 use crate::ast::JsonValueNode;
-use data_text_core::OakError;
+use data_text_core::TextError;
 
 /// JSON 序列化实现
 pub fn serialize<S, T>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
@@ -13,12 +13,12 @@ where
 }
 
 /// Serializes a Rust type into a JSON string.
-pub fn to_string<T>(value: &T) -> Result<String, OakError>
+pub fn to_string<T>(value: &T) -> Result<String, TextError>
 where
     T: serde::Serialize,
 {
     // 直接使用 serde_json 来序列化 Rust 类型
-    serde_json::to_string(value).map_err(|e| OakError::custom_error(format!("{:?}", e)))
+    serde_json::to_string(value).map_err(|e| TextError::custom_error(format!("{:?}", e)))
 }
 
 struct JsonValueSerializer {}
@@ -31,7 +31,7 @@ impl Default for JsonValueSerializer {
 
 impl serde::ser::Serializer for JsonValueSerializer {
     type Ok = JsonValueNode;
-    type Error = OakError;
+    type Error = TextError;
 
     type SerializeSeq = JsonSeqSerializer;
     type SerializeTuple = JsonSeqSerializer;
@@ -169,7 +169,7 @@ struct JsonSeqSerializer {
 
 impl serde::ser::SerializeSeq for JsonSeqSerializer {
     type Ok = JsonValueNode;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_element<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
@@ -188,7 +188,7 @@ impl serde::ser::SerializeSeq for JsonSeqSerializer {
 
 impl serde::ser::SerializeTuple for JsonSeqSerializer {
     type Ok = JsonValueNode;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_element<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
@@ -207,7 +207,7 @@ impl serde::ser::SerializeTuple for JsonSeqSerializer {
 
 impl serde::ser::SerializeTupleStruct for JsonSeqSerializer {
     type Ok = JsonValueNode;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_field<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
@@ -226,7 +226,7 @@ impl serde::ser::SerializeTupleStruct for JsonSeqSerializer {
 
 impl serde::ser::SerializeTupleVariant for JsonSeqSerializer {
     type Ok = JsonValueNode;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_field<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
@@ -250,7 +250,7 @@ struct JsonMapSerializer {
 
 impl serde::ser::SerializeMap for JsonMapSerializer {
     type Ok = JsonValueNode;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_key<T>(&mut self, key: &T) -> Result<(), Self::Error>
     where
@@ -272,7 +272,7 @@ impl serde::ser::SerializeMap for JsonMapSerializer {
             // Convert JsonValueNode key to JsonString
             let json_string = match key {
                 JsonValueNode::String(s) => s,
-                _ => return Err(OakError::custom_error("JSON keys must be strings")),
+                _ => return Err(TextError::custom_error("JSON keys must be strings")),
             };
             self.fields.push(crate::ast::JsonField { span: (0..0).into(), name: json_string, value: value_value });
         }
@@ -286,7 +286,7 @@ impl serde::ser::SerializeMap for JsonMapSerializer {
 
 impl serde::ser::SerializeStruct for JsonMapSerializer {
     type Ok = JsonValueNode;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error>
     where
@@ -306,7 +306,7 @@ impl serde::ser::SerializeStruct for JsonMapSerializer {
 
 impl serde::ser::SerializeStructVariant for JsonMapSerializer {
     type Ok = JsonValueNode;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error>
     where

@@ -1,5 +1,5 @@
 use crate::{IdlLanguage, IdlParser, ast::*, lexer::token_type::IdlTokenType, parser::element_type::IdlElementType};
-use data_text_core::{Builder, BuilderCache, GreenNode, GreenTree, OakDiagnostics, OakError, Parser, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, GreenTree, TextDiagnostics, TextError, Parser, SourceText, TextEdit, source::Source};
 
 /// A builder for IDL language structures.
 pub struct IdlBuilder<'config> {
@@ -13,12 +13,12 @@ impl<'config> IdlBuilder<'config> {
     }
 
     /// Builds the IDL AST root from a green tree.
-    pub fn build_root(&self, green_tree: GreenNode<IdlLanguage>, source: &SourceText) -> Result<IdlRoot, OakError> {
+    pub fn build_root(&self, green_tree: GreenNode<IdlLanguage>, source: &SourceText) -> Result<IdlRoot, TextError> {
         let mut items = Vec::new();
         let mut current_offset = 0;
 
         // Recursively search for items in the tree
-        fn find_items<'a>(node: &GreenNode<IdlLanguage>, offset: &mut usize, source: &SourceText, builder: &IdlBuilder, items: &mut Vec<IdlItem>) -> Result<(), OakError> {
+        fn find_items<'a>(node: &GreenNode<IdlLanguage>, offset: &mut usize, source: &SourceText, builder: &IdlBuilder, items: &mut Vec<IdlItem>) -> Result<(), TextError> {
             // 对于 SourceFile 节点，直接遍历其子节点
             if node.kind == crate::parser::element_type::IdlElementType::SourceFile {
                 for child in node.children {
@@ -60,7 +60,7 @@ impl<'config> IdlBuilder<'config> {
         Ok(IdlRoot { items })
     }
 
-    fn build_item(&self, node: &GreenNode<IdlLanguage>, offset: usize, source: &SourceText) -> Result<Option<IdlItem>, OakError> {
+    fn build_item(&self, node: &GreenNode<IdlLanguage>, offset: usize, source: &SourceText) -> Result<Option<IdlItem>, TextError> {
         let span = core::range::Range { start: offset, end: offset + node.byte_length as usize };
 
         match node.kind {
@@ -273,7 +273,7 @@ impl<'config> IdlBuilder<'config> {
     }
 
     /// Build a member from a green node
-    fn build_member(&self, node: &GreenNode<IdlLanguage>, offset: usize, source: &SourceText) -> Result<Option<IdlMember>, OakError> {
+    fn build_member(&self, node: &GreenNode<IdlLanguage>, offset: usize, source: &SourceText) -> Result<Option<IdlMember>, TextError> {
         match node.kind {
             IdlElementType::Attribute => {
                 let mut name = String::new();
@@ -353,7 +353,7 @@ impl<'config> IdlBuilder<'config> {
     }
 
     /// Build a field from a green node
-    fn build_field(&self, node: &GreenNode<IdlLanguage>, offset: usize, source: &SourceText) -> Result<Option<Field>, OakError> {
+    fn build_field(&self, node: &GreenNode<IdlLanguage>, offset: usize, source: &SourceText) -> Result<Option<Field>, TextError> {
         let mut name = String::new();
         let mut type_name = String::new();
         let mut current_offset = offset;
@@ -385,7 +385,7 @@ impl<'config> IdlBuilder<'config> {
     }
 
     /// Build a parameter from a green node
-    fn build_param(&self, node: &GreenNode<IdlLanguage>, offset: usize, source: &SourceText) -> Result<Option<Param>, OakError> {
+    fn build_param(&self, node: &GreenNode<IdlLanguage>, offset: usize, source: &SourceText) -> Result<Option<Param>, TextError> {
         let mut name = String::new();
         let mut type_name = String::new();
         let mut direction = ParamDirection::In;
@@ -437,7 +437,7 @@ impl<'config> IdlBuilder<'config> {
 }
 
 impl<'config> Builder<IdlLanguage> for IdlBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<IdlLanguage>) -> OakDiagnostics<IdlRoot> {
+    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<IdlLanguage>) -> TextDiagnostics<IdlRoot> {
         let parser = IdlParser::new(self.config);
         let mut cache = data_text_core::parser::session::ParseSession::<IdlLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);
@@ -446,15 +446,15 @@ impl<'config> Builder<IdlLanguage> for IdlBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree.clone(), &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }

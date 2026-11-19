@@ -5,7 +5,7 @@ pub mod token_type;
 
 use crate::{language::ScssLanguage, lexer::token_type::ScssTokenType};
 use data_text_core::{
-    Lexer, LexerState, OakError, Source, TextEdit,
+    Lexer, LexerState, TextError, Source, TextEdit,
     lexer::{CommentConfig, LexOutput, LexerCache, StringConfig, WhitespaceConfig},
 };
 use std::sync::LazyLock;
@@ -41,7 +41,7 @@ impl<'config> ScssLexer<'config> {
     }
 
     /// Main lexer loop that tokenizes the source text.
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

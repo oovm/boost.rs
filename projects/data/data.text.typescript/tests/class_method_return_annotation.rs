@@ -10,7 +10,7 @@ use data_text_typescript::{
     ast::{ClassMember, Statement, TypeScriptRoot},
 };
 
-fn parse(source: &str) -> data_text_core::OakDiagnostics<TypeScriptRoot> {
+fn parse(source: &str) -> data_text_core::TextDiagnostics<TypeScriptRoot> {
     let language = TypeScriptLanguage::standard();
     let mut cache = ParseSession::<TypeScriptLanguage>::new(32);
     TypeScriptBuilder::new(&language).build(&SourceText::new(source), &[], &mut cache)

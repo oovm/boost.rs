@@ -8,7 +8,7 @@ use crate::{
     lexer::{MojoLexer, MojoTokenType},
 };
 use data_text_core::{
-    OakError,
+    TextError,
     parser::{
         ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer,
         pratt::{Associativity, Pratt, PrattParser},
@@ -63,7 +63,7 @@ impl<'config> MojoParser<'config> {
         }
     }
 
-    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.skip_trivia(state);
         if state.at(MojoTokenType::Fn) {
             self.parse_function_def(state)
@@ -85,7 +85,7 @@ impl<'config> MojoParser<'config> {
         }
     }
 
-    fn parse_function_def<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_function_def<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(MojoElementType::FunctionDef.into(), |state| {
             state.expect(MojoTokenType::Fn)?;
             self.skip_trivia(state);
@@ -105,7 +105,7 @@ impl<'config> MojoParser<'config> {
         })
     }
 
-    fn parse_param_list<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_param_list<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(MojoElementType::ParamList.into(), |state| {
             while state.not_at_end() && !state.at(MojoTokenType::RightParen) {
                 self.skip_trivia(state);
@@ -124,7 +124,7 @@ impl<'config> MojoParser<'config> {
         })
     }
 
-    fn parse_variable_decl<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_variable_decl<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(MojoElementType::VariableDecl.into(), |state| {
             if state.at(MojoTokenType::Var) {
                 state.bump();
@@ -149,7 +149,7 @@ impl<'config> MojoParser<'config> {
         })
     }
 
-    fn parse_if_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_if_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(MojoElementType::IfStatement.into(), |state| {
             state.expect(MojoTokenType::If)?;
             self.skip_trivia(state);
@@ -172,7 +172,7 @@ impl<'config> MojoParser<'config> {
         })
     }
 
-    fn parse_while_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_while_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(MojoElementType::WhileStatement.into(), |state| {
             state.expect(MojoTokenType::While)?;
             self.skip_trivia(state);
@@ -183,7 +183,7 @@ impl<'config> MojoParser<'config> {
         })
     }
 
-    fn parse_return_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_return_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(MojoElementType::ReturnStatement.into(), |state| {
             state.expect(MojoTokenType::Return)?;
             self.skip_trivia(state);
@@ -195,7 +195,7 @@ impl<'config> MojoParser<'config> {
         })
     }
 
-    fn parse_expression_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_expression_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(MojoElementType::ExpressionStatement.into(), |state| {
             self.parse_expression(state, 0);
             state.eat(MojoTokenType::Newline);
@@ -203,7 +203,7 @@ impl<'config> MojoParser<'config> {
         })
     }
 
-    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(MojoElementType::Block.into(), |state| {
             // Skip spaces after colon
             self.skip_trivia(state);

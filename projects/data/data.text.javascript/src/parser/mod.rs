@@ -4,7 +4,7 @@ pub mod element_type;
 
 use crate::{language::JavaScriptLanguage, parser::element_type::JavaScriptElementType};
 use data_text_core::{
-    GreenNode, OakError, ParseCache, TextEdit,
+    GreenNode, TextError, ParseCache, TextEdit,
     parser::{Associativity, Parser, ParserState, Pratt, PrattParser, binary},
     source::Source,
 };
@@ -23,7 +23,7 @@ impl<'config> JavaScriptParser<'config> {
         Self { config }
     }
 
-    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::JavaScriptTokenType::*;
         match state.peek_kind() {
             Some(Function) => self.parse_function_declaration(state)?,
@@ -41,7 +41,7 @@ impl<'config> JavaScriptParser<'config> {
         Ok(())
     }
 
-    fn parse_function_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_function_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::JavaScriptTokenType::*;
         let cp = state.checkpoint();
         state.expect(Function).ok();
@@ -56,7 +56,7 @@ impl<'config> JavaScriptParser<'config> {
         Ok(())
     }
 
-    fn parse_variable_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_variable_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::JavaScriptTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // var/let/const
@@ -69,7 +69,7 @@ impl<'config> JavaScriptParser<'config> {
         Ok(())
     }
 
-    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::JavaScriptTokenType::*;
         let cp = state.checkpoint();
         state.expect(If).ok();
@@ -84,7 +84,7 @@ impl<'config> JavaScriptParser<'config> {
         Ok(())
     }
 
-    fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::JavaScriptTokenType::*;
         let cp = state.checkpoint();
         state.expect(While).ok();
@@ -96,7 +96,7 @@ impl<'config> JavaScriptParser<'config> {
         Ok(())
     }
 
-    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::JavaScriptTokenType::*;
         let cp = state.checkpoint();
         state.expect(For).ok();
@@ -111,7 +111,7 @@ impl<'config> JavaScriptParser<'config> {
         Ok(())
     }
 
-    fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::JavaScriptTokenType::*;
         let cp = state.checkpoint();
         state.expect(Return).ok();
@@ -123,7 +123,7 @@ impl<'config> JavaScriptParser<'config> {
         Ok(())
     }
 
-    fn parse_block_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_block_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::JavaScriptTokenType::*;
         let cp = state.checkpoint();
         state.expect(LeftBrace).ok();

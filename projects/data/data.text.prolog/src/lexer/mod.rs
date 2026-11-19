@@ -4,7 +4,7 @@ pub mod token_type;
 pub use token_type::PrologTokenType;
 
 use crate::language::PrologLanguage;
-use data_text_core::{Lexer, LexerCache, LexerState, OakError, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextError, lexer::LexOutput, source::Source};
 
 type State<'s, S> = LexerState<'s, S, PrologLanguage>;
 
@@ -20,7 +20,7 @@ impl<'config> PrologLexer<'config> {
         Self { config }
     }
 
-    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), OakError> {
+    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

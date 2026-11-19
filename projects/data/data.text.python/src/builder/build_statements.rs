@@ -4,11 +4,11 @@ use crate::{
     lexer::token_type::PythonTokenType,
     parser::PythonElementType,
 };
-use data_text_core::{GreenNode, GreenTree, OakError, Source, SourceText};
+use data_text_core::{GreenNode, GreenTree, TextError, Source, SourceText};
 
 impl<'config> super::PythonBuilder<'config> {
     /// Builds a statement from a green node.
-    pub(crate) fn build_statement(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<Option<Statement>, OakError> {
+    pub(crate) fn build_statement(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<Option<Statement>, TextError> {
         match node.kind {
             PythonElementType::FunctionDef | PythonElementType::AsyncFunctionDef => {
                 let is_async = node.kind == PythonElementType::AsyncFunctionDef;
@@ -381,7 +381,7 @@ impl<'config> super::PythonBuilder<'config> {
     }
 
     /// Builds a list of statements from a list of green nodes, handling decorators.
-    pub(crate) fn build_statement_list<'a>(&self, children: &'a [GreenTree<'a, PythonLanguage>], mut current_offset: usize, source: &SourceText) -> Result<Vec<Statement>, OakError> {
+    pub(crate) fn build_statement_list<'a>(&self, children: &'a [GreenTree<'a, PythonLanguage>], mut current_offset: usize, source: &SourceText) -> Result<Vec<Statement>, TextError> {
         let mut statements = Vec::new();
         let mut pending_decorators = Vec::new();
 
@@ -429,12 +429,12 @@ impl<'config> super::PythonBuilder<'config> {
     }
 
     /// Builds a suite (list of statements) from a green node.
-    pub(crate) fn build_suite(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<Vec<Statement>, OakError> {
+    pub(crate) fn build_suite(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<Vec<Statement>, TextError> {
         self.build_statement_list(node.children(), offset, source)
     }
 
     /// Builds an import name (alias) from a green node.
-    pub(crate) fn build_import_name(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<ImportName, OakError> {
+    pub(crate) fn build_import_name(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<ImportName, TextError> {
         let mut name = String::new();
         let mut asname = None;
         let mut current_offset = offset;
@@ -460,7 +460,7 @@ impl<'config> super::PythonBuilder<'config> {
     }
 
     /// Builds an exception handler from a green node.
-    pub(crate) fn build_except_handler(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<ExceptHandler, OakError> {
+    pub(crate) fn build_except_handler(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<ExceptHandler, TextError> {
         let mut type_ = None;
         let mut name = None;
         let mut body = Vec::new();
@@ -490,7 +490,7 @@ impl<'config> super::PythonBuilder<'config> {
     }
 
     /// Builds a `with` item from a green node.
-    pub(crate) fn build_with_item(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<WithItem, OakError> {
+    pub(crate) fn build_with_item(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<WithItem, TextError> {
         let mut context_expr = None;
         let mut optional_vars = None;
         let mut current_offset = offset;

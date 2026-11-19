@@ -3,7 +3,7 @@ pub mod token_type;
 
 use crate::{language::DockerfileLanguage, lexer::token_type::DockerfileTokenType};
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError, Source, TextEdit,
+    Lexer, LexerCache, LexerState, TextError, Source, TextEdit,
     lexer::{LexOutput, WhitespaceConfig},
 };
 use std::sync::LazyLock;
@@ -35,7 +35,7 @@ impl<'config> DockerfileLexer<'config> {
         Self { config }
     }
 
-    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), OakError> {
+    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

@@ -2,7 +2,7 @@
 /// Element types for the TOML parser.
 pub mod element_type;
 use crate::{TomlBuilder, ast::TomlRoot, language::TomlLanguage, lexer::token_type::TomlTokenKind as TomlSyntaxKind};
-use data_text_core::{Builder, OakError, ParseCache, Parser, Source, parser::session::ParseSession, source::SourceText};
+use data_text_core::{Builder, TextError, ParseCache, Parser, Source, parser::session::ParseSession, source::SourceText};
 
 /// TOML language parser.
 ///
@@ -37,13 +37,13 @@ impl<'config> Parser<TomlLanguage> for TomlParser<'config> {
 }
 
 /// Parses a TOML string.
-pub fn parse(toml: &str) -> Result<TomlRoot, OakError> {
+pub fn parse(toml: &str) -> Result<TomlRoot, TextError> {
     let language = TomlLanguage::default();
     parse_with_config(toml, &language)
 }
 
 /// Parses a TOML string.
-pub fn parse_with_config(toml: &str, config: &TomlLanguage) -> Result<TomlRoot, OakError> {
+pub fn parse_with_config(toml: &str, config: &TomlLanguage) -> Result<TomlRoot, TextError> {
     let builder = TomlBuilder::new(&config);
     let source = SourceText::new(toml);
     let mut cache = ParseSession::default();

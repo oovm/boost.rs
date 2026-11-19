@@ -4,7 +4,7 @@ pub mod token_type;
 
 use crate::{language::PascalLanguage, lexer::token_type::PascalTokenType};
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError,
+    Lexer, LexerCache, LexerState, TextError,
     lexer::{CommentConfig, LexOutput, WhitespaceConfig},
     source::Source,
 };
@@ -328,7 +328,7 @@ impl Lexer<PascalLanguage> for PascalLexer<'_> {
 }
 
 impl PascalLexer<'_> {
-    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), OakError> {
+    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), TextError> {
         let safe_point = state.get_position();
         while state.not_at_end() {
             // Skip whitespace

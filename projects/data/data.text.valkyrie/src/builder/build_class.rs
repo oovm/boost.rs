@@ -8,10 +8,10 @@ use crate::{
     lexer::{ValkyrieKeywords, token_type::ValkyrieTokenType},
     parser::element_type::ValkyrieElementType,
 };
-use data_text_core::{OakError, RedNode, RedTree, Source};
+use data_text_core::{TextError, RedNode, RedTree, Source};
 
 impl<'config> ValkyrieBuilder<'config> {
-    pub(crate) fn build_class<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<ClassDeclaration, OakError> {
+    pub(crate) fn build_class<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<ClassDeclaration, TextError> {
         let span = node.span();
         let mut kind = 0;
         let mut name = Identifier { name: String::new(), span: Default::default() };
@@ -101,7 +101,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(ClassDeclaration { name, annotations, generics, parents, body: StructureBody { fields, methods, associated_types: Vec::new(), templates: Vec::new(), span }, span })
     }
 
-    pub(crate) fn build_flags<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Flags, OakError> {
+    pub(crate) fn build_flags<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Flags, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Default::default() };
         let mut annotations = Vec::new();
@@ -141,7 +141,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(Flags { name, variants, annotations, span })
     }
 
-    pub(crate) fn build_enums<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Enums, OakError> {
+    pub(crate) fn build_enums<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Enums, TextError> {
         let span = node.span();
         let mut kind = EnumsKind::default();
         let mut name = Identifier { name: String::new(), span: Default::default() };
@@ -195,7 +195,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(Enums { kind, name, generics, variants, annotations, span })
     }
 
-    pub(crate) fn build_enum_variant<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<EnumVariant, OakError> {
+    pub(crate) fn build_enum_variant<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<EnumVariant, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Default::default() };
         let mut fields = Vec::new();
@@ -231,7 +231,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(EnumVariant { name, fields, annotations, span, value })
     }
 
-    pub(crate) fn build_field<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<FieldDeclaration, OakError> {
+    pub(crate) fn build_field<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<FieldDeclaration, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Default::default() };
         let mut typing = None;
@@ -269,7 +269,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(FieldDeclaration { annotations, name, typing, default, span })
     }
 
-    pub(crate) fn build_variant_decl<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Variant, OakError> {
+    pub(crate) fn build_variant_decl<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Variant, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Default::default() };
         let mut generics = Vec::new();
@@ -303,7 +303,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(Variant { name, generics, cases, annotations, span })
     }
 
-    pub(crate) fn build_variant_case<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<VariantCase, OakError> {
+    pub(crate) fn build_variant_case<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<VariantCase, TextError> {
         let span = node.span();
         let mut pattern = None;
         let mut body = None;
@@ -333,7 +333,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(VariantCase { pattern, body, span })
     }
 
-    pub(crate) fn build_imply<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<ImplyDeclaration, OakError> {
+    pub(crate) fn build_imply<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<ImplyDeclaration, TextError> {
         let span = node.span();
         let mut annotations = Vec::new();
         let mut generics = Vec::new();
@@ -411,7 +411,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(ImplyDeclaration { annotations, generics, target_type, trait_type, associated_types, methods, span })
     }
 
-    pub(crate) fn build_trait<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Trait, OakError> {
+    pub(crate) fn build_trait<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Trait, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Default::default() };
         let mut generics = Vec::new();
@@ -482,7 +482,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(Trait { name, generics, annotations, super_traits, body: StructureBody { fields: Vec::new(), methods, associated_types, templates, span }, span })
     }
 
-    pub(crate) fn build_trait_associated_type<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<AssociatedType, OakError> {
+    pub(crate) fn build_trait_associated_type<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<AssociatedType, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Default::default() };
         let mut bounds = Vec::new();
@@ -523,7 +523,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(AssociatedType { name, bounds, default, annotations, span })
     }
 
-    pub(crate) fn build_union<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<UnionDeclaration, OakError> {
+    pub(crate) fn build_union<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<UnionDeclaration, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Default::default() };
         let mut generics = Vec::new();
@@ -568,7 +568,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(UnionDeclaration { name, generics, annotations, body: UnionBody { fields, span }, span })
     }
 
-    pub(crate) fn build_widget<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<WidgetDeclaration, OakError> {
+    pub(crate) fn build_widget<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<WidgetDeclaration, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Default::default() };
         let mut generics = Vec::new();
@@ -661,7 +661,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(WidgetDeclaration { name, generics, items, annotations, span })
     }
 
-    pub(crate) fn build_singleton<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<SingletonDeclaration, OakError> {
+    pub(crate) fn build_singleton<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<SingletonDeclaration, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Default::default() };
         let mut generics = Vec::new();
@@ -719,7 +719,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(SingletonDeclaration { name, annotations, generics, parents, body: StructureBody { fields, methods, associated_types: Vec::new(), templates: Vec::new(), span }, span })
     }
 
-    pub(crate) fn build_struct<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<StructureDeclaration, OakError> {
+    pub(crate) fn build_struct<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<StructureDeclaration, TextError> {
         let span = node.span();
         let mut kind = StructureKind::Structure;
         let mut name = Identifier { name: String::new(), span: Default::default() };

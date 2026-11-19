@@ -5,7 +5,7 @@
 //! and test result serialization.
 
 use crate::{create_file, source_from_path};
-use data_text_core::{Language, Parser, errors::OakError};
+use data_text_core::{Language, Parser, errors::TextError};
 
 #[cfg(feature = "serde")]
 use crate::json_from_path;
@@ -84,7 +84,7 @@ impl ParserTester {
 
     /// Run tests for the given parser against all files in the root directory with the specified extensions.
     #[cfg(feature = "serde")]
-    pub fn run_tests<L, P>(self, parser: &P) -> Result<(), OakError>
+    pub fn run_tests<L, P>(self, parser: &P) -> Result<(), TextError>
     where
         P: Parser<L> + Send + Sync,
         L: Language + Send + Sync,
@@ -110,7 +110,7 @@ impl ParserTester {
 
     /// Run tests for the given parser against all files in the root directory with the specified extensions.
     #[cfg(not(feature = "serde"))]
-    pub fn run_tests<L, P>(self, _parser: &P) -> Result<(), OakError>
+    pub fn run_tests<L, P>(self, _parser: &P) -> Result<(), TextError>
     where
         P: Parser<L> + Send + Sync,
         L: Language + Send + Sync,
@@ -119,7 +119,7 @@ impl ParserTester {
         Ok(())
     }
 
-    fn find_test_files(&self) -> Result<Vec<PathBuf>, OakError> {
+    fn find_test_files(&self) -> Result<Vec<PathBuf>, TextError> {
         let mut files = Vec::new();
 
         if !self.root.exists() {
@@ -127,7 +127,7 @@ impl ParserTester {
         }
 
         for entry in Walker::new(&self.root).error_policy(ErrorPolicy::Strict) {
-            let entry = entry.map_err(|e| OakError::custom_error(e.to_string()))?;
+            let entry = entry.map_err(|e| TextError::custom_error(e.to_string()))?;
             let path = entry.path();
 
             if path.is_file() {
@@ -150,7 +150,7 @@ impl ParserTester {
     }
 
     #[cfg(feature = "serde")]
-    fn test_single_file<L, P>(&self, file_path: &Path, parser: &P, force_regenerated: bool) -> Result<bool, OakError>
+    fn test_single_file<L, P>(&self, file_path: &Path, parser: &P, force_regenerated: bool) -> Result<bool, TextError>
     where
         P: Parser<L> + Send + Sync,
         L: Language + Send + Sync,
@@ -160,7 +160,7 @@ impl ParserTester {
 
         // Perform parsing in a thread and construct test results, with main thread handling timeout control
         use std::sync::{Arc, Mutex};
-        let result: Arc<Mutex<Option<Result<ParserTestExpected, OakError>>>> = Arc::new(Mutex::new(None));
+        let result: Arc<Mutex<Option<Result<ParserTestExpected, TextError>>>> = Arc::new(Mutex::new(None));
         let result_clone = Arc::clone(&result);
         let timeout = self.timeout;
 
@@ -215,7 +215,7 @@ impl ParserTester {
 
             // Return error if timed out
             if timeout_occurred {
-                return Err(OakError::custom_error(&format!("Parser test timed out after {:?} for file: {}", timeout, file_path.display())));
+                return Err(TextError::custom_error(&format!("Parser test timed out after {:?} for file: {}", timeout, file_path.display())));
             }
 
             // Get parsing result
@@ -224,7 +224,7 @@ impl ParserTester {
                 match result_guard.as_ref() {
                     Some(Ok(test_result)) => test_result.clone(),
                     Some(Err(e)) => return Err(e.clone()),
-                    None => return Err(OakError::custom_error("Parser test thread disconnected unexpectedly")),
+                    None => return Err(TextError::custom_error("Parser test thread disconnected unexpectedly")),
                 }
             };
 
@@ -241,9 +241,9 @@ impl ParserTester {
 
             if expected_file.exists() && !force_regenerated {
                 let expected_json = json_from_path(&expected_file)?;
-                let expected: ParserTestExpected = serde_json::from_value(expected_json).map_err(|e| OakError::custom_error(e.to_string()))?;
+                let expected: ParserTestExpected = serde_json::from_value(expected_json).map_err(|e| TextError::custom_error(e.to_string()))?;
                 if test_result != expected {
-                    return Err(OakError::test_failure(file_path.to_path_buf(), format!("{:#?}", expected), format!("{:#?}", test_result)));
+                    return Err(TextError::test_failure(file_path.to_path_buf(), format!("{:#?}", expected), format!("{:#?}", test_result)));
                 }
             }
             else {
@@ -252,14 +252,14 @@ impl ParserTester {
                 let mut buf = Vec::new();
                 let formatter = serde_json::ser::PrettyFormatter::with_indent(b"    "); // 4 spaces indentation
                 let mut ser = serde_json::Serializer::with_formatter(&mut buf, formatter);
-                test_result.serialize(&mut ser).map_err(|e| OakError::custom_error(e.to_string()))?;
-                file.write_all(&buf).map_err(|e| OakError::custom_error(e.to_string()))?;
+                test_result.serialize(&mut ser).map_err(|e| TextError::custom_error(e.to_string()))?;
+                file.write_all(&buf).map_err(|e| TextError::custom_error(e.to_string()))?;
 
                 if force_regenerated {
                     regenerated = true;
                 }
                 else {
-                    return Err(OakError::test_regenerated(expected_file));
+                    return Err(TextError::test_regenerated(expected_file));
                 }
             }
 

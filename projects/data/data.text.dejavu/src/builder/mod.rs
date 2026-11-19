@@ -1,6 +1,6 @@
 use crate::DejavuLanguage;
 use data_text_core::{
-    Builder, OakDiagnostics, Source, TextEdit,
+    Builder, TextDiagnostics, Source, TextEdit,
     builder::{BuildOutput, BuilderCache},
 };
 
@@ -22,7 +22,7 @@ impl<'config> Builder<DejavuLanguage> for DejavuBuilder<'config> {
 
         let root = parse_output.result.and_then(|green_node| self.build_root(green_node, text));
 
-        OakDiagnostics { result: root, diagnostics: parse_output.diagnostics }
+        TextDiagnostics { result: root, diagnostics: parse_output.diagnostics }
     }
 }
 

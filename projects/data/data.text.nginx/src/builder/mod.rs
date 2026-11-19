@@ -1,6 +1,6 @@
 use crate::{ast::*, language::NginxLanguage, lexer::token_type::NginxTokenType, parser::element_type::NginxElementType};
 use data_text_core::{
-    Builder, BuilderCache, GreenNode, Lexer, OakDiagnostics, OakError, Parser, RedNode, RedTree, TextEdit,
+    Builder, BuilderCache, GreenNode, Lexer, TextDiagnostics, TextError, Parser, RedNode, RedTree, TextEdit,
     source::{Source, SourceText},
 };
 
@@ -17,7 +17,7 @@ impl<'config> NginxBuilder<'config> {
 }
 
 impl<'config> Builder<NginxLanguage> for NginxBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<NginxLanguage>) -> OakDiagnostics<NginxRoot> {
+    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<NginxLanguage>) -> TextDiagnostics<NginxRoot> {
         let parser = crate::parser::NginxParser::new(self.config);
         let lexer = crate::lexer::NginxLexer::new(&self.config);
 
@@ -29,21 +29,21 @@ impl<'config> Builder<NginxLanguage> for NginxBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> NginxBuilder<'config> {
-    pub(crate) fn build_root(&self, green_tree: &GreenNode<NginxLanguage>, source: &SourceText) -> Result<NginxRoot, OakError> {
+    pub(crate) fn build_root(&self, green_tree: &GreenNode<NginxLanguage>, source: &SourceText) -> Result<NginxRoot, TextError> {
         let red_root = RedNode::new(green_tree, 0);
         let mut items = Vec::new();
 
@@ -67,7 +67,7 @@ impl<'config> NginxBuilder<'config> {
         Ok(NginxRoot { range: red_root.span(), items })
     }
 
-    fn build_directive(&self, node: RedNode<NginxLanguage>, source: &SourceText) -> Result<Directive, OakError> {
+    fn build_directive(&self, node: RedNode<NginxLanguage>, source: &SourceText) -> Result<Directive, TextError> {
         let mut name = String::new();
         let mut parameters = Vec::new();
         let mut children = node.children();
@@ -101,7 +101,7 @@ impl<'config> NginxBuilder<'config> {
         Ok(Directive { name, parameters, range: node.span() })
     }
 
-    fn build_block(&self, node: RedNode<NginxLanguage>, source: &SourceText) -> Result<Block, OakError> {
+    fn build_block(&self, node: RedNode<NginxLanguage>, source: &SourceText) -> Result<Block, TextError> {
         let mut name = String::new();
         let mut parameters = Vec::new();
         let mut items = Vec::new();
@@ -148,7 +148,7 @@ impl<'config> NginxBuilder<'config> {
         Ok(Block { name, parameters, items, range: node.span() })
     }
 
-    fn build_comment(&self, node: RedNode<NginxLanguage>, source: &SourceText) -> Result<Comment, OakError> {
+    fn build_comment(&self, node: RedNode<NginxLanguage>, source: &SourceText) -> Result<Comment, TextError> {
         Ok(Comment { text: source.get_text_in(node.span()).as_ref().to_string(), range: node.span() })
     }
 }

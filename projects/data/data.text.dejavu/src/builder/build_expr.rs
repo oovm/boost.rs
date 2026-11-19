@@ -5,10 +5,10 @@ use crate::{
     lexer::token_type::DejavuTokenType,
     parser::element_type::DejavuElementType,
 };
-use data_text_core::{OakError, RedNode, RedTree, Source};
+use data_text_core::{TextError, RedNode, RedTree, Source};
 
 impl<'config> DejavuBuilder<'config> {
-    pub(crate) fn build_expr<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, OakError> {
+    pub(crate) fn build_expr<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, TextError> {
         let node_kind = node.green.kind;
         let node_span = node.span();
         if node_kind == DejavuElementType::Error {
@@ -309,7 +309,7 @@ impl<'config> DejavuBuilder<'config> {
         }
     }
 
-    pub(crate) fn build_lambda_expr<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<LambdaExpressionNode, OakError> {
+    pub(crate) fn build_lambda_expr<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<LambdaExpressionNode, TextError> {
         let span = node.span();
         let mut params = Vec::new();
         let mut return_type = None;

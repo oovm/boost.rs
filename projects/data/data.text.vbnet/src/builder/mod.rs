@@ -28,9 +28,9 @@ impl<'config> Builder<VbNetLanguage> for VbNetBuilder<'config> {
         match parse_output.result {
             Ok(green_node) => {
                 let ast = self.build_ast(&green_node, source);
-                data_text_core::errors::OakDiagnostics { result: Ok(ast), diagnostics: parse_output.diagnostics }
+                data_text_core::errors::TextDiagnostics { result: Ok(ast), diagnostics: parse_output.diagnostics }
             }
-            Err(err) => data_text_core::errors::OakDiagnostics { result: Err(err), diagnostics: parse_output.diagnostics },
+            Err(err) => data_text_core::errors::TextDiagnostics { result: Err(err), diagnostics: parse_output.diagnostics },
         }
     }
 }

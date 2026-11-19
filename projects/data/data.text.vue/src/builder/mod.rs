@@ -5,7 +5,7 @@ use crate::{
 };
 use core::range::Range;
 use data_text_core::{
-    Builder, BuilderCache, GreenNode, GreenTree, OakDiagnostics, OakError, Parser, Source,
+    Builder, BuilderCache, GreenNode, GreenTree, TextDiagnostics, TextError, Parser, Source,
     builder::BuildOutput,
     source::{SourceText, TextEdit},
 };
@@ -19,7 +19,7 @@ impl VueBuilder {
         Self
     }
 
-    fn build_root<'a>(&self, green_tree: &GreenNode<'a, VueLanguage>, source: &SourceText) -> Result<VueRoot, OakError> {
+    fn build_root<'a>(&self, green_tree: &GreenNode<'a, VueLanguage>, source: &SourceText) -> Result<VueRoot, TextError> {
         let mut blocks = Vec::new();
         let mut current_offset = 0;
 
@@ -43,7 +43,7 @@ impl VueBuilder {
         Ok(VueRoot { blocks })
     }
 
-    fn build_block<'a>(&self, node: &GreenNode<'a, VueLanguage>, offset: usize, source: &SourceText) -> Result<VueBlock, OakError> {
+    fn build_block<'a>(&self, node: &GreenNode<'a, VueLanguage>, offset: usize, source: &SourceText) -> Result<VueBlock, TextError> {
         let mut name = Range { start: offset, end: offset };
         let mut attributes = Vec::new();
         let mut children = Vec::new();
@@ -118,7 +118,7 @@ impl VueBuilder {
         Ok(result)
     }
 
-    fn build_element<'a>(&self, node: &GreenNode<'a, VueLanguage>, offset: usize, source: &SourceText) -> Result<VueElement, OakError> {
+    fn build_element<'a>(&self, node: &GreenNode<'a, VueLanguage>, offset: usize, source: &SourceText) -> Result<VueElement, TextError> {
         let mut tag_name = Range { start: offset, end: offset };
         let mut attributes = Vec::new();
         let mut children = Vec::new();
@@ -194,7 +194,7 @@ impl VueBuilder {
         Ok(result)
     }
 
-    fn build_attribute<'a>(&self, node: &GreenNode<'a, VueLanguage>, offset: usize, _source: &SourceText) -> Result<VueAttribute, OakError> {
+    fn build_attribute<'a>(&self, node: &GreenNode<'a, VueLanguage>, offset: usize, _source: &SourceText) -> Result<VueAttribute, TextError> {
         let mut name = Range { start: offset, end: offset };
         let mut value = None;
         let mut current_offset = offset;
@@ -315,7 +315,7 @@ impl VueBuilder {
         Range { start: offset, end: offset }
     }
 
-    fn build_interpolation<'a>(&self, node: &GreenNode<'a, VueLanguage>, offset: usize, _source: &SourceText) -> Result<VueInterpolation, OakError> {
+    fn build_interpolation<'a>(&self, node: &GreenNode<'a, VueLanguage>, offset: usize, _source: &SourceText) -> Result<VueInterpolation, TextError> {
         let mut expression = Range { start: offset, end: offset };
         let mut current_offset = offset;
 
@@ -363,7 +363,7 @@ impl Builder<VueLanguage> for VueBuilder {
 
         let result = parse_output.result.and_then(|green_tree| self.build_root(green_tree, &source));
 
-        OakDiagnostics { result, diagnostics }
+        TextDiagnostics { result, diagnostics }
     }
 }
 

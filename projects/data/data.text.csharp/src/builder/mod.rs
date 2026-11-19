@@ -418,12 +418,12 @@ impl<'config> Builder<CSharpLanguage> for CSharpBuilder<'config> {
         let parser = crate::parser::CSharpParser::new(self.language);
         let output = parser.parse(source, edits, &mut session);
 
-        let mut result = Err(data_text_core::OakError::custom_error("Build failed"));
+        let mut result = Err(data_text_core::TextError::custom_error("Build failed"));
         if let Ok(green) = &output.result {
             let root = self.build_root(green, source.get_text_in((0..source.length()).into()).as_ref());
             result = Ok(root)
         }
 
-        data_text_core::errors::OakDiagnostics { result, diagnostics: output.diagnostics }
+        data_text_core::errors::TextDiagnostics { result, diagnostics: output.diagnostics }
     }
 }

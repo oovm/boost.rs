@@ -1,7 +1,7 @@
 #![doc = include_str!("readme.md")]
 
 use crate::{language::SchemeLanguage, parser::SchemeParser};
-use data_text_core::{Builder, BuilderCache, Lexer, OakDiagnostics, Parser, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, Lexer, TextDiagnostics, Parser, TextEdit, source::Source};
 
 /// Builder for the Scheme language.
 #[derive(Clone)]
@@ -17,7 +17,7 @@ impl<'config> SchemeBuilder<'config> {
 }
 
 impl<'config> Builder<SchemeLanguage> for SchemeBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<SchemeLanguage>) -> OakDiagnostics<()> {
+    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<SchemeLanguage>) -> TextDiagnostics<()> {
         let parser = SchemeParser::new(self.config);
         let lexer = crate::lexer::SchemeLexer::new(&self.config);
 
@@ -25,8 +25,8 @@ impl<'config> Builder<SchemeLanguage> for SchemeBuilder<'config> {
         let parse_result = parser.parse(source, edits, cache);
 
         match parse_result.result {
-            Ok(_) => OakDiagnostics { result: Ok(()), diagnostics: parse_result.diagnostics },
-            Err(e) => OakDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
+            Ok(_) => TextDiagnostics { result: Ok(()), diagnostics: parse_result.diagnostics },
+            Err(e) => TextDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
         }
     }
 }

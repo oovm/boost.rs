@@ -26,7 +26,7 @@ impl<'config> NixLexer<'config> {
 
 impl NixLexer<'_> {
     /// Runs the lexer on the given state, tokenizing the entire source.
-    pub fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    pub fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         while state.not_at_end() {
             if self.skip_whitespace(state) {
                 continue;

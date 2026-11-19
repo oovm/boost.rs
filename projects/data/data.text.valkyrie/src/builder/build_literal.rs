@@ -4,7 +4,7 @@ use crate::{
     builder::{ValkyrieBuilder, text},
     lexer::{keywords::ValkyrieKeywords, token_type::ValkyrieTokenType},
 };
-use data_text_core::{OakError, RedNode, RedTree, Source};
+use data_text_core::{TextError, RedNode, RedTree, Source};
 
 /// Extracts the raw content of a quote capture by removing both delimiter runs.
 fn strip_delimiters(raw: &str, quote_count: usize) -> String {
@@ -13,7 +13,7 @@ fn strip_delimiters(raw: &str, quote_count: usize) -> String {
 }
 
 impl<'config> ValkyrieBuilder<'config> {
-    pub(crate) fn build_literal<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_literal<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let mut prefix: Option<Identifier> = None;
         let mut quote_capture: Option<(QuoteKind, data_text_core::Range<usize>)> = None;
@@ -64,7 +64,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(TermExpression::QuoteLiteral(QuoteLiteral { prefix, quote, quote_count: quote_count as u8, content, content_span, span }))
     }
 
-    pub(crate) fn build_bool_literal<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_bool_literal<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let mut value = false;
         for child in node.children() {
@@ -78,18 +78,18 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(TermExpression::BooleanLiteral { value, span })
     }
 
-    pub(crate) fn build_identifier_expr<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_identifier_expr<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let identifier = crate::builder::utils::build_identifier(&node, source, span)?;
         Ok(TermExpression::NamePath(Box::new(NamePath { parts: vec![identifier.clone()], span: identifier.span })))
     }
 
-    pub(crate) fn build_path_expr<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_path_expr<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let path = crate::builder::utils::build_name_path(&node, source)?;
         Ok(TermExpression::NamePath(Box::new(path)))
     }
 
-    pub(crate) fn build_name_path<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<NamePath, OakError> {
+    pub(crate) fn build_name_path<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<NamePath, TextError> {
         crate::builder::utils::build_name_path(&node, source)
     }
 }
@@ -100,7 +100,7 @@ mod tests {
     use crate::{ValkyrieBuilder, ValkyrieLanguage};
     use data_text_core::{Builder, SourceText, parser::ParseSession};
 
-    fn build(source: &str) -> data_text_core::OakDiagnostics<ValkyrieRoot> {
+    fn build(source: &str) -> data_text_core::TextDiagnostics<ValkyrieRoot> {
         let language = ValkyrieLanguage::default();
         let builder = ValkyrieBuilder::new(&language);
         let text = SourceText::new(source);

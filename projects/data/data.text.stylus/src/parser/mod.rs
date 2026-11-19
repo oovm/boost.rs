@@ -6,7 +6,7 @@ use crate::{
     parser::element_type::StylusElementType,
 };
 use data_text_core::{
-    errors::OakError,
+    errors::TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -25,7 +25,7 @@ impl<'config> StylusParser<'config> {
     }
 
     /// Parse a node.
-    fn parse_node<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_node<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         match state.peek_kind() {
             Some(StylusTokenType::Identifier) | Some(StylusTokenType::Dot) | Some(StylusTokenType::Hash) | Some(StylusTokenType::Ampersand) | Some(StylusTokenType::Star) => {
                 if self.is_declaration(state) {
@@ -57,7 +57,7 @@ impl<'config> StylusParser<'config> {
     }
 
     /// Parse a declaration.
-    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
 
         let prop_cp = state.checkpoint();
@@ -80,7 +80,7 @@ impl<'config> StylusParser<'config> {
     }
 
     /// Parse a rule.
-    fn parse_rule<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_rule<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
 
         // Parse selector
@@ -104,7 +104,7 @@ impl<'config> StylusParser<'config> {
     }
 
     /// Parse a block.
-    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(StylusTokenType::LeftBrace)?;
         while state.not_at_end() && !state.at(StylusTokenType::RightBrace) {

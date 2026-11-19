@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use data_text_core::Arc;
 
-use boost_harness::{ByteRange, Diagnostic, DiagnosticCode, DiagnosticLabel, DiagnosticLocation, DiagnosticOrigin, DiagnosticSet, DiagnosticSeverity, LabelRole, Message, SourceRef, terminal::SourceID};
+use boost_harness::diagnostic::{ByteRange, Diagnostic, DiagnosticCode, DiagnosticLabel, DiagnosticLocation, DiagnosticOrigin, DiagnosticSet, DiagnosticSeverity, LabelRole, Message, SourceRef, terminal::SourceID};
 use language_server::diagnostic::{SourceCache, SourceResolver, structured_set_to_protocol, structured_to_protocol};
 
 struct TestResolver(BTreeMap<String, SourceID>);

@@ -1,5 +1,5 @@
 use data_text_core::{
-    errors::OakError,
+    errors::TextError,
     parser::{ParseSession, Parser},
 };
 use data_text_elixir::{ElixirLanguage, parser::ElixirParser};
@@ -19,7 +19,7 @@ fn test_elixir_parser_basic() {
 }
 
 #[test]
-fn test_elixir_parser_suite() -> Result<(), OakError> {
+fn test_elixir_parser_suite() -> Result<(), TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let tests = here.join("tests/lexer"); // Use lexer tests as basic examples
     let language = ElixirLanguage::default();

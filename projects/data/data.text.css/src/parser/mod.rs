@@ -7,7 +7,7 @@ use crate::{
 };
 pub use element_type::CssElementType;
 use data_text_core::{
-    GreenNode, OakError, TextEdit,
+    GreenNode, TextError, TextEdit,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::Source,
 };
@@ -45,7 +45,7 @@ impl<'config> Parser<CssLanguage> for CssParser<'config> {
 
 impl<'config> CssParser<'config> {
     /// Parses a CSS at-rule (e.g., `@import`, `@media`).
-    fn parse_at_rule<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_at_rule<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // Consume the at-keyword
 
@@ -69,7 +69,7 @@ impl<'config> CssParser<'config> {
     }
 
     /// Parses a CSS rule set (selector + declaration block).
-    fn parse_ruleset<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_ruleset<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
 
         // Parse selector(s)
@@ -96,7 +96,7 @@ impl<'config> CssParser<'config> {
     }
 
     /// Parses CSS selectors.
-    fn parse_selectors<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_selectors<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         while state.not_at_end() && !state.at(CssTokenType::LeftBrace) {
             state.bump()
@@ -106,7 +106,7 @@ impl<'config> CssParser<'config> {
     }
 
     /// Parses a CSS declaration (property: value).
-    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
 
         // Property

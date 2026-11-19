@@ -1,12 +1,12 @@
 use crate::{ast, builder::GoBuilder, language::GoLanguage, lexer::token_type::GoTokenType, parser::element_type::GoElementType};
 use data_text_core::{
-    OakError,
+    TextError,
     source::Source,
     tree::red_tree::{RedNode, RedTree},
 };
 
 impl<'config> GoBuilder<'config> {
-    pub(crate) fn extract_function(&self, node: RedNode<GoLanguage>, source: &data_text_core::SourceText, cache: &mut impl data_text_core::BuilderCache<GoLanguage>) -> Result<ast::Function, OakError> {
+    pub(crate) fn extract_function(&self, node: RedNode<GoLanguage>, source: &data_text_core::SourceText, cache: &mut impl data_text_core::BuilderCache<GoLanguage>) -> Result<ast::Function, TextError> {
         // if let Some(cached) = cache.get_typed_node::<ast::Function>(&node.green) {
         //    return Ok(cached);
         // }

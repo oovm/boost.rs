@@ -1,5 +1,5 @@
 use crate::{ast::*, language::SassLanguage, parser::SassParser};
-use data_text_core::{Builder, BuilderCache, ElementType, OakDiagnostics, OakError, Parser, Range, SourceText, TextEdit, builder::BuildOutput, source::Source, tree::GreenNode};
+use data_text_core::{Builder, BuilderCache, ElementType, TextDiagnostics, TextError, Parser, Range, SourceText, TextEdit, builder::BuildOutput, source::Source, tree::GreenNode};
 
 /// AST builder for the Sass language.
 #[derive(Clone)]
@@ -14,7 +14,7 @@ impl<'config> SassBuilder<'config> {
     }
 
     /// Builds the Sass AST root from a green tree.
-    fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, SassLanguage>, source: &SourceText, cache: &mut impl BuilderCache<SassLanguage>) -> Result<SassRoot, OakError> {
+    fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, SassLanguage>, source: &SourceText, cache: &mut impl BuilderCache<SassLanguage>) -> Result<SassRoot, TextError> {
         let mut statements = Vec::new();
         let mut current_offset = 0;
 
@@ -35,7 +35,7 @@ impl<'config> SassBuilder<'config> {
         Ok(SassRoot { statements, span: (0..current_offset).into() })
     }
 
-    fn build_statement<'a>(&self, node: &'a GreenNode<'a, SassLanguage>, offset: usize, source: &SourceText, cache: &mut impl BuilderCache<SassLanguage>) -> Result<Option<SassStatement>, OakError> {
+    fn build_statement<'a>(&self, node: &'a GreenNode<'a, SassLanguage>, offset: usize, source: &SourceText, cache: &mut impl BuilderCache<SassLanguage>) -> Result<Option<SassStatement>, TextError> {
         if let Some(cached) = cache.get_typed_node::<SassStatement>(node) {
             return Ok(Some(cached.clone()));
         }
@@ -67,7 +67,7 @@ impl<'config> SassBuilder<'config> {
         Ok(result)
     }
 
-    fn build_variable_definition<'a>(&self, node: &'a GreenNode<'a, SassLanguage>, offset: usize, _source: &SourceText) -> Result<VariableDefinition, OakError> {
+    fn build_variable_definition<'a>(&self, node: &'a GreenNode<'a, SassLanguage>, offset: usize, _source: &SourceText) -> Result<VariableDefinition, TextError> {
         let mut name: Range<usize> = (offset..offset).into();
         let mut value: Range<usize> = (offset..offset).into();
         let mut current_offset = offset;
@@ -92,7 +92,7 @@ impl<'config> SassBuilder<'config> {
         Ok(VariableDefinition { name, value, span: (offset..offset + node.byte_length as usize).into() })
     }
 
-    fn build_rule_set<'a>(&self, node: &'a GreenNode<'a, SassLanguage>, offset: usize, source: &SourceText, cache: &mut impl BuilderCache<SassLanguage>) -> Result<RuleSet, OakError> {
+    fn build_rule_set<'a>(&self, node: &'a GreenNode<'a, SassLanguage>, offset: usize, source: &SourceText, cache: &mut impl BuilderCache<SassLanguage>) -> Result<RuleSet, TextError> {
         let mut selector = (offset..offset).into();
         let mut children = Vec::new();
         let properties = Vec::new(); // Keep for backward compatibility if needed, but we prefer children
@@ -135,7 +135,7 @@ impl<'config> SassBuilder<'config> {
         Ok(RuleSet { selector, children, properties, span: (offset..offset + node.byte_length as usize).into() })
     }
 
-    fn build_property<'a>(&self, node: &'a GreenNode<'a, SassLanguage>, offset: usize, _source: &SourceText) -> Result<Property, OakError> {
+    fn build_property<'a>(&self, node: &'a GreenNode<'a, SassLanguage>, offset: usize, _source: &SourceText) -> Result<Property, TextError> {
         let mut name: Range<usize> = (offset..offset).into();
         let mut value: Range<usize> = (offset..offset).into();
         let mut current_offset = offset;
@@ -160,7 +160,7 @@ impl<'config> SassBuilder<'config> {
         Ok(Property { name, value, span: (offset..offset + node.byte_length as usize).into() })
     }
 
-    fn build_at_rule<'a>(&self, node: &'a GreenNode<'a, SassLanguage>, offset: usize, source: &SourceText, cache: &mut impl BuilderCache<SassLanguage>) -> Result<AtRule, OakError> {
+    fn build_at_rule<'a>(&self, node: &'a GreenNode<'a, SassLanguage>, offset: usize, source: &SourceText, cache: &mut impl BuilderCache<SassLanguage>) -> Result<AtRule, TextError> {
         let mut name: Range<usize> = (offset..offset).into();
         let mut params = None;
         let mut body = None;
@@ -210,15 +210,15 @@ impl<'config> Builder<SassLanguage> for SassBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree, &source_text, cache) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }

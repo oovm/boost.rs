@@ -96,7 +96,7 @@ impl<'config> RustLexer<'config> {
 
     /// Internal method to run the lexer on the given state.
     /// This delegates to the implementation in the `lex` module.
-    pub(crate) fn run<'s, S: Source + ?Sized>(&self, state: &mut LexerState<'s, S, RustLanguage>) -> Result<(), data_text_core::OakError> {
+    pub(crate) fn run<'s, S: Source + ?Sized>(&self, state: &mut LexerState<'s, S, RustLanguage>) -> Result<(), data_text_core::TextError> {
         lex::run(self, state)
     }
 }

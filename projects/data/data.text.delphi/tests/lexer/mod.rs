@@ -1,10 +1,10 @@
-use data_text_core::errors::OakError;
+use data_text_core::errors::TextError;
 use data_text_delphi::{DelphiLanguage, DelphiLexer};
 use language_testing::lexing::LexerTester;
 use std::{path::Path, time::Duration};
 
 #[test]
-fn test_delphi_lexer() -> Result<(), OakError> {
+fn test_delphi_lexer() -> Result<(), TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let language = DelphiLanguage::default();
     let lexer = DelphiLexer::new(&language);

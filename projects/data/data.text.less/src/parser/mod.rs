@@ -7,7 +7,7 @@ use crate::{
 };
 pub use element_type::LessElementType;
 use data_text_core::{
-    GreenNode, OakError, TextEdit,
+    GreenNode, TextError, TextEdit,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::Source,
 };
@@ -45,7 +45,7 @@ impl<'config> Parser<LessLanguage> for LessParser<'config> {
 
 impl<'config> LessParser<'config> {
     /// Parses a Less at-rule (e.g., `@import`, `@media`).
-    fn parse_at_rule<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_at_rule<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // Consume the at-keyword
 
@@ -69,7 +69,7 @@ impl<'config> LessParser<'config> {
     }
 
     /// Parses a Less rule set (selector + declaration block).
-    fn parse_ruleset<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_ruleset<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
 
         // Parse selector(s)
@@ -96,7 +96,7 @@ impl<'config> LessParser<'config> {
     }
 
     /// Parses Less selectors.
-    fn parse_selectors<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_selectors<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         while state.not_at_end() && !state.at(LessTokenType::LeftBrace) {
             state.bump()
@@ -106,7 +106,7 @@ impl<'config> LessParser<'config> {
     }
 
     /// Parses a Less declaration (property: value).
-    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
 
         // Property

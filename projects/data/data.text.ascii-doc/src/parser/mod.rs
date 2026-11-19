@@ -1,6 +1,6 @@
 use crate::{language::AsciiDocLanguage, lexer::token_type::AsciiDocTokenType, parser::element_type::AsciiDocElementType as ET};
 use data_text_core::{
-    OakError,
+    TextError,
     parser::{Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -42,7 +42,7 @@ impl<'config> AsciiDocParser<'config> {
         )
     }
 
-    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let kind = match state.peek_kind() {
             Some(k) => k,
             None => return Ok(()),
@@ -72,7 +72,7 @@ impl<'config> AsciiDocParser<'config> {
         }
     }
 
-    fn parse_header<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_header<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         let kind = state.peek_kind().unwrap();
         state.bump(); // bump marker
@@ -84,7 +84,7 @@ impl<'config> AsciiDocParser<'config> {
         Ok(())
     }
 
-    fn parse_list<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_list<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
 
         while state.at(AsciiDocTokenType::ListMarker) {
@@ -114,7 +114,7 @@ impl<'config> AsciiDocParser<'config> {
         Ok(())
     }
 
-    fn parse_code_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_code_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.bump(); // start marker
 
@@ -130,7 +130,7 @@ impl<'config> AsciiDocParser<'config> {
         Ok(())
     }
 
-    fn parse_attribute<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_attribute<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.bump(); // marker
 
@@ -140,7 +140,7 @@ impl<'config> AsciiDocParser<'config> {
         Ok(())
     }
 
-    fn parse_admonition<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_admonition<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.bump(); // marker
 
@@ -150,7 +150,7 @@ impl<'config> AsciiDocParser<'config> {
         Ok(())
     }
 
-    fn parse_paragraph<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_paragraph<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
 
         while state.not_at_end() {

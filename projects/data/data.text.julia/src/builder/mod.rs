@@ -4,7 +4,7 @@ use crate::{
     lexer::token_type::JuliaTokenType,
     parser::{JuliaParser, element_type::JuliaElementType},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, GreenTree, OakDiagnostics, OakError, Parser, Source, SourceText, TextEdit, builder::BuildOutput};
+use data_text_core::{Builder, BuilderCache, GreenNode, GreenTree, TextDiagnostics, TextError, Parser, Source, SourceText, TextEdit, builder::BuildOutput};
 
 /// Builder for the Julia language.
 pub struct JuliaBuilder<'config> {
@@ -30,22 +30,22 @@ impl<'config> Builder<JuliaLanguage> for JuliaBuilder<'config> {
                 let text = source.get_text_in((0..source.length()).into()).into_owned();
                 let source_text = SourceText::new(text);
                 match self.build_root(green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(e) => OakDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
+            Err(e) => TextDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> JuliaBuilder<'config> {
     /// Builds a `JuliaRoot` from a green tree and source text.
-    pub fn build_root(&self, green_tree: &GreenNode<JuliaLanguage>, source: &SourceText) -> Result<JuliaRoot, OakError> {
+    pub fn build_root(&self, green_tree: &GreenNode<JuliaLanguage>, source: &SourceText) -> Result<JuliaRoot, TextError> {
         let mut statements = Vec::new();
         let mut current_offset = 0;
 
@@ -67,7 +67,7 @@ impl<'config> JuliaBuilder<'config> {
         Ok(JuliaRoot { statements })
     }
 
-    fn build_statement(&self, node: &GreenNode<JuliaLanguage>, offset: usize, source: &SourceText) -> Result<Option<JuliaStatement>, OakError> {
+    fn build_statement(&self, node: &GreenNode<JuliaLanguage>, offset: usize, source: &SourceText) -> Result<Option<JuliaStatement>, TextError> {
         match node.kind {
             JuliaElementType::Function => {
                 let mut name = String::new();
@@ -111,7 +111,7 @@ impl<'config> JuliaBuilder<'config> {
         }
     }
 
-    fn build_expression(&self, node: &GreenNode<JuliaLanguage>, offset: usize, source: &SourceText) -> Result<Option<JuliaExpression>, OakError> {
+    fn build_expression(&self, node: &GreenNode<JuliaLanguage>, offset: usize, source: &SourceText) -> Result<Option<JuliaExpression>, TextError> {
         match node.kind {
             JuliaElementType::Identifier => {
                 let text = source.get_text_in((offset..offset + node.text_len() as usize).into()).to_string();

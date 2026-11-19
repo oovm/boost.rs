@@ -7,7 +7,7 @@ mod directive;
 mod inline;
 
 use crate::{language::AsciidocLanguage, lexer::token_type::AsciidocTokenType};
-use data_text_core::{Lexer, LexerCache, LexerState, TextEdit, errors::OakError, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextEdit, errors::TextError, lexer::LexOutput, source::Source};
 
 pub(crate) type State<'a, S> = LexerState<'a, S, AsciidocLanguage>;
 
@@ -23,7 +23,7 @@ impl<'config> AsciidocLexer<'config> {
         Self { config }
     }
 
-    fn run<S: Source + ?Sized>(&self, state: &mut State<S>) -> Result<(), OakError> {
+    fn run<S: Source + ?Sized>(&self, state: &mut State<S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

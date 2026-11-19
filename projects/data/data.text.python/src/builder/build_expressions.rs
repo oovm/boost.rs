@@ -4,11 +4,11 @@ use crate::{
     lexer::token_type::PythonTokenType,
     parser::PythonElementType,
 };
-use data_text_core::{GreenNode, GreenTree, OakError, Source, SourceText};
+use data_text_core::{GreenNode, GreenTree, TextError, Source, SourceText};
 
 impl<'config> super::PythonBuilder<'config> {
     /// Builds an expression from a green node.
-    pub(crate) fn build_expression(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<Expression, OakError> {
+    pub(crate) fn build_expression(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<Expression, TextError> {
         match node.kind {
             PythonElementType::Constant => {
                 let mut current_offset = offset;
@@ -512,7 +512,7 @@ impl<'config> super::PythonBuilder<'config> {
     }
 
     /// Builds a keyword argument from a green node.
-    pub(crate) fn build_keyword(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<Keyword, OakError> {
+    pub(crate) fn build_keyword(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<Keyword, TextError> {
         let mut arg = None;
         let mut value = None;
         let mut current_offset = offset;
@@ -531,11 +531,11 @@ impl<'config> super::PythonBuilder<'config> {
             current_offset += child_len;
         }
 
-        if let Some(v) = value { Ok(Keyword { arg, value: v }) } else { Err(OakError::custom_error("Invalid keyword".to_string())) }
+        if let Some(v) = value { Ok(Keyword { arg, value: v }) } else { Err(TextError::custom_error("Invalid keyword".to_string())) }
     }
 
     /// Builds a starred expression from a green node.
-    pub(crate) fn build_starred(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<Expression, OakError> {
+    pub(crate) fn build_starred(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<Expression, TextError> {
         let mut value = None;
         let mut is_double = false;
         let mut current_offset = offset;
@@ -557,11 +557,11 @@ impl<'config> super::PythonBuilder<'config> {
             current_offset += child_len;
         }
 
-        if let Some(v) = value { Ok(Expression::Starred { value: v, is_double }) } else { Err(OakError::custom_error("Invalid starred expression".to_string())) }
+        if let Some(v) = value { Ok(Expression::Starred { value: v, is_double }) } else { Err(TextError::custom_error("Invalid starred expression".to_string())) }
     }
 
     /// Builds a comprehension from a green node.
-    pub(crate) fn build_comprehension(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<crate::ast::Comprehension, OakError> {
+    pub(crate) fn build_comprehension(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<crate::ast::Comprehension, TextError> {
         let mut target = None;
         let mut iter = None;
         let mut ifs = Vec::new();
@@ -593,7 +593,7 @@ impl<'config> super::PythonBuilder<'config> {
     }
 
     /// Builds a list of parameters from a green node.
-    pub(crate) fn build_parameters(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<Vec<Parameter>, OakError> {
+    pub(crate) fn build_parameters(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<Vec<Parameter>, TextError> {
         let mut parameters = Vec::new();
         let mut current_offset = offset;
 
@@ -610,7 +610,7 @@ impl<'config> super::PythonBuilder<'config> {
     }
 
     /// Builds a single parameter from a green node.
-    pub(crate) fn build_parameter(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<Parameter, OakError> {
+    pub(crate) fn build_parameter(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<Parameter, TextError> {
         let mut name = String::new();
         let mut default = None;
         let mut is_vararg = false;

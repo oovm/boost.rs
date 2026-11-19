@@ -4,7 +4,7 @@ pub mod token_type;
 
 use crate::{language::TypstLanguage, lexer::token_type::TypstTokenType};
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError,
+    Lexer, LexerCache, LexerState, TextError,
     lexer::{CommentConfig, LexOutput, StringConfig, WhitespaceConfig},
     source::{Source, TextEdit},
 };
@@ -39,7 +39,7 @@ impl<'config> TypstLexer<'config> {
         Self { config }
     }
 
-    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), OakError> {
+    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

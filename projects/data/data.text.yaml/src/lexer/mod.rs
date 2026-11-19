@@ -4,7 +4,7 @@ pub mod token_type;
 
 use crate::{language::YamlLanguage, lexer::token_type::YamlTokenType};
 use data_text_core::{
-    Lexer, LexerState, OakError, Source,
+    Lexer, LexerState, TextError, Source,
     lexer::{CommentConfig, LexOutput, LexerCache, StringConfig, WhitespaceConfig},
 };
 static YAML_WHITESPACE: WhitespaceConfig = WhitespaceConfig { unicode_whitespace: false };
@@ -27,7 +27,7 @@ impl<'config> YamlLexer<'config> {
         Self { config }
     }
 
-    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), OakError> {
+    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 
@@ -139,11 +139,11 @@ impl YamlLexer<'_> {
         false
     }
 
-    fn lex_string_literal<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<bool, OakError> {
+    fn lex_string_literal<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<bool, TextError> {
         Ok(YAML_STRING.scan(state, YamlTokenType::StringLiteral))
     }
 
-    fn lex_number_literal<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<bool, OakError> {
+    fn lex_number_literal<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<bool, TextError> {
         let start = state.get_position();
 
         if let Some(ch) = state.peek() {
@@ -193,7 +193,7 @@ impl YamlLexer<'_> {
         }
     }
 
-    fn lex_identifier_or_keyword<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<bool, OakError> {
+    fn lex_identifier_or_keyword<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<bool, TextError> {
         let start = state.get_position();
 
         if let Some(ch) = state.peek() {

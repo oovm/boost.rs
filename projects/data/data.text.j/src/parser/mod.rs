@@ -6,7 +6,7 @@ pub use element_type::JElementType;
 
 use crate::{language::JLanguage, lexer::JTokenType};
 use data_text_core::{
-    OakError, TextEdit,
+    TextError, TextEdit,
     parser::{ParseCache, ParseOutput, Parser, ParserState},
     source::Source,
 };

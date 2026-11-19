@@ -2,7 +2,7 @@ pub mod token_type;
 
 use crate::{language::MapleLanguage, lexer::token_type::MapleTokenType};
 use data_text_core::{
-    Lexer, LexerState, OakError,
+    Lexer, LexerState, TextError,
     lexer::{LexOutput, LexerCache},
     source::{Source, TextEdit},
 };
@@ -29,7 +29,7 @@ impl<'config> Lexer<MapleLanguage> for MapleLexer<'config> {
     }
 }
 impl<'config> MapleLexer<'config> {
-    fn run<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), OakError> {
+    fn run<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), TextError> {
         let _ = self.config;
         while state.not_at_end() {
             let start_position = state.get_position();

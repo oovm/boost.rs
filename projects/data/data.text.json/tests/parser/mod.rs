@@ -1,11 +1,11 @@
-use data_text_core::{GreenNode, GreenTree, OakErrorKind, SourceText, TextEdit, parser::ParseSession};
+use data_text_core::{GreenNode, GreenTree, TextErrorKind, SourceText, TextEdit, parser::ParseSession};
 use data_text_json::{JsonElementType as JsonSyntaxKind, language::JsonLanguage, lexer::JsonLexer, parser::JsonParser};
 use language_testing::parsing::ParserTester;
 use std::path::PathBuf;
 
 #[test]
 #[cfg(feature = "serde")]
-fn run_compliance_tests() -> Result<(), data_text_core::OakError> {
+fn run_compliance_tests() -> Result<(), data_text_core::TextError> {
     let mut root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     root.push("tests/compliance");
 
@@ -42,10 +42,10 @@ fn parse_trailing_comma_error_offset_standard() {
     let out = data_text_core::parser::parse(&parser, &lexer, &source, &[], &mut cache);
     let err = out.result.err().or_else(|| out.diagnostics.last().cloned()).expect("expected trailing comma error");
     match err.kind() {
-        OakErrorKind::TrailingCommaNotAllowed { offset, .. } => {
+        TextErrorKind::TrailingCommaNotAllowed { offset, .. } => {
             assert_eq!(*offset, text.find('}').unwrap());
         }
-        OakErrorKind::SyntaxError { message, offset, .. } => {
+        TextErrorKind::SyntaxError { message, offset, .. } => {
             assert!(message.contains("Trailing comma not allowed"));
             assert_eq!(*offset, text.find('}').unwrap());
         }
@@ -65,10 +65,10 @@ fn parse_unexpected_token_on_bare_key() {
     let out = data_text_core::parser::parse(&parser, &lexer, &source, &[], &mut cache);
     let err = out.result.err().or_else(|| out.diagnostics.last().cloned()).expect("expected error for bare key");
     match err.kind() {
-        OakErrorKind::UnexpectedCharacter { offset, .. } => assert_eq!(*offset, 1),
-        OakErrorKind::SyntaxError { offset, .. } => assert_eq!(*offset, 1),
-        OakErrorKind::ExpectedToken { offset, .. } => assert_eq!(*offset, 1),
-        OakErrorKind::UnexpectedToken { offset, .. } => assert_eq!(*offset, 1),
+        TextErrorKind::UnexpectedCharacter { offset, .. } => assert_eq!(*offset, 1),
+        TextErrorKind::SyntaxError { offset, .. } => assert_eq!(*offset, 1),
+        TextErrorKind::ExpectedToken { offset, .. } => assert_eq!(*offset, 1),
+        TextErrorKind::UnexpectedToken { offset, .. } => assert_eq!(*offset, 1),
         _ => panic!("unexpected error kind: {:?}", err.kind()),
     }
 }
@@ -84,7 +84,7 @@ fn parse_unexpected_eof_in_object() {
 
     let out = data_text_core::parser::parse(&parser, &lexer, &source, &[], &mut cache);
     let err = out.result.err().or_else(|| out.diagnostics.last().cloned()).expect("expected parse error");
-    assert!(matches!(err.kind(), OakErrorKind::UnexpectedEof { .. }));
+    assert!(matches!(err.kind(), TextErrorKind::UnexpectedEof { .. }));
 }
 
 #[test]

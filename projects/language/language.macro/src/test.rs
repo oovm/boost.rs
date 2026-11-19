@@ -17,7 +17,7 @@ pub fn test_lexer(input: TokenStream) -> TokenStream {
 
     let expanded = quote! {
         #[test]
-        fn #name() -> Result<(), data_text_core::OakError> {
+        fn #name() -> Result<(), data_text_core::TextError> {
             use language_testing::lexing::LexerTester;
             use std::{path::Path, time::Duration};
 
@@ -45,7 +45,7 @@ pub fn test_parser(input: TokenStream) -> TokenStream {
 
     let expanded = quote! {
         #[test]
-        fn #name() -> Result<(), data_text_core::OakError> {
+        fn #name() -> Result<(), data_text_core::TextError> {
             use language_testing::parsing::ParserTester;
             use std::{path::Path, time::Duration};
 

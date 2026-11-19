@@ -1,6 +1,6 @@
 #![cfg(feature = "serde")]
 use crate::ast::{JsonArray, JsonBoolean, JsonField, JsonNull, JsonNumber, JsonObject, JsonString, JsonValueNode};
-use data_text_core::OakError as Error;
+use data_text_core::TextError as Error;
 use serde::de;
 
 /// Serializer for converting Rust types to JSON values.

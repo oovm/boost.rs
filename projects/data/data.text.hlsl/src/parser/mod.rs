@@ -4,7 +4,7 @@ pub mod element_type;
 use crate::{language::HlslLanguage, lexer::token_type::HlslTokenType};
 use element_type::HlslElementType;
 use data_text_core::{
-    GreenNode, OakError, Parser, ParserState, TokenType, UniversalTokenRole,
+    GreenNode, TextError, Parser, ParserState, TokenType, UniversalTokenRole,
     parser::parse_with_lexer,
     source::{Source, TextEdit},
 };
@@ -372,7 +372,7 @@ impl<'config> HlslParser<'config> {
 
         if let Some((text, offset)) = name {
             if !KNOWN_ATTRIBUTES.contains(&text.as_str()) {
-                let error = OakError::syntax_error(format!("unknown HLSL attribute `{text}`"), offset, state.source.source_id());
+                let error = TextError::syntax_error(format!("unknown HLSL attribute `{text}`"), offset, state.source.source_ref());
                 state.errors.push(error);
             }
         }

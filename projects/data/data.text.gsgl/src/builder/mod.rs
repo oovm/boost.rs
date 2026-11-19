@@ -12,6 +12,6 @@ impl GsglBuilder {
 
 impl Builder<GsglLanguage> for GsglBuilder {
     fn build<'a, S: Source + ?Sized>(&self, _text: &S, _edits: &[TextEdit], _cache: &'a mut impl BuilderCache<GsglLanguage>) -> BuildOutput<GsglLanguage> {
-        data_text_core::errors::OakDiagnostics { result: Err(data_text_core::errors::OakError::custom_error("Not implemented")), diagnostics: vec![] }
+        data_text_core::errors::TextDiagnostics { result: Err(data_text_core::errors::TextError::custom_error("Not implemented")), diagnostics: vec![] }
     }
 }

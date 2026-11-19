@@ -1,15 +1,15 @@
 use crate::{language::VbNetLanguage, lexer::token_type::VbNetTokenType, parser::element_type::VbNetElementType};
-use data_text_core::{OakError, parser::ParserState, source::Source};
+use data_text_core::{TextError, parser::ParserState, source::Source};
 
 use super::{State, VbNetParser};
 
 impl<'config> VbNetParser<'config> {
-    pub(crate) fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.parse_assignment_expression(state)?;
         Ok(())
     }
 
-    pub(crate) fn parse_assignment_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_assignment_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
 
         self.parse_binary_expression(state)?;
@@ -23,7 +23,7 @@ impl<'config> VbNetParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_binary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_binary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
 
         self.parse_unary_expression(state)?;
@@ -63,7 +63,7 @@ impl<'config> VbNetParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_unary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_unary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
 
         if let Some(kind) = state.peek_kind() {
@@ -92,7 +92,7 @@ impl<'config> VbNetParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_primary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_primary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         let kind = state.peek_kind();
 
@@ -275,7 +275,7 @@ impl<'config> VbNetParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_linq<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_linq<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(VbNetTokenType::From)?;
 

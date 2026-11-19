@@ -3,7 +3,7 @@ use crate::{language::TexLanguage, lexer::token_type::TexTokenType};
 /// Token types for the TeX lexer.
 pub mod token_type;
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError, Source, TextEdit,
+    Lexer, LexerCache, LexerState, TextError, Source, TextEdit,
     lexer::{CommentConfig, LexOutput, WhitespaceConfig},
 };
 use std::sync::LazyLock;
@@ -39,7 +39,7 @@ impl<'config> TexLexer<'config> {
     }
 
     /// Runs the lexer on the current state.
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

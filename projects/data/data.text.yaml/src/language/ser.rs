@@ -1,7 +1,7 @@
 use serde::ser::{self, Serialize, Serializer};
 
 use crate::ast::YamlValueNode;
-use data_text_core::OakError;
+use data_text_core::TextError;
 
 /// YAML 序列化实现
 pub fn serialize<S, T>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
@@ -13,7 +13,7 @@ where
 }
 
 /// Serializes a Rust type into a YAML string.
-pub fn to_string<T>(value: &T) -> Result<String, OakError>
+pub fn to_string<T>(value: &T) -> Result<String, TextError>
 where
     T: serde::Serialize,
 {
@@ -31,7 +31,7 @@ impl Default for YamlValueSerializer {
 
 impl serde::ser::Serializer for YamlValueSerializer {
     type Ok = YamlValueNode;
-    type Error = OakError;
+    type Error = TextError;
 
     type SerializeSeq = YamlSeqSerializer;
     type SerializeTuple = YamlSeqSerializer;
@@ -169,7 +169,7 @@ struct YamlSeqSerializer {
 
 impl serde::ser::SerializeSeq for YamlSeqSerializer {
     type Ok = YamlValueNode;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_element<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
@@ -188,7 +188,7 @@ impl serde::ser::SerializeSeq for YamlSeqSerializer {
 
 impl serde::ser::SerializeTuple for YamlSeqSerializer {
     type Ok = YamlValueNode;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_element<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
@@ -207,7 +207,7 @@ impl serde::ser::SerializeTuple for YamlSeqSerializer {
 
 impl serde::ser::SerializeTupleStruct for YamlSeqSerializer {
     type Ok = YamlValueNode;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_field<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
@@ -226,7 +226,7 @@ impl serde::ser::SerializeTupleStruct for YamlSeqSerializer {
 
 impl serde::ser::SerializeTupleVariant for YamlSeqSerializer {
     type Ok = YamlValueNode;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_field<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
@@ -250,7 +250,7 @@ struct YamlMapSerializer {
 
 impl serde::ser::SerializeMap for YamlMapSerializer {
     type Ok = YamlValueNode;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_key<T>(&mut self, key: &T) -> Result<(), Self::Error>
     where
@@ -281,7 +281,7 @@ impl serde::ser::SerializeMap for YamlMapSerializer {
 
 impl serde::ser::SerializeStruct for YamlMapSerializer {
     type Ok = YamlValueNode;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error>
     where
@@ -301,7 +301,7 @@ impl serde::ser::SerializeStruct for YamlMapSerializer {
 
 impl serde::ser::SerializeStructVariant for YamlMapSerializer {
     type Ok = YamlValueNode;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error>
     where

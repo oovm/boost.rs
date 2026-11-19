@@ -7,7 +7,7 @@ use crate::{
     parser::element_type::ZigElementType,
 };
 use data_text_core::{
-    GreenNode, OakError,
+    GreenNode, TextError,
     parser::{
         ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer,
         pratt::{Associativity, Pratt, PrattParser, binary, unary},
@@ -148,7 +148,7 @@ impl<'config> Parser<ZigLanguage> for ZigParser<'config> {
 }
 
 impl<'p> ZigParser<'p> {
-    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         match state.peek_kind() {
             Some(ZigTokenType::Fn) => self.parse_function_declaration(state)?,
             Some(ZigTokenType::Const) | Some(ZigTokenType::Var) => self.parse_variable_declaration(state)?,
@@ -165,7 +165,7 @@ impl<'p> ZigParser<'p> {
         Ok(())
     }
 
-    fn parse_function_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_function_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(ZigTokenType::Fn).ok();
         state.expect(ZigTokenType::Identifier).ok();
@@ -182,7 +182,7 @@ impl<'p> ZigParser<'p> {
         Ok(())
     }
 
-    fn parse_variable_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_variable_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // const or var
         state.expect(ZigTokenType::Identifier).ok();
@@ -199,7 +199,7 @@ impl<'p> ZigParser<'p> {
         Ok(())
     }
 
-    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(ZigTokenType::If).ok();
         state.expect(ZigTokenType::LeftParen).ok();
@@ -213,7 +213,7 @@ impl<'p> ZigParser<'p> {
         Ok(())
     }
 
-    fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(ZigTokenType::While).ok();
         state.expect(ZigTokenType::LeftParen).ok();
@@ -224,7 +224,7 @@ impl<'p> ZigParser<'p> {
         Ok(())
     }
 
-    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(ZigTokenType::For).ok();
         state.expect(ZigTokenType::LeftParen).ok();
@@ -235,7 +235,7 @@ impl<'p> ZigParser<'p> {
         Ok(())
     }
 
-    fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(ZigTokenType::Return).ok();
         if !state.at(ZigTokenType::Semicolon) {
@@ -246,7 +246,7 @@ impl<'p> ZigParser<'p> {
         Ok(())
     }
 
-    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(ZigTokenType::LeftBrace).ok();
         while state.not_at_end() && !state.at(ZigTokenType::RightBrace) {

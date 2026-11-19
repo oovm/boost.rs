@@ -18,7 +18,7 @@ impl<'config> DartBuilder<'config> {
         Self { config }
     }
 
-    pub(crate) fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, DartLanguage>, source: &SourceText) -> Result<DartRoot, data_text_core::OakError> {
+    pub(crate) fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, DartLanguage>, source: &SourceText) -> Result<DartRoot, data_text_core::TextError> {
         let red_root = RedNode::new(green_tree, 0);
         let mut items = Vec::new();
 
@@ -151,11 +151,11 @@ impl<'config> Builder<DartLanguage> for DartBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree, &source_text) {
-                    Ok(ast_root) => data_text_core::OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
-                    Err(e) => data_text_core::OakDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => data_text_core::TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Err(e) => data_text_core::TextDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
                 }
             }
-            Err(e) => data_text_core::OakDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
+            Err(e) => data_text_core::TextDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
         }
     }
 }

@@ -29,7 +29,7 @@ impl<'config> CmdParser<'config> {
         Self { config }
     }
 
-    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         self.skip_trivia(state);
         if !state.not_at_end() {
             return Ok(());
@@ -56,14 +56,14 @@ impl<'config> CmdParser<'config> {
         }
     }
 
-    fn parse_label<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_label<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         state.expect(CmdTokenType::Label)?;
         state.finish_at(cp, CmdElementType::LabelDefinition);
         Ok(())
     }
 
-    fn parse_if<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_if<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         state.bump(); // IF
         while state.not_at_end() && !state.at(CmdTokenType::Newline) {
@@ -73,7 +73,7 @@ impl<'config> CmdParser<'config> {
         Ok(())
     }
 
-    fn parse_for<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_for<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         state.bump(); // FOR
         while state.not_at_end() && !state.at(CmdTokenType::Newline) {
@@ -83,7 +83,7 @@ impl<'config> CmdParser<'config> {
         Ok(())
     }
 
-    fn parse_set<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_set<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         state.bump(); // SET
         while state.not_at_end() && !state.at(CmdTokenType::Newline) {
@@ -93,7 +93,7 @@ impl<'config> CmdParser<'config> {
         Ok(())
     }
 
-    fn parse_command<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_command<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         while state.not_at_end() && !state.at(CmdTokenType::Newline) {
             state.bump();

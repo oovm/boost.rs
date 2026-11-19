@@ -1,7 +1,7 @@
 use serde::ser::{self, Serialize, Serializer};
 
 use crate::language::value::{VonValue, to_ast};
-use data_text_core::OakError;
+use data_text_core::TextError;
 
 /// VON 序列化实现
 pub fn serialize<S, T>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
@@ -13,7 +13,7 @@ where
 }
 
 /// Serializes a Rust type into a VON string.
-pub fn to_string<T>(value: &T) -> Result<String, OakError>
+pub fn to_string<T>(value: &T) -> Result<String, TextError>
 where
     T: serde::Serialize,
 {
@@ -22,7 +22,7 @@ where
 }
 
 /// Serializes a Rust type into an indented VON string.
-pub fn to_string_indented<T>(value: &T, indent_width: usize) -> Result<String, OakError>
+pub fn to_string_indented<T>(value: &T, indent_width: usize) -> Result<String, TextError>
 where
     T: serde::Serialize,
 {
@@ -42,7 +42,7 @@ impl Default for VonValueSerializer {
 
 impl serde::ser::Serializer for VonValueSerializer {
     type Ok = VonValue;
-    type Error = OakError;
+    type Error = TextError;
 
     type SerializeSeq = VonSeqSerializer;
     type SerializeTuple = VonSeqSerializer;
@@ -182,7 +182,7 @@ struct VonSeqSerializer {
 
 impl serde::ser::SerializeSeq for VonSeqSerializer {
     type Ok = VonValue;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_element<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
@@ -201,7 +201,7 @@ impl serde::ser::SerializeSeq for VonSeqSerializer {
 
 impl serde::ser::SerializeTuple for VonSeqSerializer {
     type Ok = VonValue;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_element<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
@@ -220,7 +220,7 @@ impl serde::ser::SerializeTuple for VonSeqSerializer {
 
 impl serde::ser::SerializeTupleStruct for VonSeqSerializer {
     type Ok = VonValue;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_field<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
@@ -239,7 +239,7 @@ impl serde::ser::SerializeTupleStruct for VonSeqSerializer {
 
 impl serde::ser::SerializeTupleVariant for VonSeqSerializer {
     type Ok = VonValue;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_field<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
@@ -263,7 +263,7 @@ struct VonMapSerializer {
 
 impl serde::ser::SerializeMap for VonMapSerializer {
     type Ok = VonValue;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_key<T>(&mut self, key: &T) -> Result<(), Self::Error>
     where
@@ -287,7 +287,7 @@ impl serde::ser::SerializeMap for VonMapSerializer {
                 VonValue::String(s) => s,
                 VonValue::Number(n) => n.to_string(),
                 VonValue::Boolean(b) => b.to_string(),
-                _ => return Err(OakError::custom_error("VON keys must be strings, numbers, or booleans")),
+                _ => return Err(TextError::custom_error("VON keys must be strings, numbers, or booleans")),
             };
             self.fields.push(crate::language::value::VonField { name: key_str, value: value_value });
         }
@@ -301,7 +301,7 @@ impl serde::ser::SerializeMap for VonMapSerializer {
 
 impl serde::ser::SerializeStruct for VonMapSerializer {
     type Ok = VonValue;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error>
     where
@@ -320,7 +320,7 @@ impl serde::ser::SerializeStruct for VonMapSerializer {
 
 impl serde::ser::SerializeStructVariant for VonMapSerializer {
     type Ok = VonValue;
-    type Error = OakError;
+    type Error = TextError;
 
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error>
     where

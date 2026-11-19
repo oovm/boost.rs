@@ -29,6 +29,6 @@ impl<'config> Builder<JavaLanguage> for JavaBuilder<'config> {
         let parser = JavaParser::new(self.language);
         let output = parser.parse(text, edits, cache);
         let result = output.result.map(|green| self.build_root(green, &text.get_text_in((0..text.length()).into())));
-        data_text_core::errors::OakDiagnostics { result, diagnostics: output.diagnostics }
+        data_text_core::errors::TextDiagnostics { result, diagnostics: output.diagnostics }
     }
 }

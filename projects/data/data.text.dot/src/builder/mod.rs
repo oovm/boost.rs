@@ -1,7 +1,7 @@
 #![doc = include_str!("readme.md")]
 
 use crate::{ast::*, language::DotLanguage, lexer::token_type::DotTokenType, parser::element_type::DotElementType};
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, OakError, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
 
 /// Builder for converting a DOT syntax tree into the typed AST.
 pub struct DotBuilder<'config> {
@@ -17,7 +17,7 @@ impl<'config> DotBuilder<'config> {
 }
 
 impl<'config> Builder<DotLanguage> for DotBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<DotLanguage>) -> OakDiagnostics<DotRoot> {
+    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<DotLanguage>) -> TextDiagnostics<DotRoot> {
         let parser = crate::parser::DotParser::new(self.config);
         let mut cache = data_text_core::parser::session::ParseSession::<DotLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);
@@ -27,23 +27,23 @@ impl<'config> Builder<DotLanguage> for DotBuilder<'config> {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 let mut diagnostics = parse_result.diagnostics;
                 match self.build_root(green_tree, &source_text, &mut diagnostics) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics },
                     Err(build_error) => {
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl DotBuilder<'_> {
     /// Builds the AST root from a green tree.
-    pub(crate) fn build_root(&self, green_tree: &GreenNode<DotLanguage>, source: &SourceText, diagnostics: &mut Vec<OakError>) -> Result<DotRoot, OakError> {
+    pub(crate) fn build_root(&self, green_tree: &GreenNode<DotLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>) -> Result<DotRoot, TextError> {
         if green_tree.kind != DotElementType::Root {
-            return Err(OakError::internal_error("the DOT syntax tree is missing its root element"));
+            return Err(TextError::internal_error("the DOT syntax tree is missing its root element"));
         }
 
         let red_root = RedNode::new(green_tree, 0);
@@ -55,7 +55,7 @@ impl DotBuilder<'_> {
                     graphs.push(self.build_graph(node, source, diagnostics));
                 }
                 else {
-                    diagnostics.push(OakError::syntax_error("unexpected element at the top level", node.span().start, source.source_id()));
+                    diagnostics.push(TextError::syntax_error("unexpected element at the top level", node.span().start, source.source_ref()));
                 }
             }
         }
@@ -64,7 +64,7 @@ impl DotBuilder<'_> {
     }
 
     /// Builds one graph definition.
-    fn build_graph(&self, node: RedNode<DotLanguage>, source: &SourceText, diagnostics: &mut Vec<OakError>) -> Graph {
+    fn build_graph(&self, node: RedNode<DotLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>) -> Graph {
         let span = node.span();
         let mut strict = false;
         let mut graph_type = GraphType::Graph;
@@ -94,7 +94,7 @@ impl DotBuilder<'_> {
     }
 
     /// Builds one statement, skipping malformed pieces with a diagnostic instead of panicking.
-    fn build_statement(&self, node: RedNode<DotLanguage>, source: &SourceText, diagnostics: &mut Vec<OakError>) -> Option<Statement> {
+    fn build_statement(&self, node: RedNode<DotLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>) -> Option<Statement> {
         match node.green.kind {
             DotElementType::GraphNode => self.build_node_statement(node, source, diagnostics).map(Statement::Node),
             DotElementType::GraphEdge => self.build_edge_statement(node, source, diagnostics).map(Statement::Edge),
@@ -102,14 +102,14 @@ impl DotBuilder<'_> {
             DotElementType::GraphAssignment => self.build_assignment(node, source).map(Statement::Assignment),
             DotElementType::GraphSubgraph => Some(Statement::Subgraph(self.build_subgraph(node, source, diagnostics))),
             kind => {
-                diagnostics.push(OakError::syntax_error(format!("unsupported statement element: {kind:?}"), node.span().start, source.source_id()));
+                diagnostics.push(TextError::syntax_error(format!("unsupported statement element: {kind:?}"), node.span().start, source.source_ref()));
                 None
             }
         }
     }
 
     /// Builds a node statement.
-    fn build_node_statement(&self, node: RedNode<DotLanguage>, source: &SourceText, diagnostics: &mut Vec<OakError>) -> Option<NodeStatement> {
+    fn build_node_statement(&self, node: RedNode<DotLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>) -> Option<NodeStatement> {
         let span = node.span();
         let mut node_id = None;
         let mut attributes = Vec::new();
@@ -126,7 +126,7 @@ impl DotBuilder<'_> {
 
         let Some(node_id) = node_id
         else {
-            diagnostics.push(OakError::syntax_error("a node statement is missing its identifier", span.start, source.source_id()));
+            diagnostics.push(TextError::syntax_error("a node statement is missing its identifier", span.start, source.source_ref()));
             return None;
         };
 
@@ -140,7 +140,7 @@ impl DotBuilder<'_> {
     /// Only node shapes named `record` or `mrecord` are structured. The raw
     /// `label` attribute is left untouched so callers can still read the
     /// original text.
-    fn build_record(&self, attributes: &[Attribute], source: &SourceText, diagnostics: &mut Vec<OakError>) -> Option<RecordLabel> {
+    fn build_record(&self, attributes: &[Attribute], source: &SourceText, diagnostics: &mut Vec<TextError>) -> Option<RecordLabel> {
         let is_record = attributes.iter().any(|attribute| attribute.name.eq_ignore_ascii_case("shape") && matches!(attribute.value.as_deref(), Some(value) if value.eq_ignore_ascii_case("record") || value.eq_ignore_ascii_case("mrecord")));
         if !is_record {
             return None;
@@ -169,7 +169,7 @@ impl DotBuilder<'_> {
 
         let Some(end) = end
         else {
-            diagnostics.push(OakError::syntax_error("unterminated record label", label.span.start, source.source_id()));
+            diagnostics.push(TextError::syntax_error("unterminated record label", label.span.start, source.source_ref()));
             return None;
         };
 
@@ -182,7 +182,7 @@ impl DotBuilder<'_> {
     }
 
     /// Builds a node identifier with its optional port.
-    fn build_node_id(&self, node: RedNode<DotLanguage>, source: &SourceText, diagnostics: &mut Vec<OakError>) -> NodeId {
+    fn build_node_id(&self, node: RedNode<DotLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>) -> NodeId {
         let span = node.span();
         let mut id = None;
         let mut port = None;
@@ -203,7 +203,7 @@ impl DotBuilder<'_> {
     }
 
     /// Builds a port suffix, normalizing compass points and reporting unknown ones.
-    fn build_port(&self, node: RedNode<DotLanguage>, source: &SourceText, diagnostics: &mut Vec<OakError>) -> Port {
+    fn build_port(&self, node: RedNode<DotLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>) -> Port {
         let span = node.span();
         let mut segments = Vec::new();
 
@@ -234,7 +234,7 @@ impl DotBuilder<'_> {
                     compass = Some(point);
                 }
                 else {
-                    diagnostics.push(OakError::syntax_error(format!("`{}` is not a compass point", second.trim()), *offset, source.source_id()));
+                    diagnostics.push(TextError::syntax_error(format!("`{}` is not a compass point", second.trim()), *offset, source.source_ref()));
                 }
             }
         }
@@ -243,7 +243,7 @@ impl DotBuilder<'_> {
     }
 
     /// Builds an edge statement, folding chained hops into ordered `(EdgeOp, operand)` pairs.
-    fn build_edge_statement(&self, node: RedNode<DotLanguage>, source: &SourceText, diagnostics: &mut Vec<OakError>) -> Option<EdgeStatement> {
+    fn build_edge_statement(&self, node: RedNode<DotLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>) -> Option<EdgeStatement> {
         let span = node.span();
         let mut left = None;
         let mut edges = Vec::new();
@@ -273,12 +273,12 @@ impl DotBuilder<'_> {
         }
 
         if pending.is_some() {
-            diagnostics.push(OakError::syntax_error("an edge operator has no right-hand operand", span.end, source.source_id()));
+            diagnostics.push(TextError::syntax_error("an edge operator has no right-hand operand", span.end, source.source_ref()));
         }
 
         let Some(left) = left
         else {
-            diagnostics.push(OakError::syntax_error("an edge statement is missing its left operand", span.start, source.source_id()));
+            diagnostics.push(TextError::syntax_error("an edge statement is missing its left operand", span.start, source.source_ref()));
             return None;
         };
 
@@ -322,7 +322,7 @@ impl DotBuilder<'_> {
     }
 
     /// Builds a subgraph, including anonymous subgraphs used as edge operands.
-    fn build_subgraph(&self, node: RedNode<DotLanguage>, source: &SourceText, diagnostics: &mut Vec<OakError>) -> SubgraphStatement {
+    fn build_subgraph(&self, node: RedNode<DotLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>) -> SubgraphStatement {
         let span = node.span();
         let mut id = None;
         let mut statements = Vec::new();

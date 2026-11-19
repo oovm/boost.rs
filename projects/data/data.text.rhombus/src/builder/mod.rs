@@ -6,7 +6,7 @@ use crate::{
     parser::RhombusParser,
 };
 use data_text_core::{
-    Builder, BuilderCache, Lexer, OakDiagnostics, Parser, TextEdit,
+    Builder, BuilderCache, Lexer, TextDiagnostics, Parser, TextEdit,
     source::{Source, SourceText},
 };
 
@@ -23,13 +23,13 @@ impl<'config> RhombusBuilder<'config> {
     }
 
     /// Builds a RhombusRoot AST node from a green tree and source text.
-    pub fn build_root(&self, green_tree: &data_text_core::GreenNode<RhombusLanguage>, source_text: &data_text_core::SourceText) -> Result<crate::ast::RhombusRoot, data_text_core::OakError> {
+    pub fn build_root(&self, green_tree: &data_text_core::GreenNode<RhombusLanguage>, source_text: &data_text_core::SourceText) -> Result<crate::ast::RhombusRoot, data_text_core::TextError> {
         Ok(crate::ast::RhombusRoot { expressions: vec![] })
     }
 }
 
 impl<'config> Builder<RhombusLanguage> for RhombusBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<RhombusLanguage>) -> OakDiagnostics<RhombusRoot> {
+    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<RhombusLanguage>) -> TextDiagnostics<RhombusRoot> {
         let parser = RhombusParser::new(self.config);
         let lexer = crate::lexer::RhombusLexer::new(&self.config);
 
@@ -41,15 +41,15 @@ impl<'config> Builder<RhombusLanguage> for RhombusBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(&green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(e) => OakDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
+            Err(e) => TextDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
         }
     }
 }

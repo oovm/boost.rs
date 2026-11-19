@@ -3,7 +3,7 @@ pub mod element_type;
 
 use crate::language::SwiftLanguage;
 use data_text_core::{
-    GreenNode, OakError, TextEdit,
+    GreenNode, TextError, TextEdit,
     parser::{
         ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer,
         pratt::{Associativity, Pratt, PrattParser, binary, unary},
@@ -24,7 +24,7 @@ impl<'config> SwiftParser<'config> {
         Self { config }
     }
 
-    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SwiftTokenType::*;
         let kind = state.peek_kind();
         // eprintln!("Parsing statement at {:?}, kind: {:?}", state.get_position(), kind);
@@ -47,7 +47,7 @@ impl<'config> SwiftParser<'config> {
         Ok(())
     }
 
-    fn parse_function_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_function_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SwiftTokenType::*;
         let cp = state.checkpoint();
         state.expect(Func).ok();
@@ -81,7 +81,7 @@ impl<'config> SwiftParser<'config> {
         Ok(())
     }
 
-    fn parse_variable_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_variable_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SwiftTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // var/let
@@ -97,7 +97,7 @@ impl<'config> SwiftParser<'config> {
         Ok(())
     }
 
-    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SwiftTokenType::*;
         let cp = state.checkpoint();
         state.expect(If).ok();
@@ -110,7 +110,7 @@ impl<'config> SwiftParser<'config> {
         Ok(())
     }
 
-    fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SwiftTokenType::*;
         let cp = state.checkpoint();
         state.expect(While).ok();
@@ -120,7 +120,7 @@ impl<'config> SwiftParser<'config> {
         Ok(())
     }
 
-    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SwiftTokenType::*;
         let cp = state.checkpoint();
         state.expect(For).ok();
@@ -132,7 +132,7 @@ impl<'config> SwiftParser<'config> {
         Ok(())
     }
 
-    fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SwiftTokenType::*;
         let cp = state.checkpoint();
         state.expect(Return).ok();
@@ -144,7 +144,7 @@ impl<'config> SwiftParser<'config> {
         Ok(())
     }
 
-    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SwiftTokenType::*;
         let cp = state.checkpoint();
         state.expect(LeftBrace).ok();

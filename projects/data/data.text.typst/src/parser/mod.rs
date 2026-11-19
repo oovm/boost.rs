@@ -7,7 +7,7 @@ use crate::{
     parser::element_type::TypstElementType,
 };
 use data_text_core::{
-    GreenNode, OakError,
+    GreenNode, TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -25,7 +25,7 @@ impl<'config> TypstParser<'config> {
         Self { config }
     }
 
-    fn parse_item<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_item<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let kind = state.peek_kind();
         match kind {
             Some(TypstTokenType::Heading) => {

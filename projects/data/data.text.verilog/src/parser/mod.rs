@@ -10,7 +10,7 @@ use crate::{
     lexer::{VerilogLexer, token_type::VerilogKind},
 };
 use data_text_core::{
-    GreenNode, OakError, TextEdit,
+    GreenNode, TextError, TextEdit,
     parser::{ParseCache, Parser, ParserState, parse_with_lexer},
     source::Source,
 };

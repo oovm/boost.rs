@@ -3,7 +3,7 @@ pub mod element_type;
 
 use crate::{language::GraphQLLanguage, lexer::GraphQLLexer, parser::element_type::GraphQLElementType};
 use data_text_core::{
-    GreenNode, OakError,
+    GreenNode, TextError,
     parser::{ParseCache, ParseOutput, Parser, parse_with_lexer},
     source::{Source, TextEdit},
 };

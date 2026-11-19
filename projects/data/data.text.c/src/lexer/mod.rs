@@ -5,7 +5,7 @@ pub mod token_type;
 pub use token_type::CTokenType;
 
 use crate::language::CLanguage;
-use data_text_core::{Lexer, LexerCache, LexerState, OakError, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextError, lexer::LexOutput, source::Source};
 use std::sync::LazyLock;
 
 pub(crate) type State<'a, S> = LexerState<'a, S, CLanguage>;
@@ -37,7 +37,7 @@ impl<'config> CLexer<'config> {
     }
 
     /// Runs the lexer on the current state until the end of the source.
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
             if self.skip_whitespace(state) {

@@ -18,13 +18,13 @@ impl Parser<FluentLanguage> for FluentParser {
     fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<FluentLanguage>) -> ParseOutput<'a, FluentLanguage> {
         // Implementation will be added here
         // For now, return an empty result
-        let diagnostics = data_text_core::errors::OakDiagnostics { result: Err(data_text_core::errors::OakError::custom_error("Not implemented")), diagnostics: vec![] };
+        let diagnostics = data_text_core::errors::TextDiagnostics { result: Err(data_text_core::errors::TextError::custom_error("Not implemented")), diagnostics: vec![] };
         diagnostics
     }
 }
 
 /// Parses a Fluent string into a Fluent AST.
-pub fn parse(input: &str) -> Result<crate::ast::FluentRoot, data_text_core::errors::OakError> {
+pub fn parse(input: &str) -> Result<crate::ast::FluentRoot, data_text_core::errors::TextError> {
     use crate::ast::*;
 
     let mut messages = Vec::with_capacity(10); // Pre-allocate capacity for common case
@@ -300,7 +300,7 @@ fn parse_pattern(input: &str) -> FluentPattern {
 }
 
 /// Parses a Fluent string into a Fluent AST with configuration.
-pub fn parse_with_config(input: &str, _config: ()) -> Result<crate::ast::FluentRoot, data_text_core::errors::OakError> {
+pub fn parse_with_config(input: &str, _config: ()) -> Result<crate::ast::FluentRoot, data_text_core::errors::TextError> {
     // Delegate to parse function for now
     parse(input)
 }

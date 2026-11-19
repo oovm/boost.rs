@@ -5,10 +5,10 @@ use crate::{
     lexer::token_type::MatlabTokenType,
     parser::element_type::MatlabElementType,
 };
-use data_text_core::{OakError, RedNode, RedTree, Source, TokenType};
+use data_text_core::{TextError, RedNode, RedTree, Source, TokenType};
 
 impl<'config> MatlabBuilder<'config> {
-    pub(crate) fn build_expr<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Expression, OakError> {
+    pub(crate) fn build_expr<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Expression, TextError> {
         let span = node.span();
         match node.element_type() {
             MatlabElementType::Symbol => self.build_symbol(node, source),
@@ -40,7 +40,7 @@ impl<'config> MatlabBuilder<'config> {
         }
     }
 
-    fn build_symbol<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Expression, OakError> {
+    fn build_symbol<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Expression, TextError> {
         let span = node.span();
         for child in node.children() {
             if let RedTree::Leaf(t) = child {
@@ -52,7 +52,7 @@ impl<'config> MatlabBuilder<'config> {
         Ok(Expression::Symbol(Identifier { name: text(source, span.clone()).trim().to_string(), span }))
     }
 
-    fn build_array<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Expression, OakError> {
+    fn build_array<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Expression, TextError> {
         let span = node.span();
         let mut rows: Vec<Vec<Expression>> = vec![Vec::new()];
         for child in node.children() {
@@ -75,7 +75,7 @@ impl<'config> MatlabBuilder<'config> {
         Ok(Expression::Array { rows, span })
     }
 
-    fn build_cell_array<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Expression, OakError> {
+    fn build_cell_array<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Expression, TextError> {
         let span = node.span();
         let mut rows: Vec<Vec<Expression>> = vec![Vec::new()];
         for child in node.children() {
@@ -98,7 +98,7 @@ impl<'config> MatlabBuilder<'config> {
         Ok(Expression::CellArray { rows, span })
     }
 
-    fn build_call<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Expression, OakError> {
+    fn build_call<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Expression, TextError> {
         let span = node.span();
         let mut head = None;
         let mut arg_groups: Vec<Vec<Expression>> = Vec::new();
@@ -129,7 +129,7 @@ impl<'config> MatlabBuilder<'config> {
         Ok(expr)
     }
 
-    fn build_member<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Expression, OakError> {
+    fn build_member<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Expression, TextError> {
         let span = node.span();
         let mut object = None;
         let mut field = None;
@@ -162,7 +162,7 @@ impl<'config> MatlabBuilder<'config> {
         Ok(Expression::Member { object: Box::new(object), field, span })
     }
 
-    fn build_arguments<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Vec<Expression>, OakError> {
+    fn build_arguments<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Vec<Expression>, TextError> {
         let mut args = Vec::new();
         for child in node.children() {
             if utils::is_trivia(&child) {
@@ -177,7 +177,7 @@ impl<'config> MatlabBuilder<'config> {
         Ok(args)
     }
 
-    fn build_binary<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Expression, OakError> {
+    fn build_binary<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Expression, TextError> {
         let span = node.span();
         let mut lhs = None;
         let mut rhs = None;
@@ -209,7 +209,7 @@ impl<'config> MatlabBuilder<'config> {
         Ok(Expression::Binary(Box::new(BinaryExpr { operator, lhs, rhs, span })))
     }
 
-    fn build_prefix<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Expression, OakError> {
+    fn build_prefix<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Expression, TextError> {
         let span = node.span();
         let mut operator = None;
         let mut operand = None;
@@ -228,7 +228,7 @@ impl<'config> MatlabBuilder<'config> {
         Ok(Expression::Prefix(Box::new(UnaryExpr { operator, operand, span })))
     }
 
-    fn build_postfix<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Expression, OakError> {
+    fn build_postfix<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Expression, TextError> {
         let span = node.span();
         let mut operator = None;
         let mut operand = None;
@@ -249,7 +249,7 @@ impl<'config> MatlabBuilder<'config> {
         Ok(Expression::Postfix(Box::new(UnaryExpr { operator, operand, span })))
     }
 
-    fn build_anonymous_function<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Expression, OakError> {
+    fn build_anonymous_function<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Expression, TextError> {
         let span = node.span();
         let mut parameters = Vec::new();
         let mut body = None;
@@ -274,7 +274,7 @@ impl<'config> MatlabBuilder<'config> {
         Ok(Expression::AnonymousFunction { parameters, body: Box::new(body), span })
     }
 
-    fn build_function_handle<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Expression, OakError> {
+    fn build_function_handle<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Expression, TextError> {
         let span = node.span();
         let mut target = None;
         for child in node.children() {

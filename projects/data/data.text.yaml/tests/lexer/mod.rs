@@ -3,7 +3,7 @@ use data_text_yaml::{YamlLanguage, YamlLexer};
 use std::{path::Path, time::Duration};
 
 #[test]
-fn test_yaml_lexer() -> Result<(), data_text_core::OakError> {
+fn test_yaml_lexer() -> Result<(), data_text_core::TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let language = YamlLanguage::default();
     let lexer = YamlLexer::new(&language);

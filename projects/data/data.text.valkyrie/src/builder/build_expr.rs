@@ -1,8 +1,8 @@
 use crate::{ValkyrieLanguage, ast::*, builder::ValkyrieBuilder};
-use data_text_core::{OakError, RedNode, RedTree, Source};
+use data_text_core::{TextError, RedNode, RedTree, Source};
 
 impl<'config> ValkyrieBuilder<'config> {
-    pub(crate) fn build_expr<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_expr<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         match node.green.kind {
             crate::parser::element_type::ValkyrieElementType::ArrayExpression => {

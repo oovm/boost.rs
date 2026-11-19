@@ -1,10 +1,10 @@
-use data_text_core::OakError;
+use data_text_core::TextError;
 use language_testing::lexing::LexerTester;
 use data_text_vala::{ValaLanguage, ValaLexer};
 use std::{path::Path, time::Duration};
 
 #[test]
-fn test_vala_lexer() -> Result<(), OakError> {
+fn test_vala_lexer() -> Result<(), TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let language = ValaLanguage::default();
     let lexer = ValaLexer::new(&language);

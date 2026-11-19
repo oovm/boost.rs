@@ -6,7 +6,7 @@ use crate::{
     parser::element_type::DjangoElementType,
 };
 use data_text_core::{
-    errors::OakError,
+    errors::TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -24,7 +24,7 @@ impl<'config> DjangoParser<'config> {
         Self { config }
     }
 
-    fn parse_node<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_node<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         match state.peek_kind() {
             Some(DjangoTokenType::VariableStart) => self.parse_variable(state),
             Some(DjangoTokenType::TagStart) => self.parse_tag_statement(state),
@@ -42,7 +42,7 @@ impl<'config> DjangoParser<'config> {
         }
     }
 
-    fn parse_variable<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_variable<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(DjangoTokenType::VariableStart)?;
         self.parse_expression(state)?;
@@ -51,7 +51,7 @@ impl<'config> DjangoParser<'config> {
         Ok(())
     }
 
-    fn parse_tag_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_tag_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(DjangoTokenType::TagStart)?;
 
@@ -71,7 +71,7 @@ impl<'config> DjangoParser<'config> {
         }
     }
 
-    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), OakError> {
+    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), TextError> {
         state.expect(DjangoTokenType::If)?;
         self.parse_expression(state)?;
         state.expect(DjangoTokenType::TagEnd).ok();
@@ -112,7 +112,7 @@ impl<'config> DjangoParser<'config> {
         Ok(())
     }
 
-    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), OakError> {
+    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), TextError> {
         state.expect(DjangoTokenType::For)?;
         self.parse_expression(state)?;
         state.expect(DjangoTokenType::In)?;
@@ -131,7 +131,7 @@ impl<'config> DjangoParser<'config> {
         Ok(())
     }
 
-    fn parse_block_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), OakError> {
+    fn parse_block_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), TextError> {
         state.expect(DjangoTokenType::Block)?;
         state.expect(DjangoTokenType::Identifier)?;
         state.expect(DjangoTokenType::TagEnd).ok();
@@ -148,11 +148,11 @@ impl<'config> DjangoParser<'config> {
         Ok(())
     }
 
-    fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.parse_binary_expression(state, 0)
     }
 
-    fn parse_binary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, min_precedence: i32) -> Result<(), OakError> {
+    fn parse_binary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, min_precedence: i32) -> Result<(), TextError> {
         let cp = state.checkpoint();
         self.parse_primary_expression(state)?;
 
@@ -179,7 +179,7 @@ impl<'config> DjangoParser<'config> {
         }
     }
 
-    fn parse_primary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_primary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         match state.peek_kind() {
             Some(DjangoTokenType::Identifier) => {
@@ -199,7 +199,7 @@ impl<'config> DjangoParser<'config> {
         Ok(())
     }
 
-    fn parse_comment<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_comment<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(DjangoTokenType::CommentStart)?;
         while state.not_at_end() && !state.at(DjangoTokenType::CommentEnd) {

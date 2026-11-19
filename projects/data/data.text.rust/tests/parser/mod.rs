@@ -1,7 +1,7 @@
 use data_text_core::{LexerCache, source::Source};
 
 #[test]
-fn test_simple_function_parsing() -> Result<(), data_text_core::OakError> {
+fn test_simple_function_parsing() -> Result<(), data_text_core::TextError> {
     use data_text_core::{Lexer, Parser, SourceText};
     use data_text_rust::{RustLanguage, RustLexer, RustParser};
 

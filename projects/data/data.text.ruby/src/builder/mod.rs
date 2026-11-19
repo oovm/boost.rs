@@ -35,25 +35,25 @@ impl<'config> Builder<RubyLanguage> for RubyBuilder<'config> {
 
         match parse_result.result {
             Ok(green_tree) => match self.build_root(green_tree, source) {
-                Ok(ast_root) => data_text_core::errors::OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                Ok(ast_root) => data_text_core::errors::TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                 Err(build_error) => {
                     let mut diagnostics = parse_result.diagnostics;
                     diagnostics.push(build_error.clone());
-                    data_text_core::errors::OakDiagnostics { result: Err(build_error), diagnostics }
+                    data_text_core::errors::TextDiagnostics { result: Err(build_error), diagnostics }
                 }
             },
-            Err(parse_error) => data_text_core::errors::OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => data_text_core::errors::TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> RubyBuilder<'config> {
-    fn build_root<S: Source + ?Sized>(&self, green_tree: &GreenNode<RubyLanguage>, source: &S) -> Result<RubyRoot, data_text_core::OakError> {
+    fn build_root<S: Source + ?Sized>(&self, green_tree: &GreenNode<RubyLanguage>, source: &S) -> Result<RubyRoot, data_text_core::TextError> {
         let statements = self.build_statement_list(green_tree, source, 0)?;
         Ok(RubyRoot { statements, span: Range { start: 0, end: source.length() } })
     }
 
-    fn build_statement_list<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, base: usize) -> Result<Vec<StatementNode>, data_text_core::OakError> {
+    fn build_statement_list<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, base: usize) -> Result<Vec<StatementNode>, data_text_core::TextError> {
         let mut statements = Vec::new();
         let mut offset = base;
         for child in node.children() {
@@ -71,7 +71,7 @@ impl<'config> RubyBuilder<'config> {
     }
 
     /// `begin ... rescue ... end`：本阶段只展开 begin 主体，rescue / ensure 暂跳过。
-    fn build_begin_body<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, base: usize) -> Result<Vec<StatementNode>, data_text_core::OakError> {
+    fn build_begin_body<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, base: usize) -> Result<Vec<StatementNode>, data_text_core::TextError> {
         let mut statements = Vec::new();
         let mut offset = base;
         for child in node.children() {
@@ -91,7 +91,7 @@ impl<'config> RubyBuilder<'config> {
         Ok(statements)
     }
 
-    fn build_statement<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, offset: usize) -> Result<Option<StatementNode>, data_text_core::OakError> {
+    fn build_statement<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, offset: usize) -> Result<Option<StatementNode>, data_text_core::TextError> {
         let span = span_at(offset, node.byte_length);
         match node.kind {
             RubyElementType::MethodDefinition => {
@@ -161,7 +161,7 @@ impl<'config> RubyBuilder<'config> {
         }
     }
 
-    fn split_method<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, base: usize) -> Result<(String, Vec<String>, Vec<StatementNode>), data_text_core::OakError> {
+    fn split_method<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, base: usize) -> Result<(String, Vec<String>, Vec<StatementNode>), data_text_core::TextError> {
         let mut name = String::new();
         let mut params = Vec::new();
         let mut in_params = false;
@@ -192,7 +192,7 @@ impl<'config> RubyBuilder<'config> {
         Ok((name, params, body))
     }
 
-    fn split_if<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, base: usize) -> Result<(ExpressionNode, Vec<StatementNode>, Option<Vec<StatementNode>>), data_text_core::OakError> {
+    fn split_if<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, base: usize) -> Result<(ExpressionNode, Vec<StatementNode>, Option<Vec<StatementNode>>), data_text_core::TextError> {
         // 修饰符形式：
         // 1) `body if/unless cond`（body 为表达式）
         // 2) `return/break/next if/unless cond`
@@ -330,12 +330,12 @@ impl<'config> RubyBuilder<'config> {
         Ok((condition.unwrap_or(ExpressionNode::Literal(LiteralNode::Nil { span })), then_body, if else_body.is_empty() { None } else { Some(else_body) }))
     }
 
-    fn split_cond_body<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, base: usize) -> Result<(ExpressionNode, Vec<StatementNode>), data_text_core::OakError> {
+    fn split_cond_body<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, base: usize) -> Result<(ExpressionNode, Vec<StatementNode>), data_text_core::TextError> {
         let (condition, body, _) = self.split_if(node, source, base)?;
         Ok((condition, body))
     }
 
-    fn first_expr<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, base: usize) -> Result<Option<ExpressionNode>, data_text_core::OakError> {
+    fn first_expr<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, base: usize) -> Result<Option<ExpressionNode>, data_text_core::TextError> {
         let mut offset = base;
         for child in node.children() {
             if let GreenTree::Node(child_node) = child {
@@ -348,7 +348,7 @@ impl<'config> RubyBuilder<'config> {
         Ok(None)
     }
 
-    fn split_block<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, base: usize) -> Result<(Vec<String>, Vec<StatementNode>), data_text_core::OakError> {
+    fn split_block<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, base: usize) -> Result<(Vec<String>, Vec<StatementNode>), data_text_core::TextError> {
         let mut params = Vec::new();
         let mut in_params = false;
         let mut offset = base;
@@ -382,7 +382,7 @@ impl<'config> RubyBuilder<'config> {
         Ok((params, body))
     }
 
-    fn build_expression<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, offset: usize) -> Result<Option<ExpressionNode>, data_text_core::OakError> {
+    fn build_expression<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, offset: usize) -> Result<Option<ExpressionNode>, data_text_core::TextError> {
         let span = span_at(offset, node.byte_length);
         match node.kind {
             RubyElementType::Identifier => {

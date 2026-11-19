@@ -5,7 +5,7 @@ pub mod token_type;
 
 use crate::{language::TclLanguage, lexer::token_type::TclTokenType};
 use data_text_core::{
-    Lexer, LexerState, OakError,
+    Lexer, LexerState, TextError,
     lexer::{CommentConfig, LexOutput, LexerCache, StringConfig, WhitespaceConfig},
 };
 
@@ -31,7 +31,7 @@ impl<'config> TclLexer<'config> {
     }
 
     /// Runs the lexer on the given source.
-    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), OakError> {
+    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

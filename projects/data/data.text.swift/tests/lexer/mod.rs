@@ -4,7 +4,7 @@ use data_text_swift::{lexer::SwiftLexer, language::SwiftLanguage};
 use std::{path::Path, time::Duration};
 
 #[test]
-fn test_swift_lexer() -> Result<(), data_text_core::OakError> {
+fn test_swift_lexer() -> Result<(), data_text_core::TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let config = SwiftLanguage::default();
     let lexer = SwiftLexer::new(&config);

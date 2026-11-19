@@ -1,4 +1,4 @@
-use data_text_core::errors::OakError;
+use data_text_core::errors::TextError;
 use language_testing::parsing::ParserTester;
 use data_text_tex::{
     ast::{MathDelimiter, TexArgument, TexCell, TexEnvironment, TexItem, TexRow},
@@ -9,7 +9,7 @@ use data_text_tex::{
 use std::{path::Path, time::Duration};
 
 #[test]
-fn test_tex_parser() -> Result<(), data_text_core::OakError> {
+fn test_tex_parser() -> Result<(), data_text_core::TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let tests = here.join("tests/parser");
     let language = TexLanguage::default();

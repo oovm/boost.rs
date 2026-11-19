@@ -8,7 +8,7 @@ use crate::{
     parser::element_type::ScalaElementType,
 };
 use data_text_core::{
-    GreenNode, OakError, TextEdit,
+    GreenNode, TextError, TextEdit,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::Source,
 };

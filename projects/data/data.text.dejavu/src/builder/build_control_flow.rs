@@ -5,10 +5,10 @@ use crate::{
     lexer::token_type::DejavuTokenType,
     parser::element_type::DejavuElementType,
 };
-use data_text_core::{OakError, RedNode, RedTree, Source};
+use data_text_core::{TextError, RedNode, RedTree, Source};
 
 impl<'config> DejavuBuilder<'config> {
-    pub(crate) fn build_if<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, OakError> {
+    pub(crate) fn build_if<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, TextError> {
         let span = node.span();
         let mut pattern = None;
         let mut condition = None;
@@ -59,7 +59,7 @@ impl<'config> DejavuBuilder<'config> {
         }))
     }
 
-    pub(crate) fn build_match<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, OakError> {
+    pub(crate) fn build_match<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, TextError> {
         let span = node.span();
         let mut scrutinee = None;
         let mut arms = Vec::new();
@@ -87,7 +87,7 @@ impl<'config> DejavuBuilder<'config> {
         Ok(ExpressionNode::Match(MatchExpressionNode { scrutinee: scrutinee.ok_or_else(|| source.syntax_error("Missing match scrutinee".to_string(), span.start))?, arms, span }))
     }
 
-    pub(crate) fn build_match_arm<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<MatchArmNode, OakError> {
+    pub(crate) fn build_match_arm<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<MatchArmNode, TextError> {
         let span = node.span();
         let mut pattern = None;
         let mut guard = None;
@@ -126,7 +126,7 @@ impl<'config> DejavuBuilder<'config> {
         })
     }
 
-    pub(crate) fn build_loop<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, OakError> {
+    pub(crate) fn build_loop<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, TextError> {
         let span = node.span();
         let mut label = None;
         let mut pattern = None;
@@ -156,7 +156,7 @@ impl<'config> DejavuBuilder<'config> {
         Ok(ExpressionNode::Loop(LoopExpressionNode { label, pattern, condition, body: body.ok_or_else(|| source.syntax_error("Missing loop body".to_string(), span.end))?, span }))
     }
 
-    pub(crate) fn build_return<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, OakError> {
+    pub(crate) fn build_return<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, TextError> {
         let span = node.span();
         let mut expr = None;
 
@@ -173,7 +173,7 @@ impl<'config> DejavuBuilder<'config> {
         Ok(ExpressionNode::Return(ReturnExpressionNode { expr, span }))
     }
 
-    pub(crate) fn build_break<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, OakError> {
+    pub(crate) fn build_break<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, TextError> {
         let span = node.span();
         let mut label = None;
         let mut expr = None;
@@ -194,7 +194,7 @@ impl<'config> DejavuBuilder<'config> {
         Ok(ExpressionNode::Break(BreakExpressionNode { label, expr, span }))
     }
 
-    pub(crate) fn build_continue<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, OakError> {
+    pub(crate) fn build_continue<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, TextError> {
         let span = node.span();
         let mut label = None;
 
@@ -211,7 +211,7 @@ impl<'config> DejavuBuilder<'config> {
         Ok(ExpressionNode::Continue(ContinueExpressionNode { label, span }))
     }
 
-    pub(crate) fn build_yield<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, OakError> {
+    pub(crate) fn build_yield<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, TextError> {
         let span = node.span();
         let mut expr = None;
         let mut yield_from = false;
@@ -232,7 +232,7 @@ impl<'config> DejavuBuilder<'config> {
         Ok(ExpressionNode::Yield(YieldExpressionNode { expr, yield_from, span }))
     }
 
-    pub(crate) fn build_raise<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, OakError> {
+    pub(crate) fn build_raise<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, TextError> {
         let span = node.span();
         let mut expr = None;
 
@@ -249,7 +249,7 @@ impl<'config> DejavuBuilder<'config> {
         Ok(ExpressionNode::Raise(RaiseExpressionNode { expr: expr.ok_or_else(|| source.syntax_error("Missing expression in raise".to_string(), span.end))?, span }))
     }
 
-    pub(crate) fn build_catch<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, OakError> {
+    pub(crate) fn build_catch<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, TextError> {
         let span = node.span();
         let mut return_type = None;
         let mut expr = None;
@@ -274,7 +274,7 @@ impl<'config> DejavuBuilder<'config> {
         Ok(ExpressionNode::Catch(CatchExpressionNode { return_type, expr: expr.ok_or_else(|| source.syntax_error("Missing expression in catch".to_string(), span.end))?, arms, span }))
     }
 
-    pub(crate) fn build_resume<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, OakError> {
+    pub(crate) fn build_resume<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, TextError> {
         let span = node.span();
         let mut expr = None;
 
@@ -292,7 +292,7 @@ impl<'config> DejavuBuilder<'config> {
     }
 
     /// Builds a ForControlNode from a ForControl red node.
-    pub(crate) fn build_for_control<S: Source + ?Sized>(&self, n: RedNode<DejavuLanguage>, source: &S) -> Result<ForControlNode, OakError> {
+    pub(crate) fn build_for_control<S: Source + ?Sized>(&self, n: RedNode<DejavuLanguage>, source: &S) -> Result<ForControlNode, TextError> {
         let span = n.span();
         let mut pattern = None;
         let mut iterable = None;
@@ -358,7 +358,7 @@ impl<'config> DejavuBuilder<'config> {
     }
 
     /// Builds an IfControlNode from an IfControl red node.
-    pub(crate) fn build_if_control<S: Source + ?Sized>(&self, n: RedNode<DejavuLanguage>, source: &S) -> Result<IfControlNode, OakError> {
+    pub(crate) fn build_if_control<S: Source + ?Sized>(&self, n: RedNode<DejavuLanguage>, source: &S) -> Result<IfControlNode, TextError> {
         let span = n.span();
         let mut condition = None;
         let mut then_body = Vec::new();
@@ -417,7 +417,7 @@ impl<'config> DejavuBuilder<'config> {
     }
 
     /// Builds a WhileControlNode from a WhileControl red node.
-    pub(crate) fn build_while_control<S: Source + ?Sized>(&self, n: RedNode<DejavuLanguage>, source: &S) -> Result<WhileControlNode, OakError> {
+    pub(crate) fn build_while_control<S: Source + ?Sized>(&self, n: RedNode<DejavuLanguage>, source: &S) -> Result<WhileControlNode, TextError> {
         let span = n.span();
         let mut condition = None;
         let mut body = Vec::new();
@@ -450,7 +450,7 @@ impl<'config> DejavuBuilder<'config> {
     }
 
     /// Builds a LoopControlNode from a LoopControl red node.
-    pub(crate) fn build_loop_control<S: Source + ?Sized>(&self, n: RedNode<DejavuLanguage>, source: &S) -> Result<LoopControlNode, OakError> {
+    pub(crate) fn build_loop_control<S: Source + ?Sized>(&self, n: RedNode<DejavuLanguage>, source: &S) -> Result<LoopControlNode, TextError> {
         let span = n.span();
         let mut pattern = None;
         let mut iterable = None;
@@ -490,7 +490,7 @@ impl<'config> DejavuBuilder<'config> {
     }
 
     /// Builds an ElseBranchNode from an ElseBranch red node.
-    pub(crate) fn build_else_branch<S: Source + ?Sized>(&self, n: RedNode<DejavuLanguage>, source: &S) -> Result<ElseBranchNode, OakError> {
+    pub(crate) fn build_else_branch<S: Source + ?Sized>(&self, n: RedNode<DejavuLanguage>, source: &S) -> Result<ElseBranchNode, TextError> {
         let span = n.span();
         let mut is_elif = false;
         let mut condition = None;

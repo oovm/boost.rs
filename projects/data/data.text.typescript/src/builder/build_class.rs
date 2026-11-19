@@ -1,8 +1,8 @@
 use crate::{ast::*, builder::TypeScriptBuilder, language::TypeScriptLanguage, lexer::token_type::TypeScriptTokenType, parser::element_type::TypeScriptElementType};
-use data_text_core::{OakError, RedNode, RedTree, Source, SourceText};
+use data_text_core::{TextError, RedNode, RedTree, Source, SourceText};
 
 impl<'config> TypeScriptBuilder<'config> {
-    pub(crate) fn build_class_member(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<ClassMember>, OakError> {
+    pub(crate) fn build_class_member(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<ClassMember>, TextError> {
         let kind = node.green.kind;
         let span = node.span();
 

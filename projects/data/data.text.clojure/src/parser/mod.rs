@@ -4,7 +4,7 @@ pub use element_type::ClojureElementType;
 
 use crate::{language::ClojureLanguage, lexer::token_type::ClojureTokenType};
 use data_text_core::{
-    OakError,
+    TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -22,7 +22,7 @@ impl<'config> ClojureParser<'config> {
         Self { config }
     }
 
-    fn parse_form<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_form<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         match state.peek_kind() {
             Some(ClojureTokenType::ListStart) => self.parse_list(state),
             Some(ClojureTokenType::VectorStart) => self.parse_vector(state),
@@ -51,7 +51,7 @@ impl<'config> ClojureParser<'config> {
         }
     }
 
-    fn parse_list<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_list<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(ClojureTokenType::ListStart).ok();
         while state.not_at_end() && !state.at(ClojureTokenType::ListEnd) {
@@ -62,7 +62,7 @@ impl<'config> ClojureParser<'config> {
         Ok(())
     }
 
-    fn parse_vector<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_vector<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(ClojureTokenType::VectorStart).ok();
         while state.not_at_end() && !state.at(ClojureTokenType::VectorEnd) {
@@ -73,7 +73,7 @@ impl<'config> ClojureParser<'config> {
         Ok(())
     }
 
-    fn parse_map<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_map<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(ClojureTokenType::MapStart).ok();
         while state.not_at_end() && !state.at(ClojureTokenType::MapEnd) {
@@ -84,7 +84,7 @@ impl<'config> ClojureParser<'config> {
         Ok(())
     }
 
-    fn parse_set<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_set<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(ClojureTokenType::SetStart).ok();
         while state.not_at_end() && !state.at(ClojureTokenType::MapEnd) {
@@ -95,7 +95,7 @@ impl<'config> ClojureParser<'config> {
         Ok(())
     }
 
-    fn parse_anon_fn<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_anon_fn<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(ClojureTokenType::AnonFnStart).ok();
         while state.not_at_end() && !state.at(ClojureTokenType::ListEnd) {

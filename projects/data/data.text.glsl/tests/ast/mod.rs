@@ -1,11 +1,11 @@
-use data_text_core::{Builder, OakError, SourceText, parser::session::ParseSession};
+use data_text_core::{Builder, TextError, SourceText, parser::session::ParseSession};
 use data_text_glsl::{
     GlslBuilder, GlslLanguage,
     ast::{GlslAssignOp, GlslBinaryOp, GlslExpression, GlslFunction, GlslGlobalVar, GlslItem, GlslQualifier, GlslRoot, GlslStatement, GlslUnaryOp},
 };
 
 /// Builds the AST and the diagnostics for `source`.
-fn build(source: &str) -> (GlslRoot, Vec<OakError>) {
+fn build(source: &str) -> (GlslRoot, Vec<TextError>) {
     let language = GlslLanguage::default();
     let builder = GlslBuilder::new(&language);
     let text = SourceText::new(source);

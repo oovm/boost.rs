@@ -34,8 +34,8 @@ pub use parser::{FSharpParser, element_type::FSharpElementType};
 ///
 /// # Errors
 ///
-/// Returns an [data_text_core::OakError] if parsing fails.
-pub fn parse(source: &str) -> Result<FSharpRoot, data_text_core::OakError> {
+/// Returns an [data_text_core::TextError] if parsing fails.
+pub fn parse(source: &str) -> Result<FSharpRoot, data_text_core::TextError> {
     let language = FSharpLanguage::new();
     let builder = FSharpBuilder::new(&language);
     let source_text = data_text_core::source::SourceText::new(source);

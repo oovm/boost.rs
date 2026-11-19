@@ -5,11 +5,11 @@ use crate::{
     lexer::token_type::ValkyrieTokenType,
     parser::element_type::ValkyrieElementType,
 };
-use data_text_core::{GreenNode, OakError, RedNode, RedTree, Source};
+use data_text_core::{GreenNode, TextError, RedNode, RedTree, Source};
 
 impl<'config> ValkyrieBuilder<'config> {
     /// Builds a strongly-typed AST from a green tree.
-    pub fn build_root<S: Source + ?Sized>(&self, green_tree: &GreenNode<ValkyrieLanguage>, source: &S) -> Result<ValkyrieRoot, OakError> {
+    pub fn build_root<S: Source + ?Sized>(&self, green_tree: &GreenNode<ValkyrieLanguage>, source: &S) -> Result<ValkyrieRoot, TextError> {
         let red_root = RedNode::<ValkyrieLanguage>::new(green_tree, 0);
         let mut items = Vec::new();
         let mut pending_annotations = Vec::new();
@@ -57,7 +57,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(ValkyrieRoot { items })
     }
 
-    pub(crate) fn build_shader<S: Source + ?Sized>(&self, n: RedNode<ValkyrieLanguage>, source: &S) -> Result<ShaderDeclaration, OakError> {
+    pub(crate) fn build_shader<S: Source + ?Sized>(&self, n: RedNode<ValkyrieLanguage>, source: &S) -> Result<ShaderDeclaration, TextError> {
         let mut name = Identifier::default();
         let mut kind = Identifier::default();
         let mut items = Vec::new();
@@ -131,7 +131,7 @@ impl<'config> ValkyrieBuilder<'config> {
         }
     }
 
-    pub(crate) fn build_item<S: Source + ?Sized>(&self, n: RedNode<ValkyrieLanguage>, source: &S) -> Result<StatementNode, OakError> {
+    pub(crate) fn build_item<S: Source + ?Sized>(&self, n: RedNode<ValkyrieLanguage>, source: &S) -> Result<StatementNode, TextError> {
         match n.green.kind {
             ValkyrieElementType::Namespace => {
                 let ns = self.build_namespace(n, source)?;

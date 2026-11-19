@@ -5,7 +5,7 @@ use language_testing::lexing::LexerTester;
 use std::path::PathBuf;
 
 #[test]
-fn test_fortran_lexer_integration() -> Result<(), data_text_core::OakError> {
+fn test_fortran_lexer_integration() -> Result<(), data_text_core::TextError> {
     let language = FortranLanguage::default();
     let lexer = FortranLexer::new(&language);
 

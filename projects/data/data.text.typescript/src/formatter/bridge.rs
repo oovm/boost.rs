@@ -8,7 +8,7 @@ pub struct TypeScriptCstFormatter;
 
 impl TypeScriptCstFormatter {
     /// Format one source buffer without constructing a pretty-print document.
-    pub fn format_source(&self, source: &str, options: &FormatOptions) -> Result<String, data_text_core::OakError> {
+    pub fn format_source(&self, source: &str, options: &FormatOptions) -> Result<String, data_text_core::TextError> {
         format_source(source, options)
     }
 }

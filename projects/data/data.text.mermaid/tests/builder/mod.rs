@@ -94,7 +94,7 @@ fn find_edge_in<'a>(elements: &'a [FlowElement], from: &str, to: &str) -> (Optio
 }
 
 #[test]
-fn test_mermaid_builder_fixture() -> Result<(), data_text_core::OakError> {
+fn test_mermaid_builder_fixture() -> Result<(), data_text_core::TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let language = MermaidLanguage::default();
     let builder = MermaidBuilder::new(&language);

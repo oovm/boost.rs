@@ -3,7 +3,7 @@ use crate::{
     lexer::{DejavuKeywords, token_type::DejavuSyntaxKind},
 };
 use data_text_core::{
-    LexerState, OakError,
+    LexerState, TextError,
     lexer::{CommentConfig, WhitespaceConfig},
     source::Source,
 };
@@ -17,14 +17,14 @@ static VK_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { li
 
 impl<'config> crate::lexer::DejavuLexer<'config> {
     /// Runs the lexer on the given state.
-    pub(crate) fn run<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), OakError> {
+    pub(crate) fn run<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), TextError> {
         match self.config.syntax_mode {
             crate::language::SyntaxMode::Programming => self.run_programming(state),
             crate::language::SyntaxMode::Template => self.run_template(state),
         }
     }
 
-    fn run_template<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), OakError> {
+    fn run_template<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), TextError> {
         let end = state.get_length();
         let template = &self.config.template;
         let code_start = template.code_start.as_str();
@@ -132,7 +132,7 @@ impl<'config> crate::lexer::DejavuLexer<'config> {
         Ok(())
     }
 
-    fn run_programming<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), OakError> {
+    fn run_programming<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), TextError> {
         let end = state.get_length();
         let template = &self.config.template;
         let code_end = template.code_end.as_str();

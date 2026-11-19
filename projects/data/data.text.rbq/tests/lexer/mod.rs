@@ -4,7 +4,7 @@ use std::time::Duration;
 
 #[test]
 #[cfg(feature = "serde")]
-fn test_rbq_lexer() -> Result<(), data_text_core::OakError> {
+fn test_rbq_lexer() -> Result<(), data_text_core::TextError> {
     let here = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let tests = here.join("tests/lexer");
     let config = RbqLanguage::default();

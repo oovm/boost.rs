@@ -3,7 +3,7 @@ use language_testing::lexing::LexerTester;
 use std::{path::Path, time::Duration};
 
 #[test]
-fn test_csv_lexer() -> Result<(), data_text_core::OakError> {
+fn test_csv_lexer() -> Result<(), data_text_core::TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lexer = CsvLexer::new();
     let test_runner = LexerTester::new(here.join("tests/lexer")).with_extension("csv").with_timeout(Duration::from_secs(5));

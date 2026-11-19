@@ -1,5 +1,5 @@
 use crate::{DockerfileParser, ast::*, language::DockerfileLanguage, lexer::token_type::DockerfileTokenType, parser::element_type::DockerfileElementType};
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, OakError, Parser, RedNode, RedTree, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, builder::BuildOutput, source::Source};
 
 /// AST builder for the Dockerfile language.
 #[derive(Clone, Copy)]
@@ -26,22 +26,22 @@ impl<'config> Builder<DockerfileLanguage> for DockerfileBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> DockerfileBuilder<'config> {
     /// Builds the AST root from the green tree.
-    pub(crate) fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, DockerfileLanguage>, source: &SourceText) -> Result<DockerfileRoot, OakError> {
+    pub(crate) fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, DockerfileLanguage>, source: &SourceText) -> Result<DockerfileRoot, TextError> {
         let root_node = RedNode::new(green_tree, 0);
         let mut instructions = Vec::new();
 
@@ -73,7 +73,7 @@ impl<'config> DockerfileBuilder<'config> {
         Ok(DockerfileRoot { instructions })
     }
 
-    fn build_from(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, OakError> {
+    fn build_from(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, TextError> {
         let mut image = String::new();
         let mut children = node.children();
 
@@ -91,7 +91,7 @@ impl<'config> DockerfileBuilder<'config> {
         Ok(Instruction::From { image: image.trim().to_string(), tag: None, span: node.span() })
     }
 
-    fn build_run(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, OakError> {
+    fn build_run(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, TextError> {
         let mut command = String::new();
         let mut children = node.children();
 
@@ -109,7 +109,7 @@ impl<'config> DockerfileBuilder<'config> {
         Ok(Instruction::Run { command: command.trim().to_string(), span: node.span() })
     }
 
-    fn build_copy(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, OakError> {
+    fn build_copy(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, TextError> {
         let mut args = Vec::new();
         let mut children = node.children();
 
@@ -127,7 +127,7 @@ impl<'config> DockerfileBuilder<'config> {
         Ok(Instruction::Copy { src: args.get(0).cloned().unwrap_or_default(), dest: args.get(1).cloned().unwrap_or_default(), span: node.span() })
     }
 
-    fn build_add(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, OakError> {
+    fn build_add(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, TextError> {
         let mut args = Vec::new();
         let mut children = node.children();
 
@@ -145,7 +145,7 @@ impl<'config> DockerfileBuilder<'config> {
         Ok(Instruction::Add { src: args.get(0).cloned().unwrap_or_default(), dest: args.get(1).cloned().unwrap_or_default(), span: node.span() })
     }
 
-    fn build_workdir(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, OakError> {
+    fn build_workdir(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, TextError> {
         let mut path = String::new();
         let mut children = node.children();
         children.next(); // skip keyword
@@ -159,7 +159,7 @@ impl<'config> DockerfileBuilder<'config> {
         Ok(Instruction::Workdir { path: path.trim().to_string(), span: node.span() })
     }
 
-    fn build_expose(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, OakError> {
+    fn build_expose(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, TextError> {
         let mut port = String::new();
         let mut children = node.children();
         children.next(); // skip keyword
@@ -173,7 +173,7 @@ impl<'config> DockerfileBuilder<'config> {
         Ok(Instruction::Expose { port: port.trim().to_string(), span: node.span() })
     }
 
-    fn build_env(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, OakError> {
+    fn build_env(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, TextError> {
         let mut key = String::new();
         let mut value = String::new();
         let mut children = node.children();
@@ -199,7 +199,7 @@ impl<'config> DockerfileBuilder<'config> {
         Ok(Instruction::Env { key, value, span: node.span() })
     }
 
-    fn build_cmd(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, OakError> {
+    fn build_cmd(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, TextError> {
         let mut command = String::new();
         let mut children = node.children();
         children.next(); // skip keyword
@@ -213,7 +213,7 @@ impl<'config> DockerfileBuilder<'config> {
         Ok(Instruction::Cmd { command: command.trim().to_string(), span: node.span() })
     }
 
-    fn build_entrypoint(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, OakError> {
+    fn build_entrypoint(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, TextError> {
         let mut command = String::new();
         let mut children = node.children();
         children.next(); // skip keyword
@@ -227,7 +227,7 @@ impl<'config> DockerfileBuilder<'config> {
         Ok(Instruction::Entrypoint { command: command.trim().to_string(), span: node.span() })
     }
 
-    fn build_volume(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, OakError> {
+    fn build_volume(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, TextError> {
         let mut path = String::new();
         let mut children = node.children();
         children.next(); // skip keyword
@@ -241,7 +241,7 @@ impl<'config> DockerfileBuilder<'config> {
         Ok(Instruction::Volume { path: path.trim().to_string(), span: node.span() })
     }
 
-    fn build_user(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, OakError> {
+    fn build_user(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, TextError> {
         let mut user = String::new();
         let mut children = node.children();
         children.next(); // skip keyword
@@ -255,7 +255,7 @@ impl<'config> DockerfileBuilder<'config> {
         Ok(Instruction::User { user: user.trim().to_string(), span: node.span() })
     }
 
-    fn build_label(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, OakError> {
+    fn build_label(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, TextError> {
         let mut key = String::new();
         let mut value = String::new();
         let mut children = node.children();
@@ -281,7 +281,7 @@ impl<'config> DockerfileBuilder<'config> {
         Ok(Instruction::Label { key, value, span: node.span() })
     }
 
-    fn build_arg(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, OakError> {
+    fn build_arg(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, TextError> {
         let mut name = String::new();
         let mut default = None;
         let mut children = node.children();
@@ -306,7 +306,7 @@ impl<'config> DockerfileBuilder<'config> {
         Ok(Instruction::Arg { name, default, span: node.span() })
     }
 
-    fn build_stopsignal(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, OakError> {
+    fn build_stopsignal(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, TextError> {
         let mut signal = String::new();
         let mut children = node.children();
         children.next(); // skip keyword
@@ -320,7 +320,7 @@ impl<'config> DockerfileBuilder<'config> {
         Ok(Instruction::Stopsignal { signal: signal.trim().to_string(), span: node.span() })
     }
 
-    fn build_healthcheck(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, OakError> {
+    fn build_healthcheck(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, TextError> {
         let mut command = String::new();
         let mut children = node.children();
         children.next(); // skip keyword
@@ -334,7 +334,7 @@ impl<'config> DockerfileBuilder<'config> {
         Ok(Instruction::Healthcheck { command: command.trim().to_string(), span: node.span() })
     }
 
-    fn build_shell(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, OakError> {
+    fn build_shell(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, TextError> {
         let mut shell = String::new();
         let mut children = node.children();
         children.next(); // skip keyword
@@ -348,7 +348,7 @@ impl<'config> DockerfileBuilder<'config> {
         Ok(Instruction::Shell { shell: shell.trim().to_string(), span: node.span() })
     }
 
-    fn build_onbuild(&self, node: RedNode<DockerfileLanguage>, _source: &SourceText) -> Result<Instruction, OakError> {
+    fn build_onbuild(&self, node: RedNode<DockerfileLanguage>, _source: &SourceText) -> Result<Instruction, TextError> {
         // Simple implementation for now
         Ok(Instruction::Onbuild { instruction: Box::new(Instruction::Run { command: "ONBUILD placeholder".to_string(), span: node.span() }), span: node.span() })
     }

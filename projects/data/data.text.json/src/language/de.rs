@@ -2,7 +2,7 @@ use serde::de::{self, Deserializer, SeqAccess, Visitor};
 use std::fmt;
 
 use crate::ast::{JsonArray, JsonField, JsonObject, JsonRoot, JsonValueNode};
-use data_text_core::OakError;
+use data_text_core::TextError;
 
 /// JSON 反序列化实现
 pub fn deserialize<'de, D>(deserializer: D) -> Result<JsonValueNode, D::Error>
@@ -193,12 +193,12 @@ impl<'de> Visitor<'de> for JsonDeserializer {
 }
 
 /// Deserializes a JSON string into a Rust type.
-pub fn from_str<'de, T>(json: &'de str) -> Result<T, OakError>
+pub fn from_str<'de, T>(json: &'de str) -> Result<T, TextError>
 where
     T: serde::Deserialize<'de>,
 {
     // 直接使用 serde_json 来反序列化 JSON 字符串
-    serde_json::from_str(json).map_err(|e| OakError::custom_error(format!("{:?}", e)))
+    serde_json::from_str(json).map_err(|e| TextError::custom_error(format!("{:?}", e)))
 }
 
 struct JsonValueDeserializer {
@@ -212,7 +212,7 @@ impl JsonValueDeserializer {
 }
 
 impl<'de> serde::de::Deserializer<'de> for JsonValueDeserializer {
-    type Error = OakError;
+    type Error = TextError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
@@ -407,7 +407,7 @@ impl<'de> serde::de::Deserializer<'de> for JsonValueDeserializer {
     where
         V: serde::de::Visitor<'de>,
     {
-        Err(OakError::custom_error("Enums are not supported"))
+        Err(TextError::custom_error("Enums are not supported"))
     }
 
     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -437,7 +437,7 @@ impl JsonArrayAccess {
 }
 
 impl<'de> serde::de::SeqAccess<'de> for JsonArrayAccess {
-    type Error = OakError;
+    type Error = TextError;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
     where
@@ -470,7 +470,7 @@ impl JsonMapAccess {
 }
 
 impl<'de> serde::de::MapAccess<'de> for JsonMapAccess {
-    type Error = OakError;
+    type Error = TextError;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where

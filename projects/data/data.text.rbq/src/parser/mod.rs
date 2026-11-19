@@ -2,7 +2,7 @@
 pub mod element_type;
 
 use crate::{language::RbqLanguage, lexer::token_type::RbqTokenType, parser::element_type::RbqElementType};
-use data_text_core::{OakError, Parser, ParserState, Source, TextEdit, TokenType};
+use data_text_core::{TextError, Parser, ParserState, Source, TextEdit, TokenType};
 
 pub(crate) type State<'a, S> = ParserState<'a, RbqLanguage, S>;
 
@@ -19,7 +19,7 @@ impl<'config> RbqParser<'config> {
     }
 
     /// Parses a top-level definition or expression.
-    fn parse_top_level<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_top_level<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.skip_trivia(state);
         // Handle annotations
         while state.at(RbqTokenType::At) {
@@ -73,7 +73,7 @@ impl<'config> RbqParser<'config> {
     }
 
     /// Parses an annotation (e.g., `@name` or `@name(args)`).
-    fn parse_annotation<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_annotation<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(RbqElementType::Annotation, |state| {
             state.eat(RbqTokenType::At);
             self.skip_trivia(state);
@@ -110,7 +110,7 @@ impl<'config> RbqParser<'config> {
         })
     }
 
-    fn parse_namespace<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_namespace<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(RbqElementType::NamespaceDef, |state| {
             state.bump(); // namespace
             self.skip_trivia(state);
@@ -136,7 +136,7 @@ impl<'config> RbqParser<'config> {
         })
     }
 
-    fn parse_import<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_import<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(RbqElementType::ImportDef, |state| {
             state.bump(); // use
             self.skip_trivia(state);
@@ -147,7 +147,7 @@ impl<'config> RbqParser<'config> {
         })
     }
 
-    fn parse_struct<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_struct<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(RbqElementType::StructDef, |state| {
             state.bump(); // struct
             self.skip_trivia(state);
@@ -196,7 +196,7 @@ impl<'config> RbqParser<'config> {
         })
     }
 
-    fn parse_class<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_class<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(RbqElementType::ClassDef, |state| {
             state.bump(); // class
             self.skip_trivia(state);
@@ -245,7 +245,7 @@ impl<'config> RbqParser<'config> {
         })
     }
 
-    fn parse_field<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_field<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(RbqElementType::FieldDef, |state| {
             self.skip_trivia(state);
             if !state.eat(RbqTokenType::Ident) {
@@ -266,7 +266,7 @@ impl<'config> RbqParser<'config> {
         })
     }
 
-    fn parse_using<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_using<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(RbqElementType::UsingDef, |state| {
             state.bump(); // using
             self.skip_trivia(state);
@@ -277,7 +277,7 @@ impl<'config> RbqParser<'config> {
         })
     }
 
-    fn parse_union<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_union<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(RbqElementType::UnionDef, |state| {
             state.bump(); // union
             self.skip_trivia(state);
@@ -300,7 +300,7 @@ impl<'config> RbqParser<'config> {
         })
     }
 
-    fn parse_enum<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_enum<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(RbqElementType::EnumDef, |state| {
             state.bump(); // enum
             self.skip_trivia(state);
@@ -323,7 +323,7 @@ impl<'config> RbqParser<'config> {
         })
     }
 
-    fn parse_enum_member<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_enum_member<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(RbqElementType::EnumMember, |state| {
             self.skip_trivia(state);
             if state.at(RbqTokenType::At) {
@@ -345,7 +345,7 @@ impl<'config> RbqParser<'config> {
         })
     }
 
-    fn parse_union_member<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_union_member<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(RbqElementType::UnionMember, |state| {
             self.skip_trivia(state);
             if state.at(RbqTokenType::At) {
@@ -380,7 +380,7 @@ impl<'config> RbqParser<'config> {
         })
     }
 
-    fn parse_trait<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_trait<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(RbqElementType::TraitDef, |state| {
             state.bump(); // trait
             self.skip_trivia(state);
@@ -463,7 +463,7 @@ impl<'config> RbqParser<'config> {
         })
     }
 
-    fn parse_type_alias<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_type_alias<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(RbqElementType::TypeDef, |state| {
             state.bump(); // type
             self.skip_trivia(state);
@@ -478,7 +478,7 @@ impl<'config> RbqParser<'config> {
         })
     }
 
-    fn parse_micro_function<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_micro_function<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(RbqElementType::MicroDef, |state| {
             state.bump(); // micro
             self.skip_trivia(state);
@@ -533,7 +533,7 @@ impl<'config> RbqParser<'config> {
         })
     }
 
-    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(RbqElementType::Block, |state| {
             state.eat(RbqTokenType::LeftBrace);
             while state.not_at_end() && !state.at(RbqTokenType::RightBrace) {
@@ -552,7 +552,7 @@ impl<'config> RbqParser<'config> {
         })
     }
 
-    fn parse_type_ref<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_type_ref<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(RbqElementType::TypeRef, |state| {
             self.skip_trivia(state);
             if state.eat(RbqTokenType::LeftBrace) {
@@ -615,7 +615,7 @@ impl<'config> RbqParser<'config> {
         })
     }
 
-    fn parse_path<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_path<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.skip_trivia(state);
         if !state.eat(RbqTokenType::Ident) {
             state.eat(RbqTokenType::Utf8Kw);
@@ -631,11 +631,11 @@ impl<'config> RbqParser<'config> {
         Ok(())
     }
 
-    fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.parse_binary_expr(state, 0)
     }
 
-    fn parse_binary_expr<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, min_precedence: u8) -> Result<(), OakError> {
+    fn parse_binary_expr<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, min_precedence: u8) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         self.parse_unary_expr(state)?;
         self.skip_trivia(state);
@@ -658,7 +658,7 @@ impl<'config> RbqParser<'config> {
 
     // Removed get_precedence as it's now in RbqTokenType
 
-    fn parse_unary_expr<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_unary_expr<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         if TokenType::role(&state.current().map(|t| t.kind).unwrap_or(RbqTokenType::Error)) == data_text_core::UniversalTokenRole::Operator {
             state.bump();
@@ -672,7 +672,7 @@ impl<'config> RbqParser<'config> {
         }
     }
 
-    fn parse_primary_expr<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_primary_expr<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.skip_trivia(state);
 
         if state.at(RbqTokenType::Dollar) {
@@ -809,7 +809,7 @@ impl<'config> RbqParser<'config> {
         Ok(())
     }
 
-    fn parse_closure_or_pipeline<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_closure_or_pipeline<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.bump(); // {
         self.skip_trivia(state);
@@ -879,7 +879,7 @@ impl<'config> RbqParser<'config> {
         }
     }
 
-    fn parse_closure<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_closure<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(RbqElementType::Closure, |state| {
             state.bump(); // {
             self.skip_trivia(state);
@@ -913,7 +913,7 @@ impl<'config> RbqParser<'config> {
         })
     }
 
-    fn parse_query_pipeline<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_query_pipeline<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         state.incremental_node(RbqElementType::QueryPipeline, |state| {
             self.parse_expression(state)?;
             self.skip_trivia(state);

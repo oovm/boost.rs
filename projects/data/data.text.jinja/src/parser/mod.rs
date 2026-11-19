@@ -29,7 +29,7 @@ impl<'config> JinjaParser<'config> {
         Self { config }
     }
 
-    fn parse_node<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_node<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         match state.peek_kind() {
             Some(JinjaTokenType::DoubleLeftBrace) => self.parse_variable(state),
             Some(JinjaTokenType::LeftBracePercent) => self.parse_tag_statement(state),
@@ -48,7 +48,7 @@ impl<'config> JinjaParser<'config> {
         }
     }
 
-    fn parse_variable<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_variable<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         state.expect(JinjaTokenType::DoubleLeftBrace)?;
         self.parse_expression(state)?;
@@ -57,7 +57,7 @@ impl<'config> JinjaParser<'config> {
         Ok(())
     }
 
-    fn parse_tag_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_tag_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         state.expect(JinjaTokenType::LeftBracePercent)?;
 
@@ -96,7 +96,7 @@ impl<'config> JinjaParser<'config> {
         }
     }
 
-    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::OakError> {
+    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
         state.expect(JinjaTokenType::Identifier)?; // if
         self.parse_expression(state)?;
         state.expect(JinjaTokenType::PercentRightBrace)?;
@@ -139,7 +139,7 @@ impl<'config> JinjaParser<'config> {
         Ok(())
     }
 
-    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::OakError> {
+    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
         state.expect(JinjaTokenType::Identifier)?; // for
         self.parse_expression(state)?; // x
         // Jinja for syntax: for x in y
@@ -189,7 +189,7 @@ impl<'config> JinjaParser<'config> {
         Ok(())
     }
 
-    fn parse_block_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::OakError> {
+    fn parse_block_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
         state.expect(JinjaTokenType::Identifier)?; // block
         state.expect(JinjaTokenType::Identifier)?; // name
         state.expect(JinjaTokenType::PercentRightBrace)?;
@@ -209,7 +209,7 @@ impl<'config> JinjaParser<'config> {
         Ok(())
     }
 
-    fn parse_macro_definition<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::OakError> {
+    fn parse_macro_definition<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
         state.expect(JinjaTokenType::Identifier)?; // macro
         state.expect(JinjaTokenType::Identifier)?; // name
 
@@ -240,7 +240,7 @@ impl<'config> JinjaParser<'config> {
         Ok(())
     }
 
-    fn parse_extends_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::OakError> {
+    fn parse_extends_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
         state.expect(JinjaTokenType::Identifier)?;
         self.parse_expression(state)?;
         state.expect(JinjaTokenType::PercentRightBrace)?;
@@ -248,7 +248,7 @@ impl<'config> JinjaParser<'config> {
         Ok(())
     }
 
-    fn parse_include_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::OakError> {
+    fn parse_include_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
         state.expect(JinjaTokenType::Identifier)?;
         self.parse_expression(state)?;
         state.expect(JinjaTokenType::PercentRightBrace)?;
@@ -256,7 +256,7 @@ impl<'config> JinjaParser<'config> {
         Ok(())
     }
 
-    fn parse_set_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::OakError> {
+    fn parse_set_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
         state.expect(JinjaTokenType::Identifier)?;
         state.expect(JinjaTokenType::Identifier)?;
         state.expect(JinjaTokenType::Eq)?;
@@ -266,7 +266,7 @@ impl<'config> JinjaParser<'config> {
         Ok(())
     }
 
-    fn parse_from_import_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::OakError> {
+    fn parse_from_import_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
         state.expect(JinjaTokenType::Identifier)?;
         self.parse_expression(state)?;
         state.expect(JinjaTokenType::Identifier)?;
@@ -278,7 +278,7 @@ impl<'config> JinjaParser<'config> {
         Ok(())
     }
 
-    fn parse_import_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::OakError> {
+    fn parse_import_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
         state.expect(JinjaTokenType::Identifier)?;
         self.parse_expression(state)?;
         while state.not_at_end() && !state.at(JinjaTokenType::PercentRightBrace) {
@@ -289,11 +289,11 @@ impl<'config> JinjaParser<'config> {
         Ok(())
     }
 
-    fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         self.parse_binary_expression(state, 0)
     }
 
-    fn parse_binary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, min_precedence: i32) -> Result<(), data_text_core::OakError> {
+    fn parse_binary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, min_precedence: i32) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         self.parse_primary_expression(state)?;
 
@@ -323,7 +323,7 @@ impl<'config> JinjaParser<'config> {
         }
     }
 
-    fn parse_primary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_primary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
 
         match state.peek_kind() {

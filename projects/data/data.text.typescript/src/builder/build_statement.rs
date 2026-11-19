@@ -1,6 +1,6 @@
 use crate::{ast::*, builder::TypeScriptBuilder, language::TypeScriptLanguage, lexer::token_type::TypeScriptTokenType, parser::element_type::TypeScriptElementType};
 use core::range::Range;
-use data_text_core::{OakError, RedNode, RedTree, Source, SourceText};
+use data_text_core::{TextError, RedNode, RedTree, Source, SourceText};
 
 /// Builds a [`ModuleSpecifier`] from the span of a string literal token.
 ///
@@ -14,7 +14,7 @@ fn module_specifier_at(span: Range<usize>, source: &SourceText) -> ModuleSpecifi
 }
 
 impl<'config> TypeScriptBuilder<'config> {
-    pub(crate) fn build_statement(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<Statement>, OakError> {
+    pub(crate) fn build_statement(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<Statement>, TextError> {
         let kind = node.green.kind;
         let span = node.span();
 

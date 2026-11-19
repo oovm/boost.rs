@@ -12,7 +12,7 @@ use crate::{
     lexer::{BatLexer, BatTokenType},
 };
 use data_text_core::{
-    OakError, TextEdit,
+    TextError, TextEdit,
     parser::{ParseCache, Parser, ParserState},
     source::Source,
 };
@@ -38,7 +38,7 @@ impl<'config> BatParser<'config> {
         Self { config }
     }
 
-    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.skip_trivia(state);
         if !state.not_at_end() {
             return Ok(());
@@ -65,14 +65,14 @@ impl<'config> BatParser<'config> {
         }
     }
 
-    fn parse_label<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_label<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(BatTokenType::Label)?;
         state.finish_at(cp, BatElementType::LabelDefinition);
         Ok(())
     }
 
-    fn parse_if<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_if<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // IF
         // Basic IF parsing: consume until newline or block
@@ -83,7 +83,7 @@ impl<'config> BatParser<'config> {
         Ok(())
     }
 
-    fn parse_for<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_for<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // FOR
         while state.not_at_end() && !state.at(BatTokenType::Newline) {
@@ -93,7 +93,7 @@ impl<'config> BatParser<'config> {
         Ok(())
     }
 
-    fn parse_set<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_set<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // SET
         while state.not_at_end() && !state.at(BatTokenType::Newline) {
@@ -103,7 +103,7 @@ impl<'config> BatParser<'config> {
         Ok(())
     }
 
-    fn parse_command<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_command<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         while state.not_at_end() && !state.at(BatTokenType::Newline) {
             state.bump();

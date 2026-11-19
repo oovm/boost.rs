@@ -6,7 +6,7 @@ use crate::{
     parser::element_type::PurescriptElementType,
 };
 use data_text_core::{
-    GreenNode, OakError,
+    GreenNode, TextError,
     parser::{Associativity, ParseCache, ParseOutput, Parser, ParserState, Pratt, PrattParser, binary, parse_with_lexer, unary},
     source::{Source, TextEdit},
 };
@@ -24,7 +24,7 @@ impl<'config> PurescriptParser<'config> {
         Self { config }
     }
 
-    fn parse_item<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_item<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         match state.peek_kind() {
             Some(PurescriptTokenType::Module) => self.parse_module(state),
             Some(PurescriptTokenType::Import) => self.parse_import(state),
@@ -43,7 +43,7 @@ impl<'config> PurescriptParser<'config> {
         }
     }
 
-    fn parse_module<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_module<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(PurescriptTokenType::Module).ok();
         state.expect(PurescriptTokenType::UpperIdentifier).ok();
@@ -61,7 +61,7 @@ impl<'config> PurescriptParser<'config> {
         Ok(())
     }
 
-    fn parse_import<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_import<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(PurescriptTokenType::Import).ok();
         state.expect(PurescriptTokenType::UpperIdentifier).ok();
@@ -78,7 +78,7 @@ impl<'config> PurescriptParser<'config> {
         Ok(())
     }
 
-    fn parse_data<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_data<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(PurescriptTokenType::Data).ok();
         state.expect(PurescriptTokenType::UpperIdentifier).ok();
@@ -94,7 +94,7 @@ impl<'config> PurescriptParser<'config> {
         Ok(())
     }
 
-    fn parse_newtype<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_newtype<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(PurescriptTokenType::Newtype).ok();
         state.expect(PurescriptTokenType::UpperIdentifier).ok();
@@ -109,7 +109,7 @@ impl<'config> PurescriptParser<'config> {
         Ok(())
     }
 
-    fn parse_type_alias<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_type_alias<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(PurescriptTokenType::Type).ok();
         state.expect(PurescriptTokenType::UpperIdentifier).ok();
@@ -123,7 +123,7 @@ impl<'config> PurescriptParser<'config> {
         Ok(())
     }
 
-    fn parse_class<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_class<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(PurescriptTokenType::Class).ok();
         while state.not_at_end() && !state.at(PurescriptTokenType::Where) {
@@ -138,7 +138,7 @@ impl<'config> PurescriptParser<'config> {
         Ok(())
     }
 
-    fn parse_instance<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_instance<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(PurescriptTokenType::Instance).ok();
         while state.not_at_end() && !state.at(PurescriptTokenType::Where) {
@@ -153,7 +153,7 @@ impl<'config> PurescriptParser<'config> {
         Ok(())
     }
 
-    fn parse_foreign<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_foreign<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(PurescriptTokenType::Foreign).ok();
         state.expect(PurescriptTokenType::Import).ok();
@@ -164,7 +164,7 @@ impl<'config> PurescriptParser<'config> {
         Ok(())
     }
 
-    fn parse_value_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_value_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         if state.at(PurescriptTokenType::Identifier) {
             let next = state.peek_at(1);
@@ -199,7 +199,7 @@ impl<'config> PurescriptParser<'config> {
         Ok(())
     }
 
-    fn parse_pattern<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_pattern<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         match state.peek_kind() {
             Some(PurescriptTokenType::Identifier)
@@ -235,7 +235,7 @@ impl<'config> PurescriptParser<'config> {
         Ok(())
     }
 
-    fn parse_type<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_type<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         while state.not_at_end() && !state.at(PurescriptTokenType::Newline) && !state.at(PurescriptTokenType::Equal) && !state.at(PurescriptTokenType::Pipe) && !state.at(PurescriptTokenType::Where) {
             state.bump();

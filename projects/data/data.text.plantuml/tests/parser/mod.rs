@@ -157,7 +157,7 @@ fn refuses_a_source_that_mixes_both_diagram_families() {
     let output = parser.parse(source, &[], &mut cache);
 
     let error = output.result.expect_err("a mixed source cannot pick one family silently");
-    let data_text_core::errors::OakErrorKind::SyntaxError { message, offset, .. } = error.kind()
+    let data_text_core::errors::TextErrorKind::SyntaxError { message, offset, .. } = error.kind()
     else {
         panic!("expected a syntax error, got {:?}", error.kind());
     };

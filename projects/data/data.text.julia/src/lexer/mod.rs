@@ -532,7 +532,7 @@ impl JuliaLexer<'_> {
 
 impl<'config> JuliaLexer<'config> {
     /// Main lexing loop.
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

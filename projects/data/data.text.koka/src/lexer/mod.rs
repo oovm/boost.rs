@@ -5,7 +5,7 @@ pub mod token_type;
 
 use crate::{language::KokaLanguage, lexer::token_type::KokaTokenType};
 use data_text_core::{
-    Lexer, LexerState, OakError, Source, TextEdit,
+    Lexer, LexerState, TextError, Source, TextEdit,
     lexer::{LexOutput, LexerCache},
 };
 
@@ -475,7 +475,7 @@ impl<'config> Lexer<KokaLanguage> for KokaLexer<'config> {
 }
 
 impl<'config> KokaLexer<'config> {
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

@@ -9,7 +9,7 @@ use crate::{
     lexer::{BashLexer, BashTokenType},
 };
 use data_text_core::{
-    OakError, TextEdit,
+    TextError, TextEdit,
     parser::{ParseCache, Parser, ParserState},
     source::Source,
 };
@@ -27,7 +27,7 @@ impl<'config> BashParser<'config> {
         Self { config }
     }
 
-    pub(crate) fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         if state.at(BashTokenType::Keyword) {
             let text = state.peek_text();
             match text.as_deref() {
@@ -49,7 +49,7 @@ impl<'config> BashParser<'config> {
         }
     }
 
-    fn parse_variable_assignment<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_variable_assignment<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(BashTokenType::Identifier)?;
         state.expect(BashTokenType::Operator)?; // =
@@ -63,7 +63,7 @@ impl<'config> BashParser<'config> {
         Ok(())
     }
 
-    fn parse_command_or_pipeline<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_command_or_pipeline<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         self.parse_command(state)?;
 
@@ -78,7 +78,7 @@ impl<'config> BashParser<'config> {
         Ok(())
     }
 
-    fn parse_if<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_if<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(BashTokenType::Keyword)?; // if
 
@@ -132,7 +132,7 @@ impl<'config> BashParser<'config> {
         Ok(())
     }
 
-    fn parse_while<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_while<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(BashTokenType::Keyword)?; // while
 
@@ -156,7 +156,7 @@ impl<'config> BashParser<'config> {
         Ok(())
     }
 
-    fn parse_for<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_for<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(BashTokenType::Keyword)?; // for
 
@@ -180,7 +180,7 @@ impl<'config> BashParser<'config> {
         Ok(())
     }
 
-    fn parse_function<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_function<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         if state.peek_text().as_deref() == Some("function") {
             state.bump();
@@ -213,7 +213,7 @@ impl<'config> BashParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_command<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_command<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         while state.not_at_end() && !state.at(BashTokenType::Newline) && !state.at(BashTokenType::Delimiter) && state.peek_text().as_deref() != Some("|") {
             if matches!(state.peek_text().as_deref(), Some(">" | ">>" | "<" | "<<")) {
@@ -227,7 +227,7 @@ impl<'config> BashParser<'config> {
         Ok(())
     }
 
-    fn parse_redirection<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_redirection<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.bump(); // The redirection operator
 

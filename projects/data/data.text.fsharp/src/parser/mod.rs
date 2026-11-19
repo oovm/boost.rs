@@ -7,7 +7,7 @@ use crate::{
     parser::element_type::FSharpElementType,
 };
 use data_text_core::{
-    GreenNode, OakError,
+    GreenNode, TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -25,7 +25,7 @@ impl<'config> FSharpParser<'config> {
         Self { config }
     }
 
-    fn parse_namespace<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_namespace<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(FSharpTokenType::Namespace)?;
 
@@ -39,7 +39,7 @@ impl<'config> FSharpParser<'config> {
         Ok(())
     }
 
-    fn parse_module<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_module<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(FSharpTokenType::Module)?;
 
@@ -51,7 +51,7 @@ impl<'config> FSharpParser<'config> {
         Ok(())
     }
 
-    fn parse_open<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_open<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(FSharpTokenType::Open)?;
 
@@ -65,7 +65,7 @@ impl<'config> FSharpParser<'config> {
         Ok(())
     }
 
-    fn parse_binding<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_binding<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(FSharpTokenType::Let)?;
 
@@ -91,7 +91,7 @@ impl<'config> FSharpParser<'config> {
         Ok(())
     }
 
-    fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         let kind = state.peek_kind();
         match kind {
@@ -154,7 +154,7 @@ impl<'config> FSharpParser<'config> {
         Ok(())
     }
 
-    fn parse_function_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, checkpoint: (usize, usize)) -> Result<(), OakError> {
+    fn parse_function_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, checkpoint: (usize, usize)) -> Result<(), TextError> {
         state.expect(FSharpTokenType::Function)?;
 
         // Parse function parameters with optional type annotations
@@ -176,7 +176,7 @@ impl<'config> FSharpParser<'config> {
         Ok(())
     }
 
-    fn parse_match_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, checkpoint: (usize, usize)) -> Result<(), OakError> {
+    fn parse_match_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, checkpoint: (usize, usize)) -> Result<(), TextError> {
         state.expect(FSharpTokenType::Match)?;
         self.parse_expression(state)?;
         state.expect(FSharpTokenType::With)?;
@@ -190,7 +190,7 @@ impl<'config> FSharpParser<'config> {
         Ok(())
     }
 
-    fn parse_match_case<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_match_case<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
 
         // Parse pattern
@@ -208,7 +208,7 @@ impl<'config> FSharpParser<'config> {
         Ok(())
     }
 
-    fn parse_pattern<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_pattern<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         let kind = state.peek_kind();
 
@@ -282,7 +282,7 @@ impl<'config> FSharpParser<'config> {
         Ok(())
     }
 
-    fn parse_let_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, checkpoint: (usize, usize)) -> Result<(), OakError> {
+    fn parse_let_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, checkpoint: (usize, usize)) -> Result<(), TextError> {
         state.expect(FSharpTokenType::Let)?;
 
         let is_rec = state.eat(FSharpTokenType::Rec);
@@ -311,7 +311,7 @@ impl<'config> FSharpParser<'config> {
         Ok(())
     }
 
-    fn parse_lambda_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, checkpoint: (usize, usize)) -> Result<(), OakError> {
+    fn parse_lambda_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, checkpoint: (usize, usize)) -> Result<(), TextError> {
         state.expect(FSharpTokenType::Fun)?;
 
         // Parse parameters
@@ -326,7 +326,7 @@ impl<'config> FSharpParser<'config> {
         Ok(())
     }
 
-    fn parse_parenthesized_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, checkpoint: (usize, usize)) -> Result<(), OakError> {
+    fn parse_parenthesized_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, checkpoint: (usize, usize)) -> Result<(), TextError> {
         state.bump(); // LeftParen
         self.parse_expression(state)?;
         state.expect(FSharpTokenType::RightParen)?;
@@ -334,7 +334,7 @@ impl<'config> FSharpParser<'config> {
         Ok(())
     }
 
-    fn parse_list_or_array_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, checkpoint: (usize, usize)) -> Result<(), OakError> {
+    fn parse_list_or_array_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, checkpoint: (usize, usize)) -> Result<(), TextError> {
         state.bump(); // LeftBracket
 
         while state.not_at_end() && !state.at(FSharpTokenType::RightBracket) {
@@ -349,7 +349,7 @@ impl<'config> FSharpParser<'config> {
         Ok(())
     }
 
-    fn parse_record_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, checkpoint: (usize, usize)) -> Result<(), OakError> {
+    fn parse_record_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, checkpoint: (usize, usize)) -> Result<(), TextError> {
         state.bump(); // LeftBrace
 
         while state.not_at_end() && !state.at(FSharpTokenType::RightBrace) {
@@ -366,7 +366,7 @@ impl<'config> FSharpParser<'config> {
         Ok(())
     }
 
-    fn parse_identifier_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, checkpoint: (usize, usize)) -> Result<(), OakError> {
+    fn parse_identifier_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, checkpoint: (usize, usize)) -> Result<(), TextError> {
         state.bump(); // Identifier
 
         // Check for function application
@@ -380,13 +380,13 @@ impl<'config> FSharpParser<'config> {
         Ok(())
     }
 
-    fn parse_literal_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, checkpoint: (usize, usize)) -> Result<(), OakError> {
+    fn parse_literal_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, checkpoint: (usize, usize)) -> Result<(), TextError> {
         state.bump(); // Literal
         state.finish_at(checkpoint, FSharpElementType::Literal);
         Ok(())
     }
 
-    fn parse_type<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_type<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         // Simple type parsing
         while state.not_at_end() && !matches!(state.peek_kind(), Some(FSharpTokenType::Equal | FSharpTokenType::Newline)) {
             state.bump();

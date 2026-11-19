@@ -2,7 +2,7 @@
 
 use core::range::Range;
 
-use data_text_core::{Builder, BuilderCache, GreenNode, GreenTree, OakDiagnostics, OakError, Parser, SourceText, TextEdit, parser::session::ParseSession, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, GreenTree, TextDiagnostics, TextError, Parser, SourceText, TextEdit, parser::session::ParseSession, source::Source};
 
 use crate::{
     ast::{AbcAccidental, AbcBarline, AbcChord, AbcClef, AbcDecoration, AbcEvent, AbcFraction, AbcHeader, AbcKey, AbcMeasure, AbcMeter, AbcNote, AbcPitch, AbcRest, AbcRoot, AbcSlur, AbcTune, AbcTuplet, AbcUnsupported, AbcVoice},
@@ -15,7 +15,7 @@ use crate::{
 pub struct AbcBuilder;
 
 impl Builder<AbcLanguage> for AbcBuilder {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<AbcLanguage>) -> OakDiagnostics<AbcRoot> {
+    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<AbcLanguage>) -> TextDiagnostics<AbcRoot> {
         let parser = AbcParser;
         let mut cache = ParseSession::<AbcLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);
@@ -26,14 +26,14 @@ impl Builder<AbcLanguage> for AbcBuilder {
                 let source_text = SourceText::new(text);
                 let mut diagnostics = parse_result.diagnostics;
                 match self.build_root(green_tree, &source_text) {
-                    Ok(root) => OakDiagnostics { result: Ok(root), diagnostics },
+                    Ok(root) => TextDiagnostics { result: Ok(root), diagnostics },
                     Err(error) => {
                         diagnostics.push(error.clone());
-                        OakDiagnostics { result: Err(error), diagnostics }
+                        TextDiagnostics { result: Err(error), diagnostics }
                     }
                 }
             }
-            Err(error) => OakDiagnostics { result: Err(error), diagnostics: parse_result.diagnostics },
+            Err(error) => TextDiagnostics { result: Err(error), diagnostics: parse_result.diagnostics },
         }
     }
 }
@@ -84,9 +84,9 @@ struct LineState {
 }
 
 impl AbcBuilder {
-    fn build_root(&self, green_tree: &GreenNode<AbcLanguage>, source: &SourceText) -> Result<AbcRoot, OakError> {
+    fn build_root(&self, green_tree: &GreenNode<AbcLanguage>, source: &SourceText) -> Result<AbcRoot, TextError> {
         if green_tree.kind != AbcElementType::SourceFile {
-            return Err(OakError::internal_error("the ABC syntax tree is missing its root element"));
+            return Err(TextError::internal_error("the ABC syntax tree is missing its root element"));
         }
 
         let mut header = AbcHeader::default();
@@ -201,7 +201,7 @@ impl AbcBuilder {
 
     /// Parse one music line into the voice's measures.
     #[allow(clippy::too_many_arguments)]
-    fn parse_music_line(&self, body: &str, base: usize, header: &AbcHeader, tune: &mut TuneBuild, voice_index: usize, lyric_targets: &mut Vec<(usize, usize, usize)>, _source: &SourceText) -> Result<(), OakError> {
+    fn parse_music_line(&self, body: &str, base: usize, header: &AbcHeader, tune: &mut TuneBuild, voice_index: usize, lyric_targets: &mut Vec<(usize, usize, usize)>, _source: &SourceText) -> Result<(), TextError> {
         let unit = header.unit_note_length.unwrap_or_else(|| default_unit(header.meter));
         let bytes = body.as_bytes();
         let mut index = 0usize;
@@ -567,7 +567,7 @@ fn mark_slur_stop(tune: &mut TuneBuild, voice_index: usize) {
 }
 
 /// Parse one note; returns the note and how many bytes it consumed.
-fn parse_note(body: &str, start: usize, base: usize, state: &mut LineState, unit: AbcFraction) -> Result<Option<(AbcNote, usize)>, OakError> {
+fn parse_note(body: &str, start: usize, base: usize, state: &mut LineState, unit: AbcFraction) -> Result<Option<(AbcNote, usize)>, TextError> {
     let bytes = body.as_bytes();
     let mut index = start;
     let mut accidental = state.accidental.take();

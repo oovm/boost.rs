@@ -7,7 +7,7 @@ use crate::{
     lexer::{CoqLexer, token_type::CoqTokenType},
 };
 use data_text_core::{
-    GreenNode, OakError,
+    GreenNode, TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -27,7 +27,7 @@ impl<'config> CoqParser<'config> {
     }
 
     /// Parses a declaration (Theorem, Lemma, Definition).
-    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.bump(); // Theorem/Lemma/Definition
         state.expect(CoqTokenType::Identifier)?;
@@ -46,7 +46,7 @@ impl<'config> CoqParser<'config> {
     }
 
     /// Parses a proof block.
-    fn parse_proof<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_proof<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(CoqTokenType::Proof)?;
         if state.at(CoqTokenType::Dot) {
@@ -73,7 +73,7 @@ impl<'config> CoqParser<'config> {
     }
 
     /// Parses a term.
-    fn parse_term<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_term<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         while state.not_at_end() && !state.at(CoqTokenType::Dot) && !state.at(CoqTokenType::Semicolon) {
             state.bump()

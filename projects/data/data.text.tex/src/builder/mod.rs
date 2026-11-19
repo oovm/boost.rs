@@ -1,5 +1,5 @@
 use crate::{ast::*, language::TexLanguage, lexer::token_type::TexTokenType, parser::TexParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, OakError, Parser, RedNode, RedTree, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, TextEdit, source::Source};
 
 /// Names of TeX environments that represent math mode (AMS + classic).
 const TEX_MATH_ENVIRONMENTS: &[&str] =
@@ -27,27 +27,27 @@ impl<'config> Builder<TexLanguage> for TexBuilder<'config> {
 
         match parse_result.result {
             Ok(green_tree) => match self.build_root_internal(green_tree, source) {
-                Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                 Err(build_error) => {
                     let mut diagnostics = parse_result.diagnostics;
                     diagnostics.push(build_error.clone());
-                    OakDiagnostics { result: Err(build_error), diagnostics }
+                    TextDiagnostics { result: Err(build_error), diagnostics }
                 }
             },
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> TexBuilder<'config> {
     /// Builds the root node of the TeX AST.
-    fn build_root_internal<S: Source + ?Sized>(&self, green_tree: &GreenNode<TexLanguage>, source: &S) -> Result<TexRoot, OakError> {
+    fn build_root_internal<S: Source + ?Sized>(&self, green_tree: &GreenNode<TexLanguage>, source: &S) -> Result<TexRoot, TextError> {
         let red_root = RedNode::new(green_tree, 0);
         self.build_content(red_root, source)
     }
 
     /// Builds the content of a node into a `TexRoot`.
-    fn build_content<S: Source + ?Sized>(&self, node: RedNode<TexLanguage>, source: &S) -> Result<TexRoot, OakError> {
+    fn build_content<S: Source + ?Sized>(&self, node: RedNode<TexLanguage>, source: &S) -> Result<TexRoot, TextError> {
         let mut items = Vec::new();
         let children: Vec<_> = node.children().collect();
 
@@ -72,7 +72,7 @@ impl<'config> TexBuilder<'config> {
         Ok(TexRoot { span: node.span().into(), items })
     }
 
-    fn build_item<S: Source + ?Sized>(&self, tree: RedTree<TexLanguage>, source: &S) -> Result<Option<TexItem>, OakError> {
+    fn build_item<S: Source + ?Sized>(&self, tree: RedTree<TexLanguage>, source: &S) -> Result<Option<TexItem>, TextError> {
         let kind: TexTokenType = tree.kind();
         match kind {
             TexTokenType::Command
@@ -231,7 +231,7 @@ impl<'config> TexBuilder<'config> {
         }
     }
 
-    fn build_superscript<S: Source + ?Sized>(&self, node: RedNode<TexLanguage>, source: &S) -> Result<TexSuperscript, OakError> {
+    fn build_superscript<S: Source + ?Sized>(&self, node: RedNode<TexLanguage>, source: &S) -> Result<TexSuperscript, TextError> {
         let mut content = TexRoot::new(node.span().into());
         for child in node.children() {
             let kind: TexTokenType = child.kind();
@@ -249,7 +249,7 @@ impl<'config> TexBuilder<'config> {
         })
     }
 
-    fn build_subscript<S: Source + ?Sized>(&self, node: RedNode<TexLanguage>, source: &S) -> Result<TexSubscript, OakError> {
+    fn build_subscript<S: Source + ?Sized>(&self, node: RedNode<TexLanguage>, source: &S) -> Result<TexSubscript, TextError> {
         let mut content = TexRoot::new(node.span().into());
         for child in node.children() {
             let kind: TexTokenType = child.kind();
@@ -267,7 +267,7 @@ impl<'config> TexBuilder<'config> {
         })
     }
 
-    fn build_command<S: Source + ?Sized>(&self, node: RedNode<TexLanguage>, source: &S) -> Result<TexCommand, OakError> {
+    fn build_command<S: Source + ?Sized>(&self, node: RedNode<TexLanguage>, source: &S) -> Result<TexCommand, TextError> {
         let mut name = String::new();
         let mut starred = false;
         let mut arguments = Vec::new();
@@ -370,11 +370,11 @@ impl<'config> TexBuilder<'config> {
         Ok(TexCommand { span: node.span().into(), name, starred, arguments })
     }
 
-    fn build_group<S: Source + ?Sized>(&self, node: RedNode<TexLanguage>, source: &S) -> Result<TexGroup, OakError> {
+    fn build_group<S: Source + ?Sized>(&self, node: RedNode<TexLanguage>, source: &S) -> Result<TexGroup, TextError> {
         Ok(TexGroup { span: node.span().into(), content: self.build_content(node, source)? })
     }
 
-    fn build_math<S: Source + ?Sized>(&self, node: RedNode<TexLanguage>, source: &S) -> Result<TexMath, OakError> {
+    fn build_math<S: Source + ?Sized>(&self, node: RedNode<TexLanguage>, source: &S) -> Result<TexMath, TextError> {
         let delimiter = match node.kind::<TexTokenType>() {
             TexTokenType::DisplayMath | TexTokenType::DoubleDollar => crate::ast::MathDelimiter::DoubleDollar,
             TexTokenType::InlineMath | TexTokenType::Dollar => crate::ast::MathDelimiter::Dollar,
@@ -385,7 +385,7 @@ impl<'config> TexBuilder<'config> {
         Ok(TexMath { span: node.span().into(), content: self.build_content(node, source)?, is_display: delimiter.is_display(), delimiter })
     }
 
-    fn build_left_right<S: Source + ?Sized>(&self, node: RedNode<TexLanguage>, source: &S) -> Result<TexLeftRightPair, OakError> {
+    fn build_left_right<S: Source + ?Sized>(&self, node: RedNode<TexLanguage>, source: &S) -> Result<TexLeftRightPair, TextError> {
         let mut left_delim = String::new();
         let mut right_delim = String::new();
         let mut content = TexRoot::new(node.span().into());
@@ -426,12 +426,12 @@ impl<'config> TexBuilder<'config> {
         Ok(TexLeftRightPair { span: node.span().into(), left_delim, right_delim, content })
     }
 
-    fn build_limits<S: Source + ?Sized>(&self, node: RedNode<TexLanguage>, _source: &S) -> Result<TexLimits, OakError> {
+    fn build_limits<S: Source + ?Sized>(&self, node: RedNode<TexLanguage>, _source: &S) -> Result<TexLimits, TextError> {
         let is_limits = node.kind::<TexTokenType>() == TexTokenType::Limits;
         Ok(TexLimits { span: node.span().into(), is_limits })
     }
 
-    fn build_environment<S: Source + ?Sized>(&self, node: RedNode<TexLanguage>, source: &S) -> Result<TexEnvironment, OakError> {
+    fn build_environment<S: Source + ?Sized>(&self, node: RedNode<TexLanguage>, source: &S) -> Result<TexEnvironment, TextError> {
         let mut name = String::new();
         let mut arguments = Vec::new();
         let mut content = TexRoot::new(node.span().into());
@@ -481,7 +481,7 @@ impl<'config> TexBuilder<'config> {
         Ok(TexEnvironment { span: node.span().into(), name, starred, is_math, arguments, content })
     }
 
-    fn build_row<S: Source + ?Sized>(&self, node: RedNode<TexLanguage>, source: &S) -> Result<TexRow, OakError> {
+    fn build_row<S: Source + ?Sized>(&self, node: RedNode<TexLanguage>, source: &S) -> Result<TexRow, TextError> {
         let mut cells = Vec::new();
         for child in node.children() {
             if child.kind::<TexTokenType>() == TexTokenType::Cell {
@@ -493,7 +493,7 @@ impl<'config> TexBuilder<'config> {
         Ok(TexRow { span: node.span().into(), cells })
     }
 
-    fn build_cell<S: Source + ?Sized>(&self, node: RedNode<TexLanguage>, source: &S) -> Result<TexCell, OakError> {
+    fn build_cell<S: Source + ?Sized>(&self, node: RedNode<TexLanguage>, source: &S) -> Result<TexCell, TextError> {
         Ok(TexCell { span: node.span().into(), content: self.build_content(node, source)? })
     }
 }

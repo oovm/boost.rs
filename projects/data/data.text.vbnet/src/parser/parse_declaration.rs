@@ -1,10 +1,10 @@
 use crate::{language::VbNetLanguage, lexer::token_type::VbNetTokenType, parser::element_type::VbNetElementType};
-use data_text_core::{OakError, parser::ParserState, source::Source};
+use data_text_core::{TextError, parser::ParserState, source::Source};
 
 use super::{State, VbNetParser};
 
 impl<'config> VbNetParser<'config> {
-    pub(crate) fn parse_namespace<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_namespace<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.skip_trivia(state);
         let checkpoint = state.checkpoint();
         state.expect(VbNetTokenType::Namespace)?;
@@ -26,7 +26,7 @@ impl<'config> VbNetParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_imports<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_imports<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.skip_trivia(state);
         let checkpoint = state.checkpoint();
         state.expect(VbNetTokenType::Imports)?;
@@ -45,7 +45,7 @@ impl<'config> VbNetParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_class<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_class<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.skip_trivia(state);
         let checkpoint = state.checkpoint();
         state.expect(VbNetTokenType::Class)?;
@@ -128,7 +128,7 @@ impl<'config> VbNetParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_interface<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_interface<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.skip_trivia(state);
         let checkpoint = state.checkpoint();
         state.expect(VbNetTokenType::Interface)?;
@@ -191,7 +191,7 @@ impl<'config> VbNetParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_structure<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_structure<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.skip_trivia(state);
         let checkpoint = state.checkpoint();
         state.expect(VbNetTokenType::Structure)?;
@@ -211,7 +211,7 @@ impl<'config> VbNetParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_enum<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_enum<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.skip_trivia(state);
         let checkpoint = state.checkpoint();
         state.expect(VbNetTokenType::Enum)?;
@@ -238,7 +238,7 @@ impl<'config> VbNetParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_module<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_module<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.skip_trivia(state);
         let checkpoint = state.checkpoint();
         state.expect(VbNetTokenType::Module)?;

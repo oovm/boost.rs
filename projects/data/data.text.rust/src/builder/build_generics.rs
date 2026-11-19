@@ -4,7 +4,7 @@ use data_text_core::{BuilderCache, RedNode, RedTree, SourceText};
 
 impl<'config> super::RustBuilder<'config> {
     /// Builds generic parameters and where clauses from a node's children.
-    pub fn build_generics_and_where(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Option<Generics>, data_text_core::OakError> {
+    pub fn build_generics_and_where(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Option<Generics>, data_text_core::TextError> {
         let mut params = Vec::new();
         let mut where_clause = None;
         let mut generics_span: Option<Range<usize>> = None;
@@ -64,7 +64,7 @@ impl<'config> super::RustBuilder<'config> {
         }
     }
 
-    fn parse_generic_params(&self, children: &[RedTree<RustLanguage>], source: &SourceText) -> Result<Vec<GenericParam>, data_text_core::OakError> {
+    fn parse_generic_params(&self, children: &[RedTree<RustLanguage>], source: &SourceText) -> Result<Vec<GenericParam>, data_text_core::TextError> {
         let mut params = Vec::new();
         let mut current_start = 0;
 
@@ -90,9 +90,9 @@ impl<'config> super::RustBuilder<'config> {
         Ok(params)
     }
 
-    fn parse_single_generic_param(&self, children: &[RedTree<RustLanguage>], source: &SourceText) -> Result<GenericParam, data_text_core::OakError> {
+    fn parse_single_generic_param(&self, children: &[RedTree<RustLanguage>], source: &SourceText) -> Result<GenericParam, data_text_core::TextError> {
         if children.is_empty() {
-            return Err(data_text_core::OakError::syntax_error("Empty generic parameter".to_string(), 0, None));
+            return Err(data_text_core::TextError::syntax_error("Empty generic parameter".to_string(), 0, None));
         }
 
         // Handle attributes (skipped for now but structure is here)
@@ -131,7 +131,7 @@ impl<'config> super::RustBuilder<'config> {
 
         let remaining = &children[i..];
         if remaining.is_empty() {
-            return Err(data_text_core::OakError::syntax_error("Generic parameter name missing after attributes".to_string(), children[0].span().start, None));
+            return Err(data_text_core::TextError::syntax_error("Generic parameter name missing after attributes".to_string(), children[0].span().start, None));
         }
 
         // Lifetime parameter: 'a: 'b + 'c
@@ -239,7 +239,7 @@ impl<'config> super::RustBuilder<'config> {
         Ok(GenericParam::Type { name, bounds, default })
     }
 
-    fn parse_type_param_bounds(&self, children: &[RedTree<RustLanguage>], source: &SourceText) -> Result<Vec<TypeParamBound>, data_text_core::OakError> {
+    fn parse_type_param_bounds(&self, children: &[RedTree<RustLanguage>], source: &SourceText) -> Result<Vec<TypeParamBound>, data_text_core::TextError> {
         let mut bounds = Vec::new();
         for child in children {
             match child {
@@ -255,7 +255,7 @@ impl<'config> super::RustBuilder<'config> {
         Ok(bounds)
     }
 
-    fn parse_where_clause(&self, children: &[RedTree<RustLanguage>], span: Range<usize>, source: &SourceText) -> Result<WhereClause, data_text_core::OakError> {
+    fn parse_where_clause(&self, children: &[RedTree<RustLanguage>], span: Range<usize>, source: &SourceText) -> Result<WhereClause, data_text_core::TextError> {
         let mut predicates = Vec::new();
         let mut current_start = 0;
 
@@ -280,7 +280,7 @@ impl<'config> super::RustBuilder<'config> {
         Ok(WhereClause { predicates, span })
     }
 
-    fn parse_where_predicate(&self, children: &[RedTree<RustLanguage>], source: &SourceText) -> Result<WherePredicate, data_text_core::OakError> {
+    fn parse_where_predicate(&self, children: &[RedTree<RustLanguage>], source: &SourceText) -> Result<WherePredicate, data_text_core::TextError> {
         let mut colon_idx = None;
         for (i, child) in children.iter().enumerate() {
             if let RedTree::Leaf(t) = child {
@@ -323,7 +323,7 @@ impl<'config> super::RustBuilder<'config> {
             Ok(WherePredicate::Type { bounded_ty, bounds })
         }
         else {
-            Err(data_text_core::OakError::syntax_error("Missing colon in where predicate".to_string(), children[0].span().start, None))
+            Err(data_text_core::TextError::syntax_error("Missing colon in where predicate".to_string(), children[0].span().start, None))
         }
     }
 }

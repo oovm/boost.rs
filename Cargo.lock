@@ -1217,9 +1217,9 @@ dependencies = [
 name = "data-binary-jvm"
 version = "0.1.0"
 dependencies = [
- "acorn-zip 0.0.1 (git+https://github.com/yggdrasil-language/acorn.rs?rev=beccbdf77374dbb2ca67395be19af3e2048c57ca)",
  "boost-source 0.1.0",
  "data-binary-core",
+ "data-binary-zip",
  "serde",
 ]
 
@@ -1284,7 +1284,7 @@ version = "0.1.0"
 name = "data-binary-wasm"
 version = "0.1.0"
 dependencies = [
- "data-compression",
+ "data-encoding",
  "serde",
 ]
 

@@ -3,7 +3,7 @@ use language_testing::lexing::LexerTester;
 use std::time::Duration;
 
 #[test]
-fn test_racket_lexer() -> Result<(), data_text_core::OakError> {
+fn test_racket_lexer() -> Result<(), data_text_core::TextError> {
     let here = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let tests = here.join("tests/lexer");
     let lexer = Lexer;

@@ -5,7 +5,7 @@ use crate::{
     lexer::token_type::GraphQLTokenType,
     parser::{GraphQLParser, element_type::GraphQLElementType},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, OakError, Parser, Range, RedNode, RedTree, SourceText, TextEdit, TokenType, builder::BuildOutput, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, Range, RedNode, RedTree, SourceText, TextEdit, TokenType, builder::BuildOutput, source::Source};
 
 /// AST builder for GraphQL.
 #[derive(Clone)]
@@ -34,21 +34,21 @@ impl<'config> Builder<GraphQLLanguage> for GraphQLBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> GraphQLBuilder<'config> {
-    pub(crate) fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, GraphQLLanguage>, source: &SourceText) -> Result<GraphQLRoot, OakError> {
+    pub(crate) fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, GraphQLLanguage>, source: &SourceText) -> Result<GraphQLRoot, TextError> {
         let root_node = RedNode::new(green_tree, 0);
         let mut definitions = Vec::new();
 
@@ -77,7 +77,7 @@ impl<'config> GraphQLBuilder<'config> {
         Ok(GraphQLRoot { document: Document { definitions, span: root_node.span() } })
     }
 
-    fn build_operation_definition<'a>(&self, node: RedNode<'a, GraphQLLanguage>, source: &SourceText) -> Result<OperationDefinition, OakError> {
+    fn build_operation_definition<'a>(&self, node: RedNode<'a, GraphQLLanguage>, source: &SourceText) -> Result<OperationDefinition, TextError> {
         let mut operation_type = OperationType::Query;
         let mut name = None;
 
@@ -97,7 +97,7 @@ impl<'config> GraphQLBuilder<'config> {
         Ok(OperationDefinition { operation_type, name, span: node.span() })
     }
 
-    fn build_fragment_definition<'a>(&self, node: RedNode<'a, GraphQLLanguage>, source: &SourceText) -> Result<FragmentDefinition, OakError> {
+    fn build_fragment_definition<'a>(&self, node: RedNode<'a, GraphQLLanguage>, source: &SourceText) -> Result<FragmentDefinition, TextError> {
         let mut name = String::new();
 
         for child in node.children() {
@@ -111,11 +111,11 @@ impl<'config> GraphQLBuilder<'config> {
         Ok(FragmentDefinition { name, span: node.span() })
     }
 
-    fn build_schema_definition<'a>(&self, node: RedNode<'a, GraphQLLanguage>, _source: &SourceText) -> Result<SchemaDefinition, OakError> {
+    fn build_schema_definition<'a>(&self, node: RedNode<'a, GraphQLLanguage>, _source: &SourceText) -> Result<SchemaDefinition, TextError> {
         Ok(SchemaDefinition { span: node.span() })
     }
 
-    fn build_type_definition<'a>(&self, node: RedNode<'a, GraphQLLanguage>, source: &SourceText) -> Result<TypeDefinition, OakError> {
+    fn build_type_definition<'a>(&self, node: RedNode<'a, GraphQLLanguage>, source: &SourceText) -> Result<TypeDefinition, TextError> {
         let mut name = String::new();
 
         for child in node.children() {

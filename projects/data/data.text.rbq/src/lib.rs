@@ -51,7 +51,7 @@ pub use crate::lsp::RbqLanguageService;
 pub use crate::mcp::serve_rbq_mcp;
 
 /// Parses a string into an RBQ AST.
-pub fn parse(input: &str) -> Result<RbqRoot, data_text_core::OakError> {
+pub fn parse(input: &str) -> Result<RbqRoot, data_text_core::TextError> {
     use data_text_core::{ParseSession, Parser, tree::RedTree};
 
     // Create language configuration
@@ -80,7 +80,7 @@ pub fn parse(input: &str) -> Result<RbqRoot, data_text_core::OakError> {
     // Get the red node from the red tree
     let red_node = match red_tree.as_node() {
         Some(node) => node,
-        None => return Err(data_text_core::OakError::custom_error("Root node not found")),
+        None => return Err(data_text_core::TextError::custom_error("Root node not found")),
     };
 
     // Convert the red tree to AST

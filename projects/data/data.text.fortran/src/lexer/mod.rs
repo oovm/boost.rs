@@ -2,7 +2,7 @@
 pub mod token_type;
 
 use crate::{language::FortranLanguage, lexer::token_type::FortranTokenType};
-use data_text_core::{Lexer, LexerCache, LexerState, OakError, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextError, lexer::LexOutput, source::Source};
 
 pub(crate) type State<'a, S> = LexerState<'a, S, FortranLanguage>;
 
@@ -29,7 +29,7 @@ impl<'config> FortranLexer<'config> {
         Self { config }
     }
 
-    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), OakError> {
+    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

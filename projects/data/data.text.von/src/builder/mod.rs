@@ -4,7 +4,7 @@ use crate::{
     lexer::{VonLexer, VonTokenType},
     parser::{VonElementType, VonParser},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, Lexer, OakDiagnostics, OakError, Parser, SourceText, TextEdit, parser::session::ParseSession, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Lexer, TextDiagnostics, TextError, Parser, SourceText, TextEdit, parser::session::ParseSession, source::Source};
 
 /// A builder for VON AST and diagnostic results.
 #[derive(Clone)]
@@ -20,7 +20,7 @@ impl<'config> VonBuilder<'config> {
 }
 
 impl<'config> Builder<VonLanguage> for VonBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<VonLanguage>) -> OakDiagnostics<VonRoot> {
+    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<VonLanguage>) -> TextDiagnostics<VonRoot> {
         let parser = VonParser::new(self.config);
         let lexer = VonLexer::new(self.config);
 
@@ -33,21 +33,21 @@ impl<'config> Builder<VonLanguage> for VonBuilder<'config> {
                 let text = source.get_text_in((0..source.length()).into());
                 let source_text = SourceText::new(text.into_owned());
                 match self.build_root(&green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> VonBuilder<'config> {
-    fn build_root<'a>(&self, green_tree: &GreenNode<'a, VonLanguage>, source: &SourceText) -> Result<VonRoot, OakError> {
+    fn build_root<'a>(&self, green_tree: &GreenNode<'a, VonLanguage>, source: &SourceText) -> Result<VonRoot, TextError> {
         // eprintln!("GreenTree: {:#?}", green_tree);
         let root_node = green_tree
             .children
@@ -56,13 +56,13 @@ impl<'config> VonBuilder<'config> {
                 data_text_core::GreenTree::Node(n) => Some(n),
                 data_text_core::GreenTree::Leaf(_) => None,
             })
-            .ok_or_else(|| OakError::unexpected_eof(0, None))?;
+            .ok_or_else(|| TextError::unexpected_eof(0, None))?;
 
         let value = self.build_value(root_node, 0, source)?;
         Ok(VonRoot { value })
     }
 
-    fn build_value<'a>(&self, node: &GreenNode<'a, VonLanguage>, offset: usize, source: &SourceText) -> Result<VonValue, OakError> {
+    fn build_value<'a>(&self, node: &GreenNode<'a, VonLanguage>, offset: usize, source: &SourceText) -> Result<VonValue, TextError> {
         let span: data_text_core::Range<usize> = (offset..offset + node.byte_length as usize).into();
 
         match node.kind {
@@ -121,7 +121,7 @@ impl<'config> VonBuilder<'config> {
                         }
                     }
                 }
-                let variant = variant.ok_or_else(|| OakError::expected_token("Variant", span.start, None))?;
+                let variant = variant.ok_or_else(|| TextError::expected_token("Variant", span.start, None))?;
                 Ok(VonValue::Enum(VonEnum { variant, payload, span }))
             }
             VonElementType::Value | VonElementType::ArrayElement | VonElementType::Root => {
@@ -164,7 +164,7 @@ impl<'config> VonBuilder<'config> {
                             // eprintln!("Parsing number: '{}' at span {:?}", text, n_span);
                             let clean_text = text.replace('_', "");
                             let value = clean_text.parse::<f64>().map_err(|e| {
-                                OakError::custom_error(format!(
+                                TextError::custom_error(format!(
                                     "Numeric parse failure: text='{}', error={:?}, span={:?}, source_around='{}'",
                                     text,
                                     e,
@@ -187,13 +187,13 @@ impl<'config> VonBuilder<'config> {
                         current_offset += l.length as usize;
                     }
                 }
-                Err(OakError::unexpected_eof(span.start, None))
+                Err(TextError::unexpected_eof(span.start, None))
             }
-            _ => Err(OakError::syntax_error(format!("Unexpected node kind: {:?}", node.kind), span.start, None)),
+            _ => Err(TextError::syntax_error(format!("Unexpected node kind: {:?}", node.kind), span.start, None)),
         }
     }
 
-    fn build_field<'a>(&self, node: &GreenNode<'a, VonLanguage>, offset: usize, source: &SourceText) -> Result<VonField, OakError> {
+    fn build_field<'a>(&self, node: &GreenNode<'a, VonLanguage>, offset: usize, source: &SourceText) -> Result<VonField, TextError> {
         let span: data_text_core::Range<usize> = (offset..offset + node.byte_length as usize).into();
 
         let mut name = None;
@@ -219,8 +219,8 @@ impl<'config> VonBuilder<'config> {
             }
         }
 
-        let name = name.ok_or_else(|| OakError::expected_token("Key", span.start, None))?;
-        let value = value.ok_or_else(|| OakError::expected_token("Value", span.start, None))?;
+        let name = name.ok_or_else(|| TextError::expected_token("Key", span.start, None))?;
+        let value = value.ok_or_else(|| TextError::expected_token("Value", span.start, None))?;
 
         Ok(VonField { name, value, span })
     }

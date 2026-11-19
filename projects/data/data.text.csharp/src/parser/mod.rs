@@ -5,7 +5,7 @@ use crate::language::CSharpLanguage;
 pub mod element_type;
 pub use element_type::CSharpElementType;
 use data_text_core::{
-    GreenNode, OakError,
+    GreenNode, TextError,
     parser::{
         ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer,
         pratt::{Associativity, Pratt, PrattParser, binary},
@@ -178,7 +178,7 @@ impl<'config> CSharpParser<'config> {
     ///
     /// This is the main dispatch method for the parser, routing to specific
     /// methods based on the next token in the stream.
-    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::CSharpTokenType;
         match state.peek_kind() {
             Some(CSharpTokenType::Namespace) => self.parse_namespace_declaration(state)?,
@@ -231,7 +231,7 @@ impl<'config> CSharpParser<'config> {
     /// Parses a `foreach` statement.
     ///
     /// Format: `foreach (Type var in collection) statement`
-    fn parse_foreach_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_foreach_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::CSharpTokenType;
         let cp = state.checkpoint();
         state.bump(); // foreach
@@ -247,7 +247,7 @@ impl<'config> CSharpParser<'config> {
     }
 
     /// Parses a `namespace` declaration.
-    fn parse_namespace_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_namespace_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::CSharpTokenType;
         let cp = state.checkpoint();
         state.expect(CSharpTokenType::Namespace).ok();
@@ -267,7 +267,7 @@ impl<'config> CSharpParser<'config> {
     }
 
     /// Parses a `using` directive.
-    fn parse_using_directive<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_using_directive<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::CSharpTokenType;
         let cp = state.checkpoint();
         state.expect(CSharpTokenType::Using).ok();
@@ -280,7 +280,7 @@ impl<'config> CSharpParser<'config> {
     }
 
     /// Parses an accessor block (e.g., `{ get; set; }` for properties).
-    fn parse_accessor_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_accessor_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::CSharpTokenType;
         state.expect(CSharpTokenType::LeftBrace).ok();
         while state.not_at_end() && !state.at(CSharpTokenType::RightBrace) {
@@ -304,7 +304,7 @@ impl<'config> CSharpParser<'config> {
     }
 
     /// Parses a declaration (class, interface, struct, enum, record, delegate, event, field, property, or method).
-    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::CSharpTokenType;
         let cp = state.checkpoint();
 
@@ -455,7 +455,7 @@ impl<'config> CSharpParser<'config> {
     }
 
     /// Parses an `if` statement.
-    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::CSharpTokenType;
         let cp = state.checkpoint();
         state.bump(); // if
@@ -471,7 +471,7 @@ impl<'config> CSharpParser<'config> {
     }
 
     /// Parses a `while` statement.
-    fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::CSharpTokenType;
         let cp = state.checkpoint();
         state.bump(); // while
@@ -484,7 +484,7 @@ impl<'config> CSharpParser<'config> {
     }
 
     /// Parses a `for` statement.
-    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::CSharpTokenType;
         let cp = state.checkpoint();
         state.bump(); // for
@@ -497,7 +497,7 @@ impl<'config> CSharpParser<'config> {
     }
 
     /// Parses a block statement enclosed in braces `{ ... }`.
-    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::CSharpTokenType;
         let cp = state.checkpoint();
         state.expect(CSharpTokenType::LeftBrace).ok();
@@ -510,7 +510,7 @@ impl<'config> CSharpParser<'config> {
     }
 
     /// Parses a `return` statement.
-    fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::CSharpTokenType;
         let cp = state.checkpoint();
         state.bump(); // return
@@ -549,7 +549,7 @@ impl<'config> CSharpParser<'config> {
     }
 
     /// Parses a `switch` statement.
-    fn parse_switch_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_switch_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::CSharpTokenType;
         let cp = state.checkpoint();
         state.bump(); // switch
@@ -587,7 +587,7 @@ impl<'config> CSharpParser<'config> {
     }
 
     /// Parses a `try` statement with optional `catch` and `finally` blocks.
-    fn parse_try_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_try_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::CSharpTokenType;
         let cp = state.checkpoint();
         state.bump(); // try

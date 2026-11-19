@@ -4,7 +4,7 @@ pub mod token_type;
 
 use crate::{language::IdlLanguage, lexer::token_type::IdlTokenType};
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError, Source,
+    Lexer, LexerCache, LexerState, TextError, Source,
     lexer::{LexOutput, WhitespaceConfig},
     source::TextEdit,
 };
@@ -38,7 +38,7 @@ impl<'config> IdlLexer<'config> {
     }
 
     /// Main lexing loop
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

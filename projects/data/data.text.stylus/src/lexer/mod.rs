@@ -3,7 +3,7 @@
 pub mod token_type;
 
 use crate::{language::StylusLanguage, lexer::token_type::StylusTokenType};
-use data_text_core::{Lexer, LexerCache, LexerState, OakError, TextEdit, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextError, TextEdit, lexer::LexOutput, source::Source};
 
 pub(crate) type State<'a, S> = LexerState<'a, S, StylusLanguage>;
 
@@ -305,7 +305,7 @@ impl<'config> StylusLexer<'config> {
 
 impl<'config> StylusLexer<'config> {
     /// Run the lexer
-    fn run<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), OakError> {
+    fn run<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

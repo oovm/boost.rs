@@ -1,17 +1,17 @@
 use crate::{lexer::token_type::DejavuTokenType, parser::element_type::DejavuElementType};
-use data_text_core::{GreenNode, OakError, source::Source};
+use data_text_core::{GreenNode, TextError, source::Source};
 
 use super::State;
 
 impl<'config> super::DejavuParser<'config> {
-    pub(crate) fn parse_expression_internal<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, _precedence: u8) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, OakError> {
+    pub(crate) fn parse_expression_internal<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, _precedence: u8) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         self.parse_primary_expression(state)?;
         // 暂时简化处理，跳过 postfix 和 filter 解析
         Ok(state.finish_at(cp, DejavuElementType::Expression))
     }
 
-    fn parse_primary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_primary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         if state.at(DejavuTokenType::Identifier) {
             let cp = state.checkpoint();
             let token = state.current().unwrap();
@@ -59,7 +59,7 @@ impl<'config> super::DejavuParser<'config> {
         Ok(())
     }
 
-    fn parse_translate_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_translate_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         // 解析翻译键
         if state.at(DejavuTokenType::StringLiteral) {
             state.bump(); // 消耗字符串字面量
@@ -87,7 +87,7 @@ impl<'config> super::DejavuParser<'config> {
         Ok(())
     }
 
-    fn parse_filter_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_filter_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.at(DejavuTokenType::Pipe) {
             let cp = state.checkpoint();
             state.bump(); // 消耗 |> 操作符
@@ -120,7 +120,7 @@ impl<'config> super::DejavuParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_template_code<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, OakError> {
+    pub(crate) fn parse_template_code<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         // 接受 CodeStart 或 TemplateControlStart
@@ -131,7 +131,7 @@ impl<'config> super::DejavuParser<'config> {
             state.expect(DejavuTokenType::TemplateControlStart)?;
         }
         else {
-            return Err(OakError::custom_error("Expected CodeStart or TemplateControlStart"));
+            return Err(TextError::custom_error("Expected CodeStart or TemplateControlStart"));
         }
 
         self.parse_expression_internal(state, 0)?;
@@ -147,7 +147,7 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, DejavuElementType::Interpolation))
     }
 
-    pub(crate) fn parse_template_comment<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, OakError> {
+    pub(crate) fn parse_template_comment<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         state.expect(DejavuTokenType::TemplateCommentStart)?;
         while state.not_at_end() && !state.at(DejavuTokenType::TemplateCommentEnd) {

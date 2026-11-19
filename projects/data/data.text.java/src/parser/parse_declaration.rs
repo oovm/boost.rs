@@ -4,7 +4,7 @@ use crate::{
     parser::{State, element_type::JavaElementType},
 };
 use data_text_core::{
-    OakError,
+    TextError,
     parser::pratt::{Pratt, PrattParser},
     source::Source,
 };
@@ -25,7 +25,7 @@ pub trait DeclarationParser: Pratt<JavaLanguage> {
     }
 
     /// Parse a block statement
-    fn parse_block_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError>
+    fn parse_block_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError>
     where
         Self: Sized,
     {
@@ -33,7 +33,7 @@ pub trait DeclarationParser: Pratt<JavaLanguage> {
     }
 
     /// Parse a declaration (class, interface, enum, method, field, etc.)
-    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError>
+    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError>
     where
         Self: Sized,
     {
@@ -189,7 +189,7 @@ pub trait DeclarationParser: Pratt<JavaLanguage> {
     }
 
     /// Parse a package declaration
-    fn parse_package_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_package_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use JavaTokenType::*;
         let cp = state.checkpoint();
         state.expect(Package).ok();
@@ -209,7 +209,7 @@ pub trait DeclarationParser: Pratt<JavaLanguage> {
     }
 
     /// Parse an import declaration
-    fn parse_import_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_import_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use JavaTokenType::*;
         let cp = state.checkpoint();
         state.expect(Import).ok();
@@ -232,7 +232,7 @@ pub trait DeclarationParser: Pratt<JavaLanguage> {
     }
 
     /// Parse an annotation
-    fn parse_annotation<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError>
+    fn parse_annotation<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError>
     where
         Self: Sized,
     {
@@ -259,7 +259,7 @@ pub trait DeclarationParser: Pratt<JavaLanguage> {
     }
 
     /// Parse a type (primitive or reference type)
-    fn parse_type<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_type<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use JavaTokenType::*;
         self.skip_trivia(state);
         let cp = state.checkpoint();
@@ -299,7 +299,7 @@ pub trait DeclarationParser: Pratt<JavaLanguage> {
     }
 
     /// Parse type parameters for generics
-    fn parse_type_parameters<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_type_parameters<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use JavaTokenType::*;
         self.skip_trivia(state);
         if state.at(LeftAngle) {
@@ -328,7 +328,7 @@ pub trait DeclarationParser: Pratt<JavaLanguage> {
     }
 
     /// Parse a variable declaration
-    fn parse_variable_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError>
+    fn parse_variable_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError>
     where
         Self: Sized,
     {

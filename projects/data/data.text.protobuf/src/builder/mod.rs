@@ -4,7 +4,7 @@ use crate::{
     parser::{ProtobufParser, element_type::ProtobufElementType},
 };
 use data_text_core::{
-    GreenNode, GreenTree, OakDiagnostics, OakError, SourceText,
+    GreenNode, GreenTree, TextDiagnostics, TextError, SourceText,
     builder::{BuildOutput, Builder, BuilderCache},
     parser::Parser,
     source::{Source, TextEdit},
@@ -34,21 +34,21 @@ impl<'config> Builder<ProtobufLanguage> for ProtobufBuilder<'config> {
                 let text = source.get_text_in((0..source.length()).into());
                 let source_text = SourceText::new(text.into_owned());
                 match self.build_root(&green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(e) => OakDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
+            Err(e) => TextDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> ProtobufBuilder<'config> {
-    fn build_root(&self, green_tree: &GreenNode<ProtobufLanguage>, source: &SourceText) -> Result<ProtobufRoot, OakError> {
+    fn build_root(&self, green_tree: &GreenNode<ProtobufLanguage>, source: &SourceText) -> Result<ProtobufRoot, TextError> {
         let mut definitions = Vec::new();
         let mut current_offset = 0;
 
@@ -69,7 +69,7 @@ impl<'config> ProtobufBuilder<'config> {
         Ok(ProtobufRoot { definitions })
     }
 
-    fn build_definition(&self, node: &GreenNode<ProtobufLanguage>, offset: usize, source: &SourceText) -> Result<Option<Definition>, OakError> {
+    fn build_definition(&self, node: &GreenNode<ProtobufLanguage>, offset: usize, source: &SourceText) -> Result<Option<Definition>, TextError> {
         let span = data_text_core::Range { start: offset, end: offset + node.byte_length as usize };
 
         match node.kind {

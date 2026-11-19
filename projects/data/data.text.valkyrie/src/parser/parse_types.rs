@@ -36,7 +36,7 @@ fn is_type_name_token(kind: &ValkyrieTokenType) -> bool {
 ///
 /// 必须产出 `NamePath` 节点；分隔符同时接受 `.` 与 `::`。
 /// 遇到 turbofish `::<` 时停在 `::` 之前。禁止只 bump 首段后把后续段摊成 Type 叶子。
-fn parse_type_name_path<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+fn parse_type_name_path<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     if let Some(token) = state.current() {
         if is_type_name_token(&token.kind) {
@@ -66,7 +66,7 @@ fn parse_type_name_path<S: data_text_core::Source + ?Sized>(state: &mut State<'_
 }
 
 /// Parse a type
-pub(crate) fn parse_type<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_type<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     if state.at(ValkyrieTokenType::BracketL) {
         state.bump();
@@ -150,7 +150,7 @@ pub(crate) fn parse_type<S: data_text_core::Source + ?Sized>(state: &mut State<'
 /// Parse micro/mezzo parameter generics: prefer `micro wrap<T>(...)`, also accept `micro wrap::<T>(...)`.
 ///
 /// Distinct from type application `Envelope<T>` and call-site turbofish `foo::<T>()`.
-pub(crate) fn parse_micro_generic_parameter_clause<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_micro_generic_parameter_clause<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     if state.at(ValkyrieTokenType::ColonColon) && state.peek_non_trivia_kind_at(1) == Some(ValkyrieTokenType::LessThan) {
         state.bump();
     }
@@ -161,12 +161,12 @@ pub(crate) fn parse_micro_generic_parameter_clause<S: data_text_core::Source + ?
 }
 
 /// Legacy name alias.
-pub(crate) fn parse_term_generic_parameter_clause<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_term_generic_parameter_clause<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     parse_micro_generic_parameter_clause(state)
 }
 
 /// Parse type-level generic parameter lists for type/unite/trait: `<T, U>`.
-pub(crate) fn parse_generic_parameter_list<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_generic_parameter_list<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     state.bump();
     while state.not_at_end() && !state.at(ValkyrieTokenType::GreaterThan) {
@@ -202,7 +202,7 @@ pub(crate) fn parse_generic_parameter_list<S: data_text_core::Source + ?Sized>(s
 }
 
 /// Parse a generic parameter list
-pub(crate) fn parse_generic_argument_list<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_generic_argument_list<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     state.bump();
     // `Foo<>` / `type<>` 不是「无参应用」：空实参列表不产出任何节点却让类型位静默退化，
@@ -237,7 +237,7 @@ pub(crate) fn parse_generic_argument_list<S: data_text_core::Source + ?Sized>(st
 }
 
 /// Parse a parameter list
-pub(crate) fn parse_parameter_list<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_parameter_list<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     state.bump();
     while state.not_at_end() && !state.at(ValkyrieTokenType::ParenthesisR) {
@@ -271,12 +271,12 @@ pub(crate) fn parse_parameter_list<S: data_text_core::Source + ?Sized>(state: &m
 }
 
 // Functions below are defined in other modules
-pub(crate) fn parse_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     crate::parser::parse_expressions::parse_expression(state)
 }
 
 /// 约束使用独立节点，不能把 bound 的 Type 节点挂到返回类型位置。
-pub(crate) fn parse_where_clause<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_where_clause<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     if !state.at(ValkyrieTokenType::Keyword(ValkyrieKeywords::Where)) {
         return Ok(());
     }

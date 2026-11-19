@@ -1,5 +1,5 @@
 use crate::{CssParser, ast::CssRoot, language::CssLanguage};
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, Parser, RedNode, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, RedNode, SourceText, TextEdit, builder::BuildOutput, source::Source};
 
 /// A builder for CSS documents that coordinates parsing and AST construction.
 #[derive(Clone)]
@@ -25,9 +25,9 @@ impl Builder<CssLanguage> for CssBuilder {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 let ast_root = self.build_root(green_tree, &source_text);
-                OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics }
+                TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }

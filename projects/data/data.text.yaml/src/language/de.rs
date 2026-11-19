@@ -2,7 +2,7 @@ use serde::de::{self, Deserializer, SeqAccess, Visitor};
 use std::fmt;
 
 use crate::ast::{YamlMapping, YamlMappingEntry, YamlRoot, YamlScalar, YamlSequence, YamlValueNode};
-use data_text_core::OakError;
+use data_text_core::TextError;
 
 /// YAML 反序列化实现
 pub fn deserialize<'de, D>(deserializer: D) -> Result<YamlValueNode, D::Error>
@@ -192,7 +192,7 @@ impl<'de> Visitor<'de> for YamlDeserializer {
 }
 
 /// Deserializes a YAML string into a Rust type.
-pub fn from_str<'de, T>(yaml: &'de str) -> Result<T, OakError>
+pub fn from_str<'de, T>(yaml: &'de str) -> Result<T, TextError>
 where
     T: serde::Deserialize<'de>,
 {
@@ -341,7 +341,7 @@ impl YamlValueDeserializer {
 }
 
 impl<'de> serde::de::Deserializer<'de> for YamlValueDeserializer {
-    type Error = OakError;
+    type Error = TextError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
@@ -553,7 +553,7 @@ impl<'de> serde::de::Deserializer<'de> for YamlValueDeserializer {
     where
         V: serde::de::Visitor<'de>,
     {
-        Err(OakError::custom_error("Enums are not supported"))
+        Err(TextError::custom_error("Enums are not supported"))
     }
 
     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -583,7 +583,7 @@ impl YamlSequenceAccess {
 }
 
 impl<'de> serde::de::SeqAccess<'de> for YamlSequenceAccess {
-    type Error = OakError;
+    type Error = TextError;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
     where
@@ -616,7 +616,7 @@ impl YamlMapAccess {
 }
 
 impl<'de> serde::de::MapAccess<'de> for YamlMapAccess {
-    type Error = OakError;
+    type Error = TextError;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where

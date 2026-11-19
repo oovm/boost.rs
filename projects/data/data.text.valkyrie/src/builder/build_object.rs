@@ -1,8 +1,8 @@
 use crate::{ValkyrieLanguage, ast::*, builder::ValkyrieBuilder, lexer::token_type::ValkyrieTokenType};
-use data_text_core::{OakError, RedNode, RedTree, Source};
+use data_text_core::{TextError, RedNode, RedTree, Source};
 
 impl<'config> ValkyrieBuilder<'config> {
-    pub(crate) fn build_object<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_object<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let mut callee = None;
         let mut fields = Vec::new();
@@ -76,7 +76,7 @@ impl<'config> ValkyrieBuilder<'config> {
     ///
     /// Supports both new syntax (`:` separator) and deprecated syntax (`=` separator).
     /// When the deprecated `=` syntax is detected, a warning is logged.
-    fn extract_object_field<S: Source + ?Sized>(&self, node: &RedNode<ValkyrieLanguage>, source: &S) -> Result<Option<(Identifier, TermExpression)>, OakError> {
+    fn extract_object_field<S: Source + ?Sized>(&self, node: &RedNode<ValkyrieLanguage>, source: &S) -> Result<Option<(Identifier, TermExpression)>, TextError> {
         let mut field_name = None;
         let mut value = None;
         let mut separator_found = false;

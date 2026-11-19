@@ -8,7 +8,7 @@ use crate::{
     parser::element_type::SchemeElementType,
 };
 use data_text_core::{
-    OakError,
+    TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -26,7 +26,7 @@ impl<'config> SchemeParser<'config> {
         Self { config }
     }
 
-    fn parse_form<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_form<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         match state.peek_kind() {
             Some(SchemeTokenType::LeftParen) => self.parse_list(state),
             Some(SchemeTokenType::Quote_) | Some(SchemeTokenType::Quasiquote_) | Some(SchemeTokenType::Unquote_) | Some(SchemeTokenType::UnquoteSplicing_) => {
@@ -44,7 +44,7 @@ impl<'config> SchemeParser<'config> {
         }
     }
 
-    fn parse_list<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_list<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(SchemeTokenType::LeftParen).ok();
         while state.not_at_end() && !state.at(SchemeTokenType::RightParen) {

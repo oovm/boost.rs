@@ -7,7 +7,7 @@ use crate::{
     parser::element_type::JuliaElementType,
 };
 use data_text_core::{
-    OakError,
+    TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -38,7 +38,7 @@ impl<'config> JuliaParser<'config> {
         }
     }
 
-    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.skip_trivia(state);
         if state.at(JuliaTokenType::Function) {
             self.parse_function(state)?;
@@ -60,7 +60,7 @@ impl<'config> JuliaParser<'config> {
         Ok(())
     }
 
-    fn parse_if<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_if<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // if
         self.skip_trivia(state);
@@ -91,7 +91,7 @@ impl<'config> JuliaParser<'config> {
         Ok(())
     }
 
-    fn parse_for<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_for<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // for
         self.skip_trivia(state);
@@ -123,7 +123,7 @@ impl<'config> JuliaParser<'config> {
         Ok(())
     }
 
-    fn parse_function<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_function<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // function
         self.skip_trivia(state);
@@ -162,7 +162,7 @@ impl<'config> JuliaParser<'config> {
         Ok(())
     }
 
-    fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.skip_trivia(state);
         let cp = state.checkpoint();
 

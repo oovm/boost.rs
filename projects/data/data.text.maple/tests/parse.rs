@@ -11,7 +11,7 @@ fn parses_maple_minimal_expression() {
     assert!(!output.has_errors(), "parse errors: {:?}", output.diagnostics);
 }
 
-fn build(input: &str) -> data_text_core::OakDiagnostics<data_text_maple::ast::MapleRoot> {
+fn build(input: &str) -> data_text_core::TextDiagnostics<data_text_maple::ast::MapleRoot> {
     use data_text_core::Builder;
     let language = MapleLanguage::default();
     let source = SourceText::new(input);

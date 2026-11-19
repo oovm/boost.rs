@@ -35,20 +35,20 @@ impl<'config> Builder<LuaLanguage> for LuaBuilder<'config> {
 
         match parse_result.result {
             Ok(green_tree) => match self.build_root(green_tree.clone(), source) {
-                Ok(ast_root) => data_text_core::errors::OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                Ok(ast_root) => data_text_core::errors::TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                 Err(build_error) => {
                     let mut diagnostics = parse_result.diagnostics;
                     diagnostics.push(build_error.clone());
-                    data_text_core::errors::OakDiagnostics { result: Err(build_error), diagnostics }
+                    data_text_core::errors::TextDiagnostics { result: Err(build_error), diagnostics }
                 }
             },
-            Err(parse_error) => data_text_core::errors::OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => data_text_core::errors::TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> LuaBuilder<'config> {
-    fn build_root<S: Source + ?Sized>(&self, green_tree: GreenNode<LuaLanguage>, source: &S) -> Result<LuaRoot, data_text_core::OakError> {
+    fn build_root<S: Source + ?Sized>(&self, green_tree: GreenNode<LuaLanguage>, source: &S) -> Result<LuaRoot, data_text_core::TextError> {
         let mut statements = Vec::new();
         let mut offset = 0;
         for child in green_tree.children() {
@@ -65,7 +65,7 @@ impl<'config> LuaBuilder<'config> {
         Ok(LuaRoot { statements, span: (0..offset).into() })
     }
 
-    fn build_statement<S: Source + ?Sized>(&self, node: &GreenNode<LuaLanguage>, source: &S, offset: usize) -> Result<Option<LuaStatement>, data_text_core::OakError> {
+    fn build_statement<S: Source + ?Sized>(&self, node: &GreenNode<LuaLanguage>, source: &S, offset: usize) -> Result<Option<LuaStatement>, data_text_core::TextError> {
         match node.kind {
             LuaElementType::LocalStatement => {
                 let mut names = Vec::new();
@@ -413,7 +413,7 @@ impl<'config> LuaBuilder<'config> {
         }
     }
 
-    fn build_expression<S: Source + ?Sized>(&self, node: &GreenNode<LuaLanguage>, source: &S, offset: usize) -> Result<Option<LuaExpression>, data_text_core::OakError> {
+    fn build_expression<S: Source + ?Sized>(&self, node: &GreenNode<LuaLanguage>, source: &S, offset: usize) -> Result<Option<LuaExpression>, data_text_core::TextError> {
         match node.kind {
             LuaElementType::LiteralExpression => {
                 for child in node.children() {

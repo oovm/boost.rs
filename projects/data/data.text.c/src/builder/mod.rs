@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use crate::{CParser, ast::*, language::CLanguage, lexer::CTokenType, parser::CElementType};
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, OakError, Parser, RedNode, RedTree, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, builder::BuildOutput, source::Source};
 
 mod build_type_system;
 
@@ -33,22 +33,22 @@ impl<'config> Builder<CLanguage> for CBuilder<'config> {
                 // Build AST.
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> CBuilder<'config> {
     /// Builds the AST root from the green tree.
-    pub(crate) fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, CLanguage>, source: &SourceText) -> Result<CRoot, OakError> {
+    pub(crate) fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, CLanguage>, source: &SourceText) -> Result<CRoot, TextError> {
         let root_node = RedNode::new(green_tree, 0);
         let mut external_declarations = Vec::new();
 
@@ -66,7 +66,7 @@ impl<'config> CBuilder<'config> {
     }
 
     /// Builds a function definition from a red node.
-    fn build_function_definition(&self, node: RedNode<CLanguage>, source: &SourceText) -> Result<FunctionDefinition, OakError> {
+    fn build_function_definition(&self, node: RedNode<CLanguage>, source: &SourceText) -> Result<FunctionDefinition, TextError> {
         let mut declaration_specifiers = Vec::new();
         let mut declarator = None;
         let mut compound_statement = None;
@@ -104,11 +104,11 @@ impl<'config> CBuilder<'config> {
     }
 
     /// Builds a declaration from a red node.
-    fn build_declaration(&self, node: RedNode<CLanguage>, _source: &SourceText) -> Result<Declaration, OakError> {
+    fn build_declaration(&self, node: RedNode<CLanguage>, _source: &SourceText) -> Result<Declaration, TextError> {
         Ok(Declaration { declaration_specifiers: vec![], init_declarators: vec![], span: node.span() })
     }
 
-    fn build_compound_statement(&self, node: RedNode<CLanguage>, source: &SourceText) -> Result<CompoundStatement, OakError> {
+    fn build_compound_statement(&self, node: RedNode<CLanguage>, source: &SourceText) -> Result<CompoundStatement, TextError> {
         let mut block_items = Vec::new();
 
         self.collect_block_items(node, source, &mut block_items)?;
@@ -116,7 +116,7 @@ impl<'config> CBuilder<'config> {
         Ok(CompoundStatement { block_items, span: node.span() })
     }
 
-    fn collect_block_items(&self, node: RedNode<CLanguage>, source: &SourceText, out: &mut Vec<BlockItem>) -> Result<(), OakError> {
+    fn collect_block_items(&self, node: RedNode<CLanguage>, source: &SourceText, out: &mut Vec<BlockItem>) -> Result<(), TextError> {
         for child in node.children() {
             if let RedTree::Node(n) = child {
                 match n.green.kind {
@@ -135,12 +135,12 @@ impl<'config> CBuilder<'config> {
         Ok(())
     }
 
-    fn build_if_statement(&self, node: RedNode<CLanguage>, source: &SourceText) -> Result<SelectionStatement, OakError> {
+    fn build_if_statement(&self, node: RedNode<CLanguage>, source: &SourceText) -> Result<SelectionStatement, TextError> {
         let mut condition = None;
         let mut then_statement = None;
         let mut else_statement = None;
 
-        fn scan<'config>(builder: &CBuilder<'config>, node: &RedNode<CLanguage>, source: &SourceText, condition: &mut Option<Expression>, then_statement: &mut Option<Statement>, else_statement: &mut Option<Statement>) -> Result<(), OakError> {
+        fn scan<'config>(builder: &CBuilder<'config>, node: &RedNode<CLanguage>, source: &SourceText, condition: &mut Option<Expression>, then_statement: &mut Option<Statement>, else_statement: &mut Option<Statement>) -> Result<(), TextError> {
             for child in node.children() {
                 if let RedTree::Node(n) = child {
                     match n.green.kind {
@@ -188,7 +188,7 @@ impl<'config> CBuilder<'config> {
         })
     }
 
-    fn build_return_statement(&self, node: RedNode<CLanguage>, source: &SourceText) -> Result<JumpStatement, OakError> {
+    fn build_return_statement(&self, node: RedNode<CLanguage>, source: &SourceText) -> Result<JumpStatement, TextError> {
         let mut expression = None;
         for child in node.children() {
             match child {
@@ -209,7 +209,7 @@ impl<'config> CBuilder<'config> {
         Ok(JumpStatement::Return(expression, node.span()))
     }
 
-    fn build_expression(&self, node: RedNode<CLanguage>, source: &SourceText) -> Result<Option<Expression>, OakError> {
+    fn build_expression(&self, node: RedNode<CLanguage>, source: &SourceText) -> Result<Option<Expression>, TextError> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {

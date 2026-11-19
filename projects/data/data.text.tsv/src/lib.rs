@@ -31,14 +31,14 @@ pub type TsvRootNode = crate::ast::TsvRoot;
 /// Serializes the given value to a TSV string.
 #[cfg(feature = "serde")]
 /// Serializes the given value to a TSV string.
-pub fn to_string<T: ::serde::Serialize>(value: &T) -> Result<String, data_text_core::OakError> {
+pub fn to_string<T: ::serde::Serialize>(value: &T) -> Result<String, data_text_core::TextError> {
     data_text_dsv::to_string_with_config::<TSV_LANG, T>(value)
 }
 
 /// Deserializes a TSV string into a value of type `T`.
 #[cfg(feature = "serde")]
 /// Deserializes a TSV string into a value of type `T`.
-pub fn from_str<T: ::serde::de::DeserializeOwned>(s: &str) -> Result<T, data_text_core::OakError> {
+pub fn from_str<T: ::serde::de::DeserializeOwned>(s: &str) -> Result<T, data_text_core::TextError> {
     data_text_dsv::from_str_with_config::<TSV_LANG, T>(s)
 }
 
@@ -48,7 +48,7 @@ pub fn language() -> data_text_dsv::DsvLanguage {
 }
 
 /// Parses a TSV string into a `TsvRoot` AST.
-pub fn parse(tsv: &str) -> Result<crate::ast::TsvRoot, data_text_core::OakError> {
+pub fn parse(tsv: &str) -> Result<crate::ast::TsvRoot, data_text_core::TextError> {
     use data_text_core::{Builder, parser::session::ParseSession, source::SourceText};
     let builder = TsvBuilder::new();
     let source = SourceText::new(tsv.to_string());

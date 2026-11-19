@@ -7,7 +7,7 @@ use crate::{
     parser::element_type::MermaidElementType,
 };
 use data_text_core::{
-    OakError, TextEdit,
+    TextError, TextEdit,
     parser::{ParseCache, ParseOutput, Parser, ParserState},
     source::Source,
 };
@@ -70,7 +70,7 @@ impl<'a> MermaidParser<'a> {
 
     /// 逐行扫描源码，把 flowchart、sequence diagram 与 class diagram
     /// 段落分别包成 `Graph`、`SequenceDiagram`、`ClassDiagram` 元素。
-    fn parse_root<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), OakError> {
+    fn parse_root<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             match state.peek_kind() {
                 Some(MermaidTokenType::Newline) => state.bump(),

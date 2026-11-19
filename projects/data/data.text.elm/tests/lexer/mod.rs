@@ -1,10 +1,10 @@
-use data_text_core::{errors::OakError, source::Source};
+use data_text_core::{errors::TextError, source::Source};
 use data_text_elm::{ElmLanguage, ElmLexer};
 use language_testing::lexing::LexerTester;
 use std::{path::Path, time::Duration};
 
 #[test]
-fn test_elixir_lexer() -> Result<(), OakError> {
+fn test_elixir_lexer() -> Result<(), TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let language = ElmLanguage::default();
     let lexer = ElmLexer::new(&language);
@@ -41,7 +41,7 @@ fn test_peek_behavior() {
 }
 
 #[test]
-fn test_elixir_module_parsing() -> Result<(), OakError> {
+fn test_elixir_module_parsing() -> Result<(), TextError> {
     use data_text_core::{Lexer, SourceText};
 
     let source = SourceText::new("defmodule MyModule do\n  def hello do\n    :world\n  end\nend");

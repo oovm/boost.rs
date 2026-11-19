@@ -3,7 +3,7 @@ pub mod element_type;
 
 use crate::{language::FortranLanguage, parser::element_type::FortranElementType};
 use data_text_core::{
-    GreenNode, OakError,
+    GreenNode, TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };

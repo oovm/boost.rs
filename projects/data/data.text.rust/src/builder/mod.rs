@@ -2,7 +2,7 @@ use crate::RustParser;
 
 use crate::{ast::*, language::RustLanguage, lexer::RustTokenType, parser::RustElementType};
 use core::range::Range;
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, OakError, Parser, RedNode, RedTree, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, builder::BuildOutput, source::Source};
 use std::sync::Arc;
 
 mod build_generics;
@@ -31,28 +31,28 @@ impl<'config> Builder<RustLanguage> for RustBuilder<'config> {
     fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<RustLanguage>) -> BuildOutput<RustLanguage> {
         let parser = RustParser::new(self.config);
         let mut session = data_text_core::parser::session::ParseSession::<RustLanguage>::default();
-        let OakDiagnostics { result, diagnostics } = parser.parse(source, edits, &mut session);
+        let TextDiagnostics { result, diagnostics } = parser.parse(source, edits, &mut session);
 
         match result {
             Ok(green) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green, &source_text) {
-                    Ok(root) => OakDiagnostics { result: Ok(root), diagnostics },
+                    Ok(root) => TextDiagnostics { result: Ok(root), diagnostics },
                     Err(e) => {
                         let mut diagnostics = diagnostics;
                         diagnostics.push(e.clone());
-                        OakDiagnostics { result: Err(e), diagnostics }
+                        TextDiagnostics { result: Err(e), diagnostics }
                     }
                 }
             }
-            Err(e) => OakDiagnostics { result: Err(e), diagnostics },
+            Err(e) => TextDiagnostics { result: Err(e), diagnostics },
         }
     }
 }
 
 impl<'config> RustBuilder<'config> {
     /// Builds the root of the AST (the entire source file).
-    pub(crate) fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, RustLanguage>, source: &SourceText) -> Result<RustRoot, OakError> {
+    pub(crate) fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, RustLanguage>, source: &SourceText) -> Result<RustRoot, TextError> {
         let red_root = RedNode::new(green_tree, 0);
         let mut items = Vec::new();
 
@@ -113,7 +113,7 @@ impl<'config> RustBuilder<'config> {
     }
 
     /// Builds a function definition.
-    pub(crate) fn build_function(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Arc<Function>, OakError> {
+    pub(crate) fn build_function(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Arc<Function>, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Range { start: 0, end: 0 } };
         let mut params = Vec::new();
@@ -167,7 +167,7 @@ impl<'config> RustBuilder<'config> {
     }
 
     /// Builds a parameter list.
-    fn build_param_list(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Vec<Param>, OakError> {
+    fn build_param_list(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Vec<Param>, TextError> {
         let mut params = Vec::new();
         for child in node.children() {
             if let RedTree::Node(n) = child {
@@ -180,7 +180,7 @@ impl<'config> RustBuilder<'config> {
     }
 
     /// Builds a parameter.
-    fn build_param(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Param, OakError> {
+    fn build_param(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Param, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Range { start: 0, end: 0 } };
         let mut ty = Type::Path("_".to_string());
@@ -206,7 +206,7 @@ impl<'config> RustBuilder<'config> {
     }
 
     /// Builds a code block.
-    fn build_block(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Block, OakError> {
+    fn build_block(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Block, TextError> {
         let span = node.span();
         let mut statements = Vec::new();
 
@@ -241,7 +241,7 @@ impl<'config> RustBuilder<'config> {
     }
 
     /// Builds a let statement.
-    fn build_let_statement(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Statement, OakError> {
+    fn build_let_statement(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Statement, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Range { start: 0, end: 0 } };
         let mut ty = None;
@@ -257,7 +257,7 @@ impl<'config> RustBuilder<'config> {
                         match pattern {
                             Pattern::Ident(ident) => name = ident,
                             _ => {
-                                return Err(OakError::syntax_error("Expected identifier in let statement".to_string(), span.start, None));
+                                return Err(TextError::syntax_error("Expected identifier in let statement".to_string(), span.start, None));
                             }
                         }
                     }
@@ -282,7 +282,7 @@ impl<'config> RustBuilder<'config> {
     }
 
     /// Builds an expression statement.
-    fn build_expr_statement(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Statement, OakError> {
+    fn build_expr_statement(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Statement, TextError> {
         let span = node.span();
         let mut expr = Expr::Bool { value: false, span: span.clone().into() };
         let mut has_semicolon = false;
@@ -306,7 +306,7 @@ impl<'config> RustBuilder<'config> {
     }
 
     /// Builds an expression.
-    pub(crate) fn build_expr(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Expr, OakError> {
+    pub(crate) fn build_expr(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Expr, TextError> {
         let span = node.span();
 
         match node.green.kind {
@@ -319,7 +319,7 @@ impl<'config> RustBuilder<'config> {
                         }
                     }
                 }
-                Err(OakError::syntax_error("Invalid identifier expression".to_string(), span.start, None))
+                Err(TextError::syntax_error("Invalid identifier expression".to_string(), span.start, None))
             }
             RustElementType::LiteralExpression => {
                 for child in node.children() {
@@ -338,7 +338,7 @@ impl<'config> RustBuilder<'config> {
                         }
                     }
                 }
-                Err(OakError::syntax_error("Invalid literal expression".to_string(), span.start, None))
+                Err(TextError::syntax_error("Invalid literal expression".to_string(), span.start, None))
             }
             RustElementType::BinaryExpression => {
                 let mut left = None;
@@ -381,7 +381,7 @@ impl<'config> RustBuilder<'config> {
                     }
                 }
 
-                if let (Some(left), Some(op), Some(right)) = (left, op, right) { Ok(Expr::Binary { left, op, right, span: span.into() }) } else { Err(OakError::syntax_error("Invalid binary expression".to_string(), span.start, None)) }
+                if let (Some(left), Some(op), Some(right)) = (left, op, right) { Ok(Expr::Binary { left, op, right, span: span.into() }) } else { Err(TextError::syntax_error("Invalid binary expression".to_string(), span.start, None)) }
             }
             RustElementType::UnaryExpression => {
                 let mut op = None;
@@ -407,7 +407,7 @@ impl<'config> RustBuilder<'config> {
                     }
                 }
 
-                if let (Some(op), Some(operand)) = (op, operand) { Ok(Expr::Unary { op, expr: operand, span: span.into() }) } else { Err(OakError::syntax_error("Invalid unary expression".to_string(), span.start, None)) }
+                if let (Some(op), Some(operand)) = (op, operand) { Ok(Expr::Unary { op, expr: operand, span: span.into() }) } else { Err(TextError::syntax_error("Invalid unary expression".to_string(), span.start, None)) }
             }
             RustElementType::CallExpression => {
                 let mut func = None;
@@ -427,7 +427,7 @@ impl<'config> RustBuilder<'config> {
                     }
                 }
 
-                if let Some(func) = func { Ok(Expr::Call { callee: func, args, span: span.into() }) } else { Err(OakError::syntax_error("Invalid call expression".to_string(), span.start, None)) }
+                if let Some(func) = func { Ok(Expr::Call { callee: func, args, span: span.into() }) } else { Err(TextError::syntax_error("Invalid call expression".to_string(), span.start, None)) }
             }
             RustElementType::FieldExpression => {
                 let mut base = None;
@@ -447,7 +447,7 @@ impl<'config> RustBuilder<'config> {
                     }
                 }
 
-                if let Some(receiver) = base { Ok(Expr::Field { receiver, field, span: span.into() }) } else { Err(OakError::syntax_error("Invalid field expression".to_string(), span.start, None)) }
+                if let Some(receiver) = base { Ok(Expr::Field { receiver, field, span: span.into() }) } else { Err(TextError::syntax_error("Invalid field expression".to_string(), span.start, None)) }
             }
             RustElementType::IndexExpression => {
                 let mut base = None;
@@ -464,7 +464,7 @@ impl<'config> RustBuilder<'config> {
                     }
                 }
 
-                if let (Some(receiver), Some(index)) = (base, index) { Ok(Expr::Index { receiver, index, span: span.into() }) } else { Err(OakError::syntax_error("Invalid index expression".to_string(), span.start, None)) }
+                if let (Some(receiver), Some(index)) = (base, index) { Ok(Expr::Index { receiver, index, span: span.into() }) } else { Err(TextError::syntax_error("Invalid index expression".to_string(), span.start, None)) }
             }
             RustElementType::ParenthesizedExpression => {
                 for child in node.children() {
@@ -473,18 +473,18 @@ impl<'config> RustBuilder<'config> {
                         return Ok(Expr::Paren { expr: Box::new(inner_expr), span: span.into() });
                     }
                 }
-                Err(OakError::syntax_error("Invalid parenthesized expression".to_string(), span.start, None))
+                Err(TextError::syntax_error("Invalid parenthesized expression".to_string(), span.start, None))
             }
             RustElementType::BlockExpression => {
                 let block = self.build_block(node, source)?;
                 Ok(Expr::Block(block))
             }
-            _ => Err(OakError::syntax_error(format!("Unsupported expression type: {:?}", node.green.kind), span.start, None)),
+            _ => Err(TextError::syntax_error(format!("Unsupported expression type: {:?}", node.green.kind), span.start, None)),
         }
     }
 
     /// Builds a struct definition.
-    pub(crate) fn build_struct(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Arc<Struct>, OakError> {
+    pub(crate) fn build_struct(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Arc<Struct>, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Range { start: 0, end: 0 } };
         let mut fields = Vec::new();
@@ -508,7 +508,7 @@ impl<'config> RustBuilder<'config> {
     }
 
     /// Builds a list of fields (for structs or enums).
-    fn build_fields(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Vec<Field>, OakError> {
+    fn build_fields(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Vec<Field>, TextError> {
         let mut fields = Vec::new();
         for child in node.children() {
             if let RedTree::Node(n) = child {
@@ -521,7 +521,7 @@ impl<'config> RustBuilder<'config> {
     }
 
     /// Builds a single field.
-    fn build_field(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Field, OakError> {
+    fn build_field(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Field, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Range { start: 0, end: 0 } };
         let mut ty = Type::Path("_".to_string());
@@ -543,7 +543,7 @@ impl<'config> RustBuilder<'config> {
     }
 
     /// Builds an enum definition.
-    pub(crate) fn build_enum(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Arc<Enum>, OakError> {
+    pub(crate) fn build_enum(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Arc<Enum>, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Range { start: 0, end: 0 } };
         let mut variants = Vec::new();
@@ -567,7 +567,7 @@ impl<'config> RustBuilder<'config> {
     }
 
     /// Builds a list of enum variants.
-    fn build_variants(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Vec<Variant>, OakError> {
+    fn build_variants(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Vec<Variant>, TextError> {
         let mut variants = Vec::new();
         for child in node.children() {
             if let RedTree::Node(n) = child {
@@ -580,7 +580,7 @@ impl<'config> RustBuilder<'config> {
     }
 
     /// Builds a single enum variant.
-    fn build_variant(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Variant, OakError> {
+    fn build_variant(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Variant, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Range { start: 0, end: 0 } };
         let mut fields = None;
@@ -602,7 +602,7 @@ impl<'config> RustBuilder<'config> {
     }
 
     /// Builds a trait definition.
-    pub(crate) fn build_trait(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Arc<Trait>, OakError> {
+    pub(crate) fn build_trait(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Arc<Trait>, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Range { start: 0, end: 0 } };
         let mut items = Vec::new();
@@ -626,7 +626,7 @@ impl<'config> RustBuilder<'config> {
     }
 
     /// Builds items within a trait.
-    fn build_trait_items(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Vec<TraitItem>, OakError> {
+    fn build_trait_items(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Vec<TraitItem>, TextError> {
         let mut items = Vec::new();
         for child in node.children() {
             if let RedTree::Node(n) = child {
@@ -647,7 +647,7 @@ impl<'config> RustBuilder<'config> {
     }
 
     /// Builds an impl block.
-    pub(crate) fn build_impl(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Arc<Impl>, OakError> {
+    pub(crate) fn build_impl(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Arc<Impl>, TextError> {
         let span = node.span();
         let mut ty = Type::Path("_".to_string());
         let mut trait_ = None;
@@ -684,7 +684,7 @@ impl<'config> RustBuilder<'config> {
     }
 
     /// Builds items within an impl block.
-    fn build_impl_items(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Vec<ImplItem>, OakError> {
+    fn build_impl_items(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Vec<ImplItem>, TextError> {
         let mut items = Vec::new();
         for child in node.children() {
             if let RedTree::Node(n) = child {
@@ -709,7 +709,7 @@ impl<'config> RustBuilder<'config> {
     }
 
     /// Builds a module definition.
-    pub(crate) fn build_module(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Arc<Module>, OakError> {
+    pub(crate) fn build_module(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Arc<Module>, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Range { start: 0, end: 0 } };
         let mut items = Vec::new();
@@ -734,7 +734,7 @@ impl<'config> RustBuilder<'config> {
     }
 
     /// Builds a use statement.
-    pub(crate) fn build_use(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Arc<UseItem>, OakError> {
+    pub(crate) fn build_use(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Arc<UseItem>, TextError> {
         let span = node.span();
         let mut path = String::new();
 
@@ -751,7 +751,7 @@ impl<'config> RustBuilder<'config> {
     }
 
     /// Builds a constant definition.
-    pub(crate) fn build_const(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Arc<Const>, OakError> {
+    pub(crate) fn build_const(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Arc<Const>, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Range { start: 0, end: 0 } };
         let mut ty = Type::Path("_".to_string());
@@ -777,7 +777,7 @@ impl<'config> RustBuilder<'config> {
     }
 
     /// Builds a static definition.
-    pub(crate) fn build_static(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Arc<Static>, OakError> {
+    pub(crate) fn build_static(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Arc<Static>, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Range { start: 0, end: 0 } };
         let mut ty = Type::Path("_".to_string());
@@ -807,7 +807,7 @@ impl<'config> RustBuilder<'config> {
     }
 
     /// Builds a type alias.
-    pub(crate) fn build_type_alias(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Arc<TypeAlias>, OakError> {
+    pub(crate) fn build_type_alias(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Arc<TypeAlias>, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Range { start: 0, end: 0 } };
         let mut ty = Type::Path("_".to_string());
@@ -830,7 +830,7 @@ impl<'config> RustBuilder<'config> {
         Ok(type_alias)
     }
 
-    fn build_item_statement(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Item, OakError> {
+    fn build_item_statement(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Item, TextError> {
         for child in node.children() {
             if let RedTree::Node(n) = child {
                 match n.green.kind {
@@ -848,17 +848,17 @@ impl<'config> RustBuilder<'config> {
                 }
             }
         }
-        Err(OakError::syntax_error("Invalid item statement".to_string(), node.offset, None))
+        Err(TextError::syntax_error("Invalid item statement".to_string(), node.offset, None))
     }
 
-    fn build_type(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Type, OakError> {
+    fn build_type(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Type, TextError> {
         let span = node.span();
         match node.green.kind {
             _ => Ok(Type::Path(text(source, span.into()))),
         }
     }
 
-    fn build_pattern(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Pattern, OakError> {
+    fn build_pattern(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Pattern, TextError> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
@@ -883,7 +883,7 @@ impl<'config> RustBuilder<'config> {
         Ok(Pattern::Wildcard)
     }
 
-    fn build_argument_list(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Vec<Expr>, OakError> {
+    fn build_argument_list(&self, node: RedNode<RustLanguage>, source: &SourceText) -> Result<Vec<Expr>, TextError> {
         let mut args = Vec::new();
         for child in node.children() {
             if let RedTree::Node(n) = child {

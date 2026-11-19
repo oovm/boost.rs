@@ -6,7 +6,7 @@ use crate::{
 };
 use data_text_core::{
     Parser,
-    errors::OakError,
+    errors::TextError,
     parser::{ParseCache, ParseOutput, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -42,11 +42,11 @@ impl<'config> Parser<HandlebarsLanguage> for HandlebarsParser<'config> {
 }
 
 impl<'config> HandlebarsParser<'config> {
-    fn parse_item<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_item<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let token = match state.current() {
             Some(t) => t,
             None => {
-                let err = OakError::unexpected_eof(state.tokens.index(), state.source_id());
+                let err = TextError::unexpected_eof(state.tokens.index(), state.source_ref());
                 state.errors.push(err.clone());
                 return Err(err);
             }
@@ -75,7 +75,7 @@ impl<'config> HandlebarsParser<'config> {
         Ok(())
     }
 
-    fn parse_mustache<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_mustache<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(HandlebarsTokenType::Open)?;
 
@@ -88,7 +88,7 @@ impl<'config> HandlebarsParser<'config> {
         Ok(())
     }
 
-    fn parse_mustache_unescaped<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_mustache_unescaped<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(HandlebarsTokenType::OpenUnescaped)?;
 
@@ -101,7 +101,7 @@ impl<'config> HandlebarsParser<'config> {
         Ok(())
     }
 
-    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(HandlebarsTokenType::OpenBlock)?;
 
@@ -138,7 +138,7 @@ impl<'config> HandlebarsParser<'config> {
         Ok(())
     }
 
-    fn parse_inverse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_inverse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(HandlebarsTokenType::OpenInverseBlock)?;
 
@@ -166,7 +166,7 @@ impl<'config> HandlebarsParser<'config> {
         Ok(())
     }
 
-    fn parse_else_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_else_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(HandlebarsTokenType::Open)?;
         state.expect(HandlebarsTokenType::Else)?;
@@ -180,7 +180,7 @@ impl<'config> HandlebarsParser<'config> {
         Ok(())
     }
 
-    fn parse_raw_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_raw_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(HandlebarsTokenType::OpenRawBlock)?;
 
@@ -207,7 +207,7 @@ impl<'config> HandlebarsParser<'config> {
         Ok(())
     }
 
-    fn parse_partial<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_partial<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(HandlebarsTokenType::OpenPartial)?;
 
@@ -225,7 +225,7 @@ impl<'config> HandlebarsParser<'config> {
         Ok(())
     }
 
-    fn parse_comment<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_comment<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         if state.at(HandlebarsTokenType::OpenComment) {
             state.expect(HandlebarsTokenType::OpenComment)?;
@@ -245,7 +245,7 @@ impl<'config> HandlebarsParser<'config> {
         Ok(())
     }
 
-    fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
 
         self.parse_path(state)?;
@@ -259,7 +259,7 @@ impl<'config> HandlebarsParser<'config> {
         Ok(())
     }
 
-    fn parse_parameter<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_parameter<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         if state.at(HandlebarsTokenType::Identifier) {
             // Check if it's a named parameter: key=value
             let next = state.peek_at(1);
@@ -278,7 +278,7 @@ impl<'config> HandlebarsParser<'config> {
         self.parse_value(state)
     }
 
-    fn parse_value<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_value<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         if state.at(HandlebarsTokenType::Identifier) {
             self.parse_path(state)?
         }
@@ -290,14 +290,14 @@ impl<'config> HandlebarsParser<'config> {
         }
         else {
             let token = state.current();
-            let err = data_text_core::errors::OakError::unexpected_token(format!("{:?}", token.map(|t| t.kind)), state.tokens.index(), state.source_id());
+            let err = data_text_core::errors::TextError::unexpected_token(format!("{:?}", token.map(|t| t.kind)), state.tokens.index(), state.source_ref());
             state.errors.push(err.clone());
             return Err(err);
         }
         Ok(())
     }
 
-    fn parse_path<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_path<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(HandlebarsTokenType::Identifier)?;
 
@@ -310,7 +310,7 @@ impl<'config> HandlebarsParser<'config> {
         Ok(())
     }
 
-    fn parse_sub_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_sub_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(HandlebarsTokenType::LeftParen)?;
 

@@ -3,7 +3,7 @@ use crate::{
     lexer::{ValkyrieKeywords, token_type::ValkyrieTokenType},
 };
 use data_text_core::{
-    LexerState, OakError,
+    LexerState, TextError,
     lexer::{CommentConfig, WhitespaceConfig},
     source::Source,
 };
@@ -18,7 +18,7 @@ static VK_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { li
 
 impl crate::lexer::ValkyrieLexer<'_> {
     /// Runs the lexer on the given state.
-    pub(crate) fn run<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), OakError> {
+    pub(crate) fn run<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), TextError> {
         let mut template_mode = crate::lexer::lex_tgrammar::TemplateLexMode::default();
         while state.not_at_end() {
             if self.lex_tgrammar_fragment(state, &mut template_mode) {
@@ -32,17 +32,17 @@ impl crate::lexer::ValkyrieLexer<'_> {
     }
 
     /// 普通 Valkyrie 词法（子区间全量扫描，供 `<% ... %>` 指令内等场景）。
-    pub(crate) fn run_programming<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), OakError> {
+    pub(crate) fn run_programming<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), TextError> {
         self.run_programming_inner(state, false)
     }
 
     /// `<% ... %>` 指令内部词法（`end` 等 TGrammar 关键词仅在此上下文生效）。
-    pub(crate) fn run_template_directive_programming<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), OakError> {
+    pub(crate) fn run_template_directive_programming<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), TextError> {
         self.run_programming_inner(state, true)
     }
 
     /// 主词法循环用：每次仅前进一个 programming token，以便与 TGrammar 交错。
-    fn run_programming_once<S: Source + ?Sized>(&self, state: &mut State<'_, S>, template_directive: bool) -> Result<(), OakError> {
+    fn run_programming_once<S: Source + ?Sized>(&self, state: &mut State<'_, S>, template_directive: bool) -> Result<(), TextError> {
         let end = state.get_length();
         while state.get_position() < end {
             let start_pos = state.get_position();
@@ -75,7 +75,7 @@ impl crate::lexer::ValkyrieLexer<'_> {
         Ok(())
     }
 
-    fn run_programming_inner<S: Source + ?Sized>(&self, state: &mut State<'_, S>, template_directive: bool) -> Result<(), OakError> {
+    fn run_programming_inner<S: Source + ?Sized>(&self, state: &mut State<'_, S>, template_directive: bool) -> Result<(), TextError> {
         let end = state.get_length();
         while state.get_position() < end {
             self.run_programming_once(state, template_directive)?;
@@ -249,7 +249,7 @@ impl crate::lexer::ValkyrieLexer<'_> {
             state.advance(c.len_utf8());
         }
         state.add_token(ValkyrieTokenType::Error, start, state.get_position());
-        state.add_error(data_text_core::OakError::syntax_error("unterminated quoted literal: opening run of 1 `'` requires a closing run of 1".to_string(), start, None));
+        state.add_error(data_text_core::TextError::syntax_error("unterminated quoted literal: opening run of 1 `'` requires a closing run of 1".to_string(), start, None));
         true
     }
 
@@ -318,7 +318,7 @@ impl crate::lexer::ValkyrieLexer<'_> {
         }
 
         state.add_token(ValkyrieTokenType::Error, start, state.get_position());
-        state.add_error(data_text_core::OakError::syntax_error(format!("unterminated quoted literal: opening run of {quote_count} `{quote}` requires a closing run of {quote_count}"), start, None));
+        state.add_error(data_text_core::TextError::syntax_error(format!("unterminated quoted literal: opening run of {quote_count} `{quote}` requires a closing run of {quote_count}"), start, None));
         true
     }
 
@@ -395,7 +395,7 @@ impl crate::lexer::ValkyrieLexer<'_> {
                     }
                     else {
                         state.add_token(ValkyrieTokenType::Error, start, state.get_position());
-                        state.add_error(data_text_core::OakError::syntax_error("float literal exponent requires at least one digit", start, None));
+                        state.add_error(data_text_core::TextError::syntax_error("float literal exponent requires at least one digit", start, None));
                         return true;
                     }
                 }

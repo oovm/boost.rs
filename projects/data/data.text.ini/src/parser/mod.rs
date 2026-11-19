@@ -31,7 +31,7 @@ impl<'config> IniParser<'config> {
     }
 
     /// Parses an INI table or array of tables.
-    pub(crate) fn parse_table<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::errors::OakError> {
+    pub(crate) fn parse_table<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::errors::TextError> {
         let checkpoint = state.checkpoint();
         let kind = if state.at(IniTokenType::DoubleLeftBracket) {
             state.expect(IniTokenType::DoubleLeftBracket)?;
@@ -60,7 +60,7 @@ impl<'config> IniParser<'config> {
     }
 
     /// Parses an INI key-value pair.
-    pub(crate) fn parse_key_value<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::errors::OakError> {
+    pub(crate) fn parse_key_value<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::errors::TextError> {
         let checkpoint = state.checkpoint();
         self.parse_key(state)?;
 
@@ -83,7 +83,7 @@ impl<'config> IniParser<'config> {
     }
 
     /// Parses an INI key.
-    fn parse_key<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::errors::OakError> {
+    fn parse_key<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::errors::TextError> {
         let checkpoint = state.checkpoint();
         // Support dotted keys: a.b.c
         loop {
@@ -94,7 +94,7 @@ impl<'config> IniParser<'config> {
                 state.bump();
             }
             else {
-                let err = data_text_core::errors::OakError::expected_token("identifier or string", state.current_offset(), state.source_id());
+                let err = data_text_core::errors::TextError::expected_token("identifier or string", state.current_offset(), state.source_ref());
                 state.errors.push(err);
                 return Err(state.errors.last().unwrap().clone());
             }
@@ -113,7 +113,7 @@ impl<'config> IniParser<'config> {
     }
 
     /// Parses an INI value.
-    fn parse_value<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::errors::OakError> {
+    fn parse_value<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::errors::TextError> {
         let checkpoint = state.checkpoint();
         if self.config.value_style == IniValueStyle::LineRemainder {
             // Lexer emits a single String token (possibly empty) for the line remainder.
@@ -124,7 +124,7 @@ impl<'config> IniParser<'config> {
                 // `Key=` with nothing before EOF/newline — empty value node.
             }
             else {
-                let err = data_text_core::errors::OakError::expected_token("line value", state.current_offset(), state.source_id());
+                let err = data_text_core::errors::TextError::expected_token("line value", state.current_offset(), state.source_ref());
                 state.errors.push(err);
                 return Err(state.errors.last().unwrap().clone());
             }
@@ -133,7 +133,7 @@ impl<'config> IniParser<'config> {
         }
 
         let kind = state.peek_kind().ok_or_else(|| {
-            let err = data_text_core::errors::OakError::unexpected_eof(state.tokens.index(), state.source_id());
+            let err = data_text_core::errors::TextError::unexpected_eof(state.tokens.index(), state.source_ref());
             state.errors.push(err);
             state.errors.last().unwrap().clone()
         })?;
@@ -149,7 +149,7 @@ impl<'config> IniParser<'config> {
                 self.parse_inline_table(state)?;
             }
             _ => {
-                let err = data_text_core::errors::OakError::expected_token("value", state.current_offset(), state.source_id());
+                let err = data_text_core::errors::TextError::expected_token("value", state.current_offset(), state.source_ref());
                 state.errors.push(err);
                 return Err(state.errors.last().unwrap().clone());
             }
@@ -160,7 +160,7 @@ impl<'config> IniParser<'config> {
     }
 
     /// Parses an INI array.
-    fn parse_array<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::errors::OakError> {
+    fn parse_array<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::errors::TextError> {
         let checkpoint = state.checkpoint();
         state.expect(IniTokenType::LeftBracket)?;
         self.skip_trivia(state);
@@ -180,7 +180,7 @@ impl<'config> IniParser<'config> {
     }
 
     /// Parses an INI inline table.
-    fn parse_inline_table<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::errors::OakError> {
+    fn parse_inline_table<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::errors::TextError> {
         let checkpoint = state.checkpoint();
         state.expect(IniTokenType::LeftBrace)?;
         self.skip_trivia(state);

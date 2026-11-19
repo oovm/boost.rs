@@ -4,7 +4,7 @@ pub mod element_type;
 use crate::{language::WgslLanguage, lexer::token_type::WgslTokenType};
 use element_type::WgslElementType;
 use data_text_core::{
-    GreenNode, OakError, TokenType, UniversalTokenRole,
+    GreenNode, TextError, TokenType, UniversalTokenRole,
     parser::{Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -308,7 +308,7 @@ impl<'config> WgslParser<'config> {
 
         if let Some((text, offset)) = name {
             if !KNOWN_ATTRIBUTES.contains(&text.as_str()) {
-                let error = OakError::syntax_error(format!("unknown WGSL attribute `{text}`"), offset, state.source.source_id());
+                let error = TextError::syntax_error(format!("unknown WGSL attribute `{text}`"), offset, state.source.source_ref());
                 state.errors.push(error);
             }
         }

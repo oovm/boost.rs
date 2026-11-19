@@ -3,7 +3,7 @@
 /// This module defines the lexer for EJS (Embedded JavaScript) templates,
 /// responsible for tokenizing the input into meaningful tokens.
 use data_text_core::{
-    OakError,
+    TextError,
     lexer::{LexOutput, Lexer, LexerCache, LexerState},
     source::Source,
 };
@@ -47,7 +47,7 @@ impl<'config> EjsLexer<'config> {
     ///
     /// This method orchestrates the lexing process by alternating between
     /// text mode and code mode based on the EJS delimiters encountered.
-    fn run<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), OakError> {
+    fn run<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

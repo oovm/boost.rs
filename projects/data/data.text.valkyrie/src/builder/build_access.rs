@@ -5,10 +5,10 @@ use crate::{
     lexer::token_type::ValkyrieTokenType,
     parser::element_type::ValkyrieElementType,
 };
-use data_text_core::{OakError, RedNode, RedTree, Source};
+use data_text_core::{TextError, RedNode, RedTree, Source};
 
 impl<'config> ValkyrieBuilder<'config> {
-    pub(crate) fn build_field_expr<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_field_expr<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let (receiver, field) = utils::build_field_expr(&node, source, |n, s| self.build_expr(*n, s))?;
 
@@ -19,7 +19,7 @@ impl<'config> ValkyrieBuilder<'config> {
     ///
     /// Indexing has separate ordinal and cardinal semantics. Ordinal indexing uses square brackets `[ ]`, is 1-based; `1` means the first element.
     /// Not equivalent to cardinal indexing `⁅ ⁆` by default.
-    pub(crate) fn build_index<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_index<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let (receiver, index) = utils::build_index_expr(&node, source, |n, s| self.build_expr(*n, s), "Missing index")?;
 
@@ -30,14 +30,14 @@ impl<'config> ValkyrieBuilder<'config> {
     ///
     /// Cardinal indexing uses `⁅ ⁆` (ASCII alias `::[ ]`), is 0-based; `0` means the first element.
     /// AST variant remains `Offset`; semantics are cardinal indexing, not pointer arithmetic or "offset access" terminology.
-    pub(crate) fn build_offset<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_offset<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let (receiver, offset) = utils::build_index_expr(&node, source, |n, s| self.build_expr(*n, s), "Missing cardinal index")?;
 
         Ok(TermExpression::Offset { receiver, offset, span })
     }
 
-    pub(crate) fn build_turbofish<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_turbofish<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let mut expr = None;
         let mut arguments = Vec::new();
@@ -71,13 +71,13 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(TermExpression::Turbofish { expr, arguments, span })
     }
 
-    pub(crate) fn build_paren<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_paren<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let expr = utils::get_required_expr(&node, source, |n, s| self.build_expr(*n, s), "Missing parenthesized expression", span.start)?;
         Ok(TermExpression::Group { expr, span })
     }
 
-    pub(crate) fn build_cast<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_cast<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let mut expr = None;
         let mut ty = None;
@@ -102,7 +102,7 @@ impl<'config> ValkyrieBuilder<'config> {
     }
 
     /// `expr?`：后缀传播节点的子表达式是唯一操作数，`?` 本身不产生子节点。
-    pub(crate) fn build_try_propagate<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_try_propagate<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let mut operand = None;
         for child in node.children() {

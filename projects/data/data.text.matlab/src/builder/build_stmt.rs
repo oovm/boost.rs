@@ -5,7 +5,7 @@ use crate::{
     lexer::token_type::MatlabTokenType,
     parser::element_type::MatlabElementType,
 };
-use data_text_core::{OakError, RedNode, RedTree, Source};
+use data_text_core::{TextError, RedNode, RedTree, Source};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum IfPhase {
@@ -26,7 +26,7 @@ enum SwitchPhase {
 }
 
 impl<'config> MatlabBuilder<'config> {
-    pub(crate) fn build_stmt<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Statement, OakError> {
+    pub(crate) fn build_stmt<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Statement, TextError> {
         let span = node.span();
         match node.element_type() {
             MatlabElementType::IfStmt => self.build_if(node, source),
@@ -47,7 +47,7 @@ impl<'config> MatlabBuilder<'config> {
         }
     }
 
-    fn build_name_declaration<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S, is_global: bool) -> Result<Statement, OakError> {
+    fn build_name_declaration<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S, is_global: bool) -> Result<Statement, TextError> {
         let span = node.span();
         let mut names = Vec::new();
         for child in node.children() {
@@ -68,7 +68,7 @@ impl<'config> MatlabBuilder<'config> {
         if is_global { Ok(Statement::Global { names, span }) } else { Ok(Statement::Persistent { names, span }) }
     }
 
-    fn build_command<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Statement, OakError> {
+    fn build_command<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Statement, TextError> {
         let span = node.span();
         let mut name = None;
         let mut args = Vec::new();
@@ -97,7 +97,7 @@ impl<'config> MatlabBuilder<'config> {
         Ok(Statement::Command { name, args, span })
     }
 
-    fn build_if<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Statement, OakError> {
+    fn build_if<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Statement, TextError> {
         let span = node.span();
         let mut condition = None;
         let mut then_body = Vec::new();
@@ -147,7 +147,7 @@ impl<'config> MatlabBuilder<'config> {
         Ok(Statement::If { condition, then_body, elseifs, else_body, span })
     }
 
-    fn build_while<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Statement, OakError> {
+    fn build_while<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Statement, TextError> {
         let span = node.span();
         let mut condition = None;
         let mut body = Vec::new();
@@ -165,7 +165,7 @@ impl<'config> MatlabBuilder<'config> {
         Ok(Statement::While { condition, body, span })
     }
 
-    fn build_for<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Statement, OakError> {
+    fn build_for<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Statement, TextError> {
         let span = node.span();
         let mut header = None;
         let mut body = Vec::new();
@@ -183,7 +183,7 @@ impl<'config> MatlabBuilder<'config> {
         Ok(Statement::For { header, body, span })
     }
 
-    fn build_parfor<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Statement, OakError> {
+    fn build_parfor<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Statement, TextError> {
         let span = node.span();
         let mut header = None;
         let mut body = Vec::new();
@@ -201,7 +201,7 @@ impl<'config> MatlabBuilder<'config> {
         Ok(Statement::Parfor { header, body, span })
     }
 
-    fn build_spmd<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Statement, OakError> {
+    fn build_spmd<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Statement, TextError> {
         let span = node.span();
         let mut body = Vec::new();
         for child in node.children() {
@@ -212,7 +212,7 @@ impl<'config> MatlabBuilder<'config> {
         Ok(Statement::Spmd { body, span })
     }
 
-    fn build_switch<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Statement, OakError> {
+    fn build_switch<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Statement, TextError> {
         let span = node.span();
         let mut discriminant = None;
         let mut cases = Vec::new();
@@ -263,7 +263,7 @@ impl<'config> MatlabBuilder<'config> {
         Ok(Statement::Switch { discriminant, cases, otherwise, span })
     }
 
-    fn build_try<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Statement, OakError> {
+    fn build_try<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Statement, TextError> {
         let span = node.span();
         let mut body = Vec::new();
         let mut catch_body = Vec::new();
@@ -307,7 +307,7 @@ impl<'config> MatlabBuilder<'config> {
         Ok(Statement::Try { body, catch_name, catch_body, span })
     }
 
-    fn build_function<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Statement, OakError> {
+    fn build_function<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Statement, TextError> {
         let span = node.span();
         let mut header = None;
         let mut body = Vec::new();
@@ -325,7 +325,7 @@ impl<'config> MatlabBuilder<'config> {
         Ok(Statement::Function { header, body, span })
     }
 
-    fn build_return<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Statement, OakError> {
+    fn build_return<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S) -> Result<Statement, TextError> {
         let span = node.span();
         let mut value = None;
         for child in node.children() {

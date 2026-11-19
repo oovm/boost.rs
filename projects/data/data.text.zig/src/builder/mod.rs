@@ -4,7 +4,7 @@ use crate::{
     language::ZigLanguage,
     parser::{ZigParser, element_type::ZigElementType},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
 use std::sync::Arc;
 
 /// AST builder for the Zig language
@@ -21,7 +21,7 @@ impl<'config> ZigBuilder<'config> {
     }
 
     /// Builds the AST root node from the syntax tree
-    pub fn build_root(&self, green: &GreenNode<ZigLanguage>, source: &SourceText) -> Result<ZigRoot, data_text_core::OakError> {
+    pub fn build_root(&self, green: &GreenNode<ZigLanguage>, source: &SourceText) -> Result<ZigRoot, data_text_core::TextError> {
         let mut items = Vec::new();
         let red = RedNode::new(green, 0);
 
@@ -63,7 +63,7 @@ impl<'config> ZigBuilder<'config> {
         Ok(ZigRoot { items })
     }
 
-    fn build_block(&self, node: RedNode<ZigLanguage>, source: &SourceText) -> Result<Arc<Block>, data_text_core::OakError> {
+    fn build_block(&self, node: RedNode<ZigLanguage>, source: &SourceText) -> Result<Arc<Block>, data_text_core::TextError> {
         let mut statements = Vec::new();
 
         for child in node.children() {
@@ -76,7 +76,7 @@ impl<'config> ZigBuilder<'config> {
         Ok(Arc::new(Block { statements, span: node.span().into() }))
     }
 
-    fn build_statement(&self, node: RedNode<ZigLanguage>, source: &SourceText) -> Result<Statement, data_text_core::OakError> {
+    fn build_statement(&self, node: RedNode<ZigLanguage>, source: &SourceText) -> Result<Statement, data_text_core::TextError> {
         let kind = node.green.kind;
         match kind {
             ZigElementType::Block => Ok(Statement::Block(self.build_block(node, source)?)),
@@ -131,13 +131,13 @@ impl<'config> ZigBuilder<'config> {
         }
     }
 
-    fn build_declaration(&self, node: RedNode<ZigLanguage>, _source: &SourceText) -> Result<Arc<Declaration>, data_text_core::OakError> {
+    fn build_declaration(&self, node: RedNode<ZigLanguage>, _source: &SourceText) -> Result<Arc<Declaration>, data_text_core::TextError> {
         let span = node.span();
         let decl = Arc::new(Declaration { name: "decl".to_string(), is_comptime: false, span: span.into() });
         Ok(decl)
     }
 
-    fn build_container_field(&self, node: RedNode<ZigLanguage>, _source: &SourceText) -> Result<Arc<ContainerField>, data_text_core::OakError> {
+    fn build_container_field(&self, node: RedNode<ZigLanguage>, _source: &SourceText) -> Result<Arc<ContainerField>, data_text_core::TextError> {
         let span = node.span();
         let field = Arc::new(ContainerField { name: "field".to_string(), span: span.into() });
         Ok(field)
@@ -153,15 +153,15 @@ impl<'config> Builder<ZigLanguage> for ZigBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }

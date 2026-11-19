@@ -3,7 +3,7 @@ use language_testing::parsing::ParserTester;
 use std::{path::Path, time::Duration};
 
 #[test]
-fn test_ada_parser() -> Result<(), data_text_core::OakError> {
+fn test_ada_parser() -> Result<(), data_text_core::TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let language = AdaLanguage::default();
     let parser = AdaParser::new(&language);

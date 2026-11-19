@@ -5,7 +5,7 @@ use crate::{
     parser::{MermaidParser, element_type::MermaidElementType},
 };
 use data_text_core::{
-    Builder, BuilderCache, GreenNode, OakDiagnostics, Source, SourceText, TextEdit,
+    Builder, BuilderCache, GreenNode, TextDiagnostics, Source, SourceText, TextEdit,
     tree::{GreenLeaf, GreenTree},
 };
 use std::collections::HashMap;
@@ -43,7 +43,7 @@ impl<'config> MermaidBuilder<'config> {
     }
 
     /// Builds a Mermaid root from a green tree and source text.
-    pub fn build_root(&self, green_tree: &GreenNode<MermaidLanguage>, source: &SourceText) -> Result<MermaidRoot, data_text_core::OakError> {
+    pub fn build_root(&self, green_tree: &GreenNode<MermaidLanguage>, source: &SourceText) -> Result<MermaidRoot, data_text_core::TextError> {
         let mut diagrams = Vec::new();
         let mut offset = 0usize;
 
@@ -905,9 +905,9 @@ impl<'config> Builder<MermaidLanguage> for MermaidBuilder<'config> {
         match parse_result.result {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
-                OakDiagnostics { result: self.build_root(green_tree, &source_text), diagnostics: parse_result.diagnostics }
+                TextDiagnostics { result: self.build_root(green_tree, &source_text), diagnostics: parse_result.diagnostics }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }

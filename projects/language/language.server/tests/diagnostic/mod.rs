@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use data_text_core::Arc;
 
-use boost_harness::{ByteRange, Diagnostic, DiagnosticCode, DiagnosticLabel, DiagnosticLocation, DiagnosticOrigin, DiagnosticSeverity, LabelRole, Message, SourceRef, terminal::SourceID};
+use boost_harness::diagnostic::{ByteRange, Diagnostic, DiagnosticCode, DiagnosticLabel, DiagnosticLocation, DiagnosticOrigin, DiagnosticSeverity, LabelRole, Message, SourceRef, terminal::SourceID};
 use language_server::{
     diagnostic::{SourceCache, SourceResolver, byte_index_to_position, position_to_byte_index, structured_to_protocol},
     types::{DiagnosticSeverity as ProtocolSeverity, TextPosition},
@@ -73,7 +73,7 @@ fn structured_text_diagnostic_to_protocol() {
 
 #[test]
 fn structured_member_diagnostic_uses_related_information() {
-    use boost_harness::{MappingPrecision, MemberPath, MemberSegment};
+    use boost_harness::diagnostic::{MappingPrecision, MemberPath, MemberSegment};
 
     let cache = SourceCache::default();
     let resolver = TestResolver::new(&SourceRef::new("acorn", "docx.zip").unwrap(), SourceID::default());

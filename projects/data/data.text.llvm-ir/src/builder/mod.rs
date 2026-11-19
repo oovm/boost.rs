@@ -4,7 +4,7 @@ use crate::{
     lexer::token_type::LLvmTokenType,
     parser::{LLirParser, element_type::LLvmElementType},
 };
-use data_text_core::{Builder, BuilderCache, OakDiagnostics, OakError, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
 
 /// A builder for converting LLVM IR green trees into an AST.
 pub struct LLirBuilder<'config> {
@@ -20,7 +20,7 @@ impl<'config> LLirBuilder<'config> {
 }
 
 impl<'config> Builder<LLvmLanguage> for LLirBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<LLvmLanguage>) -> OakDiagnostics<LLirRoot> {
+    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<LLvmLanguage>) -> TextDiagnostics<LLirRoot> {
         let parser = LLirParser::new(self.config);
         let parse_result = parser.parse(source, edits, cache);
 
@@ -28,21 +28,21 @@ impl<'config> Builder<LLvmLanguage> for LLirBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(RedNode::new(&green_tree, 0), &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> LLirBuilder<'config> {
-    fn build_root(&self, node: RedNode<LLvmLanguage>, source: &SourceText) -> Result<LLirRoot, OakError> {
+    fn build_root(&self, node: RedNode<LLvmLanguage>, source: &SourceText) -> Result<LLirRoot, TextError> {
         let mut items = vec![];
         for child in node.children() {
             if let RedTree::Node(node) = child {
@@ -67,7 +67,7 @@ impl<'config> LLirBuilder<'config> {
         Ok(LLirRoot { items, span: node.span() })
     }
 
-    fn build_global(&self, node: RedNode<LLvmLanguage>, source: &SourceText) -> Result<LLirGlobal, OakError> {
+    fn build_global(&self, node: RedNode<LLvmLanguage>, source: &SourceText) -> Result<LLirGlobal, TextError> {
         let mut name = String::new();
         let mut ty = String::new();
         let mut value = String::new();
@@ -107,7 +107,7 @@ impl<'config> LLirBuilder<'config> {
         Ok(LLirGlobal { name, ty, value, is_constant })
     }
 
-    fn build_function(&self, node: RedNode<LLvmLanguage>, source: &SourceText) -> Result<LLirFunction, OakError> {
+    fn build_function(&self, node: RedNode<LLvmLanguage>, source: &SourceText) -> Result<LLirFunction, TextError> {
         let mut name = String::new();
         let mut return_type = String::new();
         let mut parameters = vec![];
@@ -195,7 +195,7 @@ impl<'config> LLirBuilder<'config> {
         Ok(LLirFunction { name, return_type, parameters, blocks, span: node.span() })
     }
 
-    fn build_instruction(&self, node: RedNode<LLvmLanguage>, source: &SourceText) -> Result<LLirInstruction, OakError> {
+    fn build_instruction(&self, node: RedNode<LLvmLanguage>, source: &SourceText) -> Result<LLirInstruction, TextError> {
         let mut result = None;
         let mut opcode = String::new();
         let mut operands = vec![];

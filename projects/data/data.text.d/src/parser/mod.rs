@@ -39,7 +39,7 @@ impl<'config> DParser<'config> {
     }
 
     /// Parses a module declaration.
-    fn parse_module<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_module<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         state.bump(); // module
         self.skip_trivia(state);
@@ -58,7 +58,7 @@ impl<'config> DParser<'config> {
     }
 
     /// Parses an import declaration.
-    fn parse_import<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_import<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         state.bump(); // import
         self.skip_trivia(state);
@@ -77,7 +77,7 @@ impl<'config> DParser<'config> {
     }
 
     /// Parses a class definition.
-    fn parse_class<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_class<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         state.bump(); // class
         self.skip_trivia(state);
@@ -118,7 +118,7 @@ impl<'config> DParser<'config> {
     }
 
     /// Parses a struct definition.
-    fn parse_struct<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_struct<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         state.bump(); // struct
         self.skip_trivia(state);
@@ -146,7 +146,7 @@ impl<'config> DParser<'config> {
     }
 
     /// Parses an interface definition.
-    fn parse_interface<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_interface<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         state.bump(); // interface
         self.skip_trivia(state);
@@ -187,7 +187,7 @@ impl<'config> DParser<'config> {
     }
 
     /// Parses a function definition.
-    fn parse_function<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_function<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         state.bump(); // function
         self.skip_trivia(state);
@@ -248,7 +248,7 @@ impl<'config> DParser<'config> {
     }
 
     /// Parses a statement.
-    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         self.skip_trivia(state);
         match state.peek_kind() {
             Some(DTokenType::ModuleKeyword) => self.parse_module(state)?,

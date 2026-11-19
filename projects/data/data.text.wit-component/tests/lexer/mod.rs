@@ -3,7 +3,7 @@ use data_text_wit_component::{WitLanguage, WitLexer};
 use std::{path::Path, time::Duration};
 
 #[test]
-fn test_wit_lexer() -> Result<(), data_text_core::OakError> {
+fn test_wit_lexer() -> Result<(), data_text_core::TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let language = WitLanguage::default();
     let lexer = WitLexer::new(&language);

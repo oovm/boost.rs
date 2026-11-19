@@ -6,7 +6,7 @@ mod position;
 
 pub use boost_harness::{
     self,
-    terminal::{SourceCache, SourceID, SourcePath, SourceProvider, SourceSpan},
+    diagnostic::terminal::{SourceCache, SourceID, SourcePath, SourceProvider, SourceSpan},
 };
 pub use convert::{SourceResolver, structured_set_to_protocol, structured_to_protocol};
 pub use error::DiagnosticError;

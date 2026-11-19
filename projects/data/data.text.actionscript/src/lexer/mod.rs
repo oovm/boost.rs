@@ -7,7 +7,7 @@ pub use token_type::ActionScriptTokenType;
 
 use crate::language::ActionScriptLanguage;
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError,
+    Lexer, LexerCache, LexerState, TextError,
     lexer::{CommentConfig, LexOutput, StringConfig, WhitespaceConfig},
 };
 use std::sync::LazyLock;
@@ -43,7 +43,7 @@ impl<'config> ActionScriptLexer<'config> {
     }
 
     /// Main lexical analysis logic
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
             if self.skip_whitespace(state) {

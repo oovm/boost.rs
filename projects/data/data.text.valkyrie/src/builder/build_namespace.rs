@@ -5,10 +5,10 @@ use crate::{
     lexer::token_type::ValkyrieTokenType,
     parser::element_type::ValkyrieElementType,
 };
-use data_text_core::{OakError, RedNode, RedTree, Source};
+use data_text_core::{TextError, RedNode, RedTree, Source};
 
 impl<'config> ValkyrieBuilder<'config> {
-    pub(crate) fn build_namespace<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<NamespaceDeclaration, OakError> {
+    pub(crate) fn build_namespace<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<NamespaceDeclaration, TextError> {
         let span = node.span();
         let mut primary = false;
         let mut name = NamePath { parts: Vec::new(), span: Default::default() };

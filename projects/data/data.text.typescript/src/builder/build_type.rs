@@ -1,8 +1,8 @@
 use crate::{ast::*, builder::TypeScriptBuilder, language::TypeScriptLanguage, lexer::token_type::TypeScriptTokenType, parser::element_type::TypeScriptElementType};
-use data_text_core::{OakError, RedNode, RedTree, Source, SourceText};
+use data_text_core::{TextError, RedNode, RedTree, Source, SourceText};
 
 impl<'config> TypeScriptBuilder<'config> {
-    pub(crate) fn build_type_annotation(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<TypeAnnotation>, OakError> {
+    pub(crate) fn build_type_annotation(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<TypeAnnotation>, TextError> {
         let raw = source.get_text_in(node.span().into()).trim().to_string();
         for child in node.children() {
             if let RedTree::Node(child_node) = child {
@@ -148,7 +148,7 @@ impl<'config> TypeScriptBuilder<'config> {
         if raw.is_empty() { Ok(None) } else { Ok(Some(TypeAnnotation::Identifier(raw))) }
     }
 
-    pub(crate) fn build_type_parameter(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<TypeParameter>, OakError> {
+    pub(crate) fn build_type_parameter(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<TypeParameter>, TextError> {
         let mut name = String::new();
         let mut constraint = None;
         let mut default = None;

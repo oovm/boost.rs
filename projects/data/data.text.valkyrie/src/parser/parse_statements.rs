@@ -8,7 +8,7 @@ use data_text_core::parser::ParserState;
 type State<'a, S> = ParserState<'a, ValkyrieLanguage, S>;
 
 /// 解析语句
-pub(crate) fn parse_statement<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_statement<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     state.skip_trivia();
     if state.at(ValkyrieTokenType::TemplateL) {
         return super::parse_template::parse_template_statement(state);
@@ -31,7 +31,7 @@ pub(crate) fn parse_statement<S: data_text_core::Source + ?Sized>(state: &mut St
 }
 
 /// 解析 let 语句
-pub(crate) fn parse_let_statement<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_let_statement<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     state.bump();
     parse_binding_modifiers(state)?;
     parse_pattern(state)?;
@@ -50,7 +50,7 @@ pub(crate) fn parse_let_statement<S: data_text_core::Source + ?Sized>(state: &mu
 }
 
 /// 解析表达式语句
-pub(crate) fn parse_expr_statement<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_expr_statement<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     parse_expression(state)?;
     if state.at(ValkyrieTokenType::Semicolon) {
         state.bump();
@@ -59,7 +59,7 @@ pub(crate) fn parse_expr_statement<S: data_text_core::Source + ?Sized>(state: &m
 }
 
 /// 解析模式
-pub(crate) fn parse_pattern<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_pattern<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     if state.at(ValkyrieTokenType::Underscore) {
         state.bump();
@@ -72,10 +72,10 @@ pub(crate) fn parse_pattern<S: data_text_core::Source + ?Sized>(state: &mut Stat
 }
 
 // 以下函数在其他模块中定义
-pub(crate) fn parse_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     crate::parser::parse_expressions::parse_expression(state)
 }
 
-pub(crate) fn parse_type<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_type<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     crate::parser::parse_types::parse_type(state)
 }

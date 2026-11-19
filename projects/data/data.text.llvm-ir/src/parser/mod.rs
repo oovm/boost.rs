@@ -9,7 +9,7 @@ use crate::{
     parser::element_type::LLvmElementType,
 };
 use data_text_core::{
-    OakError,
+    TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -33,7 +33,7 @@ impl<'config> LLirParser<'config> {
         }
     }
 
-    fn parse_type<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_type<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
 
         // Basic types: i8, i16, i32, i64, float, double, void, etc.
@@ -111,7 +111,7 @@ impl<'config> LLirParser<'config> {
         Ok(())
     }
 
-    fn parse_item<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_item<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
 
         // Skip whitespace/newline/comments
@@ -136,7 +136,7 @@ impl<'config> LLirParser<'config> {
         Ok(())
     }
 
-    fn parse_global<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_global<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(LLvmTokenType::GlobalVar)?;
         self.skip_trivia(state);
@@ -166,7 +166,7 @@ impl<'config> LLirParser<'config> {
         Ok(())
     }
 
-    fn parse_function<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_function<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(LLvmTokenType::Keyword)?; // define
         self.skip_trivia(state);

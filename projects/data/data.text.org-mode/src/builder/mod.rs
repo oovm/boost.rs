@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use crate::language::OrgModeLanguage;
-use data_text_core::{Builder, BuilderCache, OakDiagnostics, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, TextDiagnostics, TextEdit, source::Source};
 
 /// Org-mode AST builder.
 pub struct OrgModeBuilder {}
@@ -14,7 +14,7 @@ impl OrgModeBuilder {
 }
 
 impl Builder<OrgModeLanguage> for OrgModeBuilder {
-    fn build<'a, S: Source + ?Sized>(&self, _source: &S, _edits: &[TextEdit], _cache: &'a mut impl BuilderCache<OrgModeLanguage>) -> OakDiagnostics<()> {
-        OakDiagnostics { result: Ok(()), diagnostics: Vec::new() }
+    fn build<'a, S: Source + ?Sized>(&self, _source: &S, _edits: &[TextEdit], _cache: &'a mut impl BuilderCache<OrgModeLanguage>) -> TextDiagnostics<()> {
+        TextDiagnostics { result: Ok(()), diagnostics: Vec::new() }
     }
 }

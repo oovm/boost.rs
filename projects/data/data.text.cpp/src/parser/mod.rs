@@ -8,7 +8,7 @@ use crate::{
     lexer::{CppLexer, CppTokenType},
 };
 use data_text_core::{
-    GreenNode, OakError,
+    GreenNode, TextError,
     parser::{Associativity, ParseCache, ParseOutput, Parser, ParserState, Pratt, PrattParser, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -33,7 +33,7 @@ impl<'config> CppParser<'config> {
     ///
     /// This includes keywords, compound statements, preprocessor directives,
     /// and expressions followed by a semicolon.
-    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::CppTokenType::*;
         self.skip_trivia(state);
         match state.peek_kind() {
@@ -74,7 +74,7 @@ impl<'config> CppParser<'config> {
     }
 
     /// Parses a compound statement (a block of statements enclosed in braces).
-    fn parse_compound_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_compound_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         if !state.eat(CppTokenType::LeftBrace) {
             // Skip until right brace or end of file
@@ -104,7 +104,7 @@ impl<'config> CppParser<'config> {
     }
 
     /// Parses an if statement.
-    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // if
         self.skip_trivia(state);
@@ -124,7 +124,7 @@ impl<'config> CppParser<'config> {
     }
 
     /// Parses a while statement.
-    fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // while
         self.skip_trivia(state);
@@ -138,7 +138,7 @@ impl<'config> CppParser<'config> {
     }
 
     /// Parses a for statement.
-    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // for
         self.skip_trivia(state);
@@ -174,7 +174,7 @@ impl<'config> CppParser<'config> {
     }
 
     /// Parses a return statement.
-    fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // return
         self.skip_trivia(state);
@@ -188,7 +188,7 @@ impl<'config> CppParser<'config> {
     }
 
     /// Parses a declaration statement.
-    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
 
         // Parse type specifiers and qualifiers
@@ -214,7 +214,7 @@ impl<'config> CppParser<'config> {
     }
 
     /// Parses a function definition.
-    fn parse_function_definition<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_function_definition<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
 
         // Parse function name
@@ -248,7 +248,7 @@ impl<'config> CppParser<'config> {
     }
 
     /// Parses a class definition.
-    fn parse_class_definition<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_class_definition<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // class/struct/enum
 
@@ -304,7 +304,7 @@ impl<'config> CppParser<'config> {
     }
 
     /// Parses a namespace definition.
-    fn parse_namespace_definition<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_namespace_definition<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // namespace
 

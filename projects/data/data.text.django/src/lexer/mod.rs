@@ -3,7 +3,7 @@ pub mod token_type;
 
 use crate::{language::DjangoLanguage, lexer::token_type::DjangoTokenType};
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError, Source,
+    Lexer, LexerCache, LexerState, TextError, Source,
     lexer::{CommentConfig, LexOutput, StringConfig, WhitespaceConfig},
     source::TextEdit,
 };
@@ -39,7 +39,7 @@ impl<'config> DjangoLexer<'config> {
         Self { config }
     }
 
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
             if self.skip_whitespace(state) {

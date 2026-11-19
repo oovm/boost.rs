@@ -4,7 +4,7 @@ use crate::{
     lexer::JsonLexer,
     parser::JsonParser,
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, Lexer, OakDiagnostics, OakError, Parser, SourceText, TextEdit, parser::session::ParseSession, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Lexer, TextDiagnostics, TextError, Parser, SourceText, TextEdit, parser::session::ParseSession, source::Source};
 
 /// AST builder for JSON.
 #[derive(Clone)]
@@ -20,45 +20,45 @@ impl<'config> JsonBuilder<'config> {
 }
 
 impl<'config> Builder<JsonLanguage> for JsonBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<JsonLanguage>) -> OakDiagnostics<JsonRoot> {
+    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<JsonLanguage>) -> TextDiagnostics<JsonRoot> {
         let parser = JsonParser::new(self.config);
         let lexer = JsonLexer::new(self.config);
 
         let mut cache = ParseSession::<JsonLanguage>::default();
         lexer.lex(source, edits, &mut cache);
         let parse_result = parser.parse(source, edits, &mut cache);
-        let OakDiagnostics { result, diagnostics } = parse_result;
+        let TextDiagnostics { result, diagnostics } = parse_result;
 
         match result {
             Ok(green_tree) => {
                 let text = source.get_text_in((0..source.length()).into());
                 let source_text = SourceText::new(text.into_owned());
                 match self.build_root(&green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics },
         }
     }
 }
 
 impl<'config> JsonBuilder<'config> {
-    fn build_root<'a>(&self, green_tree: &GreenNode<'a, JsonLanguage>, source: &SourceText) -> Result<JsonRoot, OakError> {
+    fn build_root<'a>(&self, green_tree: &GreenNode<'a, JsonLanguage>, source: &SourceText) -> Result<JsonRoot, TextError> {
         let root_node = match green_tree.children.first() {
             Some(data_text_core::GreenTree::Node(n)) => n,
-            _ => return Err(OakError::unexpected_eof(0, None)),
+            _ => return Err(TextError::unexpected_eof(0, None)),
         };
 
         let value = self.build_value(root_node, 0, source)?;
         Ok(JsonRoot { value })
     }
 
-    fn build_value<'a>(&self, node: &GreenNode<'a, JsonLanguage>, offset: usize, source: &SourceText) -> Result<JsonValueNode, OakError> {
+    fn build_value<'a>(&self, node: &GreenNode<'a, JsonLanguage>, offset: usize, source: &SourceText) -> Result<JsonValueNode, TextError> {
         use crate::parser::element_type::JsonElementType;
         let span: data_text_core::Range<usize> = (offset..offset + node.byte_length as usize).into();
 
@@ -109,7 +109,7 @@ impl<'config> JsonBuilder<'config> {
             }
             JsonElementType::Number => {
                 let text = source.get_text_in(span.clone());
-                let value = text.parse::<f64>().map_err(|_| OakError::syntax_error(format!("Invalid number: {}", text), span.start, None))?;
+                let value = text.parse::<f64>().map_err(|_| TextError::syntax_error(format!("Invalid number: {}", text), span.start, None))?;
                 Ok(JsonValueNode::Number(JsonNumber { value, span }))
             }
             JsonElementType::Boolean => {
@@ -128,13 +128,13 @@ impl<'config> JsonBuilder<'config> {
                         current_offset += l.length as usize;
                     }
                 }
-                Err(OakError::unexpected_eof(span.start, None))
+                Err(TextError::unexpected_eof(span.start, None))
             }
-            _ => Err(OakError::syntax_error(format!("Unexpected node kind: {:?}", node.kind), span.start, None)),
+            _ => Err(TextError::syntax_error(format!("Unexpected node kind: {:?}", node.kind), span.start, None)),
         }
     }
 
-    fn build_field<'a>(&self, node: &GreenNode<'a, JsonLanguage>, offset: usize, source: &SourceText) -> Result<JsonField, OakError> {
+    fn build_field<'a>(&self, node: &GreenNode<'a, JsonLanguage>, offset: usize, source: &SourceText) -> Result<JsonField, TextError> {
         use crate::{lexer::token_type::JsonTokenType, parser::element_type::JsonElementType};
         let span: data_text_core::Range<usize> = (offset..offset + node.byte_length as usize).into();
         let mut name = None;
@@ -171,6 +171,6 @@ impl<'config> JsonBuilder<'config> {
             }
         }
 
-        Ok(JsonField { name: name.ok_or_else(|| OakError::syntax_error("Missing field name", offset, None))?, value: value.ok_or_else(|| OakError::syntax_error("Missing field value", offset, None))?, span })
+        Ok(JsonField { name: name.ok_or_else(|| TextError::syntax_error("Missing field name", offset, None))?, value: value.ok_or_else(|| TextError::syntax_error("Missing field value", offset, None))?, span })
     }
 }

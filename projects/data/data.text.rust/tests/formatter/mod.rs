@@ -1,5 +1,5 @@
 #[test]
-fn test_rust_formatter() -> Result<(), data_text_core::OakError> {
+fn test_rust_formatter() -> Result<(), data_text_core::TextError> {
     use data_text_rust::RustFormatter;
 
     let formatter = RustFormatter::new();
@@ -13,7 +13,7 @@ fn test_rust_formatter() -> Result<(), data_text_core::OakError> {
 }
 
 #[test]
-fn test_rust_formatter_with_config() -> Result<(), data_text_core::OakError> {
+fn test_rust_formatter_with_config() -> Result<(), data_text_core::TextError> {
     use data_text_rust::RustFormatter;
 
     let formatter = RustFormatter::with_config("    ".to_string(), 80);

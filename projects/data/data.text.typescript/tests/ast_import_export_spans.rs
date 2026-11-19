@@ -2,13 +2,13 @@
 //! their spans slice back to the source text and `export * from` stays
 //! distinguishable from `export {} from`.
 
-use data_text_core::{Builder, OakDiagnostics, SourceText, parser::ParseSession};
+use data_text_core::{Builder, TextDiagnostics, SourceText, parser::ParseSession};
 use data_text_typescript::{
     TypeScriptBuilder, TypeScriptLanguage,
     ast::{ExportSpecifier, ImportSpecifier, Statement, TypeScriptRoot},
 };
 
-fn parse(source: &str) -> OakDiagnostics<TypeScriptRoot> {
+fn parse(source: &str) -> TextDiagnostics<TypeScriptRoot> {
     let language = TypeScriptLanguage::standard();
     let mut cache = ParseSession::<TypeScriptLanguage>::new(32);
     TypeScriptBuilder::new(&language).build(&SourceText::new(source), &[], &mut cache)

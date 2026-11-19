@@ -3,7 +3,7 @@ use crate::{
     language::{TomlArray, TomlTable, TomlValue},
     parse,
 };
-use data_text_core::OakError;
+use data_text_core::TextError;
 use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
 use std::{collections::HashMap, fmt::Formatter};
 
@@ -197,7 +197,7 @@ impl<'de> Visitor<'de> for TomlDeserializer {
 }
 
 /// Deserializes a TOML string into a Rust type.
-pub fn from_str<'de, T>(toml: &'de str) -> Result<T, OakError>
+pub fn from_str<'de, T>(toml: &'de str) -> Result<T, TextError>
 where
     T: serde::Deserialize<'de>,
 {
@@ -308,7 +308,7 @@ impl ValueDeserializerWrapper {
 }
 
 impl<'de> serde::de::Deserializer<'de> for ValueDeserializerWrapper {
-    type Error = OakError;
+    type Error = TextError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
@@ -504,7 +504,7 @@ impl<'de> serde::de::Deserializer<'de> for ValueDeserializerWrapper {
     where
         V: Visitor<'de>,
     {
-        Err(OakError::custom_error("Enums are not supported"))
+        Err(TextError::custom_error("Enums are not supported"))
     }
 
     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -534,7 +534,7 @@ impl ValueArrayAccess {
 }
 
 impl<'de> SeqAccess<'de> for ValueArrayAccess {
-    type Error = OakError;
+    type Error = TextError;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
     where
@@ -567,7 +567,7 @@ impl ValueMapAccess {
 }
 
 impl<'de> MapAccess<'de> for ValueMapAccess {
-    type Error = OakError;
+    type Error = TextError;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where

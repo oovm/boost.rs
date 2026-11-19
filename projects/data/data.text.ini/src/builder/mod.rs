@@ -1,5 +1,5 @@
 use crate::{IniParser, ast::*, language::IniLanguage, lexer::token_type::IniTokenType, parser::element_type::IniElementType};
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, OakError, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
 
 /// INI AST builder implementation.
 pub struct IniBuilder<'config> {
@@ -15,7 +15,7 @@ impl<'config> IniBuilder<'config> {
 }
 
 impl<'config> Builder<IniLanguage> for IniBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<IniLanguage>) -> OakDiagnostics<IniRoot> {
+    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<IniLanguage>) -> TextDiagnostics<IniRoot> {
         let parser = IniParser::new(self.config);
         let mut cache = data_text_core::parser::session::ParseSession::<IniLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);
@@ -24,22 +24,22 @@ impl<'config> Builder<IniLanguage> for IniBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> IniBuilder<'config> {
     /// Builds the AST root from a green tree.
-    pub(crate) fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, IniLanguage>, source: &SourceText) -> Result<IniRoot, OakError> {
+    pub(crate) fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, IniLanguage>, source: &SourceText) -> Result<IniRoot, TextError> {
         let red_root = RedNode::new(green_tree, 0);
         let mut sections = Vec::new();
         let mut properties = Vec::new();
@@ -58,7 +58,7 @@ impl<'config> IniBuilder<'config> {
     }
 
     /// Builds a section from a red node.
-    fn build_section(&self, node: RedNode<IniLanguage>, source: &SourceText) -> Result<Section, OakError> {
+    fn build_section(&self, node: RedNode<IniLanguage>, source: &SourceText) -> Result<Section, TextError> {
         let span = node.span();
         let mut name = String::new();
         let mut properties = Vec::new();
@@ -79,7 +79,7 @@ impl<'config> IniBuilder<'config> {
     }
 
     /// Builds a property from a red node.
-    fn build_property(&self, node: RedNode<IniLanguage>, source: &SourceText) -> Result<Property, OakError> {
+    fn build_property(&self, node: RedNode<IniLanguage>, source: &SourceText) -> Result<Property, TextError> {
         let span = node.span();
         let mut key = String::new();
         let mut value = String::new();

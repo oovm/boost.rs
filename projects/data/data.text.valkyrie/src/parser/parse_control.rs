@@ -39,7 +39,7 @@ fn brace_balance_between<S: data_text_core::Source + ?Sized>(state: &mut State<'
 }
 
 /// `case Pat:` 后允许多条语句，直到同级 `case` / `else` / `}`。
-fn parse_implicit_match_arm_body<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+fn parse_implicit_match_arm_body<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     let mut depth = 0i32;
     while state.not_at_end() {
@@ -64,7 +64,7 @@ fn parse_implicit_match_arm_body<S: data_text_core::Source + ?Sized>(state: &mut
 }
 
 /// 解析 if 表达式
-pub(crate) fn parse_if_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_if_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     state.bump();
     // `if (a) == (b) { … }` 里的括号只是分组，不是条件括号；
@@ -88,7 +88,7 @@ pub(crate) fn parse_if_expression<S: data_text_core::Source + ?Sized>(state: &mu
 }
 
 /// 解析 match 表达式
-pub(crate) fn parse_match_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_match_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     state.bump();
     crate::parser::parse_expressions::parse_scrutinee_expression(state)?;
@@ -117,7 +117,7 @@ pub(crate) fn parse_match_expression<S: data_text_core::Source + ?Sized>(state: 
 ///
 /// 备选只允许出现在 arm 顶层；子模式（构造/数组/字段内）仍是单一模式，
 /// 深处的 `A | B` 由原子解析失败暴露为语法错误，不做隐式分组猜测。
-fn parse_match_pattern<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+fn parse_match_pattern<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     let pcp = state.sink.checkpoint();
     parse_match_pattern_atom(state)?;
     if state.at(ValkyrieTokenType::Pipe) {
@@ -132,7 +132,7 @@ fn parse_match_pattern<S: data_text_core::Source + ?Sized>(state: &mut State<'_,
 }
 
 /// 解析 match 模式原子：`Some(value)` / `None` / `_` / `[head, ...tail]`。
-fn parse_match_pattern_atom<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+fn parse_match_pattern_atom<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     let pcp = state.sink.checkpoint();
     // 字面量原子：完整模式或构造/数组子模式的单个 token，直接消费进当前 Pattern 节点；
     // builder 按叶节点映射 `Pattern::Literal`，不经零消费的递归调用产生空节点。
@@ -253,7 +253,7 @@ fn parse_match_pattern_atom<S: data_text_core::Source + ?Sized>(state: &mut Stat
 }
 
 /// 解析 match arm
-pub(crate) fn parse_match_arm<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_match_arm<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     state.skip_trivia();
     if state.at(ValkyrieTokenType::Keyword(ValkyrieKeywords::Case)) {
@@ -288,7 +288,7 @@ pub(crate) fn parse_match_arm<S: data_text_core::Source + ?Sized>(state: &mut St
 }
 
 /// 解析带标签的循环：`'label: loop/while/for …`。
-pub(crate) fn parse_labeled_loop_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_labeled_loop_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     state.bump();
     if state.at(ValkyrieTokenType::Colon) {
@@ -303,12 +303,12 @@ pub(crate) fn parse_labeled_loop_expression<S: data_text_core::Source + ?Sized>(
 }
 
 /// 解析 loop 表达式
-pub(crate) fn parse_loop_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_loop_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     parse_loop_expression_with(state, cp)
 }
 
-fn parse_loop_expression_with<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, cp: usize) -> Result<(), data_text_core::OakError> {
+fn parse_loop_expression_with<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, cp: usize) -> Result<(), data_text_core::TextError> {
     state.bump();
     if (state.at(ValkyrieTokenType::Identifier) || state.at(ValkyrieTokenType::Underscore)) && state.peek_non_trivia_kind_at(1) == Some(ValkyrieTokenType::Keyword(ValkyrieKeywords::In)) {
         parse_pattern(state)?;
@@ -331,12 +331,12 @@ fn parse_loop_expression_with<S: data_text_core::Source + ?Sized>(state: &mut St
 }
 
 /// 解析 while 表达式
-pub(crate) fn parse_while_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_while_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     parse_while_expression_with(state, cp)
 }
 
-fn parse_while_expression_with<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, cp: usize) -> Result<(), data_text_core::OakError> {
+fn parse_while_expression_with<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, cp: usize) -> Result<(), data_text_core::TextError> {
     state.bump();
     crate::parser::parse_expressions::parse_condition_expression(state)?;
     parse_block_expression(state)?;
@@ -345,12 +345,12 @@ fn parse_while_expression_with<S: data_text_core::Source + ?Sized>(state: &mut S
 }
 
 /// 解析 for 表达式
-pub(crate) fn parse_for_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_for_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     parse_for_expression_with(state, cp)
 }
 
-fn parse_for_expression_with<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, cp: usize) -> Result<(), data_text_core::OakError> {
+fn parse_for_expression_with<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, cp: usize) -> Result<(), data_text_core::TextError> {
     state.bump();
     parse_pattern(state)?;
     if state.at(ValkyrieTokenType::Keyword(ValkyrieKeywords::In)) {
@@ -373,7 +373,7 @@ fn can_start_return_value<S: data_text_core::Source + ?Sized>(state: &mut State<
 }
 
 /// 解析 return 表达式
-pub(crate) fn parse_return_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_return_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     state.bump();
     if can_start_return_value(state) {
@@ -384,7 +384,7 @@ pub(crate) fn parse_return_expression<S: data_text_core::Source + ?Sized>(state:
 }
 
 /// 解析 lambda 表达式
-pub(crate) fn parse_lambda_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_lambda_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     state.bump();
     if state.at(ValkyrieTokenType::ParenthesisL) {
@@ -405,7 +405,7 @@ pub(crate) fn parse_lambda_expression<S: data_text_core::Source + ?Sized>(state:
 
 // Functions below are defined in other modules
 /// 匿名 micro 的参数、返回类型与主体均由结构节点保存。
-pub(crate) fn parse_anonymous_micro<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_anonymous_micro<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     state.bump();
     if !state.at(ValkyrieTokenType::ParenthesisL) {
@@ -424,18 +424,18 @@ pub(crate) fn parse_anonymous_micro<S: data_text_core::Source + ?Sized>(state: &
     Ok(())
 }
 
-pub(crate) fn parse_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     crate::parser::parse_expressions::parse_expression(state)
 }
 
-pub(crate) fn parse_block_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_block_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     crate::parser::parse_blocks::parse_block_expression(state)
 }
 
-pub(crate) fn parse_pattern<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_pattern<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     crate::parser::parse_statements::parse_pattern(state)
 }
 
-pub(crate) fn parse_parameter_list<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_parameter_list<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     crate::parser::parse_types::parse_parameter_list(state)
 }

@@ -5,7 +5,7 @@ use language_testing::{building::BuilderTester, lexing::LexerTester, parsing::Pa
 use std::{path::Path, time::Duration};
 
 #[test]
-fn test_rust_lexer() -> Result<(), data_text_core::OakError> {
+fn test_rust_lexer() -> Result<(), data_text_core::TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let language = RustLanguage::default();
     let lexer = RustLexer::new(&language);
@@ -15,7 +15,7 @@ fn test_rust_lexer() -> Result<(), data_text_core::OakError> {
 }
 
 #[test]
-fn test_rust_parser() -> Result<(), data_text_core::OakError> {
+fn test_rust_parser() -> Result<(), data_text_core::TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let language = RustLanguage::default();
     let parser = RustParser::new(&language);
@@ -25,7 +25,7 @@ fn test_rust_parser() -> Result<(), data_text_core::OakError> {
 }
 
 #[test]
-fn test_rust_builder() -> Result<(), data_text_core::OakError> {
+fn test_rust_builder() -> Result<(), data_text_core::TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let language = RustLanguage::default();
     let builder = RustBuilder::new(&language);

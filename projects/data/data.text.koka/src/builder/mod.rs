@@ -1,7 +1,7 @@
 #![doc = include_str!("readme.md")]
 
 use crate::{ast::KokaRoot, language::KokaLanguage, lexer::KokaLexer, parser::KokaParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, Lexer, OakDiagnostics, OakError, Parser, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Lexer, TextDiagnostics, TextError, Parser, SourceText, TextEdit, source::Source};
 
 /// A builder for the Koka language that constructs an AST from a green tree.
 pub struct KokaBuilder<'config> {
@@ -16,7 +16,7 @@ impl<'config> KokaBuilder<'config> {
 }
 
 impl<'config> Builder<KokaLanguage> for KokaBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<KokaLanguage>) -> OakDiagnostics<KokaRoot> {
+    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<KokaLanguage>) -> TextDiagnostics<KokaRoot> {
         let parser = KokaParser::new(self.config);
         let lexer = KokaLexer::new(&self.config);
 
@@ -28,21 +28,21 @@ impl<'config> Builder<KokaLanguage> for KokaBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree.clone(), &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> KokaBuilder<'config> {
-    pub(crate) fn build_root(&self, green_tree: GreenNode<KokaLanguage>, _source: &SourceText) -> Result<KokaRoot, OakError> {
+    pub(crate) fn build_root(&self, green_tree: GreenNode<KokaLanguage>, _source: &SourceText) -> Result<KokaRoot, TextError> {
         let mut declarations = Vec::new();
         let mut offset = 0;
 

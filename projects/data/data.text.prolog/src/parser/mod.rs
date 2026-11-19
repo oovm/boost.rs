@@ -6,7 +6,7 @@ use crate::{
     lexer::{PrologLexer, token_type::PrologTokenType},
 };
 use data_text_core::{
-    GreenNode, OakError,
+    GreenNode, TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState},
     source::{Source, TextEdit},
 };

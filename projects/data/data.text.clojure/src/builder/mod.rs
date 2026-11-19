@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use crate::{ast::*, language::ClojureLanguage, parser::ClojureParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, Parser, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, SourceText, TextEdit, source::Source};
 
 /// AST builder for the Clojure language
 #[derive(Clone)]
@@ -16,12 +16,12 @@ impl<'config> ClojureBuilder<'config> {
     }
 
     /// Builds the AST root node from the green tree
-    pub fn build_root<'a>(&self, green: &'a GreenNode<'a, ClojureLanguage>, _source: &SourceText) -> Result<ClojureRoot<'a>, data_text_core::OakError> {
+    pub fn build_root<'a>(&self, green: &'a GreenNode<'a, ClojureLanguage>, _source: &SourceText) -> Result<ClojureRoot<'a>, data_text_core::TextError> {
         // Simplified AST building logic
         // Note: The current definition of ClojureRoot requires a RedNode; here we return a basic implementation.
         // The actual implementation usually involves converting GreenNode to RedNode.
         let tree = data_text_core::tree::RedNode::new(green, 0);
-        ClojureRoot::cast(tree).ok_or_else(|| data_text_core::OakError::custom_error("Failed to cast to ClojureRoot"))
+        ClojureRoot::cast(tree).ok_or_else(|| data_text_core::TextError::custom_error("Failed to cast to ClojureRoot"))
     }
 }
 
@@ -39,16 +39,16 @@ impl<'config> Builder<ClojureLanguage> for ClojureBuilder<'config> {
                         // Since ClojureRoot has a lifetime, it might need special handling here.
                         // In the Builder trait, TypedRoot is usually () or a type without a lifetime.
                         // For now, we return Ok(()) if TypedRoot is ().
-                        OakDiagnostics { result: Ok(()), diagnostics: parse_result.diagnostics }
+                        TextDiagnostics { result: Ok(()), diagnostics: parse_result.diagnostics }
                     }
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }

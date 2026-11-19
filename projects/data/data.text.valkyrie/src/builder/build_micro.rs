@@ -8,14 +8,14 @@ use crate::{
     lexer::{ValkyrieKeywords, token_type::ValkyrieTokenType},
     parser::element_type::ValkyrieElementType,
 };
-use data_text_core::{OakError, RedNode, RedTree, Source};
+use data_text_core::{TextError, RedNode, RedTree, Source};
 
 fn wrap_optional_type(inner: TypeExpression, nullable: bool, span: Span) -> TypeExpression {
     if nullable { TypeExpression::Optional(Box::new(OptionalType { inner: Box::new(inner), span })) } else { inner }
 }
 
 impl<'config> ValkyrieBuilder<'config> {
-    pub(crate) fn build_mezzo<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TypeFunction, OakError> {
+    pub(crate) fn build_mezzo<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TypeFunction, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Default::default() };
         let mut generics = Vec::new();
@@ -64,7 +64,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(TypeFunction { where_constraints, name, generics, annotations, params, return_type, body, span })
     }
 
-    pub(crate) fn build_micro<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<MicroDeclaration, OakError> {
+    pub(crate) fn build_micro<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<MicroDeclaration, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Default::default() };
         let mut generics = Vec::new();
@@ -134,7 +134,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(MicroDeclaration { where_constraints, name, generics, annotations, params, return_type, body, span, is_abstract, is_final })
     }
 
-    pub(crate) fn build_generic_params<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Vec<GenericParam>, OakError> {
+    pub(crate) fn build_generic_params<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Vec<GenericParam>, TextError> {
         let mut params = Vec::new();
         for child in node.children() {
             match child {
@@ -152,7 +152,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(params)
     }
 
-    pub(crate) fn build_generic_param<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<GenericParam, OakError> {
+    pub(crate) fn build_generic_param<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<GenericParam, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Default::default() };
         let mut constraints = Vec::new();
@@ -185,7 +185,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(GenericParam { name, constraints, default, span })
     }
 
-    pub(crate) fn build_type<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TypeExpression, OakError> {
+    pub(crate) fn build_type<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TypeExpression, TextError> {
         let span = node.span();
         if node.children().any(|child| matches!(child, RedTree::Leaf(t) if t.kind == ValkyrieTokenType::BracketL)) {
             return self.build_bracket_type(node, source);
@@ -289,7 +289,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Err(source.syntax_error(format!("Type node has no base type at {span:?}"), span.start))
     }
 
-    fn build_paren_tuple_type<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TypeExpression, OakError> {
+    fn build_paren_tuple_type<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TypeExpression, TextError> {
         let span = node.span();
         let mut elements = Vec::new();
         let mut pending_name: Option<Identifier> = None;
@@ -324,7 +324,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(TypeExpression::Tuple(Box::new(TupleType { elements, span })))
     }
 
-    fn build_bracket_type<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TypeExpression, OakError> {
+    fn build_bracket_type<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TypeExpression, TextError> {
         let span = node.span();
         let mut element_type = None;
         let mut length = None;
@@ -351,7 +351,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(TypeExpression::Unary(Box::new(TypeUnaryNode { operator: ValkyrieTokenType::BracketL, base, length, span })))
     }
 
-    pub(crate) fn build_params<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Vec<Param>, OakError> {
+    pub(crate) fn build_params<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Vec<Param>, TextError> {
         let mut params = Vec::new();
         for child in node.children() {
             match child {
@@ -369,7 +369,7 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(params)
     }
 
-    pub(crate) fn build_param<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Param, OakError> {
+    pub(crate) fn build_param<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Param, TextError> {
         let span = node.span();
         let mut name: Option<Identifier> = None;
         let mut ty = None;

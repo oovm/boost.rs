@@ -3,7 +3,7 @@
 #![warn(missing_docs)]
 #![doc = include_str!("readme.md")]
 use data_text_core::{
-    errors::OakError,
+    errors::TextError,
     language::{ElementRole, ElementType, Language, UniversalElementRole},
     tree::{RedNode, red_tree::RedLeaf},
     visitor::Visitor,
@@ -16,7 +16,7 @@ pub trait SemanticSearch: Send + Sync {
     /// # Arguments
     /// * `query` - The search query string.
     /// * `limit` - The maximum number of results to return.
-    async fn search(&self, query: &str, limit: usize) -> Result<Vec<String>, OakError>;
+    async fn search(&self, query: &str, limit: usize) -> Result<Vec<String>, TextError>;
 }
 
 /// A default implementation of SemanticSearch that does nothing.
@@ -24,8 +24,8 @@ pub struct NoSemanticSearch;
 
 impl SemanticSearch for NoSemanticSearch {
     /// Always returns an error indicating semantic search is disabled.
-    async fn search(&self, _query: &str, _limit: usize) -> Result<Vec<String>, OakError> {
-        Err(OakError::semantic_error("Semantic search is not enabled on this server"))
+    async fn search(&self, _query: &str, _limit: usize) -> Result<Vec<String>, TextError> {
+        Err(TextError::semantic_error("Semantic search is not enabled on this server"))
     }
 }
 
@@ -87,12 +87,12 @@ impl<'a, L: Language> Visitor<'a, L> for ChunkCollector<'a, L> {
 
 impl SemanticSearcher {
     /// Creates a new semantic searcher with the given database path.
-    pub async fn new(_db_path: &str) -> Result<Self, OakError> {
+    pub async fn new(_db_path: &str) -> Result<Self, TextError> {
         Ok(Self {})
     }
 
     /// Chunks code using oak-core's AST and indexes it
-    pub async fn index_code<'a, L: Language>(&self, root: RedNode<'a, L>, source: &'a str, _table_name: &str) -> Result<(), OakError> {
+    pub async fn index_code<'a, L: Language>(&self, root: RedNode<'a, L>, source: &'a str, _table_name: &str) -> Result<(), TextError> {
         let mut collector = ChunkCollector::<L>::new(source);
         collector.visit_node(root);
 
@@ -108,7 +108,7 @@ impl SemanticSearcher {
 }
 
 impl SemanticSearch for SemanticSearcher {
-    async fn search(&self, _query: &str, _limit: usize) -> Result<Vec<String>, OakError> {
+    async fn search(&self, _query: &str, _limit: usize) -> Result<Vec<String>, TextError> {
         // Concrete implementation (query embedding and vector search) has been removed.
         Ok(vec![])
     }

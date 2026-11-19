@@ -1,8 +1,8 @@
 use crate::{ast::*, builder::TypeScriptBuilder, language::TypeScriptLanguage, parser::element_type::TypeScriptElementType};
-use data_text_core::{OakError, RedNode, RedTree, Source, SourceText};
+use data_text_core::{TextError, RedNode, RedTree, Source, SourceText};
 
 impl<'config> TypeScriptBuilder<'config> {
-    pub(crate) fn build_jsx_element(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<JsxElement>, OakError> {
+    pub(crate) fn build_jsx_element(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<JsxElement>, TextError> {
         let span = node.span();
         let mut opening_element = None;
         let mut children = Vec::new();
@@ -25,7 +25,7 @@ impl<'config> TypeScriptBuilder<'config> {
         if let (Some(opening), Some(closing)) = (opening_element, closing_element) { Ok(Some(JsxElement { opening_element: opening, children, closing_element: closing, span: span.into() })) } else { Ok(None) }
     }
 
-    pub(crate) fn build_jsx_opening_element(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<JsxOpeningElement>, OakError> {
+    pub(crate) fn build_jsx_opening_element(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<JsxOpeningElement>, TextError> {
         let span = node.span();
         let mut name = None;
         let mut attributes = Vec::new();
@@ -51,7 +51,7 @@ impl<'config> TypeScriptBuilder<'config> {
         if let Some(n) = name { Ok(Some(JsxOpeningElement { name: n, attributes, span: span.into() })) } else { Ok(None) }
     }
 
-    pub(crate) fn build_jsx_closing_element(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<JsxClosingElement>, OakError> {
+    pub(crate) fn build_jsx_closing_element(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<JsxClosingElement>, TextError> {
         let span = node.span();
         let mut name = None;
 
@@ -66,7 +66,7 @@ impl<'config> TypeScriptBuilder<'config> {
         if let Some(n) = name { Ok(Some(JsxClosingElement { name: n, span: span.into() })) } else { Ok(None) }
     }
 
-    pub(crate) fn build_jsx_self_closing_element(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<JsxSelfClosingElement>, OakError> {
+    pub(crate) fn build_jsx_self_closing_element(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<JsxSelfClosingElement>, TextError> {
         let span = node.span();
         let mut name = None;
         let mut attributes = Vec::new();
@@ -92,7 +92,7 @@ impl<'config> TypeScriptBuilder<'config> {
         if let Some(n) = name { Ok(Some(JsxSelfClosingElement { name: n, attributes, span: span.into() })) } else { Ok(None) }
     }
 
-    pub(crate) fn build_jsx_fragment(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<JsxFragment>, OakError> {
+    pub(crate) fn build_jsx_fragment(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<JsxFragment>, TextError> {
         let span = node.span();
         let mut opening_fragment = None;
         let mut children = Vec::new();
@@ -115,7 +115,7 @@ impl<'config> TypeScriptBuilder<'config> {
         if let (Some(opening), Some(closing)) = (opening_fragment, closing_fragment) { Ok(Some(JsxFragment { opening_fragment: opening, children, closing_fragment: closing, span: span.into() })) } else { Ok(None) }
     }
 
-    pub(crate) fn build_jsx_child(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<JsxChild>, OakError> {
+    pub(crate) fn build_jsx_child(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<JsxChild>, TextError> {
         match node.green.kind {
             TypeScriptElementType::JsxElement => {
                 if let Some(e) = self.build_jsx_element(node, source)? {
@@ -156,7 +156,7 @@ impl<'config> TypeScriptBuilder<'config> {
         }
     }
 
-    pub(crate) fn build_jsx_attribute_or_spread(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<JsxAttributeOrSpread>, OakError> {
+    pub(crate) fn build_jsx_attribute_or_spread(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<JsxAttributeOrSpread>, TextError> {
         match node.green.kind {
             TypeScriptElementType::JsxAttribute => {
                 let span = node.span();

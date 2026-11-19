@@ -1,10 +1,10 @@
 use crate::{SqlElementType, SqlLanguage, ast::*, builder::SqlBuilder, lexer::token_type::SqlTokenType};
-use data_text_core::{OakError, Range, RedNode, RedTree, SourceText, TokenType};
+use data_text_core::{TextError, Range, RedNode, RedTree, SourceText, TokenType};
 use std::sync::Arc;
 
 impl<'config> SqlBuilder<'config> {
     /// Builds a typed expression from an untyped expression node.
-    pub(crate) fn build_expression<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Expression, OakError> {
+    pub(crate) fn build_expression<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Expression, TextError> {
         self.build_expression_with_precedence(node, source, 0)
     }
 
@@ -12,7 +12,7 @@ impl<'config> SqlBuilder<'config> {
     ///
     /// It uses a "precedence climbing" algorithm to correctly structure binary operations
     /// when the input CST is flat or partially structured.
-    fn build_expression_with_precedence<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText, min_precedence: u8) -> Result<Expression, OakError> {
+    fn build_expression_with_precedence<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText, min_precedence: u8) -> Result<Expression, TextError> {
         let children = node.children().collect::<Vec<_>>();
 
         // Handle parentheses — only unwrap when there is a single inner expression.
@@ -164,7 +164,7 @@ impl<'config> SqlBuilder<'config> {
                             }
                             let Some(RedTree::Node(n)) = children.get(i)
                             else {
-                                return Err(OakError::custom_error("`IS` requires `NULL`, `TRUE`, or `FALSE`"));
+                                return Err(TextError::custom_error("`IS` requires `NULL`, `TRUE`, or `FALSE`"));
                             };
                             let right = self.build_expression_with_precedence(n.clone(), source, 0)?;
                             let span = Range { start: left.span().start, end: right.span().end };
@@ -177,8 +177,8 @@ impl<'config> SqlBuilder<'config> {
                                 Expression::Literal(Literal::Boolean(value, _)) => Expression::IsTruth { expr, value: *value, negated, span },
                                 // `IS UNKNOWN` is not lowered yet, and folding it into a
                                 // comparison would silently change three-valued logic.
-                                Expression::Identifier(identifier) if identifier.name.eq_ignore_ascii_case("UNKNOWN") => return Err(OakError::custom_error("`IS UNKNOWN` is not supported")),
-                                _ => return Err(OakError::custom_error("`IS` requires `NULL`, `TRUE`, or `FALSE`")),
+                                Expression::Identifier(identifier) if identifier.name.eq_ignore_ascii_case("UNKNOWN") => return Err(TextError::custom_error("`IS UNKNOWN` is not supported")),
+                                _ => return Err(TextError::custom_error("`IS` requires `NULL`, `TRUE`, or `FALSE`")),
                             };
                             continue;
                         }
@@ -196,7 +196,7 @@ impl<'config> SqlBuilder<'config> {
                                 if n.green.kind == SqlElementType::Subquery {
                                     let Expression::Subquery { query, .. } = self.build_subquery(n.clone(), source)?
                                     else {
-                                        return Err(OakError::custom_error("IN expected a subquery"));
+                                        return Err(TextError::custom_error("IN expected a subquery"));
                                     };
                                     left = Expression::InSubquery { expr: Box::new(left), query, negated: negated_operator, span };
                                 }
@@ -259,7 +259,7 @@ impl<'config> SqlBuilder<'config> {
         Ok(left)
     }
 
-    fn build_primary_expression<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Expression, OakError> {
+    fn build_primary_expression<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Expression, TextError> {
         // Dispatch on node kind first — FunctionCall nodes have Identifier children
         // that the child loop below would otherwise pick up as the primary.
         if node.green.kind == SqlElementType::FunctionCall {
@@ -303,10 +303,10 @@ impl<'config> SqlBuilder<'config> {
                 }
             }
         }
-        Err(OakError::custom_error("Failed to build primary expression"))
+        Err(TextError::custom_error("Failed to build primary expression"))
     }
 
-    fn build_primary_expression_from_leaf(&self, t: &data_text_core::RedLeaf<SqlLanguage>, source: &SourceText) -> Result<Expression, OakError> {
+    fn build_primary_expression_from_leaf(&self, t: &data_text_core::RedLeaf<SqlLanguage>, source: &SourceText) -> Result<Expression, TextError> {
         match t.kind {
             SqlTokenType::NumberLiteral | SqlTokenType::FloatLiteral => {
                 let text = self.get_text(t.span.clone(), source);
@@ -323,7 +323,7 @@ impl<'config> SqlBuilder<'config> {
             SqlTokenType::True | SqlTokenType::False => Ok(Expression::Literal(Literal::Boolean(t.kind == SqlTokenType::True, t.span.clone()))),
             SqlTokenType::Null => Ok(Expression::Literal(Literal::Null(t.span.clone()))),
             SqlTokenType::Identifier_ => Ok(Expression::Identifier(Identifier { name: self.get_text(t.span.clone(), source), span: t.span.clone() })),
-            _ => Err(OakError::custom_error("Not a primary expression leaf")),
+            _ => Err(TextError::custom_error("Not a primary expression leaf")),
         }
     }
 
@@ -332,7 +332,7 @@ impl<'config> SqlBuilder<'config> {
     /// The parser packages the whole CASE as a single SqlElementType::Expression
     /// node whose children interleave keyword leaves (CASE/WHEN/THEN/ELSE/END)
     /// with nested expression nodes.
-    fn build_case_expression<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Expression, OakError> {
+    fn build_case_expression<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Expression, TextError> {
         let full_span = node.span();
         let children: Vec<_> = node.children().collect();
         let mut iter = children.iter().peekable();
@@ -394,7 +394,7 @@ impl<'config> SqlBuilder<'config> {
     }
 
     /// Build a `CAST(expr AS type_name)` expression.
-    fn build_cast_expression<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Expression, OakError> {
+    fn build_cast_expression<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Expression, TextError> {
         let full_span = node.span();
         let children: Vec<_> = node.children().collect();
         let mut iter = children.iter().peekable();
@@ -455,7 +455,7 @@ impl<'config> SqlBuilder<'config> {
     /// Advances the peekable iterator over a single expression child (either a
     /// nested SqlElementType::Expression node or, as a fallback, builds a leaf
     /// literal/identifier).
-    fn consume_expression_child<'a, I>(&self, iter: &mut std::iter::Peekable<I>, source: &SourceText) -> Result<Expression, OakError>
+    fn consume_expression_child<'a, I>(&self, iter: &mut std::iter::Peekable<I>, source: &SourceText) -> Result<Expression, TextError>
     where
         I: Iterator<Item = &'a RedTree<'a, SqlLanguage>>,
     {
@@ -470,7 +470,7 @@ impl<'config> SqlBuilder<'config> {
         }
         let Some(item) = iter.next()
         else {
-            return Err(OakError::custom_error("Expected expression in CASE/CAST"));
+            return Err(TextError::custom_error("Expected expression in CASE/CAST"));
         };
         match item {
             RedTree::Leaf(l) => {
@@ -486,14 +486,14 @@ impl<'config> SqlBuilder<'config> {
                     SqlTokenType::False => Ok(Expression::Literal(Literal::Boolean(false, l.span.clone()))),
                     SqlTokenType::Null => Ok(Expression::Literal(Literal::Null(l.span.clone()))),
                     SqlTokenType::Identifier_ => Ok(Expression::Identifier(Identifier { name: self.get_text(l.span.clone(), source), span: l.span.clone() })),
-                    _ => Err(OakError::custom_error(format!("Expected expression in CASE/CAST, got {:?}", l.kind))),
+                    _ => Err(TextError::custom_error(format!("Expected expression in CASE/CAST, got {:?}", l.kind))),
                 }
             }
             RedTree::Node(child) => self.build_expression(*child, source),
         }
     }
 
-    fn build_literal<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Literal, OakError> {
+    fn build_literal<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Literal, TextError> {
         for child in node.children() {
             if let RedTree::Leaf(t) = child {
                 match t.kind {
@@ -510,7 +510,7 @@ impl<'config> SqlBuilder<'config> {
                 }
             }
         }
-        Err(OakError::custom_error("Missing literal content"))
+        Err(TextError::custom_error("Missing literal content"))
     }
 
     /// Maps a token kind to its operator precedence level.
@@ -527,7 +527,7 @@ impl<'config> SqlBuilder<'config> {
         }
     }
 
-    pub(crate) fn build_function_call<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Expression, OakError> {
+    pub(crate) fn build_function_call<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Expression, TextError> {
         let mut name = None;
         let mut args = Vec::new();
         let mut distinct = false;
@@ -575,7 +575,7 @@ impl<'config> SqlBuilder<'config> {
             }
         }
 
-        Ok(Expression::FunctionCall { name: name.ok_or_else(|| OakError::custom_error("Missing function name"))?, args, distinct, window, span: node.span() })
+        Ok(Expression::FunctionCall { name: name.ok_or_else(|| TextError::custom_error("Missing function name"))?, args, distinct, window, span: node.span() })
     }
 
     /// Lowers an `OVER (...)` node into a [`WindowSpec`].
@@ -584,7 +584,7 @@ impl<'config> SqlBuilder<'config> {
     /// name at least one clause, and the frame is limited to the forms the AST
     /// models. Rejecting here keeps unsupported windows out of an analyzer as
     /// valid calls.
-    fn build_window_spec<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<WindowSpec, OakError> {
+    fn build_window_spec<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<WindowSpec, TextError> {
         let mut partition_by: Vec<Identifier> = Vec::new();
         let mut order_by: Vec<WindowOrderItem> = Vec::new();
         let mut frame = None;
@@ -613,25 +613,25 @@ impl<'config> SqlBuilder<'config> {
         }
 
         if partition_clauses > 1 {
-            return Err(OakError::custom_error("Duplicate `PARTITION BY` in window specification"));
+            return Err(TextError::custom_error("Duplicate `PARTITION BY` in window specification"));
         }
         if partition_by.is_empty() && order_by.is_empty() && frame.is_none() {
-            return Err(OakError::custom_error("`OVER` requires `PARTITION BY`, `ORDER BY`, or a window frame"));
+            return Err(TextError::custom_error("`OVER` requires `PARTITION BY`, `ORDER BY`, or a window frame"));
         }
 
         Ok(WindowSpec { partition_by, order_by, frame, span: node.span() })
     }
 
     /// Builds one window column, rejecting anything that is not a column reference.
-    fn build_window_column<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText, clause: &str) -> Result<Identifier, OakError> {
+    fn build_window_column<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText, clause: &str) -> Result<Identifier, TextError> {
         match self.build_expression(node.clone(), source)? {
             Expression::Identifier(identifier) => Ok(identifier),
-            _ => Err(OakError::custom_error(format!("{clause} in a window accepts only column references"))),
+            _ => Err(TextError::custom_error(format!("{clause} in a window accepts only column references"))),
         }
     }
 
     /// Builds the `ORDER BY` items of a window specification.
-    fn build_window_order_by<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Vec<WindowOrderItem>, OakError> {
+    fn build_window_order_by<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Vec<WindowOrderItem>, TextError> {
         let mut items: Vec<WindowOrderItem> = Vec::new();
         let mut current: Option<WindowOrderItem> = None;
 
@@ -685,13 +685,13 @@ impl<'config> SqlBuilder<'config> {
             items.push(item);
         }
         if items.is_empty() {
-            return Err(OakError::custom_error("`ORDER BY` in a window requires at least one column"));
+            return Err(TextError::custom_error("`ORDER BY` in a window requires at least one column"));
         }
         Ok(items)
     }
 
     /// Builds a `ROWS` / `RANGE` frame from its lowered leaves.
-    fn build_window_frame<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<WindowFrame, OakError> {
+    fn build_window_frame<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<WindowFrame, TextError> {
         let mut leaves: Vec<(SqlTokenType, String)> = Vec::new();
         for child in node.children() {
             if let RedTree::Leaf(t) = child {
@@ -707,7 +707,7 @@ impl<'config> SqlBuilder<'config> {
         let unit = match leaves.first().map(|(_, text)| text.as_str()) {
             Some("ROWS") => WindowFrameUnit::Rows,
             Some("RANGE") => WindowFrameUnit::Range,
-            _ => return Err(OakError::custom_error("A window frame must start with `ROWS` or `RANGE`")),
+            _ => return Err(TextError::custom_error("A window frame must start with `ROWS` or `RANGE`")),
         };
 
         let mut index = 1usize;
@@ -715,7 +715,7 @@ impl<'config> SqlBuilder<'config> {
             index += 1;
             let start = window_frame_bound(&leaves, &mut index)?;
             if !leaves.get(index).is_some_and(|(_, text)| text == "AND") {
-                return Err(OakError::custom_error("A window frame `BETWEEN` requires `AND`"));
+                return Err(TextError::custom_error("A window frame `BETWEEN` requires `AND`"));
             }
             index += 1;
             let end = window_frame_bound(&leaves, &mut index)?;
@@ -726,14 +726,14 @@ impl<'config> SqlBuilder<'config> {
         };
 
         if index != leaves.len() {
-            return Err(OakError::custom_error("Unsupported window frame"));
+            return Err(TextError::custom_error("Unsupported window frame"));
         }
         if matches!(start, WindowFrameBound::UnboundedFollowing) {
-            return Err(OakError::custom_error("`UNBOUNDED FOLLOWING` cannot start a window frame"));
+            return Err(TextError::custom_error("`UNBOUNDED FOLLOWING` cannot start a window frame"));
         }
         if let Some(end) = &end {
             if start.is_after(end) {
-                return Err(OakError::custom_error("A window frame cannot start after its end bound"));
+                return Err(TextError::custom_error("A window frame cannot start after its end bound"));
             }
         }
 
@@ -744,23 +744,23 @@ impl<'config> SqlBuilder<'config> {
     ///
     /// The parser keeps the parenthesized query as a `Subquery` child, so the
     /// predicate reuses the subquery lowering and only tags the node as `Exists`.
-    fn build_exists_expression<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Expression, OakError> {
+    fn build_exists_expression<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Expression, TextError> {
         let span = node.span();
         for child in node.children() {
             if let RedTree::Node(n) = child {
                 if n.green.kind == SqlElementType::Subquery {
                     let Expression::Subquery { query, .. } = self.build_subquery(n, source)?
                     else {
-                        return Err(OakError::custom_error("EXISTS expected a subquery"));
+                        return Err(TextError::custom_error("EXISTS expected a subquery"));
                     };
                     return Ok(Expression::Exists { query, negated: false, span });
                 }
             }
         }
-        Err(OakError::custom_error("EXISTS expected a subquery"))
+        Err(TextError::custom_error("EXISTS expected a subquery"))
     }
 
-    pub(crate) fn build_subquery<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Expression, OakError> {
+    pub(crate) fn build_subquery<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Expression, TextError> {
         for child in node.children() {
             if let RedTree::Node(n) = child {
                 if n.green.kind == SqlElementType::SelectStatement {
@@ -768,10 +768,10 @@ impl<'config> SqlBuilder<'config> {
                 }
             }
         }
-        Err(OakError::custom_error("Missing select statement in subquery"))
+        Err(TextError::custom_error("Missing select statement in subquery"))
     }
 
-    fn build_vector<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Expression, OakError> {
+    fn build_vector<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Expression, TextError> {
         let mut elements = Vec::new();
         for child in node.children() {
             if let RedTree::Node(n) = child {
@@ -788,10 +788,10 @@ impl<'config> SqlBuilder<'config> {
 ///
 /// The parser already validated the token sequence, so a mismatch here means the
 /// frame is not one of the supported forms rather than a syntax error.
-fn window_frame_bound(leaves: &[(SqlTokenType, String)], index: &mut usize) -> Result<WindowFrameBound, OakError> {
+fn window_frame_bound(leaves: &[(SqlTokenType, String)], index: &mut usize) -> Result<WindowFrameBound, TextError> {
     let Some((kind, text)) = leaves.get(*index)
     else {
-        return Err(OakError::custom_error("Missing window frame bound"));
+        return Err(TextError::custom_error("Missing window frame bound"));
     };
     match text.as_str() {
         "UNBOUNDED" => {
@@ -805,19 +805,19 @@ fn window_frame_bound(leaves: &[(SqlTokenType, String)], index: &mut usize) -> R
                     *index += 1;
                     Ok(WindowFrameBound::UnboundedFollowing)
                 }
-                _ => Err(OakError::custom_error("`UNBOUNDED` must be followed by `PRECEDING` or `FOLLOWING`")),
+                _ => Err(TextError::custom_error("`UNBOUNDED` must be followed by `PRECEDING` or `FOLLOWING`")),
             }
         }
         "CURRENT" => {
             *index += 1;
             if leaves.get(*index).map(|(kind, _)| *kind) != Some(SqlTokenType::Row) {
-                return Err(OakError::custom_error("`CURRENT` must be followed by `ROW`"));
+                return Err(TextError::custom_error("`CURRENT` must be followed by `ROW`"));
             }
             *index += 1;
             Ok(WindowFrameBound::CurrentRow)
         }
         _ if *kind == SqlTokenType::NumberLiteral => {
-            let offset = text.parse::<u64>().map_err(|_| OakError::custom_error("A window frame offset must be a non-negative integer"))?;
+            let offset = text.parse::<u64>().map_err(|_| TextError::custom_error("A window frame offset must be a non-negative integer"))?;
             *index += 1;
             match leaves.get(*index).map(|(_, text)| text.as_str()) {
                 Some("PRECEDING") => {
@@ -828,9 +828,9 @@ fn window_frame_bound(leaves: &[(SqlTokenType, String)], index: &mut usize) -> R
                     *index += 1;
                     Ok(WindowFrameBound::Following(offset))
                 }
-                _ => Err(OakError::custom_error("A window frame offset must be followed by `PRECEDING` or `FOLLOWING`")),
+                _ => Err(TextError::custom_error("A window frame offset must be followed by `PRECEDING` or `FOLLOWING`")),
             }
         }
-        _ => Err(OakError::custom_error("Unsupported window frame bound")),
+        _ => Err(TextError::custom_error("Unsupported window frame bound")),
     }
 }

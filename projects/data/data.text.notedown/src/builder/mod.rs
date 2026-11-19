@@ -17,6 +17,6 @@ impl<'config> NoteBuilder<'config> {
 impl<'config> Builder<NotedownLanguage> for NoteBuilder<'config> {
     fn build<'a, S: Source + ?Sized>(&self, _source: &S, _edits: &[TextEdit], _cache: &'a mut impl BuilderCache<NotedownLanguage>) -> data_text_core::builder::BuildOutput<NotedownLanguage> {
         // Simple implementation
-        data_text_core::errors::OakDiagnostics { result: Ok(NoteDocument {}), diagnostics: Vec::new() }
+        data_text_core::errors::TextDiagnostics { result: Ok(NoteDocument {}), diagnostics: Vec::new() }
     }
 }

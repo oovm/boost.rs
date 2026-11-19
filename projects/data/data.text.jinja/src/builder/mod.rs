@@ -3,7 +3,7 @@
 /// This module defines the builder for Jinja templates, used to construct the AST
 /// from the parsed green tree.
 use data_text_core::{
-    BuilderCache, GreenNode, GreenTree, OakDiagnostics, OakError, SourceText,
+    BuilderCache, GreenNode, GreenTree, TextDiagnostics, TextError, SourceText,
     builder::{BuildOutput, Builder as BuilderTrait},
     source::{Source, TextEdit},
 };
@@ -31,7 +31,7 @@ impl<'a> JinjaBuilder<'a> {
     }
 
     /// Builds the root AST node from a green tree and source text
-    fn build_root<'b>(&self, green_tree: &'b GreenNode<'b, JinjaLanguage>, source: &SourceText) -> Result<JinjaRoot, OakError> {
+    fn build_root<'b>(&self, green_tree: &'b GreenNode<'b, JinjaLanguage>, source: &SourceText) -> Result<JinjaRoot, TextError> {
         let span = (0..green_tree.byte_length as usize).into();
         let mut elements = Vec::new();
         let mut offset = 0usize;
@@ -388,15 +388,15 @@ impl<'a> BuilderTrait<JinjaLanguage> for JinjaBuilder<'a> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(text.get_text_in((0..text.length()).into()).into_owned());
                 match self.build_root(green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }

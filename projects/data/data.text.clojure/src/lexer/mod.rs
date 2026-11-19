@@ -5,7 +5,7 @@ pub use token_type::ClojureTokenType;
 
 use crate::ClojureLanguage;
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError,
+    Lexer, LexerCache, LexerState, TextError,
     lexer::LexOutput,
     source::{Source, TextEdit},
 };
@@ -34,7 +34,7 @@ impl<'config> ClojureLexer<'config> {
     pub fn new(config: &'config ClojureLanguage) -> Self {
         Self { config }
     }
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let start = state.get_position();
             let safe_point = start;

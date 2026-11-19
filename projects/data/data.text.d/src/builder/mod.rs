@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use crate::language::DLanguage;
-use data_text_core::{Builder, BuilderCache, GreenNode, OakError, Parser, RedNode, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextError, Parser, RedNode, SourceText, TextEdit, source::Source};
 
 /// D language AST builder
 #[derive(Clone)]
@@ -14,7 +14,7 @@ impl<'config> DBuilder<'config> {
         Self { config }
     }
 
-    fn build_root(&self, green_tree: &GreenNode<DLanguage>, _source: &SourceText) -> Result<crate::ast::DRoot, OakError> {
+    fn build_root(&self, green_tree: &GreenNode<DLanguage>, _source: &SourceText) -> Result<crate::ast::DRoot, TextError> {
         let _red_root = RedNode::new(green_tree, 0);
         // Basic implementation, can be expanded later
         Ok(crate::ast::DRoot { items: Vec::new() })

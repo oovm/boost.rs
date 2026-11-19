@@ -1,5 +1,5 @@
 use crate::{WatParser, ast::*, language::WatLanguage, lexer::token_type::WatTokenType, parser::element_type::WatElementType};
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, OakError, Parser, RedNode, RedTree, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, builder::BuildOutput, source::Source};
 
 /// AST builder for the WebAssembly Text (WAT) format.
 #[derive(Clone, Copy)]
@@ -25,21 +25,21 @@ impl<'config> Builder<WatLanguage> for WatBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree.clone(), &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> WatBuilder<'config> {
-    fn build_root(&self, green_tree: GreenNode<WatLanguage>, source: &SourceText) -> Result<WatRoot, OakError> {
+    fn build_root(&self, green_tree: GreenNode<WatLanguage>, source: &SourceText) -> Result<WatRoot, TextError> {
         let red_root = RedNode::new(&green_tree, 0);
         let mut items = Vec::new();
 
@@ -57,7 +57,7 @@ impl<'config> WatBuilder<'config> {
         Ok(WatRoot { items })
     }
 
-    fn build_module(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatModule, OakError> {
+    fn build_module(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatModule, TextError> {
         let mut name = None;
         let mut items = Vec::new();
 
@@ -98,7 +98,7 @@ impl<'config> WatBuilder<'config> {
         Ok(WatModule { name, items })
     }
 
-    fn build_func(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatFunc, OakError> {
+    fn build_func(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatFunc, TextError> {
         let mut name = None;
         let mut params = Vec::new();
         let mut results = Vec::new();
@@ -133,7 +133,7 @@ impl<'config> WatBuilder<'config> {
         Ok(WatFunc { name, params, results, locals, body })
     }
 
-    fn build_param(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatParam, OakError> {
+    fn build_param(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatParam, TextError> {
         let mut name = None;
         let mut ty = WatTypeKind::I32; // Default
 
@@ -154,7 +154,7 @@ impl<'config> WatBuilder<'config> {
         Ok(WatParam { name, ty })
     }
 
-    fn build_result(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatResult, OakError> {
+    fn build_result(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatResult, TextError> {
         let mut ty = WatTypeKind::I32; // Default
 
         for child in node.children() {
@@ -168,7 +168,7 @@ impl<'config> WatBuilder<'config> {
         Ok(WatResult { ty })
     }
 
-    fn build_local(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatLocal, OakError> {
+    fn build_local(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatLocal, TextError> {
         let mut name = None;
         let mut ty = WatTypeKind::I32; // Default
 
@@ -189,7 +189,7 @@ impl<'config> WatBuilder<'config> {
         Ok(WatLocal { name, ty })
     }
 
-    fn build_instruction(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatInstruction, OakError> {
+    fn build_instruction(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatInstruction, TextError> {
         let mut opcode = String::new();
         let mut args = Vec::new();
 
@@ -242,7 +242,7 @@ impl<'config> WatBuilder<'config> {
         }
     }
 
-    fn build_export(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatExport, OakError> {
+    fn build_export(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatExport, TextError> {
         let mut name = String::new();
         let mut kind = String::new();
         let mut id = String::new();
@@ -268,7 +268,7 @@ impl<'config> WatBuilder<'config> {
         Ok(WatExport { name, kind, id })
     }
 
-    fn build_import(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatImport, OakError> {
+    fn build_import(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatImport, TextError> {
         let mut module = String::new();
         let mut name = String::new();
         let mut kind = String::new();
@@ -296,7 +296,7 @@ impl<'config> WatBuilder<'config> {
         Ok(WatImport { module, name, kind })
     }
 
-    fn build_type(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatType, OakError> {
+    fn build_type(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatType, TextError> {
         let mut id = None;
         for child in node.children() {
             if let RedTree::Leaf(t) = child {
@@ -308,7 +308,7 @@ impl<'config> WatBuilder<'config> {
         Ok(WatType { id })
     }
 
-    fn build_table(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatTable, OakError> {
+    fn build_table(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatTable, TextError> {
         let mut id = None;
         for child in node.children() {
             if let RedTree::Leaf(t) = child {
@@ -320,7 +320,7 @@ impl<'config> WatBuilder<'config> {
         Ok(WatTable { id, span: node.span() })
     }
 
-    fn build_memory(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatMemory, OakError> {
+    fn build_memory(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatMemory, TextError> {
         let mut id = None;
         for child in node.children() {
             if let RedTree::Leaf(t) = child {
@@ -332,7 +332,7 @@ impl<'config> WatBuilder<'config> {
         Ok(WatMemory { id, span: node.span() })
     }
 
-    fn build_global(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatGlobal, OakError> {
+    fn build_global(&self, node: RedNode<WatLanguage>, source: &SourceText) -> Result<WatGlobal, TextError> {
         let mut id = None;
         let mut ty = WatTypeKind::I32;
         let mut mutable = false;

@@ -1,10 +1,10 @@
 use data_text_astro::{SvelteLanguage, SvelteLexer};
-use data_text_core::errors::OakError;
+use data_text_core::errors::TextError;
 use language_testing::lexing::LexerTester;
 use std::{path::Path, time::Duration};
 
 #[test]
-fn test_astro_lexer() -> Result<(), OakError> {
+fn test_astro_lexer() -> Result<(), TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let language = SvelteLanguage::default();
     let lexer = SvelteLexer::new(&language);

@@ -8,7 +8,7 @@ use data_text_core::parser::ParserState;
 type State<'a, S> = ParserState<'a, ValkyrieLanguage, S>;
 
 /// 解析块表达式
-pub(crate) fn parse_block<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_block<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     state.bump();
     while state.not_at_end() && !state.at(ValkyrieTokenType::BraceR) {
@@ -26,12 +26,12 @@ pub(crate) fn parse_block<S: data_text_core::Source + ?Sized>(state: &mut State<
 }
 
 /// 解析块表达式
-pub(crate) fn parse_block_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_block_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     if state.at(ValkyrieTokenType::BraceL) { parse_block(state) } else { Ok(()) }
 }
 
 /// 解析 `Point { x: 1, y }` 对象初始化块（也容纳 trailing closure 表达式体）。
-pub(crate) fn parse_object_initializer<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_object_initializer<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     state.bump();
     while state.not_at_end() && !state.at(ValkyrieTokenType::BraceR) {
@@ -71,6 +71,6 @@ pub(crate) fn parse_object_initializer<S: data_text_core::Source + ?Sized>(state
 }
 
 // 以下函数在其他模块中定义
-pub(crate) fn parse_statement<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+pub(crate) fn parse_statement<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
     parse_statements::parse_statement(state)
 }

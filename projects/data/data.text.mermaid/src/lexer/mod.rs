@@ -50,7 +50,7 @@ impl<'config> MermaidLexer<'config> {
         Self { config }
     }
 
-    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), data_text_core::OakError> {
+    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), data_text_core::TextError> {
         // 上一个非 trivia token，用于只在 `graph` 之后识别方向关键字。
         let mut last_significant: Option<MermaidTokenType> = None;
 

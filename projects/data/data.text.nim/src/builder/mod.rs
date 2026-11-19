@@ -4,7 +4,7 @@ use crate::{
     language::NimLanguage,
     parser::{NimElementType, NimParser},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, OakError, Parser, RedNode, RedTree, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, TextEdit, builder::BuildOutput, source::Source};
 use std::sync::Arc;
 
 /// Root structure for Nim build output.
@@ -28,7 +28,7 @@ impl<'config> NimBuilder<'config> {
     }
 
     /// Builds the AST root node.
-    pub fn build_root<'a, S: Source + ?Sized>(&self, green: &'a GreenNode<'a, NimLanguage>, _source: &S) -> Result<NimRoot, OakError> {
+    pub fn build_root<'a, S: Source + ?Sized>(&self, green: &'a GreenNode<'a, NimLanguage>, _source: &S) -> Result<NimRoot, TextError> {
         let mut items = Vec::new();
         let red = RedNode::new(green, 0);
 
@@ -51,13 +51,13 @@ impl<'config> NimBuilder<'config> {
         Ok(NimRoot { items })
     }
 
-    fn build_declaration<'a>(&self, node: RedNode<'a, NimLanguage>) -> Result<Arc<Declaration>, OakError> {
+    fn build_declaration<'a>(&self, node: RedNode<'a, NimLanguage>) -> Result<Arc<Declaration>, TextError> {
         let span = node.span();
         let decl = Arc::new(Declaration { name: "decl".to_string(), span });
         Ok(decl)
     }
 
-    fn build_statement<'a>(&self, node: RedNode<'a, NimLanguage>) -> Result<Statement, OakError> {
+    fn build_statement<'a>(&self, node: RedNode<'a, NimLanguage>) -> Result<Statement, TextError> {
         match node.green.kind {
             NimElementType::StaticStmt => {
                 // Find the block in the static statement
@@ -99,7 +99,7 @@ impl<'config> NimBuilder<'config> {
         }
     }
 
-    fn build_block<'a>(&self, node: RedNode<'a, NimLanguage>) -> Result<Arc<Block>, OakError> {
+    fn build_block<'a>(&self, node: RedNode<'a, NimLanguage>) -> Result<Arc<Block>, TextError> {
         let span = node.span();
         let mut statements = Vec::new();
 
@@ -122,14 +122,14 @@ impl<'config> Builder<NimLanguage> for NimBuilder<'config> {
 
         match parse_result.result {
             Ok(green_tree) => match self.build_root(green_tree, source) {
-                Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                 Err(e) => {
                     let mut diagnostics = parse_result.diagnostics;
                     diagnostics.push(e.clone());
-                    OakDiagnostics { result: Err(e), diagnostics }
+                    TextDiagnostics { result: Err(e), diagnostics }
                 }
             },
-            Err(e) => OakDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
+            Err(e) => TextDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
         }
     }
 }

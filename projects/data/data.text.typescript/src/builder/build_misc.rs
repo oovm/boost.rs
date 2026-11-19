@@ -1,8 +1,8 @@
 use crate::{ast::*, builder::TypeScriptBuilder, language::TypeScriptLanguage, lexer::token_type::TypeScriptTokenType, parser::element_type::TypeScriptElementType};
-use data_text_core::{OakError, RedNode, RedTree, Source, SourceText};
+use data_text_core::{TextError, RedNode, RedTree, Source, SourceText};
 
 impl<'config> TypeScriptBuilder<'config> {
-    pub(crate) fn build_parameter(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<FunctionParam>, OakError> {
+    pub(crate) fn build_parameter(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<FunctionParam>, TextError> {
         let mut name = String::new();
         let mut binding_names = Vec::new();
         let mut pattern_text = None;
@@ -70,7 +70,7 @@ impl<'config> TypeScriptBuilder<'config> {
         Ok(Some(FunctionParam { name, binding_names, pattern_text, default, is_rest, ty, optional_marker, decorators, span: span.into() }))
     }
 
-    pub(crate) fn build_enum_member(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<EnumMember>, OakError> {
+    pub(crate) fn build_enum_member(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<EnumMember>, TextError> {
         let mut name = String::new();
         let mut initializer = None;
         let span = node.span();
@@ -90,7 +90,7 @@ impl<'config> TypeScriptBuilder<'config> {
         Ok(Some(EnumMember { name, initializer, span: span.into() }))
     }
 
-    pub(crate) fn build_decorator(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<Decorator>, OakError> {
+    pub(crate) fn build_decorator(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<Decorator>, TextError> {
         let mut expression = None;
         let span = node.span();
 

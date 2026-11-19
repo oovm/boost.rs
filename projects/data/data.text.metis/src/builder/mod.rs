@@ -15,7 +15,7 @@ impl Builder<MetisLanguage> for MetisBuilder {
         let language = MetisLanguage::default();
         let parser = language.parser();
         let green_tree = parser.parse(text, edits, cache);
-        data_text_core::errors::OakDiagnostics { result: Err(data_text_core::errors::OakError::custom_error("Metis CST builder not implemented yet")), diagnostics: green_tree.diagnostics }
+        data_text_core::errors::TextDiagnostics { result: Err(data_text_core::errors::TextError::custom_error("Metis CST builder not implemented yet")), diagnostics: green_tree.diagnostics }
     }
 }
 

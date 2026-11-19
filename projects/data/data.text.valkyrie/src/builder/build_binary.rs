@@ -4,10 +4,10 @@ use crate::{
     builder::{ValkyrieBuilder, utils},
     lexer::token_type::ValkyrieTokenType,
 };
-use data_text_core::{OakError, RedNode, Source};
+use data_text_core::{TextError, RedNode, Source};
 
 impl<'config> ValkyrieBuilder<'config> {
-    pub(crate) fn build_binary<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_binary<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let (left, op, right) = utils::build_binary_expr(&node, source, |n, s| self.build_expr(*n, s), crate::lexer::token_type::ValkyrieTokenType::Plus)?;
 

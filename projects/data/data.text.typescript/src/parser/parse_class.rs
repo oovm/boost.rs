@@ -2,17 +2,17 @@ use crate::{
     lexer::token_type::TypeScriptTokenType,
     parser::{State, TypeScriptParser},
 };
-use data_text_core::{OakError, parser::pratt::PrattParser, source::Source};
+use data_text_core::{TextError, parser::pratt::PrattParser, source::Source};
 
 impl<'config> TypeScriptParser<'config> {
-    pub(crate) fn parse_class_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_class_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         self.parse_class_declaration_content(state)?;
         state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::ClassDeclaration);
         Ok(())
     }
 
-    pub(crate) fn parse_class_declaration_content<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_class_declaration_content<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         self.eat(state, Abstract);
         self.expect(state, Class).ok();
@@ -33,7 +33,7 @@ impl<'config> TypeScriptParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_class_expression_content<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_class_expression_content<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         self.expect(state, Class).ok();
         self.eat_class_name_opt(state);
@@ -70,7 +70,7 @@ impl<'config> TypeScriptParser<'config> {
         }
     }
 
-    pub(crate) fn parse_class_body<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_class_body<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         let cp = state.checkpoint();
         self.expect(state, LeftBrace).ok();

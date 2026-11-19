@@ -508,7 +508,7 @@ impl<'config> VbNetLexer<'config> {
     /// This method performs the main lexing loop, attempting to match various
     /// token types (whitespace, comments, literals, keywords, etc.) until the
     /// end of the input is reached.
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

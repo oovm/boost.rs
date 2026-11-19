@@ -1,5 +1,5 @@
 use crate::{GlslParser, ast::*, language::GlslLanguage, lexer::token_type::GlslTokenType, parser::element_type::GlslElementType};
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, OakError, Parser, RedLeaf, RedNode, RedTree, TextEdit, TokenType, builder::BuildOutput, parser::session::ParseSession, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedLeaf, RedNode, RedTree, TextEdit, TokenType, builder::BuildOutput, parser::session::ParseSession, source::Source};
 
 /// AST builder for the GLSL language.
 #[derive(Clone, Copy)]
@@ -23,20 +23,20 @@ impl<'config> Builder<GlslLanguage> for GlslBuilder<'config> {
 
         match parse_result.result {
             Ok(green_tree) => match self.build_root(green_tree, source) {
-                Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                 Err(build_error) => {
                     let mut diagnostics = parse_result.diagnostics;
                     diagnostics.push(build_error.clone());
-                    OakDiagnostics { result: Err(build_error), diagnostics }
+                    TextDiagnostics { result: Err(build_error), diagnostics }
                 }
             },
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> GlslBuilder<'config> {
-    fn build_root<'a, S: Source + ?Sized>(&self, green_tree: &'a GreenNode<'a, GlslLanguage>, source: &S) -> Result<GlslRoot, OakError> {
+    fn build_root<'a, S: Source + ?Sized>(&self, green_tree: &'a GreenNode<'a, GlslLanguage>, source: &S) -> Result<GlslRoot, TextError> {
         let red_root = RedNode::new(green_tree, 0);
         let mut items = Vec::new();
 

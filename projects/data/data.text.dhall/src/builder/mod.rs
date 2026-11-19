@@ -1,7 +1,7 @@
 use crate::parser::DHallParser;
 #[doc = include_str!("../readme.md")]
 use crate::{ast::*, language::DHallLanguage};
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, OakError, Parser, RedNode, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, SourceText, TextEdit, builder::BuildOutput, source::Source};
 
 /// DHall AST builder.
 #[derive(Clone)]
@@ -26,21 +26,21 @@ impl<'config> Builder<DHallLanguage> for DHallBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree.clone(), &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> DHallBuilder<'config> {
-    pub(crate) fn build_root(&self, green_tree: GreenNode<DHallLanguage>, source: &SourceText) -> Result<DHallRoot, OakError> {
+    pub(crate) fn build_root(&self, green_tree: GreenNode<DHallLanguage>, source: &SourceText) -> Result<DHallRoot, TextError> {
         let mut expressions = Vec::new();
         let mut current_offset = 0;
 
@@ -59,7 +59,7 @@ impl<'config> DHallBuilder<'config> {
         Ok(DHallRoot { expressions })
     }
 
-    fn build_expr(&self, node: &GreenNode<DHallLanguage>, offset: usize, source: &SourceText) -> Result<DHallExpr, OakError> {
+    fn build_expr(&self, node: &GreenNode<DHallLanguage>, offset: usize, source: &SourceText) -> Result<DHallExpr, TextError> {
         let span = core::range::Range { start: offset, end: offset + node.byte_length as usize };
 
         match node.kind {

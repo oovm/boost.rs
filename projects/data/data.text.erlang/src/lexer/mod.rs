@@ -5,7 +5,7 @@ pub use token_type::ErlangTokenType;
 
 use crate::language::ErlangLanguage;
 use data_text_core::{
-    errors::OakError,
+    errors::TextError,
     lexer::{LexOutput, Lexer, LexerCache, LexerState},
     source::{Source, TextEdit},
 };
@@ -36,7 +36,7 @@ impl<'config> ErlangLexer<'config> {
     }
 
     /// Main lexer run method.
-    pub fn run<'a, S: Source + ?Sized>(&self, state: &mut LexerState<'a, S, ErlangLanguage>) -> Result<(), OakError> {
+    pub fn run<'a, S: Source + ?Sized>(&self, state: &mut LexerState<'a, S, ErlangLanguage>) -> Result<(), TextError> {
         while state.not_at_end() {
             // Safety check to prevent infinite loops
             let start_pos = state.get_position();

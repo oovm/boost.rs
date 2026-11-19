@@ -86,7 +86,7 @@ pub fn print_von(value: &VonValue, style: PrintStyle, options: &FormatOptions) -
 
 /// 通过 serde 将 `value` 序列化为紧凑 VON 文本（AST print 路径）。
 #[cfg(feature = "serde")]
-pub fn to_string<T>(value: &T) -> Result<String, oak_core::OakError>
+pub fn to_string<T>(value: &T) -> Result<String, oak_core::TextError>
 where
     T: serde::Serialize,
 {
@@ -95,7 +95,7 @@ where
 
 /// 经 `oak-von::printer` 将 `value` 写出为缩进 VON 文本。
 #[cfg(feature = "serde")]
-pub fn to_string_indented<T>(value: &T) -> Result<String, oak_core::OakError>
+pub fn to_string_indented<T>(value: &T) -> Result<String, oak_core::TextError>
 where
     T: serde::Serialize,
 {

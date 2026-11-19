@@ -9,7 +9,7 @@ use crate::{
     parser::element_type::RhombusElementType,
 };
 use data_text_core::{
-    OakError,
+    TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -27,7 +27,7 @@ impl<'config> RhombusParser<'config> {
         Self { config }
     }
 
-    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
 
         // Rhombus statements often end with a newline or are grouped in blocks
@@ -37,7 +37,7 @@ impl<'config> RhombusParser<'config> {
         Ok(())
     }
 
-    fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         match state.peek_kind() {
             Some(RhombusTokenType::LeftParen) | Some(RhombusTokenType::LeftBracket) | Some(RhombusTokenType::LeftBrace) => self.parse_block(state),
             Some(_) => {
@@ -48,7 +48,7 @@ impl<'config> RhombusParser<'config> {
         }
     }
 
-    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         let open_kind = state.peek_kind();
         let close_kind = match open_kind {

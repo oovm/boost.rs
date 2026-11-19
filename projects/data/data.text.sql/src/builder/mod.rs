@@ -1,5 +1,5 @@
 use crate::{SqlElementType, SqlLanguage, SqlParser, ast, ast::*, lexer::token_type::SqlTokenType};
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, OakError, Parser, Range, RedNode, RedTree, SourceText, TextEdit, TokenType, builder::BuildOutput, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, Range, RedNode, RedTree, SourceText, TextEdit, TokenType, builder::BuildOutput, source::Source};
 use std::sync::Arc;
 
 mod build_expression_tree;
@@ -64,21 +64,21 @@ impl<'config> Builder<SqlLanguage> for SqlBuilder<'config> {
     fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<SqlLanguage>) -> BuildOutput<SqlLanguage> {
         let parser = SqlParser::new(self.config);
         let parse_result = parser.parse(source, edits, cache);
-        let OakDiagnostics { result, diagnostics } = parse_result;
+        let TextDiagnostics { result, diagnostics } = parse_result;
 
         match result {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics },
         }
     }
 }
@@ -89,7 +89,7 @@ impl<'config> SqlBuilder<'config> {
     /// This method performs the "lowering" phase where it traverses the untyped [`GreenNode`]
     /// tree and constructs a structured [`SqlRoot`]. It maps each top-level child node
     /// to its corresponding SQL statement type (SELECT, INSERT, etc.).
-    pub(crate) fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, SqlLanguage>, source: &SourceText) -> Result<SqlRoot, OakError> {
+    pub(crate) fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, SqlLanguage>, source: &SourceText) -> Result<SqlRoot, TextError> {
         let root_node = RedNode::new(green_tree, 0);
         let mut statements = Vec::new();
 
@@ -125,7 +125,7 @@ impl<'config> SqlBuilder<'config> {
     }
 
     /// Builds a `SELECT` statement AST node.
-    fn build_select_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<SelectStatement, OakError> {
+    fn build_select_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<SelectStatement, TextError> {
         let mut with = None;
         let mut quantifier = None;
         let mut items = Vec::new();
@@ -167,14 +167,14 @@ impl<'config> SqlBuilder<'config> {
         }
 
         if where_found && expr.is_none() {
-            return Err(OakError::custom_error("WHERE predicate could not be built"));
+            return Err(TextError::custom_error("WHERE predicate could not be built"));
         }
 
         Ok(SelectStatement { with, quantifier, items, from, joins, expr, group_by, having, order_by, limit, span: node.span() })
     }
 
     /// Builds the `WITH` clause of a query.
-    fn build_with_clause<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<WithClause, OakError> {
+    fn build_with_clause<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<WithClause, TextError> {
         let mut ctes = Vec::new();
         for child in node.children() {
             if let RedTree::Node(n) = child {
@@ -184,7 +184,7 @@ impl<'config> SqlBuilder<'config> {
             }
         }
         if ctes.is_empty() {
-            return Err(OakError::custom_error("`WITH` requires at least one common table expression"));
+            return Err(TextError::custom_error("`WITH` requires at least one common table expression"));
         }
         Ok(WithClause { ctes, span: node.span() })
     }
@@ -193,7 +193,7 @@ impl<'config> SqlBuilder<'config> {
     ///
     /// The name is the first identifier of the definition and the optional column
     /// list follows it, so the split is by order rather than by lookahead.
-    fn build_cte_definition<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<CteDefinition, OakError> {
+    fn build_cte_definition<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<CteDefinition, TextError> {
         let mut name = None;
         let mut columns = Vec::new();
         let mut query = None;
@@ -203,7 +203,7 @@ impl<'config> SqlBuilder<'config> {
                     query = Some(Box::new(self.build_select_statement(n, source)?));
                 }
                 RedTree::Node(n) if n.green.kind == SqlElementType::SetOperationStatement => {
-                    return Err(OakError::custom_error("Set operations in a CTE are not supported"));
+                    return Err(TextError::custom_error("Set operations in a CTE are not supported"));
                 }
                 RedTree::Leaf(t) if t.kind == SqlTokenType::Identifier_ => {
                     let identifier = Identifier { name: self.get_text(t.span.clone(), source), span: t.span.clone() };
@@ -217,14 +217,14 @@ impl<'config> SqlBuilder<'config> {
                 _ => {}
             }
         }
-        Ok(CteDefinition { name: name.ok_or_else(|| OakError::custom_error("Missing common table expression name"))?, columns, query: query.ok_or_else(|| OakError::custom_error("Missing common table expression query"))?, span: node.span() })
+        Ok(CteDefinition { name: name.ok_or_else(|| TextError::custom_error("Missing common table expression name"))?, columns, query: query.ok_or_else(|| TextError::custom_error("Missing common table expression query"))?, span: node.span() })
     }
 
     /// Builds a set operation (`UNION` / `INTERSECT` / `EXCEPT`) statement.
     ///
     /// `ORDER BY` and `LIMIT` sit on the set operation node because they apply to
     /// the combined result, not to the last branch.
-    fn build_set_operation_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<SetOperationStatement, OakError> {
+    fn build_set_operation_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<SetOperationStatement, TextError> {
         let mut operands = Vec::new();
         let mut operators = Vec::new();
         let mut order_by = None;
@@ -277,17 +277,17 @@ impl<'config> SqlBuilder<'config> {
         // also catches the edge case of a stray operator with no right-hand
         // operand (e.g. `SELECT a UNION;`).
         if operands.len() != operators.len() + 1 {
-            return Err(OakError::custom_error("Malformed set operation: operand and operator counts do not match"));
+            return Err(TextError::custom_error("Malformed set operation: operand and operator counts do not match"));
         }
         if operands.is_empty() {
-            return Err(OakError::custom_error("Missing operand in set operation"));
+            return Err(TextError::custom_error("Missing operand in set operation"));
         }
 
         Ok(SetOperationStatement { operands, operators, order_by, limit, span: node.span() })
     }
 
     /// Builds the explicit `ALL` / `DISTINCT` quantifier of a `SELECT` statement.
-    fn build_select_quantifier<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<SelectQuantifier, OakError> {
+    fn build_select_quantifier<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<SelectQuantifier, TextError> {
         let mut all = None;
         let mut distinct = None;
         let mut on = false;
@@ -315,12 +315,12 @@ impl<'config> SqlBuilder<'config> {
             if on { Ok(SelectQuantifier::DistinctOn { expressions, span: node.span() }) } else { Ok(SelectQuantifier::Distinct { span }) }
         }
         else {
-            Err(OakError::custom_error("Missing ALL or DISTINCT in select quantifier"))
+            Err(TextError::custom_error("Missing ALL or DISTINCT in select quantifier"))
         }
     }
 
     /// Builds a select item (column or expression) for a `SELECT` statement.
-    fn build_select_item<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<SelectItem, OakError> {
+    fn build_select_item<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<SelectItem, TextError> {
         let mut expr = None;
         let mut alias = None;
         let mut is_star = false;
@@ -355,11 +355,11 @@ impl<'config> SqlBuilder<'config> {
             }
         }
 
-        if is_star { Ok(SelectItem::Star { span: node.span() }) } else { Ok(SelectItem::Expression { expr: expr.ok_or_else(|| OakError::custom_error("Missing expression in select item"))?, alias, span: node.span() }) }
+        if is_star { Ok(SelectItem::Star { span: node.span() }) } else { Ok(SelectItem::Expression { expr: expr.ok_or_else(|| TextError::custom_error("Missing expression in select item"))?, alias, span: node.span() }) }
     }
 
     /// Builds an `INSERT` statement AST node.
-    fn build_insert_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<InsertStatement, OakError> {
+    fn build_insert_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<InsertStatement, TextError> {
         let mut table_name = None;
         let mut columns = Vec::new();
         let mut rows = Vec::new();
@@ -401,12 +401,12 @@ impl<'config> SqlBuilder<'config> {
                     }
                     SqlElementType::SelectStatement => {
                         if query.is_some() {
-                            return Err(OakError::custom_error("Too many queries in INSERT"));
+                            return Err(TextError::custom_error("Too many queries in INSERT"));
                         }
                         query = Some(Box::new(self.build_select_statement(n, source)?));
                     }
                     SqlElementType::SetOperationStatement => {
-                        return Err(OakError::custom_error("`INSERT ... SELECT` does not support set operations"));
+                        return Err(TextError::custom_error("`INSERT ... SELECT` does not support set operations"));
                     }
                     SqlElementType::DefaultValues => default_values = true,
                     SqlElementType::ConflictClause => on_conflict = Some(self.build_on_conflict_clause(n, source)?),
@@ -423,15 +423,15 @@ impl<'config> SqlBuilder<'config> {
             match query {
                 Some(query) => InsertSource::Select(query),
                 None if !rows.is_empty() => InsertSource::Values,
-                None => return Err(OakError::custom_error("Missing `VALUES` list, `DEFAULT VALUES` or nested `SELECT` in INSERT")),
+                None => return Err(TextError::custom_error("Missing `VALUES` list, `DEFAULT VALUES` or nested `SELECT` in INSERT")),
             }
         };
 
-        Ok(InsertStatement { table_name: table_name.ok_or_else(|| OakError::custom_error("Missing table name in INSERT"))?, columns, rows, source: insert_source, on_conflict, returning, span: node.span() })
+        Ok(InsertStatement { table_name: table_name.ok_or_else(|| TextError::custom_error("Missing table name in INSERT"))?, columns, rows, source: insert_source, on_conflict, returning, span: node.span() })
     }
 
     /// Builds the `ON CONFLICT` clause of an `INSERT` statement.
-    fn build_on_conflict_clause<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<OnConflictClause, OakError> {
+    fn build_on_conflict_clause<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<OnConflictClause, TextError> {
         let mut columns = Vec::new();
         let mut do_nothing = false;
         let mut do_update = false;
@@ -464,14 +464,14 @@ impl<'config> SqlBuilder<'config> {
             OnConflictAction::DoUpdate { assignments, selection }
         }
         else {
-            return Err(OakError::custom_error("`ON CONFLICT` requires `DO NOTHING` or `DO UPDATE`"));
+            return Err(TextError::custom_error("`ON CONFLICT` requires `DO NOTHING` or `DO UPDATE`"));
         };
 
         Ok(OnConflictClause { columns, action, span: node.span() })
     }
 
     /// Builds the `RETURNING` clause of an `INSERT` statement.
-    fn build_returning_clause<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<ReturningClause, OakError> {
+    fn build_returning_clause<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<ReturningClause, TextError> {
         let mut items = Vec::new();
 
         for child in node.children() {
@@ -486,7 +486,7 @@ impl<'config> SqlBuilder<'config> {
     }
 
     /// Collects expressions from a node into a vector.
-    fn collect_expressions<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText, out: &mut Vec<Expression>) -> Result<(), OakError> {
+    fn collect_expressions<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText, out: &mut Vec<Expression>) -> Result<(), TextError> {
         for child in node.children() {
             if let RedTree::Node(n) = child {
                 match n.green.kind {
@@ -507,7 +507,7 @@ impl<'config> SqlBuilder<'config> {
     }
 
     /// Builds an `UPDATE` statement AST node.
-    fn build_update_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<UpdateStatement, OakError> {
+    fn build_update_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<UpdateStatement, TextError> {
         let mut table_name: Option<TableName> = None;
         let mut assignments = Vec::new();
         let mut selection = None;
@@ -537,14 +537,14 @@ impl<'config> SqlBuilder<'config> {
         }
 
         if where_found && selection.is_none() {
-            return Err(OakError::custom_error("WHERE predicate could not be built"));
+            return Err(TextError::custom_error("WHERE predicate could not be built"));
         }
 
-        Ok(UpdateStatement { table_name: table_name.ok_or_else(|| OakError::custom_error("Missing table name in UPDATE"))?, assignments, selection, span: node.span() })
+        Ok(UpdateStatement { table_name: table_name.ok_or_else(|| TextError::custom_error("Missing table name in UPDATE"))?, assignments, selection, span: node.span() })
     }
 
     /// Builds an assignment (column = expression) for an `UPDATE` statement.
-    fn build_assignment<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Assignment, OakError> {
+    fn build_assignment<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Assignment, TextError> {
         let mut column = None;
         let mut value = None;
 
@@ -562,11 +562,11 @@ impl<'config> SqlBuilder<'config> {
             }
         }
 
-        Ok(Assignment { column: column.ok_or_else(|| OakError::custom_error("Missing column in assignment"))?, value: value.ok_or_else(|| OakError::custom_error("Missing value in assignment"))?, span: node.span() })
+        Ok(Assignment { column: column.ok_or_else(|| TextError::custom_error("Missing column in assignment"))?, value: value.ok_or_else(|| TextError::custom_error("Missing value in assignment"))?, span: node.span() })
     }
 
     /// Builds a `DELETE` statement AST node.
-    fn build_delete_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<DeleteStatement, OakError> {
+    fn build_delete_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<DeleteStatement, TextError> {
         let mut table_name = None;
         let mut selection = None;
         let mut where_found = false;
@@ -588,14 +588,14 @@ impl<'config> SqlBuilder<'config> {
         }
 
         if where_found && selection.is_none() {
-            return Err(OakError::custom_error("WHERE predicate could not be built"));
+            return Err(TextError::custom_error("WHERE predicate could not be built"));
         }
 
-        Ok(DeleteStatement { table_name: table_name.ok_or_else(|| OakError::custom_error("Missing table name in DELETE"))?, selection, span: node.span() })
+        Ok(DeleteStatement { table_name: table_name.ok_or_else(|| TextError::custom_error("Missing table name in DELETE"))?, selection, span: node.span() })
     }
 
     /// Builds a `CREATE` statement AST node.
-    fn build_create_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<CreateStatement, OakError> {
+    fn build_create_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<CreateStatement, TextError> {
         let mut object_type = CreateObjectType::Table;
         let mut name = None;
         let mut if_not_exists = false;
@@ -657,16 +657,16 @@ impl<'config> SqlBuilder<'config> {
 
         let body = match object_type {
             CreateObjectType::Table => CreateBody::Table { columns, constraints: table_constraints, span: node.span() },
-            CreateObjectType::View => CreateBody::View { query: Box::new(query.ok_or_else(|| OakError::custom_error("Missing query in CREATE VIEW"))?), span: node.span() },
-            CreateObjectType::Index => CreateBody::Index { table_name: table_name.ok_or_else(|| OakError::custom_error("Missing table name in CREATE INDEX"))?, columns: index_columns, unique, span: node.span() },
+            CreateObjectType::View => CreateBody::View { query: Box::new(query.ok_or_else(|| TextError::custom_error("Missing query in CREATE VIEW"))?), span: node.span() },
+            CreateObjectType::Index => CreateBody::Index { table_name: table_name.ok_or_else(|| TextError::custom_error("Missing table name in CREATE INDEX"))?, columns: index_columns, unique, span: node.span() },
             CreateObjectType::Database => CreateBody::Database { span: node.span() },
         };
 
-        let result = CreateStatement { object_type, name: name.ok_or_else(|| OakError::custom_error("Missing name in CREATE"))?, if_not_exists, body, span: node.span() };
+        let result = CreateStatement { object_type, name: name.ok_or_else(|| TextError::custom_error("Missing name in CREATE"))?, if_not_exists, body, span: node.span() };
         Ok(result)
     }
 
-    fn build_column_definition<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<ColumnDefinition, OakError> {
+    fn build_column_definition<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<ColumnDefinition, TextError> {
         let mut name = None;
         // Spans of the tokens that spell the column type. Slicing the source
         // between the first and the last one keeps the type exactly as written
@@ -756,11 +756,11 @@ impl<'config> SqlBuilder<'config> {
             _ => Arc::from(""),
         };
 
-        Ok(ColumnDefinition { name: name.ok_or_else(|| OakError::custom_error("Missing name in column definition"))?, data_type, constraints, span: node.span() })
+        Ok(ColumnDefinition { name: name.ok_or_else(|| TextError::custom_error("Missing name in column definition"))?, data_type, constraints, span: node.span() })
     }
 
     /// Builds a table-level constraint of a `CREATE TABLE` statement.
-    fn build_table_constraint<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<TableConstraint, OakError> {
+    fn build_table_constraint<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<TableConstraint, TextError> {
         let mut is_primary = false;
         let mut is_foreign = false;
         let mut is_check = false;
@@ -807,21 +807,21 @@ impl<'config> SqlBuilder<'config> {
         let span = node.span();
         if is_primary {
             if conflict && resolution.is_none() {
-                return Err(OakError::custom_error("Missing resolution in `ON CONFLICT`"));
+                return Err(TextError::custom_error("Missing resolution in `ON CONFLICT`"));
             }
             return Ok(TableConstraint::PrimaryKey { columns: indexed_columns, on_conflict: resolution, span });
         }
         if is_foreign {
-            return Ok(TableConstraint::ForeignKey { columns, table_name: table_name.ok_or_else(|| OakError::custom_error("Missing referenced table in `FOREIGN KEY`"))?, referenced_columns, span });
+            return Ok(TableConstraint::ForeignKey { columns, table_name: table_name.ok_or_else(|| TextError::custom_error("Missing referenced table in `FOREIGN KEY`"))?, referenced_columns, span });
         }
         if is_check {
-            return Ok(TableConstraint::Check { expr: expr.ok_or_else(|| OakError::custom_error("Missing expression in `CHECK`"))?, span });
+            return Ok(TableConstraint::Check { expr: expr.ok_or_else(|| TextError::custom_error("Missing expression in `CHECK`"))?, span });
         }
-        Err(OakError::custom_error("Unknown table constraint"))
+        Err(TextError::custom_error("Unknown table constraint"))
     }
 
     /// Builds one column of a table-level `PRIMARY KEY` constraint.
-    fn build_indexed_column<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<IndexedColumn, OakError> {
+    fn build_indexed_column<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<IndexedColumn, TextError> {
         let mut name = None;
         let mut direction = None;
         for child in node.children() {
@@ -835,7 +835,7 @@ impl<'config> SqlBuilder<'config> {
                 _ => {}
             }
         }
-        Ok(IndexedColumn { name: name.ok_or_else(|| OakError::custom_error("Missing column name in `PRIMARY KEY`"))?, direction, span: node.span() })
+        Ok(IndexedColumn { name: name.ok_or_else(|| TextError::custom_error("Missing column name in `PRIMARY KEY`"))?, direction, span: node.span() })
     }
 
     /// Helper to find the next node of a specific kind after a certain position
@@ -850,7 +850,7 @@ impl<'config> SqlBuilder<'config> {
         None
     }
 
-    fn build_drop_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<DropStatement, OakError> {
+    fn build_drop_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<DropStatement, TextError> {
         let mut object_type = DropObjectType::Table;
         let mut name = None;
         let mut if_exists = false;
@@ -873,11 +873,11 @@ impl<'config> SqlBuilder<'config> {
             }
         }
 
-        let result = DropStatement { object_type, name: name.ok_or_else(|| OakError::custom_error("Missing name in DROP"))?, if_exists, span: node.span() };
+        let result = DropStatement { object_type, name: name.ok_or_else(|| TextError::custom_error("Missing name in DROP"))?, if_exists, span: node.span() };
         Ok(result)
     }
 
-    fn build_alter_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<AlterStatement, OakError> {
+    fn build_alter_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<AlterStatement, TextError> {
         let mut table_name = None;
         let mut action = None;
 
@@ -892,11 +892,11 @@ impl<'config> SqlBuilder<'config> {
             }
         }
 
-        let result = AlterStatement { table_name: table_name.ok_or_else(|| OakError::custom_error("Missing table name in ALTER"))?, action, span: node.span() };
+        let result = AlterStatement { table_name: table_name.ok_or_else(|| TextError::custom_error("Missing table name in ALTER"))?, action, span: node.span() };
         Ok(result)
     }
 
-    fn build_alter_action<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<ast::AlterAction, OakError> {
+    fn build_alter_action<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<ast::AlterAction, TextError> {
         use SqlTokenType::*;
         let mut is_add = false;
         let mut is_drop = false;
@@ -942,16 +942,16 @@ impl<'config> SqlBuilder<'config> {
         };
 
         if is_add {
-            Ok(ast::AlterAction::AddColumn { name: identifier.ok_or_else(|| OakError::custom_error("Missing column name in ALTER TABLE ADD"))?, data_type, span: node.span() })
+            Ok(ast::AlterAction::AddColumn { name: identifier.ok_or_else(|| TextError::custom_error("Missing column name in ALTER TABLE ADD"))?, data_type, span: node.span() })
         }
         else if is_drop {
-            Ok(ast::AlterAction::DropColumn { name: identifier.ok_or_else(|| OakError::custom_error("Missing column name in ALTER TABLE DROP"))?, span: node.span() })
+            Ok(ast::AlterAction::DropColumn { name: identifier.ok_or_else(|| TextError::custom_error("Missing column name in ALTER TABLE DROP"))?, span: node.span() })
         }
         else if is_rename {
-            Ok(ast::AlterAction::RenameTo { new_name: identifier.ok_or_else(|| OakError::custom_error("Missing new name in ALTER TABLE RENAME"))?, span: node.span() })
+            Ok(ast::AlterAction::RenameTo { new_name: identifier.ok_or_else(|| TextError::custom_error("Missing new name in ALTER TABLE RENAME"))?, span: node.span() })
         }
         else {
-            Err(OakError::custom_error("Unknown ALTER action"))
+            Err(TextError::custom_error("Unknown ALTER action"))
         }
     }
 
@@ -959,14 +959,14 @@ impl<'config> SqlBuilder<'config> {
     ///
     /// A nested `SELECT` child means the source is a derived table; otherwise the
     /// node is a plain (possibly aliased) table name.
-    fn build_table_source<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<TableSource, OakError> {
+    fn build_table_source<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<TableSource, TextError> {
         for child in node.children() {
             match child {
                 RedTree::Node(n) if n.green.kind == SqlElementType::SelectStatement => {
                     return Ok(TableSource::Derived { query: Box::new(self.build_select_statement(n, source)?), alias: self.build_derived_alias(node.clone(), source), span: node.span() });
                 }
                 RedTree::Node(n) if matches!(n.green.kind, SqlElementType::SetOperationStatement) => {
-                    return Err(OakError::custom_error("Set operations in a derived table are not supported"));
+                    return Err(TextError::custom_error("Set operations in a derived table are not supported"));
                 }
                 _ => {}
             }
@@ -992,7 +992,7 @@ impl<'config> SqlBuilder<'config> {
         alias
     }
 
-    fn build_table_name<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<TableName, OakError> {
+    fn build_table_name<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<TableName, TextError> {
         let mut name = None;
         let mut alias = None;
         for child in node.children() {
@@ -1012,10 +1012,10 @@ impl<'config> SqlBuilder<'config> {
                 }
             }
         }
-        Ok(TableName { name: name.ok_or_else(|| OakError::custom_error("Missing table name"))?, alias, span: node.span() })
+        Ok(TableName { name: name.ok_or_else(|| TextError::custom_error("Missing table name"))?, alias, span: node.span() })
     }
 
-    fn build_transaction_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<ast::TransactionStatement, OakError> {
+    fn build_transaction_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<ast::TransactionStatement, TextError> {
         use SqlTokenType::*;
         let mut head: Option<SqlTokenType> = None;
         let mut saw_to = false;
@@ -1042,15 +1042,15 @@ impl<'config> SqlBuilder<'config> {
             (Some(Rollback), true, Some(name)) => TransactionAction::RollbackToSavepoint(name),
             (Some(Savepoint), _, Some(name)) => TransactionAction::Savepoint(name),
             (Some(Release), _, Some(name)) => TransactionAction::ReleaseSavepoint(name),
-            (Some(Rollback), true, None) => return Err(OakError::custom_error("`ROLLBACK TO` requires a savepoint name")),
-            (Some(Savepoint), _, None) => return Err(OakError::custom_error("`SAVEPOINT` requires a name")),
-            (Some(Release), _, None) => return Err(OakError::custom_error("`RELEASE` requires a savepoint name")),
-            _ => return Err(OakError::custom_error("Missing transaction action")),
+            (Some(Rollback), true, None) => return Err(TextError::custom_error("`ROLLBACK TO` requires a savepoint name")),
+            (Some(Savepoint), _, None) => return Err(TextError::custom_error("`SAVEPOINT` requires a name")),
+            (Some(Release), _, None) => return Err(TextError::custom_error("`RELEASE` requires a savepoint name")),
+            _ => return Err(TextError::custom_error("Missing transaction action")),
         };
         Ok(ast::TransactionStatement { action, span: node.span() })
     }
 
-    fn build_set_names_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<SetNamesStatement, OakError> {
+    fn build_set_names_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<SetNamesStatement, TextError> {
         let tokens = node
             .children()
             .filter_map(|child| match child {
@@ -1059,17 +1059,17 @@ impl<'config> SqlBuilder<'config> {
             })
             .collect::<Vec<_>>();
         if tokens.first().is_none_or(|token| !token.eq_ignore_ascii_case("NAMES")) {
-            return Err(OakError::custom_error("SET NAMES requires a character set and optional collation"));
+            return Err(TextError::custom_error("SET NAMES requires a character set and optional collation"));
         }
         let (character_set, collation) = match tokens.as_slice() {
             [_, character_set] => (character_set.clone(), None),
             [_, character_set, collate, collation] if collate.eq_ignore_ascii_case("COLLATE") => (character_set.clone(), Some(collation.clone())),
-            _ => return Err(OakError::custom_error("SET NAMES requires a character set and optional collation")),
+            _ => return Err(TextError::custom_error("SET NAMES requires a character set and optional collation")),
         };
         Ok(SetNamesStatement { character_set, collation, span: node.span() })
     }
 
-    fn build_set_variable_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<SetVariableStatement, OakError> {
+    fn build_set_variable_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<SetVariableStatement, TextError> {
         let mut words = Vec::new();
         let mut value = None;
         for child in node.children() {
@@ -1082,11 +1082,11 @@ impl<'config> SqlBuilder<'config> {
             }
         }
         let (scope, name) = split_session_scope(words, "SET")?;
-        let value = value.ok_or_else(|| OakError::custom_error("SET requires an assigned value"))?;
+        let value = value.ok_or_else(|| TextError::custom_error("SET requires an assigned value"))?;
         Ok(SetVariableStatement { scope, name, value, span: node.span() })
     }
 
-    fn build_show_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<ShowStatement, OakError> {
+    fn build_show_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<ShowStatement, TextError> {
         let mut words = Vec::new();
         let mut like = None;
         for child in node.children() {
@@ -1106,7 +1106,7 @@ impl<'config> SqlBuilder<'config> {
         Ok(ShowStatement { scope, target, like, span: node.span() })
     }
 
-    fn build_pragma_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<PragmaStatement, OakError> {
+    fn build_pragma_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<PragmaStatement, TextError> {
         let mut name = None;
         let mut value = None;
         for child in node.children() {
@@ -1120,10 +1120,10 @@ impl<'config> SqlBuilder<'config> {
                 _ => {}
             }
         }
-        Ok(PragmaStatement { name: name.ok_or_else(|| OakError::custom_error("PRAGMA requires a name"))?, value, span: node.span() })
+        Ok(PragmaStatement { name: name.ok_or_else(|| TextError::custom_error("PRAGMA requires a name"))?, value, span: node.span() })
     }
 
-    fn build_identifier<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Identifier, OakError> {
+    fn build_identifier<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Identifier, TextError> {
         // Trivia is attached to the preceding token, so a node ending at an
         // identifier carries its trailing whitespace in the span.
         let text = self.get_text(node.span(), source);
@@ -1132,7 +1132,7 @@ impl<'config> SqlBuilder<'config> {
         Ok(Identifier { name, span: node.span() })
     }
 
-    fn build_join_clause<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<JoinClause, OakError> {
+    fn build_join_clause<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<JoinClause, TextError> {
         let mut join_type = JoinType::Inner;
         let mut table = None;
         let mut on = None;
@@ -1155,10 +1155,10 @@ impl<'config> SqlBuilder<'config> {
             }
         }
 
-        Ok(JoinClause { join_type, table: table.ok_or_else(|| OakError::custom_error("Missing table in JOIN"))?, on, span: node.span() })
+        Ok(JoinClause { join_type, table: table.ok_or_else(|| TextError::custom_error("Missing table in JOIN"))?, on, span: node.span() })
     }
 
-    fn build_group_by_clause<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<crate::ast::GroupByClause, OakError> {
+    fn build_group_by_clause<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<crate::ast::GroupByClause, TextError> {
         use crate::{
             ast::GroupByItem,
             lexer::SqlTokenType::{Comma, Cube, Grouping, LeftParen, RightParen, Rollup, Sets},
@@ -1175,7 +1175,7 @@ impl<'config> SqlBuilder<'config> {
                     if i < children.len() {
                         if let RedTree::Leaf(t) = &children[i] {
                             if t.kind != Sets {
-                                return Err(OakError::custom_error("expected `SETS` after `GROUPING`"));
+                                return Err(TextError::custom_error("expected `SETS` after `GROUPING`"));
                             }
                         }
                         i += 1;
@@ -1184,7 +1184,7 @@ impl<'config> SqlBuilder<'config> {
                     if i < children.len() {
                         if let RedTree::Leaf(t) = &children[i] {
                             if t.kind != LeftParen {
-                                return Err(OakError::custom_error("expected `(` after `GROUPING SETS`"));
+                                return Err(TextError::custom_error("expected `(` after `GROUPING SETS`"));
                             }
                         }
                         i += 1;
@@ -1192,11 +1192,11 @@ impl<'config> SqlBuilder<'config> {
                     let mut groups: Vec<Vec<GroupByItem>> = Vec::new();
                     loop {
                         if i >= children.len() {
-                            return Err(OakError::custom_error("unexpected end in `GROUPING SETS`"));
+                            return Err(TextError::custom_error("unexpected end in `GROUPING SETS`"));
                         }
                         let RedTree::Leaf(t) = &children[i]
                         else {
-                            return Err(OakError::custom_error("expected `(` or `)` in `GROUPING SETS`"));
+                            return Err(TextError::custom_error("expected `(` or `)` in `GROUPING SETS`"));
                         };
                         if t.kind == RightParen {
                             i += 1;
@@ -1207,7 +1207,7 @@ impl<'config> SqlBuilder<'config> {
                             let mut group_items: Vec<GroupByItem> = Vec::new();
                             loop {
                                 if i >= children.len() {
-                                    return Err(OakError::custom_error("unexpected end in `GROUPING SETS` group"));
+                                    return Err(TextError::custom_error("unexpected end in `GROUPING SETS` group"));
                                 }
                                 let next = &children[i];
                                 match next {
@@ -1224,7 +1224,7 @@ impl<'config> SqlBuilder<'config> {
                                         i += 1;
                                     }
                                     _ => {
-                                        return Err(OakError::custom_error("unexpected token in `GROUPING SETS` group"));
+                                        return Err(TextError::custom_error("unexpected token in `GROUPING SETS` group"));
                                     }
                                 }
                             }
@@ -1238,7 +1238,7 @@ impl<'config> SqlBuilder<'config> {
                             }
                         }
                         else {
-                            return Err(OakError::custom_error("expected `(` in `GROUPING SETS`"));
+                            return Err(TextError::custom_error("expected `(` in `GROUPING SETS`"));
                         }
                     }
                     items.push(GroupByItem::GroupingSets(groups));
@@ -1262,7 +1262,7 @@ impl<'config> SqlBuilder<'config> {
                     let mut rollup_items: Vec<GroupByItem> = Vec::new();
                     loop {
                         if i >= children.len() {
-                            return Err(OakError::custom_error("unexpected end in `ROLLUP`"));
+                            return Err(TextError::custom_error("unexpected end in `ROLLUP`"));
                         }
                         let next = &children[i];
                         match next {
@@ -1279,7 +1279,7 @@ impl<'config> SqlBuilder<'config> {
                                 i += 1;
                             }
                             _ => {
-                                return Err(OakError::custom_error("unexpected token in `ROLLUP`"));
+                                return Err(TextError::custom_error("unexpected token in `ROLLUP`"));
                             }
                         }
                     }
@@ -1304,7 +1304,7 @@ impl<'config> SqlBuilder<'config> {
                     let mut cube_items: Vec<GroupByItem> = Vec::new();
                     loop {
                         if i >= children.len() {
-                            return Err(OakError::custom_error("unexpected end in `CUBE`"));
+                            return Err(TextError::custom_error("unexpected end in `CUBE`"));
                         }
                         let next = &children[i];
                         match next {
@@ -1321,7 +1321,7 @@ impl<'config> SqlBuilder<'config> {
                                 i += 1;
                             }
                             _ => {
-                                return Err(OakError::custom_error("unexpected token in `CUBE`"));
+                                return Err(TextError::custom_error("unexpected token in `CUBE`"));
                             }
                         }
                     }
@@ -1359,14 +1359,14 @@ impl<'config> SqlBuilder<'config> {
             }
         }
         if items.is_empty() {
-            return Err(OakError::custom_error("Missing item in GROUP BY clause"));
+            return Err(TextError::custom_error("Missing item in GROUP BY clause"));
         }
         Ok(crate::ast::GroupByClause { items, span: node.span() })
     }
 
     /// Classifies one `GROUP BY` expression node. A lone integer literal is a
     /// positional reference and becomes an explicit [`GroupByItem::Position`].
-    fn build_group_by_item<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<GroupByItem, OakError> {
+    fn build_group_by_item<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<GroupByItem, TextError> {
         if let Some(span) = Self::lone_number_span(&node) {
             if let Ok(index) = self.get_text(span.clone(), source).parse::<usize>() {
                 return Ok(GroupByItem::Position { index, span });
@@ -1395,7 +1395,7 @@ impl<'config> SqlBuilder<'config> {
         span
     }
 
-    fn build_having_clause<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<HavingClause, OakError> {
+    fn build_having_clause<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<HavingClause, TextError> {
         let mut condition = None;
         for child in node.children() {
             if let RedTree::Node(n) = child {
@@ -1406,10 +1406,10 @@ impl<'config> SqlBuilder<'config> {
                 }
             }
         }
-        Ok(HavingClause { condition: condition.ok_or_else(|| OakError::custom_error("Missing condition in HAVING"))?, span: node.span() })
+        Ok(HavingClause { condition: condition.ok_or_else(|| TextError::custom_error("Missing condition in HAVING"))?, span: node.span() })
     }
 
-    fn build_order_by_clause<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<OrderByClause, OakError> {
+    fn build_order_by_clause<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<OrderByClause, TextError> {
         let mut items = Vec::new();
         let mut current: Option<OrderByItem> = None;
 
@@ -1442,7 +1442,7 @@ impl<'config> SqlBuilder<'config> {
             items.push(item);
         }
         if items.is_empty() {
-            return Err(OakError::custom_error("Missing item in ORDER BY clause"));
+            return Err(TextError::custom_error("Missing item in ORDER BY clause"));
         }
 
         Ok(OrderByClause { items, span: node.span() })
@@ -1462,7 +1462,7 @@ impl<'config> SqlBuilder<'config> {
         }
     }
 
-    fn build_limit_clause<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<LimitClause, OakError> {
+    fn build_limit_clause<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<LimitClause, TextError> {
         let mut limit = None;
         let mut offset = None;
 
@@ -1504,7 +1504,7 @@ impl<'config> SqlBuilder<'config> {
         }
 
         if limit.is_none() && offset.is_none() {
-            return Err(OakError::custom_error("LIMIT/OFFSET clause requires at least one value"));
+            return Err(TextError::custom_error("LIMIT/OFFSET clause requires at least one value"));
         }
 
         Ok(LimitClause { limit, offset, span: node.span() })
@@ -1544,7 +1544,7 @@ impl<'config> SqlBuilder<'config> {
         }
     }
 
-    fn build_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<SqlStatement, OakError> {
+    fn build_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<SqlStatement, TextError> {
         match node.green.kind {
             SqlElementType::SelectStatement => Ok(SqlStatement::Select(self.build_select_statement(node, source)?)),
             SqlElementType::SetOperationStatement => Ok(SqlStatement::SetOperation(self.build_set_operation_statement(node, source)?)),
@@ -1559,21 +1559,21 @@ impl<'config> SqlBuilder<'config> {
             SqlElementType::SetVariableStatement => Ok(SqlStatement::SetVariable(self.build_set_variable_statement(node, source)?)),
             SqlElementType::ShowStatement => Ok(SqlStatement::Show(self.build_show_statement(node, source)?)),
             SqlElementType::PragmaStatement => Ok(SqlStatement::Pragma(self.build_pragma_statement(node, source)?)),
-            _ => Err(OakError::custom_error("Unknown statement type")),
+            _ => Err(TextError::custom_error("Unknown statement type")),
         }
     }
 }
 
 /// Splits identifier words collected from a session statement into an optional
 /// scope prefix and the target word.
-fn split_session_scope(words: Vec<Arc<str>>, keyword: &str) -> Result<(Option<SessionScope>, Arc<str>), OakError> {
+fn split_session_scope(words: Vec<Arc<str>>, keyword: &str) -> Result<(Option<SessionScope>, Arc<str>), TextError> {
     match words.as_slice() {
         [name] => Ok((None, name.clone())),
         [scope, name] => {
-            let scope = SessionScope::from_word(scope).ok_or_else(|| OakError::custom_error(format!("{keyword} scope must be GLOBAL, SESSION, or LOCAL")))?;
+            let scope = SessionScope::from_word(scope).ok_or_else(|| TextError::custom_error(format!("{keyword} scope must be GLOBAL, SESSION, or LOCAL")))?;
             Ok((Some(scope), name.clone()))
         }
-        _ => Err(OakError::custom_error(format!("{keyword} requires a target word"))),
+        _ => Err(TextError::custom_error(format!("{keyword} requires a target word"))),
     }
 }
 

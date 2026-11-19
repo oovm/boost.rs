@@ -5,10 +5,10 @@ use crate::{
     lexer::token_type::DejavuTokenType,
     parser::element_type::DejavuElementType,
 };
-use data_text_core::{OakError, RedNode, RedTree, Source};
+use data_text_core::{TextError, RedNode, RedTree, Source};
 
 impl<'config> DejavuBuilder<'config> {
-    pub(crate) fn build_mezzo<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<TypeFunctionDefinition, OakError> {
+    pub(crate) fn build_mezzo<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<TypeFunctionDefinition, TextError> {
         let span = node.span();
         let mut name = IdentifierNode { name: String::new(), span: Default::default() };
         let mut annotations = Vec::new();
@@ -48,7 +48,7 @@ impl<'config> DejavuBuilder<'config> {
         Ok(TypeFunctionDefinition { name, annotations, params, return_type: None, body, span })
     }
 
-    pub(crate) fn build_micro<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<MicroDefinition, OakError> {
+    pub(crate) fn build_micro<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<MicroDefinition, TextError> {
         let span = node.span();
         let mut name = IdentifierNode { name: String::new(), span: Default::default() };
         let mut annotations = Vec::new();
@@ -94,7 +94,7 @@ impl<'config> DejavuBuilder<'config> {
         Ok(MicroDefinition { name, annotations, params, return_type, body, span })
     }
 
-    pub(crate) fn build_params<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<Vec<ParameterNode>, OakError> {
+    pub(crate) fn build_params<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<Vec<ParameterNode>, TextError> {
         let mut params = Vec::new();
         for child in node.children() {
             match child {
@@ -112,7 +112,7 @@ impl<'config> DejavuBuilder<'config> {
         Ok(params)
     }
 
-    pub(crate) fn build_param<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ParameterNode, OakError> {
+    pub(crate) fn build_param<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ParameterNode, TextError> {
         let span = node.span();
         let mut annotations = Vec::new();
         let mut name: Option<IdentifierNode> = None;

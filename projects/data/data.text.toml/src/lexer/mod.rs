@@ -5,7 +5,7 @@ pub use crate::lexer::token_type::TomlTokenType;
 
 use crate::{language::TomlLanguage, lexer::token_type::TomlTokenKind as TomlSyntaxKind};
 use data_text_core::{
-    Lexer, LexerState, OakError, TextEdit,
+    Lexer, LexerState, TextError, TextEdit,
     lexer::{LexOutput, LexerCache},
     source::Source,
 };
@@ -39,7 +39,7 @@ impl<'config> TomlLexer<'config> {
     }
 
     /// Main lexing loop that iterates through the source text.
-    fn run<S: Source + ?Sized>(&self, state: &mut State<S>) -> Result<(), OakError> {
+    fn run<S: Source + ?Sized>(&self, state: &mut State<S>) -> Result<(), TextError> {
         while state.not_at_end() {
             if let Some(ch) = state.peek() {
                 match ch {

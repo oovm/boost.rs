@@ -4,7 +4,7 @@ pub mod token_type;
 
 use crate::{language::GraphQLLanguage, lexer::token_type::GraphQLTokenType};
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError, TextEdit,
+    Lexer, LexerCache, LexerState, TextError, TextEdit,
     lexer::{CommentConfig, LexOutput, StringConfig, WhitespaceConfig},
     source::Source,
 };
@@ -39,7 +39,7 @@ impl<'config> GraphQLLexer<'config> {
         Self { config }
     }
 
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

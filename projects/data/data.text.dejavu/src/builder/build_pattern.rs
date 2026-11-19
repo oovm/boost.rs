@@ -5,10 +5,10 @@ use crate::{
     lexer::token_type::DejavuTokenType,
     parser::element_type::DejavuElementType,
 };
-use data_text_core::{OakError, RedNode, RedTree, Source};
+use data_text_core::{TextError, RedNode, RedTree, Source};
 
 impl<'config> DejavuBuilder<'config> {
-    pub(crate) fn build_pattern<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<PatternNode, OakError> {
+    pub(crate) fn build_pattern<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<PatternNode, TextError> {
         match node.green.kind {
             DejavuElementType::Pattern => {
                 // Traverse children to find specific pattern type or identifier

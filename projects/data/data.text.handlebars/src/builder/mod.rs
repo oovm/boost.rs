@@ -5,7 +5,7 @@ use crate::{
     parser::{HandlebarsParser, element_type::HandlebarsElementType},
 };
 use core::range::Range;
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, OakError, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
 
 /// AST builder for the Handlebars language.
 #[derive(Clone)]
@@ -21,7 +21,7 @@ impl<'config> HandlebarsBuilder<'config> {
 }
 
 impl<'config> Builder<HandlebarsLanguage> for HandlebarsBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<HandlebarsLanguage>) -> OakDiagnostics<HandlebarsRoot> {
+    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<HandlebarsLanguage>) -> TextDiagnostics<HandlebarsRoot> {
         let parser = HandlebarsParser::new(self.config);
 
         let mut parse_cache = data_text_core::parser::session::ParseSession::<HandlebarsLanguage>::default();
@@ -31,21 +31,21 @@ impl<'config> Builder<HandlebarsLanguage> for HandlebarsBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> HandlebarsBuilder<'config> {
-    pub(crate) fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, HandlebarsLanguage>, source: &SourceText) -> Result<HandlebarsRoot, OakError> {
+    pub(crate) fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, HandlebarsLanguage>, source: &SourceText) -> Result<HandlebarsRoot, TextError> {
         let red_root = RedNode::new(green_tree, 0);
         let mut nodes = Vec::new();
 
@@ -62,7 +62,7 @@ impl<'config> HandlebarsBuilder<'config> {
         Ok(HandlebarsRoot { nodes })
     }
 
-    fn build_node(&self, node: RedNode<HandlebarsLanguage>, source: &SourceText) -> Result<TemplateNode, OakError> {
+    fn build_node(&self, node: RedNode<HandlebarsLanguage>, source: &SourceText) -> Result<TemplateNode, TextError> {
         match node.green.kind {
             HandlebarsElementType::Mustache => {
                 // Simplified Mustache building

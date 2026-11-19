@@ -3,7 +3,7 @@ pub mod element_type;
 
 use crate::{language::GoLanguage, lexer::GoLexer};
 use data_text_core::{
-    OakError,
+    TextError,
     parser::{Associativity, ParseCache, ParseOutput, Parser, ParserState, Pratt, PrattParser, binary, parse_with_lexer, unary},
     source::{Source, TextEdit},
     tree::GreenNode,
@@ -36,7 +36,7 @@ impl<'config> GoParser<'config> {
         }
     }
 
-    pub(crate) fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::{GoElementType as E, GoTokenType as T};
         self.skip_trivia(state);
         match state.peek_kind() {
@@ -81,7 +81,7 @@ impl<'config> GoParser<'config> {
         Ok(())
     }
 
-    fn parse_package_clause<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_package_clause<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::{GoElementType as E, GoTokenType as T};
         let cp = state.checkpoint();
         state.expect(T::Package).ok();
@@ -91,7 +91,7 @@ impl<'config> GoParser<'config> {
         Ok(())
     }
 
-    fn parse_import_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_import_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::{GoElementType as E, GoTokenType as T};
         let cp = state.checkpoint();
         state.expect(T::Import).ok();
@@ -108,7 +108,7 @@ impl<'config> GoParser<'config> {
         Ok(())
     }
 
-    fn parse_function_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_function_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::{GoElementType as E, GoTokenType as T};
         let cp = state.checkpoint();
         state.expect(T::Func).ok();
@@ -155,7 +155,7 @@ impl<'config> GoParser<'config> {
         Ok(())
     }
 
-    fn parse_parameter_list<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_parameter_list<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::{GoElementType as E, GoTokenType as T};
         let cp = state.checkpoint();
         state.expect(T::LeftParen).ok();
@@ -193,7 +193,7 @@ impl<'config> GoParser<'config> {
         Ok(())
     }
 
-    fn parse_variable_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_variable_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::{GoElementType as E, GoTokenType as T};
         let cp = state.checkpoint();
         state.expect(T::Var).ok();
@@ -230,7 +230,7 @@ impl<'config> GoParser<'config> {
         Ok(())
     }
 
-    fn parse_const_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_const_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::{GoElementType as E, GoTokenType as T};
         let cp = state.checkpoint();
         state.expect(T::Const).ok();
@@ -245,7 +245,7 @@ impl<'config> GoParser<'config> {
         Ok(())
     }
 
-    fn parse_type_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_type_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::{GoElementType as E, GoTokenType as T};
         let cp = state.checkpoint();
         state.expect(T::Type).ok();
@@ -260,7 +260,7 @@ impl<'config> GoParser<'config> {
         Ok(())
     }
 
-    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::{GoElementType as E, GoTokenType as T};
         let cp = state.checkpoint();
         state.expect(T::If).ok();
@@ -289,7 +289,7 @@ impl<'config> GoParser<'config> {
         Ok(())
     }
 
-    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::{GoElementType as E, GoTokenType as T};
         let cp = state.checkpoint();
         state.expect(T::For).ok();
@@ -324,7 +324,7 @@ impl<'config> GoParser<'config> {
         Ok(())
     }
 
-    fn parse_switch_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_switch_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::{GoElementType as E, GoTokenType as T};
         let cp = state.checkpoint();
         state.expect(T::Switch).ok();
@@ -336,7 +336,7 @@ impl<'config> GoParser<'config> {
         Ok(())
     }
 
-    fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::{GoElementType as E, GoTokenType as T};
         let cp = state.checkpoint();
         state.expect(T::Return).ok();
@@ -348,7 +348,7 @@ impl<'config> GoParser<'config> {
         Ok(())
     }
 
-    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::{GoElementType as E, GoTokenType as T};
         let cp = state.checkpoint();
         state.expect(T::LeftBrace).ok();

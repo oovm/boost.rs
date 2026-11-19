@@ -9,7 +9,7 @@ use crate::{
     lexer::{XmlLexer, token_type::XmlTokenType},
 };
 use data_text_core::{
-    OakError, TextEdit,
+    TextError, TextEdit,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::Source,
 };
@@ -64,7 +64,7 @@ impl<'config> XmlParser<'config> {
         }
     }
 
-    fn close_start_tag<'a, S: Source + ?Sized>(state: &mut State<'a, S>, start_tag_checkpoint: (usize, usize)) -> Result<(), OakError> {
+    fn close_start_tag<'a, S: Source + ?Sized>(state: &mut State<'a, S>, start_tag_checkpoint: (usize, usize)) -> Result<(), TextError> {
         if state.at(XmlTokenType::RightAngle) {
             Self::bump_without_skipping_trivia(state);
         }
@@ -75,7 +75,7 @@ impl<'config> XmlParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_prolog<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_prolog<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(XmlTokenType::LeftAngle)?;
         state.expect(XmlTokenType::Question)?;
@@ -98,7 +98,7 @@ impl<'config> XmlParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_element<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_element<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
 
         // Start Tag
@@ -161,7 +161,7 @@ impl<'config> XmlParser<'config> {
         Ok(())
     }
 
-    fn parse_attribute<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_attribute<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(XmlTokenType::Identifier)?;
         self.skip_trivia(state);

@@ -8,7 +8,7 @@ struct ScannedToken {
     span: core::range::Range<usize>,
 }
 
-pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<String, data_text_core::OakError> {
+pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<String, data_text_core::TextError> {
     let tokens = scan_significant_tokens(source)?;
     validate_delimiters(source, &tokens)?;
 
@@ -17,9 +17,9 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
         let left = &pair[0];
         let right = &pair[1];
         let span = core::range::Range { start: left.span.end, end: right.span.start };
-        let gap = source.get(span.clone()).ok_or_else(|| data_text_core::OakError::format_error("token span is outside source"))?;
-        let left_text = source.get(left.span.clone()).ok_or_else(|| data_text_core::OakError::format_error("left token span is outside source"))?;
-        let right_text = source.get(right.span.clone()).ok_or_else(|| data_text_core::OakError::format_error("right token span is outside source"))?;
+        let gap = source.get(span.clone()).ok_or_else(|| data_text_core::TextError::format_error("token span is outside source"))?;
+        let left_text = source.get(left.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("left token span is outside source"))?;
+        let right_text = source.get(right.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("right token span is outside source"))?;
         let constraint = awsl_gap_constraint(left_text, gap, right_text);
         gaps.push((TokenGap { left: left_text, source: gap, right: right_text, span }, constraint));
     }
@@ -30,7 +30,7 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
     Ok(formatted)
 }
 
-fn scan_significant_tokens(source: &str) -> Result<Vec<ScannedToken>, data_text_core::OakError> {
+fn scan_significant_tokens(source: &str) -> Result<Vec<ScannedToken>, data_text_core::TextError> {
     let mut tokens = Vec::new();
     let mut index = 0usize;
     while index < source.len() {
@@ -48,7 +48,7 @@ fn scan_significant_tokens(source: &str) -> Result<Vec<ScannedToken>, data_text_
             index = token_end;
             continue;
         }
-        let ch = source[index..].chars().next().ok_or_else(|| data_text_core::OakError::format_error("invalid utf-8 in source"))?;
+        let ch = source[index..].chars().next().ok_or_else(|| data_text_core::TextError::format_error("invalid utf-8 in source"))?;
         if is_punct(ch) {
             tokens.push(ScannedToken { span: core::range::Range { start: index, end: index + ch.len_utf8() } });
             index += ch.len_utf8();
@@ -69,7 +69,7 @@ fn scan_significant_tokens(source: &str) -> Result<Vec<ScannedToken>, data_text_
             index += next.len_utf8();
         }
         if index == start {
-            return Err(data_text_core::OakError::format_error("failed to advance AWSL scan"));
+            return Err(data_text_core::TextError::format_error("failed to advance AWSL scan"));
         }
         tokens.push(ScannedToken { span: core::range::Range { start, end: index } });
     }
@@ -158,10 +158,10 @@ fn awsl_gap_constraint(left: &str, gap: &str, right: &str) -> GapConstraint {
     constraint
 }
 
-fn validate_delimiters(source: &str, tokens: &[ScannedToken]) -> Result<(), data_text_core::OakError> {
+fn validate_delimiters(source: &str, tokens: &[ScannedToken]) -> Result<(), data_text_core::TextError> {
     let mut stack = Vec::new();
     for token in tokens {
-        let text = source.get(token.span.clone()).ok_or_else(|| data_text_core::OakError::format_error("token span is outside source"))?;
+        let text = source.get(token.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("token span is outside source"))?;
         if text.starts_with("<!--") || text.starts_with('"') || text.starts_with('\'') {
             continue;
         }
@@ -181,10 +181,10 @@ fn validate_delimiters(source: &str, tokens: &[ScannedToken]) -> Result<(), data
             _ => {}
         }
     }
-    if stack.is_empty() { Ok(()) } else { Err(data_text_core::OakError::format_error(format!("formatter input has unbalanced delimiters: unclosed {stack:?}"))) }
+    if stack.is_empty() { Ok(()) } else { Err(data_text_core::TextError::format_error(format!("formatter input has unbalanced delimiters: unclosed {stack:?}"))) }
 }
 
-fn delimiter_error(source: &str, pos: usize) -> Result<(), data_text_core::OakError> {
+fn delimiter_error(source: &str, pos: usize) -> Result<(), data_text_core::TextError> {
     let snippet = source.get(pos.saturating_sub(40)..pos.saturating_add(40)).unwrap_or("");
-    Err(data_text_core::OakError::format_error(format!("formatter input has unbalanced delimiters at {pos}: {snippet:?}")))
+    Err(data_text_core::TextError::format_error(format!("formatter input has unbalanced delimiters at {pos}: {snippet:?}")))
 }

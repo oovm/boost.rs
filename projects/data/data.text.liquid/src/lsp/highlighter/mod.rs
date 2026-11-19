@@ -18,7 +18,7 @@ impl LiquidHighlighter {
 }
 
 impl Highlighter for LiquidHighlighter {
-    fn highlight<'a>(&self, source: &'a str, _language: &str, theme: Theme) -> Result<HighlightResult<'a>, data_text_core::errors::OakError> {
+    fn highlight<'a>(&self, source: &'a str, _language: &str, theme: Theme) -> Result<HighlightResult<'a>, data_text_core::errors::TextError> {
         let theme_config = theme.get_theme();
         let segments = vec![oak_highlight::HighlightSegment { span: oak_highlight::HighlightSpan { start: 0, end: source.len() }, style: theme_config.resolve_style("none"), text: std::borrow::Cow::Borrowed(source) }];
         Ok(HighlightResult { segments, source: std::borrow::Cow::Borrowed(source) })

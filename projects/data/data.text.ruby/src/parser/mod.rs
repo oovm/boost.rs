@@ -7,7 +7,7 @@ use crate::{
     lexer::{RubyLexer, token_type::RubyTokenType},
 };
 use data_text_core::{
-    GreenNode, OakError, TextEdit,
+    GreenNode, TextError, TextEdit,
     parser::{
         ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer,
         pratt::{Associativity, Pratt, PrattParser},
@@ -57,7 +57,7 @@ impl<'config> RubyParser<'config> {
         }
     }
 
-    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::RubyTokenType::*;
         self.skip_stmt_gap(state);
         // 体循环边界：不要把 `end`/`else` 当表达式吞掉。
@@ -157,7 +157,7 @@ impl<'config> RubyParser<'config> {
         Ok(())
     }
 
-    fn parse_unless_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_unless_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::RubyTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // unless
@@ -171,7 +171,7 @@ impl<'config> RubyParser<'config> {
         Ok(())
     }
 
-    fn parse_until_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_until_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::RubyTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // until
@@ -181,7 +181,7 @@ impl<'config> RubyParser<'config> {
         Ok(())
     }
 
-    fn parse_for_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_for_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::RubyTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // for
@@ -193,7 +193,7 @@ impl<'config> RubyParser<'config> {
         Ok(())
     }
 
-    fn parse_case_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_case_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::RubyTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // case
@@ -222,7 +222,7 @@ impl<'config> RubyParser<'config> {
         Ok(())
     }
 
-    fn parse_case_body<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_case_body<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::RubyTokenType::*;
         while state.not_at_end() && !state.at(End) && !state.at(When) && !state.at(Else) {
             self.parse_statement(state)?
@@ -271,7 +271,7 @@ impl<'config> RubyParser<'config> {
         state.finish_at(cp, crate::parser::element_type::RubyElementType::BlockExpression);
     }
 
-    fn parse_begin_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_begin_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::RubyTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // begin
@@ -317,7 +317,7 @@ impl<'config> RubyParser<'config> {
         Ok(())
     }
 
-    fn parse_method_def<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_method_def<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::RubyTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // def
@@ -352,7 +352,7 @@ impl<'config> RubyParser<'config> {
         Ok(())
     }
 
-    fn parse_body<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_body<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::RubyTokenType::*;
         loop {
             self.skip_stmt_gap(state);
@@ -366,7 +366,7 @@ impl<'config> RubyParser<'config> {
     }
 
     /// if/unless 的 then/else 体：停在 `else`/`elsif`/`end`，不吞 `end`。
-    fn parse_conditional_body<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_conditional_body<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::RubyTokenType::*;
         loop {
             self.skip_stmt_gap(state);
@@ -378,7 +378,7 @@ impl<'config> RubyParser<'config> {
         Ok(())
     }
 
-    fn parse_class_def<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_class_def<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::RubyTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // class
@@ -391,7 +391,7 @@ impl<'config> RubyParser<'config> {
         Ok(())
     }
 
-    fn parse_module_def<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_module_def<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::RubyTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // module
@@ -401,7 +401,7 @@ impl<'config> RubyParser<'config> {
         Ok(())
     }
 
-    fn parse_if_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_if_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::RubyTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // if
@@ -419,7 +419,7 @@ impl<'config> RubyParser<'config> {
         Ok(())
     }
 
-    fn parse_while_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_while_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::RubyTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // while
@@ -429,7 +429,7 @@ impl<'config> RubyParser<'config> {
         Ok(())
     }
 
-    fn parse_return_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_return_stmt<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::RubyTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // return

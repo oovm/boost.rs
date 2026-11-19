@@ -29,6 +29,6 @@ impl<'config> Builder<RbqLanguage> for RbqBuilder<'config> {
             crate::ast::RbqRoot::lower(red, &source_text)
         });
 
-        data_text_core::errors::OakDiagnostics { result, diagnostics: parse_result.diagnostics }
+        data_text_core::errors::TextDiagnostics { result, diagnostics: parse_result.diagnostics }
     }
 }

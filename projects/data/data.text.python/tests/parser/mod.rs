@@ -1,10 +1,10 @@
-use data_text_core::errors::OakError;
+use data_text_core::errors::TextError;
 use data_text_python::{PythonLanguage, PythonParser};
 use language_testing::parsing::ParserTester;
 use std::{path::Path, time::Duration};
 
 #[test]
-fn test_python_parser() -> Result<(), OakError> {
+fn test_python_parser() -> Result<(), TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let tests = here.join("tests/parser");
     let language = PythonLanguage::default();

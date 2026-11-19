@@ -2,7 +2,7 @@ use crate::{
     ast::{DsvField, DsvRecord, DsvRoot},
     language::DsvLanguage,
 };
-use data_text_core::OakError as Error;
+use data_text_core::TextError as Error;
 
 /// Serializer for converting Rust types to DSV values.
 pub struct Serializer<const LANG: DsvLanguage>;

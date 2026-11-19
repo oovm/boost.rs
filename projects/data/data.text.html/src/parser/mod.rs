@@ -7,7 +7,7 @@ use crate::{
     parser::element_type::HtmlElementType,
 };
 use data_text_core::{
-    OakError,
+    TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -33,7 +33,7 @@ impl<'config> HtmlParser<'config> {
     /// separate closing tags (e.g., `<div>...</div>`). `foreign` marks the
     /// inside of an `<svg>` or `<math>` subtree, where the self-closing flag is
     /// acknowledged instead of ignored.
-    fn parse_tag<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, foreign: bool) -> Result<(), OakError> {
+    fn parse_tag<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, foreign: bool) -> Result<(), TextError> {
         use crate::lexer::token_type::HtmlTokenType::*;
         let cp = state.checkpoint();
         state.expect(TagOpen).ok();

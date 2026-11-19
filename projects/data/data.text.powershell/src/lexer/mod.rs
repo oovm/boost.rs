@@ -4,7 +4,7 @@ pub mod token_type;
 
 use crate::{language::PowerShellLanguage, lexer::token_type::PowerShellTokenType};
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError,
+    Lexer, LexerCache, LexerState, TextError,
     lexer::LexOutput,
     source::{Source, TextEdit},
 };
@@ -24,7 +24,7 @@ impl<'config> PowerShellLexer<'config> {
         Self { config }
     }
 
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             if self.skip_whitespace(state) {
                 continue;

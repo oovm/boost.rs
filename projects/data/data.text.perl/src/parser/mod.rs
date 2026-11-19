@@ -3,7 +3,7 @@ pub mod element_type;
 
 use crate::language::PerlLanguage;
 use data_text_core::{
-    OakError,
+    TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -25,7 +25,7 @@ impl<'config> PerlParser<'config> {
     }
 
     /// Parses a single statement.
-    pub(crate) fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::PerlTokenType::*;
         self.skip_trivia(state);
 
@@ -55,7 +55,7 @@ impl<'config> PerlParser<'config> {
         }
     }
 
-    fn parse_sub_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_sub_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::PerlTokenType::*;
         let cp = state.checkpoint();
         state.expect(Sub)?;
@@ -72,7 +72,7 @@ impl<'config> PerlParser<'config> {
         Ok(())
     }
 
-    fn parse_package_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_package_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::PerlTokenType::*;
         let cp = state.checkpoint();
         state.expect(Package)?;
@@ -84,7 +84,7 @@ impl<'config> PerlParser<'config> {
         Ok(())
     }
 
-    fn parse_use_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_use_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::PerlTokenType::*;
         let cp = state.checkpoint();
         state.expect(Use)?;
@@ -99,7 +99,7 @@ impl<'config> PerlParser<'config> {
         Ok(())
     }
 
-    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::PerlTokenType::*;
         let cp = state.checkpoint();
         state.expect(If)?;
@@ -136,7 +136,7 @@ impl<'config> PerlParser<'config> {
         Ok(())
     }
 
-    fn parse_unless_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_unless_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::PerlTokenType::*;
         let cp = state.checkpoint();
         state.expect(Unless)?;
@@ -152,7 +152,7 @@ impl<'config> PerlParser<'config> {
         Ok(())
     }
 
-    fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::PerlTokenType::*;
         let cp = state.checkpoint();
         state.expect(While)?;
@@ -168,7 +168,7 @@ impl<'config> PerlParser<'config> {
         Ok(())
     }
 
-    fn parse_until_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_until_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::PerlTokenType::*;
         let cp = state.checkpoint();
         state.expect(Until)?;
@@ -184,7 +184,7 @@ impl<'config> PerlParser<'config> {
         Ok(())
     }
 
-    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::PerlTokenType::*;
         let cp = state.checkpoint();
         if state.at(For) {
@@ -207,7 +207,7 @@ impl<'config> PerlParser<'config> {
         Ok(())
     }
 
-    fn parse_do_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_do_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::PerlTokenType::*;
         let cp = state.checkpoint();
         state.expect(Do)?;
@@ -226,7 +226,7 @@ impl<'config> PerlParser<'config> {
         Ok(())
     }
 
-    fn parse_variable_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_variable_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::PerlTokenType::*;
         let cp = state.checkpoint();
         state.bump(); // my, our, local
@@ -239,7 +239,7 @@ impl<'config> PerlParser<'config> {
         Ok(())
     }
 
-    fn parse_expression_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_expression_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::PerlTokenType::*;
         let cp = state.checkpoint();
         while state.not_at_end() && !state.at(Semicolon) {
@@ -250,7 +250,7 @@ impl<'config> PerlParser<'config> {
         Ok(())
     }
 
-    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::PerlTokenType::*;
         let cp = state.checkpoint();
         state.expect(LeftBrace)?;

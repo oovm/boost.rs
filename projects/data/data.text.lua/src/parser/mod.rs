@@ -4,7 +4,7 @@ pub use element_type::LuaElementType;
 
 use crate::{language::LuaLanguage, lexer::LuaLexer};
 use data_text_core::{
-    GreenNode, OakError, TextEdit,
+    GreenNode, TextError, TextEdit,
     parser::{
         ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer,
         pratt::{Associativity, Pratt, PrattParser, binary, unary},
@@ -25,7 +25,7 @@ impl<'config> LuaParser<'config> {
         Self { config }
     }
 
-    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::LuaTokenType::*;
         match state.peek_kind() {
             Some(Local) => self.parse_local_statement(state)?,
@@ -62,7 +62,7 @@ impl<'config> LuaParser<'config> {
         Ok(())
     }
 
-    fn parse_local_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_local_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::LuaTokenType::*;
         let cp = state.checkpoint();
         state.expect(Local).ok();
@@ -87,7 +87,7 @@ impl<'config> LuaParser<'config> {
         Ok(())
     }
 
-    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::LuaTokenType::*;
         let cp = state.checkpoint();
         state.expect(If).ok();
@@ -107,7 +107,7 @@ impl<'config> LuaParser<'config> {
         Ok(())
     }
 
-    fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_while_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::LuaTokenType::*;
         let cp = state.checkpoint();
         state.expect(While).ok();
@@ -119,7 +119,7 @@ impl<'config> LuaParser<'config> {
         Ok(())
     }
 
-    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::LuaTokenType::*;
         let cp = state.checkpoint();
         state.expect(For).ok();
@@ -149,7 +149,7 @@ impl<'config> LuaParser<'config> {
         Ok(())
     }
 
-    fn parse_repeat_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_repeat_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::LuaTokenType::*;
         let cp = state.checkpoint();
         state.expect(Repeat).ok();
@@ -160,7 +160,7 @@ impl<'config> LuaParser<'config> {
         Ok(())
     }
 
-    fn parse_function_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_function_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::LuaTokenType::*;
         let cp = state.checkpoint();
         state.expect(Function).ok();
@@ -176,7 +176,7 @@ impl<'config> LuaParser<'config> {
         Ok(())
     }
 
-    fn parse_function_body<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_function_body<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::LuaTokenType::*;
         state.expect(LeftParen).ok();
         if !state.at(RightParen) {
@@ -199,7 +199,7 @@ impl<'config> LuaParser<'config> {
         Ok(())
     }
 
-    fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_return_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::LuaTokenType::*;
         let cp = state.checkpoint();
         state.expect(Return).ok();
@@ -214,7 +214,7 @@ impl<'config> LuaParser<'config> {
         Ok(())
     }
 
-    fn parse_break_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_break_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::LuaTokenType::*;
         let cp = state.checkpoint();
         state.expect(Break).ok();
@@ -222,7 +222,7 @@ impl<'config> LuaParser<'config> {
         Ok(())
     }
 
-    fn parse_do_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_do_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::LuaTokenType::*;
         let cp = state.checkpoint();
         state.expect(Do).ok();
@@ -232,7 +232,7 @@ impl<'config> LuaParser<'config> {
         Ok(())
     }
 
-    fn parse_goto_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_goto_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::LuaTokenType::*;
         let cp = state.checkpoint();
         state.expect(Goto).ok();
@@ -241,7 +241,7 @@ impl<'config> LuaParser<'config> {
         Ok(())
     }
 
-    fn parse_label_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_label_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::LuaTokenType::*;
         let cp = state.checkpoint();
         state.expect(ColonColon).ok();
@@ -251,7 +251,7 @@ impl<'config> LuaParser<'config> {
         Ok(())
     }
 
-    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::LuaTokenType::*;
         while state.not_at_end() && !state.at(End) && !state.at(Else) && !state.at(Elseif) && !state.at(Until) {
             self.parse_statement(state)?;

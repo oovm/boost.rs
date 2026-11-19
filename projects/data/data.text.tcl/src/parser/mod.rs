@@ -7,7 +7,7 @@ use crate::{
     parser::element_type::TclElementType,
 };
 use data_text_core::{
-    GreenNode, OakError,
+    GreenNode, TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -28,7 +28,7 @@ impl<'config> TclParser<'config> {
         Self { config }
     }
 
-    fn parse_command<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_command<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
 
         // Peek the first word to see if it's a special command
@@ -60,7 +60,7 @@ impl<'config> TclParser<'config> {
         Ok(())
     }
 
-    fn parse_word<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_word<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
 
         if state.at(TclTokenType::Dollar) {

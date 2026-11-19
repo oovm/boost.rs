@@ -6,7 +6,7 @@ use crate::{
     parser::element_type::ErlangElementType,
 };
 use data_text_core::{
-    GreenNode, OakError, TokenType,
+    GreenNode, TextError, TokenType,
     parser::{Associativity, ParseCache, ParseOutput, Parser, ParserState, Pratt, PrattParser, binary, parse_with_lexer, unary},
     source::{Source, TextEdit},
 };
@@ -26,7 +26,7 @@ impl<'config> ErlangParser<'config> {
         Self { config }
     }
 
-    fn parse_item<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_item<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         match state.peek_kind() {
             Some(ErlangTokenType::Minus) => self.parse_attribute(state),
             Some(ErlangTokenType::Atom) => self.parse_function(state),
@@ -38,7 +38,7 @@ impl<'config> ErlangParser<'config> {
         }
     }
 
-    fn parse_attribute<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_attribute<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(ErlangTokenType::Minus).ok();
         match state.peek_kind() {
@@ -88,7 +88,7 @@ impl<'config> ErlangParser<'config> {
         Ok(())
     }
 
-    fn parse_function<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_function<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         loop {
             let clause_cp = state.checkpoint();
@@ -125,7 +125,7 @@ impl<'config> ErlangParser<'config> {
         Ok(())
     }
 
-    fn parse_pattern<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_pattern<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         match state.peek_kind() {
             Some(ErlangTokenType::Atom) | Some(ErlangTokenType::Variable) | Some(ErlangTokenType::Number) | Some(ErlangTokenType::String) => {

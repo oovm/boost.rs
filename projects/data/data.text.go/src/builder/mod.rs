@@ -7,7 +7,7 @@ use crate::{
     parser::{GoParser, element_type::GoElementType},
 };
 use data_text_core::{
-    Builder, BuilderCache, GreenNode, Lexer, OakDiagnostics, OakError, ParseSession, Parser, SourceText, TextEdit, TokenType,
+    Builder, BuilderCache, GreenNode, Lexer, TextDiagnostics, TextError, ParseSession, Parser, SourceText, TextEdit, TokenType,
     builder::BuildOutput,
     source::Source,
     tree::{RedNode, RedTree},
@@ -30,7 +30,7 @@ impl<'config> Builder<GoLanguage> for GoBuilder<'config> {
             let source = SourceText::new(text.get_text_in((0..text.length()).into()).into_owned());
             self.build_root(green, &source, unsafe { &mut *cache_ptr })
         });
-        OakDiagnostics { result, diagnostics: output.diagnostics }
+        TextDiagnostics { result, diagnostics: output.diagnostics }
     }
 }
 
@@ -131,7 +131,7 @@ impl<'config> GoBuilder<'config> {
         imports
     }
 
-    fn extract_block(&self, node: RedNode<GoLanguage>, source: &SourceText) -> Result<ast::Block, OakError> {
+    fn extract_block(&self, node: RedNode<GoLanguage>, source: &SourceText) -> Result<ast::Block, TextError> {
         let mut statements = vec![];
         let span = node.span();
 
@@ -146,7 +146,7 @@ impl<'config> GoBuilder<'config> {
         Ok(ast::Block { statements, span })
     }
 
-    fn extract_statement(&self, node: RedNode<GoLanguage>, source: &SourceText) -> Result<Option<ast::Statement>, OakError> {
+    fn extract_statement(&self, node: RedNode<GoLanguage>, source: &SourceText) -> Result<Option<ast::Statement>, TextError> {
         match node.green.kind {
             GoElementType::ReturnStatement => {
                 let mut values = vec![];
@@ -267,17 +267,17 @@ impl<'config> GoBuilder<'config> {
         }
     }
 
-    fn extract_expression(&self, node: RedNode<GoLanguage>, source: &SourceText) -> Result<ast::Expression, OakError> {
+    fn extract_expression(&self, node: RedNode<GoLanguage>, source: &SourceText) -> Result<ast::Expression, TextError> {
         self.extract_expression_internal(RedTree::Node(node), source)
     }
 
-    fn extract_expression_internal(&self, tree: RedTree<GoLanguage>, source: &SourceText) -> Result<ast::Expression, OakError> {
+    fn extract_expression_internal(&self, tree: RedTree<GoLanguage>, source: &SourceText) -> Result<ast::Expression, TextError> {
         match tree {
             RedTree::Leaf(leaf) => {
                 if leaf.kind == GoTokenType::Identifier {
                     let name = source.get_text_in(leaf.span).trim().to_string();
                     if name.is_empty() {
-                        return Err(OakError::parse_error("Empty identifier leaf"));
+                        return Err(TextError::parse_error("Empty identifier leaf"));
                     }
                     Ok(ast::Expression::Identifier { name, span: leaf.span })
                 }
@@ -285,7 +285,7 @@ impl<'config> GoBuilder<'config> {
                     Ok(ast::Expression::Literal { value: source.get_text_in(leaf.span).to_string(), span: leaf.span })
                 }
                 else {
-                    Err(OakError::parse_error(format!("Unexpected leaf in expression: {:?}", leaf.kind)))
+                    Err(TextError::parse_error(format!("Unexpected leaf in expression: {:?}", leaf.kind)))
                 }
             }
             RedTree::Node(node) => match node.green.kind {
@@ -319,7 +319,7 @@ impl<'config> GoBuilder<'config> {
                                 RedTree::Leaf(l) => println!("    child {}: Leaf kind={:?}, span={:?}, text={:?}", i, l.kind, l.span, source.get_text_in(l.span)),
                             }
                         }
-                        return Err(OakError::parse_error(format!("Empty identifier at {:?}", node.span())));
+                        return Err(TextError::parse_error(format!("Empty identifier at {:?}", node.span())));
                     }
                     Ok(ast::Expression::Identifier { name, span: node.span() })
                 }
@@ -402,7 +402,7 @@ impl<'config> GoBuilder<'config> {
         }
     }
 
-    fn extract_variables(&self, node: RedNode<GoLanguage>, source: &SourceText, cache: &mut impl BuilderCache<GoLanguage>) -> Result<Vec<Declaration>, OakError> {
+    fn extract_variables(&self, node: RedNode<GoLanguage>, source: &SourceText, cache: &mut impl BuilderCache<GoLanguage>) -> Result<Vec<Declaration>, TextError> {
         if let Some(cached) = cache.get_typed_node::<Vec<Declaration>>(&node.green) {
             return Ok(cached);
         }
@@ -443,7 +443,7 @@ impl<'config> GoBuilder<'config> {
         Ok(vars)
     }
 
-    fn extract_consts(&self, node: RedNode<GoLanguage>, source: &SourceText, cache: &mut impl BuilderCache<GoLanguage>) -> Result<Vec<Declaration>, OakError> {
+    fn extract_consts(&self, node: RedNode<GoLanguage>, source: &SourceText, cache: &mut impl BuilderCache<GoLanguage>) -> Result<Vec<Declaration>, TextError> {
         if let Some(cached) = cache.get_typed_node::<Vec<Declaration>>(&node.green) {
             return Ok(cached);
         }
@@ -484,7 +484,7 @@ impl<'config> GoBuilder<'config> {
         Ok(consts)
     }
 
-    fn extract_types(&self, node: RedNode<GoLanguage>, source: &SourceText, cache: &mut impl BuilderCache<GoLanguage>) -> Result<Vec<Declaration>, OakError> {
+    fn extract_types(&self, node: RedNode<GoLanguage>, source: &SourceText, cache: &mut impl BuilderCache<GoLanguage>) -> Result<Vec<Declaration>, TextError> {
         if let Some(cached) = cache.get_typed_node::<Vec<Declaration>>(&node.green) {
             return Ok(cached);
         }

@@ -25,7 +25,7 @@ impl<'config> JinjaLexer<'config> {
         Self { config }
     }
 
-    fn run<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+    fn run<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

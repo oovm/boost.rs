@@ -7,7 +7,7 @@ use crate::{
     parser::element_type::JasminElementType,
 };
 use data_text_core::{
-    OakError,
+    TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -28,7 +28,7 @@ impl<'config> JasminParser<'config> {
     }
 
     /// Parses a top-level element.
-    pub(crate) fn _parse_top_level<'a, S: Source + ?Sized>(&self, state: &mut _State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn _parse_top_level<'a, S: Source + ?Sized>(&self, state: &mut _State<'a, S>) -> Result<(), TextError> {
         self.skip_trivia(state);
         if state.not_at_end() {
             state.bump();

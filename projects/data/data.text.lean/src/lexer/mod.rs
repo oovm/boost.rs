@@ -6,7 +6,7 @@ pub mod token_type;
 ///
 /// Provides lexical analysis for the Lean language, converting source text into a token stream
 use crate::{language::LeanLanguage, lexer::token_type::LeanTokenType};
-use data_text_core::{Lexer, LexerCache, LexerState, OakError, TextEdit, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextError, TextEdit, lexer::LexOutput, source::Source};
 
 pub(crate) type State<'a, S> = LexerState<'a, S, LeanLanguage>;
 
@@ -371,7 +371,7 @@ impl<'config> LeanLexer<'config> {
         }
     }
 
-    fn run<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), OakError> {
+    fn run<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             if self.skip_whitespace(state) || self.lex_newline(state) || self.lex_comment(state) || self.lex_string(state) || self.lex_char(state) || self.lex_number(state) || self.lex_identifier_or_keyword(state) || self.lex_operator_or_delimiter(state) {
                 continue;

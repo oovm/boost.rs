@@ -3,7 +3,7 @@ use crate::{
     ast::{MojoExpression, MojoLiteral, MojoStatement},
     parser::MojoElementType,
 };
-use data_text_core::{GreenNode, GreenTree, OakError, Source, source::SourceText};
+use data_text_core::{GreenNode, GreenTree, TextError, Source, source::SourceText};
 
 /// Mojo AST builder.
 pub struct MojoBuilder<'a> {
@@ -11,7 +11,7 @@ pub struct MojoBuilder<'a> {
 }
 
 impl<'a> MojoBuilder<'a> {
-    fn build_param_list(&self, node: &GreenNode<MojoLanguage>, offset: usize) -> Result<Vec<(String, Option<String>)>, OakError> {
+    fn build_param_list(&self, node: &GreenNode<MojoLanguage>, offset: usize) -> Result<Vec<(String, Option<String>)>, TextError> {
         let mut params = Vec::new();
         let mut current_offset = offset;
         let mut current_name = String::new();
@@ -54,7 +54,7 @@ impl<'a> MojoBuilder<'a> {
     }
 
     /// Builds AST from GreenNode
-    pub fn build_root(&self, green: &GreenNode<MojoLanguage>) -> Result<Vec<MojoStatement>, OakError> {
+    pub fn build_root(&self, green: &GreenNode<MojoLanguage>) -> Result<Vec<MojoStatement>, TextError> {
         let mut statements = Vec::new();
         let mut offset = 0;
 
@@ -72,7 +72,7 @@ impl<'a> MojoBuilder<'a> {
         Ok(statements)
     }
 
-    fn build_statement(&self, node: &GreenNode<MojoLanguage>, offset: usize) -> Result<Option<MojoStatement>, OakError> {
+    fn build_statement(&self, node: &GreenNode<MojoLanguage>, offset: usize) -> Result<Option<MojoStatement>, TextError> {
         match node.kind {
             MojoElementType::FunctionDef => self.build_function_def(node, offset).map(Some),
             MojoElementType::VariableDecl => self.build_variable_decl(node, offset).map(Some),
@@ -84,7 +84,7 @@ impl<'a> MojoBuilder<'a> {
         }
     }
 
-    fn build_function_def(&self, node: &GreenNode<MojoLanguage>, offset: usize) -> Result<MojoStatement, OakError> {
+    fn build_function_def(&self, node: &GreenNode<MojoLanguage>, offset: usize) -> Result<MojoStatement, TextError> {
         let mut name = String::new();
         let mut params = Vec::new();
         let mut return_type = None;
@@ -118,7 +118,7 @@ impl<'a> MojoBuilder<'a> {
         Ok(MojoStatement::Function { name, params, return_type, body })
     }
 
-    fn build_variable_decl(&self, node: &GreenNode<MojoLanguage>, offset: usize) -> Result<MojoStatement, OakError> {
+    fn build_variable_decl(&self, node: &GreenNode<MojoLanguage>, offset: usize) -> Result<MojoStatement, TextError> {
         let mut name = String::new();
         let mut ty = None;
         let mut value = None;
@@ -145,7 +145,7 @@ impl<'a> MojoBuilder<'a> {
         Ok(MojoStatement::Variable { name, ty, value, is_let })
     }
 
-    fn build_if_stmt(&self, node: &GreenNode<MojoLanguage>, offset: usize) -> Result<MojoStatement, OakError> {
+    fn build_if_stmt(&self, node: &GreenNode<MojoLanguage>, offset: usize) -> Result<MojoStatement, TextError> {
         let mut condition = MojoExpression::Literal(MojoLiteral::None);
         let mut then_body = Vec::new();
         let mut else_body = None;
@@ -178,7 +178,7 @@ impl<'a> MojoBuilder<'a> {
         Ok(MojoStatement::If { condition, then_body, else_body })
     }
 
-    fn build_while_stmt(&self, node: &GreenNode<MojoLanguage>, offset: usize) -> Result<MojoStatement, OakError> {
+    fn build_while_stmt(&self, node: &GreenNode<MojoLanguage>, offset: usize) -> Result<MojoStatement, TextError> {
         let mut condition = MojoExpression::Literal(MojoLiteral::None);
         let mut body = Vec::new();
         let mut current_offset = offset;
@@ -201,7 +201,7 @@ impl<'a> MojoBuilder<'a> {
         Ok(MojoStatement::While { condition, body })
     }
 
-    fn build_return_stmt(&self, node: &GreenNode<MojoLanguage>, offset: usize) -> Result<MojoStatement, OakError> {
+    fn build_return_stmt(&self, node: &GreenNode<MojoLanguage>, offset: usize) -> Result<MojoStatement, TextError> {
         let mut value = None;
         let mut current_offset = offset;
 
@@ -217,7 +217,7 @@ impl<'a> MojoBuilder<'a> {
         Ok(MojoStatement::Return(value))
     }
 
-    fn build_expression_stmt(&self, node: &GreenNode<MojoLanguage>, offset: usize) -> Result<MojoStatement, OakError> {
+    fn build_expression_stmt(&self, node: &GreenNode<MojoLanguage>, offset: usize) -> Result<MojoStatement, TextError> {
         let mut expr = MojoExpression::Literal(MojoLiteral::None);
         let mut current_offset = offset;
 
@@ -233,7 +233,7 @@ impl<'a> MojoBuilder<'a> {
         Ok(MojoStatement::Expression(expr))
     }
 
-    fn build_expression(&self, node: &GreenNode<MojoLanguage>, offset: usize) -> Result<MojoExpression, OakError> {
+    fn build_expression(&self, node: &GreenNode<MojoLanguage>, offset: usize) -> Result<MojoExpression, TextError> {
         match node.kind {
             MojoElementType::LiteralExpr => {
                 let text = self.source.get_text_in((offset..offset + node.text_len() as usize).into());

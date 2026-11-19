@@ -7,7 +7,7 @@ use crate::{
     parser::element_type::ElmElementType,
 };
 use data_text_core::{
-    GreenNode, OakError,
+    GreenNode, TextError,
     parser::{Associativity, ParseCache, ParseOutput, Parser, ParserState, Pratt, PrattParser, binary, parse_with_lexer, unary},
     source::{Source, TextEdit},
 };
@@ -25,7 +25,7 @@ impl<'config> ElmParser<'config> {
         Self { config }
     }
 
-    fn parse_item<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_item<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         match state.peek_kind() {
             Some(ElmTokenType::Module) => self.parse_module(state),
             Some(ElmTokenType::Import) => self.parse_import(state),
@@ -47,7 +47,7 @@ impl<'config> ElmParser<'config> {
         }
     }
 
-    fn parse_module<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_module<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(ElmTokenType::Module).ok();
         state.expect(ElmTokenType::Identifier).ok();
@@ -63,7 +63,7 @@ impl<'config> ElmParser<'config> {
         Ok(())
     }
 
-    fn parse_import<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_import<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(ElmTokenType::Import).ok();
         state.expect(ElmTokenType::Identifier).ok();
@@ -81,7 +81,7 @@ impl<'config> ElmParser<'config> {
         Ok(())
     }
 
-    fn parse_type_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_type_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(ElmTokenType::Type).ok();
         state.expect(ElmTokenType::Identifier).ok();
@@ -97,7 +97,7 @@ impl<'config> ElmParser<'config> {
         Ok(())
     }
 
-    fn parse_type_alias<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_type_alias<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(ElmTokenType::Type).ok();
         state.expect(ElmTokenType::Alias).ok();
@@ -114,7 +114,7 @@ impl<'config> ElmParser<'config> {
         Ok(())
     }
 
-    fn parse_port<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_port<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(ElmTokenType::Port).ok();
         state.expect(ElmTokenType::Identifier).ok();
@@ -126,7 +126,7 @@ impl<'config> ElmParser<'config> {
         Ok(())
     }
 
-    fn parse_value_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_value_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         if state.at(ElmTokenType::Identifier) {
             let next = state.peek_at(1);
@@ -151,7 +151,7 @@ impl<'config> ElmParser<'config> {
         Ok(())
     }
 
-    fn parse_pattern<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_pattern<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         match state.peek_kind() {
             Some(ElmTokenType::Identifier) | Some(ElmTokenType::Number) | Some(ElmTokenType::String) | Some(ElmTokenType::Char) => {

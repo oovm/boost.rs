@@ -10,7 +10,7 @@ use crate::{
     lexer::token_type::PlantUmlTokenType,
     parser::element_type::PlantUmlElementType,
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, OakError, Parser, RedLeaf, RedNode, RedTree, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedLeaf, RedNode, RedTree, SourceText, TextEdit, source::Source};
 use std::collections::HashMap;
 
 /// Builder for converting a PlantUML syntax tree into the typed AST.
@@ -27,7 +27,7 @@ impl<'config> PlantUmlBuilder<'config> {
 }
 
 impl Builder<PlantUmlLanguage> for PlantUmlBuilder<'_> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<PlantUmlLanguage>) -> OakDiagnostics<PlantUmlRoot> {
+    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<PlantUmlLanguage>) -> TextDiagnostics<PlantUmlRoot> {
         let parser = crate::parser::PlantUmlParser::new(self._config);
         let mut cache = data_text_core::parser::session::ParseSession::<PlantUmlLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);
@@ -37,23 +37,23 @@ impl Builder<PlantUmlLanguage> for PlantUmlBuilder<'_> {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 let mut diagnostics = parse_result.diagnostics;
                 match self.build_root(green_tree, &source_text, &mut diagnostics) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics },
                     Err(build_error) => {
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl PlantUmlBuilder<'_> {
     /// Builds the AST root from a green tree.
-    pub(crate) fn build_root(&self, green_tree: &GreenNode<PlantUmlLanguage>, source: &SourceText, diagnostics: &mut Vec<OakError>) -> Result<PlantUmlRoot, OakError> {
+    pub(crate) fn build_root(&self, green_tree: &GreenNode<PlantUmlLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>) -> Result<PlantUmlRoot, TextError> {
         if green_tree.kind != PlantUmlElementType::Root {
-            return Err(OakError::internal_error("the PlantUML syntax tree is missing its root element"));
+            return Err(TextError::internal_error("the PlantUML syntax tree is missing its root element"));
         }
 
         let red_root = RedNode::new(green_tree, 0);
@@ -119,7 +119,7 @@ impl PlantUmlBuilder<'_> {
         Ok(PlantUmlRoot { diagrams: vec![diagram] })
     }
 
-    fn build_class_diagram(&self, elements: &[RedNode<PlantUmlLanguage>], source: &SourceText, diagnostics: &mut Vec<OakError>, span: core::range::Range<usize>) -> ClassDiagram {
+    fn build_class_diagram(&self, elements: &[RedNode<PlantUmlLanguage>], source: &SourceText, diagnostics: &mut Vec<TextError>, span: core::range::Range<usize>) -> ClassDiagram {
         let mut classes = Vec::new();
         let mut relations = Vec::new();
 
@@ -138,7 +138,7 @@ impl PlantUmlBuilder<'_> {
         ClassDiagram { classes, relations, span }
     }
 
-    fn build_class_declaration(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, diagnostics: &mut Vec<OakError>) -> ClassDeclaration {
+    fn build_class_declaration(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>) -> ClassDeclaration {
         let span = node.span();
         let leaves = significant_leaves(&node);
         let mut index = 0;
@@ -205,7 +205,7 @@ impl PlantUmlBuilder<'_> {
         ClassDeclaration { name, display, keyword, members, span }
     }
 
-    fn build_class_members(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, diagnostics: &mut Vec<OakError>) -> Vec<ClassMember> {
+    fn build_class_members(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>) -> Vec<ClassMember> {
         let mut members = Vec::new();
 
         for child in node.children() {
@@ -219,7 +219,7 @@ impl PlantUmlBuilder<'_> {
         members
     }
 
-    fn build_class_member(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, _diagnostics: &mut Vec<OakError>) -> ClassMember {
+    fn build_class_member(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, _diagnostics: &mut Vec<TextError>) -> ClassMember {
         let span = node.span();
         let leaves = significant_leaves(&node);
         let visibility = match leaves.first().map(|leaf| leaf.kind) {
@@ -235,7 +235,7 @@ impl PlantUmlBuilder<'_> {
         ClassMember { visibility, text, is_method, span }
     }
 
-    fn build_class_relation(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, diagnostics: &mut Vec<OakError>) -> Option<ClassRelation> {
+    fn build_class_relation(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>) -> Option<ClassRelation> {
         let span = node.span();
         let leaves = significant_leaves(&node);
         let Some(left_leaf) = leaves.first()
@@ -305,7 +305,7 @@ impl PlantUmlBuilder<'_> {
         Some(ClassRelation { left, right, left_multiplicity, right_multiplicity, kind, marker_at_left, label, span })
     }
 
-    fn build_sequence_diagram(&self, elements: &[RedNode<PlantUmlLanguage>], source: &SourceText, diagnostics: &mut Vec<OakError>, span: core::range::Range<usize>) -> SequenceDiagram {
+    fn build_sequence_diagram(&self, elements: &[RedNode<PlantUmlLanguage>], source: &SourceText, diagnostics: &mut Vec<TextError>, span: core::range::Range<usize>) -> SequenceDiagram {
         let participants: Vec<Participant> = elements.iter().filter(|node| node.green.kind == PlantUmlElementType::ParticipantDeclaration).map(|node| self.build_participant(*node, source, diagnostics)).collect();
 
         let mut names = HashMap::new();
@@ -352,7 +352,7 @@ impl PlantUmlBuilder<'_> {
         SequenceDiagram { participants, messages, activations, span }
     }
 
-    fn build_participant(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, diagnostics: &mut Vec<OakError>) -> Participant {
+    fn build_participant(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>) -> Participant {
         let span = node.span();
         let leaves = significant_leaves(&node);
         let kind = match leaves.first().map(|leaf| leaf.kind) {
@@ -397,7 +397,7 @@ impl PlantUmlBuilder<'_> {
         Participant { id, display, kind, span }
     }
 
-    fn build_sequence_message(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, names: &HashMap<String, String>, diagnostics: &mut Vec<OakError>) -> SequenceMessage {
+    fn build_sequence_message(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, names: &HashMap<String, String>, diagnostics: &mut Vec<TextError>) -> SequenceMessage {
         let span = node.span();
         let leaves = significant_leaves(&node);
         let from_leaf = leaves.first();
@@ -427,14 +427,14 @@ impl PlantUmlBuilder<'_> {
         SequenceMessage { from, to, text, arrow, span }
     }
 
-    fn build_activity_diagram(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, diagnostics: &mut Vec<OakError>, span: core::range::Range<usize>) -> ActivityDiagram {
+    fn build_activity_diagram(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>, span: core::range::Range<usize>) -> ActivityDiagram {
         let lines = collect_lines(&node, source);
         let mut index = 0;
         let nodes = self.build_activity_nodes(&lines, &mut index, &[], false, diagnostics);
         ActivityDiagram { nodes, span }
     }
 
-    fn build_activity_nodes(&self, lines: &[StatementLine], index: &mut usize, terminators: &[&str], stop_at_lane: bool, diagnostics: &mut Vec<OakError>) -> Vec<ActivityNode> {
+    fn build_activity_nodes(&self, lines: &[StatementLine], index: &mut usize, terminators: &[&str], stop_at_lane: bool, diagnostics: &mut Vec<TextError>) -> Vec<ActivityNode> {
         let mut nodes = Vec::new();
 
         while *index < lines.len() {
@@ -484,7 +484,7 @@ impl PlantUmlBuilder<'_> {
         nodes
     }
 
-    fn build_activity_decision(&self, lines: &[StatementLine], index: &mut usize, diagnostics: &mut Vec<OakError>) -> ActivityDecision {
+    fn build_activity_decision(&self, lines: &[StatementLine], index: &mut usize, diagnostics: &mut Vec<TextError>) -> ActivityDecision {
         let start = lines[*index].span.start;
         let condition = parenthesized(&lines[*index].text);
         let label = parenthesized_after(&lines[*index].text, "then");
@@ -498,7 +498,7 @@ impl PlantUmlBuilder<'_> {
         loop {
             let Some(line) = lines.get(*index)
             else {
-                diagnostics.push(OakError::syntax_error("unterminated activity decision, expected `endif`".to_string(), start, None));
+                diagnostics.push(TextError::syntax_error("unterminated activity decision, expected `endif`".to_string(), start, None));
                 break;
             };
             let normalized = line.text.to_ascii_lowercase();
@@ -532,7 +532,7 @@ impl PlantUmlBuilder<'_> {
         ActivityDecision { branches, span: core::range::Range { start, end } }
     }
 
-    fn build_activity_fork(&self, lines: &[StatementLine], index: &mut usize, diagnostics: &mut Vec<OakError>) -> ActivityFork {
+    fn build_activity_fork(&self, lines: &[StatementLine], index: &mut usize, diagnostics: &mut Vec<TextError>) -> ActivityFork {
         let start = lines[*index].span.start;
         *index += 1;
         let mut branches = Vec::new();
@@ -545,7 +545,7 @@ impl PlantUmlBuilder<'_> {
 
             let Some(line) = lines.get(*index)
             else {
-                diagnostics.push(OakError::syntax_error("unterminated activity fork, expected `end fork`".to_string(), start, None));
+                diagnostics.push(TextError::syntax_error("unterminated activity fork, expected `end fork`".to_string(), start, None));
                 break;
             };
             let normalized = line.text.to_ascii_lowercase();
@@ -564,7 +564,7 @@ impl PlantUmlBuilder<'_> {
         ActivityFork { branches, span: core::range::Range { start, end } }
     }
 
-    fn build_activity_swimlane(&self, lines: &[StatementLine], index: &mut usize, terminators: &[&str], diagnostics: &mut Vec<OakError>) -> ActivitySwimlane {
+    fn build_activity_swimlane(&self, lines: &[StatementLine], index: &mut usize, terminators: &[&str], diagnostics: &mut Vec<TextError>) -> ActivitySwimlane {
         let line = &lines[*index];
         let span = line.span;
         let (name, color) = parse_swimlane(&line.text);
@@ -574,7 +574,7 @@ impl PlantUmlBuilder<'_> {
         ActivitySwimlane { name, color, nodes, span: core::range::Range { start: span.start, end } }
     }
 
-    fn build_state_diagram(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, diagnostics: &mut Vec<OakError>, span: core::range::Range<usize>) -> StateDiagram {
+    fn build_state_diagram(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>, span: core::range::Range<usize>) -> StateDiagram {
         let lines = collect_lines(&node, source);
         let mut index = 0;
         let mut elements = Vec::new();
@@ -593,7 +593,7 @@ impl PlantUmlBuilder<'_> {
         StateDiagram { elements, span }
     }
 
-    fn parse_state_element(&self, lines: &[StatementLine], index: &mut usize, diagnostics: &mut Vec<OakError>) -> Option<StateElement> {
+    fn parse_state_element(&self, lines: &[StatementLine], index: &mut usize, diagnostics: &mut Vec<TextError>) -> Option<StateElement> {
         let line = &lines[*index];
         let text = line.text.as_str();
 
@@ -613,7 +613,7 @@ impl PlantUmlBuilder<'_> {
         None
     }
 
-    fn build_state_regions(&self, lines: &[StatementLine], index: &mut usize, diagnostics: &mut Vec<OakError>) -> Vec<StateRegion> {
+    fn build_state_regions(&self, lines: &[StatementLine], index: &mut usize, diagnostics: &mut Vec<TextError>) -> Vec<StateRegion> {
         let mut regions = Vec::new();
         let mut elements = Vec::new();
 
@@ -637,7 +637,7 @@ impl PlantUmlBuilder<'_> {
         regions
     }
 
-    fn build_component_diagram(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, diagnostics: &mut Vec<OakError>, span: core::range::Range<usize>) -> ComponentDiagram {
+    fn build_component_diagram(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>, span: core::range::Range<usize>) -> ComponentDiagram {
         let lines = collect_lines(&node, source);
         let mut index = 0;
         let mut elements = Vec::new();
@@ -648,7 +648,7 @@ impl PlantUmlBuilder<'_> {
         ComponentDiagram { elements, relations, span }
     }
 
-    fn parse_component_block(&self, lines: &[StatementLine], index: &mut usize, in_block: bool, elements: &mut Vec<ComponentElement>, relations: &mut Vec<ComponentRelation>, diagnostics: &mut Vec<OakError>) {
+    fn parse_component_block(&self, lines: &[StatementLine], index: &mut usize, in_block: bool, elements: &mut Vec<ComponentElement>, relations: &mut Vec<ComponentRelation>, diagnostics: &mut Vec<TextError>) {
         while *index < lines.len() {
             let line = &lines[*index];
             let text = line.text.as_str();
@@ -713,7 +713,7 @@ impl PlantUmlBuilder<'_> {
         }
     }
 
-    fn parse_component_relation(&self, line: &StatementLine, diagnostics: &mut Vec<OakError>) -> Option<ComponentRelation> {
+    fn parse_component_relation(&self, line: &StatementLine, diagnostics: &mut Vec<TextError>) -> Option<ComponentRelation> {
         let mut rest = line.text.as_str();
         let left = take_endpoint(&mut rest)?;
         let left_multiplicity = take_multiplicity(&mut rest);
@@ -726,7 +726,7 @@ impl PlantUmlBuilder<'_> {
 
         let Some((kind, marker_at_left)) = relation_arrow(arrow)
         else {
-            diagnostics.push(OakError::syntax_error(format!("unsupported component relation arrow `{arrow}`"), line.span.start, None));
+            diagnostics.push(TextError::syntax_error(format!("unsupported component relation arrow `{arrow}`"), line.span.start, None));
             return None;
         };
 
@@ -835,7 +835,7 @@ fn state_endpoint(raw: &str, is_left: bool) -> StateEndpoint {
     if value == "[*]" { if is_left { StateEndpoint::Start } else { StateEndpoint::End } } else { StateEndpoint::State(unquote(value)) }
 }
 
-fn parse_state_header(text: &str, diagnostics: &mut Vec<OakError>, offset: usize) -> (String, Option<String>, StateKind, bool) {
+fn parse_state_header(text: &str, diagnostics: &mut Vec<TextError>, offset: usize) -> (String, Option<String>, StateKind, bool) {
     let rest = text[head_word_len(text)..].trim();
     let has_block = rest.ends_with('{');
     let rest = rest.trim_end_matches('{').trim_end();
@@ -844,7 +844,7 @@ fn parse_state_header(text: &str, diagnostics: &mut Vec<OakError>, offset: usize
         match after.find('"') {
             Some(end) => (Some(after[..end].to_string()), after[end + 1..].trim()),
             None => {
-                diagnostics.push(OakError::syntax_error("unterminated state display name".to_string(), offset, None));
+                diagnostics.push(TextError::syntax_error("unterminated state display name".to_string(), offset, None));
                 (None, rest)
             }
         }

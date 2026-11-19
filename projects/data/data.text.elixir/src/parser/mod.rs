@@ -3,7 +3,7 @@ use crate::{
     lexer::{ElixirLexer, token_type::ElixirTokenType},
 };
 use data_text_core::{
-    GreenNode, OakError, TokenType,
+    GreenNode, TextError, TokenType,
     parser::{Associativity, ParseCache, ParseOutput, Parser, ParserState, Pratt, PrattParser, binary, parse_with_lexer, unary},
     source::{Source, TextEdit},
 };

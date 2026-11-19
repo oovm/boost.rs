@@ -1,5 +1,5 @@
 use crate::{ast::*, language::TypeScriptLanguage, lexer::TypeScriptLexer, parser::TypeScriptParser};
-use data_text_core::{Builder, BuilderCache, Lexer, OakDiagnostics, Parser, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, Lexer, TextDiagnostics, Parser, SourceText, TextEdit, source::Source};
 
 mod build_binding;
 mod build_class;
@@ -33,7 +33,7 @@ impl<'config> TypeScriptBuilder<'config> {
 }
 
 impl<'config> Builder<TypeScriptLanguage> for TypeScriptBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<TypeScriptLanguage>) -> OakDiagnostics<TypeScriptRoot> {
+    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<TypeScriptLanguage>) -> TextDiagnostics<TypeScriptRoot> {
         let parser = TypeScriptParser::new(self.config);
         let lexer = TypeScriptLexer::new(&self.config);
 
@@ -45,15 +45,15 @@ impl<'config> Builder<TypeScriptLanguage> for TypeScriptBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }

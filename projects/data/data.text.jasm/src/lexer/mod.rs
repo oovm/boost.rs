@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError, Source,
+    Lexer, LexerCache, LexerState, TextError, Source,
     lexer::{CommentConfig, LexOutput, StringConfig},
 };
 /// Token types for the JASM language.
@@ -35,7 +35,7 @@ impl<'config> JasmLexer<'config> {
     }
 
     /// Main lexing loop.
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

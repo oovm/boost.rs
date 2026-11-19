@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use core::range::Range;
 
-use data_text_core::{Builder, BuilderCache, GreenNode, GreenTree, OakDiagnostics, OakError, Parser, SourceText, TextEdit, parser::session::ParseSession, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, GreenTree, TextDiagnostics, TextError, Parser, SourceText, TextEdit, parser::session::ParseSession, source::Source};
 
 use crate::{
     ast::{SmilesArrow, SmilesArrowKind, SmilesAtom, SmilesBond, SmilesBondOrder, SmilesChirality, SmilesItem, SmilesRoot, SmilesStereo},
@@ -17,7 +17,7 @@ use crate::{
 pub struct SmilesBuilder;
 
 impl Builder<SmilesLanguage> for SmilesBuilder {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<SmilesLanguage>) -> OakDiagnostics<SmilesRoot> {
+    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<SmilesLanguage>) -> TextDiagnostics<SmilesRoot> {
         let parser = SmilesParser;
         let mut cache = ParseSession::<SmilesLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);
@@ -28,14 +28,14 @@ impl Builder<SmilesLanguage> for SmilesBuilder {
                 let source_text = SourceText::new(text);
                 let mut diagnostics = parse_result.diagnostics;
                 match self.build_root(green_tree, &source_text) {
-                    Ok(root) => OakDiagnostics { result: Ok(root), diagnostics },
+                    Ok(root) => TextDiagnostics { result: Ok(root), diagnostics },
                     Err(error) => {
                         diagnostics.push(error.clone());
-                        OakDiagnostics { result: Err(error), diagnostics }
+                        TextDiagnostics { result: Err(error), diagnostics }
                     }
                 }
             }
-            Err(error) => OakDiagnostics { result: Err(error), diagnostics: parse_result.diagnostics },
+            Err(error) => TextDiagnostics { result: Err(error), diagnostics: parse_result.diagnostics },
         }
     }
 }
@@ -77,9 +77,9 @@ impl Traversal {
 }
 
 impl SmilesBuilder {
-    fn build_root(&self, green_tree: &GreenNode<SmilesLanguage>, source: &SourceText) -> Result<SmilesRoot, OakError> {
+    fn build_root(&self, green_tree: &GreenNode<SmilesLanguage>, source: &SourceText) -> Result<SmilesRoot, TextError> {
         if green_tree.kind != SmilesElementType::SourceFile {
-            return Err(OakError::internal_error("the SMILES syntax tree is missing its root element"));
+            return Err(TextError::internal_error("the SMILES syntax tree is missing its root element"));
         }
 
         let document_start = 0usize;
@@ -132,14 +132,14 @@ impl SmilesBuilder {
                 SmilesElementType::BranchOpen => {
                     let Some(current) = traversal.current
                     else {
-                        return Err(OakError::syntax_error("a branch cannot open before the first atom", start, source.source_id()));
+                        return Err(TextError::syntax_error("a branch cannot open before the first atom", start, source.source_ref()));
                     };
                     traversal.branches.push(current);
                 }
                 SmilesElementType::BranchClose => {
                     let Some(previous) = traversal.branches.pop()
                     else {
-                        return Err(OakError::syntax_error("a branch closes without a matching opening", start, source.source_id()));
+                        return Err(TextError::syntax_error("a branch closes without a matching opening", start, source.source_ref()));
                     };
                     traversal.pending = None;
                     traversal.current = Some(previous);
@@ -148,11 +148,11 @@ impl SmilesBuilder {
                     let text = source.get_text_in((start..end).into()).into_owned();
                     let Some(label) = ring_label(&text)
                     else {
-                        return Err(OakError::syntax_error(format!("ring label `{text}` is outside the modelled subset, only `0`-`9` and `%nn` are accepted"), start, source.source_id()));
+                        return Err(TextError::syntax_error(format!("ring label `{text}` is outside the modelled subset, only `0`-`9` and `%nn` are accepted"), start, source.source_ref()));
                     };
                     let Some(current) = traversal.current
                     else {
-                        return Err(OakError::syntax_error("a ring label needs an atom before it", start, source.source_id()));
+                        return Err(TextError::syntax_error("a ring label needs an atom before it", start, source.source_ref()));
                     };
                     match traversal.rings.remove(&label) {
                         Some((other, order)) => {
@@ -202,15 +202,15 @@ impl SmilesBuilder {
 
     /// Close the fragment under construction and reset the traversal.
     #[allow(clippy::too_many_arguments)]
-    fn finish_item(&self, item: &mut Item, traversal: &mut Traversal, phase: Phase, offset: usize, source: &SourceText, reactants: &mut Vec<SmilesItem>, reagents: &mut Vec<SmilesItem>, products: &mut Vec<SmilesItem>) -> Result<(), OakError> {
+    fn finish_item(&self, item: &mut Item, traversal: &mut Traversal, phase: Phase, offset: usize, source: &SourceText, reactants: &mut Vec<SmilesItem>, reagents: &mut Vec<SmilesItem>, products: &mut Vec<SmilesItem>) -> Result<(), TextError> {
         if !item.touched {
             return Ok(());
         }
         if let Some((label, _)) = traversal.rings.iter().next() {
-            return Err(OakError::syntax_error(format!("ring label `{label}` is never closed in its fragment"), offset, source.source_id()));
+            return Err(TextError::syntax_error(format!("ring label `{label}` is never closed in its fragment"), offset, source.source_ref()));
         }
         if !traversal.branches.is_empty() {
-            return Err(OakError::syntax_error("a branch is never closed", offset, source.source_id()));
+            return Err(TextError::syntax_error("a branch is never closed", offset, source.source_ref()));
         }
         let finished = std::mem::take(item).into_ast();
         match phase {
@@ -232,14 +232,14 @@ enum Phase {
 }
 
 /// Parse one atom token.
-fn parse_atom(text: &str, span: Range<usize>, source: &SourceText) -> Result<SmilesAtom, OakError> {
+fn parse_atom(text: &str, span: Range<usize>, source: &SourceText) -> Result<SmilesAtom, TextError> {
     if text.starts_with('[') {
         parse_bracket_atom(text, span, source)
     }
     else {
         let first = text.chars().next().unwrap_or('*');
         if !is_organic_symbol(text) {
-            return Err(OakError::syntax_error(format!("`{text}` is not an organic-subset atom or a bracket atom"), span.start, source.source_id()));
+            return Err(TextError::syntax_error(format!("`{text}` is not an organic-subset atom or a bracket atom"), span.start, source.source_ref()));
         }
         Ok(SmilesAtom { element: text.to_string(), aromatic: first.is_ascii_lowercase(), charge: 0, isotope: None, explicit_hydrogens: None, chirality: None, span })
     }
@@ -250,10 +250,10 @@ fn is_organic_symbol(text: &str) -> bool {
     matches!(text, "B" | "C" | "N" | "O" | "P" | "S" | "F" | "I" | "Cl" | "Br" | "b" | "c" | "n" | "o" | "p" | "s" | "H" | "*")
 }
 
-fn parse_bracket_atom(text: &str, span: Range<usize>, source: &SourceText) -> Result<SmilesAtom, OakError> {
+fn parse_bracket_atom(text: &str, span: Range<usize>, source: &SourceText) -> Result<SmilesAtom, TextError> {
     let inner = text.trim_start_matches('[').trim_end_matches(']');
     if inner.is_empty() {
-        return Err(OakError::syntax_error("an empty bracket atom has no element", span.start, source.source_id()));
+        return Err(TextError::syntax_error("an empty bracket atom has no element", span.start, source.source_ref()));
     }
 
     let bytes = inner.as_bytes();
@@ -280,7 +280,7 @@ fn parse_bracket_atom(text: &str, span: Range<usize>, source: &SourceText) -> Re
         inner[start..index].to_string()
     }
     else {
-        return Err(OakError::syntax_error("a bracket atom is missing its element symbol", span.start, source.source_id()));
+        return Err(TextError::syntax_error("a bracket atom is missing its element symbol", span.start, source.source_ref()));
     };
     let aromatic = element.chars().next().is_some_and(|character| character.is_ascii_lowercase());
 
@@ -321,7 +321,7 @@ fn parse_bracket_atom(text: &str, span: Range<usize>, source: &SourceText) -> Re
                 charge = direction * magnitude.max(1);
             }
             _ => {
-                return Err(OakError::syntax_error(format!("bracket atom part `{}` is outside the modelled subset", &inner[index..index + 1]), span.start, source.source_id()));
+                return Err(TextError::syntax_error(format!("bracket atom part `{}` is outside the modelled subset", &inner[index..index + 1]), span.start, source.source_ref()));
             }
         }
     }
@@ -330,7 +330,7 @@ fn parse_bracket_atom(text: &str, span: Range<usize>, source: &SourceText) -> Re
 }
 
 /// Parse a bond symbol.
-fn parse_bond(text: &str, span: Range<usize>, source: &SourceText) -> Result<(SmilesBondOrder, Option<SmilesStereo>), OakError> {
+fn parse_bond(text: &str, span: Range<usize>, source: &SourceText) -> Result<(SmilesBondOrder, Option<SmilesStereo>), TextError> {
     match text {
         "-" => Ok((SmilesBondOrder::Single, None)),
         "=" => Ok((SmilesBondOrder::Double, None)),
@@ -339,7 +339,7 @@ fn parse_bond(text: &str, span: Range<usize>, source: &SourceText) -> Result<(Sm
         "~" => Ok((SmilesBondOrder::Any, None)),
         "/" => Ok((SmilesBondOrder::Single, Some(SmilesStereo::Up))),
         "\\" => Ok((SmilesBondOrder::Single, Some(SmilesStereo::Down))),
-        other => Err(OakError::syntax_error(format!("bond symbol `{other}` is outside the modelled subset"), span.start, source.source_id())),
+        other => Err(TextError::syntax_error(format!("bond symbol `{other}` is outside the modelled subset"), span.start, source.source_ref())),
     }
 }
 

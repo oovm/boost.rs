@@ -8,7 +8,7 @@ use crate::{
 };
 use data_text_core::{
     TextEdit, TokenType,
-    errors::OakError,
+    errors::TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState},
     source::Source,
     tree::GreenNode,

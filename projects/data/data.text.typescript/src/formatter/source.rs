@@ -10,7 +10,7 @@ use crate::{
     lexer::{TypeScriptLexer, token_type::TypeScriptTokenType},
 };
 
-pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<String, data_text_core::OakError> {
+pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<String, data_text_core::TextError> {
     if source.is_empty() {
         return Ok(String::new());
     }
@@ -39,9 +39,9 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
         let left = &pair[0];
         let right = &pair[1];
         let span = Range { start: left.span.end, end: right.span.start };
-        let gap = source.get(span.clone()).ok_or_else(|| data_text_core::OakError::format_error("lexer token span is outside source"))?;
-        let left_text = source.get(left.span.clone()).ok_or_else(|| data_text_core::OakError::format_error("left token span is outside source"))?;
-        let right_text = source.get(right.span.clone()).ok_or_else(|| data_text_core::OakError::format_error("right token span is outside source"))?;
+        let gap = source.get(span.clone()).ok_or_else(|| data_text_core::TextError::format_error("lexer token span is outside source"))?;
+        let left_text = source.get(left.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("left token span is outside source"))?;
+        let right_text = source.get(right.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("right token span is outside source"))?;
         let mut constraint = conservative_constraint(left_text, gap, right_text);
         if left_text == ">" && is_jsx_attribute_gap(&significant, index, source) {
             constraint = oak_formatter::GapConstraint::NoSpace;
@@ -542,7 +542,7 @@ fn is_layout(kind: TypeScriptTokenType) -> bool {
     matches!(kind, TypeScriptTokenType::Whitespace | TypeScriptTokenType::Newline)
 }
 
-fn validate_delimiters(source: &str, tokens: &[&data_text_core::Token<TypeScriptTokenType>]) -> Result<(), data_text_core::OakError> {
+fn validate_delimiters(source: &str, tokens: &[&data_text_core::Token<TypeScriptTokenType>]) -> Result<(), data_text_core::TextError> {
     let mut stack = Vec::new();
     for token in tokens {
         if matches!(token.kind, TypeScriptTokenType::StringLiteral | TypeScriptTokenType::TemplateString | TypeScriptTokenType::RegexLiteral | TypeScriptTokenType::LineComment | TypeScriptTokenType::BlockComment) {
@@ -554,21 +554,21 @@ fn validate_delimiters(source: &str, tokens: &[&data_text_core::Token<TypeScript
             TypeScriptTokenType::LeftBracket => stack.push('['),
             TypeScriptTokenType::RightBrace => {
                 if stack.pop() != Some('{') {
-                    return Err(data_text_core::OakError::format_error("formatter input has unbalanced delimiters"));
+                    return Err(data_text_core::TextError::format_error("formatter input has unbalanced delimiters"));
                 }
             }
             TypeScriptTokenType::RightParen => {
                 if stack.pop() != Some('(') {
-                    return Err(data_text_core::OakError::format_error("formatter input has unbalanced delimiters"));
+                    return Err(data_text_core::TextError::format_error("formatter input has unbalanced delimiters"));
                 }
             }
             TypeScriptTokenType::RightBracket => {
                 if stack.pop() != Some('[') {
-                    return Err(data_text_core::OakError::format_error("formatter input has unbalanced delimiters"));
+                    return Err(data_text_core::TextError::format_error("formatter input has unbalanced delimiters"));
                 }
             }
             _ => {}
         }
     }
-    if stack.is_empty() { Ok(()) } else { Err(data_text_core::OakError::format_error("formatter input has unbalanced delimiters")) }
+    if stack.is_empty() { Ok(()) } else { Err(data_text_core::TextError::format_error("formatter input has unbalanced delimiters")) }
 }

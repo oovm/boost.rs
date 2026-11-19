@@ -3,7 +3,7 @@ use data_text_toml::{language::TomlLanguage, lexer::TomlLexer};
 use std::{path::Path, time::Duration};
 
 #[test]
-fn test_toml_lexer() -> Result<(), data_text_core::OakError> {
+fn test_toml_lexer() -> Result<(), data_text_core::TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let language = TomlLanguage::default();
     let lexer = TomlLexer::new(&language);

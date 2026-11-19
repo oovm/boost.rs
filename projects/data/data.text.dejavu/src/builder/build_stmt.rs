@@ -5,10 +5,10 @@ use crate::{
     lexer::token_type::DejavuTokenType,
     parser::element_type::DejavuElementType,
 };
-use data_text_core::{OakError, RedNode, RedTree, Source};
+use data_text_core::{TextError, RedNode, RedTree, Source};
 
 impl<'config> DejavuBuilder<'config> {
-    pub(crate) fn build_statement<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<StatementNode, OakError> {
+    pub(crate) fn build_statement<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<StatementNode, TextError> {
         match node.green.kind {
             DejavuElementType::LetStatement => self.build_let(node, source),
             DejavuElementType::ExprStatement => self.build_expr_stmt(node, source),
@@ -16,7 +16,7 @@ impl<'config> DejavuBuilder<'config> {
         }
     }
 
-    pub(crate) fn build_let<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<StatementNode, OakError> {
+    pub(crate) fn build_let<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<StatementNode, TextError> {
         let span = node.span();
         let mut children_iter = node
             .children()
@@ -101,7 +101,7 @@ impl<'config> DejavuBuilder<'config> {
         Ok(StatementNode::Let(LetStatement { annotations, is_mutable, pattern, expr, span }))
     }
 
-    pub(crate) fn build_expr_stmt<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<StatementNode, OakError> {
+    pub(crate) fn build_expr_stmt<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<StatementNode, TextError> {
         let span = node.span();
         let mut children_iter = node
             .children()
@@ -153,7 +153,7 @@ impl<'config> DejavuBuilder<'config> {
         Ok(StatementNode::Expr(ExpressionStatement { annotations, expr, semi, span }))
     }
 
-    pub(crate) fn build_using<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<UsingStatement, OakError> {
+    pub(crate) fn build_using<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<UsingStatement, TextError> {
         let span = node.span();
         let mut path = NamePathNode { parts: Vec::new(), span: Default::default() };
 
@@ -173,7 +173,7 @@ impl<'config> DejavuBuilder<'config> {
         Ok(UsingStatement { path, span })
     }
 
-    pub(crate) fn build_effect<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<EffectDefinition, OakError> {
+    pub(crate) fn build_effect<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<EffectDefinition, TextError> {
         let span = node.span();
         let mut name = IdentifierNode { name: String::new(), span: Default::default() };
         let mut annotations = Vec::new();
@@ -204,7 +204,7 @@ impl<'config> DejavuBuilder<'config> {
         Ok(EffectDefinition { name, annotations, items, span })
     }
 
-    pub(crate) fn build_attribute<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<AttributeNode, OakError> {
+    pub(crate) fn build_attribute<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<AttributeNode, TextError> {
         let span = node.span();
         let mut name = IdentifierNode { name: String::new(), span: Default::default() };
         let mut args = Vec::new();
@@ -244,7 +244,7 @@ impl<'config> DejavuBuilder<'config> {
         Ok(AttributeNode { name, args, span })
     }
 
-    pub(crate) fn build_name_path<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<NamePathNode, OakError> {
+    pub(crate) fn build_name_path<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<NamePathNode, TextError> {
         let span = node.span();
         let mut parts = Vec::new();
 

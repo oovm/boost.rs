@@ -2,7 +2,7 @@
 /// CSS token types and role definitions.
 pub mod token_type;
 use crate::language::CssLanguage;
-use data_text_core::{Lexer, LexerState, OakError, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerState, TextError, lexer::LexOutput, source::Source};
 pub use token_type::CssTokenType;
 
 type State<'s, S> = LexerState<'s, S, CssLanguage>;
@@ -396,7 +396,7 @@ impl<'config> CssLexer<'config> {
     }
 
     /// Main entry point for the lexer.
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

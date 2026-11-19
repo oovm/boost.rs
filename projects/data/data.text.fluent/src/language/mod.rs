@@ -22,7 +22,7 @@ impl Language for FluentLanguage {
 }
 
 /// Deserializes a Fluent string into a Fluent AST.
-pub fn from_str(input: &str) -> Result<super::ast::FluentRoot, data_text_core::OakError> {
+pub fn from_str(input: &str) -> Result<super::ast::FluentRoot, data_text_core::TextError> {
     use super::parser::parse;
 
     let root = parse(input)?;

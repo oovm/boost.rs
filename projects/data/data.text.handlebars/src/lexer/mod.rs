@@ -4,7 +4,7 @@ pub mod token_type;
 pub use token_type::HandlebarsTokenType;
 
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError, Range,
+    Lexer, LexerCache, LexerState, TextError, Range,
     lexer::{LexOutput, StringConfig, WhitespaceConfig},
     source::Source,
 };
@@ -40,7 +40,7 @@ impl<'config> HandlebarsLexer<'config> {
         Self { config }
     }
 
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

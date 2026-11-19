@@ -1,9 +1,9 @@
 use crate::{ValkyrieLanguage, ast::*, builder::ValkyrieBuilder, lexer::token_type::ValkyrieTokenType};
-use data_text_core::{OakError, RedNode, RedTree, Source};
+use data_text_core::{TextError, RedNode, RedTree, Source};
 
 impl<'config> ValkyrieBuilder<'config> {
     /// 构建 lambda 表达式
-    pub(crate) fn build_lambda_expr<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<AnonymousMicro, OakError> {
+    pub(crate) fn build_lambda_expr<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<AnonymousMicro, TextError> {
         let span = node.span();
         let mut params = Vec::new();
         let mut return_type = None;

@@ -4,7 +4,7 @@ pub mod token_type;
 
 use crate::{language::ScalaLanguage, lexer::token_type::ScalaTokenType};
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError, TextEdit,
+    Lexer, LexerCache, LexerState, TextError, TextEdit,
     lexer::{CommentConfig, LexOutput, StringConfig, WhitespaceConfig},
     source::Source,
 };
@@ -40,7 +40,7 @@ impl<'config> ScalaLexer<'config> {
         Self { config }
     }
 
-    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), OakError> {
+    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

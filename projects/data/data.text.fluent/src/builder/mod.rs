@@ -15,7 +15,7 @@ impl Builder<FluentLanguage> for FluentBuilder {
     fn build<'a, S: Source + ?Sized>(&self, text: &S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<FluentLanguage>) -> BuildOutput<FluentLanguage> {
         // Implementation will be added here
         // For now, return an empty result
-        let diagnostics = data_text_core::errors::OakDiagnostics { result: Err(data_text_core::errors::OakError::custom_error("Not implemented")), diagnostics: vec![] };
+        let diagnostics = data_text_core::errors::TextDiagnostics { result: Err(data_text_core::errors::TextError::custom_error("Not implemented")), diagnostics: vec![] };
         diagnostics
     }
 }

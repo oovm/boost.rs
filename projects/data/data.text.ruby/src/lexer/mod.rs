@@ -3,7 +3,7 @@
 pub mod token_type;
 
 use crate::{language::RubyLanguage, lexer::token_type::RubyTokenType};
-use data_text_core::{LexOutput, Lexer, LexerCache, LexerState, OakError, Source, TextEdit};
+use data_text_core::{LexOutput, Lexer, LexerCache, LexerState, TextError, Source, TextEdit};
 
 pub(crate) type State<'a, S> = LexerState<'a, S, RubyLanguage>;
 
@@ -30,7 +30,7 @@ impl<'config> RubyLexer<'config> {
         Self { config }
     }
 
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

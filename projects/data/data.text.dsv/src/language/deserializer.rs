@@ -2,7 +2,7 @@ use crate::{
     ast::{DsvField, DsvRecord, DsvRoot},
     language::DsvLanguage,
 };
-use data_text_core::OakError as Error;
+use data_text_core::TextError as Error;
 
 /// Converts a `DsvRoot` to a deserializable value of type `T`.
 pub fn from_value<const LANG: DsvLanguage, T: serde::de::DeserializeOwned>(value: DsvRoot<LANG>) -> Result<T, Error> {

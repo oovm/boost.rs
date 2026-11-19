@@ -2,7 +2,7 @@
 
 pub mod token_type;
 use crate::{language::SvelteLanguage, lexer::token_type::SvelteTokenType};
-use data_text_core::{LexOutput, Lexer, LexerCache, LexerState, OakError, Source};
+use data_text_core::{LexOutput, Lexer, LexerCache, LexerState, TextError, Source};
 
 pub(crate) type State<'a, S> = LexerState<'a, S, SvelteLanguage>;
 
@@ -18,7 +18,7 @@ impl<'config> SvelteLexer<'config> {
         Self { config }
     }
 
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let start_pos = state.get_position();
 

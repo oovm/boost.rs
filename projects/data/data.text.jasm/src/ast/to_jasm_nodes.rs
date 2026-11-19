@@ -1,6 +1,6 @@
 use crate::{formats::jasm::ast::*, program::*};
-use data_text_core::{OakDiagnostics, OakError};
-type Result<T> = std::result::Result<T, OakError>;
+use data_text_core::{TextDiagnostics, TextError};
+type Result<T> = std::result::Result<T, TextError>;
 
 pub struct JvmToJasmConverter {
     constant_pool: JvmConstantPool,
@@ -11,12 +11,12 @@ impl JvmToJasmConverter {
         Self { constant_pool: JvmConstantPool::new() }
     }
 
-    pub fn convert(&mut self, program: JvmProgram) -> OakDiagnostics<JasmRoot> {
+    pub fn convert(&mut self, program: JvmProgram) -> TextDiagnostics<JasmRoot> {
         let constant_pool = program.constant_pool.clone();
         self.constant_pool = constant_pool;
         match self.convert_class(program) {
-            Ok(jasm_class) => OakDiagnostics::success(JasmRoot { class: jasm_class }),
-            Err(error) => OakDiagnostics::failure(error),
+            Ok(jasm_class) => TextDiagnostics::success(JasmRoot { class: jasm_class }),
+            Err(error) => TextDiagnostics::failure(error),
         }
     }
 
@@ -206,7 +206,7 @@ impl JvmToJasmConverter {
                 Ok(JasmInstruction::MethodCall { instruction: "invokedynamic".to_string(), method_ref })
             }
 
-            _ => Err(OakError::custom_error(format!("Unsupported JVM instruction for JASM conversion: {:?}", instruction))),
+            _ => Err(TextError::custom_error(format!("Unsupported JVM instruction for JASM conversion: {:?}", instruction))),
         }
     }
 
@@ -230,18 +230,18 @@ impl JvmToJasmConverter {
                     JvmConstantPoolEntry::InterfaceMethodref { class_name, name, descriptor } => {
                         Ok(format!("{}.\"{}\":\"{}\"", class_name, name, descriptor))
                     }
-                    _ => Err(OakError::custom_error(format!(
+                    _ => Err(TextError::custom_error(format!(
                         "Unsupported constant pool entry type for JASM conversion: {:?}",
                         entry
                     ))),
                 }
             }
             else {
-                Err(OakError::custom_error(format!("Constant pool entry not found for index: {}", index)))
+                Err(TextError::custom_error(format!("Constant pool entry not found for index: {}", index)))
             }
         }
         else {
-            Err(OakError::custom_error(format!("Symbol not found in constant pool: {}", symbol)))
+            Err(TextError::custom_error(format!("Symbol not found in constant pool: {}", symbol)))
         }
     }
 }
@@ -252,7 +252,7 @@ impl Default for JvmToJasmConverter {
     }
 }
 
-pub fn convert_jvm_to_jasm(program: JvmProgram) -> OakDiagnostics<JasmRoot> {
+pub fn convert_jvm_to_jasm(program: JvmProgram) -> TextDiagnostics<JasmRoot> {
     let mut converter = JvmToJasmConverter::new();
     converter.convert(program)
 }

@@ -3,7 +3,7 @@ use language_testing::parsing::ParserTester;
 use std::{path::Path, time::Duration};
 
 #[test]
-fn test_dejavu_parser() -> Result<(), data_text_core::OakError> {
+fn test_dejavu_parser() -> Result<(), data_text_core::TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lang = DejavuLanguage::default();
     let parser = DejavuParser::new(&lang);
@@ -12,7 +12,7 @@ fn test_dejavu_parser() -> Result<(), data_text_core::OakError> {
 }
 
 #[test]
-fn test_flags_parser() -> Result<(), data_text_core::OakError> {
+fn test_flags_parser() -> Result<(), data_text_core::TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lang = DejavuLanguage::default();
     let parser = DejavuParser::new(&lang);
@@ -23,7 +23,7 @@ fn test_flags_parser() -> Result<(), data_text_core::OakError> {
 }
 
 #[test]
-fn test_legacy_compliance() -> Result<(), data_text_core::OakError> {
+fn test_legacy_compliance() -> Result<(), data_text_core::TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lang = Box::leak(Box::new(DejavuLanguage::default()));
     let parser = DejavuParser::new(lang);

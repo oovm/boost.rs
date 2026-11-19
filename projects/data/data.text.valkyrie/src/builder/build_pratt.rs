@@ -4,12 +4,12 @@ use crate::{
     builder::ValkyrieBuilder,
     lexer::token_type::ValkyrieTokenType,
 };
-use data_text_core::{OakError, RedNode, RedTree, Source};
+use data_text_core::{TextError, RedNode, RedTree, Source};
 
 impl<'config> ValkyrieBuilder<'config> {
     /// 使用 Pratt 解析器构建表达式
     /// 这是一个更高效的表达式解析方法，特别适合处理运算符优先级
-    pub(crate) fn build_expr_pratt<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_expr_pratt<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         // 对于简单的表达式，直接使用现有的构建方法
         // 对于复杂的二元表达式，使用 Pratt 解析器
         match node.green.kind {
@@ -22,7 +22,7 @@ impl<'config> ValkyrieBuilder<'config> {
     }
 
     /// 使用 Pratt 解析器构建二元表达式
-    fn build_binary_pratt<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    fn build_binary_pratt<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
 
         // 收集所有的操作数和运算符
@@ -61,7 +61,7 @@ impl<'config> ValkyrieBuilder<'config> {
     }
 
     /// Pratt 解析器的核心算法
-    fn pratt_parse<S: Source + ?Sized>(&self, operands: Vec<TermExpression>, operators: Vec<(ValkyrieTokenType, data_text_core::Range<usize>)>, span: data_text_core::Range<usize>) -> Result<TermExpression, OakError> {
+    fn pratt_parse<S: Source + ?Sized>(&self, operands: Vec<TermExpression>, operators: Vec<(ValkyrieTokenType, data_text_core::Range<usize>)>, span: data_text_core::Range<usize>) -> Result<TermExpression, TextError> {
         // 运算符优先级表
         let precedence = |op: &ValkyrieTokenType| -> u8 {
             match op {

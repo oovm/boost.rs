@@ -2,7 +2,7 @@ use crate::{
     lexer::TypeScriptTokenType,
     parser::{State, TypeScriptParser},
 };
-use data_text_core::{OakError, TokenType, source::Source};
+use data_text_core::{TextError, TokenType, source::Source};
 
 impl<'config> TypeScriptParser<'config> {
     pub(crate) fn peek_kind<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Option<TypeScriptTokenType> {
@@ -16,7 +16,7 @@ impl<'config> TypeScriptParser<'config> {
         }
     }
 
-    pub(crate) fn expect<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, kind: TypeScriptTokenType) -> Result<(), OakError> {
+    pub(crate) fn expect<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, kind: TypeScriptTokenType) -> Result<(), TextError> {
         self.skip_trivia(state);
         state.expect(kind)
     }
@@ -50,7 +50,7 @@ impl<'config> TypeScriptParser<'config> {
         }
     }
 
-    pub(crate) fn parse_parameters<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_parameters<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         self.expect(state, LeftParen).ok();
         while state.not_at_end() && !self.at(state, RightParen) {
@@ -97,11 +97,11 @@ impl<'config> TypeScriptParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_type_annotation<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_type_annotation<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.parse_type_annotation_with_arrow(state, false)
     }
 
-    pub(crate) fn parse_return_type_annotation<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_return_type_annotation<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.parse_type_annotation_with_arrow(state, true)
     }
 
@@ -111,7 +111,7 @@ impl<'config> TypeScriptParser<'config> {
     /// top-level arrow belongs to the type itself (`(): () => void { body }`).
     /// `parse_return_type_annotation` still stops at `=>` for arrow-function
     /// bodies, where the arrow really does terminate the annotation.
-    pub(crate) fn parse_declaration_return_type_annotation<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_declaration_return_type_annotation<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         self.parse_type_annotation_with_arrow(state, false)
     }
 
@@ -245,7 +245,7 @@ impl<'config> TypeScriptParser<'config> {
         closed
     }
 
-    fn parse_type_annotation_with_arrow<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, stop_at_arrow: bool) -> Result<(), OakError> {
+    fn parse_type_annotation_with_arrow<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, stop_at_arrow: bool) -> Result<(), TextError> {
         use crate::{lexer::token_type::TypeScriptTokenType::*, parser::element_type::TypeScriptElementType};
 
         let cp = state.checkpoint();
@@ -301,7 +301,7 @@ impl<'config> TypeScriptParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         let cp = state.checkpoint();
         self.expect(state, LeftBrace).ok();
@@ -322,7 +322,7 @@ impl<'config> TypeScriptParser<'config> {
     /// Generic declarations (`function f<T>`, `class Box<T>`, `interface A<T>`)
     /// and generic arrows (`<T>(x: T) => x`) place this list between the name
     /// and the rest of the declaration, so it is consumed as one node.
-    pub(crate) fn parse_type_parameters<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_type_parameters<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::{lexer::token_type::TypeScriptTokenType::*, parser::element_type::TypeScriptElementType};
         if !self.at(state, Less) {
             return Ok(());
@@ -356,7 +356,7 @@ impl<'config> TypeScriptParser<'config> {
     ///
     /// Covers dotted names and type arguments (`Foo`, `Foo.Bar`, `Foo<T>`) so
     /// the clause scanners never stop inside a generic argument list.
-    pub(crate) fn parse_type_reference<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_type_reference<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::{lexer::token_type::TypeScriptTokenType::*, parser::element_type::TypeScriptElementType};
         let cp = state.checkpoint();
         if self.at(state, IdentifierName) {

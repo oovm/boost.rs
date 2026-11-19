@@ -6,7 +6,7 @@ use crate::{
 };
 use core::range::Range;
 use data_text_core::{
-    Builder, BuilderCache, GreenNode, GreenTree, OakDiagnostics, OakError, Parser, Source,
+    Builder, BuilderCache, GreenNode, GreenTree, TextDiagnostics, TextError, Parser, Source,
     builder::BuildOutput,
     source::{SourceText, TextEdit},
 };
@@ -20,7 +20,7 @@ impl SvelteBuilder {
         Self
     }
 
-    fn build_root<'a>(&self, green_tree: &GreenNode<'a, SvelteLanguage>, source: &SourceText) -> Result<SvelteRoot, OakError> {
+    fn build_root<'a>(&self, green_tree: &GreenNode<'a, SvelteLanguage>, source: &SourceText) -> Result<SvelteRoot, TextError> {
         let mut nodes = Vec::new();
         let mut current_offset = 0;
 
@@ -41,7 +41,7 @@ impl SvelteBuilder {
         Ok(SvelteRoot { nodes })
     }
 
-    fn build_node<'a>(&self, node: &GreenNode<'a, SvelteLanguage>, offset: usize, source: &SourceText) -> Result<Option<SvelteNode>, OakError> {
+    fn build_node<'a>(&self, node: &GreenNode<'a, SvelteLanguage>, offset: usize, source: &SourceText) -> Result<Option<SvelteNode>, TextError> {
         match node.kind {
             SvelteElementType::Element => Ok(Some(SvelteNode::Element(self.build_element(node, offset, source)?))),
             SvelteElementType::Expression => Ok(Some(SvelteNode::Expression(self.build_expression(node, offset, source)?))),
@@ -58,7 +58,7 @@ impl SvelteBuilder {
         }
     }
 
-    fn build_element<'a>(&self, node: &GreenNode<'a, SvelteLanguage>, offset: usize, source: &SourceText) -> Result<SvelteElement, OakError> {
+    fn build_element<'a>(&self, node: &GreenNode<'a, SvelteLanguage>, offset: usize, source: &SourceText) -> Result<SvelteElement, TextError> {
         let mut tag_name = String::new();
         let mut attributes = Vec::new();
         let mut children = Vec::new();
@@ -108,7 +108,7 @@ impl SvelteBuilder {
         Ok(SvelteElement { tag_name, attributes, children, span: Range { start: offset, end: offset + node.byte_length as usize } })
     }
 
-    fn build_attribute<'a>(&self, node: &GreenNode<'a, SvelteLanguage>, offset: usize, source: &SourceText) -> Result<SvelteAttribute, OakError> {
+    fn build_attribute<'a>(&self, node: &GreenNode<'a, SvelteLanguage>, offset: usize, source: &SourceText) -> Result<SvelteAttribute, TextError> {
         let mut name = String::new();
         let mut value = None;
         let mut current_offset = offset;
@@ -180,7 +180,7 @@ impl SvelteBuilder {
         }
     }
 
-    fn build_expression<'a>(&self, node: &GreenNode<'a, SvelteLanguage>, offset: usize, source: &SourceText) -> Result<SvelteExpression, OakError> {
+    fn build_expression<'a>(&self, node: &GreenNode<'a, SvelteLanguage>, offset: usize, source: &SourceText) -> Result<SvelteExpression, TextError> {
         let mut expression = String::new();
         let mut current_offset = offset;
 
@@ -202,7 +202,7 @@ impl SvelteBuilder {
         Ok(SvelteExpression { expression: expression.trim().to_string(), span: Range { start: offset, end: offset + node.byte_length as usize } })
     }
 
-    fn build_block<'a>(&self, node: &GreenNode<'a, SvelteLanguage>, offset: usize, source: &SourceText) -> Result<SvelteBlock, OakError> {
+    fn build_block<'a>(&self, node: &GreenNode<'a, SvelteLanguage>, offset: usize, source: &SourceText) -> Result<SvelteBlock, TextError> {
         let mut kind = String::new();
         let mut expression = String::new();
         let mut children = Vec::new();
@@ -272,7 +272,7 @@ impl SvelteBuilder {
         Ok(SvelteBlock { kind, expression: expression.trim().to_string(), children, branches, span: Range { start: offset, end: offset + node.byte_length as usize } })
     }
 
-    fn build_branch<'a>(&self, node: &GreenNode<'a, SvelteLanguage>, offset: usize, source: &SourceText) -> Result<SvelteBranch, OakError> {
+    fn build_branch<'a>(&self, node: &GreenNode<'a, SvelteLanguage>, offset: usize, source: &SourceText) -> Result<SvelteBranch, TextError> {
         let mut name = String::new();
         let mut expression = None;
         let mut children = Vec::new();
@@ -355,6 +355,6 @@ impl Builder<SvelteLanguage> for SvelteBuilder {
 
         let result = parse_output.result.and_then(|green_tree| self.build_root(green_tree, &source));
 
-        OakDiagnostics { result, diagnostics }
+        TextDiagnostics { result, diagnostics }
     }
 }

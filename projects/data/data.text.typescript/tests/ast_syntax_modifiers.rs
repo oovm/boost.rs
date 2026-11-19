@@ -1,13 +1,13 @@
 //! AST fields must record real syntax nodes with spans. `is_*` facts are derived
 //! methods, never inferred booleans.
 
-use data_text_core::{Builder, OakDiagnostics, SourceText, parser::ParseSession};
+use data_text_core::{Builder, TextDiagnostics, SourceText, parser::ParseSession};
 use data_text_typescript::{
     TypeScriptBuilder, TypeScriptLanguage,
     ast::{ClassMember, ExportSpecifier, ImportSpecifier, ModifierKind, Statement, TypeScriptRoot},
 };
 
-fn parse(source: &str) -> OakDiagnostics<TypeScriptRoot> {
+fn parse(source: &str) -> TextDiagnostics<TypeScriptRoot> {
     let language = TypeScriptLanguage::standard();
     let mut cache = ParseSession::<TypeScriptLanguage>::new(32);
     TypeScriptBuilder::new(&language).build(&SourceText::new(source), &[], &mut cache)

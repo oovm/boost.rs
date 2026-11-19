@@ -1,5 +1,5 @@
 use crate::{VerilogParser, ast::*, language::VerilogLanguage, lexer::token_type::VerilogKind};
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, OakError, Parser, RedNode, RedTree, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, builder::BuildOutput, source::Source};
 
 /// AST builder for Verilog.
 #[derive(Clone, Copy)]
@@ -23,21 +23,21 @@ impl<'config> Builder<VerilogLanguage> for VerilogBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(&green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }
 
 impl<'config> VerilogBuilder<'config> {
-    fn build_root(&self, green_tree: &GreenNode<VerilogLanguage>, source: &SourceText) -> Result<VerilogRoot, OakError> {
+    fn build_root(&self, green_tree: &GreenNode<VerilogLanguage>, source: &SourceText) -> Result<VerilogRoot, TextError> {
         let red_root = RedNode::new(green_tree, 0);
         let mut modules = Vec::new();
 
@@ -52,7 +52,7 @@ impl<'config> VerilogBuilder<'config> {
         Ok(VerilogRoot { modules })
     }
 
-    fn build_module(&self, node: RedNode<VerilogLanguage>, source: &SourceText) -> Result<VerilogModule, OakError> {
+    fn build_module(&self, node: RedNode<VerilogLanguage>, source: &SourceText) -> Result<VerilogModule, TextError> {
         let mut name = String::new();
         let mut ports = Vec::new();
         let mut items = Vec::new();
@@ -83,7 +83,7 @@ impl<'config> VerilogBuilder<'config> {
         Ok(VerilogModule { name, ports, items })
     }
 
-    fn build_port_list(&self, node: RedNode<VerilogLanguage>, source: &SourceText) -> Result<Vec<VerilogPort>, OakError> {
+    fn build_port_list(&self, node: RedNode<VerilogLanguage>, source: &SourceText) -> Result<Vec<VerilogPort>, TextError> {
         let mut ports = Vec::new();
         for child in node.children() {
             if let RedTree::Node(n) = child {
@@ -95,7 +95,7 @@ impl<'config> VerilogBuilder<'config> {
         Ok(ports)
     }
 
-    fn build_port(&self, node: RedNode<VerilogLanguage>, source: &SourceText) -> Result<VerilogPort, OakError> {
+    fn build_port(&self, node: RedNode<VerilogLanguage>, source: &SourceText) -> Result<VerilogPort, TextError> {
         let mut name = String::new();
         let mut direction = None;
         let mut ty = None;
@@ -121,7 +121,7 @@ impl<'config> VerilogBuilder<'config> {
         Ok(VerilogPort { name, direction, ty })
     }
 
-    fn build_module_item(&self, node: RedNode<VerilogLanguage>, source: &SourceText) -> Result<Option<VerilogModuleItem>, OakError> {
+    fn build_module_item(&self, node: RedNode<VerilogLanguage>, source: &SourceText) -> Result<Option<VerilogModuleItem>, TextError> {
         for child in node.children() {
             if let RedTree::Node(n) = child {
                 match n.green.kind {
@@ -144,7 +144,7 @@ impl<'config> VerilogBuilder<'config> {
         Ok(None)
     }
 
-    fn build_assign(&self, node: RedNode<VerilogLanguage>, source: &SourceText) -> Result<VerilogAssign, OakError> {
+    fn build_assign(&self, node: RedNode<VerilogLanguage>, source: &SourceText) -> Result<VerilogAssign, TextError> {
         let mut text = String::new();
         for child in node.children() {
             if let RedTree::Leaf(t) = child {
@@ -160,7 +160,7 @@ impl<'config> VerilogBuilder<'config> {
         Ok(VerilogAssign { left, right })
     }
 
-    fn build_always(&self, node: RedNode<VerilogLanguage>, source: &SourceText) -> Result<VerilogAlways, OakError> {
+    fn build_always(&self, node: RedNode<VerilogLanguage>, source: &SourceText) -> Result<VerilogAlways, TextError> {
         let mut sensitivity = None;
         let mut statement = String::new();
 
@@ -188,7 +188,7 @@ impl<'config> VerilogBuilder<'config> {
         Ok(VerilogAlways { sensitivity, statement })
     }
 
-    fn build_initial(&self, node: RedNode<VerilogLanguage>, source: &SourceText) -> Result<VerilogInitial, OakError> {
+    fn build_initial(&self, node: RedNode<VerilogLanguage>, source: &SourceText) -> Result<VerilogInitial, TextError> {
         let mut statement = String::new();
         for child in node.children() {
             match child {
@@ -205,7 +205,7 @@ impl<'config> VerilogBuilder<'config> {
         Ok(VerilogInitial { statement })
     }
 
-    fn build_declaration(&self, node: RedNode<VerilogLanguage>, source: &SourceText) -> Result<VerilogDeclaration, OakError> {
+    fn build_declaration(&self, node: RedNode<VerilogLanguage>, source: &SourceText) -> Result<VerilogDeclaration, TextError> {
         let mut ty = String::new();
         let mut name = String::new();
         let mut value = None;

@@ -6,7 +6,7 @@ pub mod token_type;
 pub use token_type::CmdTokenType;
 
 use crate::language::CmdLanguage;
-use data_text_core::{Lexer, LexerCache, LexerState, OakError, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextError, lexer::LexOutput, source::Source};
 
 pub(crate) type State<'a, S> = LexerState<'a, S, CmdLanguage>;
 
@@ -33,7 +33,7 @@ impl<'config> CmdLexer<'config> {
         Self { config }
     }
 
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let start_pos = state.get_position();
             if let Some(ch) = state.peek() {

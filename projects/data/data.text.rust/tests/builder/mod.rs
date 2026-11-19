@@ -2,7 +2,7 @@ use data_text_core::LexerCache;
 use data_text_rust::Highlighter;
 
 #[test]
-fn test_rust_integration() -> Result<(), data_text_core::OakError> {
+fn test_rust_integration() -> Result<(), data_text_core::TextError> {
     use data_text_core::{Lexer, Parser, SourceText};
     use data_text_rust::{RustLanguage, RustLexer, RustParser};
 
@@ -28,7 +28,7 @@ fn test_rust_integration() -> Result<(), data_text_core::OakError> {
 }
 
 #[test]
-fn test_rust_builder_single_file() -> Result<(), data_text_core::OakError> {
+fn test_rust_builder_single_file() -> Result<(), data_text_core::TextError> {
     use data_text_core::{Builder, SourceText, parser::session::ParseSession};
     use data_text_rust::{RustBuilder, RustLanguage};
 
@@ -47,7 +47,7 @@ fn test_rust_builder_single_file() -> Result<(), data_text_core::OakError> {
 }
 
 #[test]
-fn test_rust_builder_complex() -> Result<(), data_text_core::OakError> {
+fn test_rust_builder_complex() -> Result<(), data_text_core::TextError> {
     use data_text_core::{Builder, SourceText, parser::session::ParseSession};
     use data_text_rust::{RustBuilder, RustLanguage};
 
@@ -100,7 +100,7 @@ fn main() {
 }
 
 #[test]
-fn test_complete_rust_program() -> Result<(), data_text_core::OakError> {
+fn test_complete_rust_program() -> Result<(), data_text_core::TextError> {
     use data_text_core::{Lexer, SourceText};
     use data_text_rust::{RustFormatter, RustHighlighter, RustLanguage, RustLexer};
 

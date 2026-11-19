@@ -6,7 +6,7 @@ pub use element_type::AdaElementType;
 
 use crate::{language::AdaLanguage, lexer::AdaTokenType};
 use data_text_core::{
-    OakError, TextEdit,
+    TextError, TextEdit,
     parser::{Parser, ParserState},
     source::Source,
 };
@@ -24,7 +24,7 @@ impl<'config> AdaParser<'config> {
         Self { config }
     }
 
-    pub(crate) fn parse_context_clause<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_context_clause<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(AdaTokenType::With).ok();
 
@@ -43,7 +43,7 @@ impl<'config> AdaParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_package_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_package_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(AdaTokenType::Package).ok();
 
@@ -73,7 +73,7 @@ impl<'config> AdaParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_subprogram_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_subprogram_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
 
         if state.at(AdaTokenType::Procedure) {
@@ -115,7 +115,7 @@ impl<'config> AdaParser<'config> {
         Ok(())
     }
 
-    pub(crate) fn parse_pragma<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    pub(crate) fn parse_pragma<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(AdaTokenType::Pragma).ok();
         state.expect(AdaTokenType::Identifier).ok();

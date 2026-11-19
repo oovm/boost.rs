@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use crate::{ast::*, language::BatLanguage, parser::BatParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, Parser, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, SourceText, TextEdit, source::Source};
 
 /// Windows Batch (BAT) AST builder.
 #[derive(Clone)]
@@ -27,8 +27,8 @@ impl<'config> BatBuilder<'config> {
     ///
     /// # Returns
     ///
-    /// A `Result` containing the `BatRoot` AST or an `OakError`.
-    pub fn build_root(&self, _green: &GreenNode<BatLanguage>, _source: &SourceText) -> Result<BatRoot, data_text_core::OakError> {
+    /// A `Result` containing the `BatRoot` AST or an `TextError`.
+    pub fn build_root(&self, _green: &GreenNode<BatLanguage>, _source: &SourceText) -> Result<BatRoot, data_text_core::TextError> {
         // Simplified AST construction logic.
         Ok(BatRoot { elements: vec![] })
     }
@@ -44,15 +44,15 @@ impl<'config> Builder<BatLanguage> for BatBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }

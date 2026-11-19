@@ -1,5 +1,5 @@
 use crate::{ValkyrieLanguage, ast::*, lexer::token_type::ValkyrieTokenType};
-use data_text_core::{OakError, RedNode, RedTree, Source};
+use data_text_core::{TextError, RedNode, RedTree, Source};
 
 /// Skip whitespace, newline, and comment nodes
 pub(crate) fn should_skip_node(node: &RedTree<ValkyrieLanguage>) -> bool {
@@ -35,10 +35,10 @@ where
 pub(crate) fn get_required_expr<S: Source + ?Sized>(
     node: &RedNode<ValkyrieLanguage>,
     source: &S,
-    build_expr: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<TermExpression, OakError>,
+    build_expr: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<TermExpression, TextError>,
     error_msg: &str,
     span_start: usize,
-) -> Result<Box<TermExpression>, OakError> {
+) -> Result<Box<TermExpression>, TextError> {
     let mut expr = None;
     for child in node.children() {
         if let RedTree::Node(n) = child {
@@ -52,7 +52,7 @@ pub(crate) fn get_required_expr<S: Source + ?Sized>(
 }
 
 /// Get a required child node, or return an error if missing
-pub(crate) fn get_required_child<'a, S: Source + ?Sized>(node: &'a RedNode<'a, ValkyrieLanguage>, source: &S, error_msg: &str, span_start: usize) -> Result<RedTree<'a, ValkyrieLanguage>, OakError> {
+pub(crate) fn get_required_child<'a, S: Source + ?Sized>(node: &'a RedNode<'a, ValkyrieLanguage>, source: &S, error_msg: &str, span_start: usize) -> Result<RedTree<'a, ValkyrieLanguage>, TextError> {
     for child in node.children() {
         if !should_skip_node(&child) {
             return Ok(child);
@@ -62,7 +62,7 @@ pub(crate) fn get_required_child<'a, S: Source + ?Sized>(node: &'a RedNode<'a, V
 }
 
 /// Build an identifier expression
-pub(crate) fn build_identifier<S: Source + ?Sized>(node: &RedNode<ValkyrieLanguage>, source: &S, span: data_text_core::Range<usize>) -> Result<Identifier, OakError> {
+pub(crate) fn build_identifier<S: Source + ?Sized>(node: &RedNode<ValkyrieLanguage>, source: &S, span: data_text_core::Range<usize>) -> Result<Identifier, TextError> {
     let mut name = String::new();
     for child in node.children() {
         if let RedTree::Leaf(t) = child {
@@ -76,7 +76,7 @@ pub(crate) fn build_identifier<S: Source + ?Sized>(node: &RedNode<ValkyrieLangua
 }
 
 /// Build a name path
-pub(crate) fn build_name_path<S: Source + ?Sized>(node: &RedNode<ValkyrieLanguage>, source: &S) -> Result<NamePath, OakError> {
+pub(crate) fn build_name_path<S: Source + ?Sized>(node: &RedNode<ValkyrieLanguage>, source: &S) -> Result<NamePath, TextError> {
     let span = node.span();
     let mut parts = Vec::new();
 
@@ -105,7 +105,7 @@ pub(crate) fn build_name_path<S: Source + ?Sized>(node: &RedNode<ValkyrieLanguag
 }
 
 /// Build an argument list
-pub(crate) fn build_arg_list<S: Source + ?Sized>(node: &RedNode<ValkyrieLanguage>, source: &S, build_expr: &impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<TermExpression, OakError>) -> Result<Vec<TermExpression>, OakError> {
+pub(crate) fn build_arg_list<S: Source + ?Sized>(node: &RedNode<ValkyrieLanguage>, source: &S, build_expr: &impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<TermExpression, TextError>) -> Result<Vec<TermExpression>, TextError> {
     let mut args = Vec::new();
     for child in node.children() {
         if let RedTree::Node(arg_n) = child {
@@ -121,9 +121,9 @@ pub(crate) fn build_arg_list<S: Source + ?Sized>(node: &RedNode<ValkyrieLanguage
 pub(crate) fn build_binary_expr<S: Source + ?Sized>(
     node: &RedNode<ValkyrieLanguage>,
     source: &S,
-    build_expr: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<TermExpression, OakError>,
+    build_expr: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<TermExpression, TextError>,
     default_op: ValkyrieTokenType,
-) -> Result<(Box<TermExpression>, ValkyrieTokenType, Box<TermExpression>), OakError> {
+) -> Result<(Box<TermExpression>, ValkyrieTokenType, Box<TermExpression>), TextError> {
     let span = node.span();
     let mut left = None;
     let mut right = None;
@@ -167,9 +167,9 @@ pub(crate) fn build_binary_expr<S: Source + ?Sized>(
 pub(crate) fn build_unary_expr<S: Source + ?Sized>(
     node: &RedNode<ValkyrieLanguage>,
     source: &S,
-    build_expr: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<TermExpression, OakError>,
+    build_expr: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<TermExpression, TextError>,
     default_op: ValkyrieTokenType,
-) -> Result<(ValkyrieTokenType, Box<TermExpression>), OakError> {
+) -> Result<(ValkyrieTokenType, Box<TermExpression>), TextError> {
     let span = node.span();
     let mut expr = None;
     let mut op = None;
@@ -198,7 +198,7 @@ pub(crate) fn build_unary_expr<S: Source + ?Sized>(
 }
 
 /// Shared helper to build field-access expressions
-pub(crate) fn build_field_expr<S: Source + ?Sized>(node: &RedNode<ValkyrieLanguage>, source: &S, build_expr: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<TermExpression, OakError>) -> Result<(Box<TermExpression>, Identifier), OakError> {
+pub(crate) fn build_field_expr<S: Source + ?Sized>(node: &RedNode<ValkyrieLanguage>, source: &S, build_expr: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<TermExpression, TextError>) -> Result<(Box<TermExpression>, Identifier), TextError> {
     let span = node.span();
     let mut receiver = None;
     let mut field = None;
@@ -233,9 +233,9 @@ pub(crate) fn build_field_expr<S: Source + ?Sized>(node: &RedNode<ValkyrieLangua
 pub(crate) fn build_index_expr<S: Source + ?Sized>(
     node: &RedNode<ValkyrieLanguage>,
     source: &S,
-    build_expr: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<TermExpression, OakError>,
+    build_expr: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<TermExpression, TextError>,
     error_msg: &str,
-) -> Result<(Box<TermExpression>, Box<TermExpression>), OakError> {
+) -> Result<(Box<TermExpression>, Box<TermExpression>), TextError> {
     let span = node.span();
     let mut receiver = None;
     let mut index = None;
@@ -262,7 +262,7 @@ pub(crate) fn build_index_expr<S: Source + ?Sized>(
 }
 
 /// Shared helper to build call expressions
-pub(crate) fn build_call_expr<S: Source + ?Sized>(node: &RedNode<ValkyrieLanguage>, source: &S, build_expr: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<TermExpression, OakError>) -> Result<(Box<TermExpression>, Vec<TermExpression>), OakError> {
+pub(crate) fn build_call_expr<S: Source + ?Sized>(node: &RedNode<ValkyrieLanguage>, source: &S, build_expr: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<TermExpression, TextError>) -> Result<(Box<TermExpression>, Vec<TermExpression>), TextError> {
     let span = node.span();
     let mut callee = None;
     let mut args = Vec::new();
@@ -295,11 +295,11 @@ pub(crate) fn build_call_expr<S: Source + ?Sized>(node: &RedNode<ValkyrieLanguag
 pub(crate) fn build_block_expr<S: Source + ?Sized>(
     node: &RedNode<ValkyrieLanguage>,
     source: &S,
-    build_let: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<Statement, OakError>,
-    build_expr_stmt: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<Statement, OakError>,
-    build_template_stmt: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<Statement, OakError>,
-    build_expr: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<TermExpression, OakError>,
-) -> Result<Vec<Statement>, OakError> {
+    build_let: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<Statement, TextError>,
+    build_expr_stmt: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<Statement, TextError>,
+    build_template_stmt: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<Statement, TextError>,
+    build_expr: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<TermExpression, TextError>,
+) -> Result<Vec<Statement>, TextError> {
     let mut statements = Vec::new();
 
     for child in node.children() {

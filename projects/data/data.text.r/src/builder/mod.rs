@@ -5,7 +5,7 @@ use crate::{
     lexer::token_type::RTokenType,
     parser::element_type::RElementType,
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, GreenTree, OakDiagnostics, OakError, Parser, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, GreenTree, TextDiagnostics, TextError, Parser, SourceText, TextEdit, builder::BuildOutput, source::Source};
 
 /// Builder for constructing the R language AST from a green tree.
 #[derive(Clone)]
@@ -20,7 +20,7 @@ impl<'config> RBuilder<'config> {
     }
 
     /// Builds the root AST node from a green tree and source text.
-    pub fn build_root(&self, green_tree: &GreenNode<RLanguage>, source: &SourceText) -> Result<RRoot, OakError> {
+    pub fn build_root(&self, green_tree: &GreenNode<RLanguage>, source: &SourceText) -> Result<RRoot, TextError> {
         let mut statements = Vec::new();
         let mut current_offset = 0;
 
@@ -39,7 +39,7 @@ impl<'config> RBuilder<'config> {
         Ok(RRoot { statements })
     }
 
-    fn build_statement(&self, node: &GreenNode<RLanguage>, offset: usize, source: &SourceText) -> Result<Option<Statement>, OakError> {
+    fn build_statement(&self, node: &GreenNode<RLanguage>, offset: usize, source: &SourceText) -> Result<Option<Statement>, TextError> {
         match node.kind {
             RElementType::Assignment => {
                 let mut name = None;
@@ -106,7 +106,7 @@ impl<'config> RBuilder<'config> {
         }
     }
 
-    fn build_expression(&self, node: &GreenNode<RLanguage>, offset: usize, source: &SourceText) -> Result<Expr, OakError> {
+    fn build_expression(&self, node: &GreenNode<RLanguage>, offset: usize, source: &SourceText) -> Result<Expr, TextError> {
         match node.kind {
             RElementType::IdentifierExpression | RElementType::Identifier => Ok(Expr::Ident(Identifier { name: source.get_text_in((offset..offset + node.text_len() as usize).into()).to_string(), span: (offset..offset + node.text_len() as usize).into() })),
             RElementType::LiteralExpression => {
@@ -139,9 +139,9 @@ impl<'config> RBuilder<'config> {
                     current_offset += child_len
                 }
 
-                if let Some(c) = callee { Ok(Expr::Call { callee: c, args, span: (offset..offset + node.text_len() as usize).into() }) } else { Err(OakError::custom_error(format!("Unexpected token at offset {}", offset))) }
+                if let Some(c) = callee { Ok(Expr::Call { callee: c, args, span: (offset..offset + node.text_len() as usize).into() }) } else { Err(TextError::custom_error(format!("Unexpected token at offset {}", offset))) }
             }
-            _ => Err(OakError::custom_error(format!("Unexpected token at offset {}", offset))),
+            _ => Err(TextError::custom_error(format!("Unexpected token at offset {}", offset))),
         }
     }
 }
@@ -156,15 +156,15 @@ impl<'config> Builder<RLanguage> for RBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(e) => OakDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
+            Err(e) => TextDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
         }
     }
 }

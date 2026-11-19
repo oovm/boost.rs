@@ -1,6 +1,6 @@
 use core::range::Range;
 
-use data_text_core::{GreenNode, GreenTree, OakError, Source, SourceText, TokenType};
+use data_text_core::{GreenNode, GreenTree, TextError, Source, SourceText, TokenType};
 
 use crate::{
     ast::{VosBinaryOp, VosExpr, VosFieldInit, VosFnDecl, VosFnKind, VosLambda, VosLet, VosLiteral, VosParameter, VosPathSep, VosProgram, VosProjItem, VosRoot, VosStmt, VosSyntaxElement, VosSyntaxSlice, VosTypeSyntax, VosUnaryOp},
@@ -94,7 +94,7 @@ impl VosBuilder {
     }
 
     /// Projects a whole Oak root into an expression program.
-    pub fn project_program(&self, root: &VosRoot) -> Result<VosProgram, OakError> {
+    pub fn project_program(&self, root: &VosRoot) -> Result<VosProgram, TextError> {
         let source = SourceText::new(root.source.clone());
         let mut tokens = Vec::new();
         for child in &root.syntax.children {
@@ -168,15 +168,15 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         if self.index == 0 { self.span_end } else { self.tokens[self.index - 1].1.end }
     }
 
-    fn unexpected(&self, message: &str) -> OakError {
-        OakError::expected_token(message, self.current_start(), None)
+    fn unexpected(&self, message: &str) -> TextError {
+        TextError::expected_token(message, self.current_start(), None)
     }
 
-    fn unexpected_eof(&self) -> OakError {
-        OakError::unexpected_eof(self.span_end, None)
+    fn unexpected_eof(&self) -> TextError {
+        TextError::unexpected_eof(self.span_end, None)
     }
 
-    fn expect(&mut self, kind: VosTokenType, message: &str) -> Result<(), OakError> {
+    fn expect(&mut self, kind: VosTokenType, message: &str) -> Result<(), TextError> {
         if self.eat(kind) {
             return Ok(());
         }
@@ -209,7 +209,7 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         )
     }
 
-    fn expect_name(&mut self, message: &str) -> Result<(String, Range<usize>), OakError> {
+    fn expect_name(&mut self, message: &str) -> Result<(String, Range<usize>), TextError> {
         let Some(kind) = self.kind_at(self.index)
         else {
             return Err(self.unexpected_eof());
@@ -231,7 +231,7 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
 
     // --- program ---
 
-    fn parse_program(&mut self, stop_at_rbrace: bool) -> Result<VosProgram, OakError> {
+    fn parse_program(&mut self, stop_at_rbrace: bool) -> Result<VosProgram, TextError> {
         let mut micros = Vec::new();
         let mut statements = Vec::new();
         let mut result = None;
@@ -264,7 +264,7 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         Ok(VosProgram { micros, statements, result, span: (self.span_start..self.span_end).into() })
     }
 
-    fn parse_fn_decl(&mut self, kind: VosFnKind) -> Result<VosFnDecl, OakError> {
+    fn parse_fn_decl(&mut self, kind: VosFnKind) -> Result<VosFnDecl, TextError> {
         let span_start = self.current_start();
         self.index += 1;
         let (name, name_span) = self.expect_name("VOS function name")?;
@@ -300,7 +300,7 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         Ok(VosFnDecl { kind, name, name_span, parameters, return_type, body, span: (span_start..self.last_end()).into() })
     }
 
-    fn parse_let(&mut self) -> Result<VosLet, OakError> {
+    fn parse_let(&mut self) -> Result<VosLet, TextError> {
         let span_start = self.current_start();
         self.index += 1;
         let (name, name_span) = self.expect_name("VOS binding name")?;
@@ -310,7 +310,7 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         Ok(VosLet { name, name_span, type_expr, value, span: (span_start..self.last_end()).into() })
     }
 
-    fn parse_type(&mut self) -> Result<VosTypeSyntax, OakError> {
+    fn parse_type(&mut self) -> Result<VosTypeSyntax, TextError> {
         if self.at_end() {
             return Err(self.unexpected_eof());
         }
@@ -324,11 +324,11 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
 
     // --- expressions ---
 
-    fn parse_expression(&mut self) -> Result<VosExpr, OakError> {
+    fn parse_expression(&mut self) -> Result<VosExpr, TextError> {
         self.parse_or()
     }
 
-    fn parse_or(&mut self) -> Result<VosExpr, OakError> {
+    fn parse_or(&mut self) -> Result<VosExpr, TextError> {
         let mut left = self.parse_and()?;
         while self.eat_text("||") {
             let right = self.parse_and()?;
@@ -338,7 +338,7 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         Ok(left)
     }
 
-    fn parse_and(&mut self) -> Result<VosExpr, OakError> {
+    fn parse_and(&mut self) -> Result<VosExpr, TextError> {
         let mut left = self.parse_cmp()?;
         while self.eat_text("&&") {
             let right = self.parse_cmp()?;
@@ -348,7 +348,7 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         Ok(left)
     }
 
-    fn parse_cmp(&mut self) -> Result<VosExpr, OakError> {
+    fn parse_cmp(&mut self) -> Result<VosExpr, TextError> {
         let mut left = self.parse_add()?;
         loop {
             let op = if self.eat_text("==") {
@@ -383,7 +383,7 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         Ok(left)
     }
 
-    fn parse_add(&mut self) -> Result<VosExpr, OakError> {
+    fn parse_add(&mut self) -> Result<VosExpr, TextError> {
         let mut left = self.parse_mul()?;
         loop {
             let op = if self.eat_text("+") {
@@ -406,7 +406,7 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         Ok(left)
     }
 
-    fn parse_mul(&mut self) -> Result<VosExpr, OakError> {
+    fn parse_mul(&mut self) -> Result<VosExpr, TextError> {
         let mut left = self.parse_unary()?;
         loop {
             let op = if self.eat_text("*") {
@@ -429,7 +429,7 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         Ok(left)
     }
 
-    fn parse_unary(&mut self) -> Result<VosExpr, OakError> {
+    fn parse_unary(&mut self) -> Result<VosExpr, TextError> {
         if self.at_text("!") {
             let span_start = self.current_start();
             self.index += 1;
@@ -439,7 +439,7 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         self.parse_postfix()
     }
 
-    fn parse_postfix(&mut self) -> Result<VosExpr, OakError> {
+    fn parse_postfix(&mut self) -> Result<VosExpr, TextError> {
         let mut expr = self.parse_primary()?;
         loop {
             if self.eat(VosTokenType::Question) {
@@ -477,7 +477,7 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         Ok(expr)
     }
 
-    fn finish_member(&mut self, expr: VosExpr, sep: VosPathSep) -> Result<VosExpr, OakError> {
+    fn finish_member(&mut self, expr: VosExpr, sep: VosPathSep) -> Result<VosExpr, TextError> {
         let (name, name_span) = self.expect_name("expected VOS member name")?;
         let mut expr = VosExpr::Member { object: Box::new(expr), name, name_span: name_span.clone(), sep, span: name_span.clone() };
         if self.at(VosTokenType::LeftParen) {
@@ -498,7 +498,7 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         }
     }
 
-    fn parse_primary(&mut self) -> Result<VosExpr, OakError> {
+    fn parse_primary(&mut self) -> Result<VosExpr, TextError> {
         let Some(kind) = self.kind_at(self.index)
         else {
             return Err(self.unexpected_eof());
@@ -513,7 +513,7 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         }
     }
 
-    fn parse_parenthesized(&mut self) -> Result<VosExpr, OakError> {
+    fn parse_parenthesized(&mut self) -> Result<VosExpr, TextError> {
         let span_start = self.current_start();
         self.index += 1;
         let checkpoint = self.index;
@@ -561,7 +561,7 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         }
     }
 
-    fn parse_name_expression(&mut self) -> Result<VosExpr, OakError> {
+    fn parse_name_expression(&mut self) -> Result<VosExpr, TextError> {
         let (name, name_span) = self.expect_name("expected VOS expression")?;
         if self.eat_text("=>") {
             let body = self.parse_lambda_body()?;
@@ -574,11 +574,11 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         Ok(VosExpr::Name { name, span: name_span })
     }
 
-    fn parse_lambda_body(&mut self) -> Result<VosExpr, OakError> {
+    fn parse_lambda_body(&mut self) -> Result<VosExpr, TextError> {
         if self.at(VosTokenType::LeftBrace) { self.parse_anon_object() } else { self.parse_expression() }
     }
 
-    fn parse_literal(&mut self) -> Result<VosExpr, OakError> {
+    fn parse_literal(&mut self) -> Result<VosExpr, TextError> {
         let token = self.tokens[self.index].clone();
         self.index += 1;
         let text = self.source.get_text_in(token.1.clone().into()).into_owned();
@@ -601,7 +601,7 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         Ok(VosExpr::Literal(value))
     }
 
-    fn parse_list(&mut self) -> Result<VosExpr, OakError> {
+    fn parse_list(&mut self) -> Result<VosExpr, TextError> {
         let span_start = self.current_start();
         self.index += 1;
         let mut items = Vec::new();
@@ -622,13 +622,13 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         Ok(VosExpr::List { items, span: (span_start..self.last_end()).into() })
     }
 
-    fn parse_anon_object(&mut self) -> Result<VosExpr, OakError> {
+    fn parse_anon_object(&mut self) -> Result<VosExpr, TextError> {
         let span_start = self.current_start();
         let fields = self.parse_field_init_block()?;
         Ok(VosExpr::AnonObject { fields, span: (span_start..self.last_end()).into() })
     }
 
-    fn parse_field_init_block(&mut self) -> Result<Vec<VosFieldInit>, OakError> {
+    fn parse_field_init_block(&mut self) -> Result<Vec<VosFieldInit>, TextError> {
         self.expect(VosTokenType::LeftBrace, "expected `{` before VOS field list")?;
         let mut fields = Vec::new();
         loop {
@@ -644,7 +644,7 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         Ok(fields)
     }
 
-    fn parse_proj_items_block(&mut self) -> Result<Vec<VosProjItem>, OakError> {
+    fn parse_proj_items_block(&mut self) -> Result<Vec<VosProjItem>, TextError> {
         self.expect(VosTokenType::LeftBrace, "expected `{` before VOS projection items")?;
         let mut items = Vec::new();
         loop {
@@ -665,7 +665,7 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         Ok(items)
     }
 
-    fn parse_field_init(&mut self) -> Result<VosFieldInit, OakError> {
+    fn parse_field_init(&mut self) -> Result<VosFieldInit, TextError> {
         let (name, name_span) = self.expect_name("expected VOS field name")?;
         if self.eat(VosTokenType::Colon) {
             let value = self.parse_expression()?;
@@ -676,7 +676,7 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         }
     }
 
-    fn parse_arg_list(&mut self) -> Result<Vec<VosExpr>, OakError> {
+    fn parse_arg_list(&mut self) -> Result<Vec<VosExpr>, TextError> {
         self.expect(VosTokenType::LeftParen, "expected `(` before VOS arguments")?;
         let mut args = Vec::new();
         loop {

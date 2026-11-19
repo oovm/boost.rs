@@ -7,7 +7,7 @@
 use crate::{create_file, source_from_path};
 use data_text_core::{
     Language, Lexer, Source, TokenType,
-    errors::{OakDiagnostics, OakError},
+    errors::{TextDiagnostics, TextError},
 };
 
 #[cfg(feature = "serde")]
@@ -88,7 +88,7 @@ impl LexerTester {
 
     /// Run tests for the given lexer against all files in the root directory with the specified extensions.
     #[cfg(feature = "serde")]
-    pub fn run_tests<L, Lex>(self, lexer: &Lex) -> Result<(), OakError>
+    pub fn run_tests<L, Lex>(self, lexer: &Lex) -> Result<(), TextError>
     where
         L: Language + Send + Sync,
         L::TokenType: serde::Serialize + std::fmt::Debug + Send + Sync,
@@ -112,7 +112,7 @@ impl LexerTester {
 
     /// Run tests for the given lexer against all files in the root directory with the specified extensions.
     #[cfg(not(feature = "serde"))]
-    pub fn run_tests<L, Lex>(self, _lexer: &Lex) -> Result<(), OakError>
+    pub fn run_tests<L, Lex>(self, _lexer: &Lex) -> Result<(), TextError>
     where
         L: Language + Send + Sync,
         Lex: Lexer<L> + Send + Sync + Clone,
@@ -120,7 +120,7 @@ impl LexerTester {
         Ok(())
     }
 
-    fn find_test_files(&self) -> Result<Vec<PathBuf>, OakError> {
+    fn find_test_files(&self) -> Result<Vec<PathBuf>, TextError> {
         let mut files = Vec::new();
 
         if !self.root.exists() {
@@ -128,7 +128,7 @@ impl LexerTester {
         }
 
         for entry in Walker::new(&self.root).error_policy(ErrorPolicy::Strict) {
-            let entry = entry.map_err(|e| OakError::custom_error(e.to_string()))?;
+            let entry = entry.map_err(|e| TextError::custom_error(e.to_string()))?;
             let path = entry.path();
 
             if path.is_file() {
@@ -151,7 +151,7 @@ impl LexerTester {
     }
 
     #[cfg(feature = "serde")]
-    fn test_single_file<L, Lex>(&self, file_path: &Path, lexer: &Lex, force_regenerated: bool) -> Result<bool, OakError>
+    fn test_single_file<L, Lex>(&self, file_path: &Path, lexer: &Lex, force_regenerated: bool) -> Result<bool, TextError>
     where
         L: Language + Send + Sync,
         L::TokenType: serde::Serialize + std::fmt::Debug + Send + Sync,
@@ -197,18 +197,18 @@ impl LexerTester {
 
             // Return error if timed out
             if timeout_occurred {
-                return Err(OakError::custom_error(&format!("Lexer test timed out after {:?} for file: {}", self.timeout, file_path.display())));
+                return Err(TextError::custom_error(&format!("Lexer test timed out after {:?} for file: {}", self.timeout, file_path.display())));
             }
 
             Ok(())
         })?;
 
         // Get lexical analysis result
-        let OakDiagnostics { result: tokens_result, mut diagnostics } = {
+        let TextDiagnostics { result: tokens_result, mut diagnostics } = {
             let result_guard = result.lock().unwrap();
             match result_guard.as_ref() {
                 Some(output) => output.clone(),
-                None => return Err(OakError::custom_error("Failed to get lexer result")),
+                None => return Err(TextError::custom_error("Failed to get lexer result")),
             }
         };
 
@@ -256,9 +256,9 @@ impl LexerTester {
         let mut regenerated = false;
         if expected_file.exists() && !force_regenerated {
             let expected_json = json_from_path(&expected_file)?;
-            let expected: LexerTestExpected = serde_json::from_value(expected_json).map_err(|e| OakError::custom_error(e.to_string()))?;
+            let expected: LexerTestExpected = serde_json::from_value(expected_json).map_err(|e| TextError::custom_error(e.to_string()))?;
             if test_result != expected {
-                return Err(OakError::test_failure(file_path.to_path_buf(), format!("{:#?}", expected), format!("{:#?}", test_result)));
+                return Err(TextError::test_failure(file_path.to_path_buf(), format!("{:#?}", expected), format!("{:#?}", test_result)));
             }
         }
         else {
@@ -267,8 +267,8 @@ impl LexerTester {
             let mut buf = Vec::new();
             let formatter = serde_json::ser::PrettyFormatter::with_indent(b"    "); // 4 spaces indentation
             let mut ser = serde_json::Serializer::with_formatter(&mut buf, formatter);
-            test_result.serialize(&mut ser).map_err(|e| OakError::custom_error(e.to_string()))?;
-            file.write_all(&buf).map_err(|e| OakError::custom_error(e.to_string()))?;
+            test_result.serialize(&mut ser).map_err(|e| TextError::custom_error(e.to_string()))?;
+            file.write_all(&buf).map_err(|e| TextError::custom_error(e.to_string()))?;
             regenerated = true;
         }
 

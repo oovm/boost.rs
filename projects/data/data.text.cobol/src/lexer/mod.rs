@@ -10,7 +10,7 @@ pub mod token_type;
 pub use token_type::CobolTokenType;
 
 use crate::language::CobolLanguage;
-use data_text_core::{Lexer, LexerCache, LexerState, OakError, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextError, lexer::LexOutput, source::Source};
 
 /// COBOL lexer.
 pub struct CobolLexer;

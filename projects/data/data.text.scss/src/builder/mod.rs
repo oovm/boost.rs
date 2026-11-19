@@ -1,5 +1,5 @@
 use crate::{ast::ScssRoot, language::ScssLanguage};
-use data_text_core::{Builder, BuilderCache, Lexer, OakDiagnostics, Parser, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{Builder, BuilderCache, Lexer, TextDiagnostics, Parser, TextEdit, builder::BuildOutput, source::Source};
 
 /// AST builder for SCSS language
 #[derive(Clone)]
@@ -26,9 +26,9 @@ impl<'config> Builder<ScssLanguage> for ScssBuilder<'config> {
         match parse_result.result {
             Ok(parse_tree) => {
                 let ast = self.build_ast(source, &parse_tree);
-                OakDiagnostics { result: Ok(ast), diagnostics: parse_result.diagnostics }
+                TextDiagnostics { result: Ok(ast), diagnostics: parse_result.diagnostics }
             }
-            Err(e) => OakDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
+            Err(e) => TextDiagnostics { result: Err(e), diagnostics: parse_result.diagnostics },
         }
     }
 }

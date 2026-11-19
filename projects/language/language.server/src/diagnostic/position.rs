@@ -1,4 +1,4 @@
-use boost_harness::terminal::{SourceID, SourceProvider, SourceSpan, SourceView};
+use boost_harness::diagnostic::terminal::{SourceID, SourceProvider, SourceSpan, SourceView};
 
 use crate::types::{TextPosition, TextRange};
 

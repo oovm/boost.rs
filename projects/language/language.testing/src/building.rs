@@ -5,7 +5,7 @@
 //! and test result serialization for typed root structures.
 
 use crate::{create_file, source_from_path};
-use data_text_core::{Builder, Language, errors::OakError};
+use data_text_core::{Builder, Language, errors::TextError};
 
 #[cfg(feature = "serde")]
 use crate::json_from_path;
@@ -85,7 +85,7 @@ impl BuilderTester {
 
     /// Run tests for the given builder against all files in the root directory with the specified extensions.
     #[cfg(feature = "serde")]
-    pub fn run_tests<L, B>(self, builder: &B) -> Result<(), OakError>
+    pub fn run_tests<L, B>(self, builder: &B) -> Result<(), TextError>
     where
         B: Builder<L> + Send + Sync,
         L: Language + Send + Sync,
@@ -111,7 +111,7 @@ impl BuilderTester {
 
     /// Run tests for the given builder against all files in the root directory with the specified extensions.
     #[cfg(not(feature = "serde"))]
-    pub fn run_tests<L, B>(self, _builder: &B) -> Result<(), OakError>
+    pub fn run_tests<L, B>(self, _builder: &B) -> Result<(), TextError>
     where
         B: Builder<L> + Send + Sync,
         L: Language + Send + Sync,
@@ -120,7 +120,7 @@ impl BuilderTester {
         Ok(())
     }
 
-    fn find_test_files(&self) -> Result<Vec<PathBuf>, OakError> {
+    fn find_test_files(&self) -> Result<Vec<PathBuf>, TextError> {
         let mut files = Vec::new();
 
         if !self.root.exists() {
@@ -128,7 +128,7 @@ impl BuilderTester {
         }
 
         for entry in Walker::new(&self.root).error_policy(ErrorPolicy::Strict) {
-            let entry = entry.map_err(|e| OakError::custom_error(e.to_string()))?;
+            let entry = entry.map_err(|e| TextError::custom_error(e.to_string()))?;
             let path = entry.path();
 
             if path.is_file() {
@@ -151,7 +151,7 @@ impl BuilderTester {
     }
 
     #[cfg(feature = "serde")]
-    fn test_single_file<L, B>(&self, file_path: &Path, builder: &B, force_regenerated: bool) -> Result<bool, OakError>
+    fn test_single_file<L, B>(&self, file_path: &Path, builder: &B, force_regenerated: bool) -> Result<bool, TextError>
     where
         B: Builder<L> + Send + Sync,
         L: Language + Send + Sync,
@@ -161,7 +161,7 @@ impl BuilderTester {
 
         // Perform build in a thread and construct test results, with main thread handling timeout control
         use std::sync::{Arc, Mutex};
-        let result: Arc<Mutex<Option<Result<BuilderTestExpected, OakError>>>> = Arc::new(Mutex::new(None));
+        let result: Arc<Mutex<Option<Result<BuilderTestExpected, TextError>>>> = Arc::new(Mutex::new(None));
         let result_clone = Arc::clone(&result);
         let timeout = self.timeout;
         let file_path_string = file_path.display().to_string();
@@ -220,7 +220,7 @@ impl BuilderTester {
 
             // Return error if timed out
             if timeout_occurred {
-                return Err(OakError::custom_error(format!("Builder test timed out after {:?} for file: {}", timeout, file_path_string)));
+                return Err(TextError::custom_error(format!("Builder test timed out after {:?} for file: {}", timeout, file_path_string)));
             }
 
             // Get build result
@@ -229,7 +229,7 @@ impl BuilderTester {
                 match result_guard.as_ref() {
                     Some(Ok(test_result)) => test_result.clone(),
                     Some(Err(e)) => return Err(e.clone()),
-                    None => return Err(OakError::custom_error("Builder thread disconnected unexpectedly")),
+                    None => return Err(TextError::custom_error("Builder thread disconnected unexpectedly")),
                 }
             };
 
@@ -246,9 +246,9 @@ impl BuilderTester {
 
             if expected_file.exists() && !force_regenerated {
                 let expected_json = json_from_path(&expected_file)?;
-                let expected: BuilderTestExpected = serde_json::from_value(expected_json).map_err(|e| OakError::custom_error(e.to_string()))?;
+                let expected: BuilderTestExpected = serde_json::from_value(expected_json).map_err(|e| TextError::custom_error(e.to_string()))?;
                 if test_result != expected {
-                    return Err(OakError::test_failure(file_path.to_path_buf(), format!("{:#?}", expected), format!("{:#?}", test_result)));
+                    return Err(TextError::test_failure(file_path.to_path_buf(), format!("{:#?}", expected), format!("{:#?}", test_result)));
                 }
             }
             else {
@@ -257,8 +257,8 @@ impl BuilderTester {
                 let mut buf = Vec::new();
                 let formatter = serde_json::ser::PrettyFormatter::with_indent(b"    "); // 4 spaces indentation
                 let mut ser = serde_json::Serializer::with_formatter(&mut buf, formatter);
-                test_result.serialize(&mut ser).map_err(|e| OakError::custom_error(e.to_string()))?;
-                file.write_all(&buf).map_err(|e| OakError::custom_error(e.to_string()))?;
+                test_result.serialize(&mut ser).map_err(|e| TextError::custom_error(e.to_string()))?;
+                file.write_all(&buf).map_err(|e| TextError::custom_error(e.to_string()))?;
                 regenerated = true;
             }
 

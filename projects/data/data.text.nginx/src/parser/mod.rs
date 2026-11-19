@@ -6,7 +6,7 @@ use crate::{
     lexer::{NginxLexer, token_type::NginxTokenType},
 };
 use data_text_core::{
-    GreenNode, OakError,
+    GreenNode, TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState},
     source::{Source, TextEdit},
 };

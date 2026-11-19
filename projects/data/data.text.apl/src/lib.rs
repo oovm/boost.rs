@@ -24,7 +24,7 @@ pub mod mcp;
 /// Parser module.
 pub mod parser;
 
-pub use data_text_core::OakError;
+pub use data_text_core::TextError;
 
 /// Highlighter implementation.
 #[cfg(feature = "oak-highlight")]

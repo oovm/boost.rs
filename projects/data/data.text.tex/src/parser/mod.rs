@@ -7,7 +7,7 @@ use crate::{
     parser::element_type::TexElementType,
 };
 use data_text_core::{
-    GreenNode, OakError,
+    GreenNode, TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -28,7 +28,7 @@ impl<'config> TexParser<'config> {
     }
 
     /// Parses a single TeX item (command, environment, group, etc.).
-    fn parse_item<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_item<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         match state.peek_kind() {
             Some(TexTokenType::BeginKeyword) => self.parse_environment(state),
             Some(TexTokenType::Dollar) => self.parse_math_delimiter(state, TexTokenType::Dollar, TexElementType::InlineMath),
@@ -92,7 +92,7 @@ impl<'config> TexParser<'config> {
     }
 
     /// Parses a TeX environment (e.g., `\begin{...} ... \end{...}`).
-    fn parse_environment<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_environment<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
 
         // Parse \begin{name} — the name is always the first mandatory argument
@@ -145,7 +145,7 @@ impl<'config> TexParser<'config> {
     /// A row is one or more cells separated by `&`, optionally closed by the
     /// `\\` row break. An empty cell before `&`, `\\` or `\end` is a real cell
     /// (for example `a & & b`), so the parser always finishes a cell node.
-    fn parse_environment_row<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_environment_row<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         loop {
             self.parse_environment_cell(state)?;
@@ -164,7 +164,7 @@ impl<'config> TexParser<'config> {
 
     /// Parses one cell of an environment row, stopping at the next cell
     /// separator, row break or the closing `\end`.
-    fn parse_environment_cell<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_environment_cell<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         while state.not_at_end() && !state.at(TexTokenType::Ampersand) && !state.at(TexTokenType::RowBreak) && !state.at(TexTokenType::EndKeyword) {
             self.parse_item(state)?;
@@ -173,7 +173,7 @@ impl<'config> TexParser<'config> {
         Ok(())
     }
 
-    fn parse_superscript<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_superscript<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(TexTokenType::Caret)?;
 
@@ -188,7 +188,7 @@ impl<'config> TexParser<'config> {
         Ok(())
     }
 
-    fn parse_subscript<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_subscript<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(TexTokenType::Underscore)?;
 
@@ -203,7 +203,7 @@ impl<'config> TexParser<'config> {
         Ok(())
     }
 
-    fn parse_command<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_command<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         let kind = state.peek_kind().unwrap_or(TexTokenType::Command);
 
@@ -235,7 +235,7 @@ impl<'config> TexParser<'config> {
         Ok(())
     }
 
-    fn parse_group<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_group<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(TexTokenType::LeftBrace)?;
         while state.not_at_end() && !state.at(TexTokenType::RightBrace) {
@@ -249,7 +249,7 @@ impl<'config> TexParser<'config> {
     /// Parse a math block delimited by `$...$`, `$$...$$`, `\(...\)` or
     /// `\[...\]`. The same lexed token kind is used for opening and
     /// closing, so we match on that.
-    fn parse_math_delimiter<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, open_kind: TexTokenType, element_kind: TexElementType) -> Result<(), OakError> {
+    fn parse_math_delimiter<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, open_kind: TexTokenType, element_kind: TexElementType) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.bump(); // consume opening delimiter
         while state.not_at_end() && !state.at(open_kind) {
@@ -265,7 +265,7 @@ impl<'config> TexParser<'config> {
 
     /// Parse `\left<delim> ... \right<delim>` (optionally with
     /// `\middle<delim>` tokens inside the content).
-    fn parse_left_right<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_left_right<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
 
         // consume `\left`
@@ -288,7 +288,7 @@ impl<'config> TexParser<'config> {
     }
 
     /// Parse a `\limits` or `\nolimits` command.
-    fn parse_limits<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_limits<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         let kind = state.peek_kind().unwrap_or(TexTokenType::Limits);
         state.bump();
@@ -302,7 +302,7 @@ impl<'config> TexParser<'config> {
 
     /// Consume a single delimiter token after `\left`, `\middle` or `\right`.
     /// Handles `\left\{` and `\left(`, but also the invisible `\left.`.
-    fn consume_delimiter_token<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn consume_delimiter_token<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         if !state.not_at_end() {
             return Ok(());
         }
@@ -337,7 +337,7 @@ impl<'config> TexParser<'config> {
         }
     }
 
-    fn parse_optional_argument<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_optional_argument<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(TexTokenType::LeftBracket)?;
         while state.not_at_end() && !state.at(TexTokenType::RightBracket) {
@@ -348,7 +348,7 @@ impl<'config> TexParser<'config> {
         Ok(())
     }
 
-    fn parse_mandatory_argument<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+    fn parse_mandatory_argument<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.expect(TexTokenType::LeftBrace)?;
         while state.not_at_end() && !state.at(TexTokenType::RightBrace) {

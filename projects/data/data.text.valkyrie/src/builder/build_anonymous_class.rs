@@ -4,7 +4,7 @@ use crate::{
     builder::{ValkyrieBuilder, text},
     lexer::{ValkyrieKeywords, token_type::ValkyrieTokenType},
 };
-use data_text_core::{OakError, RedNode, RedTree, Source};
+use data_text_core::{TextError, RedNode, RedTree, Source};
 
 impl<'config> ValkyrieBuilder<'config> {
     /// Builds an anonymous `class { ... }` / `structure { ... }` expression.
@@ -14,7 +14,7 @@ impl<'config> ValkyrieBuilder<'config> {
     /// - `structure { ... }`
     /// - `class: Trait { ... }`
     /// - `class(Parent)` / `class(alias: Parent)` / `class()`
-    pub(crate) fn build_anonymous_class<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_anonymous_class<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let mut is_structure = false;
         let mut annotations = Vec::new();
@@ -129,7 +129,7 @@ impl<'config> ValkyrieBuilder<'config> {
     ///     }
     /// }
     /// ```
-    pub(crate) fn build_super_call<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, OakError> {
+    pub(crate) fn build_super_call<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
         let mut parent_alias = None;
         let mut method = None;

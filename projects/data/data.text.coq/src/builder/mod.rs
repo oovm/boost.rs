@@ -1,5 +1,5 @@
 use crate::{CoqParser, ast::*, language::CoqLanguage};
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, SourceText, TextEdit, source::Source};
 
 /// AST builder for the Coq language.
 #[derive(Clone)]
@@ -15,7 +15,7 @@ impl<'config> CoqBuilder<'config> {
     }
 
     /// Builds the AST root from the green tree.
-    pub fn build_root(&self, _green: &GreenNode<CoqLanguage>, _source: &SourceText) -> Result<CoqRoot, data_text_core::OakError> {
+    pub fn build_root(&self, _green: &GreenNode<CoqLanguage>, _source: &SourceText) -> Result<CoqRoot, data_text_core::TextError> {
         // Simplified AST building logic
         Ok(CoqRoot::new())
     }
@@ -33,15 +33,15 @@ impl<'config> Builder<CoqLanguage> for CoqBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree, &source_text) {
-                    Ok(ast_root) => OakDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => TextDiagnostics { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
-                        OakDiagnostics { result: Err(build_error), diagnostics }
+                        TextDiagnostics { result: Err(build_error), diagnostics }
                     }
                 }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }

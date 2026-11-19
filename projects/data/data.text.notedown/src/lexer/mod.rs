@@ -32,7 +32,7 @@ impl<'config> Lexer<NotedownLanguage> for NotedownLexer<'config> {
 }
 
 impl<'config> NotedownLexer<'config> {
-    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::OakError> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), data_text_core::TextError> {
         while state.not_at_end() {
             // Try various lexical rules
             if self.skip_whitespace(state) {

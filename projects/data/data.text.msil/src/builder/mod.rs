@@ -5,7 +5,7 @@ use crate::{
     language::MsilLanguage,
     parser::{MsilParser, element_type::MsilElementType},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, OakDiagnostics, Source, SourceText, TextEdit};
+use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Source, SourceText, TextEdit};
 
 /// Builder for the MSIL language.
 #[derive(Clone)]
@@ -21,7 +21,7 @@ impl<'config> MsilBuilder<'config> {
     }
 
     /// Builds the root AST node from a green tree.
-    pub fn build_root(&self, green_tree: &GreenNode<MsilLanguage>, source: &SourceText) -> Result<MsilRoot, data_text_core::OakError> {
+    pub fn build_root(&self, green_tree: &GreenNode<MsilLanguage>, source: &SourceText) -> Result<MsilRoot, data_text_core::TextError> {
         let red_root = data_text_core::RedNode::new(green_tree, 0);
 
         let mut items = Vec::new();
@@ -154,7 +154,7 @@ impl<'config> MsilBuilder<'config> {
 }
 
 impl<'config> Builder<MsilLanguage> for MsilBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<MsilLanguage>) -> OakDiagnostics<MsilRoot> {
+    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<MsilLanguage>) -> TextDiagnostics<MsilRoot> {
         let parser = MsilParser::new(self.config);
         let lexer = crate::lexer::MsilLexer::new(&self.config);
 
@@ -164,9 +164,9 @@ impl<'config> Builder<MsilLanguage> for MsilBuilder<'config> {
         match parse_result.result {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
-                OakDiagnostics { result: self.build_root(green_tree, &source_text), diagnostics: parse_result.diagnostics }
+                TextDiagnostics { result: self.build_root(green_tree, &source_text), diagnostics: parse_result.diagnostics }
             }
-            Err(parse_error) => OakDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => TextDiagnostics { result: Err(parse_error), diagnostics: parse_result.diagnostics },
         }
     }
 }

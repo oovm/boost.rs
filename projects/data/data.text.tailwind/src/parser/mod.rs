@@ -10,7 +10,7 @@ use crate::{
 };
 use core::range::Range;
 use data_text_core::{
-    errors::OakError,
+    errors::TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
@@ -30,7 +30,7 @@ impl TailwindParser {
         Self { config }
     }
 
-    fn parse_node<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<Option<TailwindNode>, OakError> {
+    fn parse_node<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<Option<TailwindNode>, TextError> {
         match state.peek_kind() {
             Some(TailwindTokenType::Directive) => {
                 let directive = self.parse_directive(state)?;
@@ -60,7 +60,7 @@ impl TailwindParser {
     }
 
     /// Parses a Tailwind class (e.g., hover:bg-red-500, !p-4).
-    fn parse_class<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<TailwindClass, OakError> {
+    fn parse_class<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<TailwindClass, TextError> {
         let checkpoint = state.checkpoint();
         let start_pos = state.current_offset();
         let mut is_important = false;
@@ -124,7 +124,7 @@ impl TailwindParser {
     }
 
     /// Parses a directive (e.g., @tailwind base).
-    fn parse_directive<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<TailwindDirective, OakError> {
+    fn parse_directive<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<TailwindDirective, TextError> {
         let checkpoint = state.checkpoint();
         let start_pos = state.current_offset();
 

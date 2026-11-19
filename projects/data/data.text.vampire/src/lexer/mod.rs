@@ -5,7 +5,7 @@ pub use token_type::VampireTokenType;
 
 use crate::language::VampireLanguage;
 use data_text_core::{
-    Lexer, LexerCache, LexerState, OakError, TextEdit,
+    Lexer, LexerCache, LexerState, TextError, TextEdit,
     lexer::{CommentConfig, LexOutput, StringConfig, WhitespaceConfig},
     source::Source,
 };
@@ -41,7 +41,7 @@ impl<'config> VampireLexer<'config> {
     }
 
     /// Main lexing loop
-    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), OakError> {
+    fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), TextError> {
         while state.not_at_end() {
             let safe_point = state.get_position();
 

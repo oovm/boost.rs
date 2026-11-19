@@ -4,7 +4,7 @@ use crate::{
     parser::{State, element_type::JavaElementType},
 };
 use data_text_core::{
-    GreenNode, OakError, TokenType,
+    GreenNode, TextError, TokenType,
     parser::pratt::{Associativity, Pratt, PrattParser, binary},
     source::Source,
 };
@@ -18,7 +18,7 @@ pub(crate) fn parse_expression_statement<'a, S: Source + ?Sized, P: Pratt<JavaLa
 }
 
 /// Parse an anonymous class expression
-pub(crate) fn parse_anonymous_class<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + super::parse_declaration::DeclarationParser>(parser: &P, state: &mut State<'a, S>) -> Result<(), OakError> {
+pub(crate) fn parse_anonymous_class<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + super::parse_declaration::DeclarationParser>(parser: &P, state: &mut State<'a, S>) -> Result<(), TextError> {
     use JavaTokenType::*;
     let cp = state.checkpoint();
     parser.parse_type(state)?;

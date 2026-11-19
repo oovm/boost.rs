@@ -3,7 +3,7 @@ use data_text_tsv::TsvLexer;
 use std::{path::Path, time::Duration};
 
 #[test]
-fn test_tsv_lexer() -> Result<(), data_text_core::OakError> {
+fn test_tsv_lexer() -> Result<(), data_text_core::TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lexer = TsvLexer::new();
     let test_runner = LexerTester::new(here.join("tests/lexer")).with_extension("tsv").with_timeout(Duration::from_secs(5));
